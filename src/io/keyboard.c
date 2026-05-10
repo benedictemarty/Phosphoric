@@ -49,16 +49,22 @@ void oric_keyboard_set_layout(oric_keyboard_t* kb, oric_kb_layout_t layout) {
  * ================================================================
  *
  * Derived from ROM keyboard tables at $FF70 (unshifted) and $FFB0 (shifted).
- * Each entry: { row, col, need_oric_shift }
+ * Each entry: { col, row, need_oric_shift }
+ *   - col = hardware column (VIA ORB[0:2], 74LS138 output index)
+ *   - row = hardware row    (PSG R14 bit index)
+ *
+ * Storage: matrix[col] has bit `row` cleared when (col, row) is pressed.
+ * The literal values in the table below pre-date this clarification —
+ * they were correct numerically but the field names were swapped.
  */
 
 typedef struct {
-    int8_t row, col;
+    int8_t col, row;
     bool shift;
 } char_entry_t;
 
-#define U(r,c) {r, c, false}    /* Unshifted: just press this key */
-#define S(r,c) {r, c, true}     /* Shifted: press this key + ORIC Shift */
+#define U(c,r) {c, r, false}    /* Unshifted: just press this key */
+#define S(c,r) {c, r, true}     /* Shifted: press this key + ORIC Shift */
 #define X      {-1, -1, false}  /* Unmapped */
 
 static const char_entry_t char_map[128] = {
@@ -121,12 +127,12 @@ static const char_entry_t char_map[128] = {
     /* 0x7F DEL */ X
 };
 
-/* ORIC Left Shift position in matrix */
-#define ORIC_LSHIFT_ROW 4
+/* ORIC Left Shift position (hardware col, hardware row) */
 #define ORIC_LSHIFT_COL 4
-/* RETURN key position */
-#define ORIC_RETURN_ROW 7
-#define ORIC_RETURN_COL 5
+#define ORIC_LSHIFT_ROW 4
+/* RETURN key position (hardware col, hardware row) */
+#define ORIC_RETURN_COL 7
+#define ORIC_RETURN_ROW 5
 
 #undef U
 #undef S
@@ -135,16 +141,16 @@ static const char_entry_t char_map[128] = {
 bool oric_keyboard_press_char(oric_keyboard_t* kb, char c) {
     if (c == '\n' || c == '\r') {
         /* RETURN key */
-        kb->matrix[ORIC_RETURN_ROW] &= ~(1 << ORIC_RETURN_COL);
+        kb->matrix[ORIC_RETURN_COL] &= ~(1 << ORIC_RETURN_ROW);
         return true;
     }
     unsigned char uc = (unsigned char)c;
     if (uc > 127) return false;
     const char_entry_t* entry = &char_map[uc];
-    if (entry->row < 0) return false;
-    kb->matrix[entry->row] &= ~(1 << entry->col);
+    if (entry->col < 0) return false;
+    kb->matrix[entry->col] &= ~(1 << entry->row);
     if (entry->shift)
-        kb->matrix[ORIC_LSHIFT_ROW] &= ~(1 << ORIC_LSHIFT_COL);
+        kb->matrix[ORIC_LSHIFT_COL] &= ~(1 << ORIC_LSHIFT_ROW);
     return true;
 }
 
@@ -161,25 +167,30 @@ void oric_keyboard_release_all(oric_keyboard_t* kb) {
 /**
  * ORIC keyboard matrix mapping (QWERTY layout from Oricutron)
  *
- *              Col0(FE) Col1(FD) Col2(FB) Col3(F7) Col4(EF)  Col5(DF)  Col6(BF)  Col7(7F)
- * Row 0:       7        n        5        v        RCTRL     1         x         3
- * Row 1:       j        t        r        f        (none)    ESC       q         d
- * Row 2:       m        6        b        4        LCTRL     z         2         c
- * Row 3:       k        9        ;        -        FUNCT     (none)    \         '
- * Row 4:       SPACE    ,        .        UP       LSHIFT    LEFT      DOWN      RIGHT
- * Row 5:       u        i        o        p        FUNCT     BKSP      ]         [
- * Row 6:       y        h        g        e        FUNCT     a         s         w
- * Row 7:       8        l        0        /        RSHIFT    RETURN    (none)    =
+ * Header: PSG R14 mask testing each hardware row (active-low).
+ * Side label: hardware column (VIA ORB[0:2] / 74LS138 output index).
+ *
+ *              Row0(FE) Row1(FD) Row2(FB) Row3(F7) Row4(EF)  Row5(DF)  Row6(BF)  Row7(7F)
+ * Col 0:       7        n        5        v        RCTRL     1         x         3
+ * Col 1:       j        t        r        f        (none)    ESC       q         d
+ * Col 2:       m        6        b        4        LCTRL     z         2         c
+ * Col 3:       k        9        ;        -        FUNCT     (none)    \         '
+ * Col 4:       SPACE    ,        .        UP       LSHIFT    LEFT      DOWN      RIGHT
+ * Col 5:       u        i        o        p        FUNCT     BKSP      ]         [
+ * Col 6:       y        h        g        e        FUNCT     a         s         w
+ * Col 7:       8        l        0        /        RSHIFT    RETURN    (none)    =
+ *
+ * Table layout: qwerty_tab[col * 8 + row] = SDL keycode.
  */
 static const SDL_Keycode qwerty_tab[64] = {
-    /* Row 0 */ SDLK_7,     SDLK_n,     SDLK_5,        SDLK_v,     SDLK_RCTRL,    SDLK_1,        SDLK_x,            SDLK_3,
-    /* Row 1 */ SDLK_j,     SDLK_t,     SDLK_r,        SDLK_f,     0,             SDLK_ESCAPE,   SDLK_q,            SDLK_d,
-    /* Row 2 */ SDLK_m,     SDLK_6,     SDLK_b,        SDLK_4,     SDLK_LCTRL,    SDLK_z,        SDLK_2,            SDLK_c,
-    /* Row 3 */ SDLK_k,     SDLK_9,     SDLK_SEMICOLON,SDLK_MINUS, 0,             0,             SDLK_BACKSLASH,    SDLK_QUOTE,
-    /* Row 4 */ SDLK_SPACE, SDLK_COMMA, SDLK_PERIOD,   SDLK_UP,    SDLK_LSHIFT,   SDLK_LEFT,     SDLK_DOWN,         SDLK_RIGHT,
-    /* Row 5 */ SDLK_u,     SDLK_i,     SDLK_o,        SDLK_p,     SDLK_LALT,     SDLK_BACKSPACE,SDLK_RIGHTBRACKET, SDLK_LEFTBRACKET,
-    /* Row 6 */ SDLK_y,     SDLK_h,     SDLK_g,        SDLK_e,     SDLK_RALT,     SDLK_a,        SDLK_s,            SDLK_w,
-    /* Row 7 */ SDLK_8,     SDLK_l,     SDLK_0,        SDLK_SLASH, SDLK_RSHIFT,   SDLK_RETURN,   SDLK_BACKQUOTE,    SDLK_EQUALS
+    /* Col 0 */ SDLK_7,     SDLK_n,     SDLK_5,        SDLK_v,     SDLK_RCTRL,    SDLK_1,        SDLK_x,            SDLK_3,
+    /* Col 1 */ SDLK_j,     SDLK_t,     SDLK_r,        SDLK_f,     0,             SDLK_ESCAPE,   SDLK_q,            SDLK_d,
+    /* Col 2 */ SDLK_m,     SDLK_6,     SDLK_b,        SDLK_4,     SDLK_LCTRL,    SDLK_z,        SDLK_2,            SDLK_c,
+    /* Col 3 */ SDLK_k,     SDLK_9,     SDLK_SEMICOLON,SDLK_MINUS, 0,             0,             SDLK_BACKSLASH,    SDLK_QUOTE,
+    /* Col 4 */ SDLK_SPACE, SDLK_COMMA, SDLK_PERIOD,   SDLK_UP,    SDLK_LSHIFT,   SDLK_LEFT,     SDLK_DOWN,         SDLK_RIGHT,
+    /* Col 5 */ SDLK_u,     SDLK_i,     SDLK_o,        SDLK_p,     SDLK_LALT,     SDLK_BACKSPACE,SDLK_RIGHTBRACKET, SDLK_LEFTBRACKET,
+    /* Col 6 */ SDLK_y,     SDLK_h,     SDLK_g,        SDLK_e,     SDLK_RALT,     SDLK_a,        SDLK_s,            SDLK_w,
+    /* Col 7 */ SDLK_8,     SDLK_l,     SDLK_0,        SDLK_SLASH, SDLK_RSHIFT,   SDLK_RETURN,   SDLK_BACKQUOTE,    SDLK_EQUALS
 };
 
 static bool handle_qwerty(oric_keyboard_t* kb, const SDL_Event* event) {
@@ -191,10 +202,10 @@ static bool handle_qwerty(oric_keyboard_t* kb, const SDL_Event* event) {
 
     for (int i = 0; i < 64; i++) {
         if (qwerty_tab[i] == key) {
-            int row = i / 8;
-            int col = i % 8;
-            if (down) kb->matrix[row] &= ~(1 << col);
-            else      kb->matrix[row] |= (1 << col);
+            int col = i / 8;
+            int row = i % 8;
+            if (down) kb->matrix[col] &= ~(1 << row);
+            else      kb->matrix[col] |= (1 << row);
             return true;
         }
     }
@@ -204,8 +215,11 @@ static bool handle_qwerty(oric_keyboard_t* kb, const SDL_Event* event) {
 /**
  * Non-printable keys handled via SDL scancode (not TEXTINPUT).
  * These produce control codes or have special matrix positions.
+ *
+ * Entry fields: { SDL scancode, hw col (ORB[0:2]), hw row (PSG R14 bit) }.
+ * All four arrow keys share hardware column 4 (the LSHIFT/FUNCT column).
  */
-static const struct { SDL_Scancode sc; int8_t row, col; } special_keys[] = {
+static const struct { SDL_Scancode sc; int8_t col, row; } special_keys[] = {
     { SDL_SCANCODE_UP,        4, 3 },
     { SDL_SCANCODE_DOWN,      4, 6 },
     { SDL_SCANCODE_LEFT,      4, 5 },
@@ -223,11 +237,11 @@ static const struct { SDL_Scancode sc; int8_t row, col; } special_keys[] = {
 /* --- Pressed key tracking --- */
 
 static void sym_add_pressed(oric_keyboard_t* kb, uint32_t scancode,
-                            int8_t row, int8_t col, bool shift) {
+                            int8_t col, int8_t row, bool shift) {
     if (kb->pressed_count >= ORIC_KB_MAX_PRESSED) return;
     kb->pressed[kb->pressed_count].scancode = scancode;
-    kb->pressed[kb->pressed_count].row = row;
     kb->pressed[kb->pressed_count].col = col;
+    kb->pressed[kb->pressed_count].row = row;
     kb->pressed[kb->pressed_count].shift = shift;
     kb->pressed_count++;
 }
@@ -249,12 +263,12 @@ static void sym_remove_pressed(oric_keyboard_t* kb, uint32_t scancode) {
 static void sym_rebuild_matrix(oric_keyboard_t* kb) {
     memset(kb->matrix, 0xFF, sizeof(kb->matrix));
     for (int i = 0; i < kb->pressed_count; i++) {
-        int8_t row = kb->pressed[i].row;
         int8_t col = kb->pressed[i].col;
-        if (row >= 0 && row < 8 && col >= 0 && col < 8)
-            kb->matrix[row] &= ~(1 << col);
+        int8_t row = kb->pressed[i].row;
+        if (col >= 0 && col < 8 && row >= 0 && row < 8)
+            kb->matrix[col] &= ~(1 << row);
         if (kb->pressed[i].shift)
-            kb->matrix[ORIC_LSHIFT_ROW] &= ~(1 << ORIC_LSHIFT_COL);
+            kb->matrix[ORIC_LSHIFT_COL] &= ~(1 << ORIC_LSHIFT_ROW);
     }
 }
 
@@ -265,13 +279,13 @@ static bool handle_symbolic(oric_keyboard_t* kb, const SDL_Event* event) {
         if (c > 127) return false;  /* Non-ASCII: ignore */
 
         const char_entry_t* entry = &char_map[c];
-        if (entry->row < 0) return false;  /* Unmapped character */
+        if (entry->col < 0) return false;  /* Unmapped character */
 
         if (kb->has_pending) {
             /* Remove any previous entry for this scancode (key repeat) */
             sym_remove_pressed(kb, kb->pending_scancode);
             sym_add_pressed(kb, kb->pending_scancode,
-                           entry->row, entry->col, entry->shift);
+                           entry->col, entry->row, entry->shift);
             sym_rebuild_matrix(kb);
             kb->has_pending = false;
         }
@@ -288,7 +302,7 @@ static bool handle_symbolic(oric_keyboard_t* kb, const SDL_Event* event) {
                 /* Avoid duplicates on key repeat */
                 sym_remove_pressed(kb, (uint32_t)sc);
                 sym_add_pressed(kb, (uint32_t)sc,
-                               special_keys[i].row, special_keys[i].col, false);
+                               special_keys[i].col, special_keys[i].row, false);
                 sym_rebuild_matrix(kb);
                 return true;
             }

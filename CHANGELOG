@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.2-alpha] - 2026-05-11
+
+### Keyboard naming convention cleanup (Sprint 34c)
+
+#### Changed (no behavior change — pure rename)
+- **Convention de la matrice clavier explicitée** dans `include/io/keyboard.h` :
+  `matrix[col]` indexé par hardware col (VIA ORB[0:2]), bit `row` = hardware
+  row (PSG R14 bit). Active-low. La sémantique hardware était déjà respectée
+  côté stockage et scan VIA PB3 ; seuls les **noms** de champs/constantes
+  étaient inversés vis-à-vis du hardware standard ORIC.
+- **`char_entry_t`** (src/io/keyboard.c) : champs `{row, col}` → `{col, row}`.
+  Macros `U(r,c)` / `S(r,c)` → `U(c,r)` / `S(c,r)`. Valeurs numériques du
+  `char_map[128]` inchangées (étaient déjà hardware-correctes).
+- **`ORIC_LSHIFT_ROW/_COL`** et **`ORIC_RETURN_ROW/_COL`** : noms swappés,
+  valeurs inchangées.
+- **`special_keys[]`** : commentaire d'entrée précise hw col / hw row.
+- **`qwerty_tab[64]`** : commentaire de la table redessiné avec en-tête `RowN`
+  (masque PSG R14) et étiquettes latérales `Col N` (74LS138 output). Variables
+  locales de `handle_qwerty` renommées (`row`/`col` → `col`/`row`).
+- **`pressed[].row/.col`** (include/io/keyboard.h) : swappés, commentés.
+- **`tests/unit/test_keyboard.c`** : macro `KEY_IS_PRESSED(kb, col, row)`,
+  constantes `ORIC_*_COL` / `ORIC_*_ROW` swappées (valeurs identiques),
+  call sites ajustés en conséquence, commentaires "Row X, Col Y" → "Col X,
+  Row Y".
+
+#### Context
+Mise en évidence par la confusion du rapport Asteroids (cf. session
+précédente) : les **labels** `row`/`col` dans `keyboard.c` étaient en réalité
+hardware-inversés. Le code de scan dans `main.c` (`matrix[col]` + `~reg14`)
+était hardware-correct ; le rapport demandant à le "corriger" était lui-même
+basé sur la lecture des labels swappés.
+
+Vérification ROM ($FF70 unshifted / $FFB0 shifted) : l'encoding ROM
+`index = (row << 3) | col` confirme la convention hardware standard appliquée
+maintenant aux noms Phosphoric. 'A' shifted à offset 46 = `$41` →
+hw (col=6, row=5) ↔ `char_map['A'] = U(6,5)` ✓.
+
 ## [1.16.1-alpha] - 2026-03-28
 
 ### HIRES bit 7 inversion fix + keyboard tests (Sprint 34b)

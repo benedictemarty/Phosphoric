@@ -458,6 +458,15 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Docs: CLAUDE.md improvements (dynamic test counts, ACIA I/O routing, condensed CLI)
 - [x] 22 new tests, 327 total
 
+### Sprint 34c: Keyboard naming convention cleanup (v1.16.2-alpha) - DONE
+- [x] Refactor: matrix[col] indexed by HW col (VIA ORB[0:2]), bit = HW row (PSG R14)
+- [x] Refactor: char_entry_t fields {row,col} → {col,row}; U/S macros args swapped
+- [x] Refactor: ORIC_LSHIFT/RETURN_ROW/_COL constants names swapped, values unchanged
+- [x] Refactor: qwerty_tab[] / special_keys[] / handle_qwerty aligned on HW semantics
+- [x] Refactor: test KEY_IS_PRESSED(kb, col, row); ORIC_*_COL/_ROW args reordered
+- [x] Docs: keyboard.h matrix layout convention explicit (col indexed, row bits)
+- [x] 327 tests pass (zero behavior change, pure rename)
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -495,6 +504,6 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
-**Last Updated**: 2026-03-28
-**Current Version**: 1.16.1-alpha
+**Last Updated**: 2026-05-11
+**Current Version**: 1.16.2-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

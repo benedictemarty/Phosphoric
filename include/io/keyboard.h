@@ -2,10 +2,19 @@
  * @file keyboard.h
  * @brief ORIC-1 keyboard matrix emulation with SDL2 mapping
  *
- * The ORIC keyboard is an 8-column x 8-row matrix.
- * Column select via VIA Port B bits 0-2 (74LS138 decoder).
- * Row data via PSG Port A (register 14), active low.
- * Scan result on VIA PB3 (ROM keyboard scanning method).
+ * Hardware matrix (8 columns x 8 rows):
+ *   - Column select: VIA ORB[0:2] → 74LS138 decoder → 1 of 8 column lines
+ *   - Row mask:      PSG register 14 (= PSG Port A in output mode), 8 bits,
+ *                    active-low (bit r = 0 → row r is being tested)
+ *   - Scan result:   VIA PB3 = 1 iff any tested row has a key pressed
+ *                    in the selected column
+ *
+ * STORAGE CONVENTION (matrix[8]):
+ *   matrix[col] holds the row-state byte for hardware column `col` (where
+ *   `col` is the value driven on VIA ORB[0:2]). Within that byte, bit `row`
+ *   corresponds to PSG R14 bit `row`. A key at hardware position (col, row)
+ *   is "pressed" when bit `row` of matrix[col] is **clear** (active-low,
+ *   matching the hardware bus). matrix[col]=0xFF means no key in column `col`.
  *
  * Supports two mapping modes:
  * - QWERTY: positional mapping (SDL keycode → ORIC matrix position)
@@ -35,7 +44,11 @@ typedef enum {
 
 /**
  * @brief ORIC keyboard matrix (8 columns x 8 rows)
- * Active low: 0xFF = no keys, bit clear = key pressed.
+ *
+ * matrix[col] : row-state byte for hardware column `col` (VIA ORB[0:2]).
+ *               Bit `row` corresponds to PSG R14 bit `row`. Active-low.
+ *               matrix[col]=0xFF → no keys in column `col`.
+ *               matrix[col] & (1<<row) == 0 → key at (col, row) is pressed.
  */
 typedef struct oric_keyboard_s {
     uint8_t matrix[8];
@@ -44,8 +57,8 @@ typedef struct oric_keyboard_s {
     /* Symbolic mode: track pressed keys for proper release */
     struct {
         uint32_t scancode;
-        int8_t row;
-        int8_t col;
+        int8_t col;     /* Hardware column (VIA ORB[0:2]) */
+        int8_t row;     /* Hardware row    (PSG R14 bit)  */
         bool shift;     /* This key needs ORIC Shift */
     } pressed[ORIC_KB_MAX_PRESSED];
     int pressed_count;

@@ -48,19 +48,23 @@ static int tests_failed = 0;
     } \
 } while(0)
 
-/* Helper: check if a matrix bit is pressed (active low) */
-#define KEY_IS_PRESSED(kb, row, col) (((kb).matrix[row] & (1 << (col))) == 0)
-#define KEY_IS_RELEASED(kb, row, col) (((kb).matrix[row] & (1 << (col))) != 0)
+/* Helper: check if a matrix bit is pressed (active low).
+ * Convention: matrix[col] has bit `row` cleared when (col, row) is pressed.
+ *   - col = hardware column (VIA ORB[0:2])
+ *   - row = hardware row    (PSG R14 bit) */
+#define KEY_IS_PRESSED(kb, col, row) (((kb).matrix[col] & (1 << (row))) == 0)
+#define KEY_IS_RELEASED(kb, col, row) (((kb).matrix[col] & (1 << (row))) != 0)
 
-/* ORIC arrow key positions in matrix (Row 4) */
-#define ORIC_UP_ROW    4
-#define ORIC_UP_COL    3
-#define ORIC_LEFT_ROW  4
-#define ORIC_LEFT_COL  5
-#define ORIC_DOWN_ROW  4
-#define ORIC_DOWN_COL  6
-#define ORIC_RIGHT_ROW 4
-#define ORIC_RIGHT_COL 7
+/* ORIC arrow key positions in matrix.
+ * All four arrows share hardware column 4 (the LSHIFT/FUNCT column). */
+#define ORIC_UP_COL    4
+#define ORIC_UP_ROW    3
+#define ORIC_LEFT_COL  4
+#define ORIC_LEFT_ROW  5
+#define ORIC_DOWN_COL  4
+#define ORIC_DOWN_ROW  6
+#define ORIC_RIGHT_COL 4
+#define ORIC_RIGHT_ROW 7
 
 /* Helper: build a fake SDL_KEYDOWN event */
 static SDL_Event make_keydown(SDL_Keycode key, SDL_Scancode sc) {
@@ -118,7 +122,7 @@ TEST(test_press_char_letter_A) {
     oric_keyboard_t kb;
     oric_keyboard_init(&kb);
 
-    /* 'A' should map to Row 6, Col 5 */
+    /* 'A' should map to Col 6, Row 5 */
     ASSERT_TRUE(oric_keyboard_press_char(&kb, 'A'));
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 6, 5));
 }
@@ -141,7 +145,7 @@ TEST(test_press_char_return) {
     oric_keyboard_init(&kb);
 
     ASSERT_TRUE(oric_keyboard_press_char(&kb, '\n'));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 5));  /* RETURN = Row 7, Col 5 */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 5));  /* RETURN = Col 7, Row 5 */
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -152,7 +156,7 @@ TEST(test_press_char_shifted) {
     oric_keyboard_t kb;
     oric_keyboard_init(&kb);
 
-    /* '!' = Shift + 1, key at Row 0 Col 5, Shift at Row 4 Col 4 */
+    /* '!' = Shift + 1, key at Col 0 Row 5, Shift at Col 4 Row 4 */
     ASSERT_TRUE(oric_keyboard_press_char(&kb, '!'));
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 0, 5));  /* '1' key */
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 4, 4));  /* LSHIFT */
@@ -174,7 +178,7 @@ TEST(test_release_all) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 7: QWERTY — Arrow UP maps to Row 4 Col 3                */
+/*  TEST 7: QWERTY — Arrow UP maps to Col 4 Row 3                */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_qwerty_arrow_up) {
@@ -183,11 +187,11 @@ TEST(test_qwerty_arrow_up) {
 
     SDL_Event ev = make_keydown(SDLK_UP, SDL_SCANCODE_UP);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_ROW, ORIC_UP_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_COL, ORIC_UP_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 8: QWERTY — Arrow DOWN maps to Row 4 Col 6              */
+/*  TEST 8: QWERTY — Arrow DOWN maps to Col 4 Row 6              */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_qwerty_arrow_down) {
@@ -196,11 +200,11 @@ TEST(test_qwerty_arrow_down) {
 
     SDL_Event ev = make_keydown(SDLK_DOWN, SDL_SCANCODE_DOWN);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_DOWN_ROW, ORIC_DOWN_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_DOWN_COL, ORIC_DOWN_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 9: QWERTY — Arrow LEFT maps to Row 4 Col 5              */
+/*  TEST 9: QWERTY — Arrow LEFT maps to Col 4 Row 5              */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_qwerty_arrow_left) {
@@ -209,11 +213,11 @@ TEST(test_qwerty_arrow_left) {
 
     SDL_Event ev = make_keydown(SDLK_LEFT, SDL_SCANCODE_LEFT);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_LEFT_ROW, ORIC_LEFT_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_LEFT_COL, ORIC_LEFT_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 10: QWERTY — Arrow RIGHT maps to Row 4 Col 7            */
+/*  TEST 10: QWERTY — Arrow RIGHT maps to Col 4 Row 7            */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_qwerty_arrow_right) {
@@ -222,7 +226,7 @@ TEST(test_qwerty_arrow_right) {
 
     SDL_Event ev = make_keydown(SDLK_RIGHT, SDL_SCANCODE_RIGHT);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_ROW, ORIC_RIGHT_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_COL, ORIC_RIGHT_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -236,12 +240,12 @@ TEST(test_qwerty_arrow_release) {
     /* Press UP */
     SDL_Event down = make_keydown(SDLK_UP, SDL_SCANCODE_UP);
     oric_keyboard_handle_sdl_event(&kb, &down);
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_ROW, ORIC_UP_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_COL, ORIC_UP_ROW));
 
     /* Release UP */
     SDL_Event up = make_keyup(SDLK_UP, SDL_SCANCODE_UP);
     oric_keyboard_handle_sdl_event(&kb, &up);
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, ORIC_UP_ROW, ORIC_UP_COL));
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, ORIC_UP_COL, ORIC_UP_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -255,7 +259,7 @@ TEST(test_azerty_arrow_up) {
 
     SDL_Event ev = make_keydown(SDLK_UP, SDL_SCANCODE_UP);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_ROW, ORIC_UP_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_COL, ORIC_UP_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -269,7 +273,7 @@ TEST(test_azerty_arrow_down) {
 
     SDL_Event ev = make_keydown(SDLK_DOWN, SDL_SCANCODE_DOWN);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_DOWN_ROW, ORIC_DOWN_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_DOWN_COL, ORIC_DOWN_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -283,7 +287,7 @@ TEST(test_azerty_arrow_left) {
 
     SDL_Event ev = make_keydown(SDLK_LEFT, SDL_SCANCODE_LEFT);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_LEFT_ROW, ORIC_LEFT_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_LEFT_COL, ORIC_LEFT_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -297,7 +301,7 @@ TEST(test_azerty_arrow_right) {
 
     SDL_Event ev = make_keydown(SDLK_RIGHT, SDL_SCANCODE_RIGHT);
     ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &ev));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_ROW, ORIC_RIGHT_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_COL, ORIC_RIGHT_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -312,16 +316,16 @@ TEST(test_azerty_arrow_release) {
     /* Press LEFT */
     SDL_Event down = make_keydown(SDLK_LEFT, SDL_SCANCODE_LEFT);
     oric_keyboard_handle_sdl_event(&kb, &down);
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_LEFT_ROW, ORIC_LEFT_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_LEFT_COL, ORIC_LEFT_ROW));
 
     /* Release LEFT */
     SDL_Event up = make_keyup(SDLK_LEFT, SDL_SCANCODE_LEFT);
     oric_keyboard_handle_sdl_event(&kb, &up);
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, ORIC_LEFT_ROW, ORIC_LEFT_COL));
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, ORIC_LEFT_COL, ORIC_LEFT_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 17: QWERTY — SPACE maps to Row 4 Col 0                  */
+/*  TEST 17: QWERTY — SPACE maps to Col 4 Row 0                  */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_qwerty_space) {
@@ -334,7 +338,7 @@ TEST(test_qwerty_space) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 18: QWERTY — RETURN maps to Row 7 Col 5                 */
+/*  TEST 18: QWERTY — RETURN maps to Col 7 Row 5                 */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_qwerty_return) {
@@ -360,14 +364,14 @@ TEST(test_multiple_arrows) {
     oric_keyboard_handle_sdl_event(&kb, &ev_up);
     oric_keyboard_handle_sdl_event(&kb, &ev_right);
 
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_ROW, ORIC_UP_COL));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_ROW, ORIC_RIGHT_COL));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_UP_COL, ORIC_UP_ROW));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_COL, ORIC_RIGHT_ROW));
 
     /* Release UP, RIGHT still pressed */
     SDL_Event rel_up = make_keyup(SDLK_UP, SDL_SCANCODE_UP);
     oric_keyboard_handle_sdl_event(&kb, &rel_up);
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, ORIC_UP_ROW, ORIC_UP_COL));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_ROW, ORIC_RIGHT_COL));
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, ORIC_UP_COL, ORIC_UP_ROW));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, ORIC_RIGHT_COL, ORIC_RIGHT_ROW));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */

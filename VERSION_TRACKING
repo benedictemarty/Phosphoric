@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.1-alpha
-Release Date: 2026-03-28
-Status: Alpha (HIRES bit 7 inversion fix + keyboard tests, 327 tests pass)
+Current Version: 1.16.2-alpha
+Release Date: 2026-05-11
+Status: Alpha (keyboard naming convention cleanup, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.2-alpha (2026-05-11): Keyboard naming convention cleanup (Sprint 34c)
+  * Pure rename refactor: matrix[col] indexed by HW col (VIA ORB), bit = HW row (PSG R14)
+  * char_entry_t {row,col} → {col,row}; macros U/S args swapped; same values
+  * ORIC_LSHIFT_ROW/_COL and ORIC_RETURN_ROW/_COL: names swapped, values unchanged
+  * special_keys[], qwerty_tab[] comments + handle_qwerty locals aligned on HW semantics
+  * test_keyboard.c: KEY_IS_PRESSED(kb, col, row); ORIC_*_COL/_ROW arg order
+  * Doc: keyboard.h matrix layout convention explicit
+  * 327 tests pass (no behavior change)
+
 - 1.16.1-alpha (2026-03-28): HIRES bit 7 fix + 21 keyboard tests (Sprint 34b)
 - 1.16.0-alpha (2026-03-24): Serial hardening + bas2tap + AY fix + frame limiter (Sprint 34)
   * Fix: 50 Hz PAL frame limiter (was running at monitor refresh rate)
