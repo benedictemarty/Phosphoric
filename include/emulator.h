@@ -33,7 +33,7 @@
 #include "utils/profiler.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.13-alpha"
+#define EMU_VERSION "1.16.14-alpha"
 
 /**
  * @brief ORIC machine model
@@ -145,6 +145,16 @@ typedef struct emulator_s {
     /* Frame dump options */
     const char* frame_dump_dir;
     int frame_dump_interval;
+
+    /* RAM dump at cycle: write 64KB of RAM to FILE when cycle >= threshold */
+    int64_t dump_ram_at_cycles;
+    const char* dump_ram_at_file;
+    bool dump_ram_at_done;
+
+    /* IRQ trace: log each IRQ entry + RTI to FILE */
+    FILE* irq_trace_fp;
+    bool irq_trace_active;
+    int32_t irq_trace_depth;  /* Track IRQ nesting (incremented on IRQ, decremented on RTI) */
 
     /* Auto-type: inject keystrokes at specified cycle count */
     const char* type_keys_text;

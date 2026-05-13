@@ -232,7 +232,9 @@ static void print_usage(const char* program_name) {
     printf("      --cast-discover        Discover Chromecast devices on network\n");
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
     printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
+    printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
     printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
+    printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
@@ -537,6 +539,14 @@ static bool emulator_init(emulator_t* emu) {
     emu->screenshot_at_file = NULL;
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
+    emu->dump_ram_at_cycles = -1;
+    emu->dump_ram_at_file = NULL;
+    emu->dump_ram_at_done = true;
+    emu->irq_trace_fp = NULL;
+    emu->irq_trace_active = false;
+    emu->irq_trace_depth = 0;
+    emu->cpu.irq_trace_fp = NULL;
+    emu->cpu.irq_trace_count = 0;
 
     log_info("Emulator initialized successfully");
     return true;
@@ -544,6 +554,13 @@ static bool emulator_init(emulator_t* emu) {
 
 static void emulator_cleanup(emulator_t* emu) {
     log_info("Shutting down emulator");
+    if (emu->irq_trace_fp) {
+        log_info("IRQ trace: %llu interrupts logged",
+                 (unsigned long long)emu->cpu.irq_trace_count);
+        fclose((FILE*)emu->irq_trace_fp);
+        emu->irq_trace_fp = NULL;
+        emu->cpu.irq_trace_fp = NULL;
+    }
     if (!emu->headless) {
         audio_cleanup();
         renderer_cleanup();
@@ -1152,6 +1169,21 @@ static void emulator_run(emulator_t* emu) {
 
         frame_count++;
 
+        /* RAM dump at cycle: write 64KB once when threshold reached */
+        if (!emu->dump_ram_at_done && emu->dump_ram_at_cycles >= 0 &&
+            (int64_t)total_executed >= emu->dump_ram_at_cycles) {
+            FILE* rf = fopen(emu->dump_ram_at_file, "wb");
+            if (rf) {
+                fwrite(emu->memory.ram, 1, 0x10000, rf);
+                fclose(rf);
+                log_info("RAM dump (64KB) at %llu cycles → %s",
+                         (unsigned long long)total_executed, emu->dump_ram_at_file);
+            } else {
+                log_error("Cannot open RAM dump file: %s", emu->dump_ram_at_file);
+            }
+            emu->dump_ram_at_done = true;
+        }
+
 #ifdef HAS_SDL2
         /* Frame limiter: 50 Hz PAL = 20ms per frame.
          * Without this, the emulator runs at monitor refresh rate (60 Hz+)
@@ -1228,6 +1260,8 @@ int main(int argc, char* argv[]) {
     const char* printer_type_arg = NULL;
     int scale_factor = 3;
     const char* trace_file = NULL;
+    const char* dump_ram_at_arg = NULL;
+    const char* trace_irq_file = NULL;
     int64_t trace_max = 0;
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
@@ -1239,7 +1273,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -1283,6 +1317,8 @@ int main(int argc, char* argv[]) {
         {"serial-irq-on-rdrf",  no_argument,       0, OPT_SERIAL_IRQ_RDRF},
         {"serial-trace",        required_argument, 0, OPT_SERIAL_TRACE},
         {"acia-addr",           required_argument, 0, OPT_ACIA_ADDR},
+        {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
+        {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
         {"help",                no_argument,       0, '?'},
         {0, 0, 0, 0}
     };
@@ -1357,6 +1393,8 @@ int main(int argc, char* argv[]) {
             case OPT_SERIAL_TRACE:
                 serial_trace_file = optarg;
                 break;
+            case OPT_DUMP_RAM_AT: dump_ram_at_arg = optarg; break;
+            case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
                 break;
@@ -1544,6 +1582,44 @@ int main(int argc, char* argv[]) {
 
     emu.frame_dump_dir = frame_dump_dir;
     emu.frame_dump_interval = (frame_dump_interval > 0) ? frame_dump_interval : 50;
+
+    /* Parse --dump-ram-at CYCLES:FILE */
+    if (dump_ram_at_arg) {
+        const char* colon = strchr(dump_ram_at_arg, ':');
+        if (colon) {
+            emu.dump_ram_at_cycles = atoll(dump_ram_at_arg);
+            emu.dump_ram_at_file = colon + 1;
+            emu.dump_ram_at_done = false;
+            log_info("RAM dump scheduled at %lld cycles → %s",
+                     (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
+        } else {
+            log_error("Invalid --dump-ram-at format. Use CYCLES:FILE");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    } else {
+        emu.dump_ram_at_cycles = -1;
+        emu.dump_ram_at_file = NULL;
+        emu.dump_ram_at_done = true;
+    }
+
+    /* Open --trace-irq FILE */
+    if (trace_irq_file) {
+        FILE* fp = fopen(trace_irq_file, "w");
+        if (!fp) {
+            log_error("Cannot open --trace-irq file: %s", trace_irq_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        fprintf(fp, "# Phosphoric IRQ trace — Oric-1/Atmos\n");
+        fprintf(fp, "# Format: <cycle> <event> <details>\n");
+        fprintf(fp, "# IRQ-ENTRY: PC before, target (= vector at $FFFE/F), IFR/IER snapshot, srcmask\n");
+        fprintf(fp, "# RTI: PC after RTI, P flags, SP\n");
+        emu.irq_trace_fp = fp;
+        emu.irq_trace_active = true;
+        emu.cpu.irq_trace_fp = fp;
+        log_info("IRQ trace → %s", trace_irq_file);
+    }
 
     /* Parse --screenshot-at CYCLES:FILE */
     if (screenshot_at_arg) {

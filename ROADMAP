@@ -539,6 +539,17 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34o: Outillage debug IRQ (--trace-irq, --dump-ram-at) (v1.16.14-alpha) - DONE
+- [x] Demande formulée par équipe asteroids (debug IRQ T1 user vector)
+- [x] --trace-irq FILE : log chaque IRQ entrée + RTI avec contexte complet
+      (cycle, PC_pre, target $FFFE/F, IFR snapshot, IER snapshot, srcmask)
+- [x] --dump-ram-at CYCLES:FILE : 64KB RAM dump à cycle précis
+- [x] Hooks dans handle_irq + RTI opcode (cpu6502.c + opcodes.c)
+- [x] Champ void* irq_trace_fp dans cpu6502_t (sans <stdio.h> dans header)
+- [x] CLI parsing + cleanup + help text
+- [x] Validé : 284 IRQ tracés sur asteroids.tap Atmos en 5.5M cycles
+- [x] 327 tests pass
+
 ### Sprint 34n: Rendu scanline-par-scanline ULA hardware-accurate (v1.16.13-alpha) - DONE
 - [x] Diagnostic : asteroids.tap noir sur Atmos, OK Oric-1 (et OK sur Oricutron)
 - [x] Cause racine : rendu frame-end de Phosphoric vs scanline d'Oricutron

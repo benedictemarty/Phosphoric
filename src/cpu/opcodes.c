@@ -9,6 +9,7 @@
 #include "cpu/cpu_internal.h"
 #include "memory/memory.h"
 #include <string.h>
+#include <stdio.h>
 
 /* Helper: update N and Z flags based on value */
 static inline void update_nz(cpu6502_t* cpu, uint8_t val) {
@@ -534,6 +535,11 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x40:
         cpu->P = (cpu_pull(cpu) & ~FLAG_BREAK) | FLAG_UNUSED;
         cpu->PC = cpu_pull_word(cpu);
+        if (cpu->irq_trace_fp) {
+            fprintf((FILE*)cpu->irq_trace_fp,
+                    "%010llu RTI       PC_return=$%04X P=$%02X SP=$%02X\n",
+                    (unsigned long long)cpu->cycles, cpu->PC, cpu->P, cpu->SP);
+        }
         break;
 
     /* ── BRK ── */

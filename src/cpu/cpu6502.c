@@ -38,6 +38,7 @@ static void handle_nmi(cpu6502_t* cpu) {
 }
 
 static void handle_irq(cpu6502_t* cpu) {
+    uint16_t pc_before = cpu->PC;
     cpu_push_word(cpu, cpu->PC);
     cpu_push(cpu, (cpu->P & ~FLAG_BREAK) | FLAG_UNUSED);
     cpu_set_flag(cpu, FLAG_INTERRUPT, true);
@@ -46,6 +47,17 @@ static void handle_irq(cpu6502_t* cpu) {
      * The I flag prevents re-entry. The source must deassert
      * its IRQ bit when the CPU acknowledges it (e.g. reading VIA IFR). */
     cpu->cycles += 7;
+
+    if (cpu->irq_trace_fp) {
+        /* VIA registers at $0300-$030F : IFR=$0D, IER=$0E. Read via memory
+         * to capture current state at IRQ entry. */
+        uint8_t ifr = cpu_mem_read(cpu, 0x030D);
+        uint8_t ier = cpu_mem_read(cpu, 0x030E);
+        fprintf((FILE*)cpu->irq_trace_fp,
+                "%010llu IRQ-ENTRY PC_pre=$%04X target=$%04X IFR=$%02X IER=$%02X srcmask=$%02X\n",
+                (unsigned long long)cpu->cycles, pc_before, cpu->PC, ifr, ier, cpu->irq);
+        cpu->irq_trace_count++;
+    }
 }
 
 int cpu_step(cpu6502_t* cpu) {

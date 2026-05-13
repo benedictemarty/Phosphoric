@@ -65,6 +65,11 @@ typedef struct {
     uint8_t  irq;           /**< IRQ source bitfield (level-triggered) */
 
     memory_t* memory;       /**< Pointer to memory subsystem */
+
+    /* Optional IRQ trace: when non-NULL, handle_irq and RTI opcode log
+     * one line per event. Caller owns the FILE* lifecycle. */
+    void* irq_trace_fp;     /**< FILE* (opaque to avoid <stdio.h> coupling) */
+    uint64_t irq_trace_count;
 } cpu6502_t;
 
 /**

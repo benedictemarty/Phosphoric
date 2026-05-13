@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.13-alpha
+Current Version: 1.16.14-alpha
 Release Date: 2026-05-13
-Status: Alpha (Rendu scanline-par-scanline ULA-accurate ; asteroids Atmos OK, 327 tests pass)
+Status: Alpha (Outillage debug IRQ : --trace-irq et --dump-ram-at, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.14-alpha (2026-05-13): Outillage debug IRQ --trace-irq + --dump-ram-at (Sprint 34o)
+  * --trace-irq FILE : log chaque IRQ servie (cycle, PC, IFR, IER, srcmask)
+                       et chaque RTI (cycle, PC return, P, SP)
+  * --dump-ram-at C:FILE : dump 64KB RAM à cycle C
+  * Hooks dans handle_irq (cpu6502.c) et RTI opcode (opcodes.c)
+  * Champ void* irq_trace_fp dans cpu6502_t (sans coupler <stdio.h>)
+  * Sprint déclenché par demande équipe asteroids (debug IRQ T1 user vector)
+  * 327 tests pass
+
 - 1.16.13-alpha (2026-05-13): Rendu vidéo scanline-par-scanline ULA hardware-accurate (Sprint 34n)
   * Avant : video_render_frame en fin de boucle CPU (sample mémoire figé)
   * Maintenant : video_render_scanline interleavé tous les 64 cycles CPU

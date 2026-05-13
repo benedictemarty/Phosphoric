@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.14-alpha] - 2026-05-13
+
+### Outillage debug IRQ — `--trace-irq` et `--dump-ram-at` (Sprint 34o)
+
+#### Added
+- **`--trace-irq FILE`** : log chaque IRQ servie + chaque RTI dans FILE.
+  Format texte (lignes uniques) :
+  - `<cycle> IRQ-ENTRY PC_pre=$XXXX target=$YYYY IFR=$ZZ IER=$WW srcmask=$VV`
+  - `<cycle> RTI       PC_return=$XXXX P=$YY SP=$ZZ`
+  - `target` = adresse lue par CPU dans `$FFFE/F` au moment de l'IRQ
+  - `srcmask` = bitfield des sources VIA pending (`cpu->irq` interne)
+  - À l'exit log un compte total (`IRQ trace: N interrupts logged`)
+- **`--dump-ram-at CYCLES:FILE`** : écrit 64 KB de RAM raw dans FILE quand
+  `total_executed >= CYCLES`. Une seule fois. Complémentaire de
+  `--screenshot-at` pour debug.
+
+#### Why
+- Demandes outillage formulées par l'équipe asteroids dans
+  `phosphoric-irq-debug-request.md` (cf. réponse Phosphoric
+  `docs/notes/2026-05-13-asteroids-irq-debug-response.md`).
+- `--trace-irq` essentiel pour diagnostiquer les bugs de handler IRQ
+  user (vecteur `$0228` Oric‑1 / `$0244` Atmos). Capture cycle, source,
+  IER snapshot — couvre les 3 classes de bugs : PHA manquant, source
+  IRQ non clearée, conflit ROM/user vector.
+- `--dump-ram-at` pour vérifier l'état RAM (incl. zero page, frame_cnt,
+  $0244, $024A) à un cycle précis.
+
+#### Implementation
+- `include/cpu/cpu6502.h` : ajout `void* irq_trace_fp` et `uint64_t
+  irq_trace_count` dans `cpu6502_t`. `void*` (au lieu de `FILE*`) pour
+  éviter le couplage `<stdio.h>` dans le header CPU.
+- `src/cpu/cpu6502.c` `handle_irq()` : log IRQ-ENTRY si `irq_trace_fp`.
+- `src/cpu/opcodes.c` opcode `0x40` (RTI) : log RTI si `irq_trace_fp`.
+- `src/main.c` : parsing `--trace-irq`, `--dump-ram-at`, init, cleanup.
+- `include/emulator.h` : nouveaux champs `dump_ram_at_*`, `irq_trace_fp`,
+  `irq_trace_active`, `irq_trace_depth`.
+
+#### Verified
+- `make tests` : 24/24 suites passent (renderer headless pré-existant
+  inchangé).
+- Test asteroids.tap + Atmos : 284 IRQ tracés sur 5.5M cycles (T1 IRQ
+  ROM @ 10 K cycles cadence = 100 Hz), srcmask=$01 = VIA, target=$0244
+  conforme.
+- Test `--dump-ram-at 5100000:FILE` : 65536 octets RAM écrits à
+  5,112,317 cycles (granularité = fin de frame).
+
 ## [1.16.13-alpha] - 2026-05-13
 
 ### Rendu vidéo scanline-par-scanline (ULA hardware-accurate) (Sprint 34n)
