@@ -86,7 +86,7 @@ typedef struct via6522_s {
     void* userdata;
 
     /* CB1 pin state for edge detection */
-    bool cb1_pin;  /**< Current CB1 pin level (true=high, VSync inactive) */
+    bool cb1_pin;  /**< Current CB1 pin level (true=high, idle on Oric) */
 
     /* IRQ output state (tracks /IRQ pin level to avoid spurious callbacks) */
     bool irq_line;  /**< Current IRQ output: true = asserted, false = deasserted */

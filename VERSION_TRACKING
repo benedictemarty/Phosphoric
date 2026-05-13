@@ -1,12 +1,23 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.10-alpha
+Current Version: 1.16.11-alpha
 Release Date: 2026-05-13
-Status: Alpha (Fast-load séparation injection/auto-exec, 327 tests pass)
+Status: Alpha (CB1 hardware fidelity — VSync n'est plus pulsé sur CB1, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.11-alpha (2026-05-13): Hardware fidelity CB1 ≠ VSync (Sprint 34l)
+  * Change: Phosphoric ne pulse plus CB1 à chaque trame
+  * Le vrai Oric ne câble PAS CB1 au signal VSync de l'ULA
+  * Programmes qui pollent IFR bit 4 pour la VSync doivent migrer vers
+    Timer 1 du VIA (mode continu 20 ms PAL) ou lecture mémoire ULA
+  * Diagnostic : asteroids.tap loopait sur Oricutron mais avançait sur
+    Phosphoric ≤ 1.16.10 (CB1 pulsé artificiellement) — divergence éliminée
+  * Note technique fournie à l'équipe asteroids
+    (docs/notes/2026-05-13-asteroids-vsync-cb1.md)
+  * 327 tests pass (renderer headless test pré-existant inchangé)
+
 - 1.16.10-alpha (2026-05-13): Fast-load séparation injection/auto-exec (Sprint 34k)
   * Fix: CALL manuel produisait ILLEGAL QUANTITY dans fenêtre 3.6M-5M cycles
   * Avant: injection + auto-exec à 5M → fenêtre 1.4s avec READY affiché mais

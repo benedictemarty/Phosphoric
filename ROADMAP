@@ -539,6 +539,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34l: Hardware fidelity CB1 ≠ VSync (v1.16.11-alpha) - DONE
+- [x] Diagnostic divergence asteroids.tap Oricutron vs Phosphoric
+- [x] Cause racine : Phosphoric pulsait CB1 à chaque trame, mais le vrai
+      Oric ne câble PAS CB1 au signal VSync de l'ULA
+- [x] Suppression du trigger CB1 dans la boucle frame (src/main.c:852-866)
+- [x] Constantes VSYNC_CYCLE/VSYNC_START_LINE conservées (documentation
+      timing PAL uniquement, ne pilotent plus aucune broche)
+- [x] Commentaires cb1_pin mis à jour (« idle on Oric »)
+- [x] Test confirmation : asteroids.tap loope sur $0D8E A=$40 Y=$0E,
+      identique à la capture Oricutron — divergence éliminée
+- [x] Note technique livrée à l'équipe asteroids
+      (docs/notes/2026-05-13-asteroids-vsync-cb1.md)
+- [x] 327 tests pass
+
 ## Future Enhancements
 
 ### Advanced Features

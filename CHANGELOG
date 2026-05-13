@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.11-alpha] - 2026-05-13
+
+### Hardware fidelity — CB1 n'est plus piloté sur VSync (Sprint 34l)
+
+#### Changed
+- **VIA CB1 n'est plus pulsé à chaque trame**. Sur le vrai Oric, CB1 n'est
+  pas connecté au signal VSync de l'ULA — c'était une simplification non
+  conforme au hardware. Phosphoric s'alignait à tort sur cette convention,
+  masquant des bugs logiciels dans des programmes qui pollent `IFR bit 4`
+  pour détecter la VSync.
+- Suppression de `via_set_cb1(false/true)` dans la boucle frame
+  (`src/main.c:852-866`). Les constantes `VSYNC_CYCLE` / `VSYNC_START_LINE`
+  (`include/emulator.h:75-76`) sont conservées comme documentation du timing
+  PAL mais ne pilotent plus aucune broche VIA.
+- Commentaires `cb1_pin` mis à jour : « idle on Oric » au lieu de « VSync
+  inactive » dans `src/io/via6522.c` et `include/io/via6522.h`.
+
+#### Why
+- Divergence reproductible : `asteroids.tap` (jeu maison de bmarty) boucle
+  sur `$0D8E` (`AND #$10 / BEQ -7`) dans Oricutron WIP `f79d5d4` après
+  l'écran titre. Avec Phosphoric ≤ 1.16.10 le programme avançait (CB1 pulsé
+  artificiellement), masquant le fait que le code asteroids `frame_wait()`
+  (game.c:289-300) repose sur un câblage CB1=VSync qui n'existe pas sur le
+  hardware réel. Note technique fournie à l'équipe asteroids
+  (`docs/notes/2026-05-13-asteroids-vsync-cb1.md`).
+- Méthodes VSync fidèles disponibles côté programme : Timer 1 du VIA en mode
+  continu à 20 ms PAL, ou lecture mémoire d'un bit ULA selon révision.
+
+#### Verified
+- `make tests` : 24/24 suites passent (test renderer headless pré-existant
+  inchangé, indépendant de ce changement).
+- Test in vitro : `oric1-emu -r basic10.rom -t asteroids.tap -f -n -c 10M`
+  bloque maintenant en `PC=$0D8E A=$40 Y=$0E`, identique à la capture
+  Oricutron fournie par bmarty. Comportement aligné.
+
 ## [1.16.10-alpha] - 2026-05-13
 
 ### Fast-load séparation injection / auto-exec (Sprint 34k)

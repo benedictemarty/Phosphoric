@@ -26,7 +26,7 @@ static void via_check_irq(via6522_t* via) {
 
 void via_init(via6522_t* via) {
     memset(via, 0, sizeof(via6522_t));
-    via->cb1_pin = true;   /* CB1 defaults high (VSync inactive) */
+    via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
     via->irq_line = false;  /* /IRQ not asserted */
 }
 
@@ -46,7 +46,7 @@ void via_reset(via6522_t* via) {
     via->pcr = 0;
     via->ifr = 0;
     via->ier = 0;
-    via->cb1_pin = true;   /* CB1 defaults high (VSync inactive) */
+    via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
     via->irq_line = false;  /* /IRQ not asserted */
 }
 
