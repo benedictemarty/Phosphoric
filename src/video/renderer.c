@@ -24,8 +24,11 @@ bool renderer_init(int scale) {
         ORIC_SCREEN_W * scale, ORIC_SCREEN_H * scale,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!window) return false;
-    sdl_renderer = SDL_CreateRenderer(window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    /* No PRESENTVSYNC flag: SDL_Delay(20 - frame_elapsed) in main.c handles
+     * 50 Hz pacing. PRESENTVSYNC was redundant and could block indefinitely
+     * on some Wayland compositors when the window is occluded/minimized,
+     * causing the WM to flag Phosphoric as « ne répond pas ». */
+    sdl_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!sdl_renderer) return false;
     texture = SDL_CreateTexture(sdl_renderer,
         SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,

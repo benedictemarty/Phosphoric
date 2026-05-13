@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.16.11-alpha
-Build Status: ALPHA (CB1 hardware fidelity — VSync ≠ CB1, asteroids divergence éliminée)
+Version: 1.16.12-alpha
+Build Status: ALPHA (Fix Mutter « ne répond pas » : suppression SDL_RENDERER_PRESENTVSYNC)
 Last Updated: 2026-05-13
 
 ================================================================

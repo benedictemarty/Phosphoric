@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.12-alpha] - 2026-05-13
+
+### Fix — Mutter « ne répond pas » sur fenêtre statique (Sprint 34m)
+
+#### Fixed
+- Sur Ubuntu/GNOME Wayland, Phosphoric déclenchait la boîte de dialogue
+  « oric1-emu ne répond pas » dès que la fenêtre restait statique (cas
+  reproduit avec `asteroids.tap` qui boucle dans `frame_wait()` sur CB1
+  depuis le passage hardware-fidèle en 1.16.11). Cause : flag
+  `SDL_RENDERER_PRESENTVSYNC` dans `SDL_CreateRenderer` (`src/video/renderer.c:28`)
+  pouvait bloquer `SDL_RenderPresent` indéfiniment sur certains
+  compositeurs Wayland quand la fenêtre est occluse, empêchant
+  `SDL_PollEvent` (donc la réponse `_NET_WM_PING`) de s'exécuter à temps.
+- Suppression du flag `SDL_RENDERER_PRESENTVSYNC`. La cadence 50 Hz reste
+  assurée par `SDL_Delay(20 - frame_elapsed)` dans `src/main.c:1136-1142`
+  (déjà en place, faisait double emploi avec PRESENTVSYNC).
+
+#### Verified
+- `asteroids.tap` en SDL : fenêtre rendue, plus de dialog Mutter, GUI
+  réactive (F10 quit, F12 screenshot, etc. fonctionnent).
+- `make tests` : 24/24 suites passent (renderer headless pré-existant
+  inchangé).
+
 ## [1.16.11-alpha] - 2026-05-13
 
 ### Hardware fidelity — CB1 n'est plus piloté sur VSync (Sprint 34l)

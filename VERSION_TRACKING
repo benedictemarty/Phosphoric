@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.11-alpha
+Current Version: 1.16.12-alpha
 Release Date: 2026-05-13
-Status: Alpha (CB1 hardware fidelity — VSync n'est plus pulsé sur CB1, 327 tests pass)
+Status: Alpha (Fix Mutter « ne répond pas » via suppression PRESENTVSYNC, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.12-alpha (2026-05-13): Fix Mutter « ne répond pas » sur fenêtre statique (Sprint 34m)
+  * Cause : SDL_RENDERER_PRESENTVSYNC pouvait bloquer SDL_RenderPresent
+    indéfiniment sur compositeurs Wayland quand fenêtre occluse →
+    SDL_PollEvent (et _NET_WM_PING) jamais appelé → Mutter timeout
+  * Fix : suppression du flag, SDL_Delay(20-elapsed) assurait déjà 50 Hz
+  * Reproduit avec asteroids.tap + Ubuntu/GNOME Wayland
+  * 327 tests pass
+
 - 1.16.11-alpha (2026-05-13): Hardware fidelity CB1 ≠ VSync (Sprint 34l)
   * Change: Phosphoric ne pulse plus CB1 à chaque trame
   * Le vrai Oric ne câble PAS CB1 au signal VSync de l'ULA

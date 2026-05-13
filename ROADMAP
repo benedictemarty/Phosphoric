@@ -539,6 +539,18 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34m: Fix Mutter « ne répond pas » Wayland (v1.16.12-alpha) - DONE
+- [x] Diagnostic : Phosphoric appairait comme « ne répond pas » sur Wayland
+      dès que la fenêtre restait statique (cas asteroids.tap loopant sur
+      frame_wait() après 1.16.11)
+- [x] Cause racine : SDL_RENDERER_PRESENTVSYNC dans renderer.c:28 pouvait
+      bloquer SDL_RenderPresent indéfiniment sur compositeurs Wayland avec
+      fenêtre occluse → SDL_PollEvent jamais appelé → _NET_WM_PING jamais
+      répondu → Mutter timeout (~5 sec)
+- [x] Fix : suppression du flag, SDL_Delay(20-elapsed) assure 50 Hz seule
+- [x] Validé : utilisateur confirme « cela fonctionne »
+- [x] 327 tests pass
+
 ### Sprint 34l: Hardware fidelity CB1 ≠ VSync (v1.16.11-alpha) - DONE
 - [x] Diagnostic divergence asteroids.tap Oricutron vs Phosphoric
 - [x] Cause racine : Phosphoric pulsait CB1 à chaque trame, mais le vrai
