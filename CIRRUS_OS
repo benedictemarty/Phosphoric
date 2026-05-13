@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.16.8-alpha
-Build Status: ALPHA (Auto-CLOAD -t/-f + Makefile auto-dep + Fast-load auto-exec MC + TAP fixes)
+Version: 1.16.9-alpha
+Build Status: ALPHA (Fast-load 5M timing + --no-autorun + Auto-CLOAD + auto-dep + TAP fixes)
 Last Updated: 2026-05-13
 
 ================================================================

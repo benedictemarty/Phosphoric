@@ -1,12 +1,22 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.8-alpha
+Current Version: 1.16.9-alpha
 Release Date: 2026-05-13
-Status: Alpha (Auto-CLOAD pour -t sans -f, 327 tests pass)
+Status: Alpha (Fast-load auto-exec timing 5M cycles + bin2tap --no-autorun, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.9-alpha (2026-05-13): Fast-load timing + bin2tap --no-autorun (Sprint 34j)
+  * Fix: délai auto-exec fast-load 3M → 5M cycles (ROM init complète)
+    Rapport équipe Asteroids: VIA PCR/IER instables à 3M cycles → glitch
+    HIRES + frame-wait bloqué. 5M cycles = ROM dans boucle READY stable.
+  * Feat: bin2tap --no-autorun = opt-out auto-run flag ($C7 → $00)
+  * Auto-CLOAD"" (v1.16.8) aussi aligné sur 5M cycles
+  * Recommandation alternative pour binaires sensibles: -t sans -f
+    (ROM CLOAD complète assure état VIA/ULA propre)
+  * 327 tests pass
+
 - 1.16.8-alpha (2026-05-13): Auto-CLOAD pour -t sans -f (Sprint 34i)
   * Feat: phosphoric -t game.tap (sans -f) auto-type CLOAD"" après BASIC ready
   * Avant : tape buffered, utilisateur devait taper CLOAD"" manuellement

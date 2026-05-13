@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.9-alpha] - 2026-05-13
+
+### Fast-load auto-exec timing + `bin2tap --no-autorun` (Sprint 34j)
+
+#### Fixed
+- **Délai d'auto-exec `-f` passé de 3 M → 5 M cycles**. À 3 M, la ROM BASIC
+  vient juste de finir son RAM test mais continue de configurer VIA PCR/IER,
+  les vecteurs IRQ et l'ULA jusque vers ~3.6 M (boucle READY). Un binaire
+  qui prenait la main à 3 M trouvait le VIA dans un état semi-initialisé →
+  CB1 IFR ne se latchait pas (frame-wait bloqué), HIRES partiel (bande
+  blanche y=192-199), tearing. Reporté par l'équipe Oric Asteroids dans
+  `docs/phosphoric-autorun-timing.md`. À 5 M, la ROM est dans READY idle
+  stable, l'état VIA/ULA est final.
+- L'auto-CLOAD"" pour `-t` sans `-f` (v1.16.8) aligné sur le même délai 5 M.
+
+#### Added
+- **`bin2tap --no-autorun`** : flag opt-out qui force `auto_run=$00` dans
+  le header, indépendamment de `--exec`. Pour les binaires sensibles au
+  timing ROM ou les sessions de debug où l'on veut taper `CALL` manuellement.
+  Recommandation alternative : utiliser `-t` sans `-f` (Phosphoric v1.16.8+
+  auto-type `CLOAD""`, la ROM CLOAD complète assure un état VIA propre).
+
+#### Tests
+- 327 tests pass.
+
 ## [1.16.8-alpha] - 2026-05-13
 
 ### Auto-CLOAD pour `-t` sans `-f` (Sprint 34i)

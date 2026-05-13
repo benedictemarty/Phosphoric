@@ -519,6 +519,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Comportement -f inchangé
 - [x] 327 tests pass
 
+### Sprint 34j: Fast-load timing + bin2tap --no-autorun (v1.16.9-alpha) - DONE
+- [x] Fix: délai auto-exec fast-load 3M → 5M cycles (init ROM complète)
+- [x] À 3M cycles, VIA PCR/IER pas finis de configurer ⇒ glitch HIRES
+      + frame-wait CB1 bloqué (rapport équipe Oric Asteroids)
+- [x] À 5M cycles, ROM dans boucle READY = état VIA/ULA stable
+- [x] Auto-CLOAD"" (-t sans -f) aligné sur même délai 5M
+- [x] Feat: bin2tap --no-autorun = force auto-run $00 (opt-out flag)
+- [x] Doc alternative: -t sans -f utilise CLOAD ROM complète, état propre
+- [x] 327 tests pass
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -557,5 +567,5 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 ---
 
 **Last Updated**: 2026-05-13
-**Current Version**: 1.16.8-alpha
+**Current Version**: 1.16.9-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

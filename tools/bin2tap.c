@@ -10,12 +10,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "storage/tap.h"
 #include "utils/logging.h"
 
 int main(int argc, char* argv[]) {
     if (argc < 5) {
-        printf("Usage: %s <input.bin> --start <addr> --exec <addr> -o <output.tap> [--name <name>]\n", argv[0]);
+        printf("Usage: %s <input.bin> --start <addr> --exec <addr> -o <output.tap> [--name <name>] [--no-autorun]\n", argv[0]);
+        printf("  --no-autorun  Set TAP auto-run flag to $00 (override --exec).\n");
+        printf("                Useful for binaries sensitive to ROM init timing\n");
+        printf("                under -f fast-load; user must CALL/USR manually.\n");
         return 1;
     }
 
@@ -24,6 +28,7 @@ int main(int argc, char* argv[]) {
     const char* name = "PROGRAM";
     uint16_t start_addr = 0;
     uint16_t exec_addr = 0;
+    bool no_autorun = false;
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -34,8 +39,12 @@ int main(int argc, char* argv[]) {
             exec_addr = (uint16_t)strtol(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             name = argv[++i];
+        } else if (strcmp(argv[i], "--no-autorun") == 0) {
+            no_autorun = true;
         }
     }
+
+    if (no_autorun) exec_addr = 0;  /* tap_from_binary uses exec_addr==0 → auto-run $00 */
 
     if (!output_file) {
         fprintf(stderr, "Error: Output file not specified\n");

@@ -867,10 +867,14 @@ static void emulator_run(emulator_t* emu) {
 
         total_executed += (uint64_t)frame_cycles;
 
-        /* Deferred fast-load: inject TAP data after ROM RAM test completes.
-         * BASIC 1.0 RAM test runs $FA1F-$FA45 (~2.5M cycles), so we wait
-         * 3M cycles to ensure RAM test is complete before injecting. */
-        if (emu->fastload_pending && total_executed > 3000000) {
+        /* Deferred fast-load: inject TAP data after ROM init completes.
+         * BASIC 1.0 RAM test runs $FA1F-$FA45 (~2.5M cycles) then continues
+         * setting up VIA/ULA/IRQ vectors until reaching the READY prompt
+         * around 3.6M cycles. We wait 5M cycles so VIA PCR/IER and the ULA
+         * are fully stable when machine-code binaries with auto-run flag
+         * receive the forced JMP — premature exec leaves the VIA in a
+         * half-configured state and breaks CB1-polling games. */
+        if (emu->fastload_pending && total_executed > 5000000) {
             for (int i = 0; i < emu->fastload_size; i++) {
                 memory_write(&emu->memory, (uint16_t)(emu->fastload_addr + i),
                              emu->fastload_buf[i]);
@@ -935,7 +939,7 @@ static void emulator_run(emulator_t* emu) {
          * is now ready (RAM test done) — auto-type CLOAD"" so the ROM CLOAD
          * routine runs and triggers the on-tape auto-run flag normally.
          * Only fires once; user can override by setting --type-keys. */
-        if (emu->tape_auto_cload_pending && total_executed > 3000000 &&
+        if (emu->tape_auto_cload_pending && total_executed > 5000000 &&
             !emu->type_keys_text) {
             emu->type_keys_text = "CLOAD\"\"\\n";
             emu->type_keys_at = (int64_t)total_executed + CYCLES_PER_FRAME * 10;
