@@ -167,13 +167,19 @@ bool tap_read_header(tap_file_t* tap, tap_header_t* header) {
 
     /* Fallback: 9-byte at offset 0 (original behavior) */
 
-    /* Parse header from raw buffer */
+    /* Parse header from raw buffer.
+     * 9-byte ROM format: raw[0..1] = reserved ($00 $00), raw[2] = type,
+     *                    raw[3] = auto-run, raw[4..5] = end (BE),
+     *                    raw[6..7] = start (BE), raw[8] = separator.
+     * 7-byte tool format: raw[0] = type, raw[1] = auto-run,
+     *                     raw[2..3] = end (BE), raw[4..5] = start (BE),
+     *                     raw[6] = separator. */
     int p = best_off;
+    if (best_sz == 9) {
+        p += 2;  /* skip reserved bytes raw[0..1] = $00 $00 */
+    }
     header->type = raw[p++];
     header->auto_run = raw[p++];
-    if (best_sz == 9) {
-        p += 2;  /* skip extra bytes (ROM $64/$63) */
-    }
     header->end_addr = (uint16_t)((raw[p] << 8) | raw[p + 1]);
     p += 2;
     header->start_addr = (uint16_t)((raw[p] << 8) | raw[p + 1]);

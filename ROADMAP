@@ -485,6 +485,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Confirmé OK Oricutron + Phosphoric (chargement + auto-exec)
 - [x] 327 tests pass
 
+### Sprint 34f: TAP reader 9-byte header parsing fix (v1.16.5-alpha) - DONE
+- [x] Fix: tap_read_header lit type/auto-run au bon offset en 9-byte ROM
+- [x] Avant: type=raw[0], auto=raw[1] (les 2 octets réservés $00 $00)
+- [x] Après: skip 2 octets réservés, type=raw[2], auto=raw[3]
+- [x] Conséquence : fast-load binaires .tap (asteroids) plus interprétés
+      comme BASIC, plus de basic_rechain destructeur + RUN auto-typé
+      causant ?ILLEGAL QUANTITY ERROR
+- [x] Vérifié TYRANN.SAV (type=$80), examples BASIC (type=$00), asteroids ($80)
+- [x] 327 tests pass
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -523,5 +533,5 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 ---
 
 **Last Updated**: 2026-05-13
-**Current Version**: 1.16.4-alpha
+**Current Version**: 1.16.5-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

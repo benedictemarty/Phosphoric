@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.5-alpha] - 2026-05-13
+
+### TAP reader 9-byte header type/auto-run parsing (Sprint 34f)
+
+#### Fixed
+- **`tap_read_header` lisait type et auto-run aux mauvaises positions** en
+  mode 9-byte ROM-format : il prenait `raw[0..1]` (qui sont les 2 octets
+  réservés `$00 $00`) au lieu de `raw[2..3]` (vraies valeurs). Conséquence
+  visible sur le fast-load Phosphoric : un binaire machine code (type réel
+  `$80`) était lu comme `type=$00` (BASIC) → branche BASIC du fast-load
+  appelée → `basic_rechain` corrompait le binaire + auto-type `RUN` →
+  `?ILLEGAL QUANTITY ERROR`.
+- Le skip de 2 octets a été déplacé **avant** la lecture type/auto-run. Vérifié
+  sur TYRANN.SAV (type=`$80` ✓), tous les `.tap` BASIC examples (type=`$00` ✓),
+  et asteroids.tap (type=`$80` ✓).
+
+#### Tests
+- 327 tests pass.
+
 ## [1.16.4-alpha] - 2026-05-13
 
 ### TAP writer machine-code auto-run flag (Sprint 34e)

@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.4-alpha
+Current Version: 1.16.5-alpha
 Release Date: 2026-05-13
-Status: Alpha (TAP writer machine-code auto-run $C7 flag, 327 tests pass)
+Status: Alpha (TAP reader 9-byte type/auto-run position fix, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.5-alpha (2026-05-13): TAP reader 9-byte header parsing (Sprint 34f)
+  * Fix: tap_read_header lit type et auto-run au bon offset en mode 9-byte
+  * Avant: raw[0..1] pris comme type/auto (en fait octets réservés $00 $00)
+  * Après: skip raw[0..1], puis lecture type=raw[2], auto-run=raw[3]
+  * Conséquence du bug: fast-load des binaires .tap traités comme BASIC
+    → basic_rechain corrompait + RUN auto-typé → ?ILLEGAL QUANTITY ERROR
+  * Vérifié: TYRANN.SAV.tap type=$80, examples BASIC type=$00, asteroids type=$80
+  * 327 tests pass
+
 - 1.16.4-alpha (2026-05-13): TAP writer machine-code auto-run flag (Sprint 34e)
   * Fix: bin2tap utilise auto-run = $C7 (et non $80) pour binaire auto-exec
   * $80 = BASIC auto-run (RUN), $C7 = machine-code auto-run (JMP start_addr)
