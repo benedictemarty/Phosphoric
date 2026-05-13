@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.10-alpha] - 2026-05-13
+
+### Fast-load séparation injection / auto-exec (Sprint 34k)
+
+#### Fixed
+- **`CALL adresse` manuel produisait `?ILLEGAL QUANTITY ERROR` dans une
+  fenêtre de race**. Depuis v1.16.9 le fast-load injectait ET auto-exécutait
+  à 5 M cycles. Or le prompt READY apparaît à ~3.6 M cycles : entre 3.6 M
+  et 5 M il y avait une fenêtre de ~1.4 sec où l'utilisateur voyait `Ready`
+  mais le binaire n'était pas encore en RAM. S'il tapait `CALL 1280` dans
+  cette fenêtre, la routine BASIC faisait `JMP ($0033) → $0500` où l'init
+  RAM contient `$00` → `BRK` → handler erreur → `?ILLEGAL QUANTITY ERROR`.
+  Trace 6502 capturée :
+  ```
+  E810  JMP ($0033)   ← parser BASIC CALL
+  0500  BRK            ← RAM init pattern $00 → BRK opcode
+  ```
+- Fix : phase 1 d'injection RAM à **3 M cycles** (juste après RAM test ROM,
+  avant que READY ne s'affiche). Phase 2 d'auto-exec / auto-RUN à 5 M
+  cycles (VIA + ULA stables). Un utilisateur tapant `CALL n` manuellement
+  trouve désormais ses opcodes en place dès `Ready`.
+- Nouveau champ `fastload_autoexec_pending` dans `emulator_t` pour piloter
+  la phase 2 indépendamment.
+
+#### Tests
+- 327 tests pass.
+
 ## [1.16.9-alpha] - 2026-05-13
 
 ### Fast-load auto-exec timing + `bin2tap --no-autorun` (Sprint 34j)

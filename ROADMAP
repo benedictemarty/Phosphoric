@@ -529,6 +529,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Doc alternative: -t sans -f utilise CLOAD ROM complète, état propre
 - [x] 327 tests pass
 
+### Sprint 34k: Fast-load séparation injection/auto-exec (v1.16.10-alpha) - DONE
+- [x] Fix: CALL manuel ILLEGAL QUANTITY dans fenêtre 3.6M-5M cycles
+- [x] Cause racine : injection à 5M, mais READY à 3.6M → fenêtre 1.4s où
+      $0500 = $00 (init RAM) → JMP via CALL = BRK = ?ILLEGAL QUANTITY
+- [x] Phase 1 injection RAM → 3M cycles (avant READY)
+- [x] Phase 2 auto-exec / RUN → 5M cycles (VIA stable)
+- [x] fastload_autoexec_pending dans emulator_t
+- [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
+- [x] 327 tests pass
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -567,5 +577,5 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 ---
 
 **Last Updated**: 2026-05-13
-**Current Version**: 1.16.9-alpha
+**Current Version**: 1.16.10-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

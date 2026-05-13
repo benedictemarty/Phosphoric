@@ -867,14 +867,13 @@ static void emulator_run(emulator_t* emu) {
 
         total_executed += (uint64_t)frame_cycles;
 
-        /* Deferred fast-load: inject TAP data after ROM init completes.
-         * BASIC 1.0 RAM test runs $FA1F-$FA45 (~2.5M cycles) then continues
-         * setting up VIA/ULA/IRQ vectors until reaching the READY prompt
-         * around 3.6M cycles. We wait 5M cycles so VIA PCR/IER and the ULA
-         * are fully stable when machine-code binaries with auto-run flag
-         * receive the forced JMP — premature exec leaves the VIA in a
-         * half-configured state and breaks CB1-polling games. */
-        if (emu->fastload_pending && total_executed > 5000000) {
+        /* Fast-load phase 1: inject TAP data into RAM as soon as the ROM
+         * RAM test is done (~3M cycles). Injecting early ensures the binary
+         * is in place when the BASIC READY prompt appears (~3.6M cycles) so
+         * a user typing CALL/USR manually finds valid opcodes at start_addr.
+         * The ROM init writes to its own zero-page/system area, not to
+         * $0500+ where our binary goes, so no overwrite race. */
+        if (emu->fastload_pending && total_executed > 3000000) {
             for (int i = 0; i < emu->fastload_size; i++) {
                 memory_write(&emu->memory, (uint16_t)(emu->fastload_addr + i),
                              emu->fastload_buf[i]);
@@ -884,19 +883,9 @@ static void emulator_run(emulator_t* emu) {
                      emu->fastload_addr + emu->fastload_size - 1,
                      (unsigned long long)total_executed);
 
-            /* For BASIC programs, re-link the line chain and set pointers.
-             * The ORIC ROM's CLOAD re-links all next-line pointers after
-             * loading, because the program may have been saved from a
-             * different address. Our fast-load must do the same.
-             * Walk through lines (each terminated by $00), compute the
-             * actual next-line address, and update the 2-byte pointer. */
             if (emu->fastload_type == 0x00) {
-                /* Rechain BASIC line pointers — TAP files may have stale
-                 * pointers (e.g. TYRANN.TAP first block). The ROM's RUN
-                 * command does NOT call rechain ($C56F). */
+                /* BASIC: rechain + VARTAB now (binary fully in RAM) */
                 basic_rechain(&emu->memory);
-
-                /* Set VARTAB */
                 uint16_t vartab = emu->fastload_end + 1;
                 memory_write(&emu->memory, 0x9C, (uint8_t)(vartab & 0xFF));
                 memory_write(&emu->memory, 0x9D, (uint8_t)(vartab >> 8));
@@ -905,34 +894,38 @@ static void emulator_run(emulator_t* emu) {
                 memory_write(&emu->memory, 0xA0, (uint8_t)(vartab & 0xFF));
                 memory_write(&emu->memory, 0xA1, (uint8_t)(vartab >> 8));
                 log_info("BASIC: VARTAB=$%04X", vartab);
-
-                /* Auto-type RUN + RETURN after a short delay for BASIC init */
-                if (!emu->type_keys_text) {
-                    emu->type_keys_text = "RUN\\n";
-                    emu->type_keys_at = (int64_t)total_executed + CYCLES_PER_FRAME * 10;
-                    emu->type_keys_idx = 0;
-                    emu->type_keys_next_cycle = emu->type_keys_at;
-                    emu->type_keys_done = false;
-                    emu->type_keys_last_char = 0;
-                    log_info("Auto-typing RUN after fast-load");
-                }
-            } else if (emu->fastload_type == 0x80 &&
-                       (emu->fastload_auto_run & 0x80)) {
-                /* Machine code with auto-run flag set ($C7 = CSAVE J convention,
-                 * $80 also accepted). On real ORIC, the CLOAD ROM routine ends
-                 * with JMP start_addr in that case. Fast-load bypasses the ROM
-                 * routine, so we replicate the jump by forcing the CPU PC.
-                 * The 6502 BASIC stack frame at this point is the keyboard wait
-                 * loop — the program either runs forever (game) or executes
-                 * RTS to return to BASIC. */
-                emu->cpu.PC = emu->fastload_addr;
-                log_info("Auto-exec machine code at $%04X (auto-run flag=$%02X)",
-                         emu->fastload_addr, emu->fastload_auto_run);
             }
 
+            /* Phase 2 (auto-exec / auto-RUN) is fired later from a separate
+             * block, once the ROM has finished its full init and reached the
+             * READY idle loop — at that point VIA PCR/IER/IFR and ULA are
+             * fully configured, so machine-code binaries don't inherit a
+             * half-initialized I/O state. */
+            emu->fastload_autoexec_pending = true;
             free(emu->fastload_buf);
             emu->fastload_buf = NULL;
             emu->fastload_pending = false;
+        }
+
+        /* Fast-load phase 2: fire auto-exec / auto-RUN once VIA + ULA are
+         * stable (~5M cycles, ROM in READY idle loop). Cf. rapport
+         * docs/phosphoric-autorun-timing.md de l'équipe Asteroids. */
+        if (emu->fastload_autoexec_pending && total_executed > 5000000) {
+            if (emu->fastload_type == 0x00 && !emu->type_keys_text) {
+                emu->type_keys_text = "RUN\\n";
+                emu->type_keys_at = (int64_t)total_executed + CYCLES_PER_FRAME * 10;
+                emu->type_keys_idx = 0;
+                emu->type_keys_next_cycle = emu->type_keys_at;
+                emu->type_keys_done = false;
+                emu->type_keys_last_char = 0;
+                log_info("Auto-typing RUN after fast-load (phase 2)");
+            } else if (emu->fastload_type == 0x80 &&
+                       (emu->fastload_auto_run & 0x80)) {
+                emu->cpu.PC = emu->fastload_addr;
+                log_info("Auto-exec machine code at $%04X (auto-run flag=$%02X, phase 2)",
+                         emu->fastload_addr, emu->fastload_auto_run);
+            }
+            emu->fastload_autoexec_pending = false;
         }
 
         /* Auto-CLOAD: when a tape was provided without -f, the BASIC prompt

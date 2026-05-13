@@ -1,12 +1,22 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.9-alpha
+Current Version: 1.16.10-alpha
 Release Date: 2026-05-13
-Status: Alpha (Fast-load auto-exec timing 5M cycles + bin2tap --no-autorun, 327 tests pass)
+Status: Alpha (Fast-load séparation injection/auto-exec, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.10-alpha (2026-05-13): Fast-load séparation injection/auto-exec (Sprint 34k)
+  * Fix: CALL manuel produisait ILLEGAL QUANTITY dans fenêtre 3.6M-5M cycles
+  * Avant: injection + auto-exec à 5M → fenêtre 1.4s avec READY affiché mais
+    $0500 = $00 (RAM init) → JMP via CALL = BRK = ?ILLEGAL QUANTITY
+  * Phase 1 injection RAM → 3M cycles (avant READY, ROM init zero-page OK)
+  * Phase 2 auto-exec / auto-RUN → 5M cycles (VIA + ULA stables)
+  * Trace 6502 confirmée : E810 JMP ($0033) → 0500 BRK → handler erreur
+  * Nouveau champ fastload_autoexec_pending dans emulator_t
+  * 327 tests pass
+
 - 1.16.9-alpha (2026-05-13): Fast-load timing + bin2tap --no-autorun (Sprint 34j)
   * Fix: délai auto-exec fast-load 3M → 5M cycles (ROM init complète)
     Rapport équipe Asteroids: VIA PCR/IER instables à 3M cycles → glitch
