@@ -467,6 +467,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Docs: keyboard.h matrix layout convention explicit (col indexed, row bits)
 - [x] 327 tests pass (zero behavior change, pure rename)
 
+### Sprint 34d: TAP writer ROM-format compatibility (v1.16.3-alpha) - DONE
+- [x] Fix: tap_write_header insère 2 octets réservés ($00 $00) après marker $24
+- [x] Header passé du format 7-byte (tool legacy) au 9-byte ROM-compatible
+- [x] Oricutron / Euphoric / hardware physique acceptent désormais les .tap
+      générés par bin2tap et bas2tap (avant : plantage CLOAD "" sur asteroids)
+- [x] Parser tap_read_header inchangé (gère déjà 7-byte ET 9-byte)
+- [x] Investigation rapport HIRES TEXT glitch (équipe Asteroids) = faux positif
+      Phosphoric ; charset HIRES $9800 doit être initialisé par le programme
+- [x] 327 tests pass (aucune régression)
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -504,6 +514,6 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
-**Last Updated**: 2026-05-11
-**Current Version**: 1.16.2-alpha
+**Last Updated**: 2026-05-13
+**Current Version**: 1.16.3-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

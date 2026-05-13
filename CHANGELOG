@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.3-alpha] - 2026-05-13
+
+### TAP writer ROM-format compatibility (Sprint 34d)
+
+#### Fixed
+- **`bin2tap` / `bas2tap` produisaient un header 7-byte non lu par Oricutron /
+  Euphoric / hardware physique** — plantage à `CLOAD ""` (start/end addresses
+  décalées de 2 octets, lecture en zero page). `tap_write_header` insère
+  désormais 2 octets réservés (`$00 $00`) entre le marker `$24` et le couple
+  type/auto-run, conformément au format ROM Oric (header 9-byte) utilisé par
+  TYRANN, citadel et tous les `.tap` commerciaux.
+- Le parser Phosphoric (`tap_read_header`) supporte déjà les deux variantes
+  (7-byte legacy / 9-byte ROM) — aucune régression de lecture sur les `.tap`
+  produits avant ce fix.
+
+#### Investigation
+- Rapport `phosphoric-hires-text-glitch.md` (équipe Oric Asteroids) : faux
+  positif côté Phosphoric. La zone TEXT du bas en HIRES est bien lue à
+  `$BF68-$BFDF` (lignes texte 25-27 de `$BB80`), conforme hardware. Le glitch
+  observé provient du **charset HIRES non initialisé** : l'ULA lit le charset
+  à `$9800` en HIRES, le programme doit copier `$B400 → $9800` (2 048 octets)
+  avant `STA $BB80,$1C`. La commande BASIC `HIRES` le fait automatiquement.
+
+#### Tests
+- 327 tests pass (aucun ajout, fix au-dessus de l'API publique).
+
 ## [1.16.2-alpha] - 2026-05-11
 
 ### Keyboard naming convention cleanup (Sprint 34c)

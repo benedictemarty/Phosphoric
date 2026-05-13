@@ -1,12 +1,22 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.2-alpha
-Release Date: 2026-05-11
-Status: Alpha (keyboard naming convention cleanup, 327 tests pass)
+Current Version: 1.16.3-alpha
+Release Date: 2026-05-13
+Status: Alpha (TAP writer ROM-format compatibility, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.3-alpha (2026-05-13): TAP writer ROM-format compatibility (Sprint 34d)
+  * Fix: tap_write_header insère 2 octets réservés ($00 $00) après le marker $24
+    → header 9-byte ROM-compatible (Oricutron, Euphoric, hardware physique)
+  * Avant : bin2tap/bas2tap produisaient un format 7-byte tolérant Phosphoric
+    mais rejeté par Oricutron (plantage CLOAD "" sur asteroids.tap)
+  * Parser Phosphoric inchangé (gère déjà 7-byte ET 9-byte, aucune régression)
+  * Investigation : rapport HIRES TEXT glitch équipe Asteroids = faux positif,
+    Phosphoric conforme hardware (charset HIRES $9800 à init manuellement)
+  * 327 tests pass (no behavior change sur API publique)
+
 - 1.16.2-alpha (2026-05-11): Keyboard naming convention cleanup (Sprint 34c)
   * Pure rename refactor: matrix[col] indexed by HW col (VIA ORB), bit = HW row (PSG R14)
   * char_entry_t {row,col} → {col,row}; macros U/S args swapped; same values

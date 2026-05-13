@@ -211,6 +211,15 @@ bool tap_write_header(tap_file_t* tap, const tap_header_t* header) {
     uint8_t marker = TAP_MARKER;
     fwrite(&marker, 1, 1, tap->file); tap->position++;
 
+    /* 9-byte ROM-format header: 2 reserved bytes before type/auto-run.
+     * Required for Oricutron / Euphoric / hardware compatibility — without
+     * them the strict parsers read end/start addresses 2 bytes too early
+     * and crash at CLOAD "". Phosphoric's reader handles both 7- and 9-byte
+     * variants (tap_read_header). */
+    uint8_t reserved = 0x00;
+    fwrite(&reserved, 1, 1, tap->file); tap->position++;
+    fwrite(&reserved, 1, 1, tap->file); tap->position++;
+
     /* Type and auto-run */
     fwrite(&header->type, 1, 1, tap->file); tap->position++;
     fwrite(&header->auto_run, 1, 1, tap->file); tap->position++;
