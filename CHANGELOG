@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.4-alpha] - 2026-05-13
+
+### TAP writer machine-code auto-run flag (Sprint 34e)
+
+#### Fixed
+- **`bin2tap` produisait un auto-run flag `$80` pour les binaires** — sur ORIC
+  réel et Oricutron, ce flag déclenche `RUN` (interprétation BASIC) au lieu de
+  `JMP start_addr`. Résultat : le binaire chargé est lu comme tokens BASIC et
+  Oricutron affiche `?ILLEGAL...` immédiatement après CLOAD. La convention
+  commerciale (CSAVE "name",A,E,J) utilise `$C7` pour signaler "auto-run
+  machine code → JMP start_addr". `bin2tap` aligne désormais sur `$C7`.
+- Survey des `.tap` commerciaux (007, ATLANTIS, citadel, johnny, spooky, …) :
+  100 % utilisent `80 c7` (type machine + auto-run $C7). Notre format produit
+  désormais le même header `00 00 80 c7 …`.
+- `bas2tap` inchangé : pour BASIC, `$80` reste la valeur correcte (RUN
+  automatique du programme BASIC chargé).
+
+#### Tests
+- 327 tests pass.
+
 ## [1.16.3-alpha] - 2026-05-13
 
 ### TAP writer ROM-format compatibility (Sprint 34d)

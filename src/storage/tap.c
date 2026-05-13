@@ -585,7 +585,12 @@ bool tap_from_binary(const char* bin_file, const char* tap_filename,
     memset(&header, 0, sizeof(header));
     header.sync_len = 3;
     header.type = TAP_MACHINE;
-    header.auto_run = (exec_addr != 0) ? 0x80 : 0x00;
+    /* Machine-code auto-run uses $C7 (CSAVE "...",A,E,J convention), not $80.
+     * $80 is the BASIC auto-run flag and triggers a RUN on the loaded bytes —
+     * on a machine-code program Oricutron then reports an ?ILLEGAL... error
+     * because the binary is parsed as BASIC tokens. $C7 instructs the loader
+     * to JMP start_addr after loading. */
+    header.auto_run = (exec_addr != 0) ? 0xC7 : 0x00;
     header.start_addr = start_addr;
     header.end_addr = start_addr + (uint16_t)fsize - 1;
     if (name) strncpy(header.name, name, TAP_NAME_LEN - 1);

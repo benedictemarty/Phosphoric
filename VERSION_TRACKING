@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.3-alpha
+Current Version: 1.16.4-alpha
 Release Date: 2026-05-13
-Status: Alpha (TAP writer ROM-format compatibility, 327 tests pass)
+Status: Alpha (TAP writer machine-code auto-run $C7 flag, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.4-alpha (2026-05-13): TAP writer machine-code auto-run flag (Sprint 34e)
+  * Fix: bin2tap utilise auto-run = $C7 (et non $80) pour binaire auto-exec
+  * $80 = BASIC auto-run (RUN), $C7 = machine-code auto-run (JMP start_addr)
+  * Sans ce fix, Oricutron interprétait le binaire comme tokens BASIC → ILLEGAL
+  * Aligné sur les .tap commerciaux (007, ATLANTIS, citadel, johnny, …)
+  * bas2tap inchangé ($80 reste correct pour BASIC)
+  * 327 tests pass
+
 - 1.16.3-alpha (2026-05-13): TAP writer ROM-format compatibility (Sprint 34d)
   * Fix: tap_write_header insère 2 octets réservés ($00 $00) après le marker $24
     → header 9-byte ROM-compatible (Oricutron, Euphoric, hardware physique)

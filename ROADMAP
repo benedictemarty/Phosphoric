@@ -477,6 +477,14 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
       Phosphoric ; charset HIRES $9800 doit être initialisé par le programme
 - [x] 327 tests pass (aucune régression)
 
+### Sprint 34e: TAP writer machine-code auto-run flag (v1.16.4-alpha) - DONE
+- [x] Fix: bin2tap utilise auto-run = $C7 pour binaire (et non $80)
+- [x] $80 = RUN BASIC ; $C7 = JMP start_addr (convention CSAVE "...",A,E,J)
+- [x] Aligné sur tous les .tap commerciaux (007, ATLANTIS, citadel, johnny…)
+- [x] Header asteroids final: `16 16 16 24 00 00 80 c7 …` (ROM-compat complet)
+- [x] Confirmé OK Oricutron + Phosphoric (chargement + auto-exec)
+- [x] 327 tests pass
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -515,5 +523,5 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 ---
 
 **Last Updated**: 2026-05-13
-**Current Version**: 1.16.3-alpha
+**Current Version**: 1.16.4-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
