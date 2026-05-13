@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.6-alpha] - 2026-05-13
+
+### Fast-load auto-exec for machine code (Sprint 34g)
+
+#### Added
+- **Fast-load gère désormais l'auto-run binaire** (`type=$80 + auto-run bit 7`).
+  Sur ORIC réel, CLOAD avec flag `$C7` termine par `JMP start_addr` ; le
+  fast-load contourne la ROM CLOAD donc ne déclenchait pas cet auto-exec —
+  un binaire chargé restait en mémoire mais ne se lançait pas. Phosphoric
+  force désormais `cpu.PC = start_addr` après injection, équivalent du JMP
+  ROM. Vérifié : asteroids.tap s'auto-exécute en fast-load avec BASIC 1.0
+  comme avec BASIC 1.1.
+- Nouveau champ `fastload_auto_run` dans `emulator_t` pour passer le flag
+  du header au bloc d'injection deferred.
+- TYRANN.SAV.tap (auto-run=`$00`) reste injecté sans auto-exec — comportement
+  inchangé pour les `.tap` sans flag.
+
+#### Tests
+- 327 tests pass.
+
 ## [1.16.5-alpha] - 2026-05-13
 
 ### TAP reader 9-byte header type/auto-run parsing (Sprint 34f)

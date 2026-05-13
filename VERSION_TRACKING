@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.5-alpha
+Current Version: 1.16.6-alpha
 Release Date: 2026-05-13
-Status: Alpha (TAP reader 9-byte type/auto-run position fix, 327 tests pass)
+Status: Alpha (Fast-load auto-exec machine code, 327 tests pass)
 
 Version History:
 ----------------
+- 1.16.6-alpha (2026-05-13): Fast-load auto-exec for machine code (Sprint 34g)
+  * Feat: fast-load déclenche auto-exec quand type=$80 + auto-run bit 7 mis
+  * Force cpu.PC = start_addr après injection deferred (équivalent JMP ROM)
+  * Avant: binaire chargé en mémoire mais pas exécuté en mode -f
+  * Vérifié: asteroids.tap s'auto-exécute en fast-load ORIC-1/Atmos
+  * TYRANN.SAV.tap (auto-run=$00) inchangé (pas d'exec forcé)
+  * 327 tests pass
+
 - 1.16.5-alpha (2026-05-13): TAP reader 9-byte header parsing (Sprint 34f)
   * Fix: tap_read_header lit type et auto-run au bon offset en mode 9-byte
   * Avant: raw[0..1] pris comme type/auto (en fait octets réservés $00 $00)

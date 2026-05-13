@@ -495,6 +495,14 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Vérifié TYRANN.SAV (type=$80), examples BASIC (type=$00), asteroids ($80)
 - [x] 327 tests pass
 
+### Sprint 34g: Fast-load auto-exec for machine code (v1.16.6-alpha) - DONE
+- [x] Feat: fast-load auto-exec quand type=$80 + auto-run bit 7 mis ($C7/$80)
+- [x] Force cpu.PC = start_addr après injection deferred (équivalent JMP ROM)
+- [x] Nouveau champ fastload_auto_run dans emulator_t
+- [x] asteroids.tap s'auto-exécute en fast-load (mode -f)
+- [x] TYRANN.SAV.tap (auto-run=$00) inchangé — pas d'exec forcé
+- [x] 327 tests pass
+
 ## Future Enhancements
 
 ### Advanced Features
@@ -533,5 +541,5 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 ---
 
 **Last Updated**: 2026-05-13
-**Current Version**: 1.16.5-alpha
+**Current Version**: 1.16.6-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

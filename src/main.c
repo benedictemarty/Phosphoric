@@ -912,6 +912,18 @@ static void emulator_run(emulator_t* emu) {
                     emu->type_keys_last_char = 0;
                     log_info("Auto-typing RUN after fast-load");
                 }
+            } else if (emu->fastload_type == 0x80 &&
+                       (emu->fastload_auto_run & 0x80)) {
+                /* Machine code with auto-run flag set ($C7 = CSAVE J convention,
+                 * $80 also accepted). On real ORIC, the CLOAD ROM routine ends
+                 * with JMP start_addr in that case. Fast-load bypasses the ROM
+                 * routine, so we replicate the jump by forcing the CPU PC.
+                 * The 6502 BASIC stack frame at this point is the keyboard wait
+                 * loop — the program either runs forever (game) or executes
+                 * RTS to return to BASIC. */
+                emu->cpu.PC = emu->fastload_addr;
+                log_info("Auto-exec machine code at $%04X (auto-run flag=$%02X)",
+                         emu->fastload_addr, emu->fastload_auto_run);
             }
 
             free(emu->fastload_buf);
@@ -1623,6 +1635,7 @@ int main(int argc, char* argv[]) {
                             emu.fastload_end = header.end_addr;
                             emu.fastload_size = (uint16_t)rd;
                             emu.fastload_type = header.type;
+                            emu.fastload_auto_run = header.auto_run;
                             emu.fastload_pending = true;
                             log_info("Buffered %d bytes for deferred injection to $%04X-$%04X",
                                      rd, header.start_addr, header.start_addr + rd - 1);

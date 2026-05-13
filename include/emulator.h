@@ -33,7 +33,7 @@
 #include "utils/profiler.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.5-alpha"
+#define EMU_VERSION "1.16.6-alpha"
 
 /**
  * @brief ORIC machine model
@@ -120,6 +120,7 @@ typedef struct emulator_s {
     uint16_t fastload_end;       /* Target end address (from TAP header) */
     uint16_t fastload_size;      /* Data size in bytes */
     uint8_t  fastload_type;      /* TAP type: 0x00=BASIC, 0x80=MC */
+    uint8_t  fastload_auto_run;  /* TAP auto-run flag: $00=none, $80=BASIC RUN, $C7=MC JMP */
     bool     fastload_pending;   /* Injection pending */
 
     /* Post-CLOAD BASIC rechain (line pointers in TAP may be stale) */
