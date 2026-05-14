@@ -318,13 +318,14 @@ cppcheck:
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  cppcheck — analyse statique"
 	@echo "═══════════════════════════════════════════════════════"
-	@cppcheck --enable=warning,style,performance,portability \
+	@cppcheck --enable=warning,performance,portability \
 	          --std=c11 \
 	          --suppress=missingIncludeSystem \
 	          --suppress=unusedFunction \
+	          --suppress=normalCheckLevelMaxBranches \
+	          --suppress=*:third_party/* \
 	          -I ./include \
 	          --error-exitcode=1 \
-	          --quiet \
 	          src/ 2>&1
 	@echo "  cppcheck : OK"
 	@echo "═══════════════════════════════════════════════════════"

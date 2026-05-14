@@ -618,7 +618,7 @@ static void basic_rechain(memory_t* mem) {
     uint16_t ptr = (uint16_t)(mem->ram[0x9A] | (mem->ram[0x9B] << 8));
 
     int lines_fixed = 0;
-    while (ptr < 0xC000) {
+    while (ptr + 1 < 0xC000) {
         /* Check next-line pointer high byte — $00 means end of program.
          * The ROM $C56F checks ONLY the high byte (ptr+1): LDA ($91),Y
          * with Y=1, then BEQ to exit. Valid next-line pointers always
@@ -1092,9 +1092,9 @@ static void emulator_run(emulator_t* emu) {
                                  tm->tm_hour, tm->tm_min, tm->tm_sec);
                         FILE* df = fopen(dumpname, "wb");
                         if (df) {
-                            fwrite(emu->memory.ram, 1, 0x10000, df);
+                            fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), df);
                             fclose(df);
-                            log_info("Memory dump: %s (64KB, PC=$%04X, cycle=%llu)",
+                            log_info("Memory dump: %s (48KB RAM $0000-$BFFF, PC=$%04X, cycle=%llu)",
                                      dumpname, emu->cpu.PC,
                                      (unsigned long long)total_executed);
                         }
@@ -1178,9 +1178,9 @@ static void emulator_run(emulator_t* emu) {
             (int64_t)total_executed >= emu->dump_ram_at_cycles) {
             FILE* rf = fopen(emu->dump_ram_at_file, "wb");
             if (rf) {
-                fwrite(emu->memory.ram, 1, 0x10000, rf);
+                fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
                 fclose(rf);
-                log_info("RAM dump (64KB) at %llu cycles → %s",
+                log_info("RAM dump (48KB $0000-$BFFF) at %llu cycles → %s",
                          (unsigned long long)total_executed, emu->dump_ram_at_file);
             } else {
                 log_error("Cannot open RAM dump file: %s", emu->dump_ram_at_file);
