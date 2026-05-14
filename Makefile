@@ -95,7 +95,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard valgrind static-analysis coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -313,6 +313,37 @@ static-analysis:
 	@echo ""
 	@echo "Static analysis complete."
 
+cppcheck:
+	@command -v cppcheck >/dev/null 2>&1 || { echo "cppcheck non trouvé — apt install cppcheck"; exit 1; }
+	@echo "═══════════════════════════════════════════════════════"
+	@echo "  cppcheck — analyse statique"
+	@echo "═══════════════════════════════════════════════════════"
+	@cppcheck --enable=warning,style,performance,portability \
+	          --std=c11 \
+	          --suppress=missingIncludeSystem \
+	          --suppress=unusedFunction \
+	          -I ./include \
+	          --error-exitcode=1 \
+	          --quiet \
+	          src/ 2>&1
+	@echo "  cppcheck : OK"
+	@echo "═══════════════════════════════════════════════════════"
+
+flawfinder:
+	@command -v flawfinder >/dev/null 2>&1 || { echo "flawfinder non trouvé — pip install flawfinder"; exit 1; }
+	@echo "═══════════════════════════════════════════════════════"
+	@echo "  flawfinder — analyse sécurité"
+	@echo "═══════════════════════════════════════════════════════"
+	@flawfinder --minlevel=2 --error-level=5 src/ include/
+	@echo "  flawfinder : OK (aucun risque niveau 5 critique)"
+	@echo "═══════════════════════════════════════════════════════"
+
+security-check: cppcheck flawfinder
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════"
+	@echo "  Security check complet : cppcheck + flawfinder OK"
+	@echo "═══════════════════════════════════════════════════════"
+
 valgrind: test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast
 	@echo "Running tests under Valgrind..."
 	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_cpu
@@ -424,7 +455,10 @@ help:
 	@echo "  test-rominfo - Run ROM analysis tests"
 	@echo "  test-cast    - Run cast server tests (requires CAST=1)"
 	@echo "  valgrind     - Run all tests under Valgrind"
-	@echo "  static-analysis - Run static analysis"
+	@echo "  static-analysis - Run static analysis (extra compiler warnings)"
+	@echo "  cppcheck     - Run cppcheck static analysis (apt install cppcheck)"
+	@echo "  flawfinder   - Run flawfinder security scan (pip install flawfinder)"
+	@echo "  security-check - Run cppcheck + flawfinder"
 	@echo "  install      - Install emulator (PREFIX=/usr/local)"
 	@echo "  uninstall    - Remove installed files"
 	@echo "  coverage     - Build with coverage, run tests, generate report"
