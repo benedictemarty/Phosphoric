@@ -539,6 +539,23 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ap: LOCI SDIMG write support FAT16/32 (v1.16.42-alpha) - DONE
+- [x] API write : fopen_ex, fwrite, unlink, rename, mkdir, sync
+- [x] write_sector avec EROFS si image RO hôte
+- [x] write_fat_entry : update sur les NumFATs miroirs
+- [x] alloc_free_cluster + free_cluster_chain + extend_chain
+- [x] find_dir_entry + alloc_dir_entry (étend cluster dir si plein)
+- [x] to_fat_83 normalisation strict (8.3, chars interdits)
+- [x] update_dir_entry / write_new_entry / mark_entry_deleted
+- [x] sdimg_handle_t : flag writable + dir_entry_lba/off
+- [x] op_open route O_CREAT/O_TRUNC/RDWR vers fopen_ex(mode≥1)
+- [x] op_write_xstack/xram routent vers loci_sdimg_fwrite
+- [x] op_unlink/rename/mkdir routent vers SDIMG API
+- [x] Fallback rb+ → rb si image RO côté hôte
+- [x] tests/unit/test_loci_sdimg_write.c : 12 tests cold-roundtrip
+- [x] Makefile test-loci-sdimg-write + ajout à la cible tests
+- [x] 470 tests global pass (458 + 12), 0 régression
+
 ### Sprint 34ao+: LOCI SDIMG E2E intégration (v1.16.41-alpha) - DONE
 - [x] Fix picker TUI vide : d_attrib normalisé (DIR=0x10 ou 0)
 - [x] Fix OPENDIR path vide accepté (= racine)

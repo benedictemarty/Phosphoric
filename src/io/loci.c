@@ -784,25 +784,23 @@ static void op_open_sdimg(loci_t* loci) {
         api_return_errno(loci, LOCI_ENOENT);
         return;
     }
-    /* Read-only backend: reject any write-related flag. */
-    uint8_t write_flags = LOCI_O_CREAT | LOCI_O_TRUNC | LOCI_O_APPEND | LOCI_O_EXCL;
-    int rw = flags & LOCI_O_RDWR;
-    if ((flags & write_flags) || rw == 1 /* WRONLY */ || rw == 3 /* RDWR */) {
-        api_return_errno(loci, LOCI_EACCES);
-        return;
-    }
     /* Strip optional volume prefix "X:". */
     const char* p = path;
     if (p[0] && p[1] == ':') p += 2;
     while (*p == '/' || *p == '\\') p++;
-    int slot = loci_sdimg_fopen((loci_sdimg_t*)loci->sdimg, p);
+
+    /* Sprint 34ap: route through write-aware open if write flags set. */
+    int rw = flags & LOCI_O_RDWR;
+    int mode = 0;
+    if ((flags & (LOCI_O_CREAT | LOCI_O_TRUNC | LOCI_O_APPEND)) ||
+        rw == 1 || rw == 3) {
+        mode = (rw == 3) ? 2 : 1;
+    }
+    int slot = loci_sdimg_fopen_ex((loci_sdimg_t*)loci->sdimg, p, mode);
     if (slot < 0) {
         api_return_errno(loci, sdimg_errno_to_loci(slot));
         return;
     }
-    /* Mark the POSIX slot as in-use so it cannot collide. We store a
-     * tagged sentinel pointer: low byte = sdimg slot, with the top
-     * bytes set so fd_to_file() can detect it via fp range checks. */
     loci->fds[slot] = (void*)(uintptr_t)(0x1000000u | (uint32_t)slot);
     api_return_ax(loci, (uint16_t)(slot + LOCI_FD_OFFSET));
 }
@@ -1014,8 +1012,31 @@ static void op_read_xstack(loci_t* loci) {
 /* 0x18 WRITE_XSTACK: A=fd, xstack contains bytes followed by uint16 count.
  * The firmware first pops the count, then the bytes are at xstack[ptr..ptr+count]. */
 static void op_write_xstack(loci_t* loci) {
-    if (loci->sdimg) {  /* Read-only backend */
-        api_return_errno(loci, LOCI_EACCES);
+    if (loci->sdimg) {
+        int fd = loci->regs[LOCI_REG_API_A];
+        if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
+            api_return_errno(loci, LOCI_EINVAL); return;
+        }
+        uint16_t count = (uint16_t)loci->xstack[loci->xstack_ptr]
+                       | ((uint16_t)loci->xstack[loci->xstack_ptr + 1] << 8);
+        loci->xstack_ptr += 2;
+        if (count == 0) {
+            xstack_zero(loci);
+            api_return_ax(loci, 0);
+            return;
+        }
+        if (loci->xstack_ptr + count > LOCI_XSTACK_SIZE) {
+            api_return_errno(loci, LOCI_EINVAL); return;
+        }
+        int slot = fd - LOCI_FD_OFFSET;
+        if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
+            api_return_errno(loci, LOCI_EBADF); return;
+        }
+        int bw = loci_sdimg_fwrite((loci_sdimg_t*)loci->sdimg, slot,
+                                   &loci->xstack[loci->xstack_ptr], count);
+        xstack_zero(loci);
+        if (bw < 0) { api_return_errno(loci, sdimg_errno_to_loci(bw)); return; }
+        api_return_ax(loci, (uint16_t)bw);
         return;
     }
     int fd = loci->regs[LOCI_REG_API_A];
@@ -1138,7 +1159,6 @@ static void op_read_xram(loci_t* loci) {
 /* 0x19 WRITE_XRAM: A=fd, xstack count + xram_addr.
  * Writes xram[xram_addr..] to file. Returns bytes_written. */
 static void op_write_xram(loci_t* loci) {
-    if (loci->sdimg) { api_return_errno(loci, LOCI_EACCES); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     if (loci->xstack_ptr + 4 > LOCI_XSTACK_SIZE) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -1156,6 +1176,19 @@ static void op_write_xram(loci_t* loci) {
         api_return_errno(loci, LOCI_EINVAL);
         return;
     }
+
+    if (loci->sdimg) {
+        int slot = fd - LOCI_FD_OFFSET;
+        if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
+            api_return_errno(loci, LOCI_EBADF); return;
+        }
+        int bw = loci_sdimg_fwrite((loci_sdimg_t*)loci->sdimg, slot,
+                                   &loci->xram[xram_addr], count);
+        if (bw < 0) { api_return_errno(loci, sdimg_errno_to_loci(bw)); return; }
+        api_return_axsreg(loci, (uint32_t)bw);
+        return;
+    }
+
     FILE* fp = fd_to_file(loci, fd);
     if (!fp) {
         api_return_errno(loci, LOCI_EBADF);
@@ -1276,7 +1309,18 @@ static void op_umount(loci_t* loci) {
 
 /* 0x1B UNLINK: xstack top = path. */
 static void op_unlink(loci_t* loci) {
-    if (loci->sdimg) { api_return_errno(loci, LOCI_EACCES); return; }
+    if (loci->sdimg) {
+        char path[260] = {0};
+        pop_zstring(loci, path, sizeof(path));
+        if (path[0] == 0) { api_return_errno(loci, LOCI_EINVAL); return; }
+        const char* p = path;
+        if (p[0] && p[1] == ':') p += 2;
+        while (*p == '/' || *p == '\\') p++;
+        int r = loci_sdimg_unlink((loci_sdimg_t*)loci->sdimg, p);
+        if (r < 0) { api_return_errno(loci, sdimg_errno_to_loci(r)); return; }
+        api_return_ax(loci, 0);
+        return;
+    }
     char path[260];
     if (!pop_zstring(loci, path, sizeof(path))) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -1296,7 +1340,25 @@ static void op_unlink(loci_t* loci) {
 
 /* 0x1C RENAME: xstack contains new path (top) then old path (below). */
 static void op_rename(loci_t* loci) {
-    if (loci->sdimg) { api_return_errno(loci, LOCI_EACCES); return; }
+    if (loci->sdimg) {
+        char new_path[260] = {0};
+        char old_path[260] = {0};
+        pop_zstring(loci, new_path, sizeof(new_path));
+        pop_zstring(loci, old_path, sizeof(old_path));
+        if (old_path[0] == 0 || new_path[0] == 0) {
+            api_return_errno(loci, LOCI_EINVAL); return;
+        }
+        const char* p_old = old_path;
+        const char* p_new = new_path;
+        if (p_old[0] && p_old[1] == ':') p_old += 2;
+        while (*p_old == '/' || *p_old == '\\') p_old++;
+        if (p_new[0] && p_new[1] == ':') p_new += 2;
+        while (*p_new == '/' || *p_new == '\\') p_new++;
+        int r = loci_sdimg_rename((loci_sdimg_t*)loci->sdimg, p_old, p_new);
+        if (r < 0) { api_return_errno(loci, sdimg_errno_to_loci(r)); return; }
+        api_return_ax(loci, 0);
+        return;
+    }
     char new_path[260];
     if (!pop_zstring(loci, new_path, sizeof(new_path))) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -1437,8 +1499,16 @@ static void op_readdir(loci_t* loci) {
 
 /* 0x83 MKDIR: xstack=path. */
 static void op_mkdir(loci_t* loci) {
-    if (loci->sdimg) {  /* Read-only backend */
-        api_return_errno(loci, LOCI_EACCES);
+    if (loci->sdimg) {
+        char path[260] = {0};
+        pop_zstring(loci, path, sizeof(path));
+        if (path[0] == 0) { api_return_errno(loci, LOCI_EINVAL); return; }
+        const char* p = path;
+        if (p[0] && p[1] == ':') p += 2;
+        while (*p == '/' || *p == '\\') p++;
+        int r = loci_sdimg_mkdir((loci_sdimg_t*)loci->sdimg, p);
+        if (r < 0) { api_return_errno(loci, sdimg_errno_to_loci(r)); return; }
+        api_return_ax(loci, 0);
         return;
     }
     char path[260];

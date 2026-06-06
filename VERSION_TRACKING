@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.41-alpha
+Current Version: 1.16.42-alpha
 Release Date: 2026-06-07
-Status: Alpha (LOCI SDIMG E2E validé interactivement — 458 tests pass)
+Status: Alpha (LOCI SDIMG read-write FAT16/32 — 470 tests pass)
 
 Version History:
 ----------------
+- 1.16.42-alpha (2026-06-07): LOCI SDIMG write support (Sprint 34ap)
+  * 5 nouvelles API : fopen_ex, fwrite, unlink, rename, mkdir, sync
+  * FAT alloc/free + mirror sync (NumFATs copies)
+  * Dir entry create/update/delete + 8.3 normalisation
+  * 11 ops loci.c rebranchées (plus de EACCES blanket)
+  * 12 nouveaux tests cold-roundtrip (close+reopen+verify)
+  * Fallback EROFS si image hôte read-only
+
 - 1.16.41-alpha (2026-06-07): LOCI SDIMG E2E polish (Sprint 34ao+)
   * Fix picker TUI vide (d_attrib normalisé : DIR ou 0)
   * Fix OPENDIR path vide rejeté (pop_zstring false sur n==0)

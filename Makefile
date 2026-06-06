@@ -104,7 +104,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -298,6 +298,13 @@ test-loci-sdimg: $(TEST_LOCI_SDIMG_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_LOCI_SDIMG_SRCS) $(LDFLAGS) -o test_loci_sdimg
 	@./test_loci_sdimg
 
+TEST_LOCI_SDIMG_WRITE_SRCS = tests/unit/test_loci_sdimg_write.c \
+                             src/io/loci_sdimg.c src/utils/logging.c
+
+test-loci-sdimg-write: $(TEST_LOCI_SDIMG_WRITE_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_LOCI_SDIMG_WRITE_SRCS) $(LDFLAGS) -o test_loci_sdimg_write
+	@./test_loci_sdimg_write
+
 TEST_SERIAL_SRCS = tests/unit/test_serial.c src/io/acia6551.c \
                    src/io/serial_backend.c src/utils/logging.c
 
@@ -324,7 +331,7 @@ test-coverage: $(TEST_COVERAGE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_COVERAGE_SRCS) $(LDFLAGS) -o test_coverage
 	@./test_coverage
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-coverage
+tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

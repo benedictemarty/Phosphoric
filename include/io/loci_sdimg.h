@@ -60,6 +60,43 @@ int  loci_sdimg_readdir(loci_sdimg_t* img, int dh,
 /* Close directory handle. */
 int  loci_sdimg_closedir(loci_sdimg_t* img, int dh);
 
+/* ─── Write API (Sprint 34ap) ─────────────────────────────────────
+ *
+ * The image opens with whatever permissions fopen("rb+") yields. If
+ * the underlying .img file is read-only on the host, all write ops
+ * return -EROFS.
+ *
+ * All write ops update both FAT copies atomically per sector — the
+ * caller never sees an inconsistent mirror state. fsync is NOT called
+ * after each write; call loci_sdimg_sync() explicitly to flush. */
+
+/* Create (O_CREAT) or open existing file for writing. mode: 0=read,
+ * 1=write (create or truncate), 2=read+write (create if absent).
+ * Returns handle or -errno. */
+int  loci_sdimg_fopen_ex(loci_sdimg_t* img, const char* path,
+                         int mode);
+
+/* Write count bytes at the current cursor. Extends the file (allocating
+ * clusters as needed). Returns bytes written, or -errno (in particular
+ * -ENOSPC if the data area is full, -EROFS if the image is read-only). */
+int  loci_sdimg_fwrite(loci_sdimg_t* img, int fd,
+                       const void* buf, uint16_t count);
+
+/* Delete a file. Frees its cluster chain and zeroes its dir entry.
+ * Returns 0 on success, -errno on failure. */
+int  loci_sdimg_unlink(loci_sdimg_t* img, const char* path);
+
+/* Rename a file inside the same directory. Cross-directory rename
+ * supported as long as src and dst parent dirs both exist. */
+int  loci_sdimg_rename(loci_sdimg_t* img, const char* old_path,
+                       const char* new_path);
+
+/* Create a directory at path (with "." and ".." entries). */
+int  loci_sdimg_mkdir(loci_sdimg_t* img, const char* path);
+
+/* Flush pending host I/O. */
+int  loci_sdimg_sync(loci_sdimg_t* img);
+
 /* Diagnostics. */
 const char* loci_sdimg_fs_label(const loci_sdimg_t* img);   /* "FAT16"/"FAT32" */
 uint32_t    loci_sdimg_total_size(const loci_sdimg_t* img);

@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.42-alpha] - 2026-06-07
+
+### LOCI : SDIMG read-write (FAT16/32 write) — Sprint 34ap
+
+Extension du backend SDIMG pour supporter l'écriture sur image SD raw.
+Le firmware LOCI peut maintenant CSAVE / FOPEN(W) / UNLINK / MKDIR /
+RENAME directement sur l'image FAT, sans extraction vers /tmp.
+
+#### Added — write API (`include/io/loci_sdimg.h`)
+- `loci_sdimg_fopen_ex(img, path, mode)` : mode 0=R, 1=W (create/trunc),
+  2=R+W (create if absent)
+- `loci_sdimg_fwrite(img, fd, buf, count)` : extend file, alloc clusters,
+  update dir entry size
+- `loci_sdimg_unlink(img, path)` : free cluster chain + mark entry 0xE5
+- `loci_sdimg_rename(img, old, new)` : in-place rename si même dir,
+  alloc+delete si dir différent
+- `loci_sdimg_mkdir(img, path)` : alloc cluster, init avec "." et "..",
+  ajout entry dans parent
+- `loci_sdimg_sync(img)` : flush host I/O
+
+#### Added — low-level helpers (`src/io/loci_sdimg.c`)
+- `write_sector` : atomic per-sector write avec early EROFS si image RO
+- `write_fat_entry` : update sur les NumFATs copies du miroir FAT
+- `alloc_free_cluster` : first-fit search + EOC mark
+- `free_cluster_chain` : libère toute la chain
+- `extend_chain` : alloc + link
+- `alloc_dir_entry` : trouve un slot libre ou étend le cluster du dir
+- `find_dir_entry` : retourne (lba, off) pour update in-place
+- `to_fat_83` : normalisation host basename → 8.3 packed
+- `update_dir_entry` / `write_new_entry` / `mark_entry_deleted`
+
+#### Added — handle extension (`sdimg_handle_t`)
+- `writable` flag (set par fopen_ex modes 1/2)
+- `dir_entry_lba` / `dir_entry_off` : position de l'entry pour update
+  size sur extension de fichier
+
+#### Routing dans loci.c
+- `op_open` : flags O_CREAT/O_TRUNC/O_APPEND/RDWR/WRONLY routés vers
+  `fopen_ex(mode=1 ou 2)` au lieu d'EACCES
+- `op_write_xstack` : pop count + bytes, appel à `loci_sdimg_fwrite`
+- `op_write_xram` : route les writes depuis fenêtre xram
+- `op_unlink` : `loci_sdimg_unlink` (au lieu d'EACCES)
+- `op_rename` : `loci_sdimg_rename`
+- `op_mkdir` : `loci_sdimg_mkdir`
+
+#### Open semantics
+- Tente `fopen(rb+)` au open de l'image ; fallback `rb` si l'image est
+  RO côté hôte → `img->read_only = true` → toutes les ops d'écriture
+  renvoient `-EROFS` quelle que soit la profondeur.
+
+#### Tests
+- `tests/unit/test_loci_sdimg_write.c` : 12 tests cold-roundtrip
+  (fermer l'image, rouvrir, vérifier l'intégrité depuis un cold read)
+- Cible Makefile `test-loci-sdimg-write` ajoutée à la suite `tests`
+- Total tests projet : **470** (458 + 12 nouveaux)
+
+#### Limitations restantes (post-34ap)
+- Pas de support LFN (toujours 8.3 only)
+- Pas de support FAT12 (toujours rejeté à l'open)
+- Pas de MBR (toujours superfloppy)
+- Pas de truncate explicite via ftruncate (utiliser fopen mode 1)
+- mkdir → "." et ".." pointent vers le parent et le nouveau cluster
+  mais pas de validation rigoureuse de la cohérence cross-dir
+
+---
+
 ## [1.16.41-alpha] - 2026-06-07
 
 ### LOCI : intégration end-to-end SDIMG (boot + tape + ROM patches) — Sprint 34ao+
