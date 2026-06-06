@@ -1,12 +1,24 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.25-alpha
+Current Version: 1.16.26-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI ops système + RTC + RNG — 359 tests pass)
+Status: Alpha (LOCI File I/O POSIX — 367 tests pass)
 
 Version History:
 ----------------
+- 1.16.26-alpha (2026-06-06): LOCI File I/O POSIX (Sprint 34aa)
+  * 7 ops file I/O : OPEN/CLOSE/READ_XSTACK/WRITE_XSTACK/LSEEK/UNLINK/RENAME
+  * Backend POSIX (fopen/fread/fwrite/...) avec table 16 fd
+  * Sandbox path : flash_root, traversal .. rejeté EACCES, préfixe X: strippé
+  * CLI --loci-flash DIR
+  * Mapping flags O_RDWR/CREAT/TRUNC/APPEND/EXCL → fopen mode string
+  * Mapping errno host → LOCI errno
+  * Constants LOCI_O_* exposées dans le header
+  * 8 nouveaux tests test-loci, total 27 ; 367 tests total
+  * READ_XRAM/WRITE_XRAM différés (sprint 34ab avec mount)
+  * ROM LOCI progresse PC $F641 → $EB18
+
 - 1.16.25-alpha (2026-06-06): LOCI ops système + RTC + RNG (Sprint 34z)
   * Helpers api_return_ax/axsreg/errno + xstack push/sync/zero
   * Pop sémantique de $03AC (correction sprint 34y : auto-avance)

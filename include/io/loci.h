@@ -103,6 +103,21 @@ typedef enum {
 
 #define LOCI_XSTACK_SIZE 256
 
+/* open() flags — matching firmware constants (std.c). */
+#define LOCI_O_RDWR    0x03
+#define LOCI_O_CREAT   0x10
+#define LOCI_O_TRUNC   0x20
+#define LOCI_O_APPEND  0x40
+#define LOCI_O_EXCL    0x80
+
+/* File descriptor table — POSIX-mapped subset of LOCI's std_fil[]. */
+#define LOCI_FD_MAX     16
+#define LOCI_FD_OFFSET  3      /* fd 0/1/2 reserved (stdin/stdout/stderr) */
+
+/* Path sandbox root — LOCI paths resolve relative to this directory.
+ * Override at runtime via loci_set_flash_root(). */
+#define LOCI_FLASH_DEFAULT "."
+
 typedef struct loci_s {
     bool enabled;
 
@@ -131,11 +146,23 @@ typedef struct loci_s {
     /* Simple LCG state for deterministic RNG when needed (currently we
      * use rand() for variety). Reserved for future deterministic mode. */
     uint64_t rng_state;
+
+    /* Host-fs file backend (Sprint 34aa).
+     * fds[i] is the FILE* for fd = LOCI_FD_OFFSET + i (3..18). NULL = closed. */
+    void* fds[LOCI_FD_MAX];
+
+    /* Sandbox root directory — paths from the 6502 are resolved here.
+     * NULL = use current working directory. */
+    char flash_root[256];
 } loci_t;
 
 bool    loci_init(loci_t* loci);
 void    loci_reset(loci_t* loci);
 void    loci_cleanup(loci_t* loci);
+
+/* Configure the host directory used as sandbox root for LOCI file ops
+ * (Sprint 34aa). Pass NULL or empty string to use CWD. */
+void    loci_set_flash_root(loci_t* loci, const char* path);
 
 /* Bus interface — called from the memory I/O callback when an address
  * lies inside the MIA window. Out-of-range addresses must be filtered

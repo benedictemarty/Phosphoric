@@ -36,6 +36,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <sys/time.h>
+#include <unistd.h>
+#include <errno.h>
 
 /* ─── name lookup for diagnostics ───────────────────────────────── */
 
@@ -110,8 +112,23 @@ void loci_reset(loci_t* loci) {
 
 void loci_cleanup(loci_t* loci) {
     if (!loci) return;
-    /* Sprint 34y: no external resources to free. */
-    (void)loci;
+    /* Close any still-open files (Sprint 34aa). */
+    for (int i = 0; i < LOCI_FD_MAX; i++) {
+        if (loci->fds[i]) {
+            fclose((FILE*)loci->fds[i]);
+            loci->fds[i] = NULL;
+        }
+    }
+}
+
+void loci_set_flash_root(loci_t* loci, const char* path) {
+    if (!loci) return;
+    if (path && *path) {
+        strncpy(loci->flash_root, path, sizeof(loci->flash_root) - 1);
+        loci->flash_root[sizeof(loci->flash_root) - 1] = '\0';
+    } else {
+        loci->flash_root[0] = '\0';
+    }
 }
 
 /* ─── errno / BUSY / xstack helpers ────────────────────────────── */
@@ -271,6 +288,285 @@ static void op_clk_settime(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
+/* ─── File I/O (Sprint 34aa) ──────────────────────────────────── */
+
+/* Map host errno → LOCI errno. */
+static uint16_t map_errno(int e) {
+    switch (e) {
+        case ENOENT: return LOCI_ENOENT;
+        case EACCES: return LOCI_EACCES;
+        case EEXIST: return LOCI_EEXIST;
+        case ENOMEM: return LOCI_ENOMEM;
+        case EBADF:  return LOCI_EBADF;
+        case EINVAL: return LOCI_EINVAL;
+        case ENOSPC: return LOCI_ENOSPC;
+        case EBUSY:  return LOCI_EBUSY;
+        case EIO:    return LOCI_EIO;
+        case ENOSYS: return LOCI_ENOSYS;
+        default:     return LOCI_EIO;
+    }
+}
+
+/* Resolve a guest path against the sandbox root. Rejects absolute and
+ * up-traversing paths to keep guest 6502 code from escaping the root.
+ * Strips a leading volume prefix like "0:" or "USB:" if present. */
+static bool resolve_path(loci_t* loci, const char* in,
+                         char* out, size_t outsize) {
+    /* Strip volume prefix "X:" where X is alnum. */
+    const char* p = in;
+    if (p[0] && p[1] == ':') p += 2;
+    while (*p == '/' || *p == '\\') p++;
+
+    /* Reject path-traversal attempts. */
+    if (strstr(p, "..")) return false;
+
+    const char* root = loci->flash_root[0] ? loci->flash_root : ".";
+    int n = snprintf(out, outsize, "%s/%s", root, p);
+    return n > 0 && (size_t)n < outsize;
+}
+
+/* Map LOCI open flags → fopen mode string. */
+static const char* fopen_mode_for(uint8_t flags) {
+    int rw = flags & LOCI_O_RDWR;
+    bool create = (flags & LOCI_O_CREAT) != 0;
+    bool trunc  = (flags & LOCI_O_TRUNC) != 0;
+    bool append = (flags & LOCI_O_APPEND) != 0;
+
+    if (rw == 0) return "rb";              /* read only */
+    if (append)  return rw == 1 ? "ab"  : "a+b";
+    if (trunc)   return rw == 1 ? "wb"  : "w+b";
+    if (create)  return rw == 1 ? "wb"  : "w+b";   /* create new for write */
+    return rw == 1 ? "r+b" : "r+b";        /* open existing */
+}
+
+/* Pop a null-terminated string from the xstack top into out (path), then
+ * zero the xstack as per firmware semantics. Returns true on success. */
+static bool pop_zstring(loci_t* loci, char* out, size_t outsize) {
+    if (loci->xstack_ptr >= LOCI_XSTACK_SIZE) return false;
+    size_t n = 0;
+    uint16_t p = loci->xstack_ptr;
+    while (p < LOCI_XSTACK_SIZE && n + 1 < outsize) {
+        uint8_t c = loci->xstack[p++];
+        if (c == 0) break;
+        out[n++] = (char)c;
+    }
+    out[n] = '\0';
+    xstack_zero(loci);
+    return n > 0;
+}
+
+/* Allocate a free fd slot. Returns -1 if all are used. */
+static int alloc_fd(loci_t* loci) {
+    for (int i = 0; i < LOCI_FD_MAX; i++) {
+        if (loci->fds[i] == NULL) return i;
+    }
+    return -1;
+}
+
+static FILE* fd_to_file(loci_t* loci, int fd) {
+    int idx = fd - LOCI_FD_OFFSET;
+    if (idx < 0 || idx >= LOCI_FD_MAX) return NULL;
+    return (FILE*)loci->fds[idx];
+}
+
+/* 0x14 OPEN: A=flags, xstack top = path (null-terminated). Returns fd or -1. */
+static void op_open(loci_t* loci) {
+    uint8_t flags = loci->regs[LOCI_REG_API_A];
+    char path[260];
+    if (!pop_zstring(loci, path, sizeof(path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    char host_path[512];
+    if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
+
+    /* Optional EXCL: refuse if file exists. */
+    if ((flags & LOCI_O_CREAT) && (flags & LOCI_O_EXCL)) {
+        if (access(host_path, F_OK) == 0) {
+            api_return_errno(loci, LOCI_EEXIST);
+            return;
+        }
+    }
+
+    FILE* fp = fopen(host_path, fopen_mode_for(flags));
+    if (!fp) {
+        api_return_errno(loci, map_errno(errno));
+        return;
+    }
+    int slot = alloc_fd(loci);
+    if (slot < 0) {
+        fclose(fp);
+        api_return_errno(loci, LOCI_EMFILE);
+        return;
+    }
+    loci->fds[slot] = fp;
+    api_return_ax(loci, (uint16_t)(slot + LOCI_FD_OFFSET));
+}
+
+/* 0x15 CLOSE: A=fd. */
+static void op_close(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    FILE* fp = fd_to_file(loci, fd);
+    if (!fp) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    fclose(fp);
+    loci->fds[fd - LOCI_FD_OFFSET] = NULL;
+    api_return_ax(loci, 0);
+}
+
+/* 0x16 READ_XSTACK: A=fd, xstack top = uint16 count. Read into xstack. */
+static void op_read_xstack(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    /* Pop 2 bytes (count, LE) from xstack. */
+    if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    uint16_t count = (uint16_t)loci->xstack[loci->xstack_ptr]
+                   | ((uint16_t)loci->xstack[loci->xstack_ptr + 1] << 8);
+    loci->xstack_ptr += 2;
+    if (count == 0 || count > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    FILE* fp = fd_to_file(loci, fd);
+    if (!fp) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    /* Read into a temp buffer, then push onto xstack (descending). */
+    uint8_t buf[LOCI_XSTACK_SIZE];
+    size_t br = fread(buf, 1, count, fp);
+    xstack_zero(loci);
+    if (br > 0) {
+        /* Push so that buf[0] ends up at xstack[XSTACK_SIZE-br]. */
+        loci->xstack_ptr = (uint16_t)(LOCI_XSTACK_SIZE - br);
+        memcpy(&loci->xstack[loci->xstack_ptr], buf, br);
+        xstack_sync(loci);
+    }
+    api_return_ax(loci, (uint16_t)br);
+}
+
+/* 0x18 WRITE_XSTACK: A=fd, xstack contains bytes followed by uint16 count.
+ * The firmware first pops the count, then the bytes are at xstack[ptr..ptr+count]. */
+static void op_write_xstack(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    uint16_t count = (uint16_t)loci->xstack[loci->xstack_ptr]
+                   | ((uint16_t)loci->xstack[loci->xstack_ptr + 1] << 8);
+    loci->xstack_ptr += 2;
+    if (count == 0) {
+        xstack_zero(loci);
+        api_return_ax(loci, 0);
+        return;
+    }
+    if (loci->xstack_ptr + count > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    FILE* fp = fd_to_file(loci, fd);
+    if (!fp) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    size_t bw = fwrite(&loci->xstack[loci->xstack_ptr], 1, count, fp);
+    xstack_zero(loci);
+    api_return_ax(loci, (uint16_t)bw);
+}
+
+/* 0x1A LSEEK: A=fd, xstack contains int32 offset, uint8 whence.
+ * Firmware pushes whence first then offset (offset on top). */
+static void op_lseek(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    if (loci->xstack_ptr + 5 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    int32_t offset;
+    memcpy(&offset, &loci->xstack[loci->xstack_ptr], 4);
+    loci->xstack_ptr += 4;
+    uint8_t whence = loci->xstack[loci->xstack_ptr++];
+    xstack_zero(loci);
+
+    FILE* fp = fd_to_file(loci, fd);
+    if (!fp) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    int hw;
+    switch (whence) {
+        case 0: hw = SEEK_SET; break;
+        case 1: hw = SEEK_CUR; break;
+        case 2: hw = SEEK_END; break;
+        default:
+            api_return_errno(loci, LOCI_EINVAL);
+            return;
+    }
+    if (fseek(fp, offset, hw) != 0) {
+        api_return_errno(loci, map_errno(errno));
+        return;
+    }
+    long pos = ftell(fp);
+    if (pos < 0) {
+        api_return_errno(loci, map_errno(errno));
+        return;
+    }
+    /* Return position in AXSREG (uint32). */
+    api_return_axsreg(loci, (uint32_t)pos);
+}
+
+/* 0x1B UNLINK: xstack top = path. */
+static void op_unlink(loci_t* loci) {
+    char path[260];
+    if (!pop_zstring(loci, path, sizeof(path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    char host_path[512];
+    if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
+    if (unlink(host_path) != 0) {
+        api_return_errno(loci, map_errno(errno));
+        return;
+    }
+    api_return_ax(loci, 0);
+}
+
+/* 0x1C RENAME: xstack contains new path (top) then old path (below). */
+static void op_rename(loci_t* loci) {
+    char new_path[260];
+    if (!pop_zstring(loci, new_path, sizeof(new_path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    char old_path[260];
+    if (!pop_zstring(loci, old_path, sizeof(old_path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    char host_new[512], host_old[512];
+    if (!resolve_path(loci, new_path, host_new, sizeof(host_new)) ||
+        !resolve_path(loci, old_path, host_old, sizeof(host_old))) {
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
+    if (rename(host_old, host_new) != 0) {
+        api_return_errno(loci, map_errno(errno));
+        return;
+    }
+    api_return_ax(loci, 0);
+}
+
 /* ─── dispatch ─────────────────────────────────────────────────── */
 
 static void dispatch_op(loci_t* loci, uint8_t op) {
@@ -283,6 +579,13 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_CLK_GETRES:  op_clk_getres(loci);   break;
         case LOCI_OP_CLK_GETTIME: op_clk_gettime(loci);  break;
         case LOCI_OP_CLK_SETTIME: op_clk_settime(loci);  break;
+        case LOCI_OP_OPEN:        op_open(loci);         break;
+        case LOCI_OP_CLOSE:       op_close(loci);        break;
+        case LOCI_OP_READ_XSTACK: op_read_xstack(loci);  break;
+        case LOCI_OP_WRITE_XSTACK:op_write_xstack(loci); break;
+        case LOCI_OP_LSEEK:       op_lseek(loci);        break;
+        case LOCI_OP_UNLINK:      op_unlink(loci);       break;
+        case LOCI_OP_RENAME:      op_rename(loci);       break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));

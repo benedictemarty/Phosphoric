@@ -239,7 +239,8 @@ static void print_usage(const char* program_name) {
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
-    printf("      --loci                 Enable LOCI MIA at $03A0-$03BF (Sprint 34y: stub dispatcher)\n");
+    printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");
+    printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
@@ -560,6 +561,9 @@ static bool emulator_init(emulator_t* emu) {
 }
 
 static void emulator_cleanup(emulator_t* emu) {
+    if (emu->has_loci) {
+        loci_cleanup(&emu->loci);
+    }
     if (emu->tui_mode) {
         tui_cleanup();
         emu->tui_mode = false;
@@ -1292,6 +1296,7 @@ int main(int argc, char* argv[]) {
     const char* symbols_file = NULL;
     bool tui_mode = false;
     bool loci_enabled = false;
+    const char* loci_flash_root = NULL;
     int64_t trace_max = 0;
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
@@ -1303,7 +1308,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -1352,6 +1357,7 @@ int main(int argc, char* argv[]) {
         {"symbols",             required_argument, 0, OPT_SYMBOLS},
         {"tui",                 no_argument,       0, OPT_TUI},
         {"loci",                no_argument,       0, OPT_LOCI},
+        {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"help",                no_argument,       0, '?'},
         {0, 0, 0, 0}
     };
@@ -1431,6 +1437,7 @@ int main(int argc, char* argv[]) {
             case OPT_SYMBOLS: symbols_file = optarg; break;
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
             case OPT_LOCI: loci_enabled = true; break;
+            case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
                 break;
@@ -1662,8 +1669,14 @@ int main(int argc, char* argv[]) {
         loci_init(&emu.loci);
         emu.loci.enabled = true;
         emu.has_loci = true;
-        log_info("LOCI MIA enabled at $%04X-$%04X (all API ops stubbed → ENOSYS)",
-                 LOCI_MIA_BASE, LOCI_MIA_END);
+        if (loci_flash_root) {
+            loci_set_flash_root(&emu.loci, loci_flash_root);
+            log_info("LOCI MIA enabled at $%04X-$%04X (flash root: %s)",
+                     LOCI_MIA_BASE, LOCI_MIA_END, loci_flash_root);
+        } else {
+            log_info("LOCI MIA enabled at $%04X-$%04X (flash root: CWD)",
+                     LOCI_MIA_BASE, LOCI_MIA_END);
+        }
     }
 
     /* Load symbol table (--symbols FILE) */

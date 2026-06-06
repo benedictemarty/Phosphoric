@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.26-alpha] - 2026-06-06
+
+### LOCI : File I/O POSIX subset (Sprint 34aa)
+
+#### Added
+- **7 ops file I/O** implémentées (sur 9 du subset 0x14-0x1C) :
+  - `0x14 OPEN` : ouvre un fichier, retourne fd ≥ 3
+  - `0x15 CLOSE` : ferme un fd
+  - `0x16 READ_XSTACK` : lit N octets depuis fd → xstack
+  - `0x18 WRITE_XSTACK` : écrit N octets depuis xstack → fd
+  - `0x1A LSEEK` : seek SET/CUR/END, retourne new_pos en AXSREG
+  - `0x1B UNLINK` : supprime un fichier
+  - `0x1C RENAME` : renomme un fichier
+- **Backend POSIX** (`fopen`/`fread`/`fwrite`/`fseek`/`unlink`/`rename`)
+  avec table de fd (16 slots).
+- **Sandbox path** : tous les chemins LOCI sont résolus relativement à
+  `loci.flash_root` (defaut = CWD). Préfixe de volume `X:` automatiquement
+  stripé, traversal `..` refusé avec EACCES.
+- **CLI `--loci-flash DIR`** : configure le sandbox root (implique `--loci`).
+- **Mapping flags POSIX** : RDWR/CREAT/TRUNC/APPEND/EXCL → mode `fopen()`.
+- **Mapping errno host → LOCI** : ENOENT/EACCES/EEXIST/EMFILE/etc.
+- **Exposition des constants `LOCI_O_*`** dans le header.
+- **8 nouveaux tests test-loci** (total 27) : ouvre+ferme + crée fichier,
+  ENOENT sur missing, EACCES sur path-traversal, write/read roundtrip
+  ("HELLO"), lseek SET + read suit la position, unlink supprime,
+  EBADF sur fd inconnu, EMFILE quand table fd pleine.
+
+#### Pas encore implémentés
+- `0x17 READ_XRAM` / `0x19 WRITE_XRAM` : nécessitent la fenêtre DMA
+  (xram backing) — sprint 34ab avec mount/umount.
+
+#### Validation
+ROM LOCI v0.3.0 : `PC=$F641` (34z) → `PC=$EB18` (34aa) après 200 000
+cycles. La ROM essaie maintenant de lire des fichiers (settings,
+listes de drives) et n'est plus bloquée par ENOSYS sur OPEN.
+
 ## [1.16.25-alpha] - 2026-06-06
 
 ### LOCI : ops système + RTC + RNG (Sprint 34z)

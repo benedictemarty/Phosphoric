@@ -99,14 +99,13 @@ TEST(test_out_of_range_read_ff) {
 TEST(test_api_op_dispatches_and_sets_enosys) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
-    /* errno should be ENOSYS */
+    /* Use an op with no implementation yet (MIA_BOOT in Sprint 34aa). */
+    loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
     ASSERT_EQ(e, LOCI_ENOSYS);
-    /* BUSY cleared after sync dispatch */
     ASSERT_TRUE((l.regs[LOCI_REG_BUSY] & 0x80) == 0);
-    ASSERT_EQ(l.op_count[LOCI_OP_OPEN], 1);
+    ASSERT_EQ(l.op_count[LOCI_OP_MIA_BOOT], 1);
 }
 
 TEST(test_api_op_none_does_not_dispatch) {
@@ -223,10 +222,268 @@ TEST(test_xstack_read_pops_byte) {
 TEST(test_unimplemented_op_still_enosys) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    loci_write(&l, 0x03AF, LOCI_OP_OPEN);   /* not implemented in 34z */
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);   /* not implemented until 34ab */
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
     ASSERT_EQ(e, LOCI_ENOSYS);
+}
+
+/* ── 34aa: File I/O POSIX subset ─────────────────────────────── */
+
+#include <unistd.h>
+#include <sys/stat.h>
+
+/* Helper: push a null-terminated string onto the xstack (the way the 6502
+ * does before calling open/unlink/rename). */
+static void push_path(loci_t* l, const char* s) {
+    size_t len = strlen(s);
+    /* Push terminator first, then bytes in reverse so the string reads
+     * forward starting at xstack[xstack_ptr]. */
+    loci_write(l, 0x03AC, 0);   /* terminator */
+    for (size_t i = len; i > 0; i--) {
+        loci_write(l, 0x03AC, (uint8_t)s[i - 1]);
+    }
+}
+
+/* Helper: push a uint16 (little-endian) onto the xstack. */
+static void push_u16(loci_t* l, uint16_t v) {
+    loci_write(l, 0x03AC, (uint8_t)(v >> 8));
+    loci_write(l, 0x03AC, (uint8_t)(v & 0xFF));
+}
+
+static char* make_tmpdir(void) {
+    char* d = malloc(64);
+    strcpy(d, "/tmp/loci_test_XXXXXX");
+    if (!mkdtemp(d)) { free(d); return NULL; }
+    return d;
+}
+
+TEST(test_op_open_close_creates_file) {
+    char* tmpdir = make_tmpdir();
+    ASSERT_TRUE(tmpdir != NULL);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    push_path(&l, "foo.txt");
+    l.regs[LOCI_REG_API_A] = LOCI_O_CREAT | LOCI_O_TRUNC | 1;  /* WRONLY+CREAT+TRUNC */
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);
+
+    /* File should now exist on disk. */
+    char path[300];
+    snprintf(path, sizeof(path), "%s/foo.txt", tmpdir);
+    ASSERT_EQ(access(path, F_OK), 0);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+
+    unlink(path);
+    rmdir(tmpdir);
+    loci_cleanup(&l);
+    free(tmpdir);
+}
+
+TEST(test_op_open_missing_returns_enoent) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "nope.bin");
+    l.regs[LOCI_REG_API_A] = 0;   /* RDONLY */
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_ENOENT);
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_open_path_traversal_rejected) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, "/tmp");
+    push_path(&l, "../etc/passwd");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EACCES);
+    loci_cleanup(&l);
+}
+
+TEST(test_write_read_roundtrip) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    /* Open for writing. */
+    push_path(&l, "data.bin");
+    l.regs[LOCI_REG_API_A] = LOCI_O_CREAT | LOCI_O_TRUNC | 1;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);
+
+    /* The 6502 writes a string by pushing it in REVERSE order so that
+     * reading forward from xstack_ptr yields the string in order.
+     * To write "HELLO" the 6502 pushes O,L,L,E,H. */
+    loci_write(&l, 0x03AC, 'O');
+    loci_write(&l, 0x03AC, 'L');
+    loci_write(&l, 0x03AC, 'L');
+    loci_write(&l, 0x03AC, 'E');
+    loci_write(&l, 0x03AC, 'H');
+    /* Then push count uint16 (hi first, lo last → lo on top, LE in xstack). */
+    push_u16(&l, 5);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_WRITE_XSTACK);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 5);
+
+    /* Close. */
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+
+    /* Re-open for reading. */
+    push_path(&l, "data.bin");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);
+
+    /* Request 5 bytes. */
+    push_u16(&l, 5);
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_READ_XSTACK);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 5);
+
+    /* Pop and verify "HELLO". */
+    char buf[6] = {0};
+    for (int i = 0; i < 5; i++) buf[i] = (char)loci_read(&l, 0x03AC);
+    ASSERT_TRUE(strcmp(buf, "HELLO") == 0);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+
+    char path[300];
+    snprintf(path, sizeof(path), "%s/data.bin", tmpdir);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_lseek_set_then_read) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    /* Pre-create file with known content using POSIX. */
+    char path[300];
+    snprintf(path, sizeof(path), "%s/seek.bin", tmpdir);
+    FILE* fp = fopen(path, "wb");
+    fwrite("0123456789", 1, 10, fp);
+    fclose(fp);
+
+    push_path(&l, "seek.bin");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);
+
+    /* Push int32 offset=5, then uint8 whence=0 (SEEK_SET). */
+    int32_t offset = 5;
+    loci_write(&l, 0x03AC, 0);   /* whence */
+    loci_write(&l, 0x03AC, (uint8_t)((offset >> 24) & 0xFF));
+    loci_write(&l, 0x03AC, (uint8_t)((offset >> 16) & 0xFF));
+    loci_write(&l, 0x03AC, (uint8_t)((offset >>  8) & 0xFF));
+    loci_write(&l, 0x03AC, (uint8_t)(offset & 0xFF));
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_LSEEK);
+    /* Returns position in AXSREG. */
+    uint32_t pos = l.regs[LOCI_REG_API_A] |
+                   ((uint32_t)l.regs[LOCI_REG_API_X]    << 8) |
+                   ((uint32_t)l.regs[LOCI_REG_API_SREG] << 16) |
+                   ((uint32_t)l.regs[LOCI_REG_API_SREG_HI] << 24);
+    ASSERT_EQ(pos, 5);
+
+    /* Read 3 bytes → should be "567". */
+    push_u16(&l, 3);
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_READ_XSTACK);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 3);
+    char buf[4] = {0};
+    for (int i = 0; i < 3; i++) buf[i] = (char)loci_read(&l, 0x03AC);
+    ASSERT_TRUE(strcmp(buf, "567") == 0);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_unlink_removes_file) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/gone.tmp", tmpdir);
+    FILE* fp = fopen(path, "wb"); fputc('!', fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "gone.tmp");
+    loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_TRUE(access(path, F_OK) != 0);
+
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_close_bad_fd_returns_ebadf) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 42;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EBADF);
+}
+
+TEST(test_fd_exhaustion_emfile) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    /* Pre-create file. */
+    char path[300];
+    snprintf(path, sizeof(path), "%s/a.bin", tmpdir);
+    FILE* fp = fopen(path, "wb"); fclose(fp);
+
+    /* Open the same file LOCI_FD_MAX times to fill the table. */
+    int opened = 0;
+    for (int i = 0; i < LOCI_FD_MAX; i++) {
+        push_path(&l, "a.bin");
+        l.regs[LOCI_REG_API_A] = 0;
+        loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+        if ((l.regs[LOCI_REG_API_A] >= LOCI_FD_OFFSET) &&
+            (l.regs[LOCI_REG_API_ERRNO_LO] | l.regs[LOCI_REG_API_ERRNO_HI]) == 0) {
+            opened++;
+        }
+    }
+    ASSERT_EQ(opened, LOCI_FD_MAX);
+
+    /* One more should fail with EMFILE. */
+    push_path(&l, "a.bin");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EMFILE);
+
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
 }
 
 /* ── reset ──────────────────────────────────────────────────── */
@@ -268,6 +525,14 @@ int main(void) {
     RUN(test_op_clk_gettime_pushes_time);
     RUN(test_op_clk_getres_bad_id_returns_einval);
     RUN(test_unimplemented_op_still_enosys);
+    RUN(test_op_open_close_creates_file);
+    RUN(test_op_open_missing_returns_enoent);
+    RUN(test_open_path_traversal_rejected);
+    RUN(test_write_read_roundtrip);
+    RUN(test_lseek_set_then_read);
+    RUN(test_unlink_removes_file);
+    RUN(test_close_bad_fd_returns_ebadf);
+    RUN(test_fd_exhaustion_emfile);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");
