@@ -1361,6 +1361,273 @@ TEST(test_dsk_four_independent_drives) {
     free(a); free(b); free(c); free(d); free(tmpdir);
 }
 
+/* ── 34ah: scénarios d'intégration composés ──────────────────── */
+
+/* Scénario : monter ROM + 2 disques + 1 tape ensemble, vérifier l'état
+ * cohérent, puis tout démonter et vérifier le cleanup. */
+TEST(test_integration_full_mount_session) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+
+    /* Pré-créer 4 fichiers cibles. */
+    snprintf(path, sizeof(path), "%s/rom.bin", tmpdir);
+    FILE* fp = fopen(path, "wb"); fputc('R', fp); fclose(fp);
+    snprintf(path, sizeof(path), "%s/d0.dsk", tmpdir);
+    fp = fopen(path, "wb"); fputc('D', fp); fclose(fp);
+    snprintf(path, sizeof(path), "%s/d1.dsk", tmpdir);
+    fp = fopen(path, "wb"); fputc('E', fp); fclose(fp);
+    char* tap_path = make_tap_with_one_header(tmpdir, "game.tap");
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    struct { uint8_t drive; const char* name; } steps[] = {
+        { LOCI_MNT_ROM, "rom.bin"  },
+        { 0,            "d0.dsk"   },
+        { 1,            "d1.dsk"   },
+        { LOCI_MNT_TAP, "game.tap" },
+    };
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        push_path(&l, steps[i].name);
+        l.regs[LOCI_REG_API_A] = steps[i].drive;
+        loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+        ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+        ASSERT_TRUE(l.mnt_mounted[steps[i].drive]);
+    }
+    /* DSK slots 0/1 should hold open handles, TAP backend opened. */
+    ASSERT_TRUE(l.dsk_fp[0] != NULL);
+    ASSERT_TRUE(l.dsk_fp[1] != NULL);
+    ASSERT_TRUE(l.dsk_fp[2] == NULL);
+    ASSERT_TRUE(l.dsk_fp[3] == NULL);
+    ASSERT_TRUE(l.tap_fp   != NULL);
+
+    /* Unmount everything. */
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        l.regs[LOCI_REG_API_A] = steps[i].drive;
+        loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
+        ASSERT_TRUE(!l.mnt_mounted[steps[i].drive]);
+    }
+    ASSERT_TRUE(l.dsk_fp[0] == NULL);
+    ASSERT_TRUE(l.dsk_fp[1] == NULL);
+    ASSERT_TRUE(l.tap_fp   == NULL);
+
+    /* Cleanup files. */
+    snprintf(path, sizeof(path), "%s/rom.bin", tmpdir); unlink(path);
+    snprintf(path, sizeof(path), "%s/d0.dsk", tmpdir);  unlink(path);
+    snprintf(path, sizeof(path), "%s/d1.dsk", tmpdir);  unlink(path);
+    unlink(tap_path);
+    rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+/* Scénario : énumération complète d'un dossier avec 3 fichiers.
+ * Vérifie qu'opendir + 3 readdir + 1 readdir vide + closedir convergent. */
+TEST(test_integration_dir_enumeration) {
+    char* tmpdir = make_tmpdir();
+    const char* names[] = { "alpha.txt", "beta.bin", "gamma.dat" };
+    char path[300];
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        snprintf(path, sizeof(path), "%s/%s", tmpdir, names[i]);
+        FILE* fp = fopen(path, "wb"); fputc('!', fp); fclose(fp);
+    }
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, ".");
+    loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);
+    int dfd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(dfd >= LOCI_DIR_OFFSET);
+
+    bool seen[3] = {false, false, false};
+    int total_seen = 0;
+    /* Up to 6 readdir calls — should yield 3 named + then empty terminator. */
+    for (int round = 0; round < 6; round++) {
+        l.regs[LOCI_REG_API_A] = (uint8_t)dfd;
+        loci_write(&l, 0x03AF, LOCI_OP_READDIR);
+        uint16_t base = l.xstack_ptr;
+        char name[65] = {0};
+        for (int i = 0; i < 64; i++) name[i] = (char)l.xstack[base + 2 + i];
+        if (!name[0]) break;
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            if (strcmp(name, names[i]) == 0 && !seen[i]) {
+                seen[i] = true;
+                total_seen++;
+                break;
+            }
+        }
+    }
+    ASSERT_EQ(total_seen, 3);
+    ASSERT_TRUE(seen[0] && seen[1] && seen[2]);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)dfd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSEDIR);
+
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        snprintf(path, sizeof(path), "%s/%s", tmpdir, names[i]);
+        unlink(path);
+    }
+    rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+/* Scénario : TAP avec plusieurs headers consécutifs. Vérifie que des
+ * READ_HEADER successifs trouvent chaque header sans se chevaucher. */
+TEST(test_integration_tap_multi_header_scan) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/multi.tap", tmpdir);
+
+    /* Construire un TAP avec 3 headers, séparés par des données filler. */
+    FILE* fp = fopen(path, "wb");
+    static const uint8_t hdr1[16] = {
+        0,0,0,0xC7, 0x09,0xFF, 0x05,0x00, 0,
+        'A','A','A',0,0,0,0
+    };
+    static const uint8_t hdr2[16] = {
+        0,0,0,0xC7, 0xFF,0x00, 0x00,0x10, 0,
+        'B','B','B',0,0,0,0
+    };
+    static const uint8_t hdr3[16] = {
+        0,0,0,0xC7, 0x10,0xCC, 0x20,0x10, 0,
+        'C','C','C',0,0,0,0
+    };
+    /* Lead-in, sync, header, padding, sync, header, padding, sync, header. */
+    for (int i = 0; i < 4; i++) fputc(0, fp);
+    fputc(0x16, fp); fputc(0x16, fp); fputc(0x16, fp); fputc(0x24, fp);
+    fwrite(hdr1, 1, 16, fp);
+    for (int i = 0; i < 6; i++) fputc(0x55, fp);
+    fputc(0x16, fp); fputc(0x16, fp); fputc(0x16, fp); fputc(0x24, fp);
+    fwrite(hdr2, 1, 16, fp);
+    for (int i = 0; i < 6; i++) fputc(0xAA, fp);
+    fputc(0x16, fp); fputc(0x16, fp); fputc(0x16, fp); fputc(0x24, fp);
+    fwrite(hdr3, 1, 16, fp);
+    fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "multi.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+
+    char first_byte[3] = {0};
+    for (int i = 0; i < 3; i++) {
+        loci_write(&l, 0x03AF, LOCI_OP_TAP_READ_HEADER);
+        /* Filename starts at offset 9. */
+        first_byte[i] = (char)l.xstack[l.xstack_ptr + 9];
+    }
+    /* Should have read 'A', 'B', 'C' in order. */
+    ASSERT_EQ(first_byte[0], 'A');
+    ASSERT_EQ(first_byte[1], 'B');
+    ASSERT_EQ(first_byte[2], 'C');
+
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+/* Scénario : MIA_BOOT flow complet — préparer un ROM mounté, déclencher
+ * boot, vérifier que le callback reçoit le bon path puis ax=0. */
+TEST(test_integration_mia_boot_with_mounted_rom) {
+    char* tmpdir = make_tmpdir();
+    char rom_path[300];
+    snprintf(rom_path, sizeof(rom_path), "%s/myrom.bin", tmpdir);
+    FILE* fp = fopen(rom_path, "wb");
+    for (int i = 0; i < 256; i++) fputc(0xEA, fp);   /* NOPs */
+    fclose(fp);
+
+    rom_swap_capture_t cap = { .result = true };
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    loci_set_rom_swap_callback(&l, capture_swap, &cap);
+
+    /* Mount custom ROM in slot 5. */
+    push_path(&l, "myrom.bin");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_ROM;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+
+    /* Boot — should use the custom ROM, not basic10/basic11b. */
+    l.regs[LOCI_REG_API_A] = 0;   /* default settings */
+    loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_EQ(cap.call_count, 1);
+    ASSERT_TRUE(strstr(cap.last_path, "myrom.bin") != NULL);
+    ASSERT_TRUE(strstr(cap.last_path, "basic")     == NULL);
+    ASSERT_EQ(cap.last_base, 0xC000);
+
+    unlink(rom_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+/* Scénario : configuration HID kbd_xram puis injection d'une combo
+ * Shift+A. Le bitmap doit refléter les deux états simultanément. */
+TEST(test_integration_hid_combo_shift_a) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);   /* configurer kbd_xram */
+
+    /* HID_KEY_A = 0x04, modifier LEFT_SHIFT = 0x02. */
+    uint8_t kc[6] = {0x04, 0, 0, 0, 0, 0};
+    loci_kbd_set_report(&l, 0x02, kc);
+
+    /* Byte 0 bit 4 (= 1 << (0x04 & 7)) should be set. */
+    ASSERT_TRUE(l.xram[0x4000] & 0x10);
+    /* Byte 28 should hold modifier 0x02. */
+    ASSERT_EQ(l.xram[0x4000 + 28], 0x02);
+    /* No-key sentinel must be cleared (a key is down). */
+    ASSERT_EQ(l.xram[0x4000] & 0x01, 0);
+}
+
+/* Scénario : la ROM LOCI binaire est cohérente — taille 16 KB, reset
+ * vector pointe dans la plage ROM ($C000-$FFFF). */
+TEST(test_integration_locirom_binary_sanity) {
+    FILE* fp = fopen("roms/loci/locirom", "rb");
+    if (!fp) {
+        printf("(roms/loci/locirom absent — skip) ");
+        return;
+    }
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    ASSERT_EQ(sz, 16384);
+
+    /* Reset vector lit à offset $3FFC-$3FFD (correspond à $FFFC). */
+    fseek(fp, 0x3FFC, SEEK_SET);
+    uint8_t lo = (uint8_t)fgetc(fp);
+    uint8_t hi = (uint8_t)fgetc(fp);
+    fclose(fp);
+    uint16_t reset = (uint16_t)lo | ((uint16_t)hi << 8);
+    ASSERT_TRUE(reset >= 0xC000);
+}
+
+/* Scénario : mount d'un drive 0 + accès bus $0310 — la ROM peut probe
+ * via le bus sans avoir à utiliser l'API. Vérifie la cohérence. */
+TEST(test_integration_dsk_mount_then_bus_probe) {
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "boot.dsk", 64);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "boot.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+
+    /* Selected drive = 0 by default. NOT_READY should be cleared. */
+    uint8_t st = loci_dsk_read(&l, 0x0310);
+    ASSERT_EQ(st & LOCI_DSK_STAT_NOT_READY, 0);
+
+    /* Switch via CTRL to drive 1 (non monté) — should report NOT_READY. */
+    loci_dsk_write(&l, 0x0314, 1u << LOCI_DSK_CTRL_DRV_SEL_SHIFT);
+    ASSERT_EQ(l.dsk_selected, 1);
+    st = loci_dsk_read(&l, 0x0310);
+    ASSERT_TRUE((st & LOCI_DSK_STAT_NOT_READY) != 0);
+
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -1461,6 +1728,13 @@ int main(void) {
     RUN(test_dsk_track_sect_data_passthrough);
     RUN(test_dsk_drq_register);
     RUN(test_dsk_four_independent_drives);
+    RUN(test_integration_full_mount_session);
+    RUN(test_integration_dir_enumeration);
+    RUN(test_integration_tap_multi_header_scan);
+    RUN(test_integration_mia_boot_with_mounted_rom);
+    RUN(test_integration_hid_combo_shift_a);
+    RUN(test_integration_locirom_binary_sanity);
+    RUN(test_integration_dsk_mount_then_bus_probe);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

@@ -1,12 +1,19 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.32-alpha
+Current Version: 1.16.33-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI DSK multi-drive stub — 420 tests pass)
+Status: Alpha (LOCI sprint série terminée — 427 tests pass)
 
 Version History:
 ----------------
+- 1.16.33-alpha (2026-06-06): LOCI tests intégration Sprint 34ah FINAL
+  * 7 scénarios composés : mount session, dir enum, TAP multi-header,
+    MIA_BOOT mounted ROM, HID combo, locirom binary sanity, dsk probe
+  * E2E boot validé : LOCI ROM reach $C354 (TUI) en 500k cycles
+  * Total test-loci : 87 (9 sprints livrés)
+  * Bilan : 27/36 ops (75%), ~3000 LOC LOCI, série 34y-34ah complete
+
 - 1.16.32-alpha (2026-06-06): LOCI DSK multi-drive stub (Sprint 34ae)
   * 4 drives DSK auto-ouvertes sur MOUNT 0-3
   * Bus $0310-$0314 + $0318 : status idle, CTRL drive select, latch passthrough

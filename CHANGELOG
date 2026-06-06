@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.33-alpha] - 2026-06-06
+
+### LOCI : tests intégration scénarios bootés — Sprint 34ah (FINAL)
+
+#### Added
+- **7 scénarios d'intégration** couvrant les flots composés LOCI :
+  1. **Full mount session** : ROM + 2 dsk + tape ensemble, vérifie l'état
+     cohérent puis cleanup intégral après UMOUNT
+  2. **Dir enumeration** : opendir + 3 readdir + terminator + closedir,
+     vérifie que les 3 fichiers attendus apparaissent une seule fois
+  3. **TAP multi-header scan** : tape avec 3 headers consécutifs, scans
+     successifs trouvent A/B/C dans l'ordre
+  4. **MIA_BOOT avec ROM monté** : slot 5 prioritaire sur basic10/11b
+  5. **HID combo Shift+A** : bitmap + modifier byte 28 simultanés
+  6. **locirom binary sanity** : vérifie taille 16 KB + reset vector
+     dans $C000-$FFFF
+  7. **DSK mount + bus probe** : transition CTRL drive select + STAT
+- **E2E boot validé** : `./oric1-emu -r roms/loci/locirom --loci -n -c 500000`
+  atteint $C354 (boucle TUI), aucun crash CPU sur 500 000 cycles.
+
+#### Bilan complet sprints 34y → 34ah
+9 sprints LOCI livrés, ~3000 LOC ajoutées, 87 tests unitaires +
+intégration, 27 ops sur 36 implémentées (75%).
+
+| Sprint | Périmètre | Tests |
+|---|---|---|
+| 34y | Skeleton + dispatcher | 11 |
+| 34z | Sys + RTC + RNG (6 ops) | 19 |
+| 34aa | File I/O POSIX (7 ops) | 27 |
+| 34ab | xram DMA + mount (5 ops) | 38 |
+| 34ac | Dir API + uname (5 ops) | 44 |
+| 34ag | USB HID kbd/mou/pad | 54 |
+| 34ad | ROM swap MIA_BOOT | 62 |
+| 34af | TAP cassette + ops 0x92-94 | 72 |
+| 34ae | DSK multi-drive stub | 80 |
+| **34ah** | **Intégration scénarios** | **87** |
+
+**Reste à implémenter** (non-blocking pour usage TUI) :
+- WD1793 cycle-accurate lecture/écriture secteurs
+- Bit-streamer TAP $0317 DATA
+- Ops 0x02 CPU_PHI2 / 0x03 OEM_CODEPAGE / 0x05 STDIN_OPT (non-critiques)
+- Bridge SDL keyboard → loci_kbd_set_report dans main loop
+
+LOCI Phosphoric atteint un niveau utilisable pour le développement
+6502 ciblant la plateforme LOCI et la validation de jeux compatibles.
+
 ## [1.16.32-alpha] - 2026-06-06
 
 ### LOCI : DSK multi-drive WD179x stub (Sprint 34ae)

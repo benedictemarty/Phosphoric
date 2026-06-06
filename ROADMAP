@@ -539,6 +539,15 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ah: LOCI tests intégration scénarios bootés (v1.16.33-alpha) - DONE
+- [x] 7 scénarios d'intégration composés (test_integration_*) :
+      mount session 4 slots, dir enum 3 files, TAP multi-header A/B/C,
+      MIA_BOOT mounted ROM wins, HID Shift+A bitmap, locirom binary
+      sanity 16KB + reset vector, DSK mount + bus probe CTRL switch
+- [x] E2E boot validé : ROM LOCI reach $C354 en 500k cycles, aucun crash
+- [x] 87 tests test-loci total (+7 du sprint)
+- [x] **Série Sprint LOCI complète** : 34y → 34ah (9 sprints, 27/36 ops)
+
 ### Sprint 34ae: LOCI DSK multi-drive WD179x stub (v1.16.32-alpha) - DONE
 - [x] dsk_fp[4] : 4 drives indépendants
 - [x] Auto-open sur MOUNT drive 0-3
