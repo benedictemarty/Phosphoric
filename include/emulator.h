@@ -133,6 +133,7 @@ typedef struct emulator_s {
     /* CSAVE support: capture saved data to .TAP file */
     FILE*    csave_file;            /* Open TAP file for CSAVE output */
     int      csave_byte_count;     /* Bytes written in current CSAVE */
+    char     csave_last_path[64];   /* Path of last CSAVE for re-buffering */
 
     bool running;
     bool fast_load;

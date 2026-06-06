@@ -27,6 +27,7 @@
 #include "storage/disk.h"
 #include "storage/sedoric.h"
 #include "io/microdisc.h"
+#include "io/loci_sdimg.h"
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -956,6 +957,9 @@ do_patch:
                 uint8_t leader[] = { 0x16, 0x16, 0x16 };
                 fwrite(leader, 1, 3, emu->csave_file);
                 emu->csave_byte_count = 0;
+                strncpy(emu->csave_last_path, csave_path,
+                        sizeof(emu->csave_last_path) - 1);
+                emu->csave_last_path[sizeof(emu->csave_last_path) - 1] = 0;
                 log_info("CSAVE: saving to %s", csave_path);
             }
         } else {
@@ -976,9 +980,80 @@ do_patch:
         /* CSAVE complete — close the file */
         if (emu->csave_file) {
             fclose(emu->csave_file);
-            log_info("CSAVE: saved %d bytes to csave_output.tap", emu->csave_byte_count);
+            log_info("CSAVE: saved %d bytes to %s",
+                     emu->csave_byte_count, emu->csave_last_path);
             emu->csave_file = NULL;
             emu->csave_byte_count = 0;
+
+            /* Sprint 34ap: re-buffer the just-saved tape into emu->tapebuf
+             * so a follow-up CLOAD finds it, and persist into the SDIMG
+             * if one is attached so the next session sees the file. */
+            FILE* fr = fopen(emu->csave_last_path, "rb");
+            if (fr) {
+                fseek(fr, 0, SEEK_END);
+                long sz = ftell(fr);
+                fseek(fr, 0, SEEK_SET);
+                if (sz > 0) {
+                    if (emu->tapebuf) free(emu->tapebuf);
+                    emu->tapebuf = (uint8_t*)malloc((size_t)sz);
+                    if (emu->tapebuf && fread(emu->tapebuf, 1, (size_t)sz, fr) == (size_t)sz) {
+                        emu->tapelen = (int)sz;
+                        emu->tapeoffs = 0;
+                        emu->tape_loaded = true;
+                        emu->tape_syncstack = -1;
+                        log_info("CSAVE: re-buffered %ld bytes for CLOAD", sz);
+                    }
+                }
+                fclose(fr);
+
+                /* Persist to SDIMG so the file survives restart. */
+                if (emu->has_loci && emu->loci.sdimg && emu->tapebuf && emu->tapelen > 0) {
+                    /* Derive 8.3 basename: keep only [A-Z0-9_] from the
+                     * BASIC-supplied filename. BASIC may sandwich the
+                     * user input with a length byte, quotes, and spaces. */
+                    const char* base = strrchr(emu->csave_last_path, '/');
+                    base = base ? base + 1 : emu->csave_last_path;
+                    char clean[16] = {0};
+                    int ci = 0;
+                    for (; *base && ci < 8 && *base != '.'; base++) {
+                        unsigned char c = (unsigned char)*base;
+                        if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
+                        if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                            c == '_' || c == '-') {
+                            clean[ci++] = (char)c;
+                        }
+                    }
+                    if (ci == 0) {
+                        /* Fallback when the BASIC name was unrecognisable
+                         * (empty after sanitization) — use a timestamped
+                         * name so we don't clobber existing files. */
+                        snprintf(clean, sizeof(clean), "CSAVE%03d",
+                                 (int)(emu->tapelen % 1000));
+                        ci = (int)strlen(clean);
+                    }
+                    snprintf(clean + ci, sizeof(clean) - ci, ".TAP");
+                    int fd = loci_sdimg_fopen_ex(
+                        (loci_sdimg_t*)emu->loci.sdimg, clean, 1);
+                    if (fd >= 0) {
+                        int total = 0;
+                        while (total < emu->tapelen) {
+                            int chunk = emu->tapelen - total;
+                            if (chunk > 256) chunk = 256;
+                            int bw = loci_sdimg_fwrite(
+                                (loci_sdimg_t*)emu->loci.sdimg, fd,
+                                emu->tapebuf + total, (uint16_t)chunk);
+                            if (bw <= 0) break;
+                            total += bw;
+                        }
+                        loci_sdimg_fclose((loci_sdimg_t*)emu->loci.sdimg, fd);
+                        loci_sdimg_sync((loci_sdimg_t*)emu->loci.sdimg);
+                        log_info("CSAVE: persisted %d bytes to SDIMG as %s",
+                                 total, clean);
+                    } else {
+                        log_warning("CSAVE: SDIMG persist failed (errno=%d)", -fd);
+                    }
+                }
+            }
         }
     }
 }
