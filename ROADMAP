@@ -539,6 +539,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ae: LOCI DSK multi-drive WD179x stub (v1.16.32-alpha) - DONE
+- [x] dsk_fp[4] : 4 drives indépendants
+- [x] Auto-open sur MOUNT drive 0-3
+- [x] Auto-close sur UMOUNT
+- [x] Bus registres $0310-$0314 + $0318 stub
+- [x] CMD/STAT reporte NOT_READY si drive non monté
+- [x] CTRL decode drive select bits 5-6
+- [x] TRACK/SECT/DATA passthrough latch
+- [x] Routing prioritise Microdisc si présent, sinon LOCI DSK
+- [x] 8 nouveaux tests, total 80, 420 tests global
+- [x] WD1793 cycle-accurate deferred (sprint séparé si besoin)
+
+### Sprint 34af: LOCI TAP cassette + ops 0x92-94 (v1.16.31-alpha) - DONE
+- [x] Backend tap_fp/size/counter dans loci_t
+- [x] Auto-mount slot 4 (LOCI_MNT_TAP) → tap_open
+- [x] op 0x92 TAP_SEEK : AXSREG pos clamp size-1, fseek
+- [x] op 0x93 TAP_TELL : retourne counter
+- [x] op 0x94 TAP_READ_HEADER : scan sync 16 16 16 24, lit header 16 octets
+- [x] Sanitise filename : non-printable → '?'
+- [x] Bus $0315-$0317 stub : CMD/STAT/DATA
+- [x] CMD REW reset counter
+- [x] STAT reporte NOT_READY si pas de tape
+- [x] 10 nouveaux tests test-loci
+
 ### Sprint 34ad: LOCI ROM swap runtime MIA_BOOT (v1.16.30-alpha) - DONE
 - [x] Op 0xA0 MIA_BOOT décodé : A=settings, dispatcher
 - [x] Constants LOCI_BOOT_FDC/TAP/B11/TAP_BIT/TAP_ALD/RESUME/FAST

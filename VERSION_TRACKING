@@ -1,12 +1,25 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.30-alpha
+Current Version: 1.16.32-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI ROM swap runtime — 402 tests pass)
+Status: Alpha (LOCI DSK multi-drive stub — 420 tests pass)
 
 Version History:
 ----------------
+- 1.16.32-alpha (2026-06-06): LOCI DSK multi-drive stub (Sprint 34ae)
+  * 4 drives DSK auto-ouvertes sur MOUNT 0-3
+  * Bus $0310-$0314 + $0318 : status idle, CTRL drive select, latch passthrough
+  * Hook routing : LOCI vs Microdisc selon has_microdisc
+  * 8 nouveaux tests, total 80, 420 tests global
+  * Stub uniquement — pas de WD1793 cycle-accurate (deferred)
+
+- 1.16.31-alpha (2026-06-06): LOCI TAP cassette + ops 0x92-94 (Sprint 34af)
+  * Backend TAP + auto-mount slot 4
+  * Ops TAP_SEEK/TELL/READ_HEADER
+  * Bus $0315-$0317 stub (CMD/STAT/DATA)
+  * 10 nouveaux tests, 412 tests global
+
 - 1.16.30-alpha (2026-06-06): LOCI ROM swap runtime MIA_BOOT (Sprint 34ad)
   * Op 0xA0 MIA_BOOT implémenté avec settings flags
   * Callback ROM-swap : loci_set_rom_swap_callback(cb, ctx)

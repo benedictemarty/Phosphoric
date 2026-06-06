@@ -221,7 +221,7 @@ TEST(test_xstack_read_pops_byte) {
 TEST(test_unimplemented_op_still_enosys) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    loci_write(&l, 0x03AF, LOCI_OP_TAP_SEEK);   /* not implemented until 34af */
+    loci_write(&l, 0x03AF, LOCI_OP_CPU_PHI2);   /* never implemented host-side */
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
     ASSERT_EQ(e, LOCI_ENOSYS);
@@ -1038,6 +1038,329 @@ TEST(test_mia_boot_fdc_loads_microdisc_too) {
     ASSERT_TRUE(strstr(cap.last_path, "microdis") != NULL);
 }
 
+/* ── 34af: TAP cassette API + $0315-$0317 ────────────────────── */
+
+/* Build a minimal TAP file with one sync mark + 16-byte header.
+ * Layout: lead-in zeros (4) + 16 16 16 24 + header (16). */
+static char* make_tap_with_one_header(const char* root, const char* filename) {
+    char* path = malloc(300);
+    snprintf(path, 300, "%s/%s", root, filename);
+    FILE* fp = fopen(path, "wb");
+    /* Optional lead-in (a few zero bytes). */
+    for (int i = 0; i < 4; i++) fputc(0, fp);
+    /* Sync mark. */
+    fputc(0x16, fp); fputc(0x16, fp); fputc(0x16, fp); fputc(0x24, fp);
+    /* Header (16 bytes): flag/flag/type/autorun/end_hi/end_lo/start_hi/start_lo
+     * /reserved/filename[7]. We fill in deterministic values. */
+    static const uint8_t hdr[16] = {
+        0x00, 0x00, 0x00, 0xC7,        /* flags + autorun */
+        0x09, 0xFF,                    /* end addr */
+        0x05, 0x00,                    /* start addr */
+        0x00,                          /* reserved */
+        'M','Y','P','R','G',0,0        /* filename (7 chars used in header) */
+    };
+    fwrite(hdr, 1, 16, fp);
+    fclose(fp);
+    return path;
+}
+
+TEST(test_tap_mount_opens_file) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "game.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "game.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_TRUE(l.tap_fp != NULL);
+    ASSERT_EQ(l.tap_size, 24);   /* 4 + 4 + 16 */
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+TEST(test_tap_umount_closes) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "x.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_TRUE(l.tap_fp != NULL);
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
+    ASSERT_TRUE(l.tap_fp == NULL);
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+TEST(test_tap_tell_returns_zero_after_mount) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "x.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_TELL);
+    uint32_t pos = l.regs[LOCI_REG_API_A] |
+                   ((uint32_t)l.regs[LOCI_REG_API_X]    << 8) |
+                   ((uint32_t)l.regs[LOCI_REG_API_SREG] << 16) |
+                   ((uint32_t)l.regs[LOCI_REG_API_SREG_HI] << 24);
+    ASSERT_EQ(pos, 0);
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+TEST(test_tap_seek_updates_counter) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "x.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    /* Set AXSREG = 10 then call SEEK. */
+    l.regs[LOCI_REG_API_A] = 10;
+    l.regs[LOCI_REG_API_X] = 0;
+    l.regs[LOCI_REG_API_SREG] = 0;
+    l.regs[LOCI_REG_API_SREG_HI] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_SEEK);
+    ASSERT_EQ(l.tap_counter, 10);
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+TEST(test_tap_seek_clamps_to_size_minus_1) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "x.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    l.regs[LOCI_REG_API_A] = 0xFF;   /* way past size 24 */
+    l.regs[LOCI_REG_API_X] = 0xFF;
+    l.regs[LOCI_REG_API_SREG] = 0;
+    l.regs[LOCI_REG_API_SREG_HI] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_SEEK);
+    /* Should clamp to size-1 = 23. */
+    ASSERT_EQ(l.tap_counter, 23);
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+TEST(test_tap_read_header_finds_sync_and_pushes_header) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "x.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_READ_HEADER);
+
+    /* AXSREG should hold sync start = position of first 0x16 = 4. */
+    uint32_t sync_start = l.regs[LOCI_REG_API_A] |
+                         ((uint32_t)l.regs[LOCI_REG_API_X]    << 8) |
+                         ((uint32_t)l.regs[LOCI_REG_API_SREG] << 16) |
+                         ((uint32_t)l.regs[LOCI_REG_API_SREG_HI] << 24);
+    ASSERT_EQ(sync_start, 4);
+
+    /* xstack should hold the 16-byte header. */
+    ASSERT_EQ(LOCI_XSTACK_SIZE - l.xstack_ptr, 16);
+    /* Filename starts at offset 9 (offset 9 == 'M'). */
+    ASSERT_EQ(l.xstack[l.xstack_ptr + 9], 'M');
+
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+TEST(test_tap_read_header_no_sync_returns_enoent) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/empty.tap", tmpdir);
+    /* File large enough to pass the size check but no sync mark. */
+    FILE* fp = fopen(path, "wb");
+    for (int i = 0; i < 32; i++) fputc(0, fp);
+    fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "empty.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_READ_HEADER);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_ENOENT);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_tap_seek_no_tape_returns_enodev) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_SEEK);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_ENODEV);
+}
+
+TEST(test_tap_io_stat_reports_not_ready_when_empty) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    uint8_t v = loci_tap_read(&l, 0x0316);
+    ASSERT_TRUE((v & LOCI_TAP_STAT_NOT_READY) != 0);
+}
+
+TEST(test_tap_io_cmd_rewind_resets_counter) {
+    char* tmpdir = make_tmpdir();
+    char* tap_path = make_tap_with_one_header(tmpdir, "x.tap");
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.tap");
+    l.regs[LOCI_REG_API_A] = LOCI_MNT_TAP;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+
+    /* Move forward via SEEK then rewind via $0315 CMD. */
+    l.regs[LOCI_REG_API_A] = 10;
+    l.regs[LOCI_REG_API_X] = 0;
+    l.regs[LOCI_REG_API_SREG] = 0;
+    l.regs[LOCI_REG_API_SREG_HI] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_TAP_SEEK);
+    ASSERT_EQ(l.tap_counter, 10);
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_REW);
+    ASSERT_EQ(l.tap_counter, 0);
+
+    unlink(tap_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tap_path); free(tmpdir);
+}
+
+/* ── 34ae: DSK multi-drive WD179x stub ───────────────────────── */
+
+static char* make_blob(const char* root, const char* name, int size) {
+    char* p = malloc(300);
+    snprintf(p, 300, "%s/%s", root, name);
+    FILE* fp = fopen(p, "wb");
+    for (int i = 0; i < size; i++) fputc(i & 0xFF, fp);
+    fclose(fp);
+    return p;
+}
+
+TEST(test_dsk_mount_opens_drive_image) {
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "side0.dsk", 256);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "side0.dsk");
+    l.regs[LOCI_REG_API_A] = 0;   /* drive 0 */
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_TRUE(l.dsk_fp[0] != NULL);
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
+TEST(test_dsk_umount_closes) {
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "x.dsk", 16);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x.dsk");
+    l.regs[LOCI_REG_API_A] = 2;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_TRUE(l.dsk_fp[2] != NULL);
+    l.regs[LOCI_REG_API_A] = 2;
+    loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
+    ASSERT_TRUE(l.dsk_fp[2] == NULL);
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
+TEST(test_dsk_cmd_reports_not_ready_for_empty_drive) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* No drive mounted → selected drive 0 not ready. */
+    uint8_t s = loci_dsk_read(&l, 0x0310);
+    ASSERT_TRUE((s & LOCI_DSK_STAT_NOT_READY) != 0);
+}
+
+TEST(test_dsk_cmd_ready_for_mounted_drive) {
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "y.dsk", 32);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "y.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    uint8_t s = loci_dsk_read(&l, 0x0310);
+    ASSERT_EQ(s & LOCI_DSK_STAT_NOT_READY, 0);
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
+TEST(test_dsk_ctrl_select_drive_via_bits_5_6) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Bits 5-6 = drive 2 → value 0b01000000 = 0x40. */
+    loci_dsk_write(&l, 0x0314, 0x40);
+    ASSERT_EQ(l.dsk_selected, 2);
+    ASSERT_EQ(l.dsk_ctrl, 0x40);
+}
+
+TEST(test_dsk_track_sect_data_passthrough) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_dsk_write(&l, 0x0311, 0x12);   /* track */
+    loci_dsk_write(&l, 0x0312, 0x34);   /* sector */
+    loci_dsk_write(&l, 0x0313, 0x56);   /* data */
+    ASSERT_EQ(loci_dsk_read(&l, 0x0311), 0x12);
+    ASSERT_EQ(loci_dsk_read(&l, 0x0312), 0x34);
+    ASSERT_EQ(loci_dsk_read(&l, 0x0313), 0x56);
+}
+
+TEST(test_dsk_drq_register) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_dsk_write(&l, 0x0318, 0x80);
+    ASSERT_EQ(loci_dsk_read(&l, 0x0318), 0x80);
+}
+
+TEST(test_dsk_four_independent_drives) {
+    char* tmpdir = make_tmpdir();
+    char* a = make_blob(tmpdir, "a.dsk", 16);
+    char* b = make_blob(tmpdir, "b.dsk", 16);
+    char* c = make_blob(tmpdir, "c.dsk", 16);
+    char* d = make_blob(tmpdir, "d.dsk", 16);
+    const char* names[4] = {"a.dsk", "b.dsk", "c.dsk", "d.dsk"};
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    for (int i = 0; i < 4; i++) {
+        push_path(&l, names[i]);
+        l.regs[LOCI_REG_API_A] = (uint8_t)i;
+        loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+        ASSERT_TRUE(l.dsk_fp[i] != NULL);
+    }
+    unlink(a); unlink(b); unlink(c); unlink(d); rmdir(tmpdir);
+    loci_cleanup(&l);
+    free(a); free(b); free(c); free(d); free(tmpdir);
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -1120,6 +1443,24 @@ int main(void) {
     RUN(test_mia_boot_no_callback_acks);
     RUN(test_mia_boot_settings_latched);
     RUN(test_mia_boot_fdc_loads_microdisc_too);
+    RUN(test_tap_mount_opens_file);
+    RUN(test_tap_umount_closes);
+    RUN(test_tap_tell_returns_zero_after_mount);
+    RUN(test_tap_seek_updates_counter);
+    RUN(test_tap_seek_clamps_to_size_minus_1);
+    RUN(test_tap_read_header_finds_sync_and_pushes_header);
+    RUN(test_tap_read_header_no_sync_returns_enoent);
+    RUN(test_tap_seek_no_tape_returns_enodev);
+    RUN(test_tap_io_stat_reports_not_ready_when_empty);
+    RUN(test_tap_io_cmd_rewind_resets_counter);
+    RUN(test_dsk_mount_opens_drive_image);
+    RUN(test_dsk_umount_closes);
+    RUN(test_dsk_cmd_reports_not_ready_for_empty_drive);
+    RUN(test_dsk_cmd_ready_for_mounted_drive);
+    RUN(test_dsk_ctrl_select_drive_via_bits_5_6);
+    RUN(test_dsk_track_sect_data_passthrough);
+    RUN(test_dsk_drq_register);
+    RUN(test_dsk_four_independent_drives);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

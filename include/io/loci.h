@@ -134,6 +134,46 @@ typedef enum {
 #define LOCI_AM_DIR  0x10
 #define LOCI_AM_SYS  0x04
 
+/* DSK WD179x I/O registers (Sprint 34ae). */
+#define LOCI_DSK_IO_CMD     0x0310   /* status (read) / command (write) */
+#define LOCI_DSK_IO_TRACK   0x0311
+#define LOCI_DSK_IO_SECT    0x0312
+#define LOCI_DSK_IO_DATA    0x0313
+#define LOCI_DSK_IO_CTRL    0x0314
+#define LOCI_DSK_IO_DRQ     0x0318
+
+/* WD1793 status bits we report (subset). */
+#define LOCI_DSK_STAT_NOT_READY  0x80
+#define LOCI_DSK_STAT_WPROT      0x40
+#define LOCI_DSK_STAT_RECORD_T   0x20
+#define LOCI_DSK_STAT_LOST       0x04
+#define LOCI_DSK_STAT_DRQ        0x02
+#define LOCI_DSK_STAT_BUSY       0x01
+
+/* DSK CTRL ($0314) bits matching real Microdisc / LOCI layout. */
+#define LOCI_DSK_CTRL_DRV_SEL_SHIFT  5
+#define LOCI_DSK_CTRL_DRV_SEL_MASK   (0x03u << LOCI_DSK_CTRL_DRV_SEL_SHIFT)
+
+/* TAP cassette I/O registers (Sprint 34af). */
+#define LOCI_TAP_IO_CMD   0x0315
+#define LOCI_TAP_IO_STAT  0x0316
+#define LOCI_TAP_IO_DATA  0x0317
+
+/* TAP STAT register bits. */
+#define LOCI_TAP_STAT_NOT_READY 0x80
+#define LOCI_TAP_STAT_WPROT     0x40
+#define LOCI_TAP_STAT_BUSY      0x01
+
+/* TAP CMD values. */
+#define LOCI_TAP_CMD_PLAY      0x01
+#define LOCI_TAP_CMD_REC       0x02
+#define LOCI_TAP_CMD_REW       0x03
+#define LOCI_TAP_CMD_READ_BIT  0x04
+#define LOCI_TAP_CMD_FFW       0x05
+
+/* TAP header layout (16 bytes, matches firmware tap_header_t). */
+#define LOCI_TAP_HEADER_SIZE  16
+
 /* MIA_BOOT (op 0xA0) bit flags — matches firmware sys/mia.h. */
 #define LOCI_BOOT_FDC      0x01   /* Mount Microdisc device ROM at $A000 */
 #define LOCI_BOOT_TAP      0x02   /* Load tape image */
@@ -217,6 +257,26 @@ typedef struct loci_s {
     /* MIA_BOOT settings latched on last 0xA0 call (Sprint 34ad). */
     uint8_t boot_settings;
 
+    /* TAP cassette backend (Sprint 34af). Auto-opened by op_mount when
+     * drive == LOCI_MNT_TAP; closed by op_umount. */
+    void*    tap_fp;       /* FILE* host */
+    uint32_t tap_size;     /* total bytes in mounted file */
+    uint32_t tap_counter;  /* current read offset */
+    uint8_t  tap_cmd;      /* last value written to $0315 (CMD) */
+    uint8_t  tap_stat;     /* mirrored to $0316 (STAT) */
+
+    /* DSK multi-drive backend (Sprint 34ae).
+     * Each of slots 0-3 may have an open host file. The bus interface is
+     * a minimal WD1793 stub: report idle/no-DRQ, accept commands silently. */
+    void*    dsk_fp[4];        /* FILE* per drive (NULL = unmounted) */
+    uint8_t  dsk_selected;     /* drive selected by last $0314 CTRL write (0..3) */
+    uint8_t  dsk_status;       /* what $0310 read returns */
+    uint8_t  dsk_track;        /* $0311 */
+    uint8_t  dsk_sect;         /* $0312 */
+    uint8_t  dsk_data;         /* $0313 */
+    uint8_t  dsk_ctrl;         /* $0314 — last write */
+    uint8_t  dsk_drq;          /* $0318 — current DRQ flag byte */
+
     /* ROM-swap callback (Sprint 34ad).
      * Set by the emulator via loci_set_rom_swap_callback(). Invoked by
      * op 0xA0 MIA_BOOT to load the requested ROM image into Oric memory
@@ -266,6 +326,25 @@ void    loci_write(loci_t* loci, uint16_t address, uint8_t value);
 static inline bool loci_addr_in_mia(uint16_t address) {
     return address >= LOCI_MIA_BASE && address <= LOCI_MIA_END;
 }
+
+/* TAP cassette register range $0315-$0317 (Sprint 34af). */
+static inline bool loci_addr_in_tap(uint16_t address) {
+    return address >= LOCI_TAP_IO_CMD && address <= LOCI_TAP_IO_DATA;
+}
+
+/* DSK WD179x register range $0310-$0314 + $0318 (Sprint 34ae). */
+static inline bool loci_addr_in_dsk(uint16_t address) {
+    return (address >= LOCI_DSK_IO_CMD && address <= LOCI_DSK_IO_CTRL) ||
+           (address == LOCI_DSK_IO_DRQ);
+}
+
+/* TAP register access (used by the main I/O router). */
+uint8_t loci_tap_read(loci_t* loci, uint16_t address);
+void    loci_tap_write(loci_t* loci, uint16_t address, uint8_t value);
+
+/* DSK register access — stub WD1793 (Sprint 34ae). */
+uint8_t loci_dsk_read(loci_t* loci, uint16_t address);
+void    loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value);
 
 /* Run the pending API op (called by the main loop after every CPU step
  * when LOCI is enabled). For Sprint 34y all ops return ENOSYS synchronously,

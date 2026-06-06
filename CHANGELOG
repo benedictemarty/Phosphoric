@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.32-alpha] - 2026-06-06
+
+### LOCI : DSK multi-drive WD179x stub (Sprint 34ae)
+
+#### Added
+- **Tableau 4 drives DSK** : `loci_t.dsk_fp[4]` (FILE* host par drive).
+- **Auto-open sur MOUNT** : drive 0-3 ouvre l'image automatiquement
+  (en complément du tracking de path déjà fait sprint 34ab).
+- **Bus registres $0310-$0314 + $0318** :
+  - `$0310 CMD/STAT` (read) : retourne idle, ou `NOT_READY` si drive non monté
+  - `$0311 TRACK`, `$0312 SECT`, `$0313 DATA` : passthrough latch
+  - `$0314 CTRL` : décode bits 5-6 pour drive selection (0-3)
+  - `$0318 DRQ` : passthrough
+- **API `loci_dsk_read/write`** + helpers d'adressage `loci_addr_in_dsk`.
+- **Hook routing** : `--loci` sans `--disk-rom` route $0310-7 + $0318 vers LOCI.
+  Sinon Microdisc garde la priorité (compat existante).
+- **Constants** : `LOCI_DSK_IO_*`, `LOCI_DSK_STAT_*`, `LOCI_DSK_CTRL_*`.
+- **8 nouveaux tests test-loci** : mount/umount drive 0, NOT_READY si
+  unmounted, ready si mounted, CTRL drive select, track/sect/data
+  passthrough, DRQ, 4 drives indépendants montés ensemble.
+
+#### Limites
+Sprint 34ae fournit la plomberie + I/O register stub mais pas la
+mécanique WD1793 cycle-accurate (lecture/écriture de secteurs streamés
+via DRQ/INTRQ). Les commandes écrites dans `$0310` sont silencieusement
+acceptées (le ROM LOCI ne devrait pas crasher en mode probe). L'émulation
+disque complète viendrait dans un sprint séparé si LOCI-as-disk-controller
+devenait un cas d'usage prioritaire.
+
+## [1.16.31-alpha] - 2026-06-06
+
+### LOCI : TAP cassette + ops 0x92-0x94 (Sprint 34af)
+
+#### Added
+- **Backend TAP** : `loci_t.tap_fp/size/counter/cmd/stat`. Auto-ouvert
+  sur MOUNT du slot 4 (`LOCI_MNT_TAP`), refermé sur UMOUNT.
+- **3 nouvelles ops API** :
+  - `0x92 TAP_SEEK` : pos depuis `AXSREG`, clamp à `size-1`, fseek, retourne pos
+  - `0x93 TAP_TELL` : retourne counter en `AXSREG`
+  - `0x94 TAP_READ_HEADER` : scanne fenêtre 4-byte pour sync mark
+    `16 16 16 24`, lit les 16 octets de header suivants, push sur xstack,
+    retourne `sync_start` en AXSREG ; sanitise les caractères non
+    imprimables du filename par `?`
+- **Bus registres $0315-$0317** :
+  - `$0315 CMD` (write) : latch + rewind si `LOCI_TAP_CMD_REW` (0x03)
+  - `$0316 STAT` (read) : `NOT_READY` quand pas de bande montée
+  - `$0317 DATA` (read) : retourne 0 (bit-streamer non implémenté en 34af)
+- **Constants** : `LOCI_TAP_IO_*`, `LOCI_TAP_STAT_*`, `LOCI_TAP_CMD_*`,
+  `LOCI_TAP_HEADER_SIZE` (16).
+- **10 nouveaux tests test-loci** : mount/umount, tell, seek + clamp,
+  read_header succès + filename byte, no sync → ENOENT, seek sans
+  tape → ENODEV, STAT not ready, REW reset counter.
+
 ## [1.16.30-alpha] - 2026-06-06
 
 ### LOCI : ROM swap runtime (op 0xA0 MIA_BOOT) — Sprint 34ad

@@ -84,6 +84,12 @@ static const char* op_name(uint8_t op) {
     }
 }
 
+/* Forward decls for helpers used across sections. */
+static bool tap_open(loci_t* loci, const char* host_path);
+static void tap_close(loci_t* loci);
+static bool dsk_open(loci_t* loci, uint8_t drive, const char* host_path);
+static void dsk_close(loci_t* loci, uint8_t drive);
+
 /* ─── clock helpers ────────────────────────────────────────────── */
 
 static uint64_t now_us(void) {
@@ -130,6 +136,18 @@ void loci_cleanup(loci_t* loci) {
         if (loci->dirs[i]) {
             closedir((DIR*)loci->dirs[i]);
             loci->dirs[i] = NULL;
+        }
+    }
+    /* Close mounted TAP (Sprint 34af). */
+    if (loci->tap_fp) {
+        fclose((FILE*)loci->tap_fp);
+        loci->tap_fp = NULL;
+    }
+    /* Close mounted disks (Sprint 34ae). */
+    for (int i = 0; i < 4; i++) {
+        if (loci->dsk_fp[i]) {
+            fclose((FILE*)loci->dsk_fp[i]);
+            loci->dsk_fp[i] = NULL;
         }
     }
 }
@@ -781,6 +799,22 @@ static void op_mount(loci_t* loci) {
         api_return_errno(loci, LOCI_ENOENT);
         return;
     }
+    /* Sprint 34af: when the tape slot is targeted, auto-open the file
+     * so the TAP API ops (0x92-94) can read from it. */
+    if (drive == LOCI_MNT_TAP) {
+        if (!tap_open(loci, host_path)) {
+            api_return_errno(loci, LOCI_EIO);
+            return;
+        }
+    }
+    /* Sprint 34ae: disk drives 0-3 → open the DSK image so the bus
+     * registers can later stream sectors. */
+    if (drive < 4) {
+        if (!dsk_open(loci, drive, host_path)) {
+            api_return_errno(loci, LOCI_EIO);
+            return;
+        }
+    }
     loci->mnt_mounted[drive] = true;
     strncpy(loci->mnt_paths[drive], path, sizeof(loci->mnt_paths[drive]) - 1);
     loci->mnt_paths[drive][sizeof(loci->mnt_paths[drive]) - 1] = '\0';
@@ -791,6 +825,8 @@ static void op_mount(loci_t* loci) {
 static void op_umount(loci_t* loci) {
     uint8_t drive = loci->regs[LOCI_REG_API_A];
     if (drive < LOCI_MNT_MAX) {
+        if (drive == LOCI_MNT_TAP) tap_close(loci);
+        if (drive < 4)             dsk_close(loci, drive);
         loci->mnt_mounted[drive] = false;
         loci->mnt_paths[drive][0] = '\0';
     }
@@ -994,6 +1030,216 @@ static void op_uname(loci_t* loci) {
     api_return_ax(loci, loci->xstack_ptr);
 }
 
+/* ─── TAP cassette (Sprint 34af) ──────────────────────────────── */
+
+/* Open the host TAP file and seed the read counter. */
+static bool tap_open(loci_t* loci, const char* host_path) {
+    if (loci->tap_fp) {
+        fclose((FILE*)loci->tap_fp);
+        loci->tap_fp = NULL;
+    }
+    FILE* fp = fopen(host_path, "rb");
+    if (!fp) return false;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz < 0) { fclose(fp); return false; }
+    loci->tap_fp = fp;
+    loci->tap_size = (uint32_t)sz;
+    loci->tap_counter = 0;
+    loci->tap_stat = 0;          /* ready, not busy, not protected */
+    return true;
+}
+
+static void tap_close(loci_t* loci) {
+    if (loci->tap_fp) {
+        fclose((FILE*)loci->tap_fp);
+        loci->tap_fp = NULL;
+    }
+    loci->tap_size = 0;
+    loci->tap_counter = 0;
+    loci->tap_stat = LOCI_TAP_STAT_NOT_READY;
+}
+
+/* Bus interface for $0315-$0317. Sprint 34af leaves the bit-level
+ * stream unimplemented (CMD/STAT just latch and report idle) — the
+ * LOCI ROM uses these for cassette PLAY mode which needs cycle-accurate
+ * VIA interaction we don't emulate yet. */
+uint8_t loci_tap_read(loci_t* loci, uint16_t address) {
+    if (!loci || !loci->enabled) return 0xFF;
+    switch (address) {
+        case LOCI_TAP_IO_CMD:  return loci->tap_cmd;
+        case LOCI_TAP_IO_STAT:
+            return loci->tap_fp ? loci->tap_stat
+                                : (uint8_t)(LOCI_TAP_STAT_NOT_READY);
+        case LOCI_TAP_IO_DATA:
+            /* Streamed bits not implemented — return 0 to keep the 6502
+             * out of a tight wait loop. */
+            return 0;
+    }
+    return 0xFF;
+}
+
+void loci_tap_write(loci_t* loci, uint16_t address, uint8_t value) {
+    if (!loci || !loci->enabled) return;
+    if (address == LOCI_TAP_IO_CMD) {
+        loci->tap_cmd = value;
+        /* Rewind = back to start. */
+        if (value == LOCI_TAP_CMD_REW && loci->tap_fp) {
+            fseek((FILE*)loci->tap_fp, 0, SEEK_SET);
+            loci->tap_counter = 0;
+        }
+    }
+    /* DATA writes (record) and STAT writes are ignored in 34af. */
+}
+
+/* 0x92 TAP_SEEK: pos in AXSREG (clamped to size-1), returns final pos. */
+static void op_tap_seek(loci_t* loci) {
+    if (!loci->tap_fp) {
+        api_return_errno(loci, LOCI_ENODEV);
+        return;
+    }
+    uint32_t pos = (uint32_t)loci->regs[LOCI_REG_API_A]
+                 | ((uint32_t)loci->regs[LOCI_REG_API_X]    <<  8)
+                 | ((uint32_t)loci->regs[LOCI_REG_API_SREG] << 16)
+                 | ((uint32_t)loci->regs[LOCI_REG_API_SREG_HI] << 24);
+    if (loci->tap_size > 0 && pos >= loci->tap_size) {
+        pos = loci->tap_size - 1;
+    }
+    if (fseek((FILE*)loci->tap_fp, (long)pos, SEEK_SET) != 0) {
+        api_return_errno(loci, LOCI_EIO);
+        return;
+    }
+    loci->tap_counter = pos;
+    api_return_axsreg(loci, pos);
+}
+
+/* 0x93 TAP_TELL: returns counter in AXSREG. */
+static void op_tap_tell(loci_t* loci) {
+    api_return_axsreg(loci, loci->tap_counter);
+}
+
+/* 0x94 TAP_READ_HEADER: scan forward for sync mark 16 16 16 24, then
+ * read the next 16-byte header. Pushes header on xstack, returns the
+ * position of the sync mark in AXSREG. ENODEV/ENOENT on errors. */
+static void op_tap_read_header(loci_t* loci) {
+    if (!loci->tap_fp) {
+        api_return_errno(loci, LOCI_ENODEV);
+        return;
+    }
+    if (loci->tap_size < LOCI_TAP_HEADER_SIZE + 4) {
+        api_return_errno(loci, LOCI_ENOENT);
+        return;
+    }
+
+    /* Resume scan at tap_counter. */
+    FILE* fp = (FILE*)loci->tap_fp;
+    fseek(fp, (long)loci->tap_counter, SEEK_SET);
+
+    /* Stream-scan one byte at a time keeping a 4-byte sliding window. */
+    uint8_t w[4] = {0};
+    int filled = 0;
+    long sync_end = -1;
+    long pos = (long)loci->tap_counter;
+    int c;
+    while ((c = fgetc(fp)) != EOF) {
+        w[0] = w[1]; w[1] = w[2]; w[2] = w[3]; w[3] = (uint8_t)c;
+        pos++;
+        if (filled < 4) { filled++; continue; }
+        if (w[0] == 0x16 && w[1] == 0x16 && w[2] == 0x16 && w[3] == 0x24) {
+            sync_end = pos;   /* points just past the 0x24 */
+            break;
+        }
+    }
+    if (sync_end < 0) {
+        api_return_errno(loci, LOCI_ENOENT);
+        return;
+    }
+
+    /* Read the 16-byte header that immediately follows. */
+    uint8_t header[LOCI_TAP_HEADER_SIZE] = {0};
+    size_t hr = fread(header, 1, LOCI_TAP_HEADER_SIZE, fp);
+    if (hr != LOCI_TAP_HEADER_SIZE) {
+        api_return_errno(loci, LOCI_ENOENT);
+        return;
+    }
+    /* Sanitise the filename slice (last 16 bytes — actually offsets 9..24
+     * in firmware; we mirror its safety pass). */
+    for (int i = 9; i < LOCI_TAP_HEADER_SIZE; i++) {
+        uint8_t ch = header[i];
+        if (ch != 0 && (ch < 32 || ch >= 128)) header[i] = '?';
+    }
+    /* Advance counter past the header for subsequent calls. */
+    loci->tap_counter = (uint32_t)(sync_end + LOCI_TAP_HEADER_SIZE);
+
+    /* Push header on xstack (firmware: sync_pos - 4 = start of sync mark). */
+    xstack_zero(loci);
+    loci->xstack_ptr = (uint16_t)(LOCI_XSTACK_SIZE - LOCI_TAP_HEADER_SIZE);
+    memcpy(&loci->xstack[loci->xstack_ptr], header, LOCI_TAP_HEADER_SIZE);
+    xstack_sync(loci);
+    api_return_axsreg(loci, (uint32_t)(sync_end - 4));
+}
+
+/* ─── DSK WD179x stub (Sprint 34ae) ───────────────────────────── */
+
+static bool dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
+    if (drive >= 4) return false;
+    if (loci->dsk_fp[drive]) {
+        fclose((FILE*)loci->dsk_fp[drive]);
+        loci->dsk_fp[drive] = NULL;
+    }
+    FILE* fp = fopen(host_path, "r+b");
+    if (!fp) fp = fopen(host_path, "rb");
+    if (!fp) return false;
+    loci->dsk_fp[drive] = fp;
+    return true;
+}
+
+static void dsk_close(loci_t* loci, uint8_t drive) {
+    if (drive >= 4) return;
+    if (loci->dsk_fp[drive]) {
+        fclose((FILE*)loci->dsk_fp[drive]);
+        loci->dsk_fp[drive] = NULL;
+    }
+}
+
+uint8_t loci_dsk_read(loci_t* loci, uint16_t address) {
+    if (!loci || !loci->enabled) return 0xFF;
+    switch (address) {
+        case LOCI_DSK_IO_CMD: {
+            /* Report idle status. If selected drive isn't mounted,
+             * flip NOT_READY. */
+            uint8_t s = 0;
+            if (!loci->dsk_fp[loci->dsk_selected])
+                s |= LOCI_DSK_STAT_NOT_READY;
+            return s;
+        }
+        case LOCI_DSK_IO_TRACK: return loci->dsk_track;
+        case LOCI_DSK_IO_SECT:  return loci->dsk_sect;
+        case LOCI_DSK_IO_DATA:  return loci->dsk_data;
+        case LOCI_DSK_IO_CTRL:  return loci->dsk_ctrl;
+        case LOCI_DSK_IO_DRQ:   return loci->dsk_drq;
+    }
+    return 0xFF;
+}
+
+void loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value) {
+    if (!loci || !loci->enabled) return;
+    switch (address) {
+        case LOCI_DSK_IO_CMD:   loci->dsk_status = 0; break;  /* commands swallowed */
+        case LOCI_DSK_IO_TRACK: loci->dsk_track  = value; break;
+        case LOCI_DSK_IO_SECT:  loci->dsk_sect   = value; break;
+        case LOCI_DSK_IO_DATA:  loci->dsk_data   = value; break;
+        case LOCI_DSK_IO_CTRL:
+            loci->dsk_ctrl = value;
+            loci->dsk_selected =
+                (uint8_t)((value & LOCI_DSK_CTRL_DRV_SEL_MASK)
+                          >> LOCI_DSK_CTRL_DRV_SEL_SHIFT);
+            break;
+        case LOCI_DSK_IO_DRQ:   loci->dsk_drq    = value; break;
+    }
+}
+
 /* ─── MIA_BOOT — runtime ROM swap (Sprint 34ad) ──────────────── */
 
 /* Resolve the BASIC ROM filename used by MIA_BOOT, given the settings:
@@ -1083,6 +1329,9 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_MKDIR:       op_mkdir(loci);        break;
         case LOCI_OP_UNAME:       op_uname(loci);        break;
         case LOCI_OP_MIA_BOOT:    op_mia_boot(loci);     break;
+        case LOCI_OP_TAP_SEEK:    op_tap_seek(loci);     break;
+        case LOCI_OP_TAP_TELL:    op_tap_tell(loci);     break;
+        case LOCI_OP_TAP_READ_HEADER: op_tap_read_header(loci); break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));

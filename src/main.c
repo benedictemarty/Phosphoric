@@ -298,6 +298,18 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
     if (emu->has_loci && loci_addr_in_mia(address)) {
         return loci_read(&emu->loci, address);
     }
+    /* LOCI TAP $0315-$0317 (Sprint 34af). Overlaps Microdisc $0310-$031F
+     * — LOCI claims priority when active since it replaces the cassette
+     * interface. */
+    if (emu->has_loci && loci_addr_in_tap(address)) {
+        return loci_tap_read(&emu->loci, address);
+    }
+    /* LOCI DSK $0310-$0314 + $0318 (Sprint 34ae). Only when no real
+     * Microdisc is present — otherwise the existing microdisc handler
+     * owns the range. */
+    if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
+        return loci_dsk_read(&emu->loci, address);
+    }
 
     /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
@@ -414,6 +426,16 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     /* LOCI MIA: $03A0-$03BF */
     if (emu->has_loci && loci_addr_in_mia(address)) {
         loci_write(&emu->loci, address, value);
+        return;
+    }
+    /* LOCI TAP $0315-$0317 (Sprint 34af). */
+    if (emu->has_loci && loci_addr_in_tap(address)) {
+        loci_tap_write(&emu->loci, address, value);
+        return;
+    }
+    /* LOCI DSK $0310-$0314 + $0318 (Sprint 34ae). */
+    if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
+        loci_dsk_write(&emu->loci, address, value);
         return;
     }
 
