@@ -305,6 +305,12 @@ typedef struct loci_s {
      *       for BASIC, $A000 for Microdisc). */
     bool (*rom_swap_cb)(void* ctx, const char* rom_path, uint16_t base_addr);
     void* rom_swap_ctx;
+
+    /* SD raw image backend (Sprint 34ao). When non-NULL, file ops
+     * (open/read/lseek/close/opendir/readdir/closedir) delegate to the
+     * FAT16/32 reader in loci_sdimg.c instead of POSIX. Mutually
+     * exclusive with flash_root[]: the CLI rejects both flags together. */
+    void* sdimg;   /* loci_sdimg_t* — opaque to avoid header coupling */
 } loci_t;
 
 bool    loci_init(loci_t* loci);
@@ -314,6 +320,15 @@ void    loci_cleanup(loci_t* loci);
 /* Configure the host directory used as sandbox root for LOCI file ops
  * (Sprint 34aa). Pass NULL or empty string to use CWD. */
 void    loci_set_flash_root(loci_t* loci, const char* path);
+
+/* Attach a raw SD image backend (Sprint 34ao). Path must be a FAT16/32
+ * superfloppy .img file. Returns true on success. Mutually exclusive
+ * with loci_set_flash_root() — the last one called wins (caller's
+ * responsibility to keep them apart). Read-only in this initial cut. */
+bool    loci_attach_sdimg(loci_t* loci, const char* path);
+
+/* Detach the SD image (frees backend, leaves flash_root untouched). */
+void    loci_detach_sdimg(loci_t* loci);
 
 /* USB HID bridge (Sprint 34ag).
  * Update the keyboard bitmap in xram from a HID-style boot report.

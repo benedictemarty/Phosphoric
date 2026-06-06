@@ -1,12 +1,18 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.39-alpha
+Current Version: 1.16.40-alpha
 Release Date: 2026-06-07
-Status: Alpha (LOCI fix MIA spin ABI — 448 tests pass — END-TO-END VALIDÉ)
+Status: Alpha (LOCI backend image SD raw FAT16/32 — 458 tests pass)
 
 Version History:
 ----------------
+- 1.16.40-alpha (2026-06-07): LOCI backend image SD raw (Sprint 34ao)
+  * src/io/loci_sdimg.{c,h} — parser FAT16/FAT32 read-only superfloppy
+  * CLI --loci-sdimg PATH (mutuellement exclusif avec --loci-flash)
+  * 11 ops file/dir dispatchées + 5 ops d'écriture rejetées EACCES
+  * 10 tests SDIMG + 0 régression sur les 448 tests précédents
+
 - 1.16.39-alpha (2026-06-07): LOCI fix critique MIA spin window ABI (Sprint 34an)
   * Cause racine identifiée par ingé principal après review CR
   * api_install_blocked/released_stub + extension api_set_ax

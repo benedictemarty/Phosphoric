@@ -539,6 +539,23 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ao: LOCI backend image SD raw FAT16/32 (v1.16.40-alpha) - DONE
+- [x] Nouveau module src/io/loci_sdimg.{c,h} (parseur FAT autonome ~470 LOC)
+- [x] BPB parsing : auto-détection FAT16 vs FAT32 par cluster count
+- [x] FAT chain walk pour seek arbitraire dans les fichiers
+- [x] Lookup case-insensitive 8.3 (skip LFN slots et volume labels)
+- [x] CLI --loci-sdimg PATH avec validation exclusion mutuelle vs --loci-flash
+- [x] Champ void* sdimg opaque dans loci_t (pas de couplage d'header)
+- [x] API loci_attach_sdimg / loci_detach_sdimg
+- [x] 11 ops file/dir dispatchées vers backend SDIMG quand activé
+- [x] 5 ops d'écriture rejetées EACCES (read-only v1)
+- [x] sdimg_errno_to_loci mapping POSIX→LOCI errno
+- [x] Tag sentinel dans fds[]/dirs[] pour éviter collisions POSIX
+- [x] loci_cleanup conditionnel (skip fclose/closedir si sdimg actif)
+- [x] tests/unit/test_loci_sdimg.c : 10 tests avec génération FAT16 inline
+- [x] Makefile : src/io/loci_sdimg.c ajouté + cible test-loci-sdimg
+- [x] 458 tests global pass (448 + 10 nouveaux), 0 régression
+
 ### Sprint 34an: LOCI fix critique MIA spin window ABI (v1.16.39-alpha) - DONE
 - [x] Cause racine identifiée par ingé principal après review CR
 - [x] api_install_blocked_stub + api_install_released_stub (Option B)

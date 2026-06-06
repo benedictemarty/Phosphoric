@@ -29,6 +29,7 @@
  */
 
 #include "io/loci.h"
+#include "io/loci_sdimg.h"
 #include "utils/logging.h"
 
 #include <string.h>
@@ -143,19 +144,23 @@ void loci_reset(loci_t* loci) {
     seed_initial_stub(loci);
 }
 
+/* Forward decl — defined later. */
+void loci_detach_sdimg(loci_t* loci);
+
 void loci_cleanup(loci_t* loci) {
     if (!loci) return;
-    /* Close any still-open files (Sprint 34aa). */
+    /* Close any still-open files (Sprint 34aa). When sdimg backend is
+     * active, fds[] holds tagged sentinels (not FILE*), so we just
+     * clear them — loci_detach_sdimg below releases the real handles. */
     for (int i = 0; i < LOCI_FD_MAX; i++) {
         if (loci->fds[i]) {
-            fclose((FILE*)loci->fds[i]);
+            if (!loci->sdimg) fclose((FILE*)loci->fds[i]);
             loci->fds[i] = NULL;
         }
     }
-    /* Close any still-open dirs (Sprint 34ac). */
     for (int i = 0; i < LOCI_DIR_MAX; i++) {
         if (loci->dirs[i]) {
-            closedir((DIR*)loci->dirs[i]);
+            if (!loci->sdimg) closedir((DIR*)loci->dirs[i]);
             loci->dirs[i] = NULL;
         }
     }
@@ -171,6 +176,8 @@ void loci_cleanup(loci_t* loci) {
             loci->dsk_fp[i] = NULL;
         }
     }
+    /* Detach SD image backend (Sprint 34ao). */
+    loci_detach_sdimg(loci);
 }
 
 void loci_set_flash_root(loci_t* loci, const char* path) {
@@ -181,6 +188,26 @@ void loci_set_flash_root(loci_t* loci, const char* path) {
     } else {
         loci->flash_root[0] = '\0';
     }
+}
+
+bool loci_attach_sdimg(loci_t* loci, const char* path) {
+    if (!loci || !path) return false;
+    loci_detach_sdimg(loci);
+    loci_sdimg_t* img = loci_sdimg_open(path);
+    if (!img) {
+        log_warning("LOCI: failed to open SD image '%s' (errno=%d)", path, errno);
+        return false;
+    }
+    loci->sdimg = img;
+    log_info("LOCI: SD image attached: %s (%s, %u bytes)",
+             path, loci_sdimg_fs_label(img), loci_sdimg_total_size(img));
+    return true;
+}
+
+void loci_detach_sdimg(loci_t* loci) {
+    if (!loci || !loci->sdimg) return;
+    loci_sdimg_close((loci_sdimg_t*)loci->sdimg);
+    loci->sdimg = NULL;
 }
 
 void loci_set_rom_swap_callback(loci_t* loci,
@@ -679,8 +706,177 @@ static FILE* fd_to_file(loci_t* loci, int fd) {
     return (FILE*)loci->fds[idx];
 }
 
+/* ─── SDIMG backend dispatch (Sprint 34ao) ──────────────────────────
+ * When loci->sdimg is non-NULL, the SD raw image backend handles all
+ * file/dir ops instead of POSIX. Each handler below mirrors its POSIX
+ * counterpart's contract (errno mapping, return value, xstack layout).
+ * Writes are rejected with EACCES — read-only initial cut. */
+
+static int sdimg_errno_to_loci(int neg_errno) {
+    int e = neg_errno < 0 ? -neg_errno : neg_errno;
+    switch (e) {
+        case 0:        return 0;
+        case ENOENT:   return LOCI_ENOENT;
+        case EACCES:   return LOCI_EACCES;
+        case EISDIR:   return LOCI_EACCES;
+        case ENOTDIR:  return LOCI_EINVAL;
+        case EBADF:    return LOCI_EBADF;
+        case EINVAL:   return LOCI_EINVAL;
+        case EMFILE:   return LOCI_EMFILE;
+        case EIO:      return LOCI_EIO;
+        default:       return LOCI_EIO;
+    }
+}
+
+static void op_open_sdimg(loci_t* loci) {
+    uint8_t flags = loci->regs[LOCI_REG_API_A];
+    char path[260];
+    if (!pop_zstring(loci, path, sizeof(path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    /* Read-only backend: reject any write-related flag. */
+    uint8_t write_flags = LOCI_O_CREAT | LOCI_O_TRUNC | LOCI_O_APPEND | LOCI_O_EXCL;
+    int rw = flags & LOCI_O_RDWR;
+    if ((flags & write_flags) || rw == 1 /* WRONLY */ || rw == 3 /* RDWR */) {
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
+    /* Strip optional volume prefix "X:". */
+    const char* p = path;
+    if (p[0] && p[1] == ':') p += 2;
+    while (*p == '/' || *p == '\\') p++;
+    int slot = loci_sdimg_fopen((loci_sdimg_t*)loci->sdimg, p);
+    if (slot < 0) {
+        api_return_errno(loci, sdimg_errno_to_loci(slot));
+        return;
+    }
+    /* Mark the POSIX slot as in-use so it cannot collide. We store a
+     * tagged sentinel pointer: low byte = sdimg slot, with the top
+     * bytes set so fd_to_file() can detect it via fp range checks. */
+    loci->fds[slot] = (void*)(uintptr_t)(0x1000000u | (uint32_t)slot);
+    api_return_ax(loci, (uint16_t)(slot + LOCI_FD_OFFSET));
+}
+
+static void op_close_sdimg(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    int slot = fd - LOCI_FD_OFFSET;
+    if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    int r = loci_sdimg_fclose((loci_sdimg_t*)loci->sdimg, slot);
+    loci->fds[slot] = NULL;
+    if (r < 0) { api_return_errno(loci, sdimg_errno_to_loci(r)); return; }
+    api_return_ax(loci, 0);
+}
+
+static void op_read_xstack_sdimg(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL); return;
+    }
+    uint16_t count = (uint16_t)loci->xstack[loci->xstack_ptr]
+                   | ((uint16_t)loci->xstack[loci->xstack_ptr + 1] << 8);
+    loci->xstack_ptr += 2;
+    if (count == 0 || count > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL); return;
+    }
+    int slot = fd - LOCI_FD_OFFSET;
+    if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
+        api_return_errno(loci, LOCI_EBADF); return;
+    }
+    uint8_t buf[LOCI_XSTACK_SIZE];
+    int br = loci_sdimg_fread((loci_sdimg_t*)loci->sdimg, slot, buf, count);
+    if (br < 0) { api_return_errno(loci, sdimg_errno_to_loci(br)); return; }
+    xstack_zero(loci);
+    if (br > 0) {
+        loci->xstack_ptr = (uint16_t)(LOCI_XSTACK_SIZE - br);
+        memcpy(&loci->xstack[loci->xstack_ptr], buf, (size_t)br);
+        xstack_sync(loci);
+    }
+    api_return_ax(loci, (uint16_t)br);
+}
+
+static void op_lseek_sdimg(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    if (loci->xstack_ptr + 5 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL); return;
+    }
+    int32_t offset;
+    memcpy(&offset, &loci->xstack[loci->xstack_ptr], 4);
+    loci->xstack_ptr += 4;
+    uint8_t whence = loci->xstack[loci->xstack_ptr++];
+    xstack_zero(loci);
+    int slot = fd - LOCI_FD_OFFSET;
+    if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
+        api_return_errno(loci, LOCI_EBADF); return;
+    }
+    int32_t pos = loci_sdimg_lseek((loci_sdimg_t*)loci->sdimg, slot, offset, whence);
+    if (pos < 0) { api_return_errno(loci, sdimg_errno_to_loci(pos)); return; }
+    api_return_axsreg(loci, (uint32_t)pos);
+}
+
+static void op_opendir_sdimg(loci_t* loci) {
+    char path[260];
+    if (!pop_zstring(loci, path, sizeof(path))) {
+        api_return_errno(loci, LOCI_EINVAL); return;
+    }
+    const char* p = path;
+    if (p[0] && p[1] == ':') p += 2;
+    while (*p == '/' || *p == '\\') p++;
+    int slot = loci_sdimg_opendir((loci_sdimg_t*)loci->sdimg, p);
+    if (slot < 0) { api_return_errno(loci, sdimg_errno_to_loci(slot)); return; }
+    /* Tag dirs[] slot for collision avoidance. */
+    loci->dirs[slot] = (void*)(uintptr_t)(0x2000000u | (uint32_t)slot);
+    api_return_ax(loci, (uint16_t)(slot + LOCI_DIR_OFFSET));
+}
+
+static void op_closedir_sdimg(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    int slot = fd - LOCI_DIR_OFFSET;
+    if (slot < 0 || slot >= LOCI_DIR_MAX || !loci->dirs[slot]) {
+        api_return_errno(loci, LOCI_EBADF); return;
+    }
+    int r = loci_sdimg_closedir((loci_sdimg_t*)loci->sdimg, slot);
+    loci->dirs[slot] = NULL;
+    if (r < 0) { api_return_errno(loci, sdimg_errno_to_loci(r)); return; }
+    api_return_ax(loci, 0);
+}
+
+static void op_readdir_sdimg(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    int slot = fd - LOCI_DIR_OFFSET;
+    if (slot < 0 || slot >= LOCI_DIR_MAX || !loci->dirs[slot]) {
+        api_return_errno(loci, LOCI_EBADF); return;
+    }
+    char name[64] = {0};
+    uint8_t attrib = 0;
+    uint32_t size = 0;
+    int r = loci_sdimg_readdir((loci_sdimg_t*)loci->sdimg, slot, name, &attrib, &size);
+    if (r < 0) { api_return_errno(loci, sdimg_errno_to_loci(r)); return; }
+
+    uint8_t dirent_buf[LOCI_DIRENT_SIZE] = {0};
+    dirent_buf[0] = (uint8_t)(fd & 0xFF);
+    dirent_buf[1] = (uint8_t)((fd >> 8) & 0xFF);
+    if (r == 1) {
+        size_t nl = strlen(name);
+        if (nl > LOCI_DIR_NAME_LEN - 1) nl = LOCI_DIR_NAME_LEN - 1;
+        memcpy(&dirent_buf[2], name, nl);
+        /* FAT attribute byte maps directly to firmware d_attrib. */
+        dirent_buf[66] = attrib;
+        memcpy(&dirent_buf[68], &size, 4);
+    }
+    xstack_zero(loci);
+    loci->xstack_ptr = (uint16_t)(LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE);
+    memcpy(&loci->xstack[loci->xstack_ptr], dirent_buf, LOCI_DIRENT_SIZE);
+    xstack_sync(loci);
+    api_return_ax(loci, 0);
+}
+
 /* 0x14 OPEN: A=flags, xstack top = path (null-terminated). Returns fd or -1. */
 static void op_open(loci_t* loci) {
+    if (loci->sdimg) { op_open_sdimg(loci); return; }
     uint8_t flags = loci->regs[LOCI_REG_API_A];
     char path[260];
     if (!pop_zstring(loci, path, sizeof(path))) {
@@ -718,6 +914,7 @@ static void op_open(loci_t* loci) {
 
 /* 0x15 CLOSE: A=fd. */
 static void op_close(loci_t* loci) {
+    if (loci->sdimg) { op_close_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     FILE* fp = fd_to_file(loci, fd);
     if (!fp) {
@@ -731,6 +928,7 @@ static void op_close(loci_t* loci) {
 
 /* 0x16 READ_XSTACK: A=fd, xstack top = uint16 count. Read into xstack. */
 static void op_read_xstack(loci_t* loci) {
+    if (loci->sdimg) { op_read_xstack_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     /* Pop 2 bytes (count, LE) from xstack. */
     if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
@@ -765,6 +963,10 @@ static void op_read_xstack(loci_t* loci) {
 /* 0x18 WRITE_XSTACK: A=fd, xstack contains bytes followed by uint16 count.
  * The firmware first pops the count, then the bytes are at xstack[ptr..ptr+count]. */
 static void op_write_xstack(loci_t* loci) {
+    if (loci->sdimg) {  /* Read-only backend */
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
     int fd = loci->regs[LOCI_REG_API_A];
     if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -795,6 +997,7 @@ static void op_write_xstack(loci_t* loci) {
 /* 0x1A LSEEK: A=fd, xstack contains int32 offset, uint8 whence.
  * Firmware pushes whence first then offset (offset on top). */
 static void op_lseek(loci_t* loci) {
+    if (loci->sdimg) { op_lseek_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     if (loci->xstack_ptr + 5 > LOCI_XSTACK_SIZE) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -854,6 +1057,21 @@ static void op_read_xram(loci_t* loci) {
         api_return_errno(loci, LOCI_EINVAL);
         return;
     }
+
+    if (loci->sdimg) {
+        int slot = fd - LOCI_FD_OFFSET;
+        if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
+            api_return_errno(loci, LOCI_EBADF); return;
+        }
+        int br = loci_sdimg_fread((loci_sdimg_t*)loci->sdimg, slot,
+                                  &loci->xram[xram_addr], count);
+        if (br < 0) { api_return_errno(loci, sdimg_errno_to_loci(br)); return; }
+        refresh_rw0(loci);
+        refresh_rw1(loci);
+        api_return_axsreg(loci, (uint32_t)br);
+        return;
+    }
+
     FILE* fp = fd_to_file(loci, fd);
     if (!fp) {
         api_return_errno(loci, LOCI_EBADF);
@@ -869,6 +1087,7 @@ static void op_read_xram(loci_t* loci) {
 /* 0x19 WRITE_XRAM: A=fd, xstack count + xram_addr.
  * Writes xram[xram_addr..] to file. Returns bytes_written. */
 static void op_write_xram(loci_t* loci) {
+    if (loci->sdimg) { api_return_errno(loci, LOCI_EACCES); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     if (loci->xstack_ptr + 4 > LOCI_XSTACK_SIZE) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -994,6 +1213,7 @@ static void op_umount(loci_t* loci) {
 
 /* 0x1B UNLINK: xstack top = path. */
 static void op_unlink(loci_t* loci) {
+    if (loci->sdimg) { api_return_errno(loci, LOCI_EACCES); return; }
     char path[260];
     if (!pop_zstring(loci, path, sizeof(path))) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -1013,6 +1233,7 @@ static void op_unlink(loci_t* loci) {
 
 /* 0x1C RENAME: xstack contains new path (top) then old path (below). */
 static void op_rename(loci_t* loci) {
+    if (loci->sdimg) { api_return_errno(loci, LOCI_EACCES); return; }
     char new_path[260];
     if (!pop_zstring(loci, new_path, sizeof(new_path))) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -1053,6 +1274,7 @@ static DIR* dir_fd_to_handle(loci_t* loci, int fd) {
 
 /* 0x80 OPENDIR: xstack=path. Returns dir_fd >= LOCI_DIR_OFFSET. */
 static void op_opendir(loci_t* loci) {
+    if (loci->sdimg) { op_opendir_sdimg(loci); return; }
     char path[260];
     if (!pop_zstring(loci, path, sizeof(path))) {
         api_return_errno(loci, LOCI_EINVAL);
@@ -1080,6 +1302,7 @@ static void op_opendir(loci_t* loci) {
 
 /* 0x81 CLOSEDIR: A=dir_fd. */
 static void op_closedir(loci_t* loci) {
+    if (loci->sdimg) { op_closedir_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     DIR* d = dir_fd_to_handle(loci, fd);
     if (!d) {
@@ -1094,6 +1317,7 @@ static void op_closedir(loci_t* loci) {
 /* 0x82 READDIR: A=dir_fd. Pushes a dirent struct (72 bytes) onto xstack.
  * Skips "." and "..". On end-of-dir, returns empty name. */
 static void op_readdir(loci_t* loci) {
+    if (loci->sdimg) { op_readdir_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
     DIR* d = dir_fd_to_handle(loci, fd);
     if (!d) {
@@ -1150,6 +1374,10 @@ static void op_readdir(loci_t* loci) {
 
 /* 0x83 MKDIR: xstack=path. */
 static void op_mkdir(loci_t* loci) {
+    if (loci->sdimg) {  /* Read-only backend */
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
     char path[260];
     if (!pop_zstring(loci, path, sizeof(path))) {
         api_return_errno(loci, LOCI_EINVAL);

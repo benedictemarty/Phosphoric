@@ -241,6 +241,8 @@ static void print_usage(const char* program_name) {
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
     printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
+    printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
+    printf("                             Mutually exclusive with --loci-flash\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
@@ -1484,6 +1486,7 @@ int main(int argc, char* argv[]) {
     bool tui_mode = false;
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
+    const char* loci_sdimg_path = NULL;
     int64_t trace_max = 0;
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
@@ -1495,7 +1498,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -1545,6 +1548,7 @@ int main(int argc, char* argv[]) {
         {"tui",                 no_argument,       0, OPT_TUI},
         {"loci",                no_argument,       0, OPT_LOCI},
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
+        {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
         {"help",                no_argument,       0, '?'},
         {0, 0, 0, 0}
     };
@@ -1625,6 +1629,7 @@ int main(int argc, char* argv[]) {
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
             case OPT_LOCI: loci_enabled = true; break;
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
+            case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
                 break;
@@ -1872,7 +1877,18 @@ int main(int argc, char* argv[]) {
          * the ROM's ReadKeyboard sees a working PSG. */
         emu.psg.registers[7] = 0x7F;
         log_info("LOCI: pre-seeded PSG R7=$7F (firmware AY init for keyboard)");
-        if (loci_flash_root) {
+        if (loci_flash_root && loci_sdimg_path) {
+            log_error("--loci-flash and --loci-sdimg are mutually exclusive");
+            return 1;
+        }
+        if (loci_sdimg_path) {
+            if (!loci_attach_sdimg(&emu.loci, loci_sdimg_path)) {
+                log_error("Failed to attach LOCI SD image: %s", loci_sdimg_path);
+                return 1;
+            }
+            log_info("LOCI MIA enabled at $%04X-$%04X (SD image: %s)",
+                     LOCI_MIA_BASE, LOCI_MIA_END, loci_sdimg_path);
+        } else if (loci_flash_root) {
             loci_set_flash_root(&emu.loci, loci_flash_root);
             log_info("LOCI MIA enabled at $%04X-$%04X (flash root: %s)",
                      LOCI_MIA_BASE, LOCI_MIA_END, loci_flash_root);
