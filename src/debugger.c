@@ -475,42 +475,9 @@ static void show_help(void) {
 /*  REPL COMMAND LOOP                                                  */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-void debugger_repl(debugger_t* dbg, emulator_t* emu) {
-    dbg->active = true;
-    dbg->step_mode = false;
-
-    /* Reset disasm pagination on every break — `d` first shows around PC,
-     * subsequent `d` calls page forward, `d -` walks back through the
-     * navigations done within this session. */
-    dbg->disasm_cursor_valid = false;
-    dbg->disasm_history_top = 0;
-
-    /* Show current state on entry */
-    printf("\n*** DEBUGGER BREAK at $%04X ***\n", emu->cpu.PC);
-    show_registers(emu);
-    show_disassembly(emu, emu->cpu.PC, 1);
-
-    char line[256];
-    while (dbg->active) {
-        printf("dbg> ");
-        fflush(stdout);
-
-        if (!fgets(line, sizeof(line), stdin)) {
-            /* EOF on stdin - quit */
-            emu->running = false;
-            dbg->active = false;
-            break;
-        }
-
-        /* Strip trailing newline */
-        size_t len = strlen(line);
-        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-            line[--len] = '\0';
-
-        /* Skip empty lines */
-        if (len == 0)
-            continue;
-
+/* Single-line REPL command dispatch. Used by the interactive REPL
+ * loop and by the TUI's ':' command-line mode. */
+static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line) {
         /* Parse command */
         char cmd[32] = {0};
         char arg1[32] = {0};
@@ -593,7 +560,7 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
                     addr = a;
                 } else {
                     printf("  Unknown address/symbol: %s\n", arg1);
-                    continue;
+                    return;
                 }
             }
             if (arg2[0]) {
@@ -609,7 +576,7 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
                  * the one before is the previous one. */
                 if (dbg->disasm_history_top < 2) {
                     printf("  (no previous page)\n");
-                    continue;
+                    return;
                 }
                 dbg->disasm_history_top--;   /* discard current */
                 addr = dbg->disasm_history[--dbg->disasm_history_top];
@@ -633,12 +600,12 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
             if (!arg1[0]) {
                 printf("  Usage: m addr [len]          dump memory\n");
                 printf("         m addr = V1 [V2 ...]  write byte(s)\n");
-                continue;
+                return;
             }
             uint16_t addr;
             if (!parse_addr(emu, arg1, &addr)) {
                 printf("  Unknown address/symbol: %s\n", arg1);
-                continue;
+                return;
             }
             /* Detect "=" in arg2 (separator) or as part of arg2 like "=42".
              * Anything after = is a list of values; we re-scan `line` after
@@ -718,7 +685,7 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
                 uint16_t addr;
                 if (!parse_addr(emu, arg1, &addr)) {
                     printf("  Unknown address/symbol: %s\n", arg1);
-                    continue;
+                    return;
                 }
                 /* Detect optional "if <expression>" after the address.
                  * sscanf collected the address into arg1 and the next
@@ -734,7 +701,7 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
                 if (idx < 0) {
                     printf("  Error: maximum breakpoints reached (%d)\n",
                            DEBUGGER_MAX_BREAKPOINTS);
-                    continue;
+                    return;
                 }
                 if (if_pos && *if_pos) {
                     bp_condition_t cond;
@@ -743,7 +710,7 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
                         printf("  Invalid condition: %s\n", if_pos);
                         printf("  Syntax: REG op VALUE  or  M[ADDR] op VALUE\n");
                         printf("  REG: A X Y SP P PC   op: == != < <= > >=\n");
-                        continue;
+                        return;
                     }
                     breakpoint_t* bp = &dbg->breakpoints[idx];
                     bp->has_cond = true;
@@ -791,7 +758,7 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
                 uint16_t addr;
                 if (!parse_addr(emu, arg1, &addr)) {
                     printf("  Unknown address/symbol: %s\n", arg1);
-                    continue;
+                    return;
                 }
                 int idx = debugger_add_watchpoint(dbg, addr);
                 if (idx >= 0) {
@@ -877,5 +844,50 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
         else {
             printf("  Unknown command: '%s'. Type 'h' for help.\n", cmd);
         }
+}
+
+void debugger_repl(debugger_t* dbg, emulator_t* emu) {
+    dbg->active = true;
+    dbg->step_mode = false;
+
+    /* Reset disasm pagination on every break — `d` first shows around PC,
+     * subsequent `d` calls page forward, `d -` walks back through the
+     * navigations done within this session. */
+    dbg->disasm_cursor_valid = false;
+    dbg->disasm_history_top = 0;
+
+    /* Show current state on entry */
+    printf("\n*** DEBUGGER BREAK at $%04X ***\n", emu->cpu.PC);
+    show_registers(emu);
+    show_disassembly(emu, emu->cpu.PC, 1);
+
+    char line[256];
+    while (dbg->active) {
+        printf("dbg> ");
+        fflush(stdout);
+
+        if (!fgets(line, sizeof(line), stdin)) {
+            /* EOF on stdin - quit */
+            emu->running = false;
+            dbg->active = false;
+            break;
+        }
+
+        /* Strip trailing newline */
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            line[--len] = '\0';
+
+        /* Skip empty lines */
+        if (len == 0)
+            continue;
+
+        process_repl_line(dbg, emu, line);
     }
+}
+
+/* Public wrapper: execute a single REPL command line. */
+void debugger_repl_run_line(debugger_t* dbg, emulator_t* emu, const char* line) {
+    if (!line || !*line) return;
+    process_repl_line(dbg, emu, line);
 }

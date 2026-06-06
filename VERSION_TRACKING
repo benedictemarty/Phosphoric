@@ -1,12 +1,22 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.21-alpha
+Current Version: 1.16.22-alpha
 Release Date: 2026-06-06
-Status: Alpha (Édition mémoire live REPL — 340 tests pass)
+Status: Alpha (TUI ncurses multi-panes optionnel — 340 tests pass)
 
 Version History:
 ----------------
+- 1.16.22-alpha (2026-06-06): TUI ncurses optionnel (Sprint 34w)
+  * Build flag TUI=1 (linke -lncursesw, sinon stubs static inline)
+  * CLI --tui : 6 panes ncurses (regs, stack, disasm, mem, bp/wp, status)
+  * Couleurs : PC vert+gras, breakpoints magenta, symboles jaune, headers cyan
+  * Raccourcis : s/n/c/q, PgUp/PgDn (mem), g (goto), : (REPL line)
+  * Refactor debugger_repl : process_repl_line interne exposé via wrapper
+    debugger_repl_run_line — TUI ':' réutilise le parseur REPL existant
+  * Sprint déclenché par gap n°5 du comparatif debug vs Oricutron — DERNIER
+  * 340 tests pass — tous les gaps n°1..5 sont fermés
+
 - 1.16.21-alpha (2026-06-06): Édition mémoire live REPL (Sprint 34v)
   * m ADDR = V1 [V2 V3 ...] : écrit une séquence d'octets
   * ADDR accepte hex ou symbole (parse_addr)

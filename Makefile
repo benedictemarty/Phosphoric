@@ -77,6 +77,12 @@ ifeq ($(CAST), 1)
     SOURCES += src/network/cast_server.c src/network/castv2.c
 endif
 
+ifeq ($(TUI), 1)
+    SOURCES += src/tui.c
+    CFLAGS  += -DHAS_TUI
+    LDFLAGS += -lncursesw
+endif
+
 OBJECTS = $(SOURCES:.c=.o)
 
 # Core libraries (no main)

@@ -34,7 +34,7 @@
 #include "utils/symbols.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.21-alpha"
+#define EMU_VERSION "1.16.22-alpha"
 
 /**
  * @brief ORIC machine model
@@ -177,6 +177,10 @@ typedef struct emulator_s {
 
     /* Symbol table for debugger (loaded via --symbols) */
     symbol_table_t symbols;
+
+    /* TUI mode flag: when true, breakpoints route to the ncurses TUI
+     * instead of the line-based REPL (build with TUI=1). */
+    bool tui_mode;
 
     /* CPU trace logging */
     cpu_trace_t trace;

@@ -539,6 +539,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34w: TUI ncurses multi-panes optionnel (v1.16.22-alpha) - DONE
+- [x] Build flag TUI=1 (linke -lncursesw, sinon stubs static inline pour compat)
+- [x] Module src/tui.c + include/tui.h
+- [x] CLI --tui (force --debug, requiert build TUI=1)
+- [x] Layout 6 panes :
+      - Registres + Stack (haut, côte à côte)
+      - Disassembly (centre, PC vert+gras, breakpoints magenta)
+      - Memory + Breakpoints/Watchpoints (bas, côte à côte)
+      - Status line (bas avec raccourcis)
+- [x] Symboles annotés en jaune+gras dans le disasm
+- [x] Headers de panes en cyan+gras
+- [x] Raccourcis : s/n/c/q + PgUp/PgDn (mem scroll) + g (goto mem) + : (cmd)
+- [x] Step-over JSR géré comme dans le REPL (temp breakpoint à PC+3)
+- [x] ':' suspend ncurses, exécute la ligne via debugger_repl_run_line,
+      retour TUI au prochain key press
+- [x] Refactor debugger_repl : process_repl_line interne extrait, exposé
+      via wrapper debugger_repl_run_line (sans changement de comportement)
+- [x] emulator_t.tui_mode flag ; main loop route vers tui_repl ou
+      debugger_repl selon ce drapeau
+- [x] tui_init/tui_cleanup gérés dans emulator_init/cleanup
+- [x] Sprint déclenché par gap n°5 du comparatif debug vs Oricutron
+- [x] DERNIER gap du comparatif fermé — n°1..5 tous DONE
+- [x] 340 tests pass
+
 ### Sprint 34v: Édition mémoire live REPL (v1.16.21-alpha) - DONE
 - [x] Syntaxe `m ADDR = V1 [V2 V3 ...]` : écrit séquence d'octets
 - [x] ADDR via parse_addr (hex ou symbole)

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.22-alpha] - 2026-06-06
+
+### Debug : TUI ncurses optionnel — Sprint 34w
+
+#### Added
+- **Build flag `TUI=1`** : `make SDL2=1 TUI=1` compile le debugger TUI
+  (linke `-lncursesw`, définit `HAS_TUI`). Sans TUI=1, des `static inline`
+  stubs maintiennent la compatibilité — aucune dépendance ncurses requise
+  dans le build par défaut.
+- **CLI `--tui`** : remplace la session REPL par une TUI multi-panes
+  ncurses à chaque break du debugger. Force `--debug`.
+- **Layout 6 panes** : Registres + Stack en haut, Disassembly au centre
+  (PC mis en évidence vert, breakpoints en magenta, symboles annotés en
+  jaune), Memory + Breakpoints/Watchpoints en bas, ligne de statut.
+- **Raccourcis** : `s` step, `n` next (step-over JSR), `c` continue,
+  `q` quit, `PgUp/PgDn` scroll mémoire, `g` saut mémoire (hex ou symbole),
+  `:` ouvre une ligne de commande qui exécute n'importe quelle commande
+  du REPL classique (`b`, `w`, `d`, `m =`, `set`, `sym`...).
+- **Couleurs ncurses** : PC en vert+gras, breakpoints en magenta,
+  symboles en jaune+gras, headers de panes en cyan+gras.
+
+#### Changed
+- **Refactor `debugger_repl`** : extraction du dispatch de commandes
+  dans `process_repl_line()` interne, exposé via `debugger_repl_run_line()`
+  pour partage entre REPL et TUI. Aucun changement de comportement.
+- `emulator_t` : nouveau flag `tui_mode` ; main loop route vers `tui_repl`
+  ou `debugger_repl` selon ce drapeau.
+
 ## [1.16.21-alpha] - 2026-06-06
 
 ### Debug : édition mémoire live — Sprint 34v

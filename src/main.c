@@ -31,6 +31,7 @@
 #include "io/keyboard.h"
 #include "io/printer.h"
 #include "debugger.h"
+#include "tui.h"
 #include "savestate.h"
 #include "utils/trace.h"
 #include "utils/rominfo.h"
@@ -237,6 +238,7 @@ static void print_usage(const char* program_name) {
     printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
+    printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
@@ -546,6 +548,10 @@ static bool emulator_init(emulator_t* emu) {
 }
 
 static void emulator_cleanup(emulator_t* emu) {
+    if (emu->tui_mode) {
+        tui_cleanup();
+        emu->tui_mode = false;
+    }
     log_info("Shutting down emulator");
     if (emu->irq_trace_fp) {
         log_info("IRQ trace: %llu interrupts logged",
@@ -812,7 +818,11 @@ static void emulator_run(emulator_t* emu) {
 
             /* Interactive debugger check */
             if (emu->debugger.active || debugger_should_break(&emu->debugger, emu)) {
-                debugger_repl(&emu->debugger, emu);
+                if (emu->tui_mode) {
+                    tui_repl(emu);
+                } else {
+                    debugger_repl(&emu->debugger, emu);
+                }
                 if (!emu->running) break;
             }
 
@@ -1268,6 +1278,7 @@ int main(int argc, char* argv[]) {
     const char* dump_ram_at_arg = NULL;
     const char* trace_irq_file = NULL;
     const char* symbols_file = NULL;
+    bool tui_mode = false;
     int64_t trace_max = 0;
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
@@ -1279,7 +1290,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -1326,6 +1337,7 @@ int main(int argc, char* argv[]) {
         {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
         {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
         {"symbols",             required_argument, 0, OPT_SYMBOLS},
+        {"tui",                 no_argument,       0, OPT_TUI},
         {"help",                no_argument,       0, '?'},
         {0, 0, 0, 0}
     };
@@ -1403,6 +1415,7 @@ int main(int argc, char* argv[]) {
             case OPT_DUMP_RAM_AT: dump_ram_at_arg = optarg; break;
             case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
             case OPT_SYMBOLS: symbols_file = optarg; break;
+            case OPT_TUI: tui_mode = true; debug_mode = true; break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
                 break;
@@ -1631,6 +1644,21 @@ int main(int argc, char* argv[]) {
 
     /* Load symbol table (--symbols FILE) */
     symbol_table_init(&emu.symbols);
+
+    /* Route debugger break into ncurses TUI when --tui is set
+     * (requires build with TUI=1). Init done lazily on first break. */
+    emu.tui_mode = tui_mode;
+    if (tui_mode) {
+#ifdef HAS_TUI
+        if (!tui_init()) {
+            log_error("Failed to initialise ncurses TUI");
+            emu.tui_mode = false;
+        }
+#else
+        log_error("--tui requires a build with TUI=1 (ncurses)");
+        emu.tui_mode = false;
+#endif
+    }
     if (symbols_file) {
         if (symbol_table_load(&emu.symbols, symbols_file) < 0) {
             emulator_cleanup(&emu);
