@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.33-alpha
+Current Version: 1.16.34-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI sprint série terminée — 427 tests pass)
+Status: Alpha (LOCI action button IRQ trap — 435 tests pass)
 
 Version History:
 ----------------
+- 1.16.34-alpha (2026-06-06): LOCI action button warm IRQ trap (Sprint 34ai)
+  * loci_action_button_short/release + set_action_callbacks
+  * Trap 6 octets B8/50 FE/6C FA FF mirroré $03BA-$03BF MIA
+  * Callbacks host : patch mem->rom[$3FFE/F], cpu_irq_set/clear,
+    cpu.P |= FLAG_OVERFLOW au release
+  * État action_active + saved_irq_vector dans loci_t
+  * Idempotence press et release
+  * 8 nouveaux tests test-loci, total 95, 435 global
+
 - 1.16.33-alpha (2026-06-06): LOCI tests intégration Sprint 34ah FINAL
   * 7 scénarios composés : mount session, dir enum, TAP multi-header,
     MIA_BOOT mounted ROM, HID combo, locirom binary sanity, dsk probe

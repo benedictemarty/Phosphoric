@@ -170,6 +170,54 @@ void loci_set_rom_swap_callback(loci_t* loci,
     loci->rom_swap_ctx = ctx;
 }
 
+void loci_set_action_callbacks(loci_t* loci,
+        void (*install_cb)(void*),
+        void (*release_cb)(void*),
+        void* ctx) {
+    if (!loci) return;
+    loci->action_install_cb = install_cb;
+    loci->action_release_cb = release_cb;
+    loci->action_ctx = ctx;
+}
+
+/* ─── Action button (Sprint 34ai) ─────────────────────────────── */
+
+/* The 6-byte IRQ trap installed at $03BA-$03BF (LOCI MIA register space):
+ *   $03BA  B8        CLV         clear V flag
+ *   $03BB  50 FE     BVC -2      spin while V=0 (loops back to BVC)
+ *   $03BD  6C FA FF  JMP ($FFFA) indirect via NMI vector
+ * When the user releases the button the host sets V=1, BVC falls through,
+ * and JMP ($FFFA) jumps to the save-state handler in the LOCI ROM. */
+static const uint8_t LOCI_ACTION_TRAP[6] = {
+    0xB8, 0x50, 0xFE, 0x6C, 0xFA, 0xFF
+};
+
+void loci_action_button_short(loci_t* loci) {
+    if (!loci || !loci->enabled) return;
+    if (loci->action_active) return;  /* idempotent */
+
+    /* Mirror the trap into the MIA register file so a 6502 instruction
+     * fetch from $03BA-$03BF (routed through loci_read) returns the right
+     * opcodes. Offsets 0x1A-0x1F within the 32-byte window. */
+    for (int i = 0; i < 6; i++) {
+        loci->regs[0x1A + i] = LOCI_ACTION_TRAP[i];
+    }
+
+    loci->action_active = true;
+    if (loci->action_install_cb) {
+        loci->action_install_cb(loci->action_ctx);
+    }
+}
+
+void loci_action_button_release(loci_t* loci) {
+    if (!loci || !loci->enabled) return;
+    if (!loci->action_active) return;
+    if (loci->action_release_cb) {
+        loci->action_release_cb(loci->action_ctx);
+    }
+    loci->action_active = false;
+}
+
 /* ─── errno / BUSY / xstack helpers ────────────────────────────── */
 
 static void set_errno(loci_t* loci, uint16_t e) {

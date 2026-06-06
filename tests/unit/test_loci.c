@@ -1628,6 +1628,110 @@ TEST(test_integration_dsk_mount_then_bus_probe) {
     loci_cleanup(&l); free(dsk_path); free(tmpdir);
 }
 
+/* ── 34ai: Action button (warm IRQ trap) ─────────────────────── */
+
+typedef struct {
+    int install_count;
+    int release_count;
+} action_capture_t;
+
+static void capture_install(void* ctx) {
+    ((action_capture_t*)ctx)->install_count++;
+}
+static void capture_release(void* ctx) {
+    ((action_capture_t*)ctx)->release_count++;
+}
+
+TEST(test_action_short_writes_trap_bytes) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_action_button_short(&l);
+    /* Trap mirrored at MIA offsets 0x1A-0x1F. */
+    ASSERT_EQ(l.regs[0x1A], 0xB8);
+    ASSERT_EQ(l.regs[0x1B], 0x50);
+    ASSERT_EQ(l.regs[0x1C], 0xFE);
+    ASSERT_EQ(l.regs[0x1D], 0x6C);
+    ASSERT_EQ(l.regs[0x1E], 0xFA);
+    ASSERT_EQ(l.regs[0x1F], 0xFF);
+    ASSERT_TRUE(l.action_active);
+}
+
+TEST(test_action_short_invokes_install_cb) {
+    action_capture_t cap = {0};
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_action_callbacks(&l, capture_install, capture_release, &cap);
+    loci_action_button_short(&l);
+    ASSERT_EQ(cap.install_count, 1);
+    ASSERT_EQ(cap.release_count, 0);
+}
+
+TEST(test_action_short_idempotent_when_already_active) {
+    action_capture_t cap = {0};
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_action_callbacks(&l, capture_install, capture_release, &cap);
+    loci_action_button_short(&l);
+    loci_action_button_short(&l);   /* second press while active */
+    loci_action_button_short(&l);
+    ASSERT_EQ(cap.install_count, 1);
+}
+
+TEST(test_action_release_invokes_release_cb) {
+    action_capture_t cap = {0};
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_action_callbacks(&l, capture_install, capture_release, &cap);
+    loci_action_button_short(&l);
+    loci_action_button_release(&l);
+    ASSERT_EQ(cap.release_count, 1);
+    ASSERT_TRUE(!l.action_active);
+}
+
+TEST(test_action_release_noop_when_inactive) {
+    action_capture_t cap = {0};
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_action_callbacks(&l, capture_install, capture_release, &cap);
+    loci_action_button_release(&l);   /* never short-pressed */
+    ASSERT_EQ(cap.release_count, 0);
+}
+
+TEST(test_action_disabled_loci_is_noop) {
+    action_capture_t cap = {0};
+    loci_t l; loci_init(&l);
+    l.enabled = false;
+    loci_set_action_callbacks(&l, capture_install, capture_release, &cap);
+    loci_action_button_short(&l);
+    ASSERT_EQ(cap.install_count, 0);
+    ASSERT_TRUE(!l.action_active);
+}
+
+TEST(test_action_works_without_callbacks) {
+    /* No host hooks installed — the LOCI side still flips state and
+     * writes the trap bytes, just no IRQ pulse / V-flag-set happens. */
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_action_button_short(&l);
+    ASSERT_TRUE(l.action_active);
+    ASSERT_EQ(l.regs[0x1A], 0xB8);
+    loci_action_button_release(&l);
+    ASSERT_TRUE(!l.action_active);
+}
+
+TEST(test_action_re_press_after_release) {
+    action_capture_t cap = {0};
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_action_callbacks(&l, capture_install, capture_release, &cap);
+    loci_action_button_short(&l);
+    loci_action_button_release(&l);
+    loci_action_button_short(&l);   /* second press cycle */
+    loci_action_button_release(&l);
+    ASSERT_EQ(cap.install_count, 2);
+    ASSERT_EQ(cap.release_count, 2);
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -1735,6 +1839,14 @@ int main(void) {
     RUN(test_integration_hid_combo_shift_a);
     RUN(test_integration_locirom_binary_sanity);
     RUN(test_integration_dsk_mount_then_bus_probe);
+    RUN(test_action_short_writes_trap_bytes);
+    RUN(test_action_short_invokes_install_cb);
+    RUN(test_action_short_idempotent_when_already_active);
+    RUN(test_action_release_invokes_release_cb);
+    RUN(test_action_release_noop_when_inactive);
+    RUN(test_action_disabled_loci_is_noop);
+    RUN(test_action_works_without_callbacks);
+    RUN(test_action_re_press_after_release);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

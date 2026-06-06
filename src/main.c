@@ -290,6 +290,41 @@ static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr
     return true;
 }
 
+/* LOCI action-button install hook (Sprint 34ai).
+ * Saves the current IRQ vector at $FFFE/F, redirects it to the trap at
+ * $03BA, then pulses the CPU IRQ line. The trap bytes themselves were
+ * already mirrored into the MIA register file by loci_action_button_short. */
+static void loci_action_install_irq_trap(void* ctx) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return;
+    /* Save current vector. The ORIC IRQ vector lives in ROM at $FFFE/F,
+     * backed by mem->rom (offset $3FFE/F since rom starts at $C000). */
+    uint8_t lo = emu->memory.rom[0x3FFE];
+    uint8_t hi = emu->memory.rom[0x3FFF];
+    emu->loci.saved_irq_vector = (uint16_t)lo | ((uint16_t)hi << 8);
+    /* Redirect to the trap at $03BA. */
+    emu->memory.rom[0x3FFE] = 0xBA;
+    emu->memory.rom[0x3FFF] = 0x03;
+    /* Pulse the IRQ line. Source bit is arbitrary — VIA works because
+     * the CPU handler doesn't introspect the source for this trap. */
+    cpu_irq_set(&emu->cpu, IRQF_VIA);
+}
+
+/* LOCI action-button release hook (Sprint 34ai).
+ * Sets the 6502 V flag so the BVC -2 spin falls through and the trap's
+ * JMP ($FFFA) executes. Also restores the original IRQ vector so a
+ * later non-trap IRQ behaves normally. */
+static void loci_action_release_irq_trap(void* ctx) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return;
+    emu->cpu.P |= FLAG_OVERFLOW;
+    uint16_t v = emu->loci.saved_irq_vector;
+    emu->memory.rom[0x3FFE] = (uint8_t)(v & 0xFF);
+    emu->memory.rom[0x3FFF] = (uint8_t)(v >> 8);
+    /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
+    cpu_irq_clear(&emu->cpu, IRQF_VIA);
+}
+
 /* I/O callback: route VIA and Microdisc register access */
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
@@ -1716,6 +1751,11 @@ int main(int argc, char* argv[]) {
         emu.has_loci = true;
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);
+        /* Action-button hooks (Sprint 34ai). */
+        loci_set_action_callbacks(&emu.loci,
+            loci_action_install_irq_trap,
+            loci_action_release_irq_trap,
+            &emu);
         if (loci_flash_root) {
             loci_set_flash_root(&emu.loci, loci_flash_root);
             log_info("LOCI MIA enabled at $%04X-$%04X (flash root: %s)",

@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.34-alpha] - 2026-06-06
+
+### LOCI : Action button (warm IRQ trap) — Sprint 34ai
+
+#### Added
+- **API publique `loci_action_button_short()`** : installe le trap IRQ
+  6 octets `B8 50 FE 6C FA FF` (`CLV`/`BVC -2`/`JMP ($FFFA)`) au offset
+  $03BA-$03BF de la fenêtre MIA, sauvegarde le vecteur IRQ courant
+  ($FFFE/F dans la ROM Oric), redirige le vecteur vers $03BA, et pulse
+  IRQ via le callback host.
+- **API publique `loci_action_button_release()`** : déclenche le callback
+  release qui set le V flag du 6502 (sortie de la BVC spin) et restore
+  le vecteur IRQ original.
+- **`loci_set_action_callbacks(loci, install_cb, release_cb, ctx)`** :
+  enregistre les hooks host. Sans hooks, l'API marque l'état mais ne
+  touche pas le CPU/mémoire.
+- **Côté `main.c`** : callbacks `loci_action_install_irq_trap` /
+  `loci_action_release_irq_trap` qui patchent `mem->rom[$3FFE/F]`,
+  appellent `cpu_irq_set(IRQF_VIA)` puis `cpu_irq_clear` au release,
+  et set `cpu.P |= FLAG_OVERFLOW` pour relâcher la BVC spin.
+- **État interne** : `loci_t.action_active` + `loci_t.saved_irq_vector`.
+- **Idempotence** : second short-press alors qu'actif = no-op ;
+  release alors qu'inactif = no-op ; re-press après release fonctionne.
+- **8 nouveaux tests test-loci** (total 95) : trap bytes écrits, install
+  cb invoké, idempotence, release cb invoké, release inactif noop,
+  disabled LOCI noop, fonctionne sans callbacks, cycle press/release/press.
+
+#### Pas câblé
+Pas encore de binding clavier SDL pour déclencher l'action button au
+runtime — `F8` est le candidat naturel mais nécessite hook dans le main
+loop SDL. Pour l'instant l'API est appelable depuis le code C ou via
+un programme de test.
+
 ## [1.16.33-alpha] - 2026-06-06
 
 ### LOCI : tests intégration scénarios bootés — Sprint 34ah (FINAL)

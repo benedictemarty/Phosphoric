@@ -539,6 +539,18 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ai: LOCI action button warm IRQ trap (v1.16.34-alpha) - DONE
+- [x] loci_action_button_short : installe trap 6 octets MIA $03BA-$03BF
+- [x] loci_action_button_release : release + restore vecteur
+- [x] loci_set_action_callbacks : enregistre hooks host
+- [x] Côté main.c : install_cb patche mem->rom[$3FFE/F] + cpu_irq_set
+- [x] release_cb : cpu.P |= FLAG_OVERFLOW + cpu_irq_clear + restore vector
+- [x] action_active + saved_irq_vector dans loci_t
+- [x] Idempotence : 2nd short while active = noop, release inactive = noop
+- [x] 8 nouveaux tests test-loci, total 95, 435 tests global
+- [x] Bouton Reset/Update : design documenté (réponse précédente),
+      pas implémentés sur cette itération
+
 ### Sprint 34ah: LOCI tests intégration scénarios bootés (v1.16.33-alpha) - DONE
 - [x] 7 scénarios d'intégration composés (test_integration_*) :
       mount session 4 slots, dir enum 3 files, TAP multi-header A/B/C,

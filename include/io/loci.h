@@ -277,6 +277,23 @@ typedef struct loci_s {
     uint8_t  dsk_ctrl;         /* $0314 — last write */
     uint8_t  dsk_drq;          /* $0318 — current DRQ flag byte */
 
+    /* Action-button trap state (Sprint 34ai).
+     * When the user presses the LOCI action button (short, warm path),
+     * the firmware installs a 6-byte trap at $03BA-$03BF and hijacks
+     * the IRQ vector at $FFFE/F to point there. On release, the V flag
+     * is set so the BVC spin exits and JMP ($FFFA) runs the save-state
+     * handler. */
+    bool     action_active;
+    uint16_t saved_irq_vector;   /* Original $FFFE/F before takeover. */
+
+    /* Action-button host hooks (Sprint 34ai). The install hook writes
+     * the trap bytes, saves+redirects the IRQ vector, and triggers IRQ.
+     * The release hook sets the CPU V flag (or restores the vector).
+     * Both receive the registered opaque ctx (typically emulator_t*). */
+    void   (*action_install_cb)(void* ctx);
+    void   (*action_release_cb)(void* ctx);
+    void*  action_ctx;
+
     /* ROM-swap callback (Sprint 34ad).
      * Set by the emulator via loci_set_rom_swap_callback(). Invoked by
      * op 0xA0 MIA_BOOT to load the requested ROM image into Oric memory
@@ -314,6 +331,33 @@ void    loci_set_rom_swap_callback(
             loci_t* loci,
             bool (*cb)(void* ctx, const char* rom_path, uint16_t base_addr),
             void* ctx);
+
+/* Register the action-button host hooks (Sprint 34ai). install_cb is
+ * called on short-press to set up the IRQ trap; release_cb is called
+ * when the user releases the button (or via API). Either may be NULL
+ * — in that case the corresponding action becomes a no-op. */
+void    loci_set_action_callbacks(
+            loci_t* loci,
+            void (*install_cb)(void* ctx),
+            void (*release_cb)(void* ctx),
+            void* ctx);
+
+/* Action button — short press, warm path.
+ * Installs the 6-byte trap at $03BA-$03BF (mirrored in LOCI MIA regs):
+ *   B8         CLV
+ *   50 FE      BVC -2   (spin until V is set)
+ *   6C FA FF   JMP ($FFFA)
+ * Saves the original IRQ vector ($FFFE/F) into loci.saved_irq_vector,
+ * delegates to install_cb to redirect the hardware vector and trigger
+ * IRQ, then sets action_active=true. Idempotent: re-pressing while
+ * already active is a no-op. */
+void    loci_action_button_short(loci_t* loci);
+
+/* Action button — release. Delegates to release_cb which is expected
+ * to set the 6502 V flag (so BVC -2 falls through and JMP ($FFFA)
+ * executes the save-state handler). Marks action_active=false.
+ * No-op if the trap was never installed. */
+void    loci_action_button_release(loci_t* loci);
 
 /* Bus interface — called from the memory I/O callback when an address
  * lies inside the MIA window. Out-of-range addresses must be filtered
