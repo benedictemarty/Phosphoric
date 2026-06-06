@@ -275,6 +275,45 @@ static void print_usage(const char* program_name) {
  * so the new reset vector is honoured. Only base_addr = $C000 is wired
  * for now (BASIC ROM swap); $A000 (Microdisc overlay) returns true
  * without actually swapping — handled by the existing --disk-rom path. */
+/* Sprint 34ao: LOCI tape-mount hook. Loads a TAP into emu.tapebuf so
+ * the CLOAD ROM patches find data. Path is the already-extracted
+ * /tmp/loci_extract_* file produced by sdimg_extract_to_temp. */
+static bool loci_tape_mount_cb(void* ctx, const char* host_tape_path) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu || !host_tape_path) return false;
+    FILE* f = fopen(host_tape_path, "rb");
+    if (!f) {
+        log_warning("LOCI tape mount: cannot open %s", host_tape_path);
+        return false;
+    }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz <= 0) { fclose(f); return false; }
+
+    if (emu->tapebuf) { free(emu->tapebuf); emu->tapebuf = NULL; }
+    emu->tapebuf = (uint8_t*)malloc((size_t)sz);
+    if (!emu->tapebuf) { fclose(f); return false; }
+    size_t rd = fread(emu->tapebuf, 1, (size_t)sz, f);
+    fclose(f);
+    if ((long)rd != sz) {
+        free(emu->tapebuf); emu->tapebuf = NULL;
+        return false;
+    }
+    emu->tapelen = (int)sz;
+    emu->tapeoffs = 0;
+    emu->tape_loaded = true;
+    emu->tape_syncstack = -1;
+    /* Do NOT trigger auto-CLOAD here: when LOCI mounts the tape, the
+     * LOCI ROM is still in control. Auto-typed keystrokes would land
+     * in the LOCI TUI, not BASIC. The user will type CLOAD"" after
+     * MIA_BOOT swaps in BASIC. */
+    emu->tape_auto_cload_pending = false;
+    log_info("LOCI tape mount: %s buffered (%ld bytes, type CLOAD\"\" in BASIC)",
+             host_tape_path, sz);
+    return true;
+}
+
 static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu || !rom_path || !*rom_path) return false;
@@ -287,6 +326,21 @@ static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr
     if (!memory_load_rom(&emu->memory, rom_path, 0)) {
         log_error("LOCI ROM swap: failed to load %s", rom_path);
         return false;
+    }
+    /* Sprint 34ao: when LOCI swaps to BASIC 1.1 (Atmos) the previous
+     * BASIC 1.0 CLOAD patches no longer match — re-detect from the
+     * filename so cassette interception keeps working. */
+    const char* base = strrchr(rom_path, '/');
+    base = base ? base + 1 : rom_path;
+    bool is_b11 = (strstr(base, "11") != NULL) ||
+                  (strstr(base, "atmos") != NULL) ||
+                  (strstr(base, "ATMOS") != NULL);
+    const rom_patches_t* new_patches = get_rom_patches(
+        is_b11 ? ORIC_MODEL_ATMOS : ORIC_MODEL_ORIC1);
+    if (new_patches != emu->rom_patches) {
+        emu->rom_patches = new_patches;
+        emu->model = is_b11 ? ORIC_MODEL_ATMOS : ORIC_MODEL_ORIC1;
+        log_info("LOCI ROM swap: patches → %s", emu->rom_patches->name);
     }
     /* Reset the 6502 so it re-reads the new $FFFC reset vector. */
     cpu_reset(&emu->cpu);
@@ -1863,6 +1917,8 @@ int main(int argc, char* argv[]) {
         emu.has_loci = true;
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);
+        /* Tape-mount callback used by op_mount on LOCI_MNT_TAP (Sprint 34ao). */
+        loci_set_tape_mount_callback(&emu.loci, loci_tape_mount_cb, &emu);
         /* Action-button hooks (Sprint 34ai). */
         loci_set_action_callbacks(&emu.loci,
             loci_action_install_irq_trap,

@@ -539,6 +539,17 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ao+: LOCI SDIMG E2E intégration (v1.16.41-alpha) - DONE
+- [x] Fix picker TUI vide : d_attrib normalisé (DIR=0x10 ou 0)
+- [x] Fix OPENDIR path vide accepté (= racine)
+- [x] Fix MIA_BOOT extrait ROM depuis SDIMG vers /tmp/loci_extract_*
+- [x] Fix op_mount LOCI_MNT_TAP appelle loci_tape_mount_cb
+- [x] loci_tape_mount_cb dans main.c : remplit emu.tapebuf + tape_loaded
+- [x] Fix rom_patches re-détectés au ROM swap (BASIC 1.0 ↔ 1.1)
+- [x] Tool tools/mkloci_sd.c : populator FAT16 standalone
+- [x] VALIDATION INTERACTIVE : AIGLE.TAP chargé depuis loci_demo.img
+- [x] CLOAD"" sous BASIC Atmos fonctionne avec tape extrait
+
 ### Sprint 34ao: LOCI backend image SD raw FAT16/32 (v1.16.40-alpha) - DONE
 - [x] Nouveau module src/io/loci_sdimg.{c,h} (parseur FAT autonome ~470 LOC)
 - [x] BPB parsing : auto-détection FAT16 vs FAT32 par cluster count

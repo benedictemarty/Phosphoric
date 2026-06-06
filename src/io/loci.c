@@ -210,6 +210,13 @@ void loci_detach_sdimg(loci_t* loci) {
     loci->sdimg = NULL;
 }
 
+void loci_set_tape_mount_callback(loci_t* loci,
+        bool (*cb)(void*, const char*), void* ctx) {
+    if (!loci) return;
+    loci->tape_mount_cb = cb;
+    loci->tape_mount_ctx = ctx;
+}
+
 void loci_set_rom_swap_callback(loci_t* loci,
         bool (*cb)(void*, const char*, uint16_t),
         void* ctx) {
@@ -728,11 +735,53 @@ static int sdimg_errno_to_loci(int neg_errno) {
     }
 }
 
+/* Extract a file from the SD image to a temp file under /tmp, so that
+ * legacy POSIX-FILE-based code (rom_swap_cb, tap_open, dsk_open) can
+ * keep working unchanged when --loci-sdimg is active. The temp file
+ * lives at /tmp/loci_extract_<basename> and is overwritten on each
+ * call. Returns true on success and fills out_host_path. */
+static bool sdimg_extract_to_temp(loci_t* loci, const char* sd_path,
+                                  char* out_host_path, size_t out_sz) {
+    /* Strip the LOCI volume prefix if present. */
+    const char* p = sd_path;
+    if (p[0] && p[1] == ':') p += 2;
+    while (*p == '/' || *p == '\\') p++;
+
+    int fd = loci_sdimg_fopen((loci_sdimg_t*)loci->sdimg, p);
+    if (fd < 0) {
+        log_info("LOCI SDIMG extract: not found in image: '%s' (errno=%d)", p, -fd);
+        return false;
+    }
+    /* Compose temp path from the basename only. */
+    const char* base = strrchr(p, '/');
+    base = base ? base + 1 : p;
+    int n = snprintf(out_host_path, out_sz, "/tmp/loci_extract_%s", base);
+    if (n <= 0 || (size_t)n >= out_sz) {
+        loci_sdimg_fclose((loci_sdimg_t*)loci->sdimg, fd);
+        return false;
+    }
+    FILE* fp = fopen(out_host_path, "wb");
+    if (!fp) {
+        loci_sdimg_fclose((loci_sdimg_t*)loci->sdimg, fd);
+        return false;
+    }
+    uint8_t buf[512];
+    int br;
+    while ((br = loci_sdimg_fread((loci_sdimg_t*)loci->sdimg, fd, buf, sizeof(buf))) > 0) {
+        fwrite(buf, 1, (size_t)br, fp);
+    }
+    fclose(fp);
+    loci_sdimg_fclose((loci_sdimg_t*)loci->sdimg, fd);
+    log_info("LOCI SDIMG extract: '%s' → '%s'", p, out_host_path);
+    return true;
+}
+
 static void op_open_sdimg(loci_t* loci) {
     uint8_t flags = loci->regs[LOCI_REG_API_A];
-    char path[260];
-    if (!pop_zstring(loci, path, sizeof(path))) {
-        api_return_errno(loci, LOCI_EINVAL);
+    char path[260] = {0};
+    pop_zstring(loci, path, sizeof(path));
+    if (path[0] == 0) {
+        api_return_errno(loci, LOCI_ENOENT);
         return;
     }
     /* Read-only backend: reject any write-related flag. */
@@ -818,10 +867,10 @@ static void op_lseek_sdimg(loci_t* loci) {
 }
 
 static void op_opendir_sdimg(loci_t* loci) {
-    char path[260];
-    if (!pop_zstring(loci, path, sizeof(path))) {
-        api_return_errno(loci, LOCI_EINVAL); return;
-    }
+    char path[260] = {0};
+    /* Accept empty path = root. pop_zstring returns false on n==0 but
+     * still zeroes path; we don't error out. */
+    pop_zstring(loci, path, sizeof(path));
     const char* p = path;
     if (p[0] && p[1] == ':') p += 2;
     while (*p == '/' || *p == '\\') p++;
@@ -863,8 +912,10 @@ static void op_readdir_sdimg(loci_t* loci) {
         size_t nl = strlen(name);
         if (nl > LOCI_DIR_NAME_LEN - 1) nl = LOCI_DIR_NAME_LEN - 1;
         memcpy(&dirent_buf[2], name, nl);
-        /* FAT attribute byte maps directly to firmware d_attrib. */
-        dirent_buf[66] = attrib;
+        /* Normalize attrib to match what POSIX op_readdir emits: only
+         * the DIR bit (0x10) survives. Files end up with attrib=0,
+         * which is what the LOCI ROM TUI expects to render them. */
+        dirent_buf[66] = (attrib & LOCI_AM_DIR) ? LOCI_AM_DIR : 0;
         memcpy(&dirent_buf[68], &size, 4);
     }
     xstack_zero(loci);
@@ -1166,16 +1217,23 @@ static void op_mount(loci_t* loci) {
         api_return_errno(loci, LOCI_EINVAL);
         return;
     }
-    /* Verify the file exists (LOCI would actually mount a disk image here;
-     * Sprint 34ab only records the mapping for Sprint 34ad/34ae plumbing). */
+    /* Verify the file exists. When sdimg is active, extract to /tmp so
+     * the existing tap_open/dsk_open POSIX paths can use the result. */
     char host_path[512];
-    if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
-        api_return_errno(loci, LOCI_EACCES);
-        return;
-    }
-    if (access(host_path, F_OK) != 0) {
-        api_return_errno(loci, LOCI_ENOENT);
-        return;
+    if (loci->sdimg) {
+        if (!sdimg_extract_to_temp(loci, path, host_path, sizeof(host_path))) {
+            api_return_errno(loci, LOCI_ENOENT);
+            return;
+        }
+    } else {
+        if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
+            api_return_errno(loci, LOCI_EACCES);
+            return;
+        }
+        if (access(host_path, F_OK) != 0) {
+            api_return_errno(loci, LOCI_ENOENT);
+            return;
+        }
     }
     /* Sprint 34af: when the tape slot is targeted, auto-open the file
      * so the TAP API ops (0x92-94) can read from it. */
@@ -1183,6 +1241,11 @@ static void op_mount(loci_t* loci) {
         if (!tap_open(loci, host_path)) {
             api_return_errno(loci, LOCI_EIO);
             return;
+        }
+        /* Sprint 34ao: also notify the host so CLOAD ROM patches can
+         * find the tape data (LOCI's tap_fp is for $0315-$0317 only). */
+        if (loci->tape_mount_cb) {
+            loci->tape_mount_cb(loci->tape_mount_ctx, host_path);
         }
     }
     /* Sprint 34ae: disk drives 0-3 → open the DSK image so the bus
@@ -1660,10 +1723,16 @@ static void op_mia_boot(loci_t* loci) {
         return;
     }
 
-    /* Resolve BASIC ROM path against the sandbox. */
+    /* Resolve BASIC ROM path. When sdimg is active, extract from FAT
+     * image into a temp file the rom_swap_cb can open with fopen(). */
     const char* guest_rom = derive_basic_rom_path(loci, settings);
     char host_rom[512];
-    if (!resolve_path(loci, guest_rom, host_rom, sizeof(host_rom))) {
+    if (loci->sdimg) {
+        if (!sdimg_extract_to_temp(loci, guest_rom, host_rom, sizeof(host_rom))) {
+            api_return_errno(loci, LOCI_ENOENT);
+            return;
+        }
+    } else if (!resolve_path(loci, guest_rom, host_rom, sizeof(host_rom))) {
         api_return_errno(loci, LOCI_EACCES);
         return;
     }
@@ -1678,7 +1747,13 @@ static void op_mia_boot(loci_t* loci) {
     if (settings & LOCI_BOOT_FDC) {
         const char* disc_path = "microdis.rom";
         char host_disc[512];
-        if (resolve_path(loci, disc_path, host_disc, sizeof(host_disc))) {
+        bool ok = false;
+        if (loci->sdimg) {
+            ok = sdimg_extract_to_temp(loci, disc_path, host_disc, sizeof(host_disc));
+        } else {
+            ok = resolve_path(loci, disc_path, host_disc, sizeof(host_disc));
+        }
+        if (ok) {
             loci->rom_swap_cb(loci->rom_swap_ctx, host_disc, 0xA000);
         }
     }

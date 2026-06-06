@@ -306,6 +306,14 @@ typedef struct loci_s {
     bool (*rom_swap_cb)(void* ctx, const char* rom_path, uint16_t base_addr);
     void* rom_swap_ctx;
 
+    /* Tape-mount callback (Sprint 34ao). Invoked by op_mount when slot
+     * LOCI_MNT_TAP is targeted so the host emulator can load the .tap
+     * into its cassette subsystem (emu->tapebuf) — required for CLOAD
+     * ROM patches to find the file. Receives the host-side path of the
+     * already-extracted tape file. */
+    bool (*tape_mount_cb)(void* ctx, const char* host_tape_path);
+    void* tape_mount_ctx;
+
     /* SD raw image backend (Sprint 34ao). When non-NULL, file ops
      * (open/read/lseek/close/opendir/readdir/closedir) delegate to the
      * FAT16/32 reader in loci_sdimg.c instead of POSIX. Mutually
@@ -354,6 +362,12 @@ void    loci_kbd_clear(loci_t* loci);
 void    loci_mou_report(loci_t* loci, uint8_t buttons,
                         int8_t dx, int8_t dy,
                         int8_t wheel, int8_t pan);
+
+/* Register the tape-mount callback used by op_mount on LOCI_MNT_TAP
+ * (Sprint 34ao). Required for CLOAD to find the tape when --loci-sdimg
+ * is active. */
+void    loci_set_tape_mount_callback(loci_t* loci,
+        bool (*cb)(void*, const char*), void* ctx);
 
 /* Register the ROM-swap callback used by op 0xA0 MIA_BOOT. */
 void    loci_set_rom_swap_callback(

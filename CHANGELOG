@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.41-alpha] - 2026-06-07
+
+### LOCI : intégration end-to-end SDIMG (boot + tape + ROM patches) — Sprint 34ao+
+
+Polish suite à validation E2E utilisateur de l'image SD raw : 4 bugs
+de plomberie corrigés pour faire fonctionner le scénario complet
+LOCI TUI → mount TAP → MIA_BOOT vers BASIC 1.1 → CLOAD"".
+
+#### Fixed
+- **TUI picker LOCI vide** : `op_readdir_sdimg` renvoyait le bit FAT
+  ARCHIVE (0x20) dans `d_attrib`. Le firmware LOCI s'attend à ce que
+  les fichiers réguliers aient `d_attrib=0` (seul le bit DIR=0x10
+  survit côté POSIX). Normalisation : `(attrib & 0x10) ? 0x10 : 0`.
+- **OPENDIR path vide rejeté** : `pop_zstring` retourne false sur
+  une chaîne vide (le LOCI ROM ouvre la racine avec un path vide).
+  `op_opendir_sdimg` et `op_open_sdimg` acceptent maintenant le path
+  vide pour OPENDIR (= racine), explicite ENOENT pour OPEN.
+- **MIA_BOOT échouait avec SDIMG** : `op_mia_boot` résolvait la ROM
+  cible via `resolve_path` POSIX. Lorsqu'un sdimg est actif, on
+  extrait maintenant la ROM (et microdis.rom si BOOT_FDC) vers
+  `/tmp/loci_extract_<basename>` via `sdimg_extract_to_temp`, puis le
+  rom_swap_cb fait son `fopen` standard sur ce chemin.
+- **op_mount sur LOCI_MNT_TAP n'alimentait pas CLOAD** : le TAP était
+  ouvert dans le backend LOCI ($0315-$0317) mais pas dans le
+  sous-système cassette principal de l'émulateur. CLOAD restait
+  bloqué sur "Searching" puisque `emu.tapebuf` était NULL.
+  Ajout du callback `loci_set_tape_mount_callback()` + impl
+  `loci_tape_mount_cb` dans main.c qui lit le .tap extrait dans
+  `emu.tapebuf` (54630 bytes pour AIGLE.TAP) avec `tape_loaded=true`.
+- **rom_swap_cb laissait les patches BASIC 1.0** : quand LOCI swap
+  vers basic11b.rom, les CLOAD patches BASIC 1.0 (initialisés au boot
+  car la ROM LOCI était détectée comme ORIC-1) ne matchent plus les
+  adresses BASIC 1.1. Auto-détection du basename ("11"/"atmos") pour
+  re-piocher la bonne table de patches via `get_rom_patches()`.
+
+#### Added
+- `loci_set_tape_mount_callback()` dans `include/io/loci.h`.
+- Champ `tape_mount_cb`/`tape_mount_ctx` dans `loci_t`.
+
+#### Changed
+- Auto-CLOAD désactivé côté LOCI tape_mount_cb : LOCI ROM tirait
+  prématurément la frappe pendant que le TUI était encore en main.
+  L'utilisateur tape `CLOAD""` lui-même une fois en BASIC.
+
+#### Validation utilisateur (interactive AZERTY)
+
+Session de test E2E confirmée :
+- Picker LOCI affiche les 5 fichiers de loci_demo.img
+- Mount TAP `AIGLE.TAP` → `emu.tapebuf` chargé (54630 bytes)
+- ESC → MIA_BOOT → ROM swap vers BASIC 1.1 + patches mis à jour
+- `CLOAD""` en BASIC Atmos → chargement effectif depuis le TAP
+
+#### Outil
+
+- `tools/mkloci_sd.c` (~240 LOC) : populator FAT16 standalone pour
+  préparer une image SD démo sans mtools/mcopy.
+  Usage : `mkloci_sd output.img <size_mb> [file ...]`
+
+---
+
 ## [1.16.40-alpha] - 2026-06-07
 
 ### LOCI : backend image SD raw (FAT16/FAT32 read-only) — Sprint 34ao

@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.40-alpha
+Current Version: 1.16.41-alpha
 Release Date: 2026-06-07
-Status: Alpha (LOCI backend image SD raw FAT16/32 — 458 tests pass)
+Status: Alpha (LOCI SDIMG E2E validé interactivement — 458 tests pass)
 
 Version History:
 ----------------
+- 1.16.41-alpha (2026-06-07): LOCI SDIMG E2E polish (Sprint 34ao+)
+  * Fix picker TUI vide (d_attrib normalisé : DIR ou 0)
+  * Fix OPENDIR path vide rejeté (pop_zstring false sur n==0)
+  * Fix MIA_BOOT cherchait ./basic11b.rom au lieu de SDIMG (extract /tmp)
+  * Fix CLOAD bloqué Searching (tape_mount_cb → emu.tapebuf)
+  * Fix rom_patches restaient BASIC 1.0 après swap vers 1.1
+  * VALIDATION E2E interactive : AIGLE.TAP chargé depuis image SD
+  * Outil mkloci_sd : populator FAT16 standalone
+
 - 1.16.40-alpha (2026-06-07): LOCI backend image SD raw (Sprint 34ao)
   * src/io/loci_sdimg.{c,h} — parser FAT16/FAT32 read-only superfloppy
   * CLI --loci-sdimg PATH (mutuellement exclusif avec --loci-flash)
