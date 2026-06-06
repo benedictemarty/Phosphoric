@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.17-alpha] - 2026-06-06
+
+### Vidéo : attributs texte ULA (double hauteur, alt charset, blink) — Sprint 34r
+
+#### Added
+- **Attributs série groupe 0x08-0x0F** désormais décodés :
+  bit 0 = alt charset, bit 1 = double hauteur, bit 2 = blink (flash).
+  Auparavant le groupe entier était silencieusement ignoré (`case 0x08: break;`).
+- **Double hauteur** : phase top/bottom alternée par rangée texte. La logique
+  suit le modèle ULA : `dbl_phase` représente la phase à appliquer à la
+  rangée suivante, bascule tant que DBL reste actif, reset à 0 sinon.
+  Permet aux écrans de titre (ARTIC METEORS, démos) de s'afficher à grande
+  hauteur correctement.
+- **Alt charset** : route vers `$B800` (texte) / `$9C00` (HIRES) au lieu
+  de `$B400` / `$9800`. Le path test/headless (`vid->charset` non-NULL)
+  utilise les 128 chars suivants du tableau.
+- **Blink** : XOR de `char_inv` quand bit blink actif et `frame_counter & 0x10`
+  (toggle ~3 Hz). Curseur BASIC et textes clignotants restitués.
+
+#### Changed
+- `video_t` enrichi de `text_attr`, `dbl_phase`, `dbl_was_active`, `frame_counter`.
+- `decode_attr` met à jour `vid->text_attr` au lieu de `break` muet.
+- `text_attr` reset en début de chaque scanline (sémantique ULA :
+  attributs latched au sein d'une scanline uniquement).
+- Frame counter incrémenté en `y==0` pour le timing du blink.
+
+#### Fixed
+- **Asteroids d'Artic Computing** : titre `ARTIC METEORS` désormais lisible
+  (auparavant affiché comme `ABTF METEABS` — mauvais index charset car la
+  moitié basse des caractères doublés se rabattait sur la moitié haute).
+
 ## [1.16.16-alpha] - 2026-05-14
 
 ### CI : cppcheck + flawfinder + 3 bugs buffer overflow corrigés (Sprint 34q)

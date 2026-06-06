@@ -539,6 +539,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34r: Attributs texte ULA — double hauteur / alt charset / blink (v1.16.17-alpha) - DONE
+- [x] decode_attr case 0x08 décode bit 0 (alt) / bit 1 (double) / bit 2 (blink)
+      (auparavant break muet → groupe 0x08-0x0F totalement ignoré)
+- [x] Double hauteur : dbl_phase top/bottom, suivie en fin de rangée (chline==7).
+      Phase pour rangée suivante ; reset à 0 si DBL absent (chaîne brisée).
+- [x] Alt charset : base $B800 (texte) / $9C00 (HIRES) au lieu de $B400/$9800.
+      Path test/headless utilise 128 chars suivants du buffer.
+- [x] Blink : XOR de char_inv si bit blink actif et frame_counter & 0x10 (~3 Hz).
+- [x] text_attr reset par scanline (sémantique ULA correcte).
+- [x] frame_counter incrémenté à y==0.
+- [x] Fix concret : titre Asteroids d'Artic ("ARTIC METEORS") lisible
+      (auparavant "ABTF METEABS" — moitié basse pointait sur moitié haute).
+- [x] 330 tests pass (24/24 cpu, 11/11 video, etc.)
+
 ### Sprint 34q: CI sécurité cppcheck + flawfinder + 3 bugs corrigés (v1.16.16-alpha) - DONE
 - [x] Ajout make cppcheck (warning,performance,portability ; exclusion third_party/)
 - [x] Ajout make flawfinder (minlevel=2, error-level=5)
