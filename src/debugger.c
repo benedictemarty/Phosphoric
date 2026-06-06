@@ -450,6 +450,7 @@ static void show_help(void) {
     printf("  d +               Same as `d` (next page)\n");
     printf("  d -               Pop history (previous page)\n");
     printf("  m addr [len]      Memory dump hex+ASCII (default: 256)\n");
+    printf("  m addr = V1 [V2...]  Write byte(s) to memory\n");
     printf("  b addr            Add PC breakpoint\n");
     printf("  b addr if EXPR    Conditional breakpoint\n");
     printf("                    EXPR: REG op VAL | M[ADDR] op VAL\n");
@@ -627,16 +628,68 @@ void debugger_repl(debugger_t* dbg, emulator_t* emu) {
             dbg->disasm_cursor = next;
             dbg->disasm_cursor_valid = true;
         }
-        /* ── MEMORY DUMP ────────────────────────────────── */
+        /* ── MEMORY DUMP / WRITE ────────────────────────── */
         else if (strcmp(cmd, "m") == 0) {
             if (!arg1[0]) {
-                printf("  Usage: m addr [len]\n");
-            } else {
-                uint16_t addr;
-                if (!parse_addr(emu, arg1, &addr)) {
-                    printf("  Unknown address/symbol: %s\n", arg1);
-                    continue;
+                printf("  Usage: m addr [len]          dump memory\n");
+                printf("         m addr = V1 [V2 ...]  write byte(s)\n");
+                continue;
+            }
+            uint16_t addr;
+            if (!parse_addr(emu, arg1, &addr)) {
+                printf("  Unknown address/symbol: %s\n", arg1);
+                continue;
+            }
+            /* Detect "=" in arg2 (separator) or as part of arg2 like "=42".
+             * Anything after = is a list of values; we re-scan `line` after
+             * the '=' character to read more than the 3 tokens sscanf got. */
+            const char* eq = strchr(line, '=');
+            if (eq) {
+                const char* vals = skip_ws(eq + 1);
+                int written = 0;
+                uint16_t write_addr = addr;
+                while (*vals && written < 256) {
+                    char tok[32];
+                    size_t tn = 0;
+                    while (*vals && !isspace((unsigned char)*vals) &&
+                           *vals != ',' && tn < sizeof(tok) - 1) {
+                        tok[tn++] = *vals++;
+                    }
+                    tok[tn] = '\0';
+                    if (tn == 0) { vals = skip_ws(vals); continue; }
+                    /* Each token: hex with $/0x prefix, else decimal */
+                    const char* s = tok;
+                    int base = 10;
+                    if (*s == '$') { s++; base = 16; }
+                    else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) { s += 2; base = 16; }
+                    else if (tn >= 2) {
+                        /* Heuristic: if any alpha hex digit appears, treat as hex */
+                        for (size_t i = 0; i < tn; i++) {
+                            char c = tok[i];
+                            if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+                                base = 16;
+                                break;
+                            }
+                        }
+                    }
+                    char* end = NULL;
+                    unsigned long v = strtoul(s, &end, base);
+                    if (end == s || v > 0xFF) {
+                        printf("  Invalid byte value: %s\n", tok);
+                        break;
+                    }
+                    memory_write(&emu->memory, write_addr, (uint8_t)v);
+                    write_addr = (uint16_t)(write_addr + 1);
+                    written++;
+                    vals = skip_ws(vals);
+                    while (*vals == ',') vals = skip_ws(vals + 1);
                 }
+                if (written > 0) {
+                    printf("  Wrote %d byte%s to $%04X-$%04X\n",
+                           written, written > 1 ? "s" : "",
+                           addr, (uint16_t)(addr + written - 1));
+                }
+            } else {
                 int len2 = 256;
                 if (arg2[0])
                     len2 = (int)strtol(arg2, NULL, 0);

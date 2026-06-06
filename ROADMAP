@@ -539,6 +539,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34v: Édition mémoire live REPL (v1.16.21-alpha) - DONE
+- [x] Syntaxe `m ADDR = V1 [V2 V3 ...]` : écrit séquence d'octets
+- [x] ADDR via parse_addr (hex ou symbole)
+- [x] Tokens : hex ($/0x/a-f implicite) ou décimal, sep espace ou ,
+- [x] Validation 0..255 par octet, max 256 par appel
+- [x] Confirmation "Wrote N bytes to $XXXX-$YYYY"
+- [x] Rétro-compatible : sans = la commande reste un dump
+- [x] Sprint déclenché par gap n°4 du comparatif debug vs Oricutron
+- [x] 340 tests pass
+
 ### Sprint 34u: Breakpoints conditionnels (v1.16.20-alpha) - DONE
 - [x] Syntaxe `b ADDR if EXPR` — EXPR évaluée à l'arrivée du PC
 - [x] Opérandes : A, X, Y, SP, P, PC, M[ADDR] (ADDR hex ou symbole)

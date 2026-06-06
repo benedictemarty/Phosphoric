@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.21-alpha] - 2026-06-06
+
+### Debug : édition mémoire live — Sprint 34v
+
+#### Added
+- **`m ADDR = V1 [V2 V3 ...]`** : écrit une séquence d'octets en
+  mémoire à partir de ADDR. Jusqu'à 256 valeurs par appel.
+- Valeurs acceptées par token : hex (`$XX`, `0xXX`, ou décimal),
+  séparateurs espace ou virgule. Plage `0..255` validée.
+- ADDR accepte un symbole comme partout dans le debugger.
+- Confirmation : `Wrote N bytes to $XXXX-$YYYY`.
+
+#### Changed
+- La commande `m` détecte la présence de `=` dans la ligne pour
+  basculer en mode écriture ; sans `=` elle conserve son
+  comportement de dump (rétro-compatible).
+- Help text mis à jour avec la nouvelle syntaxe.
+
 ## [1.16.20-alpha] - 2026-06-06
 
 ### Debug : breakpoints conditionnels — Sprint 34u

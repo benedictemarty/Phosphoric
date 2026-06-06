@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.20-alpha
+Current Version: 1.16.21-alpha
 Release Date: 2026-06-06
-Status: Alpha (Breakpoints conditionnels — 340 tests pass)
+Status: Alpha (Édition mémoire live REPL — 340 tests pass)
 
 Version History:
 ----------------
+- 1.16.21-alpha (2026-06-06): Édition mémoire live REPL (Sprint 34v)
+  * m ADDR = V1 [V2 V3 ...] : écrit une séquence d'octets
+  * ADDR accepte hex ou symbole (parse_addr)
+  * Tokens : hex ($XX/0xXX/a-f implicite) ou décimal, séparateur espace/virgule
+  * Validation plage 0..255 par octet, max 256 par appel
+  * Rétro-compatible : sans = la commande reste un dump
+  * Sprint déclenché par gap n°4 du comparatif debug vs Oricutron
+  * 340 tests pass
+
 - 1.16.20-alpha (2026-06-06): Breakpoints conditionnels (Sprint 34u)
   * b ADDR if EXPR : breakpoint évalué dynamiquement
   * Opérandes A/X/Y/SP/P/PC/M[ADDR] (ADDR hex ou symbole)
