@@ -288,6 +288,35 @@ static void op_clk_settime(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
+/* ─── xram DMA window helpers (Sprint 34ab) ───────────────────── */
+
+static uint16_t get_addr0(loci_t* loci) {
+    return (uint16_t)loci->regs[LOCI_REG_ADDR0_LO] |
+           ((uint16_t)loci->regs[LOCI_REG_ADDR0_HI] << 8);
+}
+static uint16_t get_addr1(loci_t* loci) {
+    return (uint16_t)loci->regs[LOCI_REG_ADDR1_LO] |
+           ((uint16_t)loci->regs[LOCI_REG_ADDR1_HI] << 8);
+}
+static void set_addr0(loci_t* loci, uint16_t a) {
+    loci->regs[LOCI_REG_ADDR0_LO] = (uint8_t)(a & 0xFF);
+    loci->regs[LOCI_REG_ADDR0_HI] = (uint8_t)(a >> 8);
+}
+static void set_addr1(loci_t* loci, uint16_t a) {
+    loci->regs[LOCI_REG_ADDR1_LO] = (uint8_t)(a & 0xFF);
+    loci->regs[LOCI_REG_ADDR1_HI] = (uint8_t)(a >> 8);
+}
+
+/* Refresh the RW0/RW1 register from the current addr. Called after any
+ * change to addr0/addr1 (write to lo/hi byte) so the next 6502 read of
+ * $03A4/$03A8 sees the byte at the new position. */
+static void refresh_rw0(loci_t* loci) {
+    loci->regs[LOCI_REG_RW0] = loci->xram[get_addr0(loci)];
+}
+static void refresh_rw1(loci_t* loci) {
+    loci->regs[LOCI_REG_RW1] = loci->xram[get_addr1(loci)];
+}
+
 /* ─── File I/O (Sprint 34aa) ──────────────────────────────────── */
 
 /* Map host errno → LOCI errno. */
@@ -523,6 +552,147 @@ static void op_lseek(loci_t* loci) {
     api_return_axsreg(loci, (uint32_t)pos);
 }
 
+/* 0x17 READ_XRAM: A=fd, xstack contains uint16 count then uint16 xram_addr
+ * (firmware: api_pop_uint16(&count) then api_pop_uint16_end(&xram_addr)).
+ * Reads from file into xram[xram_addr..]. Returns bytes_read in AXSREG. */
+static void op_read_xram(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    if (loci->xstack_ptr + 4 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    uint16_t count;
+    uint16_t xram_addr;
+    memcpy(&count, &loci->xstack[loci->xstack_ptr], 2);
+    loci->xstack_ptr += 2;
+    memcpy(&xram_addr, &loci->xstack[loci->xstack_ptr], 2);
+    loci->xstack_ptr += 2;
+    xstack_zero(loci);
+
+    if ((uint32_t)xram_addr + count > LOCI_XRAM_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    FILE* fp = fd_to_file(loci, fd);
+    if (!fp) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    size_t br = fread(&loci->xram[xram_addr], 1, count, fp);
+    /* Refresh windows in case they pointed into the touched region. */
+    refresh_rw0(loci);
+    refresh_rw1(loci);
+    api_return_axsreg(loci, (uint32_t)br);
+}
+
+/* 0x19 WRITE_XRAM: A=fd, xstack count + xram_addr.
+ * Writes xram[xram_addr..] to file. Returns bytes_written. */
+static void op_write_xram(loci_t* loci) {
+    int fd = loci->regs[LOCI_REG_API_A];
+    if (loci->xstack_ptr + 4 > LOCI_XSTACK_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    uint16_t count;
+    uint16_t xram_addr;
+    memcpy(&count, &loci->xstack[loci->xstack_ptr], 2);
+    loci->xstack_ptr += 2;
+    memcpy(&xram_addr, &loci->xstack[loci->xstack_ptr], 2);
+    loci->xstack_ptr += 2;
+    xstack_zero(loci);
+
+    if ((uint32_t)xram_addr + count > LOCI_XRAM_SIZE) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    FILE* fp = fd_to_file(loci, fd);
+    if (!fp) {
+        api_return_errno(loci, LOCI_EBADF);
+        return;
+    }
+    size_t bw = fwrite(&loci->xram[xram_addr], 1, count, fp);
+    api_return_axsreg(loci, (uint32_t)bw);
+}
+
+/* 0x88 GETCWD: A=drive (0-5, or 255 = derive boot). Pushes path string
+ * onto xstack and returns its length in A. */
+static void op_getcwd(loci_t* loci) {
+    uint8_t drive = loci->regs[LOCI_REG_API_A];
+    if (drive == 255) {
+        /* Priority : ROM > DSK 0 > TAP — matches firmware logic. */
+        if      (loci->mnt_mounted[LOCI_MNT_ROM]) drive = LOCI_MNT_ROM;
+        else if (loci->mnt_mounted[0])            drive = 0;
+        else if (loci->mnt_mounted[LOCI_MNT_TAP]) drive = LOCI_MNT_TAP;
+        else { api_return_errno(loci, LOCI_ENOENT); return; }
+    }
+    if (drive >= LOCI_MNT_MAX || !loci->mnt_mounted[drive]) {
+        api_return_errno(loci, LOCI_ENOENT);
+        return;
+    }
+    const char* path = loci->mnt_paths[drive];
+    /* Firmware reports the directory part — strip trailing filename if any.
+     * Find the rightmost '/'; length = position + 1 (include the slash). */
+    const char* slash = strrchr(path, '/');
+    size_t len = slash ? (size_t)(slash - path + 1) : strlen(path);
+    if (len > 255) len = 255;
+
+    /* Push terminator then bytes in reverse so reading forward from
+     * xstack_ptr yields the path. */
+    xstack_zero(loci);
+    uint8_t zero = 0;
+    if (!xstack_push_n(loci, &zero, 1)) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    for (size_t i = len; i > 0; i--) {
+        uint8_t c = (uint8_t)path[i - 1];
+        if (!xstack_push_n(loci, &c, 1)) {
+            api_return_errno(loci, LOCI_EINVAL);
+            return;
+        }
+    }
+    api_return_ax(loci, (uint16_t)len);
+}
+
+/* 0x90 MOUNT: A=drive (0-5), xstack=path. Stores path in slot. */
+static void op_mount(loci_t* loci) {
+    uint8_t drive = loci->regs[LOCI_REG_API_A];
+    char path[256];
+    if (!pop_zstring(loci, path, sizeof(path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    if (drive >= LOCI_MNT_MAX) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    /* Verify the file exists (LOCI would actually mount a disk image here;
+     * Sprint 34ab only records the mapping for Sprint 34ad/34ae plumbing). */
+    char host_path[512];
+    if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
+        api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
+    if (access(host_path, F_OK) != 0) {
+        api_return_errno(loci, LOCI_ENOENT);
+        return;
+    }
+    loci->mnt_mounted[drive] = true;
+    strncpy(loci->mnt_paths[drive], path, sizeof(loci->mnt_paths[drive]) - 1);
+    loci->mnt_paths[drive][sizeof(loci->mnt_paths[drive]) - 1] = '\0';
+    api_return_ax(loci, 0);
+}
+
+/* 0x91 UMOUNT: A=drive. Clears slot. */
+static void op_umount(loci_t* loci) {
+    uint8_t drive = loci->regs[LOCI_REG_API_A];
+    if (drive < LOCI_MNT_MAX) {
+        loci->mnt_mounted[drive] = false;
+        loci->mnt_paths[drive][0] = '\0';
+    }
+    api_return_ax(loci, 0);
+}
+
 /* 0x1B UNLINK: xstack top = path. */
 static void op_unlink(loci_t* loci) {
     char path[260];
@@ -586,6 +756,11 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_LSEEK:       op_lseek(loci);        break;
         case LOCI_OP_UNLINK:      op_unlink(loci);       break;
         case LOCI_OP_RENAME:      op_rename(loci);       break;
+        case LOCI_OP_READ_XRAM:   op_read_xram(loci);    break;
+        case LOCI_OP_WRITE_XRAM:  op_write_xram(loci);   break;
+        case LOCI_OP_MOUNT:       op_mount(loci);        break;
+        case LOCI_OP_UMOUNT:      op_umount(loci);       break;
+        case LOCI_OP_GETCWD:      op_getcwd(loci);       break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));
@@ -602,6 +777,23 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
     if (!loci || !loci->enabled) return 0xFF;
     if (!loci_addr_in_mia(address)) return 0xFF;
     uint8_t off = (uint8_t)(address - LOCI_MIA_BASE);
+
+    /* xram DMA window 0 — read RW0, then advance addr0 by step0 (signed). */
+    if (off == LOCI_REG_RW0) {
+        uint8_t v = loci->regs[LOCI_REG_RW0];
+        int8_t step = (int8_t)loci->regs[LOCI_REG_STEP0];
+        set_addr0(loci, (uint16_t)(get_addr0(loci) + step));
+        refresh_rw0(loci);
+        return v;
+    }
+    /* xram DMA window 1 — read RW1, advance addr1 by step1. */
+    if (off == LOCI_REG_RW1) {
+        uint8_t v = loci->regs[LOCI_REG_RW1];
+        int8_t step = (int8_t)loci->regs[LOCI_REG_STEP1];
+        set_addr1(loci, (uint16_t)(get_addr1(loci) + step));
+        refresh_rw1(loci);
+        return v;
+    }
 
     /* API_STACK: a 6502 read pops the top byte. Firmware semantics:
      *   value = xstack[ptr]; ptr++ (clamped to LOCI_XSTACK_SIZE);
@@ -626,6 +818,33 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
     if (!loci || !loci->enabled) return;
     if (!loci_addr_in_mia(address)) return;
     uint8_t off = (uint8_t)(address - LOCI_MIA_BASE);
+
+    /* xram DMA window writes : update xram[addr] then advance and
+     * refresh RW. Address-set writes only refresh RW (no advance). */
+    if (off == LOCI_REG_RW0) {
+        loci->xram[get_addr0(loci)] = value;
+        int8_t step = (int8_t)loci->regs[LOCI_REG_STEP0];
+        set_addr0(loci, (uint16_t)(get_addr0(loci) + step));
+        refresh_rw0(loci);
+        return;
+    }
+    if (off == LOCI_REG_RW1) {
+        loci->xram[get_addr1(loci)] = value;
+        int8_t step = (int8_t)loci->regs[LOCI_REG_STEP1];
+        set_addr1(loci, (uint16_t)(get_addr1(loci) + step));
+        refresh_rw1(loci);
+        return;
+    }
+    if (off == LOCI_REG_ADDR0_LO || off == LOCI_REG_ADDR0_HI) {
+        loci->regs[off] = value;
+        refresh_rw0(loci);
+        return;
+    }
+    if (off == LOCI_REG_ADDR1_LO || off == LOCI_REG_ADDR1_HI) {
+        loci->regs[off] = value;
+        refresh_rw1(loci);
+        return;
+    }
 
     /* API_STACK: 6502 writes push onto xstack (grows downward). */
     if (off == LOCI_REG_API_STACK) {

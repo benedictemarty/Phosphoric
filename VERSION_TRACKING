@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.26-alpha
+Current Version: 1.16.27-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI File I/O POSIX — 367 tests pass)
+Status: Alpha (LOCI xram + mount/umount — 378 tests pass)
 
 Version History:
 ----------------
+- 1.16.27-alpha (2026-06-06): LOCI xram DMA + mount/getcwd (Sprint 34ab)
+  * xram 64 KB + 2 fenêtres DMA auto-inc ($03A4-A7, $03A8-AB)
+  * Ops 0x17 READ_XRAM, 0x19 WRITE_XRAM, 0x88 GETCWD, 0x90 MOUNT, 0x91 UMOUNT
+  * Mount table 6 slots (4 dsk + tap + ROM), résolution sandbox path
+  * 11 nouveaux tests test-loci, total 38, 378 tests global
+  * Mount image disque/tape/ROM différé sprints 34ad-34ae-34af
+  * ROM LOCI atteint PC=$C354 — boucle TUI active
+
 - 1.16.26-alpha (2026-06-06): LOCI File I/O POSIX (Sprint 34aa)
   * 7 ops file I/O : OPEN/CLOSE/READ_XSTACK/WRITE_XSTACK/LSEEK/UNLINK/RENAME
   * Backend POSIX (fopen/fread/fwrite/...) avec table 16 fd

@@ -539,6 +539,21 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ab: LOCI xram DMA + mount/umount/getcwd (v1.16.27-alpha) - DONE
+- [x] xram 64 KB tampon partagé loci_t.xram
+- [x] Fenêtre DMA 0 : $03A4 RW0, $03A5 STEP0 (signed), $03A6/A7 ADDR0
+- [x] Fenêtre DMA 1 : $03A8 RW1, $03A9 STEP1, $03AA/AB ADDR1
+- [x] Auto-incrément read/write avec step signé (positif/négatif)
+- [x] op 0x17 READ_XRAM : pop (count, xram_addr), fread → xram
+- [x] op 0x19 WRITE_XRAM : pop args, fwrite ← xram
+- [x] op 0x90 MOUNT : drive 0-5, valide existence fichier, store path
+- [x] op 0x91 UMOUNT : clear slot
+- [x] op 0x88 GETCWD : returns path du slot, A=255 → derive (ROM > DSK0 > TAP)
+- [x] Mount table 6 slots (LOCI_MNT_TAP=4, LOCI_MNT_ROM=5)
+- [x] 11 nouveaux tests test-loci, total 38, 378 tests global
+- [x] Mount image disque/tape/ROM différé (path tracking only)
+- [x] ROM LOCI atteint PC=$C354 — boucle TUI active
+
 ### Sprint 34aa: LOCI File I/O POSIX subset (v1.16.26-alpha) - DONE
 - [x] op 0x14 OPEN : fopen + flags POSIX, retourne fd ≥ 3
 - [x] op 0x15 CLOSE : fclose, libère slot fd

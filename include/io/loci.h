@@ -118,6 +118,20 @@ typedef enum {
  * Override at runtime via loci_set_flash_root(). */
 #define LOCI_FLASH_DEFAULT "."
 
+/* xram — 64 KB SRAM exposed to the 6502 through DMA windows. */
+#define LOCI_XRAM_SIZE  0x10000
+
+/* Mount slots — 4 disk drives + 1 tape + 1 ROM. */
+#define LOCI_MNT_MAX    6
+#define LOCI_MNT_TAP    4
+#define LOCI_MNT_ROM    5
+
+/* Additional MIA register offsets used for the DMA windows. */
+#define LOCI_REG_ADDR0_LO 0x06   /* $03A6 */
+#define LOCI_REG_ADDR0_HI 0x07   /* $03A7 */
+#define LOCI_REG_ADDR1_LO 0x0A   /* $03AA */
+#define LOCI_REG_ADDR1_HI 0x0B   /* $03AB */
+
 typedef struct loci_s {
     bool enabled;
 
@@ -154,6 +168,17 @@ typedef struct loci_s {
     /* Sandbox root directory — paths from the 6502 are resolved here.
      * NULL = use current working directory. */
     char flash_root[256];
+
+    /* xram — 64 KB shared SRAM accessed by the 6502 via the DMA windows
+     * at $03A4 (data window 0) and $03A8 (data window 1).
+     * The corresponding addresses live in $03A6-A7 and $03AA-AB, with
+     * signed step in $03A5/$03A9. */
+    uint8_t xram[LOCI_XRAM_SIZE];
+
+    /* Mount table : 4 disk drives + 1 tape + 1 ROM. Sprint 34ab tracks
+     * paths only — actual disk/tape/ROM image plumbing lands in 34ad-34af. */
+    bool mnt_mounted[LOCI_MNT_MAX];
+    char mnt_paths[LOCI_MNT_MAX][256];
 } loci_t;
 
 bool    loci_init(loci_t* loci);

@@ -222,7 +222,7 @@ TEST(test_xstack_read_pops_byte) {
 TEST(test_unimplemented_op_still_enosys) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);   /* not implemented until 34ab */
+    loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);   /* not implemented until 34ac */
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
     ASSERT_EQ(e, LOCI_ENOSYS);
@@ -486,6 +486,194 @@ TEST(test_fd_exhaustion_emfile) {
     loci_cleanup(&l); free(tmpdir);
 }
 
+/* ── 34ab: xram window + mount/umount/getcwd ──────────────────── */
+
+TEST(test_xram_window0_read_advances) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Seed xram. */
+    for (int i = 0; i < 8; i++) l.xram[i] = (uint8_t)(0x10 + i);
+    /* Set step=1, addr=0. */
+    loci_write(&l, 0x03A5, 1);
+    loci_write(&l, 0x03A6, 0x00);
+    loci_write(&l, 0x03A7, 0x00);
+    /* Reads of $03A4 should yield xram[0], [1], [2], ... */
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0x10);
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0x11);
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0x12);
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0x13);
+}
+
+TEST(test_xram_window0_write_advances) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03A5, 1);
+    loci_write(&l, 0x03A6, 0x10);
+    loci_write(&l, 0x03A7, 0x20);   /* addr = $2010 */
+    loci_write(&l, 0x03A4, 0xAA);
+    loci_write(&l, 0x03A4, 0xBB);
+    loci_write(&l, 0x03A4, 0xCC);
+    ASSERT_EQ(l.xram[0x2010], 0xAA);
+    ASSERT_EQ(l.xram[0x2011], 0xBB);
+    ASSERT_EQ(l.xram[0x2012], 0xCC);
+}
+
+TEST(test_xram_window_step_negative) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    for (int i = 0; i < 8; i++) l.xram[i] = (uint8_t)(0xA0 + i);
+    loci_write(&l, 0x03A5, (uint8_t)((int8_t)(-1)));
+    loci_write(&l, 0x03A6, 0x03);
+    loci_write(&l, 0x03A7, 0x00);   /* addr = $0003 */
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0xA3);
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0xA2);
+    ASSERT_EQ(loci_read(&l, 0x03A4), 0xA1);
+}
+
+TEST(test_xram_window1_independent) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    for (int i = 0; i < 4; i++) l.xram[0x0500 + i] = (uint8_t)(0x50 + i);
+    loci_write(&l, 0x03A9, 1);
+    loci_write(&l, 0x03AA, 0x00);
+    loci_write(&l, 0x03AB, 0x05);
+    ASSERT_EQ(loci_read(&l, 0x03A8), 0x50);
+    ASSERT_EQ(loci_read(&l, 0x03A8), 0x51);
+}
+
+TEST(test_mount_records_path) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/disk0.dsk", tmpdir);
+    FILE* fp = fopen(path, "wb"); fputc('!', fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "disk0.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_TRUE(l.mnt_mounted[0]);
+    ASSERT_TRUE(strcmp(l.mnt_paths[0], "disk0.dsk") == 0);
+
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_mount_missing_file_enoent) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "nope.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_ENOENT);
+    ASSERT_TRUE(!l.mnt_mounted[0]);
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_mount_bad_drive_einval) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/x", tmpdir);
+    FILE* fp = fopen(path, "wb"); fclose(fp);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "x");
+    l.regs[LOCI_REG_API_A] = 99;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EINVAL);
+    unlink(path); rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_umount_clears_slot) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.mnt_mounted[2] = true;
+    strcpy(l.mnt_paths[2], "x.dsk");
+    l.regs[LOCI_REG_API_A] = 2;
+    loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
+    ASSERT_TRUE(!l.mnt_mounted[2]);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+}
+
+TEST(test_read_xram_from_file) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/blob.bin", tmpdir);
+    FILE* fp = fopen(path, "wb");
+    for (int i = 0; i < 32; i++) fputc(i, fp);
+    fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+
+    push_path(&l, "blob.bin");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);
+
+    /* Push (xram_addr=0x1000) then (count=32). Firmware pops count first then
+     * xram_addr; firmware-side push order is xram_addr first then count. */
+    /* push xram_addr u16: hi=0x10, lo=0x00. */
+    loci_write(&l, 0x03AC, 0x10);
+    loci_write(&l, 0x03AC, 0x00);
+    /* push count u16: hi=0x00, lo=0x20. */
+    loci_write(&l, 0x03AC, 0x00);
+    loci_write(&l, 0x03AC, 0x20);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_READ_XRAM);
+    /* AXSREG should hold 32. */
+    uint32_t br = l.regs[LOCI_REG_API_A] |
+                  ((uint32_t)l.regs[LOCI_REG_API_X]    << 8) |
+                  ((uint32_t)l.regs[LOCI_REG_API_SREG] << 16) |
+                  ((uint32_t)l.regs[LOCI_REG_API_SREG_HI] << 24);
+    ASSERT_EQ(br, 32);
+    /* xram[0x1000..0x101F] should hold 0..31. */
+    for (int i = 0; i < 32; i++)
+        ASSERT_EQ(l.xram[0x1000 + i], i);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_getcwd_returns_path) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.mnt_mounted[1] = true;
+    strcpy(l.mnt_paths[1], "USB:foo/bar.dsk");
+    l.regs[LOCI_REG_API_A] = 1;
+    loci_write(&l, 0x03AF, LOCI_OP_GETCWD);
+    /* Length should be position of last '/' + 1 = 8 ("USB:foo/" = 8). */
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 8);
+    char buf[16] = {0};
+    for (int i = 0; i < 8; i++) buf[i] = (char)loci_read(&l, 0x03AC);
+    ASSERT_TRUE(strcmp(buf, "USB:foo/") == 0);
+}
+
+TEST(test_getcwd_255_derives_rom) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.mnt_mounted[LOCI_MNT_ROM] = true;
+    strcpy(l.mnt_paths[LOCI_MNT_ROM], "loci.rom");
+    l.regs[LOCI_REG_API_A] = 255;
+    loci_write(&l, 0x03AF, LOCI_OP_GETCWD);
+    /* No '/' in "loci.rom" → len = strlen = 8. */
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 8);
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -533,6 +721,17 @@ int main(void) {
     RUN(test_unlink_removes_file);
     RUN(test_close_bad_fd_returns_ebadf);
     RUN(test_fd_exhaustion_emfile);
+    RUN(test_xram_window0_read_advances);
+    RUN(test_xram_window0_write_advances);
+    RUN(test_xram_window_step_negative);
+    RUN(test_xram_window1_independent);
+    RUN(test_mount_records_path);
+    RUN(test_mount_missing_file_enoent);
+    RUN(test_mount_bad_drive_einval);
+    RUN(test_umount_clears_slot);
+    RUN(test_read_xram_from_file);
+    RUN(test_getcwd_returns_path);
+    RUN(test_getcwd_255_derives_rom);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.27-alpha] - 2026-06-06
+
+### LOCI : xram DMA window + READ/WRITE_XRAM + mount/umount/getcwd (Sprint 34ab)
+
+#### Added
+- **xram 64 KB** : tampon SRAM partagé entre LOCI et le 6502, accédé
+  via les fenêtres DMA auto-incrémentées.
+- **Fenêtre DMA 0** :
+  - `$03A4` RW0 : R/W xram[addr0], avance addr0 += step0 (signé)
+  - `$03A5` STEP0 : pas signé int8
+  - `$03A6/A7` ADDR0 : adresse 16-bit (lo/hi)
+- **Fenêtre DMA 1** : same at `$03A8/A9/AA/AB`
+- **5 nouvelles ops API** :
+  - `0x17 READ_XRAM` : lit depuis fd vers xram[xram_addr..]
+  - `0x19 WRITE_XRAM` : écrit xram[xram_addr..] vers fd
+  - `0x90 MOUNT` : enregistre image (disk/tape/ROM) sur slot 0-5
+  - `0x91 UMOUNT` : libère un slot
+  - `0x88 GETCWD` : retourne path du slot (255 = derive ROM/DSK0/TAP)
+- **Mount table 6 slots** : 4 disks (0-3) + tape (4) + ROM (5).
+  Sprint 34ab vérifie l'existence du fichier ; le mount réel des
+  images disque/tape/ROM arrive sprints 34ad-34ae-34af.
+- **11 nouveaux tests test-loci** (total 38) : xram read/write auto-inc,
+  step négatif, fenêtres indépendantes, mount records path, mount
+  missing file → ENOENT, bad drive → EINVAL, umount clears slot,
+  READ_XRAM file → xram roundtrip, GETCWD path + 255-derive.
+
+#### Validation
+ROM LOCI v0.3.0 : `PC=$EB18` (34aa) → `PC=$C354` (34ab) après 500 000
+cycles. La ROM est maintenant dans sa boucle principale (TUI) — elle
+a fini son init, lu ses settings, et tourne en attente d'input.
+
 ## [1.16.26-alpha] - 2026-06-06
 
 ### LOCI : File I/O POSIX subset (Sprint 34aa)
