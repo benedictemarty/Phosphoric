@@ -539,6 +539,19 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ag: LOCI USB HID stubs kbd/mou/pad (v1.16.29-alpha) - DONE
+- [x] PIX_XREG (0x01) décodé : device/channel/addr/word depuis xstack
+- [x] Route channel*256+addr : 0=kbd, 1=mou, 2=pad
+- [x] kbd_xram/mou_xram/pad_xram init à 0xFFFF (sentinel firmware)
+- [x] API bridge loci_kbd_set_report(modifier, keycodes[6])
+- [x] API bridge loci_kbd_clear()
+- [x] Bitmap firmware-truthful : bit (kc&7) du byte (kc>>3)
+- [x] Modifier byte 28 (HID_KEY_CONTROL_LEFT >> 3)
+- [x] No-key sentinel byte 0 bit 0
+- [x] 10 nouveaux tests test-loci, total 54, 394 tests global
+- [x] Sprint sauté hors ordre (34ag avant 34ad-34af) pour valider HID
+- [x] Bridge SDL → loci_kbd_set_report : différé (besoin scénario end-to-end)
+
 ### Sprint 34ac: LOCI Dir API + uname (v1.16.28-alpha) - DONE
 - [x] op 0x80 OPENDIR : opendir host, retourne dir_fd >= 32
 - [x] op 0x81 CLOSEDIR : closedir, libère slot

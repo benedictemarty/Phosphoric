@@ -1,12 +1,21 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.28-alpha
+Current Version: 1.16.29-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI Dir API + uname — 384 tests pass)
+Status: Alpha (LOCI USB HID stubs — 394 tests pass)
 
 Version History:
 ----------------
+- 1.16.29-alpha (2026-06-06): LOCI USB HID stubs kbd/mou/pad (Sprint 34ag)
+  * PIX_XREG décodé : device/channel/addr/word depuis xstack
+  * Route channel*256+addr : 0=kbd, 1=mou, 2=pad (set xram address)
+  * API bridge : loci_kbd_set_report(modifier, keycodes[6]) + loci_kbd_clear
+  * Bitmap 32 octets dans xram[kbd_xram..]: bit (kc&7) du byte (kc>>3),
+    modifier byte 28, no-key sentinel byte 0 bit 0
+  * 10 nouveaux tests test-loci, total 54, 394 tests global
+  * Bridge SDL → loci_kbd_set_report pas encore câblé dans main loop
+
 - 1.16.28-alpha (2026-06-06): LOCI Dir API + uname (Sprint 34ac)
   * 5 ops : OPENDIR/CLOSEDIR/READDIR/MKDIR/UNAME
   * Table dir_fd 8 slots (offset 32, matches firmware FD_OFFS_LFS)

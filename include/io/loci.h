@@ -196,6 +196,14 @@ typedef struct loci_s {
     /* Directory iterators (Sprint 34ac). dirs[i] is a host DIR* exposed
      * to the 6502 as dir_fd = LOCI_DIR_OFFSET + i. */
     void* dirs[LOCI_DIR_MAX];
+
+    /* USB HID xram addresses (Sprint 34ag) — set by the 6502 via PIX_XREG
+     * (device=0=MIA, channel=0, addr=0/1/2 for kbd/mou/pad). 0xFFFF = unset.
+     * When set, the corresponding HID state bitmap is mirrored into
+     * xram[kbd_xram..kbd_xram+31] (kbd is 32 bytes), etc. */
+    uint16_t kbd_xram;
+    uint16_t mou_xram;
+    uint16_t pad_xram;
 } loci_t;
 
 bool    loci_init(loci_t* loci);
@@ -205,6 +213,17 @@ void    loci_cleanup(loci_t* loci);
 /* Configure the host directory used as sandbox root for LOCI file ops
  * (Sprint 34aa). Pass NULL or empty string to use CWD. */
 void    loci_set_flash_root(loci_t* loci, const char* path);
+
+/* USB HID bridge (Sprint 34ag).
+ * Update the keyboard bitmap in xram from a HID-style boot report.
+ * `modifier` mirrors the HID modifier byte (LCtrl=0x01, LShift=0x02, ...).
+ * `keycodes` is a 6-slot array of HID usage codes (0 = empty slot).
+ * Has no effect if the 6502 has not yet pointed kbd_xram at a region. */
+void    loci_kbd_set_report(loci_t* loci, uint8_t modifier,
+                            const uint8_t keycodes[6]);
+
+/* Clear the keyboard bitmap (all keys released). */
+void    loci_kbd_clear(loci_t* loci);
 
 /* Bus interface — called from the memory I/O callback when an address
  * lies inside the MIA window. Out-of-range addresses must be filtered

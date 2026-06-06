@@ -195,15 +195,14 @@ TEST(test_op_clk_getres_bad_id_returns_einval) {
     ASSERT_EQ(e, LOCI_EINVAL);
 }
 
-TEST(test_op_pix_xreg_no_errno) {
+TEST(test_op_pix_xreg_empty_xstack_einval) {
     loci_t l; loci_init(&l);
     l.enabled = true;
+    /* No args on xstack — should return EINVAL (Sprint 34ag enforces shape). */
     loci_write(&l, 0x03AF, LOCI_OP_PIX_XREG);
-    /* PIX_XREG currently accepts everything silently. */
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
-    ASSERT_EQ(e, 0);
-    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_EQ(e, LOCI_EINVAL);
 }
 
 TEST(test_xstack_read_pops_byte) {
@@ -791,6 +790,139 @@ TEST(test_uname_pushes_5_fields) {
     ASSERT_TRUE(strncmp(buf, "Phosphoric LOCI", 15) == 0);
 }
 
+/* ── 34ag: USB HID stubs ─────────────────────────────────────── */
+
+/* Helper: build a PIX_XREG call to MIA device with channel/addr/word. */
+static void pix_xreg_mia(loci_t* l, uint8_t channel, uint8_t addr, uint16_t word) {
+    /* Push from bottom to top of stack (high index last). Layout :
+     *   bottom of pushed data = lo(word)   (xstack[XSTACK-5])
+     *                hi(word) (xstack[XSTACK-4])
+     *                addr     (xstack[XSTACK-3])
+     *                channel  (xstack[XSTACK-2])
+     *                device   (xstack[XSTACK-1])
+     * Reverse-push so the final top-of-stack ends up at device. */
+    loci_write(l, 0x03AC, 0);              /* push device=0 (MIA) */
+    loci_write(l, 0x03AC, channel);
+    loci_write(l, 0x03AC, addr);
+    loci_write(l, 0x03AC, (uint8_t)(word >> 8));
+    loci_write(l, 0x03AC, (uint8_t)(word & 0xFF));
+    loci_write(l, 0x03AF, LOCI_OP_PIX_XREG);
+}
+
+TEST(test_pix_xreg_kbd_sets_kbd_xram) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);
+    ASSERT_EQ(l.kbd_xram, 0x4000);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+}
+
+TEST(test_pix_xreg_mou_sets_mou_xram) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 1, 0x5000);
+    ASSERT_EQ(l.mou_xram, 0x5000);
+}
+
+TEST(test_pix_xreg_pad_sets_pad_xram) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 2, 0x6000);
+    ASSERT_EQ(l.pad_xram, 0x6000);
+}
+
+TEST(test_pix_xreg_disables_kbd_with_ffff) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);
+    pix_xreg_mia(&l, 0, 0, 0xFFFF);
+    ASSERT_EQ(l.kbd_xram, 0xFFFF);
+}
+
+TEST(test_pix_xreg_bad_device_einval) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Push with device=1 (VGA — not served). */
+    loci_write(&l, 0x03AC, 1);   /* device */
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AF, LOCI_OP_PIX_XREG);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EINVAL);
+}
+
+TEST(test_kbd_set_report_writes_bitmap) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);
+
+    /* Press 'A' (HID 0x04) + 'B' (0x05). */
+    uint8_t kc[6] = {0x04, 0x05, 0, 0, 0, 0};
+    loci_kbd_set_report(&l, 0, kc);
+
+    /* byte 0 bit 4 = 'A'; byte 0 bit 5 = 'B'. */
+    ASSERT_EQ(l.xram[0x4000] & 0x30, 0x30);
+    /* No "no-key" sentinel since a key is down. */
+    ASSERT_EQ(l.xram[0x4000] & 0x01, 0);
+}
+
+TEST(test_kbd_set_report_modifier_byte28) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);
+
+    /* LCtrl = 0x01 modifier, no key. */
+    uint8_t kc[6] = {0};
+    loci_kbd_set_report(&l, 0x01, kc);
+
+    /* Modifier lives at byte LOCI_HID_KEY_CONTROL_LEFT >> 3 = 0xE0>>3 = 28. */
+    ASSERT_EQ(l.xram[0x4000 + 28], 0x01);
+    /* No "no-key" sentinel because modifier is non-zero. */
+    ASSERT_EQ(l.xram[0x4000] & 0x01, 0);
+}
+
+TEST(test_kbd_set_report_no_key_sentinel) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);
+
+    uint8_t kc[6] = {0};
+    loci_kbd_set_report(&l, 0, kc);
+    /* Bit 0 of byte 0 = "no key pressed" sentinel. */
+    ASSERT_EQ(l.xram[0x4000] & 0x01, 0x01);
+}
+
+TEST(test_kbd_clear_resets_bitmap) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 0, 0x4000);
+
+    /* Pre-fill with a key. */
+    uint8_t kc1[6] = {0x04, 0, 0, 0, 0, 0};
+    loci_kbd_set_report(&l, 0, kc1);
+    ASSERT_TRUE(l.xram[0x4000] & 0x10);
+
+    loci_kbd_clear(&l);
+    /* All keys released → sentinel bit set, key bit cleared. */
+    ASSERT_EQ(l.xram[0x4000] & 0x10, 0);
+    ASSERT_EQ(l.xram[0x4000] & 0x01, 0x01);
+}
+
+TEST(test_kbd_set_report_noop_when_xram_unset) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Pre-fill xram[0..32] with a known pattern. */
+    for (int i = 0; i < 32; i++) l.xram[i] = (uint8_t)(0xAA + i);
+    /* kbd_xram is 0xFFFF → no-op expected. */
+    uint8_t kc[6] = {0x04, 0, 0, 0, 0, 0};
+    loci_kbd_set_report(&l, 0, kc);
+    for (int i = 0; i < 32; i++)
+        ASSERT_EQ(l.xram[i], (uint8_t)(0xAA + i));
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -823,7 +955,7 @@ int main(void) {
     RUN(test_op_count_increments);
     RUN(test_xstack_push_pop_roundtrip);
     RUN(test_xstack_read_pops_byte);
-    RUN(test_op_pix_xreg_no_errno);
+    RUN(test_op_pix_xreg_empty_xstack_einval);
     RUN(test_op_rng_lrand_returns_axsreg);
     RUN(test_op_clock_returns_uptime);
     RUN(test_op_clk_getres_pushes_one_sec);
@@ -855,6 +987,16 @@ int main(void) {
     RUN(test_mkdir_creates_dir);
     RUN(test_closedir_bad_fd_ebadf);
     RUN(test_uname_pushes_5_fields);
+    RUN(test_pix_xreg_kbd_sets_kbd_xram);
+    RUN(test_pix_xreg_mou_sets_mou_xram);
+    RUN(test_pix_xreg_pad_sets_pad_xram);
+    RUN(test_pix_xreg_disables_kbd_with_ffff);
+    RUN(test_pix_xreg_bad_device_einval);
+    RUN(test_kbd_set_report_writes_bitmap);
+    RUN(test_kbd_set_report_modifier_byte28);
+    RUN(test_kbd_set_report_no_key_sentinel);
+    RUN(test_kbd_clear_resets_bitmap);
+    RUN(test_kbd_set_report_noop_when_xram_unset);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

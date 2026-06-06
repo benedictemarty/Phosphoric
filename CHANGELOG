@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.29-alpha] - 2026-06-06
+
+### LOCI : USB HID stubs (clavier/souris/manette) — Sprint 34ag
+
+#### Added
+- **Décodage complet de `0x01 PIX_XREG`** (auparavant stub silencieux) :
+  - Lit device/channel/addr/word depuis xstack (5 octets : device=top,
+    puis channel, addr, hi-word, lo-word)
+  - Refuse EINVAL si device ≠ 0 (seul MIA est servi)
+  - Pour MIA : route selon `channel*256 + addr` :
+    - `0` → `kbd_xram = word` (adresse xram du bitmap clavier 32 octets)
+    - `1` → `mou_xram = word`
+    - `2` → `pad_xram = word`
+- **API bridge HID dans `loci.h`** :
+  - `loci_kbd_set_report(loci, modifier, keycodes[6])` : convertit un
+    rapport HID boot keyboard en bitmap 32 octets dans
+    `xram[kbd_xram..kbd_xram+31]`
+  - `loci_kbd_clear(loci)` : raccourci pour relâcher toutes les touches
+- **Format bitmap** mirroring firmware :
+  - Bit (keycode & 7) du byte (keycode >> 3) = touche pressée
+  - Byte 28 = modifier (Ctrl/Shift/Alt/...)
+  - Byte 0 bit 0 = "aucune touche" sentinel
+  - NumLock/CapsLock omis (LEDs hôte non pertinents Oric-side)
+- **`kbd_xram`/`mou_xram`/`pad_xram`** initialisés à `0xFFFF` (sentinel
+  matching firmware) ; `loci_kbd_set_report` no-op tant que la ROM ne
+  les a pas configurés via PIX_XREG.
+- **10 nouveaux tests test-loci** (total 54) : 5 sur le PIX_XREG (kbd/
+  mou/pad set, disable via FFFF, bad device EINVAL), 5 sur le bridge
+  (bitmap, modifier byte 28, no-key sentinel, clear, no-op si unset).
+
+#### Pas câblé
+Le bridge `loci_kbd_set_report` est implémenté côté LOCI mais pas encore
+appelé depuis le main loop SDL — sera fait quand on aura un cas d'usage
+end-to-end avec la ROM LOCI affichée dans la fenêtre.
+
+#### Validation
+Tous les ops API HID-related répondent correctement aux conventions
+firmware. La ROM LOCI accepte la configuration sans erreur — si on lui
+injectait des keycodes via `loci_kbd_set_report`, elle réagirait au
+TUI.
+
 ## [1.16.28-alpha] - 2026-06-06
 
 ### LOCI : Dir API + uname (Sprint 34ac)

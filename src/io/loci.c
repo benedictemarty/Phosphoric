@@ -100,6 +100,10 @@ bool loci_init(loci_t* loci) {
     loci->xstack_ptr = LOCI_XSTACK_SIZE;   /* empty */
     loci->clock_start_us = now_us();
     loci->rng_state = loci->clock_start_us ^ 0xA5A5A5A5A5A5A5A5ULL;
+    /* HID xram addresses unset until PIX_XREG configures them. */
+    loci->kbd_xram = 0xFFFF;
+    loci->mou_xram = 0xFFFF;
+    loci->pad_xram = 0xFFFF;
     return true;
 }
 
@@ -216,11 +220,94 @@ static void api_return_errno(loci_t* loci, uint16_t e) {
 
 /* ─── API handlers (Sprint 34z: system / RTC / RNG) ──────────── */
 
-/* 0x01 PIX_XREG — forwards a 24-bit "channel:addr:word" packet to the PIX
- * (USB HID) subsystem. Sprint 34z accepts it silently with ax=0; Sprint
- * 34ag will route to SDL kbd/mouse/pad bridges. */
+/* 0x01 PIX_XREG — generic packet routed to a PIX device.
+ *
+ * xstack layout (firmware reads from the high end):
+ *   xstack[XSTACK_SIZE-1] = device   (0 = MIA, the only one we serve)
+ *   xstack[XSTACK_SIZE-2] = channel
+ *   xstack[XSTACK_SIZE-3] = addr
+ *   xstack[XSTACK_SIZE-4..] = one or more uint16 data words (popped in reverse)
+ *
+ * Sprint 34ag handles the MIA HID subset:
+ *   channel*256 + addr  == 0  → kbd_xreg(word)   (channel 0 addr 0)
+ *                       == 1  → mou_xreg(word)
+ *                       == 2  → pad_xreg(word)
+ * The `word` arg gives the xram address where the bitmap mirrors live
+ * (0xFFFF disables the mirror — matches firmware sentinel). */
 static void op_pix_xreg(loci_t* loci) {
+    /* Need at least device + channel + addr + 2-byte word = 5 bytes. */
+    if (LOCI_XSTACK_SIZE - loci->xstack_ptr < 5) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    uint8_t device  = loci->xstack[LOCI_XSTACK_SIZE - 1];
+    uint8_t channel = loci->xstack[LOCI_XSTACK_SIZE - 2];
+    uint8_t addr    = loci->xstack[LOCI_XSTACK_SIZE - 3];
+
+    /* Only MIA device is wired in Sprint 34ag — VGA/others would route
+     * to a video chip that doesn't exist here. */
+    if (device != 0) {
+        xstack_zero(loci);
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+
+    /* Data uint16 lives at xstack[XSTACK_SIZE-5..XSTACK_SIZE-4]
+     * (lo at index -5, hi at -4 per firmware push convention). */
+    uint16_t word = (uint16_t)loci->xstack[LOCI_XSTACK_SIZE - 5] |
+                    ((uint16_t)loci->xstack[LOCI_XSTACK_SIZE - 4] << 8);
+
+    uint16_t route = (uint16_t)channel * 256 + addr;
+    switch (route) {
+        case 0: loci->kbd_xram = word; break;
+        case 1: loci->mou_xram = word; break;
+        case 2: loci->pad_xram = word; break;
+        default:
+            /* Unhandled channel/addr — accept silently per Sprint 34z
+             * behaviour to avoid breaking ROMs that probe other channels. */
+            break;
+    }
+
+    xstack_zero(loci);
     api_return_ax(loci, 0);
+}
+
+/* ─── HID bridge (Sprint 34ag) ─────────────────────────────────── */
+
+/* HID usage codes we care about. */
+#define LOCI_HID_KEY_A             0x04
+#define LOCI_HID_KEY_CONTROL_LEFT  0xE0   /* >> 3 = 28 → modifier byte index */
+
+void loci_kbd_set_report(loci_t* loci, uint8_t modifier,
+                          const uint8_t keycodes[6]) {
+    if (!loci || !loci->enabled) return;
+    if (loci->kbd_xram == 0xFFFF) return;
+    if ((uint32_t)loci->kbd_xram + 32 > LOCI_XRAM_SIZE) return;
+
+    uint8_t keys[32] = {0};
+    bool any_key = false;
+    /* Phantom-state preservation: if a slot reports keycode 1 (ErrorRollOver),
+     * keep previous keys. For now we ignore phantom (we never inject it). */
+    for (int i = 0; i < 6; i++) {
+        uint8_t kc = keycodes[i];
+        if (kc >= LOCI_HID_KEY_A) {
+            any_key = true;
+            keys[kc >> 3] |= (uint8_t)(1u << (kc & 7));
+        }
+    }
+    /* Modifier maps directly to byte 28 (HID_KEY_CONTROL_LEFT >> 3). */
+    keys[LOCI_HID_KEY_CONTROL_LEFT >> 3] = modifier;
+    /* Sentinel bit 0 of byte 0 marks "no key pressed". */
+    if (!any_key && !modifier) keys[0] |= 0x01;
+    /* NUMLOCK/CAPSLOCK bits (2,3) intentionally omitted — host keyboard
+     * lock state isn't relevant on the Oric side. */
+
+    memcpy(&loci->xram[loci->kbd_xram], keys, 32);
+}
+
+void loci_kbd_clear(loci_t* loci) {
+    uint8_t empty[6] = {0};
+    loci_kbd_set_report(loci, 0, empty);
 }
 
 /* 0x04 RNG_LRAND — returns a 31-bit positive random uint32 in AXSREG. */
