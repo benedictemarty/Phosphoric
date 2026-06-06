@@ -5,9 +5,11 @@
  * @date 2026-06-06
  */
 
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "../../include/io/loci.h"
 #include "../../include/utils/logging.h"
@@ -133,6 +135,100 @@ TEST(test_xstack_push_pop_roundtrip) {
     ASSERT_EQ(loci_read(&l, 0x03AC), 0x20);
 }
 
+/* ── 34z: system / RTC / RNG ─────────────────────────────────── */
+
+TEST(test_op_rng_lrand_returns_axsreg) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03AF, LOCI_OP_RNG_LRAND);
+    /* errno should not be set; high bit cleared (firmware masks 0x7FFFFFFF) */
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, 0);
+    uint8_t sreg_hi = l.regs[LOCI_REG_API_SREG_HI];
+    ASSERT_TRUE((sreg_hi & 0x80) == 0);
+    ASSERT_TRUE((l.regs[LOCI_REG_BUSY] & 0x80) == 0);
+}
+
+TEST(test_op_clock_returns_uptime) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Sleep briefly so uptime isn't 0. */
+    struct timespec ts = {0, 20 * 1000 * 1000};   /* 20 ms */
+    nanosleep(&ts, NULL);
+    loci_write(&l, 0x03AF, LOCI_OP_CLOCK);
+    /* Read AXSREG (32-bit) — should be >= 1 (10 ms unit) */
+    uint32_t v = l.regs[LOCI_REG_API_A] |
+                 ((uint32_t)l.regs[LOCI_REG_API_X]    << 8) |
+                 ((uint32_t)l.regs[LOCI_REG_API_SREG] << 16) |
+                 ((uint32_t)l.regs[LOCI_REG_API_SREG_HI] << 24);
+    ASSERT_TRUE(v >= 1);
+}
+
+TEST(test_op_clk_getres_pushes_one_sec) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 0;   /* CLOCK_REALTIME */
+    loci_write(&l, 0x03AF, LOCI_OP_CLK_GETRES);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);   /* ax = 0 (OK) */
+    /* xstack must hold: uint32 sec=1, int32 nsec=0 — 8 bytes total */
+    ASSERT_EQ(LOCI_XSTACK_SIZE - l.xstack_ptr, 8);
+    /* Top of stack is the lo byte of sec (1). */
+    ASSERT_EQ(l.xstack[l.xstack_ptr], 1);
+}
+
+TEST(test_op_clk_gettime_pushes_time) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_CLK_GETTIME);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_EQ(LOCI_XSTACK_SIZE - l.xstack_ptr, 8);   /* uint32+int32 */
+}
+
+TEST(test_op_clk_getres_bad_id_returns_einval) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 99;
+    loci_write(&l, 0x03AF, LOCI_OP_CLK_GETRES);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EINVAL);
+}
+
+TEST(test_op_pix_xreg_no_errno) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03AF, LOCI_OP_PIX_XREG);
+    /* PIX_XREG currently accepts everything silently. */
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, 0);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+}
+
+TEST(test_xstack_read_pops_byte) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03AC, 0x10);
+    loci_write(&l, 0x03AC, 0x20);
+    /* Top is 0x20; reading pops it. */
+    ASSERT_EQ(loci_read(&l, 0x03AC), 0x20);
+    /* Next read returns 0x10. */
+    ASSERT_EQ(loci_read(&l, 0x03AC), 0x10);
+    /* Empty now. */
+    ASSERT_EQ(l.xstack_ptr, LOCI_XSTACK_SIZE);
+}
+
+TEST(test_unimplemented_op_still_enosys) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);   /* not implemented in 34z */
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_ENOSYS);
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -164,6 +260,14 @@ int main(void) {
     RUN(test_api_op_none_does_not_dispatch);
     RUN(test_op_count_increments);
     RUN(test_xstack_push_pop_roundtrip);
+    RUN(test_xstack_read_pops_byte);
+    RUN(test_op_pix_xreg_no_errno);
+    RUN(test_op_rng_lrand_returns_axsreg);
+    RUN(test_op_clock_returns_uptime);
+    RUN(test_op_clk_getres_pushes_one_sec);
+    RUN(test_op_clk_gettime_pushes_time);
+    RUN(test_op_clk_getres_bad_id_returns_einval);
+    RUN(test_unimplemented_op_still_enosys);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

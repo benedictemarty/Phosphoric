@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.25-alpha] - 2026-06-06
+
+### LOCI : ops système + RTC + RNG (Sprint 34z)
+
+#### Added
+- **Helpers de retour API** mirroring firmware semantics :
+  - `api_set_ax(val)` / `api_set_axsreg(val)` : registres $03B4-$03B9
+  - `api_return_ax/axsreg` : set + clear BUSY
+  - `api_return_errno(e)` : zero xstack, set errno, return -1
+- **xstack helpers** : `push_n`, `push_u32`, `push_i32` + `xstack_sync`
+  pour mirror le top byte dans $03AC, `xstack_zero` pour réinit.
+- **Pop sémantique** de $03AC : un read pop le top byte et avance le
+  pointeur (correction de la sémantique stub du sprint 34y qui ne
+  popait pas).
+- **6 ops API implémentées** (sur les 36) :
+  - `0x01 PIX_XREG` : stub silencieux (sera routé USB HID en 34ag)
+  - `0x04 RNG_LRAND` : retourne uint32 31-bit positif dans AXSREG
+  - `0x0F CLOCK` : uptime en unités 10 ms (formule firmware us_64/10000)
+  - `0x10 CLK_GETRES` : push (sec=1, nsec=0) sur xstack, ax=0
+  - `0x11 CLK_GETTIME` : push host time + nsec=0, ax=0
+  - `0x12 CLK_SETTIME` : pop args (8 octets), ax=0 (on n'altère pas l'horloge host)
+- **Wallclock start** stocké dans `loci_t.clock_start_us` ; remis à
+  zéro par `loci_reset`.
+- **8 nouveaux tests test-loci** (total 19) : pop xstack, RNG return,
+  CLOCK uptime, CLK_GETRES/GETTIME push, CLK_GETRES bad-id EINVAL,
+  PIX_XREG accept, op non-implémentée → ENOSYS.
+
+#### Validation
+La ROM LOCI v0.3.0 progresse désormais au-delà de son point de
+blocage initial : sans 34z elle restait à PC=$F2C3 (poll RTC), avec
+34z elle atteint $F641 — les ops clock/RTC débloquent l'init TUI.
+
 ## [1.16.24-alpha] - 2026-06-06
 
 ### LOCI : skeleton + dispatcher (stub ENOSYS) — Sprint 34y

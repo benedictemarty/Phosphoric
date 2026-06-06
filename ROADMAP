@@ -539,6 +539,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34z: LOCI ops système + RTC + RNG (v1.16.25-alpha) - DONE
+- [x] Helpers api_return_ax/axsreg/errno (semantics firmware)
+- [x] xstack push_n/push_u32/push_i32 + sync + zero
+- [x] Pop sémantique de $03AC (read auto-pop, sprint 34y stub corrigé)
+- [x] op 0x01 PIX_XREG : stub silencieux (USB HID en 34ag)
+- [x] op 0x04 RNG_LRAND : random 31-bit positif dans AXSREG
+- [x] op 0x0F CLOCK : uptime us_64/10000
+- [x] op 0x10 CLK_GETRES : push (sec=1, nsec=0), ax=0
+- [x] op 0x11 CLK_GETTIME : push (host_time, nsec=0), ax=0
+- [x] op 0x12 CLK_SETTIME : pop 8 octets, ax=0 (no host clock change)
+- [x] EINVAL si clock_id != CLOCK_REALTIME (CLK_ID 0)
+- [x] 8 nouveaux tests test-loci, total 19 ; 359 tests total
+- [x] Validation : ROM LOCI progresse PC $F2C3 → $F641
+
 ### Sprint 34y: LOCI skeleton + dispatcher (v1.16.24-alpha) - DONE
 - [x] Module src/io/loci.c + include/io/loci.h
 - [x] Décodeur bus MIA $03A0-$03BF (register file 32 octets, R/W)

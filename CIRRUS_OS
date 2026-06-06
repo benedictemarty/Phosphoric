@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.16.24-alpha
-Build Status: ALPHA (LOCI skeleton + dispatcher stub)
+Version: 1.16.25-alpha
+Build Status: ALPHA (LOCI ops système + RTC + RNG)
 Last Updated: 2026-06-06
 
 ================================================================

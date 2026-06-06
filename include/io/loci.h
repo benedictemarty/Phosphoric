@@ -110,7 +110,11 @@ typedef struct loci_s {
     uint8_t regs[LOCI_MIA_SIZE];
 
     /* xstack — argument buffer accessed by the 6502 through API_STACK.
-     * Grows downward; top of stack is at xstack_ptr (LOCI_XSTACK_SIZE = empty). */
+     * Grows downward; top of stack is at xstack_ptr (LOCI_XSTACK_SIZE = empty).
+     * Firmware semantics:
+     *   - 6502 writes $03AC : push (xstack_ptr-=1; xstack[ptr]=value)
+     *   - 6502 reads  $03AC : pop  (value=xstack[ptr]; xstack_ptr+=1)
+     *   - api_zxstack() resets ptr to top (cleared between ops). */
     uint8_t  xstack[LOCI_XSTACK_SIZE];
     uint16_t xstack_ptr;
 
@@ -119,6 +123,14 @@ typedef struct loci_s {
 
     /* Aggregated counters (debug / stats). */
     uint64_t op_count[256];
+
+    /* Wallclock start — used by clk_api_clock to report uptime.
+     * Stored as Unix epoch microseconds at the moment of loci_init(). */
+    uint64_t clock_start_us;
+
+    /* Simple LCG state for deterministic RNG when needed (currently we
+     * use rand() for variety). Reserved for future deterministic mode. */
+    uint64_t rng_state;
 } loci_t;
 
 bool    loci_init(loci_t* loci);

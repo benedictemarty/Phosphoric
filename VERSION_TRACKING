@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.24-alpha
+Current Version: 1.16.25-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI skeleton + dispatcher stub — 351 tests pass)
+Status: Alpha (LOCI ops système + RTC + RNG — 359 tests pass)
 
 Version History:
 ----------------
+- 1.16.25-alpha (2026-06-06): LOCI ops système + RTC + RNG (Sprint 34z)
+  * Helpers api_return_ax/axsreg/errno + xstack push/sync/zero
+  * Pop sémantique de $03AC (correction sprint 34y : auto-avance)
+  * 6 ops API implémentées : PIX_XREG (stub), RNG_LRAND, CLOCK,
+    CLK_GETRES/GETTIME/SETTIME
+  * 8 nouveaux tests test-loci (total 19)
+  * ROM LOCI progresse PC=$F2C3 → $F641 (clock débloque init TUI)
+
 - 1.16.24-alpha (2026-06-06): LOCI skeleton + dispatcher (Sprint 34y)
   * Module src/io/loci.c + include/io/loci.h
   * Décodeur bus MIA $03A0-$03BF (register file 32 octets)
