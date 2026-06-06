@@ -13,6 +13,8 @@
 
 #include "../../include/io/loci.h"
 #include "../../include/utils/logging.h"
+#include "../../include/cpu/cpu6502.h"
+#include "../../include/memory/memory.h"
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -46,7 +48,20 @@ static int tests_passed = 0;
 TEST(test_init_zeroes_state) {
     loci_t l; memset(&l, 0xFF, sizeof(l));
     ASSERT_TRUE(loci_init(&l));
-    for (size_t i = 0; i < sizeof(l.regs); i++) ASSERT_EQ(l.regs[i], 0);
+    /* $03A0-$03AF cleared, $03B0-$03B9 seeded with released no-op stub
+     * (matches firmware api_run() : released stub with A=X=SREG=0). */
+    for (size_t i = 0; i < 0x10; i++) ASSERT_EQ(l.regs[i], 0);
+    /* Seeded stub: CLV ; BVC +0 ; LDA #$00 ; LDX #$00 ; RTS ; sreg=0 */
+    ASSERT_EQ(l.regs[0x10], 0xB8);   /* CLV */
+    ASSERT_EQ(l.regs[0x11], 0x50);   /* BVC */
+    ASSERT_EQ(l.regs[0x12], 0x00);   /* operand +0 / BUSY=0 */
+    ASSERT_EQ(l.regs[0x13], 0xA9);   /* LDA # */
+    ASSERT_EQ(l.regs[0x14], 0x00);   /* A */
+    ASSERT_EQ(l.regs[0x15], 0xA2);   /* LDX # */
+    ASSERT_EQ(l.regs[0x16], 0x00);   /* X */
+    ASSERT_EQ(l.regs[0x17], 0x60);   /* RTS */
+    ASSERT_EQ(l.regs[0x18], 0x00);   /* SREG lo */
+    ASSERT_EQ(l.regs[0x19], 0x00);   /* SREG hi */
     ASSERT_EQ(l.active_op, 0);
     ASSERT_EQ(l.xstack_ptr, LOCI_XSTACK_SIZE);
 }
@@ -1906,6 +1921,202 @@ TEST(test_reset_clears_state) {
     ASSERT_EQ(l.xstack_ptr, LOCI_XSTACK_SIZE);
 }
 
+/* ── 6502 differential ABI test : real CPU executes JSR $03B0 ────
+ *
+ * The whole point of this test : exercise the MIA spin-window ABI from
+ * the CPU side, not by calling handlers directly. Builds a tiny program
+ * that triggers an op, JSR $03B0, captures the returned A/X/SREG into
+ * RAM, then BRKs. If the spin window isn't materialised correctly the
+ * CPU never returns and we time out. */
+
+static loci_t g_loci_for_diff;
+
+static uint8_t diff_io_read(uint16_t addr, void* ud) {
+    (void)ud;
+    if (loci_addr_in_mia(addr)) return loci_read(&g_loci_for_diff, addr);
+    return 0xFF;
+}
+static void diff_io_write(uint16_t addr, uint8_t val, void* ud) {
+    (void)ud;
+    if (loci_addr_in_mia(addr)) loci_write(&g_loci_for_diff, addr, val);
+}
+
+TEST(test_6502_jsr_spin_returns_via_released_stub) {
+    /* Set up real CPU + memory + LOCI on the bus. */
+    memory_t mem;
+    memory_init(&mem);
+    memory_set_io_callbacks(&mem, diff_io_read, diff_io_write, NULL);
+    loci_init(&g_loci_for_diff);
+    g_loci_for_diff.enabled = true;
+
+    cpu6502_t cpu;
+    cpu_init(&cpu, &mem);
+
+    /* Test program at $C000 :
+     *
+     *   $C000  LDA #$04           ; op = RNG_LRAND (handler always returns OK)
+     *   $C002  STA $03AF          ; trigger op (installs blocked then resolves)
+     *   $C005  20 B0 03           JSR $03B0   ; spin → CLV/BVC+0/LDA/LDX/RTS
+     *   $C008  STA $0200          ; record A
+     *   $C00B  STX $0201          ; record X
+     *   $C00E  LDA $03B8          ; SREG lo
+     *   $C011  STA $0202
+     *   $C014  LDA $03B9          ; SREG hi
+     *   $C017  STA $0203
+     *   $C01A  00                 ; BRK (sentinel for test end)
+     *
+     * Reset vector $FFFC/D → $C000. */
+    static const uint8_t program[] = {
+        /* C000 */ 0xA9, 0x04,
+        /* C002 */ 0x8D, 0xAF, 0x03,
+        /* C005 */ 0x20, 0xB0, 0x03,
+        /* C008 */ 0x8D, 0x00, 0x02,
+        /* C00B */ 0x8E, 0x01, 0x02,
+        /* C00E */ 0xAD, 0xB8, 0x03,
+        /* C011 */ 0x8D, 0x02, 0x02,
+        /* C014 */ 0xAD, 0xB9, 0x03,
+        /* C017 */ 0x8D, 0x03, 0x02,
+        /* C01A */ 0x00
+    };
+    /* Memory model: writes to ROM area via memory_write go to ram or rom
+     * depending on banking — for the test we poke ram directly. The CPU
+     * fetch path will route through memory_read which respects the I/O
+     * range for $03A0-BF but otherwise reads from RAM/ROM. We use the
+     * RAM region (memory_read reads ram for $0000-$BFFF) — but $C000+
+     * is in ROM. So we put the program at $0300... wait, $0300 is in I/O.
+     *
+     * Safest: put the program at $0400 (well above zero page+stack,
+     * outside I/O, in RAM). Reset vector points there. */
+    for (size_t i = 0; i < sizeof(program); i++) {
+        memory_write(&mem, (uint16_t)(0x0400 + i), program[i]);
+    }
+    /* Patch the JSR target absolute address embedded above to point to
+     * the correct $03B0 spin window — already $03B0 so just fix the
+     * program offsets for STA $03AF in the relocated copy : */
+    /* The program above is position-independent for the data accesses
+     * ($03AF, $03B0, $0200, etc. are absolute) so it works at $0400.
+     * Reset vector → $0400. */
+    /* Reset vector goes to ROM (memory_write to $C000-$FFFF is ignored
+     * when ROM is enabled by default). Poke mem.rom directly. */
+    mem.rom[0x3FFC] = 0x00;
+    mem.rom[0x3FFD] = 0x04;
+    cpu_reset(&cpu);
+
+    /* Run until BRK or 1000 cycles (the spin needs ~12 cycles, total ~50). */
+    int total = 0;
+    for (int i = 0; i < 200; i++) {
+        if (memory_read(&mem, cpu.PC) == 0x00) break;  /* BRK = test end */
+        total += cpu_step(&cpu);
+        if (total > 1000) break;  /* runaway guard */
+    }
+
+    /* Verify we exited the spin via released stub. */
+    ASSERT_TRUE(total < 1000);
+    /* RNG_LRAND returns a 31-bit positive uint32 via AXSREG.
+     * High bit (bit 7 of SREG hi at $03B9) must be cleared. */
+    uint8_t a   = memory_read(&mem, 0x0200);
+    uint8_t x   = memory_read(&mem, 0x0201);
+    uint8_t srl = memory_read(&mem, 0x0202);
+    uint8_t srh = memory_read(&mem, 0x0203);
+    uint32_t axsreg = (uint32_t)a | ((uint32_t)x << 8) |
+                     ((uint32_t)srl << 16) | ((uint32_t)srh << 24);
+    ASSERT_TRUE((axsreg & 0x80000000u) == 0);   /* 31-bit positive */
+    /* Released stub must leave BUSY ($03B2 bit 7) cleared. */
+    ASSERT_TRUE((g_loci_for_diff.regs[LOCI_REG_BUSY] & 0x80) == 0);
+    /* The CPU executed past the JSR — PC should be at the BRK ($041A). */
+    ASSERT_EQ(cpu.PC, 0x041A);
+
+    loci_cleanup(&g_loci_for_diff);
+}
+
+TEST(test_6502_jsr_spin_zxstack_op_00) {
+    /* Op $00 (zxstack) : clears xstack, returns ax=0 via released stub. */
+    memory_t mem;
+    memory_init(&mem);
+    memory_set_io_callbacks(&mem, diff_io_read, diff_io_write, NULL);
+    loci_init(&g_loci_for_diff);
+    g_loci_for_diff.enabled = true;
+
+    cpu6502_t cpu;
+    cpu_init(&cpu, &mem);
+
+    /* Pre-fill xstack so we can verify it was cleared. */
+    loci_write(&g_loci_for_diff, 0x03AC, 0x42);
+    ASSERT_TRUE(g_loci_for_diff.xstack_ptr < LOCI_XSTACK_SIZE);
+
+    /* Program : LDA #0 ; STA $03AF ; JSR $03B0 ; STA $0200 ; STX $0201 ; BRK */
+    static const uint8_t program[] = {
+        0xA9, 0x00,
+        0x8D, 0xAF, 0x03,
+        0x20, 0xB0, 0x03,
+        0x8D, 0x00, 0x02,
+        0x8E, 0x01, 0x02,
+        0x00
+    };
+    for (size_t i = 0; i < sizeof(program); i++)
+        memory_write(&mem, (uint16_t)(0x0400 + i), program[i]);
+    /* Reset vector goes to ROM (memory_write to $C000-$FFFF is ignored
+     * when ROM is enabled by default). Poke mem.rom directly. */
+    mem.rom[0x3FFC] = 0x00;
+    mem.rom[0x3FFD] = 0x04;
+    cpu_reset(&cpu);
+
+    int total = 0;
+    for (int i = 0; i < 200; i++) {
+        if (memory_read(&mem, cpu.PC) == 0x00) break;
+        total += cpu_step(&cpu);
+        if (total > 1000) break;
+    }
+    ASSERT_TRUE(total < 1000);
+    /* zxstack must reset xstack_ptr. */
+    ASSERT_EQ(g_loci_for_diff.xstack_ptr, LOCI_XSTACK_SIZE);
+    /* ax = 0 → A = 0, X = 0 */
+    ASSERT_EQ(memory_read(&mem, 0x0200), 0);
+    ASSERT_EQ(memory_read(&mem, 0x0201), 0);
+
+    loci_cleanup(&g_loci_for_diff);
+}
+
+TEST(test_6502_initial_jsr_returns_zero) {
+    /* Before any op : initial seeded stub returns A=X=SREG=0 cleanly.
+     * Catches regressions where loci_init forgets seed_initial_stub. */
+    memory_t mem;
+    memory_init(&mem);
+    memory_set_io_callbacks(&mem, diff_io_read, diff_io_write, NULL);
+    loci_init(&g_loci_for_diff);
+    g_loci_for_diff.enabled = true;
+
+    cpu6502_t cpu;
+    cpu_init(&cpu, &mem);
+
+    /* Program : JSR $03B0 ; STA $0200 ; STX $0201 ; BRK */
+    static const uint8_t program[] = {
+        0x20, 0xB0, 0x03,
+        0x8D, 0x00, 0x02,
+        0x8E, 0x01, 0x02,
+        0x00
+    };
+    for (size_t i = 0; i < sizeof(program); i++)
+        memory_write(&mem, (uint16_t)(0x0400 + i), program[i]);
+    /* Reset vector goes to ROM (memory_write to $C000-$FFFF is ignored
+     * when ROM is enabled by default). Poke mem.rom directly. */
+    mem.rom[0x3FFC] = 0x00;
+    mem.rom[0x3FFD] = 0x04;
+    cpu_reset(&cpu);
+
+    int total = 0;
+    for (int i = 0; i < 200; i++) {
+        if (memory_read(&mem, cpu.PC) == 0x00) break;
+        total += cpu_step(&cpu);
+        if (total > 1000) break;
+    }
+    ASSERT_TRUE(total < 1000);
+    ASSERT_EQ(memory_read(&mem, 0x0200), 0);
+    ASSERT_EQ(memory_read(&mem, 0x0201), 0);
+
+    loci_cleanup(&g_loci_for_diff);
+}
+
 int main(void) {
     log_init(LOG_LEVEL_ERROR);
     printf("\n");
@@ -2017,6 +2228,9 @@ int main(void) {
     RUN(test_mou_report_accumulates_deltas);
     RUN(test_mou_report_noop_when_xram_unset);
     RUN(test_mou_report_buttons_independent_of_deltas);
+    RUN(test_6502_initial_jsr_returns_zero);
+    RUN(test_6502_jsr_spin_zxstack_op_00);
+    RUN(test_6502_jsr_spin_returns_via_released_stub);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

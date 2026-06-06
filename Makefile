@@ -281,7 +281,9 @@ test-symbols: $(TEST_SYMBOLS_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_SYMBOLS_SRCS) $(LDFLAGS) -o test_symbols
 	@./test_symbols
 
-TEST_LOCI_SRCS = tests/unit/test_loci.c src/io/loci.c src/utils/logging.c
+TEST_LOCI_SRCS = tests/unit/test_loci.c src/io/loci.c src/utils/logging.c \
+                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                 src/memory/memory.c src/memory/banking.c
 
 test-loci: $(TEST_LOCI_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_LOCI_SRCS) $(LDFLAGS) -o test_loci

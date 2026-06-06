@@ -100,6 +100,25 @@ static uint64_t now_us(void) {
 
 /* ─── lifecycle ────────────────────────────────────────────────── */
 
+/* Seed the MIA spin window ($03B0-$03B7) with a no-op RELEASED stub
+ * that returns A=X=SREG=0. Matches the firmware's api_run() entry which
+ * also calls api_return_errno(0) → released stub with A=X=$FF, ERRNO=0.
+ * Phosphoric uses A=X=0 for the boot state since no op has run yet
+ * and any pre-op `JSR $03B0` from probe code should return cleanly. */
+static void seed_initial_stub(loci_t* loci) {
+    /* CLV / BVC +0 / LDA #$00 / LDX #$00 / RTS — falls through and returns. */
+    loci->regs[LOCI_REG_INJECT0 + 0] = 0xB8;
+    loci->regs[LOCI_REG_INJECT0 + 1] = 0x50;
+    loci->regs[LOCI_REG_INJECT0 + 2] = 0x00;
+    loci->regs[LOCI_REG_INJECT0 + 3] = 0xA9;
+    loci->regs[LOCI_REG_INJECT0 + 4] = 0x00;   /* A immediate */
+    loci->regs[LOCI_REG_INJECT0 + 5] = 0xA2;
+    loci->regs[LOCI_REG_INJECT0 + 6] = 0x00;   /* X immediate */
+    loci->regs[LOCI_REG_INJECT0 + 7] = 0x60;
+    loci->regs[LOCI_REG_INJECT0 + 8] = 0x00;   /* SREG lo */
+    loci->regs[LOCI_REG_INJECT0 + 9] = 0x00;   /* SREG hi */
+}
+
 bool loci_init(loci_t* loci) {
     if (!loci) return false;
     memset(loci, 0, sizeof(*loci));
@@ -110,6 +129,7 @@ bool loci_init(loci_t* loci) {
     loci->kbd_xram = 0xFFFF;
     loci->mou_xram = 0xFFFF;
     loci->pad_xram = 0xFFFF;
+    seed_initial_stub(loci);
     return true;
 }
 
@@ -120,6 +140,7 @@ void loci_reset(loci_t* loci) {
     loci->xstack_ptr = LOCI_XSTACK_SIZE;
     loci->active_op = 0;
     loci->clock_start_us = now_us();
+    seed_initial_stub(loci);
 }
 
 void loci_cleanup(loci_t* loci) {
@@ -225,10 +246,9 @@ static void set_errno(loci_t* loci, uint16_t e) {
     loci->regs[LOCI_REG_API_ERRNO_HI] = (uint8_t)(e >> 8);
 }
 
-static void set_busy(loci_t* loci, bool busy) {
-    if (busy) loci->regs[LOCI_REG_BUSY] |=  0x80;
-    else      loci->regs[LOCI_REG_BUSY] &= ~0x80;
-}
+/* set_busy moved below — definition deferred until after install_*_stub
+ * helpers so the kept variant can document its overloaded semantics. */
+static void set_busy(loci_t* loci, bool busy);
 
 /* Mirror the top byte of xstack into $03AC so the 6502 sees it on read.
  * Called after every xstack mutation. */
@@ -263,26 +283,99 @@ static bool xstack_push_i32(loci_t* loci, int32_t v) {
     return xstack_push_n(loci, &v, 4);
 }
 
-/* ─── API return helpers (mirror firmware semantics) ──────────── */
+/* ─── API return helpers (mirror firmware semantics) ──────────────
+ *
+ * The MIA "spin" window at $03B0-$03B9 isn't a passive register file —
+ * it's a chunk of self-modifying 6502 code that the host coprocessor
+ * (Pi Pico firmware on real LOCI hardware) rewrites on every op
+ * transition. The 6502 ABI is:
+ *
+ *     STA $03AF          ; trigger op
+ *     JSR $03B0          ; CALL the spin window
+ *     ; <on return, A = result_lo, X = result_hi,
+ *     ;            $03B8/B9 hold the high 16 bits for AXSREG returns>
+ *
+ * Blocked stub (op queued, BUSY set) — installed when the 6502 writes
+ * a non-trivial op to $03AF :
+ *
+ *     $03B0  B8           CLV
+ *     $03B1  50 FE        BVC -2     (loops back to $03B0)
+ *     $03B3  A9 --        LDA #A     (operand patched later)
+ *
+ * Released stub (op done, BUSY cleared) — installed when the handler
+ * has set A/X/SREG. Byte $03B2 = $00 acts as BOTH "BUSY cleared" AND
+ * "BVC operand = +0" so the CPU falls through into LDA/LDX/RTS :
+ *
+ *     $03B0  B8           CLV
+ *     $03B1  50 00        BVC +0     (falls through)
+ *     $03B3  A9 <A_lo>    LDA #A
+ *     $03B5  A2 <X_hi>    LDX #X
+ *     $03B7  60           RTS
+ *     $03B8  <SREG_lo>
+ *     $03B9  <SREG_hi>
+ *
+ * Phosphoric prior to this fix only wrote $03B4 ($03B6, $03B8, $03B9)
+ * — never the BVC/LDA/LDX/RTS opcodes. So a real 6502 `JSR $03B0`
+ * fetched whatever was in regs[0x10..] (initialised to zero =
+ * `BRK BRK …`), and the LOCI ROM's first fastcall (`tap_tell` from
+ * `update_tap_counter` at main.c:1159) hung the boot before reaching
+ * `InitKeyboard()` and the TUI's `while(1)`. Hence "no spinner, no
+ * key reaction" reported in CR 2026-06-06_LOCI_Session. */
 
+/* Install the BLOCKED stub at $03B0-$03B3. The operand byte at $03B2
+ * is $FE which has bit 7 set, matching the firmware's overloaded
+ * "BUSY=1" semantics. */
+static void api_install_blocked_stub(loci_t* loci) {
+    loci->regs[LOCI_REG_INJECT0 + 0] = 0xB8;   /* CLV          */
+    loci->regs[LOCI_REG_INJECT0 + 1] = 0x50;   /* BVC          */
+    loci->regs[LOCI_REG_INJECT0 + 2] = 0xFE;   /* operand -2 + BUSY=1 */
+    loci->regs[LOCI_REG_INJECT0 + 3] = 0xA9;   /* LDA # (operand patched on release) */
+}
+
+/* Install the RELEASED stub at $03B0-$03B3. Operand $00 = both
+ * BVC +0 (fall-through) and BUSY=0. */
+static void api_install_released_stub(loci_t* loci) {
+    loci->regs[LOCI_REG_INJECT0 + 0] = 0xB8;   /* CLV       */
+    loci->regs[LOCI_REG_INJECT0 + 1] = 0x50;   /* BVC       */
+    loci->regs[LOCI_REG_INJECT0 + 2] = 0x00;   /* operand +0 + BUSY=0 */
+    loci->regs[LOCI_REG_INJECT0 + 3] = 0xA9;   /* LDA #     */
+}
+
+/* api_set_ax matches firmware api.h:183-186 byte-for-byte: stores A at
+ * $03B4, the LDX # opcode ($A2) at $03B5, X at $03B6, RTS ($60) at $03B7.
+ * Result : a `JSR $03B0` that falls through the BVC will execute
+ *   LDA #A ; LDX #X ; RTS
+ * and return cleanly with A/X loaded. */
 static void api_set_ax(loci_t* loci, uint16_t val) {
-    loci->regs[LOCI_REG_API_A] = (uint8_t)(val & 0xFF);
-    loci->regs[LOCI_REG_API_X] = (uint8_t)((val >> 8) & 0xFF);
+    loci->regs[LOCI_REG_API_A]    = (uint8_t)(val & 0xFF);     /* $03B4 */
+    loci->regs[LOCI_REG_INJECT0 + 5] = 0xA2;                   /* $03B5 LDX # */
+    loci->regs[LOCI_REG_API_X]    = (uint8_t)((val >> 8) & 0xFF); /* $03B6 */
+    loci->regs[LOCI_REG_INJECT0 + 7] = 0x60;                   /* $03B7 RTS */
 }
 
 static void api_set_axsreg(loci_t* loci, uint32_t val) {
     api_set_ax(loci, (uint16_t)val);
-    loci->regs[LOCI_REG_API_SREG]    = (uint8_t)((val >> 16) & 0xFF);
-    loci->regs[LOCI_REG_API_SREG_HI] = (uint8_t)((val >> 24) & 0xFF);
+    loci->regs[LOCI_REG_API_SREG]    = (uint8_t)((val >> 16) & 0xFF); /* $03B8 */
+    loci->regs[LOCI_REG_API_SREG_HI] = (uint8_t)((val >> 24) & 0xFF); /* $03B9 */
+}
+
+/* Kept as an explicit name for sites that just want the BUSY bit
+ * toggled (e.g. xstack pop after release). Reads/writes the same
+ * BUSY bit the firmware overloads onto the BVC operand. */
+static void set_busy(loci_t* loci, bool busy) {
+    if (busy) loci->regs[LOCI_REG_BUSY] |=  0x80;
+    else      loci->regs[LOCI_REG_BUSY] &= ~0x80;
 }
 
 static void api_return_ax(loci_t* loci, uint16_t val) {
     api_set_ax(loci, val);
-    set_busy(loci, false);
+    api_install_released_stub(loci);   /* writes $03B0-3 incl. BUSY=0 */
+    set_busy(loci, false);             /* redundant but explicit */
 }
 
 static void api_return_axsreg(loci_t* loci, uint32_t val) {
     api_set_axsreg(loci, val);
+    api_install_released_stub(loci);
     set_busy(loci, false);
 }
 
@@ -1401,8 +1494,11 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));
-            set_errno(loci, LOCI_ENOSYS);
-            set_busy(loci, false);
+            /* api_return_errno posts the released stub via the
+             * api_return_axsreg call chain. Crucial : without this
+             * the 6502 JSR $03B0 reads the blocked stub forever
+             * (the bug behind CR 2026-06-06 — InitKeyboard unreached). */
+            api_return_errno(loci, LOCI_ENOSYS);
             break;
     }
     loci->active_op = 0;
@@ -1494,13 +1590,44 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
 
     loci->regs[off] = value;
 
-    /* API_OP: writing here triggers a dispatch. The firmware sets BUSY
-     * before the write so the polling Oric code waits for completion. */
+    /* API_OP: writing here triggers a dispatch.
+     *
+     * Contract (mirrors firmware sys/mia.c:814-828) :
+     *   - 0x00 zxstack()  : reset xstack + return ax=0 via released stub
+     *   - 0xFF exit()     : install blocked stub permanently (6502 spins
+     *                       at $03B0 — no released stub will ever be
+     *                       posted; matches firmware which sets
+     *                       stop_requested and never resolves the call)
+     *   - other           : install blocked stub, then synchronous
+     *                       handler; the handler MUST call api_return_*
+     *                       which posts the released stub with A/X/SREG.
+     *
+     * Every path must end with either install_blocked (caller will
+     * eventually un-spin) or install_released (handler done). Otherwise
+     * the 6502 `JSR $03B0` fetches whatever zero-init garbage we have
+     * in $03B0-9 and crashes. */
     if (off == LOCI_REG_API_OP) {
-        if (value != LOCI_OP_NONE && value != LOCI_OP_RESET_SENTINEL) {
-            set_busy(loci, true);
-            dispatch_op(loci, value);
+        if (value == 0x00) {
+            /* zxstack: clear stack, ax=0, released stub. */
+            xstack_zero(loci);
+            api_return_ax(loci, 0);
+            return;
         }
+        if (value == 0xFF) {
+            /* exit(): permanent block — 6502 spins forever at $03B0,
+             * matching the firmware's stop_requested behaviour. */
+            api_install_blocked_stub(loci);
+            log_debug("LOCI: exit() called — 6502 will spin at $03B0");
+            return;
+        }
+        /* Skip the sentinel marker (no-op, no dispatch). */
+        if (value == LOCI_OP_RESET_SENTINEL) {
+            return;
+        }
+        /* Normal op: blocked stub first, then handler resolves via
+         * api_return_ax/axsreg/errno which install the released stub. */
+        api_install_blocked_stub(loci);
+        dispatch_op(loci, value);
     }
 }
 
