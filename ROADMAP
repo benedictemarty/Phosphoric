@@ -539,6 +539,14 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34al: LOCI bridge souris SDL → mou_xram (v1.16.37-alpha) - DONE
+- [x] loci_mou_report(buttons, dx, dy, wheel, pan)
+- [x] Bridge SDL : MOUSEMOTION/BUTTONDOWN/UP/WHEEL
+- [x] Cumul deltas matches firmware mou_xram_data
+- [x] 4 nouveaux tests, total 105 test-loci, 445 global
+- [x] NOTE : ROM LOCI v0.3.0 utilise matrice clavier Oric (PSG R14)
+        et NON le HID — bridge HID utile pour programmes 6502 modernes
+
 ### Sprint 34ak: LOCI bridge SDL keyboard → HID (v1.16.36-alpha) - DONE
 - [x] loci_sync_kbd_from_sdl(emu) dans main.c (#ifdef HAS_SDL2)
 - [x] Lecture SDL_GetKeyboardState + SDL_GetModState

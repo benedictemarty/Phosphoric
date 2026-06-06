@@ -326,6 +326,20 @@ void    loci_kbd_set_report(loci_t* loci, uint8_t modifier,
 /* Clear the keyboard bitmap (all keys released). */
 void    loci_kbd_clear(loci_t* loci);
 
+/* Update the LOCI mouse state in xram (Sprint 34al).
+ * Mirror the firmware's HID-mouse report struct (5 bytes at mou_xram):
+ *   byte 0 : buttons (bit 0 = left, 1 = right, 2 = middle)
+ *   byte 1 : cumulative delta X (uint8, wraps)
+ *   byte 2 : cumulative delta Y
+ *   byte 3 : cumulative wheel
+ *   byte 4 : cumulative pan
+ * The firmware ACCUMULATES the deltas — passing dx=0/dy=0 here only
+ * updates the button byte. Has no effect if the 6502 has not pointed
+ * mou_xram at a region. */
+void    loci_mou_report(loci_t* loci, uint8_t buttons,
+                        int8_t dx, int8_t dy,
+                        int8_t wheel, int8_t pan);
+
 /* Register the ROM-swap callback used by op 0xA0 MIA_BOOT. */
 void    loci_set_rom_swap_callback(
             loci_t* loci,

@@ -384,6 +384,24 @@ void loci_kbd_clear(loci_t* loci) {
     loci_kbd_set_report(loci, 0, empty);
 }
 
+void loci_mou_report(loci_t* loci, uint8_t buttons,
+                     int8_t dx, int8_t dy,
+                     int8_t wheel, int8_t pan) {
+    if (!loci || !loci->enabled) return;
+    if (loci->mou_xram == 0xFFFF) return;
+    if ((uint32_t)loci->mou_xram + 5 > LOCI_XRAM_SIZE) return;
+
+    /* Layout (firmware mou_xram_data): buttons, dx, dy, wheel, pan.
+     * dx/dy/wheel/pan accumulate (firmware does mou_xram_data.x +=
+     * report->x on each HID poll), so we add into the live byte. */
+    uint8_t* m = &loci->xram[loci->mou_xram];
+    m[0]  = buttons;
+    m[1] = (uint8_t)(m[1] + (uint8_t)dx);
+    m[2] = (uint8_t)(m[2] + (uint8_t)dy);
+    m[3] = (uint8_t)(m[3] + (uint8_t)wheel);
+    m[4] = (uint8_t)(m[4] + (uint8_t)pan);
+}
+
 /* 0x04 RNG_LRAND — returns a 31-bit positive random uint32 in AXSREG. */
 static void op_rng_lrand(loci_t* loci) {
     /* Use rand() seeded once at init time for variety. The firmware uses

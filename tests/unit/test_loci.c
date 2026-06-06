@@ -1846,6 +1846,52 @@ TEST(test_hid_release_clears_corresponding_bits) {
     ASSERT_EQ(l.xram[0x2000] & 0x01, 0x01);   /* no-key sentinel */
 }
 
+/* ── 34al: bridge souris (loci_mou_report) ───────────────────── */
+
+TEST(test_mou_report_writes_buttons_and_deltas) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 1, 0x3000);   /* set mou_xram */
+
+    loci_mou_report(&l, 0x05, 3, -2, 1, 0);
+    /* Layout: buttons / dx / dy / wheel / pan */
+    ASSERT_EQ(l.xram[0x3000 + 0], 0x05);
+    ASSERT_EQ(l.xram[0x3000 + 1], 3);
+    ASSERT_EQ(l.xram[0x3000 + 2], (uint8_t)(-2));
+    ASSERT_EQ(l.xram[0x3000 + 3], 1);
+    ASSERT_EQ(l.xram[0x3000 + 4], 0);
+}
+
+TEST(test_mou_report_accumulates_deltas) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 1, 0x3000);
+    loci_mou_report(&l, 0, 5, 5, 0, 0);
+    loci_mou_report(&l, 0, 3, 4, 0, 0);
+    ASSERT_EQ(l.xram[0x3001], 8);    /* 5 + 3 */
+    ASSERT_EQ(l.xram[0x3002], 9);    /* 5 + 4 */
+}
+
+TEST(test_mou_report_noop_when_xram_unset) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* mou_xram is 0xFFFF (default). */
+    for (int i = 0; i < 8; i++) l.xram[i] = 0xAB;
+    loci_mou_report(&l, 0x01, 10, 10, 0, 0);
+    for (int i = 0; i < 8; i++) ASSERT_EQ(l.xram[i], 0xAB);
+}
+
+TEST(test_mou_report_buttons_independent_of_deltas) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    pix_xreg_mia(&l, 0, 1, 0x3000);
+    loci_mou_report(&l, 0, 7, 7, 0, 0);   /* deltas only */
+    ASSERT_EQ(l.xram[0x3000], 0);
+    loci_mou_report(&l, 0x02, 0, 0, 0, 0); /* right button, no delta */
+    ASSERT_EQ(l.xram[0x3000], 0x02);
+    ASSERT_EQ(l.xram[0x3001], 7);          /* delta unchanged */
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -1967,6 +2013,10 @@ int main(void) {
     RUN(test_hid_up_arrow_is_0x52);
     RUN(test_hid_six_simultaneous_keys);
     RUN(test_hid_release_clears_corresponding_bits);
+    RUN(test_mou_report_writes_buttons_and_deltas);
+    RUN(test_mou_report_accumulates_deltas);
+    RUN(test_mou_report_noop_when_xram_unset);
+    RUN(test_mou_report_buttons_independent_of_deltas);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");

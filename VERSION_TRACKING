@@ -1,12 +1,18 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.36-alpha
+Current Version: 1.16.37-alpha
 Release Date: 2026-06-06
-Status: Alpha (LOCI SDL→HID bridge — 441 tests pass)
+Status: Alpha (LOCI souris SDL → mou_xram — 445 tests pass)
 
 Version History:
 ----------------
+- 1.16.37-alpha (2026-06-06): LOCI bridge souris SDL → mou_xram (Sprint 34al)
+  * loci_mou_report(buttons, dx, dy, wheel, pan)
+  * Bridge SDL_MOUSEMOTION/BUTTONDOWN/UP/WHEEL
+  * Cumul deltas matches firmware
+  * 4 nouveaux tests, total 105 test-loci, 445 global
+
 - 1.16.36-alpha (2026-06-06): LOCI bridge SDL keyboard → HID (Sprint 34ak)
   * loci_sync_kbd_from_sdl : lit SDL_GetKeyboardState et call loci_kbd_set_report
   * SDL scancode = HID code (design SDL)

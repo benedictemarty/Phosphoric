@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.37-alpha] - 2026-06-06
+
+### LOCI : bridge souris SDL → mou_xram — Sprint 34al
+
+#### Added
+- **`loci_mou_report(loci, buttons, dx, dy, wheel, pan)`** : mirror le
+  HID-mouse report dans xram[mou_xram..mou_xram+4]. Layout firmware :
+  byte 0 = boutons (bit 0 L, 1 R, 2 M), bytes 1-4 = deltas cumulés.
+- **Bridge SDL** dans main.c :
+  - `SDL_MOUSEMOTION` → mou_report(buttons, dx_rel, dy_rel)
+  - `SDL_MOUSEBUTTONDOWN/UP` → mou_report(buttons, 0, 0)
+  - `SDL_MOUSEWHEEL` → mou_report(0, 0, 0, wheel.y, wheel.x)
+- Cumul des deltas côté LOCI (matches firmware accum).
+- **4 nouveaux tests test-loci** (total 105) : buttons+deltas écrits
+  correctement, deltas accumulés, no-op si mou_xram unset, boutons
+  indépendants des deltas.
+
+#### Note clavier LOCI
+La ROM LOCI v0.3.0 utilise la **matrice clavier Oric standard** (PSG R14
++ VIA PB) pour scanner ses touches, **pas le HID** que le bridge
+SDL→HID alimente. Le HID sert pour les **programmes 6502** modernes qui
+utilisent l'API LOCI (e.g. souris USB). Pour la ROM LOCI elle-même,
+la navigation TUI passe par la matrice Oric.
+
 ## [1.16.36-alpha] - 2026-06-06
 
 ### LOCI : bridge SDL keyboard → HID bitmap — Sprint 34ak

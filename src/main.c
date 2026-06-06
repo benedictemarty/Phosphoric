@@ -1313,6 +1313,38 @@ static void emulator_run(emulator_t* emu) {
                     /* Symbolic mode: character -> ORIC key mapping */
                     oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
                     break;
+                /* Sprint 34al: bridge SDL mouse → LOCI mou_xram. */
+                case SDL_MOUSEMOTION:
+                    if (emu->has_loci) {
+                        uint32_t bs = SDL_GetMouseState(NULL, NULL);
+                        uint8_t btn = 0;
+                        if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
+                        if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
+                        if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
+                        loci_mou_report(&emu->loci, btn,
+                                        (int8_t)event.motion.xrel,
+                                        (int8_t)event.motion.yrel,
+                                        0, 0);
+                    }
+                    break;
+                case SDL_MOUSEBUTTONDOWN:
+                case SDL_MOUSEBUTTONUP:
+                    if (emu->has_loci) {
+                        uint32_t bs = SDL_GetMouseState(NULL, NULL);
+                        uint8_t btn = 0;
+                        if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
+                        if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
+                        if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
+                        loci_mou_report(&emu->loci, btn, 0, 0, 0, 0);
+                    }
+                    break;
+                case SDL_MOUSEWHEEL:
+                    if (emu->has_loci) {
+                        loci_mou_report(&emu->loci, 0, 0, 0,
+                                        (int8_t)event.wheel.y,
+                                        (int8_t)event.wheel.x);
+                    }
+                    break;
                 /* SDL game controller / joystick events */
                 case SDL_CONTROLLERBUTTONDOWN:
                 case SDL_CONTROLLERBUTTONUP:
