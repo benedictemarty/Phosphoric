@@ -9,6 +9,8 @@
 #ifndef LOGGING_H
 #define LOGGING_H
 
+#include <stdio.h>
+
 /**
  * @brief Log levels
  */
@@ -25,6 +27,10 @@ typedef enum {
  * @param level Minimum log level
  */
 void log_init(log_level_t level);
+
+/* Sprint 35a — redirect log output to a custom FILE* (e.g. stderr for
+ * IPC control mode). Pass NULL to revert to default (stdout). */
+void log_set_stream(FILE* fp);
 
 /**
  * @brief Cleanup logging system

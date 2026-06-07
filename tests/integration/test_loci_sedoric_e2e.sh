@@ -166,6 +166,41 @@ if skip_if_missing "$NATIVE_ROM" "$LOCI_ROM" "$SDIMG" "$TAP"; then
     rm -f "$NAT_BIN" "$LOC_BIN"
 fi
 
+# ── Scenario 35a — IPC control protocol smoke ──────────────────────
+echo ""
+echo "Scenario 35a — IPC control protocol (OricForge integration)"
+if skip_if_missing "$NATIVE_ROM"; then
+    OUT=$(printf "regs\nread \$F88F 4\nbreak \$F893\ncontinue\nquit\n" \
+        | timeout 5 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+    # Expectations: EVT ready, EVT stopped, OK regs, OK 4 bytes, OK id=0,
+    # OK ack continue, EVT stopped reason=break at F893, OK ack quit.
+    expected_lines=(
+        "EVT ready"
+        "EVT stopped pc=F88F cycles=0 reason=break"
+        "OK A=00 X=00 Y=00 SP=FD P=24 PC=F88F cycles=0"
+        "OK A2 FF 9A 58"
+        "OK id=0 addr=F893"
+        "OK"
+        "EVT stopped pc=F893 cycles=6 reason=break"
+        "OK"
+    )
+    all_ok=true
+    for expected in "${expected_lines[@]}"; do
+        if ! grep -qF "$expected" <<<"$OUT"; then
+            echo "    Missing line: $expected"
+            all_ok=false
+        fi
+    done
+    if $all_ok; then
+        echo "  [PASS] 35a IPC protocol handshake + step + break + quit"
+        pass=$((pass+1))
+    else
+        echo "  [FAIL] 35a IPC protocol"
+        echo "$OUT" | head -20 | sed 's/^/    /'
+        fail=$((fail+1))
+    fi
+fi
+
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  Results: $pass passed, $fail failed, $skipped skipped"

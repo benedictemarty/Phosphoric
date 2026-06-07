@@ -12,9 +12,17 @@
 #include <time.h>
 
 static log_level_t current_log_level = LOG_LEVEL_INFO;
+/* Sprint 35a — output stream is configurable so the OricForge IPC mode
+ * (--control) can divert logs to stderr and keep stdout strictly for
+ * protocol traffic. NULL = uninitialised, falls back to stdout. */
+static FILE* log_stream = NULL;
 
 void log_init(log_level_t level) {
     current_log_level = level;
+}
+
+void log_set_stream(FILE* fp) {
+    log_stream = fp;
 }
 
 void log_cleanup(void) {
@@ -25,6 +33,7 @@ static void log_message(log_level_t level, const char* level_str, const char* fo
     if (level < current_log_level) {
         return;
     }
+    FILE* fp = log_stream ? log_stream : stdout;
 
     time_t now;
     time(&now);
@@ -34,10 +43,10 @@ static void log_message(log_level_t level, const char* level_str, const char* fo
     char time_str[32];
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", timeinfo);
 
-    printf("[%s] %s: ", time_str, level_str);
-    vprintf(format, args);
-    printf("\n");
-    fflush(stdout);
+    fprintf(fp, "[%s] %s: ", time_str, level_str);
+    vfprintf(fp, format, args);
+    fprintf(fp, "\n");
+    fflush(fp);
 }
 
 void log_debug(const char* format, ...) {

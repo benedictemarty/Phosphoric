@@ -71,6 +71,7 @@ SOURCES = src/main.c \
           src/hostfs/vfs.c \
           src/savestate.c \
           src/debugger.c \
+          src/control.c \
           src/utils/logging.c \
           src/utils/config.c \
           src/utils/trace.c \

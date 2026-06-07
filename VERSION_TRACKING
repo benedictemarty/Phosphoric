@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.71-alpha
+Current Version: 1.16.72-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 34d5 — rewind/single-step inverse `u`/`undo` ; backlog 34d 7/7 clos ; 499 tests + 5 E2E)
+Status: Alpha (Sprint 35a — IPC control mode OricForge `--control` ; 6/6 E2E ; 499 tests)
 
 Version History:
 ----------------
+- 1.16.72-alpha (2026-06-07): Sprint 35a — **IPC control mode OricForge** (CLI `--control`, protocole text-line stdin/stdout, logs sur stderr, 12 commandes, 2 events ; régression E2E ajoutée), 499 tests + 6 E2E PASS
 - 1.16.71-alpha (2026-06-07): Sprint 34d5 — **Rewind/single-step inverse `u`/`undo`** (ring 16 snapshots CPU+RAM+upper_ram+frame_cycles ; périph hors scope ; backlog 34d 7/7 clos), 499 tests + 5 E2E PASS
 - 1.16.70-alpha (2026-06-07): Sprint 34d4 — **Raster-line breakpoints** (REPL `br line` / `br` / `brd N` / `brd *` ; fire quand frame_cycles franchit la ligne PAL 0..311 ; gère wraps de frame), 499 tests + 5 E2E PASS
 - 1.16.69-alpha (2026-06-07): Sprint 34d3 — **REPL `loci` snapshot complet MIA** (2780 LOC de LOCI gagne une introspection live : ops top-5, xstack, xram, fds, dirs, mounts, TAP, DSK 4 drives, boot_settings), 499 tests + 5 E2E PASS

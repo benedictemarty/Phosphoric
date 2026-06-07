@@ -773,6 +773,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] STAT reporte NOT_READY si pas de tape
 - [x] 10 nouveaux tests test-loci
 
+### Sprint 35a: IPC control mode (OricForge IDE integration) (v1.16.72-alpha) - DONE
+Référence : `docs/control_protocol.md`
+- [x] CLI `--control` (implique `--debug` + `--headless`)
+- [x] Routage logs vers stderr (`log_set_stream(FILE*)`)
+- [x] Module `src/control.c` + `include/control.h` (REPL machine-friendly)
+- [x] 12 commandes : `regs`, `set`, `read`, `write`, `break`, `unbreak`, `break-list`, `step`, `next`, `continue`, `pause`, `reset`, `quit`
+- [x] 2 events : `EVT ready`, `EVT stopped` (avec `reason=break/step/watch`)
+- [x] Scenario E2E `35a IPC protocol` ajouté (6/6 scenarios E2E PASS)
+- [ ] 35b à venir : `watch`, `raster`, `load-tap`/`load-rom`/`load-sym`, async pause
+
 ### Sprint 34d: Audit gaps debug post-LOCI — backlog (v1.16.67-71) - DONE
 Référence : `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`
 - [x] Fix bug parser symboles Format A préfixe `0x` non comptabilisé (`symbols.c:hex_parse`) — livré v1.16.67-alpha

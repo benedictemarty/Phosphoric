@@ -33,6 +33,7 @@
 #include "io/printer.h"
 #include "debugger.h"
 #include "tui.h"
+#include "control.h"
 #include "savestate.h"
 #include "utils/trace.h"
 #include "utils/rominfo.h"
@@ -264,6 +265,8 @@ static void print_usage(const char* program_name) {
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
+    printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");
+    printf("                             logs to stderr, see docs/control_protocol.md)\n");
     printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
@@ -1295,6 +1298,12 @@ static void emulator_run(emulator_t* emu) {
 
     log_info("Starting emulation at PC=$%04X", emu->cpu.PC);
 
+    /* Sprint 35a — emit the IPC ready banner once everything is wired up
+     * so the client knows the channel is live. */
+    if (emu->control_mode) {
+        control_emit_ready(emu);
+    }
+
     uint64_t total_executed = 0;
     uint64_t frame_count = 0;
     bool screenshot_at_done = false;
@@ -1320,7 +1329,20 @@ static void emulator_run(emulator_t* emu) {
 
             /* Interactive debugger check */
             if (emu->debugger.active || debugger_should_break(&emu->debugger, emu)) {
-                if (emu->tui_mode) {
+                if (emu->control_mode) {
+                    /* Emit a `stopped` event on every break re-entry. The
+                     * first entry (active was set pre-loop) is informational
+                     * — the IDE sees `ready` from main() and then `stopped`. */
+                    const char* reason =
+                        emu->debugger.step_mode ? "step" :
+                        emu->debugger.watch_triggered ? "watch" : "break";
+                    /* Reset step_mode so the next `continue` doesn't fire
+                     * stepping; control_repl will set it again on a `step`
+                     * command. */
+                    emu->debugger.step_mode = false;
+                    control_emit_stopped(emu, reason);
+                    control_repl(emu);
+                } else if (emu->tui_mode) {
                     tui_repl(emu);
                 } else {
                     debugger_repl(&emu->debugger, emu);
@@ -1959,6 +1981,7 @@ int main(int argc, char* argv[]) {
     const char* trace_irq_file = NULL;
     const char* symbols_file = NULL;
     bool tui_mode = false;
+    bool control_mode = false;
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
     const char* loci_sdimg_path = NULL;
@@ -1973,7 +1996,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2024,6 +2047,7 @@ int main(int argc, char* argv[]) {
         {"loci",                no_argument,       0, OPT_LOCI},
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
+        {"control",             no_argument,       0, OPT_CONTROL},
         {"help",                no_argument,       0, '?'},
         {0, 0, 0, 0}
     };
@@ -2102,6 +2126,14 @@ int main(int argc, char* argv[]) {
             case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
             case OPT_SYMBOLS: symbols_file = optarg; break;
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
+            case OPT_CONTROL:
+                control_mode = true;
+                debug_mode = true;
+                headless = true;
+                /* Redirect logs to stderr as early as possible so the
+                 * init banner doesn't pollute the protocol channel. */
+                log_set_stream(stderr);
+                break;
             case OPT_LOCI: loci_enabled = true; break;
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
@@ -2380,6 +2412,16 @@ int main(int argc, char* argv[]) {
 
     /* Load symbol table (--symbols FILE) */
     symbol_table_init(&emu.symbols);
+
+    /* Sprint 35a — IPC control mode for OricForge. Logs go to stderr so
+     * stdout stays a clean protocol channel. Forces headless so SDL output
+     * never collides with stdout traffic. */
+    emu.control_mode = control_mode;
+    if (control_mode) {
+        log_set_stream(stderr);
+        emu.headless = true;
+        emu.debugger.active = true;   /* wait for first client command */
+    }
 
     /* Route debugger break into ncurses TUI when --tui is set
      * (requires build with TUI=1). Init done lazily on first break. */

@@ -35,7 +35,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.71-alpha"
+#define EMU_VERSION "1.16.72-alpha"
 
 /**
  * @brief ORIC machine model
@@ -175,6 +175,11 @@ typedef struct emulator_s {
      * Updated by the main emulation loop after each cpu_step so the debugger
      * can derive the raster line via `frame_cycles / PAL_CYCLES_PER_LINE`. */
     int frame_cycles;
+
+    /* Sprint 35a — IPC control mode for OricForge IDE integration. When set,
+     * stdin/stdout speak a line-based protocol (CMD/REP/EVT). Logs are
+     * routed to stderr at startup so stdout stays clean. */
+    bool control_mode;
 
     /* Screenshot options */
     const char* screenshot_file;

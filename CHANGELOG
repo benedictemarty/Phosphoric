@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.72-alpha] - 2026-06-07
+
+### Sprint 35a — IPC control mode (OricForge IDE integration)
+
+Suite à la demande d'intégration OricForge IDE. Mode IPC `--control`
+sur stdin/stdout, conçu pour permettre à un IDE de driver Phosphoric
+en tant que back-end debug source-level.
+
+#### Added
+
+- **CLI `--control`** — active le mode IPC. Implique `--debug` (premier
+  break immédiat) et `--headless` (pas de SDL output sur stdout).
+- **Routage logs vers stderr** quand `--control` est actif (les
+  log_info habituels n'étaient pas compatibles avec un protocole
+  text-line sur stdout). Nouveau helper `log_set_stream(FILE*)`.
+- **`src/control.c`** (~250 LOC) — boucle REPL machine-friendly,
+  réutilise les primitives `debugger_add_breakpoint` / `cpu_reset` /
+  `memory_read_write`.
+- **Protocole text-line** (`docs/control_protocol.md`, 80 lignes) :
+  - 3 types de messages : CMD (client→emu), REP (`OK`/`ERR`), EVT
+    (spontané).
+  - 12 commandes sprint 35a : `regs`, `set <reg> <val>`,
+    `read <addr> <len>`, `write <addr> <bytes>...`, `break <addr>`,
+    `unbreak <id>`, `break-list`, `step`, `next`, `continue`,
+    `pause`, `reset`, `quit`.
+  - 2 events sprint 35a : `EVT ready` (boot), `EVT stopped` (à
+    chaque transition CPU → REPL, avec `reason=break/step/watch`).
+
+#### Smoke test
+
+```
+$ printf "regs\nread \$F88F 4\nbreak \$F893\ncontinue\nquit\n" \
+    | ./oric1-emu -r roms/basic11b.rom --control
+EVT ready pc=F88F cycles=0 version=1.16.72-alpha
+EVT stopped pc=F88F cycles=0 reason=break
+OK A=00 X=00 Y=00 SP=FD P=24 PC=F88F cycles=0
+OK A2 FF 9A 58
+OK id=0 addr=F893
+OK
+EVT stopped pc=F893 cycles=6 reason=break
+OK
+```
+
+#### Régression automatisée
+
+Nouveau scenario `35a IPC protocol` ajouté à
+`tests/integration/test_loci_sedoric_e2e.sh`. Vérifie 8 lignes
+attendues (handshake + step + break + quit). 6/6 scenarios E2E
+PASS.
+
+#### Backlog sprint 35b (suite OricForge)
+
+- `watch <addr>` + `EVT stopped reason=watch`
+- `raster <line>` + `EVT stopped reason=raster`
+- `load-tap` / `load-rom` / `load-sym`
+- Async pause-while-running (poll stdin pendant l'exécution)
+- Client de référence Python pour les tests OricForge
+
+#### Tests
+
+- 499 tests unitaires PASS (mode control n'instrumente pas l'unitaire).
+- 6/6 scenarios E2E PASS (5 LOCI/Sedoric + 1 nouveau IPC).
+
+---
+
 ## [1.16.71-alpha] - 2026-06-07
 
 ### Sprint 34d5 — Debug : rewind/single-step inverse (P2-F audit)
