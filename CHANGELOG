@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.67-alpha] - 2026-06-07
+
+### Sprint 34d1 — Debug : fix `0x` parser symboles + résolution opérandes disasm
+
+Suite à l'audit `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`, deux
+fixes les plus impactants en valeur/effort.
+
+#### Fixed — Parser symboles Format A : préfixe `0x` non comptabilisé
+
+`src/utils/symbols.c:hex_parse` retournait la longueur des **chiffres
+hex** (4 pour `F000`), pas la longueur **totale consommée** (6 pour
+`0xF000`). Le Format A calculait `after = p + n + (*p == '$' ? 1 : 0)`
+en ajoutant +1 pour `$` mais en oubliant +2 pour `0x`. Conséquence :
+toute ligne `0xF000 reset` (style C/Python) était silencieusement
+ignorée pendant le chargement.
+
+**Fix** : `hex_parse` retourne désormais le nombre total de chars
+consommés (préfixe + chiffres). Format A simplifié à `after = p + n`.
+Format C (déjà `q + n`) et Format B/D (utilise juste la valeur) restent
+corrects. Nouveau test `test_format_addr_first_0x_prefix` couvre
+`0xF000` ET `0XF800` (majuscule).
+
+Smoke test :
+```
+$ cat /tmp/test.sym
+0xF000 reset
+0XE800 lower
+$ ... --symbols /tmp/test.sym → "2 entries loaded" (avant : 0)
+```
+
+#### Added — Résolution des symboles sur opérandes du disasm (P0-A audit)
+
+`src/debugger.c:show_disassembly` résolvait les symboles uniquement sur
+l'adresse de **l'instruction courante** (label en tête de ligne). Les
+opérandes (`JSR $00E2`, `LDA $E5BD,X`) restaient en hex pur, ce qui
+rendait la feature symboles (sprint 34s) à moitié exploitable.
+
+**Fix** : nouvelle helper `append_operand_symbols(tbl, buf)` qui scanne
+le string disasm pour chaque token `$XXXX`, lookup symbole, et imprime
+en suffixe `; $XXXX=<name>` (séparées par `,` si plusieurs). Le buf
+disasm lui-même reste inchangé (alignement `%-18s` préservé).
+
+Smoke test :
+```
+$ printf "d E000 3\n" | ... --symbols /tmp/cinema.sym
+  $E000: D0 05     BNE $E007          ; 2 cyc
+  $E002: 20 E2 00  JSR $00E2          ; 6 cyc  ; $00E2=CINEMA
+  $E005: 90 5B     BCC $E062          ; 2 cyc
+```
+
+#### Tests
+
+- **499 tests unitaires PASS** (498 + 1), 11 tests test-symbols.
+- **5/5 scenarios E2E PASS** via `make test-loci-e2e`.
+
+---
+
 ## [1.16.66-alpha] - 2026-06-07
 
 ### Sprint 34c R4 — Split mécanique `loci.c` (2380 LOC) → 4 TUs

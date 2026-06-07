@@ -320,6 +320,41 @@ static void show_registers(emulator_t* emu) {
 
 /* Disassemble `count` instructions starting at `addr`. Returns the
  * address of the byte just past the final instruction (next page start). */
+/* Sprint 34d1 P0-A — scan a disasm string for `$XXXX` operands and
+ * append `; $XXXX=<name>` comments resolved through the loaded symbol
+ * table. The buf itself is left untouched (width-sensitive %-18s
+ * alignment) — we only print a suffix when at least one symbol matched. */
+static void append_operand_symbols(const symbol_table_t* tbl, const char* buf) {
+    if (!tbl || tbl->count == 0) return;
+    bool printed = false;
+    const char* p = buf;
+    while (*p) {
+        if (*p == '$') {
+            const char* q = p + 1;
+            int n = 0;
+            unsigned int v = 0;
+            while (n < 4 && isxdigit((unsigned char)*q)) {
+                int d = *q;
+                d = (d <= '9') ? (d - '0')
+                  : ((d & 0xDF) - 'A' + 10);
+                v = (v << 4) | (unsigned)d;
+                q++; n++;
+            }
+            if (n == 4) {
+                const char* s = symbol_lookup(tbl, (uint16_t)v);
+                if (s) {
+                    printf("%s $%04X=%s", printed ? "," : "  ;",
+                           (uint16_t)v, s);
+                    printed = true;
+                }
+                p = q;
+                continue;
+            }
+        }
+        p++;
+    }
+}
+
 static uint16_t show_disassembly(emulator_t* emu, uint16_t addr, int count) {
     for (int i = 0; i < count; i++) {
         char buf[64];
@@ -335,6 +370,7 @@ static uint16_t show_disassembly(emulator_t* emu, uint16_t addr, int count) {
         }
         uint8_t opc = memory_read(&emu->memory, addr);
         printf(" %-18s ; %u cyc", buf, cpu_opcode_cycles(opc));
+        append_operand_symbols(&emu->symbols, buf);   /* sprint 34d1 P0-A */
         if (addr == emu->cpu.PC)
             printf("  <---");
         printf("\n");

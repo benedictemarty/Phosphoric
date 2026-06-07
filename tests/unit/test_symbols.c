@@ -72,6 +72,19 @@ TEST(test_format_addr_first_dollar) {
     unlink(path); free(path);
 }
 
+/* ── Format A with C/Python `0x` / `0X` prefix ─────────────────────
+ * Regression check : sprint 34d1 fix. hex_parse used to return only the
+ * digit count, while Format A's `after` calc added +1 for `$` but missed
+ * the +2 for `0x`. Result : "0xF000 NAME" was silently dropped. */
+TEST(test_format_addr_first_0x_prefix) {
+    symbol_table_t t; symbol_table_init(&t);
+    char* path = write_tmp("0xF000 RESET\n0XE800 LOWER\n");
+    ASSERT_EQ(symbol_table_load(&t, path), 2);
+    ASSERT_STR_EQ(symbol_lookup(&t, 0xF000), "RESET");
+    ASSERT_STR_EQ(symbol_lookup(&t, 0xE800), "LOWER");
+    unlink(path); free(path);
+}
+
 /* ── Format A without dollar: XXXX NAME ────────────────────────── */
 TEST(test_format_addr_first_no_dollar) {
     symbol_table_t t; symbol_table_init(&t);
@@ -179,6 +192,7 @@ int main(void) {
     printf("===========================================================\n\n");
 
     RUN(test_format_addr_first_dollar);
+    RUN(test_format_addr_first_0x_prefix);
     RUN(test_format_addr_first_no_dollar);
     RUN(test_format_equ);
     RUN(test_format_vice_lab);

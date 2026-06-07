@@ -17,15 +17,22 @@ void symbol_table_init(symbol_table_t* tbl) {
     tbl->count = 0;
 }
 
+/* Parse a hex token of form `$XXXX`, `0xXXXX`, `0XXXXX` or bare `XXXX`.
+ * Returns the TOTAL number of characters consumed (prefix + digits), so
+ * the caller can use `p + n` directly to advance past the token —
+ * regardless of which prefix (if any) was present. Previously Format A
+ * hardcoded `+ 1` for `$` and missed `0x`, causing the addr-first parser
+ * to silently reject lines like `0xF000 reset`. */
 static int hex_parse(const char* s, uint16_t* out) {
     if (!s || !*s) return 0;
+    const char* start = s;
     if (*s == '$') s++;
     else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
     char* end = NULL;
     unsigned long v = strtoul(s, &end, 16);
     if (end == s || v > 0xFFFF) return 0;
     *out = (uint16_t)v;
-    return (int)(end - s);
+    return (int)(end - start);
 }
 
 /* Skip leading whitespace; return pointer to first non-space char. */
@@ -102,7 +109,7 @@ static bool parse_line(symbol_table_t* tbl, char* line) {
         const char* save = p;
         int n = hex_parse(p, &addr);
         if (n > 0) {
-            const char* after = p + n + (*p == '$' ? 1 : 0);
+            const char* after = p + n;   /* hex_parse returns total consumed */
             if (*after == '\0' || isspace((unsigned char)*after) ||
                 *after == ',' || *after == ':' || *after == '=') {
                 char* q = lstrip((char*)after);
