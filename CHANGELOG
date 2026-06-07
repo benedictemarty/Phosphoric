@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.77-alpha] - 2026-06-07
+
+### Sprint 36b — Game compatibility regression suite
+
+Item dormant « Game compatibility testing » (sprint 14 historique)
+enfin chiffré. Première suite de régression sur du code commercial
+réel — catches les bugs CPU/PSG/HIRES/tape que les tests unitaires
+ne voient pas.
+
+#### Added — `tests/integration/test_game_compat.sh`
+
+Boote 7 titres Oric commerciaux depuis OricProgramsLib (lib externe
+non versionnée, override via `ORIC_PROGRAMS_LIB=/path`). Pour chaque
+jeu, dump RAM à un cycle précis et grep une signature distinctive
+de l'écran d'intro.
+
+| Slug | Signature attendue |
+|------|--------------------|
+| manic-miner | `PRESSEZ 3 FOIS RETURN` |
+| hopper | `PRESS  [1]  FOR NO SOUND` |
+| breakout | `BALLS:` |
+| harrier-attack | `HIGH  SCORE` |
+| atlantis | `ARRETEZ VOTRE MAGNETO` |
+| oric-trek | `Enter Level of Difficulty` |
+| tyrann | `SI VOTRE ENREGISTREUR NE POSSEDE PAS` |
+
+Skip gracieux si `OricProgramsLib` absent (CI sans la lib passe
+quand même).
+
+#### Added — `make test-game-compat`
+
+Cible Makefile dédiée. Pas ajoutée à `make tests` car dépend d'une
+lib externe (~25 s d'exécution avec les 7 titres).
+
+#### Validation
+
+```
+$ make test-game-compat
+[...]
+  Results: 7 passed, 0 failed, 0 skipped
+```
+
+7/7 PASS sur la sélection actuelle. Mix de TAP BASIC + machine code +
+multi-block + auto-CLOAD, cible BASIC 1.1 (Atmos).
+
+#### Tests
+
+- 499 tests unitaires PASS.
+- 13/13 scenarios E2E LOCI/IPC PASS.
+- **7/7 game compatibility PASS** sur OricProgramsLib.
+
+---
+
 ## [1.16.76-alpha] - 2026-06-07
 
 ### Sprint 36a — Performance benchmark harness

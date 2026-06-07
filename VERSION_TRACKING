@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.76-alpha
+Current Version: 1.16.77-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 36a — bench perf harness `--bench` + `make bench` 4 scenarios ; baseline ~1% overhead ; 13/13 E2E ; 499 tests)
+Status: Alpha (Sprint 36b — game compat suite 7 titres commerciaux ; 7/7 PASS ; 499 tests + 13 E2E + 7 game compat)
 
 Version History:
 ----------------
+- 1.16.77-alpha (2026-06-07): Sprint 36b — **Game compatibility regression suite** (`make test-game-compat`, 7 titres Oric commerciaux depuis OricProgramsLib, signature distinctive d'intro vérifiée ; item dormant phase 4 « Game compatibility testing » coché), 499 tests + 13 E2E + 7 game compat PASS
 - 1.16.76-alpha (2026-06-07): Sprint 36a — **Performance benchmark harness** (`--bench` flag, `make bench` 4 scenarios, baseline mesurée 99.5x real-time sur basic-idle, overhead ~1% sur frame budget ; item dormant "<5% CPU overhead" enfin chiffré), 499 tests + 13 E2E PASS
 - 1.16.75-alpha (2026-06-07): Sprint 35c — **`bread` binaire + `phos_smoke_client.py` + SIGPIPE hardening** (3 items convenus avec OricForge ; mini-client Python ~250 LOC stdlib only ; SIGPIPE ignoré + ferror(stdout) shutdown propre), 499 tests + 12 E2E PASS
 - 1.16.74-alpha (2026-06-07): Sprint 35b — **watch/raster/load-tap/load-rom/load-sym/disasm + EVT halt jam|cycle_limit** (`last_break_reason` pour précision `EVT stopped`, caps étendu), 499 tests + 11 E2E PASS

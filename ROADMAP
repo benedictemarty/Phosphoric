@@ -90,7 +90,7 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Fix memory map comment (VIA at $0300-$030F)
 - [x] Fix strncpy truncation warnings in hostfs.c
 - [x] SDL2 display integration testing
-- [ ] Game compatibility testing
+- [x] Game compatibility testing — sprint 36b : suite régression 7 titres commerciaux (manic-miner, hopper, breakout, harrier-attack, atlantis, oric-trek, tyrann) via `make test-game-compat`
 
 ### Sprint 15: Video Integration & Debug Export (v1.0.0-beta.2) - DONE
 - [x] Integrate video_t into emulator main loop
@@ -794,6 +794,13 @@ Référence : `docs/control_protocol.md`
 - [x] Caps updated : `step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm`
 - [ ] `bread <addr> <len>` (framing binaire) — reporté à 35c selon scope
 - [ ] Client de référence Python (livré par OricForge en parallèle)
+
+### Sprint 36b: Game compatibility regression suite (v1.16.77-alpha) - DONE
+- [x] `tests/integration/test_game_compat.sh` — boote 7 titres Oric commerciaux depuis OricProgramsLib et vérifie signature distinctive d'intro
+- [x] Cible `make test-game-compat`
+- [x] 7/7 PASS : manic-miner, hopper, breakout, harrier-attack, atlantis, oric-trek, tyrann
+- [x] Skip gracieux si `ORIC_PROGRAMS_LIB` absent
+- [x] Item dormant phase 4 « Game compatibility testing » coché
 
 ### Sprint 36a: Performance benchmark harness (v1.16.76-alpha) - DONE
 - [x] CLI flag `--bench` : ligne `BENCH cycles=… mhz_eq=… speed_ratio=…x frame_us=…` à l'exit

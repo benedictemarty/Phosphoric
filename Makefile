@@ -108,7 +108,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -349,6 +349,13 @@ test-loci-e2e:
 #        `make bench CYCLES=200000000`  longer run
 bench:
 	@bash tools/bench.sh $(if $(BENCH_TSV),--tsv,)
+
+# Sprint 36b — game compatibility regression. Boots 7 commercial
+# Oric titles from OricProgramsLib and checks each reaches a known
+# intro screen. Skips gracefully when the lib is absent.
+# Override path via ORIC_PROGRAMS_LIB=/path or BASIC_ROM=...
+test-game-compat:
+	@bash tests/integration/test_game_compat.sh
 
 tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
 	@echo ""
