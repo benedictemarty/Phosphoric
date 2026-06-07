@@ -35,7 +35,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.47-alpha"
+#define EMU_VERSION "1.16.48-alpha"
 
 /**
  * @brief ORIC machine model
@@ -198,6 +198,11 @@ typedef struct emulator_s {
     bool type_keys_done;
     char type_keys_last_char;       /* Last typed char (debounce repeated keys) */
     int type_keys_debounce;         /* Debounce frames remaining (0 = ready) */
+    /* Sprint 34av : si true, les chars sont injectés via le HID LOCI
+     * (loci_kbd_set_report) au lieu de la matrice ORIC. Activé par le
+     * préfixe "loci-hid:" dans le TEXT de --type-keys. Pour automatiser
+     * la navigation TUI LOCI sans une vraie SDL keyboard event. */
+    bool type_keys_loci_hid;
 
     /* Breakpoint (legacy single breakpoint, -1 = none) */
     int32_t breakpoint;

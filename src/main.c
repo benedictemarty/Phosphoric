@@ -1423,6 +1423,79 @@ static void emulator_run(emulator_t* emu) {
             if ((int64_t)total_executed >= emu->type_keys_next_cycle) {
                 int idx = emu->type_keys_idx;
                 char c = emu->type_keys_text[idx];
+                /* Sprint 34av : LOCI HID injection path. Each char/escape
+                 * yields a HID usage code that's pushed into the LOCI kbd
+                 * bitmap for ~2 frames, then released. */
+                if (emu->type_keys_loci_hid && emu->has_loci) {
+                    if (c == '\0') {
+                        loci_kbd_clear(&emu->loci);
+                        emu->type_keys_done = true;
+                    } else if (emu->type_keys_debounce > 0) {
+                        loci_kbd_clear(&emu->loci);
+                        emu->type_keys_debounce--;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                    } else if (c == '\\') {
+                        /* Escape : \n \e \u \d \l \r \pN */
+                        char esc = emu->type_keys_text[idx+1];
+                        uint8_t hid = 0;
+                        switch (esc) {
+                            case 'n': hid = 0x28; break;  /* Enter */
+                            case 'e': hid = 0x29; break;  /* Escape */
+                            case 'u': hid = 0x52; break;  /* Up */
+                            case 'd': hid = 0x51; break;  /* Down */
+                            case 'l': hid = 0x50; break;  /* Left */
+                            case 'r': hid = 0x4F; break;  /* Right */
+                            case 'p': {
+                                int secs = emu->type_keys_text[idx+2] - '0';
+                                if (secs < 1) secs = 1;
+                                if (secs > 9) secs = 9;
+                                loci_kbd_clear(&emu->loci);
+                                emu->type_keys_idx += 3;
+                                emu->type_keys_next_cycle = (int64_t)total_executed + ORIC_CLOCK_HZ * secs;
+                                goto type_keys_done_frame;
+                            }
+                            default: hid = 0; break;
+                        }
+                        if (hid) {
+                            uint8_t keys[6] = { hid, 0, 0, 0, 0, 0 };
+                            loci_kbd_set_report(&emu->loci, 0, keys);
+                            emu->type_keys_last_char = esc;
+                            emu->type_keys_idx += 2;
+                            emu->type_keys_debounce = 2;  /* release for 2 frames after */
+                            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
+                        } else {
+                            emu->type_keys_idx += 2;  /* unknown escape — skip */
+                        }
+                    } else {
+                        /* Regular char → HID code */
+                        uint8_t hid = 0;
+                        char lc = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+                        if (lc >= 'a' && lc <= 'z') hid = (uint8_t)(0x04 + (lc - 'a'));
+                        else if (lc == '0') hid = 0x27;
+                        else if (lc >= '1' && lc <= '9') hid = (uint8_t)(0x1E + (lc - '1'));
+                        else if (lc == ' ') hid = 0x2C;
+                        if (hid) {
+                            if (c == emu->type_keys_last_char) {
+                                /* Same char twice : release first */
+                                loci_kbd_clear(&emu->loci);
+                                emu->type_keys_debounce = 1;
+                                emu->type_keys_last_char = 0;
+                                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                            } else {
+                                uint8_t mod = (c >= 'A' && c <= 'Z') ? 0x02 : 0;  /* L-Shift */
+                                uint8_t keys[6] = { hid, 0, 0, 0, 0, 0 };
+                                loci_kbd_set_report(&emu->loci, mod, keys);
+                                emu->type_keys_last_char = c;
+                                emu->type_keys_idx++;
+                                emu->type_keys_debounce = 2;
+                                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
+                            }
+                        } else {
+                            emu->type_keys_idx++;  /* unknown char — skip */
+                        }
+                    }
+                    type_keys_done_frame:;
+                } else
                 if (c == '\0') {
                     /* Done typing */
                     oric_keyboard_release_all(&emu->keyboard);
@@ -1442,6 +1515,19 @@ static void emulator_run(emulator_t* emu) {
                         oric_keyboard_release_all(&emu->keyboard);
                         oric_keyboard_press_char(&emu->keyboard, '\n');
                         emu->type_keys_last_char = '\n';
+                        emu->type_keys_idx += 2;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+                    }
+                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'e') {
+                    /* Sprint 34av : \e = ESC. Touche utile pour le TUI LOCI. */
+                    if (emu->type_keys_last_char == 0x1B) {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        emu->type_keys_last_char = 0;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                    } else {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        oric_keyboard_press_char(&emu->keyboard, 0x1B);
+                        emu->type_keys_last_char = 0x1B;
                         emu->type_keys_idx += 2;
                         emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
                     }
@@ -2233,17 +2319,26 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Parse --type-keys CYCLES:TEXT */
+    /* Parse --type-keys CYCLES:TEXT (Sprint 34av: TEXT may start with
+     * "loci-hid:" to route keys via the LOCI HID bitmap instead of the
+     * ORIC keyboard matrix — useful for automating the LOCI TUI). */
     if (type_keys_arg) {
         const char* colon = strchr(type_keys_arg, ':');
         if (colon) {
             emu.type_keys_at = atoll(type_keys_arg);
-            emu.type_keys_text = colon + 1;
+            const char* text = colon + 1;
+            if (strncmp(text, "loci-hid:", 9) == 0) {
+                emu.type_keys_loci_hid = true;
+                text += 9;
+            }
+            emu.type_keys_text = text;
             emu.type_keys_idx = 0;
             emu.type_keys_next_cycle = emu.type_keys_at;
             emu.type_keys_done = false;
-            log_info("Auto-type at %lld cycles: \"%s\"",
-                     (long long)emu.type_keys_at, emu.type_keys_text);
+            log_info("Auto-type at %lld cycles (%s): \"%s\"",
+                     (long long)emu.type_keys_at,
+                     emu.type_keys_loci_hid ? "LOCI HID" : "ORIC matrix",
+                     emu.type_keys_text);
         } else {
             log_error("Invalid --type-keys format. Use CYCLES:TEXT (e.g. 3000000:CLOAD\"\"\\n)");
             emulator_cleanup(&emu);

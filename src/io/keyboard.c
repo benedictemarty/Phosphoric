@@ -148,6 +148,12 @@ bool oric_keyboard_press_char(oric_keyboard_t* kb, char c) {
         kb->matrix[ORIC_RETURN_COL] &= ~(1 << ORIC_RETURN_ROW);
         return true;
     }
+    if (c == 0x1B) {
+        /* Sprint 34av : ESC key (Oric matrix col=1, row=5). Pressé via
+         * --type-keys '\e' notamment pour naviguer le TUI LOCI. */
+        kb->matrix[1] &= ~(1 << 5);
+        return true;
+    }
     unsigned char uc = (unsigned char)c;
     if (uc > 127) return false;
     const char_entry_t* entry = &char_map[uc];

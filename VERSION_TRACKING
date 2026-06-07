@@ -1,12 +1,20 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.47-alpha
+Current Version: 1.16.48-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 34au — 34/36 ops LOCI implémentées, 481 tests pass)
+Status: Alpha (Sprint 34av — E2E LOCI automatisé via --type-keys \e)
 
 Version History:
 ----------------
+- 1.16.48-alpha (2026-06-07): Sprint 34av — automatisation E2E LOCI
+  * \e (ESC) ajouté à oric_keyboard_press_char (matrice col=1, row=5)
+  * \e dans --type-keys mode matrix (debounce 4 frames)
+  * Mode loci-hid: dans --type-keys (HID xram, défensif pour futurs ROMs)
+  * E2E LOCI complet automatisé : ROM → ESC → MIA_BOOT → BASIC 1.1 →
+    typed program → RUN → résultat affiché
+  * 481 tests pass
+
 - 1.16.47-alpha (2026-06-07): Sprint 34au — 7 ops LOCI stubbées implémentées
   * CPU_PHI2 (retourne 1 MHz) + OEM_CODEPAGE + STDIN_OPT (no-op success)
   * 5x MAP_TUNE_* (TMAP/TIOR/TIOW/TIOD/TADR — vident xstack + 0)
