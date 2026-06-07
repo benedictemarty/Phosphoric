@@ -35,7 +35,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.45-alpha"
+#define EMU_VERSION "1.16.46-alpha"
 
 /**
  * @brief ORIC machine model
@@ -67,12 +67,19 @@ typedef struct rom_patches_s {
     uint16_t csave_header_buf;  /**< Base of 9-byte header staging buffer the
                                   *  ROM populates before WriteFileHeader.
                                   *  CSAVE-variant-agnostic source of truth.
-                                  *  Atmos: $02A8 (read $02B0 down to $02A8
-                                  *  for on-tape byte order). 0 = unknown,
-                                  *  fall back to TXTTAB/VARTAB. */
+                                  *  Atmos: $02A8. ORIC-1: $005E (zero page).
+                                  *  Read at writefileheader_entry trap, NOT at
+                                  *  csave_end (the data-write loop mutates
+                                  *  $5F/$60 on ORIC-1 — senior 34at). */
     uint16_t csave_filename_buf;/**< Base of filename buffer the ROM uses
                                   *  during CSAVE. Atmos: $027F.
-                                  *  ORIC-1: $0035 (legacy). */
+                                  *  ORIC-1: $0035. */
+    uint16_t writefileheader_entry; /**< Entry of WriteFileHeader. Trap fires
+                                      *  here to snapshot the header/filename
+                                      *  buffers BEFORE any in-flight mutation
+                                      *  (Sprint 34at). ORIC-1: $E57B. Atmos:
+                                      *  $E607. 0 = no snapshot, fall back to
+                                      *  live RAM at csave_end. */
     uint16_t cload_data_rts;    /**< CLOAD data loop RTS (triggers post-load rechain) */
     uint16_t putbyte_entry;     /**< putbyte() entry point (CSAVE) */
     uint16_t putbyte_end;       /**< putbyte() RTS address */
@@ -147,6 +154,17 @@ typedef struct emulator_s {
     FILE*    csave_file;            /* Open TAP file for CSAVE output */
     int      csave_byte_count;     /* Bytes written in current CSAVE */
     char     csave_last_path[64];   /* Path of last CSAVE for re-buffering */
+    /* Sprint 34at : header + filename snapshot taken at writefileheader_entry.
+     * On ORIC-1 the data-write loop reuses $5F/$60 → reading them at csave_end
+     * gives the END address instead of START. Snapshot avoids this race. */
+    uint8_t  csave_header_snap[9];
+    char     csave_fname_snap[17];
+    bool     csave_snap_valid;
+    /* Sprint 34at : ORIC-1 csave_end ($E80A) is on a code path shared by CLOAD,
+     * so the trap can fire twice per CSAVE+CLOAD turn. csave_in_progress is
+     * set at writeleader_entry, cleared at the first csave_end, so the second
+     * one becomes a no-op rather than rebuilding from stale state. */
+    bool     csave_in_progress;
 
     bool running;
     bool fast_load;

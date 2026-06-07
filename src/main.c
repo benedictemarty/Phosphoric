@@ -150,12 +150,24 @@ static const rom_patches_t rom_patches_basic10 = {
     .readbyte_store    = 0x002F,
     .readbyte_storezero= 0,         /* GetTapeByte on Oric-1 does not maintain $02B1 */
     .readbyte_setcarry = false,     /* and exits with C=0 */
-    .csave_header_buf  = 0,         /* TODO : ORIC-1 CSAVE header path not researched yet */
-    .csave_filename_buf= 0x0035,    /* legacy : keep current behaviour for BASIC 1.0 */
+    .csave_header_buf  = 0x005E,    /* Sprint 34at — ZP staging buffer $5E..$66
+                                      * (read via LDX#9 / LDA $5D,X / DEX, see
+                                      * disasm at $E585). Senior-approved. */
+    .csave_filename_buf= 0x0035,    /* filename at $0035 (16 bytes, null-term) */
+    .writefileheader_entry = 0xE57B,/* Snapshot trap point — captures $5E..$66
+                                      * + $0035 BEFORE the data-write loop
+                                      * mutates $5F/$60 as a work pointer. */
     .cload_data_rts    = 0xE502,
     .putbyte_entry     = 0xE5C6,
     .putbyte_end       = 0xE5F2,
-    .csave_end         = 0xE7FE,
+    .csave_end         = 0xE80A,    /* Sprint 34at (senior-approved Option A):
+                                      * $E80A is the JMP $EBD0 that terminates
+                                      * the CSAVE outer routine. $E7FE never
+                                      * fires on ORIC-1 (verified via PCLOG in
+                                      * cpu_step) — the JSR $E804 at $E7F5 calls
+                                      * a sub-routine that JMPs to warm-start
+                                      * instead of RTSing. The PHP-orphaned
+                                      * stack is reset by the warm-start handler. */
     .writeleader_entry = 0xE6BA,
     .writeleader_end   = 0xE6C9
 };
@@ -173,6 +185,9 @@ static const rom_patches_t rom_patches_basic11 = {
     .csave_header_buf  = 0x02A8,    /* Atmos WriteFileHeader staging : $02A8..$02B0 (reversed
                                       * on-tape order, see disasm at $E60F-$E618) */
     .csave_filename_buf= 0x027F,    /* Atmos filename buffer (16 chars, null-terminated) */
+    .writefileheader_entry = 0xE607,/* Sprint 34at: snapshot point for Atmos —
+                                      * same defensive pattern (cheap, harmless
+                                      * if $02A8..$02B0 isn't mutated post-call). */
     .cload_data_rts    = 0xE50A,
     .putbyte_entry     = 0xE65E,
     .putbyte_end       = 0xE68A,
@@ -883,7 +898,8 @@ static void tape_patches(emulator_t* emu) {
     uint16_t pc = emu->cpu.PC;
 
     /* CSAVE patches work even without a tape loaded */
-    if (pc == p->writeleader_entry || pc == p->putbyte_entry || pc == p->csave_end) {
+    if (pc == p->writeleader_entry || pc == p->putbyte_entry || pc == p->csave_end ||
+        (p->writefileheader_entry && pc == p->writefileheader_entry)) {
         goto do_patch;  /* Skip tape_loaded check for CSAVE */
     }
 
@@ -954,6 +970,26 @@ do_patch:
             }
             emu->cpu.PC = p->getsync_end;
         }
+    } else if (p->writefileheader_entry && pc == p->writefileheader_entry) {
+        /* Sprint 34at : snapshot the header staging buffer and the
+         * filename buffer at WriteFileHeader entry — before any data-write
+         * loop reuses the staging ZP as a work pointer. On ORIC-1, $5F/$60
+         * holds TXTTAB right now but will be advanced to VARTAB during the
+         * data write, so reading it at csave_end would give the WRONG
+         * start address. */
+        if (p->csave_header_buf) {
+            for (int i = 0; i < 9; i++) {
+                emu->csave_header_snap[i] = emu->memory.ram[p->csave_header_buf + i];
+            }
+        }
+        if (p->csave_filename_buf) {
+            for (int i = 0; i < 16; i++) {
+                emu->csave_fname_snap[i] = (char)emu->memory.ram[p->csave_filename_buf + i];
+            }
+            emu->csave_fname_snap[16] = 0;
+        }
+        emu->csave_snap_valid = true;
+        /* Do NOT modify PC — let the ROM execute WriteFileHeader normally. */
     } else if (pc == p->writeleader_entry) {
         /* CSAVE: write tape leader — open output file if needed */
         if (!emu->csave_file) {
@@ -986,6 +1022,8 @@ do_patch:
                 uint8_t leader[] = { 0x16, 0x16, 0x16 };
                 fwrite(leader, 1, 3, emu->csave_file);
                 emu->csave_byte_count = 0;
+                emu->csave_snap_valid = false;  /* 34at : reset between CSAVEs */
+                emu->csave_in_progress = true;  /* 34at : guard against shared-path re-entry */
                 strncpy(emu->csave_last_path, csave_path,
                         sizeof(emu->csave_last_path) - 1);
                 emu->csave_last_path[sizeof(emu->csave_last_path) - 1] = 0;
@@ -1005,6 +1043,10 @@ do_patch:
         emu->csave_byte_count++;
         emu->cpu.PC = p->putbyte_end;
     } else if (pc == p->csave_end) {
+        /* 34at : guard against re-entry on shared code paths (ORIC-1
+         * $E80A is reached from CLOAD's exit too). */
+        if (!emu->csave_in_progress) return;
+        emu->csave_in_progress = false;
         /* CSAVE complete — rebuild the TAP (Sprint 34as).
          *
          * Sourcing priority :
@@ -1036,7 +1078,18 @@ do_patch:
 
         uint16_t start_addr, end_addr;
         uint8_t  header_type, header_auto;
-        if (p->csave_header_buf) {
+        /* Sprint 34at : prefer the snapshot captured at writefileheader_entry,
+         * because data-write loops on ORIC-1 reuse $5F/$60 as a work pointer
+         * and the live RAM no longer holds the original start address. */
+        if (emu->csave_snap_valid) {
+            /* Snapshot layout matches the live buffer indexing. */
+            start_addr  = (uint16_t)(emu->csave_header_snap[1] |
+                                     (emu->csave_header_snap[2] << 8));
+            end_addr    = (uint16_t)(emu->csave_header_snap[3] |
+                                     (emu->csave_header_snap[4] << 8));
+            header_auto = emu->csave_header_snap[5];
+            header_type = emu->csave_header_snap[6];
+        } else if (p->csave_header_buf) {
             uint16_t b = p->csave_header_buf;
             start_addr  = (uint16_t)(emu->memory.ram[b + 1] |
                                      (emu->memory.ram[b + 2] << 8));
@@ -1058,12 +1111,19 @@ do_patch:
         int prog_len = (int)end_addr - (int)start_addr + 1;
         if (prog_len < 0) prog_len = 0;
 
-        /* Sanitize the filename from the ROM's CSAVE buffer. */
-        uint16_t fn_addr = p->csave_filename_buf ? p->csave_filename_buf : 0x0035;
+        /* Sanitize the filename. Prefer snapshot if valid (consistent with
+         * the header source). */
         char clean_name[12] = {0};
         int ci = 0;
         for (int i = 0; i < 16 && ci < 11; i++) {
-            unsigned char c = emu->memory.ram[fn_addr + i];
+            unsigned char c;
+            if (emu->csave_snap_valid) {
+                c = (unsigned char)emu->csave_fname_snap[i];
+            } else {
+                uint16_t fn_addr =
+                    p->csave_filename_buf ? p->csave_filename_buf : 0x0035;
+                c = emu->memory.ram[fn_addr + i];
+            }
             if (c == 0) break;
             if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
             if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
@@ -1155,6 +1215,10 @@ do_patch:
                 }
             }
             free(tap);
+            /* 34at : invalidate snapshot so a subsequent csave_end hit that
+             * shares the same PC (ORIC-1 $E80A is reached from CLOAD's exit
+             * path too) does not re-rebuild from stale state. */
+            emu->csave_snap_valid = false;
         } else {
             log_warning("CSAVE: OOM rebuilding TAP");
         }
