@@ -1,12 +1,22 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.43-alpha
+Current Version: 1.16.44-alpha
 Release Date: 2026-06-07
-Status: Alpha (CSAVE TAP format fix + round-trip validé — 470 tests pass)
+Status: Alpha (Sprint 34ar review sénior — Errors found éliminé + fd_kind + mkstemp)
 
 Version History:
 ----------------
+- 1.16.44-alpha (2026-06-07): Sprint 34ar — review ingé sénior
+  * Errors found éliminé : $02B1 storezero + SEC version-specific
+    (BASIC 1.1 Atmos seul, fields readbyte_storezero/setcarry dans
+    rom_patches_t — patch data-driven, ORIC-1 inchangé)
+  * fd_kind[] / dir_kind[] remplacent pointer-tag (UB-adjacent éliminé)
+  * mkstemp() pour /tmp/loci_<basename>_XXXXXX (race symlink résolue)
+  * Silence handler EOT retiré (compensation devenue inutile)
+  * Référence : .pch Oricutron + désassemblée Atmos GetTapeByte
+  * 470 tests pass, AIGLE.TAP régression OK
+
 - 1.16.43-alpha (2026-06-07): Fix CSAVE TAP format (Sprint 34aq)
   * Reconstruction canonique du TAP depuis RAM BASIC au csave_end
   * Header byte-compatible avec format Oric standard (AIGLE.TAP)

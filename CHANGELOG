@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.44-alpha] - 2026-06-07
+
+### Sprint 34ar — Review ingé sénior : 3 fixes + cleanup compensations
+
+Suite à la review de l'ingé sénior (doc `docs/CR/2026-06-07_Senior_Review...`)
+qui a craqué le diagnostic "Errors found" via la table de symboles
+d'Oricutron + désassemblée Atmos `GetTapeByte`.
+
+#### Fixed — "Errors found" éliminé (cause racine version-specific)
+
+Le patch CLOAD bypassait le bit-decoder via `readbyte_entry` mais
+omettait deux effets de bord version-spécifiques :
+
+| Effet à readbyte_end | BASIC 1.0 (Oric-1) | BASIC 1.1 (Atmos) | Avant 34ar |
+|----------------------|---|---|---|
+| `STA $2F` | oui | oui | ✓ |
+| **`STZ $02B1`** (parity acc.) | non | **oui** | **manquant** |
+| **`SEC`** (exit C=1) | non | **oui** | **manquant** |
+
+`$02B1` est l'octet de travail erreur/parité de `GetTapeByte` Atmos.
+Sans le double effet (STZ + SEC), VERIFY accumule un compteur d'erreur
+fantôme → "Errors found" alors que la donnée est correcte.
+
+Patch data-driven via `rom_patches_t` :
+```c
+uint16_t readbyte_storezero;  /* 0=ORIC-1, $02B1=Atmos */
+bool     readbyte_setcarry;   /* false=ORIC-1, true=Atmos */
+```
+
+Référence : `.pch` d'Oricutron + désassemblée Atmos fournie par l'ingé sénior.
+
+#### Fixed — `fd_kind[]` / `dir_kind[]` remplacent pointer-tag (UB-adjacent)
+
+Le hack `(void*)(0x1000000u | slot)` reposait sur "tout vrai FILE* >
+0x10000000 sur Linux glibc" — false en puissance (musl, 32-bit) et
+UB-adjacent (cast int→FILE* déréférençable).
+
+Remplacé par tableaux parallèles `uint8_t fd_kind[]` / `uint8_t dir_kind[]` :
+- 0 = unused
+- 1 = POSIX FILE* / DIR*
+- 2 = SDIMG slot
+
+Cleanup conditionnel : `if (kind == 1) fclose(fp);` clair, pas
+d'hypothèse plateforme. TODO(vtable) documenté pour quand un 3e
+backend arrivera.
+
+#### Fixed — `mkstemp()` pour extractions temp SDIMG
+
+Path `/tmp/loci_extract_<basename>` prédictible remplacé par
+`/tmp/loci_<basename>_XXXXXX` via `mkstemp` (`O_CREAT | O_EXCL | 0600`).
+Évite :
+- Collision entre instances émulateur concurrentes
+- Race symlink (attaquant pre-creating symlink au path prédictible)
+
+#### Changed — Silence EOT retiré (compensation devenue inutile)
+
+L'ingé sénior alertait : "vérifie qu'ils ne masquent plus rien — empiler
+des compensations sur une racine erronée finit toujours par mordre".
+Le silence EOT (retour 0x00 quand tape exhausted) était une compensation
+pour le diagnostic erroné. Avec `$02B1`/carry corrects, round-trip
+CSAVE/CLOAD validé sans le silence ; AIGLE.TAP charge toujours
+correctement. Retiré pour réduire la surface.
+
+#### Validation
+
+```
+CLOAD "T1"
+HI               ← pas de "Errors found"
+Ready
+LIST
+ 10 PRINT "HI"
+```
+
+- 470 tests pass, 0 régression
+- AIGLE.TAP : régression OK (écran HIRES title affiché)
+
+---
+
 ## [1.16.43-alpha] - 2026-06-07
 
 ### CSAVE : fix format TAP byte-compatible — Sprint 34aq
