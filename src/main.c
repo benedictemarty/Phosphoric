@@ -1339,6 +1339,7 @@ static void emulator_run(emulator_t* emu) {
 
             int step = cpu_step(&emu->cpu);
             frame_cycles += step;
+            emu->frame_cycles = frame_cycles;   /* expose for raster bps */
 
             /* Post-CLOAD BASIC rechain: the ORIC ROM does NOT rechain
              * line pointers after CLOAD. TAP files may have stale pointers

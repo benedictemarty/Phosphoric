@@ -54,6 +54,15 @@ typedef struct debugger_s {
     uint16_t watchpoints[DEBUGGER_MAX_WATCHPOINTS];
     uint8_t  num_watchpoints;
 
+    /* Sprint 34d4 (P2-G audit) — raster-line breakpoints. Each entry holds
+     * a PAL line number 0..311; the debugger fires when frame_cycles crosses
+     * its threshold. last_raster_line tracks the previous observation so a
+     * single CPU step (≤ 7 cycles) that straddles a line boundary still
+     * triggers. -1 = no observation yet. */
+    int16_t  raster_bps[8];
+    uint8_t  num_raster_bps;
+    int16_t  last_raster_line;
+
     bool     watch_triggered;    /* Set by memory trace callback */
     uint16_t watch_addr_hit;     /* Which watchpoint address was hit */
 

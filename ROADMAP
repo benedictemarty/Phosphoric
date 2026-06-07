@@ -781,8 +781,8 @@ Référence : `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`
 - [x] P1-C : commande REPL `disk`/`fdc` (Microdisc + WD1793 + 4 drives) — livré v1.16.68-alpha
 - [x] P1-D : commande REPL `acia`/`serial` (6551 + signaux + FIFO + backend) — livré v1.16.68-alpha
 - [x] P1-E : commande REPL `tape`/`cassette` (position, status, preview bytes) — livré v1.16.68-alpha
-- [ ] P2-F : rewind / single-step inverse (ring savestates compressés) — M
-- [ ] P2-G : raster-line breakpoint (`break raster N`) — M
+- [ ] P2-F : rewind / single-step inverse (ring savestates compressés) — M (seul item M restant)
+- [x] P2-G : raster-line breakpoint (`br N`, `brd N`/`brd *`) — livré v1.16.70-alpha
 
 ### Sprint 34c: Backlog issu de la senior review post-34b5 - DONE
 Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`

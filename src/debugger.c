@@ -48,6 +48,8 @@ void debugger_init(debugger_t* dbg) {
     dbg->num_watchpoints = 0;
     dbg->watch_triggered = false;
     dbg->has_temp_breakpoint = false;
+    dbg->last_raster_line = -1;
+    for (int i = 0; i < 8; i++) dbg->raster_bps[i] = -1;
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -301,6 +303,38 @@ bool debugger_should_break(debugger_t* dbg, emulator_t* emu) {
         printf("\n*** WATCHPOINT hit: write to $%04X ***\n", dbg->watch_addr_hit);
         dbg->watch_triggered = false;
         return true;
+    }
+
+    /* Raster-line breakpoint (sprint 34d4 P2-G).
+     * Fire when the current PAL line crosses a configured threshold, but
+     * NOT on every single CPU step within the same line — use
+     * last_raster_line to detect transitions and frame wraps. */
+    if (dbg->num_raster_bps > 0) {
+        int cur = emu->frame_cycles / PAL_CYCLES_PER_LINE;
+        int prev = dbg->last_raster_line;
+        if (cur != prev) {
+            for (int i = 0; i < 8; i++) {
+                int bp = dbg->raster_bps[i];
+                if (bp < 0) continue;
+                /* Wrap (new frame) : prev was at end, cur at start.
+                 * Fire if bp lies in (prev..maxline] OR [0..cur]. */
+                bool fire;
+                if (prev < 0) {
+                    fire = (cur == bp);
+                } else if (cur < prev) {
+                    fire = (bp > prev) || (bp <= cur);
+                } else {
+                    fire = (bp > prev && bp <= cur);
+                }
+                if (fire) {
+                    printf("\n*** RASTER BREAK at line %d (frame_cyc=%d) ***\n",
+                           bp, emu->frame_cycles);
+                    dbg->last_raster_line = (int16_t)cur;
+                    return true;
+                }
+            }
+            dbg->last_raster_line = (int16_t)cur;
+        }
     }
 
     return false;
@@ -748,6 +782,9 @@ static void show_help(void) {
     printf("                    REG: A X Y SP P PC   op: == != < <= > >=\n");
     printf("  b                 List all breakpoints\n");
     printf("  bd n              Delete breakpoint #n\n");
+    printf("  br line           Raster bp at PAL line (0..311)\n");
+    printf("  br                List raster breakpoints\n");
+    printf("  brd n             Delete raster bp #n (or `brd *` to clear all)\n");
     printf("  w addr            Add write watchpoint\n");
     printf("  w                 List all watchpoints\n");
     printf("  wd n              Delete watchpoint #n\n");
@@ -1033,6 +1070,55 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                     printf("  Breakpoint #%d removed\n", idx);
                 else
                     printf("  Invalid breakpoint index\n");
+            }
+        }
+        /* ── RASTER-LINE BREAKPOINT (sprint 34d4 P2-G) ── */
+        else if (strcmp(cmd, "br") == 0) {
+            if (!arg1[0]) {
+                int n = 0;
+                for (int i = 0; i < 8; i++) {
+                    if (dbg->raster_bps[i] >= 0) {
+                        printf("  #%d: line %d\n", i, dbg->raster_bps[i]);
+                        n++;
+                    }
+                }
+                if (n == 0) printf("  No raster breakpoints (range: 0-311)\n");
+            } else {
+                int line = atoi(arg1);
+                if (line < 0 || line >= PAL_LINES_PER_FRAME) {
+                    printf("  Line must be 0..%d\n", PAL_LINES_PER_FRAME - 1);
+                } else {
+                    int slot = -1;
+                    for (int i = 0; i < 8; i++) {
+                        if (dbg->raster_bps[i] < 0) { slot = i; break; }
+                    }
+                    if (slot < 0) {
+                        printf("  All 8 raster breakpoint slots used\n");
+                    } else {
+                        dbg->raster_bps[slot] = (int16_t)line;
+                        dbg->num_raster_bps++;
+                        printf("  Raster breakpoint #%d set at line %d\n",
+                               slot, line);
+                    }
+                }
+            }
+        }
+        else if (strcmp(cmd, "brd") == 0) {
+            if (!arg1[0]) {
+                printf("  Usage: brd <index>  (or `brd *` to clear all)\n");
+            } else if (arg1[0] == '*') {
+                for (int i = 0; i < 8; i++) dbg->raster_bps[i] = -1;
+                dbg->num_raster_bps = 0;
+                printf("  All raster breakpoints cleared\n");
+            } else {
+                int idx = atoi(arg1);
+                if (idx < 0 || idx >= 8 || dbg->raster_bps[idx] < 0) {
+                    printf("  Invalid raster breakpoint index\n");
+                } else {
+                    dbg->raster_bps[idx] = -1;
+                    dbg->num_raster_bps--;
+                    printf("  Raster breakpoint #%d removed\n", idx);
+                }
             }
         }
         /* ── WATCHPOINT ─────────────────────────────────── */

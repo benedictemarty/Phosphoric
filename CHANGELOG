@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.70-alpha] - 2026-06-07
+
+### Sprint 34d4 — Debug : raster-line breakpoints (P2-G audit)
+
+Item P2-G de l'audit gaps debug post-LOCI. Permet de breaker quand le
+balayage PAL atteint une ligne précise — utile pour debugger les effets
+HIRES / changements d'attributs / interruptions raster.
+
+#### Added
+
+- **`int emulator_t.frame_cycles`** : exposé par la boucle principale
+  (`main.c:1342`) après chaque `cpu_step`. Le debugger en dérive la
+  ligne courante via `frame_cycles / PAL_CYCLES_PER_LINE`.
+- **`int16_t debugger_t.raster_bps[8]`** + compteur + `last_raster_line`
+  trackeur de transition. 8 slots disponibles, range 0..311.
+- **`debugger_should_break`** : check des raster bps quand la ligne
+  change. Fire si une bp tombe dans `(prev_line, cur_line]` ; gère
+  correctement les wraps de frame (prev=311 → cur=0).
+- **REPL `br line`** : ajouter un raster bp.
+- **REPL `br`** : lister les raster bps actifs.
+- **REPL `brd N`** : supprimer un slot. `brd *` clear tout.
+
+Affichage à la triggering :
+```
+*** RASTER BREAK at line 100 (frame_cyc=6404) ***
+```
+
+#### Smoke test
+
+```
+dbg> br 100
+  Raster breakpoint #0 set at line 100
+dbg> c
+*** RASTER BREAK at line 100 (frame_cyc=6404) ***
+```
+
+#### Bilan série 34d
+
+4 sprints, 4 commits. Tous les items P0 et P1 livrés (parser symboles
+`0x` + résolution opérandes disasm + REPL `disk`/`acia`/`tape` + REPL
+`loci`) + P2-G raster bps. Reste seulement P2-F (rewind/single-step
+inverse), seul item M restant qui demande un savestate-ring compressé.
+
+#### Tests
+
+- 499 tests unitaires PASS (logique raster simple, smoke test live).
+- 5/5 scenarios E2E PASS via `make test-loci-e2e`.
+
+---
+
 ## [1.16.69-alpha] - 2026-06-07
 
 ### Sprint 34d3 — Debug REPL : commande `loci` (P0-B audit)

@@ -35,7 +35,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.69-alpha"
+#define EMU_VERSION "1.16.70-alpha"
 
 /**
  * @brief ORIC machine model
@@ -170,6 +170,11 @@ typedef struct emulator_s {
     bool fast_load;
     bool headless;
     int64_t max_cycles;
+
+    /* Sprint 34d4 (P2-G audit) — current cycle position within the PAL frame.
+     * Updated by the main emulation loop after each cpu_step so the debugger
+     * can derive the raster line via `frame_cycles / PAL_CYCLES_PER_LINE`. */
+    int frame_cycles;
 
     /* Screenshot options */
     const char* screenshot_file;
