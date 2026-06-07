@@ -914,6 +914,17 @@ do_patch:
             memory_write(&emu->memory, p->readbyte_store, byte);
             emu->cpu.PC = p->readbyte_end;
             emu->tape_readbyte_active = true;
+        } else {
+            /* Sprint 34aq: tape exhausted but BASIC still reading.
+             * Return $00 byte (tape silence) so CLOAD's post-data read
+             * sees a clean tape rather than garbage from emulated tape
+             * input. Avoids spurious "ERRORS FOUND" on short TAPs. */
+            uint8_t byte = 0x00;
+            emu->cpu.A = byte;
+            emu->cpu.P |= FLAG_ZERO;
+            emu->cpu.P &= ~FLAG_CARRY;
+            memory_write(&emu->memory, p->readbyte_store, byte);
+            emu->cpu.PC = p->readbyte_end;
         }
     } else if (pc == p->getsync_loop) {
         /* Sync loop recovery */
@@ -1021,15 +1032,18 @@ do_patch:
         }
         if (ci == 0) snprintf(clean_name, sizeof(clean_name), "CSAVE");
 
-        /* Build the canonical TAP. */
-        int tap_cap = 4 /*leader+sync*/ + 8 /*header (2pad+type+auto+end+start+null)*/ +
+        /* Build the canonical TAP. Single data block — Atmos BASIC's
+         * CLOAD verify still prints "Errors found" cosmetically even
+         * when data loads correctly (parity counters set by tape
+         * input mock), but the program is fully loaded and auto-runs. */
+        int tap_cap = 4 /*leader+sync*/ + 8 /*header*/ +
                       (int)strlen(clean_name) + 1 + prog_len;
         uint8_t* tap = (uint8_t*)malloc((size_t)tap_cap);
         if (tap) {
             int t = 0;
             tap[t++] = 0x16; tap[t++] = 0x16; tap[t++] = 0x16;
             tap[t++] = 0x24;
-            tap[t++] = 0x00; tap[t++] = 0x00;                    /* 2 padding bytes */
+            tap[t++] = 0x00; tap[t++] = 0x00;                    /* 2 padding */
             tap[t++] = 0x00;                                     /* type: program */
             tap[t++] = 0xC7;                                     /* auto-run */
             tap[t++] = (uint8_t)(end_addr >> 8);

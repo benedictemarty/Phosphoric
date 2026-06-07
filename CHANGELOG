@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Aucune régression sur 470 tests (108 LOCI + 10 SDIMG + 12 SDIMG
   write + ~340 autres).
 
+#### Limitation connue
+- Le message "Errors found" reste affiché par BASIC Atmos après
+  CLOAD malgré le bon chargement (LIST affiche le programme et
+  l'auto-run s'exécute). Cause : compteurs de parité tape dans le
+  ROM mis à jour par notre handler EOT qui ne simule pas le silence
+  bit-exact. Cosmétique uniquement — données et exécution OK.
+
 ---
 
 ## [1.16.42-alpha] - 2026-06-07
