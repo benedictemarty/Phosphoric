@@ -35,7 +35,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.75-alpha"
+#define EMU_VERSION "1.16.76-alpha"
 
 /**
  * @brief ORIC machine model
@@ -185,6 +185,12 @@ typedef struct emulator_s {
      * reason=user` instead of the default `reason=break` and reset this
      * flag. Lets the IDE see exactly one event per pause cycle. */
     bool control_async_pause_pending;
+
+    /* Sprint 36a — `--bench` flag : at exit, emulator_run prints a
+     * single-line throughput report (cycles, wall_ms, MHz_equivalent,
+     * speed_ratio vs real ORIC) to stdout. Implies --headless so the
+     * SDL2 frame limiter doesn't cap the measurement. */
+    bool bench_mode;
 
     /* Screenshot options */
     const char* screenshot_file;

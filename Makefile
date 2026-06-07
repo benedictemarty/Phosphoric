@@ -108,7 +108,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -341,6 +341,14 @@ test-coverage: $(TEST_COVERAGE_SRCS)
 # Skipped gracefully when required ROM/disk assets are absent.
 test-loci-e2e:
 	@bash tests/integration/test_loci_sedoric_e2e.sh
+
+# Sprint 36a — throughput benchmark. Runs 4 scenarios headless and
+# reports MHz-equivalent / speed ratio vs real ORIC (1 MHz).
+# Usage: `make bench`               human-readable table
+#        `make bench BENCH_TSV=1`   tab-separated for tracking
+#        `make bench CYCLES=200000000`  longer run
+bench:
+	@bash tools/bench.sh $(if $(BENCH_TSV),--tsv,)
 
 tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
 	@echo ""

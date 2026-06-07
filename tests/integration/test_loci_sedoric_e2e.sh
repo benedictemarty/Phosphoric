@@ -277,6 +277,17 @@ if skip_if_missing "$NATIVE_ROM"; then
         echo "  [SKIP] 35c Python smoke client (python3 not available)"
         skipped=$((skipped+1))
     fi
+
+    # Sprint 36a — `--bench` harness emits a parseable single-line report.
+    BENCH_OUT=$(timeout 5 "$EMU" -r "$NATIVE_ROM" --bench -c 1000000 2>/dev/null)
+    if echo "$BENCH_OUT" | grep -qE "^BENCH cycles=[0-9]+ frames=[0-9]+ wall_ms=[0-9.]+ mhz_eq=[0-9.]+ speed_ratio=[0-9.]+x frame_us=[0-9.]+$"; then
+        echo "  [PASS] 36a --bench produces parseable BENCH line"
+        pass=$((pass+1))
+    else
+        echo "  [FAIL] 36a --bench"
+        echo "$BENCH_OUT" | head -5 | sed 's/^/    /'
+        fail=$((fail+1))
+    fi
 fi
 
 echo ""

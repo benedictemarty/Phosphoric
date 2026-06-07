@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.76-alpha] - 2026-06-07
+
+### Sprint 36a — Performance benchmark harness
+
+Suite à l'item dormant « <5% CPU overhead on modern hardware »
+identifié au backlog post-35c. Maintenant mesuré honnêtement.
+
+#### Added — `--bench` CLI flag
+
+À l'exit, l'émulateur imprime sur stdout une ligne parseable :
+
+```
+BENCH cycles=N frames=N wall_ms=X mhz_eq=Y speed_ratio=Zx frame_us=W
+```
+
+- `mhz_eq` : équivalent MHz émulé (`cycles / wall_time`). >1.0 = plus
+  rapide que real-time, <1.0 = plus lent.
+- `speed_ratio` : multiplicateur vs real ORIC (1 MHz).
+- `frame_us` : temps CPU réel par frame émulée (target 50 Hz = 20 ms,
+  donc une valeur de 200 µs = 1% d'overhead réel).
+
+Logs routés vers stderr en mode bench (comme `--control`) pour que
+stdout reste un canal de mesure propre.
+
+#### Added — `tools/bench.sh` + `make bench`
+
+Script qui lance 4 scenarios représentatifs sur 100M cycles par
+défaut (≈ 100 s de temps émulé) et tabule :
+
+| Scenario | Workload |
+|----------|----------|
+| `basic-idle` | BASIC ready loop (CPU + ROM read, no I/O) |
+| `sedoric-native` | Microdisc + Sedoric V4 (FDC + video + audio) |
+| `sedoric-loci` | Sedoric V4 via LOCI bridge (mesure overhead LOCI) |
+| `tape-007-fastload` | 007 game fast-load + intro (PSG + HIRES heavy) |
+
+Variantes :
+- `make bench` — table human-readable
+- `make bench BENCH_TSV=1` — TSV pour tracking
+- `make bench CYCLES=200000000` — run plus long
+
+#### Résultats baseline (Linux x86_64, GCC 14, -O2)
+
+100M cycles par scenario :
+
+| Scenario | wall_ms | mhz_eq | speed | frame_us |
+|----------|--------:|-------:|------:|---------:|
+| basic-idle | 1005 | 99.5 | 99.5× | 201 |
+| sedoric-native | 1072 | 93.3 | 93.3× | 214 |
+| sedoric-loci | 1152 | 86.8 | 86.8× | 230 |
+| tape-007-fastload | 1226 | 81.6 | 81.6× | 245 |
+
+Overhead réel à 1% (basic-idle = 201 µs sur 20 000 µs frame budget).
+Largement sous le target historique de 5%. La pile LOCI ajoute ~7%
+d'overhead vs Microdisc natif équivalent.
+
+#### Régression E2E
+
+Scenario `36a --bench produces parseable BENCH line` ajouté au script
+E2E. Vérifie le format de la ligne (parsing strict). **13/13
+scenarios E2E PASS**.
+
+#### Tests
+
+- 499 tests unitaires PASS.
+- 13/13 scenarios E2E PASS.
+
+---
+
 ## [1.16.75-alpha] - 2026-06-07
 
 ### Sprint 35c — `bread` binary framing + Python smoke client + hardening

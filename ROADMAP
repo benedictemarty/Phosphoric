@@ -795,6 +795,14 @@ Référence : `docs/control_protocol.md`
 - [ ] `bread <addr> <len>` (framing binaire) — reporté à 35c selon scope
 - [ ] Client de référence Python (livré par OricForge en parallèle)
 
+### Sprint 36a: Performance benchmark harness (v1.16.76-alpha) - DONE
+- [x] CLI flag `--bench` : ligne `BENCH cycles=… mhz_eq=… speed_ratio=…x frame_us=…` à l'exit
+- [x] `tools/bench.sh` : 4 scenarios (basic-idle, sedoric-native, sedoric-loci, tape-007-fastload)
+- [x] Cible `make bench` (variantes `BENCH_TSV=1`, `CYCLES=…`)
+- [x] Baseline mesurée : ~99.5x real-time sur basic-idle, ~81-93x sur charges réelles
+- [x] Overhead historique <5% confirmé : ~1% sur basic-idle (201 µs / 20 ms frame budget)
+- [x] Scenario E2E `36a --bench produces parseable BENCH line` (13/13 E2E PASS)
+
 ### Sprint 35c: Hardening + intégration OricForge (v1.16.75-alpha) - DONE
 - [x] `bread <addr> <len>` framing binaire length-prefixed (1..65536 octets)
 - [x] Client Python `tests/integration/phos_smoke_client.py` (~250 LOC)
@@ -1191,7 +1199,7 @@ Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`
 - [x] Cycle-accurate timing
 - [x] 100% game compatibility (40/40 programs tested: 25 TAP + 11 DSK + 4 demos)
 - [x] Code coverage measured: 72.2% global, 78.9% excluding interactive REPL
-- [ ] <5% CPU overhead on modern hardware
+- [x] <5% CPU overhead on modern hardware — mesuré sprint 36a : ~1% overhead réel (201 µs / 20000 µs frame budget, basic-idle). Voir `make bench`.
 
 ### Quality
 - [x] 330 tests passing (make tests)

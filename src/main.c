@@ -267,6 +267,8 @@ static void print_usage(const char* program_name) {
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
     printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");
     printf("                             logs to stderr, see docs/control_protocol.md)\n");
+    printf("      --bench                Headless throughput bench: prints `BENCH cycles=... mhz_eq=... ...`\n");
+    printf("                             on stdout at exit. Use with -c N for fixed-cycle run.\n");
     printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
@@ -1304,6 +1306,13 @@ static void emulator_run(emulator_t* emu) {
         control_emit_ready(emu);
     }
 
+    /* Sprint 36a — start wall clock for --bench. CLOCK_MONOTONIC is what
+     * we want : insensitive to NTP / RTC adjustments. */
+    struct timespec bench_t0 = {0};
+    if (emu->bench_mode) {
+        clock_gettime(CLOCK_MONOTONIC, &bench_t0);
+    }
+
     uint64_t total_executed = 0;
     uint64_t frame_count = 0;
     bool screenshot_at_done = false;
@@ -1956,6 +1965,26 @@ static void emulator_run(emulator_t* emu) {
     char state[128];
     cpu_get_state_string(&emu->cpu, state, sizeof(state));
     log_info("Final CPU state: %s", state);
+
+    /* Sprint 36a — single-line bench report on stdout. Easy to grep from
+     * scripts. ORIC clock is 1 MHz, so `mhz_eq` of 1.0 = real-time,
+     * 50.0 = 50x real-time. */
+    if (emu->bench_mode) {
+        struct timespec t1;
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double wall_s = (double)(t1.tv_sec - bench_t0.tv_sec)
+                      + (double)(t1.tv_nsec - bench_t0.tv_nsec) * 1e-9;
+        if (wall_s <= 0.0) wall_s = 1e-9;
+        double mhz_eq = (double)total_executed / (wall_s * 1e6);
+        double speed_ratio = mhz_eq / 1.0;   /* ORIC is 1 MHz */
+        double frame_us = wall_s * 1e6 / (frame_count > 0 ? (double)frame_count : 1.0);
+        printf("BENCH cycles=%llu frames=%llu wall_ms=%.3f mhz_eq=%.2f "
+               "speed_ratio=%.1fx frame_us=%.1f\n",
+               (unsigned long long)total_executed,
+               (unsigned long long)frame_count,
+               wall_s * 1000.0, mhz_eq, speed_ratio, frame_us);
+        fflush(stdout);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -1999,6 +2028,7 @@ int main(int argc, char* argv[]) {
     const char* symbols_file = NULL;
     bool tui_mode = false;
     bool control_mode = false;
+    bool bench_mode = false;
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
     const char* loci_sdimg_path = NULL;
@@ -2013,7 +2043,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2065,6 +2095,7 @@ int main(int argc, char* argv[]) {
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
         {"control",             no_argument,       0, OPT_CONTROL},
+        {"bench",               no_argument,       0, OPT_BENCH},
         {"help",                no_argument,       0, '?'},
         {0, 0, 0, 0}
     };
@@ -2149,6 +2180,13 @@ int main(int argc, char* argv[]) {
                 headless = true;
                 /* Redirect logs to stderr as early as possible so the
                  * init banner doesn't pollute the protocol channel. */
+                log_set_stream(stderr);
+                break;
+            case OPT_BENCH:
+                bench_mode = true;
+                headless = true;
+                /* Logs to stderr so the single-line BENCH report on
+                 * stdout is easy to grep / pipe / parse. */
                 log_set_stream(stderr);
                 break;
             case OPT_LOCI: loci_enabled = true; break;
@@ -2434,6 +2472,7 @@ int main(int argc, char* argv[]) {
      * stdout stays a clean protocol channel. Forces headless so SDL output
      * never collides with stdout traffic. */
     emu.control_mode = control_mode;
+    emu.bench_mode = bench_mode;
     if (control_mode) {
         log_set_stream(stderr);
         emu.headless = true;
