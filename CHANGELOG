@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.69-alpha] - 2026-06-07
+
+### Sprint 34d3 — Debug REPL : commande `loci` (P0-B audit)
+
+Item P0-B le plus impactant de l'audit gaps debug post-LOCI
+(`docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`). Les 2 780 LOC de
+LOCI (`loci_core` + `loci_fs` + `loci_bus` + `loci_boot`) avaient
+**zéro surface debugger** avant ce sprint.
+
+#### Added
+
+Nouvelle commande REPL `loci` (~150 LOC, `debugger.c:show_loci_state`)
+qui imprime un snapshot complet de l'état MIA :
+
+- **Activité** : `active_op`, `errno` numérique, registres de retour
+  `A`/`X`/`SREG`, `BUSY`.
+- **Ops dispatchées** : compteur total cumulé + top-5 par `op_count[op]`.
+- **xstack** : pointeur courant, taux d'occupation (`used/256`),
+  preview des 16 premiers octets en cours d'utilisation.
+- **xram windows** : adresses + step signé des fenêtres DMA `0` et `1`,
+  plus les pointeurs HID `kbd_xram`/`mou_xram`/`pad_xram`.
+- **Sandbox + SDIMG** : `flash_root` effectif, statut backend SDIMG.
+- **File handles** : liste des fds ouverts avec type (POSIX/SDIMG).
+- **Dir handles** : liste avec chemin résolu (R1 sprint 34c).
+- **Mount table** : 4 drives + TAP + ROM avec leur path host.
+- **TAP backend** : position courante, pourcentage, `cmd`/`stat`.
+- **DSK bus** : drive sélectionné, CTRL, INTRQ/INTENA, et pour chaque
+  drive monté la taille / tracks / sec/track / format (MFM ou raw).
+- **boot_settings** : flags décodés du dernier `MIA_BOOT` (FDC, TAP,
+  B11, etc.).
+
+#### Smoke test
+
+```
+dbg> loci
+  LOCI MIA State (enabled=1):
+    active_op=$00  errno=0  A=$00 X=$00 SREG=$0000  BUSY=$00
+    Ops dispatched: 42 total
+    Top:  $14×12  $18×8  $A0×1
+    xstack_ptr=$0100 (used 0/256):
+    xram window0 addr=$0000 step=+0   window1 addr=$0000 step=+0
+    HID xram: kbd=$FFFF mou=$FFFF pad=$FFFF
+    flash_root="(cwd)"  sdimg=attached
+    File handles: 0 open
+    Dir handles: 0 open
+    Mounts: 1/6 active
+      [0 drive A] SEDO40u.DSK
+    DSK selected=A  CTRL=$00  INTRQ=clear INTENA=0
+      A: 696320 bytes, 80 tracks, 17 sec/track  MFM
+```
+
+#### Backlog 34d après ce sprint
+
+Tous les items P0/P1 du backlog sont livrés. Restent les 2 items P2
+(rewind/single-step inverse + raster-line breakpoint), tous deux M.
+
+#### Tests
+
+- 499 tests unitaires PASS (inchangé — fonction REPL, smoke test live).
+- 5/5 scenarios E2E PASS via `make test-loci-e2e`.
+
+---
+
 ## [1.16.68-alpha] - 2026-06-07
 
 ### Sprint 34d2 — Debug REPL : commandes `disk` / `acia` / `tape`

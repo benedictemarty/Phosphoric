@@ -777,7 +777,7 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 Référence : `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`
 - [x] Fix bug parser symboles Format A préfixe `0x` non comptabilisé (`symbols.c:hex_parse`) — livré v1.16.67-alpha
 - [x] P0-A : résolution des symboles sur opérandes du disasm (`debugger.c:append_operand_symbols`) — livré v1.16.67-alpha
-- [ ] P0-B : commande REPL `loci` (dump op courant + handles + mounts + errno) — M (~120 LOC)
+- [x] P0-B : commande REPL `loci` (snapshot complet MIA : ops, xstack, xram, fds, mounts, TAP/DSK) — livré v1.16.69-alpha
 - [x] P1-C : commande REPL `disk`/`fdc` (Microdisc + WD1793 + 4 drives) — livré v1.16.68-alpha
 - [x] P1-D : commande REPL `acia`/`serial` (6551 + signaux + FIFO + backend) — livré v1.16.68-alpha
 - [x] P1-E : commande REPL `tape`/`cassette` (position, status, preview bytes) — livré v1.16.68-alpha

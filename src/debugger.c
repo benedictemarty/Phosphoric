@@ -566,6 +566,169 @@ static void show_tape_state(emulator_t* emu) {
     }
 }
 
+/* Sprint 34d3 P0-B — Full LOCI introspection (MIA register file, xstack,
+ * xram windows, fd/dir tables, mount table, TAP/DSK backend, errno, top
+ * ops by count). 2780 LOC of LOCI had zero debugger surface before. */
+static void show_loci_state(emulator_t* emu) {
+    if (!emu->has_loci) {
+        printf("  LOCI: not active (use --loci or --loci-sdimg PATH)\n");
+        return;
+    }
+    loci_t* l = &emu->loci;
+
+    printf("  LOCI MIA State (enabled=%d):\n", l->enabled);
+
+    /* Activity: current op + errno + return regs. */
+    uint16_t err = (uint16_t)l->regs[LOCI_REG_API_ERRNO_LO]
+                 | ((uint16_t)l->regs[LOCI_REG_API_ERRNO_HI] << 8);
+    printf("    active_op=$%02X  errno=%u  A=$%02X X=$%02X "
+           "SREG=$%02X%02X  BUSY=$%02X\n",
+           l->active_op, err,
+           l->regs[LOCI_REG_API_A], l->regs[LOCI_REG_API_X],
+           l->regs[LOCI_REG_API_SREG_HI], l->regs[LOCI_REG_API_SREG],
+           l->regs[LOCI_REG_BUSY]);
+
+    /* Top 5 ops by count. */
+    uint64_t total = 0;
+    int top[5] = {-1, -1, -1, -1, -1};
+    for (int op = 1; op < 256; op++) {
+        total += l->op_count[op];
+        for (int s = 0; s < 5; s++) {
+            if (top[s] < 0 ||
+                l->op_count[op] > l->op_count[top[s]]) {
+                for (int m = 4; m > s; m--) top[m] = top[m - 1];
+                top[s] = op;
+                break;
+            }
+        }
+    }
+    printf("    Ops dispatched: %llu total\n", (unsigned long long)total);
+    if (total > 0) {
+        printf("    Top:");
+        for (int s = 0; s < 5 && top[s] >= 0 &&
+                       l->op_count[top[s]] > 0; s++) {
+            printf("  $%02X×%llu", (uint8_t)top[s],
+                   (unsigned long long)l->op_count[top[s]]);
+        }
+        printf("\n");
+    }
+
+    /* xstack — print pointer + a sample of the top bytes. */
+    printf("    xstack_ptr=$%04X (used %u/%u):", l->xstack_ptr,
+           LOCI_XSTACK_SIZE - l->xstack_ptr, LOCI_XSTACK_SIZE);
+    int used = LOCI_XSTACK_SIZE - l->xstack_ptr;
+    int show = used < 16 ? used : 16;
+    for (int i = 0; i < show; i++)
+        printf(" %02X", l->xstack[l->xstack_ptr + i]);
+    if (used > 16) printf(" …");
+    printf("\n");
+
+    /* xram windows. */
+    uint16_t a0 = (uint16_t)l->regs[LOCI_REG_ADDR0_LO]
+                | ((uint16_t)l->regs[LOCI_REG_ADDR0_HI] << 8);
+    uint16_t a1 = (uint16_t)l->regs[LOCI_REG_ADDR1_LO]
+                | ((uint16_t)l->regs[LOCI_REG_ADDR1_HI] << 8);
+    int8_t s0 = (int8_t)l->regs[LOCI_REG_STEP0];
+    int8_t s1 = (int8_t)l->regs[LOCI_REG_STEP1];
+    printf("    xram window0 addr=$%04X step=%+d   window1 addr=$%04X step=%+d\n",
+           a0, s0, a1, s1);
+    printf("    HID xram: kbd=$%04X mou=$%04X pad=$%04X\n",
+           l->kbd_xram, l->mou_xram, l->pad_xram);
+
+    /* Sandbox + SDIMG backend. */
+    printf("    flash_root=\"%s\"  sdimg=%s\n",
+           l->flash_root[0] ? l->flash_root : "(cwd)",
+           l->sdimg ? "attached" : "none");
+
+    /* File handles. */
+    int fd_active = 0;
+    for (int i = 0; i < LOCI_FD_MAX; i++)
+        if (l->fd_kind[i] != 0) fd_active++;
+    if (fd_active > 0) {
+        printf("    File handles: %d/%d open\n", fd_active, LOCI_FD_MAX);
+        for (int i = 0; i < LOCI_FD_MAX; i++) {
+            if (l->fd_kind[i] != 0) {
+                printf("      fd=%d  %s\n", i + LOCI_FD_OFFSET,
+                       l->fd_kind[i] == 1 ? "POSIX" :
+                       l->fd_kind[i] == 2 ? "SDIMG" : "?");
+            }
+        }
+    } else {
+        printf("    File handles: 0 open\n");
+    }
+
+    /* Dir handles. */
+    int dir_active = 0;
+    for (int i = 0; i < LOCI_DIR_MAX; i++)
+        if (l->dir_kind[i] != 0) dir_active++;
+    if (dir_active > 0) {
+        printf("    Dir handles: %d/%d open\n", dir_active, LOCI_DIR_MAX);
+        for (int i = 0; i < LOCI_DIR_MAX; i++) {
+            if (l->dir_kind[i] != 0) {
+                printf("      dir_fd=%d  path=\"%s\"\n",
+                       i + LOCI_DIR_OFFSET,
+                       l->dirs_path[i][0] ? l->dirs_path[i] : "(none)");
+            }
+        }
+    } else {
+        printf("    Dir handles: 0 open\n");
+    }
+
+    /* Mount table. */
+    static const char* mnt_label[LOCI_MNT_MAX] = {
+        "drive A", "drive B", "drive C", "drive D", "TAP", "ROM" };
+    int mnt_active = 0;
+    for (int i = 0; i < LOCI_MNT_MAX; i++)
+        if (l->mnt_mounted[i]) mnt_active++;
+    if (mnt_active > 0) {
+        printf("    Mounts: %d/%d active\n", mnt_active, LOCI_MNT_MAX);
+        for (int i = 0; i < LOCI_MNT_MAX; i++) {
+            if (l->mnt_mounted[i]) {
+                printf("      [%d %-8s] %s\n", i, mnt_label[i],
+                       l->mnt_paths[i][0] ? l->mnt_paths[i] : "(no path)");
+            }
+        }
+    } else {
+        printf("    Mounts: 0 active\n");
+    }
+
+    /* TAP backend. */
+    if (l->tap_fp) {
+        double pct = l->tap_size > 0 ? 100.0 * l->tap_counter / l->tap_size : 0.0;
+        printf("    TAP: %u/%u bytes (%.1f%%) cmd=$%02X stat=$%02X\n",
+               l->tap_counter, l->tap_size, pct, l->tap_cmd, l->tap_stat);
+    } else {
+        printf("    TAP: idle\n");
+    }
+
+    /* DSK bus selection + per-drive status. */
+    printf("    DSK selected=%c  CTRL=$%02X  INTRQ=%s INTENA=%d\n",
+           'A' + l->dsk_selected, l->dsk_ctrl,
+           l->dsk_intrq == 0x00 ? "asserted" : "clear",
+           l->dsk_intena);
+    for (int i = 0; i < 4; i++) {
+        if (l->dsk_image[i]) {
+            printf("      %c: %u bytes, %d tracks, %d sec/track  %s%s\n",
+                   'A' + i, l->dsk_image_size[i],
+                   l->dsk_tracks[i], l->dsk_sectors[i],
+                   l->dsk_is_mfm[i] ? "MFM" : "raw",
+                   l->dsk_host_path[i][0] ? "" : " (no path)");
+        }
+    }
+
+    /* Boot settings (last MIA_BOOT). */
+    if (l->boot_settings) {
+        printf("    boot_settings=$%02X:%s%s%s%s%s%s%s\n", l->boot_settings,
+               (l->boot_settings & LOCI_BOOT_FDC)     ? " FDC"     : "",
+               (l->boot_settings & LOCI_BOOT_TAP)     ? " TAP"     : "",
+               (l->boot_settings & LOCI_BOOT_B11)     ? " B11"     : "",
+               (l->boot_settings & LOCI_BOOT_TAP_BIT) ? " TAP_BIT" : "",
+               (l->boot_settings & LOCI_BOOT_TAP_ALD) ? " TAP_ALD" : "",
+               (l->boot_settings & LOCI_BOOT_RESUME)  ? " RESUME"  : "",
+               (l->boot_settings & LOCI_BOOT_FAST)    ? " FAST"    : "");
+    }
+}
+
 static void show_help(void) {
     printf("\n  Debugger Commands:\n");
     printf("  ─────────────────────────────────────────────────\n");
@@ -593,6 +756,7 @@ static void show_help(void) {
     printf("  disk / fdc        Show Microdisc WD1793 + 4 drives\n");
     printf("  acia / serial     Show ACIA 6551 registers + signals + FIFO\n");
     printf("  tape / cassette   Show tape position, status, next bytes\n");
+    printf("  loci              Show LOCI MIA full state (regs, fds, mounts, DSK/TAP)\n");
     printf("  stack             Show stack contents\n");
     printf("  set reg val       Set register (A,X,Y,SP,PC,P)\n");
     printf("  sym [name|addr]   List symbols / resolve name or address\n");
@@ -934,6 +1098,10 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         /* ── TAPE / CASSETTE STATE ─────────────────────── */
         else if (strcmp(cmd, "tape") == 0 || strcmp(cmd, "cassette") == 0) {
             show_tape_state(emu);
+        }
+        /* ── LOCI MIA STATE (sprint 34d3) ───────────────── */
+        else if (strcmp(cmd, "loci") == 0) {
+            show_loci_state(emu);
         }
         /* ── STACK ──────────────────────────────────────── */
         else if (strcmp(cmd, "stack") == 0) {
