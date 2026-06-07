@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.60-alpha] - 2026-06-07
+
+### Sprint 34b5 — E2E pipe TAP LOCI : 007 « Dangereusement Vôtre »
+
+#### Validation E2E
+
+Étend la régression hors DSK : valide aussi le pipe **TAP+ROM-swap LOCI**
+(distinct du pipe DSK couvert par 34b0-b4) en chargeant un jeu
+commercial complet via la séquence TUI LOCI :
+
+1. `t` → tape drive section
+2. SPACE → file picker
+3. SPACE → 007.TAP sélectionné (premier alphabétique)
+4. ESC → MIA_BOOT + ROM swap BASIC 1.1
+5. `CLOAD""` → 3 getsync multi-block (offsets 0, 137, 8322)
+6. Auto-run → écran intro 007 « Dangereusement Vôtre » (DOMARK 1985)
+
+Comparaison écran ($BB80, 1120 octets) vs boot natif fast-load
+(`-r basic11b.rom -t 007.tap -f`) : **0/1120 byte diff**.
+
+#### Added
+
+- Scenario `34b5 — 007 « Dangereusement Vôtre » via LOCI/TAP` dans
+  `tests/integration/test_loci_sedoric_e2e.sh`.
+- Garde-fou contre régression du pipe TAP LOCI (CLOAD multi-block
+  getsync, fastload via ROM patches).
+
+#### Tests
+
+- 484 tests unitaires PASS (suite standard inchangée).
+- 5/5 scenarios E2E PASS via `make test-loci-e2e`.
+
+---
+
 ## [1.16.59-alpha] - 2026-06-07
 
 ### Sprint 34b4 — RUN after LOAD via LOCI (exec du programme rechargé)

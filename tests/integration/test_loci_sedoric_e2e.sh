@@ -144,6 +144,28 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
     rm -f "$NAT_BIN" "$LOC_BIN"
 fi
 
+# ── Scenario 34b5 — 007 TAP via LOCI (game load) ──────────────────
+echo ""
+echo "Scenario 34b5 — 007 « Dangereusement Vôtre » via LOCI/TAP"
+TAP=tapes/007.tap
+if skip_if_missing "$NATIVE_ROM" "$LOCI_ROM" "$SDIMG" "$TAP"; then
+    NAT_BIN=$(mktemp)
+    LOC_BIN=$(mktemp)
+    # Native baseline: BASIC 1.1 + fast-load of 007.tap.
+    "$EMU" -r "$NATIVE_ROM" -t "$TAP" -f \
+        --headless -c 30000000 \
+        --dump-ram-at 29000000:"$NAT_BIN" >/dev/null 2>&1
+    # LOCI: TUI → 't' tape drive → SPACE picker → SPACE select (007.TAP
+    # is the alphabetically-first TAP on loci_demo.img) → ESC = MIA_BOOT
+    # → ROM swap BASIC 1.1 → CLOAD"" → auto-run.
+    "$EMU" -r "$LOCI_ROM" --loci --loci-sdimg "$SDIMG" \
+        --headless -c 60000000 \
+        --type-keys '15000000:\p3t\p2 \p2 \p2\e\p9\p1CLOAD""\n\p9\p9\p9' \
+        --dump-ram-at 55000000:"$LOC_BIN" >/dev/null 2>&1
+    cmp_region "34b5 screen text (007 intro)" "$NAT_BIN" "$LOC_BIN" $((0xBB80)) 1120
+    rm -f "$NAT_BIN" "$LOC_BIN"
+fi
+
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  Results: $pass passed, $fail failed, $skipped skipped"

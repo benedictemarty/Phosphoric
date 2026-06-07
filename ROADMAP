@@ -773,6 +773,13 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] STAT reporte NOT_READY si pas de tape
 - [x] 10 nouveaux tests test-loci
 
+### Sprint 34b5: E2E pipe TAP LOCI — 007 jeu commercial (v1.16.60-alpha) - DONE
+- [x] Étend la régression au pipe TAP+ROM-swap LOCI (différent du pipe DSK 34b0-b4)
+- [x] 007 « Dangereusement Vôtre » (DOMARK 1985) chargé via TUI LOCI : `t/SPACE/SPACE/ESC` + `CLOAD""` auto-run
+- [x] Écran intro 100 % identique (0/1120 byte diff) vs boot natif fast-load (`-t 007.tap -f`)
+- [x] Scenario `34b5` ajouté au script E2E
+- [x] 5/5 scenarios E2E PASS ; 484 tests unitaires PASS
+
 ### Sprint 34b4: RUN after LOAD via LOCI (exec round-trip) (v1.16.59-alpha) - DONE
 - [x] `RUN` après LOAD via LOCI exécute le programme rechargé : écran « HELLO LOCI » affiché
 - [x] Test différentiel native vs LOCI : écran post-RUN 100 % identique (0/1120 byte diff)
