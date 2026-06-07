@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.16.63-alpha
-Build Status: ALPHA (Sprint 34c R3 : persistance écritures DSK raw vers fichier hôte ; 488 tests + 5 E2E)
+Version: 1.16.64-alpha
+Build Status: ALPHA (Sprint 34c R5 : tests errno + fix bug op_rename ; 497 tests + 5 E2E)
 Last Updated: 2026-06-07
 
 ================================================================

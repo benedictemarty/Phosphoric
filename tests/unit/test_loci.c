@@ -901,6 +901,157 @@ TEST(test_path_rejects_dotdot_component) {
     loci_cleanup(&l);
 }
 
+/* ─── Sprint 34c R5 — error paths matrix ─────────────────────────
+ * The senior review post-34b5 noted the errno surface of LOCI ops is
+ * thinly tested. These exercise the 5 main errno classes (EBADF, EINVAL,
+ * ENOENT, EACCES) across ops that didn't have a dedicated coverage:
+ * READ/WRITE_XSTACK/LSEEK (EBADF), LSEEK (EINVAL), UNLINK/RENAME
+ * (ENOENT), READDIR (EBADF), MKDIR (EACCES). */
+
+static uint16_t errno_lo(loci_t* l) {
+    return (uint16_t)(l->regs[LOCI_REG_API_ERRNO_LO]
+                    | ((uint16_t)l->regs[LOCI_REG_API_ERRNO_HI] << 8));
+}
+
+TEST(test_op_read_xstack_bad_fd_ebadf) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Push uint16 count = 4 (lo first → push hi then lo). */
+    push_u16(&l, 4);
+    l.regs[LOCI_REG_API_A] = 99;   /* not allocated */
+    loci_write(&l, 0x03AF, LOCI_OP_READ_XSTACK);
+    ASSERT_EQ(errno_lo(&l), LOCI_EBADF);
+    loci_cleanup(&l);
+}
+
+TEST(test_op_write_xstack_bad_fd_ebadf) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Push some payload + count = 1. */
+    loci_write(&l, 0x03AC, 'X');
+    push_u16(&l, 1);
+    l.regs[LOCI_REG_API_A] = 99;
+    loci_write(&l, 0x03AF, LOCI_OP_WRITE_XSTACK);
+    ASSERT_EQ(errno_lo(&l), LOCI_EBADF);
+    loci_cleanup(&l);
+}
+
+TEST(test_op_lseek_bad_fd_ebadf) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Push int32 offset (4 bytes) + uint8 whence (=0 SEEK_SET). */
+    loci_write(&l, 0x03AC, 0);   /* whence */
+    loci_write(&l, 0x03AC, 0);   /* offset[3] hi */
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);   /* offset[0] lo */
+    l.regs[LOCI_REG_API_A] = 99;
+    loci_write(&l, 0x03AF, LOCI_OP_LSEEK);
+    ASSERT_EQ(errno_lo(&l), LOCI_EBADF);
+    loci_cleanup(&l);
+}
+
+TEST(test_op_lseek_bad_whence_einval) {
+    char* tmpdir = make_tmpdir();
+    char path[300]; snprintf(path, sizeof(path), "%s/a.bin", tmpdir);
+    FILE* fp = fopen(path, "wb"); fwrite("xyz", 1, 3, fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "a.bin");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);
+
+    /* whence = 5 → invalid (only 0/1/2 accepted). */
+    loci_write(&l, 0x03AC, 5);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    loci_write(&l, 0x03AC, 0);
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_LSEEK);
+    ASSERT_EQ(errno_lo(&l), LOCI_EINVAL);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    unlink(path); rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_op_unlink_missing_enoent) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "does_not_exist.bin");
+    loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
+    ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_op_rename_missing_enoent) {
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    /* xstack : new path on top, old path below — same order as op_open
+     * comment in loci.c:1431. */
+    push_path(&l, "old_missing.bin");
+    push_path(&l, "newname.bin");
+    loci_write(&l, 0x03AF, LOCI_OP_RENAME);
+    ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+/* Sprint 34c R5 — happy path for op_rename. The bug fix is for both
+ * pop calls to read distinct strings (previously the second pop saw a
+ * zeroed xstack and returned EINVAL, making rename always fail). */
+TEST(test_op_rename_renames_existing) {
+    char* tmpdir = make_tmpdir();
+    char src[300], dst[300];
+    snprintf(src, sizeof(src), "%s/from.bin", tmpdir);
+    snprintf(dst, sizeof(dst), "%s/to.bin",   tmpdir);
+    FILE* fp = fopen(src, "wb"); fwrite("RENAME", 1, 6, fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "from.bin");   /* old on bottom */
+    push_path(&l, "to.bin");     /* new on top */
+    loci_write(&l, 0x03AF, LOCI_OP_RENAME);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+
+    struct stat st;
+    ASSERT_TRUE(stat(src, &st) != 0);    /* source gone */
+    ASSERT_EQ(stat(dst, &st), 0);
+    ASSERT_EQ(st.st_size, 6);
+
+    unlink(dst); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_op_readdir_bad_fd_ebadf) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 99;
+    loci_write(&l, 0x03AF, LOCI_OP_READDIR);
+    ASSERT_EQ(errno_lo(&l), LOCI_EBADF);
+    loci_cleanup(&l);
+}
+
+TEST(test_op_mkdir_traversal_eacces) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, "/tmp");
+    /* Embed ".." as a real path component → rejected by resolve_path. */
+    push_path(&l, "..");
+    loci_write(&l, 0x03AF, LOCI_OP_MKDIR);
+    ASSERT_EQ(errno_lo(&l), LOCI_EACCES);
+    loci_cleanup(&l);
+}
+
 TEST(test_mkdir_creates_dir) {
     char* tmpdir = make_tmpdir();
     loci_t l; loci_init(&l);
@@ -2431,6 +2582,15 @@ int main(void) {
     RUN(test_readdir_subdir_uses_correct_base);
     RUN(test_path_allows_double_dot_in_name);
     RUN(test_path_rejects_dotdot_component);
+    RUN(test_op_read_xstack_bad_fd_ebadf);
+    RUN(test_op_write_xstack_bad_fd_ebadf);
+    RUN(test_op_lseek_bad_fd_ebadf);
+    RUN(test_op_lseek_bad_whence_einval);
+    RUN(test_op_unlink_missing_enoent);
+    RUN(test_op_rename_missing_enoent);
+    RUN(test_op_rename_renames_existing);
+    RUN(test_op_readdir_bad_fd_ebadf);
+    RUN(test_op_mkdir_traversal_eacces);
     RUN(test_mkdir_creates_dir);
     RUN(test_closedir_bad_fd_ebadf);
     RUN(test_uname_pushes_5_fields);

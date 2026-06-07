@@ -779,7 +779,7 @@ Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`
 - [x] R2 — Durcir `resolve_path` (tokeniser `/`, rejeter `..` exact, plus de `strstr`) — `loci.c:702-718`, livré v1.16.62-alpha
 - [x] R3 — Persister écritures DSK en mode raw (helper `dsk_flush`, no-op si MFM_DISK détecté) — livré v1.16.63-alpha
 - [ ] R4 — Split `loci.c` (2276 LOC) en 4 TUs : `loci_core` / `loci_fs` / `loci_bus` / `loci_boot` — M (~1 jour, refactor mécanique)
-- [ ] R5 — Test unitaire chemins d'erreur API ops (errno EBADF/EINVAL/ENOENT/EACCES sur 8-10 ops) — S (~150 LOC)
+- [x] R5 — Tests chemins d'erreur API ops (8 nouveaux EBADF/EINVAL/ENOENT/EACCES) + fix bug `op_rename` découvert au passage — livré v1.16.64-alpha
 - [ ] Hors R1-R5 : fix `op_uname` hardcode `1.16.27` → `EMU_VERSION` (`loci.c:1606-1611`)
 - [ ] Hors R1-R5 : déporter `loci_overlay_buf` static de `main.c:364` vers `emulator_t`
 

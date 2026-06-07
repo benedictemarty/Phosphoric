@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.64-alpha] - 2026-06-07
+
+### Sprint 34c R5 — Tests chemins d'erreur API + fix `op_rename`
+
+Issu de la senior review post-34b5.
+
+#### Fixed — `op_rename` ne renommait jamais (POSIX et SDIMG)
+
+Bug latent **découvert en écrivant les tests R5** : `pop_zstring` appelle
+`xstack_zero` après le premier string lu, ce qui efface tout le reste
+de l'xstack. Conséquence : la 2e `pop_zstring` dans `op_rename` voyait
+toujours un xstack vide → renvoyait `LOCI_EINVAL`. **`op_rename` ne
+pouvait donc jamais réussir**, sur les deux backends.
+
+Aucun test de référence n'exerçait `op_rename` (`grep -c "op_rename"
+tests/unit/test_loci.c` ≈ 0 avant ce sprint), d'où la persistance du
+bug. C'est exactement le scénario que R5 cherche à attraper.
+
+**Fix** : nouvelle primitive `pop_zstring_keep` (`loci.c:760-776`) qui
+pop sans zéroer + met à jour `xstack_ptr` correctement. `pop_zstring`
+reste un wrapper compatible (call site existants inchangés).
+`op_rename` POSIX et SDIMG poppent désormais les 2 chaînes via
+`pop_zstring_keep` puis `xstack_zero` à la fin.
+
+#### Added — 8 nouveaux tests errno (R5 stricto sensu)
+
+Matrice errno × ops jusqu'ici pas individuellement testées :
+
+| Op | Errno testé | Test |
+|----|-------------|------|
+| READ_XSTACK | EBADF | `test_op_read_xstack_bad_fd_ebadf` |
+| WRITE_XSTACK | EBADF | `test_op_write_xstack_bad_fd_ebadf` |
+| LSEEK | EBADF | `test_op_lseek_bad_fd_ebadf` |
+| LSEEK | EINVAL | `test_op_lseek_bad_whence_einval` |
+| UNLINK | ENOENT | `test_op_unlink_missing_enoent` |
+| RENAME | ENOENT | `test_op_rename_missing_enoent` |
+| READDIR | EBADF | `test_op_readdir_bad_fd_ebadf` |
+| MKDIR | EACCES | `test_op_mkdir_traversal_eacces` |
+
+Plus un test positif pour valider que le fix `op_rename` fonctionne :
+`test_op_rename_renames_existing`.
+
+#### Tests
+
+- **497 tests unitaires PASS** (488 + 9), 132 tests test-loci.
+- **5/5 scenarios E2E PASS** via `make test-loci-e2e`.
+
+---
+
 ## [1.16.63-alpha] - 2026-06-07
 
 ### Sprint 34c R3 — Persistance des écritures DSK raw vers le fichier hôte

@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.63-alpha
+Current Version: 1.16.64-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 34c R3 — persistance écritures DSK raw vers fichier hôte ; 488 tests + 5 E2E)
+Status: Alpha (Sprint 34c R5 — tests chemins d'erreur API + fix bug `op_rename` ; 497 tests + 5 E2E)
 
 Version History:
 ----------------
+- 1.16.64-alpha (2026-06-07): Sprint 34c R5 — **Tests errno + fix `op_rename`** (8 nouveaux tests EBADF/EINVAL/ENOENT/EACCES ; bug latent `pop_zstring`/`xstack_zero` cassant `op_rename` POSIX+SDIMG corrigé), 497 tests + 5 E2E PASS
 - 1.16.63-alpha (2026-06-07): Sprint 34c R3 — **Persistance écritures DSK raw** (`dsk_flush` helper, no-op si MFM_DISK détecté ; SAVE survit à la sortie de l'émulateur en mode raw), 488 tests + 5 E2E PASS
 - 1.16.62-alpha (2026-06-07): Sprint 34c R1+R2 — **Fix `op_readdir` sub-dir + durcissement `resolve_path`** (R1 : `dirs_path[]` tracker pour stat ; R2 : tokenisation `/` + rejet `..` exact), 487 tests + 5 E2E PASS
 - 1.16.61-alpha (2026-06-07): Docs — **Senior review post-validation E2E LOCI** (CR 168 lignes, aucun P0, 3 P1 dont 1 bug réel `op_readdir`, backlog R1-R5 pour sprint 34c), 484 tests + 5 E2E PASS

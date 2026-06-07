@@ -752,18 +752,28 @@ static const char* fopen_mode_for(uint8_t flags) {
 
 /* Pop a null-terminated string from the xstack top into out (path), then
  * zero the xstack as per firmware semantics. Returns true on success. */
-static bool pop_zstring(loci_t* loci, char* out, size_t outsize) {
+/* Sprint 34c R5 : extracted as a primitive that DOES NOT clear the
+ * xstack so multi-string ops (op_rename) can pop two strings in a row.
+ * Updates xstack_ptr to point past the consumed string + its terminator. */
+static bool pop_zstring_keep(loci_t* loci, char* out, size_t outsize) {
     if (loci->xstack_ptr >= LOCI_XSTACK_SIZE) return false;
     size_t n = 0;
     uint16_t p = loci->xstack_ptr;
+    bool saw_term = false;
     while (p < LOCI_XSTACK_SIZE && n + 1 < outsize) {
         uint8_t c = loci->xstack[p++];
-        if (c == 0) break;
+        if (c == 0) { saw_term = true; break; }
         out[n++] = (char)c;
     }
     out[n] = '\0';
+    loci->xstack_ptr = p;
+    return n > 0 || saw_term;   /* empty string with terminator is OK */
+}
+
+static bool pop_zstring(loci_t* loci, char* out, size_t outsize) {
+    bool ok = pop_zstring_keep(loci, out, outsize);
     xstack_zero(loci);
-    return n > 0;
+    return ok && out[0] != '\0';
 }
 
 /* Allocate a free fd slot. Returns -1 if all are used. */
@@ -1432,9 +1442,13 @@ static void op_rename(loci_t* loci) {
     if (loci->sdimg) {
         char new_path[260] = {0};
         char old_path[260] = {0};
-        pop_zstring(loci, new_path, sizeof(new_path));
-        pop_zstring(loci, old_path, sizeof(old_path));
-        if (old_path[0] == 0 || new_path[0] == 0) {
+        /* Sprint 34c R5 : pop both strings BEFORE the xstack gets zeroed,
+         * otherwise old_path would always come back empty (latent bug
+         * caught by the new test_op_rename_missing_enoent). */
+        bool ok1 = pop_zstring_keep(loci, new_path, sizeof(new_path));
+        bool ok2 = pop_zstring_keep(loci, old_path, sizeof(old_path));
+        xstack_zero(loci);
+        if (!ok1 || !ok2 || old_path[0] == 0 || new_path[0] == 0) {
             api_return_errno(loci, LOCI_EINVAL); return;
         }
         const char* p_old = old_path;
@@ -1448,13 +1462,14 @@ static void op_rename(loci_t* loci) {
         api_return_ax(loci, 0);
         return;
     }
+    /* Sprint 34c R5 : same fix as the SDIMG path — pop both strings
+     * before zeroing, otherwise old_path is empty. */
     char new_path[260];
-    if (!pop_zstring(loci, new_path, sizeof(new_path))) {
-        api_return_errno(loci, LOCI_EINVAL);
-        return;
-    }
     char old_path[260];
-    if (!pop_zstring(loci, old_path, sizeof(old_path))) {
+    bool ok1 = pop_zstring_keep(loci, new_path, sizeof(new_path));
+    bool ok2 = pop_zstring_keep(loci, old_path, sizeof(old_path));
+    xstack_zero(loci);
+    if (!ok1 || !ok2 || new_path[0] == 0 || old_path[0] == 0) {
         api_return_errno(loci, LOCI_EINVAL);
         return;
     }
