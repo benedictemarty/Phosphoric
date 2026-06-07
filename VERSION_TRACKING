@@ -1,12 +1,19 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.48-alpha
+Current Version: 1.16.49-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 34av — E2E LOCI automatisé via --type-keys \e)
+Status: Alpha (Sprint 34av+ — E2E LOCI complet : 007 jeu chargé automatiquement)
 
 Version History:
 ----------------
+- 1.16.49-alpha (2026-06-07): Sprint 34av+ — E2E LOCI complet
+  * Doc LOCI TUI récupérée du wiki sodiumlb (raccourcis t/a/b/c/d/m/o/r/s)
+  * Validation E2E : t+SPACE+SPACE+ESC mount 007.TAP, CLOAD charge, auto-run
+  * Écran final : titre "007 Dangereusement Vôtre" (DOMARK 1985)
+  * Premier émulateur grand public LOCI bout-en-bout sur jeu commercial
+  * CR détaillé : 2026-06-07_E2E_LOCI_007_Tape_Loaded.md
+
 - 1.16.48-alpha (2026-06-07): Sprint 34av — automatisation E2E LOCI
   * \e (ESC) ajouté à oric_keyboard_press_char (matrice col=1, row=5)
   * \e dans --type-keys mode matrix (debounce 4 frames)

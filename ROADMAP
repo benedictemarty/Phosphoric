@@ -539,6 +539,14 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34av+: E2E LOCI complet 007 jeu chargé (v1.16.49-alpha) - DONE
+- [x] Doc LOCI TUI récupérée wiki sodiumlb (raccourcis t/a-d/m/o/r/s/F)
+- [x] Workflow : t → SPACE (picker) → SPACE (file) → ESC (boot)
+- [x] E2E 007.TAP : LOCI → t+SPACE+SPACE+ESC → BASIC 1.1 → CLOAD → run
+- [x] Multi-block TAP : 3 getsync (offsets 0, 137, 8322)
+- [x] Auto-run titre "007 Dangereusement Vôtre" DOMARK 1985 affiché
+- [x] CR : docs/CR/2026-06-07_E2E_LOCI_007_Tape_Loaded.md
+
 ### Sprint 34av: Automatisation E2E LOCI (v1.16.48-alpha) - DONE
 - [x] \e (ESC) ajouté à oric_keyboard_press_char (col=1, row=5)
 - [x] Flèches \u \d \l \r (col=4, rows 3/6/5/7) via sentinelles 0x80-0x83

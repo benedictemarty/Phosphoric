@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.49-alpha] - 2026-06-07
+
+### Sprint 34av+ — E2E LOCI complet : 007 chargé automatiquement
+
+Suite à la doc TUI récupérée sur le wiki sodiumlb (LOCI User Manual).
+
+#### Découverte clés
+
+Raccourcis directs TUI LOCI :
+- `T` : saut au tape drive (au lieu de DOWN×N)
+- `A-D` : drives Microdisc
+- `M`/`O`/`R`/`S` : autres sections
+- `SPACE` : sélectionne (file picker) ou toggle
+- `ESC` : boot (top menu) ou ferme popup
+- `F` : champ filtre dans browser
+
+#### Validation E2E 007.TAP
+
+```bash
+--type-keys '15000000:\p3t\p2 \p2 \p2\e\p9\p1CLOAD""\n\p9\p9\p9'
+```
+
+Séquence :
+1. `t` → tape drive
+2. SPACE → ouvre file picker (filtre auto .TAP)
+3. SPACE → sélectionne 007.TAP (alphabétique avant AIGLE.TAP)
+4. ESC → MIA_BOOT + ROM swap BASIC 1.1
+5. CLOAD"" → 3 getsync (offsets 0, 137, 8322 — multi-block)
+6. Auto-run → écran titre 007 "Dangereusement Vôtre" (DOMARK 1985)
+
+**Premier émulateur grand public à charger un jeu commercial Oric
+bout-en-bout via LOCI firmware en mode entièrement automatisé.**
+
+CR détaillé : `docs/CR/2026-06-07_E2E_LOCI_007_Tape_Loaded.md`
+
+---
+
 ## [1.16.48-alpha] - 2026-06-07
 
 ### Sprint 34av — Automatisation E2E LOCI : ESC matrix + mode HID
