@@ -50,6 +50,83 @@ void debugger_init(debugger_t* dbg) {
     dbg->has_temp_breakpoint = false;
     dbg->last_raster_line = -1;
     for (int i = 0; i < 8; i++) dbg->raster_bps[i] = -1;
+    dbg->undo_head = 0;
+    dbg->undo_count = 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  UNDO RING (sprint 34d5 P2-F)                                       */
+/* ═══════════════════════════════════════════════════════════════════ */
+#define UNDO_RING_DEPTH 16
+
+typedef struct undo_snapshot_s {
+    /* CPU subset (data only — no pointers). */
+    uint8_t  A, X, Y, SP, P;
+    uint16_t PC;
+    uint64_t cycles;
+    uint32_t cycles_left;
+    bool     halted;
+    bool     nmi_pending;
+    uint8_t  irq;
+    /* Memory subset (data only — no callbacks). */
+    uint8_t  ram[RAM_SIZE];           /* 64 KB */
+    uint8_t  upper_ram[ROM_SIZE];     /* 16 KB */
+    memory_bank_t charset_bank;
+    bool     rom_enabled;
+    bool     overlay_active;
+    bool     basic_rom_disabled;
+    /* Frame position so raster bps stay coherent post-rewind. */
+    int      frame_cycles;
+} undo_snapshot_t;
+
+/* File-static ring (~1.3 MB) — kept out of debugger_t so emulator_t stays
+ * stack-friendly. Single-threaded REPL: no concurrency. */
+static undo_snapshot_t g_undo_ring[UNDO_RING_DEPTH];
+
+static void undo_push(debugger_t* dbg, emulator_t* emu) {
+    undo_snapshot_t* s = &g_undo_ring[dbg->undo_head];
+    s->A = emu->cpu.A;     s->X = emu->cpu.X;     s->Y = emu->cpu.Y;
+    s->SP = emu->cpu.SP;   s->P = emu->cpu.P;     s->PC = emu->cpu.PC;
+    s->cycles = emu->cpu.cycles;
+    s->cycles_left = emu->cpu.cycles_left;
+    s->halted = emu->cpu.halted;
+    s->nmi_pending = emu->cpu.nmi_pending;
+    s->irq = emu->cpu.irq;
+    memcpy(s->ram,       emu->memory.ram,       RAM_SIZE);
+    memcpy(s->upper_ram, emu->memory.upper_ram, ROM_SIZE);
+    s->charset_bank      = emu->memory.charset_bank;
+    s->rom_enabled       = emu->memory.rom_enabled;
+    s->overlay_active    = emu->memory.overlay_active;
+    s->basic_rom_disabled = emu->memory.basic_rom_disabled;
+    s->frame_cycles      = emu->frame_cycles;
+    dbg->undo_head = (uint8_t)((dbg->undo_head + 1) % UNDO_RING_DEPTH);
+    if (dbg->undo_count < UNDO_RING_DEPTH) dbg->undo_count++;
+}
+
+static bool undo_pop(debugger_t* dbg, emulator_t* emu) {
+    if (dbg->undo_count == 0) return false;
+    dbg->undo_head = (uint8_t)((dbg->undo_head + UNDO_RING_DEPTH - 1)
+                               % UNDO_RING_DEPTH);
+    dbg->undo_count--;
+    const undo_snapshot_t* s = &g_undo_ring[dbg->undo_head];
+    emu->cpu.A = s->A;       emu->cpu.X = s->X;     emu->cpu.Y = s->Y;
+    emu->cpu.SP = s->SP;     emu->cpu.P = s->P;     emu->cpu.PC = s->PC;
+    emu->cpu.cycles = s->cycles;
+    emu->cpu.cycles_left = s->cycles_left;
+    emu->cpu.halted = s->halted;
+    emu->cpu.nmi_pending = s->nmi_pending;
+    emu->cpu.irq = s->irq;
+    memcpy(emu->memory.ram,       s->ram,       RAM_SIZE);
+    memcpy(emu->memory.upper_ram, s->upper_ram, ROM_SIZE);
+    emu->memory.charset_bank       = s->charset_bank;
+    emu->memory.rom_enabled        = s->rom_enabled;
+    emu->memory.overlay_active     = s->overlay_active;
+    emu->memory.basic_rom_disabled = s->basic_rom_disabled;
+    emu->frame_cycles              = s->frame_cycles;
+    /* Reset raster-bp transition tracker — restored frame_cycles is the
+     * authoritative observation now. */
+    dbg->last_raster_line = -1;
+    return true;
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -769,6 +846,7 @@ static void show_help(void) {
     printf("  s / step          Step 1 instruction\n");
     printf("  n / next          Step over (JSR → break at return)\n");
     printf("  c / continue      Continue execution\n");
+    printf("  u / undo          Rewind last step (CPU+RAM, ring of 16)\n");
     printf("  r / regs          Show CPU registers\n");
     printf("  d                 Disassemble next page (page size persists)\n");
     printf("  d addr [n]        Jump-disasm; push current page to history\n");
@@ -818,12 +896,14 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
 
         /* ── STEP ───────────────────────────────────────── */
         if (strcmp(cmd, "s") == 0 || strcmp(cmd, "step") == 0) {
+            undo_push(dbg, emu);   /* sprint 34d5 P2-F */
             dbg->step_mode = true;
             dbg->active = false;
             /* Execute one instruction and come back */
         }
         /* ── NEXT (step-over) ───────────────────────────── */
         else if (strcmp(cmd, "n") == 0 || strcmp(cmd, "next") == 0) {
+            undo_push(dbg, emu);   /* sprint 34d5 P2-F */
             /* Check if current instruction is JSR ($20) */
             uint8_t opcode = memory_read(&emu->memory, emu->cpu.PC);
             if (opcode == 0x20) {
@@ -836,6 +916,18 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                 dbg->step_mode = true;
             }
             dbg->active = false;
+        }
+        /* ── UNDO (sprint 34d5 P2-F) ───────────────────── */
+        else if (strcmp(cmd, "u") == 0 || strcmp(cmd, "undo") == 0) {
+            if (undo_pop(dbg, emu)) {
+                printf("  Rewound 1 step. PC=$%04X cycles=%llu "
+                       "(%u snapshots left)\n",
+                       emu->cpu.PC, (unsigned long long)emu->cpu.cycles,
+                       dbg->undo_count);
+                show_disassembly(emu, emu->cpu.PC, 1);
+            } else {
+                printf("  Nothing to undo (ring empty)\n");
+            }
         }
         /* ── CONTINUE ───────────────────────────────────── */
         else if (strcmp(cmd, "c") == 0 || strcmp(cmd, "continue") == 0) {

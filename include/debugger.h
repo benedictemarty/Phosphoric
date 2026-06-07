@@ -63,6 +63,15 @@ typedef struct debugger_s {
     uint8_t  num_raster_bps;
     int16_t  last_raster_line;
 
+    /* Sprint 34d5 (P2-F audit) — single-step rewind ring. Snapshots
+     * (CPU + 64KB RAM + 16KB upper_ram + memory flags + frame position)
+     * are pushed before each `s`/`n` step. `u` pops and restores. The
+     * actual storage lives in a file-static array in debugger.c (~1.3 MB
+     * for 16 slots) so debugger_t itself stays small. Peripheral state
+     * (VIA / PSG / FDC / LOCI / ACIA) is NOT rewound — document limitation. */
+    uint8_t  undo_head;     /* next slot to write (0..15) */
+    uint8_t  undo_count;    /* entries actually present (0..16) */
+
     bool     watch_triggered;    /* Set by memory trace callback */
     uint16_t watch_addr_hit;     /* Which watchpoint address was hit */
 

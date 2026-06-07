@@ -5,6 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.71-alpha] - 2026-06-07
+
+### Sprint 34d5 — Debug : rewind/single-step inverse (P2-F audit)
+
+Dernier item P2-F de l'audit gaps debug post-LOCI. **Backlog 34d
+entièrement clos.**
+
+#### Added — `u` / `undo` REPL command
+
+Le debugger pousse un snapshot de l'état émulateur avant chaque
+`s`/`step` ou `n`/`next`. La commande `u` (alias `undo`) pop le dernier
+snapshot et restaure :
+
+- **CPU** : A/X/Y/SP/P/PC + cycles + cycles_left + halted + nmi_pending
+  + irq bitfield.
+- **Memory** : 64 KB RAM (`ram[]`) + 16 KB upper_ram (Microdisc overlay)
+  + flags (charset_bank, rom_enabled, overlay_active, basic_rom_disabled).
+- **Frame position** : `frame_cycles` pour que les raster breakpoints
+  restent cohérents après un rewind.
+
+Ring profondeur **16 snapshots** (~1.3 MB total, stockés dans une variable
+file-static de `debugger.c` pour ne pas alourdir `emulator_t`). Le ring
+file-écrase quand plein.
+
+Affichage :
+```
+dbg> u
+  Rewound 1 step. PC=$F891 cycles=2 (1 snapshots left)
+  $F891: 9A        TXS                ; 2 cyc  <---
+```
+
+#### Limitation documentée
+
+**L'état périphérique** (VIA / PSG / FDC / LOCI / ACIA / cassette) **n'est
+pas rewound** dans cette version. Acceptable pour le cas d'usage principal
+(« step over qui déraille, on revient »), car les statuts périph dépendent
+surtout du CPU+RAM. Pour un debug fin d'IRQ VIA / timer pendant le step
+undoné, le rewind peut laisser un état périph divergent.
+
+Évolution future possible : étendre `undo_snapshot_t` aux structures
+périph stables (VIA / PSG / FDC). Pas requis pour 95% des sessions.
+
+#### Smoke test
+
+```
+dbg> r       # PC=F88F cycles=0
+dbg> s       # → F891 cycles=2
+dbg> s       # → F892 cycles=4
+dbg> s       # → F894 cycles=6
+dbg> u       # ← F892 cycles=4  (2 snapshots left)
+dbg> u       # ← F891 cycles=2  (1 snapshot left)
+dbg> u       # ← F88F cycles=0  (0 snapshots left)
+dbg> u       # → "Nothing to undo (ring empty)"
+```
+
+#### Bilan série 34d complet
+
+5 sprints, 5 commits, **7/7 items de l'audit livrés** :
+- 34d1 : Fix `0x` parser symboles + P0-A résolution opérandes disasm
+- 34d2 : P1-C/D/E REPL `disk`/`acia`/`tape`
+- 34d3 : P0-B REPL `loci` (snapshot complet MIA)
+- 34d4 : P2-G raster-line breakpoints
+- 34d5 : P2-F rewind/single-step inverse
+
+#### Tests
+
+- 499 tests unitaires PASS (logique ring simple, smoke test live).
+- 5/5 scenarios E2E PASS via `make test-loci-e2e`.
+
+---
+
 ## [1.16.70-alpha] - 2026-06-07
 
 ### Sprint 34d4 — Debug : raster-line breakpoints (P2-G audit)

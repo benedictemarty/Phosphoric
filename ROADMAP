@@ -773,7 +773,7 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] STAT reporte NOT_READY si pas de tape
 - [x] 10 nouveaux tests test-loci
 
-### Sprint 34d: Audit gaps debug post-LOCI — backlog (v1.16.67+) - IN PROGRESS
+### Sprint 34d: Audit gaps debug post-LOCI — backlog (v1.16.67-71) - DONE
 Référence : `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`
 - [x] Fix bug parser symboles Format A préfixe `0x` non comptabilisé (`symbols.c:hex_parse`) — livré v1.16.67-alpha
 - [x] P0-A : résolution des symboles sur opérandes du disasm (`debugger.c:append_operand_symbols`) — livré v1.16.67-alpha
@@ -781,7 +781,7 @@ Référence : `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`
 - [x] P1-C : commande REPL `disk`/`fdc` (Microdisc + WD1793 + 4 drives) — livré v1.16.68-alpha
 - [x] P1-D : commande REPL `acia`/`serial` (6551 + signaux + FIFO + backend) — livré v1.16.68-alpha
 - [x] P1-E : commande REPL `tape`/`cassette` (position, status, preview bytes) — livré v1.16.68-alpha
-- [ ] P2-F : rewind / single-step inverse (ring savestates compressés) — M (seul item M restant)
+- [x] P2-F : rewind / single-step inverse (`u`/`undo`, ring 16 snapshots CPU+RAM) — livré v1.16.71-alpha
 - [x] P2-G : raster-line breakpoint (`br N`, `brd N`/`brd *`) — livré v1.16.70-alpha
 
 ### Sprint 34c: Backlog issu de la senior review post-34b5 - DONE
