@@ -539,6 +539,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34ar: Review ingé sénior — 3 fixes + cleanup (v1.16.44-alpha) - DONE
+- [x] Diagnostic "Errors found" craqué par ingé sénior :
+  - [x] $02B1 storezero (Atmos seulement) — parity accumulator
+  - [x] SEC à readbyte_end (Atmos) — VERIFY logic needs C=1
+- [x] readbyte_storezero + readbyte_setcarry dans rom_patches_t
+- [x] Patch readbyte_entry data-driven (les 2 ROMs BASIC)
+- [x] fd_kind[] et dir_kind[] remplacent pointer-tag (UB-adjacent éliminé)
+- [x] mkstemp() au lieu de /tmp/loci_extract_<basename>
+- [x] Silence handler EOT retiré (compensation devenue inutile)
+- [x] AIGLE.TAP régression OK
+- [x] Round-trip CSAVE/CLOAD : pas de "Errors found", LIST correct
+- [x] 470 tests pass, 0 régression
+- [x] Référence : .pch d'Oricutron + désasm Atmos GetTapeByte (sénior)
+
 ### Sprint 34aq: Fix CSAVE TAP format byte-compatible (v1.16.43-alpha) - DONE
 - [x] Diagnostic : hexdump TAP CSAVE vs AIGLE.TAP révèle off-by-one
 - [x] Putbyte capture désactivée (byte-stream ROM non fiable)
