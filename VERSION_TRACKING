@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.73-alpha
+Current Version: 1.16.74-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 35a freeze — hello + step-out + peek structuré + async pause-while-running ; 7/7 E2E ; 499 tests)
+Status: Alpha (Sprint 35b — watch/raster/load-*/disasm + EVT halt ; 11/11 E2E ; 499 tests)
 
 Version History:
 ----------------
+- 1.16.74-alpha (2026-06-07): Sprint 35b — **watch/raster/load-tap/load-rom/load-sym/disasm + EVT halt jam|cycle_limit** (`last_break_reason` pour précision `EVT stopped`, caps étendu), 499 tests + 11 E2E PASS
 - 1.16.73-alpha (2026-06-07): Sprint 35a freeze — **hello/peek/step-out + async pause-while-running** (réponse aux 4 items pre-freeze OricForge ; `ERR busy` pour cmds non-{pause,quit} pendant continue), 499 tests + 7 E2E PASS
 - 1.16.72-alpha (2026-06-07): Sprint 35a — **IPC control mode OricForge** (CLI `--control`, protocole text-line stdin/stdout, logs sur stderr, 12 commandes, 2 events ; régression E2E ajoutée), 499 tests + 6 E2E PASS
 - 1.16.71-alpha (2026-06-07): Sprint 34d5 — **Rewind/single-step inverse `u`/`undo`** (ring 16 snapshots CPU+RAM+upper_ram+frame_cycles ; périph hors scope ; backlog 34d 7/7 clos), 499 tests + 5 E2E PASS

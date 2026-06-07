@@ -25,7 +25,7 @@ All values are space-separated `key=value` tokens. Hex numbers accept
 4. When the CPU stops again (breakpoint hit, step terminated, watchpoint),
    emulator emits `EVT stopped …` and waits for the next command.
 
-## Commands implemented in 35a (frozen)
+## Commands implemented in 35a+35b
 
 | CMD | Reply | Notes |
 |-----|-------|-------|
@@ -45,6 +45,15 @@ All values are space-separated `key=value` tokens. Hex numbers accept
 | `pause` | `OK pc=… cycles=…` then `EVT stopped reason=user` | works both when stopped AND while running |
 | `reset` | `OK pc=…` | warm reset |
 | `quit` | `OK` then process exits | |
+| `watch <addr>` | `OK id=N addr=XXXX` | break on write (sprint 35b) |
+| `unwatch <id>` | `OK` | |
+| `watch-list` | `OK id=N:addr=XXXX [id=… …]` | |
+| `raster <line>` | `OK id=N line=L` | break when PAL line reached (0..311) |
+| `unraster <id>` | `OK` | |
+| `load-tap <path>` | `OK size=N` | runtime tape mount |
+| `load-rom <path>` | `OK size=N pc=XXXX` | replaces BASIC ROM, warm reset |
+| `load-sym <path>` | `OK count=N total=M` | merges into the existing symbol table |
+| `disasm <addr> <n>` | `OK addr=XXXX bytes=K disasm="…" [label=NAME]` (N lines) | server-side disassembly cross-check |
 
 ## Async commands while running
 
@@ -67,11 +76,16 @@ wait for `EVT stopped`, then send the synchronous command.
 |-----|--------|---------|
 | `ready` | `pc cycles version` | once at start-up |
 | `stopped` | `pc cycles reason` | every transition CPU → REPL |
+| `halt` | `pc cycles reason` | terminal (sprint 35b) — process is about to exit |
 
-Reason values : `break` (PC breakpoint hit, including step-out / next
-landing on the temporary breakpoint), `step` (single step terminated),
-`user` (async `pause` while running), `watch` (watchpoint write hit,
-sprint 35b).
+`stopped` reasons : `break` (PC breakpoint hit), `temp` (step-out or
+next landed on the temporary breakpoint), `step` (single step
+terminated), `user` (async `pause` while running), `watch` (watchpoint
+write hit), `raster` (raster-line breakpoint hit).
+
+`halt` reasons : `jam` (CPU halted, KIL opcode or similar), `cycle_limit`
+(`--cycles N` reached). When the IDE sends `quit`, no `halt` event is
+emitted — the `OK` ack to `quit` is the only signal.
 
 ## Example session
 
@@ -93,10 +107,8 @@ OK
 
 ## Future sprints
 
-- **35b** : `watch <addr>` + `EVT stopped reason=watch`,
-  `raster <line>` + `EVT stopped reason=raster`, `load-tap`, `load-rom`,
-  `load-sym`. Async pause-while-running.
-- **35c** : strict framing with line numbers and ACK sequences,
+- **35c** : `bread <addr> <len>` (framing binaire pour les memory inspectors
+  ≥ 32 KB), strict framing with line numbers and ACK sequences,
   server-side timeouts, exhaustive client reference in Python.
 
 ## Error handling

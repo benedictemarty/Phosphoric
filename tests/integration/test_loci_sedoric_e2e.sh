@@ -212,6 +212,54 @@ if skip_if_missing "$NATIVE_ROM"; then
         echo "$OUT2" | head -10 | sed 's/^/    /'
         fail=$((fail+1))
     fi
+
+    # Sprint 35b — watchpoints + reason=watch
+    OUT3=$(printf "watch \$0500\nwrite \$0500 AA\ncontinue\nquit\n" \
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+    if grep -qF "reason=watch" <<<"$OUT3"; then
+        echo "  [PASS] 35b watchpoint fires reason=watch"
+        pass=$((pass+1))
+    else
+        echo "  [FAIL] 35b watchpoint"
+        echo "$OUT3" | head -10 | sed 's/^/    /'
+        fail=$((fail+1))
+    fi
+
+    # Sprint 35b — raster bp + reason=raster
+    OUT4=$(printf "raster 100\ncontinue\nquit\n" \
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+    if grep -qF "reason=raster" <<<"$OUT4"; then
+        echo "  [PASS] 35b raster bp fires reason=raster"
+        pass=$((pass+1))
+    else
+        echo "  [FAIL] 35b raster bp"
+        echo "$OUT4" | head -10 | sed 's/^/    /'
+        fail=$((fail+1))
+    fi
+
+    # Sprint 35b — EVT halt reason=cycle_limit
+    OUT5=$(printf "continue\n" \
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control -c 1000 2>/dev/null)
+    if grep -qF "EVT halt" <<<"$OUT5" && grep -qF "reason=cycle_limit" <<<"$OUT5"; then
+        echo "  [PASS] 35b EVT halt reason=cycle_limit"
+        pass=$((pass+1))
+    else
+        echo "  [FAIL] 35b EVT halt"
+        echo "$OUT5" | head -10 | sed 's/^/    /'
+        fail=$((fail+1))
+    fi
+
+    # Sprint 35b — disasm + load-sym
+    OUT6=$(printf "disasm \$F88F 3\nquit\n" \
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+    if grep -qF 'disasm="LDX #$FF"' <<<"$OUT6"; then
+        echo "  [PASS] 35b disasm produces parseable output"
+        pass=$((pass+1))
+    else
+        echo "  [FAIL] 35b disasm"
+        echo "$OUT6" | head -10 | sed 's/^/    /'
+        fail=$((fail+1))
+    fi
 fi
 
 echo ""

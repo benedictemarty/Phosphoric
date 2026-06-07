@@ -13,6 +13,7 @@
 #include "memory/memory.h"
 #include "debugger.h"
 #include "utils/logging.h"
+#include "utils/symbols.h"
 #include "io/via6522.h"
 #include "audio/audio.h"
 #include "io/microdisc.h"
@@ -121,6 +122,12 @@ void control_emit_stopped(emulator_t* emu, const char* reason) {
              reason ? reason : "unknown");
 }
 
+void control_emit_halt(emulator_t* emu, const char* reason) {
+    emit_evt("halt pc=%04X cycles=%llu reason=%s",
+             emu->cpu.PC, (unsigned long long)emu->cpu.cycles,
+             reason ? reason : "unknown");
+}
+
 /* ─── parsing helpers ──────────────────────────────────────────────
  * Accept hex with or without `$`/`0x` prefix, plus plain decimal when
  * unambiguous. The IDE side is well-defined, so we stay strict. */
@@ -192,19 +199,22 @@ static void cmd_read(emulator_t* emu, const char* addr_s, const char* len_s) {
     fflush(stdout);
 }
 
-static void cmd_write(emulator_t* emu, char* rest) {
-    /* `write <addr> <b0> <b1> ...` — at least one byte required. */
-    char* save;
-    char* addr_s = strtok_r(rest, " \t", &save);
+static void cmd_write(emulator_t* emu, const char* addr_s,
+                      const char* first_byte, char* rest_save) {
     uint16_t addr;
-    if (!addr_s || !parse_u16(addr_s, &addr)) {
+    if (!addr_s || !parse_u16(addr_s, &addr) || !first_byte) {
         reply_err("write: usage `write <addr> <byte>...`");
         return;
     }
-    int n = 0;
+    uint8_t b;
+    if (!parse_u8(first_byte, &b)) {
+        reply_err("write: bad byte at offset 0");
+        return;
+    }
+    memory_write(&emu->memory, addr, b);
+    int n = 1;
     char* tok;
-    while ((tok = strtok_r(NULL, " \t", &save)) != NULL) {
-        uint8_t b;
+    while ((tok = strtok_r(NULL, " \t", &rest_save)) != NULL) {
         if (!parse_u8(tok, &b)) {
             reply_err("write: bad byte at offset %d", n);
             return;
@@ -212,7 +222,6 @@ static void cmd_write(emulator_t* emu, char* rest) {
         memory_write(&emu->memory, (uint16_t)(addr + n), b);
         n++;
     }
-    if (n == 0) { reply_err("write: no bytes given"); return; }
     reply_ok("count=%d", n);
 }
 
@@ -237,6 +246,159 @@ static void cmd_unbreak(emulator_t* emu, const char* id_s) {
     reply_ok("");
 }
 
+/* Sprint 35b — watchpoints (write to address). */
+static void cmd_watch(emulator_t* emu, const char* addr_s) {
+    uint16_t addr;
+    if (!parse_u16(addr_s, &addr)) {
+        reply_err("watch: usage `watch <addr>`");
+        return;
+    }
+    int id = debugger_add_watchpoint(&emu->debugger, addr);
+    if (id < 0) { reply_err("watch: full or rejected"); return; }
+    debugger_install_watchpoint_trace(&emu->debugger, emu);
+    reply_ok("id=%d addr=%04X", id, addr);
+}
+
+static void cmd_unwatch(emulator_t* emu, const char* id_s) {
+    if (!id_s) { reply_err("unwatch: usage `unwatch <id>`"); return; }
+    int id = atoi(id_s);
+    if (!debugger_remove_watchpoint(&emu->debugger, id)) {
+        reply_err("unwatch: invalid id");
+        return;
+    }
+    debugger_install_watchpoint_trace(&emu->debugger, emu);
+    reply_ok("");
+}
+
+static void cmd_watch_list(emulator_t* emu) {
+    debugger_t* dbg = &emu->debugger;
+    fputs("OK", stdout);
+    for (int i = 0; i < dbg->num_watchpoints; i++) {
+        fprintf(stdout, " id=%d:addr=%04X", i, dbg->watchpoints[i]);
+    }
+    fputc('\n', stdout);
+    fflush(stdout);
+}
+
+/* Sprint 35b — raster-line breakpoints (PAL 0..311). */
+static void cmd_raster(emulator_t* emu, const char* line_s) {
+    if (!line_s) { reply_err("raster: usage `raster <line>`"); return; }
+    int line = atoi(line_s);
+    if (line < 0 || line >= PAL_LINES_PER_FRAME) {
+        reply_err("raster: line must be 0..%d", PAL_LINES_PER_FRAME - 1);
+        return;
+    }
+    debugger_t* dbg = &emu->debugger;
+    int slot = -1;
+    for (int i = 0; i < 8; i++) {
+        if (dbg->raster_bps[i] < 0) { slot = i; break; }
+    }
+    if (slot < 0) { reply_err("raster: all 8 slots used"); return; }
+    dbg->raster_bps[slot] = (int16_t)line;
+    dbg->num_raster_bps++;
+    reply_ok("id=%d line=%d", slot, line);
+}
+
+static void cmd_unraster(emulator_t* emu, const char* id_s) {
+    if (!id_s) { reply_err("unraster: usage `unraster <id>`"); return; }
+    int id = atoi(id_s);
+    if (id < 0 || id >= 8 || emu->debugger.raster_bps[id] < 0) {
+        reply_err("unraster: invalid id");
+        return;
+    }
+    emu->debugger.raster_bps[id] = -1;
+    emu->debugger.num_raster_bps--;
+    reply_ok("");
+}
+
+/* Sprint 35b — runtime load helpers. They call the same primitives as
+ * the CLI bootstrap path: file existence + size + memcpy into the right
+ * slot. Errors return ERR with a short description. */
+static bool load_file_into(const char* path, uint8_t** out_buf,
+                           size_t* out_len, size_t max_len) {
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return false;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz <= 0 || (size_t)sz > max_len) { fclose(fp); return false; }
+    uint8_t* buf = (uint8_t*)malloc((size_t)sz);
+    if (!buf) { fclose(fp); return false; }
+    size_t n = fread(buf, 1, (size_t)sz, fp);
+    fclose(fp);
+    if (n != (size_t)sz) { free(buf); return false; }
+    *out_buf = buf;
+    *out_len = (size_t)sz;
+    return true;
+}
+
+static void cmd_load_tap(emulator_t* emu, const char* path) {
+    if (!path) { reply_err("load-tap: usage `load-tap <path>`"); return; }
+    uint8_t* buf = NULL;
+    size_t len = 0;
+    if (!load_file_into(path, &buf, &len, 1 << 20)) {
+        reply_err("load-tap: cannot read `%s`", path);
+        return;
+    }
+    if (emu->tapebuf) free(emu->tapebuf);
+    emu->tapebuf = buf;
+    emu->tapelen = (int)len;
+    emu->tapeoffs = 0;
+    emu->tape_loaded = true;
+    emu->tape_path = strdup(path);
+    reply_ok("size=%zu", len);
+}
+
+static void cmd_load_rom(emulator_t* emu, const char* path) {
+    if (!path) { reply_err("load-rom: usage `load-rom <path>`"); return; }
+    uint8_t* buf = NULL;
+    size_t len = 0;
+    /* Cap at 16 KB — typical Oric BASIC ROM. */
+    if (!load_file_into(path, &buf, &len, 16 * 1024)) {
+        reply_err("load-rom: cannot read `%s`", path);
+        return;
+    }
+    if (len != 16 * 1024) {
+        free(buf);
+        reply_err("load-rom: expected 16384 bytes, got %zu", len);
+        return;
+    }
+    memcpy(emu->memory.rom, buf, len);
+    free(buf);
+    cpu_reset(&emu->cpu);
+    reply_ok("size=%zu pc=%04X", len, emu->cpu.PC);
+}
+
+static void cmd_load_sym(emulator_t* emu, const char* path) {
+    if (!path) { reply_err("load-sym: usage `load-sym <path>`"); return; }
+    int n = symbol_table_load(&emu->symbols, path);
+    if (n < 0) { reply_err("load-sym: parse failed"); return; }
+    reply_ok("count=%d total=%d", n, emu->symbols.count);
+}
+
+/* Sprint 35b — disassemble N instructions starting at addr. */
+static void cmd_disasm(emulator_t* emu, const char* addr_s, const char* n_s) {
+    uint16_t addr;
+    uint32_t n;
+    if (!parse_u16(addr_s, &addr) || !parse_hex(n_s, &n)) {
+        reply_err("disasm: usage `disasm <addr> <n>`");
+        return;
+    }
+    if (n == 0 || n > 64) { reply_err("disasm: n must be 1..64"); return; }
+    /* One reply line per instruction. */
+    for (uint32_t i = 0; i < n; i++) {
+        char buf[64];
+        int bytes = cpu_disassemble(&emu->cpu, addr, buf, sizeof(buf));
+        const char* sym = symbol_lookup(&emu->symbols, addr);
+        fprintf(stdout, "OK addr=%04X bytes=%d disasm=\"%s\"",
+                addr, bytes, buf);
+        if (sym) fprintf(stdout, " label=%s", sym);
+        fputc('\n', stdout);
+        addr = (uint16_t)(addr + bytes);
+    }
+    fflush(stdout);
+}
+
 static void cmd_break_list(emulator_t* emu) {
     debugger_t* dbg = &emu->debugger;
     fputs("OK", stdout);
@@ -256,7 +418,7 @@ static void cmd_reset(emulator_t* emu) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm"
 
 static void cmd_hello(const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -391,7 +553,7 @@ void control_repl(emulator_t* emu) {
             cmd_read(emu, arg1, arg2);
         }
         else if (strcmp(cmd, "write") == 0) {
-            cmd_write(emu, save);
+            cmd_write(emu, arg1, arg2, save);
         }
         else if (strcmp(cmd, "break") == 0) {
             cmd_break(emu, arg1);
@@ -401,6 +563,33 @@ void control_repl(emulator_t* emu) {
         }
         else if (strcmp(cmd, "break-list") == 0) {
             cmd_break_list(emu);
+        }
+        else if (strcmp(cmd, "watch") == 0) {
+            cmd_watch(emu, arg1);
+        }
+        else if (strcmp(cmd, "unwatch") == 0) {
+            cmd_unwatch(emu, arg1);
+        }
+        else if (strcmp(cmd, "watch-list") == 0) {
+            cmd_watch_list(emu);
+        }
+        else if (strcmp(cmd, "raster") == 0) {
+            cmd_raster(emu, arg1);
+        }
+        else if (strcmp(cmd, "unraster") == 0) {
+            cmd_unraster(emu, arg1);
+        }
+        else if (strcmp(cmd, "load-tap") == 0) {
+            cmd_load_tap(emu, arg1);
+        }
+        else if (strcmp(cmd, "load-rom") == 0) {
+            cmd_load_rom(emu, arg1);
+        }
+        else if (strcmp(cmd, "load-sym") == 0) {
+            cmd_load_sym(emu, arg1);
+        }
+        else if (strcmp(cmd, "disasm") == 0) {
+            cmd_disasm(emu, arg1, arg2);
         }
         else if (strcmp(cmd, "reset") == 0) {
             cmd_reset(emu);

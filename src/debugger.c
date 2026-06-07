@@ -359,26 +359,35 @@ void debugger_install_watchpoint_trace(debugger_t* dbg, emulator_t* emu) {
 
 bool debugger_should_break(debugger_t* dbg, emulator_t* emu) {
     uint16_t pc = emu->cpu.PC;
+    dbg->last_break_reason[0] = '\0';
 
     /* Step mode: always break */
-    if (dbg->step_mode)
+    if (dbg->step_mode) {
+        strncpy(dbg->last_break_reason, "step", sizeof(dbg->last_break_reason) - 1);
         return true;
+    }
 
-    /* Temporary breakpoint (step-over) */
+    /* Temporary breakpoint (step-over / step-out) */
     if (dbg->has_temp_breakpoint && pc == dbg->temp_breakpoint) {
         dbg->has_temp_breakpoint = false;
+        strncpy(dbg->last_break_reason, "temp", sizeof(dbg->last_break_reason) - 1);
         return true;
     }
 
     /* PC breakpoint hit (evaluates condition if present) */
     (void)pc;
-    if (debugger_check_pc(dbg, emu))
+    if (debugger_check_pc(dbg, emu)) {
+        strncpy(dbg->last_break_reason, "break", sizeof(dbg->last_break_reason) - 1);
         return true;
+    }
 
     /* Watchpoint triggered */
     if (dbg->watch_triggered) {
-        printf("\n*** WATCHPOINT hit: write to $%04X ***\n", dbg->watch_addr_hit);
+        if (!emu->control_mode) {
+            printf("\n*** WATCHPOINT hit: write to $%04X ***\n", dbg->watch_addr_hit);
+        }
         dbg->watch_triggered = false;
+        strncpy(dbg->last_break_reason, "watch", sizeof(dbg->last_break_reason) - 1);
         return true;
     }
 
@@ -404,9 +413,13 @@ bool debugger_should_break(debugger_t* dbg, emulator_t* emu) {
                     fire = (bp > prev && bp <= cur);
                 }
                 if (fire) {
-                    printf("\n*** RASTER BREAK at line %d (frame_cyc=%d) ***\n",
-                           bp, emu->frame_cycles);
+                    if (!emu->control_mode) {
+                        printf("\n*** RASTER BREAK at line %d (frame_cyc=%d) ***\n",
+                               bp, emu->frame_cycles);
+                    }
                     dbg->last_raster_line = (int16_t)cur;
+                    strncpy(dbg->last_break_reason, "raster",
+                            sizeof(dbg->last_break_reason) - 1);
                     return true;
                 }
             }

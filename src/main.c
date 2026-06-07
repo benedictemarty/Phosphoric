@@ -1330,19 +1330,25 @@ static void emulator_run(emulator_t* emu) {
             /* Interactive debugger check */
             if (emu->debugger.active || debugger_should_break(&emu->debugger, emu)) {
                 if (emu->control_mode) {
-                    /* Emit a `stopped` event on every break re-entry. The
-                     * first entry (active was set pre-loop) is informational
-                     * — the IDE sees `ready` from main() and then `stopped`. */
+                    /* Pick the reason for the EVT stopped: async pause wins
+                     * over CPU-side break causes; otherwise use the explicit
+                     * last_break_reason populated by debugger_should_break
+                     * (sprint 35b). Fallback "break" for the first entry
+                     * when active was set pre-loop. */
                     const char* reason =
                         emu->control_async_pause_pending ? "user" :
-                        emu->debugger.step_mode ? "step" :
-                        emu->debugger.watch_triggered ? "watch" : "break";
+                        emu->debugger.last_break_reason[0]
+                            ? emu->debugger.last_break_reason
+                            : "break";
                     emu->control_async_pause_pending = false;
                     /* Reset step_mode so the next `continue` doesn't fire
                      * stepping; control_repl will set it again on a `step`
                      * command. */
                     emu->debugger.step_mode = false;
                     control_emit_stopped(emu, reason);
+                    /* Clear last_break_reason after emitting so the next
+                     * stop starts fresh. */
+                    emu->debugger.last_break_reason[0] = '\0';
                     control_repl(emu);
                 } else if (emu->tui_mode) {
                     tui_repl(emu);
@@ -1926,11 +1932,13 @@ static void emulator_run(emulator_t* emu) {
         /* Check cycle limit for headless/test mode */
         if (emu->max_cycles >= 0 && (int64_t)total_executed >= emu->max_cycles) {
             log_info("Cycle limit reached (%lld cycles)", (long long)emu->max_cycles);
+            if (emu->control_mode) control_emit_halt(emu, "cycle_limit");
             break;
         }
 
         if (emu->cpu.halted) {
             log_info("CPU halted after %llu cycles", (unsigned long long)total_executed);
+            if (emu->control_mode) control_emit_halt(emu, "jam");
             break;
         }
     }

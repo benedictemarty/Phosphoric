@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.74-alpha] - 2026-06-07
+
+### Sprint 35b — Control protocol : watchpoints, raster, load-*, disasm, halt
+
+Backlog OricForge post-freeze 35a. Toutes les commandes prévues
+(sauf `bread` framing binaire, reporté à 35c selon scope).
+
+#### Added — Commandes IPC
+
+- **`watch <addr>`** : breakpoint sur écriture. Internally pose un
+  watchpoint via `debugger_add_watchpoint` + installe le trace
+  callback. Reply `OK id=N addr=XXXX`. Émet `EVT stopped reason=watch`
+  quand la write arrive.
+- **`unwatch <id>`** + **`watch-list`** : compagnons standards.
+- **`raster <line>`** : raster-line breakpoint sur PAL 0..311. Reply
+  `OK id=N line=L`. Émet `EVT stopped reason=raster` au crossing.
+- **`unraster <id>`** : suppression.
+- **`load-tap <path>`** : monte un .TAP à chaud (remplace celui
+  éventuellement en place).
+- **`load-rom <path>`** : remplace la ROM BASIC (16 KB strict) +
+  warm reset CPU.
+- **`load-sym <path>`** : merge un fichier symboles dans la table
+  courante. Reply `OK count=N total=M`.
+- **`disasm <addr> <n>`** : désassemble N instructions (1..64). Reply
+  N lignes `OK addr=XXXX bytes=K disasm="…" [label=NAME]`. Permet
+  à OricForge de cross-checker son désasm côté serveur.
+
+#### Added — Events
+
+- **`EVT halt reason=jam`** : émis quand `CPU.halted = true` (KIL
+  opcode ou équivalent).
+- **`EVT halt reason=cycle_limit`** : émis quand `--cycles N` atteint.
+
+Pas de `EVT halt reason=back_to_rom` — comme discuté avec OricForge,
+ce cas reste un user-side break dans l'IDE.
+
+#### Changed — `last_break_reason` field
+
+Nouveau `debugger_t.last_break_reason[16]` peuplé par
+`debugger_should_break` au moment du break. Permet à `EVT stopped` de
+reporter précisément `step/temp/break/watch/raster` au lieu d'un
+fallback `break`. Les `printf` legacy (« *** WATCHPOINT hit *** »,
+« *** RASTER BREAK *** ») sont désormais gated par `!control_mode`
+pour ne pas polluer le canal protocole.
+
+#### Caps update
+
+`hello` reply : `caps=step-out,peek,hello,async-pause,watch,raster,
+load-tap,load-rom,load-sym,disasm`
+
+#### Régression E2E
+
+Le scenario `35a IPC protocol` étendu avec 4 sous-tests 35b :
+- `35b watchpoint fires reason=watch`
+- `35b raster bp fires reason=raster`
+- `35b EVT halt reason=cycle_limit`
+- `35b disasm produces parseable output`
+
+**11/11 scenarios E2E PASS** (5 LOCI/Sedoric + 6 IPC).
+
+#### Fix de service
+
+`cmd_write` retravaillé : prenait `save` (post-arg2) comme premier
+argument et perdait l'address. Maintenant prend `arg1` (addr) et
+`arg2` (first byte) plus `save` pour les bytes suivants.
+
+#### Tests
+
+- 499 tests unitaires PASS.
+- **11/11 scenarios E2E PASS** via `make test-loci-e2e`.
+
+---
+
 ## [1.16.73-alpha] - 2026-06-07
 
 ### Sprint 35a freeze — Pre-freeze hardening (OricForge review)

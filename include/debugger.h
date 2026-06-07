@@ -78,6 +78,14 @@ typedef struct debugger_s {
     bool     active;             /* Debugger is in REPL mode */
     bool     step_mode;          /* Single-step after break */
 
+    /* Sprint 35b — explicit last-break reason for the IPC control mode.
+     * Set by debugger_should_break (which consumes the transient flags
+     * like watch_triggered) and read by the main loop right after, so
+     * `EVT stopped reason=…` carries the correct cause.
+     * Values: "step", "watch", "raster", "break" (PC bp), "temp" (next).
+     * Empty string when none. */
+    char     last_break_reason[16];
+
     /* Temporary breakpoint for step-over (next command) */
     uint16_t temp_breakpoint;
     bool     has_temp_breakpoint;

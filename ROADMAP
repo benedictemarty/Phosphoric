@@ -784,14 +784,22 @@ Référence : `docs/control_protocol.md`
 - [x] Hello/version handshake avec `caps=` extensible
 - [x] Scenarios E2E IPC : sync handshake + async pause (7/7 scenarios E2E PASS)
 
-### Sprint 35b: OricForge backlog (à venir)
-- [ ] `watch <addr>` + `EVT stopped reason=watch`
-- [ ] `raster <line>` + `EVT stopped reason=raster`
-- [ ] `load-tap` / `load-rom` / `load-sym`
-- [ ] `disasm <addr> <n>` (souhait OricForge confort)
-- [ ] `bread <addr> <len>` (framing binaire — 35b ou 35c selon scope)
+### Sprint 35b: OricForge backlog (v1.16.74-alpha) - DONE
+- [x] `watch <addr>` / `unwatch` / `watch-list` + `EVT stopped reason=watch`
+- [x] `raster <line>` / `unraster` + `EVT stopped reason=raster`
+- [x] `load-tap` / `load-rom` / `load-sym`
+- [x] `disasm <addr> <n>` (1..64 instructions, parseable)
+- [x] `EVT halt reason=jam/cycle_limit` (back-to-ROM laissé au break user-side)
+- [x] `debugger_t.last_break_reason[]` pour précision `EVT stopped reason=…`
+- [x] Caps updated : `step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm`
+- [ ] `bread <addr> <len>` (framing binaire) — reporté à 35c selon scope
 - [ ] Client de référence Python (livré par OricForge en parallèle)
-- [ ] `EVT halt reason=jam/cycle_limit` (le cas back-to-ROM laissé au break user-side)
+
+### Sprint 35c: Hardening + intégration OricForge (à venir)
+- [ ] `bread <addr> <len>` framing binaire pour les memory inspectors ≥ 32 KB
+- [ ] Framing strict (numéros de séquence, ACK)
+- [ ] Server-side timeouts
+- [ ] Client Python intégré dans tests/integration/
 
 ### Sprint 34d: Audit gaps debug post-LOCI — backlog (v1.16.67-71) - DONE
 Référence : `docs/CR/2026-06-07_Debug_Gaps_Audit_Post_LOCI.md`

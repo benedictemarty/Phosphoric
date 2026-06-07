@@ -49,4 +49,11 @@ void control_emit_stopped(emulator_t* emu, const char* reason);
  */
 bool control_poll_pause(emulator_t* emu);
 
+/**
+ * @brief Emit `EVT halt reason=<reason>` when the main loop exits for a
+ * terminal cause (cycle_limit, jam). After this the process is about to
+ * exit, so no further protocol traffic is expected.
+ */
+void control_emit_halt(emulator_t* emu, const char* reason);
+
 #endif /* CONTROL_H */
