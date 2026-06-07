@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.62-alpha] - 2026-06-07
+
+### Sprint 34c R1+R2 — Fix `op_readdir` sub-dir + durcissement `resolve_path`
+
+Issu de la senior review post-34b5
+(`docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`).
+
+#### Fixed — R1 : `op_readdir` POSIX stat avec mauvais base path
+
+**Avant** (`loci.c:1549-1551` ancienne version) :
+
+```c
+const char* base = loci->flash_root[0] ? loci->flash_root : ".";
+snprintf(fullpath, sizeof(fullpath), "%s/%s", base, de->d_name);
+```
+
+`opendir("sub/")` ouvrait `<root>/sub/`, mais `op_readdir` stat()ait
+`<root>/<entry>` au lieu de `<root>/sub/<entry>`. Conséquences :
+- `S_ISDIR` faux pour les sous-dossiers vraiment-DIR du sub.
+- `d_size = 0` reporté sur entries qui n'existaient pas au niveau root.
+
+Non observé en E2E (Sedoric reste à la racine), aurait été visible dès
+qu'une UI parcourt `OPENDIR /sub`.
+
+**Fix** : `loci_t` gagne un `dirs_path[LOCI_DIR_MAX][256]` qui stocke
+le path résolu au moment de l'`opendir` ; `op_readdir` l'utilise comme
+base pour `stat()`. Cleanup miroir dans `op_closedir`.
+
+#### Changed — R2 : `resolve_path` ne dépend plus de `strstr`
+
+**Avant** :
+
+```c
+if (strstr(p, "..")) return false;
+```
+
+Rejetait `my..backup.dsk` (légitime) et n'attrapait pas les variantes
+encodées ni les composants vides (`//`). **Maintenant** : tokenisation
+explicite sur `/` et rejet du composant **exact** `..` (ou chaîne vide).
+
+#### Tests
+
+- 3 nouveaux tests unitaires :
+  - `test_readdir_subdir_uses_correct_base` — couvre R1.
+  - `test_path_allows_double_dot_in_name` — couvre R2 (légitime).
+  - `test_path_rejects_dotdot_component` — couvre R2 (escape).
+- `test_open_path_traversal_rejected` (existant) : pas de régression.
+- **487 tests unitaires PASS** (484 + 3), 122 tests test-loci.
+- **5/5 scenarios E2E PASS** via `make test-loci-e2e`.
+
+---
+
 ## [1.16.61-alpha] - 2026-06-07
 
 ### Docs — Senior review post-validation E2E LOCI (sprints 34b0→34b5)

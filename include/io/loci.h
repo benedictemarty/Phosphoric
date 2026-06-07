@@ -251,9 +251,12 @@ typedef struct loci_s {
 
     /* Directory iterators (Sprint 34ac). dirs[i] is a host DIR* exposed
      * to the 6502 as dir_fd = LOCI_DIR_OFFSET + i. dir_kind[i] : 0 = unused,
-     * 1 = POSIX DIR*, 2 = SDIMG slot (Sprint 34ar). */
+     * 1 = POSIX DIR*, 2 = SDIMG slot (Sprint 34ar). dirs_path[i] holds the
+     * resolved host path used at opendir time so readdir can stat() entries
+     * via the correct base (sprint 34c, fix from senior review post-34b5). */
     void*   dirs[LOCI_DIR_MAX];
     uint8_t dir_kind[LOCI_DIR_MAX];
+    char    dirs_path[LOCI_DIR_MAX][256];
 
     /* USB HID xram addresses (Sprint 34ag) — set by the 6502 via PIX_XREG
      * (device=0=MIA, channel=0, addr=0/1/2 for kbd/mou/pad). 0xFFFF = unset.

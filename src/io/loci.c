@@ -701,7 +701,12 @@ static uint16_t map_errno(int e) {
 
 /* Resolve a guest path against the sandbox root. Rejects absolute and
  * up-traversing paths to keep guest 6502 code from escaping the root.
- * Strips a leading volume prefix like "0:" or "USB:" if present. */
+ * Strips a leading volume prefix like "0:" or "USB:" if present.
+ *
+ * Path-traversal rejection (sprint 34c, R2 from senior review post-34b5):
+ * tokenize on '/' and reject only the EXACT component ".." or empty.
+ * The earlier strstr(p, "..") rejected legitimate names like
+ * "my..backup.dsk" while missing URL-encoded variants. */
 static bool resolve_path(loci_t* loci, const char* in,
                          char* out, size_t outsize) {
     /* Strip volume prefix "X:" where X is alnum. */
@@ -709,8 +714,17 @@ static bool resolve_path(loci_t* loci, const char* in,
     if (p[0] && p[1] == ':') p += 2;
     while (*p == '/' || *p == '\\') p++;
 
-    /* Reject path-traversal attempts. */
-    if (strstr(p, "..")) return false;
+    /* Walk components, rejecting "." (no-op trap) and ".." (escape). */
+    const char* c = p;
+    while (*c) {
+        const char* end = c;
+        while (*end && *end != '/' && *end != '\\') end++;
+        size_t len = (size_t)(end - c);
+        if (len == 0) return false;                  /* "//" */
+        if (len == 2 && c[0] == '.' && c[1] == '.') return false;
+        c = end;
+        while (*c == '/' || *c == '\\') c++;
+    }
 
     const char* root = loci->flash_root[0] ? loci->flash_root : ".";
     int n = snprintf(out, outsize, "%s/%s", root, p);
@@ -1493,6 +1507,14 @@ static void op_opendir(loci_t* loci) {
     }
     loci->dirs[slot] = d;
     loci->dir_kind[slot] = 1;
+    /* Track resolved path so op_readdir stat()s via the correct base
+     * (sprint 34c R1, fix from senior review post-34b5). Truncation here
+     * would only re-introduce the prior buggy behavior for the rare case
+     * of host_path > 255 chars — log it. */
+    size_t pn = strlen(host_path);
+    if (pn >= sizeof(loci->dirs_path[slot])) pn = sizeof(loci->dirs_path[slot]) - 1;
+    memcpy(loci->dirs_path[slot], host_path, pn);
+    loci->dirs_path[slot][pn] = '\0';
     api_return_ax(loci, (uint16_t)(slot + LOCI_DIR_OFFSET));
 }
 
@@ -1508,6 +1530,7 @@ static void op_closedir(loci_t* loci) {
     closedir(d);
     loci->dirs[fd - LOCI_DIR_OFFSET] = NULL;
     loci->dir_kind[fd - LOCI_DIR_OFFSET] = 0;
+    loci->dirs_path[fd - LOCI_DIR_OFFSET][0] = '\0';
     api_return_ax(loci, 0);
 }
 
@@ -1542,11 +1565,14 @@ static void op_readdir(loci_t* loci) {
         memcpy(&dirent_buf[2], de->d_name, nl);
         dirent_buf[2 + nl] = '\0';
 
-        /* d_attrib: at offset 66. Check via stat. */
+        /* d_attrib: at offset 66. Check via stat. Use the dir's resolved
+         * path (sprint 34c R1) so entries inside a sub-directory get
+         * stat'd via "<root>/<sub>/<entry>" and not "<root>/<entry>". */
         uint8_t attrib = 0;
         struct stat st;
         char fullpath[768];
-        const char* base = loci->flash_root[0] ? loci->flash_root : ".";
+        const char* base = loci->dirs_path[fd - LOCI_DIR_OFFSET];
+        if (!base[0]) base = loci->flash_root[0] ? loci->flash_root : ".";
         snprintf(fullpath, sizeof(fullpath), "%s/%s", base, de->d_name);
         if (stat(fullpath, &st) == 0 && S_ISDIR(st.st_mode)) {
             attrib = LOCI_AM_DIR;

@@ -769,6 +769,88 @@ TEST(test_readdir_lists_entries_skipping_dotdot) {
     loci_cleanup(&l); free(tmpdir);
 }
 
+/* Sprint 34c R1 — readdir on a sub-directory must stat() via the
+ * sub-dir's path, not flash_root. Previously the sub-entry "inner.txt"
+ * came back with d_size = 0 because stat() was called on
+ * "<root>/inner.txt" instead of "<root>/sub/inner.txt". */
+TEST(test_readdir_subdir_uses_correct_base) {
+    char* tmpdir = make_tmpdir();
+    char subdir[300], inner_path[400];
+    snprintf(subdir, sizeof(subdir), "%s/sub", tmpdir);
+    mkdir(subdir, 0755);
+    snprintf(inner_path, sizeof(inner_path), "%s/inner.txt", subdir);
+    FILE* fp = fopen(inner_path, "wb"); fwrite("hello", 1, 5, fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "sub");
+    loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);
+    int dfd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(dfd >= LOCI_DIR_OFFSET);
+
+    bool seen = false;
+    for (int round = 0; round < 4; round++) {
+        l.regs[LOCI_REG_API_A] = (uint8_t)dfd;
+        loci_write(&l, 0x03AF, LOCI_OP_READDIR);
+        uint16_t base = l.xstack_ptr;
+        char name[65] = {0};
+        for (int i = 0; i < 64; i++) name[i] = (char)l.xstack[base + 2 + i];
+        if (!name[0]) break;
+        if (strcmp(name, "inner.txt") == 0) {
+            seen = true;
+            uint32_t sz = (uint32_t)l.xstack[base + 68]
+                        | ((uint32_t)l.xstack[base + 69] << 8)
+                        | ((uint32_t)l.xstack[base + 70] << 16)
+                        | ((uint32_t)l.xstack[base + 71] << 24);
+            /* Previously this was 0 because of the wrong base path. */
+            ASSERT_EQ(sz, 5u);
+        }
+    }
+    ASSERT_TRUE(seen);
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)dfd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSEDIR);
+    unlink(inner_path); rmdir(subdir); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
+}
+
+/* Sprint 34c R2 — resolve_path must reject the EXACT ".." component
+ * (escape) but accept names that merely CONTAIN ".." (legitimate). */
+TEST(test_path_allows_double_dot_in_name) {
+    char* tmpdir = make_tmpdir();
+    char fpath[300];
+    snprintf(fpath, sizeof(fpath), "%s/my..backup.bin", tmpdir);
+    FILE* fp = fopen(fpath, "wb"); fwrite("x", 1, 1, fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "my..backup.bin");
+    l.regs[LOCI_REG_API_A] = 0;   /* read-only */
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= LOCI_FD_OFFSET);   /* used to be EACCES via strstr */
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    unlink(fpath); rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+/* Sprint 34c R2 — embedded ".." in a sub-component still rejected. */
+TEST(test_path_rejects_dotdot_component) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, "/tmp");
+    push_path(&l, "sub/../etc/passwd");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EACCES);
+    loci_cleanup(&l);
+}
+
 TEST(test_mkdir_creates_dir) {
     char* tmpdir = make_tmpdir();
     loci_t l; loci_init(&l);
@@ -2295,6 +2377,9 @@ int main(void) {
     RUN(test_opendir_closedir);
     RUN(test_opendir_missing_enoent);
     RUN(test_readdir_lists_entries_skipping_dotdot);
+    RUN(test_readdir_subdir_uses_correct_base);
+    RUN(test_path_allows_double_dot_in_name);
+    RUN(test_path_rejects_dotdot_component);
     RUN(test_mkdir_creates_dir);
     RUN(test_closedir_bad_fd_ebadf);
     RUN(test_uname_pushes_5_fields);

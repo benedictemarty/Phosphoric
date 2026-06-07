@@ -773,10 +773,10 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] STAT reporte NOT_READY si pas de tape
 - [x] 10 nouveaux tests test-loci
 
-### Sprint 34c: Backlog issu de la senior review post-34b5 - PLANNED
+### Sprint 34c: Backlog issu de la senior review post-34b5 - IN PROGRESS
 Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`
-- [ ] R1 — Fix `op_readdir` POSIX (mauvais base path pour `stat`) — `loci.c:1549-1551`, XS (~15 LOC + 1 test)
-- [ ] R2 — Durcir `resolve_path` (tokeniser `/`, rejeter `..` exact, plus de `strstr`) — `loci.c:702-718`, XS (~10 LOC + 4 tests)
+- [x] R1 — Fix `op_readdir` POSIX (mauvais base path pour `stat`) — `loci.c:1549-1551`, livré v1.16.62-alpha
+- [x] R2 — Durcir `resolve_path` (tokeniser `/`, rejeter `..` exact, plus de `strstr`) — `loci.c:702-718`, livré v1.16.62-alpha
 - [ ] R3 — Persister écritures DSK en mode raw (flush `image → fp` dans `dsk_close` + `loci_cleanup`) — `loci.c:1875-1889`, S (~20 LOC + 1 test E2E)
 - [ ] R4 — Split `loci.c` (2276 LOC) en 4 TUs : `loci_core` / `loci_fs` / `loci_bus` / `loci_boot` — M (~1 jour, refactor mécanique)
 - [ ] R5 — Test unitaire chemins d'erreur API ops (errno EBADF/EINVAL/ENOENT/EACCES sur 8-10 ops) — S (~150 LOC)

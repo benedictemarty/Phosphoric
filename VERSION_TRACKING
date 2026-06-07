@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.61-alpha
+Current Version: 1.16.62-alpha
 Release Date: 2026-06-07
-Status: Alpha (Docs — senior review post-validation E2E LOCI : aucun P0, 3 P1 listés, sprint 34c planifié)
+Status: Alpha (Sprint 34c R1+R2 — fix `op_readdir` sub-dir + durcissement `resolve_path` ; 487 tests + 5 E2E)
 
 Version History:
 ----------------
+- 1.16.62-alpha (2026-06-07): Sprint 34c R1+R2 — **Fix `op_readdir` sub-dir + durcissement `resolve_path`** (R1 : `dirs_path[]` tracker pour stat ; R2 : tokenisation `/` + rejet `..` exact), 487 tests + 5 E2E PASS
 - 1.16.61-alpha (2026-06-07): Docs — **Senior review post-validation E2E LOCI** (CR 168 lignes, aucun P0, 3 P1 dont 1 bug réel `op_readdir`, backlog R1-R5 pour sprint 34c), 484 tests + 5 E2E PASS
 - 1.16.60-alpha (2026-06-07): Sprint 34b5 — **E2E pipe TAP LOCI** (007 « Dangereusement Vôtre » chargé via TUI LOCI, écran intro 100 % identique au natif), 484 tests + 5 E2E PASS
 - 1.16.59-alpha (2026-06-07): Sprint 34b4 — **RUN after LOAD via LOCI** (programme rechargé exécute « HELLO LOCI », écran 100 % identique au natif), 484 tests + 4 E2E PASS
