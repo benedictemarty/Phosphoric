@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.50-alpha] - 2026-06-07
+
+### Sprint 34aw — WD1793 cycle-accurate sur le bus DSK LOCI
+
+#### Added
+
+- **Réutilisation du `fdc_t` cycle-accurate** existant (`src/storage/disk.c`,
+  412 LOC) — déjà battle-tested par le Microdisc — au lieu de
+  réimplémenter le WD1793 dans LOCI.
+- **Champs dans `loci_t`** :
+  - `fdc_t dsk_fdc` : instance WD1793
+  - `uint8_t* dsk_image[4]` : buffer RAM par drive (chargé au mount)
+  - `uint32_t dsk_image_size[4]`
+  - `uint8_t dsk_tracks[4]` / `uint8_t dsk_sectors[4]` (defaults 41/17)
+- **Callbacks DRQ** wirés : `loci_fdc_set_drq` / `loci_fdc_clr_drq`
+  mettent à jour `loci->dsk_drq` (active-low convention Oricutron).
+- **`fdc_ticktock(&loci.dsk_fdc, step)`** hooké dans la main emulation
+  loop (`main.c:1307`) parallèlement à celui du Microdisc.
+
+#### Changed
+
+- `dsk_open` slurpe le `.DSK` entier en RAM (≤ 1 MB) au lieu de garder
+  juste un FILE*. Permet l'accès byte-aléatoire requis par le WD1793.
+- `loci_dsk_read/write` routent vers `fdc_read/write(reg 0-3)` au lieu
+  de stubs. Le bit `NOT_READY` est OR'd-in dans STATUS quand le drive
+  sélectionné n'a pas d'image (le FDC ne connaît pas l'état mount).
+- `loci_apply_dsk_selection` appelé sur changement de drive via CTRL
+  (`$0314`) : ré-arme le FDC avec le buffer du nouveau drive.
+- `dsk_close` libère le buffer + détache le FDC si c'était le drive
+  sélectionné.
+
+#### Tests
+
+3 nouveaux tests valident le plumbing :
+- `test_dsk_wd1793_restore_command_clears_busy` : mount + cmd Restore
+  ($08) + tick → BUSY clear
+- `test_dsk_wd1793_ctrl_change_drive_repoints_fdc` : mount drives 0 et
+  1, switch via CTRL → `fdc.disk_data` pointe sur le bon buffer
+- `test_dsk_drq_callback_updates_loci_byte` : appel direct des
+  callbacks → `loci->dsk_drq` reflète l'état
+
+#### Couverture
+
+- 119 tests test-loci (vs 116 avant)
+- **484 tests global** (vs 481 avant)
+- 0 régression
+
+#### Impact
+
+LOCI peut maintenant servir des `.DSK` Sedoric/disquettes Oric avec
+WD1793 cycle-accurate au 6502, contrairement aux stubs précédents
+(status idle, no DRQ). Ouverture pour intégrer Sedoric directement
+depuis l'image SD raw via LOCI sans Microdisc card.
+
+#### Reste à valider (E2E interactif)
+
+- Boot Sedoric via LOCI : mount d'un `.DSK` Sedoric + ROM swap microdis
+  via MIA_BOOT → boot interactif au prompt Sedoric
+- Performance avec image lue en RAM (vs streaming)
+
+---
+
 ## [1.16.49-alpha] - 2026-06-07
 
 ### Sprint 34av+ — E2E LOCI complet : 007 chargé automatiquement

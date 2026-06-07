@@ -1,12 +1,22 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.49-alpha
+Current Version: 1.16.50-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 34av+ — E2E LOCI complet : 007 jeu chargé automatiquement)
+Status: Alpha (Sprint 34aw — WD1793 cycle-accurate sur DSK LOCI)
 
 Version History:
 ----------------
+- 1.16.50-alpha (2026-06-07): Sprint 34aw — WD1793 cycle-accurate sur DSK LOCI
+  * Réutilisation du fdc_t existant (src/storage/disk.c, déjà cycle-accurate)
+  * 4 dsk_image[] buffers RAM + dsk_fdc dans loci_t
+  * loci_dsk_read/write routés vers fdc_read/write (registers 0-3)
+  * Callbacks DRQ wirés → loci.dsk_drq active-low
+  * fdc_ticktock hooké dans main loop parallèle au Microdisc
+  * loci_apply_dsk_selection sur drive change via CTRL
+  * 3 nouveaux tests : Restore command + drive switch + DRQ callback
+  * 484 tests global (vs 481), 0 régression
+
 - 1.16.49-alpha (2026-06-07): Sprint 34av+ — E2E LOCI complet
   * Doc LOCI TUI récupérée du wiki sodiumlb (raccourcis t/a/b/c/d/m/o/r/s)
   * Validation E2E : t+SPACE+SPACE+ESC mount 007.TAP, CLOAD charge, auto-run

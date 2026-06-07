@@ -539,6 +539,21 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Validé : CALL 1280 manuel sur binaire test = OK (L10 = "Ready" pas erreur)
 - [x] 327 tests pass
 
+### Sprint 34aw: WD1793 cycle-accurate sur bus DSK LOCI (v1.16.50-alpha) - DONE
+- [x] Découverte : fdc_t cycle-accurate déjà existe (src/storage/disk.c)
+- [x] Réutilisation au lieu de réinventer (Microdisc le sert déjà)
+- [x] loci_t étendu : dsk_fdc + dsk_image[4] + dsk_image_size[4]
+      + dsk_tracks[4] + dsk_sectors[4]
+- [x] Callbacks DRQ : loci_fdc_set_drq/clr_drq → loci.dsk_drq (active-low)
+- [x] dsk_open : slurp .DSK en RAM (≤ 1 MB), apply_selection si active
+- [x] dsk_close : free buffer + détache FDC si active
+- [x] loci_dsk_read/write routent vers fdc_read/write (reg 0-3)
+- [x] STATUS OR'd-in NOT_READY si drive non monté
+- [x] fdc_ticktock hooké dans main loop
+- [x] 3 tests nouveaux (Restore command + drive switch + DRQ callback)
+- [x] 119 tests test-loci (vs 116), 484 global, 0 régression
+- [x] Makefile : src/storage/disk.c ajouté à TEST_LOCI_SRCS
+
 ### Sprint 34av+: E2E LOCI complet 007 jeu chargé (v1.16.49-alpha) - DONE
 - [x] Doc LOCI TUI récupérée wiki sodiumlb (raccourcis t/a-d/m/o/r/s/F)
 - [x] Workflow : t → SPACE (picker) → SPACE (file) → ESC (boot)

@@ -1380,6 +1380,71 @@ TEST(test_dsk_four_independent_drives) {
     free(a); free(b); free(c); free(d); free(tmpdir);
 }
 
+/* ── Sprint 34aw : WD1793 cycle-accurate behind LOCI DSK bus ───── */
+
+TEST(test_dsk_wd1793_restore_command_clears_busy) {
+    /* Monte un .DSK minimal, envoie Restore (cmd $08), tickte le FDC, et
+     * vérifie que le bit BUSY redescend. Valide que le pipe LOCI → fdc_t
+     * route bien les commandes WD1793. */
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "r.dsk", 256 * 17 * 41);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "r.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    /* Drive 0 selected by default. Send Restore. */
+    loci_dsk_write(&l, 0x0310, 0x08);
+    /* Tick the FDC for ~1 cycle (the implementation completes restore
+     * synchronously, BUSY is set then cleared via callbacks). */
+    fdc_ticktock(&l.dsk_fdc, 64);
+    uint8_t s = loci_dsk_read(&l, 0x0310);
+    ASSERT_EQ(s & FDC_ST_BUSY, 0);
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
+TEST(test_dsk_wd1793_ctrl_change_drive_repoints_fdc) {
+    /* Mount drives 0 et 1, switch selected, vérifie que le FDC pointe sur
+     * le bon buffer (taille distincte pour différencier). */
+    char* tmpdir = make_tmpdir();
+    char* d0 = make_blob(tmpdir, "0.dsk", 100);
+    char* d1 = make_blob(tmpdir, "1.dsk", 200);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    /* mount drive 0 */
+    push_path(&l, "0.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    /* mount drive 1 */
+    push_path(&l, "1.dsk");
+    l.regs[LOCI_REG_API_A] = 1;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    /* Initially drive 0 selected, FDC points at the 100-byte image. */
+    ASSERT_EQ(l.dsk_fdc.disk_data, l.dsk_image[0]);
+    /* Switch to drive 1 via CTRL ($0314 with bits 5-6 = 1 → 0x20). */
+    loci_dsk_write(&l, 0x0314, 0x20);
+    ASSERT_EQ(l.dsk_selected, 1);
+    ASSERT_EQ(l.dsk_fdc.disk_data, l.dsk_image[1]);
+    unlink(d0); unlink(d1); rmdir(tmpdir);
+    loci_cleanup(&l); free(d0); free(d1); free(tmpdir);
+}
+
+TEST(test_dsk_drq_callback_updates_loci_byte) {
+    /* Le callback de fdc_t qu'on a wiré dans loci_init met à jour
+     * loci->dsk_drq. Vérifie le path en appelant directement. */
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.dsk_drq = 0xFF;   /* dummy initial */
+    /* Simule callback "DRQ set" comme le ferait fdc_t. */
+    l.dsk_fdc.set_drq(&l);
+    ASSERT_EQ(l.dsk_drq, 0x00);
+    l.dsk_fdc.clr_drq(&l);
+    ASSERT_EQ(l.dsk_drq, 0x80);
+}
+
 /* ── 34ah: scénarios d'intégration composés ──────────────────── */
 
 /* Scénario : monter ROM + 2 disques + 1 tape ensemble, vérifier l'état
@@ -2268,6 +2333,9 @@ int main(void) {
     RUN(test_dsk_track_sect_data_passthrough);
     RUN(test_dsk_drq_register);
     RUN(test_dsk_four_independent_drives);
+    RUN(test_dsk_wd1793_restore_command_clears_busy);
+    RUN(test_dsk_wd1793_ctrl_change_drive_repoints_fdc);
+    RUN(test_dsk_drq_callback_updates_loci_byte);
     RUN(test_integration_full_mount_session);
     RUN(test_integration_dir_enumeration);
     RUN(test_integration_tap_multi_header_scan);

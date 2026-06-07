@@ -1301,6 +1301,12 @@ static void emulator_run(emulator_t* emu) {
                 fdc_ticktock(&emu->microdisc.fdc, step);
             }
 
+            /* LOCI WD1793 (Sprint 34aw) : tick the FDC backing LOCI's
+             * 4 virtual DSK drives so DRQ/INTRQ timing is cycle-accurate. */
+            if (emu->has_loci) {
+                fdc_ticktock(&emu->loci.dsk_fdc, step);
+            }
+
             /* ACIA 6551: serial TX/RX timing (aggregated, one call per instruction) */
             if (emu->has_serial) {
                 acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);

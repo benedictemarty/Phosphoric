@@ -283,7 +283,7 @@ test-symbols: $(TEST_SYMBOLS_SRCS)
 	@./test_symbols
 
 TEST_LOCI_SRCS = tests/unit/test_loci.c src/io/loci.c src/io/loci_sdimg.c \
-                 src/utils/logging.c \
+                 src/utils/logging.c src/storage/disk.c \
                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                  src/memory/memory.c src/memory/banking.c
 

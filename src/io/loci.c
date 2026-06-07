@@ -125,6 +125,10 @@ static void seed_initial_stub(loci_t* loci) {
     loci->regs[LOCI_REG_INJECT0 + 9] = 0x00;   /* SREG hi */
 }
 
+/* Forward decls — defined further down. */
+static void loci_fdc_set_drq(void* userdata);
+static void loci_fdc_clr_drq(void* userdata);
+
 bool loci_init(loci_t* loci) {
     if (!loci) return false;
     memset(loci, 0, sizeof(*loci));
@@ -136,6 +140,19 @@ bool loci_init(loci_t* loci) {
     loci->mou_xram = 0xFFFF;
     loci->pad_xram = 0xFFFF;
     seed_initial_stub(loci);
+    /* Sprint 34aw : init the WD1793 backing the 4 DSK drives. Default
+     * geometry matches Oric DSK convention (41 tracks SS, 17 sectors). */
+    fdc_init(&loci->dsk_fdc);
+    /* DRQ callbacks update the LOCI-visible drq byte (active-low : 0=set,
+     * 0x80=clear). Same convention as Microdisc on $0318. */
+    loci->dsk_fdc.set_drq = loci_fdc_set_drq;
+    loci->dsk_fdc.clr_drq = loci_fdc_clr_drq;
+    loci->dsk_fdc.drq_userdata = loci;
+    loci->dsk_drq = 0x80;   /* DRQ inactive at boot */
+    for (int i = 0; i < 4; i++) {
+        loci->dsk_tracks[i]  = 41;
+        loci->dsk_sectors[i] = 17;
+    }
     return true;
 }
 
@@ -176,11 +193,16 @@ void loci_cleanup(loci_t* loci) {
         fclose((FILE*)loci->tap_fp);
         loci->tap_fp = NULL;
     }
-    /* Close mounted disks (Sprint 34ae). */
+    /* Close mounted disks (Sprint 34ae) + free their image buffers (34aw). */
     for (int i = 0; i < 4; i++) {
         if (loci->dsk_fp[i]) {
             fclose((FILE*)loci->dsk_fp[i]);
             loci->dsk_fp[i] = NULL;
+        }
+        if (loci->dsk_image[i]) {
+            free(loci->dsk_image[i]);
+            loci->dsk_image[i] = NULL;
+            loci->dsk_image_size[i] = 0;
         }
     }
     /* Detach SD image backend (Sprint 34ao). */
@@ -1731,18 +1753,69 @@ static void op_tap_read_header(loci_t* loci) {
     api_return_axsreg(loci, (uint32_t)(sync_end - 4));
 }
 
-/* ─── DSK WD179x stub (Sprint 34ae) ───────────────────────────── */
+/* DRQ callbacks bridging fdc_t → loci.dsk_drq (active-low byte). */
+static void loci_fdc_set_drq(void* userdata) {
+    loci_t* l = (loci_t*)userdata;
+    if (l) l->dsk_drq = 0x00;   /* asserted */
+}
+static void loci_fdc_clr_drq(void* userdata) {
+    loci_t* l = (loci_t*)userdata;
+    if (l) l->dsk_drq = 0x80;   /* clear */
+}
+
+/* ─── DSK WD1793 cycle-accurate (Sprint 34aw) ──────────────────────
+ *
+ * Backed by the shared fdc_t module in src/storage/disk.c (same WD1793
+ * core that drives the real Microdisc card). Each of the 4 LOCI virtual
+ * drives keeps its DSK image in RAM (loaded at mount time). On a CTRL
+ * write that changes the active drive, we re-point the FDC at the new
+ * drive's buffer via fdc_set_disk(). The 6502 then reads/writes through
+ * the standard $0310-$0313 register window and the FDC handles the
+ * Restore / Seek / Step / ReadSector / WriteSector / Force commands. */
+
+static void loci_apply_dsk_selection(loci_t* loci) {
+    uint8_t drv = loci->dsk_selected;
+    if (drv >= 4) return;
+    fdc_set_disk(&loci->dsk_fdc,
+                 loci->dsk_image[drv],
+                 loci->dsk_image_size[drv]);
+    loci->dsk_fdc.tracks            = loci->dsk_tracks[drv];
+    loci->dsk_fdc.sectors_per_track = loci->dsk_sectors[drv];
+}
 
 static bool dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
     if (drive >= 4) return false;
+    /* Close previous handle / free previous buffer for this drive. */
     if (loci->dsk_fp[drive]) {
         fclose((FILE*)loci->dsk_fp[drive]);
         loci->dsk_fp[drive] = NULL;
     }
+    if (loci->dsk_image[drive]) {
+        free(loci->dsk_image[drive]);
+        loci->dsk_image[drive] = NULL;
+        loci->dsk_image_size[drive] = 0;
+    }
+    /* Open + slurp the whole .DSK into a malloc'd buffer so the WD1793
+     * has byte-random access (Oric DSKs are typically ≤ 360 KB). */
     FILE* fp = fopen(host_path, "r+b");
     if (!fp) fp = fopen(host_path, "rb");
     if (!fp) return false;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (sz <= 0 || sz > (long)(1 * 1024 * 1024)) { fclose(fp); return false; }
+    uint8_t* buf = (uint8_t*)malloc((size_t)sz);
+    if (!buf) { fclose(fp); return false; }
+    if (fread(buf, 1, (size_t)sz, fp) != (size_t)sz) {
+        free(buf); fclose(fp); return false;
+    }
     loci->dsk_fp[drive] = fp;
+    loci->dsk_image[drive] = buf;
+    loci->dsk_image_size[drive] = (uint32_t)sz;
+    /* If this drive is the currently selected one, re-arm the FDC. */
+    if (loci->dsk_selected == drive) {
+        loci_apply_dsk_selection(loci);
+    }
     return true;
 }
 
@@ -1752,22 +1825,32 @@ static void dsk_close(loci_t* loci, uint8_t drive) {
         fclose((FILE*)loci->dsk_fp[drive]);
         loci->dsk_fp[drive] = NULL;
     }
+    if (loci->dsk_image[drive]) {
+        free(loci->dsk_image[drive]);
+        loci->dsk_image[drive] = NULL;
+        loci->dsk_image_size[drive] = 0;
+    }
+    if (loci->dsk_selected == drive) {
+        fdc_set_disk(&loci->dsk_fdc, NULL, 0);
+    }
 }
 
 uint8_t loci_dsk_read(loci_t* loci, uint16_t address) {
     if (!loci || !loci->enabled) return 0xFF;
     switch (address) {
         case LOCI_DSK_IO_CMD: {
-            /* Report idle status. If selected drive isn't mounted,
-             * flip NOT_READY. */
-            uint8_t s = 0;
-            if (!loci->dsk_fp[loci->dsk_selected])
+            /* STATUS = FDC status OR'd with NOT_READY when the active
+             * drive has no image mounted (the FDC itself doesn't know
+             * about LOCI mount state). */
+            uint8_t s = fdc_read(&loci->dsk_fdc, 0);
+            if (loci->dsk_selected < 4 && !loci->dsk_image[loci->dsk_selected]) {
                 s |= LOCI_DSK_STAT_NOT_READY;
+            }
             return s;
         }
-        case LOCI_DSK_IO_TRACK: return loci->dsk_track;
-        case LOCI_DSK_IO_SECT:  return loci->dsk_sect;
-        case LOCI_DSK_IO_DATA:  return loci->dsk_data;
+        case LOCI_DSK_IO_TRACK: return fdc_read(&loci->dsk_fdc, 1);
+        case LOCI_DSK_IO_SECT:  return fdc_read(&loci->dsk_fdc, 2);
+        case LOCI_DSK_IO_DATA:  return fdc_read(&loci->dsk_fdc, 3);
         case LOCI_DSK_IO_CTRL:  return loci->dsk_ctrl;
         case LOCI_DSK_IO_DRQ:   return loci->dsk_drq;
     }
@@ -1777,17 +1860,21 @@ uint8_t loci_dsk_read(loci_t* loci, uint16_t address) {
 void loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value) {
     if (!loci || !loci->enabled) return;
     switch (address) {
-        case LOCI_DSK_IO_CMD:   loci->dsk_status = 0; break;  /* commands swallowed */
-        case LOCI_DSK_IO_TRACK: loci->dsk_track  = value; break;
-        case LOCI_DSK_IO_SECT:  loci->dsk_sect   = value; break;
-        case LOCI_DSK_IO_DATA:  loci->dsk_data   = value; break;
-        case LOCI_DSK_IO_CTRL:
+        case LOCI_DSK_IO_CMD:   fdc_write(&loci->dsk_fdc, 0, value); break;
+        case LOCI_DSK_IO_TRACK: fdc_write(&loci->dsk_fdc, 1, value); break;
+        case LOCI_DSK_IO_SECT:  fdc_write(&loci->dsk_fdc, 2, value); break;
+        case LOCI_DSK_IO_DATA:  fdc_write(&loci->dsk_fdc, 3, value); break;
+        case LOCI_DSK_IO_CTRL: {
             loci->dsk_ctrl = value;
-            loci->dsk_selected =
-                (uint8_t)((value & LOCI_DSK_CTRL_DRV_SEL_MASK)
-                          >> LOCI_DSK_CTRL_DRV_SEL_SHIFT);
+            uint8_t newdrv = (uint8_t)((value & LOCI_DSK_CTRL_DRV_SEL_MASK)
+                                       >> LOCI_DSK_CTRL_DRV_SEL_SHIFT);
+            if (newdrv != loci->dsk_selected) {
+                loci->dsk_selected = newdrv;
+                loci_apply_dsk_selection(loci);
+            }
             break;
-        case LOCI_DSK_IO_DRQ:   loci->dsk_drq    = value; break;
+        }
+        case LOCI_DSK_IO_DRQ:   loci->dsk_drq = value; break;
     }
 }
 

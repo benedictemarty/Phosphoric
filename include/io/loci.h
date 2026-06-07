@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "storage/disk.h"   /* fdc_t — WD1793 cycle-accurate (Sprint 34aw) */
 
 /* MIA bus range — the API surface lives in this 32-byte window. */
 #define LOCI_MIA_BASE   0x03A0
@@ -278,12 +279,20 @@ typedef struct loci_s {
      * a minimal WD1793 stub: report idle/no-DRQ, accept commands silently. */
     void*    dsk_fp[4];        /* FILE* per drive (NULL = unmounted) */
     uint8_t  dsk_selected;     /* drive selected by last $0314 CTRL write (0..3) */
-    uint8_t  dsk_status;       /* what $0310 read returns */
-    uint8_t  dsk_track;        /* $0311 */
-    uint8_t  dsk_sect;         /* $0312 */
-    uint8_t  dsk_data;         /* $0313 */
+    uint8_t  dsk_status;       /* what $0310 read returns (legacy stub mode) */
+    uint8_t  dsk_track;        /* $0311 (legacy stub mode) */
+    uint8_t  dsk_sect;         /* $0312 (legacy stub mode) */
+    uint8_t  dsk_data;         /* $0313 (legacy stub mode) */
     uint8_t  dsk_ctrl;         /* $0314 — last write */
     uint8_t  dsk_drq;          /* $0318 — current DRQ flag byte */
+    /* Sprint 34aw : real WD1793 backed by the shared fdc_t module. The
+     * 4 dsk_data[]/dsk_size[] buffers hold each .DSK image in memory ;
+     * fdc_set_disk() points the FDC at the active drive on CTRL writes. */
+    fdc_t    dsk_fdc;          /* cycle-accurate WD1793 (src/storage/disk.c) */
+    uint8_t* dsk_image[4];     /* raw .DSK bytes per drive (NULL = unmounted) */
+    uint32_t dsk_image_size[4];/* size in bytes per drive */
+    uint8_t  dsk_tracks[4];    /* derived from DSK header (default 41) */
+    uint8_t  dsk_sectors[4];   /* sectors per track (default 17 Oric) */
 
     /* Action-button trap state (Sprint 34ai).
      * When the user presses the LOCI action button (short, warm path),
