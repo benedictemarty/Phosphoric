@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.57-alpha
+Current Version: 1.16.58-alpha
 Release Date: 2026-06-07
-Status: Alpha (Sprint 34b2 — SAVE/NEW/LOAD round-trip via LOCI : premier test write WD1793 E2E)
+Status: Alpha (Sprint 34b3 — script E2E LOCI/Sedoric + cible Makefile : garde-fou régression)
 
 Version History:
 ----------------
+- 1.16.58-alpha (2026-06-07): Sprint 34b3 — **Régression E2E LOCI/Sedoric** (script bash + cible `make test-loci-e2e`, rejoue 34b0/b1/b2 avec diff bytes), 484 tests PASS
 - 1.16.57-alpha (2026-06-07): Sprint 34b2 — **SAVE/NEW/LOAD round-trip via LOCI** (premier test write WD1793, BASIC text byte-identique au natif après round-trip), 484 tests PASS
 - 1.16.56-alpha (2026-06-07): Sprint 34b1 — **DIR + LOAD"MENU.COM" via LOCI** (catalogue + programme machine, écrans 100 % identiques au natif), 484 tests PASS
 - 1.16.55-alpha (2026-06-07): Sprint 34b0 — **Interaction Sedoric V4.0 via LOCI** (option 6 + drive A → version DOS affichée, écran 100 % identique au natif), 484 tests PASS

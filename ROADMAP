@@ -773,6 +773,13 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] STAT reporte NOT_READY si pas de tape
 - [x] 10 nouveaux tests test-loci
 
+### Sprint 34b3: Régression E2E LOCI/Sedoric — script + cible Makefile (v1.16.58-alpha) - DONE
+- [x] `tests/integration/test_loci_sedoric_e2e.sh` : rejoue 34b0/b1/b2, compare native vs LOCI
+- [x] Skip gracieux si ROMs/images absentes (assets non versionnés)
+- [x] Cible `make test-loci-e2e` opt-in (pas dans `tests` standard : assets externes + ~3 min)
+- [x] 3/3 scenarios E2E PASS sur la machine de dev
+- [x] 484 tests unitaires PASS (suite standard inchangée)
+
 ### Sprint 34b2: Sedoric SAVE/NEW/LOAD round-trip via LOCI (v1.16.57-alpha) - DONE
 - [x] `SAVE"TEST.BAS"` → Sedoric écrit programme + entrée directory via WD1793 Write Sector LOCI
 - [x] `NEW` puis `LOAD"TEST.BAS"` → programme rechargé depuis disque virtuel

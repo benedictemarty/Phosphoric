@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.58-alpha] - 2026-06-07
+
+### Sprint 34b3 — Régression E2E LOCI/Sedoric (script + cible Makefile)
+
+#### Added
+
+- **`tests/integration/test_loci_sedoric_e2e.sh`** — script bash qui
+  rejoue les 3 scénarios des sprints 34b0/b1/b2 et compare native
+  Microdisc vs LOCI sur la fenêtre mémoire pertinente :
+
+  | Scenario | Verif region | Length |
+  |----------|--------------|-------:|
+  | 34b0 DOS version | écran texte `$BB80` | 1120 |
+  | 34b1 DIR catalogue | écran texte `$BB80` | 1120 |
+  | 34b2 SAVE/LOAD round-trip | BASIC text `$0500` | 64 |
+
+  Skip gracieusement (exit 0, comptage `skipped`) si les ROMs ou
+  images disque ne sont pas présentes — la base ne versionne pas ces
+  assets binaires.
+
+- **`make test-loci-e2e`** — cible opt-in. Pas ajoutée à la suite
+  `tests` standard : dépend d'assets non versionnés (~17 MB SD image
+  + .DSK) et tourne plus longtemps (~3 min, 6 lancements de
+  l'émulateur) que le reste de la suite (< 30 s).
+
+#### Validation
+
+```bash
+$ make test-loci-e2e
+[...]
+  Results: 3 passed, 0 failed, 0 skipped
+```
+
+Garde-fou contre régression du pipe LOCI/Sedoric (WD1793 read+write
+multi-secteurs, ROMDIS dynamique, INTRQ asynchrone, ROM swap MIA_BOOT)
+— tous validés en pratique sur le boot + interaction Sedoric V4.0
+master.
+
+#### Tests
+
+- 484 tests unitaires PASS (suite standard inchangée).
+- 3/3 scenarios E2E PASS via `make test-loci-e2e`.
+
+---
+
 ## [1.16.57-alpha] - 2026-06-07
 
 ### Sprint 34b2 — Sedoric SAVE / NEW / LOAD round-trip via LOCI

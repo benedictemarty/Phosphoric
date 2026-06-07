@@ -104,7 +104,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -330,6 +330,11 @@ TEST_COVERAGE_SRCS = tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcode
 test-coverage: $(TEST_COVERAGE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_COVERAGE_SRCS) $(LDFLAGS) -o test_coverage
 	@./test_coverage
+
+# E2E regression of the LOCI/Sedoric pipe (sprints 34b0/b1/b2).
+# Skipped gracefully when required ROM/disk assets are absent.
+test-loci-e2e:
+	@bash tests/integration/test_loci_sedoric_e2e.sh
 
 tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
 	@echo ""
