@@ -170,7 +170,11 @@ static const rom_patches_t rom_patches_basic10 = {
                                       * instead of RTSing. The PHP-orphaned
                                       * stack is reset by the warm-start handler. */
     .writeleader_entry = 0xE6BA,
-    .writeleader_end   = 0xE6C9
+    .writeleader_end   = 0xE6C9,
+    .tape_type_addr    = 0x0064     /* CLOAD header read at $E4BC stores the 9
+                                      * header bytes reversed (STA $5D,X / DEX),
+                                      * so on-tape byte 3 (file type) lands at
+                                      * $64 — NOT $66 ($66 = reserved byte 1). */
 };
 
 static const rom_patches_t rom_patches_basic11 = {
@@ -194,7 +198,11 @@ static const rom_patches_t rom_patches_basic11 = {
     .putbyte_end       = 0xE68A,
     .csave_end         = 0xE93C,
     .writeleader_entry = 0xE75A,
-    .writeleader_end   = 0xE769
+    .writeleader_end   = 0xE769,
+    .tape_type_addr    = 0x02AE    /* CLOAD header read at $E4B9 stores the 9
+                                     * header bytes reversed (STA $02A7,X / DEX),
+                                     * so on-tape byte 3 (file type) lands at
+                                     * $02AE. */
 };
 
 /**
@@ -1387,9 +1395,14 @@ static void emulator_run(emulator_t* emu) {
              * all next-line pointers so GOTO/GOSUB can traverse the chain. */
             if (emu->tape_readbyte_active && emu->rom_patches &&
                 emu->cpu.PC == emu->rom_patches->cload_data_rts) {
-                /* Only rechain BASIC programs (type $00 stored at ZP $66).
-                 * Machine code loads ($80, $C0) must not be rechained. */
-                if (emu->memory.ram[0x66] == 0x00) {
+                /* Only rechain BASIC programs (header file-type byte $00).
+                 * Machine code loads ($80, $C0) must not be rechained —
+                 * rechaining would overwrite program bytes with bogus
+                 * next-line pointers (seen with Asteroids at $0500: 12
+                 * "fixed" pointers corrupted the code, crashing the ROM
+                 * 1.0 autorun JMP ($5F)). The type byte address is
+                 * ROM-specific: $64 on ORIC-1, $02AE on Atmos. */
+                if (emu->memory.ram[emu->rom_patches->tape_type_addr] == 0x00) {
                     basic_rechain(&emu->memory);
                 }
                 emu->tape_readbyte_active = false;

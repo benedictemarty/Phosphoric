@@ -795,6 +795,13 @@ Référence : `docs/control_protocol.md`
 - [ ] `bread <addr> <len>` (framing binaire) — reporté à 35c selon scope
 - [ ] Client de référence Python (livré par OricForge en parallèle)
 
+### Sprint 36c: Fix rechain parasite CLOAD code machine (v1.16.79-alpha) - DONE
+- [x] Diagnostic forum « asteroids.tap no autorun » : reproduit via chemin ROM réel (auto-CLOAD sans `-f`)
+- [x] Root cause : garde rechain lisait le type en `$66` ; ROM 1.0 stocke l'en-tête inversé → type en `$64` (Atmos : `$02AE`)
+- [x] Nouveau champ `rom_patches_t.tape_type_addr` (ORIC-1 `$0064` / Atmos `$02AE`)
+- [x] Vérifié : ROM 1.0 autorun MC = `$E7AA` → `JMP ($005F)` ; Asteroids boote écran titre via CLOAD réel
+- [x] `tests/integration/test_mc_autorun_rechain.sh` + `make test-mc-autorun` (4 scenarios, dont cas témoin rechain BASIC/TYRANN)
+
 ### Sprint 36b: Game compatibility regression suite (v1.16.77-alpha) - DONE
 - [x] `tests/integration/test_game_compat.sh` — boote 7 titres Oric commerciaux depuis OricProgramsLib et vérifie signature distinctive d'intro
 - [x] Cible `make test-game-compat`

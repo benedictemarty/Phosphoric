@@ -108,7 +108,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -341,6 +341,11 @@ test-coverage: $(TEST_COVERAGE_SRCS)
 # Skipped gracefully when required ROM/disk assets are absent.
 test-loci-e2e:
 	@bash tests/integration/test_loci_sedoric_e2e.sh
+
+# Sprint 36c -- machine-code autorun / rechain-gate regression.
+# Requires the emulator + tools to be built (uses bin2tap/bas2tap).
+test-mc-autorun:
+	@bash tests/integration/test_mc_autorun_rechain.sh
 
 # Sprint 36a — throughput benchmark. Runs 4 scenarios headless and
 # reports MHz-equivalent / speed ratio vs real ORIC (1 MHz).

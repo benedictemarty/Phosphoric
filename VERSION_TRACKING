@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.78-alpha
-Release Date: 2026-06-07
-Status: Alpha (Sprint 36b+ — game compat suite étendue 7 → 15 titres ; 15/15 PASS ; 499 tests + 13 E2E + 15 game compat)
+Current Version: 1.16.79-alpha
+Release Date: 2026-06-11
+Status: Alpha (Sprint 36c — fix rechain parasite CLOAD code machine, autorun ROM 1.0 vérifié ; 499 tests + 13 E2E + 15 game compat + 4 mc-autorun)
 
 Version History:
 ----------------
+- 1.16.79-alpha (2026-06-11): Sprint 36c — **Fix rechain parasite CLOAD code machine** (octet de type lu en $66 au lieu de $64/ROM 1.0, $02AE/Atmos — en-tête stocké inversé ; corrompait le code chargé et cassait l'autorun JMP ($5F) ; nouveau `make test-mc-autorun` 4 scenarios), 499 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.78-alpha (2026-06-07): Sprint 36b+ — **Game compat suite étendue** (+8 titres : zaxxon, kong, cobra, exocet, alien-attack, colditz, mr-wimpy, chess-ii ; mix BASIC+MC, FR+EN, arcade+puzzle+chess+shooter), 499 tests + 13 E2E + 15 game compat PASS
 - 1.16.77-alpha (2026-06-07): Sprint 36b — **Game compatibility regression suite** (`make test-game-compat`, 7 titres Oric commerciaux depuis OricProgramsLib, signature distinctive d'intro vérifiée ; item dormant phase 4 « Game compatibility testing » coché), 499 tests + 13 E2E + 7 game compat PASS
 - 1.16.76-alpha (2026-06-07): Sprint 36a — **Performance benchmark harness** (`--bench` flag, `make bench` 4 scenarios, baseline mesurée 99.5x real-time sur basic-idle, overhead ~1% sur frame budget ; item dormant "<5% CPU overhead" enfin chiffré), 499 tests + 13 E2E PASS

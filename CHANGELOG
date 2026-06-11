@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.79-alpha] - 2026-06-11
+
+### Sprint 36c — Fix rechain parasite sur CLOAD code machine (autorun ROM 1.0)
+
+Diagnostic parti d'un rapport forum : `asteroids.tap` (code machine
+ORIC-1, autorun `$C7`) chargeait sous JOric/oric.games mais ne
+démarrait pas. Reproduit dans Phosphoric via le chemin ROM réel
+(auto-CLOAD sans `-f`) : autorun OK… mais crash immédiat vers READY.
+
+#### Fixed
+
+- **Rechain BASIC parasite sur les chargements code machine** : la
+  garde lisait l'octet de type en `$66`, or la lecture d'en-tête CLOAD
+  de la ROM 1.0 (`LDX #$09` / `STA $5D,X` / `DEX`, disasm `$E4BC`)
+  stocke les 9 octets **en ordre inverse** — le type atterrit en `$64`
+  (`$66` = octet réservé 1, toujours `$00`). Tout chargement code
+  machine était donc rechainé : 12 « pointeurs corrigés » écrasaient
+  le code d'Asteroids à `$0500` (ex. `LDX #$FF / TXS` → `LDX #$30`),
+  crash dès le `JMP ($5F)` d'autorun. Nouveau champ
+  `rom_patches_t.tape_type_addr` : `$64` (ORIC-1), `$02AE` (Atmos,
+  en-tête stocké inversé en `$02A8-$02B0` depuis `$E4B9`).
+
+#### Added
+
+- `tests/integration/test_mc_autorun_rechain.sh` + cible
+  `make test-mc-autorun` : 4 scenarios — autorun MC intact (ROM 1.0 +
+  Atmos, marqueur écran + bytes programme vérifiés) + cas témoin
+  rechain BASIC toujours actif (pointeur volontairement corrompu,
+  garde le fix TYRANN).
+
+#### Notes d'investigation (utile aux portages)
+
+- La ROM 1.0 **supporte bien l'autorun code machine** : handler CLOAD
+  `$E7AA` → `$63` (autorun) ≠ 0 puis `$64` (type) ≠ 0 → `JMP ($005F)`.
+  Aucun `CMP #$C7` dans la ROM 1.0 (le `$E7FE` de l'Atmos est le
+  parseur d'options CLOAD, pas le test d'autorun).
+- Asteroids vérifié fonctionnel écran titre via chemin ROM réel
+  ORIC-1 post-fix.
+- Piège outillage : `bin2tap` parse les adresses via `strtol` base 0 —
+  `--start 0500` est lu **octal** (`$0140`). Toujours préfixer `0x`.
+
+#### Tests
+
+- 499 tests unitaires PASS.
+- 13/13 scenarios E2E LOCI/IPC PASS.
+- 4/4 mc-autorun/rechain PASS (nouveau).
+
+---
+
 ## [1.16.78-alpha] - 2026-06-07
 
 ### Sprint 36b+ — Game compat suite étendue 7 → 15 titres

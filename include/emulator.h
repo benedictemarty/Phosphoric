@@ -35,7 +35,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.78-alpha"
+#define EMU_VERSION "1.16.79-alpha"
 
 /**
  * @brief ORIC machine model
@@ -86,6 +86,12 @@ typedef struct rom_patches_s {
     uint16_t csave_end;         /**< CSAVE complete RTS address */
     uint16_t writeleader_entry; /**< writeleader() entry point */
     uint16_t writeleader_end;   /**< writeleader() RTS address */
+    uint16_t tape_type_addr;    /**< RAM address where the ROM stores the tape
+                                  *  header file-type byte ($00=BASIC,
+                                  *  $80=machine code) after CLOAD header read.
+                                  *  Header is stored reversed (STA base,X /
+                                  *  DEX): ORIC-1 $0064, Atmos $02AE. Used to
+                                  *  gate the post-CLOAD BASIC rechain. */
 } rom_patches_t;
 #define ORIC_CLOCK_HZ   1000000
 #define ORIC_FRAME_RATE  50
