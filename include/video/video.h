@@ -11,6 +11,14 @@
 
 #define ORIC_SCREEN_W   240
 #define ORIC_SCREEN_H   224
+/* Maximum framebuffer dimensions across all ULA profiles. The OCULA
+ * profile (RP2350-based ULA replacement, forum.defence-force.org t=2709)
+ * reserves room for future 80-column text (480 px) and doubled vertical
+ * resolution. The framebuffer is allocated at this capacity; the active
+ * resolution is native_w x native_h (240x224 for both profiles until the
+ * OCULA extended modes land). */
+#define OCULA_MAX_W     480
+#define OCULA_MAX_H     448
 #define ORIC_TEXT_COLS   40
 #define ORIC_TEXT_ROWS   28
 #define ORIC_HIRES_W    240
@@ -29,8 +37,21 @@
 #define ORIC_CYAN    6
 #define ORIC_WHITE   7
 
+/* ULA profile: which chip the video subsystem emulates.
+ * HCS10017 is the stock Oric ULA (default, strictly faithful).
+ * OCULA is the RP2350-based replacement project — identical to the stock
+ * ULA for now; extended modes (80-col text, redefinable palette, hi-res
+ * mono) will only ever be reachable under this profile. */
+typedef enum {
+    ULA_PROFILE_HCS10017 = 0,
+    ULA_PROFILE_OCULA    = 1,
+} ula_profile_t;
+
 typedef struct video_s {
-    uint8_t framebuffer[ORIC_SCREEN_W * ORIC_SCREEN_H * 3]; /* RGB888 */
+    uint8_t framebuffer[OCULA_MAX_W * OCULA_MAX_H * 3]; /* RGB888, native_w x native_h used */
+    ula_profile_t ula_profile;
+    int native_w;           /* Active framebuffer width (stride) in pixels */
+    int native_h;           /* Active framebuffer height in pixels */
     bool hires_mode;
     bool need_refresh;
     uint8_t* screen_ram;    /* Pointer into memory $BB80 (text) or $A000 (hires) */
@@ -60,5 +81,11 @@ void video_set_mode(video_t* vid, bool hires);
 void video_render_frame(video_t* vid, const uint8_t* memory);
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y);
 void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b);
+
+/* ULA profile management */
+void video_set_profile(video_t* vid, ula_profile_t profile);
+ula_profile_t video_get_profile(const video_t* vid);
+const char* video_profile_name(ula_profile_t profile);
+int video_profile_parse(const char* name); /* returns ula_profile_t or -1 */
 
 #endif

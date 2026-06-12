@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0-alpha] - 2026-06-12
+
+### Sprint 39 — Profil ULA pluggable : infrastructure OCULA (étape 1)
+
+Phosphoric devient le banc d'essai logiciel du projet OCULA
+(remplacement de l'ULA HCS 10017 par un RP2350B,
+forum.defence-force.org viewtopic.php?t=2709). Cette étape pose
+l'infrastructure : profil sélectionnable, résolution native variable,
+persistance — sans aucun changement de comportement par défaut. Les
+modes étendus (texte 80 colonnes, palette redéfinissable, HIRES
+monochrome 480px, banking) arriveront dans les sprints suivants,
+uniquement accessibles sous le profil `ocula`.
+
+#### Added
+
+- **Profil ULA pluggable** (`ula_profile_t` dans video.h) :
+  `ULA_PROFILE_HCS10017` (défaut, strictement fidèle) et
+  `ULA_PROFILE_OCULA`. API : `video_set_profile()`,
+  `video_get_profile()`, `video_profile_name()`,
+  `video_profile_parse()`. Le profil survit à `video_reset()`
+  (il modélise la puce dans le support, pas un mode d'exécution).
+- **CLI `--ula PROFILE`** (`ula` | `hcs10017` | `ocula`, insensible
+  à la casse) ; argument invalide rejeté avec message explicite.
+- **Résolution native variable** : champs `native_w`/`native_h` dans
+  `video_t`, framebuffer dimensionné à la capacité maximale OCULA
+  (`OCULA_MAX_W`×`OCULA_MAX_H` = 480×448, réserve pour le 80 colonnes
+  et la verticale doublée). Les deux profils rendent 240×224 à ce
+  stade. `set_pixel`, exports PPM/BMP/ASCII et push cast MJPEG
+  suivent désormais la résolution native ; le renderer SDL2 recrée
+  texture + logical size + fenêtre si la résolution change en cours
+  d'exécution.
+- **Persistance savestate** : octet de profil ajouté en fin de
+  section VID du format .ost ; lecture rétro-compatible (les .ost
+  antérieurs à 2 octets VID chargent en profil HCS 10017).
+- **`make test-ocula`** : 12 nouveaux tests unitaires (défaut,
+  set/get, survie au reset, noms, parsing valide/invalide, résolution
+  native par profil, capacité framebuffer, bascule de profil
+  (clear + no-op), rendu OCULA pixel-identique au HCS 10017)
+  + 1 test roundtrip profil dans test_savestate. Total : 536 tests.
+
 ## [1.16.84-alpha] - 2026-06-12
 
 ### Sprint 38 — Trace FDC opt-in (FDC_TRACE) + fix dump RAM 64 Ko

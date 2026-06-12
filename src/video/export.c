@@ -20,11 +20,11 @@ bool video_export_ppm(const video_t* vid, const char* filename) {
     FILE* fp = fopen(filename, "wb");
     if (!fp) return false;
 
-    /* PPM P6 header */
-    fprintf(fp, "P6\n%d %d\n255\n", ORIC_SCREEN_W, ORIC_SCREEN_H);
+    /* PPM P6 header — native resolution follows the active ULA profile */
+    fprintf(fp, "P6\n%d %d\n255\n", vid->native_w, vid->native_h);
 
     /* Raw RGB data */
-    size_t pixels = (size_t)(ORIC_SCREEN_W * ORIC_SCREEN_H * 3);
+    size_t pixels = (size_t)(vid->native_w * vid->native_h * 3);
     size_t written = fwrite(vid->framebuffer, 1, pixels, fp);
     fclose(fp);
 
@@ -37,8 +37,8 @@ bool video_export_bmp(const video_t* vid, const char* filename) {
     FILE* fp = fopen(filename, "wb");
     if (!fp) return false;
 
-    unsigned int w = ORIC_SCREEN_W;
-    unsigned int h = ORIC_SCREEN_H;
+    unsigned int w = (unsigned int)vid->native_w;
+    unsigned int h = (unsigned int)vid->native_h;
     unsigned int row_stride = w * 3;
     unsigned int row_padding = (4 - (row_stride % 4)) % 4;
     unsigned int padded_row = row_stride + row_padding;
@@ -98,9 +98,9 @@ bool video_export_ascii(const video_t* vid, FILE* fp, unsigned int scale_x, unsi
     if (scale_x == 0) scale_x = 2;
     if (scale_y == 0) scale_y = 2;
 
-    for (unsigned int y = 0; y < ORIC_SCREEN_H; y += scale_y) {
-        for (unsigned int x = 0; x < ORIC_SCREEN_W; x += scale_x) {
-            int off = (y * ORIC_SCREEN_W + x) * 3;
+    for (unsigned int y = 0; y < (unsigned int)vid->native_h; y += scale_y) {
+        for (unsigned int x = 0; x < (unsigned int)vid->native_w; x += scale_x) {
+            int off = (int)(y * (unsigned int)vid->native_w + x) * 3;
             uint8_t r = vid->framebuffer[off];
             uint8_t g = vid->framebuffer[off + 1];
             uint8_t b = vid->framebuffer[off + 2];

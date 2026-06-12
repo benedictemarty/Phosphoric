@@ -261,6 +261,8 @@ static void print_usage(const char* program_name) {
     printf("  -p, --printer FILE         Capture printer output to FILE (LPRINT/LLIST)\n");
     printf("      --printer-type TYPE    Printer type: text (default) or mcp40 (4-color plotter)\n");
     printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
+    printf("      --ula PROFILE          ULA profile: ula (stock HCS 10017, default)\n");
+    printf("                             or ocula (OCULA RP2350 replacement, extended modes)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles (\\n=Return, \\pN=pause N sec)\n");
     printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
     printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
@@ -1768,7 +1770,8 @@ static void emulator_run(emulator_t* emu) {
         /* Push frame to cast server if active */
         if (emu->has_cast_server) {
             cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
-                                   ORIC_SCREEN_W, ORIC_SCREEN_H);
+                                   (unsigned int)emu->video.native_w,
+                                   (unsigned int)emu->video.native_h);
         }
 
         /* Present to screen and handle events if not headless */
@@ -2087,6 +2090,7 @@ int main(int argc, char* argv[]) {
     const char* printer_file = NULL;
     const char* printer_type_arg = NULL;
     int scale_factor = 3;
+    int ula_profile = ULA_PROFILE_HCS10017;
     const char* trace_file = NULL;
     const char* dump_ram_at_arg = NULL;
     const char* trace_irq_file = NULL;
@@ -2108,7 +2112,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_ULA };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2159,6 +2163,7 @@ int main(int argc, char* argv[]) {
         {"loci",                no_argument,       0, OPT_LOCI},
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
+        {"ula",                 required_argument, 0, OPT_ULA},
         {"control",             no_argument,       0, OPT_CONTROL},
         {"bench",               no_argument,       0, OPT_BENCH},
         {"help",                no_argument,       0, '?'},
@@ -2210,6 +2215,13 @@ int main(int argc, char* argv[]) {
                 scale_factor = atoi(optarg);
                 if (scale_factor < 1 || scale_factor > 4) {
                     fprintf(stderr, "Invalid scale factor: %s (must be 1-4)\n", optarg);
+                    return 1;
+                }
+                break;
+            case OPT_ULA:
+                ula_profile = video_profile_parse(optarg);
+                if (ula_profile < 0) {
+                    fprintf(stderr, "Invalid ULA profile: %s (must be ula or ocula)\n", optarg);
                     return 1;
                 }
                 break;
@@ -2289,6 +2301,11 @@ int main(int argc, char* argv[]) {
     if (!emulator_init(&emu)) {
         log_error("Failed to initialize emulator");
         return 1;
+    }
+
+    if (ula_profile != ULA_PROFILE_HCS10017) {
+        video_set_profile(&emu.video, (ula_profile_t)ula_profile);
+        log_info("ULA profile: %s", video_profile_name(emu.video.ula_profile));
     }
 
     emu.fast_load = fast_load;

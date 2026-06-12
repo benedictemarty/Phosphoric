@@ -12,14 +12,25 @@
 
 #include "video/video.h"
 #include <string.h>
+#include <strings.h>
 
 static const uint8_t palette[8][3] = {
     {0x00,0x00,0x00},{0xFF,0x00,0x00},{0x00,0xFF,0x00},{0xFF,0xFF,0x00},
     {0x00,0x00,0xFF},{0xFF,0x00,0xFF},{0x00,0xFF,0xFF},{0xFF,0xFF,0xFF},
 };
 
+/* Active resolution for a given profile. Both profiles render 240x224
+ * today; the OCULA extended modes (80-col, hi-res mono) will widen this
+ * per-mode in a later sprint. */
+static void apply_profile_resolution(video_t* vid) {
+    vid->native_w = ORIC_SCREEN_W;
+    vid->native_h = ORIC_SCREEN_H;
+}
+
 bool video_init(video_t* vid) {
     memset(vid, 0, sizeof(video_t));
+    vid->ula_profile = ULA_PROFILE_HCS10017;
+    apply_profile_resolution(vid);
     vid->hires_mode = false;
     vid->need_refresh = true;
     vid->vid_mode = 0x02;  /* Powerup default: TEXT, PAL50 (same as Oricutron) */
@@ -29,10 +40,37 @@ bool video_init(video_t* vid) {
 void video_cleanup(video_t* vid) { (void)vid; }
 
 void video_reset(video_t* vid) {
+    /* ula_profile survives reset: the profile models which physical chip
+     * is socketed, not a runtime mode. */
+    apply_profile_resolution(vid);
     vid->hires_mode = false;
     vid->need_refresh = true;
     vid->vid_mode = 0x02;
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
+}
+
+void video_set_profile(video_t* vid, ula_profile_t profile) {
+    if (vid->ula_profile == profile) return;
+    vid->ula_profile = profile;
+    apply_profile_resolution(vid);
+    memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
+    vid->need_refresh = true;
+}
+
+ula_profile_t video_get_profile(const video_t* vid) {
+    return vid->ula_profile;
+}
+
+const char* video_profile_name(ula_profile_t profile) {
+    return profile == ULA_PROFILE_OCULA ? "ocula" : "ula";
+}
+
+int video_profile_parse(const char* name) {
+    if (!name) return -1;
+    if (strcasecmp(name, "ula") == 0 ||
+        strcasecmp(name, "hcs10017") == 0) return ULA_PROFILE_HCS10017;
+    if (strcasecmp(name, "ocula") == 0) return ULA_PROFILE_OCULA;
+    return -1;
 }
 
 void video_set_mode(video_t* vid, bool hires) {
@@ -46,8 +84,8 @@ void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b) {
 }
 
 static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
-    if (x < 0 || x >= ORIC_SCREEN_W || y < 0 || y >= ORIC_SCREEN_H) return;
-    int off = (y * ORIC_SCREEN_W + x) * 3;
+    if (x < 0 || x >= vid->native_w || y < 0 || y >= vid->native_h) return;
+    int off = (y * vid->native_w + x) * 3;
     vid->framebuffer[off] = r; vid->framebuffer[off+1] = g; vid->framebuffer[off+2] = b;
 }
 

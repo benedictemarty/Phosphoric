@@ -108,7 +108,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-ocula test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -256,6 +256,13 @@ test-renderer: $(TEST_RENDERER_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_RENDERER_SRCS) $(LDFLAGS) -o test_renderer
 	@./test_renderer
 
+TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/renderer.c \
+                  src/memory/memory.c src/memory/banking.c src/utils/logging.c
+
+test-ocula: $(TEST_OCULA_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_OCULA_SRCS) $(LDFLAGS) -o test_ocula
+	@./test_ocula
+
 TEST_TRACE_SRCS = tests/unit/test_trace.c src/utils/trace.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c
@@ -362,7 +369,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
+tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-ocula test-trace test-profiler test-rominfo test-serial test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -494,7 +501,7 @@ uninstall:
 
 clean:
 	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TOOLS)
-	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_audio test_debugger test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_keyboard test_coverage
+	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_audio test_debugger test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_ocula test_trace test_profiler test_rominfo test_serial test_keyboard test_coverage
 	rm -f tools/*.o tools/*.d
 	find . -name '*.gcno' -o -name '*.gcda' -o -name '*.gcov' -o -name '*.d' | xargs rm -f 2>/dev/null
 
@@ -520,6 +527,7 @@ help:
 	@echo "  test-printer - Run printer tests"
 	@echo "  test-mcp40  - Run MCP-40 plotter tests"
 	@echo "  test-renderer- Run display scaling tests"
+	@echo "  test-ocula   - Run OCULA ULA-profile tests"
 	@echo "  test-trace   - Run CPU trace logging tests"
 	@echo "  test-profiler- Run CPU profiler tests"
 	@echo "  test-rominfo - Run ROM analysis tests"

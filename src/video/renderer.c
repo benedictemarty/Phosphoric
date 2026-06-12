@@ -16,9 +16,13 @@ static SDL_Renderer* sdl_renderer;
 static SDL_Texture* texture;
 static bool fullscreen;
 static int current_scale;
+static int tex_w = ORIC_SCREEN_W;   /* Current texture/native resolution */
+static int tex_h = ORIC_SCREEN_H;
 
 bool renderer_init(int scale) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) return false;
+    tex_w = ORIC_SCREEN_W;
+    tex_h = ORIC_SCREEN_H;
     window = SDL_CreateWindow("Phosphoric",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         ORIC_SCREEN_W * scale, ORIC_SCREEN_H * scale,
@@ -49,7 +53,21 @@ void renderer_cleanup(void) {
 }
 
 void renderer_present(video_t* vid) {
-    SDL_UpdateTexture(texture, NULL, vid->framebuffer, ORIC_SCREEN_W * 3);
+    /* OCULA extended modes change the native resolution at runtime:
+     * recreate the streaming texture (and resize the window) to follow. */
+    if (vid->native_w != tex_w || vid->native_h != tex_h) {
+        tex_w = vid->native_w;
+        tex_h = vid->native_h;
+        if (texture) SDL_DestroyTexture(texture);
+        texture = SDL_CreateTexture(sdl_renderer,
+            SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
+            tex_w, tex_h);
+        SDL_RenderSetLogicalSize(sdl_renderer, tex_w, tex_h);
+        if (!fullscreen) {
+            SDL_SetWindowSize(window, tex_w * current_scale, tex_h * current_scale);
+        }
+    }
+    SDL_UpdateTexture(texture, NULL, vid->framebuffer, vid->native_w * 3);
     SDL_RenderClear(sdl_renderer);
     SDL_RenderCopy(sdl_renderer, texture, NULL, NULL);
     SDL_RenderPresent(sdl_renderer);
@@ -66,7 +84,7 @@ void renderer_set_scale(int scale) {
     if (scale == current_scale) return;
     current_scale = scale;
     if (fullscreen) return; /* Don't resize in fullscreen */
-    SDL_SetWindowSize(window, ORIC_SCREEN_W * scale, ORIC_SCREEN_H * scale);
+    SDL_SetWindowSize(window, tex_w * scale, tex_h * scale);
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 

@@ -453,6 +453,32 @@ TEST(test_save_load_with_microdisc) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  TEST 9: ULA profile (OCULA) roundtrip in VID section               */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_save_load_ula_profile) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    video_set_profile(&emu1.video, ULA_PROFILE_OCULA);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+    ASSERT_EQ(video_get_profile(&emu2.video), ULA_PROFILE_OCULA);
+
+    /* And the stock profile roundtrips too */
+    video_set_profile(&emu1.video, ULA_PROFILE_HCS10017);
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+    ASSERT_EQ(video_get_profile(&emu2.video), ULA_PROFILE_HCS10017);
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -471,6 +497,7 @@ int main(void) {
     RUN(test_save_file_header);
     RUN(test_load_invalid_file);
     RUN(test_save_load_with_microdisc);
+    RUN(test_save_load_ula_profile);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

@@ -102,6 +102,14 @@ make SDL2=1
 - **Runtime toggle** — F3 cycles through scale factors
 - **CLI** — `--scale N` (1, 2, 3, 4)
 
+### ULA Profiles (OCULA)
+- **Pluggable ULA** — `--ula ula` (stock HCS 10017, default) or `--ula ocula`
+- **OCULA** — software testbed for the RP2350-based ULA replacement project
+  ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709));
+  renders identically to the stock ULA today, extended modes (80-column text,
+  redefinable palette, 480px hi-res mono, memory banking) land OCULA-only
+- **Persistent** — profile saved in `.ost` save states (backward compatible)
+
 ### CPU Trace Logging
 - **Instruction trace** — Log every CPU instruction with disassembly and register state
 - **CLI** — `--trace FILE` to enable, `--trace-max N` to limit
@@ -187,6 +195,7 @@ Printer:
 
 Display:
   --scale N                 Display scale: 1, 2, 3 (default), 4
+  --ula PROFILE             ULA profile: ula (stock HCS 10017, default), ocula
 
 Trace:
   --trace FILE              Log CPU instruction trace to FILE
@@ -455,4 +464,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.16.75-alpha | 499 unit tests + 12 E2E | ORIC-1 + Atmos | LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-07
+Phosphoric v1.17.0-alpha | 536 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA step 1) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12

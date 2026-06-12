@@ -249,6 +249,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     sec = begin_section(fp, "VID\0");
     write_u8(fp, emu->video.hires_mode ? 1 : 0);
     write_u8(fp, emu->video.vid_mode);
+    write_u8(fp, (uint8_t)emu->video.ula_profile);
     end_section(fp, sec);
 
     /* ── KBD Section ── */
@@ -524,6 +525,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             bool hires = read_u8(fp) != 0;
             emu->video.vid_mode = read_u8(fp);
             emu->video.hires_mode = hires;
+            /* ULA profile byte appended in 1.17.0 — older .ost files have
+             * a 2-byte VID section, default them to the stock HCS 10017. */
+            ula_profile_t profile = ULA_PROFILE_HCS10017;
+            if (sec_size >= 3) {
+                uint8_t p = read_u8(fp);
+                if (p == ULA_PROFILE_OCULA) profile = ULA_PROFILE_OCULA;
+            }
+            video_set_profile(&emu->video, profile);
             /* Recalculate video pointers */
             emu->video.charset = emu->memory.charset;
             if (hires) {

@@ -333,6 +333,33 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] VERSION_TRACKING : 1.16.84-alpha tracé
 - [ ] Élucider test_renderer_init_headless en profil SDL2=1 (pré-existant)
 
+### Sprint 39: Profil ULA pluggable — infrastructure OCULA étape 1 (v1.17.0-alpha) - DONE
+
+Phosphoric comme banc d'essai logiciel du projet OCULA (remplacement
+ULA HCS 10017 par RP2350B, forum.defence-force.org t=2709). Plan en
+4 étapes : 1) infrastructure (ce sprint), 2) texte 80 colonnes,
+3) modes graphiques étendus (palette redéfinissable, HIRES mono 480px),
+4) banking mémoire. Interface de configuration cible : attributs série
+étendus (fidèle à la contrainte « l'ULA ne voit pas A0-A7 »).
+
+- [x] ula_profile_t (HCS10017 défaut / OCULA) + API video_set_profile,
+      video_get_profile, video_profile_name, video_profile_parse
+- [x] Profil survivant à video_reset (puce dans le support, pas un mode)
+- [x] CLI --ula ula|hcs10017|ocula (insensible à la casse, rejet propre)
+- [x] Résolution native variable native_w/native_h ; framebuffer
+      dimensionné OCULA_MAX 480×448 ; set_pixel borné dynamiquement
+- [x] Renderer SDL2 : texture/logical size/fenêtre recréées si la
+      résolution native change en cours d'exécution
+- [x] Exports PPM/BMP/ASCII + push cast MJPEG sur résolution native
+- [x] Savestate .ost : octet profil en fin de section VID, lecture
+      rétro-compatible (anciens fichiers → HCS10017)
+- [x] make test-ocula : 12 tests (dont rendu OCULA pixel-identique au
+      HCS 10017) + 1 roundtrip savestate ; 536 tests au total, 0 échec
+- [ ] Étape 2 : mode texte 80 colonnes (480px, bascule 40/80)
+- [ ] Étape 3 : palette redéfinissable + HIRES monochrome 480px
+- [ ] Étape 4 : banking mémoire (variante RAM intégrée RP2350)
+- [ ] Spécification partagée des attributs étendus dans ~/Occula
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)
