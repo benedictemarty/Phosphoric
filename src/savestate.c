@@ -7,7 +7,8 @@
  *
  * Implements .ost (Oric Save sTate) format:
  * - 48-byte header (magic, version, file size, CRC32, emu version)
- * - Sequential sections: CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, SER, META
+ * - Sequential sections: CPU, MEM, VIA, PSG, VID, OCB, KBD, FDC, MDC, TAP, SER, META
+ *   (OCB = OCULA $A000-$BFFF side banks, present only once banking was used)
  * - CRC32 integrity check over all data after the header
  */
 
@@ -251,6 +252,15 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->video.vid_mode);
     write_u8(fp, (uint8_t)emu->video.ula_profile);
     end_section(fp, sec);
+
+    /* ── OCB Section (OCULA banking, only once side banks exist) ── */
+    if (emu->memory.ocula_bank_mem) {
+        sec = begin_section(fp, "OCB\0");
+        write_u8(fp, emu->memory.ocula_bank);
+        fwrite(emu->memory.ocula_bank_mem, 1,
+               (OCULA_BANK_COUNT - 1) * OCULA_BANK_SIZE, fp);
+        end_section(fp, sec);
+    }
 
     /* ── KBD Section ── */
     sec = begin_section(fp, "KBD\0");
@@ -542,6 +552,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             }
             /* Regenerate framebuffer */
             video_render_frame(&emu->video, emu->memory.ram);
+        } else if (memcmp(tag, "OCB\0", 4) == 0) {
+            uint8_t bank = read_u8(fp);
+            /* Select a side bank first to force allocation, then load */
+            if (memory_ocula_set_bank(&emu->memory, 1)) {
+                fread(emu->memory.ocula_bank_mem, 1,
+                      (OCULA_BANK_COUNT - 1) * OCULA_BANK_SIZE, fp);
+                memory_ocula_set_bank(&emu->memory, bank);
+            }
         } else if (memcmp(tag, "KBD\0", 4) == 0) {
             fread(emu->keyboard.matrix, 1, 8, fp);
         } else if (memcmp(tag, "FDC\0", 4) == 0) {

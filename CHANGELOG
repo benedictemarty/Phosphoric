@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0-alpha] - 2026-06-13
+
+### Sprint 42 — OCULA étape 4 : identification + banking mémoire
+
+Dernière étape du plan OCULA : le plan 4 étapes est complet
+(spec v0.5 dans docs/ocula_extensions.md).
+
+#### Added
+
+- **Fenêtre I/O $03E0-$03E7** (nouveau module src/io/ocula_io.c, actif
+  sous `--ula ocula` uniquement) : $03E0/$03E1 = 'O','C'
+  (identification, pendant du 'L' de LOCI), $03E2 = capacités ($0F :
+  80 col + HIRES étendu + palette + banking), $03E3 = banque CPU,
+  $03E4-$03E7 réservés ($03E4 = future banque vidéo). Réaliste
+  matériellement : l'ULA décode déjà la page $03 (nIO) et pilote le
+  bus en mode OCULA-is-the-RAM.
+- **Banking mémoire $A000-$BFFF** : 8 banques de 8 Ko (banque 0 = RAM
+  principale + 7 banques annexes dans la SRAM OCULA = 56 Ko
+  additionnels), allocation paresseuse, masquage 3 bits. **L'ULA
+  balaye toujours la banque 0** — banking vu du CPU seulement.
+- **Section OCB du savestate .ost** : index + contenu des 7 banques,
+  écrite seulement si le banking a servi ; rétro-compatible.
+- **9 nouveaux tests** (8 ocula_io/banking dans test-ocula + 1
+  roundtrip OCB dans test-savestate). Total : 571 tests.
+- **Validé E2E** via le protocole de contrôle : lecture $03E0-$03E3 =
+  `4F 43 0F 00`, isolation des banques (banque 1 vierge, écriture
+  isolée, banque 0 préservée) ; détection BASIC `PEEK(992)` = 79.
+
+#### Notes
+
+- Piège BASIC documenté : `PEEK(#3E0)` échoue (le tokenizer avale
+  `3E0` comme notation scientifique) → utiliser 992-995 en décimal.
+
 ## [1.19.0-alpha] - 2026-06-13
 
 ### Sprint 41 — OCULA étape 3 : HIRES étendu 320×200 + palette redéfinissable

@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.19.0-alpha** | **562 unit tests + 13 E2E, 100% pass** | **Zero memory leaks**
+**Version: 1.20.0-alpha** | **571 unit tests + 13 E2E, 100% pass** | **Zero memory leaks**
 
 ```
  ____  _                      _                _
@@ -118,8 +118,12 @@ make SDL2=1
 - **Redefinable palette** — 8 RGB332 entries at $BFE0-$BFE7 armed by 'O','C'
   at $BFE8-$BFE9, re-read each frame, applies to all modes; never scanned by
   a stock ULA
-- **Spec** — [docs/ocula_extensions.md](docs/ocula_extensions.md); next:
-  memory banking + OCULA identification register
+- **ID + memory banking** — I/O window $03E0-$03E7: 'O','C' identification
+  (`PEEK(992)=79`), capability byte, and a bank register switching
+  $A000-$BFFF between main RAM and 7 side banks (56 KB extra); the ULA
+  always scans bank 0; banks persist in save states (OCB section)
+- **Spec** — [docs/ocula_extensions.md](docs/ocula_extensions.md) v0.5 —
+  the 4-step OCULA plan is complete
 - **Persistent** — profile saved in `.ost` save states (backward compatible)
 
 ### CPU Trace Logging
@@ -476,4 +480,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.19.0-alpha | 562 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA 80-col) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12
+Phosphoric v1.20.0-alpha | 571 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA 80-col) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12

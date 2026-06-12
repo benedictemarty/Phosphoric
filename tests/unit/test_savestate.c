@@ -479,6 +479,33 @@ TEST(test_save_load_ula_profile) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  TEST 10: OCULA banking (OCB section) roundtrip                     */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_save_load_ocula_banks) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    /* Write a marker in bank 0, then a different one in side bank 3 */
+    emu1.memory.ram[0xA123] = 0x11;
+    memory_ocula_set_bank(&emu1.memory, 3);
+    memory_write(&emu1.memory, 0xA123, 0x5A);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    ASSERT_EQ(memory_ocula_get_bank(&emu2.memory), 3);
+    ASSERT_EQ(memory_read(&emu2.memory, 0xA123), 0x5A);   /* bank 3 */
+    memory_ocula_set_bank(&emu2.memory, 0);
+    ASSERT_EQ(memory_read(&emu2.memory, 0xA123), 0x11);   /* bank 0 */
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -498,6 +525,7 @@ int main(void) {
     RUN(test_load_invalid_file);
     RUN(test_save_load_with_microdisc);
     RUN(test_save_load_ula_profile);
+    RUN(test_save_load_ocula_banks);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

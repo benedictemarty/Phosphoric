@@ -1,7 +1,7 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.4 (Sprint 41) — vérifié sans conflit avec le
-firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
+**Statut** : brouillon v0.5 (Sprint 42, plan 4 étapes complet) — vérifié
+sans conflit avec le firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
 
@@ -120,10 +120,46 @@ sans le magic (ou sous profil stock), palette Oric standard.
   `POKE#BFE7,224` (entrée 7 → rouge pur 0xE0). Désarmement :
   `POKE#BFE8,0`.
 
-## Réservations (étape suivante)
+## Fenêtre I/O $03E0-$03E7 : identification + banking (étape 4)
 
-- **Étape 4** : banking mémoire, registre d'identification OCULA
-  (équivalent du marqueur `'L'` en $0319 de LOCI)
+Contrairement aux extensions vidéo (in-band), cette fenêtre est de
+l'I/O classique dans la page $03xx — réaliste pour le matériel : l'ULA
+décode déjà la page $03 (elle génère nIO), et en mode OCULA-is-the-RAM
+elle voit le bus d'adresses complet et pilote le bus de données.
+
+| Adresse | Accès | Contenu |
+|---------|-------|---------|
+| $03E0 (992) | R | `'O'` ($4F) — identification (pendant du `'L'` de LOCI en $0319) |
+| $03E1 (993) | R | `'C'` ($43) |
+| $03E2 (994) | R | capacités : bit 0 = 80 col, bit 1 = HIRES étendu, bit 2 = palette, bit 3 = banking (= $0F) |
+| $03E3 (995) | R/W | **banque CPU $A000-$BFFF** (0-7, masqué sur 3 bits) |
+| $03E4-$03E7 | R | réservé (lit $00 ; $03E4 réservé pour une future banque vidéo / page flipping) |
+
+### Détection d'OCULA
+
+`IF PEEK(992)=79 AND PEEK(993)=67 THEN` → OCULA présent. Sur un Oric
+stock, $03E0-$03E7 retombe sur le miroir VIA → valeurs différentes.
+**Piège BASIC** : écrire `PEEK(#3E0)` échoue, le tokenizer avale `3E0`
+comme notation scientifique (3×10⁰) — utiliser les adresses décimales
+992-995.
+
+### Banking mémoire
+
+- La fenêtre **$A000-$BFFF (8 Ko)** bascule entre la **banque 0**
+  (RAM principale) et **7 banques annexes** dans la SRAM interne de
+  l'OCULA → 56 Ko additionnels.
+- **L'ULA balaye toujours la banque 0** : le banking est vu du CPU
+  seulement. Composer une image dans une banque annexe puis la copier,
+  ou attendre le registre banque vidéo ($03E4, réservé) pour du vrai
+  page flipping.
+- La fenêtre couvre l'écran texte ($BB80), les charsets ($B400/$B800)
+  et la zone HIRES : banque ≠ 0 les masque au CPU (la ROM continue
+  d'écrire « à l'aveugle » dans la banque active) — revenir en banque 0
+  avant tout affichage.
+- Banques annexes initialisées à zéro ; contenu persistant dans les
+  savestates (section `OCB` du format .ost, présente seulement si le
+  banking a servi).
+- Exemple : `POKE 995,1` (banque 1) … `POKE 995,0` (retour).
 
 ## Implémentation de référence
 

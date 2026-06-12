@@ -24,6 +24,7 @@
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
 #include "io/via6522.h"
+#include "io/ocula_io.h"
 #include "video/video.h"
 #include "video/export.h"
 #include "storage/tap.h"
@@ -531,6 +532,12 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return loci_dsk_read(&emu->loci, address);
     }
 
+    /* OCULA ID + banking window: $03E0-$03E7 (only under --ula ocula) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_io_addr_in_window(address)) {
+        return ocula_io_read(&emu->memory, address);
+    }
+
     /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
         return acia_read(&emu->acia, address);
@@ -678,6 +685,13 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     /* LOCI DSK $0310-$0314 + $0318-$0319 (Sprint 34ae). */
     if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
         loci_dsk_write(&emu->loci, address, value);
+        return;
+    }
+
+    /* OCULA ID + banking window: $03E0-$03E7 (only under --ula ocula) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_io_addr_in_window(address)) {
+        ocula_io_write(&emu->memory, address, value);
         return;
     }
 

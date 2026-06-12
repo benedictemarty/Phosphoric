@@ -25,6 +25,13 @@
 #define RAM_SIZE    49152  /**< User RAM size (48KB) */
 #define ROM_SIZE    16384  /**< ROM size (16KB) */
 
+/* OCULA memory banking (étape 4): the $A000-$BFFF window (8KB) can be
+ * switched between bank 0 (main RAM, always scanned by the ULA) and 7
+ * side banks held in the OCULA's internal SRAM. CPU-visible only. */
+#define OCULA_BANK_COUNT 8       /**< bank 0 = main RAM + 7 side banks */
+#define OCULA_BANK_SIZE  0x2000  /**< $A000-$BFFF */
+#define OCULA_BANK_BASE  0xA000
+
 /**
  * @brief Memory access types (for debugging/tracing)
  */
@@ -68,6 +75,12 @@ typedef struct memory_s {
     /* Memory access tracing (for debugging) */
     bool trace_enabled;
     void (*trace_callback)(uint16_t address, uint8_t value, mem_access_type_t type);
+
+    /* OCULA banking ($A000-$BFFF): bank 0 = ram[], banks 1-7 live in
+     * ocula_bank_mem (lazily allocated, 7 x OCULA_BANK_SIZE). The ULA
+     * always scans bank 0 — banking is CPU-visible only. */
+    uint8_t ocula_bank;          /**< Active CPU bank (0-7) */
+    uint8_t* ocula_bank_mem;     /**< Side banks 1-7 storage, NULL until used */
 
 } memory_t;
 
@@ -181,5 +194,21 @@ void memory_clear_ram(memory_t* mem, uint8_t pattern);
  * @return Pointer to memory region or NULL if invalid
  */
 uint8_t* memory_get_ptr(memory_t* mem, uint16_t address);
+
+/**
+ * @brief Select the OCULA CPU bank for $A000-$BFFF (0-7)
+ *
+ * Allocates the side-bank storage on first non-zero selection.
+ *
+ * @param mem Pointer to memory structure
+ * @param bank Bank number 0-7 (values are masked to 3 bits)
+ * @return true on success, false on allocation failure
+ */
+bool memory_ocula_set_bank(memory_t* mem, uint8_t bank);
+
+/**
+ * @brief Get the active OCULA CPU bank (0 when banking unused)
+ */
+uint8_t memory_ocula_get_bank(const memory_t* mem);
 
 #endif /* MEMORY_H */

@@ -16,6 +16,7 @@
 #include <string.h>
 #include "video/video.h"
 #include "video/export.h"
+#include "io/ocula_io.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -554,6 +555,100 @@ TEST(test_exthires_ppm_export_dimensions) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  ID REGISTERS + MEMORY BANKING (Sprint 42 — $03E0-$03E7)        */
+/* ═══════════════════════════════════════════════════════════════ */
+
+TEST(test_id_registers) {
+    memory_t mem;
+    memory_init(&mem);
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_ID0), 'O');
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_ID1), 'C');
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_CAPS), OCULA_CAPS_ALL);
+    memory_cleanup(&mem);
+}
+
+TEST(test_id_registers_read_only) {
+    memory_t mem;
+    memory_init(&mem);
+    ocula_io_write(&mem, OCULA_IO_ID0, 0xAA);
+    ocula_io_write(&mem, OCULA_IO_CAPS, 0x00);
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_ID0), 'O');
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_CAPS), OCULA_CAPS_ALL);
+    memory_cleanup(&mem);
+}
+
+TEST(test_reserved_regs_read_zero) {
+    memory_t mem;
+    memory_init(&mem);
+    for (uint16_t a = 0x03E4; a <= OCULA_IO_END; a++)
+        ASSERT_EQ(ocula_io_read(&mem, a), 0x00);
+    memory_cleanup(&mem);
+}
+
+TEST(test_bank_default_zero) {
+    memory_t mem;
+    memory_init(&mem);
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_BANK), 0);
+    ASSERT_TRUE(mem.ocula_bank_mem == NULL);  /* no alloc until used */
+    memory_cleanup(&mem);
+}
+
+TEST(test_bank_switch_isolates_window) {
+    memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, 0xA000, 11);            /* bank 0 */
+    ocula_io_write(&mem, OCULA_IO_BANK, 1);
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_BANK), 1);
+    ASSERT_EQ(memory_read(&mem, 0xA000), 0);   /* bank 1 starts clean */
+    memory_write(&mem, 0xA000, 22);
+    ASSERT_EQ(memory_read(&mem, 0xA000), 22);
+    ocula_io_write(&mem, OCULA_IO_BANK, 0);
+    ASSERT_EQ(memory_read(&mem, 0xA000), 11);  /* bank 0 untouched */
+    ocula_io_write(&mem, OCULA_IO_BANK, 1);
+    ASSERT_EQ(memory_read(&mem, 0xA000), 22);  /* bank 1 persisted */
+    memory_cleanup(&mem);
+}
+
+TEST(test_bank_value_masked_to_3_bits) {
+    memory_t mem;
+    memory_init(&mem);
+    ocula_io_write(&mem, OCULA_IO_BANK, 0x0A);  /* 10 & 7 = 2 */
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_BANK), 2);
+    memory_cleanup(&mem);
+}
+
+TEST(test_bank_window_bounds) {
+    memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, 0x9FFF, 33);            /* below window */
+    memory_write(&mem, 0xBFFF, 44);            /* last window byte, bank 0 */
+    ocula_io_write(&mem, OCULA_IO_BANK, 3);
+    memory_write(&mem, 0xBFFF, 55);
+    ASSERT_EQ(memory_read(&mem, 0x9FFF), 33);  /* outside: always bank 0 */
+    ASSERT_EQ(memory_read(&mem, 0xBFFF), 55);
+    ocula_io_write(&mem, OCULA_IO_BANK, 0);
+    ASSERT_EQ(memory_read(&mem, 0xBFFF), 44);
+    memory_cleanup(&mem);
+}
+
+TEST(test_ula_always_scans_bank_0) {
+    static video_t vid;
+    memory_t mem;
+    memory_init(&mem);
+    memset(mem.ram, 0, RAM_SIZE);
+    for (int row = 0; row < 8; row++)
+        mem.ram[0xB400 + 0x41 * 8 + row] = 0x3F;
+    mem.ram[0xBB80] = 0x41;                    /* 'A' in bank 0 screen */
+    video_init(&vid);
+    video_set_profile(&vid, ULA_PROFILE_OCULA);
+    ocula_io_write(&mem, OCULA_IO_BANK, 2);    /* CPU on side bank */
+    /* The ULA renders from mem.ram (bank 0) regardless of CPU bank */
+    video_render_frame(&vid, mem.ram);
+    ASSERT_EQ(vid.framebuffer[0], 0xFF);
+    memory_cleanup(&mem);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -601,6 +696,14 @@ int main(void) {
     RUN(test_palette_applies_in_text_mode);
     RUN(test_palette_restores_when_magic_removed);
     RUN(test_exthires_ppm_export_dimensions);
+    RUN(test_id_registers);
+    RUN(test_id_registers_read_only);
+    RUN(test_reserved_regs_read_zero);
+    RUN(test_bank_default_zero);
+    RUN(test_bank_switch_isolates_window);
+    RUN(test_bank_value_masked_to_3_bits);
+    RUN(test_bank_window_bounds);
+    RUN(test_ula_always_scans_bank_0);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

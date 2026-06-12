@@ -425,9 +425,30 @@ Analyse de sodiumlb/ocula-pivic-firmware v0.1.4 (clone d'étude dans
 - [x] 14 nouveaux tests + 1 ajusté ; 562 tests, 0 échec ; E2E réels
       320×224 + encre rouge palette ; contre-épreuve stock 240×224
 - [x] Spec ocula_extensions.md v0.4
-- [ ] Étape 4 : banking mémoire + registre d'identification OCULA
-- [ ] Mettre à jour la RFC upstream (#53) avec l'étape 3
+- [x] Étape 4 : banking mémoire + registre d'identification → Sprint 42
+- [x] Mettre à jour la RFC upstream (#53) avec l'étape 3
 - [ ] Démo BASIC 80 col + 320×200 + palette dans examples/
+
+### Sprint 42: OCULA étape 4 — identification + banking (v1.20.0-alpha) - DONE
+
+Plan OCULA 4 étapes COMPLET. Spec v0.5.
+
+- [x] Module src/io/ocula_io.c : fenêtre I/O $03E0-$03E7 sous
+      --ula ocula ($03E0/$03E1 = 'O','C', $03E2 = caps $0F,
+      $03E3 = banque, $03E4 réservé banque vidéo/page flipping)
+- [x] Banking $A000-$BFFF : 8 banques × 8 Ko (banque 0 = RAM
+      principale, 7 annexes = 56 Ko SRAM OCULA), allocation paresseuse,
+      ULA toujours sur banque 0 (memory_ocula_set_bank/get_bank)
+- [x] Savestate : section OCB (index + 7×8 Ko), présente seulement si
+      le banking a servi, rétro-compatible
+- [x] 9 nouveaux tests (571 au total, 0 échec)
+- [x] E2E protocole de contrôle : read 03E0 4 → 4F 43 0F 00 ;
+      write/read A000 avec bascule 995 → isolation vérifiée
+- [x] Piège BASIC documenté : PEEK(#3E0) avalé par la notation
+      scientifique → PEEK(992)..POKE 995 en décimal
+- [ ] Proposer l'étape 4 sur la RFC upstream #53
+- [ ] Registre banque vidéo $03E4 (page flipping) si retour upstream
+- [ ] Démo BASIC complète (80 col + 320×200 + palette + banking)
 
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)

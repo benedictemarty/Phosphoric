@@ -18,6 +18,7 @@
 #include "memory/memory.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 bool memory_init(memory_t* mem) {
     memset(mem, 0, sizeof(memory_t));
@@ -52,7 +53,29 @@ bool memory_init(memory_t* mem) {
 }
 
 void memory_cleanup(memory_t* mem) {
-    (void)mem;
+    free(mem->ocula_bank_mem);
+    mem->ocula_bank_mem = NULL;
+    mem->ocula_bank = 0;
+}
+
+bool memory_ocula_set_bank(memory_t* mem, uint8_t bank) {
+    bank &= 0x07;
+    if (bank != 0 && !mem->ocula_bank_mem) {
+        mem->ocula_bank_mem = calloc(OCULA_BANK_COUNT - 1, OCULA_BANK_SIZE);
+        if (!mem->ocula_bank_mem) return false;
+    }
+    mem->ocula_bank = bank;
+    return true;
+}
+
+uint8_t memory_ocula_get_bank(const memory_t* mem) {
+    return mem->ocula_bank;
+}
+
+/* CPU view of the $A000-$BFFF window under OCULA banking. */
+static inline uint8_t* ocula_window_ptr(memory_t* mem, uint16_t address) {
+    return &mem->ocula_bank_mem[(mem->ocula_bank - 1) * OCULA_BANK_SIZE +
+                                (address - OCULA_BANK_BASE)];
 }
 
 bool memory_load_rom(memory_t* mem, const char* filename, uint16_t offset) {
@@ -102,7 +125,12 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
 
     /* RAM: $0000-$BFFF */
     if (address < 0xC000) {
-        val = mem->ram[address];
+        /* OCULA banking: CPU sees the selected side bank at $A000-$BFFF.
+         * The ULA always scans bank 0 (mem->ram). */
+        if (mem->ocula_bank != 0 && address >= OCULA_BANK_BASE)
+            val = *ocula_window_ptr(mem, address);
+        else
+            val = mem->ram[address];
         if (mem->trace_enabled && mem->trace_callback)
             mem->trace_callback(address, val, MEM_READ);
         return val;
@@ -155,7 +183,10 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
 
     /* RAM: $0000-$BFFF always writable */
     if (address < 0xC000) {
-        mem->ram[address] = value;
+        if (mem->ocula_bank != 0 && address >= OCULA_BANK_BASE)
+            *ocula_window_ptr(mem, address) = value;
+        else
+            mem->ram[address] = value;
         return;
     }
 
