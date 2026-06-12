@@ -1,7 +1,9 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.2 (Sprint 40) — à faire converger avec le projet
-matériel OCULA ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
+**Statut** : brouillon v0.3 (Sprint 40) — vérifié sans conflit avec le
+firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
+v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
+à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
 
 Phosphoric sert de banc d'essai logiciel au remplacement de l'ULA HCS 10017
 par un RP2350B. Ce document spécifie le contrat que les programmes Oric
@@ -23,20 +25,27 @@ où l'extension dégrade proprement vers le comportement standard.
 ## Attribut 25 : mode texte 80 colonnes
 
 Le groupe d'attributs 24-31 (`val & 0x18 == 0x18`) définit le mode vidéo :
-`vid_mode = val & 0x07`, avec bit 2 = HIRES, bit 1 = 60 Hz. **Le bit 0
-est un don't-care sur le HCS 10017** — OCULA lui donne un sens :
+`vid_mode = val & 0x07`, avec bit 2 = HIRES, bit 1 = 50 Hz (levé = 50 Hz,
+`ULA_50HZ 0x02` dans le firmware officiel). **Le bit 0 est un don't-care
+sur le HCS 10017 comme dans le firmware OCULA v0.1.4** — cette spec lui
+donne un sens :
 
-| Attribut | HCS 10017 (stock)  | OCULA                       |
-|----------|--------------------|-----------------------------|
-| 24       | TEXT 50 Hz         | TEXT 40 colonnes            |
-| **25**   | TEXT 50 Hz (bit 0 ignoré) | **TEXT 80 colonnes** |
-| 26       | TEXT 50 Hz         | TEXT 40 colonnes            |
-| 28       | HIRES 50 Hz        | HIRES (bit 0 sans effet : bit 2 prioritaire) |
-| 29       | HIRES 50 Hz        | réservé étape 3 (HIRES étendu) |
+| Attribut | vid_mode | HCS 10017 (stock)  | OCULA                       |
+|----------|----------|--------------------|-----------------------------|
+| 24       | `000`    | TEXT 60 Hz         | TEXT 40 colonnes 60 Hz      |
+| **25**   | `001`    | TEXT 60 Hz (bit 0 ignoré) | **TEXT 80 colonnes** 60 Hz |
+| 26       | `010`    | TEXT 50 Hz         | TEXT 40 colonnes 50 Hz      |
+| **27**   | `011`    | TEXT 50 Hz (bit 0 ignoré) | **TEXT 80 colonnes** 50 Hz |
+| 28       | `100`    | HIRES 60 Hz        | HIRES (bit 2 prioritaire sur bit 0) |
+| 29       | `101`    | HIRES 60 Hz        | réservé étape 3 (HIRES étendu) |
+| 30       | `110`    | HIRES 50 Hz        | HIRES 50 Hz                 |
 
-Activation depuis le BASIC : `POKE #BB80,25` (l'attribut est lu au
-balayage suivant). Retour 40 colonnes : placer l'attribut 24 ou 26 dans
-l'écran 80 colonnes (`POKE #A000,26`).
+Le test 80 colonnes est `(vid_mode & 0b101) == 0b001` : les attributs
+25 et 27 l'activent tous deux, le bit 1 (fréquence) restant indépendant.
+Activation depuis le BASIC en PAL : `POKE #BB80,27` (27 préserve le
+50 Hz ; 25 fonctionne aussi mais bascule en 60 Hz sur le matériel réel).
+Retour 40 colonnes : placer l'attribut 26 dans l'écran 80 colonnes
+(`POKE #A000,26`).
 
 ### Mémoire écran 80 colonnes
 

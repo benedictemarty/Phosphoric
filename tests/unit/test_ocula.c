@@ -330,6 +330,17 @@ TEST(test_80col_back_to_40col_via_attr26) {
     ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
 }
 
+TEST(test_80col_latch_via_attr27_50hz) {
+    static video_t vid;
+    setup_80col(&vid);
+    /* Attr 27 = bit 0 (80-col) + bit 1 (50 Hz): frequency bit stays
+     * independent, 80-col activates — canonical PAL activation. */
+    vid.vid_mode = 0x03;
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, OCULA_MAX_W);
+}
+
 TEST(test_80col_hires_bit_wins) {
     static video_t vid;
     setup_80col(&vid);
@@ -389,6 +400,7 @@ int main(void) {
     RUN(test_80col_alt_charset_attr);
     RUN(test_80col_bottom_row_27);
     RUN(test_80col_back_to_40col_via_attr26);
+    RUN(test_80col_latch_via_attr27_50hz);
     RUN(test_80col_hires_bit_wins);
     RUN(test_80col_ppm_export_dimensions);
 

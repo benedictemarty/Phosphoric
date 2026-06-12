@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.1-alpha] - 2026-06-13
+
+### Sprint 40b — Alignement avec le firmware OCULA officiel
+
+Analyse du firmware réel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
+v0.1.4 (clone d'étude dans ~/Occula) et des manuels du wiki ocula-docs.
+
+#### Added
+
+- **docs/ocula_firmware_alignment.md** : rapport d'alignement —
+  l'attribut 25/27 (bit 0 de vid_mode) est confirmé libre dans le
+  firmware officiel (`ULA_50HZ 0x02`, `ULA_HIRES 0x04`, bit 0 jamais
+  lu) ; décodage des attributs série identique à Phosphoric ; `SET
+  MODE` du moniteur USB = mode d'installation (DRAM/OCULA-is-the-RAM),
+  pas un mode vidéo → notre spec in-band est orthogonale et sans
+  conflit. Divergences fines relevées (période FLASH 64 vs 32 trames,
+  modèle double hauteur, timing 60 Hz 264 lignes) + capacités réelles
+  notées (SET PHI2 turbo, SET BOOT remplacement ROM, sortie XULA pour
+  la détection LOCI).
+- **Test attribut 27** (80 col + 50 Hz, activation PAL canonique) ;
+  548 tests au total.
+
+#### Changed
+
+- **docs/ocula_extensions.md v0.3** : sémantique du bit 1 corrigée
+  (levé = 50 Hz, conforme firmware), table des attributs 24-30
+  complétée (binaire + fréquences), activation PAL recommandée
+  `POKE #BB80,27` (25 accepté aussi, test `(vid_mode & 0b101) ==
+  0b001`).
+
 ## [1.18.0-alpha] - 2026-06-12
 
 ### Sprint 40 — OCULA étape 2 : mode texte 80 colonnes
