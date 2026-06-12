@@ -101,4 +101,7 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg);
 void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value);
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles);
 
+/* Trace FDC sur stderr si la variable d'env FDC_TRACE est définie (debug) */
+int fdc_trace_enabled(void);
+
 #endif /* DISK_H */

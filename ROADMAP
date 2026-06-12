@@ -323,6 +323,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] 7 nouveaux tests dont rejeu de la séquence 6502 d'un jeu réel
 - [ ] Validation finale sur interface IJK physique (testeur forum)
 
+### Sprint 38: Trace FDC + fix dump RAM 64 Ko (v1.16.84-alpha) - DONE
+- [x] FDC_TRACE=1 : trace stderr écritures registres FDC (PC 6502 +
+      cycle), SEEK (état interne) et READ (piste/secteur) — a permis
+      de rétracter le faux bug WD1793 « track+1 » du projet SCUMM-Oric
+- [x] --dump-ram-at : retour aux 64 Ko documentés ($C000-$FFFF = vue
+      CPU bankée, sans effet de bord), régression 48 Ko corrigée
+- [x] Suite de tests complète 0 échec (profil sans SDL2)
+- [x] VERSION_TRACKING : 1.16.84-alpha tracé
+- [ ] Élucider test_renderer_init_headless en profil SDL2=1 (pré-existant)
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)

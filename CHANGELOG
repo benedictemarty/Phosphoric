@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.84-alpha] - 2026-06-12
+
+### Sprint 38 — Trace FDC opt-in (FDC_TRACE) + fix dump RAM 64 Ko
+
+Outillage de diagnostic ajouté pour instruire un rapport de bug WD1793
+du projet SCUMM-Oric (« track+1 après scroll ») — la trace a prouvé que
+le bug était dans le harnais de test 6502, pas dans Phosphoric
+(rapport rétracté, cf. SCUMM/docs/phosphoric_bug_report_wd1793_scroll.md).
+
+#### Added
+
+- **`FDC_TRACE=1`** (variable d'environnement) : trace sur stderr
+  chaque écriture registre Microdisc/WD1793 avec PC 6502 et cycle
+  (`[FDC] PC=055F cyc=8692214 write $0313 = 02`), chaque SEEK
+  (piste cible + c_track/track_reg/data internes) et chaque READ
+  (piste/secteur/side + found/NOT_FOUND). Coût nul quand désactivée
+  (getenv évalué une seule fois). `fdc_trace_enabled()` exporté par
+  storage/disk.h ; points de trace dans main.c (io_write_callback,
+  PC + cycle) et storage/disk.c (fdc_seek_track, READ).
+
+#### Fixed
+
+- **`--dump-ram-at` dumpe à nouveau 64 Ko comme documenté** : une
+  régression silencieuse le réduisait à 48 Ko ($0000-$BFFF), cassant
+  11 validations memdump du projet SCUMM-Oric (« dump trop court
+  49152 »). $C000-$FFFF est maintenant la vue CPU réelle (banking
+  BASIC ROM / overlay Microdisc / upper RAM), lue sans effet de bord.
+
+#### Tests
+
+- Suite complète : 0 échec (profil référence sans SDL2).
+- Note : `test_renderer_init_headless` échoue avec `SDL2=1` —
+  pré-existant, indépendant de ce sprint (mode renderer 0x3 vs 0x1
+  attendu quand HAS_SDL2 est défini).
+
 ## [1.16.83-alpha] - 2026-06-12
 
 ### Sprint 37 — Fix modèle joystick IJK : port imprimante (VIA Port A direct)

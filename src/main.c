@@ -692,6 +692,11 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
             acia_write(&emu->acia, address, value);
             return;
         }
+        if (fdc_trace_enabled()) {
+            fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
+                    emu->cpu.PC, (unsigned long long)emu->cpu.cycles,
+                    address, value);
+        }
         microdisc_write(&emu->microdisc, address, value);
         /* Sync overlay flags to memory system */
         emu->memory.basic_rom_disabled = emu->microdisc.romdis;
@@ -1963,8 +1968,15 @@ static void emulator_run(emulator_t* emu) {
             FILE* rf = fopen(emu->dump_ram_at_file, "wb");
             if (rf) {
                 fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
+                /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay /
+                 * upper RAM). memory_read est sans effet de bord hors
+                 * page I/O ($0300-$03FF), jamais atteinte ici. */
+                for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                    uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                    fwrite(&b, 1, 1, rf);
+                }
                 fclose(rf);
-                log_info("RAM dump (48KB $0000-$BFFF) at %llu cycles → %s",
+                log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
                          (unsigned long long)total_executed, emu->dump_ram_at_file);
             } else {
                 log_error("Cannot open RAM dump file: %s", emu->dump_ram_at_file);

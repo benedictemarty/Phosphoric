@@ -18,6 +18,14 @@
 #include "storage/disk.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+/* Trace FDC sur stderr si FDC_TRACE est définie (évalué une seule fois) */
+int fdc_trace_enabled(void) {
+    static int enabled = -1;
+    if (enabled < 0) enabled = (getenv("FDC_TRACE") != NULL);
+    return enabled;
+}
 
 /* Default no-op callback */
 static void fdc_dummy_cb(void* userdata) { (void)userdata; }
@@ -74,6 +82,10 @@ static uint8_t* fdc_find_sector(fdc_t* fdc, uint8_t sec_id) {
  * Sets delayed INTRQ and proper status bits.
  */
 static void fdc_seek_track(fdc_t* fdc, uint8_t target) {
+    if (fdc_trace_enabled()) {
+        fprintf(stderr, "[FDC] seek target=%u (c_track=%u track_reg=%u data=%02X)\n",
+                target, fdc->c_track, fdc->track, fdc->data);
+    }
     if (fdc->disk_data) {
         if (target >= fdc->tracks) {
             target = (fdc->tracks > 0) ? fdc->tracks - 1 : 0;
@@ -279,6 +291,11 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
         case 0x80: /* Read sector (Type II) */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
+            if (fdc_trace_enabled()) {
+                fprintf(stderr, "[FDC] READ c_track=%u sector=%u side=%u %s\n",
+                        fdc->c_track, fdc->sector, fdc->side,
+                        fdc->cur_sector_data ? "ok" : "NOT_FOUND");
+            }
             if (!fdc->cur_sector_data) {
                 fdc->status = FDC_ST_NOT_FOUND;
                 fdc->clr_drq(fdc->drq_userdata);
