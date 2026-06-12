@@ -6,17 +6,24 @@
  * @version 1.6.0-alpha
  *
  * Emulates the IJK joystick interface, the most common ORIC joystick
- * adapter. The IJK connects to the printer port and is read via
- * PSG Port A (register 14), active low.
+ * adapter. The IJK connects to the printer port = VIA Port A driven
+ * DIRECTLY (not through the PSG — that was the v1.16 model, proven
+ * wrong on real hardware by an external tester; protocol below
+ * validated against Oricutron):
  *
- * IJK bit layout (active low: 0 = pressed, 1 = released):
- *   Bit 0: Left
- *   Bit 1: Right
- *   Bit 2: (unused, active low on some interfaces)
- *   Bit 3: Down
- *   Bit 4: Up
- *   Bit 5: Fire
- *   Bit 6-7: unused (active low = 0)
+ *   - Enable:  VIA PB4 (printer strobe) configured as output and
+ *              driven LOW.
+ *   - Select:  Port A bits 6-7 driven as outputs — bit 6 = 1 selects
+ *              stick A, bit 7 = 1 selects stick B, both 1 = none.
+ *   - Read:    Port A bits 0-5 as inputs, active low
+ *              (0 = pressed, 1 = released):
+ *                Bit 0: Right
+ *                Bit 1: Left
+ *                Bit 2: Fire
+ *                Bit 3: Down
+ *                Bit 4: Up
+ *                Bit 5: presence — reads 0 whenever the interface is
+ *                       plugged and enabled (PB4 low), 1 otherwise.
  *
  * Also supports "keyboard-as-joystick" mode where arrow keys and
  * a fire key are mapped to IJK directions.
@@ -32,12 +39,13 @@
 #include <SDL2/SDL.h>
 #endif
 
-/** IJK joystick bit positions (active low) */
-#define IJK_LEFT   (1 << 0)
-#define IJK_RIGHT  (1 << 1)
-#define IJK_DOWN   (1 << 3)
-#define IJK_UP     (1 << 4)
-#define IJK_FIRE   (1 << 5)
+/** IJK joystick bit positions (active low) — real hardware layout */
+#define IJK_RIGHT    (1 << 0)
+#define IJK_LEFT     (1 << 1)
+#define IJK_FIRE     (1 << 2)
+#define IJK_DOWN     (1 << 3)
+#define IJK_UP       (1 << 4)
+#define IJK_PRESENCE (1 << 5)   /**< 0 = interface present and enabled */
 
 /** Joystick input mode */
 typedef enum {
@@ -53,7 +61,7 @@ typedef enum {
  * PSG Port A. Active low: 0xFF = nothing pressed.
  */
 typedef struct oric_joystick_s {
-    uint8_t port_a_mask;       /**< IJK state (active low, AND with keyboard) */
+    uint8_t port_a_mask;       /**< IJK stick state (active low) */
     oric_joy_mode_t mode;      /**< Input mode */
 #ifdef HAS_SDL2
     SDL_GameController* controller;  /**< SDL2 game controller handle */
@@ -80,8 +88,28 @@ void oric_joystick_release(oric_joystick_t* joy, uint8_t button_mask);
 /** Release all directions/buttons */
 void oric_joystick_release_all(oric_joystick_t* joy);
 
-/** Get current IJK port A state (for blending with keyboard) */
+/** Get current raw stick state (active low, no protocol gating) */
 uint8_t oric_joystick_read(const oric_joystick_t* joy);
+
+/**
+ * @brief Full IJK read protocol — external pin state of VIA Port A
+ *
+ * Pure function modelling what the IJK interface drives on the
+ * printer-port lines given the current VIA port states:
+ *   - returns 0xFF (pulled-up, transparent) unless PB4 is configured
+ *     as output (ddrb bit 4 = 1) and driven low (orb bit 4 = 0);
+ *   - otherwise pulls IJK_PRESENCE (bit 5) low, and overlays the
+ *     stick A state when Port A pin 6 is high and pin 7 low
+ *     (select pins as driven by the program through ora/ddra).
+ *
+ * @param via_ora  VIA ORA  (output register A)
+ * @param via_ddra VIA DDRA (data direction A)
+ * @param via_orb  VIA ORB  (output register B)
+ * @param via_ddrb VIA DDRB (data direction B)
+ */
+uint8_t oric_joystick_port_a_pins(const oric_joystick_t* joy,
+                                  uint8_t via_ora, uint8_t via_ddra,
+                                  uint8_t via_orb, uint8_t via_ddrb);
 
 #ifdef HAS_SDL2
 /**

@@ -302,13 +302,26 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ### Sprint 24: IJK Joystick Support (v1.6.0-alpha) - DONE
 - [x] IJK joystick interface (src/io/joystick.c, include/io/joystick.h)
-- [x] PSG Port A active low bit layout: 0=Left, 1=Right, 3=Down, 4=Up, 5=Fire
+- [x] ~~PSG Port A active low bit layout: 0=Left, 1=Right, 3=Down, 4=Up, 5=Fire~~
+      **modèle faux — corrigé Sprint 37** (cf. ci-dessous)
 - [x] Keyboard-as-joystick mode (--joystick keys): arrow keys + RCtrl/RAlt
 - [x] SDL2 game controller mode (--joystick gamepad): D-pad, left stick, A/B/X
-- [x] Joystick/keyboard blending (AND on PSG Port A read)
+- [x] ~~Joystick/keyboard blending (AND on PSG Port A read)~~ **retiré Sprint 37**
 - [x] SDL_INIT_GAMECONTROLLER + hot-plug device detection
 - [x] CLI: -j/--joystick (keys, gamepad)
 - [x] 10 new joystick unit tests (196 total, 100% pass)
+
+### Sprint 37: Fix modèle IJK — port imprimante VIA direct (v1.16.83-alpha) - DONE
+- [x] Protocole réel (validé Oricutron + testeur externe sur interface
+      physique) : enable PB4 sortie+bas, select broches port A 6-7
+      (bit6=stick A, bit7=stick B, les deux=aucun), état bits 0-5
+      actif bas — layout réel Right=0, Left=1, Fire=2, Down=3, Up=4,
+      bit 5 = présence (bas si interface activée)
+- [x] oric_joystick_port_a_pins() pure + câblage via.porta_read
+- [x] via6522: wired-AND des broches externes avec IRA (ORA/ORA_NH)
+- [x] Suppression du blending clavier PSG (non conforme au matériel)
+- [x] 7 nouveaux tests dont rejeu de la séquence 6502 d'un jeu réel
+- [ ] Validation finale sur interface IJK physique (testeur forum)
 
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)

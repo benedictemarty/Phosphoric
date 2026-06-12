@@ -243,7 +243,7 @@ test-printer: $(TEST_PRINTER_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_PRINTER_SRCS) $(LDFLAGS) -o test_printer
 	@./test_printer
 
-TEST_JOYSTICK_SRCS = tests/unit/test_joystick.c src/io/joystick.c src/utils/logging.c
+TEST_JOYSTICK_SRCS = tests/unit/test_joystick.c src/io/joystick.c src/io/via6522.c src/utils/logging.c
 
 test-joystick: $(TEST_JOYSTICK_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_JOYSTICK_SRCS) $(LDFLAGS) -o test_joystick

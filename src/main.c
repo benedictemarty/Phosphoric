@@ -590,14 +590,36 @@ static void psg_decode(emulator_t* emu) {
  *
  * VIA ORB bits 0-2 select the keyboard column (active via 74LS138 decoder).
  * Returns row data: 0xFF = no keys, bit cleared = key pressed (active low).
+ *
+ * Note: the IJK joystick is NOT blended here any more (v1.16 model,
+ * wrong on real hardware) — it lives on the printer port (VIA Port A
+ * direct), see ijk_port_a_read() below.
  */
 static uint8_t keyboard_matrix_read(void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
     uint8_t col = emu->via.orb & 0x07;
-    uint8_t kbd = emu->keyboard.matrix[col];
-    /* Blend joystick IJK state with keyboard (both active low → AND) */
-    uint8_t joy = oric_joystick_read(&emu->joystick);
-    return kbd & joy;
+    return emu->keyboard.matrix[col];
+}
+
+/**
+ * @brief VIA Port A external pins callback — IJK joystick interface
+ *
+ * Hardware-accurate model (validated against Oricutron, after an
+ * external tester proved the PSG-blend model wrong on a real IJK):
+ *   - Enable: VIA PB4 (printer strobe) must be an OUTPUT driven LOW.
+ *   - Select: Port A bits 6-7 (driven by the program as outputs) —
+ *     bit 6 = 1 selects stick A, bit 7 = 1 selects stick B,
+ *     both = 1 selects none. The single emulated stick is stick A.
+ *   - Output: bits 0-5 active low (IJK_RIGHT..IJK_UP per joystick.h),
+ *     bit 5 (IJK_PRESENCE) pulled low whenever the interface is
+ *     enabled — programs use it to detect the interface.
+ * Returns 0xFF (pulled-up lines) when disabled or not plugged.
+ */
+static uint8_t ijk_port_a_read(void* userdata) {
+    emulator_t* emu = (emulator_t*)userdata;
+    return oric_joystick_port_a_pins(&emu->joystick,
+                                     emu->via.ora, emu->via.ddra,
+                                     emu->via.orb, emu->via.ddrb);
 }
 
 /**
@@ -795,7 +817,10 @@ static bool emulator_init(emulator_t* emu) {
     via_set_irq_callback(&emu->via, irq_callback, emu);
 
     /* VIA Port A is driven by PSG in READ mode: psg_decode() updates via.ira
-     * (IRA init = 0xFF, no phantom keys). No porta_read callback needed. */
+     * (IRA init = 0xFF, no phantom keys). porta_read models the EXTERNAL
+     * devices on the printer port pins — the IJK joystick interface
+     * (wired-AND with IRA in via_read, cf. ijk_port_a_read). */
+    emu->via.porta_read = ijk_port_a_read;
     emu->via.portb_read = portb_read_callback;
     emu->via.userdata = emu;
 

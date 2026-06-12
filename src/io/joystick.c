@@ -6,7 +6,9 @@
  * @version 1.6.0-alpha
  *
  * Implements the IJK joystick interface — the most common ORIC joystick
- * adapter. Read via PSG Port A (register 14), active low.
+ * adapter. Lives on the printer port = VIA Port A direct (enable on
+ * PB4 low, stick select on pins 6-7, state on pins 0-5 active low,
+ * presence on bit 5) — cf. oric_joystick_port_a_pins() and joystick.h.
  *
  * Supports SDL2 game controllers and keyboard-as-joystick mode
  * (arrow keys + Right Ctrl as fire).
@@ -57,6 +59,28 @@ uint8_t oric_joystick_read(const oric_joystick_t* joy) {
         return 0xFF;  /* No joystick: all bits high */
     }
     return joy->port_a_mask;
+}
+
+uint8_t oric_joystick_port_a_pins(const oric_joystick_t* joy,
+                                  uint8_t via_ora, uint8_t via_ddra,
+                                  uint8_t via_orb, uint8_t via_ddrb) {
+    uint8_t joysel, out;
+
+    if (joy->mode == ORIC_JOY_DISABLED) return 0xFF;
+    /* Enable: PB4 (printer strobe) output and driven low */
+    if (!(via_ddrb & 0x10)) return 0xFF;
+    if (via_orb & 0x10) return 0xFF;
+
+    out = (uint8_t)~IJK_PRESENCE;       /* presence line pulled low */
+    /* Stick select = Port A pins as driven by the program (output
+     * bits from ORA, floating input lines read high) */
+    joysel = (uint8_t)((via_ora & via_ddra) | ~via_ddra);
+    if ((joysel & 0xC0) == 0xC0) return out;   /* both selects = none */
+    if (joysel & 0x40) {
+        out &= joy->port_a_mask;               /* stick A */
+    }
+    /* bit 7 = stick B: not wired (single emulated joystick) */
+    return out;
 }
 
 /* ═══════════════════════════════════════════════════════════════ */

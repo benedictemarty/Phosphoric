@@ -71,7 +71,13 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
         /* PSG drives IRA only when in READ mode (psg_decode updates ira).
          * Using ira instead of polling a callback matches hardware: PSG
          * puts data on the bus only during its READ bus cycle, not on
-         * every Port A read. IRA is initialised to 0xFF (no keys pressed). */
+         * every Port A read. IRA is initialised to 0xFF (no keys pressed).
+         *
+         * porta_read (optional) models EXTERNAL devices on the printer
+         * port (e.g. IJK joystick interface) pulling lines low: pulled-up
+         * bus, every driver can only pull down → wired-AND of IRA (PSG)
+         * and the external pin state. */
+        uint8_t pins = via->porta_read ? via->porta_read(via->userdata) : 0xFF;
         via->ifr &= ~VIA_INT_CA1;
         {
             uint8_t ca2_mode = via->pcr & 0x0E;
@@ -79,7 +85,7 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
                 via->ifr &= ~VIA_INT_CA2;
         }
         via_check_irq(via);
-        return (via->ora & via->ddra) | (via->ira & ~via->ddra);
+        return (via->ora & via->ddra) | ((via->ira & pins) & ~via->ddra);
     }
     case VIA_DDRB: return via->ddrb;
     case VIA_DDRA: return via->ddra;
@@ -107,8 +113,12 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
     case VIA_PCR: return via->pcr;
     case VIA_IFR: return via->ifr;
     case VIA_IER: return via->ier | VIA_INT_ANY;
-    case VIA_ORA_NH:
-        return (via->ora & via->ddra) | (via->ira & ~via->ddra);
+    case VIA_ORA_NH: {
+        /* No-handshake variant: same wired-AND as VIA_ORA, without
+         * touching the CA1/CA2 interrupt flags. */
+        uint8_t pins = via->porta_read ? via->porta_read(via->userdata) : 0xFF;
+        return (via->ora & via->ddra) | ((via->ira & pins) & ~via->ddra);
+    }
     }
     return 0xFF;
 }

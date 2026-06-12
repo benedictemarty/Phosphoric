@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.83-alpha] - 2026-06-12
+
+### Sprint 37 — Fix modèle joystick IJK : port imprimante (VIA Port A direct)
+
+Le modèle IJK historique (état blendé dans la lecture clavier du
+port A du PSG, R14) était **faux** — prouvé par un testeur externe
+(forum Defence-Force) : un jeu utilisant ce protocole marchait sous
+Phosphoric mais pas sur interface IJK réelle. Protocole corrigé,
+validé contre Oricutron :
+
+#### Fixed
+
+- **Interface IJK = port imprimante (VIA Port A direct)** : enable par
+  PB4 (strobe) configuré en sortie et tiré bas ; sélection du stick
+  par les broches 6-7 du port A (bit 6 = stick A, bit 7 = stick B,
+  les deux = aucun) ; état sur bits 0-5 actif bas avec le layout réel
+  **Right=0, Left=1, Fire=2, Down=3, Up=4** (l'ancien layout
+  L/R/D/U/F sur 0/1/3/4/5 était lui aussi erroné) ; **bit 5 =
+  présence**, tiré bas dès que l'interface est activée (détection
+  logicielle). `oric_joystick_port_a_pins()` (fonction pure,
+  testable) + câblage `via.porta_read` → `ijk_port_a_read()`.
+- **via6522 : lecture ORA/ORA_NH** — wired-AND des broches externes
+  (`porta_read`, pull-ups) avec IRA (bus PSG) sur les bits en entrée ;
+  le callback `porta_read` existait mais n'était jamais consommé.
+- **keyboard_matrix_read** : suppression du blending joystick (le
+  clavier PSG ne voit plus jamais l'état IJK — conforme au matériel).
+
+#### Added
+
+- 7 nouveaux tests unitaires (`test_joystick.c`) : layout réel des
+  bits, gating PB4 (input/haut), présence seule, lecture stick A,
+  selects flottants, mode désactivé, et un test d'intégration
+  via6522 qui rejoue la séquence 6502 exacte utilisée par un jeu
+  (DDRB=$F7, PB4=0, DDRA=$C0, ORA=$40, LDA ORA). 17/17 PASS,
+  suite complète verte.
+
 ## [1.16.82-alpha] - 2026-06-12
 
 ### Sprint 36f — Backlog conformité LOCI : console UART, TAP bas niveau, ACIA $0380
