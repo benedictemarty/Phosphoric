@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.81-alpha
+Current Version: 1.16.82-alpha
 Release Date: 2026-06-12
-Status: Alpha (Sprint 36e — Conformité API LOCI vs firmware : lseek whence/ordre args, phi2 kHz, xstack 512 ; 505 tests + 13 E2E + 15 game compat + 4 mc-autorun)
+Status: Alpha (Sprint 36f — Backlog conformité LOCI : console UART $03A0-$03A3, TAP bas niveau $0315-$0317, ACIA $0380, adj_scan ; 516 tests + 13 E2E + 15 game compat + 4 mc-autorun)
 
 Version History:
 ----------------
+- 1.16.82-alpha (2026-06-12): Sprint 36f — **Backlog conformité LOCI** (console UART $03A0-$03A2 + snoop ULA $03A3 ; protocole TAP bas niveau PLAY/REC/READ_BIT/FFW avec lead-in 8×0x16, trame 14 bits et protection moteur via snoop VIA ORB ; op $A6 adj_scan ; $031A-$031B ; octets exacts IRQ/DRQ $0314/$0318 ; ACIA par défaut à $0380 sous --loci ; fix build headless clock_gettime ; 11 nouveaux tests), 516 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.81-alpha (2026-06-12): Sprint 36e — **Conformité API LOCI vs firmware officiel** (audit complet vs `sodiumlb/loci-firmware` : `lseek` op $1A ordre des args inversé (whence au sommet, offset short-stack 0-4 octets signe-étendu) + mapping whence inversé (0=CUR/1=END/2=SET) ; `phi2` op $02 retourne 1000 kHz dans AX au lieu de 1 000 000 Hz ; `LOCI_XSTACK_SIZE` 256→512 = firmware `XSTACK_SIZE 0x200` ; 4 nouveaux tests), 505 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.80-alpha (2026-06-11): Sprint 36d — **LOCI identity marker register $0319** (`LOCI_DSK_IO_ID` returns 'L' (0x4C) when LOCI enabled, matching real loci-firmware `IOREGS(0x0319)='L'`/disabled writes ; unblocks client `loci_present()` checks under `--loci`/`--loci-flash`, found while building locifilemanager-v2 test harness ; 2 new unit tests), 501 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.79-alpha (2026-06-11): Sprint 36c — **Fix rechain parasite CLOAD code machine** (octet de type lu en $66 au lieu de $64/ROM 1.0, $02AE/Atmos — en-tête stocké inversé ; corrompait le code chargé et cassait l'autorun JMP ($5F) ; nouveau `make test-mc-autorun` 4 scenarios), 499 tests + 13 E2E + 4 mc-autorun PASS

@@ -801,7 +801,20 @@ Référence : `docs/control_protocol.md`
 - [x] Fix `phi2` op $02 : retourne 1000 kHz dans AX (convention `cpu_api_phi2`) au lieu de 1 000 000 Hz en AXSREG (débordait AX)
 - [x] Fix `LOCI_XSTACK_SIZE` 256 → 512 (= firmware `XSTACK_SIZE 0x200`, `mem.h`) ; `read_xstack` accepte désormais count ≤ 512
 - [x] 4 nouveaux tests (whence CUR/END + short-stack 0 et 1 octet signe-étendu, capacité xstack 512, read_xstack > 256) ; tests lseek/phi2 existants réalignés sur la convention firmware
-- [ ] Backlog 36f (divergences moyennes documentées dans l'audit) : console UART $03A0-$03A3 (bit7 TX-ready minimal), protocole TAP bas niveau $0315/$0317 (PLAY/REC/READ_BIT/FFW), ACIA LOCI $0380-$0383, op $A6 `adj_scan`, $031A-$031B, bits bas $0314/$0318
+- [x] Backlog 36f (divergences moyennes documentées dans l'audit) : console UART $03A0-$03A3 (bit7 TX-ready minimal), protocole TAP bas niveau $0315/$0317 (PLAY/REC/READ_BIT/FFW), ACIA LOCI $0380-$0383, op $A6 `adj_scan`, $031A-$031B, bits bas $0314/$0318 → livré en Sprint 36f (v1.16.82-alpha)
+
+### Sprint 36f: Backlog conformité LOCI — console UART, TAP bas niveau, ACIA $0380 (v1.16.82-alpha) - DONE
+- [x] Console UART $03A0-$03A2 : flags TX-ready/RX-ready, TX bufferisé ligne → log, file RX 64 octets (`loci_cons_inject`) ; $03A3 snoop ULA (write clear)
+- [x] Protocole TAP bas niveau $0315-$0317 : PLAY / REC / READ_BIT (trame 14 bits `tap_encode_byte` : start 0, 8 data LSB-first, parité impaire, stops) / FFW ; lead-in 8×0x16 ; EOF → 0x00
+- [x] Protection moteur firmware-conforme : PLAY/REC/READ_BIT latchés moteur coupé, exécutés au démarrage moteur (snoop VIA ORB $0300 bit 6 → `loci_tap_motor`)
+- [x] Montage TAP r+b avec repli lecture seule + WPROT dans $0316
+- [x] Op $A6 `adj_scan` : ack AX=0, xram[$FFF0] = scan terminé
+- [x] $031A-$031B dans la fenêtre DSK (stockage simple, init 0)
+- [x] $0314/$0318 : octets exacts 0x80/0x00 (suppression du padding `|0x7F`)
+- [x] ACIA par défaut à $0380-$0383 sous `--loci` + `--serial` (override `--acia-addr`)
+- [x] Fix build headless : `_POSIX_C_SOURCE 200809L` pour `clock_gettime` (régression sprint 36a, visible uniquement sans SDL2=1)
+- [x] 11 nouveaux tests unitaires (150 au total sur test-loci)
+- Reste hors scope (documenté) : émulation PIO du pattern matcher ULA $03A3 (write-only chez nous), BUSY observable (handlers synchrones), LittleFS "0:" distinct
 
 ### Sprint 36d: LOCI identity marker register $0319 (v1.16.80-alpha) - DONE
 - [x] Found while building Phosphoric-based test harness for locifilemanager-v2 (LOCI Oric Atmos client)

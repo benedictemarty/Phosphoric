@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.82-alpha] - 2026-06-12
+
+### Sprint 36f — Backlog conformité LOCI : console UART, TAP bas niveau, ACIA $0380
+
+Suite de l'audit 36e : résorption des divergences moyennes/mineures
+restantes vis-à-vis du firmware `sodiumlb/loci-firmware`.
+
+#### Added
+
+- **Console UART $03A0-$03A2** (`loci_core.c`) : $03A0 lecture =
+  bit 7 TX prêt (toujours 1) + bit 6 RX disponible avec préchargement
+  de $03A2 ; $03A1 écriture TX accumulée en ligne et flushée vers le
+  log sur '\n' ; $03A2 lecture consomme la file RX (ring 64 octets,
+  alimentée par `loci_cons_inject()`). $03A3 (snoop ULA) : l'écriture
+  recharge le pattern matcher et remet le registre à 0.
+- **Protocole TAP bas niveau $0315-$0317** (`loci_bus.c`) : commandes
+  PLAY (lecture octet), REC (écriture octet $0317), READ_BIT (trame
+  14 bits LSB-first : start 0, 8 data, parité impaire, stops — réplique
+  de `tap_encode_byte`), FFW (seek fin de bande) ; lead-in synthétique
+  8×0x16 après mount/rewind/seek(0) sans avancer le compteur ; EOF
+  renvoie 0x00. PLAY/REC/READ_BIT sont protégés moteur : latchés dans
+  $0315 tant que le moteur est coupé, exécutés dès qu'il démarre
+  (snoop VIA ORB $0300 bit 6 → `loci_tap_motor()`, comme `tap_act`).
+  Montage TAP en lecture/écriture (r+b) avec repli lecture seule +
+  bit WPROT dans $0316.
+- **Op $A6 `adj_scan`** : ack immédiat AX=0, progression xram[$FFF0]
+  posée à « scan terminé » (bit 7 clair).
+- **$031A-$031B** : intégrés à la fenêtre DSK (read-enable firmware),
+  stockage simple init 0.
+- **ACIA sous LOCI** : avec `--loci` + `--serial` sans `--acia-addr`
+  explicite, l'ACIA 6551 est mappée par défaut à $0380-$0383 comme le
+  firmware (`acia.c` : `acia_io = &IOREGS(0x380)`).
+- 11 nouveaux tests unitaires (console flags/FIFO/TX, snoop ULA,
+  adj_scan, lead-in PLAY, protection moteur, trame READ_BIT 0x3C2C,
+  REC+FFW+REW, $031A/B, octets exacts IRQ).
+
+#### Fixed
+
+- **$0314/$0318 lecture** : octets exacts 0x80 (repos) / 0x00 (actif)
+  comme le firmware, au lieu du padding `| 0x7F`.
+- **Build headless cassé** (`make` sans SDL2=1) : `clock_gettime` /
+  `CLOCK_MONOTONIC` (timer bench, sprint 36a) non déclarés sous
+  `-std=c11` strict — ajout de `_POSIX_C_SOURCE 200809L` dans main.c.
+
 ## [1.16.81-alpha] - 2026-06-12
 
 ### Sprint 36e — Conformité API LOCI vs firmware officiel

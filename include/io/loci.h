@@ -25,8 +25,10 @@
 #define LOCI_MIA_SIZE   32
 
 /* Selected register offsets within the window (firmware-truthful names). */
-#define LOCI_REG_CONS_FLAGS   0x00   /* $03A0 — bit 7 = data avail, bit 6 = VSYNC */
-#define LOCI_REG_CONS_CHAR    0x02   /* $03A2 — console input character */
+#define LOCI_REG_CONS_FLAGS   0x00   /* $03A0 — bit 7 = TX writable, bit 6 = RX ready */
+#define LOCI_REG_CONS_TX      0x01   /* $03A1 — console UART TX (write) */
+#define LOCI_REG_CONS_CHAR    0x02   /* $03A2 — console UART RX (read consumes) */
+#define LOCI_REG_ULA_SNOOP    0x03   /* $03A3 — ULA mode snoop (write reloads matcher) */
 #define LOCI_REG_RW0          0x04   /* $03A4 — DMA window 0 data */
 #define LOCI_REG_STEP0        0x05   /* $03A5 — DMA window 0 step (signed) */
 #define LOCI_REG_RW1          0x08   /* $03A8 — DMA window 1 data */
@@ -80,6 +82,7 @@ typedef enum {
     LOCI_OP_MAP_TUNE_TIOW    = 0xA3,
     LOCI_OP_MAP_TUNE_TIOD    = 0xA4,
     LOCI_OP_MAP_TUNE_TADR    = 0xA5,
+    LOCI_OP_ADJ_SCAN         = 0xA6,
     LOCI_OP_RESET_SENTINEL   = 0xFF
 } loci_op_t;
 
@@ -101,6 +104,7 @@ typedef enum {
 #define LOCI_ERANGE  15
 #define LOCI_EBADF   16
 #define LOCI_ENOEXEC 17
+#define LOCI_EUNKNOWN 18
 
 #define LOCI_XSTACK_SIZE 512   /* matches firmware XSTACK_SIZE 0x200 (mem.h) */
 
@@ -143,6 +147,8 @@ typedef enum {
 #define LOCI_DSK_IO_CTRL    0x0314
 #define LOCI_DSK_IO_DRQ     0x0318
 #define LOCI_DSK_IO_ID      0x0319   /* LOCI identity marker, read-only 'L' */
+#define LOCI_DSK_IO_SPARE0  0x031A   /* in firmware read-enable map, plain storage */
+#define LOCI_DSK_IO_SPARE1  0x031B
 
 /* WD1793 status bits we report (subset). */
 #define LOCI_DSK_STAT_NOT_READY  0x80
@@ -277,6 +283,25 @@ typedef struct loci_s {
     uint32_t tap_counter;  /* current read offset */
     uint8_t  tap_cmd;      /* last value written to $0315 (CMD) */
     uint8_t  tap_stat;     /* mirrored to $0316 (STAT) */
+    /* Sprint 36f — low-level TAP protocol (firmware tap.c semantics). */
+    uint8_t  tap_data;        /* $0317 DATA register */
+    uint8_t  tap_lead_in;     /* synthetic 0x16 bytes served (max 8) */
+    uint8_t  tap_bit_counter; /* READ_BIT frame position 0..13 */
+    uint16_t tap_encoded;     /* current 14-bit READ_BIT frame */
+    bool     tap_motor_on;    /* snooped from VIA ORB $0300 bit 6 */
+    bool     tap_wprot;       /* mounted file is not writable */
+
+    /* Console UART $03A0-$03A2 (Sprint 36f). TX accumulates into a line
+     * buffer flushed to the log on '\n'; RX is a small ring fed by
+     * loci_cons_inject() (tests / future host bridges). */
+    char     cons_tx_line[128];
+    uint8_t  cons_tx_len;
+    uint8_t  cons_rx[64];
+    uint8_t  cons_rx_head;
+    uint8_t  cons_rx_tail;
+
+    /* $031A-$031B spare DSK-window bytes (firmware: plain storage). */
+    uint8_t  dsk_spare[2];
 
     /* DSK multi-drive backend (Sprint 34ae).
      * Each of slots 0-3 may have an open host file. The bus interface is
@@ -464,15 +489,26 @@ static inline bool loci_addr_in_tap(uint16_t address) {
     return address >= LOCI_TAP_IO_CMD && address <= LOCI_TAP_IO_DATA;
 }
 
-/* DSK WD179x register range $0310-$0314 + $0318-$0319 (Sprint 34ae). */
+/* DSK WD179x register range $0310-$0314 + $0318-$031B (Sprint 36f extends
+ * to the full firmware read-enable window). */
 static inline bool loci_addr_in_dsk(uint16_t address) {
     return (address >= LOCI_DSK_IO_CMD && address <= LOCI_DSK_IO_CTRL) ||
-           (address == LOCI_DSK_IO_DRQ) || (address == LOCI_DSK_IO_ID);
+           (address >= LOCI_DSK_IO_DRQ && address <= LOCI_DSK_IO_SPARE1);
 }
 
 /* TAP register access (used by the main I/O router). */
 uint8_t loci_tap_read(loci_t* loci, uint16_t address);
 void    loci_tap_write(loci_t* loci, uint16_t address, uint8_t value);
+
+/* Cassette motor snoop (Sprint 36f) — the firmware watches VIA ORB
+ * writes at $0300 and takes bit 6 as the motor line. PLAY/REC/READ_BIT
+ * are motor-protected: they stay latched in $0315 until the motor turns
+ * on, exactly like the firmware tap_task() state machine. */
+void    loci_tap_motor(loci_t* loci, bool on);
+
+/* Inject one byte into the console UART RX ring ($03A2). Used by tests
+ * and future host-side console bridges. */
+void    loci_cons_inject(loci_t* loci, uint8_t ch);
 
 /* DSK register access — stub WD1793 (Sprint 34ae). */
 uint8_t loci_dsk_read(loci_t* loci, uint16_t address);

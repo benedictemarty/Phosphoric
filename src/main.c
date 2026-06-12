@@ -6,6 +6,9 @@
  * @version 1.0.0-beta.2
  */
 
+/* clock_gettime/CLOCK_MONOTONIC (bench timer) under strict -std=c11. */
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -680,6 +683,12 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     if (reg == VIA_ORA || reg == 0x0F) {
         /* ORA write: data goes to PSG bus. The actual PSG operation
          * depends on BDIR/BC1 which are set via ORB. */
+    }
+
+    /* LOCI snoops VIA ORB writes ($0300) for the cassette motor line
+     * (PB6), like the firmware tap_act() hook (Sprint 36f). */
+    if (emu->has_loci && address == 0x0300) {
+        loci_tap_motor(&emu->loci, (value & 0x40) != 0);
     }
 
     /* Capture old PCR before VIA write (for printer strobe edge detection) */
@@ -2287,6 +2296,11 @@ int main(int argc, char* argv[]) {
     if (acia_addr_arg) {
         emu.acia_base_addr = (uint16_t)strtol(acia_addr_arg, NULL, 16);
         log_info("ACIA base address: $%04X", emu.acia_base_addr);
+    } else if (loci_enabled && serial_arg) {
+        /* LOCI firmware exposes its ACIA at $0380-$0383 (acia.c). Under
+         * --loci, default there so LOCI client software finds it. */
+        emu.acia_base_addr = 0x0380;
+        log_info("ACIA base address: $0380 (LOCI default — override with --acia-addr)");
     } else {
         emu.acia_base_addr = ACIA_DEFAULT_BASE;
     }

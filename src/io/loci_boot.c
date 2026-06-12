@@ -98,6 +98,15 @@ static void op_map_tune_noop(loci_t* loci, const char* name) {
     api_return_ax(loci, 0);
 }
 
+void op_adj_scan(loci_t* loci) {
+    /* Firmware (adj.c) releases immediately then sweeps tior 0-31 with
+     * progress in xram[$FFF0] (bit 7 = scan in progress). No hardware to
+     * tune here: report an already-completed scan. */
+    loci->xram[0xFFF0] = 0x00;
+    xstack_zero(loci);
+    api_return_ax(loci, 0);
+}
+
 void op_map_tune_tmap(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TMAP"); }
 void op_map_tune_tior(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TIOR"); }
 void op_map_tune_tiow(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TIOW"); }

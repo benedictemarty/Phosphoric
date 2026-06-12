@@ -13,6 +13,7 @@
 
 #include "../../include/emulator.h"   /* EMU_VERSION (test_uname release) */
 #include "../../include/io/loci.h"
+#include "../../include/io/loci_internal.h"   /* loci_tap_open/close (36f) */
 #include "../../include/utils/logging.h"
 #include "../../include/cpu/cpu6502.h"
 #include "../../include/memory/memory.h"
@@ -97,8 +98,10 @@ TEST(test_disabled_write_is_noop) {
 TEST(test_write_read_passthrough) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    loci_write(&l, 0x03A0, 0x42);
-    ASSERT_EQ(loci_read(&l, 0x03A0), 0x42);
+    /* $03A0 is live since Sprint 36f (console flags) — use plain
+     * storage registers for the passthrough check. */
+    loci_write(&l, 0x03B8, 0x42);
+    ASSERT_EQ(loci_read(&l, 0x03B8), 0x42);
     loci_write(&l, 0x03B4, 0xAB);
     ASSERT_EQ(loci_read(&l, 0x03B4), 0xAB);
 }
@@ -1782,9 +1785,9 @@ TEST(test_dsk_track_sect_data_passthrough) {
 TEST(test_dsk_drq_register) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    /* Sprint 34aw+ : read $0318 returns drq | 0x7F (Microdisc convention).
-     * dsk_drq init = 0x80 (inactive) → read = 0xFF. */
-    ASSERT_EQ(loci_dsk_read(&l, 0x0318), 0xFF);
+    /* Sprint 36f : firmware serves exact 0x80 (idle) / 0x00 (asserted)
+     * for the active-low DRQ register — no |0x7F padding. */
+    ASSERT_EQ(loci_dsk_read(&l, 0x0318), 0x80);
 }
 
 TEST(test_dsk_id_register_returns_loci_marker) {
@@ -1803,6 +1806,216 @@ TEST(test_dsk_id_register_ff_when_disabled) {
     loci_t l; loci_init(&l);
     l.enabled = false;
     ASSERT_EQ(loci_dsk_read(&l, 0x0319), 0xFF);
+}
+
+/* ── Sprint 36f : conformité firmware (console, TAP bas niveau, …) ── */
+
+TEST(test_dsk_spare_registers_31a_31b) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Firmware keeps $031A-$031B in the read-enable map, init 0, plain
+     * storage on write. */
+    ASSERT_EQ(loci_dsk_read(&l, 0x031A), 0x00);
+    ASSERT_EQ(loci_dsk_read(&l, 0x031B), 0x00);
+    loci_dsk_write(&l, 0x031A, 0x42);
+    loci_dsk_write(&l, 0x031B, 0x99);
+    ASSERT_EQ(loci_dsk_read(&l, 0x031A), 0x42);
+    ASSERT_EQ(loci_dsk_read(&l, 0x031B), 0x99);
+    ASSERT_TRUE(loci_addr_in_dsk(0x031A));
+    ASSERT_TRUE(loci_addr_in_dsk(0x031B));
+}
+
+TEST(test_dsk_irq_register_exact_bytes) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* $0314 read = IRQ register, active low: exact 0x80 idle / 0x00
+     * pending (firmware bytes, no |0x7F padding). */
+    ASSERT_EQ(loci_dsk_read(&l, 0x0314), 0x80);
+    l.dsk_fdc.set_intrq(&l);
+    ASSERT_EQ(loci_dsk_read(&l, 0x0314), 0x00);
+    l.dsk_fdc.clr_intrq(&l);
+    ASSERT_EQ(loci_dsk_read(&l, 0x0314), 0x80);
+}
+
+TEST(test_cons_flags_tx_ready_rx_pending) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Bit 7 (TX writable) always set; bit 6 (RX ready) follows the ring. */
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);
+    loci_cons_inject(&l, 'A');
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0xC0);
+    ASSERT_EQ(loci_read(&l, 0x03A2), 'A');   /* read consumes */
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);
+    ASSERT_EQ(loci_read(&l, 0x03A2), 0x00);  /* empty queue reads 0 */
+}
+
+TEST(test_cons_rx_fifo_order) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_cons_inject(&l, 'O');
+    loci_cons_inject(&l, 'K');
+    ASSERT_EQ(loci_read(&l, 0x03A2), 'O');
+    ASSERT_EQ(loci_read(&l, 0x03A2), 'K');
+}
+
+TEST(test_cons_tx_line_buffer_flushes_on_newline) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_write(&l, 0x03A1, 'H');
+    loci_write(&l, 0x03A1, 'I');
+    ASSERT_EQ(l.cons_tx_len, 2);
+    loci_write(&l, 0x03A1, '\n');   /* flush to log */
+    ASSERT_EQ(l.cons_tx_len, 0);
+}
+
+TEST(test_ula_snoop_write_clears_register) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.regs[LOCI_REG_ULA_SNOOP] = 0x1A;
+    loci_write(&l, 0x03A3, 0x30);   /* reload matcher → register cleared */
+    ASSERT_EQ(loci_read(&l, 0x03A3), 0x00);
+}
+
+TEST(test_op_adj_scan_reports_completed) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    l.xram[0xFFF0] = 0xFF;
+    loci_write(&l, 0x03AF, LOCI_OP_ADJ_SCAN);
+    ASSERT_EQ(errno_lo(&l), 0);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_EQ(l.regs[LOCI_REG_API_X], 0);
+    /* Progress byte: bit 7 clear = scan no longer in progress. */
+    ASSERT_EQ(l.xram[0xFFF0] & 0x80, 0);
+    ASSERT_EQ(l.op_count[LOCI_OP_ADJ_SCAN], 1);
+}
+
+/* Helper: create a TAP-protocol test file with given bytes. */
+static char* make_tap_file(const char* tmpdir, const uint8_t* bytes, size_t n) {
+    char* path = malloc(300);
+    snprintf(path, 300, "%s/proto.tap", tmpdir);
+    FILE* fp = fopen(path, "wb");
+    fwrite(bytes, 1, n, fp);
+    fclose(fp);
+    return path;
+}
+
+TEST(test_tap_play_lead_in_then_data) {
+    char* tmpdir = make_tmpdir();
+    uint8_t content[2] = { 0xAA, 0xBB };
+    char* path = make_tap_file(tmpdir, content, 2);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    ASSERT_TRUE(loci_tap_open(&l, path));
+    loci_tap_motor(&l, true);
+
+    /* First 8 PLAY reads serve the synthetic 0x16 lead-in; the byte
+     * counter must not move (firmware tap_read_byte). */
+    for (int i = 0; i < 8; i++) {
+        loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_PLAY);
+        ASSERT_EQ(loci_tap_read(&l, 0x0315), 0x00);   /* cmd done */
+        ASSERT_EQ(loci_tap_read(&l, 0x0317), 0x16);
+        ASSERT_EQ(l.tap_counter, 0);
+    }
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_PLAY);
+    ASSERT_EQ(loci_tap_read(&l, 0x0317), 0xAA);
+    ASSERT_EQ(l.tap_counter, 1);
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_PLAY);
+    ASSERT_EQ(loci_tap_read(&l, 0x0317), 0xBB);
+    /* Past EOF: firmware returns 0x00. */
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_PLAY);
+    ASSERT_EQ(loci_tap_read(&l, 0x0317), 0x00);
+
+    loci_tap_close(&l);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(path); free(tmpdir);
+}
+
+TEST(test_tap_play_is_motor_protected) {
+    char* tmpdir = make_tmpdir();
+    uint8_t content[1] = { 0x5C };
+    char* path = make_tap_file(tmpdir, content, 1);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    ASSERT_TRUE(loci_tap_open(&l, path));
+
+    /* Motor off: PLAY stays latched in $0315 (firmware state machine
+     * waits in TAP_IDLE), DATA untouched. */
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_PLAY);
+    ASSERT_EQ(loci_tap_read(&l, 0x0315), LOCI_TAP_CMD_PLAY);
+    ASSERT_EQ(loci_tap_read(&l, 0x0317), 0x00);
+
+    /* Motor on (VIA ORB bit 6 snoop): latched command executes. */
+    loci_tap_motor(&l, true);
+    ASSERT_EQ(loci_tap_read(&l, 0x0315), 0x00);
+    ASSERT_EQ(loci_tap_read(&l, 0x0317), 0x16);   /* lead-in byte 1 */
+
+    loci_tap_close(&l);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(path); free(tmpdir);
+}
+
+TEST(test_tap_read_bit_14bit_frame) {
+    char* tmpdir = make_tmpdir();
+    uint8_t content[1] = { 0x00 };
+    char* path = make_tap_file(tmpdir, content, 1);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    ASSERT_TRUE(loci_tap_open(&l, path));
+    loci_tap_motor(&l, true);
+
+    /* First byte streamed is the 0x16 lead-in. Expected frame
+     * (firmware tap_encode_byte): 0b11110000000000 | parity<<9 | b<<1.
+     * 0x16 has 3 set bits → odd-parity bit = (1+3)&1 = 0.
+     * frame = 0x3C00 | 0x16<<1 = 0x3C2C, served LSB first over 14 reads. */
+    uint16_t frame = 0;
+    for (int i = 0; i < 14; i++) {
+        loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_READ_BIT);
+        ASSERT_EQ(loci_tap_read(&l, 0x0315), 0x00);
+        frame |= (uint16_t)((loci_tap_read(&l, 0x0317) & 0x01) << i);
+    }
+    ASSERT_EQ(frame, 0x3C2C);
+
+    loci_tap_close(&l);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(path); free(tmpdir);
+}
+
+TEST(test_tap_rec_writes_byte_and_ffw) {
+    char* tmpdir = make_tmpdir();
+    uint8_t content[2] = { 0x00, 0x00 };
+    char* path = make_tap_file(tmpdir, content, 2);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    ASSERT_TRUE(loci_tap_open(&l, path));
+    ASSERT_TRUE(!l.tap_wprot);   /* opened r+b */
+    loci_tap_motor(&l, true);
+
+    /* REC writes the $0317 DATA byte at the current counter. */
+    loci_tap_write(&l, 0x0317, 0x5A);
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_REC);
+    ASSERT_EQ(loci_tap_read(&l, 0x0315), 0x00);
+    ASSERT_EQ(l.tap_counter, 1);
+
+    FILE* check = fopen(path, "rb");
+    ASSERT_EQ(fgetc(check), 0x5A);
+    fclose(check);
+
+    /* FFW seeks to end of tape (firmware tap_ffw). */
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_FFW);
+    ASSERT_EQ(l.tap_counter, l.tap_size);
+
+    /* REW resets counter AND replays the lead-in (firmware tap_rewind). */
+    loci_tap_write(&l, 0x0315, LOCI_TAP_CMD_REW);
+    ASSERT_EQ(l.tap_counter, 0);
+    ASSERT_EQ(l.tap_lead_in, 0);
+
+    loci_tap_close(&l);
+    unlink(path); rmdir(tmpdir);
+    loci_cleanup(&l); free(path); free(tmpdir);
 }
 
 TEST(test_dsk_four_independent_drives) {
@@ -2797,6 +3010,17 @@ int main(void) {
     RUN(test_dsk_drq_register);
     RUN(test_dsk_id_register_returns_loci_marker);
     RUN(test_dsk_id_register_ff_when_disabled);
+    RUN(test_dsk_spare_registers_31a_31b);
+    RUN(test_dsk_irq_register_exact_bytes);
+    RUN(test_cons_flags_tx_ready_rx_pending);
+    RUN(test_cons_rx_fifo_order);
+    RUN(test_cons_tx_line_buffer_flushes_on_newline);
+    RUN(test_ula_snoop_write_clears_register);
+    RUN(test_op_adj_scan_reports_completed);
+    RUN(test_tap_play_lead_in_then_data);
+    RUN(test_tap_play_is_motor_protected);
+    RUN(test_tap_read_bit_14bit_frame);
+    RUN(test_tap_rec_writes_byte_and_ffw);
     RUN(test_dsk_four_independent_drives);
     RUN(test_dsk_wd1793_restore_command_clears_busy);
     RUN(test_dsk_wd1793_ctrl_change_drive_repoints_fdc);

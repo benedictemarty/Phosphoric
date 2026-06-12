@@ -67,6 +67,7 @@ static const char* op_name(uint8_t op) {
         case LOCI_OP_MAP_TUNE_TIOW:   return "MAP_TUNE_TIOW";
         case LOCI_OP_MAP_TUNE_TIOD:   return "MAP_TUNE_TIOD";
         case LOCI_OP_MAP_TUNE_TADR:   return "MAP_TUNE_TADR";
+        case LOCI_OP_ADJ_SCAN:        return "ADJ_SCAN";
         default:                      return "?";
     }
 }
@@ -556,6 +557,7 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_MAP_TUNE_TIOW:   op_map_tune_tiow(loci);  break;
         case LOCI_OP_MAP_TUNE_TIOD:   op_map_tune_tiod(loci);  break;
         case LOCI_OP_MAP_TUNE_TADR:   op_map_tune_tadr(loci);  break;
+        case LOCI_OP_ADJ_SCAN:        op_adj_scan(loci);       break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));
@@ -567,10 +569,68 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
 
 /* ─── bus interface ────────────────────────────────────────────── */
 
+/* ─── console UART $03A0-$03A2 (Sprint 36f) ───────────────────── */
+
+static bool cons_rx_pending(const loci_t* loci) {
+    return loci->cons_rx_head != loci->cons_rx_tail;
+}
+
+static uint8_t cons_rx_pop(loci_t* loci) {
+    if (!cons_rx_pending(loci)) return 0;
+    uint8_t v = loci->cons_rx[loci->cons_rx_tail];
+    loci->cons_rx_tail = (uint8_t)((loci->cons_rx_tail + 1) % sizeof(loci->cons_rx));
+    return v;
+}
+
+void loci_cons_inject(loci_t* loci, uint8_t ch) {
+    if (!loci) return;
+    uint8_t next = (uint8_t)((loci->cons_rx_head + 1) % sizeof(loci->cons_rx));
+    if (next == loci->cons_rx_tail) return;   /* ring full — drop */
+    loci->cons_rx[loci->cons_rx_head] = ch;
+    loci->cons_rx_head = next;
+}
+
+static void cons_tx_byte(loci_t* loci, uint8_t ch) {
+    if (ch == '\n' || loci->cons_tx_len >= sizeof(loci->cons_tx_line) - 1) {
+        loci->cons_tx_line[loci->cons_tx_len] = '\0';
+        if (loci->cons_tx_len > 0 || ch == '\n') {
+            log_info("LOCI console: %s", loci->cons_tx_line);
+        }
+        loci->cons_tx_len = 0;
+        if (ch != '\n' && ch != '\r') {
+            loci->cons_tx_line[loci->cons_tx_len++] = (char)ch;
+        }
+        return;
+    }
+    if (ch != '\r') {
+        loci->cons_tx_line[loci->cons_tx_len++] = (char)ch;
+    }
+}
+
 uint8_t loci_read(loci_t* loci, uint16_t address) {
     if (!loci || !loci->enabled) return 0xFF;
     if (!loci_addr_in_mia(address)) return 0xFF;
     uint8_t off = (uint8_t)(address - LOCI_MIA_BASE);
+
+    if (off == LOCI_REG_CONS_FLAGS) {
+        /* Firmware (mia.c): bit 7 = TX writable, bit 6 = RX data ready.
+         * Our TX sink never stalls, so bit 7 is always set. Reading also
+         * preloads $03A2 with the head of the RX queue. */
+        uint8_t flags = 0x80;
+        if (cons_rx_pending(loci)) {
+            flags |= 0x40;
+            loci->regs[LOCI_REG_CONS_CHAR] = loci->cons_rx[loci->cons_rx_tail];
+        }
+        loci->regs[LOCI_REG_CONS_FLAGS] = flags;
+        return flags;
+    }
+    if (off == LOCI_REG_CONS_CHAR) {
+        /* Read consumes one RX byte (0 when the queue is empty). */
+        uint8_t v = cons_rx_pop(loci);
+        loci->regs[LOCI_REG_CONS_CHAR] =
+            cons_rx_pending(loci) ? loci->cons_rx[loci->cons_rx_tail] : 0;
+        return v;
+    }
 
     if (off == LOCI_REG_RW0) {
         uint8_t v = loci->regs[LOCI_REG_RW0];
@@ -606,6 +666,19 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
     if (!loci || !loci->enabled) return;
     if (!loci_addr_in_mia(address)) return;
     uint8_t off = (uint8_t)(address - LOCI_MIA_BASE);
+
+    if (off == LOCI_REG_CONS_TX) {
+        /* Console UART TX — accumulate and flush to the log on '\n'. */
+        cons_tx_byte(loci, value);
+        loci->regs[LOCI_REG_CONS_TX] = value;
+        return;
+    }
+    if (off == LOCI_REG_ULA_SNOOP) {
+        /* Firmware reloads the ULA-attribute pattern matcher and clears
+         * the register; we have no PIO sniffer, so just clear. */
+        loci->regs[LOCI_REG_ULA_SNOOP] = 0;
+        return;
+    }
 
     if (off == LOCI_REG_RW0) {
         loci->xram[get_addr0(loci)] = value;

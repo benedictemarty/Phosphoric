@@ -22,7 +22,13 @@ bool loci_tap_open(loci_t* loci, const char* host_path) {
         fclose((FILE*)loci->tap_fp);
         loci->tap_fp = NULL;
     }
-    FILE* fp = fopen(host_path, "rb");
+    /* Firmware REC writes into the mounted file — try read/write first. */
+    bool wprot = false;
+    FILE* fp = fopen(host_path, "r+b");
+    if (!fp) {
+        fp = fopen(host_path, "rb");
+        wprot = true;
+    }
     if (!fp) return false;
     fseek(fp, 0, SEEK_END);
     long sz = ftell(fp);
@@ -32,6 +38,10 @@ bool loci_tap_open(loci_t* loci, const char* host_path) {
     loci->tap_size = (uint32_t)sz;
     loci->tap_counter = 0;
     loci->tap_stat = 0;
+    loci->tap_wprot = wprot;
+    loci->tap_lead_in = 0;
+    loci->tap_bit_counter = 0;
+    loci->tap_data = 0;
     return true;
 }
 
@@ -45,15 +55,116 @@ void loci_tap_close(loci_t* loci) {
     loci->tap_stat = LOCI_TAP_STAT_NOT_READY;
 }
 
+/* ─── Low-level TAP protocol (Sprint 36f, firmware tap.c semantics) ──
+ * PLAY/REC/READ_BIT are motor-protected: when the motor is off the
+ * command stays latched in $0315 and executes once the motor turns on
+ * (snooped from VIA ORB bit 6 via loci_tap_motor). REW/FFW always run.
+ * Each completed command resets $0315 to 0x00 — that is the completion
+ * handshake the locirom patches poll. */
+
+static uint8_t tap_parity_odd(uint8_t byte) {
+    uint8_t parity = 1;
+    for (uint8_t i = 0; i < 8; i++) {
+        if ((byte >> i) & 0x01) parity++;
+    }
+    return parity & 0x01;
+}
+
+static uint16_t tap_encode_frame(uint8_t byte) {
+    /* 14-bit frame, LSB first: start 0, 8 data bits, odd parity, stops. */
+    return (uint16_t)(0x3C00 | (tap_parity_odd(byte) << 9) | (byte << 1));
+}
+
+static uint8_t tap_read_byte_host(loci_t* loci) {
+    if (loci->tap_lead_in < 8) {
+        /* Synthetic lead-in after mount/rewind — counter untouched. */
+        loci->tap_lead_in++;
+        return 0x16;
+    }
+    FILE* fp = (FILE*)loci->tap_fp;
+    if (fseek(fp, (long)loci->tap_counter, SEEK_SET) != 0) return 0x00;
+    int c = fgetc(fp);
+    if (c == EOF) return 0x00;   /* firmware returns 0 past EOF */
+    loci->tap_counter++;
+    return (uint8_t)c;
+}
+
+static void tap_exec_cmd(loci_t* loci, uint8_t cmd) {
+    FILE* fp = (FILE*)loci->tap_fp;
+    switch (cmd) {
+        case LOCI_TAP_CMD_REW:
+            if (fp) {
+                fseek(fp, 0, SEEK_SET);
+                loci->tap_counter = 0;
+                loci->tap_bit_counter = 0;
+                loci->tap_lead_in = 0;
+            }
+            loci->tap_cmd = 0;
+            break;
+        case LOCI_TAP_CMD_FFW:
+            if (fp) {
+                fseek(fp, 0, SEEK_END);
+                loci->tap_counter = loci->tap_size;
+            }
+            loci->tap_cmd = 0;
+            break;
+        case LOCI_TAP_CMD_PLAY:
+            if (!loci->tap_motor_on) return;          /* stays latched */
+            loci->tap_data = fp ? tap_read_byte_host(loci) : 0x00;
+            loci->tap_cmd = 0;
+            break;
+        case LOCI_TAP_CMD_READ_BIT:
+            if (!loci->tap_motor_on) return;
+            if (loci->tap_bit_counter == 0) {
+                uint8_t b = fp ? tap_read_byte_host(loci) : 0x00;
+                loci->tap_encoded = tap_encode_frame(b);
+            }
+            loci->tap_data = (uint8_t)((loci->tap_encoded >> loci->tap_bit_counter) & 0x01);
+            if (++loci->tap_bit_counter >= 14) loci->tap_bit_counter = 0;
+            loci->tap_cmd = 0;
+            break;
+        case LOCI_TAP_CMD_REC:
+            if (!loci->tap_motor_on) return;
+            if (fp && !loci->tap_wprot) {
+                if (fseek(fp, (long)loci->tap_counter, SEEK_SET) == 0 &&
+                    fputc(loci->tap_data, fp) != EOF) {
+                    loci->tap_counter++;
+                    if (loci->tap_counter > loci->tap_size) {
+                        loci->tap_size = loci->tap_counter;
+                    }
+                    fflush(fp);
+                }
+            }
+            loci->tap_cmd = 0;
+            break;
+        default:
+            loci->tap_cmd = 0;
+            break;
+    }
+}
+
+void loci_tap_motor(loci_t* loci, bool on) {
+    if (!loci || !loci->enabled) return;
+    loci->tap_motor_on = on;
+    /* Firmware: a motor-protected command latched while the motor was
+     * off runs as soon as the state machine reaches TAP_READY. */
+    if (on && loci->tap_cmd != 0) {
+        tap_exec_cmd(loci, loci->tap_cmd);
+    }
+}
+
 uint8_t loci_tap_read(loci_t* loci, uint16_t address) {
     if (!loci || !loci->enabled) return 0xFF;
     switch (address) {
         case LOCI_TAP_IO_CMD:  return loci->tap_cmd;
-        case LOCI_TAP_IO_STAT:
-            return loci->tap_fp ? loci->tap_stat
-                                : (uint8_t)(LOCI_TAP_STAT_NOT_READY);
+        case LOCI_TAP_IO_STAT: {
+            if (!loci->tap_fp) return LOCI_TAP_STAT_NOT_READY;
+            uint8_t s = loci->tap_stat;
+            if (loci->tap_wprot) s |= LOCI_TAP_STAT_WPROT;
+            return s;
+        }
         case LOCI_TAP_IO_DATA:
-            return 0;
+            return loci->tap_data;
     }
     return 0xFF;
 }
@@ -62,10 +173,9 @@ void loci_tap_write(loci_t* loci, uint16_t address, uint8_t value) {
     if (!loci || !loci->enabled) return;
     if (address == LOCI_TAP_IO_CMD) {
         loci->tap_cmd = value;
-        if (value == LOCI_TAP_CMD_REW && loci->tap_fp) {
-            fseek((FILE*)loci->tap_fp, 0, SEEK_SET);
-            loci->tap_counter = 0;
-        }
+        tap_exec_cmd(loci, value);
+    } else if (address == LOCI_TAP_IO_DATA) {
+        loci->tap_data = value;
     }
 }
 
@@ -86,6 +196,7 @@ void op_tap_seek(loci_t* loci) {
         return;
     }
     loci->tap_counter = pos;
+    if (pos == 0) loci->tap_lead_in = 0;   /* firmware tap_seek() */
     api_return_axsreg(loci, pos);
 }
 
@@ -301,9 +412,13 @@ uint8_t loci_dsk_read(loci_t* loci, uint16_t address) {
         case LOCI_DSK_IO_TRACK: return fdc_read(&loci->dsk_fdc, 1);
         case LOCI_DSK_IO_SECT:  return fdc_read(&loci->dsk_fdc, 2);
         case LOCI_DSK_IO_DATA:  return fdc_read(&loci->dsk_fdc, 3);
-        case LOCI_DSK_IO_CTRL:  return loci->dsk_intrq | 0x7F;
-        case LOCI_DSK_IO_DRQ:   return loci->dsk_drq | 0x7F;
+        /* Firmware serves exact 0x80 (idle) / 0x00 (asserted) bytes for
+         * the active-low IRQ and DRQ registers — no |0x7F padding. */
+        case LOCI_DSK_IO_CTRL:  return loci->dsk_intrq;
+        case LOCI_DSK_IO_DRQ:   return loci->dsk_drq;
         case LOCI_DSK_IO_ID:    return 'L';
+        case LOCI_DSK_IO_SPARE0: return loci->dsk_spare[0];
+        case LOCI_DSK_IO_SPARE1: return loci->dsk_spare[1];
     }
     return 0xFF;
 }
@@ -339,5 +454,7 @@ void loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value) {
             break;
         }
         case LOCI_DSK_IO_DRQ:   loci->dsk_drq = value; break;
+        case LOCI_DSK_IO_SPARE0: loci->dsk_spare[0] = value; break;
+        case LOCI_DSK_IO_SPARE1: loci->dsk_spare[1] = value; break;
     }
 }
