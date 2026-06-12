@@ -35,6 +35,23 @@
 #define OCULA_80COL_COLS  80
 #define OCULA_80COL_BASE  0xA000
 
+/* OCULA extended HIRES 320x200 bicolor (extended serial attribute 29/31).
+ * Same memory footprint as stock HIRES ($A000-$BF3F, 40 bytes/row x 200)
+ * but all 8 bits of every byte are pixels (no serial attributes, no
+ * invert bit) — 320 px wide, ink/paper fixed to palette entries 7/0.
+ * Lines 200-223 stay standard text rows (in-band escape hatch: a mode
+ * attribute there switches back). 480x200 was considered but 16000
+ * bytes do not fit the $A000-$BFFF window. */
+#define OCULA_EXTHIRES_W     320
+#define OCULA_EXTHIRES_BASE  0xA000
+
+/* OCULA redefinable palette: 8 RGB332 entries at $BFE0-$BFE7 (the 32
+ * bytes above the text screen, never scanned by a stock ULA), armed by
+ * the magic bytes 'O','C' at $BFE8-$BFE9. Re-read at every frame start;
+ * without the magic the standard Oric palette applies. */
+#define OCULA_PAL_BASE   0xBFE0
+#define OCULA_PAL_MAGIC  0xBFE8
+
 /* ORIC colors */
 #define ORIC_BLACK   0
 #define ORIC_RED     1
@@ -75,6 +92,16 @@ typedef struct video_s {
      * for a whole frame. Mid-frame attribute changes take effect at the
      * next frame. */
     bool ocula_80col;
+
+    /* OCULA extended-HIRES latch (attr 29/31): same frame-start
+     * evaluation as ocula_80col. 80-col (bit 2 clear) and ext-HIRES
+     * (bit 2 set) are mutually exclusive by construction. */
+    bool ocula_exthires;
+
+    /* Active palette, RGB888 per Oric color 0-7. Standard palette by
+     * default; under OCULA, redefinable per frame from OCULA_PAL_BASE
+     * when the OCULA_PAL_MAGIC bytes are armed. */
+    uint8_t pal_rgb[8][3];
 
     /* Serial-attribute group 0x08-0x0F (text attrs).
      * bit 0 = alt charset, bit 1 = double height, bit 2 = blink.

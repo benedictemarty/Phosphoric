@@ -347,7 +347,9 @@ TEST(test_80col_hires_bit_wins) {
     vid.vid_mode = 0x05;  /* bit 0 set BUT HIRES bit set: not 80-col */
     video_render_frame(&vid, mem80);
     ASSERT_FALSE(vid.ocula_80col);
-    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+    /* Since étape 3, attr 29 (bit 0 + HIRES) selects extended HIRES */
+    ASSERT_TRUE(vid.ocula_exthires);
+    ASSERT_EQ(vid.native_w, OCULA_EXTHIRES_W);
 }
 
 TEST(test_80col_ppm_export_dimensions) {
@@ -366,6 +368,188 @@ TEST(test_80col_ppm_export_dimensions) {
     remove(path);
     ASSERT_EQ(n, 3);
     ASSERT_EQ(w, 480);
+    ASSERT_EQ(h, 224);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  EXTENDED HIRES 320x200 + PALETTE (Sprint 41 — attrs 29/31)     */
+/* ═══════════════════════════════════════════════════════════════ */
+
+TEST(test_exthires_latch_via_attr29) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[0xBB80] = 29;  /* extended serial attribute: ext-HIRES */
+    video_render_frame(&vid, mem80);
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_exthires);
+    ASSERT_FALSE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, OCULA_EXTHIRES_W);
+    ASSERT_EQ(vid.native_h, ORIC_SCREEN_H);
+}
+
+TEST(test_exthires_attr31_50hz_variant) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x07;  /* attr 31: bits 0+1+2 — frequency independent */
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_exthires);
+}
+
+TEST(test_exthires_ignored_on_stock_ula) {
+    static video_t vid;
+    setup_80col(&vid);
+    video_set_profile(&vid, ULA_PROFILE_HCS10017);
+    vid.vid_mode = 0x05;
+    video_render_frame(&vid, mem80);
+    /* Stock ULA: attr 29 is plain HIRES, 240 px */
+    ASSERT_FALSE(vid.ocula_exthires);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+}
+
+TEST(test_exthires_8_pixels_per_byte) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE] = 0x80;      /* MSB = leftmost pixel */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);   /* bit 7 lit */
+    ASSERT_EQ(pixel_r(&vid, 1, 0), 0x00);   /* bit 6 dark */
+}
+
+TEST(test_exthires_no_attribute_decoding) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    /* 0x07 would be an INK attribute in stock HIRES; here it is pure
+     * bitmap: 3 rightmost pixels of the byte lit. */
+    mem80[OCULA_EXTHIRES_BASE] = 0x07;
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 4, 0), 0x00);
+    ASSERT_EQ(pixel_r(&vid, 5, 0), 0xFF);
+    ASSERT_EQ(pixel_r(&vid, 7, 0), 0xFF);
+    /* And the mode did not change (no attr decode in bitmap area) */
+    ASSERT_TRUE(vid.ocula_exthires);
+}
+
+TEST(test_exthires_column_39_renders_to_319) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE + 39] = 0x01;  /* LSB = rightmost pixel */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 319, 0), 0xFF);
+    ASSERT_EQ(pixel_r(&vid, 318, 0), 0x00);
+}
+
+TEST(test_exthires_bottom_rows_are_text) {
+    static video_t vid;
+    setup_80col(&vid);
+    /* Hires charsets at $9800 (ext-HIRES keeps standard bottom rows) */
+    for (int row = 0; row < 8; row++)
+        mem80[0x9800 + 0x41 * 8 + row] = 0x3F;
+    vid.vid_mode = 0x05;
+    mem80[0xBB80 + 25 * 40] = 0x41;  /* 'A' in text row 25 (y=200) */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 200), 0xFF);   /* glyph rendered */
+    ASSERT_EQ(pixel_r(&vid, 250, 200), 0x00); /* x 240-319 stays blank */
+}
+
+TEST(test_exthires_escape_via_bottom_text_attr) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_exthires);
+    /* Bottom text rows still decode attributes: in-band escape hatch */
+    mem80[0xBB80 + 25 * 40] = 26;  /* attr TEXT 50 Hz */
+    video_render_frame(&vid, mem80);
+    video_render_frame(&vid, mem80);
+    ASSERT_FALSE(vid.ocula_exthires);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+}
+
+TEST(test_palette_redefine_with_magic) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE] = 0x80;
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 7]  = 0xE0;  /* ink (entry 7) -> pure red RGB332 */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0x00);
+}
+
+TEST(test_palette_ignored_without_magic) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE] = 0x80;
+    mem80[OCULA_PAL_BASE + 7]  = 0xE0;  /* no magic: standard palette */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);  /* still white */
+}
+
+TEST(test_palette_ignored_on_stock_ula) {
+    static video_t vid;
+    setup_80col(&vid);
+    video_set_profile(&vid, ULA_PROFILE_HCS10017);
+    mem80[0xBB80] = 0x41;
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 7]  = 0xE0;
+    video_render_frame(&vid, mem80);
+    /* Stock ULA never reads the palette block: glyph stays white */
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);
+}
+
+TEST(test_palette_applies_in_text_mode) {
+    static video_t vid;
+    setup_80col(&vid);
+    /* 40-col text under OCULA, ink red redefined to pure green */
+    mem80[0xBB80]     = 0x01;  /* attr INK red */
+    mem80[0xBB80 + 1] = 0x41;  /* 'A' */
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 1]  = 0x1C;  /* entry 1 -> pure green RGB332 */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 6, 0), 0x00);
+    ASSERT_EQ(pixel_g(&vid, 6, 0), 0xFF);
+}
+
+TEST(test_palette_restores_when_magic_removed) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE] = 0x80;
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 7]  = 0xE0;
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0x00);  /* red ink active */
+    mem80[OCULA_PAL_MAGIC] = 0x00;          /* disarm */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);  /* back to white */
+}
+
+TEST(test_exthires_ppm_export_dimensions) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    video_render_frame(&vid, mem80);
+    const char* path = "/tmp/oric1_test_exthires.ppm";
+    ASSERT_TRUE(video_export_ppm(&vid, path));
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    char magic[3] = {0};
+    int w = 0, h = 0;
+    int n = fscanf(fp, "%2s %d %d", magic, &w, &h);
+    fclose(fp);
+    remove(path);
+    ASSERT_EQ(n, 3);
+    ASSERT_EQ(w, 320);
     ASSERT_EQ(h, 224);
 }
 
@@ -403,6 +587,20 @@ int main(void) {
     RUN(test_80col_latch_via_attr27_50hz);
     RUN(test_80col_hires_bit_wins);
     RUN(test_80col_ppm_export_dimensions);
+    RUN(test_exthires_latch_via_attr29);
+    RUN(test_exthires_attr31_50hz_variant);
+    RUN(test_exthires_ignored_on_stock_ula);
+    RUN(test_exthires_8_pixels_per_byte);
+    RUN(test_exthires_no_attribute_decoding);
+    RUN(test_exthires_column_39_renders_to_319);
+    RUN(test_exthires_bottom_rows_are_text);
+    RUN(test_exthires_escape_via_bottom_text_attr);
+    RUN(test_palette_redefine_with_magic);
+    RUN(test_palette_ignored_without_magic);
+    RUN(test_palette_ignored_on_stock_ula);
+    RUN(test_palette_applies_in_text_mode);
+    RUN(test_palette_restores_when_magic_removed);
+    RUN(test_exthires_ppm_export_dimensions);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

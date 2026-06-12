@@ -1,6 +1,6 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.3 (Sprint 40) — vérifié sans conflit avec le
+**Statut** : brouillon v0.4 (Sprint 41) — vérifié sans conflit avec le
 firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
@@ -36,9 +36,10 @@ donne un sens :
 | **25**   | `001`    | TEXT 60 Hz (bit 0 ignoré) | **TEXT 80 colonnes** 60 Hz |
 | 26       | `010`    | TEXT 50 Hz         | TEXT 40 colonnes 50 Hz      |
 | **27**   | `011`    | TEXT 50 Hz (bit 0 ignoré) | **TEXT 80 colonnes** 50 Hz |
-| 28       | `100`    | HIRES 60 Hz        | HIRES (bit 2 prioritaire sur bit 0) |
-| 29       | `101`    | HIRES 60 Hz        | réservé étape 3 (HIRES étendu) |
+| 28       | `100`    | HIRES 60 Hz        | HIRES 60 Hz                 |
+| **29**   | `101`    | HIRES 60 Hz (bit 0 ignoré) | **HIRES étendu 320×200** 60 Hz |
 | 30       | `110`    | HIRES 50 Hz        | HIRES 50 Hz                 |
+| **31**   | `111`    | HIRES 50 Hz (bit 0 ignoré) | **HIRES étendu 320×200** 50 Hz |
 
 Le test 80 colonnes est `(vid_mode & 0b101) == 0b001` : les attributs
 25 et 27 l'activent tous deux, le bit 1 (fréquence) restant indépendant.
@@ -77,10 +78,50 @@ Sur un HCS 10017, l'attribut 25 vaut TEXT 50 Hz : l'écran reste en
 écrivant l'attribut 25 puis en testant le rendu… ou plus simplement via
 une signature à définir (réservé : étape 4, registre d'identification).
 
-## Réservations (étapes suivantes)
+## Attributs 29/31 : HIRES étendu 320×200 bicolore (étape 3)
 
-- **Étape 3** : attribut 29 = HIRES étendu (480 px monochrome) ;
-  palette redéfinissable (séquence d'attributs à spécifier)
+Même logique que le 80 colonnes : bit 0 + bit 2 (HIRES) levés.
+Le test est `(vid_mode & 0b101) == 0b101` (attributs 29 et 31, le bit 1
+de fréquence restant indépendant).
+
+- **Bitmap pur 320×200** : écran à **$A000**, 40 octets/ligne × 200
+  (même empreinte mémoire que le HIRES standard, $A000-$BF3F). **Les
+  8 bits de chaque octet sont des pixels** (MSB à gauche) — pas
+  d'attributs série dans le bitmap, pas de bit d'inversion. Le 480 px
+  initialement envisagé ne tient pas dans la fenêtre $A000-$BFFF
+  (16 000 octets requis) ; le 320×200 évoqué sur le fil t=2709 tient
+  exactement.
+- **Couleurs** : encre = entrée 7 de la palette, papier = entrée 0 —
+  redéfinissables via la palette OCULA (ci-dessous).
+- **Lignes 200-223** : rangées texte standard ($BB80, lignes 25-27),
+  attributs série actifs — c'est la **porte de sortie in-band** du mode
+  bitmap (un attribut 24/26/28/30 y bascule le mode à la trame
+  suivante).
+- **Activation canonique** : `HIRES:POKE#A000,29` — l'écran HIRES doit
+  être propre avant de poser l'attribut : si $A000-$BF3F contient des
+  données résiduelles, leurs octets 24-31 re-décodés mi-trame reprennent
+  la main sur le mode (comportement fidèle de l'ULA, identique sur
+  matériel réel).
+- **Dégradation** : sur ULA stock, attr 29/31 = HIRES standard 240 px.
+
+## Palette redéfinissable (étape 3)
+
+8 entrées **RGB332** à **$BFE0-$BFE7**, armées par les octets magiques
+`'O','C'` ($4F,$43) à **$BFE8-$BFE9**. Relue à chaque début de trame ;
+sans le magic (ou sous profil stock), palette Oric standard.
+
+- S'applique à **tous les modes** sous OCULA (texte 40/80 col, HIRES
+  standard et étendu) — c'est le « multi-coloric » du fil t=2709.
+- $BFE0-$BFFF (32 octets au-dessus de l'écran texte) n'est **jamais
+  balayé par l'ULA d'origine** : neutre sur matériel stock. Pour le
+  vrai OCULA, la zone est lisible pendant le blanking (l'ULA contrôle
+  le bus DRAM), y compris en mode DRAM-is-the-RAM.
+- Exemple BASIC : `POKE#BFE8,79:POKE#BFE9,67` (arme 'O','C') puis
+  `POKE#BFE7,224` (entrée 7 → rouge pur 0xE0). Désarmement :
+  `POKE#BFE8,0`.
+
+## Réservations (étape suivante)
+
 - **Étape 4** : banking mémoire, registre d'identification OCULA
   (équivalent du marqueur `'L'` en $0319 de LOCI)
 

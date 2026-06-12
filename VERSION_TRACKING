@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.18.1-alpha
+Current Version: 1.19.0-alpha
 Release Date: 2026-06-13
-Status: Alpha (Sprint 40b — alignement firmware OCULA officiel v0.1.4 : attribut 25/27 confirmé sans conflit, spec v0.3, rapport docs/ocula_firmware_alignment.md ; 548 tests) ; précédent : (Sprint 40 — OCULA étape 2 : mode texte 80 colonnes ; 547 tests)
+Status: Alpha (Sprint 41 — OCULA étape 3 : HIRES étendu 320×200 bicolore (attrs 29/31, bitmap 8 px/octet) + palette redéfinissable RGB332 $BFE0 ; 562 tests) ; précédent : (Sprint 40b — alignement firmware OCULA officiel ; 548 tests)
 
 Version History:
 ----------------
+- 1.19.0-alpha (2026-06-13): Sprint 41 — **OCULA étape 3 : HIRES étendu 320×200 + palette redéfinissable** (attrs 29/31 : bitmap pur $A000 8 px/octet sans attributs, lignes 200-223 texte = échappement in-band, activation canonique HIRES:POKE#A000,29 ; palette 8×RGB332 $BFE0-$BFE7 armée par 'O','C' $BFE8-$BFE9, relue par trame, valable tous modes, neutre sur ULA stock ; pal_rgb par instance dans video_t ; 14 nouveaux tests + E2E réels 320×224 et encre rouge 0xFF0000 ; spec v0.4), 562 tests PASS
 - 1.18.1-alpha (2026-06-13): Sprint 40b — **Alignement firmware OCULA officiel** (analyse ocula-pivic-firmware v0.1.4 : bit 0 de vid_mode jamais lu par le firmware → attributs 25/27 libres, décodage attributs identique, SET MODE = mode d'installation pas mode vidéo ; divergences relevées FLASH 64 vs 32 trames / double hauteur / 60 Hz 264 lignes ; capacités notées SET PHI2 turbo + SET BOOT ROM + XULA→LOCI ; spec ocula_extensions v0.3 : bit 1 = 50 Hz corrigé, activation PAL canonique POKE #BB80,27 ; nouveau rapport docs/ocula_firmware_alignment.md ; +1 test attr 27), 548 tests PASS
 - 1.18.0-alpha (2026-06-12): Sprint 40 — **OCULA étape 2 : mode texte 80 colonnes** (attribut série étendu 25 = bit 0 de vid_mode, don't-care sur HCS 10017 → dégradation gracieuse ; écran 80×28 à $A000-$A8BF, charsets $B400/$B800 conservés, résolution native 480×224 ; attributs série par colonne, double hauteur/blink/inversion/alt charset fidèles au 40 col ; latch en début de trame, HIRES prioritaire ; spec docs/ocula_extensions.md ; 11 nouveaux tests + E2E POKE#BB80,25 sous BASIC 1.0 réel → screenshot 480×224, contre-épreuve stock 240×224), 547 tests PASS
 - 1.17.0-alpha (2026-06-12): Sprint 39 — **Profil ULA pluggable : infrastructure OCULA étape 1** (CLI `--ula ula|ocula` ; `ula_profile_t` + API set/get/name/parse, profil survivant au reset ; résolution native variable `native_w`/`native_h`, framebuffer dimensionné 480×448 pour les futurs modes 80 col/HIRES mono ; exports PPM/BMP/ASCII, cast MJPEG et renderer SDL2 suivant la résolution native ; octet profil en section VID .ost rétro-compatible ; `make test-ocula` 12 tests + 1 roundtrip savestate — rendu OCULA pixel-identique au HCS 10017 à ce stade), 536 tests PASS

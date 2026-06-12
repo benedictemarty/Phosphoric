@@ -19,17 +19,48 @@ static const uint8_t palette[8][3] = {
     {0x00,0x00,0xFF},{0xFF,0x00,0xFF},{0x00,0xFF,0xFF},{0xFF,0xFF,0xFF},
 };
 
-/* Active resolution: follows the OCULA 80-column latch; the stock
- * profile and OCULA-in-standard-mode both render 240x224. */
+/* Active resolution: follows the OCULA mode latches; the stock profile
+ * and OCULA-in-standard-mode both render 240x224. */
 static void apply_profile_resolution(video_t* vid) {
-    vid->native_w = vid->ocula_80col ? OCULA_MAX_W : ORIC_SCREEN_W;
+    if (vid->ocula_80col)         vid->native_w = OCULA_MAX_W;
+    else if (vid->ocula_exthires) vid->native_w = OCULA_EXTHIRES_W;
+    else                          vid->native_w = ORIC_SCREEN_W;
     vid->native_h = ORIC_SCREEN_H;
+}
+
+static void palette_reset(video_t* vid) {
+    memcpy(vid->pal_rgb, palette, sizeof(vid->pal_rgb));
+}
+
+/* Re-evaluate the redefinable palette at frame start. Armed by the
+ * 'O','C' magic at OCULA_PAL_MAGIC: 8 RGB332 entries at OCULA_PAL_BASE
+ * replace the standard palette for the coming frame. */
+static void palette_latch(video_t* vid, const uint8_t* memory) {
+    if (vid->ula_profile == ULA_PROFILE_OCULA &&
+        memory[OCULA_PAL_MAGIC] == 'O' && memory[OCULA_PAL_MAGIC + 1] == 'C') {
+        for (int i = 0; i < 8; i++) {
+            uint8_t v = memory[OCULA_PAL_BASE + i];
+            vid->pal_rgb[i][0] = (uint8_t)((((v >> 5) & 0x07) * 255) / 7);
+            vid->pal_rgb[i][1] = (uint8_t)((((v >> 2) & 0x07) * 255) / 7);
+            vid->pal_rgb[i][2] = (uint8_t)(((v & 0x03) * 255) / 3);
+        }
+    } else {
+        palette_reset(vid);
+    }
+}
+
+/* Palette-aware color lookup used by all rendering paths. */
+static void get_rgb(const video_t* vid, uint8_t oric_color,
+                    uint8_t* r, uint8_t* g, uint8_t* b) {
+    uint8_t c = oric_color & 0x07;
+    *r = vid->pal_rgb[c][0]; *g = vid->pal_rgb[c][1]; *b = vid->pal_rgb[c][2];
 }
 
 bool video_init(video_t* vid) {
     memset(vid, 0, sizeof(video_t));
     vid->ula_profile = ULA_PROFILE_HCS10017;
     apply_profile_resolution(vid);
+    palette_reset(vid);
     vid->hires_mode = false;
     vid->need_refresh = true;
     vid->vid_mode = 0x02;  /* Powerup default: TEXT, PAL50 (same as Oricutron) */
@@ -42,7 +73,9 @@ void video_reset(video_t* vid) {
     /* ula_profile survives reset: the profile models which physical chip
      * is socketed, not a runtime mode. */
     vid->ocula_80col = false;
+    vid->ocula_exthires = false;
     apply_profile_resolution(vid);
+    palette_reset(vid);
     vid->hires_mode = false;
     vid->need_refresh = true;
     vid->vid_mode = 0x02;
@@ -53,7 +86,9 @@ void video_set_profile(video_t* vid, ula_profile_t profile) {
     if (vid->ula_profile == profile) return;
     vid->ula_profile = profile;
     vid->ocula_80col = false;
+    vid->ocula_exthires = false;
     apply_profile_resolution(vid);
+    palette_reset(vid);
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
     vid->need_refresh = true;
 }
@@ -143,8 +178,8 @@ static void render_hires_block(video_t* vid, int x, int y,
     uint8_t fg = inv ? paper : ink;
     uint8_t bg = inv ? ink : paper;
     uint8_t ir, ig, ib, pr, pg, pb;
-    video_get_rgb(fg, &ir, &ig, &ib);
-    video_get_rgb(bg, &pr, &pg, &pb);
+    get_rgb(vid, fg, &ir, &ig, &ib);
+    get_rgb(vid, bg, &pr, &pg, &pb);
     for (int bx = 5; bx >= 0; bx--) {
         if (byte & (1 << bx))
             set_pixel(vid, x + (5 - bx), y, ir, ig, ib);
@@ -161,8 +196,8 @@ static void render_text_char(video_t* vid, const uint8_t* mem, int x, int sy,
     uint8_t fg = inverse ? paper : ink;
     uint8_t bg = inverse ? ink : paper;
     uint8_t ir, ig, ib, pr, pg, pb;
-    video_get_rgb(fg, &ir, &ig, &ib);
-    video_get_rgb(bg, &pr, &pg, &pb);
+    get_rgb(vid, fg, &ir, &ig, &ib);
+    get_rgb(vid, bg, &pr, &pg, &pb);
     for (int cy = 0; cy < 8; cy++) {
         uint8_t bits = get_charset_byte(vid, mem, byte & 0x7F, cy);
         bool char_inv = (byte & 0x80) != 0;
@@ -182,7 +217,7 @@ static void render_text_char(video_t* vid, const uint8_t* mem, int x, int sy,
 static void render_attr_block(video_t* vid, int x, int y,
                               uint8_t paper, int height) {
     uint8_t pr, pg, pb;
-    video_get_rgb(paper, &pr, &pg, &pb);
+    get_rgb(vid, paper, &pr, &pg, &pb);
     for (int cy = 0; cy < height; cy++)
         for (int bx = 0; bx < 6; bx++)
             set_pixel(vid, x + bx, y + cy, pr, pg, pb);
@@ -254,8 +289,8 @@ static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
             if (vid->text_attr & 0x02) row_had_double = true;
         } else {
             uint8_t ir, ig, ib, pr, pg, pb;
-            video_get_rgb(ink, &ir, &ig, &ib);
-            video_get_rgb(paper, &pr, &pg, &pb);
+            get_rgb(vid, ink, &ir, &ig, &ib);
+            get_rgb(vid, paper, &pr, &pg, &pb);
             int erow = effective_chline(vid, chline);
             uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
             bool char_inv = (byte & 0x80) != 0;
@@ -278,6 +313,27 @@ static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (y == 223) vid->need_refresh = false;
 }
 
+/**
+ * Render one OCULA extended-HIRES scanline (attr 29/31): 320x200
+ * bicolor bitmap at $A000, 40 bytes/row, all 8 bits are pixels (MSB
+ * leftmost) — no serial attributes, no invert bit. Colors are palette
+ * entries 7 (ink) and 0 (paper), redefinable via the OCULA palette.
+ */
+static void render_exthires_scanline(video_t* vid, const uint8_t* memory, int y) {
+    uint8_t ir, ig, ib, pr, pg, pb;
+    get_rgb(vid, ORIC_WHITE, &ir, &ig, &ib);
+    get_rgb(vid, ORIC_BLACK, &pr, &pg, &pb);
+    for (int col = 0; col < 40; col++) {
+        uint8_t byte = memory[OCULA_EXTHIRES_BASE + y * 40 + col];
+        for (int bx = 7; bx >= 0; bx--) {
+            if (byte & (1 << bx))
+                set_pixel(vid, col * 8 + (7 - bx), y, ir, ig, ib);
+            else
+                set_pixel(vid, col * 8 + (7 - bx), y, pr, pg, pb);
+        }
+    }
+}
+
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (!memory) return;
     if (y < 0 || y >= 224) return;
@@ -287,17 +343,22 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         vid->dbl_phase = 0;
         vid->dbl_was_active = false;
 
-        /* OCULA 80-column latch: vid_mode bit 0 with HIRES clear, under
-         * the OCULA profile only. Latched at frame start so the
-         * framebuffer stride is stable for the whole frame. */
+        /* OCULA frame-start latches (stride stays stable for a whole
+         * frame): 80-col = bit 0 with HIRES clear; ext-HIRES = bit 0
+         * with HIRES set. The redefinable palette is re-read here too. */
         bool want_80col = (vid->ula_profile == ULA_PROFILE_OCULA) &&
                           ((vid->vid_mode & 0x05) == 0x01);
-        if (want_80col != vid->ocula_80col) {
+        bool want_exthires = (vid->ula_profile == ULA_PROFILE_OCULA) &&
+                             ((vid->vid_mode & 0x05) == 0x05);
+        if (want_80col != vid->ocula_80col ||
+            want_exthires != vid->ocula_exthires) {
             vid->ocula_80col = want_80col;
+            vid->ocula_exthires = want_exthires;
             apply_profile_resolution(vid);
             memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
             vid->need_refresh = true;
         }
+        palette_latch(vid, memory);
     }
 
     /* ULA resets attributes at start of every scanline. */
@@ -307,6 +368,13 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         render_80col_scanline(vid, memory, y);
         return;
     }
+    if (vid->ocula_exthires && y < 200) {
+        render_exthires_scanline(vid, memory, y);
+        return;
+    }
+    /* ext-HIRES lines 200-223 fall through to the standard bottom text
+     * rows ($BB80): serial attributes still decode there, which is the
+     * in-band escape hatch out of the bitmap-only extended mode. */
 
     if (y < 200) {
         uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
@@ -331,8 +399,8 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 uint8_t fg = inverse ? paper : ink;
                 uint8_t bg = inverse ? ink : paper;
                 uint8_t ir, ig, ib, pr, pg, pb;
-                video_get_rgb(fg, &ir, &ig, &ib);
-                video_get_rgb(bg, &pr, &pg, &pb);
+                get_rgb(vid, fg, &ir, &ig, &ib);
+                get_rgb(vid, bg, &pr, &pg, &pb);
                 int erow = effective_chline(vid, chline);
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
                 bool char_inv = (byte & 0x80) != 0;
@@ -376,8 +444,8 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 uint8_t fg = inverse ? paper : ink;
                 uint8_t bg = inverse ? ink : paper;
                 uint8_t ir, ig, ib, pr, pg, pb;
-                video_get_rgb(fg, &ir, &ig, &ib);
-                video_get_rgb(bg, &pr, &pg, &pb);
+                get_rgb(vid, fg, &ir, &ig, &ib);
+                get_rgb(vid, bg, &pr, &pg, &pb);
                 int erow = effective_chline(vid, chline);
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
                 bool char_inv = (byte & 0x80) != 0;

@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.0-alpha] - 2026-06-13
+
+### Sprint 41 — OCULA étape 3 : HIRES étendu 320×200 + palette redéfinissable
+
+Les deux dernières extensions vidéo du plan OCULA. Spécification v0.4
+dans docs/ocula_extensions.md.
+
+#### Added
+
+- **Attributs 29/31 : HIRES étendu 320×200 bicolore** — bitmap pur à
+  $A000 (40 octets/ligne, les 8 bits de chaque octet sont des pixels,
+  MSB à gauche), même empreinte mémoire que le HIRES standard. Pas
+  d'attributs série dans le bitmap ; lignes 200-223 = rangées texte
+  standard (porte de sortie in-band). Encre/papier = entrées 7/0 de la
+  palette. Le 480 px envisagé ne tenait pas dans $A000-$BFFF (16 Ko
+  requis) : le 320×200 du fil t=2709 tient exactement. Activation
+  canonique : `HIRES:POKE#A000,29` (écran propre requis — des données
+  résiduelles en $A000 re-décodées mi-trame reprennent la main sur le
+  mode, comportement ULA fidèle, vérifié par trace).
+- **Palette redéfinissable** : 8 entrées RGB332 à $BFE0-$BFE7, armées
+  par 'O','C' à $BFE8-$BFE9, relues à chaque début de trame. S'applique
+  à tous les modes sous OCULA (le « multi-coloric ») ; zone jamais
+  balayée par l'ULA stock → neutre sur matériel d'origine. Palette par
+  instance `pal_rgb[8][3]` dans video_t (tous les chemins de rendu
+  convertis).
+- **14 nouveaux tests** test-ocula (latch 29/31, dégradation stock,
+  8 px/octet, non-décodage des attributs en bitmap, colonne 39, rangées
+  basses texte, échappement in-band, palette armée/désarmée/stock/texte,
+  export PPM 320×224) + 1 test 80col ajusté (attr 29 n'est plus
+  « réservé »). Total : 562 tests.
+- **Validé E2E** : `HIRES:POKE#A000,29` sous BASIC 1.0 réel →
+  screenshot 320×224 (240×224 sur ULA stock) ; palette : POKE des
+  magics + entrée 7 → texte rendu en rouge pur 0xFF0000.
+
 ## [1.18.1-alpha] - 2026-06-13
 
 ### Sprint 40b — Alignement avec le firmware OCULA officiel

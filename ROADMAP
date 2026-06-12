@@ -406,6 +406,29 @@ Analyse de sodiumlb/ocula-pivic-firmware v0.1.4 (clone d'étude dans
 - [ ] Backlog : vérifier période FLASH (64 vs 32 trames) et modèle
       double hauteur (parité ligne vs phase chaînée) sur matériel réel
 
+### Sprint 41: OCULA étape 3 — HIRES étendu 320×200 + palette (v1.19.0-alpha) - DONE
+
+- [x] Attributs 29/31 : HIRES étendu 320×200 bicolore, bitmap pur à
+      $A000 (8 px/octet, MSB à gauche, pas d'attributs série) ; le
+      480 px envisagé ne tenait pas dans $A000-$BFFF → 320×200 du fil
+      t=2709 retenu (même empreinte que le HIRES standard)
+- [x] Lignes 200-223 = rangées texte standard avec attributs actifs :
+      porte de sortie in-band du mode bitmap
+- [x] Palette redéfinissable : 8×RGB332 à $BFE0-$BFE7, magic 'O','C'
+      à $BFE8-$BFE9, relue par trame, tous modes, neutre sur stock ;
+      pal_rgb par instance (chemins de rendu convertis de la palette
+      globale vers get_rgb(vid,…))
+- [x] Diagnostic E2E instructif : poser l'attr 29 depuis un écran texte
+      laisse les données résiduelles de $A000 re-décoder des attributs
+      mi-trame et reprendre le mode (fidèle ULA) → activation canonique
+      HIRES:POKE#A000,29 sur écran propre, documentée dans la spec
+- [x] 14 nouveaux tests + 1 ajusté ; 562 tests, 0 échec ; E2E réels
+      320×224 + encre rouge palette ; contre-épreuve stock 240×224
+- [x] Spec ocula_extensions.md v0.4
+- [ ] Étape 4 : banking mémoire + registre d'identification OCULA
+- [ ] Mettre à jour la RFC upstream (#53) avec l'étape 3
+- [ ] Démo BASIC 80 col + 320×200 + palette dans examples/
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)

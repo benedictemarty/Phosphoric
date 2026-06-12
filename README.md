@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.18.1-alpha** | **548 unit tests + 13 E2E, 100% pass** | **Zero memory leaks**
+**Version: 1.19.0-alpha** | **562 unit tests + 13 E2E, 100% pass** | **Zero memory leaks**
 
 ```
  ____  _                      _                _
@@ -112,8 +112,14 @@ make SDL2=1
   ULA — confirmed conflict-free against the official
   [ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
   v0.1.4 (see [docs/ocula_firmware_alignment.md](docs/ocula_firmware_alignment.md))
+- **Extended HIRES 320x200** — serial attribute 29/31: pure bitmap at $A000
+  (8 pixels/byte, no attributes), bottom text rows keep attributes as the
+  in-band escape hatch; canonical activation `HIRES:POKE#A000,29`
+- **Redefinable palette** — 8 RGB332 entries at $BFE0-$BFE7 armed by 'O','C'
+  at $BFE8-$BFE9, re-read each frame, applies to all modes; never scanned by
+  a stock ULA
 - **Spec** — [docs/ocula_extensions.md](docs/ocula_extensions.md); next:
-  redefinable palette, 480px hi-res mono (attr 29), memory banking
+  memory banking + OCULA identification register
 - **Persistent** — profile saved in `.ost` save states (backward compatible)
 
 ### CPU Trace Logging
@@ -470,4 +476,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.18.1-alpha | 548 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA 80-col) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12
+Phosphoric v1.19.0-alpha | 562 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA 80-col) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12
