@@ -1837,8 +1837,14 @@ static void emulator_run(emulator_t* emu) {
                         FILE* df = fopen(dumpname, "wb");
                         if (df) {
                             fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), df);
+                            /* $C000-$FFFF : vue CPU bankée (même contrat 64 Ko
+                             * que --dump-ram-at, cf. sprint 38) */
+                            for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                                uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                                fwrite(&b, 1, 1, df);
+                            }
                             fclose(df);
-                            log_info("Memory dump: %s (48KB RAM $0000-$BFFF, PC=$%04X, cycle=%llu)",
+                            log_info("Memory dump: %s (64KB, $C000-$FFFF = CPU view, PC=$%04X, cycle=%llu)",
                                      dumpname, emu->cpu.PC,
                                      (unsigned long long)total_executed);
                         }

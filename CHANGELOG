@@ -32,6 +32,18 @@ le bug était dans le harnais de test 6502, pas dans Phosphoric
   11 validations memdump du projet SCUMM-Oric (« dump trop court
   49152 »). $C000-$FFFF est maintenant la vue CPU réelle (banking
   BASIC ROM / overlay Microdisc / upper RAM), lue sans effet de bord.
+  Origine : l'ancien `fwrite(ram, 1, 0x10000)` était un over-read (UB)
+  qui dumpait 64 Ko « par chance » ; le fix cppcheck b2af997 l'avait
+  tronqué à 48 Ko sans mettre à jour le contrat (`--help`) ni les
+  consommateurs. Le dump interactif **F7** est aligné sur le même
+  contrat 64 Ko.
+
+#### Docs
+
+- Mémo équipe : `docs/CR/2026-06-12_Memo_Equipe_FDC_Trace_Retractation_WD1793.md`
+  (rétractation du bug report WD1793, méthode FDC_TRACE, post-mortem de
+  la régression dump, leçons process : binaire déployé vs HEAD, fixes
+  d'outillage vs contrats, trace obligatoire pour les bug reports FDC).
 
 #### Tests
 
