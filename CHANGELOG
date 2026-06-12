@@ -34,6 +34,9 @@ v0.1.4 (clone d'étude dans ~/Occula) et des manuels du wiki ocula-docs.
   complétée (binaire + fréquences), activation PAL recommandée
   `POKE #BB80,27` (25 accepté aussi, test `(vid_mode & 0b101) ==
   0b001`).
+- **RFC upstream ouverte** : proposition de l'extension 80 colonnes
+  (attributs 25/27) soumise au projet officiel →
+  [ocula-pivic-firmware#53](https://github.com/sodiumlb/ocula-pivic-firmware/issues/53).
 
 ## [1.18.0-alpha] - 2026-06-12
 

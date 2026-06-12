@@ -399,8 +399,8 @@ Analyse de sodiumlb/ocula-pivic-firmware v0.1.4 (clone d'étude dans
 - [x] Spec v0.3 : bit 1 = 50 Hz (levé), table 24-30 complète,
       activation PAL canonique POKE #BB80,27 + test attr 27 (548 tests)
 - [x] Rapport docs/ocula_firmware_alignment.md
-- [ ] Proposer l'extension attribut 25/27 upstream (issue
-      ocula-pivic-firmware ou forum t=2709)
+- [x] Proposer l'extension attribut 25/27 upstream : RFC ouverte →
+      https://github.com/sodiumlb/ocula-pivic-firmware/issues/53
 - [ ] Backlog : timing 60 Hz réel (264 lignes, vsync 236-240)
 - [ ] Backlog : option turbo --phi2 kHz (équivalent SET PHI2)
 - [ ] Backlog : vérifier période FLASH (64 vs 32 trames) et modèle

@@ -79,8 +79,8 @@ pour la cohérence du snoop ULA `$03A3` du mode `--loci` de Phosphoric.
 ## Actions
 
 - [x] Spec attribut 25 confirmée sans conflit (ce document)
-- [ ] Proposer l'extension attribut 25 upstream (issue/PR sur
-      ocula-pivic-firmware ou fil forum t=2709)
+- [x] Proposer l'extension attribut 25/27 upstream : RFC ouverte le
+      2026-06-13 → [ocula-pivic-firmware#53](https://github.com/sodiumlb/ocula-pivic-firmware/issues/53)
 - [ ] Backlog : timing 60 Hz 264 lignes (vid_mode bit 1)
 - [ ] Backlog : option turbo type `SET PHI2` (`--phi2 kHz`)
 - [ ] Vérifier période FLASH et modèle double hauteur sur matériel réel
