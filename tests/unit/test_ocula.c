@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "video/video.h"
+#include "video/export.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -200,6 +201,164 @@ TEST(test_ocula_renders_identical_to_hcs10017) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  80-COLUMN MODE (Sprint 40 — extended serial attribute 25)      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+static uint8_t mem80[0x10000];
+
+/* Helper: fresh OCULA video + clean memory; glyph 'A' (0x41) row 0
+ * = all 6 pixels set in the standard TEXT charset at $B400. */
+static void setup_80col(video_t* vid) {
+    memset(mem80, 0, sizeof(mem80));
+    for (int row = 0; row < 8; row++) {
+        mem80[0xB400 + 0x41 * 8 + row] = 0x3F;  /* std charset: solid */
+        mem80[0xB800 + 0x41 * 8 + row] = 0x2A;  /* alt charset: distinct */
+    }
+    video_init(vid);
+    video_set_profile(vid, ULA_PROFILE_OCULA);
+}
+
+static uint8_t pixel_r(const video_t* vid, int x, int y) {
+    return vid->framebuffer[(y * vid->native_w + x) * 3];
+}
+static uint8_t pixel_g(const video_t* vid, int x, int y) {
+    return vid->framebuffer[(y * vid->native_w + x) * 3 + 1];
+}
+
+TEST(test_80col_latch_via_attr25) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[0xBB80] = 25;  /* extended serial attribute: 80-column text */
+    video_render_frame(&vid, mem80);   /* attr decoded during this frame */
+    video_render_frame(&vid, mem80);   /* latch fires at next frame start */
+    ASSERT_TRUE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, OCULA_MAX_W);
+    ASSERT_EQ(vid.native_h, ORIC_SCREEN_H);
+}
+
+TEST(test_80col_ignored_on_stock_ula) {
+    static video_t vid;
+    setup_80col(&vid);
+    video_set_profile(&vid, ULA_PROFILE_HCS10017);
+    mem80[0xBB80] = 25;
+    video_render_frame(&vid, mem80);
+    video_render_frame(&vid, mem80);
+    /* Stock HCS 10017: bit 0 is a don't-care, stays 40-column TEXT */
+    ASSERT_FALSE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+}
+
+TEST(test_80col_default_boot_is_40col) {
+    static video_t vid;
+    setup_80col(&vid);
+    video_render_frame(&vid, mem80);  /* powerup vid_mode = 2: bit 0 clear */
+    ASSERT_FALSE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+}
+
+TEST(test_80col_fetches_from_a000) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    mem80[OCULA_80COL_BASE] = 0x41;   /* 'A' at row 0, col 0 */
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_80col);
+    /* Solid glyph row, default ink white: pixel (0,0) is white */
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);
+}
+
+TEST(test_80col_column_79_renders) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    /* Columns 0-77 hold 0x00 bytes = INK black attributes (faithful ULA
+     * behavior), so re-arm INK white at column 78 before the glyph. */
+    mem80[OCULA_80COL_BASE + 78] = 0x07;
+    mem80[OCULA_80COL_BASE + 79] = 0x41;
+    video_render_frame(&vid, mem80);
+    /* Column 79 occupies x = 474..479 */
+    ASSERT_EQ(pixel_r(&vid, 474, 0), 0xFF);
+    ASSERT_EQ(pixel_r(&vid, 479, 0), 0xFF);
+    /* Column 78 untouched: black */
+    ASSERT_EQ(pixel_r(&vid, 473, 0), 0x00);
+}
+
+TEST(test_80col_serial_attributes_per_column) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    mem80[OCULA_80COL_BASE]     = 0x01;  /* attr: INK red */
+    mem80[OCULA_80COL_BASE + 1] = 0x41;  /* 'A' rendered in red */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 6, 0), 0xFF);  /* col 1, red channel on */
+    ASSERT_EQ(pixel_g(&vid, 6, 0), 0x00);  /* green channel off */
+}
+
+TEST(test_80col_alt_charset_attr) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    mem80[OCULA_80COL_BASE]     = 0x09;  /* attr: alternate charset */
+    mem80[OCULA_80COL_BASE + 1] = 0x41;  /* 'A' from $B800: 0x2A pattern */
+    video_render_frame(&vid, mem80);
+    /* 0x2A = 0b101010: bit 5 set -> x offset 0 lit, bit 4 clear -> x 1 dark */
+    ASSERT_EQ(pixel_r(&vid, 6, 0), 0xFF);
+    ASSERT_EQ(pixel_r(&vid, 7, 0), 0x00);
+}
+
+TEST(test_80col_bottom_row_27) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    mem80[OCULA_80COL_BASE + 27 * OCULA_80COL_COLS] = 0x41;
+    video_render_frame(&vid, mem80);
+    /* Row 27 chline 7 = scanline 223 */
+    ASSERT_EQ(pixel_r(&vid, 0, 223), 0xFF);
+}
+
+TEST(test_80col_back_to_40col_via_attr26) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_80col);
+    mem80[OCULA_80COL_BASE] = 26;  /* attr: TEXT 50Hz, bit 0 clear */
+    video_render_frame(&vid, mem80);   /* attr decoded from 80-col stream */
+    video_render_frame(&vid, mem80);   /* latch drops at frame start */
+    ASSERT_FALSE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+}
+
+TEST(test_80col_hires_bit_wins) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;  /* bit 0 set BUT HIRES bit set: not 80-col */
+    video_render_frame(&vid, mem80);
+    ASSERT_FALSE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+}
+
+TEST(test_80col_ppm_export_dimensions) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x01;
+    video_render_frame(&vid, mem80);
+    const char* path = "/tmp/oric1_test_80col.ppm";
+    ASSERT_TRUE(video_export_ppm(&vid, path));
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    char magic[3] = {0};
+    int w = 0, h = 0;
+    int n = fscanf(fp, "%2s %d %d", magic, &w, &h);
+    fclose(fp);
+    remove(path);
+    ASSERT_EQ(n, 3);
+    ASSERT_EQ(w, 480);
+    ASSERT_EQ(h, 224);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -221,6 +380,17 @@ int main(void) {
     RUN(test_profile_switch_clears_framebuffer);
     RUN(test_profile_switch_same_is_noop);
     RUN(test_ocula_renders_identical_to_hcs10017);
+    RUN(test_80col_latch_via_attr25);
+    RUN(test_80col_ignored_on_stock_ula);
+    RUN(test_80col_default_boot_is_40col);
+    RUN(test_80col_fetches_from_a000);
+    RUN(test_80col_column_79_renders);
+    RUN(test_80col_serial_attributes_per_column);
+    RUN(test_80col_alt_charset_attr);
+    RUN(test_80col_bottom_row_27);
+    RUN(test_80col_back_to_40col_via_attr26);
+    RUN(test_80col_hires_bit_wins);
+    RUN(test_80col_ppm_export_dimensions);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

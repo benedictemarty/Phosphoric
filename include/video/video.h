@@ -27,6 +27,14 @@
 #define ORIC_CHAR_H     8
 #define ORIC_FPS         50
 
+/* OCULA 80-column text mode (extended serial attribute 25, OCULA profile
+ * only — see docs/ocula_extensions.md). 80 chars x 6 px = 480 px wide.
+ * Screen RAM moves to $A000 (80 bytes/row x 28 rows = $A000-$A8BF), the
+ * region HIRES uses, so the standard ($B400) and alternate ($B800) TEXT
+ * charsets remain available. */
+#define OCULA_80COL_COLS  80
+#define OCULA_80COL_BASE  0xA000
+
 /* ORIC colors */
 #define ORIC_BLACK   0
 #define ORIC_RED     1
@@ -57,7 +65,16 @@ typedef struct video_s {
     uint8_t* screen_ram;    /* Pointer into memory $BB80 (text) or $A000 (hires) */
     uint8_t* charset;       /* Character set ROM */
     uint8_t vid_mode;       /* ULA video mode (persistent, set by serial attrs 24-31).
-                             * Bit 2: HIRES when set. Initialized to 2 (TEXT/PAL50). */
+                             * Bit 2: HIRES when set. Initialized to 2 (TEXT/PAL50).
+                             * Bit 0 is a don't-care on the stock HCS 10017; under
+                             * the OCULA profile it selects 80-column text when
+                             * HIRES (bit 2) is clear. */
+
+    /* OCULA 80-column latch: evaluated once per frame (scanline 0) from
+     * ula_profile + vid_mode, so the framebuffer stride stays constant
+     * for a whole frame. Mid-frame attribute changes take effect at the
+     * next frame. */
+    bool ocula_80col;
 
     /* Serial-attribute group 0x08-0x0F (text attrs).
      * bit 0 = alt charset, bit 1 = double height, bit 2 = blink.

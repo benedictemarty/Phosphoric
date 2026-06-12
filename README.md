@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.16.75-alpha** | **499 unit tests + 12 E2E, 100% pass** | **Zero memory leaks**
+**Version: 1.18.0-alpha** | **547 unit tests + 13 E2E, 100% pass** | **Zero memory leaks**
 
 ```
  ____  _                      _                _
@@ -105,9 +105,12 @@ make SDL2=1
 ### ULA Profiles (OCULA)
 - **Pluggable ULA** — `--ula ula` (stock HCS 10017, default) or `--ula ocula`
 - **OCULA** — software testbed for the RP2350-based ULA replacement project
-  ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709));
-  renders identically to the stock ULA today, extended modes (80-column text,
-  redefinable palette, 480px hi-res mono, memory banking) land OCULA-only
+  ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709))
+- **80-column text mode** — extended serial attribute 25 (`POKE #BB80,25`),
+  screen at $A000 (80 bytes x 28 rows), native 480x224, full serial-attribute
+  semantics; degrades gracefully to 40-column on a stock ULA
+- **Spec** — [docs/ocula_extensions.md](docs/ocula_extensions.md); next:
+  redefinable palette, 480px hi-res mono (attr 29), memory banking
 - **Persistent** — profile saved in `.ost` save states (backward compatible)
 
 ### CPU Trace Logging
@@ -464,4 +467,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.17.0-alpha | 536 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA step 1) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12
+Phosphoric v1.18.0-alpha | 547 unit tests + 13 E2E | ORIC-1 + Atmos | ULA profiles (OCULA 80-col) + LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-12

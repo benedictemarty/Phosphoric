@@ -355,10 +355,35 @@ ULA HCS 10017 par RP2350B, forum.defence-force.org t=2709). Plan en
       rétro-compatible (anciens fichiers → HCS10017)
 - [x] make test-ocula : 12 tests (dont rendu OCULA pixel-identique au
       HCS 10017) + 1 roundtrip savestate ; 536 tests au total, 0 échec
-- [ ] Étape 2 : mode texte 80 colonnes (480px, bascule 40/80)
+- [x] Étape 2 : mode texte 80 colonnes (480px, bascule 40/80) → Sprint 40
 - [ ] Étape 3 : palette redéfinissable + HIRES monochrome 480px
 - [ ] Étape 4 : banking mémoire (variante RAM intégrée RP2350)
-- [ ] Spécification partagée des attributs étendus dans ~/Occula
+- [x] Spécification partagée des attributs étendus → docs/ocula_extensions.md
+
+### Sprint 40: OCULA étape 2 — mode texte 80 colonnes (v1.18.0-alpha) - DONE
+
+Première extension fonctionnelle du profil ocula. Mécanisme retenu :
+attribut série étendu 25 (bit 0 de vid_mode, don't-care sur HCS 10017)
+→ un programme OCULA dégrade proprement sur ULA d'origine.
+
+- [x] Attribut 25 = TEXT 80 colonnes (HIRES bit 2 prioritaire) ;
+      activation BASIC : POKE #BB80,25 ; retour : attr 24/26
+- [x] Écran 80×28 à $A000-$A8BF (zone HIRES), charsets $B400/$B800
+      conservés ; résolution native 480×224
+- [x] render_80col_scanline : attributs série par colonne, double
+      hauteur, blink, inversion bit 7, charset alternatif — fidèles
+      au mode 40 colonnes
+- [x] Latch en début de trame (stride framebuffer stable par trame ;
+      attr décodé en cours de trame → effet à la trame suivante)
+- [x] Savestate : aucune extension de format nécessaire (latch dérivé
+      de vid_mode + profil au rendu)
+- [x] Spécification docs/ocula_extensions.md (étape 2 + réservations
+      étapes 3-4 : attr 29 HIRES étendu, palette, identification)
+- [x] 11 nouveaux tests test-ocula ; 547 tests au total, 0 échec
+- [x] E2E réel : POKE #BB80,25 sous BASIC 1.0 --ula ocula → screenshot
+      480×224 ; contre-épreuve ULA stock → 240×224
+- [ ] Étape 3 : palette redéfinissable + HIRES monochrome 480px (attr 29)
+- [ ] Démo BASIC 80 colonnes dans examples/
 
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)

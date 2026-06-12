@@ -19,11 +19,10 @@ static const uint8_t palette[8][3] = {
     {0x00,0x00,0xFF},{0xFF,0x00,0xFF},{0x00,0xFF,0xFF},{0xFF,0xFF,0xFF},
 };
 
-/* Active resolution for a given profile. Both profiles render 240x224
- * today; the OCULA extended modes (80-col, hi-res mono) will widen this
- * per-mode in a later sprint. */
+/* Active resolution: follows the OCULA 80-column latch; the stock
+ * profile and OCULA-in-standard-mode both render 240x224. */
 static void apply_profile_resolution(video_t* vid) {
-    vid->native_w = ORIC_SCREEN_W;
+    vid->native_w = vid->ocula_80col ? OCULA_MAX_W : ORIC_SCREEN_W;
     vid->native_h = ORIC_SCREEN_H;
 }
 
@@ -42,6 +41,7 @@ void video_cleanup(video_t* vid) { (void)vid; }
 void video_reset(video_t* vid) {
     /* ula_profile survives reset: the profile models which physical chip
      * is socketed, not a runtime mode. */
+    vid->ocula_80col = false;
     apply_profile_resolution(vid);
     vid->hires_mode = false;
     vid->need_refresh = true;
@@ -52,6 +52,7 @@ void video_reset(video_t* vid) {
 void video_set_profile(video_t* vid, ula_profile_t profile) {
     if (vid->ula_profile == profile) return;
     vid->ula_profile = profile;
+    vid->ocula_80col = false;
     apply_profile_resolution(vid);
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
     vid->need_refresh = true;
@@ -230,6 +231,53 @@ static bool blink_phase_on(video_t* vid) {
     return (vid->text_attr & 0x04) && (vid->frame_counter & 0x10);
 }
 
+/**
+ * Render one 80-column text scanline (OCULA profile, extended serial
+ * attribute 25). All 28 rows (lines 0-223) read from $A000 + row*80;
+ * there is no HIRES mixing — a HIRES attribute in the stream still
+ * updates vid_mode, which is re-latched at the next frame start.
+ * Serial attributes (ink/paper/text attrs) work per column as in the
+ * stock 40-column mode.
+ */
+static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
+    int row = y / 8;
+    int chline = y & 7;
+    uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
+    bool row_had_double = false;
+
+    for (int col = 0; col < OCULA_80COL_COLS; col++) {
+        uint8_t byte = memory[OCULA_80COL_BASE + row * OCULA_80COL_COLS + col];
+        if ((byte & 0x60) == 0) {
+            bool inverse = false;
+            decode_attr(vid, byte, &ink, &paper, &inverse);
+            render_attr_block(vid, col * 6, y, paper, 1);
+            if (vid->text_attr & 0x02) row_had_double = true;
+        } else {
+            uint8_t ir, ig, ib, pr, pg, pb;
+            video_get_rgb(ink, &ir, &ig, &ib);
+            video_get_rgb(paper, &pr, &pg, &pb);
+            int erow = effective_chline(vid, chline);
+            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
+            bool char_inv = (byte & 0x80) != 0;
+            if (blink_phase_on(vid)) char_inv = !char_inv;
+            for (int bx = 5; bx >= 0; bx--) {
+                bool on = (bits & (1 << bx)) != 0;
+                if (char_inv) on = !on;
+                if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
+                else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
+            }
+            if (vid->text_attr & 0x02) row_had_double = true;
+        }
+    }
+
+    if (chline == 7) {
+        vid->dbl_phase = row_had_double ? !vid->dbl_phase : 0;
+        vid->dbl_was_active = row_had_double;
+    }
+
+    if (y == 223) vid->need_refresh = false;
+}
+
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (!memory) return;
     if (y < 0 || y >= 224) return;
@@ -238,10 +286,27 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         vid->frame_counter++;
         vid->dbl_phase = 0;
         vid->dbl_was_active = false;
+
+        /* OCULA 80-column latch: vid_mode bit 0 with HIRES clear, under
+         * the OCULA profile only. Latched at frame start so the
+         * framebuffer stride is stable for the whole frame. */
+        bool want_80col = (vid->ula_profile == ULA_PROFILE_OCULA) &&
+                          ((vid->vid_mode & 0x05) == 0x01);
+        if (want_80col != vid->ocula_80col) {
+            vid->ocula_80col = want_80col;
+            apply_profile_resolution(vid);
+            memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
+            vid->need_refresh = true;
+        }
     }
 
     /* ULA resets attributes at start of every scanline. */
     vid->text_attr = 0;
+
+    if (vid->ocula_80col) {
+        render_80col_scanline(vid, memory, y);
+        return;
+    }
 
     if (y < 200) {
         uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;

@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0-alpha] - 2026-06-12
+
+### Sprint 40 — OCULA étape 2 : mode texte 80 colonnes
+
+Première extension fonctionnelle du profil `--ula ocula` : le mode
+texte 80 colonnes promis jadis pour l'Oric Stratos. Spécification
+partagée dans docs/ocula_extensions.md, pensée pour rester réalisable
+sur le matériel RP2350B réel (l'ULA ne voit pas A0-A7 → configuration
+par attributs série étendus, pas par port I/O).
+
+#### Added
+
+- **Attribut série étendu 25** : le bit 0 de vid_mode (don't-care sur
+  le HCS 10017) sélectionne le texte 80 colonnes sous OCULA quand
+  HIRES (bit 2) est éteint. Activation BASIC : `POKE #BB80,25` ;
+  retour 40 colonnes : attribut 24/26 dans l'écran 80 col.
+  Dégradation gracieuse : sur ULA stock l'attribut 25 = TEXT 50 Hz.
+- **Écran 80 colonnes à $A000** (80 octets × 28 lignes, $A000-$A8BF,
+  la zone HIRES) ; charsets TEXT standard $B400 / alternatif $B800
+  conservés. Résolution native 480×224 (glyphes 6×8).
+- **Rendu fidèle au modèle ULA** : attributs série par colonne
+  (INK/PAPER/texte), double hauteur, clignotement, inversion bit 7,
+  jeu alternatif — identiques au mode 40 colonnes. Latch du mode en
+  début de trame (stride stable par trame) ; bit 2 HIRES prioritaire
+  sur le bit 0.
+- **docs/ocula_extensions.md** : spécification des attributs étendus
+  (étape 2 livrée, réservations étapes 3-4).
+- **11 nouveaux tests** dans test-ocula (latch via attribut 25,
+  ignorance sur ULA stock, boot 40 col par défaut, fetch $A000,
+  colonne 79, attributs par colonne, charset alternatif, ligne 27,
+  retour 40 col, priorité HIRES, export PPM 480×224). Total : 547.
+- **Validé E2E** : `POKE #BB80,25` tapé dans BASIC 1.0 réel sous
+  `--ula ocula` → screenshot 480×224 ; même séquence sous ULA stock
+  → 240×224 (dégradation vérifiée).
+
 ## [1.17.0-alpha] - 2026-06-12
 
 ### Sprint 39 — Profil ULA pluggable : infrastructure OCULA (étape 1)

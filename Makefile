@@ -257,6 +257,7 @@ test-renderer: $(TEST_RENDERER_SRCS)
 	@./test_renderer
 
 TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/renderer.c \
+                  src/video/export.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
 test-ocula: $(TEST_OCULA_SRCS)

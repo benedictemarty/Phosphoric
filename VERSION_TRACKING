@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.17.0-alpha
+Current Version: 1.18.0-alpha
 Release Date: 2026-06-12
-Status: Alpha (Sprint 39 — profil ULA pluggable, infrastructure OCULA étape 1 : --ula ula|ocula, résolution native variable, persistance savestate ; 536 tests) ; précédent : (Sprint 38 — trace FDC opt-in FDC_TRACE=1 + fix --dump-ram-at 64 Ko ; 523 tests)
+Status: Alpha (Sprint 40 — OCULA étape 2 : mode texte 80 colonnes via attribut série étendu 25, écran $A000, 480×224, validé E2E BASIC réel ; 547 tests) ; précédent : (Sprint 39 — profil ULA pluggable, infrastructure OCULA étape 1 ; 536 tests)
 
 Version History:
 ----------------
+- 1.18.0-alpha (2026-06-12): Sprint 40 — **OCULA étape 2 : mode texte 80 colonnes** (attribut série étendu 25 = bit 0 de vid_mode, don't-care sur HCS 10017 → dégradation gracieuse ; écran 80×28 à $A000-$A8BF, charsets $B400/$B800 conservés, résolution native 480×224 ; attributs série par colonne, double hauteur/blink/inversion/alt charset fidèles au 40 col ; latch en début de trame, HIRES prioritaire ; spec docs/ocula_extensions.md ; 11 nouveaux tests + E2E POKE#BB80,25 sous BASIC 1.0 réel → screenshot 480×224, contre-épreuve stock 240×224), 547 tests PASS
 - 1.17.0-alpha (2026-06-12): Sprint 39 — **Profil ULA pluggable : infrastructure OCULA étape 1** (CLI `--ula ula|ocula` ; `ula_profile_t` + API set/get/name/parse, profil survivant au reset ; résolution native variable `native_w`/`native_h`, framebuffer dimensionné 480×448 pour les futurs modes 80 col/HIRES mono ; exports PPM/BMP/ASCII, cast MJPEG et renderer SDL2 suivant la résolution native ; octet profil en section VID .ost rétro-compatible ; `make test-ocula` 12 tests + 1 roundtrip savestate — rendu OCULA pixel-identique au HCS 10017 à ce stade), 536 tests PASS
 - 1.16.84-alpha (2026-06-12): Sprint 38 — **Trace FDC opt-in `FDC_TRACE=1`** (écritures registres avec PC 6502 + cycle, SEEK avec état interne, READ piste/secteur — a rétracté le faux bug WD1793 « track+1 » de SCUMM-Oric) + **fix `--dump-ram-at` 64 Ko** (régression 48 Ko ; $C000-$FFFF = vue CPU bankée), suite complète PASS (profil sans SDL2)
 - 1.16.83-alpha (2026-06-12): Sprint 37 — **Fix modèle IJK** (port imprimante = VIA Port A direct : enable PB4 bas, select broches 6-7, layout réel R/L/F/D/U sur bits 0-4, bit 5 présence ; wired-AND porta_read dans via_read ; suppression du blending clavier PSG ; 7 nouveaux tests dont rejeu de la séquence 6502), suite complète PASS
