@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.84-alpha
-Release Date: 2026-06-12
-Status: Alpha (Sprint 37 — fix modèle joystick IJK : port imprimante VIA Port A direct, layout réel, bit présence ; 523 tests) ; précédent : (Sprint 36f — Backlog conformité LOCI : console UART $03A0-$03A3, TAP bas niveau $0315-$0317, ACIA $0380, adj_scan ; 516 tests + 13 E2E + 15 game compat + 4 mc-autorun)
+Current Version: 1.17.0-alpha
+Release Date: 2026-06-13
+Status: Alpha (Sprint 45 — PicoWiFiModemUSB : backend --serial picowifi[:SSID[:PASS]], jeu AT v0.1.0 complet (WiFi/telnet/numéros rapides/registres S/codes résultat), ACIA $0380 sous --loci ; 551 tests) ; précédent : (Sprint 38 — Trace FDC opt-in + fix dump RAM 64 Ko ; 523 tests)
 
 Version History:
 ----------------
+- 1.17.0-alpha (2026-06-13): Sprint 45 — **PicoWiFiModemUSB (modem WiFi LOCI)** (émulation du PicoWiFiModemUSB de sodiumlb : Pico W pont USB CDC ↔ WiFi exposée par LOCI comme ACIA à $0380 ; backend dédié src/io/serial_picowifi.c SERIAL_BACKEND_PICOWIFI, --serial picowifi[:SSID[:PASS]] ; jeu AT v0.1.0 complet : AT$SSID/$PASS/$MDNS, ATDT/ATDS/ATD TCP, ATNET telnet, AT$SB/$SU série, S0/S2, ATE/Q/V/X codes résultat, AT&K/&D flux, AT&Z numéros rapides, AT$SP/&R serveur, AT&V/&W/&F profil, ATI infos, +++ gardé, A/ répétition ; WiFi simulé, data = vrai TCP ; 28 nouveaux tests make test-picowifi ; réf github.com/sodiumlb/PicoWiFiModemUSB v0.1.0), 551 tests PASS
 - 1.16.84-alpha (2026-06-12): Sprint 38 — **Trace FDC opt-in `FDC_TRACE=1`** (écritures registres avec PC 6502 + cycle, SEEK avec état interne, READ piste/secteur — a rétracté le faux bug WD1793 « track+1 » de SCUMM-Oric) + **fix `--dump-ram-at` 64 Ko** (régression 48 Ko ; $C000-$FFFF = vue CPU bankée), suite complète PASS (profil sans SDL2)
 - 1.16.83-alpha (2026-06-12): Sprint 37 — **Fix modèle IJK** (port imprimante = VIA Port A direct : enable PB4 bas, select broches 6-7, layout réel R/L/F/D/U sur bits 0-4, bit 5 présence ; wired-AND porta_read dans via_read ; suppression du blending clavier PSG ; 7 nouveaux tests dont rejeu de la séquence 6502), suite complète PASS
 - 1.16.82-alpha (2026-06-12): Sprint 36f — **Backlog conformité LOCI** (console UART $03A0-$03A2 + snoop ULA $03A3 ; protocole TAP bas niveau PLAY/REC/READ_BIT/FFW avec lead-in 8×0x16, trame 14 bits et protection moteur via snoop VIA ORB ; op $A6 adj_scan ; $031A-$031B ; octets exacts IRQ/DRQ $0314/$0318 ; ACIA par défaut à $0380 sous --loci ; fix build headless clock_gettime ; 11 nouveaux tests), 516 tests + 13 E2E + 4 mc-autorun PASS

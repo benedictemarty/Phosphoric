@@ -333,6 +333,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] VERSION_TRACKING : 1.16.84-alpha tracé
 - [ ] Élucider test_renderer_init_headless en profil SDL2=1 (pré-existant)
 
+### Sprint 45: PicoWiFiModemUSB — modem WiFi LOCI (v1.17.0-alpha) - DONE
+
+Émulation du PicoWiFiModemUSB de sodiumlb (l'auteur de LOCI) : une
+Pico W pont USB CDC ↔ WiFi que le firmware LOCI expose à l'Oric comme
+un ACIA série à $0380. Branche feature/picowifi (depuis main/sprint 38).
+
+- [x] Backend dédié src/io/serial_picowifi.c (SERIAL_BACKEND_PICOWIFI),
+      état opaque heap-alloc dans l'union serial_backend_t
+- [x] CLI --serial picowifi[:SSID[:PASS]] ; combiné à --loci → ACIA $0380
+      automatique = montage réel Pico W + LOCI reproduit
+- [x] Jeu de commandes AT v0.1.0 complet et fidèle au firmware réel :
+      WiFi (AT$SSID/$PASS/$MDNS, ATCn), dial (ATDT/ATDS/ATD TCP),
+      telnet (ATNET, AT$TTY/$TTS/$TTL), série (AT$SB/$SU), registres S
+      (S0/S2), codes résultat (ATE/Q/V/X), flux (AT&K/&D), numéros
+      rapides (AT&Z), serveur (AT$SP/&R), profil (AT&V/&W/&F), infos
+      (ATI), online (ATO), échappement +++ gardé, répétition A/
+- [x] WiFi associé simulé ; connexions de données = vrais sockets TCP
+      (réutilise l'infra getaddrinfo/connect non-bloquant du backend modem)
+- [x] 28 tests unitaires make test-picowifi (config, codes résultat,
+      registres, numéros rapides, telnet, reset usine, erreurs), 551 total
+- [x] CHANGELOG / VERSION_TRACKING / CIRRUS_OS / README / CLAUDE.md à jour
+- [ ] E2E BASIC : PRINT vers ACIA $0380 + lecture réponse AT (à ajouter)
+- [ ] Numéros rapides AT&Z persistés (AT&W actuellement no-op)
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)

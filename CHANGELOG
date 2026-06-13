@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0-alpha] - 2026-06-13
+
+### Sprint 45 — PicoWiFiModemUSB (modem WiFi LOCI)
+
+Émule le **PicoWiFiModemUSB** de sodiumlb (l'auteur de LOCI) : une
+Raspberry Pi Pico W qui fait le pont USB CDC ↔ WiFi avec un jeu de
+commandes AT de style Hayes. Sur le vrai matériel, le firmware LOCI
+expose ce périphérique à l'Oric comme un ACIA série à $0380 — du point
+de vue de l'Oric, « c'est juste un ACIA ». Phosphoric reproduit ce
+chemin de bout en bout.
+
+#### Added
+
+- **Backend `--serial picowifi[:SSID[:PASS]]`** (module dédié
+  src/io/serial_picowifi.c, `SERIAL_BACKEND_PICOWIFI`) : modem WiFi piloté
+  par commandes AT, par-dessus l'infrastructure socket TCP existante.
+  Sous `--loci`, l'ACIA est déjà mappé à $0380 (défaut firmware) — la
+  combinaison `--loci --serial picowifi:MonWiFi:motdepasse` reproduit le
+  montage réel Pico W + LOCI.
+- **Jeu de commandes AT v0.1.0 complet** (fidèle au firmware réel) :
+  - WiFi : `AT$SSID`, `AT$PASS`, `AT$MDNS` (défaut « espmodem »), `ATCn`/`ATC?`
+  - Numérotation : `ATDT`/`ATDP` (TCP), `ATDS` (numéro mémorisé), `ATD`
+  - Telnet : `ATNET` (0/1/2), `AT$TTY` (« ansi »), `AT$TTS` (80x24), `AT$TTL`
+  - Série : `AT$SB` (baud), `AT$SU` (format 8N1)
+  - Registres S : `S0` (auto-réponse), `S2` (char d'échappement, défaut 43)
+  - Codes résultat : `ATE` (écho), `ATQ` (silence), `ATV` (texte/numérique), `ATX`
+  - Flux/DTR : `AT&K` (RTS/CTS), `AT&D`
+  - Numéros rapides : `AT&Z0..9=host:port,alias`
+  - Serveur entrant : `AT$SP` (port), `AT&R` (mot de passe)
+  - Profil : `AT&V` (affiche config), `AT&W` (sauvegarde), `AT&F` (usine)
+  - Démarrage : `AT$AE`, `AT$W` ; infos : `ATI` ; en ligne : `ATO`
+  - Échappement `+++` (gardé en temps, char S2) ; répétition `A/`
+- **28 tests unitaires** (`make test-picowifi`) : config WiFi, formatage des
+  codes résultat (Q/V), registres S, numéros rapides, telnet, reset usine,
+  gestion d'erreurs, répétition, type de backend.
+
+#### Notes
+
+- L'association WiFi est **simulée** (AT$SSID/AT$PASS stockent les
+  identifiants ; le lien est « actif » dès qu'un SSID est défini). Les
+  connexions de données sont de vrais sockets TCP (telnet/brut).
+- `ATGET`/`ATRD`/`ATRT` renvoient une réponse simulée (pas d'horloge NIST
+  ni de client HTTP dans l'émulateur).
+- Référence : github.com/sodiumlb/PicoWiFiModemUSB (release v0.1.0).
+
 ## [1.16.84-alpha] - 2026-06-12
 
 ### Sprint 38 — Trace FDC opt-in (FDC_TRACE) + fix dump RAM 64 Ko

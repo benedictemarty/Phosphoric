@@ -284,7 +284,7 @@ static void print_usage(const char* program_name) {
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
     printf("                             Mutually exclusive with --loci-flash\n");
-    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P\n");
+    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P, picowifi[:SSID[:PASS]]\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
     printf("      --serial-buffer N     RX FIFO buffer N bytes (prevents overrun, default: off)\n");
@@ -2414,10 +2414,34 @@ int main(int argc, char* argv[]) {
                 strncpy(host, hp, sizeof(host) - 1);
             }
             sb = serial_backend_digitelec_create(host, port, &emu.acia);
+        } else if (strcmp(serial_arg, "picowifi") == 0 ||
+                   strncmp(serial_arg, "picowifi:", 9) == 0) {
+            /* PicoWiFiModemUSB (sodiumlb) — WiFi modem exposed via LOCI.
+             *   --serial picowifi                Credentials set via AT$SSID=
+             *   --serial picowifi:SSID           Pre-set SSID, no password
+             *   --serial picowifi:SSID:PASS      Pre-set SSID + password */
+            char ssid[64] = {0};
+            char pass[64] = {0};
+            if (serial_arg[8] == ':') {
+                const char* sp = serial_arg + 9;
+                const char* colon = strchr(sp, ':');
+                if (colon) {
+                    size_t sl = (size_t)(colon - sp);
+                    if (sl >= sizeof(ssid)) sl = sizeof(ssid) - 1;
+                    memcpy(ssid, sp, sl);
+                    ssid[sl] = '\0';
+                    strncpy(pass, colon + 1, sizeof(pass) - 1);
+                } else {
+                    strncpy(ssid, sp, sizeof(ssid) - 1);
+                }
+            }
+            sb = serial_backend_picowifi_create(ssid[0] ? ssid : NULL,
+                                                pass[0] ? pass : NULL);
         } else {
             log_error("Unknown serial backend: %s", serial_arg);
             log_error("  loopback, tcp:host:port, pty, modem:host:port,");
-            log_error("  modem:listen:port, com:baud,bits,P,stop,device, digitelec:host:port");
+            log_error("  modem:listen:port, com:baud,bits,P,stop,device,");
+            log_error("  digitelec:host:port, picowifi[:SSID[:PASS]]");
             emulator_cleanup(&emu);
             return 1;
         }

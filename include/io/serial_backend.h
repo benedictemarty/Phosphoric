@@ -27,7 +27,8 @@ typedef enum {
     SERIAL_BACKEND_PTY      = 3,    /**< POSIX pseudo-terminal */
     SERIAL_BACKEND_MODEM    = 4,    /**< TCP with AT command emulation */
     SERIAL_BACKEND_COM      = 5,    /**< Real serial port (termios) */
-    SERIAL_BACKEND_DIGITELEC = 6    /**< Digitelec DTL 2000 V23/V21 modem */
+    SERIAL_BACKEND_DIGITELEC = 6,   /**< Digitelec DTL 2000 V23/V21 modem */
+    SERIAL_BACKEND_PICOWIFI = 7     /**< sodiumlb PicoWiFiModemUSB (LOCI) */
 } serial_backend_type_t;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -167,6 +168,16 @@ typedef struct serial_backend_s {
             /* Pointer to ACIA for driving signal lines */
             void*    acia_ptr;          /**< acia6551_t* (avoid circular include) */
         } digitelec;
+
+        /* PicoWiFiModemUSB (sodiumlb) emulation. The real device is a
+         * Raspberry Pi Pico W bridging USB CDC ↔ WiFi with a Hayes-style AT
+         * command set, exposed to the Oric by the LOCI firmware as an ACIA
+         * at $0380. The command set is large enough (~30 commands) to live
+         * in its own module (serial_picowifi.c); the state is heap-allocated
+         * and opaque here to keep this union small. */
+        struct {
+            void*    impl;              /**< picowifi_t* (serial_picowifi.c) */
+        } picowifi;
     } state;
 } serial_backend_t;
 
@@ -223,6 +234,21 @@ serial_backend_t* serial_backend_com_create(const char* config);
  * @param acia  Pointer to ACIA for driving DCD/DSR/CTS signals
  */
 serial_backend_t* serial_backend_digitelec_create(const char* host, uint16_t port, void* acia);
+
+/**
+ * @brief Create a PicoWiFiModemUSB backend (sodiumlb, LOCI WiFi modem)
+ *
+ * Emulates the sodiumlb PicoWiFiModemUSB: a Raspberry Pi Pico W that the
+ * LOCI firmware exposes to the Oric as an ACIA serial modem at $0380.
+ * Implements the device's Hayes-style AT command set (AT$SSID/AT$PASS for
+ * WiFi, ATDT for TCP dial, ATNET telnet, AT&Z speed dial, S-registers,
+ * Q/V/X result-code formatting, &K/&D flow control). WiFi association is
+ * simulated; data connections are real TCP sockets.
+ *
+ * @param ssid  Pre-set WiFi SSID, or NULL (set later via AT$SSID=)
+ * @param pass  Pre-set WiFi password, or NULL (set later via AT$PASS=)
+ */
+serial_backend_t* serial_backend_picowifi_create(const char* ssid, const char* pass);
 
 /**
  * @brief Destroy a backend and free resources
