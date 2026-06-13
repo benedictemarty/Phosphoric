@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.17.1-alpha
-Build Status: ALPHA (Sprint 52 : DTL 2000 — câblage IRQ ACIA 6850 → CPU, source IRQF_DTL2000, IRQ RX/TX level-triggered ; 538 tests)
+Version: 1.17.2-alpha
+Build Status: ALPHA (Sprint 53 : DTL 2000 — .tap de test auto-run + fix collision variables BASIC 2-cars ; validé cassette bout en bout, loopback 10/10 ; 538 tests)
 Last Updated: 2026-06-13
 
 ================================================================
