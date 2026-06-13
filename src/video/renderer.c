@@ -62,10 +62,10 @@ void renderer_present(video_t* vid) {
         texture = SDL_CreateTexture(sdl_renderer,
             SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
             tex_w, tex_h);
+        /* Logical size change lets SDL scale the new resolution into the
+         * existing window without resizing it — the window stays fixed,
+         * like a monitor that doesn't change size when the signal changes. */
         SDL_RenderSetLogicalSize(sdl_renderer, tex_w, tex_h);
-        if (!fullscreen) {
-            SDL_SetWindowSize(window, tex_w * current_scale, tex_h * current_scale);
-        }
     }
     SDL_UpdateTexture(texture, NULL, vid->framebuffer, vid->native_w * 3);
     SDL_RenderClear(sdl_renderer);
