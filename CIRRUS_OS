@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.17.1-alpha
-Build Status: ALPHA (Sprint 46 : PicoWiFi fidélité firmware — défauts corrects, commandes composées, ATC? numérique, ATX effectif, ATZ no-op ; 556 tests)
+Version: 1.17.2-alpha
+Build Status: ALPHA (Sprint 47 : PicoWiFi protocole Telnet — NET0/1/2, CR+NUL/IAC, négociation DO/WILL/SB, préfixes ATDT, AT$AYT ; 566 tests)
 Last Updated: 2026-06-13
 
 ================================================================
@@ -55,7 +55,7 @@ BUILD STATUS
 [V] CPU Performance Profiler - Complete (--profile FILE, hotspots, opcode histogram)
 [V] ROM Analysis Tools    - Complete (--rom-info, vectors, targets, strings, usage)
 [V] ACIA 6551 Serial     - Complete (Digitelec DTL 2000, MCP RS232-C, V23 Minitel, Modem AT, COM termios, TCP/PTY/loopback)
-[V] PicoWiFiModemUSB      - Complete (--serial picowifi, jeu AT v0.1.0 sodiumlb, défauts/codes/commandes composées fidèles au firmware réel ; backlog telnet/réseau/NVRAM)
+[V] PicoWiFiModemUSB      - Complete (--serial picowifi, jeu AT v0.1.0 sodiumlb, défauts/codes/commandes composées + protocole Telnet NET0/1/2 fidèles ; backlog réseau réel/NVRAM)
 [V] Test Suite            - Complete (305 tests via make tests, 100% pass)
 [V] ROM Compatibility     - Validated (ORIC-1 BASIC 1.0 + Atmos BASIC 1.1 ROMs)
 [V] Performance           - Benchmarked (~90+ MHz, target met)

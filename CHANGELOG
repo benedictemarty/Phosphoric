@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.2-alpha] - 2026-06-13
+
+### Sprint 47 — PicoWiFi : protocole Telnet (cœur de la fidélité)
+
+Implémente le traitement Telnet du flux de données — sans lui, une vraie
+session BBS recevait un flux d'octets corrompu. Aligné sur le firmware
+réel (`support.h` : `sendSerialData`/`receiveTcpData`).
+
+#### Added
+
+- **Modes NET0/NET1/NET2** appliqués au flux bidirectionnel via
+  `session_telnet` (mode actif de l'appel, distinct du défaut `ATNET`).
+- **Émission** (Oric → ligne) : doublage `IAC` (réel + faux),
+  `CR`→`CR+NUL` (réel uniquement).
+- **Réception** (ligne → Oric) : machine à états IAC, filtrage `CR+NUL`→
+  `CR` (réel), dé-doublage `IAC IAC`→`IAC`, contrôle telnet retiré du flux.
+- **Négociation IAC** : `DO`→`WILL` pour BINARY/ECHO/SUP_GA/TTYPE/TSPEED,
+  `WONT` sinon ; `WILL`→`DONT` pour LINEMODE/NAWS/LFLOW/NEW_ENVIRON/
+  XDISPLOC, `DO` sinon.
+- **Sous-négociation** : `TTYPE`→type terminal, `TSPEED`→baud,baud,
+  `NAWS`→largeur/hauteur, `LOC`→location.
+- **Préfixes `ATDT`** : `-`=NET0, `=`=NET1 (réel), `+`=NET2 (faux) — fixent
+  le mode telnet de la session ; réinitialisé au défaut sur NO CARRIER.
+- **`AT$AYT`** : émet `IAC AYT` si en appel telnet ; un `IAC AYT` entrant
+  reçoit la réponse `[Yes]`.
+
+#### Tests
+
+- **10 tests d'intégration** sur sockets localhost réels (43 picowifi,
+  566 au total) : CR+NUL/IAC sortant (réel/faux/NET0 transparent),
+  négociation DO TTYPE / WILL NAWS entrante, filtrage CR+NUL entrant,
+  IAC IAC = donnée, réponse AYT, et le cas Minitel NET0 transparent.
+
+#### Notes
+
+- Le garde-temps `+++` reste approximé (compteur de polls, pas le 1 s
+  cycle-exact) — un timing cycle-précis demanderait une horloge dans la
+  vtable série ; reporté, sans impact fonctionnel sur la détection.
+- **Cas Minitel/OricTel** : `ATDT-host` (NET0) garantit un flux Vidéotex
+  intact, le piège `CR+NUL` du mode réel étant désormais explicite.
+
 ## [1.17.1-alpha] - 2026-06-13
 
 ### Sprint 46 — PicoWiFi : fidélité au firmware réel

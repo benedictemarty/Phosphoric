@@ -14,6 +14,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include "io/serial_backend.h"
 
 static int tests_passed = 0;
@@ -406,6 +412,215 @@ TEST(test_backend_type_tag) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Sprint 47 — Telnet integration tests (real localhost sockets)
+ *
+ *  These exercise the genuine data path: a loopback TCP listener stands in
+ *  for the remote host; the backend dials it via ATDT and we verify the
+ *  byte-level telnet transforms and IAC negotiation in both directions.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static int g_listener = -1;
+static int g_srv = -1;
+
+static uint16_t tn_make_listener(void) {
+    g_listener = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sa.sin_port = 0;   /* ephemeral */
+    int one = 1;
+    setsockopt(g_listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    bind(g_listener, (struct sockaddr*)&sa, sizeof(sa));
+    listen(g_listener, 1);
+    socklen_t sl = sizeof(sa);
+    getsockname(g_listener, (struct sockaddr*)&sa, &sl);
+    return ntohs(sa.sin_port);
+}
+
+/* Set up backend, dial the listener with the given prefix (""/"="/"-"/"+"),
+ * and accept the server side into g_srv. */
+static void tn_connect(const char* prefix) {
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[80], r[512];
+    snprintf(cmd, sizeof(cmd), "ATDT%s127.0.0.1:%u", prefix, port);
+    pw_cmd(cmd, r, sizeof(r));            /* dials → CONNECT */
+    g_srv = accept(g_listener, NULL, NULL);
+    int fl = fcntl(g_srv, F_GETFL, 0);
+    fcntl(g_srv, F_SETFL, fl | O_NONBLOCK);
+}
+
+static void tn_disconnect(void) {
+    if (g_srv >= 0) { close(g_srv); g_srv = -1; }
+    if (g_listener >= 0) { close(g_listener); g_listener = -1; }
+    pw_teardown();
+}
+
+/* Read up to max bytes from the server side, retrying for EAGAIN. */
+static int tn_srv_read(uint8_t* buf, int max) {
+    for (int t = 0; t < 4000; t++) {
+        ssize_t r = read(g_srv, buf, (size_t)max);
+        if (r > 0) return (int)r;
+        if (r == 0) return 0;
+    }
+    return 0;
+}
+
+/* Pump the backend's recv (reads socket → telnet → rx) draining data bytes
+ * destined for the Oric into out. */
+static int tn_drain_oric(uint8_t* out, int max) {
+    int i = 0; uint8_t b;
+    for (int t = 0; t < 4000 && i < max; t++) {
+        if (pw->recv(pw, &b)) out[i++] = b;
+    }
+    return i;
+}
+
+/* Send a run of data-mode bytes from the Oric to the line. */
+static void tn_oric_send(const uint8_t* buf, int len) {
+    for (int i = 0; i < len; i++) pw->send(pw, buf[i]);
+}
+
+TEST(test_telnet_outbound_cr_nul) {
+    /* REAL telnet ('=') : CR → CR NUL on the wire. */
+    tn_connect("=");
+    uint8_t in[] = { 'A', 0x0D, 'B' };
+    tn_oric_send(in, 3);
+    uint8_t got[16];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 4);
+    ASSERT_TRUE(got[0] == 'A' && got[1] == 0x0D && got[2] == 0x00 && got[3] == 'B');
+    tn_disconnect();
+}
+
+TEST(test_telnet_outbound_iac_double) {
+    /* IAC (0xFF) is doubled in both real and fake modes. */
+    tn_connect("=");
+    uint8_t in[] = { 0xFF };
+    tn_oric_send(in, 1);
+    uint8_t got[8];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 2);
+    ASSERT_TRUE(got[0] == 0xFF && got[1] == 0xFF);
+    tn_disconnect();
+}
+
+TEST(test_telnet_net0_transparent) {
+    /* NET0 ('-') : byte-transparent — no CR+NUL, no IAC doubling.
+     * This is the mode required for clean Videotex/Minitel streams. */
+    tn_connect("-");
+    uint8_t in[] = { 'A', 0x0D, 'B', 0xFF };
+    tn_oric_send(in, 4);
+    uint8_t got[16];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 4);
+    ASSERT_TRUE(got[0] == 'A' && got[1] == 0x0D && got[2] == 'B' && got[3] == 0xFF);
+    tn_disconnect();
+}
+
+TEST(test_telnet_fake_no_cr_nul) {
+    /* FAKE ('+') : IAC doubled but CR is NOT followed by NUL. */
+    tn_connect("+");
+    uint8_t in[] = { 0x0D, 0xFF };
+    tn_oric_send(in, 2);
+    uint8_t got[16];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 3);
+    ASSERT_TRUE(got[0] == 0x0D && got[1] == 0xFF && got[2] == 0xFF);
+    tn_disconnect();
+}
+
+TEST(test_telnet_inbound_do_ttype_will) {
+    /* Server: IAC DO TTYPE → backend replies IAC WILL TTYPE; the sequence
+     * is stripped from the Oric stream. */
+    tn_connect("=");
+    uint8_t req[] = { 255, 253, 24 };   /* IAC DO TTYPE */
+    (void)!write(g_srv, req, 3);
+    uint8_t oric[16];
+    int no = tn_drain_oric(oric, sizeof(oric));
+    ASSERT_TRUE(no == 0);               /* nothing leaks to the Oric */
+    uint8_t got[8];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 3);
+    ASSERT_TRUE(got[0] == 255 && got[1] == 251 && got[2] == 24); /* IAC WILL TTYPE */
+    tn_disconnect();
+}
+
+TEST(test_telnet_inbound_will_naws_dont) {
+    /* Server: IAC WILL NAWS → backend replies IAC DONT NAWS. */
+    tn_connect("=");
+    uint8_t req[] = { 255, 251, 31 };   /* IAC WILL NAWS */
+    (void)!write(g_srv, req, 3);
+    uint8_t oric[16];
+    (void)tn_drain_oric(oric, sizeof(oric));
+    uint8_t got[8];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 3);
+    ASSERT_TRUE(got[0] == 255 && got[1] == 254 && got[2] == 31); /* IAC DONT NAWS */
+    tn_disconnect();
+}
+
+TEST(test_telnet_inbound_cr_nul_filter) {
+    /* REAL : incoming CR NUL is delivered to the Oric as a bare CR. */
+    tn_connect("=");
+    uint8_t data[] = { 'A', 0x0D, 0x00, 'B' };
+    (void)!write(g_srv, data, 4);
+    uint8_t oric[16];
+    int n = tn_drain_oric(oric, sizeof(oric));
+    ASSERT_TRUE(n == 3);
+    ASSERT_TRUE(oric[0] == 'A' && oric[1] == 0x0D && oric[2] == 'B');
+    tn_disconnect();
+}
+
+TEST(test_telnet_inbound_iac_iac_data) {
+    /* IAC IAC in the stream is a single literal 0xFF data byte. */
+    tn_connect("=");
+    uint8_t data[] = { 'X', 255, 255, 'Y' };
+    (void)!write(g_srv, data, 4);
+    uint8_t oric[16];
+    int n = tn_drain_oric(oric, sizeof(oric));
+    ASSERT_TRUE(n == 3);
+    ASSERT_TRUE(oric[0] == 'X' && oric[1] == 0xFF && oric[2] == 'Y');
+    tn_disconnect();
+}
+
+TEST(test_telnet_inbound_ayt_response) {
+    /* Server sends IAC AYT → backend answers "\r\n[Yes]\r\n" on the line. */
+    tn_connect("=");
+    uint8_t req[] = { 255, 246 };       /* IAC AYT */
+    (void)!write(g_srv, req, 2);
+    uint8_t oric[16];
+    (void)tn_drain_oric(oric, sizeof(oric));
+    uint8_t got[32];
+    int n = tn_srv_read(got, sizeof(got));
+    got[n > 0 ? n : 0] = '\0';
+    ASSERT_CONTAINS((char*)got, "[Yes]");
+    tn_disconnect();
+}
+
+TEST(test_net0_default_via_atnet) {
+    /* ATNET0 then dial with no prefix → session inherits NET0 (transparent).
+     * Mirrors the Minitel/OricTel use case (Videotex byte stream intact). */
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[80], r[512];
+    pw_cmd("ATNET0", r, sizeof(r));
+    snprintf(cmd, sizeof(cmd), "ATDT127.0.0.1:%u", port);
+    pw_cmd(cmd, r, sizeof(r));
+    g_srv = accept(g_listener, NULL, NULL);
+    int fl = fcntl(g_srv, F_GETFL, 0);
+    fcntl(g_srv, F_SETFL, fl | O_NONBLOCK);
+    uint8_t in[] = { 0x0D, 0xFF };       /* would be transformed if telnet on */
+    tn_oric_send(in, 2);
+    uint8_t got[8];
+    int n = tn_srv_read(got, sizeof(got));
+    ASSERT_TRUE(n == 2);
+    ASSERT_TRUE(got[0] == 0x0D && got[1] == 0xFF);
+    tn_disconnect();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Runner
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -448,6 +663,18 @@ int main(void) {
     RUN(test_baud_set_and_query);
     RUN(test_flow_control_amp_k);
     RUN(test_backend_type_tag);
+
+    /* Sprint 47 — telnet protocol (localhost socket integration) */
+    RUN(test_telnet_outbound_cr_nul);
+    RUN(test_telnet_outbound_iac_double);
+    RUN(test_telnet_net0_transparent);
+    RUN(test_telnet_fake_no_cr_nul);
+    RUN(test_telnet_inbound_do_ttype_will);
+    RUN(test_telnet_inbound_will_naws_dont);
+    RUN(test_telnet_inbound_cr_nul_filter);
+    RUN(test_telnet_inbound_iac_iac_data);
+    RUN(test_telnet_inbound_ayt_response);
+    RUN(test_net0_default_via_atnet);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

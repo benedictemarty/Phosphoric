@@ -391,25 +391,29 @@ README, partiellement obsolète/hérité de l'ancêtre ESP8266).
 - [x] Tests : 5 nouveaux (défauts, numéros rapides, ligne composée, token
       inconnu), 33 picowifi / 556 total
 
-### Sprint 47: PicoWiFi — protocole Telnet (cœur de la fidélité) (PLANNED)
+### Sprint 47: PicoWiFi — protocole Telnet (cœur de la fidélité) (v1.17.2-alpha) - DONE
 
-Sans ça, une vraie session BBS telnet reçoit un flux d'octets erroné.
+Sans ça, une vraie session BBS telnet recevait un flux d'octets erroné.
 
-- [ ] **Modes NET0/NET1/NET2** appliqués au flux de données bidirectionnel
-- [ ] **Sortant** (`sendSerialData`) : doublage `IAC` (REAL+FAKE),
-      `CR`→`CR+NUL` (REAL uniquement)
-- [ ] **Entrant** (`receiveTcpData`) : filtrage `CR+NUL`→`CR` (REAL),
-      dé-doublage `IAC IAC`→`IAC`
-- [ ] **Négociation IAC** : DO → WILL pour BINARY/ECHO/SUP_GA/TTYPE/TSPEED,
+- [x] **Modes NET0/NET1/NET2** appliqués au flux bidirectionnel
+      (`session_telnet`, distinct du défaut `ATNET`)
+- [x] **Sortant** : doublage `IAC` (REAL+FAKE), `CR`→`CR+NUL` (REAL)
+- [x] **Entrant** : machine à états IAC, filtrage `CR+NUL`→`CR` (REAL),
+      dé-doublage `IAC IAC`→`IAC`, contrôle telnet retiré du flux Oric
+- [x] **Négociation IAC** : DO → WILL pour BINARY/ECHO/SUP_GA/TTYPE/TSPEED,
       WONT sinon ; WILL → DONT pour LINEMODE/NAWS/LFLOW/NEW_ENVIRON/XDISPLOC,
       DO sinon
-- [ ] **Sous-négociation SB** : TTYPE→`terminal`, TSPEED→`speed,speed`,
+- [x] **Sous-négociation SB** : TTYPE→`terminal`, TSPEED→`baud,baud`,
       NAWS→`width/height`, LOC→`location`
-- [ ] **`+++` guard-time réel** : 1 s avant / 3× escChar / 1 s après, basé
-      sur les cycles CPU (pas le compteur de polls actuel) ; escChar≥128 désactive
-- [ ] **Préfixes `ATDT`** `-`/`=`/`+` → NO/REAL/FAKE telnet pour la session
-- [ ] **`AT$AYT`** (émet `IAC AYT`) + réponse `[Yes]` à un AYT entrant
-- [ ] Tests : vecteurs CR/NUL/IAC sortant+entrant, table de négociation
+- [x] **Préfixes `ATDT`** `-`/`=`/`+` → NO/REAL/FAKE telnet (session),
+      réinitialisé au défaut sur NO CARRIER
+- [x] **`AT$AYT`** (émet `IAC AYT`) + réponse `[Yes]` à un AYT entrant
+- [x] Tests : 10 tests d'intégration sur sockets localhost réels (CR/NUL/
+      IAC sortant REAL/FAKE/NET0, négociation DO TTYPE / WILL NAWS,
+      filtrage entrant, IAC IAC = donnée, AYT, cas Minitel NET0), 566 total
+- [~] **`+++` guard-time** : reste approximé (compteur de polls) — un timing
+      cycle-exact (1 s) demanderait une horloge dans la vtable série ;
+      reporté, sans impact fonctionnel sur la détection d'échappement
 
 ### Sprint 48: PicoWiFi — commandes réseau réelles (PLANNED)
 

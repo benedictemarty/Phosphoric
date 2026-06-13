@@ -57,6 +57,41 @@
 #define PW_DEFAULT_PORT 23         /* telnet */
 #define PW_DEFAULT_BAUD 9600       /* firmware DEFAULT_SPEED */
 
+/* Telnet protocol (sprint 47). Modes: 0=none, 1=real (CR+NUL), 2=fake. */
+#define TN_NONE   0
+#define TN_REAL   1
+#define TN_FAKE   2
+/* Commands */
+#define TN_SE    240
+#define TN_NOP   241
+#define TN_DM    242
+#define TN_BRK   243
+#define TN_AYT   246
+#define TN_SB    250
+#define TN_WILL  251
+#define TN_WONT  252
+#define TN_DO    253
+#define TN_DONT  254
+#define TN_IAC   255
+/* Options */
+#define TNO_BINARY      0
+#define TNO_ECHO        1
+#define TNO_SUP_GA      3
+#define TNO_LOC        23
+#define TNO_TTYPE      24
+#define TNO_NAWS       31
+#define TNO_TSPEED     32
+#define TNO_LFLOW      33
+#define TNO_LINEMODE   34
+#define TNO_XDISPLOC   35
+#define TNO_NEW_ENVIRON 39
+/* Receive state machine */
+#define TN_ST_NORMAL  0
+#define TN_ST_IAC     1
+#define TN_ST_VERB    2   /* got WILL/WONT/DO/DONT, awaiting option */
+#define TN_ST_SB      3   /* in subnegotiation, awaiting IAC SE */
+#define TN_ST_SB_IAC  4   /* saw IAC inside subnegotiation */
+
 /* Hayes result codes — exact enum from firmware types.h */
 enum {
     PW_OK = 0,
@@ -99,7 +134,12 @@ typedef struct {
     char     fmt[8];                /* AT$SU, default "8N1" */
 
     /* ── Telnet ── */
-    int      telnet;                /* ATNET: 0=off, 1=real, 2=fake */
+    int      telnet;                /* ATNET: configured default (0/1/2) */
+    int      session_telnet;        /* active mode for the current call */
+    int      tn_state;              /* receive state machine (TN_ST_*) */
+    int      tn_verb;               /* pending WILL/WONT/DO/DONT */
+    int      tn_sb_opt;             /* subnegotiation option (-1 = none yet) */
+    bool     tn_prev_cr;            /* previous delivered byte was CR */
     char     tty_type[16];          /* AT$TTY, default "ansi" */
     int      tty_w, tty_h;          /* AT$TTS, default 80x24 */
     char     tty_loc[64];           /* AT$TTL, default "Computer Room" */
@@ -191,6 +231,14 @@ static void pw_qval(picowifi_t* pw, const char* s)
  * (extended). Mirrors firmware sendResult(). */
 static void pw_result(picowifi_t* pw, int code)
 {
+    /* Firmware: a lost/failed call resets the session telnet mode to the
+     * configured default and clears the receive state machine. */
+    if (code == PW_NO_CARRIER || code == PW_NO_ANSWER) {
+        pw->session_telnet = pw->telnet;
+        pw->tn_state = TN_ST_NORMAL;
+        pw->tn_prev_cr = false;
+    }
+
     if (pw->quiet) return;
 
     if (!pw->verbose) {
@@ -256,7 +304,8 @@ static void pw_factory(picowifi_t* pw, bool keep_creds)
     snprintf(pw->mdns, sizeof(pw->mdns), "picomodem");
     pw->baud = PW_DEFAULT_BAUD;
     snprintf(pw->fmt, sizeof(pw->fmt), "8N1");
-    pw->telnet = 1;                 /* REAL_TELNET */
+    pw->telnet = TN_REAL;
+    pw->session_telnet = TN_REAL;
     snprintf(pw->tty_type, sizeof(pw->tty_type), "ansi");
     pw->tty_w = 80; pw->tty_h = 24;
     snprintf(pw->tty_loc, sizeof(pw->tty_loc), "Computer Room");
@@ -332,6 +381,128 @@ static int pw_tcp_connect(const char* host, uint16_t port)
     return fd;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Telnet protocol (sprint 47) — mirrors firmware support.h
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* Raw best-effort write to the data socket (no transform). Returns false
+ * on a fatal (non-EAGAIN) error so the caller can drop carrier. */
+static bool pw_sock_write(picowifi_t* pw, const uint8_t* buf, size_t len)
+{
+    if (pw->sockfd < 0) return true;
+    ssize_t r = pw_write(pw->sockfd, buf, len);
+    if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return false;
+    return true;
+}
+
+/* Send one data byte from the Oric to the line, telnet-encoded:
+ * IAC doubled (real+fake), CR→CR+NUL (real only). */
+static bool pw_tn_out_byte(picowifi_t* pw, uint8_t b)
+{
+    if (pw->session_telnet != TN_NONE && b == TN_IAC) {
+        uint8_t d[2] = { TN_IAC, TN_IAC };
+        return pw_sock_write(pw, d, 2);
+    }
+    if (pw->session_telnet == TN_REAL && b == 0x0D) {
+        uint8_t d[2] = { 0x0D, 0x00 };
+        return pw_sock_write(pw, d, 2);
+    }
+    return pw_sock_write(pw, &b, 1);
+}
+
+/* Respond to an inbound DO/WILL negotiation. */
+static void pw_tn_negotiate(picowifi_t* pw, int verb, int opt)
+{
+    uint8_t r[3] = { TN_IAC, 0, (uint8_t)opt };
+    if (verb == TN_DO) {
+        if (opt == TNO_BINARY || opt == TNO_ECHO || opt == TNO_SUP_GA ||
+            opt == TNO_TTYPE  || opt == TNO_TSPEED) {
+            r[1] = TN_WILL; pw_sock_write(pw, r, 3);
+        } else if (opt == TNO_LOC) {
+            r[1] = TN_WILL; pw_sock_write(pw, r, 3);
+            uint8_t h[3] = { TN_IAC, TN_SB, TNO_LOC };
+            uint8_t t[2] = { TN_IAC, TN_SE };
+            pw_sock_write(pw, h, 3);
+            pw_sock_write(pw, (const uint8_t*)pw->tty_loc, strlen(pw->tty_loc));
+            pw_sock_write(pw, t, 2);
+        } else if (opt == TNO_NAWS) {
+            r[1] = TN_WILL; pw_sock_write(pw, r, 3);
+            uint8_t s[9] = { TN_IAC, TN_SB, TNO_NAWS,
+                             0, (uint8_t)pw->tty_w, 0, (uint8_t)pw->tty_h,
+                             TN_IAC, TN_SE };
+            pw_sock_write(pw, s, 9);
+        } else {
+            r[1] = TN_WONT; pw_sock_write(pw, r, 3);
+        }
+    } else if (verb == TN_WILL) {
+        if (opt == TNO_LINEMODE || opt == TNO_NAWS || opt == TNO_LFLOW ||
+            opt == TNO_NEW_ENVIRON || opt == TNO_XDISPLOC) {
+            r[1] = TN_DONT; pw_sock_write(pw, r, 3);
+        } else {
+            r[1] = TN_DO; pw_sock_write(pw, r, 3);
+        }
+    }
+    /* DONT / WONT inbound → ignored */
+}
+
+/* Respond to a completed inbound subnegotiation (IAC SB opt ... IAC SE). */
+static void pw_tn_subneg(picowifi_t* pw, int opt)
+{
+    if (opt == TNO_TTYPE) {
+        uint8_t h[4] = { TN_IAC, TN_SB, TNO_TTYPE, 0 /* IS */ };
+        uint8_t t[2] = { TN_IAC, TN_SE };
+        pw_sock_write(pw, h, 4);
+        pw_sock_write(pw, (const uint8_t*)pw->tty_type, strlen(pw->tty_type));
+        pw_sock_write(pw, t, 2);
+    } else if (opt == TNO_TSPEED) {
+        char sp[24];
+        int n = snprintf(sp, sizeof(sp), "%d,%d", pw->baud, pw->baud);
+        uint8_t h[4] = { TN_IAC, TN_SB, TNO_TSPEED, 0 /* IS */ };
+        uint8_t t[2] = { TN_IAC, TN_SE };
+        pw_sock_write(pw, h, 4);
+        pw_sock_write(pw, (const uint8_t*)sp, (size_t)n);
+        pw_sock_write(pw, t, 2);
+    }
+    /* other options → ignored */
+}
+
+/* Feed one byte received from the line through the telnet state machine.
+ * Data bytes are pushed to the RX ring; telnet control is consumed (and may
+ * write responses back to the line). */
+static void pw_tn_rx_byte(picowifi_t* pw, uint8_t b)
+{
+    switch (pw->tn_state) {
+    case TN_ST_NORMAL:
+        if (b == TN_IAC) { pw->tn_state = TN_ST_IAC; return; }
+        if (pw->session_telnet == TN_REAL && pw->tn_prev_cr && b == 0x00) {
+            pw->tn_prev_cr = false;   /* filter CR+NUL → CR */
+            return;
+        }
+        pw_rx_push(pw, b);
+        pw->tn_prev_cr = (b == 0x0D);
+        return;
+    case TN_ST_IAC:
+        if (b == TN_IAC) { pw_rx_push(pw, 0xFF); pw->tn_prev_cr = false; pw->tn_state = TN_ST_NORMAL; return; }
+        if (b == TN_WILL || b == TN_WONT || b == TN_DO || b == TN_DONT) { pw->tn_verb = b; pw->tn_state = TN_ST_VERB; return; }
+        if (b == TN_SB) { pw->tn_sb_opt = -1; pw->tn_state = TN_ST_SB; return; }
+        if (b == TN_AYT) { pw_sock_write(pw, (const uint8_t*)"\r\n[Yes]\r\n", 9); pw->tn_state = TN_ST_NORMAL; return; }
+        pw->tn_state = TN_ST_NORMAL;   /* DM/NOP/BRK/GA/… ignored */
+        return;
+    case TN_ST_VERB:
+        pw_tn_negotiate(pw, pw->tn_verb, b);
+        pw->tn_state = TN_ST_NORMAL;
+        return;
+    case TN_ST_SB:
+        if (b == TN_IAC) { pw->tn_state = TN_ST_SB_IAC; return; }
+        if (pw->tn_sb_opt < 0) pw->tn_sb_opt = b;   /* first byte = option */
+        return;
+    case TN_ST_SB_IAC:
+        if (b == TN_SE) { pw_tn_subneg(pw, pw->tn_sb_opt); pw->tn_state = TN_ST_NORMAL; return; }
+        pw->tn_state = TN_ST_SB;   /* IAC IAC inside SB = data, ignore */
+        return;
+    }
+}
+
 static bool pw_wifi_associate(picowifi_t* pw)
 {
     if (pw->ssid[0] == '\0') return false;
@@ -360,6 +531,8 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port)
     pw->mode = 1;
     pw->plus_count = 0;
     pw->connect_time = time(NULL);
+    pw->tn_state = TN_ST_NORMAL;
+    pw->tn_prev_cr = false;
     snprintf(pw->host, sizeof(pw->host), "%s", host);
     pw->port = port;
     log_info("PicoWiFi: CONNECT %s:%u (fd=%d)", host, port, fd);
@@ -383,18 +556,25 @@ static void pw_parse_hostport(const char* s, char* host, size_t hsz, uint16_t* p
     }
 }
 
-/* Dial from a raw argument (consumes the rest of the line). */
+/* Dial from a raw argument (consumes the rest of the line). Leading telnet
+ * prefixes set the session telnet mode: '-'=none, '='=real, '+'=fake. */
 static void pw_do_dial(picowifi_t* pw, const char* arg)
 {
-    /* Telnet prefixes +/=/- are skipped for now (sprint 47 will act on
-     * them to force the session telnet mode). */
-    while (*arg == '+' || *arg == '=' || *arg == '-' || *arg == ' ') arg++;
+    int sess = pw->telnet;
+    for (;;) {
+        if (*arg == '-')      { sess = TN_NONE; arg++; }
+        else if (*arg == '=') { sess = TN_REAL; arg++; }
+        else if (*arg == '+') { sess = TN_FAKE; arg++; }
+        else if (*arg == ' ') { arg++; }
+        else break;
+    }
     char host[256]; uint16_t port;
     pw_parse_hostport(arg, host, sizeof(host), &port);
     if (host[0] == '\0' && pw->host[0] != '\0') {  /* redial preset */
         snprintf(host, sizeof(host), "%s", pw->host);
         port = pw->port ? pw->port : PW_DEFAULT_PORT;
     }
+    pw->session_telnet = sess;
     pw_dial(pw, host, port);
 }
 
@@ -436,6 +616,17 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
     }
 
     /* ── $ proprietary commands ── (tested before single letters) */
+    if ((a = pw_match(p, "$AYT"))) {
+        /* Send Telnet "Are You There" if in a telnet call. */
+        if (pw->sockfd >= 0 && pw->session_telnet != TN_NONE) {
+            uint8_t s[2] = { TN_IAC, TN_AYT };
+            pw_sock_write(pw, s, 2);
+            pw->mode = 1;          /* back online */
+            return a;              /* no OK: we are online again */
+        }
+        pw_result(pw, PW_ERROR);
+        return a;
+    }
     if ((a = pw_match(p, "$SSID"))) {
         if (*a == '?') { pw_qval(pw, pw->ssid); return pw_end(pw, a + 1); }
         if (*a == '=') { pw->wifi_up = false; return pw_end(pw, pw_setstr(pw->ssid, sizeof(pw->ssid), a + 1)); }
@@ -585,8 +776,12 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
     if ((a = pw_match(p, "DS"))) {
         int n = (*a >= '0' && *a <= '9') ? (*a - '0') : -1;
         const char* after = pw_skip_digits(a);
-        if (n >= 0 && pw->dial[n].used) pw_dial(pw, pw->dial[n].host, pw->dial[n].port);
-        else pw_result(pw, PW_ERROR);
+        if (n >= 0 && pw->dial[n].used) {
+            pw->session_telnet = pw->telnet;   /* speed dial uses default mode */
+            pw_dial(pw, pw->dial[n].host, pw->dial[n].port);
+        } else {
+            pw_result(pw, PW_ERROR);
+        }
         return after;
     }
     if ((a = pw_match(p, "D"))) {
@@ -738,6 +933,8 @@ static bool picowifi_open(serial_backend_t* self)
     pw->plus_count = 0;
     pw->silence = 0;
     pw->connect_time = 0;
+    pw->tn_state = TN_ST_NORMAL;
+    pw->tn_prev_cr = false;
     /* Apply factory defaults, preserving any CLI-supplied credentials
      * (firmware: boot loads NVRAM; we have none yet → factory defaults). */
     pw_factory(pw, true);
@@ -785,14 +982,13 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
         if (pw->sockfd >= 0 && pw->plus_count > 0) {
             uint8_t e = (uint8_t)pw->esc_char;
             for (int i = 0; i < pw->plus_count && i < 3; i++)
-                (void)pw_write(pw->sockfd, &e, 1);
+                (void)pw_tn_out_byte(pw, e);
         }
         pw->plus_count = 0;
         pw->silence = 0;
 
         if (pw->sockfd >= 0) {
-            ssize_t r = pw_write(pw->sockfd, &byte, 1);
-            if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            if (!pw_tn_out_byte(pw, byte)) {
                 log_info("PicoWiFi: write error, carrier lost");
                 close(pw->sockfd);
                 pw->sockfd = -1;
@@ -831,7 +1027,10 @@ static bool picowifi_recv(serial_backend_t* self, uint8_t* byte)
         uint8_t tmp[256];
         ssize_t r = pw_read(pw->sockfd, tmp, sizeof(tmp));
         if (r > 0) {
-            for (ssize_t i = 0; i < r; i++) pw_rx_push(pw, tmp[i]);
+            for (ssize_t i = 0; i < r; i++) {
+                if (pw->session_telnet != TN_NONE) pw_tn_rx_byte(pw, tmp[i]);
+                else pw_rx_push(pw, tmp[i]);
+            }
         } else if (r == 0) {
             log_info("PicoWiFi: peer closed connection");
             close(pw->sockfd);

@@ -236,6 +236,31 @@ Connectez minicom/screen/picocom sur ce device depuis un autre terminal.
 
 Vrai port série via termios (Linux). Format : `baud,databits,parité,stopbits,device`.
 
+### 7. PicoWiFiModemUSB (modem WiFi LOCI)
+
+```bash
+# Sous --loci, l'ACIA est mappée à $0380 (défaut firmware LOCI)
+./oric1-emu -r roms/basic10.rom --loci --serial picowifi:MonWiFi:motdepasse
+```
+
+Émule le modem WiFi de sodiumlb (Pico W exposée par LOCI comme ACIA). Le
+programme ORIC compose en commandes AT. Jeu v0.1.0 complet : `AT$SSID=`,
+`AT$PASS=`, `ATC1` (connexion WiFi), `ATDT host:port` (TCP), `ATNET`,
+numéros rapides `AT&Z`, registres S, etc. WiFi simulé, données = vrai TCP.
+
+**⚠ Minitel / Vidéotex : forcer NET0.** Le mode telnet réel (NET1, défaut)
+traduit `CR`→`CR+NUL` et double `IAC` (0xFF) — ce qui **corrompt** un flux
+Vidéotex (où ces octets sont des données). Compose en NET0 pour un flux
+transparent :
+
+```basic
+A$="ATDT-mon.serveur.minitel:516"+CHR$(13) : REM le '-' force NET0
+```
+
+Le préfixe `-` (NET0), `=` (NET1 réel), `+` (NET2 faux) fixe le mode telnet
+de la session. Pour du Vidéotex pur, le backend `digitelec` + `--serial-v23`
+reste l'option la plus idiomatique (V23 1200/75 natif, sans commandes AT).
+
 ## Options d'amélioration
 
 ### FIFO RX (anti-overrun)
