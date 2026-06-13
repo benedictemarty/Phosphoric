@@ -453,6 +453,25 @@ exacts, commandes composées, protocole Telnet (IAC/CR-NUL/négociation),
 réseau réel (ATGET/ATRD), persistance NVRAM. Reste optionnel : garde-temps
 +++ cycle-exact (vtable série), per-slot telnet prefix des numéros rapides.
 
+### Sprint 50: PicoWiFi — pont réel vers le réseau de l'hôte (v1.18.0-alpha) - DONE
+
+Reflète l'état réseau réel de l'hôte (lecture seule), au-delà de la
+simulation. Le chemin de données était déjà réel (TCP via l'interface
+active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
+
+- [x] Option `PHOSPHORIC_PICOWIFI_REALNET=1` (opt-in, off par défaut)
+- [x] `ATI` : IP locale réelle (`getifaddrs`) + état de connexion réel
+- [x] `ATC?`/`ATC1` : connectivité internet réelle (test de route UDP
+      8.8.8.8:53, aucun paquet émis ; échec si hors-ligne)
+- [x] Adoption du SSID WiFi réel de l'hôte au boot (best-effort `iwgetid`)
+      si aucun SSID configuré
+- [x] **Lecture seule par conception** : jamais de contrôle/scan/association
+      de la carte (OS-spécifique, privilégié, perturberait la vraie connexion)
+- [x] 3 nouveaux tests (62 picowifi, 585 total) ; mode simulé inchangé par
+      défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
+- [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
+      Future Enhancements, déconseillé
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)

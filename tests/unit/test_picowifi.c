@@ -870,6 +870,41 @@ TEST(test_boot_wifi_auto_associate) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Real host-network bridge (read-only, opt-in via env var)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+TEST(test_realnet_ati_reports_host_ip) {
+    setenv("PHOSPHORIC_PICOWIFI_REALNET", "1", 1);
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATI", r, sizeof(r));
+    ASSERT_CONTAINS(r, "(host)");          /* real-state markers */
+    ASSERT_CONTAINS(r, ".");               /* an IPv4 address */
+    ASSERT_NOT_CONTAINS(r, "simulated");
+    pw_teardown();
+    unsetenv("PHOSPHORIC_PICOWIFI_REALNET");
+}
+
+TEST(test_realnet_atc_returns_real_status) {
+    setenv("PHOSPHORIC_PICOWIFI_REALNET", "1", 1);
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATC?", r, sizeof(r));
+    ASSERT_TRUE(strchr(r, '0') != NULL || strchr(r, '1') != NULL);
+    pw_teardown();
+    unsetenv("PHOSPHORIC_PICOWIFI_REALNET");
+}
+
+TEST(test_realnet_off_is_simulated) {
+    /* Default (no env) keeps the simulated IP — regression guard. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATI", r, sizeof(r));
+    ASSERT_CONTAINS(r, "simulated");
+    pw_teardown();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Runner
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -949,6 +984,11 @@ int main(void) {
     RUN(test_boot_autoexec);
     RUN(test_factory_reset_persists);
     RUN(test_boot_wifi_auto_associate);
+
+    /* Real host-network bridge (read-only) */
+    RUN(test_realnet_ati_reports_host_ip);
+    RUN(test_realnet_atc_returns_real_status);
+    RUN(test_realnet_off_is_simulated);
 
     unlink(PW_NVRAM_TEST);
 

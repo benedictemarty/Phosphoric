@@ -47,6 +47,8 @@
 #include <netinet/tcp.h>
 #include <netdb.h>
 #include <poll.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
 
 #include "io/serial_backend.h"
 #include "utils/logging.h"
@@ -127,7 +129,8 @@ typedef struct {
     char     ssid[64];
     char     pass[64];
     char     mdns[64];              /* default "picomodem" */
-    bool     wifi_up;               /* simulated association */
+    bool     wifi_up;               /* association state */
+    bool     realnet;              /* reflect the host's real network state */
 
     /* ── Serial parameters (reported, not enforced) ── */
     int      baud;                  /* AT$SB, default 9600 */
@@ -697,8 +700,82 @@ static void pw_tn_rx_byte(picowifi_t* pw, uint8_t b)
     }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Host network reflection (real bridge, read-only) — opt-in via
+ *  PHOSPHORIC_PICOWIFI_REALNET=1. We never control the host WiFi card; we
+ *  only report its real state (local IP, internet reachability, SSID).
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* First non-loopback IPv4 address of the host, else loopback/0.0.0.0. */
+static void pw_host_local_ip(char* out, size_t osz)
+{
+    snprintf(out, osz, "0.0.0.0");
+    struct ifaddrs* ifa = NULL;
+    if (getifaddrs(&ifa) != 0) return;
+    char loop[INET_ADDRSTRLEN] = {0};
+    for (struct ifaddrs* p = ifa; p; p = p->ifa_next) {
+        if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET) continue;
+        char ip[INET_ADDRSTRLEN];
+        struct sockaddr_in* sin = (struct sockaddr_in*)p->ifa_addr;
+        inet_ntop(AF_INET, &sin->sin_addr, ip, sizeof(ip));
+        if (strcmp(ip, "127.0.0.1") == 0) { snprintf(loop, sizeof(loop), "%s", ip); continue; }
+        snprintf(out, osz, "%s", ip);   /* first real address wins */
+        freeifaddrs(ifa);
+        return;
+    }
+    if (loop[0]) snprintf(out, osz, "%s", loop);
+    freeifaddrs(ifa);
+}
+
+/* True if the host has a route to the internet. Uses the classic "UDP
+ * connect to 8.8.8.8" trick — no packet is sent, the kernel just resolves
+ * the outbound route (fails with no route when offline). */
+static bool pw_host_online(void)
+{
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return false;
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &sa.sin_addr);
+    bool ok = (connect(fd, (struct sockaddr*)&sa, sizeof(sa)) == 0);
+    if (ok) {
+        struct sockaddr_in local;
+        socklen_t l = sizeof(local);
+        if (getsockname(fd, (struct sockaddr*)&local, &l) == 0) {
+            char ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &local.sin_addr, ip, sizeof(ip));
+            ok = (strcmp(ip, "0.0.0.0") != 0 && strcmp(ip, "127.0.0.1") != 0);
+        }
+    }
+    close(fd);
+    return ok;
+}
+
+/* Best-effort host WiFi SSID (Linux wireless-tools). Empty if unavailable. */
+static bool pw_host_ssid(char* out, size_t osz)
+{
+    out[0] = '\0';
+    FILE* p = popen("iwgetid -r 2>/dev/null", "r");
+    if (!p) return false;
+    bool ok = false;
+    if (fgets(out, (int)osz, p)) {
+        size_t n = strlen(out);
+        while (n > 0 && (out[n - 1] == '\n' || out[n - 1] == '\r')) out[--n] = '\0';
+        ok = (n > 0);
+    }
+    pclose(p);
+    return ok;
+}
+
 static bool pw_wifi_associate(picowifi_t* pw)
 {
+    if (pw->realnet) {
+        /* Real bridge: "association" succeeds iff the host is online. */
+        pw->wifi_up = pw_host_online();
+        return pw->wifi_up;
+    }
     if (pw->ssid[0] == '\0') return false;
     if (!pw->wifi_up) {
         pw->wifi_up = true;
@@ -1067,6 +1144,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
     /* ── WiFi connection control ── */
     if ((a = pw_match(p, "C"))) {
         if (*a == '?') {
+            if (pw->realnet) pw->wifi_up = pw_host_online();   /* live state */
             pw_rx_str(pw, "\r\n");
             pw_rx_push(pw, pw->wifi_up ? '1' : '0');
             pw_rx_str(pw, "\r\n");
@@ -1120,11 +1198,23 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         pw_qval(pw, "PicoWiFiModemUSB (emulated)");
         snprintf(b, sizeof(b), "Firmware v%s", PW_FW_VERSION);
         pw_qval(pw, b);
-        snprintf(b, sizeof(b), "WiFi: %s %s",
-                 pw->ssid[0] ? pw->ssid : "(not configured)",
-                 pw->wifi_up ? "UP" : "DOWN");
-        pw_qval(pw, b);
-        pw_qval(pw, "IP: 192.168.0.42 (simulated)");
+        if (pw->realnet) {
+            bool up = pw_host_online();
+            pw->wifi_up = up;
+            snprintf(b, sizeof(b), "WiFi: %s %s",
+                     pw->ssid[0] ? pw->ssid : "(host)", up ? "UP" : "DOWN");
+            pw_qval(pw, b);
+            char ip[INET_ADDRSTRLEN];
+            pw_host_local_ip(ip, sizeof(ip));
+            snprintf(b, sizeof(b), "IP: %s (host)", ip);
+            pw_qval(pw, b);
+        } else {
+            snprintf(b, sizeof(b), "WiFi: %s %s",
+                     pw->ssid[0] ? pw->ssid : "(not configured)",
+                     pw->wifi_up ? "UP" : "DOWN");
+            pw_qval(pw, b);
+            pw_qval(pw, "IP: 192.168.0.42 (simulated)");
+        }
         return pw_end(pw, a);
     }
     if ((a = pw_match(p, "Z"))) {
@@ -1208,8 +1298,22 @@ static bool picowifi_open(serial_backend_t* self)
     if (pw->cli_ssid[0]) snprintf(pw->ssid, sizeof(pw->ssid), "%s", pw->cli_ssid);
     if (pw->cli_pass[0]) snprintf(pw->pass, sizeof(pw->pass), "%s", pw->cli_pass);
 
-    /* Auto-reconnect WiFi at boot when an SSID is configured (simulated). */
-    if (pw->ssid[0]) {
+    /* Real bridge (opt-in): reflect the host's network state instead of
+     * simulating. We read it (SSID, reachability) but never control it. */
+    const char* rn = getenv("PHOSPHORIC_PICOWIFI_REALNET");
+    pw->realnet = (rn && rn[0] && rn[0] != '0');
+
+    if (pw->realnet) {
+        if (pw->ssid[0] == '\0') {
+            char real_ssid[64];
+            if (pw_host_ssid(real_ssid, sizeof(real_ssid)))
+                snprintf(pw->ssid, sizeof(pw->ssid), "%s", real_ssid);
+        }
+        pw->wifi_up = pw_host_online();
+        log_info("PicoWiFi: real host bridge (SSID:%s online:%d)",
+                 pw->ssid[0] ? pw->ssid : "(unknown)", pw->wifi_up);
+    } else if (pw->ssid[0]) {
+        /* Auto-reconnect WiFi at boot when an SSID is configured (simulated). */
         pw->wifi_up = true;
         log_info("PicoWiFi: boot WiFi associate \"%s\" (simulated)", pw->ssid);
     }

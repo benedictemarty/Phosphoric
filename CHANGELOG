@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0-alpha] - 2026-06-13
+
+### Sprint 50 — PicoWiFi : pont réel vers le réseau de l'hôte (lecture seule)
+
+Le backend reflète l'état réseau **réel** de l'hôte au lieu de le simuler,
+en lecture seule — on n'a jamais piloté/reconfiguré la carte WiFi.
+
+#### Added
+
+- **Option `PHOSPHORIC_PICOWIFI_REALNET=1`** : active le pont réel.
+  - `ATI` rapporte l'**IP locale réelle** de l'hôte (`getifaddrs`) et l'état
+    de connexion réel, au lieu de `192.168.0.42 (simulated)`.
+  - `ATC?`/`ATC1` reflètent la **connectivité internet réelle** (test de
+    route UDP vers 8.8.8.8:53, aucun paquet émis ; échec si hors-ligne).
+  - Au boot, si aucun SSID n'est configuré, adoption du **SSID WiFi réel**
+    de l'hôte (best-effort `iwgetid`).
+- Le **chemin de données était déjà réel** depuis le sprint 45 : `ATDT`/
+  `ATGET`/`ATRD` sortent en vrai TCP par l'interface active de l'hôte (carte
+  WiFi comprise). Cette option ne change que le *reporting* de l'état WiFi.
+
+#### Tests
+
+- **3 nouveaux tests** (62 picowifi, 585 au total) : `ATI` rapporte une IP
+  hôte (marqueur `(host)`, pas `simulated`), `ATC?` renvoie un statut réel
+  0/1, régression mode simulé par défaut.
+
+#### Notes
+
+- **Lecture seule, par conception** : l'émulateur ne contrôle jamais le WiFi
+  de l'hôte (pas de scan/association/reconfiguration). Piloter la carte
+  serait OS-spécifique, privilégié et perturberait la connexion réelle —
+  écarté volontairement (voir l'échange de conception).
+- Désactivé par défaut → le mode simulé (hors-ligne, tests) reste inchangé.
+
 ## [1.17.4-alpha] - 2026-06-13
 
 ### Sprint 49 — PicoWiFi : persistance NVRAM + boot (fin de la fidélité)

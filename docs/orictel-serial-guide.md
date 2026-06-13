@@ -274,6 +274,20 @@ modem (ATI, AT$SSID, ATC1…) et affiche les réponses :
 plus lent que le débit du modem → OVERRUN et octets perdus (l'ACIA n'a
 qu'un registre RX). Le FIFO bufferise les réponses.
 
+**Pont réseau réel.** Les connexions de données (`ATDT`/`ATGET`/`ATRD`)
+sortent déjà en vrai TCP par l'interface active de l'hôte (carte WiFi
+comprise). Pour que l'état WiFi *rapporté* (IP, connectivité, SSID) soit
+réel lui aussi — au lieu de simulé — exporte :
+
+```bash
+PHOSPHORIC_PICOWIFI_REALNET=1 ./oric1-emu ... --serial picowifi ...
+```
+
+`ATI` affiche alors l'IP locale réelle (`IP: 192.168.1.19 (host)`), `ATC?`
+reflète la vraie connectivité internet, et le SSID de l'hôte est adopté au
+boot. C'est en **lecture seule** : l'émulateur ne pilote jamais la carte
+WiFi (pas de scan/association). Désactivé par défaut (mode simulé).
+
 ## Options d'amélioration
 
 ### FIFO RX (anti-overrun)
