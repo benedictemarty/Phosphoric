@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.18.0-alpha
-Build Status: ALPHA (Sprint 50 : PicoWiFi pont réel hôte lecture seule — REALNET=1, ATI IP réelle, ATC connectivité réelle, SSID hôte ; 585 tests)
+Version: 1.18.1-alpha
+Build Status: ALPHA (Fix ACIA : plancher cadence polling RX (anti-tempête syscall à baud=0) ; 585 tests)
 Last Updated: 2026-06-13
 
 ================================================================

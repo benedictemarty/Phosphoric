@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.1-alpha] - 2026-06-13
+
+### Fix — ACIA : plancher de cadence de polling RX (anti-tempête syscall)
+
+#### Fixed
+
+- **`acia_tick` ne sonde plus le backend série à chaque cycle** quand le
+  débit est à 0 (horloge externe / « instant transfer », `rx_reload == 1`).
+  Avec un backend sur socket et une connexion ouverte, cela provoquait un
+  `poll()`/`read()` par cycle CPU — une tempête de syscalls qui ralentissait
+  fortement l'émulateur. Un plancher `ACIA_RX_POLL_FLOOR` (32 cycles, ≈32 µs)
+  borne désormais la cadence de sonde. Aucun effet aux débits réels
+  (rx_reload ≫ 32, p.ex. ~1041 à 9600) ni sur le backend loopback (lecture
+  en mémoire, sans syscall).
+- Mesure : 40M cycles à baud 0 avec flux entrant continu → 0,3 s headless
+  (auparavant : tempête de syscalls).
+
+#### Notes
+
+- Cela ne concerne PAS la « lenteur » observée lors du test BBS sans `-n` :
+  celle-ci était le **frame limiter 50 Hz** (comportement temps-réel correct
+  — 250M cycles = 250 s émulées à 1 MHz), pas un bug. Diagnostic initial
+  rectifié après mesure.
+
 ## [1.18.0-alpha] - 2026-06-13
 
 ### Sprint 50 — PicoWiFi : pont réel vers le réseau de l'hôte (lecture seule)

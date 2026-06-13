@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.18.0-alpha
+Current Version: 1.18.1-alpha
 Release Date: 2026-06-13
-Status: Alpha (Sprint 50 — PicoWiFi pont réel hôte (lecture seule) : PHOSPHORIC_PICOWIFI_REALNET=1, ATI IP locale réelle, ATC?/ATC1 connectivité internet réelle, SSID hôte adopté au boot ; données déjà réelles via TCP ; 585 tests) ; précédent : (Sprint 49 — PicoWiFi persistance NVRAM ; 582 tests)
+Status: Alpha (Fix ACIA — plancher de cadence polling RX ACIA_RX_POLL_FLOOR=32 : plus de syscall par cycle à baud=0 avec connexion socket ouverte ; sans effet aux débits réels ; 585 tests) ; précédent : (Sprint 50 — PicoWiFi pont réel hôte ; 585 tests)
 
 Version History:
 ----------------
+- 1.18.1-alpha (2026-06-13): Fix ACIA — **plancher cadence polling RX** (acia_tick ne sonde plus le backend à chaque cycle quand baud=0/rx_reload=1 ; ACIA_RX_POLL_FLOOR=32 cycles ≈32µs borne la cadence ; tempête poll()/read() par cycle éliminée pour backends socket avec connexion ouverte ; aucun effet aux débits réels rx_reload≫32 ni sur loopback en mémoire ; mesure 40M cycles baud=0 flux continu = 0,3s headless ; NB : la lenteur du test BBS sans -n était le frame limiter 50 Hz = temps-réel correct, pas un bug — diagnostic rectifié), 585 tests PASS
 - 1.18.0-alpha (2026-06-13): Sprint 50 — **PicoWiFi pont réel hôte (lecture seule)** (option PHOSPHORIC_PICOWIFI_REALNET=1 : ATI rapporte l'IP locale réelle getifaddrs + état réel au lieu de 192.168.0.42 simulé ; ATC?/ATC1 reflètent la connectivité internet réelle via test de route UDP 8.8.8.8:53 sans émission ; adoption du SSID WiFi réel iwgetid au boot si aucun configuré ; chemin de données déjà réel depuis sprint 45 = ATDT/ATGET/ATRD en vrai TCP par l'interface active dont WiFi ; LECTURE SEULE par conception — jamais de contrôle/reconfiguration de la carte ; désactivé par défaut, mode simulé inchangé ; 3 nouveaux tests, 62 picowifi), 585 tests PASS
 - 1.17.4-alpha (2026-06-13): Sprint 49 — **PicoWiFi persistance NVRAM + boot** (fichier hôte = flash littlefs ; chemin PHOSPHORIC_PICOWIFI_NVRAM sinon $HOME/.phosphoric_picowifi.cfg ; format clé=valeur magie PWNV1 ; AT&W sauvegarde, AT&V0 courant vs AT&V1 stocké, AT&F reset+persist ; séquence boot défauts→NVRAM→CLI prioritaire + WiFi auto-associate simulé + exécution AT$AE ; AT&D/&K/$W stockés mais inertes documenté ; 7 nouveaux tests hermétiques NVRAM temp via env var, 59 picowifi ; **fidélité PicoWiFi complète** 45-49 : surface AT / défauts+codes+composées / Telnet / réseau réel / NVRAM), 582 tests PASS
 - 1.17.3-alpha (2026-06-13): Sprint 48 — **PicoWiFi commandes réseau réelles** (ATGET http://host[:port][/path] : vraie requête HTTP/1.1 GET + Host + Connection:close, mode données NET0, réponse brute vers Oric, HTTP only ; ATRD/ATRT NIST DAYTIME time.nist.gov:13 RFC 867 sortie YY-MM-DD HH:MM:SS, ERROR si en appel ; numérotation par alias ATDTparticles et par 7 chiffres identiques ATDT7777777→slot ; AT$BM message occupé get/set ; 9 nouveaux tests dont ATGET end-to-end sur socket localhost + parse DAYTIME + dial alias/7-digits + escape +++/ATO, 52 picowifi), 575 tests PASS
