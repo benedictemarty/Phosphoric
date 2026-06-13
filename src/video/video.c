@@ -74,6 +74,8 @@ void video_reset(video_t* vid) {
      * is socketed, not a runtime mode. */
     vid->ocula_80col = false;
     vid->ocula_exthires = false;
+    vid->ocula_scroll_x = 0;
+    vid->ocula_scroll_y = 0;
     apply_profile_resolution(vid);
     palette_reset(vid);
     vid->hires_mode = false;
@@ -87,6 +89,8 @@ void video_set_profile(video_t* vid, ula_profile_t profile) {
     vid->ula_profile = profile;
     vid->ocula_80col = false;
     vid->ocula_exthires = false;
+    vid->ocula_scroll_x = 0;
+    vid->ocula_scroll_y = 0;
     apply_profile_resolution(vid);
     palette_reset(vid);
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
@@ -323,14 +327,18 @@ static void render_exthires_scanline(video_t* vid, const uint8_t* memory, int y)
     uint8_t ir, ig, ib, pr, pg, pb;
     get_rgb(vid, ORIC_WHITE, &ir, &ig, &ib);
     get_rgb(vid, ORIC_BLACK, &pr, &pg, &pb);
-    for (int col = 0; col < 40; col++) {
-        uint8_t byte = memory[OCULA_EXTHIRES_BASE + y * 40 + col];
-        for (int bx = 7; bx >= 0; bx--) {
-            if (byte & (1 << bx))
-                set_pixel(vid, col * 8 + (7 - bx), y, ir, ig, ib);
-            else
-                set_pixel(vid, col * 8 + (7 - bx), y, pr, pg, pb);
-        }
+    /* OCULA-GPU hardware scroll: source fetch shifted by (dx, dy),
+     * wrapping modulo 320x200. Per-pixel fetch keeps the bit shifting
+     * between source bytes trivial. */
+    int src_y = (y + vid->ocula_scroll_y) % 200;
+    int dx = vid->ocula_scroll_x;
+    for (int x = 0; x < OCULA_EXTHIRES_W; x++) {
+        int sx = (x + dx) % OCULA_EXTHIRES_W;
+        uint8_t byte = memory[OCULA_EXTHIRES_BASE + src_y * 40 + (sx >> 3)];
+        if (byte & (0x80 >> (sx & 7)))
+            set_pixel(vid, x, y, ir, ig, ib);
+        else
+            set_pixel(vid, x, y, pr, pg, pb);
     }
 }
 

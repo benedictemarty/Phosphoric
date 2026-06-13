@@ -538,6 +538,12 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return ocula_io_read(&emu->memory, address);
     }
 
+    /* OCULA-GPU command window: $03E8-$03EF (étape 5) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_gpu_addr_in_window(address)) {
+        return ocula_gpu_read(&emu->ocula_gpu, address);
+    }
+
     /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
         return acia_read(&emu->acia, address);
@@ -695,6 +701,14 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
         return;
     }
 
+    /* OCULA-GPU command window: $03E8-$03EF (étape 5) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_gpu_addr_in_window(address)) {
+        ocula_gpu_write(&emu->ocula_gpu, &emu->memory, &emu->video,
+                        address, value);
+        return;
+    }
+
     /* ACIA 6551 serial: $031C-$031F */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
         acia_write(&emu->acia, address, value);
@@ -849,6 +863,7 @@ static bool emulator_init(emulator_t* emu) {
      * vid->charset is left NULL so the renderer uses the RAM copy
      * which the ROM populates during boot. */
     video_init(&emu->video);
+    ocula_gpu_init(&emu->ocula_gpu);
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {
@@ -1428,6 +1443,26 @@ static void emulator_run(emulator_t* emu) {
                     debugger_repl(&emu->debugger, emu);
                 }
                 if (!emu->running) break;
+            }
+
+            /* OCULA-GPU WAIT_VBL (étape 5): PHI0 is stretched — the 6502
+             * and every PHI0-clocked peripheral (VIA, FDC, ACIA) freeze
+             * while the ULA keeps scanning. Relative machine time is
+             * preserved; wake when the beam enters vertical blanking
+             * (line 224). */
+            if (emu->ocula_gpu.wait_vbl) {
+                frame_cycles += 1;
+                emu->frame_cycles = frame_cycles;
+                if (frame_cycles >= 224 * PAL_CYCLES_PER_LINE) {
+                    emu->ocula_gpu.wait_vbl = false;
+                    emu->ocula_gpu.status = OCULA_GPU_ST_READY;
+                }
+                int stall_scanline = frame_cycles / PAL_CYCLES_PER_LINE;
+                while (rendered_scanlines < stall_scanline && rendered_scanlines < 224) {
+                    video_render_scanline(&emu->video, emu->memory.ram, rendered_scanlines);
+                    rendered_scanlines++;
+                }
+                continue;
             }
 
             /* CPU trace logging (before step, captures pre-execution state) */

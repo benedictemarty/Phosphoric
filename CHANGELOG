@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.0-alpha] - 2026-06-13
+
+### Sprint 43 — OCULA étape 5 : OCULA-GPU
+
+Implémente la proposition GPU de la spec v0.6 (commit 6c1a4e3) :
+le cœur libre du RP2350B exécute des commandes graphiques sans voler
+de cycles au 6502. Tier 2 : détection préalable obligatoire
+(PEEK(992)/993 + bit 4 de $03E2). Spec v0.7.
+
+#### Added
+
+- **Fenêtre de commande $03E8-$03EF** (module src/io/ocula_gpu.c) :
+  GPU_CMD $03E8 (écriture = déclenchement, bit 7 = variante bloquante),
+  GPU_STATUS $03E9 ($00 prêt, $01 occupé, ≥$80 erreur), GPU_PTR
+  $03EA/$03EB (bloc d'arguments de 16 octets en RAM). Capacités $03E2 :
+  $0F → $1F (bit 4 = GPU).
+- **Commandes v1** : $01 INFO (version/sprites/opmask dans le bloc),
+  $02 FILL (rectangle d'octets), $03 COPY (snapshot complet →
+  recouvrement sûr), $04 SCROLL (registres dx/dy persistants appliqués
+  au fetch HIRES étendu, wrap 320×200), $05 WAIT_VBL (bloquant
+  uniquement : $85).
+- **Étirement PHI0 (WAIT_VBL)** : la boucle d'émulation gèle le 6502
+  et tous les périphériques cadencés PHI0 (VIA, FDC, ACIA) pendant que
+  l'ULA continue le balayage ; réveil à l'entrée du blanking vertical
+  (ligne 224). Posté pendant le blanking = retour immédiat.
+- **Scroll matériel** : render_exthires_scanline passe en fetch
+  per-pixel avec décalage (x+dx)%320 / (y+dy)%200 ; reset au changement
+  de profil/reset.
+- **Garde mémoire basse** : bloc d'arguments et cibles sous $0400
+  rejetés ($81) — protège page zéro/pile/système/I-O. Erreurs $80
+  (opcode), $82 (WAIT_VBL non bloquant).
+- **Banking intégré** : les adresses $A000-$BFFF des commandes passent
+  par la banque CPU active (synergie étape 4).
+- **Section OGP du savestate** : status/ptr/wait_vbl + scroll x/y,
+  écrite sous profil OCULA, re-rendu au chargement.
+- **14 nouveaux tests** (13 GPU dans test-ocula + 1 roundtrip OGP).
+  Total : 585 tests.
+- **Validé E2E** : FILL 10×10 complet via protocole de contrôle
+  (bloc $0400, STATUS 00, rectangle FF, hors-zone intact) ; WAIT_VBL
+  en run BASIC réel (POKE 1000,133 → suspension puis reprise).
+
 ## [1.20.0-alpha] - 2026-06-13
 
 ### Sprint 42 — OCULA étape 4 : identification + banking mémoire

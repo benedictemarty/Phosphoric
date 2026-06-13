@@ -17,6 +17,7 @@
 #include "video/video.h"
 #include "video/export.h"
 #include "io/ocula_io.h"
+#include "io/ocula_gpu.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -649,6 +650,187 @@ TEST(test_ula_always_scans_bank_0) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  OCULA-GPU (Sprint 43 — $03E8-$03EF, étape 5)                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/* Helper: memory + video + gpu, arg block at $0400. Writes the 16-byte
+ * argument block then fires the opcode. */
+static void gpu_setup(memory_t* mem, video_t* vid, ocula_gpu_t* gpu) {
+    memory_init(mem);
+    memset(mem->ram, 0, RAM_SIZE);
+    video_init(vid);
+    video_set_profile(vid, ULA_PROFILE_OCULA);
+    ocula_gpu_init(gpu);
+    ocula_gpu_write(gpu, mem, vid, OCULA_GPU_PTRL, 0x00);
+    ocula_gpu_write(gpu, mem, vid, OCULA_GPU_PTRH, 0x04);
+}
+
+static void gpu_args(memory_t* mem, const uint8_t* a, int n) {
+    for (int i = 0; i < n; i++) mem->ram[0x0400 + i] = a[i];
+}
+
+TEST(test_gpu_caps_bit) {
+    memory_t mem;
+    memory_init(&mem);
+    ASSERT_EQ(ocula_io_read(&mem, OCULA_IO_CAPS), 0x1F);
+    ASSERT_TRUE(OCULA_CAPS_ALL & OCULA_CAP_GPU);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_ptr_readback) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    ASSERT_EQ(ocula_gpu_read(&gpu, OCULA_GPU_PTRL), 0x00);
+    ASSERT_EQ(ocula_gpu_read(&gpu, OCULA_GPU_PTRH), 0x04);
+    ASSERT_EQ(ocula_gpu_read(&gpu, OCULA_GPU_STATUS), OCULA_GPU_ST_READY);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_info) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_INFO);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ST_READY);
+    ASSERT_EQ(mem.ram[0x0400], OCULA_GPU_INFO_VERSION);
+    ASSERT_EQ(mem.ram[0x0401], OCULA_GPU_INFO_SPRITES);
+    ASSERT_EQ(mem.ram[0x0402], OCULA_GPU_INFO_OPMASK);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_fill) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    /* FILL dst=$A000 stride=40 w=10 h=10 val=$FF */
+    uint8_t args[] = {0x00, 0xA0, 40, 10, 10, 0xFF};
+    gpu_args(&mem, args, 6);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_FILL);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ST_READY);
+    ASSERT_EQ(mem.ram[0xA000], 0xFF);            /* coin haut-gauche */
+    ASSERT_EQ(mem.ram[0xA000 + 9 * 40 + 9], 0xFF); /* coin bas-droit */
+    ASSERT_EQ(mem.ram[0xA000 + 10], 0x00);       /* hors largeur */
+    ASSERT_EQ(mem.ram[0xA000 + 10 * 40], 0x00);  /* hors hauteur */
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_fill_respects_active_bank) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    memory_ocula_set_bank(&mem, 2);
+    uint8_t args[] = {0x00, 0xA0, 1, 1, 1, 0x77};
+    gpu_args(&mem, args, 6);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_FILL);
+    ASSERT_EQ(memory_read(&mem, 0xA000), 0x77);  /* banque 2 */
+    memory_ocula_set_bank(&mem, 0);
+    ASSERT_EQ(memory_read(&mem, 0xA000), 0x00);  /* banque 0 intacte */
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_copy) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    mem.ram[0x5000] = 0xAA;
+    mem.ram[0x5001] = 0xBB;
+    mem.ram[0x5028] = 0xCC;  /* ligne 2 (stride 40) */
+    /* COPY src=$5000 sstr=40 dst=$A000 dstr=40 w=2 h=2 */
+    uint8_t args[] = {0x00, 0x50, 40, 0x00, 0xA0, 40, 2, 2};
+    gpu_args(&mem, args, 8);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_COPY);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ST_READY);
+    ASSERT_EQ(mem.ram[0xA000], 0xAA);
+    ASSERT_EQ(mem.ram[0xA001], 0xBB);
+    ASSERT_EQ(mem.ram[0xA028], 0xCC);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_copy_overlap_safe) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    for (int i = 0; i < 8; i++) mem.ram[0x5000 + i] = (uint8_t)(i + 1);
+    /* Copie recouvrante vers l'avant : dst = src+2, 1 ligne de 8 */
+    uint8_t args[] = {0x00, 0x50, 8, 0x02, 0x50, 8, 8, 1};
+    gpu_args(&mem, args, 8);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_COPY);
+    /* Snapshot complet avant écriture : pas de propagation en cascade */
+    ASSERT_EQ(mem.ram[0x5002], 1);
+    ASSERT_EQ(mem.ram[0x5009], 8);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_scroll_registers_and_render) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    vid.vid_mode = 0x05;  /* HIRES étendu */
+    mem.ram[0xA000] = 0x80;  /* pixel à (0,0) */
+    uint8_t args[] = {8, 1};  /* dx=8 px, dy=1 ligne */
+    gpu_args(&mem, args, 2);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_SCROLL);
+    ASSERT_EQ(vid.ocula_scroll_x, 8);
+    ASSERT_EQ(vid.ocula_scroll_y, 1);
+    video_render_frame(&vid, mem.ram);
+    /* Source (0,0) apparaît à l'écran en x=(0-8) mod 320=312, y=199 :
+     * fetch écran (312,199) ← source ((312+8)%320=0, (199+1)%200=0) ✓ */
+    ASSERT_EQ(pixel_r(&vid, 312, 199), 0xFF);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0x00);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_scroll_zero_is_off) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    vid.vid_mode = 0x05;
+    mem.ram[0xA000] = 0x80;
+    uint8_t args[] = {0, 0};
+    gpu_args(&mem, args, 2);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_SCROLL);
+    video_render_frame(&vid, mem.ram);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_wait_vbl_requires_blocking) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_WAIT_VBL);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ERR_NOBLOCK);
+    ASSERT_FALSE(gpu.wait_vbl);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD,
+                    OCULA_GPU_OP_WAIT_VBL | 0x80);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ST_BUSY);
+    ASSERT_TRUE(gpu.wait_vbl);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_bad_opcode) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, 0x42);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ERR_BADOP);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_bad_arg_ptr) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_PTRL, 0x00);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_PTRH, 0x02);  /* $0200 < $0400 */
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_INFO);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ERR_BADADDR);
+    memory_cleanup(&mem);
+}
+
+TEST(test_gpu_fill_protects_low_memory) {
+    memory_t mem; static video_t vid; ocula_gpu_t gpu;
+    gpu_setup(&mem, &vid, &gpu);
+    /* FILL dst=$0200 → rejeté (zéro page/pile/système/I-O protégés) */
+    uint8_t args[] = {0x00, 0x02, 1, 8, 1, 0xFF};
+    gpu_args(&mem, args, 6);
+    ocula_gpu_write(&gpu, &mem, &vid, OCULA_GPU_CMD, OCULA_GPU_OP_FILL);
+    ASSERT_EQ(gpu.status, OCULA_GPU_ERR_BADADDR);
+    ASSERT_EQ(mem.ram[0x0200], 0x00);
+    memory_cleanup(&mem);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -704,6 +886,19 @@ int main(void) {
     RUN(test_bank_value_masked_to_3_bits);
     RUN(test_bank_window_bounds);
     RUN(test_ula_always_scans_bank_0);
+    RUN(test_gpu_caps_bit);
+    RUN(test_gpu_ptr_readback);
+    RUN(test_gpu_info);
+    RUN(test_gpu_fill);
+    RUN(test_gpu_fill_respects_active_bank);
+    RUN(test_gpu_copy);
+    RUN(test_gpu_copy_overlap_safe);
+    RUN(test_gpu_scroll_registers_and_render);
+    RUN(test_gpu_scroll_zero_is_off);
+    RUN(test_gpu_wait_vbl_requires_blocking);
+    RUN(test_gpu_bad_opcode);
+    RUN(test_gpu_bad_arg_ptr);
+    RUN(test_gpu_fill_protects_low_memory);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

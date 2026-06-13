@@ -38,8 +38,10 @@
 #define OCULA_CAP_EXTHIRES 0x02
 #define OCULA_CAP_PALETTE  0x04
 #define OCULA_CAP_BANKING  0x08
+#define OCULA_CAP_GPU      0x10  /* étape 5: command window $03E8-$03EF */
 #define OCULA_CAPS_ALL     (OCULA_CAP_80COL | OCULA_CAP_EXTHIRES | \
-                            OCULA_CAP_PALETTE | OCULA_CAP_BANKING)
+                            OCULA_CAP_PALETTE | OCULA_CAP_BANKING | \
+                            OCULA_CAP_GPU)
 
 static inline bool ocula_io_addr_in_window(uint16_t address) {
     return address >= OCULA_IO_BASE && address <= OCULA_IO_END;

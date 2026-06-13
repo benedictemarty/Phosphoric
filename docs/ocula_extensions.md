@@ -1,6 +1,6 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.6 (Sprint 42 + proposition étape 5 GPU) — vérifié
+**Statut** : brouillon v0.7 (Sprint 43, étapes 1-5 implémentées) — vérifié
 sans conflit avec le firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
@@ -161,10 +161,10 @@ comme notation scientifique (3×10⁰) — utiliser les adresses décimales
   banking a servi).
 - Exemple : `POKE 995,1` (banque 1) … `POKE 995,0` (retour).
 
-## Étape 5 (proposition) : OCULA-GPU
+## Étape 5 : OCULA-GPU
 
-**Statut : proposition v0.6, non implémentée** — backlog Sprint 43, à
-discuter upstream après retour sur les étapes 1-4 (RFC #53).
+**Statut : implémentée (Sprint 43, v1.21.0-alpha)** — à discuter
+upstream après retour sur les étapes 1-4 (RFC #53).
 
 ### Changement de contrat : tier 2
 
@@ -226,7 +226,7 @@ Capacités : **bit 4 de $03E2** = GPU présent ($03E2 passe de $0F à $1F).
 
 | Op | Nom | Bloc d'arguments | Effet |
 |----|-----|------------------|-------|
-| $01 | INFO | — | bloc ← version GPU, nb sprites max, capacités détaillées |
+| $01 | INFO | — | bloc ← [0] version GPU (=1), [1] sprites max (=0 en v1), [2] bitmask des ops supportées (=$1F), [3-15] zéro |
 | $02 | FILL | dst(2) stride(1) w(1) h(1) val(1) | rectangle d'octets rempli |
 | $03 | COPY | src(2) sstr(1) dst(2) dstr(1) w(1) h(1) | copie rectangulaire ; ordre choisi pour gérer le recouvrement |
 | $04 | SCROLL | dx(1) dy(1) | registres persistants appliqués au fetch des modes bitmap étendus (29/31), wrap modulo 320/200 ; 0,0 = off |
@@ -242,6 +242,28 @@ Exemple BASIC (remplir un rectangle 10×10 en HIRES étendu) :
 40 POKE 1000,2                    ' FILL (posted)
 50 IF PEEK(1001)<>0 THEN 50       ' attendre STATUS (ou POKE 1000,130 bloquant)
 ```
+
+### Protections et erreurs
+
+- **Garde mémoire basse** : le bloc d'arguments et les cibles
+  FILL/COPY sous **$0400** sont rejetés (erreur $81) — protège la page
+  zéro, la pile, les variables système et la page I/O $03xx (une
+  lecture GPU de la page I/O déclencherait des effets de bord VIA/FDC).
+- Codes d'erreur : **$80** opcode inconnu, **$81** adresse invalide,
+  **$82** WAIT_VBL appelé sans le bit bloquant.
+- COPY fait un snapshot complet avant d'écrire : recouvrement sûr dans
+  les deux sens.
+- WAIT_VBL posté pendant le blanking : retour immédiat (on y est déjà).
+
+### Note d'émulation (Phosphoric)
+
+Les commandes s'exécutent instantanément du point de vue du 6502
+(émulateur mono-thread) : STATUS n'est observé occupé que pour
+WAIT_VBL. Le matériel réel pourra être plus lent — un logiciel bien
+écrit **doit** toujours poller GPU_STATUS. Pendant WAIT_VBL, Phosphoric
+gèle le 6502 et tous les périphériques cadencés par PHI0 (VIA, FDC,
+ACIA) tandis que l'ULA continue son balayage — conforme à l'étirement
+d'horloge du matériel.
 
 ### Ordre de réalisation proposé (rapport valeur/coût)
 

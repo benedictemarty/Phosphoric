@@ -450,7 +450,7 @@ Plan OCULA 4 étapes COMPLET. Spec v0.5.
 - [ ] Registre banque vidéo $03E4 (page flipping) si retour upstream
 - [ ] Démo BASIC complète (80 col + 320×200 + palette + banking)
 
-### Sprint 43: OCULA étape 5 — GPU (spec v0.6) - PLANNED
+### Sprint 43: OCULA étape 5 — GPU (v1.21.0-alpha) - DONE
 
 Tier 2 (détection obligatoire) : le RP2350 exécute des commandes
 graphiques pendant que le 6502 tourne (OCULA-is-the-RAM = SRAM
@@ -459,13 +459,22 @@ interne, zéro contention bus ; sync bloquante par étirement de PHI0).
 - [x] Spec docs/ocula_extensions.md v0.6 : fenêtre $03E8-$03EF
       (GPU_CMD/STATUS/PTR), sémantique posted/bloquant, commandes v1
       INFO/FILL/COPY/SCROLL/WAIT_VBL, exemple BASIC
-- [ ] Implémentation Phosphoric : dispatcher dans src/io/ocula_io.c,
-      ordre SCROLL → WAIT_VBL → FILL/COPY
-- [ ] Étirement PHI0 (suspension CPU/VIA) dans la boucle d'émulation
-- [ ] Capacités $03E2 : bit 4 GPU ($0F → $1F)
-- [ ] Tests test-ocula (posted, bloquant, banking actif, erreurs)
+- [x] Implémentation Phosphoric : module dédié src/io/ocula_gpu.c
+      (toutes les commandes v1, pas seulement SCROLL/WAIT_VBL)
+- [x] Étirement PHI0 dans la boucle d'émulation : 6502 + VIA + FDC +
+      ACIA gelés, ULA continue, réveil à l'entrée du VBL (ligne 224) ;
+      posté pendant le blanking = retour immédiat
+- [x] Capacités $03E2 : bit 4 GPU ($0F → $1F)
+- [x] COPY snapshot complet (recouvrement sûr) ; SCROLL fetch per-pixel
+      wrap 320×200 ; garde mémoire <$0400 ($81) ; erreurs $80/$82 ;
+      banking étape 4 intégré ; section OGP du savestate
+- [x] Tests test-ocula : 13 GPU + 1 roundtrip OGP (585 tests, 0 échec)
+- [x] E2E : FILL 10×10 via protocole de contrôle ; WAIT_VBL en BASIC
+      réel (POKE 1000,133 → suspension puis reprise)
+- [x] Spec v0.7 : layout INFO précisé, gardes/erreurs, note d'émulation
 - [ ] v2 si retour upstream : sprites au scanout, LINE, page flipping
 - [ ] Proposer l'étape 5 upstream (fil dédié ou RFC #53)
+- [ ] Démo BASIC vitrine (80 col + 320×200 + palette + banking + GPU)
 
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)

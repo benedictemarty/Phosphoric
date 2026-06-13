@@ -58,6 +58,7 @@ SOURCES = src/main.c \
           src/io/acia6551.c \
           src/io/serial_backend.c \
           src/io/ocula_io.c \
+          src/io/ocula_gpu.c \
           src/video/video.c \
           src/video/textmode.c \
           src/video/hires.c \
@@ -258,7 +259,7 @@ test-renderer: $(TEST_RENDERER_SRCS)
 	@./test_renderer
 
 TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/renderer.c \
-                  src/video/export.c src/io/ocula_io.c \
+                  src/video/export.c src/io/ocula_io.c src/io/ocula_gpu.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
 test-ocula: $(TEST_OCULA_SRCS)

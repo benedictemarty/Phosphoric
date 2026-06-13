@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.20.0-alpha
-Build Status: ALPHA (Sprint 42 : OCULA étape 4 — ID $03E0 + banking $A000-$BFFF 8×8 Ko ; plan 4 étapes complet ; 571 tests)
+Version: 1.21.0-alpha
+Build Status: ALPHA (Sprint 43 : OCULA étape 5 — GPU $03E8-$03EF, FILL/COPY/SCROLL/WAIT_VBL, étirement PHI0 ; 585 tests)
 Last Updated: 2026-06-13
 
 ================================================================
@@ -51,7 +51,7 @@ BUILD STATUS
 [V] Printer Emulation     - Complete (Centronics parallel, LPRINT/LLIST capture)
 [V] MCP-40 Plotter        - Complete (4-color pen plotter, 480x400, BMP export)
 [V] Display Scaling       - Complete (x1/x2/x3/x4, F3 hotkey, nearest-neighbor)
-[V] ULA Profiles (OCULA)  - Complete (4-step plan: 80-col, ext-HIRES 320x200, RGB332 palette, $03E0 ID window + 8x8KB banking)
+[V] ULA Profiles (OCULA)  - Complete (5-step plan: 80-col, ext-HIRES 320x200, RGB332 palette, $03E0 ID + 8x8KB banking, $03E8 GPU FILL/COPY/SCROLL/WAIT_VBL)
 [V] CPU Trace Logging     - Complete (--trace FILE, --trace-max N, per-instruction log)
 [V] CPU Performance Profiler - Complete (--profile FILE, hotspots, opcode histogram)
 [V] ROM Analysis Tools    - Complete (--rom-info, vectors, targets, strings, usage)

@@ -262,6 +262,17 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         end_section(fp, sec);
     }
 
+    /* ── OGP Section (OCULA-GPU registers + hardware scroll) ── */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA) {
+        sec = begin_section(fp, "OGP\0");
+        write_u8(fp, emu->ocula_gpu.status);
+        write_u16le(fp, emu->ocula_gpu.arg_ptr);
+        write_bool(fp, emu->ocula_gpu.wait_vbl);
+        write_u8(fp, emu->video.ocula_scroll_x);
+        write_u8(fp, emu->video.ocula_scroll_y);
+        end_section(fp, sec);
+    }
+
     /* ── KBD Section ── */
     sec = begin_section(fp, "KBD\0");
     fwrite(emu->keyboard.matrix, 1, 8, fp);
@@ -560,6 +571,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                       (OCULA_BANK_COUNT - 1) * OCULA_BANK_SIZE, fp);
                 memory_ocula_set_bank(&emu->memory, bank);
             }
+        } else if (memcmp(tag, "OGP\0", 4) == 0) {
+            emu->ocula_gpu.status = read_u8(fp);
+            emu->ocula_gpu.arg_ptr = read_u16le(fp);
+            emu->ocula_gpu.wait_vbl = read_bool(fp);
+            emu->video.ocula_scroll_x = read_u8(fp);
+            emu->video.ocula_scroll_y = read_u8(fp);
+            /* Re-render with the restored hardware scroll applied */
+            video_render_frame(&emu->video, emu->memory.ram);
         } else if (memcmp(tag, "KBD\0", 4) == 0) {
             fread(emu->keyboard.matrix, 1, 8, fp);
         } else if (memcmp(tag, "FDC\0", 4) == 0) {

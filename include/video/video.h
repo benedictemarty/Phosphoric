@@ -103,6 +103,11 @@ typedef struct video_s {
      * when the OCULA_PAL_MAGIC bytes are armed. */
     uint8_t pal_rgb[8][3];
 
+    /* OCULA-GPU hardware scroll (SCROLL command, étape 5): applied to
+     * the extended-HIRES fetch only, wrap modulo 320/200. 0,0 = off. */
+    uint8_t ocula_scroll_x;
+    uint8_t ocula_scroll_y;
+
     /* Serial-attribute group 0x08-0x0F (text attrs).
      * bit 0 = alt charset, bit 1 = double height, bit 2 = blink.
      * Reset to 0 at start of every scanline; latched per-column. */
