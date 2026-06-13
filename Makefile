@@ -58,6 +58,7 @@ SOURCES = src/main.c \
           src/io/acia6551.c \
           src/io/serial_backend.c \
           src/io/dtl2000.c \
+          src/io/serial_picowifi.c \
           src/video/video.c \
           src/video/textmode.c \
           src/video/hires.c \
@@ -109,7 +110,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-dtl2000 test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-dtl2000 test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -326,6 +327,13 @@ test-dtl2000: $(TEST_DTL2000_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_DTL2000_SRCS) $(LDFLAGS) -lutil -o test_dtl2000
 	@./test_dtl2000
 
+TEST_PICOWIFI_SRCS = tests/unit/test_picowifi.c src/io/serial_picowifi.c \
+                     src/utils/logging.c
+
+test-picowifi: $(TEST_PICOWIFI_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_PICOWIFI_SRCS) $(LDFLAGS) -o test_picowifi
+	@./test_picowifi
+
 TEST_KEYBOARD_SRCS = tests/unit/test_keyboard.c src/io/keyboard.c src/utils/logging.c
 
 test-keyboard: $(TEST_KEYBOARD_SRCS)
@@ -370,7 +378,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-dtl2000 test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
+tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-dtl2000 test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -502,7 +510,7 @@ uninstall:
 
 clean:
 	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TOOLS)
-	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_audio test_debugger test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_keyboard test_coverage
+	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_audio test_debugger test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_picowifi test_keyboard test_coverage
 	rm -f tools/*.o tools/*.d
 	find . -name '*.gcno' -o -name '*.gcda' -o -name '*.gcov' -o -name '*.d' | xargs rm -f 2>/dev/null
 

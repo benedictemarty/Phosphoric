@@ -36,7 +36,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.17.4-alpha"
+#define EMU_VERSION "1.19.0-alpha"
 
 /**
  * @brief ORIC machine model

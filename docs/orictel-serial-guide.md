@@ -236,6 +236,58 @@ Connectez minicom/screen/picocom sur ce device depuis un autre terminal.
 
 Vrai port série via termios (Linux). Format : `baud,databits,parité,stopbits,device`.
 
+### 7. PicoWiFiModemUSB (modem WiFi LOCI)
+
+```bash
+# Sous --loci, l'ACIA est mappée à $0380 (défaut firmware LOCI)
+./oric1-emu -r roms/basic10.rom --loci --serial picowifi:MonWiFi:motdepasse
+```
+
+Émule le modem WiFi de sodiumlb (Pico W exposée par LOCI comme ACIA). Le
+programme ORIC compose en commandes AT. Jeu v0.1.0 complet : `AT$SSID=`,
+`AT$PASS=`, `ATC1` (connexion WiFi), `ATDT host:port` (TCP), `ATNET`,
+numéros rapides `AT&Z`, registres S, etc. WiFi simulé, données = vrai TCP.
+
+**⚠ Minitel / Vidéotex : forcer NET0.** Le mode telnet réel (NET1, défaut)
+traduit `CR`→`CR+NUL` et double `IAC` (0xFF) — ce qui **corrompt** un flux
+Vidéotex (où ces octets sont des données). Compose en NET0 pour un flux
+transparent :
+
+```basic
+A$="ATDT-mon.serveur.minitel:516"+CHR$(13) : REM le '-' force NET0
+```
+
+Le préfixe `-` (NET0), `=` (NET1 réel), `+` (NET2 faux) fixe le mode telnet
+de la session. Pour du Vidéotex pur, le backend `digitelec` + `--serial-v23`
+reste l'option la plus idiomatique (V23 1200/75 natif, sans commandes AT).
+
+**Exemple prêt à l'emploi** : `examples/picowifi_test.bas` dialogue avec le
+modem (ATI, AT$SSID, ATC1…) et affiche les réponses :
+
+```bash
+./oric1-emu -r roms/basic11b.rom \
+  --acia-addr 0380 --serial picowifi:HomeNet --serial-buffer 512 \
+  -t examples/picowifi_test.tap -f
+```
+
+⚠ `--serial-buffer N` est important : sans FIFO RX, l'affichage BASIC est
+plus lent que le débit du modem → OVERRUN et octets perdus (l'ACIA n'a
+qu'un registre RX). Le FIFO bufferise les réponses.
+
+**Pont réseau réel.** Les connexions de données (`ATDT`/`ATGET`/`ATRD`)
+sortent déjà en vrai TCP par l'interface active de l'hôte (carte WiFi
+comprise). Pour que l'état WiFi *rapporté* (IP, connectivité, SSID) soit
+réel lui aussi — au lieu de simulé — exporte :
+
+```bash
+PHOSPHORIC_PICOWIFI_REALNET=1 ./oric1-emu ... --serial picowifi ...
+```
+
+`ATI` affiche alors l'IP locale réelle (`IP: 192.168.1.19 (host)`), `ATC?`
+reflète la vraie connectivité internet, et le SSID de l'hôte est adopté au
+boot. C'est en **lecture seule** : l'émulateur ne pilote jamais la carte
+WiFi (pas de scan/association). Désactivé par défaut (mode simulé).
+
 ## Options d'amélioration
 
 ### FIFO RX (anti-overrun)

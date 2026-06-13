@@ -45,8 +45,9 @@ make SDL2=1
 - **AY-3-8910 PSG** — 3 tone channels, noise, 16 envelope shapes, SDL2 audio output
 - **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot
 - **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain
-- **ACIA 6551** — Serial controller at $031C-$031F, 5 backends (loopback, TCP, PTY, modem AT, COM), V23 mode (Minitel/Digitelec)
+- **ACIA 6551** — Serial controller at $031C-$031F, 6 backends (loopback, TCP, PTY, modem AT, COM, PicoWiFiModemUSB), V23 mode (Minitel/Digitelec)
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
+- **PicoWiFiModemUSB** — Émulation du modem WiFi de sodiumlb (Pico W, USB CDC ↔ WiFi) exposé par LOCI comme ACIA à $0380. Jeu de commandes AT v0.1.0 complet (`--serial picowifi[:SSID[:PASS]]`). WiFi simulé, connexions de données en TCP réel.
 - **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 35/36 API ops, USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). Boote Sedoric V4 master complet via le firmware LOCI.
 
 ### ORIC-1 & Atmos Support

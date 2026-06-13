@@ -54,6 +54,15 @@ static void acia_calc_framebits(acia6551_t* acia)
     acia->bitmask = (uint8_t)((1U << wordlen) - 1);
 }
 
+/* Minimum cycles between two backend RX polls. At a real baud rate the
+ * per-byte interval is much larger (e.g. ~1041 cycles at 9600), so this
+ * floor never affects baud-accurate timing. It only matters when baud is 0
+ * (external clock / "instant transfer", rx_reload == 1): without it, a
+ * socket-backed backend would do a poll()/read() syscall every CPU cycle
+ * while a connection is open. 32 cycles ≈ 32 µs of emulated time —
+ * imperceptible latency, but it caps the syscall rate ~32×. */
+#define ACIA_RX_POLL_FLOOR 32
+
 /**
  * @brief Compute CPU cycles per byte for a given baud rate and frame format
  */
@@ -417,7 +426,10 @@ void acia_tick(acia6551_t* acia, int cycles)
     /* ── RX path ── */
     acia->rx_cycles -= cycles;
     if (acia->rx_cycles <= 0) {
-        acia->rx_cycles = acia->rx_reload;
+        /* Reset to the baud-rate interval, but never poll the backend more
+         * often than the floor (avoids a per-cycle syscall storm at baud 0). */
+        acia->rx_cycles = (acia->rx_reload > ACIA_RX_POLL_FLOOR)
+                          ? acia->rx_reload : ACIA_RX_POLL_FLOOR;
 
         if (acia->dcd && acia->backend->poll &&
             acia->backend->poll(acia->backend)) {

@@ -68,7 +68,8 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 - **io/mcp40.c** — MCP-40 4-color pen plotter: 480x400 framebuffer, Bresenham line drawing, BMP export
 - **io/cassette.c** — Cassette interface: TAP format loading/saving (CLOAD/CSAVE ROM patching, post-CLOAD rechain)
 - **io/acia6551.c** — ACIA 6551 serial at $031C-$031F: TX/RX, IRQ, baud rate timing, V23 mode (Digitelec DTL 2000, Minitel)
-- **io/serial_backend.c** — Serial backends: loopback, TCP, PTY, modem Hayes (AT commands, 64KB buffers), COM (termios)
+- **io/serial_backend.c** — Serial backends: loopback, TCP, PTY, modem Hayes (AT commands, 64KB buffers), COM (termios), Digitelec DTL 2000
+- **io/serial_picowifi.c** — PicoWiFiModemUSB (sodiumlb): WiFi modem emulation with full v0.1.0 AT command set, exposed via LOCI as ACIA at $0380 (`--serial picowifi[:SSID[:PASS]]`)
 - **io/microdisc.c** — Microdisc: WD1793 FDC at $0310-$031F, 4 drives, overlay ROM banking
 - **video/** — ULA: text/HIRES framebuffer, PPM/BMP/ASCII export, `renderer.c` for SDL2 scaling (x1-x4)
 - **audio/** — AY-3-8910 PSG: 3 tone + noise + envelope, SDL2 audio callback
@@ -128,7 +129,8 @@ The current version string is defined in `EMU_VERSION` macro in `include/emulato
 
 # Serial backends (--serial TYPE)
 # loopback, tcp:host:port, pty, modem[:host:port], modem:listen:port,
-# com:baud,bits,parity,stop,device, digitelec:host:port
+# com:baud,bits,parity,stop,device, digitelec:host:port,
+# picowifi[:SSID[:PASS]]  (LOCI WiFi modem, ACIA $0380 under --loci)
 # Options: --acia-addr XXXX, --serial-v23, --serial-buffer N,
 #          --serial-irq-on-rdrf, --serial-trace FILE
 
