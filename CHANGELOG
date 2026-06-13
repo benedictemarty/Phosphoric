@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.2-alpha] - 2026-06-13
+
+### Sprint 53 — DTL 2000 : .tap du programme de test + fix collision de variables BASIC
+
+#### Added
+
+- **`examples/dtl2000-test.tap`** : version cassette auto-run du programme de
+  test (générée par `bas2tap --auto-run`), chargeable directement :
+  `./oric1-emu -r roms/basic11b.rom -t examples/dtl2000-test.tap -f --dtl2000 loopback`.
+
+#### Fixed
+
+- **`examples/dtl2000-test.bas` — collision de noms de variables** : le BASIC
+  Oric ne retient que **2 caractères significatifs**, donc `CRA` et `CRB`
+  désignaient la même variable `CR`. `POKE CRA,4` pokait en réalité `CRB`
+  (`$03FB`), `pia_cra` n'était jamais mis en mode OR, et la ligne n'était
+  jamais connectée (DCD restait à 1, loopback 0/10). Variables renommées
+  (`AA` pour le contrôle A ; `CB`/`CRB` inutilisés supprimés). Validé bout en
+  bout dans l'émulateur : TEST 3 DCD=0 (porteuse présente), TEST 4 = 10/10.
+
+#### Notes
+
+- L'émulation du périphérique était correcte (test unitaire `test-dtl2000`
+  vert) ; le bug était purement dans le programme BASIC d'exemple. La
+  validation par chargement cassette réel confirme le chemin complet
+  PIA/ACIA via la ROM + le miroir VIA page-3.
+
 ## [1.17.1-alpha] - 2026-06-13
 
 ### Sprint 52 — DTL 2000 : câblage de l'IRQ ACIA 6850 vers le CPU

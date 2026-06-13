@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.17.1-alpha
+Current Version: 1.17.2-alpha
 Release Date: 2026-06-13
-Status: Alpha (Sprint 52 — DTL 2000 : câblage IRQ ACIA 6850 → CPU, nouvelle source IRQF_DTL2000 (0x08), IRQ RX (RIE+RDRF) / TX (TIE+TDRE) level-triggered ; 538 tests dont 3 nouveaux) ; précédent : (Sprint 51 — Digitelec DTL 2000 émulation fidèle PIA 6821 + ACIA 6850 à $03F8-$03FD ; 535 tests)
+Status: Alpha (Sprint 53 — DTL 2000 : .tap auto-run du programme de test + fix collision variables BASIC 2-cars (CRA/CRB→CR) ; validé bout en bout dans l'émulateur, TEST 4 loopback 10/10 ; 538 tests) ; précédent : (Sprint 52 — DTL 2000 câblage IRQ ACIA 6850 → CPU ; 538 tests)
 
 Version History:
 ----------------
+- 1.17.2-alpha (2026-06-13): Sprint 53 — **DTL 2000 : .tap de test + fix collision variables BASIC** : `examples/dtl2000-test.tap` (auto-run) ; fix `dtl2000-test.bas` (BASIC Oric = 2 cars significatifs → `CRA`/`CRB` collisionnaient en `CR`, ligne jamais connectée) ; validation par chargement cassette réel : TEST 3 DCD=0, TEST 4 loopback 10/10 ; émulation du périphérique inchangée (test unitaire déjà vert), bug isolé au programme d'exemple
 - 1.17.1-alpha (2026-06-13): Sprint 52 — **DTL 2000 : câblage IRQ → CPU** : nouvelle source `IRQF_DTL2000` (0x08) dans le bitfield level-triggered du 6502 ; `dtl2000_cpu_irq_set/clr` reliés à l'init (re-câblés après ré-init via `--dtl2000-addr`) ; IRQ réception (RIE+RDRF) et émission (TC=01 TIE+TDRE), désassert à la lecture/écriture ; 3 nouveaux tests IRQ, suite complète 538 tests PASS
 - 1.17.0-alpha (2026-06-13): Sprint 51 — **Digitelec DTL 2000 fidèle (PIA 6821 + ACIA 6850, $03F8-$03FD)** : nouveau module `io/dtl2000`, distinct du backend comportemental `digitelec`/ACIA 6551 ; PIA OR bit2=connexion ligne, bit4=mode asym/sym, DDRA=$F4 ; ACIA 6850 reset $03, état RDRF/TDRE/DCD/CTS, émission porteuse bit6 ; valeurs registres extraites par OCR (Tesseract fra) du manuel « Programmation carte DTL V23 » ; CLI `--dtl2000`/`--dtl2000-addr` (transport loopback/tcp/pty) ; `examples/dtl2000-test.bas` ; conflit page-3 Jasmin documenté + avertissement ; 12 nouveaux tests bit-à-bit, suite complète 535 tests PASS
 - 1.16.84-alpha (2026-06-12): Sprint 38 — **Trace FDC opt-in `FDC_TRACE=1`** (écritures registres avec PC 6502 + cycle, SEEK avec état interne, READ piste/secteur — a rétracté le faux bug WD1793 « track+1 » de SCUMM-Oric) + **fix `--dump-ram-at` 64 Ko** (régression 48 Ko ; $C000-$FFFF = vue CPU bankée), suite complète PASS (profil sans SDL2)
