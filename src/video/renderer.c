@@ -38,7 +38,9 @@ bool renderer_init(int scale) {
         SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
         ORIC_SCREEN_W, ORIC_SCREEN_H);
     if (!texture) return false;
-    SDL_RenderSetLogicalSize(sdl_renderer, ORIC_SCREEN_W, ORIC_SCREEN_H);
+    /* No SDL_RenderSetLogicalSize: SDL_RenderCopy(NULL, NULL) stretches the
+     * texture to fill the window exactly, so mode changes (e.g. 80-col OCULA)
+     * never produce letterbox bars. */
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); /* nearest-neighbor */
     fullscreen = false;
     current_scale = scale;
@@ -62,10 +64,7 @@ void renderer_present(video_t* vid) {
         texture = SDL_CreateTexture(sdl_renderer,
             SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
             tex_w, tex_h);
-        /* Logical size change lets SDL scale the new resolution into the
-         * existing window without resizing it — the window stays fixed,
-         * like a monitor that doesn't change size when the signal changes. */
-        SDL_RenderSetLogicalSize(sdl_renderer, tex_w, tex_h);
+        /* No SDL_RenderSetLogicalSize: SDL_RenderCopy fills the window. */
     }
     SDL_UpdateTexture(texture, NULL, vid->framebuffer, vid->native_w * 3);
     SDL_RenderClear(sdl_renderer);
