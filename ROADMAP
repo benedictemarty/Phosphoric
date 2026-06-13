@@ -347,6 +347,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] 3 nouveaux tests IRQ (désactivée par défaut, RX avec RIE, TX avec TIE)
 - [x] Suite complète 538 tests PASS
 
+### Sprint 55: Retour d'intégration OricTel — corrections série & build (v1.19.1-alpha) - DONE
+
+Rapport d'intégration de l'équipe OricTel (émulateur Minitel 1B), qui pilote
+l'ACIA 6551 `$031C` via les backends DTL 2000 / PicoWiFi. Trois corrections
+côté Phosphoric + un point de confort documenté.
+
+- [x] **#1 — Verrou œuf-poule DCD du backend Digitelec** (`src/io/acia6551.c`) :
+      `acia_tick()` ne sondait `poll()` que si `dcd` était déjà vrai, alors que
+      le backend Digitelec lève DCD *depuis l'intérieur* de `poll()` sur front
+      DTR → en réception pure, aucun CARRIER DETECT avant une frappe clavier.
+      `poll()` est désormais inconditionnel ; le garde `dcd` ne conditionne plus
+      que la livraison RDRF. Régression `test_dcd_deadlock_autodial`.
+- [x] **#2 — Dial PicoWiFi `ATD<hôte>` p/t tronqué** (`src/io/serial_picowifi.c`) :
+      `pw_match` insensible à la casse faisait correspondre `Dp` à `DP` (pulse) ;
+      `ATDpavi.3617.fr` perdait le `p` initial. Modificateur T/P reconnu via
+      `pw_match_cs` sensible à la casse (majuscule seule). Tests
+      `test_dial_host_starting_with_p`, `test_dial_uppercase_modifier_keeps_host`.
+- [x] **#4 — CMakeLists.txt obsolète** : sources manquantes (dont `symbols.c` →
+      `undefined reference symbol_lookup/resolve`) réalignées sur le `Makefile` ;
+      `-DHAS_SDL2` ajouté ; version projet 1.19.0. Build CMake vérifié OK.
+- [x] **#3 (confort)** — binaire headless par défaut (`SDL2 ?= 0`) documenté dans
+      le README (`make SDL2=1` pour l'affichage). Pas de changement de comportement.
+- [x] Suite complète 603 tests PASS (+3 : 1 serial, 2 picowifi)
+
 ### Sprint 38: Trace FDC + fix dump RAM 64 Ko (v1.16.84-alpha) - DONE
 - [x] FDC_TRACE=1 : trace stderr écritures registres FDC (PC 6502 +
       cycle), SEEK (état interne) et READ (piste/secteur) — a permis

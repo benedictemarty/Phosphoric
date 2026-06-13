@@ -738,6 +738,40 @@ TEST(test_dial_seven_digits) {
     tn_disconnect();
 }
 
+TEST(test_dial_host_starting_with_p) {
+    /* Regression (OricTel report #2): a bare ATD to a host whose name starts
+     * with 'p'/'t' must NOT be mistaken for a DP/DT pulse/tone modifier.
+     * Before the fix, "ATDpbbs" parsed as DP + "bbs" (pulse-dial of "bbs"),
+     * losing the leading 'p' and failing alias resolution. The dial modifier
+     * is now matched case-sensitively (uppercase T/P only), so the lowercase
+     * 'p' stays part of the hostname. */
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[96], r[512];
+    snprintf(cmd, sizeof(cmd), "AT&Z5=127.0.0.1:%u,pbbs", port);
+    pw_cmd(cmd, r, sizeof(r));
+    pw_cmd("ATDpbbs", r, sizeof(r));     /* bare D, host keeps its 'p' */
+    ASSERT_CONTAINS(r, "CONNECT");
+    g_srv = accept(g_listener, NULL, NULL);
+    ASSERT_TRUE(g_srv >= 0);
+    tn_disconnect();
+}
+
+TEST(test_dial_uppercase_modifier_keeps_host) {
+    /* The uppercase ATDT modifier is still consumed, and a host that then
+     * starts with 'p' (e.g. "ATDTpbbs") keeps its leading letter. */
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[96], r[512];
+    snprintf(cmd, sizeof(cmd), "AT&Z5=127.0.0.1:%u,pbbs", port);
+    pw_cmd(cmd, r, sizeof(r));
+    pw_cmd("ATDTpbbs", r, sizeof(r));    /* T stripped, "pbbs" dialed */
+    ASSERT_CONTAINS(r, "CONNECT");
+    g_srv = accept(g_listener, NULL, NULL);
+    ASSERT_TRUE(g_srv >= 0);
+    tn_disconnect();
+}
+
 TEST(test_plus_plus_plus_escape) {
     /* +++ returns to command mode without dropping carrier; ATO resumes. */
     tn_connect("-");
@@ -973,6 +1007,8 @@ int main(void) {
     RUN(test_atget_http_request);
     RUN(test_dial_by_alias);
     RUN(test_dial_seven_digits);
+    RUN(test_dial_host_starting_with_p);
+    RUN(test_dial_uppercase_modifier_keeps_host);
     RUN(test_plus_plus_plus_escape);
     RUN(test_atrd_in_call_errors);
 

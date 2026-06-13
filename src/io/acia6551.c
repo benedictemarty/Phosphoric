@@ -431,8 +431,16 @@ void acia_tick(acia6551_t* acia, int cycles)
         acia->rx_cycles = (acia->rx_reload > ACIA_RX_POLL_FLOOR)
                           ? acia->rx_reload : ACIA_RX_POLL_FLOOR;
 
-        if (acia->dcd && acia->backend->poll &&
-            acia->backend->poll(acia->backend)) {
+        /* Always poll the backend, even with DCD deasserted, so it can
+         * raise the carrier on its own. The Digitelec DTL 2000 dials on a
+         * DTR edge from inside poll() (digitelec_check_dtr); gating poll()
+         * on DCD would deadlock in pure-receive mode — poll() sets DCD, but
+         * poll() was never reached because DCD was still low. The DCD guard
+         * therefore only gates delivery of received bytes to RDRF below. */
+        bool rx_ready = acia->backend->poll &&
+                        acia->backend->poll(acia->backend);
+
+        if (acia->dcd && rx_ready) {
             uint8_t byte;
             if (acia->backend->recv(acia->backend, &byte)) {
                 byte &= acia->bitmask;

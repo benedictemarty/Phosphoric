@@ -528,6 +528,80 @@ TEST(test_state_preservation) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Regression — Digitelec DCD deadlock (OricTel report #1)
+ *
+ *  A backend that auto-dials on a DTR edge and raises DCD only from inside
+ *  its own poll() — exactly the Digitelec DTL 2000 pattern. acia_tick() must
+ *  poll the backend even while DCD is low, otherwise the carrier is never
+ *  established in pure-receive mode (poll() raises DCD, but poll() was gated
+ *  on DCD — a chicken-and-egg deadlock).
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static acia6551_t* g_auto_acia;
+static bool g_auto_carrier;
+static uint8_t g_auto_byte;
+static bool g_auto_byte_ready;
+
+static bool auto_poll(serial_backend_t* self) {
+    (void)self;
+    /* Mimic digitelec_check_dtr(): connect on a DTR edge from inside poll(). */
+    bool dtr = (acia_read(g_auto_acia, ACIA_REG_COMMAND) & ACIA_CMD_DTR) != 0;
+    if (dtr && !g_auto_carrier) {
+        g_auto_carrier = true;
+        g_auto_byte = 0x4E;                 /* 'N' — arrives once carrier up */
+        g_auto_byte_ready = true;
+        acia_set_dcd(g_auto_acia, true);    /* raise carrier — like connect() */
+    }
+    return g_auto_byte_ready;
+}
+
+static bool auto_recv(serial_backend_t* self, uint8_t* byte) {
+    (void)self;
+    if (!g_auto_byte_ready) return false;
+    *byte = g_auto_byte;
+    g_auto_byte_ready = false;
+    return true;
+}
+
+static bool auto_send(serial_backend_t* self, uint8_t b) { (void)self; (void)b; return true; }
+static bool auto_connected(serial_backend_t* self) { (void)self; return g_auto_carrier; }
+
+TEST(test_dcd_deadlock_autodial) {
+    acia6551_t a;
+    acia_init(&a);
+
+    serial_backend_t mock;
+    memset(&mock, 0, sizeof(mock));
+    mock.send = auto_send;
+    mock.recv = auto_recv;
+    mock.poll = auto_poll;
+    mock.connected = auto_connected;
+
+    g_auto_acia = &a;
+    g_auto_carrier = false;
+    g_auto_byte_ready = false;
+
+    acia_set_backend(&a, &mock);
+
+    /* Simulate digitelec_open(): no carrier yet. */
+    acia_set_dcd(&a, false);
+    ASSERT_FALSE(a.dcd);
+
+    /* Host asserts DTR but transmits nothing (pure-receive direct mode). */
+    acia_write(&a, ACIA_REG_COMMAND, ACIA_CMD_DTR);
+
+    /* Tick the ACIA without any TX. With the bug, poll() is gated on DCD and
+     * never runs → the backend never dials → DCD stays low forever. With the
+     * fix, poll() runs regardless, raises DCD, and the byte reaches RDR. */
+    for (int i = 0; i < 2000; i++) acia_tick(&a, 4);
+
+    ASSERT_TRUE(a.dcd);                                  /* carrier established */
+    uint8_t status = acia_read(&a, ACIA_REG_STATUS);
+    ASSERT_TRUE(status & ACIA_STATUS_RDRF);              /* byte delivered */
+    ASSERT_EQ(acia_read(&a, ACIA_REG_DATA), 0x4E);       /* the 'N' */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Main
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -558,6 +632,7 @@ int main(void) {
     RUN(test_rx_fifo);
     RUN(test_irq_65c51_mode);
     RUN(test_state_preservation);
+    RUN(test_dcd_deadlock_autodial);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

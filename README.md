@@ -160,6 +160,12 @@ make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric
 sudo make install              # Install to /usr/local
 ```
 
+> **Affichage graphique :** le défaut du `Makefile` est `SDL2=0` (build
+> *headless*, sans fenêtre). Pour la sortie vidéo/audio/clavier réelle, il
+> **faut** compiler avec `make SDL2=1`. Un binaire produit sans cette option
+> ne s'exécute qu'en `--headless`. Le build CMake (`CMakeLists.txt`) active
+> SDL2 inconditionnellement (`-DHAS_SDL2`).
+
 ## Usage
 
 ```

@@ -884,6 +884,22 @@ static const char* pw_match(const char* s, const char* prefix)
     return NULL;
 }
 
+/* Case-SENSITIVE variant, used for the ATDT / ATDP dial modifiers.
+ *
+ * The dial string of a WiFi modem is a hostname, not a phone number, and a
+ * host may legitimately start with 'p'/'t' (e.g. "pavi.3617.fr"). Matching
+ * the T/P modifier case-insensitively would swallow that leading letter:
+ * "ATDpavi…" would parse as DP (pulse) + "avi…". By requiring an UPPERCASE
+ * T/P for the modifier we keep the conventional "ATDThost" / "ATDPhost"
+ * working while letting a lowercase-led host pass through to the bare-D path
+ * untouched. */
+static const char* pw_match_cs(const char* s, const char* prefix)
+{
+    size_t n = strlen(prefix);
+    if (strncmp(s, prefix, n) == 0) return s + n;
+    return NULL;
+}
+
 static const char* pw_skip_digits(const char* p)
 {
     while (isdigit((unsigned char)*p)) p++;
@@ -1068,7 +1084,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
     }
 
     /* ── Dialing (consumes rest of line, emits own result) ── */
-    if ((a = pw_match(p, "DT")) || (a = pw_match(p, "DP"))) {
+    if ((a = pw_match_cs(p, "DT")) || (a = pw_match_cs(p, "DP"))) {
         const char* end = a + strlen(a);
         pw_do_dial(pw, a);
         return end;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(phosphoric VERSION 1.0.0 LANGUAGES C CXX)
+project(phosphoric VERSION 1.19.0 LANGUAGES C CXX)
 
 # C/C++ Standards
 set(CMAKE_C_STANDARD 11)
@@ -37,6 +37,11 @@ include_directories(
     ${SDL2_INCLUDE_DIRS}
 )
 
+# SDL2 is linked unconditionally here, so enable the display/audio/input code
+# paths (the Makefile passes this via SDL2=1 → -DHAS_SDL2). Without it the
+# binary would link SDL2 yet stay headless.
+add_compile_definitions(HAS_SDL2)
+
 # Source files
 set(CPU_SOURCES
     src/cpu/cpu6502.c
@@ -52,8 +57,20 @@ set(MEMORY_SOURCES
 set(IO_SOURCES
     src/io/via6522.c
     src/io/keyboard.c
+    src/io/joystick.c
+    src/io/printer.c
+    src/io/mcp40.c
     src/io/cassette.c
     src/io/microdisc.c
+    src/io/loci_core.c
+    src/io/loci_fs.c
+    src/io/loci_bus.c
+    src/io/loci_boot.c
+    src/io/loci_sdimg.c
+    src/io/acia6551.c
+    src/io/serial_backend.c
+    src/io/dtl2000.c
+    src/io/serial_picowifi.c
 )
 
 set(VIDEO_SOURCES
@@ -82,11 +99,17 @@ set(HOSTFS_SOURCES
 
 set(DEBUGGER_SOURCES
     src/debugger.c
+    src/control.c
+    src/savestate.c
 )
 
 set(UTILS_SOURCES
     src/utils/logging.c
     src/utils/config.c
+    src/utils/trace.c
+    src/utils/profiler.c
+    src/utils/rominfo.c
+    src/utils/symbols.c
 )
 
 set(MAIN_SOURCE

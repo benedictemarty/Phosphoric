@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.19.0-alpha
-Build Status: ALPHA (Sprint 54 : fusion PicoWiFi → main — DTL 2000 (1.17.x) + PicoWiFi (1.18.x) coexistent ; backend picowifi $0380 + carte DTL 2000 $03F8 ; 600 tests PASS)
+Version: 1.19.1-alpha
+Build Status: ALPHA (Sprint 55 : retour d'intégration OricTel — 3 corrections côté Phosphoric (verrou DCD Digitelec dans acia_tick, dial PicoWiFi ATD<hôte> p/t, CMakeLists.txt réaligné + HAS_SDL2) ; build SDL documenté ; 603 tests PASS)
 Last Updated: 2026-06-13
 
 ================================================================
@@ -78,8 +78,9 @@ Debugger Tests: 8/8 passed (100%)
 Save State Tests: 8/8 passed (100%)
 Atmos Tests: 10/10 passed (100%)
 Cast Tests: 24/24 passed (100%)
-Serial Tests: 19/19 passed (100%)
-Last Test Run: 2026-03-22 (Sprint 33)
+Serial Tests: 21/21 passed (100%) — +test_dcd_deadlock_autodial (régression verrou DCD Digitelec)
+PicoWiFi Tests: 64/64 passed (100%) — +test_dial_host_starting_with_p, +test_dial_uppercase_modifier_keeps_host
+Last Test Run: 2026-06-13 (Sprint 55) — suite complète 603 tests PASS
 
 CPU Tests:          74/74 passed
 Memory Tests:       19/19 passed
@@ -100,9 +101,10 @@ Cast Tests:         24/24 passed
 Trace Tests:        10/10 passed
 Profiler Tests:     10/10 passed
 ROM Info Tests:     10/10 passed
-Serial Tests:       19/19 passed
+Serial Tests:       21/21 passed
+PicoWiFi Tests:     64/64 passed
 Coverage Tests:     24/24 passed
-Last Test Run: 2026-03-22 (Sprint 33)
+Last Test Run: 2026-06-13 (Sprint 55)
 
 ================================================================
 

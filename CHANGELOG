@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.1-alpha] - 2026-06-13
+
+### Sprint 55 — Retour d'intégration OricTel : corrections série & build
+
+Suite au rapport d'intégration de l'équipe OricTel (émulateur Minitel 1B,
+`docs/RAPPORT_PHOSPHORIC.md` côté OricTel), pilotant l'ACIA 6551 `$031C` via les
+backends DTL 2000 / PicoWiFi. Trois corrections côté Phosphoric + un point de
+confort.
+
+#### Fixed
+
+- **ACIA — verrou œuf-poule DCD du backend Digitelec** (`src/io/acia6551.c`,
+  rapport #1) : `acia_tick()` ne sondait `backend->poll()` que si `acia->dcd`
+  était déjà vrai. Or le backend Digitelec établit la porteuse (et lève DCD)
+  *depuis l'intérieur* de `poll()` sur front DTR (`digitelec_check_dtr`). En
+  réception pure, DCD restait faux indéfiniment : aucun CARRIER DETECT tant que
+  l'utilisateur ne frappait pas une touche (chemin TX). `poll()` est désormais
+  appelé inconditionnellement ; le garde `dcd` ne conditionne plus que la
+  livraison des octets reçus à RDRF. Test de régression `test_dcd_deadlock_autodial`.
+- **PicoWiFi — `ATD<hôte>` commençant par `p`/`t` tronqué** (`src/io/serial_picowifi.c`,
+  rapport #2) : `pw_match` (insensible à la casse) faisait correspondre `Dp` à
+  `DP` (pulse), si bien que `ATDpavi.3617.fr` était composé comme `DP` + `avi…`
+  — le `p` initial de l'hôte était perdu. Le modificateur de numérotation T/P
+  est maintenant reconnu via `pw_match_cs` **sensible à la casse** (T/P
+  majuscule uniquement) : `ATDThost`/`ATDPhost` fonctionnent, et un hôte à
+  initiale minuscule conserve sa première lettre. Tests `test_dial_host_starting_with_p`
+  et `test_dial_uppercase_modifier_keeps_host`.
+- **CMakeLists.txt obsolète — édition de liens cassée** (`CMakeLists.txt`,
+  rapport #4) : la liste des sources omettait de nombreux modules (joystick,
+  printer, mcp40, LOCI, ACIA, serial_backend, dtl2000, serial_picowifi,
+  savestate, control, trace, profiler, rominfo, **symbols** → `undefined
+  reference to symbol_lookup/symbol_resolve`). Listes `IO_SOURCES`,
+  `DEBUGGER_SOURCES`, `UTILS_SOURCES` réalignées sur le `Makefile` ;
+  `-DHAS_SDL2` ajouté (le CMake liait SDL2 sans activer les chemins
+  d'affichage) ; version du projet portée à 1.19.0. Build CMake vérifié OK.
+
+#### Notes
+
+- **Binaire distribué sans SDL** (rapport #3) : le défaut `SDL2 ?= 0` du
+  `Makefile` produit un binaire headless. Documenté dans le README (`make
+  SDL2=1` pour l'affichage graphique). Aucun changement de comportement.
+
 ## [1.19.0-alpha] - 2026-06-13
 
 ### Sprint 54 — Intégration : fusion de la branche PicoWiFi dans main
