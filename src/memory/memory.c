@@ -197,8 +197,14 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
             uint16_t off = address - 0xBB80;
             uint16_t row = off / 40;
             uint16_t col = off % 40;
-            if (row < 28)
+            if (row < 28) {
                 mem->ram[0xA000 + row * 80 + col] = value;
+                /* Col 39 (last of 40-col row) is mirrored to col 79 too so
+                 * that CAPS/status chars written at the 40-col right edge
+                 * appear at the 80-col right edge, not the middle. */
+                if (col == 39)
+                    mem->ram[0xA000 + row * 80 + 79] = value;
+            }
         }
         return;
     }
