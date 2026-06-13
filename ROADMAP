@@ -1271,6 +1271,7 @@ Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`
 - [x] Display scaling (x1, x2, x3, x4)
 - [x] Trace logging
 - [x] Serial interface (ACIA 6551, RS232, Minitel/V23)
+- [x] Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR-verified registers, IRQ wired, cassette-validated)
 
 ### Developer Tools
 - [x] Memory viewer (debugger: m command)
