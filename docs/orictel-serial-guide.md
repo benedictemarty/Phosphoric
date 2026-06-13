@@ -261,6 +261,19 @@ Le préfixe `-` (NET0), `=` (NET1 réel), `+` (NET2 faux) fixe le mode telnet
 de la session. Pour du Vidéotex pur, le backend `digitelec` + `--serial-v23`
 reste l'option la plus idiomatique (V23 1200/75 natif, sans commandes AT).
 
+**Exemple prêt à l'emploi** : `examples/picowifi_test.bas` dialogue avec le
+modem (ATI, AT$SSID, ATC1…) et affiche les réponses :
+
+```bash
+./oric1-emu -r roms/basic11b.rom \
+  --acia-addr 0380 --serial picowifi:HomeNet --serial-buffer 512 \
+  -t examples/picowifi_test.tap -f
+```
+
+⚠ `--serial-buffer N` est important : sans FIFO RX, l'affichage BASIC est
+plus lent que le débit du modem → OVERRUN et octets perdus (l'ACIA n'a
+qu'un registre RX). Le FIFO bufferise les réponses.
+
 ## Options d'amélioration
 
 ### FIFO RX (anti-overrun)
