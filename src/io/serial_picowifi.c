@@ -174,6 +174,11 @@ typedef struct {
     /* ── Startup ── */
     char     auto_exec[256];        /* $AE */
     int      startup_wait;          /* $W */
+
+    /* ── NVRAM (sprint 49): host file standing in for the Pico flash ── */
+    char     nvram_path[512];       /* resolved at open(); "" = no persistence */
+    char     cli_ssid[64];          /* credentials from the CLI (override NVRAM) */
+    char     cli_pass[64];
 } picowifi_t;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -346,6 +351,150 @@ static void pw_factory(picowifi_t* pw, bool keep_creds)
         snprintf(pw->ssid, sizeof(pw->ssid), "%s", ssid_save);
         snprintf(pw->pass, sizeof(pw->pass), "%s", pass_save);
     }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  NVRAM persistence (sprint 49) — a host file stands in for the Pico
+ *  flash. The real firmware writes SETTINGS_T verbatim; we use a robust
+ *  key=value text format with a "PWNV1" magic header.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void pw_parse_hostport(const char* s, char* host, size_t hsz, uint16_t* port);
+
+/* Resolve the NVRAM file path: PHOSPHORIC_PICOWIFI_NVRAM env var, else
+ * $HOME/.phosphoric_picowifi.cfg, else disabled. */
+static void pw_nvram_resolve_path(picowifi_t* pw)
+{
+    const char* env = getenv("PHOSPHORIC_PICOWIFI_NVRAM");
+    if (env && env[0]) {
+        snprintf(pw->nvram_path, sizeof(pw->nvram_path), "%s", env);
+        return;
+    }
+    const char* home = getenv("HOME");
+    if (home && home[0])
+        snprintf(pw->nvram_path, sizeof(pw->nvram_path), "%s/.phosphoric_picowifi.cfg", home);
+    else
+        pw->nvram_path[0] = '\0';
+}
+
+static bool pw_nvram_save(picowifi_t* pw)
+{
+    if (pw->nvram_path[0] == '\0') return false;
+    FILE* f = fopen(pw->nvram_path, "w");
+    if (!f) return false;
+    fprintf(f, "PWNV1\n");
+    fprintf(f, "ssid=%s\n", pw->ssid);
+    fprintf(f, "pass=%s\n", pw->pass);
+    fprintf(f, "mdns=%s\n", pw->mdns);
+    fprintf(f, "baud=%d\n", pw->baud);
+    fprintf(f, "fmt=%s\n", pw->fmt);
+    fprintf(f, "telnet=%d\n", pw->telnet);
+    fprintf(f, "tty_type=%s\n", pw->tty_type);
+    fprintf(f, "tty_w=%d\n", pw->tty_w);
+    fprintf(f, "tty_h=%d\n", pw->tty_h);
+    fprintf(f, "tty_loc=%s\n", pw->tty_loc);
+    fprintf(f, "s0=%d\n", pw->s0_rings);
+    fprintf(f, "s2=%d\n", pw->esc_char);
+    fprintf(f, "echo=%d\n", pw->echo);
+    fprintf(f, "quiet=%d\n", pw->quiet);
+    fprintf(f, "verbose=%d\n", pw->verbose);
+    fprintf(f, "xcode=%d\n", pw->xcode);
+    fprintf(f, "flow_k=%d\n", pw->flow_k);
+    fprintf(f, "dtr_d=%d\n", pw->dtr_d);
+    fprintf(f, "server_port=%u\n", pw->server_port);
+    fprintf(f, "server_pass=%s\n", pw->server_pass);
+    fprintf(f, "busy_msg=%s\n", pw->busy_msg);
+    fprintf(f, "auto_exec=%s\n", pw->auto_exec);
+    fprintf(f, "startup_wait=%d\n", pw->startup_wait);
+    for (int i = 0; i < PW_DIAL_SLOTS; i++) {
+        if (pw->dial[i].used)
+            fprintf(f, "dial%d=%s:%u,%s\n", i,
+                    pw->dial[i].host, pw->dial[i].port, pw->dial[i].alias);
+    }
+    fclose(f);
+    return true;
+}
+
+/* Load stored settings into dst's config fields. Returns true if a valid
+ * NVRAM file was read. */
+static bool pw_nvram_load_into(const char* path, picowifi_t* dst)
+{
+    if (!path || !path[0]) return false;
+    FILE* f = fopen(path, "r");
+    if (!f) return false;
+    char line[600];
+    if (!fgets(line, sizeof(line), f) || strncmp(line, "PWNV1", 5) != 0) {
+        fclose(f);
+        return false;
+    }
+    while (fgets(line, sizeof(line), f)) {
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = '\0';
+        char* eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq = '\0';
+        const char* k = line;
+        const char* v = eq + 1;
+        if      (!strcmp(k, "ssid"))        snprintf(dst->ssid, sizeof(dst->ssid), "%s", v);
+        else if (!strcmp(k, "pass"))        snprintf(dst->pass, sizeof(dst->pass), "%s", v);
+        else if (!strcmp(k, "mdns"))        snprintf(dst->mdns, sizeof(dst->mdns), "%s", v);
+        else if (!strcmp(k, "baud"))        dst->baud = atoi(v);
+        else if (!strcmp(k, "fmt"))         snprintf(dst->fmt, sizeof(dst->fmt), "%s", v);
+        else if (!strcmp(k, "telnet"))      dst->telnet = atoi(v);
+        else if (!strcmp(k, "tty_type"))    snprintf(dst->tty_type, sizeof(dst->tty_type), "%s", v);
+        else if (!strcmp(k, "tty_w"))       dst->tty_w = atoi(v);
+        else if (!strcmp(k, "tty_h"))       dst->tty_h = atoi(v);
+        else if (!strcmp(k, "tty_loc"))     snprintf(dst->tty_loc, sizeof(dst->tty_loc), "%s", v);
+        else if (!strcmp(k, "s0"))          dst->s0_rings = atoi(v);
+        else if (!strcmp(k, "s2"))          dst->esc_char = atoi(v);
+        else if (!strcmp(k, "echo"))        dst->echo = atoi(v) != 0;
+        else if (!strcmp(k, "quiet"))       dst->quiet = atoi(v) != 0;
+        else if (!strcmp(k, "verbose"))     dst->verbose = atoi(v) != 0;
+        else if (!strcmp(k, "xcode"))       dst->xcode = atoi(v);
+        else if (!strcmp(k, "flow_k"))      dst->flow_k = atoi(v);
+        else if (!strcmp(k, "dtr_d"))       dst->dtr_d = atoi(v);
+        else if (!strcmp(k, "server_port")) dst->server_port = (uint16_t)atoi(v);
+        else if (!strcmp(k, "server_pass")) snprintf(dst->server_pass, sizeof(dst->server_pass), "%s", v);
+        else if (!strcmp(k, "busy_msg"))    snprintf(dst->busy_msg, sizeof(dst->busy_msg), "%s", v);
+        else if (!strcmp(k, "auto_exec"))   snprintf(dst->auto_exec, sizeof(dst->auto_exec), "%s", v);
+        else if (!strcmp(k, "startup_wait")) dst->startup_wait = atoi(v);
+        else if (!strncmp(k, "dial", 4)) {
+            int idx = atoi(k + 4);
+            if (idx >= 0 && idx < PW_DIAL_SLOTS) {
+                char hp[300] = {0}, alias[32] = {0};
+                const char* comma = strrchr(v, ',');
+                if (comma) {
+                    size_t hl = (size_t)(comma - v);
+                    if (hl >= sizeof(hp)) hl = sizeof(hp) - 1;
+                    memcpy(hp, v, hl); hp[hl] = '\0';
+                    snprintf(alias, sizeof(alias), "%s", comma + 1);
+                } else {
+                    snprintf(hp, sizeof(hp), "%s", v);
+                }
+                char host[256]; uint16_t port;
+                pw_parse_hostport(hp, host, sizeof(host), &port);
+                snprintf(dst->dial[idx].host, sizeof(dst->dial[idx].host), "%s", host);
+                dst->dial[idx].port = port;
+                snprintf(dst->dial[idx].alias, sizeof(dst->dial[idx].alias), "%s", alias);
+                dst->dial[idx].used = true;
+            }
+        }
+    }
+    fclose(f);
+    return true;
+}
+
+/* Emit the two-line settings summary (AT&V) from a source config. */
+static void pw_display_settings(picowifi_t* pw, const picowifi_t* s)
+{
+    char b[256];
+    snprintf(b, sizeof(b), "E%d Q%d V%d X%d &K%d &D%d S0=%d S2=%d NET%d",
+             s->echo, s->quiet, s->verbose, s->xcode,
+             s->flow_k, s->dtr_d, s->s0_rings, s->esc_char, s->telnet);
+    pw_qval(pw, b);
+    snprintf(b, sizeof(b), "SSID:%s MDNS:%s BAUD:%d FMT:%s TTY:%s %dx%d",
+             s->ssid, s->mdns, s->baud, s->fmt, s->tty_type, s->tty_w, s->tty_h);
+    pw_qval(pw, b);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -817,22 +966,22 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         return pw_end(pw, a);
     }
     if ((a = pw_match(p, "&V"))) {
-        if (*a == '0' || *a == '1' || *a == '\0' || *a == ' ') {
-            char b[256];
-            snprintf(b, sizeof(b), "E%d Q%d V%d X%d &K%d &D%d S0=%d S2=%d NET%d",
-                     pw->echo, pw->quiet, pw->verbose, pw->xcode,
-                     pw->flow_k, pw->dtr_d, pw->s0_rings, pw->esc_char, pw->telnet);
-            pw_qval(pw, b);
-            snprintf(b, sizeof(b), "SSID:%s MDNS:%s BAUD:%d FMT:%s TTY:%s %dx%d",
-                     pw->ssid, pw->mdns, pw->baud, pw->fmt,
-                     pw->tty_type, pw->tty_w, pw->tty_h);
-            pw_qval(pw, b);
+        if (*a == '1') {
+            /* AT&V1: show the settings stored in NVRAM (defaults if none). */
+            static picowifi_t tmp;   /* large; avoid a big stack frame */
+            memset(&tmp, 0, sizeof(tmp));
+            pw_factory(&tmp, false);
+            pw_nvram_load_into(pw->nvram_path, &tmp);
+            pw_display_settings(pw, &tmp);
+            a++;
+        } else {
+            pw_display_settings(pw, pw);   /* AT&V / AT&V0: current settings */
+            if (*a == '0') a++;
         }
-        if (*a == '0' || *a == '1') a++;
         return pw_end(pw, a);
     }
-    if ((a = pw_match(p, "&W"))) { return pw_end(pw, a); }   /* save: no-op (sprint 49) */
-    if ((a = pw_match(p, "&F"))) { pw_factory(pw, false); return pw_end(pw, a); }
+    if ((a = pw_match(p, "&W"))) { pw_nvram_save(pw); return pw_end(pw, a); }
+    if ((a = pw_match(p, "&F"))) { pw_factory(pw, false); pw_nvram_save(pw); return pw_end(pw, a); }
 
     /* ── Telnet enable ── */
     if ((a = pw_match(p, "NET"))) {
@@ -1050,11 +1199,28 @@ static bool picowifi_open(serial_backend_t* self)
     pw->connect_time = 0;
     pw->tn_state = TN_ST_NORMAL;
     pw->tn_prev_cr = false;
-    /* Apply factory defaults, preserving any CLI-supplied credentials
-     * (firmware: boot loads NVRAM; we have none yet → factory defaults). */
-    pw_factory(pw, true);
+
+    /* Boot sequence (firmware setup): factory defaults, then overlay NVRAM
+     * if present, then CLI credentials take precedence. */
+    pw_nvram_resolve_path(pw);
+    pw_factory(pw, false);
+    pw_nvram_load_into(pw->nvram_path, pw);
+    if (pw->cli_ssid[0]) snprintf(pw->ssid, sizeof(pw->ssid), "%s", pw->cli_ssid);
+    if (pw->cli_pass[0]) snprintf(pw->pass, sizeof(pw->pass), "%s", pw->cli_pass);
+
+    /* Auto-reconnect WiFi at boot when an SSID is configured (simulated). */
+    if (pw->ssid[0]) {
+        pw->wifi_up = true;
+        log_info("PicoWiFi: boot WiFi associate \"%s\" (simulated)", pw->ssid);
+    }
+
     log_info("PicoWiFi: backend opened (SSID:%s)",
              pw->ssid[0] ? pw->ssid : "(unset)");
+
+    /* Run the boot auto-execute command if configured ($AE). */
+    if (pw->auto_exec[0])
+        pw_process_at(pw, pw->auto_exec);
+
     return true;
 }
 
@@ -1186,8 +1352,10 @@ serial_backend_t* serial_backend_picowifi_create(const char* ssid, const char* p
     picowifi_t* pw = calloc(1, sizeof(picowifi_t));
     if (!pw) { free(b); return NULL; }
 
-    if (ssid) snprintf(pw->ssid, sizeof(pw->ssid), "%s", ssid);
-    if (pass) snprintf(pw->pass, sizeof(pw->pass), "%s", pass);
+    /* Stash CLI credentials; open() applies them after loading NVRAM so
+     * they take precedence over stored values. */
+    if (ssid) snprintf(pw->cli_ssid, sizeof(pw->cli_ssid), "%s", ssid);
+    if (pass) snprintf(pw->cli_pass, sizeof(pw->cli_pass), "%s", pass);
 
     b->type = SERIAL_BACKEND_PICOWIFI;
     b->open = picowifi_open;

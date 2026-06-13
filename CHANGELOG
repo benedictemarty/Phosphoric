@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.4-alpha] - 2026-06-13
+
+### Sprint 49 — PicoWiFi : persistance NVRAM + boot (fin de la fidélité)
+
+Dernier sprint du chantier PicoWiFi : la configuration survit aux
+redémarrages, comme la flash du vrai Pico. Clôt l'alignement complet
+avec le firmware `sodiumlb/PicoWiFiModemUSB`.
+
+#### Added
+
+- **Persistance NVRAM** : un fichier hôte tient lieu de flash littlefs.
+  Chemin via `PHOSPHORIC_PICOWIFI_NVRAM`, sinon
+  `$HOME/.phosphoric_picowifi.cfg`. Format texte `clé=valeur` avec magie
+  `PWNV1` (magie absente/invalide → défauts d'usine, comme le firmware).
+- **`AT&W`** sauvegarde la configuration courante ; **`AT&V0`** affiche la
+  config courante, **`AT&V1`** la config stockée (deux peuvent différer) ;
+  **`AT&F`** réinitialise ET réécrit les défauts en NVRAM.
+- **Séquence de boot** (open) : défauts d'usine → superposition NVRAM →
+  identifiants CLI prioritaires ; association WiFi simulée si un SSID est
+  présent ; exécution de la commande de démarrage **`AT$AE`**.
+
+#### Tests
+
+- **7 nouveaux tests** (59 picowifi, 582 au total), hermétiques (NVRAM
+  temporaire via env var) : round-trip sauvegarde/reboot, non-persistance
+  sans `AT&W`, `AT&V0`≠`AT&V1`, priorité des identifiants CLI sur la NVRAM,
+  exécution `AT$AE` au boot, `AT&F` persisté, auto-association WiFi au boot.
+
+#### Notes
+
+- `AT&D`/`AT&K` et `AT$W` (attente démarrage) restent stockés mais inertes
+  (pas de vraies broches DTR/RTS/CTS ni d'attente bloquante sur la variante
+  USB-CDC) — documenté.
+- **Fidélité PicoWiFi complète** : surface AT (45), défauts/codes/commandes
+  composées (46), protocole Telnet (47), réseau réel (48), NVRAM (49).
+
 ## [1.17.3-alpha] - 2026-06-13
 
 ### Sprint 48 — PicoWiFi : commandes réseau réelles

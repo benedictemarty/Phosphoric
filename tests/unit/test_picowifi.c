@@ -11,6 +11,7 @@
  * — only the hermetic command-parsing paths are exercised.
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,7 +73,17 @@ static int tests_failed = 0;
 
 static serial_backend_t* pw;
 
+#define PW_NVRAM_TEST "/tmp/phosphoric_pwnv_test.cfg"
+
+/* Fresh boot: wipe the test NVRAM so each test starts at factory state. */
 static void pw_setup(const char* ssid, const char* pass) {
+    unlink(PW_NVRAM_TEST);
+    pw = serial_backend_picowifi_create(ssid, pass);
+    pw->open(pw);
+}
+
+/* Boot WITHOUT wiping NVRAM (used to verify persistence across a reboot). */
+static void pw_setup_keepnvram(const char* ssid, const char* pass) {
     pw = serial_backend_picowifi_create(ssid, pass);
     pw->open(pw);
 }
@@ -750,10 +761,124 @@ TEST(test_atrd_in_call_errors) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Sprint 49 — NVRAM persistence + boot
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+TEST(test_nvram_roundtrip) {
+    /* Save settings, reboot (keeping NVRAM), verify they persist. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$SSID=StoredNet", r, sizeof(r));
+    pw_cmd("AT$SB=2400", r, sizeof(r));
+    pw_cmd("AT&W", r, sizeof(r));        /* persist */
+    ASSERT_CONTAINS(r, "OK");
+    pw_teardown();
+
+    pw_setup_keepnvram(NULL, NULL);      /* reboot */
+    pw_cmd("AT$SSID?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "StoredNet");
+    pw_cmd("AT$SB?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "2400");
+    pw_teardown();
+}
+
+TEST(test_nvram_not_saved_without_atw) {
+    /* A change not followed by AT&W must not survive a reboot. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$SSID=Ephemeral", r, sizeof(r));   /* no AT&W */
+    pw_teardown();
+
+    pw_setup_keepnvram(NULL, NULL);
+    pw_cmd("AT$SSID?", r, sizeof(r));
+    ASSERT_NOT_CONTAINS(r, "Ephemeral");
+    pw_teardown();
+}
+
+TEST(test_view_stored_vs_current) {
+    /* AT&V0 = current, AT&V1 = stored. After AT&W then a change, they
+     * must differ on the changed field (S0). */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATS0=2", r, sizeof(r));
+    pw_cmd("AT&W", r, sizeof(r));        /* store S0=2 */
+    pw_cmd("ATS0=9", r, sizeof(r));      /* current S0=9, stored still 2 */
+    pw_cmd("AT&V0", r, sizeof(r));
+    ASSERT_CONTAINS(r, "S0=9");
+    pw_cmd("AT&V1", r, sizeof(r));
+    ASSERT_CONTAINS(r, "S0=2");
+    pw_teardown();
+}
+
+TEST(test_cli_creds_override_nvram) {
+    /* NVRAM stores one SSID; a CLI-provided SSID wins at boot. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$SSID=FromNvram", r, sizeof(r));
+    pw_cmd("AT&W", r, sizeof(r));
+    pw_teardown();
+
+    pw_setup_keepnvram("FromCli", NULL); /* CLI ssid overrides */
+    pw_cmd("AT$SSID?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "FromCli");
+    ASSERT_NOT_CONTAINS(r, "FromNvram");
+    pw_teardown();
+}
+
+TEST(test_boot_autoexec) {
+    /* AT$AE stores a command run at the next boot. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATS0=0", r, sizeof(r));
+    pw_cmd("AT$AE=ATS0=9", r, sizeof(r));  /* boot command sets S0=9 */
+    pw_cmd("AT&W", r, sizeof(r));
+    pw_teardown();
+
+    pw_setup_keepnvram(NULL, NULL);        /* boot runs ATS0=9 */
+    pw_cmd("ATS0?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "9");
+    pw_teardown();
+}
+
+TEST(test_factory_reset_persists) {
+    /* AT&F resets AND writes defaults to NVRAM. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$SSID=Doomed", r, sizeof(r));
+    pw_cmd("AT&W", r, sizeof(r));
+    pw_cmd("AT&F", r, sizeof(r));           /* factory + persist */
+    pw_teardown();
+
+    pw_setup_keepnvram(NULL, NULL);
+    pw_cmd("AT$SSID?", r, sizeof(r));
+    ASSERT_NOT_CONTAINS(r, "Doomed");
+    pw_teardown();
+}
+
+TEST(test_boot_wifi_auto_associate) {
+    /* With a stored SSID, the link comes up at boot (ATC? = 1). */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$SSID=AutoNet", r, sizeof(r));
+    pw_cmd("AT&W", r, sizeof(r));
+    pw_teardown();
+
+    pw_setup_keepnvram(NULL, NULL);
+    pw_cmd("ATC?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "1");
+    pw_teardown();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Runner
  * ═══════════════════════════════════════════════════════════════════════ */
 
 int main(void) {
+    /* Keep all tests hermetic: NVRAM lives in a temp file, never the user's
+     * real home config. */
+    setenv("PHOSPHORIC_PICOWIFI_NVRAM", PW_NVRAM_TEST, 1);
+    unlink(PW_NVRAM_TEST);
+
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
     printf("  PicoWiFiModemUSB Backend Tests\n");
@@ -815,6 +940,17 @@ int main(void) {
     RUN(test_dial_seven_digits);
     RUN(test_plus_plus_plus_escape);
     RUN(test_atrd_in_call_errors);
+
+    /* Sprint 49 — NVRAM persistence + boot */
+    RUN(test_nvram_roundtrip);
+    RUN(test_nvram_not_saved_without_atw);
+    RUN(test_view_stored_vs_current);
+    RUN(test_cli_creds_override_nvram);
+    RUN(test_boot_autoexec);
+    RUN(test_factory_reset_persists);
+    RUN(test_boot_wifi_auto_associate);
+
+    unlink(PW_NVRAM_TEST);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

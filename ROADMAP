@@ -430,17 +430,28 @@ Sans ça, une vraie session BBS telnet recevait un flux d'octets erroné.
       575 total. Connexion réelle time.nist.gov / HTTP distant non testée
       auto (réseau externe), comme ATDT — parsing et erreurs couverts.
 
-### Sprint 49: PicoWiFi — persistance NVRAM + boot (PLANNED)
+### Sprint 49: PicoWiFi — persistance NVRAM + boot (v1.17.4-alpha) - DONE
 
-- [ ] **`SETTINGS_T` persistée** : fichier hôte comme substitut de la flash
-      littlefs (magic 0x5678), chargé au boot
-- [ ] **`AT&W`** sauvegarde, **`AT&V0`** courant vs **`AT&V1`** sauvegardé
-      (format multi-lignes fidèle), **`AT&F`** écrit les défauts
-- [ ] **Boot** : auto-reconnect WiFi si SSID, exécution `autoExecute` (`AT$AE`),
-      `AT$W` attente démarrage
-- [ ] **`AT&D`/`AT&K`** stockés ; effet matériel documenté comme inerte
-      (pas de vraies broches DTR/RTS/CTS sur la variante USB-CDC)
-- [ ] Tests : round-trip save/load, &V0≠&V1 après modif sans &W
+Dernier sprint du chantier PicoWiFi — **fidélité complète** avec le firmware.
+
+- [x] **Config persistée** : fichier hôte = flash littlefs (chemin via
+      PHOSPHORIC_PICOWIFI_NVRAM sinon $HOME/.phosphoric_picowifi.cfg),
+      format clé=valeur, magie `PWNV1` (absente/invalide → défauts d'usine)
+- [x] **`AT&W`** sauvegarde, **`AT&V0`** courant vs **`AT&V1`** stocké,
+      **`AT&F`** reset + persiste les défauts
+- [x] **Boot** (open) : défauts → superposition NVRAM → identifiants CLI
+      prioritaires ; WiFi auto-associate simulé si SSID ; exécution `AT$AE`
+- [x] **`AT&D`/`AT&K`/`AT$W`** stockés ; effet matériel inerte documenté
+      (pas de vraies broches DTR/RTS/CTS ni d'attente sur la variante USB-CDC)
+- [x] Tests : 7 hermétiques (NVRAM temp via env var) — round-trip, non-
+      persistance sans &W, &V0≠&V1, priorité CLI, AT$AE au boot, &F persisté,
+      auto-associate ; 59 picowifi, 582 total
+
+**Bilan PicoWiFi (sprints 45-49)** : backend fidèle au firmware réel
+sodiumlb/PicoWiFiModemUSB v0.1.0 — surface AT complète, défauts/codes
+exacts, commandes composées, protocole Telnet (IAC/CR-NUL/négociation),
+réseau réel (ATGET/ATRD), persistance NVRAM. Reste optionnel : garde-temps
++++ cycle-exact (vtable série), per-slot telnet prefix des numéros rapides.
 
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
