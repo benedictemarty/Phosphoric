@@ -1,6 +1,6 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.5 (Sprint 42, plan 4 étapes complet) — vérifié
+**Statut** : brouillon v0.6 (Sprint 42 + proposition étape 5 GPU) — vérifié
 sans conflit avec le firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
@@ -160,6 +160,95 @@ comme notation scientifique (3×10⁰) — utiliser les adresses décimales
   savestates (section `OCB` du format .ost, présente seulement si le
   banking a servi).
 - Exemple : `POKE 995,1` (banque 1) … `POKE 995,0` (retour).
+
+## Étape 5 (proposition) : OCULA-GPU
+
+**Statut : proposition v0.6, non implémentée** — backlog Sprint 43, à
+discuter upstream après retour sur les étapes 1-4 (RFC #53).
+
+### Changement de contrat : tier 2
+
+Les étapes 1-3 dégradent gracieusement sur ULA stock ; l'étape 4 est
+détectable mais inerte. Le GPU rompt ce contrat : un programme qui
+délègue son rendu ne fait rien d'utile sur un HCS 10017 — et les
+écritures dans $03E8+ y retombent sur le miroir VIA (effets de bord
+possibles). La spec distingue donc :
+
+- **Tier 1** (étapes 1-3) : in-band, dégradation gracieuse, un même
+  binaire tourne partout.
+- **Tier 2** (étapes 4-5) : **détection préalable obligatoire**
+  (`PEEK(992)=79 AND PEEK(993)=67`, puis bit 4 de $03E2 pour le GPU).
+
+### Pourquoi c'est réaliste sur le matériel
+
+- **RP2350B = 2 cœurs Cortex-M33** : cœur 1 au scanout DVI, cœur 0
+  libre pour exécuter les commandes (file inter-cœurs).
+- **OCULA-is-the-RAM** : la RAM est la SRAM interne du chip — le GPU
+  lit/écrit la mémoire **sans toucher au bus Oric ni voler de cycles
+  au 6502**. Exécution concurrente vraie. (DRAM-is-the-RAM : GPU
+  limité au blanking, hors scope v1.)
+- **L'OCULA génère PHI0** (cf. `SET PHI2` du firmware) : il peut
+  **étirer l'horloge CPU** pendant une commande bloquante — la
+  synchronisation sans broche IRQ (le socket ULA n'en a pas).
+
+### Fenêtre de commande $03E8-$03EF
+
+Prolonge la fenêtre d'identification/banking de l'étape 4.
+
+| Adresse | Accès | Contenu |
+|---------|-------|---------|
+| $03E8 (1000) | W | **GPU_CMD** : opcode ; l'écriture déclenche l'exécution. Bit 7 levé = variante bloquante (étirement PHI0 jusqu'à la fin) |
+| $03E9 (1001) | R | **GPU_STATUS** : $00 prêt/terminé, $01 occupé, ≥$80 code d'erreur |
+| $03EA/$03EB (1002/1003) | R/W | **GPU_PTR** lo/hi : adresse du bloc d'arguments (16 octets) en RAM |
+| $03EC-$03EF | — | réservé v2 (collisions sprites, compteurs) |
+
+Capacités : **bit 4 de $03E2** = GPU présent ($03E2 passe de $0F à $1F).
+
+### Sémantique d'exécution
+
+- **Posted (défaut)** : écrire le bloc d'arguments, GPU_PTR, puis
+  l'opcode dans GPU_CMD. STATUS passe à $01 ; le GPU copie le bloc
+  d'arguments au déclenchement (le bloc est réutilisable aussitôt) ;
+  STATUS retombe à $00. Le 6502 continue de tourner pendant ce temps.
+- **Bloquant** : opcode | $80 → PHI0 étiré jusqu'à STATUS = $00.
+  Toute la machine est suspendue (VIA et timers compris : le temps
+  *relatif* est préservé, pas le temps réel). Budget maximal proposé :
+  une trame par commande.
+- **Banking** : les adresses $A000-$BFFF du bloc d'arguments désignent
+  la **banque CPU active** ($03E3) — on peut donc composer dans une
+  banque annexe puis copier vers la banque 0 visible (synergie
+  étape 4).
+- **Cohérence d'affichage** : les écritures GPU dans la zone balayée
+  sont visibles dès la scanline suivante (tearing possible) — utiliser
+  WAIT_VBL ou composer hors écran.
+
+### Jeu de commandes v1
+
+| Op | Nom | Bloc d'arguments | Effet |
+|----|-----|------------------|-------|
+| $01 | INFO | — | bloc ← version GPU, nb sprites max, capacités détaillées |
+| $02 | FILL | dst(2) stride(1) w(1) h(1) val(1) | rectangle d'octets rempli |
+| $03 | COPY | src(2) sstr(1) dst(2) dstr(1) w(1) h(1) | copie rectangulaire ; ordre choisi pour gérer le recouvrement |
+| $04 | SCROLL | dx(1) dy(1) | registres persistants appliqués au fetch des modes bitmap étendus (29/31), wrap modulo 320/200 ; 0,0 = off |
+| $05 | WAIT_VBL | — | toujours bloquant ($85) : CPU suspendu jusqu'au prochain blanking vertical — sync raster |
+| $06-$7F | — | — | réservé v2 : LINE, sprites composités au scanout (table 8 entrées), décompression RLE, page flipping (couplé à $03E4) |
+
+Exemple BASIC (remplir un rectangle 10×10 en HIRES étendu) :
+
+```basic
+10 REM bloc d'arguments en #0400 : dst=#A000, stride=40, w=10, h=10, val=255
+20 POKE#400,0:POKE#401,160:POKE#402,40:POKE#403,10:POKE#404,10:POKE#405,255
+30 POKE 1002,0:POKE 1003,4        ' GPU_PTR = #0400
+40 POKE 1000,2                    ' FILL (posted)
+50 IF PEEK(1001)<>0 THEN 50       ' attendre STATUS (ou POKE 1000,130 bloquant)
+```
+
+### Ordre de réalisation proposé (rapport valeur/coût)
+
+1. **SCROLL** — quasi gratuit, débloque le défilement fluide impossible
+   à 1 MHz ; 2. **WAIT_VBL** — sync raster, manque historique de
+   l'Oric ; 3. **FILL/COPY** — blitter de base ; 4. v2 : sprites au
+   scanout (zéro RAM Oric, zéro scintillement), LINE, page flipping.
 
 ## Implémentation de référence
 

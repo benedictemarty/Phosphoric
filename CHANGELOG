@@ -33,6 +33,12 @@ Dernière étape du plan OCULA : le plan 4 étapes est complet
   `4F 43 0F 00`, isolation des banques (banque 1 vierge, écriture
   isolée, banque 0 préservée) ; détection BASIC `PEEK(992)` = 79.
 
+- **Spec étape 5 proposée (v0.6)** : OCULA-GPU — fenêtre de commande
+  $03E8-$03EF (CMD/STATUS/PTR), exécution posted ou bloquante par
+  étirement de PHI0, commandes v1 INFO/FILL/COPY/SCROLL/WAIT_VBL,
+  contrat « tier 2 » (détection obligatoire). Non implémentée —
+  backlog Sprint 43, à discuter upstream après retour sur la RFC #53.
+
 #### Notes
 
 - Piège BASIC documenté : `PEEK(#3E0)` échoue (le tokenizer avale

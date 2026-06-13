@@ -450,6 +450,23 @@ Plan OCULA 4 étapes COMPLET. Spec v0.5.
 - [ ] Registre banque vidéo $03E4 (page flipping) si retour upstream
 - [ ] Démo BASIC complète (80 col + 320×200 + palette + banking)
 
+### Sprint 43: OCULA étape 5 — GPU (spec v0.6) - PLANNED
+
+Tier 2 (détection obligatoire) : le RP2350 exécute des commandes
+graphiques pendant que le 6502 tourne (OCULA-is-the-RAM = SRAM
+interne, zéro contention bus ; sync bloquante par étirement de PHI0).
+
+- [x] Spec docs/ocula_extensions.md v0.6 : fenêtre $03E8-$03EF
+      (GPU_CMD/STATUS/PTR), sémantique posted/bloquant, commandes v1
+      INFO/FILL/COPY/SCROLL/WAIT_VBL, exemple BASIC
+- [ ] Implémentation Phosphoric : dispatcher dans src/io/ocula_io.c,
+      ordre SCROLL → WAIT_VBL → FILL/COPY
+- [ ] Étirement PHI0 (suspension CPU/VIA) dans la boucle d'émulation
+- [ ] Capacités $03E2 : bit 4 GPU ($0F → $1F)
+- [ ] Tests test-ocula (posted, bloquant, banking actif, erreurs)
+- [ ] v2 si retour upstream : sprites au scanout, LINE, page flipping
+- [ ] Proposer l'étape 5 upstream (fil dédié ou RFC #53)
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)
