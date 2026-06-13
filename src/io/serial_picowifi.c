@@ -7,29 +7,26 @@
  * Emulates the sodiumlb PicoWiFiModemUSB — a Raspberry Pi Pico W that
  * bridges USB CDC ↔ WiFi with a Hayes-style AT command set. On real
  * hardware the device plugs into LOCI over USB, and the LOCI firmware
- * exposes it to the Oric as an ACIA serial modem at $0380. From the Oric's
- * point of view it is "just an ACIA"; from the user's point of view it is a
- * WiFi modem driven by AT commands.
+ * exposes it to the Oric as an ACIA serial modem at $0380.
  *
- * What is emulated:
- *   - The v0.1.0 AT command set (see github.com/sodiumlb/PicoWiFiModemUSB):
- *     WiFi config (AT$SSID/AT$PASS/AT$MDNS), dialing (ATDT/ATDS/ATD),
- *     telnet (ATNET, AT$TTY/AT$TTS/AT$TTL), S-registers (S0/S2),
- *     result-code formatting (ATE/ATQ/ATV/ATX), flow control (AT&K/AT&D),
- *     speed dial (AT&Z), incoming server (AT$SP/AT&R), info (ATI),
- *     profile (AT&V/AT&W/AT&F), startup (AT$AE/AT$W), online (ATO),
- *     +++ escape (guard-timed, S2-configurable escape char), A/ repeat.
- *   - Data connections are real TCP sockets (telnet/raw).
+ * Sprint 45 delivered the AT command surface. Sprint 46 aligns behaviour
+ * with the real firmware source (clone sodiumlb/PicoWiFiModemUSB):
+ *   - exact factory defaults (mDNS "picomodem", 9600 baud, location
+ *     "Computer Room", 3 predefined speed dials)
+ *   - faithful result-code enum (R_NO_ANSWER=5, R_RING_IP=6)
+ *   - compound command lines ("ATS0=1 X1 Q0"): a token loop where only the
+ *     last token emits a result, an unknown token aborts with ERROR
+ *   - ATC? numeric (0/1), ATX extended codes (CONNECT <speed>,
+ *     NO CARRIER (HH:MM:SS)), ATZ as a no-op (the real device cannot reset
+ *     without dropping USB)
  *
- * What is simulated:
- *   - WiFi association: AT$SSID/AT$PASS store credentials; the link is
- *     considered "up" once an SSID is set. There is no real radio.
- *   - ATGET/ATRD/ATRT and other internet-service commands return a
- *     plausible canned response — the emulator has no NIST clock.
+ * Deferred to later sprints (see ROADMAP):
+ *   - 47: telnet protocol (CR+NUL, IAC negotiation), real +++ guard time,
+ *         ATDT +/=/- prefixes, AT$AYT
+ *   - 48: ATGET (HTTP), ATRD/ATRT (NIST), alias/7-digit dial, AT$BM
+ *   - 49: NVRAM persistence (AT&W/&V0/&V1), boot auto-reconnect
  *
- * This is a separate module from serial_backend.c because the command set
- * is large; the picowifi_t state is heap-allocated and reached through the
- * opaque `state.picowifi.impl` pointer in serial_backend_t.
+ * WiFi association is simulated; data connections are real TCP sockets.
  */
 
 #define _GNU_SOURCE
@@ -43,6 +40,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -57,16 +55,17 @@
 #define PW_RX_BUFSZ     65536      /* 64KB receive ring (line → Oric) */
 #define PW_DIAL_SLOTS   10         /* AT&Z0..9 speed-dial entries */
 #define PW_DEFAULT_PORT 23         /* telnet */
+#define PW_DEFAULT_BAUD 9600       /* firmware DEFAULT_SPEED */
 
-/* ── Hayes result codes ── */
+/* Hayes result codes — exact enum from firmware types.h */
 enum {
     PW_OK = 0,
     PW_CONNECT = 1,
     PW_RING = 2,
     PW_NO_CARRIER = 3,
     PW_ERROR = 4,
-    PW_NO_DIALTONE = 6,
-    PW_BUSY = 7,
+    PW_NO_ANSWER = 5,
+    PW_RING_IP = 6,
 };
 
 typedef struct {
@@ -77,6 +76,7 @@ typedef struct {
     uint16_t port;                  /* preset/last dial port */
     uint8_t* rx_buf;                /* 64KB ring → Oric */
     int      rx_head, rx_tail, rx_count;
+    time_t   connect_time;          /* set on dial, used for NO CARRIER (X1) */
 
     /* ── AT command state machine ── */
     int      mode;                  /* 0 = command, 1 = data */
@@ -91,18 +91,18 @@ typedef struct {
     /* ── WiFi configuration / state ── */
     char     ssid[64];
     char     pass[64];
-    char     mdns[64];              /* default "espmodem" */
+    char     mdns[64];              /* default "picomodem" */
     bool     wifi_up;               /* simulated association */
 
     /* ── Serial parameters (reported, not enforced) ── */
-    int      baud;                  /* AT$SB, default 1200 */
+    int      baud;                  /* AT$SB, default 9600 */
     char     fmt[8];                /* AT$SU, default "8N1" */
 
     /* ── Telnet ── */
     int      telnet;                /* ATNET: 0=off, 1=real, 2=fake */
     char     tty_type[16];          /* AT$TTY, default "ansi" */
     int      tty_w, tty_h;          /* AT$TTS, default 80x24 */
-    char     tty_loc[64];           /* AT$TTL */
+    char     tty_loc[64];           /* AT$TTL, default "Computer Room" */
 
     /* ── S-registers ── */
     int      s0_rings;              /* S0: auto-answer ring count */
@@ -114,7 +114,7 @@ typedef struct {
     bool     verbose;               /* V: 1=text, 0=numeric */
     int      xcode;                 /* X: 0=basic, 1=extended */
 
-    /* ── Flow control / DTR ── */
+    /* ── Flow control / DTR (stored, inert on USB-CDC variant) ── */
     int      flow_k;                /* &K: 0=off, 1=RTS/CTS */
     int      dtr_d;                 /* &D: 0..3 */
 
@@ -179,84 +179,127 @@ static void pw_rx_str(picowifi_t* pw, const char* s)
     while (*s) pw_rx_push(pw, (uint8_t)*s++);
 }
 
-/* Emit a Hayes result code, honouring ATQ (quiet) and ATV (verbose). */
+/* A query value is printed on its own CRLF-delimited line. */
+static void pw_qval(picowifi_t* pw, const char* s)
+{
+    pw_rx_str(pw, "\r\n");
+    pw_rx_str(pw, s);
+    pw_rx_str(pw, "\r\n");
+}
+
+/* Emit a Hayes result code, honouring ATQ (quiet), ATV (verbose), ATX
+ * (extended). Mirrors firmware sendResult(). */
 static void pw_result(picowifi_t* pw, int code)
 {
     if (pw->quiet) return;
-    if (pw->verbose) {
-        const char* txt;
-        switch (code) {
-            case PW_OK:          txt = "OK";          break;
-            case PW_CONNECT:     txt = "CONNECT";     break;
-            case PW_RING:        txt = "RING";        break;
-            case PW_NO_CARRIER:  txt = "NO CARRIER";  break;
-            case PW_ERROR:       txt = "ERROR";       break;
-            case PW_NO_DIALTONE: txt = "NO DIALTONE"; break;
-            case PW_BUSY:        txt = "BUSY";        break;
-            default:             txt = "ERROR";       break;
-        }
+
+    if (!pw->verbose) {
+        int c = (code == PW_RING_IP) ? PW_RING : code;
+        char b[12];
+        snprintf(b, sizeof(b), "%d", c);
         pw_rx_str(pw, "\r\n");
-        pw_rx_str(pw, txt);
-        pw_rx_str(pw, "\r\n");
-    } else {
-        char b[8];
-        snprintf(b, sizeof(b), "%d\r", code);
         pw_rx_str(pw, b);
+        pw_rx_str(pw, "\r\n");
+        return;
     }
+
+    pw_rx_str(pw, "\r\n");
+    switch (code) {
+        case PW_CONNECT:
+            pw_rx_str(pw, "CONNECT");
+            if (pw->xcode) {
+                char b[16];
+                snprintf(b, sizeof(b), " %d", pw->baud);
+                pw_rx_str(pw, b);
+            }
+            break;
+        case PW_NO_CARRIER:
+            pw_rx_str(pw, "NO CARRIER");
+            if (pw->xcode && pw->connect_time) {
+                long s = (long)(time(NULL) - pw->connect_time);
+                if (s < 0) s = 0;
+                char b[48];
+                snprintf(b, sizeof(b), " (%02ld:%02ld:%02ld)",
+                         s / 3600, (s / 60) % 60, s % 60);
+                pw_rx_str(pw, b);
+            }
+            break;
+        case PW_RING:
+        case PW_RING_IP:   pw_rx_str(pw, "RING");      break;
+        case PW_NO_ANSWER: pw_rx_str(pw, "NO ANSWER"); break;
+        case PW_ERROR:     pw_rx_str(pw, "ERROR");     break;
+        case PW_OK:
+        default:           pw_rx_str(pw, "OK");        break;
+    }
+    pw_rx_str(pw, "\r\n");
+}
+
+/* Emit OK only when the command line is fully consumed (compound lines:
+ * intermediate tokens are silent). Returns the pointer unchanged. */
+static const char* pw_end(picowifi_t* pw, const char* p)
+{
+    if (!*p) pw_result(pw, PW_OK);
+    return p;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Defaults
+ *  Factory defaults (firmware factoryDefaults)
  * ═══════════════════════════════════════════════════════════════════════ */
 
-static void pw_set_defaults(picowifi_t* pw)
+static void pw_factory(picowifi_t* pw, bool keep_creds)
 {
-    /* Networking handles and credentials survive a soft ATZ reset on the
-     * real device (they are stored), so only the session defaults reset. */
-    pw->mode = 0;
-    pw->cmd_len = 0;
-    pw->plus_count = 0;
-    pw->silence = 0;
+    char ssid_save[64], pass_save[64];
+    snprintf(ssid_save, sizeof(ssid_save), "%s", pw->ssid);
+    snprintf(pass_save, sizeof(pass_save), "%s", pw->pass);
+
+    pw->ssid[0] = pw->pass[0] = '\0';
+    snprintf(pw->mdns, sizeof(pw->mdns), "picomodem");
+    pw->baud = PW_DEFAULT_BAUD;
+    snprintf(pw->fmt, sizeof(pw->fmt), "8N1");
+    pw->telnet = 1;                 /* REAL_TELNET */
+    snprintf(pw->tty_type, sizeof(pw->tty_type), "ansi");
+    pw->tty_w = 80; pw->tty_h = 24;
+    snprintf(pw->tty_loc, sizeof(pw->tty_loc), "Computer Room");
+    pw->s0_rings = 0;
+    pw->esc_char = 43;              /* '+' */
     pw->echo = true;
     pw->quiet = false;
-    pw->verbose = true;
-    pw->xcode = 1;
-    pw->s0_rings = 0;
-    pw->esc_char = 43;          /* '+' */
-    pw->telnet = 1;             /* real telnet by default */
+    pw->verbose = true;            /* V1 */
+    pw->xcode = 1;                 /* X1 */
     pw->flow_k = 0;
     pw->dtr_d = 0;
-    if (pw->mdns[0] == '\0')
-        snprintf(pw->mdns, sizeof(pw->mdns), "espmodem");
-    if (pw->fmt[0] == '\0')
-        snprintf(pw->fmt, sizeof(pw->fmt), "8N1");
-    if (pw->baud == 0)
-        pw->baud = 1200;
-    if (pw->tty_type[0] == '\0')
-        snprintf(pw->tty_type, sizeof(pw->tty_type), "ansi");
-    if (pw->tty_w == 0) { pw->tty_w = 80; pw->tty_h = 24; }
-}
-
-/* Reset *everything* to factory state (AT&F). */
-static void pw_factory_reset(picowifi_t* pw)
-{
-    pw->ssid[0] = pw->pass[0] = '\0';
-    pw->mdns[0] = pw->fmt[0] = pw->tty_type[0] = pw->tty_loc[0] = '\0';
-    pw->tty_w = pw->tty_h = 0;
-    pw->baud = 0;
     pw->server_port = 0;
     pw->server_pass[0] = '\0';
     pw->auto_exec[0] = '\0';
     pw->startup_wait = 0;
+
+    /* 3 predefined speed dials (firmware factoryDefaults). The real device
+     * stores a leading '+' on each (forces FAKE_TELNET) — telnet handling
+     * is sprint 47, so the bare host:port is stored for now. */
     for (int i = 0; i < PW_DIAL_SLOTS; i++) pw->dial[i].used = false;
-    pw_set_defaults(pw);
+    pw->dial[0].used = true;
+    snprintf(pw->dial[0].host, sizeof(pw->dial[0].host), "particlesbbs.dyndns.org");
+    pw->dial[0].port = 6400;
+    snprintf(pw->dial[0].alias, sizeof(pw->dial[0].alias), "particles");
+    pw->dial[1].used = true;
+    snprintf(pw->dial[1].host, sizeof(pw->dial[1].host), "altair.virtualaltair.com");
+    pw->dial[1].port = 4667;
+    snprintf(pw->dial[1].alias, sizeof(pw->dial[1].alias), "altair");
+    pw->dial[2].used = true;
+    snprintf(pw->dial[2].host, sizeof(pw->dial[2].host), "heatwave.ddns.net");
+    pw->dial[2].port = 9640;
+    snprintf(pw->dial[2].alias, sizeof(pw->dial[2].alias), "heatwave");
+
+    if (keep_creds) {
+        snprintf(pw->ssid, sizeof(pw->ssid), "%s", ssid_save);
+        snprintf(pw->pass, sizeof(pw->pass), "%s", pass_save);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  Dialing
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* Open a non-blocking TCP connection. Returns fd or -1. */
 static int pw_tcp_connect(const char* host, uint16_t port)
 {
     struct addrinfo hints, *res, *rp;
@@ -289,7 +332,6 @@ static int pw_tcp_connect(const char* host, uint16_t port)
     return fd;
 }
 
-/* Bring the (simulated) WiFi link up if an SSID is configured. */
 static bool pw_wifi_associate(picowifi_t* pw)
 {
     if (pw->ssid[0] == '\0') return false;
@@ -317,14 +359,13 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port)
     pw->sockfd = fd;
     pw->mode = 1;
     pw->plus_count = 0;
-    strncpy(pw->host, host, sizeof(pw->host) - 1);
-    pw->host[sizeof(pw->host) - 1] = '\0';
+    pw->connect_time = time(NULL);
+    snprintf(pw->host, sizeof(pw->host), "%s", host);
     pw->port = port;
     log_info("PicoWiFi: CONNECT %s:%u (fd=%d)", host, port, fd);
     pw_result(pw, PW_CONNECT);
 }
 
-/* Parse "host[:port]" into host/port (default telnet port). */
 static void pw_parse_hostport(const char* s, char* host, size_t hsz, uint16_t* port)
 {
     *port = PW_DEFAULT_PORT;
@@ -338,16 +379,29 @@ static void pw_parse_hostport(const char* s, char* host, size_t hsz, uint16_t* p
         host[hl] = '\0';
         *port = (uint16_t)atoi(colon + 1);
     } else {
-        strncpy(host, s, hsz - 1);
-        host[hsz - 1] = '\0';
+        snprintf(host, hsz, "%s", s);
     }
 }
 
+/* Dial from a raw argument (consumes the rest of the line). */
+static void pw_do_dial(picowifi_t* pw, const char* arg)
+{
+    /* Telnet prefixes +/=/- are skipped for now (sprint 47 will act on
+     * them to force the session telnet mode). */
+    while (*arg == '+' || *arg == '=' || *arg == '-' || *arg == ' ') arg++;
+    char host[256]; uint16_t port;
+    pw_parse_hostport(arg, host, sizeof(host), &port);
+    if (host[0] == '\0' && pw->host[0] != '\0') {  /* redial preset */
+        snprintf(host, sizeof(host), "%s", pw->host);
+        port = pw->port ? pw->port : PW_DEFAULT_PORT;
+    }
+    pw_dial(pw, host, port);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
- *  AT command parser
+ *  AT command parsing
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* Case-insensitive prefix match; returns the tail after the prefix, or NULL. */
 static const char* pw_match(const char* s, const char* prefix)
 {
     size_t n = strlen(prefix);
@@ -355,221 +409,112 @@ static const char* pw_match(const char* s, const char* prefix)
     return NULL;
 }
 
-static void pw_emit_str_line(picowifi_t* pw, const char* s)
+static const char* pw_skip_digits(const char* p)
 {
-    pw_rx_str(pw, "\r\n");
-    pw_rx_str(pw, s);
-    pw_rx_str(pw, "\r\n");
+    while (isdigit((unsigned char)*p)) p++;
+    return p;
 }
 
-static void pw_process_at(picowifi_t* pw, const char* line)
+/* Copy the rest of the line as a string value; returns end-of-line. */
+static const char* pw_setstr(char* dst, size_t dsz, const char* a)
 {
-    /* "A/" repeats the last command (handled before AT stripping). */
-    if ((line[0] == 'A' || line[0] == 'a') && line[1] == '/') {
-        line = pw->last_cmd;
-    } else {
-        strncpy(pw->last_cmd, line, sizeof(pw->last_cmd) - 1);
-        pw->last_cmd[sizeof(pw->last_cmd) - 1] = '\0';
-    }
+    snprintf(dst, dsz, "%s", a);
+    return a + strlen(a);
+}
 
-    /* Strip leading "AT" (the prefix is mandatory on real hardware). */
-    if ((line[0] == 'A' || line[0] == 'a') &&
-        (line[1] == 'T' || line[1] == 't')) {
-        line += 2;
-    } else if (line[0] != '\0') {
-        pw_result(pw, PW_ERROR);
-        return;
-    }
-
-    /* Bare "AT" → OK */
-    if (line[0] == '\0') { pw_result(pw, PW_OK); return; }
-
+/* Dispatch one token. Returns the pointer just past the consumed token
+ * (config commands emit OK only if at end; dial/info emit their own
+ * result), or NULL if the token is unknown. */
+static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
+{
     const char* a;
 
-    /* ── WiFi configuration ── */
-    if ((a = pw_match(line, "$SSID"))) {
-        if (*a == '?') { pw_emit_str_line(pw, pw->ssid); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->ssid, a + 1, sizeof(pw->ssid) - 1);
-            pw->ssid[sizeof(pw->ssid) - 1] = '\0';
-            pw->wifi_up = false;  /* re-associate on next dial */
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
-    }
-    if ((a = pw_match(line, "$PASS"))) {
-        if (*a == '?') { pw_emit_str_line(pw, "********"); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->pass, a + 1, sizeof(pw->pass) - 1);
-            pw->pass[sizeof(pw->pass) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
-    }
-    if ((a = pw_match(line, "$MDNS"))) {
-        if (*a == '?') { pw_emit_str_line(pw, pw->mdns); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->mdns, a + 1, sizeof(pw->mdns) - 1);
-            pw->mdns[sizeof(pw->mdns) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
+    /* AT? — quick help */
+    if (*p == '?') {
+        pw_qval(pw, "PicoWiFiModemUSB AT set: $SSID $PASS C D NET S0 S2 E Q V X &Z &V I");
+        return pw_end(pw, p + 1);
     }
 
-    /* ── Serial parameters ── */
-    if ((a = pw_match(line, "$SB"))) {
-        if (*a == '?') {
-            char b[16]; snprintf(b, sizeof(b), "%d", pw->baud);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a == '=') { pw->baud = atoi(a + 1); pw_result(pw, PW_OK); }
-        else pw_result(pw, PW_ERROR);
-        return;
+    /* ── $ proprietary commands ── (tested before single letters) */
+    if ((a = pw_match(p, "$SSID"))) {
+        if (*a == '?') { pw_qval(pw, pw->ssid); return pw_end(pw, a + 1); }
+        if (*a == '=') { pw->wifi_up = false; return pw_end(pw, pw_setstr(pw->ssid, sizeof(pw->ssid), a + 1)); }
+        return pw_end(pw, a);
     }
-    if ((a = pw_match(line, "$SU"))) {
-        if (*a == '?') { pw_emit_str_line(pw, pw->fmt); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->fmt, a + 1, sizeof(pw->fmt) - 1);
-            pw->fmt[sizeof(pw->fmt) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
+    if ((a = pw_match(p, "$PASS"))) {
+        /* Firmware shows the actual value on query (no masking). */
+        if (*a == '?') { pw_qval(pw, pw->pass); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->pass, sizeof(pw->pass), a + 1)); }
+        return pw_end(pw, a);
     }
-
-    /* ── Telnet terminal ── */
-    if ((a = pw_match(line, "$TTY"))) {
-        if (*a == '?') { pw_emit_str_line(pw, pw->tty_type); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->tty_type, a + 1, sizeof(pw->tty_type) - 1);
-            pw->tty_type[sizeof(pw->tty_type) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
+    if ((a = pw_match(p, "$MDNS"))) {
+        if (*a == '?') { pw_qval(pw, pw->mdns); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->mdns, sizeof(pw->mdns), a + 1)); }
+        return pw_end(pw, a);
     }
-    if ((a = pw_match(line, "$TTS"))) {
+    if ((a = pw_match(p, "$SB"))) {
+        if (*a == '?') { char b[16]; snprintf(b, sizeof(b), "%d", pw->baud); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a == '=') { pw->baud = atoi(a + 1); return pw_end(pw, pw_skip_digits(a + 1)); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "$SU"))) {
+        if (*a == '?') { pw_qval(pw, pw->fmt); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->fmt, sizeof(pw->fmt), a + 1)); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "$TTY"))) {
+        if (*a == '?') { pw_qval(pw, pw->tty_type); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->tty_type, sizeof(pw->tty_type), a + 1)); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "$TTS"))) {
         if (*a == '?') {
             char b[16]; snprintf(b, sizeof(b), "%dx%d", pw->tty_w, pw->tty_h);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a == '=') {
+            pw_qval(pw, b); return pw_end(pw, a + 1);
+        }
+        if (*a == '=') {
             int w = 0, h = 0;
-            if (sscanf(a + 1, "%dx%d", &w, &h) == 2) {
-                pw->tty_w = w; pw->tty_h = h; pw_result(pw, PW_OK);
-            } else pw_result(pw, PW_ERROR);
-        } else pw_result(pw, PW_ERROR);
-        return;
-    }
-    if ((a = pw_match(line, "$TTL"))) {
-        if (*a == '?') { pw_emit_str_line(pw, pw->tty_loc); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->tty_loc, a + 1, sizeof(pw->tty_loc) - 1);
-            pw->tty_loc[sizeof(pw->tty_loc) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
-    }
-
-    /* ── Incoming server ── */
-    if ((a = pw_match(line, "$SP"))) {
-        if (*a == '?') {
-            char b[16]; snprintf(b, sizeof(b), "%u", pw->server_port);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a == '=') { pw->server_port = (uint16_t)atoi(a + 1); pw_result(pw, PW_OK); }
-        else pw_result(pw, PW_ERROR);
-        return;
-    }
-    if ((a = pw_match(line, "$AE"))) {
-        if (*a == '?') { pw_emit_str_line(pw, pw->auto_exec); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->auto_exec, a + 1, sizeof(pw->auto_exec) - 1);
-            pw->auto_exec[sizeof(pw->auto_exec) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
-    }
-    if ((a = pw_match(line, "$W"))) {
-        if (*a == '?') {
-            char b[16]; snprintf(b, sizeof(b), "%d", pw->startup_wait);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a == '=') { pw->startup_wait = atoi(a + 1); pw_result(pw, PW_OK); }
-        else pw_result(pw, PW_ERROR);
-        return;
-    }
-
-    /* ── Dialing ── */
-    if ((a = pw_match(line, "DT")) || (a = pw_match(line, "DP"))) {
-        /* ATDT[+=-]host[:port] — leading +/=/- variants are ignored. */
-        while (*a == '+' || *a == '=' || *a == '-' || *a == ' ') a++;
-        char host[256]; uint16_t port;
-        pw_parse_hostport(a, host, sizeof(host), &port);
-        if (host[0] == '\0' && pw->host[0] != '\0') { /* redial preset */
-            strncpy(host, pw->host, sizeof(host) - 1);
-            host[sizeof(host) - 1] = '\0';
-            port = pw->port ? pw->port : PW_DEFAULT_PORT;
+            if (sscanf(a + 1, "%dx%d", &w, &h) == 2) { pw->tty_w = w; pw->tty_h = h; }
+            return pw_end(pw, a + strlen(a));
         }
-        pw_dial(pw, host, port);
-        return;
+        return pw_end(pw, a);
     }
-    if ((a = pw_match(line, "DS"))) {
-        int n = atoi(a);
-        if (n >= 0 && n < PW_DIAL_SLOTS && pw->dial[n].used) {
-            pw_dial(pw, pw->dial[n].host, pw->dial[n].port);
-        } else {
-            pw_result(pw, PW_NO_CARRIER);
-        }
-        return;
+    if ((a = pw_match(p, "$TTL"))) {
+        if (*a == '?') { pw_qval(pw, pw->tty_loc); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->tty_loc, sizeof(pw->tty_loc), a + 1)); }
+        return pw_end(pw, a);
     }
-    if ((a = pw_match(line, "D"))) {
-        char host[256]; uint16_t port;
-        pw_parse_hostport(a, host, sizeof(host), &port);
-        if (host[0] == '\0' && pw->host[0] != '\0') {
-            strncpy(host, pw->host, sizeof(host) - 1);
-            host[sizeof(host) - 1] = '\0';
-            port = pw->port ? pw->port : PW_DEFAULT_PORT;
-        }
-        pw_dial(pw, host, port);
-        return;
+    if ((a = pw_match(p, "$SP"))) {
+        if (*a == '?') { char b[16]; snprintf(b, sizeof(b), "%u", pw->server_port); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a == '=') { pw->server_port = (uint16_t)atoi(a + 1); return pw_end(pw, pw_skip_digits(a + 1)); }
+        return pw_end(pw, a);
     }
-
-    /* ── WiFi connection control ── */
-    if ((a = pw_match(line, "C"))) {
-        if (*a == '?') {
-            pw_emit_str_line(pw, pw->wifi_up ? "CONNECTED" : "DISCONNECTED");
-            pw_result(pw, PW_OK);
-        } else if (*a == '1') {
-            if (pw_wifi_associate(pw)) pw_result(pw, PW_OK);
-            else pw_result(pw, PW_ERROR);
-        } else if (*a == '0') {
-            pw->wifi_up = false;
-            log_info("PicoWiFi: WiFi disconnected (simulated)");
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
+    if ((a = pw_match(p, "$AE"))) {
+        if (*a == '?') { pw_qval(pw, pw->auto_exec); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->auto_exec, sizeof(pw->auto_exec), a + 1)); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "$W"))) {
+        if (*a == '?') { char b[8]; snprintf(b, sizeof(b), "%d", pw->startup_wait); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a == '=') { pw->startup_wait = atoi(a + 1); return pw_end(pw, pw_skip_digits(a + 1)); }
+        return pw_end(pw, a);
     }
 
-    /* ── Telnet enable ── */
-    if ((a = pw_match(line, "NET"))) {
-        if (*a == '?') {
-            char b[4]; snprintf(b, sizeof(b), "%d", pw->telnet);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a >= '0' && *a <= '2') {
-            pw->telnet = *a - '0'; pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
-    }
-
-    /* ── Speed dial AT&Zn=host[:port],alias ── */
-    if ((a = pw_match(line, "&Z"))) {
-        int n = *a - '0';
-        if (n < 0 || n >= PW_DIAL_SLOTS) { pw_result(pw, PW_ERROR); return; }
+    /* ── & extended commands ── */
+    if ((a = pw_match(p, "&Z"))) {
+        int n = (*a >= '0' && *a <= '9') ? (*a - '0') : -1;
+        if (n < 0) return pw_end(pw, a);
         a++;
         if (*a == '?') {
             if (pw->dial[n].used) {
                 char b[300];
                 snprintf(b, sizeof(b), "%s:%u,%s",
                          pw->dial[n].host, pw->dial[n].port, pw->dial[n].alias);
-                pw_emit_str_line(pw, b);
-            } else pw_emit_str_line(pw, "");
-            pw_result(pw, PW_OK);
-        } else if (*a == '=') {
+                pw_qval(pw, b);
+            } else pw_qval(pw, "");
+            return pw_end(pw, a + 1);
+        }
+        if (*a == '=') {
             a++;
             char hp[256] = {0}, alias[32] = {0};
             const char* comma = strchr(a, ',');
@@ -577,9 +522,9 @@ static void pw_process_at(picowifi_t* pw, const char* line)
                 size_t hl = (size_t)(comma - a);
                 if (hl >= sizeof(hp)) hl = sizeof(hp) - 1;
                 memcpy(hp, a, hl); hp[hl] = '\0';
-                strncpy(alias, comma + 1, sizeof(alias) - 1);
+                snprintf(alias, sizeof(alias), "%s", comma + 1);
             } else {
-                strncpy(hp, a, sizeof(hp) - 1);
+                snprintf(hp, sizeof(hp), "%s", a);
             }
             char host[256]; uint16_t port;
             pw_parse_hostport(hp, host, sizeof(host), &port);
@@ -587,155 +532,190 @@ static void pw_process_at(picowifi_t* pw, const char* line)
             pw->dial[n].port = port;
             snprintf(pw->dial[n].alias, sizeof(pw->dial[n].alias), "%s", alias);
             pw->dial[n].used = true;
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
+            return pw_end(pw, a + strlen(a));
+        }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "&R"))) {
+        if (*a == '?') { pw_qval(pw, pw->server_pass); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->server_pass, sizeof(pw->server_pass), a + 1)); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "&K"))) {
+        if (*a == '?') { char b[4]; snprintf(b, sizeof(b), "%d", pw->flow_k); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a >= '0' && *a <= '1') { pw->flow_k = *a - '0'; return pw_end(pw, a + 1); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "&D"))) {
+        if (*a == '?') { char b[4]; snprintf(b, sizeof(b), "%d", pw->dtr_d); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a >= '0' && *a <= '3') { pw->dtr_d = *a - '0'; return pw_end(pw, a + 1); }
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "&V"))) {
+        if (*a == '0' || *a == '1' || *a == '\0' || *a == ' ') {
+            char b[256];
+            snprintf(b, sizeof(b), "E%d Q%d V%d X%d &K%d &D%d S0=%d S2=%d NET%d",
+                     pw->echo, pw->quiet, pw->verbose, pw->xcode,
+                     pw->flow_k, pw->dtr_d, pw->s0_rings, pw->esc_char, pw->telnet);
+            pw_qval(pw, b);
+            snprintf(b, sizeof(b), "SSID:%s MDNS:%s BAUD:%d FMT:%s TTY:%s %dx%d",
+                     pw->ssid, pw->mdns, pw->baud, pw->fmt,
+                     pw->tty_type, pw->tty_w, pw->tty_h);
+            pw_qval(pw, b);
+        }
+        if (*a == '0' || *a == '1') a++;
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "&W"))) { return pw_end(pw, a); }   /* save: no-op (sprint 49) */
+    if ((a = pw_match(p, "&F"))) { pw_factory(pw, false); return pw_end(pw, a); }
+
+    /* ── Telnet enable ── */
+    if ((a = pw_match(p, "NET"))) {
+        if (*a == '?') { char b[4]; snprintf(b, sizeof(b), "%d", pw->telnet); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a >= '0' && *a <= '2') { pw->telnet = *a - '0'; return pw_end(pw, a + 1); }
+        return pw_end(pw, a);
     }
 
-    /* ── Incoming password AT&R ── */
-    if ((a = pw_match(line, "&R"))) {
-        if (*a == '?') { pw_emit_str_line(pw, "********"); pw_result(pw, PW_OK); }
-        else if (*a == '=') {
-            strncpy(pw->server_pass, a + 1, sizeof(pw->server_pass) - 1);
-            pw->server_pass[sizeof(pw->server_pass) - 1] = '\0';
-            pw_result(pw, PW_OK);
-        } else pw_result(pw, PW_ERROR);
-        return;
+    /* ── Dialing (consumes rest of line, emits own result) ── */
+    if ((a = pw_match(p, "DT")) || (a = pw_match(p, "DP"))) {
+        const char* end = a + strlen(a);
+        pw_do_dial(pw, a);
+        return end;
     }
-
-    /* ── Flow control / DTR ── */
-    if ((a = pw_match(line, "&K"))) {
-        if (*a == '?') {
-            char b[4]; snprintf(b, sizeof(b), "%d", pw->flow_k);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a >= '0' && *a <= '1') { pw->flow_k = *a - '0'; pw_result(pw, PW_OK); }
+    if ((a = pw_match(p, "DS"))) {
+        int n = (*a >= '0' && *a <= '9') ? (*a - '0') : -1;
+        const char* after = pw_skip_digits(a);
+        if (n >= 0 && pw->dial[n].used) pw_dial(pw, pw->dial[n].host, pw->dial[n].port);
         else pw_result(pw, PW_ERROR);
-        return;
+        return after;
     }
-    if ((a = pw_match(line, "&D"))) {
-        if (*a == '?') {
-            char b[4]; snprintf(b, sizeof(b), "%d", pw->dtr_d);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a >= '0' && *a <= '3') { pw->dtr_d = *a - '0'; pw_result(pw, PW_OK); }
-        else pw_result(pw, PW_ERROR);
-        return;
+    if ((a = pw_match(p, "D"))) {
+        const char* end = a + strlen(a);
+        pw_do_dial(pw, a);
+        return end;
     }
 
-    /* ── Profile ── */
-    if ((a = pw_match(line, "&V"))) {
-        char b[256];
-        snprintf(b, sizeof(b), "E%d Q%d V%d X%d &K%d &D%d S0=%d S2=%d NET%d",
-                 pw->echo, pw->quiet, pw->verbose, pw->xcode,
-                 pw->flow_k, pw->dtr_d, pw->s0_rings, pw->esc_char, pw->telnet);
-        pw_emit_str_line(pw, b);
-        snprintf(b, sizeof(b), "SSID:%s MDNS:%s BAUD:%d FMT:%s TTY:%s %dx%d",
-                 pw->ssid, pw->mdns, pw->baud, pw->fmt,
-                 pw->tty_type, pw->tty_w, pw->tty_h);
-        pw_emit_str_line(pw, b);
-        pw_result(pw, PW_OK);
-        return;
+    /* ── Network utilities (stubbed — sprint 48) ── */
+    if ((a = pw_match(p, "GET"))) {
+        pw_qval(pw, "(ATGET not supported in emulation)");
+        return pw_end(pw, a + strlen(a));
     }
-    if (pw_match(line, "&W")) { pw_result(pw, PW_OK); return; }  /* save: no-op */
-    if (pw_match(line, "&F")) { pw_factory_reset(pw); pw_result(pw, PW_OK); return; }
+    if ((a = pw_match(p, "RD")) || (a = pw_match(p, "RT"))) {
+        pw_qval(pw, "1970-01-01 00:00:00 UTC (no clock)");
+        return pw_end(pw, a);
+    }
+
+    /* ── WiFi connection control ── */
+    if ((a = pw_match(p, "C"))) {
+        if (*a == '?') {
+            pw_rx_str(pw, "\r\n");
+            pw_rx_push(pw, pw->wifi_up ? '1' : '0');
+            pw_rx_str(pw, "\r\n");
+            return pw_end(pw, a + 1);
+        }
+        if (*a == '1') {
+            if (pw_wifi_associate(pw)) return pw_end(pw, a + 1);
+            pw_result(pw, PW_ERROR);
+            return a + 1;
+        }
+        if (*a == '0') { pw->wifi_up = false; return pw_end(pw, a + 1); }
+        pw->wifi_up = false;           /* ATC alone → disconnect */
+        return pw_end(pw, a);
+    }
 
     /* ── S-registers ── */
-    if ((a = pw_match(line, "S0"))) {
-        if (*a == '?') {
-            char b[8]; snprintf(b, sizeof(b), "%d", pw->s0_rings);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a == '=') { pw->s0_rings = atoi(a + 1); pw_result(pw, PW_OK); }
-        else pw_result(pw, PW_ERROR);
-        return;
+    if ((a = pw_match(p, "S0"))) {
+        if (*a == '?') { char b[8]; snprintf(b, sizeof(b), "%d", pw->s0_rings); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a == '=') { pw->s0_rings = atoi(a + 1); return pw_end(pw, pw_skip_digits(a + 1)); }
+        return pw_end(pw, a);
     }
-    if ((a = pw_match(line, "S2"))) {
-        if (*a == '?') {
-            char b[8]; snprintf(b, sizeof(b), "%d", pw->esc_char);
-            pw_emit_str_line(pw, b); pw_result(pw, PW_OK);
-        } else if (*a == '=') { pw->esc_char = atoi(a + 1); pw_result(pw, PW_OK); }
-        else pw_result(pw, PW_ERROR);
-        return;
+    if ((a = pw_match(p, "S2"))) {
+        if (*a == '?') { char b[8]; snprintf(b, sizeof(b), "%d", pw->esc_char); pw_qval(pw, b); return pw_end(pw, a + 1); }
+        if (*a == '=') { pw->esc_char = atoi(a + 1); return pw_end(pw, pw_skip_digits(a + 1)); }
+        return pw_end(pw, a);
     }
 
     /* ── Result-code formatting ── */
-    if ((a = pw_match(line, "E"))) {
-        pw->echo = (*a != '0');
-        pw_result(pw, PW_OK);
-        return;
-    }
-    if ((a = pw_match(line, "Q"))) {
-        pw->quiet = (*a == '1');
-        pw_result(pw, PW_OK);
-        return;
-    }
-    if ((a = pw_match(line, "V"))) {
-        pw->verbose = (*a != '0');
-        pw_result(pw, PW_OK);
-        return;
-    }
-    if ((a = pw_match(line, "X"))) {
-        pw->xcode = (*a == '0') ? 0 : 1;
-        pw_result(pw, PW_OK);
-        return;
-    }
+    if ((a = pw_match(p, "E"))) { pw->echo = (*a != '0'); return pw_end(pw, (*a == '0' || *a == '1') ? a + 1 : a); }
+    if ((a = pw_match(p, "Q"))) { pw->quiet = (*a == '1'); return pw_end(pw, (*a == '0' || *a == '1') ? a + 1 : a); }
+    if ((a = pw_match(p, "V"))) { pw->verbose = (*a != '0'); return pw_end(pw, (*a == '0' || *a == '1') ? a + 1 : a); }
+    if ((a = pw_match(p, "X"))) { pw->xcode = (*a == '0') ? 0 : 1; return pw_end(pw, (*a == '0' || *a == '1') ? a + 1 : a); }
 
-    /* ── Hangup / answer / online ── */
-    if (pw_match(line, "H")) {
-        if (pw->sockfd >= 0) {
-            close(pw->sockfd);
-            pw->sockfd = -1;
-            log_info("PicoWiFi: hangup");
-        }
+    /* ── Hangup / online / answer / info / reset ── */
+    if ((a = pw_match(p, "H"))) {
+        if (pw->sockfd >= 0) { close(pw->sockfd); pw->sockfd = -1; log_info("PicoWiFi: hangup"); }
         pw->mode = 0;
-        pw_result(pw, PW_OK);
-        return;
+        return pw_end(pw, (*a == '0') ? a + 1 : a);
     }
-    if (pw_match(line, "O")) {
+    if ((a = pw_match(p, "O"))) {
         if (pw->sockfd >= 0) { pw->mode = 1; pw_result(pw, PW_CONNECT); }
         else pw_result(pw, PW_NO_CARRIER);
-        return;
+        return a;
     }
-    if (pw_match(line, "A")) {
-        /* ATA: answer an incoming connection (none in this emulation). */
-        pw_result(pw, PW_NO_CARRIER);
-        return;
+    if ((a = pw_match(p, "A"))) {
+        pw_result(pw, PW_NO_CARRIER);   /* no incoming call in this emulation */
+        return a;
     }
-
-    /* ── Info ── */
-    if (pw_match(line, "I")) {
+    if ((a = pw_match(p, "I"))) {
         char b[160];
-        pw_emit_str_line(pw, "PicoWiFiModemUSB (emulated)");
+        pw_qval(pw, "PicoWiFiModemUSB (emulated)");
         snprintf(b, sizeof(b), "Firmware v%s", PW_FW_VERSION);
-        pw_emit_str_line(pw, b);
+        pw_qval(pw, b);
         snprintf(b, sizeof(b), "WiFi: %s %s",
                  pw->ssid[0] ? pw->ssid : "(not configured)",
                  pw->wifi_up ? "UP" : "DOWN");
-        pw_emit_str_line(pw, b);
-        pw_emit_str_line(pw, "IP: 192.168.0.42 (simulated)");
-        pw_result(pw, PW_OK);
+        pw_qval(pw, b);
+        pw_qval(pw, "IP: 192.168.0.42 (simulated)");
+        return pw_end(pw, a);
+    }
+    if ((a = pw_match(p, "Z"))) {
+        /* Firmware ATZ is a no-op (a hard reset would drop USB). */
+        return pw_end(pw, a);
+    }
+
+    return NULL;   /* unknown token */
+}
+
+static void pw_process_at(picowifi_t* pw, const char* raw)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s", raw);
+
+    /* Trim trailing whitespace, then leading. */
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n - 1] == ' ' || buf[n - 1] == '\t')) buf[--n] = '\0';
+    char* line = buf;
+    while (*line == ' ' || *line == '\t') line++;
+
+    /* A/ repeats the last command (no AT prefix, no CR on real hw). */
+    if ((line[0] == 'A' || line[0] == 'a') && line[1] == '/') {
+        snprintf(buf, sizeof(buf), "%s", pw->last_cmd);
+        line = buf;
+    } else {
+        snprintf(pw->last_cmd, sizeof(pw->last_cmd), "%s", line);
+    }
+
+    /* Mandatory AT prefix. */
+    if ((line[0] == 'A' || line[0] == 'a') && (line[1] == 'T' || line[1] == 't')) {
+        line += 2;
+    } else if (line[0] != '\0') {
+        pw_result(pw, PW_ERROR);
         return;
     }
 
-    /* ── Time / HTTP (simulated, no real internet service) ── */
-    if (pw_match(line, "RD") || pw_match(line, "RT")) {
-        pw_emit_str_line(pw, "1970-01-01 00:00:00 UTC (no clock)");
-        pw_result(pw, PW_OK);
-        return;
-    }
-    if (pw_match(line, "GET")) {
-        pw_emit_str_line(pw, "(ATGET not supported in emulation)");
-        pw_result(pw, PW_OK);
-        return;
-    }
+    /* Bare AT → OK */
+    if (line[0] == '\0') { pw_result(pw, PW_OK); return; }
 
-    /* ── Reset ── */
-    if (pw_match(line, "Z")) {
-        pw_set_defaults(pw);
-        pw_result(pw, PW_OK);
-        return;
+    /* Compound command loop: each token consumes its args; only the last
+     * emits a result; an unknown token aborts the whole line with ERROR. */
+    const char* p = line;
+    while (*p) {
+        const char* next = pw_dispatch_one(pw, p);
+        if (!next || next == p) { pw_result(pw, PW_ERROR); return; }
+        p = next;
+        while (*p == ' ') p++;
+        if (pw->mode == 1) break;   /* a dial switched us to data mode */
     }
-
-    /* Unknown */
-    pw_result(pw, PW_ERROR);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -753,7 +733,14 @@ static bool picowifi_open(serial_backend_t* self)
     pw->rx_head = pw->rx_tail = pw->rx_count = 0;
     pw->sockfd = -1;
     pw->listen_fd = -1;
-    pw_set_defaults(pw);
+    pw->mode = 0;
+    pw->cmd_len = 0;
+    pw->plus_count = 0;
+    pw->silence = 0;
+    pw->connect_time = 0;
+    /* Apply factory defaults, preserving any CLI-supplied credentials
+     * (firmware: boot loads NVRAM; we have none yet → factory defaults). */
+    pw_factory(pw, true);
     log_info("PicoWiFi: backend opened (SSID:%s)",
              pw->ssid[0] ? pw->ssid : "(unset)");
     return true;
@@ -778,8 +765,10 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
 
     /* ── Data mode ── */
     if (pw->mode == 1) {
-        /* +++ escape with guard time (escape char is S2-configurable). */
-        if ((int)byte == pw->esc_char && pw->silence >= 50) {
+        /* +++ escape with guard time (escape char is S2-configurable;
+         * values >= 128 disable the escape per firmware). Real 1 s guard
+         * timing is sprint 47; this is a poll-count approximation. */
+        if (pw->esc_char < 128 && (int)byte == pw->esc_char && pw->silence >= 50) {
             pw->plus_count++;
             if (pw->plus_count >= 3) {
                 pw->mode = 0;
@@ -793,7 +782,6 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
             pw->silence = 0;
             return true;
         }
-        /* Flush any pending escape chars that turned out to be data. */
         if (pw->sockfd >= 0 && pw->plus_count > 0) {
             uint8_t e = (uint8_t)pw->esc_char;
             for (int i = 0; i < pw->plus_count && i < 3; i++)
@@ -803,8 +791,8 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
         pw->silence = 0;
 
         if (pw->sockfd >= 0) {
-            ssize_t n = pw_write(pw->sockfd, &byte, 1);
-            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            ssize_t r = pw_write(pw->sockfd, &byte, 1);
+            if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
                 log_info("PicoWiFi: write error, carrier lost");
                 close(pw->sockfd);
                 pw->sockfd = -1;
@@ -841,10 +829,10 @@ static bool picowifi_recv(serial_backend_t* self, uint8_t* byte)
 
     if (pw->mode == 1 && pw->sockfd >= 0) {
         uint8_t tmp[256];
-        ssize_t n = pw_read(pw->sockfd, tmp, sizeof(tmp));
-        if (n > 0) {
-            for (ssize_t i = 0; i < n; i++) pw_rx_push(pw, tmp[i]);
-        } else if (n == 0) {
+        ssize_t r = pw_read(pw->sockfd, tmp, sizeof(tmp));
+        if (r > 0) {
+            for (ssize_t i = 0; i < r; i++) pw_rx_push(pw, tmp[i]);
+        } else if (r == 0) {
             log_info("PicoWiFi: peer closed connection");
             close(pw->sockfd);
             pw->sockfd = -1;
@@ -884,8 +872,8 @@ serial_backend_t* serial_backend_picowifi_create(const char* ssid, const char* p
     picowifi_t* pw = calloc(1, sizeof(picowifi_t));
     if (!pw) { free(b); return NULL; }
 
-    if (ssid) { strncpy(pw->ssid, ssid, sizeof(pw->ssid) - 1); }
-    if (pass) { strncpy(pw->pass, pass, sizeof(pw->pass) - 1); }
+    if (ssid) snprintf(pw->ssid, sizeof(pw->ssid), "%s", ssid);
+    if (pass) snprintf(pw->pass, sizeof(pw->pass), "%s", pass);
 
     b->type = SERIAL_BACKEND_PICOWIFI;
     b->open = picowifi_open;

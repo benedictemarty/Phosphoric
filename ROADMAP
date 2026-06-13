@@ -368,30 +368,28 @@ la **fidélité comportementale**. Périmètre = reproduire le firmware réel ;
 toute extension au-delà (ex. proxy TLS) est explicitement hors-périmètre
 (voir Future Enhancements).
 
-### Sprint 46: PicoWiFi — défauts + codes résultat + parsing composé (PLANNED)
+### Sprint 46: PicoWiFi — défauts + codes résultat + parsing composé (v1.17.1-alpha) - DONE
 
 Corrige les divergences vs le code source (l'impl sprint 45 suivait le
-README, qui est partiellement obsolète/hérité de l'ancêtre ESP8266).
+README, partiellement obsolète/hérité de l'ancêtre ESP8266).
 
-- [ ] **Défauts d'usine corrects** (`factoryDefaults`) : mDNS `picomodem`
+- [x] **Défauts d'usine corrects** (`factoryDefaults`) : mDNS `picomodem`
       (PAS `espmodem`), baud `9600` (PAS 1200), location `Computer Room`,
       terminal `ansi`, NET1, X1, V1, S2=43, 8N1
-- [ ] **3 numéros rapides préchargés** : slot 0 `particles`/
-      `+particlesbbs.dyndns.org:6400`, slot 1 `altair`/
-      `altair.virtualaltair.com:4667`, slot 2 `heatwave`/`heatwave.ddns.net:9640`
-- [ ] **Enum codes résultat fidèle** : R_OK=0, R_CONNECT=1, R_RING=2,
-      R_NO_CARRIER=3, R_ERROR=4, R_NO_ANSWER=5, R_RING_IP=6 (retirer
+- [x] **3 numéros rapides préchargés** : slot 0 `particles`, slot 1
+      `altair`, slot 2 `heatwave` (préfixe telnet `+` reporté au sprint 47)
+- [x] **Enum codes résultat fidèle** : R_OK=0, R_CONNECT=1, R_RING=2,
+      R_NO_CARRIER=3, R_ERROR=4, R_NO_ANSWER=5, R_RING_IP=6 (retiré
       NO_DIALTONE/BUSY inventés)
-- [ ] **Parsing de commandes composées** (`ATS0=1 X1 Q0`) : boucle de
-      tokens, seul le DERNIER token émet OK/valeur, token inconnu → ERROR
-      (vide la ligne), respecter l'ordre des tests de préfixes du firmware
-- [ ] **`ATC?` numérique** (`0`/`1`, un caractère) au lieu de texte
-- [ ] **`ATX` effectif** : `CONNECT <serialSpeed>` et
-      `NO CARRIER (HH:MM:SS)` en X1, formes simples en X0
-- [ ] **`AT$PASS?`** affiche la vraie valeur (firmware ne masque pas) —
-      OU garder le masquage comme déviation sécurité documentée (à trancher)
-- [ ] **`ATZ`** = no-op `OK` (le firmware ne reset pas : casserait l'USB)
-- [ ] Tests : parsing composé, défauts, formats de codes (make test-picowifi)
+- [x] **Parsing de commandes composées** (`ATS0=1 X1 Q0`) : boucle de
+      tokens, seul le DERNIER émet OK/valeur, token inconnu → ERROR
+- [x] **`ATC?` numérique** (`0`/`1`) au lieu de texte
+- [x] **`ATX` effectif** : `CONNECT <baud>` et `NO CARRIER (HH:MM:SS)` en
+      X1, formes simples en X0
+- [x] **`AT$PASS?`** affiche la vraie valeur (fidèle au firmware)
+- [x] **`ATZ`** = no-op `OK` (le firmware ne reset pas : casserait l'USB)
+- [x] Tests : 5 nouveaux (défauts, numéros rapides, ligne composée, token
+      inconnu), 33 picowifi / 556 total
 
 ### Sprint 47: PicoWiFi — protocole Telnet (cœur de la fidélité) (PLANNED)
 

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.1-alpha] - 2026-06-13
+
+### Sprint 46 — PicoWiFi : fidélité au firmware réel
+
+Après audit du code source réel (clone `sodiumlb/PicoWiFiModemUSB`),
+correction des divergences du backend sprint 45 (qui suivait le README,
+partiellement obsolète) et ajout du comportement structurant.
+
+#### Fixed
+
+- **Défauts d'usine fidèles** : mDNS `picomodem` (et non `espmodem`),
+  baud `9600` (et non 1200), location `Computer Room`, terminal `ansi`,
+  format `8N1`, NET1, X1, V1, S2=43 — alignés sur `factoryDefaults`.
+- **3 numéros rapides préchargés** : slot 0 `particles`, slot 1 `altair`,
+  slot 2 `heatwave` (comme le firmware).
+- **Enum codes résultat fidèle** : R_OK=0…R_ERROR=4, **R_NO_ANSWER=5,
+  R_RING_IP=6** (remplace les NO_DIALTONE/BUSY inventés au sprint 45).
+- **`ATC?` numérique** (`0`/`1`) au lieu de `CONNECTED`/`DISCONNECTED`.
+- **`AT$PASS?`** affiche la vraie valeur (le firmware ne masque pas).
+- **`ATZ`** = no-op `OK` (un reset matériel couperait l'USB).
+
+#### Added
+
+- **Commandes composées** (`ATS0=1 X1 Q0`) : boucle de tokens, seul le
+  dernier émet un résultat, un token inconnu interrompt la ligne avec
+  ERROR — fidèle à `doAtCmds()`.
+- **`ATX` effectif** : `CONNECT <baud>` et `NO CARRIER (HH:MM:SS)` en X1,
+  formes simples en X0.
+- **5 nouveaux tests** (33 au total pour picowifi) : défauts picomodem/
+  9600/Computer Room, numéros rapides préchargés, ligne composée, token
+  inconnu dans une ligne composée.
+
+#### Notes
+
+- Reste en backlog (ROADMAP) : protocole Telnet/IAC (sprint 47), ATGET/
+  ATRD réels (48), persistance NVRAM (49).
+
 ## [1.17.0-alpha] - 2026-06-13
 
 ### Sprint 45 — PicoWiFiModemUSB (modem WiFi LOCI)

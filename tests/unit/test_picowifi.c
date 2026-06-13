@@ -116,22 +116,74 @@ TEST(test_ssid_preset_from_factory) {
     pw_teardown();
 }
 
-TEST(test_password_masked_on_query) {
+TEST(test_password_query_shows_value) {
+    /* Sprint 46: firmware shows the actual password (no masking). */
     pw_setup(NULL, NULL);
     char r[512];
     pw_cmd("AT$PASS=hunter2", r, sizeof(r));
     ASSERT_CONTAINS(r, "OK");
     pw_cmd("AT$PASS?", r, sizeof(r));
-    ASSERT_NOT_CONTAINS(r, "hunter2");
-    ASSERT_CONTAINS(r, "*");
+    ASSERT_CONTAINS(r, "hunter2");
     pw_teardown();
 }
 
-TEST(test_mdns_default_espmodem) {
+TEST(test_mdns_default_picomodem) {
+    /* Sprint 46: firmware factory default is "picomodem", not "espmodem". */
     pw_setup(NULL, NULL);
     char r[512];
     pw_cmd("AT$MDNS?", r, sizeof(r));
-    ASSERT_CONTAINS(r, "espmodem");
+    ASSERT_CONTAINS(r, "picomodem");
+    pw_teardown();
+}
+
+TEST(test_baud_default_9600) {
+    /* Sprint 46: firmware DEFAULT_SPEED is 9600. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$SB?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "9600");
+    pw_teardown();
+}
+
+TEST(test_location_default_computer_room) {
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$TTL?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "Computer Room");
+    pw_teardown();
+}
+
+TEST(test_predefined_speed_dials) {
+    /* Sprint 46: 3 factory speed dials (particles/altair/heatwave). */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT&Z0?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "particles");
+    pw_cmd("AT&Z1?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "altair");
+    pw_cmd("AT&Z2?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "heatwave");
+    pw_teardown();
+}
+
+TEST(test_compound_command_line) {
+    /* Sprint 46: "ATS0=7 NET0" applies BOTH settings, emits ONE OK. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATS0=7 NET0", r, sizeof(r));
+    ASSERT_CONTAINS(r, "OK");
+    pw_cmd("ATS0?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "7");
+    pw_cmd("ATNET?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "0");
+    pw_teardown();
+}
+
+TEST(test_compound_unknown_token_errors) {
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("ATE0 WXYZ Q0", r, sizeof(r));   /* WXYZ unknown → whole line ERROR */
+    ASSERT_CONTAINS(r, "ERROR");
     pw_teardown();
 }
 
@@ -163,7 +215,7 @@ TEST(test_echo_off_ate0) {
     pw_cmd("AT$MDNS?", r, sizeof(r));
     /* With echo off the command itself must not be echoed back */
     ASSERT_NOT_CONTAINS(r, "MDNS");
-    ASSERT_CONTAINS(r, "espmodem");
+    ASSERT_CONTAINS(r, "picomodem");
     pw_teardown();
 }
 
@@ -219,8 +271,8 @@ TEST(test_speed_dial_store_and_query) {
 TEST(test_dial_speed_slot_empty) {
     pw_setup("Net", NULL);
     char r[512];
-    pw_cmd("ATDS5", r, sizeof(r));   /* empty slot → NO CARRIER */
-    ASSERT_CONTAINS(r, "NO CARRIER");
+    pw_cmd("ATDS5", r, sizeof(r));   /* empty slot → ERROR (firmware) */
+    ASSERT_CONTAINS(r, "ERROR");
     pw_teardown();
 }
 
@@ -233,12 +285,14 @@ TEST(test_dial_no_ssid_no_carrier) {
 }
 
 TEST(test_wifi_connect_status) {
+    /* Sprint 46: ATC? returns numeric 0/1 (firmware), not text. */
     pw_setup("MyNet", "pw");
     char r[512];
     pw_cmd("ATC1", r, sizeof(r));    /* associate */
     ASSERT_CONTAINS(r, "OK");
     pw_cmd("ATC?", r, sizeof(r));
-    ASSERT_CONTAINS(r, "CONNECTED");
+    ASSERT_CONTAINS(r, "1");
+    ASSERT_NOT_CONTAINS(r, "CONNECTED");
     pw_teardown();
 }
 
@@ -306,18 +360,21 @@ TEST(test_repeat_last_command) {
     pw_setup(NULL, NULL);
     char r[512];
     pw_cmd("AT$MDNS?", r, sizeof(r));
-    pw_cmd("A/", r, sizeof(r));      /* repeat → espmodem again */
-    ASSERT_CONTAINS(r, "espmodem");
+    pw_cmd("A/", r, sizeof(r));      /* repeat → picomodem again */
+    ASSERT_CONTAINS(r, "picomodem");
     pw_teardown();
 }
 
-TEST(test_atz_resets_session_defaults) {
+TEST(test_atz_is_noop) {
+    /* Sprint 46: firmware ATZ does NOT reset (would drop USB) — just OK.
+     * So a prior ATV0 (numeric) stays in effect after ATZ. */
     pw_setup(NULL, NULL);
     char r[512];
-    pw_cmd("ATV0", r, sizeof(r));    /* numeric */
-    pw_cmd("ATZ", r, sizeof(r));     /* reset → verbose restored */
+    pw_cmd("ATV0", r, sizeof(r));    /* numeric result codes */
+    pw_cmd("ATZ", r, sizeof(r));     /* no-op */
     pw_cmd("AT", r, sizeof(r));
-    ASSERT_CONTAINS(r, "OK");        /* verbose form back */
+    ASSERT_CONTAINS(r, "0");         /* still numeric, ATZ did not restore V1 */
+    ASSERT_NOT_CONTAINS(r, "OK");
     pw_teardown();
 }
 
@@ -361,8 +418,13 @@ int main(void) {
     RUN(test_bare_at_ok);
     RUN(test_ssid_set_and_query);
     RUN(test_ssid_preset_from_factory);
-    RUN(test_password_masked_on_query);
-    RUN(test_mdns_default_espmodem);
+    RUN(test_password_query_shows_value);
+    RUN(test_mdns_default_picomodem);
+    RUN(test_baud_default_9600);
+    RUN(test_location_default_computer_room);
+    RUN(test_predefined_speed_dials);
+    RUN(test_compound_command_line);
+    RUN(test_compound_unknown_token_errors);
     RUN(test_numeric_result_codes_atv0);
     RUN(test_quiet_mode_atq1);
     RUN(test_echo_off_ate0);
@@ -382,7 +444,7 @@ int main(void) {
     RUN(test_save_profile_atw_ok);
     RUN(test_view_profile_atv_amp);
     RUN(test_repeat_last_command);
-    RUN(test_atz_resets_session_defaults);
+    RUN(test_atz_is_noop);
     RUN(test_baud_set_and_query);
     RUN(test_flow_control_amp_k);
     RUN(test_backend_type_tag);

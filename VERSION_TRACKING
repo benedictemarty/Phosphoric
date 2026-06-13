@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.17.0-alpha
+Current Version: 1.17.1-alpha
 Release Date: 2026-06-13
-Status: Alpha (Sprint 45 — PicoWiFiModemUSB : backend --serial picowifi[:SSID[:PASS]], jeu AT v0.1.0 complet (WiFi/telnet/numéros rapides/registres S/codes résultat), ACIA $0380 sous --loci ; 551 tests) ; précédent : (Sprint 38 — Trace FDC opt-in + fix dump RAM 64 Ko ; 523 tests)
+Status: Alpha (Sprint 46 — PicoWiFi fidélité firmware : défauts corrects (picomodem/9600/Computer Room), 3 numéros rapides préchargés, enum codes résultat fidèle, commandes composées, ATC? numérique, ATX effectif, ATZ no-op ; 556 tests) ; précédent : (Sprint 45 — PicoWiFiModemUSB : backend --serial picowifi, jeu AT v0.1.0 ; 551 tests)
 
 Version History:
 ----------------
+- 1.17.1-alpha (2026-06-13): Sprint 46 — **PicoWiFi fidélité au firmware réel** (audit clone sodiumlb/PicoWiFiModemUSB → corrige les divergences du sprint 45 : défauts mDNS picomodem/baud 9600/location Computer Room, 3 numéros rapides préchargés particles/altair/heatwave, enum codes résultat fidèle R_NO_ANSWER=5/R_RING_IP=6, ATC? numérique 0/1, AT$PASS? non masqué, ATZ no-op ; commandes composées ATS0=1 X1 Q0 avec boucle de tokens et résultat uniquement sur le dernier token ; ATX effectif CONNECT <baud>/NO CARRIER HH:MM:SS ; 5 nouveaux tests, 33 picowifi ; backlog 47-49 telnet/réseau/NVRAM), 556 tests PASS
 - 1.17.0-alpha (2026-06-13): Sprint 45 — **PicoWiFiModemUSB (modem WiFi LOCI)** (émulation du PicoWiFiModemUSB de sodiumlb : Pico W pont USB CDC ↔ WiFi exposée par LOCI comme ACIA à $0380 ; backend dédié src/io/serial_picowifi.c SERIAL_BACKEND_PICOWIFI, --serial picowifi[:SSID[:PASS]] ; jeu AT v0.1.0 complet : AT$SSID/$PASS/$MDNS, ATDT/ATDS/ATD TCP, ATNET telnet, AT$SB/$SU série, S0/S2, ATE/Q/V/X codes résultat, AT&K/&D flux, AT&Z numéros rapides, AT$SP/&R serveur, AT&V/&W/&F profil, ATI infos, +++ gardé, A/ répétition ; WiFi simulé, data = vrai TCP ; 28 nouveaux tests make test-picowifi ; réf github.com/sodiumlb/PicoWiFiModemUSB v0.1.0), 551 tests PASS
 - 1.16.84-alpha (2026-06-12): Sprint 38 — **Trace FDC opt-in `FDC_TRACE=1`** (écritures registres avec PC 6502 + cycle, SEEK avec état interne, READ piste/secteur — a rétracté le faux bug WD1793 « track+1 » de SCUMM-Oric) + **fix `--dump-ram-at` 64 Ko** (régression 48 Ko ; $C000-$FFFF = vue CPU bankée), suite complète PASS (profil sans SDL2)
 - 1.16.83-alpha (2026-06-12): Sprint 37 — **Fix modèle IJK** (port imprimante = VIA Port A direct : enable PB4 bas, select broches 6-7, layout réel R/L/F/D/U sur bits 0-4, bit 5 présence ; wired-AND porta_read dans via_read ; suppression du blending clavier PSG ; 7 nouveaux tests dont rejeu de la séquence 6502), suite complète PASS
