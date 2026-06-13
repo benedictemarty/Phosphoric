@@ -587,6 +587,25 @@ TEST(test_unlink_removes_file) {
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
 }
 
+/* Sprint 36g — UNLINK on an empty directory must succeed (FatFs f_unlink()
+ * removes both files and empty directories on real LOCI firmware). */
+TEST(test_unlink_removes_empty_directory) {
+    char* tmpdir = make_tmpdir();
+    char subdir[300];
+    snprintf(subdir, sizeof(subdir), "%s/empty_sub", tmpdir);
+    mkdir(subdir, 0755);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "empty_sub");
+    loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    ASSERT_TRUE(access(subdir, F_OK) != 0);
+
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
 TEST(test_close_bad_fd_returns_ebadf) {
     loci_t l; loci_init(&l);
     l.enabled = true;
@@ -1118,6 +1137,28 @@ TEST(test_op_unlink_missing_enoent) {
     loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
     ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+/* Sprint 36g — UNLINK on a non-empty directory must fail with LOCI_EACCES
+ * (rmdir() ENOTEMPTY) and leave the directory and its contents intact. */
+TEST(test_unlink_nonempty_directory_returns_eacces) {
+    char* tmpdir = make_tmpdir();
+    char subdir[300], inner_path[400];
+    snprintf(subdir, sizeof(subdir), "%s/full_sub", tmpdir);
+    mkdir(subdir, 0755);
+    snprintf(inner_path, sizeof(inner_path), "%s/inner.txt", subdir);
+    FILE* fp = fopen(inner_path, "wb"); fputc('!', fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, "full_sub");
+    loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
+    ASSERT_EQ(errno_lo(&l), LOCI_EACCES);
+    ASSERT_TRUE(access(subdir, F_OK) == 0);
+
+    unlink(inner_path); rmdir(subdir); rmdir(tmpdir);
+    loci_cleanup(&l); free(tmpdir);
 }
 
 TEST(test_op_rename_missing_enoent) {
@@ -2940,6 +2981,7 @@ int main(void) {
     RUN(test_xstack_512_bytes_capacity);
     RUN(test_read_xstack_count_above_256);
     RUN(test_unlink_removes_file);
+    RUN(test_unlink_removes_empty_directory);
     RUN(test_close_bad_fd_returns_ebadf);
     RUN(test_fd_exhaustion_emfile);
     RUN(test_xram_window0_read_advances);
@@ -2965,6 +3007,7 @@ int main(void) {
     RUN(test_op_lseek_bad_fd_ebadf);
     RUN(test_op_lseek_bad_whence_einval);
     RUN(test_op_unlink_missing_enoent);
+    RUN(test_unlink_nonempty_directory_returns_eacces);
     RUN(test_op_rename_missing_enoent);
     RUN(test_op_rename_renames_existing);
     RUN(test_op_readdir_bad_fd_ebadf);

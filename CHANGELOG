@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.83-alpha] - 2026-06-13
+
+### Sprint 36g — Fix UNLINK sur répertoire vide (backend hostfs)
+
+Trouvé via le harness de test locifilemanager-v2 (client LOCI Oric Atmos) :
+le déplacement récursif de répertoire laissait derrière lui l'arborescence
+source désormais vide, car `op_unlink` échouait silencieusement sur les
+répertoires.
+
+#### Fixed
+
+- **`op_unlink` (hostfs, `loci_fs.c`)** : appelait `unlink()` nu, qui renvoie
+  `EISDIR` sur un répertoire sous Linux. Le firmware LOCI réel (`f_unlink()`
+  de FatFs) supprime à la fois les fichiers et les répertoires vides —
+  `op_unlink` détecte désormais un répertoire via `stat()` et utilise
+  `rmdir()` dans ce cas.
+- **`map_errno`** : `ENOTEMPTY` → `LOCI_EACCES` (répertoire non vide, comme
+  le firmware réel pour une suppression refusée).
+- 2 nouveaux tests unitaires (`test_unlink_removes_empty_directory`,
+  `test_unlink_nonempty_directory_returns_eacces` ; 152 au total sur
+  test-loci).
+
+#### Scope/Limitation
+
+- Le backend `loci_sdimg_unlink()` (image `.dsk`, `loci_sdimg.c`) renvoie
+  toujours `-EISDIR` pour les répertoires et n'est pas concerné par ce
+  correctif — hors scope, aucun client connu n'utilise UNLINK sur répertoire
+  via une image `.dsk` montée.
+
 ## [1.16.82-alpha] - 2026-06-12
 
 ### Sprint 36f — Backlog conformité LOCI : console UART, TAP bas niveau, ACIA $0380

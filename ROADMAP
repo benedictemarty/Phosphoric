@@ -795,6 +795,13 @@ Référence : `docs/control_protocol.md`
 - [ ] `bread <addr> <len>` (framing binaire) — reporté à 35c selon scope
 - [ ] Client de référence Python (livré par OricForge en parallèle)
 
+### Sprint 36g: Fix UNLINK sur répertoire vide — backend hostfs (v1.16.83-alpha) - DONE
+- [x] Found while building Phosphoric-based test harness for locifilemanager-v2 (recursive directory move test) : le move récursif laissait derrière lui l'arborescence source vide
+- [x] Root cause : `op_unlink` (hostfs, `loci_fs.c`) appelait `unlink()` nu, qui renvoie `EISDIR` sur un répertoire sous Linux ; le firmware LOCI réel (`f_unlink()` FatFs) supprime fichiers ET répertoires vides
+- [x] Fix : `op_unlink` détecte un répertoire via `stat()` et appelle `rmdir()` dans ce cas ; `map_errno` mappe `ENOTEMPTY` → `LOCI_EACCES`
+- [x] 2 nouveaux tests (`test_unlink_removes_empty_directory`, `test_unlink_nonempty_directory_returns_eacces`)
+- [x] Hors scope (documenté) : `loci_sdimg_unlink()` (image `.dsk`) renvoie toujours `-EISDIR` pour les répertoires, non corrigé
+
 ### Sprint 36e: Conformité API LOCI vs firmware officiel (v1.16.81-alpha) - DONE
 - [x] Audit complet de l'émulation LOCI contre les sources `sodiumlb/loci-firmware` (registres I/O, conventions API, 35 opcodes)
 - [x] Fix `lseek` op $1A : whence int8 au sommet de la xstack + offset int32 short-stack 0-4 octets signe-étendu (`api_pop_int32_end`) ; mapping firmware 0=SEEK_CUR / 1=SEEK_END / 2=SEEK_SET (les deux étaient inversés) ; helper partagé `pop_lseek_args()` POSIX+SDIMG
