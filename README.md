@@ -46,6 +46,7 @@ make SDL2=1
 - **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot
 - **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain
 - **ACIA 6551** — Serial controller at $031C-$031F, 5 backends (loopback, TCP, PTY, modem AT, COM), V23 mode (Minitel/Digitelec)
+- **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
 - **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 35/36 API ops, USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). Boote Sedoric V4 master complet via le firmware LOCI.
 
 ### ORIC-1 & Atmos Support
@@ -234,6 +235,39 @@ Display & Export:
   --type-keys N:TEXT        Simulate keyboard input
   -v, --verbose             Debug logging
 ```
+
+### Digitelec DTL 2000 example
+
+The Digitelec DTL 2000 is a memory-mapped V23 modem card (PIA 6821 + ACIA 6850
+at `$03F8-$03FD`). A ready-to-run BASIC test program is provided in
+`examples/dtl2000-test.bas` (and its auto-run tape `examples/dtl2000-test.tap`).
+
+```bash
+# Build the conversion tools (once) if you want to regenerate the tape
+make tools
+./bas2tap examples/dtl2000-test.bas -o examples/dtl2000-test.tap --auto-run
+
+# Run the test program with a loopback modem (what you transmit comes back)
+./oric1-emu -r roms/basic11b.rom -t examples/dtl2000-test.tap -f --dtl2000 loopback
+
+# Connect the card to a real BBS / Minitel-style host over TCP instead
+./oric1-emu -r roms/basic11b.rom --dtl2000 tcp:bbs.example.org:23
+```
+
+The program drives the card exactly as the period software did — PIA Port A
+selects the line/mode, the ACIA carries the data. With `loopback` it reports:
+
+```
+TEST 1 TDRE= 1                     transmitter ready
+TEST 2 DCD (1=PAS PORTEUSE)= 1     no carrier before connecting
+TEST 3 DCD APRES CONNEXION= 0      carrier present after POKE PA,208
+TEST 4 LOOPBACK= 10 /10            all bytes echoed back
+```
+
+> ⚠️ `$03F8-$03FF` aliases the VIA mirror (and, on real hardware, the Jasmin
+> disc electronics). Phosphoric intercepts the range for the DTL 2000 when
+> `--dtl2000` is active; avoid enabling it together with a Microdisc/Jasmin.
+> Register reference and OCR sources: `docs/digitelec-dtl2000/`.
 
 ### Key Bindings
 

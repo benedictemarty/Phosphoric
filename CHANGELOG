@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.3-alpha] - 2026-06-13
+
+### Sprint 53b — README : documentation d'usage du Digitelec DTL 2000
+
+#### Changed
+
+- **README** : ajout d'un bullet « Digitelec DTL 2000 » dans les features et
+  d'une section d'exemple d'usage complète (build du `.tap` via `bas2tap`,
+  lancement avec `--dtl2000 loopback` et `--dtl2000 tcp:...`, sortie attendue
+  du programme de test, rappel du conflit page-3 et pointeur vers
+  `docs/digitelec-dtl2000/`).
+
 ## [1.17.2-alpha] - 2026-06-13
 
 ### Sprint 53 — DTL 2000 : .tap du programme de test + fix collision de variables BASIC
