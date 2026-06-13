@@ -93,6 +93,11 @@ typedef struct video_s {
      * next frame. */
     bool ocula_80col;
 
+    /* When true, the 80-col latch is forced on permanently regardless of
+     * vid_mode (sprint 44: BASIC mirror mode, --ocula-80col-basic).
+     * Survives reset like ula_profile — it models a configuration. */
+    bool ocula_80col_forced;
+
     /* OCULA extended-HIRES latch (attr 29/31): same frame-start
      * evaluation as ocula_80col. 80-col (bit 2 clear) and ext-HIRES
      * (bit 2 set) are mutually exclusive by construction. */

@@ -82,6 +82,12 @@ typedef struct memory_s {
     uint8_t ocula_bank;          /**< Active CPU bank (0-7) */
     uint8_t* ocula_bank_mem;     /**< Side banks 1-7 storage, NULL until used */
 
+    /* OCULA 80-col BASIC mirror (sprint 44): when true, every write to the
+     * 40-col text screen ($BB80-$BFDF) is also mirrored to $A000 in 80-col
+     * layout (left 40 of 80 columns per row). Lets standard BASIC PRINT/LIST
+     * appear on the 80-col display without ROM modification. */
+    bool ocula_80col_mirror;
+
 } memory_t;
 
 /**

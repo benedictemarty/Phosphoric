@@ -830,6 +830,61 @@ TEST(test_gpu_fill_protects_low_memory) {
     memory_cleanup(&mem);
 }
 
+/* ─────────────────────────────────────────────────────────────── */
+/*  Sprint 44 — OCULA 80-col BASIC mirror                          */
+/* ─────────────────────────────────────────────────────────────── */
+
+TEST(test_80col_mirror_basic_write) {
+    /* A write to $BB80 (first char, 40-col screen) must be mirrored
+     * to $A000 row 0, col 0 when ocula_80col_mirror is active. */
+    memory_t mem;
+    memory_init(&mem);
+    mem.ocula_80col_mirror = true;
+    memory_write(&mem, 0xBB80, 0x41); /* 'A' */
+    ASSERT_EQ(mem.ram[0xBB80], 0x41);
+    ASSERT_EQ(mem.ram[0xA000], 0x41); /* mirrored at row 0 col 0 */
+    memory_cleanup(&mem);
+}
+
+TEST(test_80col_mirror_row_col_mapping) {
+    /* Write to $BB80 + 80 = $BBD0 → row 2, col 0 of 40-col (off=80, row=2, col=0)
+     * → 80-col addr = $A000 + 2*80 + 0 = $A0A0 */
+    memory_t mem;
+    memory_init(&mem);
+    mem.ocula_80col_mirror = true;
+    uint16_t src = 0xBB80 + 80; /* row 2 col 0 */
+    memory_write(&mem, src, 0x42);
+    ASSERT_EQ(mem.ram[src], 0x42);
+    ASSERT_EQ(mem.ram[0xA000 + 2 * 80 + 0], 0x42);
+    memory_cleanup(&mem);
+}
+
+TEST(test_80col_mirror_disabled_by_default) {
+    /* Without the flag the 40-col write must NOT touch $A000. */
+    memory_t mem;
+    memory_init(&mem);
+    mem.ram[0xA000] = 0x00;
+    memory_write(&mem, 0xBB80, 0x41);
+    ASSERT_EQ(mem.ram[0xBB80], 0x41);
+    ASSERT_EQ(mem.ram[0xA000], 0x00);
+    memory_cleanup(&mem);
+}
+
+TEST(test_80col_forced_latch_survives_vid_mode) {
+    /* ocula_80col_forced must keep ocula_80col=true even when
+     * vid_mode has no attr 25/27 set (standard BASIC mode). */
+    static video_t vid;
+    video_init(&vid);
+    video_set_profile(&vid, ULA_PROFILE_OCULA);
+    vid.ocula_80col_forced = true;
+    uint8_t mem[65536];
+    memset(mem, 0, sizeof(mem));
+    /* vid_mode=2 (default, TEXT, no bit 0) — forced must override */
+    vid.vid_mode = 0x02;
+    video_render_scanline(&vid, mem, 0); /* evaluates latches */
+    ASSERT_TRUE(vid.ocula_80col);
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -899,6 +954,10 @@ int main(void) {
     RUN(test_gpu_bad_opcode);
     RUN(test_gpu_bad_arg_ptr);
     RUN(test_gpu_fill_protects_low_memory);
+    RUN(test_80col_mirror_basic_write);
+    RUN(test_80col_mirror_row_col_mapping);
+    RUN(test_80col_mirror_disabled_by_default);
+    RUN(test_80col_forced_latch_survives_vid_mode);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

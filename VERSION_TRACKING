@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.21.0-alpha
+Current Version: 1.22.0-alpha
 Release Date: 2026-06-13
-Status: Alpha (Sprint 43 — OCULA étape 5 : OCULA-GPU $03E8-$03EF (INFO/FILL/COPY/SCROLL/WAIT_VBL, étirement PHI0, scroll matériel 320×200) ; 585 tests) ; précédent : (Sprint 42 — OCULA étape 4 : ID + banking ; 571 tests)
+Status: Alpha (Sprint 44 — OCULA 80-col BASIC mirror : --ocula-80col-basic, hook $BB80-$BFDF→$A000 row×80+col, ocula_80col_forced survive reset ; 589 tests) ; précédent : (Sprint 43 — OCULA étape 5 : OCULA-GPU ; 585 tests)
 
 Version History:
 ----------------
+- 1.22.0-alpha (2026-06-13): Sprint 44 — **OCULA 80-col BASIC mirror** (--ocula-80col-basic : flag ocula_80col_mirror dans memory_write() reflète $BB80-$BFDF→$A000 stride 80 ; ocula_80col_forced force le latch 80-col indépendamment de vid_mode, survit au reset comme ula_profile ; implique ULA_PROFILE_OCULA si non défini ; 4 nouveaux tests miroir + latch forcé), 589 tests PASS
 - 1.21.0-alpha (2026-06-13): Sprint 43 — **OCULA étape 5 : OCULA-GPU** (fenêtre $03E8-$03EF : GPU_CMD bit 7 bloquant, GPU_STATUS, GPU_PTR bloc 16 octets ; commandes INFO/FILL/COPY snapshot-safe/SCROLL wrap 320×200/WAIT_VBL $85 ; étirement PHI0 dans la boucle main (6502+VIA+FDC+ACIA gelés, ULA continue, réveil ligne 224) ; garde <$0400 ; banking intégré ; caps $1F ; section OGP .ost ; 14 nouveaux tests + E2E FILL via control et WAIT_VBL en BASIC réel ; spec v0.7), 585 tests PASS
 - 1.20.0-alpha (2026-06-13): Sprint 42 — **OCULA étape 4 : identification + banking mémoire** (module src/io/ocula_io.c, fenêtre $03E0-$03E7 sous --ula ocula : 'O','C', caps $0F, registre banque ; banking $A000-$BFFF 8 banques de 8 Ko, ULA toujours sur banque 0, allocation paresseuse ; section OCB du .ost ; 9 nouveaux tests ; E2E via protocole de contrôle : 4F 43 0F + isolation des banques ; piège BASIC PEEK(#3E0)≠PEEK(992) documenté ; spec v0.5 — plan 4 étapes complet), 571 tests PASS
 - 1.19.0-alpha (2026-06-13): Sprint 41 — **OCULA étape 3 : HIRES étendu 320×200 + palette redéfinissable** (attrs 29/31 : bitmap pur $A000 8 px/octet sans attributs, lignes 200-223 texte = échappement in-band, activation canonique HIRES:POKE#A000,29 ; palette 8×RGB332 $BFE0-$BFE7 armée par 'O','C' $BFE8-$BFE9, relue par trame, valable tous modes, neutre sur ULA stock ; pal_rgb par instance dans video_t ; 14 nouveaux tests + E2E réels 320×224 et encre rouge 0xFF0000 ; spec v0.4), 562 tests PASS

@@ -187,6 +187,19 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
             *ocula_window_ptr(mem, address) = value;
         else
             mem->ram[address] = value;
+
+        /* OCULA 80-col BASIC mirror: reflect 40-col screen writes to the
+         * 80-col screen at $A000. Screen $BB80-$BFDF (40×28) → $A000 left
+         * half (col 0-39 of 80). Catches STA ($12),Y, STA $BB80,X and the
+         * scroll fill STA $BB7F,Y via the unified write path. */
+        if (mem->ocula_80col_mirror &&
+            address >= 0xBB80 && address <= 0xBFDF) {
+            uint16_t off = address - 0xBB80;
+            uint16_t row = off / 40;
+            uint16_t col = off % 40;
+            if (row < 28)
+                mem->ram[0xA000 + row * 80 + col] = value;
+        }
         return;
     }
 

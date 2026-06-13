@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0-alpha] - 2026-06-13
+
+### Sprint 44 — OCULA 80-col BASIC mirror
+
+Permet d'utiliser le mode texte 80 colonnes directement depuis le BASIC
+standard sans modifier la ROM. Un hook dans `memory_write()` intercepte
+toutes les écritures de la ROM vers l'écran 40-col ($BB80-$BFDF) et les
+reflète simultanément dans le framebuffer 80-col ($A000, stride 80).
+
+#### Added
+
+- **`--ocula-80col-basic`** : nouvelle option CLI qui active le mode
+  80-col sans que le BASIC ait à émettre l'attribut 25 — `PRINT`, `LIST`,
+  `INPUT`, scroll et curseur apparaissent sur l'affichage 80 colonnes.
+  Implique `--ula ocula` si non déjà spécifié.
+- **`memory_t.ocula_80col_mirror`** (include/memory/memory.h) : flag qui
+  active le miroir. Toute écriture en $BB80-$BFDF est aussi écrite en
+  $A000 + row×80 + col (28 lignes × 40 colonnes dans la moitié gauche
+  du framebuffer 80-col).
+- **`video_t.ocula_80col_forced`** (include/video/video.h) : force le
+  latch 80-col à `true` dès le scanline 0, indépendamment de `vid_mode`.
+  Survit au reset (modélise une configuration matérielle, comme
+  `ula_profile`). Désactive aussi le latch ext-HIRES quand actif.
+
+#### Changed
+
+- `video_render_scanline()` (src/video/video.c) : calcul des latches
+  `want_80col` / `want_exthires` tient compte de `ocula_80col_forced`.
+- `memory_write()` (src/memory/memory.c) : hook miroir 40→80 colonnes
+  intercalé après l'écriture normale, sans coût si `ocula_80col_mirror`
+  est `false`.
+
+---
+
 ## [1.21.0-alpha] - 2026-06-13
 
 ### Sprint 43 — OCULA étape 5 : OCULA-GPU

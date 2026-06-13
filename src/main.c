@@ -2160,8 +2160,9 @@ int main(int argc, char* argv[]) {
     int serial_buffer_size = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
+    bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_ULA };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_ULA, OPT_OCULA_80COL_BASIC };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2213,6 +2214,7 @@ int main(int argc, char* argv[]) {
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
         {"ula",                 required_argument, 0, OPT_ULA},
+        {"ocula-80col-basic",   no_argument,       0, OPT_OCULA_80COL_BASIC},
         {"control",             no_argument,       0, OPT_CONTROL},
         {"bench",               no_argument,       0, OPT_BENCH},
         {"help",                no_argument,       0, '?'},
@@ -2273,6 +2275,11 @@ int main(int argc, char* argv[]) {
                     fprintf(stderr, "Invalid ULA profile: %s (must be ula or ocula)\n", optarg);
                     return 1;
                 }
+                break;
+            case OPT_OCULA_80COL_BASIC:
+                ocula_80col_basic = true;
+                if (ula_profile == ULA_PROFILE_HCS10017)
+                    ula_profile = ULA_PROFILE_OCULA;
                 break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
@@ -2355,6 +2362,12 @@ int main(int argc, char* argv[]) {
     if (ula_profile != ULA_PROFILE_HCS10017) {
         video_set_profile(&emu.video, (ula_profile_t)ula_profile);
         log_info("ULA profile: %s", video_profile_name(emu.video.ula_profile));
+    }
+
+    if (ocula_80col_basic) {
+        emu.video.ocula_80col_forced = true;
+        emu.memory.ocula_80col_mirror = true;
+        log_info("OCULA 80-col BASIC mirror enabled");
     }
 
     emu.fast_load = fast_load;

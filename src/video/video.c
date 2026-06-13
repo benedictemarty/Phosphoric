@@ -353,10 +353,14 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
 
         /* OCULA frame-start latches (stride stays stable for a whole
          * frame): 80-col = bit 0 with HIRES clear; ext-HIRES = bit 0
-         * with HIRES set. The redefinable palette is re-read here too. */
-        bool want_80col = (vid->ula_profile == ULA_PROFILE_OCULA) &&
-                          ((vid->vid_mode & 0x05) == 0x01);
-        bool want_exthires = (vid->ula_profile == ULA_PROFILE_OCULA) &&
+         * with HIRES set. ocula_80col_forced (--ocula-80col-basic) bypasses
+         * the vid_mode check so BASIC's standard attrs don't drop the mode.
+         * The redefinable palette is re-read here too. */
+        bool want_80col = vid->ocula_80col_forced ||
+                          ((vid->ula_profile == ULA_PROFILE_OCULA) &&
+                           ((vid->vid_mode & 0x05) == 0x01));
+        bool want_exthires = !vid->ocula_80col_forced &&
+                             (vid->ula_profile == ULA_PROFILE_OCULA) &&
                              ((vid->vid_mode & 0x05) == 0x05);
         if (want_80col != vid->ocula_80col ||
             want_exthires != vid->ocula_exthires) {

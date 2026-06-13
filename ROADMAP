@@ -476,6 +476,23 @@ interne, zéro contention bus ; sync bloquante par étirement de PHI0).
 - [ ] Proposer l'étape 5 upstream (fil dédié ou RFC #53)
 - [ ] Démo BASIC vitrine (80 col + 320×200 + palette + banking + GPU)
 
+### Sprint 44: OCULA 80-col BASIC mirror (v1.22.0-alpha) - DONE
+
+Permet au BASIC standard (BASIC 1.0 + 1.1) d'écrire sur le framebuffer
+80 colonnes sans modification de la ROM ni de l'API PRINT/INPUT.
+
+- [x] `memory_t.ocula_80col_mirror` : hook dans `memory_write()`, toute
+      écriture $BB80-$BFDF reflétée vers $A000+row×80+col
+- [x] `video_t.ocula_80col_forced` : latch 80-col permanent indépendant
+      de `vid_mode`, survit au reset (comme `ula_profile`)
+- [x] `--ocula-80col-basic` CLI : active les deux flags, implique
+      `--ula ocula` si non spécifié ; log_info confirmant l'activation
+- [x] Couvre les 3 chemins ROM : STA ($12),Y / STA $BB80,X / STA $BB7F,Y
+      via le point d'entrée unifié `memory_write()`
+- [x] 4 nouveaux tests : miroir basique, mapping row×col, désactivation
+      par défaut, latch forcé résiste à vid_mode neutre (589 tests total)
+- [ ] Démonstration SDL2 live (BASIC PRINT 80 colonnes)
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)
