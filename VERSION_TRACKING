@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.17.3-alpha
+Current Version: 1.17.4-alpha
 Release Date: 2026-06-13
-Status: Alpha (Sprint 53b — README : doc d'usage Digitelec DTL 2000 (feature bullet + section exemple --dtl2000 loopback/tcp + sortie attendue) ; 538 tests) ; précédent : (Sprint 53 — DTL 2000 .tap auto-run + fix collision variables BASIC ; 538 tests)
+Status: Alpha (Sprint 53c — ROADMAP : DTL 2000 ajouté aux features complétées (Future Enhancements / Advanced Features) ; 538 tests) ; précédent : (Sprint 53b — README doc d'usage Digitelec DTL 2000 ; 538 tests)
 
 Version History:
 ----------------
+- 1.17.4-alpha (2026-06-13): Sprint 53c — **ROADMAP : DTL 2000 dans les features complétées** : item `[x]` ajouté à « Advanced Features » (carte PIA 6821 + ACIA 6850 $03F8-$03FD, OCR, IRQ, validée cassette) ; doc-only, 538 tests inchangés
 - 1.17.3-alpha (2026-06-13): Sprint 53b — **README : doc d'usage DTL 2000** : bullet feature + section exemple (build `.tap` via bas2tap, `--dtl2000 loopback`/`tcp:`, sortie attendue du programme de test, conflit page-3, pointeur `docs/digitelec-dtl2000/`) ; doc-only, 538 tests inchangés
 - 1.17.2-alpha (2026-06-13): Sprint 53 — **DTL 2000 : .tap de test + fix collision variables BASIC** : `examples/dtl2000-test.tap` (auto-run) ; fix `dtl2000-test.bas` (BASIC Oric = 2 cars significatifs → `CRA`/`CRB` collisionnaient en `CR`, ligne jamais connectée) ; validation par chargement cassette réel : TEST 3 DCD=0, TEST 4 loopback 10/10 ; émulation du périphérique inchangée (test unitaire déjà vert), bug isolé au programme d'exemple
 - 1.17.1-alpha (2026-06-13): Sprint 52 — **DTL 2000 : câblage IRQ → CPU** : nouvelle source `IRQF_DTL2000` (0x08) dans le bitfield level-triggered du 6502 ; `dtl2000_cpu_irq_set/clr` reliés à l'init (re-câblés après ré-init via `--dtl2000-addr`) ; IRQ réception (RIE+RDRF) et émission (TC=01 TIE+TDRE), désassert à la lecture/écriture ; 3 nouveaux tests IRQ, suite complète 538 tests PASS

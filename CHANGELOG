@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.4-alpha] - 2026-06-13
+
+### Sprint 53c — ROADMAP : DTL 2000 dans les features complétées
+
+#### Changed
+
+- **ROADMAP** : ajout du Digitelec DTL 2000 à la checklist « Future
+  Enhancements / Advanced Features » comme item complété (`[x]` : carte
+  PIA 6821 + ACIA 6850 à $03F8-$03FD, registres OCR-vérifiés, IRQ câblée,
+  validée par cassette).
+
 ## [1.17.3-alpha] - 2026-06-13
 
 ### Sprint 53b — README : documentation d'usage du Digitelec DTL 2000
