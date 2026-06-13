@@ -1,0 +1,13 @@
+PROGRAMMATION DE LA CARTE DTL V 23
+EN ASSOCIATION AVEC L'INTERFACE APPLE II
+
+Cette partie de la notice contient toutes les informations dont vous
+avez besoin pour programmer la carte DTL V 23 depuis votre APPLE II.
+
+La carte DTL V 23 peut fonctionner selon deux modes bien
+distincts :
+
+- le mode "asymétrique", qui permet l'accès à un serveur de type TELETEL,
+
+- le mode "symétrique", qui permet la communication avec un autre micro-or-
+dinateur.

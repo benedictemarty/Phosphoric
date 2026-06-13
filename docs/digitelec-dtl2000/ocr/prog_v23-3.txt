@@ -1,0 +1,59 @@
+Dans le cas qui nous concerne, à savoir la communication asymé-
+
+trique utilisant la carte DTL V 23, il ne faut pas poker d'autres valeurs dans
+cet octet.
+
+Puisque la composition d'un numéro téléphonique est une suite de
+coupures de ligne, l'utilisation de cet octet permet une numérotation automa-
+tique. Ainsi, la composition du chiffre 7, par exemple, nécessite l'envoi sur la
+ligne de 7 impuisions composées chacune d'une ouverture de ligne d'une durée
+de 66 ms, suivie d'une fermeture d'une durée de 33 ms. La composition du
+chiffre 7 peut donc se traduire par le programme Basic :
+
+119 FORI=1TO7
+
+129 POKE $SC95S8,212
+
+139 FOR J = 1 TO 44: NEXT J
+149  POKE SC9S8,208
+
+159 FOR J = 1 TO 22: NEXT J
+169 NEXT
+
+(Note : La composition du chiffre f correspond à l'envoi de 10 impulsions).
+
+Entre deux trains d'impulsions, la ligne doit être fermée, et cela
+pendant 1 s environ. Après la composition du numéro, la ligne doit être
+maintenue fermée jusqu'à la fin de la communication. Enfin, dans un pro-
+gramme de composition automatique de numéros, n'oubliez pas de prévoir un
+ou des délais permettant d'attendre l'apparition de la ou des tonalités
+nécessaires à la composition.
+
+SCYSC :
+Cet octet permet le contrôle de la transmission.
+
+Contrairement à un octet de mémoire "classique", SCfSC n'est
+physiquement pas le même, suivant qu'on y accède en lecture ou en écriture.
+
+En écriture, SCYSC permet de commander l'émission de porteuse du
+DTL 2 000. Pour commencer l'émission, faire POKE SC#SC,9 ; pour l'arrêter,
+faire POKE SCHSC, 73.
+
+Dans le cas d'une communication asymétrique utilisant la carte DTL
+V 23, il ne faut pas poker d'autres valeurs dans cet octet.
+
+En lecture, SCYSC contient des informations essentielles sur le
+déroulement de la transmission (PRINT PEEK [S8C4SC)D :
+
+- le bit Ÿ indique qu'un caractère vient d'être reçu s'il est à 1 (remis à f par
+lecture du caractère : cf. SC#SD) :;
+
+- le bit 1 indique que le caractère que i'on Vient d'émettre est effectivement
+parti s'il est à 1 ;
+
+- le bit 2 indique que la porteuse du modem du serveur avec lequel on com-
+munique est présente s'il est à @ ;
+
+- le bit 3 indique que le modem est prêt à émettre s'il est à ÿ.
+
+Nous allons Voir dans la suite comment utiliser ces indications.

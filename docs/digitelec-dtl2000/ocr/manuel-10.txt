@@ -1,0 +1,16 @@
+-10-
+
+- En V21, dès l'apparition de la bannière "Transpac XXX", taper le
+numéro Transpac du centre de calcul choisi. Si le numéro est valide et le
+serveur disponible, le message COM apparaît. Pour terminer la liaison, taper
+CTRL-P puis LIB. Il est alors possible de taper le numéro d'un autre serveur
+ou bien de terminer la communication, en pressant CTRL-D 2 fois.
+
+- La sauvegarde de l'écran en V21 comme en V23 est possible en ap-
+puyant sur la touche Esc. Il faut ensuite donner le nom sous lequel on désire
+conserver l'écran. En V23 (Télétel), les noms d'écran sont précédés, sur le
+catalogue de la disquette, par le préfixe VIDEO. , et en V21 (Transpac), par
+le préfixe PAC., ou PAC2. . Ces préfixes sont rajoutés automatiquement par le
+
+programme.
+

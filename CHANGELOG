@@ -50,6 +50,9 @@ contexte.
   de registres contre l'OCR (état init, sélection DDR/OR, connexion/mode,
   master reset, masques 7/8 bits, émission porteuse, TDRE, aller-retour
   loopback, garde « pas d'émission ligne ouverte », reset).
+- **`docs/digitelec-dtl2000/`** : archives source (référence registres
+  consolidée `registres-ocr.md`, document de contexte `contexte.md`, OCR brut
+  des 22 pages des manuels d'époque dans `ocr/`).
 
 #### Notes
 

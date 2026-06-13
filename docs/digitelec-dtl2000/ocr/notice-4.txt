@@ -1,0 +1,59 @@
+_4-
+
+La disquette contient également un logiciel de communication,
+écrit entièrement en langage machine, permettant de communiquer avec un
+autre APPLE II. Ce logiciel permet d'émettre et de recevoir des programmes
+Basic Applesoft ainsi que des zones-mémoire (et donc des données ou des
+programmes en langage machine).
+
+Voici comment procéder :
+
+1°) Charger le programme de communication en faisant un RESET puis
+BLOAD COM. -
+2°) Appeler son correspondant. Définir le type de données échangées
+
+(programme Basic ou zone-mémoire), le rôle de chacun (émetteur ou récep-
+teur), le type de modulation.
+
+Deux types de modulation sont possibles : la modulation V 21 et
+la modulation V 23 (la carte DTL V 23 ne peut travailler qu'en V 23).
+La V 21 est moins rapide (300 Bauds, soit 30 octets par seconde) que la
+V 23 (1 200 Bauds, soit 120 octets par seconde) mais présente une fiabi-
+lité plus grande (le logiciel de commmication utilise un code correcteur
+d'erreurs en V 21. Un tel code est impossible à mettre en oeuvre en modu-
+lation V 23, la transmission s'effectuant en Half-Duplex. La fiabilité
+est cependant plus que suffisante dans la plupart des cas en V 23).
+
+3°) L'émetteur doit charger le programme Basic Applesoft ou le
+
+fichier binaire qu'il souhaite transmettre. S'il s'agit d'une zone-mémoire
+l'émetteur doit en outre faire :
+
+POKE 36866, adresse du début du bloc (partie basse)
+POKE 36867, adresse du début du bloc (partie haute)
+POKE 36868, «üresse G2 la fin du bloc +1 (partie basse)
+POKE 36869, adresse de la fin du bloc +1 (partie haute)
+
+(le récepteur n'a pas à poker ces valeurs).
+D P
+
+4°) L'émetteur et le récepteur doivent taper un POKE 37931,16%S
+où S est le numéro de slot utilisé par chacun pour le DTL 2 000.
+5°) Faire maintenant un CALL de la routine de communication. Les
+adresses à appeler sont les suivantes:
+V 23 V 21
+Basic 36874 37364
+Emetteur Binaire 36881 37371
+, Basic 36893 37383
+Es Binaire 36900 37390
+
+Exemple : pour transmettre un programme Basic en V 23, l'émetteur fait
+CALL 36874 et le récepteur CALL 36893.
+
+6°) _ Raccrocher le combiné.
+
+7°) Attendre quelques secondes pour être sûr que son interlocuteur
+
+a lui aussi raccroché. En V 23, c'est l'émetteur qui amorce la transmission
+en appuyant sur la barre d'espace. En V 21, c'est le récepteur qui doit
+appuyer sur ia barre d'espace.

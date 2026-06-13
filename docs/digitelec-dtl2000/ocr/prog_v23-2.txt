@@ -1,0 +1,44 @@
+Fonctionnement en mode asymétrique
+
+Les données sont émises par le serveur à 1 200 Bauds (bits par
+seconde) et par le terminal (APPLE + DTL 2 000) à 75 Bauds, d'après l'avis
+V 23 du CCITT (Comité Consultatif International Télégraphique et Télépho-
+nique). Les données transmises sont en fait des caractères codés selon
+l'alphabet ASCII sur 7 bits.
+
+Le modem DTL 2 000 occupe 6 octets de la mémoire de votre
+
+APPLE qui sont (en hexadécimal) : 3CUS8, JSCUS9, SCUSA, SCUSB, SCUSD, où
+S représente le numéro du slot utilisé plus 8.
+
+Les octets SCYSA et SCYSB ne sont pas utilisés par la carte DTL
+V 23.
+
+Comme tout système informatique, le DTL 2 000 doit être initialisé
+au début de chaque programme le concernant. Cette initialisation peut
+s'écrire ainsi (les adresses doivent être converties en décimal, suivant la
+valeur de S) :
+
+19 POKE SC9S9, ÿ
+29 POKE SCYS8, 244
+39 POKE SCOSC, 3
+49 POKE SC9S9, 4
+5f POKE $C9S8, 212
+69 POKE SCOSC, 73.
+
+Dans ce qui suit, le bit Ÿ désigne, pour un octet donné, le bit de
+poids le pius faible, et le bit 7 le bit de poids le plus fort.
+
+* x
+
+PROGRAMMATION
+
+Une fois l'initialisation effectuée, les octets dont vous avez besoin
+pour gérer une communication de type asymétrique avec le serveur sont :
+3COS8, SCYSC, et 3CYSD.
+
+SC4S8 :
+
+Cet octet permet la connexion ou la déconnexion du modem sur la
+ligne. Pour connecter le modem, faire POKE SCYS8,208 (fermeture de la
+ligne) ; pour le déconnecter, faire POKE S8C9S8,212 (ouverture de la ligne).

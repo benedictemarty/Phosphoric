@@ -1,0 +1,60 @@
+DNNICELEL INFORMATIQUE
+
+Parc Club Cadéra - Avenue J.-F. Kennedy
+
+33700 MERIGNAC
+
+Tél. (56) 34.44.92
+
+DTL PLUS
+
+MODEM DIGITELEC DTL 2 O00 Configuration DTL V 23
+
+/ APPLE II
+
+NOTICE D'UTILISATION
+
+Félicitations pour votre achat d'un DTL 2 000 ! Vous êtes main-
+tenant en possession d'un véritable système de communications, qui vous
+permettra non seulement d'échanger des données et des programmes avec un
+autre micro-ordinateur, et de vous raccorder à l'un des nombreux réseaux
+de services télé-informatiques, mais aussi d'utiliser votre ligne télépho-
+nique en association avec votre ordinateur à des fins domestiques telles
+que la télécommande par téléphone ou la messagerie électronique privée.
+
+Mais voyons tout de suite plus en détail quels sont les éléments
+constitutifs de votre L.L 2 (oO.
+
+A l'avant, sept voyants lumineux vous renseigneront en permanence
+sur le déroulement de vos communications :
+
+— Marche indique que le modem est sous tension.
+
+— Connexion indique qu'il est en ligne.
+
+- Prêt à émettre signifie que la porteuse d'émission est modulée
+par le DTL 2 000. S'il y a en même temps connexion, la porteuse
+est effectivement émise sur la ligne.
+
+- Détection indique que l'on reçoit la porteuse d'un autre modem.
+
+- Réception et Emission visualisent les données transmises dans
+les deux sens.
+
+— Test, enfin, est un voyant dont la signification varie suivant
+la carte modem utilisée. Dans le cas de la carte DTL V23 ou
+de la carte DTL PLUS, il indique que l'on est en mode V 23
+symétrique (nous verrons bientôt ce que cela signifie).
+
+À l'arrière du DTL 2000, vous pouvez voir la prise d'alimentation,
+la prise téléphonique, et le câble en nappe permettant le raccordement di-
+rect à votre ordinateur.
+
+.… À l'intérieur, votre modem se compose d'un circuit "fond de panier
+sur lequei s'enfichent deux cartes-filles. La carte raccordée au câble en
+nappe est la carte d'interface avec votre APPLE II. L'autre carte est la
+carte modem qui réalise les fonctions de modulation et de démodulation
+des données. Si vous changez d'ordinateur, nul besoin de changer de modem !
+il suffit de remplacer la carte d'interface, qui est disponible séparément.
+
+SARL capital de 50.000 F. - SIRET 33010909100018 . C.CP. Bx 64781 H :- Code APE 7701 - RC Bx 5330409091 B

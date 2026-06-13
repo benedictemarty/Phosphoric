@@ -1,0 +1,45 @@
+SCYSD :
+
+C'est par cet octet que transitent toutes les données transmises
+dans les deux sens. Comme SCÿSC, cette adresse correspond en fait à deux
+octets, suivant qu'on V accède en lecture ou en écriture.
+
+En lecture, SCYSD contient le dernier caractère reçu, qu'il faut lire
+lorsque le bit f de SCYSC est passé à 1.
+
+En écriture, 3CYSD reçoit le caractère que l'on veut émettre. On ne
+
+peut écrire dans $CYSD qu'après avoir vérifié que le bit 1 de SCHSC est passé
+a 1.
+
+N'oubliez pas qu'en émission comme en réception, les caractères
+
+sont codés sur 7 bits uniquement, conformément à l'alphabet ASCII (le bit 7
+est toujours à 1).
+
+Algorithme de communication :
+
+Voici un exemple d'algorithme utilisant les indications précédentes.
+
+INITIALISATIONS
+
+Lenture de
+BCASC
+
+OL!
+
+Lecture de
+8CASD
+out
+attente d'être
+émis ?
+À Lecture de | Trai Lsté
+Scysc
+| À
+NON Pa out
+NY
+
+Ecriture dons
+
+SCA5D :
+

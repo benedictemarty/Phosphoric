@@ -1,0 +1,40 @@
+Fonctionnement en mode symétrique
+
+Contrairement à ce qui se passe dans le mode asymétrique, les
+données sont émises à tour de rôle par les deux interlocuteurs (half-duplex).
+En pratique, il s'agit de transmettre soit un programme, soit un fichier de
+données, d'un ordinateur vers un autre.
+
+La vitesse est de 1 200 Bauds, indépendamment du sens de transmis-
+sion.
+
+L'utilisation des octets SCYS8, 3CYS9, 8CYSC, SCYSD est la même
+qu'en mode asymétrique, aux différences suivantes près :
+
+x x
+
+INITIALISATIONS
+
+19 POKE 3CYS9, ÿ
+20 POKE SCYS8, 244
+39 POKE SCYSC, 4
+49 POKE 3CYS9, 3
+59 POKE SC9YS8, 196
+69 POKE SCOSC, 85.
+
+*
+
+Connexion :
+
+Pour connecter, faire : POKE SC#S8,192
+pour déconnecter, faire : POKE 3CYS8,196.
+
+Emission :
+
+Début d'émission, faire : POKE SC#SC, 21,
+fin d'émission, faire : POKE SCYSC, 85.
+Les données sont transmises sur 8 bits.
+
+Voici deux exemples d'algorithmes, l'un en émission, l'autre en
+réception, que vous pouvez utiliser pour transmettre vos programmes ou Vos
+fichiers.

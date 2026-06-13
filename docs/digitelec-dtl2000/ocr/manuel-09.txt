@@ -1,0 +1,48 @@
+-t
+
+ANNEXE : Utilisation du logiciel de communication DIGICOM sur l'Apple II C
+
+Dans sa version Apple II C, le modem DTL 2 000 / RS 232 est livré
+avec le logiciel de communication DIGICOM, fourni à titre gracieux par la
+société DIGITELEC Informatique, qui permet d'accéder très facilement aux
+réseaux télématiques.
+
+Voici comment procéder :
+
+* Lancer la disquette. Le chargement est automatique. Il est nécessaire de
+configurer le programme (menu configuration) avant la première utilisation.
+
+* Choisir le type d'appel (V21 ou V23) [le modem DTL 2 000 / RS 232 en confi-
+guration DTL V23 ne fonctionne qu'en V231 :
+
+- V23 doit être sélectionné pour l'appel d'un serveur Télétel.
+- V21 doit être sélectionné pour l'appel du réseau Transpac.
+
+* Positionner les micro-interrupteurs, suivant le type de modulation, comme
+indiqué au chapître précédent.
+
+* Composer sur le combiné de téléphone le numéro d'appel du serveur choisi,
+par exemple :
+
+_- 11 (annuaire électronique)  (V23)
+- 36139155 (Télétel 1) (V23)
+- 36149166 (Télétel 2) (V23)
+- 36159177 (Télétel 3) (V23)
+- 36019100 (Transpac) (V21)
+
+* Dès que la porteuse du serveur appelé (sifflement) se fait entendre, appuyer
+sur n'importe quelle touche (sauf Return ou Enter). La communication est éta-
+blie.
+
+- En V23, les fonctions spéciales du Minitel (Envoi, Sommaire, etc...)
+sont obtenues en appuyant sur les touches mentionnées ci-dessous :
+
+FIN DE
+REPE- | ANNULA- | CORREC- CONNEXION/
+
+PE COMMUNI-
+
+ENVOI | SOMMAIRE | RETOUR | SUITE | +pron | TroN mon | ŒIDE | LOU DIN COMMUN
+
+RETURN Î — | — | CTRL-X DEL | CTRL-G | CTRL-L | CTRL-D CTRL-F
+

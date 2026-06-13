@@ -1,0 +1,39 @@
+Les circuits 103, 105 et 108 vont dans le sens ordinateur 5 modem,
+les circuits 104, 106 et 109 dans le sens modem ordinateur.
+
+Les circuits 103 et 104 sont les circuits de transfert de données.
+
+Le circuit 105 est utilisé par l'ordinateur pour demander au modem
+d'émettre sa porteuse sur la ligne.
+
+Le circuit 106 informe l'ordinateur de la possibilité d'émettre des
+données.
+
+Le circuit 109 informe l'ordinateur de la présence sur la ligne de
+la porteuse du modem distant.
+
+Le circuit 108 est utilisé par l'ordinateur pour demander au modem
+de se connecter sur la ligne.
+
+Un circuit de la jonction est dit à 1 lorsque le signal qu'il repré-
+sente est faux.
+
+(L'ordinateur, ou l'opérateur, met le circuit 108, par exemple, à 1, lorsqu'il
+désire que le modem ne soit pas connecté sur la ligne).
+
+DECONNEXION AUTOMATIQUE :
+
+qe Re er ee
+
+Le modem DTL 2 000 / RS 232 est équipé d'un dispositif de déconnexion
+automatique qui se met en veille 45 secondes après la connexion du modem sur la
+ligne (c'est-à-dire après le passage du circuit 108 à 6).
+
+Lorsque ce dispositif est en veille, la perte de la porteuse du modem
+distant entraîne automatiquement la déconnexion du modem.
+
+Si la porteuse du modem distant n'est pas apparue dans un délai d'en-
+viron 45 secondes après la connexion, il y a également déconnexion.
+
+Pour reconnecter le modem après une déconnexion automatique, il faut
+d'abord remettre le circuit 108 à 1, puis de nouveau à @.

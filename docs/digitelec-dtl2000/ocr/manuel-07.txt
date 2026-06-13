@@ -1,0 +1,56 @@
+#
+
+_7-
+
+Exemple 2 : Appel d'un serveur en V21 (300 Bauds) (configuration
+
+sn DTL + uniquement)
+Exemple 3 : Communication entre deux ordinateurs en Full Duplex
+
+Avant l'établissement de la communication, positionner les micro-
+interrupteurs 3 à 8 comme indiqué au chapître précédent, mode V21 Appel
+( 30, 49, 5-1, 6-1, 7-D, 8=1).
+
+Composer le numéro de téléphone du serveur sur le combiné associé
+au modem. Dès que la porteuse du serveur apparaît, mettre 108 et 105 à 9,
+pour connecter le modem et émettre la porteuse.
+
+Les circuits 109 et 106 passent alors à @, la communication est
+complètement établie.
+
+Dans ce mode, l'émission et la réception des données se font à
+300 Bauds. Le format de caractère à utiliser pour l'accès au réseau Transpac
+est le même que précédemment, à savoir : 7 bits de données + parité paire +
+1 stop bit.
+
+La fin de communication s'obtient en mettant 108 à 1, ou bien lors
+de la perte de la porteuse du serveur, par déconnexion automatique.
+
+[Le modem DTL 2 000 / RS 232 en configuration DTL V23 ne pouvant
+communiquer en Full Duplex qu'en mode V23 Appel, la communication entre deux
+modems DTL 2 000 configuration DTL V23 n'est possible qu'en Half Duplex (cf.
+Exemple 4)].
+
+Positionner tout d'abord les micro-interrupteurs 3 à 8 suivant le type
+de modulation choisi (V21 ou V23).
+
+L'un des deux interlocuteurs se place en mode Appel, l'autre en mode
+Réponse.
+
+Etablir ensuite la communication téléphonique.
+
+L'opérateur en mode Réponse doit le premier connecter son modem sur
+la ligne en mettant les circuits 108 et 105 à @. L'opérateur en mode Appel en-
+tend alors la tonalité de réponse (2100 Hz), puis la porteuse du modem distant,
+et met à son tour les circuits 108 et 105 à @, afin de connecter son modem.
+
+Les circuits 109 et 106 passent ensuite à @, la communication est
+complètement établie.
+
+Pour terminer la transmission, mettre le circuit 108 à 1.
+
+N.B. Lorsque les deux modems sont connectés, il est possible de laisser décro-
+chés les combinés utilisés pour établir la communication. Ainsi, à la fin de la
+transmission (1—3 108), les deux interlocuteurs peuvent reprendre une conver-
+sation, et éventuellement repasser ensuite en transmission de données, sans
+avoir à établir une nouvelle communication.

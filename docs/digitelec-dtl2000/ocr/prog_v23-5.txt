@@ -1,0 +1,27 @@
+Les initialisations comprennent :
+- l'initialisation générale évoquée plus haut,
+
+- l'établissement de la communication (numérotation et connexion manuelle ou
+automatique),
+
+- la vérification de la détection de porteuse (soit visuelle par le voyant Dé-
+tection, soit automatique par un test sur le bit 2 de SCYHSC (NB : dans ce
+dernier cas, la lecture de SCYSC doit être suivie d'une lecture "blanche" de
+3C9SD, qui est nécessaire à la réinitialisation du bit 2 de 8CHSC),
+
+- l'ordre d'émission (écriture de 9 dans SCYSC).
+
+Le traitement du caractère lu dans 8C9SC consiste soit en un
+rangement dans une mémoire (transfert de fichiers), soit en un décodage suivi
+d'un affichage sur l'écran.
+
+Les caractères en attente d'être émis peuvent provenir soit de la
+mémoire, soit du clavier.
+
+Dans la pratique, étant données les vitesses de transmission, un tel
+logiciel de communication doit être écrit en Assembleur. Dans le cas du
+raccordement à un serveur de type TELETEL, les caractères que vous
+recevrez se répartiront en caractères ASCII, composant les caractères, et en
+caractères de commande (mise en page, etc) codés suivant le protocole
+VIDEOTEX. La description de ces caractères de commande est relativement
+longue et déborderait de l'objet de cette notice.
