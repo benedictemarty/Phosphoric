@@ -169,6 +169,7 @@ typedef struct {
     /* ── Incoming server ── */
     uint16_t server_port;           /* $SP, 0 = disabled */
     char     server_pass[64];       /* &R */
+    char     busy_msg[128];         /* $BM, sent to rejected callers */
 
     /* ── Startup ── */
     char     auto_exec[256];        /* $AE */
@@ -319,6 +320,8 @@ static void pw_factory(picowifi_t* pw, bool keep_creds)
     pw->dtr_d = 0;
     pw->server_port = 0;
     pw->server_pass[0] = '\0';
+    snprintf(pw->busy_msg, sizeof(pw->busy_msg),
+             "Sorry, the system is currently busy. Please try again later.");
     pw->auto_exec[0] = '\0';
     pw->startup_wait = 0;
 
@@ -379,6 +382,48 @@ static int pw_tcp_connect(const char* host, uint16_t port)
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     return fd;
+}
+
+/* Read from fd until a newline or timeout (ms). Returns bytes read (NUL
+ * terminated), or -1 on error/timeout with no data. Socket is non-blocking
+ * (pw_tcp_connect sets O_NONBLOCK), so we poll between reads. */
+static int pw_read_line_timeout(int fd, char* buf, size_t sz, int timeout_ms)
+{
+    size_t n = 0;
+    int waited = 0;
+    while (n < sz - 1) {
+        char c;
+        ssize_t r = pw_read(fd, &c, 1);
+        if (r == 1) {
+            if (c == '\n' && n > 0) break;   /* end of line */
+            if (c != '\r') buf[n++] = c;     /* keep, drop CR */
+            waited = 0;
+            continue;
+        }
+        if (r == 0) break;                   /* peer closed */
+        if (waited >= timeout_ms) break;     /* timeout */
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        poll(&pfd, 1, 50);
+        waited += 50;
+    }
+    buf[n] = '\0';
+    return (n > 0) ? (int)n : -1;
+}
+
+/* Parse a NIST DAYTIME line (RFC 867) into "YY-MM-DD HH:MM:SS".
+ * Format: "MJD YY-MM-DD HH:MM:SS TT L H msADV UTC(NIST) OTM".
+ * Non-static so the unit tests can exercise it directly. */
+bool pw_parse_daytime(const char* raw, char* out, size_t osz)
+{
+    char tmp[256];
+    snprintf(tmp, sizeof(tmp), "%s", raw);
+    char* save = NULL;
+    char* mjd  = strtok_r(tmp, " \t\r\n", &save);
+    char* date = strtok_r(NULL, " \t\r\n", &save);
+    char* tm   = strtok_r(NULL, " \t\r\n", &save);
+    if (!mjd || !date || !tm) return false;
+    snprintf(out, osz, "%s %s", date, tm);
+    return true;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -568,8 +613,32 @@ static void pw_do_dial(picowifi_t* pw, const char* arg)
         else if (*arg == ' ') { arg++; }
         else break;
     }
+    bool had_colon = (strchr(arg, ':') != NULL);
     char host[256]; uint16_t port;
     pw_parse_hostport(arg, host, sizeof(host), &port);
+
+    /* No explicit port → try speed-dial resolution (firmware dialNumber):
+     * a 7-digit run of identical digits selects slot N, otherwise the
+     * host is matched against the stored aliases. */
+    if (!had_colon && host[0] != '\0') {
+        int slot = -1;
+        size_t hl = strlen(host);
+        if (hl == 7) {
+            bool same = true;
+            for (size_t i = 0; i < 7; i++)
+                if (!isdigit((unsigned char)host[i]) || host[i] != host[0]) { same = false; break; }
+            if (same) slot = host[0] - '0';
+        }
+        if (slot < 0) {
+            for (int i = 0; i < PW_DIAL_SLOTS; i++)
+                if (pw->dial[i].used && strcasecmp(host, pw->dial[i].alias) == 0) { slot = i; break; }
+        }
+        if (slot >= 0 && pw->dial[slot].used) {
+            snprintf(host, sizeof(host), "%s", pw->dial[slot].host);
+            port = pw->dial[slot].port;
+        }
+    }
+
     if (host[0] == '\0' && pw->host[0] != '\0') {  /* redial preset */
         snprintf(host, sizeof(host), "%s", pw->host);
         port = pw->port ? pw->port : PW_DEFAULT_PORT;
@@ -690,6 +759,11 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         if (*a == '=') { pw->startup_wait = atoi(a + 1); return pw_end(pw, pw_skip_digits(a + 1)); }
         return pw_end(pw, a);
     }
+    if ((a = pw_match(p, "$BM"))) {
+        if (*a == '?') { pw_qval(pw, pw->busy_msg); return pw_end(pw, a + 1); }
+        if (*a == '=') { return pw_end(pw, pw_setstr(pw->busy_msg, sizeof(pw->busy_msg), a + 1)); }
+        return pw_end(pw, a);
+    }
 
     /* ── & extended commands ── */
     if ((a = pw_match(p, "&Z"))) {
@@ -790,14 +864,55 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         return end;
     }
 
-    /* ── Network utilities (stubbed — sprint 48) ── */
+    /* ── Network utilities (sprint 48) ── */
     if ((a = pw_match(p, "GET"))) {
-        pw_qval(pw, "(ATGET not supported in emulation)");
-        return pw_end(pw, a + strlen(a));
+        /* ATGET http://host[:port][/path] — HTTP/1.1 GET, raw stream out. */
+        const char* url = a;
+        const char* end = a + strlen(a);
+        while (*url == ' ') url++;
+        const char* h = pw_match(url, "http://");
+        if (h) url = h;
+        char hostport[300] = {0}, path[256] = {0};
+        const char* slash = strchr(url, '/');
+        if (slash) {
+            size_t hl = (size_t)(slash - url);
+            if (hl >= sizeof(hostport)) hl = sizeof(hostport) - 1;
+            memcpy(hostport, url, hl); hostport[hl] = '\0';
+            snprintf(path, sizeof(path), "%s", slash + 1);
+        } else {
+            snprintf(hostport, sizeof(hostport), "%s", url);
+        }
+        char host[256]; uint16_t port;
+        pw_parse_hostport(hostport, host, sizeof(host), &port);
+        if (!strchr(hostport, ':')) port = 80;        /* HTTP default */
+        pw->session_telnet = TN_NONE;                 /* raw HTTP, no telnet */
+        pw_dial(pw, host, port);                      /* emits CONNECT, mode=1 */
+        if (pw->sockfd >= 0) {
+            char req[700];
+            int rn = snprintf(req, sizeof(req),
+                              "GET /%s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n",
+                              path, host);
+            pw_sock_write(pw, (const uint8_t*)req, (size_t)rn);
+        }
+        return end;
     }
     if ((a = pw_match(p, "RD")) || (a = pw_match(p, "RT"))) {
-        pw_qval(pw, "1970-01-01 00:00:00 UTC (no clock)");
-        return pw_end(pw, a);
+        /* NIST DAYTIME (RFC 867) at time.nist.gov:13 → "YY-MM-DD HH:MM:SS". */
+        if (pw->sockfd >= 0) { pw_result(pw, PW_ERROR); return a; }  /* in call */
+        int fd = pw_tcp_connect("time.nist.gov", 13);
+        if (fd < 0) { pw_result(pw, PW_ERROR); return a; }
+        char line[256];
+        /* DAYTIME starts with a blank line, then the timestamp line. */
+        int got = pw_read_line_timeout(fd, line, sizeof(line), 2000);
+        if (got <= 0) got = pw_read_line_timeout(fd, line, sizeof(line), 2000);
+        close(fd);
+        char out[64];
+        if (got > 0 && pw_parse_daytime(line, out, sizeof(out))) {
+            pw_qval(pw, out);
+            return pw_end(pw, a);
+        }
+        pw_result(pw, PW_ERROR);
+        return a;
     }
 
     /* ── WiFi connection control ── */

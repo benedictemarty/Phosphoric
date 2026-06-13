@@ -22,6 +22,9 @@
 #include <arpa/inet.h>
 #include "io/serial_backend.h"
 
+/* Internal helper exposed for testing (serial_picowifi.c). */
+bool pw_parse_daytime(const char* raw, char* out, size_t osz);
+
 static int tests_passed = 0;
 static int tests_failed = 0;
 
@@ -621,6 +624,132 @@ TEST(test_net0_default_via_atnet) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Sprint 48 — real network commands (ATGET / ATRD), alias & 7-digit dial,
+ *  AT$BM, +++ escape
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* Drive +++ from data mode back to command mode (poll-count guard: pump
+ * recv between each '+' so the silence threshold is met each time). */
+static void tn_escape_to_command(void) {
+    uint8_t b;
+    for (int k = 0; k < 3; k++) {
+        for (int i = 0; i < 80; i++) pw->recv(pw, &b);
+        pw->send(pw, '+');
+    }
+    for (int i = 0; i < 40; i++) pw->recv(pw, &b);   /* drain the OK */
+}
+
+TEST(test_nist_daytime_parse) {
+    char out[64];
+    bool ok = pw_parse_daytime("59999 26-06-13 12:34:56 50 0 0 123.4 UTC(NIST) *",
+                               out, sizeof(out));
+    ASSERT_TRUE(ok);
+    ASSERT_CONTAINS(out, "26-06-13 12:34:56");
+}
+
+TEST(test_nist_daytime_parse_garbage) {
+    char out[64];
+    ASSERT_FALSE(pw_parse_daytime("xx", out, sizeof(out)));
+}
+
+TEST(test_busy_message_default) {
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$BM?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "busy");
+    pw_teardown();
+}
+
+TEST(test_busy_message_set) {
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT$BM=Closed for maintenance", r, sizeof(r));
+    ASSERT_CONTAINS(r, "OK");
+    pw_cmd("AT$BM?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "Closed for maintenance");
+    pw_teardown();
+}
+
+TEST(test_atget_http_request) {
+    /* ATGET issues a real HTTP/1.1 GET; the response streams raw to Oric. */
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[96], r[512];
+    snprintf(cmd, sizeof(cmd), "ATGET http://127.0.0.1:%u/hello", port);
+    pw_cmd(cmd, r, sizeof(r));
+    ASSERT_CONTAINS(r, "CONNECT");
+    g_srv = accept(g_listener, NULL, NULL);
+    int fl = fcntl(g_srv, F_GETFL, 0);
+    fcntl(g_srv, F_SETFL, fl | O_NONBLOCK);
+
+    uint8_t req[300];
+    int n = tn_srv_read(req, sizeof(req) - 1);
+    req[n > 0 ? n : 0] = '\0';
+    ASSERT_CONTAINS((char*)req, "GET /hello HTTP/1.1");
+    ASSERT_CONTAINS((char*)req, "Host: 127.0.0.1");
+    ASSERT_CONTAINS((char*)req, "Connection: close");
+
+    const char* resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHELLO";
+    (void)!write(g_srv, resp, strlen(resp));
+    uint8_t oric[256];
+    int no = tn_drain_oric(oric, sizeof(oric) - 1);
+    oric[no > 0 ? no : 0] = '\0';
+    ASSERT_CONTAINS((char*)oric, "200 OK");
+    ASSERT_CONTAINS((char*)oric, "HELLO");
+    tn_disconnect();
+}
+
+TEST(test_dial_by_alias) {
+    /* AT&Z5 = localhost,mybbs ; ATDTmybbs resolves the alias and connects. */
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[96], r[512];
+    snprintf(cmd, sizeof(cmd), "AT&Z5=127.0.0.1:%u,mybbs", port);
+    pw_cmd(cmd, r, sizeof(r));
+    pw_cmd("ATDTmybbs", r, sizeof(r));
+    ASSERT_CONTAINS(r, "CONNECT");
+    g_srv = accept(g_listener, NULL, NULL);
+    ASSERT_TRUE(g_srv >= 0);
+    tn_disconnect();
+}
+
+TEST(test_dial_seven_digits) {
+    /* ATDT7777777 → speed-dial slot 7. */
+    uint16_t port = tn_make_listener();
+    pw_setup("Net", NULL);
+    char cmd[96], r[512];
+    snprintf(cmd, sizeof(cmd), "AT&Z7=127.0.0.1:%u,x", port);
+    pw_cmd(cmd, r, sizeof(r));
+    pw_cmd("ATDT7777777", r, sizeof(r));
+    ASSERT_CONTAINS(r, "CONNECT");
+    g_srv = accept(g_listener, NULL, NULL);
+    ASSERT_TRUE(g_srv >= 0);
+    tn_disconnect();
+}
+
+TEST(test_plus_plus_plus_escape) {
+    /* +++ returns to command mode without dropping carrier; ATO resumes. */
+    tn_connect("-");
+    ASSERT_TRUE(pw->connected(pw));
+    tn_escape_to_command();
+    ASSERT_FALSE(pw->connected(pw));     /* command mode, socket still open */
+    char r[256];
+    pw_cmd("ATO", r, sizeof(r));
+    ASSERT_CONTAINS(r, "CONNECT");
+    tn_disconnect();
+}
+
+TEST(test_atrd_in_call_errors) {
+    /* ATRD while a call is up → ERROR (firmware refuses). */
+    tn_connect("-");
+    tn_escape_to_command();
+    char r[256];
+    pw_cmd("ATRD", r, sizeof(r));
+    ASSERT_CONTAINS(r, "ERROR");
+    tn_disconnect();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Runner
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -675,6 +804,17 @@ int main(void) {
     RUN(test_telnet_inbound_iac_iac_data);
     RUN(test_telnet_inbound_ayt_response);
     RUN(test_net0_default_via_atnet);
+
+    /* Sprint 48 — real network commands */
+    RUN(test_nist_daytime_parse);
+    RUN(test_nist_daytime_parse_garbage);
+    RUN(test_busy_message_default);
+    RUN(test_busy_message_set);
+    RUN(test_atget_http_request);
+    RUN(test_dial_by_alias);
+    RUN(test_dial_seven_digits);
+    RUN(test_plus_plus_plus_escape);
+    RUN(test_atrd_in_call_errors);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

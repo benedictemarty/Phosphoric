@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.3-alpha] - 2026-06-13
+
+### Sprint 48 — PicoWiFi : commandes réseau réelles
+
+Implémente les commandes réseau du firmware qui restaient stubbées.
+
+#### Added
+
+- **`ATGET http://host[:port][/path]`** : vraie requête HTTP/1.1
+  (`GET /path HTTP/1.1` + `Host:` + `Connection: close`), passe en mode
+  données NET0 (HTTP brut), la réponse (en-têtes inclus) est diffusée vers
+  l'Oric. HTTP uniquement (pas HTTPS) — fidèle au firmware.
+- **`ATRD` / `ATRT`** : date/heure UTC via le protocole NIST DAYTIME
+  (`time.nist.gov:13`, RFC 867), sortie `YY-MM-DD HH:MM:SS`. ERROR si déjà
+  en appel ou en cas d'échec réseau.
+- **Numérotation par alias** (`ATDTparticles`) et **par numéro à 7 chiffres
+  identiques** (`ATDT7777777` → slot 7) — résolution des numéros rapides
+  quand aucun port explicite n'est donné.
+- **`AT$BM`** : message « occupé » (get/set), défaut firmware, destiné aux
+  appels entrants rejetés.
+
+#### Tests
+
+- **9 nouveaux tests** (52 picowifi, 575 au total) : requête HTTP ATGET
+  end-to-end sur socket localhost (vérifie la requête émise + le flux de
+  réponse), parse DAYTIME (+ rejet d'une ligne invalide), dial par alias
+  et par 7 chiffres, get/set + défaut de `AT$BM`, échappement `+++` →
+  mode commande + `ATO`, `ATRD` refusé en cours d'appel.
+
+#### Notes
+
+- La connexion réelle à `time.nist.gov` (ATRD) et un vrai serveur HTTP
+  distant (ATGET) ne sont pas testés automatiquement (réseau externe),
+  comme `ATDT` ; le parsing et les chemins d'erreur le sont.
+- Reste au backlog (sprint 49) : persistance NVRAM (AT&W/&V0/&V1), boot
+  auto-reconnect.
+
 ## [1.17.2-alpha] - 2026-06-13
 
 ### Sprint 47 — PicoWiFi : protocole Telnet (cœur de la fidélité)

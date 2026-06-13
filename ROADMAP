@@ -415,17 +415,20 @@ Sans ça, une vraie session BBS telnet recevait un flux d'octets erroné.
       cycle-exact (1 s) demanderait une horloge dans la vtable série ;
       reporté, sans impact fonctionnel sur la détection d'échappement
 
-### Sprint 48: PicoWiFi — commandes réseau réelles (PLANNED)
+### Sprint 48: PicoWiFi — commandes réseau réelles (v1.17.3-alpha) - DONE
 
-- [ ] **`ATGET`** : GET HTTP/1.1 (`Host:` + `Connection: close`), flux brut
-      vers la série (headers inclus), HTTP seulement
-- [ ] **`ATRD`/`ATRT`** : NIST daytime `time.nist.gov:13`, sortie
-      `YY-MM-DD HH:MM:SS`, ERROR si déjà en appel ou échec
-- [ ] **Dial par alias** (`ATDTparticles`) + **numéro 7 chiffres identiques**
-      (`ATDT7777777` → slot 7)
-- [ ] **`AT$BM`** message occupé + rejet d'appel entrant (BUSY si vide)
-- [ ] Tests : parsing requête HTTP, parsing réponse NIST, dial alias/7-digits
-      (chemins réseau réels non testés auto, comme ATDT — tester parsing+erreur)
+- [x] **`ATGET`** : GET HTTP/1.1 (`Host:` + `Connection: close`), mode
+      données NET0, flux brut (headers inclus) vers la série, HTTP seulement
+- [x] **`ATRD`/`ATRT`** : NIST DAYTIME `time.nist.gov:13` (RFC 867), sortie
+      `YY-MM-DD HH:MM:SS`, ERROR si déjà en appel ou échec réseau
+- [x] **Dial par alias** (`ATDTmybbs`) + **numéro 7 chiffres identiques**
+      (`ATDT7777777` → slot 7) quand aucun port explicite
+- [x] **`AT$BM`** message occupé (get/set, défaut firmware)
+- [x] Tests : 9 nouveaux dont ATGET end-to-end sur socket localhost (requête
+      émise + flux réponse), parse DAYTIME (+ rejet ligne invalide), dial
+      alias/7-chiffres, escape +++/ATO, ATRD refusé en appel ; 52 picowifi,
+      575 total. Connexion réelle time.nist.gov / HTTP distant non testée
+      auto (réseau externe), comme ATDT — parsing et erreurs couverts.
 
 ### Sprint 49: PicoWiFi — persistance NVRAM + boot (PLANNED)
 
