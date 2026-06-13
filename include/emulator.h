@@ -26,6 +26,7 @@
 #include "io/microdisc.h"
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
+#include "io/dtl2000.h"
 #include "storage/sedoric.h"
 #include "hostfs/hostfs.h"
 #include "debugger.h"
@@ -35,7 +36,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.16.84-alpha"
+#define EMU_VERSION "1.17.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -129,6 +130,11 @@ typedef struct emulator_s {
     uint16_t acia_base_addr;
     serial_backend_t* serial_backend;
     bool has_serial;
+
+    /* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 at $03F8-$03FD */
+    dtl2000_t dtl2000;
+    serial_backend_t* dtl2000_backend;
+    bool has_dtl2000;
 
     /* Microdisc controller */
     microdisc_t microdisc;

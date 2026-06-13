@@ -40,6 +40,7 @@ test_renderer
 test_rominfo
 test_savestate
 test_serial
+test_dtl2000
 test_symbols
 test_trace
 

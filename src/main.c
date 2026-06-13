@@ -291,6 +291,8 @@ static void print_usage(const char* program_name) {
     printf("      --serial-irq-on-rdrf  WDC 65C51 IRQ mode (re-trigger while RDRF set)\n");
     printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
+    printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8: loopback, tcp:H:P, pty\n");
+    printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
     printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     printf("      --load-state FILE      Load emulator state from FILE at startup\n");
     printf("  -?, --help                 Show this help\n");
@@ -543,6 +545,12 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return microdisc_read(&emu->microdisc, address);
     }
 
+    /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD.
+     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
+    if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
+        return dtl2000_read(&emu->dtl2000, address);
+    }
+
     /* VIA 6522: $0300-$030F (mirrored in $0300-$03FF) */
     return via_read(&emu->via, (uint8_t)(address & 0x0F));
 }
@@ -704,6 +712,13 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
         return;
     }
 
+    /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD.
+     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
+    if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
+        dtl2000_write(&emu->dtl2000, address, value);
+        return;
+    }
+
     uint8_t reg = (uint8_t)(address & 0x0F);
 
     /* Intercept VIA Port A writes to forward to PSG data bus */
@@ -811,6 +826,9 @@ static bool emulator_init(emulator_t* emu) {
     emu->acia.irq_set = acia_cpu_irq_set;
     emu->acia.irq_clr = acia_cpu_irq_clr;
     emu->acia.irq_userdata = emu;
+
+    /* Initialize Digitelec DTL 2000 modem card (disabled by default) */
+    dtl2000_init(&emu->dtl2000, DTL2000_DEFAULT_BASE);
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
     ay_init(&emu->psg, ORIC_CLOCK_HZ);
@@ -923,6 +941,11 @@ static void emulator_cleanup(emulator_t* emu) {
         serial_backend_destroy(emu->serial_backend);
         emu->serial_backend = NULL;
         emu->has_serial = false;
+    }
+    if (emu->dtl2000_backend) {
+        serial_backend_destroy(emu->dtl2000_backend);
+        emu->dtl2000_backend = NULL;
+        emu->has_dtl2000 = false;
     }
     /* Close ACIA trace and free RX FIFO */
     acia_set_trace(&emu->acia, NULL);
@@ -1468,6 +1491,11 @@ static void emulator_run(emulator_t* emu) {
             if (emu->has_serial) {
                 acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
                 acia_tick(&emu->acia, step);
+            }
+
+            /* Digitelec DTL 2000: PIA+ACIA TX/RX timing */
+            if (emu->has_dtl2000) {
+                dtl2000_tick(&emu->dtl2000, step);
             }
 
             /* NOTE: real Oric hardware does NOT expose VSync via VIA CB1.
@@ -2103,12 +2131,14 @@ int main(int argc, char* argv[]) {
     bool rom_info_enabled = false;
     const char* serial_arg = NULL;
     const char* acia_addr_arg = NULL;
+    const char* dtl2000_arg = NULL;
+    const char* dtl2000_addr_arg = NULL;
     bool serial_v23 = false;
     int serial_buffer_size = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2152,6 +2182,8 @@ int main(int argc, char* argv[]) {
         {"serial-irq-on-rdrf",  no_argument,       0, OPT_SERIAL_IRQ_RDRF},
         {"serial-trace",        required_argument, 0, OPT_SERIAL_TRACE},
         {"acia-addr",           required_argument, 0, OPT_ACIA_ADDR},
+        {"dtl2000",             required_argument, 0, OPT_DTL2000},
+        {"dtl2000-addr",        required_argument, 0, OPT_DTL2000_ADDR},
         {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
         {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
         {"symbols",             required_argument, 0, OPT_SYMBOLS},
@@ -2259,6 +2291,12 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
+                break;
+            case OPT_DTL2000:
+                dtl2000_arg = optarg;
+                break;
+            case OPT_DTL2000_ADDR:
+                dtl2000_addr_arg = optarg;
                 break;
             case '?':
             default:
@@ -2443,6 +2481,59 @@ int main(int argc, char* argv[]) {
             } else {
                 log_error("Failed to open serial backend: %s", serial_arg);
                 serial_backend_destroy(sb);
+            }
+        }
+    }
+
+    /* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 modem card.
+     * The transport backend reuses the generic serial backends. */
+    if (dtl2000_arg) {
+        uint16_t base = DTL2000_DEFAULT_BASE;
+        if (dtl2000_addr_arg) {
+            base = (uint16_t)strtol(dtl2000_addr_arg, NULL, 16);
+        }
+        if (emu.has_microdisc) {
+            log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
+                        "(Jasmin) — not faithful to coexist on real hardware", base);
+        }
+        serial_backend_t* db = NULL;
+        if (strcmp(dtl2000_arg, "loopback") == 0) {
+            db = serial_backend_loopback_create();
+        } else if (strncmp(dtl2000_arg, "tcp:", 4) == 0) {
+            char host[256] = {0};
+            uint16_t port = 23;
+            const char* hp = dtl2000_arg + 4;
+            const char* colon = strrchr(hp, ':');
+            if (colon && colon != hp) {
+                size_t hlen = (size_t)(colon - hp);
+                if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
+                memcpy(host, hp, hlen);
+                host[hlen] = '\0';
+                port = (uint16_t)atoi(colon + 1);
+            } else {
+                strncpy(host, hp, sizeof(host) - 1);
+            }
+            db = serial_backend_tcp_create(host, port);
+        } else if (strcmp(dtl2000_arg, "pty") == 0) {
+            db = serial_backend_pty_create();
+        } else {
+            log_error("Unknown DTL 2000 transport: %s (loopback, tcp:host:port, pty)",
+                      dtl2000_arg);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+
+        if (db) {
+            if (db->open(db)) {
+                dtl2000_init(&emu.dtl2000, base);
+                dtl2000_set_backend(&emu.dtl2000, db);
+                emu.dtl2000_backend = db;
+                emu.has_dtl2000 = true;
+                log_info("Digitelec DTL 2000 enabled at $%04X (transport: %s)",
+                         base, dtl2000_arg);
+            } else {
+                log_error("Failed to open DTL 2000 transport: %s", dtl2000_arg);
+                serial_backend_destroy(db);
             }
         }
     }

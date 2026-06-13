@@ -1,0 +1,344 @@
+/**
+ * @file test_dtl2000.c
+ * @brief Digitelec DTL 2000 (PIA 6821 + ACIA 6850) unit tests
+ * @author bmarty <bmarty@mailo.com>
+ * @date 2026-06-13
+ * @version 1.0.0
+ *
+ * Verifies the faithful DTL 2000 modem-card model bit-for-bit against the
+ * register values extracted (by OCR) from the period programming manual
+ * "Programmation carte DTL V23": PIA Port A line/mode bits, ACIA 6850
+ * control/status semantics, asymmetric/symmetric init sequences, and a
+ * loopback round-trip through the serial backend.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "io/dtl2000.h"
+#include "io/serial_backend.h"
+
+static int tests_passed = 0;
+static int tests_failed = 0;
+
+#define TEST(name) static void name(void)
+#define RUN(name) do { \
+    printf("  %-50s", #name); \
+    name(); \
+    tests_passed++; \
+    printf("PASS\n"); \
+} while(0)
+
+#define ASSERT_EQ(a, b) do { \
+    if ((a) != (b)) { \
+        printf("FAIL\n    %s:%d: expected %d, got %d\n", __FILE__, __LINE__, (int)(b), (int)(a)); \
+        tests_failed++; return; \
+    } \
+} while(0)
+
+#define ASSERT_TRUE(x) do { \
+    if (!(x)) { \
+        printf("FAIL\n    %s:%d: expected true\n", __FILE__, __LINE__); \
+        tests_failed++; return; \
+    } \
+} while(0)
+
+#define ASSERT_FALSE(x) do { \
+    if ((x)) { \
+        printf("FAIL\n    %s:%d: expected false\n", __FILE__, __LINE__); \
+        tests_failed++; return; \
+    } \
+} while(0)
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Setup helpers
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define BASE  DTL2000_DEFAULT_BASE
+#define A_PA  (BASE + DTL_REG_PIA_A)
+#define A_CRA (BASE + DTL_REG_PIA_CRA)
+#define A_PB  (BASE + DTL_REG_PIA_B)
+#define A_CRB (BASE + DTL_REG_PIA_CRB)
+#define A_CS  (BASE + DTL_REG_ACIA_CS)
+#define A_DAT (BASE + DTL_REG_ACIA_D)
+
+static dtl2000_t dev;
+static serial_backend_t* loopback;
+
+static void setup(void) {
+    dtl2000_init(&dev, DTL2000_DEFAULT_BASE);
+    loopback = serial_backend_loopback_create();
+    loopback->open(loopback);
+    dtl2000_set_backend(&dev, loopback);
+}
+
+static void teardown(void) {
+    if (loopback) {
+        serial_backend_destroy(loopback);
+        loopback = NULL;
+    }
+}
+
+/* Run the asymmetric V23 init sequence from the manual (transposed Oric). */
+static void init_asymmetric(void) {
+    dtl2000_write(&dev, A_CRA, 0x00);   /* CRA: select DDRA */
+    dtl2000_write(&dev, A_PA, DTL_DDRA_INIT);   /* DDRA = $F4 */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);  /* ACIA master reset $03 */
+    dtl2000_write(&dev, A_CRA, 0x04);   /* CRA: select OR (CR2=1) */
+    dtl2000_write(&dev, A_PA, DTL_OR_ASYM_DISCONNECT); /* OR=$D4, line open */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_CFG);      /* control=$49 (7E1) */
+}
+
+/* Tick enough cycles to cross one RX byte period at the given baud. */
+static void tick_one_byte(int baud) {
+    int total = (1000000 / baud) * 12 + 16;
+    while (total > 0) {
+        int step = (total >= 4) ? 4 : total;
+        dtl2000_tick(&dev, step);
+        total -= step;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Tests
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+TEST(test_init_state) {
+    dtl2000_t d;
+    dtl2000_init(&d, DTL2000_DEFAULT_BASE);
+
+    /* Power-on: transmitter empty; line open → carrier absent (DCD=1),
+     * not clear to send (CTS=1). */
+    uint8_t st = dtl2000_read(&d, A_CS);
+    ASSERT_TRUE(st & DTL_ACIA_SR_TDRE);
+    ASSERT_FALSE(st & DTL_ACIA_SR_RDRF);
+    ASSERT_TRUE(st & DTL_ACIA_SR_DCD);   /* carrier lost */
+    ASSERT_TRUE(st & DTL_ACIA_SR_CTS);   /* not clear */
+    ASSERT_FALSE(d.line_connected);
+}
+
+TEST(test_addr_in_range) {
+    dtl2000_t d;
+    dtl2000_init(&d, DTL2000_DEFAULT_BASE);
+    ASSERT_FALSE(dtl2000_addr_in_range(&d, 0x03F7));
+    ASSERT_TRUE(dtl2000_addr_in_range(&d, 0x03F8));
+    ASSERT_TRUE(dtl2000_addr_in_range(&d, 0x03FD));
+    ASSERT_FALSE(dtl2000_addr_in_range(&d, 0x03FE));
+    ASSERT_FALSE(dtl2000_addr_in_range(&d, 0x0300));
+}
+
+TEST(test_pia_ddr_or_select) {
+    dtl2000_t d;
+    dtl2000_init(&d, DTL2000_DEFAULT_BASE);
+
+    /* CR2=0 → Port A address routes to DDRA */
+    dtl2000_write(&d, A_CRA, 0x00);
+    dtl2000_write(&d, A_PA, 0xF4);
+    ASSERT_EQ(dtl2000_read(&d, A_PA), 0xF4);   /* reads DDRA */
+
+    /* CR2=1 → Port A address routes to the output register */
+    dtl2000_write(&d, A_CRA, 0x04);
+    dtl2000_write(&d, A_PA, 0xD4);
+    ASSERT_EQ(dtl2000_read(&d, A_PA), 0xD4);   /* reads ORA */
+    /* DDRA preserved underneath */
+    dtl2000_write(&d, A_CRA, 0x00);
+    ASSERT_EQ(dtl2000_read(&d, A_PA), 0xF4);
+}
+
+TEST(test_line_connect_disconnect) {
+    setup();
+    init_asymmetric();   /* leaves line open ($D4) */
+
+    /* Line open → not connected, carrier absent */
+    uint8_t st = dtl2000_read(&dev, A_CS);
+    ASSERT_FALSE(dev.line_connected);
+    ASSERT_TRUE(st & DTL_ACIA_SR_DCD);
+
+    /* Connect: OR bit2 → 0 ($D0). Backend (loopback) is connected, so the
+     * carrier becomes present → DCD bit clears. */
+    dtl2000_write(&dev, A_PA, DTL_OR_ASYM_CONNECT);  /* $D0 */
+    ASSERT_TRUE(dev.line_connected);
+    st = dtl2000_read(&dev, A_CS);
+    ASSERT_FALSE(st & DTL_ACIA_SR_DCD);   /* carrier present */
+    ASSERT_FALSE(st & DTL_ACIA_SR_CTS);   /* clear to send */
+
+    /* Disconnect again: OR bit2 → 1 ($D4) */
+    dtl2000_write(&dev, A_PA, DTL_OR_ASYM_DISCONNECT);
+    ASSERT_FALSE(dev.line_connected);
+    st = dtl2000_read(&dev, A_CS);
+    ASSERT_TRUE(st & DTL_ACIA_SR_DCD);
+
+    teardown();
+}
+
+TEST(test_mode_select_bit4) {
+    setup();
+    dtl2000_write(&dev, A_CRA, 0x04);   /* OR select */
+
+    /* Asymmetric: OR bit4 = 1 ($D0/$D4) */
+    dtl2000_write(&dev, A_PA, DTL_OR_ASYM_CONNECT);  /* $D0 */
+    ASSERT_FALSE(dev.symmetric);
+    ASSERT_EQ(dev.tx_baud, DTL_V23_TX_BAUD);   /* 75 */
+    ASSERT_EQ(dev.rx_baud, DTL_V23_RX_BAUD);   /* 1200 */
+
+    /* Symmetric: OR bit4 = 0 ($C0/$C4) */
+    dtl2000_write(&dev, A_PA, DTL_OR_SYM_CONNECT);   /* $C0 */
+    ASSERT_TRUE(dev.symmetric);
+    ASSERT_EQ(dev.tx_baud, 1200);
+    ASSERT_EQ(dev.rx_baud, 1200);
+
+    teardown();
+}
+
+TEST(test_acia_master_reset) {
+    setup();
+    /* Inject a received byte first */
+    dev.acia_status |= DTL_ACIA_SR_RDRF;
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);   /* $03 */
+    uint8_t st = dtl2000_read(&dev, A_CS);
+    ASSERT_FALSE(st & DTL_ACIA_SR_RDRF);
+    ASSERT_TRUE(st & DTL_ACIA_SR_TDRE);
+    teardown();
+}
+
+TEST(test_acia_word_select_mask) {
+    setup();
+
+    /* $49 = 7E1 → 7-bit data mask */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_CFG);   /* $49 */
+    ASSERT_EQ(dev.bitmask, 0x7F);
+    ASSERT_EQ(dev.framebits, 10);   /* start+7+parity+1 stop */
+
+    /* $55 = 8N1 → 8-bit data mask */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_CFG);    /* $55 */
+    ASSERT_EQ(dev.bitmask, 0xFF);
+    ASSERT_EQ(dev.framebits, 10);   /* start+8+0+1 stop */
+
+    teardown();
+}
+
+TEST(test_acia_carrier_emission_bit) {
+    setup();
+
+    /* $49: TC = 10 → RTS high → NOT emitting */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_CFG);   /* $49 */
+    ASSERT_FALSE(dev.tx_carrier);
+
+    /* $09: TC = 00 → RTS low → emitting carrier */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_EMIT);  /* $09 */
+    ASSERT_TRUE(dev.tx_carrier);
+
+    /* Symmetric: $55 no emit, $15 emit */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_CFG);    /* $55 */
+    ASSERT_FALSE(dev.tx_carrier);
+    dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_EMIT);   /* $15 */
+    ASSERT_TRUE(dev.tx_carrier);
+
+    teardown();
+}
+
+TEST(test_tx_clears_tdre) {
+    setup();
+    init_asymmetric();
+    dtl2000_write(&dev, A_PA, DTL_OR_ASYM_CONNECT);  /* connect */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_EMIT);   /* emit carrier */
+
+    /* TDRE set before write */
+    ASSERT_TRUE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_TDRE);
+
+    dtl2000_write(&dev, A_DAT, 'Z');
+    /* Transmitter busy → TDRE clears */
+    ASSERT_FALSE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_TDRE);
+
+    /* After one TX byte period at 75 baud, TDRE returns */
+    tick_one_byte(75);
+    ASSERT_TRUE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_TDRE);
+
+    teardown();
+}
+
+TEST(test_loopback_roundtrip) {
+    setup();
+    /* Connect line, symmetric 8-bit so the byte survives unmasked */
+    dtl2000_write(&dev, A_CRA, 0x04);
+    dtl2000_write(&dev, A_PA, DTL_OR_SYM_CONNECT);   /* $C0 connect, symmetric */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);       /* master reset */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_EMIT);    /* $15 8N1 emit */
+
+    /* Transmit a byte; loopback echoes it back */
+    dtl2000_write(&dev, A_DAT, 0x42);
+
+    /* Initially no RX */
+    ASSERT_FALSE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_RDRF);
+
+    /* Tick across an RX byte period at 1200 baud */
+    tick_one_byte(1200);
+
+    uint8_t st = dtl2000_read(&dev, A_CS);
+    ASSERT_TRUE(st & DTL_ACIA_SR_RDRF);
+    ASSERT_EQ(dtl2000_read(&dev, A_DAT), 0x42);
+
+    /* Reading data clears RDRF */
+    ASSERT_FALSE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_RDRF);
+
+    teardown();
+}
+
+TEST(test_no_tx_when_line_open) {
+    setup();
+    /* Configure to emit but leave line OPEN (not connected) */
+    dtl2000_write(&dev, A_CRA, 0x04);
+    dtl2000_write(&dev, A_PA, DTL_OR_SYM_DISCONNECT); /* $C4 open */
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);
+    dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_EMIT);
+
+    dtl2000_write(&dev, A_DAT, 0x55);
+    tick_one_byte(1200);
+    /* Nothing should have been transmitted/echoed because the line is open */
+    ASSERT_FALSE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_RDRF);
+    ASSERT_EQ(dev.tx_count, 0u);
+
+    teardown();
+}
+
+TEST(test_reset_clears_state) {
+    setup();
+    init_asymmetric();
+    dtl2000_write(&dev, A_PA, DTL_OR_ASYM_CONNECT);
+    ASSERT_TRUE(dev.line_connected);
+
+    dtl2000_reset(&dev);
+    ASSERT_FALSE(dev.line_connected);
+    ASSERT_FALSE(dev.symmetric);
+    ASSERT_EQ(dev.tx_count, 0u);
+    ASSERT_EQ(dev.rx_count, 0u);
+    uint8_t st = dtl2000_read(&dev, A_CS);
+    ASSERT_TRUE(st & DTL_ACIA_SR_TDRE);
+    ASSERT_TRUE(st & DTL_ACIA_SR_DCD);
+
+    teardown();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Main
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+int main(void) {
+    printf("\n=== Digitelec DTL 2000 (PIA 6821 + ACIA 6850) Tests ===\n\n");
+
+    RUN(test_init_state);
+    RUN(test_addr_in_range);
+    RUN(test_pia_ddr_or_select);
+    RUN(test_line_connect_disconnect);
+    RUN(test_mode_select_bit4);
+    RUN(test_acia_master_reset);
+    RUN(test_acia_word_select_mask);
+    RUN(test_acia_carrier_emission_bit);
+    RUN(test_tx_clears_tdre);
+    RUN(test_loopback_roundtrip);
+    RUN(test_no_tx_when_line_open);
+    RUN(test_reset_clears_state);
+
+    printf("\n=== Results: %d passed, %d failed ===\n\n", tests_passed, tests_failed);
+    return tests_failed > 0 ? 1 : 0;
+}
