@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.17.0-alpha
-Build Status: ALPHA (Sprint 51 : Digitelec DTL 2000 fidèle — PIA 6821 + ACIA 6850 à $03F8-$03FD, sémantique registres OCR du manuel d'époque, CLI --dtl2000 ; 535 tests)
+Version: 1.17.1-alpha
+Build Status: ALPHA (Sprint 52 : DTL 2000 — câblage IRQ ACIA 6850 → CPU, source IRQF_DTL2000, IRQ RX/TX level-triggered ; 538 tests)
 Last Updated: 2026-06-13
 
 ================================================================
@@ -34,7 +34,7 @@ BUILD STATUS
 [V] HIRES Mode Detection  - Fixed ($26A bit 1, not bit 2)
 [V] Keyboard Automation   - Complete (--type-keys, press_char/release_all API)
 [V] Microdisc Controller  - Complete (I/O $0310-$031F, overlay ROM, IRQ routing)
-[V] Digitelec DTL 2000    - Complete (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR-verified registers, --dtl2000)
+[V] Digitelec DTL 2000    - Complete (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR-verified registers, --dtl2000, IRQ wired IRQF_DTL2000)
 [V] Disk Boot (Sedoric)   - Working (-d .dsk + --disk-rom microdis.rom, boots to SEDORIC V4.0)
 [V] RAM Init Pattern      - Fixed (Oricutron-compatible: 128x00+128xFF per page)
 [V] IRQ Model             - Fixed (level-triggered bitfield, matches real 6502)

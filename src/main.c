@@ -799,6 +799,15 @@ static void acia_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_SERIAL);
 }
 
+/* Digitelec DTL 2000 (ACIA 6850) IRQ callbacks */
+static void dtl2000_cpu_irq_set(emulator_t* emu) {
+    cpu_irq_set(&emu->cpu, IRQF_DTL2000);
+}
+
+static void dtl2000_cpu_irq_clr(emulator_t* emu) {
+    cpu_irq_clear(&emu->cpu, IRQF_DTL2000);
+}
+
 static bool emulator_init(emulator_t* emu) {
     log_info("Initializing Phosphoric v%s", EMU_VERSION);
 
@@ -829,6 +838,9 @@ static bool emulator_init(emulator_t* emu) {
 
     /* Initialize Digitelec DTL 2000 modem card (disabled by default) */
     dtl2000_init(&emu->dtl2000, DTL2000_DEFAULT_BASE);
+    emu->dtl2000.irq_set = dtl2000_cpu_irq_set;
+    emu->dtl2000.irq_clr = dtl2000_cpu_irq_clr;
+    emu->dtl2000.irq_userdata = emu;
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
     ay_init(&emu->psg, ORIC_CLOCK_HZ);
@@ -2526,6 +2538,10 @@ int main(int argc, char* argv[]) {
         if (db) {
             if (db->open(db)) {
                 dtl2000_init(&emu.dtl2000, base);
+                /* dtl2000_init() zeroes the struct — re-wire the CPU IRQ hooks */
+                emu.dtl2000.irq_set = dtl2000_cpu_irq_set;
+                emu.dtl2000.irq_clr = dtl2000_cpu_irq_clr;
+                emu.dtl2000.irq_userdata = &emu;
                 dtl2000_set_backend(&emu.dtl2000, db);
                 emu.dtl2000_backend = db;
                 emu.has_dtl2000 = true;

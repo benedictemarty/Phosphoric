@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.1-alpha] - 2026-06-13
+
+### Sprint 52 — DTL 2000 : câblage de l'IRQ ACIA 6850 vers le CPU
+
+#### Added
+
+- **Nouvelle source d'IRQ `IRQF_DTL2000` (0x08)** dans le bitfield IRQ
+  level-triggered du 6502 (`cpu6502.h`), aux côtés de VIA/DISK/SERIAL.
+- **Câblage IRQ DTL 2000 → CPU** : `dtl2000_cpu_irq_set/clr` dans `main.c`,
+  reliés à `emu->dtl2000.irq_set/irq_clr` à l'init (et re-câblés après le
+  ré-init de base via `--dtl2000-addr`). L'ACIA 6850 émise une IRQ selon la
+  logique matérielle déjà modélisée :
+  - **RIE** (control bit 7) + **RDRF** → IRQ réception ;
+  - **TC = 01** (RTS bas + TIE) + **TDRE** → IRQ émission.
+  La ligne est level-triggered : asserte tant que la condition tient, se
+  désasserte à la lecture des données (RDRF) ou à l'écriture (TDRE).
+- **3 tests IRQ** (`test_dtl2000`) : IRQ désactivée par défaut, IRQ sur
+  réception avec RIE (assert puis désassert à la lecture), IRQ sur émission
+  avec TIE (assert sur TDRE, désassert à l'écriture, ré-assert après shift).
+
+#### Notes
+
+- Le logiciel DTL 2000 d'époque interrogeait en polling ; l'IRQ est désormais
+  disponible pour les pilotes qui l'utilisent (terminaux Minitel temps réel).
+
 ## [1.17.0-alpha] - 2026-06-13
 
 ### Sprint 51 — Digitelec DTL 2000 : émulation fidèle PIA 6821 + ACIA 6850 ($03F8-$03FD)

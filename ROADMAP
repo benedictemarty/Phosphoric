@@ -335,8 +335,17 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] examples/dtl2000-test.bas (séquences POKE/PEEK transposées de l'OCR)
 - [x] 12 tests bit-à-bit (make test-dtl2000), suite complète 535 tests PASS
 - [x] Avertissement coexistence Microdisc/DTL (Jasmin) documenté
-- [ ] Câblage IRQ vers CPU (le logiciel DTL polle ; hooks prêts, NULL par défaut)
+- [x] Câblage IRQ vers CPU → livré en Sprint 52 (v1.17.1-alpha)
 - [ ] Validation contre un logiciel Oric d'origine (cassette DTL introuvable en ligne)
+
+### Sprint 52: DTL 2000 — câblage IRQ ACIA 6850 → CPU (v1.17.1-alpha) - DONE
+- [x] Nouvelle source IRQF_DTL2000 (0x08) dans le bitfield level-triggered 6502
+- [x] dtl2000_cpu_irq_set/clr reliés à emu->dtl2000.irq_set/clr à l'init
+      (re-câblés après le ré-init de base via --dtl2000-addr)
+- [x] IRQ réception (RIE + RDRF) et émission (TC=01 TIE + TDRE), désassert
+      à la lecture des données / écriture, level-triggered
+- [x] 3 nouveaux tests IRQ (désactivée par défaut, RX avec RIE, TX avec TIE)
+- [x] Suite complète 538 tests PASS
 
 ### Sprint 38: Trace FDC + fix dump RAM 64 Ko (v1.16.84-alpha) - DONE
 - [x] FDC_TRACE=1 : trace stderr écritures registres FDC (PC 6502 +

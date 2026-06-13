@@ -319,6 +319,86 @@ TEST(test_reset_clears_state) {
     teardown();
 }
 
+/* ───────────────────────────────────────────────────────────────────────
+ *  IRQ probe — records the level-triggered IRQ line state via the hooks
+ * ─────────────────────────────────────────────────────────────────────── */
+
+static int probe_irq_line = 0;   /* 1 = asserted */
+static void probe_irq_set(emulator_t* e) { (void)e; probe_irq_line = 1; }
+static void probe_irq_clr(emulator_t* e) { (void)e; probe_irq_line = 0; }
+
+static void attach_irq_probe(void) {
+    probe_irq_line = 0;
+    dev.irq_set = probe_irq_set;
+    dev.irq_clr = probe_irq_clr;
+    dev.irq_userdata = NULL;
+}
+
+TEST(test_irq_disabled_by_default) {
+    setup();
+    attach_irq_probe();
+    /* No RIE / no TIE: configure 8N1 emit, connect, send/receive a byte */
+    dtl2000_write(&dev, A_CRA, 0x04);
+    dtl2000_write(&dev, A_PA, DTL_OR_SYM_CONNECT);
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);
+    dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_EMIT);   /* $15: RIE=0, TC=00 */
+    dtl2000_write(&dev, A_DAT, 0x33);
+    tick_one_byte(1200);
+    /* RDRF set but interrupts disabled → no IRQ */
+    ASSERT_TRUE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_RDRF);
+    ASSERT_FALSE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_IRQ);
+    ASSERT_EQ(probe_irq_line, 0);
+    teardown();
+}
+
+TEST(test_irq_on_rx_with_rie) {
+    setup();
+    attach_irq_probe();
+    dtl2000_write(&dev, A_CRA, 0x04);
+    dtl2000_write(&dev, A_PA, DTL_OR_SYM_CONNECT);
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);
+    /* $15 (8N1 emit) + RIE($80) = $95 */
+    dtl2000_write(&dev, A_CS, (uint8_t)(DTL_ACIA_SYM_EMIT | DTL_ACIA_CR_RIE));
+    ASSERT_EQ(probe_irq_line, 0);
+
+    /* Transmit a byte; loopback echoes; RX poll sets RDRF → IRQ asserts */
+    dtl2000_write(&dev, A_DAT, 0x44);
+    tick_one_byte(1200);
+    uint8_t st = dtl2000_read(&dev, A_CS);
+    ASSERT_TRUE(st & DTL_ACIA_SR_RDRF);
+    ASSERT_TRUE(st & DTL_ACIA_SR_IRQ);
+    ASSERT_EQ(probe_irq_line, 1);
+
+    /* Reading the data clears RDRF → IRQ deasserts */
+    (void)dtl2000_read(&dev, A_DAT);
+    ASSERT_FALSE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_IRQ);
+    ASSERT_EQ(probe_irq_line, 0);
+    teardown();
+}
+
+TEST(test_irq_on_tx_with_tie) {
+    setup();
+    attach_irq_probe();
+    dtl2000_write(&dev, A_CRA, 0x04);
+    dtl2000_write(&dev, A_PA, DTL_OR_SYM_CONNECT);
+    dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);
+    /* 8N1 with TC=01 (RTS low + TIE on): WS=101<<2=$14, CDS=01, TC=01<<5=$20 → $35 */
+    dtl2000_write(&dev, A_CS, 0x35);
+    /* TDRE is set after reset → with TIE, IRQ asserts immediately */
+    ASSERT_TRUE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_TDRE);
+    ASSERT_EQ(probe_irq_line, 1);
+
+    /* Writing data clears TDRE → IRQ deasserts while shifting out */
+    dtl2000_write(&dev, A_DAT, 0x55);
+    ASSERT_EQ(probe_irq_line, 0);
+
+    /* After the byte shifts out, TDRE returns → IRQ re-asserts */
+    tick_one_byte(1200);
+    ASSERT_TRUE(dtl2000_read(&dev, A_CS) & DTL_ACIA_SR_TDRE);
+    ASSERT_EQ(probe_irq_line, 1);
+    teardown();
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Main
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -338,6 +418,9 @@ int main(void) {
     RUN(test_loopback_roundtrip);
     RUN(test_no_tx_when_line_open);
     RUN(test_reset_clears_state);
+    RUN(test_irq_disabled_by_default);
+    RUN(test_irq_on_rx_with_rie);
+    RUN(test_irq_on_tx_with_tie);
 
     printf("\n=== Results: %d passed, %d failed ===\n\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;
