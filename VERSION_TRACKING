@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.84-alpha
-Release Date: 2026-06-12
-Status: Alpha (Sprint 37 — fix modèle joystick IJK : port imprimante VIA Port A direct, layout réel, bit présence ; 523 tests) ; précédent : (Sprint 36f — Backlog conformité LOCI : console UART $03A0-$03A3, TAP bas niveau $0315-$0317, ACIA $0380, adj_scan ; 516 tests + 13 E2E + 15 game compat + 4 mc-autorun)
+Current Version: 1.17.0-alpha
+Release Date: 2026-06-13
+Status: Alpha (Sprint 51 — Digitelec DTL 2000 : émulation fidèle PIA 6821 + ACIA 6850 à $03F8-$03FD, distincte du backend digitelec/ACIA 6551 ; sémantique registres extraite par OCR du manuel d'époque ; CLI --dtl2000 ; 535 tests dont 12 nouveaux) ; précédent : (Sprint 38 — Trace FDC opt-in FDC_TRACE=1 + fix --dump-ram-at 64 Ko ; 523 tests)
 
 Version History:
 ----------------
+- 1.17.0-alpha (2026-06-13): Sprint 51 — **Digitelec DTL 2000 fidèle (PIA 6821 + ACIA 6850, $03F8-$03FD)** : nouveau module `io/dtl2000`, distinct du backend comportemental `digitelec`/ACIA 6551 ; PIA OR bit2=connexion ligne, bit4=mode asym/sym, DDRA=$F4 ; ACIA 6850 reset $03, état RDRF/TDRE/DCD/CTS, émission porteuse bit6 ; valeurs registres extraites par OCR (Tesseract fra) du manuel « Programmation carte DTL V23 » ; CLI `--dtl2000`/`--dtl2000-addr` (transport loopback/tcp/pty) ; `examples/dtl2000-test.bas` ; conflit page-3 Jasmin documenté + avertissement ; 12 nouveaux tests bit-à-bit, suite complète 535 tests PASS
 - 1.16.84-alpha (2026-06-12): Sprint 38 — **Trace FDC opt-in `FDC_TRACE=1`** (écritures registres avec PC 6502 + cycle, SEEK avec état interne, READ piste/secteur — a rétracté le faux bug WD1793 « track+1 » de SCUMM-Oric) + **fix `--dump-ram-at` 64 Ko** (régression 48 Ko ; $C000-$FFFF = vue CPU bankée), suite complète PASS (profil sans SDL2)
 - 1.16.83-alpha (2026-06-12): Sprint 37 — **Fix modèle IJK** (port imprimante = VIA Port A direct : enable PB4 bas, select broches 6-7, layout réel R/L/F/D/U sur bits 0-4, bit 5 présence ; wired-AND porta_read dans via_read ; suppression du blending clavier PSG ; 7 nouveaux tests dont rejeu de la séquence 6502), suite complète PASS
 - 1.16.82-alpha (2026-06-12): Sprint 36f — **Backlog conformité LOCI** (console UART $03A0-$03A2 + snoop ULA $03A3 ; protocole TAP bas niveau PLAY/REC/READ_BIT/FFW avec lead-in 8×0x16, trame 14 bits et protection moteur via snoop VIA ORB ; op $A6 adj_scan ; $031A-$031B ; octets exacts IRQ/DRQ $0314/$0318 ; ACIA par défaut à $0380 sous --loci ; fix build headless clock_gettime ; 11 nouveaux tests), 516 tests + 13 E2E + 4 mc-autorun PASS

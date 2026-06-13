@@ -1,0 +1,53 @@
+Le
+
+L
+
+LU
+
+Emission : Réception :
+
+— Anitialisation générale - initialisation généra-
+
+- Étabiissement de le
+
+{a m i tio , i
+communication - Établissement de 1a
+
+- Drdre d'émission Comvnunication
+
+Pointeur = adress
+de début du pro-
+gramme ou du
+fichier.
+
+Pointeur = Adresse
+de début du pro
+gramme où du
+fichier
+
+Lecture de
+gcgsc
+
+ë
+
+Lecture de ÊCBSC
+. L
+
+NUN I NON AN au
+NY
+
+RC
+Feriture dans Lecture de CAS D
+ÉCBSD ie l'uctul et stockage
+panité. de l'actet pointé
+Painteur = Pointer =
+Pointeur + 1 Pointeur + 1
+
+Là encore, il est nécessaire, compte tenu de la vitesse, de travailler
+en Assembleur.
+
+IL est également possible, pour les deux correspondants d'assumer à
+tour de rôle les fonctions d'émetteur et de récepteur, et donc d'échanger des
+messages, par exemple, en temps reel.
+
+# *

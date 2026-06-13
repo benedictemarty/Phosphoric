@@ -1,0 +1,44 @@
+LES MICRO-INTERRUPTEURS :
+
+KTD |08
+
+MAPOOEUE
+
+11213 41 561 7|8
+
+Pour chacun de ces micro-interrupteurs, la position basse (lorsqu'on
+regarde le clavier de face, la nappe conductrice étant dirigée vers le haut)
+correspond à la valeur 1 et la position haute à la valeur 6.
+
+La fonction de chaque micro-interrupteur est la suivante :
+
+* Micro-interrupteur 1 : Ce micro-interrupteur est placé en parallèle sur le
+circuit 108 de la jonction RS 232 C, qui commande la connexion du modem sur
+
+la ligne téléphonique. Ainsi, lorsque ce circuit est absent de la jonction et
+que l'ordinateur ne peut le commander , il suffit de mettre le micro-interrup-
+teur-L-à pour connecter le modem sur la ligne téléphonique. Remettre ce micro-
+interrupteur à 1 déconnecte le modem. Lorsque l'ordinateur pilote effectivement
+le circuit 108, il faut laisser le micro-interrupteur 1 à 1.
+
+* Micro-interrupteur 2 : Ce micro-interrupteur est placé en parallèle sur le
+circuit 105 de la jonction RS 232 C, qui commande l'émission de porteuse du
+modem. Ainsi, lorsque ce circuit est absent de la jonction et que l'ordinateur
+ne peut le commander , il suffit de mettre le micro-interrupteur 2 à @ pour
+émettre la porteuse. Remettre ce micro-interrupteur à 1 rétablit le silence
+
+sur la ligne. Lorsque l'ordinateur pilote effectivement le circuit 105, il faut
+laisser le micro-interrupteur 2 à 1.
+
+* Micro-interrupteurs 3, 4 et 5 : Ces micro-interrupteurs sélectionnent le type
+de modulation utilisé par le modem, de la façon suivante :
+
+Micro-interrupteur 3 4 5
+V23 Appel Co] 1 1
+V23 Réponse 1 1 1
+V21 Appel ) 1) 1
+V21 Réponse 1 (0) 1
+V23 Half Duplex tr) 1 1)
+
+[N.B. En configuration DTL V23, le modem ne fonctionne qu'en mode V23 Appel
+et V23 Half Duplex]

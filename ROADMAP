@@ -323,6 +323,21 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] 7 nouveaux tests dont rejeu de la séquence 6502 d'un jeu réel
 - [ ] Validation finale sur interface IJK physique (testeur forum)
 
+### Sprint 51: Digitelec DTL 2000 fidèle — PIA 6821 + ACIA 6850 ($03F8-$03FD) (v1.17.0-alpha) - DONE
+- [x] OCR (Tesseract fra) du manuel d'époque « Programmation carte DTL V23 »
+      → sémantique bit-à-bit figée (points « à confirmer » résolus)
+- [x] Module io/dtl2000 : PIA 6821 (4 reg) + ACIA 6850 (2 reg), distinct du
+      backend comportemental digitelec/ACIA 6551
+- [x] PIA OR bit2=connexion ligne, bit4=mode asym/sym, DDRA=$F4 ; ACIA reset
+      $03, état RDRF/TDRE/DCD/CTS, émission porteuse bit6 ; timing V23 75/1200
+- [x] Routage I/O $03F8-$03FD intercepté avant le miroir VIA (conflit page-3)
+- [x] CLI --dtl2000 TRANSPORT (loopback/tcp/pty) + --dtl2000-addr
+- [x] examples/dtl2000-test.bas (séquences POKE/PEEK transposées de l'OCR)
+- [x] 12 tests bit-à-bit (make test-dtl2000), suite complète 535 tests PASS
+- [x] Avertissement coexistence Microdisc/DTL (Jasmin) documenté
+- [ ] Câblage IRQ vers CPU (le logiciel DTL polle ; hooks prêts, NULL par défaut)
+- [ ] Validation contre un logiciel Oric d'origine (cassette DTL introuvable en ligne)
+
 ### Sprint 38: Trace FDC + fix dump RAM 64 Ko (v1.16.84-alpha) - DONE
 - [x] FDC_TRACE=1 : trace stderr écritures registres FDC (PC 6502 +
       cycle), SEEK (état interne) et READ (piste/secteur) — a permis

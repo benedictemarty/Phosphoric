@@ -1,0 +1,44 @@
+II INSTALLATION
+
+.. Trois câbles permettent de relier le modem DTL 2 000 / RS 232 au
+monde extérieur :
+
+L]
+- le câble d'alimentation secteur relié au bloc d'alimentation muni
+d'une prise de courant,
+
+- le câble téléphonique relié à une prise gigogne,
+
+- le câble de raccordement à l'ordinateur relié à un connecteur
+RS 232C 25 broches (5 broches pour l'Apple II C).
+
+Raccordement à l'ordinateur :
+
+Le raccordement à l'ordinateur doit TOUJOURS s'effectuer avec le
+modem et l'ordinateur HORS TENSION.
+
+Raccorder le connecteur du modem à la prise RS 232 C de votre ordi-
+nateur (prise modem).
+
+Raccordement au réseau téléphonique :
+
+- Enficher à sa place la prise gigogne reliée au modem.
+
+- Rebrancher le combiné téléphonique à l'arrière de la prise gigogne.
+
+Le modem peut être laissé branché en permanence sur la prise télé-
+phonique, SAUF EN PERIODE D'ORAGE. Le raccordement du modem, et à plus forte
+raison son utilisation, sont formellement déconseillés pendant un orage. En
+
+cas d'absence prolongée, il est donc préférable de débrancher le modem de la
+prise téléphonique.
+
+Raccordement au secteur :
+
+Enficher la prise du bloc alimentation dans une prise de courant
+220 V (50 Hz).
+
+11 faut toujours prendre soin de débrancher cette prise :
+- avant toute opération de raccordement à l'ordinateur,
+
+- avant d'ouvrir le capot du modem.

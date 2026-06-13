@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0-alpha] - 2026-06-13
+
+### Sprint 51 — Digitelec DTL 2000 : émulation fidèle PIA 6821 + ACIA 6850 ($03F8-$03FD)
+
+Modélisation **fidèle au matériel** de la carte modem Digitelec DTL 2000
+telle que vue sur l'Oric : une fenêtre memory-mapped de 6 octets en
+`$03F8-$03FD` exposant un **PIA Motorola 6821** (4 registres) + un
+**ACIA Motorola 6850** (2 registres). Distincte du backend série
+comportemental `digitelec` (qui passe par l'ACIA 6551 émulée à `$031C`),
+elle se pilote exactement comme le faisait le logiciel d'époque : le PIA
+commande la ligne et le mode, l'ACIA porte les données.
+
+La sémantique bit-à-bit des registres a été extraite par **OCR** (Tesseract
+`fra`) du manuel de programmation d'époque « Programmation carte DTL V23 »
+(chips identiques à la variante Apple II, mapping offset-pour-offset),
+résolvant tous les points laissés « à confirmer » dans le document de
+contexte.
+
+#### Added
+
+- **Module `io/dtl2000` (PIA 6821 + ACIA 6850)** : `dtl2000_init`,
+  `dtl2000_reset`, `dtl2000_read`, `dtl2000_write`, `dtl2000_tick`,
+  `dtl2000_set_backend`, `dtl2000_addr_in_range`.
+  - PIA Port A (OR) : **bit 2 = connexion ligne** (0 = ligne fermée/connecté,
+    1 = ouverte/déconnecté), **bit 4 = mode** (1 = asymétrique V23 75/1200,
+    0 = symétrique 1200/1200). DDRA d'init = `$F4`. Accès DDR/OR via CRA bit 2.
+  - ACIA 6850 contrôle : `$03` = master reset ; word-select (bits 2-4),
+    diviseur (bits 0-1), contrôle d'émission RTS/TIE (bits 5-6, **bit 6 =
+    émission porteuse**), RIE (bit 7). Valeurs d'époque reconnues :
+    `$49` (7E1 asym, pas d'émission), `$09` (asym émission), `$55` (8N1 sym),
+    `$15` (sym émission).
+  - ACIA 6850 état : bit 0 = RDRF, bit 1 = TDRE, **bit 2 = DCD** (1 = porteuse
+    perdue, actif bas), **bit 3 = CTS** (1 = pas prêt, actif bas).
+  - Timing V23 : RX 1200 / TX 75 bauds (asymétrique), 1200/1200 (symétrique),
+    cadence calculée depuis le format de trame.
+- **CLI** : `--dtl2000 TRANSPORT` (loopback, `tcp:H:P`, pty) et
+  `--dtl2000-addr ADDR` (base, défaut `03F8`). Le transport réutilise les
+  backends série génériques.
+- **`examples/dtl2000-test.bas`** : programme BASIC de test transposé des
+  séquences POKE/PEEK d'origine (init asymétrique, connexion, aller-retour
+  loopback, mode terminal), à lancer avec `--dtl2000 loopback`.
+- **`make test-dtl2000`** : 12 tests unitaires bit-à-bit validant les valeurs
+  de registres contre l'OCR (état init, sélection DDR/OR, connexion/mode,
+  master reset, masques 7/8 bits, émission porteuse, TDRE, aller-retour
+  loopback, garde « pas d'émission ligne ouverte », reset).
+- **`docs/digitelec-dtl2000/`** : archives source (référence registres
+  consolidée `registres-ocr.md`, document de contexte `contexte.md`, OCR brut
+  des 22 pages des manuels d'époque dans `ocr/`).
+
+#### Notes
+
+- **Conflit page 3** : `$03F8-$03FF` aliase le miroir VIA 6522 (`$0300-$030F`
+  répété sur la page) et, sur matériel réel, l'électronique disque Jasmin.
+  Le routeur intercepte `$03F8-$03FD` avant le repli VIA quand la carte est
+  active ; un avertissement est émis si Microdisc et DTL 2000 sont activés
+  ensemble (non fidèle à coexister sur matériel réel).
+- L'IRQ vers le CPU n'est pas câblée (le logiciel DTL d'époque interroge en
+  polling) : le bit 7 d'état est calculé pour fidélité, hooks CPU laissés NULL.
+
 ## [1.16.84-alpha] - 2026-06-12
 
 ### Sprint 38 — Trace FDC opt-in (FDC_TRACE) + fix dump RAM 64 Ko

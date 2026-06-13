@@ -1,0 +1,36 @@
+* Micro-interrupteurs 6, 7 et 8 : Ces micro-interrupteurs doivent être position-
+nés suivant la configuration du modem DTL 2 000 utilisée, de la façon suivante :
+
+Micro-interrupteur 6 7 8
+Configuration DTL + l (0) 1
+Configuration DTL V23 ® 1 1
+
+IV EXEMPLES DE COMMUNICATION
+
+Avant toute communication, les circuits 108 et 105 sont à L, ainsi
+que les circuits 106 et 109.
+
+DL Rappel_: -Jes circuits 108 (connexion du modem sur la ligne) et 105
+(demande pour émettre) peuvent être commandés, soit par l'ordinateur, s'ils
+existent au niveau de la jonction, soit manuellement , par les micro- interrup-
+teurs L et 2.
+
+Exemple 1 : Appel d'un serveur en V23 (serveur Télétel)
+
+Avant l'établissement de la communication, positionner les micro-
+interrupteurs 3 à 8 comme indiqué au chapître précédent, mode V23 Appel
+( 3=9, 4=1, 5=1, 8-1, 6 et 7 suivant configuration).
+
+Composer le numéro de téléphone du serveur sur le combiné associé
+au modem . Dès que la porteuse du serveur apparaît, mettre les circuits 108 et
+105 à O, pour connecter le modem et émettre la porteuse.
+
+Les circuits 109 (détection de porteuse reçue) et 106 (prêt à émettr_)
+passent alors à @, la communication est complètement établie.
+
+Dans ce mode, l'émission des données se fait à 75 Bauds, et la récep-
+tion à 1200 Bauds. Le format de caractère à utiliser pour l'accès au réseau
+Télétel est : 7 bits de données + parité paire + 1 stop bit.
+
+La fin de communication s'obtient en mettant 108 à 1, ou bien lors
+de la perte de la porteuse du serveur, par déconnexion automatique.

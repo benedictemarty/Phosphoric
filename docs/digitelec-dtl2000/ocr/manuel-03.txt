@@ -1,0 +1,49 @@
+Le panneau de contrôle du modem DTL 2 000 / RS 232 comporte sept
+voyants permettant un contrôle visuel du déroulement des communications.
+
+Lorsqu'ils sont allumés :
+
+— le voyant MARCHE indique que le modem DTL 2 000 / RS 232 est sous
+tension.
+
+— le voyant CONNEXION indique que le modem DTL 2 000 / RS 232 utilise
+la ligne téléphonique. Le combiné de téléphone associé au modem est alors décon-
+
+necté de la ligne. Le combiné est utilisable lorsque le voyant CONNEXION est
+éteint.
+
+— le voyant PRET À EMETTRE indique que le modem module une porteuse.
+
+— le voyant DETECTION indique que le modem reçoit la porteuse d'un
+modem distant.
+
+- les voyants RECEPTION et EMISSION visualisent les données trans-
+mises dans les deux sens.
+
+— le voyant TEST indique une transmission en Half-Duplex.
+
+777 TTTT PRINCIPES DE FONCTIONNEMENT ns :
+
+Le modem DTL 2 000 / RS 232 est commandé par les lignes de la jonc-
+
+tion RS 232 C d'une part et par un clavier de 8 micro-interrupteurs, situé à
+l'arrière du boitier, d'autre part.
+
+Les lignes de la jonction RS 232 C sont les suivantes :
+
+N° de circuit
+
+N° de broche N° de broche (fil)
+Connecteur RS 232 C | connecteur Apple IIC CCITT
+(avis V24)
+2 4 103 Emission des données
+3 5 104 Réception des données
+4 1 105 Demande pour émettre
+5 - 106 Prêt à émettre
+7 2 102 Masse électrique
+8 3 109 Détecteur du signal de
+ligne reçu
+20 l 108 Connexion du modem sur
+
+(108.1) la ligne
+

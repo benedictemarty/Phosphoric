@@ -1,0 +1,23 @@
+“
+
+_5-
+
+8°) Si tout s'est bien passé, l'écran de l'émetteur et celui du
+récepteur affichent le message "OK" en fin de transmission. Sinon, c'est
+le message "ERREUR" qui apparaît. Décrocher le combiné.
+
+9°) Taper alors sur RETURN. Il ne reste plus au récepteur qu'à sau-
+vegarder le programme ou les données reçues sur disquette.
+
+N. B. En V 23, l' expédi teur aura remarqué que, pendant l'émission, les
+voyants Détection et Réception sont également allumés. Ceci est aû au dis-
+positif interne de bouclage qui permet, en mode symétrique, de recevoir
+simultanément toutes les données émises, et donc d'effectuer, éventuelle-
+ment, un contrôle en transmission.
+
+Voilà ! Vous savez maintenant comment utiliser votre Modem
+DTL 2 O00 ou du moins une partie de ses possibilités. Pour en savoir
+plus, n'hésitez pas à consulter la brochure jointe "Programmation de la
+carte DTL V 23 en association avec l'interface APPLE II".
+
+Nous vous souhaitons de bonnes communications !

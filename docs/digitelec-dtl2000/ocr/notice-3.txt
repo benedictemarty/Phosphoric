@@ -1,0 +1,53 @@
+La numérotation s'effectue automatiquement. À l'apparition de la
+porteuse du modem du point d'accès appelé, votre DTIL 2 O00 émet à son
+tour. L'échange des données est alors possible.
+
+1) APPEL D'UN SERVEUR TELETEL (V 23) :
+
+Les touches spéciales du Minitel ont été simulées par transcodage
+du clavier de l'APPLE II. Ainsi :
+RETURN . signifie ENVOI
+DEL signifie CORRECTION
+É— signifie RETOUR
+— signifie SUITE
+
+T signifie SOMMAIRE
+V signifie  REPETITION
+CTRL--G signifie  GUIDE |
+CTRL-X signifie  ANNULATION
+CTRL-D signifie CONNEXION / FIN
+CTRL-L signifie  LOUPE
+
+Pour terminer la communication, il faut presser CTRL-D, puis
+CTRL-F,
+
+*
+
+Si vous n'êtes pas faniliarisé avec le système MINITEL, nous vous
+conseillons d'appeler l'annuaire électronique et de taper SOMMAIRE. Vous
+trouverez ainsi un petit guide d'utilisation du MINITEL. Vous pouvez éga-
+lement appeler le point d'accès TELETEL (614.91.66 ou 16.36. 14.91.66) et
+taper AST, suivi d'ENVOI. Vous accèderez alors à l'annuaire des Services
+comprenant également un guide d'utilisation.
+
+2) APPEL DU RESEAU TRANSPAC (V 21 - Carte DIL PLUS uniquement) :
+
+Vous disposez dans ce mode d'un véritable terminal. Dès l'appa-
+rition de la bannière "Transpac XXX'", tapez le numéro Transpac du centre
+de calcul auquel vous désirez vous raccorder. Si le numéro est valide et
+le serveur disponible, le message COM apparaît. Vous êtes alors en commu-
+nication. Pour couper la communication, tapez CTRL-P, puis LIB (return).
+
+Vous pouvez alors taper le numéro d'un autre serveur ou terminer la liaison
+en pressant CTRL-D (2 fois),
+
+*
+
+Dans les deux cas (Télétel et Transpac) il vous est également
+possible de sauvegarder des écrans sur la disquette. Il suffit pour cela
+de taper la touche ESC pendant que l'écran que vous voulez conserver est
+affiché. Un menu de sauvegardeapparaît alors vous demandant le numéro du
+drive concerné et le nom que vous voulez donner au fichier sauvegardé.
+
+Pour récupérer un écran, tapez 1 lorsque vous êtes sous le
+contrôle du menu principal, après déconnexion.

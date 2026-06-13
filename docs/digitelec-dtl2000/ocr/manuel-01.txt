@@ -1,0 +1,52 @@
+#
+
+;
+
+ns VP LL 1 11e 7 Le
+DIUTIELESC
+
+INFORMATIQUE
+
+Parc Club Cadéra - Avenue J.-F. Kennedy
+33700 MERIGNAC
+Tél. 56344492
+
+PRUPRer - | | MODE M DTL 2000
+
+RS 232 & APPLE IIC
+
+MANUEL DE L'UTILISATEUR
+
+I PRESENTATION
+
+NS —
+
+DUR
+amis
+
+ntérface À quer avec les réseaux télématiaües ou avec
+un autre ordinateur via le réseau téléphonique.
+
+set Deux configi#ätions du modem DTL 2 000 / RS 232 sont possibles, la
+#7 configuration DIL V23 et la configuration DTL +. Pour passer de la première à
+
+la seconde, il suffit de changer une carte (la carte modem) à l'intérieur du
+boitier. °
+
+Les types de modulation utilisables avec le modem DTL 2 000 / RS 232
+sont les suivants :
+
+* en configuration DTL V23 :
+
+- V23 Appel en Full Duplex (1200 Bauds réception / 75 Bauds émission)
+- V23 en Half Duplex (1200 Bauds réception / TP EPPEE émission).
+
+* en configuration DIL V21 :
+
+- V23 Appel en Full Duplex (1200 Bauds réception/75 Bauds émission)
+
+- V23 Réponse en Full Duplex (75 Bauds réception/1200 Bauds émission)
+- V23 en Half Duplex (1200 Bauds réception/1200 Bauds émission)
+- V21 Appel en Full Duplex (300 Bauds réception/300 Bauds émission)
+
+- V21 Réponse en Full Duplex (300 Bauds réception/300 Bauds émission) .

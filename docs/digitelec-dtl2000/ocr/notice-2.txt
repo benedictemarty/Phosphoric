@@ -1,0 +1,60 @@
+2
+
+Attention : Avant d'ouvrir votre modem pour introduire ou changer
+une carte, prenez TOUJOURS soin de débrancher la prise secteur.
+
+x
+
+Vous vous demandez peut-être comment se fait-il qu'il n'y ait
+aucun poussoir, aucun interrupteur vous permettant d'agir sur.le DTL 2000
+Contrairement à certains autres modems. Cela vient du fait que, raccordé
+directement aux bus de votre ordinateur, le DTL 2000 peut entretenir un
+dialogue beaucoup plus riche avec votre ordinateur que s'il lui était rac-
+cordé par une liaison de type RS 232 C ou V 24. Tous les paramètres de
+communication (vitesse de transmission, mode de transmission, format des
+caractères, etc...) peuvent ainsi être adressés au modem par l'ordinateur
+lui-même, et donc de façon entièrement automatique si l'on utilise un
+
+programme, ce qui est bien plus élégant et pratique qu'une intervention
+manuelle !
+
+k
+
+Mais il est temps maintenant de passer aux actes :
+
+Branchez tout d'abord la prise téléphonique de votre DTL 2000 en
+lieu et place de la prise de votre combiné. Rebranchez ensuite cette der-
+nière à l'arrière de la prise du modem.
+
+Placez ensuite la carte Digitelec Cf A2 dans l'un des slots (de
+1 à 5 inclus) de la carte-mère de votre APPLE II. Enfoncez enfin avec pré-
+caution le connecteur du câble en nappe sur cette carte, en veillant bien
+à ce que la nappe de fils sorte sur le bord droit de la carte (en regar-
+dant du côté des composants), c'est-à-dire vers l'arrière de L'APPLE IT.
+
+T1 ne vous reste plus qu'à brancher la prise d'alimentation sur
+le secteur (220 V uniquement).
+
+Le voyant marche s'est allumé, vous êtes prêt à communiquer.
+
+x
+
+Nous avons le plaisir de vous offrir une disquette contenant des
+logiciels de communication vous permettant d'utiliser immédiatement votre
+modem, que ce soit pour l'accès à un serveur de type TELETEL, pour l'accès
+au réseau Transpac (DTL PLUS uniquement) ou pour l'échange de fichiers et
+de programmes avec un autre APPLE II. Vous pouvez bien entendu créer des
+logiciels personnalisés, tel qu'un service de messagerie entre amis par
+exemple. Il vous faudra lire pour cela la brochure jointe “Programmation
+de la carte modem en association avec l'interface APPLE II", qui vous dé-
+voilera tous les secrets du DIL 2000 (quelques notions de programmation en
+Basic ou en Assembleur vous seront toutefois nécessaires).
+
+La disquette démarre automatiquement à la mise sous tension de
+L'APPLE IT. Il ne vous reste plus qu'à répondre aux questions que vous pose
+le programme. Vous pouvez appeler soit un des numéros que vous propose le
+programme, soit le numéro d'un serveur que vous connaissez. Dans ce cas, les
+chiffres constituant le numéro que vous composez doivent étre tapés les uns
+à la suite des autres, sans espace ni autre signe à l'exception du tiret (-)
+qui introduit un délai de 5 secondes permettant d'attendre une tonalité
+(après le 16 par exemple).

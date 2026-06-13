@@ -216,6 +216,10 @@ Serial (ACIA 6551):
   --serial-trace FILE       Trace TX/RX/signals with timestamps
   --acia-addr XXXX          Override ACIA base address (default $031C)
 
+Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD):
+  --dtl2000 TRANSPORT       loopback | tcp:host:port | pty
+  --dtl2000-addr XXXX       Override base address (default $03F8)
+
 Chromecast:
   --cast-server[=PORT]      Start MJPEG server (default 8080)
   --cast-to[=DEVICE]        Cast to Chromecast

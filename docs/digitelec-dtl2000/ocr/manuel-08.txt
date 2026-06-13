@@ -1,0 +1,35 @@
+_
+
+_8-
+
+Exemple 4 : Communication entre deux ordinateurs en Half Duplex
+
+En Half Duplex, les donnée
+
+s ne sont plus émises en même temps, mais
+à tour de rôle.
+
+Positionner tout d'abord les micro-interrupteurs 3 à 8 comme indiqué
+
+au chapître précédent, mode V23 Half Duplex (39, 4=1, 59, 8-1, 6 et 7 suivant
+configuration).
+
+Etablir ensuite la communication téléphonique, puis connecter les
+deux modems sur la ligne en mettant le circuit 108 à de chaque côté.
+
+L'opérateur qui doit émettre le premier (par accord préalable) met
+le circuit 105 à @ afin d'émettre sa porteuse. L'opérateur en réception laisse
+le circuit 105 à 1 et voit le circuit 109 (détection de porteuse) passer à @.
+
+Il reçoit alors les données émises par le modem distant.
+
+Du côté émission, le circuit 109 est aussi à ® et les données émises
+par l'ordinateur lui sont renvoyées automatiquement en écho par le modem. Pour
+cesser d'émettre, il suffit de remettre le circuit 105 à 1. Les circuits 109
+passent alors à 1 des deux côtés. Si l'opérateur jusque-là en réception désire
+passer en émission, il doit mettre le circuit 105 à @ dans un délai inférieur
+
+à 100 millisecondes, après le passage du circuit 109 à 1, afin de ne pas acti-
+ver le dispositif de déconnexion automatique du modem.
+
+Pour terminer la Communication, mettre le circuit 108 à 1.
