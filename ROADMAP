@@ -357,6 +357,145 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] VERSION_TRACKING : 1.16.84-alpha tracé
 - [ ] Élucider test_renderer_init_headless en profil SDL2=1 (pré-existant)
 
+### Sprint 45: PicoWiFiModemUSB — modem WiFi LOCI (v1.17.0-alpha) - DONE
+
+Émulation du PicoWiFiModemUSB de sodiumlb (l'auteur de LOCI) : une
+Pico W pont USB CDC ↔ WiFi que le firmware LOCI expose à l'Oric comme
+un ACIA série à $0380. Branche feature/picowifi (depuis main/sprint 38).
+
+- [x] Backend dédié src/io/serial_picowifi.c (SERIAL_BACKEND_PICOWIFI),
+      état opaque heap-alloc dans l'union serial_backend_t
+- [x] CLI --serial picowifi[:SSID[:PASS]] ; combiné à --loci → ACIA $0380
+      automatique = montage réel Pico W + LOCI reproduit
+- [x] Jeu de commandes AT v0.1.0 complet et fidèle au firmware réel :
+      WiFi (AT$SSID/$PASS/$MDNS, ATCn), dial (ATDT/ATDS/ATD TCP),
+      telnet (ATNET, AT$TTY/$TTS/$TTL), série (AT$SB/$SU), registres S
+      (S0/S2), codes résultat (ATE/Q/V/X), flux (AT&K/&D), numéros
+      rapides (AT&Z), serveur (AT$SP/&R), profil (AT&V/&W/&F), infos
+      (ATI), online (ATO), échappement +++ gardé, répétition A/
+- [x] WiFi associé simulé ; connexions de données = vrais sockets TCP
+      (réutilise l'infra getaddrinfo/connect non-bloquant du backend modem)
+- [x] 28 tests unitaires make test-picowifi (config, codes résultat,
+      registres, numéros rapides, telnet, reset usine, erreurs), 551 total
+- [x] CHANGELOG / VERSION_TRACKING / CIRRUS_OS / README / CLAUDE.md à jour
+- [ ] E2E BASIC : PRINT vers ACIA $0380 + lecture réponse AT (à ajouter)
+- [ ] Numéros rapides AT&Z persistés (AT&W actuellement no-op)
+
+---
+
+## Backlog PicoWiFiModemUSB — fidélité au firmware réel
+
+Audit du code source réel (clone `sodiumlb/PicoWiFiModemUSB`, fichiers
+`at_basic.h`/`at_extended.h`/`at_proprietary.h`/`support.h`/`tcp_support.h`/
+`wifi_modem.cpp`). Le sprint 45 a livré la **surface AT** ; ce backlog vise
+la **fidélité comportementale**. Périmètre = reproduire le firmware réel ;
+toute extension au-delà (ex. proxy TLS) est explicitement hors-périmètre
+(voir Future Enhancements).
+
+### Sprint 46: PicoWiFi — défauts + codes résultat + parsing composé (v1.17.1-alpha) - DONE
+
+Corrige les divergences vs le code source (l'impl sprint 45 suivait le
+README, partiellement obsolète/hérité de l'ancêtre ESP8266).
+
+- [x] **Défauts d'usine corrects** (`factoryDefaults`) : mDNS `picomodem`
+      (PAS `espmodem`), baud `9600` (PAS 1200), location `Computer Room`,
+      terminal `ansi`, NET1, X1, V1, S2=43, 8N1
+- [x] **3 numéros rapides préchargés** : slot 0 `particles`, slot 1
+      `altair`, slot 2 `heatwave` (préfixe telnet `+` reporté au sprint 47)
+- [x] **Enum codes résultat fidèle** : R_OK=0, R_CONNECT=1, R_RING=2,
+      R_NO_CARRIER=3, R_ERROR=4, R_NO_ANSWER=5, R_RING_IP=6 (retiré
+      NO_DIALTONE/BUSY inventés)
+- [x] **Parsing de commandes composées** (`ATS0=1 X1 Q0`) : boucle de
+      tokens, seul le DERNIER émet OK/valeur, token inconnu → ERROR
+- [x] **`ATC?` numérique** (`0`/`1`) au lieu de texte
+- [x] **`ATX` effectif** : `CONNECT <baud>` et `NO CARRIER (HH:MM:SS)` en
+      X1, formes simples en X0
+- [x] **`AT$PASS?`** affiche la vraie valeur (fidèle au firmware)
+- [x] **`ATZ`** = no-op `OK` (le firmware ne reset pas : casserait l'USB)
+- [x] Tests : 5 nouveaux (défauts, numéros rapides, ligne composée, token
+      inconnu), 33 picowifi / 556 total
+
+### Sprint 47: PicoWiFi — protocole Telnet (cœur de la fidélité) (v1.17.2-alpha) - DONE
+
+Sans ça, une vraie session BBS telnet recevait un flux d'octets erroné.
+
+- [x] **Modes NET0/NET1/NET2** appliqués au flux bidirectionnel
+      (`session_telnet`, distinct du défaut `ATNET`)
+- [x] **Sortant** : doublage `IAC` (REAL+FAKE), `CR`→`CR+NUL` (REAL)
+- [x] **Entrant** : machine à états IAC, filtrage `CR+NUL`→`CR` (REAL),
+      dé-doublage `IAC IAC`→`IAC`, contrôle telnet retiré du flux Oric
+- [x] **Négociation IAC** : DO → WILL pour BINARY/ECHO/SUP_GA/TTYPE/TSPEED,
+      WONT sinon ; WILL → DONT pour LINEMODE/NAWS/LFLOW/NEW_ENVIRON/XDISPLOC,
+      DO sinon
+- [x] **Sous-négociation SB** : TTYPE→`terminal`, TSPEED→`baud,baud`,
+      NAWS→`width/height`, LOC→`location`
+- [x] **Préfixes `ATDT`** `-`/`=`/`+` → NO/REAL/FAKE telnet (session),
+      réinitialisé au défaut sur NO CARRIER
+- [x] **`AT$AYT`** (émet `IAC AYT`) + réponse `[Yes]` à un AYT entrant
+- [x] Tests : 10 tests d'intégration sur sockets localhost réels (CR/NUL/
+      IAC sortant REAL/FAKE/NET0, négociation DO TTYPE / WILL NAWS,
+      filtrage entrant, IAC IAC = donnée, AYT, cas Minitel NET0), 566 total
+- [~] **`+++` guard-time** : reste approximé (compteur de polls) — un timing
+      cycle-exact (1 s) demanderait une horloge dans la vtable série ;
+      reporté, sans impact fonctionnel sur la détection d'échappement
+
+### Sprint 48: PicoWiFi — commandes réseau réelles (v1.17.3-alpha) - DONE
+
+- [x] **`ATGET`** : GET HTTP/1.1 (`Host:` + `Connection: close`), mode
+      données NET0, flux brut (headers inclus) vers la série, HTTP seulement
+- [x] **`ATRD`/`ATRT`** : NIST DAYTIME `time.nist.gov:13` (RFC 867), sortie
+      `YY-MM-DD HH:MM:SS`, ERROR si déjà en appel ou échec réseau
+- [x] **Dial par alias** (`ATDTmybbs`) + **numéro 7 chiffres identiques**
+      (`ATDT7777777` → slot 7) quand aucun port explicite
+- [x] **`AT$BM`** message occupé (get/set, défaut firmware)
+- [x] Tests : 9 nouveaux dont ATGET end-to-end sur socket localhost (requête
+      émise + flux réponse), parse DAYTIME (+ rejet ligne invalide), dial
+      alias/7-chiffres, escape +++/ATO, ATRD refusé en appel ; 52 picowifi,
+      575 total. Connexion réelle time.nist.gov / HTTP distant non testée
+      auto (réseau externe), comme ATDT — parsing et erreurs couverts.
+
+### Sprint 49: PicoWiFi — persistance NVRAM + boot (v1.17.4-alpha) - DONE
+
+Dernier sprint du chantier PicoWiFi — **fidélité complète** avec le firmware.
+
+- [x] **Config persistée** : fichier hôte = flash littlefs (chemin via
+      PHOSPHORIC_PICOWIFI_NVRAM sinon $HOME/.phosphoric_picowifi.cfg),
+      format clé=valeur, magie `PWNV1` (absente/invalide → défauts d'usine)
+- [x] **`AT&W`** sauvegarde, **`AT&V0`** courant vs **`AT&V1`** stocké,
+      **`AT&F`** reset + persiste les défauts
+- [x] **Boot** (open) : défauts → superposition NVRAM → identifiants CLI
+      prioritaires ; WiFi auto-associate simulé si SSID ; exécution `AT$AE`
+- [x] **`AT&D`/`AT&K`/`AT$W`** stockés ; effet matériel inerte documenté
+      (pas de vraies broches DTR/RTS/CTS ni d'attente sur la variante USB-CDC)
+- [x] Tests : 7 hermétiques (NVRAM temp via env var) — round-trip, non-
+      persistance sans &W, &V0≠&V1, priorité CLI, AT$AE au boot, &F persisté,
+      auto-associate ; 59 picowifi, 582 total
+
+**Bilan PicoWiFi (sprints 45-49)** : backend fidèle au firmware réel
+sodiumlb/PicoWiFiModemUSB v0.1.0 — surface AT complète, défauts/codes
+exacts, commandes composées, protocole Telnet (IAC/CR-NUL/négociation),
+réseau réel (ATGET/ATRD), persistance NVRAM. Reste optionnel : garde-temps
++++ cycle-exact (vtable série), per-slot telnet prefix des numéros rapides.
+
+### Sprint 50: PicoWiFi — pont réel vers le réseau de l'hôte (v1.18.0-alpha) - DONE
+
+Reflète l'état réseau réel de l'hôte (lecture seule), au-delà de la
+simulation. Le chemin de données était déjà réel (TCP via l'interface
+active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
+
+- [x] Option `PHOSPHORIC_PICOWIFI_REALNET=1` (opt-in, off par défaut)
+- [x] `ATI` : IP locale réelle (`getifaddrs`) + état de connexion réel
+- [x] `ATC?`/`ATC1` : connectivité internet réelle (test de route UDP
+      8.8.8.8:53, aucun paquet émis ; échec si hors-ligne)
+- [x] Adoption du SSID WiFi réel de l'hôte au boot (best-effort `iwgetid`)
+      si aucun SSID configuré
+- [x] **Lecture seule par conception** : jamais de contrôle/scan/association
+      de la carte (OS-spécifique, privilégié, perturberait la vraie connexion)
+- [x] 3 nouveaux tests (62 picowifi, 585 total) ; mode simulé inchangé par
+      défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
+- [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
+      Future Enhancements, déconseillé
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)
@@ -1272,6 +1411,21 @@ Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`
 - [x] Trace logging
 - [x] Serial interface (ACIA 6551, RS232, Minitel/V23)
 - [x] Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR-verified registers, IRQ wired, cassette-validated)
+- [x] PicoWiFiModemUSB (modem WiFi LOCI, jeu AT v0.1.0)
+
+### Hors périmètre « fidèle au firmware » (extensions assumées)
+
+Fonctionnalités utiles MAIS qui n'existent PAS sur le vrai matériel.
+À n'implémenter que comme options explicitement non-fidèles, jamais
+activées par défaut, clairement signalées dans l'aide CLI.
+
+- [ ] **Proxy TLS terminant pour PicoWiFi** (HTTPS pour l'Oric) : le vrai
+      PicoWiFiModemUSB est un pont TCP transparent — il ne termine PAS TLS
+      (`ATGET` = HTTP seulement, `ATDT:443` = octets bruts). Un 6502 à 1 MHz
+      ne peut pas faire un handshake TLS. Piste : option `--serial-tls-proxy`
+      où l'émulateur (hôte) déchiffre TLS et présente du clair à l'Oric.
+      C'est une capacité AU-DELÀ du firmware réel → divergence assumée,
+      séparée du backend `picowifi` fidèle. Priorité basse.
 
 ### Developer Tools
 - [x] Memory viewer (debugger: m command)

@@ -5,6 +5,286 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.0-alpha] - 2026-06-13
+
+### Sprint 54 — Intégration : fusion de la branche PicoWiFi dans main
+
+Fusion de `feature/picowifi` (sprints 45-50 + fix ACIA) dans `main` (qui portait
+l'émulation Digitelec DTL 2000, sprints 51-53c). Les deux branches avaient
+incrémenté indépendamment depuis 1.16.84 ; les entrées PicoWiFi ont été
+**renumérotées en 1.18.0-1.18.6** (au-dessus des entrées DTL 1.17.x) pour lever
+la collision de numéros de version.
+
+#### Added
+
+- **PicoWiFiModemUSB** (backend série `picowifi`, sprints 45-50) : modem WiFi
+  LOCI exposé comme ACIA à $0380, jeu de commandes AT v0.1.0, protocole Telnet,
+  commandes réseau réelles, persistance NVRAM + boot, pont réel vers le réseau
+  de l'hôte (lecture seule). Détail par sprint en 1.18.0-1.18.5.
+- **Fix ACIA** (1.18.6) : plancher de cadence de polling RX (anti-tempête
+  syscall à baud=0).
+
+#### Notes
+
+- Le code (main.c, serial_backend.c/.h, serial_picowifi.c) a fusionné sans
+  conflit ; seuls les fichiers de suivi/doc nécessitaient une réconciliation.
+- DTL 2000 (1.17.0-1.17.4) et PicoWiFi (1.18.0-1.18.6) coexistent : deux
+  périphériques série distincts (ACIA 6850 $03F8 vs modem WiFi $0380).
+
+## [1.18.6-alpha] - 2026-06-13
+
+### Fix — ACIA : plancher de cadence de polling RX (anti-tempête syscall)
+
+#### Fixed
+
+- **`acia_tick` ne sonde plus le backend série à chaque cycle** quand le
+  débit est à 0 (horloge externe / « instant transfer », `rx_reload == 1`).
+  Avec un backend sur socket et une connexion ouverte, cela provoquait un
+  `poll()`/`read()` par cycle CPU — une tempête de syscalls qui ralentissait
+  fortement l'émulateur. Un plancher `ACIA_RX_POLL_FLOOR` (32 cycles, ≈32 µs)
+  borne désormais la cadence de sonde. Aucun effet aux débits réels
+  (rx_reload ≫ 32, p.ex. ~1041 à 9600) ni sur le backend loopback (lecture
+  en mémoire, sans syscall).
+- Mesure : 40M cycles à baud 0 avec flux entrant continu → 0,3 s headless
+  (auparavant : tempête de syscalls).
+
+#### Notes
+
+- Cela ne concerne PAS la « lenteur » observée lors du test BBS sans `-n` :
+  celle-ci était le **frame limiter 50 Hz** (comportement temps-réel correct
+  — 250M cycles = 250 s émulées à 1 MHz), pas un bug. Diagnostic initial
+  rectifié après mesure.
+
+## [1.18.5-alpha] - 2026-06-13
+
+### Sprint 50 — PicoWiFi : pont réel vers le réseau de l'hôte (lecture seule)
+
+Le backend reflète l'état réseau **réel** de l'hôte au lieu de le simuler,
+en lecture seule — on n'a jamais piloté/reconfiguré la carte WiFi.
+
+#### Added
+
+- **Option `PHOSPHORIC_PICOWIFI_REALNET=1`** : active le pont réel.
+  - `ATI` rapporte l'**IP locale réelle** de l'hôte (`getifaddrs`) et l'état
+    de connexion réel, au lieu de `192.168.0.42 (simulated)`.
+  - `ATC?`/`ATC1` reflètent la **connectivité internet réelle** (test de
+    route UDP vers 8.8.8.8:53, aucun paquet émis ; échec si hors-ligne).
+  - Au boot, si aucun SSID n'est configuré, adoption du **SSID WiFi réel**
+    de l'hôte (best-effort `iwgetid`).
+- Le **chemin de données était déjà réel** depuis le sprint 45 : `ATDT`/
+  `ATGET`/`ATRD` sortent en vrai TCP par l'interface active de l'hôte (carte
+  WiFi comprise). Cette option ne change que le *reporting* de l'état WiFi.
+
+#### Tests
+
+- **3 nouveaux tests** (62 picowifi, 585 au total) : `ATI` rapporte une IP
+  hôte (marqueur `(host)`, pas `simulated`), `ATC?` renvoie un statut réel
+  0/1, régression mode simulé par défaut.
+
+#### Notes
+
+- **Lecture seule, par conception** : l'émulateur ne contrôle jamais le WiFi
+  de l'hôte (pas de scan/association/reconfiguration). Piloter la carte
+  serait OS-spécifique, privilégié et perturberait la connexion réelle —
+  écarté volontairement (voir l'échange de conception).
+- Désactivé par défaut → le mode simulé (hors-ligne, tests) reste inchangé.
+
+## [1.18.4-alpha] - 2026-06-13
+
+### Sprint 49 — PicoWiFi : persistance NVRAM + boot (fin de la fidélité)
+
+Dernier sprint du chantier PicoWiFi : la configuration survit aux
+redémarrages, comme la flash du vrai Pico. Clôt l'alignement complet
+avec le firmware `sodiumlb/PicoWiFiModemUSB`.
+
+#### Added
+
+- **Persistance NVRAM** : un fichier hôte tient lieu de flash littlefs.
+  Chemin via `PHOSPHORIC_PICOWIFI_NVRAM`, sinon
+  `$HOME/.phosphoric_picowifi.cfg`. Format texte `clé=valeur` avec magie
+  `PWNV1` (magie absente/invalide → défauts d'usine, comme le firmware).
+- **`AT&W`** sauvegarde la configuration courante ; **`AT&V0`** affiche la
+  config courante, **`AT&V1`** la config stockée (deux peuvent différer) ;
+  **`AT&F`** réinitialise ET réécrit les défauts en NVRAM.
+- **Séquence de boot** (open) : défauts d'usine → superposition NVRAM →
+  identifiants CLI prioritaires ; association WiFi simulée si un SSID est
+  présent ; exécution de la commande de démarrage **`AT$AE`**.
+
+#### Tests
+
+- **7 nouveaux tests** (59 picowifi, 582 au total), hermétiques (NVRAM
+  temporaire via env var) : round-trip sauvegarde/reboot, non-persistance
+  sans `AT&W`, `AT&V0`≠`AT&V1`, priorité des identifiants CLI sur la NVRAM,
+  exécution `AT$AE` au boot, `AT&F` persisté, auto-association WiFi au boot.
+
+#### Notes
+
+- `AT&D`/`AT&K` et `AT$W` (attente démarrage) restent stockés mais inertes
+  (pas de vraies broches DTR/RTS/CTS ni d'attente bloquante sur la variante
+  USB-CDC) — documenté.
+- **Fidélité PicoWiFi complète** : surface AT (45), défauts/codes/commandes
+  composées (46), protocole Telnet (47), réseau réel (48), NVRAM (49).
+
+## [1.18.3-alpha] - 2026-06-13
+
+### Sprint 48 — PicoWiFi : commandes réseau réelles
+
+Implémente les commandes réseau du firmware qui restaient stubbées.
+
+#### Added
+
+- **`ATGET http://host[:port][/path]`** : vraie requête HTTP/1.1
+  (`GET /path HTTP/1.1` + `Host:` + `Connection: close`), passe en mode
+  données NET0 (HTTP brut), la réponse (en-têtes inclus) est diffusée vers
+  l'Oric. HTTP uniquement (pas HTTPS) — fidèle au firmware.
+- **`ATRD` / `ATRT`** : date/heure UTC via le protocole NIST DAYTIME
+  (`time.nist.gov:13`, RFC 867), sortie `YY-MM-DD HH:MM:SS`. ERROR si déjà
+  en appel ou en cas d'échec réseau.
+- **Numérotation par alias** (`ATDTparticles`) et **par numéro à 7 chiffres
+  identiques** (`ATDT7777777` → slot 7) — résolution des numéros rapides
+  quand aucun port explicite n'est donné.
+- **`AT$BM`** : message « occupé » (get/set), défaut firmware, destiné aux
+  appels entrants rejetés.
+
+#### Tests
+
+- **9 nouveaux tests** (52 picowifi, 575 au total) : requête HTTP ATGET
+  end-to-end sur socket localhost (vérifie la requête émise + le flux de
+  réponse), parse DAYTIME (+ rejet d'une ligne invalide), dial par alias
+  et par 7 chiffres, get/set + défaut de `AT$BM`, échappement `+++` →
+  mode commande + `ATO`, `ATRD` refusé en cours d'appel.
+
+#### Notes
+
+- La connexion réelle à `time.nist.gov` (ATRD) et un vrai serveur HTTP
+  distant (ATGET) ne sont pas testés automatiquement (réseau externe),
+  comme `ATDT` ; le parsing et les chemins d'erreur le sont.
+- Reste au backlog (sprint 49) : persistance NVRAM (AT&W/&V0/&V1), boot
+  auto-reconnect.
+
+## [1.18.2-alpha] - 2026-06-13
+
+### Sprint 47 — PicoWiFi : protocole Telnet (cœur de la fidélité)
+
+Implémente le traitement Telnet du flux de données — sans lui, une vraie
+session BBS recevait un flux d'octets corrompu. Aligné sur le firmware
+réel (`support.h` : `sendSerialData`/`receiveTcpData`).
+
+#### Added
+
+- **Modes NET0/NET1/NET2** appliqués au flux bidirectionnel via
+  `session_telnet` (mode actif de l'appel, distinct du défaut `ATNET`).
+- **Émission** (Oric → ligne) : doublage `IAC` (réel + faux),
+  `CR`→`CR+NUL` (réel uniquement).
+- **Réception** (ligne → Oric) : machine à états IAC, filtrage `CR+NUL`→
+  `CR` (réel), dé-doublage `IAC IAC`→`IAC`, contrôle telnet retiré du flux.
+- **Négociation IAC** : `DO`→`WILL` pour BINARY/ECHO/SUP_GA/TTYPE/TSPEED,
+  `WONT` sinon ; `WILL`→`DONT` pour LINEMODE/NAWS/LFLOW/NEW_ENVIRON/
+  XDISPLOC, `DO` sinon.
+- **Sous-négociation** : `TTYPE`→type terminal, `TSPEED`→baud,baud,
+  `NAWS`→largeur/hauteur, `LOC`→location.
+- **Préfixes `ATDT`** : `-`=NET0, `=`=NET1 (réel), `+`=NET2 (faux) — fixent
+  le mode telnet de la session ; réinitialisé au défaut sur NO CARRIER.
+- **`AT$AYT`** : émet `IAC AYT` si en appel telnet ; un `IAC AYT` entrant
+  reçoit la réponse `[Yes]`.
+
+#### Tests
+
+- **10 tests d'intégration** sur sockets localhost réels (43 picowifi,
+  566 au total) : CR+NUL/IAC sortant (réel/faux/NET0 transparent),
+  négociation DO TTYPE / WILL NAWS entrante, filtrage CR+NUL entrant,
+  IAC IAC = donnée, réponse AYT, et le cas Minitel NET0 transparent.
+
+#### Notes
+
+- Le garde-temps `+++` reste approximé (compteur de polls, pas le 1 s
+  cycle-exact) — un timing cycle-précis demanderait une horloge dans la
+  vtable série ; reporté, sans impact fonctionnel sur la détection.
+- **Cas Minitel/OricTel** : `ATDT-host` (NET0) garantit un flux Vidéotex
+  intact, le piège `CR+NUL` du mode réel étant désormais explicite.
+
+## [1.18.1-alpha] - 2026-06-13
+
+### Sprint 46 — PicoWiFi : fidélité au firmware réel
+
+Après audit du code source réel (clone `sodiumlb/PicoWiFiModemUSB`),
+correction des divergences du backend sprint 45 (qui suivait le README,
+partiellement obsolète) et ajout du comportement structurant.
+
+#### Fixed
+
+- **Défauts d'usine fidèles** : mDNS `picomodem` (et non `espmodem`),
+  baud `9600` (et non 1200), location `Computer Room`, terminal `ansi`,
+  format `8N1`, NET1, X1, V1, S2=43 — alignés sur `factoryDefaults`.
+- **3 numéros rapides préchargés** : slot 0 `particles`, slot 1 `altair`,
+  slot 2 `heatwave` (comme le firmware).
+- **Enum codes résultat fidèle** : R_OK=0…R_ERROR=4, **R_NO_ANSWER=5,
+  R_RING_IP=6** (remplace les NO_DIALTONE/BUSY inventés au sprint 45).
+- **`ATC?` numérique** (`0`/`1`) au lieu de `CONNECTED`/`DISCONNECTED`.
+- **`AT$PASS?`** affiche la vraie valeur (le firmware ne masque pas).
+- **`ATZ`** = no-op `OK` (un reset matériel couperait l'USB).
+
+#### Added
+
+- **Commandes composées** (`ATS0=1 X1 Q0`) : boucle de tokens, seul le
+  dernier émet un résultat, un token inconnu interrompt la ligne avec
+  ERROR — fidèle à `doAtCmds()`.
+- **`ATX` effectif** : `CONNECT <baud>` et `NO CARRIER (HH:MM:SS)` en X1,
+  formes simples en X0.
+- **5 nouveaux tests** (33 au total pour picowifi) : défauts picomodem/
+  9600/Computer Room, numéros rapides préchargés, ligne composée, token
+  inconnu dans une ligne composée.
+
+#### Notes
+
+- Reste en backlog (ROADMAP) : protocole Telnet/IAC (sprint 47), ATGET/
+  ATRD réels (48), persistance NVRAM (49).
+
+## [1.18.0-alpha] - 2026-06-13
+
+### Sprint 45 — PicoWiFiModemUSB (modem WiFi LOCI)
+
+Émule le **PicoWiFiModemUSB** de sodiumlb (l'auteur de LOCI) : une
+Raspberry Pi Pico W qui fait le pont USB CDC ↔ WiFi avec un jeu de
+commandes AT de style Hayes. Sur le vrai matériel, le firmware LOCI
+expose ce périphérique à l'Oric comme un ACIA série à $0380 — du point
+de vue de l'Oric, « c'est juste un ACIA ». Phosphoric reproduit ce
+chemin de bout en bout.
+
+#### Added
+
+- **Backend `--serial picowifi[:SSID[:PASS]]`** (module dédié
+  src/io/serial_picowifi.c, `SERIAL_BACKEND_PICOWIFI`) : modem WiFi piloté
+  par commandes AT, par-dessus l'infrastructure socket TCP existante.
+  Sous `--loci`, l'ACIA est déjà mappé à $0380 (défaut firmware) — la
+  combinaison `--loci --serial picowifi:MonWiFi:motdepasse` reproduit le
+  montage réel Pico W + LOCI.
+- **Jeu de commandes AT v0.1.0 complet** (fidèle au firmware réel) :
+  - WiFi : `AT$SSID`, `AT$PASS`, `AT$MDNS` (défaut « espmodem »), `ATCn`/`ATC?`
+  - Numérotation : `ATDT`/`ATDP` (TCP), `ATDS` (numéro mémorisé), `ATD`
+  - Telnet : `ATNET` (0/1/2), `AT$TTY` (« ansi »), `AT$TTS` (80x24), `AT$TTL`
+  - Série : `AT$SB` (baud), `AT$SU` (format 8N1)
+  - Registres S : `S0` (auto-réponse), `S2` (char d'échappement, défaut 43)
+  - Codes résultat : `ATE` (écho), `ATQ` (silence), `ATV` (texte/numérique), `ATX`
+  - Flux/DTR : `AT&K` (RTS/CTS), `AT&D`
+  - Numéros rapides : `AT&Z0..9=host:port,alias`
+  - Serveur entrant : `AT$SP` (port), `AT&R` (mot de passe)
+  - Profil : `AT&V` (affiche config), `AT&W` (sauvegarde), `AT&F` (usine)
+  - Démarrage : `AT$AE`, `AT$W` ; infos : `ATI` ; en ligne : `ATO`
+  - Échappement `+++` (gardé en temps, char S2) ; répétition `A/`
+- **28 tests unitaires** (`make test-picowifi`) : config WiFi, formatage des
+  codes résultat (Q/V), registres S, numéros rapides, telnet, reset usine,
+  gestion d'erreurs, répétition, type de backend.
+
+#### Notes
+
+- L'association WiFi est **simulée** (AT$SSID/AT$PASS stockent les
+  identifiants ; le lien est « actif » dès qu'un SSID est défini). Les
+  connexions de données sont de vrais sockets TCP (telnet/brut).
+- `ATGET`/`ATRD`/`ATRT` renvoient une réponse simulée (pas d'horloge NIST
+  ni de client HTTP dans l'émulateur).
+- Référence : github.com/sodiumlb/PicoWiFiModemUSB (release v0.1.0).
+
 ## [1.17.4-alpha] - 2026-06-13
 
 ### Sprint 53c — ROADMAP : DTL 2000 dans les features complétées
