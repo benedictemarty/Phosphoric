@@ -261,7 +261,8 @@ static void print_usage(const char* program_name) {
     printf("  -p, --printer FILE         Capture printer output to FILE (LPRINT/LLIST)\n");
     printf("      --printer-type TYPE    Printer type: text (default) or mcp40 (4-color plotter)\n");
     printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
-    printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles (\\n=Return, \\pN=pause N sec)\n");
+    printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles (\\n=Return, \\e=Escape,\n");
+    printf("                             \\u\\d\\l\\r=arrows, \\fN=FUNCT+N, \\pN=pause N sec)\n");
     printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
     printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
     printf("      --break ADDR           Set initial debugger breakpoint (hex)\n");
@@ -1690,6 +1691,26 @@ static void emulator_run(emulator_t* emu) {
                         oric_keyboard_press_char(&emu->keyboard, arrow);
                         emu->type_keys_last_char = arrow;
                         emu->type_keys_idx += 2;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+                    }
+                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'f' &&
+                           emu->type_keys_text[idx+2] >= '0' && emu->type_keys_text[idx+2] <= '9') {
+                    /* \fN = FUNCT+N (N=0-9). press_char() can only set one
+                     * matrix bit per call without an intervening release,
+                     * so hold FUNCT and the digit together by calling it
+                     * twice in a row (matrix bits accumulate via &=). */
+                    char digit = emu->type_keys_text[idx+2];
+                    char sentinel = (char)(0x90 + (digit - '0'));
+                    if (emu->type_keys_last_char == sentinel) {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        emu->type_keys_last_char = 0;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                    } else {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        oric_keyboard_press_char(&emu->keyboard, (char)0x84); /* FUNCT */
+                        oric_keyboard_press_char(&emu->keyboard, digit);
+                        emu->type_keys_last_char = sentinel;
+                        emu->type_keys_idx += 3;
                         emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
                     }
                 } else if (c == '\\' && emu->type_keys_text[idx+1] == 'p') {

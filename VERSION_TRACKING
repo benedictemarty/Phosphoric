@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.16.84-alpha
-Release Date: 2026-06-13
-Status: Alpha (Sprint 36h — Fix conformité WRITE_XSTACK op $18 ; 518 tests + 13 E2E + 15 game compat + 4 mc-autorun)
+Current Version: 1.16.85-alpha
+Release Date: 2026-06-14
+Status: Alpha (Sprint 36i — Ajout \fN (FUNCT+N) au type-keys ; 518 tests + 13 E2E + 15 game compat + 4 mc-autorun)
 
 Version History:
 ----------------
+- 1.16.85-alpha (2026-06-14): Sprint 36i — **`--type-keys` : nouvel échappement `\fN` (FUNCT+N)** (`oric_keyboard_press_char()` gagne un sentinel `0x84` pour la touche FUNCT (matrix[5] bit4) ; le parseur `--type-keys` maintient FUNCT et le chiffre N enfoncés simultanément via deux appels successifs sans relâchement intermédiaire ; demandé par le harness Phosphoric d'OricScreenEditorLOCI pour piloter sa barre de menus FUNCT+1 ; `--help` mis à jour), 518 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.84-alpha (2026-06-13): Sprint 36h — **Fix conformité WRITE_XSTACK (op $18)** (`op_write_xstack` (hostfs+SDIMG) dépilait à tort un `uint16` de comptage explicite avant les données, comme READ_XSTACK ; le firmware réel (`std_api_write_xstack`, `sodiumlb/loci-firmware` std.c) déduit le comptage de `XSTACK_SIZE - xstack_ptr` sans dépiler de valeur explicite ; trouvé via le harness locifilemanager-v2 (`config_save()` provoquait un blocage firmware total survivant au RESET sur matériel réel) ; `test_write_read_roundtrip` corrigé pour la convention firmware, 152 tests inchangés sur test-loci), 518 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.83-alpha (2026-06-13): Sprint 36g — **Fix UNLINK sur répertoire vide (hostfs)** (`op_unlink` détecte un répertoire via `stat()` et appelle `rmdir()` au lieu d'`unlink()` nu (EISDIR sous Linux), conforme à `f_unlink()` de FatFs sur le firmware réel ; `ENOTEMPTY` → `LOCI_EACCES` ; trouvé via le harness locifilemanager-v2 (move récursif laissant des répertoires source vides) ; 2 nouveaux tests), 518 tests + 13 E2E + 4 mc-autorun PASS
 - 1.16.82-alpha (2026-06-12): Sprint 36f — **Backlog conformité LOCI** (console UART $03A0-$03A2 + snoop ULA $03A3 ; protocole TAP bas niveau PLAY/REC/READ_BIT/FFW avec lead-in 8×0x16, trame 14 bits et protection moteur via snoop VIA ORB ; op $A6 adj_scan ; $031A-$031B ; octets exacts IRQ/DRQ $0314/$0318 ; ACIA par défaut à $0380 sous --loci ; fix build headless clock_gettime ; 11 nouveaux tests), 516 tests + 13 E2E + 4 mc-autorun PASS

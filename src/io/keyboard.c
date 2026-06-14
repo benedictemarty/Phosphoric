@@ -159,6 +159,10 @@ bool oric_keyboard_press_char(oric_keyboard_t* kb, char c) {
     if (c == (char)0x81) { kb->matrix[4] &= ~(1 << 6); return true; } /* DOWN */
     if (c == (char)0x82) { kb->matrix[4] &= ~(1 << 5); return true; } /* LEFT */
     if (c == (char)0x83) { kb->matrix[4] &= ~(1 << 7); return true; } /* RIGHT */
+    /* FUNCT modifier (col=5, row=4). Sentinel above 0x7F so it never
+     * collides with char_map; combined with a digit via \fN in
+     * --type-keys to express FUNCT+N two-key combos. */
+    if (c == (char)0x84) { kb->matrix[5] &= ~(1 << 4); return true; } /* FUNCT */
     unsigned char uc = (unsigned char)c;
     if (uc > 127) return false;
     const char_entry_t* entry = &char_map[uc];
