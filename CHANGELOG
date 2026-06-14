@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.2-alpha] - 2026-06-14
+
+### Sprint 56 — Fidélité ULA : double hauteur en parité de rangée absolue
+
+### Fixed
+- **Rendu double hauteur (attribut texte 0x0A) — modèle de phase incorrect.**
+  Le ULA émulé pilotait la moitié haute/basse du glyphe via une phase
+  *dépendante du contenu* (`dbl_phase` basculée en fin de rangée si la rangée
+  contenait du double, remise à 0 sinon). Conséquence : un glyphe double hauteur
+  affichait **toujours** sa moitié haute en premier, quelle que soit la rangée.
+  Le vrai ULA Oric (confirmé sur la source Oricutron `ula.c` :
+  `vid_chline = (y>>1)&7`) utilise la **parité de la rangée absolue** : rangée
+  paire → moitié haute, rangée impaire → moitié basse. Un bloc double hauteur
+  démarré sur une rangée impaire montre donc sa moitié basse d'abord (quirk
+  matériel « aligner sur rangée paire sinon brouillé »). `effective_chline()`
+  remplace `dbl_phase` par `(row & 1)` ; tout le suivi de phase
+  (`dbl_phase`/`dbl_was_active`/`row_had_double` + reset par trame) est supprimé
+  (mort et erroné). Cas aligné sur rangée paire (le plus courant) inchangé.
+
+### Removed
+- Champs `video_t.dbl_phase` et `video_t.dbl_was_active` (non sérialisés en
+  savestate, usage interne uniquement).
+- Fonction morte `render_text_char()` (`src/video/video.c`) — jamais appelée
+  (le rendu texte est inliné dans `video_render_scanline`), supprimait le
+  warning préexistant `-Wunused-function`.
+
+### Added
+- `test-video` : `test_double_height_row_parity` — vérifie par rendu réel le
+  texte normal (chline absolu), l'alignement pair (haut/bas) et le quirk de
+  parité impair (bas/haut). 604 tests PASS (+1).
+
 ## [1.19.1-alpha] - 2026-06-13
 
 ### Sprint 55 — Retour d'intégration OricTel : corrections série & build

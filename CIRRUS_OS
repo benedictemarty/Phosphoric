@@ -2,9 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.19.1-alpha
-Build Status: ALPHA (Sprint 55 : retour d'intégration OricTel — 3 corrections côté Phosphoric (verrou DCD Digitelec dans acia_tick, dial PicoWiFi ATD<hôte> p/t, CMakeLists.txt réaligné + HAS_SDL2) ; build SDL documenté ; 603 tests PASS)
-Last Updated: 2026-06-13
+Version: 1.19.2-alpha
+Build Status: ALPHA (Sprint 56 : fidélité ULA — rendu double hauteur corrigé en parité de rangée absolue (modèle Oricutron (y>>1)&7), suivi de phase contenu-dépendant supprimé, test_double_height_row_parity ajouté ; 604 tests PASS)
+Last Updated: 2026-06-14
 
 ================================================================
 
@@ -28,6 +28,7 @@ BUILD STATUS
 [V] Video Export          - Complete (PPM, BMP, ASCII export)
 [V] PSG Bus Protocol      - Fixed (CA2=BC1, CB2=BDIR, keyboard PB3)
 [V] HIRES Text Rows       - Fixed (serial attributes in bottom 3 rows)
+[V] Double-Height Text    - Fixed (absolute row parity (y>>1)&7, Oricutron model)
 [V] SDL2 Keyboard         - Complete (64 keys, QWERTY + AZERTY layouts, HW-aligned naming)
 [V] CLOAD ROM Patching    - Complete (getsync + readbyte interception + post-CLOAD rechain)
 [V] HIRES Rendering       - Fixed (attribute detection, bit 7 swap encre/papier, $9800 charset)

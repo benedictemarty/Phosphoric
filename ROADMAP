@@ -371,6 +371,29 @@ côté Phosphoric + un point de confort documenté.
       le README (`make SDL2=1` pour l'affichage). Pas de changement de comportement.
 - [x] Suite complète 603 tests PASS (+3 : 1 serial, 2 picowifi)
 
+### Sprint 56: Fidélité ULA — double hauteur en parité de rangée absolue (v1.19.2-alpha) - DONE
+
+Le rendu de l'attribut texte double hauteur (`0x0A`) employait un modèle de phase
+*dépendant du contenu* qui divergeait du vrai ULA. Confirmation du modèle réel sur
+la source Oricutron avant correction.
+
+- [x] **Modèle Oricutron confirmé** (`ula.c`) : `vid_chline = (y>>1)&7` quand
+      l'attribut double est actif, sinon `y&7`. C'est de la **parité de rangée
+      absolue** (flip-flop implicite reset en haut de trame), pas un suivi par
+      contenu.
+- [x] **Correction** (`src/video/video.c`) : `effective_chline()` remplace
+      `vid->dbl_phase` par `(row & 1)` — équivalent algébrique de `(y>>1)&7` avec
+      `y = row*8 + chline`. Rangée paire → moitié haute (glyphe 0-3), impaire →
+      moitié basse (glyphe 4-7). Le quirk « aligner sur rangée paire sinon
+      brouillé » est désormais reproduit.
+- [x] **Suppression code mort/erroné** : tout le suivi de phase
+      (`row_had_double`, blocs `chline == 7`, reset par trame) et les champs
+      `video_t.dbl_phase` / `dbl_was_active` (non sérialisés en savestate).
+- [x] **Test** : `test_double_height_row_parity` (rendu réel) — texte normal
+      (chline absolu) + alignement pair (haut/bas) + quirk impair (bas/haut).
+- [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
+- [x] Suite complète 604 tests PASS (+1 video)
+
 ### Sprint 38: Trace FDC + fix dump RAM 64 Ko (v1.16.84-alpha) - DONE
 - [x] FDC_TRACE=1 : trace stderr écritures registres FDC (PC 6502 +
       cycle), SEEK (état interne) et READ (piste/secteur) — a permis

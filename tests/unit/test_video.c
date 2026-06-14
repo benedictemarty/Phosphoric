@@ -444,6 +444,70 @@ TEST(test_video_init_cleanup) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  DOUBLE-HEIGHT ROW PARITY (Oricutron/real ULA model)            */
+/* ═══════════════════════════════════════════════════════════════ */
+
+/* Is the pixel at (x,y) lit (white-ish foreground) ? */
+static int dh_pixel_on(const video_t* v, int x, int y) {
+    return v->framebuffer[(y * ORIC_SCREEN_W + x) * 3] > 100;
+}
+
+/* Lay a double-height glyph 'A' on text rows r0..r1 (attr 0x0A at col 0,
+ * glyph at cols 1+). */
+static void dh_put(uint8_t* mem, int r0, int r1) {
+    for (int r = r0; r <= r1; r++) {
+        mem[0xBB80 + r * 40 + 0] = 0x0A;                 /* double-height attr */
+        for (int c = 1; c < 40; c++) mem[0xBB80 + r * 40 + c] = 'A';
+    }
+}
+
+/* Real Oric ULA renders double height by absolute char-row parity (y>>1)&7:
+ * even rows show the top half of the glyph, odd rows the bottom half. A glyph
+ * placed on an odd row therefore shows its BOTTOM half first (the well-known
+ * "must align double height to an even row" quirk). */
+TEST(test_double_height_row_parity) {
+    video_t vid;
+    video_init(&vid);
+
+    /* Glyph 'A': top half (rows 0-3) solid, bottom half (rows 4-7) blank. */
+    uint8_t charset[2048];
+    memset(charset, 0, sizeof(charset));
+    for (int r = 0; r < 4; r++) charset['A' * 8 + r] = 0x3F;
+    vid.charset = charset;
+
+    uint8_t* mem = (uint8_t*)calloc(49152, 1);
+    ASSERT_TRUE(mem != NULL);
+    const int x = 8;                /* inside column 1 */
+    #define MIDY(row) ((row) * 8 + 3)
+
+    /* Sanity: a NON-double 'A' on row 0 uses real glyph rows (chline=y&7):
+     * y=0 -> glyph row 0 (solid), y=4 -> glyph row 4 (blank). */
+    memset(mem + 0xBB80, ' ', 40 * 28);
+    for (int c = 0; c < 40; c++) mem[0xBB80 + c] = 'A';
+    video_render_frame(&vid, mem);
+    ASSERT_TRUE(dh_pixel_on(&vid, x, 0));      /* glyph row 0 solid */
+    ASSERT_TRUE(!dh_pixel_on(&vid, x, 4));     /* glyph row 4 blank */
+
+    /* EVEN-aligned (rows 0,1): top half then bottom half. */
+    memset(mem + 0xBB80, ' ', 40 * 28);
+    dh_put(mem, 0, 1);
+    video_render_frame(&vid, mem);
+    ASSERT_TRUE(dh_pixel_on(&vid, x, MIDY(0)));    /* row 0 = top (solid) */
+    ASSERT_TRUE(!dh_pixel_on(&vid, x, MIDY(1)));   /* row 1 = bottom (blank) */
+
+    /* ODD-aligned (rows 1,2): parity quirk — row 1 shows BOTTOM half. */
+    memset(mem + 0xBB80, ' ', 40 * 28);
+    dh_put(mem, 1, 2);
+    video_render_frame(&vid, mem);
+    ASSERT_TRUE(!dh_pixel_on(&vid, x, MIDY(1)));   /* row 1 = bottom (blank) */
+    ASSERT_TRUE(dh_pixel_on(&vid, x, MIDY(2)));    /* row 2 = top (solid) */
+
+    #undef MIDY
+    free(mem);
+    video_cleanup(&vid);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  MAIN                                                           */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -464,6 +528,7 @@ int main(void) {
     RUN(test_ppm_exact_pixel_data);
     RUN(test_export_null_params);
     RUN(test_rom_boot_screenshot);
+    RUN(test_double_height_row_parity);
 
     printf("\n");
     printf("===========================================================\n");

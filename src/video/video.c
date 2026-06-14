@@ -115,28 +115,6 @@ static void render_hires_block(video_t* vid, int x, int y,
 }
 
 /**
- * Render a single text character block (6x8 pixels).
- */
-static void render_text_char(video_t* vid, const uint8_t* mem, int x, int sy,
-                             uint8_t byte, uint8_t ink, uint8_t paper, bool inverse) {
-    uint8_t fg = inverse ? paper : ink;
-    uint8_t bg = inverse ? ink : paper;
-    uint8_t ir, ig, ib, pr, pg, pb;
-    video_get_rgb(fg, &ir, &ig, &ib);
-    video_get_rgb(bg, &pr, &pg, &pb);
-    for (int cy = 0; cy < 8; cy++) {
-        uint8_t bits = get_charset_byte(vid, mem, byte & 0x7F, cy);
-        bool char_inv = (byte & 0x80) != 0;
-        for (int bx = 5; bx >= 0; bx--) {
-            bool on = (bits & (1 << bx)) != 0;
-            if (char_inv) on = !on;
-            if (on) set_pixel(vid, x + (5 - bx), sy + cy, ir, ig, ib);
-            else    set_pixel(vid, x + (5 - bx), sy + cy, pr, pg, pb);
-        }
-    }
-}
-
-/**
  * Render an attribute block (6 pixels wide, filled with paper color).
  * For text mode, renders 6x8; for HIRES, renders 6x1.
  */
@@ -180,10 +158,16 @@ static void render_attr_block(video_t* vid, int x, int y,
  * the emulator main loop, so each scanline sees the memory state at
  * that exact CPU cycle. Mimics Oricutron's `ula_doraster`.
  */
-/* Effective char-row index applying double-height and current dbl_phase. */
-static int effective_chline(video_t* vid, int chline) {
+/* Effective char-row index applying double-height, matching the Oricutron/
+ * real ULA model: double height uses (y>>1)&7, i.e. the absolute char-row
+ * parity (row&1), NOT a content-driven phase. With y = row*8 + chline:
+ *   (y>>1)&7 == (chline>>1) + ((row&1) ? 4 : 0)
+ * Even rows show the top half (glyph rows 0-3), odd rows the bottom half
+ * (glyph rows 4-7). This reproduces the "double-height must start on an even
+ * row or it is garbled" hardware quirk. */
+static int effective_chline(video_t* vid, int chline, int row) {
     if (vid->text_attr & 0x02)
-        return (chline >> 1) + (vid->dbl_phase ? 4 : 0);
+        return (chline >> 1) + ((row & 1) ? 4 : 0);
     return chline;
 }
 
@@ -196,11 +180,8 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (!memory) return;
     if (y < 0 || y >= 224) return;
 
-    if (y == 0) {
+    if (y == 0)
         vid->frame_counter++;
-        vid->dbl_phase = 0;
-        vid->dbl_was_active = false;
-    }
 
     /* ULA resets attributes at start of every scanline. */
     vid->text_attr = 0;
@@ -209,7 +190,6 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
         int row = y / 8;
         int chline = y & 7;
-        bool row_had_double = false;
 
         for (int col = 0; col < 40; col++) {
             bool hires = (vid->vid_mode & 0x04) != 0;
@@ -220,7 +200,6 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 bool inverse = false;
                 decode_attr(vid, byte, &ink, &paper, &inverse);
                 render_attr_block(vid, col * 6, y, paper, 1);
-                if (vid->text_attr & 0x02) row_had_double = true;
             } else if (hires) {
                 render_hires_block(vid, col * 6, y, byte, ink, paper);
             } else {
@@ -230,7 +209,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 uint8_t ir, ig, ib, pr, pg, pb;
                 video_get_rgb(fg, &ir, &ig, &ib);
                 video_get_rgb(bg, &pr, &pg, &pb);
-                int erow = effective_chline(vid, chline);
+                int erow = effective_chline(vid, chline, row);
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
                 bool char_inv = (byte & 0x80) != 0;
                 if (blink_phase_on(vid)) char_inv = !char_inv;
@@ -240,17 +219,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                     if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
                     else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
                 }
-                if (vid->text_attr & 0x02) row_had_double = true;
             }
-        }
-
-        /* End-of-row bookkeeping for double-height phase tracking. */
-        if (chline == 7) {
-            /* Phase for NEXT row: toggle if doubled chain continues,
-             * reset to top half (0) otherwise. The row that just rendered
-             * already consumed the current dbl_phase. */
-            vid->dbl_phase = row_had_double ? !vid->dbl_phase : 0;
-            vid->dbl_was_active = row_had_double;
         }
 
         if (y == 199) vid->hires_mode = (vid->vid_mode & 0x04) != 0;
@@ -259,7 +228,6 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         int row = 25 + (y - 200) / 8;
         int chline = (y - 200) & 7;
         uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
-        bool row_had_double = false;
 
         for (int col = 0; col < 40; col++) {
             uint8_t byte = memory[0xBB80 + row * 40 + col];
@@ -267,7 +235,6 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 bool inverse = false;
                 decode_attr(vid, byte, &ink, &paper, &inverse);
                 render_attr_block(vid, col * 6, y, paper, 1);
-                if (vid->text_attr & 0x02) row_had_double = true;
             } else {
                 bool inverse = false;
                 uint8_t fg = inverse ? paper : ink;
@@ -275,7 +242,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 uint8_t ir, ig, ib, pr, pg, pb;
                 video_get_rgb(fg, &ir, &ig, &ib);
                 video_get_rgb(bg, &pr, &pg, &pb);
-                int erow = effective_chline(vid, chline);
+                int erow = effective_chline(vid, chline, row);
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
                 bool char_inv = (byte & 0x80) != 0;
                 if (blink_phase_on(vid)) char_inv = !char_inv;
@@ -285,16 +252,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                     if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
                     else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
                 }
-                if (vid->text_attr & 0x02) row_had_double = true;
             }
-        }
-
-        if (chline == 7) {
-            /* Phase for NEXT row: toggle if doubled chain continues,
-             * reset to top half (0) otherwise. The row that just rendered
-             * already consumed the current dbl_phase. */
-            vid->dbl_phase = row_had_double ? !vid->dbl_phase : 0;
-            vid->dbl_was_active = row_had_double;
         }
 
         if (y == 223) vid->need_refresh = false;
