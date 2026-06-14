@@ -2762,6 +2762,29 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /* Guard: the base system (BASIC) ROM must be present.
+     *
+     * Real ORIC-1/Atmos hardware always has its BASIC ROM soldered in; the
+     * Microdisc overlay EPROM is *additional*, never a replacement. Without a
+     * main ROM, $C000-$FFFF (BASIC ROM area) stays zeroed: any code that maps
+     * the BASIC ROM back in (e.g. a disc demo doing $0314=$06 then JMP into the
+     * ROM) reads $00 = BRK and falls into the $0000 BRK loop — a confusing crash
+     * that looks like a banking bug but is just a missing -r. Fail fast with a
+     * clear message instead. (--load-state keeps only a warning: a state may be
+     * paired with a ROM-less workflow, and the ROM area is not serialized.) */
+    if (!rom_file && !load_state_file) {
+        if (disk_rom_file) {
+            log_error("--disk-rom requires the base system ROM (-r ROM): the "
+                      "BASIC ROM area $C000-$FFFF would be empty and the machine "
+                      "cannot boot (code mapping the ROM reads $00 = BRK). "
+                      "Add e.g. -r roms/basic11b.rom");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        log_warning("No system ROM loaded (-r ROM): $C000-$FFFF is empty, the "
+                    "machine will not boot. Specify e.g. -r roms/basic11b.rom");
+    }
+
     /* ROM analysis (if requested) */
     if (rom_info_enabled && rom_file) {
         rom_analysis_t rom_analysis;

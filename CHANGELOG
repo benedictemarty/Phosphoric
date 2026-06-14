@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.3-alpha] - 2026-06-14
+
+### Sprint 57 — Garde-fou ROM système absent (faux bug Microdisc Nova2026)
+
+### Added
+- **Garde-fou ROM principal manquant** (`src/main.c`). Démarrer `--disk-rom`
+  sans `-r` laissait `$C000-$FFFF` (zone ROM BASIC) à zéro : tout code remappant
+  le ROM BASIC (ex. démo disque faisant `$0314=$06` puis `JMP` dans le ROM) lisait
+  `$00` = BRK et tombait dans la boucle BRK `$0000` (~cycle 349k pour
+  Cybernova/Nova2026). Ressemblait à un bug d'overlay/banking Microdisc, mais
+  c'était un `-r` manquant. Désormais : `--disk-rom` sans `-r` → **erreur fatale**
+  immédiate (config impossible sur vrai matériel : le ROM BASIC est soudé,
+  l'EPROM Microdisc est additionnelle) ; aucun ROM du tout → **avertissement** non
+  fatal. Le mapping Microdisc lui-même était correct (validé : la démo tourne et
+  s'affiche dès que `-r roms/basic11b.rom` est fourni).
+- `tests/integration/test_rom_guard.sh` + cible `test-rom-guard` (dans
+  `make tests`) : vérifie erreur+exit 1 sans `-r`, avertissement sans ROM, et
+  silence du garde-fou avec `-r`. 607 tests PASS (+3).
+
 ## [1.19.2-alpha] - 2026-06-14
 
 ### Sprint 56 — Fidélité ULA : double hauteur en parité de rangée absolue

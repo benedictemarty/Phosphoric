@@ -394,6 +394,27 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 57: Garde-fou ROM système absent (faux bug Microdisc Nova2026) (v1.19.3-alpha) - DONE
+
+Investigation d'un « bug overlay Microdisc » rapporté (démo Cybernova/Nova2026,
+boucle BRK `$0000` ~cycle 349k). Reproduit puis **réfuté** : ce n'est pas un bug
+d'émulation mais un `-r` manquant dans la commande.
+
+- [x] **Diagnostic** : `--disk-rom` sans `-r` → zone ROM BASIC `$C000-$FFFF` à zéro.
+      La démo fait `$0314=$06` (romdis off → ROM BASIC mappé) puis `JMP $F8B8` ;
+      sans ROM chargé, `$F8B8` lit `$00` = BRK → boucle `$0000`. Avec
+      `-r roms/basic11b.rom` : la démo tourne et **s'affiche** (18→34 % de l'écran
+      à 8–20 M cycles). Le mapping Microdisc est donc correct.
+- [x] **Réfutation du diagnostic externe** : le rapport `BUG_phosphoric_rmw_mem_M16`
+      cité visait un **65C816** (`cpu65c816_opcodes.c`, scheduler `--wm-taskmode`)
+      d'un autre projet — Phosphoric est un **6502**. Sans rapport.
+- [x] **Garde-fou** (`src/main.c`) : `--disk-rom` sans `-r` = erreur fatale
+      (config impossible : ROM BASIC soudé, EPROM Microdisc additionnelle) ;
+      aucun ROM = avertissement non fatal. `--load-state` reste en avertissement.
+- [x] **Test** : `tests/integration/test_rom_guard.sh` (3 cas : erreur+exit 1,
+      avertissement, silence avec `-r`) + cible `test-rom-guard` dans `make tests`.
+- [x] Suite complète 607 tests PASS (+3)
+
 ### Sprint 38: Trace FDC + fix dump RAM 64 Ko (v1.16.84-alpha) - DONE
 - [x] FDC_TRACE=1 : trace stderr écritures registres FDC (PC 6502 +
       cycle), SEEK (état interne) et READ (piste/secteur) — a permis
