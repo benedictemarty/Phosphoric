@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.5-alpha] - 2026-06-15
+
+### Outil `tap2sedoric` — injection d'un .tap dans une disquette Sedoric
+
+Implémentation de `tools/tap2sedoric.c` (auparavant un stub « not yet
+implemented »). Outil host autonome (`cc -O2 -o tap2sedoric tap2sedoric.c`) qui
+injecte un fichier Oric `.tap` dans une copie d'une disquette Sedoric (`.dsk`,
+format MFM_DISK) de sorte qu'il apparaisse au `DIR` et soit chargeable. Sert de
+passerelle disquette au client terminal Oric `bbsgo` (story D1, cassette→Sedoric).
+
+#### Added
+
+- **`tap2sedoric`** : parse le `.tap` (nom, adresses début/fin, données) ; écrit
+  le fichier dans des secteurs libres comme fichier Sedoric — secteur descripteur
+  (adresse de chargement + carte des secteurs) + secteurs de données ; ajoute
+  l'entrée de répertoire (piste 20/secteur 4, statut V4 `0x40`, high-water mark) ;
+  met à jour les compteurs VTOC (secteurs libres, nombre de fichiers) ; patche les
+  champs de données MFM **en place** avec recalcul du **CRC-16/CCITT** (`0x1021`/
+  `0xFFFF`). Usage : `tap2sedoric <in.tap> -o <out.dsk> -b <base.dsk> [-n NOM.EXT]`.
+
+#### Notes
+
+- Format on-disk Sedoric (V4) rétro-conçu et **validé end-to-end** : disquette
+  produite bootée dans l'émulateur, fichier visible au `DIR` (`bbsgo` :
+  `make download-sedoric`). La lecture FDC ne vérifie pas le CRC (recalcul pour la
+  correction sur vrai matériel / autres émulateurs).
+- Limites : injection dans un unique secteur de répertoire (≤ 15 entrées, base
+  vierge) ; allocation depuis la piste 21. Détails dans `bbsgo/CLIENT_ORIC.md §17`.
+
 ## [1.19.4-alpha] - 2026-06-15
 
 ### Sprint 58 — Débordement de tas d'un octet à chaque CSAVE (corruption différée)
