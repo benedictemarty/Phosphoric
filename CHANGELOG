@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.4-alpha] - 2026-06-15
+
+### Sprint 58 — Débordement de tas d'un octet à chaque CSAVE (corruption différée)
+
+### Fixed
+- **Heap overflow d'1 octet par CSAVE** (`src/main.c`, construction du TAP
+  canonique). `tap_cap` réservait `8` octets pour l'en-tête alors que la boucle
+  `tap[t++]` en écrit **9** (2 padding + type + autorun + 2 end + 2 start +
+  1 reserved). Chaque CSAVE débordait donc l'allocation `malloc(tap_cap)` d'un
+  octet, corrompant les métadonnées de l'allocateur ; l'effet était **différé et
+  cumulatif** → `malloc(): invalid next size` après plusieurs CSAVE (typiquement
+  via un terminal/BBS appelant CSAVE en boucle). Correctif : `+ 8 /*header*/` →
+  `+ 9 /*header: 2 pad+type+auto+2 end+2 start+1 reserved*/`. L'allocation couvre
+  désormais exactement les octets écrits (`t == tap_cap` en fin de construction).
+  Détectable de façon déterministe dès le 1er CSAVE sous AddressSanitizer.
+  Diagnostic et correctif issus du CR `Phosphoric-upstream/docs/CR/2026-06-15_Bug_CSAVE_Heap_Overflow.md`
+  (rédigé et committé côté upstream Phosphoric, transposé à l'identique ici). 607 tests PASS.
+
 ## [1.19.3-alpha] - 2026-06-14
 
 ### Sprint 57 — Garde-fou ROM système absent (faux bug Microdisc Nova2026)

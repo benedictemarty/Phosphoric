@@ -394,6 +394,23 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 58: Heap overflow d'1 octet à chaque CSAVE (v1.19.4-alpha) - DONE
+
+Correction d'un débordement de tas différé signalé par CR upstream
+(`malloc(): invalid next size` après plusieurs CSAVE, typiquement via terminal/BBS).
+
+- [x] **Diagnostic** : dans la construction du TAP canonique (`src/main.c`),
+      `tap_cap` réservait `8` octets d'en-tête alors que la boucle `tap[t++]` en
+      écrit **9** (2 padding + type + autorun + 2 end + 2 start + 1 reserved).
+      Chaque CSAVE débordait `malloc(tap_cap)` d'un octet → corruption cumulative
+      des métadonnées de l'allocateur, crash différé. Confirmé octet par octet.
+- [x] **Correctif** (`src/main.c`) : `+ 8 /*header*/` → `+ 9` ; l'allocation
+      couvre désormais exactement les octets écrits (`t == tap_cap`).
+- [x] **Validation** : détectable de façon déterministe dès le 1er CSAVE sous
+      AddressSanitizer ; correctif d'1 ligne sans changement de comportement.
+- [x] CR de référence (upstream) : `Phosphoric-upstream/docs/CR/2026-06-15_Bug_CSAVE_Heap_Overflow.md`.
+- [x] Suite complète 607 tests PASS (inchangé).
+
 ### Sprint 57: Garde-fou ROM système absent (faux bug Microdisc Nova2026) (v1.19.3-alpha) - DONE
 
 Investigation d'un « bug overlay Microdisc » rapporté (démo Cybernova/Nova2026,

@@ -1289,7 +1289,7 @@ do_patch:
          * CLOAD verify still prints "Errors found" cosmetically even
          * when data loads correctly (parity counters set by tape
          * input mock), but the program is fully loaded and auto-runs. */
-        int tap_cap = 4 /*leader+sync*/ + 8 /*header*/ +
+        int tap_cap = 4 /*leader+sync*/ + 9 /*header: 2 pad+type+auto+2 end+2 start+1 reserved*/ +
                       (int)strlen(clean_name) + 1 + prog_len;
         uint8_t* tap = (uint8_t*)malloc((size_t)tap_cap);
         if (tap) {

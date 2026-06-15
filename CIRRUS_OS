@@ -2,9 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.19.3-alpha
-Build Status: ALPHA (Sprint 57 : garde-fou ROM système absent — --disk-rom sans -r = erreur fatale, aucun ROM = avertissement (réfute le faux bug overlay Microdisc Nova2026), mapping Microdisc confirmé correct, test-rom-guard ajouté ; 607 tests PASS)
-Last Updated: 2026-06-14
+Version: 1.19.4-alpha
+Build Status: ALPHA (Sprint 58 : heap overflow d'1 octet à chaque CSAVE — tap_cap réservait 8 octets d'en-tête mais 9 écrits, corruption de tas différée (malloc(): invalid next size) ; correctif +8→+9 (t == tap_cap) ; 607 tests PASS)
+Last Updated: 2026-06-15
 
 ================================================================
 
