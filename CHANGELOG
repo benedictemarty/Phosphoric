@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.6-alpha] - 2026-06-16
+
+### Sprint 58b — Garde-fou de non-régression sur l'invariant tap_cap
+
+### Added
+- **Invariant `t == tap_cap` toujours actif** (`src/main.c`, construction du TAP
+  CSAVE). Après la boucle d'écriture `tap[t++]`, un garde compare le nombre
+  d'octets réellement écrits (`t`) à la capacité allouée (`tap_cap`). En cas de
+  divergence — c.-à-d. exactement le motif du heap overflow +8/+9 corrigé au
+  Sprint 58 (v1.19.4) si une édition future ré-introduisait l'écart — le garde
+  journalise `log_error` et **refuse d'émettre le TAP** (free + invalidation du
+  snapshot `csave_snap_valid`, comme le chemin nominal). Choix d'un garde runtime
+  **non purgé** plutôt qu'un `assert()` : la release est compilée `-DNDEBUG`, qui
+  supprimerait un `assert` ; sous AddressSanitizer le débordement lui-même est
+  capturé à l'écriture fautive, ce garde couvre le binaire de production. Aucun
+  effet sur le chemin nominal (`t == tap_cap` toujours vrai après le fix). 607
+  tests PASS (inchangé).
+
 ## [1.19.5-alpha] - 2026-06-15
 
 ### Outil `tap2sedoric` — injection d'un .tap dans une disquette Sedoric

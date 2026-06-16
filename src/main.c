@@ -1311,6 +1311,24 @@ do_patch:
                 tap[t++] = emu->memory.ram[start_addr + i];
             }
 
+            /* Non-regression invariant (Sprint 58): the hand-computed tap_cap
+             * MUST equal the number of bytes the tap[t++] sequence wrote. A
+             * mismatch means the allocation and the writer have drifted apart
+             * — exactly the +8/+9 heap overflow this guard exists to catch.
+             * Kept always-on: the release build defines NDEBUG, which would
+             * strip a bare assert(). Under ASan the overflow itself fires at
+             * the offending write; here we flag the drift and refuse to emit
+             * a corrupt TAP if t < tap_cap (or after-the-fact if t > tap_cap). */
+            if (t != tap_cap) {
+                log_error("CSAVE: TAP size invariant violated (wrote %d bytes, "
+                          "allocated %d) — aborting TAP emission", t, tap_cap);
+                free(tap);
+                /* Mirror the normal-path cleanup: drop the stale snapshot so a
+                 * later csave_end hit at the same PC does not rebuild from it. */
+                emu->csave_snap_valid = false;
+                return;
+            }
+
             /* Overwrite the host file with the proper TAP. */
             FILE* fw = fopen(emu->csave_last_path, "wb");
             if (fw) {

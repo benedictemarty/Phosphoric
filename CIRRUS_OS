@@ -2,9 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.19.4-alpha
-Build Status: ALPHA (Sprint 58 : heap overflow d'1 octet à chaque CSAVE — tap_cap réservait 8 octets d'en-tête mais 9 écrits, corruption de tas différée (malloc(): invalid next size) ; correctif +8→+9 (t == tap_cap) ; 607 tests PASS)
-Last Updated: 2026-06-15
+Version: 1.19.6-alpha
+Build Status: ALPHA (Sprint 58b : garde-fou non-régression invariant tap_cap — garde runtime toujours actif `t == tap_cap` après la boucle d'écriture du TAP CSAVE, refus d'émission + log_error sur divergence (non purgé par NDEBUG vs assert) ; 1.19.5 = outil tap2sedoric ; 607 tests PASS ; build SDL2=1 OK)
+Last Updated: 2026-06-16
 
 ================================================================
 

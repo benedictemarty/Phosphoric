@@ -394,6 +394,24 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 58b: Garde-fou de non-régression sur l'invariant tap_cap (v1.19.6-alpha) - DONE
+
+Durcissement de suivi du fix Sprint 58 : empêcher toute ré-introduction future
+du débordement de tas +8/+9.
+
+- [x] **Garde runtime toujours actif** (`src/main.c`) : après la boucle
+      `tap[t++]`, vérification `t == tap_cap`. Divergence → `log_error` + refus
+      d'émettre le TAP (free + invalidation `csave_snap_valid`).
+- [x] **Choix non purgeable** : garde runtime préféré à `assert()` car la release
+      est compilée `-DNDEBUG` (qui supprimerait l'assert) ; sous AddressSanitizer
+      le débordement est de toute façon capturé à l'écriture fautive.
+- [x] Aucun effet sur le chemin nominal (`t == tap_cap` toujours vrai post-fix).
+- [x] Suite complète 607 tests PASS (inchangé) ; build `SDL2=1` validé.
+
+Note : v1.19.5-alpha (commit `6a80e33`, outil `tap2sedoric`) s'est intercalée et
+n'avait mis à jour que le CHANGELOG ; suivi (EMU_VERSION/VERSION_TRACKING/
+CIRRUS_OS/ROADMAP) rétabli à 1.19.6 ici.
+
 ### Sprint 58: Heap overflow d'1 octet à chaque CSAVE (v1.19.4-alpha) - DONE
 
 Correction d'un débordement de tas différé signalé par CR upstream
