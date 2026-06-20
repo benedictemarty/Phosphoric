@@ -448,6 +448,64 @@ TEST(test_press_char_shifted_lshift_only) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  CTRL / FUNCT modifiers (--type-keys \Cx \Fx)                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+TEST(test_press_ctrl_position) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    oric_keyboard_press_ctrl(&kb);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));   /* LCTRL col=2 row=4 */
+    /* No other key disturbed */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 3, 4));  /* FUNCT untouched */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT untouched */
+}
+
+TEST(test_press_funct_position) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    oric_keyboard_press_funct(&kb);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 3, 4));   /* FUNCT col=3 row=4 */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 2, 4));  /* LCTRL untouched */
+}
+
+TEST(test_ctrl_combo_holds_both) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    /* CTRL+C : modifier held while companion key is pressed */
+    oric_keyboard_press_ctrl(&kb);
+    ASSERT_TRUE(oric_keyboard_press_char(&kb, 'c'));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));   /* CTRL still held */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 7));   /* 'c' = col=2 row=7 */
+}
+
+TEST(test_funct_combo_holds_both) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    /* FUNCT+a */
+    oric_keyboard_press_funct(&kb);
+    ASSERT_TRUE(oric_keyboard_press_char(&kb, 'a'));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 3, 4));   /* FUNCT still held */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 6, 5));   /* 'a' = col=6 row=5 */
+}
+
+TEST(test_modifier_release_all_clears) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    oric_keyboard_press_ctrl(&kb);
+    oric_keyboard_press_funct(&kb);
+    oric_keyboard_release_all(&kb);
+    for (int i = 0; i < 8; i++) {
+        ASSERT_EQ(kb.matrix[i], 0xFF);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 
 int main(void) {
     printf("Running ORIC keyboard mapping tests...\n");
@@ -488,6 +546,13 @@ int main(void) {
     RUN(test_press_char_double_return_needs_gap);
     RUN(test_press_char_upper_lower_same_position);
     RUN(test_press_char_shifted_lshift_only);
+
+    printf("\n  CTRL / FUNCT modifiers (\\Cx \\Fx):\n");
+    RUN(test_press_ctrl_position);
+    RUN(test_press_funct_position);
+    RUN(test_ctrl_combo_holds_both);
+    RUN(test_funct_combo_holds_both);
+    RUN(test_modifier_release_all_clears);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

@@ -125,7 +125,7 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] Fix HIRES bit 7 inversion: ink/paper XOR 7
 - [x] Fix HIRES charset address: $9800 in HIRES mode
 - [x] Keyboard automation: oric_keyboard_press_char() / release_all()
-- [x] --type-keys CYCLES:TEXT CLI option (supports \n, \pN pause)
+- [x] --type-keys CYCLES:TEXT CLI option (escapes \n \e \u\d\l\r \Cx(CTRL) \Fx(FUNCT) \pN, Sprint 59)
 - [x] Poker game compatibility validated (poker-asn.tap)
 
 ### Sprint 17: Microdisc & Sedoric Boot (v1.0.0-beta.6) - DONE
@@ -393,6 +393,23 @@ la source Oricutron avant correction.
       (chline absolu) + alignement pair (haut/bas) + quirk impair (bas/haut).
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
+
+### Sprint 59: Injection des modificateurs CTRL et FUNCT (--type-keys) (v1.20.0-alpha) - DONE
+
+Extension de l'auto-frappe `--type-keys` aux deux modificateurs Oric (CTRL,
+FUNCT) qui n'étaient câblés que dans le mapping SDL temps réel.
+
+- [x] **Escapes `\Cx` (CTRL+x) et `\Fx` (FUNCT+x)** : le modificateur reste
+      pressé pendant l'appui de la touche compagne `x` (3 caractères consommés).
+- [x] **Chemin clavier standard** (`src/io/keyboard.c`) : `oric_keyboard_press_ctrl()`
+      (LCTRL col 2/row 4) + `oric_keyboard_press_funct()` (FUNCT col 3/row 4),
+      abaissent le seul bit du modificateur ; sentinelle par modificateur forçant
+      une trame de relâche entre deux combos consécutifs.
+- [x] **Chemin LOCI HID** (`src/main.c`) : CTRL = bit modificateur USB HID 0x01 ;
+      FUNCT = accord `Tab` (0x2B) faute d'équivalent HID standard (cohérent SDL).
+- [x] Aide `--help` enrichie (liste complète des escapes).
+- [x] 5 tests `tests/unit/test_keyboard.c` (positions, combos maintenus, relâche).
+- [x] Suite complète 612 tests PASS (+5) ; build `SDL2=1` validé.
 
 ### Sprint 58b: Garde-fou de non-régression sur l'invariant tap_cap (v1.19.6-alpha) - DONE
 

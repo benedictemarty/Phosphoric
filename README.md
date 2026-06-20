@@ -129,7 +129,7 @@ make SDL2=1
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric`
-- **Keyboard automation** — `--type-keys CYCLES:TEXT`
+- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\pN` pause)
 
 ## Building
 
@@ -240,6 +240,7 @@ Display & Export:
   --screenshot FILE         Screenshot at exit (.ppm/.bmp)
   --screenshot-at N:FILE    Screenshot after N cycles
   --type-keys N:TEXT        Simulate keyboard input
+                            (escapes: \n \e \u \d \l \r \Cx=Ctrl+x \Fx=Funct+x \pN)
   -v, --verbose             Debug logging
 ```
 

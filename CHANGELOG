@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0-alpha] - 2026-06-20
+
+### Sprint 59 — Injection des modificateurs CTRL et FUNCT (`--type-keys`)
+
+### Added
+- **Escapes `\Cx` (CTRL+x) et `\Fx` (FUNCT+x)** dans l'auto-frappe `--type-keys`.
+  Jusqu'ici l'injection ne couvrait que les caractères imprimables, RETURN
+  (`\n`), ESC (`\e`), les flèches (`\u \d \l \r`) et la pause (`\pN`) ; les
+  deux modificateurs Oric CTRL et FUNCT n'étaient câblés que dans le mapping
+  SDL temps réel, pas dans le chemin d'injection. La syntaxe `\Cx`/`\Fx`
+  maintient le modificateur pressé pendant l'appui de la touche compagne `x`
+  (3 caractères consommés), p. ex. `--type-keys 3000000:\Cc` = CTRL+C.
+  - **Chemin clavier standard** (`src/io/keyboard.c`) : nouvelles fonctions
+    `oric_keyboard_press_ctrl()` (LCTRL, col 2 / row 4) et
+    `oric_keyboard_press_funct()` (FUNCT, col 3 / row 4) — elles abaissent le
+    seul bit du modificateur sans toucher aux autres touches, pour être
+    combinées avec `oric_keyboard_press_char()` après un `release_all()`.
+    Un sentinelle distinct par modificateur force une trame de relâche entre
+    deux combos consécutifs (le scanner ROM voit des frappes distinctes).
+  - **Chemin LOCI HID** (`src/main.c`) : analyse du firmware `loci-firmware`
+    (`src/mia/usb/kbd.c`, `kbd_prev_report_to_xram()`) — la MIA expose un
+    bitmap clavier USB HID **brut** en XRAM (bit `kc>>3` / `1<<(kc&7)`,
+    octet modificateur recopié à l'index `0xE0>>3`=28). CTRL = bit de
+    modificateur USB `0x01` (`KEYBOARD_MODIFIER_LEFTCTRL`) : **fidèle au
+    firmware**. FUNCT n'a **aucun code HID ni aucune notion dans le firmware**
+    (terme « funct » absent des sources) ; il est émis en accord `Tab`
+    (`0x2B`) par convention (interprétation laissée au logiciel consommateur).
+- **5 tests** dans `tests/unit/test_keyboard.c` : positions CTRL/FUNCT,
+  combos maintenus (CTRL+C, FUNCT+A), et relâche globale. 612 tests PASS (+5).
+
+### Changed
+- **Aide `--help`** : la ligne `--type-keys` détaille désormais l'ensemble des
+  escapes (`\n \e \u \d \l \r \Cx \Fx \pN`) au lieu de `\n`/`\pN` seuls.
+
 ## [1.19.6-alpha] - 2026-06-16
 
 ### Sprint 58b — Garde-fou de non-régression sur l'invariant tap_cap

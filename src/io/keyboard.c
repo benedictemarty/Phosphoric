@@ -137,6 +137,12 @@ static const char_entry_t char_map[128] = {
 /* RETURN key position (hardware col, hardware row) */
 #define ORIC_RETURN_COL 7
 #define ORIC_RETURN_ROW 5
+/* CTRL (LCTRL) and FUNCT modifier positions (hardware col, hardware row).
+ * Both sit on row 4 (the modifier row), like LSHIFT, in distinct columns. */
+#define ORIC_LCTRL_COL 2
+#define ORIC_LCTRL_ROW 4
+#define ORIC_FUNCT_COL 3
+#define ORIC_FUNCT_ROW 4
 
 #undef U
 #undef S
@@ -171,6 +177,17 @@ bool oric_keyboard_press_char(oric_keyboard_t* kb, char c) {
 
 void oric_keyboard_release_all(oric_keyboard_t* kb) {
     memset(kb->matrix, 0xFF, sizeof(kb->matrix));
+}
+
+void oric_keyboard_press_ctrl(oric_keyboard_t* kb) {
+    /* CTRL is a held modifier: clear its bit without touching other keys so
+     * the caller can press a companion key (after release_all). */
+    kb->matrix[ORIC_LCTRL_COL] &= ~(1 << ORIC_LCTRL_ROW);
+}
+
+void oric_keyboard_press_funct(oric_keyboard_t* kb) {
+    /* FUNCT is a held modifier (same convention as press_ctrl). */
+    kb->matrix[ORIC_FUNCT_COL] &= ~(1 << ORIC_FUNCT_ROW);
 }
 
 #ifdef HAS_SDL2

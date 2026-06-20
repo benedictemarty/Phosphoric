@@ -86,6 +86,22 @@ bool oric_keyboard_press_char(oric_keyboard_t* kb, char c);
  */
 void oric_keyboard_release_all(oric_keyboard_t* kb);
 
+/**
+ * @brief Press the CTRL modifier (held, does not release other keys)
+ *
+ * Clears the LCTRL matrix bit only. Intended for --type-keys \Cx combos:
+ * call after release_all(), then oric_keyboard_press_char() for the
+ * companion key. Release with oric_keyboard_release_all().
+ */
+void oric_keyboard_press_ctrl(oric_keyboard_t* kb);
+
+/**
+ * @brief Press the FUNCT modifier (held, does not release other keys)
+ *
+ * Clears the FUNCT matrix bit only (same usage as oric_keyboard_press_ctrl).
+ */
+void oric_keyboard_press_funct(oric_keyboard_t* kb);
+
 #ifdef HAS_SDL2
 /**
  * @brief Handle SDL2 event and update ORIC keyboard matrix
