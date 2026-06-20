@@ -138,10 +138,13 @@ static const char_entry_t char_map[128] = {
 #define ORIC_RETURN_COL 7
 #define ORIC_RETURN_ROW 5
 /* CTRL (LCTRL) and FUNCT modifier positions (hardware col, hardware row).
- * Both sit on row 4 (the modifier row), like LSHIFT, in distinct columns. */
+ * Both sit on row 4 (the modifier row), like LSHIFT, in distinct columns.
+ * FUNCT = col 5 (verified against the LOCI ROM keyboard scanner, VKEY_FUNCT
+ * = 5*8+4, and Phosphoric's own qwerty_tab where col5/row4 = LALT = FUNCT;
+ * col 3 / row 4 is unconnected). */
 #define ORIC_LCTRL_COL 2
 #define ORIC_LCTRL_ROW 4
-#define ORIC_FUNCT_COL 3
+#define ORIC_FUNCT_COL 5
 #define ORIC_FUNCT_ROW 4
 
 #undef U
@@ -186,7 +189,7 @@ void oric_keyboard_press_ctrl(oric_keyboard_t* kb) {
 }
 
 void oric_keyboard_press_funct(oric_keyboard_t* kb) {
-    /* FUNCT is a held modifier (same convention as press_ctrl). */
+    /* FUNCT is a held modifier (col 5 / row 4 — same convention as press_ctrl). */
     kb->matrix[ORIC_FUNCT_COL] &= ~(1 << ORIC_FUNCT_ROW);
 }
 
@@ -262,7 +265,7 @@ static const struct { SDL_Scancode sc; int8_t col, row; } special_keys[] = {
     { SDL_SCANCODE_DELETE,    5, 5 },
     { SDL_SCANCODE_LCTRL,     2, 4 },
     { SDL_SCANCODE_RCTRL,     0, 4 },
-    { SDL_SCANCODE_TAB,       3, 4 },  /* FUNCT */
+    { SDL_SCANCODE_TAB,       5, 4 },  /* FUNCT (col 5, like qwerty_tab LALT) */
     { 0, -1, -1 }  /* sentinel */
 };
 

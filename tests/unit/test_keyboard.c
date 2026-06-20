@@ -458,7 +458,7 @@ TEST(test_press_ctrl_position) {
     oric_keyboard_press_ctrl(&kb);
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));   /* LCTRL col=2 row=4 */
     /* No other key disturbed */
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, 3, 4));  /* FUNCT untouched */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 5, 4));  /* FUNCT (col=5) untouched */
     ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT untouched */
 }
 
@@ -467,7 +467,7 @@ TEST(test_press_funct_position) {
     oric_keyboard_init(&kb);
 
     oric_keyboard_press_funct(&kb);
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, 3, 4));   /* FUNCT col=3 row=4 */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 5, 4));   /* FUNCT col=5 row=4 (LOCI ROM VKEY_FUNCT) */
     ASSERT_TRUE(KEY_IS_RELEASED(kb, 2, 4));  /* LCTRL untouched */
 }
 
@@ -489,7 +489,7 @@ TEST(test_funct_combo_holds_both) {
     /* FUNCT+a */
     oric_keyboard_press_funct(&kb);
     ASSERT_TRUE(oric_keyboard_press_char(&kb, 'a'));
-    ASSERT_TRUE(KEY_IS_PRESSED(kb, 3, 4));   /* FUNCT still held */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 5, 4));   /* FUNCT still held (col=5) */
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 6, 5));   /* 'a' = col=6 row=5 */
 }
 

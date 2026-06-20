@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.20.0-alpha
-Build Status: ALPHA (Sprint 59 : injection CTRL/FUNCT dans `--type-keys` — escapes `\Cx`=CTRL+x et `\Fx`=FUNCT+x, modificateur maintenu pendant la touche compagne ; helpers `oric_keyboard_press_ctrl/funct` + bit HID 0x01 / accord Tab côté LOCI ; 612 tests PASS, +5 ; 1.19.6 = garde-fou invariant tap_cap ; build SDL2=1 OK)
+Version: 1.20.1-alpha
+Build Status: ALPHA (Sprint 59b : fix position FUNCT col 5 (pas col 3) + validation empirique LFMV2 — `\Cc`→keyb_char=0x03, `\F1`→0xB1 dans le LOCI File Manager réel ; Sprint 59 = injection CTRL/FUNCT `--type-keys` ; 612 tests PASS ; build SDL2=1 OK)
 Last Updated: 2026-06-20
 
 ================================================================

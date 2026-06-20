@@ -394,6 +394,20 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 59b: Fix position FUNCT (col 5) + validation empirique LFMV2 (v1.20.1-alpha) - DONE
+
+Test du Sprint 59 sur le LOCI File Manager réel (locifilemanager-v2), qui a
+révélé une mauvaise position matricielle pour FUNCT.
+
+- [x] **Bug** : `oric_keyboard_press_funct()` pressait col 3/row 4 (non connectée)
+      au lieu de **col 5/row 4** → `\Fx` ne déclenchait jamais `MOD_FUNCT`.
+- [x] **Source de vérité** : scanner clavier ROM LOCI (`VKEY_FUNCT = 5*8+4`,
+      LFMV2 `include/keyboard.c/.h`) + `qwerty_tab` Phosphoric (col5/row4=LALT).
+- [x] Table SDL `special_keys` corrigée aussi (TAB (3,4)→(5,4)).
+- [x] **Validation empirique** : LFMV2 booté via `--loci`, `--type-keys` + dump
+      RAM symboles. `\Cc`→keyb_char($84E7)=0x03 (KEY_CTRL_C) ; `\F1`→0xB1 (KEY_F1,
+      échouait à 0x31 avant fix). Tests unitaires mis à jour. 612 tests PASS.
+
 ### Sprint 59: Injection des modificateurs CTRL et FUNCT (--type-keys) (v1.20.0-alpha) - DONE
 
 Extension de l'auto-frappe `--type-keys` aux deux modificateurs Oric (CTRL,
@@ -402,9 +416,9 @@ FUNCT) qui n'étaient câblés que dans le mapping SDL temps réel.
 - [x] **Escapes `\Cx` (CTRL+x) et `\Fx` (FUNCT+x)** : le modificateur reste
       pressé pendant l'appui de la touche compagne `x` (3 caractères consommés).
 - [x] **Chemin clavier standard** (`src/io/keyboard.c`) : `oric_keyboard_press_ctrl()`
-      (LCTRL col 2/row 4) + `oric_keyboard_press_funct()` (FUNCT col 3/row 4),
-      abaissent le seul bit du modificateur ; sentinelle par modificateur forçant
-      une trame de relâche entre deux combos consécutifs.
+      (LCTRL col 2/row 4) + `oric_keyboard_press_funct()` (FUNCT col 5/row 4,
+      cf. fix 59b), abaissent le seul bit du modificateur ; sentinelle par
+      modificateur forçant une trame de relâche entre deux combos consécutifs.
 - [x] **Chemin LOCI HID** (`src/main.c`) : CTRL = bit modificateur USB HID 0x01 ;
       FUNCT = accord `Tab` (0x2B) faute d'équivalent HID standard (cohérent SDL).
 - [x] Aide `--help` enrichie (liste complète des escapes).

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.1-alpha] - 2026-06-20
+
+### Sprint 59b — Fix position matricielle FUNCT (col 5, pas col 3) + validation empirique LFMV2
+
+### Fixed
+- **`oric_keyboard_press_funct()` pressait la mauvaise colonne** : col 3 / row 4
+  au lieu de **col 5 / row 4**. La position col 3 / row 4 est non connectée sur
+  le matériel ; la vraie touche FUNCT est en col 5 (confirmé par le scanner
+  clavier de la ROM LOCI — `VKEY_FUNCT = 5*8+4` dans locifilemanager-v2 — et par
+  le `qwerty_tab` interne de Phosphoric où col 5 / row 4 = LALT = FUNCT).
+  Conséquence du bug : `\Fx` ne déclenchait jamais `MOD_FUNCT` dans les apps
+  LOCI. Corrigé aussi dans la table SDL temps réel `special_keys`
+  (`SDL_SCANCODE_TAB` : (3,4) → (5,4)).
+- **Validation empirique sur le LOCI File Manager (LFMV2)** : booté l'app réelle
+  via `--loci`, injection `--type-keys` puis dump RAM des symboles LFMV2.
+  - `\Cc` → `keyb_matrix[2]=0x90` (CTRL bit4 + 'c' bit7), `keyb_char ($84E7)=0x03`
+    = `KEY_CTRL_C`. ✓
+  - `\F1` → `keyb_matrix[5]=0x10` (FUNCT) + `keyb_matrix[0]=0x20` ('1'),
+    `keyb_char=0xB1` = `KEY_F1`. ✓ (échouait à `0x31` avant le fix.)
+
 ## [1.20.0-alpha] - 2026-06-20
 
 ### Sprint 59 — Injection des modificateurs CTRL et FUNCT (`--type-keys`)
@@ -19,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (3 caractères consommés), p. ex. `--type-keys 3000000:\Cc` = CTRL+C.
   - **Chemin clavier standard** (`src/io/keyboard.c`) : nouvelles fonctions
     `oric_keyboard_press_ctrl()` (LCTRL, col 2 / row 4) et
-    `oric_keyboard_press_funct()` (FUNCT, col 3 / row 4) — elles abaissent le
+    `oric_keyboard_press_funct()` (FUNCT, col 5 / row 4 — voir fix 1.20.1) —
+    elles abaissent le
     seul bit du modificateur sans toucher aux autres touches, pour être
     combinées avec `oric_keyboard_press_char()` après un `release_all()`.
     Un sentinelle distinct par modificateur force une trame de relâche entre
