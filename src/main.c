@@ -263,7 +263,8 @@ static void print_usage(const char* program_name) {
     printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
     printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
-    printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\pN=pause N sec\n");
+    printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
+    printf("                             \\Rx=RShift+x \\pN=pause N sec\n");
     printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
     printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
     printf("      --break ADDR           Set initial debugger breakpoint (hex)\n");
@@ -1675,15 +1676,15 @@ static void emulator_run(emulator_t* emu) {
                             case 'd': hid = 0x51; break;  /* Down */
                             case 'l': hid = 0x50; break;  /* Left */
                             case 'r': hid = 0x4F; break;  /* Right */
-                            case 'C': case 'F': {
-                                /* \Cx = CTRL+x, \Fx = FUNCT+x. The LOCI MIA
-                                 * firmware (loci-firmware kbd.c) exposes a raw
-                                 * USB HID keyboard bitmap in XRAM: CTRL is the
-                                 * standard modifier bit 0x01 (KEYBOARD_MODIFIER_
-                                 * LEFTCTRL) — firmware-exact. FUNCT has NO HID
-                                 * usage code and no concept in the firmware, so
-                                 * it is sent as a USB Tab (0x2B) chord by
-                                 * convention (consumer-defined). */
+                            case 'C': case 'F': case 'L': case 'R': {
+                                /* \Cx=CTRL+x, \Lx=LEFT-shift+x, \Rx=RIGHT-shift+x,
+                                 * \Fx=FUNCT+x. The LOCI MIA firmware (loci-firmware
+                                 * kbd.c) exposes a raw USB HID keyboard bitmap in
+                                 * XRAM: the modifiers are the standard HID bits
+                                 * (LEFTCTRL=0x01, LEFTSHIFT=0x02, RIGHTSHIFT=0x20)
+                                 * — firmware-exact. FUNCT has NO HID usage code and
+                                 * no concept in the firmware, so it is sent as a
+                                 * USB Tab (0x2B) chord by convention. */
                                 char keyc = emu->type_keys_text[idx+2];
                                 char lc = (keyc >= 'A' && keyc <= 'Z')
                                             ? (char)(keyc - 'A' + 'a') : keyc;
@@ -1696,12 +1697,14 @@ static void emulator_run(emulator_t* emu) {
                                     emu->type_keys_idx += 2;  /* dangling/unknown — skip */
                                     goto type_keys_done_frame;
                                 }
-                                if (esc == 'C') {
-                                    uint8_t keys[6] = { khid, 0, 0, 0, 0, 0 };
-                                    loci_kbd_set_report(&emu->loci, 0x01, keys);
-                                } else {
+                                if (esc == 'F') {
                                     uint8_t keys[6] = { 0x2B, khid, 0, 0, 0, 0 };
                                     loci_kbd_set_report(&emu->loci, 0, keys);
+                                } else {
+                                    uint8_t hmod = (esc == 'C') ? 0x01
+                                                 : (esc == 'L') ? 0x02 : 0x20;
+                                    uint8_t keys[6] = { khid, 0, 0, 0, 0, 0 };
+                                    loci_kbd_set_report(&emu->loci, hmod, keys);
                                 }
                                 emu->type_keys_last_char = esc;
                                 emu->type_keys_idx += 3;
@@ -1817,15 +1820,22 @@ static void emulator_run(emulator_t* emu) {
                         emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
                     }
                 } else if (c == '\\' && (emu->type_keys_text[idx+1] == 'C' ||
-                                          emu->type_keys_text[idx+1] == 'F')) {
-                    /* \Cx = CTRL+x, \Fx = FUNCT+x. The modifier is held while
-                     * the companion key x is pressed (3 chars consumed).
-                     * A distinct sentinel per modifier forces a release frame
-                     * between two consecutive combos so the ROM scanner sees
-                     * separate keystrokes. */
-                    bool is_ctrl = (emu->type_keys_text[idx+1] == 'C');
+                                          emu->type_keys_text[idx+1] == 'F' ||
+                                          emu->type_keys_text[idx+1] == 'L' ||
+                                          emu->type_keys_text[idx+1] == 'R')) {
+                    /* \Cx=CTRL+x, \Fx=FUNCT+x, \Lx=LEFT-shift+x, \Rx=RIGHT-shift+x.
+                     * The modifier is held while the companion key x is pressed
+                     * (3 chars consumed). A distinct sentinel per modifier forces
+                     * a release frame between two consecutive combos so the ROM
+                     * scanner sees separate keystrokes. */
+                    char mod = emu->type_keys_text[idx+1];
                     char keyc = emu->type_keys_text[idx+2];
-                    char sentinel = (char)(is_ctrl ? 0x90 : 0x91);
+                    /* Single shared sentinel (0x90) for ALL modifier combos so
+                     * that two consecutive combos — even with the same base key
+                     * (e.g. \L1\R1) — are always separated by a release frame,
+                     * which the ROM/app keyboard scanner needs to see as two
+                     * distinct keystrokes. */
+                    char sentinel = (char)0x90;
                     if (emu->type_keys_last_char == sentinel) {
                         oric_keyboard_release_all(&emu->keyboard);
                         emu->type_keys_last_char = 0;
@@ -1834,8 +1844,10 @@ static void emulator_run(emulator_t* emu) {
                         emu->type_keys_idx += 2;  /* dangling modifier — skip */
                     } else {
                         oric_keyboard_release_all(&emu->keyboard);
-                        if (is_ctrl) oric_keyboard_press_ctrl(&emu->keyboard);
-                        else         oric_keyboard_press_funct(&emu->keyboard);
+                        if (mod == 'C')      oric_keyboard_press_ctrl(&emu->keyboard);
+                        else if (mod == 'F') oric_keyboard_press_funct(&emu->keyboard);
+                        else if (mod == 'L') oric_keyboard_press_lshift(&emu->keyboard);
+                        else                 oric_keyboard_press_rshift(&emu->keyboard);
                         oric_keyboard_press_char(&emu->keyboard, keyc);
                         emu->type_keys_last_char = sentinel;
                         emu->type_keys_idx += 3;

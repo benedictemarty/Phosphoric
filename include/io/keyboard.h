@@ -102,6 +102,20 @@ void oric_keyboard_press_ctrl(oric_keyboard_t* kb);
  */
 void oric_keyboard_press_funct(oric_keyboard_t* kb);
 
+/**
+ * @brief Press the LEFT shift modifier (held, col 4 / row 4)
+ *
+ * Same usage as oric_keyboard_press_ctrl (for --type-keys \Lx combos).
+ */
+void oric_keyboard_press_lshift(oric_keyboard_t* kb);
+
+/**
+ * @brief Press the RIGHT shift modifier (held, col 7 / row 4)
+ *
+ * Same usage as oric_keyboard_press_ctrl (for --type-keys \Rx combos).
+ */
+void oric_keyboard_press_rshift(oric_keyboard_t* kb);
+
 #ifdef HAS_SDL2
 /**
  * @brief Handle SDL2 event and update ORIC keyboard matrix

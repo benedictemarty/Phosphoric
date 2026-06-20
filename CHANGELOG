@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.0-alpha] - 2026-06-20
+
+### Sprint 60 — Injection SHIFT gauche/droit + validation clavier complète ORIC-1/Atmos
+
+### Added
+- **Escapes `\Lx` (LEFT shift + x) et `\Rx` (RIGHT shift + x)** dans `--type-keys`,
+  complétant `\Cx`/`\Fx`. Le LEFT shift n'était jusque-là injectable
+  qu'implicitement (majuscules/symboles via `press_char`) et le RIGHT shift ne
+  l'était pas du tout. Helpers `oric_keyboard_press_lshift()` (col 4 / row 4) et
+  `oric_keyboard_press_rshift()` (col 7 / row 4) ; chemin LOCI HID = bits
+  modificateurs USB standard (LEFTSHIFT=0x02, RIGHTSHIFT=0x20). +3 tests clavier.
+- **Outils de validation clavier** (`tools/keytest/`) :
+  - `keydetect.bas` — programme BASIC interactif affichant le code de chaque
+    touche (`KEY$`).
+  - `keytest.bas` — variante de capture (POKE des codes dans un buffer `#2000`).
+  - `validate_keys.sh` — harnais automatisé : injecte 86 touches/combos via
+    `--type-keys`, dump la RAM, compare au vecteur attendu, **pour ORIC-1
+    (BASIC 1.0) et Atmos (BASIC 1.1)**. Résultat : **172/172 vérifications OK**.
+  - `tools/keytest/README.md` — couverture + comportements ROM documentés.
+
+### Changed
+- **Sentinelle de combo unique (0x90)** pour tous les modificateurs : deux combos
+  consécutifs (même de modificateurs différents) sont désormais toujours séparés
+  par une trame de relâche.
+- **Aide `--help`** : ajout de `\Lx`/`\Rx`.
+
+### Validated (empirique, applications réelles)
+- KEY$ ROM : lettres `$41`–`$5A`, chiffres `$30`–`$39`, symboles, ESC `$1B`,
+  flèches `$0B/$0A/$08/$09`, CTRL+lettre `$01`–`$1A` — **identiques ORIC-1/Atmos**.
+- **CTRL+C = BREAK** (interrompt BASIC) ; **FUNCT ignoré par le ROM** (FUNCT+x →
+  touche de base), n'a de sens que matrice (LOCI File Manager : FUNCT+1→KEY_F1).
+- **SHIFT G/D** : positions matérielles distinctes (LSHIFT col 4 / RSHIFT col 7,
+  vérifié `keyb_matrix[4]` vs `[7]` sur LFMV2), équivalentes pour le ROM
+  (`\L1`=`\R1`=`'!'`). `shift+2`=`'@'` sur clavier Oric.
+
 ## [1.20.1-alpha] - 2026-06-20
 
 ### Sprint 59b — Fix position matricielle FUNCT (col 5, pas col 3) + validation empirique LFMV2

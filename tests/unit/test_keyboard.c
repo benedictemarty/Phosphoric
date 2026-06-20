@@ -493,6 +493,35 @@ TEST(test_funct_combo_holds_both) {
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 6, 5));   /* 'a' = col=6 row=5 */
 }
 
+TEST(test_press_lshift_position) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    oric_keyboard_press_lshift(&kb);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 4, 4));   /* LSHIFT col=4 row=4 */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 7, 4));  /* RSHIFT untouched */
+}
+
+TEST(test_press_rshift_position) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    oric_keyboard_press_rshift(&kb);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 4));   /* RSHIFT col=7 row=4 */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT untouched */
+}
+
+TEST(test_lshift_rshift_distinct) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    /* The two shift keys are physically distinct positions */
+    oric_keyboard_press_lshift(&kb);
+    oric_keyboard_press_rshift(&kb);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 4, 4));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 4));
+}
+
 TEST(test_modifier_release_all_clears) {
     oric_keyboard_t kb;
     oric_keyboard_init(&kb);
@@ -547,11 +576,14 @@ int main(void) {
     RUN(test_press_char_upper_lower_same_position);
     RUN(test_press_char_shifted_lshift_only);
 
-    printf("\n  CTRL / FUNCT modifiers (\\Cx \\Fx):\n");
+    printf("\n  CTRL / FUNCT / SHIFT modifiers (\\Cx \\Fx \\Lx \\Rx):\n");
     RUN(test_press_ctrl_position);
     RUN(test_press_funct_position);
     RUN(test_ctrl_combo_holds_both);
     RUN(test_funct_combo_holds_both);
+    RUN(test_press_lshift_position);
+    RUN(test_press_rshift_position);
+    RUN(test_lshift_rshift_distinct);
     RUN(test_modifier_release_all_clears);
 
     printf("\n═══════════════════════════════════════════════════════════\n");

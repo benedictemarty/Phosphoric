@@ -131,9 +131,11 @@ static const char_entry_t char_map[128] = {
     /* 0x7F DEL */ X
 };
 
-/* ORIC Left Shift position (hardware col, hardware row) */
+/* ORIC Left/Right Shift positions (hardware col, hardware row) */
 #define ORIC_LSHIFT_COL 4
 #define ORIC_LSHIFT_ROW 4
+#define ORIC_RSHIFT_COL 7
+#define ORIC_RSHIFT_ROW 4
 /* RETURN key position (hardware col, hardware row) */
 #define ORIC_RETURN_COL 7
 #define ORIC_RETURN_ROW 5
@@ -191,6 +193,16 @@ void oric_keyboard_press_ctrl(oric_keyboard_t* kb) {
 void oric_keyboard_press_funct(oric_keyboard_t* kb) {
     /* FUNCT is a held modifier (col 5 / row 4 — same convention as press_ctrl). */
     kb->matrix[ORIC_FUNCT_COL] &= ~(1 << ORIC_FUNCT_ROW);
+}
+
+void oric_keyboard_press_lshift(oric_keyboard_t* kb) {
+    /* LEFT shift held modifier (col 4 / row 4). */
+    kb->matrix[ORIC_LSHIFT_COL] &= ~(1 << ORIC_LSHIFT_ROW);
+}
+
+void oric_keyboard_press_rshift(oric_keyboard_t* kb) {
+    /* RIGHT shift held modifier (col 7 / row 4). */
+    kb->matrix[ORIC_RSHIFT_COL] &= ~(1 << ORIC_RSHIFT_ROW);
 }
 
 #ifdef HAS_SDL2

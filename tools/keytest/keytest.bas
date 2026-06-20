@@ -1,0 +1,5 @@
+10 A=#2000
+20 K$=KEY$ : IF K$="" THEN 20
+30 POKE A,ASC(K$) : A=A+1
+40 K$=KEY$ : IF K$<>"" THEN 40
+50 GOTO 20

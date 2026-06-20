@@ -394,6 +394,23 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60: Injection SHIFT G/D + validation clavier ORIC-1/Atmos (v1.21.0-alpha) - DONE
+
+Complète l'injection des modificateurs (CTRL/FUNCT) avec les deux SHIFT, et
+livre un harnais de validation clavier couvrant les deux modèles.
+
+- [x] **Escapes `\Lx` (LEFT shift+x) et `\Rx` (RIGHT shift+x)** ; helpers
+      `oric_keyboard_press_lshift` (col 4/row 4) + `press_rshift` (col 7/row 4)
+      ; chemin LOCI HID = bits USB 0x02 (LSHIFT) / 0x20 (RSHIFT). +3 tests.
+- [x] **Sentinelle de combo unifiée (0x90)** : sépare tout combo consécutif.
+- [x] **Outils `tools/keytest/`** : `keydetect.bas` (interactif), `keytest.bas`
+      (capture buffer #2000), `validate_keys.sh` (harnais), `README.md`.
+- [x] **Validation 86 touches/combos × 2 ROMs = 172/172 OK** (ORIC-1 BASIC 1.0
+      + Atmos BASIC 1.1). Comportements ROM documentés : CTRL+C=BREAK, FUNCT
+      ignoré par le ROM (→ touche de base), SHIFT L/R distinct matrice mais
+      équivalent ROM, shift+2='@', flèches 0B/0A/08/09.
+- [x] Suite complète 615 tests PASS (+3).
+
 ### Sprint 59b: Fix position FUNCT (col 5) + validation empirique LFMV2 (v1.20.1-alpha) - DONE
 
 Test du Sprint 59 sur le LOCI File Manager réel (locifilemanager-v2), qui a

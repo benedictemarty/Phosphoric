@@ -129,7 +129,7 @@ make SDL2=1
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric`
-- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\pN` pause)
+- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
 
 ## Building
 
@@ -239,8 +239,8 @@ Display & Export:
   --cycles N                Run N cycles then exit
   --screenshot FILE         Screenshot at exit (.ppm/.bmp)
   --screenshot-at N:FILE    Screenshot after N cycles
-  --type-keys N:TEXT        Simulate keyboard input
-                            (escapes: \n \e \u \d \l \r \Cx=Ctrl+x \Fx=Funct+x \pN)
+  --type-keys N:TEXT        Simulate keyboard input (escapes: \n \e \u \d \l \r
+                            \Cx=Ctrl+x \Fx=Funct+x \Lx/\Rx=Left/Right Shift+x \pN)
   -v, --verbose             Debug logging
 ```
 
