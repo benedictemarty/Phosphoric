@@ -36,7 +36,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.6-alpha"
+#define EMU_VERSION "1.21.7-alpha"
 
 /**
  * @brief ORIC machine model
@@ -242,6 +242,10 @@ typedef struct emulator_s {
 
     /* Display scaling (1-4, default 3) */
     int scale_factor;
+
+    /* Force the SDL software renderer (--render-software). Works around setups
+     * where the accelerated renderer presents an all-black window. */
+    bool render_software;
 
     /* Interactive debugger */
     debugger_t debugger;

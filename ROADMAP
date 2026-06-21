@@ -394,6 +394,23 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60h: Fix SDL écran noir + doc matrice puce × transport — reco #5 (v1.21.7-alpha) - DONE
+
+- [x] **Fix SDL fenêtre noire** : `renderer_init()` forçait `SDL_RENDERER_ACCELERATED`
+      (créé OK mais cadre tout noir sur certaines configs GPU : llvmpipe/X logiciel,
+      NVIDIA/Xwayland). Nouveau flag `--render-software` (+ champ `render_software`,
+      signature `renderer_init(scale, prefer_software)`), respect de
+      `SDL_RENDER_DRIVER=software`, fallback auto en logiciel si l'accéléré échoue.
+      Validé empiriquement (OTRM visible sur la carte DTL).
+- [x] **README — section « Serial communication: chips × transports »** : tableau
+      des puces (`--serial` ACIA 6551 $031C/$0380, `--dtl2000` PIA 6821 + ACIA 6850
+      $03F8, `--loci` MIA) + matrice de disponibilité des transports par puce.
+- [x] Distinction **transparent** (loopback/tcp/pty/com/file, dispo partout) vs
+      **à protocole** (modem/digitelec/picowifi, réservés à `--serial`), + portée
+      réelle des options `--serial-*` (ACIA 6551 only) + exemple `file:`.
+- [x] Référence CLI README corrigée (com:/file:, --serial-buffer/--serial-irq-on-rdrf).
+- [x] Doc uniquement, 627 tests inchangés.
+
 ### Sprint 60g: Backend série `file:` replay/capture — reco #4 (v1.21.6-alpha) - DONE
 
 - [x] **Backend `file:IN[:OUT]`** (`SERIAL_BACKEND_FILE`, `serial_backend_file_create()`) :

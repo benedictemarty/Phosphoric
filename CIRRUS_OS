@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.6-alpha
-Build Status: ALPHA (Sprint 60g : backend série file:IN[:OUT] replay/capture (reco #4) — transport transparent déterministe (RX rejoué/TX capturé), dispo --serial ET --dtl2000 via le helper partagé, test e2e make test-serial-file (capture + round-trip + plomberie) ; Sprint 60f = unification transports DTL ; 627 tests PASS ; build SDL2=1 OK)
+Version: 1.21.7-alpha
+Build Status: ALPHA (Sprint 60h : fix SDL écran noir (renderer accéléré rendait noir sur certaines configs GPU → --render-software + respect SDL_RENDER_DRIVER + fallback auto logiciel) + doc matrice puce × transport (reco #5, README puces vs transports) ; Sprint 60g = backend file: ; 627 tests PASS ; fix SDL validé empiriquement ; build SDL2=1 OK)
 Last Updated: 2026-06-21
 
 ================================================================

@@ -50,7 +50,7 @@
 #endif
 
 /* Forward declarations for renderer (in renderer.c) */
-bool renderer_init(int scale);
+bool renderer_init(int scale, bool prefer_software);
 void renderer_cleanup(void);
 void renderer_present(video_t* vid);
 void renderer_toggle_fullscreen(void);
@@ -261,6 +261,8 @@ static void print_usage(const char* program_name) {
     printf("  -p, --printer FILE         Capture printer output to FILE (LPRINT/LLIST)\n");
     printf("      --printer-type TYPE    Printer type: text (default) or mcp40 (4-color plotter)\n");
     printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
+    printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
+    printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
     printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
     printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
@@ -946,7 +948,7 @@ static bool emulator_init(emulator_t* emu) {
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {
-        renderer_init(emu->scale_factor > 0 ? emu->scale_factor : 3);
+        renderer_init(emu->scale_factor > 0 ? emu->scale_factor : 3, emu->render_software);
 #ifdef HAS_SDL2
         SDL_StartTextInput();  /* Enable TEXTINPUT events for symbolic keyboard */
 #endif
@@ -2295,6 +2297,7 @@ int main(int argc, char* argv[]) {
     const char* printer_file = NULL;
     const char* printer_type_arg = NULL;
     int scale_factor = 3;
+    bool render_software = false;
     const char* trace_file = NULL;
     const char* dump_ram_at_arg = NULL;
     const char* trace_irq_file = NULL;
@@ -2318,7 +2321,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2352,6 +2355,7 @@ int main(int argc, char* argv[]) {
         {"printer",             required_argument, 0, 'p'},
         {"printer-type",        required_argument, 0, OPT_PRINTER_TYPE},
         {"scale",               required_argument, 0, OPT_SCALE},
+        {"render-software",     no_argument,       0, OPT_RENDER_SOFTWARE},
         {"trace",               required_argument, 0, OPT_TRACE},
         {"trace-max",           required_argument, 0, OPT_TRACE_MAX},
         {"profile",             required_argument, 0, OPT_PROFILE},
@@ -2425,6 +2429,7 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
                 break;
+            case OPT_RENDER_SOFTWARE: render_software = true; break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
@@ -2503,6 +2508,7 @@ int main(int argc, char* argv[]) {
     /* Set headless and scale before init so renderer is configured correctly */
     emu.headless = headless;
     emu.scale_factor = scale_factor;
+    emu.render_software = render_software;
 
     if (!emulator_init(&emu)) {
         log_error("Failed to initialize emulator");

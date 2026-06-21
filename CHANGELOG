@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.7-alpha] - 2026-06-21
+
+### Sprint 60h — Fix SDL écran noir + doc matrice puce × transport série (reco #5)
+
+### Fixed
+- **Fenêtre SDL toute noire sur certaines configs GPU/pilotes** (llvmpipe/X
+  logiciel, NVIDIA/Xwayland) : `renderer_init()` forçait `SDL_RENDERER_ACCELERATED`,
+  créé avec succès mais présentant un cadre entièrement noir alors que le
+  framebuffer était correct (vérifié : 95 % de pixels non-noirs en headless).
+  Désormais : nouveau flag **`--render-software`** force le renderer logiciel,
+  `SDL_RENDER_DRIVER=software` est respecté, et l'accéléré **bascule
+  automatiquement en logiciel** s'il ne peut être créé. Nouveau champ
+  `emulator_t.render_software` ; `renderer_init(scale, prefer_software)`.
+
+### Changed
+- **README — section « Serial communication: chips × transports »** : tableau
+  explicite séparant **les puces** (`--serial` ACIA 6551 $031C/$0380, `--dtl2000`
+  PIA 6821 + ACIA 6850 $03F8, `--loci` MIA) des **transports** (transparents :
+  loopback/tcp/pty/com/file ; à protocole : modem/digitelec/picowifi), avec une
+  matrice de disponibilité par puce et la portée réelle des options `--serial-*`
+  (ACIA 6551 uniquement). Lève la confusion « quelle option agit sur quelle puce ».
+- **Référence CLI README** mise à jour (transports `com:`/`file:` manquants pour
+  `--serial` et `--dtl2000`, options `--serial-buffer`/`--serial-irq-on-rdrf`).
+- Exemple `file:` (capture / replay) ajouté.
+
+  627 tests PASS (inchangé — le fix SDL touche l'affichage, non testé en unitaire ;
+  validé empiriquement : OTRM visible sur la carte DTL en `--render-software`).
+
 ## [1.21.6-alpha] - 2026-06-21
 
 ### Sprint 60g — Backend série `file:` replay/capture (recommandation #4)

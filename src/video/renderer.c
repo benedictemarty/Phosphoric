@@ -17,18 +17,39 @@ static SDL_Texture* texture;
 static bool fullscreen;
 static int current_scale;
 
-bool renderer_init(int scale) {
+bool renderer_init(int scale, bool prefer_software) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) return false;
     window = SDL_CreateWindow("Phosphoric",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         ORIC_SCREEN_W * scale, ORIC_SCREEN_H * scale,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!window) return false;
-    /* No PRESENTVSYNC flag: SDL_Delay(20 - frame_elapsed) in main.c handles
-     * 50 Hz pacing. PRESENTVSYNC was redundant and could block indefinitely
-     * on some Wayland compositors when the window is occluded/minimized,
-     * causing the WM to flag Phosphoric as « ne répond pas ». */
-    sdl_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+    /* Renderer selection. Default is the accelerated driver, but on some
+     * setups (llvmpipe/software X, certain NVIDIA/Xwayland combos) the
+     * accelerated renderer is created successfully yet presents an all-black
+     * window. So:
+     *   - --render-software (prefer_software) or SDL_RENDER_DRIVER=software
+     *     forces the software renderer up front;
+     *   - otherwise we try accelerated and fall back to software if it can't
+     *     be created at all.
+     * No PRESENTVSYNC flag: SDL_Delay(20 - frame_elapsed) in main.c handles
+     * 50 Hz pacing; PRESENTVSYNC could block indefinitely on some Wayland
+     * compositors when the window is occluded/minimized. */
+    const char* drv = SDL_GetHint(SDL_HINT_RENDER_DRIVER);
+    if (drv && SDL_strcasecmp(drv, "software") == 0) prefer_software = true;
+
+    if (prefer_software) {
+        sdl_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    } else {
+        sdl_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        if (!sdl_renderer) {
+            SDL_Log("Accelerated renderer unavailable (%s) — falling back to software",
+                    SDL_GetError());
+            sdl_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+        }
+    }
+    if (!sdl_renderer) sdl_renderer = SDL_CreateRenderer(window, -1, 0); /* last resort */
     if (!sdl_renderer) return false;
     texture = SDL_CreateTexture(sdl_renderer,
         SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
@@ -82,7 +103,7 @@ void renderer_cycle_scale(void) {
 
 #else
 
-bool renderer_init(int scale) { (void)scale; return true; }
+bool renderer_init(int scale, bool prefer_software) { (void)scale; (void)prefer_software; return true; }
 void renderer_cleanup(void) {}
 void renderer_present(video_t* vid) { (void)vid; }
 void renderer_toggle_fullscreen(void) {}
