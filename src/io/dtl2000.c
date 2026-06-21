@@ -106,8 +106,8 @@ static void dtl_update_irq(dtl2000_t* dev)
 /* Decode the Port A output register after a write: line connection + mode. */
 static void dtl_pia_update_outputs(dtl2000_t* dev)
 {
-    bool new_connected = ((dev->pia_ora & DTL_PIA_A_LINE) == 0);
-    bool new_symmetric = ((dev->pia_ora & DTL_PIA_A_MODE) == 0);
+    bool new_connected = ((dev->pia.ora & DTL_PIA_A_LINE) == 0);
+    bool new_symmetric = ((dev->pia.ora & DTL_PIA_A_MODE) == 0);
 
     if (new_symmetric != dev->symmetric) {
         dev->symmetric = new_symmetric;
@@ -188,8 +188,8 @@ void dtl2000_init(dtl2000_t* dev, uint16_t base_addr)
 
 void dtl2000_reset(dtl2000_t* dev)
 {
-    dev->pia_ddra = dev->pia_ora = dev->pia_cra = 0;
-    dev->pia_ddrb = dev->pia_orb = dev->pia_crb = 0;
+    pia6821_init(&dev->pia);
+    pia6821_reset(&dev->pia);
 
     dev->acia_control = 0;
     /* Power-on: transmitter empty, line open → carrier absent / not CTS. */
@@ -221,16 +221,11 @@ uint8_t dtl2000_read(dtl2000_t* dev, uint16_t addr)
 
     switch (off) {
         case DTL_REG_PIA_A:
-            /* CRA bit2 selects OR (data) vs DDR (direction). */
-            return (dev->pia_cra & DTL_PIA_CR_DDR_SEL) ? dev->pia_ora
-                                                       : dev->pia_ddra;
         case DTL_REG_PIA_CRA:
-            return dev->pia_cra;
         case DTL_REG_PIA_B:
-            return (dev->pia_crb & DTL_PIA_CR_DDR_SEL) ? dev->pia_orb
-                                                       : dev->pia_ddrb;
         case DTL_REG_PIA_CRB:
-            return dev->pia_crb;
+            /* PIA register offsets 0-3 map directly to RS1,RS0. */
+            return pia6821_read(&dev->pia, (uint8_t)off);
         case DTL_REG_ACIA_CS:
             dtl_refresh_signals(dev);
             return dev->acia_status;
@@ -254,22 +249,20 @@ void dtl2000_write(dtl2000_t* dev, uint16_t addr, uint8_t value)
 
     switch (off) {
         case DTL_REG_PIA_A:
-            if (dev->pia_cra & DTL_PIA_CR_DDR_SEL) {
-                dev->pia_ora = value;
+            pia6821_write(&dev->pia, PIA_RS_PRA, value);
+            /* An ORA write (CRA bit2 = 1) may change the line/mode outputs. */
+            if (dev->pia.cra & DTL_PIA_CR_DDR_SEL) {
                 dtl_pia_update_outputs(dev);
-            } else {
-                dev->pia_ddra = value;
             }
             break;
         case DTL_REG_PIA_CRA:
-            dev->pia_cra = value;
+            pia6821_write(&dev->pia, PIA_RS_CRA, value);
             break;
         case DTL_REG_PIA_B:
-            if (dev->pia_crb & DTL_PIA_CR_DDR_SEL) dev->pia_orb = value;
-            else                                   dev->pia_ddrb = value;
+            pia6821_write(&dev->pia, PIA_RS_PRB, value);
             break;
         case DTL_REG_PIA_CRB:
-            dev->pia_crb = value;
+            pia6821_write(&dev->pia, PIA_RS_CRB, value);
             break;
         case DTL_REG_ACIA_CS:
             dtl_acia_control_write(dev, value);

@@ -45,6 +45,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "io/pia6821.h"
+
 /* Forward declarations */
 typedef struct serial_backend_s serial_backend_t;
 typedef struct emulator_s emulator_t;
@@ -133,9 +135,8 @@ typedef struct emulator_s emulator_t;
 typedef struct dtl2000_s {
     uint16_t base_addr;          /**< I/O base ($03F8 by default) */
 
-    /* PIA 6821 registers */
-    uint8_t pia_ddra, pia_ora, pia_cra;
-    uint8_t pia_ddrb, pia_orb, pia_crb;
+    /* PIA 6821 (Port A drives the line/mode; Port B unused by the card). */
+    pia6821_t pia;
 
     /* ACIA 6850 registers */
     uint8_t acia_control;        /**< last control write */

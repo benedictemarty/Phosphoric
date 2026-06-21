@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.10-alpha] - 2026-06-21
+
+### Sprint 60k — Module PIA 6821 (MC6821) autonome + rebranchement du DTL 2000
+
+### Added
+- **Module PIA 6821 (MC6821) complet et réutilisable** (`src/io/pia6821.c`,
+  `include/io/pia6821.h`) : 2 ports A/B avec DDR/OR/CR, lignes de contrôle
+  CA1/CB1 (IRQ1 : enable bit0, sélection de front bit1, flag bit7, clear-on-read),
+  CA2/CB2 en entrée (IRQ2 : enable bit3, front bit4, flag bit6) **et** en sortie
+  (set/reset, pulse, handshake), résolution des pins de sortie (`OR & DDR`),
+  lecture mixte entrée/sortie, et callbacks (port A/B out, CA2/CB2 out, IRQA/IRQB).
+- **Suite de tests `make test-pia6821`** (`tests/unit/test_pia6821.c`) : 14 tests
+  (DDR/OR select, read mixte, IRQ1 front montant/descendant, flag sans enable,
+  IRQ2 entrée, CA2 set/reset, CA2 handshake/pulse, CB2 handshake sur écriture PRB,
+  callback IRQ, indépendance des côtés A/B).
+
+### Changed
+- **Le DTL 2000 utilise désormais ce module** : les 6 champs PIA ad-hoc de
+  `dtl2000_t` sont remplacés par un `pia6821_t pia`, et `dtl2000_read/write`
+  routent les offsets PIA ($03F8-$03FB) vers `pia6821_read/write`. Le décodage
+  ligne/mode (Port A bit 2 / bit 4) est inchangé. **Aucune régression** : 15 tests
+  DTL + e2e + boot OTRM identiques.
+
+  Réutilisable par d'éventuelles autres cartes 6821. (Suite logique : factoriser
+  aussi l'ACIA 6850 hors de `dtl2000.c`.) 644 tests PASS (+14).
+
 ## [1.21.9-alpha] - 2026-06-21
 
 ### Sprint 60j — Timing baud réel sur horloge externe (recommandation #6)

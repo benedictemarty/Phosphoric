@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.9-alpha
-Build Status: ALPHA (Sprint 60j : timing baud réel sur horloge externe (reco #6) — --serial-baud N remplace l'« instant transfer » par une cadence réelle de N bauds quand l'ACIA 6551 sélectionne l'horloge externe (index 0), pour tester les logiciels sensibles au débit ; warning instant ne spamme plus ; débits internes déjà cycle-exacts ; Sprint 60i = dépréciation digitelec: ; 630 tests PASS ; build SDL2=1 OK)
+Version: 1.21.10-alpha
+Build Status: ALPHA (Sprint 60k : module PIA 6821 (MC6821) autonome et réutilisable (src/io/pia6821.c) — 2 ports A/B, CA1/CB1 IRQ1, CA2/CB2 entrée IRQ2 + sortie set-reset/pulse/handshake, callbacks ; DTL 2000 rebranché dessus sans régression (15 tests DTL + e2e + OTRM identiques) ; 14 tests PIA ; Sprint 60j = --serial-baud ; 644 tests PASS ; build SDL2=1 OK)
 Last Updated: 2026-06-21
 
 ================================================================
