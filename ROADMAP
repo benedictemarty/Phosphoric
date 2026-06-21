@@ -394,6 +394,16 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60i: Dépréciation du backend `digitelec:` — reco #3 (v1.21.8-alpha) - DONE
+
+- [x] **`--serial digitelec:` DÉPRÉCIÉ** au profit de `--dtl2000` (carte fidèle).
+      Le comportemental modélise le DTL 2000 comme un modem externe sur l'ACIA 6551
+      ($031C), pas le vrai matériel (carte PIA 6821 + ACIA 6850 $03F8, validée OTRM).
+- [x] Avertissement de dépréciation au boot + commande de migration
+      (`--serial digitelec:H:P` → `--dtl2000 tcp:H:P`), backend gardé fonctionnel un cycle.
+- [x] `--help`, README (matrice : digitelec ⚠️ deprecated + note de migration) à jour.
+- [x] 2 assertions e2e (warning émis + backend toujours fonctionnel). 629 tests PASS (+2).
+
 ### Sprint 60h: Fix SDL écran noir + doc matrice puce × transport — reco #5 (v1.21.7-alpha) - DONE
 
 - [x] **Fix SDL fenêtre noire** : `renderer_init()` forçait `SDL_RENDERER_ACCELERATED`

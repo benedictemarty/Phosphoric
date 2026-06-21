@@ -45,7 +45,7 @@ make SDL2=1
 - **AY-3-8910 PSG** — 3 tone channels, noise, 16 envelope shapes, SDL2 audio output
 - **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot
 - **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain
-- **ACIA 6551** — Serial controller at $031C-$031F, transports loopback/TCP/PTY/COM/file + protocol backends (modem AT, digitelec, PicoWiFiModemUSB), V23 mode (Minitel/Digitelec). See the *chips × transports* matrix below
+- **ACIA 6551** — Serial controller at $031C-$031F, transports loopback/TCP/PTY/COM/file + protocol backends (modem AT, PicoWiFiModemUSB; `digitelec` deprecated → use `--dtl2000`), V23 mode (Minitel/Digitelec). See the *chips × transports* matrix below
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
 - **PicoWiFiModemUSB** — Émulation du modem WiFi de sodiumlb (Pico W, USB CDC ↔ WiFi) exposé par LOCI comme ACIA à $0380. Jeu de commandes AT v0.1.0 complet (`--serial picowifi[:SSID[:PASS]]`). WiFi simulé, connexions de données en TCP réel.
 - **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 35/36 API ops, USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). Boote Sedoric V4 master complet via le firmware LOCI.
@@ -274,7 +274,7 @@ injects its own command/UART layer:
 | `com:B,D,P,S,DEV` | transparent | ✅ | ✅ | Real serial device (termios) |
 | `file:IN[:OUT]` | transparent | ✅ | ✅ | Deterministic replay (RX) / capture (TX) |
 | `modem[:H:P]` | protocol | ✅ | ❌ | Hayes AT interpreter |
-| `digitelec:H:P` | protocol | ✅ | ❌ | Behavioural DTL 2000 (via ACIA 6551) |
+| `digitelec:H:P` | protocol | ⚠️ | ❌ | **Deprecated** — behavioural DTL 2000 via ACIA 6551; use `--dtl2000` |
 | `picowifi[:…]` | protocol | ✅ | ❌ | PicoWiFiModemUSB WiFi modem |
 
 > The protocol backends are **`--serial`-only by design**: the DTL 2000 is dialled
@@ -283,6 +283,13 @@ injects its own command/UART layer:
 > DTL card would be unfaithful. The `--serial-*` tuning options (`-v23`, `-buffer`,
 > `-irq-on-rdrf`) apply to the **ACIA 6551 only**; the DTL drives V23 sym/asym via
 > its PIA instead.
+>
+> ⚠️ **`digitelec:` is deprecated.** It models the DTL 2000 as an external modem on
+> the ACIA 6551 ($031C) — which is *not* how the real card works. The genuine DTL
+> 2000 is the memory-mapped PIA 6821 + ACIA 6850 at $03F8, now faithfully emulated
+> by **`--dtl2000`** (validated against the period OTRM terminal). Migrate
+> `--serial digitelec:host:port` → `--dtl2000 tcp:host:port`; for a plain ACIA 6551
+> modem use `--serial modem:` or `--serial tcp:`.
 
 `file:` is handy for reproducible protocol tests — feed a recorded server stream
 as input and capture the program's replies for diffing, with no network or peer:

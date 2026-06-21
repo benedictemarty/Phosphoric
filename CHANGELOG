@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.8-alpha] - 2026-06-21
+
+### Sprint 60i — Dépréciation du backend `digitelec:` (recommandation #3)
+
+### Changed
+- **`--serial digitelec:` est DÉPRÉCIÉ** au profit de la carte fidèle `--dtl2000`.
+  Le backend comportemental modélise le DTL 2000 comme un modem externe branché
+  sur l'ACIA 6551 (`$031C`), ce qui **ne correspond pas au vrai matériel** : le
+  DTL 2000 réel est une carte mémoire-mappée PIA 6821 + ACIA 6850 à `$03F8`,
+  désormais émulée fidèlement par `--dtl2000` (validée par OTRM, cf. sprint 60e).
+  Le backend reste **fonctionnel un cycle** mais émet un avertissement de
+  dépréciation au démarrage avec la commande de migration
+  (`--serial digitelec:H:P` → `--dtl2000 tcp:H:P`).
+- `--help`, README (matrice puce × transport : `digitelec` marqué ⚠️ deprecated)
+  et la note de migration mis à jour.
+
+### Added
+- 2 assertions e2e (`tests/integration/test_dtl2000_txrx.sh`) : l'avertissement
+  de dépréciation est émis, et le backend reste fonctionnel (non supprimé).
+
+  Décision « trancher la redondance DTL » du diagnostic comms. 629 tests PASS (+2).
+
 ## [1.21.7-alpha] - 2026-06-21
 
 ### Sprint 60h — Fix SDL écran noir + doc matrice puce × transport série (reco #5)

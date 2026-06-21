@@ -289,7 +289,8 @@ static void print_usage(const char* program_name) {
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
     printf("                             Mutually exclusive with --loci-flash\n");
-    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], digitelec:H:P, picowifi[:SSID[:PASS]]\n");
+    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n");
+    printf("                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
     printf("      --serial-buffer N     RX FIFO buffer N bytes (prevents overrun, default: off)\n");
@@ -2594,9 +2595,17 @@ int main(int argc, char* argv[]) {
             }
             sb = serial_backend_modem_create(host, port, listen_mode);
         } else if (!sb && strncmp(serial_arg, "digitelec:", 10) == 0) {
-            /* digitelec:host:port — behavioural DTL 2000 V23 modem bound to
-             * the emulated ACIA 6551 (distinct from the faithful --dtl2000
-             * card; see include/io/dtl2000.h). */
+            /* digitelec:host:port — DEPRECATED behavioural model. It treats the
+             * DTL 2000 as an external V23 modem hanging off the emulated ACIA
+             * 6551 ($031C), which is *not* how the real card works: the actual
+             * DTL 2000 is a memory-mapped PIA 6821 + ACIA 6850 at $03F8 (now
+             * faithfully modelled by --dtl2000, validated against OTRM). Kept
+             * functional for one cycle; steer users to the faithful option. */
+            log_warning("--serial digitelec: is DEPRECATED — it models the DTL 2000 as a");
+            log_warning("  6551 external modem ($031C), not the real PIA+ACIA-6850 card.");
+            log_warning("  Use --dtl2000 tcp:%s for the faithful DTL 2000 card,",
+                        serial_arg + 10);
+            log_warning("  or --serial modem:/tcp: for a generic ACIA 6551 modem.");
             char host[256];
             uint16_t port;
             parse_host_port(serial_arg + 10, host, sizeof(host), &port, 23);

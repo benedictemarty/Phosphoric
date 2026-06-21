@@ -103,6 +103,16 @@ grep -q "Unknown DTL 2000 transport" "$mlog" \
 grep -q "Unknown DTL 2000 transport" "$mlog" \
     && ok "DTL rejects an unknown transport with a clear error" \
     || ko "DTL did not report the unknown transport"
+
+# --- recommendation #3: --serial digitelec: is deprecated in favour of the ---
+# faithful --dtl2000 card, but kept functional for one cycle (warn, don't break).
+"$EMU" -r "$ROM" --serial digitelec:localhost:2323 -n -c 200000 >"$mlog" 2>&1
+grep -qi "digitelec: is DEPRECATED" "$mlog" \
+    && ok "--serial digitelec: emits a deprecation warning (→ --dtl2000)" \
+    || ko "--serial digitelec: did not warn about deprecation"
+grep -q "Serial interface enabled" "$mlog" \
+    && ok "--serial digitelec: still functional (not removed yet)" \
+    || ko "--serial digitelec: stopped working"
 rm -f "$mlog"
 
 echo "=== result: $pass passed, $fail failed ==="
