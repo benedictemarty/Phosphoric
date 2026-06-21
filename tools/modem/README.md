@@ -64,8 +64,33 @@ Autres BBS telnet vérifiés joignables : `particlesbbs.dyndns.org:6400`,
 > résolution DNS qui échoue (nom d'hôte inexistant) — pas un problème de la
 > chaîne d'émulation.
 
+## Usenet / NNTP (Eternal-September) — terminal CRLF
+
+NNTP exige des fins de ligne **CRLF**, alors que le terminal telehack envoie du
+CR seul. Utilise la variante `modem_nntp.bas` (envoie CR+LF sur RETURN) :
+
+```bash
+./oric1-emu -r roms/basic11b.rom --loci \
+    --serial com:9600,8,N,1,/dev/ttyACM0 --acia-addr 0380 --serial-buffer 8192 \
+    -t tools/modem/modem_nntp.tap -f
+```
+
+Puis (le `-` = mode transparent/raw, requis pour NNTP) :
+```
+ATDT-news.eternal-september.org:119      (compte gratuit requis)
+AUTHINFO USER <login>
+AUTHINFO PASS <motdepasse>
+GROUP comp.sys.oric
+HEAD <n> / BODY <n> / ARTICLE <n>
+POST                                     (publier ; greeting "posting ok")
+```
+Compte gratuit : https://www.eternal-september.org/ . Lecture ET publication OK.
+NB : la frappe au clavier est cadencée par la main (pas de perte) ; un envoi
+programmatique de longue chaîne peut perdre des octets (ACIA en instant transfer).
+
 ## Fichiers
-- `modem_term.bas` — terminal full-duplex interactif (clavier ↔ modem).
+- `modem_term.bas` — terminal full-duplex interactif (clavier ↔ modem, CR).
+- `modem_nntp.bas` — terminal interactif **CRLF** (pour NNTP/Usenet).
 - `modem_probe.bas` — sonde minimale : envoie `ATI` et affiche la réponse
   (auto-run, sans interaction). Test rapide.
 

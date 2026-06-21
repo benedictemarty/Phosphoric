@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.3-alpha] - 2026-06-21
+
+### Sprint 60d — Terminal NNTP/Usenet (CRLF) pour Eternal-September
+
+### Added
+- **`tools/modem/modem_nntp.bas`** (+ `.tap`) : variante CRLF du terminal WiFi
+  LOCI. NNTP exige des fins de ligne CR+LF (le terminal telehack envoyait du CR
+  seul) ; ce terminal envoie `CR+LF` sur RETURN, permettant de lire ET publier
+  des news Usenet via un serveur NNTP (compte gratuit Eternal-September).
+- **Doc** (`tools/modem/README.md`) : section Usenet/NNTP — connexion
+  `ATDT-news.eternal-september.org:119` (mode transparent), `AUTHINFO`,
+  `GROUP`/`HEAD`/`BODY`/`ARTICLE`, `POST`. Connexion validée empiriquement
+  (greeting INN 2.8.0 + réponse `HELP` reçus via le vrai modem).
+  Doc/tools uniquement, 615 tests inchangés.
+
 ## [1.21.2-alpha] - 2026-06-21
 
 ### Sprint 60c — Doc : exemple de test BBS telehack.com:23

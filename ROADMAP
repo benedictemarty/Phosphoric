@@ -394,6 +394,15 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60d: Terminal NNTP/Usenet (CRLF) Eternal-September (v1.21.3-alpha) - DONE
+
+- [x] **`tools/modem/modem_nntp.bas`** (+ tap) : terminal CRLF (NNTP exige CR+LF,
+      vs CR seul de telehack) pour lire ET poster des news Usenet.
+- [x] **Doc README** : connexion `ATDT-news.eternal-september.org:119`
+      (transparent), AUTHINFO/GROUP/HEAD/BODY/ARTICLE/POST, compte gratuit.
+- [x] Connexion validée empiriquement (greeting INN 2.8.0 + HELP via le vrai
+      PicoWiFiModemUSB). Doc/tools uniquement, 615 tests inchangés.
+
 ### Sprint 60c: Doc test BBS telehack.com:23 + taps prébuilts (v1.21.2-alpha) - DONE
 
 - [x] **`tools/modem/README.md`** : section « TELEHACK » — connexion BBS telnet
