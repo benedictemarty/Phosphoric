@@ -224,6 +224,8 @@ Serial (ACIA 6551 at $031C; $0380 under --loci):
                             | digitelec:host:port | picowifi[:SSID[:PASS]]
   --serial-v23              V23 asymmetric mode 1200/75 (Minitel) — ACIA 6551 only
   --serial-buffer N         RX FIFO of N bytes (anti-overrun) — ACIA 6551 only
+  --serial-baud N           External-clock baud: realistic timing instead of
+                            instant transfer (baud index 0) — ACIA 6551 only
   --serial-irq-on-rdrf      WDC 65C51 IRQ mode — ACIA 6551 only
   --serial-trace FILE       Trace TX/RX/signals (ACIA 6551 + DTL 2000)
   --acia-addr XXXX          Override ACIA base address (default $031C)
@@ -282,7 +284,9 @@ injects its own command/UART layer:
 > `picowifi` emulate a UART of their own — so layering them behind the faithful
 > DTL card would be unfaithful. The `--serial-*` tuning options (`-v23`, `-buffer`,
 > `-irq-on-rdrf`) apply to the **ACIA 6551 only**; the DTL drives V23 sym/asym via
-> its PIA instead.
+> its PIA instead. `--serial-baud N` only matters when the program selects the
+> external clock (baud index 0): instead of *instant transfer* it times those
+> bytes at N baud, so throughput-sensitive software can be exercised.
 >
 > ⚠️ **`digitelec:` is deprecated.** It models the DTL 2000 as an external modem on
 > the ACIA 6551 ($031C) — which is *not* how the real card works. The genuine DTL

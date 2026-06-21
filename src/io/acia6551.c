@@ -229,11 +229,18 @@ static void acia_update_timing(acia6551_t* acia)
     } else {
         int baud_idx = acia->control & ACIA_CTL_BAUD_MASK;
         int baud = baud_rate_table[baud_idx];
+        if (baud == 0 && acia->ext_clock_baud > 0) {
+            /* External clock selected, but the user asked for a realistic
+             * cadence (--serial-baud) instead of instant transfer. */
+            baud = (int)acia->ext_clock_baud;
+        }
         acia->baud_rate = (uint32_t)baud;
         acia->rx_reload = cycles_per_byte(baud, acia->framebits);
         acia->tx_reload = cycles_per_byte(baud, acia->framebits);
-        if (baud == 0) {
-            log_warning("ACIA: baud rate 0 (external clock) — using instant transfer");
+        if (baud == 0 && !acia->ext_clock_warned) {
+            log_warning("ACIA: baud rate 0 (external clock) — using instant transfer "
+                        "(set --serial-baud N for realistic timing)");
+            acia->ext_clock_warned = true;
         }
     }
 
@@ -560,6 +567,16 @@ void acia_set_irq_on_rdrf(acia6551_t* acia, bool enabled)
     if (enabled) {
         log_info("ACIA IRQ mode: WDC 65C51 (re-trigger while RDRF set)");
     }
+}
+
+void acia_set_ext_clock_baud(acia6551_t* acia, uint32_t baud)
+{
+    acia->ext_clock_baud = baud;
+    if (baud > 0) {
+        log_info("ACIA external-clock baud: %u (realistic timing instead of instant)",
+                 baud);
+    }
+    acia_update_timing(acia);  /* apply immediately if already in external-clock mode */
 }
 
 void acia_set_trace(acia6551_t* acia, const char* filename)

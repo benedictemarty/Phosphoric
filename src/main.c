@@ -294,6 +294,8 @@ static void print_usage(const char* program_name) {
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
     printf("      --serial-buffer N     RX FIFO buffer N bytes (prevents overrun, default: off)\n");
+    printf("      --serial-baud N       External-clock baud (ACIA 6551): realistic timing\n");
+    printf("                            instead of instant transfer when baud index = 0\n");
     printf("      --serial-irq-on-rdrf  WDC 65C51 IRQ mode (re-trigger while RDRF set)\n");
     printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
@@ -2319,10 +2321,11 @@ int main(int argc, char* argv[]) {
     const char* dtl2000_addr_arg = NULL;
     bool serial_v23 = false;
     int serial_buffer_size = 0;
+    int serial_baud = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2364,6 +2367,7 @@ int main(int argc, char* argv[]) {
         {"serial",              required_argument, 0, OPT_SERIAL},
         {"serial-v23",          no_argument,       0, OPT_SERIAL_V23},
         {"serial-buffer",       required_argument, 0, OPT_SERIAL_BUFFER},
+        {"serial-baud",         required_argument, 0, OPT_SERIAL_BAUD},
         {"serial-irq-on-rdrf",  no_argument,       0, OPT_SERIAL_IRQ_RDRF},
         {"serial-trace",        required_argument, 0, OPT_SERIAL_TRACE},
         {"acia-addr",           required_argument, 0, OPT_ACIA_ADDR},
@@ -2446,6 +2450,10 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_SERIAL_BUFFER:
                 serial_buffer_size = atoi(optarg);
+                break;
+            case OPT_SERIAL_BAUD:
+                serial_baud = atoi(optarg);
+                if (serial_baud < 0) serial_baud = 0;
                 break;
             case OPT_SERIAL_IRQ_RDRF:
                 serial_irq_on_rdrf = true;
@@ -2652,6 +2660,9 @@ int main(int argc, char* argv[]) {
                 }
                 if (serial_buffer_size > 0) {
                     acia_set_rx_fifo(&emu.acia, serial_buffer_size);
+                }
+                if (serial_baud > 0) {
+                    acia_set_ext_clock_baud(&emu.acia, (uint32_t)serial_baud);
                 }
                 if (serial_irq_on_rdrf) {
                     acia_set_irq_on_rdrf(&emu.acia, true);

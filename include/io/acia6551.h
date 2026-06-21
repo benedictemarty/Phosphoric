@@ -187,6 +187,13 @@ typedef struct acia6551_s {
     /* Enhanced IRQ mode (WDC 65C51 behavior) */
     bool    irq_on_rdrf;        /**< Re-trigger IRQ while RDRF set (--serial-irq-on-rdrf) */
 
+    /* External-clock baud rate (--serial-baud N). When the control register
+     * selects the external clock (baud index 0), the default is "instant
+     * transfer" (1 cycle/byte); a non-zero value here substitutes a realistic
+     * baud cadence instead, for timing-sensitive software. 0 = instant. */
+    uint32_t ext_clock_baud;
+    bool    ext_clock_warned;   /**< Instant-transfer warning already emitted */
+
     /* Serial trace / debug dump (--serial-trace FILE) */
     FILE*   trace_file;         /**< Trace output file (NULL = disabled) */
     uint64_t trace_cycle;       /**< Current CPU cycle for timestamping */
@@ -276,6 +283,16 @@ void acia_set_rx_fifo(acia6551_t* acia, int size);
  * during simultaneous TX/RX (the MOS 6551 bug).
  */
 void acia_set_irq_on_rdrf(acia6551_t* acia, bool enabled);
+
+/**
+ * @brief Set the baud rate used when the program selects the external clock.
+ *
+ * By default an external-clock selection (baud index 0) means "instant
+ * transfer". Passing a non-zero @p baud makes the ACIA time those transfers at
+ * that rate instead — useful to exercise timing-sensitive software. 0 restores
+ * the instant default.
+ */
+void acia_set_ext_clock_baud(acia6551_t* acia, uint32_t baud);
 
 /**
  * @brief Enable serial trace logging to file

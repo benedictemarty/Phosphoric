@@ -394,6 +394,16 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60j: Timing baud réel sur horloge externe — reco #6 (v1.21.9-alpha) - DONE
+
+- [x] **`--serial-baud N`** : quand un programme sélectionne l'horloge externe de
+      l'ACIA 6551 (index baud 0), remplace l'« instant transfer » (1 cycle/octet)
+      par une cadence réelle de N bauds — pour tester les logiciels sensibles au
+      débit. Champ `acia6551_t.ext_clock_baud` + `acia_set_ext_clock_baud()`.
+- [x] Warning « instant transfer » ne spamme plus (garde `ext_clock_warned`).
+- [x] Test unitaire `test_ext_clock_baud`. Débits internes 50-19200 déjà cycle-exacts.
+- [x] 630 tests PASS (+1). **Diagnostic comms : 5/5 recommandations livrées.**
+
 ### Sprint 60i: Dépréciation du backend `digitelec:` — reco #3 (v1.21.8-alpha) - DONE
 
 - [x] **`--serial digitelec:` DÉPRÉCIÉ** au profit de `--dtl2000` (carte fidèle).

@@ -254,6 +254,32 @@ TEST(test_v23_mode) {
     teardown();
 }
 
+TEST(test_ext_clock_baud) {
+    setup();
+
+    /* Select the external clock (baud index 0), 8-N-1 -> 10 framebits.
+     * Default = instant transfer: reload == 1 cycle/byte. */
+    acia_write(&acia, ACIA_REG_CONTROL, 0x10);  /* baud idx 0, 8 data, 1 stop */
+    ASSERT_EQ(acia.rx_reload, 1);
+    ASSERT_EQ(acia.tx_reload, 1);
+
+    /* --serial-baud 9600: realistic cadence substituted for external clock. */
+    acia_set_ext_clock_baud(&acia, 9600);
+    ASSERT_EQ(acia.rx_reload, (1000000L * 10) / 9600);
+    ASSERT_EQ(acia.tx_reload, (1000000L * 10) / 9600);
+
+    /* A real internal baud rate ignores the override (uses its own rate). */
+    acia_write(&acia, ACIA_REG_CONTROL, 0x1E);  /* 9600 internal, 8-N-1 */
+    ASSERT_EQ(acia.rx_reload, (1000000L * 10) / 9600);
+
+    /* Back to 0 restores instant transfer. */
+    acia_set_ext_clock_baud(&acia, 0);
+    acia_write(&acia, ACIA_REG_CONTROL, 0x10);
+    ASSERT_EQ(acia.rx_reload, 1);
+
+    teardown();
+}
+
 TEST(test_dcd_dsr_status) {
     acia6551_t a;
     acia_init(&a);
@@ -621,6 +647,7 @@ int main(void) {
     RUN(test_rx_irq);
     RUN(test_overrun);
     RUN(test_v23_mode);
+    RUN(test_ext_clock_baud);
     RUN(test_dcd_dsr_status);
     RUN(test_loopback_backend);
     RUN(test_frame_format_8n1);
