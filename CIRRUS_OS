@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.11-alpha
-Build Status: ALPHA (Sprint 60l : module ACIA 6850 (MC6850) autonome et réutilisable (src/io/acia6850.c) — Control/Status + Tx/Rx Data, word-select, RTS/TIE/RIE, statut RDRF/TDRE/DCD/CTS/IRQ, DCD/CTS en entrées, callback IRQ ; DTL 2000 rebranché dessus sans régression (15 tests DTL + e2e + OTRM identiques) ; DTL = PIA 6821 + ACIA 6850 réutilisables ; 11 tests ACIA ; Sprint 60k = module PIA 6821 ; 655 tests PASS ; build SDL2=1 OK)
+Version: 1.21.12-alpha
+Build Status: ALPHA (Sprint 60m : commande AT$SCAN du backend picowifi (src/io/serial_picowifi.c, helper pw_scan() + dispatch avant $SSID) — liste les réseaux WiFi à portée (un AP/ligne <index> <ssid>, 1-based, dédup SSID, cachés ignorés, terminé OK), scan réel hôte via nmcli avec repli simulé (CI/headless), pas de collision $SSID/$SB/$SU/$SP, menu numéroté côté Oric (LOCI ACIA $0380), origine note équipe firmware ; test test_scan_lists_networks (65 tests picowifi) ; Sprint 60l = module ACIA 6850 ; 656 tests PASS ; build SDL2=1 OK)
 Last Updated: 2026-06-21
 
 ================================================================

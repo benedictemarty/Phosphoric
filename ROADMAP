@@ -406,6 +406,25 @@ la source Oricutron avant correction.
 - [x] **DTL 2000 désormais entièrement composé de PIA 6821 + ACIA 6850 réutilisables.**
 - [x] Suite `make test-acia6850` (11 tests). 655 tests PASS (+11).
 
+### Sprint 60m: Commande AT$SCAN (liste des réseaux WiFi) du backend picowifi (v1.21.12-alpha) - DONE
+
+- [x] **`AT$SCAN` dans le backend `picowifi`** (`src/io/serial_picowifi.c`, helper
+      `pw_scan()` + branche de dispatch avant `$SSID`) : émule la commande du
+      firmware PicoWiFiModemUSB (fork TLS `benedictemarty`) listant les points
+      d'accès à portée — un AP par ligne `<index> <ssid>` (1-based), dédupliqué par
+      SSID, SSID cachés (vides) ignorés, terminé par `OK`.
+- [x] **Scan réel via `nmcli -t -f SSID dev wifi`** (l'émulateur tourne sur desktop),
+      avec repli sur une liste simulée (AlterOP New / Livebox-E380 / Freebox-39030C)
+      si `nmcli` est absent (CI/headless) → toujours une liste numérotée exploitable.
+- [x] **Pas de collision** de préfixe avec `$SSID`/`$SB`/`$SU`/`$SP` (`pw_match` teste
+      un préfixe, `$SCAN` diverge au 3ᵉ caractère).
+- [x] Permet un menu numéroté des réseaux côté programme Oric de config WiFi (via
+      LOCI, ACIA $0380) au lieu d'une saisie manuelle du SSID — comportement
+      identique vrai Pico W / émulation. Origine : note équipe firmware
+      (`note-equipe-phosphoric-atscan.md`).
+- [x] Test `test_scan_lists_networks` (`tests/unit/test_picowifi.c`, 65 tests picowifi).
+      656 tests PASS (+1).
+
 ### Sprint 60k: Module PIA 6821 (MC6821) autonome + rebranchement DTL (v1.21.10-alpha) - DONE
 
 - [x] **Module PIA 6821 complet et réutilisable** (`src/io/pia6821.c` + `.h`) :

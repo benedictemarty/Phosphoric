@@ -136,6 +136,18 @@ TEST(test_ssid_preset_from_factory) {
     pw_teardown();
 }
 
+TEST(test_scan_lists_networks) {
+    /* AT$SCAN lists nearby APs as "<index> <ssid>", numbered from 1,
+     * terminated by OK. Uses the host nmcli, with a simulated fallback so
+     * the command always yields a parseable, numbered list. */
+    pw_setup(NULL, NULL);
+    char r[1024];
+    pw_cmd("AT$SCAN", r, sizeof(r));
+    ASSERT_CONTAINS(r, "1 ");
+    ASSERT_CONTAINS(r, "OK");
+    pw_teardown();
+}
+
 TEST(test_password_query_shows_value) {
     /* Sprint 46: firmware shows the actual password (no masking). */
     pw_setup(NULL, NULL);
@@ -956,6 +968,7 @@ int main(void) {
     RUN(test_bare_at_ok);
     RUN(test_ssid_set_and_query);
     RUN(test_ssid_preset_from_factory);
+    RUN(test_scan_lists_networks);
     RUN(test_password_query_shows_value);
     RUN(test_mdns_default_picomodem);
     RUN(test_baud_default_9600);

@@ -913,6 +913,43 @@ static const char* pw_setstr(char* dst, size_t dsz, const char* a)
     return a + strlen(a);
 }
 
+/* AT$SCAN — list nearby WiFi networks, mirroring the firmware doScan():
+ * one access point per line as "<index> <ssid>" (1-based), de-duplicated by
+ * SSID, hidden (empty) SSIDs skipped, then OK. The emulator runs on a desktop,
+ * so we scan the host's real networks via nmcli, with a simulated fallback when
+ * nmcli is absent (CI/headless) so the command always returns something usable. */
+static void pw_scan(picowifi_t* pw)
+{
+    char seen[24][33];
+    int  n = 0;
+    FILE* f = popen("nmcli -t -f SSID dev wifi 2>/dev/null", "r");
+    if (f) {
+        char line[256];
+        while (n < 24 && fgets(line, sizeof line, f)) {
+            size_t L = strlen(line);
+            while (L && (line[L - 1] == '\n' || line[L - 1] == '\r')) line[--L] = 0;
+            if (!line[0]) continue;                 /* hidden SSID */
+            int dup = 0;
+            for (int i = 0; i < n; i++)
+                if (!strcmp(seen[i], line)) { dup = 1; break; }
+            if (dup) continue;
+            snprintf(seen[n], sizeof seen[n], "%s", line);
+            n++;
+        }
+        pclose(f);
+    }
+    if (n == 0) {                                   /* fallback simulated list */
+        static const char* sim[] = { "AlterOP New", "Livebox-E380", "Freebox-39030C" };
+        for (int i = 0; i < 3; i++) snprintf(seen[i], sizeof seen[i], "%s", sim[i]);
+        n = 3;
+    }
+    for (int i = 0; i < n; i++) {
+        char b[64];
+        snprintf(b, sizeof b, "%d %.32s\r\n", i + 1, seen[i]);
+        pw_rx_str(pw, b);
+    }
+}
+
 /* Dispatch one token. Returns the pointer just past the consumed token
  * (config commands emit OK only if at end; dial/info emit their own
  * result), or NULL if the token is unknown. */
@@ -937,6 +974,12 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         }
         pw_result(pw, PW_ERROR);
         return a;
+    }
+    if ((a = pw_match(p, "$SCAN"))) {
+        /* No collision with $SSID/$SB/$SU/$SP: pw_match is a prefix test and
+         * "$SCAN" diverges at the 3rd char. List APs, then OK. */
+        pw_scan(pw);
+        return pw_end(pw, a);
     }
     if ((a = pw_match(p, "$SSID"))) {
         if (*a == '?') { pw_qval(pw, pw->ssid); return pw_end(pw, a + 1); }

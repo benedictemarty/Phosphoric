@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.12-alpha] - 2026-06-21
+
+### Sprint 60m — Commande AT$SCAN (liste des réseaux WiFi) du backend picowifi
+
+### Added
+- **`AT$SCAN` dans le backend `picowifi`** (`src/io/serial_picowifi.c`,
+  helper `pw_scan()` + branche de dispatch avant `$SSID`) : émule la commande
+  `AT$SCAN` du firmware PicoWiFiModemUSB (fork TLS `benedictemarty`), qui liste
+  les points d'accès à portée — **un AP par ligne au format `<index> <ssid>`**
+  (index 1-based), dédupliqué par SSID, SSID cachés (vides) ignorés, terminé par
+  `OK`. L'émulateur tournant sur un poste de bureau, le scan interroge les vrais
+  réseaux de l'hôte via `nmcli -t -f SSID dev wifi`, avec repli sur une liste
+  simulée (`AlterOP New`, `Livebox-E380`, `Freebox-39030C`) quand `nmcli` est
+  absent (CI/headless) afin que la commande renvoie toujours une liste numérotée
+  exploitable. Pas de collision avec `$SSID`/`$SB`/`$SU`/`$SP` (`pw_match` est un
+  test de préfixe, `$SCAN` diverge au 3ᵉ caractère). Permet à un programme Oric
+  de config WiFi (via LOCI, ACIA `$0380`) de proposer un menu numéroté des
+  réseaux plutôt qu'une saisie manuelle du SSID — comportement identique sur le
+  vrai Pico W et sous émulation. Origine : note de l'équipe firmware
+  (`note-equipe-phosphoric-atscan.md`).
+- **Test `test_scan_lists_networks`** (`tests/unit/test_picowifi.c`) : vérifie
+  que `AT$SCAN` produit une liste numérotée (`"1 "`) terminée par `OK`.
+  Suite `make test-picowifi` : 65 tests PASS.
+
 ## [1.21.11-alpha] - 2026-06-21
 
 ### Sprint 60l — Module ACIA 6850 (MC6850) autonome + rebranchement du DTL 2000
