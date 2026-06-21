@@ -394,6 +394,16 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60c: Doc test BBS telehack.com:23 + taps prébuilts (v1.21.2-alpha) - DONE
+
+- [x] **`tools/modem/README.md`** : section « TELEHACK » — connexion BBS telnet
+      réelle validée end-to-end (`ATDT telehack.com:23` → `CONNECT 9600` →
+      bannière TELEHACK 1206 octets sur l'écran du Oric, via le vrai modem +
+      WiFi réel) ; liste de BBS joignables + note diagnostic NO CARRIER=DNS.
+- [x] **Taps prébuilts committés** (`modem_term.tap`, `modem_probe.tap`) pour
+      lancement direct sans étape `bas2tap` (corrige un blocage utilisateur).
+- [x] Doc/tools uniquement, 615 tests inchangés.
+
 ### Sprint 60b: Terminal WiFi LOCI — PicoWiFiModemUSB réel (v1.21.1-alpha) - DONE
 
 Utilisation d'un VRAI PicoWiFiModemUSB (branché en USB sur l'hôte) depuis le

@@ -30,6 +30,40 @@ Le programme s'auto-exécute. Tapez des commandes AT au clavier :
 | `ATE0` / `ATE1` | écho modem off/on (le terminal n'a pas d'écho local) |
 | `CTRL-C` | quitter le terminal (BREAK BASIC) |
 
+## Cible de test confirmée — TELEHACK
+
+`telehack.com:23` est un service telnet public, fiable et 100 % ASCII (idéal
+pour l'écran 40 colonnes du Oric). Une fois le terminal lancé :
+
+```
+ATDT telehack.com:23
+```
+
+Réponse réelle obtenue (vrai modem, WiFi réel) :
+
+```
+DIALLING telehack.com:23
+CONNECT 9600
+Connected to TELEHACK port 112
+It is ... in Mountain View, California, USA.
+There are N local users. There are M hosts on the network.
+May the command line live forever.
+Command, one of the following:
+  2048  advent  eliza  figlet  starwars  rfc  usenet  ...
+Type HELP for a detailed command list.
+```
+
+Commandes amusantes à essayer une fois connecté : `starwars`, `eliza`,
+`figlet hello`, `advent`, `2048`, `today`, `rfc 1`. `CTRL-C` interrompt une
+commande BBS (côté TELEHACK), pas le terminal.
+
+Autres BBS telnet vérifiés joignables : `particlesbbs.dyndns.org:6400`,
+`bbs.fozztexx.com:23`, `blackflag.acid.org:23`.
+
+> Note : si un `ATDT` renvoie `NO CARRIER (00:00:00)` immédiatement, c'est une
+> résolution DNS qui échoue (nom d'hôte inexistant) — pas un problème de la
+> chaîne d'émulation.
+
 ## Fichiers
 - `modem_term.bas` — terminal full-duplex interactif (clavier ↔ modem).
 - `modem_probe.bas` — sonde minimale : envoie `ATI` et affiche la réponse

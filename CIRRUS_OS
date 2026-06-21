@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.1-alpha
-Build Status: ALPHA (Sprint 60b : outils modem tools/modem/ — terminal WiFi LOCI BASIC pilotant un VRAI PicoWiFiModemUSB (USB hôte) via com: + ACIA $0380 + --loci, validé end-to-end (TX ATI -> RX réponse modem sur écran Oric) ; Sprint 60 = SHIFT G/D + validation clavier 172/172 ; 615 tests PASS ; build SDL2=1 OK)
+Version: 1.21.2-alpha
+Build Status: ALPHA (Sprint 60c : doc exemple BBS telehack.com:23 dans tools/modem/README.md — connexion telnet réelle validée (ATDT -> CONNECT 9600 -> bannière TELEHACK sur écran Oric via vrai PicoWiFiModemUSB) ; Sprint 60b = terminal WiFi LOCI ; 615 tests PASS ; build SDL2=1 OK)
 Last Updated: 2026-06-21
 
 ================================================================

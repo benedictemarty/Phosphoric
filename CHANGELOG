@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.2-alpha] - 2026-06-21
+
+### Sprint 60c — Doc : exemple de test BBS telehack.com:23
+
+### Added
+- **`tools/modem/README.md`** : section « Cible de test confirmée — TELEHACK ».
+  Connexion BBS end-to-end validée avec le vrai PicoWiFiModemUSB : `ATDT
+  telehack.com:23` → `CONNECT 9600` → bannière TELEHACK (1206 octets) affichée
+  sur l'écran du Oric, via le WiFi réel. Liste de BBS telnet joignables et note
+  de diagnostic (`NO CARRIER 00:00:00` = échec DNS, pas la chaîne d'émulation).
+- **Taps prébuilts committés** (`modem_term.tap`, `modem_probe.tap`) pour
+  lancer le terminal directement sans étape `bas2tap` préalable.
+  Doc/tools uniquement, 615 tests inchangés.
+
 ## [1.21.1-alpha] - 2026-06-21
 
 ### Sprint 60b — Terminal WiFi LOCI (PicoWiFiModemUSB réel via backend com:)
