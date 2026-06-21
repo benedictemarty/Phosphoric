@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.6-alpha] - 2026-06-21
+
+### Sprint 60g — Backend série `file:` replay/capture (recommandation #4)
+
+### Added
+- **Backend `file:IN[:OUT]`** (`SERIAL_BACKEND_FILE`, `serial_backend_file_create()`)
+  — transport *transparent* déterministe : les octets lus depuis `IN` sont livrés
+  au Oric en RX, les octets émis par le Oric sont capturés dans `OUT`. Les deux
+  côtés sont optionnels : `file:in.bin` (replay seul), `file:in.bin:out.bin`
+  (replay + capture), `file::out.bin` (capture seule). Lookahead 1 octet pour un
+  `poll()` exact ; flush eager pour observer la capture en cours de run.
+- Disponible pour `--serial` **et** `--dtl2000` via le helper partagé
+  `serial_transport_create()` (cf. sprint 60f).
+- **`examples/dtl2000-echo.bas`** : programme echo RX→TX (5 octets) pour le test
+  round-trip.
+- **Test e2e `make test-serial-file`** (`tests/integration/test_serial_file_backend.sh`) :
+  capture (« ABCDEFGHIJ »), round-trip replay→echo→capture (`in == out`), et
+  plomberie `--serial`. 3 assertions hermétiques.
+
+  Idéal pour des tests de protocole reproductibles sans réseau/pair. 627 tests
+  PASS (+3).
+
 ## [1.21.5-alpha] - 2026-06-21
 
 ### Sprint 60f — Unification des transports série DTL 2000 (recommandation #1)

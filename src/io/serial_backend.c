@@ -1245,6 +1245,113 @@ serial_backend_t* serial_backend_digitelec_create(const char* host, uint16_t por
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  FILE backend — deterministic replay (RX) / capture (TX)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static bool file_open(serial_backend_t* self)
+{
+    self->state.file.peeked = -1;
+    self->state.file.in = NULL;
+    self->state.file.out = NULL;
+
+    if (self->state.file.in_path[0]) {
+        FILE* f = fopen(self->state.file.in_path, "rb");
+        if (!f) {
+            log_error("Serial FILE: open(%s) for replay failed: %s",
+                      self->state.file.in_path, strerror(errno));
+            return false;
+        }
+        self->state.file.in = f;
+    }
+    if (self->state.file.out_path[0]) {
+        FILE* f = fopen(self->state.file.out_path, "wb");
+        if (!f) {
+            log_error("Serial FILE: open(%s) for capture failed: %s",
+                      self->state.file.out_path, strerror(errno));
+            if (self->state.file.in) { fclose((FILE*)self->state.file.in); self->state.file.in = NULL; }
+            return false;
+        }
+        self->state.file.out = f;
+    }
+
+    log_info("Serial FILE: replay=%s capture=%s",
+             self->state.file.in_path[0]  ? self->state.file.in_path  : "(none)",
+             self->state.file.out_path[0] ? self->state.file.out_path : "(none)");
+    return true;
+}
+
+static void file_close(serial_backend_t* self)
+{
+    if (self->state.file.in)  { fclose((FILE*)self->state.file.in);  self->state.file.in  = NULL; }
+    if (self->state.file.out) { fflush((FILE*)self->state.file.out);
+                                fclose((FILE*)self->state.file.out); self->state.file.out = NULL; }
+}
+
+static bool file_send(serial_backend_t* self, uint8_t byte)
+{
+    if (self->state.file.out) {
+        fputc(byte, (FILE*)self->state.file.out);
+        /* Flush eagerly so captures are observable mid-run (and survive a
+         * cycle-limited headless exit that never calls close()). */
+        fflush((FILE*)self->state.file.out);
+    }
+    return true;  /* TX is always accepted (discarded if no capture file) */
+}
+
+static bool file_recv(serial_backend_t* self, uint8_t* byte)
+{
+    if (self->state.file.peeked >= 0) {
+        *byte = (uint8_t)self->state.file.peeked;
+        self->state.file.peeked = -1;
+        return true;
+    }
+    if (!self->state.file.in) return false;
+    int c = fgetc((FILE*)self->state.file.in);
+    if (c == EOF) return false;
+    *byte = (uint8_t)c;
+    return true;
+}
+
+static bool file_poll(serial_backend_t* self)
+{
+    if (self->state.file.peeked >= 0) return true;
+    if (!self->state.file.in) return false;
+    int c = fgetc((FILE*)self->state.file.in);
+    if (c == EOF) return false;
+    self->state.file.peeked = c;  /* one-byte lookahead → accurate poll */
+    return true;
+}
+
+static bool file_connected(serial_backend_t* self)
+{
+    (void)self;
+    return true;  /* the "line" is the file(s); always present */
+}
+
+serial_backend_t* serial_backend_file_create(const char* in_path, const char* out_path)
+{
+    serial_backend_t* b = calloc(1, sizeof(serial_backend_t));
+    if (!b) return NULL;
+
+    b->type = SERIAL_BACKEND_FILE;
+    b->open = file_open;
+    b->close = file_close;
+    b->send = file_send;
+    b->recv = file_recv;
+    b->poll = file_poll;
+    b->connected = file_connected;
+
+    if (in_path) {
+        strncpy(b->state.file.in_path, in_path, sizeof(b->state.file.in_path) - 1);
+    }
+    if (out_path) {
+        strncpy(b->state.file.out_path, out_path, sizeof(b->state.file.out_path) - 1);
+    }
+    b->state.file.peeked = -1;
+    return b;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Common destroy
  * ═══════════════════════════════════════════════════════════════════════ */
 

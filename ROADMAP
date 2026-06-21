@@ -394,6 +394,17 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60g: Backend série `file:` replay/capture — reco #4 (v1.21.6-alpha) - DONE
+
+- [x] **Backend `file:IN[:OUT]`** (`SERIAL_BACKEND_FILE`, `serial_backend_file_create()`) :
+      transport transparent déterministe — RX rejoué depuis `IN`, TX capturé dans
+      `OUT`. Formes : `file:in` (replay), `file:in:out` (les deux), `file::out`
+      (capture). Lookahead 1 octet (poll exact), flush eager.
+- [x] Câblé dans `serial_transport_create()` → disponible `--serial` ET `--dtl2000`.
+- [x] `examples/dtl2000-echo.bas` (echo RX→TX) + test e2e `make test-serial-file`
+      (capture « ABCDEFGHIJ », round-trip `in==out` « ORIC! », plomberie `--serial`).
+- [x] Tests de protocole reproductibles sans réseau/pair ; 627 tests PASS (+3).
+
 ### Sprint 60f: Unification des transports série DTL 2000 — reco #1 (v1.21.5-alpha) - DONE
 
 - [x] **Helper partagé `serial_transport_create()`** (+ `parse_host_port()`) :

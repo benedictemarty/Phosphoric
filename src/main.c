@@ -287,7 +287,7 @@ static void print_usage(const char* program_name) {
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
     printf("                             Mutually exclusive with --loci-flash\n");
-    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, digitelec:H:P, picowifi[:SSID[:PASS]]\n");
+    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], digitelec:H:P, picowifi[:SSID[:PASS]]\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
     printf("                            (auto-enabled with digitelec backend)\n");
     printf("      --serial-buffer N     RX FIFO buffer N bytes (prevents overrun, default: off)\n");
@@ -295,7 +295,7 @@ static void print_usage(const char* program_name) {
     printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
     printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
-    printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV\n");
+    printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");
     printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
     printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     printf("      --load-state FILE      Load emulator state from FILE at startup\n");
@@ -835,7 +835,7 @@ static void parse_host_port(const char* spec, char* host, size_t host_sz,
 /* Create a *transparent* serial transport from @p spec: a raw byte pipe that
  * passes data through unchanged, faithful behind any UART (the ACIA 6551 of
  * --serial as well as the ACIA 6850 of the --dtl2000 card): loopback, tcp:H:P,
- * pty, com:.
+ * pty, com:, file:IN[:OUT].
  *
  * Deliberately excludes the *protocol-injecting* backends — modem (an in-process
  * Hayes AT interpreter), digitelec and picowifi (which emulate a UART of their
@@ -863,6 +863,27 @@ static serial_backend_t* serial_transport_create(const char* spec)
     if (strncmp(spec, "com:", 4) == 0) {
         /* com:baud,bits,parity,stop,device */
         return serial_backend_com_create(spec + 4);
+    }
+    if (strncmp(spec, "file:", 5) == 0) {
+        /* file:IN[:OUT] — deterministic replay (RX) / capture (TX).
+         *   file:in.bin            replay only
+         *   file:in.bin:out.bin    replay + capture
+         *   file::out.bin          capture only (empty IN) */
+        const char* rest = spec + 5;
+        char in_path[256] = {0};
+        char out_path[256] = {0};
+        const char* colon = strchr(rest, ':');
+        if (colon) {
+            size_t ilen = (size_t)(colon - rest);
+            if (ilen >= sizeof(in_path)) ilen = sizeof(in_path) - 1;
+            memcpy(in_path, rest, ilen);
+            in_path[ilen] = '\0';
+            strncpy(out_path, colon + 1, sizeof(out_path) - 1);
+        } else {
+            strncpy(in_path, rest, sizeof(in_path) - 1);
+        }
+        return serial_backend_file_create(in_path[0] ? in_path : NULL,
+                                          out_path[0] ? out_path : NULL);
     }
     return NULL;  /* not a transparent transport */
 }
@@ -2601,7 +2622,7 @@ int main(int argc, char* argv[]) {
             log_error("Unknown serial backend: %s", serial_arg);
             log_error("  loopback, tcp:host:port, pty, modem:host:port,");
             log_error("  modem:listen:port, com:baud,bits,P,stop,device,");
-            log_error("  digitelec:host:port, picowifi[:SSID[:PASS]]");
+            log_error("  file:in[:out], digitelec:host:port, picowifi[:SSID[:PASS]]");
             emulator_cleanup(&emu);
             return 1;
         }
@@ -2651,7 +2672,7 @@ int main(int argc, char* argv[]) {
         serial_backend_t* db = serial_transport_create(dtl2000_arg);
         if (!db) {
             log_error("Unknown DTL 2000 transport: %s", dtl2000_arg);
-            log_error("  loopback, tcp:host:port, pty, com:baud,bits,P,stop,device");
+            log_error("  loopback, tcp:host:port, pty, com:baud,bits,P,stop,device, file:in[:out]");
             log_error("  (the DTL is dialled via its PIA, not Hayes AT — no 'modem')");
             emulator_cleanup(&emu);
             return 1;

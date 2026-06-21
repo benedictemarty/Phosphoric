@@ -28,7 +28,8 @@ typedef enum {
     SERIAL_BACKEND_MODEM    = 4,    /**< TCP with AT command emulation */
     SERIAL_BACKEND_COM      = 5,    /**< Real serial port (termios) */
     SERIAL_BACKEND_DIGITELEC = 6,   /**< Digitelec DTL 2000 V23/V21 modem */
-    SERIAL_BACKEND_PICOWIFI = 7     /**< sodiumlb PicoWiFiModemUSB (LOCI) */
+    SERIAL_BACKEND_PICOWIFI = 7,    /**< sodiumlb PicoWiFiModemUSB (LOCI) */
+    SERIAL_BACKEND_FILE     = 8     /**< File replay (RX) / capture (TX) */
 } serial_backend_type_t;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -178,6 +179,18 @@ typedef struct serial_backend_s {
         struct {
             void*    impl;              /**< picowifi_t* (serial_picowifi.c) */
         } picowifi;
+
+        /* File replay/capture — a deterministic transparent transport.
+         * Bytes read from `in` are delivered to the Oric as RX; bytes the Oric
+         * transmits are appended to `out`. Either side may be absent. Used for
+         * reproducible protocol tests without a network/peer. */
+        struct {
+            void*    in;                /**< FILE* replay source (NULL = none) */
+            void*    out;               /**< FILE* capture sink   (NULL = none) */
+            char     in_path[256];      /**< Replay file path ("" = none) */
+            char     out_path[256];     /**< Capture file path ("" = none) */
+            int      peeked;            /**< 1-byte RX lookahead (-1 = empty) */
+        } file;
     } state;
 } serial_backend_t;
 
@@ -249,6 +262,24 @@ serial_backend_t* serial_backend_digitelec_create(const char* host, uint16_t por
  * @param pass  Pre-set WiFi password, or NULL (set later via AT$PASS=)
  */
 serial_backend_t* serial_backend_picowifi_create(const char* ssid, const char* pass);
+
+/**
+ * @brief Create a file replay/capture backend (deterministic transport)
+ *
+ * Bytes read from @p in_path are delivered to the host program as received
+ * data (RX); bytes the program transmits are appended to @p out_path (TX).
+ * Either path may be NULL/empty: replay-only (no capture), capture-only (no
+ * input, RX stays empty), or — degenerate — neither.
+ *
+ * Being a transparent byte pipe it works behind any UART (ACIA 6551 / 6850),
+ * so it is available to both --serial and --dtl2000. Ideal for reproducible
+ * protocol tests: feed a recorded server stream as input, capture the program's
+ * replies for diffing.
+ *
+ * @param in_path   Replay source path, or NULL for none
+ * @param out_path  Capture sink path, or NULL for none
+ */
+serial_backend_t* serial_backend_file_create(const char* in_path, const char* out_path);
 
 /**
  * @brief Destroy a backend and free resources
