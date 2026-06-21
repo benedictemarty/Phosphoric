@@ -425,6 +425,20 @@ la source Oricutron avant correction.
 - [x] Test `test_scan_lists_networks` (`tests/unit/test_picowifi.c`, 65 tests picowifi).
       656 tests PASS (+1).
 
+### Sprint 60n: Fix CTRL+lettre (CTRL+T caps-lock) en mode clavier symbolique (v1.21.13-alpha) - DONE
+
+- [x] **Bug** : en `-k azerty` (mode symbolique, `src/io/keyboard.c` `handle_symbolic`),
+      une lettre n'entrait dans la matrice qu'à l'arrivée de `SDL_TEXTINPUT` ; quand
+      CTRL est maintenu, l'OS supprime ce `TEXTINPUT` → la lettre n'atteignait jamais
+      la matrice et **CTRL-T (toggle CAPS LOCK, ROM `$F6ED`), CTRL-C (BREAK), etc.
+      restaient sans effet**.
+- [x] **Fix** : le `KEYDOWN` mappe désormais la lettre directement quand `KMOD_CTRL`
+      est actif, **via le keycode `SDLK_a..SDLK_z`** (= caractère réellement produit
+      par le clavier) → correct en AZERTY/QWERTZ comme en QWERTY.
+- [x] Mode QWERTY positionnel (défaut), qui route déjà CTRL+T via `qwerty_tab`, inchangé.
+- [x] Tests `test_azerty_ctrl_t_caps_toggle` + `test_qwerty_ctrl_t_caps_toggle`
+      (`make test-keyboard`, 34 tests). 658 tests PASS (+2).
+
 ### Sprint 60k: Module PIA 6821 (MC6821) autonome + rebranchement DTL (v1.21.10-alpha) - DONE
 
 - [x] **Module PIA 6821 complet et réutilisable** (`src/io/pia6821.c` + `.h`) :

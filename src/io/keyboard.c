@@ -355,6 +355,23 @@ static bool handle_symbolic(oric_keyboard_t* kb, const SDL_Event* event) {
             }
         }
 
+        /* CTRL held: the OS suppresses SDL_TEXTINPUT for letter keys, so the
+         * companion letter would never reach the matrix and CTRL-combos
+         * (CTRL-T caps-lock toggle, CTRL-C break, …) would silently do
+         * nothing in symbolic mode. Map the letter here, keyed on the
+         * layout-aware keycode (SDLK_a..SDLK_z == 'a'..'z') so the ORIC cell
+         * matches the character the user's keyboard actually produces. */
+        if (event->key.keysym.mod & KMOD_CTRL) {
+            SDL_Keycode kc = event->key.keysym.sym;
+            if (kc >= SDLK_a && kc <= SDLK_z && char_map[kc].col >= 0) {
+                sym_remove_pressed(kb, (uint32_t)sc);
+                sym_add_pressed(kb, (uint32_t)sc,
+                                char_map[kc].col, char_map[kc].row, char_map[kc].shift);
+                sym_rebuild_matrix(kb);
+                return true;
+            }
+        }
+
         /* Ignore Shift/Alt/AltGr (handled by TEXTINPUT character mapping) */
         if (sc == SDL_SCANCODE_LSHIFT || sc == SDL_SCANCODE_RSHIFT ||
             sc == SDL_SCANCODE_LALT || sc == SDL_SCANCODE_RALT)

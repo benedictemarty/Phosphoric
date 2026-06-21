@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.13-alpha] - 2026-06-21
+
+### Sprint 60n — Fix CTRL+lettre (CTRL+T caps-lock) en mode clavier symbolique (azerty)
+
+### Fixed
+- **CTRL+T (toggle CAPS LOCK) et plus largement CTRL+lettre ne fonctionnaient
+  pas en mode clavier symbolique** (`-k azerty`, `src/io/keyboard.c`,
+  `handle_symbolic`). En symbolique, une lettre n'était insérée dans la matrice
+  qu'à l'arrivée de l'évènement `SDL_TEXTINPUT` ; or, quand CTRL est maintenu,
+  l'OS **supprime** le `TEXTINPUT` pour les lettres → la lettre n'atteignait
+  jamais la matrice, et les combos CTRL-T (bascule majuscules/minuscules de la
+  ROM `$F6ED`), CTRL-C (BREAK), etc. restaient sans effet. Le `KEYDOWN` mappe
+  désormais directement la lettre quand `KMOD_CTRL` est actif, **en se basant
+  sur le keycode (`SDLK_a..SDLK_z`)** — donc sur le caractère réellement produit
+  par le clavier de l'utilisateur, ce qui reste correct en AZERTY/QWERTZ. Le
+  mode QWERTY positionnel (défaut), qui route déjà CTRL+T via `qwerty_tab`,
+  est inchangé.
+- 2 tests : `test_azerty_ctrl_t_caps_toggle` (fix : LCTRL 2,4 + T 1,1 simultanés,
+  relâche correcte) et `test_qwerty_ctrl_t_caps_toggle` (garde de non-régression
+  positionnelle). `make test-keyboard` : 34 tests PASS.
+
 ## [1.21.12-alpha] - 2026-06-21
 
 ### Sprint 60m — Commande AT$SCAN (liste des réseaux WiFi) du backend picowifi

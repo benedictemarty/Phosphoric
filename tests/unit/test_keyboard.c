@@ -325,6 +325,51 @@ TEST(test_azerty_arrow_release) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  AZERTY — CTRL+T (caps-lock toggle) reaches the matrix          */
+/*  Regression: in symbolic mode a held CTRL suppresses            */
+/*  SDL_TEXTINPUT, so the letter must be mapped on KEYDOWN. Both    */
+/*  LCTRL (2,4) and T (1,1) must be down for the ROM to see CTRL-T. */
+/* ═══════════════════════════════════════════════════════════════ */
+
+TEST(test_azerty_ctrl_t_caps_toggle) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+    oric_keyboard_set_layout(&kb, ORIC_KB_AZERTY);
+
+    /* CTRL down (special_keys → LCTRL at 2,4) */
+    SDL_Event ctrl = make_keydown(SDLK_LCTRL, SDL_SCANCODE_LCTRL);
+    oric_keyboard_handle_sdl_event(&kb, &ctrl);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));
+
+    /* T down WITH the CTRL modifier set — no TEXTINPUT will follow */
+    SDL_Event t = make_keydown(SDLK_t, SDL_SCANCODE_T);
+    t.key.keysym.mod = KMOD_LCTRL;
+    ASSERT_TRUE(oric_keyboard_handle_sdl_event(&kb, &t));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 1, 1));   /* T at col 1 row 1 (char_map['t']) */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));   /* CTRL still held → CTRL-T seen */
+
+    /* Release T → only T clears, CTRL stays */
+    SDL_Event tup = make_keyup(SDLK_t, SDL_SCANCODE_T);
+    oric_keyboard_handle_sdl_event(&kb, &tup);
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 1, 1));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));
+}
+
+/* QWERTY positional mode already routes CTRL+T directly (both keycodes are
+ * in qwerty_tab); guard against a future regression. */
+TEST(test_qwerty_ctrl_t_caps_toggle) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);   /* default ORIC_KB_QWERTY */
+
+    SDL_Event ctrl = make_keydown(SDLK_LCTRL, SDL_SCANCODE_LCTRL);
+    oric_keyboard_handle_sdl_event(&kb, &ctrl);
+    SDL_Event t = make_keydown(SDLK_t, SDL_SCANCODE_T);
+    oric_keyboard_handle_sdl_event(&kb, &t);
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 2, 4));   /* LCTRL */
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 1, 1));   /* T */
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  TEST 17: QWERTY — SPACE maps to Col 4 Row 0                  */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -565,6 +610,8 @@ int main(void) {
     RUN(test_azerty_arrow_left);
     RUN(test_azerty_arrow_right);
     RUN(test_azerty_arrow_release);
+    RUN(test_azerty_ctrl_t_caps_toggle);
+    RUN(test_qwerty_ctrl_t_caps_toggle);
 
     printf("\n  Other keys:\n");
     RUN(test_qwerty_space);
