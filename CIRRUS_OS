@@ -2,9 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.13-alpha
-Build Status: ALPHA (Sprint 60n : fix CTRL+lettre en mode clavier symbolique azerty (src/io/keyboard.c, handle_symbolic) — la lettre n'entrait dans la matrice qu'au SDL_TEXTINPUT, supprimé par l'OS quand CTRL tenu → CTRL-T (toggle CAPS), CTRL-C (BREAK) sans effet ; KEYDOWN mappe désormais la lettre quand KMOD_CTRL actif via keycode SDLK_a..z (layout-aware AZERTY), QWERTY positionnel inchangé ; 2 tests clavier (34 test-keyboard) ; Sprint 60m = commande AT$SCAN picowifi ; 658 tests PASS ; build SDL2=1 OK)
-Last Updated: 2026-06-21
+Version: 1.21.14-alpha
+Build Status: ALPHA (Sprint 60o : backend picowifi firmware v0.2.0 — terminaison TLS réelle dans le modem émulé (src/io/serial_picowifi.c, OpenSSL, gardé par HAS_PICOTLS auto-détecté via pkg-config) — le modem déchiffre et présente du clair à l'Oric (qui ne fait aucune crypto à ~1 MHz). Préfixe dial # (TLS), ATGET https://, AT$CV?/0/1 (vérif certificat, CV1 refusé sans CA), AT$CA?/=/- (magasin CA PEM), vérif stricte chaîne+hostname. Validé live : ATGET https://example.com/ → TLSv1.3 → HTTP/1.1 200 OK clair ; bon root CA → CONNECT vérifié, mauvais CA → verify failed → pas de session. Flag Makefile PICOTLS (auto/0/1). 6 tests picowifi (65→71) ; 664 tests PASS ; builds headless + SDL2=1 OK)
+Last Updated: 2026-06-22
 
 ================================================================
 
@@ -57,7 +57,7 @@ BUILD STATUS
 [V] CPU Performance Profiler - Complete (--profile FILE, hotspots, opcode histogram)
 [V] ROM Analysis Tools    - Complete (--rom-info, vectors, targets, strings, usage)
 [V] ACIA 6551 Serial     - Complete (Digitelec DTL 2000, MCP RS232-C, V23 Minitel, Modem AT, COM termios, TCP/PTY/loopback)
-[V] PicoWiFiModemUSB      - Complete (--serial picowifi, jeu AT v0.1.0 sodiumlb, FIDÉLITÉ COMPLÈTE : défauts/codes/commandes composées, Telnet NET0/1/2, ATGET/ATRD réseau réel, dial alias/7-chiffres, persistance NVRAM + boot, pont réel hôte lecture seule REALNET)
+[V] PicoWiFiModemUSB      - Complete (--serial picowifi, jeu AT v0.2.0, FIDÉLITÉ COMPLÈTE : défauts/codes/commandes composées, Telnet NET0/1/2, ATGET http+https/ATRD réseau réel, dial alias/7-chiffres, persistance NVRAM + boot, pont réel hôte lecture seule REALNET, AT$SCAN ; TLS réel via OpenSSL [HAS_PICOTLS] : préfixe dial #, ATGET https, AT$CV vérif certificat, AT$CA magasin CA PEM — validé live TLSv1.3 + vérif certificat OK/rejet)
 [V] Test Suite            - Complete (305 tests via make tests, 100% pass)
 [V] ROM Compatibility     - Validated (ORIC-1 BASIC 1.0 + Atmos BASIC 1.1 ROMs)
 [V] Performance           - Benchmarked (~90+ MHz, target met)
@@ -80,7 +80,7 @@ Save State Tests: 8/8 passed (100%)
 Atmos Tests: 10/10 passed (100%)
 Cast Tests: 24/24 passed (100%)
 Serial Tests: 21/21 passed (100%) — +test_dcd_deadlock_autodial (régression verrou DCD Digitelec)
-PicoWiFi Tests: 64/64 passed (100%) — +test_dial_host_starting_with_p, +test_dial_uppercase_modifier_keeps_host
+PicoWiFi Tests: 71/71 passed (100%) — +6 TLS v0.2.0 ($CV/$CA, dial #, ATGET https)
 Last Test Run: 2026-06-13 (Sprint 55) — suite complète 603 tests PASS
 
 CPU Tests:          74/74 passed
@@ -103,7 +103,7 @@ Trace Tests:        10/10 passed
 Profiler Tests:     10/10 passed
 ROM Info Tests:     10/10 passed
 Serial Tests:       21/21 passed
-PicoWiFi Tests:     64/64 passed
+PicoWiFi Tests:     71/71 passed
 Coverage Tests:     24/24 passed
 Last Test Run: 2026-06-13 (Sprint 55)
 

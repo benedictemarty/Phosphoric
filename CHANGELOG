@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.14-alpha] - 2026-06-22
+
+### Sprint 60o — Backend picowifi firmware v0.2.0 : terminaison TLS réelle
+
+### Added
+- **Terminaison TLS dans le modem émulé** (`src/io/serial_picowifi.c`), à
+  l'identique du firmware réel PicoWiFiModemUSB **v0.2.0** (`mbedTLS`/`altcp_tls`
+  côté Pico W → ici **OpenSSL**). Le modem déchiffre le lien et présente du
+  **clair** à l'Oric : un ORIC ~1 MHz qui ne fait aucune crypto atteint des
+  BBS/services HTTPS. Gardé par `HAS_PICOTLS` (auto-activé par le Makefile quand
+  OpenSSL est présent ; sinon un appel sécurisé renvoie `NO CARRIER`).
+  - Préfixe de numérotation **`#`** (combinable : `ATDT#host:992`, `ATDT#=host`)
+    ouvre un appel TLS — l'Oric échange ensuite du clair.
+  - `ATGET https://host[:port][/path]` — GET HTTPS (port 443 par défaut),
+    flux déchiffré streamé à l'Oric.
+  - `AT$CV?/0/1` — vérification du certificat serveur. `AT$CV1` est **refusé**
+    (`ERROR`) sans CA chargé (sinon faux sentiment de sécurité).
+  - `AT$CA?/=/-` — magasin CA : taille / upload PEM (terminé par une ligne ne
+    contenant que `.`) / suppression. Un CA chargé + `AT$CV1` impose la
+    vérification stricte (chaîne + hostname, `SSL_VERIFY_PEER`).
+  - `pw_conn_read/write/close/pending` : abstraction TLS↔socket sur tout le
+    chemin data (lecture, écriture, fermeture, `poll`/`SSL_pending`).
+- **`PICOTLS`** dans le Makefile (auto-détecte OpenSSL via `pkg-config`,
+  `PICOTLS=0` pour forcer un build sans TLS).
+
+### Changed
+- `EMU_VERSION` → `1.21.14-alpha` ; `PW_FW_VERSION` → `0.2.0` (rapporté par
+  `ATI`). `AT?` annonce désormais `$CV $CA`. `pw_dial()` prend un paramètre
+  `secure`. `pw_factory()` réinitialise `tls_verify` (défaut insecure, comme le
+  `SETTINGS_T` du firmware).
+
+### Validated
+- Test **live** (réseau réel) : `ATGET https://example.com/` → handshake
+  **TLSv1.3**, l'Oric reçoit `HTTP/1.1 200 OK` + HTML en clair. Vérification de
+  certificat prouvée dans les deux sens : bon root CA (Comodo AAA, 1517 o) →
+  `TLS session up (verified)` → CONNECT ; CA auto-signé non concordant →
+  `TLS verify failed: unable to get local issuer certificate` → pas de session
+  (miroir de la validation `badssl.com` du firmware réel).
+- 6 nouveaux tests hermétiques (`make test-picowifi` 65 → **71**) : `$CV` défaut
+  off, `$CV1` sans CA → ERROR, upload `$CA=` + `$CV1` OK + `$CA-` reset, routage
+  des préfixes `#` et `https://`, aide. **664 tests PASS (+6)**.
+
 ## [1.21.13-alpha] - 2026-06-21
 
 ### Sprint 60n — Fix CTRL+lettre (CTRL+T caps-lock) en mode clavier symbolique (azerty)

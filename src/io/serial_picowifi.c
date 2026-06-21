@@ -26,6 +26,19 @@
  *   - 48: ATGET (HTTP), ATRD/ATRT (NIST), alias/7-digit dial, AT$BM
  *   - 49: NVRAM persistence (AT&W/&V0/&V1), boot auto-reconnect
  *
+ * Sprint 60 tracks firmware v0.2.0 (TLS termination). The real Pico W
+ * terminates TLS with mbedTLS (altcp_tls) and presents cleartext to the Oric;
+ * we mirror that with OpenSSL (gated by HAS_PICOTLS, auto-enabled when the
+ * library is present). New surface, faithful to the firmware:
+ *   - '#' dial prefix (combinable: "ATDT#host:992", "ATDT#=host") opens a
+ *     TLS-terminated call; the Oric sends/receives cleartext.
+ *   - ATGET https://... dials port 443 over TLS.
+ *   - AT$CV?/0/1 — certificate verification (1 refused without a stored CA).
+ *   - AT$CA?/=/-  — CA store: query size / upload PEM (end with a "." line) /
+ *     delete. A loaded CA + AT$CV1 enforces MBEDTLS_SSL_VERIFY_REQUIRED.
+ * When HAS_PICOTLS is absent the state still parses, but a secure dial yields
+ * NO CARRIER (no crypto available) — matching "feature compiled out".
+ *
  * WiFi association is simulated; data connections are real TCP sockets.
  */
 
@@ -50,10 +63,17 @@
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 
+#ifdef HAS_PICOTLS
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509_vfy.h>
+#include <openssl/x509v3.h>
+#endif
+
 #include "io/serial_backend.h"
 #include "utils/logging.h"
 
-#define PW_FW_VERSION   "0.1.0"
+#define PW_FW_VERSION   "0.2.0"
 #define PW_RX_BUFSZ     65536      /* 64KB receive ring (line → Oric) */
 #define PW_DIAL_SLOTS   10         /* AT&Z0..9 speed-dial entries */
 #define PW_DEFAULT_PORT 23         /* telnet */
@@ -182,6 +202,19 @@ typedef struct {
     char     nvram_path[512];       /* resolved at open(); "" = no persistence */
     char     cli_ssid[64];          /* credentials from the CLI (override NVRAM) */
     char     cli_pass[64];
+
+    /* ── TLS termination (sprint 60, firmware v0.2.0) ── */
+    bool     session_secure;        /* current call terminates TLS */
+    bool     tls_verify;            /* AT$CV: enforce certificate verification */
+    char     ca_cert[8192];         /* AT$CA: stored CA in PEM (firmware ca.pem) */
+    size_t   ca_cert_len;           /* 0 = no CA loaded */
+    bool     ca_capture;            /* inside an AT$CA= multi-line PEM upload */
+    size_t   ca_stage_len;          /* bytes accumulated during the upload */
+    size_t   ca_line_beg;           /* start of the current PEM line in ca_cert */
+#ifdef HAS_PICOTLS
+    SSL_CTX* ssl_ctx;               /* per-call client context */
+    SSL*     ssl;                   /* active TLS session (NULL = plain) */
+#endif
 } picowifi_t;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -332,6 +365,7 @@ static void pw_factory(picowifi_t* pw, bool keep_creds)
              "Sorry, the system is currently busy. Please try again later.");
     pw->auto_exec[0] = '\0';
     pw->startup_wait = 0;
+    pw->tls_verify = false;          /* firmware SETTINGS_T default (insecure) */
 
     /* 3 predefined speed dials (firmware factoryDefaults). The real device
      * stores a leading '+' on each (forces FAKE_TELNET) — telnet handling
@@ -536,6 +570,143 @@ static int pw_tcp_connect(const char* host, uint16_t port)
     return fd;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  TLS termination (sprint 60, firmware v0.2.0) — the modem decrypts the
+ *  link and hands cleartext to the Oric. Mirrors the Pico W altcp_tls path:
+ *  TLS 1.2+ client, SNI = host, VERIFY_NONE by default, VERIFY_REQUIRED when
+ *  AT$CV1 is set with a CA loaded (AT$CA=). Gated by HAS_PICOTLS.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#ifdef HAS_PICOTLS
+/* Wrap an already-connected (non-blocking) socket in a client TLS session.
+ * The handshake runs in blocking mode with a bounded timeout, then the socket
+ * is restored to non-blocking for the data phase. Returns true on success. */
+static bool pw_tls_wrap(picowifi_t* pw, int fd, const char* host)
+{
+    SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) { log_error("PicoWiFi: SSL_CTX_new failed"); return false; }
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+
+    bool verify = pw->tls_verify && pw->ca_cert_len > 0;
+    if (verify) {
+        /* Load the AT$CA= CA (PEM) and require a valid chain + hostname. */
+        BIO* bio = BIO_new_mem_buf(pw->ca_cert, (int)pw->ca_cert_len);
+        X509_STORE* store = SSL_CTX_get_cert_store(ctx);
+        X509* ca; bool any = false;
+        while (bio && (ca = PEM_read_bio_X509(bio, NULL, NULL, NULL)) != NULL) {
+            X509_STORE_add_cert(store, ca);
+            X509_free(ca);
+            any = true;
+        }
+        if (bio) BIO_free(bio);
+        if (!any) {
+            log_error("PicoWiFi: CA parse failed (PEM expected) — refusing TLS");
+            SSL_CTX_free(ctx);
+            return false;
+        }
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+    } else {
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+    }
+
+    SSL* ssl = SSL_new(ctx);
+    if (!ssl) { SSL_CTX_free(ctx); return false; }
+    SSL_set_fd(ssl, fd);
+    SSL_set_tlsext_host_name(ssl, host);          /* SNI */
+    if (verify) {
+        /* Strict hostname check against the presented certificate. */
+        SSL_set1_host(ssl, host);
+        SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    }
+
+    /* Handshake blocking with a 10 s guard, then back to non-blocking. */
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+    struct timeval tv = { .tv_sec = 10, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    int rc = SSL_connect(ssl);
+    if (rc != 1) {
+        long vr = SSL_get_verify_result(ssl);
+        if (vr != X509_V_OK)
+            log_error("PicoWiFi: TLS verify failed: %s", X509_verify_cert_error_string(vr));
+        else
+            log_error("PicoWiFi: TLS handshake failed (rc=%d)", SSL_get_error(ssl, rc));
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return false;
+    }
+
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);        /* restore non-blocking */
+    pw->ssl = ssl;
+    pw->ssl_ctx = ctx;
+    log_info("PicoWiFi: TLS session up (%s, %sverified) to %s",
+             SSL_get_version(ssl), verify ? "" : "un", host);
+    return true;
+}
+#endif /* HAS_PICOTLS */
+
+/* Tear down the data connection (TLS session if any, then the socket). */
+static void pw_conn_close(picowifi_t* pw)
+{
+#ifdef HAS_PICOTLS
+    if (pw->ssl)     { SSL_shutdown(pw->ssl); SSL_free(pw->ssl); pw->ssl = NULL; }
+    if (pw->ssl_ctx) { SSL_CTX_free(pw->ssl_ctx); pw->ssl_ctx = NULL; }
+#endif
+    if (pw->sockfd >= 0) { close(pw->sockfd); pw->sockfd = -1; }
+    pw->session_secure = false;
+}
+
+/* Unified read: TLS-decrypted when secure, raw otherwise. Returns >0 bytes,
+ * 0 on peer close (drop carrier), -1 with errno=EAGAIN when no data yet. */
+static ssize_t pw_conn_read(picowifi_t* pw, void* buf, size_t n)
+{
+#ifdef HAS_PICOTLS
+    if (pw->ssl) {
+        int r = SSL_read(pw->ssl, buf, (int)n);
+        if (r > 0) return r;
+        int e = SSL_get_error(pw->ssl, r);
+        if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE) {
+            errno = EAGAIN;
+            return -1;
+        }
+        return 0;                      /* ZERO_RETURN or fatal → carrier lost */
+    }
+#endif
+    return pw_read(pw->sockfd, buf, n);
+}
+
+/* Unified write: TLS-encrypted when secure, raw otherwise. */
+static ssize_t pw_conn_write(picowifi_t* pw, const void* buf, size_t n)
+{
+#ifdef HAS_PICOTLS
+    if (pw->ssl) {
+        int r = SSL_write(pw->ssl, buf, (int)n);
+        if (r > 0) return r;
+        int e = SSL_get_error(pw->ssl, r);
+        if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE) {
+            errno = EAGAIN;
+            return -1;
+        }
+        errno = EIO;
+        return -1;
+    }
+#endif
+    return pw_write(pw->sockfd, buf, n);
+}
+
+/* True when buffered plaintext is waiting inside the TLS engine (poll on the
+ * raw fd would miss it). */
+static bool pw_conn_pending(picowifi_t* pw)
+{
+#ifdef HAS_PICOTLS
+    if (pw->ssl) return SSL_pending(pw->ssl) > 0;
+#endif
+    (void)pw;
+    return false;
+}
+
 /* Read from fd until a newline or timeout (ms). Returns bytes read (NUL
  * terminated), or -1 on error/timeout with no data. Socket is non-blocking
  * (pw_tcp_connect sets O_NONBLOCK), so we poll between reads. */
@@ -587,7 +758,7 @@ bool pw_parse_daytime(const char* raw, char* out, size_t osz)
 static bool pw_sock_write(picowifi_t* pw, const uint8_t* buf, size_t len)
 {
     if (pw->sockfd < 0) return true;
-    ssize_t r = pw_write(pw->sockfd, buf, len);
+    ssize_t r = pw_conn_write(pw, buf, len);
     if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return false;
     return true;
 }
@@ -784,8 +955,9 @@ static bool pw_wifi_associate(picowifi_t* pw)
     return true;
 }
 
-/* Dial host:port. Emits CONNECT/NO CARRIER and switches to data mode. */
-static void pw_dial(picowifi_t* pw, const char* host, uint16_t port)
+/* Dial host:port. When secure, terminate TLS before switching to data mode
+ * (the Oric then exchanges cleartext). Emits CONNECT/NO CARRIER. */
+static void pw_dial(picowifi_t* pw, const char* host, uint16_t port, bool secure)
 {
     if (!pw_wifi_associate(pw)) {
         log_warning("PicoWiFi: dial with no SSID configured");
@@ -798,6 +970,23 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port)
         pw_result(pw, PW_NO_CARRIER);
         return;
     }
+    pw->session_secure = false;
+    if (secure) {
+#ifdef HAS_PICOTLS
+        if (!pw_tls_wrap(pw, fd, host)) {
+            close(fd);
+            pw_result(pw, PW_NO_CARRIER);   /* handshake/verify failed */
+            return;
+        }
+        pw->session_secure = true;
+#else
+        log_warning("PicoWiFi: secure dial requested but TLS not compiled in "
+                    "(rebuild with OpenSSL) — NO CARRIER");
+        close(fd);
+        pw_result(pw, PW_NO_CARRIER);
+        return;
+#endif
+    }
     pw->sockfd = fd;
     pw->mode = 1;
     pw->plus_count = 0;
@@ -806,7 +995,8 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port)
     pw->tn_prev_cr = false;
     snprintf(pw->host, sizeof(pw->host), "%s", host);
     pw->port = port;
-    log_info("PicoWiFi: CONNECT %s:%u (fd=%d)", host, port, fd);
+    log_info("PicoWiFi: CONNECT %s:%u (fd=%d%s)", host, port, fd,
+             secure ? ", TLS" : "");
     pw_result(pw, PW_CONNECT);
 }
 
@@ -827,15 +1017,18 @@ static void pw_parse_hostport(const char* s, char* host, size_t hsz, uint16_t* p
     }
 }
 
-/* Dial from a raw argument (consumes the rest of the line). Leading telnet
- * prefixes set the session telnet mode: '-'=none, '='=real, '+'=fake. */
+/* Dial from a raw argument (consumes the rest of the line). Leading prefixes
+ * are combinable (firmware order-independent): '-'=no telnet, '='=real telnet,
+ * '+'=fake telnet, '#'=terminate TLS for this call. */
 static void pw_do_dial(picowifi_t* pw, const char* arg)
 {
     int sess = pw->telnet;
+    bool secure = false;
     for (;;) {
         if (*arg == '-')      { sess = TN_NONE; arg++; }
         else if (*arg == '=') { sess = TN_REAL; arg++; }
         else if (*arg == '+') { sess = TN_FAKE; arg++; }
+        else if (*arg == '#') { secure = true;  arg++; }
         else if (*arg == ' ') { arg++; }
         else break;
     }
@@ -870,7 +1063,7 @@ static void pw_do_dial(picowifi_t* pw, const char* arg)
         port = pw->port ? pw->port : PW_DEFAULT_PORT;
     }
     pw->session_telnet = sess;
-    pw_dial(pw, host, port);
+    pw_dial(pw, host, port, secure);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -959,7 +1152,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
 
     /* AT? — quick help */
     if (*p == '?') {
-        pw_qval(pw, "PicoWiFiModemUSB AT set: $SSID $PASS C D NET S0 S2 E Q V X &Z &V I");
+        pw_qval(pw, "PicoWiFiModemUSB AT set: $SSID $PASS $CV $CA C D NET S0 S2 E Q V X &Z &V I");
         return pw_end(pw, p + 1);
     }
 
@@ -980,6 +1173,43 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
          * "$SCAN" diverges at the 3rd char. List APs, then OK. */
         pw_scan(pw);
         return pw_end(pw, a);
+    }
+    /* ── TLS certificate verification / CA store (v0.2.0) ──
+     * Tested before $CV-less $C... none exist, but keep $CV/$CA ahead of the
+     * single-letter "C" (ATC) match below — that lives outside the $ block. */
+    if ((a = pw_match(p, "$CV"))) {
+        /* AT$CV? query (0/1) · AT$CV0 disable · AT$CV1 enable (ERROR w/o CA). */
+        if (*a == '?') { pw_qval(pw, pw->tls_verify ? "1" : "0"); return pw_end(pw, a + 1); }
+        if (*a == '0') { pw->tls_verify = false; return pw_end(pw, a + 1); }
+        if (*a == '1') {
+            if (pw->ca_cert_len == 0) { pw_result(pw, PW_ERROR); return a + 1; }
+            pw->tls_verify = true;
+            return pw_end(pw, a + 1);
+        }
+        pw_result(pw, PW_ERROR);
+        return a;
+    }
+    if ((a = pw_match(p, "$CA"))) {
+        /* AT$CA? size · AT$CA- delete · AT$CA= upload PEM (end with "." line). */
+        if (*a == '?') {
+            char b[32]; snprintf(b, sizeof(b), "CA: %zu bytes", pw->ca_cert_len);
+            pw_qval(pw, b); return pw_end(pw, a + 1);
+        }
+        if (*a == '-') {
+            pw->ca_cert_len = 0; pw->ca_cert[0] = '\0';
+            pw->tls_verify = false;         /* no CA → verification impossible */
+            return pw_end(pw, a + 1);
+        }
+        if (*a == '=') {
+            /* Enter multi-line capture (handled in picowifi_send). */
+            pw->ca_capture = true;
+            pw->ca_stage_len = 0;
+            pw->ca_line_beg = 0;
+            pw_rx_str(pw, "\r\nSend CA in PEM; end with a line containing only '.'\r\n");
+            return a + 1;                   /* no OK yet: prompt only */
+        }
+        pw_result(pw, PW_ERROR);
+        return a;
     }
     if ((a = pw_match(p, "$SSID"))) {
         if (*a == '?') { pw_qval(pw, pw->ssid); return pw_end(pw, a + 1); }
@@ -1137,7 +1367,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         const char* after = pw_skip_digits(a);
         if (n >= 0 && pw->dial[n].used) {
             pw->session_telnet = pw->telnet;   /* speed dial uses default mode */
-            pw_dial(pw, pw->dial[n].host, pw->dial[n].port);
+            pw_dial(pw, pw->dial[n].host, pw->dial[n].port, false);
         } else {
             pw_result(pw, PW_ERROR);
         }
@@ -1151,12 +1381,17 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
 
     /* ── Network utilities (sprint 48) ── */
     if ((a = pw_match(p, "GET"))) {
-        /* ATGET http://host[:port][/path] — HTTP/1.1 GET, raw stream out. */
+        /* ATGET http://host[:port][/path]  — plain HTTP/1.1 GET, raw stream.
+         * ATGET https://host[:port][/path] — TLS-terminated (port 443 default),
+         * the modem decrypts and streams cleartext to the Oric (v0.2.0). */
         const char* url = a;
         const char* end = a + strlen(a);
         while (*url == ' ') url++;
-        const char* h = pw_match(url, "http://");
-        if (h) url = h;
+        bool secure = false;
+        uint16_t def_port = 80;
+        const char* h;
+        if ((h = pw_match(url, "https://"))) { url = h; secure = true; def_port = 443; }
+        else if ((h = pw_match(url, "http://"))) { url = h; }
         char hostport[300] = {0}, path[256] = {0};
         const char* slash = strchr(url, '/');
         if (slash) {
@@ -1169,9 +1404,9 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         }
         char host[256]; uint16_t port;
         pw_parse_hostport(hostport, host, sizeof(host), &port);
-        if (!strchr(hostport, ':')) port = 80;        /* HTTP default */
+        if (!strchr(hostport, ':')) port = def_port; /* scheme default port */
         pw->session_telnet = TN_NONE;                 /* raw HTTP, no telnet */
-        pw_dial(pw, host, port);                      /* emits CONNECT, mode=1 */
+        pw_dial(pw, host, port, secure);              /* emits CONNECT, mode=1 */
         if (pw->sockfd >= 0) {
             char req[700];
             int rn = snprintf(req, sizeof(req),
@@ -1239,7 +1474,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
 
     /* ── Hangup / online / answer / info / reset ── */
     if ((a = pw_match(p, "H"))) {
-        if (pw->sockfd >= 0) { close(pw->sockfd); pw->sockfd = -1; log_info("PicoWiFi: hangup"); }
+        if (pw->sockfd >= 0) { pw_conn_close(pw); log_info("PicoWiFi: hangup"); }
         pw->mode = 0;
         return pw_end(pw, (*a == '0') ? a + 1 : a);
     }
@@ -1391,7 +1626,7 @@ static void picowifi_close(serial_backend_t* self)
 {
     picowifi_t* pw = (picowifi_t*)self->state.picowifi.impl;
     if (!pw) return;
-    if (pw->sockfd >= 0) { close(pw->sockfd); pw->sockfd = -1; }
+    pw_conn_close(pw);
     if (pw->listen_fd >= 0) { close(pw->listen_fd); pw->listen_fd = -1; }
     free(pw->rx_buf);
     pw->rx_buf = NULL;
@@ -1434,12 +1669,45 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
         if (pw->sockfd >= 0) {
             if (!pw_tn_out_byte(pw, byte)) {
                 log_info("PicoWiFi: write error, carrier lost");
-                close(pw->sockfd);
-                pw->sockfd = -1;
+                pw_conn_close(pw);
                 pw->mode = 0;
                 pw_result(pw, PW_NO_CARRIER);
                 return false;
             }
+        }
+        return true;
+    }
+
+    /* ── AT$CA= PEM upload: capture raw lines until a sole "." (firmware
+     * doCACert). Segments on LF; CR is dropped; the "." terminator line is not
+     * stored. The newline is kept inside the PEM so it parses back. ── */
+    if (pw->ca_capture) {
+        if (pw->echo) pw_rx_push(pw, byte);
+        if (byte == '\r') return true;
+        if (byte == '\n') {
+            if (pw->ca_stage_len - pw->ca_line_beg == 1 &&
+                pw->ca_cert[pw->ca_line_beg] == '.') {
+                pw->ca_cert_len = pw->ca_line_beg;     /* drop terminator line */
+                pw->ca_cert[pw->ca_cert_len] = '\0';
+                pw->ca_capture = false;
+                if (pw->ca_cert_len > 0) {
+                    char b[48];
+                    snprintf(b, sizeof(b), "CA stored: %zu bytes", pw->ca_cert_len);
+                    pw_qval(pw, b);
+                    pw_result(pw, PW_OK);
+                } else {
+                    pw_result(pw, PW_ERROR);
+                }
+            } else if (pw->ca_stage_len < sizeof(pw->ca_cert) - 1) {
+                pw->ca_cert[pw->ca_stage_len++] = '\n';
+                pw->ca_line_beg = pw->ca_stage_len;
+            } else {
+                pw->ca_capture = false;                /* overflow → abort */
+                pw->ca_cert_len = 0;
+                pw_result(pw, PW_ERROR);
+            }
+        } else if (pw->ca_stage_len < sizeof(pw->ca_cert) - 1) {
+            pw->ca_cert[pw->ca_stage_len++] = (char)byte;
         }
         return true;
     }
@@ -1469,7 +1737,7 @@ static bool picowifi_recv(serial_backend_t* self, uint8_t* byte)
 
     if (pw->mode == 1 && pw->sockfd >= 0) {
         uint8_t tmp[256];
-        ssize_t r = pw_read(pw->sockfd, tmp, sizeof(tmp));
+        ssize_t r = pw_conn_read(pw, tmp, sizeof(tmp));
         if (r > 0) {
             for (ssize_t i = 0; i < r; i++) {
                 if (pw->session_telnet != TN_NONE) pw_tn_rx_byte(pw, tmp[i]);
@@ -1477,8 +1745,7 @@ static bool picowifi_recv(serial_backend_t* self, uint8_t* byte)
             }
         } else if (r == 0) {
             log_info("PicoWiFi: peer closed connection");
-            close(pw->sockfd);
-            pw->sockfd = -1;
+            pw_conn_close(pw);
             pw->mode = 0;
             pw_result(pw, PW_NO_CARRIER);
         }
@@ -1491,6 +1758,7 @@ static bool picowifi_poll(serial_backend_t* self)
     picowifi_t* pw = (picowifi_t*)self->state.picowifi.impl;
     if (pw->rx_count > 0) return true;
     if (pw->mode == 1 && pw->sockfd >= 0) {
+        if (pw_conn_pending(pw)) return true;   /* buffered TLS plaintext */
         struct pollfd pfd = { .fd = pw->sockfd, .events = POLLIN };
         return poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN);
     }

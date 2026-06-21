@@ -5,9 +5,10 @@
  * @date 2026-06-13
  *
  * Drives the picowifi backend through its serial vtable (send AT chars,
- * drain the response from the RX ring) and asserts the v0.1.0 AT command
- * behaviour: WiFi config, result-code formatting, S-registers, speed dial,
- * telnet, info, factory reset, and error handling. No real network is used
+ * drain the response from the RX ring) and asserts the v0.1.0/v0.2.0 AT
+ * command behaviour: WiFi config, result-code formatting, S-registers, speed
+ * dial, telnet, info, factory reset, error handling, and the v0.2.0 TLS
+ * surface ($CV/$CA, '#' dial prefix, ATGET https). No real network is used
  * — only the hermetic command-parsing paths are exercised.
  */
 
@@ -96,14 +97,25 @@ static void pw_teardown(void) {
     pw = NULL;
 }
 
-/* Send a command line (CR appended), drain the response into out. */
-static void pw_cmd(const char* line, char* out, size_t outsz) {
-    for (const char* p = line; *p; p++) pw->send(pw, (uint8_t)*p);
-    pw->send(pw, '\r');
+/* Drain the RX ring into out. */
+static void pw_drain(char* out, size_t outsz) {
     size_t i = 0;
     uint8_t b;
     while (i < outsz - 1 && pw->recv(pw, &b)) out[i++] = (char)b;
     out[i] = '\0';
+}
+
+/* Send a command line (CR appended), drain the response into out. */
+static void pw_cmd(const char* line, char* out, size_t outsz) {
+    for (const char* p = line; *p; p++) pw->send(pw, (uint8_t)*p);
+    pw->send(pw, '\r');
+    pw_drain(out, outsz);
+}
+
+/* Send a raw string verbatim (no CR appended) — used for the AT$CA= PEM
+ * upload, which is segmented on LF by the firmware. */
+static void pw_send_str(const char* s) {
+    for (; *s; s++) pw->send(pw, (uint8_t)*s);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -341,7 +353,7 @@ TEST(test_info_command) {
     char r[512];
     pw_cmd("ATI", r, sizeof(r));
     ASSERT_CONTAINS(r, "PicoWiFiModemUSB");
-    ASSERT_CONTAINS(r, "0.1.0");
+    ASSERT_CONTAINS(r, "0.2.0");
     pw_teardown();
 }
 
@@ -950,6 +962,93 @@ TEST(test_realnet_off_is_simulated) {
     pw_teardown();
 }
 
+/* ── Sprint 60 — firmware v0.2.0 TLS surface (hermetic; no real network) ── */
+
+TEST(test_tls_cv_default_off) {
+    /* AT$CV? reports 0 at factory (insecure default). */
+    pw_setup(NULL, NULL);
+    char r[256];
+    pw_cmd("AT$CV?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "0");
+    pw_cmd("AT$CA?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "CA: 0 bytes");
+    pw_teardown();
+}
+
+TEST(test_tls_cv1_without_ca_errors) {
+    /* AT$CV1 is refused without a stored CA (would be silently insecure). */
+    pw_setup(NULL, NULL);
+    char r[256];
+    pw_cmd("AT$CV1", r, sizeof(r));
+    ASSERT_CONTAINS(r, "ERROR");
+    pw_cmd("AT$CV?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "0");
+    pw_teardown();
+}
+
+TEST(test_tls_ca_upload_enables_verify) {
+    /* AT$CA= uploads a PEM (ended by a sole '.'), AT$CV1 then succeeds, and
+     * AT$CA- clears both the CA and the verification flag. */
+    pw_setup(NULL, NULL);
+    char r[1024];
+    pw_cmd("AT$CA=", r, sizeof(r));
+    ASSERT_CONTAINS(r, "PEM");
+    pw_send_str("-----BEGIN CERTIFICATE-----\n"
+                "MIIBdummyBase64Content==\n"
+                "-----END CERTIFICATE-----\n"
+                ".\n");
+    pw_drain(r, sizeof(r));
+    ASSERT_CONTAINS(r, "CA stored");
+    ASSERT_CONTAINS(r, "OK");
+    pw_cmd("AT$CA?", r, sizeof(r));
+    ASSERT_NOT_CONTAINS(r, "CA: 0 bytes");
+    pw_cmd("AT$CV1", r, sizeof(r));
+    ASSERT_CONTAINS(r, "OK");
+    pw_cmd("AT$CV?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "1");
+    /* Delete the CA → verification can no longer stand. */
+    pw_cmd("AT$CA-", r, sizeof(r));
+    ASSERT_CONTAINS(r, "OK");
+    pw_cmd("AT$CA?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "CA: 0 bytes");
+    pw_cmd("AT$CV?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "0");
+    pw_teardown();
+}
+
+TEST(test_tls_dial_prefix_routed) {
+    /* The '#' dial prefix is accepted and routed through the dialer; with no
+     * SSID and no real-net bridge, association fails → NO CARRIER (proves the
+     * prefix is parsed, not rejected as an unknown command). */
+    pw_setup(NULL, NULL);
+    char r[256];
+    pw_cmd("ATDT#example.com:443", r, sizeof(r));
+    ASSERT_CONTAINS(r, "NO CARRIER");
+    ASSERT_NOT_CONTAINS(r, "ERROR");
+    pw_teardown();
+}
+
+TEST(test_tls_atget_https_routed) {
+    /* ATGET https://... is parsed (TLS, port 443) and dialed; hermetic NO
+     * CARRIER without an SSID. */
+    pw_setup(NULL, NULL);
+    char r[256];
+    pw_cmd("ATGET https://example.com/", r, sizeof(r));
+    ASSERT_CONTAINS(r, "NO CARRIER");
+    ASSERT_NOT_CONTAINS(r, "ERROR");
+    pw_teardown();
+}
+
+TEST(test_help_lists_tls_commands) {
+    /* AT? advertises the new $CV/$CA verbs. */
+    pw_setup(NULL, NULL);
+    char r[512];
+    pw_cmd("AT?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "$CV");
+    ASSERT_CONTAINS(r, "$CA");
+    pw_teardown();
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Runner
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -1038,6 +1137,14 @@ int main(void) {
     RUN(test_realnet_ati_reports_host_ip);
     RUN(test_realnet_atc_returns_real_status);
     RUN(test_realnet_off_is_simulated);
+
+    /* Sprint 60 — firmware v0.2.0 TLS termination */
+    RUN(test_tls_cv_default_off);
+    RUN(test_tls_cv1_without_ca_errors);
+    RUN(test_tls_ca_upload_enables_verify);
+    RUN(test_tls_dial_prefix_routed);
+    RUN(test_tls_atget_https_routed);
+    RUN(test_help_lists_tls_commands);
 
     unlink(PW_NVRAM_TEST);
 

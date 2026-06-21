@@ -439,6 +439,31 @@ la source Oricutron avant correction.
 - [x] Tests `test_azerty_ctrl_t_caps_toggle` + `test_qwerty_ctrl_t_caps_toggle`
       (`make test-keyboard`, 34 tests). 658 tests PASS (+2).
 
+### Sprint 60o: Backend picowifi firmware v0.2.0 — terminaison TLS réelle (v1.21.14-alpha) - DONE
+
+- [x] **Terminaison TLS dans le modem émulé** (`src/io/serial_picowifi.c`),
+      fidèle au firmware réel PicoWiFiModemUSB **v0.2.0** (`mbedTLS`/`altcp_tls`
+      côté Pico W → **OpenSSL** ici). Le modem déchiffre le lien et présente du
+      **clair** à l'Oric (qui ne fait aucune crypto à ~1 MHz) → accès BBS/HTTPS
+      chiffrés. Gardé par `HAS_PICOTLS` ; sans TLS compilé, un appel sécurisé
+      renvoie `NO CARRIER`.
+- [x] **Préfixe dial `#`** combinable (`ATDT#host:992`, `ATDT#=host`) → appel TLS.
+- [x] **`ATGET https://host[:port][/path]`** — GET HTTPS (port 443 défaut),
+      flux déchiffré streamé à l'Oric.
+- [x] **`AT$CV?/0/1`** — vérification du certificat serveur ; `AT$CV1` **refusé**
+      (`ERROR`) sans CA chargé.
+- [x] **`AT$CA?/=/-`** — magasin CA : taille / upload PEM (terminé par ligne `.`) /
+      suppression ; CA + `AT$CV1` → vérif stricte chaîne + hostname (`SSL_VERIFY_PEER`).
+- [x] Abstraction **`pw_conn_read/write/close/pending`** (TLS↔socket) sur tout le
+      chemin data + `poll`/`SSL_pending`.
+- [x] Makefile : flag **`PICOTLS`** (auto-détecte OpenSSL via `pkg-config` ; `0`/`1`).
+- [x] **Validé live** (réseau réel) : `ATGET https://example.com/` → handshake
+      **TLSv1.3**, l'Oric reçoit `HTTP/1.1 200 OK` + HTML en clair. Vérif certificat
+      prouvée 2 sens : root Comodo AAA (1517 o) → `TLS session up (verified)` +
+      CONNECT ; CA auto-signé non concordant → `TLS verify failed` → pas de session
+      (miroir validation badssl.com du firmware).
+- [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
+
 ### Sprint 60k: Module PIA 6821 (MC6821) autonome + rebranchement DTL (v1.21.10-alpha) - DONE
 
 - [x] **Module PIA 6821 complet et réutilisable** (`src/io/pia6821.c` + `.h`) :

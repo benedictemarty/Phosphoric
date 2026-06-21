@@ -29,6 +29,19 @@ ifeq ($(CAST), 1)
     LDFLAGS += -lpthread -lssl -lcrypto
 endif
 
+# PicoWiFi TLS termination (v0.2.0 firmware) — OpenSSL terminates TLS in the
+# emulated modem so the Oric reaches HTTPS/secure BBS in cleartext, mirroring
+# the real Pico W mbedTLS path. Auto-enabled when OpenSSL is available; set
+# PICOTLS=0 to force a TLS-less build (secure dials then return NO CARRIER).
+PICOTLS ?= auto
+ifeq ($(PICOTLS), auto)
+    PICOTLS := $(shell pkg-config --exists openssl && echo 1 || echo 0)
+endif
+ifeq ($(PICOTLS), 1)
+    CFLAGS += -DHAS_PICOTLS $(shell pkg-config --cflags openssl 2>/dev/null)
+    LDFLAGS += $(shell pkg-config --libs openssl 2>/dev/null)
+endif
+
 # Coverage support (optional)
 COVERAGE ?= 0
 ifeq ($(COVERAGE), 1)
