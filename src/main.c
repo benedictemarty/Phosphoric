@@ -294,7 +294,8 @@ static void print_usage(const char* program_name) {
     printf("      --serial-irq-on-rdrf  WDC 65C51 IRQ mode (re-trigger while RDRF set)\n");
     printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
-    printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8: loopback, tcp:H:P, pty\n");
+    printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
+    printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV\n");
     printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
     printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     printf("      --load-state FILE      Load emulator state from FILE at startup\n");
@@ -809,6 +810,61 @@ static void dtl2000_cpu_irq_set(emulator_t* emu) {
 
 static void dtl2000_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_DTL2000);
+}
+
+/* Parse a "host[:port]" spec into @p host / @p port, defaulting to @p def_port
+ * when no port is given. The host buffer is always NUL-terminated. */
+static void parse_host_port(const char* spec, char* host, size_t host_sz,
+                            uint16_t* port, uint16_t def_port)
+{
+    *port = def_port;
+    host[0] = '\0';
+    const char* colon = strrchr(spec, ':');
+    if (colon && colon != spec) {
+        size_t hlen = (size_t)(colon - spec);
+        if (hlen >= host_sz) hlen = host_sz - 1;
+        memcpy(host, spec, hlen);
+        host[hlen] = '\0';
+        *port = (uint16_t)atoi(colon + 1);
+    } else {
+        strncpy(host, spec, host_sz - 1);
+        host[host_sz - 1] = '\0';
+    }
+}
+
+/* Create a *transparent* serial transport from @p spec: a raw byte pipe that
+ * passes data through unchanged, faithful behind any UART (the ACIA 6551 of
+ * --serial as well as the ACIA 6850 of the --dtl2000 card): loopback, tcp:H:P,
+ * pty, com:.
+ *
+ * Deliberately excludes the *protocol-injecting* backends — modem (an in-process
+ * Hayes AT interpreter), digitelec and picowifi (which emulate a UART of their
+ * own). Those only make sense in front of the ACIA 6551 the host program drives
+ * with AT commands; the DTL 2000 is instead dialled by its PIA 6821 line bit and
+ * carries raw V23 data, so a Hayes layer behind it would be unfaithful.
+ *
+ * Returns NULL when @p spec is not a transparent transport — the caller may then
+ * try the protocol backends or report the error. This is the single source of
+ * truth shared by --serial and --dtl2000 so the two never drift apart again. */
+static serial_backend_t* serial_transport_create(const char* spec)
+{
+    if (strcmp(spec, "loopback") == 0) {
+        return serial_backend_loopback_create();
+    }
+    if (strncmp(spec, "tcp:", 4) == 0) {
+        char host[256];
+        uint16_t port;
+        parse_host_port(spec + 4, host, sizeof(host), &port, 23);
+        return serial_backend_tcp_create(host, port);
+    }
+    if (strcmp(spec, "pty") == 0) {
+        return serial_backend_pty_create();
+    }
+    if (strncmp(spec, "com:", 4) == 0) {
+        /* com:baud,bits,parity,stop,device */
+        return serial_backend_com_create(spec + 4);
+    }
+    return NULL;  /* not a transparent transport */
 }
 
 static bool emulator_init(emulator_t* emu) {
@@ -2489,29 +2545,12 @@ int main(int argc, char* argv[]) {
         emu.acia_base_addr = ACIA_DEFAULT_BASE;
     }
     if (serial_arg) {
-        serial_backend_t* sb = NULL;
-        if (strcmp(serial_arg, "loopback") == 0) {
-            sb = serial_backend_loopback_create();
-        } else if (strncmp(serial_arg, "tcp:", 4) == 0) {
-            /* Parse tcp:host:port */
-            char host[256] = {0};
-            uint16_t port = 23;  /* Default: telnet */
-            const char* hp = serial_arg + 4;
-            const char* colon = strrchr(hp, ':');
-            if (colon && colon != hp) {
-                size_t hlen = (size_t)(colon - hp);
-                if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
-                memcpy(host, hp, hlen);
-                host[hlen] = '\0';
-                port = (uint16_t)atoi(colon + 1);
-            } else {
-                strncpy(host, hp, sizeof(host) - 1);
-            }
-            sb = serial_backend_tcp_create(host, port);
-        } else if (strcmp(serial_arg, "pty") == 0) {
-            sb = serial_backend_pty_create();
-        } else if (strcmp(serial_arg, "modem") == 0 ||
-                   strncmp(serial_arg, "modem:", 6) == 0) {
+        /* First try the shared transparent transports (loopback/tcp/pty/com),
+         * then the ACIA-6551-specific protocol backends (Hayes modem, digitelec,
+         * picowifi) that inject their own command/UART layer. */
+        serial_backend_t* sb = serial_transport_create(serial_arg);
+        if (!sb && (strcmp(serial_arg, "modem") == 0 ||
+                    strncmp(serial_arg, "modem:", 6) == 0)) {
             /* Hayes AT modem. Modes:
              *   --serial modem              Pure command mode (use ATD to dial)
              *   --serial modem:host:port    Preset host (ATD without args connects here)
@@ -2524,39 +2563,19 @@ int main(int argc, char* argv[]) {
                 listen_mode = true;
                 port = (uint16_t)atoi(hp + 7);
             } else {
-                const char* colon = strrchr(hp, ':');
-                if (colon && colon != hp) {
-                    size_t hlen = (size_t)(colon - hp);
-                    if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
-                    memcpy(host, hp, hlen);
-                    host[hlen] = '\0';
-                    port = (uint16_t)atoi(colon + 1);
-                } else {
-                    strncpy(host, hp, sizeof(host) - 1);
-                }
+                parse_host_port(hp, host, sizeof(host), &port, 23);
             }
             sb = serial_backend_modem_create(host, port, listen_mode);
-        } else if (strncmp(serial_arg, "com:", 4) == 0) {
-            /* Parse com:baud,bits,parity,stop,device */
-            sb = serial_backend_com_create(serial_arg + 4);
-        } else if (strncmp(serial_arg, "digitelec:", 10) == 0) {
-            /* Parse digitelec:host:port — Digitelec DTL 2000 V23 modem */
-            char host[256] = {0};
-            uint16_t port = 23;
-            const char* hp = serial_arg + 10;
-            const char* colon = strrchr(hp, ':');
-            if (colon && colon != hp) {
-                size_t hlen = (size_t)(colon - hp);
-                if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
-                memcpy(host, hp, hlen);
-                host[hlen] = '\0';
-                port = (uint16_t)atoi(colon + 1);
-            } else {
-                strncpy(host, hp, sizeof(host) - 1);
-            }
+        } else if (!sb && strncmp(serial_arg, "digitelec:", 10) == 0) {
+            /* digitelec:host:port — behavioural DTL 2000 V23 modem bound to
+             * the emulated ACIA 6551 (distinct from the faithful --dtl2000
+             * card; see include/io/dtl2000.h). */
+            char host[256];
+            uint16_t port;
+            parse_host_port(serial_arg + 10, host, sizeof(host), &port, 23);
             sb = serial_backend_digitelec_create(host, port, &emu.acia);
-        } else if (strcmp(serial_arg, "picowifi") == 0 ||
-                   strncmp(serial_arg, "picowifi:", 9) == 0) {
+        } else if (!sb && (strcmp(serial_arg, "picowifi") == 0 ||
+                           strncmp(serial_arg, "picowifi:", 9) == 0)) {
             /* PicoWiFiModemUSB (sodiumlb) — WiFi modem exposed via LOCI.
              *   --serial picowifi                Credentials set via AT$SSID=
              *   --serial picowifi:SSID           Pre-set SSID, no password
@@ -2578,7 +2597,7 @@ int main(int argc, char* argv[]) {
             }
             sb = serial_backend_picowifi_create(ssid[0] ? ssid : NULL,
                                                 pass[0] ? pass : NULL);
-        } else {
+        } else if (!sb) {
             log_error("Unknown serial backend: %s", serial_arg);
             log_error("  loopback, tcp:host:port, pty, modem:host:port,");
             log_error("  modem:listen:port, com:baud,bits,P,stop,device,");
@@ -2623,29 +2642,17 @@ int main(int argc, char* argv[]) {
             log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
                         "(Jasmin) — not faithful to coexist on real hardware", base);
         }
-        serial_backend_t* db = NULL;
-        if (strcmp(dtl2000_arg, "loopback") == 0) {
-            db = serial_backend_loopback_create();
-        } else if (strncmp(dtl2000_arg, "tcp:", 4) == 0) {
-            char host[256] = {0};
-            uint16_t port = 23;
-            const char* hp = dtl2000_arg + 4;
-            const char* colon = strrchr(hp, ':');
-            if (colon && colon != hp) {
-                size_t hlen = (size_t)(colon - hp);
-                if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
-                memcpy(host, hp, hlen);
-                host[hlen] = '\0';
-                port = (uint16_t)atoi(colon + 1);
-            } else {
-                strncpy(host, hp, sizeof(host) - 1);
-            }
-            db = serial_backend_tcp_create(host, port);
-        } else if (strcmp(dtl2000_arg, "pty") == 0) {
-            db = serial_backend_pty_create();
-        } else {
-            log_error("Unknown DTL 2000 transport: %s (loopback, tcp:host:port, pty)",
-                      dtl2000_arg);
+        /* The DTL card accepts the same *transparent* transports as --serial
+         * (loopback/tcp/pty/com) — raw byte pipes for the V23 line. The DTL 2000
+         * is dialled by its PIA 6821 line bit and carries raw data, so the
+         * protocol-injecting backends (Hayes modem, digitelec, picowifi) are
+         * intentionally excluded: a Hayes AT layer behind the DTL would be
+         * unfaithful (the host software never issues AT commands). */
+        serial_backend_t* db = serial_transport_create(dtl2000_arg);
+        if (!db) {
+            log_error("Unknown DTL 2000 transport: %s", dtl2000_arg);
+            log_error("  loopback, tcp:host:port, pty, com:baud,bits,P,stop,device");
+            log_error("  (the DTL is dialled via its PIA, not Hayes AT — no 'modem')");
             emulator_cleanup(&emu);
             return 1;
         }
@@ -2660,6 +2667,9 @@ int main(int argc, char* argv[]) {
                 dtl2000_set_backend(&emu.dtl2000, db);
                 emu.dtl2000_backend = db;
                 emu.has_dtl2000 = true;
+                if (serial_trace_file) {
+                    dtl2000_set_trace(&emu.dtl2000, serial_trace_file);
+                }
                 log_info("Digitelec DTL 2000 enabled at $%04X (transport: %s)",
                          base, dtl2000_arg);
             } else {

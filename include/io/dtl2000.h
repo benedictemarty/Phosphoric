@@ -162,6 +162,9 @@ typedef struct dtl2000_s {
     /* Statistics */
     uint32_t tx_count, rx_count;
 
+    /* Optional TX/RX trace (NULL = off). Lines: dir, hex, ascii, status. */
+    FILE* trace;
+
     /* Optional CPU IRQ routing (left NULL = polling mode, as the DTL software) */
     void (*irq_set)(emulator_t* emu);
     void (*irq_clr)(emulator_t* emu);
@@ -189,6 +192,9 @@ void dtl2000_tick(dtl2000_t* dev, int cycles);
 
 /** @brief Attach a serial backend for transport (loopback/TCP/PTY). */
 void dtl2000_set_backend(dtl2000_t* dev, serial_backend_t* backend);
+
+/** @brief Enable a human-readable TX/RX byte trace to @p filename (NULL = off). */
+void dtl2000_set_trace(dtl2000_t* dev, const char* filename);
 
 /** @brief True if @p addr falls inside the device's register window. */
 bool dtl2000_addr_in_range(const dtl2000_t* dev, uint16_t addr);

@@ -394,6 +394,34 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60f: Unification des transports série DTL 2000 — reco #1 (v1.21.5-alpha) - DONE
+
+- [x] **Helper partagé `serial_transport_create()`** (+ `parse_host_port()`) :
+      source unique de vérité pour les transports *transparents* (tuyaux d'octets
+      bruts : loopback, tcp:H:P, pty, com:), utilisé par `--serial` et `--dtl2000`.
+- [x] **`--dtl2000` accepte `com:`** (vrai port série) en plus de loopback/tcp/pty.
+- [x] **Transparent vs protocole** : `modem` (Hayes AT), `digitelec:`/`picowifi`
+      injectent leur couche commande/UART → réservés à `--serial`. Le DTL 2000 est
+      composé par son PIA 6821 (bit ligne, pas d'AT) et transporte du V23 brut →
+      `--dtl2000 modem` rejeté (une couche Hayes derrière serait infidèle).
+- [x] `--help` + message d'erreur DTL mis à jour ; 3 assertions e2e (pty accepté,
+      modem rejeté, inconnu rejeté).
+- [x] Refactor sans régression sur `--serial` (`--serial modem` OK) ; 624 tests PASS (+3).
+
+### Sprint 60e: Trace série TX/RX du Digitelec DTL 2000 + validation OTRM (v1.21.4-alpha) - DONE
+
+- [x] **Trace TX/RX ACIA 6850** : `--serial-trace` câblé sur la carte `--dtl2000`
+      (champ `dtl2000_t.trace` + `dtl2000_set_trace()`), chaque octet émis/reçu
+      journalisé (dir, hex, ASCII, statut, compteurs, note sent/recv/dropped).
+- [x] **Test e2e `make test-dtl2000-txrx`** (`tests/integration/test_dtl2000_txrx.sh`) :
+      boote `examples/dtl2000-test.bas` en loopback, vérifie 10 octets `A`..`J`
+      renvoyés identiques en RX, 0 dropped (6 assertions, skip gracieux).
+- [x] **OTRM 2.00** (`otrm-mc6850@3fc.tap` d'iss/raxiss, trouvé via fil forum
+      defence-force p33463) booté sur l'émulation DTL : auto-exec $C7, statut
+      « ACIA 6850 @ 0x3fc » → validation par vrai logiciel d'époque (manquante
+      depuis le sprint 51). POKEs d'init 1200/1200 d'iss confirment `DDRA=$F4`.
+- [x] 621 tests PASS (+6).
+
 ### Sprint 60d: Terminal NNTP/Usenet (CRLF) Eternal-September (v1.21.3-alpha) - DONE
 
 - [x] **`tools/modem/modem_nntp.bas`** (+ tap) : terminal CRLF (NNTP exige CR+LF,
@@ -1593,7 +1621,7 @@ Référence : `docs/CR/2026-06-07_Senior_LOCI_Pipe_Review_Post_34b5.md`
 - [x] Display scaling (x1, x2, x3, x4)
 - [x] Trace logging
 - [x] Serial interface (ACIA 6551, RS232, Minitel/V23)
-- [x] Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR-verified registers, IRQ wired, cassette-validated)
+- [x] Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR-verified registers, IRQ wired, cassette-validated, TX/RX serial trace, OTRM 2.00 boot-validated)
 - [x] PicoWiFiModemUSB (modem WiFi LOCI, jeu AT v0.1.0)
 
 ### Hors périmètre « fidèle au firmware » (extensions assumées)

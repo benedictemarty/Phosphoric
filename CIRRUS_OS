@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.3-alpha
-Build Status: ALPHA (Sprint 60d : terminal NNTP/Usenet CRLF tools/modem/modem_nntp.bas pour Eternal-September — lit/poste des news via le vrai modem, connexion validée (greeting INN 2.8.0 + HELP) ; Sprint 60c = doc telehack ; 615 tests PASS ; build SDL2=1 OK)
+Version: 1.21.5-alpha
+Build Status: ALPHA (Sprint 60f : unification des transports série DTL 2000 (reco #1) — helper partagé serial_transport_create() pour les transports transparents (loopback/tcp/pty/com), --dtl2000 accepte com: en plus ; modem(Hayes)/digitelec/picowifi réservés à --serial car ils injectent un protocole (DTL composé par son PIA, pas en AT → modem rejeté) ; refactor sans régression ; Sprint 60e = trace TX/RX DTL + validation OTRM ; 624 tests PASS ; build SDL2=1 OK)
 Last Updated: 2026-06-21
 
 ================================================================

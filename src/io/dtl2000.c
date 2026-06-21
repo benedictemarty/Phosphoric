@@ -17,6 +17,24 @@
  *  Internal helpers
  * ─────────────────────────────────────────────────────────────────────── */
 
+/* Emit one TX/RX line to the trace file (if enabled). @p note flags special
+ * cases such as a transmit dropped because the line is open / carrier off. */
+static void dtl_trace_byte(dtl2000_t* dev, const char* dir, uint8_t byte,
+                           const char* note)
+{
+    if (!dev->trace) return;
+    char c = (byte >= 0x20 && byte < 0x7F) ? (char)byte : '.';
+    fprintf(dev->trace,
+            "%-3s  %02X  '%c'  ST=%02X %s%s%s%s  TX=%u RX=%u  %s\n",
+            dir, byte, c, dev->acia_status,
+            (dev->acia_status & DTL_ACIA_SR_RDRF) ? "RDRF " : "",
+            (dev->acia_status & DTL_ACIA_SR_TDRE) ? "TDRE " : "",
+            (dev->acia_status & DTL_ACIA_SR_DCD)  ? "DCD "  : "",
+            (dev->acia_status & DTL_ACIA_SR_CTS)  ? "CTS"   : "",
+            dev->tx_count, dev->rx_count,
+            note ? note : "");
+}
+
 /* Decode word-select (6850 bits 2-4) into data bits / parity / stop bits,
  * returning the total frame length and setting the data mask. */
 static uint8_t dtl_frame_from_ws(uint8_t ws, uint8_t* bitmask_out)
@@ -144,6 +162,11 @@ static void dtl_acia_data_write(dtl2000_t* dev, uint8_t value)
         dev->backend && dev->backend->send) {
         dev->backend->send(dev->backend, dev->acia_tdr);
         dev->tx_count++;
+        dtl_trace_byte(dev, "TX", dev->acia_tdr, "sent");
+    } else {
+        dtl_trace_byte(dev, "TX", dev->acia_tdr,
+                       dev->line_connected ? "dropped (no carrier)"
+                                           : "dropped (line open)");
     }
 
     dev->acia_status &= (uint8_t)~DTL_ACIA_SR_TDRE;  /* transmitter busy */
@@ -276,6 +299,7 @@ void dtl2000_tick(dtl2000_t* dev, int cycles)
                     dev->acia_rdr = (uint8_t)(b & dev->bitmask);
                     dev->acia_status |= DTL_ACIA_SR_RDRF;
                     dev->rx_count++;
+                    dtl_trace_byte(dev, "RX", dev->acia_rdr, "recv");
                     dtl_update_irq(dev);
                 }
             }
@@ -297,4 +321,25 @@ void dtl2000_set_backend(dtl2000_t* dev, serial_backend_t* backend)
 {
     dev->backend = backend;
     dtl_refresh_signals(dev);
+}
+
+void dtl2000_set_trace(dtl2000_t* dev, const char* filename)
+{
+    if (dev->trace) {
+        fclose(dev->trace);
+        dev->trace = NULL;
+    }
+    if (filename) {
+        dev->trace = fopen(filename, "w");
+        if (dev->trace) {
+            fprintf(dev->trace,
+                    "# Digitelec DTL 2000 — ACIA 6850 TX/RX trace (base $%04X)\n"
+                    "# DIR  HEX  ASCII  STATUS  COUNTERS  NOTE\n",
+                    dev->base_addr);
+            fflush(dev->trace);
+            log_info("DTL 2000 serial trace: %s", filename);
+        } else {
+            log_error("DTL 2000 serial trace: failed to open %s", filename);
+        }
+    }
 }

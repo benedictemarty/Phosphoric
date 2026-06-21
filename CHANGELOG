@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.5-alpha] - 2026-06-21
+
+### Sprint 60f — Unification des transports série DTL 2000 (recommandation #1)
+
+### Changed
+- **Transports série factorisés** : nouveau helper `serial_transport_create()`
+  (+ `parse_host_port()`) dans `src/main.c`, source unique de vérité pour les
+  backends *transparents* (tuyaux d'octets bruts) : loopback, tcp:H:P, pty, com:.
+  Utilisé à la fois par `--serial` et `--dtl2000`, qui ne peuvent plus diverger.
+- **`--dtl2000` accepte désormais `com:`** (vrai périphérique série) en plus de
+  loopback/tcp/pty, via le helper partagé.
+- **Distinction transport transparent vs backend à protocole** : `modem` (Hayes),
+  `digitelec:` et `picowifi` injectent leur propre couche commande/UART et restent
+  **réservés à `--serial`**. Le DTL 2000 est composé par son **PIA 6821** (bit
+  ligne décroché, pas de commande AT) et transporte des données V23 brutes : une
+  couche Hayes derrière le DTL serait infidèle, donc `--dtl2000 modem` est rejeté.
+- `--help` et le message d'erreur de transport DTL mis à jour (mention « dialled
+  via PIA, not Hayes AT »).
+
+### Added
+- 3 assertions e2e dans `tests/integration/test_dtl2000_txrx.sh` : `--dtl2000 pty`
+  accepté (transparent), `--dtl2000 modem` rejeté (infidèle), transport inconnu
+  rejeté proprement.
+
+  Refactor sans changement de comportement pour `--serial` (suite `test-serial`
+  inchangée ; `--serial modem` toujours fonctionnel). 624 tests PASS (+3).
+
+## [1.21.4-alpha] - 2026-06-21
+
+### Sprint 60e — Trace série TX/RX du Digitelec DTL 2000 + validation OTRM
+
+### Added
+- **Trace TX/RX ACIA 6850 du DTL 2000** : `--serial-trace FICHIER` couvre désormais
+  aussi la carte `--dtl2000` (jusqu'ici réservé à l'ACIA 6551 `--serial`). Chaque
+  octet émis/reçu est journalisé (dir, hex, ASCII, statut RDRF/TDRE/DCD/CTS,
+  compteurs TX/RX, note `sent`/`recv`/`dropped`). Nouveau champ `dtl2000_t.trace`
+  + API `dtl2000_set_trace()` (`src/io/dtl2000.c`, `include/io/dtl2000.h`),
+  câblage dans `src/main.c`.
+- **Test e2e `make test-dtl2000-txrx`** (`tests/integration/test_dtl2000_txrx.sh`) :
+  boote le driver `examples/dtl2000-test.bas` sur la carte PIA/ACIA en loopback,
+  capture la trace et vérifie automatiquement que les 10 octets émis (`A`..`J`)
+  reviennent identiques en RX, sans aucun `dropped`. 6 assertions. Skip gracieux
+  si l'émulateur/ROM/bas2tap absents.
+
+### Validated
+- **OTRM 2.00 (build `otrm-mc6850@3fc.tap` d'iss/raxiss)** boote sur l'émulation
+  DTL 2000 : auto-exec ($C7), barre de statut « ACIA 6850 @ 0x3fc » → le terminal
+  d'époque détecte notre ACIA à la bonne adresse. Validation par vrai logiciel,
+  manquante depuis le sprint 51. POKEs d'init 1200/1200 d'iss confirment `DDRA=$F4`.
+
+  621 tests (615 + 6 assertions e2e), tous au vert.
+
 ## [1.21.3-alpha] - 2026-06-21
 
 ### Sprint 60d — Terminal NNTP/Usenet (CRLF) pour Eternal-September
