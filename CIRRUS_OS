@@ -2,9 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.0-alpha
-Build Status: ALPHA (Sprint 60 : injection SHIFT G/D `\Lx`/`\Rx` + outils validation clavier tools/keytest/ — 86 touches/combos validés sur ORIC-1 ET Atmos = 172/172 OK ; SHIFT L/R distinct matrice (col4/col7), CTRL+C=BREAK, FUNCT ignoré par ROM ; Sprint 59b = fix FUNCT col 5 ; 615 tests PASS ; build SDL2=1 OK)
-Last Updated: 2026-06-20
+Version: 1.21.1-alpha
+Build Status: ALPHA (Sprint 60b : outils modem tools/modem/ — terminal WiFi LOCI BASIC pilotant un VRAI PicoWiFiModemUSB (USB hôte) via com: + ACIA $0380 + --loci, validé end-to-end (TX ATI -> RX réponse modem sur écran Oric) ; Sprint 60 = SHIFT G/D + validation clavier 172/172 ; 615 tests PASS ; build SDL2=1 OK)
+Last Updated: 2026-06-21
 
 ================================================================
 

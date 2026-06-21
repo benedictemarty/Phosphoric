@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.1-alpha] - 2026-06-21
+
+### Sprint 60b — Terminal WiFi LOCI (PicoWiFiModemUSB réel via backend com:)
+
+### Added
+- **Outils modem `tools/modem/`** : pilotes BASIC pour utiliser un **vrai**
+  PicoWiFiModemUSB (branché en USB sur l'hôte) depuis le Oric émulé, dans la
+  config LOCI authentique (`--loci`, ACIA 6551 à **$0380**, backend
+  `--serial com:9600,8,N,1,/dev/ttyACM0`).
+  - `modem_term.bas` — terminal full-duplex interactif (clavier→TX, RX→écran,
+    sans écho local). Pilote ACIA : control `$1E`, command `$0B`.
+  - `modem_probe.bas` — sonde `ATI` auto-run.
+  - `README.md` — câblage, commandes AT, validation.
+- **Validation end-to-end** (`--serial-trace`) : `TX: ATI\r` → `RX: Pico WiFi
+  modem … WiFi status: CONNECTED … OK` du vrai modem affiché sur l'écran du Oric
+  via l'ACIA LOCI émulée à $0380 (WiFi réel « AlterOP New », RSSI live).
+  Outils/doc uniquement, 615 tests inchangés.
+
 ## [1.21.0-alpha] - 2026-06-20
 
 ### Sprint 60 — Injection SHIFT gauche/droit + validation clavier complète ORIC-1/Atmos

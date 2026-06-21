@@ -394,6 +394,19 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60b: Terminal WiFi LOCI — PicoWiFiModemUSB réel (v1.21.1-alpha) - DONE
+
+Utilisation d'un VRAI PicoWiFiModemUSB (branché en USB sur l'hôte) depuis le
+Oric émulé, en config LOCI authentique.
+
+- [x] **Outils `tools/modem/`** : `modem_term.bas` (terminal full-duplex
+      clavier↔modem), `modem_probe.bas` (sonde ATI), `README.md`.
+- [x] **Chaîne** : Oric BASIC → ACIA 6551 `$0380` (`--acia-addr 0380`, `--loci`)
+      → backend `--serial com:9600,8,N,1,/dev/ttyACM0` → vrai Pico → WiFi réel.
+- [x] **Validé end-to-end** (`--serial-trace`) : `TX ATI\r` → `RX "Pico WiFi
+      modem ... WiFi status: CONNECTED ... OK"` du vrai modem affiché à l'écran
+      du Oric (RSSI live). Outils/doc uniquement, 615 tests inchangés.
+
 ### Sprint 60: Injection SHIFT G/D + validation clavier ORIC-1/Atmos (v1.21.0-alpha) - DONE
 
 Complète l'injection des modificateurs (CTRL/FUNCT) avec les deux SHIFT, et
