@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.11-alpha] - 2026-06-21
+
+### Sprint 60l — Module ACIA 6850 (MC6850) autonome + rebranchement du DTL 2000
+
+### Added
+- **Module ACIA 6850 (MC6850) complet et réutilisable** (`src/io/acia6850.c`,
+  `include/io/acia6850.h`) : registres Control/Status + Tx/Rx Data, décodage
+  word-select (format de trame + masque de données), champ transmit-control
+  (RTS bas + Tx IRQ), RIE, statut RDRF/TDRE/DCD/CTS/IRQ, chemin RX/TX
+  (`rx_byte`/`tx_complete`), résolution d'IRQ (RIE&RDRF, TIE&TDRE), pins
+  d'entrée DCD/CTS, callback IRQ. (Le latch d'IRQ sur perte DCD du vrai chip
+  n'est pas modélisé — le seul utilisateur, le DTL 2000, sonde DCD.)
+- **Suite `make test-acia6850`** (`tests/unit/test_acia6850.c`, 11 tests).
+
+### Changed
+- **Le DTL 2000 utilise désormais ce module** : les 7 champs ACIA ad-hoc de
+  `dtl2000_t` (control/status/rdr/tdr/framebits/bitmask/tx_carrier) sont
+  remplacés par un `acia6850_t acia`. `dtl2000` conserve le baud/timing V23, le
+  backend et le gating TX/carrier ; il pilote DCD/CTS du 6850 depuis l'état de
+  ligne, route control/status/data via `acia6850_*`, et reçoit l'IRQ par
+  callback. **Aucune régression** : 15 tests DTL + e2e + boot OTRM identiques.
+
+  Avec le sprint 60k (PIA), le DTL 2000 est maintenant **entièrement composé de
+  deux modules réutilisables** (PIA 6821 + ACIA 6850), fidèle à son matériel.
+  655 tests PASS (+11).
+
 ## [1.21.10-alpha] - 2026-06-21
 
 ### Sprint 60k — Module PIA 6821 (MC6821) autonome + rebranchement du DTL 2000

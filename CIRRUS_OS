@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.10-alpha
-Build Status: ALPHA (Sprint 60k : module PIA 6821 (MC6821) autonome et réutilisable (src/io/pia6821.c) — 2 ports A/B, CA1/CB1 IRQ1, CA2/CB2 entrée IRQ2 + sortie set-reset/pulse/handshake, callbacks ; DTL 2000 rebranché dessus sans régression (15 tests DTL + e2e + OTRM identiques) ; 14 tests PIA ; Sprint 60j = --serial-baud ; 644 tests PASS ; build SDL2=1 OK)
+Version: 1.21.11-alpha
+Build Status: ALPHA (Sprint 60l : module ACIA 6850 (MC6850) autonome et réutilisable (src/io/acia6850.c) — Control/Status + Tx/Rx Data, word-select, RTS/TIE/RIE, statut RDRF/TDRE/DCD/CTS/IRQ, DCD/CTS en entrées, callback IRQ ; DTL 2000 rebranché dessus sans régression (15 tests DTL + e2e + OTRM identiques) ; DTL = PIA 6821 + ACIA 6850 réutilisables ; 11 tests ACIA ; Sprint 60k = module PIA 6821 ; 655 tests PASS ; build SDL2=1 OK)
 Last Updated: 2026-06-21
 
 ================================================================

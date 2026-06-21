@@ -193,7 +193,7 @@ TEST(test_mode_select_bit4) {
 TEST(test_acia_master_reset) {
     setup();
     /* Inject a received byte first */
-    dev.acia_status |= DTL_ACIA_SR_RDRF;
+    dev.acia.status |= DTL_ACIA_SR_RDRF;
     dtl2000_write(&dev, A_CS, DTL_ACIA_RESET);   /* $03 */
     uint8_t st = dtl2000_read(&dev, A_CS);
     ASSERT_FALSE(st & DTL_ACIA_SR_RDRF);
@@ -206,13 +206,13 @@ TEST(test_acia_word_select_mask) {
 
     /* $49 = 7E1 → 7-bit data mask */
     dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_CFG);   /* $49 */
-    ASSERT_EQ(dev.bitmask, 0x7F);
-    ASSERT_EQ(dev.framebits, 10);   /* start+7+parity+1 stop */
+    ASSERT_EQ(dev.acia.bitmask, 0x7F);
+    ASSERT_EQ(dev.acia.framebits, 10);   /* start+7+parity+1 stop */
 
     /* $55 = 8N1 → 8-bit data mask */
     dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_CFG);    /* $55 */
-    ASSERT_EQ(dev.bitmask, 0xFF);
-    ASSERT_EQ(dev.framebits, 10);   /* start+8+0+1 stop */
+    ASSERT_EQ(dev.acia.bitmask, 0xFF);
+    ASSERT_EQ(dev.acia.framebits, 10);   /* start+8+0+1 stop */
 
     teardown();
 }
@@ -222,17 +222,17 @@ TEST(test_acia_carrier_emission_bit) {
 
     /* $49: TC = 10 → RTS high → NOT emitting */
     dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_CFG);   /* $49 */
-    ASSERT_FALSE(dev.tx_carrier);
+    ASSERT_FALSE(dev.acia.rts_low);
 
     /* $09: TC = 00 → RTS low → emitting carrier */
     dtl2000_write(&dev, A_CS, DTL_ACIA_ASYM_EMIT);  /* $09 */
-    ASSERT_TRUE(dev.tx_carrier);
+    ASSERT_TRUE(dev.acia.rts_low);
 
     /* Symmetric: $55 no emit, $15 emit */
     dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_CFG);    /* $55 */
-    ASSERT_FALSE(dev.tx_carrier);
+    ASSERT_FALSE(dev.acia.rts_low);
     dtl2000_write(&dev, A_CS, DTL_ACIA_SYM_EMIT);   /* $15 */
-    ASSERT_TRUE(dev.tx_carrier);
+    ASSERT_TRUE(dev.acia.rts_low);
 
     teardown();
 }

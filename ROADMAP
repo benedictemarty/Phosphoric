@@ -394,6 +394,18 @@ la source Oricutron avant correction.
 - [x] Cas aligné sur rangée paire (le plus courant) : sortie inchangée, non-régression.
 - [x] Suite complète 604 tests PASS (+1 video)
 
+### Sprint 60l: Module ACIA 6850 (MC6850) autonome + rebranchement DTL (v1.21.11-alpha) - DONE
+
+- [x] **Module ACIA 6850 complet et réutilisable** (`src/io/acia6850.c` + `.h`) :
+      Control/Status + Tx/Rx Data, word-select (trame+masque), transmit-control
+      (RTS bas / Tx IRQ), RIE, statut RDRF/TDRE/DCD/CTS/IRQ, chemin RX/TX, IRQ
+      (RIE&RDRF | TIE&TDRE), pins DCD/CTS en entrées, callback IRQ.
+- [x] **DTL 2000 rebranché** : 7 champs ACIA ad-hoc → `acia6850_t` ; le DTL garde
+      le baud/timing V23, le backend et le gating TX, pilote DCD/CTS et reçoit
+      l'IRQ par callback. Aucune régression (15 tests DTL + e2e + OTRM identiques).
+- [x] **DTL 2000 désormais entièrement composé de PIA 6821 + ACIA 6850 réutilisables.**
+- [x] Suite `make test-acia6850` (11 tests). 655 tests PASS (+11).
+
 ### Sprint 60k: Module PIA 6821 (MC6821) autonome + rebranchement DTL (v1.21.10-alpha) - DONE
 
 - [x] **Module PIA 6821 complet et réutilisable** (`src/io/pia6821.c` + `.h`) :

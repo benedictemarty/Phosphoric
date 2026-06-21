@@ -46,6 +46,7 @@
 #include <stdio.h>
 
 #include "io/pia6821.h"
+#include "io/acia6850.h"
 
 /* Forward declarations */
 typedef struct serial_backend_s serial_backend_t;
@@ -138,18 +139,13 @@ typedef struct dtl2000_s {
     /* PIA 6821 (Port A drives the line/mode; Port B unused by the card). */
     pia6821_t pia;
 
-    /* ACIA 6850 registers */
-    uint8_t acia_control;        /**< last control write */
-    uint8_t acia_status;         /**< status (read) */
-    uint8_t acia_rdr;            /**< received byte */
-    uint8_t acia_tdr;            /**< byte being transmitted */
+    /* ACIA 6850 (registers, status, IRQ, frame format). The DCD/CTS input pins
+     * are driven by the modem-line logic below; the baud clock is external. */
+    acia6850_t acia;
 
     /* Decoded modem state */
     bool    line_connected;      /**< ORA bit2 == 0 (line closed) */
     bool    symmetric;           /**< ORA bit4 == 0 (symmetric V23) */
-    bool    tx_carrier;          /**< RTS low → emitting carrier */
-    uint8_t bitmask;             /**< data mask (0x7F=7-bit, 0xFF=8-bit) */
-    uint8_t framebits;           /**< total bits per frame (timing) */
     uint32_t rx_baud, tx_baud;   /**< current baud rates */
 
     /* Timing (cycle counters) */

@@ -23,32 +23,21 @@ static void dtl_trace_byte(dtl2000_t* dev, const char* dir, uint8_t byte,
                            const char* note)
 {
     if (!dev->trace) return;
+    uint8_t st = dev->acia.status;
     char c = (byte >= 0x20 && byte < 0x7F) ? (char)byte : '.';
     fprintf(dev->trace,
             "%-3s  %02X  '%c'  ST=%02X %s%s%s%s  TX=%u RX=%u  %s\n",
-            dir, byte, c, dev->acia_status,
-            (dev->acia_status & DTL_ACIA_SR_RDRF) ? "RDRF " : "",
-            (dev->acia_status & DTL_ACIA_SR_TDRE) ? "TDRE " : "",
-            (dev->acia_status & DTL_ACIA_SR_DCD)  ? "DCD "  : "",
-            (dev->acia_status & DTL_ACIA_SR_CTS)  ? "CTS"   : "",
+            dir, byte, c, st,
+            (st & DTL_ACIA_SR_RDRF) ? "RDRF " : "",
+            (st & DTL_ACIA_SR_TDRE) ? "TDRE " : "",
+            (st & DTL_ACIA_SR_DCD)  ? "DCD "  : "",
+            (st & DTL_ACIA_SR_CTS)  ? "CTS"   : "",
             dev->tx_count, dev->rx_count,
             note ? note : "");
 }
 
-/* Decode word-select (6850 bits 2-4) into data bits / parity / stop bits,
- * returning the total frame length and setting the data mask. */
-static uint8_t dtl_frame_from_ws(uint8_t ws, uint8_t* bitmask_out)
-{
-    /* ws: 0=7E2 1=7O2 2=7E1 3=7O1 4=8N2 5=8N1 6=8E1 7=8O1 */
-    uint8_t data   = (ws < 4) ? 7 : 8;
-    uint8_t parity = (ws == 4 || ws == 5) ? 0 : 1;
-    uint8_t stop   = (ws == 0 || ws == 1 || ws == 4) ? 2 : 1;
-    if (bitmask_out) *bitmask_out = (data == 7) ? 0x7F : 0xFF;
-    return (uint8_t)(1 + data + parity + stop);  /* + start bit */
-}
-
 /* Recompute baud rates and per-byte cycle reloads from the current mode
- * and frame format. */
+ * and the ACIA's frame format. */
 static void dtl_recalc_timing(dtl2000_t* dev)
 {
     if (dev->symmetric) {
@@ -59,7 +48,7 @@ static void dtl_recalc_timing(dtl2000_t* dev)
         dev->rx_baud = DTL_V23_RX_BAUD;  /* 1200 */
         dev->tx_baud = DTL_V23_TX_BAUD;  /* 75   */
     }
-    uint32_t fb = dev->framebits ? dev->framebits : 10;
+    uint32_t fb = dev->acia.framebits ? dev->acia.framebits : 10;
     dev->rx_reload = (int32_t)((uint64_t)DTL2000_CLOCK_HZ * fb / dev->rx_baud);
     dev->tx_reload = (int32_t)((uint64_t)DTL2000_CLOCK_HZ * fb / dev->tx_baud);
     if (dev->rx_reload < 1) dev->rx_reload = 1;
@@ -75,32 +64,17 @@ static void dtl_refresh_signals(dtl2000_t* dev)
                    dev->backend && dev->backend->connected &&
                    dev->backend->connected(dev->backend);
 
-    if (carrier) dev->acia_status &= (uint8_t)~DTL_ACIA_SR_DCD;
-    else         dev->acia_status |= DTL_ACIA_SR_DCD;
-
-    /* Clear to send once the line is up and carrier established. */
-    if (carrier) dev->acia_status &= (uint8_t)~DTL_ACIA_SR_CTS;
-    else         dev->acia_status |= DTL_ACIA_SR_CTS;
+    /* Drive the ACIA's DCD/CTS input pins from the modem-line state. */
+    acia6850_set_dcd(&dev->acia, carrier);
+    acia6850_set_cts(&dev->acia, carrier);
 }
 
-/* Recompute the IRQ status bit (and optionally drive the CPU line). */
-static void dtl_update_irq(dtl2000_t* dev)
+/* The ACIA's IRQ output (called by acia6850_*) routed to the CPU /IRQ line. */
+static void dtl_acia_irq_cb(void* ud, bool active)
 {
-    bool irq = false;
-    if ((dev->acia_control & DTL_ACIA_CR_RIE) &&
-        (dev->acia_status & DTL_ACIA_SR_RDRF)) {
-        irq = true;
-    }
-    uint8_t tc = (uint8_t)((dev->acia_control & DTL_ACIA_CR_TC_MASK) >> DTL_ACIA_CR_TC_SHIFT);
-    if (tc == DTL_TC_RTS_LOW_TIE_ON && (dev->acia_status & DTL_ACIA_SR_TDRE)) {
-        irq = true;
-    }
-
-    if (irq) dev->acia_status |= DTL_ACIA_SR_IRQ;
-    else     dev->acia_status &= (uint8_t)~DTL_ACIA_SR_IRQ;
-
-    if (irq && dev->irq_set)      dev->irq_set(dev->irq_userdata);
-    else if (!irq && dev->irq_clr) dev->irq_clr(dev->irq_userdata);
+    dtl2000_t* dev = (dtl2000_t*)ud;
+    if (active && dev->irq_set)       dev->irq_set(dev->irq_userdata);
+    else if (!active && dev->irq_clr) dev->irq_clr(dev->irq_userdata);
 }
 
 /* Decode the Port A output register after a write: line connection + mode. */
@@ -125,54 +99,39 @@ static void dtl_pia_update_outputs(dtl2000_t* dev)
 /* Apply a write to the ACIA control register. */
 static void dtl_acia_control_write(dtl2000_t* dev, uint8_t value)
 {
-    if ((value & DTL_ACIA_CR_CDS_MASK) == DTL_ACIA_CR_MASTER_RST) {
-        /* Master reset: clear receiver/transmitter state, TDRE set. */
-        dev->acia_control = value;
-        dev->acia_status  = DTL_ACIA_SR_TDRE;
-        dev->acia_rdr     = 0;
-        dev->tx_busy      = false;
-        dev->tx_cycles    = 0;
-        dev->rx_cycles    = 0;
+    bool master_reset = acia6850_control_write(&dev->acia, value);
+    if (master_reset) {
+        dev->tx_busy   = false;
+        dev->tx_cycles = 0;
+        dev->rx_cycles = 0;
         dtl_refresh_signals(dev);
-        dtl_update_irq(dev);
         return;
     }
-
-    dev->acia_control = value;
-
-    uint8_t ws = (uint8_t)((value & DTL_ACIA_CR_WS_MASK) >> DTL_ACIA_CR_WS_SHIFT);
-    dev->framebits = dtl_frame_from_ws(ws, &dev->bitmask);
-
-    uint8_t tc = (uint8_t)((value & DTL_ACIA_CR_TC_MASK) >> DTL_ACIA_CR_TC_SHIFT);
-    /* Carrier emitted when /RTS is driven low — every TC value except the
-     * "RTS high" code (10). */
-    dev->tx_carrier = (tc != DTL_TC_RTS_HIGH_TIE_OFF);
-
-    dtl_recalc_timing(dev);
+    dtl_recalc_timing(dev);     /* frame format may have changed */
     dtl_refresh_signals(dev);
-    dtl_update_irq(dev);
 }
 
 /* Apply a write to the ACIA data register: queue a byte for transmission. */
 static void dtl_acia_data_write(dtl2000_t* dev, uint8_t value)
 {
-    dev->acia_tdr = (uint8_t)(value & dev->bitmask);
+    /* The ACIA latches TDR (masked to the frame width) and clears TDRE. */
+    acia6850_write_data(&dev->acia, value);
+    uint8_t tdr = dev->acia.tdr;
 
-    if (dev->line_connected && dev->tx_carrier &&
+    /* The modem only puts the byte on the line when connected and emitting. */
+    if (dev->line_connected && acia6850_rts_low(&dev->acia) &&
         dev->backend && dev->backend->send) {
-        dev->backend->send(dev->backend, dev->acia_tdr);
+        dev->backend->send(dev->backend, tdr);
         dev->tx_count++;
-        dtl_trace_byte(dev, "TX", dev->acia_tdr, "sent");
+        dtl_trace_byte(dev, "TX", tdr, "sent");
     } else {
-        dtl_trace_byte(dev, "TX", dev->acia_tdr,
+        dtl_trace_byte(dev, "TX", tdr,
                        dev->line_connected ? "dropped (no carrier)"
                                            : "dropped (line open)");
     }
 
-    dev->acia_status &= (uint8_t)~DTL_ACIA_SR_TDRE;  /* transmitter busy */
     dev->tx_busy   = true;
     dev->tx_cycles = dev->tx_reload;
-    dtl_update_irq(dev);
 }
 
 /* ───────────────────────────────────────────────────────────────────────
@@ -191,17 +150,13 @@ void dtl2000_reset(dtl2000_t* dev)
     pia6821_init(&dev->pia);
     pia6821_reset(&dev->pia);
 
-    dev->acia_control = 0;
-    /* Power-on: transmitter empty, line open → carrier absent / not CTS. */
-    dev->acia_status  = DTL_ACIA_SR_TDRE | DTL_ACIA_SR_DCD | DTL_ACIA_SR_CTS;
-    dev->acia_rdr = 0;
-    dev->acia_tdr = 0;
+    /* Wire the ACIA's IRQ output to the CPU /IRQ line, then reset it. */
+    dev->acia.irq_out  = dtl_acia_irq_cb;
+    dev->acia.userdata = dev;
+    acia6850_init(&dev->acia);
 
     dev->line_connected = false;
     dev->symmetric      = false;       /* asymmetric V23 by default */
-    dev->tx_carrier     = false;
-    dev->bitmask        = 0x7F;        /* 7-bit until configured */
-    dev->framebits      = 10;
     dev->tx_busy        = false;
     dev->tx_cycles = dev->rx_cycles = 0;
     dev->tx_count = dev->rx_count = 0;
@@ -228,14 +183,11 @@ uint8_t dtl2000_read(dtl2000_t* dev, uint16_t addr)
             return pia6821_read(&dev->pia, (uint8_t)off);
         case DTL_REG_ACIA_CS:
             dtl_refresh_signals(dev);
-            return dev->acia_status;
+            return acia6850_status(&dev->acia);
         case DTL_REG_ACIA_D: {
-            uint8_t v = dev->acia_rdr;
-            /* Reading data clears RDRF; the blank read also re-arms the DCD
-             * latch per the manual. */
-            dev->acia_status &= (uint8_t)~DTL_ACIA_SR_RDRF;
+            /* Reading data clears RDRF (and recomputes IRQ); refresh DCD/CTS. */
+            uint8_t v = acia6850_read_data(&dev->acia);
             dtl_refresh_signals(dev);
-            dtl_update_irq(dev);
             return v;
         }
         default:
@@ -285,15 +237,13 @@ void dtl2000_tick(dtl2000_t* dev, int cycles)
         dev->rx_cycles += dev->rx_reload;
         if (dev->rx_cycles <= 0) dev->rx_cycles = dev->rx_reload;
 
-        if (dev->line_connected && !(dev->acia_status & DTL_ACIA_SR_RDRF)) {
+        if (dev->line_connected && !acia6850_rdrf(&dev->acia)) {
             if (dev->backend->poll && dev->backend->poll(dev->backend)) {
                 uint8_t b = 0;
                 if (dev->backend->recv && dev->backend->recv(dev->backend, &b)) {
-                    dev->acia_rdr = (uint8_t)(b & dev->bitmask);
-                    dev->acia_status |= DTL_ACIA_SR_RDRF;
+                    acia6850_rx_byte(&dev->acia, b);
                     dev->rx_count++;
-                    dtl_trace_byte(dev, "RX", dev->acia_rdr, "recv");
-                    dtl_update_irq(dev);
+                    dtl_trace_byte(dev, "RX", dev->acia.rdr, "recv");
                 }
             }
         }
@@ -304,8 +254,7 @@ void dtl2000_tick(dtl2000_t* dev, int cycles)
         dev->tx_cycles -= cycles;
         if (dev->tx_cycles <= 0) {
             dev->tx_busy = false;
-            dev->acia_status |= DTL_ACIA_SR_TDRE;
-            dtl_update_irq(dev);
+            acia6850_tx_complete(&dev->acia);
         }
     }
 }

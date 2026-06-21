@@ -159,3 +159,4 @@ __pycache__/
 # Save states
 *.sav
 *.state
+test_acia6850
