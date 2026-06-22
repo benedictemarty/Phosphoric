@@ -42,12 +42,18 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
 - **KEYS** — affiche/masque le clavier virtuel.
 - **FULL** — plein écran (le canvas est centré et mis à la hauteur de l'écran,
   ratio 240/224 conservé).
+- **CRT** — filtre scanlines + vignette par-dessus l'écran (état mémorisé).
+- **SAVE / REST** — sauvegarde l'état dans un `.ost` (téléchargé) / restaure un
+  `.ost` (appliqué **à chaud**, sans reboot).
+- **LEDs TAPE / DISK** (sous l'écran) — s'allument pendant un CLOAD (cassette)
+  ou un accès disque (WD1793 BUSY).
 - **Clavier virtuel ORIC fidèle**, en **overlay semi-transparent par-dessus
   l'écran** : disposition réelle (ESC, CTRL, FUNCT, 2× SHIFT, RETURN, DEL, SPACE,
-  flèches ↑←↓→) avec modificateurs **collants CTRL / FUNCT / SHIFT**. Les
-  symboles shiftés affichés en exposant sont **dérivés de la matrice réelle**
-  (`char_map`) : `2`→`@`, `6`→`^`, `-`→`_`, `;`→`:`, `[`→`{`, `\`→`|`, etc.
-  En **ORIC-1**, la touche **FUNCT (Atmos-only) est absente**.
+  flèches ↑←↓→) avec modificateurs **collants CTRL / FUNCT / SHIFT** (le Shift/
+  Ctrl/Alt physiques pilotent aussi ces modificateurs). Les symboles shiftés
+  affichés en exposant sont **dérivés de la matrice réelle** (`char_map`) :
+  `2`→`@`, `6`→`^`, `-`→`_`, `;`→`:`, `[`→`{`, `\`→`|`, etc. En **ORIC-1**, la
+  touche **FUNCT (Atmos-only) est absente**.
 
 > **CTRL+T et autres chords :** le navigateur réserve certains raccourcis
 > (CTRL+T = nouvel onglet) au niveau de l'OS — ils n'atteignent jamais le

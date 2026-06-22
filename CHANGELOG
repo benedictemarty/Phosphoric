@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.23-alpha] - 2026-06-23
+
+### Sprint 60x — Polissage UI web : filtre CRT, LEDs d'activité I/O, sauvegarde/restauration d'état
+
+### Added
+- **Filtre CRT** (`web/shell.html`) — overlay scanlines + vignette par-dessus
+  l'écran avec léger boost « phosphore » du canvas, activable depuis le bouton
+  **CRT** du rail (état mémorisé en `localStorage`). 100% CSS, aucun coût émulation.
+- **LEDs d'activité I/O** — deux indicateurs **TAPE** (rouge) / **DISK** (vert)
+  sous l'écran, alimentés par le nouvel export C `web_io_activity()`
+  (`src/main.c`, gardé `__EMSCRIPTEN__`) : bit0 = `tape_readbyte_active` (CLOAD
+  en cours), bit1 = `microdisc.fdc.status & FDC_ST_BUSY`. Sondés à ~120 ms.
+- **Sauvegarde / restauration d'état `.ost` depuis l'UI** — boutons **SAVE**
+  (télécharge un instantané) et **REST** (recharge un `.ost`, appliqué **à
+  chaud** sans reboot) dans le rail. Exports C `web_save_state()` /
+  `web_load_state()` (via `savestate_save/load` vers `/state.ost` du FS virtuel,
+  lu/écrit en JS avec `FS` + Blob download / file input).
+- Flags WASM : `EXPORTED_FUNCTIONS` étendu (`_web_io_activity`,
+  `_web_save_state`, `_web_load_state`).
+
+### Validated
+- Build natif + WASM propres (les exports sont `__EMSCRIPTEN__`-only → natif
+  inchangé). Validé en Chromium headless : filtre CRT (scanlines + vignette
+  visibles), rail SAVE/REST/CRT + LEDs rendus, round-trip d'état
+  `SAVE=1 / 65799 octets / LOAD=1`. 699 tests inchangés.
+
 ## [1.21.22-alpha] - 2026-06-23
 
 ### Sprint 60w — Intégration des contributions LOCI de xahmol (PR #10, #19 ; #20 déclinée)

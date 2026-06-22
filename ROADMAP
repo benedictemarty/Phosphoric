@@ -464,6 +464,20 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60x: Polissage UI web — filtre CRT, LEDs I/O, save/load état (v1.21.23-alpha) - DONE
+
+- [x] **Filtre CRT** (`web/shell.html`) : overlay scanlines + vignette + boost
+      phosphore, bouton **CRT** du rail, persistant `localStorage`, 100% CSS.
+- [x] **LEDs d'activité TAPE/DISK** sous l'écran via export
+      `web_io_activity()` (`tape_readbyte_active` / `fdc.status & FDC_ST_BUSY`).
+- [x] **Sauvegarde/restauration `.ost` depuis l'UI** : boutons **SAVE**
+      (download instantané) / **REST** (upload + restauration **à chaud**),
+      exports `web_save_state()` / `web_load_state()` (`savestate_save/load`).
+- [x] Exports `__EMSCRIPTEN__`-only → natif inchangé. Validé Chromium headless
+      (CRT, round-trip état SAVE=1/65799 o/LOAD=1). 699 tests inchangés.
+- [ ] Pistes futures : courbure d'écran CRT (WebGL), persistance auto de l'état
+      (resume on reload), slots de sauvegarde multiples.
+
 ### Sprint 60w: Intégration des contributions LOCI de xahmol (v1.21.22-alpha) - DONE
 
 - [x] **PR #10** intégrée : `op_unlink` (`src/io/loci_fs.c`) supprime les dossiers

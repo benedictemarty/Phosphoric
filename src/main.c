@@ -80,6 +80,27 @@ EMSCRIPTEN_KEEPALIVE void web_key(int c, int ctrl, int funct, int shift, int dow
 EMSCRIPTEN_KEEPALIVE void web_key_release_all(void) {
     if (g_web_emu) oric_keyboard_release_all(&g_web_emu->keyboard);
 }
+
+/* I/O activity bitmap for the on-screen LEDs: bit0 = tape (CLOAD in progress),
+ * bit1 = disk (WD1793 BUSY). Polled by the web UI. */
+EMSCRIPTEN_KEEPALIVE int web_io_activity(void) {
+    if (!g_web_emu) return 0;
+    int bits = 0;
+    if (g_web_emu->tape_readbyte_active) bits |= 1;
+    if (g_web_emu->microdisc.fdc.status & FDC_ST_BUSY) bits |= 2;
+    return bits;
+}
+
+/* Save a snapshot to /state.ost in the virtual FS (JS downloads it). 1 = ok. */
+EMSCRIPTEN_KEEPALIVE int web_save_state(void) {
+    return (g_web_emu && savestate_save(g_web_emu, "/state.ost")) ? 1 : 0;
+}
+
+/* Restore a snapshot from /state.ost (JS writes the uploaded bytes first).
+ * Applied live to the running machine — no reload. 1 = ok. */
+EMSCRIPTEN_KEEPALIVE int web_load_state(void) {
+    return (g_web_emu && savestate_load(g_web_emu, "/state.ost")) ? 1 : 0;
+}
 #endif /* __EMSCRIPTEN__ */
 
 /* Forward declarations for renderer (in renderer.c) */
