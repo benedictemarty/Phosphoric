@@ -20,6 +20,10 @@
 #include <errno.h>
 #include <time.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "emulator.h"
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
@@ -2240,9 +2244,17 @@ static void emulator_run(emulator_t* emu) {
          * SDL_Delay has ~1ms resolution, good enough for frame pacing. */
         if (!emu->headless) {
             uint32_t frame_elapsed = SDL_GetTicks() - frame_start_ticks;
-            if (frame_elapsed < 20) {
-                SDL_Delay(20 - frame_elapsed);
+            uint32_t budget = 20;
+#ifdef __EMSCRIPTEN__
+            /* In the browser the C while-loop must yield to the event loop
+             * each frame (Asyncify rewinds/unwinds the stack here). This both
+             * paces to ~50 Hz and keeps the tab responsive. */
+            emscripten_sleep(frame_elapsed < budget ? budget - frame_elapsed : 0);
+#else
+            if (frame_elapsed < budget) {
+                SDL_Delay(budget - frame_elapsed);
             }
+#endif
         }
 #endif
 

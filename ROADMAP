@@ -464,6 +464,24 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60u: Build WebAssembly — l'émulateur dans le navigateur (`make wasm`) (v1.21.20-alpha) - DONE
+
+- [x] **Cible `make wasm`** (Emscripten) : émulateur complet compilé en WASM+JS,
+      rendu `<canvas>`, audio Web Audio, clavier DOM (réutilise le port SDL2) ;
+      sortie `web/phosphoric.{html,js,wasm,data}`, ROMs préchargées, shell
+      `web/shell.html`, démarre l'Atmos.
+- [x] **Boucle principale compatible navigateur** : sous `__EMSCRIPTEN__`, le
+      limiteur de frame (`src/main.c`) cède via **Asyncify** (`emscripten_sleep`,
+      ~50 Hz) ; `-sSTACK_SIZE=8MB` (gros `emulator_t` sur la pile).
+- [x] Réseau natif (série TCP/PTY/COM, GDB, cast, TLS) lié en no-op navigateur ;
+      cœur machine + vidéo + audio + clavier + cassette + disque OK.
+- [x] **Fidélité prouvée** : sortie WASM byte-identique au natif (boot Atmos
+      headless sous Node.js → même capture PPM à 2M et 5M cycles). Build propre
+      (0 warning). Doc `docs/wasm.md`. Artefacts générés ignorés par git.
+- [ ] Pistes futures : UI web (boutons reset/load TAP-DSK, sélecteur ORIC-1/Atmos,
+      glisser-déposer de fichiers), relais WebSocket pour rétablir le modem/TLS
+      dans le navigateur, plein écran + filtres CRT, PWA installable.
+
 ### Sprint 60t: Record/replay déterministe des entrées (movie TAS) (`--record`/`--replay`) (v1.21.19-alpha) - DONE
 
 - [x] **Module movie** (`src/utils/movie.c` + `include/utils/movie.h`) :

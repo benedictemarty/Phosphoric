@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.20-alpha] - 2026-06-22
+
+### Sprint 60u — Build WebAssembly : l'émulateur dans le navigateur (`make wasm`)
+
+### Added
+- **Cible `make wasm`** (Emscripten) : compile l'émulateur complet en
+  WebAssembly + JS, rendu sur `<canvas>`, audio Web Audio, clavier DOM, en
+  réutilisant le chemin SDL2 existant (port SDL d'Emscripten). Produit dans
+  `web/` : `phosphoric.html` (shell + canvas, `web/shell.html`), `.js`, `.wasm`,
+  et `.data` (ROMs de `roms/` préchargées dans le FS virtuel). Démarre l'Atmos.
+- **Boucle principale compatible navigateur** : sous `__EMSCRIPTEN__`, le
+  limiteur de frame de `src/main.c` rend la main à la boucle d'événements via
+  **Asyncify** (`emscripten_sleep`) — cadence ~50 Hz et garde l'onglet réactif.
+  `-sSTACK_SIZE=8MB` (le gros `emulator_t` vit sur la pile de `main()`).
+- Les fonctionnalités réseau natives (backends série TCP/PTY/COM, stub GDB,
+  serveur Cast, TLS) se lient en no-op dans le navigateur ; le cœur machine,
+  vidéo, audio, clavier, cassette et disque fonctionnent.
+
+### Validated
+- Build WASM **propre** (0 warning, 0 erreur) sur les 49 sources.
+- **Fidélité prouvée — sortie WASM byte-identique au natif** : un boot Atmos
+  headless (`-n -c N --screenshot`) compilé en WASM et exécuté sous Node.js
+  produit exactement la même capture PPM que le binaire natif (vérifié à 2M
+  **et** 5M cycles ; à 5M, l'écran « ORIC EXTENDED BASIC V1.1 / Ready » est
+  rendu à l'octet près). Le déterminisme cycle-exact survit à la compilation.
+- Build natif + suite complète inchangés (**696 tests PASS**). `web/shell.html`
+  versionné ; artefacts générés (`.js`/`.wasm`/`.data`) ignorés par git.
+- Doc `docs/wasm.md`.
+
 ## [1.21.19-alpha] - 2026-06-22
 
 ### Sprint 60t — Record/replay déterministe des entrées (movie TAS) (`--record` / `--replay`)

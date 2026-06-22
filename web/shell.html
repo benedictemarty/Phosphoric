@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phosphoric — ORIC-1/Atmos emulator (WebAssembly)</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; background: #0b0b0f; color: #d8d8e0;
+    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; gap: 14px; padding: 18px 12px;
+  }
+  h1 { font-size: 16px; font-weight: 600; letter-spacing: .04em; margin: 4px 0 0; }
+  h1 small { color: #8a8a99; font-weight: 400; }
+  #frame {
+    background: #000; border: 1px solid #26263a; border-radius: 8px;
+    padding: 10px; box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  /* ORIC display is 240x224; scale up crisply. */
+  canvas {
+    display: block; width: 720px; height: 672px; max-width: 92vw; height: auto;
+    aspect-ratio: 240 / 224; image-rendering: pixelated; background: #000;
+    border-radius: 4px;
+  }
+  #status { font-size: 12px; color: #8a8a99; min-height: 1.2em; }
+  .hint { font-size: 12px; color: #6f6f80; max-width: 720px; text-align: center; line-height: 1.5; }
+  .hint kbd {
+    background: #1a1a26; border: 1px solid #30304a; border-radius: 4px;
+    padding: 1px 5px; font-size: 11px; color: #c8c8d6;
+  }
+  a { color: #7aa2ff; }
+</style>
+</head>
+<body>
+  <h1>Phosphoric <small>— ORIC-1 / Atmos · WebAssembly</small></h1>
+  <div id="frame"><canvas id="canvas" tabindex="1" oncontextmenu="event.preventDefault()" width="240" height="224"></canvas></div>
+  <div id="status">Loading…</div>
+  <p class="hint">
+    Click the screen to give it keyboard focus, then type as on a real Atmos.
+    Audio starts after the first click. Try <kbd>PRINT&nbsp;2*21</kbd> then <kbd>RETURN</kbd>.
+  </p>
+
+  <script type="text/javascript">
+    var statusEl = document.getElementById('status');
+    var Module = {
+      // Boot the Atmos ROM (bundled into the virtual FS at /roms).
+      arguments: ['-r', '/roms/basic11b.rom'],
+      canvas: document.getElementById('canvas'),
+      print:    function (t) { console.log(t); },
+      printErr: function (t) { console.warn(t); },
+      setStatus: function (t) { if (statusEl) statusEl.textContent = t || ''; },
+      onRuntimeInitialized: function () { this.setStatus('Running'); }
+    };
+    Module.setStatus('Loading…');
+    // Resume the Web Audio context (autoplay policy) on first interaction.
+    window.addEventListener('click', function () {
+      if (typeof Module.SDL2 !== 'undefined' &&
+          Module.SDL2.audioContext &&
+          Module.SDL2.audioContext.state === 'suspended') {
+        Module.SDL2.audioContext.resume();
+      }
+    }, { once: false });
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

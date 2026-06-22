@@ -129,7 +129,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -583,9 +583,29 @@ uninstall:
 
 clean:
 	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TOOLS)
-	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_audio test_debugger test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_picowifi test_keyboard test_coverage
+	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_avi test_audio test_debugger test_gdbstub test_movie test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_picowifi test_keyboard test_coverage
 	rm -f tools/*.o tools/*.d
+	rm -f web/phosphoric.html web/phosphoric.js web/phosphoric.wasm web/phosphoric.data
 	find . -name '*.gcno' -o -name '*.gcda' -o -name '*.gcov' -o -name '*.d' | xargs rm -f 2>/dev/null
+
+# ═══════════════════════════════════════════════════════════════
+#  WEBASSEMBLY (Emscripten)
+# ═══════════════════════════════════════════════════════════════
+# Builds a browser bundle (HTML+JS+WASM+preloaded ROMs). Needs emsdk active
+# (`emcc` in PATH). Networking features (serial sockets/PTY, GDB stub, cast,
+# TLS) link as no-ops in the browser; the core machine, video, audio, keyboard,
+# tape and disk all run. The C main loop yields per frame via Asyncify.
+#   make wasm && (cd web && python3 -m http.server) → open localhost:8000/phosphoric.html
+EMCC ?= emcc
+WASM_OUT = web/phosphoric.html
+WASM_CFLAGS  = -O2 -std=c11 -DHAS_SDL2 -sUSE_SDL=2 -I./include
+WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
+               --preload-file roms@/roms --shell-file web/shell.html
+
+wasm: web/shell.html
+	$(EMCC) $(WASM_CFLAGS) $(LIB_SOURCES) src/main.c $(WASM_LDFLAGS) -o $(WASM_OUT)
+	@echo "WASM ready → serve web/ over HTTP and open phosphoric.html"
+	@echo "  e.g.  (cd web && python3 -m http.server 8000)  then  http://localhost:8000/phosphoric.html"
 
 help:
 	@echo "Phosphoric — ORIC-1 Emulator Makefile"
