@@ -18,10 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     dans IndexedDB, écrit dans le FS virtuel via `Module.preRun`
     (`addRunDependency`), et la machine redémarre avec `-t …-f` (cassette) ou
     `--disk-rom microdis.rom -d …` (disquette).
-  - **Clavier virtuel ORIC-1/Atmos fidèle, semi-transparent** (panneau « verre »
-    backdrop-blur) : disposition réelle (ESC/CTRL/FUNCT/2×SHIFT/RETURN/DEL/SPACE
-    + flèches ↑←↓→ en T inversé), symboles shiftés affichés en exposant
-    (! " # $ % & ' ( ) < > ? …), modificateurs **collants CTRL / FUNCT / SHIFT**.
+  - **Clavier virtuel ORIC-1/Atmos fidèle**, en **overlay semi-transparent
+    par-dessus l'écran** (panneau « verre » backdrop-blur), **affichable/masquable**
+    via le bouton **KEYS** du rail : disposition réelle (ESC/CTRL/FUNCT/2×SHIFT/
+    RETURN/DEL/SPACE + flèches ↑←↓→ en T inversé), modificateurs **collants
+    CTRL / FUNCT / SHIFT**. Les **symboles shiftés en exposant sont dérivés de la
+    matrice réelle de l'émulateur** (`char_map`, `src/io/keyboard.c`) — fidèles à
+    l'ORIC : `2`→`@`, `6`→`^`, `-`→`_`, `;`→`:`, `[`→`{`, `\`→`|`, etc.
 - **Pont clavier C↔JS** (`src/main.c`, gardé `__EMSCRIPTEN__`) : exports
   `web_key(c, ctrl, funct, shift, down)` et `web_key_release_all()` écrivant la
   matrice ORIC directement. **Résout le vol de CTRL+T par le navigateur** : la
