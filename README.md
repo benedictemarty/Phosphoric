@@ -124,7 +124,7 @@ make SDL2=1
 - **CLI** — `--rom-info [FILE]` prints to stdout or writes to file
 
 ### Modern Features
-- **Video export** — PPM, BMP, ASCII screenshots
+- **Video export** — PPM, BMP, ASCII screenshots; Motion-JPEG AVI recording (`--video`)
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
@@ -246,6 +246,9 @@ Display & Export:
   --cycles N                Run N cycles then exit
   --screenshot FILE         Screenshot at exit (.ppm/.bmp)
   --screenshot-at N:FILE    Screenshot after N cycles
+  --video FILE              Record video to a Motion-JPEG AVI file
+  --video-fps N             Recording frame rate (default: 50)
+  --video-quality N         JPEG quality 1..100 (default: 85)
   --type-keys N:TEXT        Simulate keyboard input (escapes: \n \e \u \d \l \r
                             \Cx=Ctrl+x \Fx=Funct+x \Lx/\Rx=Left/Right Shift+x \pN)
   -v, --verbose             Debug logging

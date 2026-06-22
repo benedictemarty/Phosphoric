@@ -464,6 +464,27 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60q: Export vidéo Motion-JPEG AVI (`--video`) (v1.21.16-alpha) - DONE
+
+- [x] **Module recorder AVI MJPG autonome** (`src/video/avi_recorder.c` +
+      `include/video/avi_recorder.h`) : écrit un fichier AVI complet
+      (RIFF/`hdrl`/`avih`/`strl`/`strh`/`strf` BITMAPINFOHEADER/`movi`/chunks
+      `00dc`/index `idx1`) en **Motion-JPEG**, **sans dépendance externe** —
+      parité avec l'export AVI d'Oricutron. Tailles RIFF/movi + `dwTotalFrames`/
+      `dwLength` + suggested-buffer back-patchées à `avi_recorder_close()`.
+- [x] **TU unique `src/video/stb_image_write_impl.c`** hébergeant
+      l'implémentation `stb_image_write` (partagée avec le cast server MJPEG) →
+      plus de symbole dupliqué ; `cast_server.c` n'inclut que les déclarations.
+- [x] **Options CLI** `--video FILE` / `--video-fps N` (déf. 50) /
+      `--video-quality N` (déf. 85), branchées dans la boucle de rendu de
+      `main.c` (1 trame/frame, finalisation à la sortie).
+- [x] Validé bout-en-bout : AVI relu par `ffprobe` (mjpeg, 240×224, 50 fps,
+      201 trames) et trame décodée par ffmpeg (écran de boot Atmos correct) ;
+      builds headless + `CAST=1` linkent OK.
+- [x] Suite `make test-avi` (`tests/unit/test_avi.c`, **7 tests**). 672 tests PASS (+7).
+- [ ] Pistes futures : export GIF animé ; multiplexage audio (AVI PCM stream) ;
+      export AVI depuis le menu GUI/cast.
+
 ### Sprint 60p: picowifi — persistance du CA et de tlsVerify (firmware v0.2.0) (v1.21.15-alpha) - DONE
 
 - [x] **CA persistant** (`src/io/serial_picowifi.c`, helpers `pw_ca_path/persist/load`)

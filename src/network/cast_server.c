@@ -27,8 +27,8 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-/* stb_image_write for JPEG encoding */
-#define STB_IMAGE_WRITE_IMPLEMENTATION
+/* stb_image_write for JPEG encoding. The implementation lives in a single
+ * TU (src/video/stb_image_write_impl.c); here we only need the declarations. */
 #define STBI_WRITE_NO_STDIO
 #include "../../third_party/stb_image_write.h"
 

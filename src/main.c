@@ -255,6 +255,9 @@ static void print_usage(const char* program_name) {
     printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
+    printf("      --video FILE           Record video to a Motion-JPEG AVI file\n");
+    printf("      --video-fps N          Recording frame rate (default: 50)\n");
+    printf("      --video-quality N      JPEG quality 1..100 (default: 85)\n");
     printf("  -m, --model MODEL          Machine model: oric1 or atmos (default: auto-detect)\n");
     printf("  -k, --keyboard LAYOUT      Keyboard layout: qwerty (default) or azerty\n");
     printf("  -j, --joystick MODE        Joystick: keys (arrow keys), gamepad (SDL2 controller)\n");
@@ -2179,6 +2182,11 @@ static void emulator_run(emulator_t* emu) {
             video_export_ppm(&emu->video, path);
         }
 
+        /* Video recording: append this frame to the MJPEG AVI. */
+        if (emu->video_avi_active) {
+            avi_recorder_add_frame(&emu->video_avi_rec, emu->video.framebuffer);
+        }
+
         frame_count++;
 
         /* RAM dump at cycle: write 64KB once when threshold reached */
@@ -2282,6 +2290,9 @@ int main(int argc, char* argv[]) {
     const char* screenshot_at_arg = NULL;
     const char* frame_dump_dir = NULL;
     int frame_dump_interval = 50;
+    const char* video_avi_file = NULL;
+    int video_avi_fps = 50;
+    int video_avi_quality = 85;
     const char* keyboard_layout = NULL;
 
     const char* type_keys_arg = NULL;
@@ -2325,7 +2336,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2343,6 +2354,9 @@ int main(int argc, char* argv[]) {
         {"screenshot-at",       required_argument, 0, OPT_SCREENSHOT_AT},
         {"frame-dump",          required_argument, 0, OPT_FRAME_DUMP},
         {"frame-dump-interval", required_argument, 0, OPT_FRAME_DUMP_INTERVAL},
+        {"video",               required_argument, 0, OPT_VIDEO},
+        {"video-fps",           required_argument, 0, OPT_VIDEO_FPS},
+        {"video-quality",       required_argument, 0, OPT_VIDEO_QUALITY},
         {"keyboard",            required_argument, 0, 'k'},
         {"type-keys",           required_argument, 0, OPT_TYPE_KEYS},
         {"disk-rom",            required_argument, 0, OPT_DISK_ROM},
@@ -2406,6 +2420,9 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
             case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
+            case OPT_VIDEO: video_avi_file = optarg; break;
+            case OPT_VIDEO_FPS: video_avi_fps = atoi(optarg); break;
+            case OPT_VIDEO_QUALITY: video_avi_quality = atoi(optarg); break;
             case 'k': keyboard_layout = optarg; break;
             case OPT_TYPE_KEYS: type_keys_arg = optarg; break;
             case OPT_DISK_ROM: disk_rom_file = optarg; break;
@@ -2728,6 +2745,22 @@ int main(int argc, char* argv[]) {
 
     emu.frame_dump_dir = frame_dump_dir;
     emu.frame_dump_interval = (frame_dump_interval > 0) ? frame_dump_interval : 50;
+
+    emu.video_avi_file = video_avi_file;
+    emu.video_avi_fps = (video_avi_fps > 0) ? video_avi_fps : 50;
+    emu.video_avi_quality = (video_avi_quality > 0) ? video_avi_quality : 85;
+    emu.video_avi_active = false;
+    if (video_avi_file) {
+        if (avi_recorder_open(&emu.video_avi_rec, video_avi_file,
+                              ORIC_SCREEN_W, ORIC_SCREEN_H,
+                              emu.video_avi_fps, emu.video_avi_quality)) {
+            emu.video_avi_active = true;
+            log_info("Video recording (MJPEG AVI) -> %s (%d fps, q%d)",
+                     video_avi_file, emu.video_avi_fps, emu.video_avi_quality);
+        } else {
+            log_error("Cannot open video file for recording: %s", video_avi_file);
+        }
+    }
 
     /* Parse --dump-ram-at CYCLES:FILE */
     if (dump_ram_at_arg) {
@@ -3226,6 +3259,18 @@ int main(int argc, char* argv[]) {
 
     /* Run emulation */
     emulator_run(&emu);
+
+    /* Finalize video recording (write index, back-patch sizes). */
+    if (emu.video_avi_active) {
+        uint32_t nframes = emu.video_avi_rec.frame_count;
+        if (avi_recorder_close(&emu.video_avi_rec)) {
+            log_info("Video recording finalized: %s (%u frames)",
+                     video_avi_file, nframes);
+        } else {
+            log_error("Error finalizing video recording: %s", video_avi_file);
+        }
+        emu.video_avi_active = false;
+    }
 
     /* Save state on exit if specified */
     if (save_state_file) {

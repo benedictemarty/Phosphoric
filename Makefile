@@ -78,6 +78,8 @@ SOURCES = src/main.c \
           src/video/textmode.c \
           src/video/hires.c \
           src/video/export.c \
+          src/video/avi_recorder.c \
+          src/video/stb_image_write_impl.c \
           src/video/renderer.c \
           src/audio/ay3891x.c \
           src/audio/audio_output.c \
@@ -125,7 +127,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -207,6 +209,13 @@ TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/export.c \
 test-video: $(TEST_VIDEO_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_VIDEO_SRCS) $(LDFLAGS) -o test_video
 	@./test_video
+
+TEST_AVI_SRCS = tests/unit/test_avi.c src/video/avi_recorder.c \
+                src/video/stb_image_write_impl.c
+
+test-avi: $(TEST_AVI_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_AVI_SRCS) $(LDFLAGS) -o test_avi
+	@./test_avi
 
 TEST_AUDIO_SRCS = tests/unit/test_audio.c src/audio/ay3891x.c src/utils/logging.c
 
@@ -422,7 +431,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -572,6 +581,7 @@ help:
 	@echo "  test-system  - Run integration tests only"
 	@echo "  test-rom     - Run ROM compatibility tests"
 	@echo "  test-video   - Run video export tests"
+	@echo "  test-avi     - Run MJPEG AVI recorder tests"
 	@echo "  test-audio   - Run PSG audio tests"
 	@echo "  test-debugger- Run debugger tests"
 	@echo "  test-savestate - Run save state tests"

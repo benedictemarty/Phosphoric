@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.15-alpha
-Build Status: ALPHA (Sprint 60p : picowifi persistance CA + tlsVerify (firmware v0.2.0) — le CA (src/io/serial_picowifi.c) est écrit dans un sidecar <nvram>.ca dès AT$CA= (indépendant d'AT&W, survit aux reboots et au factory reset comme le ca.pem LittleFS), supprimé par AT$CA-, rechargé au boot ; tls_verify persisté dans le NVRAM via AT&W. Test test_tls_ca_persists_across_reboot (picowifi 71→72). Sprint 60o = terminaison TLS réelle picowifi v0.2.0 (OpenSSL, HAS_PICOTLS, dial #, ATGET https, AT$CV/$CA, validé live TLSv1.3 + vérif certificat). 665 tests PASS ; builds headless + SDL2=1 OK)
+Version: 1.21.16-alpha
+Build Status: ALPHA (Sprint 60q : export vidéo Motion-JPEG AVI — nouveau module src/video/avi_recorder.c écrivant un AVI MJPG autonome (parité Oricutron, sans dépendance), options --video FILE / --video-fps N / --video-quality N, encodeur JPEG stb_image_write extrait dans le TU unique src/video/stb_image_write_impl.c (partagé avec le cast server, plus de symbole dupliqué) ; index idx1 + tailles RIFF/movi back-patchées à la fermeture ; validé bout-en-bout via ffprobe/ffmpeg (mjpeg 240×224 50 fps). Suite make test-avi (7 tests). 672 tests PASS ; builds headless + SDL2=1 + CAST=1 OK)
 Last Updated: 2026-06-22
 
 ================================================================
@@ -26,6 +26,7 @@ BUILD STATUS
 [V] Host Filesystem       - Complete (HostFS + VFS)
 [V] Conversion Tools      - Complete (bas2tap, bin2tap, tap2sedoric ; header 9-byte ROM-compat)
 [V] Video Export          - Complete (PPM, BMP, ASCII export)
+[V] Video Recording       - Complete (Motion-JPEG AVI, --video, no external dep)
 [V] PSG Bus Protocol      - Fixed (CA2=BC1, CB2=BDIR, keyboard PB3)
 [V] HIRES Text Rows       - Fixed (serial attributes in bottom 3 rows)
 [V] Double-Height Text    - Fixed (absolute row parity (y>>1)&7, Oricutron model)
@@ -74,6 +75,7 @@ Unit Tests: 305/305 passed (100%)
 Integration Tests: 7/7 passed (100%)
 ROM Compatibility: 12/12 passed (100%)
 Video Export Tests: 11/11 passed (100%)
+AVI Recorder Tests: 7/7 passed (100%) — MJPEG AVI structure, idx1, back-patched sizes
 Audio PSG Tests: 8/8 passed (100%)
 Debugger Tests: 8/8 passed (100%)
 Save State Tests: 8/8 passed (100%)
@@ -90,6 +92,7 @@ Storage Tests:      12/12 passed
 System Tests:       10/10 passed
 ROM Tests:          12/12 passed
 Video Tests:        11/11 passed
+AVI Recorder Tests:  7/7  passed
 Audio Tests:         8/8  passed
 Debugger Tests:      8/8  passed
 Save State Tests:    8/8  passed

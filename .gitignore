@@ -24,6 +24,7 @@ test_storage
 test_system
 test_rom
 test_video
+test_avi
 test_audio
 test_debugger
 test_atmos

@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.16-alpha] - 2026-06-22
+
+### Sprint 60q — Export vidéo Motion-JPEG AVI (`--video`)
+
+### Added
+- **Enregistrement vidéo dans un fichier AVI autonome** (`src/video/avi_recorder.c`,
+  `include/video/avi_recorder.h`) en **Motion-JPEG (MJPG)** — parité avec
+  l'export AVI d'Oricutron, **sans dépendance externe**. Chaque trame est
+  encodée en JPEG (via `stb_image_write`) et stockée comme chunk `00dc` dans la
+  liste `movi` ; l'index `idx1` et toutes les tailles RIFF/movi/`avih`/`strh`
+  sont écrits/back-patchés à la fermeture. Lisible par VLC, ffmpeg, mpv.
+- **Options CLI** : `--video FILE` (active l'enregistrement), `--video-fps N`
+  (défaut 50, cadence PAL ORIC), `--video-quality N` (qualité JPEG 1..100,
+  défaut 85). Branchées dans la boucle de rendu de `main.c` (une trame ajoutée
+  par frame, finalisation à la sortie).
+- **TU unique `src/video/stb_image_write_impl.c`** hébergeant l'implémentation
+  `stb_image_write` (utilisée à la fois par le recorder AVI et le cast server
+  MJPEG), pour éviter les symboles dupliqués ; `cast_server.c` n'inclut plus que
+  les déclarations.
+
+### Validated
+- Nouvelle suite `make test-avi` (`tests/unit/test_avi.c`, **7 tests**) :
+  ouverture/fermeture, présence et ordre des fourccs (`RIFF`/`AVI `/`hdrl`/
+  `avih`/`strh`/`MJPG`/`movi`/`idx1`), cohérence des tailles back-patchées
+  (taille RIFF = fichier−8, `dwTotalFrames`/`dwLength` = nb trames), index
+  `idx1` (une entrée keyframe par trame, offsets pointant sur les chunks
+  `00dc`), enregistrement vide, no-op de `close()`, args invalides.
+- Validé **bout-en-bout** : `--video` sur un boot Atmos → AVI relu par
+  `ffprobe` (mjpeg, 240×224, 50 fps, trames cohérentes) et trame décodée par
+  ffmpeg (écran de boot BASIC 1.1 correct). Builds headless **et** `CAST=1`
+  linkent sans symbole dupliqué.
+- **672 tests PASS (+7)**.
+
 ## [1.21.15-alpha] - 2026-06-22
 
 ### Sprint 60p — picowifi : persistance du CA et de tlsVerify (firmware v0.2.0)

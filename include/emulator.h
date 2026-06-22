@@ -19,6 +19,7 @@
 #include "memory/memory.h"
 #include "io/via6522.h"
 #include "video/video.h"
+#include "video/avi_recorder.h"
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/joystick.h"
@@ -36,7 +37,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.15-alpha"
+#define EMU_VERSION "1.21.16-alpha"
 
 /**
  * @brief ORIC machine model
@@ -212,6 +213,13 @@ typedef struct emulator_s {
     /* Frame dump options */
     const char* frame_dump_dir;
     int frame_dump_interval;
+
+    /* Video recording (Motion-JPEG AVI) */
+    const char* video_avi_file;   /* output .avi path, NULL = disabled */
+    int video_avi_fps;            /* recording frame rate (default 50) */
+    int video_avi_quality;        /* JPEG quality 1..100 (default 85) */
+    avi_recorder_t video_avi_rec; /* recorder state */
+    bool video_avi_active;        /* true once the file is open */
 
     /* RAM dump at cycle: write 64KB of RAM to FILE when cycle >= threshold */
     int64_t dump_ram_at_cycles;
