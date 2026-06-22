@@ -5,92 +5,129 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Phosphoric — ORIC-1/Atmos emulator (WebAssembly)</title>
 <style>
-  :root { color-scheme: dark; --bg:#0b0b0f; --panel:#14141d; --line:#26263a;
-          --ink:#d8d8e0; --dim:#8a8a99; --accent:#7aa2ff; --hot:#ffb454; }
+  :root { color-scheme: dark; --bg:#0a0a0e; --panel:#15151f; --line:#2a2a40;
+          --ink:#e2e2ea; --dim:#8a8a99; --accent:#7aa2ff; --hot:#ffb454; }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
-    display: flex; flex-direction: column; align-items: center;
-    min-height: 100vh; gap: 12px; padding: 16px 12px 28px;
+    margin: 0;
+    background: radial-gradient(1200px 600px at 50% -10%, #16162a 0%, var(--bg) 60%);
+    color: var(--ink); font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+    display: flex; min-height: 100vh;
   }
-  h1 { font-size: 15px; font-weight: 600; letter-spacing: .04em; margin: 2px 0 0; }
+  /* ── left icon rail (options, JOric-style) ─────────────────────── */
+  #rail {
+    width: 72px; flex: 0 0 72px; background: rgba(18,18,28,.72);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 14px 0; position: sticky; top: 0; height: 100vh;
+  }
+  .rbtn {
+    width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer; position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    transition: background .12s, border-color .12s, transform .05s;
+  }
+  .rbtn:hover { border-color: #44446a; background: #1b1b2a; }
+  .rbtn:active { transform: scale(.94); }
+  .rbtn svg { width: 22px; height: 22px; stroke: currentColor; fill: none;
+              stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .rbtn .cap { font-size: 8.5px; letter-spacing: .02em; color: var(--dim); line-height: 1; }
+  .rbtn.on { border-color: var(--accent); color: var(--accent); }
+  .rbtn .badge {
+    position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px;
+    padding: 0 4px; border-radius: 9px; background: var(--accent); color: #06060a;
+    font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .rbtn[hidden] { display: none; }
+  .rspacer { flex: 1; }
+
+  /* ── main stage ─────────────────────────────────────────────────── */
+  #stage { flex: 1; display: flex; flex-direction: column; align-items: center;
+           gap: 12px; padding: 18px 14px 26px; min-width: 0; }
+  h1 { font-size: 14px; font-weight: 600; letter-spacing: .05em; margin: 2px 0 0; color: #c9c9d6; }
   h1 small { color: var(--dim); font-weight: 400; }
-  .bar {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    justify-content: center; max-width: 760px;
-  }
-  button, .seg {
-    font: inherit; font-size: 12px; color: var(--ink);
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 7px; padding: 6px 11px; cursor: pointer;
-    user-select: none; -webkit-user-select: none; transition: background .1s, border-color .1s;
-  }
-  button:hover { border-color: #3a3a5a; }
-  button:active { background: #1d1d2c; }
-  .seg { display: inline-flex; padding: 0; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; }
-  .seg button.on { background: var(--accent); color: #06060a; font-weight: 600; }
-  #frame { background: #000; border: 1px solid var(--line); border-radius: 8px;
-           padding: 10px; box-shadow: 0 8px 40px rgba(0,0,0,.6); position: relative; }
-  canvas { display: block; width: 720px; max-width: 92vw; aspect-ratio: 240/224;
-           image-rendering: pixelated; background: #000; border-radius: 4px; }
-  #drop-veil {
-    position: absolute; inset: 6px; border: 2px dashed var(--accent);
-    border-radius: 6px; display: none; align-items: center; justify-content: center;
-    background: rgba(12,12,20,.78); color: var(--accent); font-size: 14px; z-index: 5;
-  }
+  #frame { background: #000; border: 1px solid var(--line); border-radius: 10px;
+           padding: 10px; box-shadow: 0 10px 50px rgba(0,0,0,.6); position: relative; }
+  canvas { display: block; width: 680px; max-width: 88vw; aspect-ratio: 240/224;
+           image-rendering: pixelated; background: #000; border-radius: 5px; }
+  #drop-veil { position: absolute; inset: 6px; border: 2px dashed var(--accent);
+    border-radius: 7px; display: none; align-items: center; justify-content: center;
+    background: rgba(10,10,18,.8); color: var(--accent); font-size: 14px; z-index: 5; }
   body.dragging #drop-veil { display: flex; }
   #status { font-size: 12px; color: var(--dim); min-height: 1.2em; text-align: center; }
   #media { color: var(--hot); }
-  .hint { font-size: 11.5px; color: #6f6f80; max-width: 740px; text-align: center; line-height: 1.55; }
-  kbd { background: #1a1a26; border: 1px solid #30304a; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
 
-  /* Virtual keyboard */
-  #kbd { display: flex; flex-direction: column; gap: 5px; max-width: 760px; width: 100%; }
-  #kbd .row { display: flex; gap: 5px; justify-content: center; }
-  #kbd .k {
-    flex: 1 1 0; min-width: 0; max-width: 56px; height: 42px;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-    font-size: 13px; cursor: pointer; user-select: none; -webkit-user-select: none;
-    touch-action: none;
+  /* ── ORIC virtual keyboard (semi-transparent overlay panel) ─────── */
+  #kbd {
+    width: 760px; max-width: 94vw;
+    background: linear-gradient(180deg, rgba(28,28,44,.46), rgba(14,14,24,.40));
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(120,130,180,.22); border-radius: 14px;
+    padding: 12px 12px; display: flex; flex-direction: column; gap: 6px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
   }
-  #kbd .k:active, #kbd .k.held { background: var(--accent); color: #06060a; }
-  #kbd .k.mod.on { background: var(--hot); color: #06060a; border-color: var(--hot); }
-  #kbd .k.wide { flex: 2 1 0; max-width: 120px; }
-  #kbd .k.space { flex: 6 1 0; max-width: 360px; }
-  #kbd .k small { font-size: 10px; color: var(--dim); }
-  #kbd .k:active small, #kbd .k.held small, #kbd .k.mod.on small { color: #06060a; }
+  #kbd .row { display: flex; gap: 6px; }
+  .key {
+    flex: 1 1 0; min-width: 0; height: 44px; border-radius: 8px;
+    background: rgba(40,42,62,.55); border: 1px solid rgba(150,160,200,.18);
+    color: #eef0f8; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 14px; cursor: pointer; user-select: none; -webkit-user-select: none;
+    touch-action: none; line-height: 1; box-shadow: inset 0 -2px 0 rgba(0,0,0,.25);
+    transition: background .06s, transform .04s, box-shadow .06s;
+  }
+  .key .sup { font-size: 9px; color: var(--dim); height: 9px; }
+  .key.held, .key:active { background: var(--accent); color: #06060a; transform: translateY(1px);
+                           box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); }
+  .key.held .sup, .key:active .sup { color: #06060a; }
+  .key.mod { background: rgba(60,52,40,.5); font-size: 11px; letter-spacing: .03em; }
+  .key.mod.on { background: var(--hot); color: #06060a; border-color: var(--hot); }
+  .key.lbl { font-size: 11px; letter-spacing: .02em; }
+  /* width weights (approx ORIC proportions) */
+  .w12 { flex-grow: 1.2; } .w15 { flex-grow: 1.5; } .w18 { flex-grow: 1.8; }
+  .w20 { flex-grow: 2.0; } .ret { flex-grow: 2.2; } .space { flex-grow: 8; }
+  .gap { flex-grow: .5; background: none; border: none; box-shadow: none; cursor: default; }
+  @media (max-width: 720px) { .key { height: 38px; font-size: 12px; } #rail { width: 60px; flex-basis: 60px; } }
 </style>
 </head>
 <body>
-  <h1>Phosphoric <small>— ORIC-1 / Atmos · WebAssembly</small></h1>
-
-  <div class="bar">
-    <span class="seg" role="group" aria-label="Machine">
-      <button id="rom-oric1">ORIC-1</button>
-      <button id="rom-atmos">Atmos</button>
-    </span>
-    <button id="btn-load">Load .tap / .dsk…</button>
-    <button id="btn-eject" hidden>⏏ Eject</button>
-    <button id="btn-reset">↻ Reset</button>
+  <!-- LEFT ICON RAIL -->
+  <nav id="rail">
+    <button class="rbtn" id="btn-machine" title="Toggle ORIC-1 / Atmos (cold restart)">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 20h8M12 17v3"/></svg>
+      <span class="cap">MODEL</span><span class="badge" id="machine-badge">A</span>
+    </button>
+    <button class="rbtn" id="btn-load" title="Load a .tap or .dsk file">
+      <svg viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 17v-5m0 0-2.2 2.2M12 12l2.2 2.2"/></svg>
+      <span class="cap">LOAD</span>
+    </button>
+    <button class="rbtn" id="btn-eject" title="Eject media" hidden>
+      <svg viewBox="0 0 24 24"><path d="M5 15h14M6 12l6-7 6 7z"/></svg>
+      <span class="cap">EJECT</span>
+    </button>
+    <button class="rbtn" id="btn-reset" title="Reset (cold reboot)">
+      <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 3.5V8h-4.5"/></svg>
+      <span class="cap">RESET</span>
+    </button>
+    <div class="rspacer"></div>
+    <button class="rbtn" id="btn-fs" title="Fullscreen">
+      <svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"/></svg>
+      <span class="cap">FULL</span>
+    </button>
     <input id="file-input" type="file" accept=".tap,.dsk,.TAP,.DSK" hidden>
+  </nav>
+
+  <!-- MAIN STAGE -->
+  <div id="stage">
+    <h1>Phosphoric <small>— ORIC-1 / Atmos · WebAssembly</small></h1>
+    <div id="frame">
+      <canvas id="canvas" tabindex="1" oncontextmenu="event.preventDefault()" width="240" height="224"></canvas>
+      <div id="drop-veil">Drop a .tap or .dsk file…</div>
+    </div>
+    <div id="status">Loading…</div>
+    <div id="kbd" aria-label="ORIC virtual keyboard"></div>
   </div>
-
-  <div id="frame">
-    <canvas id="canvas" tabindex="1" oncontextmenu="event.preventDefault()" width="240" height="224"></canvas>
-    <div id="drop-veil">Drop a .tap or .dsk file…</div>
-  </div>
-
-  <div id="status">Loading…</div>
-  <div id="kbd" aria-label="Virtual keyboard"></div>
-
-  <p class="hint">
-    Click the screen for keyboard focus. <b>Use the on-screen <kbd>CTRL</kbd></b> for
-    chords like CTRL+T (the browser steals real Ctrl+T). Drag a <kbd>.tap</kbd>/<kbd>.dsk</kbd>
-    onto the screen to load it. Audio starts after the first click.
-  </p>
 
 <script>
 //  ── configuration (synchronous: ROM + media metadata) ───────────────────
@@ -107,77 +144,65 @@ if (mediaName && mediaKind === 'dsk') args.push('--disk-rom', '/roms/microdis.ro
 function idb(cb) {
   var r = indexedDB.open('phosphoric', 1);
   r.onupgradeneeded = function () { r.result.createObjectStore('media'); };
-  r.onsuccess = function () { cb(r.result); };
-  r.onerror = function () { cb(null); };
+  r.onsuccess = function () { cb(r.result); }; r.onerror = function () { cb(null); };
 }
-function idbPut(key, buf, done) {
-  idb(function (db) { if (!db) return done && done();
-    var t = db.transaction('media', 'readwrite'); t.objectStore('media').put(buf, key);
-    t.oncomplete = function () { done && done(); }; });
-}
-function idbGet(key, done) {
-  idb(function (db) { if (!db) return done(null);
-    var g = db.transaction('media', 'readonly').objectStore('media').get(key);
-    g.onsuccess = function () { done(g.result || null); };
-    g.onerror = function () { done(null); }; });
-}
+function idbPut(key, buf, done) { idb(function (db) { if (!db) return done && done();
+  var t = db.transaction('media', 'readwrite'); t.objectStore('media').put(buf, key);
+  t.oncomplete = function () { done && done(); }; }); }
+function idbGet(key, done) { idb(function (db) { if (!db) return done(null);
+  var g = db.transaction('media', 'readonly').objectStore('media').get(key);
+  g.onsuccess = function () { done(g.result || null); }; g.onerror = function () { done(null); }; }); }
 
 //  ── Emscripten Module ────────────────────────────────────────────────────
 var statusEl = document.getElementById('status');
+var ready = false;
 var Module = {
   arguments: args,
   canvas: document.getElementById('canvas'),
-  print:    function (t) { console.log(t); },
-  printErr: function (t) { console.warn(t); },
-  setStatus: function (t) { if (statusEl && t) statusEl.firstChild ?
-                            (statusEl.childNodes[0].nodeValue = t + ' ') : (statusEl.textContent = t); },
+  print: function (t) { console.log(t); }, printErr: function (t) { console.warn(t); },
   preRun: [function () {
-    // Write the dropped media file into the virtual FS before main() runs.
     if (!mediaName) return;
     addRunDependency('media-file');
     idbGet(mediaName, function (buf) {
-      try {
-        if (buf) { try { FS.mkdir('/media'); } catch (e) {}
-                   FS.writeFile('/media/' + mediaName, new Uint8Array(buf)); }
-      } catch (e) { console.warn('media write failed', e); }
+      try { if (buf) { try { FS.mkdir('/media'); } catch (e) {}
+                       FS.writeFile('/media/' + mediaName, new Uint8Array(buf)); } }
+      catch (e) { console.warn('media write failed', e); }
       removeRunDependency('media-file');
     });
   }],
   onRuntimeInitialized: function () { ready = true; refreshUI(); }
 };
-var ready = false;
 
-//  ── top toolbar ──────────────────────────────────────────────────────────
+//  ── options (icon rail) ───────────────────────────────────────────────────
 function refreshUI() {
-  document.getElementById('rom-oric1').classList.toggle('on', rom === 'oric1');
-  document.getElementById('rom-atmos').classList.toggle('on', rom === 'atmos');
-  var ej = document.getElementById('btn-eject');
-  if (mediaName) { ej.hidden = false; ej.textContent = '⏏ ' + mediaName; }
+  document.getElementById('machine-badge').textContent = (rom === 'oric1') ? '1' : 'A';
+  var ej = document.getElementById('btn-eject'); ej.hidden = !mediaName;
+  if (mediaName) ej.title = 'Eject ' + mediaName;
   var label = (rom === 'oric1' ? 'ORIC-1 / BASIC 1.0' : 'Atmos / BASIC 1.1');
   if (mediaName) label += ' · ' + mediaName + ' (' + mediaKind + ')';
   statusEl.textContent = (ready ? 'Running — ' : 'Loading — ') + label;
 }
-function setRom(r) { sessionStorage.setItem('phos_rom', r); location.reload(); }
-document.getElementById('rom-oric1').onclick = function () { setRom('oric1'); };
-document.getElementById('rom-atmos').onclick = function () { setRom('atmos'); };
+document.getElementById('btn-machine').onclick = function () {
+  sessionStorage.setItem('phos_rom', rom === 'oric1' ? 'atmos' : 'oric1'); location.reload(); };
 document.getElementById('btn-reset').onclick = function () { location.reload(); };
 document.getElementById('btn-eject').onclick = function () {
-  sessionStorage.removeItem('phos_media_name'); sessionStorage.removeItem('phos_media_kind');
-  location.reload();
-};
+  sessionStorage.removeItem('phos_media_name'); sessionStorage.removeItem('phos_media_kind'); location.reload(); };
 document.getElementById('btn-load').onclick = function () { document.getElementById('file-input').click(); };
 document.getElementById('file-input').onchange = function (e) { if (e.target.files[0]) loadMedia(e.target.files[0]); };
+document.getElementById('btn-fs').onclick = function () {
+  var f = document.getElementById('frame');
+  if (!document.fullscreenElement) (f.requestFullscreen || f.webkitRequestFullscreen).call(f);
+  else document.exitFullscreen(); };
 
 //  ── file loading (button + drag-drop) ─────────────────────────────────────
 function loadMedia(file) {
-  var n = file.name, low = n.toLowerCase();
+  var low = file.name.toLowerCase();
   var kind = low.endsWith('.dsk') ? 'dsk' : (low.endsWith('.tap') ? 'tap' : '');
   if (!kind) { alert('Unsupported file — drop a .tap or .dsk'); return; }
   file.arrayBuffer().then(function (buf) {
-    idbPut(n, buf, function () {
-      sessionStorage.setItem('phos_media_name', n);
-      sessionStorage.setItem('phos_media_kind', kind);
-      location.reload();   // cold-boot with the new media inserted
+    idbPut(file.name, buf, function () {
+      sessionStorage.setItem('phos_media_name', file.name);
+      sessionStorage.setItem('phos_media_kind', kind); location.reload();
     });
   });
 }
@@ -188,59 +213,51 @@ window.addEventListener('dragleave', function (e) { e.preventDefault(); if (--dr
 window.addEventListener('drop',      function (e) { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
   if (e.dataTransfer.files && e.dataTransfer.files[0]) loadMedia(e.dataTransfer.files[0]); });
 
-//  ── audio unlock on first interaction ─────────────────────────────────────
 window.addEventListener('click', function () {
   if (Module.SDL2 && Module.SDL2.audioContext && Module.SDL2.audioContext.state === 'suspended')
-    Module.SDL2.audioContext.resume();
-});
+    Module.SDL2.audioContext.resume(); });
 
-//  ── virtual keyboard ──────────────────────────────────────────────────────
-// Each key: [label, code]. code = ASCII, or sentinel (13 RET, 27 ESC, 32 SPC,
-// 0x80-0x83 arrows, 0x84 DEL). Modifiers are sticky toggles.
+//  ── ORIC keyboard (faithful layout) ───────────────────────────────────────
+// key = [label, code, classes?, supLabel?]. code: ASCII or sentinel
+// (13 RET, 27 ESC, 32 SPC, 0x80-0x83 ↑↓←→, 0x84 DEL); 'M_C/M_F/M_S' modifiers.
+var ESC=27, RET=13, SPC=32, DEL=0x84, UP=0x80, DN=0x81, LF=0x82, RG=0x83;
 var LAYOUT = [
-  [['1',49],['2',50],['3',51],['4',52],['5',53],['6',54],['7',55],['8',56],['9',57],['0',48],['-',45],['=',61],['DEL',0x84]],
-  [['Q',113],['W',119],['E',101],['R',114],['T',116],['Y',121],['U',117],['I',105],['O',111],['P',112],['[',91],[']',93]],
-  [['A',97],['S',115],['D',100],['F',102],['G',103],['H',104],['J',106],['K',107],['L',108],[';',59],["'",39],['RET',13]],
-  [['CTRL','M_C'],['Z',122],['X',120],['C',99],['V',118],['B',98],['N',110],['M',109],[',',44],['.',46],['/',47],['FUNCT','M_F']],
-  [['SHIFT','M_S'],['ESC',27],['SPACE',32],['◄',0x82],['▲',0x80],['▼',0x81],['►',0x83]]
+  [['ESC',ESC,'lbl w12'],['1',49,'','!'],['2',50,'','"'],['3',51,'','#'],['4',52,'','$'],['5',53,'','%'],['6',54,'','&'],['7',55,"",'\''],['8',56,'','('],['9',57,'',')'],['0',48],['-',45,'','='],['=',61,'','+'],['DEL',DEL,'lbl w12']],
+  [['CTRL','M_C','mod w15'],['Q',113],['W',119],['E',101],['R',114],['T',116],['Y',121],['U',117],['I',105],['O',111],['P',112],['[',91],[']',93],['RET',RET,'lbl ret']],
+  [['FUNCT','M_F','mod w18'],['A',97],['S',115],['D',100],['F',102],['G',103],['H',104],['J',106],['K',107],['L',108],[';',59,'',':'],["'",39],['\\',92]],
+  [['SHIFT','M_S','mod w20'],['Z',122],['X',120],['C',99],['V',118],['B',98],['N',110],['M',109],[',',44,'','<'],['.',46,'','>'],['/',47,'','?'],['SHIFT','M_S','mod w15'],['↑',UP,'lbl']],
+  [['SPACE',SPC,'space'],['←',LF,'lbl'],['↓',DN,'lbl'],['→',RG,'lbl']]
 ];
-var mods = { c: false, f: false, s: false };   // ctrl / funct / shift armed
+var mods = { c:false, f:false, s:false };
 function callKey(code, down) {
   if (!ready) return;
   try { Module.ccall('web_key', null, ['number','number','number','number','number'],
-                     [code, mods.c?1:0, mods.f?1:0, mods.s?1:0, down ? 1 : 0]); }
-  catch (e) { /* runtime not ready */ }
+                     [code, mods.c?1:0, mods.f?1:0, mods.s?1:0, down?1:0]); } catch (e) {}
 }
-function clearMods() {
-  mods.c = mods.f = mods.s = false;
-  document.querySelectorAll('#kbd .k.mod.on').forEach(function (el) { el.classList.remove('on'); });
-}
+function syncMods() { document.querySelectorAll('.key.mod').forEach(function (el) {
+  var s = el.dataset.mod; if (s) el.classList.toggle('on', mods[s]); }); }
+function clearMods() { mods.c = mods.f = mods.s = false; syncMods(); }
 function buildKbd() {
   var root = document.getElementById('kbd');
   LAYOUT.forEach(function (row) {
     var rdiv = document.createElement('div'); rdiv.className = 'row';
-    row.forEach(function (key) {
-      var label = key[0], code = key[1];
-      var el = document.createElement('div'); el.className = 'k';
-      el.innerHTML = label.length > 1 ? '<small>' + label + '</small>' : label;
-      if (label === 'SPACE') el.classList.add('space');
-      else if (label.length > 1) el.classList.add('wide');
-
+    row.forEach(function (k) {
+      var label = k[0], code = k[1], cls = k[2] || '', sup = k[3] || '';
+      var el = document.createElement('div'); el.className = 'key ' + cls;
+      el.innerHTML = (sup ? '<span class="sup">' + sup + '</span>' : (cls.indexOf('lbl')<0 && cls.indexOf('mod')<0 ? '<span class="sup"></span>' : '')) + label;
       if (code === 'M_C' || code === 'M_F' || code === 'M_S') {
         var slot = code === 'M_C' ? 'c' : (code === 'M_F' ? 'f' : 's');
-        el.classList.add('mod');
-        el.addEventListener('pointerdown', function (e) {
-          e.preventDefault();
-          mods[slot] = !mods[slot]; el.classList.toggle('on', mods[slot]);
-        });
+        el.dataset.mod = slot;
+        el.addEventListener('pointerdown', function (e) { e.preventDefault();
+          mods[slot] = !mods[slot]; syncMods(); });
       } else {
         var press = function (e) { e.preventDefault(); el.classList.add('held'); callKey(code, true); };
-        var release = function (e) { if (e) e.preventDefault();
+        var release = function (e) { if (e) e.preventDefault(); if (!el.classList.contains('held')) return;
           el.classList.remove('held'); callKey(code, false);
           if (mods.c || mods.f || mods.s) clearMods(); };
         el.addEventListener('pointerdown', press);
         el.addEventListener('pointerup', release);
-        el.addEventListener('pointerleave', function (e) { if (el.classList.contains('held')) release(e); });
+        el.addEventListener('pointerleave', release);
         el.addEventListener('pointercancel', release);
       }
       rdiv.appendChild(el);

@@ -11,15 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Page web enrichie** (`web/shell.html`, façon JOric) au-dessus du build WASM :
-  - **Sélecteur de machine** ORIC-1 / Atmos (relance à froid avec la ROM choisie,
-    mémorisée en `sessionStorage`).
-  - **Glisser-déposer `.tap`/`.dsk`** (ou bouton « Load ») : le fichier est stocké
+  - **Rail d'icônes vertical à gauche** (icônes SVG, pas de texte) : bascule de
+    machine **ORIC-1 / Atmos** (badge 1/A, relance à froid, `sessionStorage`),
+    **Load** `.tap`/`.dsk`, **Eject**, **Reset**, **plein écran**.
+  - **Glisser-déposer `.tap`/`.dsk`** (ou bouton Load) : le fichier est stocké
     dans IndexedDB, écrit dans le FS virtuel via `Module.preRun`
     (`addRunDependency`), et la machine redémarre avec `-t …-f` (cassette) ou
-    `--disk-rom microdis.rom -d …` (disquette). Bouton **⏏ Eject**.
-  - **Bouton Reset** (reboot à froid en conservant ROM + média).
-  - **Clavier virtuel** complet (lettres/chiffres/symboles, RETURN, SPACE, DEL,
-    ESC, flèches) avec modificateurs **collants CTRL / FUNCT / SHIFT**.
+    `--disk-rom microdis.rom -d …` (disquette).
+  - **Clavier virtuel ORIC-1/Atmos fidèle, semi-transparent** (panneau « verre »
+    backdrop-blur) : disposition réelle (ESC/CTRL/FUNCT/2×SHIFT/RETURN/DEL/SPACE
+    + flèches ↑←↓→ en T inversé), symboles shiftés affichés en exposant
+    (! " # $ % & ' ( ) < > ? …), modificateurs **collants CTRL / FUNCT / SHIFT**.
 - **Pont clavier C↔JS** (`src/main.c`, gardé `__EMSCRIPTEN__`) : exports
   `web_key(c, ctrl, funct, shift, down)` et `web_key_release_all()` écrivant la
   matrice ORIC directement. **Résout le vol de CTRL+T par le navigateur** : la
