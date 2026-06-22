@@ -443,6 +443,7 @@ static bool pw_nvram_save(picowifi_t* pw)
     fprintf(f, "busy_msg=%s\n", pw->busy_msg);
     fprintf(f, "auto_exec=%s\n", pw->auto_exec);
     fprintf(f, "startup_wait=%d\n", pw->startup_wait);
+    fprintf(f, "tls_verify=%d\n", pw->tls_verify);   /* firmware SETTINGS_T.tlsVerify */
     for (int i = 0; i < PW_DIAL_SLOTS; i++) {
         if (pw->dial[i].used)
             fprintf(f, "dial%d=%s:%u,%s\n", i,
@@ -495,6 +496,7 @@ static bool pw_nvram_load_into(const char* path, picowifi_t* dst)
         else if (!strcmp(k, "busy_msg"))    snprintf(dst->busy_msg, sizeof(dst->busy_msg), "%s", v);
         else if (!strcmp(k, "auto_exec"))   snprintf(dst->auto_exec, sizeof(dst->auto_exec), "%s", v);
         else if (!strcmp(k, "startup_wait")) dst->startup_wait = atoi(v);
+        else if (!strcmp(k, "tls_verify"))  dst->tls_verify = atoi(v) != 0;
         else if (!strncmp(k, "dial", 4)) {
             int idx = atoi(k + 4);
             if (idx >= 0 && idx < PW_DIAL_SLOTS) {
@@ -519,6 +521,41 @@ static bool pw_nvram_load_into(const char* path, picowifi_t* dst)
     }
     fclose(f);
     return true;
+}
+
+/* ── TLS CA persistence (firmware ca.pem in LittleFS) ──
+ * The CA is a standalone file, written immediately on AT$CA= (not gated by
+ * AT&W) and surviving factory reset — so we keep it in a sidecar file next to
+ * the NVRAM rather than inside it. */
+static void pw_ca_path(picowifi_t* pw, char* out, size_t osz)
+{
+    out[0] = '\0';
+    if (pw->nvram_path[0]) snprintf(out, osz, "%s.ca", pw->nvram_path);
+}
+
+static void pw_ca_persist(picowifi_t* pw)
+{
+    char path[600];
+    pw_ca_path(pw, path, sizeof(path));
+    if (!path[0]) return;
+    if (pw->ca_cert_len == 0) { remove(path); return; }
+    FILE* f = fopen(path, "w");
+    if (!f) return;
+    fwrite(pw->ca_cert, 1, pw->ca_cert_len, f);
+    fclose(f);
+}
+
+static void pw_ca_load(picowifi_t* pw)
+{
+    char path[600];
+    pw_ca_path(pw, path, sizeof(path));
+    if (!path[0]) return;
+    FILE* f = fopen(path, "r");
+    if (!f) return;
+    size_t n = fread(pw->ca_cert, 1, sizeof(pw->ca_cert) - 1, f);
+    fclose(f);
+    pw->ca_cert[n] = '\0';
+    pw->ca_cert_len = n;
 }
 
 /* Emit the two-line settings summary (AT&V) from a source config. */
@@ -1198,6 +1235,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         if (*a == '-') {
             pw->ca_cert_len = 0; pw->ca_cert[0] = '\0';
             pw->tls_verify = false;         /* no CA → verification impossible */
+            pw_ca_persist(pw);              /* removes the sidecar (firmware deleteCACert) */
             return pw_end(pw, a + 1);
         }
         if (*a == '=') {
@@ -1589,6 +1627,7 @@ static bool picowifi_open(serial_backend_t* self)
     pw_nvram_resolve_path(pw);
     pw_factory(pw, false);
     pw_nvram_load_into(pw->nvram_path, pw);
+    pw_ca_load(pw);                 /* CA persists separately (firmware ca.pem) */
     if (pw->cli_ssid[0]) snprintf(pw->ssid, sizeof(pw->ssid), "%s", pw->cli_ssid);
     if (pw->cli_pass[0]) snprintf(pw->pass, sizeof(pw->pass), "%s", pw->cli_pass);
 
@@ -1691,6 +1730,7 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
                 pw->ca_cert[pw->ca_cert_len] = '\0';
                 pw->ca_capture = false;
                 if (pw->ca_cert_len > 0) {
+                    pw_ca_persist(pw);                 /* firmware writeCACert() */
                     char b[48];
                     snprintf(b, sizeof(b), "CA stored: %zu bytes", pw->ca_cert_len);
                     pw_qval(pw, b);

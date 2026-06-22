@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.15-alpha] - 2026-06-22
+
+### Sprint 60p — picowifi : persistance du CA et de tlsVerify (firmware v0.2.0)
+
+### Added
+- **Persistance du magasin CA** (`src/io/serial_picowifi.c`), à l'identique du
+  firmware réel où `ca.pem` est un fichier LittleFS indépendant : le CA est
+  écrit dans un **sidecar `<nvram>.ca`** dès `AT$CA=` (pas conditionné par
+  `AT&W`), supprimé par `AT$CA-`, et **rechargé au boot** — il survit aux
+  reboots **et** au factory reset `AT&F` (comme `ca.pem`). Helpers
+  `pw_ca_path/persist/load`.
+- **`tls_verify` persisté dans le NVRAM** (clé `tls_verify`, écrite par `AT&W`
+  avec les autres réglages, comme `SETTINGS_T.tlsVerify` du firmware) et
+  restauré au boot.
+
+### Validated
+- Test `test_tls_ca_persists_across_reboot` : upload `AT$CA=` + `AT$CV1` + `AT&W`,
+  reboot (NVRAM conservée) → `AT$CA?` rapporte le CA et `AT$CV?` → `1` ; après
+  `AT$CA-` + reboot → `CA: 0 bytes`. `make test-picowifi` 71 → **72**.
+  **665 tests PASS (+1)**.
+
 ## [1.21.14-alpha] - 2026-06-22
 
 ### Sprint 60o — Backend picowifi firmware v0.2.0 : terminaison TLS réelle

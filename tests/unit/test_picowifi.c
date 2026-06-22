@@ -75,10 +75,12 @@ static int tests_failed = 0;
 static serial_backend_t* pw;
 
 #define PW_NVRAM_TEST "/tmp/phosphoric_pwnv_test.cfg"
+#define PW_NVRAM_CA   "/tmp/phosphoric_pwnv_test.cfg.ca"   /* CA sidecar */
 
-/* Fresh boot: wipe the test NVRAM so each test starts at factory state. */
+/* Fresh boot: wipe the test NVRAM (and CA sidecar) so each test starts clean. */
 static void pw_setup(const char* ssid, const char* pass) {
     unlink(PW_NVRAM_TEST);
+    unlink(PW_NVRAM_CA);
     pw = serial_backend_picowifi_create(ssid, pass);
     pw->open(pw);
 }
@@ -1049,6 +1051,38 @@ TEST(test_help_lists_tls_commands) {
     pw_teardown();
 }
 
+TEST(test_tls_ca_persists_across_reboot) {
+    /* The CA survives a reboot on its own (firmware ca.pem, written on AT$CA=,
+     * independent of AT&W); tlsVerify survives once committed with AT&W. */
+    pw_setup(NULL, NULL);
+    char r[1024];
+    pw_cmd("AT$CA=", r, sizeof(r));
+    pw_send_str("-----BEGIN CERTIFICATE-----\nMIIBpersisted==\n"
+                "-----END CERTIFICATE-----\n.\n");
+    pw_drain(r, sizeof(r));
+    ASSERT_CONTAINS(r, "CA stored");
+    pw_cmd("AT$CV1", r, sizeof(r));
+    ASSERT_CONTAINS(r, "OK");
+    pw_cmd("AT&W", r, sizeof(r));            /* persist tlsVerify */
+    ASSERT_CONTAINS(r, "OK");
+    pw_teardown();
+
+    /* Reboot WITHOUT wiping NVRAM: CA + verification must come back. */
+    pw_setup_keepnvram(NULL, NULL);
+    pw_cmd("AT$CA?", r, sizeof(r));
+    ASSERT_NOT_CONTAINS(r, "CA: 0 bytes");
+    pw_cmd("AT$CV?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "1");
+    /* AT$CA- clears the sidecar so a later reboot sees no CA. */
+    pw_cmd("AT$CA-", r, sizeof(r));
+    pw_teardown();
+    pw_setup_keepnvram(NULL, NULL);
+    pw_cmd("AT$CA?", r, sizeof(r));
+    ASSERT_CONTAINS(r, "CA: 0 bytes");
+    pw_teardown();
+    unlink(PW_NVRAM_CA);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Runner
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -1145,8 +1179,10 @@ int main(void) {
     RUN(test_tls_dial_prefix_routed);
     RUN(test_tls_atget_https_routed);
     RUN(test_help_lists_tls_commands);
+    RUN(test_tls_ca_persists_across_reboot);
 
     unlink(PW_NVRAM_TEST);
+    unlink(PW_NVRAM_CA);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

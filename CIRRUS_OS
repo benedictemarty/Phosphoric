@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.14-alpha
-Build Status: ALPHA (Sprint 60o : backend picowifi firmware v0.2.0 — terminaison TLS réelle dans le modem émulé (src/io/serial_picowifi.c, OpenSSL, gardé par HAS_PICOTLS auto-détecté via pkg-config) — le modem déchiffre et présente du clair à l'Oric (qui ne fait aucune crypto à ~1 MHz). Préfixe dial # (TLS), ATGET https://, AT$CV?/0/1 (vérif certificat, CV1 refusé sans CA), AT$CA?/=/- (magasin CA PEM), vérif stricte chaîne+hostname. Validé live : ATGET https://example.com/ → TLSv1.3 → HTTP/1.1 200 OK clair ; bon root CA → CONNECT vérifié, mauvais CA → verify failed → pas de session. Flag Makefile PICOTLS (auto/0/1). 6 tests picowifi (65→71) ; 664 tests PASS ; builds headless + SDL2=1 OK)
+Version: 1.21.15-alpha
+Build Status: ALPHA (Sprint 60p : picowifi persistance CA + tlsVerify (firmware v0.2.0) — le CA (src/io/serial_picowifi.c) est écrit dans un sidecar <nvram>.ca dès AT$CA= (indépendant d'AT&W, survit aux reboots et au factory reset comme le ca.pem LittleFS), supprimé par AT$CA-, rechargé au boot ; tls_verify persisté dans le NVRAM via AT&W. Test test_tls_ca_persists_across_reboot (picowifi 71→72). Sprint 60o = terminaison TLS réelle picowifi v0.2.0 (OpenSSL, HAS_PICOTLS, dial #, ATGET https, AT$CV/$CA, validé live TLSv1.3 + vérif certificat). 665 tests PASS ; builds headless + SDL2=1 OK)
 Last Updated: 2026-06-22
 
 ================================================================
@@ -80,7 +80,7 @@ Save State Tests: 8/8 passed (100%)
 Atmos Tests: 10/10 passed (100%)
 Cast Tests: 24/24 passed (100%)
 Serial Tests: 21/21 passed (100%) — +test_dcd_deadlock_autodial (régression verrou DCD Digitelec)
-PicoWiFi Tests: 71/71 passed (100%) — +6 TLS v0.2.0 ($CV/$CA, dial #, ATGET https)
+PicoWiFi Tests: 72/72 passed (100%) — +6 TLS v0.2.0 ($CV/$CA, dial #, ATGET https), +1 persistance CA/tlsVerify
 Last Test Run: 2026-06-13 (Sprint 55) — suite complète 603 tests PASS
 
 CPU Tests:          74/74 passed
@@ -103,7 +103,7 @@ Trace Tests:        10/10 passed
 Profiler Tests:     10/10 passed
 ROM Info Tests:     10/10 passed
 Serial Tests:       21/21 passed
-PicoWiFi Tests:     71/71 passed
+PicoWiFi Tests:     72/72 passed
 Coverage Tests:     24/24 passed
 Last Test Run: 2026-06-13 (Sprint 55)
 
