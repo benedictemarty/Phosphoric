@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.16.75-alpha** | **499 unit tests + 12 E2E, 100% pass** | **Zero memory leaks**
+**Version: 1.21.22-alpha** | **699 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -367,15 +367,19 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 ## Testing
 
 ```bash
-make tests               # All 499 unit tests (100% pass)
+make tests               # Full suite — 699 tests (100% pass)
 make test-cpu            # CPU tests (74)
 make test-memory         # Memory tests
 make test-io             # VIA/I/O tests
 make test-storage        # Storage tests
 make test-system         # Integration tests
 make test-video          # Video export tests
+make test-avi            # Motion-JPEG AVI recorder tests
 make test-audio          # PSG audio tests
-make test-debugger       # Debugger tests
+make test-debugger       # Debugger tests (incl. inline assembler + memory search)
+make test-gdbstub        # GDB remote stub (RSP protocol) tests
+make test-movie          # Input record/replay tests
+make test-loci           # LOCI MIA tests
 make test-savestate      # Save state tests
 make test-atmos          # Atmos support tests
 make test-joystick       # Joystick tests
@@ -561,7 +565,11 @@ Le comportement de Phosphoric s'appuie largement sur l'étude de ces émulateurs
 ## Repository
 
 ```bash
+# GitHub
+git clone https://github.com/benedictemarty/Phosphoric.git
+# (mirror) self-hosted
 git clone https://git.nagominosato.fr:6775/chipinette/Phosphoric.git
+
 cd Phosphoric
 make SDL2=1
 ```
