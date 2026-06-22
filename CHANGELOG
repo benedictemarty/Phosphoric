@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.18-alpha] - 2026-06-22
+
+### Sprint 60s — Stub GDB remote : déboguer le 6502 depuis GDB / un IDE (`--gdb`)
+
+### Added
+- **Serveur GDB Remote Serial Protocol (RSP)** (`src/network/gdbstub.c`,
+  `include/network/gdbstub.h`) : un client `gdb`/lldb ou un IDE (VS Code, CLion)
+  peut s'attacher via `target remote :PORT` et poser des breakpoints,
+  single-stepper, lire/écrire registres et mémoire du 6502 émulé. **Aucun autre
+  émulateur Oric n'a ça** — pont entre le rétro-dev 8 bits et l'outillage moderne.
+- **Option CLI `--gdb[=PORT]`** (défaut 1234) : ouvre le listener, attend la
+  connexion GDB, puis démarre la machine arrêtée au vecteur de reset (GDB pilote
+  l'exécution). Réutilise le `debugger_t` existant : les breakpoints GDB et le
+  REPL natif partagent le même modèle.
+- **Commandes RSP gérées** : `?`, `g`/`G` (bloc registres A/X/Y/SP/PC/P),
+  `p`/`P` (registre unique), `m`/`M` (lecture sans effet de bord / écriture
+  mémoire), `c`/`s` (continue/step, avec adresse optionnelle), `Z0`/`z0` &
+  `Z1`/`z1` (breakpoints), `Z2`/`z2` (write watchpoint), `H`, `D` (détache),
+  `k` (kill), `qSupported`, `qAttached`, `qC`, `qfThreadInfo`/`qsThreadInfo`,
+  `qOffsets`, `qSymbol`, `qXfer:features:read:target.xml` (description 6502),
+  `QStartNoAckMode`, `vCont?`/`vCont`. Interruption Ctrl-C (`0x03`) pendant
+  l'exécution (poll par frame, latence ≤ 20 ms), gestion de la déconnexion.
+- Logique protocole (checksum, dispatch) séparée du transport socket pour être
+  testable hors socket. Câblé dans la boucle de `main.c` (branche `gdb_mode`).
+
+### Validated
+- **14 tests** (`tests/unit/test_gdbstub.c`, `make test-gdbstub`) sur
+  `gdb_dispatch()` : checksum, `?`, `g`/`G`, `p`/`P` (PC little-endian), `m`/`M`,
+  breakpoints + watchpoints (vérif sur `debugger_t`), actions continue/step,
+  detach/kill, `qSupported`/`qAttached`/`QStartNoAckMode`, `target.xml`, `vCont`,
+  paquet inconnu → réponse vide.
+- Validé **live** (client RSP) : handshake, `?`→S05, `g` lit PC = vecteur de
+  reset $F88F, `m FFFC,2`→`8ff8`, écriture mémoire + relecture, pose breakpoint,
+  set PC, single-step→S05, détache. Builds headless + `CAST=1` OK.
+- **691 tests PASS (+14)**.
+
 ## [1.21.17-alpha] - 2026-06-22
 
 ### Sprint 60r — Debugger : assembleur inline (`a`) + recherche mémoire (`find`)

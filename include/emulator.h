@@ -37,7 +37,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.17-alpha"
+#define EMU_VERSION "1.21.18-alpha"
 
 /**
  * @brief ORIC machine model
@@ -274,6 +274,12 @@ typedef struct emulator_s {
     /* TUI mode flag: when true, breakpoints route to the ncurses TUI
      * instead of the line-based REPL (build with TUI=1). */
     bool tui_mode;
+
+    /* GDB remote stub: when true, CPU stops route to the GDB RSP server
+     * (--gdb [PORT]) instead of the interactive REPL. gdb_stub points to a
+     * gdb_stub_t owned by main() (void* keeps emulator.h decoupled). */
+    bool gdb_mode;
+    void* gdb_stub;
 
     /* CPU trace logging */
     cpu_trace_t trace;

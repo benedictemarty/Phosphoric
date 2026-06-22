@@ -90,6 +90,7 @@ SOURCES = src/main.c \
           src/hostfs/vfs.c \
           src/savestate.c \
           src/debugger.c \
+          src/network/gdbstub.c \
           src/control.c \
           src/utils/logging.c \
           src/utils/config.c \
@@ -127,7 +128,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -216,6 +217,15 @@ TEST_AVI_SRCS = tests/unit/test_avi.c src/video/avi_recorder.c \
 test-avi: $(TEST_AVI_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_AVI_SRCS) $(LDFLAGS) -o test_avi
 	@./test_avi
+
+TEST_GDB_SRCS = tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
+                src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                src/memory/memory.c src/memory/banking.c \
+                src/io/via6522.c src/utils/logging.c src/utils/symbols.c
+
+test-gdbstub: $(TEST_GDB_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_GDB_SRCS) $(LDFLAGS) -o test_gdbstub
+	@./test_gdbstub
 
 TEST_AUDIO_SRCS = tests/unit/test_audio.c src/audio/ay3891x.c src/utils/logging.c
 
@@ -431,7 +441,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

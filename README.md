@@ -82,6 +82,7 @@ make SDL2=1
 - **Live peripheral introspection** — `via`, `psg`, `disk`/`fdc`, `acia`/`serial`, `tape`, `loci` snapshots
 - **Symbols** — Load `.sym`/`.lab`/EQU/VICE formats with `--symbols FILE`. Disasm and trace operands auto-annotated.
 - **TUI mode** — ncurses 6-pane interface (regs, stack, disasm, mem, bp+wp, status). Build with `TUI=1`, launch with `--tui`.
+- **GDB remote stub** — debug the 6502 from `gdb`/lldb/IDE (VS Code, CLion): `--gdb[=PORT]` then `target remote :PORT`. Breakpoints, single-step, registers and memory over the GDB RSP. *(No other Oric emulator offers this.)*
 - **CLI** — `--debug` (break at start), `--break ADDR`
 
 ### IPC Control Mode (OricForge IDE integration)
@@ -211,6 +212,8 @@ Debugger:
   --break ADDR              Set initial breakpoint
   --symbols FILE            Load symbol table (.sym / .lab / .sym65 / EQU)
   --tui                     Use ncurses TUI debugger (requires TUI=1 build)
+  --gdb[=PORT]              GDB remote stub on TCP PORT (default 1234);
+                            attach with: gdb -ex 'target remote :PORT'
   --control                 IPC control mode for IDE integration (stdin protocol)
 
 LOCI peripheral:

@@ -37,6 +37,7 @@
 #include "debugger.h"
 #include "tui.h"
 #include "control.h"
+#include "network/gdbstub.h"
 #include "savestate.h"
 #include "utils/trace.h"
 #include "utils/rominfo.h"
@@ -284,6 +285,8 @@ static void print_usage(const char* program_name) {
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
+    printf("      --gdb[=PORT]           GDB remote stub on TCP PORT (default 1234).\n");
+    printf("                             Waits for `gdb` ... `target remote :PORT`.\n");
     printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");
     printf("                             logs to stderr, see docs/control_protocol.md)\n");
     printf("      --bench                Headless throughput bench: prints `BENCH cycles=... mhz_eq=... ...`\n");
@@ -1549,6 +1552,8 @@ static void emulator_run(emulator_t* emu) {
                     control_repl(emu);
                 } else if (emu->tui_mode) {
                     tui_repl(emu);
+                } else if (emu->gdb_mode) {
+                    gdb_stub_stopped((gdb_stub_t*)emu->gdb_stub, emu);
                 } else {
                     debugger_repl(&emu->debugger, emu);
                 }
@@ -1651,6 +1656,12 @@ static void emulator_run(emulator_t* emu) {
          * If the IDE sent `pause`, hand control back to the REPL right
          * after this frame ends. Latency = at most one frame (~20 ms). */
         if (emu->control_mode && control_poll_pause(emu)) {
+            emu->debugger.active = true;
+        }
+
+        /* GDB stub: once per frame, check for a Ctrl-C interrupt or a client
+         * disconnect; either forces a stop into gdb_stub_stopped() next loop. */
+        if (emu->gdb_mode && gdb_stub_poll_interrupt((gdb_stub_t*)emu->gdb_stub)) {
             emu->debugger.active = true;
         }
 
@@ -2293,6 +2304,8 @@ int main(int argc, char* argv[]) {
     const char* video_avi_file = NULL;
     int video_avi_fps = 50;
     int video_avi_quality = 85;
+    bool gdb_enabled = false;
+    int gdb_port = GDB_DEFAULT_PORT;
     const char* keyboard_layout = NULL;
 
     const char* type_keys_arg = NULL;
@@ -2336,7 +2349,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2357,6 +2370,7 @@ int main(int argc, char* argv[]) {
         {"video",               required_argument, 0, OPT_VIDEO},
         {"video-fps",           required_argument, 0, OPT_VIDEO_FPS},
         {"video-quality",       required_argument, 0, OPT_VIDEO_QUALITY},
+        {"gdb",                 optional_argument, 0, OPT_GDB},
         {"keyboard",            required_argument, 0, 'k'},
         {"type-keys",           required_argument, 0, OPT_TYPE_KEYS},
         {"disk-rom",            required_argument, 0, OPT_DISK_ROM},
@@ -2423,6 +2437,10 @@ int main(int argc, char* argv[]) {
             case OPT_VIDEO: video_avi_file = optarg; break;
             case OPT_VIDEO_FPS: video_avi_fps = atoi(optarg); break;
             case OPT_VIDEO_QUALITY: video_avi_quality = atoi(optarg); break;
+            case OPT_GDB:
+                gdb_enabled = true;
+                if (optarg) gdb_port = atoi(optarg);
+                break;
             case 'k': keyboard_layout = optarg; break;
             case OPT_TYPE_KEYS: type_keys_arg = optarg; break;
             case OPT_DISK_ROM: disk_rom_file = optarg; break;
@@ -3257,8 +3275,25 @@ int main(int argc, char* argv[]) {
         log_info("CPU profiling enabled, report will be written to %s", profile_file);
     }
 
+    /* GDB remote stub: open the listener and block until a client attaches,
+     * then start the CPU halted so GDB drives execution from the reset vector. */
+    gdb_stub_t gdb_stub;
+    if (gdb_enabled) {
+        if (gdb_stub_init(&gdb_stub, (uint16_t)gdb_port)) {
+            emu.gdb_mode = true;
+            emu.gdb_stub = &gdb_stub;
+            emu.debugger.active = true;   /* stop at entry, wait for GDB */
+        } else {
+            log_error("GDB stub: failed to start on port %d", gdb_port);
+        }
+    }
+
     /* Run emulation */
     emulator_run(&emu);
+
+    if (gdb_enabled && emu.gdb_stub) {
+        gdb_stub_close(&gdb_stub);
+    }
 
     /* Finalize video recording (write index, back-patch sizes). */
     if (emu.video_avi_active) {

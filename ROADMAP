@@ -464,6 +464,27 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60s: Stub GDB remote — déboguer le 6502 depuis GDB/IDE (`--gdb`) (v1.21.18-alpha) - DONE
+
+- [x] **Serveur GDB Remote Serial Protocol** (`src/network/gdbstub.c` +
+      `include/network/gdbstub.h`) : `gdb`/lldb/IDE s'attache via
+      `target remote :PORT` ; breakpoints, single-step, lecture/écriture
+      registres+mémoire du 6502. **Inédit chez les émulateurs Oric.**
+- [x] Option CLI **`--gdb[=PORT]`** (défaut 1234) ; réutilise `debugger_t`
+      (breakpoints GDB ↔ REPL natif = même modèle) ; démarre arrêté au reset.
+- [x] Commandes RSP : `? g G p P m M c s Z0/z0 Z1/z1 Z2/z2 H D k`,
+      `qSupported/qAttached/qC/qfThreadInfo/qsThreadInfo/qOffsets/qSymbol`,
+      `qXfer:features:read:target.xml`, `QStartNoAckMode`, `vCont?/vCont`,
+      interruption Ctrl-C (poll par frame), gestion déconnexion.
+- [x] Logique protocole (checksum/dispatch) séparée du transport socket →
+      testable hors réseau. Câblé dans `main.c` (branche `gdb_mode`).
+- [x] 14 tests (`make test-gdbstub`) + validé live (client RSP : handshake,
+      registres=vecteur reset $F88F, mem R/W, breakpoint, set PC, step→S05,
+      detach). 691 tests PASS (+14).
+- [ ] Pistes futures : `vFlashErase/Write` (programmation), hardware watchpoints
+      R (`Z3`), expose la table de symboles via `qSymbol`, intégration `.gdbinit`
+      + extension VS Code (cc65/ld65 debug info).
+
 ### Sprint 60r: Debugger — assembleur inline (`a`) + recherche mémoire (`find`) (v1.21.17-alpha) - DONE
 
 - [x] **Assembleur inline** (`src/debugger.c`, `assemble_one()`) : commande
