@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     l'ORIC : `2`→`@`, `6`→`^`, `-`→`_`, `;`→`:`, `[`→`{`, `\`→`|`, etc.
   - **Clavier dépendant du modèle** : en **ORIC-1**, la touche **FUNCT
     (Atmos-only) est absente** (case inerte) ; elle n'apparaît qu'en Atmos.
+  - **Shift / Ctrl / Alt physiques liés au clavier virtuel** : maintenir Shift,
+    Ctrl (ou Alt→FUNCT) sur le clavier réel allume et applique le modificateur
+    correspondant aux clics du clavier virtuel (état effectif = collant OU
+    maintenu physiquement) ; réinitialisé à la perte de focus.
   - **Plein écran corrigé** : en `:fullscreen`, le canvas est mis à l'échelle de
     la hauteur d'écran et centré (ratio 240/224 conservé) au lieu de rester à sa
     taille fenêtrée dans un fond noir.

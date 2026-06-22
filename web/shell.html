@@ -218,12 +218,25 @@ var LAYOUT = [
   [['SHIFT','M_S','mod w20'],['Z',122],['X',120],['C',99],['V',118],['B',98],['N',110],['M',109],[',',44,'','<'],['.',46,'','>'],['/',47,'','?'],['SHIFT','M_S','mod w15'],['↑',UP,'lbl']],
   [['SPACE',SPC,'space'],['←',LF,'lbl'],['↓',DN,'lbl'],['→',RG,'lbl']]
 ];
-var mods={c:false,f:false,s:false};
+// Two sources for each modifier: 'stick' = armed by tapping the on-screen key
+// (one-shot), 'phys' = the physical Shift/Ctrl/Alt held on the real keyboard.
+// The effective modifier is the OR of both, so real Shift/Ctrl drive the
+// virtual keyboard too (and light up its on-screen keys).
+var stick={c:false,f:false,s:false}, phys={c:false,f:false,s:false};
+function modOn(k){ return stick[k]||phys[k]; }
 function callKey(code,down){ if(!ready)return;
   try{ Module.ccall('web_key',null,['number','number','number','number','number'],
-    [code,mods.c?1:0,mods.f?1:0,mods.s?1:0,down?1:0]); }catch(e){} }
-function syncMods(){ document.querySelectorAll('.key.mod').forEach(function(el){ var s=el.dataset.mod; if(s) el.classList.toggle('on',mods[s]); }); }
-function clearMods(){ mods.c=mods.f=mods.s=false; syncMods(); }
+    [code,modOn('c')?1:0,modOn('f')?1:0,modOn('s')?1:0,down?1:0]); }catch(e){} }
+function syncMods(){ document.querySelectorAll('.key.mod').forEach(function(el){ var s=el.dataset.mod; if(s) el.classList.toggle('on',modOn(s)); }); }
+function clearMods(){ stick.c=stick.f=stick.s=false; syncMods(); }   // clears only the one-shot sticky state
+// Mirror the physical Shift / Ctrl / Alt(→FUNCT) into the virtual modifiers.
+function physMod(e, down){
+  var k=e.key, slot = (k==='Shift')?'s':(k==='Control')?'c':(k==='Alt')?'f':null;
+  if(!slot) return; phys[slot]=down; syncMods();
+}
+window.addEventListener('keydown', function(e){ physMod(e,true); });
+window.addEventListener('keyup',   function(e){ physMod(e,false); });
+window.addEventListener('blur',    function(){ phys.c=phys.f=phys.s=false; syncMods(); });
 function buildKbd(){
   var root=document.getElementById('kbd');
   LAYOUT.forEach(function(row){ var rd=document.createElement('div'); rd.className='row';
@@ -237,10 +250,10 @@ function buildKbd(){
       var plain=(cls.indexOf('lbl')<0 && cls.indexOf('mod')<0);
       el.innerHTML=(plain?'<span class="sup">'+sup+'</span>':'')+label;
       if(code==='M_C'||code==='M_F'||code==='M_S'){ var slot=code==='M_C'?'c':(code==='M_F'?'f':'s'); el.dataset.mod=slot;
-        el.addEventListener('pointerdown',function(e){e.preventDefault(); mods[slot]=!mods[slot]; syncMods();}); }
+        el.addEventListener('pointerdown',function(e){e.preventDefault(); stick[slot]=!stick[slot]; syncMods();}); }
       else { var press=function(e){e.preventDefault(); el.classList.add('held'); callKey(code,true);};
         var rel=function(e){ if(e)e.preventDefault(); if(!el.classList.contains('held'))return;
-          el.classList.remove('held'); callKey(code,false); if(mods.c||mods.f||mods.s) clearMods(); };
+          el.classList.remove('held'); callKey(code,false); if(stick.c||stick.f||stick.s) clearMods(); };
         el.addEventListener('pointerdown',press); el.addEventListener('pointerup',rel);
         el.addEventListener('pointerleave',rel); el.addEventListener('pointercancel',rel); }
       rd.appendChild(el); });
