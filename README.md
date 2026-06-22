@@ -454,8 +454,8 @@ src/
   tui.c          ncurses TUI debugger (TUI=1 build)
 
 include/         Public headers
-tests/unit/      499 unit tests across CPU, memory, I/O, video, audio,
-                 storage, debugger, savestate, LOCI, symbols, etc.
+tests/unit/      unit tests across CPU, memory, I/O, video, audio, storage,
+                 debugger, GDB stub, movie, AVI, savestate, LOCI, symbols, etc.
 tests/integration/ E2E regression (Sedoric boot, IPC control, Python smoke client)
 tools/           bas2tap, bin2tap, tap2sedoric
 examples/        Example BASIC programs (.bas + .tap)
@@ -493,8 +493,8 @@ docs/            User guide, control_protocol.md, CR review docs
 ### Avertissements
 
 - **Aucune vérification formelle** : le code n'a pas été audité par un
-  ingénieur logiciel professionnel. Bien que 499 tests unitaires + 12
-  scénarios E2E passent, la couverture de test n'est pas exhaustive et
+  ingénieur logiciel professionnel. Bien que 699 tests (unitaires +
+  E2E) passent, la couverture de test n'est pas exhaustive et
   des cas limites peuvent exister.
 - **Non adapté à la production** : il s'agit d'un projet expérimental et
   éducatif. Il ne doit pas être utilisé dans des environnements critiques,
@@ -585,4 +585,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.16.75-alpha | 499 unit tests + 12 E2E | ORIC-1 + Atmos | LOCI MIA boot Sedoric V4 + ACIA 6551 + IPC control (OricForge) + Symbols + TUI + Conditional/Raster BPs + Rewind + Live peripheral introspection + bread binary + MCP-40 + Printer + Joystick + Cast | 2026-06-07
+Phosphoric v1.21.22-alpha | 699 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | LOCI MIA boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-06-23
