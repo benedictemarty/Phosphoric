@@ -3,7 +3,7 @@ CIRRUS_OS - Phosphoric Build & Development Status
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
 Version: 1.21.21-alpha
-Build Status: ALPHA (Sprint 60v : UI web (web/shell.html, façon JOric) au-dessus du build WASM — sélecteur ROM ORIC-1/Atmos, glisser-déposer .tap/.dsk (IndexedDB + preRun), clavier virtuel (CTRL/FUNCT/SHIFT collants), bouton Reset/Eject. Pont clavier C↔JS web_key() (src/main.c, __EMSCRIPTEN__) → la touche CTRL à l'écran résout le vol de CTRL+T par le navigateur. Sentinelle DEL 0x84. Validé live Chromium headless : PRINT 6*7+RET via web_key → 42 affiché. Sprint 60u = build WebAssembly. 697 tests PASS ; builds natif headless + SDL2=1 + CAST=1 + TUI=1 + WASM OK)
+Build Status: ALPHA (Sprint 60v : UI web façon JOric (web/shell.html) au-dessus du build WASM — rail d'icônes à gauche (MODEL ORIC-1/Atmos, LOAD, EJECT, RESET, KEYS, FULL), glisser-déposer .tap/.dsk (IndexedDB + preRun), clavier ORIC fidèle en overlay semi-transparent masquable (symboles dérivés de la matrice 2→@/6→^, FUNCT absent en ORIC-1), CTRL/FUNCT/SHIFT collants, plein écran centré à l'échelle (classe .fs + !important). Pont clavier C↔JS web_key() (src/main.c, __EMSCRIPTEN__) → CTRL écran résout le vol de CTRL+T par le navigateur. Sentinelle DEL 0x84. Validé live Chromium headless : PRINT 6*7+RET via web_key → 42 ; ORIC-1 sans FUNCT ; overlay + plein écran OK. Sprint 60u = build WebAssembly. 697 tests PASS ; builds natif headless + SDL2=1 + CAST=1 + TUI=1 + WASM OK)
 Last Updated: 2026-06-22
 
 ================================================================
@@ -47,7 +47,7 @@ BUILD STATUS
 [V] GDB Remote Stub        - Complete (--gdb[=PORT], GDB RSP server, gdb/lldb/IDE attach, breakpoints/step/regs/mem, target.xml)
 [V] Input Record/Replay    - Complete (--record/--replay, deterministic TAS movie, frame-quantized keyboard matrix, CI regression)
 [V] WebAssembly Build      - Complete (make wasm, Emscripten+SDL2, canvas/Web Audio/DOM keyboard, output byte-identical to native)
-[V] Web UI                 - Complete (ROM selector, .tap/.dsk drag-drop, virtual keyboard w/ CTRL/FUNCT/SHIFT, Reset; web_key C↔JS bridge)
+[V] Web UI                 - Complete (JOric-style icon rail; ROM selector, .tap/.dsk drag-drop, toggleable semi-transparent ORIC keyboard w/ matrix-faithful symbols + sticky CTRL/FUNCT/SHIFT (no FUNCT on ORIC-1), Reset, fullscreen; web_key C↔JS bridge)
 [V] VSync CB1 Signal      - Improved (edge-triggered CB1, PAL timing, mid-frame trigger, IER guard)
 [V] Cast Server           - Complete (MJPEG HTTP server, mDNS Chromecast discovery)
 [V] CASTV2 Client         - Complete (native Google Cast V2, TLS, protobuf, heartbeat)

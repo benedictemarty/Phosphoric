@@ -466,20 +466,25 @@ la source Oricutron avant correction.
 
 ### Sprint 60v: UI web — sélecteur ROM, glisser-déposer, clavier virtuel, Reset (v1.21.21-alpha) - DONE
 
-- [x] **Page web** (`web/shell.html`, façon JOric) : sélecteur machine
-      ORIC-1/Atmos (relance à froid, `sessionStorage`), glisser-déposer
-      `.tap`/`.dsk` (IndexedDB → FS virtuel via `preRun`/`addRunDependency`,
-      redémarrage avec `-t …-f` ou `--disk-rom -d …`), boutons Reset et Eject.
-- [x] **Clavier virtuel** complet (lettres/chiffres/symboles/RETURN/SPACE/DEL/
-      ESC/flèches) + modificateurs collants CTRL/FUNCT/SHIFT.
+- [x] **Page web façon JOric** (`web/shell.html`) : rail d'icônes vertical à
+      gauche (MODEL ORIC-1/Atmos relance à froid `sessionStorage`, LOAD +
+      glisser-déposer `.tap`/`.dsk` via IndexedDB→FS virtuel `preRun`, EJECT,
+      RESET, KEYS, FULL).
+- [x] **Clavier virtuel ORIC fidèle en overlay semi-transparent masquable**
+      (bouton KEYS) : disposition réelle (ESC/CTRL/FUNCT/2×SHIFT/RETURN/DEL/
+      SPACE/flèches), modificateurs collants CTRL/FUNCT/SHIFT, **symboles
+      shiftés dérivés de la matrice réelle** (`char_map` : 2→@, 6→^…),
+      **FUNCT absent en ORIC-1** (touche Atmos-only).
+- [x] **Plein écran** : canvas centré et mis à la hauteur d'écran (classe `.fs`
+      posée en JS + `!important` battant le style inline SDL, ratio conservé).
 - [x] **Pont clavier C↔JS** (`src/main.c`, `__EMSCRIPTEN__`) : `web_key()` +
       `web_key_release_all()` écrivent la matrice ORIC → **la touche CTRL à
       l'écran contourne le vol de CTRL+T par le navigateur**. Sentinelle DEL
       `0x84` (`src/io/keyboard.c`).
 - [x] Test natif `test_press_char_del_sentinel` (34→35). **Validé live**
-      (Chromium headless) : `PRINT 6*7`+RET via web_key → `42` affiché. 697 PASS.
-- [ ] Pistes futures : plein écran + filtre CRT, indicateur disque/cassette,
-      mapping clavier réel avec `preventDefault` configurable, PWA installable,
+      (Chromium headless) : `PRINT 6*7`+RET via web_key → `42` ; ORIC-1 sans
+      FUNCT ; overlay + plein écran centré vérifiés. 697 PASS.
+- [ ] Pistes futures : filtre CRT, indicateur disque/cassette, PWA installable,
       sauvegarde/chargement d'état (.ost) depuis l'UI.
 
 ### Sprint 60u: Build WebAssembly — l'émulateur dans le navigateur (`make wasm`) (v1.21.20-alpha) - DONE

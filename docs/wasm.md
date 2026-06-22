@@ -30,16 +30,24 @@ préchargées dans le système de fichiers virtuel). La page démarre l'Atmos
 
 ## Interface (page web)
 
-La page (`web/shell.html`) offre :
+La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
+(façon JOric) et le clavier ORIC en overlay :
 
-- **Sélecteur de machine** ORIC-1 / Atmos (relance à froid avec la ROM choisie).
-- **Glisser-déposer** d'un fichier `.tap` ou `.dsk` sur l'écran (ou bouton
-  « Load ») : le fichier est inséré et la machine redémarre dessus
-  (cassette `-t …-f`, ou disquette `--disk-rom microdis.rom -d …`). Bouton
-  **⏏ Eject** pour le retirer.
-- **Bouton Reset** : reboot à froid en conservant ROM et média.
-- **Clavier virtuel** (lettres, chiffres, symboles, RETURN, SPACE, DEL, ESC,
-  flèches) avec modificateurs **collants CTRL / FUNCT / SHIFT**.
+- **MODEL** — bascule machine ORIC-1 / Atmos (badge `1`/`A`, relance à froid avec
+  la ROM choisie).
+- **LOAD** + **glisser-déposer** d'un `.tap`/`.dsk` sur l'écran : le fichier est
+  inséré et la machine redémarre dessus (cassette `-t …-f`, ou disquette
+  `--disk-rom microdis.rom -d …`). Bouton **EJECT** pour le retirer.
+- **RESET** — reboot à froid en conservant ROM et média.
+- **KEYS** — affiche/masque le clavier virtuel.
+- **FULL** — plein écran (le canvas est centré et mis à la hauteur de l'écran,
+  ratio 240/224 conservé).
+- **Clavier virtuel ORIC fidèle**, en **overlay semi-transparent par-dessus
+  l'écran** : disposition réelle (ESC, CTRL, FUNCT, 2× SHIFT, RETURN, DEL, SPACE,
+  flèches ↑←↓→) avec modificateurs **collants CTRL / FUNCT / SHIFT**. Les
+  symboles shiftés affichés en exposant sont **dérivés de la matrice réelle**
+  (`char_map`) : `2`→`@`, `6`→`^`, `-`→`_`, `;`→`:`, `[`→`{`, `\`→`|`, etc.
+  En **ORIC-1**, la touche **FUNCT (Atmos-only) est absente**.
 
 > **CTRL+T et autres chords :** le navigateur réserve certains raccourcis
 > (CTRL+T = nouvel onglet) au niveau de l'OS — ils n'atteignent jamais le
