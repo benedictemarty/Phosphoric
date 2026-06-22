@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     CTRL / FUNCT / SHIFT**. Les **symboles shiftés en exposant sont dérivés de la
     matrice réelle de l'émulateur** (`char_map`, `src/io/keyboard.c`) — fidèles à
     l'ORIC : `2`→`@`, `6`→`^`, `-`→`_`, `;`→`:`, `[`→`{`, `\`→`|`, etc.
+  - **Clavier dépendant du modèle** : en **ORIC-1**, la touche **FUNCT
+    (Atmos-only) est absente** (case inerte) ; elle n'apparaît qu'en Atmos.
+  - **Plein écran corrigé** : en `:fullscreen`, le canvas est mis à l'échelle de
+    la hauteur d'écran et centré (ratio 240/224 conservé) au lieu de rester à sa
+    taille fenêtrée dans un fond noir.
 - **Pont clavier C↔JS** (`src/main.c`, gardé `__EMSCRIPTEN__`) : exports
   `web_key(c, ctrl, funct, shift, down)` et `web_key_release_all()` écrivant la
   matrice ORIC directement. **Résout le vol de CTRL+T par le navigateur** : la
