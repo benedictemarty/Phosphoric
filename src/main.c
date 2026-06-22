@@ -25,6 +25,7 @@
 #endif
 
 #include "emulator.h"
+#include "io/keyboard.h"
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
 #include "io/via6522.h"
@@ -53,6 +54,33 @@
 #ifdef HAS_CAST
 #include <arpa/inet.h>
 #endif
+
+#ifdef __EMSCRIPTEN__
+/* ─── Web glue: virtual keyboard bridge (called from JS via ccall) ─────────
+ * The browser steals some real Ctrl chords (Ctrl+T = new tab) before they ever
+ * reach the canvas; the on-screen keyboard routes through these exports instead,
+ * writing the ORIC matrix directly — so Ctrl/Funct combos always work. */
+static emulator_t* g_web_emu = NULL;
+
+/* Press (down=1) or release (down=0) a key. `c` is an ASCII char or one of the
+ * press_char sentinels (0x0D return, 0x1B esc, 0x80-0x83 arrows). `ctrl`/`funct`
+ * apply the modifier for this keystroke. Release clears the whole matrix. */
+EMSCRIPTEN_KEEPALIVE void web_key(int c, int ctrl, int funct, int shift, int down) {
+    if (!g_web_emu) return;
+    oric_keyboard_t* kb = &g_web_emu->keyboard;
+    oric_keyboard_release_all(kb);
+    if (!down) return;
+    if (ctrl)  oric_keyboard_press_ctrl(kb);
+    if (funct) oric_keyboard_press_funct(kb);
+    if (shift) oric_keyboard_press_lshift(kb);
+    oric_keyboard_press_char(kb, (char)c);
+}
+
+/* Release every key (matrix → all-released). */
+EMSCRIPTEN_KEEPALIVE void web_key_release_all(void) {
+    if (g_web_emu) oric_keyboard_release_all(&g_web_emu->keyboard);
+}
+#endif /* __EMSCRIPTEN__ */
 
 /* Forward declarations for renderer (in renderer.c) */
 bool renderer_init(int scale, bool prefer_software);
@@ -3339,6 +3367,11 @@ int main(int argc, char* argv[]) {
             log_error("GDB stub: failed to start on port %d", gdb_port);
         }
     }
+
+#ifdef __EMSCRIPTEN__
+    /* Expose the running machine to the JS virtual keyboard. */
+    g_web_emu = &emu;
+#endif
 
     /* Run emulation */
     emulator_run(&emu);

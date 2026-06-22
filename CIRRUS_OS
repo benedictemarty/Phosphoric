@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.20-alpha
-Build Status: ALPHA (Sprint 60u : build WebAssembly (make wasm) — l'émulateur complet compile en WASM via Emscripten, rendu canvas + audio Web Audio + clavier DOM (réutilise SDL2), ROMs préchargées, boucle frame cédée au navigateur via Asyncify. Fidélité PROUVÉE : sortie WASM byte-identique au natif (boot Atmos headless sous Node.js → même PPM à 2M et 5M cycles). Réseau natif (série/GDB/cast/TLS) en no-op navigateur. Sprint 60t = record/replay déterministe. 696 tests PASS ; builds natif headless + SDL2=1 + CAST=1 + TUI=1 + WASM OK)
+Version: 1.21.21-alpha
+Build Status: ALPHA (Sprint 60v : UI web (web/shell.html, façon JOric) au-dessus du build WASM — sélecteur ROM ORIC-1/Atmos, glisser-déposer .tap/.dsk (IndexedDB + preRun), clavier virtuel (CTRL/FUNCT/SHIFT collants), bouton Reset/Eject. Pont clavier C↔JS web_key() (src/main.c, __EMSCRIPTEN__) → la touche CTRL à l'écran résout le vol de CTRL+T par le navigateur. Sentinelle DEL 0x84. Validé live Chromium headless : PRINT 6*7+RET via web_key → 42 affiché. Sprint 60u = build WebAssembly. 697 tests PASS ; builds natif headless + SDL2=1 + CAST=1 + TUI=1 + WASM OK)
 Last Updated: 2026-06-22
 
 ================================================================
@@ -47,6 +47,7 @@ BUILD STATUS
 [V] GDB Remote Stub        - Complete (--gdb[=PORT], GDB RSP server, gdb/lldb/IDE attach, breakpoints/step/regs/mem, target.xml)
 [V] Input Record/Replay    - Complete (--record/--replay, deterministic TAS movie, frame-quantized keyboard matrix, CI regression)
 [V] WebAssembly Build      - Complete (make wasm, Emscripten+SDL2, canvas/Web Audio/DOM keyboard, output byte-identical to native)
+[V] Web UI                 - Complete (ROM selector, .tap/.dsk drag-drop, virtual keyboard w/ CTRL/FUNCT/SHIFT, Reset; web_key C↔JS bridge)
 [V] VSync CB1 Signal      - Improved (edge-triggered CB1, PAL timing, mid-frame trigger, IER guard)
 [V] Cast Server           - Complete (MJPEG HTTP server, mDNS Chromecast discovery)
 [V] CASTV2 Client         - Complete (native Google Cast V2, TLS, protobuf, heartbeat)

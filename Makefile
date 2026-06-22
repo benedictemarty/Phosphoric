@@ -600,6 +600,8 @@ EMCC ?= emcc
 WASM_OUT = web/phosphoric.html
 WASM_CFLAGS  = -O2 -std=c11 -DHAS_SDL2 -sUSE_SDL=2 -I./include
 WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
+               -sEXPORTED_RUNTIME_METHODS=ccall,FS,callMain \
+               -sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all \
                --preload-file roms@/roms --shell-file web/shell.html
 
 wasm: web/shell.html

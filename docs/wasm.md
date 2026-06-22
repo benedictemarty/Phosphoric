@@ -28,6 +28,25 @@ make wasm
 préchargées dans le système de fichiers virtuel). La page démarre l'Atmos
 (`-r /roms/basic11b.rom`) ; cliquez l'écran pour le focus clavier et l'audio.
 
+## Interface (page web)
+
+La page (`web/shell.html`) offre :
+
+- **Sélecteur de machine** ORIC-1 / Atmos (relance à froid avec la ROM choisie).
+- **Glisser-déposer** d'un fichier `.tap` ou `.dsk` sur l'écran (ou bouton
+  « Load ») : le fichier est inséré et la machine redémarre dessus
+  (cassette `-t …-f`, ou disquette `--disk-rom microdis.rom -d …`). Bouton
+  **⏏ Eject** pour le retirer.
+- **Bouton Reset** : reboot à froid en conservant ROM et média.
+- **Clavier virtuel** (lettres, chiffres, symboles, RETURN, SPACE, DEL, ESC,
+  flèches) avec modificateurs **collants CTRL / FUNCT / SHIFT**.
+
+> **CTRL+T et autres chords :** le navigateur réserve certains raccourcis
+> (CTRL+T = nouvel onglet) au niveau de l'OS — ils n'atteignent jamais le
+> canvas. Utilisez la **touche CTRL du clavier virtuel** : elle écrit la
+> matrice ORIC via un appel C direct (`web_key`), donc le navigateur ne
+> l'intercepte pas. Idem pour FUNCT.
+
 > Servez les fichiers par **HTTP** (pas `file://`) : le navigateur refuse de
 > charger un `.wasm` depuis le système de fichiers local.
 
@@ -57,4 +76,6 @@ Le rendu **navigateur** a aussi été validé : la page chargée dans Chromium
 headless (`--virtual-time-budget`) affiche le canvas avec l'écran de boot Atmos
 correct (« ORIC EXTENDED BASIC V1.1 / © 1983 TANGERINE / 37631 BYTES FREE /
 Ready » + indicateur CAPS) — le chemin SDL2 → WebGL/canvas fonctionne de bout
-en bout.
+en bout. La **saisie clavier** a aussi été validée : taper `PRINT 6*7` + RETURN
+via le pont `web_key` (clavier virtuel) affiche `42` — boot ROM → injection
+clavier → exécution BASIC → rendu, entièrement dans le navigateur.

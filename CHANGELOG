@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.21-alpha] - 2026-06-22
+
+### Sprint 60v — UI web : sélecteur ROM, glisser-déposer .tap/.dsk, clavier virtuel, Reset
+
+### Added
+- **Page web enrichie** (`web/shell.html`, façon JOric) au-dessus du build WASM :
+  - **Sélecteur de machine** ORIC-1 / Atmos (relance à froid avec la ROM choisie,
+    mémorisée en `sessionStorage`).
+  - **Glisser-déposer `.tap`/`.dsk`** (ou bouton « Load ») : le fichier est stocké
+    dans IndexedDB, écrit dans le FS virtuel via `Module.preRun`
+    (`addRunDependency`), et la machine redémarre avec `-t …-f` (cassette) ou
+    `--disk-rom microdis.rom -d …` (disquette). Bouton **⏏ Eject**.
+  - **Bouton Reset** (reboot à froid en conservant ROM + média).
+  - **Clavier virtuel** complet (lettres/chiffres/symboles, RETURN, SPACE, DEL,
+    ESC, flèches) avec modificateurs **collants CTRL / FUNCT / SHIFT**.
+- **Pont clavier C↔JS** (`src/main.c`, gardé `__EMSCRIPTEN__`) : exports
+  `web_key(c, ctrl, funct, shift, down)` et `web_key_release_all()` écrivant la
+  matrice ORIC directement. **Résout le vol de CTRL+T par le navigateur** : la
+  touche CTRL à l'écran passe par `ccall`, jamais interceptée par l'onglet.
+- **Sentinelle DEL `0x84`** dans `oric_keyboard_press_char` (`src/io/keyboard.c`)
+  → la touche DELETE (col5/row5) est désormais injectable (comme les flèches).
+- Flags WASM : `-sEXPORTED_RUNTIME_METHODS=ccall,FS,callMain`,
+  `-sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all`.
+
+### Validated
+- Test natif `test_press_char_del_sentinel` (`make test-keyboard` 34 → **35**).
+- **Test interactif live (Chromium headless)** : après boot Atmos, la frappe
+  `PRINT 6*7` + RETURN via `web_key` (ccall) affiche `42` à l'écran — boot ROM →
+  injection clavier → exécution BASIC → rendu vidéo, bout en bout dans le
+  navigateur. Build WASM propre, build natif + suite inchangés.
+- **697 tests PASS (+1)**.
+
 ## [1.21.20-alpha] - 2026-06-22
 
 ### Sprint 60u — Build WebAssembly : l'émulateur dans le navigateur (`make wasm`)

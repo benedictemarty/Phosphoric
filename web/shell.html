@@ -5,64 +5,252 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Phosphoric — ORIC-1/Atmos emulator (WebAssembly)</title>
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: dark; --bg:#0b0b0f; --panel:#14141d; --line:#26263a;
+          --ink:#d8d8e0; --dim:#8a8a99; --accent:#7aa2ff; --hot:#ffb454; }
+  * { box-sizing: border-box; }
   body {
-    margin: 0; background: #0b0b0f; color: #d8d8e0;
+    margin: 0; background: var(--bg); color: var(--ink);
     font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
     display: flex; flex-direction: column; align-items: center;
-    min-height: 100vh; gap: 14px; padding: 18px 12px;
+    min-height: 100vh; gap: 12px; padding: 16px 12px 28px;
   }
-  h1 { font-size: 16px; font-weight: 600; letter-spacing: .04em; margin: 4px 0 0; }
-  h1 small { color: #8a8a99; font-weight: 400; }
-  #frame {
-    background: #000; border: 1px solid #26263a; border-radius: 8px;
-    padding: 10px; box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .04em; margin: 2px 0 0; }
+  h1 small { color: var(--dim); font-weight: 400; }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    justify-content: center; max-width: 760px;
   }
-  /* ORIC display is 240x224; scale up crisply. */
-  canvas {
-    display: block; width: 720px; height: 672px; max-width: 92vw; height: auto;
-    aspect-ratio: 240 / 224; image-rendering: pixelated; background: #000;
-    border-radius: 4px;
+  button, .seg {
+    font: inherit; font-size: 12px; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 11px; cursor: pointer;
+    user-select: none; -webkit-user-select: none; transition: background .1s, border-color .1s;
   }
-  #status { font-size: 12px; color: #8a8a99; min-height: 1.2em; }
-  .hint { font-size: 12px; color: #6f6f80; max-width: 720px; text-align: center; line-height: 1.5; }
-  .hint kbd {
-    background: #1a1a26; border: 1px solid #30304a; border-radius: 4px;
-    padding: 1px 5px; font-size: 11px; color: #c8c8d6;
+  button:hover { border-color: #3a3a5a; }
+  button:active { background: #1d1d2c; }
+  .seg { display: inline-flex; padding: 0; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button.on { background: var(--accent); color: #06060a; font-weight: 600; }
+  #frame { background: #000; border: 1px solid var(--line); border-radius: 8px;
+           padding: 10px; box-shadow: 0 8px 40px rgba(0,0,0,.6); position: relative; }
+  canvas { display: block; width: 720px; max-width: 92vw; aspect-ratio: 240/224;
+           image-rendering: pixelated; background: #000; border-radius: 4px; }
+  #drop-veil {
+    position: absolute; inset: 6px; border: 2px dashed var(--accent);
+    border-radius: 6px; display: none; align-items: center; justify-content: center;
+    background: rgba(12,12,20,.78); color: var(--accent); font-size: 14px; z-index: 5;
   }
-  a { color: #7aa2ff; }
+  body.dragging #drop-veil { display: flex; }
+  #status { font-size: 12px; color: var(--dim); min-height: 1.2em; text-align: center; }
+  #media { color: var(--hot); }
+  .hint { font-size: 11.5px; color: #6f6f80; max-width: 740px; text-align: center; line-height: 1.55; }
+  kbd { background: #1a1a26; border: 1px solid #30304a; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+
+  /* Virtual keyboard */
+  #kbd { display: flex; flex-direction: column; gap: 5px; max-width: 760px; width: 100%; }
+  #kbd .row { display: flex; gap: 5px; justify-content: center; }
+  #kbd .k {
+    flex: 1 1 0; min-width: 0; max-width: 56px; height: 42px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    font-size: 13px; cursor: pointer; user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #kbd .k:active, #kbd .k.held { background: var(--accent); color: #06060a; }
+  #kbd .k.mod.on { background: var(--hot); color: #06060a; border-color: var(--hot); }
+  #kbd .k.wide { flex: 2 1 0; max-width: 120px; }
+  #kbd .k.space { flex: 6 1 0; max-width: 360px; }
+  #kbd .k small { font-size: 10px; color: var(--dim); }
+  #kbd .k:active small, #kbd .k.held small, #kbd .k.mod.on small { color: #06060a; }
 </style>
 </head>
 <body>
   <h1>Phosphoric <small>— ORIC-1 / Atmos · WebAssembly</small></h1>
-  <div id="frame"><canvas id="canvas" tabindex="1" oncontextmenu="event.preventDefault()" width="240" height="224"></canvas></div>
+
+  <div class="bar">
+    <span class="seg" role="group" aria-label="Machine">
+      <button id="rom-oric1">ORIC-1</button>
+      <button id="rom-atmos">Atmos</button>
+    </span>
+    <button id="btn-load">Load .tap / .dsk…</button>
+    <button id="btn-eject" hidden>⏏ Eject</button>
+    <button id="btn-reset">↻ Reset</button>
+    <input id="file-input" type="file" accept=".tap,.dsk,.TAP,.DSK" hidden>
+  </div>
+
+  <div id="frame">
+    <canvas id="canvas" tabindex="1" oncontextmenu="event.preventDefault()" width="240" height="224"></canvas>
+    <div id="drop-veil">Drop a .tap or .dsk file…</div>
+  </div>
+
   <div id="status">Loading…</div>
+  <div id="kbd" aria-label="Virtual keyboard"></div>
+
   <p class="hint">
-    Click the screen to give it keyboard focus, then type as on a real Atmos.
-    Audio starts after the first click. Try <kbd>PRINT&nbsp;2*21</kbd> then <kbd>RETURN</kbd>.
+    Click the screen for keyboard focus. <b>Use the on-screen <kbd>CTRL</kbd></b> for
+    chords like CTRL+T (the browser steals real Ctrl+T). Drag a <kbd>.tap</kbd>/<kbd>.dsk</kbd>
+    onto the screen to load it. Audio starts after the first click.
   </p>
 
-  <script type="text/javascript">
-    var statusEl = document.getElementById('status');
-    var Module = {
-      // Boot the Atmos ROM (bundled into the virtual FS at /roms).
-      arguments: ['-r', '/roms/basic11b.rom'],
-      canvas: document.getElementById('canvas'),
-      print:    function (t) { console.log(t); },
-      printErr: function (t) { console.warn(t); },
-      setStatus: function (t) { if (statusEl) statusEl.textContent = t || ''; },
-      onRuntimeInitialized: function () { this.setStatus('Running'); }
-    };
-    Module.setStatus('Loading…');
-    // Resume the Web Audio context (autoplay policy) on first interaction.
-    window.addEventListener('click', function () {
-      if (typeof Module.SDL2 !== 'undefined' &&
-          Module.SDL2.audioContext &&
-          Module.SDL2.audioContext.state === 'suspended') {
-        Module.SDL2.audioContext.resume();
+<script>
+//  ── configuration (synchronous: ROM + media metadata) ───────────────────
+var ROMS = { atmos: '/roms/basic11b.rom', oric1: '/roms/basic10.rom' };
+var rom = sessionStorage.getItem('phos_rom') || 'atmos';
+var mediaName = sessionStorage.getItem('phos_media_name') || '';
+var mediaKind = sessionStorage.getItem('phos_media_kind') || '';   // 'tap' | 'dsk'
+
+var args = ['-r', ROMS[rom] || ROMS.atmos];
+if (mediaName && mediaKind === 'tap') args.push('-t', '/media/' + mediaName, '-f');
+if (mediaName && mediaKind === 'dsk') args.push('--disk-rom', '/roms/microdis.rom', '-d', '/media/' + mediaName);
+
+//  ── tiny IndexedDB store for media bytes ─────────────────────────────────
+function idb(cb) {
+  var r = indexedDB.open('phosphoric', 1);
+  r.onupgradeneeded = function () { r.result.createObjectStore('media'); };
+  r.onsuccess = function () { cb(r.result); };
+  r.onerror = function () { cb(null); };
+}
+function idbPut(key, buf, done) {
+  idb(function (db) { if (!db) return done && done();
+    var t = db.transaction('media', 'readwrite'); t.objectStore('media').put(buf, key);
+    t.oncomplete = function () { done && done(); }; });
+}
+function idbGet(key, done) {
+  idb(function (db) { if (!db) return done(null);
+    var g = db.transaction('media', 'readonly').objectStore('media').get(key);
+    g.onsuccess = function () { done(g.result || null); };
+    g.onerror = function () { done(null); }; });
+}
+
+//  ── Emscripten Module ────────────────────────────────────────────────────
+var statusEl = document.getElementById('status');
+var Module = {
+  arguments: args,
+  canvas: document.getElementById('canvas'),
+  print:    function (t) { console.log(t); },
+  printErr: function (t) { console.warn(t); },
+  setStatus: function (t) { if (statusEl && t) statusEl.firstChild ?
+                            (statusEl.childNodes[0].nodeValue = t + ' ') : (statusEl.textContent = t); },
+  preRun: [function () {
+    // Write the dropped media file into the virtual FS before main() runs.
+    if (!mediaName) return;
+    addRunDependency('media-file');
+    idbGet(mediaName, function (buf) {
+      try {
+        if (buf) { try { FS.mkdir('/media'); } catch (e) {}
+                   FS.writeFile('/media/' + mediaName, new Uint8Array(buf)); }
+      } catch (e) { console.warn('media write failed', e); }
+      removeRunDependency('media-file');
+    });
+  }],
+  onRuntimeInitialized: function () { ready = true; refreshUI(); }
+};
+var ready = false;
+
+//  ── top toolbar ──────────────────────────────────────────────────────────
+function refreshUI() {
+  document.getElementById('rom-oric1').classList.toggle('on', rom === 'oric1');
+  document.getElementById('rom-atmos').classList.toggle('on', rom === 'atmos');
+  var ej = document.getElementById('btn-eject');
+  if (mediaName) { ej.hidden = false; ej.textContent = '⏏ ' + mediaName; }
+  var label = (rom === 'oric1' ? 'ORIC-1 / BASIC 1.0' : 'Atmos / BASIC 1.1');
+  if (mediaName) label += ' · ' + mediaName + ' (' + mediaKind + ')';
+  statusEl.textContent = (ready ? 'Running — ' : 'Loading — ') + label;
+}
+function setRom(r) { sessionStorage.setItem('phos_rom', r); location.reload(); }
+document.getElementById('rom-oric1').onclick = function () { setRom('oric1'); };
+document.getElementById('rom-atmos').onclick = function () { setRom('atmos'); };
+document.getElementById('btn-reset').onclick = function () { location.reload(); };
+document.getElementById('btn-eject').onclick = function () {
+  sessionStorage.removeItem('phos_media_name'); sessionStorage.removeItem('phos_media_kind');
+  location.reload();
+};
+document.getElementById('btn-load').onclick = function () { document.getElementById('file-input').click(); };
+document.getElementById('file-input').onchange = function (e) { if (e.target.files[0]) loadMedia(e.target.files[0]); };
+
+//  ── file loading (button + drag-drop) ─────────────────────────────────────
+function loadMedia(file) {
+  var n = file.name, low = n.toLowerCase();
+  var kind = low.endsWith('.dsk') ? 'dsk' : (low.endsWith('.tap') ? 'tap' : '');
+  if (!kind) { alert('Unsupported file — drop a .tap or .dsk'); return; }
+  file.arrayBuffer().then(function (buf) {
+    idbPut(n, buf, function () {
+      sessionStorage.setItem('phos_media_name', n);
+      sessionStorage.setItem('phos_media_kind', kind);
+      location.reload();   // cold-boot with the new media inserted
+    });
+  });
+}
+var dragDepth = 0;
+window.addEventListener('dragenter', function (e) { e.preventDefault(); if (dragDepth++ === 0) document.body.classList.add('dragging'); });
+window.addEventListener('dragover',  function (e) { e.preventDefault(); });
+window.addEventListener('dragleave', function (e) { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('drop',      function (e) { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) loadMedia(e.dataTransfer.files[0]); });
+
+//  ── audio unlock on first interaction ─────────────────────────────────────
+window.addEventListener('click', function () {
+  if (Module.SDL2 && Module.SDL2.audioContext && Module.SDL2.audioContext.state === 'suspended')
+    Module.SDL2.audioContext.resume();
+});
+
+//  ── virtual keyboard ──────────────────────────────────────────────────────
+// Each key: [label, code]. code = ASCII, or sentinel (13 RET, 27 ESC, 32 SPC,
+// 0x80-0x83 arrows, 0x84 DEL). Modifiers are sticky toggles.
+var LAYOUT = [
+  [['1',49],['2',50],['3',51],['4',52],['5',53],['6',54],['7',55],['8',56],['9',57],['0',48],['-',45],['=',61],['DEL',0x84]],
+  [['Q',113],['W',119],['E',101],['R',114],['T',116],['Y',121],['U',117],['I',105],['O',111],['P',112],['[',91],[']',93]],
+  [['A',97],['S',115],['D',100],['F',102],['G',103],['H',104],['J',106],['K',107],['L',108],[';',59],["'",39],['RET',13]],
+  [['CTRL','M_C'],['Z',122],['X',120],['C',99],['V',118],['B',98],['N',110],['M',109],[',',44],['.',46],['/',47],['FUNCT','M_F']],
+  [['SHIFT','M_S'],['ESC',27],['SPACE',32],['◄',0x82],['▲',0x80],['▼',0x81],['►',0x83]]
+];
+var mods = { c: false, f: false, s: false };   // ctrl / funct / shift armed
+function callKey(code, down) {
+  if (!ready) return;
+  try { Module.ccall('web_key', null, ['number','number','number','number','number'],
+                     [code, mods.c?1:0, mods.f?1:0, mods.s?1:0, down ? 1 : 0]); }
+  catch (e) { /* runtime not ready */ }
+}
+function clearMods() {
+  mods.c = mods.f = mods.s = false;
+  document.querySelectorAll('#kbd .k.mod.on').forEach(function (el) { el.classList.remove('on'); });
+}
+function buildKbd() {
+  var root = document.getElementById('kbd');
+  LAYOUT.forEach(function (row) {
+    var rdiv = document.createElement('div'); rdiv.className = 'row';
+    row.forEach(function (key) {
+      var label = key[0], code = key[1];
+      var el = document.createElement('div'); el.className = 'k';
+      el.innerHTML = label.length > 1 ? '<small>' + label + '</small>' : label;
+      if (label === 'SPACE') el.classList.add('space');
+      else if (label.length > 1) el.classList.add('wide');
+
+      if (code === 'M_C' || code === 'M_F' || code === 'M_S') {
+        var slot = code === 'M_C' ? 'c' : (code === 'M_F' ? 'f' : 's');
+        el.classList.add('mod');
+        el.addEventListener('pointerdown', function (e) {
+          e.preventDefault();
+          mods[slot] = !mods[slot]; el.classList.toggle('on', mods[slot]);
+        });
+      } else {
+        var press = function (e) { e.preventDefault(); el.classList.add('held'); callKey(code, true); };
+        var release = function (e) { if (e) e.preventDefault();
+          el.classList.remove('held'); callKey(code, false);
+          if (mods.c || mods.f || mods.s) clearMods(); };
+        el.addEventListener('pointerdown', press);
+        el.addEventListener('pointerup', release);
+        el.addEventListener('pointerleave', function (e) { if (el.classList.contains('held')) release(e); });
+        el.addEventListener('pointercancel', release);
       }
-    }, { once: false });
-  </script>
-  {{{ SCRIPT }}}
+      rdiv.appendChild(el);
+    });
+    root.appendChild(rdiv);
+  });
+}
+buildKbd();
+refreshUI();
+</script>
+{{{ SCRIPT }}}
 </body>
 </html>

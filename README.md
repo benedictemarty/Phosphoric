@@ -127,7 +127,7 @@ make SDL2=1
 ### Modern Features
 - **Video export** — PPM, BMP, ASCII screenshots; Motion-JPEG AVI recording (`--video`)
 - **Input record/replay** — deterministic "TAS movie" of keyboard input (`--record`/`--replay`). Replay is bit-deterministic — tool-assisted runs, bug repro, CI regression. *(No other Oric emulator offers this.)*
-- **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio and DOM keyboard, output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
+- **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, ROM selector, `.tap`/`.dsk` drag-drop, an on-screen virtual keyboard (CTRL/FUNCT/SHIFT) and Reset — output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`

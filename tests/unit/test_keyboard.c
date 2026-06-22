@@ -148,6 +148,15 @@ TEST(test_press_char_return) {
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 5));  /* RETURN = Col 7, Row 5 */
 }
 
+/* DEL sentinel (0x84) — used by the WebAssembly virtual keyboard. */
+TEST(test_press_char_del_sentinel) {
+    oric_keyboard_t kb;
+    oric_keyboard_init(&kb);
+
+    ASSERT_TRUE(oric_keyboard_press_char(&kb, (char)0x84));
+    ASSERT_TRUE(KEY_IS_PRESSED(kb, 5, 5));  /* DEL = Col 5, Row 5 */
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TEST 5: press_char — shifted character (!) sets LSHIFT        */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -593,6 +602,7 @@ int main(void) {
     RUN(test_press_char_letter_A);
     RUN(test_press_char_letter_lowercase);
     RUN(test_press_char_return);
+    RUN(test_press_char_del_sentinel);
     RUN(test_press_char_shifted);
     RUN(test_release_all);
     RUN(test_press_char_unmapped);
