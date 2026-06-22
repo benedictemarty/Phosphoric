@@ -464,6 +464,19 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60w: Intégration des contributions LOCI de xahmol (v1.21.22-alpha) - DONE
+
+- [x] **PR #10** intégrée : `op_unlink` (`src/io/loci_fs.c`) supprime les dossiers
+      vides (`stat`+`rmdir`), `ENOTEMPTY`→`LOCI_EACCES` — conforme `FatFs f_unlink()`.
+- [x] **PR #19** intégrée : `op_write_xstack` déduit le count de
+      `XSTACK_SIZE - xstack_ptr` (conforme `std_api_write_xstack`,
+      `sodiumlb/loci-firmware`) au lieu d'un `uint16` explicite.
+- [x] **PR #20 déclinée** : `\fN` déjà couvert par `\Fx` (HID LOCI, Sprint 59,
+      validé LFMV2) + collision sentinelle DEL `0x84` (clavier web 60v).
+- [x] 2 tests LOCI ajoutés, `test_write_read_roundtrip` corrigé
+      (`make test-loci` 150→**152**). 699 tests PASS.
+- [x] PR #10/#19 fermées (réf. commit d'intégration), #20 fermée avec explication.
+
 ### Sprint 60v: UI web — sélecteur ROM, glisser-déposer, clavier virtuel, Reset (v1.21.21-alpha) - DONE
 
 - [x] **Page web façon JOric** (`web/shell.html`) : rail d'icônes vertical à

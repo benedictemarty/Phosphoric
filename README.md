@@ -518,6 +518,9 @@ Utilisation à vos propres risques. Les contributions et revues de code sont bie
 - **Claude Opus 4.6 / 4.7 (Anthropic)** — Génération IA du code (architecture, implémentation, tests, documentation)
 - **bmarty** — Direction du projet, supervision, tests sur matériel réel
 
+### Contributeurs
+- **[Xander Mol (xahmol)](https://github.com/xahmol)** — Conformité du backend LOCI au firmware réel `sodiumlb/loci-firmware`, découverte via les harnais de test [locifilemanager-v2](https://github.com/xahmol/locifilemanager-v2) et [OricScreenEditorLOCI](https://github.com/xahmol/OricScreenEditorLOCI) : `UNLINK` sur dossier vide (PR #10), protocole `WRITE_XSTACK` sans count explicite (PR #19)
+
 ### Émulateurs de référence
 
 Le comportement de Phosphoric s'appuie largement sur l'étude de ces émulateurs :

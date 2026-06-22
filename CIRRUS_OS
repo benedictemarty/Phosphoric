@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.21-alpha
-Build Status: ALPHA (Sprint 60v : UI web façon JOric (web/shell.html) au-dessus du build WASM — rail d'icônes à gauche (MODEL ORIC-1/Atmos, LOAD, EJECT, RESET, KEYS, FULL), glisser-déposer .tap/.dsk (IndexedDB + preRun), clavier ORIC fidèle en overlay semi-transparent masquable (symboles dérivés de la matrice 2→@/6→^, FUNCT absent en ORIC-1), CTRL/FUNCT/SHIFT collants, plein écran centré à l'échelle (classe .fs + !important). Pont clavier C↔JS web_key() (src/main.c, __EMSCRIPTEN__) → CTRL écran résout le vol de CTRL+T par le navigateur. Sentinelle DEL 0x84. Validé live Chromium headless : PRINT 6*7+RET via web_key → 42 ; ORIC-1 sans FUNCT ; overlay + plein écran OK. Sprint 60u = build WebAssembly. 697 tests PASS ; builds natif headless + SDL2=1 + CAST=1 + TUI=1 + WASM OK)
+Version: 1.21.22-alpha
+Build Status: ALPHA (Sprint 60w : intégration des PR LOCI de xahmol — #10 (UNLINK dossier vide → rmdir, ENOTEMPTY→EACCES) + #19 (WRITE_XSTACK count dérivé de la profondeur xstack, conforme sodiumlb/loci-firmware) dans src/io/loci_fs.c ; PR #20 (\fN) déclinée (déjà couverte par \Fx HID Sprint 59 + collision sentinelle DEL 0x84). 2 tests LOCI ajoutés (make test-loci 150→152). Sprint 60v = UI web. 699 tests PASS ; builds natif + SDL2 + CAST + TUI + WASM OK)
+Build Status (prev): ALPHA (Sprint 60v : UI web façon JOric (web/shell.html) au-dessus du build WASM — rail d'icônes à gauche (MODEL ORIC-1/Atmos, LOAD, EJECT, RESET, KEYS, FULL), glisser-déposer .tap/.dsk (IndexedDB + preRun), clavier ORIC fidèle en overlay semi-transparent masquable (symboles dérivés de la matrice 2→@/6→^, FUNCT absent en ORIC-1), CTRL/FUNCT/SHIFT collants, plein écran centré à l'échelle (classe .fs + !important). Pont clavier C↔JS web_key() (src/main.c, __EMSCRIPTEN__) → CTRL écran résout le vol de CTRL+T par le navigateur. Sentinelle DEL 0x84. Validé live Chromium headless : PRINT 6*7+RET via web_key → 42 ; ORIC-1 sans FUNCT ; overlay + plein écran OK. Sprint 60u = build WebAssembly. 697 tests PASS ; builds natif headless + SDL2=1 + CAST=1 + TUI=1 + WASM OK)
 Last Updated: 2026-06-22
 
 ================================================================

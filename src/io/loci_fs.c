@@ -39,6 +39,7 @@ uint16_t map_errno(int e) {
         case EBUSY:  return LOCI_EBUSY;
         case EIO:    return LOCI_EIO;
         case ENOSYS: return LOCI_ENOSYS;
+        case ENOTEMPTY: return LOCI_EACCES;
         default:     return LOCI_EIO;
     }
 }
@@ -423,49 +424,37 @@ void op_read_xstack(loci_t* loci) {
     api_return_ax(loci, (uint16_t)br);
 }
 
+/* Firmware write_xstack convention (loci-firmware std.c std_api_write_xstack):
+ * unlike read_xstack, NO explicit count is popped from the xstack -- the
+ * byte count is simply how many bytes are currently pushed, i.e.
+ * XSTACK_SIZE - xstack_ptr. The data occupies xstack[xstack_ptr..SIZE).
+ * (xahmol, PR #19 — Sprint 36h conformance fix.) */
 void op_write_xstack(loci_t* loci) {
+    uint16_t count = (uint16_t)(LOCI_XSTACK_SIZE - loci->xstack_ptr);
+    uint8_t *data = &loci->xstack[loci->xstack_ptr];
+
     if (loci->sdimg) {
         int fd = loci->regs[LOCI_REG_API_A];
-        if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
-            api_return_errno(loci, LOCI_EINVAL); return;
-        }
-        uint16_t count = (uint16_t)loci->xstack[loci->xstack_ptr]
-                       | ((uint16_t)loci->xstack[loci->xstack_ptr + 1] << 8);
-        loci->xstack_ptr += 2;
         if (count == 0) {
             xstack_zero(loci);
             api_return_ax(loci, 0);
             return;
         }
-        if (loci->xstack_ptr + count > LOCI_XSTACK_SIZE) {
-            api_return_errno(loci, LOCI_EINVAL); return;
-        }
         int slot = fd - LOCI_FD_OFFSET;
         if (slot < 0 || slot >= LOCI_FD_MAX || !loci->fds[slot]) {
             api_return_errno(loci, LOCI_EBADF); return;
         }
-        int bw = loci_sdimg_fwrite((loci_sdimg_t*)loci->sdimg, slot,
-                                   &loci->xstack[loci->xstack_ptr], count);
+        int bw = loci_sdimg_fwrite((loci_sdimg_t*)loci->sdimg, slot, data, count);
         xstack_zero(loci);
         if (bw < 0) { api_return_errno(loci, sdimg_errno_to_loci(bw)); return; }
         api_return_ax(loci, (uint16_t)bw);
         return;
     }
+
     int fd = loci->regs[LOCI_REG_API_A];
-    if (loci->xstack_ptr + 2 > LOCI_XSTACK_SIZE) {
-        api_return_errno(loci, LOCI_EINVAL);
-        return;
-    }
-    uint16_t count = (uint16_t)loci->xstack[loci->xstack_ptr]
-                   | ((uint16_t)loci->xstack[loci->xstack_ptr + 1] << 8);
-    loci->xstack_ptr += 2;
     if (count == 0) {
         xstack_zero(loci);
         api_return_ax(loci, 0);
-        return;
-    }
-    if (loci->xstack_ptr + count > LOCI_XSTACK_SIZE) {
-        api_return_errno(loci, LOCI_EINVAL);
         return;
     }
     FILE* fp = fd_to_file(loci, fd);
@@ -473,7 +462,7 @@ void op_write_xstack(loci_t* loci) {
         api_return_errno(loci, LOCI_EBADF);
         return;
     }
-    size_t bw = fwrite(&loci->xstack[loci->xstack_ptr], 1, count, fp);
+    size_t bw = fwrite(data, 1, count, fp);
     xstack_zero(loci);
     api_return_ax(loci, (uint16_t)bw);
 }
@@ -711,6 +700,19 @@ void op_unlink(loci_t* loci) {
     char host_path[512];
     if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
         api_return_errno(loci, LOCI_EACCES);
+        return;
+    }
+    /* FatFs's f_unlink() (the real LOCI firmware's UNLINK backend) removes
+     * both files and empty directories; bare unlink() fails EISDIR on a
+     * directory, so detect that case and use rmdir() instead.
+     * (xahmol, PR #10.) */
+    struct stat st;
+    if (stat(host_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+        if (rmdir(host_path) != 0) {
+            api_return_errno(loci, map_errno(errno));
+            return;
+        }
+        api_return_ax(loci, 0);
         return;
     }
     if (unlink(host_path) != 0) {

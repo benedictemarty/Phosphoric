@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.22-alpha] - 2026-06-23
+
+### Sprint 60w — Intégration des contributions LOCI de xahmol (PR #10, #19 ; #20 déclinée)
+
+### Fixed
+- **LOCI `UNLINK` sur dossier vide** (PR #10, xahmol) : `op_unlink` (hostfs,
+  `src/io/loci_fs.c`) faisait un `unlink()` brut qui échoue `EISDIR` sur un
+  dossier ; le firmware réel (`FatFs f_unlink()`) supprime fichiers **et**
+  dossiers vides. Détection via `stat()` + `rmdir()` ; `ENOTEMPTY` → `LOCI_EACCES`
+  (dossier non vide). Trouvé en construisant le harnais `locifilemanager-v2`
+  (le *move* récursif laissait le squelette source vide).
+- **LOCI `WRITE_XSTACK` — count dérivé de la profondeur xstack** (PR #19, xahmol)
+  : `op_write_xstack` (hostfs + SDIMG) dépilait un count `uint16` explicite avant
+  les données, à tort. Le firmware réel (`std_api_write_xstack`,
+  `sodiumlb/loci-firmware`) ne prend **aucun** count pour `WRITE_XSTACK` — il
+  le déduit de `XSTACK_SIZE - xstack_ptr`. Seul `READ_XSTACK` prend un count
+  explicite (inchangé). Conformité protocole firmware.
+
+### Declined
+- **PR #20 (`\fN` FUNCT+N pour `--type-keys`) déclinée** : son objectif (piloter
+  FUNCT+1 de OricScreenEditorLOCI, un client LOCI, en headless) est **déjà
+  couvert** par l'échappement **`\Fx`** ajouté plus tard (Sprint 59, chemin HID
+  LOCI `loci_kbd_set_report`, validé empiriquement sur LFMV2 `\F1→0xB1`). Le
+  `\fN` proposé empruntait le chemin **matrice native** (sentinelle `0x84`),
+  inférieur pour un client LOCI et **en collision** avec la sentinelle DEL `0x84`
+  du clavier virtuel web (Sprint 60v). Non intégrée pour éviter une voie
+  redondante et conflictuelle.
+
+### Validated
+- 2 nouveaux tests LOCI (`test_unlink_removes_empty_directory`,
+  `test_unlink_nonempty_directory_returns_eacces`) + `test_write_read_roundtrip`
+  mis à jour pour le protocole corrigé (`make test-loci` 150 → **152**).
+- **699 tests PASS (+2)**. Suite complète verte (le changement WRITE_XSTACK
+  n'affecte aucun autre test).
+
 ## [1.21.21-alpha] - 2026-06-22
 
 ### Sprint 60v — UI web : sélecteur ROM, glisser-déposer .tap/.dsk, clavier virtuel, Reset

@@ -1,9 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.21.21-alpha
-Release Date: 2026-06-22
-Status: Alpha (Sprint 60v — **UI web façon JOric** (`web/shell.html`) au-dessus du build WASM : rail d'icônes à gauche (MODEL ORIC-1/Atmos, LOAD, EJECT, RESET, KEYS, FULL), glisser-déposer `.tap`/`.dsk`, **clavier ORIC fidèle en overlay semi-transparent masquable** (symboles dérivés de la matrice `2→@`/`6→^`, FUNCT absent en ORIC-1), CTRL/FUNCT/SHIFT collants, plein écran centré à l'échelle. Pont clavier C↔JS `web_key()` (`src/main.c`, `__EMSCRIPTEN__`) → la touche CTRL à l'écran **résout le vol de CTRL+T par le navigateur**. Sentinelle DEL `0x84`. Validé live (Chromium headless) : `PRINT 6*7`+RET via web_key → `42`. 697 tests PASS) ; précédent : (1.21.20 — Sprint 60u build WebAssembly, 696 tests)
+Current Version: 1.21.22-alpha
+Release Date: 2026-06-23
+Status: Alpha (Sprint 60w — **Intégration contributions LOCI de xahmol** : PR #10 (`UNLINK` sur dossier vide → `rmdir`, `ENOTEMPTY`→`LOCI_EACCES`) + PR #19 (`WRITE_XSTACK` count dérivé de `XSTACK_SIZE - xstack_ptr`, conforme `sodiumlb/loci-firmware`) intégrées dans `src/io/loci_fs.c`. **PR #20 (`\fN`) déclinée** : déjà couverte par l'échappement `\Fx` HID (Sprint 59, validé LFMV2) et en collision avec la sentinelle DEL `0x84`. 2 tests LOCI ajoutés (`make test-loci` 150→152). 699 tests PASS) ; précédent : (1.21.21 — Sprint 60v UI web, 697 tests)
+
+Version History:
+----------------
+- 1.21.22-alpha (2026-06-23): Sprint 60w — **Intégration des PR communautaires LOCI de xahmol (Xander Mol)** : **PR #10** — `op_unlink` (`src/io/loci_fs.c`) supprime les dossiers vides (`stat`+`rmdir` au lieu d'`unlink()` brut qui échoue `EISDIR`), `ENOTEMPTY`→`LOCI_EACCES`, conforme `FatFs f_unlink()`. **PR #19** — `op_write_xstack` (hostfs+SDIMG) déduit le count de `XSTACK_SIZE - xstack_ptr` au lieu de dépiler un `uint16` explicite (conforme `std_api_write_xstack` de `sodiumlb/loci-firmware` ; `READ_XSTACK` garde son count explicite). **PR #20 (`\fN` FUNCT+N) DÉCLINÉE** : objectif (FUNCT+1 headless pour OricScreenEditorLOCI, client LOCI) déjà couvert par `\Fx` (Sprint 59, chemin HID LOCI, validé LFMV2 `\F1→0xB1`) ; le `\fN` proposé (matrice native, sentinelle `0x84`) était inférieur pour LOCI et en collision avec la sentinelle DEL `0x84` du clavier web (60v). Tests : `test_unlink_removes_empty_directory` + `test_unlink_nonempty_directory_returns_eacces` ajoutés, `test_write_read_roundtrip` corrigé (`make test-loci` 150→**152**). 699 tests PASS (+2). PR #10/#19 fermées en référençant ce commit, #20 fermée avec explication. — **UI web façon JOric** (`web/shell.html`) au-dessus du build WASM : rail d'icônes à gauche (MODEL ORIC-1/Atmos, LOAD, EJECT, RESET, KEYS, FULL), glisser-déposer `.tap`/`.dsk`, **clavier ORIC fidèle en overlay semi-transparent masquable** (symboles dérivés de la matrice `2→@`/`6→^`, FUNCT absent en ORIC-1), CTRL/FUNCT/SHIFT collants, plein écran centré à l'échelle. Pont clavier C↔JS `web_key()` (`src/main.c`, `__EMSCRIPTEN__`) → la touche CTRL à l'écran **résout le vol de CTRL+T par le navigateur**. Sentinelle DEL `0x84`. Validé live (Chromium headless) : `PRINT 6*7`+RET via web_key → `42`. 697 tests PASS) ; précédent : (1.21.20 — Sprint 60u build WebAssembly, 696 tests)
 
 Version History:
 ----------------
