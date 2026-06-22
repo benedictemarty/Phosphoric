@@ -52,3 +52,9 @@ identiques : un boot Atmos headless (`-n -c N --screenshot`) compilé en WASM et
 exécuté sous Node.js produit la **même capture PPM exacte** que le binaire natif
 (testé à 2M et 5M cycles). Le déterminisme cycle-exact du cœur est préservé à
 travers la compilation WebAssembly.
+
+Le rendu **navigateur** a aussi été validé : la page chargée dans Chromium
+headless (`--virtual-time-budget`) affiche le canvas avec l'écran de boot Atmos
+correct (« ORIC EXTENDED BASIC V1.1 / © 1983 TANGERINE / 37631 BYTES FREE /
+Ready » + indicateur CAPS) — le chemin SDL2 → WebGL/canvas fonctionne de bout
+en bout.
