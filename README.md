@@ -126,6 +126,7 @@ make SDL2=1
 
 ### Modern Features
 - **Video export** — PPM, BMP, ASCII screenshots; Motion-JPEG AVI recording (`--video`)
+- **Input record/replay** — deterministic "TAS movie" of keyboard input (`--record`/`--replay`). Replay is bit-deterministic — tool-assisted runs, bug repro, CI regression. *(No other Oric emulator offers this.)*
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
@@ -252,6 +253,8 @@ Display & Export:
   --video FILE              Record video to a Motion-JPEG AVI file
   --video-fps N             Recording frame rate (default: 50)
   --video-quality N         JPEG quality 1..100 (default: 85)
+  --record FILE             Record keyboard input to a movie (deterministic replay)
+  --replay FILE             Replay a recorded input movie (ignores live keys)
   --type-keys N:TEXT        Simulate keyboard input (escapes: \n \e \u \d \l \r
                             \Cx=Ctrl+x \Fx=Funct+x \Lx/\Rx=Left/Right Shift+x \pN)
   -v, --verbose             Debug logging

@@ -256,6 +256,8 @@ static void print_usage(const char* program_name) {
     printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
+    printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
+    printf("      --replay FILE          Replay a recorded input movie (ignores live keys)\n");
     printf("      --video FILE           Record video to a Motion-JPEG AVI file\n");
     printf("      --video-fps N          Recording frame rate (default: 50)\n");
     printf("      --video-quality N      JPEG quality 1..100 (default: 85)\n");
@@ -1516,6 +1518,15 @@ static void emulator_run(emulator_t* emu) {
 #ifdef HAS_SDL2
         frame_start_ticks = SDL_GetTicks();
 #endif
+        /* Movie record/replay: the keyboard matrix is the only deterministic
+         * input. Apply this frame's state BEFORE the CPU runs so the VIA scan
+         * sees it. Replay overwrites live input; record samples it. */
+        if (emu->movie.mode == MOVIE_REPLAY) {
+            movie_replay_frame(&emu->movie, frame_count, emu->keyboard.matrix);
+        } else if (emu->movie.mode == MOVIE_RECORD) {
+            movie_record_frame(&emu->movie, frame_count, emu->keyboard.matrix);
+        }
+
         /* Execute one frame worth of CPU cycles */
         int frame_cycles = 0;
         int rendered_scanlines = 0;
@@ -2235,6 +2246,16 @@ static void emulator_run(emulator_t* emu) {
         }
 #endif
 
+        /* Headless replay: once the movie is fully drained, exit so a recorded
+         * session replays to completion unattended (CI regression). The GUI
+         * keeps running so playback can be watched. */
+        if (emu->headless && movie_replay_done(&emu->movie) &&
+            frame_count > emu->movie.end_frame) {
+            log_info("Movie replay complete (%u frames)",
+                     (unsigned)emu->movie.end_frame);
+            break;
+        }
+
         /* Check cycle limit for headless/test mode */
         if (emu->max_cycles >= 0 && (int64_t)total_executed >= emu->max_cycles) {
             log_info("Cycle limit reached (%lld cycles)", (long long)emu->max_cycles);
@@ -2306,6 +2327,8 @@ int main(int argc, char* argv[]) {
     int video_avi_quality = 85;
     bool gdb_enabled = false;
     int gdb_port = GDB_DEFAULT_PORT;
+    const char* movie_record_file = NULL;
+    const char* movie_replay_file = NULL;
     const char* keyboard_layout = NULL;
 
     const char* type_keys_arg = NULL;
@@ -2349,7 +2372,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2371,6 +2394,8 @@ int main(int argc, char* argv[]) {
         {"video-fps",           required_argument, 0, OPT_VIDEO_FPS},
         {"video-quality",       required_argument, 0, OPT_VIDEO_QUALITY},
         {"gdb",                 optional_argument, 0, OPT_GDB},
+        {"record",              required_argument, 0, OPT_RECORD},
+        {"replay",              required_argument, 0, OPT_REPLAY},
         {"keyboard",            required_argument, 0, 'k'},
         {"type-keys",           required_argument, 0, OPT_TYPE_KEYS},
         {"disk-rom",            required_argument, 0, OPT_DISK_ROM},
@@ -2441,6 +2466,8 @@ int main(int argc, char* argv[]) {
                 gdb_enabled = true;
                 if (optarg) gdb_port = atoi(optarg);
                 break;
+            case OPT_RECORD: movie_record_file = optarg; break;
+            case OPT_REPLAY: movie_replay_file = optarg; break;
             case 'k': keyboard_layout = optarg; break;
             case OPT_TYPE_KEYS: type_keys_arg = optarg; break;
             case OPT_DISK_ROM: disk_rom_file = optarg; break;
@@ -3275,6 +3302,19 @@ int main(int argc, char* argv[]) {
         log_info("CPU profiling enabled, report will be written to %s", profile_file);
     }
 
+    /* Deterministic input record/replay (TAS movie). */
+    if (movie_replay_file) {
+        uint8_t mv_model = 0;
+        if (movie_replay_open(&emu.movie, movie_replay_file, &mv_model)) {
+            if ((oric_model_t)mv_model != emu.model) {
+                log_warning("movie recorded for model %u but running model %u — "
+                            "replay may diverge", mv_model, (unsigned)emu.model);
+            }
+        }
+    } else if (movie_record_file) {
+        movie_record_open(&emu.movie, movie_record_file, (uint8_t)emu.model);
+    }
+
     /* GDB remote stub: open the listener and block until a client attaches,
      * then start the CPU halted so GDB drives execution from the reset vector. */
     gdb_stub_t gdb_stub;
@@ -3293,6 +3333,11 @@ int main(int argc, char* argv[]) {
 
     if (gdb_enabled && emu.gdb_stub) {
         gdb_stub_close(&gdb_stub);
+    }
+
+    /* Flush a recording / free replay buffers. */
+    if (emu.movie.mode != MOVIE_OFF) {
+        movie_close(&emu.movie);
     }
 
     /* Finalize video recording (write index, back-patch sizes). */

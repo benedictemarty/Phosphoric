@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.19-alpha] - 2026-06-22
+
+### Sprint 60t — Record/replay déterministe des entrées (movie TAS) (`--record` / `--replay`)
+
+### Added
+- **Enregistrement/rejeu déterministe des entrées** (`src/utils/movie.c`,
+  `include/utils/movie.h`) : la matrice clavier 8 octets (seule entrée non
+  déterministe) est capturée par frame et rejouée bit-à-bit. Permet les
+  tool-assisted runs, la reproduction de bugs, et la **régression CI** (enregistrer
+  une fois → rejouer headless → comparer la sortie). Inédit chez les émulateurs Oric.
+- **Options CLI** : `--record FILE` (capture), `--replay FILE` (rejeu, ignore le
+  clavier live). Format texte diffable (`PHOSPHORIC-MOVIE 1` / `model` / lignes
+  `F <frame> <8 octets matrice>`), **changements seulement** (le rejeu conserve
+  l'état entre deux changements). En mode headless, le rejeu **sort
+  automatiquement** à la fin du movie (régression sans surveillance).
+- Hook au sommet de la boucle frame de `main.c` (la matrice est appliquée/
+  échantillonnée avant l'exécution CPU de la frame). Avertissement si le modèle
+  du movie diffère du modèle courant.
+
+### Validated
+- 5 tests unitaires (`tests/unit/test_movie.c`, `make test-movie`) : écriture
+  changements-seuls, round-trip exact, maintien de l'état sur intervalles, drainage
+  (`movie_replay_done`), rejet d'un fichier corrompu.
+- 3 vérifs d'intégration (`tests/integration/test_movie_replay.sh`,
+  `make test-movie-replay`) : enregistrement bien formé, **rejeu déterministe
+  (deux rejeus byte-identiques)**, movie corrompu rejeté proprement.
+- Garantie : le rejeu est **bit-déterministe** (prouvé : deux rejeus produisent
+  des captures d'écran identiques). Exact pour l'entrée interactive SDL (sondée
+  par frame) ; `--type-keys` (injection cycle, sous-frame) est quantifié à la
+  frame — un movie issu de type-keys rejoue de façon déterministe mais pas
+  forcément identique au run type-keys live (documenté).
+- **696 tests PASS (+5)**.
+
 ## [1.21.18-alpha] - 2026-06-22
 
 ### Sprint 60s — Stub GDB remote : déboguer le 6502 depuis GDB / un IDE (`--gdb`)

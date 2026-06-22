@@ -97,7 +97,8 @@ SOURCES = src/main.c \
           src/utils/trace.c \
           src/utils/profiler.c \
           src/utils/rominfo.c \
-          src/utils/symbols.c
+          src/utils/symbols.c \
+          src/utils/movie.c
 
 ifeq ($(CAST), 1)
     SOURCES += src/network/cast_server.c src/network/castv2.c
@@ -128,7 +129,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help
 
 all: $(TARGET)
 
@@ -217,6 +218,15 @@ TEST_AVI_SRCS = tests/unit/test_avi.c src/video/avi_recorder.c \
 test-avi: $(TEST_AVI_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_AVI_SRCS) $(LDFLAGS) -o test_avi
 	@./test_avi
+
+TEST_MOVIE_SRCS = tests/unit/test_movie.c src/utils/movie.c src/utils/logging.c
+
+test-movie: $(TEST_MOVIE_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_MOVIE_SRCS) $(LDFLAGS) -o test_movie
+	@./test_movie
+
+test-movie-replay: $(TARGET)
+	@bash tests/integration/test_movie_replay.sh
 
 TEST_GDB_SRCS = tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
@@ -441,7 +451,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

@@ -464,6 +464,24 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60t: Record/replay déterministe des entrées (movie TAS) (`--record`/`--replay`) (v1.21.19-alpha) - DONE
+
+- [x] **Module movie** (`src/utils/movie.c` + `include/utils/movie.h`) :
+      capture la matrice clavier 8 octets (seule entrée non déterministe) par
+      frame, la rejoue bit-à-bit. Format texte diffable, changements seulement,
+      le rejeu conserve l'état entre changements.
+- [x] **Options CLI** `--record FILE` / `--replay FILE` (ignore le clavier live) ;
+      hook au sommet de la boucle frame (matrice avant l'exécution CPU) ;
+      auto-sortie headless en fin de movie (régression CI sans surveillance).
+- [x] **Rejeu bit-déterministe prouvé** (2 rejeus → captures identiques) →
+      tool-assisted runs, repro de bugs, régression CI. Inédit chez les
+      émulateurs Oric.
+- [x] 5 tests unitaires (`make test-movie`) + 3 vérifs intégration
+      (`make test-movie-replay`). 696 tests PASS (+5).
+- [ ] Pistes futures : enregistrer un savestate d'amorce dans le movie (replay
+      depuis un point arbitraire) ; granularité cycle pour capturer aussi
+      `--type-keys` à l'identique ; timeline scrubbable + frame-advance (TUI/GUI).
+
 ### Sprint 60s: Stub GDB remote — déboguer le 6502 depuis GDB/IDE (`--gdb`) (v1.21.18-alpha) - DONE
 
 - [x] **Serveur GDB Remote Serial Protocol** (`src/network/gdbstub.c` +

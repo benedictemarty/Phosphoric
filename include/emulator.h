@@ -20,6 +20,7 @@
 #include "io/via6522.h"
 #include "video/video.h"
 #include "video/avi_recorder.h"
+#include "utils/movie.h"
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/joystick.h"
@@ -37,7 +38,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.18-alpha"
+#define EMU_VERSION "1.21.19-alpha"
 
 /**
  * @brief ORIC machine model
@@ -213,6 +214,9 @@ typedef struct emulator_s {
     /* Frame dump options */
     const char* frame_dump_dir;
     int frame_dump_interval;
+
+    /* Deterministic input record/replay (TAS movie) */
+    movie_t movie;
 
     /* Video recording (Motion-JPEG AVI) */
     const char* video_avi_file;   /* output .avi path, NULL = disabled */

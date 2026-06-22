@@ -2,8 +2,8 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.21.18-alpha
-Build Status: ALPHA (Sprint 60s : stub GDB remote (--gdb[=PORT]) — serveur GDB Remote Serial Protocol (src/network/gdbstub.c) permettant à gdb/lldb/IDE de s'attacher (target remote :PORT) pour breakpoints, single-step, registres+mémoire du 6502 (INÉDIT chez les émulateurs Oric). Réutilise debugger_t ; commandes ?gGpPmMcsZzHDk/q…/QStartNoAckMode/vCont + Ctrl-C + target.xml. Logique protocole séparée du socket (14 tests make test-gdbstub, validé live). Sprint 60r = debugger assembleur a + recherche find. 691 tests PASS ; builds headless + SDL2=1 + CAST=1 + TUI=1 OK)
+Version: 1.21.19-alpha
+Build Status: ALPHA (Sprint 60t : record/replay déterministe des entrées (movie TAS) — --record/--replay capturent et rejouent la matrice clavier par frame (src/utils/movie.c) ; rejeu bit-déterministe (2 rejeus = captures identiques) pour tool-assisted runs/repro de bugs/régression CI ; format texte diffable changements-seuls, auto-sortie headless. INÉDIT chez les émulateurs Oric. Suites make test-movie (5) + test-movie-replay (3). Sprint 60s = stub GDB remote (--gdb). 696 tests PASS ; builds headless + SDL2=1 + CAST=1 + TUI=1 OK)
 Last Updated: 2026-06-22
 
 ================================================================
@@ -45,6 +45,7 @@ BUILD STATUS
 [V] PSG Envelopes         - Fixed (shapes 0-7 single cycle, HOLD shapes, continuous shapes)
 [V] Interactive Debugger   - Complete (breakpoints cond+raster, watchpoints, step, undo/rewind, disasm paginé, symboles, édition mémoire, assembleur inline `a`, recherche mémoire `find`, REPL)
 [V] GDB Remote Stub        - Complete (--gdb[=PORT], GDB RSP server, gdb/lldb/IDE attach, breakpoints/step/regs/mem, target.xml)
+[V] Input Record/Replay    - Complete (--record/--replay, deterministic TAS movie, frame-quantized keyboard matrix, CI regression)
 [V] VSync CB1 Signal      - Improved (edge-triggered CB1, PAL timing, mid-frame trigger, IER guard)
 [V] Cast Server           - Complete (MJPEG HTTP server, mDNS Chromecast discovery)
 [V] CASTV2 Client         - Complete (native Google Cast V2, TLS, protobuf, heartbeat)
@@ -78,6 +79,7 @@ ROM Compatibility: 12/12 passed (100%)
 Video Export Tests: 11/11 passed (100%)
 AVI Recorder Tests: 7/7 passed (100%) — MJPEG AVI structure, idx1, back-patched sizes
 GDB Stub Tests: 14/14 passed (100%) — RSP dispatch (g/G/m/M/Z/z/c/s/q…), target.xml
+Movie Tests: 5/5 passed (100%) — record/replay round-trip; +3 integration (test-movie-replay)
 Audio PSG Tests: 8/8 passed (100%)
 Debugger Tests: 13/13 passed (100%) — +assembleur inline (a) +recherche mémoire (find)
 Save State Tests: 8/8 passed (100%)
@@ -96,6 +98,7 @@ ROM Tests:          12/12 passed
 Video Tests:        11/11 passed
 AVI Recorder Tests:  7/7  passed
 GDB Stub Tests:     14/14 passed
+Movie Tests:         5/5  passed
 Audio Tests:         8/8  passed
 Debugger Tests:     13/13 passed
 Save State Tests:    8/8  passed
