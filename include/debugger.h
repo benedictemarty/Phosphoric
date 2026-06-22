@@ -121,6 +121,15 @@ bool debugger_should_break(debugger_t* dbg, emulator_t* emu);
 void debugger_repl(debugger_t* dbg, emulator_t* emu);
 
 /**
+ * @brief Execute a single REPL command line programmatically.
+ *
+ * Same dispatch as the interactive REPL (and the TUI ':' line), driven from
+ * a string instead of stdin. Used by the TUI command line, scripting and
+ * unit tests. No-op on NULL/empty input.
+ */
+void debugger_repl_run_line(debugger_t* dbg, emulator_t* emu, const char* line);
+
+/**
  * @brief Add a PC breakpoint
  * @return Index of added breakpoint, or -1 if full
  */

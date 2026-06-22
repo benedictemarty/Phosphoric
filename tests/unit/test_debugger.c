@@ -6,9 +6,11 @@
  * @version 1.1.0-alpha
  */
 
+#define _POSIX_C_SOURCE 200809L   /* fileno, dup, dup2 under -std=c11 */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "debugger.h"
 #include "emulator.h"
 #include "cpu/cpu6502.h"
@@ -248,6 +250,173 @@ TEST(test_disassemble_at_pc) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  INLINE ASSEMBLER (a addr MNEMONIC [operand])                       */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Assemble one line and assert the emitted bytes at `addr`. */
+static void asm_check(emulator_t* emu, debugger_t* dbg, const char* line,
+                      uint16_t addr, const uint8_t* expect, int n) {
+    debugger_repl_run_line(dbg, emu, line);
+    for (int i = 0; i < n; i++) {
+        uint8_t got = memory_read(&emu->memory, (uint16_t)(addr + i));
+        if (got != expect[i]) {
+            printf("FAIL\n    asm '%s': byte %d = 0x%02X, expected 0x%02X\n",
+                   line, i, got, expect[i]);
+            tests_failed++;
+            return;
+        }
+    }
+}
+
+TEST(test_asm_addressing_modes) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* Immediate */
+    asm_check(&emu, &dbg, "a 0400 LDA #$41", 0x0400, (uint8_t[]){0xA9, 0x41}, 2);
+    /* Absolute (3+ hex digits or value > $FF) */
+    asm_check(&emu, &dbg, "a 0402 STA $BB80", 0x0402, (uint8_t[]){0x8D, 0x80, 0xBB}, 3);
+    /* Zero page (2 hex digits, ZP form exists) */
+    asm_check(&emu, &dbg, "a 0405 LDA $42", 0x0405, (uint8_t[]){0xA5, 0x42}, 2);
+    /* Zero page,X */
+    asm_check(&emu, &dbg, "a 0407 LDA $42,X", 0x0407, (uint8_t[]){0xB5, 0x42}, 2);
+    /* Absolute,X */
+    asm_check(&emu, &dbg, "a 0409 LDA $1234,X", 0x0409, (uint8_t[]){0xBD, 0x34, 0x12}, 3);
+    /* Absolute,Y */
+    asm_check(&emu, &dbg, "a 040C LDA $1234,Y", 0x040C, (uint8_t[]){0xB9, 0x34, 0x12}, 3);
+    /* Indexed indirect ($nn,X) */
+    asm_check(&emu, &dbg, "a 040F LDA ($40,X)", 0x040F, (uint8_t[]){0xA1, 0x40}, 2);
+    /* Indirect indexed ($nn),Y */
+    asm_check(&emu, &dbg, "a 0411 LDA ($80),Y", 0x0411, (uint8_t[]){0xB1, 0x80}, 2);
+    /* Indirect (JMP) */
+    asm_check(&emu, &dbg, "a 0413 JMP ($FFFC)", 0x0413, (uint8_t[]){0x6C, 0xFC, 0xFF}, 3);
+    /* Implicit */
+    asm_check(&emu, &dbg, "a 0416 INX", 0x0416, (uint8_t[]){0xE8}, 1);
+    /* Accumulator */
+    asm_check(&emu, &dbg, "a 0417 ASL A", 0x0417, (uint8_t[]){0x0A}, 1);
+    asm_check(&emu, &dbg, "a 0418 ASL", 0x0418, (uint8_t[]){0x0A}, 1);
+
+    memory_cleanup(&emu.memory);
+}
+
+TEST(test_asm_branch_relative) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* Backward branch: BNE $0400 at $0405 → offset = 0400 - (0405+2) = -7 = 0xF9 */
+    asm_check(&emu, &dbg, "a 0405 BNE $0400", 0x0405, (uint8_t[]){0xD0, 0xF9}, 2);
+    /* Forward branch: BEQ $0410 at $0407 → offset = 0410 - (0407+2) = +7 = 0x07 */
+    asm_check(&emu, &dbg, "a 0407 BEQ $0410", 0x0407, (uint8_t[]){0xF0, 0x07}, 2);
+
+    memory_cleanup(&emu.memory);
+}
+
+TEST(test_asm_rejects_bad_input) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* Pre-fill target bytes; bad assembly must leave them untouched. */
+    memory_write(&emu.memory, 0x0500, 0xEE);
+    memory_write(&emu.memory, 0x0501, 0xEE);
+
+    /* Invalid mnemonic */
+    debugger_repl_run_line(&dbg, &emu, "a 0500 XYZ #$10");
+    ASSERT_EQ(memory_read(&emu.memory, 0x0500), 0xEE);
+    /* Branch out of range: target too far from PC */
+    debugger_repl_run_line(&dbg, &emu, "a 0500 BNE $9000");
+    ASSERT_EQ(memory_read(&emu.memory, 0x0500), 0xEE);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  MEMORY SEARCH (find)                                               */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Run a command capturing stdout into `out` (fd save/restore — headless-safe). */
+static void capture_cmd(emulator_t* emu, debugger_t* dbg,
+                        const char* line, char* out, size_t out_size) {
+    const char* tmp = "/tmp/phosphoric_find_test.txt";
+    out[0] = '\0';
+    fflush(stdout);
+    int saved = dup(fileno(stdout));
+    FILE* f = freopen(tmp, "w+", stdout);
+    if (f) {
+        debugger_repl_run_line(dbg, emu, line);
+        fflush(stdout);
+    }
+    /* Restore the original stdout. */
+    if (saved >= 0) {
+        dup2(saved, fileno(stdout));
+        close(saved);
+        clearerr(stdout);
+    }
+    FILE* rf = fopen(tmp, "r");
+    if (rf) {
+        size_t got = fread(out, 1, out_size - 1, rf);
+        out[got] = '\0';
+        fclose(rf);
+    }
+    remove(tmp);
+}
+
+TEST(test_find_byte_pattern) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* Plant a unique 3-byte pattern in RAM. */
+    memory_write(&emu.memory, 0x2000, 0xDE);
+    memory_write(&emu.memory, 0x2001, 0xAD);
+    memory_write(&emu.memory, 0x2002, 0xBE);
+
+    char out[4096];
+    capture_cmd(&emu, &dbg, "find DE AD BE", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "$2000") != NULL);
+    ASSERT_TRUE(strstr(out, "match") != NULL);
+
+    /* A pattern that does not occur. */
+    capture_cmd(&emu, &dbg, "find 11 22 33 44 55", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "not found") != NULL);
+
+    memory_cleanup(&emu.memory);
+}
+
+TEST(test_find_ascii_string) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    const char* s = "ORIC";
+    for (int i = 0; s[i]; i++)
+        memory_write(&emu.memory, (uint16_t)(0x3000 + i), (uint8_t)s[i]);
+
+    char out[4096];
+    capture_cmd(&emu, &dbg, "find \"ORIC\"", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "$3000") != NULL);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -265,6 +434,11 @@ int main(void) {
     RUN(test_breakpoint_miss);
     RUN(test_step_mode);
     RUN(test_disassemble_at_pc);
+    RUN(test_asm_addressing_modes);
+    RUN(test_asm_branch_relative);
+    RUN(test_asm_rejects_bad_input);
+    RUN(test_find_byte_pattern);
+    RUN(test_find_ascii_string);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

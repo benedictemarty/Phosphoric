@@ -34,11 +34,6 @@
 #include <string.h>
 #include <ctype.h>
 
-/* External REPL command handler — fall back to the existing parser when
- * the user types `:` in the TUI. Defined in debugger.c. */
-extern void debugger_repl_run_line(debugger_t* dbg, emulator_t* emu,
-                                   const char* line);
-
 static WINDOW* w_regs   = NULL;
 static WINDOW* w_stack  = NULL;
 static WINDOW* w_disasm = NULL;

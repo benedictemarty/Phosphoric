@@ -464,6 +464,27 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60r: Debugger — assembleur inline (`a`) + recherche mémoire (`find`) (v1.21.17-alpha) - DONE
+
+- [x] **Assembleur inline** (`src/debugger.c`, `assemble_one()`) : commande
+      `a addr MNEMONIC [operand]` assemblant une instruction 6502 en place et
+      écrivant les octets en mémoire. Tous les modes : implicite, accumulateur,
+      immédiat, ZP/absolu (auto ZP↔ABS selon largeur du littéral), `,X`/`,Y`,
+      indirect `($nnnn)`, `($nn,X)`, `($nn),Y`, branches relatives (offset
+      calculé + contrôle ±128). Reverse-lookup sur `opcode_table[]`.
+- [x] **Recherche mémoire** : commande `find B1 [B2…]` (octets hex) ou
+      `find "texte"` (ASCII), balayage $0000-$FFFF **sans effet de bord** (RAM
+      array pour $0000-$BFFF, vue CPU pour $C000-$FFFF), résolution symbolique.
+- [x] `debugger_repl_run_line()` exposé dans `include/debugger.h` (au lieu d'un
+      `extern` dans `tui.c`).
+- [x] Ferme les 2 derniers gaps debugger vs Oricutron ; les autres
+      (bp conditionnels, raster, disasm paginé, symboles, édition mémoire,
+      undo/rewind) étaient déjà présents.
+- [x] 5 tests (`make test-debugger` 8 → **13**) : 12 formes d'adressage, branches
+      avant/arrière, rejets, `find` octets + ASCII. 677 tests PASS (+5).
+- [ ] Piste future : labels/macros dans l'assembleur ; `find` dans une plage
+      d'adresses ; assemblage multi-lignes.
+
 ### Sprint 60q: Export vidéo Motion-JPEG AVI (`--video`) (v1.21.16-alpha) - DONE
 
 - [x] **Module recorder AVI MJPG autonome** (`src/video/avi_recorder.c` +
