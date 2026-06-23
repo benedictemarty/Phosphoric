@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.21.28-alpha** | **724 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.21.29-alpha** | **727 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -187,6 +187,8 @@ Tape & Disk:
   -d, --disk FILE           Load .DSK disk image (drive A)
   --disk-rom FILE           Load Microdisc ROM
   --disk1/2/3 FILE          Drives B/C/D
+  --disk-writeback          Persist in-game disk writes back to the .dsk on exit
+                            (opt-in; overwrites in place; only written drives saved)
 
 Save States:
   --save-state FILE         Save state on exit

@@ -464,6 +464,26 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 62: Persistance des sauvegardes in-game — write-back .dsk + capture savestate (v1.21.29-alpha) - DONE
+
+- [x] **Diagnostic confirmé** : l'écriture de secteur FDC (`disk.c` `$A0`) mute
+      l'image en mémoire (relecture en session OK) mais rien ne persistait
+      (`sedoric_save()` jamais appelé ; `.ost` ne capturait pas `disk->data`).
+- [x] **Section `DSK` du savestate** (`src/savestate.c`) : capture les 4 images
+      lecteurs (index, géométrie, taille, octets), restaurées au chargement
+      (réalloc si taille différente, `microdisc_set_disk` re-pointe FDC+Microdisc).
+      Format rétro/avant-compatible (section inconnue ignorée + `fseek` borné →
+      pas de bump de version `.ost`).
+- [x] **Write-back `.dsk` opt-in** (`--disk-writeback`) : sur sortie, les lecteurs
+      réellement écrits sont réécrits via `sedoric_save()`. Opt-in pour ne jamais
+      écraser un `.dsk` par accident ; seuls les lecteurs *dirty* sont sauvés.
+- [x] **Suivi dirty** : `fdc_t.disk_modified` → `microdisc.disk_dirty[drive]`.
+- [x] +3 tests (`test_fdc_write_sets_modified`, `test_sedoric_save_roundtrip`,
+      `test_save_load_disk_image`) ; smoke e2e (.dsk intact si rien écrit).
+      727 tests PASS.
+- [ ] Pistes futures : write-back non destructif vers `*.save.dsk` ; e2e Sedoric
+      SAVE complet (write guest réel) ; flag dirty exposé dans l'UI/contrôle IPC.
+
 ### Sprint 61: Interface MIDI Mageco/ORICON — MC6850 $03FE/$031C + MIDI temps réel (ALSA/CoreMIDI/WinMM) + lecteur .mid SMF (v1.21.25 → v1.21.28-alpha) - DONE
 
 - [x] **Carte MIDI Mageco** (`src/io/mageco.c` + `include/io/mageco.h`) émulant

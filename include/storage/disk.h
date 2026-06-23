@@ -70,6 +70,11 @@ typedef struct fdc_s {
     uint8_t tracks;
     uint8_t sectors_per_track;
 
+    /* Set true whenever a sector/track write mutates disk_data. The Microdisc
+     * layer consumes this to mark the current drive dirty (for .dsk write-back).
+     * Cleared by the consumer; the FDC only ever sets it. */
+    bool disk_modified;
+
     /* Current operation */
     fdc_op_t currentop;
 

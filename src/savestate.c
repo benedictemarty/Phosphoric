@@ -290,6 +290,25 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         write_u8(fp, emu->microdisc.drive);
         write_u8(fp, emu->microdisc.side);
         end_section(fp, sec);
+
+        /* ── DSK Section: the actual disk images, so in-game saves (sectors the
+         * guest wrote this session) survive save/load. One record per loaded
+         * drive: index, geometry, size, then the raw bytes. ── */
+        sec = begin_section(fp, "DSK\0");
+        uint8_t ndrives = 0;
+        for (int i = 0; i < MICRODISC_MAX_DRIVES; i++)
+            if (emu->disks[i]) ndrives++;
+        write_u8(fp, ndrives);
+        for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+            if (!emu->disks[i]) continue;
+            write_u8(fp, (uint8_t)i);
+            write_u32le(fp, emu->disks[i]->size);
+            write_u8(fp, emu->disks[i]->tracks);
+            write_u8(fp, emu->disks[i]->sectors);
+            write_u8(fp, emu->disks[i]->sides);
+            fwrite(emu->disks[i]->data, 1, emu->disks[i]->size, fp);
+        }
+        end_section(fp, sec);
     }
 
     /* ── TAP Section ── */
@@ -574,6 +593,44 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             }
             /* Reset cur_sector_data — will be recalculated on next FDC operation */
             emu->microdisc.fdc.cur_sector_data = NULL;
+        } else if (memcmp(tag, "DSK\0", 4) == 0) {
+            /* Restore the disk images captured at save time (in-game saves). */
+            uint8_t ndrives = read_u8(fp);
+            for (uint8_t k = 0; k < ndrives; k++) {
+                uint8_t drive = read_u8(fp);
+                uint32_t dsize = read_u32le(fp);
+                uint8_t dtracks = read_u8(fp);
+                uint8_t dsectors = read_u8(fp);
+                uint8_t dsides = read_u8(fp);
+                if (drive >= MICRODISC_MAX_DRIVES) {  /* defensive: skip payload */
+                    fseek(fp, dsize, SEEK_CUR);
+                    continue;
+                }
+                /* Ensure a sedoric_disk_t with a buffer of the right size. */
+                if (!emu->disks[drive]) {
+                    emu->disks[drive] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+                }
+                if (emu->disks[drive] &&
+                    (emu->disks[drive]->data == NULL ||
+                     emu->disks[drive]->size != dsize)) {
+                    uint8_t* nd = (uint8_t*)realloc(emu->disks[drive]->data, dsize);
+                    if (nd) emu->disks[drive]->data = nd;
+                }
+                if (emu->disks[drive] && emu->disks[drive]->data) {
+                    fread(emu->disks[drive]->data, 1, dsize, fp);
+                    emu->disks[drive]->size = dsize;
+                    emu->disks[drive]->tracks = dtracks;
+                    emu->disks[drive]->sectors = dsectors;
+                    emu->disks[drive]->sides = dsides;
+                    /* Re-point the Microdisc (and FDC if this is the live drive)
+                     * at the restored buffer. */
+                    microdisc_set_disk(&emu->microdisc, drive,
+                                       emu->disks[drive]->data, dsize,
+                                       dtracks, dsectors);
+                } else {
+                    fseek(fp, dsize, SEEK_CUR);  /* allocation failed — skip */
+                }
+            }
         } else if (memcmp(tag, "TAP\0", 4) == 0) {
             emu->tape_loaded = read_u8(fp) != 0;
             emu->tapelen = read_i32le(fp);

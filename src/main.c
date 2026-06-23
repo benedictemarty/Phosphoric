@@ -299,6 +299,8 @@ static void print_usage(const char* program_name) {
     printf("      --disk2 FILE           Load .DSK disk file in drive C\n");
     printf("      --disk3 FILE           Load .DSK disk file in drive D\n");
     printf("      --disk-rom FILE        Load Microdisc ROM (microdis.rom)\n");
+    printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
+    printf("                             (overwrites in place; only drives actually written are saved)\n");
     printf("  -r, --rom FILE             Load custom ROM file\n");
     printf("  -h, --hostfs PATH          Mount host directory\n");
     printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
@@ -2461,6 +2463,7 @@ int main(int argc, char* argv[]) {
 
     const char* tape_file = NULL;
     const char* disk_files[MICRODISC_MAX_DRIVES] = {NULL, NULL, NULL, NULL};
+    bool disk_writeback = false;
     const char* rom_file = NULL;
     const char* hostfs_path = NULL;
     bool fast_load = false;
@@ -2525,7 +2528,7 @@ int main(int argc, char* argv[]) {
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2533,6 +2536,7 @@ int main(int argc, char* argv[]) {
         {"disk1",               required_argument, 0, OPT_DISK1},
         {"disk2",               required_argument, 0, OPT_DISK2},
         {"disk3",               required_argument, 0, OPT_DISK3},
+        {"disk-writeback",      no_argument,       0, OPT_DISK_WRITEBACK},
         {"rom",                 required_argument, 0, 'r'},
         {"hostfs",              required_argument, 0, 'h'},
         {"fast-load",           no_argument,       0, 'f'},
@@ -2605,6 +2609,7 @@ int main(int argc, char* argv[]) {
             case OPT_DISK1: disk_files[1] = optarg; break;
             case OPT_DISK2: disk_files[2] = optarg; break;
             case OPT_DISK3: disk_files[3] = optarg; break;
+            case OPT_DISK_WRITEBACK: disk_writeback = true; break;
             case 'r': rom_file = optarg; break;
             case 'h': hostfs_path = optarg; break;
             case 'f': fast_load = true; break;
@@ -3616,6 +3621,24 @@ int main(int argc, char* argv[]) {
     if (save_state_file) {
         log_info("Saving state on exit: %s", save_state_file);
         savestate_save(&emu, save_state_file);
+    }
+
+    /* Write modified disk images back to their .dsk files (opt-in). A drive is
+     * dirty only if the guest actually wrote a sector to it this session. The
+     * original file is overwritten in place, so this is gated behind an explicit
+     * flag to never clobber a .dsk by accident. */
+    if (disk_writeback && emu.has_microdisc) {
+        for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+            if (!emu.microdisc.disk_dirty[i] || !disk_files[i] || !emu.disks[i])
+                continue;
+            if (sedoric_save(emu.disks[i], disk_files[i])) {
+                log_info("Disk write-back: drive %c -> %s (%u bytes)",
+                         'A' + i, disk_files[i], emu.disks[i]->size);
+            } else {
+                log_error("Disk write-back failed: drive %c -> %s",
+                          'A' + i, disk_files[i]);
+            }
+        }
     }
 
     /* Write profiler report if enabled */
