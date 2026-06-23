@@ -452,6 +452,51 @@ TEST(test_save_load_with_microdisc) {
     cleanup_test();
 }
 
+/* The DSK section must round-trip the disk image, so a sector the guest wrote
+ * this session (an in-game save) survives save-state → load-state. */
+TEST(test_save_load_disk_image) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    const uint32_t dsize = 256u * 17u * 2u;   /* small 2-track disk */
+
+    emu1.has_microdisc = true;
+    microdisc_init(&emu1.microdisc);
+    emu1.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+    emu1.disks[0]->data = (uint8_t*)malloc(dsize);
+    emu1.disks[0]->size = dsize;
+    emu1.disks[0]->tracks = 2;
+    emu1.disks[0]->sectors = 17;
+    emu1.disks[0]->sides = 1;
+    memset(emu1.disks[0]->data, 0x00, dsize);
+    emu1.disks[0]->data[100] = 0xAB;          /* "in-game save" markers */
+    emu1.disks[0]->data[2000] = 0xCD;
+
+    /* emu2 starts with a DIFFERENT image to prove the restore overwrites it. */
+    emu2.has_microdisc = true;
+    microdisc_init(&emu2.microdisc);
+    emu2.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+    emu2.disks[0]->data = (uint8_t*)malloc(dsize);
+    emu2.disks[0]->size = dsize;
+    memset(emu2.disks[0]->data, 0xFF, dsize);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    ASSERT_TRUE(emu2.disks[0] != NULL);
+    ASSERT_EQ(emu2.disks[0]->size, dsize);
+    ASSERT_EQ(emu2.disks[0]->data[100], 0xAB);
+    ASSERT_EQ(emu2.disks[0]->data[2000], 0xCD);
+    ASSERT_EQ(emu2.disks[0]->data[0], 0x00);   /* the 0xFF was overwritten */
+
+    free(emu1.disks[0]->data); free(emu1.disks[0]);
+    free(emu2.disks[0]->data); free(emu2.disks[0]);
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -471,6 +516,7 @@ int main(void) {
     RUN(test_save_file_header);
     RUN(test_load_invalid_file);
     RUN(test_save_load_with_microdisc);
+    RUN(test_save_load_disk_image);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

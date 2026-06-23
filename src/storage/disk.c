@@ -392,6 +392,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 break;
             }
             fdc->cur_sector_data[fdc->cur_offset++] = value;
+            fdc->disk_modified = true;   /* in-memory image mutated → drive dirty */
             fdc->status &= ~FDC_ST_DRQ;
             fdc->clr_drq(fdc->drq_userdata);
 

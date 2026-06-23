@@ -62,6 +62,10 @@ typedef struct microdisc_s {
     uint8_t  disk_tracks[MICRODISC_MAX_DRIVES];
     uint8_t  disk_sectors[MICRODISC_MAX_DRIVES];
 
+    /* Per-drive dirty flag: set when the FDC writes a sector on that drive.
+     * Consumed for .dsk write-back on exit (--disk-writeback). */
+    bool     disk_dirty[MICRODISC_MAX_DRIVES];
+
     /* Overlay ROM data (microdis.rom, 8KB) */
     uint8_t* diskrom_data;
     uint32_t diskrom_size;

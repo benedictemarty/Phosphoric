@@ -109,6 +109,11 @@ uint8_t microdisc_read(microdisc_t* md, uint16_t addr) {
 void microdisc_write(microdisc_t* md, uint16_t addr, uint8_t value) {
     if (addr >= 0x0310 && addr <= 0x0313) {
         fdc_write(&md->fdc, (uint8_t)(addr & 3), value);
+        /* If the FDC just mutated the in-memory image, mark this drive dirty. */
+        if (md->fdc.disk_modified) {
+            md->disk_dirty[md->drive & 3] = true;
+            md->fdc.disk_modified = false;
+        }
         return;
     }
 

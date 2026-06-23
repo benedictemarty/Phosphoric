@@ -130,7 +130,7 @@ Derniere mise a jour : 2026-03-02
 | VIA 6522 | Fonctionnel | Timers, interruptions, callbacks ports, CB1 edge |
 | AY-3-8910 PSG | Precis | Courbe DAC Oricutron, diviseurs d'horloge |
 | ULA Video | Fonctionnel | Texte + HIRES, attributs serie, timing PAL |
-| WD1793 FDC | Fonctionnel | Commandes Type I/II, lecture/ecriture secteur |
+| WD1793 FDC | Fonctionnel | Commandes Type I/II, lecture/ecriture secteur ; saves in-game persistantes (--disk-writeback / savestate) |
 | Clavier | Precis | Matrice 8x8 via VIA + PSG Port A |
 | Joystick IJK | Fonctionnel | Port A PSG actif bas, clavier + gamepad |
 | Imprimante | Fonctionnel | Centronics, STROBE via CA2 |
@@ -150,6 +150,9 @@ Derniere mise a jour : 2026-03-02
 - Certains programmes avec protection anti-copie peuvent ne pas se charger
 - La couverture de code n'a pas ete mesuree formellement (estimation > 80%)
 - Les tests visuels (rendu HIRES, couleurs) sont valides par screenshot headless
+- Les ecritures disque du jeu (saves in-game) ne sont ecrites dans le fichier .dsk
+  qu'avec --disk-writeback (opt-in, ecrase en place) ; sinon elles vivent dans la
+  session ou dans un savestate (.ost capture l'image disque)
 - La carte MIDI Mageko occupe $03FE/$03FF : sur vrai materiel, le forum t=2525
   signale un risque de conflit d'adresses avec d'autres extensions (l'emulateur
   avertit si le Microdisc est present). Le backend MIDI temps reel `--mageco midi`

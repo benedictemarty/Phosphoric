@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.29-alpha] - 2026-06-24
+
+### Sprint 62 — Persistance des sauvegardes in-game (write-back .dsk + capture savestate)
+
+### Added
+- **Capture de l'image disque dans le savestate** (`src/savestate.c`, section
+  `DSK`) — les images des 4 lecteurs (`disk->data`, géométrie, taille) sont
+  écrites dans le `.ost`, si bien qu'un secteur écrit par le jeu pendant la
+  session (une **save in-game**) **survit à save-state → load-state**. Au
+  chargement, l'image est restaurée (réalloc si la taille diffère) et le Microdisc
+  est re-pointé (`microdisc_set_disk`). Format **rétro/avant-compatible** : la
+  section inconnue est ignorée par l'ancien code, l'absence de `DSK` par le
+  nouveau (aucun bump de version `.ost` nécessaire).
+- **Write-back `.dsk` opt-in** (`--disk-writeback`) — sur sortie, les lecteurs
+  réellement écrits cette session sont réécrits dans leur fichier `.dsk` via
+  `sedoric_save()` (qui existait mais n'était jamais appelé). **Opt-in** pour ne
+  jamais écraser un `.dsk` par accident ; seuls les lecteurs *dirty* sont sauvés.
+- **Suivi dirty** : `fdc_t.disk_modified` (posé dans `disk.c` quand une écriture
+  de secteur mute l'image en mémoire) → consommé par `microdisc_write` qui marque
+  `microdisc.disk_dirty[drive]`.
+
+### Tests
+- `make test-storage` : `test_fdc_write_sets_modified` + `test_sedoric_save_roundtrip`
+  (write secteur → save → reload → données identiques). 14 tests.
+- `make test-savestate` : `test_save_load_disk_image` (round-trip d'image disque,
+  l'image d'emu2 est bien écrasée par celle restaurée). 9 tests.
+- Smoke e2e : `--disk-writeback` laisse un `.dsk` **intact** quand aucun secteur
+  n'est écrit (md5 identique). 727 tests PASS (+3).
+
 ## [1.21.28-alpha] - 2026-06-23
 
 ### Sprint 61 (suite 3) — Mode ORICON ($031C-$031F) après lecture complète du fil

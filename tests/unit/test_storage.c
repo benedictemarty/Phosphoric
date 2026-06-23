@@ -272,6 +272,48 @@ TEST(test_fdc_status_read_clears_intrq) {
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
+/* A sector write through the FDC must flag the image as modified, so the
+ * Microdisc can mark the drive dirty for .dsk write-back. */
+TEST(test_fdc_write_sets_modified) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    ASSERT_FALSE(fdc.disk_modified);
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    fdc.c_track = 0;
+    fdc.track = 0;
+    fdc.sector = 1;
+    fdc_write(&fdc, 0, 0xA0);          /* Write sector */
+    fdc_ticktock(&fdc, 505);
+    fdc_write(&fdc, 3, 0x42);          /* first data byte → mutates the image */
+    ASSERT_TRUE(fdc.disk_modified);    /* flagged dirty */
+    free(disk_data);
+}
+
+/* sedoric_save() must persist the in-memory image to disk so in-game saves
+ * survive: write a sector, save, reload, verify the bytes round-trip. */
+TEST(test_sedoric_save_roundtrip) {
+    sedoric_disk_t* disk = sedoric_create();
+    ASSERT_TRUE(disk != NULL);
+
+    uint8_t buf[256];
+    for (int i = 0; i < 256; i++) buf[i] = (uint8_t)(0xA0 ^ i);
+    ASSERT_TRUE(sedoric_write_sector(disk, 5, 3, buf));
+
+    const char* path = "test_storage_save.dsk";
+    ASSERT_TRUE(sedoric_save(disk, path));
+    sedoric_destroy(disk);
+
+    sedoric_disk_t* reloaded = sedoric_load(path);
+    ASSERT_TRUE(reloaded != NULL);
+    uint8_t rd[256];
+    ASSERT_TRUE(sedoric_read_sector(reloaded, 5, 3, rd));
+    for (int i = 0; i < 256; i++) ASSERT_EQ(rd[i], (uint8_t)(0xA0 ^ i));
+    sedoric_destroy(reloaded);
+    remove(path);
+}
+
 int main(void) {
     printf("Running Storage tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -289,8 +331,12 @@ int main(void) {
     RUN(test_fdc_seek);
     RUN(test_fdc_read_sector);
     RUN(test_fdc_write_sector);
+    RUN(test_fdc_write_sets_modified);
     RUN(test_fdc_force_interrupt);
     RUN(test_fdc_status_read_clears_intrq);
+
+    printf("\n  Disk persistence:\n");
+    RUN(test_sedoric_save_roundtrip);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);
