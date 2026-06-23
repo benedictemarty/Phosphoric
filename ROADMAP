@@ -182,6 +182,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
+### Sprint 63 (PLANIFIÉ): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
+
+> Noté en fin de session : besoin d'un système **côté hôte** pour changer la
+> cassette (.tap/k7) **ou** le disque (.dsk) **sans sortir de l'émulateur**.
+
+- État existant :
+  - [x] **Cassette** déjà chaud-échangeable côté hôte : commande `load-tap <path>`
+        du protocole de contrôle IPC (`src/control.c`, Sprint 35b, OricForge).
+  - [x] **ROM** : `load-rom <path>` (idem).
+  - [x] UI web : boutons LOAD / EJECT (`web/shell.html`) — mais le chargement
+        **redémarre** la machine (drag-drop relance `-t`/`-d`), pas un vrai insert live.
+- À faire :
+  - [ ] **Disque à chaud** : commandes `load-disk <drive> <path>` / `eject-disk <drive>`
+        dans `src/control.c` — `sedoric_load()` + `microdisc_set_disk()` à chaud
+        (en réutilisant le suivi dirty + `--disk-writeback` pour ne pas perdre une
+        save in-game avant l'éjection). Capability annoncée dans `CONTROL_PROTO_CAPS`.
+  - [ ] **`eject-tape`** (symétrie avec `load-tap`).
+  - [ ] **Insert live web** : que LOAD/EJECT appellent un pont C↔JS d'insertion à
+        chaud (comme `web_key`/`web_load_state`) au lieu de relancer la machine.
+  - [ ] Optionnel natif : touche/menu (SDL) ou commande TUI pour parcourir et
+        insérer un média sans redémarrer.
+  - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud
+        (boot disque A → eject → insert disque B → boot B), doc protocole.
+
 ### Sprint 19: Interactive Debugger (v1.1.0-alpha) - DONE
 - [x] Interactive REPL debugger module (src/debugger.c, include/debugger.h)
 - [x] emulator_t extracted to shared header (include/emulator.h)
