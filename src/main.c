@@ -365,6 +365,10 @@ static void print_usage(const char* program_name) {
     printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
     printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");
     printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
+    printf("      --mageco TRANSPORT    Mageco MIDI interface (ACIA 6850) at $03FE, 31250 baud\n");
+    printf("                            Transports (raw MIDI bytes): file:IN[:OUT], midi[:TARGET], smf:FILE[:loop], loopback, tcp:H:P, pty\n");
+    printf("                            file::out.mid captures Oric MIDI OUT ; midi = live ALSA port (MIDI=1) ; smf:song.mid replays a .mid into the Oric\n");
+    printf("      --mageco-addr ADDR    Mageco base address in hex (default: 03FE)\n");
     printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     printf("      --load-state FILE      Load emulator state from FILE at startup\n");
     printf("  -?, --help                 Show this help\n");
@@ -623,6 +627,12 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return dtl2000_read(&emu->dtl2000, address);
     }
 
+    /* Mageco MIDI (ACIA 6850): $03FE-$03FF.
+     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
+    if (emu->has_mageco && mageco_addr_in_range(&emu->mageco, address)) {
+        return mageco_read(&emu->mageco, address);
+    }
+
     /* VIA 6522: $0300-$030F (mirrored in $0300-$03FF) */
     return via_read(&emu->via, (uint8_t)(address & 0x0F));
 }
@@ -791,6 +801,13 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
         return;
     }
 
+    /* Mageco MIDI (ACIA 6850): $03FE-$03FF.
+     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
+    if (emu->has_mageco && mageco_addr_in_range(&emu->mageco, address)) {
+        mageco_write(&emu->mageco, address, value);
+        return;
+    }
+
     uint8_t reg = (uint8_t)(address & 0x0F);
 
     /* Intercept VIA Port A writes to forward to PSG data bus */
@@ -880,6 +897,15 @@ static void dtl2000_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_DTL2000);
 }
 
+/* Mageco MIDI (ACIA 6850) IRQ callbacks */
+static void mageco_cpu_irq_set(emulator_t* emu) {
+    cpu_irq_set(&emu->cpu, IRQF_MAGECO);
+}
+
+static void mageco_cpu_irq_clr(emulator_t* emu) {
+    cpu_irq_clear(&emu->cpu, IRQF_MAGECO);
+}
+
 /* Parse a "host[:port]" spec into @p host / @p port, defaulting to @p def_port
  * when no port is given. The host buffer is always NUL-terminated. */
 static void parse_host_port(const char* spec, char* host, size_t host_sz,
@@ -903,7 +929,7 @@ static void parse_host_port(const char* spec, char* host, size_t host_sz,
 /* Create a *transparent* serial transport from @p spec: a raw byte pipe that
  * passes data through unchanged, faithful behind any UART (the ACIA 6551 of
  * --serial as well as the ACIA 6850 of the --dtl2000 card): loopback, tcp:H:P,
- * pty, com:, file:IN[:OUT].
+ * pty, com:, file:IN[:OUT], midi[:TARGET] (ALSA, MIDI=1 build), smf:FILE[:loop].
  *
  * Deliberately excludes the *protocol-injecting* backends — modem (an in-process
  * Hayes AT interpreter), digitelec and picowifi (which emulate a UART of their
@@ -931,6 +957,25 @@ static serial_backend_t* serial_transport_create(const char* spec)
     if (strncmp(spec, "com:", 4) == 0) {
         /* com:baud,bits,parity,stop,device */
         return serial_backend_com_create(spec + 4);
+    }
+    if (strcmp(spec, "midi") == 0) {
+        return serial_backend_midi_create(NULL);
+    }
+    if (strncmp(spec, "midi:", 5) == 0) {
+        /* midi:TARGET — auto-connect to an ALSA address ("128:0" or a name) */
+        return serial_backend_midi_create(spec + 5);
+    }
+    if (strncmp(spec, "smf:", 4) == 0) {
+        /* smf:FILE[:loop] — Standard MIDI File → timed MIDI IN replay */
+        const char* rest = spec + 4;
+        const char* loopsfx = strstr(rest, ":loop");
+        bool loop = (loopsfx != NULL);
+        char path[512];
+        size_t plen = loop ? (size_t)(loopsfx - rest) : strlen(rest);
+        if (plen >= sizeof(path)) plen = sizeof(path) - 1;
+        memcpy(path, rest, plen);
+        path[plen] = '\0';
+        return serial_backend_smf_create(path, loop);
     }
     if (strncmp(spec, "file:", 5) == 0) {
         /* file:IN[:OUT] — deterministic replay (RX) / capture (TX).
@@ -989,6 +1034,12 @@ static bool emulator_init(emulator_t* emu) {
     emu->dtl2000.irq_set = dtl2000_cpu_irq_set;
     emu->dtl2000.irq_clr = dtl2000_cpu_irq_clr;
     emu->dtl2000.irq_userdata = emu;
+
+    /* Initialize Mageco MIDI interface (disabled by default) */
+    mageco_init(&emu->mageco, MAGECO_DEFAULT_BASE);
+    emu->mageco.irq_set = mageco_cpu_irq_set;
+    emu->mageco.irq_clr = mageco_cpu_irq_clr;
+    emu->mageco.irq_userdata = emu;
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
     ay_init(&emu->psg, ORIC_CLOCK_HZ);
@@ -1106,6 +1157,12 @@ static void emulator_cleanup(emulator_t* emu) {
         serial_backend_destroy(emu->dtl2000_backend);
         emu->dtl2000_backend = NULL;
         emu->has_dtl2000 = false;
+    }
+    if (emu->mageco_backend) {
+        mageco_set_trace(&emu->mageco, NULL);
+        serial_backend_destroy(emu->mageco_backend);
+        emu->mageco_backend = NULL;
+        emu->has_mageco = false;
     }
     /* Close ACIA trace and free RX FIFO */
     acia_set_trace(&emu->acia, NULL);
@@ -1685,6 +1742,11 @@ static void emulator_run(emulator_t* emu) {
             /* Digitelec DTL 2000: PIA+ACIA TX/RX timing */
             if (emu->has_dtl2000) {
                 dtl2000_tick(&emu->dtl2000, step);
+            }
+
+            /* Mageco MIDI: ACIA 6850 TX/RX timing at 31250 baud */
+            if (emu->has_mageco) {
+                mageco_tick(&emu->mageco, step);
             }
 
             /* NOTE: real Oric hardware does NOT expose VSync via VIA CB1.
@@ -2451,13 +2513,15 @@ int main(int argc, char* argv[]) {
     const char* acia_addr_arg = NULL;
     const char* dtl2000_arg = NULL;
     const char* dtl2000_addr_arg = NULL;
+    const char* mageco_arg = NULL;
+    const char* mageco_addr_arg = NULL;
     bool serial_v23 = false;
     int serial_buffer_size = 0;
     int serial_baud = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2511,6 +2575,8 @@ int main(int argc, char* argv[]) {
         {"acia-addr",           required_argument, 0, OPT_ACIA_ADDR},
         {"dtl2000",             required_argument, 0, OPT_DTL2000},
         {"dtl2000-addr",        required_argument, 0, OPT_DTL2000_ADDR},
+        {"mageco",              required_argument, 0, OPT_MAGECO},
+        {"mageco-addr",         required_argument, 0, OPT_MAGECO_ADDR},
         {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
         {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
         {"symbols",             required_argument, 0, OPT_SYMBOLS},
@@ -2639,6 +2705,12 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
+                break;
+            case OPT_MAGECO:
+                mageco_arg = optarg;
+                break;
+            case OPT_MAGECO_ADDR:
+                mageco_addr_arg = optarg;
                 break;
             case OPT_DTL2000:
                 dtl2000_arg = optarg;
@@ -2877,6 +2949,48 @@ int main(int argc, char* argv[]) {
                 log_error("Failed to open DTL 2000 transport: %s", dtl2000_arg);
                 serial_backend_destroy(db);
             }
+        }
+    }
+
+    /* Mageco MIDI interface — MC6850 ACIA at $03FE (forum t=2525).
+     * Transport reuses the transparent serial backends: file:OUT captures the
+     * raw MIDI byte stream (.mid/.syx) and file:IN replays MIDI IN; loopback/
+     * tcp/pty bridge to a host MIDI router. The byte stream is identical to a
+     * real Oric+Mageco card seen through a USB-MIDI interface. */
+    if (mageco_arg) {
+        uint16_t base = MAGECO_DEFAULT_BASE;
+        if (mageco_addr_arg) {
+            base = (uint16_t)strtol(mageco_addr_arg, NULL, 16);
+        }
+        if (emu.has_microdisc) {
+            log_warning("Mageco MIDI at $%04X shares page 3 with the disc electronics "
+                        "— the forum warns $03FE/$03FF can clash with other extensions",
+                        base);
+        }
+        serial_backend_t* mb = serial_transport_create(mageco_arg);
+        if (!mb) {
+            log_error("Unknown Mageco transport: %s", mageco_arg);
+            log_error("  loopback, tcp:host:port, pty, com:baud,bits,P,stop,device, file:in[:out]");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        if (mb->open(mb)) {
+            mageco_init(&emu.mageco, base);
+            /* mageco_init() zeroes the struct — re-wire the CPU IRQ hooks */
+            emu.mageco.irq_set = mageco_cpu_irq_set;
+            emu.mageco.irq_clr = mageco_cpu_irq_clr;
+            emu.mageco.irq_userdata = &emu;
+            mageco_set_backend(&emu.mageco, mb);
+            emu.mageco_backend = mb;
+            emu.has_mageco = true;
+            if (serial_trace_file) {
+                mageco_set_trace(&emu.mageco, serial_trace_file);
+            }
+            log_info("Mageco MIDI enabled at $%04X (31250 baud, transport: %s)",
+                     base, mageco_arg);
+        } else {
+            log_error("Failed to open Mageco transport: %s", mageco_arg);
+            serial_backend_destroy(mb);
         }
     }
 

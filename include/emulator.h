@@ -29,6 +29,7 @@
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
 #include "io/dtl2000.h"
+#include "io/mageco.h"
 #include "storage/sedoric.h"
 #include "hostfs/hostfs.h"
 #include "debugger.h"
@@ -38,7 +39,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.24-alpha"
+#define EMU_VERSION "1.21.27-alpha"
 
 /**
  * @brief ORIC machine model
@@ -140,6 +141,11 @@ typedef struct emulator_s {
     dtl2000_t dtl2000;
     serial_backend_t* dtl2000_backend;
     bool has_dtl2000;
+
+    /* Mageco MIDI interface — MC6850 ACIA at $03FE-$03FF (31250 baud MIDI) */
+    mageco_t mageco;
+    serial_backend_t* mageco_backend;
+    bool has_mageco;
 
     /* Microdisc controller */
     microdisc_t microdisc;

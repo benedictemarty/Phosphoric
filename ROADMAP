@@ -464,6 +464,50 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 61: Interface MIDI Mageco — MC6850 $03FE + MIDI temps réel (ALSA/CoreMIDI/WinMM) + lecteur .mid SMF (v1.21.25 → v1.21.27-alpha) - DONE
+
+- [x] **Carte MIDI Mageco** (`src/io/mageco.c` + `include/io/mageco.h`) émulant
+      l'interface MIDI Mageco pour Oric (forum Defence-Force t=2525, relancée par
+      Dbug en shield MIDI « Oric-Con ») : un MC6850 ACIA mappé à **$03FE-$03FF**
+      (`$03FE` Control/Status, `$03FF` Tx/Rx Data) pilotant les 2 prises DIN-5 MIDI
+      (IN optoisolé TIL 111, OUT direct). Réutilise le module `acia6850.c` autonome
+      (Sprint 60l) — seule la couche carte est neuve (~210 LOC).
+- [x] **Cadence MIDI 31250 baud, 8-N-1** côté hôte (le 6850 n'a pas de baud
+      interne) : 10 bits/trame → 320 cycles/octet à 1 MHz (TX + RX).
+- [x] **Aucun handshake modem** : DCD/CTS épinglés « présent/clair » (boucle de
+      courant unidirectionnelle), l'émetteur met toujours l'octet écrit sur le fil.
+- [x] **Option CLI `--mageco TRANSPORT`** (+ `--mageco-addr ADDR`, défaut `03FE`)
+      sur les backends transparents : `file:IN[:OUT]` capture/rejoue le flux MIDI
+      brut (`.mid`/`.syx`), `loopback`/`tcp`/`pty`. IRQ via `IRQF_MAGECO`.
+- [x] **Routage I/O** `$03FE-$03FF` intercepté devant le miroir VIA $0300-$03FF
+      (averti si Microdisc — conflit d'adresses signalé par le forum).
+- [x] **Équivalence émulateur ↔ Oric réel + carte prouvée** : flux d'octets
+      identique à un vrai Oric+Mageco vu via une interface USB-MIDI (seul le fil est
+      virtuel). Étude `docs/specs/mageco-midi-feasibility.md`.
+- [x] Suite `make test-midi` (**13 tests**) + validation e2e binaire (boot BASIC →
+      `POKE1022,21`+`POKE1023` → capture `90 3C 7F`). 713 tests PASS (+13).
+- [x] **Niveau B — backend MIDI temps réel ALSA** (v1.21.26-alpha) : transport
+      `midi[:TARGET]` (`SERIAL_BACKEND_MIDI`, `src/io/serial_backend.c`) ouvrant un
+      port séquenceur ALSA nommé/souscriptible « Phosphoric MIDI:Mageco MIDI »
+      (visible `aconnect -l`). Émission octets→évènements (`snd_midi_event`),
+      réception évènements→octets. Build optionnel `MIDI=1` (lie `-lasound`), stub
+      NULL sinon. Auto-connexion `--mageco midi:128:0`. L'Oric émulé **pilote
+      FluidSynth/DAW**, un clavier MIDI **joue dans l'Oric**. Validé temps réel
+      (ALSA 1.2.14, `aseqdump` reçoit le Note On du BASIC). +1 test. 714 tests PASS.
+- [x] **Lecteur de fichiers `.mid` (SMF)** (v1.21.27-alpha) : parseur Standard
+      MIDI File (`src/io/smf.c`, format 0/1, division PPQN/SMPTE, carte de tempo
+      intégrée, running status, SysEx) → transport `smf:FILE[:loop]`
+      (`SERIAL_BACKEND_SMF`) rejouant un `.mid` **dans** l'Oric en MIDI IN cadencé
+      à l'horloge temps réel `CLOCK_MONOTONIC` (tempo respecté). +6 tests
+      (`make test-smf`). Validé temps réel (`90 3C 7F` → `80 3C 00` à +300 ms).
+- [x] **Portages CoreMIDI (macOS) / WinMM (Windows)** (v1.21.27-alpha) : backend
+      temps réel `midi[:TARGET]` porté sur ces plateformes (même vtable/factory que
+      ALSA, `Makefile` détecte `uname`). ⚠️ écrits selon les API documentées mais
+      **non compilés/vérifiés** sur l'hôte Linux ; branche par plateforme, build
+      Linux inchangé — à valider sur macOS/Windows réels.
+- [ ] Pistes futures : validation CoreMIDI/WinMM sur matériel réel ; SMF SMPTE
+      étendu ; tempo-warp / transposition à la volée.
+
 ### Sprint 60y: Séquençage multi `--type-keys` — automatisation multi-écrans (v1.21.24-alpha) - DONE
 
 - [x] **`--type-keys` répétable** (`src/main.c`, `include/emulator.h`) : jusqu'à

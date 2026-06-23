@@ -29,6 +29,26 @@ ifeq ($(CAST), 1)
     LDFLAGS += -lpthread -lssl -lcrypto
 endif
 
+# Real-time host MIDI (ALSA sequencer) — optional. Bridges the Oric's MIDI byte
+# stream (Mageco card, --mageco midi[:target]) to the host MIDI graph so it can
+# drive FluidSynth / a DAW, or a MIDI keyboard can play into the Oric. Links
+# -lasound. Without MIDI=1 the `midi` transport returns a clear "rebuild" error.
+MIDI ?= 0
+ifeq ($(MIDI), 1)
+    CFLAGS += -DHAS_MIDI
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S), Linux)
+        CFLAGS  += $(shell pkg-config --cflags alsa 2>/dev/null)
+        LDFLAGS += $(shell pkg-config --libs alsa 2>/dev/null)
+    endif
+    ifeq ($(UNAME_S), Darwin)
+        LDFLAGS += -framework CoreMIDI -framework CoreFoundation
+    endif
+    ifneq (,$(findstring MINGW,$(UNAME_S)))
+        LDFLAGS += -lwinmm
+    endif
+endif
+
 # PicoWiFi TLS termination (v0.2.0 firmware) — OpenSSL terminates TLS in the
 # emulated modem so the Oric reaches HTTPS/secure BBS in cleartext, mirroring
 # the real Pico W mbedTLS path. Auto-enabled when OpenSSL is available; set
@@ -70,9 +90,11 @@ SOURCES = src/main.c \
           src/io/loci_sdimg.c \
           src/io/acia6551.c \
           src/io/serial_backend.c \
+          src/io/smf.c \
           src/io/pia6821.c \
           src/io/acia6850.c \
           src/io/dtl2000.c \
+          src/io/mageco.c \
           src/io/serial_picowifi.c \
           src/video/video.c \
           src/video/textmode.c \
@@ -129,7 +151,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -358,7 +380,7 @@ test-loci-sdimg-write: $(TEST_LOCI_SDIMG_WRITE_SRCS)
 	@./test_loci_sdimg_write
 
 TEST_SERIAL_SRCS = tests/unit/test_serial.c src/io/acia6551.c \
-                   src/io/serial_backend.c src/utils/logging.c
+                   src/io/serial_backend.c src/io/smf.c src/utils/logging.c
 
 test-serial: $(TEST_SERIAL_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_SERIAL_SRCS) $(LDFLAGS) -lutil -o test_serial
@@ -378,11 +400,26 @@ test-acia6850: $(TEST_ACIA6850_SRCS)
 
 TEST_DTL2000_SRCS = tests/unit/test_dtl2000.c src/io/dtl2000.c src/io/pia6821.c \
                     src/io/acia6850.c \
-                    src/io/serial_backend.c src/io/acia6551.c src/utils/logging.c
+                    src/io/serial_backend.c src/io/smf.c src/io/acia6551.c src/utils/logging.c
 
 test-dtl2000: $(TEST_DTL2000_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_DTL2000_SRCS) $(LDFLAGS) -lutil -o test_dtl2000
 	@./test_dtl2000
+
+# Mageco MIDI interface — MC6850 ACIA at $03FE, 31250 baud (forum t=2525)
+TEST_MIDI_SRCS = tests/unit/test_midi.c src/io/mageco.c src/io/acia6850.c \
+                 src/io/serial_backend.c src/io/smf.c src/io/acia6551.c src/utils/logging.c
+
+test-midi: $(TEST_MIDI_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_MIDI_SRCS) $(LDFLAGS) -lutil -o test_midi
+	@./test_midi
+
+# Standard MIDI File (.mid) parser — timed MIDI IN replay source
+TEST_SMF_SRCS = tests/unit/test_smf.c src/io/smf.c
+
+test-smf: $(TEST_SMF_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_SMF_SRCS) $(LDFLAGS) -o test_smf
+	@./test_smf
 
 # DTL 2000 TX/RX loopback e2e: boots the BASIC driver on the faithful PIA/ACIA
 # card and asserts the --serial-trace shows every TX byte echoed back on RX.
@@ -451,7 +488,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

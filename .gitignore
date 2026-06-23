@@ -49,6 +49,8 @@ test_rominfo
 test_savestate
 test_serial
 test_dtl2000
+test_midi
+test_smf
 test_pia6821
 test_picowifi
 test_symbols

@@ -135,6 +135,11 @@ Derniere mise a jour : 2026-03-02
 | Joystick IJK | Fonctionnel | Port A PSG actif bas, clavier + gamepad |
 | Imprimante | Fonctionnel | Centronics, STROBE via CA2 |
 | MCP-40 | Fonctionnel | 8 commandes, 4 couleurs, export BMP |
+| ACIA 6551 | Fonctionnel | Serie $031C-$031F, backends loopback/tcp/pty/com/modem |
+| Digitelec DTL 2000 | Fidele | PIA 6821 + ACIA 6850 a $03F8-$03FD, registres OCR |
+| MIDI Mageco | Fonctionnel | MC6850 a $03FE-$03FF, 31250 baud, `--mageco file:/smf:/midi/loopback/tcp/pty` (forum t=2525) |
+| MIDI temps reel | Fonctionnel | Port MIDI hote `--mageco midi[:TARGET]` (build `MIDI=1`) : ALSA (Linux, verifie), CoreMIDI/WinMM (ecrits, non verifies) |
+| Lecteur .mid (SMF) | Fonctionnel | `--mageco smf:FILE[:loop]` rejoue un fichier .mid dans l'Oric en MIDI IN cadence (format 0/1, carte de tempo) |
 
 ---
 
@@ -144,6 +149,11 @@ Derniere mise a jour : 2026-03-02
 - Certains programmes avec protection anti-copie peuvent ne pas se charger
 - La couverture de code n'a pas ete mesuree formellement (estimation > 80%)
 - Les tests visuels (rendu HIRES, couleurs) sont valides par screenshot headless
+- La carte MIDI Mageko occupe $03FE/$03FF : sur vrai materiel, le forum t=2525
+  signale un risque de conflit d'adresses avec d'autres extensions (l'emulateur
+  avertit si le Microdisc est present). Le backend MIDI temps reel `--mageco midi`
+  necessite un build `MIDI=1` ; la branche ALSA (Linux) est verifiee, les portages
+  CoreMIDI (macOS) / WinMM (Windows) sont ecrits mais non verifies sur materiel reel
 
 ---
 
