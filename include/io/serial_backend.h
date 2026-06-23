@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  Backend types
@@ -29,7 +30,9 @@ typedef enum {
     SERIAL_BACKEND_COM      = 5,    /**< Real serial port (termios) */
     SERIAL_BACKEND_DIGITELEC = 6,   /**< Digitelec DTL 2000 V23/V21 modem */
     SERIAL_BACKEND_PICOWIFI = 7,    /**< sodiumlb PicoWiFiModemUSB (LOCI) */
-    SERIAL_BACKEND_FILE     = 8     /**< File replay (RX) / capture (TX) */
+    SERIAL_BACKEND_FILE     = 8,    /**< File replay (RX) / capture (TX) */
+    SERIAL_BACKEND_MIDI     = 9,    /**< Real-time host MIDI port (ALSA/CoreMIDI/WinMM) */
+    SERIAL_BACKEND_SMF      = 10    /**< Standard MIDI File → timed MIDI IN replay */
 } serial_backend_type_t;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -191,6 +194,37 @@ typedef struct serial_backend_s {
             char     out_path[256];     /**< Capture file path ("" = none) */
             int      peeked;            /**< 1-byte RX lookahead (-1 = empty) */
         } file;
+
+        /* ALSA sequencer MIDI port — a *real-time* transparent transport that
+         * bridges the Oric's raw MIDI byte stream to the host MIDI graph. We
+         * create a named, subscribable duplex ALSA seq port ("Phosphoric MIDI")
+         * that shows up in `aconnect -l` / QjackCtl, so the Oric can drive a
+         * software synth (FluidSynth) or a DAW, and a MIDI keyboard can play
+         * into the Oric. TX bytes are re-assembled into seq events via a midi
+         * encoder; RX events are decoded back into bytes. The ALSA handles are
+         * opaque here to keep this header free of <alsa/asoundlib.h>. */
+        struct {
+            void*    seq;               /**< snd_seq_t* / platform handle (NULL=closed) */
+            void*    encoder;           /**< snd_midi_event_t* TX byte→event */
+            void*    decoder;           /**< snd_midi_event_t* RX event→byte */
+            int      port;              /**< our seq port id */
+            char     target[128];       /**< auto-connect address ("" = none) */
+            uint8_t  rx_buf[1024];      /**< decoded RX byte ring */
+            int      rx_head, rx_tail, rx_count;
+        } midi;
+
+        /* Standard MIDI File → timed MIDI IN replay. Parses a .mid once, then
+         * paces its events out as RX bytes on a real-time (monotonic) clock, so
+         * the Oric (behind the Mageco card) receives the song as if a sequencer
+         * were playing the MIDI keyboard. TX from the Oric is discarded. */
+        struct {
+            void*    song;              /**< smf_t* parsed file (NULL = closed) */
+            size_t   cursor;            /**< next event index */
+            int64_t  start_ns;          /**< monotonic start (ns); 0 = not started */
+            bool     loop;              /**< restart at end of song */
+            uint8_t  rx_buf[512];       /**< pending RX byte ring */
+            int      rx_head, rx_tail, rx_count;
+        } smf;
     } state;
 } serial_backend_t;
 
@@ -280,6 +314,37 @@ serial_backend_t* serial_backend_picowifi_create(const char* ssid, const char* p
  * @param out_path  Capture sink path, or NULL for none
  */
 serial_backend_t* serial_backend_file_create(const char* in_path, const char* out_path);
+
+/**
+ * @brief Create an ALSA sequencer MIDI backend (real-time host MIDI port)
+ *
+ * Opens an ALSA sequencer client and creates a named, subscribable duplex port
+ * ("Phosphoric MIDI") that appears in `aconnect -l`. The Oric's raw MIDI byte
+ * stream is re-assembled into seq events on TX and decoded back to bytes on RX,
+ * so the emulated Oric (e.g. behind the Mageco card) can drive a software synth
+ * (FluidSynth) or a DAW, and a MIDI keyboard can play into the Oric.
+ *
+ * Only available when built with MIDI=1 (links -lasound); otherwise this returns
+ * NULL with an explanatory log line so the caller degrades gracefully.
+ *
+ * @param target  Optional ALSA address to auto-connect to (e.g. "128:0" or a
+ *                client name like "FLUID"), or NULL/"" to only create the port
+ *                (connect later with aconnect).
+ */
+serial_backend_t* serial_backend_midi_create(const char* target);
+
+/**
+ * @brief Create a Standard MIDI File (.mid) replay backend (timed MIDI IN)
+ *
+ * Parses @p path as an SMF and paces its events out as received MIDI bytes on a
+ * real-time clock, so the Oric (behind the Mageco card) is fed the song at its
+ * musical tempo as if a sequencer were playing the keyboard. TX from the Oric is
+ * discarded. Always available (pure C parser, no external dependency).
+ *
+ * @param path  Path to a .mid file
+ * @param loop  Restart from the top when the song ends
+ */
+serial_backend_t* serial_backend_smf_create(const char* path, bool loop);
 
 /**
  * @brief Destroy a backend and free resources

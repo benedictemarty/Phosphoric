@@ -5,6 +5,141 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.28-alpha] - 2026-06-23
+
+### Sprint 61 (suite 3) — Mode ORICON ($031C-$031F) après lecture complète du fil
+
+### Added
+- **Mode ORICON** (`src/io/mageco.c`, `mageco_init_oricon`) — variante moderne de
+  l'interface MIDI (projet ORICON de iss, forum t=2525 page 3, vérifié verbatim) :
+  **MC6850 ACIA à $031C/$031D** + **générateur d'horloge à $031E/$031F**, fenêtre de
+  4 registres, décodage compatible LOCI. Le générateur d'horloge est modélisé en
+  deux latches lisibles/écrites (l'encodage exact du diviseur n'est pas publié dans
+  le fil ; la cadence reste MIDI 31250 baud). Le mode Mageco d'origine ($03FE/$03FF)
+  est conservé.
+- **Option CLI `--oricon TRANSPORT`** — active la variante ORICON (base $031C) avec
+  les mêmes transports que `--mageco` (`file:`/`smf:`/`midi:`/`loopback`/`tcp`/`pty`).
+  Avertit si overlap avec `--serial` (ACIA 6551) ou un Microdisc à $031C.
+- **Routage I/O** : le bloc Mageco/ORICON est désormais évalué **avant** le Microdisc
+  (`src/main.c`), car la fenêtre ORICON $031C-$031F chevauche la plage Microdisc
+  $0310-$031F (ORICON est basé LOCI, pas utilisé avec un Microdisc).
+
+### Fixed / Honesty
+- **Lecture complète du fil forum t=2525 (4 pages, 48 messages)** — la version
+  initiale ne reposait que sur la page 1. Le fil décrit **deux conceptions** : la
+  carte **Mageco** d'origine (#3FE/#3FF, Dbug) et le reboot **ORICON** ($31C-$31F +
+  générateur d'horloge, iss). L'étude `docs/specs/mageco-midi-feasibility.md` est
+  corrigée en conséquence (distinction Mageco/ORICON, SAM2695, outil Lua midi2oric).
+
+### Tests
+- 4 tests ORICON ajoutés à `make test-midi` (init/plage 4 octets, latches du
+  générateur d'horloge, absence de ces registres en mode Mageco, aller-retour ACIA
+  à $031C). Validé e2e : `--oricon` + `POKE796,21:POKE797,…` → capture `90 3C 7F`.
+- 724 tests PASS (+4).
+
+## [1.21.27-alpha] - 2026-06-23
+
+### Sprint 61 (suite 2) — Lecteur de fichiers .mid (SMF) + portages CoreMIDI/WinMM
+
+### Added
+- **Parseur Standard MIDI File** (`src/io/smf.c` + `include/io/smf.h`) — parse un
+  `.mid` (format 0 **et** 1, division PPQN ou SMPTE) en une **liste d'évènements
+  fil unique, triée par temps**, en microsecondes. Fusionne les pistes sur une
+  seule timeline et **intègre la carte de tempo** (méta Set Tempo de n'importe
+  quelle piste) ; gère le **running status**, le SysEx, et consomme les méta pour
+  le timing (les méta ne passent jamais sur le fil). Pur, déterministe, sans
+  dépendance.
+- **Transport `smf:FILE[:loop]`** (`SERIAL_BACKEND_SMF`, `src/io/serial_backend.c`)
+  — rejoue le `.mid` **dans** l'Oric (carte Mageco) comme **MIDI IN cadencé** : les
+  octets sont délivrés à l'horloge temps réel (`CLOCK_MONOTONIC`) au tempo musical
+  du morceau, comme si un séquenceur jouait le clavier. Le TX de l'Oric est ignoré.
+  `:loop` répète le morceau. Ex. `--mageco smf:song.mid`.
+- **Portage CoreMIDI (macOS) et WinMM (Windows)** du backend temps réel
+  (`src/io/serial_backend.c`, `MIDI_BACKEND_COREMIDI` / `MIDI_BACKEND_WINMM`) :
+  le transport `midi[:TARGET]` ouvre un port MIDI hôte natif sur ces plateformes,
+  même vtable et même factory que la branche ALSA. Le `Makefile` détecte la
+  plateforme (`uname`) et lie `-framework CoreMIDI` (Darwin) / `-lwinmm` (MinGW).
+  ⚠️ Écrit selon les API documentées mais **non compilé/vérifié ici** (hôte Linux) :
+  seule la branche de la plateforme courante est compilée, le build Linux est
+  inchangé.
+
+### Tests
+- Suite `make test-smf` (`tests/unit/test_smf.c`, **6 tests**) : en-tête + delta-
+  times VLQ + running status, intégration de la carte de tempo (µs/tick), fusion
+  multi-pistes (format 1), pass-through SysEx, rejet d'entrée malformée, aller-
+  retour fichier.
+- Validé temps réel (harnais) : `smf:` délivre `90 3C 7F` puis `80 3C 00` (~300 ms
+  après, tempo respecté), dans l'ordre.
+- 720 tests PASS (+6).
+
+## [1.21.26-alpha] - 2026-06-23
+
+### Sprint 61 (suite) — Backend MIDI temps réel (port ALSA, niveau B)
+
+### Added
+- **Backend MIDI temps réel ALSA** (`src/io/serial_backend.c`, type
+  `SERIAL_BACKEND_MIDI`) — nouveau transport `midi[:TARGET]` qui ouvre un client
+  séquenceur ALSA et crée un port nommé, souscriptible et duplex **« Phosphoric
+  MIDI:Mageco MIDI »** visible dans `aconnect -l`. Le flux d'octets MIDI brut de
+  l'Oric est réassemblé en évènements seq à l'émission (encodeur `snd_midi_event`)
+  et redécodé en octets à la réception → l'Oric émulé **pilote un synthé logiciel
+  (FluidSynth) ou une DAW**, et un clavier MIDI peut **jouer dans l'Oric**.
+- **Build optionnel `MIDI=1`** (`Makefile`, façon `CAST=1`) liant `-lasound`. Sans
+  ce flag, `serial_backend_midi_create()` est un **stub** qui retourne NULL avec un
+  message « rebuild with MIDI=1 » → dégradation propre, build par défaut inchangé.
+- **Auto-connexion** : `--mageco midi:128:0` (ou un nom résolu par
+  `snd_seq_parse_address`) connecte le port à la cible dès l'ouverture (sortie via
+  `snd_seq_connect_to`, entrée best-effort via `snd_seq_connect_from`). `--mageco
+  midi` seul crée le port (à câbler ensuite via `aconnect`). Disponible aussi pour
+  `--serial`/`--dtl2000` (transport transparent partagé).
+
+### Tests
+- `test_midi_alsa_stub_without_build` (`make test-midi`, build par défaut) : le
+  backend MIDI retourne NULL hors `MIDI=1` (contrat de dégradation). 714 tests.
+- Validé **temps réel** sur la machine (ALSA 1.2.14) : port `aconnect`-visible,
+  puis `aseqdump` reçoit le **Note On (do central, vélocité 127)** émis par
+  `POKE1023` du BASIC Oric à travers l'ACIA 6850 → séquenceur ALSA. Backend isolé
+  + chemin émulateur complet vérifiés.
+
+## [1.21.25-alpha] - 2026-06-23
+
+### Sprint 61 — Interface MIDI Mageco (MC6850 à $03FE)
+
+### Added
+- **Carte MIDI Mageco** (`src/io/mageco.c` + `include/io/mageco.h`) — émulation
+  de l'interface MIDI Mageco pour Oric (forum Defence-Force t=2525, relancée par
+  Dbug sous la forme du shield MIDI « Oric-Con »). Un unique **MC6850 ACIA** mappé
+  à **$03FE-$03FF** (`$03FE` Control/Status, `$03FF` Tx/Rx Data) pilotant les deux
+  prises DIN-5 MIDI (IN optoisolé par TIL 111, OUT direct). Réutilise le module
+  MC6850 autonome (`acia6850.c`) ; seule la couche carte est neuve (~210 LOC).
+- **Cadence MIDI 31250 baud, 8-N-1** appliquée côté hôte (le 6850 n'a pas de
+  générateur de baud interne) : 10 bits/trame → 320 cycles/octet à 1 MHz, pour
+  TX et RX. **Aucun handshake modem** : DCD/CTS épinglés « présent/clair » (MIDI
+  est une boucle de courant unidirectionnelle), et l'émetteur met toujours
+  l'octet écrit sur le fil (RTS hors du chemin Tx MIDI).
+- **Option CLI `--mageco TRANSPORT`** (+ `--mageco-addr ADDR`, défaut `03FE`) —
+  réutilise les backends série *transparents* : `file:IN[:OUT]` capture/rejoue le
+  flux MIDI brut (`.mid`/`.syx`), `loopback`/`tcp`/`pty` pour ponter un routeur
+  MIDI hôte. Le flux d'octets est **identique** à un vrai Oric+carte Mageco vu au
+  travers d'une interface USB-MIDI — seul le fil est virtuel.
+- **IRQ CPU** routé via le nouveau flag `IRQF_MAGECO` (`include/cpu/cpu6502.h`).
+- **Routage I/O** (`src/main.c`) : `$03FE-$03FF` interceptés devant le miroir VIA
+  $0300-$03FF lorsque la carte est active (le forum signale que ces adresses
+  « can rise incompatibilities with other extensions » — averti si Microdisc
+  présent).
+- **Étude de faisabilité** `docs/specs/mageco-midi-feasibility.md` (analyse +
+  équivalence émulateur ↔ Oric réel + carte).
+
+### Tests
+- Suite `make test-midi` (`tests/unit/test_midi.c`, **13 tests**) : état power-on
+  (DCD/CTS épinglés), plage d'adresses, timing 31250 baud (320 cycles), master
+  reset, TX clear/restore TDRE, aller-retour loopback, TX sans handshake,
+  **capture fichier d'un Note On `90 3C 7F`** (preuve de l'équivalence matérielle),
+  rejeu fichier MIDI IN, IRQ off par défaut, IRQ sur RX (RIE) et sur TX (TIE).
+- Validation **bout-en-bout** sur le binaire : boot BASIC 1.1 → `POKE1022,21` +
+  `POKE1023` → capture `90 3C 7F` à l'octet près.
+- 713 tests PASS (+13).
+
 ## [1.21.24-alpha] - 2026-06-23
 
 ### Sprint 60y — Séquençage multi `--type-keys` pour l'automatisation multi-écrans

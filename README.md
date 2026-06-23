@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.21.22-alpha** | **699 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.21.28-alpha** | **724 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -47,6 +47,7 @@ make SDL2=1
 - **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain
 - **ACIA 6551** — Serial controller at $031C-$031F, transports loopback/TCP/PTY/COM/file + protocol backends (modem AT, PicoWiFiModemUSB; `digitelec` deprecated → use `--dtl2000`), V23 mode (Minitel/Digitelec). See the *chips × transports* matrix below
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
+- **Mageco / ORICON MIDI** — MC6850 ACIA driving the MIDI DIN sockets (31250 baud 8-N-1, forum t=2525). Two designs from the thread: the original **Mageco** card at $03FE-$03FF (`--mageco`) and the modern **ORICON** reboot at $031C-$031D + clock generator $031E-$031F, LOCI-compatible (`--oricon`). Capture/replay the raw MIDI stream with `--mageco file:in[:out]`; play a Standard MIDI File **into** the Oric with `--mageco smf:song.mid[:loop]` (timed MIDI IN at the song's tempo); or — in a `MIDI=1` build — `--mageco midi[:TARGET]` opens a live host MIDI port (ALSA "Phosphoric MIDI" on Linux, CoreMIDI on macOS, WinMM on Windows) so the emulated Oric drives FluidSynth/a DAW and a MIDI keyboard plays into the Oric. The byte stream matches a real Oric+Mageco card through a USB-MIDI interface
 - **PicoWiFiModemUSB** — Émulation du modem WiFi de sodiumlb (Pico W, USB CDC ↔ WiFi) exposé par LOCI comme ACIA à $0380. Jeu de commandes AT v0.1.0 complet (`--serial picowifi[:SSID[:PASS]]`). WiFi simulé, connexions de données en TCP réel.
 - **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 35/36 API ops, USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). Boote Sedoric V4 master complet via le firmware LOCI.
 
@@ -159,6 +160,7 @@ make SDL2=1                    # Standard build with SDL2
 make                           # Headless build (no SDL2)
 make DEBUG=1 SDL2=1            # Debug build (-g -O0)
 make SDL2=1 CAST=1             # With Chromecast support
+make SDL2=1 MIDI=1             # With real-time host MIDI (ALSA/CoreMIDI/WinMM, --mageco midi)
 make wasm                      # WebAssembly/browser build (needs Emscripten; see docs/wasm.md)
 make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric)
 sudo make install              # Install to /usr/local
@@ -241,6 +243,15 @@ Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD):
                             | com:baud,bits,parity,stop,device | file:in[:out]
   --dtl2000-addr XXXX       Override base address (default $03F8)
 
+Mageco MIDI interface (MC6850 at $03FE-$03FF, 31250 baud, forum t=2525):
+  --mageco TRANSPORT        file:in[:out] | smf:FILE[:loop] | midi[:TARGET] | loopback | tcp:host:port | pty
+                            file::out.mid captures the Oric's MIDI OUT
+                            smf:song.mid replays a .mid into the Oric at tempo
+                            midi = live host MIDI port (MIDI=1 build, e.g. midi:128:0)
+  --mageco-addr XXXX        Override base address (default $03FE)
+  --oricon TRANSPORT        ORICON variant: MC6850 at $031C-$031D + clock gen
+                            $031E-$031F (LOCI-compatible); same transports as --mageco
+
 Chromecast:
   --cast-server[=PORT]      Start MJPEG server (default 8080)
   --cast-to[=DEVICE]        Cast to Chromecast
@@ -274,21 +285,25 @@ and give it a transport.
 |--------|------|---------|---------------|
 | `--serial` | ACIA 6551 (MOS) | `$031C` (`$0380` under `--loci`) | Oric V23 modem, Telestrat |
 | `--dtl2000` | PIA 6821 + ACIA 6850 (Motorola) | `$03F8` | Digitelec DTL 2000 card |
+| `--mageco` | ACIA 6850 (Motorola) | `$03FE` | Mageco MIDI interface, original card (31250 baud) |
+| `--oricon` | ACIA 6850 + clock gen | `$031C` | ORICON MIDI reboot (LOCI-compatible, 31250 baud) |
 | `--loci` | LOCI MIA | `$03A0-$03BF` | LOCI interface (sodiumlb) |
 
 **Transports** (where the bytes go). *Transparent* = raw byte pipe; *protocol* =
 injects its own command/UART layer:
 
-| Transport | Kind | `--serial` | `--dtl2000` | Notes |
-|-----------|------|:----------:|:-----------:|-------|
-| `loopback` | transparent | ✅ | ✅ | TX feeds back to RX (tests) |
-| `tcp:H:P` | transparent | ✅ | ✅ | BBS / Minitel / telnet over TCP |
-| `pty` | transparent | ✅ | ✅ | POSIX pseudo-terminal (minicom, screen) |
-| `com:B,D,P,S,DEV` | transparent | ✅ | ✅ | Real serial device (termios) |
-| `file:IN[:OUT]` | transparent | ✅ | ✅ | Deterministic replay (RX) / capture (TX) |
-| `modem[:H:P]` | protocol | ✅ | ❌ | Hayes AT interpreter |
-| `digitelec:H:P` | protocol | ⚠️ | ❌ | **Deprecated** — behavioural DTL 2000 via ACIA 6551; use `--dtl2000` |
-| `picowifi[:…]` | protocol | ✅ | ❌ | PicoWiFiModemUSB WiFi modem |
+| Transport | Kind | `--serial` | `--dtl2000` | `--mageco` | Notes |
+|-----------|------|:----------:|:-----------:|:----------:|-------|
+| `loopback` | transparent | ✅ | ✅ | ✅ | TX feeds back to RX (tests) |
+| `tcp:H:P` | transparent | ✅ | ✅ | ✅ | BBS / Minitel / telnet / MIDI router over TCP |
+| `pty` | transparent | ✅ | ✅ | ✅ | POSIX pseudo-terminal (minicom, screen) |
+| `com:B,D,P,S,DEV` | transparent | ✅ | ✅ | ✅ | Real serial device (termios) |
+| `file:IN[:OUT]` | transparent | ✅ | ✅ | ✅ | Deterministic replay (RX) / capture (TX); MIDI `.mid`/`.syx` capture |
+| `midi[:TARGET]` | transparent | ✅ | ✅ | ✅ | Live host MIDI port (`MIDI=1`; ALSA/CoreMIDI/WinMM); drives FluidSynth/DAW |
+| `smf:FILE[:loop]` | transparent | ✅ | ✅ | ✅ | Standard MIDI File → timed MIDI IN (plays a `.mid` into the Oric) |
+| `modem[:H:P]` | protocol | ✅ | ❌ | ❌ | Hayes AT interpreter |
+| `digitelec:H:P` | protocol | ⚠️ | ❌ | ❌ | **Deprecated** — behavioural DTL 2000 via ACIA 6551; use `--dtl2000` |
+| `picowifi[:…]` | protocol | ✅ | ❌ | ❌ | PicoWiFiModemUSB WiFi modem |
 
 > The protocol backends are **`--serial`-only by design**: the DTL 2000 is dialled
 > by its **PIA 6821** (line bit), not by Hayes `AT` commands, and `digitelec:`/

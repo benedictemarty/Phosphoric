@@ -44,7 +44,8 @@ typedef enum {
     IRQF_VIA     = 0x01,  /**< VIA 6522 IRQ (T1 timer, CB1/CB2, etc.) */
     IRQF_DISK    = 0x02,  /**< Microdisc FDC INTRQ */
     IRQF_SERIAL  = 0x04,  /**< ACIA 6551 serial IRQ */
-    IRQF_DTL2000 = 0x08   /**< Digitelec DTL 2000 ACIA 6850 IRQ */
+    IRQF_DTL2000 = 0x08,  /**< Digitelec DTL 2000 ACIA 6850 IRQ */
+    IRQF_MAGECO  = 0x10   /**< Mageco MIDI interface ACIA 6850 IRQ */
 } cpu_irq_source_t;
 
 /**
