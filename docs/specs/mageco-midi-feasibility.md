@@ -21,16 +21,38 @@
 > format 0/1, carte de tempo) + transport **`smf:FILE[:loop]`** rejouant un `.mid`
 > dans l'Oric en MIDI IN cadencé (`CLOCK_MONOTONIC`). 6 tests (`make test-smf`),
 > validé temps réel.
+>
+> **Réalisation mode ORICON** (v1.21.28) : après lecture complète du fil (4 pages),
+> ajout de la variante **ORICON** — 6850 à **$031C/$031D** + générateur d'horloge
+> **$031E/$031F** (latches), décodage placé devant le Microdisc. Option `--oricon
+> TRANSPORT` (mode Mageco `--mageco` conservé). 4 tests, validé e2e (`POKE796/797`
+> → capture `90 3C 7F`). Le générateur d'horloge est modélisé en latches (encodage
+> du diviseur non publié dans le fil) ; la cadence reste 31250 baud.
 
 ---
 
 ## 1. Contexte
 
-L'interface **Mageco MIDI** est une extension matérielle Oric des années 1980, dont
-Dbug a relancé la reconstruction (PCB modernes, projet modulaire « Oric-Con » avec
-shield MIDI). Côté logiciel, un lecteur de fichiers `.mid` standard existe (Fabrice).
+> **Correction (lecture des 4 pages / 48 messages du fil)** : la 1ʳᵉ version de cette
+> étude ne couvrait que la page 1. Le fil décrit **deux conceptions distinctes**, désormais
+> toutes deux émulées (`--mageco` / `--oricon`) :
+>
+> | | Carte **Mageco** d'origine (p.1, Dbug) | **ORICON** moderne (p.3, iss, 2025) |
+> |---|---|---|
+> | 6850 ACIA | **#3FE / #3FF** | **$31C / $31D** |
+> | Horloge | cristal fixe | **générateur d'horloge à $31E/$31F** |
+> | Décodage | risque de conflit | « 100% compatible LOCI » |
+> | Synthé | externe (DIN MIDI) | shield MIDI-2 avec **SAM2695** GM intégré |
+> | Logiciel | — | outil Lua **« midi2oric »** : pré-convertit le .mid en tableaux d'octets C (délais ms via attentes 6502) |
+>
+> Citation verbatim (iss, p.3, 26 oct. 2025) : *« The #ORICON uses standard serial I/O
+> only at $31C..#31F. $31C/$31D for MC6850 ACIA and $31E/$31F for clock generator. »*
 
-Caractéristiques matérielles relevées dans le fil :
+L'interface **Mageco MIDI** est une extension matérielle Oric des années 1980, dont
+Dbug a relancé la reconstruction (PCB modernes, projet modulaire « Oric-Con / ORICON »
+avec shield MIDI). Côté logiciel, l'outil Lua « midi2oric » pré-convertit le MIDI.
+
+Caractéristiques matérielles de la carte d'origine (page 1) :
 
 | Élément | Détail |
 |---|---|

@@ -137,7 +137,8 @@ Derniere mise a jour : 2026-03-02
 | MCP-40 | Fonctionnel | 8 commandes, 4 couleurs, export BMP |
 | ACIA 6551 | Fonctionnel | Serie $031C-$031F, backends loopback/tcp/pty/com/modem |
 | Digitelec DTL 2000 | Fidele | PIA 6821 + ACIA 6850 a $03F8-$03FD, registres OCR |
-| MIDI Mageco | Fonctionnel | MC6850 a $03FE-$03FF, 31250 baud, `--mageco file:/smf:/midi/loopback/tcp/pty` (forum t=2525) |
+| MIDI Mageco | Fonctionnel | MC6850 a $03FE-$03FF, 31250 baud, `--mageco` (carte d'origine, forum t=2525 p.1) |
+| MIDI ORICON | Fonctionnel | MC6850 a $031C-$031D + generateur d'horloge $031E-$031F, `--oricon` (reboot moderne, p.3, compatible LOCI) |
 | MIDI temps reel | Fonctionnel | Port MIDI hote `--mageco midi[:TARGET]` (build `MIDI=1`) : ALSA (Linux, verifie), CoreMIDI/WinMM (ecrits, non verifies) |
 | Lecteur .mid (SMF) | Fonctionnel | `--mageco smf:FILE[:loop]` rejoue un fichier .mid dans l'Oric en MIDI IN cadence (format 0/1, carte de tempo) |
 

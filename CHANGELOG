@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.28-alpha] - 2026-06-23
+
+### Sprint 61 (suite 3) — Mode ORICON ($031C-$031F) après lecture complète du fil
+
+### Added
+- **Mode ORICON** (`src/io/mageco.c`, `mageco_init_oricon`) — variante moderne de
+  l'interface MIDI (projet ORICON de iss, forum t=2525 page 3, vérifié verbatim) :
+  **MC6850 ACIA à $031C/$031D** + **générateur d'horloge à $031E/$031F**, fenêtre de
+  4 registres, décodage compatible LOCI. Le générateur d'horloge est modélisé en
+  deux latches lisibles/écrites (l'encodage exact du diviseur n'est pas publié dans
+  le fil ; la cadence reste MIDI 31250 baud). Le mode Mageco d'origine ($03FE/$03FF)
+  est conservé.
+- **Option CLI `--oricon TRANSPORT`** — active la variante ORICON (base $031C) avec
+  les mêmes transports que `--mageco` (`file:`/`smf:`/`midi:`/`loopback`/`tcp`/`pty`).
+  Avertit si overlap avec `--serial` (ACIA 6551) ou un Microdisc à $031C.
+- **Routage I/O** : le bloc Mageco/ORICON est désormais évalué **avant** le Microdisc
+  (`src/main.c`), car la fenêtre ORICON $031C-$031F chevauche la plage Microdisc
+  $0310-$031F (ORICON est basé LOCI, pas utilisé avec un Microdisc).
+
+### Fixed / Honesty
+- **Lecture complète du fil forum t=2525 (4 pages, 48 messages)** — la version
+  initiale ne reposait que sur la page 1. Le fil décrit **deux conceptions** : la
+  carte **Mageco** d'origine (#3FE/#3FF, Dbug) et le reboot **ORICON** ($31C-$31F +
+  générateur d'horloge, iss). L'étude `docs/specs/mageco-midi-feasibility.md` est
+  corrigée en conséquence (distinction Mageco/ORICON, SAM2695, outil Lua midi2oric).
+
+### Tests
+- 4 tests ORICON ajoutés à `make test-midi` (init/plage 4 octets, latches du
+  générateur d'horloge, absence de ces registres en mode Mageco, aller-retour ACIA
+  à $031C). Validé e2e : `--oricon` + `POKE796,21:POKE797,…` → capture `90 3C 7F`.
+- 724 tests PASS (+4).
+
 ## [1.21.27-alpha] - 2026-06-23
 
 ### Sprint 61 (suite 2) — Lecteur de fichiers .mid (SMF) + portages CoreMIDI/WinMM

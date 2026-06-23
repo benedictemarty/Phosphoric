@@ -294,6 +294,65 @@ TEST(test_irq_on_rx_with_rie) {
     teardown();
 }
 
+/* ── ORICON variant (6850 at $031C/$031D + clock generator $031E/$031F) ── */
+
+#define O_BASE  MAGECO_ORICON_BASE
+#define O_CS    (O_BASE + MAGECO_REG_ACIA_CS)    /* $031C */
+#define O_DAT   (O_BASE + MAGECO_REG_ACIA_D)     /* $031D */
+#define O_CLKLO (O_BASE + MAGECO_REG_CLKGEN_LO)  /* $031E */
+#define O_CLKHI (O_BASE + MAGECO_REG_CLKGEN_HI)  /* $031F */
+
+TEST(test_oricon_init_and_range) {
+    mageco_t d;
+    mageco_init_oricon(&d, MAGECO_ORICON_BASE);
+    ASSERT_EQ(d.base_addr, 0x031C);
+    ASSERT_EQ(d.span, 4);
+    ASSERT_TRUE(d.oricon);
+    /* 4-byte window $031C-$031F */
+    ASSERT_FALSE(mageco_addr_in_range(&d, 0x031B));
+    ASSERT_TRUE(mageco_addr_in_range(&d, 0x031C));
+    ASSERT_TRUE(mageco_addr_in_range(&d, 0x031F));
+    ASSERT_FALSE(mageco_addr_in_range(&d, 0x0320));
+}
+
+TEST(test_oricon_clock_generator_latches) {
+    mageco_t d;
+    mageco_init_oricon(&d, MAGECO_ORICON_BASE);
+    /* $031E/$031F are readable/writable latches in ORICON mode */
+    mageco_write(&d, O_CLKLO, 0x10);
+    mageco_write(&d, O_CLKHI, 0x27);
+    ASSERT_EQ(mageco_read(&d, O_CLKLO), 0x10);
+    ASSERT_EQ(mageco_read(&d, O_CLKHI), 0x27);
+}
+
+TEST(test_mageco_mode_has_no_clock_registers) {
+    mageco_t d;
+    mageco_init(&d, MAGECO_DEFAULT_BASE);   /* original Mageco: 2-register window */
+    ASSERT_EQ(d.span, 2);
+    ASSERT_FALSE(d.oricon);
+    /* $03FE+2/$03FE+3 are outside the 2-byte window. */
+    ASSERT_FALSE(mageco_addr_in_range(&d, 0x0400));
+    ASSERT_TRUE(mageco_addr_in_range(&d, 0x03FF));
+}
+
+TEST(test_oricon_acia_roundtrip) {
+    mageco_t d;
+    mageco_init_oricon(&d, MAGECO_ORICON_BASE);
+    serial_backend_t* lb = serial_backend_loopback_create();
+    lb->open(lb);
+    mageco_set_backend(&d, lb);
+    mageco_write(&d, O_CS, MIDI_8N1_CFG);
+
+    /* The 6850 works identically at the ORICON base. */
+    mageco_write(&d, O_DAT, 0x55);
+    int total = 400;
+    while (total > 0) { int s = total >= 4 ? 4 : total; mageco_tick(&d, s); total -= s; }
+    ASSERT_TRUE(mageco_read(&d, O_CS) & ACIA6850_SR_RDRF);
+    ASSERT_EQ(mageco_read(&d, O_DAT), 0x55);
+
+    serial_backend_destroy(lb);
+}
+
 /* The ALSA real-time MIDI backend is an optional build feature (MIDI=1). In a
  * default build it must degrade gracefully: the factory returns NULL with a log
  * line rather than crashing, so `--mageco midi` reports a clear "rebuild" error. */
@@ -332,6 +391,10 @@ int main(void) {
     RUN(test_irq_disabled_by_default);
     RUN(test_irq_on_rx_with_rie);
     RUN(test_irq_on_tx_with_tie);
+    RUN(test_oricon_init_and_range);
+    RUN(test_oricon_clock_generator_latches);
+    RUN(test_mageco_mode_has_no_clock_registers);
+    RUN(test_oricon_acia_roundtrip);
 #ifndef HAS_MIDI
     RUN(test_midi_alsa_stub_without_build);
 #endif

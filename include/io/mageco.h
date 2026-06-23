@@ -51,12 +51,26 @@ typedef struct emulator_s emulator_t;
  *  I/O Address Map
  * ═══════════════════════════════════════════════════════════════════════ */
 
-#define MAGECO_DEFAULT_BASE  0x03FE  /* Oric base (forum t=2525) */
-#define MAGECO_REG_SPAN      2       /* 2 ACIA registers */
+#define MAGECO_DEFAULT_BASE  0x03FE  /* original Mageco card (forum t=2525 p.1) */
+#define MAGECO_REG_SPAN      2       /* Mageco: 2 ACIA registers */
+
+/* ORICON (modern reboot by iss, forum t=2525 p.3, verbatim):
+ *   "The #ORICON uses standard serial I/O only at $31C..#31F.
+ *    $31C/$31D for MC6850 ACIA and $31E/$31F for clock generator."
+ * So the window is 4 bytes: the 6850 at $31C/$31D plus a programmable clock
+ * generator at $31E/$31F. The generator's exact register encoding is not
+ * published in the thread, so it is modelled as two readable/writable latches
+ * (the MIDI line stays at 31250 baud); the goal is that ORICON-aware software
+ * reading/writing $31E/$31F behaves, and the 6850 sits at the LOCI-compatible
+ * base instead of the original card's $3FE/$3FF. */
+#define MAGECO_ORICON_BASE   0x031C  /* ORICON base (LOCI-compatible) */
+#define MAGECO_ORICON_SPAN   4       /* 2 ACIA + 2 clock-generator registers */
 
 /* Register offsets (address - base) */
 #define MAGECO_REG_ACIA_CS   0  /* ACIA Control (W) / Status (R) */
 #define MAGECO_REG_ACIA_D    1  /* ACIA Tx (W) / Rx (R) */
+#define MAGECO_REG_CLKGEN_LO 2  /* ORICON clock generator low  ($31E) */
+#define MAGECO_REG_CLKGEN_HI 3  /* ORICON clock generator high ($31F) */
 
 /* Emulated card clock (the Oric system clock drives the bus) */
 #define MAGECO_CLOCK_HZ  1000000UL
@@ -69,7 +83,10 @@ typedef struct emulator_s emulator_t;
  * ═══════════════════════════════════════════════════════════════════════ */
 
 typedef struct mageco_s {
-    uint16_t base_addr;          /**< I/O base ($03FE by default) */
+    uint16_t base_addr;          /**< I/O base ($03FE Mageco / $031C ORICON) */
+    uint8_t  span;               /**< register window size (2 Mageco / 4 ORICON) */
+    bool     oricon;             /**< ORICON mode (clock generator at +2/+3) */
+    uint8_t  clkgen[2];          /**< ORICON clock-generator latches ($31E/$31F) */
 
     /* ACIA 6850 (registers, status, IRQ, frame format). The DCD/CTS input pins
      * are pinned "present/clear" (no MIDI handshake); the baud clock is the
@@ -100,8 +117,11 @@ typedef struct mageco_s {
  *  Public API
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/** @brief Initialise the device to power-on state at the given base address. */
+/** @brief Initialise the original Mageco card (2-register window) at @p base_addr. */
 void mageco_init(mageco_t* dev, uint16_t base_addr);
+
+/** @brief Initialise the ORICON variant (4-register window: 6850 + clock gen). */
+void mageco_init_oricon(mageco_t* dev, uint16_t base_addr);
 
 /** @brief Reset (equivalent to the ACIA reset line). */
 void mageco_reset(mageco_t* dev);

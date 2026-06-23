@@ -464,7 +464,7 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
-### Sprint 61: Interface MIDI Mageco — MC6850 $03FE + MIDI temps réel (ALSA/CoreMIDI/WinMM) + lecteur .mid SMF (v1.21.25 → v1.21.27-alpha) - DONE
+### Sprint 61: Interface MIDI Mageco/ORICON — MC6850 $03FE/$031C + MIDI temps réel (ALSA/CoreMIDI/WinMM) + lecteur .mid SMF (v1.21.25 → v1.21.28-alpha) - DONE
 
 - [x] **Carte MIDI Mageco** (`src/io/mageco.c` + `include/io/mageco.h`) émulant
       l'interface MIDI Mageco pour Oric (forum Defence-Force t=2525, relancée par
@@ -505,8 +505,17 @@ la source Oricutron avant correction.
       ALSA, `Makefile` détecte `uname`). ⚠️ écrits selon les API documentées mais
       **non compilés/vérifiés** sur l'hôte Linux ; branche par plateforme, build
       Linux inchangé — à valider sur macOS/Windows réels.
-- [ ] Pistes futures : validation CoreMIDI/WinMM sur matériel réel ; SMF SMPTE
-      étendu ; tempo-warp / transposition à la volée.
+- [x] **Mode ORICON ($031C-$031F)** (v1.21.28-alpha) — après lecture **complète**
+      du fil (4 pages, la 1ʳᵉ version ne couvrait que la page 1) : le fil décrit
+      2 conceptions, la carte Mageco d'origine (#3FE/#3FF, Dbug) et le reboot
+      **ORICON** (iss, p.3, vérifié verbatim). Ajout de `mageco_init_oricon`
+      (MC6850 à $031C/$031D + générateur d'horloge $031E/$031F en latches, fenêtre
+      4 registres, décodage placé devant le Microdisc), option `--oricon TRANSPORT`.
+      Mode Mageco conservé. +4 tests, validé e2e (`POKE796/797` → `90 3C 7F`).
+      Étude corrigée (distinction Mageco/ORICON, SAM2695, midi2oric).
+- [ ] Pistes futures : validation CoreMIDI/WinMM sur matériel réel ; encodage exact
+      du générateur d'horloge ORICON $031E/$031F (non publié dans le fil) ; SAM2695
+      GM intégré (shield MIDI-2) ; SMF SMPTE étendu ; tempo-warp à la volée.
 
 ### Sprint 60y: Séquençage multi `--type-keys` — automatisation multi-écrans (v1.21.24-alpha) - DONE
 

@@ -83,6 +83,17 @@ void mageco_init(mageco_t* dev, uint16_t base_addr)
 {
     memset(dev, 0, sizeof(*dev));
     dev->base_addr = base_addr ? base_addr : MAGECO_DEFAULT_BASE;
+    dev->span      = MAGECO_REG_SPAN;
+    dev->oricon    = false;
+    mageco_reset(dev);
+}
+
+void mageco_init_oricon(mageco_t* dev, uint16_t base_addr)
+{
+    memset(dev, 0, sizeof(*dev));
+    dev->base_addr = base_addr ? base_addr : MAGECO_ORICON_BASE;
+    dev->span      = MAGECO_ORICON_SPAN;
+    dev->oricon    = true;
     mageco_reset(dev);
 }
 
@@ -101,14 +112,16 @@ void mageco_reset(mageco_t* dev)
     dev->tx_busy   = false;
     dev->tx_cycles = dev->rx_cycles = 0;
     dev->tx_count  = dev->rx_count  = 0;
+    dev->clkgen[0] = dev->clkgen[1] = 0;
 
     mageco_recalc_timing(dev);
 }
 
 bool mageco_addr_in_range(const mageco_t* dev, uint16_t addr)
 {
+    uint8_t span = dev->span ? dev->span : MAGECO_REG_SPAN;
     return addr >= dev->base_addr &&
-           addr < (uint16_t)(dev->base_addr + MAGECO_REG_SPAN);
+           addr < (uint16_t)(dev->base_addr + span);
 }
 
 uint8_t mageco_read(mageco_t* dev, uint16_t addr)
@@ -120,6 +133,10 @@ uint8_t mageco_read(mageco_t* dev, uint16_t addr)
             return acia6850_status(&dev->acia);
         case MAGECO_REG_ACIA_D:
             return acia6850_read_data(&dev->acia);
+        case MAGECO_REG_CLKGEN_LO:
+            return dev->oricon ? dev->clkgen[0] : 0xFF;  /* ORICON $31E */
+        case MAGECO_REG_CLKGEN_HI:
+            return dev->oricon ? dev->clkgen[1] : 0xFF;  /* ORICON $31F */
         default:
             return 0xFF;
     }
@@ -142,6 +159,12 @@ void mageco_write(mageco_t* dev, uint16_t addr, uint8_t value)
         }
         case MAGECO_REG_ACIA_D:
             mageco_acia_data_write(dev, value);
+            break;
+        case MAGECO_REG_CLKGEN_LO:
+            if (dev->oricon) dev->clkgen[0] = value;  /* latch (baud stays MIDI) */
+            break;
+        case MAGECO_REG_CLKGEN_HI:
+            if (dev->oricon) dev->clkgen[1] = value;
             break;
         default:
             break;
