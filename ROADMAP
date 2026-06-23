@@ -464,6 +464,24 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Sprint 60y: Séquençage multi `--type-keys` — automatisation multi-écrans (v1.21.24-alpha) - DONE
+
+- [x] **`--type-keys` répétable** (`src/main.c`, `include/emulator.h`) : jusqu'à
+      `TYPE_KEYS_SEQ_MAX = 16` entrées empilées dans `type_keys_seq[]`, triées par
+      cycle d'armement croissant.
+- [x] **Activation séquentielle** par la boucle d'émulation : l'entrée suivante
+      est chargée dès que la précédente est terminée ET que son cycle est atteint.
+- [x] **Vrai relâchement clavier entre entrées** : `oric_keyboard_release_all()`
+      (+ `loci_kbd_clear()` si LOCI), reset `last_char`/`debounce` → deux entrées à
+      touches identiques (1 au cycle X, 1 au cycle Y) sont vues distinctement par le
+      `wait_release` des TUI/terminaux LOCI. Remplace « un seul `--type-keys` retenu ».
+- [x] **Diagnostic corrigé** : `\pN` est en cycles émulés (`ORIC_CLOCK_HZ * N`),
+      déterministe en `--headless` — un parcours figé venait d'un budget `-c N` trop
+      court, pas d'une pause en temps réel.
+- [x] Aide `--help` mise à jour. Test `test_type_keys_seq_fields`. 700 tests PASS (+1).
+- [ ] Pistes futures : pause `\pN` à granularité fine (ms/cycles explicites),
+      synchronisation sur événement (PC/mémoire) plutôt que cycle fixe.
+
 ### Sprint 60x: Polissage UI web — filtre CRT, LEDs I/O, save/load état (v1.21.23-alpha) - DONE
 
 - [x] **Filtre CRT** (`web/shell.html`) : overlay scanlines + vignette + boost

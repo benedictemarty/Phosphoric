@@ -325,7 +325,9 @@ static void print_usage(const char* program_name) {
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
     printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
     printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
-    printf("                             \\Rx=RShift+x \\pN=pause N sec\n");
+    printf("                             \\Rx=RShift+x \\pN=pause N sec (cycles emules)\n");
+    printf("                             Repetable : plusieurs --type-keys sont\n");
+    printf("                             sequences par cycle d'armement croissant.\n");
     printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
     printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
     printf("      --break ADDR           Set initial debugger breakpoint (hex)\n");
@@ -1806,6 +1808,27 @@ static void emulator_run(emulator_t* emu) {
             log_info("Auto-typing CLOAD\"\" for inserted tape");
         }
 
+        /* Séquençage multi --type-keys : dès que l'entrée active est terminée
+         * et que le cycle d'armement de la suivante est atteint, on la charge
+         * dans les champs type_keys_* actifs. Garantit un vrai relâchement
+         * (release_all + reset des compteurs de debounce) entre deux entrées,
+         * même à touches identiques — ce que wait_release des TUI exige. */
+        if (emu->type_keys_done &&
+            emu->type_keys_seq_idx < emu->type_keys_seq_count &&
+            (int64_t)total_executed >= emu->type_keys_seq[emu->type_keys_seq_idx].at) {
+            int s = emu->type_keys_seq_idx++;
+            oric_keyboard_release_all(&emu->keyboard);
+            if (emu->has_loci) loci_kbd_clear(&emu->loci);
+            emu->type_keys_at = emu->type_keys_seq[s].at;
+            emu->type_keys_text = emu->type_keys_seq[s].text;
+            emu->type_keys_loci_hid = emu->type_keys_seq[s].loci_hid;
+            emu->type_keys_idx = 0;
+            emu->type_keys_next_cycle = emu->type_keys_seq[s].at;
+            emu->type_keys_done = false;
+            emu->type_keys_last_char = 0;
+            emu->type_keys_debounce = 0;
+        }
+
         /* Auto-type: inject keystrokes at specified cycle count.
          * Each key is pressed for ~2 frames (40ms) then released for ~2 frames.
          * This simulates realistic typing speed for the ROM keyboard scanner. */
@@ -2392,7 +2415,8 @@ int main(int argc, char* argv[]) {
     const char* movie_replay_file = NULL;
     const char* keyboard_layout = NULL;
 
-    const char* type_keys_arg = NULL;
+    const char* type_keys_args[TYPE_KEYS_SEQ_MAX];
+    int type_keys_arg_count = 0;
     const char* disk_rom_file = NULL;
     bool debug_mode = false;
     const char* debug_break_addr = NULL;
@@ -2530,7 +2554,14 @@ int main(int argc, char* argv[]) {
             case OPT_RECORD: movie_record_file = optarg; break;
             case OPT_REPLAY: movie_replay_file = optarg; break;
             case 'k': keyboard_layout = optarg; break;
-            case OPT_TYPE_KEYS: type_keys_arg = optarg; break;
+            case OPT_TYPE_KEYS:
+                if (type_keys_arg_count < TYPE_KEYS_SEQ_MAX) {
+                    type_keys_args[type_keys_arg_count++] = optarg;
+                } else {
+                    log_warning("Too many --type-keys (max %d), ignoring extra",
+                                TYPE_KEYS_SEQ_MAX);
+                }
+                break;
             case OPT_DISK_ROM: disk_rom_file = optarg; break;
             case 'b': emu.breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
             case 'D': debug_mode = true; break;
@@ -3003,28 +3034,60 @@ int main(int argc, char* argv[]) {
 
     /* Parse --type-keys CYCLES:TEXT (Sprint 34av: TEXT may start with
      * "loci-hid:" to route keys via the LOCI HID bitmap instead of the
-     * ORIC keyboard matrix — useful for automating the LOCI TUI). */
-    if (type_keys_arg) {
-        const char* colon = strchr(type_keys_arg, ':');
-        if (colon) {
-            emu.type_keys_at = atoll(type_keys_arg);
-            const char* text = colon + 1;
-            if (strncmp(text, "loci-hid:", 9) == 0) {
-                emu.type_keys_loci_hid = true;
-                text += 9;
-            }
-            emu.type_keys_text = text;
-            emu.type_keys_idx = 0;
-            emu.type_keys_next_cycle = emu.type_keys_at;
-            emu.type_keys_done = false;
-            log_info("Auto-type at %lld cycles (%s): \"%s\"",
-                     (long long)emu.type_keys_at,
-                     emu.type_keys_loci_hid ? "LOCI HID" : "ORIC matrix",
-                     emu.type_keys_text);
-        } else {
+     * ORIC keyboard matrix — useful for automating the LOCI TUI).
+     *
+     * Plusieurs --type-keys peuvent être passés : ils sont empilés dans une
+     * file (triée par cycle d'armement) et activés l'un après l'autre une
+     * fois le précédent terminé. Cela remplace l'ancien « un seul --type-keys
+     * retenu » et permet de séquencer proprement un parcours multi-écrans à
+     * touches répétées (1 au cycle X, 1 au cycle Y, …). */
+    for (int i = 0; i < type_keys_arg_count; i++) {
+        const char* arg = type_keys_args[i];
+        const char* colon = strchr(arg, ':');
+        if (!colon) {
             log_error("Invalid --type-keys format. Use CYCLES:TEXT (e.g. 3000000:CLOAD\"\"\\n)");
             emulator_cleanup(&emu);
             return 1;
+        }
+        const char* text = colon + 1;
+        bool loci_hid = false;
+        if (strncmp(text, "loci-hid:", 9) == 0) {
+            loci_hid = true;
+            text += 9;
+        }
+        emu.type_keys_seq[emu.type_keys_seq_count].at = atoll(arg);
+        emu.type_keys_seq[emu.type_keys_seq_count].text = text;
+        emu.type_keys_seq[emu.type_keys_seq_count].loci_hid = loci_hid;
+        emu.type_keys_seq_count++;
+    }
+    if (emu.type_keys_seq_count > 0) {
+        /* Tri stable par cycle d'armement croissant (insertion : N <= 16). */
+        for (int i = 1; i < emu.type_keys_seq_count; i++) {
+            for (int j = i; j > 0 &&
+                 emu.type_keys_seq[j].at < emu.type_keys_seq[j-1].at; j--) {
+                int64_t tat = emu.type_keys_seq[j].at;
+                const char* ttext = emu.type_keys_seq[j].text;
+                bool thid = emu.type_keys_seq[j].loci_hid;
+                emu.type_keys_seq[j] = emu.type_keys_seq[j-1];
+                emu.type_keys_seq[j-1].at = tat;
+                emu.type_keys_seq[j-1].text = ttext;
+                emu.type_keys_seq[j-1].loci_hid = thid;
+            }
+        }
+        /* Active la première entrée ; les suivantes le seront dans la boucle
+         * d'émulation par activate-next quand leur cycle sera atteint. */
+        emu.type_keys_at = emu.type_keys_seq[0].at;
+        emu.type_keys_text = emu.type_keys_seq[0].text;
+        emu.type_keys_loci_hid = emu.type_keys_seq[0].loci_hid;
+        emu.type_keys_idx = 0;
+        emu.type_keys_next_cycle = emu.type_keys_at;
+        emu.type_keys_done = false;
+        emu.type_keys_seq_idx = 1;
+        for (int i = 0; i < emu.type_keys_seq_count; i++) {
+            log_info("Auto-type[%d] at %lld cycles (%s): \"%s\"", i,
+                     (long long)emu.type_keys_seq[i].at,
+                     emu.type_keys_seq[i].loci_hid ? "LOCI HID" : "ORIC matrix",
+                     emu.type_keys_seq[i].text);
         }
     }
 

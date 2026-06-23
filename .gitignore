@@ -168,3 +168,5 @@ __pycache__/
 *.sav
 *.state
 test_acia6850
+test_gdbstub
+test_movie

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.24-alpha] - 2026-06-23
+
+### Sprint 60y — Séquençage multi `--type-keys` pour l'automatisation multi-écrans
+
+### Added
+- **`--type-keys` répétable** (`src/main.c`, `include/emulator.h`) — l'option
+  peut désormais être passée plusieurs fois sur la même ligne de commande
+  (jusqu'à `TYPE_KEYS_SEQ_MAX = 16` entrées). Les entrées sont empilées dans une
+  file `type_keys_seq[]`, triées par cycle d'armement croissant, et activées
+  l'une après l'autre par la boucle d'émulation dès que (a) l'entrée précédente
+  est terminée et (b) le cycle d'armement de la suivante est atteint. Chaque
+  bascule fait un `oric_keyboard_release_all()` (+ `loci_kbd_clear()` si LOCI) et
+  réinitialise `last_char`/`debounce`, garantissant un **vrai relâchement entre
+  deux entrées même à touches identiques** — ce que le `wait_release` des TUI et
+  terminaux LOCI exige. Remplace l'ancien comportement « un seul `--type-keys`
+  retenu » qui empêchait de séquencer `1` au cycle X puis `1` au cycle Y.
+- Test `test_type_keys_seq_fields` (`tests/unit/test_full_system.c`) couvrant la
+  file de séquences et l'activation d'entrée (`make test-system`).
+
+### Changed
+- Aide `--help` : `--type-keys` documenté comme répétable ; précision que les
+  pauses `\pN` sont comptées en **cycles émulés** (déterministes en headless),
+  et non en temps réel.
+
+### Notes
+- Correction d'un diagnostic erroné : `\pN` n'a jamais été « en secondes
+  réelles » — la pause vaut `ORIC_CLOCK_HZ * N` cycles émulés (`src/main.c`),
+  donc reproductible en `--headless` quelle que soit la vitesse de l'hôte. Un
+  parcours figé venait du budget de cycles (`-c N`) trop court, pas de la pause.
+
 ## [1.21.23-alpha] - 2026-06-23
 
 ### Sprint 60x — Polissage UI web : filtre CRT, LEDs d'activité I/O, sauvegarde/restauration d'état

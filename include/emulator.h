@@ -38,7 +38,7 @@
 #include "io/loci.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.23-alpha"
+#define EMU_VERSION "1.21.24-alpha"
 
 /**
  * @brief ORIC machine model
@@ -105,6 +105,9 @@ typedef struct rom_patches_s {
 #define CYCLES_PER_FRAME     (PAL_LINES_PER_FRAME * PAL_CYCLES_PER_LINE)  /* 19968 */
 #define VSYNC_START_LINE     256
 #define VSYNC_CYCLE          (VSYNC_START_LINE * PAL_CYCLES_PER_LINE)     /* 16384 */
+
+/* Nombre max d'entrées --type-keys séquençables sur une ligne de commande */
+#define TYPE_KEYS_SEQ_MAX    16
 
 typedef struct emulator_s {
     /* Machine model */
@@ -248,6 +251,19 @@ typedef struct emulator_s {
      * préfixe "loci-hid:" dans le TEXT de --type-keys. Pour automatiser
      * la navigation TUI LOCI sans une vraie SDL keyboard event. */
     bool type_keys_loci_hid;
+    /* File de séquences --type-keys : permet de passer plusieurs
+     * --time-keys CYCLES:TEXT sur la même ligne de commande. Chaque entrée
+     * est activée (chargée dans les champs type_keys_* actifs ci-dessus) dès
+     * que son cycle d'armement est atteint ET que l'entrée précédente est
+     * terminée. Donne un séquençage par cycles propre pour les parcours
+     * multi-écrans automatisés (cf. wait_release des TUI/terminaux). */
+    struct {
+        int64_t at;          /* cycle d'armement absolu */
+        const char* text;    /* texte (sans le préfixe loci-hid:) */
+        bool loci_hid;       /* routage HID LOCI plutôt que matrice ORIC */
+    } type_keys_seq[TYPE_KEYS_SEQ_MAX];
+    int type_keys_seq_count; /* nombre d'entrées valides */
+    int type_keys_seq_idx;   /* prochaine entrée à activer */
 
     /* Breakpoint (legacy single breakpoint, -1 = none) */
     int32_t breakpoint;
