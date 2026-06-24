@@ -78,6 +78,63 @@ static int mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
     return found;
 }
 
+/**
+ * @brief CRC-16/CCITT (poly 0x1021, init 0xFFFF) as used by the WD179x.
+ *
+ * Computed over the address-mark bytes ($A1 $A1 $A1 $FB) and the data field,
+ * stored MSB-first immediately after the 256 data bytes.
+ */
+static uint16_t mfm_crc16(const uint8_t* data, int len) {
+    uint16_t crc = 0xFFFF;
+    for (int i = 0; i < len; i++) {
+        crc ^= (uint16_t)((uint16_t)data[i] << 8);
+        for (int b = 0; b < 8; b++) {
+            crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+/**
+ * @brief Inject sectors from the flat array back into raw MFM track data.
+ *
+ * Inverse of mfm_extract_track(): scans the track for sector ID/data marks,
+ * overwrites each 256-byte data field from the flat sector array, and
+ * recomputes the trailing data CRC so the image stays valid for re-reading.
+ */
+static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat,
+                            uint8_t sectors_per_track, uint8_t num_tracks) {
+    int written = 0;
+    for (int i = 0; i < MFM_TRACK_SIZE - 4; i++) {
+        if (track_data[i] == 0xA1 && track_data[i+1] == 0xA1 &&
+            track_data[i+2] == 0xA1 && track_data[i+3] == 0xFE) {
+            uint8_t id_track  = track_data[i+4];
+            uint8_t id_side   = track_data[i+5];
+            uint8_t id_sector = track_data[i+6];
+
+            if (id_sector < 1 || id_sector > sectors_per_track) continue;
+
+            for (int j = i + 10; j < i + 60 && j < MFM_TRACK_SIZE - 260; j++) {
+                if (track_data[j] == 0xA1 && track_data[j+1] == 0xA1 &&
+                    track_data[j+2] == 0xA1 && track_data[j+3] == 0xFB) {
+                    uint32_t offset = ((uint32_t)id_side * num_tracks * sectors_per_track +
+                                       (uint32_t)id_track * sectors_per_track +
+                                       (uint32_t)(id_sector - 1)) * SEDORIC_SECTOR_SIZE;
+                    /* Overwrite the 256-byte data field */
+                    memcpy(&track_data[j+4], flat + offset, SEDORIC_SECTOR_SIZE);
+                    /* Recompute CRC over $A1 $A1 $A1 $FB + 256 data bytes */
+                    uint16_t crc = mfm_crc16(&track_data[j], 4 + SEDORIC_SECTOR_SIZE);
+                    track_data[j + 4 + SEDORIC_SECTOR_SIZE]     = (uint8_t)(crc >> 8);
+                    track_data[j + 4 + SEDORIC_SECTOR_SIZE + 1] = (uint8_t)(crc & 0xFF);
+                    written++;
+                    break;
+                }
+            }
+        }
+    }
+    return written;
+}
+
 sedoric_disk_t* sedoric_load(const char* filename) {
     FILE* fp = fopen(filename, "rb");
     if (!fp) return NULL;
@@ -131,8 +188,10 @@ sedoric_disk_t* sedoric_load(const char* filename) {
         disk->sectors = sectors_per_track;
         disk->sides = (uint8_t)sides;
         disk->modified = false;
-
-        free(raw);
+        disk->is_mfm = true;
+        /* Keep the raw MFM container so writes can be injected back in-place */
+        disk->mfm_raw = raw;
+        disk->mfm_raw_size = (uint32_t)fsize;
         return disk;
     }
 
@@ -146,8 +205,38 @@ sedoric_disk_t* sedoric_load(const char* filename) {
     return disk;
 }
 
+/**
+ * @brief Write a modified MFM_DISK image back to its host file.
+ *
+ * Re-injects every flat sector into the original MFM container kept at load
+ * time, then rewrites the whole file. Preserves the MFM track structure
+ * (gaps, sync, address marks) so other tools can re-read it — unlike a raw
+ * dump of disk->data, which would clobber the MFM container.
+ */
+static bool sedoric_save_mfm(sedoric_disk_t* disk, const char* filename) {
+    if (!disk->mfm_raw || disk->mfm_raw_size <= MFM_DISK_HEADER_SIZE) return false;
+
+    for (uint32_t s = 0; s < disk->sides; s++) {
+        for (uint32_t t = 0; t < disk->tracks; t++) {
+            uint32_t track_idx = s * disk->tracks + t;
+            uint32_t raw_offset = MFM_DISK_HEADER_SIZE + track_idx * MFM_TRACK_SIZE;
+            if (raw_offset + MFM_TRACK_SIZE > disk->mfm_raw_size) break;
+            mfm_inject_track(&disk->mfm_raw[raw_offset], disk->data,
+                             disk->sectors, disk->tracks);
+        }
+    }
+
+    FILE* fp = fopen(filename, "wb");
+    if (!fp) return false;
+    bool ok = fwrite(disk->mfm_raw, 1, disk->mfm_raw_size, fp) == disk->mfm_raw_size;
+    fclose(fp);
+    if (ok) disk->modified = false;
+    return ok;
+}
+
 bool sedoric_save(sedoric_disk_t* disk, const char* filename) {
     if (!disk || !disk->data) return false;
+    if (disk->is_mfm) return sedoric_save_mfm(disk, filename);
     FILE* fp = fopen(filename, "wb");
     if (!fp) return false;
     bool ok = fwrite(disk->data, 1, disk->size, fp) == disk->size;
@@ -159,6 +248,7 @@ bool sedoric_save(sedoric_disk_t* disk, const char* filename) {
 void sedoric_destroy(sedoric_disk_t* disk) {
     if (disk) {
         free(disk->data);
+        free(disk->mfm_raw);
         free(disk);
     }
 }

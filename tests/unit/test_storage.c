@@ -314,6 +314,68 @@ TEST(test_sedoric_save_roundtrip) {
     remove(path);
 }
 
+/* Build a minimal one-track MFM_DISK image holding a single sector
+ * (track 0, side 0, sector 1) and write it to `path`. */
+static void make_minimal_mfm(const char* path) {
+    uint8_t* img = calloc(MFM_DISK_HEADER_SIZE + MFM_TRACK_SIZE, 1);
+    memcpy(img, "MFM_DISK", 8);
+    img[8] = 1;   /* sides = 1 (LE uint32) */
+    img[12] = 1;  /* tracks = 1 */
+    uint8_t* trk = img + MFM_DISK_HEADER_SIZE;
+    int p = 20;
+    trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xFE; /* ID mark */
+    trk[p++] = 0;    /* track */
+    trk[p++] = 0;    /* side */
+    trk[p++] = 1;    /* sector */
+    trk[p++] = 1;    /* size code = 256 */
+    trk[p++] = 0; trk[p++] = 0; /* ID CRC (ignored by loader) */
+    p += 12;         /* gap */
+    trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xFB; /* data mark */
+    for (int k = 0; k < 256; k++) trk[p++] = 0x55;
+    trk[p++] = 0; trk[p++] = 0; /* data CRC placeholder */
+    FILE* fp = fopen(path, "wb");
+    fwrite(img, 1, MFM_DISK_HEADER_SIZE + MFM_TRACK_SIZE, fp);
+    fclose(fp);
+    free(img);
+}
+
+/* Regression: writing back an MFM_DISK must re-inject sectors in place into
+ * the MFM container (with valid CRC), NOT dump the flat buffer over it. */
+TEST(test_sedoric_mfm_writeback_roundtrip) {
+    const char* path = "test_storage_mfm.dsk";
+    make_minimal_mfm(path);
+    long mfm_size = MFM_DISK_HEADER_SIZE + MFM_TRACK_SIZE;
+
+    sedoric_disk_t* disk = sedoric_load(path);
+    ASSERT_TRUE(disk != NULL);
+    ASSERT_TRUE(disk->is_mfm);
+    ASSERT_TRUE(disk->mfm_raw != NULL);
+
+    uint8_t* sec = sedoric_get_sector(disk, 0, 1);
+    ASSERT_TRUE(sec != NULL);
+    ASSERT_EQ(sec[0], 0x55);            /* extracted from MFM */
+    sec[0] = 0xDE; sec[1] = 0xAD;
+    ASSERT_TRUE(sedoric_save(disk, path));
+    sedoric_destroy(disk);
+
+    /* File must still be a valid MFM container of the same size (not a flat dump) */
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    fseek(fp, 0, SEEK_END);
+    ASSERT_EQ((long)ftell(fp), mfm_size);
+    fclose(fp);
+
+    sedoric_disk_t* reloaded = sedoric_load(path);
+    ASSERT_TRUE(reloaded != NULL);
+    ASSERT_TRUE(reloaded->is_mfm);
+    uint8_t* rsec = sedoric_get_sector(reloaded, 0, 1);
+    ASSERT_TRUE(rsec != NULL);
+    ASSERT_EQ(rsec[0], 0xDE);
+    ASSERT_EQ(rsec[1], 0xAD);
+    sedoric_destroy(reloaded);
+    remove(path);
+}
+
 int main(void) {
     printf("Running Storage tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -337,6 +399,7 @@ int main(void) {
 
     printf("\n  Disk persistence:\n");
     RUN(test_sedoric_save_roundtrip);
+    RUN(test_sedoric_mfm_writeback_roundtrip);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

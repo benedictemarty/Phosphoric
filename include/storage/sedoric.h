@@ -36,6 +36,9 @@ typedef struct sedoric_disk_s {
     uint8_t sectors;
     uint8_t sides;
     bool modified;
+    bool is_mfm;          /* Loaded from MFM_DISK format */
+    uint8_t* mfm_raw;     /* Original MFM container kept for in-place write-back (NULL if raw) */
+    uint32_t mfm_raw_size;
 } sedoric_disk_t;
 
 typedef struct sedoric_entry_s {

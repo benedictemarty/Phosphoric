@@ -488,6 +488,24 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Fix: Write-back MFM_DISK in-place — corrige la corruption des .dsk réels (v1.21.30-alpha) - DONE
+
+Le write-back `.dsk` du Sprint 62 corrompait les disques MFM_DISK (le format
+de tous les vrais disques Oric) : `sedoric_save()` dumpait le buffer plat des
+secteurs par-dessus le conteneur MFM, de taille différente.
+
+- [x] `sedoric_save()` aiguille raw vs MFM via `is_mfm`
+- [x] Conteneur MFM d'origine conservé au load (`mfm_raw`/`mfm_raw_size`)
+- [x] `sedoric_save_mfm()` + `mfm_inject_track()` : réinjection en place de
+      chaque secteur 256 o (inverse de `mfm_extract_track`) avec recalcul du
+      CRC-16/CCITT (`mfm_crc16`) → image MFM valide relisible
+- [x] `sedoric_destroy()` libère `mfm_raw`
+- [x] +1 test `test_sedoric_mfm_writeback_roundtrip` (réinjection + CRC +
+      taille MFM préservée) ; E2E réel SAVE→.dsk MFM intact→recharge→LIST ;
+      Valgrind clean. 728 tests PASS.
+- [ ] Corriger le log `main.c` (affiche `disk->size` plat au lieu des octets
+      MFM réellement écrits — cosmétique)
+
 ### Sprint 62: Persistance des sauvegardes in-game — write-back .dsk + capture savestate (v1.21.29-alpha) - DONE
 
 - [x] **Diagnostic confirmé** : l'écriture de secteur FDC (`disk.c` `$A0`) mute
