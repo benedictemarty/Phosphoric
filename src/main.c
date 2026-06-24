@@ -386,6 +386,7 @@ static void print_usage(const char* program_name) {
     printf("  F3  - Cycle display scale (x1 → x2 → x3 → x4)\n");
     printf("  F4  - Quick load state\n");
     printf("  F5  - Reset (with --loci : also resets MIA state, keeps mounts)\n");
+    printf("  F6  - OSD : changer la cassette/disquette a chaud (fleches, RET, ESC)\n");
     printf("  F8  - LOCI Action button (warm short press / release on key up)\n");
     printf("  F9  - Enter debugger\n");
     printf("  F10 - Quit\n");
@@ -959,6 +960,54 @@ static void parse_host_port(const char* spec, char* host, size_t host_sz,
         strncpy(host, spec, host_sz - 1);
         host[host_sz - 1] = '\0';
     }
+}
+
+/* OSD hot-swap : charge le média sélectionné dans l'overlay (cassette ou
+ * disquette lecteur A) sans quitter l'émulateur. */
+static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
+    if (e->is_disk) {
+        if (!emu->has_microdisc) {
+            snprintf(emu->osd.status, sizeof(emu->osd.status),
+                     "Pas de Microdisc (--disk-rom requis)");
+            return;
+        }
+        sedoric_disk_t* nd = sedoric_load(e->path);
+        if (!nd) {
+            snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
+            return;
+        }
+        if (emu->disks[0]) sedoric_destroy(emu->disks[0]);
+        emu->disks[0] = nd;
+        emu->disk_path = strdup(e->path);
+        microdisc_set_disk(&emu->microdisc, 0, nd->data, nd->size, nd->tracks, nd->sectors);
+        snprintf(emu->osd.status, sizeof(emu->osd.status),
+                 "Disque A: %.30s (reboot/DIR)", e->name);
+        log_info("OSD: disque A <- %s", e->path);
+    } else {
+        FILE* f = fopen(e->path, "rb");
+        if (!f) {
+            snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz <= 0 || sz > (1 << 20)) { fclose(f); return; }
+        uint8_t* buf = (uint8_t*)malloc((size_t)sz);
+        if (!buf) { fclose(f); return; }
+        if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { free(buf); fclose(f); return; }
+        fclose(f);
+        if (emu->tapebuf) free(emu->tapebuf);
+        emu->tapebuf = buf;
+        emu->tapelen = (int)sz;
+        emu->tapeoffs = 0;
+        emu->tape_loaded = true;
+        emu->tape_path = strdup(e->path);
+        snprintf(emu->osd.status, sizeof(emu->osd.status),
+                 "Cassette: %.28s (CLOAD\"\")", e->name);
+        log_info("OSD: cassette <- %s", e->path);
+    }
+    osd_close(&emu->osd);
 }
 
 /* Create a *transparent* serial transport from @p spec: a raw byte pipe that
@@ -2211,6 +2260,11 @@ static void emulator_run(emulator_t* emu) {
 
         /* Present to screen and handle events if not headless */
         if (!emu->headless) {
+            /* OSD : garde une copie fraîche du charset Oric (valide en mode
+             * texte) puis dessine l'overlay par-dessus le framebuffer. */
+            if (!emu->video.hires_mode && !emu->video.ocula_exthires)
+                osd_snapshot_font(&emu->osd, emu->memory.ram);
+            osd_render(&emu->osd, &emu->video);
             renderer_present(&emu->video);
 #ifdef HAS_SDL2
             /* Poll SDL events (keyboard, window close, etc.) */
@@ -2221,6 +2275,26 @@ static void emulator_run(emulator_t* emu) {
                     emu->running = false;
                     break;
                 case SDL_KEYDOWN:
+                    /* OSD média (F6) : quand l'overlay est ouvert, les flèches /
+                     * Entrée / Échap le pilotent et n'atteignent pas l'Oric. */
+                    if (event.key.keysym.sym == SDLK_F6) {
+                        osd_toggle(&emu->osd);
+                        break;
+                    }
+                    if (emu->osd.open) {
+                        int k = 0;
+                        switch (event.key.keysym.sym) {
+                        case SDLK_UP:       k = OSD_KEY_UP;    break;
+                        case SDLK_DOWN:     k = OSD_KEY_DOWN;  break;
+                        case SDLK_RETURN:
+                        case SDLK_KP_ENTER: k = OSD_KEY_ENTER; break;
+                        case SDLK_ESCAPE:   k = OSD_KEY_ESC;   break;
+                        default: break;
+                        }
+                        if (k && osd_key(&emu->osd, k) == OSD_ACTIVATE)
+                            osd_do_load(emu, &emu->osd.entries[emu->osd.selected]);
+                        break;  /* consomme l'événement */
+                    }
                     /* F5 = Reset, F10 = Quit, F11 = Fullscreen, F12 = Screenshot */
                     switch (event.key.keysym.sym) {
                     case SDLK_F2:

@@ -19,6 +19,7 @@
 #include "memory/memory.h"
 #include "io/via6522.h"
 #include "video/video.h"
+#include "video/osd.h"
 #include "video/avi_recorder.h"
 #include "utils/movie.h"
 #include "audio/audio.h"
@@ -40,7 +41,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.22.2-alpha"
+#define EMU_VERSION "1.23.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -121,6 +122,7 @@ typedef struct emulator_s {
     via6522_t via;
     ay3891x_t psg;
     video_t video;
+    osd_t osd;                /* OSD overlay : changement de média à chaud (F6) */
     ocula_gpu_t ocula_gpu;   /* OCULA-GPU window $03E8-$03EF (étape 5) */
     hostfs_t hostfs;
 

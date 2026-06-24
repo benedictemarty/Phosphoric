@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0-alpha] - 2026-06-25
+
+### Added — OSD : changement de média à chaud (touche F6)
+
+Overlay en surimpression (inspiré du file-requester d'Oricutron) pour changer
+la cassette (`.tap`) ou la disquette (`.dsk`, lecteur A) **sans quitter
+l'émulateur**, en réponse à la lacune de hot-swap notée à la ROADMAP Sprint 63.
+
+- **`src/video/osd.c` / `include/video/osd.h`** : module OSD découplé de SDL
+  (dessine dans `video_t.framebuffer`, reçoit des codes touches abstraits →
+  testable en headless). Scan des dossiers `tapes/`, `disks/`, `demos/ocula`,
+  `.` ; liste triée (cassettes puis disques) ; navigation ↑/↓, Entrée, Échap.
+- **F6** ouvre/ferme l'overlay (`src/main.c`) ; quand il est ouvert, les
+  flèches / Entrée / Échap le pilotent et n'atteignent pas l'Oric.
+- **Hot-swap** : cassette → remplace `tapebuf` (puis `CLOAD""`) ; disquette →
+  `sedoric_load` + `microdisc_set_disk` sur le lecteur A (comble la lacune
+  Sprint 63).
+- **Police** : snapshot du charset Oric `$B400` à chaque trame en mode texte
+  (toujours valide, aucune police à embarquer, licence propre — pas de copie
+  du font.c GPL d'Oricutron).
+- 5 tests (`make test-osd`) : scan/filtrage/tri, navigation bornée,
+  Entrée→ACTIVATE / Échap→CLOSED, rendu (panneau assombri + texte). 798 tests.
+
+#### Changed
+
+- `EMU_VERSION` 1.22.2 → 1.23.0-alpha. Aide CLI : touche F6 documentée.
+
 ## [1.22.2-alpha] - 2026-06-25
 
 ### Added — Démos OCULA (`demos/ocula/`)
