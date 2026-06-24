@@ -72,6 +72,30 @@ uint8_t memory_ocula_get_bank(const memory_t* mem) {
     return mem->ocula_bank;
 }
 
+void memory_ocula_unlock_write(memory_t* mem, uint8_t value) {
+    switch (value) {
+        case OCULA_UNLOCK_O:
+            mem->ocula_unlock_knock = 1;       /* first knock byte seen */
+            break;
+        case OCULA_UNLOCK_C:
+            if (mem->ocula_unlock_knock == 1)  /* 'O' then 'C': arm */
+                mem->ocula_unlocked = true;
+            mem->ocula_unlock_knock = 0;
+            break;
+        case OCULA_UNLOCK_LOCK:
+            mem->ocula_unlocked = false;       /* explicit re-lock */
+            mem->ocula_unlock_knock = 0;
+            break;
+        default:
+            mem->ocula_unlock_knock = 0;       /* any other byte resets */
+            break;
+    }
+}
+
+bool memory_ocula_unlocked(const memory_t* mem) {
+    return mem->ocula_unlocked;
+}
+
 /* CPU view of the $A000-$BFFF window under OCULA banking. */
 static inline uint8_t* ocula_window_ptr(memory_t* mem, uint16_t address) {
     return &mem->ocula_bank_mem[(mem->ocula_bank - 1) * OCULA_BANK_SIZE +
@@ -220,8 +244,15 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     } else if (!mem->rom_enabled) {
         /* Legacy mode: Write to overlay (stored in rom array when ROM is disabled) */
         mem->rom[address - 0xC000] = value;
+    } else {
+        /* ROM enabled: the chip ignores the write, but the OCULA snoops
+         * ROM-space blind-writes as a write-only register space. The
+         * unlock register (page $FB) arms the opt-in extensions. This is
+         * only reachable when genuine ROM is mapped — never a RAM-overlay
+         * write — matching what the real ULA sees on the bus. */
+        if ((address & 0xFF00) == OCULA_UNLOCK_PAGE)
+            memory_ocula_unlock_write(mem, value);
     }
-    /* Writes to ROM area when ROM enabled are silently ignored */
 }
 
 uint16_t memory_read_word(memory_t* mem, uint16_t address) {

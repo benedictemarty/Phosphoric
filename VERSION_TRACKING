@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.22.0-alpha
-Release Date: 2026-06-13
-Status: Alpha (Sprint 44 — OCULA 80-col BASIC mirror : --ocula-80col-basic, hook $BB80-$BFDF→$A000 row×80+col, ocula_80col_forced survive reset ; 589 tests) ; précédent : (Sprint 43 — OCULA étape 5 : OCULA-GPU ; 585 tests)
+Current Version: 1.23.0-alpha
+Release Date: 2026-06-24
+Status: Alpha (Sprint 45 — OCULA opt-in : déverrouillage par écriture aveugle ROM (knock 'O'/'C' page $FB00), extensions vidéo + palette inertes par défaut, miroir video_t.ocula_unlocked synchronisé par trame, persistance OGP rétrocompatible ; réponse à la revue Dbug t=2709 ; 597 tests) ; précédent : (Sprint 44 — OCULA 80-col BASIC mirror ; 589 tests)
 
 Version History:
 ----------------
+- 1.23.0-alpha (2026-06-24): Sprint 45 — **OCULA opt-in (déverrouillage par écriture aveugle ROM)** (réponse à la revue de Dbug sur forum.defence-force.org t=2709 : extensions inertes par défaut pour rester compatible octet pour octet ; knock 'O' $4F puis 'C' $43 sur page registre $FB00 arme `ocula_unlocked`, $00 reverrouille, décodé dans memory_write() uniquement en ROM réelle mappée jamais en overlay RAM ; memory_ocula_unlock_write()/memory_ocula_unlocked() ; video_t.ocula_unlocked miroir synchronisé par trame conditionne les latchs 80-col/ext-HIRES et la palette ; --ocula-80col-basic forcé reste indépendant ; persistance section OGP .ost rétrocompatible ; spec v0.8 ; 8 nouveaux tests), 597 tests PASS
 - 1.22.0-alpha (2026-06-13): Sprint 44 — **OCULA 80-col BASIC mirror** (--ocula-80col-basic : flag ocula_80col_mirror dans memory_write() reflète $BB80-$BFDF→$A000 stride 80 ; ocula_80col_forced force le latch 80-col indépendamment de vid_mode, survit au reset comme ula_profile ; implique ULA_PROFILE_OCULA si non défini ; 4 nouveaux tests miroir + latch forcé), 589 tests PASS
 - 1.21.0-alpha (2026-06-13): Sprint 43 — **OCULA étape 5 : OCULA-GPU** (fenêtre $03E8-$03EF : GPU_CMD bit 7 bloquant, GPU_STATUS, GPU_PTR bloc 16 octets ; commandes INFO/FILL/COPY snapshot-safe/SCROLL wrap 320×200/WAIT_VBL $85 ; étirement PHI0 dans la boucle main (6502+VIA+FDC+ACIA gelés, ULA continue, réveil ligne 224) ; garde <$0400 ; banking intégré ; caps $1F ; section OGP .ost ; 14 nouveaux tests + E2E FILL via control et WAIT_VBL en BASIC réel ; spec v0.7), 585 tests PASS
 - 1.20.0-alpha (2026-06-13): Sprint 42 — **OCULA étape 4 : identification + banking mémoire** (module src/io/ocula_io.c, fenêtre $03E0-$03E7 sous --ula ocula : 'O','C', caps $0F, registre banque ; banking $A000-$BFFF 8 banques de 8 Ko, ULA toujours sur banque 0, allocation paresseuse ; section OCB du .ost ; 9 nouveaux tests ; E2E via protocole de contrôle : 4F 43 0F + isolation des banques ; piège BASIC PEEK(#3E0)≠PEEK(992) documenté ; spec v0.5 — plan 4 étapes complet), 571 tests PASS

@@ -1,6 +1,6 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.7 (Sprint 43, étapes 1-5 implémentées) — vérifié
+**Statut** : brouillon v0.8 (Sprint 45, étapes 1-5 + opt-in) — vérifié
 sans conflit avec le firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
@@ -21,6 +21,45 @@ les bits 6 et 5 sont à zéro).
 Les extensions OCULA réutilisent les **bits « don't-care » des attributs
 existants** : un programme OCULA reste exécutable sur un ULA d'origine,
 où l'extension dégrade proprement vers le comportement standard.
+
+## Opt-in : déverrouillage par écriture aveugle ROM
+
+> **Contexte** : revue de Dbug sur le fil [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)
+> (24 juin 2026). Les attributs 25/27/29/31 sont déjà employés de façon
+> interchangeable par des logiciels existants, et la zone $BFE0-$BFFF
+> sert de stockage à plusieurs jeux (score/achievements d'*Encounter*,
+> routines de fast-loader de *Symoon*). Un Oric équipé d'un OCULA doit
+> donc se comporter **octet pour octet comme un Oric d'origine** tant
+> qu'un programme n'a pas explicitement demandé les extensions.
+
+Les extensions vidéo (80 colonnes, HIRES étendu) **et** la palette
+redéfinissable sont **inertes par défaut**. Elles ne s'activent qu'après
+un **déverrouillage** : une séquence d'écritures aveugles dans l'espace
+ROM, mécanisme préféré par sodiumlb (issue #53) car l'ULA voit ces
+écritures sur le bus alors qu'un Oric d'origine les ignore.
+
+| Étape | Écriture | Effet |
+|-------|----------|-------|
+| 1 | `POKE #FB00,79` (`'O'`) | arme la séquence |
+| 2 | `POKE #FB00,67` (`'C'`) | **déverrouille** les extensions |
+| — | `POKE #FB00,0` | reverrouille (extensions inertes) |
+
+- **Registre** : page **$FB00-$FBFF**. Sur le matériel, l'ULA ne décode
+  que les 8 bits de poids fort (A8-A15) d'une écriture aveugle ROM —
+  toute la page est donc un unique registre write-only ; n'importe
+  quelle adresse `$FBxx` convient. Toute valeur autre que la séquence
+  réinitialise le knock.
+- **Uniquement en ROM réelle** : le déverrouillage n'est pris en compte
+  que lorsque la ROM BASIC est mappée. Une écriture en overlay RAM à la
+  même adresse est une écriture mémoire normale, jamais un knock.
+- **Reverrouillage** : `POKE #FB00,0`. (Le comportement au reset à froid
+  est une question matérielle ouverte — cf. remarque de sodiumlb sur le
+  fil : « no good way to identify a reset from an ULA » ; l'émulateur
+  démarre verrouillé.)
+- **Encodage provisoire**, à confirmer avec sodiumlb / Defence Force.
+- L'identification ($03E0-$03E1 = `'O'`,`'C'`) et la lecture des
+  capacités ($03E2) restent **toujours lisibles** : un programme détecte
+  l'OCULA *puis* déverrouille avant d'utiliser les modes étendus.
 
 ## Attribut 25 : mode texte 80 colonnes
 
@@ -43,8 +82,11 @@ donne un sens :
 
 Le test 80 colonnes est `(vid_mode & 0b101) == 0b001` : les attributs
 25 et 27 l'activent tous deux, le bit 1 (fréquence) restant indépendant.
-Activation depuis le BASIC en PAL : `POKE #BB80,27` (27 préserve le
-50 Hz ; 25 fonctionne aussi mais bascule en 60 Hz sur le matériel réel).
+**Prérequis : déverrouillage** (cf. section opt-in) — sans lui les
+attributs 25/27 gardent leur sens d'origine. Activation depuis le BASIC
+en PAL : `POKE#FB00,79:POKE#FB00,67` (déverrouille) puis `POKE #BB80,27`
+(27 préserve le 50 Hz ; 25 fonctionne aussi mais bascule en 60 Hz sur le
+matériel réel).
 Retour 40 colonnes : placer l'attribut 26 dans l'écran 80 colonnes
 (`POKE #A000,26`).
 
@@ -108,7 +150,11 @@ de fréquence restant indépendant).
 
 8 entrées **RGB332** à **$BFE0-$BFE7**, armées par les octets magiques
 `'O','C'` ($4F,$43) à **$BFE8-$BFE9**. Relue à chaque début de trame ;
-sans le magic (ou sous profil stock), palette Oric standard.
+sans le magic (ou sous profil stock, **ou si l'OCULA n'est pas
+déverrouillé**), palette Oric standard. Le déverrouillage (section
+opt-in) est requis : tant qu'il n'a pas eu lieu, $BFE0-$BFFF reste un
+simple stockage mémoire — les jeux qui y rangent des données ne sont pas
+perturbés, même si leurs octets ressemblent au magic.
 
 - S'applique à **tous les modes** sous OCULA (texte 40/80 col, HIRES
   standard et étendu) — c'est le « multi-coloric » du fil t=2709.
@@ -116,9 +162,9 @@ sans le magic (ou sous profil stock), palette Oric standard.
   balayé par l'ULA d'origine** : neutre sur matériel stock. Pour le
   vrai OCULA, la zone est lisible pendant le blanking (l'ULA contrôle
   le bus DRAM), y compris en mode DRAM-is-the-RAM.
-- Exemple BASIC : `POKE#BFE8,79:POKE#BFE9,67` (arme 'O','C') puis
-  `POKE#BFE7,224` (entrée 7 → rouge pur 0xE0). Désarmement :
-  `POKE#BFE8,0`.
+- Exemple BASIC : `POKE#FB00,79:POKE#FB00,67` (déverrouille l'OCULA)
+  puis `POKE#BFE8,79:POKE#BFE9,67` (arme 'O','C') puis `POKE#BFE7,224`
+  (entrée 7 → rouge pur 0xE0). Désarmement : `POKE#BFE8,0`.
 
 ## Fenêtre I/O $03E0-$03E7 : identification + banking (étape 4)
 

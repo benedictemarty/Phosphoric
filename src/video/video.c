@@ -36,7 +36,10 @@ static void palette_reset(video_t* vid) {
  * 'O','C' magic at OCULA_PAL_MAGIC: 8 RGB332 entries at OCULA_PAL_BASE
  * replace the standard palette for the coming frame. */
 static void palette_latch(video_t* vid, const uint8_t* memory) {
-    if (vid->ula_profile == ULA_PROFILE_OCULA &&
+    /* Opt-in (sprint 45): without the unlock, $BFE0-$BFFF is plain
+     * storage (some games keep data there — cf. Dbug, forum t=2709), so
+     * the magic bytes are NOT interpreted and the standard palette holds. */
+    if (vid->ula_profile == ULA_PROFILE_OCULA && vid->ocula_unlocked &&
         memory[OCULA_PAL_MAGIC] == 'O' && memory[OCULA_PAL_MAGIC + 1] == 'C') {
         for (int i = 0; i < 8; i++) {
             uint8_t v = memory[OCULA_PAL_BASE + i];
@@ -355,12 +358,19 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
          * frame): 80-col = bit 0 with HIRES clear; ext-HIRES = bit 0
          * with HIRES set. ocula_80col_forced (--ocula-80col-basic) bypasses
          * the vid_mode check so BASIC's standard attrs don't drop the mode.
-         * The redefinable palette is re-read here too. */
+         * The redefinable palette is re-read here too.
+         *
+         * Opt-in (sprint 45): the extended modes only react to the
+         * serial attributes 25/27/29/31 once the OCULA has been unlocked.
+         * Until then attrs 25/27 keep their stock Oric meaning, so games
+         * that use them interchangeably (cf. Dbug, forum t=2709) are not
+         * disturbed. The forced BASIC-mirror mode is an explicit CLI
+         * opt-in and stays independent of the unlock. */
+        bool ext_enabled = (vid->ula_profile == ULA_PROFILE_OCULA) &&
+                           vid->ocula_unlocked;
         bool want_80col = vid->ocula_80col_forced ||
-                          ((vid->ula_profile == ULA_PROFILE_OCULA) &&
-                           ((vid->vid_mode & 0x05) == 0x01));
-        bool want_exthires = !vid->ocula_80col_forced &&
-                             (vid->ula_profile == ULA_PROFILE_OCULA) &&
+                          (ext_enabled && ((vid->vid_mode & 0x05) == 0x01));
+        bool want_exthires = !vid->ocula_80col_forced && ext_enabled &&
                              ((vid->vid_mode & 0x05) == 0x05);
         if (want_80col != vid->ocula_80col ||
             want_exthires != vid->ocula_exthires) {

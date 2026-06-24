@@ -218,6 +218,7 @@ static void setup_80col(video_t* vid) {
     }
     video_init(vid);
     video_set_profile(vid, ULA_PROFILE_OCULA);
+    vid->ocula_unlocked = true;  /* sprint 45: arm the opt-in extensions */
 }
 
 static uint8_t pixel_r(const video_t* vid, int x, int y) {
@@ -661,6 +662,7 @@ static void gpu_setup(memory_t* mem, video_t* vid, ocula_gpu_t* gpu) {
     video_init(vid);
     video_set_profile(vid, ULA_PROFILE_OCULA);
     ocula_gpu_init(gpu);
+    vid->ocula_unlocked = true;  /* sprint 45: GPU users have opted in */
     ocula_gpu_write(gpu, mem, vid, OCULA_GPU_PTRL, 0x00);
     ocula_gpu_write(gpu, mem, vid, OCULA_GPU_PTRH, 0x04);
 }
@@ -885,6 +887,125 @@ TEST(test_80col_forced_latch_survives_vid_mode) {
     ASSERT_TRUE(vid.ocula_80col);
 }
 
+/* ─────────────────────────────────────────────────────────────── */
+/*  Sprint 45 — opt-in unlock (blind-write ROM), Dbug t=2709 review  */
+/* ─────────────────────────────────────────────────────────────── */
+
+/* An OCULA-equipped Oric must render byte-for-byte like a stock machine
+ * until software opts in. attr 25 (80-col) is inert while locked. */
+TEST(test_optin_80col_inert_until_unlock) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.ocula_unlocked = false;        /* locked: stock behaviour */
+    vid.vid_mode = 0x01;               /* attr 25 */
+    video_render_frame(&vid, mem80);
+    video_render_frame(&vid, mem80);
+    ASSERT_FALSE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+    /* Now opt in: the very same attr starts driving 80-col */
+    vid.ocula_unlocked = true;
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_80col);
+    ASSERT_EQ(vid.native_w, OCULA_MAX_W);
+}
+
+TEST(test_optin_exthires_inert_until_unlock) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.ocula_unlocked = false;
+    vid.vid_mode = 0x05;               /* attr 29 */
+    video_render_frame(&vid, mem80);
+    ASSERT_FALSE(vid.ocula_exthires);
+    ASSERT_EQ(vid.native_w, ORIC_SCREEN_W);
+    vid.ocula_unlocked = true;
+    video_render_frame(&vid, mem80);
+    ASSERT_TRUE(vid.ocula_exthires);
+    ASSERT_EQ(vid.native_w, OCULA_EXTHIRES_W);
+}
+
+/* $BFE0-$BFFF stays plain storage while locked: the magic bytes are not
+ * interpreted, so a game keeping data there (Encounter, Symoon) is safe. */
+TEST(test_optin_palette_inert_until_unlock) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.ocula_unlocked = false;
+    mem80[0xBB80]     = 0x01;          /* attr INK red */
+    mem80[0xBB80 + 1] = 0x41;          /* 'A' */
+    mem80[OCULA_PAL_MAGIC]     = 'O';  /* looks like the magic... */
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 1]  = 0x1C; /* ...but stays plain data */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 6, 0), 0xFF);   /* standard red ink */
+    ASSERT_EQ(pixel_g(&vid, 6, 0), 0x00);
+    /* Opt in: now the palette redefinition takes effect */
+    vid.ocula_unlocked = true;
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 6, 0), 0x00);
+    ASSERT_EQ(pixel_g(&vid, 6, 0), 0xFF);   /* redefined to pure green */
+}
+
+/* Blind-write ROM knock: 'O' then 'C' to the unlock page arms the chip. */
+TEST(test_unlock_knock_sequence) {
+    memory_t mem;
+    memory_init(&mem);
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_O);
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));   /* mid-knock */
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_C);
+    ASSERT_TRUE(memory_ocula_unlocked(&mem));
+    memory_cleanup(&mem);
+}
+
+/* Any address in the $FB page works (ULA decodes A8-A15 only). */
+TEST(test_unlock_knock_decodes_on_page) {
+    memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE + 0x37, OCULA_UNLOCK_O);
+    memory_write(&mem, OCULA_UNLOCK_PAGE + 0xC2, OCULA_UNLOCK_C);
+    ASSERT_TRUE(memory_ocula_unlocked(&mem));
+    memory_cleanup(&mem);
+}
+
+/* 'C' without a preceding 'O' must not unlock; an interrupted knock resets. */
+TEST(test_unlock_requires_ordered_knock) {
+    memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_C);   /* lone 'C' */
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_O);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 0x55);            /* breaks knock */
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_C);
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));
+    memory_cleanup(&mem);
+}
+
+/* Writing the lock command re-locks the chip. */
+TEST(test_unlock_relock) {
+    memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_O);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_C);
+    ASSERT_TRUE(memory_ocula_unlocked(&mem));
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_LOCK);
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));
+    memory_cleanup(&mem);
+}
+
+/* A RAM-overlay write to the same address is real RAM, not an unlock:
+ * only genuine ROM blind-writes arm the chip. */
+TEST(test_unlock_ignored_in_ram_overlay) {
+    memory_t mem;
+    memory_init(&mem);
+    mem.basic_rom_disabled = true;   /* $C000-$FFFF is RAM overlay */
+    mem.overlay_active = false;
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_O);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, OCULA_UNLOCK_C);
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));
+    /* The bytes landed in RAM as a normal write */
+    ASSERT_EQ(mem.upper_ram[OCULA_UNLOCK_PAGE - 0xC000], OCULA_UNLOCK_C);
+    memory_cleanup(&mem);
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -958,6 +1079,15 @@ int main(void) {
     RUN(test_80col_mirror_row_col_mapping);
     RUN(test_80col_mirror_disabled_by_default);
     RUN(test_80col_forced_latch_survives_vid_mode);
+
+    RUN(test_optin_80col_inert_until_unlock);
+    RUN(test_optin_exthires_inert_until_unlock);
+    RUN(test_optin_palette_inert_until_unlock);
+    RUN(test_unlock_knock_sequence);
+    RUN(test_unlock_knock_decodes_on_page);
+    RUN(test_unlock_requires_ordered_knock);
+    RUN(test_unlock_relock);
+    RUN(test_unlock_ignored_in_ram_overlay);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

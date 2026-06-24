@@ -1407,6 +1407,11 @@ static void emulator_run(emulator_t* emu) {
         int frame_cycles = 0;
         int rendered_scanlines = 0;
         bool vsync_triggered = false;
+        /* OCULA opt-in (sprint 45): mirror the unlock state (armed via
+         * blind-write ROM, decoded in memory_write) into the video latch
+         * before this frame's scanlines are emitted. The extension latch
+         * runs at scanline 0, so a frame-start sync is exact. */
+        emu->video.ocula_unlocked = memory_ocula_unlocked(&emu->memory);
         while (frame_cycles < CYCLES_PER_FRAME && !emu->cpu.halted) {
             /* Legacy single breakpoint (--breakpoint / -b) */
             if (emu->breakpoint >= 0 && emu->cpu.PC == (uint16_t)emu->breakpoint) {

@@ -270,6 +270,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         write_bool(fp, emu->ocula_gpu.wait_vbl);
         write_u8(fp, emu->video.ocula_scroll_x);
         write_u8(fp, emu->video.ocula_scroll_y);
+        write_bool(fp, emu->memory.ocula_unlocked);  /* sprint 45: opt-in unlock */
         end_section(fp, sec);
     }
 
@@ -577,6 +578,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->ocula_gpu.wait_vbl = read_bool(fp);
             emu->video.ocula_scroll_x = read_u8(fp);
             emu->video.ocula_scroll_y = read_u8(fp);
+            /* Opt-in unlock byte appended in sprint 45 (6-byte OGP
+             * sections predate it). Older OCULA saves had the extensions
+             * always active, so default them to unlocked to preserve the
+             * restored display; newer saves carry the real state. */
+            emu->memory.ocula_unlocked = true;
+            if (sec_size >= 7)
+                emu->memory.ocula_unlocked = read_bool(fp);
+            emu->video.ocula_unlocked = emu->memory.ocula_unlocked;
             /* Re-render with the restored hardware scroll applied */
             video_render_frame(&emu->video, emu->memory.ram);
         } else if (memcmp(tag, "KBD\0", 4) == 0) {

@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0-alpha] - 2026-06-24
+
+### Sprint 45 — OCULA opt-in (déverrouillage par écriture aveugle ROM)
+
+Réponse à la revue de Dbug sur le fil Defence Force [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)
+(24 juin 2026) : un Oric équipé d'un OCULA doit se comporter octet pour
+octet comme un Oric d'origine tant qu'un programme n'a pas explicitement
+demandé les extensions. Les attributs série 25/27/29/31 et la zone
+$BFE0-$BFFF étant déjà utilisés par des logiciels existants (score et
+achievements d'*Encounter*, fast-loader de *Symoon*), les extensions
+vidéo et la palette redéfinissable sont désormais **inertes par défaut**.
+
+#### Added
+
+- **Déverrouillage opt-in par écriture aveugle ROM** : une séquence de
+  knock `'O'` ($4F) puis `'C'` ($43) dans la page registre **$FB00-$FBFF**
+  arme les extensions ; `0x00` reverrouille. Mécanisme préféré par
+  sodiumlb (issue #53), aligné sur le matériel (l'ULA voit les écritures
+  ROM sur le bus, l'Oric d'origine les ignore).
+- **`memory_t.ocula_unlocked` / `ocula_unlock_knock`** (include/memory/memory.h)
+  + `memory_ocula_unlock_write()` / `memory_ocula_unlocked()` : machine
+  d'état du knock, décodée dans `memory_write()` uniquement quand la ROM
+  BASIC est réellement mappée (jamais en overlay RAM).
+- **`video_t.ocula_unlocked`** : miroir de l'état, synchronisé à chaque
+  début de trame depuis `memory_ocula_unlocked()` dans la boucle
+  principale ; conditionne les latchs 80-col / ext-HIRES et la palette.
+- **8 tests** (tests/unit/test_ocula.c, 71 au total) : inertie des modes
+  et de la palette tant que verrouillé, séquence de knock, décodage sur
+  la page, ordre du knock, reverrouillage, immunité en overlay RAM.
+- **Persistance savestate** : bit de déverrouillage ajouté à la section
+  OGP (.ost). Rétrocompatible — les saves antérieurs (section 6 octets)
+  sont restaurés déverrouillés pour préserver leur affichage.
+
+#### Changed
+
+- `--ocula-80col-basic` (mode forcé, opt-in CLI explicite) reste
+  indépendant du déverrouillage.
+- `OCULA_PAL_MAGIC` toujours requis pour la palette, mais désormais
+  ignoré tant que l'OCULA n'est pas déverrouillé.
+- Spec `docs/ocula_extensions.md` v0.7 → v0.8 : nouvelle section
+  « Opt-in : déverrouillage par écriture aveugle ROM ».
+
 ## [1.22.0-alpha] - 2026-06-13
 
 ### Sprint 44 — OCULA 80-col BASIC mirror

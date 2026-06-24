@@ -103,6 +103,15 @@ typedef struct video_s {
      * (bit 2 set) are mutually exclusive by construction. */
     bool ocula_exthires;
 
+    /* OCULA opt-in unlock mirror (sprint 45): when false, the extended
+     * video modes (80-col, ext-HIRES) and the redefinable palette stay
+     * inert — an OCULA-equipped Oric renders byte-for-byte like a stock
+     * machine. Armed by the blind-write ROM knock decoded in memory.c;
+     * the main loop mirrors memory_ocula_unlocked() here each frame.
+     * The --ocula-80col-basic forced mode bypasses this (explicit CLI
+     * opt-in). See memory.h OCULA_UNLOCK_* and forum t=2709 (Dbug). */
+    bool ocula_unlocked;
+
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE
      * when the OCULA_PAL_MAGIC bytes are armed. */

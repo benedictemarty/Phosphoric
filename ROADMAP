@@ -493,6 +493,27 @@ Permet au BASIC standard (BASIC 1.0 + 1.1) d'écrire sur le framebuffer
       par défaut, latch forcé résiste à vid_mode neutre (589 tests total)
 - [ ] Démonstration SDL2 live (BASIC PRINT 80 colonnes)
 
+### Sprint 45: OCULA opt-in — déverrouillage par écriture aveugle ROM (v1.23.0-alpha) - DONE
+
+Réponse à la revue de Dbug (forum Defence Force t=2709, 24 juin 2026) :
+les extensions doivent être inertes par défaut pour rester compatible
+octet pour octet avec les logiciels existants (attrs 25/27/29/31 et zone
+$BFE0-$BFFF déjà utilisés — Encounter, Symoon).
+
+- [x] Knock blind-write ROM `'O'`/`'C'` sur page $FB00 → `ocula_unlocked` ;
+      `0x00` reverrouille ; décodé dans `memory_write()` uniquement en ROM
+      réelle mappée (jamais en overlay RAM)
+- [x] `memory_ocula_unlock_write()` / `memory_ocula_unlocked()` +
+      `memory_t.ocula_unlocked` / `ocula_unlock_knock`
+- [x] `video_t.ocula_unlocked` miroir synchronisé par trame ; conditionne
+      les latchs 80-col, ext-HIRES et la palette redéfinissable
+- [x] `--ocula-80col-basic` (forcé) reste indépendant du déverrouillage
+- [x] Persistance savestate (section OGP, rétrocompatible saves 6 octets)
+- [x] 8 nouveaux tests (71 dans test-ocula) ; suite complète au vert
+- [x] Spec docs/ocula_extensions.md v0.8 (section opt-in)
+- [ ] Confirmer l'encodage de l'unlock-key avec sodiumlb / Defence Force
+- [ ] Démo BASIC vitrine (unlock + 80 col + palette)
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)
