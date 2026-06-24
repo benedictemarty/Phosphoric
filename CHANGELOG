@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.1-alpha] - 2026-06-24
+
+### Chore — Nettoyage double-hauteur OCULA (code mort)
+
+Suite à la fusion OCULA (#26), deux mécaniques de double-hauteur coexistaient :
+celle de main basée sur `row` (`effective_chline`, Sprint 34r, active et
+testée) et celle d'OCULA basée sur `dbl_phase` (devenue vestigiale après le
+merge — écrite mais jamais lue).
+
+#### Removed
+
+- Champs `video_t.dbl_phase` / `video_t.dbl_was_active` (jamais lus).
+- Écritures mortes associées + variable locale `row_had_double` dans
+  `render_80col_scanline()` et les resets dans le bloc frame-start.
+- Aucun changement de comportement (la double-hauteur passe toujours par
+  `effective_chline(vid, chline, row)`). 793 tests PASS, dont
+  `test_double_height_row_parity`.
+
 ## [1.22.0-alpha] - 2026-06-24
 
 ### Integration — Fusion de la branche OCULA dans main (sprints 39-46)
