@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.30-alpha] - 2026-06-24
+
+### Fix — Write-back MFM_DISK in-place (corrige la corruption des .dsk réels)
+
+Le write-back `.dsk` du Sprint 62 (`--disk-writeback`) appelait
+`sedoric_save()`, qui écrit `disk->data` (le buffer plat des secteurs) tel
+quel. Pour un disque **MFM_DISK** (le format de tous les vrais disques Oric,
+chargé en extrayant les secteurs vers un buffer plat), cela écrasait le
+conteneur MFM par un dump plat de taille différente → **`.dsk` corrompu,
+illisible**. Seuls les rares disques raw étaient correctement persistés.
+
+#### Fixed
+
+- **`sedoric_save()` aiguille raw vs MFM** selon `is_mfm`. Pour le MFM, le
+  conteneur d'origine est conservé au chargement (`mfm_raw`/`mfm_raw_size`) et
+  `sedoric_save_mfm()` réinjecte chaque secteur en place via
+  `mfm_inject_track()` (inverse de `mfm_extract_track`), avec **recalcul du
+  CRC-16/CCITT** (`mfm_crc16`) → l'image reste un conteneur MFM valide,
+  relisible par d'autres outils.
+- `sedoric_destroy()` libère `mfm_raw`.
+
+#### Added
+
+- Champs `is_mfm`, `mfm_raw`, `mfm_raw_size` dans `sedoric_disk_t`.
+- Test `test_sedoric_mfm_writeback_roundtrip` : vérifie la réinjection MFM +
+  CRC et que le fichier reste à la taille MFM (pas un dump plat). 728 tests
+  PASS, Valgrind clean. E2E réel validé (`SAVE"FIX"` → `.dsk` MFM intact →
+  recharge → `LIST`).
+
 ## [1.21.29-alpha] - 2026-06-24
 
 ### Sprint 62 — Persistance des sauvegardes in-game (write-back .dsk + capture savestate)
