@@ -358,7 +358,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
          * frame): 80-col = bit 0 with HIRES clear; ext-HIRES = bit 0
          * with HIRES set. ocula_80col_forced (--ocula-80col-basic) bypasses
          * the vid_mode check so BASIC's standard attrs don't drop the mode.
-         * The redefinable palette is re-read here too.
+         * (The redefinable palette is re-read per scanline below.)
          *
          * Opt-in (sprint 45): the extended modes only react to the
          * serial attributes 25/27/29/31 once the OCULA has been unlocked.
@@ -380,8 +380,17 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
             memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
             vid->need_refresh = true;
         }
-        palette_latch(vid, memory);
     }
+
+    /* OCULA redefinable palette: re-read at the START OF EVERY SCANLINE
+     * (sprint 46). A program that rewrites $BFE0-$BFE7 between scanlines
+     * therefore gets per-line palette changes — a single change is the
+     * top/bottom split of the 1985 Multicoloric card (Micr'Oric n°9),
+     * one change per line gives copper-style rasters, and continuous
+     * changes give plasmas. The scanline-accurate main loop samples each
+     * line at its real CPU cycle, so the palette seen is the one in RAM
+     * at that moment. Inert while locked / on a stock ULA. */
+    palette_latch(vid, memory);
 
     /* ULA resets attributes at start of every scanline. */
     vid->text_attr = 0;

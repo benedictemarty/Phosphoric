@@ -1,6 +1,6 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.8 (Sprint 45, étapes 1-5 + opt-in) — vérifié
+**Statut** : brouillon v0.9 (Sprint 46, étapes 1-5 + opt-in + palette par scanline) — vérifié
 sans conflit avec le firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
@@ -149,13 +149,22 @@ de fréquence restant indépendant).
 ## Palette redéfinissable (étape 3)
 
 8 entrées **RGB332** à **$BFE0-$BFE7**, armées par les octets magiques
-`'O','C'` ($4F,$43) à **$BFE8-$BFE9**. Relue à chaque début de trame ;
-sans le magic (ou sous profil stock, **ou si l'OCULA n'est pas
-déverrouillé**), palette Oric standard. Le déverrouillage (section
+`'O','C'` ($4F,$43) à **$BFE8-$BFE9**. Relue **à chaque début de
+scanline** ; sans le magic (ou sous profil stock, **ou si l'OCULA n'est
+pas déverrouillé**), palette Oric standard. Le déverrouillage (section
 opt-in) est requis : tant qu'il n'a pas eu lieu, $BFE0-$BFFF reste un
 simple stockage mémoire — les jeux qui y rangent des données ne sont pas
 perturbés, même si leurs octets ressemblent au magic.
 
+- **Palette par scanline (changements en cours de trame)** : la relecture
+  ligne par ligne permet de réécrire $BFE0-$BFE7 entre deux scanlines pour
+  changer les couleurs des lignes suivantes dans la même trame. Un seul
+  changement = la séparation haut/bas de la carte **Multicoloric**
+  (Micr'Oric n°9, 1985 : 2×8 couleurs séparées à une ligne programmée),
+  un changement par ligne = rasters façon copper, des changements continus
+  = plasmas. L'OCULA généralise donc la Multicoloric (split unique figé)
+  à un nombre arbitraire de changements, la palette vivant en RAM relue
+  par le RP2350 plutôt qu'en mémoire matérielle dédiée.
 - S'applique à **tous les modes** sous OCULA (texte 40/80 col, HIRES
   standard et étendu) — c'est le « multi-coloric » du fil t=2709.
 - $BFE0-$BFFF (32 octets au-dessus de l'écran texte) n'est **jamais

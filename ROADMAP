@@ -514,6 +514,24 @@ $BFE0-$BFFF déjà utilisés — Encounter, Symoon).
 - [ ] Confirmer l'encodage de l'unlock-key avec sodiumlb / Defence Force
 - [ ] Démo BASIC vitrine (unlock + 80 col + palette)
 
+### Sprint 46: OCULA palette par scanline — rasters / plasma (v1.24.0-alpha) - DONE
+
+Réponse à Dbug (forum t=2709 p=34912) : palette modifiable plusieurs fois
+par trame, généralisation de la carte Multicoloric (Micr'Oric n°9, 1985 :
+split haut/bas unique) à un nombre arbitraire de changements.
+
+- [x] `palette_latch()` relu à chaque scanline (hors du bloc y==0) ;
+      réécriture $BFE0-$BFE7 entre lignes = couleurs des lignes suivantes
+- [x] Rendu scanline-accurate → chaque ligne voit la palette en RAM à son
+      cycle CPU (split / rasters copper / plasmas)
+- [x] Reste opt-in (inerte tant que non déverrouillé / ULA stock)
+- [x] 2 tests : plasma rouge/vert ligne par ligne, split 2 zones (599 total)
+- [x] Spec v0.9 (relecture par scanline + comparaison Multicoloric)
+- [ ] RGB444 (4096 teintes, comme Multicoloric) — décision à coordonner
+      avec sodiumlb (débat RGB332/333)
+- [ ] Registre vsync/beam lisible (rasters CPU sans poller PB5)
+- [ ] Démo BASIC plasma / dégradé vitrine
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)

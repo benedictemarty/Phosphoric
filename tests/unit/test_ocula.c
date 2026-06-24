@@ -1006,6 +1006,64 @@ TEST(test_unlock_ignored_in_ram_overlay) {
     memory_cleanup(&mem);
 }
 
+/* ─────────────────────────────────────────────────────────────── */
+/*  Sprint 46 — palette per-scanline (rasters / plasma, Multicoloric) */
+/* ─────────────────────────────────────────────────────────────── */
+
+/* The redefinable palette is re-read at every scanline, so rewriting an
+ * entry between scanlines changes the colour of the lines below — within
+ * the SAME frame. This generalises the Multicoloric card (single fixed
+ * top/bottom split) to an arbitrary number of mid-frame changes.
+ *
+ * Plasma: alternate palette entry 7 (ext-HIRES ink) red/green per line,
+ * rendering scanline by scanline, and check each line took the colour
+ * armed just before it was drawn. With a per-frame latch every line
+ * would share line 0's colour — this test would fail. */
+TEST(test_palette_plasma_per_scanline) {
+    static video_t vid;
+    setup_80col(&vid);                  /* OCULA + unlocked */
+    vid.vid_mode = 0x05;                /* ext-HIRES: ink = palette entry 7 */
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    /* Leftmost pixel lit on every bitmap row (MSB) */
+    for (int y = 0; y < 200; y++)
+        mem80[OCULA_EXTHIRES_BASE + y * 40] = 0x80;
+    /* Render line by line, re-arming entry 7 before each scanline:
+     * even lines -> pure red (0xE0), odd lines -> pure green (0x1C). */
+    for (int y = 0; y < 200; y++) {
+        mem80[OCULA_PAL_BASE + 7] = (y & 1) ? 0x1C : 0xE0;
+        video_render_scanline(&vid, mem80, y);
+    }
+    ASSERT_TRUE(vid.ocula_exthires);
+    /* Same frame, three consecutive lines, three palette states */
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);  /* line 0: red */
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0x00);
+    ASSERT_EQ(pixel_r(&vid, 0, 1), 0x00);  /* line 1: green */
+    ASSERT_EQ(pixel_g(&vid, 0, 1), 0xFF);
+    ASSERT_EQ(pixel_r(&vid, 0, 2), 0xFF);  /* line 2: red again */
+    ASSERT_EQ(pixel_g(&vid, 0, 2), 0x00);
+}
+
+/* Two-zone split (the literal Multicoloric use case): one palette for the
+ * top of the screen, another for the bottom, switched at a chosen line. */
+TEST(test_palette_split_two_zones) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    for (int y = 0; y < 200; y++)
+        mem80[OCULA_EXTHIRES_BASE + y * 40] = 0x80;
+    for (int y = 0; y < 200; y++) {
+        mem80[OCULA_PAL_BASE + 7] = (y < 100) ? 0xE0 : 0x1C;  /* red / green */
+        video_render_scanline(&vid, mem80, y);
+    }
+    ASSERT_EQ(pixel_r(&vid, 0, 99),  0xFF);  /* top zone: red */
+    ASSERT_EQ(pixel_g(&vid, 0, 99),  0x00);
+    ASSERT_EQ(pixel_r(&vid, 0, 100), 0x00);  /* bottom zone: green */
+    ASSERT_EQ(pixel_g(&vid, 0, 100), 0xFF);
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -1088,6 +1146,9 @@ int main(void) {
     RUN(test_unlock_requires_ordered_knock);
     RUN(test_unlock_relock);
     RUN(test_unlock_ignored_in_ram_overlay);
+
+    RUN(test_palette_plasma_per_scanline);
+    RUN(test_palette_split_two_zones);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

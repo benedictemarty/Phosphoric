@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.0-alpha] - 2026-06-24
+
+### Sprint 46 — OCULA palette par scanline (rasters / plasma)
+
+Réponse à la demande de Dbug (forum t=2709, p=34912) : pouvoir changer la
+palette redéfinissable plusieurs fois par trame. La palette est désormais
+relue **à chaque début de scanline** au lieu d'une fois par trame, ce qui
+permet — en réécrivant $BFE0-$BFE7 entre deux lignes — la séparation
+haut/bas de la carte *Multicoloric* (Micr'Oric n°9, 1985), les rasters
+façon copper, et les plasmas. Le rendu étant scanline-accurate, chaque
+ligne échantillonne la palette telle qu'elle est en RAM à son cycle CPU.
+
+#### Changed
+
+- **`palette_latch()` déplacé hors du bloc `if (y == 0)`** (src/video/video.c) :
+  appelé au début de chaque scanline. Inerte tant que l'OCULA n'est pas
+  déverrouillé / sur ULA stock (comportement opt-in inchangé).
+- Spec `docs/ocula_extensions.md` v0.8 → v0.9 : section palette mise à
+  jour (relecture par scanline, comparaison Multicoloric, rasters/plasma).
+
+#### Added
+
+- **2 tests** (tests/unit/test_ocula.c, 73 dans test-ocula) :
+  `test_palette_plasma_per_scanline` (entrée 7 alternée rouge/vert ligne
+  par ligne, vérifie 3 lignes consécutives dans la même trame) et
+  `test_palette_split_two_zones` (split haut/bas type Multicoloric).
+
 ## [1.23.0-alpha] - 2026-06-24
 
 ### Sprint 45 — OCULA opt-in (déverrouillage par écriture aveugle ROM)

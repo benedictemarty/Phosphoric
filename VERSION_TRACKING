@@ -1,12 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 1.23.0-alpha
+Current Version: 1.24.0-alpha
 Release Date: 2026-06-24
-Status: Alpha (Sprint 45 — OCULA opt-in : déverrouillage par écriture aveugle ROM (knock 'O'/'C' page $FB00), extensions vidéo + palette inertes par défaut, miroir video_t.ocula_unlocked synchronisé par trame, persistance OGP rétrocompatible ; réponse à la revue Dbug t=2709 ; 597 tests) ; précédent : (Sprint 44 — OCULA 80-col BASIC mirror ; 589 tests)
+Status: Alpha (Sprint 46 — OCULA palette par scanline : palette_latch relu à chaque scanline → split/rasters/plasma (généralise la carte Multicoloric Micr'Oric n°9) ; réponse à Dbug t=2709 p=34912 ; 599 tests) ; précédent : (Sprint 45 — OCULA opt-in déverrouillage blind-write ROM ; 597 tests)
 
 Version History:
 ----------------
+- 1.24.0-alpha (2026-06-24): Sprint 46 — **OCULA palette par scanline (rasters / plasma)** (réponse à Dbug forum t=2709 p=34912 : palette redéfinissable modifiable plusieurs fois par trame ; palette_latch() déplacé hors du bloc y==0, relu à chaque début de scanline ; réécriture $BFE0-$BFE7 entre lignes → couleurs des lignes suivantes dans la même trame ; rendu scanline-accurate → palette échantillonnée au cycle CPU de chaque ligne ; généralise la carte Multicoloric (split haut/bas unique) aux rasters copper et plasmas ; reste opt-in inerte tant que non déverrouillé ; spec v0.9 ; 2 nouveaux tests plasma + split 2 zones), 599 tests PASS
 - 1.23.0-alpha (2026-06-24): Sprint 45 — **OCULA opt-in (déverrouillage par écriture aveugle ROM)** (réponse à la revue de Dbug sur forum.defence-force.org t=2709 : extensions inertes par défaut pour rester compatible octet pour octet ; knock 'O' $4F puis 'C' $43 sur page registre $FB00 arme `ocula_unlocked`, $00 reverrouille, décodé dans memory_write() uniquement en ROM réelle mappée jamais en overlay RAM ; memory_ocula_unlock_write()/memory_ocula_unlocked() ; video_t.ocula_unlocked miroir synchronisé par trame conditionne les latchs 80-col/ext-HIRES et la palette ; --ocula-80col-basic forcé reste indépendant ; persistance section OGP .ost rétrocompatible ; spec v0.8 ; 8 nouveaux tests), 597 tests PASS
 - 1.22.0-alpha (2026-06-13): Sprint 44 — **OCULA 80-col BASIC mirror** (--ocula-80col-basic : flag ocula_80col_mirror dans memory_write() reflète $BB80-$BFDF→$A000 stride 80 ; ocula_80col_forced force le latch 80-col indépendamment de vid_mode, survit au reset comme ula_profile ; implique ULA_PROFILE_OCULA si non défini ; 4 nouveaux tests miroir + latch forcé), 589 tests PASS
 - 1.21.0-alpha (2026-06-13): Sprint 43 — **OCULA étape 5 : OCULA-GPU** (fenêtre $03E8-$03EF : GPU_CMD bit 7 bloquant, GPU_STATUS, GPU_PTR bloc 16 octets ; commandes INFO/FILL/COPY snapshot-safe/SCROLL wrap 320×200/WAIT_VBL $85 ; étirement PHI0 dans la boucle main (6502+VIA+FDC+ACIA gelés, ULA continue, réveil ligne 224) ; garde <$0400 ; banking intégré ; caps $1F ; section OGP .ost ; 14 nouveaux tests + E2E FILL via control et WAIT_VBL en BASIC réel ; spec v0.7), 585 tests PASS
