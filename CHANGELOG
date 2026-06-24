@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.2-alpha] - 2026-06-25
+
+### Added — Démos OCULA (`demos/ocula/`)
+
+Quatre démos illustrant les capacités OCULA, avec un README (lancement +
+reconstruction des `.tap`).
+
+- `oculaplasma` (MC) — plasma / raster bars : palette `$BFE0-$BFE7` relue par
+  scanline → arc-en-ciel de bandes horizontales défilantes.
+- `oculahr` (MC) — HIRES étendu 320×200 + palette animée (paper + encre en
+  phases opposées) ; zone texte basse (`$BF40-$BFDF`) initialisée à blanc pour
+  éviter le garbage 0x55, octets bitmap forcés hors plage attribut (`ora #$20`).
+- `ocula_demo` (BASIC) — palette redéfinissable (cyclage par trame).
+- `ocula80_demo` (BASIC) — texte 80 colonnes (buffer `$A000` effacé puis
+  banners pleine largeur).
+
+#### Notes
+
+- `bin2tap --start` parse via `strtol` base 0 : préfixer l'adresse en `0x`
+  (sinon `0500` = octal $0140). Documenté dans le README.
+- `EMU_VERSION` 1.22.1 → 1.22.2-alpha. Aucun changement du binaire émulateur
+  (assets uniquement) ; 793 tests inchangés.
+
 ## [1.22.1-alpha] - 2026-06-24
 
 ### Chore — Nettoyage double-hauteur OCULA (code mort)
