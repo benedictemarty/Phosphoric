@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0-alpha] - 2026-06-24
+
+### Integration — Fusion de la branche OCULA dans main (sprints 39-46)
+
+Intégration de toute la chaîne OCULA (banc d'essai logiciel du remplacement
+ULA par RP2350) développée en parallèle sur branche, réconciliée avec la
+ligne 1.21.x de main (MIDI, web/WASM, write-back disque, savestate). Le
+détail par sprint reste dans l'historique git de `feature/sprint*-ocula-*`.
+
+#### Added
+
+- **Profil ULA enfichable** (`--ula ula|ocula`) : ULA stock HCS 10017 par
+  défaut, profil OCULA opt-in. `video_set_profile()`, `ula_profile` survit au
+  reset (modélise la puce socketée).
+- **Mode texte 80 colonnes** OCULA + miroir BASIC `--ocula-80col-basic`.
+- **HIRES étendu 320×200 + palette redéfinissable** ($BFE0-$BFE7, 8×RGB332,
+  relue par scanline → split/rasters/plasmas type Multicoloric).
+- **Banking mémoire** $A000-$BFFF (8 banques) + registre d'identification.
+- **OCULA-GPU** (fenêtre $03E8-$03EF : FILL/COPY/SCROLL/WAIT_VBL, étirement
+  PHI0).
+- **Déverrouillage opt-in** par écriture aveugle ROM (knock 'O'/'C' page
+  $FB00) : extensions inertes tant que non armées (compat octet-pour-octet).
+- Sections savestate OCULA (`OCB`/`OGP`/profil ULA), rétrocompatibles.
+
+#### Changed
+
+- `EMU_VERSION` 1.21.30-alpha → **1.22.0-alpha**.
+- Réconciliation `effective_chline` : conservation de la double-hauteur
+  basée sur `row` de main (Sprint 34r, testée) ; `get_rgb(vid, …)` par
+  instance d'OCULA adopté partout (palette redéfinissable). 793 tests PASS.
+
 ## [1.21.30-alpha] - 2026-06-24
 
 ### Fix — Write-back MFM_DISK in-place (corrige la corruption des .dsk réels)

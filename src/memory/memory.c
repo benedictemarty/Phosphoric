@@ -18,6 +18,7 @@
 #include "memory/memory.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 bool memory_init(memory_t* mem) {
     memset(mem, 0, sizeof(memory_t));
@@ -52,7 +53,53 @@ bool memory_init(memory_t* mem) {
 }
 
 void memory_cleanup(memory_t* mem) {
-    (void)mem;
+    free(mem->ocula_bank_mem);
+    mem->ocula_bank_mem = NULL;
+    mem->ocula_bank = 0;
+}
+
+bool memory_ocula_set_bank(memory_t* mem, uint8_t bank) {
+    bank &= 0x07;
+    if (bank != 0 && !mem->ocula_bank_mem) {
+        mem->ocula_bank_mem = calloc(OCULA_BANK_COUNT - 1, OCULA_BANK_SIZE);
+        if (!mem->ocula_bank_mem) return false;
+    }
+    mem->ocula_bank = bank;
+    return true;
+}
+
+uint8_t memory_ocula_get_bank(const memory_t* mem) {
+    return mem->ocula_bank;
+}
+
+void memory_ocula_unlock_write(memory_t* mem, uint8_t value) {
+    switch (value) {
+        case OCULA_UNLOCK_O:
+            mem->ocula_unlock_knock = 1;       /* first knock byte seen */
+            break;
+        case OCULA_UNLOCK_C:
+            if (mem->ocula_unlock_knock == 1)  /* 'O' then 'C': arm */
+                mem->ocula_unlocked = true;
+            mem->ocula_unlock_knock = 0;
+            break;
+        case OCULA_UNLOCK_LOCK:
+            mem->ocula_unlocked = false;       /* explicit re-lock */
+            mem->ocula_unlock_knock = 0;
+            break;
+        default:
+            mem->ocula_unlock_knock = 0;       /* any other byte resets */
+            break;
+    }
+}
+
+bool memory_ocula_unlocked(const memory_t* mem) {
+    return mem->ocula_unlocked;
+}
+
+/* CPU view of the $A000-$BFFF window under OCULA banking. */
+static inline uint8_t* ocula_window_ptr(memory_t* mem, uint16_t address) {
+    return &mem->ocula_bank_mem[(mem->ocula_bank - 1) * OCULA_BANK_SIZE +
+                                (address - OCULA_BANK_BASE)];
 }
 
 bool memory_load_rom(memory_t* mem, const char* filename, uint16_t offset) {
@@ -102,7 +149,12 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
 
     /* RAM: $0000-$BFFF */
     if (address < 0xC000) {
-        val = mem->ram[address];
+        /* OCULA banking: CPU sees the selected side bank at $A000-$BFFF.
+         * The ULA always scans bank 0 (mem->ram). */
+        if (mem->ocula_bank != 0 && address >= OCULA_BANK_BASE)
+            val = *ocula_window_ptr(mem, address);
+        else
+            val = mem->ram[address];
         if (mem->trace_enabled && mem->trace_callback)
             mem->trace_callback(address, val, MEM_READ);
         return val;
@@ -155,7 +207,29 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
 
     /* RAM: $0000-$BFFF always writable */
     if (address < 0xC000) {
-        mem->ram[address] = value;
+        if (mem->ocula_bank != 0 && address >= OCULA_BANK_BASE)
+            *ocula_window_ptr(mem, address) = value;
+        else
+            mem->ram[address] = value;
+
+        /* OCULA 80-col BASIC mirror: reflect 40-col screen writes to the
+         * 80-col screen at $A000. Screen $BB80-$BFDF (40×28) → $A000 left
+         * half (col 0-39 of 80). Catches STA ($12),Y, STA $BB80,X and the
+         * scroll fill STA $BB7F,Y via the unified write path. */
+        if (mem->ocula_80col_mirror &&
+            address >= 0xBB80 && address <= 0xBFDF) {
+            uint16_t off = address - 0xBB80;
+            uint16_t row = off / 40;
+            uint16_t col = off % 40;
+            if (row < 28) {
+                mem->ram[0xA000 + row * 80 + col] = value;
+                /* Col 39 (last of 40-col row) is mirrored to col 79 too so
+                 * that CAPS/status chars written at the 40-col right edge
+                 * appear at the 80-col right edge, not the middle. */
+                if (col == 39)
+                    mem->ram[0xA000 + row * 80 + 79] = value;
+            }
+        }
         return;
     }
 
@@ -170,8 +244,15 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     } else if (!mem->rom_enabled) {
         /* Legacy mode: Write to overlay (stored in rom array when ROM is disabled) */
         mem->rom[address - 0xC000] = value;
+    } else {
+        /* ROM enabled: the chip ignores the write, but the OCULA snoops
+         * ROM-space blind-writes as a write-only register space. The
+         * unlock register (page $FB) arms the opt-in extensions. This is
+         * only reachable when genuine ROM is mapped — never a RAM-overlay
+         * write — matching what the real ULA sees on the bus. */
+        if ((address & 0xFF00) == OCULA_UNLOCK_PAGE)
+            memory_ocula_unlock_write(mem, value);
     }
-    /* Writes to ROM area when ROM enabled are silently ignored */
 }
 
 uint16_t memory_read_word(memory_t* mem, uint16_t address) {

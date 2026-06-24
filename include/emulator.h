@@ -37,9 +37,10 @@
 #include "utils/profiler.h"
 #include "utils/symbols.h"
 #include "io/loci.h"
+#include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.21.30-alpha"
+#define EMU_VERSION "1.22.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -120,6 +121,7 @@ typedef struct emulator_s {
     via6522_t via;
     ay3891x_t psg;
     video_t video;
+    ocula_gpu_t ocula_gpu;   /* OCULA-GPU window $03E8-$03EF (étape 5) */
     hostfs_t hostfs;
 
     /* Keyboard */

@@ -498,6 +498,89 @@ TEST(test_save_load_disk_image) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  TEST 9: ULA profile (OCULA) roundtrip in VID section               */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_save_load_ula_profile) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    video_set_profile(&emu1.video, ULA_PROFILE_OCULA);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+    ASSERT_EQ(video_get_profile(&emu2.video), ULA_PROFILE_OCULA);
+
+    /* And the stock profile roundtrips too */
+    video_set_profile(&emu1.video, ULA_PROFILE_HCS10017);
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+    ASSERT_EQ(video_get_profile(&emu2.video), ULA_PROFILE_HCS10017);
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  TEST 10: OCULA banking (OCB section) roundtrip                     */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_save_load_ocula_banks) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    /* Write a marker in bank 0, then a different one in side bank 3 */
+    emu1.memory.ram[0xA123] = 0x11;
+    memory_ocula_set_bank(&emu1.memory, 3);
+    memory_write(&emu1.memory, 0xA123, 0x5A);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    ASSERT_EQ(memory_ocula_get_bank(&emu2.memory), 3);
+    ASSERT_EQ(memory_read(&emu2.memory, 0xA123), 0x5A);   /* bank 3 */
+    memory_ocula_set_bank(&emu2.memory, 0);
+    ASSERT_EQ(memory_read(&emu2.memory, 0xA123), 0x11);   /* bank 0 */
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  TEST 11: OCULA-GPU registers + scroll (OGP section) roundtrip      */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_save_load_ocula_gpu) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    video_set_profile(&emu1.video, ULA_PROFILE_OCULA);
+    emu1.ocula_gpu.status = 0x01;
+    emu1.ocula_gpu.arg_ptr = 0x0420;
+    emu1.ocula_gpu.wait_vbl = true;
+    emu1.video.ocula_scroll_x = 17;
+    emu1.video.ocula_scroll_y = 42;
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    ASSERT_EQ(emu2.ocula_gpu.status, 0x01);
+    ASSERT_EQ(emu2.ocula_gpu.arg_ptr, 0x0420);
+    ASSERT_TRUE(emu2.ocula_gpu.wait_vbl);
+    ASSERT_EQ(emu2.video.ocula_scroll_x, 17);
+    ASSERT_EQ(emu2.video.ocula_scroll_y, 42);
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -517,6 +600,9 @@ int main(void) {
     RUN(test_load_invalid_file);
     RUN(test_save_load_with_microdisc);
     RUN(test_save_load_disk_image);
+    RUN(test_save_load_ula_profile);
+    RUN(test_save_load_ocula_banks);
+    RUN(test_save_load_ocula_gpu);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

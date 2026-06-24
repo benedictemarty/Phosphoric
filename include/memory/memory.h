@@ -25,6 +25,37 @@
 #define RAM_SIZE    49152  /**< User RAM size (48KB) */
 #define ROM_SIZE    16384  /**< ROM size (16KB) */
 
+/* OCULA memory banking (étape 4): the $A000-$BFFF window (8KB) can be
+ * switched between bank 0 (main RAM, always scanned by the ULA) and 7
+ * side banks held in the OCULA's internal SRAM. CPU-visible only. */
+#define OCULA_BANK_COUNT 8       /**< bank 0 = main RAM + 7 side banks */
+#define OCULA_BANK_SIZE  0x2000  /**< $A000-$BFFF */
+#define OCULA_BANK_BASE  0xA000
+
+/* OCULA opt-in unlock (Sprint 45): the extended video modes (80-col,
+ * ext-HIRES) and the redefinable palette stay INERT until a program
+ * explicitly arms them. Rationale — Dbug's review on
+ * forum.defence-force.org t=2709 (24 Jun 2026): the serial attributes
+ * 25/27/29/31 and the $BFE0-$BFFF zone are already used by stock
+ * software (e.g. Encounter's score/achievements, Symoon's fast loader),
+ * so an OCULA-equipped Oric must behave byte-for-byte like a stock
+ * machine until software opts in. The arming uses a blind-write "knock"
+ * into ROM space — writes the real ULA sees on the bus but a stock
+ * machine ignores — which is sodiumlb's preferred mechanism (issue #53,
+ * preferred over the contested page 3).
+ *
+ * Provisional encoding (pending upstream confirmation):
+ *   - register page $FB00-$FBFF (the ULA decodes A8-A15 only on a
+ *     blind-write, so the whole page is one write-only register)
+ *   - knock: write 'O' (0x4F) then 'C' (0x43) -> unlocked
+ *   - write 0x00 -> re-lock ; any other value resets the knock
+ *   - only honoured while the BASIC ROM is actually mapped (a genuine
+ *     ROM blind-write, never a RAM-overlay write). */
+#define OCULA_UNLOCK_PAGE 0xFB00 /**< high byte of the unlock register */
+#define OCULA_UNLOCK_O    0x4F    /**< 'O' — first knock byte */
+#define OCULA_UNLOCK_C    0x43    /**< 'C' — second knock byte: unlocks */
+#define OCULA_UNLOCK_LOCK 0x00    /**< re-lock command */
+
 /**
  * @brief Memory access types (for debugging/tracing)
  */
@@ -68,6 +99,25 @@ typedef struct memory_s {
     /* Memory access tracing (for debugging) */
     bool trace_enabled;
     void (*trace_callback)(uint16_t address, uint8_t value, mem_access_type_t type);
+
+    /* OCULA banking ($A000-$BFFF): bank 0 = ram[], banks 1-7 live in
+     * ocula_bank_mem (lazily allocated, 7 x OCULA_BANK_SIZE). The ULA
+     * always scans bank 0 — banking is CPU-visible only. */
+    uint8_t ocula_bank;          /**< Active CPU bank (0-7) */
+    uint8_t* ocula_bank_mem;     /**< Side banks 1-7 storage, NULL until used */
+
+    /* OCULA 80-col BASIC mirror (sprint 44): when true, every write to the
+     * 40-col text screen ($BB80-$BFDF) is also mirrored to $A000 in 80-col
+     * layout (left 40 of 80 columns per row). Lets standard BASIC PRINT/LIST
+     * appear on the 80-col display without ROM modification. */
+    bool ocula_80col_mirror;
+
+    /* OCULA opt-in unlock (sprint 45): extensions stay inert until armed
+     * by the blind-write ROM knock (see OCULA_UNLOCK_* above). The video
+     * latch mirrors ocula_unlocked each frame; ocula_unlock_knock is the
+     * 1-byte knock state (0 = idle, 1 = saw 'O'). */
+    bool ocula_unlocked;         /**< extensions armed (opt-in) */
+    uint8_t ocula_unlock_knock;  /**< blind-write knock progress */
 
 } memory_t;
 
@@ -181,5 +231,38 @@ void memory_clear_ram(memory_t* mem, uint8_t pattern);
  * @return Pointer to memory region or NULL if invalid
  */
 uint8_t* memory_get_ptr(memory_t* mem, uint16_t address);
+
+/**
+ * @brief Select the OCULA CPU bank for $A000-$BFFF (0-7)
+ *
+ * Allocates the side-bank storage on first non-zero selection.
+ *
+ * @param mem Pointer to memory structure
+ * @param bank Bank number 0-7 (values are masked to 3 bits)
+ * @return true on success, false on allocation failure
+ */
+bool memory_ocula_set_bank(memory_t* mem, uint8_t bank);
+
+/**
+ * @brief Get the active OCULA CPU bank (0 when banking unused)
+ */
+uint8_t memory_ocula_get_bank(const memory_t* mem);
+
+/**
+ * @brief Feed one blind-write ROM value to the OCULA unlock state machine
+ *
+ * Advances the knock sequence ('O' then 'C' -> unlocked, 0x00 -> re-lock,
+ * anything else -> reset). Called by memory_write for writes that land in
+ * the unlock register page while the BASIC ROM is mapped.
+ *
+ * @param mem   Pointer to memory structure
+ * @param value Byte written to the unlock register page
+ */
+void memory_ocula_unlock_write(memory_t* mem, uint8_t value);
+
+/**
+ * @brief Whether the OCULA extensions are currently armed (opt-in)
+ */
+bool memory_ocula_unlocked(const memory_t* mem);
 
 #endif /* MEMORY_H */
