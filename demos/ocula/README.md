@@ -8,7 +8,20 @@ Toutes s'exécutent sous le profil `--ula ocula`.
 > accéléré donne une fenêtre noire. Ajoutez `--render-software` (utilisé dans
 > tous les exemples ci-dessous).
 
-## Lancer une démo
+## Menu interactif
+
+Le plus simple : un menu qui liste les 4 démos et lance celle choisie.
+
+```bash
+make SDL2=1            # compile l'émulateur si besoin
+demos/ocula/menu.sh
+```
+
+Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
+`roms/basic11b.rom`), `--accel` (renderer accéléré au lieu du logiciel).
+`Ctrl+C` dans la fenêtre d'une démo revient au menu ; `q` quitte.
+
+## Lancer une démo manuellement
 
 ```bash
 # Plasma / raster bars (palette relue par scanline)
