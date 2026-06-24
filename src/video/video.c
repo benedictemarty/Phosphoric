@@ -269,7 +269,6 @@ static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
     int row = y / 8;
     int chline = y & 7;
     uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
-    bool row_had_double = false;
 
     for (int col = 0; col < OCULA_80COL_COLS; col++) {
         uint8_t byte = memory[OCULA_80COL_BASE + row * OCULA_80COL_COLS + col];
@@ -277,7 +276,6 @@ static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
             bool inverse = false;
             decode_attr(vid, byte, &ink, &paper, &inverse);
             render_attr_block(vid, col * 6, y, paper, 1);
-            if (vid->text_attr & 0x02) row_had_double = true;
         } else {
             uint8_t ir, ig, ib, pr, pg, pb;
             get_rgb(vid, ink, &ir, &ig, &ib);
@@ -292,13 +290,7 @@ static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
                 if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
                 else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
             }
-            if (vid->text_attr & 0x02) row_had_double = true;
         }
-    }
-
-    if (chline == 7) {
-        vid->dbl_phase = row_had_double ? !vid->dbl_phase : 0;
-        vid->dbl_was_active = row_had_double;
     }
 
     if (y == 223) vid->need_refresh = false;
@@ -335,8 +327,6 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
 
     if (y == 0) {
         vid->frame_counter++;
-        vid->dbl_phase = 0;
-        vid->dbl_was_active = false;
 
         /* OCULA frame-start latches (stride stays stable for a whole
          * frame): 80-col = bit 0 with HIRES clear; ext-HIRES = bit 0

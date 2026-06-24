@@ -127,12 +127,6 @@ typedef struct video_s {
      * Reset to 0 at start of every scanline; latched per-column. */
     uint8_t text_attr;
 
-    /* Per-row double-height phase: 0 = top half of doubled glyph,
-     * 1 = bottom half. Toggled at the end of each text row where
-     * double was active; reset when a row has no double attribute. */
-    uint8_t dbl_phase;
-    bool dbl_was_active;    /* Tracks whether the previous text row had DBL set */
-
     /* Frame counter for blink (toggles every ~16 frames, ~3 Hz). */
     uint32_t frame_counter;
 } video_t;

@@ -511,8 +511,9 @@ par sprint conservé dans l'historique git de `feature/sprint*-ocula-*`.
 - [x] Conflits résolus : double-hauteur de main conservée (`effective_chline`
       row-based, Sprint 34r) ; `get_rgb(vid, …)` par instance d'OCULA adopté
       partout (palette). 793 tests PASS (test-ocula 73/73).
-- [ ] Unifier les deux mécaniques de double-hauteur (row-based vs `dbl_phase`
-      vestigial) dans une passe de nettoyage
+- [x] Unifier les deux mécaniques de double-hauteur : code mort `dbl_phase`
+      supprimé (v1.22.1-alpha), seule la voie `effective_chline` row-based
+      subsiste
 - [ ] RGB444 (4096 teintes Multicoloric) — à coordonner avec sodiumlb
 
 ### Fix: Write-back MFM_DISK in-place — corrige la corruption des .dsk réels (v1.21.30-alpha) - DONE
