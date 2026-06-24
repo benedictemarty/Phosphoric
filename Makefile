@@ -105,6 +105,7 @@ SOURCES = src/main.c \
           src/video/avi_recorder.c \
           src/video/stb_image_write_impl.c \
           src/video/renderer.c \
+          src/video/osd.c \
           src/audio/ay3891x.c \
           src/audio/audio_output.c \
           src/storage/tap.c \
@@ -153,7 +154,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -325,6 +326,12 @@ TEST_RENDERER_SRCS = tests/unit/test_renderer.c src/video/video.c src/video/rend
 test-renderer: $(TEST_RENDERER_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_RENDERER_SRCS) $(LDFLAGS) -o test_renderer
 	@./test_renderer
+
+TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
+
+test-osd: $(TEST_OSD_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_OSD_SRCS) $(LDFLAGS) -o test_osd
+	@./test_osd
 
 TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/renderer.c \
                   src/video/export.c src/io/ocula_io.c src/io/ocula_gpu.c \
@@ -498,7 +505,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

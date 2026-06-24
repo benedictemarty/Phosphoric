@@ -182,7 +182,7 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
-### Sprint 63 (PLANIFIÉ): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
+### Sprint 63 (EN COURS): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
 
 > Noté en fin de session : besoin d'un système **côté hôte** pour changer la
 > cassette (.tap/k7) **ou** le disque (.dsk) **sans sortir de l'émulateur**.
@@ -193,18 +193,22 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   - [x] **ROM** : `load-rom <path>` (idem).
   - [x] UI web : boutons LOAD / EJECT (`web/shell.html`) — mais le chargement
         **redémarre** la machine (drag-drop relance `-t`/`-d`), pas un vrai insert live.
+- Réalisé (v1.23.0-alpha) — **OSD natif (F6)** :
+  - [x] **Touche/menu SDL** : overlay en surimpression (`src/video/osd.c`),
+        F6 ouvre/ferme, navigation ↑/↓/Entrée/Échap, scan `tapes/`,`disks/`,
+        `demos/ocula`,`.` (inspiré du file-requester d'Oricutron, clean-room).
+  - [x] **Disque à chaud** : `sedoric_load()` + `microdisc_set_disk()` sur le
+        lecteur A depuis l'OSD (la brique « disque à chaud » est livrée ici).
+  - [x] **Cassette à chaud** : remplace `tapebuf` depuis l'OSD (puis `CLOAD""`).
+  - [x] 5 tests `make test-osd`.
 - À faire :
-  - [ ] **Disque à chaud** : commandes `load-disk <drive> <path>` / `eject-disk <drive>`
-        dans `src/control.c` — `sedoric_load()` + `microdisc_set_disk()` à chaud
-        (en réutilisant le suivi dirty + `--disk-writeback` pour ne pas perdre une
-        save in-game avant l'éjection). Capability annoncée dans `CONTROL_PROTO_CAPS`.
-  - [ ] **`eject-tape`** (symétrie avec `load-tap`).
-  - [ ] **Insert live web** : que LOAD/EJECT appellent un pont C↔JS d'insertion à
-        chaud (comme `web_key`/`web_load_state`) au lieu de relancer la machine.
-  - [ ] Optionnel natif : touche/menu (SDL) ou commande TUI pour parcourir et
-        insérer un média sans redémarrer.
-  - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud
-        (boot disque A → eject → insert disque B → boot B), doc protocole.
+  - [ ] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
+        dans `src/control.c` (réutiliser le suivi dirty + `--disk-writeback`),
+        capability dans `CONTROL_PROTO_CAPS`.
+  - [ ] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
+        au lieu de relancer la machine.
+  - [ ] OSD : choix du lecteur (B/C/D), éjection, write-back avant swap.
+  - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud.
 
 ### Sprint 19: Interactive Debugger (v1.1.0-alpha) - DONE
 - [x] Interactive REPL debugger module (src/debugger.c, include/debugger.h)
