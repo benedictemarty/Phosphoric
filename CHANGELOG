@@ -20,6 +20,9 @@ reconstruction des `.tap`).
 - `ocula_demo` (BASIC) — palette redéfinissable (cyclage par trame).
 - `ocula80_demo` (BASIC) — texte 80 colonnes (buffer `$A000` effacé puis
   banners pleine largeur).
+- `menu.sh` — menu interactif lançant les 4 démos avec les bons flags
+  (`--ula ocula` / `--ocula-80col-basic`, `--render-software`) ; options
+  `--scale`, `--rom`, `--accel`.
 
 #### Notes
 
