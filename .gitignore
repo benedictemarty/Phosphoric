@@ -42,6 +42,7 @@ test_loci
 test_loci_sdimg
 test_loci_sdimg_write
 test_mcp40
+test_ocula
 test_printer
 test_profiler
 test_renderer

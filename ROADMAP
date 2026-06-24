@@ -488,6 +488,33 @@ la source Oricutron avant correction.
       (miroir validation badssl.com du firmware).
 - [x] 6 tests hermétiques (`make test-picowifi` 65 → **71**). 664 tests PASS (+6).
 
+### Integration: Fusion de la branche OCULA dans main — sprints 39-46 (v1.22.0-alpha) - DONE
+
+Intégration de toute la chaîne OCULA (banc d'essai logiciel du remplacement
+ULA par RP2350), développée en parallèle sur branche, réconciliée avec la
+ligne 1.21.x de main (MIDI, web/WASM, write-back disque, savestate). Détail
+par sprint conservé dans l'historique git de `feature/sprint*-ocula-*`.
+
+- [x] Profil ULA enfichable (`--ula ula|ocula`, `video_set_profile`, survit
+      au reset) — sprint 39
+- [x] Mode texte 80 colonnes + miroir BASIC (`--ocula-80col-basic`) — sprints
+      40 / 44
+- [x] HIRES étendu 320×200 + palette redéfinissable $BFE0-$BFE7 relue par
+      scanline (split/rasters/plasmas) — sprints 41 / 46
+- [x] Banking mémoire $A000-$BFFF (8 banques) + registre d'identification —
+      sprint 42
+- [x] OCULA-GPU $03E8-$03EF (FILL/COPY/SCROLL/WAIT_VBL, étirement PHI0) —
+      sprint 43
+- [x] Déverrouillage opt-in par écriture aveugle ROM (knock 'O'/'C' page
+      $FB00) — sprint 45
+- [x] Sections savestate OCULA (profil/`OCB`/`OGP`) rétrocompatibles
+- [x] Conflits résolus : double-hauteur de main conservée (`effective_chline`
+      row-based, Sprint 34r) ; `get_rgb(vid, …)` par instance d'OCULA adopté
+      partout (palette). 793 tests PASS (test-ocula 73/73).
+- [ ] Unifier les deux mécaniques de double-hauteur (row-based vs `dbl_phase`
+      vestigial) dans une passe de nettoyage
+- [ ] RGB444 (4096 teintes Multicoloric) — à coordonner avec sodiumlb
+
 ### Fix: Write-back MFM_DISK in-place — corrige la corruption des .dsk réels (v1.21.30-alpha) - DONE
 
 Le write-back `.dsk` du Sprint 62 corrompait les disques MFM_DISK (le format

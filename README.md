@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.21.29-alpha** | **727 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.22.0-alpha** | **793 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -106,6 +106,35 @@ make SDL2=1
 - **Runtime toggle** — F3 cycles through scale factors
 - **CLI** — `--scale N` (1, 2, 3, 4)
 
+### ULA Profiles (OCULA)
+- **Pluggable ULA** — `--ula ula` (stock HCS 10017, default) or `--ula ocula`
+- **OCULA** — software testbed for the RP2350-based ULA replacement project
+  ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709))
+- **80-column text mode** — extended serial attribute 25/27 (`POKE #BB80,27`
+  for PAL), screen at $A000 (80 bytes x 28 rows), native 480x224, full
+  serial-attribute semantics; degrades gracefully to 40-column on a stock
+  ULA — confirmed conflict-free against the official
+  [ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
+  v0.1.4 (see [docs/ocula_firmware_alignment.md](docs/ocula_firmware_alignment.md))
+- **Extended HIRES 320x200** — serial attribute 29/31: pure bitmap at $A000
+  (8 pixels/byte, no attributes), bottom text rows keep attributes as the
+  in-band escape hatch; canonical activation `HIRES:POKE#A000,29`
+- **Redefinable palette** — 8 RGB332 entries at $BFE0-$BFE7 armed by 'O','C'
+  at $BFE8-$BFE9, re-read each frame, applies to all modes; never scanned by
+  a stock ULA
+- **ID + memory banking** — I/O window $03E0-$03E7: 'O','C' identification
+  (`PEEK(992)=79`), capability byte, and a bank register switching
+  $A000-$BFFF between main RAM and 7 side banks (56 KB extra); the ULA
+  always scans bank 0; banks persist in save states (OCB section)
+- **OCULA-GPU** — command window $03E8-$03EF (tier 2, probe first): INFO,
+  FILL, COPY (overlap-safe), SCROLL (hardware scroll of the 320x200 mode,
+  wrap), WAIT_VBL (blocking raster sync via PHI0 stretching — the whole
+  machine freezes while the ULA keeps scanning); 16-byte argument block,
+  posted or blocking execution, low-memory guard
+- **Spec** — [docs/ocula_extensions.md](docs/ocula_extensions.md) v0.7 —
+  the 5-step OCULA plan is complete
+- **Persistent** — profile saved in `.ost` save states (backward compatible)
+
 ### CPU Trace Logging
 - **Instruction trace** — Log every CPU instruction with disassembly and register state
 - **CLI** — `--trace FILE` to enable, `--trace-max N` to limit
@@ -203,6 +232,7 @@ Printer:
 
 Display:
   --scale N                 Display scale: 1, 2, 3 (default), 4
+  --ula PROFILE             ULA profile: ula (stock HCS 10017, default), ocula
 
 Trace:
   --trace FILE              Log CPU instruction trace to FILE
@@ -602,4 +632,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.21.22-alpha | 699 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | LOCI MIA boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-06-23
+Phosphoric v1.22.0-alpha | 793 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | ULA profiles (OCULA: 80-col, ext-HIRES 320×200, palette redéfinissable, banking, GPU) + LOCI MIA boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-06-24

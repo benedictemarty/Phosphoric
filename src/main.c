@@ -29,6 +29,7 @@
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
 #include "io/via6522.h"
+#include "io/ocula_io.h"
 #include "video/video.h"
 #include "video/export.h"
 #include "storage/tap.h"
@@ -324,6 +325,8 @@ static void print_usage(const char* program_name) {
     printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
     printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
     printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
+    printf("      --ula PROFILE          ULA profile: ula (stock HCS 10017, default)\n");
+    printf("                             or ocula (OCULA RP2350 replacement, extended modes)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
     printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
     printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
@@ -611,6 +614,18 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return loci_dsk_read(&emu->loci, address);
     }
 
+    /* OCULA ID + banking window: $03E0-$03E7 (only under --ula ocula) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_io_addr_in_window(address)) {
+        return ocula_io_read(&emu->memory, address);
+    }
+
+    /* OCULA-GPU command window: $03E8-$03EF (étape 5) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_gpu_addr_in_window(address)) {
+        return ocula_gpu_read(&emu->ocula_gpu, address);
+    }
+
     /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
         return acia_read(&emu->acia, address);
@@ -771,6 +786,21 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     /* LOCI DSK $0310-$0314 + $0318-$0319 (Sprint 34ae). */
     if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
         loci_dsk_write(&emu->loci, address, value);
+        return;
+    }
+
+    /* OCULA ID + banking window: $03E0-$03E7 (only under --ula ocula) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_io_addr_in_window(address)) {
+        ocula_io_write(&emu->memory, address, value);
+        return;
+    }
+
+    /* OCULA-GPU command window: $03E8-$03EF (étape 5) */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
+        ocula_gpu_addr_in_window(address)) {
+        ocula_gpu_write(&emu->ocula_gpu, &emu->memory, &emu->video,
+                        address, value);
         return;
     }
 
@@ -1067,6 +1097,7 @@ static bool emulator_init(emulator_t* emu) {
      * vid->charset is left NULL so the renderer uses the RAM copy
      * which the ROM populates during boot. */
     video_init(&emu->video);
+    ocula_gpu_init(&emu->ocula_gpu);
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {
@@ -1648,6 +1679,11 @@ static void emulator_run(emulator_t* emu) {
         int frame_cycles = 0;
         int rendered_scanlines = 0;
         bool vsync_triggered = false;
+        /* OCULA opt-in (sprint 45): mirror the unlock state (armed via
+         * blind-write ROM, decoded in memory_write) into the video latch
+         * before this frame's scanlines are emitted. The extension latch
+         * runs at scanline 0, so a frame-start sync is exact. */
+        emu->video.ocula_unlocked = memory_ocula_unlocked(&emu->memory);
         while (frame_cycles < CYCLES_PER_FRAME && !emu->cpu.halted) {
             /* Legacy single breakpoint (--breakpoint / -b) */
             if (emu->breakpoint >= 0 && emu->cpu.PC == (uint16_t)emu->breakpoint) {
@@ -1686,6 +1722,26 @@ static void emulator_run(emulator_t* emu) {
                     debugger_repl(&emu->debugger, emu);
                 }
                 if (!emu->running) break;
+            }
+
+            /* OCULA-GPU WAIT_VBL (étape 5): PHI0 is stretched — the 6502
+             * and every PHI0-clocked peripheral (VIA, FDC, ACIA) freeze
+             * while the ULA keeps scanning. Relative machine time is
+             * preserved; wake when the beam enters vertical blanking
+             * (line 224). */
+            if (emu->ocula_gpu.wait_vbl) {
+                frame_cycles += 1;
+                emu->frame_cycles = frame_cycles;
+                if (frame_cycles >= 224 * PAL_CYCLES_PER_LINE) {
+                    emu->ocula_gpu.wait_vbl = false;
+                    emu->ocula_gpu.status = OCULA_GPU_ST_READY;
+                }
+                int stall_scanline = frame_cycles / PAL_CYCLES_PER_LINE;
+                while (rendered_scanlines < stall_scanline && rendered_scanlines < 224) {
+                    video_render_scanline(&emu->video, emu->memory.ram, rendered_scanlines);
+                    rendered_scanlines++;
+                }
+                continue;
             }
 
             /* CPU trace logging (before step, captures pre-execution state) */
@@ -2149,7 +2205,8 @@ static void emulator_run(emulator_t* emu) {
         /* Push frame to cast server if active */
         if (emu->has_cast_server) {
             cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
-                                   ORIC_SCREEN_W, ORIC_SCREEN_H);
+                                   (unsigned int)emu->video.native_w,
+                                   (unsigned int)emu->video.native_h);
         }
 
         /* Present to screen and handle events if not headless */
@@ -2501,6 +2558,7 @@ int main(int argc, char* argv[]) {
     const char* printer_type_arg = NULL;
     int scale_factor = 3;
     bool render_software = false;
+    int ula_profile = ULA_PROFILE_HCS10017;
     const char* trace_file = NULL;
     const char* dump_ram_at_arg = NULL;
     const char* trace_irq_file = NULL;
@@ -2527,8 +2585,9 @@ int main(int argc, char* argv[]) {
     int serial_baud = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
+    bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2593,6 +2652,8 @@ int main(int argc, char* argv[]) {
         {"loci",                no_argument,       0, OPT_LOCI},
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
+        {"ula",                 required_argument, 0, OPT_ULA},
+        {"ocula-80col-basic",   no_argument,       0, OPT_OCULA_80COL_BASIC},
         {"control",             no_argument,       0, OPT_CONTROL},
         {"bench",               no_argument,       0, OPT_BENCH},
         {"help",                no_argument,       0, '?'},
@@ -2665,6 +2726,18 @@ int main(int argc, char* argv[]) {
                 }
                 break;
             case OPT_RENDER_SOFTWARE: render_software = true; break;
+            case OPT_ULA:
+                ula_profile = video_profile_parse(optarg);
+                if (ula_profile < 0) {
+                    fprintf(stderr, "Invalid ULA profile: %s (must be ula or ocula)\n", optarg);
+                    return 1;
+                }
+                break;
+            case OPT_OCULA_80COL_BASIC:
+                ocula_80col_basic = true;
+                if (ula_profile == ULA_PROFILE_HCS10017)
+                    ula_profile = ULA_PROFILE_OCULA;
+                break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
@@ -2762,6 +2835,17 @@ int main(int argc, char* argv[]) {
     if (!emulator_init(&emu)) {
         log_error("Failed to initialize emulator");
         return 1;
+    }
+
+    if (ula_profile != ULA_PROFILE_HCS10017) {
+        video_set_profile(&emu.video, (ula_profile_t)ula_profile);
+        log_info("ULA profile: %s", video_profile_name(emu.video.ula_profile));
+    }
+
+    if (ocula_80col_basic) {
+        emu.video.ocula_80col_forced = true;
+        emu.memory.ocula_80col_mirror = true;
+        log_info("OCULA 80-col BASIC mirror enabled");
     }
 
     emu.fast_load = fast_load;
