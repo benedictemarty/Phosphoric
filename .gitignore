@@ -133,6 +133,7 @@ docs/latex/
 !tests/roms/*.tap
 !tests/roms/*.dsk
 !examples/*.tap
+!demos/**/*.tap
 
 # Temporary files
 *.tmp
