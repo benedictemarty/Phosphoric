@@ -308,6 +308,9 @@ static void print_usage(const char* program_name) {
     printf("  -h, --hostfs PATH          Mount host directory\n");
     printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
     printf("  -n, --headless             Run without display (headless mode)\n");
+    printf("      --realtime             Pace to 50 Hz PAL even in headless (nanosleep, no SDL);\n");
+    printf("                             needed for network serial timing (modem/XMODEM) and\n");
+    printf("                             deterministic --type-keys without a display\n");
     printf("  -c, --cycles NUM           Run for N cycles then exit\n");
     printf("  -v, --verbose              Verbose logging\n");
     printf("      --screenshot FILE      Take screenshot at exit (.ppm or .bmp)\n");
@@ -1779,6 +1782,14 @@ static void emulator_run(emulator_t* emu) {
     uint32_t frame_start_ticks = SDL_GetTicks();
 #endif
 
+#ifndef __EMSCRIPTEN__
+    /* Real-time pacing deadline (--realtime, headless/no-SDL). Absolute
+     * CLOCK_MONOTONIC target advanced by one PAL frame each iteration so the
+     * pacing never drifts. */
+    struct timespec rt_next;
+    if (emu->realtime) clock_gettime(CLOCK_MONOTONIC, &rt_next);
+#endif
+
     while (emu->running && g_running) {
 #ifdef HAS_SDL2
         frame_start_ticks = SDL_GetTicks();
@@ -2607,6 +2618,36 @@ static void emulator_run(emulator_t* emu) {
         }
 #endif
 
+#ifndef __EMSCRIPTEN__
+        /* Real-time pacing (--realtime) for headless / no-SDL runs: the SDL
+         * limiter above only runs in GUI mode, so without this a headless run
+         * sprints at ~45x real time — which breaks network serial timing
+         * (modem/XMODEM round-trips) and --type-keys sequencing. Sleep to the
+         * absolute per-frame deadline (20 ms @ 50 Hz PAL); a frame that already
+         * overran returns immediately. If we fall more than a frame behind
+         * (e.g. a blocking network read), resync so we don't burst-catch-up. */
+        if (emu->realtime
+#ifdef HAS_SDL2
+            && emu->headless
+#endif
+           ) {
+            rt_next.tv_nsec += 20000000L;  /* 20 ms */
+            if (rt_next.tv_nsec >= 1000000000L) {
+                rt_next.tv_nsec -= 1000000000L;
+                rt_next.tv_sec++;
+            }
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            int64_t lag_ns = (now.tv_sec - rt_next.tv_sec) * 1000000000LL
+                           + (now.tv_nsec - rt_next.tv_nsec);
+            if (lag_ns > 20000000LL) {
+                rt_next = now;  /* trop en retard : on recale sur l'instant courant */
+            } else {
+                clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &rt_next, NULL);
+            }
+        }
+#endif
+
         /* Headless replay: once the movie is fully drained, exit so a recorded
          * session replays to completion unattended (CI regression). The GUI
          * keeps running so playback can be watched. */
@@ -2740,7 +2781,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_REALTIME };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2753,6 +2794,7 @@ int main(int argc, char* argv[]) {
         {"hostfs",              required_argument, 0, 'h'},
         {"fast-load",           no_argument,       0, 'f'},
         {"headless",            no_argument,       0, 'n'},
+        {"realtime",            no_argument,       0, OPT_REALTIME},
         {"cycles",              required_argument, 0, 'c'},
         {"verbose",             no_argument,       0, 'v'},
         {"screenshot",          required_argument, 0, OPT_SCREENSHOT},
@@ -2881,6 +2923,7 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_RENDER_SOFTWARE: render_software = true; break;
             case OPT_NO_BORDER: emu.no_border = true; break;
+            case OPT_REALTIME: emu.realtime = true; break;
             case OPT_ULA:
                 ula_profile = video_profile_parse(optarg);
                 if (ula_profile < 0) {
