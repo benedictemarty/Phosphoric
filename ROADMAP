@@ -182,6 +182,35 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
+### Sprint 66: Cadençage temps réel headless + limites connues (v1.25.5-alpha) - EN COURS
+
+> Deux limites concrètes rencontrées en produisant une vidéo terminal↔BBS,
+> consignées ici avec fichier:ligne, impact et piste. La première est corrigée
+> dans ce sprint.
+
+**Limite 1 — Pas de cadençage temps réel en headless (CORRIGÉE v1.25.5)**
+- Constat : le frame limiter 50 Hz était sous `#ifdef HAS_SDL2` ET gardé par
+  `if (!emu->headless)` (`src/main.c`) → en headless, ~25-45× le temps réel.
+  Impact : avec un backend série réseau (`--serial modem:…`), le CPU court
+  devant les allers-retours réseau → `--type-keys` désynchronise et XMODEM sur
+  réseau réel expire (a empêché la vidéo de prod d'aller jusqu'au téléchargement).
+- [x] **`--realtime`** : pacing à 50 Hz PAL même en headless via
+  `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)` (deadline absolu sans
+  dérive, indépendant de SDL ; resync si on prend > 1 trame de retard sur un
+  read réseau bloquant). Champ `emulator_t.realtime`.
+- [x] Vérifié empiriquement : 1 M cycles (= 1 s émulée) → **0,04 s sans** vs
+  **1,03 s avec** `--realtime` (~3 % d'overhead). Pas de test unitaire
+  (comportement temporel → *flaky* en CI). 812 tests inchangés au vert.
+
+**Limite 2 — « Write Track » (formatage WD1793) non implémenté (À FAIRE)**
+- Constat : `src/storage/disk.c:362` — « Write Track (Type III) - not fully
+  implemented » ; `currentop = FDC_OP_WRITE_TRACK` posé (ligne 368) sans
+  handler de flux de données → no-op (Read Track ligne 357 idem).
+  Impact : `INIT` Sedoric ne formate pas → impossible de créer une disquette
+  vierge depuis l'émulateur → bloque la disquette bootable hands-free du terminal.
+- [ ] Implémenter le parsing du **flux MFM de piste** (IDAM/DAM, gaps, CRC) pour
+  peupler les secteurs de l'image ; relier au write-back `.dsk` existant.
+
 ### Sprint 65: OCULA — rendu overscan visible de la bordure (v1.25.0-alpha) - DONE
 
 > Affichage réel de la bordure modélisée au Sprint 64, sans toucher au

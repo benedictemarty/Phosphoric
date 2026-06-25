@@ -41,7 +41,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.25.4-alpha"
+#define EMU_VERSION "1.25.5-alpha"
 
 /**
  * @brief ORIC machine model
@@ -198,6 +198,9 @@ typedef struct emulator_s {
     bool running;
     bool fast_load;
     bool headless;
+    bool realtime;          /* --realtime : cadence à 50 Hz PAL même en headless
+                             * (pacing nanosleep, indépendant de SDL) pour les
+                             * E/S réseau (modem/XMODEM) et le séquençage clavier */
     int64_t max_cycles;
 
     /* Sprint 34d4 (P2-G audit) — current cycle position within the PAL frame.

@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.5-alpha] - 2026-06-25
+
+### Added — `--realtime` : cadençage temps réel en headless
+
+Le frame limiter 50 Hz était sous `#ifdef HAS_SDL2` **et** gardé par
+`if (!emu->headless)` : en headless, l'émulateur tournait ~25-45× le temps
+réel. Avec un backend série réseau (`--serial modem:…`), le CPU courait devant
+les allers-retours réseau → `--type-keys` désynchronisait et XMODEM sur réseau
+réel expirait (ce qui a empêché une vidéo de prod terminal↔BBS d'aller jusqu'au
+téléchargement).
+
+- **`src/main.c`** : nouvelle option **`--realtime`** (champ
+  `emulator_t.realtime`) qui cadence chaque trame à 50 Hz PAL via
+  `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)` — deadline absolu sans
+  dérive, indépendant de SDL. Resync si on prend plus d'une trame de retard
+  (read réseau bloquant) pour éviter une rafale de rattrapage. En build GUI le
+  limiteur SDL reste utilisé ; `--realtime` agit en headless / build sans SDL.
+- Vérifié empiriquement : 1 M cycles (= 1 s émulée) → **0,04 s sans** vs
+  **1,03 s avec** `--realtime` (~3 % d'overhead). Pas de test unitaire (timing
+  → *flaky* en CI). 812 tests inchangés.
+
+#### Changed
+
+- `EMU_VERSION` 1.25.4 → 1.25.5-alpha.
+
+#### Notes — limite connue consignée
+
+- **« Write Track » (formatage WD1793) non implémenté** : `src/storage/disk.c:362`
+  (`FDC_OP_WRITE_TRACK` posé sans handler de données) → `INIT` Sedoric ne crée
+  pas de disquette vierge. Piste : parser le flux MFM de piste. Suivi au
+  ROADMAP Sprint 66.
+
 ## [1.25.4-alpha] - 2026-06-25
 
 ### Added — OSD : éjection de la cassette
