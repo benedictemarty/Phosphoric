@@ -61,6 +61,20 @@
 #define OCULA_REG_PAL_PAGE    0xE0  /**< pages $E0-$E7 = palette entries 0-7 */
 #define OCULA_REG_BORDER_PAGE 0xEA  /**< page $EA = border register */
 
+/* OCULA remappable page-3 RAM (sprint 67, Phase C, forum t=2709): sodiumlb's
+ * readable/writeable home for the OCULA state. A write-only ROM register
+ * ($EB) sets the CPU page where a 256-byte window appears; reads/writes there
+ * hit the OCULA state (signature, caps, bank, palette, border) instead of RAM.
+ * 0 = unmapped (default). Proposed model — to validate with sodiumlb. */
+#define OCULA_MAP_PAGE_REG  0xEB    /**< page $EB = mapping register (write-only) */
+/* Offsets inside the mapped 256-byte window: */
+#define OCULA_PG_SIG_O   0x00       /**< 'O' (R) */
+#define OCULA_PG_SIG_C   0x01       /**< 'C' (R) */
+#define OCULA_PG_CAPS    0x02       /**< capability bits (R) */
+#define OCULA_PG_BANK    0x03       /**< CPU bank 0-7 (R/W) */
+#define OCULA_PG_PAL     0x04       /**< $04-$0B = palette entries 0-7 (R/W) */
+#define OCULA_PG_BORDER  0x0C       /**< border register (R/W) */
+
 /**
  * @brief Memory access types (for debugging/tracing)
  */
@@ -136,6 +150,11 @@ typedef struct memory_s {
     uint8_t ocula_reg_pal[8];    /**< RGB332 palette registers (pages $E0-$E7) */
     uint8_t ocula_reg_border;    /**< RGB332 border register (page $EA) */
     bool ocula_regs_armed;       /**< a register has been written since unlock */
+
+    /* OCULA remappable page-3 RAM (sprint 67, Phase C): CPU page where the
+     * 256-byte OCULA state window is exposed (R/W view of signature/bank/
+     * palette/border). 0 = unmapped. Set by the $EB mapping register. */
+    uint8_t ocula_map_page;
 
 } memory_t;
 
@@ -301,5 +320,20 @@ void memory_ocula_reg_write(memory_t* mem, uint8_t page, uint8_t value);
  * @brief Whether the OCULA write-only register file is armed (in use)
  */
 bool memory_ocula_regs_armed(const memory_t* mem);
+
+/**
+ * @brief Phase C: is `address` inside the mapped 256-byte OCULA page-3 window?
+ */
+bool memory_ocula_page_mapped(const memory_t* mem, uint16_t address);
+
+/**
+ * @brief Read one byte of the mapped OCULA window (signature/bank/palette/border)
+ */
+uint8_t memory_ocula_page_read(const memory_t* mem, uint8_t off);
+
+/**
+ * @brief Write one byte of the mapped OCULA window (bank/palette/border)
+ */
+void memory_ocula_page_write(memory_t* mem, uint8_t off, uint8_t value);
 
 #endif /* MEMORY_H */

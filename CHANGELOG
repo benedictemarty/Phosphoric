@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0-alpha] - 2026-06-25
+
+### Added — OCULA : page-3 RAM remappable (Sprint 67, Phase C)
+
+Implémente le **modèle proposé** de la « page-3 RAM » de sodiumlb (forum t=2709,
+25 juin) : une fenêtre de 256 octets **R/W remappable** qui expose l'état OCULA,
+en **coexistence** avec la fenêtre figée `$03E0` (rien cassé). À valider avec
+sodiumlb (encodage du registre de mapping, page par défaut, layout).
+
+- **Registre de mapping `$EB`** (write-only ROM, gated par l'unlock) : `POKE#EBxx,P`
+  expose la fenêtre OCULA à la page CPU `P` ; `0` = non mappée (défaut). Le re-lock
+  démappe.
+- **Fenêtre = vue R/W de l'état OCULA** (unifie Phase A et C) : `$00`/`$01` = `'O'/'C'`
+  (signature), `$02` = capacités (`$1F`), `$03` = banque CPU (R/W → banking),
+  `$04-$0B` = palette 0-7 (R/W), `$0C` = bordure (R/W). Écrire palette/bordure
+  **arme le register-file** (même état que les écritures ROM de Phase A) → la
+  page-3 RAM apporte la **lecture d'état** qui manquait au write-only.
+- **`memory.c`/`.h`** : champ `ocula_map_page` ; `memory_ocula_page_mapped/read/write` ;
+  interception en tête de `memory_read`/`memory_write` (override quand mappé +
+  déverrouillé). **`savestate.c`** : `ocula_map_page` persité dans `OGP` (rétro-compat).
+- **Tests** : 6 cas (mapping + signature, banque R/W, palette/bordure R/W +
+  read-back, non mappé par défaut, gating unlock, re-lock démappe) — **98 tests
+  OCULA OK**, suite complète verte (chemin critique `memory_read/write` intact).
+- **Reste Phase C** : migration du GPU `$03E8` vers la fenêtre, dépréciation de
+  `$03E0` + de l'in-band, migration démos/spec. **Phase B** (synchro raster)
+  toujours en attente de Dbug.
+
 ## [1.26.1-alpha] - 2026-06-25
 
 ### Fixed — OCULA : le register-file ne s'applique plus sous profil stock

@@ -275,6 +275,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         fwrite(emu->memory.ocula_reg_pal, 1, 8, fp);
         write_u8(fp, emu->memory.ocula_reg_border);
         write_bool(fp, emu->memory.ocula_regs_armed);
+        write_u8(fp, emu->memory.ocula_map_page);  /* sprint 67: page-3 mapping */
         end_section(fp, sec);
     }
 
@@ -617,6 +618,8 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 emu->memory.ocula_reg_border = read_u8(fp);
                 emu->memory.ocula_regs_armed = read_bool(fp);
             }
+            if (sec_size >= 18)                  /* sprint 67: page-3 mapping */
+                emu->memory.ocula_map_page = read_u8(fp);
             /* Re-render with the restored hardware scroll applied */
             video_render_frame(&emu->video, emu->memory.ram);
         } else if (memcmp(tag, "KBD\0", 4) == 0) {

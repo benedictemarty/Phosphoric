@@ -860,6 +860,88 @@ TEST(test_regfile_relock_disarms) {
     memory_cleanup(&mem);
 }
 
+/* ──────────── Page-3 RAM remappable window (Sprint 67, Phase C) ─────────── */
+
+/* Unlock + map $90: the window exposes the OCULA signature + caps. */
+TEST(test_page3_map_and_signature) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    memory_write(&mem, 0xEB00, 0x90);            /* map window to page $90 */
+    ASSERT_EQ(memory_read(&mem, 0x9000), 'O');
+    ASSERT_EQ(memory_read(&mem, 0x9001), 'C');
+    ASSERT_EQ(memory_read(&mem, 0x9002), 0x1F);  /* caps */
+    memory_cleanup(&mem);
+}
+
+/* Bank slot ($03) of the window drives the CPU banking. */
+TEST(test_page3_bank_rw) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    memory_write(&mem, 0xEB00, 0x90);
+    memory_write(&mem, 0x9003, 0x02);            /* select bank 2 via window */
+    ASSERT_EQ(memory_ocula_get_bank(&mem), 0x02);
+    ASSERT_EQ(memory_read(&mem, 0x9003), 0x02);  /* reads back live bank */
+    memory_cleanup(&mem);
+}
+
+/* Palette + border are R/W through the window and arm the register file. */
+TEST(test_page3_palette_border_rw) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    memory_write(&mem, 0xEB00, 0x90);
+    memory_write(&mem, 0x9000 + OCULA_PG_PAL + 7, 0xE0);  /* palette entry 7 */
+    memory_write(&mem, 0x9000 + OCULA_PG_BORDER, 0x03);   /* border */
+    ASSERT_TRUE(memory_ocula_regs_armed(&mem));
+    ASSERT_EQ(mem.ocula_reg_pal[7], 0xE0);
+    ASSERT_EQ(mem.ocula_reg_border, 0x03);
+    ASSERT_EQ(memory_read(&mem, 0x9000 + OCULA_PG_PAL + 7), 0xE0);  /* read-back */
+    ASSERT_EQ(memory_read(&mem, 0x9000 + OCULA_PG_BORDER), 0x03);
+    memory_cleanup(&mem);
+}
+
+/* Unmapped by default: the target page is plain RAM. */
+TEST(test_page3_unmapped_by_default) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    mem.ram[0x9000] = 0x42;                      /* no map register written */
+    ASSERT_EQ(memory_read(&mem, 0x9000), 0x42);  /* normal RAM, not 'O' */
+    memory_cleanup(&mem);
+}
+
+/* The mapping register is gated by the unlock. */
+TEST(test_page3_gated_by_unlock) {
+    static memory_t mem;
+    memory_init(&mem);
+    mem.ram[0x9000] = 0x42;
+    memory_write(&mem, 0xEB00, 0x90);            /* locked: ignored */
+    ASSERT_EQ(mem.ocula_map_page, 0x00);
+    ASSERT_EQ(memory_read(&mem, 0x9000), 0x42);  /* still RAM */
+    memory_cleanup(&mem);
+}
+
+/* Re-locking unmaps the window. */
+TEST(test_page3_relock_unmaps) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    memory_write(&mem, 0xEB00, 0x90);
+    ASSERT_EQ(memory_read(&mem, 0x9000), 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 0x00); /* re-lock */
+    mem.ram[0x9000] = 0x42;
+    ASSERT_EQ(mem.ocula_map_page, 0x00);
+    ASSERT_EQ(memory_read(&mem, 0x9000), 0x42);  /* back to RAM */
+    memory_cleanup(&mem);
+}
+
 TEST(test_exthires_ppm_export_dimensions) {
     static video_t vid;
     setup_80col(&vid);
@@ -1453,6 +1535,12 @@ int main(void) {
     RUN(test_regfile_memory_write_decode);
     RUN(test_regfile_gated_by_unlock);
     RUN(test_regfile_relock_disarms);
+    RUN(test_page3_map_and_signature);
+    RUN(test_page3_bank_rw);
+    RUN(test_page3_palette_border_rw);
+    RUN(test_page3_unmapped_by_default);
+    RUN(test_page3_gated_by_unlock);
+    RUN(test_page3_relock_unmaps);
     RUN(test_exthires_ppm_export_dimensions);
     RUN(test_id_registers);
     RUN(test_id_registers_read_only);
