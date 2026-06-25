@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.7-alpha] - 2026-06-25
+
+### Added — `--disk-create FILE` + validation e2e du Write Track
+
+Câble `sedoric_create()` au CLI et **valide le Write Track (v1.25.6) contre la
+vraie ROM Sedoric V4** : `INIT B` formate désormais réellement à travers
+l'émulateur.
+
+- **`src/main.c`** : option **`--disk-create FILE`** — crée une disquette
+  Sedoric vierge (`sedoric_create()`), l'écrit sur FILE, la monte en lecteur A
+  et arme le write-back (les changements du format/`INIT` sont persistés à la
+  sortie). Avertit si le lecteur A est déjà occupé par `-d`. Aide CLI mise à
+  jour.
+- **Validation end-to-end** (headless, pilotée par `--type-keys`) : boot
+  Sedoric V4 (SEDO40u) → BASIC → `INIT B` → `Y` → écran **« Formating Side 1
+  Track … »** puis **« Formating complete »**, write-back du `.dsk` déclenché
+  (image modifiée). Le parseur Write Track est donc exercé et correct face au
+  vrai DOS.
+
+#### Changed
+
+- `EMU_VERSION` 1.25.6 → 1.25.7-alpha.
+
+#### Notes — raffinement connu (géométrie)
+
+- `sedoric_create()` alloue 42 pistes / 1 face (182784 o) alors que `INIT B`
+  formate une géométrie plus grande (jusqu'à « Track 81 » → vraisemblablement
+  double face) : le disque vierge est **sous-dimensionné**, le format déborde
+  (les pistes au-delà de 41 sont ignorées en restant synchronisées). Prochaine
+  étape : aligner la géométrie de la disquette créée sur celle d'`INIT`
+  (probablement 2 faces) pour un format complet et un disque bootable.
+
 ## [1.25.6-alpha] - 2026-06-25
 
 ### Added — FDC WD1793 : « Write Track » (formatage de piste)

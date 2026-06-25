@@ -304,6 +304,8 @@ static void print_usage(const char* program_name) {
     printf("      --disk-rom FILE        Load Microdisc ROM (microdis.rom)\n");
     printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
     printf("                             (overwrites in place; only drives actually written are saved)\n");
+    printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");
+    printf("                             (then INIT/format inside; changes are saved back on exit)\n");
     printf("  -r, --rom FILE             Load custom ROM file\n");
     printf("  -h, --hostfs PATH          Mount host directory\n");
     printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
@@ -2714,6 +2716,7 @@ int main(int argc, char* argv[]) {
 
     const char* tape_file = NULL;
     const char* disk_files[MICRODISC_MAX_DRIVES] = {NULL, NULL, NULL, NULL};
+    const char* disk_create_file = NULL;
     bool disk_writeback = false;
     const char* rom_file = NULL;
     const char* hostfs_path = NULL;
@@ -2781,7 +2784,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_REALTIME };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_REALTIME, OPT_DISK_CREATE };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2790,6 +2793,7 @@ int main(int argc, char* argv[]) {
         {"disk2",               required_argument, 0, OPT_DISK2},
         {"disk3",               required_argument, 0, OPT_DISK3},
         {"disk-writeback",      no_argument,       0, OPT_DISK_WRITEBACK},
+        {"disk-create",         required_argument, 0, OPT_DISK_CREATE},
         {"rom",                 required_argument, 0, 'r'},
         {"hostfs",              required_argument, 0, 'h'},
         {"fast-load",           no_argument,       0, 'f'},
@@ -2867,6 +2871,7 @@ int main(int argc, char* argv[]) {
             case OPT_DISK2: disk_files[2] = optarg; break;
             case OPT_DISK3: disk_files[3] = optarg; break;
             case OPT_DISK_WRITEBACK: disk_writeback = true; break;
+            case OPT_DISK_CREATE: disk_create_file = optarg; disk_writeback = true; break;
             case 'r': rom_file = optarg; break;
             case 'h': hostfs_path = optarg; break;
             case 'f': fast_load = true; break;
@@ -3688,7 +3693,7 @@ int main(int argc, char* argv[]) {
     }
 
     /* Load disks with Microdisc controller */
-    bool any_disk = false;
+    bool any_disk = (disk_create_file != NULL);
     for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
         if (disk_files[i]) { any_disk = true; break; }
     }
@@ -3736,6 +3741,29 @@ int main(int argc, char* argv[]) {
             log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
                      'A' + i, emu.disks[i]->size, emu.disks[i]->sides,
                      emu.disks[i]->tracks, emu.disks[i]->sectors);
+        }
+
+        /* --disk-create : monte une disquette Sedoric vierge en lecteur A et
+         * l'écrit aussitôt sur FILE. INIT/format à l'intérieur ; le write-back
+         * de sortie (armé avec cette option) persiste les changements. */
+        if (disk_create_file && !emu.disks[0]) {
+            emu.disks[0] = sedoric_create();
+            if (!emu.disks[0]) {
+                log_error("disk-create: allocation de la disquette vierge impossible");
+                emulator_cleanup(&emu);
+                return 1;
+            }
+            if (!sedoric_save(emu.disks[0], disk_create_file))
+                log_error("disk-create: écriture impossible vers %s", disk_create_file);
+            else
+                log_info("disk-create: disquette vierge -> %s (%u octets), lecteur A",
+                         disk_create_file, emu.disks[0]->size);
+            microdisc_set_disk(&emu.microdisc, 0, emu.disks[0]->data, emu.disks[0]->size,
+                               emu.disks[0]->tracks, emu.disks[0]->sectors);
+            emu.disk_paths[0] = disk_create_file;
+            emu.disk_path = disk_create_file;
+        } else if (disk_create_file && emu.disks[0]) {
+            log_warning("disk-create ignoré : le lecteur A est déjà occupé par -d");
         }
     }
 
