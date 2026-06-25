@@ -277,14 +277,19 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
         désormais `disk_paths[]` → les disques chargés/éjectés via l'OSD sont
         persistés correctement à la sortie.
   - [x] +1 test `test_osd_eject_returns_action`. 811 tests.
+- Réalisé (v1.25.4-alpha) — **OSD : éjection de la cassette** :
+  - [x] Touche `Suppr` éjecte selon le média surligné : action `OSD_EJECT_TAPE`
+        si l'entrée est un `.tap` (sinon `OSD_EJECT` disque, inchangé).
+  - [x] `osd_do_eject_tape()` libère `tapebuf` + remet à zéro
+        `tapelen`/`tapeoffs`/`tape_loaded`/`tape_path`.
+  - [x] +1 test `test_osd_eject_depends_on_selected_media`. 812 tests.
+        → **L'OSD couvre désormais tout le hot-swap (charge/éjecte k7 + disque A–D).**
 - À faire :
   - [ ] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
         dans `src/control.c` (réutiliser le suivi dirty + `--disk-writeback`),
         capability dans `CONTROL_PROTO_CAPS`.
   - [ ] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
         au lieu de relancer la machine.
-  - [ ] OSD : éjection de la **cassette**. (Choix du lecteur A–D livré en
-        v1.23.1 ; éjection disque + write-back avant swap livrés en v1.25.3.)
   - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud.
 
 ### Sprint 19: Interactive Debugger (v1.1.0-alpha) - DONE
