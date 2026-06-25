@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.1-alpha] - 2026-06-25
+
+### Added — Démo OCULA : bordure animée `oculabord` (BASIC)
+
+Exemple versionné qui pilote le registre de bordure `$BFEA` (Sprints 64-65),
+dans `demos/ocula/` (option 5 du `menu.sh`).
+
+- **`oculabord.bas` / `.tap`** : déverrouille l'OCULA, arme le bloc
+  palette/registres, pose une palette texte lisible, puis cycle `$BFEA` une
+  fois par trame → bordure overscan pleine qui change de couleur en continu
+  (visible avec le rendu Sprint 65, `--no-border` pour masquer). Les raster
+  bars par scanline restent du ressort du code synchronisé au raster
+  (cf. `oculaplasma.s`).
+- **`menu.sh`** : nouvelle entrée « 5) Bordure animée ».
+- **`README.md`** : description + note sur la **limite `bas2tap`** (le nom du
+  `.bas` est embarqué en majuscules dans l'en-tête cassette et tronqué à 15
+  caractères ; un nom trop long casse l'auto-run, d'où `oculabord`).
+
 ## [1.25.0-alpha] - 2026-06-25
 
 ### Added — OCULA : rendu overscan visible de la bordure (Sprint 65)

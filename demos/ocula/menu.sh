@@ -54,6 +54,7 @@ while true; do
 ║  2) HIRES étendu 320x200  (palette animée)    ║
 ║  3) Palette redéfinissable (cyclage trame)    ║
 ║  4) Texte 80 colonnes                         ║
+║  5) Bordure animée  ($BFEA, cyclage trame)    ║
 ║  q) Quitter                                   ║
 ╚══════════════════════════════════════════════╝
 MENU
@@ -64,6 +65,7 @@ MENU
         2) launch oculahr.tap       "--ula ocula" ;;
         3) launch ocula_demo.tap    "--ula ocula" ;;
         4) launch ocula80_demo.tap  "--ocula-80col-basic" ;;
+        5) launch oculabord.tap     "--ula ocula" ;;
         q|Q) echo "Au revoir."; break ;;
         *) echo "Choix invalide : $choice" ;;
     esac
