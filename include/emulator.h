@@ -285,6 +285,10 @@ typedef struct emulator_s {
      * where the accelerated renderer presents an all-black window. */
     bool render_software;
 
+    /* Disable the OCULA overscan border in the window (--no-border). The
+     * border is composited on by default (Sprint 65). */
+    bool no_border;
+
     /* Interactive debugger */
     debugger_t debugger;
 

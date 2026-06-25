@@ -624,6 +624,94 @@ TEST(test_border_raster_per_scanline) {
     ASSERT_EQ(r, 0xFF); ASSERT_EQ(g, 0x00);   /* line 2: red again */
 }
 
+/* ──────────────────── Border overscan compositing (Sprint 65) ─────────── */
+
+static uint8_t composed[OCULA_BORDERED_MAX_W * OCULA_BORDERED_MAX_H * 3];
+
+/* Read a composited-output pixel given the total width tw. */
+static uint8_t cpx(int tw, int x, int y, int c) {
+    return composed[((size_t)y * tw + x) * 3 + c];
+}
+
+/* Composite dimensions = active + 2× the per-side border. */
+TEST(test_border_compose_dimensions) {
+    static video_t vid;
+    setup_80col(&vid);
+    video_render_frame(&vid, mem80);     /* 40-col text: native 240x224 */
+    int w = 0, h = 0;
+    video_compose_bordered(&vid, composed, &w, &h);
+    ASSERT_EQ(w, ORIC_SCREEN_W + 2 * OCULA_BORDER_W);
+    ASSERT_EQ(h, ORIC_SCREEN_H + 2 * OCULA_BORDER_H);
+    ASSERT_EQ(video_bordered_w(&vid), w);
+    ASSERT_EQ(video_bordered_h(&vid), h);
+}
+
+/* The active image lands inset by (OCULA_BORDER_W, OCULA_BORDER_H). */
+TEST(test_border_compose_active_centered) {
+    static video_t vid;
+    setup_80col(&vid);
+    /* Redefine ink so an active glyph pixel is a known non-black colour. */
+    mem80[0xBB80]     = 0x01;             /* INK red */
+    mem80[0xBB80 + 1] = 0x41;             /* 'A' */
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 1]  = 0x1C;    /* entry 1 -> pure green */
+    video_render_frame(&vid, mem80);
+    int w = 0, h = 0;
+    video_compose_bordered(&vid, composed, &w, &h);
+    /* active (6,0) is the first glyph pixel -> composite (6+BW, BH). */
+    ASSERT_EQ(cpx(w, 6 + OCULA_BORDER_W, OCULA_BORDER_H, 0), pixel_r(&vid, 6, 0));
+    ASSERT_EQ(cpx(w, 6 + OCULA_BORDER_W, OCULA_BORDER_H, 1), pixel_g(&vid, 6, 0));
+}
+
+/* Armed border colour fills the left/right and top/bottom bands. */
+TEST(test_border_compose_bands_colored) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_BORDER_REG]    = 0xE0;    /* pure red, all lines */
+    video_render_frame(&vid, mem80);
+    int w = 0, h = 0;
+    video_compose_bordered(&vid, composed, &w, &h);
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H, 0), 0xFF);      /* left band, row 0 */
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H, 1), 0x00);
+    ASSERT_EQ(cpx(w, w - 1, OCULA_BORDER_H, 0), 0xFF);  /* right band, row 0 */
+    ASSERT_EQ(cpx(w, 0, 0, 0), 0xFF);                  /* top band (reuses line 0) */
+    ASSERT_EQ(cpx(w, 0, h - 1, 0), 0xFF);              /* bottom band (last line) */
+}
+
+/* Disarmed / stock: every band is black. */
+TEST(test_border_compose_black_when_disarmed) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[OCULA_BORDER_REG] = 0xE0;       /* no magic -> ignored */
+    video_render_frame(&vid, mem80);
+    int w = 0, h = 0;
+    video_compose_bordered(&vid, composed, &w, &h);
+    ASSERT_EQ(cpx(w, 0, 0, 0), 0x00);
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H, 0), 0x00);
+    ASSERT_EQ(cpx(w, w - 1, h - 1, 0), 0x00);
+}
+
+/* Per-scanline border = different band colour per output row. */
+TEST(test_border_compose_raster_bands) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    for (int y = 0; y < 4; y++) {
+        mem80[OCULA_BORDER_REG] = (y & 1) ? 0x1C : 0xE0;  /* green / red */
+        video_render_scanline(&vid, mem80, y);
+    }
+    int w = 0, h = 0;
+    video_compose_bordered(&vid, composed, &w, &h);
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H + 0, 0), 0xFF);  /* line 0 left band red */
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H + 0, 1), 0x00);
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H + 1, 0), 0x00);  /* line 1 left band green */
+    ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H + 1, 1), 0xFF);
+}
+
 TEST(test_exthires_ppm_export_dimensions) {
     static video_t vid;
     setup_80col(&vid);
@@ -1204,6 +1292,11 @@ int main(void) {
     RUN(test_border_inert_until_unlock);
     RUN(test_border_zero_is_black_when_armed);
     RUN(test_border_raster_per_scanline);
+    RUN(test_border_compose_dimensions);
+    RUN(test_border_compose_active_centered);
+    RUN(test_border_compose_bands_colored);
+    RUN(test_border_compose_black_when_disarmed);
+    RUN(test_border_compose_raster_bands);
     RUN(test_exthires_ppm_export_dimensions);
     RUN(test_id_registers);
     RUN(test_id_registers_read_only);

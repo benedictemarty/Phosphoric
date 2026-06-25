@@ -412,8 +412,10 @@ d'horloge du matériel.
 - Émulateur : Phosphoric `--ula ocula` (src/video/video.c,
   `render_80col_scanline`, latch dans `video_render_scanline`)
 - **Bordure** : `border_latch()` / `video_get_border_rgb()` (Sprint 64) —
-  registre `$BFEA` latché par scanline. **Modèle par ligne uniquement** :
-  le framebuffer n'a pas encore de bande overscan, le rendu visible de la
-  bordure reste à faire (ROADMAP Sprint 65). Registres $BFEB-$BFFF réservés v2.
+  registre `$BFEA` latché par scanline. **Rendu visible** (Sprint 65) :
+  `video_compose_bordered()` entoure l'image active d'une bande overscan
+  (`OCULA_BORDER_W/H`), compositée par `renderer.c` ; CLI `--no-border`
+  (active par défaut). L'export PPM/screenshot reste en dimensions actives.
+  Registres $BFEB-$BFFF réservés v2.
 - Tests : `make test-ocula` (tests/unit/test_ocula.c)
 - Matériel : à venir (firmware RP2350B du projet OCULA)
