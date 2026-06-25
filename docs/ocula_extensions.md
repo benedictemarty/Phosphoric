@@ -149,6 +149,17 @@ de fréquence restant indépendant).
 
 ## Palette redéfinissable (étape 3)
 
+> **Évolution (forum t=2709, 25 juin 2026)** : sodiumlb a confirmé que
+> palette + bordure doivent quitter la DRAM in-band au profit de **registres
+> write-only en espace ROM** (l'ULA voit l'octet d'adresse haut → 1 page =
+> 1 registre) + **page-3 RAM remappable** pour la lecture d'état — zéro octet
+> DRAM, ce qui lève l'objection `$BFE0-$C000` de Dbug/Symoon. Phosphoric
+> implémente ce register-file en **Phase A (Sprint 66)** : pages **`$E0-$E7`**
+> = palette 0-7, **`$EA`** = bordure (RGB332, octet bas don't-care), gated par
+> le déverrouillage, **en coexistence** avec l'in-band ci-dessous (quand un
+> registre est écrit, il prend le pas). L'in-band reste documenté ici comme
+> mécanisme historique en cours de dépréciation.
+
 8 entrées **RGB332** à **$BFE0-$BFE7**, armées par les octets magiques
 `'O','C'` ($4F,$43) à **$BFE8-$BFE9**. Relue **à chaque début de
 scanline** ; sans le magic (ou sous profil stock, **ou si l'OCULA n'est

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0-alpha] - 2026-06-25
+
+### Added — OCULA : register-file write-only ROM pour palette + bordure (Sprint 66, Phase A)
+
+Implémente la mécanique de registres de sodiumlb (forum t=2709, 25 juin) : palette
+et bordure pilotables par **écritures aveugles en espace ROM** (l'ULA voit l'octet
+d'adresse haut → 1 page = 1 registre), **en parallèle** de l'in-band `$BFE0-$BFFF`
+existant (coexistence, aucun test/démo cassé). Zéro octet DRAM → lève l'objection
+`$BFE0-$C000` de Dbug/Symoon.
+
+- **`memory.c`/`.h`** : champs `ocula_reg_pal[8]` / `ocula_reg_border` /
+  `ocula_regs_armed` ; décodage étendu du snoop write ROM (pages `$E0-$E7` =
+  palette 0-7, `$EA` = bordure, RGB332 dans D0-D7) ; **gating par l'unlock**
+  (ignoré si verrouillé ; le re-lock désarme). Octet bas don't-care (fidèle au
+  brochage ULA sans A0-A7).
+- **`video.c`/`.h`** : pointeurs vivants vers le register-file ; `palette_latch`/
+  `border_latch` privilégient les registres **quand armés**, sinon retombent sur
+  l'in-band puis la palette standard. Lecture par scanline → rasters façon copper.
+- **`main.c`** : câblage unique des pointeurs à l'init de l'émulateur.
+- **`savestate.c`** : register-file persité dans la section `OGP` (10 octets,
+  gardé par `sec_size` → rétro-compatible, pas de bump de version).
+- **Tests** : 7 cas dans `test_ocula.c` (pilotage palette/bordure, override de
+  l'in-band, inerte si non armé, décodage `memory_write` complet, gating unlock,
+  re-lock désarme) — **91 tests OCULA OK**, suite complète verte.
+- **Hors scope (Phase B/C)** : synchro raster (compteur scanline + wait
+  HSync/VSync, en attente de Dbug) ; page-3 RAM remappable (remplacera `$03E0`) ;
+  dépréciation de l'in-band + migration démos/spec.
+
 ## [1.25.8-alpha] - 2026-06-25
 
 ### Added — Disquette vierge double face : `INIT` produit un disque Sedoric valide

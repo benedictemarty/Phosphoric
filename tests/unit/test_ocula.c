@@ -18,6 +18,7 @@
 #include "video/export.h"
 #include "io/ocula_io.h"
 #include "io/ocula_gpu.h"
+#include "memory/memory.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -712,6 +713,139 @@ TEST(test_border_compose_raster_bands) {
     ASSERT_EQ(cpx(w, 0, OCULA_BORDER_H + 1, 1), 0xFF);
 }
 
+/* ──────────── Write-only register file: palette + border (Sprint 66) ─────── */
+
+/* Backing store standing in for memory_t's register block + live wiring. */
+static uint8_t rf_pal[8];
+static uint8_t rf_border;
+static bool    rf_armed;
+static void wire_regs(video_t* v) {
+    memset(rf_pal, 0, sizeof(rf_pal));
+    rf_border = 0; rf_armed = false;
+    v->ocula_reg_pal = rf_pal;
+    v->ocula_reg_border = &rf_border;
+    v->ocula_regs_armed = &rf_armed;
+}
+
+/* Armed register file drives the palette (ext-HIRES ink = entry 7). */
+TEST(test_regfile_palette_drives_ink) {
+    static video_t vid;
+    setup_80col(&vid);                 /* OCULA + unlocked */
+    wire_regs(&vid);
+    vid.vid_mode = 0x05;               /* ext-HIRES */
+    mem80[OCULA_EXTHIRES_BASE] = 0x80; /* leftmost pixel = ink */
+    rf_armed = true;
+    rf_pal[7] = 0xE0;                  /* entry 7 -> pure red */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0x00);
+}
+
+/* Register file overrides the in-band $BFE0-$BFE7 block when both are set. */
+TEST(test_regfile_overrides_inband) {
+    static video_t vid;
+    setup_80col(&vid);
+    wire_regs(&vid);
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE] = 0x80;
+    /* in-band would make entry 7 green... */
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 7]  = 0x1C;
+    /* ...but the armed register file says red, and it wins. */
+    rf_armed = true;
+    rf_pal[7] = 0xE0;
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0x00);
+}
+
+/* Wired but not armed: falls back to the in-band path (no override). */
+TEST(test_regfile_inert_when_not_armed) {
+    static video_t vid;
+    setup_80col(&vid);
+    wire_regs(&vid);                   /* rf_armed = false */
+    vid.vid_mode = 0x05;
+    mem80[OCULA_EXTHIRES_BASE] = 0x80;
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_PAL_BASE + 7]  = 0x1C; /* in-band green */
+    rf_pal[7] = 0xE0;                  /* register red, but NOT armed */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0x00);  /* in-band green wins */
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);
+}
+
+/* Armed register file drives the border, per scanline. */
+TEST(test_regfile_border) {
+    static video_t vid;
+    setup_80col(&vid);
+    wire_regs(&vid);
+    rf_armed = true;
+    rf_border = 0x03;                  /* pure blue */
+    video_render_scanline(&vid, mem80, 0);
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0x00); ASSERT_EQ(b, 0xFF);
+}
+
+/* Full chain: a blind ROM-space write decodes into the register file. */
+TEST(test_regfile_memory_write_decode) {
+    static memory_t mem;
+    memory_init(&mem);
+    /* unlock via the blind-write ROM knock */
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    ASSERT_TRUE(memory_ocula_unlocked(&mem));
+    /* ROM-space writes: the register is selected by the PAGE (high byte),
+     * the low byte is don't-care. Page $E7 = palette entry 7, page $EA = border. */
+    memory_write(&mem, 0xE700 + 0x12, 0xE0);  /* palette entry 7 = red */
+    memory_write(&mem, 0xEA00 + 0x55, 0x03);  /* border = blue */
+    ASSERT_TRUE(memory_ocula_regs_armed(&mem));
+    ASSERT_EQ(mem.ocula_reg_pal[7], 0xE0);
+    ASSERT_EQ(mem.ocula_reg_border, 0x03);
+    /* wire a video instance to the real register block and render */
+    static video_t vid;
+    video_init(&vid);
+    video_set_profile(&vid, ULA_PROFILE_OCULA);
+    vid.ocula_unlocked = true;
+    vid.ocula_reg_pal = mem.ocula_reg_pal;
+    vid.ocula_reg_border = &mem.ocula_reg_border;
+    vid.ocula_regs_armed = &mem.ocula_regs_armed;
+    vid.vid_mode = 0x05;
+    mem.ram[OCULA_EXTHIRES_BASE] = 0x80;
+    video_render_frame(&vid, mem.ram);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);    /* ink red from register */
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(b, 0xFF);                       /* border blue from register */
+    memory_cleanup(&mem);
+}
+
+/* Register writes are gated by the unlock: ignored while locked. */
+TEST(test_regfile_gated_by_unlock) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, 0xE000 + 7, 0xE0);    /* locked: ignored */
+    ASSERT_FALSE(memory_ocula_regs_armed(&mem));
+    ASSERT_EQ(mem.ocula_reg_pal[7], 0x00);
+    memory_cleanup(&mem);
+}
+
+/* Re-locking ($FB00,0) disarms the register file. */
+TEST(test_regfile_relock_disarms) {
+    static memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'O');
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 'C');
+    memory_write(&mem, 0xE000, 0xFF);
+    ASSERT_TRUE(memory_ocula_regs_armed(&mem));
+    memory_write(&mem, OCULA_UNLOCK_PAGE, 0x00);  /* re-lock */
+    ASSERT_FALSE(memory_ocula_unlocked(&mem));
+    ASSERT_FALSE(memory_ocula_regs_armed(&mem));
+    memory_cleanup(&mem);
+}
+
 TEST(test_exthires_ppm_export_dimensions) {
     static video_t vid;
     setup_80col(&vid);
@@ -1297,6 +1431,13 @@ int main(void) {
     RUN(test_border_compose_bands_colored);
     RUN(test_border_compose_black_when_disarmed);
     RUN(test_border_compose_raster_bands);
+    RUN(test_regfile_palette_drives_ink);
+    RUN(test_regfile_overrides_inband);
+    RUN(test_regfile_inert_when_not_armed);
+    RUN(test_regfile_border);
+    RUN(test_regfile_memory_write_decode);
+    RUN(test_regfile_gated_by_unlock);
+    RUN(test_regfile_relock_disarms);
     RUN(test_exthires_ppm_export_dimensions);
     RUN(test_id_registers);
     RUN(test_id_registers_read_only);

@@ -56,6 +56,11 @@
 #define OCULA_UNLOCK_C    0x43    /**< 'C' — second knock byte: unlocks */
 #define OCULA_UNLOCK_LOCK 0x00    /**< re-lock command */
 
+/* OCULA write-only register pages (sprint 66): ROM-space blind writes,
+ * decoded by the high address byte only (A0-A7 absent on the ULA socket). */
+#define OCULA_REG_PAL_PAGE    0xE0  /**< pages $E0-$E7 = palette entries 0-7 */
+#define OCULA_REG_BORDER_PAGE 0xEA  /**< page $EA = border register */
+
 /**
  * @brief Memory access types (for debugging/tracing)
  */
@@ -118,6 +123,19 @@ typedef struct memory_s {
      * 1-byte knock state (0 = idle, 1 = saw 'O'). */
     bool ocula_unlocked;         /**< extensions armed (opt-in) */
     uint8_t ocula_unlock_knock;  /**< blind-write knock progress */
+
+    /* OCULA write-only register file (sprint 66, forum t=2709): sodiumlb's
+     * preferred mechanism — palette + border live in OCULA-internal registers
+     * written via blind ROM-space writes (the ULA sees the high address byte,
+     * one ROM page = one register), instead of the in-band $BFE0-$BFFF block.
+     * Zero DRAM footprint, which clears the BFE0-C000 collision (Dbug/Symoon).
+     * Pages: $E0-$E7 = palette entries 0-7, $EA = border (RGB332 in D0-D7).
+     * Gated by ocula_unlocked; ocula_regs_armed flips true on the first
+     * register write and makes these override the in-band path during the
+     * transition. Per-scanline rewrites give copper-style rasters. */
+    uint8_t ocula_reg_pal[8];    /**< RGB332 palette registers (pages $E0-$E7) */
+    uint8_t ocula_reg_border;    /**< RGB332 border register (page $EA) */
+    bool ocula_regs_armed;       /**< a register has been written since unlock */
 
 } memory_t;
 
@@ -264,5 +282,24 @@ void memory_ocula_unlock_write(memory_t* mem, uint8_t value);
  * @brief Whether the OCULA extensions are currently armed (opt-in)
  */
 bool memory_ocula_unlocked(const memory_t* mem);
+
+/**
+ * @brief Feed one blind-write ROM value to the OCULA palette/border registers
+ *
+ * Decodes the high address byte: pages $E0-$E7 set palette entries 0-7,
+ * page $EA sets the border (RGB332). Only honoured while unlocked; the first
+ * such write also arms the register file (overrides the in-band path).
+ * Called by memory_write for ROM-space writes that land in a register page.
+ *
+ * @param mem      Pointer to memory structure
+ * @param page     High address byte of the write ((address >> 8) & 0xFF)
+ * @param value    Byte written (RGB332)
+ */
+void memory_ocula_reg_write(memory_t* mem, uint8_t page, uint8_t value);
+
+/**
+ * @brief Whether the OCULA write-only register file is armed (in use)
+ */
+bool memory_ocula_regs_armed(const memory_t* mem);
 
 #endif /* MEMORY_H */

@@ -271,6 +271,10 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         write_u8(fp, emu->video.ocula_scroll_x);
         write_u8(fp, emu->video.ocula_scroll_y);
         write_bool(fp, emu->memory.ocula_unlocked);  /* sprint 45: opt-in unlock */
+        /* sprint 66: write-only register file (palette + border + armed) */
+        fwrite(emu->memory.ocula_reg_pal, 1, 8, fp);
+        write_u8(fp, emu->memory.ocula_reg_border);
+        write_bool(fp, emu->memory.ocula_regs_armed);
         end_section(fp, sec);
     }
 
@@ -605,6 +609,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             if (sec_size >= 7)
                 emu->memory.ocula_unlocked = read_bool(fp);
             emu->video.ocula_unlocked = emu->memory.ocula_unlocked;
+            /* sprint 66: write-only register file appended (10 bytes:
+             * 8 palette + border + armed). Older saves lack it → stays zeroed
+             * (in-band path), which is the pre-sprint-66 behaviour. */
+            if (sec_size >= 17) {
+                fread(emu->memory.ocula_reg_pal, 1, 8, fp);
+                emu->memory.ocula_reg_border = read_u8(fp);
+                emu->memory.ocula_regs_armed = read_bool(fp);
+            }
             /* Re-render with the restored hardware scroll applied */
             video_render_frame(&emu->video, emu->memory.ram);
         } else if (memcmp(tag, "KBD\0", 4) == 0) {
