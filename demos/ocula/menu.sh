@@ -59,6 +59,7 @@ while true; do
 ║  3) Palette redéfinissable (cyclage trame)    ║
 ║  4) Texte 80 colonnes                         ║
 ║  5) Bordure animée  ($BFEA, cyclage trame)    ║
+║  6) Registres ROM  ($E0-$E7/$EA, write-only)  ║
 ║  q) Quitter                                   ║
 ╚══════════════════════════════════════════════╝
 MENU
@@ -70,6 +71,7 @@ MENU
         3) launch ocula_demo.tap    "--ula ocula" ;;
         4) launch ocula80_demo.tap  "--ocula-80col-basic" ;;
         5) launch oculabord.tap     "--ula ocula" ;;
+        6) launch oculareg.tap      "--ula ocula" ;;
         q|Q) echo "Au revoir."; break ;;
         *) echo "Choix invalide : $choice" ;;
     esac
