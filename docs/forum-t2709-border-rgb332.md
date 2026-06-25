@@ -1,50 +1,44 @@
-# Brouillon de post — forum.defence-force.org t=2709
+# Brouillons de posts — forum.defence-force.org t=2709
 
-Réponse à **Sodiumlightbaby** (message du 24 juin 23:47 : registres write-only
-en espace ROM + page-3 RAM remappable + unlock magique). Langue : anglais.
-Direction validée 2026-06-25 : **s'aligner sur son schéma de registres** et
-proposer de déplacer palette + bordure hors de la DRAM (`$BFE0-$BFFF`) vers ses
-registres write-only → zéro octet DRAM, clôt l'objection `$BFE0-$C000` de Dbug.
-Phosphoric implémente aujourd'hui la version in-band (Sprints 64-65 + démo
-`oculabord`) ; la migration vers les registres est un follow-up suspendu à son
-accord. Spec : `docs/ocula_extensions.md` v0.10.
+Suivi des échanges OCULA (palette/bordure/registres). Langue : anglais.
 
----
+## Post #1 — POSTÉ le 2026-06-25 (p≈34924-aligné, réponse à sodiumlb)
 
-@Sodiumlightbaby — thanks, that register plan makes sense and I'd rather build
-on it than around it. Quick reactions and one concrete proposal.
+Proposait de déplacer palette + bordure de l'in-band `$BFE0-$BFFF` vers les
+registres write-only ROM de sodiumlb (zéro DRAM, clôt l'objection de Dbug).
+→ Réponses obtenues le 25 juin :
+- **sodiumlb (p=34926)** : « page 3 RAM solution with writeable locations for
+  palette and border gives the same capability as the 32 bytes solution just
+  with more space and mapping flexibility » ; « ROM space writes is the only
+  solution so far (for this mode) that allows instant response ». → **Direction
+  validée** : page-3 RAM = stockage/config, écritures ROM = chemin instantané
+  (rasters).
+- **Dbug (p=34925)** : « VSync / HSync is absolutely necessary to get proper
+  rasters and color changes that don't flash crazily » + question 80 col
+  (écran/charset en place + page flipping, ou descendus en mémoire ?).
 
-**Your scheme, as I read it:** unlock via magic writes in ROM space → write-only
-registers selected by the high address byte (64 of them, one per ROM page) → a
-mapping register exposes the hidden 256-byte page-3 RAM so software can read back
-the OCULA signature and state. I'm on board with all of it — it keeps
-DRAM-is-the-RAM viable and the unlock is the same blind-ROM-write idea I'd
-sketched.
+## Post #2 — À POSTER (réponse à sodiumlb + Dbug)
 
-**Proposal: move the palette and the border into those write-only registers,
-out of DRAM entirely.** I'd originally put the 8-entry RGB332 palette and the
-border colour in-band at $BFE0-$BFFF (the bytes just above the text screen). But
-that's exactly the region Dbug and Symoon flagged as in use (Encounter, FT-DOS,
-Seoric). If instead each palette entry and the border are OCULA write-only
-registers — one ROM page each, ~9 of your 64 — the feature consumes **zero DRAM**
-and Dbug's collision objection disappears entirely.
+Great, thanks both — that pins it down.
 
-- **RGB332 still wins:** one byte per register = one atomic write, so the ULA
-  never latches a half-updated colour. RGB444 would need two writes per entry → a
-  visible wrong colour if the line is sampled between them.
-- **Per-scanline rasters still work:** the CPU just rewrites the relevant
-  register mid-frame, timed to the line — the classic copper pattern — and the
-  ULA reads its own internal register at each scanline start. One write = a single
-  split (the 1985 Multicoloric card), one per line = raster bars, every HBLANK =
-  a plasma. The border register is what gives Dbug the raster bars bleeding into
-  the overscan.
-- **Border = $00 (or pre-unlock) ⇒ black border**, byte-for-byte a stock Oric.
-- I'd also fold identification / banking / GPU into your page-3 RAM mapping
-  rather than the fixed $03E0 window I'd drafted — same idea, your version is more
-  flexible.
+@Sodiumlightbaby — settled, then: palette and border live in the page-3 RAM
+writeable locations (the extra space and mapping flexibility is a nice bonus
+over my 32-byte block), with the ROM-space write-only registers as the
+instant-response path for DRAM-is-the-RAM. I'll target exactly that split —
+page-3 RAM as the configurable home, ROM-space writes for the per-line updates —
+and drop the $BFE0-$BFFF footprint entirely, which also clears the collision
+worry Dbug and Symoon raised.
 
-I've got the in-band version implemented and tested in Phosphoric today (palette,
-border, the visible overscan around the active image, and a little BASIC demo),
-so I can validate timing either way — but I'd rather land on your register layout
-than keep my own. Does moving palette + border into the write-only register space
-work for you, and is there a page range you'd want them to sit at?
+@Dbug — fully agreed, raster and colour changes are worthless without tight
+sync; cycle-counting alone flashes all over the place. Since OCULA owns the
+video timing, the clean fix is for it to *expose* that: a readable current-line
+value plus a "wait for next HSync/VSync" so a copper-style routine lands its
+register writes on the right scanline instead of guessing. Would a readable line
+counter + an HSync/VSync wait cover what you'd want to drive, or do you have a
+preferred shape for the sync hook?
+
+On 80 columns: the screen memory **moves** — it goes to $A000 (80 bytes/row × 28
+rows = $A000-$A8BF, the area HIRES would otherwise use), so it never overlaps the
+charsets, which stay exactly where they are ($B400 standard, $B800 alternate).
+No page flipping for the text itself; it's just a wider framebuffer read from a
+lower base.

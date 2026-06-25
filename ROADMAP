@@ -198,12 +198,16 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] CLI `--no-border` (active par défaut), champ `emulator_t.no_border`.
 - [x] 5 tests compositing dans `test_ocula.c` — 84 tests OCULA OK, suite verte.
 - À faire :
-  - [ ] **Migration in-band → registres write-only ROM** (proposée à sodiumlb,
-        24 juin) : sortir palette + bordure de `$BFE0-$BFFF` vers ses registres
-        write-only (1 page ROM/entrée, ~9 des 64), zéro octet DRAM → clôt
-        l'objection `$BFE0-$C000` de Dbug. Rasters = blind-write ROM par scanline
-        (copper). **Suspendu à l'accord de sodiumlb** (post forum envoyé).
-        Lecture d'état via sa page-3 RAM remappable (remplace le `$03E0` figé).
+  - [ ] **Migration in-band → registres write-only ROM** — **VALIDÉE par
+        sodiumlb (25 juin, p=34926)** : palette + bordure quittent `$BFE0-$BFFF`
+        pour la **page-3 RAM** (writeable, stockage/config) + **écritures ROM
+        write-only** comme chemin instantané pour les rasters par scanline
+        (DRAM-is-the-RAM). Zéro octet DRAM → clôt l'objection `$BFE0-$C000` de
+        Dbug. Remplace aussi le `$03E0` figé. À câbler dans Phosphoric.
+  - [ ] **Exposer la synchro raster** — demandé par Dbug (25 juin, p=34925 :
+        « VSync/HSync absolutely necessary… don't flash crazily ») : compteur de
+        scanline lisible + wait HSync/VSync, pour timer les écritures registres
+        (copper). Proposé en question ouverte dans le post #2.
   - [ ] Option pour inclure la bordure dans l'export PPM/screenshot/AVI
         (aujourd'hui dimensions actives, pour ne pas casser les tests d'export).
   - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
