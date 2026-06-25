@@ -254,9 +254,14 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
           `$E0-$E7` palette, `$EA` bordure) **en coexistence** avec l'in-band ;
           décodage `memory.c`, override `video.c` par scanline, savestate `OGP`,
           7 tests. Aucun test/démo cassé.
-    - [ ] **Phase C** : page-3 RAM remappable (remplace le `$03E0` figé pour
-          lecture d'état/signature), puis dépréciation de l'in-band + migration
-          des démos/spec vers les registres.
+    - [x] **Phase C — cœur (Sprint 67, v1.27.0-alpha)** : page-3 RAM remappable
+          (registre de mapping `$EB`, gated unlock) exposant une fenêtre R/W de
+          256 o sur l'état OCULA (signature, caps, banque, palette, bordure) — la
+          page-3 RAM apporte la **lecture d'état** absente du write-only et arme
+          le register-file en écriture (unifie Phase A/C). Coexiste avec `$03E0`.
+          6 tests, 98 OCULA. **Modèle proposé, à valider avec sodiumlb.**
+    - [ ] **Phase C — reste** : migrer le GPU `$03E8` vers la fenêtre, déprécier
+          `$03E0` + l'in-band, migrer démos/spec.
   - [ ] **Exposer la synchro raster** — demandé par Dbug (25 juin, p=34925 :
         « VSync/HSync absolutely necessary… don't flash crazily ») : compteur de
         scanline lisible + wait HSync/VSync, pour timer les écritures registres

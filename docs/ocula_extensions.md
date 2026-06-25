@@ -268,6 +268,18 @@ stockage RAM.
 
 ## Fenêtre I/O $03E0-$03E7 : identification + banking (étape 4)
 
+> **Évolution (forum t=2709, 25 juin 2026) — page-3 RAM remappable.** sodiumlb
+> préfère, plutôt qu'une fenêtre figée, une **fenêtre de 256 octets R/W
+> remappable** : un registre write-only ROM (**`$EB`**, gated par le
+> déverrouillage) choisit la page CPU où la fenêtre apparaît (`0` = non mappée).
+> Elle expose l'état OCULA en lecture **et** écriture — `$00/$01` = signature
+> `'O'/'C'`, `$02` = capacités, `$03` = banque, `$04-$0B` = palette, `$0C` =
+> bordure — ce qui donne la **lecture d'état** que le write-only ROM (Phase A)
+> n'a pas, et arme le register-file en écriture (palette/bordure unifiées).
+> Implémenté en **Phase C (Sprint 67)** en coexistence avec la fenêtre figée
+> ci-dessous. Modèle proposé, à valider avec sodiumlb (registre de mapping, page
+> par défaut, layout).
+
 Contrairement aux extensions vidéo (in-band), cette fenêtre est de
 l'I/O classique dans la page $03xx — réaliste pour le matériel : l'ULA
 décode déjà la page $03 (elle génère nIO), et en mode OCULA-is-the-RAM

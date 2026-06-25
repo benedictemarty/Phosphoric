@@ -86,6 +86,7 @@ void memory_ocula_unlock_write(memory_t* mem, uint8_t value) {
             mem->ocula_unlocked = false;       /* explicit re-lock */
             mem->ocula_unlock_knock = 0;
             mem->ocula_regs_armed = false;     /* register file goes inert too */
+            mem->ocula_map_page = 0;           /* unmap the page-3 window */
             break;
         default:
             mem->ocula_unlock_knock = 0;       /* any other byte resets */
@@ -101,7 +102,46 @@ void memory_ocula_reg_write(memory_t* mem, uint8_t page, uint8_t value) {
     } else if (page == OCULA_REG_BORDER_PAGE) {
         mem->ocula_reg_border = value;
         mem->ocula_regs_armed = true;
+    } else if (page == OCULA_MAP_PAGE_REG) {
+        mem->ocula_map_page = value;           /* sprint 67: map the page-3 window */
     }
+}
+
+/* Phase C (sprint 67): is `address` inside the mapped 256-byte OCULA window? */
+bool memory_ocula_page_mapped(const memory_t* mem, uint16_t address) {
+    return mem->ocula_unlocked && mem->ocula_map_page &&
+           (uint8_t)(address >> 8) == mem->ocula_map_page;
+}
+
+/* Read one byte of the mapped OCULA window: a R/W view of the OCULA state. */
+uint8_t memory_ocula_page_read(const memory_t* mem, uint8_t off) {
+    switch (off) {
+        case OCULA_PG_SIG_O: return 'O';
+        case OCULA_PG_SIG_C: return 'C';
+        case OCULA_PG_CAPS:  return 0x1F;      /* 80col|exthires|pal|bank|gpu */
+        case OCULA_PG_BANK:  return mem->ocula_bank;
+        case OCULA_PG_BORDER: return mem->ocula_reg_border;
+        default:
+            if (off >= OCULA_PG_PAL && off < OCULA_PG_PAL + 8)
+                return mem->ocula_reg_pal[off - OCULA_PG_PAL];
+            return 0;                          /* reserved */
+    }
+}
+
+/* Write one byte of the mapped OCULA window. Palette/border writes arm the
+ * register file (same state as the ROM-space writes of Phase A); the bank
+ * slot drives the CPU banking; signature/caps/reserved are read-only. */
+void memory_ocula_page_write(memory_t* mem, uint8_t off, uint8_t value) {
+    if (off == OCULA_PG_BANK) {
+        memory_ocula_set_bank(mem, (uint8_t)(value & 0x07));
+    } else if (off == OCULA_PG_BORDER) {
+        mem->ocula_reg_border = value;
+        mem->ocula_regs_armed = true;
+    } else if (off >= OCULA_PG_PAL && off < OCULA_PG_PAL + 8) {
+        mem->ocula_reg_pal[off - OCULA_PG_PAL] = value;
+        mem->ocula_regs_armed = true;
+    }
+    /* signature / caps / reserved: ignored */
 }
 
 bool memory_ocula_regs_armed(const memory_t* mem) {
@@ -151,6 +191,15 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
     /* Tracing */
     if (mem->trace_enabled && mem->trace_callback) {
         /* Callback will be called after read */
+    }
+
+    /* OCULA page-3 window (sprint 67, Phase C): when mapped + unlocked, this
+     * CPU page is a R/W view of the OCULA state, overriding normal memory. */
+    if (memory_ocula_page_mapped(mem, address)) {
+        val = memory_ocula_page_read(mem, (uint8_t)(address & 0xFF));
+        if (mem->trace_enabled && mem->trace_callback)
+            mem->trace_callback(address, val, MEM_READ);
+        return val;
     }
 
     /* I/O space: VIA 6522 at $0300-$030F (mirrored in $0300-$03FF) */
@@ -213,6 +262,13 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     if (mem->trace_enabled && mem->trace_callback)
         mem->trace_callback(address, value, MEM_WRITE);
 
+    /* OCULA page-3 window (sprint 67, Phase C): mapped + unlocked → writes hit
+     * the OCULA state (bank/palette/border), overriding normal memory. */
+    if (memory_ocula_page_mapped(mem, address)) {
+        memory_ocula_page_write(mem, (uint8_t)(address & 0xFF), value);
+        return;
+    }
+
     /* I/O space: VIA at $0300-$030F */
     if (address >= 0x0300 && address <= 0x03FF) {
         if (mem->io_write) {
@@ -269,9 +325,9 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
         uint8_t page = (uint8_t)(address >> 8);
         if ((address & 0xFF00) == OCULA_UNLOCK_PAGE)
             memory_ocula_unlock_write(mem, value);
-        else if (page == OCULA_REG_BORDER_PAGE ||
+        else if (page == OCULA_REG_BORDER_PAGE || page == OCULA_MAP_PAGE_REG ||
                  (page >= OCULA_REG_PAL_PAGE && page <= OCULA_REG_PAL_PAGE + 7))
-            memory_ocula_reg_write(mem, page, value);   /* sprint 66 register file */
+            memory_ocula_reg_write(mem, page, value);   /* sprint 66/67 registers */
     }
 }
 
