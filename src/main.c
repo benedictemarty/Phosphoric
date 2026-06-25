@@ -971,18 +971,24 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
                      "Pas de Microdisc (--disk-rom requis)");
             return;
         }
+        int drv = emu->osd.disk_drive;
+        if (drv < 0 || drv >= MICRODISC_MAX_DRIVES) drv = 0;
         sedoric_disk_t* nd = sedoric_load(e->path);
         if (!nd) {
             snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
             return;
         }
-        if (emu->disks[0]) sedoric_destroy(emu->disks[0]);
-        emu->disks[0] = nd;
-        emu->disk_path = strdup(e->path);
-        microdisc_set_disk(&emu->microdisc, 0, nd->data, nd->size, nd->tracks, nd->sectors);
+        if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
+        emu->disks[drv] = nd;
+        microdisc_set_disk(&emu->microdisc, (uint8_t)drv, nd->data, nd->size,
+                           nd->tracks, nd->sectors);
+        /* Le chemin "courant" (savestate/UI) suit le lecteur A. Le pointeur
+         * initial vient d'argv (non libérable) ; on ne fait donc que réaffecter. */
+        if (drv == 0)
+            emu->disk_path = strdup(e->path);
         snprintf(emu->osd.status, sizeof(emu->osd.status),
-                 "Disque A: %.30s (reboot/DIR)", e->name);
-        log_info("OSD: disque A <- %s", e->path);
+                 "Disque %c: %.28s (reboot/DIR)", 'A' + drv, e->name);
+        log_info("OSD: disque %c <- %s", 'A' + drv, e->path);
     } else {
         FILE* f = fopen(e->path, "rb");
         if (!f) {
@@ -2286,6 +2292,8 @@ static void emulator_run(emulator_t* emu) {
                         switch (event.key.keysym.sym) {
                         case SDLK_UP:       k = OSD_KEY_UP;    break;
                         case SDLK_DOWN:     k = OSD_KEY_DOWN;  break;
+                        case SDLK_LEFT:     k = OSD_KEY_LEFT;  break;
+                        case SDLK_RIGHT:    k = OSD_KEY_RIGHT; break;
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER: k = OSD_KEY_ENTER; break;
                         case SDLK_ESCAPE:   k = OSD_KEY_ESC;   break;

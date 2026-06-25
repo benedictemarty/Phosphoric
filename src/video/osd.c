@@ -97,6 +97,12 @@ osd_action_t osd_key(osd_t* osd, int key) {
         case OSD_KEY_DOWN:
             if (osd->selected < osd->count - 1) osd->selected++;
             break;
+        case OSD_KEY_LEFT:
+            osd->disk_drive = (osd->disk_drive + OSD_DRIVES - 1) % OSD_DRIVES;
+            break;
+        case OSD_KEY_RIGHT:
+            osd->disk_drive = (osd->disk_drive + 1) % OSD_DRIVES;
+            break;
         case OSD_KEY_ESC:
             osd_close(osd);
             return OSD_CLOSED;
@@ -162,7 +168,14 @@ void osd_render(osd_t* osd, video_t* vid) {
     int tx = x0 + 6, ty = y0 + 4;
     draw_str(osd, vid, tx, ty, "CHANGER LE MEDIA  (F6)", 255, 255, 0);
     ty += 12;
-    draw_str(osd, vid, tx, ty, "FLECHES=CHOISIR  RET=CHARGER  ESC=FERMER", 160, 160, 160);
+    draw_str(osd, vid, tx, ty, "HAUT/BAS=CHOISIR  GCH/DRT=LECTEUR", 160, 160, 160);
+    ty += 9;
+    draw_str(osd, vid, tx, ty, "RET=CHARGER  ESC=FERMER", 160, 160, 160);
+    ty += 12;
+
+    char drv[40];
+    snprintf(drv, sizeof(drv), "LECTEUR DISQUE CIBLE: %c", 'A' + osd->disk_drive);
+    draw_str(osd, vid, tx, ty, drv, 120, 200, 255);
     ty += 12;
 
     if (osd->count == 0) {

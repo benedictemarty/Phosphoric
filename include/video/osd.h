@@ -25,6 +25,10 @@
 #define OSD_KEY_DOWN  2
 #define OSD_KEY_ENTER 3
 #define OSD_KEY_ESC   4
+#define OSD_KEY_LEFT  5   /* lecteur cible précédent (D <- A) */
+#define OSD_KEY_RIGHT 6   /* lecteur cible suivant   (A -> D) */
+
+#define OSD_DRIVES    4   /* lecteurs disque cibles A..D */
 
 typedef struct {
     char name[OSD_NAME_MAX];
@@ -38,6 +42,7 @@ typedef struct {
     int  count;
     int  selected;
     int  scroll;
+    int  disk_drive;         /* lecteur cible pour un .dsk (0=A .. 3=D) */
     uint8_t font[128 * 8];   /* snapshot du charset Oric ($B400) */
     bool font_ready;
     char status[64];         /* message de la dernière action */
