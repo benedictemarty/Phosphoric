@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.6-alpha] - 2026-06-25
+
+### Added — FDC WD1793 : « Write Track » (formatage de piste)
+
+Le « Write Track » (Type III) était posé sans handler de données (no-op) →
+`INIT` Sedoric ne formatait pas. Le flux IBM/MFM de piste est désormais parsé
+pour peupler les secteurs de l'image (ROADMAP Sprint 66, limite #2).
+
+- **`src/storage/disk.c` / `include/storage/disk.h`** : machine à états dans le
+  chemin d'écriture du registre DATA pour `FDC_OP_WRITE_TRACK`. Reconnaît les
+  ID Address Marks (`0xFE` + track/side/sector/size) et Data Address Marks
+  (`0xFB`/`0xF8` + N octets de données) ; les octets de gap (`0x4E`), de sync
+  (`0x00`) et de contrôle CRC (`0xF5`/`0xF6`/`0xF7`/`0xFC`) sont ignorés. Les
+  `0xFE`/`0xFB` *à l'intérieur* d'un champ de données restent des données (gardé
+  par l'état). Chaque champ de données est placé dans le secteur nommé par le
+  dernier ID (position logique dans l'image plate). Terminaison après un champ
+  de données par secteur de la piste (`sectors_per_track`).
+- 1 test (`make test-storage`) : `test_fdc_write_track` — formate 4 secteurs via
+  un flux MFM synthétique et vérifie que les motifs atterrissent aux bons
+  offsets. 813 tests.
+
+#### Changed
+
+- `EMU_VERSION` 1.25.5 → 1.25.6-alpha.
+
+#### Notes
+
+- Validation bout-en-bout de `INIT` Sedoric (pilotage de la ROM contre une
+  disquette vierge montée) reste à faire : `sedoric_create()` fournit déjà
+  l'image vierge mais n'est pas encore câblé au CLI (prochaine étape).
+
 ## [1.25.5-alpha] - 2026-06-25
 
 ### Added — `--realtime` : cadençage temps réel en headless
