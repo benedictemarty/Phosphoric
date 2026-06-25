@@ -51,6 +51,8 @@ typedef struct sedoric_entry_s {
 } sedoric_entry_t;
 
 sedoric_disk_t* sedoric_create(void);
+/* Disquette vierge à géométrie explicite (tracks/face, sides=1|2 ; 17 sect.). */
+sedoric_disk_t* sedoric_create_blank(uint8_t tracks, uint8_t sides);
 sedoric_disk_t* sedoric_load(const char* filename);
 bool sedoric_save(sedoric_disk_t* disk, const char* filename);
 void sedoric_destroy(sedoric_disk_t* disk);

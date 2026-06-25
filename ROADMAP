@@ -221,11 +221,15 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   pilotage `--type-keys` → BASIC → `INIT B` → `Y` → écran **« Formating … »**
   puis **« Formating complete »**, write-back `.dsk` déclenché → le Write Track
   est exercé et **correct face au vrai DOS Sedoric**.
-- [ ] **Raffinement géométrie** : `sedoric_create()` fait 42 pistes / 1 face
-  (182784 o) alors qu'`INIT` formate plus grand (jusqu'à « Track 81 » →
-  vraisemblablement double face) → blank sous-dimensionné, le format déborde.
-  Aligner la géométrie de la disquette créée sur celle d'`INIT` (probablement
-  2 faces) pour produire un disque formaté complet et bootable.
+- [x] **Raffinement géométrie (v1.25.8)** : `sedoric_create_blank(tracks, sides)`
+  + inférence de géométrie raw par la taille (> 42 pistes & paire → double
+  face). `--disk-create` crée un blank **double face 42 pistes** (365568 o).
+  **Validation e2e bouclée** : `--disk-create` → `INIT B` → nom « TEST » →
+  remontée + `DIR B` → « Drive B V4 (Slv) TEST … 2776 free sectors (D/82/17)
+  0 Files » → disque double face **reconnu et valide**. +1 test
+  `test_sedoric_create_blank_double_sided`. 814 tests.
+  → **Chaîne création → INIT → DIR bouclée ; la limite #2 du Sprint 66 est
+  entièrement close.**
 
 ### Sprint 65: OCULA — rendu overscan visible de la bordure (v1.25.0-alpha) - DONE
 

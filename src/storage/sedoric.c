@@ -11,25 +11,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-sedoric_disk_t* sedoric_create(void) {
+/* Crée une disquette vierge plate à la géométrie demandée. tracks = pistes par
+ * face, sides = 1 ou 2 ; 17 secteurs/256 octets fixes (standard Sedoric). Le
+ * contenu est nul (un INIT Sedoric écrira le vrai format) avec une signature
+ * « SED » minimale. */
+sedoric_disk_t* sedoric_create_blank(uint8_t tracks, uint8_t sides) {
+    if (tracks == 0) tracks = SEDORIC_TRACKS;
+    if (sides == 0 || sides > 2) sides = 1;
     sedoric_disk_t* disk = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
     if (!disk) return NULL;
-    disk->data = (uint8_t*)calloc(1, SEDORIC_DISK_SIZE);
+    uint32_t size = (uint32_t)sides * tracks * SEDORIC_SECTORS * SEDORIC_SECTOR_SIZE;
+    disk->data = (uint8_t*)calloc(1, size);
     if (!disk->data) { free(disk); return NULL; }
-    disk->size = SEDORIC_DISK_SIZE;
-    disk->tracks = SEDORIC_TRACKS;
+    disk->size = size;
+    disk->tracks = tracks;
     disk->sectors = SEDORIC_SECTORS;
-    disk->sides = SEDORIC_SIDES;
+    disk->sides = sides;
     disk->modified = false;
 
-    /* Initialize system sectors with basic Sedoric structure */
-    /* Track 0, Sector 1: System info */
+    /* Signature minimale (Track 0, Sector 1) ; sera écrasée par INIT. */
     uint8_t* sys = disk->data;
     sys[0] = 'S'; sys[1] = 'E'; sys[2] = 'D';
-    sys[3] = disk->tracks;
-    sys[4] = disk->sectors;
-
+    sys[3] = tracks;
+    sys[4] = SEDORIC_SECTORS;
     return disk;
+}
+
+sedoric_disk_t* sedoric_create(void) {
+    return sedoric_create_blank(SEDORIC_TRACKS, SEDORIC_SIDES);
 }
 
 /**
@@ -195,12 +204,26 @@ sedoric_disk_t* sedoric_load(const char* filename) {
         return disk;
     }
 
-    /* Raw sector format (legacy) */
+    /* Raw sector format (legacy). On infère la géométrie depuis la taille quand
+     * elle est un multiple exact d'une piste 17×256 (4352 o) ; au-delà de 42
+     * pistes (et taille paire) → double face. Sinon on garde les valeurs par
+     * défaut (42 pistes / 1 face). */
     disk->data = raw;
     disk->size = (uint32_t)fsize;
-    disk->tracks = SEDORIC_TRACKS;
     disk->sectors = SEDORIC_SECTORS;
-    disk->sides = SEDORIC_SIDES;
+    uint32_t track_bytes = (uint32_t)SEDORIC_SECTORS * SEDORIC_SECTOR_SIZE; /* 4352 */
+    uint32_t total_tracks = (fsize > 0 && (uint32_t)fsize % track_bytes == 0)
+                            ? (uint32_t)fsize / track_bytes : 0;
+    if (total_tracks > SEDORIC_TRACKS && (total_tracks % 2) == 0) {
+        disk->sides = 2;
+        disk->tracks = (uint8_t)(total_tracks / 2);
+    } else if (total_tracks > 0) {
+        disk->sides = 1;
+        disk->tracks = (uint8_t)total_tracks;
+    } else {
+        disk->tracks = SEDORIC_TRACKS;
+        disk->sides = SEDORIC_SIDES;
+    }
     disk->modified = false;
     return disk;
 }

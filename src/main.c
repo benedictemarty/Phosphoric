@@ -3747,7 +3747,9 @@ int main(int argc, char* argv[]) {
          * l'écrit aussitôt sur FILE. INIT/format à l'intérieur ; le write-back
          * de sortie (armé avec cette option) persiste les changements. */
         if (disk_create_file && !emu.disks[0]) {
-            emu.disks[0] = sedoric_create();
+            /* Double face 42 pistes : géométrie que formate INIT B de Sedoric
+             * (un blank simple face était sous-dimensionné, Sprint 66). */
+            emu.disks[0] = sedoric_create_blank(SEDORIC_TRACKS, 2);
             if (!emu.disks[0]) {
                 log_error("disk-create: allocation de la disquette vierge impossible");
                 emulator_cleanup(&emu);
