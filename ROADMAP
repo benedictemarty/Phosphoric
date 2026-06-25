@@ -198,11 +198,19 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 - [x] CLI `--no-border` (active par défaut), champ `emulator_t.no_border`.
 - [x] 5 tests compositing dans `test_ocula.c` — 84 tests OCULA OK, suite verte.
 - À faire :
+  - [ ] **Migration in-band → registres write-only ROM** (proposée à sodiumlb,
+        24 juin) : sortir palette + bordure de `$BFE0-$BFFF` vers ses registres
+        write-only (1 page ROM/entrée, ~9 des 64), zéro octet DRAM → clôt
+        l'objection `$BFE0-$C000` de Dbug. Rasters = blind-write ROM par scanline
+        (copper). **Suspendu à l'accord de sodiumlb** (post forum envoyé).
+        Lecture d'état via sa page-3 RAM remappable (remplace le `$03E0` figé).
   - [ ] Option pour inclure la bordure dans l'export PPM/screenshot/AVI
         (aujourd'hui dimensions actives, pour ne pas casser les tests d'export).
   - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
         in-band, SPLIT) — v2.
-  - [ ] Poster l'amendement sur le forum t=2709 + intégrer le retour sodiumlb/Dbug.
+  - [~] Amendement forum t=2709 : brouillon aligné sur le schéma registres de
+        sodiumlb (`docs/forum-t2709-border-rgb332.md`), **post manuel** (forum
+        authentifié) ; veille cloud surveille la réponse.
 
 ### Sprint 64: OCULA — registre de bordure $BFEA (amendement RFC #53) (v1.24.0-alpha) - DONE
 
