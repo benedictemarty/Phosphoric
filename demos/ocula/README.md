@@ -10,7 +10,7 @@ Toutes s'exécutent sous le profil `--ula ocula`.
 
 ## Menu interactif
 
-Le plus simple : un menu qui liste les 4 démos et lance celle choisie.
+Le plus simple : un menu qui liste les 5 démos et lance celle choisie.
 
 ```bash
 make SDL2=1            # compile l'émulateur si besoin
@@ -18,8 +18,9 @@ demos/ocula/menu.sh
 ```
 
 Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
-`roms/basic11b.rom`), `--accel` (renderer accéléré au lieu du logiciel).
-`Ctrl+C` dans la fenêtre d'une démo revient au menu ; `q` quitte.
+`roms/basic11b.rom`), `--accel` (renderer accéléré au lieu du logiciel),
+`--no-border` (masque la bordure overscan OCULA, active par défaut depuis le
+Sprint 65). `Ctrl+C` dans la fenêtre d'une démo revient au menu ; `q` quitte.
 
 ## Lancer une démo manuellement
 

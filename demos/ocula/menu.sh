@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Menu de lancement des démos OCULA de Phosphoric.
-# Usage : demos/ocula/menu.sh [--scale N] [--rom CHEMIN] [--accel]
+# Usage : demos/ocula/menu.sh [--scale N] [--rom CHEMIN] [--accel] [--no-border]
 #   --scale N    facteur d'échelle SDL (défaut 2)
 #   --rom FILE   ROM à utiliser (défaut roms/basic11b.rom)
 #   --accel      utilise le renderer SDL accéléré (défaut : --render-software,
 #                qui évite l'écran noir sur certaines configs GPU)
+#   --no-border  masque la bordure overscan OCULA (Sprint 65 ; active par
+#                défaut — utile pour la démo « 5) Bordure animée »)
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -14,12 +16,14 @@ EMU="$ROOT/oric1-emu"
 SCALE=2
 ROM="$ROOT/roms/basic11b.rom"
 RENDER="--render-software"
+BORDER=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --scale) SCALE="$2"; shift 2 ;;
         --rom)   ROM="$2";   shift 2 ;;
         --accel) RENDER="";  shift ;;
+        --no-border) BORDER="--no-border"; shift ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Option inconnue : $1"; exit 1 ;;
     esac
@@ -41,11 +45,11 @@ launch() {
     echo
     echo ">>> $tap   ($profile)   — Ctrl+C dans cette fenêtre pour revenir au menu"
     # shellcheck disable=SC2086
-    "$EMU" -r "$ROM" $profile -t "$DEMO/$tap" -f $RENDER --scale "$SCALE"
+    "$EMU" -r "$ROM" $profile -t "$DEMO/$tap" -f $RENDER $BORDER --scale "$SCALE"
 }
 
 while true; do
-    cat <<MENU
+    cat <<'MENU'
 
 ╔══════════════════════════════════════════════╗
 ║            Démos OCULA — Phosphoric           ║
