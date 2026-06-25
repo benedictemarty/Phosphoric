@@ -2,7 +2,8 @@
 
 Réponse à Dbug (bordure + RGB332) sur le fil OCULA, à poster après le retour
 du 24 juin 2026. Langue : anglais (langue du fil). Spec : `docs/ocula_extensions.md`
-v0.10. Implémentation : Phosphoric Sprint 64 (registre $BFEA, 6 tests).
+v0.10. Implémentation : Phosphoric Sprints 64-65 (registre $BFEA + rendu
+overscan visible, 11 tests) + démo BASIC `demos/ocula/oculabord`.
 
 ---
 
@@ -51,8 +52,10 @@ floor is one scanline — there's no intra-line change, faithful to the
 line-by-line fetch.
 
 All of this degrades cleanly on a stock ULA and needs no prior detection
-(tier 1, in-band). It's implemented and unit-tested in Phosphoric now if
-anyone wants to poke at it.
+(tier 1, in-band). It's all live in Phosphoric now — the $BFEA register, the
+visible overscan rendering around the active image, and a tiny BASIC demo that
+cycles the border colour — so it's testable end to end rather than just on
+paper.
 
 Does $BFEA work for you as the border register, or would you rather it be a
 palette index than a direct RGB332 value?
