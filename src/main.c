@@ -3124,11 +3124,11 @@ int main(int argc, char* argv[]) {
     if (loci_enabled && serial_arg &&
         emu.acia_base_addr <= LOCI_MIA_END &&
         (uint16_t)(emu.acia_base_addr + 3) >= LOCI_MIA_BASE) {
-        log_warning("--acia-addr $%04X tombe dans la MIA LOCI ($%04X-$%04X) : la MIA "
-                    "masque l'ACIA et casse le scan clavier (PSG) -> terminal fige.",
+        log_warning("--acia-addr $%04X force l'ACIA dans la MIA LOCI ($%04X-$%04X) : "
+                    "la MIA la masque ET casse le scan clavier (PSG) -> terminal fige.",
                     emu.acia_base_addr, LOCI_MIA_BASE, LOCI_MIA_END);
-        log_warning("  Retirez --loci (le modem n'en a pas besoin), ou laissez "
-                    "l'ACIA LOCI par defaut $0380 (sans --acia-addr).");
+        log_warning("  Le modem LOCI (picowifi) est expose a $0380 sur le vrai LOCI : "
+                    "laissez --loci SANS --acia-addr (ACIA -> $0380) et adressez $0380.");
     }
     if (serial_arg) {
         /* First try the shared transparent transports (loopback/tcp/pty/com),
