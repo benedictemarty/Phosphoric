@@ -32,23 +32,55 @@ static void palette_reset(video_t* vid) {
     memcpy(vid->pal_rgb, palette, sizeof(vid->pal_rgb));
 }
 
+/* Expand one RGB332 byte (RRRGGGBB) to RGB888. Shared by the redefinable
+ * palette and the border register — both live in the gated $BFE0-$BFFF
+ * block and so must decode identically. */
+static void rgb332_to_rgb888(uint8_t v, uint8_t* r, uint8_t* g, uint8_t* b) {
+    *r = (uint8_t)((((v >> 5) & 0x07) * 255) / 7);
+    *g = (uint8_t)((((v >> 2) & 0x07) * 255) / 7);
+    *b = (uint8_t)(((v & 0x03) * 255) / 3);
+}
+
+/* True when the gated $BFE0-$BFFF block is live: OCULA profile, unlocked,
+ * and the 'O','C' magic armed at OCULA_PAL_MAGIC. Opt-in (sprint 45):
+ * otherwise the block is plain storage (some games keep data there — cf.
+ * Dbug, forum t=2709), so neither the palette nor the border react. */
+static bool ocula_block_armed(const video_t* vid, const uint8_t* memory) {
+    return vid->ula_profile == ULA_PROFILE_OCULA && vid->ocula_unlocked &&
+           memory[OCULA_PAL_MAGIC] == 'O' && memory[OCULA_PAL_MAGIC + 1] == 'C';
+}
+
 /* Re-evaluate the redefinable palette at frame start. Armed by the
  * 'O','C' magic at OCULA_PAL_MAGIC: 8 RGB332 entries at OCULA_PAL_BASE
  * replace the standard palette for the coming frame. */
 static void palette_latch(video_t* vid, const uint8_t* memory) {
-    /* Opt-in (sprint 45): without the unlock, $BFE0-$BFFF is plain
-     * storage (some games keep data there — cf. Dbug, forum t=2709), so
-     * the magic bytes are NOT interpreted and the standard palette holds. */
-    if (vid->ula_profile == ULA_PROFILE_OCULA && vid->ocula_unlocked &&
-        memory[OCULA_PAL_MAGIC] == 'O' && memory[OCULA_PAL_MAGIC + 1] == 'C') {
+    if (ocula_block_armed(vid, memory)) {
         for (int i = 0; i < 8; i++) {
-            uint8_t v = memory[OCULA_PAL_BASE + i];
-            vid->pal_rgb[i][0] = (uint8_t)((((v >> 5) & 0x07) * 255) / 7);
-            vid->pal_rgb[i][1] = (uint8_t)((((v >> 2) & 0x07) * 255) / 7);
-            vid->pal_rgb[i][2] = (uint8_t)(((v & 0x03) * 255) / 3);
+            rgb332_to_rgb888(memory[OCULA_PAL_BASE + i],
+                             &vid->pal_rgb[i][0], &vid->pal_rgb[i][1],
+                             &vid->pal_rgb[i][2]);
         }
     } else {
         palette_reset(vid);
+    }
+}
+
+/* Latch the border colour for scanline y from OCULA_BORDER_REG ($BFEA),
+ * RGB332, under the same gating as the palette. Black ($00 / disarmed /
+ * stock ULA) reproduces the standard Oric border. Re-read every scanline,
+ * so rewriting $BFEA between lines yields border raster bars (sprint 64,
+ * cf. Dbug forum t=2709). The framebuffer has no overscan band yet — this
+ * only fills the per-line model exposed by video_get_border_rgb(). */
+static void border_latch(video_t* vid, const uint8_t* memory, int y) {
+    if (y < 0 || y >= OCULA_MAX_H) return;
+    if (ocula_block_armed(vid, memory)) {
+        rgb332_to_rgb888(memory[OCULA_BORDER_REG],
+                         &vid->ocula_border[y][0], &vid->ocula_border[y][1],
+                         &vid->ocula_border[y][2]);
+    } else {
+        vid->ocula_border[y][0] = 0;
+        vid->ocula_border[y][1] = 0;
+        vid->ocula_border[y][2] = 0;
     }
 }
 
@@ -85,6 +117,7 @@ void video_reset(video_t* vid) {
     vid->need_refresh = true;
     vid->vid_mode = 0x02;
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
+    memset(vid->ocula_border, 0, sizeof(vid->ocula_border));
 }
 
 void video_set_profile(video_t* vid, ula_profile_t profile) {
@@ -97,6 +130,7 @@ void video_set_profile(video_t* vid, ula_profile_t profile) {
     apply_profile_resolution(vid);
     palette_reset(vid);
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
+    memset(vid->ocula_border, 0, sizeof(vid->ocula_border));
     vid->need_refresh = true;
 }
 
@@ -124,6 +158,14 @@ void video_set_mode(video_t* vid, bool hires) {
 void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b) {
     uint8_t c = oric_color & 0x07;
     *r = palette[c][0]; *g = palette[c][1]; *b = palette[c][2];
+}
+
+void video_get_border_rgb(const video_t* vid, int y,
+                          uint8_t* r, uint8_t* g, uint8_t* b) {
+    if (y < 0 || y >= OCULA_MAX_H) { *r = *g = *b = 0; return; }
+    *r = vid->ocula_border[y][0];
+    *g = vid->ocula_border[y][1];
+    *b = vid->ocula_border[y][2];
 }
 
 static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
@@ -365,6 +407,10 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
      * line at its real CPU cycle, so the palette seen is the one in RAM
      * at that moment. Inert while locked / on a stock ULA. */
     palette_latch(vid, memory);
+
+    /* Border register ($BFEA) re-read on the same per-scanline schedule:
+     * a value rewritten between scanlines paints border raster bars. */
+    border_latch(vid, memory, y);
 
     /* ULA resets attributes at start of every scanline. */
     vid->text_attr = 0;

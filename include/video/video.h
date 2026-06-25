@@ -52,6 +52,15 @@
 #define OCULA_PAL_BASE   0xBFE0
 #define OCULA_PAL_MAGIC  0xBFE8
 
+/* OCULA border / position registers ($BFEA-$BFFF): the 22 bytes the RGB332
+ * palette leaves free in the 32-byte block, re-read per scanline under the
+ * same gating as the palette (magic + unlock). $BFEA = BORDER, an RGB332
+ * border colour re-read every scanline ($00 = black = stock Oric border);
+ * rewriting it between scanlines gives border raster bars (cf. Dbug, forum
+ * t=2709). $BFEB-$BFFF reserved v2 (BORDER_CTL, SCROLLX/Y, SPLIT).
+ * See docs/ocula_extensions.md. */
+#define OCULA_BORDER_REG 0xBFEA
+
 /* ORIC colors */
 #define ORIC_BLACK   0
 #define ORIC_RED     1
@@ -122,6 +131,12 @@ typedef struct video_s {
     uint8_t ocula_scroll_x;
     uint8_t ocula_scroll_y;
 
+    /* OCULA border colour latched per scanline (RGB888), from OCULA_BORDER_REG
+     * under palette gating; black when locked / no magic / stock ULA. The
+     * framebuffer has no overscan band yet, so this is the data model a future
+     * border-rendering pass reads; exposed via video_get_border_rgb(). */
+    uint8_t ocula_border[OCULA_MAX_H][3];
+
     /* Serial-attribute group 0x08-0x0F (text attrs).
      * bit 0 = alt charset, bit 1 = double height, bit 2 = blink.
      * Reset to 0 at start of every scanline; latched per-column. */
@@ -138,6 +153,11 @@ void video_set_mode(video_t* vid, bool hires);
 void video_render_frame(video_t* vid, const uint8_t* memory);
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y);
 void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b);
+
+/* OCULA border colour latched for scanline y (0-223), RGB888. Black unless
+ * the OCULA palette block is armed and unlocked. See docs/ocula_extensions.md. */
+void video_get_border_rgb(const video_t* vid, int y,
+                          uint8_t* r, uint8_t* g, uint8_t* b);
 
 /* ULA profile management */
 void video_set_profile(video_t* vid, ula_profile_t profile);
