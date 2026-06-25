@@ -230,6 +230,11 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   `test_sedoric_create_blank_double_sided`. 814 tests.
   → **Chaîne création → INIT → DIR bouclée ; la limite #2 du Sprint 66 est
   entièrement close.**
+- [x] **Disquette bootable hands-free (v1.27.1)** : `tools/make_bootable_sedoric.sh`
+  pilote tout l'enchaînement (`--disk-create` → `INIT B`/`Y` → nom →
+  **Master disc = Y** → copie du DOS) et **vérifie le boot standalone** →
+  « SEDORIC V4.0 / © 1985 ORIC INTERNATIONAL / Ready ». **On peut désormais
+  fabriquer une disquette Sedoric bootable depuis l'émulateur, sans intervention.**
 
 ### Sprint 65: OCULA — rendu overscan visible de la bordure (v1.25.0-alpha) - DONE
 

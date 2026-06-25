@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.1-alpha] - 2026-06-25
+
+### Added — `tools/make_bootable_sedoric.sh` : disquette Sedoric bootable hands-free
+
+Script qui fabrique une disquette **Sedoric bootable** sans intervention, en
+pilotant l'émulateur en headless. Aboutissement de la chaîne Write Track →
+`--disk-create` → double face.
+
+- Pilotage `--type-keys` : crée une vierge double face (`--disk-create`), boot
+  Sedoric depuis un disque maître (SEDO40u), `INIT B` + `Y` (format), nom,
+  **Master disc = `Y`** (copie du DOS → bootable), `Init another = N`.
+- Vérifie automatiquement que la disquette **démarre seule** (bannière
+  « SEDORIC V4.0 ») et sort en erreur sinon.
+- Validé e2e : boot standalone depuis la disquette produite →
+  **« SEDORIC V4.0 / © 1985 ORIC INTERNATIONAL / Ready »**.
+
+#### Changed
+
+- `EMU_VERSION` 1.25.8 → 1.27.1-alpha. Le macro était resté à 1.25.8 alors que
+  le CHANGELOG avait progressé à 1.27.0 (sprints OCULA « page-3 » / posts forum
+  n'avaient pas bumpé `EMU_VERSION` ni VERSION_TRACKING/CIRRUS_OS) ; régularisé.
+  Outillage uniquement, binaire émulateur inchangé ; 814 tests.
+
 ## [1.27.0-alpha] - 2026-06-25
 
 ### Added — OCULA : page-3 RAM remappable (Sprint 67, Phase C)
