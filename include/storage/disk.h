@@ -84,6 +84,17 @@ typedef struct fdc_s {
     uint16_t cur_offset;       /* Current byte offset within sector */
     uint8_t sec_type;          /* Record type (0 or FDC_ST_REC_TYPE for deleted) */
 
+    /* Write Track (formatting) stream parser. The ROM streams a raw IBM/MFM
+     * track byte-by-byte via the DATA register; we recognise ID Address Marks
+     * (0xFE + track/side/sector/size) and Data Address Marks (0xFB/0xF8 + sector
+     * bytes) and drop the data fields into the flat image. Gap/sync/CRC-control
+     * bytes are layout only. */
+    uint8_t  wt_state;         /* 0=scan marks, 1=ID field, 2=data field */
+    uint8_t  wt_field_idx;     /* bytes collected so far in the ID field */
+    uint8_t  wt_id[4];         /* last ID field: track, side, sector, size code */
+    uint16_t wt_data_len;      /* expected bytes in the current data field */
+    uint8_t  wt_sectors_done;  /* data fields completed this track (→ completion) */
+
     /* Delayed DRQ/INTRQ (timing model) */
     int delayed_drq;           /* Cycles until DRQ asserts (0 = no pending) */
     int delayed_int;           /* Cycles until INTRQ asserts (0 = no pending) */

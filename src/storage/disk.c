@@ -51,6 +51,9 @@ void fdc_reset(fdc_t* fdc) {
     fdc->currentop = FDC_OP_NONE;
     fdc->cur_sector_data = NULL;
     fdc->cur_offset = 0;
+    fdc->wt_state = 0;
+    fdc->wt_field_idx = 0;
+    fdc->wt_sectors_done = 0;
     fdc->delayed_drq = 0;
     fdc->delayed_int = 0;
     fdc->di_status = -1;
@@ -359,12 +362,18 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->delayed_drq = 60;
                 fdc->currentop = FDC_OP_READ_TRACK;
             } else {
-                /* Write Track (Type III) - not fully implemented */
+                /* Write Track (Type III) - track formatting. The ROM streams a
+                 * raw IBM/MFM track; fdc_write() DATA parses it into sectors. */
                 fdc->status = FDC_ST_NOT_READY | FDC_ST_BUSY;
                 fdc->delayed_drq = 500;
                 fdc->clr_drq(fdc->drq_userdata);
                 fdc->clr_intrq(fdc->intrq_userdata);
                 fdc->delayed_int = 0;
+                fdc->wt_state = 0;
+                fdc->wt_field_idx = 0;
+                fdc->wt_data_len = 0;
+                fdc->wt_sectors_done = 0;
+                fdc->cur_sector_data = NULL;
                 fdc->currentop = FDC_OP_WRITE_TRACK;
             }
             break;
@@ -421,6 +430,60 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->delayed_drq = 32;
             }
             break;
+
+        case FDC_OP_WRITE_TRACK: {
+            /* Parse the raw IBM/MFM format stream. Only address marks matter:
+             *   0xFE = ID Address Mark    → next 4 bytes: track, side, sector, size
+             *   0xFB / 0xF8 = Data AM     → next `len` bytes: the sector payload
+             * Gap (0x4E), sync (0x00) and CRC-control bytes (0xF5/0xF6/0xF7/0xFC)
+             * are layout only. 0xFE/0xFB occurring *inside* a data field are real
+             * data and are never re-read as marks (that is what the state guards).
+             * Completion: after one data field per sector on the track. */
+            fdc->disk_modified = true;
+            switch (fdc->wt_state) {
+            case 0:  /* scanning for an address mark */
+                if (value == 0xFE) {
+                    fdc->wt_state = 1;          /* → collect the 4-byte ID field */
+                    fdc->wt_field_idx = 0;
+                } else if (value == 0xFB || value == 0xF8) {
+                    /* Drop the upcoming data field into the sector the last ID
+                     * named (logical position in the flat image). */
+                    fdc->cur_sector_data = fdc_find_sector(fdc, fdc->wt_id[2]);
+                    fdc->wt_data_len = (uint16_t)(128u << (fdc->wt_id[3] & 3));
+                    if (fdc->wt_data_len == 0 || fdc->wt_data_len > 1024)
+                        fdc->wt_data_len = 256;
+                    fdc->cur_offset = 0;
+                    fdc->wt_state = 2;          /* → collect the data field */
+                }
+                break;
+            case 1:  /* collecting the 4-byte ID field */
+                fdc->wt_id[fdc->wt_field_idx++] = value;
+                if (fdc->wt_field_idx >= 4) fdc->wt_state = 0;
+                break;
+            case 2:  /* collecting the sector data field */
+                if (fdc->cur_sector_data && fdc->cur_offset < fdc->wt_data_len)
+                    fdc->cur_sector_data[fdc->cur_offset] = value;
+                fdc->cur_offset++;             /* advance even if no sector (stay in sync) */
+                if (fdc->cur_offset >= fdc->wt_data_len) {
+                    fdc->wt_state = 0;
+                    if (fdc->wt_sectors_done < 0xFF) fdc->wt_sectors_done++;
+                }
+                break;
+            }
+            fdc->status &= ~FDC_ST_DRQ;
+            fdc->clr_drq(fdc->drq_userdata);
+
+            if (fdc->sectors_per_track > 0 &&
+                fdc->wt_sectors_done >= fdc->sectors_per_track) {
+                /* Whole track formatted: finish (trailing gap bytes ignored). */
+                fdc->delayed_int = 32;
+                fdc->di_status = 0;
+                fdc->currentop = FDC_OP_NONE;
+            } else {
+                fdc->delayed_drq = 32;          /* request the next byte */
+            }
+            break;
+        }
 
         default:
             break;

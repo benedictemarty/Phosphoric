@@ -251,6 +251,55 @@ TEST(test_fdc_write_sector) {
     free(disk_data);
 }
 
+/* Formate une piste via la commande Write Track (0xF0) : on injecte un flux
+ * IBM/MFM synthétique (gaps, sync, A1, IDAM, ID, DAM, données) et on vérifie
+ * que les champs de données atterrissent dans les bons secteurs de l'image. */
+TEST(test_fdc_write_track) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    const int SPT = 4;                 /* secteurs/piste pour ce test */
+    fdc.tracks = 1;
+    fdc.sectors_per_track = (uint8_t)SPT;
+    uint32_t sz = (uint32_t)SPT * 256;
+    uint8_t* disk_data = calloc(sz, 1);
+    fdc_set_disk(&fdc, disk_data, sz);
+    fdc.c_track = 0; fdc.track = 0; fdc.side = 0;
+
+    fdc_write(&fdc, 0, 0xF0);          /* Write Track */
+    ASSERT_EQ(fdc.currentop, FDC_OP_WRITE_TRACK);
+
+    /* Construit + injecte le flux piste, secteur par secteur. */
+    for (int s = 1; s <= SPT; s++) {
+        uint8_t pre[] = { 0x4E, 0x4E, 0x00, 0x00, 0xF5, 0xF5, 0xF5 };
+        for (size_t i = 0; i < sizeof(pre); i++) fdc_write(&fdc, 3, pre[i]);
+        fdc_write(&fdc, 3, 0xFE);                       /* IDAM */
+        fdc_write(&fdc, 3, (uint8_t)fdc.c_track);       /* track */
+        fdc_write(&fdc, 3, 0x00);                       /* side  */
+        fdc_write(&fdc, 3, (uint8_t)s);                 /* sector */
+        fdc_write(&fdc, 3, 0x01);                       /* size code 1 = 256 */
+        fdc_write(&fdc, 3, 0xF7);                       /* CRC */
+        uint8_t gap[] = { 0x4E, 0x00, 0xF5, 0xF5, 0xF5 };
+        for (size_t i = 0; i < sizeof(gap); i++) fdc_write(&fdc, 3, gap[i]);
+        fdc_write(&fdc, 3, 0xFB);                       /* DAM */
+        for (int i = 0; i < 256; i++)
+            fdc_write(&fdc, 3, (uint8_t)(s * 16 + (i & 0x0F)));  /* motif/secteur */
+        fdc_write(&fdc, 3, 0xF7);                       /* CRC */
+    }
+
+    /* La piste complète (SPT champs de données) doit terminer la commande. */
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
+
+    /* Chaque secteur logique doit porter son motif au bon offset. */
+    for (int s = 1; s <= SPT; s++) {
+        uint8_t* sec = &disk_data[(uint32_t)(s - 1) * 256];
+        ASSERT_EQ(sec[0],   (uint8_t)(s * 16 + 0));
+        ASSERT_EQ(sec[15],  (uint8_t)(s * 16 + 15));
+        ASSERT_EQ(sec[255], (uint8_t)(s * 16 + 15));
+    }
+    ASSERT_TRUE(fdc.disk_modified);
+    free(disk_data);
+}
+
 TEST(test_fdc_force_interrupt) {
     fdc_t fdc;
     fdc_init_test(&fdc);
@@ -393,6 +442,7 @@ int main(void) {
     RUN(test_fdc_seek);
     RUN(test_fdc_read_sector);
     RUN(test_fdc_write_sector);
+    RUN(test_fdc_write_track);
     RUN(test_fdc_write_sets_modified);
     RUN(test_fdc_force_interrupt);
     RUN(test_fdc_status_read_clears_intrq);

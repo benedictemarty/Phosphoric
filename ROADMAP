@@ -182,11 +182,11 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
-### Sprint 66: Cadençage temps réel headless + limites connues (v1.25.5-alpha) - EN COURS
+### Sprint 66: Cadençage temps réel headless + Write Track WD1793 (v1.25.6-alpha) - EN COURS
 
 > Deux limites concrètes rencontrées en produisant une vidéo terminal↔BBS,
-> consignées ici avec fichier:ligne, impact et piste. La première est corrigée
-> dans ce sprint.
+> consignées ici avec fichier:ligne, impact et piste. **Les deux sont
+> désormais corrigées** (--realtime en v1.25.5, Write Track en v1.25.6).
 
 **Limite 1 — Pas de cadençage temps réel en headless (CORRIGÉE v1.25.5)**
 - Constat : le frame limiter 50 Hz était sous `#ifdef HAS_SDL2` ET gardé par
@@ -202,14 +202,23 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   **1,03 s avec** `--realtime` (~3 % d'overhead). Pas de test unitaire
   (comportement temporel → *flaky* en CI). 812 tests inchangés au vert.
 
-**Limite 2 — « Write Track » (formatage WD1793) non implémenté (À FAIRE)**
-- Constat : `src/storage/disk.c:362` — « Write Track (Type III) - not fully
-  implemented » ; `currentop = FDC_OP_WRITE_TRACK` posé (ligne 368) sans
-  handler de flux de données → no-op (Read Track ligne 357 idem).
-  Impact : `INIT` Sedoric ne formate pas → impossible de créer une disquette
-  vierge depuis l'émulateur → bloque la disquette bootable hands-free du terminal.
-- [ ] Implémenter le parsing du **flux MFM de piste** (IDAM/DAM, gaps, CRC) pour
-  peupler les secteurs de l'image ; relier au write-back `.dsk` existant.
+**Limite 2 — « Write Track » (formatage WD1793) (CORRIGÉE v1.25.6)**
+- Constat : `src/storage/disk.c` — « Write Track (Type III) - not fully
+  implemented » ; `currentop = FDC_OP_WRITE_TRACK` posé sans handler de flux de
+  données → no-op. Impact : `INIT` Sedoric ne formatait pas → impossible de
+  créer une disquette vierge depuis l'émulateur.
+- [x] **Parseur du flux IBM/MFM de piste** : machine à états dans le chemin DATA
+  (`FDC_OP_WRITE_TRACK`, champs `wt_*`). Reconnaît IDAM (`0xFE`+track/side/
+  sector/size) et DAM (`0xFB`/`0xF8`+données), ignore gaps/sync/contrôle CRC,
+  place chaque champ de données dans le secteur nommé par le dernier ID
+  (position logique image plate, `disk_modified` posé). Terminaison après
+  `sectors_per_track` champs.
+- [x] +1 test `test_fdc_write_track` (formate 4 secteurs via flux synthétique,
+  vérifie les offsets). 813 tests.
+- [ ] **Reste à faire** : valider `INIT` Sedoric de bout en bout (piloter la ROM
+  contre une disquette vierge montée). `sedoric_create()` fournit déjà l'image
+  vierge mais n'est **pas câblé au CLI** → ajouter un `--disk-create FILE`
+  (créer + monter + sauver à la sortie) pour tester `INIT` réellement.
 
 ### Sprint 65: OCULA — rendu overscan visible de la bordure (v1.25.0-alpha) - DONE
 
