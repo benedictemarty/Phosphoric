@@ -85,11 +85,27 @@ void memory_ocula_unlock_write(memory_t* mem, uint8_t value) {
         case OCULA_UNLOCK_LOCK:
             mem->ocula_unlocked = false;       /* explicit re-lock */
             mem->ocula_unlock_knock = 0;
+            mem->ocula_regs_armed = false;     /* register file goes inert too */
             break;
         default:
             mem->ocula_unlock_knock = 0;       /* any other byte resets */
             break;
     }
+}
+
+void memory_ocula_reg_write(memory_t* mem, uint8_t page, uint8_t value) {
+    if (!mem->ocula_unlocked) return;          /* gated by the opt-in unlock */
+    if (page >= OCULA_REG_PAL_PAGE && page <= OCULA_REG_PAL_PAGE + 7) {
+        mem->ocula_reg_pal[page - OCULA_REG_PAL_PAGE] = value;
+        mem->ocula_regs_armed = true;
+    } else if (page == OCULA_REG_BORDER_PAGE) {
+        mem->ocula_reg_border = value;
+        mem->ocula_regs_armed = true;
+    }
+}
+
+bool memory_ocula_regs_armed(const memory_t* mem) {
+    return mem->ocula_regs_armed;
 }
 
 bool memory_ocula_unlocked(const memory_t* mem) {
@@ -250,8 +266,12 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
          * unlock register (page $FB) arms the opt-in extensions. This is
          * only reachable when genuine ROM is mapped — never a RAM-overlay
          * write — matching what the real ULA sees on the bus. */
+        uint8_t page = (uint8_t)(address >> 8);
         if ((address & 0xFF00) == OCULA_UNLOCK_PAGE)
             memory_ocula_unlock_write(mem, value);
+        else if (page == OCULA_REG_BORDER_PAGE ||
+                 (page >= OCULA_REG_PAL_PAGE && page <= OCULA_REG_PAL_PAGE + 7))
+            memory_ocula_reg_write(mem, page, value);   /* sprint 66 register file */
     }
 }
 

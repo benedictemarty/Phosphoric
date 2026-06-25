@@ -132,6 +132,17 @@ typedef struct video_s {
      * opt-in). See memory.h OCULA_UNLOCK_* and forum t=2709 (Dbug). */
     bool ocula_unlocked;
 
+    /* OCULA write-only register file (sprint 66, forum t=2709): live pointers
+     * into memory_t's register block, wired once at setup. When armed (a
+     * register was written post-unlock), palette + border come from these
+     * registers — written via blind ROM-space writes, zero DRAM footprint —
+     * instead of the in-band $BFE0-$BFFF block. NULL in the bare unit-test
+     * path: video then falls back to the in-band behaviour. Read live per
+     * scanline, so mid-frame register writes give copper-style rasters. */
+    const bool*    ocula_regs_armed;  /**< -> memory_t.ocula_regs_armed */
+    const uint8_t* ocula_reg_pal;     /**< -> memory_t.ocula_reg_pal[8] (RGB332) */
+    const uint8_t* ocula_reg_border;  /**< -> &memory_t.ocula_reg_border (RGB332) */
+
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE
      * when the OCULA_PAL_MAGIC bytes are armed. */

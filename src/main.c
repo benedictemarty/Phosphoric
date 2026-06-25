@@ -1220,6 +1220,15 @@ static bool emulator_init(emulator_t* emu) {
     video_init(&emu->video);
     ocula_gpu_init(&emu->ocula_gpu);
 
+    /* OCULA write-only register file (sprint 66): wire video's live pointers
+     * into the memory register block once. Palette + border can then be driven
+     * by blind ROM-space writes (sodiumlb's scheme) instead of the in-band
+     * $BFE0-$BFFF block. Stable for the life of the emulator → covers the main
+     * loop and the savestate-load re-render paths alike. */
+    emu->video.ocula_regs_armed = &emu->memory.ocula_regs_armed;
+    emu->video.ocula_reg_pal    = emu->memory.ocula_reg_pal;
+    emu->video.ocula_reg_border = &emu->memory.ocula_reg_border;
+
     /* Initialize renderer if not headless */
     if (!emu->headless) {
         renderer_init(emu->scale_factor > 0 ? emu->scale_factor : 3, emu->render_software);

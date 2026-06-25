@@ -50,11 +50,27 @@ static bool ocula_block_armed(const video_t* vid, const uint8_t* memory) {
            memory[OCULA_PAL_MAGIC] == 'O' && memory[OCULA_PAL_MAGIC + 1] == 'C';
 }
 
-/* Re-evaluate the redefinable palette at frame start. Armed by the
- * 'O','C' magic at OCULA_PAL_MAGIC: 8 RGB332 entries at OCULA_PAL_BASE
- * replace the standard palette for the coming frame. */
+/* True when the OCULA write-only register file is the active source for
+ * palette + border (sprint 66): a register was written since unlock. Live
+ * read through the pointer wired from memory_t; NULL in the bare unit-test
+ * path. When armed, the register file overrides the in-band $BFE0-$BFFF
+ * block during the transition to sodiumlb's register scheme. */
+static bool ocula_regs_active(const video_t* vid) {
+    return vid->ocula_regs_armed && *vid->ocula_regs_armed &&
+           vid->ocula_reg_pal && vid->ocula_reg_border;
+}
+
+/* Re-evaluate the redefinable palette at scanline start. Source order:
+ * (1) the write-only register file if armed (sprint 66), else (2) the in-band
+ * $BFE0-$BFE7 block if magic-armed + unlocked, else (3) the standard palette. */
 static void palette_latch(video_t* vid, const uint8_t* memory) {
-    if (ocula_block_armed(vid, memory)) {
+    if (ocula_regs_active(vid)) {
+        for (int i = 0; i < 8; i++) {
+            rgb332_to_rgb888(vid->ocula_reg_pal[i],
+                             &vid->pal_rgb[i][0], &vid->pal_rgb[i][1],
+                             &vid->pal_rgb[i][2]);
+        }
+    } else if (ocula_block_armed(vid, memory)) {
         for (int i = 0; i < 8; i++) {
             rgb332_to_rgb888(memory[OCULA_PAL_BASE + i],
                              &vid->pal_rgb[i][0], &vid->pal_rgb[i][1],
@@ -73,7 +89,11 @@ static void palette_latch(video_t* vid, const uint8_t* memory) {
  * only fills the per-line model exposed by video_get_border_rgb(). */
 static void border_latch(video_t* vid, const uint8_t* memory, int y) {
     if (y < 0 || y >= OCULA_MAX_H) return;
-    if (ocula_block_armed(vid, memory)) {
+    if (ocula_regs_active(vid)) {
+        rgb332_to_rgb888(*vid->ocula_reg_border,
+                         &vid->ocula_border[y][0], &vid->ocula_border[y][1],
+                         &vid->ocula_border[y][2]);
+    } else if (ocula_block_armed(vid, memory)) {
         rgb332_to_rgb888(memory[OCULA_BORDER_REG],
                          &vid->ocula_border[y][0], &vid->ocula_border[y][1],
                          &vid->ocula_border[y][2]);
