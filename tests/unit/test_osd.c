@@ -91,6 +91,23 @@ TEST(test_osd_eject_returns_action) {
     PASS();
 }
 
+TEST(test_osd_eject_depends_on_selected_media) {
+    osd_t osd; osd_init(&osd);
+    const char* dir = "/tmp/phosphoric_osd_test";
+    const char* dirs[] = { dir, NULL };
+    osd_scan(&osd, dirs);          /* alpha.tap, zeta.tap (K), game.dsk (D) */
+    osd.open = true;
+    /* entrée 0 = cassette → Suppr demande l'éjection cassette */
+    osd.selected = 0;
+    ASSERT_TRUE(!osd.entries[0].is_disk);
+    ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_EJECT_TAPE);
+    /* entrée 2 = disque → Suppr demande l'éjection disque (lecteur cible) */
+    osd.selected = 2;
+    ASSERT_TRUE(osd.entries[2].is_disk);
+    ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_EJECT);
+    PASS();
+}
+
 TEST(test_osd_enter_returns_activate) {
     osd_t osd; osd_init(&osd);
     const char* dir = "/tmp/phosphoric_osd_test";
@@ -146,6 +163,7 @@ int main(void) {
     RUN(test_osd_navigation_clamps);
     RUN(test_osd_left_right_cycle_drive);
     RUN(test_osd_eject_returns_action);
+    RUN(test_osd_eject_depends_on_selected_media);
     RUN(test_osd_enter_returns_activate);
     RUN(test_osd_key_ignored_when_closed);
     RUN(test_osd_render_draws_text);

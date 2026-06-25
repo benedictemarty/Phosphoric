@@ -1003,6 +1003,22 @@ static void osd_do_eject(emulator_t* emu) {
     osd_close(&emu->osd);
 }
 
+/* OSD : éjecte la cassette (libère le tampon TAP, vide le pont de lecture). */
+static void osd_do_eject_tape(emulator_t* emu) {
+    if (!emu->tape_loaded && !emu->tapebuf) {
+        snprintf(emu->osd.status, sizeof(emu->osd.status), "Aucune cassette");
+        return;
+    }
+    if (emu->tapebuf) { free(emu->tapebuf); emu->tapebuf = NULL; }
+    emu->tapelen = 0;
+    emu->tapeoffs = 0;
+    emu->tape_loaded = false;
+    emu->tape_path = NULL;
+    snprintf(emu->osd.status, sizeof(emu->osd.status), "Cassette ejectee");
+    log_info("OSD: cassette ejectee");
+    osd_close(&emu->osd);
+}
+
 /* OSD hot-swap : charge le média sélectionné dans l'overlay (cassette ou
  * disquette lecteur A) sans quitter l'émulateur. */
 static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
@@ -2353,6 +2369,8 @@ static void emulator_run(emulator_t* emu) {
                                 osd_do_load(emu, &emu->osd.entries[emu->osd.selected]);
                             else if (act == OSD_EJECT)
                                 osd_do_eject(emu);
+                            else if (act == OSD_EJECT_TAPE)
+                                osd_do_eject_tape(emu);
                         }
                         break;  /* consomme l'événement */
                     }

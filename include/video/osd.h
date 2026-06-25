@@ -54,6 +54,7 @@ typedef enum {
     OSD_NONE = 0,
     OSD_ACTIVATE,            /* l'utilisateur a validé : charger entries[selected] */
     OSD_EJECT,               /* éjecter le disque du lecteur cible (disk_drive) */
+    OSD_EJECT_TAPE,          /* éjecter la cassette (média surligné de type .tap) */
     OSD_CLOSED               /* l'overlay vient de se fermer */
 } osd_action_t;
 

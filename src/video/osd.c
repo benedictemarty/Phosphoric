@@ -110,6 +110,10 @@ osd_action_t osd_key(osd_t* osd, int key) {
             if (osd->count > 0) return OSD_ACTIVATE;
             break;
         case OSD_KEY_EJECT:
+            /* Éjecte selon le média surligné : cassette si l'entrée est un .tap,
+             * sinon le disque du lecteur cible (défaut si liste vide). */
+            if (osd->count > 0 && !osd->entries[osd->selected].is_disk)
+                return OSD_EJECT_TAPE;
             return OSD_EJECT;
         default: break;
     }

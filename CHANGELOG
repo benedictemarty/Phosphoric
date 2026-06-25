@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.4-alpha] - 2026-06-25
+
+### Added — OSD : éjection de la cassette
+
+Dernier maillon du hot-swap média de l'overlay F6 (ROADMAP Sprint 63) : la
+touche `Suppr` éjecte désormais **selon le média surligné** dans la liste.
+
+- **`include/video/osd.h` / `src/video/osd.c`** : nouvelle action
+  `OSD_EJECT_TAPE`. `osd_key()` renvoie `OSD_EJECT_TAPE` quand l'entrée
+  surlignée est une cassette (`.tap`), sinon `OSD_EJECT` (disque du lecteur
+  cible — comportement inchangé, défaut si la liste est vide).
+- **`src/main.c::osd_do_eject_tape()`** : libère `tapebuf`, remet à zéro
+  `tapelen`/`tapeoffs`/`tape_loaded`/`tape_path`, ferme l'overlay.
+- 1 test (`make test-osd`) : `test_osd_eject_depends_on_selected_media`
+  (cassette surlignée → `OSD_EJECT_TAPE` ; disque → `OSD_EJECT`). 812 tests.
+
+#### Changed
+
+- `EMU_VERSION` 1.25.3 → 1.25.4-alpha.
+
 ## [1.25.3-alpha] - 2026-06-25
 
 ### Added — OSD : éjection disque + write-back avant swap
