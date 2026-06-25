@@ -41,7 +41,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.23.1-alpha"
+#define EMU_VERSION "1.25.3-alpha"
 
 /**
  * @brief ORIC machine model
@@ -154,6 +154,8 @@ typedef struct emulator_s {
     /* Microdisc controller */
     microdisc_t microdisc;
     sedoric_disk_t* disks[MICRODISC_MAX_DRIVES]; /* 4 drives: A, B, C, D */
+    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* fichier .dsk par lecteur (write-back/éjection) */
+    bool disk_writeback;     /* --disk-writeback : réécrire les .dsk modifiés */
     bool has_microdisc;
 
     /* Tape buffer for ROM patching (CLOAD support) */
