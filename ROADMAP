@@ -182,6 +182,32 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
+### Sprint 64: OCULA — registre de bordure $BFEA (amendement RFC #53) (v1.24.0-alpha) - PARTIEL
+
+> Réponse à la demande répétée de Dbug (couleur de bordure + raster bars)
+> sur le forum [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709),
+> et au choix RGB332 acté. Spec : `docs/ocula_extensions.md` v0.10
+> (sections « Pourquoi RGB332 », « Fenêtre de latch », « Bordure et
+> registres de position $BFEA-$BFFF »).
+
+- Réalisé (v1.24.0-alpha) — **registre BORDER + modèle par scanline** :
+  - [x] `$BFEA` latché par scanline sous le gating opt-in de la palette
+        (profil OCULA + déverrouillage + magic `'O','C'`), décodage RGB332
+        partagé avec la palette (`rgb332_to_rgb888()`), prédicat
+        `ocula_block_armed()`, `border_latch()` dans `video.c`.
+  - [x] Défaut sûr : `$00`/désarmé/ULA stock ⇒ bordure noire = Oric d'origine.
+  - [x] Raster bars : réécriture de $BFEA entre scanlines → couleur par ligne.
+  - [x] API `video_get_border_rgb(vid, y, …)`, champ `ocula_border[]`.
+  - [x] 6 tests `test_ocula.c` (gating complet + raster) — 79 tests OCULA OK.
+- À faire :
+  - [ ] **Rendu visible** : ajouter une bande overscan au framebuffer pour
+        peindre réellement la bordure (Sprint 65) — aujourd'hui modélisée
+        par ligne mais sans pixels à l'écran.
+  - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
+        in-band, SPLIT) — v2.
+  - [ ] Poster l'amendement sur le forum t=2709 + intégrer le retour
+        sodiumlb/Dbug.
+
 ### Sprint 63 (EN COURS): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
 
 > Noté en fin de session : besoin d'un système **côté hôte** pour changer la

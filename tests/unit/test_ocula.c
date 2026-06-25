@@ -537,6 +537,93 @@ TEST(test_palette_restores_when_magic_removed) {
     ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);  /* back to white */
 }
 
+/* ───────────────────────── Border register ($BFEA) ───────────────────── */
+
+/* Armed + unlocked: $BFEA decodes as RGB332 into the per-scanline border. */
+TEST(test_border_armed_decodes_rgb332) {
+    static video_t vid;
+    setup_80col(&vid);                  /* OCULA + unlocked */
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_BORDER_REG]    = 0x03;  /* RGB332 000 000 11 = pure blue */
+    video_render_scanline(&vid, mem80, 0);
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0x00); ASSERT_EQ(b, 0xFF);
+}
+
+/* No magic: the block is plain storage, border stays black (stock Oric). */
+TEST(test_border_inert_without_magic) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[OCULA_BORDER_REG] = 0xE0;     /* would be red if interpreted */
+    video_render_scanline(&vid, mem80, 0);
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0x00); ASSERT_EQ(b, 0x00);
+}
+
+/* Stock HCS 10017 never scans the block: border stays black. */
+TEST(test_border_inert_on_stock_ula) {
+    static video_t vid;
+    setup_80col(&vid);
+    video_set_profile(&vid, ULA_PROFILE_HCS10017);
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_BORDER_REG]    = 0xE0;
+    video_render_scanline(&vid, mem80, 0);
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0x00); ASSERT_EQ(b, 0x00);
+}
+
+/* OCULA but still locked: opt-in gate keeps the border inert. */
+TEST(test_border_inert_until_unlock) {
+    static video_t vid;
+    setup_80col(&vid);
+    vid.ocula_unlocked = false;         /* re-lock */
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_BORDER_REG]    = 0xE0;
+    video_render_scanline(&vid, mem80, 0);
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0x00); ASSERT_EQ(b, 0x00);
+}
+
+/* Armed with $BFEA=$00: black border = identical to a stock Oric. */
+TEST(test_border_zero_is_black_when_armed) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    mem80[OCULA_BORDER_REG]    = 0x00;
+    video_render_scanline(&vid, mem80, 0);
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0x00); ASSERT_EQ(b, 0x00);
+}
+
+/* Per-scanline re-read: rewriting $BFEA between lines = border raster bars. */
+TEST(test_border_raster_per_scanline) {
+    static video_t vid;
+    setup_80col(&vid);
+    mem80[OCULA_PAL_MAGIC]     = 'O';
+    mem80[OCULA_PAL_MAGIC + 1] = 'C';
+    /* even lines -> red (0xE0), odd lines -> green (0x1C) */
+    for (int y = 0; y < 4; y++) {
+        mem80[OCULA_BORDER_REG] = (y & 1) ? 0x1C : 0xE0;
+        video_render_scanline(&vid, mem80, y);
+    }
+    uint8_t r, g, b;
+    video_get_border_rgb(&vid, 0, &r, &g, &b);
+    ASSERT_EQ(r, 0xFF); ASSERT_EQ(g, 0x00);   /* line 0: red */
+    video_get_border_rgb(&vid, 1, &r, &g, &b);
+    ASSERT_EQ(r, 0x00); ASSERT_EQ(g, 0xFF);   /* line 1: green */
+    video_get_border_rgb(&vid, 2, &r, &g, &b);
+    ASSERT_EQ(r, 0xFF); ASSERT_EQ(g, 0x00);   /* line 2: red again */
+}
+
 TEST(test_exthires_ppm_export_dimensions) {
     static video_t vid;
     setup_80col(&vid);
@@ -1111,6 +1198,12 @@ int main(void) {
     RUN(test_palette_ignored_on_stock_ula);
     RUN(test_palette_applies_in_text_mode);
     RUN(test_palette_restores_when_magic_removed);
+    RUN(test_border_armed_decodes_rgb332);
+    RUN(test_border_inert_without_magic);
+    RUN(test_border_inert_on_stock_ula);
+    RUN(test_border_inert_until_unlock);
+    RUN(test_border_zero_is_black_when_armed);
+    RUN(test_border_raster_per_scanline);
     RUN(test_exthires_ppm_export_dimensions);
     RUN(test_id_registers);
     RUN(test_id_registers_read_only);

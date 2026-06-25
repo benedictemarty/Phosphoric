@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.0-alpha] - 2026-06-25
+
+### Added — OCULA : registre de bordure $BFEA (Sprint 64)
+
+Implémentation du registre `BORDER` de l'amendement RFC #53 (réponse à la
+demande répétée de Dbug, forum [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
+
+- **`$BFEA` = BORDER** : couleur de bordure RGB332, latché **à chaque
+  scanline** sous le même gating opt-in que la palette (profil OCULA +
+  déverrouillage + magic `'O','C'`). `$00`/désarmé/ULA stock ⇒ noir =
+  bordure Oric d'origine. Réécrire $BFEA entre deux lignes produit des
+  **raster bars de bordure**.
+- **`src/video/video.c`** : helper `rgb332_to_rgb888()` factorisé
+  (palette + bordure décodent à l'identique), prédicat `ocula_block_armed()`,
+  `border_latch()` appelé par scanline ; buffer par ligne `video_t.ocula_border`
+  remis à zéro au reset / changement de profil.
+- **`include/video/video.h`** : constante `OCULA_BORDER_REG`, champ
+  `ocula_border[OCULA_MAX_H][3]`, API `video_get_border_rgb(vid, y, …)`.
+- **Tests** : 6 nouveaux cas dans `test_ocula.c` (décodage RGB332, inertie
+  sans magic / sur ULA stock / avant déverrouillage, $00 = noir, raster
+  par scanline) — **79 tests OCULA OK**, suites vidéo/renderer/savestate/osd
+  vertes.
+- **Limite connue** : le framebuffer n'a pas encore de bande overscan ; la
+  bordure est modélisée par ligne et exposée via l'API, son **rendu visible**
+  reste à faire (cf. ROADMAP Sprint 65).
+
 ## [1.23.2-alpha] - 2026-06-25
 
 ### Added — Spec OCULA : bordure et registres de position (amendement RFC #53)

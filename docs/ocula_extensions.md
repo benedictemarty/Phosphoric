@@ -1,6 +1,7 @@
 # Spécification des extensions OCULA
 
-**Statut** : brouillon v0.9 (Sprint 46, étapes 1-5 + opt-in + palette par scanline) — vérifié
+**Statut** : brouillon v0.10 (Sprint 46, étapes 1-5 + opt-in + palette par
+scanline + bordure/registres de position) — vérifié
 sans conflit avec le firmware officiel [sodiumlb/ocula-pivic-firmware](https://github.com/sodiumlb/ocula-pivic-firmware)
 v0.1.4 (voir [ocula_firmware_alignment.md](ocula_firmware_alignment.md)) ;
 à proposer upstream ([forum.defence-force.org t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)).
@@ -175,6 +176,85 @@ perturbés, même si leurs octets ressemblent au magic.
   puis `POKE#BFE8,79:POKE#BFE9,67` (arme 'O','C') puis `POKE#BFE7,224`
   (entrée 7 → rouge pur 0xE0). Désarmement : `POKE#BFE8,0`.
 
+### Pourquoi RGB332 et non RGB444
+
+> **Contexte** : débat profondeur de couleur sur le fil
+> [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709)
+> (24 juin 2026). Dbug plaide pour le RGB332 ; cette spec confirme ce
+> choix.
+
+Une entrée RGB332 tient sur **un seul octet** — l'écriture d'une couleur
+est donc **atomique**. C'est décisif avec la relecture par scanline :
+sous RGB444 (2 octets/entrée) une couleur réécrite entre deux scanlines
+pourrait être **lue à moitié mise à jour** (octet haut neuf, octet bas
+ancien) → couleur transitoire parasite sur une ligne. Le RGB332 supprime
+ce *tearing de palette* sans verrou ni double-buffer côté RP2350.
+
+Conséquence : 8 entrées = **8 octets** ($BFE0-$BFE7). Avec les 2 octets
+magiques, le bloc 32 octets $BFE0-$BFFF garde **22 octets libres**
+($BFEA-$BFFF) — réemployés comme **registres de position** (section
+suivante), exactement l'usage proposé par Dbug pour la marge laissée par
+le RGB332.
+
+### Fenêtre de latch (changements continus vs par scanline)
+
+La même mécanique sert le split unique, le raster et le plasma : ils ne
+diffèrent que par la **fréquence d'écriture**. Le RP2350 latche tout le
+bloc $BFE0-$BFFF **au début de chaque scanline** (pendant le HBLANK
+précédent). Une écriture CPU prise dans la fenêtre [début HBLANK → début
+scanline] s'applique à **la scanline suivante** ; au-delà, à celle
+d'après. Un « plasma continu » n'est donc pas un mode à part : c'est une
+écriture du bloc à chaque HBLANK, la granularité minimale étant **une
+scanline** (il n'existe pas de changement intra-ligne — fidèle au fetch
+ligne par ligne du matériel).
+
+## Bordure et registres de position $BFEA-$BFFF (étape 3, in-band)
+
+> **Contexte** : Dbug a demandé (deux fois, 24 juin) le contrôle de la
+> **couleur de bordure** et suggéré d'employer la marge RGB332 comme
+> **registres de position**. Cette section répond aux deux d'un coup.
+
+Les 22 octets au-dessus de la palette forment un **fichier de registres
+in-band**, relu par scanline et soumis au **même gating** que la palette
+(magic `'O','C'` à $BFE8-$BFE9 **+** OCULA déverrouillé). Sur ULA stock
+la zone n'est jamais balayée (neutre) ; sans le magic, c'est un simple
+stockage RAM.
+
+| Adresse | Registre | Sémantique |
+|---------|----------|------------|
+| $BFEA | **BORDER** | couleur de bordure **RGB332**, relue **par scanline**. `$00` = noir = bordure Oric standard (compat visuelle). |
+| $BFEB | **BORDER_CTL** | réservé v2 (bit 0 prévu : BORDER interprété comme *index palette 0-7* au lieu de RGB332 direct). Lit/écrit libre, sans effet en v1. |
+| $BFEC | **SCROLLX** | réservé v2 — offset fin horizontal des modes bitmap étendus (miroir in-band tier-1 du `SCROLL` GPU, op $04). |
+| $BFED | **SCROLLY** | réservé v2 — offset vertical idem. |
+| $BFEE | **SPLIT** | réservé v2 — ligne de bascule matérielle (split-screen sans CPU). |
+| $BFEF-$BFFF | — | réservé v2 (17 octets : fenêtres, registres futurs). |
+
+### Bordure : sémantique
+
+- **Indépendante des attributs série** : INK/PAPER se réarment
+  blanc/noir par colonne dans la zone active ; BORDER colore uniquement
+  l'**overscan** (la région que l'ULA d'origine peint en noir).
+- **Relue par scanline** → en réécrivant $BFEA entre deux lignes on
+  obtient des **raster bars de bordure** (l'effet réclamé par Dbug, ex.
+  barres horizontales qui débordent du cadre).
+- **Défaut sûr** : magic armé + `$BFEA=$00` ⇒ bordure noire, identique à
+  un Oric d'origine. Un programme qui ne veut **que** la bordure (pas la
+  palette redéfinie) arme le magic puis écrit la **palette Oric standard**
+  dans $BFE0-$BFE7 : les couleurs ne bougent pas, seule la bordure est
+  pilotée.
+- **Tier 1** : in-band, dégradation gracieuse. Sur un HCS 10017 l'octet
+  $BFEA n'est jamais lu → bordure noire d'origine. Aucune détection
+  préalable requise (contrairement au banking/GPU, tier 2).
+
+### Exemple BASIC — bordure bleue, puis raster bordure
+
+```basic
+10 POKE#FB00,79:POKE#FB00,67    ' déverrouille OCULA
+20 POKE#BFE8,79:POKE#BFE9,67    ' arme le bloc palette/registres
+30 POKE#BFEA,3                  ' bordure bleu pur RGB332 (0b00000011)
+40 REM réécrire #BFEA pendant l'affichage = barres de bordure par ligne
+```
+
 ## Fenêtre I/O $03E0-$03E7 : identification + banking (étape 4)
 
 Contrairement aux extensions vidéo (in-band), cette fenêtre est de
@@ -331,5 +411,9 @@ d'horloge du matériel.
 
 - Émulateur : Phosphoric `--ula ocula` (src/video/video.c,
   `render_80col_scanline`, latch dans `video_render_scanline`)
+- **Bordure** : `border_latch()` / `video_get_border_rgb()` (Sprint 64) —
+  registre `$BFEA` latché par scanline. **Modèle par ligne uniquement** :
+  le framebuffer n'a pas encore de bande overscan, le rendu visible de la
+  bordure reste à faire (ROADMAP Sprint 65). Registres $BFEB-$BFFF réservés v2.
 - Tests : `make test-ocula` (tests/unit/test_ocula.c)
 - Matériel : à venir (firmware RP2350B du projet OCULA)
