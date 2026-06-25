@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.2-alpha] - 2026-06-25
+
+### Changed — Démos OCULA : `menu.sh` expose `--no-border`
+
+Le lanceur `demos/ocula/menu.sh` accepte désormais `--no-border` (transmis à
+l'émulateur) pour comparer les démos avec/sans le rendu overscan du Sprint 65,
+en particulier la démo « 5) Bordure animée ». Usage et README mis à jour.
+
+### Fixed — `menu.sh` : heredoc non quoté plantait sous `set -u`
+
+Le libellé « 5) Bordure animée ($BFEA…) » ajouté en 1.25.1 contenait `$BFEA`
+dans un heredoc `cat <<MENU` non quoté : `set -u` traitait `$BFEA` comme une
+variable non liée et avortait l'affichage du menu. Délimiteur passé à
+`<<'MENU'` (texte 100 % statique).
+
 ## [1.25.1-alpha] - 2026-06-25
 
 ### Added — Démo OCULA : bordure animée `oculabord` (BASIC)
