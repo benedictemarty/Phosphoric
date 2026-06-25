@@ -3116,6 +3116,20 @@ int main(int argc, char* argv[]) {
     } else {
         emu.acia_base_addr = ACIA_DEFAULT_BASE;
     }
+    /* Garde-fou : sous --loci, la MIA occupe $03A0-$03BF et est routée AVANT
+     * l'ACIA dans les callbacks I/O. Si l'ACIA y est forcée (--acia-addr dans
+     * cette plage), la MIA la masque ET pilote le PSG/clavier → le scan clavier
+     * lit du vide et get_key boucle → terminal « figé » (annuaire BBS gelé).
+     * Le vrai LOCI expose son modem USB-CDC à $0380, pas dans la MIA. */
+    if (loci_enabled && serial_arg &&
+        emu.acia_base_addr <= LOCI_MIA_END &&
+        (uint16_t)(emu.acia_base_addr + 3) >= LOCI_MIA_BASE) {
+        log_warning("--acia-addr $%04X tombe dans la MIA LOCI ($%04X-$%04X) : la MIA "
+                    "masque l'ACIA et casse le scan clavier (PSG) -> terminal fige.",
+                    emu.acia_base_addr, LOCI_MIA_BASE, LOCI_MIA_END);
+        log_warning("  Retirez --loci (le modem n'en a pas besoin), ou laissez "
+                    "l'ACIA LOCI par defaut $0380 (sans --acia-addr).");
+    }
     if (serial_arg) {
         /* First try the shared transparent transports (loopback/tcp/pty/com),
          * then the ACIA-6551-specific protocol backends (Hayes modem, digitelec,
