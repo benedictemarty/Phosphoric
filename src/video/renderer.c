@@ -16,8 +16,11 @@ static SDL_Renderer* sdl_renderer;
 static SDL_Texture* texture;
 static bool fullscreen;
 static int current_scale;
-static int tex_w = ORIC_SCREEN_W;   /* Current texture/native resolution */
+static int tex_w = ORIC_SCREEN_W;   /* Current texture resolution (border incl.) */
 static int tex_h = ORIC_SCREEN_H;
+static bool border_on = true;       /* Composite the OCULA overscan band (Sprint 65) */
+/* Scratch buffer for the bordered composite (sized to the largest mode). */
+static uint8_t composed[OCULA_BORDERED_MAX_W * OCULA_BORDERED_MAX_H * 3];
 
 bool renderer_init(int scale, bool prefer_software) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) return false;
@@ -76,22 +79,34 @@ void renderer_cleanup(void) {
 }
 
 void renderer_present(video_t* vid) {
-    /* OCULA extended modes change the native resolution at runtime:
-     * recreate the streaming texture (and resize the window) to follow. */
-    if (vid->native_w != tex_w || vid->native_h != tex_h) {
-        tex_w = vid->native_w;
-        tex_h = vid->native_h;
+    /* Source pixels + dimensions: either the active framebuffer directly, or
+     * the active image composited inside the OCULA overscan band (Sprint 65). */
+    const uint8_t* pixels = vid->framebuffer;
+    int src_w = vid->native_w, src_h = vid->native_h;
+    if (border_on) {
+        video_compose_bordered(vid, composed, &src_w, &src_h);
+        pixels = composed;
+    }
+
+    /* OCULA extended modes (and toggling the border) change the source
+     * resolution at runtime: recreate the streaming texture to follow. */
+    if (src_w != tex_w || src_h != tex_h) {
+        tex_w = src_w;
+        tex_h = src_h;
         if (texture) SDL_DestroyTexture(texture);
         texture = SDL_CreateTexture(sdl_renderer,
             SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
             tex_w, tex_h);
         /* No SDL_RenderSetLogicalSize: SDL_RenderCopy fills the window. */
     }
-    SDL_UpdateTexture(texture, NULL, vid->framebuffer, vid->native_w * 3);
+    SDL_UpdateTexture(texture, NULL, pixels, src_w * 3);
     SDL_RenderClear(sdl_renderer);
     SDL_RenderCopy(sdl_renderer, texture, NULL, NULL);
     SDL_RenderPresent(sdl_renderer);
 }
+
+void renderer_set_border(bool on) { border_on = on; }
+bool renderer_get_border(void) { return border_on; }
 
 void renderer_toggle_fullscreen(void) {
     fullscreen = !fullscreen;
@@ -123,6 +138,8 @@ void renderer_cycle_scale(void) {
 bool renderer_init(int scale, bool prefer_software) { (void)scale; (void)prefer_software; return true; }
 void renderer_cleanup(void) {}
 void renderer_present(video_t* vid) { (void)vid; }
+void renderer_set_border(bool on) { (void)on; }
+bool renderer_get_border(void) { return false; }
 void renderer_toggle_fullscreen(void) {}
 void renderer_set_scale(int scale) { (void)scale; }
 int renderer_get_scale(void) { return 1; }

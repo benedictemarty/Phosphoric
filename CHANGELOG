@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0-alpha] - 2026-06-25
+
+### Added — OCULA : rendu overscan visible de la bordure (Sprint 65)
+
+Le registre `$BFEA` (Sprint 64) était modélisé par ligne mais sans pixels à
+l'écran. Cette version **affiche réellement la bordure** autour de l'image
+active, sans toucher au système de coordonnées de la zone active.
+
+- **Compositing à la présentation** : `video_compose_bordered()` (pur,
+  testable headless) entoure le framebuffer actif d'une **bande overscan**
+  (`OCULA_BORDER_W=32` / `OCULA_BORDER_H=24` px par côté). Chaque scanline
+  active `y` peint sa propre couleur `ocula_border[y]` dans ses bandes
+  gauche/droite ; les bandes haute/basse réutilisent la 1re / dernière ligne.
+  → bordure noire par défaut (Oric d'origine), **raster bars** quand un
+  programme pilote `$BFEA` ligne par ligne.
+- **`src/video/renderer.c`** : `renderer_present()` compose dans un tampon
+  puis met à jour la texture aux dimensions bordées (le renderer suit déjà
+  tout changement de résolution). `renderer_set_border()` / `get_border()`.
+- **`include/video/video.h`** : `OCULA_BORDER_W/H`, `OCULA_BORDERED_MAX_W/H`,
+  `video_bordered_w/h()`, `video_compose_bordered()`.
+- **CLI** : `--no-border` désactive la bordure (active par défaut) ; champ
+  `emulator_t.no_border`.
+- **Tests** : 5 cas compositing dans `test_ocula.c` (dimensions, image active
+  centrée, bandes colorées, noir si désarmé, raster par ligne) — **84 tests
+  OCULA OK**, suite complète verte.
+- **Hors scope** : l'export PPM/screenshot/AVI reste en dimensions actives
+  (pas de régression des tests d'export) ; bordure visible dans la fenêtre SDL.
+
 ## [1.24.0-alpha] - 2026-06-25
 
 ### Added — OCULA : registre de bordure $BFEA (Sprint 64)

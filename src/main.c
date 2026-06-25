@@ -108,6 +108,8 @@ EMSCRIPTEN_KEEPALIVE int web_load_state(void) {
 bool renderer_init(int scale, bool prefer_software);
 void renderer_cleanup(void);
 void renderer_present(video_t* vid);
+void renderer_set_border(bool on);
+bool renderer_get_border(void);
 void renderer_toggle_fullscreen(void);
 void renderer_set_scale(int scale);
 int renderer_get_scale(void);
@@ -325,6 +327,7 @@ static void print_usage(const char* program_name) {
     printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
     printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
     printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
+    printf("      --no-border            Disable the OCULA overscan border in the window (on by default)\n");
     printf("      --ula PROFILE          ULA profile: ula (stock HCS 10017, default)\n");
     printf("                             or ocula (OCULA RP2350 replacement, extended modes)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
@@ -1157,6 +1160,7 @@ static bool emulator_init(emulator_t* emu) {
     /* Initialize renderer if not headless */
     if (!emu->headless) {
         renderer_init(emu->scale_factor > 0 ? emu->scale_factor : 3, emu->render_software);
+        renderer_set_border(!emu->no_border);
 #ifdef HAS_SDL2
         SDL_StartTextInput();  /* Enable TEXTINPUT events for symbolic keyboard */
 #endif
@@ -2669,7 +2673,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2711,6 +2715,7 @@ int main(int argc, char* argv[]) {
         {"printer-type",        required_argument, 0, OPT_PRINTER_TYPE},
         {"scale",               required_argument, 0, OPT_SCALE},
         {"render-software",     no_argument,       0, OPT_RENDER_SOFTWARE},
+        {"no-border",           no_argument,       0, OPT_NO_BORDER},
         {"trace",               required_argument, 0, OPT_TRACE},
         {"trace-max",           required_argument, 0, OPT_TRACE_MAX},
         {"profile",             required_argument, 0, OPT_PROFILE},
@@ -2808,6 +2813,7 @@ int main(int argc, char* argv[]) {
                 }
                 break;
             case OPT_RENDER_SOFTWARE: render_software = true; break;
+            case OPT_NO_BORDER: emu.no_border = true; break;
             case OPT_ULA:
                 ula_profile = video_profile_parse(optarg);
                 if (ula_profile < 0) {

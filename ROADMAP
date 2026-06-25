@@ -182,7 +182,29 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
-### Sprint 64: OCULA — registre de bordure $BFEA (amendement RFC #53) (v1.24.0-alpha) - PARTIEL
+### Sprint 65: OCULA — rendu overscan visible de la bordure (v1.25.0-alpha) - DONE
+
+> Affichage réel de la bordure modélisée au Sprint 64, sans toucher au
+> système de coordonnées de la zone active.
+
+- [x] `video_compose_bordered()` (pur, testable headless) entoure le
+      framebuffer actif d'une bande overscan (`OCULA_BORDER_W=32` /
+      `OCULA_BORDER_H=24` px/côté) ; couleur `ocula_border[y]` par scanline
+      dans les bandes G/D, 1re/dernière ligne pour les bandes haute/basse.
+- [x] `renderer.c` compose puis met à jour la texture aux dimensions bordées
+      (le renderer suit déjà tout changement de résolution).
+- [x] `OCULA_BORDER_W/H`, `OCULA_BORDERED_MAX_W/H`, `video_bordered_w/h()`,
+      `renderer_set_border()` / `get_border()`.
+- [x] CLI `--no-border` (active par défaut), champ `emulator_t.no_border`.
+- [x] 5 tests compositing dans `test_ocula.c` — 84 tests OCULA OK, suite verte.
+- À faire :
+  - [ ] Option pour inclure la bordure dans l'export PPM/screenshot/AVI
+        (aujourd'hui dimensions actives, pour ne pas casser les tests d'export).
+  - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
+        in-band, SPLIT) — v2.
+  - [ ] Poster l'amendement sur le forum t=2709 + intégrer le retour sodiumlb/Dbug.
+
+### Sprint 64: OCULA — registre de bordure $BFEA (amendement RFC #53) (v1.24.0-alpha) - DONE
 
 > Réponse à la demande répétée de Dbug (couleur de bordure + raster bars)
 > sur le forum [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709),
@@ -199,10 +221,8 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   - [x] Raster bars : réécriture de $BFEA entre scanlines → couleur par ligne.
   - [x] API `video_get_border_rgb(vid, y, …)`, champ `ocula_border[]`.
   - [x] 6 tests `test_ocula.c` (gating complet + raster) — 79 tests OCULA OK.
+- [x] **Rendu visible** : livré au Sprint 65 (compositing overscan).
 - À faire :
-  - [ ] **Rendu visible** : ajouter une bande overscan au framebuffer pour
-        peindre réellement la bordure (Sprint 65) — aujourd'hui modélisée
-        par ligne mais sans pixels à l'écran.
   - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
         in-band, SPLIT) — v2.
   - [ ] Poster l'amendement sur le forum t=2709 + intégrer le retour

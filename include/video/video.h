@@ -61,6 +61,17 @@
  * See docs/ocula_extensions.md. */
 #define OCULA_BORDER_REG 0xBFEA
 
+/* Visible overscan band composited around the active image at presentation
+ * time (Sprint 65). The active framebuffer keeps its native_w x native_h
+ * dimensions and coordinate system unchanged — the border only exists in the
+ * composited output (SDL window / optional export). Each active scanline y
+ * paints its own ocula_border[y] colour into that line's left/right bands;
+ * the top/bottom bands reuse the first/last active line's colour. */
+#define OCULA_BORDER_W 32   /* left/right overscan, framebuffer px per side */
+#define OCULA_BORDER_H 24   /* top/bottom overscan, framebuffer px per side */
+#define OCULA_BORDERED_MAX_W (OCULA_MAX_W + 2 * OCULA_BORDER_W)
+#define OCULA_BORDERED_MAX_H (OCULA_MAX_H + 2 * OCULA_BORDER_H)
+
 /* ORIC colors */
 #define ORIC_BLACK   0
 #define ORIC_RED     1
@@ -158,6 +169,16 @@ void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b);
  * the OCULA palette block is armed and unlocked. See docs/ocula_extensions.md. */
 void video_get_border_rgb(const video_t* vid, int y,
                           uint8_t* r, uint8_t* g, uint8_t* b);
+
+/* Total dimensions of the bordered (composited) output for the current mode. */
+int  video_bordered_w(const video_t* vid);
+int  video_bordered_h(const video_t* vid);
+
+/* Compose the active framebuffer surrounded by the per-scanline OCULA border
+ * into `out` (RGB888, caller-provided, capacity >= bordered_w*bordered_h*3,
+ * which never exceeds OCULA_BORDERED_MAX_W*OCULA_BORDERED_MAX_H*3). The total
+ * dimensions are returned via *w and *h when non-NULL. */
+void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h);
 
 /* ULA profile management */
 void video_set_profile(video_t* vid, ula_profile_t profile);

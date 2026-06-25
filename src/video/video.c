@@ -168,6 +168,42 @@ void video_get_border_rgb(const video_t* vid, int y,
     *b = vid->ocula_border[y][2];
 }
 
+int video_bordered_w(const video_t* vid) {
+    return vid->native_w + 2 * OCULA_BORDER_W;
+}
+
+int video_bordered_h(const video_t* vid) {
+    return vid->native_h + 2 * OCULA_BORDER_H;
+}
+
+void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
+    int aw = vid->native_w, ah = vid->native_h;
+    int tw = aw + 2 * OCULA_BORDER_W;
+    int th = ah + 2 * OCULA_BORDER_H;
+
+    for (int ty = 0; ty < th; ty++) {
+        /* Active line under this output row (negative / past-end in the
+         * top & bottom bands, where we clamp to the first/last line). */
+        int ay = ty - OCULA_BORDER_H;
+        int cy = ay < 0 ? 0 : (ay >= ah ? ah - 1 : ay);
+        const uint8_t* bc = vid->ocula_border[cy];
+
+        uint8_t* row = out + (size_t)ty * tw * 3;
+        for (int tx = 0; tx < tw; tx++) {
+            row[tx * 3 + 0] = bc[0];
+            row[tx * 3 + 1] = bc[1];
+            row[tx * 3 + 2] = bc[2];
+        }
+        /* Overlay the active scanline inside its left/right border. */
+        if (ay >= 0 && ay < ah) {
+            const uint8_t* src = vid->framebuffer + (size_t)ay * aw * 3;
+            memcpy(row + (size_t)OCULA_BORDER_W * 3, src, (size_t)aw * 3);
+        }
+    }
+    if (w) *w = tw;
+    if (h) *h = th;
+}
+
 static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (x < 0 || x >= vid->native_w || y < 0 || y >= vid->native_h) return;
     int off = (y * vid->native_w + x) * 3;
