@@ -56,7 +56,8 @@ static bool ocula_block_armed(const video_t* vid, const uint8_t* memory) {
  * path. When armed, the register file overrides the in-band $BFE0-$BFFF
  * block during the transition to sodiumlb's register scheme. */
 static bool ocula_regs_active(const video_t* vid) {
-    return vid->ocula_regs_armed && *vid->ocula_regs_armed &&
+    return vid->ula_profile == ULA_PROFILE_OCULA &&   /* never on a stock ULA */
+           vid->ocula_regs_armed && *vid->ocula_regs_armed &&
            vid->ocula_reg_pal && vid->ocula_reg_border;
 }
 

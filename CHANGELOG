@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.1-alpha] - 2026-06-25
+
+### Fixed — OCULA : le register-file ne s'applique plus sous profil stock
+
+`ocula_regs_active()` ne vérifiait pas le profil : un register-file armé
+aurait coloré le rendu même en profil **HCS 10017** (stock), qui doit rester
+byte-for-byte fidèle. Ajout du garde `ula_profile == ULA_PROFILE_OCULA`
+(cohérent avec le chemin in-band). +1 test (`test_regfile_inert_on_stock_ula`).
+
+### Added — Démo OCULA : `oculareg` (registres write-only ROM)
+
+`demos/ocula/oculareg.bas` + `.tap` (option 6 du `menu.sh`) : après
+déverrouillage, pilote palette (`POKE#E000`..`#E700`) et bordure (`POKE#EA00`)
+par écritures aveugles en espace ROM — valide la chaîne BASIC → write ROM →
+snoop → registre → rendu dans l'émulateur réel. Vérifié headless (les couleurs
+du texte suivent les registres). README + reconstruction `bas2tap` mis à jour.
+
 ## [1.26.0-alpha] - 2026-06-25
 
 ### Added — OCULA : register-file write-only ROM pour palette + bordure (Sprint 66, Phase A)

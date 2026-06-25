@@ -822,6 +822,20 @@ TEST(test_regfile_memory_write_decode) {
     memory_cleanup(&mem);
 }
 
+/* A stock HCS 10017 has no registers: armed regs must not affect rendering. */
+TEST(test_regfile_inert_on_stock_ula) {
+    static video_t vid;
+    setup_80col(&vid);
+    wire_regs(&vid);
+    video_set_profile(&vid, ULA_PROFILE_HCS10017);  /* stock ULA */
+    rf_armed = true;
+    rf_pal[7] = 0x1C;                  /* would turn ink green if honoured */
+    mem80[0xBB80] = 0x41;              /* glyph 'A', default white ink */
+    video_render_frame(&vid, mem80);
+    ASSERT_EQ(pixel_r(&vid, 0, 0), 0xFF);  /* still standard white, not green */
+    ASSERT_EQ(pixel_g(&vid, 0, 0), 0xFF);
+}
+
 /* Register writes are gated by the unlock: ignored while locked. */
 TEST(test_regfile_gated_by_unlock) {
     static memory_t mem;
@@ -1435,6 +1449,7 @@ int main(void) {
     RUN(test_regfile_overrides_inband);
     RUN(test_regfile_inert_when_not_armed);
     RUN(test_regfile_border);
+    RUN(test_regfile_inert_on_stock_ula);
     RUN(test_regfile_memory_write_decode);
     RUN(test_regfile_gated_by_unlock);
     RUN(test_regfile_relock_disarms);

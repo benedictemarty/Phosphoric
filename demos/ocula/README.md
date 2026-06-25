@@ -52,6 +52,7 @@ Sprint 65). `Ctrl+C` dans la fenêtre d'une démo revient au menu ; `q` quitte.
 | `ocula_demo` | Palette redéfinissable (cyclage d'une entrée par trame) | BASIC |
 | `ocula80_demo` | Mode texte **80 colonnes** | BASIC |
 | `oculabord` | Bordure overscan **`$BFEA`** (couleur pleine cyclée par trame) | BASIC |
+| `oculareg` | **Registres write-only ROM** (palette `$E0-$E7`, bordure `$EA`) | BASIC |
 
 ### oculaplasma — plasma / raster bars
 La fonctionnalité phare (fil Dbug, forum.defence-force.org t=2709) : la palette
@@ -92,6 +93,16 @@ au raster, comme `oculaplasma.s` le fait pour la palette.
 > (en majuscules) dans l'en-tête cassette et le tronque à 15 caractères ; un
 > nom trop long casse l'auto-run. D'où `oculabord` et non `ocula_border_demo`.
 
+### oculareg — registres write-only ROM (BASIC)
+Démontre la mécanique de registres de sodiumlb (Sprint 66, forum t=2709) :
+après le déverrouillage, la palette et la bordure se pilotent par **écritures
+aveugles en espace ROM** au lieu de l'in-band `$BFE0-$BFFF`. L'ULA ne voit que
+l'octet d'adresse **haut** → 1 page = 1 registre (octet bas *don't-care*) :
+`POKE#E000`..`#E700` = entrées palette 0-7, `POKE#EA00` = bordure (RGB332). La
+démo redéfinit deux entrées puis cycle la bordure → les couleurs du texte sont
+pilotées par les registres, **zéro octet DRAM consommé**. Coexiste avec
+l'in-band (les registres priment dès qu'on en écrit un).
+
 ## Reconstruire les .tap
 
 Sources BASIC (`*.bas`) → `.tap` avec l'outil `bas2tap` :
@@ -101,6 +112,7 @@ make tools
 ./bas2tap demos/ocula/ocula_demo.bas   -o demos/ocula/ocula_demo.tap   --auto-run
 ./bas2tap demos/ocula/ocula80_demo.bas -o demos/ocula/ocula80_demo.tap --auto-run
 ./bas2tap demos/ocula/oculabord.bas    -o demos/ocula/oculabord.tap    --auto-run
+./bas2tap demos/ocula/oculareg.bas     -o demos/ocula/oculareg.tap     --auto-run
 ```
 
 Sources assembleur (`*.s`, syntaxe xa65) → `.bin` → `.tap` (chargées/exécutées
