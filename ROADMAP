@@ -208,9 +208,10 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
         (aujourd'hui dimensions actives, pour ne pas casser les tests d'export).
   - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
         in-band, SPLIT) — v2.
-  - [~] Amendement forum t=2709 : brouillon aligné sur le schéma registres de
-        sodiumlb (`docs/forum-t2709-border-rgb332.md`), **post manuel** (forum
-        authentifié) ; veille cloud surveille la réponse.
+  - [x] Amendement forum t=2709 **posté** (2026-06-25) : réponse à sodiumlb
+        alignée sur son schéma registres (`docs/forum-t2709-border-rgb332.md`).
+        En attente de sa réponse (plage de pages pour palette/bordure) ; veille
+        cloud surveille le fil.
 
 ### Sprint 64: OCULA — registre de bordure $BFEA (amendement RFC #53) (v1.24.0-alpha) - DONE
 
