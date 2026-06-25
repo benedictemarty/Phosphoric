@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.8-alpha] - 2026-06-25
+
+### Added — Disquette vierge double face : `INIT` produit un disque Sedoric valide
+
+Aligne la géométrie de la disquette créée sur celle qu'`INIT B` formate
+(double face) — un blank simple face (v1.25.7) était sous-dimensionné. La
+chaîne **création → `INIT` → disque DIR-able** est désormais bouclée.
+
+- **`src/storage/sedoric.c` / `include/storage/sedoric.h`** :
+  `sedoric_create_blank(tracks, sides)` (géométrie explicite) ; `sedoric_create()`
+  délègue avec les valeurs par défaut. Le chargement raw **infère la géométrie
+  depuis la taille** (multiple exact d'une piste 17×256 ; > 42 pistes et taille
+  paire → double face), pour un round-trip correct.
+- **`src/main.c`** : `--disk-create` crée désormais un blank **double face 42
+  pistes** (365568 o).
+- **Validation e2e** : `--disk-create` → boot Sedoric V4 → `INIT B` → `Y` →
+  « Formating complete », nom « TEST », write-back de l'image complète ;
+  remontée + `DIR B` →
+  **`Drive B V4 (Slv) TEST … 2776 free sectors (D/82/17) 0 Files`** : disque
+  reconnu, double face (D), 82 pistes, valide.
+- 1 test (`make test-storage`) : `test_sedoric_create_blank_double_sided`
+  (géométrie + round-trip d'inférence). 814 tests.
+
+#### Changed
+
+- `EMU_VERSION` 1.25.7 → 1.25.8-alpha.
+
 ## [1.25.7-alpha] - 2026-06-25
 
 ### Added — `--disk-create FILE` + validation e2e du Write Track

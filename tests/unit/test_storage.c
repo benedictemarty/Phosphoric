@@ -80,6 +80,28 @@ TEST(test_sedoric_create) {
     sedoric_destroy(disk);
 }
 
+/* Blank double face + inférence de géométrie raw au rechargement (la géométrie
+ * que formate INIT B de Sedoric ; un blank simple face était sous-dimensionné). */
+TEST(test_sedoric_create_blank_double_sided) {
+    sedoric_disk_t* disk = sedoric_create_blank(42, 2);
+    ASSERT_TRUE(disk != NULL);
+    ASSERT_EQ(disk->tracks, 42);
+    ASSERT_EQ(disk->sides, 2);
+    ASSERT_EQ(disk->sectors, 17);
+    ASSERT_EQ(disk->size, (uint32_t)(2 * 42 * 17 * 256));  /* 365568 */
+
+    /* Round-trip : la géométrie double face doit être ré-inférée à la taille. */
+    const char* path = "test_blank_ds.dsk";
+    ASSERT_TRUE(sedoric_save(disk, path));
+    sedoric_destroy(disk);
+    sedoric_disk_t* re = sedoric_load(path);
+    ASSERT_TRUE(re != NULL);
+    ASSERT_EQ(re->tracks, 42);
+    ASSERT_EQ(re->sides, 2);
+    sedoric_destroy(re);
+    remove(path);
+}
+
 TEST(test_sedoric_sector_rw) {
     sedoric_disk_t* disk = sedoric_create();
     uint8_t write_buf[256];
@@ -431,6 +453,7 @@ int main(void) {
 
     printf("\n  Sedoric:\n");
     RUN(test_sedoric_create);
+    RUN(test_sedoric_create_blank_double_sided);
     RUN(test_sedoric_sector_rw);
     RUN(test_sedoric_invalid_sector);
     RUN(test_sedoric_system_info);
