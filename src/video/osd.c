@@ -109,6 +109,8 @@ osd_action_t osd_key(osd_t* osd, int key) {
         case OSD_KEY_ENTER:
             if (osd->count > 0) return OSD_ACTIVATE;
             break;
+        case OSD_KEY_EJECT:
+            return OSD_EJECT;
         default: break;
     }
     /* garde la sélection visible */
@@ -170,7 +172,7 @@ void osd_render(osd_t* osd, video_t* vid) {
     ty += 12;
     draw_str(osd, vid, tx, ty, "HAUT/BAS=CHOISIR  GCH/DRT=LECTEUR", 160, 160, 160);
     ty += 9;
-    draw_str(osd, vid, tx, ty, "RET=CHARGER  ESC=FERMER", 160, 160, 160);
+    draw_str(osd, vid, tx, ty, "RET=CHARGER  SUPPR=EJECTER  ESC=FERMER", 160, 160, 160);
     ty += 12;
 
     char drv[40];

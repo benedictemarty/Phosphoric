@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.3-alpha] - 2026-06-25
+
+### Added — OSD : éjection disque + write-back avant swap
+
+Complète la gestion média à chaud de l'overlay F6 : on peut éjecter la
+disquette du lecteur cible, et tout swap/éjection sauvegarde au préalable le
+disque s'il a été modifié par le jeu (quand `--disk-writeback` est actif),
+pour ne plus perdre d'écriture (ROADMAP Sprint 63).
+
+- **Éjection** (`include/video/osd.h`, `src/video/osd.c`) : touche `Suppr`
+  (ou `Retour arrière`) → action `OSD_EJECT` ; l'en-tête affiche
+  `SUPPR=EJECTER`. `src/main.c::osd_do_eject()` sauvegarde si besoin, détruit
+  le disque, vide le lecteur (`microdisc_set_disk(drive, NULL, 0, 0, 0)`) et
+  efface le chemin associé.
+- **Write-back avant swap** (`src/main.c::osd_writeback_drive()`) : avant
+  d'écraser/éjecter un disque, si `--disk-writeback` est actif et que le
+  lecteur est *dirty*, le `.dsk` est réécrit via `sedoric_save()` puis le flag
+  *dirty* remis à zéro.
+- **Suivi des chemins par lecteur** (`emulator_t.disk_paths[4]`,
+  `emulator_t.disk_writeback`) : peuplé au démarrage depuis les `--disk*` et
+  mis à jour à chaque swap OSD. Le write-back de sortie utilise désormais
+  `disk_paths[]` (et non plus le tableau local `disk_files[]`), donc un disque
+  chargé/éjecté via l'OSD est correctement persisté à la sortie.
+- 1 test (`make test-osd`) : `test_osd_eject_returns_action`. 811 tests.
+
+#### Changed
+
+- `EMU_VERSION` 1.23.1 → 1.25.3-alpha. Le macro était resté bloqué à
+  1.23.1-alpha alors que le CHANGELOG avait progressé jusqu'à 1.25.2 (les
+  sprints OCULA 64/65 et les brouillons forum avaient mis à jour CHANGELOG/
+  ROADMAP mais pas `EMU_VERSION` ni VERSION_TRACKING/CIRRUS_OS) : régularisé
+  ici.
+
 ## [1.25.2-alpha] - 2026-06-25
 
 ### Changed — Démos OCULA : `menu.sh` expose `--no-border`
@@ -65,7 +98,6 @@ active, sans toucher au système de coordonnées de la zone active.
   OCULA OK**, suite complète verte.
 - **Hors scope** : l'export PPM/screenshot/AVI reste en dimensions actives
   (pas de régression des tests d'export) ; bordure visible dans la fenêtre SDL.
-
 ## [1.24.0-alpha] - 2026-06-25
 
 ### Added — OCULA : registre de bordure $BFEA (Sprint 64)

@@ -79,6 +79,18 @@ TEST(test_osd_left_right_cycle_drive) {
     PASS();
 }
 
+TEST(test_osd_eject_returns_action) {
+    osd_t osd; osd_init(&osd);
+    /* fermé : la touche est ignorée */
+    ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_NONE);
+    osd.open = true;
+    /* ouvert : Suppr demande une éjection (l'appelant décide du lecteur cible) */
+    ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_EJECT);
+    /* éjecter ne ferme pas l'overlay côté OSD (c'est l'appelant qui ferme) */
+    ASSERT_TRUE(osd.open);
+    PASS();
+}
+
 TEST(test_osd_enter_returns_activate) {
     osd_t osd; osd_init(&osd);
     const char* dir = "/tmp/phosphoric_osd_test";
@@ -133,6 +145,7 @@ int main(void) {
     RUN(test_osd_scan_filters_and_sorts);
     RUN(test_osd_navigation_clamps);
     RUN(test_osd_left_right_cycle_drive);
+    RUN(test_osd_eject_returns_action);
     RUN(test_osd_enter_returns_activate);
     RUN(test_osd_key_ignored_when_closed);
     RUN(test_osd_render_draws_text);

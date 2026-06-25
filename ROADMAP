@@ -262,14 +262,25 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
         + `microdisc_set_disk(drive)` (le Microdisc gère 4 lecteurs).
         `emu->disk_path` (UI/savestate) ne suit que le lecteur A.
   - [x] +1 test `test_osd_left_right_cycle_drive` (cyclage + wrap). 799 tests.
+- Réalisé (v1.25.3-alpha) — **OSD : éjection disque + write-back avant swap** :
+  - [x] Touche `Suppr`/`Retour arrière` → `OSD_EJECT` ; `osd_do_eject()` éjecte
+        la disquette du lecteur cible (`microdisc_set_disk(drive, NULL,...)`),
+        en-tête « SUPPR=EJECTER ».
+  - [x] `osd_writeback_drive()` : sauvegarde `sedoric_save()` avant swap/éjection
+        si `--disk-writeback` actif et lecteur *dirty*, puis reset du flag.
+  - [x] Suivi par lecteur `emulator_t.disk_paths[4]` + `disk_writeback` (peuplé
+        au démarrage, MAJ à chaque swap) ; le write-back de sortie utilise
+        désormais `disk_paths[]` → les disques chargés/éjectés via l'OSD sont
+        persistés correctement à la sortie.
+  - [x] +1 test `test_osd_eject_returns_action`. 811 tests.
 - À faire :
   - [ ] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
         dans `src/control.c` (réutiliser le suivi dirty + `--disk-writeback`),
         capability dans `CONTROL_PROTO_CAPS`.
   - [ ] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
         au lieu de relancer la machine.
-  - [ ] OSD : éjection (disque/cassette), write-back avant swap. (Choix du
-        lecteur A–D livré en v1.23.1-alpha.)
+  - [ ] OSD : éjection de la **cassette**. (Choix du lecteur A–D livré en
+        v1.23.1 ; éjection disque + write-back avant swap livrés en v1.25.3.)
   - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud.
 
 ### Sprint 19: Interactive Debugger (v1.1.0-alpha) - DONE

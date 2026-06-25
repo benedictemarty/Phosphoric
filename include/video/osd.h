@@ -27,6 +27,7 @@
 #define OSD_KEY_ESC   4
 #define OSD_KEY_LEFT  5   /* lecteur cible précédent (D <- A) */
 #define OSD_KEY_RIGHT 6   /* lecteur cible suivant   (A -> D) */
+#define OSD_KEY_EJECT 7   /* éjecter le disque du lecteur cible (Suppr) */
 
 #define OSD_DRIVES    4   /* lecteurs disque cibles A..D */
 
@@ -52,6 +53,7 @@ typedef struct {
 typedef enum {
     OSD_NONE = 0,
     OSD_ACTIVATE,            /* l'utilisateur a validé : charger entries[selected] */
+    OSD_EJECT,               /* éjecter le disque du lecteur cible (disk_drive) */
     OSD_CLOSED               /* l'overlay vient de se fermer */
 } osd_action_t;
 

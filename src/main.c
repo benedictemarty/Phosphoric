@@ -965,6 +965,44 @@ static void parse_host_port(const char* spec, char* host, size_t host_sz,
     }
 }
 
+/* Réécrit le .dsk du lecteur @p drv sur disque s'il a été modifié par le jeu
+ * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
+ * pas perdre les écritures. Retourne true si une sauvegarde a eu lieu. */
+static bool osd_writeback_drive(emulator_t* emu, int drv) {
+    if (!emu->disk_writeback || drv < 0 || drv >= MICRODISC_MAX_DRIVES) return false;
+    if (!emu->microdisc.disk_dirty[drv] || !emu->disks[drv] || !emu->disk_paths[drv])
+        return false;
+    bool ok = sedoric_save(emu->disks[drv], emu->disk_paths[drv]);
+    log_info("OSD: write-back lecteur %c -> %s (%s)", 'A' + drv, emu->disk_paths[drv],
+             ok ? "OK" : "ECHEC");
+    emu->microdisc.disk_dirty[drv] = false;
+    return ok;
+}
+
+/* OSD : éjecte la disquette du lecteur cible (write-back préalable si activé). */
+static void osd_do_eject(emulator_t* emu) {
+    if (!emu->has_microdisc) {
+        snprintf(emu->osd.status, sizeof(emu->osd.status),
+                 "Pas de Microdisc (--disk-rom requis)");
+        return;
+    }
+    int drv = emu->osd.disk_drive;
+    if (drv < 0 || drv >= MICRODISC_MAX_DRIVES) drv = 0;
+    if (!emu->disks[drv]) {
+        snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c deja vide", 'A' + drv);
+        return;
+    }
+    osd_writeback_drive(emu, drv);
+    sedoric_destroy(emu->disks[drv]);
+    emu->disks[drv] = NULL;
+    emu->disk_paths[drv] = NULL;
+    microdisc_set_disk(&emu->microdisc, (uint8_t)drv, NULL, 0, 0, 0);
+    if (drv == 0) emu->disk_path = NULL;
+    snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c ejecte", 'A' + drv);
+    log_info("OSD: lecteur %c ejecte", 'A' + drv);
+    osd_close(&emu->osd);
+}
+
 /* OSD hot-swap : charge le média sélectionné dans l'overlay (cassette ou
  * disquette lecteur A) sans quitter l'émulateur. */
 static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
@@ -981,14 +1019,18 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
             snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
             return;
         }
+        /* Sauve l'ancien disque s'il a été modifié, avant de l'écraser. */
+        osd_writeback_drive(emu, drv);
         if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
         emu->disks[drv] = nd;
+        emu->microdisc.disk_dirty[drv] = false;
         microdisc_set_disk(&emu->microdisc, (uint8_t)drv, nd->data, nd->size,
                            nd->tracks, nd->sectors);
-        /* Le chemin "courant" (savestate/UI) suit le lecteur A. Le pointeur
-         * initial vient d'argv (non libérable) ; on ne fait donc que réaffecter. */
+        /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). Les
+         * pointeurs initiaux viennent d'argv (non libérables) → on réaffecte. */
+        emu->disk_paths[drv] = strdup(e->path);
         if (drv == 0)
-            emu->disk_path = strdup(e->path);
+            emu->disk_path = emu->disk_paths[drv];
         snprintf(emu->osd.status, sizeof(emu->osd.status),
                  "Disque %c: %.28s (reboot/DIR)", 'A' + drv, e->name);
         log_info("OSD: disque %c <- %s", 'A' + drv, e->path);
@@ -2300,11 +2342,18 @@ static void emulator_run(emulator_t* emu) {
                         case SDLK_RIGHT:    k = OSD_KEY_RIGHT; break;
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER: k = OSD_KEY_ENTER; break;
+                        case SDLK_DELETE:
+                        case SDLK_BACKSPACE: k = OSD_KEY_EJECT; break;
                         case SDLK_ESCAPE:   k = OSD_KEY_ESC;   break;
                         default: break;
                         }
-                        if (k && osd_key(&emu->osd, k) == OSD_ACTIVATE)
-                            osd_do_load(emu, &emu->osd.entries[emu->osd.selected]);
+                        if (k) {
+                            osd_action_t act = osd_key(&emu->osd, k);
+                            if (act == OSD_ACTIVATE)
+                                osd_do_load(emu, &emu->osd.entries[emu->osd.selected]);
+                            else if (act == OSD_EJECT)
+                                osd_do_eject(emu);
+                        }
                         break;  /* consomme l'événement */
                     }
                     /* F5 = Reset, F10 = Quit, F11 = Fullscreen, F12 = Screenshot */
@@ -3410,6 +3459,11 @@ int main(int argc, char* argv[]) {
     emu.diskrom_path = disk_rom_file;
     emu.tape_path = tape_file;
 
+    /* Suivi par lecteur pour le write-back / l'éjection depuis l'OSD. */
+    emu.disk_writeback = disk_writeback;
+    for (int i = 0; i < MICRODISC_MAX_DRIVES; i++)
+        emu.disk_paths[i] = disk_files[i];
+
     /* Load ROM if specified */
     if (rom_file) {
         log_info("Loading ROM: %s", rom_file);
@@ -3801,14 +3855,16 @@ int main(int argc, char* argv[]) {
      * flag to never clobber a .dsk by accident. */
     if (disk_writeback && emu.has_microdisc) {
         for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
-            if (!emu.microdisc.disk_dirty[i] || !disk_files[i] || !emu.disks[i])
+            /* disk_paths[] suit les swaps OSD ; disk_files[] ne voit qu'argv. */
+            const char* path = emu.disk_paths[i];
+            if (!emu.microdisc.disk_dirty[i] || !path || !emu.disks[i])
                 continue;
-            if (sedoric_save(emu.disks[i], disk_files[i])) {
+            if (sedoric_save(emu.disks[i], path)) {
                 log_info("Disk write-back: drive %c -> %s (%u bytes)",
-                         'A' + i, disk_files[i], emu.disks[i]->size);
+                         'A' + i, path, emu.disks[i]->size);
             } else {
                 log_error("Disk write-back failed: drive %c -> %s",
-                          'A' + i, disk_files[i]);
+                          'A' + i, path);
             }
         }
     }
