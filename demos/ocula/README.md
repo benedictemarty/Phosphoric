@@ -35,6 +35,9 @@ Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
 
 # Texte 80 colonnes (le mode est forcé indépendamment du déverrouillage)
 ./oric1-emu -r roms/basic11b.rom --ocula-80col-basic -t demos/ocula/ocula80_demo.tap -f --render-software --scale 2
+
+# Bordure animée (registre $BFEA, cyclage par trame)
+./oric1-emu -r roms/basic11b.rom --ula ocula -t demos/ocula/oculabord.tap -f --render-software --scale 2
 ```
 
 `-f` = fast-load (injection directe + auto-run, pas besoin de `CLOAD`).
@@ -47,6 +50,7 @@ Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
 | `oculahr` | HIRES étendu **320×200** + palette animée (paper + encre) | machine code |
 | `ocula_demo` | Palette redéfinissable (cyclage d'une entrée par trame) | BASIC |
 | `ocula80_demo` | Mode texte **80 colonnes** | BASIC |
+| `oculabord` | Bordure overscan **`$BFEA`** (couleur pleine cyclée par trame) | BASIC |
 
 ### oculaplasma — plasma / raster bars
 La fonctionnalité phare (fil Dbug, forum.defence-force.org t=2709) : la palette
@@ -73,6 +77,20 @@ espaces puis y écrit des banners sur toute la largeur (480 px). À noter :
 le BASIC est lent à remplir le buffer — laissez quelques secondes avant que
 l'écran soit complet.
 
+### oculabord — bordure overscan (BASIC)
+Déverrouille l'OCULA, arme le bloc palette/registres, écrit une palette texte
+lisible (`$BFE0=0` noir, `$BFE7=255` blanc) puis cycle le registre de bordure
+`$BFEA` une fois par trame : tout le cadre overscan change de couleur en
+continu. La bordure n'est visible qu'avec le rendu overscan (Sprint 65, actif
+par défaut ; `--no-border` pour la masquer). **Couleur pleine** : depuis le
+BASIC on ne peut pas réécrire `$BFEA` en synchro avec le balayage — les
+**raster bars** par scanline (cadre arc-en-ciel) nécessitent du code synchronisé
+au raster, comme `oculaplasma.s` le fait pour la palette.
+
+> ⚠️ Nom de fichier court obligatoire : `bas2tap` embarque le nom du `.bas`
+> (en majuscules) dans l'en-tête cassette et le tronque à 15 caractères ; un
+> nom trop long casse l'auto-run. D'où `oculabord` et non `ocula_border_demo`.
+
 ## Reconstruire les .tap
 
 Sources BASIC (`*.bas`) → `.tap` avec l'outil `bas2tap` :
@@ -81,6 +99,7 @@ Sources BASIC (`*.bas`) → `.tap` avec l'outil `bas2tap` :
 make tools
 ./bas2tap demos/ocula/ocula_demo.bas   -o demos/ocula/ocula_demo.tap   --auto-run
 ./bas2tap demos/ocula/ocula80_demo.bas -o demos/ocula/ocula80_demo.tap --auto-run
+./bas2tap demos/ocula/oculabord.bas    -o demos/ocula/oculabord.tap    --auto-run
 ```
 
 Sources assembleur (`*.s`, syntaxe xa65) → `.bin` → `.tap` (chargées/exécutées
