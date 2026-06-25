@@ -17,7 +17,7 @@ registres write-only ROM de sodiumlb (zéro DRAM, clôt l'objection de Dbug).
   rasters and color changes that don't flash crazily » + question 80 col
   (écran/charset en place + page flipping, ou descendus en mémoire ?).
 
-## Post #2 — À POSTER (réponse à sodiumlb + Dbug)
+## Post #2 — POSTÉ le 2026-06-25 (p=34927, réponse à sodiumlb + Dbug)
 
 Great, thanks both — that pins it down.
 
@@ -42,3 +42,37 @@ rows = $A000-$A8BF, the area HIRES would otherwise use), so it never overlaps th
 charsets, which stay exactly where they are ($B400 standard, $B800 alternate).
 No page flipping for the text itself; it's just a wider framebuffer read from a
 lower base.
+
+## Post #3 — À POSTER (layout concret du page-3 RAM, pour validation sodiumlb)
+
+@Sodiumlightbaby — I went ahead and wired your page-3 RAM idea into Phosphoric
+so there's something concrete to shoot at rather than hand-waving. Here's the
+shape I picked — tell me where it diverges from what you have in mind.
+
+- **Mapping register** — one write-only ROM page (I used **$EB**): `STA $EBxx`
+  with the target page in the data byte maps a **256-byte window** there;
+  writing 0 unmaps it. Gated by the unlock; re-locking unmaps. So a program
+  does: unlock → set the map register → check the signature in the window →
+  use it.
+- **Window layout** (offsets in the mapped page):
+  - `$00/$01` = `'O'/'C'` signature
+  - `$02` = capability bits
+  - `$03` = CPU bank (R/W — drives the $A000-$BFFF banking)
+  - `$04-$0B` = the 8 RGB332 palette entries (R/W)
+  - `$0C` = border (R/W)
+  - rest reserved
+
+The nice part is this **unifies the two halves** you described: the ROM-space
+write-only registers stay the instant per-line path (rasters), and these same
+palette/border bytes are simply **readable/writeable** through the window — so
+the page-3 RAM gives back the read-back that the blind-write registers can't.
+Both views touch the same state.
+
+Open questions for you: is **$EB** (or any single ROM page) fine for the mapping
+register, do you have a preferred **default/parking page** for the window, and
+does the byte layout above match how you'd lay out the 256 bytes — or would you
+rather the palette/border sit at different offsets (or even keep the window
+purely for ID + control and leave palette/border to the ROM writes only)?
+
+It's all behind the unlock and coexists with the older fixed $03E0 window in the
+emulator, so nothing regresses while we settle the encoding.
