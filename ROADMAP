@@ -215,10 +215,17 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   `sectors_per_track` champs.
 - [x] +1 test `test_fdc_write_track` (formate 4 secteurs via flux synthétique,
   vérifie les offsets). 813 tests.
-- [ ] **Reste à faire** : valider `INIT` Sedoric de bout en bout (piloter la ROM
-  contre une disquette vierge montée). `sedoric_create()` fournit déjà l'image
-  vierge mais n'est **pas câblé au CLI** → ajouter un `--disk-create FILE`
-  (créer + monter + sauver à la sortie) pour tester `INIT` réellement.
+- [x] **`--disk-create FILE`** (v1.25.7) : câble `sedoric_create()` au CLI
+  (crée + écrit + monte une disquette vierge en lecteur A, arme le write-back).
+- [x] **Validation e2e (v1.25.7)** : boot Sedoric V4 (SEDO40u) headless,
+  pilotage `--type-keys` → BASIC → `INIT B` → `Y` → écran **« Formating … »**
+  puis **« Formating complete »**, write-back `.dsk` déclenché → le Write Track
+  est exercé et **correct face au vrai DOS Sedoric**.
+- [ ] **Raffinement géométrie** : `sedoric_create()` fait 42 pistes / 1 face
+  (182784 o) alors qu'`INIT` formate plus grand (jusqu'à « Track 81 » →
+  vraisemblablement double face) → blank sous-dimensionné, le format déborde.
+  Aligner la géométrie de la disquette créée sur celle d'`INIT` (probablement
+  2 faces) pour produire un disque formaté complet et bootable.
 
 ### Sprint 65: OCULA — rendu overscan visible de la bordure (v1.25.0-alpha) - DONE
 
