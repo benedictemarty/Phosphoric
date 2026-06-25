@@ -43,6 +43,7 @@ test_loci_sdimg
 test_loci_sdimg_write
 test_mcp40
 test_ocula
+test_osd
 test_printer
 test_profiler
 test_renderer
@@ -69,6 +70,10 @@ tools/sdl_keytest
 # LOCI artifacts at root
 loci_demo.img
 memdump_*.bin
+
+# Scratch capture/diff artifacts
+*.mp4
+same.bin
 
 # Coverage files
 *.gcda

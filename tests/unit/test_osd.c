@@ -63,6 +63,22 @@ TEST(test_osd_navigation_clamps) {
     PASS();
 }
 
+TEST(test_osd_left_right_cycle_drive) {
+    osd_t osd; osd_init(&osd);
+    osd.open = true;
+    ASSERT_EQ(osd.disk_drive, 0);            /* A par défaut */
+    osd_key(&osd, OSD_KEY_RIGHT);            /* A -> B */
+    ASSERT_EQ(osd.disk_drive, 1);
+    osd_key(&osd, OSD_KEY_RIGHT);
+    osd_key(&osd, OSD_KEY_RIGHT);            /* B -> C -> D */
+    ASSERT_EQ(osd.disk_drive, 3);
+    osd_key(&osd, OSD_KEY_RIGHT);            /* D -> A (wrap) */
+    ASSERT_EQ(osd.disk_drive, 0);
+    osd_key(&osd, OSD_KEY_LEFT);             /* A -> D (wrap arrière) */
+    ASSERT_EQ(osd.disk_drive, 3);
+    PASS();
+}
+
 TEST(test_osd_enter_returns_activate) {
     osd_t osd; osd_init(&osd);
     const char* dir = "/tmp/phosphoric_osd_test";
@@ -116,6 +132,7 @@ int main(void) {
     printf("===========================================================\n");
     RUN(test_osd_scan_filters_and_sorts);
     RUN(test_osd_navigation_clamps);
+    RUN(test_osd_left_right_cycle_drive);
     RUN(test_osd_enter_returns_activate);
     RUN(test_osd_key_ignored_when_closed);
     RUN(test_osd_render_draws_text);

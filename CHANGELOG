@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.2-alpha] - 2026-06-25
+
+### Added — Spec OCULA : bordure et registres de position (amendement RFC #53)
+
+Réponse aux retours de Dbug et au débat profondeur de couleur sur le fil
+[t=2709](https://forum.defence-force.org/viewtopic.php?t=2709) (24 juin 2026).
+Documentation seule (`docs/ocula_extensions.md`, brouillon v0.9 → v0.10).
+
+- **Bordure pilotable** : nouveau registre `BORDER` à **$BFEA** (couleur RGB332,
+  relue par scanline → raster bars de bordure). `$00` = noir = bordure Oric
+  standard (compat visuelle). In-band, tier 1, dégradation gracieuse.
+- **Fichier de registres de position $BFEA-$BFFF** : les 22 octets libérés par
+  le choix RGB332 (1 octet/entrée) deviennent un bloc de registres soumis au
+  même gating que la palette (magic `'O','C'` + déverrouillage). Réservés v2 :
+  `BORDER_CTL`, `SCROLLX/Y`, `SPLIT`.
+- **Choix RGB332 acté** (vs RGB444) : argumentaire atomicité — écriture de
+  couleur sur 1 octet, pas de *tearing de palette* à la relecture par scanline.
+- **Clarification fenêtre de latch** : split unique / raster / plasma = même
+  mécanique, seule la fréquence d'écriture change ; granularité = 1 scanline
+  (latch du bloc au HBLANK).
+
+## [1.23.1-alpha] - 2026-06-25
+
+### Added — OSD : choix du lecteur disque cible (A–D)
+
+L'overlay de hot-swap (F6) ne chargeait les disquettes que dans le lecteur A.
+On peut désormais choisir le lecteur cible (A, B, C ou D) avant de valider —
+le Microdisc gère 4 lecteurs, ce qui achève la complétion de la lacune
+hot-swap (ROADMAP Sprint 63).
+
+- **`include/video/osd.h`** : codes touches `OSD_KEY_LEFT`/`OSD_KEY_RIGHT`,
+  champ `osd_t.disk_drive` (0=A .. 3=D), constante `OSD_DRIVES`.
+- **`src/video/osd.c`** : ←/→ font tourner le lecteur cible (avec wrap) ;
+  l'en-tête de l'overlay affiche « LECTEUR DISQUE CIBLE: X » et la nouvelle
+  ligne d'aide « GCH/DRT=LECTEUR ».
+- **`src/main.c`** : flèches gauche/droite mappées sur `OSD_KEY_LEFT/RIGHT`
+  quand l'overlay est ouvert ; `osd_do_load()` charge la disquette dans
+  `emu->disks[disk_drive]` + `microdisc_set_disk(drive, …)`. Le chemin courant
+  (`emu->disk_path`, utilisé par l'UI/savestate) ne suit que le lecteur A.
+- 1 test (`make test-osd`) : `test_osd_left_right_cycle_drive` (cyclage A→D et
+  wrap dans les deux sens). 799 tests.
+
+#### Changed
+
+- `EMU_VERSION` 1.23.0 → 1.23.1-alpha.
+
 ## [1.23.0-alpha] - 2026-06-25
 
 ### Added — OSD : changement de média à chaud (touche F6)

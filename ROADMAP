@@ -201,13 +201,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
         lecteur A depuis l'OSD (la brique « disque à chaud » est livrée ici).
   - [x] **Cassette à chaud** : remplace `tapebuf` depuis l'OSD (puis `CLOAD""`).
   - [x] 5 tests `make test-osd`.
+- Réalisé (v1.23.1-alpha) — **OSD : choix du lecteur cible (A–D)** :
+  - [x] ←/→ font tourner le lecteur cible (A/B/C/D, wrap) ; en-tête « LECTEUR
+        DISQUE CIBLE: X ». `osd_do_load()` charge dans `emu->disks[disk_drive]`
+        + `microdisc_set_disk(drive)` (le Microdisc gère 4 lecteurs).
+        `emu->disk_path` (UI/savestate) ne suit que le lecteur A.
+  - [x] +1 test `test_osd_left_right_cycle_drive` (cyclage + wrap). 799 tests.
 - À faire :
   - [ ] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
         dans `src/control.c` (réutiliser le suivi dirty + `--disk-writeback`),
         capability dans `CONTROL_PROTO_CAPS`.
   - [ ] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
         au lieu de relancer la machine.
-  - [ ] OSD : choix du lecteur (B/C/D), éjection, write-back avant swap.
+  - [ ] OSD : éjection (disque/cassette), write-back avant swap. (Choix du
+        lecteur A–D livré en v1.23.1-alpha.)
   - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud.
 
 ### Sprint 19: Interactive Debugger (v1.1.0-alpha) - DONE
