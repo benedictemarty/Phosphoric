@@ -5,31 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.27.4-alpha] - 2026-06-26
 
-### Added — `examples/claude.bas` : « Claude sur Oric-1 » (API Anthropic via PicoWiFi réel)
+### Removed — `examples/claude.*` (programme indépendant, déplacé)
 
-Client de chat pour l'**API Anthropic** tournant sur l'Oric-1/Atmos émulé,
-dialoguant avec `api.anthropic.com` via le **PicoWiFiModemUSB physique** (USB CDC)
-relié à l'ACIA LOCI `$0380`. Le Pico termine le TLS ; l'Oric n'échange que du clair.
+Le client de chat API Anthropic (`examples/claude.bas`/`.tap`,
+`README-claude.md`, `run-claude.sh`) avait été ajouté à Phosphoric par erreur
+(PR #53) : c'est un **programme applicatif Oric indépendant**, pas un exemple de
+l'émulateur. Il a été **déplacé vers son propre projet** (`~/oricclaude`).
+`~/Oric1` ne contient que l'émulateur Phosphoric.
 
-- **`examples/claude.bas`** : init ACIA $0380, `ATPOSThttps://api.anthropic.com/v1/messages`
-  (en-têtes `x-api-key`/`anthropic-version`/`content-type` segmentés par LF, corps
-  JSON une ligne, terminateur `.`), puis extraction en streaming du marqueur
-  `"text":"` avec déséchappement JSON (`\n`, `\"`, `\\`).
-- **`examples/claude.tap`** : cassette auto-run générée via `bas2tap`.
-- **`examples/run-claude.sh`** : lance `oric1-emu` câblé sur `/dev/ttyACM0`
-  (`--loci --acia-addr 0380 --serial com:9600,8,N,1,/dev/ttyACM0 --serial-buffer 4096`).
-- **`examples/README-claude.md`** : mise en route, protocole, limites.
-- Validé e2e contre le **vrai** Pico : `ATE0`/`ATC1`/`ATI` → connexion WiFi réelle
-  + IP DHCP ; `ATPOST` HTTPS → handshake **TLS OK** (CA reconnu) et format accepté
-  par l'API (401 `invalid x-api-key` avec une fausse clé). Réponse texte complète :
-  nécessite une vraie clé API (appel facturé).
-
-### Known issues
-
-- `INPUT` BASIC coupe sur virgule ; réponses très longues : cadrage `chunked`
-  possiblement inséré (borné par le prompt système ASCII/6 lignes).
+- Retrait des 4 fichiers `examples/claude.*` et de l'entrée CHANGELOG associée.
+- `EMU_VERSION` 1.27.3 → 1.27.4-alpha (assets uniquement, binaire inchangé).
 
 ## [1.27.1-alpha] - 2026-06-25
 
