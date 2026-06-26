@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.5-alpha] - 2026-06-26
+
+### Fixed — mode `--control` : `SIGPIPE` ignoré (arrêt propre sur stdout cassé)
+
+En mode `--control` (pilotage par un agent via *pipes*), `src/control.c` veut
+s'arrêter proprement quand le stdout est cassé (`ferror(stdout)`), mais ce
+contrôle était **inatteignable** : `SIGPIPE` (action par défaut = terminaison)
+tuait l'émulateur **avant**. Invisible en terminal interactif (stdout = tty,
+jamais de SIGPIPE), mais fatal dès qu'un agent ferme/cesse de lire le tuyau.
+
+- **`src/main.c`** : `signal(SIGPIPE, SIG_IGN)` ajouté aux côtés de
+  SIGINT/SIGTERM. Le tuyau cassé est désormais géré via `ferror(stdout)` →
+  `emu->running = false` (arrêt net) au lieu d'une mort par signal.
+
+#### Notes
+
+- **Candidat (non confirmé)** pour le crash signalé « `--control` + `--serial
+  com:/dev/ttyACM0` tué quand stdin est un pipe » : non reproductible ici, même
+  avec un vrai `/dev/ttyACM0` (tous scénarios exit 0). Pour pinpointer la cause
+  exacte côté Pico/agent : `strace -f -e trace=signal,read,write,openat,ioctl`.
+- `EMU_VERSION` 1.27.4 → 1.27.5-alpha.
+
 ## [1.27.4-alpha] - 2026-06-26
 
 ### Removed — `examples/claude.*` (programme indépendant, déplacé)
