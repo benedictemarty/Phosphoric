@@ -3028,6 +3028,13 @@ int main(int argc, char* argv[]) {
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    /* Pilotage par un agent (--control) : stdout/stdin sont des *pipes*, pas un
+     * terminal. Si le pair ferme/cesse de lire, une écriture d'événement
+     * lèverait SIGPIPE et tuerait l'émulateur (mort par signal, invisible en
+     * terminal interactif). control.c veut pourtant s'arrêter PROPREMENT via
+     * ferror(stdout) — mais ce contrôle est inatteignable si SIGPIPE tue avant.
+     * On l'ignore : le tuyau cassé est alors géré proprement (arrêt net). */
+    signal(SIGPIPE, SIG_IGN);
 
     /* Cast discover: standalone mode, list devices and exit */
     if (cast_discover) {
