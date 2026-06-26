@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.6-alpha] - 2026-06-26
+
+### Fixed — `--serial picowifi` : `AT$SCAN` omettait le drapeau de sécurité
+
+Sous le backend `--serial picowifi`, la réponse à `AT$SCAN` ne contenait **pas**
+le drapeau de sécurité par réseau, divergeant du vrai firmware
+PicoWiFiModemUSB. Tout client suivant le format du firmware
+(`<index> <ssid><TAB><'O'|'S'>`) voyait donc **tous** les réseaux comme
+« ouverts », sautait l'étape mot de passe et n'affichait jamais l'indicateur
+« sécurisé ». Signalé par l'équipe OricTel.
+
+- **Réf. firmware** : `PicoWiFiModemUSB/src/at_proprietary.h` (`doScan()`) émet
+  `printf("%d %s\t%c\r\n", i + 1, scanList[i], scanOpen[i] ? 'O' : 'S')` —
+  `O` = ouvert, `S` = sécurisé.
+- **`src/io/serial_picowifi.c`** (`pw_scan()`) : la sortie passe de
+  `"%d %.32s\r\n"` à `"%d %.32s\t%c\r\n"`. La table `seen[]` devient un
+  `pw_ap_t { char ssid[33]; char sec; }` (miroir de `scanList[]`/`scanOpen[]`).
+- **Source nmcli** : requête élargie à `nmcli -t -f SSID,SECURITY dev wifi` ;
+  drapeau dérivé de `sec = (SECURITY vide || "--") ? 'O' : 'S'`.
+- **Parsing terse robuste** : nouvelle `pw_split_ssid_sec()` qui découpe sur le
+  **dernier `:` non échappé** (nmcli `-t` échappe `:` → `\:` et `\` → `\\`),
+  puis dé-échappe le SSID — un SSID contenant `:` n'est plus tronqué.
+- **Liste de repli** (headless/CI) : mélange plausible désormais avec drapeaux
+  (`AlterOP New`/`Livebox-E380`/`FreeWifi_secure` → `S`, `OricNet Guest` → `O`).
+- **Test** : `test_scan_lists_networks` (tests/unit/test_picowifi.c) renforcé —
+  vérifie la présence d'un drapeau TAB-séparé (`\tO`/`\tS`). 72/72 picowifi OK.
+- `EMU_VERSION` 1.27.5 → 1.27.6-alpha.
+
 ## [1.27.5-alpha] - 2026-06-26
 
 ### Fixed — mode `--control` : `SIGPIPE` ignoré (arrêt propre sur stdout cassé)

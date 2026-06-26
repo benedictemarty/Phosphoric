@@ -1148,34 +1148,75 @@ static const char* pw_setstr(char* dst, size_t dsz, const char* a)
  * SSID, hidden (empty) SSIDs skipped, then OK. The emulator runs on a desktop,
  * so we scan the host's real networks via nmcli, with a simulated fallback when
  * nmcli is absent (CI/headless) so the command always returns something usable. */
+/* One scanned access point: SSID plus its security flag, mirroring the
+ * firmware's scanList[]/scanOpen[] pair. sec is 'O' (open) or 'S' (secured),
+ * matching doScan() in at_proprietary.h: printf("%d %s\t%c\r\n", ...). */
+typedef struct {
+    char ssid[33];
+    char sec;          /* 'O' = open, 'S' = secured */
+} pw_ap_t;
+
+/* nmcli terse output (-t) escapes field separators and backslashes: ':' is
+ * emitted as "\:" and '\' as "\\". Split a "SSID:SECURITY" line on the last
+ * UNescaped colon so an SSID containing ':' is not truncated, then unescape
+ * the SSID in place. Returns a pointer to the SECURITY field (may be ""). */
+static const char* pw_split_ssid_sec(char* line)
+{
+    int last = -1;                                  /* index of last raw ':' */
+    for (int i = 0; line[i]; i++) {
+        if (line[i] == '\\' && line[i + 1]) { i++; continue; }  /* skip escaped */
+        if (line[i] == ':') last = i;
+    }
+    const char* sec = "";
+    if (last >= 0) { line[last] = 0; sec = line + last + 1; }
+    /* Unescape the SSID portion: "\:" -> ":", "\\" -> "\". */
+    char* w = line;
+    for (char* r = line; *r; r++) {
+        if (*r == '\\' && r[1]) r++;
+        *w++ = *r;
+    }
+    *w = 0;
+    return sec;
+}
+
 static void pw_scan(picowifi_t* pw)
 {
-    char seen[24][33];
+    pw_ap_t seen[24];
     int  n = 0;
-    FILE* f = popen("nmcli -t -f SSID dev wifi 2>/dev/null", "r");
+    FILE* f = popen("nmcli -t -f SSID,SECURITY dev wifi 2>/dev/null", "r");
     if (f) {
         char line[256];
         while (n < 24 && fgets(line, sizeof line, f)) {
             size_t L = strlen(line);
             while (L && (line[L - 1] == '\n' || line[L - 1] == '\r')) line[--L] = 0;
+            const char* sec_field = pw_split_ssid_sec(line);
             if (!line[0]) continue;                 /* hidden SSID */
+            /* Open AP: SECURITY is empty or the nmcli placeholder "--". */
+            char sec = (!sec_field[0] || !strcmp(sec_field, "--")) ? 'O' : 'S';
             int dup = 0;
             for (int i = 0; i < n; i++)
-                if (!strcmp(seen[i], line)) { dup = 1; break; }
+                if (!strcmp(seen[i].ssid, line)) { dup = 1; break; }
             if (dup) continue;
-            snprintf(seen[n], sizeof seen[n], "%s", line);
+            snprintf(seen[n].ssid, sizeof seen[n].ssid, "%s", line);
+            seen[n].sec = sec;
             n++;
         }
         pclose(f);
     }
     if (n == 0) {                                   /* fallback simulated list */
-        static const char* sim[] = { "AlterOP New", "Livebox-E380", "Freebox-39030C" };
-        for (int i = 0; i < 3; i++) snprintf(seen[i], sizeof seen[i], "%s", sim[i]);
-        n = 3;
+        static const struct { const char* ssid; char sec; } sim[] = {
+            { "AlterOP New", 'S' }, { "Livebox-E380", 'S' }, { "FreeWifi_secure", 'S' },
+            { "OricNet Guest", 'O' },
+        };
+        for (int i = 0; i < 4; i++) {
+            snprintf(seen[i].ssid, sizeof seen[i].ssid, "%s", sim[i].ssid);
+            seen[i].sec = sim[i].sec;
+        }
+        n = 4;
     }
     for (int i = 0; i < n; i++) {
         char b[64];
-        snprintf(b, sizeof b, "%d %.32s\r\n", i + 1, seen[i]);
+        snprintf(b, sizeof b, "%d %.32s\t%c\r\n", i + 1, seen[i].ssid, seen[i].sec);
         pw_rx_str(pw, b);
     }
 }

@@ -1309,6 +1309,24 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 67: PicoWiFi — AT$SCAN drapeau de sécurité (fidélité doScan) (v1.27.6-alpha) - DONE
+
+Bug remonté par l'équipe OricTel : `AT$SCAN` omettait le drapeau de sécurité
+par réseau, divergeant du firmware réel `PicoWiFiModemUSB`. Un client suivant
+le format firmware voyait TOUS les réseaux « ouverts ».
+
+- [x] Réf firmware `at_proprietary.h` doScan() : `printf("%d %s\t%c\r\n", ...,
+      scanOpen[i] ? 'O' : 'S')` — `O`=ouvert, `S`=sécurisé
+- [x] `src/io/serial_picowifi.c` pw_scan() : sortie `"%d %.32s\t%c\r\n"`,
+      `seen[]` → `pw_ap_t{ssid,sec}` (miroir scanList[]/scanOpen[])
+- [x] Source nmcli élargie à `nmcli -t -f SSID,SECURITY` ; drapeau dérivé
+      (`sec = SECURITY vide || "--" ? 'O' : 'S'`)
+- [x] `pw_split_ssid_sec()` : découpe sur le dernier `:` NON échappé (terse
+      échappe `:`→`\:`, `\`→`\\`) + dé-échappe le SSID → SSID à `:` non tronqué
+- [x] Liste de repli (headless/CI) avec drapeaux mixtes O/S
+- [x] `test_scan_lists_networks` renforcé (vérifie `\tO`/`\tS`) ; 72/72
+      picowifi, 814 total inchangé
+
 ### Sprint 25: Centronics Printer Emulation (v1.7.0-alpha) - DONE
 - [x] Centronics printer module (src/io/printer.c, include/io/printer.h)
 - [x] VIA Port A data capture via CA2 STROBE detection (PCR forced low→high)

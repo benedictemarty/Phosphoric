@@ -151,14 +151,18 @@ TEST(test_ssid_preset_from_factory) {
 }
 
 TEST(test_scan_lists_networks) {
-    /* AT$SCAN lists nearby APs as "<index> <ssid>", numbered from 1,
-     * terminated by OK. Uses the host nmcli, with a simulated fallback so
-     * the command always yields a parseable, numbered list. */
+    /* AT$SCAN lists nearby APs as "<index> <ssid>\t<O|S>", numbered from 1,
+     * terminated by OK — mirroring the firmware doScan() format
+     * (at_proprietary.h: printf("%d %s\t%c\r\n", ...), 'O'=open, 'S'=secured).
+     * Uses the host nmcli, with a simulated fallback so the command always
+     * yields a parseable, numbered list with security flags. */
     pw_setup(NULL, NULL);
     char r[1024];
     pw_cmd("AT$SCAN", r, sizeof(r));
     ASSERT_CONTAINS(r, "1 ");
     ASSERT_CONTAINS(r, "OK");
+    /* Each entry must carry a TAB-separated security flag (O or S). */
+    ASSERT_TRUE(strstr(r, "\tO") != NULL || strstr(r, "\tS") != NULL);
     pw_teardown();
 }
 
