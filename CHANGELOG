@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0-alpha] - 2026-06-28
+
+### Added — Fidélité CPU : 105 opcodes illégaux/non documentés du NMOS 6502
+
+Premier jalon du chantier « fidélité matérielle ». Le 6502 NMOS de l'ORIC-1/
+Atmos décode les 256 opcodes : jusqu'ici les 105 codes non officiels étaient
+traités comme de simples NOP (saut d'opérande). Ils sont désormais émulés avec
+leur comportement NMOS documenté, ce qui débloque les démos/intros de la scène
+qui s'en servent.
+
+- **`src/cpu/opcodes.c`** : table d'opcodes corrigée (noms réels, tailles et
+  cycles exacts au lieu de `???`/taille 1) + cas explicites pour les 105 codes :
+  - **RMW combinés** : `SLO`, `RLA`, `SRE`, `RRA`, `DCP`, `ISC` (7 modes chacun)
+    réutilisant les helpers ALU officiels (`op_adc`/`op_sbc`/`op_cmp`).
+  - **Charge/stockage** : `LAX` (LDA+LDX), `SAX` (store A&X).
+  - **Famille AND immédiat** : `ANC`, `ALR/ASR`, `ARR`, `SBX/AXS`.
+  - **Groupe instable** : `ANE/XAA`, `LXA`, `LAS/LAR`, `SHA/AHX`, `SHX`, `SHY`,
+    `TAS/SHS` — modèles documentés courants (constante magique `0xEE`,
+    `reg & (high(addr)+1)`), commentés comme instables sur silicium réel.
+  - **NOP multi-octets** : effectuent désormais la lecture-bus « morte » de leur
+    opérande (fidélité I/O), avec pénalité de franchissement de page en abs,X.
+  - **`JAM`/`KIL`** (12 codes) : figent le CPU (`cpu->halted`) comme le vrai NMOS.
+- **`tests/unit/test_cpu.c`** : +14 tests dédiés (LAX/SAX/SLO/RLA/SRE/RRA/DCP/
+  ISC/ANC/ALR/SBX/JAM/NOP#/SBC non officiel) — 74 → 88 tests CPU.
+- **`tests/unit/test_rominfo.c`** : 2ᵉ JSR de la ROM de test replacé en `$C012`
+  (juste après le `RTS`) au lieu de `$C020` — avec les tailles d'opcode désormais
+  exactes, le padding `$FF` décode en `ISC` (3 octets) et le balayage linéaire
+  aligné de `scan_targets` n'atteignait plus un JSR posé en plein padding.
+  L'intention (2 références JSR vers `$C010`) est préservée.
+
+Note de fidélité collatérale, vérifiée pendant l'audit : le flag Z après `ADC`/
+`SBC` en mode décimal est calculé sur le résultat **binaire** — c'est le
+comportement NMOS réel (et non un bug). Aucune modification nécessaire.
+
+Total tests : 814 → 828. Builds natif + SDL2 OK, 0 régression.
+
 ## [1.27.6-alpha] - 2026-06-26
 
 ### Fixed — `--serial picowifi` : `AT$SCAN` omettait le drapeau de sécurité

@@ -70,10 +70,13 @@ static void setup_rom(void) {
     test_rom[0x0010] = 0xEA;  /* NOP */
     test_rom[0x0011] = 0x60;  /* RTS */
 
-    /* Another JSR $C010 at $C020 */
-    test_rom[0x0020] = 0x20;  /* JSR $C010 */
-    test_rom[0x0021] = 0x10;
-    test_rom[0x0022] = 0xC0;
+    /* Another JSR $C010 at $C012 (right after the RTS so the instruction-aligned
+     * linear sweep reaches it; with accurate NMOS opcode sizes the surrounding
+     * $FF padding now decodes as 3-byte ISC ops and would otherwise swallow a
+     * JSR placed mid-padding). */
+    test_rom[0x0012] = 0x20;  /* JSR $C010 */
+    test_rom[0x0013] = 0x10;
+    test_rom[0x0014] = 0xC0;
 
     /* ASCII string "HELLO WORLD" at $C100 (ROM offset $0100) */
     const char* hello = "HELLO WORLD";
@@ -228,7 +231,7 @@ TEST(test_rominfo_cross_references) {
     rominfo_analyze(&analysis, test_rom, ROM_SIZE);
 
     /* $C010 should be referenced by both JSR and as IRQ/NMI vector */
-    /* At minimum, 2 JSR references from $C002 and $C020 */
+    /* At minimum, 2 JSR references from $C002 and $C012 */
     for (int i = 0; i < analysis.target_count; i++) {
         if (analysis.targets[i].address == 0xC010) {
             ASSERT_TRUE(analysis.targets[i].ref_count >= 2);
