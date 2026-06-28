@@ -337,6 +337,72 @@ TEST(test_ay_mixer) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  TIMESTAMPED WRITES (digidrums / sample-accurate audio)            */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+static void ay_write_reg_timed(ay3891x_t* ay, uint8_t reg, uint8_t val, uint64_t cyc) {
+    ay_write_address(ay, reg);
+    ay_write_data_timed(ay, val, cyc);
+}
+
+TEST(test_ay_timed_mode_flag) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    ASSERT_FALSE(ay.timed_mode);
+    ay_write_reg_timed(&ay, 8, 15, 100);  /* a sound-register write */
+    ASSERT_TRUE(ay.timed_mode);
+    /* Authoritative register updated immediately for reads/keyboard/savestate */
+    ASSERT_EQ(ay.registers[8], 15);
+}
+
+TEST(test_ay_timed_port_not_queued) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    /* Writing an I/O port (reg 14) must update the register immediately and
+     * must NOT engage timed mode (no sound effect, nothing queued). */
+    ay_write_reg_timed(&ay, 14, 0x5A, 100);
+    ASSERT_EQ(ay.registers[14], 0x5A);
+    ASSERT_FALSE(ay.timed_mode);
+}
+
+TEST(test_ay_digidrum_subbuffer_timing) {
+    ay3891x_t ay;
+    int16_t buf[256];
+    ay_init(&ay, 1000000);
+
+    /* Disable tone+noise on every channel (mixer 0x3F) so the output is a pure
+     * DC level set by the channel A volume — ideal to observe a volume change
+     * mid-buffer. Only channel A carries volume (B/C stay 0). */
+    ay_write_reg_timed(&ay, 7, 0x3F, 0);   /* mixer: all tone+noise disabled */
+    ay_write_reg_timed(&ay, 8, 15, 0);     /* chan A volume = max */
+    ay_write_reg_timed(&ay, 8, 0, 500);    /* chan A volume -> 0 at cycle 500 */
+    ay_write_reg_timed(&ay, 9, 0, 1000);   /* dummy: extend span_end to cycle 1000 */
+
+    /* Span = [0,1000], 100 samples → the volume drop at cycle 500 lands at
+     * sample 50 (500*100/1000). Samples 0..49 loud, 50..99 silent. */
+    memset(buf, 0x7F, sizeof(buf));
+    ay_generate(&ay, buf, 100);
+
+    int16_t loud = buf[0];
+    ASSERT_TRUE(loud != 0);          /* first region is the DC high level */
+    ASSERT_EQ(buf[49 * 2], loud);    /* still loud just before the transition */
+    ASSERT_EQ(buf[50 * 2], 0);       /* silent from sample 50 on */
+    ASSERT_EQ(buf[99 * 2], 0);
+}
+
+TEST(test_ay_resync_clears_queue) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    ay_write_reg_timed(&ay, 8, 15, 100);
+    /* A pending event sits in the queue (head != tail). */
+    ASSERT_TRUE(ay.evq_head != ay.evq_tail);
+    ay_sound_resync(&ay);
+    /* Resync drains the queue and mirrors authoritative state into playback. */
+    ASSERT_EQ((unsigned)ay.evq_head, (unsigned)ay.evq_tail);
+    ASSERT_EQ(ay.play.sregs[8], 15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -354,6 +420,10 @@ int main(void) {
     RUN(test_ay_generate_silence);
     RUN(test_ay_generate_tone);
     RUN(test_ay_mixer);
+    RUN(test_ay_timed_mode_flag);
+    RUN(test_ay_timed_port_not_queued);
+    RUN(test_ay_digidrum_subbuffer_timing);
+    RUN(test_ay_resync_clears_queue);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

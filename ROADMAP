@@ -1309,6 +1309,35 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 69: Fidélité audio — écritures PSG horodatées au cycle (digidrums) (v1.29.0-alpha) - DONE
+
+Deuxième jalon « fidélité matérielle » (audit Phosphoric vs Oric réel).
+`ay_generate()` rendait un buffer entier (~46 ms) depuis l'état courant des
+registres, lu sur le thread audio SDL pendant que le CPU les modifiait → toute
+écriture intra-buffer s'appliquait à résolution d'un buffer. Les **digidrums**
+(échantillons 4 bits joués en martelant le registre de volume à cadence audio)
+s'effondraient à une valeur par buffer.
+
+- [x] `include/audio/audio.h` + `src/audio/ay3891x.c` : file d'écritures
+      horodatées au cycle CPU (`ay_event_t`, anneau SPSC lock-free `_Atomic` de
+      4096 entrées) ; `ay_write_data_timed(ay, data, cpu_cycle)`
+- [x] `ay_generate()` rejoue les écritures sur un état de lecture `ay_play_t`
+      dédié, à la position d'échantillon intra-buffer exacte (proportionnelle à
+      la position en cycles de l'écriture dans la fenêtre du buffer)
+- [x] Découplage strict : `registers[]` autoritaires mis à jour immédiatement
+      (lectures/clavier/headless/savestate) ; chemin non horodaté (`ay_write_data`,
+      tests/headless) identique octet pour octet à l'historique
+- [x] `src/main.c` psg_decode : horodatage avec `emu->cpu.cycles`
+- [x] `src/savestate.c` : `ay_sound_resync()` après load (`.ost` inchangé,
+      sérialisation champ par champ)
+- [x] +4 tests `test_audio` (8 → 12) dont la preuve du timing sous-buffer du
+      digidrum ; mixage linéaire + courbe DAC log inchangés (déjà conformes)
+- [x] 828 → 832 tests ; builds natif + SDL2 + headless OK, 0 régression
+
+**Reste pour la « réplique parfaite »** : cœur cycle-par-cycle (dummy-write des
+RMW, timing I/O sub-instruction, raster sub-ligne) ; VIA 6522 (shift register,
+modes CA2/CB2 complets, T2 pulse-counting) ; effets analogiques PAL (hors-scope).
+
 ### Sprint 68: Fidélité CPU — opcodes illégaux NMOS 6502 (v1.28.0-alpha) - DONE
 
 Premier jalon du chantier « fidélité matérielle » (issu de l'audit comparatif
@@ -2314,5 +2343,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-06-28
-**Current Version**: 1.28.0-alpha
+**Current Version**: 1.29.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

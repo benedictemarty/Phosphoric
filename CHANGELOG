@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0-alpha] - 2026-06-28
+
+### Added — Fidélité audio : écritures PSG horodatées au cycle (digidrums)
+
+Deuxième jalon « fidélité matérielle ». Jusqu'ici `ay_generate()` rendait un
+buffer entier (~46 ms à 2048 samples) à partir de l'état courant des registres,
+lu sur le thread audio SDL pendant que le CPU les modifiait : toute écriture de
+registre survenant pendant la fenêtre du buffer s'appliquait avec une résolution
+d'un buffer. Les **digidrums** (échantillons 4 bits joués en martelant le
+registre de volume à cadence audio, technique classique sur Oric) s'effondraient
+donc à une seule valeur par buffer.
+
+- **`include/audio/audio.h` / `src/audio/ay3891x.c`** : file d'écritures
+  horodatées au cycle CPU (`ay_event_t`, anneau SPSC lock-free de 4096 entrées,
+  `_Atomic` tête/queue). Nouveau `ay_write_data_timed(ay, data, cpu_cycle)`.
+  `ay_generate()` rejoue les écritures sur un état de lecture `ay_play_t` dédié,
+  à la **position d'échantillon intra-buffer exacte** (proportionnelle à la
+  position en cycles de l'écriture dans la fenêtre couverte par le buffer).
+- **Découplage strict** : les `registers[]` autoritaires restent mis à jour
+  **immédiatement** sur chaque écriture (lectures, matrice clavier, émulation
+  headless et savestates voient toujours l'état courant) ; seul le rendu audio
+  passe par la file horodatée. Le chemin **non horodaté** (`ay_write_data`,
+  utilisé par les tests et le headless) est **identique octet pour octet** à
+  l'historique.
+- **`src/main.c`** (`psg_decode`) : l'écriture data PSG est désormais horodatée
+  avec `emu->cpu.cycles`.
+- **`src/savestate.c`** : `ay_sound_resync()` après chargement (miroir
+  registres→shadow + purge de la file). Format `.ost` inchangé (sérialisation
+  champ par champ ; les nouveaux champs sont transitoires).
+- **`tests/unit/test_audio.c`** : +4 tests (drapeau timed, port non mis en file,
+  timing sous-buffer du digidrum prouvé, resync purge la file) — 8 → 12 tests
+  PSG. Mixage linéaire et courbe DAC log inchangés (déjà conformes Oricutron).
+
+Total tests : 828 → 832. Builds natif + SDL2 + headless OK, 0 régression.
+
 ## [1.28.0-alpha] - 2026-06-28
 
 ### Added — Fidélité CPU : 105 opcodes illégaux/non documentés du NMOS 6502

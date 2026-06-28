@@ -696,8 +696,9 @@ static void psg_decode(emulator_t* emu) {
         /* Latch Address */
         ay_write_address(&emu->psg, emu->via.ora);
     } else if (bdir && !bc1) {
-        /* Write Data */
-        ay_write_data(&emu->psg, emu->via.ora);
+        /* Write Data — timestamped with the current CPU cycle so audio-rate
+         * register hammering (digidrums) is reproduced sample-accurately. */
+        ay_write_data_timed(&emu->psg, emu->via.ora, emu->cpu.cycles);
     } else if (!bdir && bc1) {
         /* Read Data - PSG data goes onto VIA input for Port A reads */
         emu->via.ira = ay_read_data(&emu->psg);
