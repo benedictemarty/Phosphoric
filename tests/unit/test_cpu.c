@@ -1141,6 +1141,53 @@ TEST(test_illegal_sbc_eb) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  CYCLE ACCURACY: read-modify-write dummy write (observable on I/O)  */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+static int g_io_wcount;
+static uint8_t g_io_writes[4];
+static uint8_t g_io_reg;
+
+static uint8_t rmw_io_read(uint16_t addr, void* ud) { (void)addr; (void)ud; return g_io_reg; }
+static void rmw_io_write(uint16_t addr, uint8_t val, void* ud) {
+    (void)addr; (void)ud;
+    if (g_io_wcount < 4) g_io_writes[g_io_wcount] = val;
+    g_io_wcount++;
+    g_io_reg = val;
+}
+
+TEST(test_rmw_dummy_write_on_io) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    g_io_wcount = 0;
+    g_io_reg = 0x40;
+    memory_set_io_callbacks(&mem, rmw_io_read, rmw_io_write, NULL);
+    /* INC $0310: read ($40) → write-back $40 (dummy) → write $41.
+     * Real NMOS performs the write-back cycle; observable on I/O. */
+    uint8_t code[] = {0xEE, 0x10, 0x03};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu);
+    ASSERT_EQ(g_io_wcount, 2);
+    ASSERT_EQ(g_io_writes[0], 0x40);   /* dummy write = original value */
+    ASSERT_EQ(g_io_writes[1], 0x41);   /* final write = modified value */
+}
+
+TEST(test_rmw_dummy_write_asl_io) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    g_io_wcount = 0;
+    g_io_reg = 0x21;
+    memory_set_io_callbacks(&mem, rmw_io_read, rmw_io_write, NULL);
+    /* ASL $0310: read ($21) → dummy write $21 → write $42 */
+    uint8_t code[] = {0x0E, 0x10, 0x03};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu);
+    ASSERT_EQ(g_io_wcount, 2);
+    ASSERT_EQ(g_io_writes[0], 0x21);
+    ASSERT_EQ(g_io_writes[1], 0x42);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -1269,6 +1316,10 @@ int main(void) {
     RUN(test_illegal_jam_halts);
     RUN(test_illegal_nop_imm_consumes_operand);
     RUN(test_illegal_sbc_eb);
+
+    printf("\n  Cycle Accuracy (RMW dummy write):\n");
+    RUN(test_rmw_dummy_write_on_io);
+    RUN(test_rmw_dummy_write_asl_io);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

@@ -245,9 +245,15 @@ static int do_branch(cpu6502_t* cpu, bool condition) {
  * matches the documented NMOS behaviour and the flag side effects.
  * ════════════════════════════════════════════════════════════════════ */
 
+/* All read-modify-write opcodes (official and illegal) emit the NMOS
+ * write-back cycle: the ORIGINAL value is written back before the modified
+ * value. Invisible on RAM but observable on write-sensitive I/O registers
+ * (e.g. a VIA timer-high or IFR latch reacts to the dummy write). */
+
 /* SLO (ASO): mem <<= 1 (carry from bit7), then A |= mem */
 static void op_slo(cpu6502_t* cpu, uint16_t addr) {
     uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
     cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
     v <<= 1;
     cpu_mem_write(cpu, addr, v);
@@ -258,6 +264,7 @@ static void op_slo(cpu6502_t* cpu, uint16_t addr) {
 /* RLA: mem = ROL(mem), then A &= mem */
 static void op_rla(cpu6502_t* cpu, uint16_t addr) {
     uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
     uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
     cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
     v = (uint8_t)((v << 1) | c);
@@ -269,6 +276,7 @@ static void op_rla(cpu6502_t* cpu, uint16_t addr) {
 /* SRE (LSE): mem >>= 1 (carry from bit0), then A ^= mem */
 static void op_sre(cpu6502_t* cpu, uint16_t addr) {
     uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
     cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
     v >>= 1;
     cpu_mem_write(cpu, addr, v);
@@ -279,6 +287,7 @@ static void op_sre(cpu6502_t* cpu, uint16_t addr) {
 /* RRA: mem = ROR(mem), then ADC mem */
 static void op_rra(cpu6502_t* cpu, uint16_t addr) {
     uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
     uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
     cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
     v = (uint8_t)((v >> 1) | c);
@@ -288,14 +297,18 @@ static void op_rra(cpu6502_t* cpu, uint16_t addr) {
 
 /* DCP (DCM): mem -= 1, then CMP A with mem */
 static void op_dcp(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = (uint8_t)(cpu_mem_read(cpu, addr) - 1);
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    v = (uint8_t)(v - 1);
     cpu_mem_write(cpu, addr, v);
     op_cmp(cpu, cpu->A, v);
 }
 
 /* ISC (ISB/INS): mem += 1, then SBC mem */
 static void op_isc(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = (uint8_t)(cpu_mem_read(cpu, addr) + 1);
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    v = (uint8_t)(v + 1);
     cpu_mem_write(cpu, addr, v);
     op_sbc(cpu, v);
 }
@@ -307,13 +320,63 @@ static void op_lax(cpu6502_t* cpu, uint8_t v) {
     update_nz(cpu, v);
 }
 
+/* ─── Official read-modify-write memory helpers (with dummy write) ─── */
+static void op_asl_m(cpu6502_t* cpu, uint16_t addr) {
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
+    v = (uint8_t)(v << 1);
+    cpu_mem_write(cpu, addr, v);
+    update_nz(cpu, v);
+}
+static void op_lsr_m(cpu6502_t* cpu, uint16_t addr) {
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
+    v = (uint8_t)(v >> 1);
+    cpu_mem_write(cpu, addr, v);
+    update_nz(cpu, v);
+}
+static void op_rol_m(cpu6502_t* cpu, uint16_t addr) {
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
+    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
+    v = (uint8_t)((v << 1) | c);
+    cpu_mem_write(cpu, addr, v);
+    update_nz(cpu, v);
+}
+static void op_ror_m(cpu6502_t* cpu, uint16_t addr) {
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
+    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
+    v = (uint8_t)((v >> 1) | c);
+    cpu_mem_write(cpu, addr, v);
+    update_nz(cpu, v);
+}
+static void op_inc_m(cpu6502_t* cpu, uint16_t addr) {
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    v = (uint8_t)(v + 1);
+    cpu_mem_write(cpu, addr, v);
+    update_nz(cpu, v);
+}
+static void op_dec_m(cpu6502_t* cpu, uint16_t addr) {
+    uint8_t v = cpu_mem_read(cpu, addr);
+    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
+    v = (uint8_t)(v - 1);
+    cpu_mem_write(cpu, addr, v);
+    update_nz(cpu, v);
+}
+
 /* ─── Execute a single opcode. Returns total cycles used. ─── */
 int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     int cycles = opcode_table[opcode].cycles;
     int extra = 0;
     bool page_crossed = false;
     uint16_t addr;
-    uint8_t val, result;
+    uint8_t val;
 
     switch (opcode) {
     /* ── LDA ── */
@@ -449,18 +512,10 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         update_nz(cpu, cpu->A);
         break;
     /* ── ASL (Memory) ── */
-    case 0x06: addr = addr_zero_page(cpu); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0); result = val << 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0x16: addr = addr_zero_page_x(cpu); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0); result = val << 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0x0E: addr = addr_absolute(cpu); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0); result = val << 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0x1E: addr = addr_absolute_x(cpu, NULL); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0); result = val << 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
+    case 0x06: op_asl_m(cpu, addr_zero_page(cpu)); break;
+    case 0x16: op_asl_m(cpu, addr_zero_page_x(cpu)); break;
+    case 0x0E: op_asl_m(cpu, addr_absolute(cpu)); break;
+    case 0x1E: op_asl_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── LSR (Accumulator) ── */
     case 0x4A:
@@ -469,18 +524,10 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         update_nz(cpu, cpu->A);
         break;
     /* ── LSR (Memory) ── */
-    case 0x46: addr = addr_zero_page(cpu); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0); result = val >> 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0x56: addr = addr_zero_page_x(cpu); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0); result = val >> 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0x4E: addr = addr_absolute(cpu); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0); result = val >> 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0x5E: addr = addr_absolute_x(cpu, NULL); val = cpu_mem_read(cpu, addr);
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0); result = val >> 1;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
+    case 0x46: op_lsr_m(cpu, addr_zero_page(cpu)); break;
+    case 0x56: op_lsr_m(cpu, addr_zero_page_x(cpu)); break;
+    case 0x4E: op_lsr_m(cpu, addr_absolute(cpu)); break;
+    case 0x5E: op_lsr_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── ROL (Accumulator) ── */
     case 0x2A: {
@@ -491,30 +538,10 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         break;
     }
     /* ── ROL (Memory) ── */
-    case 0x26: addr = addr_zero_page(cpu); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0);
-        result = (val << 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
-    case 0x36: addr = addr_zero_page_x(cpu); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0);
-        result = (val << 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
-    case 0x2E: addr = addr_absolute(cpu); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0);
-        result = (val << 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
-    case 0x3E: addr = addr_absolute_x(cpu, NULL); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x80) != 0);
-        result = (val << 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
+    case 0x26: op_rol_m(cpu, addr_zero_page(cpu)); break;
+    case 0x36: op_rol_m(cpu, addr_zero_page_x(cpu)); break;
+    case 0x2E: op_rol_m(cpu, addr_absolute(cpu)); break;
+    case 0x3E: op_rol_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── ROR (Accumulator) ── */
     case 0x6A: {
@@ -525,42 +552,22 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         break;
     }
     /* ── ROR (Memory) ── */
-    case 0x66: addr = addr_zero_page(cpu); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0);
-        result = (val >> 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
-    case 0x76: addr = addr_zero_page_x(cpu); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0);
-        result = (val >> 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
-    case 0x6E: addr = addr_absolute(cpu); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0);
-        result = (val >> 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
-    case 0x7E: addr = addr_absolute_x(cpu, NULL); val = cpu_mem_read(cpu, addr); {
-        uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-        cpu_set_flag(cpu, FLAG_CARRY, (val & 0x01) != 0);
-        result = (val >> 1) | c;
-        cpu_mem_write(cpu, addr, result); update_nz(cpu, result);
-    } break;
+    case 0x66: op_ror_m(cpu, addr_zero_page(cpu)); break;
+    case 0x76: op_ror_m(cpu, addr_zero_page_x(cpu)); break;
+    case 0x6E: op_ror_m(cpu, addr_absolute(cpu)); break;
+    case 0x7E: op_ror_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── INC ── */
-    case 0xE6: addr = addr_zero_page(cpu); result = cpu_mem_read(cpu, addr) + 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0xF6: addr = addr_zero_page_x(cpu); result = cpu_mem_read(cpu, addr) + 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0xEE: addr = addr_absolute(cpu); result = cpu_mem_read(cpu, addr) + 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0xFE: addr = addr_absolute_x(cpu, NULL); result = cpu_mem_read(cpu, addr) + 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
+    case 0xE6: op_inc_m(cpu, addr_zero_page(cpu)); break;
+    case 0xF6: op_inc_m(cpu, addr_zero_page_x(cpu)); break;
+    case 0xEE: op_inc_m(cpu, addr_absolute(cpu)); break;
+    case 0xFE: op_inc_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── DEC ── */
-    case 0xC6: addr = addr_zero_page(cpu); result = cpu_mem_read(cpu, addr) - 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0xD6: addr = addr_zero_page_x(cpu); result = cpu_mem_read(cpu, addr) - 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0xCE: addr = addr_absolute(cpu); result = cpu_mem_read(cpu, addr) - 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
-    case 0xDE: addr = addr_absolute_x(cpu, NULL); result = cpu_mem_read(cpu, addr) - 1; cpu_mem_write(cpu, addr, result); update_nz(cpu, result); break;
+    case 0xC6: op_dec_m(cpu, addr_zero_page(cpu)); break;
+    case 0xD6: op_dec_m(cpu, addr_zero_page_x(cpu)); break;
+    case 0xCE: op_dec_m(cpu, addr_absolute(cpu)); break;
+    case 0xDE: op_dec_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── INX, INY, DEX, DEY ── */
     case 0xE8: cpu->X++; update_nz(cpu, cpu->X); break;
