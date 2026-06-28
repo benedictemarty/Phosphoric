@@ -72,6 +72,14 @@ typedef struct {
      * one line per event. Caller owns the FILE* lifecycle. */
     void* irq_trace_fp;     /**< FILE* (opaque to avoid <stdio.h> coupling) */
     uint64_t irq_trace_count;
+
+    /* Optional per-cycle clock callback. When set, the CPU calls it for every
+     * bus cycle it consumes (one call per memory access, plus a final call for
+     * an instruction's internal cycles), letting peripherals advance in step
+     * with the CPU's bus accesses instead of in one post-instruction batch.
+     * When NULL the CPU only accumulates cycles (callers tick peripherals). */
+    void (*on_cycle)(void* ctx, int cycles);
+    void* cycle_ctx;
 } cpu6502_t;
 
 /**
@@ -124,6 +132,15 @@ int cpu_step(cpu6502_t* cpu);
  * @return Actual cycles executed
  */
 int cpu_execute_cycles(cpu6502_t* cpu, int cycles);
+
+/**
+ * @brief Set the per-cycle clock callback (or NULL to disable).
+ *
+ * @param cpu Pointer to CPU structure
+ * @param cb Callback invoked with the number of cycles for each bus tick
+ * @param ctx User context passed to the callback
+ */
+void cpu_set_cycle_callback(cpu6502_t* cpu, void (*cb)(void*, int), void* ctx);
 
 /**
  * @brief Trigger NMI (Non-Maskable Interrupt)

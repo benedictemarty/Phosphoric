@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0-alpha] - 2026-06-29
+
+### Added — Cœur cycle-par-cycle : cadencement des périphériques au cycle près
+
+Cinquième jalon « fidélité matérielle » (branche dédiée `feature/cpu-percycle-tick`).
+Le CPU expose désormais une **horloge per-cycle** : chaque accès bus consomme un
+cycle et notifie un callback, et les cycles internes d'une instruction sont
+réconciliés en fin d'instruction. Les périphériques cadencés par PHI2 (timers
+VIA, FDC Microdisc/LOCI, ACIA 6551, DTL 2000, Mageco MIDI) avancent désormais
+**en phase avec les accès bus du CPU**, au lieu d'un unique lot post-instruction.
+
+- **`include/cpu/cpu6502.h` / `src/cpu/cpu6502.c`** : champ `on_cycle` +
+  `cpu_set_cycle_callback()` ; `cpu_tick()` ; `cpu_step()` réconcilie les cycles
+  internes (padding jusqu'au compte officiel) après exécution. Handlers NMI/IRQ
+  alignés (le `+= 7` direct devient padding ; lectures de trace IRQ via
+  `memory_read` pour ne pas perturber l'horloge).
+- **`src/cpu/addressing.c`** : `cpu_mem_read`/`cpu_mem_write` cadencent 1 cycle
+  par accès.
+- **`src/main.c`** : nouveau `cpu_cycle_tick()` enregistré sur le CPU ; le bloc
+  de cadencement batch post-instruction (VIA/FDC×2/ACIA/DTL/Mageco) est retiré.
+- **Rétro-compatibilité** : sans callback (tests unitaires isolés) le CPU ne fait
+  qu'accumuler les cycles — comportement et compte de cycles **identiques**.
+- **`tests/unit/test_cpu.c`** : +2 tests (le callback reçoit exactement le total
+  de cycles par instruction ; RMW zp = 5 cycles) — 90 → 92 tests CPU.
+- **Validation** : suite complète 856 / 0 ; boots ORIC-1 + Atmos rendus ;
+  `--type-keys` (clavier piloté par IRQ) traité et rendu ; bench 95–113 MHz éq.
+  (overhead per-cycle négligeable) ; Valgrind clean.
+
+Bénéfice observable sur l'ORIC volontairement limité (le 6502 n'échantillonne
+l'IRQ qu'aux frontières d'instruction) ; l'intérêt est la justesse du modèle
+(accès bus visibles au bon cycle, fondation pour le raster sub-ligne).
+
+Total tests : 840 → 842. Builds natif + SDL2 + headless OK, 0 régression.
+
 ## [1.31.0-alpha] - 2026-06-29
 
 ### Added — Fidélité CPU : cycle d'écriture-retour (dummy write) des Read-Modify-Write

@@ -10,6 +10,9 @@
 
 uint8_t cpu_mem_read(cpu6502_t* cpu, uint16_t addr);
 void cpu_mem_write(cpu6502_t* cpu, uint16_t addr, uint8_t val);
+
+/* Advance the CPU clock by `cycles` and notify the per-cycle callback (if set). */
+void cpu_tick(cpu6502_t* cpu, int cycles);
 uint8_t cpu_fetch_byte(cpu6502_t* cpu);
 uint16_t cpu_fetch_word_pc(cpu6502_t* cpu);
 

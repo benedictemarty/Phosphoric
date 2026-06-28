@@ -1188,6 +1188,51 @@ TEST(test_rmw_dummy_write_asl_io) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  PER-CYCLE CLOCK CALLBACK                                          */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+static int g_tick_total;
+static int g_tick_calls;
+static void count_tick(void* ctx, int cycles) {
+    (void)ctx;
+    g_tick_total += cycles;
+    g_tick_calls++;
+}
+
+TEST(test_cycle_callback_total) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_cycle_callback(&cpu, count_tick, NULL);
+    g_tick_total = 0; g_tick_calls = 0;
+    /* LDA #$42 (2 cycles) then STA $10 (3 cycles) = 5 cycles, ≥1 tick each */
+    uint8_t code[] = {0xA9, 0x42, 0x85, 0x10};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    int c1 = cpu_step(&cpu);
+    int c2 = cpu_step(&cpu);
+    ASSERT_EQ(c1, 2);
+    ASSERT_EQ(c2, 3);
+    /* The callback must have been delivered exactly the executed cycle total */
+    ASSERT_EQ(g_tick_total, 5);
+    ASSERT_TRUE(g_tick_calls >= 2);
+    ASSERT_EQ((int)cpu.cycles, 5);
+}
+
+TEST(test_cycle_callback_rmw_count) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_cycle_callback(&cpu, count_tick, NULL);
+    g_tick_total = 0;
+    /* INC $10 = 5 cycles (zero-page RMW, incl. write-back) */
+    memory_write(&mem, 0x0010, 0x01);
+    uint8_t code[] = {0xE6, 0x10};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    int c = cpu_step(&cpu);
+    ASSERT_EQ(c, 5);
+    ASSERT_EQ(g_tick_total, 5);
+    ASSERT_EQ(memory_read(&mem, 0x0010), 0x02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -1320,6 +1365,10 @@ int main(void) {
     printf("\n  Cycle Accuracy (RMW dummy write):\n");
     RUN(test_rmw_dummy_write_on_io);
     RUN(test_rmw_dummy_write_asl_io);
+
+    printf("\n  Per-Cycle Clock Callback:\n");
+    RUN(test_cycle_callback_total);
+    RUN(test_cycle_callback_rmw_count);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

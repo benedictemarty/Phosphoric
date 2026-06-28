@@ -1309,6 +1309,31 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 72: Cœur cycle-par-cycle — cadencement périphériques au cycle (v1.32.0-alpha) - DONE
+
+Cinquième jalon « fidélité matérielle », sur **branche dédiée**
+`feature/cpu-percycle-tick` (isolée à la demande, vu le rayon d'impact).
+
+- [x] CPU : horloge per-cycle — champ `on_cycle` + `cpu_set_cycle_callback()` +
+      `cpu_tick()` ; chaque accès bus consomme 1 cycle, les cycles internes sont
+      réconciliés en fin d'instruction (padding jusqu'au compte officiel)
+- [x] Handlers NMI/IRQ alignés (le `+= 7` direct devient padding ; lectures de
+      trace IRQ via `memory_read` pour ne pas perturber l'horloge)
+- [x] `src/main.c` : `cpu_cycle_tick()` enregistré ; le bloc batch
+      post-instruction (VIA/FDC×2/ACIA/DTL/Mageco) est retiré → cadencement en
+      phase avec les accès bus
+- [x] Rétro-compat : sans callback (tests unitaires isolés), le CPU n'accumule
+      que les cycles → comportement et compte **identiques**
+- [x] +2 tests `test_cpu` (90 → 92) ; validation intégration : suite 856/0,
+      boots ORIC-1 + Atmos rendus, `--type-keys` (clavier IRQ) traité, bench
+      95–113 MHz éq. (overhead négligeable), Valgrind clean
+- [x] 840 → 842 tests ; builds natif + SDL2 + headless OK
+
+**Note** : bénéfice observable volontairement limité sur l'ORIC (le 6502
+n'échantillonne l'IRQ qu'aux frontières d'instruction). L'apport est la justesse
+du modèle (accès bus visibles au bon cycle) et la fondation pour un éventuel
+rendu raster sub-ligne. Branche séparée pour merge décidé après revue.
+
 ### Sprint 71: Fidélité CPU — write-back RMW (début cycle-accurate) (v1.31.0-alpha) - DONE
 
 Quatrième jalon « fidélité matérielle », première brique du chantier
@@ -2394,5 +2419,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-06-29
-**Current Version**: 1.31.0-alpha
+**Current Version**: 1.32.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
