@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0-alpha] - 2026-06-29
+
+### Added — Modèle de timing du bus MIA (LOCI) : reproduit le blocage picowifi
+
+Sur un vrai LOCI, la MIA échantillonne le bus 6502 de l'Oric via des
+state-machines PIO (RP2040) à des décalages sous-cycle (0-31) autour de PHI2,
+réglés par les opérations API `MAP_TUNE_*` (valeur dans le registre A) : `tmap`
+(signal MAP, alias **RV1**), `tior`/`tiow` (read/write actif), `tiod` (données
+I/O), `tadr` (adresse). **Le modem picowifi est une fenêtre ACIA 6551 à
+`$0380-$0383` lue à travers ce même échantillonnage** — un `tior` mal calé
+corrompt les accès et rend le modem injoignable (symptôme observé sur matériel
+réel). Jusqu'ici l'émulateur traitait les `MAP_TUNE_*` en no-op (échantillonnage
+parfait) et ne pouvait ni reproduire ni diagnostiquer ce blocage.
+
+- **`include/io/loci.h` / `src/io/loci_core.c`** : `loci_t` stocke
+  `mia_tmap/tior/tiow/tiod/tadr/tula` (défauts firmware : tmap=10, tula=10,
+  reste 0) + une fenêtre fiable `[mia_tior_lo, mia_tior_hi]` (défaut 0-31 =
+  tout marche → comportement historique préservé).
+- **`src/io/loci_boot.c`** : les `MAP_TUNE_*` lisent le registre A et stockent
+  la valeur (masquée 0-31, `tiod` 0-7) au lieu d'un no-op ;
+  `loci_mia_io_reliable()` = `tior` dans la fenêtre ; `loci_set_mia_window()`.
+- **`src/main.c`** : un accès à l'ACIA `$0380` sous `--loci` avec `tior` hors
+  fenêtre est **corrompu** (lecture → `$FF`, écriture ignorée) → reproduit le
+  blocage ; quand le logiciel/`ADJ_SCAN` remet `tior` dans la fenêtre, ça
+  remarche. Nouvelle option `--loci-mia-window LO-HI` (modélise la plage fiable
+  d'un appariement Oric/LOCI réel ; banc d'essai pour trouver le réglage).
+- **`tests/unit/test_loci.c`** : +4 tests (défauts, stockage via MAP_TUNE_TIOR/
+  TIOD, blocage puis déblocage par tune dans la fenêtre, clamp/ordre) — 152 → 156.
+- **Conformité confirmée** : le LOCI émule bien un **6551** (firmware
+  `oric/acia.c` : « Emulating 6551 ACIA »), carte de registres identique à
+  l'`acia6551.c` de Phosphoric.
+
+Total tests : 842 → 846. Builds natif + SDL2 OK, rétro-compatible (fenêtre
+ouverte par défaut → picowifi inchangé).
+
 ## [1.32.0-alpha] - 2026-06-29
 
 ### Added — Cœur cycle-par-cycle : cadencement des périphériques au cycle près

@@ -365,6 +365,10 @@ static void print_usage(const char* program_name) {
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
     printf("                             Mutually exclusive with --loci-flash\n");
+    printf("      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31).\n");
+    printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
+    printf("                             is outside it (reproduces real-HW modem block;\n");
+    printf("                             software tunes via MAP_TUNE_TIOR / ADJ_SCAN)\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n");
     printf("                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
@@ -637,6 +641,12 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
 
     /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
+        /* picowifi-over-LOCI: the ACIA at $0380 is sampled through the MIA bus
+         * window. A mis-tuned tior corrupts the read (modem unreachable). */
+        if (emu->has_loci && emu->acia_base_addr == 0x0380 &&
+            !loci_mia_io_reliable(&emu->loci)) {
+            return 0xFF;
+        }
         return acia_read(&emu->acia, address);
     }
 
@@ -816,6 +826,13 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
 
     /* ACIA 6551 serial: $031C-$031F */
     if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
+        /* picowifi-over-LOCI: a mis-tuned MIA tior drops the write (the Oric
+         * cannot reach the modem). The register-select still updates so reads
+         * stay consistent, but the data never reaches the ACIA. */
+        if (emu->has_loci && emu->acia_base_addr == 0x0380 &&
+            !loci_mia_io_reliable(&emu->loci)) {
+            return;
+        }
         acia_write(&emu->acia, address, value);
         return;
     }
@@ -2772,6 +2789,7 @@ int main(int argc, char* argv[]) {
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
     const char* loci_sdimg_path = NULL;
+    int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int64_t trace_max = 0;
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
@@ -2790,7 +2808,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_REALTIME, OPT_DISK_CREATE };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_REALTIME, OPT_DISK_CREATE };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2858,6 +2876,7 @@ int main(int argc, char* argv[]) {
         {"loci",                no_argument,       0, OPT_LOCI},
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
+        {"loci-mia-window",     required_argument, 0, OPT_LOCI_MIA_WINDOW},
         {"ula",                 required_argument, 0, OPT_ULA},
         {"ocula-80col-basic",   no_argument,       0, OPT_OCULA_80COL_BASIC},
         {"control",             no_argument,       0, OPT_CONTROL},
@@ -2995,6 +3014,19 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI: loci_enabled = true; break;
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
+            case OPT_LOCI_MIA_WINDOW: {
+                /* Models the reliable tior range of a real LOCI/Oric pairing:
+                 * "LO-HI" (0-31). picowifi ACIA accesses outside it corrupt. */
+                int lo = 0, hi = 31;
+                if (sscanf(optarg, "%d-%d", &lo, &hi) == 2) {
+                    loci_mia_win_lo = lo;
+                    loci_mia_win_hi = hi;
+                } else {
+                    log_error("--loci-mia-window: expected LO-HI (e.g. 12-18)");
+                    return 1;
+                }
+                break;
+            }
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
                 break;
@@ -3392,6 +3424,12 @@ int main(int argc, char* argv[]) {
         loci_init(&emu.loci);
         emu.loci.enabled = true;
         emu.has_loci = true;
+        if (loci_mia_win_lo >= 0) {
+            loci_set_mia_window(&emu.loci, (uint8_t)loci_mia_win_lo, (uint8_t)loci_mia_win_hi);
+            log_info("LOCI MIA reliable tior window: %d-%d (picowifi ACIA $0380 "
+                     "corrupted outside it; tune via MAP_TUNE_TIOR / ADJ_SCAN)",
+                     emu.loci.mia_tior_lo, emu.loci.mia_tior_hi);
+        }
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);
         loci_set_dsk_bus_callbacks(&emu.loci, loci_dsk_cpu_irq_set,

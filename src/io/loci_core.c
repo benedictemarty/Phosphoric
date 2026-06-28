@@ -104,6 +104,16 @@ bool loci_init(loci_t* loci) {
     loci->kbd_xram = 0xFFFF;
     loci->mou_xram = 0xFFFF;
     loci->pad_xram = 0xFFFF;
+    /* MIA bus-timing model: firmware boot defaults (tmap/tula=10, rest 0) and a
+     * fully-open reliable window (any tior works → legacy behaviour). */
+    loci->mia_tmap = 10;
+    loci->mia_tula = 10;
+    loci->mia_tior = 0;
+    loci->mia_tiow = 0;
+    loci->mia_tiod = 0;
+    loci->mia_tadr = 0;
+    loci->mia_tior_lo = 0;
+    loci->mia_tior_hi = 31;
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);
     loci->dsk_fdc.set_drq = loci_fdc_set_drq;

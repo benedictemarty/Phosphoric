@@ -1309,6 +1309,34 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 73: Modèle de timing du bus MIA (LOCI) — blocage picowifi (v1.33.0-alpha) - DONE
+
+Branche dédiée `feature/loci-mia-timing` (off-main, indépendante des sprints
+fidélité CPU 68-72). Reproduit un symptôme **matériel réel** : sur un vrai LOCI,
+un mauvais réglage de timing du bus MIA bloque l'accès au modem picowifi.
+
+- [x] Compréhension : la MIA échantillonne le bus 6502 via PIO (RP2040) à des
+      décalages sous-cycle (0-31) autour de PHI2, réglés par `MAP_TUNE_*`
+      (valeur dans le registre A) : `tmap`(=RV1), `tior`/`tiow`, `tiod`, `tadr`.
+      Le picowifi = fenêtre **ACIA 6551** `$0380-$0383` lue par ce même
+      échantillonnage → `tior` mal calé corrompt les accès → modem injoignable.
+- [x] `loci_t` stocke les 6 paramètres de timing (défauts firmware tmap=10/
+      tula=10/reste 0) + fenêtre fiable `[mia_tior_lo, mia_tior_hi]`
+      (défaut 0-31 = tout marche → rétro-compatible)
+- [x] `MAP_TUNE_*` lisent le registre A et stockent (au lieu d'un no-op) ;
+      `loci_mia_io_reliable()` ; `loci_set_mia_window()`
+- [x] `main.c` : accès ACIA `$0380` sous `--loci` avec `tior` hors fenêtre
+      corrompu (lecture `$FF`, écriture ignorée) → reproduit le blocage ;
+      option `--loci-mia-window LO-HI` (banc d'essai du réglage)
+- [x] +4 tests `test_loci` (152 → 156) ; LOCI = 6551 confirmé (firmware
+      `oric/acia.c`) → `acia6551.c` fidèle au modèle de registres
+- [x] 842 → 846 tests ; builds natif + SDL2 OK
+
+**Note de fidélité** : l'émulateur n'a pas de bus analogique, donc le « bon »
+réglage dépend de la carte (le firmware `ADJ_SCAN` le balaye par essai). Le
+modèle est *comportemental* (fenêtre fiable configurable), pas ns-exact — il sert
+à reproduire/diagnostiquer le blocage et tester la logique de tuning du logiciel.
+
 ### Sprint 72: Cœur cycle-par-cycle — cadencement périphériques au cycle (v1.32.0-alpha) - DONE
 
 Cinquième jalon « fidélité matérielle », sur **branche dédiée**

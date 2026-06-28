@@ -379,7 +379,34 @@ typedef struct loci_s {
      * FAT16/32 reader in loci_sdimg.c instead of POSIX. Mutually
      * exclusive with flash_root[]: the CLI rejects both flags together. */
     void* sdimg;   /* loci_sdimg_t* — opaque to avoid header coupling */
+
+    /* ── MIA bus-sampling timing model (peripheral fidelity) ──────────
+     * On a real LOCI the MIA samples the Oric 6502 bus via RP2040 PIO state
+     * machines at sub-cycle offsets (0-31) around PHI2, set by the MAP_TUNE_*
+     * API ops (value in register A). Mis-tuned values corrupt I/O-window
+     * accesses — notably the picowifi ACIA at $0380-$0383 — making the modem
+     * unreachable on real hardware. The emulator has no analog bus, so it
+     * models a configurable "reliable window" for the I/O read timing `tior`
+     * (the value the firmware ADJ_SCAN auto-tunes): accesses to the ACIA window
+     * are corrupted whenever tior falls outside [mia_tior_lo, mia_tior_hi].
+     * Default window 0..31 = every value works → legacy behaviour preserved. */
+    uint8_t mia_tmap;     /* MAP signal delay (RV1), firmware default 10 */
+    uint8_t mia_tior;     /* I/O read active delay, default 0 (auto-tuned) */
+    uint8_t mia_tiow;     /* I/O write active delay, default 0 */
+    uint8_t mia_tiod;     /* I/O read data delay, default 0 (range 0-7) */
+    uint8_t mia_tadr;     /* read-address delay, default 0 */
+    uint8_t mia_tula;     /* ULA snoop delay, firmware default 10 */
+    uint8_t mia_tior_lo;  /* reliable-window low bound for tior (default 0) */
+    uint8_t mia_tior_hi;  /* reliable-window high bound for tior (default 31) */
 } loci_t;
+
+/* True when the modelled MIA I/O sampling is reliable (tior in window). When
+ * false, accesses routed through the MIA I/O window (the picowifi ACIA) are
+ * corrupted, reproducing the real-hardware "modem unreachable" symptom. */
+bool loci_mia_io_reliable(const loci_t* loci);
+
+/* Set the reliable tior window (models a board where only this range works). */
+void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi);
 
 bool    loci_init(loci_t* loci);
 void    loci_reset(loci_t* loci);

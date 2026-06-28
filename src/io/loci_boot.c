@@ -91,11 +91,26 @@ void op_stdin_opt(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
-static void op_map_tune_noop(loci_t* loci, const char* name) {
-    log_debug("LOCI %s (xstack_ptr=%u) accepted, no hardware to tune",
-              name, loci->xstack_ptr);
+/* The tune value is passed in register A (firmware map.c: `uint8_t delay = API_A`).
+ * We store it so the modelled MIA I/O reliability (loci_mia_io_reliable) reacts
+ * to it — a tior outside the configured window corrupts the picowifi ACIA. */
+static void op_map_tune_store(loci_t* loci, const char* name, uint8_t* field, uint8_t mask) {
+    *field = loci->regs[LOCI_REG_API_A] & mask;
+    log_debug("LOCI %s = %u (modelled MIA timing)", name, *field);
     xstack_zero(loci);
     api_return_ax(loci, 0);
+}
+
+bool loci_mia_io_reliable(const loci_t* loci) {
+    return loci->mia_tior >= loci->mia_tior_lo && loci->mia_tior <= loci->mia_tior_hi;
+}
+
+void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi) {
+    if (lo > 31) lo = 31;
+    if (hi > 31) hi = 31;
+    if (lo > hi) { uint8_t t = lo; lo = hi; hi = t; }
+    loci->mia_tior_lo = lo;
+    loci->mia_tior_hi = hi;
 }
 
 void op_adj_scan(loci_t* loci) {
@@ -107,8 +122,8 @@ void op_adj_scan(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
-void op_map_tune_tmap(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TMAP"); }
-void op_map_tune_tior(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TIOR"); }
-void op_map_tune_tiow(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TIOW"); }
-void op_map_tune_tiod(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TIOD"); }
-void op_map_tune_tadr(loci_t* loci) { op_map_tune_noop(loci, "MAP_TUNE_TADR"); }
+void op_map_tune_tmap(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TMAP", &loci->mia_tmap, 0x1F); }
+void op_map_tune_tior(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOR", &loci->mia_tior, 0x1F); }
+void op_map_tune_tiow(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOW", &loci->mia_tiow, 0x1F); }
+void op_map_tune_tiod(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOD", &loci->mia_tiod, 0x07); }
+void op_map_tune_tadr(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TADR", &loci->mia_tadr, 0x1F); }
