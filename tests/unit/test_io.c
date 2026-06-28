@@ -450,6 +450,86 @@ TEST(test_via_t2_exact_zero) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  SHIFT REGISTER SHIFTING + T2 PULSE COUNTING + CA2/CB2 PINS        */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_sr_shift_out_phi2) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x18);   /* shift OUT under φ2 */
+    via_write(&via, VIA_SR, 0xAA);    /* starts the sequence */
+    ASSERT_TRUE(via.sr_active);
+    /* 8 shifts at one per 2 cycles = 16 cycles → SR interrupt flag set */
+    via_update(&via, 16);
+    ASSERT_EQ(via.ifr & VIA_INT_SR, VIA_INT_SR);
+    ASSERT_FALSE(via.sr_active);
+}
+
+TEST(test_sr_shift_in_phi2) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x08);   /* shift IN under φ2 */
+    via_set_cb2_input(&via, true);    /* all-ones serial input */
+    (void)via_read(&via, VIA_SR);     /* reading SR starts a shift-in sequence */
+    ASSERT_TRUE(via.sr_active);
+    via_update(&via, 16);
+    ASSERT_EQ(via.ifr & VIA_INT_SR, VIA_INT_SR);
+    ASSERT_EQ(via.sr, 0xFF);          /* eight 1-bits shifted in */
+}
+
+TEST(test_sr_shift_out_external) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x1C);   /* shift OUT under external clock (CB1) */
+    via_write(&via, VIA_SR, 0x80);
+    /* via_update must NOT shift in external-clock mode */
+    via_update(&via, 100);
+    ASSERT_FALSE(via.ifr & VIA_INT_SR);
+    for (int i = 0; i < 8; i++) via_shift_clock(&via);
+    ASSERT_EQ(via.ifr & VIA_INT_SR, VIA_INT_SR);
+}
+
+TEST(test_sr_free_running_no_flag) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x10);   /* free-running shift OUT under T2 */
+    via_write(&via, VIA_SR, 0xAA);
+    via_update(&via, 64);
+    /* Free-running mode never sets the SR flag and keeps running. */
+    ASSERT_FALSE(via.ifr & VIA_INT_SR);
+    ASSERT_TRUE(via.sr_active);
+}
+
+TEST(test_t2_pulse_counting) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x20);   /* T2 pulse-counting mode (PB6) */
+    via_write(&via, VIA_T2CL, 0x02);
+    via_write(&via, VIA_T2CH, 0x00);  /* T2 = 2, running */
+    /* φ2 ticks must NOT decrement T2 in pulse mode */
+    via_update(&via, 1000);
+    ASSERT_FALSE(via.ifr & VIA_INT_T2);
+    via_pb6_pulse(&via);              /* 2 → 1 */
+    via_pb6_pulse(&via);              /* 1 → 0 */
+    ASSERT_FALSE(via.ifr & VIA_INT_T2);
+    via_pb6_pulse(&via);              /* 0 → underflow → IRQ */
+    ASSERT_EQ(via.ifr & VIA_INT_T2, VIA_INT_T2);
+}
+
+TEST(test_ca2_cb2_manual_output) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x0E);   /* CA2 manual output high */
+    ASSERT_TRUE(via_get_ca2(&via));
+    via_write(&via, VIA_PCR, 0x0C);   /* CA2 manual output low */
+    ASSERT_FALSE(via_get_ca2(&via));
+    via_write(&via, VIA_PCR, 0xE0);   /* CB2 manual output high */
+    ASSERT_TRUE(via_get_cb2(&via));
+    via_write(&via, VIA_PCR, 0xC0);   /* CB2 manual output low */
+    ASSERT_FALSE(via_get_cb2(&via));
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -502,6 +582,14 @@ int main(void) {
 
     printf("\n  Shift Register:\n");
     RUN(test_shift_register);
+    RUN(test_sr_shift_out_phi2);
+    RUN(test_sr_shift_in_phi2);
+    RUN(test_sr_shift_out_external);
+    RUN(test_sr_free_running_no_flag);
+
+    printf("\n  T2 Pulse Counting & CA2/CB2 Pins:\n");
+    RUN(test_t2_pulse_counting);
+    RUN(test_ca2_cb2_manual_output);
 
     printf("\n  Register Masking:\n");
     RUN(test_register_mask);

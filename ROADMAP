@@ -1309,6 +1309,31 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 70: Fidélité VIA 6522 — registre à décalage, T2 pulse-counting, pins CA2/CB2 (v1.30.0-alpha) - DONE
+
+Troisième jalon « fidélité matérielle » (audit Phosphoric vs Oric réel).
+Comblement des fonctions du 6522 jusqu'ici absentes (champs présents mais jamais
+cadencés). Non exercées par la ROM ORIC standard (qui n'utilise CA2/CB2 que comme
+sorties manuelles pour le PSG) → fidélité périphériques / Telestrat. **Ajouts
+strictement additifs : les chemins clavier/PSG/timers existants sont inchangés.**
+
+- [x] **Registre à décalage** (ACR bits 4-2) : 8 modes (désactivé, shift-in/out
+      sous T2, sous φ2, sous horloge externe CB1) ; 8 bits → drapeau SR + arrêt,
+      sauf shift-out libre (100) continu sans drapeau
+- [x] Cadencement dans `via_update()` (φ2 : 1 décalage / 2 cycles ; T2 :
+      1 / (latch+2)) ; horloge externe via `via_shift_clock()` ; amorçage par
+      écriture (sortie) / lecture (entrée) de SR
+- [x] **Timer 2 pulse-counting** (ACR bit 5) : `via_pb6_pulse()` décrémente T2
+      sur front descendant PB6, underflow → drapeau T2
+- [x] **Pins CA2/CB2** : `via_get_ca2()` / `via_get_cb2()` (sortie manuelle PCR
+      + données shift-out) + entrée série `via_set_cb2_input()`
+- [x] +6 tests `test_io` (31 → 37) ; savestate `.ost` inchangé
+- [x] 832 → 838 tests ; builds natif + SDL2 + headless OK, boot ORIC vérifié
+
+**Reste pour la « réplique parfaite »** : cœur cycle-par-cycle (dummy-write des
+RMW observable sur l'I/O, timing sub-instruction, raster sub-ligne) ; modes
+CA2/CB2 pulse/handshake complets ; effets analogiques PAL (hors-scope logiciel).
+
 ### Sprint 69: Fidélité audio — écritures PSG horodatées au cycle (digidrums) (v1.29.0-alpha) - DONE
 
 Deuxième jalon « fidélité matérielle » (audit Phosphoric vs Oric réel).
@@ -2342,6 +2367,6 @@ activées par défaut, clairement signalées dans l'aide CLI.
 
 ---
 
-**Last Updated**: 2026-06-28
-**Current Version**: 1.29.0-alpha
+**Last Updated**: 2026-06-29
+**Current Version**: 1.30.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

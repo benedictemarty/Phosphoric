@@ -24,6 +24,35 @@ static void via_check_irq(via6522_t* via) {
     }
 }
 
+/* ── Shift register ───────────────────────────────────────────────────
+ * ACR bits 4-2 select the mode:
+ *   000 disabled            100 shift OUT free-running at T2 rate
+ *   001 shift IN under T2   101 shift OUT under T2
+ *   010 shift IN under φ2   110 shift OUT under φ2
+ *   011 shift IN under CB1  111 shift OUT under CB1 (external clock)
+ * After 8 shifts the SR interrupt flag is set and shifting stops, except the
+ * free-running output mode (100) which runs continuously and sets no flag. */
+static void via_do_shift(via6522_t* via) {
+    uint8_t mode = via->acr & 0x1C;
+    bool shift_out = (mode & 0x10) != 0;
+    if (shift_out) {
+        bool msb = (via->sr & 0x80) != 0;
+        via->cb2_pin = msb;
+        via->sr = (uint8_t)((via->sr << 1) | (msb ? 1 : 0)); /* rotate (free-run repeats) */
+    } else {
+        via->sr = (uint8_t)((via->sr << 1) | (via->cb2_in ? 1 : 0));
+    }
+    via->sr_count++;
+    if (via->sr_count >= 8) {
+        via->sr_count = 0;
+        if (mode != 0x10) {            /* free-running output: no flag, keep going */
+            via->sr_active = false;
+            via->ifr |= VIA_INT_SR;
+            via_check_irq(via);
+        }
+    }
+}
+
 void via_init(via6522_t* via) {
     memset(via, 0, sizeof(via6522_t));
     via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
@@ -48,6 +77,12 @@ void via_reset(via6522_t* via) {
     via->ier = 0;
     via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
     via->irq_line = false;  /* /IRQ not asserted */
+    via->cb2_pin = false;
+    via->cb2_in = false;
+    via->ca2_pin = false;
+    via->sr_active = false;
+    via->sr_clk_acc = 0;
+    via->pb6_pin = true;   /* PB6 idle high */
 }
 
 uint8_t via_read(via6522_t* via, uint8_t reg) {
@@ -108,6 +143,15 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
     case VIA_SR:
         via->ifr &= ~VIA_INT_SR;
         via_check_irq(via);
+        /* Reading SR starts a new shift-in sequence (input modes only). */
+        {
+            uint8_t mode = via->acr & 0x1C;
+            if (mode != 0 && !(mode & 0x10)) {
+                via->sr_active = true;
+                via->sr_count = 0;
+                via->sr_clk_acc = 0;
+            }
+        }
         return via->sr;
     case VIA_ACR: return via->acr;
     case VIA_PCR: return via->pcr;
@@ -179,8 +223,28 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->sr = value;
         via->ifr &= ~VIA_INT_SR;
         via_check_irq(via);
+        /* Writing SR starts a new shift-out sequence (output modes only). */
+        {
+            uint8_t mode = via->acr & 0x1C;
+            if (mode & 0x10) {
+                via->sr_active = true;
+                via->sr_count = 0;
+                via->sr_clk_acc = 0;
+            }
+        }
         break;
-    case VIA_ACR: via->acr = value; break;
+    case VIA_ACR:
+        via->acr = value;
+        /* Free-running shift-out (100) runs continuously; selecting the
+         * disabled mode (000) halts any sequence. */
+        if ((value & 0x1C) == 0x10) {
+            via->sr_active = true;
+            via->sr_count = 0;
+            via->sr_clk_acc = 0;
+        } else if ((value & 0x1C) == 0x00) {
+            via->sr_active = false;
+        }
+        break;
     case VIA_PCR: via->pcr = value; break;
     case VIA_IFR:
         via->ifr &= ~(value & VIA_IER_MASK);
@@ -218,7 +282,8 @@ void via_update(via6522_t* via, int cycles) {
         }
     }
 
-    /* Timer 2 (one-shot only in timer mode) */
+    /* Timer 2 (one-shot only in timer mode; pulse-counting mode is driven by
+     * via_pb6_pulse() instead of φ2). */
     if (via->t2_running && !(via->acr & 0x20)) {
         int old = via->t2_counter;
         via->t2_counter -= (uint16_t)cycles;
@@ -226,6 +291,25 @@ void via_update(via6522_t* via, int cycles) {
             via->ifr |= VIA_INT_T2;
             via_check_irq(via);
             via->t2_running = false;
+        }
+    }
+
+    /* Shift register: internal (φ2 / T2) clock modes. The external-clock modes
+     * (011 / 111) are driven by via_shift_clock() instead. */
+    {
+        uint8_t srmode = via->acr & 0x1C;
+        bool internal = (srmode != 0) && (srmode != 0x0C) && (srmode != 0x1C);
+        if (internal && (via->sr_active || srmode == 0x10)) {
+            /* φ2 modes (010/110): one shift every 2 cycles (CB1 clock = φ2/2).
+             * T2 modes: one shift every (T2 low latch + 2) cycles. */
+            uint32_t div = (srmode == 0x08 || srmode == 0x18)
+                         ? 2u : ((uint32_t)via->t2_latch + 2u);
+            if (div == 0) div = 1;
+            via->sr_clk_acc += (uint32_t)cycles;
+            while (via->sr_clk_acc >= div && (via->sr_active || srmode == 0x10)) {
+                via->sr_clk_acc -= div;
+                via_do_shift(via);
+            }
         }
     }
 }
@@ -290,4 +374,43 @@ void via_trigger_cb1(via6522_t* via) {
 void via_trigger_cb2(via6522_t* via) {
     via->ifr |= VIA_INT_CB2;
     via_check_irq(via);
+}
+
+void via_shift_clock(via6522_t* via) {
+    uint8_t mode = via->acr & 0x1C;
+    if (mode != 0x0C && mode != 0x1C) return; /* external-clock modes only */
+    if (!via->sr_active) return;
+    via_do_shift(via);
+}
+
+void via_set_cb2_input(via6522_t* via, bool level) {
+    via->cb2_in = level;
+}
+
+void via_pb6_pulse(via6522_t* via) {
+    /* Each call models one PB6 negative edge. */
+    if (!via->t2_running || !(via->acr & 0x20)) return;
+    if (via->t2_counter == 0) {
+        via->t2_counter = 0xFFFF;         /* underflow */
+        via->ifr |= VIA_INT_T2;
+        via_check_irq(via);
+        via->t2_running = false;
+    } else {
+        via->t2_counter--;
+    }
+}
+
+bool via_get_ca2(via6522_t* via) {
+    uint8_t ca2 = via->pcr & 0x0E;
+    if (ca2 == 0x0C) return false;        /* 110: manual output low */
+    if (ca2 == 0x0E) return true;         /* 111: manual output high */
+    return via->ca2_pin;                  /* pulse/handshake: last driven level */
+}
+
+bool via_get_cb2(via6522_t* via) {
+    if (via->acr & 0x10) return via->cb2_pin; /* shift-out drives CB2 */
+    uint8_t cb2 = via->pcr & 0xE0;
+    if (cb2 == 0xC0) return false;        /* 110: manual output low */
+    if (cb2 == 0xE0) return true;         /* 111: manual output high */
+    return via->cb2_pin;
 }
