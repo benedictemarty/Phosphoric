@@ -1172,7 +1172,10 @@ d'émulation mais un `-r` manquant dans la commande.
       CPU bankée, sans effet de bord), régression 48 Ko corrigée
 - [x] Suite de tests complète 0 échec (profil sans SDL2)
 - [x] VERSION_TRACKING : 1.16.84-alpha tracé
-- [ ] Élucider test_renderer_init_headless en profil SDL2=1 (pré-existant)
+- [x] Élucider test_renderer_init_headless en profil SDL2=1 (pré-existant) —
+      **corrigé v1.36.2** : prototype obsolète à 1 arg (vs `int,bool`) + exigence
+      du comportement stub en vrai SDL2. Test conditionné `#ifdef HAS_SDL2` ;
+      vérifié 10/10 dans les deux profils.
 
 ### Sprint 45: PicoWiFiModemUSB — modem WiFi LOCI (v1.17.0-alpha) - DONE
 

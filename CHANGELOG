@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.2-alpha] - 2026-06-29
+
+### Fixed — `test_renderer_init_headless` échouait en profil SDL2=1
+
+Bug pré-existant (suivi ROADMAP Sprint 47). Le test `test_renderer.c` redéclarait
+un prototype **obsolète** de `renderer_init` à **un seul argument**
+(`bool renderer_init(int scale)`) alors que la fonction réelle en prend **deux**
+(`int scale, bool prefer_software`, cf. `src/main.c` / `src/video/renderer.c`) ;
+l'appel `renderer_init(3)` laissait donc le 2ᵉ argument indéterminé (UB). De plus
+le test exigeait `renderer_get_scale() == 1` (« headless stub »), faux quand
+`renderer.c` est compilé avec **vrai SDL2** (il ouvre alors une fenêtre, qui
+réclame un display absent en CI). Corrigé :
+
+- prototype aligné sur la définition réelle (`renderer_init(int, bool)`),
+  appel `renderer_init(3, false)` ;
+- corps conditionné : sans `HAS_SDL2`, on vérifie le stub (init OK, scale 1) ;
+  avec `HAS_SDL2`, on exerce init+cleanup sans exiger un display (échec gracieux
+  si pas d'écran, ni crash ni fuite).
+
+Vérifié dans les **deux** profils : `make test-renderer` et `make SDL2=1
+test-renderer` → 10/10. Test seul, binaire inchangé. EMU_VERSION 1.36.1 →
+1.36.2-alpha. 849 tests.
+
 ## [1.36.1-alpha] - 2026-06-29
 
 ### Fixed — Log de write-back disque : octets réellement écrits (cosmétique)
