@@ -104,27 +104,55 @@ EMSCRIPTEN_KEEPALIVE int web_load_state(void) {
 }
 
 /* Hot-insert a cassette from a VFS path the JS side just wrote (FS.writeFile).
- * Replaces the live tape buffer and arms auto-CLOAD"" so the inserted tape
- * loads without rebooting the machine. 1 = ok. */
+ * Fast-loads it: the first block is parsed and queued for deferred RAM injection
+ * (fires next frame, since the machine is well past boot), so the browser does
+ * NOT wait for real cassette speed (~minute). The full file is also kept in
+ * tapebuf for any subsequent CLOAD. 1 = ok. */
 EMSCRIPTEN_KEEPALIVE int web_insert_tap(const char* path) {
     if (!g_web_emu || !path) return 0;
+
+    /* Parse the TAP header + first data block for the instant fast-load. */
+    tap_file_t* tap = tap_open_read(path, true);
+    if (!tap) return 0;
+    tap_header_t header;
+    if (!tap_read_header(tap, &header)) { tap_close(tap); return 0; }
+    uint16_t size = (uint16_t)(header.end_addr - header.start_addr + 1);
+    uint8_t* fbuf = (uint8_t*)malloc(size ? size : 1);
+    int rd = fbuf ? tap_read_data(tap, fbuf, size) : 0;
+    tap_close(tap);
+    if (rd <= 0) { free(fbuf); return 0; }
+
+    /* Keep the whole file in tapebuf too (subsequent CLOADs / multi-block). */
     FILE* f = fopen(path, "rb");
-    if (!f) return 0;
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz <= 0 || sz > (1 << 20)) { fclose(f); return 0; }
-    uint8_t* buf = (uint8_t*)malloc((size_t)sz);
-    if (!buf) { fclose(f); return 0; }
-    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { free(buf); fclose(f); return 0; }
-    fclose(f);
-    if (g_web_emu->tapebuf) free(g_web_emu->tapebuf);
-    g_web_emu->tapebuf = buf;
-    g_web_emu->tapelen = (int)sz;
-    g_web_emu->tapeoffs = 0;
-    g_web_emu->tape_loaded = true;
-    g_web_emu->tape_syncstack = -1;
-    g_web_emu->tape_auto_cload_pending = true;  /* auto-type CLOAD"" once ready */
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz > 0 && sz <= (1 << 20)) {
+            uint8_t* tb = (uint8_t*)malloc((size_t)sz);
+            if (tb && fread(tb, 1, (size_t)sz, f) == (size_t)sz) {
+                if (g_web_emu->tapebuf) free(g_web_emu->tapebuf);
+                g_web_emu->tapebuf = tb;
+                g_web_emu->tapelen = (int)sz;
+                g_web_emu->tapeoffs = 0;
+                g_web_emu->tape_loaded = true;
+                g_web_emu->tape_syncstack = -1;
+            } else {
+                free(tb);
+            }
+        }
+        fclose(f);
+    }
+
+    /* Arm the deferred fast-load (injected next frame: total_executed >> 3M). */
+    if (g_web_emu->fastload_buf) free(g_web_emu->fastload_buf);
+    g_web_emu->fastload_buf       = fbuf;
+    g_web_emu->fastload_addr      = header.start_addr;
+    g_web_emu->fastload_end       = header.end_addr;
+    g_web_emu->fastload_size      = (uint16_t)rd;
+    g_web_emu->fastload_type      = header.type;
+    g_web_emu->fastload_auto_run  = header.auto_run;
+    g_web_emu->fastload_pending   = true;
     return 1;
 }
 
