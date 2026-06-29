@@ -46,4 +46,14 @@ bool video_export_ascii(const video_t* vid, FILE* fp, unsigned int scale_x, unsi
  */
 bool video_export_auto(const video_t* vid, const char* filename);
 
+/**
+ * @brief Like video_export_auto(), but with the OCULA overscan border
+ *        composited around the active area (larger image). Format auto-detected
+ *        from the extension (.bmp → BMP, else PPM).
+ * @param vid Video context with rendered framebuffer
+ * @param filename Output file path
+ * @return true on success, false on error / allocation failure
+ */
+bool video_export_auto_bordered(const video_t* vid, const char* filename);
+
 #endif /* VIDEO_EXPORT_H */

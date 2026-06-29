@@ -111,6 +111,45 @@ TEST(test_text_render_ppm_export) {
     video_cleanup(&vid);
 }
 
+/* Sprint 77: the bordered export composites the OCULA overscan border, so the
+ * image is larger than the active area (and than the plain export). */
+TEST(test_export_bordered_dimensions) {
+    video_t vid;
+    video_init(&vid);
+
+    uint8_t charset[2048];
+    make_test_charset(charset);
+    vid.charset = charset;
+
+    uint8_t* mem = (uint8_t*)calloc(49152, 1);
+    ASSERT_TRUE(mem != NULL);
+    for (int i = 0; i < 40 * 28; i++) mem[0xBB80 + i] = 'A';
+    video_render_frame(&vid, mem);
+
+    const char* path = "/tmp/test_video_bordered.ppm";
+    ASSERT_TRUE(video_export_auto_bordered(&vid, path));
+
+    /* Header carries the bordered geometry: native + 2*border per axis. */
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    char magic[8];
+    int w = 0, h = 0;
+    int got = fscanf(fp, "%2s %d %d", magic, &w, &h);
+    fclose(fp);
+    ASSERT_EQ(got, 3);
+    ASSERT_TRUE(strncmp(magic, "P6", 2) == 0);
+    ASSERT_EQ(w, vid.native_w + 2 * OCULA_BORDER_W);
+    ASSERT_EQ(h, vid.native_h + 2 * OCULA_BORDER_H);
+
+    /* Bordered payload is strictly larger than the active-area export. */
+    long sz = file_size(path);
+    ASSERT_TRUE(sz > (long)(vid.native_w * vid.native_h * 3));
+
+    unlink(path);
+    free(mem);
+    video_cleanup(&vid);
+}
+
 TEST(test_text_render_framebuffer_not_black) {
     video_t vid;
     video_init(&vid);
@@ -519,6 +558,7 @@ int main(void) {
 
     RUN(test_video_init_cleanup);
     RUN(test_text_render_ppm_export);
+    RUN(test_export_bordered_dimensions);
     RUN(test_text_render_framebuffer_not_black);
     RUN(test_hires_render_ppm_export);
     RUN(test_bmp_export_valid_header);

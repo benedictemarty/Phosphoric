@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.0-alpha] - 2026-06-29
+
+### Added — Bordure OCULA dans les exports image et AVI (`--export-border`)
+
+Comble la lacune ROADMAP Sprint 65 : les captures d'écran et l'enregistrement
+AVI utilisaient les dimensions de la **zone active** (sans la bordure overscan
+OCULA déjà composée à l'affichage). La nouvelle option **`--export-border`**
+(off par défaut) inclut la bordure dans les sorties — utile pour montrer les
+barres « copper »/la couleur de bordure des démos OCULA dans un screenshot ou
+une vidéo.
+
+- **`src/video/export.c`** : encodeurs PPM/BMP refactorisés en writers bas niveau
+  prenant un buffer RGB + dimensions (`write_ppm_buffer` / `write_bmp_buffer`),
+  partagés par l'export actif et le composite bordé. Nouvelle fonction
+  `video_export_auto_bordered()` : compose via `video_compose_bordered()` puis
+  écrit (format auto-détecté .bmp/.ppm).
+- **`src/main.c`** : flag `--export-border` (`emulator_t.export_border`) ; helper
+  `emu_export_image()` appliqué au screenshot de sortie, `--screenshot-at`, F12 et
+  au frame-dump. AVI : ouverture aux dimensions bordées et composition de chaque
+  frame quand le flag est actif.
+- **Exports par défaut inchangés** (dimensions de zone active) → les tests
+  d'export existants (161280 octets) restent valides.
+- **`tests/unit/test_video.c`** : +1 test `test_export_bordered_dimensions`
+  (en-tête PPM = native + 2×bordure, payload plus gros que l'export actif) —
+  12 → 13 tests vidéo.
+
+Vérifié e2e : sous `--ula ocula`, `--screenshot-at` donne 240×224 sans le flag
+et **304×272 avec `--export-border`**. EMU_VERSION 1.36.3 → 1.37.0-alpha. 849 →
+850 tests ; builds natif + SDL2 OK.
+
 ## [1.36.3-alpha] - 2026-06-29
 
 ### Changed — DTL 2000 : constantes de statut ACIA dédupliquées (alias du 6850)
