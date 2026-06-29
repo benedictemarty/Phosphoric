@@ -11,6 +11,16 @@
 #include <stdio.h>
 #include <string.h>
 
+void cpu_tick(cpu6502_t* cpu, int cycles) {
+    cpu->cycles += (uint64_t)cycles;
+    if (cpu->on_cycle) cpu->on_cycle(cpu->cycle_ctx, cycles);
+}
+
+void cpu_set_cycle_callback(cpu6502_t* cpu, void (*cb)(void*, int), void* ctx) {
+    cpu->on_cycle = cb;
+    cpu->cycle_ctx = ctx;
+}
+
 void cpu_init(cpu6502_t* cpu, memory_t* memory) {
     memset(cpu, 0, sizeof(cpu6502_t));
     cpu->memory = memory;
@@ -34,7 +44,7 @@ static void handle_nmi(cpu6502_t* cpu) {
     cpu_set_flag(cpu, FLAG_INTERRUPT, true);
     cpu->PC = cpu_mem_read(cpu, 0xFFFA) | ((uint16_t)cpu_mem_read(cpu, 0xFFFB) << 8);
     cpu->nmi_pending = false;
-    cpu->cycles += 7;
+    /* Cycle total (7) is reconciled by cpu_step's padding. */
 }
 
 static void handle_irq(cpu6502_t* cpu) {
@@ -45,14 +55,15 @@ static void handle_irq(cpu6502_t* cpu) {
     cpu->PC = cpu_mem_read(cpu, 0xFFFE) | ((uint16_t)cpu_mem_read(cpu, 0xFFFF) << 8);
     /* Level-triggered: do NOT clear cpu->irq here.
      * The I flag prevents re-entry. The source must deassert
-     * its IRQ bit when the CPU acknowledges it (e.g. reading VIA IFR). */
-    cpu->cycles += 7;
+     * its IRQ bit when the CPU acknowledges it (e.g. reading VIA IFR).
+     * Cycle total (7) is reconciled by cpu_step's padding. */
 
     if (cpu->irq_trace_fp) {
-        /* VIA registers at $0300-$030F : IFR=$0D, IER=$0E. Read via memory
-         * to capture current state at IRQ entry. */
-        uint8_t ifr = cpu_mem_read(cpu, 0x030D);
-        uint8_t ier = cpu_mem_read(cpu, 0x030E);
+        /* VIA registers at $0300-$030F : IFR=$0D, IER=$0E. Read directly
+         * (memory_read, no bus tick) so the diagnostic trace does not perturb
+         * the cycle clock or peripheral state. */
+        uint8_t ifr = memory_read(cpu->memory, 0x030D);
+        uint8_t ier = memory_read(cpu->memory, 0x030E);
         fprintf((FILE*)cpu->irq_trace_fp,
                 "%010llu IRQ-ENTRY PC_pre=$%04X target=$%04X IFR=$%02X IER=$%02X srcmask=$%02X\n",
                 (unsigned long long)cpu->cycles, pc_before, cpu->PC, ifr, ier, cpu->irq);
@@ -63,15 +74,29 @@ static void handle_irq(cpu6502_t* cpu) {
 int cpu_step(cpu6502_t* cpu) {
     if (cpu->halted) return 0;
 
+    /* Each bus access advances the clock by one cycle (cpu_tick, via the
+     * memory accessors). An instruction's internal (non-bus) cycles are
+     * reconciled at the end by padding the difference up to the official
+     * cycle count, so cpu->cycles and the per-cycle callback stay exact
+     * while peripherals see real bus accesses at the right time. */
+
     /* Handle interrupts */
     if (cpu->nmi_pending) {
+        uint64_t before = cpu->cycles;
         handle_nmi(cpu);
+        int done = (int)(cpu->cycles - before);
+        if (done < 7) cpu_tick(cpu, 7 - done);
         return 7;
     }
     if (cpu->irq && !cpu_get_flag(cpu, FLAG_INTERRUPT)) {
+        uint64_t before = cpu->cycles;
         handle_irq(cpu);
+        int done = (int)(cpu->cycles - before);
+        if (done < 7) cpu_tick(cpu, 7 - done);
         return 7;
     }
+
+    uint64_t before = cpu->cycles;
 
     /* Fetch opcode */
     uint8_t opcode = cpu_fetch_byte(cpu);
@@ -79,7 +104,8 @@ int cpu_step(cpu6502_t* cpu) {
     /* Decode and execute */
     int cyc = cpu_execute_opcode(cpu, opcode);
 
-    cpu->cycles += cyc;
+    int done = (int)(cpu->cycles - before);
+    if (done < cyc) cpu_tick(cpu, cyc - done);
     return cyc;
 }
 

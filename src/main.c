@@ -897,6 +897,23 @@ static void irq_callback(bool state, void* userdata) {
     }
 }
 
+/* Per-cycle clock callback (registered on the CPU). The CPU invokes this for
+ * every bus cycle it consumes, so PHI2-clocked peripherals advance in step with
+ * the CPU's memory accesses instead of in one post-instruction batch. The total
+ * cycles delivered per instruction equals the instruction's cycle count. */
+static void cpu_cycle_tick(void* ctx, int cycles) {
+    emulator_t* emu = (emulator_t*)ctx;
+    via_update(&emu->via, cycles);
+    if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
+    if (emu->has_loci)      fdc_ticktock(&emu->loci.dsk_fdc, cycles);
+    if (emu->has_serial) {
+        acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
+        acia_tick(&emu->acia, cycles);
+    }
+    if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
+    if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
+}
+
 /* Microdisc CPU IRQ callbacks - level-triggered: set/clear DISK IRQ source bit */
 static void microdisc_cpu_irq_set(emulator_t* emu) {
     cpu_irq_set(&emu->cpu, IRQF_DISK);
@@ -1206,6 +1223,10 @@ static bool emulator_init(emulator_t* emu) {
     /* Wire up I/O callbacks */
     memory_set_io_callbacks(&emu->memory, io_read_callback, io_write_callback, emu);
     via_set_irq_callback(&emu->via, irq_callback, emu);
+
+    /* Drive PHI2-clocked peripherals from the CPU's per-cycle clock (replaces
+     * the post-instruction batch ticking in the frame loop). */
+    cpu_set_cycle_callback(&emu->cpu, cpu_cycle_tick, emu);
 
     /* VIA Port A is driven by PSG in READ mode: psg_decode() updates via.ira
      * (IRA init = 0xFF, no phantom keys). porta_read models the EXTERNAL
@@ -1920,35 +1941,10 @@ static void emulator_run(emulator_t* emu) {
             /* CPU profiler (record cycle cost after step) */
             profiler_record_cycles(&emu->profiler, prof_pc, step);
 
-            /* Update VIA timers */
-            via_update(&emu->via, step);
-
-            /* Microdisc FDC: process delayed DRQ/INTRQ timers */
-            if (emu->has_microdisc) {
-                fdc_ticktock(&emu->microdisc.fdc, step);
-            }
-
-            /* LOCI WD1793 (Sprint 34aw) : tick the FDC backing LOCI's
-             * 4 virtual DSK drives so DRQ/INTRQ timing is cycle-accurate. */
-            if (emu->has_loci) {
-                fdc_ticktock(&emu->loci.dsk_fdc, step);
-            }
-
-            /* ACIA 6551: serial TX/RX timing (aggregated, one call per instruction) */
-            if (emu->has_serial) {
-                acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
-                acia_tick(&emu->acia, step);
-            }
-
-            /* Digitelec DTL 2000: PIA+ACIA TX/RX timing */
-            if (emu->has_dtl2000) {
-                dtl2000_tick(&emu->dtl2000, step);
-            }
-
-            /* Mageco MIDI: ACIA 6850 TX/RX timing at 31250 baud */
-            if (emu->has_mageco) {
-                mageco_tick(&emu->mageco, step);
-            }
+            /* PHI2-clocked peripherals (VIA timers, Microdisc/LOCI FDC, ACIA,
+             * DTL 2000, Mageco MIDI) are now advanced per-cycle by the CPU's
+             * cpu_cycle_tick() callback, in step with the bus accesses, rather
+             * than in a single post-instruction batch here. */
 
             /* NOTE: real Oric hardware does NOT expose VSync via VIA CB1.
              * VSync detection on a real Oric is done by polling memory

@@ -1141,6 +1141,98 @@ TEST(test_illegal_sbc_eb) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  CYCLE ACCURACY: read-modify-write dummy write (observable on I/O)  */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+static int g_io_wcount;
+static uint8_t g_io_writes[4];
+static uint8_t g_io_reg;
+
+static uint8_t rmw_io_read(uint16_t addr, void* ud) { (void)addr; (void)ud; return g_io_reg; }
+static void rmw_io_write(uint16_t addr, uint8_t val, void* ud) {
+    (void)addr; (void)ud;
+    if (g_io_wcount < 4) g_io_writes[g_io_wcount] = val;
+    g_io_wcount++;
+    g_io_reg = val;
+}
+
+TEST(test_rmw_dummy_write_on_io) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    g_io_wcount = 0;
+    g_io_reg = 0x40;
+    memory_set_io_callbacks(&mem, rmw_io_read, rmw_io_write, NULL);
+    /* INC $0310: read ($40) → write-back $40 (dummy) → write $41.
+     * Real NMOS performs the write-back cycle; observable on I/O. */
+    uint8_t code[] = {0xEE, 0x10, 0x03};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu);
+    ASSERT_EQ(g_io_wcount, 2);
+    ASSERT_EQ(g_io_writes[0], 0x40);   /* dummy write = original value */
+    ASSERT_EQ(g_io_writes[1], 0x41);   /* final write = modified value */
+}
+
+TEST(test_rmw_dummy_write_asl_io) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    g_io_wcount = 0;
+    g_io_reg = 0x21;
+    memory_set_io_callbacks(&mem, rmw_io_read, rmw_io_write, NULL);
+    /* ASL $0310: read ($21) → dummy write $21 → write $42 */
+    uint8_t code[] = {0x0E, 0x10, 0x03};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu);
+    ASSERT_EQ(g_io_wcount, 2);
+    ASSERT_EQ(g_io_writes[0], 0x21);
+    ASSERT_EQ(g_io_writes[1], 0x42);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  PER-CYCLE CLOCK CALLBACK                                          */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+static int g_tick_total;
+static int g_tick_calls;
+static void count_tick(void* ctx, int cycles) {
+    (void)ctx;
+    g_tick_total += cycles;
+    g_tick_calls++;
+}
+
+TEST(test_cycle_callback_total) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_cycle_callback(&cpu, count_tick, NULL);
+    g_tick_total = 0; g_tick_calls = 0;
+    /* LDA #$42 (2 cycles) then STA $10 (3 cycles) = 5 cycles, ≥1 tick each */
+    uint8_t code[] = {0xA9, 0x42, 0x85, 0x10};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    int c1 = cpu_step(&cpu);
+    int c2 = cpu_step(&cpu);
+    ASSERT_EQ(c1, 2);
+    ASSERT_EQ(c2, 3);
+    /* The callback must have been delivered exactly the executed cycle total */
+    ASSERT_EQ(g_tick_total, 5);
+    ASSERT_TRUE(g_tick_calls >= 2);
+    ASSERT_EQ((int)cpu.cycles, 5);
+}
+
+TEST(test_cycle_callback_rmw_count) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_cycle_callback(&cpu, count_tick, NULL);
+    g_tick_total = 0;
+    /* INC $10 = 5 cycles (zero-page RMW, incl. write-back) */
+    memory_write(&mem, 0x0010, 0x01);
+    uint8_t code[] = {0xE6, 0x10};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    int c = cpu_step(&cpu);
+    ASSERT_EQ(c, 5);
+    ASSERT_EQ(g_tick_total, 5);
+    ASSERT_EQ(memory_read(&mem, 0x0010), 0x02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -1269,6 +1361,14 @@ int main(void) {
     RUN(test_illegal_jam_halts);
     RUN(test_illegal_nop_imm_consumes_operand);
     RUN(test_illegal_sbc_eb);
+
+    printf("\n  Cycle Accuracy (RMW dummy write):\n");
+    RUN(test_rmw_dummy_write_on_io);
+    RUN(test_rmw_dummy_write_asl_io);
+
+    printf("\n  Per-Cycle Clock Callback:\n");
+    RUN(test_cycle_callback_total);
+    RUN(test_cycle_callback_rmw_count);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

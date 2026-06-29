@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0-alpha] - 2026-06-29
+
+### Added — Cœur cycle-par-cycle : cadencement des périphériques au cycle près
+
+Cinquième jalon « fidélité matérielle » (branche dédiée `feature/cpu-percycle-tick`).
+Le CPU expose désormais une **horloge per-cycle** : chaque accès bus consomme un
+cycle et notifie un callback, et les cycles internes d'une instruction sont
+réconciliés en fin d'instruction. Les périphériques cadencés par PHI2 (timers
+VIA, FDC Microdisc/LOCI, ACIA 6551, DTL 2000, Mageco MIDI) avancent désormais
+**en phase avec les accès bus du CPU**, au lieu d'un unique lot post-instruction.
+
+- **`include/cpu/cpu6502.h` / `src/cpu/cpu6502.c`** : champ `on_cycle` +
+  `cpu_set_cycle_callback()` ; `cpu_tick()` ; `cpu_step()` réconcilie les cycles
+  internes (padding jusqu'au compte officiel) après exécution. Handlers NMI/IRQ
+  alignés (le `+= 7` direct devient padding ; lectures de trace IRQ via
+  `memory_read` pour ne pas perturber l'horloge).
+- **`src/cpu/addressing.c`** : `cpu_mem_read`/`cpu_mem_write` cadencent 1 cycle
+  par accès.
+- **`src/main.c`** : nouveau `cpu_cycle_tick()` enregistré sur le CPU ; le bloc
+  de cadencement batch post-instruction (VIA/FDC×2/ACIA/DTL/Mageco) est retiré.
+- **Rétro-compatibilité** : sans callback (tests unitaires isolés) le CPU ne fait
+  qu'accumuler les cycles — comportement et compte de cycles **identiques**.
+- **`tests/unit/test_cpu.c`** : +2 tests (le callback reçoit exactement le total
+  de cycles par instruction ; RMW zp = 5 cycles) — 90 → 92 tests CPU.
+- **Validation** : suite complète 856 / 0 ; boots ORIC-1 + Atmos rendus ;
+  `--type-keys` (clavier piloté par IRQ) traité et rendu ; bench 95–113 MHz éq.
+  (overhead per-cycle négligeable) ; Valgrind clean.
+
+Bénéfice observable sur l'ORIC volontairement limité (le 6502 n'échantillonne
+l'IRQ qu'aux frontières d'instruction) ; l'intérêt est la justesse du modèle
+(accès bus visibles au bon cycle, fondation pour le raster sub-ligne).
+
+Total tests : 840 → 842. Builds natif + SDL2 + headless OK, 0 régression.
+
+## [1.31.0-alpha] - 2026-06-29
+
+### Added — Fidélité CPU : cycle d'écriture-retour (dummy write) des Read-Modify-Write
+
+Quatrième jalon « fidélité matérielle » (début du chantier cycle-accurate).
+Sur le 6502 NMOS, les instructions Read-Modify-Write effectuent **trois** accès
+mémoire : lecture, **réécriture de la valeur d'origine** (cycle de write-back),
+puis écriture de la valeur modifiée. Phosphoric n'émettait que lecture+écriture
+finale ; le write-back manquant est invisible sur la RAM mais **observable sur
+les registres I/O sensibles à l'écriture** (un registre VIA qui réagit à toute
+écriture voit désormais l'accès intermédiaire, comme sur le vrai matériel).
+
+- **`src/cpu/opcodes.c`** : factorisation des RMW mémoire en helpers
+  (`op_asl_m/op_lsr_m/op_rol_m/op_ror_m/op_inc_m/op_dec_m`) + ajout du write-back
+  de la valeur d'origine. Idem pour les RMW illégaux (`SLO/RLA/SRE/RRA/DCP/ISC`).
+  Comportement fonctionnel (valeur finale, drapeaux, cycles) **inchangé** —
+  seul l'accès bus intermédiaire est ajouté.
+- **`tests/unit/test_cpu.c`** : +2 tests prouvant le double write sur une
+  adresse I/O instrumentée (`INC` et `ASL` sur $0310 → write-back valeur
+  d'origine puis valeur modifiée) — 88 → 90 tests CPU.
+- **Validation** : suite complète 854 / 0, `test-rom` 12/12, boot Atmos jusqu'à
+  l'écran rendu — aucune régression du chemin ROM/Sedoric malgré l'accès I/O
+  supplémentaire.
+
+Note : le reste de la cycle-accuracy stricte (relocalisation du cadencement des
+périphériques au cycle près, timing sub-instruction des 256 opcodes) reste un
+chantier dédié à fort rayon d'impact et faible bénéfice observable sur l'ORIC
+(le CPU n'échantillonne l'IRQ qu'aux frontières d'instruction) — non inclus ici.
+
+Total tests : 838 → 840. Builds natif + SDL2 + headless OK, 0 régression.
+
 ## [1.30.0-alpha] - 2026-06-29
 
 ### Added — Fidélité VIA 6522 : registre à décalage, T2 pulse-counting, pins CA2/CB2
