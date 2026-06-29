@@ -174,7 +174,10 @@
 <script>
 //  ── config ───────────────────────────────────────────────────────────────
 var ROMS = { atmos: '/roms/basic11b.rom', oric1: '/roms/basic10.rom' };
-var rom = sessionStorage.getItem('phos_rom') || 'atmos';
+// ?rom=oric1|atmos on the URL forces the machine for this load (handy for
+// linking a tape that needs a specific BASIC, e.g. ORIC-1-only games).
+var urlRom = new URLSearchParams(location.search).get('rom');
+var rom = (urlRom==='oric1'||urlRom==='atmos') ? urlRom : (sessionStorage.getItem('phos_rom') || 'atmos');
 var mediaName = sessionStorage.getItem('phos_media_name') || '';
 var mediaKind = sessionStorage.getItem('phos_media_kind') || '';
 var args = ['-r', ROMS[rom] || ROMS.atmos];
@@ -200,8 +203,33 @@ var Module = {
     idbGet(mediaName, function(buf){ try{ if(buf){ try{FS.mkdir('/media');}catch(e){}
       FS.writeFile('/media/'+mediaName, new Uint8Array(buf)); } }catch(e){console.warn(e);}
       removeRunDependency('media-file'); }); }],
-  onRuntimeInitialized: function(){ ready=true; refreshUI(); }
+  onRuntimeInitialized: function(){ ready=true; refreshUI(); maybeLoadUrlMedia(); }
 };
+
+// ?media=<file> on the URL → fetch it from the server and hot-insert it live
+// (no reboot), reusing the same C bridge as drag-and-drop. Handy for sharing a
+// direct link to a tape/disk, e.g. phosphoric.html?media=poker-asn.tap
+function maybeLoadUrlMedia(){
+  var p = new URLSearchParams(location.search).get('media');
+  if(!p) return;
+  var low=p.toLowerCase(); var kind=low.endsWith('.dsk')?'dsk':(low.endsWith('.tap')?'tap':'');
+  if(!kind){ console.warn('?media: unsupported (need .tap/.dsk):',p); return; }
+  fetch(p).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+    .then(function(buf){ var name=p.split('/').pop();
+      try{FS.mkdir('/media');}catch(e){}
+      var path='/media/'+name; FS.writeFile(path, new Uint8Array(buf));
+      // The C bridge needs main() to have set g_web_emu; onRuntimeInitialized
+      // fires just before that, so retry briefly until the insert takes.
+      (function tryInsert(n){
+        var ok = (kind==='tap')
+          ? Module.ccall('web_insert_tap','number',['string'],[path])
+          : Module.ccall('web_insert_disk','number',['number','string'],[0,path]);
+        if(ok){ sessionStorage.setItem('phos_media_name', name); sessionStorage.setItem('phos_media_kind', kind); refreshUI(); }
+        else if(n>0) setTimeout(function(){tryInsert(n-1);}, 100);
+        else console.warn('?media: insert failed (disk needs Microdisc, or engine not ready)');
+      })(50);
+    }).catch(function(e){ console.warn('?media load failed:',e); });
+}
 
 function refreshUI(){
   document.getElementById('machine-badge').textContent = (rom==='oric1')?'1':'A';

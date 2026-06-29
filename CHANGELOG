@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.0-alpha] - 2026-06-29
+
+### Added/Changed — WASM : fast-load du hot-insert + chargement média par URL
+
+Finitions du hot-swap WASM (Sprint 78), motivées par un test réel (jeu « poker »
+chargé dans le navigateur) :
+
+- **`src/main.c`** : `web_insert_tap()` fait désormais un **fast-load** (parse
+  l'en-tête TAP + 1er bloc, file une injection RAM différée qui se déclenche au
+  frame suivant) au lieu d'armer un `CLOAD""` à vitesse cassette → plus d'attente
+  d'une minute pour la 1re partie. Le fichier complet reste gardé en `tapebuf`
+  pour les CLOAD multi-blocs suivants.
+- **`web/shell.html`** : deux paramètres d'URL —
+  - `?media=<fichier.tap|.dsk>` : récupère le média depuis le serveur et
+    l'insère **à chaud** au démarrage (réutilise le pont C↔JS ; retry court le
+    temps que `g_web_emu` soit prêt après `main()`).
+  - `?rom=oric1|atmos` : force la machine pour ce chargement (utile pour lier un
+    jeu qui exige un BASIC précis — beaucoup de titres ne tournent que sur
+    ORIC-1). Ex. : `phosphoric.html?rom=oric1&media=poker-asn.tap`.
+
+Note : un jeu cassette multi-bloc volumineux reste long à charger pour ses blocs
+de données (le 2ᵉ bloc passe par le CLOAD ROM) ; le fast-load n'accélère que le
+1er bloc. EMU_VERSION 1.38.0 → 1.39.0-alpha. 850 tests (WASM/web, pas de nouveau
+test unitaire portable ; validé via build emcc réel + revue).
+
 ## [1.38.0-alpha] - 2026-06-29
 
 ### Added — Insertion de média à chaud dans le build WASM (pont C↔JS)

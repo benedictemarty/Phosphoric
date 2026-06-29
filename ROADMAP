@@ -1325,6 +1325,20 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 78b: WASM — fast-load du hot-insert + média par URL (v1.39.0-alpha) - DONE
+
+Finitions du Sprint 78 après un test réel (jeu poker dans le navigateur).
+
+- [x] `web_insert_tap()` fait un **fast-load** (parse TAP + 1er bloc, injection RAM
+      différée au frame suivant) au lieu d'un `CLOAD""` à vitesse cassette.
+- [x] `web/shell.html` : `?media=<fichier>` (fetch serveur + hot-insert au
+      démarrage, avec retry le temps que `g_web_emu` soit prêt) et
+      `?rom=oric1|atmos` (force la machine, ex. jeu ORIC-1-only).
+- [x] **emcc installé** (emsdk 6.0.1) → `.wasm` réellement généré et exports
+      vérifiés (`web_insert_tap`/`web_insert_disk` présents dans le bundle).
+- [x] Diag poker : jeu **ORIC-1** (plante en `ILLEGAL QUANTITY` sur Atmos) ;
+      rendu rouge correct. → `?rom=oric1&media=poker-asn.tap`. 850 tests.
+
 ### Sprint 78: Insertion de média à chaud dans le build WASM (v1.38.0-alpha) - DONE
 
 Comble la dernière lacune du hot-swap (Sprint 63) : dans le navigateur, déposer
