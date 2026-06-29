@@ -1469,6 +1469,45 @@ TEST(test_palette_split_two_zones) {
     ASSERT_EQ(pixel_g(&vid, 0, 100), 0xFF);
 }
 
+/* ── Raster sync registers (Sprint 76) ──────────────────────────── */
+
+/* RASTER_LO returns the scanline low byte, derived from frame_cycles. */
+TEST(test_raster_lo_tracks_scanline) {
+    ASSERT_EQ(ocula_raster_lo(0), 0);                 /* line 0 */
+    ASSERT_EQ(ocula_raster_lo(63), 0);                /* still line 0 (col 63) */
+    ASSERT_EQ(ocula_raster_lo(64), 1);                /* line 1 */
+    ASSERT_EQ(ocula_raster_lo(100 * 64), 100);        /* line 100 */
+    ASSERT_EQ(ocula_raster_lo(255 * 64), 255);        /* line 255 */
+    ASSERT_EQ(ocula_raster_lo(256 * 64), 0);          /* line 256 -> low byte 0 */
+    ASSERT_EQ(ocula_raster_lo(257 * 64), 1);          /* line 257 -> low byte 1 */
+}
+
+/* RASTER_STATUS carries bit 8, the vertical-blank flag and the h-blank flag. */
+TEST(test_raster_status_flags) {
+    /* line 0, col 0: visible, no flags */
+    ASSERT_EQ(ocula_raster_status(0), 0);
+    /* line 100, col 0: still no flags */
+    ASSERT_EQ(ocula_raster_status(100 * 64), 0);
+    /* line 256, col 0: vertical blank + bit 8 set, no h-blank */
+    ASSERT_EQ(ocula_raster_status(256 * 64),
+              OCULA_RASTER_LINE8 | OCULA_RASTER_VBLANK);
+    /* line 200, late column (>=40): h-blank only */
+    ASSERT_EQ(ocula_raster_status(200 * 64 + 50), OCULA_RASTER_HBLANK);
+    /* line 300, late column: bit8 + vblank + hblank */
+    ASSERT_EQ(ocula_raster_status(300 * 64 + 60),
+              OCULA_RASTER_LINE8 | OCULA_RASTER_VBLANK | OCULA_RASTER_HBLANK);
+}
+
+/* The full scanline can be rebuilt from RASTER_LO + RASTER_STATUS bit 0. */
+TEST(test_raster_full_line_reconstruct) {
+    for (int line = 0; line < 312; line++) {
+        int fc = line * 64;
+        int lo = ocula_raster_lo(fc);
+        int hi = (ocula_raster_status(fc) & OCULA_RASTER_LINE8) ? 1 : 0;
+        ASSERT_EQ((hi << 8) | lo, line);
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  TEST RUNNER                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -1552,6 +1591,9 @@ int main(void) {
     RUN(test_ula_always_scans_bank_0);
     RUN(test_gpu_caps_bit);
     RUN(test_gpu_ptr_readback);
+    RUN(test_raster_lo_tracks_scanline);
+    RUN(test_raster_status_flags);
+    RUN(test_raster_full_line_reconstruct);
     RUN(test_gpu_info);
     RUN(test_gpu_fill);
     RUN(test_gpu_fill_respects_active_bank);

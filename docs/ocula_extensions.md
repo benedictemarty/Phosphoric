@@ -358,9 +358,29 @@ Prolonge la fenêtre d'identification/banking de l'étape 4.
 | $03E8 (1000) | W | **GPU_CMD** : opcode ; l'écriture déclenche l'exécution. Bit 7 levé = variante bloquante (étirement PHI0 jusqu'à la fin) |
 | $03E9 (1001) | R | **GPU_STATUS** : $00 prêt/terminé, $01 occupé, ≥$80 code d'erreur |
 | $03EA/$03EB (1002/1003) | R/W | **GPU_PTR** lo/hi : adresse du bloc d'arguments (16 octets) en RAM |
-| $03EC-$03EF | — | réservé v2 (collisions sprites, compteurs) |
+| $03EC (1004) | R | **RASTER_LO** : octet bas de la scanline courante (PAL 0..311) |
+| $03ED (1005) | R | **RASTER_STATUS** : bit 0 = bit 8 de la scanline (ligne ≥ 256) ; bit 1 = VBLANK (ligne ≥ 256) ; bit 2 = HBLANK (fin de ligne) |
+| $03EE-$03EF | — | réservé v2 (collisions sprites, compteurs) |
 
 Capacités : **bit 4 de $03E2** = GPU présent ($03E2 passe de $0F à $1F).
+
+#### Synchronisation raster ($03EC/$03ED)
+
+Demandée par Dbug (forum [t=2709](https://forum.defence-force.org/viewtopic.php?t=2709),
+p=34925 : « VSync/HSync absolutely necessary… don't flash crazily »). Permet de
+caler les écritures de palette/bordure sur le balayage (barres « copper ») sans
+scintillement. Les deux registres sont calculés en direct à partir de la position
+du faisceau (PAL : 312 lignes × 64 cycles, blanc vertical à partir de la ligne
+256). Scanline complète = `RASTER_LO | ((RASTER_STATUS & 1) << 8)`.
+
+Motifs d'usage (BASIC, adresses décimales $03EC=1004, $03ED=1005) :
+
+```basic
+REM attendre la ligne N (N < 256)
+10 IF PEEK(1004)<>N THEN 10
+REM attendre le retour vertical (VSYNC, une fois par trame)
+20 IF (PEEK(1005) AND 2)=0 THEN 20
+```
 
 ### Sémantique d'exécution
 
