@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.0-alpha] - 2026-06-29
+
+### Added — Insertion de média à chaud dans le build WASM (pont C↔JS)
+
+Comble la dernière lacune du hot-swap (ROADMAP Sprint 63) : dans le portage
+navigateur, déposer une nouvelle cassette/disquette **rechargeait toute la page**
+(`location.reload()`). On peut désormais insérer un média **à chaud**, sans
+rebooter la machine — sur le modèle du pont `web_key`.
+
+- **`src/main.c`** (bloc `#ifdef __EMSCRIPTEN__`) : deux fonctions exportées
+  `EMSCRIPTEN_KEEPALIVE` —
+  - `web_insert_tap(path)` : remplace le buffer cassette vivant depuis un chemin
+    du VFS et **arme l'auto-`CLOAD""`** (le mécanisme `tape_auto_cload_pending`,
+    déclenché après le boot, tape la commande tout seul) → la cassette se charge
+    sans manipulation.
+  - `web_insert_disk(drive, path)` : monte un `.dsk` (`sedoric_load` +
+    `microdisc_set_disk`) dans le lecteur A-D. Renvoie 0 si le Microdisc n'est
+    pas actif cette session → le JS retombe alors sur un reload qui l'active.
+- **`Makefile`** : `_web_insert_tap`, `_web_insert_disk` (+ `_malloc`/`_free`)
+  ajoutés à `EXPORTED_FUNCTIONS` de la cible `wasm`.
+- **`web/shell.html`** : `loadMedia()` tente d'abord le hot-swap live
+  (`FS.writeFile` dans `/media` puis `ccall`) ; reload uniquement en repli
+  (premier média, ou disque sans contrôleur actif). Le média reste persisté en
+  IndexedDB/`sessionStorage` pour les sessions suivantes.
+
+Note : le toolchain Emscripten (`emcc`) étant absent de l'environnement de build,
+le `.wasm` n'a pas pu être généré ici ; le bloc WASM est validé par contrôle de
+syntaxe (`gcc -D__EMSCRIPTEN__ -fsyntax-only`, 0 erreur) et suit le pattern
+`web_key`/`osd_do_load` existant. Le build natif et toute la suite restent verts.
+EMU_VERSION 1.37.0 → 1.38.0-alpha. 850 tests (WASM-only, pas de nouveau test
+unitaire portable).
+
 ## [1.37.0-alpha] - 2026-06-29
 
 ### Added — Bordure OCULA dans les exports image et AVI (`--export-border`)

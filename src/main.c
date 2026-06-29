@@ -102,6 +102,50 @@ EMSCRIPTEN_KEEPALIVE int web_save_state(void) {
 EMSCRIPTEN_KEEPALIVE int web_load_state(void) {
     return (g_web_emu && savestate_load(g_web_emu, "/state.ost")) ? 1 : 0;
 }
+
+/* Hot-insert a cassette from a VFS path the JS side just wrote (FS.writeFile).
+ * Replaces the live tape buffer and arms auto-CLOAD"" so the inserted tape
+ * loads without rebooting the machine. 1 = ok. */
+EMSCRIPTEN_KEEPALIVE int web_insert_tap(const char* path) {
+    if (!g_web_emu || !path) return 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > (1 << 20)) { fclose(f); return 0; }
+    uint8_t* buf = (uint8_t*)malloc((size_t)sz);
+    if (!buf) { fclose(f); return 0; }
+    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { free(buf); fclose(f); return 0; }
+    fclose(f);
+    if (g_web_emu->tapebuf) free(g_web_emu->tapebuf);
+    g_web_emu->tapebuf = buf;
+    g_web_emu->tapelen = (int)sz;
+    g_web_emu->tapeoffs = 0;
+    g_web_emu->tape_loaded = true;
+    g_web_emu->tape_syncstack = -1;
+    g_web_emu->tape_auto_cload_pending = true;  /* auto-type CLOAD"" once ready */
+    return 1;
+}
+
+/* Hot-insert a .dsk into drive (0..3) from a VFS path. Requires the Microdisc
+ * to be active (the machine was started with --disk-rom). Returns 0 if there is
+ * no Microdisc, so the JS side can fall back to a reload that brings it up.
+ * No write-back: the WASM build does not enable --disk-writeback. */
+EMSCRIPTEN_KEEPALIVE int web_insert_disk(int drive, const char* path) {
+    if (!g_web_emu || !path) return 0;
+    if (!g_web_emu->has_microdisc) return 0;
+    if (drive < 0 || drive >= MICRODISC_MAX_DRIVES) return 0;
+    sedoric_disk_t* nd = sedoric_load(path);
+    if (!nd) return 0;
+    if (g_web_emu->disks[drive]) sedoric_destroy(g_web_emu->disks[drive]);
+    g_web_emu->disks[drive] = nd;
+    g_web_emu->microdisc.disk_dirty[drive] = false;
+    microdisc_set_disk(&g_web_emu->microdisc, (uint8_t)drive, nd->data, nd->size,
+                       nd->tracks, nd->sectors);
+    g_web_emu->disk_paths[drive] = strdup(path);
+    return 1;
+}
 #endif /* __EMSCRIPTEN__ */
 
 /* Forward declarations for renderer (in renderer.c) */
