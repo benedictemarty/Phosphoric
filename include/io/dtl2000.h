@@ -116,14 +116,17 @@ typedef struct emulator_s emulator_t;
  *  ACIA 6850 — Status register (read $03FC)
  * ═══════════════════════════════════════════════════════════════════════ */
 
-#define DTL_ACIA_SR_RDRF  0x01  /* Receive Data Register Full */
-#define DTL_ACIA_SR_TDRE  0x02  /* Transmit Data Register Empty */
-#define DTL_ACIA_SR_DCD   0x04  /* Data Carrier Detect (1 = carrier lost) */
-#define DTL_ACIA_SR_CTS   0x08  /* Clear To Send (1 = NOT clear) */
-#define DTL_ACIA_SR_FE    0x10  /* Framing Error */
-#define DTL_ACIA_SR_OVRN  0x20  /* Receiver Overrun */
-#define DTL_ACIA_SR_PE    0x40  /* Parity Error */
-#define DTL_ACIA_SR_IRQ   0x80  /* Interrupt Request */
+/* The DTL's ACIA is a 6850; its status bits live in io/acia6850.h (single
+ * source of truth). These DTL_-prefixed names are aliases kept for the
+ * DTL-specific call sites and traces — guaranteed identical to the 6850's. */
+#define DTL_ACIA_SR_RDRF  ACIA6850_SR_RDRF  /* Receive Data Register Full */
+#define DTL_ACIA_SR_TDRE  ACIA6850_SR_TDRE  /* Transmit Data Register Empty */
+#define DTL_ACIA_SR_DCD   ACIA6850_SR_DCD   /* Data Carrier Detect (1 = carrier lost) */
+#define DTL_ACIA_SR_CTS   ACIA6850_SR_CTS   /* Clear To Send (1 = NOT clear) */
+#define DTL_ACIA_SR_FE    ACIA6850_SR_FE    /* Framing Error */
+#define DTL_ACIA_SR_OVRN  ACIA6850_SR_OVRN  /* Receiver Overrun */
+#define DTL_ACIA_SR_PE    ACIA6850_SR_PE    /* Parity Error */
+#define DTL_ACIA_SR_IRQ   ACIA6850_SR_IRQ   /* Interrupt Request */
 
 /* V23 baud presets */
 #define DTL_V23_RX_BAUD  1200
