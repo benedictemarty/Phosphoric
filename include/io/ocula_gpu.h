@@ -40,6 +40,18 @@
 #define OCULA_GPU_PTRL   0x03EA
 #define OCULA_GPU_PTRH   0x03EB
 
+/* Raster sync (Sprint 76) — read-only beam-position registers, so a program
+ * can time palette/border writes to the scan (copper bars) without flicker.
+ * Requested by Dbug (forum t=2709, p=34925: "VSync/HSync absolutely
+ * necessary... don't flash crazily"). Computed live from the frame cycle
+ * counter; PAL: 312 lines x 64 cycles, vertical blank from line 256. */
+#define OCULA_GPU_RASTER_LO     0x03EC  /* R: current scanline & 0xFF (0..311) */
+#define OCULA_GPU_RASTER_STATUS 0x03ED  /* R: beam status flags (below) */
+/* RASTER_STATUS bits */
+#define OCULA_RASTER_LINE8   0x01  /* bit 8 of the scanline (line >= 256) */
+#define OCULA_RASTER_VBLANK  0x02  /* in vertical blank (line >= 256) */
+#define OCULA_RASTER_HBLANK  0x04  /* in horizontal blank (late in the line) */
+
 /* Opcodes (bit 7 = blocking variant) */
 #define OCULA_GPU_OP_INFO     0x01
 #define OCULA_GPU_OP_FILL     0x02
@@ -75,5 +87,10 @@ static inline bool ocula_gpu_addr_in_window(uint16_t address) {
 uint8_t ocula_gpu_read(const ocula_gpu_t* gpu, uint16_t address);
 void ocula_gpu_write(ocula_gpu_t* gpu, memory_t* mem, video_t* vid,
                      uint16_t address, uint8_t value);
+
+/* Raster-sync register values, derived from the PAL frame cycle counter
+ * (emulator_t.frame_cycles, 0..19967). Pure + headless-testable. */
+uint8_t ocula_raster_lo(int frame_cycles);
+uint8_t ocula_raster_status(int frame_cycles);
 
 #endif /* OCULA_GPU_H */

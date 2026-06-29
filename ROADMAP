@@ -267,10 +267,12 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
           6 tests, 98 OCULA. **Modèle proposé, à valider avec sodiumlb.**
     - [ ] **Phase C — reste** : migrer le GPU `$03E8` vers la fenêtre, déprécier
           `$03E0` + l'in-band, migrer démos/spec.
-  - [ ] **Exposer la synchro raster** — demandé par Dbug (25 juin, p=34925 :
+  - [x] **Exposer la synchro raster** — demandé par Dbug (25 juin, p=34925 :
         « VSync/HSync absolutely necessary… don't flash crazily ») : compteur de
         scanline lisible + wait HSync/VSync, pour timer les écritures registres
-        (copper). Proposé en question ouverte dans le post #2.
+        (copper). **Livré Sprint 76 (v1.36.0)** : registres `$03EC` RASTER_LO /
+        `$03ED` RASTER_STATUS (bit8/VBLANK/HBLANK). Reste à poster la réponse
+        forum (l'interface choisie : page-3 GPU réservée plutôt qu'in-band).
   - [ ] Option pour inclure la bordure dans l'export PPM/screenshot/AVI
         (aujourd'hui dimensions actives, pour ne pas casser les tests d'export).
   - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
@@ -1311,6 +1313,25 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
       défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
+
+### Sprint 76: OCULA — synchronisation raster $03EC/$03ED (v1.36.0-alpha) - DONE
+
+Répond à la demande de Dbug (forum t=2709, p=34925 : « VSync/HSync absolutely
+necessary… don't flash crazily »). Expose la position du faisceau pour caler les
+écritures palette/bordure sur le balayage (barres copper) sans scintillement.
+
+- [x] `$03EC` **RASTER_LO** (R) : octet bas de la scanline (PAL 0..311).
+- [x] `$03ED` **RASTER_STATUS** (R) : bit0 = bit8 de la scanline (≥256),
+      bit1 = VBLANK (≥256), bit2 = HBLANK (fin de ligne). Scanline complète =
+      `LO | ((STATUS&1)<<8)`.
+- [x] `src/io/ocula_gpu.c/.h` : fonctions pures `ocula_raster_lo()` /
+      `ocula_raster_status()` depuis `frame_cycles` (géométrie PAL locale,
+      découplée, testable headless) ; flags `OCULA_RASTER_LINE8/VBLANK/HBLANK`.
+- [x] `src/main.c` : `io_read_callback` route `$03EC`/`$03ED` sous `--ula ocula`
+      avant la fenêtre GPU ; inertes hors OCULA.
+- [x] +3 tests `test_ocula` (98 → 101). `docs/ocula_extensions.md` MAJ + motifs
+      BASIC. Vérifié e2e : raster bp ligne 100 → `read $03EC` = `$64`.
+- [x] 849 tests unitaires + 3 e2e/intégration ; builds natif + SDL2 OK.
 
 ### Sprint 75: Commandes IPC de hot-swap média (--control) (v1.35.0-alpha) - DONE
 

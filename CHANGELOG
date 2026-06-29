@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0-alpha] - 2026-06-29
+
+### Added — OCULA : synchronisation raster ($03EC/$03ED)
+
+Répond à la demande de Dbug (forum t=2709, p=34925 : « VSync/HSync absolutely
+necessary… don't flash crazily ») : exposer la position du faisceau pour caler
+les écritures de palette/bordure sur le balayage (barres « copper ») sans
+scintillement. Deux registres lisibles dans la fenêtre OCULA-GPU réservée :
+
+- **`$03EC` RASTER_LO** (R) — octet bas de la scanline courante (PAL 0..311).
+- **`$03ED` RASTER_STATUS** (R) — bit 0 = bit 8 de la scanline (ligne ≥ 256),
+  bit 1 = VBLANK (ligne ≥ 256), bit 2 = HBLANK (fin de ligne). Scanline complète
+  = `RASTER_LO | ((RASTER_STATUS & 1) << 8)`.
+
+- **`src/io/ocula_gpu.c` / `.h`** : fonctions pures `ocula_raster_lo()` /
+  `ocula_raster_status()`, calculées depuis le compteur de cycles de trame
+  (`emulator_t.frame_cycles`), géométrie PAL locale (découplée, testable
+  headless). Constantes de flags `OCULA_RASTER_LINE8/VBLANK/HBLANK`.
+- **`src/main.c`** : `io_read_callback` route `$03EC`/`$03ED` (sous `--ula ocula`)
+  vers ces fonctions avant la fenêtre GPU. Inertes (lecture standard) hors OCULA.
+- **`tests/unit/test_ocula.c`** : +3 tests (suivi de scanline, drapeaux
+  VBLANK/HBLANK/bit8, reconstruction de la ligne complète sur les 312 lignes) —
+  98 → 101 tests OCULA.
+- **`docs/ocula_extensions.md`** : table de la fenêtre $03E8-$03EF mise à jour +
+  section « Synchronisation raster » avec motifs d'usage BASIC.
+
+Vérifié end-to-end : sous `--ula ocula`, un breakpoint raster ligne 100 fait lire
+`$03EC` = `$64` (=100). EMU_VERSION 1.35.0 → 1.36.0-alpha. 846 → 849 tests
+unitaires ; builds natif + SDL2 OK.
+
 ## [1.35.0-alpha] - 2026-06-29
 
 ### Added — Commandes IPC de changement de média à chaud (`--control`)

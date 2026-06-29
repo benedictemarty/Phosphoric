@@ -633,6 +633,16 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return ocula_io_read(&emu->memory, address);
     }
 
+    /* OCULA raster-sync registers: $03EC RASTER_LO / $03ED RASTER_STATUS.
+     * Computed live from the frame cycle counter (Sprint 76). Intercepted
+     * before the GPU window since they share its $03E8-$03EF range. */
+    if (emu->video.ula_profile == ULA_PROFILE_OCULA) {
+        if (address == OCULA_GPU_RASTER_LO)
+            return ocula_raster_lo(emu->frame_cycles);
+        if (address == OCULA_GPU_RASTER_STATUS)
+            return ocula_raster_status(emu->frame_cycles);
+    }
+
     /* OCULA-GPU command window: $03E8-$03EF (étape 5) */
     if (emu->video.ula_profile == ULA_PROFILE_OCULA &&
         ocula_gpu_addr_in_window(address)) {

@@ -28,6 +28,37 @@ uint8_t ocula_gpu_read(const ocula_gpu_t* gpu, uint16_t address) {
     }
 }
 
+/* PAL frame geometry — must mirror emulator.h (PAL_CYCLES_PER_LINE,
+ * PAL_LINES_PER_FRAME, VSYNC_START_LINE). Kept local so this unit stays
+ * decoupled from the emulator struct and headless-testable. The active text
+ * area is ~40 of the 64 cycles per line; the rest is horizontal blanking. */
+#define RASTER_CYCLES_PER_LINE 64
+#define RASTER_LINES_PER_FRAME 312
+#define RASTER_VBLANK_LINE     256
+#define RASTER_HVISIBLE_CYCLES 40
+
+static int raster_line(int frame_cycles) {
+    if (frame_cycles < 0) frame_cycles = 0;
+    int line = frame_cycles / RASTER_CYCLES_PER_LINE;
+    /* Defensive wrap: callers pass 0..19967, but never overrun the table. */
+    return line % RASTER_LINES_PER_FRAME;
+}
+
+uint8_t ocula_raster_lo(int frame_cycles) {
+    return (uint8_t)(raster_line(frame_cycles) & 0xFF);
+}
+
+uint8_t ocula_raster_status(int frame_cycles) {
+    if (frame_cycles < 0) frame_cycles = 0;
+    int line = raster_line(frame_cycles);
+    int col  = frame_cycles % RASTER_CYCLES_PER_LINE;
+    uint8_t s = 0;
+    if (line & 0x100)                 s |= OCULA_RASTER_LINE8;
+    if (line >= RASTER_VBLANK_LINE)   s |= OCULA_RASTER_VBLANK;
+    if (col  >= RASTER_HVISIBLE_CYCLES) s |= OCULA_RASTER_HBLANK;
+    return s;
+}
+
 /* Guarded RAM access for GPU operations: addresses below $0400 (zero
  * page, stack, system variables, I/O page) are off limits — reading
  * the I/O page from the GPU could trigger VIA/FDC side effects. */
