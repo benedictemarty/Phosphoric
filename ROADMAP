@@ -1329,12 +1329,15 @@ sur l'ACIA 6551 à `$0380` (adresse de l'ACIA sous `--loci`, fenêtre du modem).
 - [x] `Makefile` : cible `test-loci-acia-e2e` (`.PHONY` + `tests`).
 - [x] Outillage/exemples seuls, binaire inchangé. 846 tests unitaires + 1 e2e.
 
-**Notes** : (1) backend **loopback** et non `picowifi` — le boot **headless** du
+**Note** : backend **loopback** et non `picowifi` — le boot **headless** du
 backend PicoWiFi n'est pas encore déterministe (le TX se bloque par moments) ;
 le couple `--loci --serial picowifi` reste démontré interactivement
-(`examples/picowifi_test.bas`). À fiabiliser dans un sprint dédié. (2) Bug
-collatéral repéré : `bas2tap` **tokenise les mots-clés à l'intérieur des lignes
-`REM`** (ex. « AT »), ce qui peut corrompre le chaînage — à corriger.
+(`examples/picowifi_test.bas`). À fiabiliser dans un sprint dédié.
+
+*(Correction v1.34.1 : un « bug bas2tap tokeniserait les REM » initialement noté
+ici était un faux positif — vérifié, le reste de ligne après le token `REM`
+(`$9D`) est copié verbatim ; l'instabilité observée venait du non-déterminisme
+du backend picowifi headless.)*
 
 ### Sprint 73: Modèle de timing du bus MIA (LOCI) — blocage picowifi (v1.33.0-alpha) - DONE
 

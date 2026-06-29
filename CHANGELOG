@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.1-alpha] - 2026-06-29
+
+### Fixed — Doc : retrait d'un « bug bas2tap » erroné (faux positif)
+
+L'entrée 1.34.0 mentionnait que `bas2tap` tokeniserait les mots-clés à
+l'intérieur des lignes `REM`. **C'est faux** — vérification faite : le
+tokeniseur (`basic_tokenize_line`, `src/storage/tap.c`) pose bien le drapeau
+`after_rem` au token `REM` (`$9D`) et copie le reste de la ligne **verbatim**
+(dump TAP : `9D 20 52 45 50 4C 59 20 41 54 …` = « REM REPLY AT » en ASCII, le
+« AT » n'est pas tokenisé ; deux `.bas` ne différant que par un mot dans le REM
+produisent un TAP de taille identique et tournent tous deux). L'instabilité que
+j'avais imputée au REM venait en réalité du **non-déterminisme du backend
+picowifi en headless** (les tests de l'époque utilisaient `--serial picowifi`).
+Mention retirée du CHANGELOG/VERSION_TRACKING/CIRRUS_OS/ROADMAP. Le seul
+problème réel reste le boot headless picowifi non déterministe. Docs seules,
+binaire inchangé. EMU_VERSION 1.34.0 → 1.34.1-alpha.
+
 ## [1.34.0-alpha] - 2026-06-29
 
 ### Added — Test e2e : un programme BASIC pilote l'ACIA 6551 du LOCI à $0380
@@ -31,9 +48,7 @@ Note : le test utilise le backend **loopback** plutôt que `picowifi`. Le backen
 PicoWiFi répond à de vraies commandes AT sur cette même fenêtre `$0380` (démo
 interactive : `examples/picowifi_test.bas`), mais son chemin de boot **headless**
 n'est pas encore assez déterministe pour la CI (parfois le TX se bloque) — à
-traiter séparément. Observation collatérale : `bas2tap` **tokenise les mots-clés
-à l'intérieur des lignes `REM`**, ce qui peut corrompre le chaînage du programme
-(ex. le mot « AT » dans un REM) — bug `bas2tap` à corriger plus tard.
+traiter séparément.
 
 Outillage/exemples uniquement, binaire émulateur inchangé. EMU_VERSION 1.33.0 →
 1.34.0-alpha. 846 tests unitaires inchangés + 1 nouveau test e2e
