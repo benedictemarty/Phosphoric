@@ -3757,8 +3757,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Load disks with Microdisc controller */
-    bool any_disk = (disk_create_file != NULL);
+    /* Load disks with Microdisc controller. A Microdisc ROM on its own is
+     * enough to bring the controller up (a real Microdisc is present even with
+     * no disk in the drives) — this enables hot-swapping a .dsk in later via
+     * the OSD or the --control `load-disk` command. */
+    bool any_disk = (disk_create_file != NULL) || (disk_rom_file != NULL);
     for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
         if (disk_files[i]) { any_disk = true; break; }
     }

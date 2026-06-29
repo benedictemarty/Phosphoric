@@ -20,6 +20,7 @@
 #include "io/acia6551.h"
 #include "io/loci.h"
 #include "storage/disk.h"
+#include "storage/sedoric.h"
 #include <sys/select.h>
 #include <unistd.h>
 #include <signal.h>
@@ -392,6 +393,93 @@ static void cmd_load_tap(emulator_t* emu, const char* path) {
     reply_ok("size=%zu", len);
 }
 
+/* Parse a drive selector: "A".."D", "a".."d" or "0".."3". -1 if invalid. */
+static int control_drive_index(const char* s) {
+    if (!s || !s[0] || s[1] != '\0') return -1;
+    char c = s[0];
+    if (c >= 'a' && c <= 'd') return c - 'a';
+    if (c >= 'A' && c <= 'D') return c - 'A';
+    if (c >= '0' && c <= '3') return c - '0';
+    return -1;
+}
+
+/* Write a modified .dsk back to its source file, mirroring osd_writeback_drive()
+ * in main.c. Opt-in via --disk-writeback; only when the drive is dirty and has a
+ * known source path. Returns true if a write-back actually happened. */
+static bool control_writeback_drive(emulator_t* emu, int drv) {
+    if (!emu->disk_writeback || drv < 0 || drv >= MICRODISC_MAX_DRIVES) return false;
+    if (!emu->microdisc.disk_dirty[drv] || !emu->disks[drv] || !emu->disk_paths[drv])
+        return false;
+    bool ok = sedoric_save(emu->disks[drv], emu->disk_paths[drv]);
+    log_info("control: write-back drive %c -> %s (%s)", 'A' + drv,
+             emu->disk_paths[drv], ok ? "OK" : "FAIL");
+    emu->microdisc.disk_dirty[drv] = false;
+    return ok;
+}
+
+/* load-disk <drive> <path> — hot-swap a .dsk into drive A-D. Mirrors the OSD
+ * hot-load path: write back the outgoing disk (if dirty + --disk-writeback),
+ * free it, then load and wire the new image. */
+static void cmd_load_disk(emulator_t* emu, const char* drive_s, const char* path) {
+    if (!drive_s || !path) {
+        reply_err("load-disk: usage `load-disk <drive A-D> <path>`");
+        return;
+    }
+    if (!emu->has_microdisc) {
+        reply_err("load-disk: no microdisc (need --disk-rom)");
+        return;
+    }
+    int drv = control_drive_index(drive_s);
+    if (drv < 0) { reply_err("load-disk: drive must be A-D"); return; }
+
+    sedoric_disk_t* nd = sedoric_load(path);
+    if (!nd) { reply_err("load-disk: cannot read `%s`", path); return; }
+
+    control_writeback_drive(emu, drv);
+    if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
+    emu->disks[drv] = nd;
+    emu->microdisc.disk_dirty[drv] = false;
+    microdisc_set_disk(&emu->microdisc, (uint8_t)drv, nd->data, nd->size,
+                       nd->tracks, nd->sectors);
+    emu->disk_paths[drv] = strdup(path);
+    if (drv == 0) emu->disk_path = emu->disk_paths[drv];
+    log_info("control: disk %c <- %s", 'A' + drv, path);
+    reply_ok("drive=%c size=%u tracks=%u sectors=%u", 'A' + drv,
+             nd->size, nd->tracks, nd->sectors);
+}
+
+/* eject-disk <drive> — empty drive A-D, writing back first if dirty. */
+static void cmd_eject_disk(emulator_t* emu, const char* drive_s) {
+    if (!emu->has_microdisc) { reply_err("eject-disk: no microdisc"); return; }
+    int drv = control_drive_index(drive_s);
+    if (drv < 0) { reply_err("eject-disk: usage `eject-disk <drive A-D>`"); return; }
+    if (!emu->disks[drv]) { reply_err("eject-disk: drive %c already empty", 'A' + drv); return; }
+
+    bool wb = control_writeback_drive(emu, drv);
+    sedoric_destroy(emu->disks[drv]);
+    emu->disks[drv] = NULL;
+    emu->disk_paths[drv] = NULL;
+    microdisc_set_disk(&emu->microdisc, (uint8_t)drv, NULL, 0, 0, 0);
+    if (drv == 0) emu->disk_path = NULL;
+    log_info("control: drive %c ejected", 'A' + drv);
+    reply_ok("drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);
+}
+
+/* eject-tape — unload the cassette and free its buffer. */
+static void cmd_eject_tape(emulator_t* emu) {
+    if (!emu->tape_loaded && !emu->tapebuf) {
+        reply_err("eject-tape: no tape loaded");
+        return;
+    }
+    if (emu->tapebuf) { free(emu->tapebuf); emu->tapebuf = NULL; }
+    emu->tapelen = 0;
+    emu->tapeoffs = 0;
+    emu->tape_loaded = false;
+    emu->tape_path = NULL;
+    log_info("control: tape ejected");
+    reply_ok("ejected");
+}
+
 static void cmd_load_rom(emulator_t* emu, const char* path) {
     if (!path) { reply_err("load-rom: usage `load-rom <path>`"); return; }
     uint8_t* buf = NULL;
@@ -461,7 +549,7 @@ static void cmd_reset(emulator_t* emu) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape"
 
 static void cmd_hello(const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -627,6 +715,15 @@ void control_repl(emulator_t* emu) {
         }
         else if (strcmp(cmd, "load-tap") == 0) {
             cmd_load_tap(emu, arg1);
+        }
+        else if (strcmp(cmd, "load-disk") == 0) {
+            cmd_load_disk(emu, arg1, arg2);
+        }
+        else if (strcmp(cmd, "eject-disk") == 0) {
+            cmd_eject_disk(emu, arg1);
+        }
+        else if (strcmp(cmd, "eject-tape") == 0) {
+            cmd_eject_tape(emu);
         }
         else if (strcmp(cmd, "load-rom") == 0) {
             cmd_load_rom(emu, arg1);
