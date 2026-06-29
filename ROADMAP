@@ -348,12 +348,13 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   - [x] +1 test `test_osd_eject_depends_on_selected_media`. 812 tests.
         → **L'OSD couvre désormais tout le hot-swap (charge/éjecte k7 + disque A–D).**
 - À faire :
-  - [ ] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
-        dans `src/control.c` (réutiliser le suivi dirty + `--disk-writeback`),
-        capability dans `CONTROL_PROTO_CAPS`.
+  - [x] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
+        dans `src/control.c` (write-back dirty + `--disk-writeback`), capability
+        dans `CONTROL_PROTO_CAPS` — livré Sprint 75 (v1.35.0).
   - [ ] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
         au lieu de relancer la machine.
-  - [ ] Tests : `make test-control` (load-disk/eject), e2e swap .dsk à chaud.
+  - [x] Tests : `make test-control` (load-disk/eject-disk/eject-tape) — livré
+        Sprint 75 (`tests/integration/test_control_media_swap.sh`, 9 assertions).
 
 ### Sprint 19: Interactive Debugger (v1.1.0-alpha) - DONE
 - [x] Interactive REPL debugger module (src/debugger.c, include/debugger.h)
@@ -1310,6 +1311,25 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
       défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
+
+### Sprint 75: Commandes IPC de hot-swap média (--control) (v1.35.0-alpha) - DONE
+
+Comble la lacune Sprint 63 : `--control` ne chargeait qu'une cassette
+(`load-tap`). Le pilotage par agent/IDE peut désormais changer disque et
+cassette à chaud, comme l'OSD (F6/Suppr).
+
+- [x] `src/control.c` : `load-disk <drive A-D> <path>` (write-back du disque
+      sortant si modifié + `--disk-writeback`, `sedoric_load` +
+      `microdisc_set_disk` ; `OK drive=X size=… tracks=… sectors=…`),
+      `eject-disk <drive>` (`OK drive=X ejected writeback=0|1`), `eject-tape`.
+- [x] Helpers `control_drive_index()` (A-D/a-d/0-3) et `control_writeback_drive()`
+      (miroir de `osd_writeback_drive`). `CONTROL_PROTO_CAPS` annonce les 3 caps.
+- [x] `src/main.c` : `--disk-rom` seul (sans disque) active le contrôleur
+      Microdisc → un `.dsk` peut être inséré à chaud ensuite (fidèle : le
+      Microdisc est présent même sans disquette).
+- [x] `tests/integration/test_control_media_swap.sh` (cible `make test-control`,
+      dans `tests`) : 9 assertions, déterministe, skip propre si assets absents.
+- [x] 846 tests unitaires + 3 e2e/intégration ; builds natif + SDL2 OK.
 
 ### Sprint 74: Test e2e — BASIC pilote l'ACIA 6551 du LOCI à $0380 (v1.34.0-alpha) - DONE
 

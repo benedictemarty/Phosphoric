@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.35.0-alpha] - 2026-06-29
+
+### Added — Commandes IPC de changement de média à chaud (`--control`)
+
+Comble la lacune ROADMAP Sprint 63 : le mode `--control` (pilotage par un agent/
+IDE via pipes) ne pouvait charger qu'une cassette (`load-tap`) ; les disques et
+l'éjection manquaient. Trois commandes ajoutées dans `src/control.c`, reflétant
+le hot-swap déjà offert par l'OSD (touche F6/Suppr) :
+
+- **`load-disk <drive> <path>`** — monte un `.dsk` dans le lecteur A-D (sélecteur
+  `A`-`D`, `a`-`d` ou `0`-`3`). Réécrit d'abord le disque sortant si modifié et
+  `--disk-writeback` actif, le libère, puis charge et câble la nouvelle image
+  (`sedoric_load` + `microdisc_set_disk`). Réponse `OK drive=X size=… tracks=…
+  sectors=…`.
+- **`eject-disk <drive>`** — vide le lecteur (write-back si modifié), réponse
+  `OK drive=X ejected writeback=0|1`. Éjecter un lecteur vide → `ERR`.
+- **`eject-tape`** — décharge la cassette et libère le buffer.
+- `CONTROL_PROTO_CAPS` annonce les 3 nouvelles capacités (vues par le client
+  via `hello`).
+
+- **`src/main.c`** : un Microdisc ROM seul (`--disk-rom` sans disque) suffit
+  désormais à activer le contrôleur — un Microdisc physique est présent même
+  sans disquette, ce qui permet d'insérer un `.dsk` à chaud ensuite (OSD ou
+  `load-disk`). Auparavant le contrôleur n'existait qu'avec un disque au boot.
+- **Tests** : `tests/integration/test_control_media_swap.sh` (cible
+  `make test-control`, dans `tests`) — 9 assertions : caps annoncées, montage +
+  `peek disk`, éjection + write-back, double-éjection rejetée, sélecteur invalide
+  et fichier manquant rejetés, éjection cassette. Déterministe.
+
+EMU_VERSION 1.34.1 → 1.35.0-alpha. 846 tests unitaires + 3 e2e/intégration
+(`test-loci-acia-e2e`, `test-control`, …). Builds natif + SDL2 OK.
+
 ## [1.34.1-alpha] - 2026-06-29
 
 ### Fixed — Doc : retrait d'un « bug bas2tap » erroné (faux positif)
