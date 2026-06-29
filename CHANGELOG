@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.3-alpha] - 2026-06-29
+
+### Changed — DTL 2000 : constantes de statut ACIA dédupliquées (alias du 6850)
+
+Achève la factorisation de l'ACIA 6850 hors de `dtl2000.c` (suite logique de la
+refonte PIA 6821, sprint 60+ ; l'émulation ACIA était déjà sortie dans
+`src/io/acia6850.c`, mais les **constantes** de bits de statut restaient
+dupliquées). Les huit `DTL_ACIA_SR_*` (`include/io/dtl2000.h`) qui redéfinissaient
+en dur `0x01..0x80` deviennent des **alias** des `ACIA6850_SR_*` partagés
+(`io/acia6850.h`) — source unique de vérité, valeurs garanties identiques par le
+compilateur. Aucun site d'appel modifié (les noms `DTL_*` restent valides dans
+`dtl2000.c` et les tests). Refactoring pur, comportement inchangé.
+
+Vérifié : `make test-dtl2000` 15/15, `make test-acia6850` 11/11, suite complète
+verte. EMU_VERSION 1.36.2 → 1.36.3-alpha. 849 tests.
+
 ## [1.36.2-alpha] - 2026-06-29
 
 ### Fixed — `test_renderer_init_headless` échouait en profil SDL2=1

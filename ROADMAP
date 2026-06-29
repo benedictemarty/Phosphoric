@@ -950,7 +950,10 @@ secteurs par-dessus le conteneur MFM, de taille différente.
       $03F8-$03FB routés vers `pia6821_read/write` ; décodage ligne/mode inchangé.
 - [x] Aucune régression (15 tests DTL + e2e + boot OTRM identiques).
 - [x] Suite `make test-pia6821` (14 tests). 644 tests PASS (+14).
-- [ ] Suite logique : factoriser aussi l'ACIA 6850 hors de `dtl2000.c`.
+- [x] Suite logique : factoriser aussi l'ACIA 6850 hors de `dtl2000.c` — fait
+      (émulation dans `src/io/acia6850.c`) ; **v1.36.3** : dernières constantes de
+      statut `DTL_ACIA_SR_*` converties en alias des `ACIA6850_SR_*` partagés
+      (source unique de vérité), plus aucune duplication.
 
 ### Sprint 60j: Timing baud réel sur horloge externe — reco #6 (v1.21.9-alpha) - DONE
 
