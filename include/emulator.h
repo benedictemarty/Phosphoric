@@ -41,7 +41,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.36.3-alpha"
+#define EMU_VERSION "1.37.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -293,6 +293,10 @@ typedef struct emulator_s {
     /* Disable the OCULA overscan border in the window (--no-border). The
      * border is composited on by default (Sprint 65). */
     bool no_border;
+
+    /* Include the OCULA overscan border in image/AVI exports (--export-border).
+     * Off by default so exports keep the active-area dimensions (Sprint 77). */
+    bool export_border;
 
     /* Interactive debugger */
     debugger_t debugger;

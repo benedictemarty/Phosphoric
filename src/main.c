@@ -333,6 +333,7 @@ static void print_usage(const char* program_name) {
     printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
     printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
     printf("      --no-border            Disable the OCULA overscan border in the window (on by default)\n");
+    printf("      --export-border        Include the OCULA border in image/AVI exports (off by default)\n");
     printf("      --ula PROFILE          ULA profile: ula (stock HCS 10017, default)\n");
     printf("                             or ocula (OCULA RP2350 replacement, extended modes)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
@@ -912,6 +913,13 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
         /* Check for Centronics printer STROBE (CA2 forced low → high) */
         oric_printer_check_strobe(&emu->printer, old_pcr, value, emu->via.ora);
     }
+}
+
+/* Export a screenshot honouring --export-border: with the flag, the OCULA
+ * overscan border is composited around the active area (larger image). */
+static bool emu_export_image(emulator_t* emu, const char* path) {
+    return emu->export_border ? video_export_auto_bordered(&emu->video, path)
+                              : video_export_auto(&emu->video, path);
 }
 
 /* VIA IRQ callback - level-triggered: set/clear VIA IRQ source bit */
@@ -2498,7 +2506,7 @@ static void emulator_run(emulator_t* emu) {
                         renderer_toggle_fullscreen();
                         break;
                     case SDLK_F12:
-                        video_export_ppm(&emu->video, "screenshot.ppm");
+                        emu_export_image(emu, "screenshot.ppm");
                         log_info("Screenshot saved to screenshot.ppm");
                         break;
                     default:
@@ -2591,7 +2599,7 @@ static void emulator_run(emulator_t* emu) {
             (int64_t)total_executed >= emu->screenshot_at_cycles) {
             log_info("Taking screenshot at %llu cycles -> %s",
                      (unsigned long long)total_executed, emu->screenshot_at_file);
-            video_export_auto(&emu->video, emu->screenshot_at_file);
+            emu_export_image(emu, emu->screenshot_at_file);
             screenshot_at_done = true;
         }
 
@@ -2600,12 +2608,21 @@ static void emulator_run(emulator_t* emu) {
             char path[512];
             snprintf(path, sizeof(path), "%s/frame_%06llu.ppm",
                      emu->frame_dump_dir, (unsigned long long)frame_count);
-            video_export_ppm(&emu->video, path);
+            emu_export_image(emu, path);
         }
 
-        /* Video recording: append this frame to the MJPEG AVI. */
+        /* Video recording: append this frame to the MJPEG AVI. With
+         * --export-border, composite the overscan border into a scratch buffer
+         * (matches the larger geometry the recorder was opened with). */
         if (emu->video_avi_active) {
-            avi_recorder_add_frame(&emu->video_avi_rec, emu->video.framebuffer);
+            if (emu->export_border) {
+                static uint8_t avi_border_buf[OCULA_BORDERED_MAX_W * OCULA_BORDERED_MAX_H * 3];
+                int bw = 0, bh = 0;
+                video_compose_bordered(&emu->video, avi_border_buf, &bw, &bh);
+                avi_recorder_add_frame(&emu->video_avi_rec, avi_border_buf);
+            } else {
+                avi_recorder_add_frame(&emu->video_avi_rec, emu->video.framebuffer);
+            }
         }
 
         frame_count++;
@@ -2711,7 +2728,7 @@ static void emulator_run(emulator_t* emu) {
     if (emu->screenshot_file) {
         log_info("Taking exit screenshot -> %s", emu->screenshot_file);
         video_render_frame(&emu->video, emu->memory.ram);
-        video_export_auto(&emu->video, emu->screenshot_file);
+        emu_export_image(emu, emu->screenshot_file);
     }
 
     log_info("Emulation stopped. Total cycles: %llu, frames: %llu",
@@ -2818,7 +2835,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_REALTIME, OPT_DISK_CREATE };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2863,6 +2880,7 @@ int main(int argc, char* argv[]) {
         {"scale",               required_argument, 0, OPT_SCALE},
         {"render-software",     no_argument,       0, OPT_RENDER_SOFTWARE},
         {"no-border",           no_argument,       0, OPT_NO_BORDER},
+        {"export-border",       no_argument,       0, OPT_EXPORT_BORDER},
         {"trace",               required_argument, 0, OPT_TRACE},
         {"trace-max",           required_argument, 0, OPT_TRACE_MAX},
         {"profile",             required_argument, 0, OPT_PROFILE},
@@ -2963,6 +2981,7 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_RENDER_SOFTWARE: render_software = true; break;
             case OPT_NO_BORDER: emu.no_border = true; break;
+            case OPT_EXPORT_BORDER: emu.export_border = true; break;
             case OPT_REALTIME: emu.realtime = true; break;
             case OPT_ULA:
                 ula_profile = video_profile_parse(optarg);
@@ -3380,8 +3399,12 @@ int main(int argc, char* argv[]) {
     emu.video_avi_quality = (video_avi_quality > 0) ? video_avi_quality : 85;
     emu.video_avi_active = false;
     if (video_avi_file) {
+        /* With --export-border the recorded frames carry the OCULA overscan
+         * border, so the stream geometry grows by the border on each side. */
+        int avi_w = emu.export_border ? ORIC_SCREEN_W + 2 * OCULA_BORDER_W : ORIC_SCREEN_W;
+        int avi_h = emu.export_border ? ORIC_SCREEN_H + 2 * OCULA_BORDER_H : ORIC_SCREEN_H;
         if (avi_recorder_open(&emu.video_avi_rec, video_avi_file,
-                              ORIC_SCREEN_W, ORIC_SCREEN_H,
+                              avi_w, avi_h,
                               emu.video_avi_fps, emu.video_avi_quality)) {
             emu.video_avi_active = true;
             log_info("Video recording (MJPEG AVI) -> %s (%d fps, q%d)",

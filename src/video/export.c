@@ -8,41 +8,39 @@
  * PPM: P6 binary format - header ASCII + raw RGB888 data
  * BMP: BITMAPFILEHEADER + BITMAPINFOHEADER + bottom-up RGB
  * ASCII: ANSI true-color escape codes for terminal display
+ *
+ * Each format has a low-level writer taking a raw RGB888 buffer + dimensions,
+ * so both the active framebuffer and the OCULA-bordered composite (Sprint 77)
+ * share the same encoders.
  */
 
 #include "video/export.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-bool video_export_ppm(const video_t* vid, const char* filename) {
-    if (!vid || !filename) return false;
+/* ── low-level encoders: raw RGB888 buffer (w*h*3) ───────────────── */
 
+static bool write_ppm_buffer(const uint8_t* rgb, int w, int h, const char* filename) {
     FILE* fp = fopen(filename, "wb");
     if (!fp) return false;
-
-    /* PPM P6 header — native resolution follows the active ULA profile */
-    fprintf(fp, "P6\n%d %d\n255\n", vid->native_w, vid->native_h);
-
-    /* Raw RGB data */
-    size_t pixels = (size_t)(vid->native_w * vid->native_h * 3);
-    size_t written = fwrite(vid->framebuffer, 1, pixels, fp);
+    fprintf(fp, "P6\n%d %d\n255\n", w, h);
+    size_t pixels = (size_t)(w * h * 3);
+    size_t written = fwrite(rgb, 1, pixels, fp);
     fclose(fp);
-
     return written == pixels;
 }
 
-bool video_export_bmp(const video_t* vid, const char* filename) {
-    if (!vid || !filename) return false;
-
+static bool write_bmp_buffer(const uint8_t* rgb, int w, int h, const char* filename) {
     FILE* fp = fopen(filename, "wb");
     if (!fp) return false;
 
-    unsigned int w = (unsigned int)vid->native_w;
-    unsigned int h = (unsigned int)vid->native_h;
-    unsigned int row_stride = w * 3;
+    unsigned int uw = (unsigned int)w;
+    unsigned int uh = (unsigned int)h;
+    unsigned int row_stride = uw * 3;
     unsigned int row_padding = (4 - (row_stride % 4)) % 4;
     unsigned int padded_row = row_stride + row_padding;
-    uint32_t pixel_data_size = (uint32_t)(padded_row * h);
+    uint32_t pixel_data_size = (uint32_t)(padded_row * uh);
     uint32_t file_size = 54 + pixel_data_size;
 
     /* BITMAPFILEHEADER (14 bytes) */
@@ -59,10 +57,10 @@ bool video_export_bmp(const video_t* vid, const char* filename) {
     uint8_t bih[40];
     memset(bih, 0, sizeof(bih));
     bih[0] = 40; /* header size */
-    bih[4] = (uint8_t)(w);
-    bih[5] = (uint8_t)(w >> 8);
-    bih[8] = (uint8_t)(h);
-    bih[9] = (uint8_t)(h >> 8);
+    bih[4] = (uint8_t)(uw);
+    bih[5] = (uint8_t)(uw >> 8);
+    bih[8] = (uint8_t)(uh);
+    bih[9] = (uint8_t)(uh >> 8);
     bih[12] = 1; /* planes */
     bih[14] = 24; /* bits per pixel */
     bih[20] = (uint8_t)(pixel_data_size);
@@ -75,13 +73,13 @@ bool video_export_bmp(const video_t* vid, const char* filename) {
 
     /* Pixel data: BMP is bottom-up, BGR order */
     uint8_t pad[3] = {0, 0, 0};
-    for (int y = (int)h - 1; y >= 0; y--) {
-        for (unsigned int x = 0; x < w; x++) {
-            unsigned int off = ((unsigned int)y * w + x) * 3;
+    for (int y = (int)uh - 1; y >= 0; y--) {
+        for (unsigned int x = 0; x < uw; x++) {
+            unsigned int off = ((unsigned int)y * uw + x) * 3;
             uint8_t bgr[3];
-            bgr[0] = vid->framebuffer[off + 2]; /* B */
-            bgr[1] = vid->framebuffer[off + 1]; /* G */
-            bgr[2] = vid->framebuffer[off + 0]; /* R */
+            bgr[0] = rgb[off + 2]; /* B */
+            bgr[1] = rgb[off + 1]; /* G */
+            bgr[2] = rgb[off + 0]; /* R */
             fwrite(bgr, 1, 3, fp);
         }
         if (row_padding > 0) {
@@ -91,6 +89,18 @@ bool video_export_bmp(const video_t* vid, const char* filename) {
 
     fclose(fp);
     return true;
+}
+
+/* ── active framebuffer exports (unchanged dimensions) ───────────── */
+
+bool video_export_ppm(const video_t* vid, const char* filename) {
+    if (!vid || !filename) return false;
+    return write_ppm_buffer(vid->framebuffer, vid->native_w, vid->native_h, filename);
+}
+
+bool video_export_bmp(const video_t* vid, const char* filename) {
+    if (!vid || !filename) return false;
+    return write_bmp_buffer(vid->framebuffer, vid->native_w, vid->native_h, filename);
 }
 
 bool video_export_ascii(const video_t* vid, FILE* fp, unsigned int scale_x, unsigned int scale_y) {
@@ -116,15 +126,35 @@ bool video_export_auto(const video_t* vid, const char* filename) {
     if (!vid || !filename) return false;
 
     const char* ext = strrchr(filename, '.');
-    if (!ext) {
-        /* Default to PPM */
-        return video_export_ppm(vid, filename);
-    }
-
-    if (strcmp(ext, ".bmp") == 0 || strcmp(ext, ".BMP") == 0) {
+    if (ext && (strcmp(ext, ".bmp") == 0 || strcmp(ext, ".BMP") == 0)) {
         return video_export_bmp(vid, filename);
     }
-
-    /* Default to PPM for .ppm or any other extension */
+    /* Default to PPM for .ppm or any other/absent extension */
     return video_export_ppm(vid, filename);
+}
+
+/* ── OCULA-bordered exports (Sprint 77) ──────────────────────────── */
+
+/* Compose the active framebuffer surrounded by the OCULA overscan border,
+ * then write it. Falls back to the active-area export when compositing is
+ * unavailable. Returns false on allocation failure. */
+bool video_export_auto_bordered(const video_t* vid, const char* filename) {
+    if (!vid || !filename) return false;
+
+    size_t cap = (size_t)OCULA_BORDERED_MAX_W * (size_t)OCULA_BORDERED_MAX_H * 3;
+    uint8_t* buf = (uint8_t*)malloc(cap);
+    if (!buf) return false;
+
+    int w = 0, h = 0;
+    video_compose_bordered(vid, buf, &w, &h);
+
+    bool ok;
+    const char* ext = strrchr(filename, '.');
+    if (ext && (strcmp(ext, ".bmp") == 0 || strcmp(ext, ".BMP") == 0)) {
+        ok = write_bmp_buffer(buf, w, h, filename);
+    } else {
+        ok = write_ppm_buffer(buf, w, h, filename);
+    }
+    free(buf);
+    return ok;
 }

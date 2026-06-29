@@ -273,8 +273,10 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
         (copper). **Livré Sprint 76 (v1.36.0)** : registres `$03EC` RASTER_LO /
         `$03ED` RASTER_STATUS (bit8/VBLANK/HBLANK). Reste à poster la réponse
         forum (l'interface choisie : page-3 GPU réservée plutôt qu'in-band).
-  - [ ] Option pour inclure la bordure dans l'export PPM/screenshot/AVI
-        (aujourd'hui dimensions actives, pour ne pas casser les tests d'export).
+  - [x] Option pour inclure la bordure dans l'export PPM/screenshot/AVI —
+        **livré Sprint 77 (v1.37.0)** : `--export-border` (off par défaut),
+        `video_export_auto_bordered()` + AVI bordé. Exports par défaut inchangés
+        (tests d'export préservés). Vérifié e2e (304×272 vs 240×224).
   - [ ] Registres réservés $BFEB-$BFFF (BORDER_CTL index-palette, SCROLLX/Y
         in-band, SPLIT) — v2.
   - [x] Amendement forum t=2709 **posté** (2026-06-25) : réponse à sodiumlb
@@ -1320,6 +1322,24 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
       défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
+
+### Sprint 77: OCULA — bordure dans les exports image et AVI (v1.37.0-alpha) - DONE
+
+Comble la lacune Sprint 65 : les captures/AVI ignoraient la bordure overscan
+OCULA (pourtant composée à l'affichage). Option `--export-border` (off par
+défaut) pour l'inclure — montrer les barres copper/la couleur de bordure des
+démos dans un screenshot ou une vidéo.
+
+- [x] `src/video/export.c` : encodeurs PPM/BMP refactorisés en writers bas
+      niveau `(rgb, w, h)` partagés ; `video_export_auto_bordered()` compose via
+      `video_compose_bordered()` puis écrit (format auto .bmp/.ppm).
+- [x] `src/main.c` : flag `--export-border` (`emulator_t.export_border`) ; helper
+      `emu_export_image()` pour screenshot de sortie, `--screenshot-at`, F12,
+      frame-dump ; AVI ouvert aux dimensions bordées + composition par frame.
+- [x] Exports par défaut **inchangés** (zone active) → tests d'export préservés.
+- [x] +1 test `test_video` (`test_export_bordered_dimensions`, 12 → 13).
+      Vérifié e2e : `--ula ocula --screenshot-at` → 240×224 sans flag,
+      **304×272** avec `--export-border`. 850 tests ; builds natif + SDL2 OK.
 
 ### Sprint 76: OCULA — synchronisation raster $03EC/$03ED (v1.36.0-alpha) - DONE
 
