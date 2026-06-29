@@ -88,6 +88,16 @@ typedef struct via6522_s {
     /* CB1 pin state for edge detection */
     bool cb1_pin;  /**< Current CB1 pin level (true=high, idle on Oric) */
 
+    /* Shift-register / CA2-CB2 pin modeling (peripheral fidelity; the stock
+     * ORIC ROM uses CA2/CB2 only as manual outputs for the PSG and does not
+     * exercise the shift register or T2 pulse counting). */
+    bool     cb2_pin;     /**< CB2 output level (shift-out data, or PCR manual) */
+    bool     cb2_in;      /**< CB2 input level sampled in shift-in modes */
+    bool     ca2_pin;     /**< CA2 output level (PCR pulse/handshake last state) */
+    bool     sr_active;   /**< a shift sequence is in progress */
+    uint32_t sr_clk_acc;  /**< cycle accumulator for φ2/T2 shift clocking */
+    bool     pb6_pin;     /**< last PB6 level (T2 pulse-count edge detection) */
+
     /* IRQ output state (tracks /IRQ pin level to avoid spurious callbacks) */
     bool irq_line;  /**< Current IRQ output: true = asserted, false = deasserted */
 
@@ -203,5 +213,48 @@ void via_set_cb1(via6522_t* via, bool state);
  * @param via Pointer to VIA structure
  */
 void via_trigger_cb2(via6522_t* via);
+
+/**
+ * @brief Feed one external shift-register clock edge (CB1-driven SR modes).
+ *
+ * Only acts when the ACR selects an external-clock shift mode (shift in/out
+ * under control of an external clock on CB1, ACR bits 2-4 = 011 or 111) and a
+ * shift sequence is active. Performs exactly one shift.
+ *
+ * @param via Pointer to VIA structure
+ */
+void via_shift_clock(via6522_t* via);
+
+/**
+ * @brief Set the CB2 input level used by the shift-in modes.
+ *
+ * @param via Pointer to VIA structure
+ * @param level CB2 input pin level
+ */
+void via_set_cb2_input(via6522_t* via, bool level);
+
+/**
+ * @brief Feed one negative edge on PB6 (Timer 2 pulse-counting mode).
+ *
+ * When ACR bit 5 = 1 and Timer 2 is running, T2 decrements on each PB6
+ * negative edge instead of φ2; underflow sets the T2 interrupt flag.
+ *
+ * @param via Pointer to VIA structure
+ */
+void via_pb6_pulse(via6522_t* via);
+
+/**
+ * @brief Get the current CA2 output pin level.
+ * @param via Pointer to VIA structure
+ * @return CA2 level (true = high)
+ */
+bool via_get_ca2(via6522_t* via);
+
+/**
+ * @brief Get the current CB2 output pin level (shift-out data or PCR output).
+ * @param via Pointer to VIA structure
+ * @return CB2 level (true = high)
+ */
+bool via_get_cb2(via6522_t* via);
 
 #endif /* VIA6522_H */

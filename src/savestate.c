@@ -567,6 +567,9 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->psg.env_volume = read_u8(fp);
             emu->psg.env_holding = read_bool(fp);
             emu->psg.clock_rate = read_u32le(fp);
+            /* Mirror restored sound state into the playback shadow and clear
+             * any stale timestamped-write queue. */
+            ay_sound_resync(&emu->psg);
         } else if (memcmp(tag, "VID\0", 4) == 0) {
             bool hires = read_u8(fp) != 0;
             emu->video.vid_mode = read_u8(fp);

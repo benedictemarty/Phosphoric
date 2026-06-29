@@ -5,6 +5,108 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0-alpha] - 2026-06-29
+
+### Added — Fidélité VIA 6522 : registre à décalage, T2 pulse-counting, pins CA2/CB2
+
+Troisième jalon « fidélité matérielle ». Comblement des fonctions du 6522
+jusqu'ici absentes (champs présents mais jamais cadencés). Ces fonctions ne
+sont pas exercées par la ROM ORIC standard (qui n'utilise CA2/CB2 que comme
+sorties manuelles pour le PSG) ; elles servent la fidélité des périphériques /
+du Telestrat. **Aucune modification des chemins clavier/PSG/timers existants** —
+ajouts strictement additifs.
+
+- **Registre à décalage (ACR bits 4-2)** : les 8 modes implémentés —
+  désactivé, shift-in/out sous T2, sous φ2, sous horloge externe (CB1). Chaque
+  séquence décale 8 bits puis lève le drapeau d'interruption SR et s'arrête,
+  sauf le mode shift-out libre (100) qui tourne en continu sans drapeau.
+  Cadencé dans `via_update()` (φ2 : 1 décalage / 2 cycles ; T2 : 1 / (latch+2)
+  cycles) ; les modes à horloge externe via le nouveau `via_shift_clock()`.
+  Séquence amorcée par l'écriture (sortie) / la lecture (entrée) de SR.
+- **Timer 2 pulse-counting (ACR bit 5)** : `via_pb6_pulse()` décrémente T2 sur
+  chaque front descendant PB6 au lieu de φ2 ; l'underflow lève le drapeau T2.
+- **Pins CA2/CB2** : modélisation de l'état (sortie manuelle haute/basse via
+  PCR, données shift-out sur CB2) exposée par `via_get_ca2()` / `via_get_cb2()`
+  + entrée série `via_set_cb2_input()`.
+- **`tests/unit/test_io.c`** : +6 tests (shift-out φ2, shift-in φ2, shift-out
+  horloge externe, mode libre sans drapeau, T2 pulse-counting, sorties
+  manuelles CA2/CB2) — 31 → 37 tests I/O.
+- **Savestate** : format `.ost` inchangé (les nouveaux champs sont transitoires).
+
+Total tests : 832 → 838. Builds natif + SDL2 + headless OK, 0 régression
+(boot ORIC vérifié).
+
+## [1.29.0-alpha] - 2026-06-28
+
+### Added — Fidélité audio : écritures PSG horodatées au cycle (digidrums)
+
+Deuxième jalon « fidélité matérielle ». Jusqu'ici `ay_generate()` rendait un
+buffer entier (~46 ms à 2048 samples) à partir de l'état courant des registres,
+lu sur le thread audio SDL pendant que le CPU les modifiait : toute écriture de
+registre survenant pendant la fenêtre du buffer s'appliquait avec une résolution
+d'un buffer. Les **digidrums** (échantillons 4 bits joués en martelant le
+registre de volume à cadence audio, technique classique sur Oric) s'effondraient
+donc à une seule valeur par buffer.
+
+- **`include/audio/audio.h` / `src/audio/ay3891x.c`** : file d'écritures
+  horodatées au cycle CPU (`ay_event_t`, anneau SPSC lock-free de 4096 entrées,
+  `_Atomic` tête/queue). Nouveau `ay_write_data_timed(ay, data, cpu_cycle)`.
+  `ay_generate()` rejoue les écritures sur un état de lecture `ay_play_t` dédié,
+  à la **position d'échantillon intra-buffer exacte** (proportionnelle à la
+  position en cycles de l'écriture dans la fenêtre couverte par le buffer).
+- **Découplage strict** : les `registers[]` autoritaires restent mis à jour
+  **immédiatement** sur chaque écriture (lectures, matrice clavier, émulation
+  headless et savestates voient toujours l'état courant) ; seul le rendu audio
+  passe par la file horodatée. Le chemin **non horodaté** (`ay_write_data`,
+  utilisé par les tests et le headless) est **identique octet pour octet** à
+  l'historique.
+- **`src/main.c`** (`psg_decode`) : l'écriture data PSG est désormais horodatée
+  avec `emu->cpu.cycles`.
+- **`src/savestate.c`** : `ay_sound_resync()` après chargement (miroir
+  registres→shadow + purge de la file). Format `.ost` inchangé (sérialisation
+  champ par champ ; les nouveaux champs sont transitoires).
+- **`tests/unit/test_audio.c`** : +4 tests (drapeau timed, port non mis en file,
+  timing sous-buffer du digidrum prouvé, resync purge la file) — 8 → 12 tests
+  PSG. Mixage linéaire et courbe DAC log inchangés (déjà conformes Oricutron).
+
+Total tests : 828 → 832. Builds natif + SDL2 + headless OK, 0 régression.
+
+## [1.28.0-alpha] - 2026-06-28
+
+### Added — Fidélité CPU : 105 opcodes illégaux/non documentés du NMOS 6502
+
+Premier jalon du chantier « fidélité matérielle ». Le 6502 NMOS de l'ORIC-1/
+Atmos décode les 256 opcodes : jusqu'ici les 105 codes non officiels étaient
+traités comme de simples NOP (saut d'opérande). Ils sont désormais émulés avec
+leur comportement NMOS documenté, ce qui débloque les démos/intros de la scène
+qui s'en servent.
+
+- **`src/cpu/opcodes.c`** : table d'opcodes corrigée (noms réels, tailles et
+  cycles exacts au lieu de `???`/taille 1) + cas explicites pour les 105 codes :
+  - **RMW combinés** : `SLO`, `RLA`, `SRE`, `RRA`, `DCP`, `ISC` (7 modes chacun)
+    réutilisant les helpers ALU officiels (`op_adc`/`op_sbc`/`op_cmp`).
+  - **Charge/stockage** : `LAX` (LDA+LDX), `SAX` (store A&X).
+  - **Famille AND immédiat** : `ANC`, `ALR/ASR`, `ARR`, `SBX/AXS`.
+  - **Groupe instable** : `ANE/XAA`, `LXA`, `LAS/LAR`, `SHA/AHX`, `SHX`, `SHY`,
+    `TAS/SHS` — modèles documentés courants (constante magique `0xEE`,
+    `reg & (high(addr)+1)`), commentés comme instables sur silicium réel.
+  - **NOP multi-octets** : effectuent désormais la lecture-bus « morte » de leur
+    opérande (fidélité I/O), avec pénalité de franchissement de page en abs,X.
+  - **`JAM`/`KIL`** (12 codes) : figent le CPU (`cpu->halted`) comme le vrai NMOS.
+- **`tests/unit/test_cpu.c`** : +14 tests dédiés (LAX/SAX/SLO/RLA/SRE/RRA/DCP/
+  ISC/ANC/ALR/SBX/JAM/NOP#/SBC non officiel) — 74 → 88 tests CPU.
+- **`tests/unit/test_rominfo.c`** : 2ᵉ JSR de la ROM de test replacé en `$C012`
+  (juste après le `RTS`) au lieu de `$C020` — avec les tailles d'opcode désormais
+  exactes, le padding `$FF` décode en `ISC` (3 octets) et le balayage linéaire
+  aligné de `scan_targets` n'atteignait plus un JSR posé en plein padding.
+  L'intention (2 références JSR vers `$C010`) est préservée.
+
+Note de fidélité collatérale, vérifiée pendant l'audit : le flag Z après `ADC`/
+`SBC` en mode décimal est calculé sur le résultat **binaire** — c'est le
+comportement NMOS réel (et non un bug). Aucune modification nécessaire.
+
+Total tests : 814 → 828. Builds natif + SDL2 OK, 0 régression.
+
 ## [1.27.6-alpha] - 2026-06-26
 
 ### Fixed — `--serial picowifi` : `AT$SCAN` omettait le drapeau de sécurité

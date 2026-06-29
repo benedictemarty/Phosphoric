@@ -984,6 +984,163 @@ TEST(test_zero_page_x_wrap) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  ILLEGAL / UNDOCUMENTED OPCODE TESTS (NMOS 6502)                   */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_illegal_lax_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0010, 0x80);
+    uint8_t code[] = {0xA7, 0x10}; /* LAX $10 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.A, 0x80);
+    ASSERT_EQ(cpu.X, 0x80);
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_NEGATIVE));
+}
+
+TEST(test_illegal_sax_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    uint8_t code[] = {0xA9, 0xCC, 0xA2, 0xF0, 0x87, 0x20}; /* LDA #$CC; LDX #$F0; SAX $20 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0020), 0xC0); /* $CC & $F0 */
+}
+
+TEST(test_illegal_slo_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0030, 0x40);          /* mem<<1 = $80, carry=0 */
+    uint8_t code[] = {0xA9, 0x01, 0x07, 0x30};  /* LDA #$01; SLO $30 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0030), 0x80); /* shifted */
+    ASSERT_EQ(cpu.A, 0x81);                      /* $01 | $80 */
+    ASSERT_FALSE(cpu_get_flag(&cpu, FLAG_CARRY));
+}
+
+TEST(test_illegal_rla_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0030, 0x40);          /* ROL with C=0 -> $80 */
+    uint8_t code[] = {0x18, 0xA9, 0xFF, 0x27, 0x30}; /* CLC; LDA #$FF; RLA $30 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0030), 0x80);
+    ASSERT_EQ(cpu.A, 0x80);                      /* $FF & $80 */
+}
+
+TEST(test_illegal_sre_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0030, 0x02);          /* >>1 = $01, carry=0 */
+    uint8_t code[] = {0xA9, 0xFF, 0x47, 0x30};  /* LDA #$FF; SRE $30 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0030), 0x01);
+    ASSERT_EQ(cpu.A, 0xFE);                      /* $FF ^ $01 */
+}
+
+TEST(test_illegal_rra_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0030, 0x02);          /* ROR C=0 -> $01, carry out=0 */
+    uint8_t code[] = {0x18, 0xA9, 0x10, 0x67, 0x30}; /* CLC; LDA #$10; RRA $30 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0030), 0x01);
+    ASSERT_EQ(cpu.A, 0x11);                      /* $10 + $01 + carry(0) */
+}
+
+TEST(test_illegal_dcp_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0030, 0x43);          /* dec -> $42 */
+    uint8_t code[] = {0xA9, 0x42, 0xC7, 0x30};  /* LDA #$42; DCP $30 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0030), 0x42);
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_ZERO));  /* A == mem */
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_CARRY));
+}
+
+TEST(test_illegal_isc_zp) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x0030, 0x0F);          /* inc -> $10 */
+    uint8_t code[] = {0x38, 0xA9, 0x20, 0xE7, 0x30}; /* SEC; LDA #$20; ISC $30 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(memory_read(&mem, 0x0030), 0x10);
+    ASSERT_EQ(cpu.A, 0x10);                      /* $20 - $10 */
+}
+
+TEST(test_illegal_anc) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    uint8_t code[] = {0xA9, 0xFF, 0x0B, 0x80}; /* LDA #$FF; ANC #$80 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(cpu.A, 0x80);
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_NEGATIVE));
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_CARRY)); /* C = bit7 */
+}
+
+TEST(test_illegal_alr) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    uint8_t code[] = {0xA9, 0xFF, 0x4B, 0x03}; /* LDA #$FF; ALR #$03 -> ($FF&$03)>>1 */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(cpu.A, 0x01);                      /* $03 >> 1 */
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_CARRY)); /* bit0 of $03 */
+}
+
+TEST(test_illegal_sbx) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    /* LDA #$FF; LDX #$0F; SBX #$01 -> X = ($FF&$0F)-$01 = $0E */
+    uint8_t code[] = {0xA9, 0xFF, 0xA2, 0x0F, 0xCB, 0x01};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(cpu.X, 0x0E);
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_CARRY)); /* $0F >= $01 */
+}
+
+TEST(test_illegal_jam_halts) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    uint8_t code[] = {0x02}; /* JAM/KIL */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    ASSERT_FALSE(cpu.halted);
+    cpu_step(&cpu);
+    ASSERT_TRUE(cpu.halted);
+}
+
+TEST(test_illegal_nop_imm_consumes_operand) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    /* NOP #$AA (0x80) then LDA #$42; PC must skip the immediate operand */
+    uint8_t code[] = {0x80, 0xAA, 0xA9, 0x42};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.PC, 0x0202);
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.A, 0x42);
+}
+
+TEST(test_illegal_sbc_eb) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    /* SEC; LDA #$50; SBC #$10 (unofficial 0xEB) -> $40 */
+    uint8_t code[] = {0x38, 0xA9, 0x50, 0xEB, 0x10};
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu_step(&cpu); cpu_step(&cpu); cpu_step(&cpu);
+    ASSERT_EQ(cpu.A, 0x40);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -1096,6 +1253,22 @@ int main(void) {
     RUN(test_indexed_indirect);
     RUN(test_indirect_indexed);
     RUN(test_zero_page_x_wrap);
+
+    printf("\n  Illegal/Undocumented Opcodes:\n");
+    RUN(test_illegal_lax_zp);
+    RUN(test_illegal_sax_zp);
+    RUN(test_illegal_slo_zp);
+    RUN(test_illegal_rla_zp);
+    RUN(test_illegal_sre_zp);
+    RUN(test_illegal_rra_zp);
+    RUN(test_illegal_dcp_zp);
+    RUN(test_illegal_isc_zp);
+    RUN(test_illegal_anc);
+    RUN(test_illegal_alr);
+    RUN(test_illegal_sbx);
+    RUN(test_illegal_jam_halts);
+    RUN(test_illegal_nop_imm_consumes_operand);
+    RUN(test_illegal_sbc_eb);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);
