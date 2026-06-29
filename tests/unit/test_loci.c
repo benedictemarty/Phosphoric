@@ -2737,6 +2737,47 @@ TEST(test_op_map_tune_tiow_clears_xstack) { run_map_tune_test(LOCI_OP_MAP_TUNE_T
 TEST(test_op_map_tune_tiod_clears_xstack) { run_map_tune_test(LOCI_OP_MAP_TUNE_TIOD); }
 TEST(test_op_map_tune_tadr_clears_xstack) { run_map_tune_test(LOCI_OP_MAP_TUNE_TADR); }
 
+/* ── MIA bus-timing model (picowifi reliability) ─────────────── */
+
+TEST(test_mia_defaults) {
+    loci_t l; loci_init(&l);
+    ASSERT_EQ(l.mia_tmap, 10);
+    ASSERT_EQ(l.mia_tula, 10);
+    ASSERT_EQ(l.mia_tior, 0);
+    ASSERT_EQ(l.mia_tior_lo, 0);
+    ASSERT_EQ(l.mia_tior_hi, 31);
+    ASSERT_TRUE(loci_mia_io_reliable(&l));   /* open window → always reliable */
+}
+
+TEST(test_mia_tune_tior_stores_value) {
+    loci_t l; loci_init(&l); l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 15;
+    loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOR);
+    ASSERT_EQ(l.mia_tior, 15);
+    l.regs[LOCI_REG_API_A] = 0xFF;           /* tiod is 3 bits (0-7) */
+    loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOD);
+    ASSERT_EQ(l.mia_tiod, 0x07);
+}
+
+TEST(test_mia_window_blocks_and_tunes) {
+    loci_t l; loci_init(&l); l.enabled = true;
+    loci_set_mia_window(&l, 12, 18);         /* only tior 12..18 works */
+    ASSERT_TRUE(!loci_mia_io_reliable(&l));  /* boot tior=0 → unreachable */
+    l.regs[LOCI_REG_API_A] = 15;
+    loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOR);
+    ASSERT_TRUE(loci_mia_io_reliable(&l));   /* tuned into window */
+    l.regs[LOCI_REG_API_A] = 25;
+    loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOR);
+    ASSERT_TRUE(!loci_mia_io_reliable(&l));  /* over-shoot → unreachable */
+}
+
+TEST(test_mia_set_window_clamps_and_orders) {
+    loci_t l; loci_init(&l);
+    loci_set_mia_window(&l, 40, 5);          /* 40→31, then swap */
+    ASSERT_EQ(l.mia_tior_lo, 5);
+    ASSERT_EQ(l.mia_tior_hi, 31);
+}
+
 /* ── reset ──────────────────────────────────────────────────── */
 
 TEST(test_reset_clears_state) {
@@ -3105,6 +3146,10 @@ int main(void) {
     RUN(test_op_map_tune_tiow_clears_xstack);
     RUN(test_op_map_tune_tadr_clears_xstack);
     RUN(test_op_map_tune_tiod_clears_xstack);
+    RUN(test_mia_defaults);
+    RUN(test_mia_tune_tior_stores_value);
+    RUN(test_mia_window_blocks_and_tunes);
+    RUN(test_mia_set_window_clamps_and_orders);
     RUN(test_reset_clears_state);
 
     printf("\n===========================================================\n");
