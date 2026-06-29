@@ -355,8 +355,10 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
   - [x] **Commandes IPC** `load-disk <drive> <path>` / `eject-disk` / `eject-tape`
         dans `src/control.c` (write-back dirty + `--disk-writeback`), capability
         dans `CONTROL_PROTO_CAPS` — livré Sprint 75 (v1.35.0).
-  - [ ] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
-        au lieu de relancer la machine.
+  - [x] **Insert live web** : pont C↔JS d'insertion à chaud (comme `web_key`)
+        au lieu de relancer la machine — **livré Sprint 78 (v1.38.0)** :
+        `web_insert_tap`/`web_insert_disk` + `loadMedia()` hot-swap (reload en
+        repli). (emcc absent ici → validé syntaxe + revue, .wasm non généré.)
   - [x] Tests : `make test-control` (load-disk/eject-disk/eject-tape) — livré
         Sprint 75 (`tests/integration/test_control_media_swap.sh`, 9 assertions).
 
@@ -1322,6 +1324,23 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
       défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
+
+### Sprint 78: Insertion de média à chaud dans le build WASM (v1.38.0-alpha) - DONE
+
+Comble la dernière lacune du hot-swap (Sprint 63) : dans le navigateur, déposer
+un média rechargeait toute la page. Pont C↔JS sur le modèle de `web_key`.
+
+- [x] `src/main.c` (`#ifdef __EMSCRIPTEN__`) : `web_insert_tap(path)` (remplace le
+      buffer cassette vivant + arme l'auto-`CLOAD""` via `tape_auto_cload_pending`)
+      et `web_insert_disk(drive, path)` (`sedoric_load` + `microdisc_set_disk` ;
+      renvoie 0 sans Microdisc → repli reload côté JS).
+- [x] `Makefile` : `_web_insert_tap`/`_web_insert_disk` (+ `_malloc`/`_free`) dans
+      `EXPORTED_FUNCTIONS` de la cible `wasm`.
+- [x] `web/shell.html` : `loadMedia()` tente le hot-swap (`FS.writeFile` + `ccall`)
+      puis reload en repli ; média persisté IndexedDB/`sessionStorage`.
+- [x] **Limite** : `emcc` absent de l'environnement → `.wasm` non généré ; bloc
+      WASM validé par `gcc -D__EMSCRIPTEN__ -fsyntax-only` (0 erreur) + revue.
+      Build natif et suite complète verts. 850 tests.
 
 ### Sprint 77: OCULA — bordure dans les exports image et AVI (v1.37.0-alpha) - DONE
 

@@ -263,7 +263,25 @@ function loadMedia(file){
   var low=file.name.toLowerCase(); var kind=low.endsWith('.dsk')?'dsk':(low.endsWith('.tap')?'tap':'');
   if(!kind){ alert('Unsupported file — drop a .tap or .dsk'); return; }
   file.arrayBuffer().then(function(buf){ idbPut(file.name, buf, function(){
-    sessionStorage.setItem('phos_media_name', file.name); sessionStorage.setItem('phos_media_kind', kind); location.reload(); }); });
+    // Remember the media so a future reload reattaches it.
+    sessionStorage.setItem('phos_media_name', file.name); sessionStorage.setItem('phos_media_kind', kind);
+    // Try a live hot-swap first — no reboot (tape arms auto-CLOAD""; disk mounts
+    // into drive A). Falls back to a full reload on first media or when the disk
+    // controller is not active this session.
+    if(ready){
+      try{
+        try{FS.mkdir('/media');}catch(e){}
+        var path='/media/'+file.name;
+        FS.writeFile(path, new Uint8Array(buf));
+        if(kind==='tap'){
+          if(Module.ccall('web_insert_tap','number',['string'],[path])) return;
+        }else{
+          if(Module.ccall('web_insert_disk','number',['number','string'],[0,path])) return;
+        }
+      }catch(err){ console.warn('hot-swap failed, reloading:',err); }
+    }
+    location.reload();
+  }); });
 }
 var dd=0;
 window.addEventListener('dragenter',function(e){e.preventDefault(); if(dd++===0)document.body.classList.add('dragging');});
