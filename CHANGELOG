@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.0-alpha] - 2026-06-29
+
+### Added — Test e2e : un programme BASIC pilote l'ACIA 6551 du LOCI à $0380
+
+Couvre la lacune ROADMAP « E2E BASIC : PRINT vers ACIA $0380 + lecture réponse ».
+Un programme BASIC tournant **dans** l'émulateur écrit *et* lit l'ACIA 6551 à
+`$0380` (l'adresse où l'ACIA atterrit sous `--loci`, fenêtre du modem PicoWiFi),
+en suivant exactement le chemin d'un terminal réel : attente TDRE (status bit 4),
+`POKE` du registre data, attente RDRF (status bit 3), `PEEK` du registre data.
+
+- **`examples/loci_acia_e2e.bas`** : initialise le 6551 (reset status, control
+  9600 8N1, command DTR/RTS), puis pour chaque octet d'une chaîne de
+  numérotation `ATDT5551234`<CR> : attend TDRE, transmet, attend RDRF, relit
+  l'octet renvoyé et le stocke à `#4000`+ ; pose un sentinel `$FF` à `#3FFC`.
+- **`tests/integration/test_loci_acia_e2e.sh`** : compile le `.bas` (bas2tap
+  `--auto-run`), lance l'émulateur headless `--loci --serial loopback`, dumpe la
+  RAM et vérifie (1) que BASIC a atteint le sentinel et (2) que les octets relus
+  via `$0380` égalent la chaîne émise → TX (`POKE $0380`) **et** RX (`PEEK
+  $0380`) prouvés. Transport **loopback** : round-trip déterministe et hermétique
+  (ni réseau, ni NVRAM). Skip propre si ROM/outils absents.
+- **`Makefile`** : cible `test-loci-acia-e2e` (dans `.PHONY` et dans `tests`).
+
+Note : le test utilise le backend **loopback** plutôt que `picowifi`. Le backend
+PicoWiFi répond à de vraies commandes AT sur cette même fenêtre `$0380` (démo
+interactive : `examples/picowifi_test.bas`), mais son chemin de boot **headless**
+n'est pas encore assez déterministe pour la CI (parfois le TX se bloque) — à
+traiter séparément. Observation collatérale : `bas2tap` **tokenise les mots-clés
+à l'intérieur des lignes `REM`**, ce qui peut corrompre le chaînage du programme
+(ex. le mot « AT » dans un REM) — bug `bas2tap` à corriger plus tard.
+
+Outillage/exemples uniquement, binaire émulateur inchangé. EMU_VERSION 1.33.0 →
+1.34.0-alpha. 846 tests unitaires inchangés + 1 nouveau test e2e
+(`test-loci-acia-e2e`). Builds natif + SDL2 OK.
+
 ## [1.33.0-alpha] - 2026-06-29
 
 ### Added — Modèle de timing du bus MIA (LOCI) : reproduit le blocage picowifi
