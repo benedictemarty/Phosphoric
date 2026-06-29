@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.1-alpha] - 2026-06-29
+
+### Fixed — Log de write-back disque : octets réellement écrits (cosmétique)
+
+À la sortie avec `--disk-writeback`, le log `Disk write-back: drive X -> … (N
+bytes)` affichait `disk->size` — la taille du **buffer de secteurs à plat** —
+alors qu'un disque **MFM** (cas de tous les vrais `.dsk` Oric) écrit son conteneur
+`mfm_raw` (`mfm_raw_size`), nettement plus gros. Exemple mesuré : `3dfongus.dsk`
+fait **1 049 856** octets sur disque (mfm_raw) mais le log annonçait **713 728**
+(buffer plat). `src/main.c` rapporte désormais les octets effectivement écrits
+(`is_mfm ? mfm_raw_size : size`), en cohérence avec `sedoric_save()`. Cosmétique
+(log seul, write-back déjà correct). EMU_VERSION 1.36.0 → 1.36.1-alpha. 849 tests.
+
 ## [1.36.0-alpha] - 2026-06-29
 
 ### Added — OCULA : synchronisation raster ($03EC/$03ED)

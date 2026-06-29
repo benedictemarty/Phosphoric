@@ -683,8 +683,9 @@ secteurs par-dessus le conteneur MFM, de taille différente.
 - [x] +1 test `test_sedoric_mfm_writeback_roundtrip` (réinjection + CRC +
       taille MFM préservée) ; E2E réel SAVE→.dsk MFM intact→recharge→LIST ;
       Valgrind clean. 728 tests PASS.
-- [ ] Corriger le log `main.c` (affiche `disk->size` plat au lieu des octets
-      MFM réellement écrits — cosmétique)
+- [x] Corriger le log `main.c` (affichait `disk->size` plat au lieu des octets
+      MFM réellement écrits) — **corrigé v1.36.1** : `is_mfm ? mfm_raw_size :
+      size`, cohérent avec `sedoric_save()`.
 
 ### Sprint 62: Persistance des sauvegardes in-game — write-back .dsk + capture savestate (v1.21.29-alpha) - DONE
 

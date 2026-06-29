@@ -4029,8 +4029,14 @@ int main(int argc, char* argv[]) {
             if (!emu.microdisc.disk_dirty[i] || !path || !emu.disks[i])
                 continue;
             if (sedoric_save(emu.disks[i], path)) {
+                /* Report the bytes actually written to the file: an MFM image
+                 * writes its mfm_raw container, a raw image writes the flat
+                 * sector buffer. (disks[i]->size is always the flat buffer.) */
+                uint32_t written = emu.disks[i]->is_mfm
+                                       ? emu.disks[i]->mfm_raw_size
+                                       : emu.disks[i]->size;
                 log_info("Disk write-back: drive %c -> %s (%u bytes)",
-                         'A' + i, path, emu.disks[i]->size);
+                         'A' + i, path, written);
             } else {
                 log_error("Disk write-back failed: drive %c -> %s",
                           'A' + i, path);
