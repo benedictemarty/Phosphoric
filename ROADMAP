@@ -1191,7 +1191,9 @@ un ACIA série à $0380. Branche feature/picowifi (depuis main/sprint 38).
 - [x] 28 tests unitaires make test-picowifi (config, codes résultat,
       registres, numéros rapides, telnet, reset usine, erreurs), 551 total
 - [x] CHANGELOG / VERSION_TRACKING / CIRRUS_OS / README / CLAUDE.md à jour
-- [ ] E2E BASIC : PRINT vers ACIA $0380 + lecture réponse AT (à ajouter)
+- [x] E2E BASIC : PRINT vers ACIA $0380 + lecture (round-trip) — livré
+      Sprint 74 (v1.34.0), `test-loci-acia-e2e` (loopback déterministe ;
+      picowifi headless non déterministe, à traiter)
 - [ ] Numéros rapides AT&Z persistés (AT&W actuellement no-op)
 
 ---
@@ -1308,6 +1310,31 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
       défaut. Démo : ATI → `IP: 192.168.1.19 (host)` `WiFi: (host) UP`
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
+
+### Sprint 74: Test e2e — BASIC pilote l'ACIA 6551 du LOCI à $0380 (v1.34.0-alpha) - DONE
+
+Comble la lacune backlog « E2E BASIC : PRINT vers ACIA $0380 + lecture réponse ».
+Un programme BASIC dans l'émulateur exerce le chemin complet d'un terminal réel
+sur l'ACIA 6551 à `$0380` (adresse de l'ACIA sous `--loci`, fenêtre du modem).
+
+- [x] `examples/loci_acia_e2e.bas` : init 6551 (reset status, control 9600 8N1,
+      command DTR/RTS) ; pour chaque octet de `ATDT5551234`<CR> : attend TDRE
+      (bit4), `POKE $0380`, attend RDRF (bit3), relit l'octet, stocke à `#4000` ;
+      sentinel `$FF` à `#3FFC`.
+- [x] `tests/integration/test_loci_acia_e2e.sh` : bas2tap `--auto-run`, headless
+      `--loci --serial loopback`, `--dump-ram-at`, vérifie sentinel + round-trip
+      (octets relus == chaîne émise) → TX (`POKE $0380`) et RX (`PEEK $0380`)
+      prouvés. Loopback = déterministe et hermétique (ni réseau ni NVRAM).
+      Skip propre si ROM/outils absents.
+- [x] `Makefile` : cible `test-loci-acia-e2e` (`.PHONY` + `tests`).
+- [x] Outillage/exemples seuls, binaire inchangé. 846 tests unitaires + 1 e2e.
+
+**Notes** : (1) backend **loopback** et non `picowifi` — le boot **headless** du
+backend PicoWiFi n'est pas encore déterministe (le TX se bloque par moments) ;
+le couple `--loci --serial picowifi` reste démontré interactivement
+(`examples/picowifi_test.bas`). À fiabiliser dans un sprint dédié. (2) Bug
+collatéral repéré : `bas2tap` **tokenise les mots-clés à l'intérieur des lignes
+`REM`** (ex. « AT »), ce qui peut corrompre le chaînage — à corriger.
 
 ### Sprint 73: Modèle de timing du bus MIA (LOCI) — blocage picowifi (v1.33.0-alpha) - DONE
 
