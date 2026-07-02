@@ -425,6 +425,7 @@ static void print_usage(const char* program_name) {
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
     printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
     printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
+    printf("      --bad-sector S:T:N     Mark side S track T sector N unreadable (RNF), repeatable\n");
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
@@ -2880,6 +2881,8 @@ int main(int argc, char* argv[]) {
     int ula_profile = ULA_PROFILE_HCS10017;
     const char* trace_file = NULL;
     const char* dump_ram_at_arg = NULL;
+    const char* bad_sector_args[FDC_MAX_BAD_SECTORS];
+    int bad_sector_arg_count = 0;
     const char* trace_irq_file = NULL;
     const char* symbols_file = NULL;
     bool tui_mode = false;
@@ -2907,7 +2910,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -2970,6 +2973,7 @@ int main(int argc, char* argv[]) {
         {"mageco-addr",         required_argument, 0, OPT_MAGECO_ADDR},
         {"oricon",              required_argument, 0, OPT_ORICON},
         {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
+        {"bad-sector",          required_argument, 0, OPT_BAD_SECTOR},
         {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
         {"symbols",             required_argument, 0, OPT_SYMBOLS},
         {"tui",                 no_argument,       0, OPT_TUI},
@@ -3094,6 +3098,13 @@ int main(int argc, char* argv[]) {
                 serial_trace_file = optarg;
                 break;
             case OPT_DUMP_RAM_AT: dump_ram_at_arg = optarg; break;
+            case OPT_BAD_SECTOR:
+                if (bad_sector_arg_count < FDC_MAX_BAD_SECTORS)
+                    bad_sector_args[bad_sector_arg_count++] = optarg;
+                else
+                    log_error("--bad-sector: map full (%d max), ignoring %s",
+                              FDC_MAX_BAD_SECTORS, optarg);
+                break;
             case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
             case OPT_SYMBOLS: symbols_file = optarg; break;
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
@@ -3878,6 +3889,22 @@ int main(int argc, char* argv[]) {
         emu.microdisc.cpu_irq_clr = microdisc_cpu_irq_clr;
         emu.microdisc.cpu_userdata = &emu;
         emu.has_microdisc = true;
+
+        /* Apply --bad-sector S:T:N fault injections (robustness testing) */
+        for (int i = 0; i < bad_sector_arg_count; i++) {
+            unsigned s, trk, sec;
+            if (sscanf(bad_sector_args[i], "%u:%u:%u", &s, &trk, &sec) == 3 &&
+                s <= 1 && trk < 256 && sec >= 1 && sec < 256) {
+                fdc_add_bad_sector(&emu.microdisc.fdc,
+                                   (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
+                log_info("Bad sector injected: side %u track %u sector %u", s, trk, sec);
+            } else {
+                log_error("Invalid --bad-sector format '%s'. Use S:T:N (side:track:sector)",
+                          bad_sector_args[i]);
+                emulator_cleanup(&emu);
+                return 1;
+            }
+        }
 
         /* Load Microdisc ROM if specified */
         if (disk_rom_file) {

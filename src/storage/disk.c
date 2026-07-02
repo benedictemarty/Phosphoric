@@ -65,6 +65,15 @@ void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size) {
     fdc->disk_size = size;
 }
 
+int fdc_add_bad_sector(fdc_t* fdc, uint8_t side, uint8_t track, uint8_t sector) {
+    if (fdc->bad_sector_count >= FDC_MAX_BAD_SECTORS) return -1;
+    fdc->bad_sectors[fdc->bad_sector_count].side = side;
+    fdc->bad_sectors[fdc->bad_sector_count].track = track;
+    fdc->bad_sectors[fdc->bad_sector_count].sector = sector;
+    fdc->bad_sector_count++;
+    return 0;
+}
+
 /**
  * Get pointer to sector data within flat disk image.
  * Layout: side * (tracks * spt) + track * spt + (sector_id - 1)
@@ -73,6 +82,13 @@ static uint8_t* fdc_find_sector(fdc_t* fdc, uint8_t sec_id) {
     if (!fdc->disk_data) return NULL;
     if (fdc->c_track >= fdc->tracks || sec_id == 0 || sec_id > fdc->sectors_per_track)
         return NULL;
+    /* Bad sector map: injected faults read as Record Not Found */
+    for (uint8_t i = 0; i < fdc->bad_sector_count; i++) {
+        if (fdc->bad_sectors[i].side == fdc->side &&
+            fdc->bad_sectors[i].track == fdc->c_track &&
+            fdc->bad_sectors[i].sector == sec_id)
+            return NULL;
+    }
     uint32_t offset = ((uint32_t)fdc->side * fdc->tracks * fdc->sectors_per_track +
                         (uint32_t)fdc->c_track * fdc->sectors_per_track +
                         (uint32_t)(sec_id - 1)) * 256;

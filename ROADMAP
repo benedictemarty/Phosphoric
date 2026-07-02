@@ -1325,6 +1325,19 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 79: Bad sector map — injection de secteurs illisibles (v1.40.0-alpha) - DONE
+
+Demandé par les tests de robustesse SCUMM-Oric (sputm S517) : le modèle
+d'image plate « soignait » silencieusement un ID field MFM corrompu.
+
+- [x] `fdc_t.bad_sectors[16]` + `fdc_add_bad_sector()` ; `fdc_find_sector()`
+      renvoie NULL pour un secteur marqué → `FDC_ST_NOT_FOUND` + INTRQ sans
+      DRQ (chemin RNF existant, comme un vrai WD1793 sur secteur abîmé)
+- [x] Option CLI `--bad-sector S:T:N` (répétable, 16 max), appliquée à
+      l'init du Microdisc ; format invalide = erreur fatale
+- [x] +1 test `test_storage` (RNF sur le secteur marqué, voisin lisible,
+      même id sur une autre piste intact, map pleine). 851 tests.
+
 ### Sprint 78b: WASM — fast-load du hot-insert + média par URL (v1.39.0-alpha) - DONE
 
 Finitions du Sprint 78 après un test réel (jeu poker dans le navigateur).

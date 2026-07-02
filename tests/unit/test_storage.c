@@ -202,6 +202,50 @@ TEST(test_fdc_seek) {
     free(disk_data);
 }
 
+TEST(test_fdc_bad_sector_map) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    ASSERT_EQ(fdc.bad_sector_count, 0);   /* fdc_init clears the map */
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    disk_data[(5 - 1) * 256] = 0xCC;      /* track 0 sector 5 first byte */
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    /* Inject: side 0, track 0, sector 5 unreadable */
+    ASSERT_EQ(fdc_add_bad_sector(&fdc, 0, 0, 5), 0);
+    ASSERT_EQ(fdc.bad_sector_count, 1);
+
+    /* Reading the bad sector -> Record Not Found, INTRQ, no DRQ */
+    fdc.c_track = 0;
+    fdc.track = 0;
+    fdc.sector = 5;
+    fdc_write(&fdc, 0, 0x80); /* Read sector */
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
+    ASSERT_TRUE(fdc.status & FDC_ST_NOT_FOUND);
+    ASSERT_TRUE(test_intrq_set);
+    ASSERT_FALSE(test_drq_set);
+
+    /* The neighbouring sector still reads fine */
+    test_intrq_set = false;
+    fdc.sector = 4;
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_EQ(fdc.currentop, FDC_OP_READ_SECTOR);
+    fdc_ticktock(&fdc, 65);
+    ASSERT_TRUE(test_drq_set);
+
+    /* Same sector id on ANOTHER track is untouched */
+    fdc.currentop = FDC_OP_NONE;
+    fdc.c_track = 1;
+    fdc.sector = 5;
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_EQ(fdc.currentop, FDC_OP_READ_SECTOR);
+
+    /* Map full -> -1 */
+    fdc.bad_sector_count = FDC_MAX_BAD_SECTORS;
+    ASSERT_EQ(fdc_add_bad_sector(&fdc, 0, 0, 6), -1);
+
+    free(disk_data);
+}
+
 TEST(test_fdc_read_sector) {
     fdc_t fdc;
     fdc_init_test(&fdc);
@@ -463,6 +507,7 @@ int main(void) {
     RUN(test_fdc_reset);
     RUN(test_fdc_restore);
     RUN(test_fdc_seek);
+    RUN(test_fdc_bad_sector_map);
     RUN(test_fdc_read_sector);
     RUN(test_fdc_write_sector);
     RUN(test_fdc_write_track);
