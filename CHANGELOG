@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.1-alpha] - 2026-07-03
+
+### Fixed — LOCI : F8 dans le menu n'écrase plus le snapshot de session
+
+Constaté en session réelle (log 04:23) : des F8 répétés DANS le menu
+re-snapshotaient l'état… du menu lui-même dans `loci_resume.ost` — le
+« resume » restaurait alors le menu au lieu de la session BASIC.
+
+- **`include/emulator.h`** : drapeau `loci_menu_active`.
+- **`src/main.c`** : au press, pas de snapshot si le menu est mappé ; au
+  relâchement, bouton ignoré dans le menu (log). Le drapeau est posé au
+  warm boot et levé par tout swap ROM $C000 (resume, MIA_BOOT vers une
+  autre ROM). Vérifié e2e : 2ᵉ `loci-button` → « inside the menu —
+  ignored », snapshot intact.
+
 ## [1.46.0-alpha] - 2026-07-03
 
 ### Fixed — LOCI : bouton Action (F8) boote le menu, version/timings patchés dans la ROM

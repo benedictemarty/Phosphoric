@@ -609,6 +609,9 @@ static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr
         log_error("LOCI ROM swap: failed to load %s", load_path);
         return false;
     }
+    /* Any successful $C000 swap unmaps the menu (MIA_BOOT into BASIC,
+     * resume...). The warm-boot path re-arms the flag right after. */
+    emu->loci_menu_active = false;
     /* Firmware behaviour: version + timing bytes are patched into the
      * freshly loaded ROM (only the LOCI menu ROM has the placeholders). */
     loci_patch_rom_info(emu);
@@ -752,10 +755,12 @@ static void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
 static void loci_action_install_irq_trap(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu) return;
-    char snap[512];
-    loci_resume_snapshot_path(emu, snap, sizeof(snap));
-    if (savestate_save(emu, snap))
-        log_info("LOCI: session snapshot -> %s (menu resume)", snap);
+    if (!emu->loci_menu_active) {   /* inside the menu: keep the session snapshot */
+        char snap[512];
+        loci_resume_snapshot_path(emu, snap, sizeof(snap));
+        if (savestate_save(emu, snap))
+            log_info("LOCI: session snapshot -> %s (menu resume)", snap);
+    }
     /* Save current vector. The ORIC IRQ vector lives in ROM at $FFFE/F,
      * backed by mem->rom (offset $3FFE/F since rom starts at $C000). */
     uint8_t lo = emu->memory.rom[0x3FFE];
@@ -786,6 +791,10 @@ static void loci_action_release_irq_trap(void* ctx) {
     /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
     cpu_irq_clear(&emu->cpu, IRQF_VIA);
 
+    if (emu->loci_menu_active) {
+        log_info("LOCI: Action button inside the menu — ignored");
+        return;
+    }
     char rom[512];
     if (!loci_find_menu_rom(emu, rom, sizeof(rom))) {
         log_warning("LOCI: menu ROM introuvable (LOCIROM/locirom dans le flash "
@@ -793,6 +802,7 @@ static void loci_action_release_irq_trap(void* ctx) {
         return;
     }
     if (loci_rom_swap_cb(emu, rom, 0xC000)) {
+        emu->loci_menu_active = true;
         cpu_reset(&emu->cpu);
         log_info("LOCI: warm boot -> menu ROM %s", rom);
     }
@@ -810,6 +820,7 @@ static bool loci_resume_session_cb(void* ctx) {
     if (emu->rom_path && !loci_rom_swap_cb(emu, emu->rom_path, 0xC000))
         return false;
     if (!savestate_load(emu, snap)) return false;
+    emu->loci_menu_active = false;
     log_info("LOCI: session resumed from %s", snap);
     return true;
 }

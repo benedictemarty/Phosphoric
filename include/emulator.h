@@ -41,7 +41,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.46.0-alpha"
+#define EMU_VERSION "1.46.1-alpha"
 
 /**
  * @brief ORIC machine model
@@ -313,6 +313,12 @@ typedef struct emulator_s {
      * inside main.c with a comment acknowledging "acceptable leak at
      * shutdown"). Freed by emulator_cleanup. */
     uint8_t* loci_overlay_buf;
+    /* True while the LOCI menu ROM (warm boot via the Action button) is
+     * mapped. Guards the button against re-entry: pressing it inside the
+     * menu must NOT re-snapshot (it would clobber the session snapshot
+     * with the menu's own state) nor re-boot the menu. Cleared when the
+     * menu leaves (resume or MIA_BOOT into another ROM). */
+    bool loci_menu_active;
 
     /* TUI mode flag: when true, breakpoints route to the ncurses TUI
      * instead of the line-based REPL (build with TUI=1). */

@@ -1325,6 +1325,12 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 85b: LOCI — garde de réentrance du bouton Action (v1.46.1-alpha) - DONE
+
+- [x] F8 dans le menu : ignoré (plus de re-snapshot du menu dans
+      loci_resume.ost qui cassait le resume) ; drapeau loci_menu_active
+      posé au warm boot, levé par tout swap ROM $C000
+
 ### Sprint 85: LOCI — bouton Action → menu, ROM patchée, ADJ_SCAN vivant (v1.46.0-alpha) - DONE
 
 Le F8 n'avait aucun effet visible ; le menu affichait FW 242.241.240
@@ -2678,5 +2684,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.46.0-alpha
+**Current Version**: 1.46.1-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
