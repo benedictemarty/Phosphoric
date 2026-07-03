@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.48.2-alpha
-Build Status: ALPHA (Changed — docs : README à jour (sprints 79-87b) + nouvelle doc de référence docs/loci.md. Docs seules. 868 tests. EMU_VERSION → 1.48.2-alpha)
+Version: 1.48.3-alpha
+Build Status: ALPHA (Fixed — README resynchronisé (version/tests/sections/commandes/footer). Docs seules. 868 tests. EMU_VERSION → 1.48.3-alpha)
+Build Status (prev): ALPHA (Changed — docs : README à jour (sprints 79-87b) + nouvelle doc de référence docs/loci.md. Docs seules. 868 tests. EMU_VERSION → 1.48.2-alpha)
 Build Status (prev): ALPHA (Added — test copie menu LOCI rejouée e2e (byte-identique, clé USB → interne) ; suppression = API UNLINK seulement (pas dans le menu v0.3.0). 868 tests. EMU_VERSION → 1.48.1-alpha)
 Build Status (prev): ALPHA (Added — **LOCI : vraies clés USB du host** : volumes « N: » routés vers /media/$USER auto-détectés ou --loci-usb DIR ; label+taille dans le device list. +1 test (867). EMU_VERSION → 1.48.0-alpha)
 Build Status (prev): ALPHA (Added — **LOCI : device list (internal/USB/picowifi) + diag ROM Mike Brown (appui long F8)** : opendir vide = fd 0, readdir « 0: Internal storage » + usb_set_status ; test108k.rom v1.08k bootée par F8 >= 2 s ou loci-button long. +1 test (866). e2e diag « RAM Test Passed ». EMU_VERSION → 1.47.0-alpha)

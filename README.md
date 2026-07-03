@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.22.0-alpha** | **793 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.48.3-alpha** | **868 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -72,7 +72,7 @@ make SDL2=1
 
 ### Save States
 - **`.ost` format** — Binary save state with CRC32 integrity check
-- **10 sections** — CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, META
+- **15 sections** — CPU, MEM, VIA, PSG, VID, OCB, OGP, KBD, FDC, MDC, DSK, BAD, TAP, SER, META (CRC32, sections inconnues ignorées = rétro/avant-compatible)
 - **Hotkeys** — F2 (quick save), F4 (quick load)
 - **CLI** — `--save-state FILE`, `--load-state FILE`
 
@@ -88,7 +88,7 @@ make SDL2=1
 
 ### IPC Control Mode (OricForge IDE integration)
 - **`--control` flag** — Phosphoric speaks a text protocol on stdin/stdout, logs on stderr.
-- **24 commands** : `hello`, `regs`, `set`, `read`, `bread` (binary), `write`, `peek <subsys>`, `break`, `unbreak`, `break-list`, `watch`, `raster`, `step`, `next`, `step-out`, `continue`, `pause`, `reset`, `quit`, `load-tap`, `load-rom`, `load-sym`, `disasm`, and more.
+- **30 commands** : `hello`, `regs`, `set`, `read`, `bread` (binary), `write`, `peek <subsys>`, `break`, `unbreak`, `break-list`, `watch`, `raster`, `step`, `next`, `step-out`, `continue`, `pause`, `reset`, `quit`, `load-tap`, `load-rom`, `load-sym`, `load-disk`, `eject-disk`, `eject-tape`, `loci-button [long]`, `disasm`, and more.
 - **3 event types** : `EVT ready`, `EVT stopped reason=…`, `EVT halt reason=…`.
 - **Async pause** while running, capability negotiation via `hello`, SIGPIPE safe.
 - **Python smoke client** (`tests/integration/phos_smoke_client.py`) — stdlib only, ~250 LOC reference implementation.
@@ -424,8 +424,8 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 ## Testing
 
 ```bash
-make tests               # Full suite — 699 tests (100% pass)
-make test-cpu            # CPU tests (74)
+make tests               # Full suite — 868 tests (100% pass)
+make test-cpu            # CPU tests (92 — incl. 105 illegal NMOS opcodes)
 make test-memory         # Memory tests
 make test-io             # VIA/I/O tests
 make test-storage        # Storage tests
@@ -448,7 +448,7 @@ make test-profiler       # CPU profiler tests
 make test-rominfo        # ROM analysis tests
 make test-serial         # ACIA 6551 serial tests
 make test-symbols        # Symbol loader tests (.sym / .lab / EQU / VICE)
-make test-loci           # LOCI MIA tests (133 tests)
+make test-loci           # LOCI MIA tests (163 tests)
 make test-loci-sdimg     # LOCI FAT16/32 SD image tests
 make test-loci-sdimg-write # LOCI write API tests
 make test-loci-e2e       # 12 end-to-end scenarios (Sedoric boot + IPC control)
@@ -550,7 +550,7 @@ docs/            User guide, control_protocol.md, CR review docs
 ### Avertissements
 
 - **Aucune vérification formelle** : le code n'a pas été audité par un
-  ingénieur logiciel professionnel. Bien que 699 tests (unitaires +
+  ingénieur logiciel professionnel. Bien que 868 tests (unitaires +
   E2E) passent, la couverture de test n'est pas exhaustive et
   des cas limites peuvent exister.
 - **Non adapté à la production** : il s'agit d'un projet expérimental et
@@ -642,4 +642,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.22.0-alpha | 793 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | ULA profiles (OCULA: 80-col, ext-HIRES 320×200, palette redéfinissable, banking, GPU) + LOCI MIA boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-06-24
+Phosphoric v1.48.3-alpha | 868 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 timing mecanique reel + bad-sector injection | ULA profiles (OCULA: 80-col, ext-HIRES 320x200, palette redefinissable, banking, GPU) + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-07-03

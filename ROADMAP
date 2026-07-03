@@ -1325,6 +1325,11 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 88b: README resynchronisé (v1.48.3-alpha) - DONE
+
+- [x] Bannière 1.22.0/793 → 1.48.3/868 ; savestate 15 sections ;
+      IPC 30 commandes ; Testing 868 (cpu 92, loci 163) ; footer à jour
+
 ### Sprint 88: Documentation — README + docs/loci.md (v1.48.2-alpha) - DONE
 
 - [x] README : VIA CA2/CB2, FDC réel + bad sectors, LOCI complet,
@@ -2720,5 +2725,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.48.2-alpha
+**Current Version**: 1.48.3-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
