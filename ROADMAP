@@ -1325,6 +1325,23 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 80: Bad sector map — le dommage suit le média (v1.41.0-alpha) - DONE
+
+Lève les trois limitations du sprint 79 : la map était portée par le FDC,
+donc par le lecteur ; sur le vrai matériel le dommage appartient au média.
+
+- [x] `fdc_bad_map_t` ; `fdc_t.bad` = map du média sous la tête ;
+      `fdc_set_bad_map()` appliquée au select de lecteur
+- [x] Microdisc : `bad_map[4]` per-drive, effacée à l'insertion d'une
+      nouvelle disquette (hot-swap OSD/IPC/WASM), conservée si même image
+- [x] LOCI : `dsk_fdc` couvert — `dsk_bad_map[4]` + `dsk_bad_cli[4]`
+      (injections CLI semées à chaque `op_mount`)
+- [x] Savestate : section `BAD` per-drive rétro-compatible
+- [x] CLI : `--bad-sector [D:]S:T:N` (lecteur A-D), routé Microdisc et/ou
+      LOCI, appliqué après le chargement des disques
+- [x] +3 tests (854) : storage (media follows), savestate (roundtrip BAD),
+      loci (semis au mount)
+
 ### Sprint 79: Bad sector map — injection de secteurs illisibles (v1.40.0-alpha) - DONE
 
 Demandé par les tests de robustesse SCUMM-Oric (sputm S517) : le modèle
@@ -2590,6 +2607,6 @@ activées par défaut, clairement signalées dans l'aide CLI.
 
 ---
 
-**Last Updated**: 2026-06-29
-**Current Version**: 1.32.0-alpha
+**Last Updated**: 2026-07-03
+**Current Version**: 1.41.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

@@ -1781,6 +1781,32 @@ TEST(test_dsk_umount_closes) {
     loci_cleanup(&l); free(dsk_path); free(tmpdir);
 }
 
+TEST(test_dsk_bad_sector_seeded_at_mount) {
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "dmg.dsk", 256);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    /* CLI injection happens before any mount: seeds the drive-0 CLI map */
+    ASSERT_EQ(loci_add_bad_sector(&l, 0, 0, 4, 2), 0);
+    ASSERT_EQ(l.dsk_bad_cli[0].count, 1);
+    /* Mounting media in drive 0 carries the injected damage */
+    push_path(&l, "dmg.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_EQ(l.dsk_bad_map[0].count, 1);
+    ASSERT_EQ(l.dsk_bad_map[0].entry[0].track, 4);
+    ASSERT_EQ(l.dsk_fdc.bad.count, 1);       /* drive 0 selected by default */
+    /* Umount: no media, live map cleared, CLI map kept for the next mount */
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
+    ASSERT_EQ(l.dsk_bad_map[0].count, 0);
+    ASSERT_EQ(l.dsk_fdc.bad.count, 0);
+    ASSERT_EQ(l.dsk_bad_cli[0].count, 1);
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
 TEST(test_dsk_cmd_reports_not_ready_for_empty_drive) {
     loci_t l; loci_init(&l);
     l.enabled = true;
@@ -3088,6 +3114,7 @@ int main(void) {
     RUN(test_tap_io_cmd_rewind_resets_counter);
     RUN(test_dsk_mount_opens_drive_image);
     RUN(test_dsk_umount_closes);
+    RUN(test_dsk_bad_sector_seeded_at_mount);
     RUN(test_dsk_cmd_reports_not_ready_for_empty_drive);
     RUN(test_dsk_cmd_ready_for_mounted_drive);
     RUN(test_dsk_ctrl_select_drive_via_bits_5_6);

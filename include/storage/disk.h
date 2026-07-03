@@ -51,6 +51,17 @@ typedef enum {
 /* Callback types for DRQ/INTRQ notification */
 typedef void (*fdc_signal_cb)(void* userdata);
 
+/* Bad sector map: unreadable sectors of ONE media (one floppy).
+ * Lives with the media image at the controller layer; the FDC holds a
+ * copy for the media currently under the head. */
+#define FDC_MAX_BAD_SECTORS 16
+typedef struct {
+    struct {
+        uint8_t side, track, sector;
+    } entry[FDC_MAX_BAD_SECTORS];
+    uint8_t count;
+} fdc_bad_map_t;
+
 typedef struct fdc_s {
     uint8_t status;
     uint8_t command;
@@ -109,25 +120,28 @@ typedef struct fdc_s {
     fdc_signal_cb clr_intrq;
     void* intrq_userdata;
 
-    /* Bad sector map (fault injection for robustness testing).
-     * Sectors listed here become invisible to fdc_find_sector -> the
-     * command layer reports Record Not Found (FDC_ST_NOT_FOUND), like a
-     * physically damaged disk. Matches real WD1793 behaviour on
-     * unreadable sectors; the flat-image model otherwise cannot express
-     * it (a corrupted MFM ID field is silently healed at load time). */
-#define FDC_MAX_BAD_SECTORS 16
-    struct {
-        uint8_t side, track, sector;
-    } bad_sectors[FDC_MAX_BAD_SECTORS];
-    uint8_t bad_sector_count;
+    /* Bad sector map of the media currently under the head (fault injection
+     * for robustness testing). Sectors listed here become invisible to
+     * fdc_find_sector -> the command layer reports Record Not Found
+     * (FDC_ST_NOT_FOUND), like a physically damaged disk. Matches real
+     * WD1793 behaviour on unreadable sectors; the flat-image model
+     * otherwise cannot express it (a corrupted MFM ID field is silently
+     * healed at load time). Damage belongs to the MEDIA, not the drive:
+     * the controller layers (Microdisc, LOCI) keep one map per drive slot
+     * and swap it in through fdc_set_bad_map() on drive select / insert. */
+    fdc_bad_map_t bad;
 } fdc_t;
 
 void fdc_init(fdc_t* fdc);
 void fdc_reset(fdc_t* fdc);
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size);
-/* Mark side/track/sector (sector is 1-based) as unreadable.
+/* Mark side/track/sector (sector is 1-based) as unreadable in MAP.
  * Returns 0 on success, -1 if the map is full. */
+int fdc_bad_map_add(fdc_bad_map_t* map, uint8_t side, uint8_t track, uint8_t sector);
+/* Same, directly on the media currently loaded in the FDC. */
 int fdc_add_bad_sector(fdc_t* fdc, uint8_t side, uint8_t track, uint8_t sector);
+/* Load MAP as the current media's bad sector map (copied; NULL = pristine). */
+void fdc_set_bad_map(fdc_t* fdc, const fdc_bad_map_t* map);
 uint8_t fdc_read(fdc_t* fdc, uint8_t reg);
 void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value);
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles);

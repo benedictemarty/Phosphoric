@@ -65,13 +65,22 @@ void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size) {
     fdc->disk_size = size;
 }
 
-int fdc_add_bad_sector(fdc_t* fdc, uint8_t side, uint8_t track, uint8_t sector) {
-    if (fdc->bad_sector_count >= FDC_MAX_BAD_SECTORS) return -1;
-    fdc->bad_sectors[fdc->bad_sector_count].side = side;
-    fdc->bad_sectors[fdc->bad_sector_count].track = track;
-    fdc->bad_sectors[fdc->bad_sector_count].sector = sector;
-    fdc->bad_sector_count++;
+int fdc_bad_map_add(fdc_bad_map_t* map, uint8_t side, uint8_t track, uint8_t sector) {
+    if (map->count >= FDC_MAX_BAD_SECTORS) return -1;
+    map->entry[map->count].side = side;
+    map->entry[map->count].track = track;
+    map->entry[map->count].sector = sector;
+    map->count++;
     return 0;
+}
+
+int fdc_add_bad_sector(fdc_t* fdc, uint8_t side, uint8_t track, uint8_t sector) {
+    return fdc_bad_map_add(&fdc->bad, side, track, sector);
+}
+
+void fdc_set_bad_map(fdc_t* fdc, const fdc_bad_map_t* map) {
+    if (map) fdc->bad = *map;
+    else memset(&fdc->bad, 0, sizeof(fdc->bad));
 }
 
 /**
@@ -83,10 +92,10 @@ static uint8_t* fdc_find_sector(fdc_t* fdc, uint8_t sec_id) {
     if (fdc->c_track >= fdc->tracks || sec_id == 0 || sec_id > fdc->sectors_per_track)
         return NULL;
     /* Bad sector map: injected faults read as Record Not Found */
-    for (uint8_t i = 0; i < fdc->bad_sector_count; i++) {
-        if (fdc->bad_sectors[i].side == fdc->side &&
-            fdc->bad_sectors[i].track == fdc->c_track &&
-            fdc->bad_sectors[i].sector == sec_id)
+    for (uint8_t i = 0; i < fdc->bad.count; i++) {
+        if (fdc->bad.entry[i].side == fdc->side &&
+            fdc->bad.entry[i].track == fdc->c_track &&
+            fdc->bad.entry[i].sector == sec_id)
             return NULL;
     }
     uint32_t offset = ((uint32_t)fdc->side * fdc->tracks * fdc->sectors_per_track +

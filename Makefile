@@ -194,7 +194,7 @@ TEST_MEM_SRCS = tests/unit/test_memory.c src/memory/memory.c \
 TEST_IO_SRCS = tests/unit/test_io.c src/io/via6522.c src/utils/logging.c
 
 TEST_STORAGE_SRCS = tests/unit/test_storage.c src/storage/sedoric.c \
-                    src/storage/disk.c src/utils/logging.c
+                    src/storage/disk.c src/io/microdisc.c src/utils/logging.c
 
 TEST_SYSTEM_SRCS = tests/unit/test_full_system.c src/cpu/cpu6502.c \
                    src/cpu/opcodes.c src/cpu/addressing.c src/memory/memory.c \

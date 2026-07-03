@@ -53,6 +53,8 @@ static void microdisc_select_drive(microdisc_t* md, uint8_t drive) {
     fdc_set_disk(&md->fdc, md->disk_data[drive], md->disk_size[drive]);
     md->fdc.tracks = md->disk_tracks[drive];
     md->fdc.sectors_per_track = md->disk_sectors[drive];
+    /* Damage follows the media: load this drive's media map */
+    fdc_set_bad_map(&md->fdc, &md->bad_map[drive]);
 }
 
 void microdisc_init(microdisc_t* md) {
@@ -145,15 +147,36 @@ void microdisc_write(microdisc_t* md, uint16_t addr, uint8_t value) {
 void microdisc_set_disk(microdisc_t* md, uint8_t drive, uint8_t* data, uint32_t size,
                         uint8_t tracks, uint8_t sectors_per_track) {
     if (drive >= MICRODISC_MAX_DRIVES) return;
+    bool media_changed = (md->disk_data[drive] != data);
     md->disk_data[drive] = data;
     md->disk_size[drive] = size;
     md->disk_tracks[drive] = tracks;
     md->disk_sectors[drive] = sectors_per_track;
+    /* New media in the slot: its surface is pristine (damage belongs to
+     * the floppy, not the drive). Re-pointing the SAME image (savestate
+     * restore, write-back refresh) keeps the map. */
+    if (media_changed)
+        memset(&md->bad_map[drive], 0, sizeof(md->bad_map[drive]));
     if (drive == md->drive) {
         fdc_set_disk(&md->fdc, data, size);
         md->fdc.tracks = tracks;
         md->fdc.sectors_per_track = sectors_per_track;
+        fdc_set_bad_map(&md->fdc, &md->bad_map[drive]);
     }
+}
+
+int microdisc_add_bad_sector(microdisc_t* md, uint8_t drive,
+                             uint8_t side, uint8_t track, uint8_t sector) {
+    if (drive >= MICRODISC_MAX_DRIVES) return -1;
+    if (fdc_bad_map_add(&md->bad_map[drive], side, track, sector) != 0) return -1;
+    microdisc_sync_bad_map(md, drive);
+    return 0;
+}
+
+void microdisc_sync_bad_map(microdisc_t* md, uint8_t drive) {
+    if (drive >= MICRODISC_MAX_DRIVES) return;
+    if (drive == md->drive)
+        fdc_set_bad_map(&md->fdc, &md->bad_map[drive]);
 }
 
 bool microdisc_load_rom(microdisc_t* md, const char* filename) {

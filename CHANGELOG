@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.0-alpha] - 2026-07-03
+
+### Changed — Bad sector map : le dommage suit le média (per-drive, LOCI, savestate)
+
+Lève les trois limitations du sprint 79 (la map était portée par le FDC,
+donc par le LECTEUR) : sur une vraie disquette le dommage appartient au
+média, pas au mécanisme.
+
+- **`include/storage/disk.h` / `src/storage/disk.c`** : type `fdc_bad_map_t`
+  (16 entrées) ; `fdc_t.bad` = map du média actuellement sous la tête ;
+  `fdc_bad_map_add()` + `fdc_set_bad_map()` (NULL = surface saine).
+- **`src/io/microdisc.c`** : `bad_map[4]` per-drive ; appliquée au FDC à la
+  sélection de lecteur, effacée quand une NOUVELLE disquette est insérée
+  (`microdisc_set_disk`, hot-swap OSD/IPC/WASM inclus) ; re-pointer la même
+  image (restauration savestate) conserve la map. `microdisc_add_bad_sector()`.
+- **`src/io/loci_bus.c`** : le `dsk_fdc` du LOCI est couvert — `dsk_bad_map[4]`
+  (média monté) + `dsk_bad_cli[4]` (injections CLI semées à chaque `op_mount`,
+  les montages ayant lieu après le parsing CLI) ; umount = map vive effacée.
+- **`src/savestate.c`** : nouvelle section `BAD` (per-drive, écrite après DSK,
+  re-arme la copie du FDC pour le lecteur sélectionné). Rétro-compatible :
+  sections inconnues ignorées au chargement, anciens .ost sans BAD acceptés.
+- **`src/main.c`** : `--bad-sector` étendu en `[D:]S:T:N` (lecteur A-D par
+  chiffre 0-3, défaut 0) ; appliqué APRÈS le chargement des disques ; routé
+  vers Microdisc et/ou LOCI ; erreur fatale si aucun sous-système disque.
+- +3 tests (854) : `test_storage` (la map suit le média au select/hot-swap),
+  `test_savestate` (roundtrip section BAD), `test_loci` (semis au mount,
+  umount efface la map vive, garde la map CLI).
+
 ## [1.40.0-alpha] - 2026-07-02
 
 ### Added — Bad sector map : injection de secteurs illisibles (--bad-sector)

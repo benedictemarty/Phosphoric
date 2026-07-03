@@ -326,6 +326,12 @@ typedef struct loci_s {
      * with a warning logged at mount-time. */
     bool     dsk_is_mfm[4];          /* true = sedoric_load MFM→flat path */
     char     dsk_host_path[4][256];  /* host path used for write-back */
+    /* Per-drive bad sector maps (fault injection). dsk_bad_map = damage of
+     * the media currently mounted; dsk_bad_cli = CLI-injected damage seeded
+     * into every media mounted in that drive (mounts happen at runtime via
+     * op_mount, after the CLI has been parsed). */
+    fdc_bad_map_t dsk_bad_map[4];
+    fdc_bad_map_t dsk_bad_cli[4];
     /* Sprint 34aw+ : INTRQ tracking pour matche le format Microdisc
      * (read $0314 = intrq | $7F, comme microdisc_read). */
     uint8_t  dsk_intrq;        /* 0x00 = asserted, 0x80 = clear */
@@ -540,6 +546,12 @@ void    loci_cons_inject(loci_t* loci, uint8_t ch);
 /* DSK register access — stub WD1793 (Sprint 34ae). */
 uint8_t loci_dsk_read(loci_t* loci, uint16_t address);
 void    loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value);
+
+/* Mark a sector of DRIVE's media as unreadable (fault injection). Also
+ * seeds the CLI map so media mounted later in DRIVE carry the damage.
+ * Returns 0 on success, -1 on bad drive or full map. */
+int     loci_add_bad_sector(loci_t* loci, uint8_t drive,
+                            uint8_t side, uint8_t track, uint8_t sector);
 
 /* Run the pending API op (called by the main loop after every CPU step
  * when LOCI is enabled). For Sprint 34y all ops return ENOSYS synchronously,

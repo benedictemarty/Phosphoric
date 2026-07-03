@@ -337,6 +337,21 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
             fwrite(emu->disks[i]->data, 1, emu->disks[i]->size, fp);
         }
         end_section(fp, sec);
+
+        /* ── BAD Section: per-drive media bad-sector maps (fault injection).
+         * Written after DSK because loading DSK re-points the media and
+         * would wipe freshly restored maps. ── */
+        sec = begin_section(fp, "BAD\0");
+        for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+            const fdc_bad_map_t* m = &emu->microdisc.bad_map[i];
+            write_u8(fp, m->count);
+            for (uint8_t k = 0; k < m->count; k++) {
+                write_u8(fp, m->entry[k].side);
+                write_u8(fp, m->entry[k].track);
+                write_u8(fp, m->entry[k].sector);
+            }
+        }
+        end_section(fp, sec);
     }
 
     /* ── TAP Section ── */
@@ -704,6 +719,22 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                     fseek(fp, dsize, SEEK_CUR);  /* allocation failed — skip */
                 }
             }
+        } else if (memcmp(tag, "BAD\0", 4) == 0) {
+            /* Per-drive media bad-sector maps; re-arm the FDC's copy for
+             * the selected drive (MDC/DSK were parsed before us). */
+            for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+                fdc_bad_map_t* m = &emu->microdisc.bad_map[i];
+                memset(m, 0, sizeof(*m));
+                uint8_t n = read_u8(fp);
+                if (n > FDC_MAX_BAD_SECTORS) n = FDC_MAX_BAD_SECTORS;
+                for (uint8_t k = 0; k < n; k++) {
+                    uint8_t bs = read_u8(fp);
+                    uint8_t bt = read_u8(fp);
+                    uint8_t bn = read_u8(fp);
+                    fdc_bad_map_add(m, bs, bt, bn);
+                }
+            }
+            microdisc_sync_bad_map(&emu->microdisc, emu->microdisc.drive);
         } else if (memcmp(tag, "TAP\0", 4) == 0) {
             emu->tape_loaded = read_u8(fp) != 0;
             emu->tapelen = read_i32le(fp);

@@ -425,7 +425,8 @@ static void print_usage(const char* program_name) {
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
     printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
     printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
-    printf("      --bad-sector S:T:N     Mark side S track T sector N unreadable (RNF), repeatable\n");
+    printf("      --bad-sector [D:]S:T:N Mark drive D (default A) side S track T sector N\n");
+    printf("                             unreadable (RNF), repeatable; damage follows the media\n");
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
     printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
@@ -3890,22 +3891,6 @@ int main(int argc, char* argv[]) {
         emu.microdisc.cpu_userdata = &emu;
         emu.has_microdisc = true;
 
-        /* Apply --bad-sector S:T:N fault injections (robustness testing) */
-        for (int i = 0; i < bad_sector_arg_count; i++) {
-            unsigned s, trk, sec;
-            if (sscanf(bad_sector_args[i], "%u:%u:%u", &s, &trk, &sec) == 3 &&
-                s <= 1 && trk < 256 && sec >= 1 && sec < 256) {
-                fdc_add_bad_sector(&emu.microdisc.fdc,
-                                   (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
-                log_info("Bad sector injected: side %u track %u sector %u", s, trk, sec);
-            } else {
-                log_error("Invalid --bad-sector format '%s'. Use S:T:N (side:track:sector)",
-                          bad_sector_args[i]);
-                emulator_cleanup(&emu);
-                return 1;
-            }
-        }
-
         /* Load Microdisc ROM if specified */
         if (disk_rom_file) {
             log_info("Loading Microdisc ROM: %s", disk_rom_file);
@@ -3966,6 +3951,43 @@ int main(int argc, char* argv[]) {
             emu.disk_path = disk_create_file;
         } else if (disk_create_file && emu.disks[0]) {
             log_warning("disk-create ignoré : le lecteur A est déjà occupé par -d");
+        }
+    }
+
+    /* Apply --bad-sector [D:]S:T:N fault injections. Damage follows the
+     * media: the maps live per drive at the controller layer (Microdisc
+     * and/or LOCI) and are wiped when a new disk is inserted. Applied after
+     * the initial disk loads so the injections stick to the loaded media. */
+    for (int i = 0; i < bad_sector_arg_count; i++) {
+        unsigned d = 0, s, trk, sec;
+        int nf = sscanf(bad_sector_args[i], "%u:%u:%u:%u", &d, &s, &trk, &sec);
+        if (nf == 3) { sec = trk; trk = s; s = d; d = 0; }   /* S:T:N → drive A */
+        if ((nf == 3 || nf == 4) &&
+            d < MICRODISC_MAX_DRIVES && s <= 1 && trk < 256 && sec >= 1 && sec < 256) {
+            int rc = -1;
+            if (emu.has_microdisc)
+                rc = microdisc_add_bad_sector(&emu.microdisc, (uint8_t)d,
+                                              (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
+            if (emu.has_loci) {
+                int rc2 = loci_add_bad_sector(&emu.loci, (uint8_t)d,
+                                              (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
+                if (rc != 0) rc = rc2;
+            }
+            if (rc == 0) {
+                log_info("Bad sector injected: drive %c side %u track %u sector %u",
+                         'A' + d, s, trk, sec);
+            } else {
+                log_error("--bad-sector %s: no disk subsystem (use -d/--disk-rom or --loci)",
+                          bad_sector_args[i]);
+                emulator_cleanup(&emu);
+                return 1;
+            }
+        } else {
+            log_error("Invalid --bad-sector format '%s'. Use [D:]S:T:N "
+                      "(drive 0-3, side 0-1, track, sector 1-255)",
+                      bad_sector_args[i]);
+            emulator_cleanup(&emu);
+            return 1;
         }
     }
 
