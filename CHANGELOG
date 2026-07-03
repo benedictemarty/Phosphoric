@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.3-alpha] - 2026-07-03
+
+### Fixed — README : chiffres désynchronisés resynchronisés
+
+- Bannière : v1.22.0-alpha / 793 tests → v1.48.3-alpha / 868 tests.
+- Save states : « 10 sections » → 15 réelles (CPU, MEM, VIA, PSG, VID,
+  OCB, OGP, KBD, FDC, MDC, DSK, BAD, TAP, SER, META).
+- Contrôle IPC : « 24 commands » → 30 (dispatch réel de control.c, dont
+  load-disk/eject-disk/eject-tape/loci-button).
+- Section Testing : 699 → 868 tests ; test-cpu 74 → 92 ; test-loci
+  133 → 163.
+- Footer : version, date, features (VIA complet, WD1793 réel, bad
+  sectors, LOCI menu/diag/USB/ABI).
+
 ## [1.48.2-alpha] - 2026-07-03
 
 ### Changed — Documentation : README + nouvelle doc docs/loci.md
