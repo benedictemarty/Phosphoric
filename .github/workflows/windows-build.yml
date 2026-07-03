@@ -39,6 +39,9 @@ jobs:
           mkdir -p dist/phosphoric-windows
           cp oric1-emu.exe dist/phosphoric-windows/
           cp /opt/sdl2-mingw/x86_64-w64-mingw32/bin/SDL2.dll dist/phosphoric-windows/
+          # winpthreads runtime (clock_gettime) — posix flavour of MinGW
+          cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || \
+            cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || true
           cp -r roms dist/phosphoric-windows/
           cp README.md CHANGELOG LICENSE dist/phosphoric-windows/ 2>/dev/null || true
           cp docs/loci.md dist/phosphoric-windows/ 2>/dev/null || true

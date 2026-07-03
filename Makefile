@@ -14,10 +14,11 @@ LDFLAGS = -lm -lutil
 # transports are excluded (clear runtime messages); everything else works.
 WIN ?= 0
 ifeq ($(WIN), 1)
-    CC = x86_64-w64-mingw32-gcc
+    # -posix flavour: clock_gettime/clock_nanosleep live in winpthreads
+    CC = x86_64-w64-mingw32-gcc-posix
     EXE = .exe
     SDL2_WIN_PREFIX ?= /opt/sdl2-mingw/x86_64-w64-mingw32
-    LDFLAGS = -lm -lws2_32 -static-libgcc
+    LDFLAGS = -lm -lws2_32 -lwinpthread -static-libgcc
     PICOTLS = 0
 endif
 
