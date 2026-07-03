@@ -1325,6 +1325,13 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 88: Documentation — README + docs/loci.md (v1.48.2-alpha) - DONE
+
+- [x] README : VIA CA2/CB2, FDC réel + bad sectors, LOCI complet,
+      options --fdc-timing/--bad-sector/--loci-usb, F6/F8
+- [x] docs/loci.md : doc de référence (mémoire, ABI firmware, stockage,
+      bouton Action, timing MIA, divergences hors périmètre)
+
 ### Sprint 87b: LOCI — copie du menu vérifiée e2e (v1.48.1-alpha) - DONE
 
 - [x] Audit copie/suppression : copie = client-side (menu, touche 'i'),
@@ -2713,5 +2720,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.48.1-alpha
+**Current Version**: 1.48.2-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
