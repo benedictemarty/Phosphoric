@@ -1325,6 +1325,19 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 86: LOCI — device list + diag ROM (v1.47.0-alpha) - DONE
+
+Le sélecteur du menu doit lister les périphériques (« 0: Internal
+storage », clé USB, picowifi) ; l'appui long doit booter la diag ROM.
+
+- [x] opendir(vide) = itérateur périphériques fd 0 (dir.c FD_OFFS_DEV) ;
+      readdir : internal storage + lignes usb_set_status + nom vide
+- [x] loci_add_usb_device() ; SDIMG (« MSC x.x MB ») et picowifi
+      (« CDC modem mounted ») déclarés par main.c
+- [x] Diag ROM Mike Brown v1.08k (roms/loci/test108k.rom + 60 Hz) ;
+      appui long F8 >= 2 s (EXT_BTN_LONGPRESS_MS) ou loci-button long
+- [x] +1 test (866) ; e2e : « Oric Diag ROM V1.08k / RAM Test Passed »
+
 ### Sprint 85b: LOCI — garde de réentrance du bouton Action (v1.46.1-alpha) - DONE
 
 - [x] F8 dans le menu : ignoré (plus de re-snapshot du menu dans
@@ -2684,5 +2697,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.46.1-alpha
+**Current Version**: 1.47.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

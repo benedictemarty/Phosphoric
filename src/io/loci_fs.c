@@ -296,9 +296,7 @@ static void op_lseek_sdimg(loci_t* loci) {
     api_return_axsreg(loci, (uint32_t)pos);
 }
 
-static void op_opendir_sdimg(loci_t* loci) {
-    char path[260] = {0};
-    pop_zstring(loci, path, sizeof(path));
+static void op_opendir_sdimg(loci_t* loci, const char* path) {
     const char* p = path;
     if (p[0] && p[1] == ':') p += 2;
     while (*p == '/' || *p == '\\') p++;
@@ -793,12 +791,20 @@ static DIR* dir_fd_to_handle(loci_t* loci, int fd) {
 }
 
 void op_opendir(loci_t* loci) {
-    if (loci->sdimg) { op_opendir_sdimg(loci); return; }
-    char path[260];
-    if (!pop_zstring(loci, path, sizeof(path))) {
-        api_return_errno(loci, LOCI_EINVAL);
+    char path[260] = {0};
+    /* Firmware dir.c reads the xstack guard on an empty stack (0x00): an
+     * empty/absent path means the DEVICE LIST, not a directory. */
+    bool popped = pop_zstring(loci, path, sizeof(path));
+    if (!popped || path[0] == '\0') {
+        if (loci->dir_dev >= 0) {              /* single iterator, like firmware */
+            api_return_errno(loci, LOCI_EMFILE);
+            return;
+        }
+        loci->dir_dev = 0;
+        api_return_ax(loci, 0);                /* fd = FD_OFFS_DEV = 0 */
         return;
     }
+    if (loci->sdimg) { op_opendir_sdimg(loci, path); return; }
     char host_path[512];
     if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
         api_return_errno(loci, LOCI_EACCES);
@@ -828,8 +834,13 @@ void op_opendir(loci_t* loci) {
 }
 
 void op_closedir(loci_t* loci) {
-    if (loci->sdimg) { op_closedir_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
+    if (fd == 0 && loci->dir_dev >= 0) {   /* device-list iterator */
+        loci->dir_dev = -1;
+        api_return_ax(loci, 0);
+        return;
+    }
+    if (loci->sdimg) { op_closedir_sdimg(loci); return; }
     DIR* d = dir_fd_to_handle(loci, fd);
     if (!d) {
         api_return_errno(loci, LOCI_EBADF);
@@ -842,9 +853,32 @@ void op_closedir(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
+/* readdir on the device-list iterator (fd 0). Firmware dir.c: entry 0 is
+ * the internal storage, then one usb_get_status() line per mounted USB
+ * device, then an empty name terminates the listing. AM_SYS attribute. */
+static void op_readdir_dev(loci_t* loci) {
+    uint8_t dirent_buf[LOCI_DIRENT_SIZE] = {0};
+    char name[LOCI_DIR_NAME_LEN] = "";
+    if (loci->dir_dev == 0) {
+        snprintf(name, sizeof(name), "0: Internal storage [15MB]");
+    } else if (loci->dir_dev - 1 < (int)loci->usb_dev_count) {
+        snprintf(name, sizeof(name), "%s", loci->usb_dev[loci->dir_dev - 1]);
+    }
+    loci->dir_dev++;
+    size_t nl = strlen(name);
+    memcpy(&dirent_buf[2], name, nl);      /* d_fd = 0 already (dev) */
+    dirent_buf[66] = LOCI_AM_SYS;          /* firmware: devices are "system" */
+    xstack_zero(loci);
+    loci->xstack_ptr = (uint16_t)(LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE);
+    memcpy(&loci->xstack[loci->xstack_ptr], dirent_buf, LOCI_DIRENT_SIZE);
+    xstack_sync(loci);
+    api_return_ax(loci, 0);
+}
+
 void op_readdir(loci_t* loci) {
-    if (loci->sdimg) { op_readdir_sdimg(loci); return; }
     int fd = loci->regs[LOCI_REG_API_A];
+    if (fd == 0 && loci->dir_dev >= 0) { op_readdir_dev(loci); return; }
+    if (loci->sdimg) { op_readdir_sdimg(loci); return; }
     DIR* d = dir_fd_to_handle(loci, fd);
     if (!d) {
         api_return_errno(loci, LOCI_EBADF);

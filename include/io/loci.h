@@ -421,6 +421,15 @@ typedef struct loci_s {
     uint8_t  adj_tior;     /* current sweep position 0-31 */
     uint32_t adj_acc;      /* cycle accumulator */
 
+    /* Device list (firmware dir.c: opendir with an empty path returns the
+     * FD_OFFS_DEV iterator, fd 0; readdir then yields "0: Internal
+     * storage [15MB]" followed by one usb_get_status() line per mounted
+     * USB device — MSC key, picowifi CDC modem... — then an empty name). */
+#define LOCI_USB_DEV_MAX 4
+    int16_t dir_dev;                             /* -1 = closed, else next index */
+    char    usb_dev[LOCI_USB_DEV_MAX][LOCI_DIR_NAME_LEN]; /* "N: <status>" */
+    uint8_t usb_dev_count;
+
     /* Tape-mount callback (Sprint 34ao). Invoked by op_mount when slot
      * LOCI_MNT_TAP is targeted so the host emulator can load the .tap
      * into its cassette subsystem (emu->tapebuf) — required for CLOAD
@@ -537,6 +546,12 @@ void    loci_set_rom_poke_callback(loci_t* loci,
 
 /* Advance the ADJ_SCAN sweep by CYCLES (call from the emulation loop). */
 void    loci_adj_tick(loci_t* loci, unsigned int cycles);
+
+/* Declare a mounted USB device: STATUS becomes the "N: <status>" line in
+ * the device list (firmware usb_set_status — e.g. the MSC key inquiry
+ * string or "CDC modem mounted" for the picowifi). Returns 0, or -1 if
+ * the table is full. */
+int     loci_add_usb_device(loci_t* loci, const char* status);
 
 /* Register the action-button host hooks (Sprint 34ai). install_cb is
  * called on short-press to set up the IRQ trap; release_cb is called

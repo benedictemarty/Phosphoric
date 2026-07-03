@@ -114,6 +114,7 @@ bool loci_init(loci_t* loci) {
     loci->mia_tadr = 0;
     loci->mia_tior_lo = 0;
     loci->mia_tior_hi = 31;
+    loci->dir_dev = -1;    /* device-list iterator closed */
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);
     loci->dsk_fdc.set_drq = loci_fdc_set_drq;
@@ -246,6 +247,14 @@ void loci_set_rom_poke_callback(loci_t* loci,
     if (!loci) return;
     loci->rom_poke_cb = cb;
     loci->rom_poke_ctx = ctx;
+}
+
+int loci_add_usb_device(loci_t* loci, const char* status) {
+    if (!loci || !status || loci->usb_dev_count >= LOCI_USB_DEV_MAX) return -1;
+    snprintf(loci->usb_dev[loci->usb_dev_count], LOCI_DIR_NAME_LEN,
+             "%d: %s", loci->usb_dev_count + 1, status);
+    loci->usb_dev_count++;
+    return 0;
 }
 
 void loci_set_action_callbacks(loci_t* loci,
