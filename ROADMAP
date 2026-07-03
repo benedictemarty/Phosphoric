@@ -1325,6 +1325,23 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 81: FDC — timings mécaniques réels du WD1793 (v1.42.0-alpha) - DONE
+
+Volet « lecteur de disquette » de l'initiative fidélité matérielle v2 :
+la mécanique d'un vrai lecteur 3" remplace les délais courts hérités.
+
+- [x] `timing_mode` FAST/REAL + `rot_pos` (300 tr/min, 200 000 cycles/tour)
+- [x] Type I : 6/12/20/30 ms par piste (r1r0), +30 ms si V (verify)
+- [x] Type II/III : premier DRQ à la latence rotationnelle réelle (+30 ms
+      si E) ; multi-secteur au rythme de la rotation ; Write Track à l'index
+- [x] RNF après 5 impulsions d'index (~1 s BUSY) — retentatives sur
+      --bad-sector au rythme du vrai matériel
+- [x] Status Type I vivant : index pulse ~4 ms/tour + TRK0 recalculés
+- [x] Microdisc = REAL par défaut ; LOCI dsk_fdc = FAST (SD servie par le
+      RP2040, sans mécanique — fidélité là aussi) ; `--fdc-timing real|fast`
+- [x] Savestate FDC +5 octets (garde de taille, anciens .ost acceptés)
+- [x] +2 tests (856) ; e2e : SEDORIC V4.0 et Manic Miner bootent en REAL
+
 ### Sprint 80: Bad sector map — le dommage suit le média (v1.41.0-alpha) - DONE
 
 Lève les trois limitations du sprint 79 : la map était portée par le FDC,
@@ -2608,5 +2625,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.41.0-alpha
+**Current Version**: 1.42.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

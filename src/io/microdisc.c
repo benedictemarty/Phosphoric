@@ -60,6 +60,10 @@ static void microdisc_select_drive(microdisc_t* md, uint8_t drive) {
 void microdisc_init(microdisc_t* md) {
     memset(md, 0, sizeof(microdisc_t));
     fdc_init(&md->fdc);
+    /* A Microdisc drives a real 3" mechanism: mechanical WD1793 timings
+     * (step rates, rotational latency, RNF after 5 index pulses). The
+     * LOCI's dsk_fdc stays FAST — its "drive" is an SD card. */
+    md->fdc.timing_mode = FDC_TIMING_REAL;
 
     /* Wire FDC callbacks to Microdisc */
     md->fdc.set_drq = microdisc_fdc_set_drq;

@@ -247,6 +247,70 @@ TEST(test_fdc_bad_sector_map) {
     free(disk_data);
 }
 
+TEST(test_fdc_real_timing_seek_and_rotation) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    fdc.timing_mode = FDC_TIMING_REAL;
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    /* Seek 10 tracks at 6 ms/step (r1r0=00): INTRQ only after ~60 ms */
+    fdc.data = 10;
+    fdc_write(&fdc, 0, 0x10);              /* Seek */
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    fdc_ticktock(&fdc, 59000);
+    ASSERT_FALSE(test_intrq_set);          /* head still moving */
+    fdc_ticktock(&fdc, 2000);
+    ASSERT_TRUE(test_intrq_set);
+    ASSERT_EQ(fdc.c_track, 10);
+
+    /* Type I status shows the LIVE index pulse: one ~4 ms window per rev */
+    uint8_t st = fdc_read(&fdc, 0);
+    ASSERT_FALSE(st & FDC_STI_PULSE);      /* rot ~61 ms: outside the pulse */
+    fdc_ticktock(&fdc, 200000 - 61000 + 500);   /* come back past the index */
+    st = fdc_read(&fdc, 0);
+    ASSERT_TRUE(st & FDC_STI_PULSE);
+    ASSERT_FALSE(st & FDC_STI_TRK0);       /* live TRK0: we are on track 10 */
+
+    /* Read sector: first DRQ arrives with the rotation, not instantly */
+    fdc.rot_pos = 0;                       /* head right at the index */
+    fdc.sector = 1;                        /* sector 1 data ≈ 1.5 ms away */
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    fdc_ticktock(&fdc, 1000);
+    ASSERT_FALSE(test_drq_set);            /* sector not under the head yet */
+    fdc_ticktock(&fdc, 600);
+    ASSERT_TRUE(test_drq_set);
+
+    free(disk_data);
+}
+
+TEST(test_fdc_real_timing_rnf_after_5_revs) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    fdc.timing_mode = FDC_TIMING_REAL;
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    /* Ask for a sector that does not exist: the real WD1793 keeps scanning
+     * ID fields and reports RNF only after 5 index pulses (~1 s) */
+    fdc.sector = 200;
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    ASSERT_FALSE(test_intrq_set);
+    fdc_ticktock(&fdc, 999000);
+    ASSERT_FALSE(test_intrq_set);          /* still scanning */
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    fdc_ticktock(&fdc, 2000);
+    ASSERT_TRUE(test_intrq_set);
+    ASSERT_TRUE(fdc.status & FDC_ST_NOT_FOUND);
+    ASSERT_FALSE(fdc.status & FDC_ST_BUSY);
+    ASSERT_FALSE(test_drq_set);
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
+
+    free(disk_data);
+}
+
 TEST(test_microdisc_bad_sector_follows_media) {
     microdisc_t md;
     microdisc_init(&md);
@@ -548,6 +612,8 @@ int main(void) {
     RUN(test_fdc_restore);
     RUN(test_fdc_seek);
     RUN(test_fdc_bad_sector_map);
+    RUN(test_fdc_real_timing_seek_and_rotation);
+    RUN(test_fdc_real_timing_rnf_after_5_revs);
     RUN(test_microdisc_bad_sector_follows_media);
     RUN(test_fdc_read_sector);
     RUN(test_fdc_write_sector);

@@ -36,6 +36,25 @@
 #define FDC_ST_WRITE_PROT 0x40
 #define FDC_ST_NOT_READY 0x80
 
+/* Timing profile.
+ * FAST = legacy short delays (Oricutron-style). Kept for the LOCI dsk_fdc:
+ *        on real hardware the LOCI's "drive" is the RP2040 serving sectors
+ *        from SD, with no mechanics — near-instant seeks are the faithful
+ *        behaviour there.
+ * REAL = mechanical 3" drive on a 1 MHz WD1793 (Microdisc): step rates
+ *        6/12/20/30 ms per track, 300 RPM rotation (200 ms/rev), first DRQ
+ *        after the requested sector actually passes under the head, Record
+ *        Not Found only after 5 index pulses (~1 s), 30 ms head settling
+ *        when the command's E/V flag asks for it, and a live index pulse
+ *        in the Type I status. */
+#define FDC_TIMING_FAST 0
+#define FDC_TIMING_REAL 1
+
+#define FDC_REV_CYCLES         200000u  /* one revolution at 300 RPM, 1 MHz */
+#define FDC_INDEX_PULSE_CYCLES 4000u    /* index pulse width (~4 ms) */
+#define FDC_SETTLE_CYCLES      30000    /* E/V flag: 30 ms at 1 MHz clock */
+#define FDC_RNF_CYCLES         (5 * (int)FDC_REV_CYCLES) /* 5 index pulses */
+
 /* Current operation */
 typedef enum {
     FDC_OP_NONE = 0,
@@ -111,6 +130,12 @@ typedef struct fdc_s {
     int delayed_int;           /* Cycles until INTRQ asserts (0 = no pending) */
     int di_status;             /* Status to set when delayed_int fires (-1 = keep) */
     int dd_status;             /* Status to set when delayed_drq fires (-1 = keep) */
+
+    /* Mechanical timing model (FDC_TIMING_REAL) */
+    uint8_t  timing_mode;      /* FDC_TIMING_FAST (default) or FDC_TIMING_REAL */
+    uint32_t rot_pos;          /* disk angle in cycles, 0..FDC_REV_CYCLES-1 */
+    bool     status_type1;     /* status register shows Type I bits (live
+                                  index pulse / TRK0 patched on read) */
 
     /* Signal callbacks */
     fdc_signal_cb set_drq;

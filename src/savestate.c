@@ -305,6 +305,9 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         write_i32le(fp, fdc->delayed_int);
         write_i32le(fp, fdc->di_status);
         write_i32le(fp, fdc->dd_status);
+        /* Mechanical timing model state (v1.42+): disk angle + Type I view */
+        write_u8(fp, fdc->status_type1 ? 1 : 0);
+        write_u32le(fp, fdc->rot_pos);
         end_section(fp, sec);
 
         /* ── MDC Section ── */
@@ -661,6 +664,10 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             fdc->delayed_int = read_i32le(fp);
             fdc->di_status = read_i32le(fp);
             fdc->dd_status = read_i32le(fp);
+            if (sec_size >= 36) {   /* v1.42+: mechanical timing state */
+                fdc->status_type1 = read_u8(fp) != 0;
+                fdc->rot_pos = read_u32le(fp) % FDC_REV_CYCLES;
+            }
         } else if (memcmp(tag, "MDC\0", 4) == 0) {
             emu->microdisc.status = read_u8(fp);
             emu->microdisc.intrq = read_u8(fp);

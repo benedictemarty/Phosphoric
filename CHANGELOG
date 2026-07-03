@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.0-alpha] - 2026-07-03
+
+### Added — FDC : timings mécaniques réels du WD1793 (profil REAL, défaut Microdisc)
+
+Le modèle « Oricutron rapide » (seek = 20 cycles quel que soit le déplacement,
+RNF instantané, pas de rotation) est remplacé par défaut par la mécanique d'un
+vrai lecteur 3" sur WD1793 à 1 MHz. Le `dsk_fdc` du LOCI reste en FAST : sur le
+vrai matériel son « lecteur » est le RP2040 servant la SD, sans mécanique —
+c'est là AUSSI de la fidélité.
+
+- **`include/storage/disk.h` / `src/storage/disk.c`** : `fdc_t.timing_mode`
+  (FAST/REAL) + `rot_pos` (angle disque, 300 tr/min = 200 000 cycles/tour) :
+  - Type I : 6/12/20/30 ms par piste selon r1r0, +30 ms si V (verify) ;
+  - Type II/III : premier DRQ quand le secteur passe réellement sous la tête
+    (latence rotationnelle via `fdc_rot_wait()`), +30 ms si E ; multi-secteur
+    continue au rythme de la rotation ; Write Track démarre à l'index ;
+  - Record Not Found après **5 impulsions d'index** (~1 s BUSY) au lieu
+    d'instantané — les retentatives Sedoric sur secteur abîmé (--bad-sector)
+    prennent désormais le temps du vrai matériel ;
+  - status Type I **vivant** : index pulse ~4 ms une fois par tour + TRK0
+    recalculés à la lecture (`status_type1`), y compris après Force Interrupt ;
+  - `fdc_reset()` ne réinitialise pas l'angle (le plateau continue de tourner).
+- **`src/io/microdisc.c`** : profil REAL par défaut (vrai lecteur 3").
+- **`src/main.c`** : `--fdc-timing real|fast` (opt-out legacy).
+- **`src/savestate.c`** : section FDC +5 octets (status_type1, rot_pos),
+  garde `sec_size >= 36` → anciens .ost acceptés.
+- +2 tests (856) : seek 10 pistes ≈ 60 ms + index pulse vivant + DRQ
+  rotationnel ; RNF après 5 tours (BUSY à 999 000 cycles, RNF à 1 001 000).
+- Vérifié e2e : boot **SEDORIC DOS V4.0** complet (menu à ~15 M cycles,
+  réaliste) et chargement **Manic Miner** (.dsk) intacts en profil REAL.
+
 ## [1.41.0-alpha] - 2026-07-03
 
 ### Changed — Bad sector map : le dommage suit le média (per-drive, LOCI, savestate)
