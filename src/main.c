@@ -17,6 +17,7 @@
 #include <getopt.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <errno.h>
 #include <time.h>
 
@@ -530,6 +531,8 @@ static bool loci_tape_mount_cb(void* ctx, const char* host_tape_path) {
     return true;
 }
 
+static void loci_patch_rom_info(emulator_t* emu);
+
 static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu || !rom_path || !*rom_path) return false;
@@ -582,10 +585,33 @@ static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr
         return true;
     }
     log_info("LOCI ROM swap: loading %s at $C000", rom_path);
-    if (!memory_load_rom(&emu->memory, rom_path, 0)) {
-        log_error("LOCI ROM swap: failed to load %s", rom_path);
+    /* Firmware bootstrap seeds basic11b.rom/basic10.rom/microdis.rom into
+     * its internal LittleFS; our flash root may not carry them. Fall back
+     * to the directory of the -r ROM (the repo's roms/) so the menu's
+     * "boot Atmos / Oric-1" entries work without --loci-flash tweaking. */
+    char fallback[512];
+    const char* load_path = rom_path;
+    if (access(rom_path, R_OK) != 0 && emu->rom_path) {
+        const char* dirend = strrchr(emu->rom_path, '/');
+        const char* base = strrchr(rom_path, '/');
+        base = base ? base + 1 : rom_path;
+        if (dirend) {
+            snprintf(fallback, sizeof(fallback), "%.*s/%s",
+                     (int)(dirend - emu->rom_path), emu->rom_path, base);
+            if (access(fallback, R_OK) == 0) {
+                log_info("LOCI ROM swap: %s not in flash root, using %s",
+                         base, fallback);
+                load_path = fallback;
+            }
+        }
+    }
+    if (!memory_load_rom(&emu->memory, load_path, 0)) {
+        log_error("LOCI ROM swap: failed to load %s", load_path);
         return false;
     }
+    /* Firmware behaviour: version + timing bytes are patched into the
+     * freshly loaded ROM (only the LOCI menu ROM has the placeholders). */
+    loci_patch_rom_info(emu);
     /* Sprint 34ao: when LOCI swaps to BASIC 1.1 (Atmos) the previous
      * BASIC 1.0 CLOAD patches no longer match — re-detect from the
      * filename so cassette interception keeps working. */
@@ -648,13 +674,88 @@ static void loci_sync_kbd_from_sdl(emulator_t* emu) {
 }
 #endif
 
-/* LOCI action-button install hook (Sprint 34ai).
- * Saves the current IRQ vector at $FFFE/F, redirects it to the trap at
- * $03BA, then pulses the CPU IRQ line. The trap bytes themselves were
- * already mirrored into the MIA register file by loci_action_button_short. */
+/* Host path of the LOCI warm-session snapshot (firmware: the session is
+ * captured so the menu can resume it). Lives in the flash root. */
+static void loci_resume_snapshot_path(emulator_t* emu, char* out, size_t outsz) {
+    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
+    snprintf(out, outsz, "%s/loci_resume.ost", root);
+}
+
+/* Locate the LOCI menu ROM, mirroring the firmware's boot priority
+ * (ext_boot_loci: locirom.rp6502 on USB → LOCIROM in internal flash →
+ * embedded copy). The .rp6502 container is not parsed — raw 16 KB
+ * images only; roms/loci/locirom is the repo's "embedded" copy. */
+static bool loci_find_menu_rom(emulator_t* emu, char* out, size_t outsz) {
+    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
+    const char* names[] = { "LOCIROM", "locirom" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        snprintf(out, outsz, "%s/%s", root, names[i]);
+        if (access(out, R_OK) == 0) return true;
+    }
+    /* Repo convention: roms/loci/locirom next to the loaded BASIC ROM
+     * (works from any CWD), then relative to the CWD. */
+    if (emu->rom_path) {
+        const char* slash = strrchr(emu->rom_path, '/');
+        if (slash) {
+            snprintf(out, outsz, "%.*s/loci/locirom",
+                     (int)(slash - emu->rom_path), emu->rom_path);
+            if (access(out, R_OK) == 0) return true;
+        }
+    }
+    snprintf(out, outsz, "roms/loci/locirom");
+    return access(out, R_OK) == 0;
+}
+
+static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
+
+/* Firmware ext_patch_version / ext_patch_timings: after a ROM lands at
+ * $C000, patch the placeholder bytes the LOCI menu ROM reserves for the
+ * firmware version (VERSIONS segment, $FFF7-9 = F0 F1 F2) and the current
+ * bus timings (TIMINGS segment, $FFEF-F3 = FA FB FC FD FE). Placeholder
+ * guards mean BASIC ROMs pass through untouched. */
+static void loci_patch_rom_info(emulator_t* emu) {
+    uint8_t* rom = emu->memory.rom;
+    if (rom[0x3FF7] == 0xF0 && rom[0x3FF8] == 0xF1 && rom[0x3FF9] == 0xF2) {
+        rom[0x3FF7] = LOCI_FW_VERSION_PATCH;
+        rom[0x3FF8] = LOCI_FW_VERSION_MINOR;
+        rom[0x3FF9] = LOCI_FW_VERSION_MAJOR;
+    }
+    if (rom[0x3FEF] == 0xFA && rom[0x3FF0] == 0xFB && rom[0x3FF1] == 0xFC &&
+        rom[0x3FF2] == 0xFD && rom[0x3FF3] == 0xFE) {
+        rom[0x3FEF] = emu->loci.mia_tmap;
+        rom[0x3FF0] = emu->loci.mia_tior;
+        rom[0x3FF1] = emu->loci.mia_tiow;
+        rom[0x3FF2] = emu->loci.mia_tiod;
+        rom[0x3FF3] = emu->loci.mia_tadr;
+        log_info("LOCI: menu ROM patched (FW %d.%d.%d, timings %u/%u/%u/%u/%u)",
+                 LOCI_FW_VERSION_MAJOR, LOCI_FW_VERSION_MINOR, LOCI_FW_VERSION_PATCH,
+                 emu->loci.mia_tmap, emu->loci.mia_tior, emu->loci.mia_tiow,
+                 emu->loci.mia_tiod, emu->loci.mia_tadr);
+    }
+}
+
+/* Live ROM byte poke (ADJ_SCAN progress: the menu ROM polls its TIMINGS
+ * byte at $FFF0 while the firmware sweeps tior). */
+static void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (emu && addr >= 0xC000)
+        emu->memory.rom[addr - 0xC000] = val;
+}
+
+/* LOCI action-button install hook (Sprint 34ai + 85).
+ * Snapshots the session (the menu's "resume" needs the machine exactly
+ * as it was — press time is a clean instruction boundary, before the
+ * trap hijacks the vectors), saves the current IRQ vector at $FFFE/F,
+ * redirects it to the trap at $03BA, then pulses the CPU IRQ line. The
+ * trap bytes themselves were already mirrored into the MIA register
+ * file by loci_action_button_short. */
 static void loci_action_install_irq_trap(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu) return;
+    char snap[512];
+    loci_resume_snapshot_path(emu, snap, sizeof(snap));
+    if (savestate_save(emu, snap))
+        log_info("LOCI: session snapshot -> %s (menu resume)", snap);
     /* Save current vector. The ORIC IRQ vector lives in ROM at $FFFE/F,
      * backed by mem->rom (offset $3FFE/F since rom starts at $C000). */
     uint8_t lo = emu->memory.rom[0x3FFE];
@@ -668,10 +769,13 @@ static void loci_action_install_irq_trap(void* ctx) {
     cpu_irq_set(&emu->cpu, IRQF_VIA);
 }
 
-/* LOCI action-button release hook (Sprint 34ai).
- * Sets the 6502 V flag so the BVC -2 spin falls through and the trap's
- * JMP ($FFFA) executes. Also restores the original IRQ vector so a
- * later non-trap IRQ behaves normally. */
+/* LOCI action-button release hook (Sprint 34ai + 85).
+ * Sets the 6502 V flag so the BVC -2 spin falls through, restores the
+ * original IRQ vector, then performs the firmware's EXT_CAPTURE_IRQ →
+ * EXT_BOOT_LOCI sequence: boot the LOCI menu ROM. On real hardware the
+ * trap's JMP ($FFFA) lands in the freshly mapped LOCI ROM whose
+ * save-state routine runs before the menu; our snapshot was taken at
+ * press time, so we go straight to the menu via the ROM's reset vector. */
 static void loci_action_release_irq_trap(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu) return;
@@ -681,6 +785,33 @@ static void loci_action_release_irq_trap(void* ctx) {
     emu->memory.rom[0x3FFF] = (uint8_t)(v >> 8);
     /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
     cpu_irq_clear(&emu->cpu, IRQF_VIA);
+
+    char rom[512];
+    if (!loci_find_menu_rom(emu, rom, sizeof(rom))) {
+        log_warning("LOCI: menu ROM introuvable (LOCIROM/locirom dans le flash "
+                    "root, ou roms/loci/locirom) — bouton Action sans effet");
+        return;
+    }
+    if (loci_rom_swap_cb(emu, rom, 0xC000)) {
+        cpu_reset(&emu->cpu);
+        log_info("LOCI: warm boot -> menu ROM %s", rom);
+    }
+}
+
+/* LOCI session-resume callback (menu "resume" entry → MIA_BOOT with
+ * LOCI_BOOT_RESUME): swap the pre-warm BASIC ROM back, then restore the
+ * snapshot taken when the Action button was pressed. */
+static bool loci_resume_session_cb(void* ctx) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return false;
+    char snap[512];
+    loci_resume_snapshot_path(emu, snap, sizeof(snap));
+    if (access(snap, R_OK) != 0) return false;
+    if (emu->rom_path && !loci_rom_swap_cb(emu, emu->rom_path, 0xC000))
+        return false;
+    if (!savestate_load(emu, snap)) return false;
+    log_info("LOCI: session resumed from %s", snap);
+    return true;
 }
 
 /* I/O callback: route VIA and Microdisc register access */
@@ -1016,7 +1147,10 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
     via_update(&emu->via, cycles);
     if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
-    if (emu->has_loci)      fdc_ticktock(&emu->loci.dsk_fdc, cycles);
+    if (emu->has_loci) {
+        fdc_ticktock(&emu->loci.dsk_fdc, cycles);
+        loci_adj_tick(&emu->loci, cycles);
+    }
     if (emu->has_serial) {
         acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
         acia_tick(&emu->acia, cycles);
@@ -3554,6 +3688,10 @@ int main(int argc, char* argv[]) {
         }
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);
+        /* Session-resume callback: menu "resume" → MIA_BOOT RESUME (Sprint 85). */
+        loci_set_resume_callback(&emu.loci, loci_resume_session_cb, &emu);
+        /* Live ROM poke: ADJ_SCAN progress byte polled by the menu ROM. */
+        loci_set_rom_poke_callback(&emu.loci, loci_rom_poke_hook, &emu);
         loci_set_dsk_bus_callbacks(&emu.loci, loci_dsk_cpu_irq_set,
                                    loci_dsk_cpu_irq_clr,
                                    loci_dsk_sync_overlay, &emu);
@@ -3725,6 +3863,10 @@ int main(int argc, char* argv[]) {
             emulator_cleanup(&emu);
             return 1;
         }
+        /* Direct LOCI menu ROM boot (-r roms/loci/locirom --loci): patch
+         * the firmware version/timing placeholders like the real MIA. */
+        if (emu.has_loci)
+            loci_patch_rom_info(&emu);
     }
 
     /* Guard: the base system (BASIC) ROM must be present.

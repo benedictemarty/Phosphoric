@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.0-alpha] - 2026-07-03
+
+### Fixed — LOCI : bouton Action (F8) boote le menu, version/timings patchés dans la ROM
+
+Le bouton Action ne faisait « rien » : le trap IRQ s'installait mais le
+`JMP ($FFFA)` retombait dans la ROM BASIC. Sur le vrai LOCI, le firmware
+enchaîne EXT_CAPTURE_IRQ → EXT_BOOT_LOCI : capture de session puis boot de
+la ROM menu (locirom). Et le menu affichait « FW 242.241.240 » sans
+timings : la ROM contient des segments placeholders (VERSIONS $FFF7-9 =
+F0 F1 F2, TIMINGS $FFEF-F3 = FA..FE) que le firmware patche au chargement
+(ext_patch_version/ext_patch_timings) — nous ne le faisions pas.
+
+- **`src/main.c`** bouton Action complet :
+  - au press : snapshot de session → `<flash root>/loci_resume.ost`
+    (frontière d'instruction propre, avant le détournement des vecteurs) ;
+  - au relâchement : boot de la ROM menu — priorité firmware LOCIROM/
+    locirom dans le flash root, puis `<dossier de -r>/loci/locirom` ;
+  - `loci_patch_rom_info()` : patch des placeholders version (FW 0.3.1,
+    la release sodiumlb de référence) et timings (tmap/tior/tiow/tiod/tadr)
+    à chaque chargement de ROM $C000 (swap MIA_BOOT et boot direct
+    `-r roms/loci/locirom`) ; les ROM BASIC passent intactes (gardes).
+- **Resume** : `MIA_BOOT` + `LOCI_BOOT_RESUME` (entrée « resume » du menu)
+  → re-swap de la ROM d'avant + restauration du snapshot (`resume_cb`).
+- **`ADJ_SCAN` vivant** : le balayage est désormais visible du 6502 —
+  `loci_adj_tick()` (100 ms de lead-in + 1 pas tior/5 ms, adj.c) écrit
+  `0x80|tior` dans l'octet ROM $FFF0 que la page tune du menu poll, puis
+  le tior configuré (sans hook : état final immédiat, comme avant).
+- **MIA_BOOT** : repli de résolution des ROM (basic11b.rom/basic10.rom/
+  microdis.rom) vers le dossier de la ROM `-r` quand le flash root ne les
+  contient pas (le firmware les pré-sème dans sa LittleFS interne).
+- **`src/control.c`** : commande IPC `loci-button` (même chemin que F8).
+- +1 test (865) : resume callback invoqué/ENOENT. Vérifié e2e (--control) :
+  F8 → « LOCI ROM 0.3.0 FW 0.3.1 », timings $FFEF-F3 = 0A 00 00 00 00.
+
 ## [1.45.0-alpha] - 2026-07-03
 
 ### Fixed — LOCI : sémantique exacte des MAP_TUNE_* et d'ADJ_SCAN (map.c/cfg.c/adj.c)

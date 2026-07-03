@@ -1445,6 +1445,31 @@ TEST(test_mia_boot_resume_no_callback_invocation) {
     ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
 }
 
+/* MIA_BOOT with LOCI_BOOT_RESUME calls the session-resume callback
+ * (menu "resume" entry, Sprint 85); its failure surfaces as ENOENT. */
+static int  test_resume_calls = 0;
+static bool test_resume_result = true;
+static bool test_resume_cb(void* ctx) { (void)ctx; test_resume_calls++; return test_resume_result; }
+
+TEST(test_mia_boot_resume_invokes_resume_callback) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_resume_callback(&l, test_resume_cb, NULL);
+    test_resume_calls = 0;
+    test_resume_result = true;
+    l.regs[LOCI_REG_API_A] = LOCI_BOOT_RESUME;
+    loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
+    ASSERT_EQ(test_resume_calls, 1);
+    ASSERT_EQ(errno_lo(&l), 0);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    /* No snapshot to resume → ENOENT */
+    test_resume_result = false;
+    l.regs[LOCI_REG_API_A] = LOCI_BOOT_RESUME;
+    loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
+    ASSERT_EQ(test_resume_calls, 2);
+    ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
+}
+
 TEST(test_mia_boot_basic10_default) {
     rom_swap_capture_t cap = { .result = true };
     loci_t l; loci_init(&l);
@@ -3137,6 +3162,7 @@ int main(void) {
     RUN(test_kbd_clear_resets_bitmap);
     RUN(test_kbd_set_report_noop_when_xram_unset);
     RUN(test_mia_boot_resume_no_callback_invocation);
+    RUN(test_mia_boot_resume_invokes_resume_callback);
     RUN(test_mia_boot_basic10_default);
     RUN(test_mia_boot_b11_basic11b);
     RUN(test_mia_boot_uses_mounted_rom_slot);

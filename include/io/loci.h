@@ -127,6 +127,13 @@ typedef enum {
 
 #define LOCI_XSTACK_SIZE 512   /* matches firmware XSTACK_SIZE 0x200 (mem.h) */
 
+/* Firmware version reported to the LOCI menu ROM (ext_patch_version
+ * patches it into the ROM's VERSIONS segment at $FFF7-$FFF9). Tracks the
+ * sodiumlb/loci-firmware release this emulation conforms to. */
+#define LOCI_FW_VERSION_MAJOR 0
+#define LOCI_FW_VERSION_MINOR 3
+#define LOCI_FW_VERSION_PATCH 1
+
 /* open() flags — matching firmware constants (std.c). */
 #define LOCI_O_RDWR    0x03
 #define LOCI_O_CREAT   0x10
@@ -393,6 +400,27 @@ typedef struct loci_s {
     bool (*rom_swap_cb)(void* ctx, const char* rom_path, uint16_t base_addr);
     void* rom_swap_ctx;
 
+    /* Session-resume callback. Invoked by op_mia_boot when the guest
+     * sets LOCI_BOOT_RESUME (the menu's "resume" entry): the host swaps
+     * the pre-warm ROM back and restores the session snapshot taken at
+     * the Action button press. Returns false if no snapshot exists. */
+    bool (*resume_cb)(void* ctx);
+    void* resume_ctx;
+
+    /* Oric-visible ROM byte poke. On real hardware the MIA serves the
+     * ROM from its xram, so firmware writes there (adj sweep progress in
+     * the menu ROM's TIMINGS byte at $FFF0) are seen live by the 6502.
+     * Our loci_t.xram is a separate staging buffer — this hook lets the
+     * module reach the emulator's mapped ROM. */
+    void (*rom_poke_cb)(void* ctx, uint16_t addr, uint8_t val);
+    void* rom_poke_ctx;
+
+    /* ADJ_SCAN asynchronous sweep state (firmware adj.c: ~100 ms lead-in
+     * then one tior step per 5 ms, progress = 0x80|tior in $FFF0). */
+    uint8_t  adj_state;    /* 0 idle, 1 lead-in, 2 sweeping */
+    uint8_t  adj_tior;     /* current sweep position 0-31 */
+    uint32_t adj_acc;      /* cycle accumulator */
+
     /* Tape-mount callback (Sprint 34ao). Invoked by op_mount when slot
      * LOCI_MNT_TAP is targeted so the host emulator can load the .tap
      * into its cassette subsystem (emu->tapebuf) — required for CLOAD
@@ -498,6 +526,17 @@ void    loci_set_rom_swap_callback(
             loci_t* loci,
             bool (*cb)(void* ctx, const char* rom_path, uint16_t base_addr),
             void* ctx);
+
+/* Register the session-resume callback used by op 0xA0 MIA_BOOT when
+ * LOCI_BOOT_RESUME is set (menu "resume" entry). */
+void    loci_set_resume_callback(loci_t* loci, bool (*cb)(void* ctx), void* ctx);
+
+/* Register the Oric-ROM byte poke hook (live ADJ_SCAN progress). */
+void    loci_set_rom_poke_callback(loci_t* loci,
+            void (*cb)(void* ctx, uint16_t addr, uint8_t val), void* ctx);
+
+/* Advance the ADJ_SCAN sweep by CYCLES (call from the emulation loop). */
+void    loci_adj_tick(loci_t* loci, unsigned int cycles);
 
 /* Register the action-button host hooks (Sprint 34ai). install_cb is
  * called on short-press to set up the IRQ trap; release_cb is called

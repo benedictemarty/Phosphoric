@@ -1325,6 +1325,22 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 85: LOCI — bouton Action → menu, ROM patchée, ADJ_SCAN vivant (v1.46.0-alpha) - DONE
+
+Le F8 n'avait aucun effet visible ; le menu affichait FW 242.241.240
+(placeholders non patchés) et aucun timing.
+
+- [x] F8 = EXT_CAPTURE_IRQ → EXT_BOOT_LOCI : snapshot session au press,
+      boot ROM menu au relâchement (LOCIROM/locirom flash root, repli
+      <dossier -r>/loci/locirom)
+- [x] Resume : MIA_BOOT + LOCI_BOOT_RESUME → re-swap ROM + snapshot
+- [x] loci_patch_rom_info : VERSIONS $FFF7-9 → FW 0.3.1 ; TIMINGS
+      $FFEF-F3 → tmap/tior/tiow/tiod/tadr (gardes placeholders)
+- [x] ADJ_SCAN vivant : loci_adj_tick écrit 0x80|tior dans l'octet ROM
+      $FFF0 pollé par la page tune (100 ms lead-in + 1 pas/5 ms)
+- [x] MIA_BOOT : repli basic11b/basic10/microdis vers le dossier de -r
+- [x] Commande IPC loci-button ; +1 test (865) ; e2e « FW 0.3.1 » vérifié
+
 ### Sprint 84: LOCI — MAP_TUNE_*/ADJ_SCAN conformes (v1.45.0-alpha) - DONE
 
 Suite de l'audit fidélité LOCI : sémantique exacte des réglages de
@@ -2662,5 +2678,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.45.0-alpha
+**Current Version**: 1.46.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

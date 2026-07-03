@@ -465,6 +465,18 @@ static void cmd_eject_disk(emulator_t* emu, const char* drive_s) {
     reply_ok("drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);
 }
 
+/* loci-button — LOCI Action button, warm short press + release. Same
+ * path as F8 in the GUI: session snapshot, IRQ trap, boot the menu ROM. */
+static void cmd_loci_button(emulator_t* emu) {
+    if (!emu->has_loci) {
+        reply_err("loci-button: LOCI not enabled (--loci)");
+        return;
+    }
+    loci_action_button_short(&emu->loci);
+    loci_action_button_release(&emu->loci);
+    reply_ok("action-button pulsed");
+}
+
 /* eject-tape — unload the cassette and free its buffer. */
 static void cmd_eject_tape(emulator_t* emu) {
     if (!emu->tape_loaded && !emu->tapebuf) {
@@ -549,7 +561,7 @@ static void cmd_reset(emulator_t* emu) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button"
 
 static void cmd_hello(const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -724,6 +736,9 @@ void control_repl(emulator_t* emu) {
         }
         else if (strcmp(cmd, "eject-tape") == 0) {
             cmd_eject_tape(emu);
+        }
+        else if (strcmp(cmd, "loci-button") == 0) {
+            cmd_loci_button(emu);
         }
         else if (strcmp(cmd, "load-rom") == 0) {
             cmd_load_rom(emu, arg1);
