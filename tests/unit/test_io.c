@@ -529,6 +529,101 @@ TEST(test_ca2_cb2_manual_output) {
     ASSERT_FALSE(via_get_cb2(&via));
 }
 
+TEST(test_ca2_handshake_output) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x08);   /* CA2 = 100 handshake output */
+    via.ca2_pin = true;
+    via_read(&via, VIA_ORA);          /* "data taken": CA2 drops low */
+    ASSERT_FALSE(via_get_ca2(&via));
+    via_update(&via, 100);
+    ASSERT_FALSE(via_get_ca2(&via));  /* stays low: no pulse in this mode */
+    via_set_ca1(&via, false);         /* CA1 active edge (falling, PCR b0=0) */
+    ASSERT_TRUE(via_get_ca2(&via));   /* "data ready" restores CA2 high */
+    ASSERT_TRUE(via.ifr & VIA_INT_CA1);
+}
+
+TEST(test_ca2_pulse_output) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x0A);   /* CA2 = 101 pulse output */
+    via.ca2_pin = true;
+    via_write(&via, VIA_ORA, 0x42);   /* access pulses CA2 low... */
+    ASSERT_FALSE(via_get_ca2(&via));
+    via_update(&via, 1);              /* ...for exactly one φ2 cycle */
+    ASSERT_TRUE(via_get_ca2(&via));
+}
+
+TEST(test_cb2_write_handshake_only) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x80);   /* CB2 = 100 handshake output */
+    via.cb2_pin = true;
+    via_read(&via, VIA_ORB);          /* reading ORB must NOT drop CB2 */
+    ASSERT_TRUE(via_get_cb2(&via));
+    via_write(&via, VIA_ORB, 0x00);   /* writing ORB does */
+    ASSERT_FALSE(via_get_cb2(&via));
+    via_set_cb1(&via, false);         /* CB1 active edge restores CB2 */
+    ASSERT_TRUE(via_get_cb2(&via));
+}
+
+TEST(test_ca2_cb2_input_edges) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x00);   /* CA2/CB2 input, falling edge */
+    via_set_ca2_input(&via, true);
+    ASSERT_FALSE(via.ifr & VIA_INT_CA2);
+    via_set_ca2_input(&via, false);   /* falling edge → flag */
+    ASSERT_TRUE(via.ifr & VIA_INT_CA2);
+    ASSERT_FALSE(via_get_ca2(&via));  /* input modes read the pin */
+    via_set_cb2_input(&via, true);
+    ASSERT_FALSE(via.ifr & VIA_INT_CB2);
+    via_set_cb2_input(&via, false);
+    ASSERT_TRUE(via.ifr & VIA_INT_CB2);
+    /* Rising-edge variants (CA2 mode 010 = 0x04, CB2 mode 010 = 0x40) */
+    via_write(&via, VIA_IFR, VIA_INT_CA2 | VIA_INT_CB2);
+    via_write(&via, VIA_PCR, 0x44);
+    via_set_ca2_input(&via, true);
+    via_set_cb2_input(&via, true);
+    ASSERT_TRUE(via.ifr & VIA_INT_CA2);
+    ASSERT_TRUE(via.ifr & VIA_INT_CB2);
+}
+
+TEST(test_ca2_independent_not_cleared_by_ora) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x02);   /* CA2 = 001 independent, falling */
+    via_set_ca2_input(&via, true);
+    via_set_ca2_input(&via, false);
+    ASSERT_TRUE(via.ifr & VIA_INT_CA2);
+    via_read(&via, VIA_ORA);          /* independent mode: flag SURVIVES */
+    ASSERT_TRUE(via.ifr & VIA_INT_CA2);
+    via_write(&via, VIA_IFR, VIA_INT_CA2);
+    via_write(&via, VIA_PCR, 0x00);   /* plain input mode */
+    via_set_ca2_input(&via, true);
+    via_set_ca2_input(&via, false);
+    ASSERT_TRUE(via.ifr & VIA_INT_CA2);
+    via_read(&via, VIA_ORA);          /* non-independent: cleared by access */
+    ASSERT_FALSE(via.ifr & VIA_INT_CA2);
+}
+
+TEST(test_porta_latching_on_ca1) {
+    via6522_t via;
+    via_init(&via);
+    via.ddra = 0x00;                  /* all inputs */
+    via.ira = 0xAA;                   /* PSG bus value (pins = 0xFF) */
+    via_write(&via, VIA_ACR, 0x01);   /* enable PA latching */
+    via_set_ca1(&via, false);         /* active edge captures 0xAA */
+    via.ira = 0x55;                   /* pins change afterwards... */
+    ASSERT_EQ(via_read(&via, VIA_ORA), 0xAA);   /* ...read stays latched */
+    via_set_ca1(&via, true);
+    via_set_ca1(&via, false);         /* next edge reloads the latch */
+    ASSERT_EQ(via_read(&via, VIA_ORA), 0x55);
+    via_write(&via, VIA_ACR, 0x00);   /* latching off: live pins again */
+    via.ira = 0x0F;
+    ASSERT_EQ(via_read(&via, VIA_ORA), 0x0F);
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -590,6 +685,12 @@ int main(void) {
     printf("\n  T2 Pulse Counting & CA2/CB2 Pins:\n");
     RUN(test_t2_pulse_counting);
     RUN(test_ca2_cb2_manual_output);
+    RUN(test_ca2_handshake_output);
+    RUN(test_ca2_pulse_output);
+    RUN(test_cb2_write_handshake_only);
+    RUN(test_ca2_cb2_input_edges);
+    RUN(test_ca2_independent_not_cleared_by_ora);
+    RUN(test_porta_latching_on_ca1);
 
     printf("\n  Register Masking:\n");
     RUN(test_register_mask);

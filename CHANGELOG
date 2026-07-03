@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.0-alpha] - 2026-07-03
+
+### Added — VIA 6522 : modes CA2/CB2 complets (handshake, pulse, entrées, latching)
+
+Dernier écart connu du 6522 après le S70 (registre à décalage, T2 pulse,
+pins) : les 8 modes du PCR sont désormais tous fonctionnels, plus le
+latching des ports. La ROM ORIC standard n'utilise que les modes manuels
+(PSG BC1/BDIR, STROBE imprimante) — chemins inchangés octet pour octet.
+
+- **Handshake output (mode 100)** : CA2 tombe à l'accès ORA (lecture ou
+  écriture), CB2 tombe à l'ÉCRITURE d'ORB seulement (write handshake, comme
+  le silicium — la lecture d'ORB ne déclenche rien) ; le front actif de
+  CA1/CB1 (« data ready/taken ») restaure la ligne à l'état haut.
+- **Pulse output (mode 101)** : ligne basse pendant exactement un cycle φ2
+  après l'accès port, restaurée par `via_update()`.
+- **Modes entrée (000-011)** : nouvelles `via_set_ca1()` (front actif PCR
+  bit 0), `via_set_ca2_input()` (PCR bit 2) ; `via_set_cb2_input()` détecte
+  désormais les fronts (PCR bit 6) en plus d'alimenter le shift-in ;
+  `via_get_ca2/cb2()` renvoient la broche d'entrée dans ces modes.
+- **Latching IRA/IRB (ACR bits 0-1)** : capture des broches du port au
+  front actif CA1/CB1, lectures ORA/ORB (et ORA_NH) servies depuis le
+  latch jusqu'au front suivant.
+- La logique de clear IFR à l'accès ORA/ORB (modes « independent » 001/011
+  exclus) était déjà correcte — vérifiée et couverte par test.
+- +6 tests test_io (37 → 43, 862 au total) : handshake CA2/CB2 (write-only
+  CB2), pulse 1 cycle, fronts d'entrée montant/descendant, independent non
+  effacé par ORA, latching PA sur CA1.
+- Vérifié e2e : boot BASIC + `PRINT 6*7` → `42` via la matrice clavier
+  (IRQ VIA) intacts.
+
 ## [1.42.0-alpha] - 2026-07-03
 
 ### Added — FDC : timings mécaniques réels du WD1793 (profil REAL, défaut Microdisc)

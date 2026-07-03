@@ -92,11 +92,25 @@ typedef struct via6522_s {
      * ORIC ROM uses CA2/CB2 only as manual outputs for the PSG and does not
      * exercise the shift register or T2 pulse counting). */
     bool     cb2_pin;     /**< CB2 output level (shift-out data, or PCR manual) */
-    bool     cb2_in;      /**< CB2 input level sampled in shift-in modes */
+    bool     cb2_in;      /**< CB2 input level (shift-in sampling + input modes) */
     bool     ca2_pin;     /**< CA2 output level (PCR pulse/handshake last state) */
+    bool     ca2_in;      /**< CA2 input level (PCR input modes 000-011) */
+    bool     ca1_pin;     /**< CA1 pin level (edge detection, idle high) */
     bool     sr_active;   /**< a shift sequence is in progress */
     uint32_t sr_clk_acc;  /**< cycle accumulator for φ2/T2 shift clocking */
     bool     pb6_pin;     /**< last PB6 level (T2 pulse-count edge detection) */
+
+    /* CA2/CB2 pulse output (PCR mode 101): pin low for one φ2 cycle after
+     * the port access, restored by via_update(). 0 = no pulse pending. */
+    int      ca2_pulse;
+    int      cb2_pulse;
+
+    /* Input latching (ACR bits 0-1): IRA/IRB captured on the CA1/CB1 active
+     * edge; reads return the latched value until the next active edge. */
+    uint8_t  pa_latch;    /**< Port A input byte captured on CA1 edge */
+    uint8_t  pb_latch;    /**< Port B input byte captured on CB1 edge */
+    bool     pa_latched;  /**< pa_latch holds a value (ACR bit 0 set) */
+    bool     pb_latched;  /**< pb_latch holds a value (ACR bit 1 set) */
 
     /* IRQ output state (tracks /IRQ pin level to avoid spurious callbacks) */
     bool irq_line;  /**< Current IRQ output: true = asserted, false = deasserted */
@@ -182,6 +196,29 @@ void via_set_irq_callback(via6522_t* via,
 void via_trigger_ca1(via6522_t* via);
 
 /**
+ * @brief Set CA1 pin level with edge detection.
+ *
+ * On the active edge (PCR bit 0: 0=falling, 1=rising): sets the CA1
+ * interrupt flag, latches Port A input if ACR bit 0 enables latching,
+ * and restores CA2 high in handshake output mode (PCR CA2 = 100).
+ *
+ * @param via Pointer to VIA structure
+ * @param state New CA1 pin level (true=high)
+ */
+void via_set_ca1(via6522_t* via, bool state);
+
+/**
+ * @brief Set the CA2 input pin level (PCR CA2 input modes 000-011).
+ *
+ * Performs edge detection per PCR bit 2 (0=falling, 1=rising) and sets
+ * the CA2 interrupt flag on the active edge. Ignored in output modes.
+ *
+ * @param via Pointer to VIA structure
+ * @param level CA2 input pin level
+ */
+void via_set_ca2_input(via6522_t* via, bool level);
+
+/**
  * @brief Trigger CA2 interrupt
  *
  * @param via Pointer to VIA structure
@@ -226,7 +263,11 @@ void via_trigger_cb2(via6522_t* via);
 void via_shift_clock(via6522_t* via);
 
 /**
- * @brief Set the CB2 input level used by the shift-in modes.
+ * @brief Set the CB2 input pin level.
+ *
+ * Feeds the shift-in modes AND, when the PCR configures CB2 as an input
+ * (modes 000-011), performs edge detection per PCR bit 6 (0=falling,
+ * 1=rising) and sets the CB2 interrupt flag on the active edge.
  *
  * @param via Pointer to VIA structure
  * @param level CB2 input pin level

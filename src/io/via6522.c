@@ -53,9 +53,39 @@ static void via_do_shift(via6522_t* via) {
     }
 }
 
+/* Port access side effects on CA2 (read/write ORA) and CB2 (write ORB):
+ * handshake output (100) drives the pin low until the CA1/CB1 active edge;
+ * pulse output (101) drives it low for one φ2 cycle. */
+static void via_ca2_port_access(via6522_t* via) {
+    uint8_t mode = via->pcr & 0x0E;
+    if (mode == 0x08) {                   /* 100: handshake output */
+        via->ca2_pin = false;
+    } else if (mode == 0x0A) {            /* 101: pulse output */
+        via->ca2_pin = false;
+        via->ca2_pulse = 1;
+    }
+}
+
+static void via_cb2_port_access(via6522_t* via) {
+    uint8_t mode = via->pcr & 0xE0;
+    if (mode == 0x80) {                   /* 100: handshake output */
+        via->cb2_pin = false;
+    } else if (mode == 0xA0) {            /* 101: pulse output */
+        via->cb2_pin = false;
+        via->cb2_pulse = 1;
+    }
+}
+
+/* Live Port A input pins: wired-AND of IRA (PSG bus) and external drivers */
+static uint8_t via_pa_pins(via6522_t* via) {
+    uint8_t pins = via->porta_read ? via->porta_read(via->userdata) : 0xFF;
+    return (uint8_t)(via->ira & pins);
+}
+
 void via_init(via6522_t* via) {
     memset(via, 0, sizeof(via6522_t));
     via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
+    via->ca1_pin = true;   /* CA1 idle high (printer ACK line, pulled up) */
     via->irq_line = false;  /* /IRQ not asserted */
 }
 
@@ -76,10 +106,16 @@ void via_reset(via6522_t* via) {
     via->ifr = 0;
     via->ier = 0;
     via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
+    via->ca1_pin = true;   /* CA1 idle high */
     via->irq_line = false;  /* /IRQ not asserted */
     via->cb2_pin = false;
     via->cb2_in = false;
     via->ca2_pin = false;
+    via->ca2_in = false;
+    via->ca2_pulse = 0;
+    via->cb2_pulse = 0;
+    via->pa_latched = false;
+    via->pb_latched = false;
     via->sr_active = false;
     via->sr_clk_acc = 0;
     via->pb6_pin = true;   /* PB6 idle high */
@@ -89,17 +125,25 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
     reg &= 0x0F;
     switch (reg) {
     case VIA_ORB: {
-        /* Read Port B: combine input and output based on DDR */
+        /* Read Port B: combine input and output based on DDR.
+         * With latching enabled (ACR bit 1) the input byte is the one
+         * captured on the last CB1 active edge, not the live pins. */
         uint8_t input = 0xFF;
-        if (via->portb_read) input = via->portb_read(via->userdata);
+        if ((via->acr & 0x02) && via->pb_latched) {
+            input = via->pb_latch;
+        } else if (via->portb_read) {
+            input = via->portb_read(via->userdata);
+        }
         via->ifr &= ~VIA_INT_CB1;
-        /* CB2 handshake clear if PCR configured */
+        /* CB2 flag cleared unless CB2 is in an independent-interrupt mode */
         {
             uint8_t cb2_mode = via->pcr & 0xE0;
             if (cb2_mode != 0x20 && cb2_mode != 0x60)
                 via->ifr &= ~VIA_INT_CB2;
         }
         via_check_irq(via);
+        /* NOTE: on the 6522, reading ORB does NOT trigger the CB2
+         * handshake/pulse — only writing ORB does (write handshake). */
         return (via->orb & via->ddrb) | (input & ~via->ddrb);
     }
     case VIA_ORA: {
@@ -112,7 +156,8 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
          * port (e.g. IJK joystick interface) pulling lines low: pulled-up
          * bus, every driver can only pull down → wired-AND of IRA (PSG)
          * and the external pin state. */
-        uint8_t pins = via->porta_read ? via->porta_read(via->userdata) : 0xFF;
+        uint8_t input = ((via->acr & 0x01) && via->pa_latched)
+                      ? via->pa_latch : via_pa_pins(via);
         via->ifr &= ~VIA_INT_CA1;
         {
             uint8_t ca2_mode = via->pcr & 0x0E;
@@ -120,7 +165,8 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
                 via->ifr &= ~VIA_INT_CA2;
         }
         via_check_irq(via);
-        return (via->ora & via->ddra) | ((via->ira & pins) & ~via->ddra);
+        via_ca2_port_access(via);   /* CA2 handshake/pulse on ORA read */
+        return (via->ora & via->ddra) | (input & ~via->ddra);
     }
     case VIA_DDRB: return via->ddrb;
     case VIA_DDRA: return via->ddra;
@@ -158,10 +204,11 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
     case VIA_IFR: return via->ifr;
     case VIA_IER: return via->ier | VIA_INT_ANY;
     case VIA_ORA_NH: {
-        /* No-handshake variant: same wired-AND as VIA_ORA, without
-         * touching the CA1/CA2 interrupt flags. */
-        uint8_t pins = via->porta_read ? via->porta_read(via->userdata) : 0xFF;
-        return (via->ora & via->ddra) | ((via->ira & pins) & ~via->ddra);
+        /* No-handshake variant: same read as VIA_ORA (latching included),
+         * without touching the CA1/CA2 flags or the CA2 handshake/pulse. */
+        uint8_t input = ((via->acr & 0x01) && via->pa_latched)
+                      ? via->pa_latch : via_pa_pins(via);
+        return (via->ora & via->ddra) | (input & ~via->ddra);
     }
     }
     return 0xFF;
@@ -179,6 +226,7 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
                 via->ifr &= ~VIA_INT_CB2;
         }
         via_check_irq(via);
+        via_cb2_port_access(via);   /* CB2 handshake/pulse (write only) */
         if (via->portb_write) via->portb_write(value, via->userdata);
         break;
     case VIA_ORA:
@@ -190,6 +238,7 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
                 via->ifr &= ~VIA_INT_CA2;
         }
         via_check_irq(via);
+        via_ca2_port_access(via);   /* CA2 handshake/pulse on ORA write */
         if (via->porta_write) via->porta_write(value, via->userdata);
         break;
     case VIA_DDRB: via->ddrb = value; break;
@@ -263,6 +312,22 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
 }
 
 void via_update(via6522_t* via, int cycles) {
+    /* CA2/CB2 pulse output (PCR mode 101): restore high after one cycle */
+    if (via->ca2_pulse > 0) {
+        via->ca2_pulse -= cycles;
+        if (via->ca2_pulse <= 0) {
+            via->ca2_pulse = 0;
+            via->ca2_pin = true;
+        }
+    }
+    if (via->cb2_pulse > 0) {
+        via->cb2_pulse -= cycles;
+        if (via->cb2_pulse <= 0) {
+            via->cb2_pulse = 0;
+            via->cb2_pin = true;
+        }
+    }
+
     /* Timer 1 */
     if (via->t1_running) {
         int old = via->t1_counter;
@@ -339,6 +404,43 @@ void via_trigger_ca1(via6522_t* via) {
     via_check_irq(via);
 }
 
+void via_set_ca1(via6522_t* via, bool state) {
+    bool old = via->ca1_pin;
+    via->ca1_pin = state;
+    if (old == state) return;
+
+    /* PCR bit 0: 0 = interrupt on falling edge, 1 = rising edge */
+    bool rising_edge = (via->pcr & 0x01) != 0;
+    bool active = (rising_edge && !old && state) ||
+                  (!rising_edge && old && !state);
+    if (!active) return;
+
+    via->ifr |= VIA_INT_CA1;
+    /* Input latching (ACR bit 0): capture Port A pins on the active edge */
+    if (via->acr & 0x01) {
+        via->pa_latch = via_pa_pins(via);
+        via->pa_latched = true;
+    }
+    /* Handshake output (PCR CA2 = 100): "data ready" edge restores CA2 */
+    if ((via->pcr & 0x0E) == 0x08)
+        via->ca2_pin = true;
+    via_check_irq(via);
+}
+
+void via_set_ca2_input(via6522_t* via, bool level) {
+    bool old = via->ca2_in;
+    via->ca2_in = level;
+    if ((via->pcr & 0x08) != 0) return;   /* output modes: pin is driven */
+    if (old == level) return;
+
+    /* PCR bit 2: 0 = falling edge, 1 = rising edge (input modes 000-011) */
+    bool rising_edge = (via->pcr & 0x04) != 0;
+    if ((rising_edge && !old && level) || (!rising_edge && old && !level)) {
+        via->ifr |= VIA_INT_CA2;
+        via_check_irq(via);
+    }
+}
+
 void via_trigger_ca2(via6522_t* via) {
     via->ifr |= VIA_INT_CA2;
     via_check_irq(via);
@@ -353,16 +455,20 @@ void via_set_cb1(via6522_t* via, bool state) {
 
     /* PCR bit 4: 0 = interrupt on falling edge, 1 = interrupt on rising edge */
     bool rising_edge = (via->pcr & 0x10) != 0;
+    bool active = (rising_edge && !old && state) ||
+                  (!rising_edge && old && !state);
+    if (!active) return;
 
-    if (rising_edge && !old && state) {
-        /* Rising edge detected and PCR selects rising */
-        via->ifr |= VIA_INT_CB1;
-        via_check_irq(via);
-    } else if (!rising_edge && old && !state) {
-        /* Falling edge detected and PCR selects falling */
-        via->ifr |= VIA_INT_CB1;
-        via_check_irq(via);
+    via->ifr |= VIA_INT_CB1;
+    /* Input latching (ACR bit 1): capture Port B pins on the active edge */
+    if (via->acr & 0x02) {
+        via->pb_latch = via->portb_read ? via->portb_read(via->userdata) : 0xFF;
+        via->pb_latched = true;
     }
+    /* Handshake output (PCR CB2 = 100): "data taken" edge restores CB2 */
+    if ((via->pcr & 0xE0) == 0x80)
+        via->cb2_pin = true;
+    via_check_irq(via);
 }
 
 void via_trigger_cb1(via6522_t* via) {
@@ -384,7 +490,17 @@ void via_shift_clock(via6522_t* via) {
 }
 
 void via_set_cb2_input(via6522_t* via, bool level) {
+    bool old = via->cb2_in;
     via->cb2_in = level;
+    if ((via->pcr & 0x80) != 0) return;   /* output modes: pin is driven */
+    if (old == level) return;
+
+    /* PCR bit 6: 0 = falling edge, 1 = rising edge (input modes 000-011) */
+    bool rising_edge = (via->pcr & 0x40) != 0;
+    if ((rising_edge && !old && level) || (!rising_edge && old && !level)) {
+        via->ifr |= VIA_INT_CB2;
+        via_check_irq(via);
+    }
 }
 
 void via_pb6_pulse(via6522_t* via) {
@@ -402,15 +518,17 @@ void via_pb6_pulse(via6522_t* via) {
 
 bool via_get_ca2(via6522_t* via) {
     uint8_t ca2 = via->pcr & 0x0E;
+    if ((ca2 & 0x08) == 0) return via->ca2_in;  /* 000-011: input pin */
     if (ca2 == 0x0C) return false;        /* 110: manual output low */
     if (ca2 == 0x0E) return true;         /* 111: manual output high */
-    return via->ca2_pin;                  /* pulse/handshake: last driven level */
+    return via->ca2_pin;                  /* 100/101: handshake/pulse level */
 }
 
 bool via_get_cb2(via6522_t* via) {
     if (via->acr & 0x10) return via->cb2_pin; /* shift-out drives CB2 */
     uint8_t cb2 = via->pcr & 0xE0;
+    if ((cb2 & 0x80) == 0) return via->cb2_in;  /* 000-011: input pin */
     if (cb2 == 0xC0) return false;        /* 110: manual output low */
     if (cb2 == 0xE0) return true;         /* 111: manual output high */
-    return via->cb2_pin;
+    return via->cb2_pin;                  /* 100/101: handshake/pulse level */
 }
