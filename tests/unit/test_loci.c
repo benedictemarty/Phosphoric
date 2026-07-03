@@ -1841,6 +1841,42 @@ TEST(test_opendir_empty_lists_devices) {
     loci_cleanup(&l);
 }
 
+/* A USB storage device registered with a host root serves its "N:"
+ * volume: "1:FILE" opens inside the key's directory, while "0:"/bare
+ * paths keep resolving in the flash root (internal storage). */
+TEST(test_usb_storage_paths_resolve_to_host_root) {
+    char* flash = make_tmpdir();
+    char* key = make_tmpdir();
+    char fpath[400];
+    snprintf(fpath, sizeof(fpath), "%s/USBFILE.TXT", key);
+    FILE* fp = fopen(fpath, "wb"); fputs("KEY!", fp); fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, flash);
+    ASSERT_EQ(loci_add_usb_storage(&l, "MSC 1.0 GB TESTKEY", key), 1);
+
+    /* "1:USBFILE.TXT" reads from the key */
+    push_path(&l, "1:USBFILE.TXT");
+    l.regs[LOCI_REG_API_A] = 0;   /* RDONLY */
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    uint16_t fd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd >= 3 && fd <= 18);
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+
+    /* "0:USBFILE.TXT" = internal storage: the file is NOT there */
+    push_path(&l, "0:USBFILE.TXT");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
+                 ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
+    ASSERT_EQ(e, LOCI_EFATFS(LOCI_FR_NO_FILE));
+
+    unlink(fpath); rmdir(key); rmdir(flash);
+    loci_cleanup(&l); free(key); free(flash);
+}
+
 /* Conformance pin: firmware dir.c FD_OFFS_FAT=64 (dir descriptors on the
  * SD/FAT backend) and api.h API_EFATFS = 32+FRESULT for filesystem errors.
  * cc65 apps compiled against the real firmware see these exact values. */
@@ -3219,6 +3255,7 @@ int main(void) {
     RUN(test_dsk_umount_closes);
     RUN(test_dsk_bad_sector_seeded_at_mount);
     RUN(test_opendir_empty_lists_devices);
+    RUN(test_usb_storage_paths_resolve_to_host_root);
     RUN(test_firmware_abi_dir_fd_and_efatfs);
     RUN(test_dsk_cmd_reports_not_ready_for_empty_drive);
     RUN(test_dsk_cmd_ready_for_mounted_drive);

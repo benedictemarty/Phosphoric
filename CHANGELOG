@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.0-alpha] - 2026-07-03
+
+### Added — LOCI : vraies clés USB du host servies à l'Oric (--loci-usb + auto-détection)
+
+Sur le vrai LOCI, on branche une clé sur le port USB host : elle apparaît
+dans la liste des périphériques avec son nom et le navigateur y accède
+par les chemins volume « N: » (FatFS multi-volume du firmware).
+
+- **`src/io/loci_fs.c`** `resolve_path()` : les préfixes « 1: »-« 4: »
+  routent vers la racine host du périphérique enregistré ; « 0: » et les
+  chemins nus restent le flash root (stockage interne). Garde
+  anti-échappement inchangée. Tous les ops passent par resolve_path →
+  open/opendir/mount/unlink/rename/mkdir fonctionnent sur la clé (monter
+  un .dsk/.tap depuis la clé marche).
+- **`include/io/loci.h` / `loci_core.c`** : `loci_add_usb_storage(status,
+  host_root)` — l'entrée du device list ET la racine « N: ».
+- **`src/main.c`** : `--loci-usb DIR` (répétable, 4 max) attache un
+  dossier comme clé ; **auto-détection** des médias montés sur le host
+  (convention udisks : /media/$USER, /run/media/$USER) au démarrage —
+  brancher une vraie clé avant de lancer, elle apparaît dans le menu avec
+  son label et sa taille (« N: MSC x.x GB <label> ») ; `--loci-usb none`
+  désactive l'auto-détection. NOTE : détection au démarrage uniquement
+  (pas de hot-plug) ; avec --loci-sdimg les ops fichiers restent au
+  backend SD (clés listées mais non navigables).
+- +1 test (867) : « 1:FILE » lu depuis la racine de la clé, « 0:FILE » →
+  EFATFS(FR_NO_FILE) (stockage interne intact). e2e : --loci-usb
+  /tmp/fakeusb → « LOCI: USB storage 2: (fakeusb) ».
+
 ## [1.47.0-alpha] - 2026-07-03
 
 ### Added — LOCI : liste des périphériques (internal/USB/picowifi) + diag ROM (appui long)
