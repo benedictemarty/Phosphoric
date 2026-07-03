@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.48.3-alpha** | **868 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.49.0-alpha** | **868 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -157,6 +157,13 @@ make SDL2=1
 ### Modern Features
 - **Video export** — PPM, BMP, ASCII screenshots; Motion-JPEG AVI recording (`--video`)
 - **Input record/replay** — deterministic "TAS movie" of keyboard input (`--record`/`--replay`). Replay is bit-deterministic — tool-assisted runs, bug repro, CI regression. *(No other Oric emulator offers this.)*
+- **Windows 11** — three ways: **browser** (the WebAssembly build is live at
+  <https://benedictemarty.github.io/Phosphoric/> — zero install), **native
+  .exe** (cross-built by CI: `windows-build` workflow artifact with
+  `oric1-emu.exe` + `SDL2.dll` + roms; or `make WIN=1 SDL2=1` with
+  MinGW-w64. v1 limits: serial tcp/pty/modem/com/picowifi, --gdb,
+  --control async-pause, CAST and host MIDI are Linux-only), and **WSL2**
+  (full-featured Linux build under WSLg)
 - **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, a JOric-style left icon rail (ROM selector, `.tap`/`.dsk` drag-drop, Reset, fullscreen, **CRT filter**, **`.ost` save/restore**), **TAPE/DISK activity LEDs**, and a faithful ORIC-1/Atmos on-screen keyboard — semi-transparent overlay, toggleable, with sticky CTRL/FUNCT/SHIFT (FUNCT hidden on ORIC-1). Output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
@@ -642,4 +649,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.48.3-alpha | 868 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 timing mecanique reel + bad-sector injection | ULA profiles (OCULA: 80-col, ext-HIRES 320x200, palette redefinissable, banking, GPU) + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-07-03
+Phosphoric v1.49.0-alpha | 868 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 timing mecanique reel + bad-sector injection | ULA profiles (OCULA: 80-col, ext-HIRES 320x200, palette redefinissable, banking, GPU) + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-07-03

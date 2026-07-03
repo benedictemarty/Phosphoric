@@ -1325,6 +1325,16 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 89: Windows 11 — Pages + port natif .exe (v1.49.0-alpha) - DONE
+
+- [x] WASM publié : https://benedictemarty.github.io/Phosphoric/
+- [x] oscompat.h + serial_backend_win.c (loopback/file) + gdbstub_win.c
+      + async-pause neutralisé ; Makefile WIN=1 (MinGW -posix + SDL2)
+- [x] CI windows-build : artifact oric1-emu.exe (PE32+) + SDL2.dll +
+      libwinpthread + roms + LISEZMOI ; verte au 2ᵉ run
+- [ ] v2 (backlog) : Winsock pour tcp/modem/picowifi/gdb, async-pause
+      via thread, test smoke wine en CI, release automatique sur tag
+
 ### Sprint 88b: README resynchronisé (v1.48.3-alpha) - DONE
 
 - [x] Bannière 1.22.0/793 → 1.48.3/868 ; savestate 15 sections ;
@@ -2725,5 +2735,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.48.3-alpha
+**Current Version**: 1.49.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

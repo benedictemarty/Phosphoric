@@ -12,16 +12,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <strings.h>
+#endif
 #include <signal.h>
 #include <getopt.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
 #include <time.h>
+#include "utils/oscompat.h"   /* statvfs/mkdir/SIGPIPE/monotonic portables */
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -758,8 +760,8 @@ static void loci_attach_usb_dir(emulator_t* emu, const char* dir) {
     const char* label = strrchr(dir, '/');
     label = (label && label[1]) ? label + 1 : dir;
     char status[64];
-    struct statvfs vs;
-    double gb = (statvfs(dir, &vs) == 0)
+    struct oscompat_statvfs vs;
+    double gb = (oscompat_statvfs(dir, &vs) == 0)
               ? (double)vs.f_blocks * (double)vs.f_frsize
                 / (1024.0 * 1024.0 * 1024.0) : 0.0;
     if (gb >= 1.0)
@@ -778,6 +780,7 @@ static void loci_attach_usb_dir(emulator_t* emu, const char* dir) {
  * plug a real key in, it shows up in the LOCI menu. */
 static void loci_scan_host_usb(emulator_t* emu) {
     const char* user = getenv("USER");
+    if (!user || !user[0]) user = getenv("USERNAME");   /* Windows */
     if (!user || !user[0]) return;
     const char* bases[] = { "/media", "/run/media" };
     for (size_t b = 0; b < sizeof(bases) / sizeof(bases[0]); b++) {
@@ -3427,7 +3430,7 @@ int main(int argc, char* argv[]) {
      * terminal interactif). control.c veut pourtant s'arrêter PROPREMENT via
      * ferror(stdout) — mais ce contrôle est inatteignable si SIGPIPE tue avant.
      * On l'ignore : le tuyau cassé est alors géré proprement (arrêt net). */
-    signal(SIGPIPE, SIG_IGN);
+    oscompat_ignore_sigpipe();
 
     /* Cast discover: standalone mode, list devices and exit */
     if (cast_discover) {
@@ -3982,7 +3985,7 @@ int main(int argc, char* argv[]) {
 
     /* Create frame dump directory if specified */
     if (frame_dump_dir) {
-        mkdir(frame_dump_dir, 0755);
+        oscompat_mkdir(frame_dump_dir, 0755);
     }
 
     /* Store file paths for save state metadata */

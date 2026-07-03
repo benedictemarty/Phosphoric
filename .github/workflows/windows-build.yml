@@ -1,0 +1,64 @@
+# Sprint 89 — cross-build Windows x86_64 (MinGW-w64) sur runner Ubuntu.
+# Produit un zip portable : oric1-emu.exe + SDL2.dll + roms/ + docs.
+name: windows-build
+
+on:
+  push:
+    branches: [main, feature/windows-port]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'Makefile'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+
+      - name: Fetch SDL2 MinGW development package
+        run: |
+          SDL2_VER=2.30.9
+          curl -sL -o /tmp/sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VER}/SDL2-devel-${SDL2_VER}-mingw.tar.gz"
+          sudo mkdir -p /opt/sdl2-mingw
+          sudo tar xzf /tmp/sdl2.tar.gz -C /opt/sdl2-mingw --strip-components=1
+
+      - name: Build (WIN=1 SDL2=1)
+        run: make WIN=1 SDL2=1 -j4
+
+      - name: Package
+        run: |
+          mkdir -p dist/phosphoric-windows
+          cp oric1-emu.exe dist/phosphoric-windows/
+          cp /opt/sdl2-mingw/x86_64-w64-mingw32/bin/SDL2.dll dist/phosphoric-windows/
+          # winpthreads runtime (clock_gettime) — posix flavour of MinGW
+          cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || \
+            cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || true
+          cp -r roms dist/phosphoric-windows/
+          cp README.md CHANGELOG LICENSE dist/phosphoric-windows/ 2>/dev/null || true
+          cp docs/loci.md dist/phosphoric-windows/ 2>/dev/null || true
+          cat > dist/phosphoric-windows/LISEZMOI-WINDOWS.txt <<'EOF'
+          Phosphoric — émulateur ORIC-1/Atmos pour Windows 11 (x86_64)
+
+          Lancer :  oric1-emu.exe -r roms\basic11b.rom
+          Disque :  oric1-emu.exe -r roms\basic11b.rom --disk-rom roms\microdis.rom -d MONJEU.DSK
+          LOCI  :   oric1-emu.exe -r roms\basic11b.rom --loci    (F8 = menu, F8 long = diag ROM)
+
+          Limites du build Windows v1 (utilisez la version Linux/WSL2 pour) :
+          - transports série tcp/pty/modem/com/picowifi (loopback et file: disponibles)
+          - --gdb (stub GDB), --control async-pause, Chromecast, MIDI hôte
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phosphoric-windows-x86_64
+          path: dist/phosphoric-windows
