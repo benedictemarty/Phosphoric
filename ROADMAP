@@ -1325,6 +1325,17 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 84: LOCI — MAP_TUNE_*/ADJ_SCAN conformes (v1.45.0-alpha) - DONE
+
+Suite de l'audit fidélité LOCI : sémantique exacte des réglages de
+timing MIA (map.c/cfg.c/adj.c du firmware).
+
+- [x] MAP_TUNE_* renvoie la valeur courante dans AX (avant : 0)
+- [x] A > 31 = requête pure, valeur intacte (avant : masqué et écrasé)
+- [x] tiod stocké non masqué (& 0x07 appliqué seulement au PIO réel)
+- [x] ADJ_SCAN : xram[$FFF0] = tior configuré, bit 7 clair (ADJ_CLEANUP)
+- [x] +1 test, 1 réécrit (864) ; suite complète verte
+
 ### Sprint 83: LOCI — errno FatFS + dir fd 64+ (ABI firmware) (v1.44.0-alpha) - DONE
 
 Volet « LOCI » de l'initiative fidélité v2 : dernières divergences vs
@@ -2651,5 +2662,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.44.0-alpha
+**Current Version**: 1.45.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

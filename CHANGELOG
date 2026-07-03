@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.45.0-alpha] - 2026-07-03
+
+### Fixed — LOCI : sémantique exacte des MAP_TUNE_* et d'ADJ_SCAN (map.c/cfg.c/adj.c)
+
+Audit de conformité des réglages de timing du bus MIA contre la source
+sodiumlb/loci-firmware : le cœur (valeur dans le registre A, plages,
+défauts tmap=10/reste=0) était conforme, mais trois écarts subsistaient.
+
+- **`src/io/loci_boot.c`** `op_map_tune_store()` :
+  - l'op renvoie désormais **la valeur courante dans AX** (firmware :
+    `api_return_ax(cfg_get_*())`) au lieu de 0 ;
+  - **A > 31 = requête pure** (« other return current ») : la valeur n'est
+    plus modifiée — avant, on masquait `A & 0x1F` et on écrasait le
+    réglage, détruisant la valeur qu'une appli voulait simplement lire ;
+  - **tiod stocké non masqué** : le firmware garde la valeur ≤ 31 telle
+    quelle dans la config (le masque `& 0x07` n'est appliqué qu'au niveau
+    PIO, adj.c) — `tiod=12` se relit 12, plus 4.
+- **`op_adj_scan`** : l'état final de `xram[$FFF0]` est le **tior
+  configuré** (bit 7 clair, firmware ADJ_CLEANUP) au lieu d'un 0 câblé en
+  dur. Le balayage reste modélisé comme instantané (le vrai firmware fait
+  un sweep asynchrone tior 0-31 en ~100 ms + 31×5 ms avec bit 7 levé).
+- Tests : `test_mia_tune_tior_stores_value` réécrit (set/AX/requête/tiod
+  non masqué) + 1 nouveau `test_adj_scan_reports_current_tior` (863 → 864).
+
 ## [1.44.0-alpha] - 2026-07-03
 
 ### Changed — LOCI : errno FatFS (32+FRESULT) et descripteurs de répertoire 64+ (ABI firmware)

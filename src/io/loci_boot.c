@@ -92,13 +92,22 @@ void op_stdin_opt(loci_t* loci) {
 }
 
 /* The tune value is passed in register A (firmware map.c: `uint8_t delay = API_A`).
- * We store it so the modelled MIA I/O reliability (loci_mia_io_reliable) reacts
- * to it — a tior outside the configured window corrupts the picowifi ACIA. */
-static void op_map_tune_store(loci_t* loci, const char* name, uint8_t* field, uint8_t mask) {
-    *field = loci->regs[LOCI_REG_API_A] & mask;
-    log_debug("LOCI %s = %u (modelled MIA timing)", name, *field);
+ * Firmware semantics (map.c + cfg.c): A <= 31 SETS the delay, any other
+ * value is a pure QUERY ("other return current") — cfg_set_* rejects it
+ * and nothing changes; the op ALWAYS returns the current value in AX
+ * (api_return_ax(cfg_get_*())). The stored value is kept unmasked: the
+ * firmware only masks at the PIO level (adj.c, e.g. tiod & 0x07), the
+ * config keeps and returns what was set. We store it so the modelled MIA
+ * I/O reliability (loci_mia_io_reliable) reacts to it — a tior outside
+ * the configured window corrupts the picowifi ACIA. */
+static void op_map_tune_store(loci_t* loci, const char* name, uint8_t* field) {
+    uint8_t a = loci->regs[LOCI_REG_API_A];
+    if (a <= 31) {
+        *field = a;
+        log_debug("LOCI %s = %u (modelled MIA timing)", name, a);
+    }
     xstack_zero(loci);
-    api_return_ax(loci, 0);
+    api_return_ax(loci, *field);
 }
 
 bool loci_mia_io_reliable(const loci_t* loci) {
@@ -114,16 +123,18 @@ void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi) {
 }
 
 void op_adj_scan(loci_t* loci) {
-    /* Firmware (adj.c) releases immediately then sweeps tior 0-31 with
-     * progress in xram[$FFF0] (bit 7 = scan in progress). No hardware to
-     * tune here: report an already-completed scan. */
-    loci->xram[0xFFF0] = 0x00;
+    /* Firmware (adj.c): asynchronous sweep of tior 0-31 (~100 ms + 31×5 ms)
+     * with progress in xram[$FFF0] = 0x80 | tior (bit 7 = scan in
+     * progress), then the CONFIGURED tior is restored and xram[$FFF0] is
+     * left holding it (bit 7 clear). No hardware to tune here: model the
+     * completed scan — the final state must still be conformant. */
+    loci->xram[0xFFF0] = loci->mia_tior & 0x1F;
     xstack_zero(loci);
     api_return_ax(loci, 0);
 }
 
-void op_map_tune_tmap(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TMAP", &loci->mia_tmap, 0x1F); }
-void op_map_tune_tior(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOR", &loci->mia_tior, 0x1F); }
-void op_map_tune_tiow(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOW", &loci->mia_tiow, 0x1F); }
-void op_map_tune_tiod(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOD", &loci->mia_tiod, 0x07); }
-void op_map_tune_tadr(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TADR", &loci->mia_tadr, 0x1F); }
+void op_map_tune_tmap(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TMAP", &loci->mia_tmap); }
+void op_map_tune_tior(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOR", &loci->mia_tior); }
+void op_map_tune_tiow(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOW", &loci->mia_tiow); }
+void op_map_tune_tiod(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TIOD", &loci->mia_tiod); }
+void op_map_tune_tadr(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TADR", &loci->mia_tadr); }
