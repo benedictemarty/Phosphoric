@@ -106,6 +106,25 @@ typedef enum {
 #define LOCI_ENOEXEC 17
 #define LOCI_EUNKNOWN 18
 
+/* Filesystem errors: the firmware forwards FatFS FRESULT codes offset by
+ * 32 (api.h API_EFATFS) for every error coming from the SD/FAT layer —
+ * the codes 1-18 above are only used for API-level validation (bad fd,
+ * slots full, no device...). The emulator's host-FS and SDIMG backends
+ * both play the SD/FAT role, so their I/O errors use this encoding too.
+ * (LittleFS errors are 128-lfs_err; internal flash is not emulated.) */
+#define LOCI_EFATFS(fresult) ((uint16_t)(32 + (fresult)))
+#define LOCI_FR_DISK_ERR            1   /* FatFS FR_DISK_ERR */
+#define LOCI_FR_INT_ERR             2   /* FatFS FR_INT_ERR */
+#define LOCI_FR_NO_FILE             4   /* FatFS FR_NO_FILE */
+#define LOCI_FR_NO_PATH             5   /* FatFS FR_NO_PATH */
+#define LOCI_FR_INVALID_NAME        6   /* FatFS FR_INVALID_NAME */
+#define LOCI_FR_DENIED              7   /* FatFS FR_DENIED */
+#define LOCI_FR_EXIST               8   /* FatFS FR_EXIST */
+#define LOCI_FR_WRITE_PROTECTED     10  /* FatFS FR_WRITE_PROTECTED */
+#define LOCI_FR_LOCKED              16  /* FatFS FR_LOCKED */
+#define LOCI_FR_NOT_ENOUGH_CORE    17  /* FatFS FR_NOT_ENOUGH_CORE */
+#define LOCI_FR_TOO_MANY_OPEN_FILES 18  /* FatFS FR_TOO_MANY_OPEN_FILES */
+
 #define LOCI_XSTACK_SIZE 512   /* matches firmware XSTACK_SIZE 0x200 (mem.h) */
 
 /* open() flags — matching firmware constants (std.c). */
@@ -128,7 +147,9 @@ typedef enum {
 
 /* Dir handles (POSIX DIR*) — separate fd space from file fds. */
 #define LOCI_DIR_MAX     8
-#define LOCI_DIR_OFFSET  32   /* matches firmware FD_OFFS_LFS */
+#define LOCI_DIR_OFFSET  64   /* firmware FD_OFFS_FAT (dir.c): our host-FS and
+                                 SDIMG backends play the SD/FAT role. (LFS
+                                 dirs are 32+, dev dir is 0 — not emulated.) */
 
 /* dirent struct laid out on xstack by readdir (must match firmware exactly).
  * sizeof = 2 + 64 + 1 + 1 + 4 = 72 bytes. */

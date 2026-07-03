@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.44.0-alpha] - 2026-07-03
+
+### Changed — LOCI : errno FatFS (32+FRESULT) et descripteurs de répertoire 64+ (ABI firmware)
+
+Résorbe les deux dernières divergences vs `sodiumlb/loci-firmware` (source
+re-clonée et vérifiée sur pièces — la note d'audit sur les fd fichiers 64+
+était FAUSSE : le firmware utilise bien 3-18 pour les fichiers FAT
+(`std.c` STD_FIL_OFFS=3, MAX=16), conformes chez nous depuis toujours).
+
+- **Errno filesystem = encodage FatFS du firmware** (`api.h` :
+  `API_EFATFS(fresult) = 32 + fresult`) : les backends host-FS et SDIMG
+  jouent le rôle de la carte SD/FAT, leurs erreurs I/O portent donc les
+  codes que voit une appli cc65 sur le vrai matériel — open/unlink/rename
+  manquant → 36 (FR_NO_FILE), opendir manquant → 37 (FR_NO_PATH), accès
+  refusé/répertoire non vide/disque plein → 39 (FR_DENIED), existe déjà →
+  40 (FR_EXIST), etc. Les codes 1-18 restent réservés aux erreurs API
+  (EBADF, EMFILE slots pleins, ENODEV, garde anti-échappement) — comme le
+  firmware. `map_errno()` + `sdimg_errno_to_loci()` réécrits ; défaut →
+  EUNKNOWN (18) au lieu d'EIO.
+- **`LOCI_DIR_OFFSET` 32 → 64** : les descripteurs de répertoire sur le
+  backend SD/FAT sont dans la plage FAT du firmware (`dir.c`
+  FD_OFFS_FAT=64 ; 32+ = LittleFS interne, 0 = dev — non émulés).
+- **`include/io/loci.h`** : macro `LOCI_EFATFS()` + codes `LOCI_FR_*`.
+- +1 test (863) : `test_firmware_abi_dir_fd_and_efatfs` fige l'ABI (dir fd
+  ∈ [64,72), EFATFS(FR_NO_FILE)=36) ; 6 assertions existantes alignées.
+
 ## [1.43.0-alpha] - 2026-07-03
 
 ### Added — VIA 6522 : modes CA2/CB2 complets (handshake, pulse, entrées, latching)

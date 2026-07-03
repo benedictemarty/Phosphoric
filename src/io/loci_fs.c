@@ -27,20 +27,28 @@
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 
+/* Host filesystem error → LOCI errno. The backend plays the SD/FAT card
+ * of the real LOCI, so filesystem errors carry the firmware's FatFS
+ * encoding (32 + FRESULT, api.h API_EFATFS); only API-level conditions
+ * (bad fd, slots full...) use the low 1-18 codes — like the firmware. */
 uint16_t map_errno(int e) {
     switch (e) {
-        case ENOENT: return LOCI_ENOENT;
-        case EACCES: return LOCI_EACCES;
-        case EEXIST: return LOCI_EEXIST;
-        case ENOMEM: return LOCI_ENOMEM;
-        case EBADF:  return LOCI_EBADF;
-        case EINVAL: return LOCI_EINVAL;
-        case ENOSPC: return LOCI_ENOSPC;
-        case EBUSY:  return LOCI_EBUSY;
-        case EIO:    return LOCI_EIO;
-        case ENOSYS: return LOCI_ENOSYS;
-        case ENOTEMPTY: return LOCI_EACCES;
-        default:     return LOCI_EIO;
+        case ENOENT:    return LOCI_EFATFS(LOCI_FR_NO_FILE);
+        case ENOTDIR:   return LOCI_EFATFS(LOCI_FR_NO_PATH);
+        case EACCES:    return LOCI_EFATFS(LOCI_FR_DENIED);
+        case EPERM:     return LOCI_EFATFS(LOCI_FR_DENIED);
+        case EEXIST:    return LOCI_EFATFS(LOCI_FR_EXIST);
+        case EROFS:     return LOCI_EFATFS(LOCI_FR_WRITE_PROTECTED);
+        case ENOMEM:    return LOCI_EFATFS(LOCI_FR_NOT_ENOUGH_CORE);
+        case EBADF:     return LOCI_EBADF;
+        case EINVAL:    return LOCI_EFATFS(LOCI_FR_INVALID_NAME);
+        case ENOSPC:    return LOCI_EFATFS(LOCI_FR_DENIED);
+        case EBUSY:     return LOCI_EFATFS(LOCI_FR_LOCKED);
+        case EIO:       return LOCI_EFATFS(LOCI_FR_DISK_ERR);
+        case ENOSYS:    return LOCI_ENOSYS;
+        case EMFILE:    return LOCI_EFATFS(LOCI_FR_TOO_MANY_OPEN_FILES);
+        case ENOTEMPTY: return LOCI_EFATFS(LOCI_FR_DENIED);
+        default:        return LOCI_EUNKNOWN;
     }
 }
 
@@ -115,19 +123,21 @@ static FILE* fd_to_file(loci_t* loci, int fd) {
 
 /* ─── SDIMG backend dispatch (Sprint 34ao) ──────────────────────── */
 
+/* SDIMG (FAT16 image) error → LOCI errno: the SDIMG IS the FAT card, so
+ * filesystem errors use the firmware's FatFS encoding (32 + FRESULT). */
 int sdimg_errno_to_loci(int neg_errno) {
     int e = neg_errno < 0 ? -neg_errno : neg_errno;
     switch (e) {
         case 0:        return 0;
-        case ENOENT:   return LOCI_ENOENT;
-        case EACCES:   return LOCI_EACCES;
-        case EISDIR:   return LOCI_EACCES;
-        case ENOTDIR:  return LOCI_EINVAL;
+        case ENOENT:   return LOCI_EFATFS(LOCI_FR_NO_FILE);
+        case EACCES:   return LOCI_EFATFS(LOCI_FR_DENIED);
+        case EISDIR:   return LOCI_EFATFS(LOCI_FR_DENIED);
+        case ENOTDIR:  return LOCI_EFATFS(LOCI_FR_NO_PATH);
         case EBADF:    return LOCI_EBADF;
-        case EINVAL:   return LOCI_EINVAL;
-        case EMFILE:   return LOCI_EMFILE;
-        case EIO:      return LOCI_EIO;
-        default:       return LOCI_EIO;
+        case EINVAL:   return LOCI_EFATFS(LOCI_FR_INVALID_NAME);
+        case EMFILE:   return LOCI_EFATFS(LOCI_FR_TOO_MANY_OPEN_FILES);
+        case EIO:      return LOCI_EFATFS(LOCI_FR_DISK_ERR);
+        default:       return LOCI_EUNKNOWN;
     }
 }
 
@@ -634,7 +644,8 @@ void op_mount(loci_t* loci) {
     char host_path[512];
     if (loci->sdimg) {
         if (!sdimg_extract_to_temp(loci, path, host_path, sizeof(host_path))) {
-            api_return_errno(loci, LOCI_ENOENT);
+            /* firmware: f_open failure inside mount → EFATFS encoding */
+            api_return_errno(loci, LOCI_EFATFS(LOCI_FR_NO_FILE));
             return;
         }
     } else {
@@ -643,7 +654,8 @@ void op_mount(loci_t* loci) {
             return;
         }
         if (access(host_path, F_OK) != 0) {
-            api_return_errno(loci, LOCI_ENOENT);
+            /* firmware: f_open failure inside mount → EFATFS encoding */
+            api_return_errno(loci, LOCI_EFATFS(LOCI_FR_NO_FILE));
             return;
         }
     }
@@ -794,7 +806,10 @@ void op_opendir(loci_t* loci) {
     }
     DIR* d = opendir(host_path);
     if (!d) {
-        api_return_errno(loci, map_errno(errno));
+        /* f_opendir reports a missing directory as FR_NO_PATH */
+        api_return_errno(loci, errno == ENOENT
+                             ? LOCI_EFATFS(LOCI_FR_NO_PATH)
+                             : map_errno(errno));
         return;
     }
     int slot = alloc_dir(loci);

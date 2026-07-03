@@ -1325,6 +1325,18 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 83: LOCI — errno FatFS + dir fd 64+ (ABI firmware) (v1.44.0-alpha) - DONE
+
+Volet « LOCI » de l'initiative fidélité v2 : dernières divergences vs
+sodiumlb/loci-firmware, vérifiées sur la source re-clonée.
+
+- [x] Erreurs filesystem = API_EFATFS (32+FRESULT) sur host-FS et SDIMG
+      (rôle carte SD/FAT) ; codes 1-18 réservés aux erreurs API
+- [x] LOCI_DIR_OFFSET 32 → 64 (dir.c FD_OFFS_FAT — plage FAT)
+- [x] Note d'audit invalidée : fd FICHIERS firmware = 3-18 (STD_FIL_OFFS=3),
+      déjà conformes ; 0/32/64 ne concernent que les RÉPERTOIRES
+- [x] +1 test ABI (863) + 6 assertions alignées ; suite complète verte
+
 ### Sprint 82: VIA 6522 — modes CA2/CB2 complets (v1.43.0-alpha) - DONE
 
 Volet « ORIC physique » de l'initiative fidélité v2 : dernier écart connu
@@ -2639,5 +2651,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.43.0-alpha
+**Current Version**: 1.44.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
