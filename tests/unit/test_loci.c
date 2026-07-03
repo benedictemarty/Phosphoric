@@ -1877,6 +1877,80 @@ TEST(test_usb_storage_paths_resolve_to_host_root) {
     loci_cleanup(&l); free(key); free(flash);
 }
 
+/* Replay of the menu ROM's file_copy (loci-rom filemanager.c, key 'i'):
+ * open(src, O_RDONLY|O_EXCL) on the USB key, open(dst, O_WRONLY|O_CREAT)
+ * on internal storage, then 8 KB read_xram/write_xram rounds through the
+ * xram staging area until a short read, close both. Proves the menu's
+ * copy-to-internal works end-to-end across volumes. */
+TEST(test_menu_file_copy_usb_to_internal) {
+    char* flash = make_tmpdir();
+    char* key = make_tmpdir();
+    char spath[400], dpath[400];
+    snprintf(spath, sizeof(spath), "%s/GAME.TAP", key);
+    FILE* fp = fopen(spath, "wb");
+    for (int i = 0; i < 12000; i++) fputc((i * 7) & 0xFF, fp);  /* > 8 KB: 2 rounds */
+    fclose(fp);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, flash);
+    ASSERT_EQ(loci_add_usb_storage(&l, "MSC 1.0 GB TESTKEY", key), 1);
+
+    push_path(&l, "1:GAME.TAP");
+    l.regs[LOCI_REG_API_A] = 0x01 | 0x80;         /* O_RDONLY | O_EXCL */
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd_src = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd_src >= LOCI_FD_OFFSET);
+
+    push_path(&l, "0:GAME.TAP");
+    l.regs[LOCI_REG_API_A] = 0x02 | 0x10;         /* O_WRONLY | O_CREAT */
+    loci_write(&l, 0x03AF, LOCI_OP_OPEN);
+    int fd_dst = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(fd_dst >= LOCI_FD_OFFSET && fd_dst != fd_src);
+
+    uint32_t len;
+    int rounds = 0;
+    do {
+        push_u16(&l, 0x8000);                     /* FM_XRAM_ADDR */
+        push_u16(&l, 0x2000);                     /* FM_XRAM_SIZE */
+        l.regs[LOCI_REG_API_A] = (uint8_t)fd_src;
+        loci_write(&l, 0x03AF, LOCI_OP_READ_XRAM);
+        len = l.regs[LOCI_REG_API_A] |
+              ((uint32_t)l.regs[LOCI_REG_API_X] << 8);
+        push_u16(&l, 0x8000);
+        push_u16(&l, (uint16_t)len);
+        l.regs[LOCI_REG_API_A] = (uint8_t)fd_dst;
+        loci_write(&l, 0x03AF, LOCI_OP_WRITE_XRAM);
+        rounds++;
+    } while (len == 0x2000 && rounds < 8);
+    ASSERT_EQ(rounds, 2);                         /* 8192 + 3808 */
+
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd_src;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+    l.regs[LOCI_REG_API_A] = (uint8_t)fd_dst;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSE);
+
+    /* The internal-storage copy is byte-identical */
+    snprintf(dpath, sizeof(dpath), "%s/GAME.TAP", flash);
+    FILE* fs = fopen(spath, "rb");
+    FILE* fdp = fopen(dpath, "rb");
+    ASSERT_TRUE(fdp != NULL);
+    int ok = 1, cs, cd;
+    long n = 0;
+    while ((cs = fgetc(fs)) != EOF) {
+        cd = fgetc(fdp);
+        if (cs != cd) { ok = 0; break; }
+        n++;
+    }
+    if (ok && fgetc(fdp) != EOF) ok = 0;          /* same length */
+    fclose(fs); fclose(fdp);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(n, 12000);
+
+    unlink(spath); unlink(dpath); rmdir(key); rmdir(flash);
+    loci_cleanup(&l); free(key); free(flash);
+}
+
 /* Conformance pin: firmware dir.c FD_OFFS_FAT=64 (dir descriptors on the
  * SD/FAT backend) and api.h API_EFATFS = 32+FRESULT for filesystem errors.
  * cc65 apps compiled against the real firmware see these exact values. */
@@ -3256,6 +3330,7 @@ int main(void) {
     RUN(test_dsk_bad_sector_seeded_at_mount);
     RUN(test_opendir_empty_lists_devices);
     RUN(test_usb_storage_paths_resolve_to_host_root);
+    RUN(test_menu_file_copy_usb_to_internal);
     RUN(test_firmware_abi_dir_fd_and_efatfs);
     RUN(test_dsk_cmd_reports_not_ready_for_empty_drive);
     RUN(test_dsk_cmd_ready_for_mounted_drive);

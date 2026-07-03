@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.1-alpha] - 2026-07-03
+
+### Added — Test : la copie du menu LOCI (touche 'i') rejouée de bout en bout
+
+Audit copie/suppression : la copie n'est PAS une op API — le menu la fait
+côté client (loci-rom filemanager.c : open(src, O_RDONLY|O_EXCL) sur la
+clé, open(dst, O_WRONLY|O_CREAT) sur le stockage interne, tours de 8 Ko
+read_xram/write_xram via la xram, close). La suppression n'existe PAS
+dans le menu v0.3.0 (touche 'd' = lecteur D) — seulement au niveau API
+(UNLINK/RENAME, déjà implémentées et testées avec errno FatFS).
+
+- +1 test (868) : `test_menu_file_copy_usb_to_internal` rejoue la
+  séquence exacte du menu — 12 000 octets clé USB → stockage interne,
+  2 tours (8192 + 3808), copie byte-identique vérifiée.
+
 ## [1.48.0-alpha] - 2026-07-03
 
 ### Added — LOCI : vraies clés USB du host servies à l'Oric (--loci-usb + auto-détection)
