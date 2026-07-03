@@ -7,6 +7,20 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include -MMD -MP
 LDFLAGS = -lm -lutil
 
+# Windows cross-build (Sprint 89) : make WIN=1 SDL2=1 with MinGW-w64.
+# Expects the SDL2 MinGW development package; point SDL2_WIN_PREFIX at its
+# x86_64-w64-mingw32 directory (contains include/ and lib/).
+# v1 scope: serial pty/com/tcp/modem/picowifi, --gdb, CAST and MIDI host
+# transports are excluded (clear runtime messages); everything else works.
+WIN ?= 0
+ifeq ($(WIN), 1)
+    CC = x86_64-w64-mingw32-gcc
+    EXE = .exe
+    SDL2_WIN_PREFIX ?= /opt/sdl2-mingw/x86_64-w64-mingw32
+    LDFLAGS = -lm -lws2_32 -static-libgcc
+    PICOTLS = 0
+endif
+
 # Debug/Release
 DEBUG ?= 0
 ifeq ($(DEBUG), 1)
@@ -18,8 +32,13 @@ endif
 # SDL2 support (optional)
 SDL2 ?= 0
 ifeq ($(SDL2), 1)
+ifeq ($(WIN), 1)
+    CFLAGS += -DHAS_SDL2 -I$(SDL2_WIN_PREFIX)/include -I$(SDL2_WIN_PREFIX)/include/SDL2 -Dmain=SDL_main
+    LDFLAGS += -L$(SDL2_WIN_PREFIX)/lib -lmingw32 -lSDL2main -lSDL2 -mwindows
+else
     CFLAGS += -DHAS_SDL2 $(shell pkg-config --cflags sdl2 2>/dev/null)
     LDFLAGS += $(shell pkg-config --libs sdl2 2>/dev/null)
+endif
 endif
 
 # Cast server support (optional)
@@ -129,6 +148,13 @@ ifeq ($(CAST), 1)
     SOURCES += src/network/cast_server.c src/network/castv2.c
 endif
 
+# Windows v1 : swap the POSIX-only modules for their Windows variants
+ifeq ($(WIN), 1)
+    SOURCES := $(filter-out src/io/serial_backend.c src/io/serial_picowifi.c \
+                            src/network/gdbstub.c, $(SOURCES))
+    SOURCES += src/io/serial_backend_win.c src/network/gdbstub_win.c
+endif
+
 ifeq ($(TUI), 1)
     SOURCES += src/tui.c
     CFLAGS  += -DHAS_TUI
@@ -145,7 +171,7 @@ LIB_OBJECTS = $(LIB_SOURCES:.c=.o)
 TOOL_OBJECTS = src/storage/tap.o src/utils/logging.o
 
 # Targets
-TARGET = oric1-emu
+TARGET = oric1-emu$(EXE)
 TOOLS = bas2tap bin2tap tap2sedoric
 
 # Install paths

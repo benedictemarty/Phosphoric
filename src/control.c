@@ -21,7 +21,9 @@
 #include "io/loci.h"
 #include "storage/disk.h"
 #include "storage/sedoric.h"
+#ifndef _WIN32
 #include <sys/select.h>
+#endif
 #include <unistd.h>
 #include <signal.h>
 
@@ -80,6 +82,12 @@ bool control_poll_pause(emulator_t* emu) {
     /* Also surface a broken stdout to the main loop so we don't keep
      * running a session no one is listening to. */
     if (ferror(stdout)) { emu->running = false; return true; }
+#ifdef _WIN32
+    /* select() only works on sockets under Winsock — async-pause while
+     * running is not available in the Windows v1 build (commands are
+     * still processed at every stop/EVT boundary). */
+    return false;
+#else
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
@@ -114,13 +122,16 @@ bool control_poll_pause(emulator_t* emu) {
     reply_err("busy: emulator running, only `pause`/`quit` allowed "
               "(received `%s`)", tok);
     return false;
+#endif /* _WIN32 */
 }
 
 void control_emit_ready(emulator_t* emu) {
     /* Sprint 35c hardening — install SIGPIPE handler so a dead IDE
      * stdout pipe doesn't terminate us; we detect failed writes via
      * ferror(stdout) and shut down cleanly. Idempotent. */
+#ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
+#endif
     emit_evt("ready pc=%04X cycles=%llu version=%s",
              emu->cpu.PC, (unsigned long long)emu->cpu.cycles, EMU_VERSION);
     /* If the IDE has already closed its end before we got here, ferror

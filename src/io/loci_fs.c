@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "utils/oscompat.h"
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 
@@ -961,7 +962,7 @@ void op_mkdir(loci_t* loci) {
         api_return_errno(loci, LOCI_EACCES);
         return;
     }
-    if (mkdir(host_path, 0755) != 0) {
+    if (oscompat_mkdir(host_path, 0755) != 0) {
         api_return_errno(loci, map_errno(errno));
         return;
     }
