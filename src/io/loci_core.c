@@ -235,6 +235,19 @@ void loci_set_rom_swap_callback(loci_t* loci,
     loci->rom_swap_ctx = ctx;
 }
 
+void loci_set_resume_callback(loci_t* loci, bool (*cb)(void*), void* ctx) {
+    if (!loci) return;
+    loci->resume_cb = cb;
+    loci->resume_ctx = ctx;
+}
+
+void loci_set_rom_poke_callback(loci_t* loci,
+        void (*cb)(void*, uint16_t, uint8_t), void* ctx) {
+    if (!loci) return;
+    loci->rom_poke_cb = cb;
+    loci->rom_poke_ctx = ctx;
+}
+
 void loci_set_action_callbacks(loci_t* loci,
         void (*install_cb)(void*),
         void (*release_cb)(void*),

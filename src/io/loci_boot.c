@@ -27,6 +27,12 @@ void op_mia_boot(loci_t* loci) {
     loci->boot_settings = settings;
 
     if (settings & LOCI_BOOT_RESUME) {
+        /* Menu "resume" entry: the host swaps the pre-warm ROM back and
+         * restores the session snapshot taken at the Action button press. */
+        if (loci->resume_cb && !loci->resume_cb(loci->resume_ctx)) {
+            api_return_errno(loci, LOCI_ENOENT);   /* no snapshot to resume */
+            return;
+        }
         api_return_ax(loci, 0);
         return;
     }
@@ -123,14 +129,52 @@ void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi) {
 }
 
 void op_adj_scan(loci_t* loci) {
-    /* Firmware (adj.c): asynchronous sweep of tior 0-31 (~100 ms + 31×5 ms)
-     * with progress in xram[$FFF0] = 0x80 | tior (bit 7 = scan in
-     * progress), then the CONFIGURED tior is restored and xram[$FFF0] is
-     * left holding it (bit 7 clear). No hardware to tune here: model the
-     * completed scan — the final state must still be conformant. */
-    loci->xram[0xFFF0] = loci->mia_tior & 0x1F;
+    /* Firmware (adj.c): asynchronous sweep of tior 0-31 (~100 ms lead-in
+     * then one step per 5 ms) with live progress in the menu ROM's
+     * TIMINGS byte at $FFF0 = 0x80 | tior (bit 7 = scan in progress),
+     * then the CONFIGURED tior is restored there (bit 7 clear). The menu
+     * ROM polls that byte, so with a rom_poke hook we run the sweep over
+     * emulated time (loci_adj_tick); without one (unit tests, headless
+     * embedders) the completed-scan final state is reported at once. */
+    if (loci->rom_poke_cb) {
+        loci->adj_state = 1;
+        loci->adj_tior = 0;
+        loci->adj_acc = 0;
+        loci->xram[0xFFF0] = 0x80;
+        loci->rom_poke_cb(loci->rom_poke_ctx, 0xFFF0, 0x80);
+    } else {
+        loci->xram[0xFFF0] = loci->mia_tior & 0x1F;
+    }
     xstack_zero(loci);
     api_return_ax(loci, 0);
+}
+
+void loci_adj_tick(loci_t* loci, unsigned int cycles) {
+    if (!loci || loci->adj_state == 0) return;
+    loci->adj_acc += cycles;
+    if (loci->adj_state == 1) {
+        if (loci->adj_acc < 100000) return;    /* 20 × 5 ms lead-in */
+        loci->adj_acc = 0;
+        loci->adj_state = 2;
+        loci->adj_tior = 0;
+        return;
+    }
+    while (loci->adj_acc >= 5000) {            /* one tior step per 5 ms */
+        loci->adj_acc -= 5000;
+        if (++loci->adj_tior > 31) {
+            /* cleanup: restore the configured tior, scan-done flag clear */
+            uint8_t v = loci->mia_tior & 0x1F;
+            loci->xram[0xFFF0] = v;
+            if (loci->rom_poke_cb)
+                loci->rom_poke_cb(loci->rom_poke_ctx, 0xFFF0, v);
+            loci->adj_state = 0;
+            return;
+        }
+    }
+    uint8_t v = (uint8_t)(0x80 | loci->adj_tior);
+    loci->xram[0xFFF0] = v;
+    if (loci->rom_poke_cb)
+        loci->rom_poke_cb(loci->rom_poke_ctx, 0xFFF0, v);
 }
 
 void op_map_tune_tmap(loci_t* loci) { op_map_tune_store(loci, "MAP_TUNE_TMAP", &loci->mia_tmap); }
