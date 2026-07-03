@@ -66,6 +66,11 @@ typedef struct microdisc_s {
      * Consumed for .dsk write-back on exit (--disk-writeback). */
     bool     disk_dirty[MICRODISC_MAX_DRIVES];
 
+    /* Per-drive bad sector map: damage belongs to the inserted MEDIA.
+     * Applied to the FDC on drive select, wiped when a new disk is
+     * inserted (microdisc_set_disk), persisted in savestates. */
+    fdc_bad_map_t bad_map[MICRODISC_MAX_DRIVES];
+
     /* Overlay ROM data (microdis.rom, 8KB) */
     uint8_t* diskrom_data;
     uint32_t diskrom_size;
@@ -82,6 +87,12 @@ uint8_t microdisc_read(microdisc_t* md, uint16_t addr);
 void microdisc_write(microdisc_t* md, uint16_t addr, uint8_t value);
 void microdisc_set_disk(microdisc_t* md, uint8_t drive, uint8_t* data, uint32_t size,
                         uint8_t tracks, uint8_t sectors_per_track);
+/* Mark a sector of the media in DRIVE as unreadable (fault injection).
+ * Returns 0 on success, -1 on bad drive or full map. */
+int microdisc_add_bad_sector(microdisc_t* md, uint8_t drive,
+                             uint8_t side, uint8_t track, uint8_t sector);
+/* Re-apply DRIVE's media bad-sector map to the FDC if DRIVE is selected. */
+void microdisc_sync_bad_map(microdisc_t* md, uint8_t drive);
 bool microdisc_load_rom(microdisc_t* md, const char* filename);
 void microdisc_cleanup(microdisc_t* md);
 

@@ -291,6 +291,20 @@ static void loci_apply_dsk_selection(loci_t* loci) {
                  loci->dsk_image_size[drv]);
     loci->dsk_fdc.tracks            = loci->dsk_tracks[drv];
     loci->dsk_fdc.sectors_per_track = loci->dsk_sectors[drv];
+    /* Damage follows the media: load this drive's media map */
+    fdc_set_bad_map(&loci->dsk_fdc, &loci->dsk_bad_map[drv]);
+}
+
+int loci_add_bad_sector(loci_t* loci, uint8_t drive,
+                        uint8_t side, uint8_t track, uint8_t sector) {
+    if (drive >= 4) return -1;
+    if (fdc_bad_map_add(&loci->dsk_bad_cli[drive], side, track, sector) != 0)
+        return -1;
+    /* Also damage the media currently mounted (if any) */
+    fdc_bad_map_add(&loci->dsk_bad_map[drive], side, track, sector);
+    if (loci->dsk_selected == drive)
+        fdc_set_bad_map(&loci->dsk_fdc, &loci->dsk_bad_map[drive]);
+    return 0;
 }
 
 bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
@@ -346,6 +360,9 @@ bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
         loci->dsk_image_size[drive] = (uint32_t)sz;
         loci->dsk_is_mfm[drive]     = false;
     }
+    /* Fresh media in the slot: pristine surface, plus any CLI-injected
+     * damage destined for this drive (--bad-sector parsed before mounts). */
+    loci->dsk_bad_map[drive] = loci->dsk_bad_cli[drive];
     log_info("LOCI loci_dsk_open drive %d: %s (%u bytes, %d tracks, %d sectors)",
              drive, host_path, loci->dsk_image_size[drive],
              loci->dsk_tracks[drive], loci->dsk_sectors[drive]);
@@ -394,8 +411,10 @@ void loci_dsk_close(loci_t* loci, uint8_t drive) {
     }
     loci->dsk_host_path[drive][0] = '\0';
     loci->dsk_is_mfm[drive] = false;
+    memset(&loci->dsk_bad_map[drive], 0, sizeof(loci->dsk_bad_map[drive]));
     if (loci->dsk_selected == drive) {
         fdc_set_disk(&loci->dsk_fdc, NULL, 0);
+        fdc_set_bad_map(&loci->dsk_fdc, NULL);
     }
 }
 

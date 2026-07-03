@@ -1325,6 +1325,79 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 83: LOCI — errno FatFS + dir fd 64+ (ABI firmware) (v1.44.0-alpha) - DONE
+
+Volet « LOCI » de l'initiative fidélité v2 : dernières divergences vs
+sodiumlb/loci-firmware, vérifiées sur la source re-clonée.
+
+- [x] Erreurs filesystem = API_EFATFS (32+FRESULT) sur host-FS et SDIMG
+      (rôle carte SD/FAT) ; codes 1-18 réservés aux erreurs API
+- [x] LOCI_DIR_OFFSET 32 → 64 (dir.c FD_OFFS_FAT — plage FAT)
+- [x] Note d'audit invalidée : fd FICHIERS firmware = 3-18 (STD_FIL_OFFS=3),
+      déjà conformes ; 0/32/64 ne concernent que les RÉPERTOIRES
+- [x] +1 test ABI (863) + 6 assertions alignées ; suite complète verte
+
+### Sprint 82: VIA 6522 — modes CA2/CB2 complets (v1.43.0-alpha) - DONE
+
+Volet « ORIC physique » de l'initiative fidélité v2 : dernier écart connu
+du 6522 (le S70 avait livré SR/T2-pulse/pins, pas les modes PCR complets).
+
+- [x] Handshake output (100) : CA2 sur accès ORA, CB2 sur écriture ORB
+      SEULEMENT (write handshake) ; restauré par le front actif CA1/CB1
+- [x] Pulse output (101) : un cycle φ2 exact, restauré par via_update()
+- [x] Modes entrée (000-011) : via_set_ca1(), via_set_ca2_input(),
+      via_set_cb2_input() avec détection de fronts (PCR b0/b2/b6)
+- [x] Latching IRA/IRB (ACR bits 0-1) au front actif CA1/CB1
+- [x] Clear IFR « independent » (001/011) vérifié correct + couvert
+- [x] +6 tests test_io (862) ; e2e boot + PRINT 6*7 via clavier OK
+
+### Sprint 81: FDC — timings mécaniques réels du WD1793 (v1.42.0-alpha) - DONE
+
+Volet « lecteur de disquette » de l'initiative fidélité matérielle v2 :
+la mécanique d'un vrai lecteur 3" remplace les délais courts hérités.
+
+- [x] `timing_mode` FAST/REAL + `rot_pos` (300 tr/min, 200 000 cycles/tour)
+- [x] Type I : 6/12/20/30 ms par piste (r1r0), +30 ms si V (verify)
+- [x] Type II/III : premier DRQ à la latence rotationnelle réelle (+30 ms
+      si E) ; multi-secteur au rythme de la rotation ; Write Track à l'index
+- [x] RNF après 5 impulsions d'index (~1 s BUSY) — retentatives sur
+      --bad-sector au rythme du vrai matériel
+- [x] Status Type I vivant : index pulse ~4 ms/tour + TRK0 recalculés
+- [x] Microdisc = REAL par défaut ; LOCI dsk_fdc = FAST (SD servie par le
+      RP2040, sans mécanique — fidélité là aussi) ; `--fdc-timing real|fast`
+- [x] Savestate FDC +5 octets (garde de taille, anciens .ost acceptés)
+- [x] +2 tests (856) ; e2e : SEDORIC V4.0 et Manic Miner bootent en REAL
+
+### Sprint 80: Bad sector map — le dommage suit le média (v1.41.0-alpha) - DONE
+
+Lève les trois limitations du sprint 79 : la map était portée par le FDC,
+donc par le lecteur ; sur le vrai matériel le dommage appartient au média.
+
+- [x] `fdc_bad_map_t` ; `fdc_t.bad` = map du média sous la tête ;
+      `fdc_set_bad_map()` appliquée au select de lecteur
+- [x] Microdisc : `bad_map[4]` per-drive, effacée à l'insertion d'une
+      nouvelle disquette (hot-swap OSD/IPC/WASM), conservée si même image
+- [x] LOCI : `dsk_fdc` couvert — `dsk_bad_map[4]` + `dsk_bad_cli[4]`
+      (injections CLI semées à chaque `op_mount`)
+- [x] Savestate : section `BAD` per-drive rétro-compatible
+- [x] CLI : `--bad-sector [D:]S:T:N` (lecteur A-D), routé Microdisc et/ou
+      LOCI, appliqué après le chargement des disques
+- [x] +3 tests (854) : storage (media follows), savestate (roundtrip BAD),
+      loci (semis au mount)
+
+### Sprint 79: Bad sector map — injection de secteurs illisibles (v1.40.0-alpha) - DONE
+
+Demandé par les tests de robustesse SCUMM-Oric (sputm S517) : le modèle
+d'image plate « soignait » silencieusement un ID field MFM corrompu.
+
+- [x] `fdc_t.bad_sectors[16]` + `fdc_add_bad_sector()` ; `fdc_find_sector()`
+      renvoie NULL pour un secteur marqué → `FDC_ST_NOT_FOUND` + INTRQ sans
+      DRQ (chemin RNF existant, comme un vrai WD1793 sur secteur abîmé)
+- [x] Option CLI `--bad-sector S:T:N` (répétable, 16 max), appliquée à
+      l'init du Microdisc ; format invalide = erreur fatale
+- [x] +1 test `test_storage` (RNF sur le secteur marqué, voisin lisible,
+      même id sur une autre piste intact, map pleine). 851 tests.
+
 ### Sprint 78b: WASM — fast-load du hot-insert + média par URL (v1.39.0-alpha) - DONE
 
 Finitions du Sprint 78 après un test réel (jeu poker dans le navigateur).
@@ -2577,6 +2650,6 @@ activées par défaut, clairement signalées dans l'aide CLI.
 
 ---
 
-**Last Updated**: 2026-06-29
-**Current Version**: 1.32.0-alpha
+**Last Updated**: 2026-07-03
+**Current Version**: 1.44.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

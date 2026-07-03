@@ -36,6 +36,25 @@
 #define FDC_ST_WRITE_PROT 0x40
 #define FDC_ST_NOT_READY 0x80
 
+/* Timing profile.
+ * FAST = legacy short delays (Oricutron-style). Kept for the LOCI dsk_fdc:
+ *        on real hardware the LOCI's "drive" is the RP2040 serving sectors
+ *        from SD, with no mechanics — near-instant seeks are the faithful
+ *        behaviour there.
+ * REAL = mechanical 3" drive on a 1 MHz WD1793 (Microdisc): step rates
+ *        6/12/20/30 ms per track, 300 RPM rotation (200 ms/rev), first DRQ
+ *        after the requested sector actually passes under the head, Record
+ *        Not Found only after 5 index pulses (~1 s), 30 ms head settling
+ *        when the command's E/V flag asks for it, and a live index pulse
+ *        in the Type I status. */
+#define FDC_TIMING_FAST 0
+#define FDC_TIMING_REAL 1
+
+#define FDC_REV_CYCLES         200000u  /* one revolution at 300 RPM, 1 MHz */
+#define FDC_INDEX_PULSE_CYCLES 4000u    /* index pulse width (~4 ms) */
+#define FDC_SETTLE_CYCLES      30000    /* E/V flag: 30 ms at 1 MHz clock */
+#define FDC_RNF_CYCLES         (5 * (int)FDC_REV_CYCLES) /* 5 index pulses */
+
 /* Current operation */
 typedef enum {
     FDC_OP_NONE = 0,
@@ -50,6 +69,17 @@ typedef enum {
 
 /* Callback types for DRQ/INTRQ notification */
 typedef void (*fdc_signal_cb)(void* userdata);
+
+/* Bad sector map: unreadable sectors of ONE media (one floppy).
+ * Lives with the media image at the controller layer; the FDC holds a
+ * copy for the media currently under the head. */
+#define FDC_MAX_BAD_SECTORS 16
+typedef struct {
+    struct {
+        uint8_t side, track, sector;
+    } entry[FDC_MAX_BAD_SECTORS];
+    uint8_t count;
+} fdc_bad_map_t;
 
 typedef struct fdc_s {
     uint8_t status;
@@ -101,6 +131,12 @@ typedef struct fdc_s {
     int di_status;             /* Status to set when delayed_int fires (-1 = keep) */
     int dd_status;             /* Status to set when delayed_drq fires (-1 = keep) */
 
+    /* Mechanical timing model (FDC_TIMING_REAL) */
+    uint8_t  timing_mode;      /* FDC_TIMING_FAST (default) or FDC_TIMING_REAL */
+    uint32_t rot_pos;          /* disk angle in cycles, 0..FDC_REV_CYCLES-1 */
+    bool     status_type1;     /* status register shows Type I bits (live
+                                  index pulse / TRK0 patched on read) */
+
     /* Signal callbacks */
     fdc_signal_cb set_drq;
     fdc_signal_cb clr_drq;
@@ -108,11 +144,29 @@ typedef struct fdc_s {
     fdc_signal_cb set_intrq;
     fdc_signal_cb clr_intrq;
     void* intrq_userdata;
+
+    /* Bad sector map of the media currently under the head (fault injection
+     * for robustness testing). Sectors listed here become invisible to
+     * fdc_find_sector -> the command layer reports Record Not Found
+     * (FDC_ST_NOT_FOUND), like a physically damaged disk. Matches real
+     * WD1793 behaviour on unreadable sectors; the flat-image model
+     * otherwise cannot express it (a corrupted MFM ID field is silently
+     * healed at load time). Damage belongs to the MEDIA, not the drive:
+     * the controller layers (Microdisc, LOCI) keep one map per drive slot
+     * and swap it in through fdc_set_bad_map() on drive select / insert. */
+    fdc_bad_map_t bad;
 } fdc_t;
 
 void fdc_init(fdc_t* fdc);
 void fdc_reset(fdc_t* fdc);
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size);
+/* Mark side/track/sector (sector is 1-based) as unreadable in MAP.
+ * Returns 0 on success, -1 if the map is full. */
+int fdc_bad_map_add(fdc_bad_map_t* map, uint8_t side, uint8_t track, uint8_t sector);
+/* Same, directly on the media currently loaded in the FDC. */
+int fdc_add_bad_sector(fdc_t* fdc, uint8_t side, uint8_t track, uint8_t sector);
+/* Load MAP as the current media's bad sector map (copied; NULL = pristine). */
+void fdc_set_bad_map(fdc_t* fdc, const fdc_bad_map_t* map);
 uint8_t fdc_read(fdc_t* fdc, uint8_t reg);
 void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value);
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles);

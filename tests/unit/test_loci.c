@@ -318,7 +318,7 @@ TEST(test_op_open_missing_returns_enoent) {
     loci_write(&l, 0x03AF, LOCI_OP_OPEN);
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
-    ASSERT_EQ(e, LOCI_ENOENT);
+    ASSERT_EQ(e, LOCI_EFATFS(LOCI_FR_NO_FILE));   /* firmware: 32+FR_NO_FILE */
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
 }
 
@@ -738,7 +738,7 @@ TEST(test_mount_missing_file_enoent) {
     loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
-    ASSERT_EQ(e, LOCI_ENOENT);
+    ASSERT_EQ(e, LOCI_EFATFS(LOCI_FR_NO_FILE));   /* firmware: 32+FR_NO_FILE */
     ASSERT_TRUE(!l.mnt_mounted[0]);
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
 }
@@ -920,7 +920,7 @@ TEST(test_opendir_missing_enoent) {
     loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);
     uint16_t e = l.regs[LOCI_REG_API_ERRNO_LO] |
                  ((uint16_t)l.regs[LOCI_REG_API_ERRNO_HI] << 8);
-    ASSERT_EQ(e, LOCI_ENOENT);
+    ASSERT_EQ(e, LOCI_EFATFS(LOCI_FR_NO_PATH));   /* firmware: 32+FR_NO_PATH */
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
 }
 
@@ -1136,7 +1136,7 @@ TEST(test_op_unlink_missing_enoent) {
     loci_set_flash_root(&l, tmpdir);
     push_path(&l, "does_not_exist.bin");
     loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
-    ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
+    ASSERT_EQ(errno_lo(&l), LOCI_EFATFS(LOCI_FR_NO_FILE));   /* f_unlink → 32+FR_NO_FILE */
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
 }
 
@@ -1155,7 +1155,7 @@ TEST(test_unlink_nonempty_directory_returns_eacces) {
     loci_set_flash_root(&l, tmpdir);
     push_path(&l, "full_sub");
     loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
-    ASSERT_EQ(errno_lo(&l), LOCI_EACCES);
+    ASSERT_EQ(errno_lo(&l), LOCI_EFATFS(LOCI_FR_DENIED));    /* f_unlink non-vide → 32+FR_DENIED */
     ASSERT_TRUE(access(subdir, F_OK) == 0);
 
     unlink(inner_path); rmdir(subdir); rmdir(tmpdir);
@@ -1172,7 +1172,7 @@ TEST(test_op_rename_missing_enoent) {
     push_path(&l, "old_missing.bin");
     push_path(&l, "newname.bin");
     loci_write(&l, 0x03AF, LOCI_OP_RENAME);
-    ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
+    ASSERT_EQ(errno_lo(&l), LOCI_EFATFS(LOCI_FR_NO_FILE));   /* f_rename → 32+FR_NO_FILE */
     rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
 }
 
@@ -1777,6 +1777,51 @@ TEST(test_dsk_umount_closes) {
     l.regs[LOCI_REG_API_A] = 2;
     loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
     ASSERT_TRUE(l.dsk_fp[2] == NULL);
+    unlink(dsk_path); rmdir(tmpdir);
+    loci_cleanup(&l); free(dsk_path); free(tmpdir);
+}
+
+/* Conformance pin: firmware dir.c FD_OFFS_FAT=64 (dir descriptors on the
+ * SD/FAT backend) and api.h API_EFATFS = 32+FRESULT for filesystem errors.
+ * cc65 apps compiled against the real firmware see these exact values. */
+TEST(test_firmware_abi_dir_fd_and_efatfs) {
+    ASSERT_EQ(LOCI_DIR_OFFSET, 64);
+    ASSERT_EQ(LOCI_EFATFS(LOCI_FR_NO_FILE), 36);
+    char* tmpdir = make_tmpdir();
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    push_path(&l, ".");                      /* open the root dir */
+    loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);
+    uint16_t dfd = l.regs[LOCI_REG_API_A];
+    ASSERT_TRUE(dfd >= 64 && dfd < 64 + LOCI_DIR_MAX);   /* FAT range */
+    l.regs[LOCI_REG_API_A] = (uint8_t)dfd;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSEDIR);
+    rmdir(tmpdir); loci_cleanup(&l); free(tmpdir);
+}
+
+TEST(test_dsk_bad_sector_seeded_at_mount) {
+    char* tmpdir = make_tmpdir();
+    char* dsk_path = make_blob(tmpdir, "dmg.dsk", 256);
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    /* CLI injection happens before any mount: seeds the drive-0 CLI map */
+    ASSERT_EQ(loci_add_bad_sector(&l, 0, 0, 4, 2), 0);
+    ASSERT_EQ(l.dsk_bad_cli[0].count, 1);
+    /* Mounting media in drive 0 carries the injected damage */
+    push_path(&l, "dmg.dsk");
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_MOUNT);
+    ASSERT_EQ(l.dsk_bad_map[0].count, 1);
+    ASSERT_EQ(l.dsk_bad_map[0].entry[0].track, 4);
+    ASSERT_EQ(l.dsk_fdc.bad.count, 1);       /* drive 0 selected by default */
+    /* Umount: no media, live map cleared, CLI map kept for the next mount */
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_UMOUNT);
+    ASSERT_EQ(l.dsk_bad_map[0].count, 0);
+    ASSERT_EQ(l.dsk_fdc.bad.count, 0);
+    ASSERT_EQ(l.dsk_bad_cli[0].count, 1);
     unlink(dsk_path); rmdir(tmpdir);
     loci_cleanup(&l); free(dsk_path); free(tmpdir);
 }
@@ -3088,6 +3133,8 @@ int main(void) {
     RUN(test_tap_io_cmd_rewind_resets_counter);
     RUN(test_dsk_mount_opens_drive_image);
     RUN(test_dsk_umount_closes);
+    RUN(test_dsk_bad_sector_seeded_at_mount);
+    RUN(test_firmware_abi_dir_fd_and_efatfs);
     RUN(test_dsk_cmd_reports_not_ready_for_empty_drive);
     RUN(test_dsk_cmd_ready_for_mounted_drive);
     RUN(test_dsk_ctrl_select_drive_via_bits_5_6);

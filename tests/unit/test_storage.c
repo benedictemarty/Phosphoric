@@ -14,6 +14,7 @@
 
 #include "storage/sedoric.h"
 #include "storage/disk.h"
+#include "io/microdisc.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -200,6 +201,153 @@ TEST(test_fdc_seek) {
     fdc_ticktock(&fdc, 25);
     ASSERT_TRUE(test_intrq_set);
     free(disk_data);
+}
+
+TEST(test_fdc_bad_sector_map) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    ASSERT_EQ(fdc.bad.count, 0);          /* fdc_init clears the map */
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    disk_data[(5 - 1) * 256] = 0xCC;      /* track 0 sector 5 first byte */
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    /* Inject: side 0, track 0, sector 5 unreadable */
+    ASSERT_EQ(fdc_add_bad_sector(&fdc, 0, 0, 5), 0);
+    ASSERT_EQ(fdc.bad.count, 1);
+
+    /* Reading the bad sector -> Record Not Found, INTRQ, no DRQ */
+    fdc.c_track = 0;
+    fdc.track = 0;
+    fdc.sector = 5;
+    fdc_write(&fdc, 0, 0x80); /* Read sector */
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
+    ASSERT_TRUE(fdc.status & FDC_ST_NOT_FOUND);
+    ASSERT_TRUE(test_intrq_set);
+    ASSERT_FALSE(test_drq_set);
+
+    /* The neighbouring sector still reads fine */
+    test_intrq_set = false;
+    fdc.sector = 4;
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_EQ(fdc.currentop, FDC_OP_READ_SECTOR);
+    fdc_ticktock(&fdc, 65);
+    ASSERT_TRUE(test_drq_set);
+
+    /* Same sector id on ANOTHER track is untouched */
+    fdc.currentop = FDC_OP_NONE;
+    fdc.c_track = 1;
+    fdc.sector = 5;
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_EQ(fdc.currentop, FDC_OP_READ_SECTOR);
+
+    /* Map full -> -1 */
+    fdc.bad.count = FDC_MAX_BAD_SECTORS;
+    ASSERT_EQ(fdc_add_bad_sector(&fdc, 0, 0, 6), -1);
+
+    free(disk_data);
+}
+
+TEST(test_fdc_real_timing_seek_and_rotation) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    fdc.timing_mode = FDC_TIMING_REAL;
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    /* Seek 10 tracks at 6 ms/step (r1r0=00): INTRQ only after ~60 ms */
+    fdc.data = 10;
+    fdc_write(&fdc, 0, 0x10);              /* Seek */
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    fdc_ticktock(&fdc, 59000);
+    ASSERT_FALSE(test_intrq_set);          /* head still moving */
+    fdc_ticktock(&fdc, 2000);
+    ASSERT_TRUE(test_intrq_set);
+    ASSERT_EQ(fdc.c_track, 10);
+
+    /* Type I status shows the LIVE index pulse: one ~4 ms window per rev */
+    uint8_t st = fdc_read(&fdc, 0);
+    ASSERT_FALSE(st & FDC_STI_PULSE);      /* rot ~61 ms: outside the pulse */
+    fdc_ticktock(&fdc, 200000 - 61000 + 500);   /* come back past the index */
+    st = fdc_read(&fdc, 0);
+    ASSERT_TRUE(st & FDC_STI_PULSE);
+    ASSERT_FALSE(st & FDC_STI_TRK0);       /* live TRK0: we are on track 10 */
+
+    /* Read sector: first DRQ arrives with the rotation, not instantly */
+    fdc.rot_pos = 0;                       /* head right at the index */
+    fdc.sector = 1;                        /* sector 1 data ≈ 1.5 ms away */
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    fdc_ticktock(&fdc, 1000);
+    ASSERT_FALSE(test_drq_set);            /* sector not under the head yet */
+    fdc_ticktock(&fdc, 600);
+    ASSERT_TRUE(test_drq_set);
+
+    free(disk_data);
+}
+
+TEST(test_fdc_real_timing_rnf_after_5_revs) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    fdc.timing_mode = FDC_TIMING_REAL;
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+
+    /* Ask for a sector that does not exist: the real WD1793 keeps scanning
+     * ID fields and reports RNF only after 5 index pulses (~1 s) */
+    fdc.sector = 200;
+    fdc_write(&fdc, 0, 0x80);
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    ASSERT_FALSE(test_intrq_set);
+    fdc_ticktock(&fdc, 999000);
+    ASSERT_FALSE(test_intrq_set);          /* still scanning */
+    ASSERT_TRUE(fdc.status & FDC_ST_BUSY);
+    fdc_ticktock(&fdc, 2000);
+    ASSERT_TRUE(test_intrq_set);
+    ASSERT_TRUE(fdc.status & FDC_ST_NOT_FOUND);
+    ASSERT_FALSE(fdc.status & FDC_ST_BUSY);
+    ASSERT_FALSE(test_drq_set);
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
+
+    free(disk_data);
+}
+
+TEST(test_microdisc_bad_sector_follows_media) {
+    microdisc_t md;
+    microdisc_init(&md);
+    uint8_t* disk_a = calloc(80 * 17 * 256, 1);
+    uint8_t* disk_b = calloc(80 * 17 * 256, 1);
+    microdisc_set_disk(&md, 0, disk_a, 80 * 17 * 256, 80, 17);
+    microdisc_set_disk(&md, 1, disk_b, 80 * 17 * 256, 80, 17);
+
+    /* Damage sector 5 of the media in drive A: FDC map armed (A selected) */
+    ASSERT_EQ(microdisc_add_bad_sector(&md, 0, 0, 0, 5), 0);
+    ASSERT_EQ(md.bad_map[0].count, 1);
+    ASSERT_EQ(md.fdc.bad.count, 1);
+
+    /* Select drive B: its media is pristine, the FDC map follows */
+    microdisc_write(&md, 0x0314, (uint8_t)(1 << 5));  /* drive select = B */
+    ASSERT_EQ(md.drive, 1);
+    ASSERT_EQ(md.fdc.bad.count, 0);
+
+    /* Back to drive A: the damage is still on that floppy */
+    microdisc_write(&md, 0x0314, 0);
+    ASSERT_EQ(md.fdc.bad.count, 1);
+
+    /* Hot-swap a NEW disk into drive A: new media, pristine surface */
+    uint8_t* disk_c = calloc(80 * 17 * 256, 1);
+    microdisc_set_disk(&md, 0, disk_c, 80 * 17 * 256, 80, 17);
+    ASSERT_EQ(md.bad_map[0].count, 0);
+    ASSERT_EQ(md.fdc.bad.count, 0);
+
+    /* Re-pointing the SAME image (savestate restore path) keeps the map */
+    ASSERT_EQ(microdisc_add_bad_sector(&md, 0, 0, 3, 7), 0);
+    microdisc_set_disk(&md, 0, disk_c, 80 * 17 * 256, 80, 17);
+    ASSERT_EQ(md.bad_map[0].count, 1);
+    ASSERT_EQ(md.fdc.bad.count, 1);
+
+    free(disk_a);
+    free(disk_b);
+    free(disk_c);
 }
 
 TEST(test_fdc_read_sector) {
@@ -463,6 +611,10 @@ int main(void) {
     RUN(test_fdc_reset);
     RUN(test_fdc_restore);
     RUN(test_fdc_seek);
+    RUN(test_fdc_bad_sector_map);
+    RUN(test_fdc_real_timing_seek_and_rotation);
+    RUN(test_fdc_real_timing_rnf_after_5_revs);
+    RUN(test_microdisc_bad_sector_follows_media);
     RUN(test_fdc_read_sector);
     RUN(test_fdc_write_sector);
     RUN(test_fdc_write_track);

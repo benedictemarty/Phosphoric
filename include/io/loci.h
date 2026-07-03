@@ -106,6 +106,25 @@ typedef enum {
 #define LOCI_ENOEXEC 17
 #define LOCI_EUNKNOWN 18
 
+/* Filesystem errors: the firmware forwards FatFS FRESULT codes offset by
+ * 32 (api.h API_EFATFS) for every error coming from the SD/FAT layer —
+ * the codes 1-18 above are only used for API-level validation (bad fd,
+ * slots full, no device...). The emulator's host-FS and SDIMG backends
+ * both play the SD/FAT role, so their I/O errors use this encoding too.
+ * (LittleFS errors are 128-lfs_err; internal flash is not emulated.) */
+#define LOCI_EFATFS(fresult) ((uint16_t)(32 + (fresult)))
+#define LOCI_FR_DISK_ERR            1   /* FatFS FR_DISK_ERR */
+#define LOCI_FR_INT_ERR             2   /* FatFS FR_INT_ERR */
+#define LOCI_FR_NO_FILE             4   /* FatFS FR_NO_FILE */
+#define LOCI_FR_NO_PATH             5   /* FatFS FR_NO_PATH */
+#define LOCI_FR_INVALID_NAME        6   /* FatFS FR_INVALID_NAME */
+#define LOCI_FR_DENIED              7   /* FatFS FR_DENIED */
+#define LOCI_FR_EXIST               8   /* FatFS FR_EXIST */
+#define LOCI_FR_WRITE_PROTECTED     10  /* FatFS FR_WRITE_PROTECTED */
+#define LOCI_FR_LOCKED              16  /* FatFS FR_LOCKED */
+#define LOCI_FR_NOT_ENOUGH_CORE    17  /* FatFS FR_NOT_ENOUGH_CORE */
+#define LOCI_FR_TOO_MANY_OPEN_FILES 18  /* FatFS FR_TOO_MANY_OPEN_FILES */
+
 #define LOCI_XSTACK_SIZE 512   /* matches firmware XSTACK_SIZE 0x200 (mem.h) */
 
 /* open() flags — matching firmware constants (std.c). */
@@ -128,7 +147,9 @@ typedef enum {
 
 /* Dir handles (POSIX DIR*) — separate fd space from file fds. */
 #define LOCI_DIR_MAX     8
-#define LOCI_DIR_OFFSET  32   /* matches firmware FD_OFFS_LFS */
+#define LOCI_DIR_OFFSET  64   /* firmware FD_OFFS_FAT (dir.c): our host-FS and
+                                 SDIMG backends play the SD/FAT role. (LFS
+                                 dirs are 32+, dev dir is 0 — not emulated.) */
 
 /* dirent struct laid out on xstack by readdir (must match firmware exactly).
  * sizeof = 2 + 64 + 1 + 1 + 4 = 72 bytes. */
@@ -326,6 +347,12 @@ typedef struct loci_s {
      * with a warning logged at mount-time. */
     bool     dsk_is_mfm[4];          /* true = sedoric_load MFM→flat path */
     char     dsk_host_path[4][256];  /* host path used for write-back */
+    /* Per-drive bad sector maps (fault injection). dsk_bad_map = damage of
+     * the media currently mounted; dsk_bad_cli = CLI-injected damage seeded
+     * into every media mounted in that drive (mounts happen at runtime via
+     * op_mount, after the CLI has been parsed). */
+    fdc_bad_map_t dsk_bad_map[4];
+    fdc_bad_map_t dsk_bad_cli[4];
     /* Sprint 34aw+ : INTRQ tracking pour matche le format Microdisc
      * (read $0314 = intrq | $7F, comme microdisc_read). */
     uint8_t  dsk_intrq;        /* 0x00 = asserted, 0x80 = clear */
@@ -540,6 +567,12 @@ void    loci_cons_inject(loci_t* loci, uint8_t ch);
 /* DSK register access — stub WD1793 (Sprint 34ae). */
 uint8_t loci_dsk_read(loci_t* loci, uint16_t address);
 void    loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value);
+
+/* Mark a sector of DRIVE's media as unreadable (fault injection). Also
+ * seeds the CLI map so media mounted later in DRIVE carry the damage.
+ * Returns 0 on success, -1 on bad drive or full map. */
+int     loci_add_bad_sector(loci_t* loci, uint8_t drive,
+                            uint8_t side, uint8_t track, uint8_t sector);
 
 /* Run the pending API op (called by the main loop after every CPU step
  * when LOCI is enabled). For Sprint 34y all ops return ENOSYS synchronously,

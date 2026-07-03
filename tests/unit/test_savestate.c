@@ -452,6 +452,41 @@ TEST(test_save_load_with_microdisc) {
     cleanup_test();
 }
 
+/* The BAD section must round-trip the per-drive media bad-sector maps and
+ * re-arm the FDC's copy for the selected drive. */
+TEST(test_save_load_bad_sectors) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+
+    emu1.has_microdisc = true;
+    microdisc_init(&emu1.microdisc);
+    ASSERT_EQ(microdisc_add_bad_sector(&emu1.microdisc, 0, 0, 0, 5), 0);
+    ASSERT_EQ(microdisc_add_bad_sector(&emu1.microdisc, 0, 1, 12, 9), 0);
+    ASSERT_EQ(microdisc_add_bad_sector(&emu1.microdisc, 2, 0, 3, 1), 0);
+
+    emu2.has_microdisc = true;
+    microdisc_init(&emu2.microdisc);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    ASSERT_EQ(emu2.microdisc.bad_map[0].count, 2);
+    ASSERT_EQ(emu2.microdisc.bad_map[0].entry[0].sector, 5);
+    ASSERT_EQ(emu2.microdisc.bad_map[0].entry[1].side, 1);
+    ASSERT_EQ(emu2.microdisc.bad_map[0].entry[1].track, 12);
+    ASSERT_EQ(emu2.microdisc.bad_map[0].entry[1].sector, 9);
+    ASSERT_EQ(emu2.microdisc.bad_map[1].count, 0);
+    ASSERT_EQ(emu2.microdisc.bad_map[2].count, 1);
+    ASSERT_EQ(emu2.microdisc.bad_map[2].entry[0].track, 3);
+    /* Drive 0 is selected: the FDC carries drive 0's media map */
+    ASSERT_EQ(emu2.microdisc.fdc.bad.count, 2);
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
 /* The DSK section must round-trip the disk image, so a sector the guest wrote
  * this session (an in-game save) survives save-state → load-state. */
 TEST(test_save_load_disk_image) {
@@ -599,6 +634,7 @@ int main(void) {
     RUN(test_save_file_header);
     RUN(test_load_invalid_file);
     RUN(test_save_load_with_microdisc);
+    RUN(test_save_load_bad_sectors);
     RUN(test_save_load_disk_image);
     RUN(test_save_load_ula_profile);
     RUN(test_save_load_ocula_banks);

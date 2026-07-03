@@ -44,6 +44,8 @@ void fdc_init(fdc_t* fdc) {
 
 void fdc_reset(fdc_t* fdc) {
     fdc->status = 0;
+    fdc->status_type1 = false;
+    /* rot_pos is NOT reset: the platter keeps spinning across a reset */
     fdc->track = 0;
     fdc->sector = 1;
     fdc->c_track = 0;
@@ -65,6 +67,24 @@ void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size) {
     fdc->disk_size = size;
 }
 
+int fdc_bad_map_add(fdc_bad_map_t* map, uint8_t side, uint8_t track, uint8_t sector) {
+    if (map->count >= FDC_MAX_BAD_SECTORS) return -1;
+    map->entry[map->count].side = side;
+    map->entry[map->count].track = track;
+    map->entry[map->count].sector = sector;
+    map->count++;
+    return 0;
+}
+
+int fdc_add_bad_sector(fdc_t* fdc, uint8_t side, uint8_t track, uint8_t sector) {
+    return fdc_bad_map_add(&fdc->bad, side, track, sector);
+}
+
+void fdc_set_bad_map(fdc_t* fdc, const fdc_bad_map_t* map) {
+    if (map) fdc->bad = *map;
+    else memset(&fdc->bad, 0, sizeof(fdc->bad));
+}
+
 /**
  * Get pointer to sector data within flat disk image.
  * Layout: side * (tracks * spt) + track * spt + (sector_id - 1)
@@ -73,6 +93,13 @@ static uint8_t* fdc_find_sector(fdc_t* fdc, uint8_t sec_id) {
     if (!fdc->disk_data) return NULL;
     if (fdc->c_track >= fdc->tracks || sec_id == 0 || sec_id > fdc->sectors_per_track)
         return NULL;
+    /* Bad sector map: injected faults read as Record Not Found */
+    for (uint8_t i = 0; i < fdc->bad.count; i++) {
+        if (fdc->bad.entry[i].side == fdc->side &&
+            fdc->bad.entry[i].track == fdc->c_track &&
+            fdc->bad.entry[i].sector == sec_id)
+            return NULL;
+    }
     uint32_t offset = ((uint32_t)fdc->side * fdc->tracks * fdc->sectors_per_track +
                         (uint32_t)fdc->c_track * fdc->sectors_per_track +
                         (uint32_t)(sec_id - 1)) * 256;
@@ -80,11 +107,26 @@ static uint8_t* fdc_find_sector(fdc_t* fdc, uint8_t sec_id) {
     return &fdc->disk_data[offset];
 }
 
+/* Step rates of the WD1793 at 1 MHz clock, per command bits r1r0 (ms). */
+static const uint16_t fdc_step_rate_ms[4] = {6, 12, 20, 30};
+
+/* Cycles until SEC_ID's data field passes under the head (REAL model).
+ * The track is modelled as sectors_per_track even angular slices, data
+ * field sitting one eighth of a slice after the sector's ID field. */
+static int fdc_rot_wait(fdc_t* fdc, uint8_t sec_id) {
+    uint32_t spt = fdc->sectors_per_track ? fdc->sectors_per_track : 17;
+    uint32_t slice = FDC_REV_CYCLES / spt;
+    uint32_t target = ((uint32_t)(sec_id - 1) * slice + slice / 8) % FDC_REV_CYCLES;
+    uint32_t wait = (target + FDC_REV_CYCLES - fdc->rot_pos) % FDC_REV_CYCLES;
+    return (wait < 2) ? 2 : (int)wait;
+}
+
 /**
  * Seek to specified track (Type I commands).
- * Sets delayed INTRQ and proper status bits.
+ * Sets delayed INTRQ and proper status bits. CMD carries the command byte
+ * (r1r0 step rate + V verify flag) for the REAL timing model.
  */
-static void fdc_seek_track(fdc_t* fdc, uint8_t target) {
+static void fdc_seek_track(fdc_t* fdc, uint8_t target, uint8_t cmd) {
     if (fdc_trace_enabled()) {
         fprintf(stderr, "[FDC] seek target=%u (c_track=%u track_reg=%u data=%02X)\n",
                 target, fdc->c_track, fdc->track, fdc->data);
@@ -96,11 +138,21 @@ static void fdc_seek_track(fdc_t* fdc, uint8_t target) {
         } else {
             fdc->di_status = FDC_STI_HEADL | FDC_STI_PULSE;
         }
+        if (fdc->timing_mode == FDC_TIMING_REAL) {
+            /* Head movement: one step-rate delay per track crossed (at
+             * least one), plus 30 ms settling when V asks for a verify. */
+            int steps = (target > fdc->c_track) ? target - fdc->c_track
+                                                : fdc->c_track - target;
+            if (steps == 0) steps = 1;
+            fdc->delayed_int = steps * (int)fdc_step_rate_ms[cmd & 3] * 1000;
+            if (cmd & 0x04) fdc->delayed_int += FDC_SETTLE_CYCLES;
+        } else {
+            /* FAST: INTRQ after 20 cycles (LOCI SD-served media) */
+            fdc->delayed_int = 20;
+        }
         fdc->c_track = target;
         fdc->c_sector = 0;
         fdc->track = target;
-        /* INTRQ fires after 20 cycles (much faster than real hardware) */
-        fdc->delayed_int = 20;
         if (fdc->c_track == 0) fdc->di_status |= FDC_STI_TRK0;
     } else {
         /* No disk: immediate INTRQ with error */
@@ -110,11 +162,30 @@ static void fdc_seek_track(fdc_t* fdc, uint8_t target) {
     }
 }
 
+/* Sector not found (bad geometry or bad-sector map). On a real WD1793 the
+ * controller keeps scanning ID fields and only gives up after 5 index
+ * pulses (~1 s): stay BUSY and post RNF+INTRQ then. FAST reports at once. */
+static void fdc_record_not_found(fdc_t* fdc) {
+    fdc->clr_drq(fdc->drq_userdata);
+    fdc->currentop = FDC_OP_NONE;
+    if (fdc->timing_mode == FDC_TIMING_REAL) {
+        fdc->status = FDC_ST_BUSY;
+        fdc->di_status = FDC_ST_NOT_FOUND;
+        fdc->delayed_int = FDC_RNF_CYCLES;
+    } else {
+        fdc->status = FDC_ST_NOT_FOUND;
+        fdc->set_intrq(fdc->intrq_userdata);
+    }
+}
+
 /**
  * Process FDC timer ticks. Must be called with CPU cycle count
  * after each instruction to handle delayed DRQ/INTRQ.
  */
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
+    /* The disk spins whether the controller is busy or not (300 RPM) */
+    fdc->rot_pos = (fdc->rot_pos + cycles) % FDC_REV_CYCLES;
+
     /* Delayed INTRQ */
     if (fdc->delayed_int > 0) {
         fdc->delayed_int -= cycles;
@@ -148,6 +219,17 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
     case FDC_STATUS:
         /* Reading status clears INTRQ */
         fdc->clr_intrq(fdc->intrq_userdata);
+        /* REAL model: Type I status carries the LIVE index pulse (one per
+         * revolution) and track-0 state, not a frozen snapshot. */
+        if (fdc->timing_mode == FDC_TIMING_REAL && fdc->status_type1 &&
+            !(fdc->status & FDC_ST_BUSY)) {
+            uint8_t st = fdc->status & (uint8_t)~(FDC_STI_PULSE | FDC_STI_TRK0);
+            if (fdc->disk_data && fdc->rot_pos < FDC_INDEX_PULSE_CYCLES)
+                st |= FDC_STI_PULSE;
+            if (fdc->c_track == 0)
+                st |= FDC_STI_TRK0;
+            return st;
+        }
         return fdc->status;
 
     case FDC_TRACK:
@@ -196,7 +278,8 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                         fdc->clr_drq(fdc->drq_userdata);
                         break;
                     }
-                    fdc->delayed_drq = 180;
+                    fdc->delayed_drq = (fdc->timing_mode == FDC_TIMING_REAL)
+                                     ? fdc_rot_wait(fdc, fdc->sector) : 180;
                 } else {
                     /* Single sector done */
                     fdc->delayed_int = 32;
@@ -253,45 +336,50 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
         switch (value & 0xE0) {
         case 0x00: /* Restore or Seek */
             fdc->status = FDC_ST_BUSY;
+            fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             if ((value & 0x10) == 0x00) {
                 /* Restore (Type I) */
-                fdc_seek_track(fdc, 0);
+                fdc_seek_track(fdc, 0, value);
             } else {
                 /* Seek (Type I) */
-                fdc_seek_track(fdc, fdc->data);
+                fdc_seek_track(fdc, fdc->data, value);
             }
             fdc->currentop = FDC_OP_NONE;
             break;
 
         case 0x20: /* Step (Type I) */
             fdc->status = FDC_ST_BUSY;
+            fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             if (fdc->direction == 0)
-                fdc_seek_track(fdc, fdc->c_track + 1);
+                fdc_seek_track(fdc, fdc->c_track + 1, value);
             else
-                fdc_seek_track(fdc, fdc->c_track > 0 ? fdc->c_track - 1 : 0);
+                fdc_seek_track(fdc, fdc->c_track > 0 ? fdc->c_track - 1 : 0, value);
             fdc->currentop = FDC_OP_NONE;
             break;
 
         case 0x40: /* Step-in (Type I) */
             fdc->status = FDC_ST_BUSY;
+            fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             fdc->direction = 0;
-            fdc_seek_track(fdc, fdc->c_track + 1);
+            fdc_seek_track(fdc, fdc->c_track + 1, value);
             fdc->currentop = FDC_OP_NONE;
             break;
 
         case 0x60: /* Step-out (Type I) */
             fdc->status = FDC_ST_BUSY;
+            fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             fdc->direction = 1;
             if (fdc->c_track > 0)
-                fdc_seek_track(fdc, fdc->c_track - 1);
+                fdc_seek_track(fdc, fdc->c_track - 1, value);
             fdc->currentop = FDC_OP_NONE;
             break;
 
         case 0x80: /* Read sector (Type II) */
+            fdc->status_type1 = false;
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (fdc_trace_enabled()) {
@@ -300,53 +388,67 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                         fdc->cur_sector_data ? "ok" : "NOT_FOUND");
             }
             if (!fdc->cur_sector_data) {
-                fdc->status = FDC_ST_NOT_FOUND;
-                fdc->clr_drq(fdc->drq_userdata);
-                fdc->set_intrq(fdc->intrq_userdata);
-                fdc->currentop = FDC_OP_NONE;
+                fdc_record_not_found(fdc);
                 break;
             }
             fdc->cur_sector_len = 256; /* Size code 1 */
             fdc->status = FDC_ST_BUSY | FDC_ST_NOT_READY;
-            fdc->delayed_drq = 60; /* First DRQ after 60 cycles */
+            if (fdc->timing_mode == FDC_TIMING_REAL) {
+                /* First DRQ once the sector actually passes under the head
+                 * (rotational latency), plus 30 ms settling if E is set. */
+                fdc->delayed_drq = fdc_rot_wait(fdc, fdc->sector)
+                                 + ((value & 0x04) ? FDC_SETTLE_CYCLES : 0);
+            } else {
+                fdc->delayed_drq = 60; /* First DRQ after 60 cycles */
+            }
             fdc->currentop = (value & 0x10) ? FDC_OP_READ_SECTORS : FDC_OP_READ_SECTOR;
             break;
 
         case 0xA0: /* Write sector (Type II) */
+            fdc->status_type1 = false;
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (!fdc->cur_sector_data) {
-                fdc->status = FDC_ST_NOT_FOUND;
-                fdc->clr_drq(fdc->drq_userdata);
-                fdc->set_intrq(fdc->intrq_userdata);
-                fdc->currentop = FDC_OP_NONE;
+                fdc_record_not_found(fdc);
                 break;
             }
             fdc->cur_sector_len = 256;
             fdc->status = FDC_ST_BUSY | FDC_ST_NOT_READY;
-            fdc->delayed_drq = 500; /* Write DRQ delay */
+            if (fdc->timing_mode == FDC_TIMING_REAL) {
+                fdc->delayed_drq = fdc_rot_wait(fdc, fdc->sector)
+                                 + ((value & 0x04) ? FDC_SETTLE_CYCLES : 0);
+            } else {
+                fdc->delayed_drq = 500; /* Write DRQ delay */
+            }
             fdc->currentop = (value & 0x10) ? FDC_OP_WRITE_SECTORS : FDC_OP_WRITE_SECTOR;
             break;
 
         case 0xC0: /* Read Address / Force Interrupt */
             if ((value & 0x10) == 0x00) {
                 /* Read Address (Type III) */
+                fdc->status_type1 = false;
                 fdc->cur_offset = 0;
                 /* Use first available sector on current track */
                 fdc->cur_sector_data = fdc_find_sector(fdc, 1);
                 if (!fdc->cur_sector_data) {
-                    fdc->status = FDC_ST_NOT_FOUND;
-                    fdc->clr_drq(fdc->drq_userdata);
-                    fdc->set_intrq(fdc->intrq_userdata);
-                    fdc->currentop = FDC_OP_NONE;
+                    fdc_record_not_found(fdc);
                     break;
                 }
-                fdc->status = FDC_ST_NOT_READY | FDC_ST_BUSY | FDC_ST_DRQ;
-                fdc->set_drq(fdc->drq_userdata);
-                fdc->currentop = FDC_OP_READ_ADDRESS;
+                if (fdc->timing_mode == FDC_TIMING_REAL) {
+                    /* First ID field reaches the head with the rotation */
+                    fdc->status = FDC_ST_NOT_READY | FDC_ST_BUSY;
+                    fdc->delayed_drq = fdc_rot_wait(fdc, 1);
+                    fdc->currentop = FDC_OP_READ_ADDRESS;
+                } else {
+                    fdc->status = FDC_ST_NOT_READY | FDC_ST_BUSY | FDC_ST_DRQ;
+                    fdc->set_drq(fdc->drq_userdata);
+                    fdc->currentop = FDC_OP_READ_ADDRESS;
+                }
             } else {
-                /* Force Interrupt (Type IV) */
+                /* Force Interrupt (Type IV). The WD1793 reloads the status
+                 * register with Type I bits after a Force Interrupt. */
                 fdc->status = 0;
+                fdc->status_type1 = true;
                 fdc->clr_drq(fdc->drq_userdata);
                 fdc->set_intrq(fdc->intrq_userdata);
                 fdc->delayed_int = 0;
@@ -356,6 +458,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             break;
 
         case 0xE0: /* Read Track / Write Track */
+            fdc->status_type1 = false;
             if ((value & 0x10) == 0x00) {
                 /* Read Track (Type III) - not fully implemented */
                 fdc->status = FDC_ST_BUSY | FDC_ST_NOT_READY;
@@ -363,9 +466,11 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->currentop = FDC_OP_READ_TRACK;
             } else {
                 /* Write Track (Type III) - track formatting. The ROM streams a
-                 * raw IBM/MFM track; fdc_write() DATA parses it into sectors. */
+                 * raw IBM/MFM track; fdc_write() DATA parses it into sectors.
+                 * On real hardware formatting starts at the index pulse. */
                 fdc->status = FDC_ST_NOT_READY | FDC_ST_BUSY;
-                fdc->delayed_drq = 500;
+                fdc->delayed_drq = (fdc->timing_mode == FDC_TIMING_REAL)
+                                 ? (int)(FDC_REV_CYCLES - fdc->rot_pos) : 500;
                 fdc->clr_drq(fdc->drq_userdata);
                 fdc->clr_intrq(fdc->intrq_userdata);
                 fdc->delayed_int = 0;
@@ -418,7 +523,8 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                         fdc->clr_drq(fdc->drq_userdata);
                         break;
                     }
-                    fdc->delayed_drq = 180;
+                    fdc->delayed_drq = (fdc->timing_mode == FDC_TIMING_REAL)
+                                     ? fdc_rot_wait(fdc, fdc->sector) : 180;
                 } else {
                     fdc->delayed_int = 32;
                     fdc->di_status = fdc->sec_type;
