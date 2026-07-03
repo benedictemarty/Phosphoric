@@ -2794,14 +2794,37 @@ TEST(test_mia_defaults) {
     ASSERT_TRUE(loci_mia_io_reliable(&l));   /* open window → always reliable */
 }
 
+/* Firmware map.c/cfg.c semantics: A <= 31 sets and the op returns the
+ * CURRENT value in AX; A > 31 is a pure query (value untouched). The
+ * stored value is unmasked — the firmware masks only at the PIO level. */
 TEST(test_mia_tune_tior_stores_value) {
     loci_t l; loci_init(&l); l.enabled = true;
     l.regs[LOCI_REG_API_A] = 15;
     loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOR);
     ASSERT_EQ(l.mia_tior, 15);
-    l.regs[LOCI_REG_API_A] = 0xFF;           /* tiod is 3 bits (0-7) */
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 15);   /* AX = current value */
+    ASSERT_EQ(l.regs[LOCI_REG_API_X], 0);
+    /* Query form: A > 31 must NOT modify the setting */
+    l.regs[LOCI_REG_API_A] = 0xFF;
+    loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOR);
+    ASSERT_EQ(l.mia_tior, 15);               /* unchanged */
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 15);   /* AX = current value */
+    /* tiod: stored unmasked (cfg keeps <= 31; PIO alone applies & 0x07) */
+    l.regs[LOCI_REG_API_A] = 12;
     loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOD);
-    ASSERT_EQ(l.mia_tiod, 0x07);
+    ASSERT_EQ(l.mia_tiod, 12);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 12);
+}
+
+/* ADJ_SCAN leaves xram[$FFF0] holding the configured tior, bit 7 clear
+ * (firmware adj.c ADJ_CLEANUP), not a hardwired zero. */
+TEST(test_adj_scan_reports_current_tior) {
+    loci_t l; loci_init(&l); l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 21;
+    loci_write(&l, 0x03AF, LOCI_OP_MAP_TUNE_TIOR);
+    l.xram[0xFFF0] = 0xFF;
+    loci_write(&l, 0x03AF, LOCI_OP_ADJ_SCAN);
+    ASSERT_EQ(l.xram[0xFFF0], 21);
 }
 
 TEST(test_mia_window_blocks_and_tunes) {
@@ -3195,6 +3218,7 @@ int main(void) {
     RUN(test_op_map_tune_tiod_clears_xstack);
     RUN(test_mia_defaults);
     RUN(test_mia_tune_tior_stores_value);
+    RUN(test_adj_scan_reports_current_tior);
     RUN(test_mia_window_blocks_and_tunes);
     RUN(test_mia_set_window_clamps_and_orders);
     RUN(test_reset_clears_state);
