@@ -40,16 +40,16 @@ make SDL2=1
 ### Core Emulation
 - **MOS 6502 CPU** — Cycle-accurate, 151 official opcodes, 13 addressing modes, BCD, level-triggered IRQ
 - **64KB Memory** — RAM ($0000-$BFFF), ROM ($C000-$FFFF), banking, I/O routing
-- **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, edge-triggered CB1, keyboard matrix
+- **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, keyboard matrix, shift register (8 modes), T2 pulse counting, **complete CA2/CB2 PCR modes** (input edges, independent interrupts, handshake — CB2 write-only like silicon —, 1-cycle pulse, manual) and IRA/IRB input latching (ACR bits 0-1)
 - **ULA Video** — Text mode (40x28) + HIRES (240x200), serial attributes, PAL timing (312 lines x 64 cycles)
 - **AY-3-8910 PSG** — 3 tone channels, noise, 16 envelope shapes, SDL2 audio output
-- **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot
+- **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot. **Real mechanical timing by default** (step rates 6/12/20/30 ms, 300 RPM rotational latency, Record-Not-Found after 5 index pulses, live Type I index pulse; `--fdc-timing fast` restores instant-feel legacy delays). **Bad-sector fault injection** (`--bad-sector [D:]S:T:N`, damage follows the media across drive select/hot-swap, persisted in save states)
 - **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain
 - **ACIA 6551** — Serial controller at $031C-$031F, transports loopback/TCP/PTY/COM/file + protocol backends (modem AT, PicoWiFiModemUSB; `digitelec` deprecated → use `--dtl2000`), V23 mode (Minitel/Digitelec). See the *chips × transports* matrix below
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
 - **Mageco / ORICON MIDI** — MC6850 ACIA driving the MIDI DIN sockets (31250 baud 8-N-1, forum t=2525). Two designs from the thread: the original **Mageco** card at $03FE-$03FF (`--mageco`) and the modern **ORICON** reboot at $031C-$031D + clock generator $031E-$031F, LOCI-compatible (`--oricon`). Capture/replay the raw MIDI stream with `--mageco file:in[:out]`; play a Standard MIDI File **into** the Oric with `--mageco smf:song.mid[:loop]` (timed MIDI IN at the song's tempo); or — in a `MIDI=1` build — `--mageco midi[:TARGET]` opens a live host MIDI port (ALSA "Phosphoric MIDI" on Linux, CoreMIDI on macOS, WinMM on Windows) so the emulated Oric drives FluidSynth/a DAW and a MIDI keyboard plays into the Oric. The byte stream matches a real Oric+Mageco card through a USB-MIDI interface
 - **PicoWiFiModemUSB** — Émulation du modem WiFi de sodiumlb (Pico W, USB CDC ↔ WiFi) exposé par LOCI comme ACIA à $0380. Jeu de commandes AT v0.1.0 complet (`--serial picowifi[:SSID[:PASS]]`). WiFi simulé, connexions de données en TCP réel.
-- **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 35/36 API ops, USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). Boote Sedoric V4 master complet via le firmware LOCI.
+- **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 36/36 API ops (ABI errno FatFS 32+FRESULT, dir fd 64+, xstack 512 conformes firmware), USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). **Bouton Action (F8)** : appui court → snapshot de session + menu LOCI (locirom v0.3.0, version FW et timings patchés dans la ROM comme le vrai firmware), entrée *resume* du menu → retour à la session ; **appui long (≥ 2 s) → diag ROM de Mike Brown** (test108k). **Liste des périphériques** dans le navigateur du menu (« 0: Internal storage », clé USB, picowifi « CDC modem mounted ») et **vraies clés USB du host** servies à l'Oric (`--loci-usb DIR`, auto-détection /media/$USER, chemins volume `N:`). Timing bus MIA réglable (`MAP_TUNE_*`, balayage `ADJ_SCAN` visible en direct). Boote Sedoric V4 master complet via le firmware LOCI. Voir [docs/loci.md](docs/loci.md).
 
 ### ORIC-1 & Atmos Support
 - **ROM auto-detection** — Detects BASIC 1.0 (ORIC-1) or 1.1 (Atmos) from ROM header
@@ -218,6 +218,11 @@ Tape & Disk:
   --disk1/2/3 FILE          Drives B/C/D
   --disk-writeback          Persist in-game disk writes back to the .dsk on exit
                             (opt-in; overwrites in place; only written drives saved)
+  --fdc-timing MODE         Microdisc WD1793 timing: real (default, mechanical 3"
+                            drive) or fast (legacy short delays)
+  --bad-sector [D:]S:T:N    Mark drive D (default A) side S track T sector N
+                            unreadable (Record Not Found), repeatable (16 max);
+                            damage follows the media (cleared on disk swap)
 
 Save States:
   --save-state FILE         Save state on exit
@@ -255,8 +260,11 @@ Debugger:
 
 LOCI peripheral:
   --loci                    Enable LOCI MIA at $03A0-$03BF
-  --loci-flash DIR          Sandbox root for LOCI file ops (implies --loci)
+  --loci-flash DIR          Internal-storage root for LOCI file ops (implies --loci)
   --loci-sdimg PATH         Raw FAT16/32 SD image (implies --loci)
+  --loci-usb DIR|none       Attach DIR as a USB key (repeatable, 4 max); media
+                            mounted in /media/$USER auto-attach — 'none' disables
+  --loci-mia-window LO-HI   Model the reliable MIA tior range (0-31)
 
 Serial (ACIA 6551 at $031C; $0380 under --loci):
   --serial TYPE             loopback | tcp:host:port | pty | modem[:host:port]
@@ -405,7 +413,9 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 | F3 | Cycle display scale (x1→x2→x3→x4) |
 | F4 | Quick load state |
 | F5 | Warm reset |
+| F6 | OSD — hot-swap tape/disk media |
 | F7 | Memory dump (64KB RAM to timestamped .bin file) |
+| F8 | LOCI Action button — short press: session snapshot + LOCI menu; hold ≥ 2 s: diag ROM |
 | F9 | Enter debugger |
 | F10 | Quit |
 | F11 | Fullscreen |

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.2-alpha] - 2026-07-03
+
+### Changed — Documentation : README + nouvelle doc docs/loci.md
+
+Mise à jour de la documentation avec tout le livré des sprints 79-87b :
+
+- **README.md** : puces VIA 6522 (modes CA2/CB2 complets + latching),
+  Microdisc (timing mécanique réel par défaut + injection bad sectors),
+  LOCI (bouton Action, menu, diag ROM, device list, clés USB, ABI) ;
+  options CLI `--fdc-timing`, `--bad-sector`, `--loci-usb`,
+  `--loci-mia-window` ; raccourcis F6 (OSD) et F8 (bouton Action
+  court/long) dans le tableau Key Bindings.
+- **docs/loci.md** (nouveau) : doc de référence LOCI — cartographie
+  mémoire, 36 ops API et ABI conforme firmware (errno FatFS, fd, xstack,
+  MAP_TUNE/ADJ_SCAN), modèle de stockage (flash interne/clés USB/SD),
+  bouton Action (menu, resume, diag ROM), timing MIA, divergences
+  connues hors périmètre.
+
+Docs seules, binaire inchangé (rebuild = version string). 868 tests.
+
 ## [1.48.1-alpha] - 2026-07-03
 
 ### Added — Test : la copie du menu LOCI (touche 'i') rejouée de bout en bout
