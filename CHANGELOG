@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.0-alpha] - 2026-07-03
+
+### Added — Windows 11 : navigateur (GitHub Pages) + port natif .exe (Sprint 89)
+
+Deux distributions Windows demandées par l'utilisateur :
+
+- **GitHub Pages** : le build WebAssembly est publié sur
+  <https://benedictemarty.github.io/Phosphoric/> — l'émulateur complet
+  (v1.48.3+) dans Edge/Chrome, zéro installation.
+- **Port natif x86_64** :
+  - `include/utils/oscompat.h` : statvfs → GetDiskFreeSpaceEx, mkdir
+    2-args, SIGPIPE no-op, init Winsock ;
+  - `src/io/serial_backend_win.c` : loopback + file complets, transports
+    POSIX (tcp/pty/modem/com/digitelec/picowifi/midi/smf) → NULL avec
+    message clair ; `src/network/gdbstub_win.c` : --gdb refuse proprement ;
+  - `src/control.c` : async-pause neutralisé sous _WIN32 (le mode
+    --control reste fonctionnel aux frontières d'arrêt) ;
+  - Makefile `WIN=1` : MinGW-w64 -posix (winpthreads pour clock_gettime/
+    clock_nanosleep), SDL2 MinGW (SDL2_WIN_PREFIX), -lws2_32, cible .exe ;
+  - `.github/workflows/windows-build.yml` : cross-build CI → artifact
+    `phosphoric-windows-x86_64` (oric1-emu.exe PE32+ 810 Ko + SDL2.dll +
+    libwinpthread-1.dll + roms + LISEZMOI-WINDOWS.txt). CI verte au 2ᵉ run.
+- Périmètre v1 exclu (messages clairs) : transports série réseau/pty/com,
+  GDB stub, async-pause, CAST, MIDI hôte → version Linux/WSL2.
+- Linux inchangé : build 0 erreur, 868 tests verts.
+
 ## [1.48.3-alpha] - 2026-07-03
 
 ### Fixed — README : chiffres désynchronisés resynchronisés
