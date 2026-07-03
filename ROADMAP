@@ -1325,6 +1325,13 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 87b: LOCI — copie du menu vérifiée e2e (v1.48.1-alpha) - DONE
+
+- [x] Audit copie/suppression : copie = client-side (menu, touche 'i'),
+      suppression = API UNLINK/RENAME uniquement (pas dans le menu v0.3.0)
+- [x] +1 test (868) : file_copy rejoué — 12 000 octets clé → interne,
+      2 tours 8 Ko via xram, byte-identique
+
 ### Sprint 87: LOCI — vraies clés USB du host (v1.48.0-alpha) - DONE
 
 - [x] resolve_path : volumes « 1: »-« 4: » → racine host enregistrée ;
@@ -2706,5 +2713,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.48.0-alpha
+**Current Version**: 1.48.1-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)
