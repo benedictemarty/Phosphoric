@@ -41,7 +41,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.46.1-alpha"
+#define EMU_VERSION "1.47.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -319,6 +319,10 @@ typedef struct emulator_s {
      * with the menu's own state) nor re-boot the menu. Cleared when the
      * menu leaves (resume or MIA_BOOT into another ROM). */
     bool loci_menu_active;
+    /* Set when the Action button was held ≥ 2 s (firmware
+     * EXT_BTN_LONGPRESS_MS): the release boots the diagnostic ROM
+     * (test108k) instead of the menu. */
+    bool loci_button_long;
 
     /* TUI mode flag: when true, breakpoints route to the ncurses TUI
      * instead of the line-based REPL (build with TUI=1). */

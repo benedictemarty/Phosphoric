@@ -1806,6 +1806,41 @@ TEST(test_dsk_umount_closes) {
     loci_cleanup(&l); free(dsk_path); free(tmpdir);
 }
 
+/* opendir with an EMPTY path returns the device-list iterator (fd 0 =
+ * firmware FD_OFFS_DEV): readdir yields "0: Internal storage [15MB]",
+ * then one usb_set_status line per declared USB device (MSC key,
+ * picowifi CDC modem), then an empty name. AM_SYS attribute. */
+TEST(test_opendir_empty_lists_devices) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    ASSERT_EQ(loci_add_usb_device(&l, "CDC modem mounted"), 0);
+    push_path(&l, "");
+    loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);        /* fd = FD_OFFS_DEV */
+    /* Entry 0: internal storage */
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_READDIR);
+    ASSERT_EQ(memcmp(&l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 2],
+                     "0: Internal storage [15MB]", 26), 0);
+    ASSERT_EQ(l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 66], LOCI_AM_SYS);
+    /* Entry 1: the picowifi modem */
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_READDIR);
+    ASSERT_EQ(memcmp(&l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 2],
+                     "1: CDC modem mounted", 20), 0);
+    /* End of list: empty name */
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_READDIR);
+    ASSERT_EQ(l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 2], 0);
+    /* closedir releases the single iterator; a second opendir works */
+    l.regs[LOCI_REG_API_A] = 0;
+    loci_write(&l, 0x03AF, LOCI_OP_CLOSEDIR);
+    push_path(&l, "");
+    loci_write(&l, 0x03AF, LOCI_OP_OPENDIR);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    loci_cleanup(&l);
+}
+
 /* Conformance pin: firmware dir.c FD_OFFS_FAT=64 (dir descriptors on the
  * SD/FAT backend) and api.h API_EFATFS = 32+FRESULT for filesystem errors.
  * cc65 apps compiled against the real firmware see these exact values. */
@@ -3183,6 +3218,7 @@ int main(void) {
     RUN(test_dsk_mount_opens_drive_image);
     RUN(test_dsk_umount_closes);
     RUN(test_dsk_bad_sector_seeded_at_mount);
+    RUN(test_opendir_empty_lists_devices);
     RUN(test_firmware_abi_dir_fd_and_efatfs);
     RUN(test_dsk_cmd_reports_not_ready_for_empty_drive);
     RUN(test_dsk_cmd_ready_for_mounted_drive);

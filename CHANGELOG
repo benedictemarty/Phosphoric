@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.0-alpha] - 2026-07-03
+
+### Added — LOCI : liste des périphériques (internal/USB/picowifi) + diag ROM (appui long)
+
+Sur le vrai LOCI, le navigateur du menu commence par la liste des
+périphériques (« 0: Internal storage », le nom de la clé USB, la ligne du
+picowifi), et un appui long (≥ 2 s) sur le bouton Action boote la
+diagnostic ROM de Mike Brown. Deux mécanismes absents de l'émulation.
+
+- **Device list** (firmware `dir.c`) : `opendir` avec un chemin vide (ou
+  pile vide = garde, comme le firmware) renvoie l'itérateur périphériques
+  fd 0 (FD_OFFS_DEV) ; `readdir` produit « 0: Internal storage [15MB] »
+  puis une ligne `usb_set_status` par périphérique déclaré, puis un nom
+  vide ; attribut AM_SYS ; un seul itérateur (EMFILE sinon). Nouvelle API
+  `loci_add_usb_device()` ; main.c déclare la SDIMG (« N: MSC x.x MB
+  PHOSPHOR SDIMG rev 1.0 ») et le picowifi (« N: CDC modem mounted »,
+  firmware cdc.c).
+- **Diag ROM** : `roms/loci/test108k.rom` (+ variante 60 Hz) — Oric
+  Diagnostic ROM v1.08k © Mike Brown (embarquée dans les builds firmware
+  réels avec sa permission ; téléchargée de oric.signal11.org.uk). Appui
+  **long ≥ 2 s** sur F8 (firmware EXT_BTN_LONGPRESS_MS, EXT_BOOT_DIAG) →
+  boot de la diag ROM au relâchement ; `loci-button long` sur --control.
+- +1 test (866) : device list (internal + picowifi + fin de liste +
+  itérateur unique). Vérifié e2e : `loci-button long` → écran « Oric Diag
+  ROM V1.08k (C) 2023 Mike Brown / RAM Test Passed ».
+
 ## [1.46.1-alpha] - 2026-07-03
 
 ### Fixed — LOCI : F8 dans le menu n'écrase plus le snapshot de session

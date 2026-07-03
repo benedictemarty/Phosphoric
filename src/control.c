@@ -465,16 +465,19 @@ static void cmd_eject_disk(emulator_t* emu, const char* drive_s) {
     reply_ok("drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);
 }
 
-/* loci-button — LOCI Action button, warm short press + release. Same
- * path as F8 in the GUI: session snapshot, IRQ trap, boot the menu ROM. */
-static void cmd_loci_button(emulator_t* emu) {
+/* loci-button [long] — LOCI Action button, warm press + release. Same
+ * path as F8 in the GUI: session snapshot, IRQ trap, then boot the menu
+ * ROM (short) or the test108k diagnostic ROM ("long", ≥ 2 s hold). */
+static void cmd_loci_button(emulator_t* emu, const char* mode) {
     if (!emu->has_loci) {
         reply_err("loci-button: LOCI not enabled (--loci)");
         return;
     }
+    bool longp = (mode && strcmp(mode, "long") == 0);
+    emu->loci_button_long = longp;
     loci_action_button_short(&emu->loci);
     loci_action_button_release(&emu->loci);
-    reply_ok("action-button pulsed");
+    reply_ok("action-button pulsed%s", longp ? " (long)" : "");
 }
 
 /* eject-tape — unload the cassette and free its buffer. */
@@ -738,7 +741,7 @@ void control_repl(emulator_t* emu) {
             cmd_eject_tape(emu);
         }
         else if (strcmp(cmd, "loci-button") == 0) {
-            cmd_loci_button(emu);
+            cmd_loci_button(emu, arg1);
         }
         else if (strcmp(cmd, "load-rom") == 0) {
             cmd_load_rom(emu, arg1);

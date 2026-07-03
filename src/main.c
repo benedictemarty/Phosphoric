@@ -684,29 +684,33 @@ static void loci_resume_snapshot_path(emulator_t* emu, char* out, size_t outsz) 
     snprintf(out, outsz, "%s/loci_resume.ost", root);
 }
 
+/* Locate a LOCI system ROM by name: flash root (the internal storage,
+ * where the firmware's LittleFS keeps them), then roms/loci/ next to the
+ * loaded BASIC ROM (works from any CWD), then relative to the CWD. */
+static bool loci_find_rom_file(emulator_t* emu, const char* name,
+                               char* out, size_t outsz) {
+    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
+    snprintf(out, outsz, "%s/%s", root, name);
+    if (access(out, R_OK) == 0) return true;
+    if (emu->rom_path) {
+        const char* slash = strrchr(emu->rom_path, '/');
+        if (slash) {
+            snprintf(out, outsz, "%.*s/loci/%s",
+                     (int)(slash - emu->rom_path), emu->rom_path, name);
+            if (access(out, R_OK) == 0) return true;
+        }
+    }
+    snprintf(out, outsz, "roms/loci/%s", name);
+    return access(out, R_OK) == 0;
+}
+
 /* Locate the LOCI menu ROM, mirroring the firmware's boot priority
  * (ext_boot_loci: locirom.rp6502 on USB → LOCIROM in internal flash →
  * embedded copy). The .rp6502 container is not parsed — raw 16 KB
  * images only; roms/loci/locirom is the repo's "embedded" copy. */
 static bool loci_find_menu_rom(emulator_t* emu, char* out, size_t outsz) {
-    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
-    const char* names[] = { "LOCIROM", "locirom" };
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        snprintf(out, outsz, "%s/%s", root, names[i]);
-        if (access(out, R_OK) == 0) return true;
-    }
-    /* Repo convention: roms/loci/locirom next to the loaded BASIC ROM
-     * (works from any CWD), then relative to the CWD. */
-    if (emu->rom_path) {
-        const char* slash = strrchr(emu->rom_path, '/');
-        if (slash) {
-            snprintf(out, outsz, "%.*s/loci/locirom",
-                     (int)(slash - emu->rom_path), emu->rom_path);
-            if (access(out, R_OK) == 0) return true;
-        }
-    }
-    snprintf(out, outsz, "roms/loci/locirom");
-    return access(out, R_OK) == 0;
+    return loci_find_rom_file(emu, "LOCIROM", out, outsz) ||
+           loci_find_rom_file(emu, "locirom", out, outsz);
 }
 
 static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
@@ -791,6 +795,25 @@ static void loci_action_release_irq_trap(void* ctx) {
     /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
     cpu_irq_clear(&emu->cpu, IRQF_VIA);
 
+    if (emu->loci_button_long) {
+        /* Firmware warm long hold (≥ 2 s): EXT_BOOT_DIAG — boot Mike
+         * Brown's diagnostic ROM (test108k, embedded in real firmware
+         * builds with his permission). No resume path: it is a hardware
+         * test reboot; F5/menu brings the machine back afterwards. */
+        emu->loci_button_long = false;
+        char diag[512];
+        if (!loci_find_rom_file(emu, "test108k.rom", diag, sizeof(diag))) {
+            log_warning("LOCI: diag ROM introuvable (test108k.rom dans le flash "
+                        "root ou roms/loci/) — appui long sans effet");
+            return;
+        }
+        if (loci_rom_swap_cb(emu, diag, 0xC000)) {
+            emu->loci_menu_active = false;
+            cpu_reset(&emu->cpu);
+            log_info("LOCI: long press -> diag ROM %s", diag);
+        }
+        return;
+    }
     if (emu->loci_menu_active) {
         log_info("LOCI: Action button inside the menu — ignored");
         return;
@@ -2612,6 +2635,7 @@ static void emulator_run(emulator_t* emu) {
 #ifdef HAS_SDL2
             /* Poll SDL events (keyboard, window close, etc.) */
             SDL_Event event;
+            static Uint32 loci_f8_down_ms;   /* Action button hold timing */
             while (SDL_PollEvent(&event)) {
                 switch (event.type) {
                 case SDL_QUIT:
@@ -2682,11 +2706,13 @@ static void emulator_run(emulator_t* emu) {
                         }
                         break;
                     case SDLK_F8:
-                        /* Sprint 34ai: LOCI Action button (warm short press).
+                        /* Sprint 34ai: LOCI Action button (warm press).
                          * Installs the IRQ trap and triggers an interrupt so
-                         * the LOCI ROM can take over (save-state menu, etc.).
-                         * Release on KEYUP below. */
-                        if (emu->has_loci) {
+                         * the LOCI ROM can take over. Release on KEYUP below:
+                         * short = menu, held ≥ 2 s = diag ROM (firmware
+                         * EXT_BTN_LONGPRESS_MS). */
+                        if (emu->has_loci && !event.key.repeat) {
+                            loci_f8_down_ms = SDL_GetTicks();
                             loci_action_button_short(&emu->loci);
                             log_info("LOCI: Action button pressed (F8)");
                         }
@@ -2745,9 +2771,12 @@ static void emulator_run(emulator_t* emu) {
                     if (event.key.keysym.sym == SDLK_F8 && emu->has_loci) {
                         /* Sprint 34ai: Action button release sets V flag
                          * so the BVC spin exits and JMP ($FFFA) runs the
-                         * save-state handler. */
+                         * save-state handler. Held ≥ 2 s = diag ROM. */
+                        bool longp = SDL_GetTicks() - loci_f8_down_ms >= 2000;
+                        emu->loci_button_long = longp;
                         loci_action_button_release(&emu->loci);
-                        log_info("LOCI: Action button released (F8)");
+                        log_info("LOCI: Action button released (F8%s)",
+                                 longp ? ", long press" : "");
                     }
                     if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
                         oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
@@ -3703,6 +3732,26 @@ int main(int argc, char* argv[]) {
         loci_set_resume_callback(&emu.loci, loci_resume_session_cb, &emu);
         /* Live ROM poke: ADJ_SCAN progress byte polled by the menu ROM. */
         loci_set_rom_poke_callback(&emu.loci, loci_rom_poke_hook, &emu);
+
+        /* Device list served by opendir("") (menu file browser: internal
+         * storage first, then one line per mounted USB device — firmware
+         * usb_set_status strings). */
+        if (loci_sdimg_path) {
+            struct stat st;
+            char msc[64];
+            double mb = (stat(loci_sdimg_path, &st) == 0)
+                      ? (double)st.st_size / (1024.0 * 1024.0) : 0.0;
+            if (mb >= 1024.0)
+                snprintf(msc, sizeof(msc), "MSC %.1f GB PHOSPHOR SDIMG rev 1.0",
+                         mb / 1024.0);
+            else
+                snprintf(msc, sizeof(msc), "MSC %.1f MB PHOSPHOR SDIMG rev 1.0", mb);
+            loci_add_usb_device(&emu.loci, msc);
+        }
+        if (serial_arg && strncmp(serial_arg, "picowifi", 8) == 0) {
+            /* firmware cdc.c: the picowifi enumerates as a CDC modem */
+            loci_add_usb_device(&emu.loci, "CDC modem mounted");
+        }
         loci_set_dsk_bus_callbacks(&emu.loci, loci_dsk_cpu_irq_set,
                                    loci_dsk_cpu_irq_clr,
                                    loci_dsk_sync_overlay, &emu);
