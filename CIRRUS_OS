@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.46.0-alpha
-Build Status: ALPHA (Fixed — **LOCI : F8 boote le menu + ROM patchée (FW 0.3.1, timings) + ADJ_SCAN vivant + resume** : snapshot au press, boot locirom au relâchement, MIA_BOOT RESUME restaure la session ; ext_patch_version/timings reproduits ; sweep tior visible dans $FFF0 ; repli ROM vers dossier -r ; commande IPC loci-button. +1 test (865). EMU_VERSION 1.45.0 → 1.46.0-alpha ; builds natif + SDL2 OK)
+Version: 1.46.1-alpha
+Build Status: ALPHA (Fixed — **LOCI : garde de réentrance du bouton Action** : F8 dans le menu ignoré, snapshot de session préservé (loci_menu_active). 865 tests. EMU_VERSION → 1.46.1-alpha)
+Build Status (prev): ALPHA (Fixed — **LOCI : F8 boote le menu + ROM patchée (FW 0.3.1, timings) + ADJ_SCAN vivant + resume** : snapshot au press, boot locirom au relâchement, MIA_BOOT RESUME restaure la session ; ext_patch_version/timings reproduits ; sweep tior visible dans $FFF0 ; repli ROM vers dossier -r ; commande IPC loci-button. +1 test (865). EMU_VERSION 1.45.0 → 1.46.0-alpha ; builds natif + SDL2 OK)
 Build Status (prev): ALPHA (Fixed — **LOCI MAP_TUNE_*/ADJ_SCAN conformes firmware** : AX = valeur courante, A>31 = requête sans écriture, tiod non masqué, ADJ_SCAN → xram[$FFF0] = tior configuré. +1 test (864). EMU_VERSION 1.44.0 → 1.45.0-alpha ; builds natif + SDL2 OK)
 Build Status (prev): ALPHA (Changed — **LOCI : errno FatFS (32+FRESULT) + dir fd 64+ (ABI firmware)** : erreurs FS des backends host-FS/SDIMG au format API_EFATFS (36/37/39/40...), codes 1-18 réservés API ; LOCI_DIR_OFFSET 32→64 (FD_OFFS_FAT). Note d'audit « fd fichiers 64+ » invalidée (firmware = 3-18, conformes). +1 test ABI (863). EMU_VERSION 1.43.0 → 1.44.0-alpha ; builds natif + SDL2 OK)
 Build Status (prev): ALPHA (Added — **VIA 6522 : modes CA2/CB2 complets** : handshake (CB2 = write-only, conforme), pulse 1 cycle φ2, modes entrée avec fronts (via_set_ca1/via_set_ca2_input/via_set_cb2_input), latching IRA/IRB (ACR b0-1). ROM ORIC inchangée (modes manuels seulement). +6 tests (862). e2e boot+clavier OK. EMU_VERSION 1.42.0 → 1.43.0-alpha ; builds natif + SDL2 OK)
