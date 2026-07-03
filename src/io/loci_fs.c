@@ -55,7 +55,20 @@ uint16_t map_errno(int e) {
 bool resolve_path(loci_t* loci, const char* in,
                   char* out, size_t outsize) {
     const char* p = in;
-    if (p[0] && p[1] == ':') p += 2;
+    const char* root = loci->flash_root[0] ? loci->flash_root : ".";
+    if (p[0] && p[1] == ':') {
+        /* Firmware volume addressing: "0:" = internal storage (LFS),
+         * "1:".."4:" = USB devices (FatFS volumes). A registered host
+         * root (real USB key attached to the emulator) serves its
+         * device number; other prefixes keep mapping to the flash root
+         * (legacy behaviour, and "0:" is the flash root by definition). */
+        if (p[0] >= '1' && p[0] <= '0' + LOCI_USB_DEV_MAX) {
+            int idx = p[0] - '1';
+            if (loci->usb_root[idx][0])
+                root = loci->usb_root[idx];
+        }
+        p += 2;
+    }
     while (*p == '/' || *p == '\\') p++;
 
     const char* c = p;
@@ -69,7 +82,6 @@ bool resolve_path(loci_t* loci, const char* in,
         while (*c == '/' || *c == '\\') c++;
     }
 
-    const char* root = loci->flash_root[0] ? loci->flash_root : ".";
     int n = snprintf(out, outsize, "%s/%s", root, p);
     return n > 0 && (size_t)n < outsize;
 }

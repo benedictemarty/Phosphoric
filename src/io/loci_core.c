@@ -253,8 +253,19 @@ int loci_add_usb_device(loci_t* loci, const char* status) {
     if (!loci || !status || loci->usb_dev_count >= LOCI_USB_DEV_MAX) return -1;
     snprintf(loci->usb_dev[loci->usb_dev_count], LOCI_DIR_NAME_LEN,
              "%d: %s", loci->usb_dev_count + 1, status);
+    loci->usb_root[loci->usb_dev_count][0] = '\0';   /* virtual device */
     loci->usb_dev_count++;
     return 0;
+}
+
+int loci_add_usb_storage(loci_t* loci, const char* status,
+                         const char* host_root) {
+    if (!loci || !host_root || loci->usb_dev_count >= LOCI_USB_DEV_MAX)
+        return -1;
+    if (loci_add_usb_device(loci, status) != 0) return -1;
+    uint8_t idx = (uint8_t)(loci->usb_dev_count - 1);
+    snprintf(loci->usb_root[idx], sizeof(loci->usb_root[idx]), "%s", host_root);
+    return idx + 1;    /* device number, i.e. the "N:" volume prefix */
 }
 
 void loci_set_action_callbacks(loci_t* loci,

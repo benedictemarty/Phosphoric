@@ -1325,6 +1325,15 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [ ] Hors périmètre : piloter la carte WiFi (associer/scanner) — voir
       Future Enhancements, déconseillé
 
+### Sprint 87: LOCI — vraies clés USB du host (v1.48.0-alpha) - DONE
+
+- [x] resolve_path : volumes « 1: »-« 4: » → racine host enregistrée ;
+      « 0: »/chemins nus = flash root ; garde anti-échappement conservée
+- [x] loci_add_usb_storage() (device list + racine volume)
+- [x] --loci-usb DIR (répétable, 4 max) + auto-détection /media/$USER,
+      /run/media/$USER au démarrage ; --loci-usb none
+- [x] +1 test (867) ; e2e « USB storage 2: (fakeusb) »
+
 ### Sprint 86: LOCI — device list + diag ROM (v1.47.0-alpha) - DONE
 
 Le sélecteur du menu doit lister les périphériques (« 0: Internal
@@ -2697,5 +2706,5 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ---
 
 **Last Updated**: 2026-07-03
-**Current Version**: 1.47.0-alpha
+**Current Version**: 1.48.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

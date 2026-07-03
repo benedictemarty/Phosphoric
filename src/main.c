@@ -16,8 +16,10 @@
 #include <signal.h>
 #include <getopt.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <errno.h>
 #include <time.h>
 
@@ -443,6 +445,8 @@ static void print_usage(const char* program_name) {
     printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
     printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
     printf("                             Mutually exclusive with --loci-flash\n");
+    printf("      --loci-usb DIR|none    Attach DIR as a LOCI USB key (repeatable, 4 max);\n");
+    printf("                             host media in /media/$USER auto-attach — 'none' disables\n");
     printf("      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31).\n");
     printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
     printf("                             is outside it (reproduces real-HW modem block;\n");
@@ -738,6 +742,59 @@ static void loci_patch_rom_info(emulator_t* emu) {
                  LOCI_FW_VERSION_MAJOR, LOCI_FW_VERSION_MINOR, LOCI_FW_VERSION_PATCH,
                  emu->loci.mia_tmap, emu->loci.mia_tior, emu->loci.mia_tiow,
                  emu->loci.mia_tiod, emu->loci.mia_tadr);
+    }
+}
+
+/* Attach a host directory as a LOCI USB mass-storage device: it appears
+ * in the menu's device list with the volume label and its "N:" paths
+ * resolve inside the directory — a real USB key plugged into the host,
+ * served to the Oric like on real hardware. */
+static void loci_attach_usb_dir(emulator_t* emu, const char* dir) {
+    struct stat st;
+    if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        log_warning("LOCI USB: %s is not a directory — ignored", dir);
+        return;
+    }
+    const char* label = strrchr(dir, '/');
+    label = (label && label[1]) ? label + 1 : dir;
+    char status[64];
+    struct statvfs vs;
+    double gb = (statvfs(dir, &vs) == 0)
+              ? (double)vs.f_blocks * (double)vs.f_frsize
+                / (1024.0 * 1024.0 * 1024.0) : 0.0;
+    if (gb >= 1.0)
+        snprintf(status, sizeof(status), "MSC %.1f GB %.40s", gb, label);
+    else
+        snprintf(status, sizeof(status), "MSC %.1f MB %.40s", gb * 1024.0, label);
+    int n = loci_add_usb_storage(&emu->loci, status, dir);
+    if (n > 0)
+        log_info("LOCI: USB storage %d: (%s) -> %s", n, label, dir);
+    else
+        log_warning("LOCI USB: device table full, %s ignored", dir);
+}
+
+/* Auto-detect removable media mounted on the host (udisks convention:
+ * /media/$USER and /run/media/$USER) and attach them as USB devices —
+ * plug a real key in, it shows up in the LOCI menu. */
+static void loci_scan_host_usb(emulator_t* emu) {
+    const char* user = getenv("USER");
+    if (!user || !user[0]) return;
+    const char* bases[] = { "/media", "/run/media" };
+    for (size_t b = 0; b < sizeof(bases) / sizeof(bases[0]); b++) {
+        char root[300];
+        snprintf(root, sizeof(root), "%s/%s", bases[b], user);
+        DIR* d = opendir(root);
+        if (!d) continue;
+        struct dirent* de;
+        while ((de = readdir(d)) != NULL) {
+            if (de->d_name[0] == '.') continue;
+            char vol[560];
+            snprintf(vol, sizeof(vol), "%s/%s", root, de->d_name);
+            struct stat st;
+            if (stat(vol, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
+            loci_attach_usb_dir(emu, vol);
+        }
+        closedir(d);
     }
 }
 
@@ -3061,6 +3118,9 @@ int main(int argc, char* argv[]) {
     const char* bad_sector_args[FDC_MAX_BAD_SECTORS];
     int bad_sector_arg_count = 0;
     const char* fdc_timing_arg = NULL;
+    const char* loci_usb_args[LOCI_USB_DEV_MAX];
+    int  loci_usb_count = 0;
+    bool loci_usb_autoscan = true;
     const char* trace_irq_file = NULL;
     const char* symbols_file = NULL;
     bool tui_mode = false;
@@ -3088,7 +3148,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -3159,6 +3219,7 @@ int main(int argc, char* argv[]) {
         {"loci",                no_argument,       0, OPT_LOCI},
         {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
         {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
+        {"loci-usb",            required_argument, 0, OPT_LOCI_USB},
         {"loci-mia-window",     required_argument, 0, OPT_LOCI_MIA_WINDOW},
         {"ula",                 required_argument, 0, OPT_ULA},
         {"ocula-80col-basic",   no_argument,       0, OPT_OCULA_80COL_BASIC},
@@ -3306,6 +3367,17 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI: loci_enabled = true; break;
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
+            case OPT_LOCI_USB:
+                if (strcmp(optarg, "none") == 0) {
+                    loci_usb_autoscan = false;
+                } else if (loci_usb_count < LOCI_USB_DEV_MAX) {
+                    loci_usb_args[loci_usb_count++] = optarg;
+                    loci_enabled = true;
+                } else {
+                    log_error("--loci-usb: table full (%d max), ignoring %s",
+                              LOCI_USB_DEV_MAX, optarg);
+                }
+                break;
             case OPT_LOCI_MIA_WINDOW: {
                 /* Models the reliable tior range of a real LOCI/Oric pairing:
                  * "LO-HI" (0-31). picowifi ACIA accesses outside it corrupt. */
@@ -3752,6 +3824,15 @@ int main(int argc, char* argv[]) {
             /* firmware cdc.c: the picowifi enumerates as a CDC modem */
             loci_add_usb_device(&emu.loci, "CDC modem mounted");
         }
+        /* Real USB keys: explicit --loci-usb DIRs, then media mounted on
+         * the host (udisks: /media/$USER, /run/media/$USER). Their "N:"
+         * paths are served from the host directory. NOTE: with
+         * --loci-sdimg, file ops are owned by the SD image backend — the
+         * keys still appear in the list but are not browsable. */
+        for (int i = 0; i < loci_usb_count; i++)
+            loci_attach_usb_dir(&emu, loci_usb_args[i]);
+        if (loci_usb_autoscan)
+            loci_scan_host_usb(&emu);
         loci_set_dsk_bus_callbacks(&emu.loci, loci_dsk_cpu_irq_set,
                                    loci_dsk_cpu_irq_clr,
                                    loci_dsk_sync_overlay, &emu);

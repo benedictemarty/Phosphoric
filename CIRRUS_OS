@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.47.0-alpha
-Build Status: ALPHA (Added — **LOCI : device list (internal/USB/picowifi) + diag ROM Mike Brown (appui long F8)** : opendir vide = fd 0, readdir « 0: Internal storage » + usb_set_status ; test108k.rom v1.08k bootée par F8 >= 2 s ou loci-button long. +1 test (866). e2e diag « RAM Test Passed ». EMU_VERSION → 1.47.0-alpha)
+Version: 1.48.0-alpha
+Build Status: ALPHA (Added — **LOCI : vraies clés USB du host** : volumes « N: » routés vers /media/$USER auto-détectés ou --loci-usb DIR ; label+taille dans le device list. +1 test (867). EMU_VERSION → 1.48.0-alpha)
+Build Status (prev): ALPHA (Added — **LOCI : device list (internal/USB/picowifi) + diag ROM Mike Brown (appui long F8)** : opendir vide = fd 0, readdir « 0: Internal storage » + usb_set_status ; test108k.rom v1.08k bootée par F8 >= 2 s ou loci-button long. +1 test (866). e2e diag « RAM Test Passed ». EMU_VERSION → 1.47.0-alpha)
 Build Status (prev): ALPHA (Fixed — **LOCI : garde de réentrance du bouton Action** : F8 dans le menu ignoré, snapshot de session préservé (loci_menu_active). 865 tests. EMU_VERSION → 1.46.1-alpha)
 Build Status (prev): ALPHA (Fixed — **LOCI : F8 boote le menu + ROM patchée (FW 0.3.1, timings) + ADJ_SCAN vivant + resume** : snapshot au press, boot locirom au relâchement, MIA_BOOT RESUME restaure la session ; ext_patch_version/timings reproduits ; sweep tior visible dans $FFF0 ; repli ROM vers dossier -r ; commande IPC loci-button. +1 test (865). EMU_VERSION 1.45.0 → 1.46.0-alpha ; builds natif + SDL2 OK)
 Build Status (prev): ALPHA (Fixed — **LOCI MAP_TUNE_*/ADJ_SCAN conformes firmware** : AX = valeur courante, A>31 = requête sans écriture, tiod non masqué, ADJ_SCAN → xram[$FFF0] = tior configuré. +1 test (864). EMU_VERSION 1.44.0 → 1.45.0-alpha ; builds natif + SDL2 OK)

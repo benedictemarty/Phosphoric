@@ -428,6 +428,9 @@ typedef struct loci_s {
 #define LOCI_USB_DEV_MAX 4
     int16_t dir_dev;                             /* -1 = closed, else next index */
     char    usb_dev[LOCI_USB_DEV_MAX][LOCI_DIR_NAME_LEN]; /* "N: <status>" */
+    char    usb_root[LOCI_USB_DEV_MAX][256];     /* host dir served as "N:" —
+                                                    empty = virtual device
+                                                    (picowifi, SDIMG) */
     uint8_t usb_dev_count;
 
     /* Tape-mount callback (Sprint 34ao). Invoked by op_mount when slot
@@ -552,6 +555,14 @@ void    loci_adj_tick(loci_t* loci, unsigned int cycles);
  * string or "CDC modem mounted" for the picowifi). Returns 0, or -1 if
  * the table is full. */
 int     loci_add_usb_device(loci_t* loci, const char* status);
+
+/* Declare a USB mass-storage device backed by HOST_ROOT: it appears in
+ * the device list like loci_add_usb_device AND paths prefixed with its
+ * device number ("N:...") resolve inside HOST_ROOT — a real USB key
+ * plugged into the host, served to the Oric like on real hardware.
+ * Returns the device number (1-4), or -1 if the table is full. */
+int     loci_add_usb_storage(loci_t* loci, const char* status,
+                             const char* host_root);
 
 /* Register the action-button host hooks (Sprint 34ai). install_cb is
  * called on short-press to set up the IRQ trap; release_cb is called
