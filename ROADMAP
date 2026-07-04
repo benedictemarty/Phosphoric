@@ -2741,7 +2741,7 @@ activées par défaut, clairement signalées dans l'aide CLI.
 ### Technical
 - [x] 100% CPU instruction compatibility (256/256 opcodes : 151 officiels + 105 illégaux NMOS)
 - [x] Cycle-accurate timing
-- [x] 100% game compatibility (40/40 programs tested: 25 TAP + 11 DSK + 4 demos)
+- [x] 100% game compatibility (41/41 programs tested: 26 TAP + 11 DSK + 4 demos)
 - [x] Code coverage measured: 72.2% global, 78.9% excluding interactive REPL
 - [x] <5% CPU overhead on modern hardware — mesuré sprint 36a : ~1% overhead réel (201 µs / 20000 µs frame budget, basic-idle). Voir `make bench`.
 

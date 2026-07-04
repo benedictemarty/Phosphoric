@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.49.0-alpha** | **868 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.50.0-alpha** | **876 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -28,8 +28,11 @@ make SDL2=1
 # Boot ORIC Atmos BASIC (auto-detected)
 ./oric1-emu -r roms/basic11b.rom
 
-# Load a tape program
+# Load a tape program (fast load: direct memory injection)
 ./oric1-emu -r roms/basic10.rom -t program.tap -f
+
+# Load a tape via the real ROM at signal level (for custom/protected loaders)
+./oric1-emu -r roms/basic10.rom -t soccermanager.tap --tape-signal
 
 # Boot Sedoric from disk
 ./oric1-emu -r roms/basic10.rom --disk-rom roms/microdis.rom -d SEDO40u.DSK
@@ -434,7 +437,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 ## Testing
 
 ```bash
-make tests               # Full suite — 868 tests (100% pass)
+make tests               # Full suite — 876 tests (100% pass)
 make test-cpu            # CPU tests (92 — incl. 105 illegal NMOS opcodes)
 make test-memory         # Memory tests
 make test-io             # VIA/I/O tests
@@ -560,7 +563,7 @@ docs/            User guide, control_protocol.md, CR review docs
 ### Avertissements
 
 - **Aucune vérification formelle** : le code n'a pas été audité par un
-  ingénieur logiciel professionnel. Bien que 868 tests (unitaires +
+  ingénieur logiciel professionnel. Bien que 876 tests (unitaires +
   E2E) passent, la couverture de test n'est pas exhaustive et
   des cas limites peuvent exister.
 - **Non adapté à la production** : il s'agit d'un projet expérimental et
@@ -652,4 +655,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.49.0-alpha | 868 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 timing mecanique reel + bad-sector injection | ULA profiles (OCULA: 80-col, ext-HIRES 320x200, palette redefinissable, banking, GPU) + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-07-03
+Phosphoric v1.50.0-alpha | 876 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 timing mecanique reel + bad-sector injection | ULA profiles (OCULA: 80-col, ext-HIRES 320x200, palette redefinissable, banking, GPU) + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-07-04

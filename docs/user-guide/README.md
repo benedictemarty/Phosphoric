@@ -108,6 +108,22 @@ Les programmes multi-blocs (ex: TYRANN.TAP) sont supportes : le premier bloc est
 les blocs suivants sont charges par CLOAD via les patches ROM. Les next-line pointers BASIC
 stale sont automatiquement recorrigees apres chaque chargement.
 
+**Chargement au niveau signal (`--tape-signal`) :**
+```bash
+./oric1-emu -r basic10.rom -t jeu.tap --tape-signal
+```
+Genere la vraie forme d'onde de la bande sur l'entree VIA CB1, lue par la
+routine CLOAD **reelle** de la ROM — comme sur une vraie machine ou sous
+Euphoric. A utiliser pour les **chargeurs cassette non standard / proteges**
+(turbo-loaders, routines de deprotection, sequencement multi-blocs maison) que
+les patches ROM ne savent pas reproduire — par exemple *Soccer Manager*
+(KnightSoft, dechiffrement `EOR #$55`), qui echoue en mode patch comme sous
+Oricutron. Au prompt, `CLOAD""` est tape automatiquement. Incompatible avec `-f`.
+
+> Le chargement se fait a la **vitesse reelle d'une cassette** (~5 min pour
+> 45 Ko en fenetre) : c'est le prix de la fidelite. Pour les jeux standard,
+> `-f` reste bien plus rapide.
+
 **Sauvegarde cassette (CSAVE) :**
 Quand un programme BASIC execute `CSAVE"nom"`, les donnees sont capturees dans un fichier
 `nom.tap` dans le repertoire courant. Si le nom est vide (`CSAVE""`), le fichier sera
