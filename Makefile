@@ -220,6 +220,8 @@ TEST_MEM_SRCS = tests/unit/test_memory.c src/memory/memory.c \
 
 TEST_IO_SRCS = tests/unit/test_io.c src/io/via6522.c src/utils/logging.c
 
+TEST_CASSETTE_SRCS = tests/unit/test_cassette.c src/io/cassette.c src/io/via6522.c
+
 TEST_STORAGE_SRCS = tests/unit/test_storage.c src/storage/sedoric.c \
                     src/storage/disk.c src/io/microdisc.c src/utils/logging.c
 
@@ -238,6 +240,10 @@ test-memory: $(TEST_MEM_SRCS)
 test-io: $(TEST_IO_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_IO_SRCS) $(LDFLAGS) -o test_io
 	@./test_io
+
+test-cassette: $(TEST_CASSETTE_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_CASSETTE_SRCS) $(LDFLAGS) -o test_cassette
+	@./test_cassette
 
 test-storage: $(TEST_STORAGE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_STORAGE_SRCS) $(LDFLAGS) -o test_storage
@@ -540,7 +546,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.0-alpha] - 2026-07-04
+
+### Added — Émulation cassette au niveau signal (VIA CB1 + Timer 2) (Sprint 90)
+
+Nouvelle option **`--tape-signal`** : au lieu de patcher les routines ROM
+`getsync`/`readbyte` (approche Oricutron, incompatible avec les chargeurs
+cassette maison), l'émulateur **génère la vraie forme d'onde de la bande sur
+l'entrée VIA CB1**. La routine de lecture ROM *réelle* — et tout chargeur
+personnalisé qui lit CB1 directement — échantillonne un signal authentique,
+exactement comme sur une vraie machine ou sous Euphoric.
+
+- **Déclencheur** : *Soccer Manager* (KnightSoft 1984) — chargeur maison +
+  déchiffrement `EOR #$55` — ne se lançait pas (écran noir/retour BASIC), comme
+  sur Oricutron, alors qu'il tourne sur Euphoric et sur vraie machine. Avec
+  `--tape-signal` : titre PUIS jeu lancé (« What is your first name please ? »).
+- **Générateur** (`src/io/cassette.c`, ex-stub) : encode chaque octet en trame
+  14 bits (start 0 · 8 données LSB · parité impaire · stops 1), pilotée sur CB1
+  avec une **1ʳᵉ demi-période constante** (208 cyc) et une 2ᵉ codant le bit
+  (208 = '1'/2400 Hz, 416 = '0'/1200 Hz) — phase ancrée pour que la ROM mesure
+  un intervalle par bit via Timer 2 (seuil ~512 cyc, cf. ROM $E67D). Leader de
+  64 trames de synchro 0x16. Protocole rétro-ingénieré du ROM BASIC 1.0.
+- **Intégration** (`src/main.c`) : `cassette_tick()` dans `cpu_cycle_tick` ;
+  patches `getsync`/`readbyte` désarmés en mode signal (CSAVE conservé) ;
+  gating de l'émission sur le PC dans la routine de lecture ROM
+  `[readbyte_entry..getsync_end]` avec rembobinage à la 1ʳᵉ entrée (la ligne
+  moteur PB6 est inexploitable — le scan clavier l'écrase à l'identique au repos
+  et pendant CLOAD). Position préservée entre octets/blocs → gère les tapes
+  multi-blocs des chargeurs protégés. Incompatible avec `-f` (message clair).
+- **Tests** : nouvelle suite `test-cassette` (8 tests) — encodage de trame,
+  gating moteur, round-trip générateur→onde CB1→classification→octets
+  identiques. Valgrind propre, analyse statique stricte propre.
+- Vérifié bout-en-bout : `hello.tap` (BASIC standard) chargé et listé via la
+  vraie ROM CLOAD ; *Soccer Manager* chargé et lancé (ORIC-1).
+
+EMU_VERSION 1.49.0 → 1.50.0-alpha. 868 → 876 tests. Docs : `docs/sprint90-cassette-signal.md`.
+
 ## [1.49.0-alpha] - 2026-07-03
 
 ### Added — Windows 11 : navigateur (GitHub Pages) + port natif .exe (Sprint 89)

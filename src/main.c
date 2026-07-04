@@ -374,6 +374,8 @@ static void print_usage(const char* program_name) {
     printf("Usage: %s [options]\n\n", program_name);
     printf("Options:\n");
     printf("  -t, --tape FILE            Load .TAP tape file\n");
+    printf("      --tape-signal          Signal-level tape (VIA CB1 waveform, real ROM\n");
+    printf("                             read) — for custom/protected loaders; excludes -f\n");
     printf("  -d, --disk FILE            Load .DSK disk file in drive A\n");
     printf("      --disk1 FILE           Load .DSK disk file in drive B\n");
     printf("      --disk2 FILE           Load .DSK disk file in drive C\n");
@@ -1195,6 +1197,9 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     if (emu->has_loci && address == 0x0300) {
         loci_tap_motor(&emu->loci, (value & 0x40) != 0);
     }
+    /* Signal-level cassette motor is gated on the ROM tape-read routine PC in
+     * tape_patches() (Sprint 90), not on ORB PB6 — the keyboard column scan
+     * clobbers PB6 identically at the READY prompt and during CLOAD. */
 
     /* Capture old PCR before VIA write (for printer strobe edge detection) */
     uint8_t old_pcr = emu->via.pcr;
@@ -1240,6 +1245,8 @@ static void irq_callback(bool state, void* userdata) {
 static void cpu_cycle_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
     via_update(&emu->via, cycles);
+    if (emu->cassette.signal_mode)
+        cassette_tick(&emu->cassette, &emu->via, cycles);
     if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
     if (emu->has_loci) {
         fdc_ticktock(&emu->loci.dsk_fdc, cycles);
@@ -1527,6 +1534,8 @@ static bool emulator_init(emulator_t* emu) {
     via_init(&emu->via);
     via_reset(&emu->via);
 
+    cassette_init(&emu->cassette);
+
     /* Initialize keyboard */
     oric_keyboard_init(&emu->keyboard);
 
@@ -1786,6 +1795,26 @@ static void tape_patches(emulator_t* emu) {
     if (pc == p->writeleader_entry || pc == p->putbyte_entry || pc == p->csave_end ||
         (p->writefileheader_entry && pc == p->writefileheader_entry)) {
         goto do_patch;  /* Skip tape_loaded check for CSAVE */
+    }
+
+    /* Signal-level mode (Sprint 90): the real ROM read routine samples the
+     * waveform on CB1, so the getsync/readbyte read patches must stay off.
+     * CSAVE (write) patches above still apply via the goto.
+     *
+     * The PB6 motor line is unusable as a gate: the keyboard column scan writes
+     * the same ORB bits during CLOAD and at the READY prompt. Instead gate the
+     * waveform on the CPU executing inside the ROM tape-read routines
+     * [readbyte_entry .. getsync_end], rewinding at the first entry. Emission
+     * pauses (position preserved) while the caller processes a byte or block —
+     * exactly what multi-block custom loaders need. */
+    if (emu->cassette.signal_mode) {
+        bool reading = (pc >= p->readbyte_entry && pc <= p->getsync_end);
+        if (reading && !emu->cassette.started) {
+            cassette_rewind(&emu->cassette);
+            emu->cassette.started = true;
+        }
+        cassette_set_motor(&emu->cassette, reading);
+        return;
     }
 
     if (!emu->tape_loaded)
@@ -3081,6 +3110,7 @@ int main(int argc, char* argv[]) {
     const char* rom_file = NULL;
     const char* hostfs_path = NULL;
     bool fast_load = false;
+    bool tape_signal = false;   /* --tape-signal: signal-level cassette (Sprint 90) */
     bool verbose = false;
     bool headless = false;
     int64_t max_cycles = -1;
@@ -3151,7 +3181,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB, OPT_TAPE_SIGNAL };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -3166,6 +3196,7 @@ int main(int argc, char* argv[]) {
         {"fast-load",           no_argument,       0, 'f'},
         {"headless",            no_argument,       0, 'n'},
         {"realtime",            no_argument,       0, OPT_REALTIME},
+        {"tape-signal",         no_argument,       0, OPT_TAPE_SIGNAL},
         {"cycles",              required_argument, 0, 'c'},
         {"verbose",             no_argument,       0, 'v'},
         {"screenshot",          required_argument, 0, OPT_SCREENSHOT},
@@ -3302,6 +3333,7 @@ int main(int argc, char* argv[]) {
             case OPT_NO_BORDER: emu.no_border = true; break;
             case OPT_EXPORT_BORDER: emu.export_border = true; break;
             case OPT_REALTIME: emu.realtime = true; break;
+            case OPT_TAPE_SIGNAL: tape_signal = true; break;
             case OPT_ULA:
                 ula_profile = video_profile_parse(optarg);
                 if (ula_profile < 0) {
@@ -4085,6 +4117,12 @@ int main(int argc, char* argv[]) {
     /* Load tape */
     if (tape_file) {
         log_info("Loading tape: %s", tape_file);
+        if (tape_signal && fast_load) {
+            log_warning("--tape-signal is incompatible with -f/--fast-load; "
+                        "using signal-level load");
+            fast_load = false;
+            emu.fast_load = false;
+        }
         if (fast_load) {
             /* Fast load: buffer TAP data for deferred injection after RAM test */
             tap_file_t* tap = tap_open_read(tape_file, true);
@@ -4152,6 +4190,12 @@ int main(int argc, char* argv[]) {
                         emu.tape_syncstack = -1;
                         emu.tape_auto_cload_pending = true;
                         log_info("Tape buffered for CLOAD: %d bytes", emu.tapelen);
+                        if (tape_signal) {
+                            cassette_signal_begin(&emu.cassette, emu.tapebuf,
+                                                  emu.tapelen);
+                            log_info("Signal-level cassette enabled: %d bytes on "
+                                     "CB1 waveform (real ROM read)", emu.tapelen);
+                        }
                     } else {
                         log_warning("Tape read incomplete: %zu/%d bytes", rd, emu.tapelen);
                         free(emu.tapebuf);

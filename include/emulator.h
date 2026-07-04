@@ -26,6 +26,7 @@
 #include "io/keyboard.h"
 #include "io/joystick.h"
 #include "io/printer.h"
+#include "io/cassette.h"
 #include "io/microdisc.h"
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
@@ -41,7 +42,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.49.0-alpha"
+#define EMU_VERSION "1.50.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -164,6 +165,11 @@ typedef struct emulator_s {
     int tapeoffs;            /* Current read offset */
     bool tape_loaded;        /* A tape is loaded and available */
     int tape_syncstack;     /* Saved SP for sync loop recovery (-1 = none) */
+
+    /* Signal-level cassette (Sprint 90): generates the tape waveform on VIA
+     * CB1 so the real ROM read routine / custom loaders sample a genuine
+     * signal. Enabled via --tape-signal; disables the getsync/readbyte patches. */
+    cassette_t cassette;
 
     /* Deferred fast-load (inject after RAM test completes) */
     uint8_t* fastload_buf;       /* Buffered TAP data */

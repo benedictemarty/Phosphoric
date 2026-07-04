@@ -44,7 +44,7 @@ make SDL2=1
 - **ULA Video** — Text mode (40x28) + HIRES (240x200), serial attributes, PAL timing (312 lines x 64 cycles)
 - **AY-3-8910 PSG** — 3 tone channels, noise, 16 envelope shapes, SDL2 audio output
 - **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot. **Real mechanical timing by default** (step rates 6/12/20/30 ms, 300 RPM rotational latency, Record-Not-Found after 5 index pulses, live Type I index pulse; `--fdc-timing fast` restores instant-feel legacy delays). **Bad-sector fault injection** (`--bad-sector [D:]S:T:N`, damage follows the media across drive select/hot-swap, persisted in save states)
-- **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain
+- **Cassette** — TAP format, CLOAD/CSAVE via ROM patching, fast load mode, multi-block support, post-CLOAD rechain, and **signal-level playback** (`--tape-signal`: real VIA CB1 waveform for custom/protected loaders)
 - **ACIA 6551** — Serial controller at $031C-$031F, transports loopback/TCP/PTY/COM/file + protocol backends (modem AT, PicoWiFiModemUSB; `digitelec` deprecated → use `--dtl2000`), V23 mode (Minitel/Digitelec). See the *chips × transports* matrix below
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
 - **Mageco / ORICON MIDI** — MC6850 ACIA driving the MIDI DIN sockets (31250 baud 8-N-1, forum t=2525). Two designs from the thread: the original **Mageco** card at $03FE-$03FF (`--mageco`) and the modern **ORICON** reboot at $031C-$031D + clock generator $031E-$031F, LOCI-compatible (`--oricon`). Capture/replay the raw MIDI stream with `--mageco file:in[:out]`; play a Standard MIDI File **into** the Oric with `--mageco smf:song.mid[:loop]` (timed MIDI IN at the song's tempo); or — in a `MIDI=1` build — `--mageco midi[:TARGET]` opens a live host MIDI port (ALSA "Phosphoric MIDI" on Linux, CoreMIDI on macOS, WinMM on Windows) so the emulated Oric drives FluidSynth/a DAW and a MIDI keyboard plays into the Oric. The byte stream matches a real Oric+Mageco card through a USB-MIDI interface
@@ -220,6 +220,9 @@ ROM & Model:
 Tape & Disk:
   -t, --tape FILE           Load .TAP cassette file
   -f, --fast-load           Fast load (direct memory injection)
+      --tape-signal         Signal-level tape: real VIA CB1 waveform read by the
+                            actual ROM CLOAD (like Euphoric / real hardware) —
+                            for custom/protected loaders. Excludes -f.
   -d, --disk FILE           Load .DSK disk image (drive A)
   --disk-rom FILE           Load Microdisc ROM
   --disk1/2/3 FILE          Drives B/C/D
