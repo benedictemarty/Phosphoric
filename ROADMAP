@@ -6,6 +6,25 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 90: Émulation cassette au niveau signal (v1.50.0-alpha) - DONE
+- [x] Option `--tape-signal` : génère la forme d'onde de la bande sur VIA CB1
+      (Timer 2), lue par la routine CLOAD **réelle** de la ROM — comme Euphoric
+      / une vraie machine — au lieu de patcher getsync/readbyte (approche
+      Oricutron, incompatible avec les chargeurs cassette maison).
+- [x] Générateur `src/io/cassette.c` (ex-stub) : trame 14 bits (start/8 data
+      LSB/parité impaire/stops), 1ʳᵉ demi-période constante (208 cyc) + 2ᵉ codant
+      le bit (208='1', 416='0'), phase ancrée, leader 64× 0x16. Protocole
+      rétro-ingénieré du ROM BASIC 1.0 ($E67D, seuil ~512 cyc).
+- [x] Gating de l'émission sur le PC dans `[readbyte_entry..getsync_end]` +
+      rewind à la 1ʳᵉ entrée (PB6 inexploitable : scan clavier). Position
+      préservée entre blocs → chargeurs multi-blocs protégés OK.
+- [x] Débloque *Soccer Manager* (KnightSoft 1984, EOR #$55) : titre PUIS jeu
+      lancé (échouait par patch, comme Oricutron).
+- [x] Suite `test-cassette` (8 tests) ; valgrind + static-analysis propres.
+      868 → 876 tests. Doc `docs/sprint90-cassette-signal.md`.
+
+---
+
 ## Phase 1: Foundation (Sprint 1-4) - COMPLETED
 
 ### Sprint 1-2: Core CPU (v0.2.0-alpha) - DONE
@@ -2734,6 +2753,6 @@ activées par défaut, clairement signalées dans l'aide CLI.
 
 ---
 
-**Last Updated**: 2026-07-03
-**Current Version**: 1.49.0-alpha
+**Last Updated**: 2026-07-04
+**Current Version**: 1.50.0-alpha
 **Next Milestone**: 2.0.0 (Telestrat / stable release)

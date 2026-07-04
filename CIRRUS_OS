@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos Cycle-Accurate Emulator
-Version: 1.49.0-alpha
-Build Status: ALPHA (Added — **Windows 11 : Pages (benedictemarty.github.io/Phosphoric) + .exe natif via CI MinGW** (oscompat, backends win, WIN=1, workflow windows-build, artifact 1,6 Mo). Linux inchangé, 868 tests. EMU_VERSION → 1.49.0-alpha)
+Version: 1.50.0-alpha
+Build Status: ALPHA (Added — **Émulation cassette au niveau signal (Sprint 90)** : option `--tape-signal` — génère la forme d'onde sur VIA CB1 lue par la ROM réelle (comme Euphoric), au lieu de patcher getsync/readbyte. Débloque les chargeurs protégés : *Soccer Manager* (KnightSoft, EOR #$55) se charge ET se lance. Générateur cassette.c (ex-stub) : trame 14 bits, 1ʳᵉ demi-période constante, phase ancrée, leader 64× 0x16, protocole ROM $E67D. Gating sur PC de lecture + rewind, position préservée multi-bloc. Suite test-cassette (8). Valgrind + static-analysis propres. 868 → 876 tests. EMU_VERSION → 1.50.0-alpha ; builds natif + SDL2 OK)
+Build Status (prev): ALPHA (Added — **Windows 11 : Pages (benedictemarty.github.io/Phosphoric) + .exe natif via CI MinGW** (oscompat, backends win, WIN=1, workflow windows-build, artifact 1,6 Mo). Linux inchangé, 868 tests. EMU_VERSION → 1.49.0-alpha)
 Build Status (prev): ALPHA (Fixed — README resynchronisé (version/tests/sections/commandes/footer). Docs seules. 868 tests. EMU_VERSION → 1.48.3-alpha)
 Build Status (prev): ALPHA (Changed — docs : README à jour (sprints 79-87b) + nouvelle doc de référence docs/loci.md. Docs seules. 868 tests. EMU_VERSION → 1.48.2-alpha)
 Build Status (prev): ALPHA (Added — test copie menu LOCI rejouée e2e (byte-identique, clé USB → interne) ; suppression = API UNLINK seulement (pas dans le menu v0.3.0). 868 tests. EMU_VERSION → 1.48.1-alpha)
@@ -89,6 +90,7 @@ BUILD STATUS
 [V] Double-Height Text    - Fixed (absolute row parity (y>>1)&7, Oricutron model)
 [V] SDL2 Keyboard         - Complete (64 keys, QWERTY + AZERTY layouts, HW-aligned naming)
 [V] CLOAD ROM Patching    - Complete (getsync + readbyte interception + post-CLOAD rechain)
+[V] Signal-level Cassette - Complete (--tape-signal : forme d'onde VIA CB1 + Timer 2, lue par la ROM réelle ; chargeurs protégés type Soccer Manager ; Sprint 90)
 [V] HIRES Rendering       - Fixed (attribute detection, bit 7 swap encre/papier, $9800 charset)
 [V] HIRES Mode Detection  - Fixed ($26A bit 1, not bit 2)
 [V] Keyboard Automation   - Complete (--type-keys + escapes \n \e \u\d\l\r \Cx(CTRL) \Fx(FUNCT) \Lx/\Rx(SHIFT L/R) \pN ; press_char/ctrl/funct/lshift/rshift API ; tools/keytest validation 172/172 ORIC-1+Atmos)
