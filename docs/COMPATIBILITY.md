@@ -15,7 +15,7 @@ Derniere mise a jour : 2026-03-02
 
 ---
 
-## Jeux cassette (.TAP) — 25/25 fonctionnels
+## Jeux cassette (.TAP) — 26/26 fonctionnels
 
 | Programme | Format | Taille | Statut | Notes |
 |-----------|--------|--------|--------|-------|
@@ -42,6 +42,7 @@ Derniere mise a jour : 2026-03-02
 | Pasta Blasta | .TAP | 22 KB | Fonctionnel | Fast load |
 | Psy | .TAP | 33 KB | Fonctionnel | Fast load |
 | Poker (poker-asn.tap) | .TAP | — | Fonctionnel | Graphismes HIRES corrects |
+| Soccer Manager | .TAP | 44 KB | Fonctionnel | **Chargeur maison + dechiffrement EOR #$55 → `--tape-signal`** (echoue en fast load, comme Oricutron) |
 | Spooky | .TAP | 24 KB | Fonctionnel | Chargement OK |
 | Spooky (cracked) | .TAP | 24 KB | Fonctionnel | Fast load |
 
