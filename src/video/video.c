@@ -277,12 +277,18 @@ static bool decode_attr(video_t* vid, uint8_t attr,
 
 /**
  * Render a single pixel block (6 pixels) for a HIRES data byte.
+ *
+ * Bit 7 (inverse) does NOT swap ink/paper — the real ULA (and Oricutron)
+ * complements both colours (XOR 7): fg -> fg^7, bg -> bg^7. This only
+ * differs from a plain swap when ink and paper are not each other's
+ * complement (e.g. blue ink on black paper: swap gives black-on-blue,
+ * but the hardware gives yellow-on-white). AIC images rely on this.
  */
 static void render_hires_block(video_t* vid, int x, int y,
                                uint8_t byte, uint8_t ink, uint8_t paper) {
     bool inv = (byte & 0x80) != 0;
-    uint8_t fg = inv ? paper : ink;
-    uint8_t bg = inv ? ink : paper;
+    uint8_t fg = inv ? (uint8_t)(ink ^ 0x07) : ink;
+    uint8_t bg = inv ? (uint8_t)(paper ^ 0x07) : paper;
     uint8_t ir, ig, ib, pr, pg, pb;
     get_rgb(vid, fg, &ir, &ig, &ib);
     get_rgb(vid, bg, &pr, &pg, &pb);
@@ -297,11 +303,17 @@ static void render_hires_block(video_t* vid, int x, int y,
 /**
  * Render an attribute block (6 pixels wide, filled with paper color).
  * For text mode, renders 6x8; for HIRES, renders 6x1.
+ *
+ * The ULA draws the attribute cell itself in the (new) background colour.
+ * If the attribute byte has bit 7 set (inverse), the background is
+ * complemented (XOR 7), matching Oricutron's ula_render_block(inverted,
+ * data=0) which uses bg^7 for every dot.
  */
 static void render_attr_block(video_t* vid, int x, int y,
-                              uint8_t paper, int height) {
+                              uint8_t paper, int height, bool inverse) {
+    uint8_t bg = inverse ? (uint8_t)(paper ^ 0x07) : paper;
     uint8_t pr, pg, pb;
-    get_rgb(vid, paper, &pr, &pg, &pb);
+    get_rgb(vid, bg, &pr, &pg, &pb);
     for (int cy = 0; cy < height; cy++)
         for (int bx = 0; bx < 6; bx++)
             set_pixel(vid, x + bx, y + cy, pr, pg, pb);
@@ -374,18 +386,20 @@ static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
         if ((byte & 0x60) == 0) {
             bool inverse = false;
             decode_attr(vid, byte, &ink, &paper, &inverse);
-            render_attr_block(vid, col * 6, y, paper, 1);
+            render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
         } else {
-            uint8_t ir, ig, ib, pr, pg, pb;
-            get_rgb(vid, ink, &ir, &ig, &ib);
-            get_rgb(vid, paper, &pr, &pg, &pb);
-            int erow = effective_chline(vid, chline, row);
-            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
             bool char_inv = (byte & 0x80) != 0;
             if (blink_phase_on(vid)) char_inv = !char_inv;
+            /* Inverse complements ink/paper (XOR 7), it does not swap them. */
+            uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
+            uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
+            uint8_t ir, ig, ib, pr, pg, pb;
+            get_rgb(vid, fg, &ir, &ig, &ib);
+            get_rgb(vid, bg, &pr, &pg, &pb);
+            int erow = effective_chline(vid, chline, row);
+            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
             for (int bx = 5; bx >= 0; bx--) {
                 bool on = (bits & (1 << bx)) != 0;
-                if (char_inv) on = !on;
                 if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
                 else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
             }
@@ -497,23 +511,22 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
             if ((byte & 0x60) == 0) {
                 bool inverse = false;
                 decode_attr(vid, byte, &ink, &paper, &inverse);
-                render_attr_block(vid, col * 6, y, paper, 1);
+                render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
             } else if (hires) {
                 render_hires_block(vid, col * 6, y, byte, ink, paper);
             } else {
-                bool inverse = false;
-                uint8_t fg = inverse ? paper : ink;
-                uint8_t bg = inverse ? ink : paper;
+                bool char_inv = (byte & 0x80) != 0;
+                if (blink_phase_on(vid)) char_inv = !char_inv;
+                /* Inverse complements ink/paper (XOR 7), it does not swap. */
+                uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
+                uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
                 uint8_t ir, ig, ib, pr, pg, pb;
                 get_rgb(vid, fg, &ir, &ig, &ib);
                 get_rgb(vid, bg, &pr, &pg, &pb);
                 int erow = effective_chline(vid, chline, row);
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
-                bool char_inv = (byte & 0x80) != 0;
-                if (blink_phase_on(vid)) char_inv = !char_inv;
                 for (int bx = 5; bx >= 0; bx--) {
                     bool on = (bits & (1 << bx)) != 0;
-                    if (char_inv) on = !on;
                     if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
                     else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
                 }
@@ -532,21 +545,20 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
             if ((byte & 0x60) == 0) {
                 bool inverse = false;
                 decode_attr(vid, byte, &ink, &paper, &inverse);
-                render_attr_block(vid, col * 6, y, paper, 1);
+                render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
             } else {
-                bool inverse = false;
-                uint8_t fg = inverse ? paper : ink;
-                uint8_t bg = inverse ? ink : paper;
+                bool char_inv = (byte & 0x80) != 0;
+                if (blink_phase_on(vid)) char_inv = !char_inv;
+                /* Inverse complements ink/paper (XOR 7), it does not swap. */
+                uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
+                uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
                 uint8_t ir, ig, ib, pr, pg, pb;
                 get_rgb(vid, fg, &ir, &ig, &ib);
                 get_rgb(vid, bg, &pr, &pg, &pb);
                 int erow = effective_chline(vid, chline, row);
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
-                bool char_inv = (byte & 0x80) != 0;
-                if (blink_phase_on(vid)) char_inv = !char_inv;
                 for (int bx = 5; bx >= 0; bx--) {
                     bool on = (bits & (1 << bx)) != 0;
-                    if (char_inv) on = !on;
                     if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
                     else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
                 }

@@ -6,6 +6,28 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 91: Bit d'inversion HIRES — complément XOR 7 (v1.50.1-alpha) - DONE
+- [x] Le bit 7 (inversion) d'un octet HIRES/texte **complémente** ink ET paper
+      (fg→fg^7, bg→bg^7) au lieu de les **permuter** — conforme à la vraie ULA
+      et à Oricutron (`bittab` : inv = `(fg^7, bg^7)`). Ne diffère d'une
+      permutation que si ink/paper ne sont pas complémentaires (blanc/noir
+      masquait le bug pour le texte courant).
+- [x] Déclencheur : rapport **Hialmar** (forum Defence Force
+      [p35017](https://forum.defence-force.org/viewtopic.php?p=35017#p35017)) —
+      images **AIC** (format du jeu « Tyrann 4 ») rendues différemment vs
+      Oricutron. `mapt4.tap` : la mer (octets inverses `$FE`/`$FF`, ink
+      bleu/jaune sur noir) sortait **noire** au lieu de **bleue/blanche**.
+- [x] Fix `src/video/video.c` : `render_hires_block` (fg=inv?ink^7:ink /
+      bg=inv?paper^7:paper) ; les 2 chemins texte (0-199, 200-223) + 80 col
+      abandonnent `on = !on` ; `render_attr_block` prend un flag `inverse`
+      (cellule attr bit 7 → paper^7, conforme `ula_render_block(inverted,0)`).
+- [x] Validé pixel à pixel vs modèle fidèle de l'algorithme ULA d'Oricutron :
+      99,9 % sur les 200 lignes HIRES (résidu = curseur BASIC vivant `$BB80`).
+      Pixels bleus 720 → 1705. Test `test_hires_inverse_complement`.
+      876 → 877 tests.
+
+---
+
 ### Sprint 90: Émulation cassette au niveau signal (v1.50.0-alpha) - DONE
 - [x] Option `--tape-signal` : génère la forme d'onde de la bande sur VIA CB1
       (Timer 2), lue par la routine CLOAD **réelle** de la ROM — comme Euphoric

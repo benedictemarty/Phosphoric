@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.1-alpha] - 2026-07-09
+
+### Fixed — Bit d'inversion HIRES : complément XOR 7, pas échange ink/paper (Sprint 91)
+
+Le bit 7 (inversion) d'un octet HIRES/texte **ne permute pas** ink et paper :
+comme sur la vraie ULA (et sous Oricutron), il **complémente les deux
+couleurs** (XOR 7) — `fg → fg^7`, `bg → bg^7`. Cela ne diffère d'une simple
+permutation que lorsque ink et paper ne sont pas complémentaires : avec du
+blanc sur noir, permuter et complémenter donnent le même résultat, ce qui
+masquait le bug pour le texte courant.
+
+- **Déclencheur** : rapport de **Hialmar** (forum Defence Force,
+  [p35017](https://forum.defence-force.org/viewtopic.php?p=35017#p35017)) — les
+  **images AIC** (format de son jeu « Tyrann 4 ») s'affichaient différemment
+  sous Phosphoric et sous Oricutron. Cas concret (image `mapt4.tap`) : la
+  **mer**, dessinée en octets inverses (`$FE`, `$FF`, …) avec ink=bleu(4) ou
+  jaune(3) sur paper=noir(0), sortait **noire** sous Phosphoric au lieu de
+  **bleue/blanche** sous Oricutron. Diagnostic : Phosphoric permutait
+  ink↔paper (`fg = inv ? paper : ink`) alors que le matériel complémente.
+- **Correctif** (`src/video/video.c`) : `render_hires_block` passe de
+  l'échange à `fg = inv ? ink^7 : ink` / `bg = inv ? paper^7 : paper`.
+  Les deux chemins texte (lignes 0-199 et 200-223) et le mode 80 colonnes
+  cessent d'inverser le motif (`on = !on`, équivalent à un échange) au profit
+  du même complément. `render_attr_block` prend un paramètre `inverse` : une
+  cellule d'attribut avec bit 7 est rendue en `paper^7` (conforme à
+  `ula_render_block(inverted, data=0)` d'Oricutron).
+- **Validation** : rendu de `mapt4.tap` comparé pixel à pixel à un modèle
+  fidèle de l'algorithme ULA d'Oricutron → concordance 99,9 % sur les 200
+  lignes HIRES (résidu = curseur/texte BASIC vivant dans la fenêtre `$BB80`,
+  absent du modèle statique). Avant/après : pixels bleus 720 → 1705.
+- **Test** : `test_hires_inverse_complement` (test_video) — ink bleu + octet
+  inverse tous pixels → jaune (4^7=3) ; pixels éteints → blanc (0^7=7).
+- 876 → 877 tests. `EMU_VERSION` 1.50.0 → 1.50.1-alpha.
+
 ## [1.50.0-alpha] - 2026-07-04
 
 ### Added — Émulation cassette au niveau signal (VIA CB1 + Timer 2) (Sprint 90)
