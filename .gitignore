@@ -37,6 +37,7 @@ test_audio
 test_debugger
 test_atmos
 test_control_dispatch
+test_control_queue
 test_coverage
 test_joystick
 test_keyboard

@@ -5,7 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.51.0-alpha] - 2026-07-14
+## [1.52.0-alpha] - 2026-07-14
+
+### Added — File de commandes thread-safe pour le pilotage (Sprint 93, API REST Epic 2)
+
+Deuxième pierre de la future **API REST de commande** (spec `docs/http-api.md`) :
+le pont thread-safe entre un thread producteur (le futur worker HTTP) et la
+boucle émulateur **single-thread**. C'est le point technique délicat isolé :
+une commande qui mute l'état (reset, load-disk, savestate…) doit s'exécuter
+**sur le thread émulateur, à une frontière de frame**, jamais depuis un thread
+arbitraire en plein milieu d'une instruction.
+
+- **Module `control_queue`** (`include/control_queue.h`, `src/control_queue.c`) :
+  file mono-consommateur / multi-producteur (liste chaînée sous un mutex
+  partagé + une condition variable **par commande**, pour qu'un producteur
+  n'attende que sa propre complétion).
+  - `control_queue_submit(q, line, &reply, &len)` — côté producteur : enfile la
+    commande et **bloque** jusqu'à ce que la boucle l'ait exécutée ; récupère la
+    réponse (buffer possédé, à libérer). Thread-safe, multi-appelants.
+  - `control_queue_drain(q, emu)` — côté émulateur : exécute le lot présent à
+    l'entrée (borne le travail par frame), via `control_dispatch()` + sink
+    buffer, et réveille chaque producteur. Consommateur unique attendu.
+  - `control_queue_create/destroy` — la destruction réveille tout producteur
+    encore bloqué (réponse vide, `CONTROL_CONTINUE`).
+  - Le consommateur relâche le mutex pendant `control_dispatch()` (potentiellement
+    lent) ; le couple release/acquire du mutex donne au producteur une vue
+    *happens-before* de la réponse.
+- **Link** : `-lpthread` ajouté au build de base (neutre sur glibc ≥ 2.34 ;
+  WIN utilise déjà `-lwinpthread`).
+- **Tests** : nouvelle suite `test-control-queue` (3 tests) — dont un scénario
+  concurrent **8 producteurs × 100 allers-retours** write/read sur une adresse
+  page-zéro **unique par thread**, prouvant le routage correct de chaque réponse
+  vers son producteur et l'absence de corruption de l'état partagé. **Valgrind
+  memcheck ET helgrind propres** (zéro race détectée).
+- **Câblage `main.c` différé à l'Epic 3** (Sprint 94) : tant qu'aucun producteur
+  n'existe (le serveur HTTP), la boucle n'a rien à drainer ; `drain(NULL, …)`
+  est un no-op pour un branchement inconditionnel futur. 888 → 891 tests.
+
 
 ### Changed — Dispatch `--control` découplé de son transport (Sprint 92, API REST Epic 1)
 

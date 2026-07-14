@@ -22,7 +22,17 @@ isolé dans l'Epic 2.
   - [x] Test unitaire du dispatch via sink buffer : `test-control-dispatch`
         (11 tests, réponses vérifiées à l'octet près). Valgrind propre.
         877 → 888 tests.
-- **Sprint 93 — Epic 2 : file de commandes thread-safe** (drainée par frame).
+- **Sprint 93 — Epic 2 : file de commandes thread-safe** (v1.52.0-alpha) - DONE
+  - [x] Module `control_queue` : file mono-consommateur / multi-producteur
+        (mutex partagé + condvar par commande). `submit()` enfile et bloque
+        jusqu'à exécution ; `drain(emu)` exécute le lot par frame via
+        `control_dispatch` + sink buffer et réveille les producteurs.
+  - [x] `-lpthread` au build de base ; `create/destroy` réveille les bloqués.
+  - [x] Test `test-control-queue` (3 tests) dont concurrent 8×100 write/read
+        sur adresse unique/thread (routage réponse→producteur + zéro
+        corruption). Valgrind memcheck + helgrind propres. 888 → 891 tests.
+  - [ ] Câblage `main.c` (drain par frame) — **différé à l'Epic 3** : pas de
+        producteur tant que le serveur HTTP n'existe pas ; `drain(NULL)` no-op.
 - **Sprint 94 — Epic 3 : serveur HTTP** (`--http-api=PORT`, bind localhost,
   endpoints média/état, réutilise le socket du cast server).
 - **Sprint 95 — Epic 4 : injection clavier + doc/exemples**.
