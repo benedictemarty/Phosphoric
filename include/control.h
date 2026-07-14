@@ -15,8 +15,49 @@
 #define CONTROL_H
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
 
 typedef struct emulator_s emulator_t;
+
+/* ─── response sink (sprint 92, Epic 1) ────────────────────────────
+ * Decouples command handlers from their output channel so the same
+ * dispatch feeds both the stdin/stdout IPC protocol and (future) an
+ * HTTP API. In `stream` mode writes go straight to `fp` and are
+ * flushed, reproducing the historical byte-for-byte stdout behaviour.
+ * In `buffer` mode output accumulates in a growable, binary-safe
+ * buffer the caller can inspect (and must free with control_sink_free). */
+typedef struct control_sink_s {
+    FILE*  fp;     /**< non-NULL => write-through stream (stdout mode) */
+    char*  buf;    /**< else => accumulation buffer (HTTP/buffer mode) */
+    size_t len;    /**< bytes used in buf (excludes NUL terminator)    */
+    size_t cap;    /**< allocated capacity of buf                      */
+    bool   error;  /**< set on a failed write / allocation             */
+} control_sink_t;
+
+/** Outcome of dispatching one command line. */
+typedef enum {
+    CONTROL_CONTINUE = 0,  /**< keep reading commands                  */
+    CONTROL_RESUME   = 1,  /**< resume CPU (step/next/step-out/continue)*/
+    CONTROL_QUIT     = 2   /**< client asked to quit                   */
+} control_result_t;
+
+/** Initialise a sink that writes through to @p fp (e.g. stdout). */
+void control_sink_init_stream(control_sink_t* s, FILE* fp);
+/** Initialise a sink that accumulates output in memory. */
+void control_sink_init_buffer(control_sink_t* s);
+/** Release a buffer-mode sink's storage (no-op in stream mode). */
+void control_sink_free(control_sink_t* s);
+
+/**
+ * @brief Parse and execute one command line into @p sink.
+ *
+ * @p line is tokenised in place (mutated). The reply (REP) is written to
+ * @p sink; asynchronous events (EVT) are not produced here. Returns whether
+ * the caller should keep reading, resume the CPU, or quit.
+ */
+control_result_t control_dispatch(emulator_t* emu, control_sink_t* sink,
+                                  char* line);
 
 /**
  * @brief Read and dispatch one batch of commands from stdin, blocking.

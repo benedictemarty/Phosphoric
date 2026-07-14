@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.0-alpha] - 2026-07-14
+
+### Changed — Dispatch `--control` découplé de son transport (Sprint 92, API REST Epic 1)
+
+Fondation de la future **API REST de commande** (spec `docs/http-api.md`) :
+le protocole `--control` est refactoré pour que ses handlers n'écrivent plus
+directement dans `stdout`, mais dans un **sink abstrait**. La même logique de
+commande pourra ainsi alimenter à la fois l'IPC stdin/stdout existant et un
+transport HTTP à venir, **sans dupliquer** les handlers métier
+(`cmd_load_tap`, `cmd_reset`, `cmd_load_disk`, `cmd_peek`…).
+
+- **`control_sink_t`** (`include/control.h`, `src/control.c`) : abstraction de
+  sortie avec deux modes — `stream` (write-through vers un `FILE*`, flush
+  immédiat : comportement stdout **byte-pour-byte identique**) et `buffer`
+  (accumulation mémoire, binary-safe, growable) que le futur serveur HTTP
+  inspectera. Helpers `sink_ok`/`sink_err`/`sink_printf`/`sink_write`.
+- **`control_dispatch(emu, sink, line)`** extrait du grand `if/else` de
+  `control_repl()` ; retourne un `control_result_t`
+  (`CONTINUE`/`RESUME`/`QUIT`). `control_repl()` devient une boucle mince
+  au-dessus du dispatch ; `control_poll_pause()` réutilise un sink stream.
+- Les événements asynchrones (`EVT ready/stopped/halt`) restent liés à stdout
+  (hors requête/réponse) — inchangés.
+- **Tests** : nouvelle suite unitaire `test-control-dispatch` (11 tests) qui
+  pilote `control_dispatch` via un sink buffer et vérifie les réponses à
+  l'octet près + les résultats `CONTINUE`/`RESUME`/`QUIT`. La suite
+  d'intégration `test-control` (hot-swap média) reste verte sans modification,
+  garantissant la non-régression du protocole stdout. Valgrind propre.
+- **Aucun changement de comportement observable** côté IPC/protocole
+  (`CONTROL_PROTO_VERSION` inchangé). 877 → 888 tests.
+
 ## [1.50.1-alpha] - 2026-07-09
 
 ### Fixed — Bit d'inversion HIRES : complément XOR 7, pas échange ink/paper (Sprint 91)

@@ -12,12 +12,16 @@ port dédié, **sans dupliquer** la logique du protocole `--control`. Découpé 
 4 sprints ; le risque single-thread (mutations aux frontières de frame) est
 isolé dans l'Epic 2.
 
-- **Sprint 92 — Epic 1 : découpler le dispatch de son transport** (fondation)
-  - [ ] `control_sink_t` (stream stdout | buffer mémoire), handlers `cmd_*`
-        écrivent dans un sink au lieu de `stdout` — non-régression byte-exacte.
-  - [ ] Extraire `control_dispatch(emu, sink, line)` → `control_result_t`
-        (`CONTINUE`/`RESUME`/`QUIT`) ; `control_repl` devient une boucle mince.
-  - [ ] Test unitaire du dispatch via sink buffer.
+- **Sprint 92 — Epic 1 : découpler le dispatch de son transport** (v1.51.0-alpha) - DONE
+  - [x] `control_sink_t` (stream stdout | buffer mémoire), handlers `cmd_*`
+        écrivent dans un sink au lieu de `stdout` — non-régression byte-exacte
+        (test-control hot-swap média vert sans modification).
+  - [x] Extraire `control_dispatch(emu, sink, line)` → `control_result_t`
+        (`CONTINUE`/`RESUME`/`QUIT`) ; `control_repl` devient une boucle mince ;
+        `control_poll_pause` réutilise un sink stream.
+  - [x] Test unitaire du dispatch via sink buffer : `test-control-dispatch`
+        (11 tests, réponses vérifiées à l'octet près). Valgrind propre.
+        877 → 888 tests.
 - **Sprint 93 — Epic 2 : file de commandes thread-safe** (drainée par frame).
 - **Sprint 94 — Epic 3 : serveur HTTP** (`--http-api=PORT`, bind localhost,
   endpoints média/état, réutilise le socket du cast server).
