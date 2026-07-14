@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.0-alpha] - 2026-07-14
+
+### Added — Serveur HTTP de commande (REST) (Sprint 94, API REST Epic 3)
+
+Aboutissement de l'initiative **API REST** (spec `docs/http-api.md`) : un
+serveur HTTP optionnel pilote Phosphoric via des appels REST, en réutilisant
+**intégralement** le dispatch `--control` (Epic 1) et la file thread-safe
+(Epic 2). Aucune logique de commande n'est dupliquée ; l'HTTP n'est qu'un
+transport de plus.
+
+- **Module `http_api`** (`include/network/http_api.h`,
+  `src/network/http_api.c`, flag `HTTPAPI=1` → `HAS_HTTPAPI`) : un thread
+  d'arrière-plan (socket + `select`, calqué sur le cast server) accepte une
+  connexion à la fois, parse un sous-ensemble d'HTTP/1.1, mappe la requête vers
+  une ligne `--control`, l'exécute via `control_queue_submit()` (bloque jusqu'au
+  drain de frame) et répond en **JSON** (`{"ok":true,"reply":…}` → 200 ;
+  `{"ok":false,"error":…}` → 400). En-tête CORS `Access-Control-Allow-Origin: *`.
+- **Options CLI** : `--http-api[=PORT]` (défaut 8888), `--http-api-bind ADDR`
+  (défaut **`127.0.0.1`** ; exposition réseau opt-in explicite),
+  `--http-api-root DIR` (bac à sable des ops fichiers, défaut CWD).
+- **Endpoints** : `GET /` (aide), `/hello`, `/regs`, `/mem?addr=&len=`,
+  `/peek/{via|psg|disk|acia|tape|loci}` ; `POST /reset`, `/mem` (write),
+  `/tape`, `/disk/{A-D}`, `/exec/{step|next|step-out|continue|pause}` ;
+  `DELETE /tape`, `/disk/{A-D}`.
+- **Sécurité** : les chemins de `/tape` et `/disk` sont résolus **dans** le
+  répertoire racine ; chemins absolus et `..` rejetés (403).
+- **Câblage `main.c`** (report du Sprint 93 levé) : création de `control_queue`,
+  démarrage du thread serveur après le parsing CLI, `control_queue_drain()`
+  appelé **une fois par frame** (à côté du push cast) ; arrêt du serveur **avant**
+  destruction de la file au cleanup (aucun producteur résiduel).
+- **Tests** : `test-httpapi` (8 vérifs e2e curl vs émulateur headless live) —
+  round-trip write/read prouvant l'exécution sur le thread émulateur, rejet du
+  bac à sable, 404. Skip gracieux si build sans `HTTPAPI=1`. Valgrind runtime
+  sans erreur. 891 → 899 tests.
+
 ## [1.52.0-alpha] - 2026-07-14
 
 ### Added — File de commandes thread-safe pour le pilotage (Sprint 93, API REST Epic 2)

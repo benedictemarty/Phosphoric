@@ -31,11 +31,20 @@ isolé dans l'Epic 2.
   - [x] Test `test-control-queue` (3 tests) dont concurrent 8×100 write/read
         sur adresse unique/thread (routage réponse→producteur + zéro
         corruption). Valgrind memcheck + helgrind propres. 888 → 891 tests.
-  - [ ] Câblage `main.c` (drain par frame) — **différé à l'Epic 3** : pas de
-        producteur tant que le serveur HTTP n'existe pas ; `drain(NULL)` no-op.
-- **Sprint 94 — Epic 3 : serveur HTTP** (`--http-api=PORT`, bind localhost,
-  endpoints média/état, réutilise le socket du cast server).
-- **Sprint 95 — Epic 4 : injection clavier + doc/exemples**.
+  - [x] Câblage `main.c` (drain par frame) — **fait au Sprint 94** avec le
+        premier producteur (le serveur HTTP) ; `drain(NULL)` reste un no-op.
+- **Sprint 94 — Epic 3 : serveur HTTP** (v1.53.0-alpha) - DONE
+  - [x] Module `http_api` (flag `HTTPAPI=1`) : thread socket/`select` calqué sur
+        le cast server, parse HTTP/1.1, mappe vers une ligne `--control`,
+        exécute via `control_queue_submit`, réponse JSON + CORS.
+  - [x] Options `--http-api[=PORT]` (8888), `--http-api-bind` (défaut
+        `127.0.0.1`), `--http-api-root` (bac à sable) ; câblage `main.c`
+        (queue + drain par frame + arrêt avant destruction).
+  - [x] Endpoints GET/POST/DELETE (hello, regs, mem, peek, reset, tape, disk,
+        exec) ; sécurité chemins (absolus/`..` rejetés → 403).
+  - [x] `test-httpapi` (8 vérifs e2e curl, skip gracieux sans `HTTPAPI=1`) ;
+        valgrind runtime clean. 891 → 899 tests.
+- **Sprint 95 — Epic 4 : injection clavier + doc/exemples** (`POST /keys`).
 
 ---
 

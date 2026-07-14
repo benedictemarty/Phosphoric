@@ -1,6 +1,17 @@
 # API REST de commande — Phosphoric
 
-> Spec agile. Statut : **Epic 1 en cours** (Sprint 92). Les Epics 2-4 sont au backlog.
+> Statut : **Epics 1-3 livrés** (Sprints 92-94, v1.53.0-alpha) — l'API est
+> fonctionnelle (`make HTTPAPI=1`, option `--http-api`). Epic 4 (injection
+> clavier `POST /keys` + exemples) au backlog (Sprint 95).
+>
+> Démarrage rapide :
+> ```bash
+> make HTTPAPI=1                       # (ajouter SDL2=1 pour la GUI)
+> ./oric1-emu -r roms/basic11b.rom --http-api=8888 --http-api-root ./disks
+> curl -s localhost:8888/regs
+> curl -s -X POST --data 'path=game.tap' localhost:8888/tape
+> curl -s -X POST localhost:8888/reset
+> ```
 
 ## 1. Vision
 

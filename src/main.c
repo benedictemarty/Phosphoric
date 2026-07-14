@@ -48,6 +48,8 @@
 #include "debugger.h"
 #include "tui.h"
 #include "control.h"
+#include "control_queue.h"
+#include "network/http_api.h"
 #include "network/gdbstub.h"
 #include "savestate.h"
 #include "utils/trace.h"
@@ -427,6 +429,9 @@ static void print_usage(const char* program_name) {
     printf("      --cast-server[=PORT]   Start MJPEG cast server (default port: 8080)\n");
     printf("      --cast-to[=DEVICE]     Cast to Chromecast (native CASTV2 protocol)\n");
     printf("      --cast-discover        Discover Chromecast devices on network\n");
+    printf("      --http-api[=PORT]      HTTP control API (REST) on PORT (default 8888, HTTPAPI=1 build)\n");
+    printf("      --http-api-bind ADDR   Bind address for the HTTP API (default 127.0.0.1)\n");
+    printf("      --http-api-root DIR    Sandbox root for HTTP file ops /tape,/disk (default CWD)\n");
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
     printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
@@ -1684,6 +1689,17 @@ static void emulator_cleanup(emulator_t* emu) {
     if (emu->has_cast_server) {
         cast_server_stop(&emu->cast_server);
     }
+    /* Stop the HTTP server (joins its thread → no more producers) BEFORE
+     * destroying the queue, so no submit() can touch freed memory. */
+    if (emu->has_http_api) {
+        http_api_stop(emu->http_api);
+        emu->http_api = NULL;
+        emu->has_http_api = false;
+    }
+    if (emu->control_queue) {
+        control_queue_destroy(emu->control_queue);
+        emu->control_queue = NULL;
+    }
     oric_printer_close(&emu->printer);
     if (emu->serial_backend) {
         serial_backend_destroy(emu->serial_backend);
@@ -2713,6 +2729,12 @@ static void emulator_run(emulator_t* emu) {
                                    (unsigned int)emu->video.native_h);
         }
 
+        /* Drain any HTTP-API commands at this frame boundary (sprint 94). The
+         * server thread parked in control_queue_submit() is unblocked here, so
+         * state-mutating commands run on the emulator thread. No-op when the
+         * API is disabled (control_queue is NULL). */
+        control_queue_drain(emu->control_queue, emu);
+
         /* Present to screen and handle events if not headless */
         if (!emu->headless) {
             /* OSD : garde une copie fraîche du charset Oric (valide en mode
@@ -3134,6 +3156,11 @@ int main(int argc, char* argv[]) {
     const char* debug_break_addr = NULL;
     bool cast_server_enabled = false;
     uint16_t cast_server_port = 0;
+    /* HTTP control API (sprint 94) */
+    bool http_api_enabled = false;
+    uint16_t http_api_port = 0;            /* 0 → HTTP_API_DEFAULT_PORT */
+    const char* http_api_bind = NULL;      /* NULL → 127.0.0.1          */
+    const char* http_api_root = NULL;      /* NULL → "." (CWD)          */
     bool cast_discover = false;
     bool cast_to_enabled = false;
     const char* cast_to_device = NULL;
@@ -3181,7 +3208,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB, OPT_TAPE_SIGNAL };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -3216,6 +3243,9 @@ int main(int argc, char* argv[]) {
         {"debug",               no_argument,       0, 'D'},
         {"break",               required_argument, 0, OPT_DEBUG_BREAK},
         {"cast-server",         optional_argument, 0, OPT_CAST_SERVER},
+        {"http-api",            optional_argument, 0, OPT_HTTP_API},
+        {"http-api-bind",       required_argument, 0, OPT_HTTP_API_BIND},
+        {"http-api-root",       required_argument, 0, OPT_HTTP_API_ROOT},
         {"cast-to",             optional_argument, 0, OPT_CAST_TO},
         {"cast-discover",       no_argument,       0, OPT_CAST_DISCOVER},
         {"save-state",          required_argument, 0, OPT_SAVE_STATE},
@@ -3311,6 +3341,12 @@ int main(int argc, char* argv[]) {
                 cast_server_enabled = true;
                 if (optarg) cast_server_port = (uint16_t)atoi(optarg);
                 break;
+            case OPT_HTTP_API:
+                http_api_enabled = true;
+                if (optarg) http_api_port = (uint16_t)atoi(optarg);
+                break;
+            case OPT_HTTP_API_BIND: http_api_bind = optarg; break;
+            case OPT_HTTP_API_ROOT: http_api_root = optarg; break;
             case OPT_CAST_TO:
                 cast_to_enabled = true;
                 if (optarg) cast_to_device = optarg;
@@ -4368,6 +4404,27 @@ int main(int argc, char* argv[]) {
         }
 #else
         fprintf(stderr, "Cast support not compiled in. Build with CAST=1.\n");
+#endif
+    }
+
+    /* Initialize HTTP control API if requested (sprint 94). Creates the
+     * frame-boundary command queue and starts the server thread; commands are
+     * executed on this (emulator) thread when the main loop drains the queue. */
+    if (http_api_enabled) {
+#ifdef HAS_HTTPAPI
+        emu.control_queue = control_queue_create();
+        emu.http_api = emu.control_queue
+            ? http_api_start(&emu, emu.control_queue, http_api_port,
+                             http_api_bind, http_api_root)
+            : NULL;
+        if (emu.http_api) {
+            emu.has_http_api = true;
+        } else {
+            log_error("Failed to start HTTP API server");
+            if (emu.control_queue) { control_queue_destroy(emu.control_queue); emu.control_queue = NULL; }
+        }
+#else
+        fprintf(stderr, "HTTP API not compiled in. Build with HTTPAPI=1.\n");
 #endif
     }
 

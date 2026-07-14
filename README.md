@@ -97,6 +97,18 @@ make SDL2=1
 - **Python smoke client** (`tests/integration/phos_smoke_client.py`) — stdlib only, ~250 LOC reference implementation.
 - **Spec** : [docs/control_protocol.md](docs/control_protocol.md)
 
+### HTTP Control API (REST)
+- **`--http-api[=PORT]`** (build with `HTTPAPI=1`) — the same command set exposed
+  over HTTP/JSON on a dedicated port (default 8888), for scripting, browser
+  dashboards and e2e tests. Reuses the `--control` dispatch; no logic duplicated.
+- **Endpoints** : `GET /hello /regs /mem?addr=&len= /peek/{via|psg|disk|acia|tape|loci}` ;
+  `POST /reset /mem /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause}` ;
+  `DELETE /tape /disk/{A-D}`. Replies are JSON (`{"ok":true,"reply":…}` / `{"ok":false,"error":…}`), CORS-enabled.
+- **Safe by default** : binds `127.0.0.1` (expose with `--http-api-bind 0.0.0.0`);
+  file ops (`/tape`, `/disk`) are sandboxed to `--http-api-root DIR` (absolute
+  paths and `..` rejected). Commands run on the emulator thread at frame boundaries.
+- **Spec** : [docs/http-api.md](docs/http-api.md)
+
 ### Chromecast Streaming
 - **MJPEG server** — HTTP stream at `/stream` (720x672, 3x upscale)
 - **WAV audio** — Real-time PSG audio streaming at `/audio`
@@ -309,6 +321,11 @@ Chromecast:
   --cast-server[=PORT]      Start MJPEG server (default 8080)
   --cast-to[=DEVICE]        Cast to Chromecast
   --cast-discover           Discover Chromecast devices
+
+HTTP control API (build with HTTPAPI=1):
+  --http-api[=PORT]         REST control API (default 8888)
+  --http-api-bind ADDR      Bind address (default 127.0.0.1)
+  --http-api-root DIR       Sandbox root for /tape,/disk file ops (default CWD)
 
 Display & Export:
   --keyboard LAYOUT         qwerty (default) or azerty

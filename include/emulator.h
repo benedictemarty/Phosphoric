@@ -42,7 +42,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.52.0-alpha"
+#define EMU_VERSION "1.53.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -353,6 +353,16 @@ typedef struct emulator_s {
     /* CASTV2 client (native Chromecast control) */
     castv2_client_t castv2_client;
     bool has_castv2;
+
+    /* HTTP control API (sprint 94, API REST Epic 3). Opaque pointers keep the
+     * pthread/socket details out of this header; both are NULL unless
+     * --http-api is given. The queue is the frame-boundary hand-off drained
+     * once per frame by the main loop. */
+    struct control_queue_s* control_queue;   /* producer→emulator commands   */
+    struct http_api_server_s* http_api;       /* HTTP server (own thread)     */
+    bool  has_http_api;
+    const char* http_api_bind;                /* bind address (default local) */
+    const char* http_api_root;                /* file-op sandbox root         */
 
     /* Loaded file paths (for save state metadata) */
     const char* rom_path;
