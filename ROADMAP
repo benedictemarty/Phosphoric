@@ -6,6 +6,25 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### API REST de commande — backlog (spec `docs/http-api.md`)
+Exposer le pilotage de Phosphoric (média, état, exécution) via HTTP/JSON sur un
+port dédié, **sans dupliquer** la logique du protocole `--control`. Découpé en
+4 sprints ; le risque single-thread (mutations aux frontières de frame) est
+isolé dans l'Epic 2.
+
+- **Sprint 92 — Epic 1 : découpler le dispatch de son transport** (fondation)
+  - [ ] `control_sink_t` (stream stdout | buffer mémoire), handlers `cmd_*`
+        écrivent dans un sink au lieu de `stdout` — non-régression byte-exacte.
+  - [ ] Extraire `control_dispatch(emu, sink, line)` → `control_result_t`
+        (`CONTINUE`/`RESUME`/`QUIT`) ; `control_repl` devient une boucle mince.
+  - [ ] Test unitaire du dispatch via sink buffer.
+- **Sprint 93 — Epic 2 : file de commandes thread-safe** (drainée par frame).
+- **Sprint 94 — Epic 3 : serveur HTTP** (`--http-api=PORT`, bind localhost,
+  endpoints média/état, réutilise le socket du cast server).
+- **Sprint 95 — Epic 4 : injection clavier + doc/exemples**.
+
+---
+
 ### Sprint 91: Bit d'inversion HIRES — complément XOR 7 (v1.50.1-alpha) - DONE
 - [x] Le bit 7 (inversion) d'un octet HIRES/texte **complémente** ink ET paper
       (fg→fg^7, bg→bg^7) au lieu de les **permuter** — conforme à la vraie ULA
