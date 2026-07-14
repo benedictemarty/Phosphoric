@@ -95,5 +95,20 @@ curl -s -X POST --data 'path=../etc/passwd' "$BASE/tape" | grep -q '"ok":false' 
 code="$(curl -s -o /dev/null -w '%{http_code}' "$BASE/nope")"
 [ "$code" = "404" ] && ok "GET /nope → 404" || ko "unknown route returned $code"
 
+# 8. keyboard injection (Epic 4): type a BASIC line remotely and verify it runs.
+#    `\n` (backslash-n) is translated to RETURN by the `keys` command. Give the
+#    ROM time to reach Ready, then to type + execute the line.
+sleep 3
+curl -s -X POST --data-urlencode 'text=POKE 4096,123\n' "$BASE/keys" | grep -q '"ok":true' \
+    && ok "POST /keys accepts keystrokes" || ko "POST /keys"
+typed=0
+for _ in $(seq 1 15); do
+    sleep 0.5
+    if curl -s "$BASE/mem?addr=1000&len=1" | grep -q '"reply":"7B"'; then typed=1; break; fi
+done
+[ "$typed" -eq 1 ] \
+    && ok "typed BASIC 'POKE 4096,123' executed (mem[\$1000]=7B)" \
+    || ko "keys→BASIC POKE did not take effect"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

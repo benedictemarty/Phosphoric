@@ -1700,6 +1700,10 @@ static void emulator_cleanup(emulator_t* emu) {
         control_queue_destroy(emu->control_queue);
         emu->control_queue = NULL;
     }
+    if (emu->kbd_inject_buf) {
+        free(emu->kbd_inject_buf);
+        emu->kbd_inject_buf = NULL;
+    }
     oric_printer_close(&emu->printer);
     if (emu->serial_backend) {
         serial_backend_destroy(emu->serial_backend);
@@ -2170,6 +2174,39 @@ do_patch:
         } else {
             log_warning("CSAVE: OOM rebuilding TAP");
         }
+    }
+}
+
+/* Sprint 95 (API REST Epic 4) — feed queued keystrokes (from the `keys`
+ * control command / HTTP POST /keys) into the keyboard matrix, one key every
+ * few frames: press+hold, then release+gap, so the ROM's per-frame scan sees
+ * each key distinctly (and repeated keys are separated). Called once per frame.
+ * Runs on the emulator thread, same as the queue drain that fills the buffer. */
+static void feed_kbd_inject(emulator_t* emu) {
+    if (!emu->kbd_inject_buf) return;
+    if (emu->kbd_inject_pos >= emu->kbd_inject_len) {
+        if (emu->kbd_inject_len) {          /* just finished a batch → reset */
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->kbd_inject_len = 0;
+            emu->kbd_inject_pos = 0;
+            emu->kbd_inject_pressed = false;
+            emu->kbd_inject_delay = 0;
+        }
+        return;
+    }
+    if (emu->kbd_inject_delay > 0) { emu->kbd_inject_delay--; return; }
+
+    if (!emu->kbd_inject_pressed) {
+        oric_keyboard_release_all(&emu->keyboard);
+        oric_keyboard_press_char(&emu->keyboard,
+                                 emu->kbd_inject_buf[emu->kbd_inject_pos]);
+        emu->kbd_inject_pressed = true;
+        emu->kbd_inject_delay = 3;          /* hold ~3 frames ≈ 60 ms */
+    } else {
+        oric_keyboard_release_all(&emu->keyboard);
+        emu->kbd_inject_pressed = false;
+        emu->kbd_inject_pos++;
+        emu->kbd_inject_delay = 2;          /* gap before the next key */
     }
 }
 
@@ -2734,6 +2771,9 @@ static void emulator_run(emulator_t* emu) {
          * state-mutating commands run on the emulator thread. No-op when the
          * API is disabled (control_queue is NULL). */
         control_queue_drain(emu->control_queue, emu);
+
+        /* Inject any keystrokes queued by the `keys` command (sprint 95). */
+        feed_kbd_inject(emu);
 
         /* Present to screen and handle events if not headless */
         if (!emu->headless) {

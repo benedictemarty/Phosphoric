@@ -1,8 +1,8 @@
 # API REST de commande — Phosphoric
 
-> Statut : **Epics 1-3 livrés** (Sprints 92-94, v1.53.0-alpha) — l'API est
-> fonctionnelle (`make HTTPAPI=1`, option `--http-api`). Epic 4 (injection
-> clavier `POST /keys` + exemples) au backlog (Sprint 95).
+> Statut : **initiative TERMINÉE — Epics 1-4 livrés** (Sprints 92-95,
+> v1.54.0-alpha). L'API pilote entièrement Phosphoric via HTTP/JSON
+> (`make HTTPAPI=1`, option `--http-api`).
 >
 > Démarrage rapide :
 > ```bash
@@ -11,6 +11,8 @@
 > curl -s localhost:8888/regs
 > curl -s -X POST --data 'path=game.tap' localhost:8888/tape
 > curl -s -X POST localhost:8888/reset
+> # Taper (et exécuter) une ligne BASIC à distance — \n = RETURN :
+> curl -s -X POST --data-urlencode 'text=PRINT 2+2\n' localhost:8888/keys
 > ```
 
 ## 1. Vision
@@ -88,21 +90,24 @@ Fondation réutilisable même si l'API REST est abandonnée ensuite.
   | `POST`   | `/tape` `{path}` / `DELETE /tape`  | `cmd_load_tap` / `cmd_eject_tape` |
   | `POST`   | `/disk/{A-D}` / `DELETE`           | `cmd_load_disk` / `cmd_eject_disk` |
   | `GET`    | `/peek/{via\|psg\|disk\|acia\|tape\|loci}` | `cmd_peek`            |
-  | `POST`   | `/exec/{reset\|step\|continue\|pause}` | dispatch exécution        |
-  | `GET`    | `/screen.jpg`                      | (réutilise le snapshot cast)  |
+  | `POST`   | `/exec/{step\|next\|step-out\|continue\|pause}` | dispatch exécution |
+  | `POST`   | `/keys` `{text}`                   | `cmd_keys` (Epic 4)           |
 
-  Réponses en **JSON** (le sink buffer convertit `key=value` → objet, ou un
-  `sink_json` dédié).
+  Réponses en **JSON** (`{"ok":true,"reply":…}` / `{"ok":false,"error":…}`),
+  en-tête CORS. *(Livré : le mapping se fait vers une ligne `--control` passée
+  à `control_queue_submit`, pas un appel direct au handler.)*
 - **US 3.3** — Sécurité : chemins de fichiers (`/tape`, `/disk`) restreints à
   un répertoire autorisé (`--http-api-root`), refus des chemins absolus et de
   `..`.
 
-### EPIC 4 — Injection clavier & documentation *(Sprint 95)*
+### EPIC 4 — Injection clavier & documentation *(Sprint 95)* — LIVRÉ
 
-- **US 4.1** — `POST /keys {text}` → `oric_keyboard_press_char`, aux frontières
-  de frame, cadence réaliste (cf. `--realtime`).
-- **US 4.2** — README + guide + exemples `curl`/Python ; mise à jour
-  CHANGELOG / VERSION_TRACKING / CIRRUS_OS / ROADMAP.
+- **US 4.1** ✅ — `POST /keys {text}` → commande `keys` → buffer d'injection
+  dynamique (`kbd_inject_*`), consommé touche par touche par la boucle
+  (`feed_kbd_inject`, press/hold/release ~5 frames/touche) sur le thread
+  émulateur. Échappements : `\n`/`\r` → RETURN, `\t`, `\e`, `\\`.
+- **US 4.2** ✅ — README + `docs/http-api.md` + exemples `curl` ; CHANGELOG /
+  VERSION_TRACKING / CIRRUS_OS / ROADMAP à jour.
 
 ## 5. Estimation
 

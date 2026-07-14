@@ -177,6 +177,39 @@ TEST(quit_signals_quit) {
     PASS();
 }
 
+TEST(keys_appends_with_escapes) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    /* "AB\nC" — backslash-n becomes RETURN (0x0A); 4 bytes queued. */
+    control_result_t r = run_one(emu, &s, "keys AB\\nC");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK queued=4 pending=4\n");
+    control_sink_free(&s);
+    ASSERT_TRUE(emu->kbd_inject_len == 4);
+    ASSERT_TRUE(emu->kbd_inject_buf[0] == 'A');
+    ASSERT_TRUE(emu->kbd_inject_buf[1] == 'B');
+    ASSERT_TRUE(emu->kbd_inject_buf[2] == '\n');   /* \n → RETURN byte */
+    ASSERT_TRUE(emu->kbd_inject_buf[3] == 'C');
+    /* A second batch appends (spaces preserved in the payload). */
+    r = run_one(emu, &s, "keys X Y");
+    ASSERT_STR_EQ(s.buf, "OK queued=3 pending=7\n");
+    control_sink_free(&s);
+    free(emu->kbd_inject_buf);
+    free(emu);
+    PASS();
+}
+
+TEST(keys_empty_is_error) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "keys");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "ERR keys: empty text\n");
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
 TEST(blank_line_is_noop) {
     emulator_t* emu = fresh_emu();
     control_sink_t s;
@@ -217,6 +250,8 @@ int main(void) {
     RUN(continue_signals_resume);
     RUN(step_signals_resume_and_sets_mode);
     RUN(quit_signals_quit);
+    RUN(keys_appends_with_escapes);
+    RUN(keys_empty_is_error);
     RUN(blank_line_is_noop);
     RUN(buffer_sink_accumulates_across_calls);
     printf("=== result: %d passed, %d failed ===\n",

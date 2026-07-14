@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.0-alpha] - 2026-07-14
+
+### Added — Injection clavier `POST /keys` — initiative API REST complète (Sprint 95, Epic 4)
+
+Dernier maillon de l'API REST (spec `docs/http-api.md`, Epics 1-4 **tous
+livrés**) : taper au clavier à distance permet de piloter un programme BASIC
+complet (saisir des lignes, les exécuter avec RETURN) via HTTP.
+
+- **Commande `keys <text>`** (`control.c`) : appende le texte à un buffer
+  d'injection clavier **dynamique** (`kbd_inject_*` dans `emulator_t`).
+  Échappements : `\n`/`\r` → RETURN, `\t` → TAB, `\e` → ESC, `\\` → backslash ;
+  tout le reste littéral (espaces préservés). Ajoutée à `CONTROL_PROTO_CAPS`
+  (`CONTROL_PROTO_VERSION` inchangé, extension additive).
+- **Consommation par frame** (`main.c`, `feed_kbd_inject`) : la boucle
+  principale presse une touche toutes les quelques frames (press+hold ~3
+  frames, release+gap ~2), à côté du drain de la file — le scanner clavier de
+  la ROM voit chaque touche distinctement (répétitions séparées). Producteur
+  (drain de `keys`) et consommateur tournent tous deux sur le **thread
+  émulateur** → aucun verrou. Buffer compacté après épuisement, libéré au
+  cleanup. Distinct du chemin CLI `--type-keys`.
+- **Endpoint `POST /keys`** (`http_api.c`) : corps `text=…` → commande `keys`.
+  Aide `GET /` mise à jour.
+- **Tests** : `test-control-dispatch` +2 (append + échappements, texte vide) ;
+  `test-httpapi` +2 dont la **démo de bout en bout** — `POST /keys` tape
+  `POKE 4096,123` + RETURN, puis `GET /mem?addr=1000` lit **`7B`** : un
+  programme BASIC saisi via HTTP s'exécute et mute la mémoire. Valgrind clean.
+  899 → 903 tests.
+
 ## [1.53.0-alpha] - 2026-07-14
 
 ### Added — Serveur HTTP de commande (REST) (Sprint 94, API REST Epic 3)

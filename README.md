@@ -102,8 +102,10 @@ make SDL2=1
   over HTTP/JSON on a dedicated port (default 8888), for scripting, browser
   dashboards and e2e tests. Reuses the `--control` dispatch; no logic duplicated.
 - **Endpoints** : `GET /hello /regs /mem?addr=&len= /peek/{via|psg|disk|acia|tape|loci}` ;
-  `POST /reset /mem /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause}` ;
+  `POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause}` ;
   `DELETE /tape /disk/{A-D}`. Replies are JSON (`{"ok":true,"reply":…}` / `{"ok":false,"error":…}`), CORS-enabled.
+- **Type at the keyboard remotely** : `POST /keys` with `text=…` (`\n` = RETURN) drives
+  a full BASIC program over HTTP — e.g. `curl -X POST --data-urlencode 'text=PRINT 2+2\n' :8888/keys`.
 - **Safe by default** : binds `127.0.0.1` (expose with `--http-api-bind 0.0.0.0`);
   file ops (`/tape`, `/disk`) are sandboxed to `--http-api-root DIR` (absolute
   paths and `..` rejected). Commands run on the emulator thread at frame boundaries.

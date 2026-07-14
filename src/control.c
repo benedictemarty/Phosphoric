@@ -668,7 +668,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -769,6 +769,44 @@ static void cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
     }
 }
 
+/* keys <text> — queue keystrokes for the main loop to inject (sprint 95).
+ * Escapes: \n / \r → RETURN, \t → TAB, \e → ESC, \\ → backslash; every other
+ * byte is literal (spaces preserved — only the command word was stripped).
+ * Appends to the emulator's growable injection buffer; the main loop presses
+ * one key every few frames. Runs on the emulator thread (queue drain), so the
+ * shared buffer needs no lock. */
+static void cmd_keys(emulator_t* emu, control_sink_t* s, const char* text) {
+    if (!text) { sink_err(s, "keys: usage `keys <text>`"); return; }
+    while (*text == ' ' || *text == '\t') text++;   /* skip leading blanks */
+    if (!*text) { sink_err(s, "keys: empty text"); return; }
+
+    size_t added = 0;
+    for (const char* p = text; *p; p++) {
+        char c = *p;
+        if (c == '\\' && p[1]) {
+            p++;
+            switch (*p) {
+                case 'n': case 'r': c = '\n'; break;   /* RETURN */
+                case 't': c = '\t'; break;
+                case 'e': c = (char)0x1B; break;       /* ESC */
+                case '\\': c = '\\'; break;
+                default: c = *p; break;                /* literal */
+            }
+        }
+        if (emu->kbd_inject_len + 1 > emu->kbd_inject_cap) {
+            size_t ncap = emu->kbd_inject_cap ? emu->kbd_inject_cap * 2 : 64;
+            char* nb = (char*)realloc(emu->kbd_inject_buf, ncap);
+            if (!nb) { sink_err(s, "keys: out of memory"); return; }
+            emu->kbd_inject_buf = nb;
+            emu->kbd_inject_cap = ncap;
+        }
+        emu->kbd_inject_buf[emu->kbd_inject_len++] = c;
+        added++;
+    }
+    sink_ok(s, "queued=%zu pending=%zu", added,
+            emu->kbd_inject_len - emu->kbd_inject_pos);
+}
+
 /* ─── dispatch ─────────────────────────────────────────────────────
  * Parse one command line (mutated in place by strtok_r) and execute it
  * into @p s. Resume/quit commands set the debugger flags and are signalled
@@ -786,6 +824,14 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
     char* save;
     char* cmd = strtok_r(line, " \t", &save);
     if (!cmd) return CONTROL_CONTINUE;
+
+    /* `keys` consumes the raw remainder (spaces preserved), so handle it here
+     * before the argument tokenizer chops the rest of the line into words. */
+    if (strcmp(cmd, "keys") == 0) {
+        cmd_keys(emu, s, save ? save : "");
+        return CONTROL_CONTINUE;
+    }
+
     char* arg1 = strtok_r(NULL, " \t", &save);
     char* arg2 = strtok_r(NULL, " \t", &save);
 

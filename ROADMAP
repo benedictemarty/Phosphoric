@@ -44,7 +44,17 @@ isolé dans l'Epic 2.
         exec) ; sécurité chemins (absolus/`..` rejetés → 403).
   - [x] `test-httpapi` (8 vérifs e2e curl, skip gracieux sans `HTTPAPI=1`) ;
         valgrind runtime clean. 891 → 899 tests.
-- **Sprint 95 — Epic 4 : injection clavier + doc/exemples** (`POST /keys`).
+- **Sprint 95 — Epic 4 : injection clavier + doc/exemples** (v1.54.0-alpha) - DONE
+  - [x] Commande `keys <text>` (buffer d'injection dynamique `kbd_inject_*`,
+        échappements `\n`→RETURN/`\t`/`\e`/`\\`) ; consommation par frame
+        (`feed_kbd_inject`, press/hold/release) sur le thread émulateur.
+  - [x] Endpoint `POST /keys` (corps `text=…`) ; aide `GET /` à jour.
+  - [x] `test-control-dispatch` +2, `test-httpapi` +2 dont la démo e2e :
+        `POST /keys 'POKE 4096,123'`+RETURN → `GET /mem` lit `7B` (BASIC saisi
+        via HTTP exécuté). 899 → 903 tests.
+
+> **Initiative API REST : TERMINÉE** (Epics 1-4, sprints 92-95, v1.51→1.54).
+> Phosphoric se pilote entièrement à distance via HTTP/JSON.
 
 ---
 

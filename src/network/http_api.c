@@ -185,7 +185,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
                 "GET /hello /regs /mem?addr=&len= /peek/{via|psg|disk|acia|tape|loci}; "
-                "POST /reset /mem /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause}; "
+                "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause}; "
                 "DELETE /tape /disk/{A-D}\"}\n");
             return false;
         }
@@ -209,6 +209,17 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
     }
     else if (strcmp(method, "POST") == 0) {
         if (strcmp(path, "/reset") == 0) { snprintf(cmd, cmdsz, "reset"); return true; }
+        if (strcmp(path, "/keys") == 0) {
+            char text[HTTP_CMD_MAX - 16];
+            if (!get_param(body, "text", text, sizeof(text))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /keys needs text= "
+                    "(\\\\n = RETURN)\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "keys %s", text);
+            return true;
+        }
         if (strncmp(path, "/exec/", 6) == 0) {
             const char* w = path + 6;
             if (strcmp(w, "step") && strcmp(w, "next") && strcmp(w, "step-out") &&
