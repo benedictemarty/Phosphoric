@@ -89,7 +89,7 @@ Fondation réutilisable même si l'API REST est abandonnée ensuite.
   | `POST`   | `/reset`                           | `cmd_reset`                   |
   | `POST`   | `/tape` `{path}` / `DELETE /tape`  | `cmd_load_tap` / `cmd_eject_tape` |
   | `POST`   | `/disk/{A-D}` / `DELETE`           | `cmd_load_disk` / `cmd_eject_disk` |
-  | `GET`    | `/peek/{via\|psg\|disk\|acia\|tape\|loci}` | `cmd_peek`            |
+  | `GET`    | `/peek/{via\|psg\|disk\|acia\|tape\|loci\|video\|kbd\|joy\|printer}` | `cmd_peek` |
   | `POST`   | `/exec/{step\|next\|step-out\|continue\|pause}` | dispatch exécution |
   | `POST`   | `/keys` `{text}`                   | `cmd_keys` (Epic 4)           |
 
@@ -223,6 +223,18 @@ instruction. Même chose côté `--control` (`watch-region <start> <end> [flags]
 ```bash
 curl -s -X POST --data 'start=2000&end=2010&flags=rw' localhost:8888/watch-region
 curl -s "localhost:8888/watch-region"     # liste
+```
+
+### EPIC 6 / US 5 — Couverture d'inspection élargie *(Sprint 101)* — LIVRÉ
+
+`GET /peek/{sub}` couvre désormais 4 sous-systèmes de plus (parité avec les
+fenêtres d'inspection de b2), en n'exposant que des champs réels :
+`video`/`ula`, `kbd`, `joy`, `printer` (état MCP-40 inclus). Mêmes commandes en
+REPL (`video`/`kbd`/`joy`/`printer`) et `--control` (`peek …`).
+
+```bash
+curl -s "localhost:8888/peek/video"    # mode ULA, OCULA, framebuffer
+curl -s "localhost:8888/peek/kbd"      # matrice clavier 8 colonnes
 ```
 
 ## 5. Estimation

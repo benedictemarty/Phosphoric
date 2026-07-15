@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.60.0-alpha] - 2026-07-15
+
+### Added — Couverture d'inspection élargie (Epic 6 / US 5, rattrapage b2) (Sprint 101)
+
+b2 a ~12 fenêtres d'inspection matérielle ; Phosphoric couvrait
+via/psg/disk/acia/tape/loci. Cette US ajoute **4 sous-systèmes** de plus, en
+n'affichant que des **champs réels** des structs.
+
+- **REPL** (comme `via`/`psg`) :
+  - `video`/`ula` — mode ULA, `vid_mode`, `text_attr`, framebuffer,
+    `frame_counter`, drapeaux OCULA (80col/exthires/unlocked, scroll) ;
+  - `kbd`/`keyboard` — matrice 8 colonnes + layout (+ compteurs SDL2) ;
+  - `joy`/`joystick` — mode, `port_a_mask` (IJK actif-bas), présence ;
+  - `printer`/`mcp40` — type/fichier/strobe/octets ; si MCP-40 : position
+    stylo, couleur, compteurs de lignes/caractères.
+- **`--control`** : `peek video|kbd|joy|printer` (format key=value une ligne).
+- **REST** : `GET /peek/{video|kbd|joy|printer}`.
+
+Aucune limitation BBC transposée (bi-CPU, teletext — sans objet ORIC).
+
+### Tests
+- `test-debugger` 21 → 22 (les 4 commandes produisent leur en-tête),
+  `test-control-dispatch` 23 → 24 (peek video/kbd/joy/printer),
+  `test-httpapi` e2e 37 → 41. Valgrind clean. 954 → 960 tests.
+- `EMU_VERSION` 1.59.0 → 1.60.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.59.0-alpha] - 2026-07-15
 
 ### Added — Carte d'accès mémoire r/w/x (Epic 6 / US 3, rattrapage b2) (Sprint 100)

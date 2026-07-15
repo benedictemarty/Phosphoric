@@ -184,7 +184,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         if (strcmp(path, "/") == 0) {
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
-                "GET /hello /regs /mem?addr=&len=[&bank=cpu|ram|rom|overlay] /peek/{via|psg|disk|acia|tape|loci} "
+                "GET /hello /regs /mem?addr=&len=[&bank=cpu|ram|rom|overlay] /peek/{via|psg|disk|acia|tape|loci|video|kbd|joy|printer} "
                 "/break /watch /disasm?addr=&n= /trace /watch-region; "
                 "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
                 "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
