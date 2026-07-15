@@ -138,3 +138,34 @@ Ready` nu tout en restant bootable. Vérifié sur `SEDO40u` (INIST
 > Note VTOC : `DIR` d'un tel Master affiche `D/80/17` (template 80 pistes) sur
 > une image physique de 42 pistes — cohabitation sûre tant que les fichiers
 > injectés restent dans les pistes physiques (cf `analyze_sedoric_vtoc`).
+
+### Charger un fichier depuis du code machine (recette **validée in-situ**)
+
+Depuis un programme ML en cours d'exécution (lancé par `LOAD`), l'**overlay RAM
+Sedoric n'est pas mappé** : appeler directement les routines DOS (`$DB2D`
+recherche, `$E0EA` lecture) **plante** (elles tombent dans la ROM BASIC). La voie
+robuste passe par le **vecteur « ! » `$0467`** (en RAM basse `$04xx`, toujours
+mappé), qui bascule sur l'overlay, exécute l'**interpréteur SEDORIC** (`$D3AE`)
+sur la ligne de commande pointée par **TXTPTR (`$00E9/$00EA`)**, puis rebascule
+sur la ROM et fait `RTS` (manuel : vecteur `!` en `$0467`, stub de bascule
+`$0477` → `STA $0314`).
+
+```asm
+        LDA #<CMD : STA $E9        ; TXTPTR = adresse de la ligne de commande
+        LDA #>CMD : STA $EA
+        JSR $0467                  ; vecteur "!" : execute la commande (overlay gere)
+        ; ... fichier charge ; poursuite normale ...
+        RTS
+CMD:    .byte "LOAD\"SCDATA\"", 0  ; ligne SEDORIC terminee par $00
+```
+
+C'est l'équivalent ML de taper `!LOAD"SCDATA"`. **Validé** : `LOAD"SCDATA"`
+appelé ainsi charge le fichier (`$6000..` = données exactes), le programme
+appelant reprend normalement. La séquence bas-niveau `$DB2D` (recherche →
+POSNMP `$C025`/POSNMS `$C026`/POSNMX `$C027`) puis `$E0EA` (lecture selon
+POSNMX/VSALO1 `$C04E`/DESALO `$C052`) est réelle mais exige de gérer soi-même la
+bascule overlay via `$0477` — préférer `$0467`.
+
+Rappel adresses (manuel) : BUFNOM `$C028` drive + `$C029` nom(9) + `$C032`
+ext(3) ; XDEFLO `$DFE6` ; recherche `$DB2D` ; lecture `$E0EA` ; TXTPTR
+`$00E9/$00EA` ; TIB (tampon clavier) `$0035`-`$0084`.
