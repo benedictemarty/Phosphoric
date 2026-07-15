@@ -22,6 +22,7 @@ oric1-emu
 bas2tap
 bin2tap
 tap2sedoric
+sedoric-info
 
 # Test binaries
 test_cpu
