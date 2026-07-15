@@ -239,6 +239,38 @@ TEST(test_profiler_report_output) {
     unlink(tmpfile_path);
 }
 
+TEST(test_profiler_region_aggregate) {
+    cpu6502_t cpu;
+    memory_t mem;
+    setup_cpu(&cpu, &mem);   /* program lives at $0400 → User RAM region */
+
+    cpu_profiler_t prof;
+    profiler_init(&prof);
+    profiler_start(&prof);
+    for (int i = 0; i < 4; i++) {   /* LDA/TAX/INX/NOP, avoid BRK */
+        uint16_t pc = cpu.PC;
+        profiler_record_instruction(&prof, &cpu);
+        int step = cpu_step(&cpu);
+        profiler_record_cycles(&prof, pc, step);
+    }
+    profiler_stop(&prof);
+
+    ASSERT_TRUE(profiler_report_to_file(&prof, tmpfile_path));
+    FILE* fp = fopen(tmpfile_path, "r");
+    ASSERT_TRUE(fp != NULL);
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+    buf[n] = '\0';
+    fclose(fp);
+
+    ASSERT_TRUE(strstr(buf, "Execution by memory region") != NULL);
+    ASSERT_TRUE(strstr(buf, "User RAM") != NULL);
+    ASSERT_TRUE(strstr(buf, "RAM total") != NULL);
+    ASSERT_TRUE(strstr(buf, "ROM total") != NULL);
+
+    unlink(tmpfile_path);
+}
+
 TEST(test_profiler_inactive_noop) {
     cpu6502_t cpu;
     memory_t mem;
@@ -300,6 +332,7 @@ int main(void) {
     RUN(test_profiler_opcode_histogram);
     RUN(test_profiler_cycle_tracking);
     RUN(test_profiler_report_output);
+    RUN(test_profiler_region_aggregate);
     RUN(test_profiler_inactive_noop);
     RUN(test_profiler_reset);
     RUN(test_profiler_report_invalid_file);

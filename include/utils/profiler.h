@@ -91,6 +91,7 @@ void profiler_reset(cpu_profiler_t* prof);
  *
  * Outputs:
  * - Summary (total instructions, total cycles)
+ * - Execution by memory region (ORIC map buckets + RAM/ROM totals)
  * - Top 20 address hotspots by execution count
  * - Top 20 address hotspots by cycle usage
  * - Opcode frequency histogram (non-zero opcodes)
