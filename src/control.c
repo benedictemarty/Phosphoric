@@ -419,7 +419,9 @@ static void cmd_watch_list(emulator_t* emu, control_sink_t* s) {
     debugger_t* dbg = &emu->debugger;
     sink_printf(s, "OK");
     for (int i = 0; i < dbg->num_watchpoints; i++) {
-        sink_printf(s, " id=%d:addr=%04X", i, dbg->watchpoints[i]);
+        static const char* mode_ch = "wrac";  /* write/read/access/change */
+        sink_printf(s, " id=%d:addr=%04X:mode=%c", i,
+                    dbg->watchpoints[i].addr, mode_ch[dbg->watchpoints[i].mode]);
     }
     sink_printf(s, "\n");
     sink_flush(s);

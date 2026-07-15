@@ -15,6 +15,7 @@
 #include "emulator.h"
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
+#include "io/via6522.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -132,12 +133,13 @@ TEST(test_add_remove_watchpoint) {
     int idx0 = debugger_add_watchpoint(&dbg, 0x0400);
     ASSERT_EQ(idx0, 0);
     ASSERT_EQ(dbg.num_watchpoints, 1);
-    ASSERT_EQ(dbg.watchpoints[0], 0x0400);
+    ASSERT_EQ(dbg.watchpoints[0].addr, 0x0400);
+    ASSERT_EQ(dbg.watchpoints[0].mode, WATCH_WRITE);
 
     int idx1 = debugger_add_watchpoint(&dbg, 0xBB80);
     ASSERT_EQ(idx1, 1);
 
-    /* Duplicate */
+    /* Duplicate (same addr + same mode) */
     int idx_dup = debugger_add_watchpoint(&dbg, 0x0400);
     ASSERT_EQ(idx_dup, 0);
     ASSERT_EQ(dbg.num_watchpoints, 2);
@@ -145,7 +147,7 @@ TEST(test_add_remove_watchpoint) {
     /* Remove */
     ASSERT_TRUE(debugger_remove_watchpoint(&dbg, 0));
     ASSERT_EQ(dbg.num_watchpoints, 1);
-    ASSERT_EQ(dbg.watchpoints[0], 0xBB80);
+    ASSERT_EQ(dbg.watchpoints[0].addr, 0xBB80);
 
     /* Watchpoint limit */
     debugger_init(&dbg);
@@ -417,6 +419,192 @@ TEST(test_find_ascii_string) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  GAP 1: READ / CHANGE WATCHPOINTS                                  */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_watchpoint_read_and_change) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    emu.control_mode = true;   /* suppress "*** WATCHPOINT ***" printf */
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* Read watchpoint: a plain read must trigger, a write must not. */
+    ASSERT_EQ(debugger_add_watchpoint_mode(&dbg, 0x2000, WATCH_READ), 0);
+    debugger_install_watchpoint_trace(&dbg, &emu);
+
+    (void)memory_read(&emu.memory, 0x2000);
+    ASSERT_TRUE(dbg.watch_triggered);
+    dbg.watch_triggered = false;
+
+    memory_write(&emu.memory, 0x2000, 0x11);
+    ASSERT_FALSE(dbg.watch_triggered);
+
+    /* Change watchpoint: only a value change triggers. */
+    debugger_init(&dbg);
+    ASSERT_EQ(debugger_add_watchpoint_mode(&dbg, 0x2500, WATCH_CHANGE), 0);
+    debugger_install_watchpoint_trace(&dbg, &emu);
+
+    memory_write(&emu.memory, 0x2500, 0x42);   /* first write: baseline hit */
+    ASSERT_TRUE(dbg.watch_triggered);
+    dbg.watch_triggered = false;
+
+    memory_write(&emu.memory, 0x2500, 0x42);   /* same value: no trigger */
+    ASSERT_FALSE(dbg.watch_triggered);
+
+    memory_write(&emu.memory, 0x2500, 0x43);   /* changed: trigger */
+    ASSERT_TRUE(dbg.watch_triggered);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  GAP 2: COMPOUND (&&/||) BREAKPOINT CONDITIONS                     */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_compound_condition) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    emu.control_mode = true;
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    char out[4096];
+    capture_cmd(&emu, &dbg, "b 1000 if A==5 && X==3", out, sizeof(out));
+    ASSERT_EQ(dbg.num_breakpoints, 1);
+    ASSERT_TRUE(dbg.breakpoints[0].has_cond);
+    ASSERT_EQ(dbg.breakpoints[0].cond.num_terms, 2);
+
+    emu.cpu.PC = 0x1000;
+    emu.cpu.A = 5; emu.cpu.X = 3;
+    ASSERT_TRUE(debugger_should_break(&dbg, &emu));   /* both true */
+
+    emu.cpu.X = 4;
+    ASSERT_FALSE(debugger_should_break(&dbg, &emu));  /* AND fails */
+
+    /* OR variant */
+    debugger_init(&dbg);
+    capture_cmd(&emu, &dbg, "b 1000 if A==9 || Y==7", out, sizeof(out));
+    emu.cpu.A = 0; emu.cpu.Y = 7;
+    ASSERT_TRUE(debugger_should_break(&dbg, &emu));   /* second term true */
+
+    emu.cpu.Y = 0;
+    ASSERT_FALSE(debugger_should_break(&dbg, &emu));
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  GAP 3: ITERATIVE MEMORY SEARCH (hunt)                             */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_hunt_narrow) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* RAM is zeroed; plant a unique value so only one cell matches. */
+    memory_write(&emu.memory, 0x2000, 0x7B);
+
+    char out[8192];
+    capture_cmd(&emu, &dbg, "hunt", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "Hunt started") != NULL);
+
+    capture_cmd(&emu, &dbg, "hunt 7B", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "candidate") != NULL);
+
+    capture_cmd(&emu, &dbg, "hunt list", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "$2000") != NULL);
+
+    capture_cmd(&emu, &dbg, "hunt clear", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "cleared") != NULL);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  GAP 4: MEMORY ⇄ FILE (save / load)                                */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_save_load_region) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    for (int i = 0; i < 4; i++)
+        memory_write(&emu.memory, (uint16_t)(0x2000 + i), (uint8_t)(0xA0 + i));
+
+    char out[4096];
+    capture_cmd(&emu, &dbg, "save /tmp/phos_region_test.bin 2000 4", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "Wrote 4") != NULL);
+
+    /* Wipe, then reload from the file. */
+    for (int i = 0; i < 4; i++)
+        memory_write(&emu.memory, (uint16_t)(0x2000 + i), 0);
+    capture_cmd(&emu, &dbg, "load /tmp/phos_region_test.bin 2000", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "Loaded 4") != NULL);
+
+    for (int i = 0; i < 4; i++)
+        ASSERT_EQ(memory_read(&emu.memory, (uint16_t)(0x2000 + i)), (uint8_t)(0xA0 + i));
+
+    remove("/tmp/phos_region_test.bin");
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  GAP 6: SET VIA REGISTER                                           */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_set_via_register) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    via_init(&emu.via);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* DDRB (register 2) stores the written value directly. */
+    char out[4096];
+    capture_cmd(&emu, &dbg, "set via 2 FF", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "VIA[$2]") != NULL);
+    ASSERT_EQ(via_read(&emu.via, 2), 0xFF);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  GAP 7: BINARY (%) NUMERIC LITERALS                                */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_binary_literal) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    char out[4096];
+    /* %100000000000 == 0x800 */
+    capture_cmd(&emu, &dbg, "b %100000000000", out, sizeof(out));
+    ASSERT_EQ(dbg.num_breakpoints, 1);
+    ASSERT_EQ(dbg.breakpoints[0].addr, 0x800);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -439,6 +627,12 @@ int main(void) {
     RUN(test_asm_rejects_bad_input);
     RUN(test_find_byte_pattern);
     RUN(test_find_ascii_string);
+    RUN(test_watchpoint_read_and_change);
+    RUN(test_compound_condition);
+    RUN(test_hunt_narrow);
+    RUN(test_save_load_region);
+    RUN(test_set_via_register);
+    RUN(test_binary_literal);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);
