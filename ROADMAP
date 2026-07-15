@@ -49,7 +49,42 @@ points où b2 est en avance et qui restent à combler :
       b2 offre des suffixes debugger (`s=`) + un drapeau `MOS's view` (`mos=`)
       pour viser une banque paginée précise. Exposer un paramètre équivalent
       (ex. `?bank=ram|rom`) pour lire sous l'overlay sans dépendre de l'état
-      courant du banking.
+      courant du banking. **→ repris par l'Epic 6 / US 2 ci-dessous.**
+
+---
+
+### Epic 6 — Parité inspection & tracing avancés (rattrapage b2) — BACKLOG
+Issu du comparatif debugger vs b2 (2026-07-15, ancré sur `b2/doc/Debug-version.md`
++ `b2/src/beeb/include/beeb/BBCMicro.h`). b2 mène sur l'inspection interactive /
+matérielle et le tracing ; Phosphoric sur l'inverse-step, les breakpoints
+conditionnels, GDB et le pilotage HTTP. Cet Epic comble le retard côté
+inspection/tracing, **filtré pour ORIC** (hors périmètre, spécifique BBC : bi-CPU
+parasite, `MOS's view`, teletext debug).
+
+- [ ] **US 1 — Tracing conditionnel** *(le plus gros écart — 🔴 haute / moyen)* :
+      déclencheurs start/stop (`start pc:XXXX` ; `stop write:XXXX | read:XXXX |
+      cycle:N | brk`), **buffer circulaire** (garder les N dernières instr au
+      lieu d'un fichier qui gonfle), **symboles inline** dans la sortie ;
+      pilotable REPL (`trace start/stop/save`) + `--control`/REST. Réutilise
+      `utils/cpu_trace.c` + la trace mémoire des watchpoints.
+- [ ] **US 2 — Inspection banque-aware** *(🔴 haute / faible-moyen)* : paramètre
+      de banque sur `m`/`d` (REPL) et `/mem`/`/peek` (REST) pour lire **sous**
+      l'overlay ROM/RAM ($C000-$FFFF), Microdisc, LOCI, sans dépendre du paging
+      courant. **Absorbe le backlog REST B1/B2 ci-dessus.**
+- [ ] **US 3 — Carte d'accès mémoire (breakpoints par octet r/w/x)** *(🟠 / moyen)* :
+      watch de région + flags par octet (lecture/écriture/exécution) au lieu des
+      8 watchpoints fixes.
+- [ ] **US 4 — Symboles scopés par banque + groupes** *(🟠 / moyen)* : scoping
+      des symboles par overlay/banque, activation par groupe (module `symbols`).
+- [ ] **US 5 — Couverture d'inspection élargie** *(🟡 / faible, quick wins)* :
+      commandes snapshot `ula`/`video`, `kbd` (matrice), `joy`,
+      `printer`/`mcp40` — égaler la palette de fenêtres b2.
+- [ ] **US 6 (optionnel, GUI/SDL)** *(🟡 / élevé)* : overlays visuels timing
+      (position faisceau TV, lignes raster) dans le renderer ; injection
+      stuck-bits RAM (comme b2).
+
+> **Recommandation :** attaquer **US 1 + US 2** (cœur de l'écart, coût
+> raisonnable, US 2 recycle le backlog REST) ; US 3-5 en backlog ; US 6 optionnel.
 
 ---
 
