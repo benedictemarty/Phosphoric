@@ -626,12 +626,14 @@ static uint16_t show_disassembly(emulator_t* emu, uint16_t addr, int count) {
     return addr;
 }
 
-static void show_memory_dump(emulator_t* emu, uint16_t addr, int len) {
+static void show_memory_dump(emulator_t* emu, uint16_t addr, int len, peek_bank_t bank) {
+    if (bank != PEEK_CPU)
+        printf("  [bank: %s]\n", debugger_bank_name(bank));
     for (int offset = 0; offset < len; offset += 16) {
         printf("  $%04X: ", (uint16_t)(addr + offset));
         /* Hex */
         for (int i = 0; i < 16 && (offset + i) < len; i++) {
-            printf("%02X ", memory_read(&emu->memory, (uint16_t)(addr + offset + i)));
+            printf("%02X ", debugger_peek_bank(emu, (uint16_t)(addr + offset + i), bank));
         }
         /* Pad if last line is short */
         int remaining = len - offset;
@@ -642,7 +644,7 @@ static void show_memory_dump(emulator_t* emu, uint16_t addr, int len) {
         /* ASCII */
         printf(" |");
         for (int i = 0; i < 16 && (offset + i) < len; i++) {
-            uint8_t c = memory_read(&emu->memory, (uint16_t)(addr + offset + i));
+            uint8_t c = debugger_peek_bank(emu, (uint16_t)(addr + offset + i), bank);
             printf("%c", (c >= 0x20 && c < 0x7F) ? c : '.');
         }
         printf("|\n");
@@ -988,7 +990,7 @@ static void show_help(void) {
     printf("  d addr [n]        Jump-disasm; push current page to history\n");
     printf("  d +               Same as `d` (next page)\n");
     printf("  d -               Pop history (previous page)\n");
-    printf("  m addr [len]      Memory dump hex+ASCII (default: 256)\n");
+    printf("  m addr [len] [bank]  Memory dump hex+ASCII (bank: cpu|ram|rom|overlay)\n");
     printf("  m addr = V1 [V2...]  Write byte(s) to memory\n");
     printf("  a addr MNE [op]   Assemble one instruction in place (e.g. a 0400 LDA #$41)\n");
     printf("  find B1 [B2...]   Search memory for a hex byte pattern\n");
@@ -1039,6 +1041,57 @@ static void show_help(void) {
 static uint8_t dbg_peek(emulator_t* emu, uint16_t a) {
     if (a < RAM_SIZE) return emu->memory.ram[a];
     return memory_read(&emu->memory, a);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  BANK-AWARE INSPECTION (Epic 6 / US 2)                              */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+uint8_t debugger_peek_bank(emulator_t* emu, uint16_t addr, peek_bank_t bank) {
+    memory_t* m = &emu->memory;
+    switch (bank) {
+        case PEEK_RAM:
+            /* Underlying RAM, including the RAM hidden behind the ROM overlay. */
+            if (addr < 0xC000) return m->ram[addr];
+            return m->upper_ram[addr - 0xC000];
+        case PEEK_ROM:
+            /* BASIC/monitor ROM only exists at $C000-$FFFF. */
+            if (addr < 0xC000) return 0x00;
+            return m->rom[addr - 0xC000];
+        case PEEK_OVERLAY:
+            /* Microdisc overlay ROM is mapped at $E000-$FFFF. */
+            if (addr < 0xE000) return 0x00;
+            {
+                uint16_t off = (uint16_t)(addr - 0xE000);
+                if (m->overlay_rom && off < m->overlay_rom_size)
+                    return m->overlay_rom[off];
+                return 0xFF;
+            }
+        case PEEK_CPU:
+        default:
+            return dbg_peek(emu, addr);
+    }
+}
+
+bool debugger_parse_bank(const char* s, peek_bank_t* out) {
+    if (!s || !*s) return false;
+    if      (strcasecmp(s, "cpu") == 0)     *out = PEEK_CPU;
+    else if (strcasecmp(s, "ram") == 0)     *out = PEEK_RAM;
+    else if (strcasecmp(s, "rom") == 0)     *out = PEEK_ROM;
+    else if (strcasecmp(s, "overlay") == 0 ||
+             strcasecmp(s, "disk") == 0)    *out = PEEK_OVERLAY;
+    else return false;
+    return true;
+}
+
+const char* debugger_bank_name(peek_bank_t bank) {
+    switch (bank) {
+        case PEEK_RAM:     return "ram";
+        case PEEK_ROM:     return "rom";
+        case PEEK_OVERLAY: return "overlay";
+        case PEEK_CPU:
+        default:           return "cpu";
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1431,7 +1484,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         /* ── MEMORY DUMP / WRITE ────────────────────────── */
         else if (strcmp(cmd, "m") == 0) {
             if (!arg1[0]) {
-                printf("  Usage: m addr [len]          dump memory\n");
+                printf("  Usage: m addr [len] [bank]   dump memory (bank: cpu|ram|rom|overlay)\n");
                 printf("         m addr = V1 [V2 ...]  write byte(s)\n");
                 return;
             }
@@ -1490,12 +1543,26 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                            addr, (uint16_t)(addr + written - 1));
                 }
             } else {
+                /* Optional trailing tokens: [len] [bank]. `arg2` may be either
+                 * a length or a bank name; a 4th token (if present) is a bank. */
+                peek_bank_t bank = PEEK_CPU;
                 int len2 = 256;
-                if (arg2[0])
-                    len2 = (int)strtol(arg2, NULL, 0);
+                if (arg2[0]) {
+                    if (debugger_parse_bank(arg2, &bank)) {
+                        len2 = 256;   /* "m addr rom" — default length */
+                    } else {
+                        len2 = (int)strtol(arg2, NULL, 0);
+                        char a3[16] = {0};
+                        if (sscanf(line, "%*s %*s %*s %15s", a3) == 1 &&
+                            !debugger_parse_bank(a3, &bank)) {
+                            printf("  Unknown bank '%s' (cpu|ram|rom|overlay)\n", a3);
+                            return;
+                        }
+                    }
+                }
                 if (len2 < 1) len2 = 1;
                 if (len2 > 65536) len2 = 65536;
-                show_memory_dump(emu, addr, len2);
+                show_memory_dump(emu, addr, len2, bank);
             }
         }
         /* ── MEMORY SEARCH ──────────────────────────────── */

@@ -6,6 +6,22 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 98: Inspection mémoire banque-aware (Epic 6 / US 2) (v1.57.0-alpha) - DONE
+Première US de l'Epic 6 (rattrapage b2). Paramètre de banque pour lire les
+couches derrière l'overlay ORIC $C000-$FFFF sans dépendre du paging courant.
+- [x] `debugger_peek_bank(emu, addr, bank)` : `cpu` (défaut) / `ram`
+      (`upper_ram` = RAM derrière la ROM) / `rom` (BASIC $C000-$FFFF) / `overlay`
+      (Microdisc $E000-$FFFF) ; side-effect-free. Helpers `parse`/`name`.
+- [x] REPL `m addr [len] [bank]` ; `--control` `read <addr> <len> [bank]`
+      (cap `mem-bank`) ; REST `GET /mem?addr=&len=&bank=`. **Absorbe le backlog
+      REST B2.**
+- [x] Différé : disasm banque-aware (`d`) ; hors périmètre : transfert binaire
+      (B1). Tests : test-debugger 19→20, test-control-dispatch 20→21,
+      test-httpapi e2e 26→29. Valgrind clean. 932 → 937 tests.
+> Détail des US restantes de l'Epic 6 plus bas.
+
+---
+
 ### Sprint 97: API REST — parité debug (bridge --control + 7 gaps) (v1.56.0-alpha) - DONE
 Les capacités debug (dont les 7 gaps du Sprint 96) n'étaient qu'au REPL. Rendues
 pilotables à distance **sans dupliquer de logique** : chaque requête HTTP est
@@ -67,10 +83,14 @@ parasite, `MOS's view`, teletext debug).
       lieu d'un fichier qui gonfle), **symboles inline** dans la sortie ;
       pilotable REPL (`trace start/stop/save`) + `--control`/REST. Réutilise
       `utils/cpu_trace.c` + la trace mémoire des watchpoints.
-- [ ] **US 2 — Inspection banque-aware** *(🔴 haute / faible-moyen)* : paramètre
-      de banque sur `m`/`d` (REPL) et `/mem`/`/peek` (REST) pour lire **sous**
-      l'overlay ROM/RAM ($C000-$FFFF), Microdisc, LOCI, sans dépendre du paging
-      courant. **Absorbe le backlog REST B1/B2 ci-dessus.**
+- [x] **US 2 — Inspection banque-aware** *(v1.57.0, Sprint 98)* : paramètre de
+      banque sur `m` (REPL), `read` (`--control`) et `GET /mem?...&bank=` (REST)
+      pour lire **sous** l'overlay ORIC $C000-$FFFF sans dépendre du paging —
+      `debugger_peek_bank` : `cpu`/`ram` (`upper_ram` derrière la ROM)/`rom`
+      (BASIC)/`overlay` (Microdisc). Cap `mem-bank`. **Absorbe le backlog REST
+      B2.** Différé : disasm banque-aware (`d`, redirection `cpu_disassemble`) ;
+      hors périmètre : transfert binaire (backlog B1). test-debugger 19→20,
+      test-control-dispatch 20→21, test-httpapi 26→29. 932→937 tests.
 - [ ] **US 3 — Carte d'accès mémoire (breakpoints par octet r/w/x)** *(🟠 / moyen)* :
       watch de région + flags par octet (lecture/écriture/exécution) au lieu des
       8 watchpoints fixes.

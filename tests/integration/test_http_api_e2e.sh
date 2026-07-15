@@ -180,5 +180,13 @@ curl -s -X POST --data-urlencode 'addr=%100000000000' "$BASE/break" | grep -q 'a
     && ok "POST /break addr=%bin literal → \$0800" || ko "binary literal"
 curl -s -X DELETE "$BASE/break/0" >/dev/null
 
+# 19. bank-aware memory read (Epic 6 / US 2): read under the ROM overlay
+curl -s "$BASE/mem?addr=C000&len=1&bank=rom" | grep -q '"ok":true' \
+    && ok "GET /mem bank=rom (read BASIC ROM under overlay)" || ko "GET /mem bank=rom"
+curl -s "$BASE/mem?addr=C000&len=1&bank=ram" | grep -q '"ok":true' \
+    && ok "GET /mem bank=ram (read RAM behind ROM)" || ko "GET /mem bank=ram"
+curl -s "$BASE/mem?addr=C000&len=1&bank=bogus" | grep -q '"ok":false' \
+    && ok "GET /mem bank=bogus rejected" || ko "GET /mem bad bank not rejected"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

@@ -84,7 +84,7 @@ Fondation réutilisable même si l'API REST est abandonnée ensuite.
   |----------|------------------------------------|-------------------------------|
   | `GET`    | `/hello`                           | `cmd_hello`                   |
   | `GET`    | `/regs`                            | `cmd_regs`                    |
-  | `GET`    | `/mem?addr=&len=`                  | `cmd_read`                    |
+  | `GET`    | `/mem?addr=&len=[&bank=cpu\|ram\|rom\|overlay]` | `cmd_read`       |
   | `POST`   | `/mem`                             | `cmd_write`                   |
   | `POST`   | `/reset`                           | `cmd_reset`                   |
   | `POST`   | `/tape` `{path}` / `DELETE /tape`  | `cmd_load_tap` / `cmd_eject_tape` |
@@ -153,6 +153,27 @@ curl -s -X POST                                          localhost:8888/hunt    
 curl -s -X POST --data 'op=eq&val=7B'                    localhost:8888/hunt        # narrow
 curl -s -X POST --data 'path=snap.ost'                   localhost:8888/state/save
 curl -s -X POST --data 'via=2&val=FF'                    localhost:8888/set
+```
+
+### EPIC 6 / US 2 — Inspection mémoire banque-aware *(Sprint 98)* — LIVRÉ
+
+`GET /mem` accepte un paramètre **`bank`** pour lire une couche mémoire précise
+**sous** l'overlay ORIC $C000-$FFFF, sans dépendre du paging courant (parité
+avec les paging overrides de b2) :
+
+| `bank`    | Couche lue |
+|-----------|-----------|
+| `cpu` *(défaut)* | vue CPU courante (ce qui est paginé) |
+| `ram`     | RAM sous-jacente (`upper_ram` = RAM derrière la ROM ≥ $C000) |
+| `rom`     | ROM BASIC/moniteur ($C000-$FFFF) |
+| `overlay` | ROM overlay Microdisc ($E000-$FFFF) |
+
+Même paramètre côté `--control` (`read <addr> <len> [bank]`) et REPL
+(`m addr [len] [bank]`). Cap `mem-bank`.
+
+```bash
+curl -s "localhost:8888/mem?addr=C000&len=1&bank=rom"   # 1er octet ROM BASIC
+curl -s "localhost:8888/mem?addr=C000&len=1&bank=ram"   # RAM cachée derrière
 ```
 
 ## 5. Estimation

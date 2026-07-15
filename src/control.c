@@ -308,19 +308,23 @@ static void cmd_set(emulator_t* emu, control_sink_t* s,
 }
 
 static void cmd_read(emulator_t* emu, control_sink_t* s,
-                     const char* addr_s, const char* len_s) {
+                     const char* addr_s, const char* len_s, const char* bank_s) {
     uint16_t addr;
     uint32_t len;
     if (!parse_u16(addr_s, &addr) || !parse_hex(len_s, &len)) {
-        sink_err(s, "read: usage `read <addr> <len>`");
+        sink_err(s, "read: usage `read <addr> <len> [cpu|ram|rom|overlay]`");
         return;
     }
     if (len > 4096) { sink_err(s, "read: len > 4096"); return; }
+    peek_bank_t bank = PEEK_CPU;
+    if (bank_s && *bank_s && !debugger_parse_bank(bank_s, &bank)) {
+        sink_err(s, "read: bad bank `%s` (cpu|ram|rom|overlay)", bank_s);
+        return;
+    }
     /* Build the reply : "OK <hex bytes>". */
     sink_printf(s, "OK");
     for (uint32_t i = 0; i < len; i++) {
-        sink_printf(s, " %02X",
-                    memory_read(&emu->memory, (uint16_t)(addr + i)));
+        sink_printf(s, " %02X", debugger_peek_bank(emu, (uint16_t)(addr + i), bank));
     }
     sink_printf(s, "\n");
     sink_flush(s);
@@ -780,7 +784,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -960,7 +964,7 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
         cmd_set(emu, s, arg1, arg2, save);
     }
     else if (strcmp(cmd, "read") == 0) {
-        cmd_read(emu, s, arg1, arg2);
+        cmd_read(emu, s, arg1, arg2, save);
     }
     else if (strcmp(cmd, "bread") == 0) {
         cmd_bread(emu, s, arg1, arg2);

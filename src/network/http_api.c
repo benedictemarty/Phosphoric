@@ -184,7 +184,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         if (strcmp(path, "/") == 0) {
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
-                "GET /hello /regs /mem?addr=&len= /peek/{via|psg|disk|acia|tape|loci} "
+                "GET /hello /regs /mem?addr=&len=[&bank=cpu|ram|rom|overlay] /peek/{via|psg|disk|acia|tape|loci} "
                 "/break /watch /disasm?addr=&n=; "
                 "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
                 "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
@@ -196,14 +196,17 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         if (strcmp(path, "/hello") == 0) { snprintf(cmd, cmdsz, "hello"); return true; }
         if (strcmp(path, "/regs") == 0)  { snprintf(cmd, cmdsz, "regs");  return true; }
         if (strcmp(path, "/mem") == 0) {
-            char addr[32], len[32];
+            char addr[32], len[32], bank[16];
             if (!get_param(query, "addr", addr, sizeof(addr)) ||
                 !get_param(query, "len", len, sizeof(len))) {
                 http_send(fd, 400, "Bad Request",
-                    "{\"ok\":false,\"error\":\"/mem needs ?addr=&len=\"}\n");
+                    "{\"ok\":false,\"error\":\"/mem needs ?addr=&len= [&bank=cpu|ram|rom|overlay]\"}\n");
                 return false;
             }
-            snprintf(cmd, cmdsz, "read %s %s", addr, len);
+            if (get_param(query, "bank", bank, sizeof(bank)))
+                snprintf(cmd, cmdsz, "read %s %s %s", addr, len, bank);
+            else
+                snprintf(cmd, cmdsz, "read %s %s", addr, len);
             return true;
         }
         if (strncmp(path, "/peek/", 6) == 0) {
