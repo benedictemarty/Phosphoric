@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.58.0-alpha] - 2026-07-15
+
+### Added — Tracing conditionnel (Epic 6 / US 1, rattrapage b2) (Sprint 99)
+
+`--trace` démarrait au boot et loguait tout (post-mortem plat, fichier qui
+gonfle). b2 déclenche finement (start/stop sur PC/write/cycle/BRK) et borne la
+mémoire. Cette US porte le tracing de Phosphoric au même niveau.
+
+- **Déclencheurs** (`trace_arm`) : **start** `now` | `pc:HEX` ; **stop**
+  `cycle:N` (N cycles après le début) | `brk` (prochain BRK $00) |
+  `write:HEX` | `read:HEX`.
+- **Buffer circulaire** (`ring:N`) : ne garde que les N dernières instructions
+  en mémoire (au lieu d'un fichier qui gonfle), sauvegardable à la demande
+  (`trace_save_ring`, plus ancien → plus récent).
+- **Symboles inline** (`sym`) : annotation `; SYMBOL` si `--symbols` chargé.
+- **Double hook mémoire** (`memory_set_trace2`, `trace_callback2`) : les
+  triggers write/read cohabitent avec le callback des watchpoints (deux
+  consommateurs indépendants de la trace mémoire).
+- **Pilotage** :
+  - REPL : `trace start [now|pc:HEX] [stop:cycle:N|brk|write:HEX|read:HEX]
+    [ring:N] [sym]`, `trace stop|save FILE|status|off`.
+  - `--control` : commande `trace <sub> <spec>` (cap `trace-cond`).
+  - REST : `POST /trace` (`spec=`), `GET /trace` (status),
+    `POST /trace/stop`, `POST /trace/save` (`path=`, sandbox),
+    `DELETE /trace` (off).
+
+Le chemin `--trace FILE` historique (start immédiat, streaming fichier) est
+préservé.
+
+### Tests
+- `test-trace` 10 → 16 (start pc, stop cycle/brk/write, ring wrap + save,
+  parseur de spec), `test-control-dispatch` 21 → 22, `test-httpapi` e2e
+  29 → 34. Valgrind clean (ring alloué/libéré). 937 → 949 tests.
+- `EMU_VERSION` 1.57.0 → 1.58.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.57.0-alpha] - 2026-07-15
 
 ### Added — Inspection mémoire banque-aware (Epic 6 / US 2, rattrapage b2) (Sprint 98)

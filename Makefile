@@ -307,7 +307,8 @@ test-movie-replay: $(TARGET)
 TEST_GDB_SRCS = tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                 src/memory/memory.c src/memory/banking.c \
-                src/io/via6522.c src/utils/logging.c src/utils/symbols.c
+                src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
+                src/utils/trace.c
 
 test-gdbstub: $(TEST_GDB_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_GDB_SRCS) $(LDFLAGS) -o test_gdbstub
@@ -322,7 +323,8 @@ test-audio: $(TEST_AUDIO_SRCS)
 TEST_DEBUGGER_SRCS = tests/unit/test_debugger.c src/debugger.c \
                      src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                      src/memory/memory.c src/memory/banking.c \
-                     src/io/via6522.c src/utils/logging.c src/utils/symbols.c
+                     src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
+                     src/utils/trace.c
 
 test-debugger: $(TEST_DEBUGGER_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_DEBUGGER_SRCS) $(LDFLAGS) -o test_debugger
@@ -394,7 +396,8 @@ test-ocula: $(TEST_OCULA_SRCS)
 
 TEST_TRACE_SRCS = tests/unit/test_trace.c src/utils/trace.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
-                  src/memory/memory.c src/memory/banking.c src/utils/logging.c
+                  src/memory/memory.c src/memory/banking.c src/utils/logging.c \
+                  src/utils/symbols.c
 
 test-trace: $(TEST_TRACE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_TRACE_SRCS) $(LDFLAGS) -o test_trace
@@ -520,7 +523,7 @@ TEST_COVERAGE_SRCS = tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcode
                      src/storage/sedoric.c src/storage/disk.c \
                      src/savestate.c src/debugger.c \
                      src/audio/ay3891x.c src/video/video.c \
-                     src/utils/logging.c src/utils/symbols.c
+                     src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 
 test-coverage: $(TEST_COVERAGE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_COVERAGE_SRCS) $(LDFLAGS) -o test_coverage
