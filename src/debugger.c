@@ -1047,6 +1047,66 @@ static void show_loci_state(emulator_t* emu) {
     }
 }
 
+/* US 5 — élargissement de la couverture d'inspection (parité fenêtres b2). */
+static void show_video_state(emulator_t* emu) {
+    video_t* v = &emu->video;
+    printf("  ULA / Video State:\n");
+    printf("    mode=%s  vid_mode=$%02X  text_attr=$%02X  need_refresh=%s\n",
+           v->hires_mode ? "HIRES" : "TEXT", v->vid_mode, v->text_attr,
+           v->need_refresh ? "yes" : "no");
+    printf("    framebuffer=%dx%d  frame_counter=%u\n",
+           v->native_w, v->native_h, v->frame_counter);
+    printf("    OCULA: 80col=%d(forced=%d) exthires=%d unlocked=%d scroll=(%u,%u)\n",
+           v->ocula_80col, v->ocula_80col_forced, v->ocula_exthires,
+           v->ocula_unlocked, v->ocula_scroll_x, v->ocula_scroll_y);
+}
+
+static void show_keyboard_state(emulator_t* emu) {
+    oric_keyboard_t* k = &emu->keyboard;
+    printf("  Keyboard (8 columns, ORB[0:2] selects col; rows active-low):\n");
+    printf("    col:     0    1    2    3    4    5    6    7\n");
+    printf("    matrix: ");
+    for (int c = 0; c < 8; c++) printf("$%02X  ", k->matrix[c]);
+    printf("\n");
+    printf("    layout=%d\n", (int)k->layout);
+#ifdef HAS_SDL2
+    printf("    pressed_count=%d  pending=%s (scancode=%u)\n",
+           k->pressed_count, k->has_pending ? "yes" : "no",
+           (unsigned)k->pending_scancode);
+#endif
+}
+
+static void show_joystick_state(emulator_t* emu) {
+    oric_joystick_t* j = &emu->joystick;
+    const char* mode = j->mode == ORIC_JOY_DISABLED    ? "disabled"    :
+                       j->mode == ORIC_JOY_SDL_GAMEPAD ? "sdl-gamepad" :
+                       j->mode == ORIC_JOY_KEYBOARD    ? "keyboard"    : "?";
+    printf("  IJK Joystick State:\n");
+    printf("    mode=%s  port_a_mask=$%02X (active-low)  interface present=%s\n",
+           mode, j->port_a_mask, (j->port_a_mask & IJK_PRESENCE) ? "no" : "yes");
+#ifdef HAS_SDL2
+    printf("    device_index=%d\n", j->device_index);
+#endif
+}
+
+static void show_printer_state(emulator_t* emu) {
+    oric_printer_t* p = &emu->printer;
+    const char* type = p->type == PRINTER_NONE  ? "none"  :
+                       p->type == PRINTER_TEXT  ? "text"  :
+                       p->type == PRINTER_MCP40 ? "mcp40" : "?";
+    printf("  Printer State:\n");
+    printf("    type=%s  output=%s  strobe_low=%s  byte_count=%u\n",
+           type, p->filename ? p->filename : "(none)",
+           p->strobe_low ? "yes" : "no", (unsigned)p->byte_count);
+    if (p->type == PRINTER_MCP40) {
+        mcp40_t* m = &p->mcp40;
+        printf("    MCP-40: pen=(%d,%d) color=%d char_size=%d lines=%u chars=%u dirty=%s\n",
+               m->pen_x, m->pen_y, (int)m->color, m->char_size,
+               (unsigned)m->line_count, (unsigned)m->char_count,
+               m->dirty ? "yes" : "no");
+    }
+}
+
 static void show_help(void) {
     printf("\n  Debugger Commands:\n");
     printf("  ─────────────────────────────────────────────────\n");
@@ -1087,6 +1147,10 @@ static void show_help(void) {
     printf("  acia / serial     Show ACIA 6551 registers + signals + FIFO\n");
     printf("  tape / cassette   Show tape position, status, next bytes\n");
     printf("  loci              Show LOCI MIA full state (regs, fds, mounts, DSK/TAP)\n");
+    printf("  video / ula       Show ULA/video state (mode, OCULA, framebuffer)\n");
+    printf("  kbd               Show keyboard matrix (8 columns)\n");
+    printf("  joy               Show IJK joystick state\n");
+    printf("  printer / mcp40   Show printer / MCP-40 plotter state\n");
     printf("  stack             Show stack contents\n");
     printf("  set reg val       Set register (A,X,Y,SP,PC,P)\n");
     printf("  set via reg val   Set VIA 6522 register (0..15)\n");
@@ -1975,6 +2039,19 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         /* ── LOCI MIA STATE (sprint 34d3) ───────────────── */
         else if (strcmp(cmd, "loci") == 0) {
             show_loci_state(emu);
+        }
+        /* ── INSPECTION ÉLARGIE (US 5) ──────────────────── */
+        else if (strcmp(cmd, "video") == 0 || strcmp(cmd, "ula") == 0) {
+            show_video_state(emu);
+        }
+        else if (strcmp(cmd, "kbd") == 0 || strcmp(cmd, "keyboard") == 0) {
+            show_keyboard_state(emu);
+        }
+        else if (strcmp(cmd, "joy") == 0 || strcmp(cmd, "joystick") == 0) {
+            show_joystick_state(emu);
+        }
+        else if (strcmp(cmd, "printer") == 0 || strcmp(cmd, "mcp40") == 0) {
+            show_printer_state(emu);
         }
         /* ── STACK ──────────────────────────────────────── */
         else if (strcmp(cmd, "stack") == 0) {

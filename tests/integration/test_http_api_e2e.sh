@@ -210,5 +210,15 @@ curl -s "$BASE/watch-region" | grep -q '2000-2010' \
 curl -s -X DELETE "$BASE/watch-region" | grep -q '"ok":true' \
     && ok "DELETE /watch-region clears it" || ko "DELETE /watch-region"
 
+# 22. widened inspection coverage (Epic 6 / US 5)
+curl -s "$BASE/peek/video" | grep -q 'vid_mode=' \
+    && ok "GET /peek/video" || ko "GET /peek/video"
+curl -s "$BASE/peek/kbd" | grep -q 'matrix=' \
+    && ok "GET /peek/kbd (keyboard matrix)" || ko "GET /peek/kbd"
+curl -s "$BASE/peek/joy" | grep -q 'port_a_mask=' \
+    && ok "GET /peek/joy" || ko "GET /peek/joy"
+curl -s "$BASE/peek/printer" | grep -q 'type=' \
+    && ok "GET /peek/printer" || ko "GET /peek/printer"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

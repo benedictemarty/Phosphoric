@@ -410,6 +410,25 @@ TEST(watch_region_set_list_clear) {
     PASS();
 }
 
+TEST(peek_new_subsystems) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    run_one(emu, &s, "peek video");
+    ASSERT_TRUE(strncmp(s.buf, "OK hires=", 9) == 0);
+    control_sink_free(&s);
+    run_one(emu, &s, "peek kbd");
+    ASSERT_TRUE(strstr(s.buf, "matrix=") != NULL);
+    control_sink_free(&s);
+    run_one(emu, &s, "peek joy");
+    ASSERT_TRUE(strstr(s.buf, "port_a_mask=") != NULL);
+    control_sink_free(&s);
+    run_one(emu, &s, "peek printer");
+    ASSERT_TRUE(strstr(s.buf, "type=") != NULL);
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -435,6 +454,7 @@ int main(void) {
     RUN(read_bank_rom_vs_ram);
     RUN(trace_start_status_off);
     RUN(watch_region_set_list_clear);
+    RUN(peek_new_subsystems);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

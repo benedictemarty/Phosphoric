@@ -6,6 +6,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 101: Couverture d'inspection élargie (Epic 6 / US 5) (v1.60.0-alpha) - DONE
+Quatrième US livrée de l'Epic 6. b2 a ~12 fenêtres d'inspection ; Phosphoric
+couvrait via/psg/disk/acia/tape/loci — ajout de 4 sous-systèmes.
+- [x] REPL `video`/`ula`, `kbd`/`keyboard`, `joy`/`joystick`, `printer`/`mcp40`
+      (uniquement des champs réels des structs ; champs SDL2-only sous
+      `#ifdef HAS_SDL2`).
+- [x] `--control peek video|kbd|joy|printer` (key=value) → REST
+      `GET /peek/{video|kbd|joy|printer}`. test-debugger 21→22,
+      test-control-dispatch 23→24, test-httpapi 37→41. Valgrind clean.
+      954 → 960 tests.
+> Epic 6 : reste US 4 (symboles scopés par banque), US 6 (optionnel GUI).
+
+---
+
 ### Sprint 100: Carte d'accès mémoire r/w/x (Epic 6 / US 3) (v1.59.0-alpha) - DONE
 Troisième US de l'Epic 6 (rattrapage b2). Les watchpoints plafonnaient à 8 ;
 b2 a des flags r/w/x par octet sur toute la mémoire.
@@ -139,9 +153,12 @@ parasite, `MOS's view`, teletext debug).
       test-control-dispatch 22→23, test-httpapi 34→37. 949→954 tests.
 - [ ] **US 4 — Symboles scopés par banque + groupes** *(🟠 / moyen)* : scoping
       des symboles par overlay/banque, activation par groupe (module `symbols`).
-- [ ] **US 5 — Couverture d'inspection élargie** *(🟡 / faible, quick wins)* :
-      commandes snapshot `ula`/`video`, `kbd` (matrice), `joy`,
-      `printer`/`mcp40` — égaler la palette de fenêtres b2.
+- [x] **US 5 — Couverture d'inspection élargie** *(v1.60.0, Sprint 101)* :
+      commandes snapshot `video`/`ula`, `kbd`, `joy`, `printer`/`mcp40` (champs
+      réels des structs uniquement ; SDL2-only sous `#ifdef HAS_SDL2`). REPL +
+      `--control peek …` + REST `GET /peek/{video|kbd|joy|printer}`.
+      test-debugger 21→22, test-control-dispatch 23→24, test-httpapi 37→41.
+      954→960 tests.
 - [ ] **US 6 (optionnel, GUI/SDL)** *(🟡 / élevé)* : overlays visuels timing
       (position faisceau TV, lignes raster) dans le renderer ; injection
       stuck-bits RAM (comme b2).

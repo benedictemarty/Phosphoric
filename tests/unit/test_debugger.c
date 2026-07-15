@@ -691,6 +691,31 @@ TEST(test_access_map) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  EPIC 6 / US 5: COUVERTURE D'INSPECTION ÉLARGIE                    */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_inspect_coverage) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    char out[4096];
+    capture_cmd(&emu, &dbg, "video", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "Video State") != NULL);
+    capture_cmd(&emu, &dbg, "kbd", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "matrix") != NULL);
+    capture_cmd(&emu, &dbg, "joy", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "Joystick") != NULL);
+    capture_cmd(&emu, &dbg, "printer", out, sizeof(out));
+    ASSERT_TRUE(strstr(out, "Printer") != NULL);
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -721,6 +746,7 @@ int main(void) {
     RUN(test_binary_literal);
     RUN(test_peek_bank_layers);
     RUN(test_access_map);
+    RUN(test_inspect_coverage);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

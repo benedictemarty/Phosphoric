@@ -960,9 +960,48 @@ static void cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
                 l->dsk_selected, l->boot_settings,
                 l->sdimg ? 1 : 0);
     }
+    else if (strcmp(sub, "video") == 0 || strcmp(sub, "ula") == 0) {
+        video_t* v = &emu->video;
+        sink_ok(s, "hires=%d vid_mode=%02X text_attr=%02X w=%d h=%d frame=%u "
+                "ocula_80col=%d ocula_exthires=%d ocula_unlocked=%d "
+                "scroll_x=%u scroll_y=%u",
+                v->hires_mode ? 1 : 0, v->vid_mode, v->text_attr,
+                v->native_w, v->native_h, (unsigned)v->frame_counter,
+                v->ocula_80col ? 1 : 0, v->ocula_exthires ? 1 : 0,
+                v->ocula_unlocked ? 1 : 0, v->ocula_scroll_x, v->ocula_scroll_y);
+    }
+    else if (strcmp(sub, "kbd") == 0 || strcmp(sub, "keyboard") == 0) {
+        oric_keyboard_t* k = &emu->keyboard;
+        sink_printf(s, "OK layout=%d matrix=", (int)k->layout);
+        for (int c = 0; c < 8; c++) sink_printf(s, "%02X", k->matrix[c]);
+        sink_printf(s, "\n");
+        sink_flush(s);
+    }
+    else if (strcmp(sub, "joy") == 0 || strcmp(sub, "joystick") == 0) {
+        oric_joystick_t* j = &emu->joystick;
+        sink_ok(s, "mode=%d port_a_mask=%02X present=%d",
+                (int)j->mode, j->port_a_mask,
+                (j->port_a_mask & IJK_PRESENCE) ? 0 : 1);
+    }
+    else if (strcmp(sub, "printer") == 0 || strcmp(sub, "mcp40") == 0) {
+        oric_printer_t* p = &emu->printer;
+        if (p->type == PRINTER_MCP40) {
+            mcp40_t* m = &p->mcp40;
+            sink_ok(s, "type=mcp40 byte_count=%u strobe_low=%d pen_x=%d pen_y=%d "
+                    "color=%d lines=%u chars=%u dirty=%d",
+                    (unsigned)p->byte_count, p->strobe_low ? 1 : 0,
+                    m->pen_x, m->pen_y, (int)m->color,
+                    (unsigned)m->line_count, (unsigned)m->char_count,
+                    m->dirty ? 1 : 0);
+        } else {
+            sink_ok(s, "type=%s byte_count=%u strobe_low=%d",
+                    p->type == PRINTER_TEXT ? "text" : "none",
+                    (unsigned)p->byte_count, p->strobe_low ? 1 : 0);
+        }
+    }
     else {
         sink_err(s, "peek: unknown subsystem `%s` "
-                 "(via|psg|disk|acia|tape|loci)", sub);
+                 "(via|psg|disk|acia|tape|loci|video|kbd|joy|printer)", sub);
     }
 }
 
