@@ -169,6 +169,30 @@ int debugger_add_breakpoint(debugger_t* dbg, uint16_t addr);
 bool debugger_remove_breakpoint(debugger_t* dbg, int index);
 
 /**
+ * @brief Add a PC breakpoint carrying a compound condition ("A==5 && X==3").
+ * @return Breakpoint index, -1 if the table is full, -2 if the expression is
+ *         unparseable.
+ */
+int debugger_add_cond_breakpoint(debugger_t* dbg, const emulator_t* emu,
+                                 uint16_t addr, const char* expr);
+
+/* ── Iterative memory search (cheat-finder) — shared by REPL and --control ── */
+typedef enum { HUNT_EQ, HUNT_UNCHANGED, HUNT_CHANGED, HUNT_GT, HUNT_LT } hunt_pred_t;
+
+void     debugger_hunt_start(emulator_t* emu);                        /* seed: all cells */
+uint32_t debugger_hunt_refine(emulator_t* emu, hunt_pred_t pred, uint8_t val);
+uint32_t debugger_hunt_count(void);
+bool     debugger_hunt_active(void);
+void     debugger_hunt_clear(void);
+/* Fill up to @max candidate addresses (and values if @out_vals != NULL);
+ * returns how many were written. */
+uint32_t debugger_hunt_list(emulator_t* emu, uint16_t* out, uint32_t max, uint8_t* out_vals);
+
+/* ── Memory ⇄ file region helpers ── */
+bool debugger_save_region(emulator_t* emu, const char* path, uint16_t addr, uint32_t len);
+long debugger_load_region(emulator_t* emu, const char* path, uint16_t addr);
+
+/**
  * @brief Add a memory write watchpoint (WATCH_WRITE mode)
  * @return Index of added watchpoint, or -1 if full
  */

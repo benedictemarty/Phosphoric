@@ -73,10 +73,15 @@ curl -s "$BASE/hello" | grep -q '"ok":true' \
 curl -s "$BASE/regs" | grep -qE '"ok":true.*A=[0-9A-F]{2}.*PC=[0-9A-F]{4}' \
     && ok "GET /regs returns a register dump" || ko "GET /regs"
 
-# 3. write/read round-trip through the queue
-curl -s -X POST --data 'addr=10&bytes=AB+CD' "$BASE/mem" | grep -q '"reply":"count=2"' \
+# /hello answers as soon as the HTTP thread is up — which is *before* the ROM
+# finishes its power-on RAM clear. Let the machine settle so memory writes stick.
+sleep 2
+
+# 3. write/read round-trip through the queue. Target free RAM ($9000, untouched
+#    by the ROM at the Ready prompt) — zero-page ($10) races the live interpreter.
+curl -s -X POST --data 'addr=9000&bytes=AB+CD' "$BASE/mem" | grep -q '"reply":"count=2"' \
     && ok "POST /mem writes 2 bytes" || ko "POST /mem write"
-curl -s "$BASE/mem?addr=10&len=2" | grep -q '"reply":"AB CD"' \
+curl -s "$BASE/mem?addr=9000&len=2" | grep -q '"reply":"AB CD"' \
     && ok "GET /mem reads back AB CD (state round-trip)" || ko "GET /mem read"
 
 # 4. reset
@@ -109,6 +114,71 @@ done
 [ "$typed" -eq 1 ] \
     && ok "typed BASIC 'POKE 4096,123' executed (mem[\$1000]=7B)" \
     || ko "keys→BASIC POKE did not take effect"
+
+# ─── Sprint 97: parité debug REST (bridge --control + 7 gaps) ─────────
+
+# 9. breakpoints: create, list, delete
+curl -s -X POST --data 'addr=0400' "$BASE/break" | grep -q '"reply":"id=0 addr=0400"' \
+    && ok "POST /break creates a breakpoint" || ko "POST /break"
+curl -s "$BASE/break" | grep -q 'addr=0400' \
+    && ok "GET /break lists it" || ko "GET /break"
+curl -s -X DELETE "$BASE/break/0" | grep -q '"ok":true' \
+    && ok "DELETE /break/0 removes it" || ko "DELETE /break/{id}"
+
+# 10. conditional breakpoint (compound &&, url-encoded)
+curl -s -X POST --data-urlencode 'addr=0500' --data-urlencode 'if=A==5 && X==3' "$BASE/break" \
+    | grep -q '"ok":true' && ok "POST /break with if=EXPR (compound)" || ko "POST /break conditional"
+curl -s -X DELETE "$BASE/break/0" >/dev/null
+
+# 11. watchpoint with access mode
+curl -s -X POST --data 'addr=2000&mode=r' "$BASE/watch" | grep -q 'mode=read' \
+    && ok "POST /watch addr= mode=r → read watchpoint" || ko "POST /watch mode"
+curl -s "$BASE/watch" | grep -q 'addr=2000' \
+    && ok "GET /watch lists it" || ko "GET /watch"
+curl -s -X DELETE "$BASE/watch/0" >/dev/null
+
+# 12. set a CPU register (the running CPU may overwrite A within microseconds,
+#     so only the command acceptance is asserted here; the deterministic
+#     register-effect check lives in test-control-dispatch on a halted core).
+curl -s -X POST --data 'reg=a&val=42' "$BASE/set" | grep -q '"ok":true' \
+    && ok "POST /set reg=a val=42 accepted" || ko "POST /set reg"
+
+# 13. set a VIA register (gap 6)
+curl -s -X POST --data 'via=2&val=FF' "$BASE/set" | grep -q '"reply":"via=2 val=FF"' \
+    && ok "POST /set via=2 val=FF" || ko "POST /set via"
+
+# 14. disasm one instruction (bridge)
+curl -s "$BASE/disasm?addr=C000&n=1" | grep -q '"ok":true' \
+    && ok "GET /disasm?addr=&n=" || ko "GET /disasm"
+
+# 15. hunt cheat-finder: seed then narrow (gap 3)
+curl -s -X POST "$BASE/hunt" | grep -q 'candidates=65536' \
+    && ok "POST /hunt seeds all cells" || ko "POST /hunt seed"
+curl -s -X POST --data 'op=same' "$BASE/hunt" | grep -q '"ok":true' \
+    && ok "POST /hunt op=same narrows" || ko "POST /hunt refine"
+curl -s -X POST --data 'op=clear' "$BASE/hunt" >/dev/null
+
+# 16. memory ⇄ file region roundtrip within the sandbox (gap 4)
+curl -s -X POST --data 'addr=3000&bytes=DE+AD+BE+EF' "$BASE/mem" >/dev/null
+curl -s -X POST --data 'path=phos_e2e_region.bin&addr=3000&len=4' "$BASE/save" | grep -q 'wrote=4' \
+    && ok "POST /save writes a region to file" || ko "POST /save"
+curl -s -X POST --data 'addr=3000&bytes=00+00+00+00' "$BASE/mem" >/dev/null
+curl -s -X POST --data 'path=phos_e2e_region.bin&addr=3000' "$BASE/load" | grep -q 'loaded=4' \
+    && curl -s "$BASE/mem?addr=3000&len=4" | grep -q '"reply":"DE AD BE EF"' \
+    && ok "POST /load restores the region (roundtrip)" || ko "POST /load"
+rm -f /tmp/phos_e2e_region.bin
+
+# 17. full save-state / load-state through the protocol (gap 5)
+curl -s -X POST --data 'path=phos_e2e_state.ost' "$BASE/state/save" | grep -q '"ok":true' \
+    && ok "POST /state/save writes .ost" || ko "POST /state/save"
+curl -s -X POST --data 'path=phos_e2e_state.ost' "$BASE/state/load" | grep -qE '"reply":"pc=[0-9A-F]{4}"' \
+    && ok "POST /state/load restores the machine" || ko "POST /state/load"
+rm -f /tmp/phos_e2e_state.ost
+
+# 18. binary % literal in a parameter (gap 7): %100000000000 == $800
+curl -s -X POST --data-urlencode 'addr=%100000000000' "$BASE/break" | grep -q 'addr=0800' \
+    && ok "POST /break addr=%bin literal → \$0800" || ko "binary literal"
+curl -s -X DELETE "$BASE/break/0" >/dev/null
 
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

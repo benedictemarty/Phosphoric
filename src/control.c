@@ -17,6 +17,7 @@
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
 #include "debugger.h"
+#include "savestate.h"
 #include "utils/logging.h"
 #include "utils/symbols.h"
 #include "io/via6522.h"
@@ -243,10 +244,12 @@ void control_emit_halt(emulator_t* emu, const char* reason) {
 
 static bool parse_hex(const char* s, uint32_t* out) {
     if (!s || !*s) return false;
+    int base = 16;
     if (*s == '$') s++;
     else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+    else if (*s == '%') { s++; base = 2; }   /* binary literal */
     char* end = NULL;
-    unsigned long v = strtoul(s, &end, 16);
+    unsigned long v = strtoul(s, &end, base);
     if (end == s) return false;
     *out = (uint32_t)v;
     return true;
@@ -277,8 +280,20 @@ static void cmd_regs(emulator_t* emu, control_sink_t* s) {
 }
 
 static void cmd_set(emulator_t* emu, control_sink_t* s,
-                    const char* reg, const char* val) {
-    if (!reg || !val) { sink_err(s, "set: usage `set <reg> <val>`"); return; }
+                    const char* reg, const char* val, const char* tail) {
+    if (!reg || !val) { sink_err(s, "set: usage `set <reg> <val>` or `set via <reg 0-15> <val>`"); return; }
+    /* `set via <reg 0-15> <val>` — write a VIA 6522 register. Here `val`
+     * carries the register index and `tail` the value. */
+    if (strcasecmp(reg, "via") == 0) {
+        uint32_t regn, vv;
+        if (!tail || !parse_hex(val, &regn) || !parse_hex(tail, &vv) || regn > 15) {
+            sink_err(s, "set: usage `set via <reg 0-15> <val>`");
+            return;
+        }
+        via_write(&emu->via, (uint8_t)regn, (uint8_t)vv);
+        sink_ok(s, "via=%u val=%02X", (unsigned)regn, (uint8_t)vv);
+        return;
+    }
     uint32_t v;
     if (!parse_hex(val, &v)) { sink_err(s, "set: bad value"); return; }
     /* Case-insensitive: A, X, Y, SP, P, PC. */
@@ -370,10 +385,19 @@ static void cmd_write(emulator_t* emu, control_sink_t* s, const char* addr_s,
     sink_ok(s, "count=%d", n);
 }
 
-static void cmd_break(emulator_t* emu, control_sink_t* s, const char* addr_s) {
+static void cmd_break(emulator_t* emu, control_sink_t* s,
+                      const char* addr_s, const char* cond) {
     uint16_t addr;
     if (!parse_u16(addr_s, &addr)) {
-        sink_err(s, "break: usage `break <addr>`");
+        sink_err(s, "break: usage `break <addr> [if <expr>]`");
+        return;
+    }
+    if (cond && *cond) {
+        int id = debugger_add_cond_breakpoint(&emu->debugger, emu, addr, cond);
+        if (id == -2) { sink_err(s, "break: bad condition `%s`", cond); return; }
+        if (id < 0)   { sink_err(s, "break: full or rejected"); return; }
+        sink_ok(s, "id=%d addr=%04X cond=\"%s\"", id, addr,
+                emu->debugger.breakpoints[id].cond_text);
         return;
     }
     int id = debugger_add_breakpoint(&emu->debugger, addr);
@@ -391,17 +415,29 @@ static void cmd_unbreak(emulator_t* emu, control_sink_t* s, const char* id_s) {
     sink_ok(s, "");
 }
 
-/* Sprint 35b — watchpoints (write to address). */
-static void cmd_watch(emulator_t* emu, control_sink_t* s, const char* addr_s) {
+/* Sprint 35b — watchpoints. Sprint 97 — optional access mode w|r|a|c. */
+static void cmd_watch(emulator_t* emu, control_sink_t* s,
+                      const char* addr_s, const char* mode_s) {
     uint16_t addr;
     if (!parse_u16(addr_s, &addr)) {
-        sink_err(s, "watch: usage `watch <addr>`");
+        sink_err(s, "watch: usage `watch <addr> [w|r|a|c]`");
         return;
     }
-    int id = debugger_add_watchpoint(&emu->debugger, addr);
+    watch_mode_t mode = WATCH_WRITE;
+    const char* mname = "write";
+    if (mode_s && *mode_s) {
+        switch (mode_s[0]) {
+            case 'w': mode = WATCH_WRITE;  mname = "write";  break;
+            case 'r': mode = WATCH_READ;   mname = "read";   break;
+            case 'a': mode = WATCH_ACCESS; mname = "access"; break;
+            case 'c': mode = WATCH_CHANGE; mname = "change"; break;
+            default: sink_err(s, "watch: bad mode `%s` (w|r|a|c)", mode_s); return;
+        }
+    }
+    int id = debugger_add_watchpoint_mode(&emu->debugger, addr, mode);
     if (id < 0) { sink_err(s, "watch: full or rejected"); return; }
     debugger_install_watchpoint_trace(&emu->debugger, emu);
-    sink_ok(s, "id=%d addr=%04X", id, addr);
+    sink_ok(s, "id=%d addr=%04X mode=%s", id, addr, mname);
 }
 
 static void cmd_unwatch(emulator_t* emu, control_sink_t* s, const char* id_s) {
@@ -656,9 +692,83 @@ static void cmd_break_list(emulator_t* emu, control_sink_t* s) {
     sink_printf(s, "OK");
     for (int i = 0; i < dbg->num_breakpoints; i++) {
         sink_printf(s, " id=%d:addr=%04X", i, dbg->breakpoints[i].addr);
+        if (dbg->breakpoints[i].has_cond)
+            sink_printf(s, ":cond=\"%s\"", dbg->breakpoints[i].cond_text);
     }
     sink_printf(s, "\n");
     sink_flush(s);
+}
+
+/* Sprint 97 — iterative memory search (cheat-finder), mirrors the REPL `hunt`.
+ * `hunt` (no op) seeds; op ∈ {eq <v>, same, changed, up, down, list, clear}. */
+static void cmd_hunt(emulator_t* emu, control_sink_t* s,
+                     const char* op, const char* val_s) {
+    if (!op || !*op) {
+        debugger_hunt_start(emu);
+        sink_ok(s, "candidates=%u", debugger_hunt_count());
+        return;
+    }
+    if (strcasecmp(op, "clear") == 0) { debugger_hunt_clear(); sink_ok(s, ""); return; }
+    if (strcasecmp(op, "list") == 0) {
+        if (!debugger_hunt_active()) { sink_err(s, "hunt: not active"); return; }
+        uint16_t addrs[64]; uint8_t vals[64];
+        uint32_t n = debugger_hunt_list(emu, addrs, 64, vals);
+        sink_printf(s, "OK count=%u", debugger_hunt_count());
+        for (uint32_t i = 0; i < n; i++)
+            sink_printf(s, " %04X=%02X", addrs[i], vals[i]);
+        sink_printf(s, "\n");
+        sink_flush(s);
+        return;
+    }
+    if (!debugger_hunt_active()) { sink_err(s, "hunt: not active (send `hunt` first)"); return; }
+    hunt_pred_t pred; uint8_t val = 0;
+    if (strcasecmp(op, "eq") == 0) {
+        uint32_t v;
+        if (!val_s || !parse_hex(val_s, &v) || v > 0xFF) { sink_err(s, "hunt: eq needs a byte"); return; }
+        pred = HUNT_EQ; val = (uint8_t)v;
+    } else if (strcasecmp(op, "same") == 0)    pred = HUNT_UNCHANGED;
+    else if (strcasecmp(op, "changed") == 0)   pred = HUNT_CHANGED;
+    else if (strcasecmp(op, "up") == 0)        pred = HUNT_GT;
+    else if (strcasecmp(op, "down") == 0)      pred = HUNT_LT;
+    else { sink_err(s, "hunt: op ∈ {eq,same,changed,up,down,list,clear}"); return; }
+    uint32_t k = debugger_hunt_refine(emu, pred, val);
+    sink_ok(s, "candidates=%u", k);
+}
+
+/* Sprint 97 — memory ⇄ file region + full save-state from the protocol. */
+static void cmd_save_mem(emulator_t* emu, control_sink_t* s,
+                         const char* path, const char* addr_s, const char* len_s) {
+    uint16_t addr; uint32_t len;
+    if (!path || !parse_u16(addr_s, &addr) || !parse_hex(len_s, &len)) {
+        sink_err(s, "save-mem: usage `save-mem <file> <addr> <len>`");
+        return;
+    }
+    if (debugger_save_region(emu, path, addr, len)) sink_ok(s, "wrote=%u addr=%04X", len, addr);
+    else sink_err(s, "save-mem: write failed");
+}
+
+static void cmd_load_mem(emulator_t* emu, control_sink_t* s,
+                         const char* path, const char* addr_s) {
+    uint16_t addr;
+    if (!path || !parse_u16(addr_s, &addr)) {
+        sink_err(s, "load-mem: usage `load-mem <file> <addr>`");
+        return;
+    }
+    long n = debugger_load_region(emu, path, addr);
+    if (n < 0) sink_err(s, "load-mem: read failed");
+    else sink_ok(s, "loaded=%ld addr=%04X", n, addr);
+}
+
+static void cmd_state_save(emulator_t* emu, control_sink_t* s, const char* path) {
+    if (!path) { sink_err(s, "state-save: usage `state-save <file>`"); return; }
+    if (savestate_save(emu, path)) sink_ok(s, "");
+    else sink_err(s, "state-save: failed");
+}
+
+static void cmd_state_load(emulator_t* emu, control_sink_t* s, const char* path) {
+    if (!path) { sink_err(s, "state-load: usage `state-load <file>`"); return; }
+    if (savestate_load(emu, path)) sink_ok(s, "pc=%04X", emu->cpu.PC);
+    else sink_err(s, "state-load: failed");
 }
 
 static void cmd_reset(emulator_t* emu, control_sink_t* s) {
@@ -670,7 +780,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -847,7 +957,7 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
         cmd_regs(emu, s);
     }
     else if (strcmp(cmd, "set") == 0) {
-        cmd_set(emu, s, arg1, arg2);
+        cmd_set(emu, s, arg1, arg2, save);
     }
     else if (strcmp(cmd, "read") == 0) {
         cmd_read(emu, s, arg1, arg2);
@@ -859,7 +969,8 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
         cmd_write(emu, s, arg1, arg2, save);
     }
     else if (strcmp(cmd, "break") == 0) {
-        cmd_break(emu, s, arg1);
+        cmd_break(emu, s, arg1,
+                  (arg2 && strcasecmp(arg2, "if") == 0) ? save : NULL);
     }
     else if (strcmp(cmd, "unbreak") == 0) {
         cmd_unbreak(emu, s, arg1);
@@ -868,7 +979,23 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
         cmd_break_list(emu, s);
     }
     else if (strcmp(cmd, "watch") == 0) {
-        cmd_watch(emu, s, arg1);
+        cmd_watch(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "hunt") == 0) {
+        cmd_hunt(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "save-mem") == 0) {
+        char* a3 = strtok_r(NULL, " \t", &save);
+        cmd_save_mem(emu, s, arg1, arg2, a3);
+    }
+    else if (strcmp(cmd, "load-mem") == 0) {
+        cmd_load_mem(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "state-save") == 0) {
+        cmd_state_save(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "state-load") == 0) {
+        cmd_state_load(emu, s, arg1);
     }
     else if (strcmp(cmd, "unwatch") == 0) {
         cmd_unwatch(emu, s, arg1);

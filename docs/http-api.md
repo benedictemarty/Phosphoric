@@ -109,6 +109,52 @@ Fondation réutilisable même si l'API REST est abandonnée ensuite.
 - **US 4.2** ✅ — README + `docs/http-api.md` + exemples `curl` ; CHANGELOG /
   VERSION_TRACKING / CIRRUS_OS / ROADMAP à jour.
 
+### EPIC 5 — Parité debug (bridge `--control` + 7 gaps) *(Sprint 97)* — LIVRÉ
+
+Le debug interactif (dont les 7 gaps du Sprint 96) est rendu pilotable à
+distance. Même principe : **chaque route mappe une ligne `--control`.**
+
+| Méthode  | Route                                   | Commande `--control`        |
+|----------|-----------------------------------------|-----------------------------|
+| `GET`    | `/break`                                | `break-list`                |
+| `POST`   | `/break` `{addr[,if]}`                  | `break <addr> [if <expr>]`  |
+| `DELETE` | `/break/{id}`                           | `unbreak <id>`              |
+| `GET`    | `/watch`                                | `watch-list`                |
+| `POST`   | `/watch` `{addr[,mode=w\|r\|a\|c]}`     | `watch <addr> [mode]`       |
+| `DELETE` | `/watch/{id}`                           | `unwatch <id>`              |
+| `POST`   | `/raster` `{line}` / `DELETE /raster/{id}` | `raster` / `unraster`    |
+| `GET`    | `/disasm?addr=&n=`                      | `disasm <addr> <n>`         |
+| `POST`   | `/set` `{reg,val}` ou `{via,val}`       | `set <reg> <val>` / `set via` |
+| `POST`   | `/hunt` `{[op[,val]]}`                  | `hunt [op] [val]`           |
+| `POST`   | `/save` `{path,addr,len}`               | `save-mem` (sandbox)        |
+| `POST`   | `/load` `{path,addr}`                   | `load-mem` (sandbox)        |
+| `POST`   | `/state/save` `{path}` / `/state/load`  | `state-save` / `state-load` |
+| `POST`   | `/sym` `{path}`                         | `load-sym` (sandbox)        |
+
+- **Watch modes** : `w` write, `r` read, `a` access, `c` change.
+- **Breakpoints conditionnels** : l'expression (`A==5 && M[$C000]>10`) est
+  URL-encodée par le client et décodée par `get_param` (`&&` → `%26%26`).
+- **`hunt`** (cheat-finder) : `op ∈ {eq <val>, same, changed, up, down, list,
+  clear}` ; `POST /hunt` sans `op` amorce sur tout l'espace d'adressage.
+- **Fichiers** : `/save` `/load` `/state/*` `/sym` sont **sandboxés** dans
+  `--http-api-root` (`..` et chemins absolus rejetés → 403).
+- **Littéraux `%` binaires** acceptés dans tous les paramètres numériques.
+- Caps `hello` étendues : `watch-mode,break-cond,hunt,save-mem,load-mem,
+  state-save,state-load,set-via,bin-literal` (extension additive,
+  `CONTROL_PROTO_VERSION` inchangé).
+
+Exemples :
+
+```bash
+curl -s -X POST --data 'addr=C000&mode=r'                localhost:8888/watch
+curl -s -X POST --data-urlencode 'addr=0500' \
+                --data-urlencode 'if=A==5 && X==3'       localhost:8888/break
+curl -s -X POST                                          localhost:8888/hunt        # seed
+curl -s -X POST --data 'op=eq&val=7B'                    localhost:8888/hunt        # narrow
+curl -s -X POST --data 'path=snap.ost'                   localhost:8888/state/save
+curl -s -X POST --data 'via=2&val=FF'                    localhost:8888/set
+```
+
 ## 5. Estimation
 
 ~600-900 LOC au total (sink+dispatch ~200, file ~120, serveur HTTP+routing

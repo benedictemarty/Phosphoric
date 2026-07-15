@@ -239,6 +239,106 @@ TEST(buffer_sink_accumulates_across_calls) {
     PASS();
 }
 
+/* ─── Sprint 97: parité debug REST (couche --control) ──────────────── */
+
+TEST(watch_mode_read) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "watch 2000 r");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK id=0 addr=2000 mode=read\n");
+    ASSERT_TRUE(emu->debugger.watchpoints[0].mode == WATCH_READ);
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
+TEST(break_conditional_compound) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "break 1000 if A==5 && X==3");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_TRUE(strncmp(s.buf, "OK id=0 addr=1000 cond=", 23) == 0);
+    ASSERT_TRUE(emu->debugger.breakpoints[0].has_cond);
+    ASSERT_TRUE(emu->debugger.breakpoints[0].cond.num_terms == 2);
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
+TEST(break_bad_condition_errors) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "break 1000 if bogus");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_TRUE(strncmp(s.buf, "ERR break: bad condition", 24) == 0);
+    ASSERT_TRUE(emu->debugger.num_breakpoints == 0);
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
+TEST(set_via_register) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "set via 2 FF");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK via=2 val=FF\n");
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
+TEST(hunt_seed_then_eq) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    /* Plant a unique byte, seed, then narrow to ==7B. */
+    run_one(emu, &s, "write 2000 7B"); control_sink_free(&s);
+    control_result_t r = run_one(emu, &s, "hunt");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK candidates=65536\n");
+    control_sink_free(&s);
+    r = run_one(emu, &s, "hunt eq 7B");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK candidates=1\n");
+    control_sink_free(&s);
+    run_one(emu, &s, "hunt clear"); control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
+TEST(break_binary_literal) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "break %100000000000");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_TRUE(emu->debugger.breakpoints[0].addr == 0x800);
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
+TEST(save_load_mem_roundtrip) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    run_one(emu, &s, "write 2000 A0 A1 A2 A3"); control_sink_free(&s);
+    control_result_t r = run_one(emu, &s, "save-mem /tmp/phos_ctl_region.bin 2000 4");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK wrote=4 addr=2000\n");
+    control_sink_free(&s);
+    run_one(emu, &s, "write 2000 00 00 00 00"); control_sink_free(&s);
+    r = run_one(emu, &s, "load-mem /tmp/phos_ctl_region.bin 2000");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK loaded=4 addr=2000\n");
+    control_sink_free(&s);
+    r = run_one(emu, &s, "read 2000 4");
+    ASSERT_STR_EQ(s.buf, "OK A0 A1 A2 A3\n");
+    control_sink_free(&s);
+    remove("/tmp/phos_ctl_region.bin");
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -254,6 +354,13 @@ int main(void) {
     RUN(keys_empty_is_error);
     RUN(blank_line_is_noop);
     RUN(buffer_sink_accumulates_across_calls);
+    RUN(watch_mode_read);
+    RUN(break_conditional_compound);
+    RUN(break_bad_condition_errors);
+    RUN(set_via_register);
+    RUN(hunt_seed_then_eq);
+    RUN(break_binary_literal);
+    RUN(save_load_mem_roundtrip);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

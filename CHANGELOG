@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.0-alpha] - 2026-07-15
+
+### Added — API REST : parité debug (bridge `--control` + 7 gaps) (Sprint 97)
+
+Les capacités de debug n'étaient accessibles qu'au REPL. Ce sprint les rend
+pilotables à distance, en respectant l'architecture existante : **toute
+requête HTTP est mappée vers une ligne `--control`, seule source de vérité.**
+
+- **Bridge du debug `--control` déjà présent vers REST** (jusque-là non routé
+  dans `http_api.c`) : `GET /break` `GET /watch` `GET /disasm?addr=&n=`,
+  `POST /raster`, `DELETE /break/{id}` `/watch/{id}` `/raster/{id}`.
+- **Watchpoints avec mode** : `POST /watch ?addr=&mode=w|r|a|c` — la commande
+  `--control watch` prend un mode optionnel (`debugger_add_watchpoint_mode`).
+- **Breakpoints conditionnels** : `POST /break ?addr=&if=EXPR` — `break <addr>
+  if <expr>` via `debugger_add_cond_breakpoint` (compound `&&`/`||`,
+  URL-encodé côté client, décodé par `get_param`).
+- **Cheat-finder** : `POST /hunt ?op=&val=` (`eq/same/changed/up/down/list/
+  clear`) — l'état hunt du debugger est exposé (`debugger_hunt_*`).
+- **Mémoire ⇄ fichier** : `POST /save ?path=&addr=&len=`, `POST /load
+  ?path=&addr=` → `save-mem`/`load-mem` (`debugger_save_region`/`_load_region`),
+  chemins **sandboxés** dans `--http-api-root`.
+- **Save-state** : `POST /state/save`, `POST /state/load` → `state-save`/
+  `state-load` (`.ost`, sandboxé).
+- **Registres VIA** : `POST /set ?via=&val=` (en plus de `?reg=&val=`).
+- **Symboles** : `POST /sym ?path=` (bridge `load-sym`, sandboxé).
+- **Littéraux binaires `%`** dans tous les paramètres (`parse_hex` de
+  `control.c`).
+- **Caps `hello`** étendues (additives, `CONTROL_PROTO_VERSION` inchangé) :
+  `watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,
+  bin-literal`.
+
+### Tests
+- `test-control-dispatch` 13 → 20 (watch mode, break conditionnel + rejet,
+  set via, hunt seed→narrow, littéral binaire, roundtrip save/load).
+- `test-httpapi` (e2e curl) 10 → 26 : un endpoint par gap, roundtrips région
+  et save-state, sandbox. Fiabilisé : settle après boot (le RAM-clear ROM
+  courait la 1ʳᵉ écriture ; défaut pré-existant révélé en exécutant réellement
+  le build `HTTPAPI=1`). Valgrind clean. 909 → 932 tests.
+- `EMU_VERSION` 1.55.0 → 1.56.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.55.0-alpha] - 2026-07-15
 
 ### Added — Parité debugger vs Oricutron : 7 gaps fermés (audit comparatif)

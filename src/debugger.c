@@ -310,6 +310,23 @@ bool debugger_remove_breakpoint(debugger_t* dbg, int index) {
     return true;
 }
 
+int debugger_add_cond_breakpoint(debugger_t* dbg, const emulator_t* emu,
+                                 uint16_t addr, const char* expr) {
+    bp_condexpr_t cond;
+    if (!parse_condexpr(emu, expr, &cond)) return -2;   /* unparseable */
+    int idx = debugger_add_breakpoint(dbg, addr);
+    if (idx < 0) return -1;                              /* table full */
+    breakpoint_t* bp = &dbg->breakpoints[idx];
+    bp->has_cond = true;
+    bp->cond = cond;
+    strncpy(bp->cond_text, expr, sizeof(bp->cond_text) - 1);
+    bp->cond_text[sizeof(bp->cond_text) - 1] = '\0';
+    size_t cl = strlen(bp->cond_text);
+    while (cl > 0 && isspace((unsigned char)bp->cond_text[cl - 1]))
+        bp->cond_text[--cl] = '\0';
+    return idx;
+}
+
 /* Evaluate a condition against current emulator state. */
 static bool eval_cond(const bp_condition_t* c, const emulator_t* emu) {
     uint32_t lhs = 0;
@@ -1035,24 +1052,37 @@ static uint8_t  hunt_prev[0x10000];
 static bool     hunt_active = false;
 static uint32_t hunt_count  = 0;
 
-typedef enum { HUNT_EQ, HUNT_UNCHANGED, HUNT_CHANGED, HUNT_GT, HUNT_LT } hunt_pred_t;
-
 static void hunt_snapshot(emulator_t* emu) {
     for (uint32_t a = 0; a < 0x10000; a++)
         hunt_prev[a] = dbg_peek(emu, (uint16_t)a);
 }
 
 /* Begin a hunt: every address becomes a candidate. */
-static void hunt_start(emulator_t* emu) {
+void debugger_hunt_start(emulator_t* emu) {
     for (uint32_t a = 0; a < 0x10000; a++) hunt_cand[a] = true;
     hunt_count = 0x10000;
     hunt_snapshot(emu);
     hunt_active = true;
 }
 
+uint32_t debugger_hunt_count(void) { return hunt_count; }
+bool     debugger_hunt_active(void) { return hunt_active; }
+void     debugger_hunt_clear(void) { hunt_active = false; hunt_count = 0; }
+
+uint32_t debugger_hunt_list(emulator_t* emu, uint16_t* out, uint32_t max, uint8_t* out_vals) {
+    uint32_t n = 0;
+    for (uint32_t a = 0; a < 0x10000 && n < max; a++) {
+        if (!hunt_cand[a]) continue;
+        out[n] = (uint16_t)a;
+        if (out_vals) out_vals[n] = dbg_peek(emu, (uint16_t)a);
+        n++;
+    }
+    return n;
+}
+
 /* Narrow the candidate set with a predicate, then re-snapshot for the next
  * relative comparison. Returns the surviving candidate count. */
-static uint32_t hunt_refine(emulator_t* emu, hunt_pred_t pred, uint8_t val) {
+uint32_t debugger_hunt_refine(emulator_t* emu, hunt_pred_t pred, uint8_t val) {
     uint32_t kept = 0;
     for (uint32_t a = 0; a < 0x10000; a++) {
         if (!hunt_cand[a]) continue;
@@ -1076,8 +1106,8 @@ static uint32_t hunt_refine(emulator_t* emu, hunt_pred_t pred, uint8_t val) {
 /*  MEMORY ⇄ FILE (save / load region)                                 */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-static bool dbg_save_region(emulator_t* emu, const char* path,
-                            uint16_t addr, uint32_t len) {
+bool debugger_save_region(emulator_t* emu, const char* path,
+                          uint16_t addr, uint32_t len) {
     FILE* f = fopen(path, "wb");
     if (!f) return false;
     for (uint32_t i = 0; i < len; i++) {
@@ -1090,7 +1120,7 @@ static bool dbg_save_region(emulator_t* emu, const char* path,
     return true;
 }
 
-static long dbg_load_region(emulator_t* emu, const char* path, uint16_t addr) {
+long debugger_load_region(emulator_t* emu, const char* path, uint16_t addr) {
     FILE* f = fopen(path, "rb");
     if (!f) return -1;
     long n = 0;
@@ -1816,7 +1846,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         /* ── HUNT (iterative memory search / cheat-finder) ─ */
         else if (strcmp(cmd, "hunt") == 0) {
             if (!arg1[0]) {
-                hunt_start(emu);
+                debugger_hunt_start(emu);
                 printf("  Hunt started: %u candidates (whole address space)\n",
                        hunt_count);
             } else if (strcasecmp(arg1, "list") == 0) {
@@ -1862,7 +1892,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                 if (!ok) {
                     printf("  Usage: hunt [V | = | + | - | ! | list | clear]\n");
                 } else {
-                    uint32_t k = hunt_refine(emu, pred, val);
+                    uint32_t k = debugger_hunt_refine(emu, pred, val);
                     printf("  %u candidate%s remain\n", k, k == 1 ? "" : "s");
                 }
             }
@@ -1881,7 +1911,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
             if (!parse_addr(emu, a_len, &len16)) {
                 printf("  Bad length: %s\n", a_len); return;
             }
-            if (dbg_save_region(emu, fname, addr, len16))
+            if (debugger_save_region(emu, fname, addr, len16))
                 printf("  Wrote %u byte(s) from $%04X to %s\n",
                        (unsigned)len16, addr, fname);
             else
@@ -1897,7 +1927,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
             if (!parse_addr(emu, a_addr, &addr)) {
                 printf("  Bad address: %s\n", a_addr); return;
             }
-            long n = dbg_load_region(emu, fname, addr);
+            long n = debugger_load_region(emu, fname, addr);
             if (n < 0) printf("  Error reading %s\n", fname);
             else printf("  Loaded %ld byte(s) into $%04X from %s\n", n, addr, fname);
         }

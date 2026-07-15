@@ -6,6 +6,36 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 97: API REST — parité debug (bridge --control + 7 gaps) (v1.56.0-alpha) - DONE
+Les capacités debug (dont les 7 gaps du Sprint 96) n'étaient qu'au REPL. Rendues
+pilotables à distance **sans dupliquer de logique** : chaque requête HTTP est
+mappée vers une ligne `--control`, seule source de vérité.
+- [x] **Bridge** du debug `--control` déjà présent mais non routé dans
+      `http_api.c` : `GET /break` `/watch` `/disasm?addr=&n=`, `POST /raster`,
+      `DELETE /break/{id}` `/watch/{id}` `/raster/{id}`.
+- [x] **Watch modes** : `cmd_watch` prend un mode optionnel →
+      `POST /watch ?addr=&mode=w|r|a|c`.
+- [x] **Breakpoints conditionnels** : `cmd_break` accepte `if EXPR`
+      (`debugger_add_cond_breakpoint`) → `POST /break ?addr=&if=EXPR`
+      (URL-encodé, décodé par `get_param`).
+- [x] **Cheat-finder** : état `hunt` exposé (`debugger_hunt_*`) →
+      `POST /hunt ?op=eq|same|changed|up|down|list|clear[&val=]`.
+- [x] **Mémoire⇄fichier** (`debugger_save_region`/`_load_region`) →
+      `POST /save ?path=&addr=&len=`, `POST /load ?path=&addr=` (sandbox).
+- [x] **Save-state** → `POST /state/save`, `POST /state/load` (`.ost`, sandbox).
+- [x] **`set via`** → `POST /set ?via=&val=` ; **symboles** → `POST /sym ?path=`.
+- [x] **Littéraux `%`** dans tous les params (`parse_hex` de `control.c`).
+- [x] Caps `hello` étendues additivement (`CONTROL_PROTO_VERSION` inchangé).
+- [x] Tests : `test-control-dispatch` 13→20, `test-httpapi` e2e 10→26 (un
+      endpoint par gap, roundtrips région + save-state, sandbox) ; fiabilisé
+      settle post-boot (flake pré-existant révélé en exécutant `HTTPAPI=1`) ;
+      valgrind clean. 909 → 932 tests.
+
+> **API REST : parité debug complète.** Tout le debug interactif se pilote via
+> HTTP/JSON, en réutilisant le dispatch `--control`.
+
+---
+
 ### Sprint 96: Parité debugger vs Oricutron — 7 gaps fermés (v1.55.0-alpha) - DONE
 Audit comparatif frais du debugger interactif face à Oricutron (inventaire ancré
 sur le code + la `ReadMe.txt` réelle d'Oricutron). La note « plus aucun gap »
