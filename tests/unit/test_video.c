@@ -211,6 +211,43 @@ TEST(test_hires_render_ppm_export) {
     video_cleanup(&vid);
 }
 
+/* HIRES inverse bit (bit 7) complements ink/paper (XOR 7); it does NOT
+ * swap them. Regression test for the AIC-image bug (forum Defence Force
+ * p35017): blue ink on black paper with inverse must render yellow-on-white,
+ * matching the real ULA / Oricutron, not black-on-blue. */
+TEST(test_hires_inverse_complement) {
+    video_t vid;
+    video_init(&vid);
+    video_set_mode(&vid, true);
+    vid.vid_mode = 0x06;   /* HIRES (bit 2), so lines 0-199 read from $A000 */
+
+    uint8_t* mem = (uint8_t*)calloc(49152, 1);
+    ASSERT_TRUE(mem != NULL);
+
+    /* Column 0 = INK attribute 4 (blue). Column 1 = inverse HIRES byte with
+     * all 6 pixels set ($BF = 0x80 inverse | 0x3F pixels). Paper stays black
+     * (0) from the scanline reset. */
+    mem[0xA000 + 0] = 0x04;          /* serial attr: INK = blue (4) */
+    mem[0xA000 + 1] = 0x80 | 0x3F;   /* inverse, all pixels ON */
+
+    video_render_frame(&vid, mem);
+
+    /* Pixel at x=6 (column 1, first dot): pattern bit set -> foreground.
+     * Inverse foreground = ink^7 = 4^7 = 3 = yellow (255,255,0). */
+    int w = vid.native_w;
+    const uint8_t* p = &vid.framebuffer[(0 * w + 6) * 3];
+    ASSERT_EQ(p[0], 255); ASSERT_EQ(p[1], 255); ASSERT_EQ(p[2], 0);
+
+    /* Now clear the pixels: inverse background = paper^7 = 0^7 = 7 = white. */
+    mem[0xA000 + 1] = 0x80 | 0x00;   /* inverse, all pixels OFF */
+    video_render_frame(&vid, mem);
+    p = &vid.framebuffer[(0 * w + 6) * 3];
+    ASSERT_EQ(p[0], 255); ASSERT_EQ(p[1], 255); ASSERT_EQ(p[2], 255);
+
+    free(mem);
+    video_cleanup(&vid);
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  BMP EXPORT                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -561,6 +598,7 @@ int main(void) {
     RUN(test_export_bordered_dimensions);
     RUN(test_text_render_framebuffer_not_black);
     RUN(test_hires_render_ppm_export);
+    RUN(test_hires_inverse_complement);
     RUN(test_bmp_export_valid_header);
     RUN(test_ascii_export_nonempty);
     RUN(test_auto_export_ppm);

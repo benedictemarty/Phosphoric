@@ -42,7 +42,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.50.0-alpha"
+#define EMU_VERSION "1.54.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -286,6 +286,18 @@ typedef struct emulator_s {
     int type_keys_seq_count; /* nombre d'entrées valides */
     int type_keys_seq_idx;   /* prochaine entrée à activer */
 
+    /* Dynamic keyboard injection (sprint 95, API REST Epic 4). A growable
+     * byte buffer appended to by the `keys` control command and consumed one
+     * key per few frames by the main loop (press/hold/release). Both producer
+     * (control_queue drain) and consumer (main loop) run on the emulator
+     * thread, so no lock is needed. Distinct from the CLI --type-keys path. */
+    char*  kbd_inject_buf;
+    size_t kbd_inject_len;
+    size_t kbd_inject_cap;
+    size_t kbd_inject_pos;   /* next byte to press */
+    int    kbd_inject_delay; /* frames to wait before the next phase */
+    bool   kbd_inject_pressed; /* true while the current key is held down */
+
     /* Breakpoint (legacy single breakpoint, -1 = none) */
     int32_t breakpoint;
 
@@ -353,6 +365,16 @@ typedef struct emulator_s {
     /* CASTV2 client (native Chromecast control) */
     castv2_client_t castv2_client;
     bool has_castv2;
+
+    /* HTTP control API (sprint 94, API REST Epic 3). Opaque pointers keep the
+     * pthread/socket details out of this header; both are NULL unless
+     * --http-api is given. The queue is the frame-boundary hand-off drained
+     * once per frame by the main loop. */
+    struct control_queue_s* control_queue;   /* producer→emulator commands   */
+    struct http_api_server_s* http_api;       /* HTTP server (own thread)     */
+    bool  has_http_api;
+    const char* http_api_bind;                /* bind address (default local) */
+    const char* http_api_root;                /* file-op sandbox root         */
 
     /* Loaded file paths (for save state metadata) */
     const char* rom_path;

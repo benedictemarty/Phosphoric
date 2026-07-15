@@ -5,6 +5,169 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.0-alpha] - 2026-07-14
+
+### Added — Injection clavier `POST /keys` — initiative API REST complète (Sprint 95, Epic 4)
+
+Dernier maillon de l'API REST (spec `docs/http-api.md`, Epics 1-4 **tous
+livrés**) : taper au clavier à distance permet de piloter un programme BASIC
+complet (saisir des lignes, les exécuter avec RETURN) via HTTP.
+
+- **Commande `keys <text>`** (`control.c`) : appende le texte à un buffer
+  d'injection clavier **dynamique** (`kbd_inject_*` dans `emulator_t`).
+  Échappements : `\n`/`\r` → RETURN, `\t` → TAB, `\e` → ESC, `\\` → backslash ;
+  tout le reste littéral (espaces préservés). Ajoutée à `CONTROL_PROTO_CAPS`
+  (`CONTROL_PROTO_VERSION` inchangé, extension additive).
+- **Consommation par frame** (`main.c`, `feed_kbd_inject`) : la boucle
+  principale presse une touche toutes les quelques frames (press+hold ~3
+  frames, release+gap ~2), à côté du drain de la file — le scanner clavier de
+  la ROM voit chaque touche distinctement (répétitions séparées). Producteur
+  (drain de `keys`) et consommateur tournent tous deux sur le **thread
+  émulateur** → aucun verrou. Buffer compacté après épuisement, libéré au
+  cleanup. Distinct du chemin CLI `--type-keys`.
+- **Endpoint `POST /keys`** (`http_api.c`) : corps `text=…` → commande `keys`.
+  Aide `GET /` mise à jour.
+- **Tests** : `test-control-dispatch` +2 (append + échappements, texte vide) ;
+  `test-httpapi` +2 dont la **démo de bout en bout** — `POST /keys` tape
+  `POKE 4096,123` + RETURN, puis `GET /mem?addr=1000` lit **`7B`** : un
+  programme BASIC saisi via HTTP s'exécute et mute la mémoire. Valgrind clean.
+  899 → 903 tests.
+
+## [1.53.0-alpha] - 2026-07-14
+
+### Added — Serveur HTTP de commande (REST) (Sprint 94, API REST Epic 3)
+
+Aboutissement de l'initiative **API REST** (spec `docs/http-api.md`) : un
+serveur HTTP optionnel pilote Phosphoric via des appels REST, en réutilisant
+**intégralement** le dispatch `--control` (Epic 1) et la file thread-safe
+(Epic 2). Aucune logique de commande n'est dupliquée ; l'HTTP n'est qu'un
+transport de plus.
+
+- **Module `http_api`** (`include/network/http_api.h`,
+  `src/network/http_api.c`, flag `HTTPAPI=1` → `HAS_HTTPAPI`) : un thread
+  d'arrière-plan (socket + `select`, calqué sur le cast server) accepte une
+  connexion à la fois, parse un sous-ensemble d'HTTP/1.1, mappe la requête vers
+  une ligne `--control`, l'exécute via `control_queue_submit()` (bloque jusqu'au
+  drain de frame) et répond en **JSON** (`{"ok":true,"reply":…}` → 200 ;
+  `{"ok":false,"error":…}` → 400). En-tête CORS `Access-Control-Allow-Origin: *`.
+- **Options CLI** : `--http-api[=PORT]` (défaut 8888), `--http-api-bind ADDR`
+  (défaut **`127.0.0.1`** ; exposition réseau opt-in explicite),
+  `--http-api-root DIR` (bac à sable des ops fichiers, défaut CWD).
+- **Endpoints** : `GET /` (aide), `/hello`, `/regs`, `/mem?addr=&len=`,
+  `/peek/{via|psg|disk|acia|tape|loci}` ; `POST /reset`, `/mem` (write),
+  `/tape`, `/disk/{A-D}`, `/exec/{step|next|step-out|continue|pause}` ;
+  `DELETE /tape`, `/disk/{A-D}`.
+- **Sécurité** : les chemins de `/tape` et `/disk` sont résolus **dans** le
+  répertoire racine ; chemins absolus et `..` rejetés (403).
+- **Câblage `main.c`** (report du Sprint 93 levé) : création de `control_queue`,
+  démarrage du thread serveur après le parsing CLI, `control_queue_drain()`
+  appelé **une fois par frame** (à côté du push cast) ; arrêt du serveur **avant**
+  destruction de la file au cleanup (aucun producteur résiduel).
+- **Tests** : `test-httpapi` (8 vérifs e2e curl vs émulateur headless live) —
+  round-trip write/read prouvant l'exécution sur le thread émulateur, rejet du
+  bac à sable, 404. Skip gracieux si build sans `HTTPAPI=1`. Valgrind runtime
+  sans erreur. 891 → 899 tests.
+
+## [1.52.0-alpha] - 2026-07-14
+
+### Added — File de commandes thread-safe pour le pilotage (Sprint 93, API REST Epic 2)
+
+Deuxième pierre de la future **API REST de commande** (spec `docs/http-api.md`) :
+le pont thread-safe entre un thread producteur (le futur worker HTTP) et la
+boucle émulateur **single-thread**. C'est le point technique délicat isolé :
+une commande qui mute l'état (reset, load-disk, savestate…) doit s'exécuter
+**sur le thread émulateur, à une frontière de frame**, jamais depuis un thread
+arbitraire en plein milieu d'une instruction.
+
+- **Module `control_queue`** (`include/control_queue.h`, `src/control_queue.c`) :
+  file mono-consommateur / multi-producteur (liste chaînée sous un mutex
+  partagé + une condition variable **par commande**, pour qu'un producteur
+  n'attende que sa propre complétion).
+  - `control_queue_submit(q, line, &reply, &len)` — côté producteur : enfile la
+    commande et **bloque** jusqu'à ce que la boucle l'ait exécutée ; récupère la
+    réponse (buffer possédé, à libérer). Thread-safe, multi-appelants.
+  - `control_queue_drain(q, emu)` — côté émulateur : exécute le lot présent à
+    l'entrée (borne le travail par frame), via `control_dispatch()` + sink
+    buffer, et réveille chaque producteur. Consommateur unique attendu.
+  - `control_queue_create/destroy` — la destruction réveille tout producteur
+    encore bloqué (réponse vide, `CONTROL_CONTINUE`).
+  - Le consommateur relâche le mutex pendant `control_dispatch()` (potentiellement
+    lent) ; le couple release/acquire du mutex donne au producteur une vue
+    *happens-before* de la réponse.
+- **Link** : `-lpthread` ajouté au build de base (neutre sur glibc ≥ 2.34 ;
+  WIN utilise déjà `-lwinpthread`).
+- **Tests** : nouvelle suite `test-control-queue` (3 tests) — dont un scénario
+  concurrent **8 producteurs × 100 allers-retours** write/read sur une adresse
+  page-zéro **unique par thread**, prouvant le routage correct de chaque réponse
+  vers son producteur et l'absence de corruption de l'état partagé. **Valgrind
+  memcheck ET helgrind propres** (zéro race détectée).
+- **Câblage `main.c` différé à l'Epic 3** (Sprint 94) : tant qu'aucun producteur
+  n'existe (le serveur HTTP), la boucle n'a rien à drainer ; `drain(NULL, …)`
+  est un no-op pour un branchement inconditionnel futur. 888 → 891 tests.
+
+
+### Changed — Dispatch `--control` découplé de son transport (Sprint 92, API REST Epic 1)
+
+Fondation de la future **API REST de commande** (spec `docs/http-api.md`) :
+le protocole `--control` est refactoré pour que ses handlers n'écrivent plus
+directement dans `stdout`, mais dans un **sink abstrait**. La même logique de
+commande pourra ainsi alimenter à la fois l'IPC stdin/stdout existant et un
+transport HTTP à venir, **sans dupliquer** les handlers métier
+(`cmd_load_tap`, `cmd_reset`, `cmd_load_disk`, `cmd_peek`…).
+
+- **`control_sink_t`** (`include/control.h`, `src/control.c`) : abstraction de
+  sortie avec deux modes — `stream` (write-through vers un `FILE*`, flush
+  immédiat : comportement stdout **byte-pour-byte identique**) et `buffer`
+  (accumulation mémoire, binary-safe, growable) que le futur serveur HTTP
+  inspectera. Helpers `sink_ok`/`sink_err`/`sink_printf`/`sink_write`.
+- **`control_dispatch(emu, sink, line)`** extrait du grand `if/else` de
+  `control_repl()` ; retourne un `control_result_t`
+  (`CONTINUE`/`RESUME`/`QUIT`). `control_repl()` devient une boucle mince
+  au-dessus du dispatch ; `control_poll_pause()` réutilise un sink stream.
+- Les événements asynchrones (`EVT ready/stopped/halt`) restent liés à stdout
+  (hors requête/réponse) — inchangés.
+- **Tests** : nouvelle suite unitaire `test-control-dispatch` (11 tests) qui
+  pilote `control_dispatch` via un sink buffer et vérifie les réponses à
+  l'octet près + les résultats `CONTINUE`/`RESUME`/`QUIT`. La suite
+  d'intégration `test-control` (hot-swap média) reste verte sans modification,
+  garantissant la non-régression du protocole stdout. Valgrind propre.
+- **Aucun changement de comportement observable** côté IPC/protocole
+  (`CONTROL_PROTO_VERSION` inchangé). 877 → 888 tests.
+
+## [1.50.1-alpha] - 2026-07-09
+
+### Fixed — Bit d'inversion HIRES : complément XOR 7, pas échange ink/paper (Sprint 91)
+
+Le bit 7 (inversion) d'un octet HIRES/texte **ne permute pas** ink et paper :
+comme sur la vraie ULA (et sous Oricutron), il **complémente les deux
+couleurs** (XOR 7) — `fg → fg^7`, `bg → bg^7`. Cela ne diffère d'une simple
+permutation que lorsque ink et paper ne sont pas complémentaires : avec du
+blanc sur noir, permuter et complémenter donnent le même résultat, ce qui
+masquait le bug pour le texte courant.
+
+- **Déclencheur** : rapport de **Hialmar** (forum Defence Force,
+  [p35017](https://forum.defence-force.org/viewtopic.php?p=35017#p35017)) — les
+  **images AIC** (format de son jeu « Tyrann 4 ») s'affichaient différemment
+  sous Phosphoric et sous Oricutron. Cas concret (image `mapt4.tap`) : la
+  **mer**, dessinée en octets inverses (`$FE`, `$FF`, …) avec ink=bleu(4) ou
+  jaune(3) sur paper=noir(0), sortait **noire** sous Phosphoric au lieu de
+  **bleue/blanche** sous Oricutron. Diagnostic : Phosphoric permutait
+  ink↔paper (`fg = inv ? paper : ink`) alors que le matériel complémente.
+- **Correctif** (`src/video/video.c`) : `render_hires_block` passe de
+  l'échange à `fg = inv ? ink^7 : ink` / `bg = inv ? paper^7 : paper`.
+  Les deux chemins texte (lignes 0-199 et 200-223) et le mode 80 colonnes
+  cessent d'inverser le motif (`on = !on`, équivalent à un échange) au profit
+  du même complément. `render_attr_block` prend un paramètre `inverse` : une
+  cellule d'attribut avec bit 7 est rendue en `paper^7` (conforme à
+  `ula_render_block(inverted, data=0)` d'Oricutron).
+- **Validation** : rendu de `mapt4.tap` comparé pixel à pixel à un modèle
+  fidèle de l'algorithme ULA d'Oricutron → concordance 99,9 % sur les 200
+  lignes HIRES (résidu = curseur/texte BASIC vivant dans la fenêtre `$BB80`,
+  absent du modèle statique). Avant/après : pixels bleus 720 → 1705.
+- **Test** : `test_hires_inverse_complement` (test_video) — ink bleu + octet
+  inverse tous pixels → jaune (4^7=3) ; pixels éteints → blanc (0^7=7).
+- 876 → 877 tests. `EMU_VERSION` 1.50.0 → 1.50.1-alpha.
+
 ## [1.50.0-alpha] - 2026-07-04
 
 ### Added — Émulation cassette au niveau signal (VIA CB1 + Timer 2) (Sprint 90)

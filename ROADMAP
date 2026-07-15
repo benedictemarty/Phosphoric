@@ -6,6 +6,80 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### API REST de commande — backlog (spec `docs/http-api.md`)
+Exposer le pilotage de Phosphoric (média, état, exécution) via HTTP/JSON sur un
+port dédié, **sans dupliquer** la logique du protocole `--control`. Découpé en
+4 sprints ; le risque single-thread (mutations aux frontières de frame) est
+isolé dans l'Epic 2.
+
+- **Sprint 92 — Epic 1 : découpler le dispatch de son transport** (v1.51.0-alpha) - DONE
+  - [x] `control_sink_t` (stream stdout | buffer mémoire), handlers `cmd_*`
+        écrivent dans un sink au lieu de `stdout` — non-régression byte-exacte
+        (test-control hot-swap média vert sans modification).
+  - [x] Extraire `control_dispatch(emu, sink, line)` → `control_result_t`
+        (`CONTINUE`/`RESUME`/`QUIT`) ; `control_repl` devient une boucle mince ;
+        `control_poll_pause` réutilise un sink stream.
+  - [x] Test unitaire du dispatch via sink buffer : `test-control-dispatch`
+        (11 tests, réponses vérifiées à l'octet près). Valgrind propre.
+        877 → 888 tests.
+- **Sprint 93 — Epic 2 : file de commandes thread-safe** (v1.52.0-alpha) - DONE
+  - [x] Module `control_queue` : file mono-consommateur / multi-producteur
+        (mutex partagé + condvar par commande). `submit()` enfile et bloque
+        jusqu'à exécution ; `drain(emu)` exécute le lot par frame via
+        `control_dispatch` + sink buffer et réveille les producteurs.
+  - [x] `-lpthread` au build de base ; `create/destroy` réveille les bloqués.
+  - [x] Test `test-control-queue` (3 tests) dont concurrent 8×100 write/read
+        sur adresse unique/thread (routage réponse→producteur + zéro
+        corruption). Valgrind memcheck + helgrind propres. 888 → 891 tests.
+  - [x] Câblage `main.c` (drain par frame) — **fait au Sprint 94** avec le
+        premier producteur (le serveur HTTP) ; `drain(NULL)` reste un no-op.
+- **Sprint 94 — Epic 3 : serveur HTTP** (v1.53.0-alpha) - DONE
+  - [x] Module `http_api` (flag `HTTPAPI=1`) : thread socket/`select` calqué sur
+        le cast server, parse HTTP/1.1, mappe vers une ligne `--control`,
+        exécute via `control_queue_submit`, réponse JSON + CORS.
+  - [x] Options `--http-api[=PORT]` (8888), `--http-api-bind` (défaut
+        `127.0.0.1`), `--http-api-root` (bac à sable) ; câblage `main.c`
+        (queue + drain par frame + arrêt avant destruction).
+  - [x] Endpoints GET/POST/DELETE (hello, regs, mem, peek, reset, tape, disk,
+        exec) ; sécurité chemins (absolus/`..` rejetés → 403).
+  - [x] `test-httpapi` (8 vérifs e2e curl, skip gracieux sans `HTTPAPI=1`) ;
+        valgrind runtime clean. 891 → 899 tests.
+- **Sprint 95 — Epic 4 : injection clavier + doc/exemples** (v1.54.0-alpha) - DONE
+  - [x] Commande `keys <text>` (buffer d'injection dynamique `kbd_inject_*`,
+        échappements `\n`→RETURN/`\t`/`\e`/`\\`) ; consommation par frame
+        (`feed_kbd_inject`, press/hold/release) sur le thread émulateur.
+  - [x] Endpoint `POST /keys` (corps `text=…`) ; aide `GET /` à jour.
+  - [x] `test-control-dispatch` +2, `test-httpapi` +2 dont la démo e2e :
+        `POST /keys 'POKE 4096,123'`+RETURN → `GET /mem` lit `7B` (BASIC saisi
+        via HTTP exécuté). 899 → 903 tests.
+
+> **Initiative API REST : TERMINÉE** (Epics 1-4, sprints 92-95, v1.51→1.54).
+> Phosphoric se pilote entièrement à distance via HTTP/JSON.
+
+---
+
+### Sprint 91: Bit d'inversion HIRES — complément XOR 7 (v1.50.1-alpha) - DONE
+- [x] Le bit 7 (inversion) d'un octet HIRES/texte **complémente** ink ET paper
+      (fg→fg^7, bg→bg^7) au lieu de les **permuter** — conforme à la vraie ULA
+      et à Oricutron (`bittab` : inv = `(fg^7, bg^7)`). Ne diffère d'une
+      permutation que si ink/paper ne sont pas complémentaires (blanc/noir
+      masquait le bug pour le texte courant).
+- [x] Déclencheur : rapport **Hialmar** (forum Defence Force
+      [p35017](https://forum.defence-force.org/viewtopic.php?p=35017#p35017)) —
+      images **AIC** (format du jeu « Tyrann 4 ») rendues différemment vs
+      Oricutron. `mapt4.tap` : la mer (octets inverses `$FE`/`$FF`, ink
+      bleu/jaune sur noir) sortait **noire** au lieu de **bleue/blanche**.
+- [x] Fix `src/video/video.c` : `render_hires_block` (fg=inv?ink^7:ink /
+      bg=inv?paper^7:paper) ; les 2 chemins texte (0-199, 200-223) + 80 col
+      abandonnent `on = !on` ; `render_attr_block` prend un flag `inverse`
+      (cellule attr bit 7 → paper^7, conforme `ula_render_block(inverted,0)`).
+- [x] Validé pixel à pixel vs modèle fidèle de l'algorithme ULA d'Oricutron :
+      99,9 % sur les 200 lignes HIRES (résidu = curseur BASIC vivant `$BB80`).
+      Pixels bleus 720 → 1705. Test `test_hires_inverse_complement`.
+      876 → 877 tests.
+
+---
+
 ### Sprint 90: Émulation cassette au niveau signal (v1.50.0-alpha) - DONE
 - [x] Option `--tape-signal` : génère la forme d'onde de la bande sur VIA CB1
       (Timer 2), lue par la routine CLOAD **réelle** de la ROM — comme Euphoric

@@ -5,7 +5,11 @@ CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
 CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include -MMD -MP
-LDFLAGS = -lm -lutil
+# -lpthread: control_queue (sprint 93) hands commands from producer threads
+# (e.g. the future HTTP API) to the single-threaded emulator loop. Harmless on
+# glibc >= 2.34 where pthread is folded into libc. WIN redefines LDFLAGS below
+# (winpthread is linked there instead).
+LDFLAGS = -lm -lutil -lpthread
 
 # Windows cross-build (Sprint 89) : make WIN=1 SDL2=1 with MinGW-w64.
 # Expects the SDL2 MinGW development package; point SDL2_WIN_PREFIX at its
@@ -47,6 +51,15 @@ CAST ?= 0
 ifeq ($(CAST), 1)
     CFLAGS += -DHAS_CAST
     LDFLAGS += -lpthread -lssl -lcrypto
+endif
+
+# HTTP control API (sprint 94, API REST Epic 3) — optional. A background thread
+# turns REST calls into --control commands run on the emulator thread via the
+# control_queue (drained per frame). Sockets + pthread only (pthread already in
+# base LDFLAGS); no extra libraries. `--http-api[=PORT]` at runtime.
+HTTPAPI ?= 0
+ifeq ($(HTTPAPI), 1)
+    CFLAGS += -DHAS_HTTPAPI
 endif
 
 # Real-time host MIDI (ALSA sequencer) — optional. Bridges the Oric's MIDI byte
@@ -137,6 +150,7 @@ SOURCES = src/main.c \
           src/debugger.c \
           src/network/gdbstub.c \
           src/control.c \
+          src/control_queue.c \
           src/utils/logging.c \
           src/utils/config.c \
           src/utils/trace.c \
@@ -147,6 +161,10 @@ SOURCES = src/main.c \
 
 ifeq ($(CAST), 1)
     SOURCES += src/network/cast_server.c src/network/castv2.c
+endif
+
+ifeq ($(HTTPAPI), 1)
+    SOURCES += src/network/http_api.c
 endif
 
 # Windows v1 : swap the POSIX-only modules for their Windows variants
@@ -181,7 +199,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -521,6 +539,25 @@ test-loci-acia-e2e: $(TARGET)
 test-control: $(TARGET)
 	@bash tests/integration/test_control_media_swap.sh
 
+# Sprint 92 (Epic 1) — transport-agnostic control_dispatch via a buffer sink.
+# Links the core library objects (no main) and drives control_dispatch()
+# directly, asserting byte-exact replies + CONTINUE/RESUME/QUIT results.
+test-control-dispatch: $(LIB_OBJECTS)
+	@$(CC) $(CFLAGS) tests/unit/test_control_dispatch.c $(LIB_OBJECTS) $(LDFLAGS) -o test_control_dispatch
+	@./test_control_dispatch
+
+# Sprint 93 (Epic 2) — thread-safe command queue. Spawns producer threads that
+# submit() concurrently while a consumer thread drain()s per "frame", asserting
+# correct per-producer routing (unique addr write/read) and zero corruption.
+test-control-queue: $(LIB_OBJECTS)
+	@$(CC) $(CFLAGS) tests/unit/test_control_queue.c $(LIB_OBJECTS) $(LDFLAGS) -o test_control_queue
+	@./test_control_queue
+
+# Sprint 94 (Epic 3) — HTTP control API end-to-end (curl vs a live headless
+# emulator). Skips gracefully unless the emulator was built with HTTPAPI=1.
+test-httpapi: $(TARGET)
+	@bash tests/integration/test_http_api_e2e.sh
+
 # Sprint 36c -- machine-code autorun / rechain-gate regression.
 # Requires the emulator + tools to be built (uses bin2tap/bas2tap).
 test-mc-autorun:
@@ -546,7 +583,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-coverage test-rom-guard
+tests: test-cpu test-memory test-io test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

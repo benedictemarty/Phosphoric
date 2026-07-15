@@ -4,6 +4,11 @@
  *
  * Implements the --control protocol described in include/control.h.
  * Reuses debugger.c primitives where possible.
+ *
+ * Sprint 92 (Epic 1): command handlers write to an abstract control_sink_t
+ * instead of stdout directly, and the dispatch logic is factored into
+ * control_dispatch() so the same handlers can back both the stdin/stdout IPC
+ * protocol and a future HTTP API. The stdout path is byte-for-byte unchanged.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -34,32 +39,110 @@
 #include <strings.h>
 #include <ctype.h>
 
-/* ─── output helpers ───────────────────────────────────────────────
- * All protocol output goes to stdout, one record per line, then we
- * flush so the IDE observes traffic in real time. */
+/* ─── response sink ────────────────────────────────────────────────
+ * All protocol replies go through a control_sink_t. In stream mode the
+ * bytes are written to the FILE and flushed immediately, so the IDE
+ * observes traffic in real time (identical to the historical behaviour).
+ * In buffer mode they accumulate in a growable, binary-safe buffer. */
 
-static void reply_ok(const char* fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    fputs("OK", stdout);
-    if (fmt && *fmt) {
-        fputc(' ', stdout);
-        vfprintf(stdout, fmt, ap);
+void control_sink_init_stream(control_sink_t* s, FILE* fp) {
+    s->fp = fp; s->buf = NULL; s->len = 0; s->cap = 0; s->error = false;
+}
+
+void control_sink_init_buffer(control_sink_t* s) {
+    s->fp = NULL; s->buf = NULL; s->len = 0; s->cap = 0; s->error = false;
+}
+
+void control_sink_free(control_sink_t* s) {
+    if (s && !s->fp) { free(s->buf); s->buf = NULL; s->len = 0; s->cap = 0; }
+}
+
+/* Grow a buffer-mode sink so it can hold @p extra more bytes plus a NUL. */
+static void sink_ensure(control_sink_t* s, size_t extra) {
+    if (s->fp) return;
+    if (s->len + extra + 1 > s->cap) {
+        size_t ncap = s->cap ? s->cap * 2 : 256;
+        while (ncap < s->len + extra + 1) ncap *= 2;
+        char* nb = (char*)realloc(s->buf, ncap);
+        if (!nb) { s->error = true; return; }
+        s->buf = nb; s->cap = ncap;
     }
-    fputc('\n', stdout);
-    fflush(stdout);
+}
+
+/* Binary-safe primitive: append @p len bytes of @p data to the sink. */
+static void sink_write(control_sink_t* s, const void* data, size_t len) {
+    if (!s || s->error || len == 0) return;
+    if (s->fp) {
+        if (fwrite(data, 1, len, s->fp) != len) s->error = true;
+    } else {
+        sink_ensure(s, len);
+        if (s->error) return;
+        memcpy(s->buf + s->len, data, len);
+        s->len += len;
+        s->buf[s->len] = '\0';
+    }
+}
+
+static void sink_vprintf(control_sink_t* s, const char* fmt, va_list ap) {
+    char tmp[1024];
+    va_list ap2;
+    va_copy(ap2, ap);
+    int n = vsnprintf(tmp, sizeof(tmp), fmt, ap);
+    if (n < 0) { va_end(ap2); return; }
+    if ((size_t)n < sizeof(tmp)) {
+        sink_write(s, tmp, (size_t)n);
+    } else {
+        char* big = (char*)malloc((size_t)n + 1);
+        if (big) {
+            vsnprintf(big, (size_t)n + 1, fmt, ap2);
+            sink_write(s, big, (size_t)n);
+            free(big);
+        }
+    }
+    va_end(ap2);
+}
+
+/* Append formatted text (no implicit newline, no flush). */
+static void sink_printf(control_sink_t* s, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    sink_vprintf(s, fmt, ap);
     va_end(ap);
 }
 
-static void reply_err(const char* fmt, ...) {
+/* Flush a stream-mode sink; no-op for buffer mode. */
+static void sink_flush(control_sink_t* s) {
+    if (s && s->fp) fflush(s->fp);
+}
+
+/* "OK" [ " " <fmt...> ] "\n", then flush — matches the legacy reply_ok(). */
+static void sink_ok(control_sink_t* s, const char* fmt, ...) {
+    sink_write(s, "OK", 2);
+    if (fmt && *fmt) {
+        sink_write(s, " ", 1);
+        va_list ap;
+        va_start(ap, fmt);
+        sink_vprintf(s, fmt, ap);
+        va_end(ap);
+    }
+    sink_write(s, "\n", 1);
+    sink_flush(s);
+}
+
+/* "ERR " <fmt...> "\n", then flush — matches the legacy reply_err(). */
+static void sink_err(control_sink_t* s, const char* fmt, ...) {
+    sink_write(s, "ERR ", 4);
     va_list ap;
     va_start(ap, fmt);
-    fputs("ERR ", stdout);
-    vfprintf(stdout, fmt, ap);
-    fputc('\n', stdout);
-    fflush(stdout);
+    sink_vprintf(s, fmt, ap);
     va_end(ap);
+    sink_write(s, "\n", 1);
+    sink_flush(s);
 }
+
+/* ─── output helpers (events) ──────────────────────────────────────
+ * Asynchronous events (EVT) are tied to the stdout IPC channel; they are
+ * not part of a request/response and keep writing to stdout directly. */
 
 static void emit_evt(const char* fmt, ...) {
     va_list ap;
@@ -105,22 +188,25 @@ bool control_poll_pause(emulator_t* emu) {
         line[--n] = '\0';
     if (n == 0) return false;
 
+    control_sink_t s;
+    control_sink_init_stream(&s, stdout);
+
     /* Strip first token for comparison. */
     char tok[16] = {0};
     sscanf(line, "%15s", tok);
     if (strcmp(tok, "pause") == 0) {
-        reply_ok("pc=%04X cycles=%llu",
-                 emu->cpu.PC, (unsigned long long)emu->cpu.cycles);
+        sink_ok(&s, "pc=%04X cycles=%llu",
+                emu->cpu.PC, (unsigned long long)emu->cpu.cycles);
         emu->control_async_pause_pending = true;
         return true;
     }
     if (strcmp(tok, "quit") == 0) {
-        reply_ok("");
+        sink_ok(&s, "");
         emu->running = false;
         return true;
     }
-    reply_err("busy: emulator running, only `pause`/`quit` allowed "
-              "(received `%s`)", tok);
+    sink_err(&s, "busy: emulator running, only `pause`/`quit` allowed "
+             "(received `%s`)", tok);
     return false;
 #endif /* _WIN32 */
 }
@@ -180,18 +266,21 @@ static bool parse_u8(const char* s, uint8_t* out) {
     return true;
 }
 
-/* ─── command handlers ─────────────────────────────────────────── */
+/* ─── command handlers ─────────────────────────────────────────────
+ * Each handler writes its reply to the sink; it no longer knows whether
+ * the destination is stdout or an in-memory buffer. */
 
-static void cmd_regs(emulator_t* emu) {
-    reply_ok("A=%02X X=%02X Y=%02X SP=%02X P=%02X PC=%04X cycles=%llu",
-             emu->cpu.A, emu->cpu.X, emu->cpu.Y, emu->cpu.SP, emu->cpu.P,
-             emu->cpu.PC, (unsigned long long)emu->cpu.cycles);
+static void cmd_regs(emulator_t* emu, control_sink_t* s) {
+    sink_ok(s, "A=%02X X=%02X Y=%02X SP=%02X P=%02X PC=%04X cycles=%llu",
+            emu->cpu.A, emu->cpu.X, emu->cpu.Y, emu->cpu.SP, emu->cpu.P,
+            emu->cpu.PC, (unsigned long long)emu->cpu.cycles);
 }
 
-static void cmd_set(emulator_t* emu, const char* reg, const char* val) {
-    if (!reg || !val) { reply_err("set: usage `set <reg> <val>`"); return; }
+static void cmd_set(emulator_t* emu, control_sink_t* s,
+                    const char* reg, const char* val) {
+    if (!reg || !val) { sink_err(s, "set: usage `set <reg> <val>`"); return; }
     uint32_t v;
-    if (!parse_hex(val, &v)) { reply_err("set: bad value"); return; }
+    if (!parse_hex(val, &v)) { sink_err(s, "set: bad value"); return; }
     /* Case-insensitive: A, X, Y, SP, P, PC. */
     if (strcasecmp(reg, "a")  == 0) emu->cpu.A  = (uint8_t)v;
     else if (strcasecmp(reg, "x")  == 0) emu->cpu.X  = (uint8_t)v;
@@ -199,27 +288,27 @@ static void cmd_set(emulator_t* emu, const char* reg, const char* val) {
     else if (strcasecmp(reg, "sp") == 0) emu->cpu.SP = (uint8_t)v;
     else if (strcasecmp(reg, "p")  == 0) emu->cpu.P  = (uint8_t)v;
     else if (strcasecmp(reg, "pc") == 0) emu->cpu.PC = (uint16_t)v;
-    else { reply_err("set: unknown reg `%s`", reg); return; }
-    reply_ok("");
+    else { sink_err(s, "set: unknown reg `%s`", reg); return; }
+    sink_ok(s, "");
 }
 
-static void cmd_read(emulator_t* emu, const char* addr_s, const char* len_s) {
+static void cmd_read(emulator_t* emu, control_sink_t* s,
+                     const char* addr_s, const char* len_s) {
     uint16_t addr;
     uint32_t len;
     if (!parse_u16(addr_s, &addr) || !parse_hex(len_s, &len)) {
-        reply_err("read: usage `read <addr> <len>`");
+        sink_err(s, "read: usage `read <addr> <len>`");
         return;
     }
-    if (len > 4096) { reply_err("read: len > 4096"); return; }
-    /* Build the reply : "OK <hex bytes>". stdio printf per byte is fine
-     * at this scale; the IDE caller batches reads anyway. */
-    fputs("OK", stdout);
+    if (len > 4096) { sink_err(s, "read: len > 4096"); return; }
+    /* Build the reply : "OK <hex bytes>". */
+    sink_printf(s, "OK");
     for (uint32_t i = 0; i < len; i++) {
-        fprintf(stdout, " %02X",
-                memory_read(&emu->memory, (uint16_t)(addr + i)));
+        sink_printf(s, " %02X",
+                    memory_read(&emu->memory, (uint16_t)(addr + i)));
     }
-    fputc('\n', stdout);
-    fflush(stdout);
+    sink_printf(s, "\n");
+    sink_flush(s);
 }
 
 /* Sprint 35c — length-prefixed binary read. Up to 64 KB per call.
@@ -231,15 +320,16 @@ static void cmd_read(emulator_t* emu, const char* addr_s, const char* len_s) {
  * The trailing newline lets a line-based client reader resync after
  * the binary chunk. The client must temporarily switch to raw-read
  * mode for the binary section (see phos_smoke_client.py::bread). */
-static void cmd_bread(emulator_t* emu, const char* addr_s, const char* len_s) {
+static void cmd_bread(emulator_t* emu, control_sink_t* s,
+                      const char* addr_s, const char* len_s) {
     uint16_t addr;
     uint32_t len;
     if (!parse_u16(addr_s, &addr) || !parse_hex(len_s, &len)) {
-        reply_err("bread: usage `bread <addr> <len>`");
+        sink_err(s, "bread: usage `bread <addr> <len>`");
         return;
     }
     if (len == 0 || len > 0x10000) {
-        reply_err("bread: len must be 1..65536");
+        sink_err(s, "bread: len must be 1..65536");
         return;
     }
     /* Stage the buffer first, then emit the OK + binary in a single
@@ -248,22 +338,22 @@ static void cmd_bread(emulator_t* emu, const char* addr_s, const char* len_s) {
     for (uint32_t i = 0; i < len; i++) {
         buf[i] = memory_read(&emu->memory, (uint16_t)(addr + i));
     }
-    fprintf(stdout, "OK bread len=%u\n", len);
-    fwrite(buf, 1, len, stdout);
-    fputc('\n', stdout);
-    fflush(stdout);
+    sink_printf(s, "OK bread len=%u\n", len);
+    sink_write(s, buf, len);
+    sink_write(s, "\n", 1);
+    sink_flush(s);
 }
 
-static void cmd_write(emulator_t* emu, const char* addr_s,
+static void cmd_write(emulator_t* emu, control_sink_t* s, const char* addr_s,
                       const char* first_byte, char* rest_save) {
     uint16_t addr;
     if (!addr_s || !parse_u16(addr_s, &addr) || !first_byte) {
-        reply_err("write: usage `write <addr> <byte>...`");
+        sink_err(s, "write: usage `write <addr> <byte>...`");
         return;
     }
     uint8_t b;
     if (!parse_u8(first_byte, &b)) {
-        reply_err("write: bad byte at offset 0");
+        sink_err(s, "write: bad byte at offset 0");
         return;
     }
     memory_write(&emu->memory, addr, b);
@@ -271,76 +361,76 @@ static void cmd_write(emulator_t* emu, const char* addr_s,
     char* tok;
     while ((tok = strtok_r(NULL, " \t", &rest_save)) != NULL) {
         if (!parse_u8(tok, &b)) {
-            reply_err("write: bad byte at offset %d", n);
+            sink_err(s, "write: bad byte at offset %d", n);
             return;
         }
         memory_write(&emu->memory, (uint16_t)(addr + n), b);
         n++;
     }
-    reply_ok("count=%d", n);
+    sink_ok(s, "count=%d", n);
 }
 
-static void cmd_break(emulator_t* emu, const char* addr_s) {
+static void cmd_break(emulator_t* emu, control_sink_t* s, const char* addr_s) {
     uint16_t addr;
     if (!parse_u16(addr_s, &addr)) {
-        reply_err("break: usage `break <addr>`");
+        sink_err(s, "break: usage `break <addr>`");
         return;
     }
     int id = debugger_add_breakpoint(&emu->debugger, addr);
-    if (id < 0) { reply_err("break: full or rejected"); return; }
-    reply_ok("id=%d addr=%04X", id, addr);
+    if (id < 0) { sink_err(s, "break: full or rejected"); return; }
+    sink_ok(s, "id=%d addr=%04X", id, addr);
 }
 
-static void cmd_unbreak(emulator_t* emu, const char* id_s) {
-    if (!id_s) { reply_err("unbreak: usage `unbreak <id>`"); return; }
+static void cmd_unbreak(emulator_t* emu, control_sink_t* s, const char* id_s) {
+    if (!id_s) { sink_err(s, "unbreak: usage `unbreak <id>`"); return; }
     int id = atoi(id_s);
     if (!debugger_remove_breakpoint(&emu->debugger, id)) {
-        reply_err("unbreak: invalid id");
+        sink_err(s, "unbreak: invalid id");
         return;
     }
-    reply_ok("");
+    sink_ok(s, "");
 }
 
 /* Sprint 35b — watchpoints (write to address). */
-static void cmd_watch(emulator_t* emu, const char* addr_s) {
+static void cmd_watch(emulator_t* emu, control_sink_t* s, const char* addr_s) {
     uint16_t addr;
     if (!parse_u16(addr_s, &addr)) {
-        reply_err("watch: usage `watch <addr>`");
+        sink_err(s, "watch: usage `watch <addr>`");
         return;
     }
     int id = debugger_add_watchpoint(&emu->debugger, addr);
-    if (id < 0) { reply_err("watch: full or rejected"); return; }
+    if (id < 0) { sink_err(s, "watch: full or rejected"); return; }
     debugger_install_watchpoint_trace(&emu->debugger, emu);
-    reply_ok("id=%d addr=%04X", id, addr);
+    sink_ok(s, "id=%d addr=%04X", id, addr);
 }
 
-static void cmd_unwatch(emulator_t* emu, const char* id_s) {
-    if (!id_s) { reply_err("unwatch: usage `unwatch <id>`"); return; }
+static void cmd_unwatch(emulator_t* emu, control_sink_t* s, const char* id_s) {
+    if (!id_s) { sink_err(s, "unwatch: usage `unwatch <id>`"); return; }
     int id = atoi(id_s);
     if (!debugger_remove_watchpoint(&emu->debugger, id)) {
-        reply_err("unwatch: invalid id");
+        sink_err(s, "unwatch: invalid id");
         return;
     }
     debugger_install_watchpoint_trace(&emu->debugger, emu);
-    reply_ok("");
+    sink_ok(s, "");
 }
 
-static void cmd_watch_list(emulator_t* emu) {
+static void cmd_watch_list(emulator_t* emu, control_sink_t* s) {
     debugger_t* dbg = &emu->debugger;
-    fputs("OK", stdout);
+    sink_printf(s, "OK");
     for (int i = 0; i < dbg->num_watchpoints; i++) {
-        fprintf(stdout, " id=%d:addr=%04X", i, dbg->watchpoints[i]);
+        sink_printf(s, " id=%d:addr=%04X", i, dbg->watchpoints[i]);
     }
-    fputc('\n', stdout);
-    fflush(stdout);
+    sink_printf(s, "\n");
+    sink_flush(s);
 }
 
 /* Sprint 35b — raster-line breakpoints (PAL 0..311). */
-static void cmd_raster(emulator_t* emu, const char* line_s) {
-    if (!line_s) { reply_err("raster: usage `raster <line>`"); return; }
+static void cmd_raster(emulator_t* emu, control_sink_t* s, const char* line_s) {
+    if (!line_s) { sink_err(s, "raster: usage `raster <line>`"); return; }
     int line = atoi(line_s);
     if (line < 0 || line >= PAL_LINES_PER_FRAME) {
-        reply_err("raster: line must be 0..%d", PAL_LINES_PER_FRAME - 1);
+        sink_err(s, "raster: line must be 0..%d", PAL_LINES_PER_FRAME - 1);
         return;
     }
     debugger_t* dbg = &emu->debugger;
@@ -348,22 +438,22 @@ static void cmd_raster(emulator_t* emu, const char* line_s) {
     for (int i = 0; i < 8; i++) {
         if (dbg->raster_bps[i] < 0) { slot = i; break; }
     }
-    if (slot < 0) { reply_err("raster: all 8 slots used"); return; }
+    if (slot < 0) { sink_err(s, "raster: all 8 slots used"); return; }
     dbg->raster_bps[slot] = (int16_t)line;
     dbg->num_raster_bps++;
-    reply_ok("id=%d line=%d", slot, line);
+    sink_ok(s, "id=%d line=%d", slot, line);
 }
 
-static void cmd_unraster(emulator_t* emu, const char* id_s) {
-    if (!id_s) { reply_err("unraster: usage `unraster <id>`"); return; }
+static void cmd_unraster(emulator_t* emu, control_sink_t* s, const char* id_s) {
+    if (!id_s) { sink_err(s, "unraster: usage `unraster <id>`"); return; }
     int id = atoi(id_s);
     if (id < 0 || id >= 8 || emu->debugger.raster_bps[id] < 0) {
-        reply_err("unraster: invalid id");
+        sink_err(s, "unraster: invalid id");
         return;
     }
     emu->debugger.raster_bps[id] = -1;
     emu->debugger.num_raster_bps--;
-    reply_ok("");
+    sink_ok(s, "");
 }
 
 /* Sprint 35b — runtime load helpers. They call the same primitives as
@@ -387,12 +477,12 @@ static bool load_file_into(const char* path, uint8_t** out_buf,
     return true;
 }
 
-static void cmd_load_tap(emulator_t* emu, const char* path) {
-    if (!path) { reply_err("load-tap: usage `load-tap <path>`"); return; }
+static void cmd_load_tap(emulator_t* emu, control_sink_t* s, const char* path) {
+    if (!path) { sink_err(s, "load-tap: usage `load-tap <path>`"); return; }
     uint8_t* buf = NULL;
     size_t len = 0;
     if (!load_file_into(path, &buf, &len, 1 << 20)) {
-        reply_err("load-tap: cannot read `%s`", path);
+        sink_err(s, "load-tap: cannot read `%s`", path);
         return;
     }
     if (emu->tapebuf) free(emu->tapebuf);
@@ -401,7 +491,7 @@ static void cmd_load_tap(emulator_t* emu, const char* path) {
     emu->tapeoffs = 0;
     emu->tape_loaded = true;
     emu->tape_path = strdup(path);
-    reply_ok("size=%zu", len);
+    sink_ok(s, "size=%zu", len);
 }
 
 /* Parse a drive selector: "A".."D", "a".."d" or "0".."3". -1 if invalid. */
@@ -431,20 +521,21 @@ static bool control_writeback_drive(emulator_t* emu, int drv) {
 /* load-disk <drive> <path> — hot-swap a .dsk into drive A-D. Mirrors the OSD
  * hot-load path: write back the outgoing disk (if dirty + --disk-writeback),
  * free it, then load and wire the new image. */
-static void cmd_load_disk(emulator_t* emu, const char* drive_s, const char* path) {
+static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
+                          const char* drive_s, const char* path) {
     if (!drive_s || !path) {
-        reply_err("load-disk: usage `load-disk <drive A-D> <path>`");
+        sink_err(s, "load-disk: usage `load-disk <drive A-D> <path>`");
         return;
     }
     if (!emu->has_microdisc) {
-        reply_err("load-disk: no microdisc (need --disk-rom)");
+        sink_err(s, "load-disk: no microdisc (need --disk-rom)");
         return;
     }
     int drv = control_drive_index(drive_s);
-    if (drv < 0) { reply_err("load-disk: drive must be A-D"); return; }
+    if (drv < 0) { sink_err(s, "load-disk: drive must be A-D"); return; }
 
     sedoric_disk_t* nd = sedoric_load(path);
-    if (!nd) { reply_err("load-disk: cannot read `%s`", path); return; }
+    if (!nd) { sink_err(s, "load-disk: cannot read `%s`", path); return; }
 
     control_writeback_drive(emu, drv);
     if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
@@ -455,16 +546,17 @@ static void cmd_load_disk(emulator_t* emu, const char* drive_s, const char* path
     emu->disk_paths[drv] = strdup(path);
     if (drv == 0) emu->disk_path = emu->disk_paths[drv];
     log_info("control: disk %c <- %s", 'A' + drv, path);
-    reply_ok("drive=%c size=%u tracks=%u sectors=%u", 'A' + drv,
-             nd->size, nd->tracks, nd->sectors);
+    sink_ok(s, "drive=%c size=%u tracks=%u sectors=%u", 'A' + drv,
+            nd->size, nd->tracks, nd->sectors);
 }
 
 /* eject-disk <drive> — empty drive A-D, writing back first if dirty. */
-static void cmd_eject_disk(emulator_t* emu, const char* drive_s) {
-    if (!emu->has_microdisc) { reply_err("eject-disk: no microdisc"); return; }
+static void cmd_eject_disk(emulator_t* emu, control_sink_t* s,
+                           const char* drive_s) {
+    if (!emu->has_microdisc) { sink_err(s, "eject-disk: no microdisc"); return; }
     int drv = control_drive_index(drive_s);
-    if (drv < 0) { reply_err("eject-disk: usage `eject-disk <drive A-D>`"); return; }
-    if (!emu->disks[drv]) { reply_err("eject-disk: drive %c already empty", 'A' + drv); return; }
+    if (drv < 0) { sink_err(s, "eject-disk: usage `eject-disk <drive A-D>`"); return; }
+    if (!emu->disks[drv]) { sink_err(s, "eject-disk: drive %c already empty", 'A' + drv); return; }
 
     bool wb = control_writeback_drive(emu, drv);
     sedoric_destroy(emu->disks[drv]);
@@ -473,28 +565,28 @@ static void cmd_eject_disk(emulator_t* emu, const char* drive_s) {
     microdisc_set_disk(&emu->microdisc, (uint8_t)drv, NULL, 0, 0, 0);
     if (drv == 0) emu->disk_path = NULL;
     log_info("control: drive %c ejected", 'A' + drv);
-    reply_ok("drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);
+    sink_ok(s, "drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);
 }
 
 /* loci-button [long] — LOCI Action button, warm press + release. Same
  * path as F8 in the GUI: session snapshot, IRQ trap, then boot the menu
  * ROM (short) or the test108k diagnostic ROM ("long", ≥ 2 s hold). */
-static void cmd_loci_button(emulator_t* emu, const char* mode) {
+static void cmd_loci_button(emulator_t* emu, control_sink_t* s, const char* mode) {
     if (!emu->has_loci) {
-        reply_err("loci-button: LOCI not enabled (--loci)");
+        sink_err(s, "loci-button: LOCI not enabled (--loci)");
         return;
     }
     bool longp = (mode && strcmp(mode, "long") == 0);
     emu->loci_button_long = longp;
     loci_action_button_short(&emu->loci);
     loci_action_button_release(&emu->loci);
-    reply_ok("action-button pulsed%s", longp ? " (long)" : "");
+    sink_ok(s, "action-button pulsed%s", longp ? " (long)" : "");
 }
 
 /* eject-tape — unload the cassette and free its buffer. */
-static void cmd_eject_tape(emulator_t* emu) {
+static void cmd_eject_tape(emulator_t* emu, control_sink_t* s) {
     if (!emu->tape_loaded && !emu->tapebuf) {
-        reply_err("eject-tape: no tape loaded");
+        sink_err(s, "eject-tape: no tape loaded");
         return;
     }
     if (emu->tapebuf) { free(emu->tapebuf); emu->tapebuf = NULL; }
@@ -503,151 +595,152 @@ static void cmd_eject_tape(emulator_t* emu) {
     emu->tape_loaded = false;
     emu->tape_path = NULL;
     log_info("control: tape ejected");
-    reply_ok("ejected");
+    sink_ok(s, "ejected");
 }
 
-static void cmd_load_rom(emulator_t* emu, const char* path) {
-    if (!path) { reply_err("load-rom: usage `load-rom <path>`"); return; }
+static void cmd_load_rom(emulator_t* emu, control_sink_t* s, const char* path) {
+    if (!path) { sink_err(s, "load-rom: usage `load-rom <path>`"); return; }
     uint8_t* buf = NULL;
     size_t len = 0;
     /* Cap at 16 KB — typical Oric BASIC ROM. */
     if (!load_file_into(path, &buf, &len, 16 * 1024)) {
-        reply_err("load-rom: cannot read `%s`", path);
+        sink_err(s, "load-rom: cannot read `%s`", path);
         return;
     }
     if (len != 16 * 1024) {
         free(buf);
-        reply_err("load-rom: expected 16384 bytes, got %zu", len);
+        sink_err(s, "load-rom: expected 16384 bytes, got %zu", len);
         return;
     }
     memcpy(emu->memory.rom, buf, len);
     free(buf);
     cpu_reset(&emu->cpu);
-    reply_ok("size=%zu pc=%04X", len, emu->cpu.PC);
+    sink_ok(s, "size=%zu pc=%04X", len, emu->cpu.PC);
 }
 
-static void cmd_load_sym(emulator_t* emu, const char* path) {
-    if (!path) { reply_err("load-sym: usage `load-sym <path>`"); return; }
+static void cmd_load_sym(emulator_t* emu, control_sink_t* s, const char* path) {
+    if (!path) { sink_err(s, "load-sym: usage `load-sym <path>`"); return; }
     int n = symbol_table_load(&emu->symbols, path);
-    if (n < 0) { reply_err("load-sym: parse failed"); return; }
-    reply_ok("count=%d total=%d", n, emu->symbols.count);
+    if (n < 0) { sink_err(s, "load-sym: parse failed"); return; }
+    sink_ok(s, "count=%d total=%d", n, emu->symbols.count);
 }
 
 /* Sprint 35b — disassemble N instructions starting at addr. */
-static void cmd_disasm(emulator_t* emu, const char* addr_s, const char* n_s) {
+static void cmd_disasm(emulator_t* emu, control_sink_t* s,
+                       const char* addr_s, const char* n_s) {
     uint16_t addr;
     uint32_t n;
     if (!parse_u16(addr_s, &addr) || !parse_hex(n_s, &n)) {
-        reply_err("disasm: usage `disasm <addr> <n>`");
+        sink_err(s, "disasm: usage `disasm <addr> <n>`");
         return;
     }
-    if (n == 0 || n > 64) { reply_err("disasm: n must be 1..64"); return; }
+    if (n == 0 || n > 64) { sink_err(s, "disasm: n must be 1..64"); return; }
     /* One reply line per instruction. */
     for (uint32_t i = 0; i < n; i++) {
         char buf[64];
         int bytes = cpu_disassemble(&emu->cpu, addr, buf, sizeof(buf));
         const char* sym = symbol_lookup(&emu->symbols, addr);
-        fprintf(stdout, "OK addr=%04X bytes=%d disasm=\"%s\"",
-                addr, bytes, buf);
-        if (sym) fprintf(stdout, " label=%s", sym);
-        fputc('\n', stdout);
+        sink_printf(s, "OK addr=%04X bytes=%d disasm=\"%s\"",
+                    addr, bytes, buf);
+        if (sym) sink_printf(s, " label=%s", sym);
+        sink_printf(s, "\n");
         addr = (uint16_t)(addr + bytes);
     }
-    fflush(stdout);
+    sink_flush(s);
 }
 
-static void cmd_break_list(emulator_t* emu) {
+static void cmd_break_list(emulator_t* emu, control_sink_t* s) {
     debugger_t* dbg = &emu->debugger;
-    fputs("OK", stdout);
+    sink_printf(s, "OK");
     for (int i = 0; i < dbg->num_breakpoints; i++) {
-        fprintf(stdout, " id=%d:addr=%04X", i, dbg->breakpoints[i].addr);
+        sink_printf(s, " id=%d:addr=%04X", i, dbg->breakpoints[i].addr);
     }
-    fputc('\n', stdout);
-    fflush(stdout);
+    sink_printf(s, "\n");
+    sink_flush(s);
 }
 
-static void cmd_reset(emulator_t* emu) {
+static void cmd_reset(emulator_t* emu, control_sink_t* s) {
     cpu_reset(&emu->cpu);
-    reply_ok("pc=%04X", emu->cpu.PC);
+    sink_ok(s, "pc=%04X", emu->cpu.PC);
 }
 
 /* Sprint 35a freeze — protocol version + capability list. Bumped whenever
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys"
 
-static void cmd_hello(const char* arg1, const char* arg2) {
+static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
-    reply_ok("server=phosphoric/%s proto=%d caps=%s",
-             EMU_VERSION, CONTROL_PROTO_VERSION, CONTROL_PROTO_CAPS);
+    sink_ok(s, "server=phosphoric/%s proto=%d caps=%s",
+            EMU_VERSION, CONTROL_PROTO_VERSION, CONTROL_PROTO_CAPS);
 }
 
 /* Sprint 35a freeze — `peek <subsystem>` exposes the per-device REPL
  * commands (via/psg/disk/acia/tape/loci) in a single-line key=value
  * format so the IDE can populate its inspectors without parsing
  * human-friendly output. Each branch emits one line. */
-static void cmd_peek(emulator_t* emu, const char* sub) {
-    if (!sub) { reply_err("peek: usage `peek <subsystem>`"); return; }
+static void cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
+    if (!sub) { sink_err(s, "peek: usage `peek <subsystem>`"); return; }
     if (strcmp(sub, "via") == 0) {
         via6522_t* v = &emu->via;
-        reply_ok("ora=%02X orb=%02X ddra=%02X ddrb=%02X "
-                 "t1c=%04X t1l=%04X t2c=%04X t2l=%02X "
-                 "acr=%02X pcr=%02X ifr=%02X ier=%02X sr=%02X "
-                 "t1_run=%d t2_run=%d",
-                 v->ora, v->orb, v->ddra, v->ddrb,
-                 v->t1_counter, v->t1_latch, v->t2_counter, v->t2_latch,
-                 v->acr, v->pcr, v->ifr, v->ier, v->sr,
-                 v->t1_running ? 1 : 0, v->t2_running ? 1 : 0);
+        sink_ok(s, "ora=%02X orb=%02X ddra=%02X ddrb=%02X "
+                "t1c=%04X t1l=%04X t2c=%04X t2l=%02X "
+                "acr=%02X pcr=%02X ifr=%02X ier=%02X sr=%02X "
+                "t1_run=%d t2_run=%d",
+                v->ora, v->orb, v->ddra, v->ddrb,
+                v->t1_counter, v->t1_latch, v->t2_counter, v->t2_latch,
+                v->acr, v->pcr, v->ifr, v->ier, v->sr,
+                v->t1_running ? 1 : 0, v->t2_running ? 1 : 0);
     }
     else if (strcmp(sub, "psg") == 0) {
         ay3891x_t* p = &emu->psg;
-        fputs("OK", stdout);
-        for (int i = 0; i < 14; i++) fprintf(stdout, " r%d=%02X", i, p->registers[i]);
-        fprintf(stdout, " env_period=%u env_shape=%u env_step=%u env_vol=%u",
-                p->env_period, p->env_shape, p->env_step, p->env_volume);
-        fputc('\n', stdout);
-        fflush(stdout);
+        sink_printf(s, "OK");
+        for (int i = 0; i < 14; i++) sink_printf(s, " r%d=%02X", i, p->registers[i]);
+        sink_printf(s, " env_period=%u env_shape=%u env_step=%u env_vol=%u",
+                    p->env_period, p->env_shape, p->env_step, p->env_volume);
+        sink_printf(s, "\n");
+        sink_flush(s);
     }
     else if (strcmp(sub, "disk") == 0 || strcmp(sub, "fdc") == 0) {
-        if (!emu->has_microdisc) { reply_err("disk: microdisc inactive"); return; }
+        if (!emu->has_microdisc) { sink_err(s, "disk: microdisc inactive"); return; }
         microdisc_t* md = &emu->microdisc;
         fdc_t* f = &md->fdc;
-        reply_ok("ctrl=%02X intrq=%d drq=%d diskrom=%d romdis=%d intena=%d "
-                 "drive=%d side=%d cmd=%02X status=%02X trk=%02X sec=%02X "
-                 "data=%02X dir=%d c_trk=%02X c_sec=%02X cur_off=%04X "
-                 "drives_mounted=%d%d%d%d",
-                 md->status,
-                 md->intrq == 0x00 ? 1 : 0, md->drq == 0x00 ? 1 : 0,
-                 md->diskrom, md->romdis, md->intena, md->drive, md->side,
-                 f->command, f->status, f->track, f->sector, f->data,
-                 f->direction, f->c_track, f->c_sector, f->cur_offset,
-                 md->disk_data[0] != NULL, md->disk_data[1] != NULL,
-                 md->disk_data[2] != NULL, md->disk_data[3] != NULL);
+        sink_ok(s, "ctrl=%02X intrq=%d drq=%d diskrom=%d romdis=%d intena=%d "
+                "drive=%d side=%d cmd=%02X status=%02X trk=%02X sec=%02X "
+                "data=%02X dir=%d c_trk=%02X c_sec=%02X cur_off=%04X "
+                "drives_mounted=%d%d%d%d",
+                md->status,
+                md->intrq == 0x00 ? 1 : 0, md->drq == 0x00 ? 1 : 0,
+                md->diskrom, md->romdis, md->intena, md->drive, md->side,
+                f->command, f->status, f->track, f->sector, f->data,
+                f->direction, f->c_track, f->c_sector, f->cur_offset,
+                md->disk_data[0] != NULL, md->disk_data[1] != NULL,
+                md->disk_data[2] != NULL, md->disk_data[3] != NULL);
     }
     else if (strcmp(sub, "acia") == 0 || strcmp(sub, "serial") == 0) {
         acia6551_t* a = &emu->acia;
-        reply_ok("tdr=%02X rdr=%02X status=%02X cmd=%02X ctrl=%02X "
-                 "framebits=%u baud=%u v23=%d tx_pending=%d rx_full=%d "
-                 "irq_line=%d dcd=%d dsr=%d cts=%d rx_fifo_count=%d "
-                 "rx_fifo_size=%d",
-                 a->tdr, a->rdr, a->status, a->command, a->control,
-                 a->framebits, a->baud_rate, a->v23_mode ? 1 : 0,
-                 a->tx_pending ? 1 : 0, a->rx_full ? 1 : 0,
-                 a->irq_line ? 1 : 0, a->dcd ? 1 : 0, a->dsr ? 1 : 0,
-                 a->cts ? 1 : 0, a->rx_fifo_count, a->rx_fifo_size);
+        sink_ok(s, "tdr=%02X rdr=%02X status=%02X cmd=%02X ctrl=%02X "
+                "framebits=%u baud=%u v23=%d tx_pending=%d rx_full=%d "
+                "irq_line=%d dcd=%d dsr=%d cts=%d rx_fifo_count=%d "
+                "rx_fifo_size=%d",
+                a->tdr, a->rdr, a->status, a->command, a->control,
+                a->framebits, a->baud_rate, a->v23_mode ? 1 : 0,
+                a->tx_pending ? 1 : 0, a->rx_full ? 1 : 0,
+                a->irq_line ? 1 : 0, a->dcd ? 1 : 0, a->dsr ? 1 : 0,
+                a->cts ? 1 : 0, a->rx_fifo_count, a->rx_fifo_size);
     }
     else if (strcmp(sub, "tape") == 0 || strcmp(sub, "cassette") == 0) {
-        reply_ok("loaded=%d pos=%d len=%d sync_loop=%d cload_active=%d "
-                 "fastload_pending=%d csave_active=%d",
-                 emu->tape_loaded ? 1 : 0, emu->tapeoffs, emu->tapelen,
-                 emu->tape_syncstack >= 0 ? 1 : 0,
-                 emu->tape_readbyte_active ? 1 : 0,
-                 emu->fastload_pending ? 1 : 0,
-                 emu->csave_file != NULL ? 1 : 0);
+        sink_ok(s, "loaded=%d pos=%d len=%d sync_loop=%d cload_active=%d "
+                "fastload_pending=%d csave_active=%d",
+                emu->tape_loaded ? 1 : 0, emu->tapeoffs, emu->tapelen,
+                emu->tape_syncstack >= 0 ? 1 : 0,
+                emu->tape_readbyte_active ? 1 : 0,
+                emu->fastload_pending ? 1 : 0,
+                emu->csave_file != NULL ? 1 : 0);
     }
     else if (strcmp(sub, "loci") == 0) {
-        if (!emu->has_loci) { reply_err("loci: inactive"); return; }
+        if (!emu->has_loci) { sink_err(s, "loci: inactive"); return; }
         loci_t* l = &emu->loci;
         uint16_t err = (uint16_t)l->regs[LOCI_REG_API_ERRNO_LO]
                      | ((uint16_t)l->regs[LOCI_REG_API_ERRNO_HI] << 8);
@@ -657,170 +750,230 @@ static void cmd_peek(emulator_t* emu, const char* sub) {
         for (int i = 0; i < LOCI_MNT_MAX; i++) if (l->mnt_mounted[i]) mnt_n++;
         uint64_t total = 0;
         for (int i = 0; i < 256; i++) total += l->op_count[i];
-        reply_ok("enabled=%d active_op=%02X errno=%u busy=%02X "
-                 "ops_total=%llu xstack_used=%u/%d "
-                 "fds_open=%d dirs_open=%d mounts=%d "
-                 "tap_pos=%u tap_size=%u dsk_selected=%d boot_settings=%02X "
-                 "sdimg=%d",
-                 l->enabled ? 1 : 0, l->active_op, err, l->regs[LOCI_REG_BUSY],
-                 (unsigned long long)total,
-                 LOCI_XSTACK_SIZE - l->xstack_ptr, LOCI_XSTACK_SIZE,
-                 fd_n, dir_n, mnt_n,
-                 l->tap_counter, l->tap_size,
-                 l->dsk_selected, l->boot_settings,
-                 l->sdimg ? 1 : 0);
+        sink_ok(s, "enabled=%d active_op=%02X errno=%u busy=%02X "
+                "ops_total=%llu xstack_used=%u/%d "
+                "fds_open=%d dirs_open=%d mounts=%d "
+                "tap_pos=%u tap_size=%u dsk_selected=%d boot_settings=%02X "
+                "sdimg=%d",
+                l->enabled ? 1 : 0, l->active_op, err, l->regs[LOCI_REG_BUSY],
+                (unsigned long long)total,
+                LOCI_XSTACK_SIZE - l->xstack_ptr, LOCI_XSTACK_SIZE,
+                fd_n, dir_n, mnt_n,
+                l->tap_counter, l->tap_size,
+                l->dsk_selected, l->boot_settings,
+                l->sdimg ? 1 : 0);
     }
     else {
-        reply_err("peek: unknown subsystem `%s` "
-                  "(via|psg|disk|acia|tape|loci)", sub);
+        sink_err(s, "peek: unknown subsystem `%s` "
+                 "(via|psg|disk|acia|tape|loci)", sub);
     }
+}
+
+/* keys <text> — queue keystrokes for the main loop to inject (sprint 95).
+ * Escapes: \n / \r → RETURN, \t → TAB, \e → ESC, \\ → backslash; every other
+ * byte is literal (spaces preserved — only the command word was stripped).
+ * Appends to the emulator's growable injection buffer; the main loop presses
+ * one key every few frames. Runs on the emulator thread (queue drain), so the
+ * shared buffer needs no lock. */
+static void cmd_keys(emulator_t* emu, control_sink_t* s, const char* text) {
+    if (!text) { sink_err(s, "keys: usage `keys <text>`"); return; }
+    while (*text == ' ' || *text == '\t') text++;   /* skip leading blanks */
+    if (!*text) { sink_err(s, "keys: empty text"); return; }
+
+    size_t added = 0;
+    for (const char* p = text; *p; p++) {
+        char c = *p;
+        if (c == '\\' && p[1]) {
+            p++;
+            switch (*p) {
+                case 'n': case 'r': c = '\n'; break;   /* RETURN */
+                case 't': c = '\t'; break;
+                case 'e': c = (char)0x1B; break;       /* ESC */
+                case '\\': c = '\\'; break;
+                default: c = *p; break;                /* literal */
+            }
+        }
+        if (emu->kbd_inject_len + 1 > emu->kbd_inject_cap) {
+            size_t ncap = emu->kbd_inject_cap ? emu->kbd_inject_cap * 2 : 64;
+            char* nb = (char*)realloc(emu->kbd_inject_buf, ncap);
+            if (!nb) { sink_err(s, "keys: out of memory"); return; }
+            emu->kbd_inject_buf = nb;
+            emu->kbd_inject_cap = ncap;
+        }
+        emu->kbd_inject_buf[emu->kbd_inject_len++] = c;
+        added++;
+    }
+    sink_ok(s, "queued=%zu pending=%zu", added,
+            emu->kbd_inject_len - emu->kbd_inject_pos);
+}
+
+/* ─── dispatch ─────────────────────────────────────────────────────
+ * Parse one command line (mutated in place by strtok_r) and execute it
+ * into @p s. Resume/quit commands set the debugger flags and are signalled
+ * to the caller through the return value; synchronous commands emit their
+ * reply inline and return CONTROL_CONTINUE. */
+control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
+                                  char* line) {
+    /* Strip trailing newline(s). */
+    size_t n = strlen(line);
+    while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+        line[--n] = '\0';
+    if (n == 0) return CONTROL_CONTINUE;   /* blank line, ignore */
+
+    /* First token = command. */
+    char* save;
+    char* cmd = strtok_r(line, " \t", &save);
+    if (!cmd) return CONTROL_CONTINUE;
+
+    /* `keys` consumes the raw remainder (spaces preserved), so handle it here
+     * before the argument tokenizer chops the rest of the line into words. */
+    if (strcmp(cmd, "keys") == 0) {
+        cmd_keys(emu, s, save ? save : "");
+        return CONTROL_CONTINUE;
+    }
+
+    char* arg1 = strtok_r(NULL, " \t", &save);
+    char* arg2 = strtok_r(NULL, " \t", &save);
+
+    if (strcmp(cmd, "hello") == 0) {
+        cmd_hello(s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "peek") == 0) {
+        cmd_peek(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "regs") == 0) {
+        cmd_regs(emu, s);
+    }
+    else if (strcmp(cmd, "set") == 0) {
+        cmd_set(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "read") == 0) {
+        cmd_read(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "bread") == 0) {
+        cmd_bread(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "write") == 0) {
+        cmd_write(emu, s, arg1, arg2, save);
+    }
+    else if (strcmp(cmd, "break") == 0) {
+        cmd_break(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "unbreak") == 0) {
+        cmd_unbreak(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "break-list") == 0) {
+        cmd_break_list(emu, s);
+    }
+    else if (strcmp(cmd, "watch") == 0) {
+        cmd_watch(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "unwatch") == 0) {
+        cmd_unwatch(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "watch-list") == 0) {
+        cmd_watch_list(emu, s);
+    }
+    else if (strcmp(cmd, "raster") == 0) {
+        cmd_raster(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "unraster") == 0) {
+        cmd_unraster(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "load-tap") == 0) {
+        cmd_load_tap(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "load-disk") == 0) {
+        cmd_load_disk(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "eject-disk") == 0) {
+        cmd_eject_disk(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "eject-tape") == 0) {
+        cmd_eject_tape(emu, s);
+    }
+    else if (strcmp(cmd, "loci-button") == 0) {
+        cmd_loci_button(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "load-rom") == 0) {
+        cmd_load_rom(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "load-sym") == 0) {
+        cmd_load_sym(emu, s, arg1);
+    }
+    else if (strcmp(cmd, "disasm") == 0) {
+        cmd_disasm(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "reset") == 0) {
+        cmd_reset(emu, s);
+    }
+    else if (strcmp(cmd, "pause") == 0) {
+        /* The REPL is only re-entered when execution is already
+         * stopped, so `pause` is informational. */
+        sink_ok(s, "pc=%04X cycles=%llu",
+                emu->cpu.PC, (unsigned long long)emu->cpu.cycles);
+    }
+    else if (strcmp(cmd, "step") == 0) {
+        emu->debugger.step_mode = true;
+        emu->debugger.active = false;
+        sink_ok(s, "");
+        return CONTROL_RESUME;
+    }
+    else if (strcmp(cmd, "next") == 0) {
+        uint8_t opc = memory_read(&emu->memory, emu->cpu.PC);
+        if (opc == 0x20) {
+            emu->debugger.temp_breakpoint = (uint16_t)(emu->cpu.PC + 3);
+            emu->debugger.has_temp_breakpoint = true;
+            emu->debugger.step_mode = false;
+        } else {
+            emu->debugger.step_mode = true;
+        }
+        emu->debugger.active = false;
+        sink_ok(s, "");
+        return CONTROL_RESUME;
+    }
+    else if (strcmp(cmd, "step-out") == 0) {
+        /* Sprint 35a freeze-time addition : peek the return address
+         * from the current stack frame (push order : hi first then lo,
+         * so JSR stores PC-1 with hi at $0100+SP+2 and lo at SP+1).
+         * RTS adds +1 to land on the instruction after JSR. */
+        uint16_t sp = (uint16_t)(0x0100 + emu->cpu.SP);
+        uint8_t lo = memory_read(&emu->memory, (uint16_t)(sp + 1));
+        uint8_t hi = memory_read(&emu->memory, (uint16_t)(sp + 2));
+        uint16_t ret = (uint16_t)(((uint16_t)hi << 8) | lo) + 1;
+        emu->debugger.temp_breakpoint = ret;
+        emu->debugger.has_temp_breakpoint = true;
+        emu->debugger.step_mode = false;
+        emu->debugger.active = false;
+        sink_ok(s, "ret=%04X", ret);
+        return CONTROL_RESUME;
+    }
+    else if (strcmp(cmd, "continue") == 0) {
+        emu->debugger.step_mode = false;
+        emu->debugger.active = false;
+        sink_ok(s, "");
+        return CONTROL_RESUME;
+    }
+    else if (strcmp(cmd, "quit") == 0) {
+        sink_ok(s, "");
+        return CONTROL_QUIT;
+    }
+    else {
+        sink_err(s, "unknown command `%s`", cmd);
+    }
+    return CONTROL_CONTINUE;
 }
 
 /* ─── main REPL loop ──────────────────────────────────────────── */
 
 void control_repl(emulator_t* emu) {
+    control_sink_t s;
+    control_sink_init_stream(&s, stdout);
     char line[1024];
     while (fgets(line, sizeof(line), stdin) != NULL) {
-        /* Strip trailing newline. */
-        size_t n = strlen(line);
-        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
-            line[--n] = '\0';
-        if (n == 0) continue;   /* blank line, ignore */
-
-        /* First token = command. */
-        char* save;
-        char* cmd = strtok_r(line, " \t", &save);
-        if (!cmd) continue;
-        char* arg1 = strtok_r(NULL, " \t", &save);
-        char* arg2 = strtok_r(NULL, " \t", &save);
-
-        if (strcmp(cmd, "hello") == 0) {
-            cmd_hello(arg1, arg2);
-        }
-        else if (strcmp(cmd, "peek") == 0) {
-            cmd_peek(emu, arg1);
-        }
-        else if (strcmp(cmd, "regs") == 0) {
-            cmd_regs(emu);
-        }
-        else if (strcmp(cmd, "set") == 0) {
-            cmd_set(emu, arg1, arg2);
-        }
-        else if (strcmp(cmd, "read") == 0) {
-            cmd_read(emu, arg1, arg2);
-        }
-        else if (strcmp(cmd, "bread") == 0) {
-            cmd_bread(emu, arg1, arg2);
-        }
-        else if (strcmp(cmd, "write") == 0) {
-            cmd_write(emu, arg1, arg2, save);
-        }
-        else if (strcmp(cmd, "break") == 0) {
-            cmd_break(emu, arg1);
-        }
-        else if (strcmp(cmd, "unbreak") == 0) {
-            cmd_unbreak(emu, arg1);
-        }
-        else if (strcmp(cmd, "break-list") == 0) {
-            cmd_break_list(emu);
-        }
-        else if (strcmp(cmd, "watch") == 0) {
-            cmd_watch(emu, arg1);
-        }
-        else if (strcmp(cmd, "unwatch") == 0) {
-            cmd_unwatch(emu, arg1);
-        }
-        else if (strcmp(cmd, "watch-list") == 0) {
-            cmd_watch_list(emu);
-        }
-        else if (strcmp(cmd, "raster") == 0) {
-            cmd_raster(emu, arg1);
-        }
-        else if (strcmp(cmd, "unraster") == 0) {
-            cmd_unraster(emu, arg1);
-        }
-        else if (strcmp(cmd, "load-tap") == 0) {
-            cmd_load_tap(emu, arg1);
-        }
-        else if (strcmp(cmd, "load-disk") == 0) {
-            cmd_load_disk(emu, arg1, arg2);
-        }
-        else if (strcmp(cmd, "eject-disk") == 0) {
-            cmd_eject_disk(emu, arg1);
-        }
-        else if (strcmp(cmd, "eject-tape") == 0) {
-            cmd_eject_tape(emu);
-        }
-        else if (strcmp(cmd, "loci-button") == 0) {
-            cmd_loci_button(emu, arg1);
-        }
-        else if (strcmp(cmd, "load-rom") == 0) {
-            cmd_load_rom(emu, arg1);
-        }
-        else if (strcmp(cmd, "load-sym") == 0) {
-            cmd_load_sym(emu, arg1);
-        }
-        else if (strcmp(cmd, "disasm") == 0) {
-            cmd_disasm(emu, arg1, arg2);
-        }
-        else if (strcmp(cmd, "reset") == 0) {
-            cmd_reset(emu);
-        }
-        else if (strcmp(cmd, "pause") == 0) {
-            /* The REPL is only re-entered when execution is already
-             * stopped, so `pause` is informational. */
-            reply_ok("pc=%04X cycles=%llu",
-                     emu->cpu.PC, (unsigned long long)emu->cpu.cycles);
-        }
-        else if (strcmp(cmd, "step") == 0) {
-            emu->debugger.step_mode = true;
-            emu->debugger.active = false;
-            reply_ok("");
-            return;
-        }
-        else if (strcmp(cmd, "next") == 0) {
-            uint8_t opc = memory_read(&emu->memory, emu->cpu.PC);
-            if (opc == 0x20) {
-                emu->debugger.temp_breakpoint = (uint16_t)(emu->cpu.PC + 3);
-                emu->debugger.has_temp_breakpoint = true;
-                emu->debugger.step_mode = false;
-            } else {
-                emu->debugger.step_mode = true;
-            }
-            emu->debugger.active = false;
-            reply_ok("");
-            return;
-        }
-        else if (strcmp(cmd, "step-out") == 0) {
-            /* Sprint 35a freeze-time addition : peek the return address
-             * from the current stack frame (push order : hi first then lo,
-             * so JSR stores PC-1 with hi at $0100+SP+2 and lo at SP+1).
-             * RTS adds +1 to land on the instruction after JSR. */
-            uint16_t sp = (uint16_t)(0x0100 + emu->cpu.SP);
-            uint8_t lo = memory_read(&emu->memory, (uint16_t)(sp + 1));
-            uint8_t hi = memory_read(&emu->memory, (uint16_t)(sp + 2));
-            uint16_t ret = (uint16_t)(((uint16_t)hi << 8) | lo) + 1;
-            emu->debugger.temp_breakpoint = ret;
-            emu->debugger.has_temp_breakpoint = true;
-            emu->debugger.step_mode = false;
-            emu->debugger.active = false;
-            reply_ok("ret=%04X", ret);
-            return;
-        }
-        else if (strcmp(cmd, "continue") == 0) {
-            emu->debugger.step_mode = false;
-            emu->debugger.active = false;
-            reply_ok("");
-            return;
-        }
-        else if (strcmp(cmd, "quit") == 0) {
-            reply_ok("");
-            emu->running = false;
-            return;
-        }
-        else {
-            reply_err("unknown command `%s`", cmd);
-        }
+        control_result_t r = control_dispatch(emu, &s, line);
+        if (r == CONTROL_RESUME) return;
+        if (r == CONTROL_QUIT) { emu->running = false; return; }
     }
     /* EOF on stdin — treat as quit. */
     emu->running = false;
