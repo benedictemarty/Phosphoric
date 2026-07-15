@@ -258,6 +258,28 @@ curl -s -X POST --data 'path=microdisc.sym&group=2' localhost:8888/sym
 curl -s -X POST --data 'group=2&enabled=off'      localhost:8888/sym/group
 ```
 
+### EPIC 6 / US 6a — Injection de stuck-bits RAM *(Sprint 103)* — LIVRÉ
+
+Injection de fautes RAM par **bits collés** (parité avec « RAM errors » de b2) :
+chaque bit de donnée peut être forcé à 0 ou à 1 sur les lectures RAM
+($0000-$BFFF).
+
+| Méthode  | Route                      | Effet |
+|----------|----------------------------|-------|
+| `POST`   | `/stuck-bits` `{zero,one}` | masques hex : `zero`=bits→0, `one`=bits→1 |
+| `GET`    | `/stuck-bits`              | masques courants |
+
+Formule : `val = (v & ~zero) | one`. `zero=00&one=00` désactive. Mêmes
+commandes en `--control` (`stuck-bits <s0> [s1]`) et REPL (`stuck S0 [S1]`).
+
+```bash
+curl -s -X POST --data 'zero=00&one=01' localhost:8888/stuck-bits   # bit0 collé à 1
+curl -s -X POST --data 'zero=00&one=00' localhost:8888/stuck-bits   # off
+```
+
+> Le volet **overlays visuels de timing** de l'US 6 (faisceau TV, lignes raster)
+> reste en backlog : c'est du rendu GUI/SDL, invérifiable en headless.
+
 ## 5. Estimation
 
 ~600-900 LOC au total (sink+dispatch ~200, file ~120, serveur HTTP+routing

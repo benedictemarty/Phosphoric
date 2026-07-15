@@ -226,5 +226,12 @@ curl -s -X POST --data 'group=5&enabled=off' "$BASE/sym/group" | grep -q 'group=
 curl -s -X POST --data 'group=5&enabled=on' "$BASE/sym/group" | grep -q 'enabled=1' \
     && ok "POST /sym/group re-enables it" || ko "POST /sym/group on"
 
+# 24. RAM stuck-bit fault injection (Epic 6 / US 6)
+curl -s -X POST --data 'zero=80&one=01' "$BASE/stuck-bits" | grep -q 'stuck0=80 stuck1=01' \
+    && ok "POST /stuck-bits sets masks" || ko "POST /stuck-bits"
+curl -s "$BASE/stuck-bits" | grep -q 'stuck0=80 stuck1=01' \
+    && ok "GET /stuck-bits reports masks" || ko "GET /stuck-bits"
+curl -s -X POST --data 'zero=00&one=00' "$BASE/stuck-bits" >/dev/null   # clear
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]
