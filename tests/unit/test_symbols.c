@@ -184,6 +184,36 @@ TEST(test_multiple_loads_accumulate) {
     unlink(p1); unlink(p2); free(p1); free(p2);
 }
 
+/* US 4 — symbol groups: scope symbols on/off by group. */
+TEST(test_symbol_groups) {
+    symbol_table_t t; symbol_table_init(&t);
+    char* pa = write_tmp("$F900 RESET\n");     /* group 1 (BASIC ROM-ish) */
+    char* pb = write_tmp("$E000 DISKENTRY\n"); /* group 2 (overlay-ish) */
+    ASSERT_EQ(symbol_table_load_group(&t, pa, 1), 1);
+    ASSERT_EQ(symbol_table_load_group(&t, pb, 2), 1);
+    ASSERT_EQ(t.count, 2);
+    ASSERT_EQ(symbol_group_count(&t, 1), 1);
+    ASSERT_EQ(symbol_group_count(&t, 2), 1);
+
+    /* Both enabled by default. */
+    ASSERT_STR_EQ(symbol_lookup(&t, 0xF900), "RESET");
+    ASSERT_STR_EQ(symbol_lookup(&t, 0xE000), "DISKENTRY");
+
+    /* Disable group 2 → its symbol disappears, group 1 stays. */
+    symbol_set_group_enabled(&t, 2, false);
+    ASSERT_TRUE(symbol_lookup(&t, 0xE000) == NULL);
+    ASSERT_STR_EQ(symbol_lookup(&t, 0xF900), "RESET");
+    uint16_t a;
+    ASSERT_TRUE(!symbol_resolve(&t, "DISKENTRY", &a));   /* resolve also filtered */
+    ASSERT_TRUE(symbol_resolve(&t, "RESET", &a) && a == 0xF900);
+
+    /* Re-enable. */
+    symbol_set_group_enabled(&t, 2, true);
+    ASSERT_STR_EQ(symbol_lookup(&t, 0xE000), "DISKENTRY");
+
+    unlink(pa); unlink(pb); free(pa); free(pb);
+}
+
 int main(void) {
     log_init(LOG_LEVEL_ERROR);
     printf("\n");
@@ -202,6 +232,7 @@ int main(void) {
     RUN(test_missing_file);
     RUN(test_lookup_miss);
     RUN(test_multiple_loads_accumulate);
+    RUN(test_symbol_groups);
 
     printf("\n===========================================================\n");
     printf("  Results: %d passed, %d failed (total: %d)\n",

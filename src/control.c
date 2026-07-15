@@ -705,11 +705,32 @@ static void cmd_load_rom(emulator_t* emu, control_sink_t* s, const char* path) {
     sink_ok(s, "size=%zu pc=%04X", len, emu->cpu.PC);
 }
 
-static void cmd_load_sym(emulator_t* emu, control_sink_t* s, const char* path) {
-    if (!path) { sink_err(s, "load-sym: usage `load-sym <path>`"); return; }
-    int n = symbol_table_load(&emu->symbols, path);
+static void cmd_load_sym(emulator_t* emu, control_sink_t* s,
+                         const char* path, const char* group_s) {
+    if (!path) { sink_err(s, "load-sym: usage `load-sym <path> [group]`"); return; }
+    uint8_t group = 0;
+    if (group_s && *group_s) {
+        uint32_t g;
+        if (!parse_hex(group_s, &g) || g > 255) { sink_err(s, "load-sym: bad group"); return; }
+        group = (uint8_t)g;
+    }
+    int n = symbol_table_load_group(&emu->symbols, path, group);
     if (n < 0) { sink_err(s, "load-sym: parse failed"); return; }
-    sink_ok(s, "count=%d total=%d", n, emu->symbols.count);
+    sink_ok(s, "count=%d total=%d group=%u", n, emu->symbols.count, group);
+}
+
+/* US 4 — enable/disable a symbol group. */
+static void cmd_sym_group(emulator_t* emu, control_sink_t* s,
+                          const char* group_s, const char* onoff_s) {
+    uint32_t g;
+    if (!group_s || !parse_hex(group_s, &g) || g > 255 || !onoff_s) {
+        sink_err(s, "sym-group: usage `sym-group <N> <on|off>`");
+        return;
+    }
+    bool en = (strcasecmp(onoff_s, "on") == 0 || strcmp(onoff_s, "1") == 0);
+    symbol_set_group_enabled(&emu->symbols, (uint8_t)g, en);
+    sink_ok(s, "group=%u enabled=%d symbols=%d",
+            g, en ? 1 : 0, symbol_group_count(&emu->symbols, (uint8_t)g));
 }
 
 /* Sprint 35b — disassemble N instructions starting at addr. */
@@ -865,7 +886,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map,sym-group"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -1169,7 +1190,10 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
         cmd_load_rom(emu, s, arg1);
     }
     else if (strcmp(cmd, "load-sym") == 0) {
-        cmd_load_sym(emu, s, arg1);
+        cmd_load_sym(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "sym-group") == 0) {
+        cmd_sym_group(emu, s, arg1, arg2);
     }
     else if (strcmp(cmd, "disasm") == 0) {
         cmd_disasm(emu, s, arg1, arg2);

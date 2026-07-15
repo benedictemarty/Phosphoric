@@ -13,8 +13,12 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Group tagged onto symbols added by the in-progress load (US 4). */
+static uint8_t s_load_group = 0;
+
 void symbol_table_init(symbol_table_t* tbl) {
     tbl->count = 0;
+    for (int i = 0; i < 256; i++) tbl->group_disabled[i] = false;  /* all enabled */
 }
 
 /* Parse a hex token of form `$XXXX`, `0xXXXX`, `0XXXXX` or bare `XXXX`.
@@ -68,6 +72,7 @@ static void add_entry(symbol_table_t* tbl, const char* name, uint16_t addr) {
     strncpy(e->name, name, SYMBOL_MAX_NAME);
     e->name[SYMBOL_MAX_NAME] = '\0';
     e->addr = addr;
+    e->group = s_load_group;
 }
 
 /* Try to parse a single line. Returns true if a symbol was added. */
@@ -144,25 +149,48 @@ static bool parse_line(symbol_table_t* tbl, char* line) {
     return false;
 }
 
-int symbol_table_load(symbol_table_t* tbl, const char* path) {
+int symbol_table_load_group(symbol_table_t* tbl, const char* path, uint8_t group) {
     FILE* fp = fopen(path, "r");
     if (!fp) {
         log_error("symbols: cannot open %s", path);
         return -1;
     }
     int before = tbl->count;
+    s_load_group = group;
     char line[512];
     while (fgets(line, sizeof(line), fp)) {
         parse_line(tbl, line);
     }
+    s_load_group = 0;
     fclose(fp);
     int added = tbl->count - before;
-    log_info("symbols: %d entries loaded from %s (total %d)", added, path, tbl->count);
+    log_info("symbols: %d entries loaded from %s (group %u, total %d)",
+             added, path, (unsigned)group, tbl->count);
     return added;
+}
+
+int symbol_table_load(symbol_table_t* tbl, const char* path) {
+    return symbol_table_load_group(tbl, path, 0);
+}
+
+void symbol_set_group_enabled(symbol_table_t* tbl, uint8_t group, bool enabled) {
+    tbl->group_disabled[group] = !enabled;
+}
+
+bool symbol_group_enabled(const symbol_table_t* tbl, uint8_t group) {
+    return !tbl->group_disabled[group];
+}
+
+int symbol_group_count(const symbol_table_t* tbl, uint8_t group) {
+    int n = 0;
+    for (int i = 0; i < tbl->count; i++)
+        if (tbl->entries[i].group == group) n++;
+    return n;
 }
 
 const char* symbol_lookup(const symbol_table_t* tbl, uint16_t addr) {
     for (int i = 0; i < tbl->count; i++) {
+        if (tbl->group_disabled[tbl->entries[i].group]) continue;
         if (tbl->entries[i].addr == addr)
             return tbl->entries[i].name;
     }
@@ -182,6 +210,7 @@ bool symbol_resolve(const symbol_table_t* tbl, const char* name, uint16_t* out) 
     if (!name || !*name) return false;
     if (*name == '.' || *name == '_') name++;
     for (int i = 0; i < tbl->count; i++) {
+        if (tbl->group_disabled[tbl->entries[i].group]) continue;
         if (ci_cmp(tbl->entries[i].name, name) == 0) {
             *out = tbl->entries[i].addr;
             return true;

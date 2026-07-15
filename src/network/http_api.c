@@ -188,7 +188,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
                 "/break /watch /disasm?addr=&n= /trace /watch-region; "
                 "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
                 "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
-                "/hunt(op,val) /sym(path) /save(path,addr,len) /load(path,addr) "
+                "/hunt(op,val) /sym(path,group) /sym/group(group,enabled) /save(path,addr,len) /load(path,addr) "
                 "/state/save /state/load /trace(spec) /trace/stop /trace/save(path) "
                 "/watch-region(start,end,flags); "
                 "DELETE /tape /disk/{A-D} /break/{id} /watch/{id} /raster/{id}\"}\n");
@@ -371,7 +371,22 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
                     "{\"ok\":false,\"error\":\"path outside sandbox root\"}\n");
                 return false;
             }
-            snprintf(cmd, cmdsz, "load-sym %s", full);
+            char group[8];
+            if (get_param(body, "group", group, sizeof(group)))
+                snprintf(cmd, cmdsz, "load-sym %s %s", full, group);
+            else
+                snprintf(cmd, cmdsz, "load-sym %s", full);
+            return true;
+        }
+        if (strcmp(path, "/sym/group") == 0) {
+            char group[8], enabled[8];
+            if (!get_param(body, "group", group, sizeof(group)) ||
+                !get_param(body, "enabled", enabled, sizeof(enabled))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /sym/group needs group=&enabled=(on|off)\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "sym-group %s %s", group, enabled);
             return true;
         }
         if (strcmp(path, "/save") == 0) {
