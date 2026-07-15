@@ -176,6 +176,22 @@ bool debugger_remove_breakpoint(debugger_t* dbg, int index);
 int debugger_add_cond_breakpoint(debugger_t* dbg, const emulator_t* emu,
                                  uint16_t addr, const char* expr);
 
+/* ── Per-byte access-flag map (Epic 6 / US 3) ──
+ * Read/write/execute breakpoints over arbitrary regions, complementing the
+ * 8 fixed watchpoints (parity with b2's per-byte debug flags). Read/write
+ * hits fire through the memory-trace callback; execute hits are checked
+ * before each instruction in debugger_should_break. */
+#define AMAP_R 0x01
+#define AMAP_W 0x02
+#define AMAP_X 0x04
+
+uint32_t debugger_amap_set(uint16_t start, uint16_t end, uint8_t flags); /* → bytes flagged */
+void     debugger_amap_clear(void);
+uint8_t  debugger_amap_get(uint16_t addr);
+bool     debugger_amap_active(void);   /* any R/W flag present (→ needs mem trace) */
+uint32_t debugger_amap_count(void);    /* number of flagged bytes */
+bool     debugger_amap_parse_flags(const char* s, uint8_t* out);  /* "rwx" subset */
+
 /* ── Iterative memory search (cheat-finder) — shared by REPL and --control ── */
 typedef enum { HUNT_EQ, HUNT_UNCHANGED, HUNT_CHANGED, HUNT_GT, HUNT_LT } hunt_pred_t;
 

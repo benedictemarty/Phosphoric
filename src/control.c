@@ -444,6 +444,51 @@ static void cmd_watch(emulator_t* emu, control_sink_t* s,
     sink_ok(s, "id=%d addr=%04X mode=%s", id, addr, mname);
 }
 
+/* US 3 — access-flag map: per-byte r/w/x breakpoints over a region. */
+static void cmd_watch_region(emulator_t* emu, control_sink_t* s,
+                             const char* start_s, const char* end_s, const char* flags_s) {
+    uint16_t start, end;
+    if (!parse_u16(start_s, &start) || !parse_u16(end_s, &end)) {
+        sink_err(s, "watch-region: usage `watch-region <start> <end> [rwx]`");
+        return;
+    }
+    uint8_t flags = AMAP_R | AMAP_W;   /* default rw */
+    if (flags_s && *flags_s && !debugger_amap_parse_flags(flags_s, &flags)) {
+        sink_err(s, "watch-region: bad flags `%s` (subset of rwx)", flags_s);
+        return;
+    }
+    uint32_t n = debugger_amap_set(start, end, flags);
+    debugger_install_watchpoint_trace(&emu->debugger, emu);
+    sink_ok(s, "flagged=%u start=%04X end=%04X flags=%c%c%c", n, start, end,
+            (flags & AMAP_R) ? 'r' : '-', (flags & AMAP_W) ? 'w' : '-',
+            (flags & AMAP_X) ? 'x' : '-');
+}
+
+static void cmd_watch_region_clear(emulator_t* emu, control_sink_t* s) {
+    debugger_amap_clear();
+    debugger_install_watchpoint_trace(&emu->debugger, emu);
+    sink_ok(s, "");
+}
+
+static void cmd_watch_region_list(emulator_t* emu, control_sink_t* s) {
+    (void)emu;
+    sink_printf(s, "OK count=%u", debugger_amap_count());
+    int shown = 0;
+    uint32_t a = 0;
+    while (a < 0x10000 && shown < 64) {
+        uint8_t f = debugger_amap_get((uint16_t)a);
+        if (!f) { a++; continue; }
+        uint32_t start = a;
+        while (a < 0x10000 && debugger_amap_get((uint16_t)a) == f) a++;
+        sink_printf(s, " %04X-%04X:%c%c%c", (uint16_t)start, (uint16_t)(a - 1),
+                    (f & AMAP_R) ? 'r' : '-', (f & AMAP_W) ? 'w' : '-',
+                    (f & AMAP_X) ? 'x' : '-');
+        shown++;
+    }
+    sink_printf(s, "\n");
+    sink_flush(s);
+}
+
 static void cmd_unwatch(emulator_t* emu, control_sink_t* s, const char* id_s) {
     if (!id_s) { sink_err(s, "unwatch: usage `unwatch <id>`"); return; }
     int id = atoi(id_s);
@@ -820,7 +865,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -1050,6 +1095,15 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
     }
     else if (strcmp(cmd, "watch-list") == 0) {
         cmd_watch_list(emu, s);
+    }
+    else if (strcmp(cmd, "watch-region") == 0) {
+        cmd_watch_region(emu, s, arg1, arg2, save);
+    }
+    else if (strcmp(cmd, "watch-region-clear") == 0) {
+        cmd_watch_region_clear(emu, s);
+    }
+    else if (strcmp(cmd, "watch-region-list") == 0) {
+        cmd_watch_region_list(emu, s);
     }
     else if (strcmp(cmd, "raster") == 0) {
         cmd_raster(emu, s, arg1);

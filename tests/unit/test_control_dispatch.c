@@ -390,6 +390,26 @@ TEST(trace_start_status_off) {
     PASS();
 }
 
+TEST(watch_region_set_list_clear) {
+    emulator_t* emu = fresh_emu();
+    debugger_amap_clear();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "watch-region 2000 2003 rw");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_TRUE(strncmp(s.buf, "OK flagged=4", 12) == 0);
+    control_sink_free(&s);
+
+    run_one(emu, &s, "watch-region-list");
+    ASSERT_TRUE(strstr(s.buf, "2000-2003:rw-") != NULL);
+    control_sink_free(&s);
+
+    run_one(emu, &s, "watch-region-clear");
+    ASSERT_STR_EQ(s.buf, "OK\n");
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -414,6 +434,7 @@ int main(void) {
     RUN(save_load_mem_roundtrip);
     RUN(read_bank_rom_vs_ram);
     RUN(trace_start_status_off);
+    RUN(watch_region_set_list_clear);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;
