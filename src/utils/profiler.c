@@ -104,6 +104,52 @@ void profiler_report(const cpu_profiler_t* prof, FILE* fp) {
     }
     fprintf(fp, "\n");
 
+    /* ── Execution by memory region (aggregate — answers ROM vs RAM/game share) ──
+     * Regions follow the standard ORIC memory map (see memory/memory.h). */
+    {
+        static const struct { const char* name; uint32_t lo, hi; } regions[] = {
+            { "Zero page",   0x0000, 0x00FF },
+            { "Stack",       0x0100, 0x01FF },
+            { "System vars", 0x0200, 0x02FF },
+            { "I/O",         0x0300, 0x03FF },
+            { "User RAM",    0x0400, 0x9FFF },
+            { "Screen RAM",  0xA000, 0xBFFF },
+            { "BASIC ROM",   0xC000, 0xF7FF },
+            { "Kernel ROM",  0xF800, 0xFFFF },
+        };
+        fprintf(fp, "── Execution by memory region ──\n");
+        fprintf(fp, "  %-14s %-10s %-9s %-11s %-8s\n",
+                "Region", "Hits", "% Instr", "Cycles", "% Cyc");
+        uint64_t ram_h = 0, ram_c = 0, rom_h = 0, rom_c = 0;
+        for (size_t r = 0; r < sizeof(regions) / sizeof(regions[0]); r++) {
+            uint64_t h = 0, c = 0;
+            for (uint32_t a = regions[r].lo; a <= regions[r].hi; a++) {
+                h += prof->addr_hits[a];
+                c += prof->addr_cycles[a];
+            }
+            double hp = prof->total_instructions
+                ? 100.0 * (double)h / (double)prof->total_instructions : 0.0;
+            double cp = prof->total_cycles
+                ? 100.0 * (double)c / (double)prof->total_cycles : 0.0;
+            fprintf(fp, "  %-14s %-10llu %6.2f%%  %-11llu %6.2f%%\n",
+                    regions[r].name, (unsigned long long)h, hp,
+                    (unsigned long long)c, cp);
+            if (regions[r].lo >= 0xC000) { rom_h += h; rom_c += c; }
+            else                         { ram_h += h; ram_c += c; }
+        }
+        double ramhp = prof->total_instructions ? 100.0 * (double)ram_h / (double)prof->total_instructions : 0.0;
+        double romhp = prof->total_instructions ? 100.0 * (double)rom_h / (double)prof->total_instructions : 0.0;
+        double ramcp = prof->total_cycles ? 100.0 * (double)ram_c / (double)prof->total_cycles : 0.0;
+        double romcp = prof->total_cycles ? 100.0 * (double)rom_c / (double)prof->total_cycles : 0.0;
+        fprintf(fp, "  %-14s %-10llu %6.2f%%  %-11llu %6.2f%%\n",
+                "RAM total", (unsigned long long)ram_h, ramhp,
+                (unsigned long long)ram_c, ramcp);
+        fprintf(fp, "  %-14s %-10llu %6.2f%%  %-11llu %6.2f%%\n",
+                "ROM total", (unsigned long long)rom_h, romhp,
+                (unsigned long long)rom_c, romcp);
+        fprintf(fp, "\n");
+    }
+
     /* Top 20 hotspots by execution count */
     #define TOP_N 20
     addr_entry_t top_hits[TOP_N];
