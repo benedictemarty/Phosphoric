@@ -230,6 +230,11 @@ typedef struct emulator_s {
      * SDL2 frame limiter doesn't cap the measurement. */
     bool bench_mode;
 
+    /* Set when a save state is restored at startup (--load-state), so
+     * emulator_run() skips its power-on cpu_reset — which would otherwise
+     * clobber the loaded PC/cycles and drop back to the reset vector. */
+    bool startup_state_loaded;
+
     /* Screenshot options */
     const char* screenshot_file;
     int64_t screenshot_at_cycles;

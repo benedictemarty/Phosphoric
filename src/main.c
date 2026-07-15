@@ -2211,7 +2211,10 @@ static void feed_kbd_inject(emulator_t* emu) {
 }
 
 static void emulator_run(emulator_t* emu) {
-    cpu_reset(&emu->cpu);
+    /* Skip the power-on reset when a save state was restored at startup —
+     * otherwise the loaded PC/cycles are wiped back to the reset vector. */
+    if (!emu->startup_state_loaded)
+        cpu_reset(&emu->cpu);
 
     log_info("Starting emulation at PC=$%04X", emu->cpu.PC);
 
@@ -4520,6 +4523,11 @@ int main(int argc, char* argv[]) {
         log_info("Loading save state: %s", load_state_file);
         if (!savestate_load(&emu, load_state_file)) {
             log_error("Failed to load save state: %s", load_state_file);
+        } else {
+            /* Prevent emulator_run()'s power-on cpu_reset from wiping the
+             * restored PC/cycles (bug: --load-state landed back at reset,
+             * cycles=0, most visible under --control). */
+            emu.startup_state_loaded = true;
         }
     }
 
