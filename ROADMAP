@@ -34,6 +34,23 @@ mappée vers une ligne `--control`, seule source de vérité.
 > **API REST : parité debug complète.** Tout le debug interactif se pilote via
 > HTTP/JSON, en réutilisant le dispatch `--control`.
 
+#### Backlog API REST — issu du comparatif HTTP vs b2 (émulateur BBC Micro)
+Comparatif mené le 2026-07-15 (source : `b2/doc/Debug-version.md` +
+`b2/src/b2/HTTPMethodsHandler.cpp`). b2 n'expose PAS son debugger sur HTTP (map
+close : `reset/paste/poke/peek/mount/run/load-disc/launch`) — son API HTTP vise
+l'**automatisation build**. Phosphoric mène sur le debug à distance ; deux
+points où b2 est en avance et qui restent à combler :
+- [ ] **B1 — Transfert mémoire binaire** : `/mem`, `/save`, `/load` répondent
+      en hex dans du JSON (~3× la taille). b2 sert/reçoit de l'`octet-stream`
+      brut (`peek`/`poke`). Ajouter une variante binaire (négociée par
+      `Accept`/`Content-Type` ou un endpoint dédié) pour les gros transferts.
+- [ ] **B2 — Sélecteur de banque dans `/mem` et `/peek`** : Phosphoric lit la
+      **vue CPU** courante (overlay ROM/RAM $C000-$FFFF résolu à l'instant t).
+      b2 offre des suffixes debugger (`s=`) + un drapeau `MOS's view` (`mos=`)
+      pour viser une banque paginée précise. Exposer un paramètre équivalent
+      (ex. `?bank=ram|rom`) pour lire sous l'overlay sans dépendre de l'état
+      courant du banking.
+
 ---
 
 ### Sprint 96: Parité debugger vs Oricutron — 7 gaps fermés (v1.55.0-alpha) - DONE
