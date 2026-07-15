@@ -191,7 +191,7 @@ TOOL_OBJECTS = src/storage/tap.o src/utils/logging.o
 
 # Targets
 TARGET = oric1-emu$(EXE)
-TOOLS = bas2tap bin2tap tap2sedoric
+TOOLS = bas2tap bin2tap tap2sedoric sedoric-info
 
 # Install paths
 PREFIX ?= /usr/local
@@ -199,7 +199,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -216,6 +216,9 @@ bin2tap: tools/bin2tap.c $(TOOL_OBJECTS)
 
 tap2sedoric: tools/tap2sedoric.c $(TOOL_OBJECTS) src/storage/sedoric.o
 	$(CC) $(CFLAGS) tools/tap2sedoric.c $(TOOL_OBJECTS) src/storage/sedoric.o $(LDFLAGS) -o tap2sedoric
+
+sedoric-info: tools/sedoric_info.c
+	$(CC) $(CFLAGS) tools/sedoric_info.c $(LDFLAGS) -o sedoric-info
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -574,6 +577,9 @@ test-rom-guard: $(TARGET)
 test-loadstate: $(TARGET)
 	@bash tests/integration/test_load_state_control.sh
 
+test-sedoric-tools: tap2sedoric sedoric-info
+	@bash tests/integration/test_sedoric_inject.sh
+
 # Sprint 36a — throughput benchmark. Runs 4 scenarios headless and
 # reports MHz-equivalent / speed ratio vs real ORIC (1 MHz).
 # Usage: `make bench`               human-readable table
@@ -589,7 +595,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate
+tests: test-cpu test-memory test-io test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

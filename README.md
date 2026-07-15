@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.50.0-alpha** | **876 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.64.0-alpha** | **984 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -185,7 +185,7 @@ make SDL2=1
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
-- **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric`
+- **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/SEDORIC.md](docs/SEDORIC.md)
 - **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
 
 ## Building
@@ -215,7 +215,7 @@ make DEBUG=1 SDL2=1            # Debug build (-g -O0)
 make SDL2=1 CAST=1             # With Chromecast support
 make SDL2=1 MIDI=1             # With real-time host MIDI (ALSA/CoreMIDI/WinMM, --mageco midi)
 make wasm                      # WebAssembly/browser build (needs Emscripten; see docs/wasm.md)
-make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric)
+make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric, sedoric-info)
 sudo make install              # Install to /usr/local
 ```
 
@@ -546,7 +546,7 @@ include/         Public headers
 tests/unit/      unit tests across CPU, memory, I/O, video, audio, storage,
                  debugger, GDB stub, movie, AVI, savestate, LOCI, symbols, etc.
 tests/integration/ E2E regression (Sedoric boot, IPC control, Python smoke client)
-tools/           bas2tap, bin2tap, tap2sedoric
+tools/           bas2tap, bin2tap, tap2sedoric, sedoric-info, sedoric_*.py/dsk_raw2mfm.py
 examples/        Example BASIC programs (.bas + .tap)
 roms/            ROM files (not distributed)
 docs/            User guide, control_protocol.md, CR review docs

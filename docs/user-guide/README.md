@@ -554,13 +554,65 @@ Convertir un binaire machine en .TAP avec adresse de chargement/execution :
 ./bin2tap programme.bin --start 0x0400 --exec 0x0400 -o programme.tap
 ```
 
-### tap2sedoric — Cassette vers disquette
+### tap2sedoric — Cassette vers disquette Sedoric
 
-Convertir un fichier .TAP en format disquette Sedoric :
+Injecter un fichier .TAP dans une copie d'une disquette Sedoric (MFM_DISK) : il
+apparait au catalogue (`DIR`) et peut etre charge/execute.
 
 ```bash
-./tap2sedoric programme.tap -o disque.dsk
+# base.dsk = une disquette Sedoric MFM existante (ex. disks/SEDO40u.DSK)
+./tap2sedoric programme.tap -o disque.dsk -b base.dsk -n PROG.COM
+
+# fichier machine auto-executable (AUTO) : charge ET s'execute via LOAD"PROG"
+./tap2sedoric programme.tap -o disque.dsk -b base.dsk -n PROG.COM -a -e 0x5000
+
+# poser un autoexec de boot (INIST) qui lance le fichier au demarrage
+./tap2sedoric programme.tap -o disque.dsk -b base.dsk -n PROG.COM -a -i 'LOAD"PROG"'
 ```
+
+Options : `-n NOM.EXT` (nom Sedoric), `-a` (AUTO), `-e EXEC_HEX` (adresse
+d'execution), `-i "INIST"` (autoexec de boot). Le catalogue est etendu
+automatiquement (chainage) au-dela de ~15 fichiers. Format et recette detailles
+dans [`docs/SEDORIC.md`](../SEDORIC.md).
+
+### sedoric-info — Inspecter une disquette Sedoric
+
+Affiche la VTOC (secteurs libres / nombre de fichiers), le nom du disque,
+l'INIST, le catalogue et les descripteurs decodes (type / load / end / exec) :
+
+```bash
+./sedoric-info disque.dsk
+./sedoric-info disque.dsk --check 1445:95   # garde de regression sur la VTOC
+```
+
+### Chaine RAW et master « nu » (scripts Python)
+
+Alternative operant en RAW (offsets directs), puis conversion en MFM :
+
+```bash
+# injecter un binaire (exec fourni => fichier AUTO) puis convertir RAW -> MFM
+python3 tools/sedoric_inject.py base.raw prog.bin 0x5000 PROG.COM out.raw 42 17 "" 0x5000
+python3 tools/dsk_raw2mfm.py out.raw out.dsk sidemajor 2 42 17
+
+# master Sedoric « nu » : neutralise l'INIST -> boot direct au prompt Ready
+python3 tools/sedoric_mkbare.py disks/SEDO40u.DSK bare.dsk
+# ... ou remplace l'INIST pour autolancer un programme au boot
+python3 tools/sedoric_mkbare.py disks/SEDO40u.DSK auto.dsk 'LOAD"PROG"'
+```
+
+### Lancer un programme machine sous Sedoric
+
+Une fois le disque monte et Sedoric demarre (`Ready`), un fichier **`.COM`
+AUTO** se lance avec la commande **`LOAD`** de Sedoric :
+
+```
+LOAD"PROG"
+```
+
+Attention : la commande est bien `LOAD` (et non `LOADM`, qui est la commande
+cassette de la ROM et renvoie `?TYPE MISMATCH ERROR`). Taper le nom nu ne lance
+qu'un programme BASIC (`?SYNTAX ERROR` pour un binaire). L'extension par defaut
+est `.COM` (un `.BIN` donnerait `?FILE NOT FOUND ERROR`).
 
 ---
 

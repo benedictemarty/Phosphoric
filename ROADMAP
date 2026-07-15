@@ -6,6 +6,47 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 104: Outillage Sedoric amendé depuis SCUMM-Oric / scoop-oric (v1.64.0-alpha) - DONE
+Reprise des acquis Sedoric des projets SCUMM-Oric et scoop-oric pour corriger et
+étendre les outils disque de Phosphoric. Format vérifié **byte-exact** contre le
+manuel primaire SEDORIC 3.0 (`sedna3_0.pdf`, dump de la BANQUE n°7) — cf
+`docs/SEDORIC.md`.
+- [x] FIX `tap2sedoric` : secteur descripteur non conforme — type `+3` jamais
+      posé, aucune adresse d'exécution, nb-secteurs en `+9,+10` **big-endian**
+      (chevauchant l'exec). Corrigé : `+3` type ($40 bloc data / $41 AUTO),
+      `+8,+9` exec (LE), `+0xA,+0xB` nb secteurs (LE).
+- [x] FIX collision multi-fichiers : `tap2sedoric` ET `sedoric_inject.py`
+      réallouaient depuis piste 21 sec 1 sans exclure les secteurs occupés (2ᵉ
+      injection écrasait le descripteur du 1ᵉʳ). Parcours catalogue + cartes de
+      secteurs des descripteurs existants avant allocation.
+- [x] ADD options `tap2sedoric` `-a` (AUTO), `-e EXEC_HEX`, `-i "INIST"` (boot
+      autoexec, piste 20 sec 1 offset 0x1E).
+- [x] ADD outil `sedoric-info` (VTOC/nom/INIST/catalogue/descripteurs décodés,
+      `--check FREE:FILES`), câblé dans `make tools`.
+- [x] ADD chaîne RAW `tools/sedoric_inject.py` + `tools/dsk_raw2mfm.py` (ordre
+      blocs MFM corrigé **side-major** = lecteur `src/storage/sedoric.c`).
+- [x] ADD **chaînage de secteurs directory** (catalogue > 15 fichiers) dans
+      `tap2sedoric` ET `sedoric_inject.py` : parcours de la chaîne `+0,+1`, et si
+      pleine, allocation+chaînage d'un secteur catalogue vierge (localisé par
+      lien, manuel ANNEXE 7). FIX associé : `scan_used` marque aussi les secteurs
+      catalogue chaînés (sinon réalloués/écrasés). Validé in-situ (LOAD d'un
+      fichier du 2ᵉ secteur, y compris injecté après création du secteur).
+- [x] ADD outil **`tools/sedoric_mkbare.py`** (master « nu » : neutralise/remplace
+      l'INIST → boot `Ready`, déterministe vs `make_bootable_sedoric.sh` fragile ;
+      MFM CRC refait, RAW géré). Vérifié : `SEDO40u` → `SEDORIC V4.0 / Ready`.
+- [x] Validation d'exécution **in-situ** : `.COM` AUTO (type $41) chargé+exécuté
+      via **`LOAD"NAME"`** (PAS `LOADM` = ROM cassette → TYPE MISMATCH ; PAS le nom
+      nu = BASIC → SYNTAX ERROR). Prouvé sur les deux pipelines (`tap2sedoric` MFM
+      et `sedoric_inject.py`+`dsk_raw2mfm` RAW). `sedoric_inject.py` : passer
+      l'exec ⇒ AUTO. Recette dans `docs/SEDORIC.md §6`.
+- [x] `docs/SEDORIC.md` + `tests/integration/test_sedoric_inject.sh`
+      (`make test-sedoric-tools`, dans `make tests`, 12 checks). 972 → 984 tests.
+> **Reste en backlog** : édition de la bitmap VTOC (les outils décrémentent le
+> compteur `free` mais n'écrivent pas les bits — sûr sur disque neuf, cf
+> `analyze_sedoric_vtoc`) ; suppression/renommage de fichiers.
+
+---
+
 ### Sprint 103: Injection stuck-bits RAM (Epic 6 / US 6a) (v1.62.0-alpha) - DONE
 Volet testable de l'US 6 (parité « RAM errors » de b2). Le volet 6b (overlays
 visuels timing) reste en backlog car GUI/SDL, invérifiable en headless.

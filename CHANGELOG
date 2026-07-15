@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.0-alpha] - 2026-07-15
+
+### Fixed — `tap2sedoric` : secteur descripteur conforme au manuel SEDORIC 3.0
+
+Le secteur descripteur écrit par `tap2sedoric` était **non conforme** : il ne
+posait jamais l'octet de **type** (`+3`, laissé à `0`), n'écrivait aucune
+**adresse d'exécution**, et plaçait le **nombre de secteurs data** en `+9,+10`
+en **big-endian** — alors que le manuel « SEDORIC 3.0 » (`sedna3_0.pdf`) et son
+dump d'exemple (descripteur de la BANQUE n°7) donnent, byte-exact :
+`+3` type (`$40` bloc data, `$41` AUTO), `+8,+9` exec (LE), `+0xA,+0xB` nb
+secteurs (LE). Le champ mal placé chevauchait l'adresse d'exécution → fichiers
+injectés non auto-exécutables. Corrigé et vérifié contre le manuel primaire
+(cf `docs/SEDORIC.md`).
+
+### Fixed — Injection multi-fichiers : plus de collision de descripteurs
+
+`tap2sedoric` **et** `tools/sedoric_inject.py` allouaient toujours depuis la
+piste 21 secteur 1 sans consulter les secteurs déjà occupés : une **2ᵉ injection
+sur le même disque écrasait le descripteur du 1ᵉʳ fichier** (constaté sur
+scoop-oric : `PROBE` effaçait `SCDATA`). Les deux outils parcourent désormais le
+catalogue et les cartes de secteurs des descripteurs existants pour exclure les
+secteurs occupés avant d'allouer.
+
+### Added — Autoexec/AUTO dans `tap2sedoric`
+
+Options `-a` (marquer AUTO, sinon déduit de l'octet autorun du `.tap`),
+`-e EXEC_HEX` (adresse d'exécution) et `-i "INIST"` (écrit l'autoexec de boot en
+piste 20 secteur 1, offset `0x1E`) → disque qui lance le fichier au boot.
+
+### Added — Outil `sedoric-info` (port de analyze_sedoric_vtoc)
+
+Inspecteur de disque Sedoric (MFM_DISK ou RAW side-major) : dump VTOC
+(free/files), nom disque, INIST, catalogue et **descripteurs décodés**
+(type/load/end/exec/nsec). `--check FREE:FILES` = garde de régression sur les
+compteurs VTOC. Câblé dans `make tools`.
+
+### Added — Chaînage de secteurs directory (catalogue > 15 fichiers)
+
+`tap2sedoric` et `sedoric_inject.py` étendent le catalogue quand le secteur
+directory est plein : parcours de la chaîne (`+0,+1`), et si tout est plein,
+allocation d'un secteur libre initialisé en catalogue vierge et chaîné. Les
+secteurs catalogue sont localisés par lien piste/secteur (manuel ANNEXE 7).
+Correctif lié : `scan_used` marque aussi les **secteurs catalogue chaînés**
+comme occupés (sinon une injection ultérieure les réallouait et les écrasait).
+**Validé in-situ** : fichier du 2ᵉ secteur catalogue listé par `DIR` et
+chargé+exécuté par `LOAD"NAME"`.
+
+### Added — Chaîne RAW portée depuis SCUMM-Oric
+
+`tools/sedoric_inject.py` (injection RAW multi-fichiers sûre) et
+`tools/dsk_raw2mfm.py` (RAW → MFM_DISK). Ordre des blocs MFM **corrigé en
+side-major** pour être lu par l'émulateur Phosphoric (`sedoric.c`,
+`track_idx = side*tracks+track`).
+
+### Added — Outil master Sedoric « nu » `sedoric_mkbare.py`
+
+Neutralise (ou remplace) l'INIST (piste 20 sec 1, `+0x1E`, CRC MFM refait ; RAW
+géré) → disque bootant directement au `Ready`, sans application concurrente,
+pour tester un `.COM` maison. Déterministe (contrairement à
+`make_bootable_sedoric.sh`, piloté par `--type-keys` et fragile). Vérifié :
+`SEDO40u` (INIST `CLS:MENU.LNG:MENU`) → boot `SEDORIC V4.0 / Ready`.
+
+### Added — Documentation & tests
+
+- `docs/SEDORIC.md` : format disque byte-exact, chaînage, recette d'exécution
+  (`LOAD"NAME"`, pas `LOADM`/`CLOAD` ; `.COM` AUTO), master « nu ».
+- `tests/integration/test_sedoric_inject.sh` (`make test-sedoric-tools`, dans
+  `make tests`) : 12 checks — chaîne RAW→MFM, format descripteur, non-collision
+  multi-fichiers (tap2sedoric ET sedoric_inject.py), INIST, compteurs VTOC,
+  chaînage directory (débordement, non-écrasement, lien écrit).
+
+972 → 984 tests. EMU_VERSION 1.63.0 → 1.64.0-alpha ; builds natif + SDL2 +
+HTTPAPI OK.
+
 ## [1.63.0-alpha] - 2026-07-15
 
 ### Added — Profiler : agrégat d'exécution par région mémoire
