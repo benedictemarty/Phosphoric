@@ -63,6 +63,19 @@ Ce dump **corrige** l'ancienne implémentation de `tap2sedoric` qui laissait `+3
 (type absent) et écrivait le nombre de secteurs en `+9,+10` **big-endian**
 (chevauchant l'adresse d'exécution). Corrigé depuis v1.64.0.
 
+### Descripteurs chaînés (fichiers > 122 secteurs) — validé
+
+Un secteur descripteur ne contient qu'une partie de la carte : le **1ᵉʳ
+descripteur** porte l'en-tête (12 o) puis la carte dès `+0x0C` (**122 paires**
+max, `0x0C..0xFE`) ; chaque **descripteur suivant** ne porte que le lien `+0,+1`
+puis la carte dès `+0x02` (**127 paires** max). Le lien `+0,+1` pointe le
+descripteur suivant (`00 00` = dernier). `+0xA,+0xB` (1ᵉʳ descripteur) = nombre
+**total** de secteurs data ; le lecteur enchaîne les descripteurs et s'arrête sur
+ce compteur. **Validé in-situ** : fichier de 150 secteurs (2 descripteurs) chargé
+intégralement par `LOAD` (secteurs du 2ᵉ descripteur inclus). `tap2sedoric` et
+`sedoric_inject.py` chaînent depuis v1.65.0 (avant : mono-descripteur, plantage
+au-delà de ~121 secteurs).
+
 ## 4. Outils
 
 | Outil | Rôle |
@@ -161,11 +174,66 @@ CMD:    .byte "LOAD\"SCDATA\"", 0  ; ligne SEDORIC terminee par $00
 
 C'est l'équivalent ML de taper `!LOAD"SCDATA"`. **Validé** : `LOAD"SCDATA"`
 appelé ainsi charge le fichier (`$6000..` = données exactes), le programme
-appelant reprend normalement. La séquence bas-niveau `$DB2D` (recherche →
+appelant reprend normalement.
+
+> **Piège (isolé par matrice de tests)** : la ligne doit être terminée par
+> **`$00`**, **jamais par CR (`$0D`)**. Avec CR l'interpréteur `$D3AE` n'aboutit
+> pas et **ne fait pas `RTS`** (fichier non chargé, TXTPTR n'avance pas, le
+> programme appelant ne reprend pas la main). L'emplacement du buffer (TIB
+> `$0035` ou RAM privée) est indifférent ; TXTPTR pointe sur le **premier
+> caractère** (le `L`), pas `cmd-1`. La séquence bas-niveau `$DB2D` (recherche →
 POSNMP `$C025`/POSNMS `$C026`/POSNMX `$C027`) puis `$E0EA` (lecture selon
 POSNMX/VSALO1 `$C04E`/DESALO `$C052`) est réelle mais exige de gérer soi-même la
-bascule overlay via `$0477` — préférer `$0467`.
+bascule overlay — préférer `$0467` sauf besoin de contrôle fin.
+
+#### Bascule overlay RAM Sedoric ↔ ROM BASIC (validé)
+
+Depuis un programme ML lancé par `LOAD`, la **ROM BASIC** est mappée en
+`$C000-$FFFF` : même les variables système (`BUFNOM $C029`, `DESALO $C052`,
+`POSNMX $C027`…) et les routines (`$DB2D`, `$E0EA`) sont **dans l'overlay** → il
+faut basculer l'overlay **avant** tout accès `$C000+`.
+
+Le plus simple : **`JSR $0477`** (stub Sedoric en RAM basse, toujours mappé) —
+un *toggle* ROM↔overlay qui **préserve** lecteur/face/IRQ via le shadow `$04FB` :
+`PHP:PHA:SEI : LDA $04FB : EOR #$02 : STA $04FB : STA $0314 : PLA:PLP:RTS`.
+Appeler une fois pour entrer dans l'overlay, une fois pour revenir.
+
+Valeurs `$0314` (décodage `src/io/microdisc.c`) : **bit 1 (ROMDIS, `$02`)** = 0 →
+overlay RAM `$C000-$DFFF`, = 1 → ROM BASIC ; **bit 7 (EPROM, `$80`)** = 1 →
+overlay RAM `$E000-$FFFF`. `$0314` étant en écriture seule, ne pas écrire de
+constante brute (bits lecteur/face à préserver) : passer par le shadow `$04FB`
+ou `$0477`. **Validé in-situ** : `$0477` + `$DB2D` + `$E0EA` charge le fichier
+(`$6000..` exact).
 
 Rappel adresses (manuel) : BUFNOM `$C028` drive + `$C029` nom(9) + `$C032`
 ext(3) ; XDEFLO `$DFE6` ; recherche `$DB2D` ; lecture `$E0EA` ; TXTPTR
 `$00E9/$00EA` ; TIB (tampon clavier) `$0035`-`$0084`.
+
+### Lire un fichier par secteur à un offset (OSGBPB / accès aléatoire) — validé
+
+Pour lire `N` octets à un offset **sans charger tout le fichier** (équivalent
+OSGBPB). Overlay ON (`$0477`) obligatoire — descripteur, routines et variables
+sont dans l'overlay.
+
+1. `BUFNOM` rempli + `JSR $DB2D` (SEARCH) → `X = POSNMX`, secteur catalogue en BUF3.
+2. `LDA $C30C,X : LDY $C30D,X : JSR $DA5D` → **descripteur chargé dans BUF1 (`$C100`)**.
+3. Format BUF1 : `$C100/01` lien descr. suivant (`00 00`=fin) · `$C102`=`FF` ·
+   `$C103` type · `$C104-05` load · `$C106-07` end · `$C108-09` exec · `$C10A-0B`
+   nb secteurs · **carte (piste,secteur) dès `$C10C`** : data sector *k* =
+   `[$C10C+2k]` (piste, b7=face B) / `[$C10C+2k+1]` (secteur). Au-delà de 122
+   secteurs, suivre le lien `$C100/01` vers le descripteur suivant.
+4. `sect_index = off/256`, `byte_in_sect = off & 255`. Poser **DRIVE `$C000`**,
+   **PISTE `$C001`** = `[$C10C+2*sect_index]`, **SECTEUR `$C002`** = `[+1]`,
+   **RWBUF `$C003/$C004`** = tampon destination.
+5. **`JSR $DA73`** (XPRSEC : lit un secteur selon DRIVE/PISTE/SECTEUR/RWBUF).
+   Copier `N` octets depuis `tampon + byte_in_sect` ; franchissement de 256 →
+   secteur suivant. (Alternative bas niveau : `XRWTS $CFCD` avec le code commande
+   FDC en X, p.ex. `#$88` lecture — mais XPRSEC est plus simple.)
+
+**Validé in-situ** : lecture du secteur data #1 (offset 256) d'un fichier de
+512 o → octets exacts du 2ᵉ secteur, sans chargement du fichier.
+
+> Interface XRWTS/XPRSEC (manuel, byte-exact) : DRIVE `$C000`, PISTE `$C001`
+> (b7=face B), SECTEUR `$C002`, RWBUF `$C003/$C004`. `$C009` = DRVDEF (lecteur
+> par défaut), `$C00A` = DRVSYS. (⚠ ne pas confondre avec `$C006-$C00A` = compteurs
+> de tentatives XRWTS.)

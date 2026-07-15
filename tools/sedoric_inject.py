@@ -84,12 +84,12 @@ def main():
                 continue
             if dirs[e + 15] & 0x80:          # supprimé
                 continue
-            cdt, cds, dg = dirs[e + 12], dirs[e + 13], 0
+            cdt, cds, dg, first = dirs[e + 12], dirs[e + 13], 0, True
             while dg < 64:
                 dg += 1
                 desc = rd(cdt, cds)
                 used.add((cdt, cds))         # le secteur descripteur lui-même
-                p = 12
+                p = 12 if first else 2       # carte dès +0x0C (1er) ou +0x02 (continuation)
                 while p + 1 < SECSZ:
                     if desc[p] == 0 and desc[p + 1] == 0:
                         break
@@ -98,13 +98,24 @@ def main():
                 if desc[0] == 0 and desc[1] == 0:
                     break
                 cdt, cds = desc[0], desc[1]
+                first = False
         if dirs[0] == 0 and dirs[1] == 0:
             break
         dt, ds = dirs[0], dirs[1]
 
     end = load + len(data) - 1
     ndata = (len(data) + SECSZ - 1) // SECSZ
-    total = ndata + 1                       # descripteur + secteurs data
+
+    # Descripteurs chaînés (validé in-situ, cf docs/SEDORIC.md) : le 1er
+    # descripteur porte l'en-tête (12 o) puis la carte (piste,secteur) dès +0x0C
+    # (122 paires max) ; chaque descripteur suivant = lien +0,+1 puis carte dès
+    # +0x02 (127 paires max). Le lien +0,+1 pointe le descripteur suivant.
+    FIRST_CAP = (SECSZ - 12) // 2          # 122 paires dans le 1er descripteur
+    CONT_CAP = (SECSZ - 2) // 2            # 127 paires par descripteur suivant
+    ndesc = 1 if ndata <= FIRST_CAP else 1 + -(-(ndata - FIRST_CAP) // CONT_CAP)
+    total = ndesc + ndata                  # descripteurs + secteurs data
+    if total > 255:
+        sys.exit("fichier trop gros : %d secteurs > 255 (nsec directory sur 1 octet)" % total)
 
     # --- allouer total secteurs depuis piste 21, face 0, hors secteurs occupés ---
     alloc = []
@@ -118,29 +129,41 @@ def main():
             t += 1
     if len(alloc) < total:
         sys.exit("pas assez de secteurs libres")
-    desc_t, desc_s = alloc[0]
+    desc_secs = alloc[:ndesc]
+    data_secs = alloc[ndesc:]
+    desc_t, desc_s = desc_secs[0]
 
-    # --- secteur descripteur ---
     # AUTO ($41) dès qu'une adresse d'exécution est fournie (ou un INIST) :
     # requis pour que `LOAD"NOM"` charge ET exécute le fichier (cf docs §6).
     is_auto = bool(init_cmd) or exec_given
-    d = bytearray(SECSZ)
-    d[0] = 0; d[1] = 0                     # lien : pas de descripteur suivant
-    d[2] = 0xFF                            # premier descripteur
-    d[3] = 0x41 if is_auto else 0x40       # b6=bloc data, b0=AUTO
-    d[4] = load & 0xFF; d[5] = (load >> 8) & 0xFF
-    d[6] = end & 0xFF;  d[7] = (end >> 8) & 0xFF
-    if is_auto:
-        d[8] = execaddr & 0xFF; d[9] = (execaddr >> 8) & 0xFF
-    d[10] = ndata & 0xFF; d[11] = (ndata >> 8) & 0xFF
-    p = 12
-    for (dt2, ds2) in alloc[1:]:
-        d[p] = dt2; d[p + 1] = ds2; p += 2
-    d[p] = 0; d[p + 1] = 0
-    wr(desc_t, desc_s, d)
+
+    # --- secteurs descripteur (chaînés) ---
+    idx = 0
+    for di in range(ndesc):
+        d = bytearray(SECSZ)
+        if di == 0:
+            d[2] = 0xFF                    # premier descripteur
+            d[3] = 0x41 if is_auto else 0x40   # b6=bloc data, b0=AUTO
+            d[4] = load & 0xFF; d[5] = (load >> 8) & 0xFF
+            d[6] = end & 0xFF;  d[7] = (end >> 8) & 0xFF
+            if is_auto:
+                d[8] = execaddr & 0xFF; d[9] = (execaddr >> 8) & 0xFF
+            d[10] = ndata & 0xFF; d[11] = (ndata >> 8) & 0xFF
+            p, cap = 12, FIRST_CAP
+        else:
+            p, cap = 2, CONT_CAP           # descripteur suivant : lien puis carte dès +0x02
+        n = min(cap, len(data_secs) - idx)
+        for (dt2, ds2) in data_secs[idx:idx + n]:
+            d[p] = dt2; d[p + 1] = ds2; p += 2
+        idx += n
+        if di < ndesc - 1:
+            d[0], d[1] = desc_secs[di + 1]    # lien -> descripteur suivant
+        elif p + 1 < SECSZ:
+            d[p] = 0; d[p + 1] = 0            # terminateur sur le dernier descripteur
+        wr(desc_secs[di][0], desc_secs[di][1], d)
 
     # --- secteurs data ---
-    for i, (dt2, ds2) in enumerate(alloc[1:]):
+    for i, (dt2, ds2) in enumerate(data_secs):
         wr(dt2, ds2, data[i * SECSZ:(i + 1) * SECSZ])
 
     # --- entrée directory (piste 20 sec 4) ---

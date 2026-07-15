@@ -175,5 +175,69 @@ PY
     && ok "directory chaining: first sector links to a second ($link)" \
     || ko "directory chaining: no link written ($link)"
 
+# --- descriptor chaining: a file > 122 data sectors needs a 2nd descriptor ---
+python3 -c "open('$TMP/big.bin','wb').write(b''.join(bytes([k&0xFF])*256 for k in range(130)))"
+python3 tools/sedoric_inject.py "$TMP/base.raw" "$TMP/big.bin" 0x0500 BIG.COM "$TMP/big.raw" 42 17 >/dev/null 2>&1
+python3 tools/dsk_raw2mfm.py "$TMP/big.raw" "$TMP/big.dsk" sidemajor 2 42 17 >/dev/null 2>&1
+BINFO="$(./sedoric-info "$TMP/big.dsk" 2>/dev/null)"
+echo "$BINFO" | grep -qE "^  BIG " && ok "descriptor chaining: 130-sector file listed" \
+    || ko "descriptor chaining: 130-sector file missing"
+# the first descriptor sector must link to a continuation (+0,+1 != 0,0)
+dlink="$(python3 - "$TMP/big.dsk" <<'PY'
+import sys
+d = open(sys.argv[1], "rb").read(); TRK_RAW=6400; HDR=256; SEC=256
+tracks = d[12] | d[13] << 8
+# descriptor of BIG is at t21 s1 (first free after 60 system sectors on this base)
+base = HDR + 21*TRK_RAW; td = d[base:base+TRK_RAW]
+for i in range(TRK_RAW-4):
+    if td[i]==0xA1 and td[i+3]==0xFE and td[i+6]==1:
+        for j in range(i+10, i+60):
+            if td[j]==0xA1 and td[j+3]==0xFB:
+                o=base+j+4
+                # verify it's the descriptor (+2==0xFF) then print its link
+                if d[o+2]==0xFF: print("%d,%d" % (d[o], d[o+1]))
+                break
+        break
+PY
+)"
+[ -n "$dlink" ] && [ "$dlink" != "0,0" ] \
+    && ok "descriptor chaining: first descriptor links to a continuation ($dlink)" \
+    || ko "descriptor chaining: no continuation descriptor ($dlink)"
+
+# --- allocation after a chained file: no collision with continuation sectors ---
+# (scan_used must read continuation descriptor maps from +0x02, not +0x0C)
+python3 tools/sedoric_inject.py "$TMP/big.raw" "$TMP/s.bin" 0x9000 AFTER.COM "$TMP/after.raw" 42 17 >/dev/null 2>&1
+overlap="$(python3 - "$TMP/after.raw" <<'PY'
+import sys
+SECSZ, TRACKS, SECTORS = 256, 42, 17
+raw = open(sys.argv[1], "rb").read()
+def off(t, s): return (t*SECTORS + (s-1)) * SECSZ          # side 0
+def rd(t, s): return raw[off(t,s):off(t,s)+SECSZ]
+def file_sectors(fdt, fds):                                # all sectors of a file
+    secs, cdt, cds, first, g = set(), fdt, fds, True, 0
+    while g < 64:
+        g += 1; d = rd(cdt, cds); secs.add((cdt, cds)); p = 12 if first else 2
+        while p+1 < SECSZ:
+            if d[p]==0 and d[p+1]==0: break
+            secs.add((d[p], d[p+1])); p += 2
+        if d[0]==0 and d[1]==0: break
+        cdt, cds, first = d[0], d[1], False
+    return secs
+# find BIG and AFTER descriptor coords from the directory (t20 s4)
+dr = rd(20, 4); big=aft=None
+for e in range(16, SECSZ, 16):
+    nm = bytes(dr[e:e+9]).rstrip()
+    if nm == b"BIG": big = (dr[e+12], dr[e+13])
+    if nm == b"AFTER": aft = (dr[e+12], dr[e+13])
+if not big or not aft:
+    print("MISSING"); sys.exit()
+inter = file_sectors(*big) & file_sectors(*aft)
+print("OVERLAP:%d" % len(inter) if inter else "OK")
+PY
+)"
+[ "$overlap" = "OK" ] \
+    && ok "allocation after chained file: no sector overlap" \
+    || ko "allocation after chained file: $overlap (continuation sectors not marked used)"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

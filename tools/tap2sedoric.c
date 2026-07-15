@@ -166,17 +166,19 @@ static void scan_used(void) {
             if (dir[e] == 0 && dir[e + 15] == 0) continue;   /* empty slot */
             if (dir[e + 15] & 0x80) continue;                /* deleted (bit7) */
             int fdt = dir[e + 12], fds = dir[e + 13];        /* descriptor loc */
-            int cdt = fdt, cds = fds, dg = 0;
+            int cdt = fdt, cds = fds, dg = 0, first = 1;
             while (dg++ < 64) {                  /* follow the descriptor chain */
                 uint8_t desc[SECSZ];
                 if (!read_sec(cdt, cds, desc)) break;
                 mark_used(cdt, cds);             /* the descriptor sector itself */
-                for (int p = 12; p + 1 < SECSZ; p += 2) {
+                /* map starts at +0x0C in the first descriptor, +0x02 in a
+                 * continuation (which only has the 2-byte link header) */
+                for (int p = first ? 12 : 2; p + 1 < SECSZ; p += 2) {
                     if (desc[p] == 0 && desc[p + 1] == 0) break;
                     mark_used(desc[p], desc[p + 1]);
                 }
                 if (desc[0] == 0 && desc[1] == 0) break;      /* no next descr. */
-                cdt = desc[0]; cds = desc[1];
+                cdt = desc[0]; cds = desc[1]; first = 0;
             }
         }
         if (dir[0] == 0 && dir[1] == 0) break;               /* no next dir sec. */
@@ -278,7 +280,17 @@ int main(int argc, char **argv) {
 
     int ndata = (int)((tap.datalen + SECSZ - 1) / SECSZ);
     if (ndata < 1) ndata = 1;
-    int total = ndata + 1;                          /* descriptor + data sectors */
+
+    /* Chained descriptors (validated in-situ, see docs/SEDORIC.md): the first
+     * descriptor carries the 12-byte header then the (track,sector) map from
+     * +0x0C (122 pairs max); each further descriptor is a 2-byte link (+0,+1)
+     * then its map from +0x02 (127 pairs max). +0,+1 links to the next. */
+    const int FIRST_CAP = (SECSZ - 12) / 2;         /* 122 pairs */
+    const int CONT_CAP  = (SECSZ - 2) / 2;          /* 127 pairs */
+    int ndesc = (ndata <= FIRST_CAP)
+              ? 1 : 1 + (ndata - FIRST_CAP + CONT_CAP - 1) / CONT_CAP;
+    int total = ndesc + ndata;                      /* descriptors + data sectors */
+    if (total > 255) { fprintf(stderr, "file too large: %d sectors > 255\n", total); return 1; }
 
     /* allocate free sectors from a safe region (track 21..) present in the image,
      * skipping sectors already consumed by existing files (multi-file safe) */
@@ -292,33 +304,51 @@ int main(int argc, char **argv) {
         if (++s > 17) { s = 1; t++; }
     }
     if (na < total) { fprintf(stderr, "not enough free sectors\n"); return 1; }
-    int desc_t = alloc_t[0], desc_s = alloc_s[0];
+    int desc_t = alloc_t[0], desc_s = alloc_s[0];    /* first descriptor sector */
+    int ddata = ndesc;                               /* first data sector index in alloc[] */
 
     /* AUTO flag: -a forces it, else honour the .tap autorun byte */
     int is_auto = (autorun == 1) || (autorun == 0 && tap.autorun != 0);
     uint16_t execaddr = (exec_arg >= 0) ? (uint16_t)exec_arg : tap.start;
 
-    /* descriptor sector (verified byte-exact vs SEDORIC 3.0 manual, see file header):
+    /* descriptor sectors (verified byte-exact vs SEDORIC 3.0 manual, see file header):
      * +2 FF | +3 type | +4,5 load LE | +6,7 end LE | +8,9 exec LE | +A,B nsec LE */
-    uint8_t d[SECSZ]; memset(d, 0, SECSZ);
-    d[2] = 0xFF;
-    d[3] = is_auto ? 0x41 : 0x40;                   /* b6=data block, b0=AUTO */
-    d[4] = tap.start & 0xFF; d[5] = tap.start >> 8;
-    d[6] = tap.end   & 0xFF; d[7] = tap.end   >> 8;
-    if (is_auto) { d[8] = execaddr & 0xFF; d[9] = execaddr >> 8; }
-    d[10] = (uint8_t)(ndata & 0xFF); d[11] = (uint8_t)(ndata >> 8);
-    int p = 12;
-    for (int i = 1; i < total; i++) { d[p++] = (uint8_t)alloc_t[i]; d[p++] = (uint8_t)alloc_s[i]; }
-    d[p] = 0; d[p+1] = 0;
-    write_sec(desc_t, desc_s, d);
+    int idx = 0;                                     /* index into data sectors */
+    for (int di = 0; di < ndesc; di++) {
+        uint8_t d[SECSZ]; memset(d, 0, SECSZ);
+        int p, cap;
+        if (di == 0) {
+            d[2] = 0xFF;
+            d[3] = is_auto ? 0x41 : 0x40;            /* b6=data block, b0=AUTO */
+            d[4] = tap.start & 0xFF; d[5] = tap.start >> 8;
+            d[6] = tap.end   & 0xFF; d[7] = tap.end   >> 8;
+            if (is_auto) { d[8] = execaddr & 0xFF; d[9] = execaddr >> 8; }
+            d[10] = (uint8_t)(ndata & 0xFF); d[11] = (uint8_t)(ndata >> 8);
+            p = 12; cap = FIRST_CAP;
+        } else {
+            p = 2; cap = CONT_CAP;                   /* continuation: link then map from +0x02 */
+        }
+        int n = ndata - idx; if (n > cap) n = cap;
+        for (int i = 0; i < n; i++) {
+            d[p++] = (uint8_t)alloc_t[ddata + idx + i];
+            d[p++] = (uint8_t)alloc_s[ddata + idx + i];
+        }
+        idx += n;
+        if (di < ndesc - 1) {                        /* link -> next descriptor */
+            d[0] = (uint8_t)alloc_t[di + 1]; d[1] = (uint8_t)alloc_s[di + 1];
+        } else if (p + 1 < SECSZ) {                  /* terminator on the last */
+            d[p] = 0; d[p + 1] = 0;
+        }
+        write_sec(alloc_t[di], alloc_s[di], d);
+    }
 
     /* data sectors */
-    for (int i = 1; i < total; i++) {
+    for (int i = 0; i < ndata; i++) {
         uint8_t b[SECSZ]; memset(b, 0, SECSZ);
-        long off = (long)(i - 1) * SECSZ;
+        long off = (long)i * SECSZ;
         long n = tap.datalen - off; if (n > SECSZ) n = SECSZ; if (n < 0) n = 0;
         memcpy(b, tap.data + off, (size_t)n);
-        write_sec(alloc_t[i], alloc_s[i], b);
+        write_sec(alloc_t[ddata + i], alloc_s[ddata + i], b);
     }
 
     /* directory entry: walk the catalogue chain (t20 s4 -> +0,+1 link -> ...)

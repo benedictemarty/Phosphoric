@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.65.0-alpha] - 2026-07-15
+
+### Added — Descripteurs chaînés Sedoric (fichiers > 122 secteurs)
+
+`tap2sedoric` et `tools/sedoric_inject.py` étaient **mono-descripteur** (plantage
+au-delà de ~121 secteurs data). Ils chaînent désormais les secteurs descripteur :
+1ᵉʳ descripteur = en-tête (12 o) + carte `(piste,secteur)` dès `+0x0C` (122 paires
+max) ; descripteurs suivants = lien `+0,+1` + carte dès `+0x02` (127 paires max).
+`+0xA,+0xB` (1ᵉʳ descripteur) = nombre total de secteurs data ; le lien `+0,+1`
+enchaîne. **Validé in-situ** : fichier de 150 secteurs (2 descripteurs) chargé
+intégralement par `LOAD` sous l'émulateur (secteurs du 2ᵉ descripteur inclus).
+Garde `total > 255` (nsec directory sur 1 octet). Format documenté `docs/SEDORIC.md`
+§3, validé (offset `+0x02` du descripteur suivant confirmé par test émulateur).
+
+### Added — Documentation appel ML de Sedoric (chargement depuis code machine)
+
+`docs/SEDORIC.md` §6 : recettes **validées in-situ** pour piloter Sedoric depuis
+un programme ML — exécuter une commande via le vecteur « ! » `$0467` (interpréteur
+`$D3AE`, ligne terminée par `$00` **jamais** CR) ; bascule overlay RAM ↔ ROM BASIC
+(`$0314` bit 1 ROMDIS / bit 7 EPROM, stub `$0477`, shadow `$04FB`) ; lecture d'un
+secteur à un offset (OSGBPB : descripteur en BUF1 `$C100`, carte dès `$C10C`,
+`XPRSEC $DA73` avec DRIVE `$C000`/PISTE `$C001`/SECTEUR `$C002`/RWBUF `$C003-04`).
+
+### Fixed — Allocation après un fichier chaîné (collision de secteurs)
+
+Le scan des secteurs occupés (`scan_used`) suit la chaîne de descripteurs mais
+lisait la carte à l'offset fixe `+0x0C` pour **tous** les descripteurs — or un
+descripteur de **continuation** a sa carte dès `+0x02`. Les 5 premières paires de
+chaque continuation n'étaient donc pas marquées occupées → une injection
+ultérieure pouvait **écraser des secteurs data** d'un fichier chaîné (signalé par
+scoop-oric : le descripteur d'un fichier tombait sur un secteur data d'un fichier
+chaîné). Corrigé dans `tap2sedoric` ET `sedoric_inject.py` (carte lue dès `+0x02`
+pour les continuations). Validé : injection d'un fichier après un fichier de 130
+secteurs → `LOAD` du fichier chaîné reste intact (aucun chevauchement).
+
+### Changed — tests
+
+`tests/integration/test_sedoric_inject.sh` : +3 checks (chaînage descripteur,
+non-collision post-chaîné) → 15 checks. 984 → 987 tests. EMU_VERSION 1.64.0 →
+1.65.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.64.0-alpha] - 2026-07-15
 
 ### Fixed — `tap2sedoric` : secteur descripteur conforme au manuel SEDORIC 3.0

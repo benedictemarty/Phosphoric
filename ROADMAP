@@ -6,6 +6,31 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 105: Descripteurs Sedoric chaînés + doc appel ML (v1.65.0-alpha) - DONE
+Extension de l'outillage Sedoric (partagé, sert les projets SCUMM-Oric/scoop-oric)
+et documentation du pilotage de Sedoric depuis du code machine. Format chaîné
+**confirmé par test émulateur**, pas par déduction.
+- [x] FIX `tap2sedoric` + `sedoric_inject.py` mono-descripteur (plantaient
+      > ~121 secteurs data) → **chaînage des secteurs descripteur** : 1ᵉʳ = en-tête
+      12 o + carte dès `+0x0C` (122 paires) ; suivants = lien `+0,+1` + carte dès
+      `+0x02` (127 paires) ; `+0xA,+0xB` (1ᵉʳ) = total data. Garde `total > 255`.
+      Validé in-situ : fichier 150 secteurs (2 descripteurs) chargé intégralement
+      par `LOAD` (secteurs du 2ᵉ descripteur inclus).
+- [x] DOC `docs/SEDORIC.md` §6 (recettes ML validées in-situ) : exécuter une
+      commande via le vecteur « ! » `$0467` (interpréteur `$D3AE`, ligne terminée
+      `$00` **jamais** CR) ; bascule overlay RAM↔ROM (`$0314` bit1 ROMDIS/bit7
+      EPROM, stub `$0477`, shadow `$04FB`) ; lecture d'un secteur à un offset
+      (OSGBPB : descripteur BUF1 `$C100`, carte `$C10C`, `XPRSEC $DA73`, interface
+      `$C000-$C004`).
+- [x] FIX collision post-fichier-chaîné : `scan_used` lisait la carte des
+      descripteurs de continuation à `+0x0C` au lieu de `+0x02` → injection après
+      un fichier chaîné pouvait écraser ses secteurs data (signalé scoop-oric).
+      Corrigé dans les 2 outils, validé (LOAD d'un fichier de 130 secteurs reste
+      intact après une injection ultérieure).
+- [x] test-sedoric-tools 12 → 15 checks. 984 → 987 tests.
+
+---
+
 ### Sprint 104: Outillage Sedoric amendé depuis SCUMM-Oric / scoop-oric (v1.64.0-alpha) - DONE
 Reprise des acquis Sedoric des projets SCUMM-Oric et scoop-oric pour corriger et
 étendre les outils disque de Phosphoric. Format vérifié **byte-exact** contre le
