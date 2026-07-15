@@ -192,6 +192,21 @@ uint32_t debugger_hunt_list(emulator_t* emu, uint16_t* out, uint32_t max, uint8_
 bool debugger_save_region(emulator_t* emu, const char* path, uint16_t addr, uint32_t len);
 long debugger_load_region(emulator_t* emu, const char* path, uint16_t addr);
 
+/* ── Bank-aware inspection (Epic 6 / US 2) ──
+ * Read a byte from a specific memory layer regardless of the current paging,
+ * so the RAM/ROM/overlay hidden behind the ORIC $C000-$FFFF overlay can be
+ * examined without touching the live banking state. Side-effect-free. */
+typedef enum {
+    PEEK_CPU = 0,   /* current CPU view (whatever is paged in) */
+    PEEK_RAM,       /* underlying RAM (ram[] < $C000 ; upper_ram[] ≥ $C000) */
+    PEEK_ROM,       /* BASIC/monitor ROM ($C000-$FFFF) */
+    PEEK_OVERLAY    /* Microdisc overlay ROM ($E000-$FFFF) */
+} peek_bank_t;
+
+uint8_t     debugger_peek_bank(emulator_t* emu, uint16_t addr, peek_bank_t bank);
+bool        debugger_parse_bank(const char* s, peek_bank_t* out);  /* cpu|ram|rom|overlay */
+const char* debugger_bank_name(peek_bank_t bank);
+
 /**
  * @brief Add a memory write watchpoint (WATCH_WRITE mode)
  * @return Index of added watchpoint, or -1 if full

@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.57.0-alpha] - 2026-07-15
+
+### Added — Inspection mémoire banque-aware (Epic 6 / US 2, rattrapage b2) (Sprint 98)
+
+Issu du comparatif debugger vs b2 : b2 vise n'importe quelle banque via ses
+paging overrides, alors que Phosphoric ne lisait que la **vue CPU** courante.
+Nouveau paramètre de **banque** pour inspecter les couches cachées derrière
+l'overlay ORIC $C000-$FFFF **sans dépendre du paging courant**, sans effet de
+bord.
+
+- **`debugger_peek_bank(emu, addr, bank)`** (`debugger.c`, exposé dans
+  `debugger.h`) : lit une couche mémoire précise —
+  - `cpu` : vue CPU courante (défaut, inchangé) ;
+  - `ram` : RAM sous-jacente (`ram[]` < $C000 ; `upper_ram[]` ≥ $C000, la RAM
+    cachée derrière la ROM) ;
+  - `rom` : ROM BASIC/moniteur ($C000-$FFFF) ;
+  - `overlay` : ROM overlay Microdisc ($E000-$FFFF).
+  Helpers `debugger_parse_bank`/`debugger_bank_name`.
+- **REPL** : `m addr [len] [bank]` (ex. `m C000 100 rom` vs `m C000 100 ram`).
+- **`--control`** : `read <addr> <len> [cpu|ram|rom|overlay]` ; cap `mem-bank`
+  ajoutée (additive).
+- **REST** : `GET /mem?addr=&len=&bank=cpu|ram|rom|overlay`. Absorbe le backlog
+  REST B2 (sélecteur de banque).
+
+Périmètre US 2 : lecture mémoire (`m`/`read`/`/mem`). Le désassemblage
+banque-aware (`d`) reste différé (nécessite de rediriger `cpu_disassemble`) —
+noté dans la ROADMAP. Le transfert binaire (backlog B1) reste séparé.
+
+### Tests
+- `test-debugger` 19 → 20 (couches rom/ram/overlay + parseur de banque),
+  `test-control-dispatch` 20 → 21 (`read C000 1 rom` vs `ram` + banque
+  invalide), `test-httpapi` e2e 26 → 29 (`bank=rom|ram`, banque invalide
+  rejetée). Valgrind clean. 932 → 937 tests.
+- `EMU_VERSION` 1.56.0 → 1.57.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.56.0-alpha] - 2026-07-15
 
 ### Added — API REST : parité debug (bridge `--control` + 7 gaps) (Sprint 97)

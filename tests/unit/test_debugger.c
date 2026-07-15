@@ -605,6 +605,47 @@ TEST(test_binary_literal) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  EPIC 6 / US 2: BANK-AWARE INSPECTION                              */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_peek_bank_layers) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    debugger_t dbg;
+    debugger_init(&dbg);
+
+    /* Distinct values in the three layers behind $C000. */
+    emu.memory.rom[0x0000] = 0xAA;         /* BASIC ROM at $C000 */
+    emu.memory.upper_ram[0x0000] = 0x55;   /* RAM behind ROM at $C000 */
+
+    /* ROM and RAM layers are read independently of current paging. */
+    ASSERT_EQ(debugger_peek_bank(&emu, 0xC000, PEEK_ROM), 0xAA);
+    ASSERT_EQ(debugger_peek_bank(&emu, 0xC000, PEEK_RAM), 0x55);
+
+    /* RAM bank below $C000 reads the main RAM array. */
+    memory_write(&emu.memory, 0x0200, 0x3C);
+    ASSERT_EQ(debugger_peek_bank(&emu, 0x0200, PEEK_RAM), 0x3C);
+
+    /* ROM bank has no meaning below $C000. */
+    ASSERT_EQ(debugger_peek_bank(&emu, 0x0200, PEEK_ROM), 0x00);
+
+    /* Overlay maps $E000-$FFFF; absent overlay reads back 0xFF there, 0x00 below. */
+    ASSERT_EQ(debugger_peek_bank(&emu, 0xE000, PEEK_OVERLAY), 0xFF);
+    ASSERT_EQ(debugger_peek_bank(&emu, 0xC000, PEEK_OVERLAY), 0x00);
+
+    /* Parser + names round-trip. */
+    peek_bank_t b;
+    ASSERT_TRUE(debugger_parse_bank("rom", &b) && b == PEEK_ROM);
+    ASSERT_TRUE(debugger_parse_bank("RAM", &b) && b == PEEK_RAM);
+    ASSERT_TRUE(debugger_parse_bank("overlay", &b) && b == PEEK_OVERLAY);
+    ASSERT_FALSE(debugger_parse_bank("bogus", &b));
+
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -633,6 +674,7 @@ int main(void) {
     RUN(test_save_load_region);
     RUN(test_set_via_register);
     RUN(test_binary_literal);
+    RUN(test_peek_bank_layers);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

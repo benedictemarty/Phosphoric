@@ -136,7 +136,7 @@ TEST(bad_arg_is_error) {
     control_sink_t s;
     control_result_t r = run_one(emu, &s, "read");
     ASSERT_TRUE(r == CONTROL_CONTINUE);
-    ASSERT_STR_EQ(s.buf, "ERR read: usage `read <addr> <len>`\n");
+    ASSERT_STR_EQ(s.buf, "ERR read: usage `read <addr> <len> [cpu|ram|rom|overlay]`\n");
     control_sink_free(&s);
     free(emu);
     PASS();
@@ -339,6 +339,29 @@ TEST(save_load_mem_roundtrip) {
     PASS();
 }
 
+TEST(read_bank_rom_vs_ram) {
+    emulator_t* emu = fresh_emu();
+    emu->memory.rom[0x0000] = 0xAA;         /* ROM at $C000 */
+    emu->memory.upper_ram[0x0000] = 0x55;   /* RAM behind ROM at $C000 */
+    control_sink_t s;
+
+    control_result_t r = run_one(emu, &s, "read C000 1 rom");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK AA\n");
+    control_sink_free(&s);
+
+    run_one(emu, &s, "read C000 1 ram");
+    ASSERT_STR_EQ(s.buf, "OK 55\n");
+    control_sink_free(&s);
+
+    run_one(emu, &s, "read C000 1 bogus");
+    ASSERT_TRUE(strncmp(s.buf, "ERR read: bad bank", 18) == 0);
+    control_sink_free(&s);
+
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -361,6 +384,7 @@ int main(void) {
     RUN(hunt_seed_then_eq);
     RUN(break_binary_literal);
     RUN(save_load_mem_roundtrip);
+    RUN(read_bank_rom_vs_ram);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;
