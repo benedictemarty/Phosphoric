@@ -118,6 +118,10 @@ typedef struct memory_s {
     /* Memory access tracing (for debugging) */
     bool trace_enabled;
     void (*trace_callback)(uint16_t address, uint8_t value, mem_access_type_t type);
+    /* Secondary independent trace hook (conditional CPU trace, Epic 6/US1).
+     * Fires whenever non-NULL, regardless of trace_enabled, so it can coexist
+     * with the watchpoint callback above. */
+    void (*trace_callback2)(uint16_t address, uint8_t value, mem_access_type_t type);
 
     /* OCULA banking ($A000-$BFFF): bank 0 = ram[], banks 1-7 live in
      * ocula_bank_mem (lazily allocated, 7 x OCULA_BANK_SIZE). The ULA
@@ -249,6 +253,11 @@ void memory_set_io_callbacks(memory_t* mem,
  * @param callback Trace callback function
  */
 void memory_set_trace(memory_t* mem, bool enabled,
+                     void (*callback)(uint16_t, uint8_t, mem_access_type_t));
+
+/** @brief Set the secondary trace hook (NULL to disable). Independent of
+ *  memory_set_trace, so watchpoints and the conditional CPU trace coexist. */
+void memory_set_trace2(memory_t* mem,
                      void (*callback)(uint16_t, uint8_t, mem_access_type_t));
 
 /**

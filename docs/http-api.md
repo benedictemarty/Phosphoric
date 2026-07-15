@@ -176,6 +176,33 @@ curl -s "localhost:8888/mem?addr=C000&len=1&bank=rom"   # 1er octet ROM BASIC
 curl -s "localhost:8888/mem?addr=C000&len=1&bank=ram"   # RAM cachée derrière
 ```
 
+### EPIC 6 / US 1 — Tracing conditionnel *(Sprint 99)* — LIVRÉ
+
+Le tracing CPU (`--trace`) devient **conditionnel** et **borné** (parité avec
+les déclencheurs et le buffer circulaire de b2).
+
+| Méthode  | Route             | Effet |
+|----------|-------------------|-------|
+| `POST`   | `/trace` `{spec}` | arme la trace (`trace start <spec>`) |
+| `GET`    | `/trace`          | statut (`active/armed/count/ring`) |
+| `POST`   | `/trace/stop`     | arrête l'enregistrement (garde le ring) |
+| `POST`   | `/trace/save` `{path}` | écrit le ring dans un fichier (sandbox) |
+| `DELETE` | `/trace`          | désarme + libère le ring |
+
+**Spec** (`spec=`, tokens séparés par espaces) :
+`now` | `pc:HEX` — départ ; `stop:cycle:N` | `stop:brk` | `stop:write:HEX` |
+`stop:read:HEX` — arrêt ; `ring:N` — buffer circulaire ; `sym` — symboles inline.
+
+Même syntaxe côté `--control` (`trace start <spec>`, `trace stop|save|status|
+off`) et REPL. Cap `trace-cond`. Le triggers write/read s'appuient sur un second
+hook mémoire (`trace_callback2`), indépendant des watchpoints.
+
+```bash
+# tracer 500 instr autour d'une routine, avec symboles, puis récupérer le ring
+curl -s -X POST --data-urlencode 'spec=pc:E000 stop:brk ring:500 sym' localhost:8888/trace
+curl -s -X POST --data 'path=run.log'  localhost:8888/trace/save
+```
+
 ## 5. Estimation
 
 ~600-900 LOC au total (sink+dispatch ~200, file ~120, serveur HTTP+routing

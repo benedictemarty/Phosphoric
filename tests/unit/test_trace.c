@@ -309,6 +309,96 @@ TEST(test_trace_cycle_count) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  Conditional tracing (Epic 6 / US 1)                           */
+/* ═══════════════════════════════════════════════════════════════ */
+
+TEST(test_trace_start_pc_trigger) {
+    cpu6502_t cpu; memory_t mem; setup_cpu(&cpu, &mem);
+    cpu_trace_t t; trace_init(&t);
+    trace_arm(&t, TRACE_START_PC, 0x0403, TRACE_STOP_NONE, 0, 0, 16, false);
+    ASSERT_TRUE(!t.active && t.armed);
+
+    cpu.PC = 0x0400; trace_log_instruction(&t, &cpu);  /* before trigger: ignored */
+    ASSERT_EQ(trace_ring_count(&t), 0u);
+    cpu.PC = 0x0403; trace_log_instruction(&t, &cpu);  /* trigger: starts here */
+    cpu.PC = 0x0404; trace_log_instruction(&t, &cpu);
+    ASSERT_TRUE(t.active);
+    ASSERT_EQ(trace_ring_count(&t), 2u);
+    trace_reset(&t); memory_cleanup(&mem);
+}
+
+TEST(test_trace_stop_cycle) {
+    cpu6502_t cpu; memory_t mem; setup_cpu(&cpu, &mem);
+    cpu_trace_t t; trace_init(&t);
+    trace_arm(&t, TRACE_START_NOW, 0, TRACE_STOP_CYCLE, 0, 10, 16, false);
+    cpu.cycles = 0;  trace_log_instruction(&t, &cpu);   /* start_cycle=0 */
+    cpu.cycles = 5;  trace_log_instruction(&t, &cpu);   /* 5<10: keep going */
+    ASSERT_TRUE(t.active);
+    cpu.cycles = 10; trace_log_instruction(&t, &cpu);   /* 10>=10: stop after */
+    ASSERT_TRUE(!t.active && t.stop_hit);
+    ASSERT_EQ(trace_ring_count(&t), 3u);
+    trace_reset(&t); memory_cleanup(&mem);
+}
+
+TEST(test_trace_stop_brk) {
+    cpu6502_t cpu; memory_t mem; setup_cpu(&cpu, &mem);
+    cpu_trace_t t; trace_init(&t);
+    trace_arm(&t, TRACE_START_NOW, 0, TRACE_STOP_BRK, 0, 0, 16, false);
+    cpu.PC = 0x0400; trace_log_instruction(&t, &cpu);   /* LDA: not BRK */
+    ASSERT_TRUE(t.active);
+    cpu.PC = 0x0405; trace_log_instruction(&t, &cpu);   /* BRK $00: stop */
+    ASSERT_TRUE(!t.active && t.stop_hit);
+    trace_reset(&t); memory_cleanup(&mem);
+}
+
+TEST(test_trace_stop_write) {
+    cpu6502_t cpu; memory_t mem; setup_cpu(&cpu, &mem);
+    cpu_trace_t t; trace_init(&t);
+    trace_arm(&t, TRACE_START_NOW, 0, TRACE_STOP_WRITE, 0x1234, 0, 16, false);
+    trace_note_mem_access(&t, 0x1234, 0);   /* a read: no stop */
+    ASSERT_TRUE(t.active);
+    trace_note_mem_access(&t, 0x1235, 1);   /* write to other addr: no stop */
+    ASSERT_TRUE(t.active);
+    trace_note_mem_access(&t, 0x1234, 1);   /* write to target: stop */
+    ASSERT_TRUE(!t.active && t.stop_hit);
+    trace_reset(&t); memory_cleanup(&mem);
+}
+
+TEST(test_trace_ring_wrap_and_save) {
+    cpu6502_t cpu; memory_t mem; setup_cpu(&cpu, &mem);
+    cpu_trace_t t; trace_init(&t);
+    trace_arm(&t, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0, 3, false);
+    for (int i = 0; i < 5; i++) { cpu.PC = 0x0400; cpu.cycles = i;
+                                  trace_log_instruction(&t, &cpu); }
+    ASSERT_EQ(trace_ring_count(&t), 3u);   /* capped at ring size */
+    ASSERT_TRUE(trace_save_ring(&t, tmpfile_path));
+    FILE* fp = fopen(tmpfile_path, "r");
+    ASSERT_TRUE(fp != NULL);
+    int lines = 0; char line[256];
+    while (fgets(line, sizeof(line), fp)) lines++;
+    fclose(fp); unlink(tmpfile_path);
+    ASSERT_EQ(lines, 3);
+    trace_reset(&t); memory_cleanup(&mem);
+}
+
+TEST(test_trace_parse_spec) {
+    trace_start_t sc; uint16_t spc; trace_stop_t st; uint16_t sa;
+    uint64_t scy; uint32_t ring; bool sym;
+    ASSERT_TRUE(trace_parse_spec("pc:E000 stop:write:BB80 ring:100 sym",
+                                 &sc, &spc, &st, &sa, &scy, &ring, &sym));
+    ASSERT_EQ(sc, TRACE_START_PC);
+    ASSERT_EQ(spc, 0xE000);
+    ASSERT_EQ(st, TRACE_STOP_WRITE);
+    ASSERT_EQ(sa, 0xBB80);
+    ASSERT_EQ(ring, 100u);
+    ASSERT_TRUE(sym);
+    ASSERT_TRUE(trace_parse_spec("stop:cycle:5000", &sc, &spc, &st, &sa, &scy, &ring, &sym));
+    ASSERT_EQ(st, TRACE_STOP_CYCLE);
+    ASSERT_EQ((unsigned)scy, 5000u);
+    ASSERT_TRUE(!trace_parse_spec("bogustoken", &sc, &spc, &st, &sa, &scy, &ring, &sym));
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  Main                                                          */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -329,6 +419,12 @@ int main(void) {
     RUN(test_trace_register_state);
     RUN(test_trace_inactive_noop);
     RUN(test_trace_cycle_count);
+    RUN(test_trace_start_pc_trigger);
+    RUN(test_trace_stop_cycle);
+    RUN(test_trace_stop_brk);
+    RUN(test_trace_stop_write);
+    RUN(test_trace_ring_wrap_and_save);
+    RUN(test_trace_parse_spec);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d/%d passed\n", tests_passed, tests_run);

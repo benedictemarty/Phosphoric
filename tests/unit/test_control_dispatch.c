@@ -362,6 +362,34 @@ TEST(read_bank_rom_vs_ram) {
     PASS();
 }
 
+TEST(trace_start_status_off) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "trace start pc:E000 ring:16 sym");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_TRUE(strncmp(s.buf, "OK armed", 8) == 0);
+    ASSERT_TRUE(emu->trace.armed);
+    ASSERT_TRUE(emu->trace.start_pc == 0xE000);
+    ASSERT_TRUE(emu->trace.ring_cap == 16);
+    control_sink_free(&s);
+
+    run_one(emu, &s, "trace status");
+    ASSERT_TRUE(strstr(s.buf, "armed=1") != NULL);
+    control_sink_free(&s);
+
+    run_one(emu, &s, "trace start bogusspec");
+    ASSERT_TRUE(strncmp(s.buf, "ERR trace: bad spec", 19) == 0);
+    control_sink_free(&s);
+
+    run_one(emu, &s, "trace off");
+    ASSERT_STR_EQ(s.buf, "OK\n");
+    ASSERT_TRUE(!emu->trace.armed);
+    control_sink_free(&s);
+
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -385,6 +413,7 @@ int main(void) {
     RUN(break_binary_literal);
     RUN(save_load_mem_roundtrip);
     RUN(read_bank_rom_vs_ram);
+    RUN(trace_start_status_off);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

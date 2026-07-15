@@ -188,5 +188,19 @@ curl -s "$BASE/mem?addr=C000&len=1&bank=ram" | grep -q '"ok":true' \
 curl -s "$BASE/mem?addr=C000&len=1&bank=bogus" | grep -q '"ok":false' \
     && ok "GET /mem bank=bogus rejected" || ko "GET /mem bad bank not rejected"
 
+# 20. conditional tracing (Epic 6 / US 1): arm a ring trace, save it, stop, off
+curl -s -X POST --data-urlencode 'spec=now ring:200' "$BASE/trace" | grep -q '"ok":true' \
+    && ok "POST /trace arms a ring trace" || ko "POST /trace"
+sleep 0.5
+curl -s "$BASE/trace" | grep -q 'count=' \
+    && ok "GET /trace reports status" || ko "GET /trace"
+curl -s -X POST --data 'path=phos_trace_e2e.log' "$BASE/trace/save" | grep -q '"ok":true' \
+    && ok "POST /trace/save writes the ring buffer" || ko "POST /trace/save"
+curl -s -X POST "$BASE/trace/stop" | grep -q '"ok":true' \
+    && ok "POST /trace/stop" || ko "POST /trace/stop"
+curl -s -X DELETE "$BASE/trace" | grep -q '"ok":true' \
+    && ok "DELETE /trace (off)" || ko "DELETE /trace"
+rm -f /tmp/phos_trace_e2e.log
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

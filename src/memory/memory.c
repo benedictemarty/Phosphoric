@@ -185,20 +185,24 @@ bool memory_load_charset(memory_t* mem, const char* filename) {
     return rd > 0;
 }
 
+/* Fire both trace hooks: the watchpoint callback (gated by trace_enabled) and
+ * the independent secondary hook (conditional CPU trace), if set. */
+static inline void mem_notify(memory_t* mem, uint16_t addr, uint8_t val,
+                              mem_access_type_t type) {
+    if (mem->trace_enabled && mem->trace_callback)
+        mem->trace_callback(addr, val, type);
+    if (mem->trace_callback2)
+        mem->trace_callback2(addr, val, type);
+}
+
 uint8_t memory_read(memory_t* mem, uint16_t address) {
     uint8_t val;
-
-    /* Tracing */
-    if (mem->trace_enabled && mem->trace_callback) {
-        /* Callback will be called after read */
-    }
 
     /* OCULA page-3 window (sprint 67, Phase C): when mapped + unlocked, this
      * CPU page is a R/W view of the OCULA state, overriding normal memory. */
     if (memory_ocula_page_mapped(mem, address)) {
         val = memory_ocula_page_read(mem, (uint8_t)(address & 0xFF));
-        if (mem->trace_enabled && mem->trace_callback)
-            mem->trace_callback(address, val, MEM_READ);
+        mem_notify(mem, address, val, MEM_READ);
         return val;
     }
 
@@ -206,8 +210,7 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
     if (address >= 0x0300 && address <= 0x03FF) {
         if (mem->io_read) {
             val = mem->io_read(address, mem->io_userdata);
-            if (mem->trace_enabled && mem->trace_callback)
-                mem->trace_callback(address, val, MEM_READ);
+            mem_notify(mem, address, val, MEM_READ);
             return val;
         }
     }
@@ -220,8 +223,7 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
             val = *ocula_window_ptr(mem, address);
         else
             val = mem->ram[address];
-        if (mem->trace_enabled && mem->trace_callback)
-            mem->trace_callback(address, val, MEM_READ);
+        mem_notify(mem, address, val, MEM_READ);
         return val;
     }
 
@@ -253,14 +255,12 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
         val = mem->rom[address - 0xC000];
     }
 
-    if (mem->trace_enabled && mem->trace_callback)
-        mem->trace_callback(address, val, MEM_READ);
+    mem_notify(mem, address, val, MEM_READ);
     return val;
 }
 
 void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
-    if (mem->trace_enabled && mem->trace_callback)
-        mem->trace_callback(address, value, MEM_WRITE);
+    mem_notify(mem, address, value, MEM_WRITE);
 
     /* OCULA page-3 window (sprint 67, Phase C): mapped + unlocked → writes hit
      * the OCULA state (bank/palette/border), overriding normal memory. */
@@ -355,6 +355,11 @@ void memory_set_trace(memory_t* mem, bool enabled,
                      void (*callback)(uint16_t, uint8_t, mem_access_type_t)) {
     mem->trace_enabled = enabled;
     mem->trace_callback = callback;
+}
+
+void memory_set_trace2(memory_t* mem,
+                     void (*callback)(uint16_t, uint8_t, mem_access_type_t)) {
+    mem->trace_callback2 = callback;
 }
 
 void memory_clear_ram(memory_t* mem, uint8_t pattern) {

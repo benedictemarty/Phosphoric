@@ -775,6 +775,42 @@ static void cmd_state_load(emulator_t* emu, control_sink_t* s, const char* path)
     else sink_err(s, "state-load: failed");
 }
 
+/* Epic 6 / US 1 — conditional CPU tracing. `sub` is the subcommand and `rest`
+ * the raw remainder (a trace spec, or a filename for `save`). */
+static void cmd_trace(emulator_t* emu, control_sink_t* s,
+                      const char* sub, const char* rest) {
+    cpu_trace_t* t = &emu->trace;
+    if (!sub || !*sub || strcasecmp(sub, "status") == 0) {
+        sink_ok(s, "active=%d armed=%d count=%llu ring=%u/%u stop_hit=%d",
+                (int)t->active, (int)t->armed, (unsigned long long)t->count,
+                trace_ring_count(t), t->ring_cap, (int)t->stop_hit);
+    } else if (strcasecmp(sub, "start") == 0) {
+        trace_start_t sc; uint16_t spc; trace_stop_t stc; uint16_t sa;
+        uint64_t scy; uint32_t ring; bool sym;
+        if (!trace_parse_spec(rest, &sc, &spc, &stc, &sa, &scy, &ring, &sym)) {
+            sink_err(s, "trace: bad spec (now|pc:HEX stop:cycle:N|brk|write:HEX|read:HEX ring:N sym)");
+            return;
+        }
+        trace_set_symbols(t, &emu->symbols);
+        trace_arm(t, sc, spc, stc, sa, scy, ring, sym);
+        trace_install_mem_hook(t, &emu->memory);
+        sink_ok(s, "armed active=%d ring=%u", (int)t->active, t->ring_cap);
+    } else if (strcasecmp(sub, "stop") == 0) {
+        trace_stop(t);
+        sink_ok(s, "count=%llu ring=%u", (unsigned long long)t->count, trace_ring_count(t));
+    } else if (strcasecmp(sub, "save") == 0) {
+        if (!rest || !*rest) { sink_err(s, "trace: usage `trace save <file>`"); return; }
+        if (trace_save_ring(t, rest)) sink_ok(s, "saved=%u", trace_ring_count(t));
+        else sink_err(s, "trace: nothing to save / write failed");
+    } else if (strcasecmp(sub, "off") == 0) {
+        trace_reset(t);
+        trace_install_mem_hook(t, &emu->memory);   /* drops the memory hook */
+        sink_ok(s, "");
+    } else {
+        sink_err(s, "trace: unknown subcommand `%s`", sub);
+    }
+}
+
 static void cmd_reset(emulator_t* emu, control_sink_t* s) {
     cpu_reset(&emu->cpu);
     sink_ok(s, "pc=%04X", emu->cpu.PC);
@@ -784,7 +820,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -945,6 +981,14 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
      * before the argument tokenizer chops the rest of the line into words. */
     if (strcmp(cmd, "keys") == 0) {
         cmd_keys(emu, s, save ? save : "");
+        return CONTROL_CONTINUE;
+    }
+
+    /* `trace` needs its subcommand + raw remainder (a spec or filename), so it
+     * is handled before the argument tokenizer chops the rest into words. */
+    if (strcmp(cmd, "trace") == 0) {
+        char* sub = strtok_r(NULL, " \t", &save);
+        cmd_trace(emu, s, sub, save ? save : "");
         return CONTROL_CONTINUE;
     }
 

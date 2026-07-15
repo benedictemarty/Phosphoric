@@ -6,6 +6,22 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 99: Tracing conditionnel (Epic 6 / US 1) (v1.58.0-alpha) - DONE
+Deuxième US de l'Epic 6 (rattrapage b2). `--trace` démarrait au boot et loguait
+tout ; b2 déclenche finement et borne la mémoire.
+- [x] Déclencheurs `trace_arm` : start `now`/`pc:HEX` ; stop `cycle:N`/`brk`/
+      `write:HEX`/`read:HEX`. Buffer circulaire `ring:N` + `trace_save_ring`.
+      Symboles inline `sym`. Chemin `--trace FILE` historique préservé.
+- [x] Double hook mémoire `memory_set_trace2`/`trace_callback2` : les triggers
+      write/read cohabitent avec le callback des watchpoints.
+- [x] Pilotage REPL `trace start/stop/save/status/off`, `--control`
+      `trace <sub> <spec>` (cap `trace-cond`), REST `POST/GET/DELETE /trace` +
+      `/trace/stop` `/trace/save`. test-trace 10→16, test-control-dispatch
+      21→22, test-httpapi e2e 29→34. Valgrind clean. 937 → 949 tests.
+> US restantes de l'Epic 6 : US 3-5 (backlog), US 6 (optionnel GUI).
+
+---
+
 ### Sprint 98: Inspection mémoire banque-aware (Epic 6 / US 2) (v1.57.0-alpha) - DONE
 Première US de l'Epic 6 (rattrapage b2). Paramètre de banque pour lire les
 couches derrière l'overlay ORIC $C000-$FFFF sans dépendre du paging courant.
@@ -77,12 +93,16 @@ conditionnels, GDB et le pilotage HTTP. Cet Epic comble le retard côté
 inspection/tracing, **filtré pour ORIC** (hors périmètre, spécifique BBC : bi-CPU
 parasite, `MOS's view`, teletext debug).
 
-- [ ] **US 1 — Tracing conditionnel** *(le plus gros écart — 🔴 haute / moyen)* :
-      déclencheurs start/stop (`start pc:XXXX` ; `stop write:XXXX | read:XXXX |
-      cycle:N | brk`), **buffer circulaire** (garder les N dernières instr au
-      lieu d'un fichier qui gonfle), **symboles inline** dans la sortie ;
-      pilotable REPL (`trace start/stop/save`) + `--control`/REST. Réutilise
-      `utils/cpu_trace.c` + la trace mémoire des watchpoints.
+- [x] **US 1 — Tracing conditionnel** *(v1.58.0, Sprint 99)* : déclencheurs
+      start (`now`/`pc:HEX`) + stop (`cycle:N`/`brk`/`write:HEX`/`read:HEX`),
+      **buffer circulaire** (`ring:N`, garde les N dernières instr, save à la
+      demande), **symboles inline** (`sym`). Double hook mémoire
+      (`memory_set_trace2`/`trace_callback2`) : les triggers write/read
+      cohabitent avec les watchpoints. Pilotage REPL `trace start/stop/save/
+      status/off`, `--control` `trace <sub> <spec>` (cap `trace-cond`), REST
+      `POST/GET/DELETE /trace` + `/trace/stop` `/trace/save`. `--trace FILE`
+      historique préservé. test-trace 10→16, test-control-dispatch 21→22,
+      test-httpapi 29→34. 937→949 tests.
 - [x] **US 2 — Inspection banque-aware** *(v1.57.0, Sprint 98)* : paramètre de
       banque sur `m` (REPL), `read` (`--control`) et `GET /mem?...&bank=` (REST)
       pour lire **sous** l'overlay ORIC $C000-$FFFF sans dépendre du paging —

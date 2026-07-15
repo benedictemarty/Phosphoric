@@ -1024,6 +1024,8 @@ static void show_help(void) {
     printf("  load FILE addr    Read a binary file into memory\n");
     printf("  disf FILE a n     Disassemble n instructions to a file\n");
     printf("  ss FILE / sl FILE Save / load full machine state (.ost)\n");
+    printf("  trace start ...   Conditional trace: [now|pc:HEX] [stop:cycle:N|brk|write:HEX|read:HEX] [ring:N] [sym]\n");
+    printf("  trace stop|save FILE|status|off\n");
     printf("  sym [name|addr]   List symbols / resolve name or address\n");
     printf("  (numbers: hex default, $ hex, %% binary; symbols if --symbols loaded)\n");
     printf("  q / quit          Quit emulator\n");
@@ -2037,6 +2039,45 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
             else if (!savestate_load) printf("  Load state unavailable in this build\n");
             else if (savestate_load(emu, arg1)) printf("  Loaded state from %s\n", arg1);
             else printf("  Error loading state from %s\n", arg1);
+        }
+        /* ── CONDITIONAL TRACE (Epic 6 / US 1) ──────────── */
+        else if (strcmp(cmd, "trace") == 0) {
+            cpu_trace_t* t = &emu->trace;
+            const char* rest = skip_ws(skip_token(skip_ws(line)));  /* after "trace" */
+            rest = skip_ws(skip_token(rest));                       /* after sub → spec */
+            if (!arg1[0] || strcasecmp(arg1, "status") == 0) {
+                printf("  trace: active=%d armed=%d count=%llu ring=%u/%u stop_hit=%d\n",
+                       t->active, t->armed, (unsigned long long)t->count,
+                       trace_ring_count(t), t->ring_cap, t->stop_hit);
+            } else if (strcasecmp(arg1, "start") == 0) {
+                trace_start_t sc; uint16_t spc; trace_stop_t stc; uint16_t sa;
+                uint64_t scy; uint32_t ring; bool sym;
+                if (!trace_parse_spec(rest, &sc, &spc, &stc, &sa, &scy, &ring, &sym)) {
+                    printf("  Usage: trace start [now|pc:HEX] "
+                           "[stop:cycle:N|stop:brk|stop:write:HEX|stop:read:HEX] "
+                           "[ring:N] [sym]\n");
+                } else {
+                    trace_set_symbols(t, &emu->symbols);
+                    trace_arm(t, sc, spc, stc, sa, scy, ring, sym);
+                    trace_install_mem_hook(t, &emu->memory);
+                    printf("  Trace armed (active=%d, ring=%u)\n", t->active, t->ring_cap);
+                }
+            } else if (strcasecmp(arg1, "stop") == 0) {
+                trace_stop(t);
+                printf("  Trace stopped (%llu instr, ring=%u)\n",
+                       (unsigned long long)t->count, trace_ring_count(t));
+            } else if (strcasecmp(arg1, "save") == 0) {
+                if (!rest[0]) printf("  Usage: trace save <file>\n");
+                else if (trace_save_ring(t, rest)) printf("  Saved %u instr to %s\n",
+                                                          trace_ring_count(t), rest);
+                else printf("  Nothing to save / write failed\n");
+            } else if (strcasecmp(arg1, "off") == 0) {
+                trace_reset(t);
+                trace_install_mem_hook(t, &emu->memory);
+                printf("  Trace off\n");
+            } else {
+                printf("  Unknown: trace %s (start|stop|save|status|off)\n", arg1);
+            }
         }
         /* ── QUIT ───────────────────────────────────────── */
         else if (strcmp(cmd, "q") == 0 || strcmp(cmd, "quit") == 0) {

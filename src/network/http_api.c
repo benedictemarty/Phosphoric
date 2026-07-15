@@ -185,11 +185,11 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
                 "GET /hello /regs /mem?addr=&len=[&bank=cpu|ram|rom|overlay] /peek/{via|psg|disk|acia|tape|loci} "
-                "/break /watch /disasm?addr=&n=; "
+                "/break /watch /disasm?addr=&n= /trace; "
                 "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
                 "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
                 "/hunt(op,val) /sym(path) /save(path,addr,len) /load(path,addr) "
-                "/state/save /state/load; "
+                "/state/save /state/load /trace(spec) /trace/stop /trace/save(path); "
                 "DELETE /tape /disk/{A-D} /break/{id} /watch/{id} /raster/{id}\"}\n");
             return false;
         }
@@ -226,6 +226,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             snprintf(cmd, cmdsz, "disasm %s %s", addr, n);
             return true;
         }
+        if (strcmp(path, "/trace") == 0) { snprintf(cmd, cmdsz, "trace status"); return true; }
     }
     else if (strcmp(method, "POST") == 0) {
         if (strcmp(path, "/reset") == 0) { snprintf(cmd, cmdsz, "reset"); return true; }
@@ -406,6 +407,30 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             snprintf(cmd, cmdsz, "load-mem %s %s", full, addr);
             return true;
         }
+        if (strcmp(path, "/trace") == 0) {
+            char spec[192];
+            if (get_param(body, "spec", spec, sizeof(spec)))
+                snprintf(cmd, cmdsz, "trace start %s", spec);
+            else
+                snprintf(cmd, cmdsz, "trace start now");
+            return true;
+        }
+        if (strcmp(path, "/trace/stop") == 0) { snprintf(cmd, cmdsz, "trace stop"); return true; }
+        if (strcmp(path, "/trace/save") == 0) {
+            if (!get_param(body, "path", arg, sizeof(arg))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /trace/save needs path=\"}\n");
+                return false;
+            }
+            char full[HTTP_ROOT_MAX];
+            if (!sandbox_path(srv, arg, full, sizeof(full))) {
+                http_send(fd, 403, "Forbidden",
+                    "{\"ok\":false,\"error\":\"path outside sandbox root\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "trace save %s", full);
+            return true;
+        }
         if (strcmp(path, "/state/save") == 0 || strcmp(path, "/state/load") == 0) {
             if (!get_param(body, "path", arg, sizeof(arg))) {
                 http_send(fd, 400, "Bad Request",
@@ -438,6 +463,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         if (strncmp(path, "/raster/", 8) == 0 && path[8]) {
             snprintf(cmd, cmdsz, "unraster %.15s", path + 8); return true;
         }
+        if (strcmp(path, "/trace") == 0) { snprintf(cmd, cmdsz, "trace off"); return true; }
     }
 
     http_send(fd, 404, "Not Found",
