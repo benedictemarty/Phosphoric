@@ -42,7 +42,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.62.0-alpha"
+#define EMU_VERSION "1.62.1-alpha"
 
 /**
  * @brief ORIC machine model
@@ -229,6 +229,11 @@ typedef struct emulator_s {
      * speed_ratio vs real ORIC) to stdout. Implies --headless so the
      * SDL2 frame limiter doesn't cap the measurement. */
     bool bench_mode;
+
+    /* Set when a save state is restored at startup (--load-state), so
+     * emulator_run() skips its power-on cpu_reset — which would otherwise
+     * clobber the loaded PC/cycles and drop back to the reset vector. */
+    bool startup_state_loaded;
 
     /* Screenshot options */
     const char* screenshot_file;

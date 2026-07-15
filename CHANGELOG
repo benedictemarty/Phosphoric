@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.1-alpha] - 2026-07-15
+
+### Fixed — `--load-state` au démarrage écrasé par le reset (surtout en `--control`)
+
+`emulator_run()` appelait **inconditionnellement** `cpu_reset()` au démarrage,
+**après** la restauration de `--load-state` (main.c) : le PC et les cycles
+chargés étaient écrasés par le vecteur de reset (cycles=0). Le symptôme était
+le plus visible en `--control`, où l'agent inspecte les registres avant tout
+`step` — l'état restauré (ex. PC=$40C8) n'était jamais atteint. La commande de
+contrôle **`state-load`** (runtime) n'était pas touchée car elle s'exécute
+après ce reset.
+
+- **Fix** : nouveau drapeau `emulator_t.startup_state_loaded`, positionné quand
+  `--load-state` réussit ; `emulator_run()` **saute** son `cpu_reset` de
+  power-on dans ce cas (l'état restauré est conservé tel quel).
+- **Test de non-régression** : `tests/integration/test_load_state_control.sh`
+  (`make test-loadstate`, dans `make tests`) — step ×5 sous `--control`,
+  `state-save`, puis relance `--load-state` + `--control` et vérifie que `regs`
+  rapporte **les mêmes cycles/PC** (skip gracieux sans ROM).
+
+### Note
+Nom exact de la commande de contrôle de chargement d'état : **`state-load`**
+(REST `POST /state/load`) ; sauvegarde : `state-save` (REST `/state/save`).
+
+968 → 971 tests. `EMU_VERSION` 1.62.0 → 1.62.1-alpha.
+
 ## [1.62.0-alpha] - 2026-07-15
 
 ### Added — Injection de stuck-bits RAM (Epic 6 / US 6a, rattrapage b2) (Sprint 103)
