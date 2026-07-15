@@ -429,6 +429,25 @@ TEST(peek_new_subsystems) {
     PASS();
 }
 
+TEST(sym_group_toggle) {
+    emulator_t* emu = fresh_emu();
+    symbol_table_init(&emu->symbols);
+    control_sink_t s;
+    /* Disable group 3, then re-enable — verify the acked state. */
+    control_result_t r = run_one(emu, &s, "sym-group 3 off");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_TRUE(strstr(s.buf, "group=3 enabled=0") != NULL);
+    ASSERT_TRUE(!symbol_group_enabled(&emu->symbols, 3));
+    control_sink_free(&s);
+
+    run_one(emu, &s, "sym-group 3 on");
+    ASSERT_TRUE(strstr(s.buf, "enabled=1") != NULL);
+    ASSERT_TRUE(symbol_group_enabled(&emu->symbols, 3));
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -455,6 +474,7 @@ int main(void) {
     RUN(trace_start_status_off);
     RUN(watch_region_set_list_clear);
     RUN(peek_new_subsystems);
+    RUN(sym_group_toggle);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

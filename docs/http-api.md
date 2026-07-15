@@ -237,6 +237,27 @@ curl -s "localhost:8888/peek/video"    # mode ULA, OCULA, framebuffer
 curl -s "localhost:8888/peek/kbd"      # matrice clavier 8 colonnes
 ```
 
+### EPIC 6 / US 4 — Groupes de symboles *(Sprint 102)* — LIVRÉ
+
+Les symboles peuvent être **tagués par groupe** (0-255) et un groupe
+activé/désactivé — pratique pour distinguer les symboles de banques différentes
+(BASIC ROM vs overlay Microdisc vs LOCI), à la manière des groupes de b2.
+
+| Méthode  | Route                    | Effet |
+|----------|--------------------------|-------|
+| `POST`   | `/sym` `{path[,group]}`  | charge un fichier de symboles dans un groupe |
+| `POST`   | `/sym/group` `{group,enabled}` | active/désactive un groupe |
+
+`symbol_lookup`/`symbol_resolve` ignorent les symboles des groupes désactivés.
+Mêmes commandes en `--control` (`load-sym FILE [group]`, `sym-group N on|off`) et
+REPL (`sym load FILE [g]`, `sym group N on|off`, `sym groups`).
+
+```bash
+curl -s -X POST --data 'path=basic.sym&group=1'   localhost:8888/sym
+curl -s -X POST --data 'path=microdisc.sym&group=2' localhost:8888/sym
+curl -s -X POST --data 'group=2&enabled=off'      localhost:8888/sym/group
+```
+
 ## 5. Estimation
 
 ~600-900 LOC au total (sink+dispatch ~200, file ~120, serveur HTTP+routing

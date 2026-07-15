@@ -6,6 +6,23 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 102: Groupes de symboles (Epic 6 / US 4) (v1.61.0-alpha) - DONE
+Cinquième US livrée de l'Epic 6 — **tout le périmètre non-GUI est fait** (reste
+US 6, overlays GUI, optionnel). Table de symboles plate → groupes activables.
+- [x] `symbol_entry_t.group` (0-255), `symbol_table_load_group`,
+      `symbol_set_group_enabled`/`_group_enabled`/`_group_count` ;
+      `symbol_lookup`/`_resolve` filtrent les groupes désactivés. Champ
+      `group_disabled[256]` (0=activé) → table zéro-initialisée robuste.
+- [x] REPL `sym load FILE [g]`/`sym group N on|off`/`sym groups`, `--control`
+      `load-sym FILE [group]`/`sym-group N on|off` (cap `sym-group`), REST
+      `POST /sym?path=&group=` + `POST /sym/group`. test-symbols 11→12,
+      test-control-dispatch 24→25, test-httpapi 41→43. Valgrind clean.
+      960 → 964 tests.
+> Epic 6 : 5/6 US livrées (US 1/2/3/4/5). Reste US 6 (overlays visuels GUI,
+> optionnel/élevé) — tout le cœur non-GUI du rattrapage b2 est atteint.
+
+---
+
 ### Sprint 101: Couverture d'inspection élargie (Epic 6 / US 5) (v1.60.0-alpha) - DONE
 Quatrième US livrée de l'Epic 6. b2 a ~12 fenêtres d'inspection ; Phosphoric
 couvrait via/psg/disk/acia/tape/loci — ajout de 4 sous-systèmes.
@@ -151,8 +168,16 @@ parasite, `MOS's view`, teletext debug).
       `watch-region`/`-list`/`-clear` (cap `access-map`) ; REST
       `POST/GET/DELETE /watch-region`. test-debugger 20→21,
       test-control-dispatch 22→23, test-httpapi 34→37. 949→954 tests.
-- [ ] **US 4 — Symboles scopés par banque + groupes** *(🟠 / moyen)* : scoping
-      des symboles par overlay/banque, activation par groupe (module `symbols`).
+- [x] **US 4 — Symboles scopés par groupes** *(v1.61.0, Sprint 102)* :
+      `symbol_entry_t.group` (0-255) + activation/désactivation par groupe
+      (`symbol_set_group_enabled`) ; `symbol_lookup`/`_resolve` filtrent les
+      groupes off (champ `group_disabled[256]`, 0=activé → zéro-init robuste).
+      REPL `sym load FILE [g]`/`sym group N on|off`/`sym groups`, `--control`
+      `load-sym FILE [group]`/`sym-group` (cap `sym-group`), REST
+      `POST /sym?…&group=` + `POST /sym/group`. test-symbols 11→12,
+      test-control-dispatch 24→25, test-httpapi 41→43. 960→964 tests.
+      *(Le scoping par suffixe Exclusive/Inclusive de b2 reste un raffinement
+      futur ; les groupes couvrent le besoin ORIC.)*
 - [x] **US 5 — Couverture d'inspection élargie** *(v1.60.0, Sprint 101)* :
       commandes snapshot `video`/`ula`, `kbd`, `joy`, `printer`/`mcp40` (champs
       réels des structs uniquement ; SDL2-only sous `#ifdef HAS_SDL2`). REPL +

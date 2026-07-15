@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.61.0-alpha] - 2026-07-15
+
+### Added — Groupes de symboles (Epic 6 / US 4, rattrapage b2) (Sprint 102)
+
+La table de symboles était plate ; b2 assigne les fichiers à des **groupes**
+(0-255) activables/désactivables. Nouveau : tagger les symboles par groupe et
+scoper leur visibilité — utile pour distinguer les symboles de banques
+différentes (BASIC ROM vs overlay Microdisc vs LOCI).
+
+- **Cœur** (`symbols.c`/`.h`) : `symbol_entry_t.group` (0-255),
+  `symbol_table_load_group(tbl, path, group)`, `symbol_set_group_enabled`,
+  `symbol_group_enabled`, `symbol_group_count`. `symbol_lookup`/`_resolve`
+  **filtrent** les symboles des groupes désactivés. Sémantique robuste :
+  champ `group_disabled[256]` (0 = activé) → une table zéro-initialisée a tous
+  les groupes actifs.
+- **Pilotage** :
+  - REPL : `sym load FILE [group]`, `sym group N on|off`, `sym groups`.
+  - `--control` : `load-sym FILE [group]` (étendu), `sym-group N on|off`
+    (cap `sym-group`).
+  - REST : `POST /sym ?path=&group=`, `POST /sym/group ?group=&enabled=`.
+
+Le mode de scoping par suffixe d'adresse (Exclusive/Inclusive) de b2 reste un
+raffinement possible ; le modèle par groupes couvre le besoin de scoping ORIC.
+
+### Tests
+- `test-symbols` 11 → 12 (chargement en groupes, désactivation filtre
+  lookup + resolve, réactivation), `test-control-dispatch` 24 → 25 (`sym-group`
+  on/off), `test-httpapi` e2e 41 → 43. Valgrind clean. 960 → 964 tests.
+- `EMU_VERSION` 1.60.0 → 1.61.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.60.0-alpha] - 2026-07-15
 
 ### Added — Couverture d'inspection élargie (Epic 6 / US 5, rattrapage b2) (Sprint 101)

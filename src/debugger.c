@@ -1161,6 +1161,7 @@ static void show_help(void) {
     printf("  trace start ...   Conditional trace: [now|pc:HEX] [stop:cycle:N|brk|write:HEX|read:HEX] [ring:N] [sym]\n");
     printf("  trace stop|save FILE|status|off\n");
     printf("  sym [name|addr]   List symbols / resolve name or address\n");
+    printf("  sym load FILE [g] | sym group N on|off | sym groups   Symbol groups (US 4)\n");
     printf("  (numbers: hex default, $ hex, %% binary; symbols if --symbols loaded)\n");
     printf("  q / quit          Quit emulator\n");
     printf("  h / help          Show this help\n");
@@ -1538,9 +1539,38 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         }
         /* ── SYMBOLS ────────────────────────────────────── */
         else if (strcmp(cmd, "sym") == 0) {
-            if (!arg1[0]) {
+            char a3[32] = {0};
+            sscanf(line, "%*s %*s %*s %31s", a3);
+            if (strcasecmp(arg1, "load") == 0) {
+                /* sym load FILE [group] */
+                if (!arg2[0]) { printf("  Usage: sym load FILE [group]\n"); return; }
+                uint8_t grp = (uint8_t)strtoul(a3[0] ? a3 : "0", NULL, 0);
+                int n = symbol_table_load_group(&emu->symbols, arg2, grp);
+                if (n < 0) printf("  Failed to load %s\n", arg2);
+                else printf("  Loaded %d symbols from %s (group %u)\n", n, arg2, grp);
+            } else if (strcasecmp(arg1, "group") == 0) {
+                /* sym group N on|off */
+                if (!arg2[0] || !a3[0]) { printf("  Usage: sym group N on|off\n"); return; }
+                uint8_t grp = (uint8_t)strtoul(arg2, NULL, 0);
+                bool en = (strcasecmp(a3, "on") == 0 || strcmp(a3, "1") == 0);
+                symbol_set_group_enabled(&emu->symbols, grp, en);
+                printf("  Group %u %s (%d symbols)\n", grp, en ? "enabled" : "disabled",
+                       symbol_group_count(&emu->symbols, grp));
+            } else if (strcasecmp(arg1, "groups") == 0) {
+                printf("  Symbol groups (non-empty):\n");
+                int any = 0;
+                for (int g = 0; g < 256; g++) {
+                    int c = symbol_group_count(&emu->symbols, (uint8_t)g);
+                    if (c > 0) {
+                        printf("    group %d: %d symbols  [%s]\n", g, c,
+                               symbol_group_enabled(&emu->symbols, (uint8_t)g) ? "on" : "off");
+                        any++;
+                    }
+                }
+                if (!any) printf("    (none)\n");
+            } else if (!arg1[0]) {
                 if (emu->symbols.count == 0) {
-                    printf("  No symbols loaded (use --symbols FILE)\n");
+                    printf("  No symbols loaded (use --symbols FILE or `sym load FILE [g]`)\n");
                 } else {
                     printf("  %d symbols loaded\n", emu->symbols.count);
                     int show = emu->symbols.count > 20 ? 20 : emu->symbols.count;

@@ -220,5 +220,11 @@ curl -s "$BASE/peek/joy" | grep -q 'port_a_mask=' \
 curl -s "$BASE/peek/printer" | grep -q 'type=' \
     && ok "GET /peek/printer" || ko "GET /peek/printer"
 
+# 23. symbol groups (Epic 6 / US 4)
+curl -s -X POST --data 'group=5&enabled=off' "$BASE/sym/group" | grep -q 'group=5 enabled=0' \
+    && ok "POST /sym/group disables a group" || ko "POST /sym/group off"
+curl -s -X POST --data 'group=5&enabled=on' "$BASE/sym/group" | grep -q 'enabled=1' \
+    && ok "POST /sym/group re-enables it" || ko "POST /sym/group on"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]
