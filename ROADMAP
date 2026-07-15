@@ -6,6 +6,84 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 97: API REST — parité debug (bridge --control + 7 gaps) (v1.56.0-alpha) - DONE
+Les capacités debug (dont les 7 gaps du Sprint 96) n'étaient qu'au REPL. Rendues
+pilotables à distance **sans dupliquer de logique** : chaque requête HTTP est
+mappée vers une ligne `--control`, seule source de vérité.
+- [x] **Bridge** du debug `--control` déjà présent mais non routé dans
+      `http_api.c` : `GET /break` `/watch` `/disasm?addr=&n=`, `POST /raster`,
+      `DELETE /break/{id}` `/watch/{id}` `/raster/{id}`.
+- [x] **Watch modes** : `cmd_watch` prend un mode optionnel →
+      `POST /watch ?addr=&mode=w|r|a|c`.
+- [x] **Breakpoints conditionnels** : `cmd_break` accepte `if EXPR`
+      (`debugger_add_cond_breakpoint`) → `POST /break ?addr=&if=EXPR`
+      (URL-encodé, décodé par `get_param`).
+- [x] **Cheat-finder** : état `hunt` exposé (`debugger_hunt_*`) →
+      `POST /hunt ?op=eq|same|changed|up|down|list|clear[&val=]`.
+- [x] **Mémoire⇄fichier** (`debugger_save_region`/`_load_region`) →
+      `POST /save ?path=&addr=&len=`, `POST /load ?path=&addr=` (sandbox).
+- [x] **Save-state** → `POST /state/save`, `POST /state/load` (`.ost`, sandbox).
+- [x] **`set via`** → `POST /set ?via=&val=` ; **symboles** → `POST /sym ?path=`.
+- [x] **Littéraux `%`** dans tous les params (`parse_hex` de `control.c`).
+- [x] Caps `hello` étendues additivement (`CONTROL_PROTO_VERSION` inchangé).
+- [x] Tests : `test-control-dispatch` 13→20, `test-httpapi` e2e 10→26 (un
+      endpoint par gap, roundtrips région + save-state, sandbox) ; fiabilisé
+      settle post-boot (flake pré-existant révélé en exécutant `HTTPAPI=1`) ;
+      valgrind clean. 909 → 932 tests.
+
+> **API REST : parité debug complète.** Tout le debug interactif se pilote via
+> HTTP/JSON, en réutilisant le dispatch `--control`.
+
+#### Backlog API REST — issu du comparatif HTTP vs b2 (émulateur BBC Micro)
+Comparatif mené le 2026-07-15 (source : `b2/doc/Debug-version.md` +
+`b2/src/b2/HTTPMethodsHandler.cpp`). b2 n'expose PAS son debugger sur HTTP (map
+close : `reset/paste/poke/peek/mount/run/load-disc/launch`) — son API HTTP vise
+l'**automatisation build**. Phosphoric mène sur le debug à distance ; deux
+points où b2 est en avance et qui restent à combler :
+- [ ] **B1 — Transfert mémoire binaire** : `/mem`, `/save`, `/load` répondent
+      en hex dans du JSON (~3× la taille). b2 sert/reçoit de l'`octet-stream`
+      brut (`peek`/`poke`). Ajouter une variante binaire (négociée par
+      `Accept`/`Content-Type` ou un endpoint dédié) pour les gros transferts.
+- [ ] **B2 — Sélecteur de banque dans `/mem` et `/peek`** : Phosphoric lit la
+      **vue CPU** courante (overlay ROM/RAM $C000-$FFFF résolu à l'instant t).
+      b2 offre des suffixes debugger (`s=`) + un drapeau `MOS's view` (`mos=`)
+      pour viser une banque paginée précise. Exposer un paramètre équivalent
+      (ex. `?bank=ram|rom`) pour lire sous l'overlay sans dépendre de l'état
+      courant du banking.
+
+---
+
+### Sprint 96: Parité debugger vs Oricutron — 7 gaps fermés (v1.55.0-alpha) - DONE
+Audit comparatif frais du debugger interactif face à Oricutron (inventaire ancré
+sur le code + la `ReadMe.txt` réelle d'Oricutron). La note « plus aucun gap »
+était périmée : 7 écarts rouverts et fermés.
+- [x] **Gap 1 — Watchpoints read/access/change** : `watchpoint_t{addr,mode,
+      last_value}`, 4 modes (`WATCH_WRITE`/`READ`/`ACCESS`/`CHANGE`) ; le
+      callback de trace mémoire filtre selon le mode (la trace remontait déjà
+      `MEM_READ`/`MEM_WRITE`). REPL `w addr [w|r|a|c]`, listing + message de hit
+      enrichis. Stub GDB `Z3`(read)/`Z4`(access) + trace (ré)installée sur
+      insertion (les watchpoints gdb se déclenchent enfin).
+- [x] **Gap 2 — Conditions de breakpoint par expression** : `b addr if EXPR`
+      jusqu'à 4 comparaisons jointes `&&`/`||`, évaluées gauche-à-droite
+      (`bp_condexpr_t`, `parse_condexpr`/`eval_condexpr`).
+- [x] **Gap 3 — Recherche mémoire itérative (cheat-finder)** : commande `hunt`
+      (seed sur tout l'espace puis raffine `V`/`=`/`+`/`-`/`!` + `list`/`clear`,
+      état file-static, snapshot 64K).
+- [x] **Gap 4 — Mémoire⇄fichier** : `save FILE addr len`, `load FILE addr`,
+      `disf FILE addr n`.
+- [x] **Gap 5 — Save-state depuis le REPL** : `ss FILE`/`sl FILE` (`.ost`),
+      dépendance `savestate` découplée par symbole faible (les tests unitaires
+      liant `debugger.c` seul ne tirent pas le sérialiseur).
+- [x] **Gap 6 — Registres VIA** : `set via <reg 0-15> <val>`.
+- [x] **Gap 7 — Littéraux binaires `%`** (`%100000000000`==`$800`).
+- [x] Tests : `test-debugger` 13→19, `test-gdbstub` couvre `Z3`/`Z4` ; valgrind
+      clean ; toutes suites vertes. 903 → 909 tests.
+
+> **Debugger interactif : parité Oricutron re-confirmée** par audit ancré sur
+> sources (plus la partie forensique/GDB/undo/raster où Phosphoric mène déjà).
+
+---
+
 ### API REST de commande — backlog (spec `docs/http-api.md`)
 Exposer le pilotage de Phosphoric (média, état, exécution) via HTTP/JSON sur un
 port dédié, **sans dupliquer** la logique du protocole `--control`. Découpé en

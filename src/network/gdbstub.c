@@ -6,7 +6,7 @@
  * @version 1.0.0
  *
  * Implements enough of the GDB RSP to debug the 6502 from `gdb`/IDEs:
- *   ?  g G p P  m M  c s  Z0/z0 Z1/z1 Z2/z2  H D k
+ *   ?  g G p P  m M  c s  Z0-Z4/z0-z4 (bp + write/read/access watch)  H D k
  *   qSupported qAttached qC qfThreadInfo qsThreadInfo qOffsets qSymbol
  *   qXfer:features:read:target.xml  QStartNoAckMode  vCont
  *
@@ -132,7 +132,7 @@ static bool remove_bp_at(debugger_t* dbg, uint16_t addr) {
 
 static bool remove_wp_at(debugger_t* dbg, uint16_t addr) {
     for (int i = 0; i < dbg->num_watchpoints; i++) {
-        if (dbg->watchpoints[i] == addr)
+        if (dbg->watchpoints[i].addr == addr)
             return debugger_remove_watchpoint(dbg, i);
     }
     return false;
@@ -258,9 +258,15 @@ gdb_action_t gdb_dispatch(gdb_stub_t* stub, emulator_t* emu,
         if (type == '0' || type == '1') {           /* sw/hw breakpoint */
             done = insert ? (debugger_add_breakpoint(dbg, (uint16_t)addr) >= 0)
                           : remove_bp_at(dbg, (uint16_t)addr);
-        } else if (type == '2' || type == '4') {     /* write/access watchpoint */
-            done = insert ? (debugger_add_watchpoint(dbg, (uint16_t)addr) >= 0)
+        } else if (type == '2' || type == '3' || type == '4') {
+            /* Z2 write, Z3 read, Z4 access watchpoint */
+            watch_mode_t m = (type == '2') ? WATCH_WRITE
+                           : (type == '3') ? WATCH_READ
+                                           : WATCH_ACCESS;
+            done = insert ? (debugger_add_watchpoint_mode(dbg, (uint16_t)addr, m) >= 0)
                           : remove_wp_at(dbg, (uint16_t)addr);
+            /* (Re)install the memory-trace callback so watchpoints actually fire. */
+            debugger_install_watchpoint_trace(dbg, emu);
         } else {
             return GDB_ACT_NONE;                      /* unsupported → empty */
         }

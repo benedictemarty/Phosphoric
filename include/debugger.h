@@ -40,19 +40,45 @@ typedef struct {
     uint32_t     value;
 } bp_condition_t;
 
+/* Compound condition: up to BP_MAX_TERMS single comparisons joined by AND/OR
+ * connectors, evaluated strictly left-to-right (no operator precedence). */
+#define BP_MAX_TERMS 4
+typedef enum { BP_CONN_AND = 0, BP_CONN_OR } bp_conn_t;
+
+typedef struct {
+    bp_condition_t terms[BP_MAX_TERMS];
+    bp_conn_t      conn[BP_MAX_TERMS - 1];  /* conn[i] joins terms[i] and terms[i+1] */
+    uint8_t        num_terms;
+} bp_condexpr_t;
+
 typedef struct {
     uint16_t       addr;
     bool           has_cond;
-    bp_condition_t cond;
-    char           cond_text[48];   /* Verbatim user text for listing */
+    bp_condexpr_t  cond;
+    char           cond_text[96];   /* Verbatim user text for listing */
 } breakpoint_t;
+
+/* Watchpoint access mode. Mirrors gdb Z2/Z3/Z4 and Oricutron bsm r/w/c. */
+typedef enum {
+    WATCH_WRITE = 0,   /* break on write */
+    WATCH_READ,        /* break on read */
+    WATCH_ACCESS,      /* break on read or write */
+    WATCH_CHANGE       /* break only when a write changes the stored value */
+} watch_mode_t;
+
+typedef struct {
+    uint16_t     addr;
+    watch_mode_t mode;
+    uint8_t      last_value;   /* WATCH_CHANGE: last observed value */
+    bool         has_last;
+} watchpoint_t;
 
 typedef struct debugger_s {
     breakpoint_t breakpoints[DEBUGGER_MAX_BREAKPOINTS];
     uint8_t      num_breakpoints;
 
-    uint16_t watchpoints[DEBUGGER_MAX_WATCHPOINTS];
-    uint8_t  num_watchpoints;
+    watchpoint_t watchpoints[DEBUGGER_MAX_WATCHPOINTS];
+    uint8_t      num_watchpoints;
 
     /* Sprint 34d4 (P2-G audit) — raster-line breakpoints. Each entry holds
      * a PAL line number 0..311; the debugger fires when frame_cycles crosses
@@ -74,6 +100,7 @@ typedef struct debugger_s {
 
     bool     watch_triggered;    /* Set by memory trace callback */
     uint16_t watch_addr_hit;     /* Which watchpoint address was hit */
+    bool     watch_read_hit;     /* True if the hit was a read access */
 
     bool     active;             /* Debugger is in REPL mode */
     bool     step_mode;          /* Single-step after break */
@@ -142,10 +169,40 @@ int debugger_add_breakpoint(debugger_t* dbg, uint16_t addr);
 bool debugger_remove_breakpoint(debugger_t* dbg, int index);
 
 /**
- * @brief Add a memory write watchpoint
+ * @brief Add a PC breakpoint carrying a compound condition ("A==5 && X==3").
+ * @return Breakpoint index, -1 if the table is full, -2 if the expression is
+ *         unparseable.
+ */
+int debugger_add_cond_breakpoint(debugger_t* dbg, const emulator_t* emu,
+                                 uint16_t addr, const char* expr);
+
+/* ── Iterative memory search (cheat-finder) — shared by REPL and --control ── */
+typedef enum { HUNT_EQ, HUNT_UNCHANGED, HUNT_CHANGED, HUNT_GT, HUNT_LT } hunt_pred_t;
+
+void     debugger_hunt_start(emulator_t* emu);                        /* seed: all cells */
+uint32_t debugger_hunt_refine(emulator_t* emu, hunt_pred_t pred, uint8_t val);
+uint32_t debugger_hunt_count(void);
+bool     debugger_hunt_active(void);
+void     debugger_hunt_clear(void);
+/* Fill up to @max candidate addresses (and values if @out_vals != NULL);
+ * returns how many were written. */
+uint32_t debugger_hunt_list(emulator_t* emu, uint16_t* out, uint32_t max, uint8_t* out_vals);
+
+/* ── Memory ⇄ file region helpers ── */
+bool debugger_save_region(emulator_t* emu, const char* path, uint16_t addr, uint32_t len);
+long debugger_load_region(emulator_t* emu, const char* path, uint16_t addr);
+
+/**
+ * @brief Add a memory write watchpoint (WATCH_WRITE mode)
  * @return Index of added watchpoint, or -1 if full
  */
 int debugger_add_watchpoint(debugger_t* dbg, uint16_t addr);
+
+/**
+ * @brief Add a memory watchpoint with an explicit access mode
+ * @return Index of added watchpoint, or -1 if full
+ */
+int debugger_add_watchpoint_mode(debugger_t* dbg, uint16_t addr, watch_mode_t mode);
 
 /**
  * @brief Remove a watchpoint by index

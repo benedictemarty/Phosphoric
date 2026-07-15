@@ -261,11 +261,13 @@ static void draw_bps(emulator_t* emu) {
             mvwprintw(w_bps, row++, 2, "W: (none)");
     } else {
         for (int i = 0; i < dbg->num_watchpoints && row < max_h - 1; i++) {
-            uint16_t a = dbg->watchpoints[i];
+            uint16_t a = dbg->watchpoints[i].addr;
+            const char* mode = "wrac";  /* write/read/access/change initial */
+            char mc = mode[dbg->watchpoints[i].mode];
             const char* s = symbol_lookup(&emu->symbols, a);
             char buf[80];
-            snprintf(buf, sizeof(buf), "W#%d $%04X%s%s",
-                     i, a, s ? " " : "", s ? s : "");
+            snprintf(buf, sizeof(buf), "W#%d $%04X:%c%s%s",
+                     i, a, mc, s ? " " : "", s ? s : "");
             buf[max_w - 4] = '\0';
             mvwprintw(w_bps, row++, 2, "%s", buf);
         }

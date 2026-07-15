@@ -152,6 +152,15 @@ TEST(test_watchpoint) {
     run("z2,1234,1", r, sizeof(r));
     ASSERT_STR(r, "OK");
     ASSERT_EQ(g_emu.debugger.num_watchpoints, 0);
+
+    /* Z3 = read watchpoint, Z4 = access watchpoint (new). */
+    run("Z3,2000,1", r, sizeof(r));
+    ASSERT_STR(r, "OK");
+    ASSERT_EQ(g_emu.debugger.watchpoints[0].mode, WATCH_READ);
+    run("Z4,2100,1", r, sizeof(r));
+    ASSERT_STR(r, "OK");
+    ASSERT_EQ(g_emu.debugger.watchpoints[1].mode, WATCH_ACCESS);
+    ASSERT_EQ(g_emu.debugger.num_watchpoints, 2);
 }
 
 TEST(test_continue_and_step_actions) {

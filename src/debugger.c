@@ -23,15 +23,27 @@
 #include "memory/memory.h"
 #include "io/via6522.h"
 #include "audio/audio.h"
+#include "savestate.h"
+
+/* Save-state is an optional link dependency: the `ss`/`sl` REPL commands use it,
+ * but unit-test binaries that link debugger.c standalone must not drag in the
+ * whole emulator serializer. Declared weak so those binaries still link; the
+ * commands NULL-guard the calls and report gracefully when absent. */
+extern bool savestate_save(const emulator_t* emu, const char* filename) __attribute__((weak));
+extern bool savestate_load(emulator_t* emu, const char* filename) __attribute__((weak));
 
 /* Parse an address argument: tries the symbol table first (case-insensitive),
- * then falls back to hex parsing. Returns true if recognised. */
+ * then falls back to numeric parsing. Hex is the default base; `$`/`0x` force
+ * hex and `%` forces binary. Returns true if recognised. */
 static bool parse_addr(const emulator_t* emu, const char* s, uint16_t* out) {
     if (!s || !*s) return false;
     if (symbol_resolve(&emu->symbols, s, out)) return true;
+    int base = 16;
     if (*s == '$') s++;
+    else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+    else if (*s == '%') { s++; base = 2; }
     char* end = NULL;
-    unsigned long v = strtoul(s, &end, 16);
+    unsigned long v = strtoul(s, &end, base);
     if (end == s || v > 0xFFFF) return false;
     *out = (uint16_t)v;
     return true;
@@ -148,8 +160,26 @@ static const char* skip_token(const char* s) {
     return s;
 }
 
-static bool parse_condition(const emulator_t* emu, const char* text,
-                            bp_condition_t* out) {
+/* Parse a numeric literal (no symbol lookup): `$`/`0x` hex, `%` binary,
+ * else decimal. Returns false if nothing consumed. */
+static bool parse_num_literal(const char* s, uint32_t* out) {
+    int base = 10;
+    if (*s == '$') { s++; base = 16; }
+    else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) { s += 2; base = 16; }
+    else if (*s == '%') { s++; base = 2; }
+    char* end = NULL;
+    unsigned long v = strtoul(s, &end, base);
+    if (end == s) return false;
+    *out = (uint32_t)v;
+    return true;
+}
+
+/* Parse a single "REG OP VALUE" or "M[ADDR] OP VALUE" comparison. On success
+ * fills *out and sets *endp just past the consumed VALUE token. The VALUE token
+ * ends at whitespace or a '&'/'|' connector so compound expressions parse with
+ * or without surrounding spaces. */
+static bool parse_one_cond(const emulator_t* emu, const char* text,
+                           bp_condition_t* out, const char** endp) {
     memset(out, 0, sizeof(*out));
     const char* p = skip_ws(text);
 
@@ -164,15 +194,7 @@ static bool parse_condition(const emulator_t* emu, const char* text,
         if (a[n] != ']') return false;
         addr_buf[n] = '\0';
         uint16_t addr;
-        if (!symbol_resolve(&emu->symbols, addr_buf, &addr)) {
-            const char* s = addr_buf;
-            if (*s == '$') s++;
-            else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
-            char* end = NULL;
-            unsigned long v = strtoul(s, &end, 16);
-            if (end == s) return false;
-            addr = (uint16_t)v;
-        }
+        if (!parse_addr(emu, addr_buf, &addr)) return false;
         out->operand = BP_OPERAND_MEM;
         out->mem_addr = addr;
         p = a + n + 1;
@@ -206,10 +228,11 @@ static bool parse_condition(const emulator_t* emu, const char* text,
 
     p = skip_ws(p);
 
-    /* RHS value: hex, decimal, or symbol */
+    /* RHS value: token ends at whitespace or a connector (& / |) */
     char rhs_buf[48];
     size_t n = 0;
-    while (p[n] && !isspace((unsigned char)p[n]) && n < sizeof(rhs_buf) - 1) {
+    while (p[n] && !isspace((unsigned char)p[n]) &&
+           p[n] != '&' && p[n] != '|' && n < sizeof(rhs_buf) - 1) {
         rhs_buf[n] = p[n]; n++;
     }
     rhs_buf[n] = '\0';
@@ -218,20 +241,50 @@ static bool parse_condition(const emulator_t* emu, const char* text,
     if (symbol_resolve(&emu->symbols, rhs_buf, &v16)) {
         out->value = v16;
     } else {
+        /* Bare hex digits (no prefix) are still accepted as hex, matching the
+         * historical single-comparison behaviour. */
         const char* s = rhs_buf;
-        int base = 10;
-        if (*s == '$') { s++; base = 16; }
-        else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) { s += 2; base = 16; }
-        else if (strchr(s, 'A') || strchr(s, 'B') || strchr(s, 'C') ||
-                 strchr(s, 'D') || strchr(s, 'E') || strchr(s, 'F') ||
-                 strchr(s, 'a') || strchr(s, 'b') || strchr(s, 'c') ||
-                 strchr(s, 'd') || strchr(s, 'e') || strchr(s, 'f')) base = 16;
-        char* end = NULL;
-        unsigned long v = strtoul(s, &end, base);
-        if (end == s) return false;
-        out->value = (uint32_t)v;
+        if (*s != '$' && *s != '%' &&
+            !(s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) &&
+            strpbrk(s, "ABCDEFabcdef")) {
+            char* end = NULL;
+            unsigned long v = strtoul(s, &end, 16);
+            if (end == s) return false;
+            out->value = (uint32_t)v;
+        } else if (!parse_num_literal(rhs_buf, &out->value)) {
+            return false;
+        }
     }
+    if (endp) *endp = p + n;
     return true;
+}
+
+/* Parse a compound condition: one or more comparisons joined by `&&`/`||`
+ * (up to BP_MAX_TERMS), evaluated left-to-right. */
+static bool parse_condexpr(const emulator_t* emu, const char* text,
+                           bp_condexpr_t* out) {
+    memset(out, 0, sizeof(*out));
+    const char* p = text;
+    for (;;) {
+        if (out->num_terms >= BP_MAX_TERMS) return false;
+        const char* end = NULL;
+        if (!parse_one_cond(emu, p, &out->terms[out->num_terms], &end))
+            return false;
+        out->num_terms++;
+        p = skip_ws(end);
+        if (!*p) break;
+        if (p[0] == '&' && p[1] == '&') {
+            if (out->num_terms >= BP_MAX_TERMS) return false;
+            out->conn[out->num_terms - 1] = BP_CONN_AND; p += 2;
+        } else if (p[0] == '|' && p[1] == '|') {
+            if (out->num_terms >= BP_MAX_TERMS) return false;
+            out->conn[out->num_terms - 1] = BP_CONN_OR; p += 2;
+        } else {
+            return false;
+        }
+        p = skip_ws(p);
+    }
+    return out->num_terms > 0;
 }
 
 int debugger_add_breakpoint(debugger_t* dbg, uint16_t addr) {
@@ -255,6 +308,23 @@ bool debugger_remove_breakpoint(debugger_t* dbg, int index) {
     }
     dbg->num_breakpoints--;
     return true;
+}
+
+int debugger_add_cond_breakpoint(debugger_t* dbg, const emulator_t* emu,
+                                 uint16_t addr, const char* expr) {
+    bp_condexpr_t cond;
+    if (!parse_condexpr(emu, expr, &cond)) return -2;   /* unparseable */
+    int idx = debugger_add_breakpoint(dbg, addr);
+    if (idx < 0) return -1;                              /* table full */
+    breakpoint_t* bp = &dbg->breakpoints[idx];
+    bp->has_cond = true;
+    bp->cond = cond;
+    strncpy(bp->cond_text, expr, sizeof(bp->cond_text) - 1);
+    bp->cond_text[sizeof(bp->cond_text) - 1] = '\0';
+    size_t cl = strlen(bp->cond_text);
+    while (cl > 0 && isspace((unsigned char)bp->cond_text[cl - 1]))
+        bp->cond_text[--cl] = '\0';
+    return idx;
 }
 
 /* Evaluate a condition against current emulator state. */
@@ -284,6 +354,18 @@ static bool eval_cond(const bp_condition_t* c, const emulator_t* emu) {
     return false;
 }
 
+/* Evaluate a compound condition, folding terms strictly left-to-right. */
+static bool eval_condexpr(const bp_condexpr_t* e, const emulator_t* emu) {
+    if (e->num_terms == 0) return true;
+    bool result = eval_cond(&e->terms[0], emu);
+    for (int i = 1; i < e->num_terms; i++) {
+        bool t = eval_cond(&e->terms[i], emu);
+        if (e->conn[i - 1] == BP_CONN_AND) result = result && t;
+        else                                result = result || t;
+    }
+    return result;
+}
+
 bool debugger_is_breakpoint(const debugger_t* dbg, uint16_t pc) {
     /* Without emulator state we can't evaluate conditions — caller (cpu_step
      * path) uses debugger_check_pc() instead for full evaluation. This stays
@@ -300,7 +382,7 @@ static bool debugger_check_pc(const debugger_t* dbg, const emulator_t* emu) {
     for (int i = 0; i < dbg->num_breakpoints; i++) {
         if (dbg->breakpoints[i].addr != emu->cpu.PC) continue;
         if (!dbg->breakpoints[i].has_cond) return true;
-        if (eval_cond(&dbg->breakpoints[i].cond, emu)) return true;
+        if (eval_condexpr(&dbg->breakpoints[i].cond, emu)) return true;
     }
     return false;
 }
@@ -309,16 +391,34 @@ static bool debugger_check_pc(const debugger_t* dbg, const emulator_t* emu) {
 /*  WATCHPOINT MANAGEMENT                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-int debugger_add_watchpoint(debugger_t* dbg, uint16_t addr) {
+static const char* watch_mode_name(watch_mode_t m) {
+    switch (m) {
+        case WATCH_WRITE:  return "write";
+        case WATCH_READ:   return "read";
+        case WATCH_ACCESS: return "access";
+        case WATCH_CHANGE: return "change";
+    }
+    return "?";
+}
+
+int debugger_add_watchpoint_mode(debugger_t* dbg, uint16_t addr, watch_mode_t mode) {
     if (dbg->num_watchpoints >= DEBUGGER_MAX_WATCHPOINTS)
         return -1;
-    /* Check for duplicate */
+    /* Check for duplicate (same address AND mode) */
     for (int i = 0; i < dbg->num_watchpoints; i++) {
-        if (dbg->watchpoints[i] == addr)
+        if (dbg->watchpoints[i].addr == addr && dbg->watchpoints[i].mode == mode)
             return i;
     }
-    dbg->watchpoints[dbg->num_watchpoints] = addr;
+    watchpoint_t* w = &dbg->watchpoints[dbg->num_watchpoints];
+    w->addr = addr;
+    w->mode = mode;
+    w->last_value = 0;
+    w->has_last = false;
     return dbg->num_watchpoints++;
+}
+
+int debugger_add_watchpoint(debugger_t* dbg, uint16_t addr) {
+    return debugger_add_watchpoint_mode(dbg, addr, WATCH_WRITE);
 }
 
 bool debugger_remove_watchpoint(debugger_t* dbg, int index) {
@@ -339,13 +439,28 @@ bool debugger_remove_watchpoint(debugger_t* dbg, int index) {
 static debugger_t* g_trace_debugger = NULL;
 
 static void watchpoint_trace_callback(uint16_t address, uint8_t value, mem_access_type_t type) {
-    (void)value;
-    if (type != MEM_WRITE || !g_trace_debugger)
-        return;
-    for (int i = 0; i < g_trace_debugger->num_watchpoints; i++) {
-        if (g_trace_debugger->watchpoints[i] == address) {
-            g_trace_debugger->watch_triggered = true;
-            g_trace_debugger->watch_addr_hit = address;
+    debugger_t* d = g_trace_debugger;
+    if (!d) return;
+    for (int i = 0; i < d->num_watchpoints; i++) {
+        watchpoint_t* w = &d->watchpoints[i];
+        if (w->addr != address) continue;
+        bool hit = false;
+        switch (w->mode) {
+            case WATCH_WRITE:  hit = (type == MEM_WRITE); break;
+            case WATCH_READ:   hit = (type == MEM_READ);  break;
+            case WATCH_ACCESS: hit = true;                break;
+            case WATCH_CHANGE:
+                if (type == MEM_WRITE) {
+                    if (!w->has_last || w->last_value != value) hit = true;
+                    w->last_value = value;
+                    w->has_last = true;
+                }
+                break;
+        }
+        if (hit) {
+            d->watch_triggered = true;
+            d->watch_addr_hit = address;
+            d->watch_read_hit = (type == MEM_READ);
             return;
         }
     }
@@ -391,7 +506,8 @@ bool debugger_should_break(debugger_t* dbg, emulator_t* emu) {
     /* Watchpoint triggered */
     if (dbg->watch_triggered) {
         if (!emu->control_mode) {
-            printf("\n*** WATCHPOINT hit: write to $%04X ***\n", dbg->watch_addr_hit);
+            printf("\n*** WATCHPOINT hit: %s at $%04X ***\n",
+                   dbg->watch_read_hit ? "read" : "write", dbg->watch_addr_hit);
         }
         dbg->watch_triggered = false;
         strncpy(dbg->last_break_reason, "watch", sizeof(dbg->last_break_reason) - 1);
@@ -879,16 +995,20 @@ static void show_help(void) {
     printf("  find \"text\"       Search memory for an ASCII string\n");
     printf("  b addr            Add PC breakpoint\n");
     printf("  b addr if EXPR    Conditional breakpoint\n");
-    printf("                    EXPR: REG op VAL | M[ADDR] op VAL\n");
+    printf("                    EXPR: TERM [&&|| TERM]... (up to 4 terms)\n");
+    printf("                    TERM: REG op VAL | M[ADDR] op VAL\n");
     printf("                    REG: A X Y SP P PC   op: == != < <= > >=\n");
     printf("  b                 List all breakpoints\n");
     printf("  bd n              Delete breakpoint #n\n");
     printf("  br line           Raster bp at PAL line (0..311)\n");
     printf("  br                List raster breakpoints\n");
     printf("  brd n             Delete raster bp #n (or `brd *` to clear all)\n");
-    printf("  w addr            Add write watchpoint\n");
+    printf("  w addr [w|r|a|c]  Add watchpoint: write/read/access/change (default write)\n");
     printf("  w                 List all watchpoints\n");
     printf("  wd n              Delete watchpoint #n\n");
+    printf("  hunt              Start cheat-finder (all cells candidate)\n");
+    printf("  hunt V | = | + | - | !   Narrow: ==V / unchanged / up / down / changed\n");
+    printf("  hunt list | clear Show candidates / reset the hunt\n");
     printf("  via               Show VIA 6522 state\n");
     printf("  psg               Show PSG AY-3-8910 state\n");
     printf("  disk / fdc        Show Microdisc WD1793 + 4 drives\n");
@@ -897,8 +1017,13 @@ static void show_help(void) {
     printf("  loci              Show LOCI MIA full state (regs, fds, mounts, DSK/TAP)\n");
     printf("  stack             Show stack contents\n");
     printf("  set reg val       Set register (A,X,Y,SP,PC,P)\n");
+    printf("  set via reg val   Set VIA 6522 register (0..15)\n");
+    printf("  save FILE a len   Write memory region to a binary file\n");
+    printf("  load FILE addr    Read a binary file into memory\n");
+    printf("  disf FILE a n     Disassemble n instructions to a file\n");
+    printf("  ss FILE / sl FILE Save / load full machine state (.ost)\n");
     printf("  sym [name|addr]   List symbols / resolve name or address\n");
-    printf("  (addr args accept symbol names if --symbols was loaded)\n");
+    printf("  (numbers: hex default, $ hex, %% binary; symbols if --symbols loaded)\n");
     printf("  q / quit          Quit emulator\n");
     printf("  h / help          Show this help\n");
     printf("\n");
@@ -914,6 +1039,98 @@ static void show_help(void) {
 static uint8_t dbg_peek(emulator_t* emu, uint16_t a) {
     if (a < RAM_SIZE) return emu->memory.ram[a];
     return memory_read(&emu->memory, a);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  ITERATIVE MEMORY SEARCH — cheat-finder (hunt)                      */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Candidate set + previous-values snapshot over the whole address space.
+ * File-static (128 KB) so debugger_t stays small, mirroring the undo ring. */
+static bool     hunt_cand[0x10000];
+static uint8_t  hunt_prev[0x10000];
+static bool     hunt_active = false;
+static uint32_t hunt_count  = 0;
+
+static void hunt_snapshot(emulator_t* emu) {
+    for (uint32_t a = 0; a < 0x10000; a++)
+        hunt_prev[a] = dbg_peek(emu, (uint16_t)a);
+}
+
+/* Begin a hunt: every address becomes a candidate. */
+void debugger_hunt_start(emulator_t* emu) {
+    for (uint32_t a = 0; a < 0x10000; a++) hunt_cand[a] = true;
+    hunt_count = 0x10000;
+    hunt_snapshot(emu);
+    hunt_active = true;
+}
+
+uint32_t debugger_hunt_count(void) { return hunt_count; }
+bool     debugger_hunt_active(void) { return hunt_active; }
+void     debugger_hunt_clear(void) { hunt_active = false; hunt_count = 0; }
+
+uint32_t debugger_hunt_list(emulator_t* emu, uint16_t* out, uint32_t max, uint8_t* out_vals) {
+    uint32_t n = 0;
+    for (uint32_t a = 0; a < 0x10000 && n < max; a++) {
+        if (!hunt_cand[a]) continue;
+        out[n] = (uint16_t)a;
+        if (out_vals) out_vals[n] = dbg_peek(emu, (uint16_t)a);
+        n++;
+    }
+    return n;
+}
+
+/* Narrow the candidate set with a predicate, then re-snapshot for the next
+ * relative comparison. Returns the surviving candidate count. */
+uint32_t debugger_hunt_refine(emulator_t* emu, hunt_pred_t pred, uint8_t val) {
+    uint32_t kept = 0;
+    for (uint32_t a = 0; a < 0x10000; a++) {
+        if (!hunt_cand[a]) continue;
+        uint8_t cur = dbg_peek(emu, (uint16_t)a);
+        bool keep = false;
+        switch (pred) {
+            case HUNT_EQ:        keep = (cur == val);          break;
+            case HUNT_UNCHANGED: keep = (cur == hunt_prev[a]); break;
+            case HUNT_CHANGED:   keep = (cur != hunt_prev[a]); break;
+            case HUNT_GT:        keep = (cur >  hunt_prev[a]); break;
+            case HUNT_LT:        keep = (cur <  hunt_prev[a]); break;
+        }
+        if (keep) kept++; else hunt_cand[a] = false;
+    }
+    hunt_count = kept;
+    hunt_snapshot(emu);
+    return kept;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  MEMORY ⇄ FILE (save / load region)                                 */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+bool debugger_save_region(emulator_t* emu, const char* path,
+                          uint16_t addr, uint32_t len) {
+    FILE* f = fopen(path, "wb");
+    if (!f) return false;
+    for (uint32_t i = 0; i < len; i++) {
+        if (fputc(dbg_peek(emu, (uint16_t)(addr + i)), f) == EOF) {
+            fclose(f);
+            return false;
+        }
+    }
+    fclose(f);
+    return true;
+}
+
+long debugger_load_region(emulator_t* emu, const char* path, uint16_t addr) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    long n = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF && (addr + n) < 0x10000) {
+        memory_write(&emu->memory, (uint16_t)(addr + n), (uint8_t)c);
+        n++;
+    }
+    fclose(f);
+    return n;
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1401,11 +1618,13 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                     return;
                 }
                 if (if_pos && *if_pos) {
-                    bp_condition_t cond;
-                    if (!parse_condition(emu, if_pos, &cond)) {
+                    bp_condexpr_t cond;
+                    if (!parse_condexpr(emu, if_pos, &cond)) {
                         debugger_remove_breakpoint(dbg, idx);
                         printf("  Invalid condition: %s\n", if_pos);
-                        printf("  Syntax: REG op VALUE  or  M[ADDR] op VALUE\n");
+                        printf("  Syntax: TERM [ && | || TERM ]...  (up to %d terms)\n",
+                               BP_MAX_TERMS);
+                        printf("  TERM: REG op VALUE  or  M[ADDR] op VALUE\n");
                         printf("  REG: A X Y SP P PC   op: == != < <= > >=\n");
                         return;
                     }
@@ -1493,11 +1712,12 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                 if (dbg->num_watchpoints == 0) {
                     printf("  No watchpoints set\n");
                 } else {
-                    printf("  Watchpoints (write):\n");
+                    printf("  Watchpoints:\n");
                     for (int i = 0; i < dbg->num_watchpoints; i++) {
-                        const char* s = symbol_lookup(&emu->symbols, dbg->watchpoints[i]);
-                        if (s) printf("    #%d: $%04X  %s\n", i, dbg->watchpoints[i], s);
-                        else   printf("    #%d: $%04X\n", i, dbg->watchpoints[i]);
+                        const watchpoint_t* w = &dbg->watchpoints[i];
+                        const char* s = symbol_lookup(&emu->symbols, w->addr);
+                        printf("    #%d: $%04X (%s)%s%s\n", i, w->addr,
+                               watch_mode_name(w->mode), s ? "  " : "", s ? s : "");
                     }
                 }
             } else {
@@ -1506,9 +1726,24 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                     printf("  Unknown address/symbol: %s\n", arg1);
                     return;
                 }
-                int idx = debugger_add_watchpoint(dbg, addr);
+                /* Optional mode token: w (write, default), r (read),
+                 * a (access = read|write), c (change). */
+                watch_mode_t mode = WATCH_WRITE;
+                if (arg2[0]) {
+                    switch (tolower((unsigned char)arg2[0])) {
+                        case 'w': mode = WATCH_WRITE;  break;
+                        case 'r': mode = WATCH_READ;   break;
+                        case 'a': mode = WATCH_ACCESS; break;
+                        case 'c': mode = WATCH_CHANGE; break;
+                        default:
+                            printf("  Unknown mode '%s' (use w|r|a|c)\n", arg2);
+                            return;
+                    }
+                }
+                int idx = debugger_add_watchpoint_mode(dbg, addr, mode);
                 if (idx >= 0) {
-                    printf("  Watchpoint #%d set at $%04X (write)\n", idx, addr);
+                    printf("  Watchpoint #%d set at $%04X (%s)\n",
+                           idx, addr, watch_mode_name(mode));
                     debugger_install_watchpoint_trace(dbg, emu);
                 } else {
                     printf("  Error: maximum watchpoints reached (%d)\n",
@@ -1560,8 +1795,23 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         }
         /* ── SET REGISTER ───────────────────────────────── */
         else if (strcmp(cmd, "set") == 0) {
-            if (!arg1[0] || !arg2[0]) {
+            if (strcasecmp(arg1, "via") == 0) {
+                /* set via <reg 0-15> <value> — write a VIA 6522 register */
+                const char* p = skip_ws(skip_token(skip_ws(line)));  /* after "set" */
+                p = skip_ws(skip_token(p));                          /* after "via" */
+                p = skip_ws(skip_token(p));                          /* after reg → value */
+                uint16_t regv = 0, valv = 0;
+                if (!arg2[0] || !*p ||
+                    !parse_addr(emu, arg2, &regv) || !parse_addr(emu, p, &valv) ||
+                    regv > 15) {
+                    printf("  Usage: set via <reg 0-15> <value>\n");
+                } else {
+                    via_write(&emu->via, (uint8_t)regv, (uint8_t)valv);
+                    printf("  VIA[$%X] = $%02X\n", (unsigned)regv, (uint8_t)valv);
+                }
+            } else if (!arg1[0] || !arg2[0]) {
                 printf("  Usage: set <reg> <value>  (reg: A,X,Y,SP,PC,P)\n");
+                printf("         set via <reg 0-15> <value>\n");
             } else {
                 uint16_t val = (uint16_t)strtol(arg2, NULL, 16);
                 /* Case-insensitive register name */
@@ -1592,6 +1842,134 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                     printf("  Unknown register: %s\n", arg1);
                 }
             }
+        }
+        /* ── HUNT (iterative memory search / cheat-finder) ─ */
+        else if (strcmp(cmd, "hunt") == 0) {
+            if (!arg1[0]) {
+                debugger_hunt_start(emu);
+                printf("  Hunt started: %u candidates (whole address space)\n",
+                       hunt_count);
+            } else if (strcasecmp(arg1, "list") == 0) {
+                if (!hunt_active) {
+                    printf("  No active hunt (type `hunt` to start)\n");
+                } else {
+                    printf("  %u candidate%s:\n", hunt_count,
+                           hunt_count == 1 ? "" : "s");
+                    int shown = 0;
+                    for (uint32_t a = 0; a < 0x10000 && shown < 64; a++) {
+                        if (!hunt_cand[a]) continue;
+                        const char* s = symbol_lookup(&emu->symbols, (uint16_t)a);
+                        printf("    $%04X = $%02X%s%s\n", (uint16_t)a,
+                               dbg_peek(emu, (uint16_t)a), s ? "  " : "", s ? s : "");
+                        shown++;
+                    }
+                    if (hunt_count > 64) printf("    ... (showing first 64)\n");
+                }
+            } else if (strcasecmp(arg1, "clear") == 0 ||
+                       strcasecmp(arg1, "reset") == 0) {
+                hunt_active = false;
+                hunt_count = 0;
+                printf("  Hunt cleared\n");
+            } else if (!hunt_active) {
+                printf("  No active hunt (type `hunt` to start)\n");
+            } else {
+                hunt_pred_t pred = HUNT_EQ;
+                uint8_t val = 0;
+                bool ok = true;
+                if (strcmp(arg1, "+") == 0)                        pred = HUNT_GT;
+                else if (strcmp(arg1, "-") == 0)                   pred = HUNT_LT;
+                else if (strcmp(arg1, "!") == 0 ||
+                         strcmp(arg1, "!=") == 0)                  pred = HUNT_CHANGED;
+                else if (strcmp(arg1, "=") == 0 && !arg2[0])       pred = HUNT_UNCHANGED;
+                else {
+                    /* value form: "V", "=V", or "= V" */
+                    const char* vs = (arg1[0] == '=') ? arg1 + 1 : arg1;
+                    if (!*vs) vs = arg2;
+                    uint16_t v16;
+                    if (!parse_addr(emu, vs, &v16) || v16 > 0xFF) ok = false;
+                    else { pred = HUNT_EQ; val = (uint8_t)v16; }
+                }
+                if (!ok) {
+                    printf("  Usage: hunt [V | = | + | - | ! | list | clear]\n");
+                } else {
+                    uint32_t k = debugger_hunt_refine(emu, pred, val);
+                    printf("  %u candidate%s remain\n", k, k == 1 ? "" : "s");
+                }
+            }
+        }
+        /* ── MEMORY → FILE / FILE → MEMORY ──────────────── */
+        else if (strcmp(cmd, "save") == 0) {
+            char fname[128] = {0}, a_addr[32] = {0}, a_len[32] = {0};
+            if (sscanf(line, "%*s %127s %31s %31s", fname, a_addr, a_len) != 3) {
+                printf("  Usage: save FILE addr len\n");
+                return;
+            }
+            uint16_t addr, len16;
+            if (!parse_addr(emu, a_addr, &addr)) {
+                printf("  Bad address: %s\n", a_addr); return;
+            }
+            if (!parse_addr(emu, a_len, &len16)) {
+                printf("  Bad length: %s\n", a_len); return;
+            }
+            if (debugger_save_region(emu, fname, addr, len16))
+                printf("  Wrote %u byte(s) from $%04X to %s\n",
+                       (unsigned)len16, addr, fname);
+            else
+                printf("  Error writing %s\n", fname);
+        }
+        else if (strcmp(cmd, "load") == 0) {
+            char fname[128] = {0}, a_addr[32] = {0};
+            if (sscanf(line, "%*s %127s %31s", fname, a_addr) != 2) {
+                printf("  Usage: load FILE addr\n");
+                return;
+            }
+            uint16_t addr;
+            if (!parse_addr(emu, a_addr, &addr)) {
+                printf("  Bad address: %s\n", a_addr); return;
+            }
+            long n = debugger_load_region(emu, fname, addr);
+            if (n < 0) printf("  Error reading %s\n", fname);
+            else printf("  Loaded %ld byte(s) into $%04X from %s\n", n, addr, fname);
+        }
+        else if (strcmp(cmd, "disf") == 0) {
+            char fname[128] = {0}, a_addr[32] = {0}, a_n[32] = {0};
+            if (sscanf(line, "%*s %127s %31s %31s", fname, a_addr, a_n) != 3) {
+                printf("  Usage: disf FILE addr count\n");
+                return;
+            }
+            uint16_t addr;
+            if (!parse_addr(emu, a_addr, &addr)) {
+                printf("  Bad address: %s\n", a_addr); return;
+            }
+            int count = atoi(a_n);
+            if (count <= 0 || count > 4096) {
+                printf("  Count must be 1..4096\n"); return;
+            }
+            FILE* f = fopen(fname, "w");
+            if (!f) { printf("  Error writing %s\n", fname); return; }
+            uint16_t a = addr;
+            for (int i = 0; i < count; i++) {
+                char dis[80];
+                int len = cpu_disassemble(&emu->cpu, a, dis, sizeof(dis));
+                fprintf(f, "$%04X: %s\n", a, dis);
+                a = (uint16_t)(a + (len > 0 ? len : 1));
+            }
+            fclose(f);
+            printf("  Disassembled %d instruction(s) from $%04X to %s\n",
+                   count, addr, fname);
+        }
+        /* ── SAVE STATE / LOAD STATE (.ost) ─────────────── */
+        else if (strcmp(cmd, "ss") == 0) {
+            if (!arg1[0]) printf("  Usage: ss FILE   (save machine state)\n");
+            else if (!savestate_save) printf("  Save state unavailable in this build\n");
+            else if (savestate_save(emu, arg1)) printf("  Saved state to %s\n", arg1);
+            else printf("  Error saving state to %s\n", arg1);
+        }
+        else if (strcmp(cmd, "sl") == 0) {
+            if (!arg1[0]) printf("  Usage: sl FILE   (load machine state)\n");
+            else if (!savestate_load) printf("  Load state unavailable in this build\n");
+            else if (savestate_load(emu, arg1)) printf("  Loaded state from %s\n", arg1);
+            else printf("  Error loading state from %s\n", arg1);
         }
         /* ── QUIT ───────────────────────────────────────── */
         else if (strcmp(cmd, "q") == 0 || strcmp(cmd, "quit") == 0) {

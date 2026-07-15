@@ -184,9 +184,13 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         if (strcmp(path, "/") == 0) {
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
-                "GET /hello /regs /mem?addr=&len= /peek/{via|psg|disk|acia|tape|loci}; "
-                "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause}; "
-                "DELETE /tape /disk/{A-D}\"}\n");
+                "GET /hello /regs /mem?addr=&len= /peek/{via|psg|disk|acia|tape|loci} "
+                "/break /watch /disasm?addr=&n=; "
+                "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
+                "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
+                "/hunt(op,val) /sym(path) /save(path,addr,len) /load(path,addr) "
+                "/state/save /state/load; "
+                "DELETE /tape /disk/{A-D} /break/{id} /watch/{id} /raster/{id}\"}\n");
             return false;
         }
         if (strcmp(path, "/hello") == 0) { snprintf(cmd, cmdsz, "hello"); return true; }
@@ -204,6 +208,19 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         }
         if (strncmp(path, "/peek/", 6) == 0) {
             snprintf(cmd, cmdsz, "peek %s", path + 6);
+            return true;
+        }
+        if (strcmp(path, "/break") == 0) { snprintf(cmd, cmdsz, "break-list"); return true; }
+        if (strcmp(path, "/watch") == 0) { snprintf(cmd, cmdsz, "watch-list"); return true; }
+        if (strcmp(path, "/disasm") == 0) {
+            char addr[32], n[32];
+            if (!get_param(query, "addr", addr, sizeof(addr)) ||
+                !get_param(query, "n", n, sizeof(n))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"/disasm needs ?addr=&n=\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "disasm %s %s", addr, n);
             return true;
         }
     }
@@ -272,12 +289,151 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             snprintf(cmd, cmdsz, "load-disk %c %s", path[6], full);
             return true;
         }
+        if (strcmp(path, "/break") == 0) {
+            char addr[32], cond[160];
+            if (!get_param(body, "addr", addr, sizeof(addr))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /break needs addr= [&if=EXPR]\"}\n");
+                return false;
+            }
+            if (get_param(body, "if", cond, sizeof(cond)))
+                snprintf(cmd, cmdsz, "break %s if %s", addr, cond);
+            else
+                snprintf(cmd, cmdsz, "break %s", addr);
+            return true;
+        }
+        if (strcmp(path, "/watch") == 0) {
+            char addr[32], mode[8];
+            if (!get_param(body, "addr", addr, sizeof(addr))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /watch needs addr= [&mode=w|r|a|c]\"}\n");
+                return false;
+            }
+            if (get_param(body, "mode", mode, sizeof(mode)))
+                snprintf(cmd, cmdsz, "watch %s %s", addr, mode);
+            else
+                snprintf(cmd, cmdsz, "watch %s", addr);
+            return true;
+        }
+        if (strcmp(path, "/raster") == 0) {
+            char line[32];
+            if (!get_param(body, "line", line, sizeof(line))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /raster needs line=\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "raster %s", line);
+            return true;
+        }
+        if (strcmp(path, "/set") == 0) {
+            char reg[16], val[32], via[16];
+            if (get_param(body, "via", via, sizeof(via)) &&
+                get_param(body, "val", val, sizeof(val))) {
+                snprintf(cmd, cmdsz, "set via %s %s", via, val);
+                return true;
+            }
+            if (get_param(body, "reg", reg, sizeof(reg)) &&
+                get_param(body, "val", val, sizeof(val))) {
+                snprintf(cmd, cmdsz, "set %s %s", reg, val);
+                return true;
+            }
+            http_send(fd, 400, "Bad Request",
+                "{\"ok\":false,\"error\":\"POST /set needs reg=&val= (or via=&val=)\"}\n");
+            return false;
+        }
+        if (strcmp(path, "/hunt") == 0) {
+            char op[16], val[32];
+            if (!get_param(body, "op", op, sizeof(op))) {
+                snprintf(cmd, cmdsz, "hunt");   /* seed */
+                return true;
+            }
+            if (get_param(body, "val", val, sizeof(val)))
+                snprintf(cmd, cmdsz, "hunt %s %s", op, val);
+            else
+                snprintf(cmd, cmdsz, "hunt %s", op);
+            return true;
+        }
+        if (strcmp(path, "/sym") == 0) {
+            if (!get_param(body, "path", arg, sizeof(arg))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /sym needs path=\"}\n");
+                return false;
+            }
+            char full[HTTP_ROOT_MAX];
+            if (!sandbox_path(srv, arg, full, sizeof(full))) {
+                http_send(fd, 403, "Forbidden",
+                    "{\"ok\":false,\"error\":\"path outside sandbox root\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "load-sym %s", full);
+            return true;
+        }
+        if (strcmp(path, "/save") == 0) {
+            char addr[32], len[32];
+            if (!get_param(body, "path", arg, sizeof(arg)) ||
+                !get_param(body, "addr", addr, sizeof(addr)) ||
+                !get_param(body, "len", len, sizeof(len))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /save needs path=&addr=&len=\"}\n");
+                return false;
+            }
+            char full[HTTP_ROOT_MAX];
+            if (!sandbox_path(srv, arg, full, sizeof(full))) {
+                http_send(fd, 403, "Forbidden",
+                    "{\"ok\":false,\"error\":\"path outside sandbox root\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "save-mem %s %s %s", full, addr, len);
+            return true;
+        }
+        if (strcmp(path, "/load") == 0) {
+            char addr[32];
+            if (!get_param(body, "path", arg, sizeof(arg)) ||
+                !get_param(body, "addr", addr, sizeof(addr))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /load needs path=&addr=\"}\n");
+                return false;
+            }
+            char full[HTTP_ROOT_MAX];
+            if (!sandbox_path(srv, arg, full, sizeof(full))) {
+                http_send(fd, 403, "Forbidden",
+                    "{\"ok\":false,\"error\":\"path outside sandbox root\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "load-mem %s %s", full, addr);
+            return true;
+        }
+        if (strcmp(path, "/state/save") == 0 || strcmp(path, "/state/load") == 0) {
+            if (!get_param(body, "path", arg, sizeof(arg))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"needs path=\"}\n");
+                return false;
+            }
+            char full[HTTP_ROOT_MAX];
+            if (!sandbox_path(srv, arg, full, sizeof(full))) {
+                http_send(fd, 403, "Forbidden",
+                    "{\"ok\":false,\"error\":\"path outside sandbox root\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "%s %s",
+                     strcmp(path, "/state/save") == 0 ? "state-save" : "state-load", full);
+            return true;
+        }
     }
     else if (strcmp(method, "DELETE") == 0) {
         if (strcmp(path, "/tape") == 0) { snprintf(cmd, cmdsz, "eject-tape"); return true; }
         if (strncmp(path, "/disk/", 6) == 0 && path[6] && !path[7]) {
             snprintf(cmd, cmdsz, "eject-disk %c", path[6]);
             return true;
+        }
+        if (strncmp(path, "/break/", 7) == 0 && path[7]) {
+            snprintf(cmd, cmdsz, "unbreak %.15s", path + 7); return true;
+        }
+        if (strncmp(path, "/watch/", 7) == 0 && path[7]) {
+            snprintf(cmd, cmdsz, "unwatch %.15s", path + 7); return true;
+        }
+        if (strncmp(path, "/raster/", 8) == 0 && path[8]) {
+            snprintf(cmd, cmdsz, "unraster %.15s", path + 8); return true;
         }
     }
 

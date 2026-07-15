@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.0-alpha] - 2026-07-15
+
+### Added — API REST : parité debug (bridge `--control` + 7 gaps) (Sprint 97)
+
+Les capacités de debug n'étaient accessibles qu'au REPL. Ce sprint les rend
+pilotables à distance, en respectant l'architecture existante : **toute
+requête HTTP est mappée vers une ligne `--control`, seule source de vérité.**
+
+- **Bridge du debug `--control` déjà présent vers REST** (jusque-là non routé
+  dans `http_api.c`) : `GET /break` `GET /watch` `GET /disasm?addr=&n=`,
+  `POST /raster`, `DELETE /break/{id}` `/watch/{id}` `/raster/{id}`.
+- **Watchpoints avec mode** : `POST /watch ?addr=&mode=w|r|a|c` — la commande
+  `--control watch` prend un mode optionnel (`debugger_add_watchpoint_mode`).
+- **Breakpoints conditionnels** : `POST /break ?addr=&if=EXPR` — `break <addr>
+  if <expr>` via `debugger_add_cond_breakpoint` (compound `&&`/`||`,
+  URL-encodé côté client, décodé par `get_param`).
+- **Cheat-finder** : `POST /hunt ?op=&val=` (`eq/same/changed/up/down/list/
+  clear`) — l'état hunt du debugger est exposé (`debugger_hunt_*`).
+- **Mémoire ⇄ fichier** : `POST /save ?path=&addr=&len=`, `POST /load
+  ?path=&addr=` → `save-mem`/`load-mem` (`debugger_save_region`/`_load_region`),
+  chemins **sandboxés** dans `--http-api-root`.
+- **Save-state** : `POST /state/save`, `POST /state/load` → `state-save`/
+  `state-load` (`.ost`, sandboxé).
+- **Registres VIA** : `POST /set ?via=&val=` (en plus de `?reg=&val=`).
+- **Symboles** : `POST /sym ?path=` (bridge `load-sym`, sandboxé).
+- **Littéraux binaires `%`** dans tous les paramètres (`parse_hex` de
+  `control.c`).
+- **Caps `hello`** étendues (additives, `CONTROL_PROTO_VERSION` inchangé) :
+  `watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,
+  bin-literal`.
+
+### Tests
+- `test-control-dispatch` 13 → 20 (watch mode, break conditionnel + rejet,
+  set via, hunt seed→narrow, littéral binaire, roundtrip save/load).
+- `test-httpapi` (e2e curl) 10 → 26 : un endpoint par gap, roundtrips région
+  et save-state, sandbox. Fiabilisé : settle après boot (le RAM-clear ROM
+  courait la 1ʳᵉ écriture ; défaut pré-existant révélé en exécutant réellement
+  le build `HTTPAPI=1`). Valgrind clean. 909 → 932 tests.
+- `EMU_VERSION` 1.55.0 → 1.56.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
+## [1.55.0-alpha] - 2026-07-15
+
+### Added — Parité debugger vs Oricutron : 7 gaps fermés (audit comparatif)
+
+Un audit comparatif frais du debugger interactif face à Oricutron (inventaire
+ancré sur le code + `ReadMe.txt` réelle d'Oricutron) a rouvert **7 écarts**
+que la note « plus aucun gap » masquait. Tous fermés ici.
+
+- **Gap 1 — Watchpoints read / access / change** : le watchpoint n'est plus
+  *write-only*. `watchpoint_t { addr, mode, last_value }` avec 4 modes
+  (`WATCH_WRITE`/`READ`/`ACCESS`/`CHANGE`) ; la trace mémoire remonte déjà
+  `MEM_READ`/`MEM_WRITE`, le callback filtre selon le mode (CHANGE ne déclenche
+  qu'à un changement de valeur). REPL `w addr [w|r|a|c]`, listing enrichi,
+  message de hit « read/write ». Côté **stub GDB** : `Z3` (read) et `Z4`
+  (access) en plus de `Z2` (write), et le callback de trace est désormais
+  (ré)installé sur insertion — les watchpoints posés depuis gdb se déclenchent
+  vraiment.
+- **Gap 2 — Conditions de breakpoint par expression** : `b addr if EXPR`
+  accepte jusqu'à **4 comparaisons** jointes par `&&`/`||`, évaluées de gauche
+  à droite (`bp_condexpr_t`). Ex. `b 1000 if A==5 && X==3`.
+- **Gap 3 — Recherche mémoire itérative (cheat-finder)** : nouvelle commande
+  `hunt` — démarre un ensemble de candidats sur tout l'espace d'adressage puis
+  le **raffine** : `hunt V` (==V), `hunt =` (inchangé), `hunt +`/`hunt -`
+  (monté/descendu), `hunt !` (changé), `hunt list`, `hunt clear`.
+- **Gap 4 — Mémoire ⇄ fichier** : `save FILE addr len` (région → binaire),
+  `load FILE addr` (binaire → mémoire), `disf FILE addr n` (désassemblage vers
+  fichier).
+- **Gap 5 — Save-state depuis le REPL** : `ss FILE` / `sl FILE` (format `.ost`).
+  Dépendance découplée par symbole faible (les binaires de test qui lient
+  `debugger.c` seul ne tirent pas tout le sérialiseur).
+- **Gap 6 — Édition des registres VIA** : `set via <reg 0-15> <val>`.
+- **Gap 7 — Littéraux binaires `%`** : acceptés partout où une adresse/valeur
+  est attendue (`%100000000000` == `$800`), en plus de `$`/`0x`/décimal.
+
+### Tests
+- `test-debugger` 13 → 19 (read/change watchpoint, condition compound `&&`/`||`,
+  hunt, roundtrip save/load, set via, littéral binaire) ; `test-gdbstub`
+  couvre `Z3`/`Z4`. Valgrind clean. Toutes suites vertes. 903 → 909 tests.
+- `EMU_VERSION` 1.54.0 → 1.55.0-alpha ; builds natif + SDL2 OK.
+
 ## [1.54.0-alpha] - 2026-07-14
 
 ### Added — Injection clavier `POST /keys` — initiative API REST complète (Sprint 95, Epic 4)
