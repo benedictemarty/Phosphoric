@@ -123,6 +123,12 @@ typedef struct memory_s {
      * with the watchpoint callback above. */
     void (*trace_callback2)(uint16_t address, uint8_t value, mem_access_type_t type);
 
+    /* RAM stuck-bit fault injection (Epic 6/US6, parity with b2 "RAM errors").
+     * Applied to main-RAM ($0000-$BFFF) reads: value = (v & ~stuck0) | stuck1.
+     * Both zero = no faults (zero cost). */
+    uint8_t stuck0;   /* bits forced to 0 */
+    uint8_t stuck1;   /* bits forced to 1 */
+
     /* OCULA banking ($A000-$BFFF): bank 0 = ram[], banks 1-7 live in
      * ocula_bank_mem (lazily allocated, 7 x OCULA_BANK_SIZE). The ULA
      * always scans bank 0 — banking is CPU-visible only. */
@@ -259,6 +265,10 @@ void memory_set_trace(memory_t* mem, bool enabled,
  *  memory_set_trace, so watchpoints and the conditional CPU trace coexist. */
 void memory_set_trace2(memory_t* mem,
                      void (*callback)(uint16_t, uint8_t, mem_access_type_t));
+
+/** @brief Set RAM stuck-bit masks (Epic 6/US6). stuck0 = bits forced to 0,
+ *  stuck1 = bits forced to 1, applied to $0000-$BFFF reads. 0,0 = disabled. */
+void memory_set_stuck_bits(memory_t* mem, uint8_t stuck0, uint8_t stuck1);
 
 /**
  * @brief Clear all RAM

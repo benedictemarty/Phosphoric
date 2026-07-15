@@ -448,6 +448,22 @@ TEST(sym_group_toggle) {
     PASS();
 }
 
+TEST(stuck_bits_set_status) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    control_result_t r = run_one(emu, &s, "stuck-bits 80 01");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK stuck0=80 stuck1=01\n");
+    ASSERT_TRUE(emu->memory.stuck0 == 0x80 && emu->memory.stuck1 == 0x01);
+    control_sink_free(&s);
+
+    run_one(emu, &s, "stuck-bits");
+    ASSERT_STR_EQ(s.buf, "OK stuck0=80 stuck1=01\n");
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -475,6 +491,7 @@ int main(void) {
     RUN(watch_region_set_list_clear);
     RUN(peek_new_subsystems);
     RUN(sym_group_toggle);
+    RUN(stuck_bits_set_status);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

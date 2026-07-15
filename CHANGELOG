@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.0-alpha] - 2026-07-15
+
+### Added — Injection de stuck-bits RAM (Epic 6 / US 6a, rattrapage b2) (Sprint 103)
+
+Volet **testable** de l'US 6 : injection de fautes RAM par **bits collés**
+(parité avec la fonction « RAM errors » de b2). Chaque bit de donnée peut être
+forcé à 0 ou à 1 sur les lectures RAM ($0000-$BFFF).
+
+- **Mémoire** (`memory.c`/`.h`) : masques `stuck0` (bits forcés à 0) / `stuck1`
+  (bits forcés à 1) ; lecture RAM → `val = (v & ~stuck0) | stuck1`, **coût nul**
+  quand les deux masques sont à 0. `memory_set_stuck_bits(mem, s0, s1)`.
+- **Pilotage** :
+  - REPL : `stuck S0 [S1]` (affiche l'état sans argument).
+  - `--control` : `stuck-bits <s0> [s1]` (cap `stuck-bits`).
+  - REST : `POST /stuck-bits ?zero=&one=`, `GET /stuck-bits`.
+
+**Non livré (volet US 6b)** : les overlays visuels de timing (position faisceau
+TV, lignes raster) sont **GUI/SDL** et **invérifiables** en headless — laissés
+en backlog plutôt que livrés sans vérification.
+
+### Tests
+- `test-memory` 19 → 20 (bit collé à 1 / à 0 / désactivé),
+  `test-control-dispatch` 25 → 26 (`stuck-bits` set + status), `test-httpapi`
+  e2e 43 → 45. Valgrind clean. 964 → 968 tests.
+- `EMU_VERSION` 1.61.0 → 1.62.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.61.0-alpha] - 2026-07-15
 
 ### Added — Groupes de symboles (Epic 6 / US 4, rattrapage b2) (Sprint 102)

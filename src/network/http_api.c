@@ -185,12 +185,12 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
                 "GET /hello /regs /mem?addr=&len=[&bank=cpu|ram|rom|overlay] /peek/{via|psg|disk|acia|tape|loci|video|kbd|joy|printer} "
-                "/break /watch /disasm?addr=&n= /trace /watch-region; "
+                "/break /watch /disasm?addr=&n= /trace /watch-region /stuck-bits; "
                 "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
                 "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
                 "/hunt(op,val) /sym(path,group) /sym/group(group,enabled) /save(path,addr,len) /load(path,addr) "
                 "/state/save /state/load /trace(spec) /trace/stop /trace/save(path) "
-                "/watch-region(start,end,flags); "
+                "/watch-region(start,end,flags) /stuck-bits(zero,one); "
                 "DELETE /tape /disk/{A-D} /break/{id} /watch/{id} /raster/{id}\"}\n");
             return false;
         }
@@ -229,6 +229,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
         }
         if (strcmp(path, "/trace") == 0) { snprintf(cmd, cmdsz, "trace status"); return true; }
         if (strcmp(path, "/watch-region") == 0) { snprintf(cmd, cmdsz, "watch-region-list"); return true; }
+        if (strcmp(path, "/stuck-bits") == 0) { snprintf(cmd, cmdsz, "stuck-bits"); return true; }
     }
     else if (strcmp(method, "POST") == 0) {
         if (strcmp(path, "/reset") == 0) { snprintf(cmd, cmdsz, "reset"); return true; }
@@ -444,6 +445,17 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
                 snprintf(cmd, cmdsz, "watch-region %s %s %s", start, end, flags);
             else
                 snprintf(cmd, cmdsz, "watch-region %s %s", start, end);
+            return true;
+        }
+        if (strcmp(path, "/stuck-bits") == 0) {
+            char zero[8], one[8];
+            if (!get_param(body, "zero", zero, sizeof(zero)) ||
+                !get_param(body, "one", one, sizeof(one))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /stuck-bits needs zero=&one= (hex bit masks)\"}\n");
+                return false;
+            }
+            snprintf(cmd, cmdsz, "stuck-bits %s %s", zero, one);
             return true;
         }
         if (strcmp(path, "/trace/stop") == 0) { snprintf(cmd, cmdsz, "trace stop"); return true; }

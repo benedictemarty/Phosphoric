@@ -1154,6 +1154,7 @@ static void show_help(void) {
     printf("  stack             Show stack contents\n");
     printf("  set reg val       Set register (A,X,Y,SP,PC,P)\n");
     printf("  set via reg val   Set VIA 6522 register (0..15)\n");
+    printf("  stuck [S0 [S1]]   RAM stuck-bit fault injection (S0→0, S1→1; 0 0 = off)\n");
     printf("  save FILE a len   Write memory region to a binary file\n");
     printf("  load FILE addr    Read a binary file into memory\n");
     printf("  disf FILE a n     Disassemble n instructions to a file\n");
@@ -2302,6 +2303,24 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                 printf("  Trace off\n");
             } else {
                 printf("  Unknown: trace %s (start|stop|save|status|off)\n", arg1);
+            }
+        }
+        /* ── RAM STUCK-BIT FAULT INJECTION (US 6) ────────── */
+        else if (strcmp(cmd, "stuck") == 0) {
+            if (!arg1[0]) {
+                printf("  RAM stuck bits: stuck0=$%02X (→0)  stuck1=$%02X (→1)\n",
+                       emu->memory.stuck0, emu->memory.stuck1);
+                printf("  Usage: stuck S0 [S1]   (S0=bits forced to 0, S1=forced to 1; 0 0 = off)\n");
+            } else {
+                uint16_t s0 = 0, s1 = 0;
+                if (!parse_addr(emu, arg1, &s0) ||
+                    (arg2[0] && !parse_addr(emu, arg2, &s1))) {
+                    printf("  Usage: stuck S0 [S1]\n");
+                } else {
+                    memory_set_stuck_bits(&emu->memory, (uint8_t)s0, (uint8_t)s1);
+                    printf("  RAM stuck bits set: stuck0=$%02X stuck1=$%02X\n",
+                           (uint8_t)s0, (uint8_t)s1);
+                }
             }
         }
         /* ── QUIT ───────────────────────────────────────── */

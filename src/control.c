@@ -719,6 +719,23 @@ static void cmd_load_sym(emulator_t* emu, control_sink_t* s,
     sink_ok(s, "count=%d total=%d group=%u", n, emu->symbols.count, group);
 }
 
+/* US 6 — RAM stuck-bit fault injection. */
+static void cmd_stuck_bits(emulator_t* emu, control_sink_t* s,
+                           const char* s0_s, const char* s1_s) {
+    if (!s0_s || !*s0_s) {
+        sink_ok(s, "stuck0=%02X stuck1=%02X", emu->memory.stuck0, emu->memory.stuck1);
+        return;
+    }
+    uint32_t s0 = 0, s1 = 0;
+    if (!parse_hex(s0_s, &s0) || (s1_s && *s1_s && !parse_hex(s1_s, &s1)) ||
+        s0 > 0xFF || s1 > 0xFF) {
+        sink_err(s, "stuck-bits: usage `stuck-bits <s0> [s1]`");
+        return;
+    }
+    memory_set_stuck_bits(&emu->memory, (uint8_t)s0, (uint8_t)s1);
+    sink_ok(s, "stuck0=%02X stuck1=%02X", (uint8_t)s0, (uint8_t)s1);
+}
+
 /* US 4 — enable/disable a symbol group. */
 static void cmd_sym_group(emulator_t* emu, control_sink_t* s,
                           const char* group_s, const char* onoff_s) {
@@ -886,7 +903,7 @@ static void cmd_reset(emulator_t* emu, control_sink_t* s) {
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map,sym-group"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map,sym-group,stuck-bits"
 
 static void cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;
@@ -1194,6 +1211,9 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
     }
     else if (strcmp(cmd, "sym-group") == 0) {
         cmd_sym_group(emu, s, arg1, arg2);
+    }
+    else if (strcmp(cmd, "stuck-bits") == 0) {
+        cmd_stuck_bits(emu, s, arg1, arg2);
     }
     else if (strcmp(cmd, "disasm") == 0) {
         cmd_disasm(emu, s, arg1, arg2);

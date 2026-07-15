@@ -287,6 +287,26 @@ TEST(test_screen_ram) {
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
+/* US 6 — RAM stuck-bit fault injection. */
+TEST(test_ram_stuck_bits) {
+    memory_t mem;
+    memory_init(&mem);
+    memory_write(&mem, 0x1000, 0x00);
+
+    /* bit0 stuck at 1 → reads back 0x01. */
+    memory_set_stuck_bits(&mem, 0x00, 0x01);
+    ASSERT_EQ(memory_read(&mem, 0x1000), 0x01);
+
+    /* bit7 stuck at 0 → 0xFF reads back 0x7F. */
+    memory_write(&mem, 0x1000, 0xFF);
+    memory_set_stuck_bits(&mem, 0x80, 0x00);
+    ASSERT_EQ(memory_read(&mem, 0x1000), 0x7F);
+
+    /* Disabled → clean read. */
+    memory_set_stuck_bits(&mem, 0x00, 0x00);
+    ASSERT_EQ(memory_read(&mem, 0x1000), 0xFF);
+}
+
 int main(void) {
     printf("Running Memory tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -321,6 +341,7 @@ int main(void) {
     printf("\n  Memory Map:\n");
     RUN(test_ram_boundary);
     RUN(test_screen_ram);
+    RUN(test_ram_stuck_bits);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

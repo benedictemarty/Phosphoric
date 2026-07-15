@@ -6,6 +6,21 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 103: Injection stuck-bits RAM (Epic 6 / US 6a) (v1.62.0-alpha) - DONE
+Volet testable de l'US 6 (parité « RAM errors » de b2). Le volet 6b (overlays
+visuels timing) reste en backlog car GUI/SDL, invérifiable en headless.
+- [x] Masques `stuck0` (bits→0) / `stuck1` (bits→1) sur les lectures RAM
+      $0000-$BFFF (`val=(v&~stuck0)|stuck1`, coût nul quand off) ;
+      `memory_set_stuck_bits`.
+- [x] REPL `stuck S0 [S1]`, `--control` `stuck-bits <s0> [s1]` (cap
+      `stuck-bits`), REST `POST /stuck-bits?zero=&one=` + `GET /stuck-bits`.
+      test-memory 19→20, test-control-dispatch 25→26, test-httpapi 43→45.
+      Valgrind clean. 964 → 968 tests.
+> **Epic 6 : rattrapage b2 substantiellement atteint** — US 1-5 + US 6a livrées.
+> Reste seulement US 6b (overlays visuels GUI), à faire sur machine avec écran.
+
+---
+
 ### Sprint 102: Groupes de symboles (Epic 6 / US 4) (v1.61.0-alpha) - DONE
 Cinquième US livrée de l'Epic 6 — **tout le périmètre non-GUI est fait** (reste
 US 6, overlays GUI, optionnel). Table de symboles plate → groupes activables.
@@ -184,9 +199,16 @@ parasite, `MOS's view`, teletext debug).
       `--control peek …` + REST `GET /peek/{video|kbd|joy|printer}`.
       test-debugger 21→22, test-control-dispatch 23→24, test-httpapi 37→41.
       954→960 tests.
-- [ ] **US 6 (optionnel, GUI/SDL)** *(🟡 / élevé)* : overlays visuels timing
-      (position faisceau TV, lignes raster) dans le renderer ; injection
-      stuck-bits RAM (comme b2).
+- [~] **US 6 — partiellement livrée** :
+      - [x] **US 6a — Injection stuck-bits RAM** *(v1.62.0, Sprint 103)* :
+            masques `stuck0`/`stuck1` sur les lectures RAM (`memory_set_stuck_bits`,
+            coût nul si off) ; REPL `stuck`, `--control` `stuck-bits`, REST
+            `POST/GET /stuck-bits`. test-memory 19→20, test-control-dispatch
+            25→26, test-httpapi 43→45. 964→968 tests.
+      - [ ] **US 6b — Overlays visuels timing** *(GUI/SDL, backlog)* : position
+            faisceau TV, lignes raster dans le renderer. **Non fait** :
+            invérifiable en environnement headless — à traiter sur machine avec
+            affichage, pas livré sans vérification visuelle.
 
 > **Recommandation :** attaquer **US 1 + US 2** (cœur de l'écart, coût
 > raisonnable, US 2 recycle le backlog REST) ; US 3-5 en backlog ; US 6 optionnel.

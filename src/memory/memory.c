@@ -223,6 +223,9 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
             val = *ocula_window_ptr(mem, address);
         else
             val = mem->ram[address];
+        /* RAM stuck-bit fault injection (US6): zero cost when no faults set. */
+        if (mem->stuck0 | mem->stuck1)
+            val = (uint8_t)((val & (uint8_t)~mem->stuck0) | mem->stuck1);
         mem_notify(mem, address, val, MEM_READ);
         return val;
     }
@@ -360,6 +363,11 @@ void memory_set_trace(memory_t* mem, bool enabled,
 void memory_set_trace2(memory_t* mem,
                      void (*callback)(uint16_t, uint8_t, mem_access_type_t)) {
     mem->trace_callback2 = callback;
+}
+
+void memory_set_stuck_bits(memory_t* mem, uint8_t stuck0, uint8_t stuck1) {
+    mem->stuck0 = stuck0;
+    mem->stuck1 = stuck1;
 }
 
 void memory_clear_ram(memory_t* mem, uint8_t pattern) {
