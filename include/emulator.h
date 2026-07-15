@@ -42,7 +42,7 @@
 #include "io/ocula_gpu.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.58.0-alpha"
+#define EMU_VERSION "1.59.0-alpha"
 
 /**
  * @brief ORIC machine model

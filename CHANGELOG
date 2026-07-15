@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.59.0-alpha] - 2026-07-15
+
+### Added — Carte d'accès mémoire r/w/x (Epic 6 / US 3, rattrapage b2) (Sprint 100)
+
+Les watchpoints plafonnaient à 8 ; b2 a des flags read/write/execute **par
+octet** sur toute la mémoire. Nouvelle **carte d'accès** : marquer des régions
+arbitraires avec des flags r/w/x, sans limite de nombre.
+
+- **Carte** (`g_amap[0x10000]`, file-static comme le hunt/undo) : un octet de
+  flags `AMAP_R`/`AMAP_W`/`AMAP_X` par adresse. `debugger_amap_set(start, end,
+  flags)`, `_clear`, `_get`, `_count`, `_active`, `_parse_flags`.
+- **Déclenchement** : les accès **read/write** à un octet flaggé passent par le
+  callback de trace mémoire (mutualisé avec les watchpoints — le callback est
+  installé si `num_watchpoints > 0` **ou** la carte a des flags r/w) ; les
+  **exécutions** (`AMAP_X`) sont testées avant chaque instruction dans
+  `debugger_should_break` (breakpoints exec illimités sur une plage).
+- **Pilotage** :
+  - REPL : `wr START END [rwx]` (défaut `rw`), `wr` (liste les runs coalescés),
+    `wr clear`.
+  - `--control` : `watch-region <start> <end> [flags]`, `watch-region-list`,
+    `watch-region-clear` (cap `access-map`).
+  - REST : `POST /watch-region` (`start=&end=&flags=`), `GET /watch-region`,
+    `DELETE /watch-region`.
+
+### Tests
+- `test-debugger` 20 → 21 (parse flags, write-hit vs read-no-hit, exec break,
+  clear), `test-control-dispatch` 22 → 23, `test-httpapi` e2e 34 → 37.
+  Valgrind clean. 949 → 954 tests.
+- `EMU_VERSION` 1.58.0 → 1.59.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.58.0-alpha] - 2026-07-15
 
 ### Added — Tracing conditionnel (Epic 6 / US 1, rattrapage b2) (Sprint 99)

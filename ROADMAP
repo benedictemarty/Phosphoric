@@ -6,6 +6,24 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 100: Carte d'accès mémoire r/w/x (Epic 6 / US 3) (v1.59.0-alpha) - DONE
+Troisième US de l'Epic 6 (rattrapage b2). Les watchpoints plafonnaient à 8 ;
+b2 a des flags r/w/x par octet sur toute la mémoire.
+- [x] Carte `g_amap[0x10000]` (file-static) : flags `AMAP_R`/`W`/`X` par
+      adresse, régions arbitraires sans limite. `debugger_amap_set/clear/get/
+      count/active/parse_flags`.
+- [x] Read/write via le callback de trace mémoire (mutualisé avec les
+      watchpoints ; installé si `num_watchpoints>0` OU carte a des flags r/w) ;
+      exec (`AMAP_X`) testé avant chaque instruction dans `debugger_should_break`.
+- [x] Pilotage REPL `wr START END [rwx]` / `wr` / `wr clear`, `--control`
+      `watch-region`/`-list`/`-clear` (cap `access-map`), REST
+      `POST/GET/DELETE /watch-region`. test-debugger 20→21,
+      test-control-dispatch 22→23, test-httpapi 34→37. Valgrind clean.
+      949 → 954 tests.
+> Epic 6 : reste US 4 (symboles scopés), US 5 (inspection élargie), US 6 (GUI).
+
+---
+
 ### Sprint 99: Tracing conditionnel (Epic 6 / US 1) (v1.58.0-alpha) - DONE
 Deuxième US de l'Epic 6 (rattrapage b2). `--trace` démarrait au boot et loguait
 tout ; b2 déclenche finement et borne la mémoire.
@@ -111,9 +129,14 @@ parasite, `MOS's view`, teletext debug).
       B2.** Différé : disasm banque-aware (`d`, redirection `cpu_disassemble`) ;
       hors périmètre : transfert binaire (backlog B1). test-debugger 19→20,
       test-control-dispatch 20→21, test-httpapi 26→29. 932→937 tests.
-- [ ] **US 3 — Carte d'accès mémoire (breakpoints par octet r/w/x)** *(🟠 / moyen)* :
-      watch de région + flags par octet (lecture/écriture/exécution) au lieu des
-      8 watchpoints fixes.
+- [x] **US 3 — Carte d'accès mémoire (breakpoints par octet r/w/x)** *(v1.59.0,
+      Sprint 100)* : carte `g_amap[0x10000]` (flags `AMAP_R`/`W`/`X` par octet,
+      régions arbitraires sans limite). Read/write via le callback de trace
+      mémoire (mutualisé watchpoints) ; exec via `debugger_should_break`.
+      REPL `wr START END [rwx]` / `wr` / `wr clear` ; `--control`
+      `watch-region`/`-list`/`-clear` (cap `access-map`) ; REST
+      `POST/GET/DELETE /watch-region`. test-debugger 20→21,
+      test-control-dispatch 22→23, test-httpapi 34→37. 949→954 tests.
 - [ ] **US 4 — Symboles scopés par banque + groupes** *(🟠 / moyen)* : scoping
       des symboles par overlay/banque, activation par groupe (module `symbols`).
 - [ ] **US 5 — Couverture d'inspection élargie** *(🟡 / faible, quick wins)* :

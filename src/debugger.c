@@ -432,6 +432,55 @@ bool debugger_remove_watchpoint(debugger_t* dbg, int index) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  ACCESS-FLAG MAP (Epic 6 / US 3) — per-byte r/w/x breakpoints        */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* One flag byte (AMAP_R|AMAP_W|AMAP_X) per address. File-static (64 KB) so
+ * debugger_t stays small, like the hunt/undo buffers. */
+static uint8_t  g_amap[0x10000];
+static uint32_t g_amap_count = 0;   /* bytes with any flag set */
+static bool     g_amap_rw = false;  /* any R or W flag present → needs mem trace */
+
+static void amap_recount(void) {
+    g_amap_count = 0;
+    g_amap_rw = false;
+    for (uint32_t a = 0; a < 0x10000; a++) {
+        if (g_amap[a]) {
+            g_amap_count++;
+            if (g_amap[a] & (AMAP_R | AMAP_W)) g_amap_rw = true;
+        }
+    }
+}
+
+uint32_t debugger_amap_set(uint16_t start, uint16_t end, uint8_t flags) {
+    if (end < start) { uint16_t t = start; start = end; end = t; }
+    flags &= (AMAP_R | AMAP_W | AMAP_X);
+    for (uint32_t a = start; a <= end; a++) g_amap[a] |= flags;
+    amap_recount();
+    return (uint32_t)(end - start) + 1;
+}
+
+void     debugger_amap_clear(void) { memset(g_amap, 0, sizeof(g_amap)); g_amap_count = 0; g_amap_rw = false; }
+uint8_t  debugger_amap_get(uint16_t addr) { return g_amap[addr]; }
+bool     debugger_amap_active(void) { return g_amap_rw; }
+uint32_t debugger_amap_count(void) { return g_amap_count; }
+
+bool debugger_amap_parse_flags(const char* s, uint8_t* out) {
+    if (!s || !*s) return false;
+    uint8_t f = 0;
+    for (; *s; s++) {
+        switch (*s) {
+            case 'r': case 'R': f |= AMAP_R; break;
+            case 'w': case 'W': f |= AMAP_W; break;
+            case 'x': case 'X': f |= AMAP_X; break;
+            default: return false;
+        }
+    }
+    *out = f;
+    return f != 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MEMORY TRACE CALLBACK (for watchpoints)                            */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -441,6 +490,17 @@ static debugger_t* g_trace_debugger = NULL;
 static void watchpoint_trace_callback(uint16_t address, uint8_t value, mem_access_type_t type) {
     debugger_t* d = g_trace_debugger;
     if (!d) return;
+    /* Access-flag map (US 3): a read/write to a flagged byte breaks. */
+    if (g_amap_rw) {
+        uint8_t f = g_amap[address];
+        if ((type == MEM_READ && (f & AMAP_R)) ||
+            (type == MEM_WRITE && (f & AMAP_W))) {
+            d->watch_triggered = true;
+            d->watch_addr_hit = address;
+            d->watch_read_hit = (type == MEM_READ);
+            return;
+        }
+    }
     for (int i = 0; i < d->num_watchpoints; i++) {
         watchpoint_t* w = &d->watchpoints[i];
         if (w->addr != address) continue;
@@ -468,7 +528,8 @@ static void watchpoint_trace_callback(uint16_t address, uint8_t value, mem_acces
 
 void debugger_install_watchpoint_trace(debugger_t* dbg, emulator_t* emu) {
     g_trace_debugger = dbg;
-    if (dbg->num_watchpoints > 0) {
+    /* Install when either the fixed watchpoints or the access map need it. */
+    if (dbg->num_watchpoints > 0 || g_amap_rw) {
         memory_set_trace(&emu->memory, true, watchpoint_trace_callback);
     } else {
         memory_set_trace(&emu->memory, false, NULL);
@@ -499,6 +560,14 @@ bool debugger_should_break(debugger_t* dbg, emulator_t* emu) {
     /* PC breakpoint hit (evaluates condition if present) */
     (void)pc;
     if (debugger_check_pc(dbg, emu)) {
+        strncpy(dbg->last_break_reason, "break", sizeof(dbg->last_break_reason) - 1);
+        return true;
+    }
+
+    /* Access-map execute breakpoint (US 3): PC marked with AMAP_X. */
+    if ((g_amap[pc] & AMAP_X)) {
+        if (!emu->control_mode)
+            printf("\n*** ACCESS-MAP exec break at $%04X ***\n", pc);
         strncpy(dbg->last_break_reason, "break", sizeof(dbg->last_break_reason) - 1);
         return true;
     }
@@ -1008,6 +1077,7 @@ static void show_help(void) {
     printf("  w addr [w|r|a|c]  Add watchpoint: write/read/access/change (default write)\n");
     printf("  w                 List all watchpoints\n");
     printf("  wd n              Delete watchpoint #n\n");
+    printf("  wr START END [rwx]  Access-map region breakpoint (default rw) | wr | wr clear\n");
     printf("  hunt              Start cheat-finder (all cells candidate)\n");
     printf("  hunt V | = | + | - | !   Narrow: ==V / unchanged / up / down / changed\n");
     printf("  hunt list | clear Show candidates / reset the hunt\n");
@@ -1832,6 +1902,54 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
                 } else {
                     printf("  Invalid watchpoint index\n");
                 }
+            }
+        }
+        /* ── ACCESS-MAP REGION (US 3): per-byte r/w/x breakpoints ── */
+        else if (strcmp(cmd, "wr") == 0) {
+            if (!arg1[0]) {
+                /* List flagged runs (coalesce contiguous same-flag bytes). */
+                if (debugger_amap_count() == 0) {
+                    printf("  No access-map flags set\n");
+                } else {
+                    printf("  Access map (%u byte%s flagged):\n",
+                           debugger_amap_count(), debugger_amap_count() > 1 ? "s" : "");
+                    int shown = 0;
+                    uint32_t a = 0;
+                    while (a < 0x10000 && shown < 32) {
+                        uint8_t f = debugger_amap_get((uint16_t)a);
+                        if (!f) { a++; continue; }
+                        uint32_t start = a;
+                        while (a < 0x10000 && debugger_amap_get((uint16_t)a) == f) a++;
+                        printf("    $%04X-$%04X  %c%c%c\n", (uint16_t)start, (uint16_t)(a - 1),
+                               (f & AMAP_R) ? 'r' : '-', (f & AMAP_W) ? 'w' : '-',
+                               (f & AMAP_X) ? 'x' : '-');
+                        shown++;
+                    }
+                }
+            } else if (strcasecmp(arg1, "clear") == 0) {
+                debugger_amap_clear();
+                debugger_install_watchpoint_trace(dbg, emu);
+                printf("  Access map cleared\n");
+            } else {
+                uint16_t start, end;
+                if (!arg2[0] || !parse_addr(emu, arg1, &start) ||
+                    !parse_addr(emu, arg2, &end)) {
+                    printf("  Usage: wr START END [rwx]   (default rw)  |  wr  |  wr clear\n");
+                    return;
+                }
+                uint8_t flags = AMAP_R | AMAP_W;   /* default rw */
+                char a3[16] = {0};
+                if (sscanf(line, "%*s %*s %*s %15s", a3) == 1 &&
+                    !debugger_amap_parse_flags(a3, &flags)) {
+                    printf("  Bad flags '%s' (subset of rwx)\n", a3);
+                    return;
+                }
+                uint32_t n = debugger_amap_set(start, end, flags);
+                debugger_install_watchpoint_trace(dbg, emu);
+                printf("  Flagged %u byte%s $%04X-$%04X as %c%c%c\n",
+                       n, n > 1 ? "s" : "", start, end,
+                       (flags & AMAP_R) ? 'r' : '-', (flags & AMAP_W) ? 'w' : '-',
+                       (flags & AMAP_X) ? 'x' : '-');
             }
         }
         /* ── VIA STATE ──────────────────────────────────── */

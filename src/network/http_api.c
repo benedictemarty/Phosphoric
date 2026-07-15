@@ -185,11 +185,12 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             http_send(fd, 200, "OK",
                 "{\"ok\":true,\"reply\":\"phosphoric http-api; "
                 "GET /hello /regs /mem?addr=&len=[&bank=cpu|ram|rom|overlay] /peek/{via|psg|disk|acia|tape|loci} "
-                "/break /watch /disasm?addr=&n= /trace; "
+                "/break /watch /disasm?addr=&n= /trace /watch-region; "
                 "POST /reset /mem /keys /tape /disk/{A-D} /exec/{step|next|step-out|continue|pause} "
                 "/break(addr,if) /watch(addr,mode) /raster(line) /set(reg|via,val) "
                 "/hunt(op,val) /sym(path) /save(path,addr,len) /load(path,addr) "
-                "/state/save /state/load /trace(spec) /trace/stop /trace/save(path); "
+                "/state/save /state/load /trace(spec) /trace/stop /trace/save(path) "
+                "/watch-region(start,end,flags); "
                 "DELETE /tape /disk/{A-D} /break/{id} /watch/{id} /raster/{id}\"}\n");
             return false;
         }
@@ -227,6 +228,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             return true;
         }
         if (strcmp(path, "/trace") == 0) { snprintf(cmd, cmdsz, "trace status"); return true; }
+        if (strcmp(path, "/watch-region") == 0) { snprintf(cmd, cmdsz, "watch-region-list"); return true; }
     }
     else if (strcmp(method, "POST") == 0) {
         if (strcmp(path, "/reset") == 0) { snprintf(cmd, cmdsz, "reset"); return true; }
@@ -415,6 +417,20 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
                 snprintf(cmd, cmdsz, "trace start now");
             return true;
         }
+        if (strcmp(path, "/watch-region") == 0) {
+            char start[32], end[32], flags[8];
+            if (!get_param(body, "start", start, sizeof(start)) ||
+                !get_param(body, "end", end, sizeof(end))) {
+                http_send(fd, 400, "Bad Request",
+                    "{\"ok\":false,\"error\":\"POST /watch-region needs start=&end= [&flags=rwx]\"}\n");
+                return false;
+            }
+            if (get_param(body, "flags", flags, sizeof(flags)))
+                snprintf(cmd, cmdsz, "watch-region %s %s %s", start, end, flags);
+            else
+                snprintf(cmd, cmdsz, "watch-region %s %s", start, end);
+            return true;
+        }
         if (strcmp(path, "/trace/stop") == 0) { snprintf(cmd, cmdsz, "trace stop"); return true; }
         if (strcmp(path, "/trace/save") == 0) {
             if (!get_param(body, "path", arg, sizeof(arg))) {
@@ -464,6 +480,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
             snprintf(cmd, cmdsz, "unraster %.15s", path + 8); return true;
         }
         if (strcmp(path, "/trace") == 0) { snprintf(cmd, cmdsz, "trace off"); return true; }
+        if (strcmp(path, "/watch-region") == 0) { snprintf(cmd, cmdsz, "watch-region-clear"); return true; }
     }
 
     http_send(fd, 404, "Not Found",

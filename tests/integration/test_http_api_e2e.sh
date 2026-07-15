@@ -202,5 +202,13 @@ curl -s -X DELETE "$BASE/trace" | grep -q '"ok":true' \
     && ok "DELETE /trace (off)" || ko "DELETE /trace"
 rm -f /tmp/phos_trace_e2e.log
 
+# 21. access-map region breakpoints (Epic 6 / US 3)
+curl -s -X POST --data 'start=2000&end=2010&flags=rw' "$BASE/watch-region" | grep -q 'flagged=' \
+    && ok "POST /watch-region flags a region r/w" || ko "POST /watch-region"
+curl -s "$BASE/watch-region" | grep -q '2000-2010' \
+    && ok "GET /watch-region lists the region" || ko "GET /watch-region"
+curl -s -X DELETE "$BASE/watch-region" | grep -q '"ok":true' \
+    && ok "DELETE /watch-region clears it" || ko "DELETE /watch-region"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

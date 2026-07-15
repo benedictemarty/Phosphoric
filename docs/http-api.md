@@ -203,6 +203,28 @@ curl -s -X POST --data-urlencode 'spec=pc:E000 stop:brk ring:500 sym' localhost:
 curl -s -X POST --data 'path=run.log'  localhost:8888/trace/save
 ```
 
+### EPIC 6 / US 3 — Carte d'accès mémoire r/w/x *(Sprint 100)* — LIVRÉ
+
+Marque des **régions arbitraires** avec des flags read/write/execute, sans la
+limite des 8 watchpoints fixes (parité avec les flags par octet de b2).
+
+| Méthode  | Route             | Effet |
+|----------|-------------------|-------|
+| `POST`   | `/watch-region` `{start,end[,flags]}` | flag la région (défaut `rw`) |
+| `GET`    | `/watch-region`   | liste les runs flaggés |
+| `DELETE` | `/watch-region`   | efface toute la carte |
+
+`flags` = sous-ensemble de `rwx`. Read/write déclenchent via le callback de
+trace mémoire (mutualisé avec les watchpoints) ; execute est testé avant chaque
+instruction. Même chose côté `--control` (`watch-region <start> <end> [flags]`,
+`watch-region-list`, `watch-region-clear`) et REPL (`wr START END [rwx]`). Cap
+`access-map`.
+
+```bash
+curl -s -X POST --data 'start=2000&end=2010&flags=rw' localhost:8888/watch-region
+curl -s "localhost:8888/watch-region"     # liste
+```
+
 ## 5. Estimation
 
 ~600-900 LOC au total (sink+dispatch ~200, file ~120, serveur HTTP+routing

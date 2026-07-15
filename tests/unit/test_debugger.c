@@ -646,6 +646,51 @@ TEST(test_peek_bank_layers) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  EPIC 6 / US 3: ACCESS-FLAG MAP (per-byte r/w/x breakpoints)       */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+TEST(test_access_map) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    memory_init(&emu.memory);
+    cpu_init(&emu.cpu, &emu.memory);
+    emu.control_mode = true;   /* suppress break banners */
+    debugger_t dbg;
+    debugger_init(&dbg);
+    debugger_amap_clear();     /* file-static map persists across tests */
+
+    uint8_t f;
+    ASSERT_TRUE(debugger_amap_parse_flags("rwx", &f) && f == (AMAP_R | AMAP_W | AMAP_X));
+    ASSERT_TRUE(debugger_amap_parse_flags("w", &f) && f == AMAP_W);
+    ASSERT_FALSE(debugger_amap_parse_flags("z", &f));
+
+    /* Flag a write region → a write in range breaks, a read does not. */
+    ASSERT_EQ(debugger_amap_set(0x2000, 0x2003, AMAP_W), 4u);
+    ASSERT_EQ(debugger_amap_count(), 4u);
+    ASSERT_TRUE(debugger_amap_active());
+    debugger_install_watchpoint_trace(&dbg, &emu);
+
+    memory_write(&emu.memory, 0x2001, 0xAA);
+    ASSERT_TRUE(dbg.watch_triggered);
+    dbg.watch_triggered = false;
+
+    (void)memory_read(&emu.memory, 0x2001);   /* only W flagged: no trigger */
+    ASSERT_FALSE(dbg.watch_triggered);
+
+    /* Execute flag → should_break fires at that PC only. */
+    debugger_amap_set(0x0500, 0x0500, AMAP_X);
+    emu.cpu.PC = 0x0500;
+    ASSERT_TRUE(debugger_should_break(&dbg, &emu));
+    emu.cpu.PC = 0x0501;
+    ASSERT_FALSE(debugger_should_break(&dbg, &emu));
+
+    debugger_amap_clear();
+    ASSERT_EQ(debugger_amap_count(), 0u);
+    ASSERT_FALSE(debugger_amap_active());
+    memory_cleanup(&emu.memory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -675,6 +720,7 @@ int main(void) {
     RUN(test_set_via_register);
     RUN(test_binary_literal);
     RUN(test_peek_bank_layers);
+    RUN(test_access_map);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);
