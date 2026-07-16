@@ -131,6 +131,7 @@ SOURCES = src/main.c \
           src/io/serial_picowifi.c \
           src/io/ocula_io.c \
           src/io/ocula_gpu.c \
+          src/io/ula_ng.c \
           src/video/video.c \
           src/video/textmode.c \
           src/video/hires.c \
@@ -199,7 +200,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all clean tools tests test-cpu test-memory test-io test-ula-ng test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -241,6 +242,8 @@ TEST_MEM_SRCS = tests/unit/test_memory.c src/memory/memory.c \
 
 TEST_IO_SRCS = tests/unit/test_io.c src/io/via6522.c src/utils/logging.c
 
+TEST_ULA_NG_SRCS = tests/unit/test_ula_ng.c src/io/ula_ng.c
+
 TEST_CASSETTE_SRCS = tests/unit/test_cassette.c src/io/cassette.c src/io/via6522.c
 
 TEST_STORAGE_SRCS = tests/unit/test_storage.c src/storage/sedoric.c \
@@ -257,6 +260,10 @@ test-cpu: $(TEST_CPU_SRCS)
 test-memory: $(TEST_MEM_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_MEM_SRCS) $(LDFLAGS) -o test_memory
 	@./test_memory
+
+test-ula-ng: $(TEST_ULA_NG_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_ULA_NG_SRCS) $(LDFLAGS) -o test_ula_ng
+	@./test_ula_ng
 
 test-io: $(TEST_IO_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_IO_SRCS) $(LDFLAGS) -o test_io
@@ -595,7 +602,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools
+tests: test-cpu test-memory test-io test-ula-ng test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

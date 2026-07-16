@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.66.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 1 : verrou/identité + plomberie page 3
+
+Fondation d'une **ULA « next-gen »** (référence logicielle d'un futur portage
+Verilog sur Sipeed Tang Primer 20K / GW2A-18). Module isolé `src/io/ula_ng.{c,h}`
+aux frontières « miroir FPGA ». Fenêtre registres **`$0340-$035F`** (libre, cf
+`docs/ula-ng/AUDIT.md`).
+
+- **Déverrouillage** : séquence `'N','G'` (`$4E,$47`) sur `$0340` ; ensuite
+  `NG_ID` (`$0340`) = `0x1E`, `NG_IDCHK` (`$034F`) = `~NG_ID` = `0xE1` (handshake
+  anti-faux-positif : le VIA ne peut pas produire `NG_ID XOR NG_IDCHK == 0xFF`).
+- **Non-régression bit-à-bit** : en état **verrouillé**, la fenêtre passe au VIA
+  (lecture + écriture) — l'ULA-NG surveille seulement `$0340` sans consommer. Elle
+  ne possède la fenêtre qu'après déverrouillage (FPGA = tristate).
+- Plomberie : hooks dans `io_read_callback`/`io_write_callback` (avant le fallback
+  VIA), champ `ula_ng` dans `emulator_t`, init verrouillé au power-on.
+- Doc : `docs/ula-ng/AUDIT.md` (audit §0 obligatoire), `ULA-NG-SPEC.md` révisée
+  (5 décisions post-audit + cible Tang Primer 20K confirmée).
+- Tests : `make test-ula-ng` (`tests/unit/test_ula_ng.c`, 8 checks : verrou,
+  handshake, séquences cassées, passthrough, re-verrouillage). Dans `make tests`.
+
+987 → 995 tests. EMU_VERSION 1.65.0 → 1.66.0-alpha ; builds natif + SDL2 +
+HTTPAPI OK. Étapes suivantes (palette-indirection, IRQ raster…) : cf
+`ULA-NG-SPEC.md §4`.
+
 ## [1.65.0-alpha] - 2026-07-15
 
 ### Added — Descripteurs chaînés Sedoric (fichiers > 122 secteurs)

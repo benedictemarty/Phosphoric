@@ -6,6 +6,27 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 106: ULA-NG étape 1 — verrou/identité + plomberie page 3 (v1.66.0-alpha) - DONE
+Fondation d'une **ULA « next-gen »** (référence logicielle d'un futur portage
+Verilog sur **Sipeed Tang Primer 20K / GW2A-18**, cf `docs/ula-ng/AUDIT.md` +
+`ULA-NG-SPEC.md`). Module isolé aux frontières miroir-FPGA.
+- [x] Audit obligatoire (§0) : `docs/ula-ng/AUDIT.md` — rendu déjà scanline-based,
+      fenêtre `$0340-$035F` libre, palette LUT `get_rgb`, IRQ bitfield (bit libre
+      `0x20`), source de temps `frame_cycles`.
+- [x] 5 décisions post-audit figées dans la spec (détection robuste, lignes 0-311,
+      LUT 16×12 b, sémantique latch, mémoire DDR3) + cible FPGA confirmée (photo).
+- [x] Module `src/io/ula_ng.{c,h}` : déverrouillage 'N','G' ($4E,$47) sur `$0340`,
+      `NG_ID`=$1E, `NG_IDCHK` ($034F)=~NG_ID (handshake anti-faux-positif).
+- [x] Plomberie : hooks `io_read/write_callback` (avant fallback VIA), champ
+      `ula_ng` dans `emulator_t`, init verrouillé au power-on.
+- [x] Non-régression **bit-à-bit** : verrouillé = passthrough VIA (FPGA=tristate) ;
+      la fenêtre n'est possédée qu'après déverrouillage.
+- [x] `make test-ula-ng` (8 checks) dans `make tests`. 987 → 995 tests.
+> **Suite** (`ULA-NG-SPEC.md §4`) : palette-indirection (§5.1), IRQ raster (§5.2),
+> start-address, palette/scanline, scroll fin, attributs //, sprites, chunky/80col.
+
+---
+
 ### Sprint 105: Descripteurs Sedoric chaînés + doc appel ML (v1.65.0-alpha) - DONE
 Extension de l'outillage Sedoric (partagé, sert les projets SCUMM-Oric/scoop-oric)
 et documentation du pilotage de Sedoric depuis du code machine. Format chaîné

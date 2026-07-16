@@ -991,6 +991,12 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return dtl2000_read(&emu->dtl2000, address);
     }
 
+    /* ULA-NG registers $0340-$035F : intercepted only once unlocked ; while
+     * locked the read falls through to the VIA mirror (indiscernable). */
+    if (ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(address)) {
+        return ula_ng_read(&emu->ula_ng, address);
+    }
+
     /* VIA 6522: $0300-$030F (mirrored in $0300-$03FF) */
     return via_read(&emu->via, (uint8_t)(address & 0x0F));
 }
@@ -1186,6 +1192,13 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
      * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
     if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
         dtl2000_write(&emu->dtl2000, address, value);
+        return;
+    }
+
+    /* ULA-NG registers $0340-$035F. Unlocked : ULA-NG owns the window (consume).
+     * Locked : silently watch $0340 for the 'N','G' unlock sequence and let the
+     * write fall through to the VIA mirror (bit-exact, indiscernable). */
+    if (ula_ng_addr_in_window(address) && ula_ng_write(&emu->ula_ng, address, value)) {
         return;
     }
 
@@ -1538,6 +1551,8 @@ static bool emulator_init(emulator_t* emu) {
 
     via_init(&emu->via);
     via_reset(&emu->via);
+
+    ula_ng_init(&emu->ula_ng);   /* ULA-NG verrouillée au démarrage (état HCS10017) */
 
     cassette_init(&emu->cassette);
 

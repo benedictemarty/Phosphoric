@@ -184,3 +184,4 @@ test_acia6850
 test_gdbstub
 test_movie
 *.ost
+test_ula_ng

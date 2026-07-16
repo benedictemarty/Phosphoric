@@ -40,9 +40,10 @@
 #include "utils/symbols.h"
 #include "io/loci.h"
 #include "io/ocula_gpu.h"
+#include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.65.0-alpha"
+#define EMU_VERSION "1.66.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -125,6 +126,7 @@ typedef struct emulator_s {
     video_t video;
     osd_t osd;                /* OSD overlay : changement de média à chaud (F6) */
     ocula_gpu_t ocula_gpu;   /* OCULA-GPU window $03E8-$03EF (étape 5) */
+    ula_ng_t ula_ng;         /* ULA-NG : registres $0340-$035F (verrou/extensions) */
     hostfs_t hostfs;
 
     /* Keyboard */
