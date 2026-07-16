@@ -6,6 +6,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 116: Démos ULA-NG (v1.76.0-alpha) - DONE
+Suite de démos des features ULA-NG sur la machine émulée (modèle `demos/ocula/`).
+Chaque démo se déverrouille elle-même ('N','G' sur $0340) — `-t <démo>.tap -f`.
+- [x] `ng_chunky.s` (machine code, xa) : chunky 4bpp 320×200 16 couleurs
+      (buffer $4000, dégradé diagonal), palette animée (rotation).
+- [x] `ng_text80.bas` : texte 80 colonnes (480 px, charset RAM $B400).
+- [x] `ng_attributes.bas` : attributs parallèles cyclés (sans color clash).
+- [x] `ng_copper.bas` : copper/scanline → barres raster arc-en-ciel.
+- [x] `ng_sprite.bas` : sprite matériel 16×16 rebondissant.
+- [x] `README.md` + `menu.sh` (--render-software défaut). Toutes vérifiées
+      headless. Tests inchangés (1036 ; démos hors `make tests`).
+
+---
+
 ### Sprint 115: ULA-NG étape 9 — chunky 4bpp / texte 80 col (§5.8) (v1.75.0-alpha) - DONE
 Dernière feature ULA-NG : deux modes vidéo étendus sélectionnés par
 `NG_MODE.b2-3`, latchés au début de trame (largeur framebuffer stable une

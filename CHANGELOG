@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.76.0-alpha] - 2026-07-16
+
+### Added — Démos ULA-NG (`demos/ula-ng/`)
+
+Suite de démos mettant en évidence les features ULA-NG sur la machine émulée,
+sur le modèle de `demos/ocula/`. Chaque démo déverrouille elle-même l'ULA-NG
+(`'N','G'` sur `$0340`) puis programme les registres — aucune option émulateur
+requise (`-t <démo>.tap -f`).
+
+- `ng_chunky.s` (machine code, xa) : **chunky 4bpp** (§5.8) — remplit un buffer
+  16000 o en RAM basse (`$4000`) d'un dégradé diagonal 16 couleurs, pointe
+  `NG_SCRSTART` dessus, active le mode chunky (320×200), puis **anime la palette**
+  (rotation) → vagues de couleur. Vérifié headless : 320×224, 16 couleurs.
+- `ng_text80.bas` : **texte 80 colonnes** (§5.8) — 80 car/ligne (480 px),
+  charset RAM `$B400`. Vérifié : 480×224.
+- `ng_attributes.bas` : **attributs parallèles** (§5.6) — encre/papier par cellule
+  cyclés, sans color clash sériel. Vérifié : encre recolorée bleu→rouge→magenta.
+- `ng_copper.bas` : **copper / palette par scanline** (§5.4) — barres raster
+  arc-en-ciel. Vérifié : 16 couleurs.
+- `ng_sprite.bas` : **sprite matériel 16×16** (§5.7) — losange composé sur le
+  fond, rebondissant. Vérifié : motif jaune présent.
+- `README.md` (guide + reconstruction .tap) et `menu.sh` (menu de lancement,
+  `--render-software` par défaut).
+- `.tap` reconstruits via `bas2tap` / `xa`+`bin2tap`. Tests inchangés (1036 ;
+  les démos sont vérifiées manuellement/headless, hors `make tests`).
+  EMU_VERSION 1.75.0 → 1.76.0-alpha.
+
 ## [1.75.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 9 : modes chunky 4bpp / texte 80 colonnes (§5.8)
