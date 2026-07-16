@@ -178,6 +178,47 @@ uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, int row
     return mem[base + char_idx * 8 + row];
 }
 
+/* Compositing overscan (bordure OCULA) — GÉNÉRIQUE, toujours compilé (lit
+ * ocula_border[], qui reste noir sans OCULA). Indépendant du build OCULA. */
+void video_get_border_rgb(const video_t* vid, int y,
+                          uint8_t* r, uint8_t* g, uint8_t* b) {
+    if (y < 0 || y >= OCULA_MAX_H) { *r = *g = *b = 0; return; }
+    *r = vid->ocula_border[y][0];
+    *g = vid->ocula_border[y][1];
+    *b = vid->ocula_border[y][2];
+}
+
+int video_bordered_w(const video_t* vid) {
+    return vid->native_w + 2 * OCULA_BORDER_W;
+}
+
+int video_bordered_h(const video_t* vid) {
+    return vid->native_h + 2 * OCULA_BORDER_H;
+}
+
+void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
+    int aw = vid->native_w, ah = vid->native_h;
+    int tw = aw + 2 * OCULA_BORDER_W;
+    int th = ah + 2 * OCULA_BORDER_H;
+    for (int ty = 0; ty < th; ty++) {
+        int ay = ty - OCULA_BORDER_H;
+        int cy = ay < 0 ? 0 : (ay >= ah ? ah - 1 : ay);
+        const uint8_t* bc = vid->ocula_border[cy];
+        uint8_t* row = out + (size_t)ty * tw * 3;
+        for (int tx = 0; tx < tw; tx++) {
+            row[tx * 3 + 0] = bc[0];
+            row[tx * 3 + 1] = bc[1];
+            row[tx * 3 + 2] = bc[2];
+        }
+        if (ay >= 0 && ay < ah) {
+            const uint8_t* src = vid->framebuffer + (size_t)ay * aw * 3;
+            memcpy(row + (size_t)OCULA_BORDER_W * 3, src, (size_t)aw * 3);
+        }
+    }
+    if (w) *w = tw;
+    if (h) *h = th;
+}
+
 /**
  * Decode a serial attribute (bits 6+5 both zero) and update ULA state.
  * Returns true if the attribute changed the video mode.

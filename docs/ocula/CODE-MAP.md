@@ -71,16 +71,27 @@ complète verte (0 échec).
 **Modules OCULA dédiés** : `src/io/ocula_io.c`, `src/io/ocula_gpu.c`,
 `src/video/ocula_video.c` — l'empreinte OCULA compilable est isolée en 3 unités.
 
-## 3. Reste : build `OCULA=0` (retrait complet) — non fait
+## 3. Build `OCULA=0` (retrait complet) — FAIT, sans `#ifdef` cœur
 
-Un binaire **compilable sans OCULA** (`make OCULA=0`, comme `CAST=0`/`HTTPAPI=0`)
-prouverait l'isolation totale. Il exige d'exclure les 3 modules OCULA **et** de
-**gater par `#ifdef HAS_OCULA` les ~25 sites d'appel** dans les fichiers cœur
-(`video.c` dispatch, `memory.c` `memory_ocula_*`, `main.c` `--ula`/câblage,
-`savestate.c` sections OCB/OGP). **Tradeoff honnête** : ça encombre 4 fichiers
-cœur de `#ifdef` (contre la lisibilité), pour un gain surtout démonstratif. À
-décider avant de l'exécuter (risque + clutter). L'isolation *structurelle* (code
-en modules dédiés) est, elle, **acquise**.
+`make OCULA=0` produit un binaire **sans OCULA** (comme `CAST=0`/`HTTPAPI=0`),
+prouvant l'isolation totale. Approche **propre par stubs** (aucun `#ifdef` dans
+les fichiers cœur) :
+
+- **Makefile** : `OCULA ?= 1`. `OCULA=1` → `-DHAS_OCULA` + les 3 modules
+  (`ocula_io.c`, `ocula_gpu.c`, `ocula_video.c`). `OCULA=0` → à la place,
+  `src/io/ocula_stubs.c` : versions **no-op inertes** des fonctions OCULA
+  appelées par le cœur (`ocula_block_armed`/`ocula_regs_active`→false,
+  `border_latch`/`render_80col`/`render_exthires`→no-op, `ocula_io/gpu/raster`→
+  bus ouvert/no-op).
+- **`memory.c`** : les `memory_ocula_*` **restent** (jamais déclenchés au runtime
+  sans déverrouillage OCULA) → **aucun `#ifdef`**.
+- **Compositing bordure** (`video_get_border_rgb`, `video_bordered_w/h`,
+  `video_compose_bordered`) **rapatrié dans `video.c`** : générique (lit
+  `ocula_border[]`, resté noir sans OCULA), toujours compilé.
+- `--ula ocula` en build `OCULA=0` : **silencieusement inerte** (rendu HCS10017).
+
+**Validé** : `OCULA=1` (défaut) suite complète verte (test-ocula 101, 0 échec
+global) ; `OCULA=0` compile + boot Oric stock (240×224). Zéro `#ifdef` cœur.
 
 ## 4. Plan d'extraction modulaire (référence)
 

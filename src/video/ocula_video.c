@@ -67,51 +67,9 @@ void border_latch(video_t* vid, const uint8_t* memory, int y) {
     }
 }
 
-/* Couleur de bordure OCULA latchée pour la scanline y (0-223), RGB888. */
-void video_get_border_rgb(const video_t* vid, int y,
-                          uint8_t* r, uint8_t* g, uint8_t* b) {
-    if (y < 0 || y >= OCULA_MAX_H) { *r = *g = *b = 0; return; }
-    *r = vid->ocula_border[y][0];
-    *g = vid->ocula_border[y][1];
-    *b = vid->ocula_border[y][2];
-}
-
-int video_bordered_w(const video_t* vid) {
-    return vid->native_w + 2 * OCULA_BORDER_W;
-}
-
-int video_bordered_h(const video_t* vid) {
-    return vid->native_h + 2 * OCULA_BORDER_H;
-}
-
-/* Compose le framebuffer actif dans sa bande overscan OCULA (RGB888). */
-void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
-    int aw = vid->native_w, ah = vid->native_h;
-    int tw = aw + 2 * OCULA_BORDER_W;
-    int th = ah + 2 * OCULA_BORDER_H;
-
-    for (int ty = 0; ty < th; ty++) {
-        /* Ligne active sous cette rangée de sortie (négative / au-delà dans les
-         * bandes haut & bas, où l'on clampe à la première/dernière ligne). */
-        int ay = ty - OCULA_BORDER_H;
-        int cy = ay < 0 ? 0 : (ay >= ah ? ah - 1 : ay);
-        const uint8_t* bc = vid->ocula_border[cy];
-
-        uint8_t* row = out + (size_t)ty * tw * 3;
-        for (int tx = 0; tx < tw; tx++) {
-            row[tx * 3 + 0] = bc[0];
-            row[tx * 3 + 1] = bc[1];
-            row[tx * 3 + 2] = bc[2];
-        }
-        /* Superpose la scanline active dans sa bordure gauche/droite. */
-        if (ay >= 0 && ay < ah) {
-            const uint8_t* src = vid->framebuffer + (size_t)ay * aw * 3;
-            memcpy(row + (size_t)OCULA_BORDER_W * 3, src, (size_t)aw * 3);
-        }
-    }
-    if (w) *w = tw;
-    if (h) *h = th;
-}
+/* video_get_border_rgb, video_bordered_w/h, video_compose_bordered : compositing
+ * overscan GÉNÉRIQUE → déplacé dans video.c (toujours compilé, indépendant
+ * d'OCULA : lit ocula_border[] qui reste noir sans OCULA). */
 
 /* ── Renderers de scanline OCULA (extraits de video.c, étape 2) ──────────
  * Utilisent les helpers de rendu partagés déclarés dans video_internal.h. */

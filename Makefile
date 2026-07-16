@@ -130,10 +130,8 @@ SOURCES = src/main.c \
           src/io/dtl2000.c \
           src/io/mageco.c \
           src/io/serial_picowifi.c \
-          src/io/ocula_io.c \
-          src/io/ocula_gpu.c \
           src/io/ula_ng.c \
-          src/video/video.c src/video/ocula_video.c \
+          src/video/video.c \
           src/video/textmode.c \
           src/video/hires.c \
           src/video/export.c \
@@ -167,6 +165,18 @@ endif
 
 ifeq ($(HTTPAPI), 1)
     SOURCES += src/network/http_api.c
+endif
+
+# OCULA (remplacement d'ULA RP2350) — ON par défaut. `make OCULA=0` compile un
+# binaire SANS OCULA : les 3 modules dédiés (io/gpu/video) sont remplacés par des
+# stubs no-op (ocula_stubs.c), sans #ifdef dans les fichiers cœur. Preuve
+# d'isolation. Voir docs/ocula/CODE-MAP.md.
+OCULA ?= 1
+ifeq ($(OCULA), 1)
+    CFLAGS  += -DHAS_OCULA
+    SOURCES += src/io/ocula_io.c src/io/ocula_gpu.c src/video/ocula_video.c
+else
+    SOURCES += src/io/ocula_stubs.c
 endif
 
 # Windows v1 : swap the POSIX-only modules for their Windows variants
