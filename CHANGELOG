@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.76.3-alpha] - 2026-07-16
+
+### Docs — Design du VDU intégré ULA-NG (`docs/ula-ng/VDU.md`)
+
+Document de design (à valider avant code) d'un **port de commandes de style
+VDU** exposé par l'ULA-NG (`NG_VDU` $0357), dont l'interpréteur et la mémoire
+de travail vivent dans l'ULA-NG — le 6502 ne fait que *streamer* des octets.
+S'appuie sur l'état de l'art 2026 (Agon Light VDP, VERA/Commander X16,
+précédent maison OCULA-GPU) : split hard/soft (datapath RTL + interpréteur en
+firmware soft-core), protocole d'upload « buffered commands » calqué sur le
+streaming auto-incrémenté existant. Jeu de commandes v0.1 minimal (20 reset,
+22 MODE, 19 palette, 18 fill couleur/cellule, 31 colorer une cellule) +
+périmètre v0.2 (PLOT/VRAM, sprites/fontes par upload, hook OSWRCH). Tests
+inchangés (1036). EMU_VERSION 1.76.2 → 1.76.3-alpha.
+
 ## [1.76.2-alpha] - 2026-07-16
 
 ### Docs — Guide utilisateur ULA-NG complet + section README
