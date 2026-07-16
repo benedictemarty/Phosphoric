@@ -39,11 +39,29 @@
 - **Gating** : profil `--ula ocula` + déverrouillage opt-in (knock `'O','C'`) →
   inerte sinon (rendu HCS10017 bit-à-bit).
 
-## 3. Plan d'extraction modulaire (proposé, non exécuté)
+## 2 bis. Extraction réalisée (étape 1, sur cette branche)
 
-Objectif : ramener le code dispersé derrière des interfaces nettes, pour qu'OCULA
-soit compilable/désactivable comme un module (à l'image de l'ULA-NG, déjà isolée
-dans `src/io/ula_ng.c` + pointeurs `video_t`).
+**`src/video/ocula_video.c`** (+ `src/video/video_internal.h` pour les 4 helpers
+partagés) reçoit le cluster OCULA **palette / bordure / registres**, sans aucune
+dépendance aux helpers de rendu statiques de `video.c` :
+`rgb332_to_rgb888`, `ocula_block_armed`, `ocula_regs_active`, `border_latch`,
+`video_get_border_rgb`, `video_bordered_w/h`, `video_compose_bordered`.
+
+`video.c` ne fait plus qu'appeler ces fonctions (via `video.h` / `video_internal.h`).
+Ajout de `ocula_video.c` aux 6 cibles Makefile qui linkent `video.c`.
+**Refactor pur, comportement identique** : suite complète verte (test-ocula 101,
+test-video 14, test-renderer 10, test-savestate 13, 0 échec global).
+
+**Reste dans `video.c`** (trop couplé aux helpers statiques `set_pixel`/`get_rgb`/
+`decode_attr`/… — étape 2) : `render_80col_scanline`, `render_exthires_scanline`,
+et les branches OCULA de `apply_profile_resolution`/`palette_latch`/le latch de
+début de trame (mêlées à l'ULA-NG et au cœur).
+
+## 3. Plan d'extraction modulaire (suite)
+
+Objectif : ramener le reste du code dispersé derrière des interfaces nettes, pour
+qu'OCULA soit compilable/désactivable comme un module (à l'image de l'ULA-NG,
+déjà isolée dans `src/io/ula_ng.c` + pointeurs `video_t`).
 
 1. **Vidéo** : extraire `render_80col_scanline`/`render_exthires_scanline`/
    `border_latch`/`ocula_block_armed`/`ocula_regs_active`/`video_compose_bordered`

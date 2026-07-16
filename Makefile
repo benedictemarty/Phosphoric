@@ -133,7 +133,7 @@ SOURCES = src/main.c \
           src/io/ocula_io.c \
           src/io/ocula_gpu.c \
           src/io/ula_ng.c \
-          src/video/video.c \
+          src/video/video.c src/video/ocula_video.c \
           src/video/textmode.c \
           src/video/hires.c \
           src/video/export.c \
@@ -290,7 +290,7 @@ test-rom: $(TEST_ROM_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_ROM_SRCS) $(LDFLAGS) -o test_rom
 	@./test_rom
 
-TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/export.c \
+TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/ocula_video.c src/video/export.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/io/via6522.c \
                   src/io/ula_ng.c src/utils/logging.c
@@ -351,7 +351,7 @@ TEST_SAVESTATE_SRCS = tests/unit/test_savestate.c src/savestate.c \
                       src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                       src/memory/memory.c src/memory/banking.c \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
-                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
+                      src/audio/ay3891x.c src/video/video.c src/video/ocula_video.c src/io/ula_ng.c \
                       src/storage/disk.c src/storage/sedoric.c \
                       src/utils/logging.c
 
@@ -384,7 +384,7 @@ test-joystick: $(TEST_JOYSTICK_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_JOYSTICK_SRCS) $(LDFLAGS) -o test_joystick
 	@./test_joystick
 
-TEST_RENDERER_SRCS = tests/unit/test_renderer.c src/video/video.c src/video/renderer.c \
+TEST_RENDERER_SRCS = tests/unit/test_renderer.c src/video/video.c src/video/ocula_video.c src/video/renderer.c \
                      src/io/ula_ng.c \
                      src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
@@ -398,7 +398,7 @@ test-osd: $(TEST_OSD_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_OSD_SRCS) $(LDFLAGS) -o test_osd
 	@./test_osd
 
-TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/renderer.c \
+TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/ocula_video.c src/video/renderer.c \
                   src/video/export.c src/io/ocula_io.c src/io/ocula_gpu.c src/io/ula_ng.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
@@ -534,7 +534,7 @@ TEST_COVERAGE_SRCS = tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcode
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c \
                      src/savestate.c src/debugger.c \
-                     src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
+                     src/audio/ay3891x.c src/video/video.c src/video/ocula_video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 
 test-coverage: $(TEST_COVERAGE_SRCS)

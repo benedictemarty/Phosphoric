@@ -11,6 +11,7 @@
  */
 
 #include "video/video.h"
+#include "video_internal.h"  /* helpers OCULA extraits (ocula_video.c) */
 #include "io/ula_ng.h"   /* composition sprites §5.7 (ng_dev) */
 #include <string.h>
 #include <strings.h>
@@ -38,31 +39,8 @@ static void palette_reset(video_t* vid) {
 /* Expand one RGB332 byte (RRRGGGBB) to RGB888. Shared by the redefinable
  * palette and the border register — both live in the gated $BFE0-$BFFF
  * block and so must decode identically. */
-static void rgb332_to_rgb888(uint8_t v, uint8_t* r, uint8_t* g, uint8_t* b) {
-    *r = (uint8_t)((((v >> 5) & 0x07) * 255) / 7);
-    *g = (uint8_t)((((v >> 2) & 0x07) * 255) / 7);
-    *b = (uint8_t)(((v & 0x03) * 255) / 3);
-}
-
-/* True when the gated $BFE0-$BFFF block is live: OCULA profile, unlocked,
- * and the 'O','C' magic armed at OCULA_PAL_MAGIC. Opt-in (sprint 45):
- * otherwise the block is plain storage (some games keep data there — cf.
- * Dbug, forum t=2709), so neither the palette nor the border react. */
-static bool ocula_block_armed(const video_t* vid, const uint8_t* memory) {
-    return vid->ula_profile == ULA_PROFILE_OCULA && vid->ocula_unlocked &&
-           memory[OCULA_PAL_MAGIC] == 'O' && memory[OCULA_PAL_MAGIC + 1] == 'C';
-}
-
-/* True when the OCULA write-only register file is the active source for
- * palette + border (sprint 66): a register was written since unlock. Live
- * read through the pointer wired from memory_t; NULL in the bare unit-test
- * path. When armed, the register file overrides the in-band $BFE0-$BFFF
- * block during the transition to sodiumlb's register scheme. */
-static bool ocula_regs_active(const video_t* vid) {
-    return vid->ula_profile == ULA_PROFILE_OCULA &&   /* never on a stock ULA */
-           vid->ocula_regs_armed && *vid->ocula_regs_armed &&
-           vid->ocula_reg_pal && vid->ocula_reg_border;
-}
+/* rgb332_to_rgb888, ocula_block_armed, ocula_regs_active → ocula_video.c
+ * (extraits, déclarés dans video_internal.h). */
 
 /* Re-evaluate the redefinable palette at scanline start. Source order:
  * (1) the write-only register file if armed (sprint 66), else (2) the in-band
@@ -93,28 +71,7 @@ static void palette_latch(video_t* vid, const uint8_t* memory) {
     }
 }
 
-/* Latch the border colour for scanline y from OCULA_BORDER_REG ($BFEA),
- * RGB332, under the same gating as the palette. Black ($00 / disarmed /
- * stock ULA) reproduces the standard Oric border. Re-read every scanline,
- * so rewriting $BFEA between lines yields border raster bars (sprint 64,
- * cf. Dbug forum t=2709). The framebuffer has no overscan band yet — this
- * only fills the per-line model exposed by video_get_border_rgb(). */
-static void border_latch(video_t* vid, const uint8_t* memory, int y) {
-    if (y < 0 || y >= OCULA_MAX_H) return;
-    if (ocula_regs_active(vid)) {
-        rgb332_to_rgb888(*vid->ocula_reg_border,
-                         &vid->ocula_border[y][0], &vid->ocula_border[y][1],
-                         &vid->ocula_border[y][2]);
-    } else if (ocula_block_armed(vid, memory)) {
-        rgb332_to_rgb888(memory[OCULA_BORDER_REG],
-                         &vid->ocula_border[y][0], &vid->ocula_border[y][1],
-                         &vid->ocula_border[y][2]);
-    } else {
-        vid->ocula_border[y][0] = 0;
-        vid->ocula_border[y][1] = 0;
-        vid->ocula_border[y][2] = 0;
-    }
-}
+/* border_latch → ocula_video.c (extrait, déclaré dans video_internal.h). */
 
 /* Palette-aware color lookup used by all rendering paths. */
 static void get_rgb(const video_t* vid, uint8_t oric_color,
@@ -192,49 +149,8 @@ void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b) {
     *r = palette[c][0]; *g = palette[c][1]; *b = palette[c][2];
 }
 
-void video_get_border_rgb(const video_t* vid, int y,
-                          uint8_t* r, uint8_t* g, uint8_t* b) {
-    if (y < 0 || y >= OCULA_MAX_H) { *r = *g = *b = 0; return; }
-    *r = vid->ocula_border[y][0];
-    *g = vid->ocula_border[y][1];
-    *b = vid->ocula_border[y][2];
-}
-
-int video_bordered_w(const video_t* vid) {
-    return vid->native_w + 2 * OCULA_BORDER_W;
-}
-
-int video_bordered_h(const video_t* vid) {
-    return vid->native_h + 2 * OCULA_BORDER_H;
-}
-
-void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
-    int aw = vid->native_w, ah = vid->native_h;
-    int tw = aw + 2 * OCULA_BORDER_W;
-    int th = ah + 2 * OCULA_BORDER_H;
-
-    for (int ty = 0; ty < th; ty++) {
-        /* Active line under this output row (negative / past-end in the
-         * top & bottom bands, where we clamp to the first/last line). */
-        int ay = ty - OCULA_BORDER_H;
-        int cy = ay < 0 ? 0 : (ay >= ah ? ah - 1 : ay);
-        const uint8_t* bc = vid->ocula_border[cy];
-
-        uint8_t* row = out + (size_t)ty * tw * 3;
-        for (int tx = 0; tx < tw; tx++) {
-            row[tx * 3 + 0] = bc[0];
-            row[tx * 3 + 1] = bc[1];
-            row[tx * 3 + 2] = bc[2];
-        }
-        /* Overlay the active scanline inside its left/right border. */
-        if (ay >= 0 && ay < ah) {
-            const uint8_t* src = vid->framebuffer + (size_t)ay * aw * 3;
-            memcpy(row + (size_t)OCULA_BORDER_W * 3, src, (size_t)aw * 3);
-        }
-    }
-    if (w) *w = tw;
-    if (h) *h = th;
-}
+/* video_get_border_rgb, video_bordered_w/h, video_compose_bordered
+ * → ocula_video.c (compositing overscan OCULA, déclarés dans video.h). */
 
 static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (x < 0 || x >= vid->native_w || y < 0 || y >= vid->native_h) return;
