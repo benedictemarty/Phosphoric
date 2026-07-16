@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.76.1-alpha** | **1036 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.76.2-alpha** | **1036 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -151,6 +151,22 @@ make SDL2=1
 - **Spec** — [docs/ocula_extensions.md](docs/ocula_extensions.md) v0.7 —
   the 5-step OCULA plan is complete
 - **Persistent** — profile saved in `.ost` save states (backward compatible)
+
+### ULA-NG (next-gen ULA)
+- **Software reference** for a future Verilog/FPGA ULA (Sipeed Tang Primer 20K /
+  GW2A-18). Register window `$0340-$035F`, **locked at reset** → bit-for-bit
+  identical to a stock HCS 10017 until a program unlocks it (`'N','G'` on
+  `$0340`). Independent of the `--ula` profile; no CLI flag needed.
+- **8 features** — palette-indirection (16×12-bit LUT), raster IRQ, start-address
+  (double-buffer/scroll), scanline copper, fine scroll X/Y, **parallel attributes**
+  (per-cell ink+paper, no color clash), **16 hardware sprites** 16×16 with
+  priority + collision, and **chunky 4bpp** (320×224, 16 colours) / **80-column
+  text** modes.
+- **Activation** — no BASIC keyword: `POKE`/machine-code register writes, or the
+  emulator's `--ula-ng-poke "340=4E,340=47,341=05,…"` (startup injection).
+- **Demos** — one per feature in [demos/ula-ng/](demos/ula-ng/) (`menu.sh`).
+- **Docs** — user guide [docs/ula-ng/README-ULA-NG.md](docs/ula-ng/README-ULA-NG.md),
+  spec [docs/ula-ng/ULA-NG-SPEC.md](docs/ula-ng/ULA-NG-SPEC.md).
 
 ### CPU Trace Logging
 - **Instruction trace** — Log every CPU instruction with disassembly and register state

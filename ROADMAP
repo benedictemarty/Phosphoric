@@ -6,6 +6,18 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 116c: Documentation utilisateur ULA-NG (v1.76.2-alpha) - DONE
+- [x] `docs/ula-ng/README-ULA-NG.md` réécrit et mis à jour aux 8 features
+      (était « étapes 1-5 ») : mode « ULA normal » (verrouillé = défaut),
+      absence de mot-clé BASIC (activation POKE/ML/`--ula-ng-poke`), table
+      d'activation par mode (NG_MODE : chunky `$05`, 80col `$09`, attributs
+      `$02`, sprites `NG_SPR_CTRL`), retour au normal (reset / `NG_MODE=0`),
+      carte complète des registres `$0340-$035F`, recettes des 8 features.
+- [x] README principal : section « ULA-NG (next-gen ULA) » + liens.
+- [x] Distinction explicite avec `--ula PROFILE` (OCULA, indépendant).
+
+---
+
 ### Sprint 116b: Retours d'essai démos ULA-NG (v1.76.1-alpha) - DONE
 - [x] **Chunky 4bpp plein écran** (§5.8) : suppression du pied de texte 40 col
       (240 px) qui laissait un trou noir 240-319 en bas d'un écran 320 px. Le

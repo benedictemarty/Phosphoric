@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.76.2-alpha] - 2026-07-16
+
+### Docs — Guide utilisateur ULA-NG complet + section README
+
+- `docs/ula-ng/README-ULA-NG.md` réécrit et **mis à jour aux 8 features**
+  (était « étapes 1-5 ») : §0 mode « ULA normal » (verrouillé = HCS 10017
+  bit-à-bit, défaut, aucun flag), §1 **absence de mot-clé BASIC** (activation
+  par POKE / code machine / `--ula-ng-poke`, comme le vrai matériel), §2
+  déverrouillage, §3 **table d'activation par mode** (NG_MODE : chunky `$05`,
+  80col `$09`, attributs `$02`, sprites `NG_SPR_CTRL`), §3 retour au normal
+  (reset ou `NG_MODE=0`), §4 **carte complète des registres** `$0340-$035F`
+  (attributs `$034D/$034E`, sprites `$0350-$0356`), §5 recettes `--ula-ng-poke`
+  des 8 features, §6 code machine, §7 démos, §8 références.
+- README principal : nouvelle section **« ULA-NG (next-gen ULA) »** (résumé des
+  8 features, activation sans mot-clé, liens guide/spec/démos).
+- Distinction explicite avec `--ula PROFILE` (axe OCULA, indépendant).
+- Tests inchangés (1036). EMU_VERSION 1.76.1 → 1.76.2-alpha.
+
 ## [1.76.1-alpha] - 2026-07-16
 
 ### Changed — Chunky NG plein écran + démo attributs plus démonstrative
