@@ -74,7 +74,7 @@ static void palette_latch(video_t* vid, const uint8_t* memory) {
 /* border_latch → ocula_video.c (extrait, déclaré dans video_internal.h). */
 
 /* Palette-aware color lookup used by all rendering paths. */
-static void get_rgb(const video_t* vid, uint8_t oric_color,
+void get_rgb(const video_t* vid, uint8_t oric_color,
                     uint8_t* r, uint8_t* g, uint8_t* b) {
     uint8_t c = oric_color & 0x07;
     *r = vid->pal_rgb[c][0]; *g = vid->pal_rgb[c][1]; *b = vid->pal_rgb[c][2];
@@ -152,7 +152,7 @@ void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b) {
 /* video_get_border_rgb, video_bordered_w/h, video_compose_bordered
  * → ocula_video.c (compositing overscan OCULA, déclarés dans video.h). */
 
-static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (x < 0 || x >= vid->native_w || y < 0 || y >= vid->native_h) return;
     int off = (y * vid->native_w + x) * 3;
     vid->framebuffer[off] = r; vid->framebuffer[off+1] = g; vid->framebuffer[off+2] = b;
@@ -165,7 +165,7 @@ static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t 
  *   TEXT mode:  $B400-$B7FF (standard charset, 128 chars x 8 bytes)
  *   HIRES mode: $9800-$9BFF (charset relocated because $B400 is in HIRES bitmap)
  */
-static uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, int row) {
+uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, int row) {
     bool alt = (vid->text_attr & 0x01) != 0;
     if (vid->charset) {
         /* External charset (test/headless path): alt charset lives 128 chars after std */
@@ -182,7 +182,7 @@ static uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, 
  * Decode a serial attribute (bits 6+5 both zero) and update ULA state.
  * Returns true if the attribute changed the video mode.
  */
-static bool decode_attr(video_t* vid, uint8_t attr,
+bool decode_attr(video_t* vid, uint8_t attr,
                         uint8_t* ink, uint8_t* paper, bool* inverse) {
     uint8_t val = attr & 0x1F;
     switch (val & 0x18) {
@@ -236,7 +236,7 @@ static void render_hires_block(video_t* vid, int x, int y,
  * complemented (XOR 7), matching Oricutron's ula_render_block(inverted,
  * data=0) which uses bg^7 for every dot.
  */
-static void render_attr_block(video_t* vid, int x, int y,
+void render_attr_block(video_t* vid, int x, int y,
                               uint8_t paper, int height, bool inverse) {
     uint8_t bg = inverse ? (uint8_t)(paper ^ 0x07) : paper;
     uint8_t pr, pg, pb;
@@ -284,14 +284,14 @@ static void render_attr_block(video_t* vid, int x, int y,
  * Even rows show the top half (glyph rows 0-3), odd rows the bottom half
  * (glyph rows 4-7). This reproduces the "double-height must start on an even
  * row or it is garbled" hardware quirk. */
-static int effective_chline(video_t* vid, int chline, int row) {
+int effective_chline(video_t* vid, int chline, int row) {
     if (vid->text_attr & 0x02)
         return (chline >> 1) + ((row & 1) ? 4 : 0);
     return chline;
 }
 
 /* Whether blink-attr is currently in its "hidden/inverted" phase. */
-static bool blink_phase_on(video_t* vid) {
+bool blink_phase_on(video_t* vid) {
     return (vid->text_attr & 0x04) && (vid->frame_counter & 0x10);
 }
 
@@ -303,63 +303,8 @@ static bool blink_phase_on(video_t* vid) {
  * Serial attributes (ink/paper/text attrs) work per column as in the
  * stock 40-column mode.
  */
-static void render_80col_scanline(video_t* vid, const uint8_t* memory, int y) {
-    int row = y / 8;
-    int chline = y & 7;
-    uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
-
-    for (int col = 0; col < OCULA_80COL_COLS; col++) {
-        uint8_t byte = memory[OCULA_80COL_BASE + row * OCULA_80COL_COLS + col];
-        if ((byte & 0x60) == 0) {
-            bool inverse = false;
-            decode_attr(vid, byte, &ink, &paper, &inverse);
-            render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
-        } else {
-            bool char_inv = (byte & 0x80) != 0;
-            if (blink_phase_on(vid)) char_inv = !char_inv;
-            /* Inverse complements ink/paper (XOR 7), it does not swap them. */
-            uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
-            uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
-            uint8_t ir, ig, ib, pr, pg, pb;
-            get_rgb(vid, fg, &ir, &ig, &ib);
-            get_rgb(vid, bg, &pr, &pg, &pb);
-            int erow = effective_chline(vid, chline, row);
-            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
-            for (int bx = 5; bx >= 0; bx--) {
-                bool on = (bits & (1 << bx)) != 0;
-                if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
-                else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
-            }
-        }
-    }
-
-    if (y == 223) vid->need_refresh = false;
-}
-
-/**
- * Render one OCULA extended-HIRES scanline (attr 29/31): 320x200
- * bicolor bitmap at $A000, 40 bytes/row, all 8 bits are pixels (MSB
- * leftmost) — no serial attributes, no invert bit. Colors are palette
- * entries 7 (ink) and 0 (paper), redefinable via the OCULA palette.
- */
-static void render_exthires_scanline(video_t* vid, const uint8_t* memory, int y) {
-    uint8_t ir, ig, ib, pr, pg, pb;
-    get_rgb(vid, ORIC_WHITE, &ir, &ig, &ib);
-    get_rgb(vid, ORIC_BLACK, &pr, &pg, &pb);
-    /* OCULA-GPU hardware scroll: source fetch shifted by (dx, dy),
-     * wrapping modulo 320x200. Per-pixel fetch keeps the bit shifting
-     * between source bytes trivial. */
-    int src_y = (y + vid->ocula_scroll_y) % 200;
-    int dx = vid->ocula_scroll_x;
-    for (int x = 0; x < OCULA_EXTHIRES_W; x++) {
-        int sx = (x + dx) % OCULA_EXTHIRES_W;
-        uint8_t byte = memory[OCULA_EXTHIRES_BASE + src_y * 40 + (sx >> 3)];
-        if (byte & (0x80 >> (sx & 7)))
-            set_pixel(vid, x, y, ir, ig, ib);
-        else
-            set_pixel(vid, x, y, pr, pg, pb);
-    }
-}
+/* render_80col_scanline, render_exthires_scanline → ocula_video.c (extraits,
+ * déclarés dans video_internal.h ; utilisent les helpers de rendu partagés). */
 
 /* Rangées de statut 200-223 : toujours TEXT depuis $BB80 (rows 25-27). Factorisé
  * pour être réutilisé par le mode chunky NG (§5.8), dont seules les lignes

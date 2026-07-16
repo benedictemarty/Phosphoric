@@ -52,12 +52,37 @@ Ajout de `ocula_video.c` aux 6 cibles Makefile qui linkent `video.c`.
 **Refactor pur, comportement identique** : suite complète verte (test-ocula 101,
 test-video 14, test-renderer 10, test-savestate 13, 0 échec global).
 
-**Reste dans `video.c`** (trop couplé aux helpers statiques `set_pixel`/`get_rgb`/
-`decode_attr`/… — étape 2) : `render_80col_scanline`, `render_exthires_scanline`,
-et les branches OCULA de `apply_profile_resolution`/`palette_latch`/le latch de
-début de trame (mêlées à l'ULA-NG et au cœur).
+## 2 ter. Extraction réalisée (étape 2 — renderers, sur cette branche)
 
-## 3. Plan d'extraction modulaire (suite)
+`video_internal.h` élargi expose les 7 helpers de rendu (non-static :
+`set_pixel`, `get_rgb`, `get_charset_byte`, `decode_attr`, `render_attr_block`,
+`effective_chline`, `blink_phase_on` — sans collision : `set_pixel` de mcp40.c
+est `static`, signature différente). **`render_80col_scanline` et
+`render_exthires_scanline` sont désormais dans `ocula_video.c`** ; `video.c` ne
+fait que les appeler.
+
+**Bilan isolation VIDÉO** : tout le code OCULA vidéo vit dans `ocula_video.c`
+(palette/bordure/registres + les 2 renderers). Restent dans `video.c`, par nature
+mêlés à l'ULA-NG et au cœur : les **branches de dispatch** (`apply_profile_resolution`,
+`palette_latch`, latch de début de trame, `video_render_scanline`) — ce sont des
+*aiguillages*, pas du rendu OCULA. Refactor pur, comportement identique : suite
+complète verte (0 échec).
+
+**Modules OCULA dédiés** : `src/io/ocula_io.c`, `src/io/ocula_gpu.c`,
+`src/video/ocula_video.c` — l'empreinte OCULA compilable est isolée en 3 unités.
+
+## 3. Reste : build `OCULA=0` (retrait complet) — non fait
+
+Un binaire **compilable sans OCULA** (`make OCULA=0`, comme `CAST=0`/`HTTPAPI=0`)
+prouverait l'isolation totale. Il exige d'exclure les 3 modules OCULA **et** de
+**gater par `#ifdef HAS_OCULA` les ~25 sites d'appel** dans les fichiers cœur
+(`video.c` dispatch, `memory.c` `memory_ocula_*`, `main.c` `--ula`/câblage,
+`savestate.c` sections OCB/OGP). **Tradeoff honnête** : ça encombre 4 fichiers
+cœur de `#ifdef` (contre la lisibilité), pour un gain surtout démonstratif. À
+décider avant de l'exécuter (risque + clutter). L'isolation *structurelle* (code
+en modules dédiés) est, elle, **acquise**.
+
+## 4. Plan d'extraction modulaire (référence)
 
 Objectif : ramener le reste du code dispersé derrière des interfaces nettes, pour
 qu'OCULA soit compilable/désactivable comme un module (à l'image de l'ULA-NG,
