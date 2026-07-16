@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.79.1-alpha] - 2026-07-16
+
+### Docs — Conclusion sur le hook OSWRCH (investigué, écarté) + piste ROM 1.2
+
+Acte l'investigation de l'ergonomie d'entrée VDU (« PRINT CHR$ alimente NG_VDU
+sans POKE », façon BBC) : désassemblage de la ROM Atmos + tests. Conclusion —
+l'Oric **n'a pas de vecteur OSWRCH par caractère** ; le hook imprimante
+($02F1/$023E) ne se déclenche pas (flag remis à 0 par l'IRQ, capture Centronics
+au niveau matériel) et serait de toute façon ~1000× trop lent (poignée de main)
+pour les données en masse. Le chemin rapide/fiable reste le pilotage direct
+(STA $0357 / POKE #357), déjà en place. Le confort « vecteur de sortie RAM
+revectorable » supposerait de patcher une ROM « BASIC 1.2 » qui *ajoute* ce
+vecteur → piste réelle mais volumineuse, **exposée hors main dans la branche
+`feature/ula-ng-rom12-vdu`** (design docs/ula-ng/ROM12-VDU.md). VDU.md §4 mis à
+jour. Aucun code cassé livré. Tests inchangés (1049). EMU_VERSION 1.79.0 →
+1.79.1-alpha.
+
 ## [1.79.0-alpha] - 2026-07-16
 
 ### Added — VDU intégré v0.3 : protocole d'upload (sprites par flux)

@@ -6,8 +6,9 @@
 > 6502. Interpréteur dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ;
 > tests `test-ula-ng` ; démos `ng_vdu.s` (mosaïque), `ng_vdu_gfx.s` (tracé de
 > lignes), `ng_vdu_spr.s` (sprite défini par flux) — pilotées **uniquement par le
-> flux**, sans pilote 6502. Reste : hook OSWRCH (nécessite de vérifier le vecteur
-> de sortie caractère de l'Oric), PLOT étendu.
+> flux**, sans pilote 6502. Le hook OSWRCH transparent a été investigué et écarté
+> (§4 : l'Oric n'a pas de vecteur de sortie par caractère ; piste ROM « 1.2 » en
+> branche `feature/ula-ng-rom12-vdu`). Reste : fontes/bitmaps upload, PLOT étendu.
 
 ## 1. Objectif
 
@@ -82,10 +83,31 @@ Codes inconnus : ignorés (0 paramètre) — comme un VDU qui absorbe l'inconnu.
 
 **Prévu ensuite** (hors périmètre actuel) :
 - fontes / bitmaps chunky via le même protocole d'upload (§5) ;
-- fenêtres (`28`) → `NG_SCRSTART`/scroll ; PLOT étendu (triangles, coords 16 bits) ;
-- hook du **vecteur de sortie caractère** de l'Oric (équivalent `OSWRCH`) pour
-  que `PRINT CHR$(…)` alimente `NG_VDU` sans POKE — **nécessite de vérifier le
-  vecteur exact** (non implémenté pour ne rien inventer).
+- fenêtres (`28`) → `NG_SCRSTART`/scroll ; PLOT étendu (triangles, coords 16 bits).
+
+### Ergonomie d'entrée : conclusion sur le hook OSWRCH (investigué)
+
+Objectif visé : `PRINT CHR$(…)` alimente `NG_VDU` **sans POKE**, façon BBC.
+Investigation menée (désassemblage ROM Atmos `basic11b.rom` + tests) :
+
+- **Pas de vecteur OSWRCH par caractère propre sur l'Oric.** La sortie caractère
+  BASIC (`$CCD9`) contient bien un hook `BIT $02F1 / JSR ($023E)`, mais `$02F1`
+  bit7 (redirection) est **remis à 0 en continu par l'IRQ 50 Hz** ; ni `PRINT`
+  (flag forcé) ni `LPRINT` n'ont appelé un wedge installé en `$023E` (compteur
+  resté à 0 — l'imprimante de l'émulateur capte au niveau matériel Centronics,
+  pas par ce vecteur). Voie **abandonnée** (aucun code cassé livré).
+- **Problème de vitesse** : rediriger par le port imprimante (Centronics, poignée
+  de main) est ~1000× plus lent qu'un `STA $0357` direct → inutilisable pour les
+  données en masse (sprites 256 o, images 16 000 o). Bon uniquement pour de
+  petites commandes.
+
+**Conclusion** : le chemin **rapide et fiable reste le pilotage direct**
+(`STA $0357` en ML, `POKE #357` en BASIC), déjà en place. Le confort « BBC »
+(vecteur de sortie RAM revectorable, pleine vitesse) suppose de **patcher une
+ROM « BASIC 1.2 »** qui *ajoute* ce vecteur (l'Oric ne l'a pas). C'est une piste
+réelle mais volumineuse (couture 6502 dans la ROM, œuvre dérivée sous copyright)
+→ **explorée hors `main`, dans la branche `feature/ula-ng-rom12-vdu`**
+(design : `docs/ula-ng/ROM12-VDU.md`).
 
 ## 5. Protocole d'upload (« buffered commands », v0.3 — sprites)
 
