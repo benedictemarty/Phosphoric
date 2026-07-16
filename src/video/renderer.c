@@ -18,7 +18,7 @@ static bool fullscreen;
 static int current_scale;
 static int tex_w = ORIC_SCREEN_W;   /* Current texture resolution (border incl.) */
 static int tex_h = ORIC_SCREEN_H;
-static bool border_on = true;       /* Composite the OCULA overscan band (Sprint 65) */
+static bool border_on = true;       /* Composite the overscan band */
 /* Scratch buffer for the bordered composite (sized to the largest mode). */
 static uint8_t composed[VIDEO_BORDERED_MAX_W * VIDEO_BORDERED_MAX_H * 3];
 
@@ -88,7 +88,7 @@ void renderer_present(video_t* vid) {
         pixels = composed;
     }
 
-    /* OCULA extended modes (and toggling the border) change the source
+    /* Extended video modes (and toggling the border) change the source
      * resolution at runtime: recreate the streaming texture to follow. */
     if (src_w != tex_w || src_h != tex_h) {
         tex_w = src_w;

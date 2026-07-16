@@ -10,7 +10,7 @@
  * ASCII: ANSI true-color escape codes for terminal display
  *
  * Each format has a low-level writer taking a raw RGB888 buffer + dimensions,
- * so both the active framebuffer and the OCULA-bordered composite (Sprint 77)
+ * so both the active framebuffer and the bordered composite (Sprint 77)
  * share the same encoders.
  */
 
@@ -133,9 +133,9 @@ bool video_export_auto(const video_t* vid, const char* filename) {
     return video_export_ppm(vid, filename);
 }
 
-/* ── OCULA-bordered exports (Sprint 77) ──────────────────────────── */
+/* ── Bordered exports (Sprint 77) ──────────────────────────── */
 
-/* Compose the active framebuffer surrounded by the OCULA overscan border,
+/* Compose the active framebuffer surrounded by the overscan border,
  * then write it. Falls back to the active-area export when compositing is
  * unavailable. Returns false on allocation failure. */
 bool video_export_auto_bordered(const video_t* vid, const char* filename) {

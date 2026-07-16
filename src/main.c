@@ -1206,7 +1206,7 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     }
 }
 
-/* Export a screenshot honouring --export-border: with the flag, the OCULA
+/* Export a screenshot honouring --export-border: with the flag, the
  * overscan border is composited around the active area (larger image). */
 static bool emu_export_image(emulator_t* emu, const char* path) {
     return emu->export_border ? video_export_auto_bordered(&emu->video, path)
@@ -3817,7 +3817,7 @@ int main(int argc, char* argv[]) {
     emu.video_avi_quality = (video_avi_quality > 0) ? video_avi_quality : 85;
     emu.video_avi_active = false;
     if (video_avi_file) {
-        /* With --export-border the recorded frames carry the OCULA overscan
+        /* With --export-border the recorded frames carry the overscan
          * border, so the stream geometry grows by the border on each side. */
         int avi_w = emu.export_border ? ORIC_SCREEN_W + 2 * VIDEO_BORDER_W : ORIC_SCREEN_W;
         int avi_h = emu.export_border ? ORIC_SCREEN_H + 2 * VIDEO_BORDER_H : ORIC_SCREEN_H;
