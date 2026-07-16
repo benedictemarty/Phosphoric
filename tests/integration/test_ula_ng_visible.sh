@@ -47,6 +47,10 @@ shot pal "340=4E,340=47,341=01,348=07,349=00,34A=F0"
 shot cop "340=4E,340=47,341=01,34B=00,34C=00,34C=7F,34C=00,34C=1E,34C=70,34C=0F"
 # start-address : scroll d'une rangée ($BB80+40 = $BBA8)
 shot scr "340=4E,340=47,341=01,342=A8,343=BB"
+# scroll fin Y = 4 px ($0345=04)
+shot scy "340=4E,340=47,341=01,345=04"
+# scroll fin X = 3 px ($0344=03)
+shot scx "340=4E,340=47,341=01,344=03"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -64,6 +68,8 @@ W,H,base=load(f"{TMP}/base.ppm")
 _,_,pal=load(f"{TMP}/pal.ppm")
 _,_,cop=load(f"{TMP}/cop.ppm")
 _,_,scr=load(f"{TMP}/scr.ppm")
+_,_,scy=load(f"{TMP}/scy.ppm")
+_,_,scx=load(f"{TMP}/scx.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -81,6 +87,14 @@ res.append(("copper: red top (%d) + blue bottom (%d)"%(red,blue), red>100 and bl
 # start-address : rangee texte 0 du decale == rangee 1 de la ref
 row=W*3
 res.append(("start-address: scrolled row0 == base row1", scr[0:8*row]==base[8*row:16*row]))
+# scroll fin Y=4 : contenu decale de 4 px vers le haut (scy[R] == base[R+4])
+res.append(("fine scroll Y=4: content shifted up 4px", scy[8*row:40*row]==base[12*row:44*row]))
+# scroll fin X=3 : contenu decale de 3 px vers la gauche (scx[x] == base[x+3])
+okX=True
+for y in range(8,40):
+    b=y*W*3
+    if scx[b:b+(W-3)*3] != base[b+9:b+9+(W-3)*3]: okX=False; break
+res.append(("fine scroll X=3: content shifted left 3px", okX))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)

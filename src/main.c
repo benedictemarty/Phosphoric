@@ -1630,6 +1630,8 @@ static bool emulator_init(emulator_t* emu) {
     emu->video.ng_pal        = emu->ula_ng.pal;
     emu->video.ng_active     = &emu->ula_ng.active;
     emu->video.ng_scrstart   = &emu->ula_ng.scrstart;   /* start-address (§5.3) */
+    emu->video.ng_scrollx    = &emu->ula_ng.scrollx;    /* scroll fin X (§5.5) */
+    emu->video.ng_scrolly    = &emu->ula_ng.scrolly;    /* scroll fin Y (§5.5) */
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {

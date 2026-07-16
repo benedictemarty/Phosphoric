@@ -29,6 +29,8 @@ void ula_ng_reset(ula_ng_t* u) {
     u->raster_enable = false;
     u->raster_pending = false;
     u->scrstart = 0;
+    u->scrollx = 0;
+    u->scrolly = 0;
     u->copper_count = 0;
     u->copper_phase = 0;
 }
@@ -99,6 +101,12 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
             break;
         case ULA_NG_REG_SCR_HI:                 /* NG_SCRSTART MSB */
             u->scrstart = (uint16_t)((u->scrstart & 0x00FF) | (value << 8));
+            break;
+        case ULA_NG_REG_SCROLLX:                /* décalage fin X, cellule 6 px */
+            u->scrollx = (uint8_t)(value > 5 ? 5 : value);
+            break;
+        case ULA_NG_REG_SCROLLY:                /* décalage fin Y, cellule 8 px */
+            u->scrolly = (uint8_t)(value & 0x07);
             break;
         case ULA_NG_REG_COP_CTRL:               /* reset de la liste copper */
             u->copper_count = 0;

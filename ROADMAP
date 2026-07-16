@@ -6,6 +6,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 112: ULA-NG étape 6 — scroll fin X/Y (§5.5) (v1.72.0-alpha) - DONE
+Décalage pixel-près (complément du scroll grossier §5.3) → défilement lisse.
+- [x] `NG_SCROLLX` ($0344, clampé 0-5 = cellule 6 px), `NG_SCROLLY` ($0345,
+      masqué 0-7 = cellule 8 px). Zone principale (0-199) quand actif.
+- [x] Y décale la ligne source (`src_y = y + scrolly`) ; X décale l'affichage
+      (`px = col·6 - scrollx`, cellule en plus pour le bord droit, `set_pixel`
+      clippe hors écran). Câblage `video_t` par pointeurs `ng_scrollx/y`.
+- [x] **Test visible** : `NG_SCROLLY=4` / `NG_SCROLLX=3` → décalage **pixel-exact**
+      au framebuffer (ajouté à `test-ula-ng-visible`). Non-régression (test-video 22/22).
+- [x] test-ula-ng 27 → 31 checks. 1016 → 1020 tests.
+> **Suite** : attributs parallèles (§5.6), sprites (§5.7), chunky/80col (§5.8).
+
+---
+
 ### Sprint 111: ULA-NG — outil `--ula-ng-poke` + guide + test end-to-end (v1.71.0-alpha) - DONE
 Outillage pour piloter/tester l'ULA-NG sans POKE BASIC lents.
 - [x] Flag CLI `--ula-ng-poke "AAA=VV,..."` : programme les registres ULA-NG

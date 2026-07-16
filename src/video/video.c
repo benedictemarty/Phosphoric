@@ -508,10 +508,19 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
 
     if (y < 200) {
         uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
-        int row = y / 8;
-        int chline = y & 7;
+        /* ULA-NG scroll fin (§5.5) : décalage pixel X (0-5) / Y (0-7) à la
+         * composition, quand actif. Inactif → 0 (compat, rendu identique). */
+        int sx = 0, sy = 0;
+        if (vid->ng_active && *vid->ng_active) {
+            if (vid->ng_scrollx) sx = *vid->ng_scrollx;
+            if (vid->ng_scrolly) sy = *vid->ng_scrolly;
+        }
+        int src_y = y + sy;              /* fine Y : décale la ligne source (contenu vers le haut) */
+        int row = src_y / 8;
+        int chline = src_y & 7;
+        int last_col = sx > 0 ? 40 : 39; /* cellule en plus pour combler le bord droit */
 
-        for (int col = 0; col < 40; col++) {
+        for (int col = 0; col <= last_col; col++) {
             bool hires = (vid->vid_mode & 0x04) != 0;
             /* ULA-NG start-address (§5.3) : remplace la base du fetch ($A000
              * HIRES / $BB80 TEXT) par NG_SCRSTART quand actif (double buffer /
@@ -519,16 +528,17 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
             uint16_t scr_base = hires ? 0xA000 : 0xBB80;
             if (vid->ng_active && *vid->ng_active && vid->ng_scrstart && *vid->ng_scrstart)
                 scr_base = *vid->ng_scrstart;
-            uint16_t base = hires ? (uint16_t)(scr_base + y * 40)
+            uint16_t base = hires ? (uint16_t)(scr_base + src_y * 40)
                                   : (uint16_t)(scr_base + row * 40);
             uint8_t byte = memory[base + col];
+            int px = col * 6 - sx;       /* fine X : décale l'affichage (set_pixel clippe) */
 
             if ((byte & 0x60) == 0) {
                 bool inverse = false;
                 decode_attr(vid, byte, &ink, &paper, &inverse);
-                render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
+                render_attr_block(vid, px, y, paper, 1, (byte & 0x80) != 0);
             } else if (hires) {
-                render_hires_block(vid, col * 6, y, byte, ink, paper);
+                render_hires_block(vid, px, y, byte, ink, paper);
             } else {
                 bool char_inv = (byte & 0x80) != 0;
                 if (blink_phase_on(vid)) char_inv = !char_inv;
@@ -542,8 +552,8 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                 uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
                 for (int bx = 5; bx >= 0; bx--) {
                     bool on = (bits & (1 << bx)) != 0;
-                    if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
-                    else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
+                    if (on) set_pixel(vid, px + (5 - bx), y, ir, ig, ib);
+                    else    set_pixel(vid, px + (5 - bx), y, pr, pg, pb);
                 }
             }
         }

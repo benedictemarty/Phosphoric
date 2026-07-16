@@ -353,8 +353,38 @@ TEST(test_copper_reset) {
     ASSERT_EQ(u.copper_count, 0);
 }
 
+/* ── Étape 6 : scroll fin X/Y (§5.5) ──────────────────────────────────── */
+
+TEST(test_scroll_default_zero) {
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_EQ(u.scrollx, 0); ASSERT_EQ(u.scrolly, 0);
+}
+
+TEST(test_scroll_program) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SCROLLX, 3);
+    ula_ng_write(&u, ULA_NG_REG_SCROLLY, 5);
+    ASSERT_EQ(u.scrollx, 3); ASSERT_EQ(u.scrolly, 5);
+}
+
+TEST(test_scroll_clamp) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SCROLLX, 9);   /* X clampé à 5 (cellule 6 px) */
+    ula_ng_write(&u, ULA_NG_REG_SCROLLY, 9);   /* Y masqué 0-7 : 9&7 = 1 */
+    ASSERT_EQ(u.scrollx, 5); ASSERT_EQ(u.scrolly, 1);
+}
+
+TEST(test_scroll_locked_no_effect) {
+    ula_ng_t u; ula_ng_init(&u);
+    ula_ng_write(&u, ULA_NG_REG_SCROLLX, 4);
+    ula_ng_write(&u, ULA_NG_REG_SCROLLY, 6);
+    ASSERT_EQ(u.scrollx, 0); ASSERT_EQ(u.scrolly, 0);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-5: unlock/palette/raster/scrstart/copper) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-6: unlock/palette/raster/scrstart/copper/scroll) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -382,6 +412,10 @@ int main(void) {
     RUN(test_copper_gradient);
     RUN(test_copper_gating);
     RUN(test_copper_reset);
+    RUN(test_scroll_default_zero);
+    RUN(test_scroll_program);
+    RUN(test_scroll_clamp);
+    RUN(test_scroll_locked_no_effect);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

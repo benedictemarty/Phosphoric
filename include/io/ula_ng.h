@@ -28,6 +28,8 @@
 #define ULA_NG_REG_MODE    0x0341u   /* NG_MODE : b0 = extensions actives */
 #define ULA_NG_REG_SCR_LO  0x0342u   /* NG_SCRSTART lo : base fetch vidéo (LSB) */
 #define ULA_NG_REG_SCR_HI  0x0343u   /* NG_SCRSTART hi : base fetch vidéo (MSB) */
+#define ULA_NG_REG_SCROLLX 0x0344u   /* NG_SCROLLX : décalage fin X (0-5 pixels) */
+#define ULA_NG_REG_SCROLLY 0x0345u   /* NG_SCROLLY : décalage fin Y (0-7 pixels) */
 #define ULA_NG_REG_RASTER  0x0346u   /* NG_RASTERLINE : ligne déclenchant l'IRQ */
 #define ULA_NG_REG_STATUS  0x0347u   /* NG_STATUS : R b7=IRQ raster en attente ;
                                         W = acquit + b0 = enable IRQ raster */
@@ -64,6 +66,10 @@ typedef struct ula_ng_s {
     /* Start-address (§5.3) : remplace la base du fetch vidéo ($A000/$BB80).
      * 0 = utiliser la base par défaut du mode (compat). */
     uint16_t scrstart;
+
+    /* Scroll fin (§5.5) : décalage pixel-près à la composition. */
+    uint8_t scrollx;       /* NG_SCROLLX : 0-5 (largeur cellule = 6 px) */
+    uint8_t scrolly;       /* NG_SCROLLY : 0-7 (hauteur cellule = 8 px) */
 
     /* IRQ raster (§5.2) */
     uint8_t raster_line;   /* NG_RASTERLINE : ligne (trame 0-311) déclenchant l'IRQ */

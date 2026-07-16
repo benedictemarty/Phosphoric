@@ -163,6 +163,8 @@ Une petite liste d'instructions palette (mini-copper) en RAM, appliquée pendant
 ### 5.5 Scroll fin X/Y
 `NG_SCROLLX` (0-5) et `NG_SCROLLY` (0-7) décalent le pipeline de fetch au niveau pixel. En pratique : offset appliqué au moment de composer la ligne.
 
+**Implémenté (étape 6, validé)** : `NG_SCROLLX` (`$0344`, clampé 0-5 = largeur cellule 6 px), `NG_SCROLLY` (`$0345`, masqué 0-7 = hauteur 8 px). Appliqué à la composition de la zone principale (0-199) quand actif (`déverrouillé && NG_MODE.b0`) : **Y** décale la ligne source (`src_y = y + scrolly`, contenu vers le haut) ; **X** décale l'affichage (`px = col·6 - scrollx`, `set_pixel` clippe hors écran, une cellule de plus fetchée pour combler le bord droit). Combiné au scroll grossier (§5.3) → défilement lisse. Inactif / 0 → rendu bit-à-bit inchangé. Test visible : `NG_SCROLLY=4` / `NG_SCROLLX=3` → décalage pixel-exact vérifié au framebuffer.
+
 ### 5.6 Attributs parallèles
 Un second plan mémoire de 8 Ko (banque sélectionnée par `NG_MODE.b4-5`) fournit encre+papier par cellule 8×1 **sans consommer d'octets pixel dans le flux** — supprime le color clash sériel. Actif seulement si `NG_MODE.b1`.
 

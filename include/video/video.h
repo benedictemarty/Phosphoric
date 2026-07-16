@@ -148,6 +148,8 @@ typedef struct video_s {
     const uint8_t (*ng_pal)[3];       /**< -> ula_ng.pal[16][3] (RGB888) */
     const bool*    ng_active;     /**< -> ula_ng.active (gate général NG) */
     const uint16_t* ng_scrstart;  /**< -> ula_ng.scrstart (base fetch, 0=défaut, §5.3) */
+    const uint8_t*  ng_scrollx;   /**< -> ula_ng.scrollx (0-5, §5.5) */
+    const uint8_t*  ng_scrolly;   /**< -> ula_ng.scrolly (0-7, §5.5) */
 
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE

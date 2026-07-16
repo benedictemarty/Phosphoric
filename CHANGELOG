@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.72.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 6 : scroll fin X/Y (§5.5)
+
+Décalage pixel-près du contenu vidéo, en complément du scroll grossier
+(start-address §5.3) → défilement lisse.
+
+- `NG_SCROLLX` (`$0344`, clampé 0-5 = largeur cellule 6 px), `NG_SCROLLY`
+  (`$0345`, masqué 0-7 = hauteur 8 px). Appliqué à la composition de la zone
+  principale (lignes 0-199) quand actif (`déverrouillé && NG_MODE.b0`).
+- **Y** décale la ligne source (`src_y = y + scrolly`, contenu vers le haut) ;
+  **X** décale l'affichage (`px = col·6 - scrollx`, une cellule de plus fetchée
+  pour combler le bord droit ; `set_pixel` clippe déjà hors écran).
+- **Test visible** (§4) : `NG_SCROLLY=4` / `NG_SCROLLX=3` → décalage **pixel-exact**
+  vérifié au framebuffer (contenu remonté de 4 px / décalé de 3 px). Ajouté à
+  `test-ula-ng-visible`. Non-régression : inactif / 0 → rendu bit-à-bit inchangé
+  (`test-video` 22/22 ; cœur de rendu modifié mais neutre en mode standard).
+- Tests : `test-ula-ng` 27 → 31 checks (défaut 0, programmation, clamp X/masque Y,
+  no-op verrouillé).
+
+1016 → 1020 tests. EMU_VERSION 1.71.0 → 1.72.0-alpha ; builds natif + SDL2 +
+HTTPAPI OK. Étape suivante : attributs parallèles (§5.6).
+
 ## [1.71.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG : outil d'injection `--ula-ng-poke` + guide + test end-to-end
