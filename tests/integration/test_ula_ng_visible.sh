@@ -51,6 +51,8 @@ shot scr "340=4E,340=47,341=01,342=A8,343=BB"
 shot scy "340=4E,340=47,341=01,345=04"
 # scroll fin X = 3 px ($0344=03)
 shot scx "340=4E,340=47,341=01,344=03"
+# attributs parallèles : NG_MODE.b1 + fill papier bleu(4)/encre rouge(1) = $21
+shot atr "340=4E,340=47,341=02,34D=21"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -70,6 +72,7 @@ _,_,cop=load(f"{TMP}/cop.ppm")
 _,_,scr=load(f"{TMP}/scr.ppm")
 _,_,scy=load(f"{TMP}/scy.ppm")
 _,_,scx=load(f"{TMP}/scx.ppm")
+_,_,atr=load(f"{TMP}/atr.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -95,6 +98,17 @@ for y in range(8,40):
     b=y*W*3
     if scx[b:b+(W-3)*3] != base[b+9:b+9+(W-3)*3]: okX=False; break
 res.append(("fine scroll X=3: content shifted left 3px", okX))
+# attributs // : zone principale (y<200) entierement papier bleu + encre rouge (aucun clash)
+ablue=ared=aother=0
+for y in range(200):
+    for x in range(W):
+        o=(y*W+x)*3
+        c=(atr[o],atr[o+1],atr[o+2])
+        if c==(0,0,0xFF): ablue+=1
+        elif c==(0xFF,0,0): ared+=1
+        else: aother+=1
+res.append(("parallel attrs: main area = blue paper(%d)+red ink(%d), other=%d"%(ablue,ared,aother),
+            ablue>40000 and ared>500 and aother==0))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.73.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 7 : attributs parallèles (§5.6)
+
+Plan mémoire d'attributs de 8 Ko fournissant encre+papier par cellule sans
+consommer d'octets pixel dans le flux vidéo → **supprime le color clash**
+sériel de l'Oric. C'est le premier usage de la mémoire additionnelle portée
+par `ula_ng` (miroir de la DDR3 externe du Tang Primer 20K, hors des 64 Ko
+du 6502).
+
+- Plan `ula_ng.attr[8192]` : un octet `(paper<<3)|ink` (3 bits chacun) par
+  cellule, indexé `y·40 + col` (0-7999 sur les 8192).
+- Programmation par flux : `NG_ATTR_FILL` (`$034D`) remplit tout le plan d'un
+  octet uniforme + reset du pointeur (une écriture = un fond complet) ;
+  `NG_ATTR_DATA` (`$034E`) écrit la cellule courante puis auto-incrémente
+  (modulo 8192).
+- Gate : `NG_MODE.b1` (`ULA_NG_MODE_ATTR`), effectif seulement déverrouillé
+  (`ula_ng.attr_active`). Quand actif, la composition de la zone principale
+  (0-199) tire encre+papier du plan au lieu des attributs sériels (les octets
+  `$00-$1F` ne sont plus interprétés comme attributs).
+- Câblage `video_t` par pointeurs (`ng_attr` / `ng_attr_active`, calqué sur le
+  motif OCULA ; `test-video` linke sans le module).
+- **Test VISIBLE** : `NG_MODE.b1` + `NG_ATTR_FILL=$21` (papier bleu, encre
+  rouge) → zone principale entièrement bleu (45961 px) + rouge (2039 px),
+  aucune autre couleur, vérifié au framebuffer (ajouté à `test-ula-ng-visible`).
+- **Non-régression** : inactif → rendu bit-à-bit inchangé (cœur de rendu
+  modifié mais neutre en standard ; `test-video` 22/22).
+- `test-ula-ng` 31→36 checks. **1020 → 1025 tests.** EMU_VERSION 1.72.0 →
+  1.73.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.72.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 6 : scroll fin X/Y (§5.5)

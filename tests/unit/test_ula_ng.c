@@ -383,8 +383,52 @@ TEST(test_scroll_locked_no_effect) {
     ASSERT_EQ(u.scrollx, 0); ASSERT_EQ(u.scrolly, 0);
 }
 
+/* ── Étape 7 : attributs parallèles (§5.6) ────────────────────────────── */
+
+TEST(test_attr_default) {
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_FALSE(u.attr_active);
+    ASSERT_EQ(u.attr[0], 0); ASSERT_EQ(u.attr[8191], 0);
+}
+
+TEST(test_attr_gating) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ASSERT_FALSE(u.attr_active);                     /* NG_MODE.b1=0 */
+    ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ATTR);  /* b1 */
+    ASSERT_TRUE(u.attr_active);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0);
+    ASSERT_FALSE(u.attr_active);
+}
+
+TEST(test_attr_fill) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0x1A);    /* paper=3, ink=2 */
+    ASSERT_EQ(u.attr[0], 0x1A); ASSERT_EQ(u.attr[100], 0x1A); ASSERT_EQ(u.attr[8191], 0x1A);
+    ASSERT_EQ(u.attr_wp, 0);
+}
+
+TEST(test_attr_stream) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0x00);    /* reset ptr + plan à 0 */
+    ula_ng_write(&u, ULA_NG_REG_ATTR_DATA, 0x11);
+    ula_ng_write(&u, ULA_NG_REG_ATTR_DATA, 0x22);
+    ula_ng_write(&u, ULA_NG_REG_ATTR_DATA, 0x33);
+    ASSERT_EQ(u.attr[0], 0x11); ASSERT_EQ(u.attr[1], 0x22); ASSERT_EQ(u.attr[2], 0x33);
+    ASSERT_EQ(u.attr_wp, 3);
+}
+
+TEST(test_attr_locked_no_effect) {
+    ula_ng_t u; ula_ng_init(&u);
+    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0xFF);    /* verrouillé : passthrough */
+    ASSERT_EQ(u.attr[0], 0);
+    ASSERT_FALSE(u.attr_active);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-6: unlock/palette/raster/scrstart/copper/scroll) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-7: ...+scroll+attr) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -416,6 +460,11 @@ int main(void) {
     RUN(test_scroll_program);
     RUN(test_scroll_clamp);
     RUN(test_scroll_locked_no_effect);
+    RUN(test_attr_default);
+    RUN(test_attr_gating);
+    RUN(test_attr_fill);
+    RUN(test_attr_stream);
+    RUN(test_attr_locked_no_effect);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

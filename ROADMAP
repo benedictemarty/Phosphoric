@@ -6,6 +6,29 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 113: ULA-NG étape 7 — attributs parallèles (§5.6) (v1.73.0-alpha) - DONE
+Plan mémoire de 8 Ko fournissant encre+papier par cellule sans consommer
+d'octets pixel dans le flux → **supprime le color clash** sériel de l'Oric.
+Premier usage de la mémoire additionnelle portée par `ula_ng` (miroir de la
+DDR3 externe du Tang Primer 20K, hors des 64 Ko du 6502).
+- [x] Plan `ula_ng.attr[8192]` : octet `(paper<<3)|ink` (3 bits chacun) par
+      cellule, indexé `y·40 + col` (0-7999 sur 8192).
+- [x] Flux : `NG_ATTR_FILL` ($034D) remplit tout le plan + reset du pointeur
+      (une écriture = un fond complet) ; `NG_ATTR_DATA` ($034E) écrit la cellule
+      courante puis auto-incrémente (modulo 8192).
+- [x] Gate `NG_MODE.b1` (`ULA_NG_MODE_ATTR`), effectif seulement déverrouillé
+      (`attr_active`). Actif → composition de la zone principale (0-199) tire
+      encre+papier du plan au lieu des attributs sériels ($00-$1F plus interprétés).
+      Câblage `video_t` par pointeurs `ng_attr` / `ng_attr_active`.
+- [x] **Test visible** : `NG_MODE.b1` + `NG_ATTR_FILL=$21` (papier bleu, encre
+      rouge) → zone principale entièrement bleu (45961 px) + rouge (2039 px),
+      aucune autre couleur, au framebuffer (ajouté à `test-ula-ng-visible`).
+      Non-régression (inactif = inchangé ; test-video 22/22).
+- [x] test-ula-ng 31 → 36 checks. 1020 → 1025 tests.
+> **Suite** : sprites (§5.7), chunky/80col (§5.8).
+
+---
+
 ### Sprint 112: ULA-NG étape 6 — scroll fin X/Y (§5.5) (v1.72.0-alpha) - DONE
 Décalage pixel-près (complément du scroll grossier §5.3) → défilement lisse.
 - [x] `NG_SCROLLX` ($0344, clampé 0-5 = cellule 6 px), `NG_SCROLLY` ($0345,

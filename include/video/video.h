@@ -150,6 +150,9 @@ typedef struct video_s {
     const uint16_t* ng_scrstart;  /**< -> ula_ng.scrstart (base fetch, 0=défaut, §5.3) */
     const uint8_t*  ng_scrollx;   /**< -> ula_ng.scrollx (0-5, §5.5) */
     const uint8_t*  ng_scrolly;   /**< -> ula_ng.scrolly (0-7, §5.5) */
+    const uint8_t*  ng_attr;      /**< -> ula_ng.attr[8192] (§5.6) */
+    const bool*     ng_attr_active; /**< -> ula_ng.attr_active */
+#define ORIC_NG_ATTR_MASK 0x1FFFu /* masque du plan d'attributs (8192-1) */
 
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE

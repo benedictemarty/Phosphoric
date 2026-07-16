@@ -33,6 +33,9 @@ void ula_ng_reset(ula_ng_t* u) {
     u->scrolly = 0;
     u->copper_count = 0;
     u->copper_phase = 0;
+    memset(u->attr, 0, sizeof(u->attr));
+    u->attr_wp = 0;
+    u->attr_active = false;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -134,6 +137,14 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
                 u->copper_phase = 0;
             }
             break;
+        case ULA_NG_REG_ATTR_FILL:              /* remplit tout le plan + reset ptr */
+            memset(u->attr, value, sizeof(u->attr));
+            u->attr_wp = 0;
+            break;
+        case ULA_NG_REG_ATTR_DATA:              /* flux 1 o/cellule, auto-incrément */
+            u->attr[u->attr_wp] = value;
+            u->attr_wp = (uint16_t)((u->attr_wp + 1) % ULA_NG_ATTR_SIZE);
+            break;
         case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
             u->raster_line = value;
             break;
@@ -145,9 +156,12 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
             break;
         }
     }
-    /* Recalcule le cache d'activation palette (unlocked && NG_MODE.b0). */
-    u->active = u->unlocked &&
-                    (u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] & ULA_NG_MODE_ENABLE);
+    /* Recalcule les caches d'activation (unlocked && NG_MODE.bx). */
+    {
+        uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO];
+        u->active = u->unlocked && (mode & ULA_NG_MODE_ENABLE);   /* b0 : palette/copper/scroll/scrstart */
+        u->attr_active = u->unlocked && (mode & ULA_NG_MODE_ATTR);/* b1 : attributs parallèles */
+    }
     return 1;                     /* consommée */
 }
 

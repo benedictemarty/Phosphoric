@@ -533,7 +533,16 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
             uint8_t byte = memory[base + col];
             int px = col * 6 - sx;       /* fine X : décale l'affichage (set_pixel clippe) */
 
-            if ((byte & 0x60) == 0) {
+            /* ULA-NG attributs parallèles (§5.6) : encre+papier par cellule
+             * depuis le plan NG, indépendamment du flux pixel (pas de color
+             * clash sériel). Actif → tous les octets sont du contenu. */
+            bool ng_attr_on = vid->ng_attr_active && *vid->ng_attr_active && vid->ng_attr;
+            if (ng_attr_on) {
+                uint8_t a = vid->ng_attr[(y * 40 + col) & (ORIC_NG_ATTR_MASK)];
+                ink = a & 0x07; paper = (uint8_t)((a >> 3) & 0x07);
+            }
+
+            if (!ng_attr_on && (byte & 0x60) == 0) {
                 bool inverse = false;
                 decode_attr(vid, byte, &ink, &paper, &inverse);
                 render_attr_block(vid, px, y, paper, 1, (byte & 0x80) != 0);

@@ -73,6 +73,10 @@ Fenêtre proposée : **`#0340`-`#035F`** dans la page 3 (libre dans la cartograp
 | `#0347` | `NG_STATUS` | R/W | Lecture : b7 = IRQ raster en attente. Écriture : **acquittement** (clear b7) **+ b0 = enable IRQ raster** (persistant). |
 | `#0348` | `NG_PAL_IDX` | R/W | Index de palette à programmer (**0-15**, LUT 16 entrées), auto-incrément optionnel. |
 | `#0349`-`#034A` | `NG_PAL_DATA` | R/W | Couleur 12 bits (4096 teintes) : `#0349` = `0000RRRR`, `#034A` = `GGGGBBBB`. |
+| `#034B` | `NG_COP_CTRL` | W | Copper (§5.4) : écriture = reset du pointeur de flux (vide la liste). |
+| `#034C` | `NG_COP_DATA` | W | Copper : flux 3 octets/entrée — `ligne`, `(index<<4)|R`, `(G<<4)|B` (64 entrées max). |
+| `#034D` | `NG_ATTR_FILL` | W | Attributs // (§5.6) : remplit tout le plan 8 Ko avec l'octet écrit `(paper<<3)|ink` + reset du pointeur de flux. |
+| `#034E` | `NG_ATTR_DATA` | W | Attributs // : écrit une cellule au pointeur `(paper<<3)|ink` puis auto-incrémente (modulo 8192). |
 | `#0350`-`#035F` | `NG_SPRITE_*` | R/W | Contrôle sprites (voir §5.7) : pointeur table, activation, statut collision. |
 
 Toute adresse de la fenêtre non listée : lecture `0xFF`, écriture ignorée (mais réserver pour extension).
@@ -168,7 +172,9 @@ Une petite liste d'instructions palette (mini-copper) en RAM, appliquée pendant
 ### 5.6 Attributs parallèles
 Un second plan mémoire de 8 Ko (banque sélectionnée par `NG_MODE.b4-5`) fournit encre+papier par cellule 8×1 **sans consommer d'octets pixel dans le flux** — supprime le color clash sériel. Actif seulement si `NG_MODE.b1`.
 
-**Localisation mémoire (révision post-audit) :** ce plan (et les banques VRAM, et les tables de sprites §5.7) vit dans une **mémoire additionnelle portée par le module `ula_ng`** — miroir de la **SDRAM externe** du Tang Primer 20K — **hors des 64 Ko** adressables par le 6502. Accès par une fenêtre de registres NG (adresse + auto-incrément), jamais mappé dans l'espace CPU. Côté émulateur : un buffer dans `ula_ng_t` ; côté FPGA : la SDRAM.
+**Localisation mémoire (révision post-audit) :** ce plan (et les banques VRAM, et les tables de sprites §5.7) vit dans une **mémoire additionnelle portée par le module `ula_ng`** — miroir de la **DDR3 externe** (128 Mbit) de la carte cœur Tang Primer 20K — **hors des 64 Ko** adressables par le 6502. Accès par une fenêtre de registres NG (adresse + auto-incrément), jamais mappé dans l'espace CPU. Côté émulateur : un buffer dans `ula_ng_t` ; côté FPGA : la DDR3.
+
+**Implémenté (étape 7, validé)** : plan `ula_ng.attr[8192]` (octet par cellule, `(paper<<3)|ink`, 3 bits chacun), indexé `y·40 + col` (0-7999 sur les 8192). Programmation par flux : `NG_ATTR_FILL` (`$034D`) remplit tout le plan d'un octet uniforme + remet le pointeur à 0 (une écriture = un fond complet, pratique pour les démos) ; `NG_ATTR_DATA` (`$034E`) écrit la cellule courante et auto-incrémente (modulo 8192). Actif seulement si `déverrouillé && NG_MODE.b1` (`ula_ng.attr_active`). Quand actif, la composition de la zone principale (0-199) tire encre+papier **du plan** au lieu des attributs sériels (les octets `#00-#1F` ne sont plus interprétés comme attributs → **plus de color clash**). Inactif → rendu bit-à-bit inchangé. Test visible : `NG_MODE.b1` + `NG_ATTR_FILL=$21` (papier bleu 4, encre rouge 1) → zone principale entièrement bleu+rouge (aucune autre couleur), vérifié au framebuffer.
 
 ### 5.7 Sprites matériels
 Jusqu'à 16 sprites 16×16, 3 bpp (index palette), avec priorité et détection de collision. Table de sprites en RAM pointée par un registre de `#0350`-`#035F`. Composition dans le pipeline de sortie (après le fond, avant conversion RGB) — invisibles pour la VRAM. Bit de collision lisible dans la zone `#0350`-`#035F`.

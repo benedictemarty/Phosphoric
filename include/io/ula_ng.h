@@ -39,8 +39,12 @@
 #define ULA_NG_REG_COP_CTRL 0x034Bu  /* NG_COP_CTRL : écriture = reset liste copper */
 #define ULA_NG_REG_COP_DATA 0x034Cu  /* NG_COP_DATA : flux 3 o/entrée (§5.4) :
                                         [0]=ligne [1]=(index<<4)|R [2]=(G<<4)|B */
+#define ULA_NG_REG_ATTR_FILL 0x034Du /* NG_ATTR_FILL : remplit tout le plan (§5.6) */
+#define ULA_NG_REG_ATTR_DATA 0x034Eu /* NG_ATTR_DATA : flux 1 o/cellule (auto-incr) */
 #define ULA_NG_REG_IDCHK   0x034Fu   /* NG_IDCHK (R) = ~NG_ID (handshake) */
 #define ULA_NG_COP_MAX     64        /* entrées max de la liste copper */
+#define ULA_NG_MODE_ATTR   0x02u     /* NG_MODE b1 : attributs parallèles actifs */
+#define ULA_NG_ATTR_SIZE   8192      /* plan d'attributs : 8 Ko (encre+papier/cellule) */
 #define ULA_NG_STATUS_IRQ  0x80u     /* NG_STATUS b7 (R) : IRQ raster en attente */
 #define ULA_NG_STATUS_EN   0x01u     /* NG_STATUS b0 (W) : enable IRQ raster */
 #define ULA_NG_FRAME_LINES 312       /* lignes trame PAL complète (0-311) */
@@ -82,6 +86,13 @@ typedef struct ula_ng_s {
     uint8_t copper_count;   /* nombre d'entrées programmées */
     uint8_t copper_phase;   /* 0/1/2 : octet courant de l'entrée en flux */
     uint8_t cop_line, cop_index, cop_r;  /* entrée partielle en cours d'assemblage */
+
+    /* Attributs parallèles (§5.6) : plan encre+papier par cellule, hors des
+     * 64 Ko du 6502 (miroir SDRAM FPGA). Actif si NG_MODE.b1. Indexé
+     * (scanline*40 + col) ; octet = (paper<<3)|ink. */
+    uint8_t attr[ULA_NG_ATTR_SIZE];
+    uint16_t attr_wp;       /* pointeur d'écriture (auto-incrément) */
+    bool    attr_active;    /* = unlocked && NG_MODE.b1 (cache pour le hook vidéo) */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */
