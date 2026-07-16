@@ -52,7 +52,7 @@ while true; do
 ╠══════════════════════════════════════════════╣
 ║  1) Chunky 4bpp 320x200 16 couleurs  (§5.8)   ║
 ║  2) Texte 80 colonnes                (§5.8)   ║
-║  3) Attributs parallèles (sans clash) (§5.6)  ║
+║  3) Attributs : mosaïque par cellule  (§5.6)  ║
 ║  4) Copper / raster bars arc-en-ciel  (§5.4)  ║
 ║  5) Sprite matériel 16x16 rebondissant (§5.7) ║
 ║  q) Quitter                                   ║

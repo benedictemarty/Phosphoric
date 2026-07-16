@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.76.1-alpha] - 2026-07-16
+
+### Changed — Chunky NG plein écran + démo attributs plus démonstrative
+
+Retours d'essai des démos ULA-NG :
+
+- **Chunky 4bpp (§5.8) : plein écran (0-223).** Le mode chunky rendait les
+  rangées 200-223 en texte de statut 40 colonnes (240 px), laissant un **trou
+  noir 240-319** en bas d'un écran 320 px. Un mode bitmap moderne n'a pas de
+  pied de texte hérité du HIRES → chunky couvre désormais toute la hauteur
+  visible depuis le buffer. `render_ng_chunky_scanline` appelée pour 0-223
+  (la démo `ng_chunky.s` remplit 224 rangées). Non-régression : test-video,
+  garde visible (chunky 320×224, magenta 36066 px), suite complète.
+- **Démo `ng_attributes` refaite en machine code** (`.s`) : au lieu d'une seule
+  encre cyclée sur tout l'écran (peu convaincant — l'Oric standard sait colorer
+  du texte), elle diffuse maintenant une **mosaïque de dégradé par cellule**
+  (8 couleurs de papier en diagonale, une couleur différente dans chaque
+  cellule) — ce qui est **impossible sur l'ULA d'origine** (color clash) et
+  démontre réellement l'intérêt des attributs parallèles. Vérifié : 8 couleurs.
+- Docs : spec §5.8 (chunky plein écran), `demos/ula-ng/README.md` + `menu.sh`.
+  Tests inchangés (1036). EMU_VERSION 1.76.0 → 1.76.1-alpha.
+
 ## [1.76.0-alpha] - 2026-07-16
 
 ### Added — Démos ULA-NG (`demos/ula-ng/`)

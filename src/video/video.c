@@ -610,8 +610,9 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
      * in-band escape hatch out of the bitmap-only extended mode. */
 
     /* ULA-NG modes étendus (§5.8) : chunky 4bpp (320) / texte 80 col (480).
-     * Lignes 200-223 = texte de statut standard ($BB80). Sprites composés en
-     * fin de rendu comme les autres modes. */
+     * Modes bitmap/texte plein écran (0-223) — pas de pied de texte 40 col
+     * (évite le trou noir 240-319 de la bande de statut hérité du HIRES).
+     * Sprites composés en fin de rendu comme les autres modes. */
     if (vid->ng_text80) {
         render_ng_text80_scanline(vid, memory, y);
         if (vid->ng_dev)
@@ -621,8 +622,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         return;
     }
     if (vid->ng_chunky) {
-        if (y < 200) render_ng_chunky_scanline(vid, memory, y);
-        else         render_bottom_text_scanline(vid, memory, y);
+        render_ng_chunky_scanline(vid, memory, y);   /* plein écran 0-223 */
         if (vid->ng_dev)
             ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
                                       vid->native_w, vid->native_h, y);

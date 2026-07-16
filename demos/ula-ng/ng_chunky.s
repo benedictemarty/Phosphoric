@@ -23,7 +23,7 @@ pini    lda pallo,x
         sta $E1
         lda #$00
         sta $E4
-        lda #200
+        lda #224
         sta $E5
 frow    ldx #$00
         lda $E4

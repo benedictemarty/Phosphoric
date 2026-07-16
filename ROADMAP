@@ -6,6 +6,20 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 116b: Retours d'essai démos ULA-NG (v1.76.1-alpha) - DONE
+- [x] **Chunky 4bpp plein écran** (§5.8) : suppression du pied de texte 40 col
+      (240 px) qui laissait un trou noir 240-319 en bas d'un écran 320 px. Le
+      mode couvre toute la hauteur (0-223) depuis le buffer ; `ng_chunky.s`
+      remplit 224 rangées. Non-régression vérifiée.
+- [x] **Démo `ng_attributes` refaite en machine code** : mosaïque de dégradé de
+      couleur **par cellule** (8 couleurs en diagonale) au lieu d'une encre
+      unique cyclée — démontre le « no color clash » (impossible sur l'ULA
+      d'origine). Vérifié 8 couleurs.
+- [x] Note : test 2 (80 col) n'était pas un plantage — juste le temps de
+      remplissage BASIC de l'écran $A000 (~30 s), déjà signalé au menu/README.
+
+---
+
 ### Sprint 116: Démos ULA-NG (v1.76.0-alpha) - DONE
 Suite de démos des features ULA-NG sur la machine émulée (modèle `demos/ocula/`).
 Chaque démo se déverrouille elle-même ('N','G' sur $0340) — `-t <démo>.tap -f`.
