@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.67.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 2 : palette-indirection (§5.1)
+
+Les couleurs logiques passent par une **LUT ULA-NG de 16 entrées × 12 bits**
+(RGB444). Point de conversion unique : `get_rgb()` lit déjà `pal_rgb` ; la LUT NG
+l'alimente via `palette_latch()` (par scanline) quand les extensions palette sont
+actives (déverrouillé **et** `NG_MODE.b0`).
+
+- Registres : `NG_MODE` (`$0341`, b0 = extensions actives), `NG_PAL_IDX`
+  (`$0348`, 0-15, auto-incrément), `NG_PAL_DATA` (`$0349`=`0000RRRR`,
+  `$034A`=`GGGGBBBB` → commit + incrément). Expansion RGB444→888 par réplication
+  de quartet (`c8 = c4*0x11`), aucun flottant (synthétisable).
+- LUT = **identité au reset** (entrées 0-7 = 8 couleurs Oric) → compatibilité
+  totale ; activer `NG_MODE.b0` sans reprogrammer ne change rien.
+- Câblage `video_t` par **pointeurs** (`ng_pal`, `ng_pal_active`), calqué sur
+  OCULA : `video.c` ne dépend pas du module `ula_ng` (test-video linke sans lui).
+- **Test visible** (spec §4) : en émulateur, `POKE` de la séquence de
+  déverrouillage + reprogrammation de la couleur 7 (blanc→vert) → 50201 pixels
+  blancs de l'écran deviennent verts (framebuffer). Non-régression : LUT identité
+  et pointeurs NULL en mode verrouillé → vidéo bit-à-bit inchangée.
+- Tests : `test-ula-ng` 8 → 13 checks (défaut identité, gating `NG_MODE.b0`,
+  programmation, expansion quartet, no-op verrouillé). 995 → 1000 tests.
+
+EMU_VERSION 1.66.0 → 1.67.0-alpha ; builds natif + SDL2 + HTTPAPI OK. Étape
+suivante : IRQ raster (§5.2).
+
 ## [1.66.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 1 : verrou/identité + plomberie page 3

@@ -115,8 +115,66 @@ TEST(test_reset_relocks) {
     ASSERT_EQ(u.regs[0x0341 - ULA_NG_WINDOW_LO], 0);     /* registres remis à 0 */
 }
 
+/* ── Étape 2 : palette-indirection (§5.1) ─────────────────────────────── */
+
+TEST(test_palette_default_identity) {
+    /* Au reset : LUT 0-7 = couleurs Oric (identité). */
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_EQ(u.pal[0][0], 0x00); ASSERT_EQ(u.pal[0][1], 0x00); ASSERT_EQ(u.pal[0][2], 0x00);  /* noir */
+    ASSERT_EQ(u.pal[1][0], 0xFF); ASSERT_EQ(u.pal[1][1], 0x00); ASSERT_EQ(u.pal[1][2], 0x00);  /* rouge */
+    ASSERT_EQ(u.pal[7][0], 0xFF); ASSERT_EQ(u.pal[7][1], 0xFF); ASSERT_EQ(u.pal[7][2], 0xFF);  /* blanc */
+}
+
+TEST(test_palette_gating) {
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_FALSE(u.pal_active);                 /* verrouillé */
+    unlock(&u);
+    ASSERT_FALSE(u.pal_active);                 /* déverrouillé mais NG_MODE.b0=0 */
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x01);    /* NG_MODE.b0 = 1 */
+    ASSERT_TRUE(u.pal_active);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x00);    /* désactive */
+    ASSERT_FALSE(u.pal_active);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x01);
+    ula_ng_reset(&u);                           /* reset re-verrouille */
+    ASSERT_FALSE(u.pal_active);
+}
+
+TEST(test_palette_program) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    /* programmer l'entrée 2 = ($F,$0,$0) -> RGB888 (FF,00,00) */
+    ula_ng_write(&u, ULA_NG_REG_PAL_IDX, 2);
+    ula_ng_write(&u, ULA_NG_REG_PAL_LO, 0x0F);      /* 0000RRRR : R=15 */
+    ula_ng_write(&u, ULA_NG_REG_PAL_HI, 0x00);      /* GGGGBBBB : G=0,B=0 -> commit */
+    ASSERT_EQ(u.pal[2][0], 0xFF); ASSERT_EQ(u.pal[2][1], 0x00); ASSERT_EQ(u.pal[2][2], 0x00);
+    /* auto-incrément : l'index passe à 3 */
+    ASSERT_EQ(u.pal_idx, 3);
+}
+
+TEST(test_palette_expand_nibble) {
+    /* RGB444 -> RGB888 par réplication : $8 -> $88, $A -> $AA, $F -> $FF */
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_PAL_IDX, 5);
+    ula_ng_write(&u, ULA_NG_REG_PAL_LO, 0x08);      /* R=8 */
+    ula_ng_write(&u, ULA_NG_REG_PAL_HI, 0xAF);      /* G=A, B=F */
+    ASSERT_EQ(u.pal[5][0], 0x88);
+    ASSERT_EQ(u.pal[5][1], 0xAA);
+    ASSERT_EQ(u.pal[5][2], 0xFF);
+}
+
+TEST(test_palette_locked_no_effect) {
+    /* Verrouillé : écrire les registres palette ne change rien (passthrough). */
+    ula_ng_t u; ula_ng_init(&u);
+    ula_ng_write(&u, ULA_NG_REG_PAL_IDX, 3);
+    ula_ng_write(&u, ULA_NG_REG_PAL_LO, 0x0F);
+    ula_ng_write(&u, ULA_NG_REG_PAL_HI, 0xFF);
+    ASSERT_EQ(u.pal[3][0], 0xFF); ASSERT_EQ(u.pal[3][1], 0xFF); ASSERT_EQ(u.pal[3][2], 0x00); /* Oric jaune inchangé */
+    ASSERT_EQ(u.pal_idx, 0);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (step 1: unlock/lock) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-2: unlock + palette) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -125,6 +183,11 @@ int main(void) {
     RUN(test_wrong_second_byte);
     RUN(test_sequence_broken_by_window_write);
     RUN(test_reset_relocks);
+    RUN(test_palette_default_identity);
+    RUN(test_palette_gating);
+    RUN(test_palette_program);
+    RUN(test_palette_expand_nibble);
+    RUN(test_palette_locked_no_effect);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

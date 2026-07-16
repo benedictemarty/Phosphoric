@@ -25,15 +25,29 @@
 #define ULA_NG_WINDOW_LO   0x0340u
 #define ULA_NG_WINDOW_HI   0x035Fu
 #define ULA_NG_REG_LOCK    0x0340u   /* NG_LOCK (W) / NG_ID (R) */
+#define ULA_NG_REG_MODE    0x0341u   /* NG_MODE : b0 = extensions actives */
+#define ULA_NG_REG_PAL_IDX 0x0348u   /* NG_PAL_IDX : index LUT (0-15), auto-incr */
+#define ULA_NG_REG_PAL_LO  0x0349u   /* NG_PAL_DATA lo : 0000RRRR */
+#define ULA_NG_REG_PAL_HI  0x034Au   /* NG_PAL_DATA hi : GGGGBBBB (commit + incr) */
 #define ULA_NG_REG_IDCHK   0x034Fu   /* NG_IDCHK (R) = ~NG_ID (handshake) */
 #define ULA_NG_VERSION     0x1Eu     /* NG_ID quand déverrouillé (v1.0) */
 #define ULA_NG_UNLOCK_N    0x4Eu     /* 'N' */
 #define ULA_NG_UNLOCK_G    0x47u     /* 'G' */
+#define ULA_NG_MODE_ENABLE 0x01u     /* NG_MODE b0 */
+#define ULA_NG_PAL_ENTRIES 16        /* LUT 16 entrées × 12 bits (RGB444) */
 
 typedef struct ula_ng_s {
     bool    unlocked;      /* extensions armées (après la séquence) */
     uint8_t unlock_step;   /* 0 = repos, 1 = 'N' vu, attend 'G' */
-    uint8_t regs[0x20];    /* fichier de registres $0340-$035F (étapes suivantes) */
+    uint8_t regs[0x20];    /* fichier de registres $0340-$035F */
+
+    /* Palette-indirection (§5.1) : LUT 16 entrées, stockée déjà étendue en
+     * RGB888 (expansion RGB444→888 par réplication de quartet à l'écriture).
+     * Au reset, les 8 premières entrées = couleurs Oric (identité → compat). */
+    uint8_t pal[ULA_NG_PAL_ENTRIES][3];
+    uint8_t pal_idx;       /* NG_PAL_IDX courant (0-15) */
+    uint8_t pal_r;         /* quartet R latché, en attente de G/B */
+    bool    pal_active;    /* = unlocked && NG_MODE.b0 (cache pour le hook vidéo) */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */

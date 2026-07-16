@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.66.0-alpha** | **995 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.67.0-alpha** | **1000 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _

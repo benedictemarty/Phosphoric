@@ -1619,6 +1619,11 @@ static bool emulator_init(emulator_t* emu) {
     emu->video.ocula_reg_pal    = emu->memory.ocula_reg_pal;
     emu->video.ocula_reg_border = &emu->memory.ocula_reg_border;
 
+    /* ULA-NG palette-indirection (§5.1) : wire video to the NG LUT. Inert until
+     * unlocked + NG_MODE.b0 (pal_active), and the LUT is identity at reset. */
+    emu->video.ng_pal        = emu->ula_ng.pal;
+    emu->video.ng_pal_active = &emu->ula_ng.pal_active;
+
     /* Initialize renderer if not headless */
     if (!emu->headless) {
         renderer_init(emu->scale_factor > 0 ? emu->scale_factor : 3, emu->render_software);

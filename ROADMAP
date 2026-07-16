@@ -6,6 +6,25 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 107: ULA-NG étape 2 — palette-indirection (§5.1) (v1.67.0-alpha) - DONE
+Deuxième feature ULA-NG : les couleurs logiques passent par une LUT programmable.
+- [x] LUT ULA-NG **16 entrées × 12 bits** (RGB444) dans `ula_ng_t`, identité au
+      reset (0-7 = couleurs Oric → compat). Registres `NG_MODE` ($0341 b0),
+      `NG_PAL_IDX` ($0348, auto-incr), `NG_PAL_DATA` ($0349/$034A). Expansion
+      RGB444→888 par réplication de quartet (`c8=c4*0x11`, synthétisable).
+- [x] Point unique `get_rgb`/`pal_rgb` alimenté par `palette_latch` (par
+      scanline) quand `pal_active` (déverrouillé + NG_MODE.b0). Câblage `video_t`
+      par pointeurs (`ng_pal`/`ng_pal_active`), calqué OCULA → `video.c`
+      indépendant du module (test-video linke sans lui).
+- [x] **Test visible** (§4) : en émulateur, POKE déverrouillage + reprog couleur
+      7 blanc→vert → 50201 px verts au framebuffer. Non-régression verrouillé
+      (LUT identité + pointeurs NULL = vidéo bit-à-bit).
+- [x] test-ula-ng 8 → 13 checks. 995 → 1000 tests.
+> **Suite** : IRQ raster (§5.2, `IRQF_ULANG=0x20`, `ula_ng_scanline`), puis
+> start-address, palette/scanline, scroll fin, attributs //, sprites, chunky.
+
+---
+
 ### Sprint 106: ULA-NG étape 1 — verrou/identité + plomberie page 3 (v1.66.0-alpha) - DONE
 Fondation d'une **ULA « next-gen »** (référence logicielle d'un futur portage
 Verilog sur **Sipeed Tang Primer 20K / GW2A-18**, cf `docs/ula-ng/AUDIT.md` +

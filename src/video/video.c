@@ -65,7 +65,15 @@ static bool ocula_regs_active(const video_t* vid) {
  * (1) the write-only register file if armed (sprint 66), else (2) the in-band
  * $BFE0-$BFE7 block if magic-armed + unlocked, else (3) the standard palette. */
 static void palette_latch(video_t* vid, const uint8_t* memory) {
-    if (ocula_regs_active(vid)) {
+    /* ULA-NG palette-indirection (§5.1) : la LUT NG (déjà RGB888) prime quand
+     * les extensions palette sont actives. Entrées 0-7 (mode standard). */
+    if (vid->ng_pal_active && *vid->ng_pal_active && vid->ng_pal) {
+        for (int i = 0; i < 8; i++) {
+            vid->pal_rgb[i][0] = vid->ng_pal[i][0];
+            vid->pal_rgb[i][1] = vid->ng_pal[i][1];
+            vid->pal_rgb[i][2] = vid->ng_pal[i][2];
+        }
+    } else if (ocula_regs_active(vid)) {
         for (int i = 0; i < 8; i++) {
             rgb332_to_rgb888(vid->ocula_reg_pal[i],
                              &vid->pal_rgb[i][0], &vid->pal_rgb[i][1],
