@@ -1635,6 +1635,8 @@ static bool emulator_init(emulator_t* emu) {
     emu->video.ng_attr       = emu->ula_ng.attr;        /* attributs // (§5.6) */
     emu->video.ng_attr_active = &emu->ula_ng.attr_active;
     emu->video.ng_dev        = &emu->ula_ng;            /* sprites (§5.7) */
+    emu->video.ng_chunky_active = &emu->ula_ng.chunky_active;  /* chunky 4bpp (§5.8) */
+    emu->video.ng_text80_active = &emu->ula_ng.text80_active;  /* texte 80col (§5.8) */
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {

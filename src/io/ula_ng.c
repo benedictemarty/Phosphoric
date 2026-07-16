@@ -42,6 +42,8 @@ void ula_ng_reset(ula_ng_t* u) {
     u->spr_enable = false;
     u->spr_collision = false;
     u->spr_active = false;
+    u->chunky_active = false;
+    u->text80_active = false;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -193,6 +195,9 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         u->active = u->unlocked && (mode & ULA_NG_MODE_ENABLE);   /* b0 : palette/copper/scroll/scrstart */
         u->attr_active = u->unlocked && (mode & ULA_NG_MODE_ATTR);/* b1 : attributs parallèles */
         u->spr_active = u->unlocked && u->spr_enable;             /* §5.7 : NG_SPR_CTRL.b0 */
+        uint8_t vidmode = mode & ULA_NG_MODE_VIDMASK;             /* §5.8 : b2-3 */
+        u->chunky_active = u->active && (vidmode == ULA_NG_VIDMODE_CHUNKY);
+        u->text80_active = u->active && (vidmode == ULA_NG_VIDMODE_TEXT80);
     }
     return 1;                     /* consommée */
 }

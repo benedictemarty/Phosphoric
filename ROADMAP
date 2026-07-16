@@ -6,6 +6,31 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 115: ULA-NG étape 9 — chunky 4bpp / texte 80 col (§5.8) (v1.75.0-alpha) - DONE
+Dernière feature ULA-NG : deux modes vidéo étendus sélectionnés par
+`NG_MODE.b2-3`, latchés au début de trame (largeur framebuffer stable une
+trame, comme les modes OCULA). Données lues depuis `NG_SCRSTART` (défaut $A000).
+- [x] **Chunky 4bpp** : 160 px/rangée × 200, 4 bits = index LUT palette NG 16
+      entrées (RGB888), 80 o/rangée, chaque px chunky = 2 px fb → **320 px**.
+      Rangées 200-223 = texte de statut $BB80.
+- [x] **Texte 80 col** : 80 car × 6 px = **480 px**, charset RAM redéfinissable
+      ($B400/$B800, mécanisme natif Oric — aucune police inventée), attributs
+      série + couleurs LUT NG.
+- [x] Caches `chunky_active`/`text80_active` (gate `unlocked && NG_MODE.b0`) ;
+      latch `video_t.ng_chunky`/`ng_text80` ; `apply_profile_resolution`
+      bascule la largeur. Refactor `render_bottom_text_scanline`. Sprites
+      composés dans les 2 modes.
+- [x] **Tests visibles** : chunky $05 + palette idx0=magenta → 320×224 magenta
+      dominant + 16 couleurs ; 80col $09 → 480×224 caractères rendus. Ajoutés à
+      `test-ula-ng-visible`. Non-régression : test-video/ocula/renderer/savestate
+      (ula_ng.c ajouté aux liens).
+- [x] test-ula-ng 42 → 47 checks. 1031 → 1036 tests.
+> **ULA-NG : toutes les features de la spec §5 sont livrées** (§5.1 palette →
+> §5.8 chunky/80col). Reste : portage Verilog FPGA (Tang Primer 20K) à partir
+> de cette référence logicielle.
+
+---
+
 ### Sprint 114: ULA-NG étape 8 — sprites matériels (§5.7) (v1.74.0-alpha) - DONE
 Jusqu'à 16 sprites 16×16, motif indexé palette, composés sur le fond avec
 priorité par index et détection de collision. Deuxième usage de la mémoire

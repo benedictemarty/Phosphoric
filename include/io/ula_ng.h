@@ -51,6 +51,9 @@
 #define ULA_NG_REG_SPR_STATUS 0x0356u/* NG_SPR_STATUS (R) : b7 = collision (clear on read) */
 #define ULA_NG_COP_MAX     64        /* entrées max de la liste copper */
 #define ULA_NG_MODE_ATTR   0x02u     /* NG_MODE b1 : attributs parallèles actifs */
+#define ULA_NG_MODE_VIDMASK 0x0Cu    /* NG_MODE b2-3 : mode vidéo (§5.8) */
+#define ULA_NG_VIDMODE_CHUNKY 0x04u  /* b2-3 = 01 : chunky 4bpp 160×200 */
+#define ULA_NG_VIDMODE_TEXT80 0x08u  /* b2-3 = 10 : texte 80 colonnes */
 #define ULA_NG_ATTR_SIZE   8192      /* plan d'attributs : 8 Ko (encre+papier/cellule) */
 #define ULA_NG_STATUS_IRQ  0x80u     /* NG_STATUS b7 (R) : IRQ raster en attente */
 #define ULA_NG_STATUS_EN   0x01u     /* NG_STATUS b0 (W) : enable IRQ raster */
@@ -121,6 +124,13 @@ typedef struct ula_ng_s {
     bool     spr_enable;    /* NG_SPR_CTRL.b0 : enable global */
     bool     spr_collision; /* collision sprite-sprite (b7 status), clear on read */
     bool     spr_active;    /* = unlocked && spr_enable (cache pour le hook vidéo) */
+
+    /* Modes vidéo étendus (§5.8), sélectionnés par NG_MODE.b2-3 (caches pour le
+     * latch vidéo de début de trame). chunky 4bpp = 160×200 16 couleurs (LUT
+     * NG) ; texte 80 colonnes = charset RAM redéfinissable. Données lues depuis
+     * NG_SCRSTART (défaut $A000). */
+    bool     chunky_active; /* = active && NG_MODE.b2-3 == 01 */
+    bool     text80_active; /* = active && NG_MODE.b2-3 == 10 */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */

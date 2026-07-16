@@ -162,6 +162,14 @@ typedef struct video_s {
      * sprites). Forward-declaré pour ne pas coupler video.h à io/ula_ng.h. */
     struct ula_ng_s* ng_dev;      /**< -> emulator_t.ula_ng (composition sprites) */
 
+    /* ULA-NG modes vidéo étendus (§5.8). Pointeurs live vers les caches ula_ng
+     * (NULL en test unitaire) ; latchés au début de trame dans ng_chunky /
+     * ng_text80 (la résolution reste stable une trame entière). */
+    const bool* ng_chunky_active; /**< -> ula_ng.chunky_active (chunky 4bpp 320px) */
+    const bool* ng_text80_active; /**< -> ula_ng.text80_active (texte 80col 480px) */
+    bool        ng_chunky;        /**< latch trame : mode chunky actif */
+    bool        ng_text80;        /**< latch trame : mode 80 colonnes actif */
+
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE
      * when the OCULA_PAL_MAGIC bytes are armed. */

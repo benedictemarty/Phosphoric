@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.75.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 9 : modes chunky 4bpp / texte 80 colonnes (§5.8)
+
+Dernière feature ULA-NG : deux modes vidéo étendus sélectionnés par
+`NG_MODE.b2-3`, latchés au début de trame (largeur framebuffer stable une
+trame entière, comme les modes OCULA). Données lues depuis `NG_SCRSTART`
+(défaut `$A000`).
+
+- **Chunky 4bpp** : 160 px/rangée × 200, chacun 4 bits = index dans la LUT
+  palette NG 16 entrées (RGB888). 80 octets/rangée (quartet haut = px gauche),
+  chaque px chunky = 2 px framebuffer → **320 px** de large. Rangées 200-223 =
+  texte de statut standard (`$BB80`).
+- **Texte 80 colonnes** : 80 caractères × 6 px = **480 px**. Charset RAM
+  redéfinissable (`$B400`/`$B800`, mécanisme natif Oric — aucune police
+  inventée) ; attributs série + couleurs LUT NG comme en texte standard.
+- Caches `ula_ng.chunky_active` / `text80_active` (= `active && vidmode`, gate
+  `unlocked && NG_MODE.b0`). Latch trame `video_t.ng_chunky` / `ng_text80` ;
+  `apply_profile_resolution` bascule la largeur (320/480).
+- Refactor : rangées 200-223 factorisées dans `render_bottom_text_scanline`
+  (réutilisé par le mode chunky). Composition sprites (§5.7) dans les 2 modes.
+- **Tests VISIBLES** : chunky `NG_MODE=$05` + palette idx0 = magenta →
+  framebuffer 320×224, magenta dominant + autres couleurs (16 couleurs) ;
+  80col `NG_MODE=$09` → framebuffer 480×224, caractères rendus. Ajoutés à
+  `test-ula-ng-visible`.
+- **Non-régression** : `test-video`/`test-ocula`/`test-renderer`/`test-savestate`
+  22/101/10/13 (module `ula_ng.c` ajouté aux liens concernés) ; inactif =
+  rendu 240 px inchangé.
+- `test-ula-ng` 42→47 checks. **1031 → 1036 tests.** EMU_VERSION 1.74.0 →
+  1.75.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.74.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 8 : sprites matériels (§5.7)

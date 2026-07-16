@@ -516,8 +516,47 @@ TEST(test_spr_locked_no_composite) {
     ASSERT_EQ(g_fb[0], 0xAB);
 }
 
+/* ── Étape 9 : modes vidéo étendus §5.8 (chunky 4bpp / texte 80col) ──────── */
+
+TEST(test_mode_default) {
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_FALSE(u.chunky_active);
+    ASSERT_FALSE(u.text80_active);
+}
+
+TEST(test_mode_chunky) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x05);   /* b0 (enable) + b2-3=01 (chunky) */
+    ASSERT_TRUE(u.chunky_active);
+    ASSERT_FALSE(u.text80_active);
+}
+
+TEST(test_mode_text80) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x09);   /* b0 (enable) + b2-3=10 (80col) */
+    ASSERT_TRUE(u.text80_active);
+    ASSERT_FALSE(u.chunky_active);
+}
+
+TEST(test_mode_needs_enable) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x04);   /* b2 sans b0 : extensions inactives */
+    ASSERT_FALSE(u.chunky_active);
+    ASSERT_FALSE(u.text80_active);
+}
+
+TEST(test_mode_locked_no_effect) {
+    ula_ng_t u; ula_ng_init(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x05);   /* verrouillé : passthrough */
+    ASSERT_FALSE(u.chunky_active);
+    ASSERT_FALSE(u.text80_active);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-8: ...+attr+sprites) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-9: ...+sprites+chunky/80col) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -560,6 +599,11 @@ int main(void) {
     RUN(test_spr_composite_and_transparency);
     RUN(test_spr_collision);
     RUN(test_spr_locked_no_composite);
+    RUN(test_mode_default);
+    RUN(test_mode_chunky);
+    RUN(test_mode_text80);
+    RUN(test_mode_needs_enable);
+    RUN(test_mode_locked_no_effect);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

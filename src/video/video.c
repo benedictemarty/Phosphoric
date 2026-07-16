@@ -23,7 +23,9 @@ static const uint8_t palette[8][3] = {
 /* Active resolution: follows the OCULA mode latches; the stock profile
  * and OCULA-in-standard-mode both render 240x224. */
 static void apply_profile_resolution(video_t* vid) {
-    if (vid->ocula_80col)         vid->native_w = OCULA_MAX_W;
+    if (vid->ng_text80)           vid->native_w = OCULA_MAX_W;      /* §5.8 : 80 col × 6 = 480 */
+    else if (vid->ng_chunky)      vid->native_w = OCULA_EXTHIRES_W; /* §5.8 : 160 chunky × 2 = 320 */
+    else if (vid->ocula_80col)    vid->native_w = OCULA_MAX_W;
     else if (vid->ocula_exthires) vid->native_w = OCULA_EXTHIRES_W;
     else                          vid->native_w = ORIC_SCREEN_W;
     vid->native_h = ORIC_SCREEN_H;
@@ -443,6 +445,97 @@ static void render_exthires_scanline(video_t* vid, const uint8_t* memory, int y)
     }
 }
 
+/* Rangées de statut 200-223 : toujours TEXT depuis $BB80 (rows 25-27). Factorisé
+ * pour être réutilisé par le mode chunky NG (§5.8), dont seules les lignes
+ * 0-199 sont chunky. */
+static void render_bottom_text_scanline(video_t* vid, const uint8_t* memory, int y) {
+    int row = 25 + (y - 200) / 8;
+    int chline = (y - 200) & 7;
+    uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
+
+    for (int col = 0; col < 40; col++) {
+        uint8_t byte = memory[0xBB80 + row * 40 + col];
+        if ((byte & 0x60) == 0) {
+            bool inverse = false;
+            decode_attr(vid, byte, &ink, &paper, &inverse);
+            render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
+        } else {
+            bool char_inv = (byte & 0x80) != 0;
+            if (blink_phase_on(vid)) char_inv = !char_inv;
+            uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
+            uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
+            uint8_t ir, ig, ib, pr, pg, pb;
+            get_rgb(vid, fg, &ir, &ig, &ib);
+            get_rgb(vid, bg, &pr, &pg, &pb);
+            int erow = effective_chline(vid, chline, row);
+            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
+            for (int bx = 5; bx >= 0; bx--) {
+                bool on = (bits & (1 << bx)) != 0;
+                if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
+                else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
+            }
+        }
+    }
+}
+
+/* ULA-NG chunky 4bpp (§5.8) : 160 pixels/rangée × 200, chacun 4 bits = index
+ * dans la LUT palette NG (16 entrées, RGB888). Données : NG_SCRSTART (défaut
+ * $A000), 80 octets/rangée (2 quartets/octet : quartet haut = pixel gauche).
+ * Chaque pixel chunky occupe 2 pixels framebuffer (160×2 = 320). */
+static void render_ng_chunky_scanline(video_t* vid, const uint8_t* memory, int y) {
+    uint16_t base = 0xA000;
+    if (vid->ng_scrstart && *vid->ng_scrstart) base = *vid->ng_scrstart;
+    base = (uint16_t)(base + y * 80);
+    for (int col = 0; col < 80; col++) {
+        uint8_t byte = memory[(uint16_t)(base + col)];
+        for (int half = 0; half < 2; half++) {
+            uint8_t idx = half == 0 ? (uint8_t)(byte >> 4) : (uint8_t)(byte & 0x0F);
+            uint8_t r, g, b;
+            if (vid->ng_pal) { r = vid->ng_pal[idx][0]; g = vid->ng_pal[idx][1]; b = vid->ng_pal[idx][2]; }
+            else             { get_rgb(vid, idx, &r, &g, &b); }   /* fallback 8 couleurs */
+            int x0 = (col * 2 + half) * 2;
+            set_pixel(vid, x0,     y, r, g, b);
+            set_pixel(vid, x0 + 1, y, r, g, b);
+        }
+    }
+}
+
+/* ULA-NG texte 80 colonnes (§5.8) : 80 caractères × 6 px = 480. Charset RAM
+ * (redéfinissable, $B400/$B800 via get_charset_byte). Données : NG_SCRSTART
+ * (défaut $A000), 80 octets/rangée. Attributs série et couleurs (LUT NG 0-7)
+ * comme en texte standard. */
+static void render_ng_text80_scanline(video_t* vid, const uint8_t* memory, int y) {
+    uint16_t base = 0xA000;
+    if (vid->ng_scrstart && *vid->ng_scrstart) base = *vid->ng_scrstart;
+    int row = y / 8;
+    int chline = y & 7;
+    uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
+
+    for (int col = 0; col < 80; col++) {
+        uint8_t byte = memory[(uint16_t)(base + row * 80 + col)];
+        if ((byte & 0x60) == 0) {
+            bool inverse = false;
+            decode_attr(vid, byte, &ink, &paper, &inverse);
+            render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
+        } else {
+            bool char_inv = (byte & 0x80) != 0;
+            if (blink_phase_on(vid)) char_inv = !char_inv;
+            uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
+            uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
+            uint8_t ir, ig, ib, pr, pg, pb;
+            get_rgb(vid, fg, &ir, &ig, &ib);
+            get_rgb(vid, bg, &pr, &pg, &pb);
+            int erow = effective_chline(vid, chline, row);
+            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
+            for (int bx = 5; bx >= 0; bx--) {
+                bool on = (bits & (1 << bx)) != 0;
+                if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
+                else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
+            }
+        }
+    }
+}
+
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (!memory) return;
     if (y < 0 || y >= 224) return;
@@ -468,10 +561,19 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
                           (ext_enabled && ((vid->vid_mode & 0x05) == 0x01));
         bool want_exthires = !vid->ocula_80col_forced && ext_enabled &&
                              ((vid->vid_mode & 0x05) == 0x05);
+        /* ULA-NG modes étendus (§5.8) : latchés au début de trame comme les
+         * modes OCULA (résolution stable une trame entière). Live via les
+         * caches ula_ng ; NULL en test unitaire. */
+        bool want_ng_chunky = vid->ng_chunky_active && *vid->ng_chunky_active;
+        bool want_ng_text80 = vid->ng_text80_active && *vid->ng_text80_active;
         if (want_80col != vid->ocula_80col ||
-            want_exthires != vid->ocula_exthires) {
+            want_exthires != vid->ocula_exthires ||
+            want_ng_chunky != vid->ng_chunky ||
+            want_ng_text80 != vid->ng_text80) {
             vid->ocula_80col = want_80col;
             vid->ocula_exthires = want_exthires;
+            vid->ng_chunky = want_ng_chunky;
+            vid->ng_text80 = want_ng_text80;
             apply_profile_resolution(vid);
             memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
             vid->need_refresh = true;
@@ -506,6 +608,27 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     /* ext-HIRES lines 200-223 fall through to the standard bottom text
      * rows ($BB80): serial attributes still decode there, which is the
      * in-band escape hatch out of the bitmap-only extended mode. */
+
+    /* ULA-NG modes étendus (§5.8) : chunky 4bpp (320) / texte 80 col (480).
+     * Lignes 200-223 = texte de statut standard ($BB80). Sprites composés en
+     * fin de rendu comme les autres modes. */
+    if (vid->ng_text80) {
+        render_ng_text80_scanline(vid, memory, y);
+        if (vid->ng_dev)
+            ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
+                                      vid->native_w, vid->native_h, y);
+        if (y == 223) vid->need_refresh = false;
+        return;
+    }
+    if (vid->ng_chunky) {
+        if (y < 200) render_ng_chunky_scanline(vid, memory, y);
+        else         render_bottom_text_scanline(vid, memory, y);
+        if (vid->ng_dev)
+            ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
+                                      vid->native_w, vid->native_h, y);
+        if (y == 223) vid->need_refresh = false;
+        return;
+    }
 
     if (y < 200) {
         uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
@@ -570,36 +693,7 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
 
         if (y == 199) vid->hires_mode = (vid->vid_mode & 0x04) != 0;
     } else {
-        /* Lines 200-223: always TEXT from $BB80 (rows 25-27) */
-        int row = 25 + (y - 200) / 8;
-        int chline = (y - 200) & 7;
-        uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
-
-        for (int col = 0; col < 40; col++) {
-            uint8_t byte = memory[0xBB80 + row * 40 + col];
-            if ((byte & 0x60) == 0) {
-                bool inverse = false;
-                decode_attr(vid, byte, &ink, &paper, &inverse);
-                render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
-            } else {
-                bool char_inv = (byte & 0x80) != 0;
-                if (blink_phase_on(vid)) char_inv = !char_inv;
-                /* Inverse complements ink/paper (XOR 7), it does not swap. */
-                uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
-                uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
-                uint8_t ir, ig, ib, pr, pg, pb;
-                get_rgb(vid, fg, &ir, &ig, &ib);
-                get_rgb(vid, bg, &pr, &pg, &pb);
-                int erow = effective_chline(vid, chline, row);
-                uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
-                for (int bx = 5; bx >= 0; bx--) {
-                    bool on = (bits & (1 << bx)) != 0;
-                    if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
-                    else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
-                }
-            }
-        }
-
+        render_bottom_text_scanline(vid, memory, y);   /* rangées 200-223 ($BB80) */
         if (y == 223) vid->need_refresh = false;
     }
 

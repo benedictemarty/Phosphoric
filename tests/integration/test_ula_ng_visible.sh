@@ -57,6 +57,10 @@ shot atr "340=4E,340=47,341=02,34D=21"
 SPRSEQ="340=4E,340=47,350=01,351=00,352=64,353=64,354=01"
 for _i in $(seq 1 256); do SPRSEQ="$SPRSEQ,355=01"; done
 shot spr "$SPRSEQ"
+# chunky 4bpp (§5.8) : NG_MODE=0x05 (enable+chunky) + palette index 0 = magenta → 320px
+shot chunky "340=4E,340=47,341=05,348=00,349=0F,34A=0F"
+# texte 80 colonnes (§5.8) : NG_MODE=0x09 (enable+text80) → 480px
+shot t80 "340=4E,340=47,341=09"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -78,6 +82,8 @@ _,_,scy=load(f"{TMP}/scy.ppm")
 _,_,scx=load(f"{TMP}/scx.ppm")
 _,_,atr=load(f"{TMP}/atr.ppm")
 _,_,spr=load(f"{TMP}/spr.ppm")
+cW,cH,chunky=load(f"{TMP}/chunky.ppm")
+tW,tH,t80=load(f"{TMP}/t80.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -121,6 +127,12 @@ for y in range(100,116):
         o=(y*W+x)*3
         if (spr[o],spr[o+1],spr[o+2])==(0xFF,0,0): sred+=1
 res.append(("sprite: 16x16 red block at (100,100) = %d/256 px"%sred, sred==256))
+# chunky 4bpp : résolution 320 large + palette index 0 (magenta) dominant
+cmag=sum(1 for o in range(0,cW*cH*3,3) if (chunky[o],chunky[o+1],chunky[o+2])==(0xFF,0,0xFF))
+res.append(("chunky 4bpp: %dx%d, magenta(idx0)=%d px"%(cW,cH,cmag), cW==320 and cmag>10000))
+# texte 80 colonnes : résolution 480 large + caractères rendus (pixels non-noirs)
+tnb=sum(1 for o in range(0,tW*tH*3,3) if (t80[o],t80[o+1],t80[o+2])!=(0,0,0))
+res.append(("text 80col: %dx%d, %d non-black px"%(tW,tH,tnb), tW==480 and tnb>1000))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)
