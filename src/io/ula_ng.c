@@ -48,6 +48,9 @@ void ula_ng_reset(ula_ng_t* u) {
     u->vdu_need = 0;
     u->vdu_got = 0;
     memset(u->vdu_params, 0, sizeof(u->vdu_params));
+    memset(u->vram, 0, sizeof(u->vram));
+    u->vram_active = false;
+    u->vdu_gcol = 0;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -77,12 +80,37 @@ uint8_t ula_ng_read(ula_ng_t* u, uint16_t addr) {
  * Interpréteur de flux de commandes (stand-in du firmware soft-core FPGA).
  * L'exécution se contente d'appeler la logique de registres déjà existante. */
 
+static int iabs(int v) { return v < 0 ? -v : v; }
+
+/* Trace un pixel dans la VRAM chunky (x 0-159, y 0-223, c index 0-15). */
+static void vram_plot(ula_ng_t* u, int x, int y, uint8_t c) {
+    if (x < 0 || x >= ULA_NG_VRAM_W || y < 0 || y >= ULA_NG_VRAM_H) return;
+    int idx = y * ULA_NG_VRAM_STRIDE + (x >> 1);
+    if (x & 1) u->vram[idx] = (uint8_t)((u->vram[idx] & 0xF0) | (c & 0x0F));
+    else       u->vram[idx] = (uint8_t)((u->vram[idx] & 0x0F) | ((c & 0x0F) << 4));
+}
+
+/* Trace une ligne (Bresenham) dans la VRAM chunky. */
+static void vram_line(ula_ng_t* u, int x0, int y0, int x1, int y1, uint8_t c) {
+    int dx = iabs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -iabs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        vram_plot(u, x0, y0, c);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
 static uint8_t vdu_need_for(uint8_t cmd) {
     switch (cmd) {
-        case 20: return 0;            /* reset */
-        case 18: case 22: return 1;   /* fill / MODE */
+        case 16: case 20: return 0;   /* CLG / reset */
+        case 17: case 18: case 22: return 1;  /* GCOL / fill / MODE */
+        case 25: return 2;            /* PLOT point (x,y) */
         case 31: return 3;            /* colorer une cellule (col,row,attr) */
-        case 19: return 4;            /* palette (l,r,g,b) */
+        case 19: case 26: return 4;   /* palette (l,r,g,b) / DRAW (x0,y0,x1,y1) */
         default: return 0;            /* inconnu : ignoré */
     }
 }
@@ -90,7 +118,23 @@ static uint8_t vdu_need_for(uint8_t cmd) {
 static void vdu_exec(ula_ng_t* u) {
     switch (u->vdu_cmd) {
         case 20:                                    /* reset -> rendu normal */
+            u->vram_active = false;
             ula_ng_write(u, ULA_NG_REG_MODE, 0x00);
+            break;
+        case 16:                                    /* CLG : chunky + VRAM ULA-NG, efface */
+            memset(u->vram, 0, sizeof(u->vram));
+            u->vram_active = true;
+            ula_ng_write(u, ULA_NG_REG_MODE, 0x05); /* chunky */
+            break;
+        case 17:                                    /* couleur de tracé courante (0-15) */
+            u->vdu_gcol = u->vdu_params[0] & 0x0F;
+            break;
+        case 25:                                    /* PLOT point (x,y) */
+            vram_plot(u, u->vdu_params[0], u->vdu_params[1], u->vdu_gcol);
+            break;
+        case 26:                                    /* DRAW ligne (x0,y0,x1,y1) */
+            vram_line(u, u->vdu_params[0], u->vdu_params[1],
+                      u->vdu_params[2], u->vdu_params[3], u->vdu_gcol);
             break;
         case 22: {                                  /* MODE : 0 std/1 chunky/2 80col */
             uint8_t n = u->vdu_params[0];

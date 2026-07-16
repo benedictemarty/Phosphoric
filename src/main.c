@@ -1637,6 +1637,8 @@ static bool emulator_init(emulator_t* emu) {
     emu->video.ng_dev        = &emu->ula_ng;            /* sprites (§5.7) */
     emu->video.ng_chunky_active = &emu->ula_ng.chunky_active;  /* chunky 4bpp (§5.8) */
     emu->video.ng_text80_active = &emu->ula_ng.text80_active;  /* texte 80col (§5.8) */
+    emu->video.ng_vram        = emu->ula_ng.vram;             /* VRAM chunky VDU (v0.2) */
+    emu->video.ng_vram_active = &emu->ula_ng.vram_active;
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {

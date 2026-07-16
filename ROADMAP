@@ -18,8 +18,22 @@ Design : `docs/ula-ng/VDU.md` (état de l'art 2026 : Agon VDP, VERA, OCULA-GPU).
       ($0357), zéro logique 6502. Menu + README démos.
 - [x] test-ula-ng 47→54 + garde visible (stream 18/$21 → fond bleu). 1036 →
       1043 tests. Docs VDU.md (v0.1) + README-ULA-NG §7bis.
-> **v0.2 (backlog)** : PLOT/CLG + VRAM chunky porté par l'ULA-NG, sprites/fontes
-> par protocole d'upload « buffered commands », hook du vecteur OSWRCH.
+> **v0.3 (backlog)** : sprites/fontes par protocole d'upload « buffered commands »,
+> hook du vecteur OSWRCH, PLOT étendu (triangles, coords 16 bits).
+
+---
+
+### Sprint 118: VDU intégré v0.2 — graphiques + VRAM ULA-NG (v1.78.0-alpha) - DONE
+« Le VDU possède ses pixels » : VRAM chunky portée par l'ULA-NG + commandes
+graphiques VDU.
+- [x] `ula_ng.vram` (160×224 4bpp = 17920 o, hors 64 Ko). Quand `vram_active`
+      (posé par `CLG`), le mode chunky lit la VRAM au lieu de la RAM CPU.
+- [x] Commandes `16` CLG, `17 c` couleur, `25 x y` PLOT, `26 x0 y0 x1 y1` DRAW
+      (Bresenham). `20`/reset désactive la VRAM.
+- [x] Câblage `video_t.ng_vram`/`ng_vram_active` ; renderer chunky lit VRAM si
+      active, sinon RAM CPU (non-régression).
+- [x] Démo `ng_vdu_gfx.s` : sunburst tracé uniquement par commandes VDU (VRAM
+      ULA-NG). test-ula-ng 54→58 + garde visible (DRAW ligne). 1043 → 1047 tests.
 
 ---
 

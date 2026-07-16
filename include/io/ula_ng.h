@@ -50,7 +50,13 @@
 #define ULA_NG_REG_SPR_DATA 0x0355u  /* NG_SPR_DATA : flux motif 1 o/px (0=transparent, 1-7=index) */
 #define ULA_NG_REG_SPR_STATUS 0x0356u/* NG_SPR_STATUS (R) : b7 = collision (clear on read) */
 #define ULA_NG_REG_VDU     0x0357u   /* NG_VDU (W) : flux de commandes VDU intégré (docs/ula-ng/VDU.md) */
-#define ULA_NG_VDU_MAXPARAMS 4       /* params max d'une commande VDU v0.1 */
+#define ULA_NG_VDU_MAXPARAMS 4       /* params max d'une commande VDU */
+/* VRAM chunky portée par l'ULA-NG (VDU v0.2) : le VDU possède ses pixels.
+ * 160×224 pixels 4bpp, 2 px/octet → 80 octets/rangée. */
+#define ULA_NG_VRAM_W      160
+#define ULA_NG_VRAM_H      224
+#define ULA_NG_VRAM_STRIDE 80
+#define ULA_NG_VRAM_SIZE   (ULA_NG_VRAM_STRIDE * ULA_NG_VRAM_H)  /* 17920 */
 #define ULA_NG_COP_MAX     64        /* entrées max de la liste copper */
 #define ULA_NG_MODE_ATTR   0x02u     /* NG_MODE b1 : attributs parallèles actifs */
 #define ULA_NG_MODE_VIDMASK 0x0Cu    /* NG_MODE b2-3 : mode vidéo (§5.8) */
@@ -142,6 +148,13 @@ typedef struct ula_ng_s {
     uint8_t  vdu_params[ULA_NG_VDU_MAXPARAMS]; /* paramètres collectés */
     uint8_t  vdu_need;                         /* nb de paramètres attendus (0 = attend un code) */
     uint8_t  vdu_got;                          /* nb de paramètres déjà collectés */
+
+    /* VRAM chunky portée par l'ULA-NG (VDU v0.2). Quand vram_active, le mode
+     * chunky lit ces pixels au lieu de la RAM CPU (NG_SCRSTART). Alimentée par
+     * les commandes VDU graphiques (CLG/PLOT/DRAW), couleur courante vdu_gcol. */
+    uint8_t  vram[ULA_NG_VRAM_SIZE];
+    bool     vram_active;                      /* chunky lit la VRAM ULA-NG */
+    uint8_t  vdu_gcol;                          /* couleur de tracé courante (0-15) */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */

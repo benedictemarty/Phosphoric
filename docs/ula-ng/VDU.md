@@ -1,12 +1,12 @@
 # ULA-NG — VDU intégré (v0.1)
 
-> **Statut : v0.1 IMPLÉMENTÉE ET VALIDÉE.** Port de commandes de style VDU
-> exposé par l'ULA-NG (`NG_VDU` $0357), dont l'interpréteur et la mémoire de
-> travail vivent **dans l'ULA-NG** — pas dans les 64 Ko du 6502. Interpréteur
-> dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ; tests
-> `test-ula-ng` ; démo `demos/ula-ng/ng_vdu.s` (mosaïque de couleur par cellule
-> pilotée uniquement par le flux, sans pilote 6502). Le périmètre v0.2 (§4)
-> reste à faire.
+> **Statut : v0.1 + v0.2 (graphiques) IMPLÉMENTÉES ET VALIDÉES.** Port de
+> commandes de style VDU exposé par l'ULA-NG (`NG_VDU` $0357), dont l'interpréteur
+> **et la VRAM** vivent **dans l'ULA-NG** — pas dans les 64 Ko du 6502.
+> Interpréteur dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ;
+> tests `test-ula-ng` ; démos `ng_vdu.s` (mosaïque par cellule) et `ng_vdu_gfx.s`
+> (tracé de lignes dans la VRAM ULA-NG) — pilotées **uniquement par le flux**,
+> sans pilote 6502. Reste v0.3 : upload sprites/fontes, hook OSWRCH.
 
 ## 1. Objectif
 
@@ -64,13 +64,20 @@ ULA-NG. Chaque commande = un **code** + N octets de **paramètres**.
 | `18 a` | 1 | **Couleur de fond par cellule** : active les attributs // et remplit le plan avec `a`=`(paper<<3)\|ink`. | `VDU 18` (GCOL) |
 | `31 col row a` | 3 | **Colorer une cellule** (`col` 0-39, `row` 0-24) avec l'attribut `a` — sans color clash. | `VDU 31` (TAB) |
 
+### Graphiques v0.2 (VRAM chunky portée par l'ULA-NG)
+
+| Code | Params | Action ULA-NG | Analogue BBC/Agon |
+|---|---|---|---|
+| `16` | — | **CLG** : active le mode chunky + la **VRAM ULA-NG**, l'efface. | `VDU 16` (CLG) |
+| `17 c` | 1 | **Couleur de tracé** courante (`c` 0-15, index LUT). | `VDU 18`/GCOL |
+| `25 x y` | 2 | **PLOT** un point (`x` 0-159, `y` 0-223) — *simplifié* : point seul, coords 8 bits (le `VDU 25` BBC complet gère modes/lignes/coords 16 bits). | `VDU 25` (PLOT) |
+| `26 x0 y0 x1 y1` | 4 | **DRAW** une ligne (Bresenham) dans la VRAM. | `VDU 25` DRAW |
+
 Codes inconnus : ignorés (0 paramètre) — comme un VDU qui absorbe l'inconnu.
 
-**Prévu v0.2+** (hors périmètre v0.1, listé pour cadrer) :
-- `16` CLG / `25 k x y` PLOT → tracé dans un **VRAM chunky** *porté par l'ULA-NG*
-  (nouveau buffer, voir §6) ;
+**Prévu v0.3+** (hors périmètre actuel, listé pour cadrer) :
 - `23 …` définir sprite / caractère via le **protocole d'upload** (§5) ;
-- `17`/`18` couleur « courante » + `28/24` fenêtres → `NG_SCRSTART`/scroll ;
+- `28/24` fenêtres → `NG_SCRSTART`/scroll ; PLOT étendu (triangles, coords 16 bits) ;
 - hook du **vecteur de sortie caractère** de l'Oric (équivalent `OSWRCH`) pour
   que `PRINT CHR$(…)` alimente `NG_VDU` sans POKE.
 
@@ -90,10 +97,12 @@ VDU ne fait que les exposer par un vocabulaire uniforme et un ID de buffer.
 ## 6. Mémoire & VRAM
 
 - v0.1 pilote l'**état existant** de l'ULA-NG (mode, palette, plan d'attributs) —
-  **aucune nouvelle mémoire** requise.
-- v0.2 (PLOT/CLG) nécessitera un **buffer VRAM chunky porté par `ula_ng`**
-  (aujourd'hui le chunky lit la RAM CPU via `NG_SCRSTART`) : c'est la vraie étape
-  « le VDU possède ses pixels ». À décider à ce moment-là.
+  aucune nouvelle mémoire.
+- **v0.2 (fait)** : `ula_ng.vram` (160×224 4bpp = 17920 o, 2 px/octet) — la vraie
+  étape « le VDU possède ses pixels ». Quand `vram_active` (posé par `CLG`), le
+  mode chunky lit **cette VRAM** au lieu de la RAM CPU (`NG_SCRSTART`). `PLOT`/
+  `DRAW` écrivent dedans (Bresenham). `reset`/`20` la désactive. Côté FPGA :
+  ce buffer vit dans la DDR3/BSRAM de l'ULA-NG.
 
 ## 7. Interpréteur (FSM)
 

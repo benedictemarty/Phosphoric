@@ -169,6 +169,8 @@ typedef struct video_s {
     const bool* ng_text80_active; /**< -> ula_ng.text80_active (texte 80col 480px) */
     bool        ng_chunky;        /**< latch trame : mode chunky actif */
     bool        ng_text80;        /**< latch trame : mode 80 colonnes actif */
+    const uint8_t* ng_vram;       /**< -> ula_ng.vram (VRAM chunky ULA-NG, VDU v0.2) */
+    const bool*    ng_vram_active;/**< -> ula_ng.vram_active (chunky lit la VRAM) */
 
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE

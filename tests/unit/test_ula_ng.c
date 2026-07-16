@@ -622,6 +622,50 @@ TEST(test_vdu_locked_no_effect) {
     ASSERT_FALSE(u.chunky_active);
 }
 
+/* VDU v0.2 : graphiques dans la VRAM portée par l'ULA-NG */
+
+TEST(test_vdu_gfx_clg) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    u.vram[0] = 0xAB;                 /* sale */
+    vdu(&u, 16);                      /* CLG */
+    ASSERT_TRUE(u.vram_active);
+    ASSERT_TRUE(u.chunky_active);
+    ASSERT_EQ(u.vram[0], 0x00);
+}
+
+TEST(test_vdu_gfx_plot) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 16);
+    vdu(&u, 17); vdu(&u, 5);          /* couleur 5 */
+    vdu(&u, 25); vdu(&u, 10); vdu(&u, 20);  /* PLOT (10,20) : x pair -> quartet haut */
+    ASSERT_EQ(u.vram[20 * 80 + 5], 0x50);
+    vdu(&u, 17); vdu(&u, 7);
+    vdu(&u, 25); vdu(&u, 11); vdu(&u, 20);  /* PLOT (11,20) : x impair -> quartet bas */
+    ASSERT_EQ(u.vram[20 * 80 + 5], 0x57);
+}
+
+TEST(test_vdu_gfx_line) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 16);
+    vdu(&u, 17); vdu(&u, 3);
+    vdu(&u, 26); vdu(&u, 0); vdu(&u, 0); vdu(&u, 4); vdu(&u, 0);  /* DRAW (0,0)-(4,0) */
+    ASSERT_EQ(u.vram[0], 0x33);       /* px (0,0)+(1,0) */
+    ASSERT_EQ(u.vram[1], 0x33);       /* px (2,0)+(3,0) */
+    ASSERT_EQ((u.vram[2] >> 4) & 0x0F, 3);  /* px (4,0) */
+}
+
+TEST(test_vdu_gfx_reset) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 16);
+    ASSERT_TRUE(u.vram_active);
+    vdu(&u, 20);                      /* reset -> VRAM désactivée */
+    ASSERT_FALSE(u.vram_active);
+}
+
 int main(void) {
     printf("\n=== ULA-NG unit tests (steps 1-9 + VDU) ===\n\n");
     RUN(test_reset_is_locked);
@@ -678,6 +722,10 @@ int main(void) {
     RUN(test_vdu_reset);
     RUN(test_vdu_unknown_ignored);
     RUN(test_vdu_locked_no_effect);
+    RUN(test_vdu_gfx_clg);
+    RUN(test_vdu_gfx_plot);
+    RUN(test_vdu_gfx_line);
+    RUN(test_vdu_gfx_reset);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

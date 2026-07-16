@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.78.0-alpha] - 2026-07-16
+
+### Added — VDU intégré v0.2 : graphiques + VRAM portée par l'ULA-NG
+
+« Le VDU possède ses pixels » : ajout d'un **VRAM chunky dans l'ULA-NG**
+(`ula_ng.vram`, 160×224 4bpp = 17920 o, hors des 64 Ko du 6502) et des commandes
+graphiques VDU qui écrivent dedans. Quand `vram_active` (posé par `CLG`), le mode
+chunky lit **cette VRAM** au lieu de la RAM CPU (`NG_SCRSTART`).
+
+- Commandes : `16` CLG (chunky + VRAM + efface), `17 c` couleur de tracé,
+  `25 x y` PLOT point (160×224), `26 x0 y0 x1 y1` DRAW ligne (Bresenham dans
+  `ula_ng.c`). `20`/reset désactive la VRAM.
+- Câblage `video_t.ng_vram`/`ng_vram_active` ; `render_ng_chunky_scanline` lit la
+  VRAM ULA-NG si active, sinon la RAM CPU (non-régression : chunky RAM inchangé).
+- **Démo** `demos/ula-ng/ng_vdu_gfx.s` : sunburst de lignes tracé **uniquement
+  par commandes VDU** (CLG/GCOL/DRAW), pixels dans la VRAM ULA-NG. Vérifié
+  headless : 320×224, 8 couleurs. Menu + README démos.
+- Tests : `test-ula-ng` 54→58 (CLG, PLOT pair/impair, DRAW, reset) ; garde
+  visible (CLG+DRAW ligne y=50 → 202 px en VRAM, chunky 320px). 1043 → 1047 tests.
+- Docs : `VDU.md` (v0.2 fait, table graphiques, §6 VRAM). Reste v0.3 (upload
+  sprites/fontes, hook OSWRCH). EMU_VERSION 1.77.0 → 1.78.0-alpha.
+
 ## [1.77.0-alpha] - 2026-07-16
 
 ### Added — VDU intégré ULA-NG v0.1 (port de commandes `NG_VDU`)

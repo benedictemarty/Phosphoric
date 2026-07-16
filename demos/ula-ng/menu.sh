@@ -56,6 +56,7 @@ while true; do
 ║  4) Copper / raster bars arc-en-ciel  (§5.4)  ║
 ║  5) Sprite matériel 16x16 rebondissant (§5.7) ║
 ║  6) VDU intégré : mosaïque via flux cmd (NG_VDU)║
+║  7) VDU graphique : sunburst (CLG/DRAW, VRAM) ║
 ║  q) Quitter                                   ║
 ╚══════════════════════════════════════════════╝
    (mode 80 col : patiente ~30 s, remplissage BASIC)
@@ -69,6 +70,7 @@ MENU
         4) launch ng_copper.tap ;;
         5) launch ng_sprite.tap ;;
         6) launch ng_vdu.tap ;;
+        7) launch ng_vdu_gfx.tap ;;
         q|Q) echo "Au revoir."; break ;;
         *) echo "Choix invalide : $choice" ;;
     esac

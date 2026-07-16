@@ -483,11 +483,18 @@ static void render_bottom_text_scanline(video_t* vid, const uint8_t* memory, int
  * $A000), 80 octets/rangée (2 quartets/octet : quartet haut = pixel gauche).
  * Chaque pixel chunky occupe 2 pixels framebuffer (160×2 = 320). */
 static void render_ng_chunky_scanline(video_t* vid, const uint8_t* memory, int y) {
-    uint16_t base = 0xA000;
-    if (vid->ng_scrstart && *vid->ng_scrstart) base = *vid->ng_scrstart;
-    base = (uint16_t)(base + y * 80);
+    /* Source des pixels : VRAM portée par l'ULA-NG (VDU v0.2) si active, sinon
+     * la RAM CPU à NG_SCRSTART (défaut $A000). */
+    const uint8_t* rowbytes;
+    if (vid->ng_vram_active && *vid->ng_vram_active && vid->ng_vram) {
+        rowbytes = vid->ng_vram + y * 80;
+    } else {
+        uint16_t base = 0xA000;
+        if (vid->ng_scrstart && *vid->ng_scrstart) base = *vid->ng_scrstart;
+        rowbytes = memory + (uint16_t)(base + y * 80);
+    }
     for (int col = 0; col < 80; col++) {
-        uint8_t byte = memory[(uint16_t)(base + col)];
+        uint8_t byte = rowbytes[col];
         for (int half = 0; half < 2; half++) {
             uint8_t idx = half == 0 ? (uint8_t)(byte >> 4) : (uint8_t)(byte & 0x0F);
             uint8_t r, g, b;

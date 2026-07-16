@@ -54,6 +54,7 @@ Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
 | `ng_copper`     | Copper / scanline §5.4 | Palette relatchée par ligne → barres raster arc-en-ciel                | BASIC |
 | `ng_sprite`     | Sprite matériel §5.7   | Sprite 16×16 (losange) composé sur le fond, rebondissant               | BASIC |
 | `ng_vdu`        | **VDU intégré** ([VDU.md](../../docs/ula-ng/VDU.md)) | Mosaïque de couleur par cellule pilotée **entièrement par un flux de commandes** écrit dans `NG_VDU` ($0357) — aucun pilote 6502 | machine code |
+| `ng_vdu_gfx`    | **VDU graphique** (v0.2) | Sunburst tracé par commandes VDU (`CLG`/`DRAW`) dans la **VRAM chunky portée par l'ULA-NG** — le VDU possède ses pixels | machine code |
 
 ## Piloter/injecter sans BASIC
 
@@ -97,6 +98,9 @@ xa demos/ula-ng/ng_attributes.s -o /tmp/ng_attributes.bin
 
 xa demos/ula-ng/ng_vdu.s -o /tmp/ng_vdu.bin
 ./bin2tap /tmp/ng_vdu.bin --start 0x0500 --exec 0x0500 -o demos/ula-ng/ng_vdu.tap --name NGVDU
+
+xa demos/ula-ng/ng_vdu_gfx.s -o /tmp/ng_vdu_gfx.bin
+./bin2tap /tmp/ng_vdu_gfx.bin --start 0x0500 --exec 0x0500 -o demos/ula-ng/ng_vdu_gfx.tap --name NGVDUGFX
 ```
 
 ## Référence

@@ -63,6 +63,8 @@ shot chunky "340=4E,340=47,341=05,348=00,349=0F,34A=0F"
 shot t80 "340=4E,340=47,341=09"
 # VDU intégré : stream VDU 18 (=$12) puis $21 (papier bleu/encre rouge) via NG_VDU ($0357)
 shot vdu "340=4E,340=47,357=12,357=21"
+# VDU graphique (v0.2) : CLG (16=$10) + GCOL 7 (17=$11) + DRAW (26=$1A) ligne (0,50)-(100,50)
+shot vdugfx "340=4E,340=47,357=10,357=11,357=07,357=1A,357=00,357=32,357=64,357=32"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -87,6 +89,7 @@ _,_,spr=load(f"{TMP}/spr.ppm")
 cW,cH,chunky=load(f"{TMP}/chunky.ppm")
 tW,tH,t80=load(f"{TMP}/t80.ppm")
 _,_,vdu=load(f"{TMP}/vdu.ppm")
+gW,gH,vdugfx=load(f"{TMP}/vdugfx.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -140,6 +143,10 @@ res.append(("text 80col: %dx%d, %d non-black px"%(tW,tH,tnb), tW==480 and tnb>10
 vblue=sum(1 for y in range(200) for x in range(W)
           if (vdu[(y*W+x)*3],vdu[(y*W+x)*3+1],vdu[(y*W+x)*3+2])==(0,0,0xFF))
 res.append(("VDU port: stream 18/$21 -> blue paper fill (%d px)"%vblue, vblue>40000))
+# VDU graphique : ligne blanche y=50 tracée dans la VRAM ULA-NG (mode chunky 320px)
+gwhite=sum(1 for x in range(gW)
+           if (vdugfx[(50*gW+x)*3],vdugfx[(50*gW+x)*3+1],vdugfx[(50*gW+x)*3+2])==(0xFF,0xFF,0xFF))
+res.append(("VDU gfx: %dx%d, white line y=50 (%d px in VRAM)"%(gW,gH,gwhite), gW==320 and gwhite>100))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)
