@@ -417,6 +417,9 @@ static void print_usage(const char* program_name) {
     printf("      --export-border        Include the OCULA border in image/AVI exports (off by default)\n");
     printf("      --ula PROFILE          ULA profile: ula (stock HCS 10017, default)\n");
     printf("                             or ocula (OCULA RP2350 replacement, extended modes)\n");
+    printf("      --ula-ng-poke SEQ      Program ULA-NG registers ($0340-$035F) at startup,\n");
+    printf("                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n");
+    printf("                             Ex: 340=4E,340=47,341=01,348=07,349=00,34A=F0 (palette)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
     printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
     printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
@@ -3214,6 +3217,7 @@ int main(int argc, char* argv[]) {
     bool headless = false;
     int64_t max_cycles = -1;
     const char* screenshot_file = NULL;
+    const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
     const char* screenshot_at_arg = NULL;
     const char* frame_dump_dir = NULL;
     int frame_dump_interval = 50;
@@ -3285,7 +3289,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool ocula_80col_basic = false;
     /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT };
+    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_ULA, OPT_OCULA_80COL_BASIC, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT, OPT_ULA_NG_POKE };
 
     static struct option long_options[] = {
         {"tape",                required_argument, 0, 't'},
@@ -3363,6 +3367,7 @@ int main(int argc, char* argv[]) {
         {"loci-usb",            required_argument, 0, OPT_LOCI_USB},
         {"loci-mia-window",     required_argument, 0, OPT_LOCI_MIA_WINDOW},
         {"ula",                 required_argument, 0, OPT_ULA},
+        {"ula-ng-poke",         required_argument, 0, OPT_ULA_NG_POKE},
         {"ocula-80col-basic",   no_argument,       0, OPT_OCULA_80COL_BASIC},
         {"control",             no_argument,       0, OPT_CONTROL},
         {"bench",               no_argument,       0, OPT_BENCH},
@@ -3389,6 +3394,7 @@ int main(int argc, char* argv[]) {
             case 'c': max_cycles = atoll(optarg); break;
             case 'v': verbose = true; break;
             case OPT_SCREENSHOT: screenshot_file = optarg; break;
+            case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
             case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
             case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
@@ -3600,6 +3606,26 @@ int main(int argc, char* argv[]) {
     if (ula_profile != ULA_PROFILE_HCS10017) {
         video_set_profile(&emu.video, (ula_profile_t)ula_profile);
         log_info("ULA profile: %s", video_profile_name(emu.video.ula_profile));
+    }
+
+    /* --ula-ng-poke "AAA=VV,..." : programme directement les registres ULA-NG
+     * ($0340-$035F) au démarrage (déverrouillage, palette, copper, raster…),
+     * sans passer par des POKE BASIC lents. Idéal pour démos/tests/captures. */
+    if (ula_ng_poke) {
+        const char* p = ula_ng_poke;
+        int n = 0;
+        while (*p) {
+            unsigned addr = 0, val = 0;
+            if (sscanf(p, "%x=%x", &addr, &val) == 2 &&
+                ula_ng_addr_in_window((uint16_t)addr)) {
+                ula_ng_write(&emu.ula_ng, (uint16_t)addr, (uint8_t)val);
+                n++;
+            }
+            const char* comma = strchr(p, ',');
+            if (!comma) break;
+            p = comma + 1;
+        }
+        log_info("ULA-NG: %d register write(s) applied from --ula-ng-poke", n);
     }
 
     if (ocula_80col_basic) {

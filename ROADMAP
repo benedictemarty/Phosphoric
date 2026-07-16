@@ -6,6 +6,19 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 111: ULA-NG — outil `--ula-ng-poke` + guide + test end-to-end (v1.71.0-alpha) - DONE
+Outillage pour piloter/tester l'ULA-NG sans POKE BASIC lents.
+- [x] Flag CLI `--ula-ng-poke "AAA=VV,..."` : programme les registres ULA-NG
+      ($0340-$035F) au démarrage via `ula_ng_write` (hex), combinable avec
+      `--screenshot-at`. `--control write $addr $val` atteint aussi l'ULA-NG.
+- [x] `docs/ula-ng/README-ULA-NG.md` : guide utilisateur (livrable spec §8) —
+      déverrouillage, carte des registres, exemples `--ula-ng-poke` + asm.
+- [x] `tests/integration/test_ula_ng_visible.sh` (`make test-ula-ng-visible`, dans
+      `make tests`) : garde de régression **end-to-end vidéo** (palette, copper,
+      start-address vérifiés au framebuffer). 1014 → 1016 tests.
+
+---
+
 ### Sprint 110: ULA-NG étape 5 — palette par scanline / copper (§5.4) (v1.70.0-alpha) - DONE
 Mini-copper : dégradés / splits de couleur verticaux sans CPU par ligne.
 - [x] Liste copper **64 entrées** (ligne, index LUT, couleur RGB444). Flux :

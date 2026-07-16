@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.71.0-alpha] - 2026-07-16
+
+### Added — ULA-NG : outil d'injection `--ula-ng-poke` + guide + test end-to-end
+
+Programmation directe des registres ULA-NG (`$0340-$035F`) au démarrage, sans
+POKE BASIC lents (limités à ~80 car./ligne) — pour démos, tests, captures.
+
+- **`--ula-ng-poke "AAA=VV,..."`** : applique une séquence d'écritures de registres
+  (hex) après l'init, via `ula_ng_write`. Ex. palette :
+  `--ula-ng-poke "340=4E,340=47,341=01,348=07,349=00,34A=F0"`. Combinable avec
+  `--screenshot-at`. (Rappel : `--control write $addr $val` atteint aussi l'ULA-NG
+  via le dispatch I/O.)
+- **`docs/ula-ng/README-ULA-NG.md`** : guide utilisateur (livrable spec §8) —
+  déverrouillage, carte des registres implémentés, exemples `--ula-ng-poke` et
+  assembleur.
+- **`tests/integration/test_ula_ng_visible.sh`** (`make test-ula-ng-visible`, dans
+  `make tests`) : garde de régression **end-to-end du pipeline vidéo** — vérifie au
+  framebuffer la palette (blanc→vert), le copper (bandes rouge/bleu) et le
+  start-address (scroll d'une rangée), tout via `--ula-ng-poke`.
+
+1014 → 1016 tests. EMU_VERSION 1.70.0 → 1.71.0-alpha ; builds natif + SDL2 +
+HTTPAPI OK.
+
 ## [1.70.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 5 : palette par scanline / mini-copper (§5.4)
