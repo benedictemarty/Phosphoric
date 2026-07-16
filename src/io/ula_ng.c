@@ -36,6 +36,12 @@ void ula_ng_reset(ula_ng_t* u) {
     memset(u->attr, 0, sizeof(u->attr));
     u->attr_wp = 0;
     u->attr_active = false;
+    memset(u->sprites, 0, sizeof(u->sprites));
+    u->spr_sel = 0;
+    u->spr_wp = 0;
+    u->spr_enable = false;
+    u->spr_collision = false;
+    u->spr_active = false;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -52,6 +58,11 @@ uint8_t ula_ng_read(ula_ng_t* u, uint16_t addr) {
         case ULA_NG_REG_LOCK:  return ULA_NG_VERSION;                 /* NG_ID */
         case ULA_NG_REG_IDCHK: return (uint8_t)(~ULA_NG_VERSION);     /* NG_IDCHK = ~NG_ID */
         case ULA_NG_REG_STATUS: return u->raster_pending ? ULA_NG_STATUS_IRQ : 0x00;
+        case ULA_NG_REG_SPR_STATUS: {           /* b7 = collision, clear on read */
+            uint8_t s = u->spr_collision ? ULA_NG_SPR_STATUS_COL : 0x00;
+            u->spr_collision = false;
+            return s;
+        }
         default:               return u->regs[addr - ULA_NG_WINDOW_LO];
     }
 }
@@ -145,6 +156,26 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
             u->attr[u->attr_wp] = value;
             u->attr_wp = (uint16_t)((u->attr_wp + 1) % ULA_NG_ATTR_SIZE);
             break;
+        case ULA_NG_REG_SPR_CTRL:               /* enable global sprites (§5.7) */
+            u->spr_enable = (value & 0x01u) != 0;
+            break;
+        case ULA_NG_REG_SPR_SEL:                /* sélection sprite + reset ptr motif */
+            u->spr_sel = value & (ULA_NG_SPRITES - 1);
+            u->spr_wp = 0;
+            break;
+        case ULA_NG_REG_SPR_X:
+            u->sprites[u->spr_sel].x = value;
+            break;
+        case ULA_NG_REG_SPR_Y:
+            u->sprites[u->spr_sel].y = value;
+            break;
+        case ULA_NG_REG_SPR_ATTR:               /* b0 = visible */
+            u->sprites[u->spr_sel].enable = (value & 0x01u) != 0;
+            break;
+        case ULA_NG_REG_SPR_DATA:               /* flux motif : 0=transparent, 1-7=index */
+            u->sprites[u->spr_sel].pattern[u->spr_wp] = value & 0x07u;
+            u->spr_wp = (uint16_t)((u->spr_wp + 1) % ULA_NG_SPR_PIXELS);
+            break;
         case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
             u->raster_line = value;
             break;
@@ -161,6 +192,7 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO];
         u->active = u->unlocked && (mode & ULA_NG_MODE_ENABLE);   /* b0 : palette/copper/scroll/scrstart */
         u->attr_active = u->unlocked && (mode & ULA_NG_MODE_ATTR);/* b1 : attributs parallèles */
+        u->spr_active = u->unlocked && u->spr_enable;             /* §5.7 : NG_SPR_CTRL.b0 */
     }
     return 1;                     /* consommée */
 }
@@ -188,4 +220,39 @@ void ula_ng_scanline(ula_ng_t* u, int line) {
 
 bool ula_ng_irq(const ula_ng_t* u) {
     return u->raster_pending;
+}
+
+void ula_ng_composite_scanline(ula_ng_t* u, uint8_t* fb, int w, int h, int y) {
+    if (!u || !u->spr_active || !fb) return;
+    if (y < 0 || y >= h) return;
+    if (w > ULA_NG_SPR_MAXW) w = ULA_NG_SPR_MAXW;
+
+    /* Occupancy de la scanline : marque les pixels déjà couverts par un sprite
+     * opaque → collision sprite-sprite quand deux sprites se recouvrent. */
+    uint8_t occ[ULA_NG_SPR_MAXW];
+    memset(occ, 0, (size_t)w);
+
+    /* Dessin des sprites 15→0 : le sprite 0 est écrit en dernier → au-dessus
+     * (priorité par index). L'occupancy détecte le recouvrement quel que soit
+     * l'ordre. */
+    for (int s = ULA_NG_SPRITES - 1; s >= 0; s--) {
+        if (!u->sprites[s].enable) continue;
+        int sy = (int)u->sprites[s].y;
+        int row = y - sy;                         /* ligne du sprite couvrant y */
+        if (row < 0 || row >= ULA_NG_SPR_DIM) continue;
+        int sx = (int)u->sprites[s].x;
+        const uint8_t* pat = &u->sprites[s].pattern[row * ULA_NG_SPR_DIM];
+        for (int col = 0; col < ULA_NG_SPR_DIM; col++) {
+            uint8_t idx = pat[col];
+            if (idx == 0) continue;               /* transparent */
+            int x = sx + col;
+            if (x < 0 || x >= w) continue;        /* clip horizontal */
+            if (occ[x]) u->spr_collision = true;  /* recouvrement sprite-sprite */
+            occ[x] = 1;
+            int off = (y * w + x) * 3;
+            fb[off + 0] = u->pal[idx][0];
+            fb[off + 1] = u->pal[idx][1];
+            fb[off + 2] = u->pal[idx][2];
+        }
+    }
 }

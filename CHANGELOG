@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.74.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 8 : sprites matériels (§5.7)
+
+Jusqu'à 16 sprites 16×16, motif indexé palette, composés sur le fond avec
+priorité par index et détection de collision. Deuxième usage de la mémoire
+additionnelle portée par `ula_ng` (miroir de la DDR3 externe du Tang Primer
+20K, hors des 64 Ko du 6502).
+
+- Table `ula_ng.sprites[16]` : motif 1 octet/px (0 = transparent, 1-7 = index
+  LUT palette), position X/Y, bit visible.
+- Programmation par flux via la fenêtre : `NG_SPR_CTRL` ($0350, b0 = enable
+  global), `NG_SPR_SEL` ($0351, sprite courant + reset pointeur motif),
+  `NG_SPR_X`/`NG_SPR_Y` ($0352/$0353), `NG_SPR_ATTR` ($0354, b0 = visible),
+  `NG_SPR_DATA` ($0355, flux motif auto-incrémenté mod 256).
+- Composition dans `ula_ng_composite_scanline()` (le module ula_ng possède
+  l'état sprite, la palette et la collision), appelée par `video_render_scanline`
+  après le rendu du fond via le pointeur `video_t.ng_dev`. Couleur = LUT NG.
+- **Priorité par index** : composition 15→0 → le sprite 0 finit au-dessus.
+- **Détection de collision** sprite-sprite (recouvrement de pixels opaques sur
+  une scanline) → `NG_SPR_STATUS` ($0356, b7, clear on read).
+- Gate `unlocked && NG_SPR_CTRL.b0` (`spr_active`) ; inactif → rendu inchangé.
+- **Test VISIBLE** : sprite 0 (16×16 rempli d'index 1 = rouge) à (100,100) →
+  bloc rouge de 256 px pixel-exact au framebuffer (ajouté à
+  `test-ula-ng-visible`, via `--ula-ng-poke`).
+- **Non-régression** : `test-video` 22/22 (module `ula_ng.c` ajouté au link).
+- `test-ula-ng` 36→42 checks. **1025 → 1031 tests.** EMU_VERSION 1.73.0 →
+  1.74.0-alpha ; builds natif + SDL2 + HTTPAPI OK.
+
 ## [1.73.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 7 : attributs parallèles (§5.6)

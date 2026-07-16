@@ -53,6 +53,10 @@ shot scy "340=4E,340=47,341=01,345=04"
 shot scx "340=4E,340=47,341=01,344=03"
 # attributs parallèles : NG_MODE.b1 + fill papier bleu(4)/encre rouge(1) = $21
 shot atr "340=4E,340=47,341=02,34D=21"
+# sprites : sprite 0 (16x16) rempli d'index 1 (rouge), enable global + sprite, à (100,100)
+SPRSEQ="340=4E,340=47,350=01,351=00,352=64,353=64,354=01"
+for _i in $(seq 1 256); do SPRSEQ="$SPRSEQ,355=01"; done
+shot spr "$SPRSEQ"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -73,6 +77,7 @@ _,_,scr=load(f"{TMP}/scr.ppm")
 _,_,scy=load(f"{TMP}/scy.ppm")
 _,_,scx=load(f"{TMP}/scx.ppm")
 _,_,atr=load(f"{TMP}/atr.ppm")
+_,_,spr=load(f"{TMP}/spr.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -109,6 +114,13 @@ for y in range(200):
         else: aother+=1
 res.append(("parallel attrs: main area = blue paper(%d)+red ink(%d), other=%d"%(ablue,ared,aother),
             ablue>40000 and ared>500 and aother==0))
+# sprites : bloc 16x16 rouge (index 1) à (100,100), composé sur le fond
+sred=0
+for y in range(100,116):
+    for x in range(100,116):
+        o=(y*W+x)*3
+        if (spr[o],spr[o+1],spr[o+2])==(0xFF,0,0): sred+=1
+res.append(("sprite: 16x16 red block at (100,100) = %d/256 px"%sred, sred==256))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)

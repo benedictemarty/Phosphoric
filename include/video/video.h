@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+struct ula_ng_s;   /* io/ula_ng.h — sprites §5.7 (couplage évité) */
+
 #define ORIC_SCREEN_W   240
 #define ORIC_SCREEN_H   224
 /* Maximum framebuffer dimensions across all ULA profiles. The OCULA
@@ -153,6 +155,12 @@ typedef struct video_s {
     const uint8_t*  ng_attr;      /**< -> ula_ng.attr[8192] (§5.6) */
     const bool*     ng_attr_active; /**< -> ula_ng.attr_active */
 #define ORIC_NG_ATTR_MASK 0x1FFFu /* masque du plan d'attributs (8192-1) */
+
+    /* ULA-NG sprites (§5.7) : le module ula_ng possède l'état sprite (table,
+     * palette, collision) ; video appelle ula_ng_composite_scanline en fin de
+     * scanline via ce pointeur. NULL dans le chemin de test unitaire (pas de
+     * sprites). Forward-declaré pour ne pas coupler video.h à io/ula_ng.h. */
+    struct ula_ng_s* ng_dev;      /**< -> emulator_t.ula_ng (composition sprites) */
 
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE

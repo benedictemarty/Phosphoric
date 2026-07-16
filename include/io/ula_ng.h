@@ -42,6 +42,13 @@
 #define ULA_NG_REG_ATTR_FILL 0x034Du /* NG_ATTR_FILL : remplit tout le plan (§5.6) */
 #define ULA_NG_REG_ATTR_DATA 0x034Eu /* NG_ATTR_DATA : flux 1 o/cellule (auto-incr) */
 #define ULA_NG_REG_IDCHK   0x034Fu   /* NG_IDCHK (R) = ~NG_ID (handshake) */
+#define ULA_NG_REG_SPR_CTRL 0x0350u  /* NG_SPR_CTRL : b0 = enable global sprites (§5.7) */
+#define ULA_NG_REG_SPR_SEL  0x0351u  /* NG_SPR_SEL : sprite sélectionné 0-15 + reset ptr motif */
+#define ULA_NG_REG_SPR_X    0x0352u  /* NG_SPR_X : position X (0-255) du sprite sélectionné */
+#define ULA_NG_REG_SPR_Y    0x0353u  /* NG_SPR_Y : position Y (0-255) */
+#define ULA_NG_REG_SPR_ATTR 0x0354u  /* NG_SPR_ATTR : b0 = sprite visible */
+#define ULA_NG_REG_SPR_DATA 0x0355u  /* NG_SPR_DATA : flux motif 1 o/px (0=transparent, 1-7=index) */
+#define ULA_NG_REG_SPR_STATUS 0x0356u/* NG_SPR_STATUS (R) : b7 = collision (clear on read) */
 #define ULA_NG_COP_MAX     64        /* entrées max de la liste copper */
 #define ULA_NG_MODE_ATTR   0x02u     /* NG_MODE b1 : attributs parallèles actifs */
 #define ULA_NG_ATTR_SIZE   8192      /* plan d'attributs : 8 Ko (encre+papier/cellule) */
@@ -53,6 +60,11 @@
 #define ULA_NG_UNLOCK_G    0x47u     /* 'G' */
 #define ULA_NG_MODE_ENABLE 0x01u     /* NG_MODE b0 */
 #define ULA_NG_PAL_ENTRIES 16        /* LUT 16 entrées × 12 bits (RGB444) */
+#define ULA_NG_SPRITES     16        /* nombre de sprites matériels (§5.7) */
+#define ULA_NG_SPR_DIM     16        /* sprites 16×16 */
+#define ULA_NG_SPR_PIXELS  (ULA_NG_SPR_DIM * ULA_NG_SPR_DIM) /* 256 px/sprite */
+#define ULA_NG_SPR_MAXW    512       /* largeur framebuffer max (occupancy collision) */
+#define ULA_NG_SPR_STATUS_COL 0x80u  /* NG_SPR_STATUS b7 : collision détectée */
 
 typedef struct ula_ng_s {
     bool    unlocked;      /* extensions armées (après la séquence) */
@@ -88,11 +100,27 @@ typedef struct ula_ng_s {
     uint8_t cop_line, cop_index, cop_r;  /* entrée partielle en cours d'assemblage */
 
     /* Attributs parallèles (§5.6) : plan encre+papier par cellule, hors des
-     * 64 Ko du 6502 (miroir SDRAM FPGA). Actif si NG_MODE.b1. Indexé
+     * 64 Ko du 6502 (miroir DDR3 FPGA). Actif si NG_MODE.b1. Indexé
      * (scanline*40 + col) ; octet = (paper<<3)|ink. */
     uint8_t attr[ULA_NG_ATTR_SIZE];
     uint16_t attr_wp;       /* pointeur d'écriture (auto-incrément) */
     bool    attr_active;    /* = unlocked && NG_MODE.b1 (cache pour le hook vidéo) */
+
+    /* Sprites matériels (§5.7) : jusqu'à 16 sprites 16×16, motif indexé palette
+     * (0 = transparent, 1-7 = index LUT). Table hors des 64 Ko du 6502 (miroir
+     * DDR3 FPGA), programmée par flux via la fenêtre de registres. Composition
+     * dans le pipeline de sortie (après le fond) ; priorité par index (0 devant) ;
+     * détection de collision sprite-sprite. */
+    struct {
+        uint8_t x, y;                        /* position écran (px) */
+        bool    enable;                      /* NG_SPR_ATTR.b0 : visible */
+        uint8_t pattern[ULA_NG_SPR_PIXELS];  /* 0=transparent, 1-7=index palette */
+    } sprites[ULA_NG_SPRITES];
+    uint8_t  spr_sel;       /* sprite sélectionné pour la programmation */
+    uint16_t spr_wp;        /* pointeur d'écriture motif (0-255, auto-incrément) */
+    bool     spr_enable;    /* NG_SPR_CTRL.b0 : enable global */
+    bool     spr_collision; /* collision sprite-sprite (b7 status), clear on read */
+    bool     spr_active;    /* = unlocked && spr_enable (cache pour le hook vidéo) */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */
@@ -124,5 +152,11 @@ void ula_ng_scanline(ula_ng_t* u, int line);
 
 /** État de la ligne d'IRQ vers le 6502 (vrai = IRQ raster active). */
 bool ula_ng_irq(const ula_ng_t* u);
+
+/** Composite les sprites (§5.7) sur la scanline `y` du framebuffer RGB888
+ *  (largeur `w`, hauteur `h`). Transparent = index 0 ; couleur = LUT palette NG.
+ *  Priorité par index (sprite 0 devant). Met `spr_collision` sur recouvrement
+ *  sprite-sprite. No-op si `!spr_active`. À appeler après le rendu du fond. */
+void ula_ng_composite_scanline(ula_ng_t* u, uint8_t* fb, int w, int h, int y);
 
 #endif /* ULA_NG_H */

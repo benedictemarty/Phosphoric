@@ -11,6 +11,7 @@
  */
 
 #include "video/video.h"
+#include "io/ula_ng.h"   /* composition sprites §5.7 (ng_dev) */
 #include <string.h>
 #include <strings.h>
 
@@ -601,6 +602,13 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
 
         if (y == 223) vid->need_refresh = false;
     }
+
+    /* ULA-NG sprites (§5.7) : composition sur le fond de cette scanline (après
+     * le fond, avant présentation) — no-op si inactif. Le module ula_ng possède
+     * l'état sprite, la palette et la collision. */
+    if (vid->ng_dev)
+        ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
+                                  vid->native_w, vid->native_h, y);
 }
 
 void video_render_frame(video_t* vid, const uint8_t* memory) {

@@ -77,7 +77,13 @@ Fenêtre proposée : **`#0340`-`#035F`** dans la page 3 (libre dans la cartograp
 | `#034C` | `NG_COP_DATA` | W | Copper : flux 3 octets/entrée — `ligne`, `(index<<4)|R`, `(G<<4)|B` (64 entrées max). |
 | `#034D` | `NG_ATTR_FILL` | W | Attributs // (§5.6) : remplit tout le plan 8 Ko avec l'octet écrit `(paper<<3)|ink` + reset du pointeur de flux. |
 | `#034E` | `NG_ATTR_DATA` | W | Attributs // : écrit une cellule au pointeur `(paper<<3)|ink` puis auto-incrémente (modulo 8192). |
-| `#0350`-`#035F` | `NG_SPRITE_*` | R/W | Contrôle sprites (voir §5.7) : pointeur table, activation, statut collision. |
+| `#0350` | `NG_SPR_CTRL` | W | Sprites (§5.7) : b0 = enable global. |
+| `#0351` | `NG_SPR_SEL` | W | Sprite sélectionné pour la programmation (0-15) + reset du pointeur de motif. |
+| `#0352` | `NG_SPR_X` | W | Position X (0-255) du sprite sélectionné. |
+| `#0353` | `NG_SPR_Y` | W | Position Y (0-255). |
+| `#0354` | `NG_SPR_ATTR` | W | b0 = sprite visible. |
+| `#0355` | `NG_SPR_DATA` | W | Flux motif : 1 octet/pixel (`0` = transparent, `1`-`7` = index palette), auto-incrément (mod 256). |
+| `#0356` | `NG_SPR_STATUS` | R | b7 = collision sprite-sprite depuis la dernière lecture (clear on read). |
 
 Toute adresse de la fenêtre non listée : lecture `0xFF`, écriture ignorée (mais réserver pour extension).
 
@@ -178,6 +184,8 @@ Un second plan mémoire de 8 Ko (banque sélectionnée par `NG_MODE.b4-5`) fourn
 
 ### 5.7 Sprites matériels
 Jusqu'à 16 sprites 16×16, 3 bpp (index palette), avec priorité et détection de collision. Table de sprites en RAM pointée par un registre de `#0350`-`#035F`. Composition dans le pipeline de sortie (après le fond, avant conversion RGB) — invisibles pour la VRAM. Bit de collision lisible dans la zone `#0350`-`#035F`.
+
+**Implémenté (étape 8, validé)** : 16 sprites 16×16 dans la mémoire additionnelle `ula_ng.sprites[16]` (motif 1 octet/px, `0` = transparent, `1`-`7` = index LUT palette ; hors des 64 Ko du 6502, miroir DDR3). Programmation par flux via la fenêtre : `NG_SPR_CTRL` ($0350, b0 = enable global), `NG_SPR_SEL` ($0351, sprite courant + reset pointeur motif), `NG_SPR_X`/`NG_SPR_Y` ($0352/$0353, position écran), `NG_SPR_ATTR` ($0354, b0 = visible), `NG_SPR_DATA` ($0355, flux motif auto-incrémenté). Composition dans `ula_ng_composite_scanline()` appelée par le hook vidéo après le rendu du fond de chaque scanline (couleur = LUT palette NG). **Priorité par index** : les sprites sont composés 15→0, donc le sprite 0 finit au-dessus. **Détection de collision** sprite-sprite (recouvrement de pixels opaques sur une scanline) → `NG_SPR_STATUS` ($0356, b7, clear on read). Gate `unlocked && NG_SPR_CTRL.b0` (`spr_active`) ; inactif → rendu inchangé. Test visible : sprite 0 (16×16 rempli d'index 1 = rouge) à (100,100) → bloc rouge de 256 px pixel-exact au framebuffer. *Non encore implémenté (raffinement futur)* : priorité vis-à-vis du fond (le bit « derrière le fond » nécessite un tampon d'index de fond ; les sprites sont pour l'instant toujours au premier plan), 3 bpp compact côté FPGA (émulateur = 1 octet/px).
 
 ### 5.8 Modes chunky / 80 colonnes
 - **Chunky 4bpp** : 160×200, 16 couleurs parmi 4096 (via LUT étendue si besoin).

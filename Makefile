@@ -293,7 +293,7 @@ test-rom: $(TEST_ROM_SRCS)
 TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/export.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/io/via6522.c \
-                  src/utils/logging.c
+                  src/io/ula_ng.c src/utils/logging.c
 
 test-video: $(TEST_VIDEO_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_VIDEO_SRCS) $(LDFLAGS) -o test_video

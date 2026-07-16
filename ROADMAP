@@ -6,6 +6,29 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 114: ULA-NG étape 8 — sprites matériels (§5.7) (v1.74.0-alpha) - DONE
+Jusqu'à 16 sprites 16×16, motif indexé palette, composés sur le fond avec
+priorité par index et détection de collision. Deuxième usage de la mémoire
+additionnelle portée par `ula_ng` (miroir DDR3 externe du Tang Primer 20K).
+- [x] Table `ula_ng.sprites[16]` : motif 1 o/px (0=transparent, 1-7=index LUT),
+      position X/Y, bit visible. Hors des 64 Ko du 6502.
+- [x] Registres flux : `NG_SPR_CTRL` ($0350 enable global), `NG_SPR_SEL` ($0351
+      + reset ptr motif), `NG_SPR_X`/`Y` ($0352/$0353), `NG_SPR_ATTR` ($0354
+      visible), `NG_SPR_DATA` ($0355 flux auto-incr mod 256).
+- [x] Composition `ula_ng_composite_scanline()` (module ula_ng possède état
+      sprite/palette/collision), appelée par `video_render_scanline` après le
+      fond via pointeur `video_t.ng_dev`. Priorité par index (15→0 → sprite 0
+      au-dessus).
+- [x] Collision sprite-sprite (recouvrement pixels opaques/scanline) →
+      `NG_SPR_STATUS` ($0356 b7, clear on read). Gate `spr_active`.
+- [x] **Test visible** : sprite 0 (16×16 index 1 = rouge) à (100,100) → bloc
+      rouge **256 px pixel-exact** au framebuffer (ajouté à `test-ula-ng-visible`).
+      Non-régression (test-video 22/22 ; module ula_ng.c ajouté au link).
+- [x] test-ula-ng 36 → 42 checks. 1025 → 1031 tests.
+> **Suite** : chunky/80col (§5.8) — dernière feature ULA-NG.
+
+---
+
 ### Sprint 113: ULA-NG étape 7 — attributs parallèles (§5.6) (v1.73.0-alpha) - DONE
 Plan mémoire de 8 Ko fournissant encre+papier par cellule sans consommer
 d'octets pixel dans le flux → **supprime le color clash** sériel de l'Oric.

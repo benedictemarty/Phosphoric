@@ -1634,6 +1634,7 @@ static bool emulator_init(emulator_t* emu) {
     emu->video.ng_scrolly    = &emu->ula_ng.scrolly;    /* scroll fin Y (§5.5) */
     emu->video.ng_attr       = emu->ula_ng.attr;        /* attributs // (§5.6) */
     emu->video.ng_attr_active = &emu->ula_ng.attr_active;
+    emu->video.ng_dev        = &emu->ula_ng;            /* sprites (§5.7) */
 
     /* Initialize renderer if not headless */
     if (!emu->headless) {

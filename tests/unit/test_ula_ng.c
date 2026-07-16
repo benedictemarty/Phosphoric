@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "io/ula_ng.h"
 
 static int tests_passed = 0;
@@ -427,8 +428,96 @@ TEST(test_attr_locked_no_effect) {
     ASSERT_FALSE(u.attr_active);
 }
 
+/* ── Étape 8 : sprites matériels (§5.7) ─────────────────────────────────── */
+
+static uint8_t g_fb[32 * 32 * 3];
+
+TEST(test_spr_default) {
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_FALSE(u.spr_active);
+    ASSERT_FALSE(u.spr_collision);
+    ASSERT_FALSE(u.sprites[0].enable);
+}
+
+TEST(test_spr_gating) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ASSERT_FALSE(u.spr_active);
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);   /* enable global */
+    ASSERT_TRUE(u.spr_active);
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x00);
+    ASSERT_FALSE(u.spr_active);
+}
+
+TEST(test_spr_program) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SPR_SEL, 3);
+    ula_ng_write(&u, ULA_NG_REG_SPR_X, 40);
+    ula_ng_write(&u, ULA_NG_REG_SPR_Y, 50);
+    ula_ng_write(&u, ULA_NG_REG_SPR_ATTR, 0x01);
+    ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 5);
+    ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 2);
+    ASSERT_EQ(u.sprites[3].x, 40);
+    ASSERT_EQ(u.sprites[3].y, 50);
+    ASSERT_TRUE(u.sprites[3].enable);
+    ASSERT_EQ(u.sprites[3].pattern[0], 5);
+    ASSERT_EQ(u.sprites[3].pattern[1], 2);
+    ASSERT_EQ(u.spr_wp, 2);
+    ula_ng_write(&u, ULA_NG_REG_SPR_SEL, 3);   /* SEL remet le pointeur motif à 0 */
+    ASSERT_EQ(u.spr_wp, 0);
+}
+
+TEST(test_spr_composite_and_transparency) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);
+    ula_ng_write(&u, ULA_NG_REG_SPR_SEL, 0);
+    ula_ng_write(&u, ULA_NG_REG_SPR_X, 4);
+    ula_ng_write(&u, ULA_NG_REG_SPR_Y, 4);
+    ula_ng_write(&u, ULA_NG_REG_SPR_ATTR, 0x01);
+    ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 0);   /* px (row0,col0) transparent */
+    ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 1);   /* px (row0,col1) index 1 = rouge */
+    memset(g_fb, 0, sizeof(g_fb));
+    ula_ng_composite_scanline(&u, g_fb, 32, 32, 4);   /* y=4 = row0 du sprite */
+    int o0 = (4 * 32 + 4) * 3, o1 = (4 * 32 + 5) * 3;
+    ASSERT_EQ(g_fb[o0], 0); ASSERT_EQ(g_fb[o0 + 1], 0); ASSERT_EQ(g_fb[o0 + 2], 0);
+    ASSERT_EQ(g_fb[o1], u.pal[1][0]);
+    ASSERT_EQ(g_fb[o1 + 1], u.pal[1][1]);
+    ASSERT_EQ(g_fb[o1 + 2], u.pal[1][2]);
+}
+
+TEST(test_spr_collision) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);
+    for (int s = 0; s < 2; s++) {               /* 2 sprites opaques superposés */
+        ula_ng_write(&u, ULA_NG_REG_SPR_SEL, (uint8_t)s);
+        ula_ng_write(&u, ULA_NG_REG_SPR_X, 8);
+        ula_ng_write(&u, ULA_NG_REG_SPR_Y, 8);
+        ula_ng_write(&u, ULA_NG_REG_SPR_ATTR, 0x01);
+        ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 1);
+    }
+    ASSERT_FALSE(u.spr_collision);
+    memset(g_fb, 0, sizeof(g_fb));
+    ula_ng_composite_scanline(&u, g_fb, 32, 32, 8);
+    ASSERT_TRUE(u.spr_collision);
+    ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_SPR_STATUS), ULA_NG_SPR_STATUS_COL);
+    ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_SPR_STATUS), 0x00);   /* clear on read */
+    ASSERT_FALSE(u.spr_collision);
+}
+
+TEST(test_spr_locked_no_composite) {
+    ula_ng_t u; ula_ng_init(&u);
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);   /* verrouillé : passthrough */
+    ASSERT_FALSE(u.spr_active);
+    memset(g_fb, 0xAB, sizeof(g_fb));
+    ula_ng_composite_scanline(&u, g_fb, 32, 32, 0);   /* no-op */
+    ASSERT_EQ(g_fb[0], 0xAB);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-7: ...+scroll+attr) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-8: ...+attr+sprites) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -465,6 +554,12 @@ int main(void) {
     RUN(test_attr_fill);
     RUN(test_attr_stream);
     RUN(test_attr_locked_no_effect);
+    RUN(test_spr_default);
+    RUN(test_spr_gating);
+    RUN(test_spr_program);
+    RUN(test_spr_composite_and_transparency);
+    RUN(test_spr_collision);
+    RUN(test_spr_locked_no_composite);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);
