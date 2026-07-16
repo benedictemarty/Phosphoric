@@ -29,6 +29,8 @@ void ula_ng_reset(ula_ng_t* u) {
     u->raster_enable = false;
     u->raster_pending = false;
     u->scrstart = 0;
+    u->copper_count = 0;
+    u->copper_phase = 0;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -98,6 +100,32 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         case ULA_NG_REG_SCR_HI:                 /* NG_SCRSTART MSB */
             u->scrstart = (uint16_t)((u->scrstart & 0x00FF) | (value << 8));
             break;
+        case ULA_NG_REG_COP_CTRL:               /* reset de la liste copper */
+            u->copper_count = 0;
+            u->copper_phase = 0;
+            break;
+        case ULA_NG_REG_COP_DATA:               /* flux 3 o/entrée (§5.4) */
+            if (u->copper_phase == 0) {
+                u->cop_line = value;
+                u->copper_phase = 1;
+            } else if (u->copper_phase == 1) {
+                u->cop_index = (uint8_t)((value >> 4) & 0x0F);
+                u->cop_r = (uint8_t)(value & 0x0F);
+                u->copper_phase = 2;
+            } else {                            /* GGGGBBBB : commit de l'entrée */
+                uint8_t g = (uint8_t)((value >> 4) & 0x0F);
+                uint8_t b = (uint8_t)(value & 0x0F);
+                if (u->copper_count < ULA_NG_COP_MAX) {
+                    u->copper[u->copper_count].line  = u->cop_line;
+                    u->copper[u->copper_count].index = u->cop_index;
+                    u->copper[u->copper_count].r = (uint8_t)(u->cop_r * 0x11);
+                    u->copper[u->copper_count].g = (uint8_t)(g * 0x11);
+                    u->copper[u->copper_count].b = (uint8_t)(b * 0x11);
+                    u->copper_count++;
+                }
+                u->copper_phase = 0;
+            }
+            break;
         case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
             u->raster_line = value;
             break;
@@ -116,11 +144,23 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
 }
 
 void ula_ng_scanline(ula_ng_t* u, int line) {
-    /* Armée = déverrouillé + extensions actives (NG_MODE.b0) + enable IRQ. */
-    if (!u->unlocked || u->raster_enable == false) return;
-    if (!(u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] & ULA_NG_MODE_ENABLE)) return;
-    if (line == (int)u->raster_line) {
-        u->raster_pending = true;   /* niveau : reste jusqu'à acquittement */
+    /* Actif = déverrouillé + extensions actives (NG_MODE.b0). */
+    if (!u->active) return;
+
+    /* IRQ raster (§5.2) : niveau, reste jusqu'à acquittement. */
+    if (u->raster_enable && line == (int)u->raster_line) {
+        u->raster_pending = true;
+    }
+
+    /* Palette par scanline (§5.4) : applique les entrées copper de cette ligne
+     * à la LUT (le hook vidéo relit u->pal la ligne suivante). */
+    for (uint8_t i = 0; i < u->copper_count; i++) {
+        if (u->copper[i].line == (uint8_t)line) {
+            uint8_t idx = u->copper[i].index & 0x0F;
+            u->pal[idx][0] = u->copper[i].r;
+            u->pal[idx][1] = u->copper[i].g;
+            u->pal[idx][2] = u->copper[i].b;
+        }
     }
 }
 

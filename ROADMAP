@@ -6,6 +6,22 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 110: ULA-NG étape 5 — palette par scanline / copper (§5.4) (v1.70.0-alpha) - DONE
+Mini-copper : dégradés / splits de couleur verticaux sans CPU par ligne.
+- [x] Liste copper **64 entrées** (ligne, index LUT, couleur RGB444). Flux :
+      `NG_COP_CTRL` ($034B) reset ; `NG_COP_DATA` ($034C) 3 octets/entrée
+      (`ligne`, `(index<<4)|R`, `(G<<4)|B`). Expansion RGB444→888.
+- [x] `ula_ng_scanline(line)` applique à `u->pal[index]` les entrées de la ligne
+      si `déverrouillé && NG_MODE.b0` ; hook vidéo relit la LUT → effet ligne
+      suivante (cohérent §9). Raster IRQ + copper factorisés (gating sur `active`).
+- [x] **Test visible** : couleur 7 rouge (ligne 0) puis bleu (ligne 30) → bandes
+      verticales (bandeau rouge, « BYTES FREE » bleu). Non-régression (test-video 22/22).
+- [x] test-ula-ng 22 → 27 checks. 1009 → 1014 tests.
+> **Suite** : scroll fin X/Y (§5.5), attributs // (§5.6), sprites (§5.7),
+> chunky/80col (§5.8).
+
+---
+
 ### Sprint 109: ULA-NG étape 4 — start-address (§5.3) (v1.69.0-alpha) - DONE
 Double buffering + scroll vertical grossier par relocalisation du fetch vidéo.
 - [x] `NG_SCRSTART` ($0342 LSB / $0343 MSB, 16 bits) remplace la base du fetch

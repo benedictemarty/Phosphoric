@@ -277,8 +277,84 @@ TEST(test_scrstart_reset_clears) {
     ASSERT_EQ(u.scrstart, 0);
 }
 
+/* ── Étape 5 : palette par scanline / copper (§5.4) ───────────────────── */
+
+/* Programme une entrée copper (ligne, index, R4,G4,B4). */
+static void cop_entry(ula_ng_t* u, int line, int idx, int r, int g, int b) {
+    ula_ng_write(u, ULA_NG_REG_COP_DATA, (uint8_t)line);
+    ula_ng_write(u, ULA_NG_REG_COP_DATA, (uint8_t)((idx << 4) | (r & 0x0F)));
+    ula_ng_write(u, ULA_NG_REG_COP_DATA, (uint8_t)(((g & 0x0F) << 4) | (b & 0x0F)));
+}
+
+TEST(test_copper_program) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);       /* reset liste */
+    cop_entry(&u, 10, 3, 0xF, 0, 0);                /* ligne 10, index 3, rouge */
+    ASSERT_EQ(u.copper_count, 1);
+    ASSERT_EQ(u.copper[0].line, 10);
+    ASSERT_EQ(u.copper[0].index, 3);
+    ASSERT_EQ(u.copper[0].r, 0xFF); ASSERT_EQ(u.copper[0].g, 0x00); ASSERT_EQ(u.copper[0].b, 0x00);
+}
+
+TEST(test_copper_apply_at_line) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
+    cop_entry(&u, 50, 7, 0, 0xF, 0);                /* ligne 50 : couleur 7 -> vert */
+    ula_ng_scanline(&u, 49);
+    ASSERT_EQ(u.pal[7][1], 0xFF);                   /* pal[7] = blanc (identité) */
+    ASSERT_EQ(u.pal[7][0], 0xFF);
+    ula_ng_scanline(&u, 50);                        /* applique l'entrée */
+    ASSERT_EQ(u.pal[7][0], 0x00); ASSERT_EQ(u.pal[7][1], 0xFF); ASSERT_EQ(u.pal[7][2], 0x00);
+}
+
+TEST(test_copper_gradient) {
+    /* Même index, couleurs différentes selon la ligne. */
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
+    cop_entry(&u, 0,   1, 0xF, 0, 0);               /* ligne 0 : couleur 1 rouge */
+    cop_entry(&u, 100, 1, 0, 0, 0xF);               /* ligne 100 : couleur 1 bleu */
+    ula_ng_scanline(&u, 0);
+    ASSERT_EQ(u.pal[1][0], 0xFF); ASSERT_EQ(u.pal[1][2], 0x00);   /* rouge */
+    ula_ng_scanline(&u, 100);
+    ASSERT_EQ(u.pal[1][0], 0x00); ASSERT_EQ(u.pal[1][2], 0xFF);   /* bleu */
+}
+
+TEST(test_copper_gating) {
+    ula_ng_t u; ula_ng_init(&u);
+    /* verrouillé : le flux copper est passthrough, rien programmé */
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
+    cop_entry(&u, 10, 0, 0xF, 0xF, 0xF);
+    ASSERT_EQ(u.copper_count, 0);
+    /* déverrouillé + copper programmé mais NG_MODE.b0=0 : scanline n'applique pas */
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
+    cop_entry(&u, 5, 2, 0xF, 0, 0);
+    ula_ng_scanline(&u, 5);
+    ASSERT_EQ(u.pal[2][0], 0x00);                   /* couleur 2 (vert Oric) inchangée */
+}
+
+TEST(test_copper_reset) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
+    cop_entry(&u, 1, 0, 0xF, 0, 0);
+    ASSERT_EQ(u.copper_count, 1);
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);       /* reset liste */
+    ASSERT_EQ(u.copper_count, 0);
+    cop_entry(&u, 2, 0, 0, 0xF, 0);
+    ula_ng_reset(&u);                               /* reset matériel */
+    ASSERT_EQ(u.copper_count, 0);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-4: unlock + palette + raster + scrstart) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-5: unlock/palette/raster/scrstart/copper) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -301,6 +377,11 @@ int main(void) {
     RUN(test_scrstart_program);
     RUN(test_scrstart_locked_no_effect);
     RUN(test_scrstart_reset_clears);
+    RUN(test_copper_program);
+    RUN(test_copper_apply_at_line);
+    RUN(test_copper_gradient);
+    RUN(test_copper_gating);
+    RUN(test_copper_reset);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

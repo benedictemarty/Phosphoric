@@ -34,7 +34,11 @@
 #define ULA_NG_REG_PAL_IDX 0x0348u   /* NG_PAL_IDX : index LUT (0-15), auto-incr */
 #define ULA_NG_REG_PAL_LO  0x0349u   /* NG_PAL_DATA lo : 0000RRRR */
 #define ULA_NG_REG_PAL_HI  0x034Au   /* NG_PAL_DATA hi : GGGGBBBB (commit + incr) */
+#define ULA_NG_REG_COP_CTRL 0x034Bu  /* NG_COP_CTRL : écriture = reset liste copper */
+#define ULA_NG_REG_COP_DATA 0x034Cu  /* NG_COP_DATA : flux 3 o/entrée (§5.4) :
+                                        [0]=ligne [1]=(index<<4)|R [2]=(G<<4)|B */
 #define ULA_NG_REG_IDCHK   0x034Fu   /* NG_IDCHK (R) = ~NG_ID (handshake) */
+#define ULA_NG_COP_MAX     64        /* entrées max de la liste copper */
 #define ULA_NG_STATUS_IRQ  0x80u     /* NG_STATUS b7 (R) : IRQ raster en attente */
 #define ULA_NG_STATUS_EN   0x01u     /* NG_STATUS b0 (W) : enable IRQ raster */
 #define ULA_NG_FRAME_LINES 312       /* lignes trame PAL complète (0-311) */
@@ -65,6 +69,13 @@ typedef struct ula_ng_s {
     uint8_t raster_line;   /* NG_RASTERLINE : ligne (trame 0-311) déclenchant l'IRQ */
     bool    raster_enable; /* NG_STATUS.b0 : IRQ raster armée */
     bool    raster_pending;/* IRQ raster en attente (b7), jusqu'à acquittement */
+
+    /* Palette par scanline (§5.4) : mini-copper. Liste d'entrées (ligne, index
+     * LUT, couleur RGB888) appliquée par ula_ng_scanline pendant le hblank. */
+    struct { uint8_t line, index, r, g, b; } copper[ULA_NG_COP_MAX];
+    uint8_t copper_count;   /* nombre d'entrées programmées */
+    uint8_t copper_phase;   /* 0/1/2 : octet courant de l'entrée en flux */
+    uint8_t cop_line, cop_index, cop_r;  /* entrée partielle en cours d'assemblage */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */

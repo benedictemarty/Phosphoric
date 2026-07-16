@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.70.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 5 : palette par scanline / mini-copper (§5.4)
+
+Liste d'instructions palette appliquée par ligne → dégradés / splits de couleur
+verticaux sans intervention CPU par ligne.
+
+- Liste copper de **64 entrées** max, chaque entrée = `(ligne, index LUT,
+  couleur RGB444)`. Programmation par **flux** : `NG_COP_CTRL` (`$034B`) réinitialise
+  la liste ; `NG_COP_DATA` (`$034C`) reçoit **3 octets/entrée** (`ligne`,
+  `(index<<4)|R`, `(G<<4)|B`, commit au 3ᵉ). Expansion RGB444→888 par réplication.
+- `ula_ng_scanline(line)` applique à la LUT (`u->pal[index]`) toute entrée dont
+  `ligne == line`, si `déverrouillé && NG_MODE.b0`. Le hook vidéo relit la LUT →
+  effet **ligne suivante** (cohérent §9). Raster IRQ (§5.2) et copper cohabitent
+  dans `ula_ng_scanline` (gating factorisé sur le flag NG `active`).
+- **Test visible** (§4) : copper posant la couleur 7 en rouge (ligne 0) puis bleu
+  (ligne 30) → **bandes de couleur verticales** (bandeau blanc → rouge, « BYTES
+  FREE » → bleu). Non-régression : liste vide au reset / inactif → LUT inchangée,
+  vidéo bit-à-bit (`test-video` 22/22).
+- Tests : `test-ula-ng` 22 → 27 checks (programmation flux, application à la
+  ligne, gradient multi-ligne, gating, reset).
+
+1009 → 1014 tests. EMU_VERSION 1.69.0 → 1.70.0-alpha ; builds natif + SDL2 +
+HTTPAPI OK. Étape suivante : scroll fin X/Y (§5.5).
+
 ## [1.69.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 4 : start-address (§5.3)

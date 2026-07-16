@@ -158,6 +158,8 @@ Les couleurs logiques deviennent des index dans une **LUT de 16 entrées × 12 b
 ### 5.4 Palette par scanline
 Une petite liste d'instructions palette (mini-copper) en RAM, appliquée pendant le hblank par `ula_ng_scanline`. Format à définir simplement : table de (ligne, index, couleur) triée. Garder trivialement synthétisable (une FIFO relue par ligne).
 
+**Implémenté (étape 5, validé)** : liste copper de 64 entrées max, chaque entrée = `(ligne, index LUT, couleur RGB444)`. Programmation par flux : `NG_COP_CTRL` (`$034B`) en écriture réinitialise la liste ; `NG_COP_DATA` (`$034C`) reçoit **3 octets par entrée** : `[0]=ligne`, `[1]=(index<<4)|R`, `[2]=(G<<4)|B` (commit à chaque 3ᵉ octet). `ula_ng_scanline(line)` applique à la LUT (`u->pal[index]`) toute entrée dont `ligne == line` (actif si `déverrouillé && NG_MODE.b0`). Le hook vidéo relit la LUT → effet **ligne suivante** (cohérent §9). Prévoir une entrée « ligne 0 » pour poser la base à chaque trame. Test visible : couleur 7 rouge (ligne 0) puis bleue (ligne 30) → bandes de couleur verticales (framebuffer).
+
 ### 5.5 Scroll fin X/Y
 `NG_SCROLLX` (0-5) et `NG_SCROLLY` (0-7) décalent le pipeline de fetch au niveau pixel. En pratique : offset appliqué au moment de composer la ligne.
 
