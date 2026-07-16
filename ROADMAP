@@ -23,6 +23,19 @@ Design : `docs/ula-ng/VDU.md` (état de l'art 2026 : Agon VDP, VERA, OCULA-GPU).
 
 ---
 
+### Sprint 120: Retrait complet d'OCULA du mainline (v1.80.0-alpha) - DONE
+Sur demande : plus aucun code spécifique OCULA dans `main` (OCULA préservé et
+recompilable sur la branche `feature/ocula-isolation`).
+- [x] Suppression des modules/headers/demos/docs/test OCULA.
+- [x] Strip de video.c/h, memory.c/h, main.c, savestate.c, debugger.c, control.c.
+- [x] Constantes partagées avec l'ULA-NG **renommées génériques** (VIDEO_MAX_W,
+      VIDEO_WIDE_W, VIDEO_BORDER_*, video_border) → ULA-NG (§5.1-5.8 + VDU) intacte.
+- [x] Compositing bordure conservé générique (inerte). Sections savestate OCB/OGP
+      retirées (rétro-compatible).
+- [x] Suite complète verte, test-ocula (101) retiré. 1049 → 948 tests.
+
+---
+
 ### Sprint 119: VDU intégré v0.3 — upload sprites par flux (v1.79.0-alpha) - DONE
 Protocole « buffered commands » (à la Agon) pour définir un sprite entièrement
 par le flux VDU.

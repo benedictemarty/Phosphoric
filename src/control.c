@@ -1000,13 +1000,9 @@ static void cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
     }
     else if (strcmp(sub, "video") == 0 || strcmp(sub, "ula") == 0) {
         video_t* v = &emu->video;
-        sink_ok(s, "hires=%d vid_mode=%02X text_attr=%02X w=%d h=%d frame=%u "
-                "ocula_80col=%d ocula_exthires=%d ocula_unlocked=%d "
-                "scroll_x=%u scroll_y=%u",
+        sink_ok(s, "hires=%d vid_mode=%02X text_attr=%02X w=%d h=%d frame=%u",
                 v->hires_mode ? 1 : 0, v->vid_mode, v->text_attr,
-                v->native_w, v->native_h, (unsigned)v->frame_counter,
-                v->ocula_80col ? 1 : 0, v->ocula_exthires ? 1 : 0,
-                v->ocula_unlocked ? 1 : 0, v->ocula_scroll_x, v->ocula_scroll_y);
+                v->native_w, v->native_h, (unsigned)v->frame_counter);
     }
     else if (strcmp(sub, "kbd") == 0 || strcmp(sub, "keyboard") == 0) {
         oric_keyboard_t* k = &emu->keyboard;

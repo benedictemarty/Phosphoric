@@ -74,7 +74,7 @@ void osd_snapshot_font(osd_t* osd, const uint8_t* mem) {
 }
 
 void osd_open(osd_t* osd) {
-    static const char* const dirs[] = { "tapes", "disks", "demos/ocula", ".", NULL };
+    static const char* const dirs[] = { "tapes", "disks", "demos/ula-ng", ".", NULL };
     osd_scan(osd, dirs);
     osd->open = true;
 }

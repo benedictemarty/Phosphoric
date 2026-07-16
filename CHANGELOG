@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.0-alpha] - 2026-07-17
+
+### Removed — Retrait complet d'OCULA du mainline (sur demande)
+
+Tout le code spécifique OCULA (profil ULA de remplacement RP2350) est **retiré
+de `main`** : plus aucune référence OCULA dans le code cœur. OCULA reste
+préservé/recompilable sur la branche `feature/ocula-isolation`.
+
+- Fichiers supprimés : `src/io/ocula_io.c`, `ocula_gpu.c`, `ocula_stubs.c`,
+  `src/video/ocula_video.c`, `include/io/ocula_io.h`, `ocula_gpu.h`,
+  `src/video/video_internal.h`, `tests/unit/test_ocula.c`, `demos/ocula/`,
+  `docs/ocula_extensions.md`, `docs/ocula_firmware_alignment.md`, `docs/ocula/`.
+- `video.c`/`video.h` : retrait du profil ULA (`ula_profile`, `--ula`),
+  des modes 80col/ext-HIRES OCULA, de la palette/bordure redéfinissables
+  (`ocula_block_armed`/`regs_active`/`border_latch`/`rgb332`), des champs
+  `video_t` OCULA. Constantes partagées avec l'ULA-NG **renommées génériques**
+  (`OCULA_MAX_W`→`VIDEO_MAX_W`, `OCULA_EXTHIRES_W`→`VIDEO_WIDE_W`,
+  `OCULA_BORDER_*`→`VIDEO_BORDER_*`, `ocula_border`→`video_border`) pour
+  préserver l'ULA-NG (chunky/80col) intacte.
+- `memory.c`/`memory.h` : retrait de `memory_ocula_*` (banking $A000-$BFFF,
+  knock de déverrouillage, registres write-only, fenêtre page-3), champs et
+  constantes associés.
+- `main.c` : retrait de l'option `--ula`/`--ocula-80col-basic`, du câblage
+  GPU/ID, des fenêtres I/O `$03E0-$03EF`, du WAIT_VBL, du miroir 80col.
+- `savestate.c` : sections **OCB/OGP** retirées (octet de profil VID réservé ;
+  anciens `.ost` avec OCB/OGP → sections ignorées, rétro-compatible).
+- `debugger.c`/`control.c` : champs OCULA retirés des inspections `peek video`.
+- Compositing overscan bordure **conservé en générique** (`video_compose_bordered`,
+  inerte/noir sans source de couleur) pour ne pas casser `--export-border`.
+- Non-régression : **ULA-NG (§5.1-5.8 + VDU) intacte** ; build natif + SDL2 +
+  HTTPAPI OK ; suite complète verte (test-ocula 101 retiré). 1049 → 948 tests.
+  EMU_VERSION 1.79.1 → 1.80.0-alpha.
+
 ## [1.79.1-alpha] - 2026-07-16
 
 ### Docs — Conclusion sur le hook OSWRCH (investigué, écarté) + piste ROM 1.2

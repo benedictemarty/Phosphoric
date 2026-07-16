@@ -20,7 +20,7 @@ static int tex_w = ORIC_SCREEN_W;   /* Current texture resolution (border incl.)
 static int tex_h = ORIC_SCREEN_H;
 static bool border_on = true;       /* Composite the OCULA overscan band (Sprint 65) */
 /* Scratch buffer for the bordered composite (sized to the largest mode). */
-static uint8_t composed[OCULA_BORDERED_MAX_W * OCULA_BORDERED_MAX_H * 3];
+static uint8_t composed[VIDEO_BORDERED_MAX_W * VIDEO_BORDERED_MAX_H * 3];
 
 bool renderer_init(int scale, bool prefer_software) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) return false;
@@ -63,7 +63,7 @@ bool renderer_init(int scale, bool prefer_software) {
         ORIC_SCREEN_W, ORIC_SCREEN_H);
     if (!texture) return false;
     /* No SDL_RenderSetLogicalSize: SDL_RenderCopy(NULL, NULL) stretches the
-     * texture to fill the window exactly, so mode changes (e.g. 80-col OCULA)
+     * texture to fill the window exactly, so mode changes (e.g. 80-col ULA-NG)
      * never produce letterbox bars. */
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); /* nearest-neighbor */
     fullscreen = false;
@@ -80,7 +80,7 @@ void renderer_cleanup(void) {
 
 void renderer_present(video_t* vid) {
     /* Source pixels + dimensions: either the active framebuffer directly, or
-     * the active image composited inside the OCULA overscan band (Sprint 65). */
+     * the active image composited inside the overscan band. */
     const uint8_t* pixels = vid->framebuffer;
     int src_w = vid->native_w, src_h = vid->native_h;
     if (border_on) {
