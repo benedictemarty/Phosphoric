@@ -1056,9 +1056,6 @@ static void show_video_state(emulator_t* emu) {
            v->need_refresh ? "yes" : "no");
     printf("    framebuffer=%dx%d  frame_counter=%u\n",
            v->native_w, v->native_h, v->frame_counter);
-    printf("    OCULA: 80col=%d(forced=%d) exthires=%d unlocked=%d scroll=(%u,%u)\n",
-           v->ocula_80col, v->ocula_80col_forced, v->ocula_exthires,
-           v->ocula_unlocked, v->ocula_scroll_x, v->ocula_scroll_y);
 }
 
 static void show_keyboard_state(emulator_t* emu) {
@@ -1147,7 +1144,7 @@ static void show_help(void) {
     printf("  acia / serial     Show ACIA 6551 registers + signals + FIFO\n");
     printf("  tape / cassette   Show tape position, status, next bytes\n");
     printf("  loci              Show LOCI MIA full state (regs, fds, mounts, DSK/TAP)\n");
-    printf("  video / ula       Show ULA/video state (mode, OCULA, framebuffer)\n");
+    printf("  video / ula       Show ULA/video state (mode, framebuffer)\n");
     printf("  kbd               Show keyboard matrix (8 columns)\n");
     printf("  joy               Show IJK joystick state\n");
     printf("  printer / mcp40   Show printer / MCP-40 plotter state\n");

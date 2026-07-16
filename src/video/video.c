@@ -11,7 +11,6 @@
  */
 
 #include "video/video.h"
-#include "video_internal.h"  /* helpers OCULA extraits (ocula_video.c) */
 #include "io/ula_ng.h"   /* composition sprites §5.7 (ng_dev) */
 #include <string.h>
 #include <strings.h>
@@ -21,13 +20,11 @@ static const uint8_t palette[8][3] = {
     {0x00,0x00,0xFF},{0xFF,0x00,0xFF},{0x00,0xFF,0xFF},{0xFF,0xFF,0xFF},
 };
 
-/* Active resolution: follows the OCULA mode latches; the stock profile
- * and OCULA-in-standard-mode both render 240x224. */
+/* Active resolution : suit les latches de mode ULA-NG (chunky 320 / 80col 480),
+ * sinon 240 standard. */
 static void apply_profile_resolution(video_t* vid) {
-    if (vid->ng_text80)           vid->native_w = OCULA_MAX_W;      /* §5.8 : 80 col × 6 = 480 */
-    else if (vid->ng_chunky)      vid->native_w = OCULA_EXTHIRES_W; /* §5.8 : 160 chunky × 2 = 320 */
-    else if (vid->ocula_80col)    vid->native_w = OCULA_MAX_W;
-    else if (vid->ocula_exthires) vid->native_w = OCULA_EXTHIRES_W;
+    if (vid->ng_text80)           vid->native_w = VIDEO_MAX_W;   /* §5.8 : 80 col × 6 = 480 */
+    else if (vid->ng_chunky)      vid->native_w = VIDEO_WIDE_W;  /* §5.8 : 160 chunky × 2 = 320 */
     else                          vid->native_w = ORIC_SCREEN_W;
     vid->native_h = ORIC_SCREEN_H;
 }
@@ -36,45 +33,23 @@ static void palette_reset(video_t* vid) {
     memcpy(vid->pal_rgb, palette, sizeof(vid->pal_rgb));
 }
 
-/* Expand one RGB332 byte (RRRGGGBB) to RGB888. Shared by the redefinable
- * palette and the border register — both live in the gated $BFE0-$BFFF
- * block and so must decode identically. */
-/* rgb332_to_rgb888, ocula_block_armed, ocula_regs_active → ocula_video.c
- * (extraits, déclarés dans video_internal.h). */
-
-/* Re-evaluate the redefinable palette at scanline start. Source order:
- * (1) the write-only register file if armed (sprint 66), else (2) the in-band
- * $BFE0-$BFE7 block if magic-armed + unlocked, else (3) the standard palette. */
+/* Palette relue au début de scanline : LUT ULA-NG (§5.1) si active, sinon
+ * palette Oric standard. */
 static void palette_latch(video_t* vid, const uint8_t* memory) {
-    /* ULA-NG palette-indirection (§5.1) : la LUT NG (déjà RGB888) prime quand
-     * les extensions palette sont actives. Entrées 0-7 (mode standard). */
+    (void)memory;
     if (vid->ng_active && *vid->ng_active && vid->ng_pal) {
         for (int i = 0; i < 8; i++) {
             vid->pal_rgb[i][0] = vid->ng_pal[i][0];
             vid->pal_rgb[i][1] = vid->ng_pal[i][1];
             vid->pal_rgb[i][2] = vid->ng_pal[i][2];
         }
-    } else if (ocula_regs_active(vid)) {
-        for (int i = 0; i < 8; i++) {
-            rgb332_to_rgb888(vid->ocula_reg_pal[i],
-                             &vid->pal_rgb[i][0], &vid->pal_rgb[i][1],
-                             &vid->pal_rgb[i][2]);
-        }
-    } else if (ocula_block_armed(vid, memory)) {
-        for (int i = 0; i < 8; i++) {
-            rgb332_to_rgb888(memory[OCULA_PAL_BASE + i],
-                             &vid->pal_rgb[i][0], &vid->pal_rgb[i][1],
-                             &vid->pal_rgb[i][2]);
-        }
     } else {
         palette_reset(vid);
     }
 }
 
-/* border_latch → ocula_video.c (extrait, déclaré dans video_internal.h). */
-
 /* Palette-aware color lookup used by all rendering paths. */
-void get_rgb(const video_t* vid, uint8_t oric_color,
+static void get_rgb(const video_t* vid, uint8_t oric_color,
                     uint8_t* r, uint8_t* g, uint8_t* b) {
     uint8_t c = oric_color & 0x07;
     *r = vid->pal_rgb[c][0]; *g = vid->pal_rgb[c][1]; *b = vid->pal_rgb[c][2];
@@ -82,7 +57,6 @@ void get_rgb(const video_t* vid, uint8_t oric_color,
 
 bool video_init(video_t* vid) {
     memset(vid, 0, sizeof(video_t));
-    vid->ula_profile = ULA_PROFILE_HCS10017;
     apply_profile_resolution(vid);
     palette_reset(vid);
     vid->hires_mode = false;
@@ -94,49 +68,13 @@ bool video_init(video_t* vid) {
 void video_cleanup(video_t* vid) { (void)vid; }
 
 void video_reset(video_t* vid) {
-    /* ula_profile survives reset: the profile models which physical chip
-     * is socketed, not a runtime mode. */
-    vid->ocula_80col = false;
-    vid->ocula_exthires = false;
-    vid->ocula_scroll_x = 0;
-    vid->ocula_scroll_y = 0;
     apply_profile_resolution(vid);
     palette_reset(vid);
     vid->hires_mode = false;
     vid->need_refresh = true;
     vid->vid_mode = 0x02;
     memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
-    memset(vid->ocula_border, 0, sizeof(vid->ocula_border));
-}
-
-void video_set_profile(video_t* vid, ula_profile_t profile) {
-    if (vid->ula_profile == profile) return;
-    vid->ula_profile = profile;
-    vid->ocula_80col = false;
-    vid->ocula_exthires = false;
-    vid->ocula_scroll_x = 0;
-    vid->ocula_scroll_y = 0;
-    apply_profile_resolution(vid);
-    palette_reset(vid);
-    memset(vid->framebuffer, 0, sizeof(vid->framebuffer));
-    memset(vid->ocula_border, 0, sizeof(vid->ocula_border));
-    vid->need_refresh = true;
-}
-
-ula_profile_t video_get_profile(const video_t* vid) {
-    return vid->ula_profile;
-}
-
-const char* video_profile_name(ula_profile_t profile) {
-    return profile == ULA_PROFILE_OCULA ? "ocula" : "ula";
-}
-
-int video_profile_parse(const char* name) {
-    if (!name) return -1;
-    if (strcasecmp(name, "ula") == 0 ||
-        strcasecmp(name, "hcs10017") == 0) return ULA_PROFILE_HCS10017;
-    if (strcasecmp(name, "ocula") == 0) return ULA_PROFILE_OCULA;
-    return -1;
+    memset(vid->video_border, 0, sizeof(vid->video_border));
 }
 
 void video_set_mode(video_t* vid, bool hires) {
@@ -149,10 +87,7 @@ void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b) {
     *r = palette[c][0]; *g = palette[c][1]; *b = palette[c][2];
 }
 
-/* video_get_border_rgb, video_bordered_w/h, video_compose_bordered
- * → ocula_video.c (compositing overscan OCULA, déclarés dans video.h). */
-
-void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+static void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (x < 0 || x >= vid->native_w || y < 0 || y >= vid->native_h) return;
     int off = (y * vid->native_w + x) * 3;
     vid->framebuffer[off] = r; vid->framebuffer[off+1] = g; vid->framebuffer[off+2] = b;
@@ -165,7 +100,7 @@ void set_pixel(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
  *   TEXT mode:  $B400-$B7FF (standard charset, 128 chars x 8 bytes)
  *   HIRES mode: $9800-$9BFF (charset relocated because $B400 is in HIRES bitmap)
  */
-uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, int row) {
+static uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, int row) {
     bool alt = (vid->text_attr & 0x01) != 0;
     if (vid->charset) {
         /* External charset (test/headless path): alt charset lives 128 chars after std */
@@ -178,32 +113,32 @@ uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, int row
     return mem[base + char_idx * 8 + row];
 }
 
-/* Compositing overscan (bordure OCULA) — GÉNÉRIQUE, toujours compilé (lit
- * ocula_border[], qui reste noir sans OCULA). Indépendant du build OCULA. */
+/* Compositing overscan (bordure) — générique, toujours compilé (lit
+ * video_border[], qui reste noir). */
 void video_get_border_rgb(const video_t* vid, int y,
                           uint8_t* r, uint8_t* g, uint8_t* b) {
-    if (y < 0 || y >= OCULA_MAX_H) { *r = *g = *b = 0; return; }
-    *r = vid->ocula_border[y][0];
-    *g = vid->ocula_border[y][1];
-    *b = vid->ocula_border[y][2];
+    if (y < 0 || y >= VIDEO_MAX_H) { *r = *g = *b = 0; return; }
+    *r = vid->video_border[y][0];
+    *g = vid->video_border[y][1];
+    *b = vid->video_border[y][2];
 }
 
 int video_bordered_w(const video_t* vid) {
-    return vid->native_w + 2 * OCULA_BORDER_W;
+    return vid->native_w + 2 * VIDEO_BORDER_W;
 }
 
 int video_bordered_h(const video_t* vid) {
-    return vid->native_h + 2 * OCULA_BORDER_H;
+    return vid->native_h + 2 * VIDEO_BORDER_H;
 }
 
 void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
     int aw = vid->native_w, ah = vid->native_h;
-    int tw = aw + 2 * OCULA_BORDER_W;
-    int th = ah + 2 * OCULA_BORDER_H;
+    int tw = aw + 2 * VIDEO_BORDER_W;
+    int th = ah + 2 * VIDEO_BORDER_H;
     for (int ty = 0; ty < th; ty++) {
-        int ay = ty - OCULA_BORDER_H;
+        int ay = ty - VIDEO_BORDER_H;
         int cy = ay < 0 ? 0 : (ay >= ah ? ah - 1 : ay);
-        const uint8_t* bc = vid->ocula_border[cy];
+        const uint8_t* bc = vid->video_border[cy];
         uint8_t* row = out + (size_t)ty * tw * 3;
         for (int tx = 0; tx < tw; tx++) {
             row[tx * 3 + 0] = bc[0];
@@ -212,7 +147,7 @@ void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
         }
         if (ay >= 0 && ay < ah) {
             const uint8_t* src = vid->framebuffer + (size_t)ay * aw * 3;
-            memcpy(row + (size_t)OCULA_BORDER_W * 3, src, (size_t)aw * 3);
+            memcpy(row + (size_t)VIDEO_BORDER_W * 3, src, (size_t)aw * 3);
         }
     }
     if (w) *w = tw;
@@ -223,7 +158,7 @@ void video_compose_bordered(const video_t* vid, uint8_t* out, int* w, int* h) {
  * Decode a serial attribute (bits 6+5 both zero) and update ULA state.
  * Returns true if the attribute changed the video mode.
  */
-bool decode_attr(video_t* vid, uint8_t attr,
+static bool decode_attr(video_t* vid, uint8_t attr,
                         uint8_t* ink, uint8_t* paper, bool* inverse) {
     uint8_t val = attr & 0x1F;
     switch (val & 0x18) {
@@ -277,7 +212,7 @@ static void render_hires_block(video_t* vid, int x, int y,
  * complemented (XOR 7), matching Oricutron's ula_render_block(inverted,
  * data=0) which uses bg^7 for every dot.
  */
-void render_attr_block(video_t* vid, int x, int y,
+static void render_attr_block(video_t* vid, int x, int y,
                               uint8_t paper, int height, bool inverse) {
     uint8_t bg = inverse ? (uint8_t)(paper ^ 0x07) : paper;
     uint8_t pr, pg, pb;
@@ -325,27 +260,16 @@ void render_attr_block(video_t* vid, int x, int y,
  * Even rows show the top half (glyph rows 0-3), odd rows the bottom half
  * (glyph rows 4-7). This reproduces the "double-height must start on an even
  * row or it is garbled" hardware quirk. */
-int effective_chline(video_t* vid, int chline, int row) {
+static int effective_chline(video_t* vid, int chline, int row) {
     if (vid->text_attr & 0x02)
         return (chline >> 1) + ((row & 1) ? 4 : 0);
     return chline;
 }
 
 /* Whether blink-attr is currently in its "hidden/inverted" phase. */
-bool blink_phase_on(video_t* vid) {
+static bool blink_phase_on(video_t* vid) {
     return (vid->text_attr & 0x04) && (vid->frame_counter & 0x10);
 }
-
-/**
- * Render one 80-column text scanline (OCULA profile, extended serial
- * attribute 25). All 28 rows (lines 0-223) read from $A000 + row*80;
- * there is no HIRES mixing — a HIRES attribute in the stream still
- * updates vid_mode, which is re-latched at the next frame start.
- * Serial attributes (ink/paper/text attrs) work per column as in the
- * stock 40-column mode.
- */
-/* render_80col_scanline, render_exthires_scanline → ocula_video.c (extraits,
- * déclarés dans video_internal.h ; utilisent les helpers de rendu partagés). */
 
 /* Rangées de statut 200-223 : toujours TEXT depuis $BB80 (rows 25-27). Factorisé
  * pour être réutilisé par le mode chunky NG (§5.8), dont seules les lignes
@@ -452,35 +376,13 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (y == 0) {
         vid->frame_counter++;
 
-        /* OCULA frame-start latches (stride stays stable for a whole
-         * frame): 80-col = bit 0 with HIRES clear; ext-HIRES = bit 0
-         * with HIRES set. ocula_80col_forced (--ocula-80col-basic) bypasses
-         * the vid_mode check so BASIC's standard attrs don't drop the mode.
-         * (The redefinable palette is re-read per scanline below.)
-         *
-         * Opt-in (sprint 45): the extended modes only react to the
-         * serial attributes 25/27/29/31 once the OCULA has been unlocked.
-         * Until then attrs 25/27 keep their stock Oric meaning, so games
-         * that use them interchangeably (cf. Dbug, forum t=2709) are not
-         * disturbed. The forced BASIC-mirror mode is an explicit CLI
-         * opt-in and stays independent of the unlock. */
-        bool ext_enabled = (vid->ula_profile == ULA_PROFILE_OCULA) &&
-                           vid->ocula_unlocked;
-        bool want_80col = vid->ocula_80col_forced ||
-                          (ext_enabled && ((vid->vid_mode & 0x05) == 0x01));
-        bool want_exthires = !vid->ocula_80col_forced && ext_enabled &&
-                             ((vid->vid_mode & 0x05) == 0x05);
-        /* ULA-NG modes étendus (§5.8) : latchés au début de trame comme les
-         * modes OCULA (résolution stable une trame entière). Live via les
-         * caches ula_ng ; NULL en test unitaire. */
+        /* ULA-NG modes étendus (§5.8) : latchés au début de trame (résolution
+         * stable une trame entière). Live via les caches ula_ng ; NULL en test
+         * unitaire. */
         bool want_ng_chunky = vid->ng_chunky_active && *vid->ng_chunky_active;
         bool want_ng_text80 = vid->ng_text80_active && *vid->ng_text80_active;
-        if (want_80col != vid->ocula_80col ||
-            want_exthires != vid->ocula_exthires ||
-            want_ng_chunky != vid->ng_chunky ||
+        if (want_ng_chunky != vid->ng_chunky ||
             want_ng_text80 != vid->ng_text80) {
-            vid->ocula_80col = want_80col;
-            vid->ocula_exthires = want_exthires;
             vid->ng_chunky = want_ng_chunky;
             vid->ng_text80 = want_ng_text80;
             apply_profile_resolution(vid);
@@ -489,31 +391,12 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
         }
     }
 
-    /* OCULA redefinable palette: re-read at the START OF EVERY SCANLINE
-     * (sprint 46). A program that rewrites $BFE0-$BFE7 between scanlines
-     * therefore gets per-line palette changes — a single change is the
-     * top/bottom split of the 1985 Multicoloric card (Micr'Oric n°9),
-     * one change per line gives copper-style rasters, and continuous
-     * changes give plasmas. The scanline-accurate main loop samples each
-     * line at its real CPU cycle, so the palette seen is the one in RAM
-     * at that moment. Inert while locked / on a stock ULA. */
+    /* Palette relue au début de chaque scanline (LUT ULA-NG §5.1 si active). */
     palette_latch(vid, memory);
-
-    /* Border register ($BFEA) re-read on the same per-scanline schedule:
-     * a value rewritten between scanlines paints border raster bars. */
-    border_latch(vid, memory, y);
 
     /* ULA resets attributes at start of every scanline. */
     vid->text_attr = 0;
 
-    if (vid->ocula_80col) {
-        render_80col_scanline(vid, memory, y);
-        return;
-    }
-    if (vid->ocula_exthires && y < 200) {
-        render_exthires_scanline(vid, memory, y);
-        return;
-    }
     /* ext-HIRES lines 200-223 fall through to the standard bottom text
      * rows ($BB80): serial attributes still decode there, which is the
      * in-band escape hatch out of the bitmap-only extended mode. */

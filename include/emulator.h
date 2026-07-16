@@ -39,11 +39,10 @@
 #include "utils/profiler.h"
 #include "utils/symbols.h"
 #include "io/loci.h"
-#include "io/ocula_gpu.h"
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.79.1-alpha"
+#define EMU_VERSION "1.80.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -125,7 +124,6 @@ typedef struct emulator_s {
     ay3891x_t psg;
     video_t video;
     osd_t osd;                /* OSD overlay : changement de média à chaud (F6) */
-    ocula_gpu_t ocula_gpu;   /* OCULA-GPU window $03E8-$03EF (étape 5) */
     ula_ng_t ula_ng;         /* ULA-NG : registres $0340-$035F (verrou/extensions) */
     hostfs_t hostfs;
 
@@ -315,12 +313,12 @@ typedef struct emulator_s {
      * where the accelerated renderer presents an all-black window. */
     bool render_software;
 
-    /* Disable the OCULA overscan border in the window (--no-border). The
-     * border is composited on by default (Sprint 65). */
+    /* Disable the overscan border in the window (--no-border). The border is
+     * composited on by default (generic overscan infra). */
     bool no_border;
 
-    /* Include the OCULA overscan border in image/AVI exports (--export-border).
-     * Off by default so exports keep the active-area dimensions (Sprint 77). */
+    /* Include the overscan border in image/AVI exports (--export-border).
+     * Off by default so exports keep the active-area dimensions. */
     bool export_border;
 
     /* Interactive debugger */

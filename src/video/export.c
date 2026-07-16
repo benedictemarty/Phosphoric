@@ -141,7 +141,7 @@ bool video_export_auto(const video_t* vid, const char* filename) {
 bool video_export_auto_bordered(const video_t* vid, const char* filename) {
     if (!vid || !filename) return false;
 
-    size_t cap = (size_t)OCULA_BORDERED_MAX_W * (size_t)OCULA_BORDERED_MAX_H * 3;
+    size_t cap = (size_t)VIDEO_BORDERED_MAX_W * (size_t)VIDEO_BORDERED_MAX_H * 3;
     uint8_t* buf = (uint8_t*)malloc(cap);
     if (!buf) return false;
 

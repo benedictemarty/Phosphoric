@@ -8,7 +8,7 @@
  * Implements .ost (Oric Save sTate) format:
  * - 48-byte header (magic, version, file size, CRC32, emu version)
  * - Sequential sections: CPU, MEM, VIA, PSG, VID, OCB, KBD, FDC, MDC, TAP, SER, META
- *   (OCB = OCULA $A000-$BFFF side banks, present only once banking was used)
+ *  
  * - CRC32 integrity check over all data after the header
  */
 
@@ -250,34 +250,8 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     sec = begin_section(fp, "VID\0");
     write_u8(fp, emu->video.hires_mode ? 1 : 0);
     write_u8(fp, emu->video.vid_mode);
-    write_u8(fp, (uint8_t)emu->video.ula_profile);
+    write_u8(fp, 0);   /* réservé (ancien profil ULA, retiré) */
     end_section(fp, sec);
-
-    /* ── OCB Section (OCULA banking, only once side banks exist) ── */
-    if (emu->memory.ocula_bank_mem) {
-        sec = begin_section(fp, "OCB\0");
-        write_u8(fp, emu->memory.ocula_bank);
-        fwrite(emu->memory.ocula_bank_mem, 1,
-               (OCULA_BANK_COUNT - 1) * OCULA_BANK_SIZE, fp);
-        end_section(fp, sec);
-    }
-
-    /* ── OGP Section (OCULA-GPU registers + hardware scroll) ── */
-    if (emu->video.ula_profile == ULA_PROFILE_OCULA) {
-        sec = begin_section(fp, "OGP\0");
-        write_u8(fp, emu->ocula_gpu.status);
-        write_u16le(fp, emu->ocula_gpu.arg_ptr);
-        write_bool(fp, emu->ocula_gpu.wait_vbl);
-        write_u8(fp, emu->video.ocula_scroll_x);
-        write_u8(fp, emu->video.ocula_scroll_y);
-        write_bool(fp, emu->memory.ocula_unlocked);  /* sprint 45: opt-in unlock */
-        /* sprint 66: write-only register file (palette + border + armed) */
-        fwrite(emu->memory.ocula_reg_pal, 1, 8, fp);
-        write_u8(fp, emu->memory.ocula_reg_border);
-        write_bool(fp, emu->memory.ocula_regs_armed);
-        write_u8(fp, emu->memory.ocula_map_page);  /* sprint 67: page-3 mapping */
-        end_section(fp, sec);
-    }
 
     /* ── KBD Section ── */
     sec = begin_section(fp, "KBD\0");
@@ -592,14 +566,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             bool hires = read_u8(fp) != 0;
             emu->video.vid_mode = read_u8(fp);
             emu->video.hires_mode = hires;
-            /* ULA profile byte appended in 1.17.0 — older .ost files have
-             * a 2-byte VID section, default them to the stock HCS 10017. */
-            ula_profile_t profile = ULA_PROFILE_HCS10017;
-            if (sec_size >= 3) {
-                uint8_t p = read_u8(fp);
-                if (p == ULA_PROFILE_OCULA) profile = ULA_PROFILE_OCULA;
-            }
-            video_set_profile(&emu->video, profile);
+            if (sec_size >= 3) (void)read_u8(fp);   /* ancien octet profil ULA, ignoré */
             /* Recalculate video pointers */
             emu->video.charset = emu->memory.charset;
             if (hires) {
@@ -608,40 +575,6 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 emu->video.screen_ram = emu->memory.ram + 0xBB80;
             }
             /* Regenerate framebuffer */
-            video_render_frame(&emu->video, emu->memory.ram);
-        } else if (memcmp(tag, "OCB\0", 4) == 0) {
-            uint8_t bank = read_u8(fp);
-            /* Select a side bank first to force allocation, then load */
-            if (memory_ocula_set_bank(&emu->memory, 1)) {
-                fread(emu->memory.ocula_bank_mem, 1,
-                      (OCULA_BANK_COUNT - 1) * OCULA_BANK_SIZE, fp);
-                memory_ocula_set_bank(&emu->memory, bank);
-            }
-        } else if (memcmp(tag, "OGP\0", 4) == 0) {
-            emu->ocula_gpu.status = read_u8(fp);
-            emu->ocula_gpu.arg_ptr = read_u16le(fp);
-            emu->ocula_gpu.wait_vbl = read_bool(fp);
-            emu->video.ocula_scroll_x = read_u8(fp);
-            emu->video.ocula_scroll_y = read_u8(fp);
-            /* Opt-in unlock byte appended in sprint 45 (6-byte OGP
-             * sections predate it). Older OCULA saves had the extensions
-             * always active, so default them to unlocked to preserve the
-             * restored display; newer saves carry the real state. */
-            emu->memory.ocula_unlocked = true;
-            if (sec_size >= 7)
-                emu->memory.ocula_unlocked = read_bool(fp);
-            emu->video.ocula_unlocked = emu->memory.ocula_unlocked;
-            /* sprint 66: write-only register file appended (10 bytes:
-             * 8 palette + border + armed). Older saves lack it → stays zeroed
-             * (in-band path), which is the pre-sprint-66 behaviour. */
-            if (sec_size >= 17) {
-                fread(emu->memory.ocula_reg_pal, 1, 8, fp);
-                emu->memory.ocula_reg_border = read_u8(fp);
-                emu->memory.ocula_regs_armed = read_bool(fp);
-            }
-            if (sec_size >= 18)                  /* sprint 67: page-3 mapping */
-                emu->memory.ocula_map_page = read_u8(fp);
-            /* Re-render with the restored hardware scroll applied */
             video_render_frame(&emu->video, emu->memory.ram);
         } else if (memcmp(tag, "KBD\0", 4) == 0) {
             fread(emu->keyboard.matrix, 1, 8, fp);

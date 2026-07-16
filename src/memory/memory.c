@@ -52,111 +52,7 @@ bool memory_init(memory_t* mem) {
     return true;
 }
 
-void memory_cleanup(memory_t* mem) {
-    free(mem->ocula_bank_mem);
-    mem->ocula_bank_mem = NULL;
-    mem->ocula_bank = 0;
-}
-
-bool memory_ocula_set_bank(memory_t* mem, uint8_t bank) {
-    bank &= 0x07;
-    if (bank != 0 && !mem->ocula_bank_mem) {
-        mem->ocula_bank_mem = calloc(OCULA_BANK_COUNT - 1, OCULA_BANK_SIZE);
-        if (!mem->ocula_bank_mem) return false;
-    }
-    mem->ocula_bank = bank;
-    return true;
-}
-
-uint8_t memory_ocula_get_bank(const memory_t* mem) {
-    return mem->ocula_bank;
-}
-
-void memory_ocula_unlock_write(memory_t* mem, uint8_t value) {
-    switch (value) {
-        case OCULA_UNLOCK_O:
-            mem->ocula_unlock_knock = 1;       /* first knock byte seen */
-            break;
-        case OCULA_UNLOCK_C:
-            if (mem->ocula_unlock_knock == 1)  /* 'O' then 'C': arm */
-                mem->ocula_unlocked = true;
-            mem->ocula_unlock_knock = 0;
-            break;
-        case OCULA_UNLOCK_LOCK:
-            mem->ocula_unlocked = false;       /* explicit re-lock */
-            mem->ocula_unlock_knock = 0;
-            mem->ocula_regs_armed = false;     /* register file goes inert too */
-            mem->ocula_map_page = 0;           /* unmap the page-3 window */
-            break;
-        default:
-            mem->ocula_unlock_knock = 0;       /* any other byte resets */
-            break;
-    }
-}
-
-void memory_ocula_reg_write(memory_t* mem, uint8_t page, uint8_t value) {
-    if (!mem->ocula_unlocked) return;          /* gated by the opt-in unlock */
-    if (page >= OCULA_REG_PAL_PAGE && page <= OCULA_REG_PAL_PAGE + 7) {
-        mem->ocula_reg_pal[page - OCULA_REG_PAL_PAGE] = value;
-        mem->ocula_regs_armed = true;
-    } else if (page == OCULA_REG_BORDER_PAGE) {
-        mem->ocula_reg_border = value;
-        mem->ocula_regs_armed = true;
-    } else if (page == OCULA_MAP_PAGE_REG) {
-        mem->ocula_map_page = value;           /* sprint 67: map the page-3 window */
-    }
-}
-
-/* Phase C (sprint 67): is `address` inside the mapped 256-byte OCULA window? */
-bool memory_ocula_page_mapped(const memory_t* mem, uint16_t address) {
-    return mem->ocula_unlocked && mem->ocula_map_page &&
-           (uint8_t)(address >> 8) == mem->ocula_map_page;
-}
-
-/* Read one byte of the mapped OCULA window: a R/W view of the OCULA state. */
-uint8_t memory_ocula_page_read(const memory_t* mem, uint8_t off) {
-    switch (off) {
-        case OCULA_PG_SIG_O: return 'O';
-        case OCULA_PG_SIG_C: return 'C';
-        case OCULA_PG_CAPS:  return 0x1F;      /* 80col|exthires|pal|bank|gpu */
-        case OCULA_PG_BANK:  return mem->ocula_bank;
-        case OCULA_PG_BORDER: return mem->ocula_reg_border;
-        default:
-            if (off >= OCULA_PG_PAL && off < OCULA_PG_PAL + 8)
-                return mem->ocula_reg_pal[off - OCULA_PG_PAL];
-            return 0;                          /* reserved */
-    }
-}
-
-/* Write one byte of the mapped OCULA window. Palette/border writes arm the
- * register file (same state as the ROM-space writes of Phase A); the bank
- * slot drives the CPU banking; signature/caps/reserved are read-only. */
-void memory_ocula_page_write(memory_t* mem, uint8_t off, uint8_t value) {
-    if (off == OCULA_PG_BANK) {
-        memory_ocula_set_bank(mem, (uint8_t)(value & 0x07));
-    } else if (off == OCULA_PG_BORDER) {
-        mem->ocula_reg_border = value;
-        mem->ocula_regs_armed = true;
-    } else if (off >= OCULA_PG_PAL && off < OCULA_PG_PAL + 8) {
-        mem->ocula_reg_pal[off - OCULA_PG_PAL] = value;
-        mem->ocula_regs_armed = true;
-    }
-    /* signature / caps / reserved: ignored */
-}
-
-bool memory_ocula_regs_armed(const memory_t* mem) {
-    return mem->ocula_regs_armed;
-}
-
-bool memory_ocula_unlocked(const memory_t* mem) {
-    return mem->ocula_unlocked;
-}
-
-/* CPU view of the $A000-$BFFF window under OCULA banking. */
-static inline uint8_t* ocula_window_ptr(memory_t* mem, uint16_t address) {
-    return &mem->ocula_bank_mem[(mem->ocula_bank - 1) * OCULA_BANK_SIZE +
-                                (address - OCULA_BANK_BASE)];
-}
+void memory_cleanup(memory_t* mem) { (void)mem; }
 
 bool memory_load_rom(memory_t* mem, const char* filename, uint16_t offset) {
     FILE* fp = fopen(filename, "rb");
@@ -198,14 +94,6 @@ static inline void mem_notify(memory_t* mem, uint16_t addr, uint8_t val,
 uint8_t memory_read(memory_t* mem, uint16_t address) {
     uint8_t val;
 
-    /* OCULA page-3 window (sprint 67, Phase C): when mapped + unlocked, this
-     * CPU page is a R/W view of the OCULA state, overriding normal memory. */
-    if (memory_ocula_page_mapped(mem, address)) {
-        val = memory_ocula_page_read(mem, (uint8_t)(address & 0xFF));
-        mem_notify(mem, address, val, MEM_READ);
-        return val;
-    }
-
     /* I/O space: VIA 6522 at $0300-$030F (mirrored in $0300-$03FF) */
     if (address >= 0x0300 && address <= 0x03FF) {
         if (mem->io_read) {
@@ -217,12 +105,7 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
 
     /* RAM: $0000-$BFFF */
     if (address < 0xC000) {
-        /* OCULA banking: CPU sees the selected side bank at $A000-$BFFF.
-         * The ULA always scans bank 0 (mem->ram). */
-        if (mem->ocula_bank != 0 && address >= OCULA_BANK_BASE)
-            val = *ocula_window_ptr(mem, address);
-        else
-            val = mem->ram[address];
+        val = mem->ram[address];
         /* RAM stuck-bit fault injection (US6): zero cost when no faults set. */
         if (mem->stuck0 | mem->stuck1)
             val = (uint8_t)((val & (uint8_t)~mem->stuck0) | mem->stuck1);
@@ -265,13 +148,6 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
 void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     mem_notify(mem, address, value, MEM_WRITE);
 
-    /* OCULA page-3 window (sprint 67, Phase C): mapped + unlocked → writes hit
-     * the OCULA state (bank/palette/border), overriding normal memory. */
-    if (memory_ocula_page_mapped(mem, address)) {
-        memory_ocula_page_write(mem, (uint8_t)(address & 0xFF), value);
-        return;
-    }
-
     /* I/O space: VIA at $0300-$030F */
     if (address >= 0x0300 && address <= 0x03FF) {
         if (mem->io_write) {
@@ -282,29 +158,7 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
 
     /* RAM: $0000-$BFFF always writable */
     if (address < 0xC000) {
-        if (mem->ocula_bank != 0 && address >= OCULA_BANK_BASE)
-            *ocula_window_ptr(mem, address) = value;
-        else
-            mem->ram[address] = value;
-
-        /* OCULA 80-col BASIC mirror: reflect 40-col screen writes to the
-         * 80-col screen at $A000. Screen $BB80-$BFDF (40×28) → $A000 left
-         * half (col 0-39 of 80). Catches STA ($12),Y, STA $BB80,X and the
-         * scroll fill STA $BB7F,Y via the unified write path. */
-        if (mem->ocula_80col_mirror &&
-            address >= 0xBB80 && address <= 0xBFDF) {
-            uint16_t off = address - 0xBB80;
-            uint16_t row = off / 40;
-            uint16_t col = off % 40;
-            if (row < 28) {
-                mem->ram[0xA000 + row * 80 + col] = value;
-                /* Col 39 (last of 40-col row) is mirrored to col 79 too so
-                 * that CAPS/status chars written at the 40-col right edge
-                 * appear at the 80-col right edge, not the middle. */
-                if (col == 39)
-                    mem->ram[0xA000 + row * 80 + 79] = value;
-            }
-        }
+        mem->ram[address] = value;
         return;
     }
 
@@ -319,19 +173,8 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     } else if (!mem->rom_enabled) {
         /* Legacy mode: Write to overlay (stored in rom array when ROM is disabled) */
         mem->rom[address - 0xC000] = value;
-    } else {
-        /* ROM enabled: the chip ignores the write, but the OCULA snoops
-         * ROM-space blind-writes as a write-only register space. The
-         * unlock register (page $FB) arms the opt-in extensions. This is
-         * only reachable when genuine ROM is mapped — never a RAM-overlay
-         * write — matching what the real ULA sees on the bus. */
-        uint8_t page = (uint8_t)(address >> 8);
-        if ((address & 0xFF00) == OCULA_UNLOCK_PAGE)
-            memory_ocula_unlock_write(mem, value);
-        else if (page == OCULA_REG_BORDER_PAGE || page == OCULA_MAP_PAGE_REG ||
-                 (page >= OCULA_REG_PAL_PAGE && page <= OCULA_REG_PAL_PAGE + 7))
-            memory_ocula_reg_write(mem, page, value);   /* sprint 66/67 registers */
     }
+    /* ROM enabled: the chip ignores the write. */
 }
 
 uint16_t memory_read_word(memory_t* mem, uint16_t address) {

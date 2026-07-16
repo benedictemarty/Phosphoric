@@ -167,17 +167,6 @@ ifeq ($(HTTPAPI), 1)
     SOURCES += src/network/http_api.c
 endif
 
-# OCULA (remplacement d'ULA RP2350) — ON par défaut. `make OCULA=0` compile un
-# binaire SANS OCULA : les 3 modules dédiés (io/gpu/video) sont remplacés par des
-# stubs no-op (ocula_stubs.c), sans #ifdef dans les fichiers cœur. Preuve
-# d'isolation. Voir docs/ocula/CODE-MAP.md.
-OCULA ?= 1
-ifeq ($(OCULA), 1)
-    CFLAGS  += -DHAS_OCULA
-    SOURCES += src/io/ocula_io.c src/io/ocula_gpu.c src/video/ocula_video.c
-else
-    SOURCES += src/io/ocula_stubs.c
-endif
 
 # Windows v1 : swap the POSIX-only modules for their Windows variants
 ifeq ($(WIN), 1)
@@ -211,7 +200,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all clean tools tests test-cpu test-memory test-io test-ula-ng test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all clean tools tests test-cpu test-memory test-io test-ula-ng test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -300,7 +289,7 @@ test-rom: $(TEST_ROM_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_ROM_SRCS) $(LDFLAGS) -o test_rom
 	@./test_rom
 
-TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/ocula_video.c src/video/export.c \
+TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/export.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/io/via6522.c \
                   src/io/ula_ng.c src/utils/logging.c
@@ -361,7 +350,7 @@ TEST_SAVESTATE_SRCS = tests/unit/test_savestate.c src/savestate.c \
                       src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                       src/memory/memory.c src/memory/banking.c \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
-                      src/audio/ay3891x.c src/video/video.c src/video/ocula_video.c src/io/ula_ng.c \
+                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                       src/storage/disk.c src/storage/sedoric.c \
                       src/utils/logging.c
 
@@ -394,7 +383,7 @@ test-joystick: $(TEST_JOYSTICK_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_JOYSTICK_SRCS) $(LDFLAGS) -o test_joystick
 	@./test_joystick
 
-TEST_RENDERER_SRCS = tests/unit/test_renderer.c src/video/video.c src/video/ocula_video.c src/video/renderer.c \
+TEST_RENDERER_SRCS = tests/unit/test_renderer.c src/video/video.c src/video/renderer.c \
                      src/io/ula_ng.c \
                      src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
@@ -408,13 +397,6 @@ test-osd: $(TEST_OSD_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_OSD_SRCS) $(LDFLAGS) -o test_osd
 	@./test_osd
 
-TEST_OCULA_SRCS = tests/unit/test_ocula.c src/video/video.c src/video/ocula_video.c src/video/renderer.c \
-                  src/video/export.c src/io/ocula_io.c src/io/ocula_gpu.c src/io/ula_ng.c \
-                  src/memory/memory.c src/memory/banking.c src/utils/logging.c
-
-test-ocula: $(TEST_OCULA_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_OCULA_SRCS) $(LDFLAGS) -o test_ocula
-	@./test_ocula
 
 TEST_TRACE_SRCS = tests/unit/test_trace.c src/utils/trace.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
@@ -544,7 +526,7 @@ TEST_COVERAGE_SRCS = tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcode
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c \
                      src/savestate.c src/debugger.c \
-                     src/audio/ay3891x.c src/video/video.c src/video/ocula_video.c src/io/ula_ng.c \
+                     src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 
 test-coverage: $(TEST_COVERAGE_SRCS)
@@ -617,7 +599,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-ula-ng test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-ocula test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible
+tests: test-cpu test-memory test-io test-ula-ng test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -749,7 +731,7 @@ uninstall:
 
 clean:
 	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TOOLS)
-	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_avi test_audio test_debugger test_gdbstub test_movie test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_ocula test_trace test_profiler test_rominfo test_serial test_picowifi test_keyboard test_coverage
+	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_avi test_audio test_debugger test_gdbstub test_movie test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_picowifi test_keyboard test_coverage
 	rm -f tools/*.o tools/*.d
 	rm -f web/phosphoric.html web/phosphoric.js web/phosphoric.wasm web/phosphoric.data
 	find . -name '*.gcno' -o -name '*.gcda' -o -name '*.gcov' -o -name '*.d' | xargs rm -f 2>/dev/null
@@ -798,7 +780,6 @@ help:
 	@echo "  test-printer - Run printer tests"
 	@echo "  test-mcp40  - Run MCP-40 plotter tests"
 	@echo "  test-renderer- Run display scaling tests"
-	@echo "  test-ocula   - Run OCULA ULA-profile tests"
 	@echo "  test-trace   - Run CPU trace logging tests"
 	@echo "  test-profiler- Run CPU profiler tests"
 	@echo "  test-rominfo - Run ROM analysis tests"

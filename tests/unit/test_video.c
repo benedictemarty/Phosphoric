@@ -138,8 +138,8 @@ TEST(test_export_bordered_dimensions) {
     fclose(fp);
     ASSERT_EQ(got, 3);
     ASSERT_TRUE(strncmp(magic, "P6", 2) == 0);
-    ASSERT_EQ(w, vid.native_w + 2 * OCULA_BORDER_W);
-    ASSERT_EQ(h, vid.native_h + 2 * OCULA_BORDER_H);
+    ASSERT_EQ(w, vid.native_w + 2 * VIDEO_BORDER_W);
+    ASSERT_EQ(h, vid.native_h + 2 * VIDEO_BORDER_H);
 
     /* Bordered payload is strictly larger than the active-area export. */
     long sz = file_size(path);
