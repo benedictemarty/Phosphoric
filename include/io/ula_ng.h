@@ -26,6 +26,8 @@
 #define ULA_NG_WINDOW_HI   0x035Fu
 #define ULA_NG_REG_LOCK    0x0340u   /* NG_LOCK (W) / NG_ID (R) */
 #define ULA_NG_REG_MODE    0x0341u   /* NG_MODE : b0 = extensions actives */
+#define ULA_NG_REG_SCR_LO  0x0342u   /* NG_SCRSTART lo : base fetch vidéo (LSB) */
+#define ULA_NG_REG_SCR_HI  0x0343u   /* NG_SCRSTART hi : base fetch vidéo (MSB) */
 #define ULA_NG_REG_RASTER  0x0346u   /* NG_RASTERLINE : ligne déclenchant l'IRQ */
 #define ULA_NG_REG_STATUS  0x0347u   /* NG_STATUS : R b7=IRQ raster en attente ;
                                         W = acquit + b0 = enable IRQ raster */
@@ -53,7 +55,11 @@ typedef struct ula_ng_s {
     uint8_t pal[ULA_NG_PAL_ENTRIES][3];
     uint8_t pal_idx;       /* NG_PAL_IDX courant (0-15) */
     uint8_t pal_r;         /* quartet R latché, en attente de G/B */
-    bool    pal_active;    /* = unlocked && NG_MODE.b0 (cache pour le hook vidéo) */
+    bool    active;    /* = unlocked && NG_MODE.b0 (gate général NG : hooks vidéo) */
+
+    /* Start-address (§5.3) : remplace la base du fetch vidéo ($A000/$BB80).
+     * 0 = utiliser la base par défaut du mode (compat). */
+    uint16_t scrstart;
 
     /* IRQ raster (§5.2) */
     uint8_t raster_line;   /* NG_RASTERLINE : ligne (trame 0-311) déclenchant l'IRQ */

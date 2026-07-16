@@ -6,6 +6,22 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 109: ULA-NG étape 4 — start-address (§5.3) (v1.69.0-alpha) - DONE
+Double buffering + scroll vertical grossier par relocalisation du fetch vidéo.
+- [x] `NG_SCRSTART` ($0342 LSB / $0343 MSB, 16 bits) remplace la base du fetch
+      ($A000 HIRES / $BB80 TEXT) pour la zone principale (lignes 0-199) quand
+      actif (déverrouillé && NG_MODE.b0). **$0000 = base par défaut** (compat, pas
+      de blank au reset). Rangées de statut 200-223 fixes à $BB80.
+- [x] Câblage `video_t` par pointeur `ng_scrstart` ; flag NG général renommé
+      `active` (`ng_active` côté vidéo) — gate palette ET start-address.
+- [x] **Test visible** : `NG_SCRSTART = $BB80+40` → écran remonté d'une rangée,
+      comparaison **pixel-exacte** du framebuffer. Non-régression (test-video 22/22).
+- [x] test-ula-ng 18 → 22 checks. 1005 → 1009 tests.
+> **Suite** : palette/scanline (§5.4), scroll fin (§5.5), attributs // (§5.6),
+> sprites (§5.7), chunky/80col (§5.8).
+
+---
+
 ### Sprint 108: ULA-NG étape 3 — IRQ raster (§5.2) (v1.68.0-alpha) - DONE
 Interruption raster programmable (la feature la plus demandée).
 - [x] Source `IRQF_ULANG = 0x20` (cpu6502.h), combinée au bitfield 6502

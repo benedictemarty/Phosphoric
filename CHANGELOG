@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.69.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 4 : start-address (§5.3)
+
+`NG_SCRSTART` (`$0342` LSB / `$0343` MSB, 16 bits) remplace l'adresse de base du
+fetch vidéo (`$A000` HIRES / `$BB80` TEXT) → double buffering + scroll vertical
+grossier.
+
+- Appliqué au fetch de la **zone principale** (lignes 0-199) quand actif
+  (`déverrouillé && NG_MODE.b0`) ; **`$0000` = base par défaut du mode** (compat,
+  pas de blank au reset ; `$0000` n'est jamais un écran valide). Les 3 rangées de
+  statut (200-223) restent fixes à `$BB80`.
+- Câblage `video_t` par pointeur `ng_scrstart` (calqué palette/OCULA). Le flag NG
+  général `pal_active` est renommé **`active`** (`ng_active` côté vidéo) car il
+  gate maintenant palette ET start-address (même condition).
+- **Test visible** (§4) : `NG_SCRSTART = $BB80+40` → l'écran remonte d'une rangée ;
+  comparaison **pixel-exacte** du framebuffer (rangée texte 0 du décalé == rangée 1
+  de la référence). Non-régression : inactif / `$0000` → base par défaut, vidéo
+  bit-à-bit inchangée (`test-video` 22/22).
+- Tests : `test-ula-ng` 18 → 22 checks (défaut 0, programmation LSB/MSB, no-op
+  verrouillé, reset).
+
+1005 → 1009 tests. EMU_VERSION 1.68.0 → 1.69.0-alpha ; builds natif + SDL2 +
+HTTPAPI OK. Étape suivante : palette par scanline (§5.4).
+
 ## [1.68.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 3 : IRQ raster (§5.2)

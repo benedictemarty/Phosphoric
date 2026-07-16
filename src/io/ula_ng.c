@@ -24,10 +24,11 @@ void ula_ng_reset(ula_ng_t* u) {
     memcpy(u->pal, oric_palette, sizeof(oric_palette));
     u->pal_idx = 0;
     u->pal_r = 0;
-    u->pal_active = false;
+    u->active = false;
     u->raster_line = 0;
     u->raster_enable = false;
     u->raster_pending = false;
+    u->scrstart = 0;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -91,6 +92,12 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
             u->pal_idx = (uint8_t)((u->pal_idx + 1) & 0x0F);
             break;
         }
+        case ULA_NG_REG_SCR_LO:                 /* NG_SCRSTART LSB */
+            u->scrstart = (uint16_t)((u->scrstart & 0xFF00) | value);
+            break;
+        case ULA_NG_REG_SCR_HI:                 /* NG_SCRSTART MSB */
+            u->scrstart = (uint16_t)((u->scrstart & 0x00FF) | (value << 8));
+            break;
         case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
             u->raster_line = value;
             break;
@@ -103,7 +110,7 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         }
     }
     /* Recalcule le cache d'activation palette (unlocked && NG_MODE.b0). */
-    u->pal_active = u->unlocked &&
+    u->active = u->unlocked &&
                     (u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] & ULA_NG_MODE_ENABLE);
     return 1;                     /* consommée */
 }

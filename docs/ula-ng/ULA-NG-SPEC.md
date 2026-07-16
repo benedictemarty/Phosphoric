@@ -153,6 +153,8 @@ Les couleurs logiques deviennent des index dans une **LUT de 16 entrées × 12 b
 ### 5.3 Start address
 `NG_SCRSTART` remplace l'adresse de base fixe du fetch vidéo (`#A000` en HIRES, `#BB80` en TEXT). Par défaut = valeur d'origine. Permet double buffering (basculer entre deux buffers) et scroll vertical grossier (incrément par ligne).
 
+**Implémenté (étape 4, validé)** : `NG_SCRSTART` (`$0342` LSB / `$0343` MSB, 16 bits) est appliqué au **fetch de la zone principale** (lignes 0-199 : `$A000`+y·40 en HIRES, `$BB80`+row·40 en TEXT) quand actif (`déverrouillé && NG_MODE.b0`). **`$0000` = base par défaut du mode** (compat, pas de blank au reset ; `$0000` n'est jamais un écran valide). Les 3 rangées de statut (lignes 200-223) restent fixes à `$BB80`. Câblage `video_t` par pointeur (`ng_scrstart`). Test visible : `NG_SCRSTART = $BB80+40` → l'écran remonte d'une rangée (comparaison pixel-exacte du framebuffer).
+
 ### 5.4 Palette par scanline
 Une petite liste d'instructions palette (mini-copper) en RAM, appliquée pendant le hblank par `ula_ng_scanline`. Format à définir simplement : table de (ligne, index, couleur) triée. Garder trivialement synthétisable (une FIFO relue par ligne).
 

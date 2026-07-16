@@ -127,16 +127,16 @@ TEST(test_palette_default_identity) {
 
 TEST(test_palette_gating) {
     ula_ng_t u; ula_ng_init(&u);
-    ASSERT_FALSE(u.pal_active);                 /* verrouillé */
+    ASSERT_FALSE(u.active);                 /* verrouillé */
     unlock(&u);
-    ASSERT_FALSE(u.pal_active);                 /* déverrouillé mais NG_MODE.b0=0 */
+    ASSERT_FALSE(u.active);                 /* déverrouillé mais NG_MODE.b0=0 */
     ula_ng_write(&u, ULA_NG_REG_MODE, 0x01);    /* NG_MODE.b0 = 1 */
-    ASSERT_TRUE(u.pal_active);
+    ASSERT_TRUE(u.active);
     ula_ng_write(&u, ULA_NG_REG_MODE, 0x00);    /* désactive */
-    ASSERT_FALSE(u.pal_active);
+    ASSERT_FALSE(u.active);
     ula_ng_write(&u, ULA_NG_REG_MODE, 0x01);
     ula_ng_reset(&u);                           /* reset re-verrouille */
-    ASSERT_FALSE(u.pal_active);
+    ASSERT_FALSE(u.active);
 }
 
 TEST(test_palette_program) {
@@ -242,8 +242,43 @@ TEST(test_raster_reset_clears) {
     ASSERT_FALSE(u.raster_enable);
 }
 
+/* ── Étape 4 : start-address (§5.3) ───────────────────────────────────── */
+
+TEST(test_scrstart_default_zero) {
+    ula_ng_t u; ula_ng_init(&u);
+    ASSERT_EQ(u.scrstart, 0);                   /* 0 = base par défaut */
+}
+
+TEST(test_scrstart_program) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0x00);  /* LSB */
+    ula_ng_write(&u, ULA_NG_REG_SCR_HI, 0x90);  /* MSB -> $9000 */
+    ASSERT_EQ(u.scrstart, 0x9000);
+    /* modifier seulement le LSB */
+    ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0x28);
+    ASSERT_EQ(u.scrstart, 0x9028);
+}
+
+TEST(test_scrstart_locked_no_effect) {
+    ula_ng_t u; ula_ng_init(&u);
+    ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0xA8);  /* verrouillé : passthrough */
+    ula_ng_write(&u, ULA_NG_REG_SCR_HI, 0xBB);
+    ASSERT_EQ(u.scrstart, 0);
+}
+
+TEST(test_scrstart_reset_clears) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0x00);
+    ula_ng_write(&u, ULA_NG_REG_SCR_HI, 0xA0);
+    ASSERT_EQ(u.scrstart, 0xA000);
+    ula_ng_reset(&u);
+    ASSERT_EQ(u.scrstart, 0);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-3: unlock + palette + raster IRQ) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-4: unlock + palette + raster + scrstart) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -262,6 +297,10 @@ int main(void) {
     RUN(test_raster_wrong_line);
     RUN(test_raster_gating);
     RUN(test_raster_reset_clears);
+    RUN(test_scrstart_default_zero);
+    RUN(test_scrstart_program);
+    RUN(test_scrstart_locked_no_effect);
+    RUN(test_scrstart_reset_clears);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

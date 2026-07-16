@@ -67,7 +67,7 @@ static bool ocula_regs_active(const video_t* vid) {
 static void palette_latch(video_t* vid, const uint8_t* memory) {
     /* ULA-NG palette-indirection (§5.1) : la LUT NG (déjà RGB888) prime quand
      * les extensions palette sont actives. Entrées 0-7 (mode standard). */
-    if (vid->ng_pal_active && *vid->ng_pal_active && vid->ng_pal) {
+    if (vid->ng_active && *vid->ng_active && vid->ng_pal) {
         for (int i = 0; i < 8; i++) {
             vid->pal_rgb[i][0] = vid->ng_pal[i][0];
             vid->pal_rgb[i][1] = vid->ng_pal[i][1];
@@ -513,7 +513,14 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
 
         for (int col = 0; col < 40; col++) {
             bool hires = (vid->vid_mode & 0x04) != 0;
-            uint16_t base = hires ? (0xA000 + y * 40) : (0xBB80 + row * 40);
+            /* ULA-NG start-address (§5.3) : remplace la base du fetch ($A000
+             * HIRES / $BB80 TEXT) par NG_SCRSTART quand actif (double buffer /
+             * scroll vertical grossier). 0 ou inactif = base par défaut (compat). */
+            uint16_t scr_base = hires ? 0xA000 : 0xBB80;
+            if (vid->ng_active && *vid->ng_active && vid->ng_scrstart && *vid->ng_scrstart)
+                scr_base = *vid->ng_scrstart;
+            uint16_t base = hires ? (uint16_t)(scr_base + y * 40)
+                                  : (uint16_t)(scr_base + row * 40);
             uint8_t byte = memory[base + col];
 
             if ((byte & 0x60) == 0) {

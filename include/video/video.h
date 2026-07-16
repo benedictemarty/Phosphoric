@@ -146,7 +146,8 @@ typedef struct video_s {
     /* ULA-NG palette-indirection (§5.1). Wired from emulator_t.ula_ng ; NULL in
      * the bare unit-test path. When active, the NG LUT overrides pal_rgb. */
     const uint8_t (*ng_pal)[3];       /**< -> ula_ng.pal[16][3] (RGB888) */
-    const bool*    ng_pal_active;     /**< -> ula_ng.pal_active */
+    const bool*    ng_active;     /**< -> ula_ng.active (gate général NG) */
+    const uint16_t* ng_scrstart;  /**< -> ula_ng.scrstart (base fetch, 0=défaut, §5.3) */
 
     /* Active palette, RGB888 per Oric color 0-7. Standard palette by
      * default; under OCULA, redefinable per frame from OCULA_PAL_BASE
