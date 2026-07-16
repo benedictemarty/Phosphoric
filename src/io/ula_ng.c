@@ -25,6 +25,9 @@ void ula_ng_reset(ula_ng_t* u) {
     u->pal_idx = 0;
     u->pal_r = 0;
     u->pal_active = false;
+    u->raster_line = 0;
+    u->raster_enable = false;
+    u->raster_pending = false;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -40,6 +43,7 @@ uint8_t ula_ng_read(ula_ng_t* u, uint16_t addr) {
     switch (addr) {
         case ULA_NG_REG_LOCK:  return ULA_NG_VERSION;                 /* NG_ID */
         case ULA_NG_REG_IDCHK: return (uint8_t)(~ULA_NG_VERSION);     /* NG_IDCHK = ~NG_ID */
+        case ULA_NG_REG_STATUS: return u->raster_pending ? ULA_NG_STATUS_IRQ : 0x00;
         default:               return u->regs[addr - ULA_NG_WINDOW_LO];
     }
 }
@@ -87,6 +91,13 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
             u->pal_idx = (uint8_t)((u->pal_idx + 1) & 0x0F);
             break;
         }
+        case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
+            u->raster_line = value;
+            break;
+        case ULA_NG_REG_STATUS:                 /* acquit (b7=0) + enable (b0) */
+            u->raster_enable = (value & ULA_NG_STATUS_EN) != 0;
+            u->raster_pending = false;
+            break;
         default:
             break;
         }
@@ -95,4 +106,17 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
     u->pal_active = u->unlocked &&
                     (u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] & ULA_NG_MODE_ENABLE);
     return 1;                     /* consommée */
+}
+
+void ula_ng_scanline(ula_ng_t* u, int line) {
+    /* Armée = déverrouillé + extensions actives (NG_MODE.b0) + enable IRQ. */
+    if (!u->unlocked || u->raster_enable == false) return;
+    if (!(u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] & ULA_NG_MODE_ENABLE)) return;
+    if (line == (int)u->raster_line) {
+        u->raster_pending = true;   /* niveau : reste jusqu'à acquittement */
+    }
+}
+
+bool ula_ng_irq(const ula_ng_t* u) {
+    return u->raster_pending;
 }

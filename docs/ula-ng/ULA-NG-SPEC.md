@@ -70,7 +70,7 @@ Fenêtre proposée : **`#0340`-`#035F`** dans la page 3 (libre dans la cartograp
 | `#0344` | `NG_SCROLLX` | R/W | Décalage fin X (0-5 pixels). |
 | `#0345` | `NG_SCROLLY` | R/W | Décalage fin Y (0-7 pixels). |
 | `#0346` | `NG_RASTERLINE` | R/W | Numéro de ligne déclenchant l'IRQ raster. |
-| `#0347` | `NG_STATUS` | R/W | Lecture : b7 = IRQ raster en attente. Écriture : acquittement (clear). |
+| `#0347` | `NG_STATUS` | R/W | Lecture : b7 = IRQ raster en attente. Écriture : **acquittement** (clear b7) **+ b0 = enable IRQ raster** (persistant). |
 | `#0348` | `NG_PAL_IDX` | R/W | Index de palette à programmer (**0-15**, LUT 16 entrées), auto-incrément optionnel. |
 | `#0349`-`#034A` | `NG_PAL_DATA` | R/W | Couleur 12 bits (4096 teintes) : `#0349` = `0000RRRR`, `#034A` = `GGGGBBBB`. |
 | `#0350`-`#035F` | `NG_SPRITE_*` | R/W | Contrôle sprites (voir §5.7) : pointeur table, activation, statut collision. |
@@ -145,6 +145,10 @@ Les couleurs logiques deviennent des index dans une **LUT de 16 entrées × 12 b
 **Numérotation (révision post-audit) :** `ula_ng_scanline` est piloté sur la **ligne trame complète 0-311** (`frame_cycles / 64`), découplé du rendu visible 0-223, pour permettre aussi les IRQ en zone vblank. `NG_RASTERLINE` 8 bits couvre 0-255 (tout le visible + haut vblank) ; un 9ᵉ bit reste réservé dans `NG_MODE` pour 256-311 si besoin.
 
 **Raccord IRQ (résolu par l'audit) :** IRQ 6502 = bitfield **level-triggered OU-câblé** (`cpu.irq`, `include/cpu/cpu6502.h`). Ajouter `IRQF_ULANG = 0x20` (prochain bit libre) et asserter/acquitter via `cpu_irq_set/clear(&emu->cpu, IRQF_ULANG)`. Chaque source garde son bit → **on combine, on n'écrase pas** (exigence respectée par construction).
+
+**Enable (décision d'implémentation, étape 3) :** un bit d'activation évite les IRQ parasites (au reset `NG_RASTERLINE`=0). **`NG_STATUS.b0` (écriture) = enable** (persistant) ; toute écriture de `NG_STATUS` acquitte aussi (clear b7). L'IRQ n'est levée que si **déverrouillé && NG_MODE.b0 && enable**. En BASIC nu (vecteur IRQ en ROM), armer l'IRQ sans ISR gèle la machine (boucle d'IRQ non acquittée) — c'est le comportement attendu ; une barre raster propre requiert un ISR (redirection du vecteur sous Sedoric/overlay).
+
+**Implémenté (étape 3, validé)** : `ula_ng_scanline(line)` piloté par la boucle vidéo sur la trame 0-311, `NG_STATUS.b7`/acquit, `IRQF_ULANG`. Unit tests + observable end-to-end (BASIC gelé quand armé sans ISR).
 
 ### 5.3 Start address
 `NG_SCRSTART` remplace l'adresse de base fixe du fetch vidéo (`#A000` en HIRES, `#BB80` en TEXT). Par défaut = valeur d'origine. Permet double buffering (basculer entre deux buffers) et scroll vertical grossier (incrément par ligne).

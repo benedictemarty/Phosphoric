@@ -173,8 +173,77 @@ TEST(test_palette_locked_no_effect) {
     ASSERT_EQ(u.pal_idx, 0);
 }
 
+/* ── Étape 3 : IRQ raster (§5.2) ──────────────────────────────────────── */
+
+/* Déverrouille + arme l'IRQ raster à la ligne `line`. */
+static void arm_raster(ula_ng_t* u, int line) {
+    unlock(u);
+    ula_ng_write(u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);   /* NG_MODE.b0 */
+    ula_ng_write(u, ULA_NG_REG_RASTER, (uint8_t)line);      /* NG_RASTERLINE */
+    ula_ng_write(u, ULA_NG_REG_STATUS, ULA_NG_STATUS_EN);   /* enable IRQ */
+}
+
+TEST(test_raster_fires_at_line) {
+    ula_ng_t u; ula_ng_init(&u);
+    arm_raster(&u, 100);
+    ula_ng_scanline(&u, 99);
+    ASSERT_FALSE(ula_ng_irq(&u));               /* pas encore */
+    ula_ng_scanline(&u, 100);
+    ASSERT_TRUE(ula_ng_irq(&u));                /* IRQ levée */
+    ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_STATUS), ULA_NG_STATUS_IRQ);  /* b7 */
+}
+
+TEST(test_raster_level_until_ack) {
+    ula_ng_t u; ula_ng_init(&u);
+    arm_raster(&u, 50);
+    ula_ng_scanline(&u, 50);
+    ASSERT_TRUE(ula_ng_irq(&u));
+    ula_ng_scanline(&u, 60);                    /* d'autres lignes : reste levée */
+    ASSERT_TRUE(ula_ng_irq(&u));
+    ula_ng_write(&u, ULA_NG_REG_STATUS, ULA_NG_STATUS_EN);  /* acquit (reste armée) */
+    ASSERT_FALSE(ula_ng_irq(&u));               /* acquittée */
+    ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_STATUS), 0x00);
+    ula_ng_scanline(&u, 50);                    /* re-déclenche à la ligne */
+    ASSERT_TRUE(ula_ng_irq(&u));
+}
+
+TEST(test_raster_wrong_line) {
+    ula_ng_t u; ula_ng_init(&u);
+    arm_raster(&u, 100);
+    for (int y = 0; y < 312; y++) if (y != 100) ula_ng_scanline(&u, y);
+    ASSERT_FALSE(ula_ng_irq(&u));
+}
+
+TEST(test_raster_gating) {
+    ula_ng_t u; ula_ng_init(&u);
+    /* verrouillé : aucune IRQ */
+    ula_ng_scanline(&u, 0);
+    ASSERT_FALSE(ula_ng_irq(&u));
+    /* déverrouillé + NG_MODE.b0 mais enable=0 : aucune IRQ */
+    unlock(&u);
+    ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
+    ula_ng_write(&u, ULA_NG_REG_RASTER, 10);
+    ula_ng_scanline(&u, 10);
+    ASSERT_FALSE(ula_ng_irq(&u));
+    /* enable mais NG_MODE.b0=0 : aucune IRQ */
+    ula_ng_write(&u, ULA_NG_REG_STATUS, ULA_NG_STATUS_EN);
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x00);
+    ula_ng_scanline(&u, 10);
+    ASSERT_FALSE(ula_ng_irq(&u));
+}
+
+TEST(test_raster_reset_clears) {
+    ula_ng_t u; ula_ng_init(&u);
+    arm_raster(&u, 20);
+    ula_ng_scanline(&u, 20);
+    ASSERT_TRUE(ula_ng_irq(&u));
+    ula_ng_reset(&u);
+    ASSERT_FALSE(ula_ng_irq(&u));
+    ASSERT_FALSE(u.raster_enable);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-2: unlock + palette) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-3: unlock + palette + raster IRQ) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -188,6 +257,11 @@ int main(void) {
     RUN(test_palette_program);
     RUN(test_palette_expand_nibble);
     RUN(test_palette_locked_no_effect);
+    RUN(test_raster_fires_at_line);
+    RUN(test_raster_level_until_ack);
+    RUN(test_raster_wrong_line);
+    RUN(test_raster_gating);
+    RUN(test_raster_reset_clears);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

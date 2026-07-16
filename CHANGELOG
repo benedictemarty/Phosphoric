@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.68.0-alpha] - 2026-07-16
+
+### Added — ULA-NG étape 3 : IRQ raster (§5.2)
+
+Interruption raster programmable, la fonctionnalité la plus demandée.
+
+- Nouvelle source d'IRQ `IRQF_ULANG = 0x20` (`cpu6502.h`) — combinée au bitfield
+  level-triggered OU-câblé, sans écraser les IRQ existantes (VIA, disque…).
+- Registres : `NG_RASTERLINE` (`$0346`, ligne trame 0-255) ; `NG_STATUS`
+  (`$0347`) — lecture b7 = IRQ en attente, écriture = acquittement (clear b7)
+  **+ b0 = enable** (bit ajouté pour éviter les IRQ parasites).
+- `ula_ng_scanline(line)` piloté par la boucle vidéo sur la **trame complète
+  0-311** (découplé du rendu visible 0-223) ; lève l'IRQ (niveau) quand
+  `line == NG_RASTERLINE`, si `déverrouillé && NG_MODE.b0 && enable`. Pont vers le
+  6502 : `cpu_irq_set/clear(IRQF_ULANG)` par ligne + à l'acquittement.
+- **Validation** : `test-ula-ng` +5 checks (déclenchement à la ligne, niveau
+  jusqu'à acquit, mauvaise ligne, gating verrou/mode/enable, reset). Observable
+  end-to-end : armer l'IRQ raster sans ISR **gèle BASIC** (la ROM ne l'acquitte
+  pas → boucle d'IRQ), alors que le contrôle sans armement tourne normalement →
+  l'IRQ atteint bien le CPU. Barre raster « propre » = ISR (vecteur redirigé
+  sous Sedoric/overlay), hors BASIC nu.
+- Non-régression : inactif quand verrouillé / `NG_MODE.b0`=0 / enable=0 → aucune
+  IRQ, vidéo et timing inchangés (`test-cpu` 92/92).
+
+1000 → 1005 tests (test-ula-ng 13 → 18). EMU_VERSION 1.67.0 → 1.68.0-alpha ;
+builds natif + SDL2 + HTTPAPI OK. Étape suivante : start-address (§5.3).
+
 ## [1.67.0-alpha] - 2026-07-16
 
 ### Added — ULA-NG étape 2 : palette-indirection (§5.1)

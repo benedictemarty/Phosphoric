@@ -1199,6 +1199,9 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
      * Locked : silently watch $0340 for the 'N','G' unlock sequence and let the
      * write fall through to the VIA mirror (bit-exact, indiscernable). */
     if (ula_ng_addr_in_window(address) && ula_ng_write(&emu->ula_ng, address, value)) {
+        /* Sync the raster IRQ line (NG_STATUS write acknowledges → deassert). */
+        if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
+        else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
         return;
     }
 
@@ -2283,6 +2286,7 @@ static void emulator_run(emulator_t* emu) {
         /* Execute one frame worth of CPU cycles */
         int frame_cycles = 0;
         int rendered_scanlines = 0;
+        int ng_line = 0;            /* ULA-NG raster tick, full PAL frame (0-311) */
         bool vsync_triggered = false;
         /* OCULA opt-in (sprint 45): mirror the unlock state (armed via
          * blind-write ROM, decoded in memory_write) into the video latch
@@ -2410,6 +2414,15 @@ static void emulator_run(emulator_t* emu) {
             while (rendered_scanlines < target_scanline && rendered_scanlines < 224) {
                 video_render_scanline(&emu->video, emu->memory.ram, rendered_scanlines);
                 rendered_scanlines++;
+            }
+            /* ULA-NG raster tick over the FULL PAL frame (0-311), decoupled from
+             * the visible render (0-223). Asserts the raster IRQ line when the
+             * programmed NG_RASTERLINE is crossed (level, cleared by NG_STATUS
+             * ack). No-op unless unlocked + NG_MODE.b0 + raster enable. */
+            while (ng_line < target_scanline && ng_line < ULA_NG_FRAME_LINES) {
+                ula_ng_scanline(&emu->ula_ng, ng_line);
+                if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
+                ng_line++;
             }
         }
 

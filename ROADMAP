@@ -6,6 +6,26 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 108: ULA-NG étape 3 — IRQ raster (§5.2) (v1.68.0-alpha) - DONE
+Interruption raster programmable (la feature la plus demandée).
+- [x] Source `IRQF_ULANG = 0x20` (cpu6502.h), combinée au bitfield 6502
+      level-triggered OU-câblé (aucune IRQ existante écrasée).
+- [x] Registres `NG_RASTERLINE` ($0346), `NG_STATUS` ($0347 : R b7=pending,
+      W=acquit + b0=enable — bit ajouté pour éviter les IRQ parasites au reset).
+- [x] `ula_ng_scanline(line)` piloté par la boucle vidéo sur la **trame complète
+      0-311** (découplé du visible 0-223) ; IRQ niveau à `line==NG_RASTERLINE` si
+      `déverrouillé && NG_MODE.b0 && enable`. Pont `cpu_irq_set/clear(IRQF_ULANG)`
+      par ligne + à l'acquittement.
+- [x] Validation : test-ula-ng +5 checks + **observable end-to-end** (armer sans
+      ISR gèle BASIC → l'IRQ atteint le 6502 ; contrôle non armé tourne). Barre
+      raster propre = ISR (vecteur redirigé sous Sedoric/overlay), hors BASIC nu.
+- [x] Non-régression (inactif verrouillé/mode0/enable0 ; test-cpu 92/92).
+      1000 → 1005 tests (test-ula-ng 13 → 18).
+> **Suite** : start-address (§5.3), palette/scanline (§5.4), scroll fin (§5.5),
+> attributs // (§5.6), sprites (§5.7), chunky/80col (§5.8).
+
+---
+
 ### Sprint 107: ULA-NG étape 2 — palette-indirection (§5.1) (v1.67.0-alpha) - DONE
 Deuxième feature ULA-NG : les couleurs logiques passent par une LUT programmable.
 - [x] LUT ULA-NG **16 entrées × 12 bits** (RGB444) dans `ula_ng_t`, identité au

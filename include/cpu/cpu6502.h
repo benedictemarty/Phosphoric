@@ -45,7 +45,8 @@ typedef enum {
     IRQF_DISK    = 0x02,  /**< Microdisc FDC INTRQ */
     IRQF_SERIAL  = 0x04,  /**< ACIA 6551 serial IRQ */
     IRQF_DTL2000 = 0x08,  /**< Digitelec DTL 2000 ACIA 6850 IRQ */
-    IRQF_MAGECO  = 0x10   /**< Mageco MIDI interface ACIA 6850 IRQ */
+    IRQF_MAGECO  = 0x10,  /**< Mageco MIDI interface ACIA 6850 IRQ */
+    IRQF_ULANG   = 0x20   /**< ULA-NG raster IRQ (NG_RASTERLINE / NG_STATUS) */
 } cpu_irq_source_t;
 
 /**
