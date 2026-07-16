@@ -49,6 +49,8 @@
 #define ULA_NG_REG_SPR_ATTR 0x0354u  /* NG_SPR_ATTR : b0 = sprite visible */
 #define ULA_NG_REG_SPR_DATA 0x0355u  /* NG_SPR_DATA : flux motif 1 o/px (0=transparent, 1-7=index) */
 #define ULA_NG_REG_SPR_STATUS 0x0356u/* NG_SPR_STATUS (R) : b7 = collision (clear on read) */
+#define ULA_NG_REG_VDU     0x0357u   /* NG_VDU (W) : flux de commandes VDU intégré (docs/ula-ng/VDU.md) */
+#define ULA_NG_VDU_MAXPARAMS 4       /* params max d'une commande VDU v0.1 */
 #define ULA_NG_COP_MAX     64        /* entrées max de la liste copper */
 #define ULA_NG_MODE_ATTR   0x02u     /* NG_MODE b1 : attributs parallèles actifs */
 #define ULA_NG_MODE_VIDMASK 0x0Cu    /* NG_MODE b2-3 : mode vidéo (§5.8) */
@@ -131,6 +133,15 @@ typedef struct ula_ng_s {
      * NG_SCRSTART (défaut $A000). */
     bool     chunky_active; /* = active && NG_MODE.b2-3 == 01 */
     bool     text80_active; /* = active && NG_MODE.b2-3 == 10 */
+
+    /* VDU intégré (docs/ula-ng/VDU.md) : port de commandes NG_VDU ($0357). Le
+     * 6502 streame des octets ; l'interpréteur (ci-dessous = stand-in du firmware
+     * soft-core FPGA) traduit en écritures de registres existantes. FSM sans
+     * allocation : code courant + paramètres collectés. */
+    uint8_t  vdu_cmd;                          /* code de commande en cours */
+    uint8_t  vdu_params[ULA_NG_VDU_MAXPARAMS]; /* paramètres collectés */
+    uint8_t  vdu_need;                         /* nb de paramètres attendus (0 = attend un code) */
+    uint8_t  vdu_got;                          /* nb de paramètres déjà collectés */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */

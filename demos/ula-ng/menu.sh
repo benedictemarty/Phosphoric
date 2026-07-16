@@ -55,6 +55,7 @@ while true; do
 ║  3) Attributs : mosaïque par cellule  (§5.6)  ║
 ║  4) Copper / raster bars arc-en-ciel  (§5.4)  ║
 ║  5) Sprite matériel 16x16 rebondissant (§5.7) ║
+║  6) VDU intégré : mosaïque via flux cmd (NG_VDU)║
 ║  q) Quitter                                   ║
 ╚══════════════════════════════════════════════╝
    (mode 80 col : patiente ~30 s, remplissage BASIC)
@@ -67,6 +68,7 @@ MENU
         3) launch ng_attributes.tap ;;
         4) launch ng_copper.tap ;;
         5) launch ng_sprite.tap ;;
+        6) launch ng_vdu.tap ;;
         q|Q) echo "Au revoir."; break ;;
         *) echo "Choix invalide : $choice" ;;
     esac

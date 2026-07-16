@@ -108,6 +108,7 @@ possédée jusqu'au reset.
 | `$0354` | `NG_SPR_ATTR` | W | b0 = sprite visible. |
 | `$0355` | `NG_SPR_DATA` | W | Flux motif 16×16 : 1 o/px (`0`=transparent, `1`-`7`=index LUT), auto-incr. |
 | `$0356` | `NG_SPR_STATUS` | R | b7 = collision sprite-sprite (clear on read). |
+| `$0357` | `NG_VDU` | W | Flux de commandes VDU intégré (voir [VDU.md](VDU.md)). |
 
 ---
 
@@ -184,8 +185,24 @@ demos/ula-ng/menu.sh
 
 ---
 
+## 7 bis. VDU intégré (`NG_VDU` $0357)
+
+Au lieu d'écrire les registres un par un, on peut **streamer des commandes de
+style VDU** dans `$0357` ; l'interpréteur vit **dans l'ULA-NG** (le 6502 ne porte
+aucun pilote). Jeu v0.1 : `20` reset, `22 n` MODE (0 std/1 chunky/2 80col),
+`19 l r g b` palette, `18 a` fond couleur par cellule, `31 col row a` colorer une
+cellule (sans color clash). Exemple BASIC (fond bleu/encre rouge = `$21`) :
+
+```basic
+POKE#340,78:POKE#340,71 : REM deverrouille
+POKE#357,18:POKE#357,#21 : REM VDU 18, $21
+```
+
+Détails, protocole d'upload (v0.2) et état de l'art : **[VDU.md](VDU.md)**.
+
 ## 8. Référence
 
+- `docs/ula-ng/VDU.md` — VDU intégré (port de commandes `NG_VDU`).
 - `docs/ula-ng/ULA-NG-SPEC.md` — spécification complète (registres, timing,
   décisions d'implémentation, cible FPGA).
 - `docs/ula-ng/AUDIT.md` — architecture et frontières « miroir FPGA ».

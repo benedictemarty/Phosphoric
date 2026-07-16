@@ -61,6 +61,8 @@ shot spr "$SPRSEQ"
 shot chunky "340=4E,340=47,341=05,348=00,349=0F,34A=0F"
 # texte 80 colonnes (§5.8) : NG_MODE=0x09 (enable+text80) → 480px
 shot t80 "340=4E,340=47,341=09"
+# VDU intégré : stream VDU 18 (=$12) puis $21 (papier bleu/encre rouge) via NG_VDU ($0357)
+shot vdu "340=4E,340=47,357=12,357=21"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -84,6 +86,7 @@ _,_,atr=load(f"{TMP}/atr.ppm")
 _,_,spr=load(f"{TMP}/spr.ppm")
 cW,cH,chunky=load(f"{TMP}/chunky.ppm")
 tW,tH,t80=load(f"{TMP}/t80.ppm")
+_,_,vdu=load(f"{TMP}/vdu.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -133,6 +136,10 @@ res.append(("chunky 4bpp: %dx%d, magenta(idx0)=%d px"%(cW,cH,cmag), cW==320 and 
 # texte 80 colonnes : résolution 480 large + caractères rendus (pixels non-noirs)
 tnb=sum(1 for o in range(0,tW*tH*3,3) if (t80[o],t80[o+1],t80[o+2])!=(0,0,0))
 res.append(("text 80col: %dx%d, %d non-black px"%(tW,tH,tnb), tW==480 and tnb>1000))
+# VDU intégré : VDU 18 = fond bleu par cellule (papier bleu dominant, comme attributs //)
+vblue=sum(1 for y in range(200) for x in range(W)
+          if (vdu[(y*W+x)*3],vdu[(y*W+x)*3+1],vdu[(y*W+x)*3+2])==(0,0,0xFF))
+res.append(("VDU port: stream 18/$21 -> blue paper fill (%d px)"%vblue, vblue>40000))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)

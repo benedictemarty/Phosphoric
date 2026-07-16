@@ -6,6 +6,23 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 117: VDU intégré ULA-NG v0.1 (v1.77.0-alpha) - DONE
+Port de commandes de style VDU (`NG_VDU` $0357) : le 6502 streame des octets,
+l'interpréteur vit **dans l'ULA-NG** (stand-in du firmware soft-core FPGA).
+Design : `docs/ula-ng/VDU.md` (état de l'art 2026 : Agon VDP, VERA, OCULA-GPU).
+- [x] FSM sans allocation dans `ula_ng.c` ; l'exécution appelle `ula_ng_write`
+      (zéro duplication). Verrouillé → passthrough.
+- [x] Jeu v0.1 : `20` reset, `22 n` MODE, `19 l r g b` palette, `18 a` fond
+      couleur par cellule, `31 col row a` colorer une cellule (sans clash).
+- [x] Démo `ng_vdu.s` : mosaïque par cellule **pilotée uniquement par le flux**
+      ($0357), zéro logique 6502. Menu + README démos.
+- [x] test-ula-ng 47→54 + garde visible (stream 18/$21 → fond bleu). 1036 →
+      1043 tests. Docs VDU.md (v0.1) + README-ULA-NG §7bis.
+> **v0.2 (backlog)** : PLOT/CLG + VRAM chunky porté par l'ULA-NG, sprites/fontes
+> par protocole d'upload « buffered commands », hook du vecteur OSWRCH.
+
+---
+
 ### Sprint 116c: Documentation utilisateur ULA-NG (v1.76.2-alpha) - DONE
 - [x] `docs/ula-ng/README-ULA-NG.md` réécrit et mis à jour aux 8 features
       (était « étapes 1-5 ») : mode « ULA normal » (verrouillé = défaut),

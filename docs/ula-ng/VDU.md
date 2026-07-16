@@ -1,8 +1,12 @@
-# ULA-NG — VDU intégré (design v0.1)
+# ULA-NG — VDU intégré (v0.1)
 
-> **Statut : DOCUMENT DE DESIGN** (à valider avant implémentation). Décrit un
-> port de commandes de style VDU exposé par l'ULA-NG, dont l'interpréteur et la
-> mémoire de travail vivent **dans l'ULA-NG** — pas dans les 64 Ko du 6502.
+> **Statut : v0.1 IMPLÉMENTÉE ET VALIDÉE.** Port de commandes de style VDU
+> exposé par l'ULA-NG (`NG_VDU` $0357), dont l'interpréteur et la mémoire de
+> travail vivent **dans l'ULA-NG** — pas dans les 64 Ko du 6502. Interpréteur
+> dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ; tests
+> `test-ula-ng` ; démo `demos/ula-ng/ng_vdu.s` (mosaïque de couleur par cellule
+> pilotée uniquement par le flux, sans pilote 6502). Le périmètre v0.2 (§4)
+> reste à faire.
 
 ## 1. Objectif
 

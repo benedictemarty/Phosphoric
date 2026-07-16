@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.77.0-alpha] - 2026-07-16
+
+### Added — VDU intégré ULA-NG v0.1 (port de commandes `NG_VDU`)
+
+Implémentation du design `docs/ula-ng/VDU.md` : un **port de commandes de style
+VDU** (`NG_VDU` $0357). Le 6502 *streame* des octets ; l'**interpréteur vit dans
+l'ULA-NG** (`src/io/ula_ng.c`, stand-in du firmware soft-core FPGA) et ne fait
+qu'appeler la logique de registres existante — le CPU **ne porte aucun pilote**.
+
+- FSM sans allocation (`vdu_cmd/params/need/got`) : code + paramètres collectés,
+  exécution à complétion, retour en attente de code ; commande inconnue ignorée.
+- Jeu v0.1 : `20` reset (→ rendu normal), `22 n` MODE (0 std/1 chunky/2 80col),
+  `19 l r g b` palette (LUT RGB444), `18 a` fond couleur par cellule (attributs
+  //), `31 col row a` colorer une cellule (sans color clash).
+- Verrouillé → passthrough (aucun effet, non-régression).
+- **Démo** `demos/ula-ng/ng_vdu.s` : mosaïque de couleur par cellule pilotée
+  **uniquement par le flux VDU** (writes dans $0357), zéro logique 6502. Menu +
+  README des démos mis à jour. Vérifié headless : 8 couleurs.
+- Tests : `test-ula-ng` 47→54 (mode, palette, fill, cellule, reset, inconnu,
+  verrouillé). Garde visible : stream `18/$21` → fond bleu (45961 px), identique
+  aux écritures registres directes. **1036 → 1043 tests.**
+- Docs : `VDU.md` (marqué v0.1 implémentée), `README-ULA-NG.md` §7bis + registre
+  $0357. Périmètre v0.2 (PLOT/VRAM, sprites/fontes par upload, hook OSWRCH) à
+  faire. EMU_VERSION 1.76.3 → 1.77.0-alpha.
+
 ## [1.76.3-alpha] - 2026-07-16
 
 ### Docs — Design du VDU intégré ULA-NG (`docs/ula-ng/VDU.md`)

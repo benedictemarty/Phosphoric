@@ -555,8 +555,75 @@ TEST(test_mode_locked_no_effect) {
     ASSERT_FALSE(u.text80_active);
 }
 
+/* ── VDU intégré (docs/ula-ng/VDU.md) ───────────────────────────────────── */
+
+static void vdu(ula_ng_t* u, uint8_t b) { ula_ng_write(u, ULA_NG_REG_VDU, b); }
+
+TEST(test_vdu_mode) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 22); vdu(&u, 1);          /* MODE 1 = chunky */
+    ASSERT_TRUE(u.chunky_active);
+    vdu(&u, 22); vdu(&u, 2);          /* MODE 2 = 80col */
+    ASSERT_TRUE(u.text80_active);
+    ASSERT_FALSE(u.chunky_active);
+    vdu(&u, 22); vdu(&u, 0);          /* MODE 0 = std */
+    ASSERT_FALSE(u.chunky_active);
+    ASSERT_FALSE(u.text80_active);
+    ASSERT_TRUE(u.active);            /* b0 actif */
+}
+
+TEST(test_vdu_palette) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 19); vdu(&u, 7); vdu(&u, 15); vdu(&u, 0); vdu(&u, 0);  /* LUT[7] = rouge */
+    ASSERT_EQ(u.pal[7][0], 0xFF); ASSERT_EQ(u.pal[7][1], 0x00); ASSERT_EQ(u.pal[7][2], 0x00);
+}
+
+TEST(test_vdu_fill) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 18); vdu(&u, 0x21);       /* fond couleur par cellule = $21 */
+    ASSERT_TRUE(u.attr_active);
+    ASSERT_EQ(u.attr[0], 0x21); ASSERT_EQ(u.attr[100], 0x21);
+}
+
+TEST(test_vdu_cell) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 31); vdu(&u, 5); vdu(&u, 2); vdu(&u, 0x1A);  /* col5, row2 -> scanlines 16-23 */
+    ASSERT_TRUE(u.attr_active);
+    ASSERT_EQ(u.attr[16 * 40 + 5], 0x1A);
+    ASSERT_EQ(u.attr[23 * 40 + 5], 0x1A);
+    ASSERT_EQ(u.attr[15 * 40 + 5], 0x00);   /* hors cellule : inchangé */
+}
+
+TEST(test_vdu_reset) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 22); vdu(&u, 1);          /* chunky */
+    ASSERT_TRUE(u.chunky_active);
+    vdu(&u, 20);                      /* reset -> normal */
+    ASSERT_FALSE(u.chunky_active);
+    ASSERT_FALSE(u.active);
+}
+
+TEST(test_vdu_unknown_ignored) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 99);                      /* commande inconnue : ignorée, pas de crash */
+    vdu(&u, 22); vdu(&u, 1);          /* le flux reste sain ensuite */
+    ASSERT_TRUE(u.chunky_active);
+}
+
+TEST(test_vdu_locked_no_effect) {
+    ula_ng_t u; ula_ng_init(&u);
+    vdu(&u, 22); vdu(&u, 1);          /* verrouillé : passthrough, aucun effet */
+    ASSERT_FALSE(u.chunky_active);
+}
+
 int main(void) {
-    printf("\n=== ULA-NG unit tests (steps 1-9: ...+sprites+chunky/80col) ===\n\n");
+    printf("\n=== ULA-NG unit tests (steps 1-9 + VDU) ===\n\n");
     RUN(test_reset_is_locked);
     RUN(test_addr_window);
     RUN(test_locked_writes_passthrough);
@@ -604,6 +671,13 @@ int main(void) {
     RUN(test_mode_text80);
     RUN(test_mode_needs_enable);
     RUN(test_mode_locked_no_effect);
+    RUN(test_vdu_mode);
+    RUN(test_vdu_palette);
+    RUN(test_vdu_fill);
+    RUN(test_vdu_cell);
+    RUN(test_vdu_reset);
+    RUN(test_vdu_unknown_ignored);
+    RUN(test_vdu_locked_no_effect);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

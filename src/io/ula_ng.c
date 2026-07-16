@@ -44,6 +44,10 @@ void ula_ng_reset(ula_ng_t* u) {
     u->spr_active = false;
     u->chunky_active = false;
     u->text80_active = false;
+    u->vdu_cmd = 0;
+    u->vdu_need = 0;
+    u->vdu_got = 0;
+    memset(u->vdu_params, 0, sizeof(u->vdu_params));
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -66,6 +70,74 @@ uint8_t ula_ng_read(ula_ng_t* u, uint16_t addr) {
             return s;
         }
         default:               return u->regs[addr - ULA_NG_WINDOW_LO];
+    }
+}
+
+/* ── VDU intégré (docs/ula-ng/VDU.md) ───────────────────────────────────────
+ * Interpréteur de flux de commandes (stand-in du firmware soft-core FPGA).
+ * L'exécution se contente d'appeler la logique de registres déjà existante. */
+
+static uint8_t vdu_need_for(uint8_t cmd) {
+    switch (cmd) {
+        case 20: return 0;            /* reset */
+        case 18: case 22: return 1;   /* fill / MODE */
+        case 31: return 3;            /* colorer une cellule (col,row,attr) */
+        case 19: return 4;            /* palette (l,r,g,b) */
+        default: return 0;            /* inconnu : ignoré */
+    }
+}
+
+static void vdu_exec(ula_ng_t* u) {
+    switch (u->vdu_cmd) {
+        case 20:                                    /* reset -> rendu normal */
+            ula_ng_write(u, ULA_NG_REG_MODE, 0x00);
+            break;
+        case 22: {                                  /* MODE : 0 std/1 chunky/2 80col */
+            uint8_t n = u->vdu_params[0];
+            uint8_t m = (n == 1) ? 0x05u : (n == 2) ? 0x09u : 0x01u;
+            ula_ng_write(u, ULA_NG_REG_MODE, m);
+            break;
+        }
+        case 19:                                    /* palette LUT[l] = RGB444 */
+            ula_ng_write(u, ULA_NG_REG_PAL_IDX, (uint8_t)(u->vdu_params[0] & 0x0F));
+            ula_ng_write(u, ULA_NG_REG_PAL_LO,  (uint8_t)(u->vdu_params[1] & 0x0F));
+            ula_ng_write(u, ULA_NG_REG_PAL_HI,
+                (uint8_t)(((u->vdu_params[2] & 0x0F) << 4) | (u->vdu_params[3] & 0x0F)));
+            break;
+        case 18: {                                  /* fond couleur par cellule : attr // + fill */
+            uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] | ULA_NG_MODE_ATTR;
+            ula_ng_write(u, ULA_NG_REG_MODE, mode);
+            ula_ng_write(u, ULA_NG_REG_ATTR_FILL, u->vdu_params[0]);
+            break;
+        }
+        case 31: {                                  /* colorer une cellule (col,row,attr) */
+            uint8_t col = u->vdu_params[0], row = u->vdu_params[1], a = u->vdu_params[2];
+            uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] | ULA_NG_MODE_ATTR;
+            ula_ng_write(u, ULA_NG_REG_MODE, mode);
+            if (col < 40 && row < 25) {
+                for (int sc = row * 8; sc < row * 8 + 8 && sc < 200; sc++)
+                    u->attr[sc * 40 + col] = a;
+            }
+            break;
+        }
+        default: break;                             /* commande inconnue : ignorée */
+    }
+}
+
+static void vdu_feed(ula_ng_t* u, uint8_t b) {
+    if (u->vdu_need == 0) {                          /* attend un code de commande */
+        u->vdu_cmd = b;
+        u->vdu_got = 0;
+        u->vdu_need = vdu_need_for(b);
+        if (u->vdu_need == 0) vdu_exec(u);           /* commande sans paramètre */
+    } else {                                         /* octet de paramètre */
+        if (u->vdu_got < ULA_NG_VDU_MAXPARAMS)
+            u->vdu_params[u->vdu_got] = b;
+        u->vdu_got++;
+        if (u->vdu_got >= u->vdu_need) {
+            vdu_exec(u);
+            u->vdu_need = 0;
+        }
     }
 }
 
@@ -177,6 +249,9 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         case ULA_NG_REG_SPR_DATA:               /* flux motif : 0=transparent, 1-7=index */
             u->sprites[u->spr_sel].pattern[u->spr_wp] = value & 0x07u;
             u->spr_wp = (uint16_t)((u->spr_wp + 1) % ULA_NG_SPR_PIXELS);
+            break;
+        case ULA_NG_REG_VDU:                    /* flux de commandes VDU (§VDU) */
+            vdu_feed(u, value);
             break;
         case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
             u->raster_line = value;

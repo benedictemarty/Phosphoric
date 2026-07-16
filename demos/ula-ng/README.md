@@ -53,6 +53,7 @@ Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
 | `ng_attributes` | Attributs parallèles §5.6 | **Mosaïque de couleur par cellule** (dégradé diagonal 8 couleurs) — un fond couleur différent dans **chaque** cellule, impossible sur l'ULA d'origine (color clash) | machine code |
 | `ng_copper`     | Copper / scanline §5.4 | Palette relatchée par ligne → barres raster arc-en-ciel                | BASIC |
 | `ng_sprite`     | Sprite matériel §5.7   | Sprite 16×16 (losange) composé sur le fond, rebondissant               | BASIC |
+| `ng_vdu`        | **VDU intégré** ([VDU.md](../../docs/ula-ng/VDU.md)) | Mosaïque de couleur par cellule pilotée **entièrement par un flux de commandes** écrit dans `NG_VDU` ($0357) — aucun pilote 6502 | machine code |
 
 ## Piloter/injecter sans BASIC
 
@@ -93,6 +94,9 @@ xa demos/ula-ng/ng_chunky.s -o /tmp/ng_chunky.bin
 
 xa demos/ula-ng/ng_attributes.s -o /tmp/ng_attributes.bin
 ./bin2tap /tmp/ng_attributes.bin --start 0x0500 --exec 0x0500 -o demos/ula-ng/ng_attributes.tap --name NGATTR
+
+xa demos/ula-ng/ng_vdu.s -o /tmp/ng_vdu.bin
+./bin2tap /tmp/ng_vdu.bin --start 0x0500 --exec 0x0500 -o demos/ula-ng/ng_vdu.tap --name NGVDU
 ```
 
 ## Référence
