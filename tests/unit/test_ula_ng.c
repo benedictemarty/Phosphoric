@@ -666,6 +666,33 @@ TEST(test_vdu_gfx_reset) {
     ASSERT_FALSE(u.vram_active);
 }
 
+/* VDU v0.3 : protocole d'upload (sprite via flux) */
+
+TEST(test_vdu_sprite_upload) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 23); vdu(&u, 0);          /* begin upload motif sprite 0 */
+    for (int i = 0; i < 256; i++) vdu(&u, 3);  /* motif = index 3 */
+    ASSERT_EQ(u.vdu_upload, 0);       /* upload terminé */
+    ASSERT_EQ(u.sprites[0].pattern[0], 3);
+    ASSERT_EQ(u.sprites[0].pattern[255], 3);
+    vdu(&u, 24); vdu(&u, 0); vdu(&u, 40); vdu(&u, 50); vdu(&u, 1);  /* pos + enable */
+    ASSERT_EQ(u.sprites[0].x, 40);
+    ASSERT_EQ(u.sprites[0].y, 50);
+    ASSERT_TRUE(u.sprites[0].enable);
+    ASSERT_TRUE(u.spr_active);        /* enable global posé par VDU 24 */
+}
+
+TEST(test_vdu_upload_then_command) {
+    ula_ng_t u; ula_ng_init(&u);
+    unlock(&u);
+    vdu(&u, 23); vdu(&u, 1);
+    for (int i = 0; i < 256; i++) vdu(&u, 5);
+    vdu(&u, 22); vdu(&u, 1);          /* stream fini -> commande normale reconnue */
+    ASSERT_TRUE(u.chunky_active);
+    ASSERT_EQ(u.sprites[1].pattern[10], 5);
+}
+
 int main(void) {
     printf("\n=== ULA-NG unit tests (steps 1-9 + VDU) ===\n\n");
     RUN(test_reset_is_locked);
@@ -726,6 +753,8 @@ int main(void) {
     RUN(test_vdu_gfx_plot);
     RUN(test_vdu_gfx_line);
     RUN(test_vdu_gfx_reset);
+    RUN(test_vdu_sprite_upload);
+    RUN(test_vdu_upload_then_command);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

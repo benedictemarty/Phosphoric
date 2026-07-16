@@ -155,6 +155,11 @@ typedef struct ula_ng_s {
     uint8_t  vram[ULA_NG_VRAM_SIZE];
     bool     vram_active;                      /* chunky lit la VRAM ULA-NG */
     uint8_t  vdu_gcol;                          /* couleur de tracé courante (0-15) */
+
+    /* Protocole d'upload VDU (v0.3, « buffered commands » à la Agon) : après
+     * VDU 23 (begin sprite pattern), les vdu_upload octets suivants sont
+     * streamés dans le motif du sprite sélectionné (spr_sel/spr_wp réutilisés). */
+    uint16_t vdu_upload;                        /* octets restants à streamer (0 = inactif) */
 } ula_ng_t;
 
 /** Initialise (= reset : état verrouillé HCS10017, registres à 0). */

@@ -51,6 +51,7 @@ void ula_ng_reset(ula_ng_t* u) {
     memset(u->vram, 0, sizeof(u->vram));
     u->vram_active = false;
     u->vdu_gcol = 0;
+    u->vdu_upload = 0;
 }
 
 void ula_ng_init(ula_ng_t* u) {
@@ -108,9 +109,10 @@ static uint8_t vdu_need_for(uint8_t cmd) {
     switch (cmd) {
         case 16: case 20: return 0;   /* CLG / reset */
         case 17: case 18: case 22: return 1;  /* GCOL / fill / MODE */
+        case 23: return 1;            /* begin upload motif sprite (id) */
         case 25: return 2;            /* PLOT point (x,y) */
         case 31: return 3;            /* colorer une cellule (col,row,attr) */
-        case 19: case 26: return 4;   /* palette (l,r,g,b) / DRAW (x0,y0,x1,y1) */
+        case 19: case 24: case 26: return 4;  /* palette / sprite pos (id,x,y,f) / DRAW */
         default: return 0;            /* inconnu : ignoré */
     }
 }
@@ -136,6 +138,19 @@ static void vdu_exec(ula_ng_t* u) {
             vram_line(u, u->vdu_params[0], u->vdu_params[1],
                       u->vdu_params[2], u->vdu_params[3], u->vdu_gcol);
             break;
+        case 23:                                    /* begin upload motif sprite (id) */
+            u->spr_sel = u->vdu_params[0] & (ULA_NG_SPRITES - 1);
+            u->spr_wp = 0;
+            u->vdu_upload = ULA_NG_SPR_PIXELS;      /* 256 octets suivants = motif */
+            break;
+        case 24: {                                  /* sprite : position + enable (id,x,y,f) */
+            uint8_t id = u->vdu_params[0] & (ULA_NG_SPRITES - 1);
+            u->sprites[id].x = u->vdu_params[1];
+            u->sprites[id].y = u->vdu_params[2];
+            u->sprites[id].enable = (u->vdu_params[3] & 0x01u) != 0;
+            u->spr_enable = true;                   /* active les sprites (cache recalc. après) */
+            break;
+        }
         case 22: {                                  /* MODE : 0 std/1 chunky/2 80col */
             uint8_t n = u->vdu_params[0];
             uint8_t m = (n == 1) ? 0x05u : (n == 2) ? 0x09u : 0x01u;
@@ -169,6 +184,12 @@ static void vdu_exec(ula_ng_t* u) {
 }
 
 static void vdu_feed(ula_ng_t* u, uint8_t b) {
+    if (u->vdu_upload > 0) {                         /* upload en cours : octet = motif sprite */
+        u->sprites[u->spr_sel].pattern[u->spr_wp] = (uint8_t)(b & 0x07);
+        u->spr_wp = (uint16_t)((u->spr_wp + 1) % ULA_NG_SPR_PIXELS);
+        u->vdu_upload--;
+        return;
+    }
     if (u->vdu_need == 0) {                          /* attend un code de commande */
         u->vdu_cmd = b;
         u->vdu_got = 0;

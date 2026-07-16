@@ -65,6 +65,11 @@ shot t80 "340=4E,340=47,341=09"
 shot vdu "340=4E,340=47,357=12,357=21"
 # VDU graphique (v0.2) : CLG (16=$10) + GCOL 7 (17=$11) + DRAW (26=$1A) ligne (0,50)-(100,50)
 shot vdugfx "340=4E,340=47,357=10,357=11,357=07,357=1A,357=00,357=32,357=64,357=32"
+# VDU upload (v0.3) : VDU 23 (=$17) sprite 0 + 256 o motif (index 3) + VDU 24 (=$18) pos (100,80) enable
+VDUSPR="340=4E,340=47,357=17,357=00"
+for _i in $(seq 1 256); do VDUSPR="$VDUSPR,357=03"; done
+VDUSPR="$VDUSPR,357=18,357=00,357=64,357=50,357=01"
+shot vduspr "$VDUSPR"
 
 python3 - "$TMP" <<'PY'
 import sys
@@ -90,6 +95,7 @@ cW,cH,chunky=load(f"{TMP}/chunky.ppm")
 tW,tH,t80=load(f"{TMP}/t80.ppm")
 _,_,vdu=load(f"{TMP}/vdu.ppm")
 gW,gH,vdugfx=load(f"{TMP}/vdugfx.ppm")
+_,_,vduspr=load(f"{TMP}/vduspr.ppm")
 res=[]
 # palette : les blancs de la ref deviennent verts
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
@@ -147,6 +153,10 @@ res.append(("VDU port: stream 18/$21 -> blue paper fill (%d px)"%vblue, vblue>40
 gwhite=sum(1 for x in range(gW)
            if (vdugfx[(50*gW+x)*3],vdugfx[(50*gW+x)*3+1],vdugfx[(50*gW+x)*3+2])==(0xFF,0xFF,0xFF))
 res.append(("VDU gfx: %dx%d, white line y=50 (%d px in VRAM)"%(gW,gH,gwhite), gW==320 and gwhite>100))
+# VDU upload : sprite 16x16 plein (index 3 = jaune) uploadé par flux, à (100,80)
+syellow=sum(1 for y in range(80,96) for x in range(100,116)
+            if (vduspr[(y*240+x)*3],vduspr[(y*240+x)*3+1],vduspr[(y*240+x)*3+2])==(0xFF,0xFF,0))
+res.append(("VDU upload: 16x16 sprite via stream at (100,80) = %d/256 px"%syellow, syellow==256))
 for msg,okk in res:
     print(("OK " if okk else "KO ")+msg)
 sys.exit(0 if all(o for _,o in res) else 1)

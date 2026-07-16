@@ -57,6 +57,7 @@ while true; do
 ║  5) Sprite matériel 16x16 rebondissant (§5.7) ║
 ║  6) VDU intégré : mosaïque via flux cmd (NG_VDU)║
 ║  7) VDU graphique : sunburst (CLG/DRAW, VRAM) ║
+║  8) VDU upload : sprite défini par flux (v0.3)║
 ║  q) Quitter                                   ║
 ╚══════════════════════════════════════════════╝
    (mode 80 col : patiente ~30 s, remplissage BASIC)
@@ -71,6 +72,7 @@ MENU
         5) launch ng_sprite.tap ;;
         6) launch ng_vdu.tap ;;
         7) launch ng_vdu_gfx.tap ;;
+        8) launch ng_vdu_spr.tap ;;
         q|Q) echo "Au revoir."; break ;;
         *) echo "Choix invalide : $choice" ;;
     esac

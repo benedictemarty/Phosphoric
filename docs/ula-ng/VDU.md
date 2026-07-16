@@ -1,12 +1,13 @@
 # ULA-NG — VDU intégré (v0.1)
 
-> **Statut : v0.1 + v0.2 (graphiques) IMPLÉMENTÉES ET VALIDÉES.** Port de
-> commandes de style VDU exposé par l'ULA-NG (`NG_VDU` $0357), dont l'interpréteur
-> **et la VRAM** vivent **dans l'ULA-NG** — pas dans les 64 Ko du 6502.
-> Interpréteur dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ;
-> tests `test-ula-ng` ; démos `ng_vdu.s` (mosaïque par cellule) et `ng_vdu_gfx.s`
-> (tracé de lignes dans la VRAM ULA-NG) — pilotées **uniquement par le flux**,
-> sans pilote 6502. Reste v0.3 : upload sprites/fontes, hook OSWRCH.
+> **Statut : v0.1 + v0.2 (graphiques) + v0.3 (upload) IMPLÉMENTÉES ET VALIDÉES.**
+> Port de commandes de style VDU exposé par l'ULA-NG (`NG_VDU` $0357), dont
+> l'interpréteur **et la VRAM** vivent **dans l'ULA-NG** — pas dans les 64 Ko du
+> 6502. Interpréteur dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ;
+> tests `test-ula-ng` ; démos `ng_vdu.s` (mosaïque), `ng_vdu_gfx.s` (tracé de
+> lignes), `ng_vdu_spr.s` (sprite défini par flux) — pilotées **uniquement par le
+> flux**, sans pilote 6502. Reste : hook OSWRCH (nécessite de vérifier le vecteur
+> de sortie caractère de l'Oric), PLOT étendu.
 
 ## 1. Objectif
 
@@ -75,24 +76,32 @@ ULA-NG. Chaque commande = un **code** + N octets de **paramètres**.
 
 Codes inconnus : ignorés (0 paramètre) — comme un VDU qui absorbe l'inconnu.
 
-**Prévu v0.3+** (hors périmètre actuel, listé pour cadrer) :
-- `23 …` définir sprite / caractère via le **protocole d'upload** (§5) ;
-- `28/24` fenêtres → `NG_SCRSTART`/scroll ; PLOT étendu (triangles, coords 16 bits) ;
+### Upload v0.3 (sprites via flux) — voir §5
+
+`23 id` (begin upload motif sprite) + `24 id x y f` (position + enable).
+
+**Prévu ensuite** (hors périmètre actuel) :
+- fontes / bitmaps chunky via le même protocole d'upload (§5) ;
+- fenêtres (`28`) → `NG_SCRSTART`/scroll ; PLOT étendu (triangles, coords 16 bits) ;
 - hook du **vecteur de sortie caractère** de l'Oric (équivalent `OSWRCH`) pour
-  que `PRINT CHR$(…)` alimente `NG_VDU` sans POKE.
+  que `PRINT CHR$(…)` alimente `NG_VDU` sans POKE — **nécessite de vérifier le
+  vecteur exact** (non implémenté pour ne rien inventer).
 
-## 5. Protocole d'upload (« buffered commands », design v0.2)
+## 5. Protocole d'upload (« buffered commands », v0.3 — sprites)
 
-Pour les données volumineuses (motifs de sprites 256 o, bitmaps chunky, fontes),
-on reprend le modèle Agon, calqué sur le **streaming auto-incrémenté** déjà en
-place dans l'ULA-NG :
+Pour les données volumineuses (motifs de sprites 256 o, plus tard bitmaps/fontes),
+on reprend le modèle Agon, calqué sur le **streaming auto-incrémenté** de l'ULA-NG.
+**Implémenté pour les sprites** :
 
-1. **SELECT** un buffer/cible (ex. « sprite #k », « VRAM offset »),
-2. **STREAM** les octets (auto-incrément, comme `NG_ATTR_DATA`/`NG_SPR_DATA`),
-3. **USE** : référencer le buffer par ID (afficher le sprite, blitter la VRAM).
+| Code | Params | Action |
+|---|---|---|
+| `23 id` | 1 | **SELECT + BEGIN UPLOAD** : sprite `id` (0-15) ; les **256 octets suivants** sont streamés dans son motif (1 o/px, 0-7). |
+| `24 id x y f` | 4 | **USE** : position (`x`,`y`) + `f` b0 = visible ; active aussi les sprites globalement. |
 
-L'ULA-NG possède déjà les briques : `attr[]`, `sprites[].pattern[]`. Le protocole
-VDU ne fait que les exposer par un vocabulaire uniforme et un ID de buffer.
+Séquence : `VDU 23,id` → 256 octets de motif → `VDU 24,id,x,y,1`. L'interpréteur
+tient un compteur `vdu_upload` : tant qu'il est non nul, chaque octet reçu va dans
+le motif (pas interprété comme commande). Extensible plus tard aux fontes/bitmaps
+(même mécanisme, autre cible).
 
 ## 6. Mémoire & VRAM
 

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.79.0-alpha] - 2026-07-16
+
+### Added — VDU intégré v0.3 : protocole d'upload (sprites par flux)
+
+Protocole « buffered commands » (à la Agon) pour définir un sprite **entièrement
+par le flux VDU**, sans écrire les registres sprite : `VDU 23,id` ouvre l'upload
+du motif du sprite `id` (les 256 octets suivants sont streamés dans son motif),
+`VDU 24,id,x,y,f` le positionne + l'active (f b0 = visible, + enable global).
+
+- FSM : compteur `vdu_upload` en tête de `vdu_feed` — tant qu'il est non nul,
+  chaque octet reçu va dans le motif du sprite (pas interprété comme commande),
+  puis retour automatique en mode commande. Réutilise `spr_sel`/`spr_wp`.
+- **Démo** `demos/ula-ng/ng_vdu_spr.s` : losange 16×16 défini par un flux de
+  256 octets (`VDU 23`) puis positionné (`VDU 24`) — zéro logique 6502 hors
+  streaming. Vérifié headless : ~113 px (losange). Menu + README démos.
+- Tests : `test-ula-ng` 58→60 (upload + retour commande) ; garde visible (sprite
+  16×16 plein uploadé par flux → 256/256 px à (100,80)). 1047 → 1049 tests.
+- Docs : `VDU.md` (§5 upload implémenté, table 23/24). Reste : fontes/bitmaps
+  par upload, hook OSWRCH (vecteur à vérifier). EMU_VERSION 1.78.0 → 1.79.0-alpha.
+
 ## [1.78.0-alpha] - 2026-07-16
 
 ### Added — VDU intégré v0.2 : graphiques + VRAM portée par l'ULA-NG
