@@ -9,10 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-make SDL2=1              # Standard build with SDL2
-make DEBUG=1 SDL2=1      # Debug build (-g -O0)
-make                     # Headless build (no SDL2)
-make SDL2=1 CAST=1       # Build with Chromecast MJPEG streaming
+make                     # Standard build with SDL2 (default since v1.67)
+make SDL2=0              # Headless build (no SDL2, for CI/automation)
+make DEBUG=1             # Debug build (-g -O0)
+make CAST=1              # Build with Chromecast MJPEG streaming
 make COVERAGE=1          # Build with gcov coverage instrumentation
 make tools               # Build conversion tools (bas2tap, bin2tap, tap2sedoric)
 make clean               # Clean build artifacts

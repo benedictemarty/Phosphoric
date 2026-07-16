@@ -34,8 +34,9 @@ else
     CFLAGS += -O2 -DNDEBUG
 endif
 
-# SDL2 support (optional)
-SDL2 ?= 0
+# SDL2 support — ON by default (affichage/audio/clavier réels). Pour un build
+# headless (CI/automation, sans libSDL2), passer explicitement SDL2=0.
+SDL2 ?= 1
 ifeq ($(SDL2), 1)
 ifeq ($(WIN), 1)
     CFLAGS += -DHAS_SDL2 -I$(SDL2_WIN_PREFIX)/include -I$(SDL2_WIN_PREFIX)/include/SDL2 -Dmain=SDL_main

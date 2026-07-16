@@ -209,21 +209,21 @@ sudo apt-get install libssl-dev
 ### Build
 
 ```bash
-make SDL2=1                    # Standard build with SDL2
-make                           # Headless build (no SDL2)
-make DEBUG=1 SDL2=1            # Debug build (-g -O0)
-make SDL2=1 CAST=1             # With Chromecast support
-make SDL2=1 MIDI=1             # With real-time host MIDI (ALSA/CoreMIDI/WinMM, --mageco midi)
+make                           # Standard build with SDL2 (default)
+make SDL2=0                    # Headless build (no SDL2, for CI/automation)
+make DEBUG=1                   # Debug build (-g -O0)
+make CAST=1                    # With Chromecast support
+make MIDI=1                    # With real-time host MIDI (ALSA/CoreMIDI/WinMM, --mageco midi)
 make wasm                      # WebAssembly/browser build (needs Emscripten; see docs/wasm.md)
 make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric, sedoric-info)
 sudo make install              # Install to /usr/local
 ```
 
-> **Affichage graphique :** le défaut du `Makefile` est `SDL2=0` (build
-> *headless*, sans fenêtre). Pour la sortie vidéo/audio/clavier réelle, il
-> **faut** compiler avec `make SDL2=1`. Un binaire produit sans cette option
-> ne s'exécute qu'en `--headless`. Le build CMake (`CMakeLists.txt`) active
-> SDL2 inconditionnellement (`-DHAS_SDL2`).
+> **Affichage graphique :** depuis la v1.67, le défaut du `Makefile` est
+> **`SDL2=1`** (affichage/audio/clavier réels). Pour un build *headless*
+> (CI/automation, sans `libSDL2`), passer explicitement **`make SDL2=0`** ; un
+> tel binaire ne s'exécute qu'en `--headless`. Le build CMake (`CMakeLists.txt`)
+> active SDL2 inconditionnellement (`-DHAS_SDL2`).
 
 ## Usage
 
