@@ -126,6 +126,15 @@ void mageco_init_oricon(mageco_t* dev, uint16_t base_addr);
 /** @brief Reset (equivalent to the ACIA reset line). */
 void mageco_reset(mageco_t* dev);
 
+/** @brief Hook savestate — écrit l'état ÉMULÉ (registres ACIA, clkgen ORICON,
+ *  compteurs) sur `fp`. Le **transport hôte n'est PAS sérialisé** (backend MIDI/
+ *  série, trace, callbacks) : savestate même-build. Renvoie true si écrit. */
+bool mageco_save(const mageco_t* dev, FILE* fp);
+
+/** @brief Hook savestate — relit l'état émulé. Garde par taille ; **préserve
+ *  les pointeurs hôte** de l'instance courante. */
+void mageco_load(mageco_t* dev, FILE* fp, uint32_t size);
+
 /** @brief Read a register ($03FE-$03FF). */
 uint8_t mageco_read(mageco_t* dev, uint16_t addr);
 

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.88.0-alpha] - 2026-07-17
+
+### Added — Epic 7 / US4 (Sprints 128-129) : savestate DTL2000 + Mageco (séparation état/transport à la sérialisation)
+
+Comble la lacune identifiée par l'audit : DTL2000 et Mageco n'avaient aucune
+section `.ost`. Nouvelles sections **« DTL »** et **« MAG »** via les hooks
+`io_device_t`.
+
+- **Choix assumé** : plutôt qu'un **découpage physique** des structs cœur
+  (`dtl2000_t`/`mageco_t`, risqué et non nécessaire), la « séparation état émulé /
+  transport hôte » de l'US4 se fait **à la (dé)sérialisation** : l'état émulé
+  (registres PIA/ACIA, baud, compteurs, clkgen) est sauvé en blob, et **les
+  pointeurs hôte sont préservés** de l'instance vivante au chargement — j'ai
+  vérifié exactement les 14 pointeurs de `dtl2000_t` (pia 7 + acia 2 + device 5)
+  et les 7 de `mageco_t`. Une connexion TCP/PTY et les octets en vol ne se
+  sérialisent pas : savestate **même-build**, transport non restauré (documenté).
+- Garde par taille au chargement (layout différent → ignoré, jamais corrompu).
+  Section émise **seulement si le périphérique est présent** → `.ost` d'un boot
+  normal **inchangé** (vérifié : tag absent, 65799 o identiques).
+- `dtl2000_save`/`load`, `mageco_save`/`load` dans leurs modules ; wrappers +
+  `save_tag` "DTL"/"MAG" dans `io_bus.c`.
+
+Non-régression et preuves : `test-dtl2000` +1 (round-trip : état restauré,
+**pointeurs hôte sentinelles préservés**, garde par taille) → 16/16 ; `test-midi`
++1 → 19/19 ; suite complète 941 → **943**. Golden 4/4 iso-comportement. E2e réel :
+`--dtl2000 loopback` → section « DTL » (65991 o) puis `--load-state` OK (aucun
+crash → callbacks préservés). Doc `docs/architecture/io-bus.md` §6.
+
+EMU_VERSION 1.87.0-alpha → 1.88.0-alpha.
+
 ## [1.87.0-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US3 **partiel** (Sprint 127) : déclarations d'options CLI extraites (parser NON réécrit — honnêteté)

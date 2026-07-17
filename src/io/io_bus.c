@@ -77,6 +77,15 @@ static bool mageco_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     mageco_write(&emu->mageco, addr, value);
     return true;
 }
+/* Savestate (section "MAG") : émise seulement si le Mageco est présent →
+ * .ost inchangé sinon. Transport hôte non restauré (cf. mageco_save). */
+static bool mageco_dev_save(emulator_t* emu, FILE* fp) {
+    if (!emu->has_mageco) return false;
+    return mageco_save(&emu->mageco, fp);
+}
+static void mageco_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    mageco_load(&emu->mageco, fp, size);
+}
 
 /* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
  * $031C-$031F si présente → pas de test interne ici). */
@@ -108,6 +117,15 @@ static uint8_t dtl2000_dev_read(emulator_t* emu, uint16_t addr) {
 static bool dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     dtl2000_write(&emu->dtl2000, addr, value);
     return true;
+}
+/* Savestate (section "DTL") : émise seulement si le DTL2000 est présent →
+ * .ost inchangé sinon. Transport hôte non restauré (cf. dtl2000_save). */
+static bool dtl2000_dev_save(emulator_t* emu, FILE* fp) {
+    if (!emu->has_dtl2000) return false;
+    return dtl2000_save(&emu->dtl2000, fp);
+}
+static void dtl2000_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    dtl2000_load(&emu->dtl2000, fp, size);
 }
 
 /* ULA-NG $0340-$035F : dernier périphérique du bus, avant le repli VIA.
@@ -148,9 +166,11 @@ static const io_device_t io_bus[] = {
      * à migrer sur le même modèle que l'ULA-NG ; LOCI a la réserve des handles OS.) */
     { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL, NULL, NULL, NULL },
     { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL, NULL, NULL, NULL },
-    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL, NULL, NULL, NULL },
+    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL,
+      "MAG\0",     mageco_dev_save,      mageco_dev_load },
     { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },
-    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL, NULL, NULL, NULL },
+    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL,
+      "DTL\0",     dtl2000_dev_save,     dtl2000_dev_load },
     /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
      * écritures de sa fenêtre même verrouillée (guet 'N','G'). Sérialisée via la
      * section "UNG" (émise seulement si déverrouillée → .ost inchangé sinon). */

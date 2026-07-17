@@ -124,6 +124,32 @@ bool mageco_addr_in_range(const mageco_t* dev, uint16_t addr)
            addr < (uint16_t)(dev->base_addr + span);
 }
 
+/* ── Savestate (Epic 7 / US4) ───────────────────────────────────────────────
+ * État émulé en blob (même-build, garde par taille) ; transport hôte (backend,
+ * trace, callbacks) préservé depuis l'instance vivante — cf. dtl2000_save. */
+bool mageco_save(const mageco_t* dev, FILE* fp)
+{
+    return fwrite(dev, sizeof(*dev), 1, fp) == 1;
+}
+
+void mageco_load(mageco_t* dev, FILE* fp, uint32_t size)
+{
+    if (size != sizeof(*dev))
+        return;
+    mageco_t keep = *dev;
+    if (fread(dev, sizeof(*dev), 1, fp) != 1) {
+        *dev = keep;
+        return;
+    }
+    dev->backend      = keep.backend;
+    dev->trace        = keep.trace;
+    dev->irq_set      = keep.irq_set;
+    dev->irq_clr      = keep.irq_clr;
+    dev->irq_userdata = keep.irq_userdata;
+    dev->acia.irq_out  = keep.acia.irq_out;
+    dev->acia.userdata = keep.acia.userdata;
+}
+
 uint8_t mageco_read(mageco_t* dev, uint16_t addr)
 {
     uint16_t off = (uint16_t)(addr - dev->base_addr);

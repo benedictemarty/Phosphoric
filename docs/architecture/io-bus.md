@@ -115,6 +115,10 @@ Le même principe s'étend à ce qui rend main.c monolithique :
   ce modèle : DTL2000, Mageco (petits jeux de registres) ; **LOCI a une réserve
   réelle** — ses handles de fichiers OS ne sont pas sérialisables tels quels.
   À terme, on pourra retirer les sections codées en dur (le mal OCB/OGP).
+  **DTL2000 et Mageco migrés (Epic 7/US4)** : sections « DTL »/« MAG », état
+  émulé en blob + **pointeurs hôte préservés** au chargement (backend/trace/
+  callbacks non sérialisables) ; transport live non restauré (même-build). Reste
+  **LOCI** : réserve réelle (montages/descripteurs OS).
 - **init / reset / cleanup** : `io_device_t` pourrait porter ces hooks → boucles
   génériques. *Non fait* : le reset n'est pas uniforme (le warm reset F5 ne reset
   que CPU + LOCI, ce dernier avec une sémantique « garde les montages »).

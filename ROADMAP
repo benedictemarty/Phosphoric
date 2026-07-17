@@ -49,14 +49,19 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > Backlog : élargir la couverture de tests CLI d'abord, puis extraire le parser
 > par petits lots vérifiables. main.c 4425 → 4342 L.
 
-### US 4 — Séparer état émulé / transport hôte (série) (Sprint 128-129)
-- [ ] Scinder `dtl2000_t`/`mageco_t`/`serial_backend_t` en **modèle POD
-      sérialisable** (registres, compteurs) vs **liaison hôte** (backend, FILE*,
-      callbacks) reliés par pointeur.
-- [ ] Débloque le savestate DTL2000/Mageco (sections « DTL »/« MAG », registres
-      seulement, transport explicitement non restauré et documenté).
-> Gain : dette structurelle #1 résorbée ; savestate cohérent. Risque : moyen
-> (refactor de structs cœur ; couvert par tests série + savestate).
+### US 4 — Savestate DTL2000/Mageco via séparation état/transport (Sprints 128-129) — DONE (v1.88.0-alpha)
+- [x] Sections **« DTL »** / **« MAG »** via les hooks `io_device_t`.
+      `dtl2000_save`/`load`, `mageco_save`/`load` dans leurs modules.
+- [x] Séparation état/transport faite **à la (dé)sérialisation** (pas de découpage
+      physique des structs cœur, jugé risqué et non nécessaire) : état émulé sauvé
+      en blob, **14 pointeurs hôte de dtl2000_t / 7 de mageco_t préservés** au
+      chargement. Garde par taille ; section émise seulement si présent → `.ost`
+      normal inchangé. Transport non restauré (même-build, documenté).
+- [x] Preuves : test-dtl2000 16/16 (+round-trip pointeurs sentinelles),
+      test-midi 19/19, suite 941 → 943, golden 4/4, e2e réel `--dtl2000` +
+      `--load-state` OK.
+> Gain : dette structurelle #2 (savestate série) résorbée. Reste hors périmètre :
+> savestate **LOCI** (handles OS, cf. US5 backlog).
 
 ### US 5 — Compléter le contrat `io_device_t` (lifecycle) (Sprint 130-131)
 - [ ] Ajouter hooks optionnels `reset(emu)` et `tick(emu, cycles)`.

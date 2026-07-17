@@ -181,6 +181,16 @@ void dtl2000_init(dtl2000_t* dev, uint16_t base_addr);
 /** @brief Reset (equivalent to the PIA/ACIA reset lines). */
 void dtl2000_reset(dtl2000_t* dev);
 
+/** @brief Hook savestate — écrit l'état ÉMULÉ (registres PIA/ACIA, baud,
+ *  compteurs) sur `fp`. Le **transport hôte n'est PAS sérialisé** (backend
+ *  série, trace, callbacks) : savestate même-build, la connexion live reste
+ *  celle de la session courante. Renvoie true si écrit. Voir docs io-bus.md. */
+bool dtl2000_save(const dtl2000_t* dev, FILE* fp);
+
+/** @brief Hook savestate — relit l'état émulé. Garde par taille ; **préserve
+ *  les pointeurs hôte** (backend/trace/callbacks) de l'instance courante. */
+void dtl2000_load(dtl2000_t* dev, FILE* fp, uint32_t size);
+
 /** @brief Read a register ($03F8-$03FD). */
 uint8_t dtl2000_read(dtl2000_t* dev, uint16_t addr);
 

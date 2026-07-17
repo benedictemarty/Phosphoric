@@ -375,6 +375,40 @@ TEST(test_irq_on_tx_with_tie) {
     teardown();
 }
 
+/* Savestate (Epic 7 / US4) : état émulé restauré, pointeurs hôte préservés. */
+TEST(test_savestate_roundtrip_preserves_host_pointers) {
+    setup_loopback();
+    dev.tx_count = 5;
+    dev.rx_count = 11;
+    dev.acia.control = 0x35;
+    dev.clkgen[0] = 0xAB;
+
+    FILE* f = fopen("/tmp/mageco_savestate_test.bin", "wb");
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(mageco_save(&dev, f));
+    fclose(f);
+
+    mageco_t d2;
+    memset(&d2, 0, sizeof(d2));
+    d2.backend       = (serial_backend_t*)0x2222;
+    d2.acia.userdata = (void*)0x3333;
+
+    FILE* g = fopen("/tmp/mageco_savestate_test.bin", "rb");
+    ASSERT_TRUE(g != NULL);
+    mageco_load(&d2, g, (uint32_t)sizeof(mageco_t));
+    fclose(g);
+
+    ASSERT_EQ(d2.tx_count, 5);
+    ASSERT_EQ(d2.rx_count, 11);
+    ASSERT_EQ(d2.acia.control, 0x35);
+    ASSERT_EQ(d2.clkgen[0], 0xAB);
+    ASSERT_TRUE(d2.backend == (serial_backend_t*)0x2222);
+    ASSERT_TRUE(d2.acia.userdata == (void*)0x3333);
+
+    remove("/tmp/mageco_savestate_test.bin");
+    teardown();
+}
+
 int main(void) {
     printf("\n=== Mageco MIDI interface (MC6850 @ $03FE) Tests ===\n\n");
 
@@ -385,6 +419,7 @@ int main(void) {
     RUN(test_master_reset);
     RUN(test_tx_clears_then_restores_tdre);
     RUN(test_loopback_roundtrip);
+    RUN(test_savestate_roundtrip_preserves_host_pointers);
     RUN(test_tx_always_sends_no_handshake);
     RUN(test_file_capture_note_on);
     RUN(test_file_replay_in);
