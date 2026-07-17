@@ -6,6 +6,32 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 123: ULA-NG migrée vers le bus — dispatch I/O = boucle + repli VIA (v1.83.0-alpha) - DONE
+Dernier périphérique à plage encore câblé en dur. Sa migration a nécessité
+d'**étendre le contrat `io_device_t`** (sa sémantique d'écriture ne rentrait pas
+dans le contrat précédent, dit honnêtement).
+- [x] `write` renvoie désormais `bool` « consommé » (au lieu de `void`) : une
+      écriture peut décliner et retomber sur le VIA. Périphériques à plage
+      exclusive → toujours `true` ; ULA-NG → verdict de `ula_ng_write`
+      (verrouillée, octet neutre non consommé → repli VIA bit-à-bit).
+- [x] `claims_write` optionnel (NULL → `claims`) : l'ULA-NG voit les écritures de
+      sa fenêtre même verrouillée (guet 'N','G') alors que ses lectures ne
+      répondent que déverrouillée. `io_bus_find_write` = `claims_write ?: claims`.
+- [x] Wrapper ULA-NG synchronise l'IRQ raster quand l'écriture est consommée.
+      Blocs ULA-NG retirés des 2 callbacks → `io_read/write_callback` = boucle du
+      bus + repli VIA. **Plus aucun périphérique à plage câblé en dur.**
+- [x] Non-régression : `test-ula-ng` 60/60 + garde visible 2/2 (déverrouillage +
+      palette/copper + IRQ raster via le dispatch réel), boots byte-identiques au
+      pré-migration. `make tests` = 939 checks (outils construits ; 923 sans,
+      écart = e2e `bas2tap` skippés qui s'exécutent après `make tools`).
+- [x] Doc `docs/architecture/io-bus.md` §3/§5 (contrat étendu, ULA-NG ✅).
+> **backlog** : la migration du **dispatch I/O** est terminée. Étendre ensuite
+> `io_device_t` aux hooks `init`/`reset`/`savestate`/`tick` (§6 io-bus.md) —
+> notamment chaque device sérialisant sa propre section `.ost` (le point qui a
+> fait mal avec OCB/OGP).
+
+---
+
 ### Sprint 122: LOCI migré vers le bus `io_device_t` (v1.82.0-alpha) - DONE
 Suite de la migration du bus I/O. Le **LOCI** — le périphérique précisément
 pointé par le constat « que fait le code du LOCI dans le `main` ? » — quitte le

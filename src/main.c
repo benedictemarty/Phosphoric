@@ -945,10 +945,11 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     if (loci_addr_in_tap(addr)) return loci_tap_read(&emu->loci, addr);
     return loci_dsk_read(&emu->loci, addr);   /* DSK (claims l'a garanti) */
 }
-static void loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    if (loci_addr_in_mia(addr)) { loci_write(&emu->loci, addr, value); return; }
-    if (loci_addr_in_tap(addr)) { loci_tap_write(&emu->loci, addr, value); return; }
-    loci_dsk_write(&emu->loci, addr, value);  /* DSK */
+static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    if (loci_addr_in_mia(addr))      loci_write(&emu->loci, addr, value);
+    else if (loci_addr_in_tap(addr)) loci_tap_write(&emu->loci, addr, value);
+    else                             loci_dsk_write(&emu->loci, addr, value);  /* DSK */
+    return true;
 }
 
 /* ACIA 6551 ($031C-$031F par défaut, base configurable). */
@@ -962,10 +963,13 @@ static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
         return 0xFF;
     return acia_read(&emu->acia, addr);
 }
-static void acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    /* picowifi-over-LOCI : la write est avalée si le MIA n'est pas fiable, mais
+     * elle est bien « consommée » (l'ACIA possède la plage) → true. */
     if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
-        return;
+        return true;
     acia_write(&emu->acia, addr, value);
+    return true;
 }
 
 /* Mageco / ORICON MIDI (ACIA 6850) : $03FE-$03FF ou $031C-$031E. */
@@ -975,8 +979,9 @@ static bool mageco_dev_claims(emulator_t* emu, uint16_t addr) {
 static uint8_t mageco_dev_read(emulator_t* emu, uint16_t addr) {
     return mageco_read(&emu->mageco, addr);
 }
-static void mageco_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+static bool mageco_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     mageco_write(&emu->mageco, addr, value);
+    return true;
 }
 
 /* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
@@ -987,7 +992,7 @@ static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
 static uint8_t microdisc_dev_read(emulator_t* emu, uint16_t addr) {
     return microdisc_read(&emu->microdisc, addr);
 }
-static void microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+static bool microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     if (fdc_trace_enabled()) {
         fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
                 emu->cpu.PC, (unsigned long long)emu->cpu.cycles, addr, value);
@@ -996,6 +1001,7 @@ static void microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     /* Sync overlay flags to memory system */
     emu->memory.basic_rom_disabled = emu->microdisc.romdis;
     emu->memory.overlay_active = emu->microdisc.diskrom;
+    return true;
 }
 
 /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
@@ -1005,24 +1011,67 @@ static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
 static uint8_t dtl2000_dev_read(emulator_t* emu, uint16_t addr) {
     return dtl2000_read(&emu->dtl2000, addr);
 }
-static void dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+static bool dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     dtl2000_write(&emu->dtl2000, addr, value);
+    return true;
+}
+
+/* ULA-NG $0340-$035F : dernier périphérique du bus, avant le repli VIA.
+ *  - Lecture : ne répond que déverrouillée (`claims`) ; verrouillée, la fenêtre
+ *    retombe sur le miroir VIA (indiscernable).
+ *  - Écriture : `claims_write` = fenêtre seule → l'ULA-NG voit les écritures
+ *    même verrouillée pour guetter la séquence 'N','G'. `ula_ng_write` renvoie
+ *    si elle a consommé ; sinon le dispatch retombe sur le VIA (bit-à-bit). */
+static bool ula_ng_dev_claims(emulator_t* emu, uint16_t addr) {
+    return ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(addr);
+}
+static bool ula_ng_dev_claims_write(emulator_t* emu, uint16_t addr) {
+    (void)emu;
+    return ula_ng_addr_in_window(addr);
+}
+static uint8_t ula_ng_dev_read(emulator_t* emu, uint16_t addr) {
+    return ula_ng_read(&emu->ula_ng, addr);
+}
+static bool ula_ng_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    if (!ula_ng_write(&emu->ula_ng, addr, value))
+        return false;   /* non consommée (verrouillée, octet neutre) → repli VIA */
+    /* Écriture consommée : synchroniser la ligne d'IRQ raster (un write de
+     * NG_STATUS acquitte → désassertion). */
+    if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
+    else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
+    return true;
 }
 
 static const io_device_t io_bus[] = {
-    { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write },
-    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write },
-    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write },
-    { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write },
-    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write },
+    { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL },
+    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL },
+    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL },
+    { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL },
+    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL },
+    /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
+     * écritures de sa fenêtre même verrouillée (guet 'N','G'). */
+    { "ula-ng",    ula_ng_dev_claims,    ula_ng_dev_read,    ula_ng_dev_write,    ula_ng_dev_claims_write },
 };
 static const int io_bus_count = (int)(sizeof(io_bus) / sizeof(io_bus[0]));
 
-/* Renvoie le device qui possède `addr` (NULL sinon). Ordre de la table = priorité. */
+/* Renvoie le device qui possède `addr` en **lecture** (NULL sinon).
+ * Ordre de la table = priorité. */
 static const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
     for (int i = 0; i < io_bus_count; i++)
         if (io_bus[i].claims(emu, addr))
             return &io_bus[i];
+    return NULL;
+}
+
+/* Renvoie le device qui possède `addr` en **écriture** (claims_write si fourni,
+ * sinon claims). NULL si aucun. */
+static const io_device_t* io_bus_find_write(emulator_t* emu, uint16_t addr) {
+    for (int i = 0; i < io_bus_count; i++) {
+        bool (*cw)(emulator_t*, uint16_t) = io_bus[i].claims_write ? io_bus[i].claims_write
+                                                                   : io_bus[i].claims;
+        if (cw(emu, addr))
+            return &io_bus[i];
+    }
     return NULL;
 }
 
@@ -1031,15 +1080,11 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
     /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
-     * Microdisc, DTL2000). Repli sur l'ULA-NG puis le VIA. */
+     * Microdisc, DTL2000, ULA-NG). Repli sur le VIA.
+     * ULA-NG en lecture : ne réclame que déverrouillée ; verrouillée, la fenêtre
+     * retombe sur le miroir VIA (indiscernable). */
     const io_device_t* dev = io_bus_find(emu, address);
     if (dev) return dev->read(emu, address);
-
-    /* ULA-NG registers $0340-$035F : intercepted only once unlocked ; while
-     * locked the read falls through to the VIA mirror (indiscernable). */
-    if (ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(address)) {
-        return ula_ng_read(&emu->ula_ng, address);
-    }
 
     /* VIA 6522: $0300-$030F (mirrored in $0300-$03FF) */
     return via_read(&emu->via, (uint8_t)(address & 0x0F));
@@ -1163,23 +1208,16 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
     /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
-     * Microdisc, DTL2000). Repli sur l'ULA-NG puis le VIA.
+     * Microdisc, DTL2000, ULA-NG). Le device peut **décliner** l'écriture
+     * (write → false) : c'est le cas de l'ULA-NG verrouillée, qui guette la
+     * séquence 'N','G' en fenêtre mais laisse retomber les octets neutres sur le
+     * VIA (bit-à-bit, indiscernable). Sinon repli VIA.
      *
      * NB : le snoop LOCI sur l'écriture VIA ORB $0300 (ligne moteur cassette,
      * cf. loci_tap_motor plus bas) n'est PAS un claim — l'écriture va au VIA ;
      * il reste donc hors bus, dans le chemin VIA. */
-    const io_device_t* dev = io_bus_find(emu, address);
-    if (dev) { dev->write(emu, address, value); return; }
-
-    /* ULA-NG registers $0340-$035F. Unlocked : ULA-NG owns the window (consume).
-     * Locked : silently watch $0340 for the 'N','G' unlock sequence and let the
-     * write fall through to the VIA mirror (bit-exact, indiscernable). */
-    if (ula_ng_addr_in_window(address) && ula_ng_write(&emu->ula_ng, address, value)) {
-        /* Sync the raster IRQ line (NG_STATUS write acknowledges → deassert). */
-        if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
-        else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
-        return;
-    }
+    const io_device_t* dev = io_bus_find_write(emu, address);
+    if (dev && dev->write(emu, address, value)) return;
 
     uint8_t reg = (uint8_t)(address & 0x0F);
 

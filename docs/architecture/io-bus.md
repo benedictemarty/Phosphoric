@@ -36,9 +36,10 @@ Critère : **revendique une plage d'adresses en page 3** (± ROM overlay).
 ```c
 typedef struct io_device_s {
     const char* name;
-    bool    (*claims)(struct emulator_s* emu, uint16_t addr);
+    bool    (*claims)(struct emulator_s* emu, uint16_t addr);        /* claim LECTURE (+ écriture par défaut) */
     uint8_t (*read)(struct emulator_s* emu, uint16_t addr);
-    void    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value);
+    bool    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value); /* true = consommé, false = repli VIA */
+    bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);  /* optionnel (NULL → claims) */
 } io_device_t;
 ```
 
@@ -48,11 +49,21 @@ présente ; l'ACIA à $0380 doit consulter la fiabilité MIA du LOCI. Le context
 complet est nécessaire. (Un `self` seul suffirait pour un device isolé, mais
 pas pour le graphe de priorités réel.)
 
-**Dispatch** (`main.c`) : une table `io_bus[]` + `io_bus_find(emu, addr)` qui
-renvoie le **premier** device qui `claims()` (l'ordre de la table = la priorité).
-`io_read/write_callback` interrogent la table en tête, puis retombent sur les
-`if` en dur restants (**pattern strangler** : migration progressive, jamais un
-big-bang).
+**`write` renvoie « consommé »**, `claims_write` distinct.** L'écriture peut
+**décliner** (renvoyer `false`) pour retomber sur le VIA — indispensable à
+l'ULA-NG, qui doit *voir* les écritures de sa fenêtre même verrouillée (pour
+guetter la séquence de déverrouillage 'N','G') tout en laissant passer les
+octets neutres à l'identique du VIA. Comme son claim d'écriture (fenêtre seule)
+diffère de son claim de lecture (déverrouillée + fenêtre), un `claims_write`
+optionnel s'ajoute (NULL → réutilise `claims`). Les périphériques à plage
+exclusive laissent `claims_write` à NULL et renvoient toujours `true`.
+
+**Dispatch** (`main.c`) : une table `io_bus[]`. En lecture, `io_bus_find(emu, addr)`
+renvoie le **premier** device qui `claims()` ; en écriture, `io_bus_find_write`
+utilise `claims_write ?: claims`, puis le dispatch respecte le verdict de `write`
+(false → repli VIA). L'ordre de la table = la priorité. `io_read/write_callback`
+se réduisent à **la boucle du bus + le repli VIA** — tous les périphériques à
+plage sont désormais dans la table (**pattern strangler** mené à son terme).
 
 ## 4. Étape 1 réalisée — preuve du modèle
 
@@ -76,17 +87,16 @@ retirés des 2 callbacks. **Suite complète verte** (test-dtl2000 15/15 + intég
    Microdisc ; DSK seulement `!has_microdisc`). Le snoop VIA ORB $0300
    (`loci_tap_motor`, ligne moteur cassette) n'est **pas** un claim → reste dans
    le chemin VIA.
-5. ⏳ **ULA-NG** : **reste câblée en dur après la boucle** (repli avant VIA). Son
-   écriture doit *toujours* recevoir l'octet en fenêtre — même verrouillée, pour
-   guetter la séquence de déverrouillage 'N','G' — et `ula_ng_write` **renvoie**
-   si elle a consommé (sinon repli VIA + synchro de l'IRQ raster). Ce
-   « claim-avec-effet-de-bord + repli » ne rentre pas dans le contrat
-   `read`/`write` renvoyant `void` : il faudrait étendre le contrat (`write`
-   renvoyant un booléen « consommé », `claims` distinct lecture/écriture). À
-   traiter avec les extensions du §6, pas avant.
+5. ✅ **ULA-NG** : migrée grâce à l'extension du contrat (`write` renvoyant
+   « consommé » + `claims_write` distinct). Lecture : `claims` = déverrouillée &&
+   en fenêtre. Écriture : `claims_write` = en fenêtre (toujours) ; `ula_ng_dev_write`
+   renvoie le verdict de `ula_ng_write` (false verrouillée → repli VIA) et
+   synchronise l'IRQ raster quand l'écriture est consommée. Placée **en dernier**
+   dans la table (repli avant VIA). Non-régression : boots déverrouillage+palette
+   byte-identiques au pré-migration, `test-ula-ng` 60/60, garde visible 2/2.
 
-Aujourd'hui, `io_read/write_callback` = **la boucle du bus + le cas ULA-NG + le
-repli VIA**. Tout le reste (LOCI compris) est passé sur `io_device_t`.
+Aujourd'hui, `io_read/write_callback` = **la boucle du bus + le repli VIA**. Tous
+les périphériques à plage (LOCI et ULA-NG compris) sont sur `io_device_t`.
 
 ## 6. Étapes suivantes (au-delà du dispatch I/O)
 

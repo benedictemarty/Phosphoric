@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.83.0-alpha] - 2026-07-17
+
+### Changed — ULA-NG migrée vers le bus : le dispatch I/O est désormais « boucle + repli VIA »
+
+Dernier périphérique à plage encore câblé en dur. Sa migration a nécessité
+d'**étendre le contrat `io_device_t`**, car son écriture a une sémantique
+particulière (honnêtement irréductible au contrat précédent) :
+
+- **`write` renvoie maintenant `bool` « consommé »** (au lieu de `void`) : une
+  écriture peut **décliner** et retomber sur le VIA. Les périphériques à plage
+  exclusive renvoient toujours `true` ; l'ULA-NG renvoie le verdict de
+  `ula_ng_write` — verrouillée, un octet neutre n'est pas consommé et retombe sur
+  le miroir VIA (bit-à-bit, indiscernable).
+- **`claims_write` optionnel** (NULL → réutilise `claims`) : l'ULA-NG doit *voir*
+  les écritures de sa fenêtre **même verrouillée** (pour guetter la séquence de
+  déverrouillage 'N','G'), alors que ses **lectures** ne répondent que
+  déverrouillée. Ces deux claims diffèrent → un prédicat d'écriture distinct.
+- Dispatch : `io_bus_find_write` utilise `claims_write ?: claims` ; le write
+  respecte le verdict (`false` → repli VIA). Le wrapper ULA-NG synchronise l'IRQ
+  raster quand l'écriture est consommée (un write de NG_STATUS acquitte).
+- Les blocs ULA-NG en dur sont retirés des deux callbacks. **`io_read_callback`
+  et `io_write_callback` se réduisent à la boucle du bus + le repli VIA** : plus
+  aucun périphérique à plage câblé en dur (LOCI et ULA-NG compris).
+
+Non-régression : `test-ula-ng` 60/60 + garde visible end-to-end 2/2 (déverrouillage
+'N','G' + palette/copper via le dispatch réel, IRQ raster inclus) ; boots headless
+déverrouillage+palette **byte-identiques** au binaire pré-migration ; suite complète
+verte. Doc `docs/architecture/io-bus.md` §3/§5 mise à jour (contrat étendu, ULA-NG ✅).
+
+Décompte de tests : `make tests` = **939 checks passants outils construits**
+(923 sans outils ; l'écart = e2e dépendant de `bas2tap` qui étaient *skippés* et
+s'exécutent une fois `make tools` fait — aucun test nouveau ni retiré ici).
+
+EMU_VERSION 1.82.0-alpha → 1.83.0-alpha.
+
 ## [1.82.0-alpha] - 2026-07-17
 
 ### Changed — LOCI migré vers le bus `io_device_t` (réponse directe à « que fait le LOCI dans le main ? »)

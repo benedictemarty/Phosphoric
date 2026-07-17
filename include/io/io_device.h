@@ -28,13 +28,23 @@ struct emulator_s;   /* contexte complet (forward-decl : évite le cycle d'inclu
 
 typedef struct io_device_s {
     const char* name;
-    /** Vrai si le périphérique possède cette adresse *maintenant* (présence +
-     *  plage + éventuelles conditions croisées). */
+    /** Vrai si le périphérique possède cette adresse *maintenant* en **lecture**
+     *  (présence + plage + éventuelles conditions croisées). Sert aussi de claim
+     *  d'écriture par défaut quand `claims_write` est NULL. */
     bool    (*claims)(struct emulator_s* emu, uint16_t addr);
     /** Lecture d'un octet à `addr` (appelée uniquement si claims() a renvoyé vrai). */
     uint8_t (*read)(struct emulator_s* emu, uint16_t addr);
-    /** Écriture d'un octet à `addr` (idem). */
-    void    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value);
+    /** Écriture d'un octet à `addr`. Renvoie **true si l'écriture est consommée**,
+     *  **false pour la laisser retomber sur le VIA** (repli). Les périphériques
+     *  ordinaires (plage exclusive) renvoient toujours true ; ce faux permet à
+     *  l'ULA-NG de guetter sa séquence de déverrouillage en fenêtre tout en
+     *  laissant passer les écritures non reconnues, à l'identique du VIA. */
+    bool    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value);
+    /** Claim d'écriture distinct (optionnel, NULL → réutilise `claims`). Utile
+     *  quand un périphérique doit voir des écritures qu'il n'intercepte pas en
+     *  lecture : l'ULA-NG verrouillée doit recevoir les écritures de sa fenêtre
+     *  (pour repérer 'N','G') alors que ses lectures retombent sur le VIA. */
+    bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);
 } io_device_t;
 
 #endif /* IO_DEVICE_H */
