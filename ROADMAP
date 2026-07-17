@@ -6,6 +6,28 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 122: LOCI migré vers le bus `io_device_t` (v1.82.0-alpha) - DONE
+Suite de la migration du bus I/O. Le **LOCI** — le périphérique précisément
+pointé par le constat « que fait le code du LOCI dans le `main` ? » — quitte le
+câblage en dur des callbacks pour rejoindre la table `io_bus[]`, en tête.
+- [x] Un seul `io_device_t` « loci » modélise les 3 sous-fenêtres disjointes
+      (MIA $03A0-$03BF, TAP $0315-$0317 recouvrant le Microdisc, DSK
+      $0310-$0314/$0318-$0319 si `!has_microdisc`). `claims` encode la priorité,
+      `read`/`write` dispatchent en interne.
+- [x] 6 blocs `if (has_loci && ...)` retirés → `io_read/write_callback` = boucle
+      de bus + cas ULA-NG + repli VIA. Snoop VIA ORB $0300 (`loci_tap_motor`)
+      conservé hors bus (pas un claim).
+- [x] Non-régression : suite verte (923), boots LOCI (MIA + image SD/DSK)
+      byte-identiques au binaire pré-bus, e2e ACIA-over-LOCI $0380 OK.
+- [x] Doc `docs/architecture/io-bus.md` §5 (LOCI ✅, ULA-NG ⏳ justifiée).
+> **backlog** : l'ULA-NG reste câblée après la boucle (claim à effet de bord :
+> l'écriture doit toujours recevoir l'octet en fenêtre pour guetter 'N','G' et
+> renvoie si consommée). La migrer suppose d'étendre le contrat `io_device_t`
+> (`write` renvoyant « consommé », `claims` distinct lecture/écriture) → à faire
+> avec les hooks génériques init/reset/savestate/tick.
+
+---
+
 ### Sprint 121: Bus de périphériques `io_device_t` (v1.81.0-alpha) - DONE
 Réponse au constat architectural « que fait le code du LOCI dans le `main` de
 l'émulateur ? ». Le routage I/O ($0300-$03FF) était une cascade de `if` codés

@@ -61,20 +61,32 @@ iso-comportement, aucun risque de priorité) migré derrière `io_device_t` :
 wrappers `dtl2000_dev_{claims,read,write}`, entrée dans `io_bus[]`, `if` en dur
 retirés des 2 callbacks. **Suite complète verte** (test-dtl2000 15/15 + intégration).
 
-## 5. Ordre de migration proposé
+## 5. Ordre de migration
 
 1. ✅ **DTL 2000** (fait — plage exclusive, valide le contrat).
-2. **Mageco / ORICON** puis **ACIA 6551** : petites plages, mais l'ORICON et
-   l'ACIA **recouvrent** le Microdisc → migrer ensemble et encoder la priorité
-   dans l'ordre de la table + les `claims` (ACIA possède $031C-$031F si présente).
-3. **Microdisc** : `claims` = `has_microdisc && 0x0310-0x031F && !(ACIA/ORICON le réclame)`.
-4. **LOCI** (MIA + TAP + DSK, 3 sous-plages, priorité haute, conditions vs
-   Microdisc) : le plus gros ; à faire en dernier, une fois le modèle rodé.
-5. **ULA-NG** : cas particulier (passthrough VIA si verrouillé) → `claims` =
-   `ula_ng_active(...) && ula_ng_addr_in_window(addr)` (déjà la sémantique
-   actuelle). Le rendu reste dans `video`.
+2. ✅ **ACIA 6551**, **Mageco / ORICON** : petites plages recouvrant le Microdisc
+   → priorité encodée dans l'ordre de la table + les `claims` (ACIA possède
+   $031C-$031F si présente ; l'ACIA à $0380 consulte la fiabilité MIA du LOCI).
+3. ✅ **Microdisc** : `claims` = `has_microdisc && 0x0310-0x031F` (l'ACIA, placée
+   avant, possède déjà $031C-$031F si présente). Le wrapper conserve `fdc_trace`
+   et la synchro des drapeaux d'overlay (`basic_rom_disabled`/`overlay_active`).
+4. ✅ **LOCI** (MIA $03A0-$03BF + TAP $0315-$0317 + DSK $0310-$0314/$0318-$0319,
+   3 sous-plages **disjointes**) : un seul `io_device_t` **en tête de table** qui
+   dispatche en interne. Le `claims` encode la priorité (TAP recouvre toujours le
+   Microdisc ; DSK seulement `!has_microdisc`). Le snoop VIA ORB $0300
+   (`loci_tap_motor`, ligne moteur cassette) n'est **pas** un claim → reste dans
+   le chemin VIA.
+5. ⏳ **ULA-NG** : **reste câblée en dur après la boucle** (repli avant VIA). Son
+   écriture doit *toujours* recevoir l'octet en fenêtre — même verrouillée, pour
+   guetter la séquence de déverrouillage 'N','G' — et `ula_ng_write` **renvoie**
+   si elle a consommé (sinon repli VIA + synchro de l'IRQ raster). Ce
+   « claim-avec-effet-de-bord + repli » ne rentre pas dans le contrat
+   `read`/`write` renvoyant `void` : il faudrait étendre le contrat (`write`
+   renvoyant un booléen « consommé », `claims` distinct lecture/écriture). À
+   traiter avec les extensions du §6, pas avant.
 
-Une fois tout migré, `io_read/write_callback` = **une boucle + le repli VIA**.
+Aujourd'hui, `io_read/write_callback` = **la boucle du bus + le cas ULA-NG + le
+repli VIA**. Tout le reste (LOCI compris) est passé sur `io_device_t`.
 
 ## 6. Étapes suivantes (au-delà du dispatch I/O)
 

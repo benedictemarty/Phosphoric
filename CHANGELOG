@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.82.0-alpha] - 2026-07-17
+
+### Changed — LOCI migré vers le bus `io_device_t` (réponse directe à « que fait le LOCI dans le main ? »)
+
+Suite de la migration du bus I/O. Le **LOCI** (sodiumlb) — le périphérique
+précisément pointé par le constat architectural — quitte le câblage en dur des
+callbacks pour rejoindre la table `io_bus[]`, **en tête** (priorité maximale).
+
+- Un seul `io_device_t` « loci » modélise les **3 sous-fenêtres disjointes** :
+  MIA $03A0-$03BF, TAP $0315-$0317 (remplace la cassette, recouvre le Microdisc),
+  DSK $0310-$0314/$0318-$0319 (seulement `!has_microdisc`). Le `claims` encode la
+  priorité ; `read`/`write` dispatchent en interne vers
+  `loci_read`/`loci_tap_read`/`loci_dsk_read` (resp. write).
+- Les 6 blocs `if (emu->has_loci && ...)` sont retirés de `io_read_callback` et
+  `io_write_callback`. Ces callbacks se réduisent désormais à : **boucle de bus →
+  cas ULA-NG → repli VIA**.
+- Le snoop LOCI sur l'écriture VIA ORB $0300 (`loci_tap_motor`, ligne moteur
+  cassette) **n'est pas un claim** (l'écriture va au VIA) → conservé dans le
+  chemin VIA, hors bus.
+- **ULA-NG reste câblée après la boucle** (documenté) : son écriture doit
+  toujours recevoir l'octet en fenêtre (guet de la séquence 'N','G' même
+  verrouillée) et `ula_ng_write` renvoie si elle a consommé — ce claim à effet de
+  bord + repli ne rentre pas dans le contrat `void` sans l'étendre (§6 io-bus.md).
+
+Non-régression vérifiée : suite complète verte (923 tests) ; boots LOCI headless
+(MIA passif + image SD → chemin DSK) **byte-identiques** au binaire pré-bus ;
+e2e ACIA-over-LOCI $0380 (cas particulier picowifi via le bus) OK. Les 5 échecs
+de `test-loci-e2e` (assertions de texte écran, hors `make tests`) préexistent à
+la migration (identiques avec le binaire stable). Doc `docs/architecture/io-bus.md`
+§5 mise à jour (LOCI ✅, ULA-NG ⏳ avec justification).
+
+EMU_VERSION 1.81.0-alpha → 1.82.0-alpha.
+
 ## [1.81.0-alpha] - 2026-07-17
 
 ### Changed — Bus de périphériques `io_device_t` : le main ne câble plus les périphériques en dur

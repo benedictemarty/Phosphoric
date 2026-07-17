@@ -919,10 +919,37 @@ static bool loci_resume_session_cb(void* ctx) {
 /* ── Bus I/O : périphériques enregistrés (docs/architecture/io-bus.md) ──────
  * Migration progressive de la cascade de `if` en dur vers cette table. Chaque
  * périphérique fournit claims/read/write ; le dispatch parcourt la table.
- * Le LOCI (priorité haute, recouvre le Microdisc via TAP $0315-$0317) reste
- * câblé en dur AVANT la boucle ; ULA-NG reste câblée APRÈS. L'ordre de la table
- * = la priorité (ACIA avant Microdisc : l'ACIA possède $031C-$031F si présente).
+ * L'ordre de la table = la priorité : LOCI en tête (recouvre le Microdisc via
+ * TAP $0315-$0317), puis ACIA (possède $031C-$031F si présente) avant Microdisc.
+ * Seule l'ULA-NG reste câblée APRÈS la boucle : son écriture doit toujours
+ * recevoir l'octet en fenêtre (même verrouillée, pour guetter la séquence
+ * 'N','G') et `ula_ng_write` *renvoie* si elle a consommé — sinon repli VIA ;
+ * ce claim-avec-effet-de-bord ne rentre pas dans le contrat void read/write.
  * Pattern « strangler ». */
+
+/* LOCI (sodiumlb) : trois sous-fenêtres disjointes, dispatchées en interne.
+ *  - MIA $03A0-$03BF (indépendant des autres périphériques) ;
+ *  - TAP $0315-$0317 : remplace l'interface cassette, recouvre le Microdisc
+ *    $0310-$031F → priorité (LOCI est en tête de table) ;
+ *  - DSK $0310-$0314 + $0318-$0319 : seulement en l'absence de vrai Microdisc
+ *    (sinon le Microdisc possède la plage). */
+static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
+    if (!emu->has_loci) return false;
+    if (loci_addr_in_mia(addr)) return true;
+    if (loci_addr_in_tap(addr)) return true;
+    if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
+    return false;
+}
+static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
+    if (loci_addr_in_mia(addr)) return loci_read(&emu->loci, addr);
+    if (loci_addr_in_tap(addr)) return loci_tap_read(&emu->loci, addr);
+    return loci_dsk_read(&emu->loci, addr);   /* DSK (claims l'a garanti) */
+}
+static void loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    if (loci_addr_in_mia(addr)) { loci_write(&emu->loci, addr, value); return; }
+    if (loci_addr_in_tap(addr)) { loci_tap_write(&emu->loci, addr, value); return; }
+    loci_dsk_write(&emu->loci, addr, value);  /* DSK */
+}
 
 /* ACIA 6551 ($031C-$031F par défaut, base configurable). */
 static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
@@ -983,6 +1010,7 @@ static void dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 }
 
 static const io_device_t io_bus[] = {
+    { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write },
     { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write },
     { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write },
     { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write },
@@ -1002,25 +1030,8 @@ static const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* LOCI MIA: $03A0-$03BF (checked first — independent of other peripherals) */
-    if (emu->has_loci && loci_addr_in_mia(address)) {
-        return loci_read(&emu->loci, address);
-    }
-    /* LOCI TAP $0315-$0317 (Sprint 34af). Overlaps Microdisc $0310-$031F
-     * — LOCI claims priority when active since it replaces the cassette
-     * interface. */
-    if (emu->has_loci && loci_addr_in_tap(address)) {
-        return loci_tap_read(&emu->loci, address);
-    }
-    /* LOCI DSK $0310-$0314 + $0318-$0319 (Sprint 34ae). Only when no real
-     * Microdisc is present — otherwise the existing microdisc handler
-     * owns the range. */
-    if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
-        return loci_dsk_read(&emu->loci, address);
-    }
-
-    /* Bus I/O : périphériques enregistrés (ACIA, Mageco, Microdisc, DTL2000) —
-     * après le LOCI prioritaire, avant le repli VIA. */
+    /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
+     * Microdisc, DTL2000). Repli sur l'ULA-NG puis le VIA. */
     const io_device_t* dev = io_bus_find(emu, address);
     if (dev) return dev->read(emu, address);
 
@@ -1151,24 +1162,12 @@ static uint8_t portb_read_callback(void* userdata) {
 static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* LOCI MIA: $03A0-$03BF */
-    if (emu->has_loci && loci_addr_in_mia(address)) {
-        loci_write(&emu->loci, address, value);
-        return;
-    }
-    /* LOCI TAP $0315-$0317 (Sprint 34af). */
-    if (emu->has_loci && loci_addr_in_tap(address)) {
-        loci_tap_write(&emu->loci, address, value);
-        return;
-    }
-    /* LOCI DSK $0310-$0314 + $0318-$0319 (Sprint 34ae). */
-    if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
-        loci_dsk_write(&emu->loci, address, value);
-        return;
-    }
-
-    /* Bus I/O : périphériques enregistrés (ACIA, Mageco, Microdisc, DTL2000) —
-     * après le LOCI prioritaire, avant le repli VIA. */
+    /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
+     * Microdisc, DTL2000). Repli sur l'ULA-NG puis le VIA.
+     *
+     * NB : le snoop LOCI sur l'écriture VIA ORB $0300 (ligne moteur cassette,
+     * cf. loci_tap_motor plus bas) n'est PAS un claim — l'écriture va au VIA ;
+     * il reste donc hors bus, dans le chemin VIA. */
     const io_device_t* dev = io_bus_find(emu, address);
     if (dev) { dev->write(emu, address, value); return; }
 
