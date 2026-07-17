@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.87.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 **partiel** (Sprint 127) : déclarations d'options CLI extraites (parser NON réécrit — honnêteté)
+
+Extraction des **données déclaratives** des options CLI (l'enum `OPT_*` + la
+table getopt `long_options[]` + la chaîne d'options courtes) de `main()` vers un
+header dédié `include/cli/cli_options.h`.
+
+- **Ce qui est fait, sûr et vérifié** : relocation de données pures (zéro
+  changement de logique). Le switch de parsing reste dans `main()`. Iso-
+  comportement par construction ; golden 4/4 + `--help` OK + option inconnue
+  toujours rejetée + suite complète verte.
+- **Ce qui n'est PAS fait, et pourquoi (dit franchement)** : la réécriture
+  déclarative complète (parser générique + `cli_args_t`) envisagée par l'US3
+  **n'est pas livrée**. Mesure à l'appui : le switch a **63 `case` dont 43
+  portent des effets de bord au parsing** (fopen/malloc/exit/appels d'init) et
+  ~89 variables locales seraient à router à la main. Ce n'est **pas prouvable
+  iso-comportement** avec le filet de tests actuel (golden 4 scénarios + suite) ;
+  une régression sur une option obscure passerait inaperçue. Je préfère livrer la
+  part sûre et documenter le reste plutôt que prétendre à une garantie que je ne
+  peux pas tenir. Reste au backlog : élargir d'abord la couverture de tests CLI,
+  puis extraire le parser par petits lots vérifiables.
+
+`main.c` : 4425 → **4342** lignes. EMU_VERSION 1.86.0-alpha → 1.87.0-alpha.
+
 ## [1.86.0-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US2 (Sprint 126) : bus I/O extrait de `main.c` vers un adaptateur dédié

@@ -38,12 +38,16 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > **adaptateur unique** (`io_bus.c`, seul io/ à inclure emulator.h). Modules purs
 > préservés. Iso-comportement golden 4/4 ; main.c 4690 → 4425 L.
 
-### US 3 — Module argparse déclaratif (Sprint 127)
-- [ ] `struct cli_args_t` + table déclarative des ~79 options + boucle générique
-      de parsing → `src/cli/args.c`.
-- [ ] `main()` reçoit un `cli_args_t` rempli ; validation centralisée.
-> Gain : -~250 L de main(). Risque : moyen (combinaisons implicites `--control ⟹
-> headless+debug` à préserver ; e2e de non-régression CLI requis).
+### US 3 — Module argparse déclaratif (Sprint 127) — PARTIEL (v1.87.0-alpha)
+- [x] **Données** extraites : enum `OPT_*` + table `long_options[]` +
+      `CLI_SHORT_OPTIONS` → `include/cli/cli_options.h`. Iso-comportement par
+      construction (relocation de données) ; golden 4/4 + `--help` + suite verte.
+- [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
+      63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
+      **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre
+      plutôt que prétendre une garantie intenable.
+> Backlog : élargir la couverture de tests CLI d'abord, puis extraire le parser
+> par petits lots vérifiables. main.c 4425 → 4342 L.
 
 ### US 4 — Séparer état émulé / transport hôte (série) (Sprint 128-129)
 - [ ] Scinder `dtl2000_t`/`mageco_t`/`serial_backend_t` en **modèle POD
