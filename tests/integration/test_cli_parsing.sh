@@ -81,6 +81,30 @@ expect "--joystick bogus is non-fatal (exit 0)" 0 "Unknown joystick mode"
 run "$EMU" -r "$ROM" -n --serial BOGUS -c 1000
 expect "--serial bogus is fatal (exit 1)" 1 "Unknown serial backend"
 
+# ── enum / range / value validation (all measured) ────────────────────
+run "$EMU" -r "$ROM" -n -m BOGUS -c 1000
+expect "--model bogus is fatal (exit 1)" 1 "Unknown model"
+
+run "$EMU" -r "$ROM" -n -m atmos -c 1000
+expect "--model atmos parses (exit 0)" 0
+
+run "$EMU" -r "$ROM" -n --scale 99 -c 1000
+expect "--scale out of range (99) is fatal (exit 1)" 1 "must be 1-4"
+
+run "$EMU" -r "$ROM" -n --dtl2000 BOGUS -c 1000
+expect "--dtl2000 bogus transport is fatal (exit 1)" 1 "Unknown DTL 2000 transport"
+
+# Non-fatal-by-design cases (captured as-is : a bogus value is IGNORED, not
+# rejected — a future parser must keep this or change it consciously).
+run "$EMU" -r "$ROM" -n -k BOGUS -c 1000
+expect "--keyboard bogus is non-fatal (exit 0)" 0
+
+run "$EMU" -r "$ROM" -n --acia-addr ZZZZ -c 1000
+expect "--acia-addr invalid hex is non-fatal (exit 0)" 0
+
+run "$EMU" -r "$ROM" -n --load-state /nonexistent.ost -c 1000
+expect "--load-state missing file is non-fatal (exit 0)" 0
+
 # ── positive control : a well-formed CYCLES:FILE parses and acts ───────
 run "$EMU" -r "$ROM" -n --dump-ram-at 500000:"$TMP/ram.bin" -c 600000
 if [ "$RC" -eq 0 ] && [ -s "$TMP/ram.bin" ] \
