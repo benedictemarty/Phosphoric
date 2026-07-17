@@ -36,7 +36,7 @@ enum {
     OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING,
     OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT,
     OPT_ULA_NG_POKE, OPT_PSG_TRACE, OPT_AUDIO_WAV, OPT_SCREENSHOT_TEXT,
-    OPT_SCREENSHOT_ANSI
+    OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -63,6 +63,8 @@ static const struct option long_options[] = {
     {"screenshot-at",       required_argument, 0, OPT_SCREENSHOT_AT},
     {"screenshot-text",     required_argument, 0, OPT_SCREENSHOT_TEXT},
     {"screenshot-ansi",     required_argument, 0, OPT_SCREENSHOT_ANSI},
+    {"screenshot-text-at",  required_argument, 0, OPT_SCREENSHOT_TEXT_AT},
+    {"screenshot-ansi-at",  required_argument, 0, OPT_SCREENSHOT_ANSI_AT},
     {"frame-dump",          required_argument, 0, OPT_FRAME_DUMP},
     {"frame-dump-interval", required_argument, 0, OPT_FRAME_DUMP_INTERVAL},
     {"video",               required_argument, 0, OPT_VIDEO},

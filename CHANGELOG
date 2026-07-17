@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.93.0-alpha] - 2026-07-17
+
+### Added — Screenshot texte/ANSI à un cycle donné : `--screenshot-text-at` + `--screenshot-ansi-at`
+
+Suite de v1.92.0 (`--screenshot-text`/`--screenshot-ansi` étaient des sorties « à la
+fin du run »). Équivalents « à un cycle donné » sur le modèle exact de
+`--screenshot-at`, réutilisant le helper `cli_split_cycles_file()` (mutualisé en v1.91.1).
+
+- **`--screenshot-text-at C:FILE`** — dumpe le contenu texte de l'écran (`$BB80`, 40×28)
+  dès que le compteur de cycles atteint C.
+- **`--screenshot-ansi-at C:FILE`** — image ANSI true-color du framebuffer dès le cycle C.
+
+Comportement d'erreur **identique** à `--screenshot-at` : format sans `:` → fatal (rc 1)
+avec message `Invalid --screenshot-text-at format. Use CYCLES:FILE` (idem `-ansi-at`).
+
+**Vérifié par la mesure** : boot Atmos, `--screenshot-text-at 3000000:FILE` → fichier
+écrit au cycle 3015456 avec `ORIC EXTENDED BASIC V1.1` / `© 1983 TANGERINE` /
+`37631 BYTES FREE` ; `--screenshot-ansi-at` → 264 654 o ; formats malformés → rc 1
+(mesuré sans pipe). Tests : `make test-cli-parsing` **29/29** (+4 : 2 malformés fatals +
+2 contrôles positifs fichier non vide). `make clean && make tests` complet vert (exit 0).
+
+EMU_VERSION 1.92.0-alpha → 1.93.0-alpha ; builds natif + SDL2 OK.
+
 ## [1.92.0-alpha] - 2026-07-17
 
 ### Added — Screenshot texte : `--screenshot-text` et `--screenshot-ansi`

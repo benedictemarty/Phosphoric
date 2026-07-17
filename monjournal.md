@@ -93,9 +93,23 @@ Deux options CLI de sortie, calquées sur `--screenshot` :
 - Le dump lit toujours les 28 lignes de `$BB80`, quel que soit le mode (TEXT/HIRES) :
   en HIRES seules les 3 dernières lignes texte sont réellement à l'écran, mais le
   buffer `$BB80` est lu tel quel.
-- Les options sont **de sortie** (`--screenshot`-like), pas encore « à un cycle
-  donné » (pas d'équivalent `--screenshot-at` pour le texte). Non demandé pour l'instant.
+- ~~Les options sont de sortie, pas encore « à un cycle donné ».~~ **Comblé** :
+  voir l'itération 2 ci-dessous.
+
+### 7. Itération 2 — variantes « à un cycle donné » (v1.93.0-alpha)
+La limite notée au point 6 (« pas d'équivalent `--screenshot-at` ») est **comblée** :
+- `--screenshot-text-at C:FILE` et `--screenshot-ansi-at C:FILE`, calqués sur le
+  `--screenshot-at` existant, **réutilisant** le helper `cli_split_cycles_file()` déjà
+  mutualisé (v1.91.1) — pas de duplication du parsing `CYCLES:FILE`.
+- **Méthode** : je suis parti du code exact de `--screenshot-at` (parsing + bloc dans la
+  boucle) et je l'ai décliné, pour garantir un comportement d'erreur **identique**
+  (format sans `:` → fatal rc 1, même message via `optname`).
+- **Mesuré** : `--screenshot-text-at 3000000:FILE` écrit au cycle 3015456 le même écran
+  Atmos lisible ; malformés → rc 1 vérifié **sans pipe** (un `| grep` aurait masqué le
+  vrai code retour — piège évité).
+- **Tests** : filet CLI `test-cli-parsing` **29/29** (+4 cas : 2 malformés fatals + 2
+  contrôles positifs « fichier non vide »), sur le modèle des cas `--screenshot-at`.
 
 ---
 
-_Dernière mise à jour : session d'ajout du screenshot texte/ANSI._
+_Dernière mise à jour : itération 2 (screenshot texte/ANSI à un cycle donné, v1.93.0)._

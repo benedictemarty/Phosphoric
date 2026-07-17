@@ -121,6 +121,23 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Sprint 135: Screenshot texte/ANSI à un cycle donné — `--screenshot-text-at` + `--screenshot-ansi-at` (v1.93.0-alpha) - DONE
+Suite de Sprint 134 (les `--screenshot-text`/`--screenshot-ansi` étaient des sorties
+« fin de run » ; l'équivalent « à un cycle donné » manquait, cf. limite notée au
+Sprint 134). Équivalents sur le **modèle exact de `--screenshot-at`**, réutilisant le
+helper `cli_split_cycles_file()` (mutualisé en v1.91.1).
+- `--screenshot-text-at C:FILE` : dumpe le texte `$BB80` dès que les cycles atteignent C.
+- `--screenshot-ansi-at C:FILE` : image ANSI true-color du framebuffer dès le cycle C.
+- Erreur **identique** à `--screenshot-at` : format sans `:` → fatal rc 1
+  (`Invalid --screenshot-text-at format. Use CYCLES:FILE`).
+Vérifié **par la mesure** : boot Atmos, `--screenshot-text-at 3000000:FILE` → écrit au
+cycle 3015456 (`ORIC EXTENDED BASIC V1.1`/`© 1983 TANGERINE`/`37631 BYTES FREE`) ;
+`--screenshot-ansi-at` → 264654 o ; formats malformés → rc 1 (mesuré sans pipe).
+Tests : `make test-cli-parsing` **29/29** (+4 : 2 malformés fatals + 2 contrôles positifs
+fichier non vide). `make clean && make tests` complet vert (exit 0). Builds natif + SDL2 OK.
+
+---
+
 ### Sprint 134: Screenshot texte — `--screenshot-text` + `--screenshot-ansi` (v1.92.0-alpha) - DONE
 Réponse à « existe-t-il un screenshot texte ? ». Constat **mesuré** avant tout code :
 `video_export_ascii()` existait dans `export.c` mais **n'était branchée à aucune option

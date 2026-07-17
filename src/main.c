@@ -323,6 +323,8 @@ static void print_usage(const char* program_name) {
     printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
     printf("      --screenshot-text FILE Dump screen text ($BB80, 40x28) as ASCII at exit\n");
     printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
+    printf("      --screenshot-text-at C:FILE  Dump screen text after C cycles to FILE\n");
+    printf("      --screenshot-ansi-at C:FILE  Dump ANSI framebuffer after C cycles to FILE\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
     printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
@@ -1462,6 +1464,10 @@ static bool emulator_init(emulator_t* emu) {
     emu->screenshot_at_file = NULL;
     emu->screenshot_text_file = NULL;
     emu->screenshot_ansi_file = NULL;
+    emu->screenshot_text_at_cycles = -1;
+    emu->screenshot_text_at_file = NULL;
+    emu->screenshot_ansi_at_cycles = -1;
+    emu->screenshot_ansi_at_file = NULL;
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
     emu->dump_ram_at_cycles = -1;
@@ -2080,6 +2086,8 @@ static void emulator_run(emulator_t* emu) {
     uint64_t total_executed = 0;
     uint64_t frame_count = 0;
     bool screenshot_at_done = false;
+    bool screenshot_text_at_done = false;
+    bool screenshot_ansi_at_done = false;
 
 #ifdef HAS_SDL2
     uint32_t frame_start_ticks = SDL_GetTicks();
@@ -2858,6 +2866,32 @@ static void emulator_run(emulator_t* emu) {
             screenshot_at_done = true;
         }
 
+        /* Text screenshot at specific cycle count (contenu texte réel $BB80) */
+        if (!screenshot_text_at_done && emu->screenshot_text_at_cycles >= 0 &&
+            (int64_t)total_executed >= emu->screenshot_text_at_cycles) {
+            FILE* tf = fopen(emu->screenshot_text_at_file, "w");
+            if (tf) {
+                video_export_screen_text(emu->memory.ram, tf);
+                fclose(tf);
+                log_info("Text screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, emu->screenshot_text_at_file);
+            } else {
+                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_at_file);
+            }
+            screenshot_text_at_done = true;
+        }
+
+        /* ANSI screenshot at specific cycle count (image true-color du framebuffer) */
+        if (!screenshot_ansi_at_done && emu->screenshot_ansi_at_cycles >= 0 &&
+            (int64_t)total_executed >= emu->screenshot_ansi_at_cycles) {
+            if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_at_file, 2, 2))
+                log_info("ANSI screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, emu->screenshot_ansi_at_file);
+            else
+                log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_at_file);
+            screenshot_ansi_at_done = true;
+        }
+
         /* Frame dump */
         if (emu->frame_dump_dir && (frame_count % (uint64_t)emu->frame_dump_interval == 0)) {
             char path[512];
@@ -3093,6 +3127,8 @@ int main(int argc, char* argv[]) {
     const char* screenshot_file = NULL;
     const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
     const char* screenshot_at_arg = NULL;
+    const char* screenshot_text_at_arg = NULL;
+    const char* screenshot_ansi_at_arg = NULL;
     const char* screenshot_text_file = NULL;
     const char* screenshot_ansi_file = NULL;
     const char* frame_dump_dir = NULL;
@@ -3186,6 +3222,8 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT: screenshot_file = optarg; break;
             case OPT_SCREENSHOT_TEXT: screenshot_text_file = optarg; break;
             case OPT_SCREENSHOT_ANSI: screenshot_ansi_file = optarg; break;
+            case OPT_SCREENSHOT_TEXT_AT: screenshot_text_at_arg = optarg; break;
+            case OPT_SCREENSHOT_ANSI_AT: screenshot_ansi_at_arg = optarg; break;
             case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
             case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
@@ -3885,6 +3923,22 @@ int main(int argc, char* argv[]) {
     if (screenshot_at_arg) {
         if (!cli_split_cycles_file(screenshot_at_arg, "screenshot-at",
                                    &emu.screenshot_at_cycles, &emu.screenshot_at_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+
+    /* Parse --screenshot-text-at CYCLES:FILE et --screenshot-ansi-at CYCLES:FILE */
+    if (screenshot_text_at_arg) {
+        if (!cli_split_cycles_file(screenshot_text_at_arg, "screenshot-text-at",
+                                   &emu.screenshot_text_at_cycles, &emu.screenshot_text_at_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    if (screenshot_ansi_at_arg) {
+        if (!cli_split_cycles_file(screenshot_ansi_at_arg, "screenshot-ansi-at",
+                                   &emu.screenshot_ansi_at_cycles, &emu.screenshot_ansi_at_file)) {
             emulator_cleanup(&emu);
             return 1;
         }

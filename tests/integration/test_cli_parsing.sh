@@ -71,6 +71,12 @@ expect "--dump-ram-at without ':' → exit 1" 1 "Invalid --dump-ram-at format"
 run "$EMU" -r "$ROM" -n --screenshot-at NOCOLON -c 1000
 expect "--screenshot-at without ':' → exit 1" 1 "Invalid --screenshot-at format"
 
+run "$EMU" -r "$ROM" -n --screenshot-text-at NOCOLON -c 1000
+expect "--screenshot-text-at without ':' → exit 1" 1 "Invalid --screenshot-text-at format"
+
+run "$EMU" -r "$ROM" -n --screenshot-ansi-at NOCOLON -c 1000
+expect "--screenshot-ansi-at without ':' → exit 1" 1 "Invalid --screenshot-ansi-at format"
+
 run "$EMU" -r "$ROM" -n --type-keys NOCOLON -c 1000
 expect "--type-keys without ':' → exit 1" 1 "Invalid --type-keys format"
 
@@ -112,6 +118,22 @@ if [ "$RC" -eq 0 ] && [ -s "$TMP/ram.bin" ] \
     note_pass "well-formed --dump-ram-at 500000:FILE parses and writes 64K"
 else
     note_fail "well-formed --dump-ram-at (rc=$RC, size=$(stat -c%s "$TMP/ram.bin" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --screenshot-text-at : dump du texte $BB80 non vide au cycle donné
+run "$EMU" -r "$ROM" -n --screenshot-text-at 3000000:"$TMP/at.txt" -c 3200000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/at.txt" ]; then
+    note_pass "well-formed --screenshot-text-at 3000000:FILE parses and writes text"
+else
+    note_fail "well-formed --screenshot-text-at (rc=$RC, size=$(stat -c%s "$TMP/at.txt" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --screenshot-ansi-at : image ANSI non vide au cycle donné
+run "$EMU" -r "$ROM" -n --screenshot-ansi-at 3000000:"$TMP/at.ansi" -c 3200000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/at.ansi" ]; then
+    note_pass "well-formed --screenshot-ansi-at 3000000:FILE parses and writes ANSI"
+else
+    note_fail "well-formed --screenshot-ansi-at (rc=$RC, size=$(stat -c%s "$TMP/at.ansi" 2>/dev/null || echo 0))"
 fi
 
 # ── side-effect options (fopen / load at parse time) : the delicate part of

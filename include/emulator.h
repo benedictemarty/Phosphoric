@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.92.0-alpha"
+#define EMU_VERSION "1.93.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -241,6 +241,10 @@ typedef struct emulator_s {
     const char* screenshot_at_file;
     const char* screenshot_text_file; /* dump contenu texte écran $BB80 (sortie) */
     const char* screenshot_ansi_file; /* image ANSI true-color du framebuffer (sortie) */
+    int64_t screenshot_text_at_cycles; /* dump texte à un cycle donné (-1 = off) */
+    const char* screenshot_text_at_file;
+    int64_t screenshot_ansi_at_cycles; /* image ANSI à un cycle donné (-1 = off) */
+    const char* screenshot_ansi_at_file;
 
     /* Frame dump options */
     const char* frame_dump_dir;
