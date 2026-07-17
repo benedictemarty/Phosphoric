@@ -2228,17 +2228,24 @@ static void emulator_run(emulator_t* emu) {
 
         total_executed += (uint64_t)frame_cycles;
 
-        /* --audio-wav : render one frame of PSG audio and append it as 16-bit
-         * stereo PCM. ay_generate is the same routine the SDL callback uses ;
-         * this path is only armed in headless (SDL audio is not opened there),
-         * so the main loop is the sole consumer of the PSG event queue. */
-        if (emu->audio_wav_fp) {
+        /* Headless audio sinks : render THIS frame's PSG audio ONCE via
+         * ay_generate (the same routine the SDL callback uses) and feed every
+         * active sink — the --audio-wav file and/or the AVI's PCM stream.
+         * Generating once is essential : ay_generate consumes the PSG event
+         * queue, so two calls per frame would double-drain it. Armed only in
+         * headless (in GUI the SDL audio device is the generator's owner). */
+        bool avi_audio = emu->video_avi_active && emu->video_avi_rec.has_audio;
+        if (emu->audio_wav_fp || avi_audio) {
             enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
             int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
             ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
-            fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
-            emu->audio_wav_data_bytes +=
-                (uint32_t)(WAV_FRAME_SAMPLES * 2 * (int)sizeof(int16_t));
+            if (emu->audio_wav_fp) {
+                fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
+                emu->audio_wav_data_bytes +=
+                    (uint32_t)(WAV_FRAME_SAMPLES * 2 * (int)sizeof(int16_t));
+            }
+            if (avi_audio)
+                avi_recorder_add_audio(&emu->video_avi_rec, wav_buf, WAV_FRAME_SAMPLES);
         }
 
         /* Sprint 35a freeze — async pause: once per frame, peek at stdin.
@@ -3608,11 +3615,18 @@ int main(int argc, char* argv[]) {
          * border, so the stream geometry grows by the border on each side. */
         int avi_w = emu.export_border ? ORIC_SCREEN_W + 2 * VIDEO_BORDER_W : ORIC_SCREEN_W;
         int avi_h = emu.export_border ? ORIC_SCREEN_H + 2 * VIDEO_BORDER_H : ORIC_SCREEN_H;
-        if (avi_recorder_open(&emu.video_avi_rec, video_avi_file,
-                              avi_w, avi_h,
-                              emu.video_avi_fps, emu.video_avi_quality)) {
+        /* Audio is muxed into the AVI only in headless : in GUI the SDL audio
+         * callback already owns the PSG generator (ay_generate), so the main
+         * loop must not also drive it. Headless has no SDL audio device. */
+        int avi_arate = emu.headless ? AUDIO_SAMPLE_RATE : 0;
+        int avi_achan = emu.headless ? 2 : 0;
+        if (avi_recorder_open_av(&emu.video_avi_rec, video_avi_file,
+                                 avi_w, avi_h,
+                                 emu.video_avi_fps, emu.video_avi_quality,
+                                 avi_arate, avi_achan)) {
             emu.video_avi_active = true;
-            log_info("Video recording (MJPEG AVI) -> %s (%d fps, q%d)",
+            log_info("Video recording (MJPEG AVI%s) -> %s (%d fps, q%d)",
+                     emu.headless ? " + PCM audio" : "",
                      video_avi_file, emu.video_avi_fps, emu.video_avi_quality);
         } else {
             log_error("Cannot open video file for recording: %s", video_avi_file);

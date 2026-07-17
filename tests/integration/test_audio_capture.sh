@@ -77,6 +77,16 @@ else
     note_fail "WAV differs between runs (non-deterministic)"
 fi
 
+# ── Test 4: --video (headless) muxes a PCM audio stream into the AVI ────
+"$EMU" -r "$ROM" -n --type-keys '2500000:PING\n' \
+    --video "$TMP/ping.avi" -c 6000000 >/dev/null 2>&1
+if [ -s "$TMP/ping.avi" ] && grep -qa "auds" "$TMP/ping.avi" \
+        && grep -qa "01wb" "$TMP/ping.avi"; then
+    note_pass "--video (headless) AVI embeds a PCM audio stream ('auds'+'01wb')"
+else
+    note_fail "--video AVI has no audio stream"
+fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]

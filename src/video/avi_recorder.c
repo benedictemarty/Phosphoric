@@ -111,8 +111,26 @@ static void jpeg_append(void* context, void* data, int size) {
 #define AVI_STRH_LENGTH_POS   (AVI_STRH_DATA_POS + 32L)
 #define AVI_STRH_SUGGBUF_POS  (AVI_STRH_DATA_POS + 36L)
 
+/* Optional audio 'strl' follows the video one. Its strh data starts after the
+ * video strh (56) + video strf chunk (8+40) + the audio LIST/'strl' (12) +
+ * 'strh'+size (8). Only meaningful when has_audio. */
+#define AVI_AUDIO_STRH_DATA_POS  (AVI_STRH_DATA_POS + 56L + 8L + 40L + 12L + 8L)
+#define AVI_AUDIO_STRH_LENGTH_POS  (AVI_AUDIO_STRH_DATA_POS + 32L)
+#define AVI_AUDIO_STRH_SUGGBUF_POS (AVI_AUDIO_STRH_DATA_POS + 36L)
+
+/* hdrl LIST payload sizes. Video-only = 192 ; the audio strl adds
+ * 8 (LIST+size) + 94 ('strl' 4 + strh 8+56 + strf 8+18) = 102. */
+#define AVI_HDRL_SIZE_VIDEO  192u
+#define AVI_HDRL_SIZE_AV     (AVI_HDRL_SIZE_VIDEO + 102u)
+
 bool avi_recorder_open(avi_recorder_t* rec, const char* filename,
                        int width, int height, int fps, int quality) {
+    return avi_recorder_open_av(rec, filename, width, height, fps, quality, 0, 0);
+}
+
+bool avi_recorder_open_av(avi_recorder_t* rec, const char* filename,
+                          int width, int height, int fps, int quality,
+                          int audio_rate, int audio_channels) {
     if (!rec || !filename || width <= 0 || height <= 0 || fps <= 0) return false;
 
     memset(rec, 0, sizeof(*rec));
@@ -124,6 +142,12 @@ bool avi_recorder_open(avi_recorder_t* rec, const char* filename,
     rec->fps = fps;
     rec->quality = (quality < 1) ? 1 : (quality > 100 ? 100 : quality);
 
+    rec->has_audio = (audio_rate > 0 && audio_channels > 0);
+    rec->audio_rate = audio_rate;
+    rec->audio_channels = audio_channels;
+    uint32_t block_align = rec->has_audio ? (uint32_t)(audio_channels * 2) : 0;
+    uint32_t avg_bps = rec->has_audio ? (uint32_t)audio_rate * block_align : 0;
+
     FILE* fp = rec->fp;
     uint32_t usec = (uint32_t)(1000000 / fps);
 
@@ -132,9 +156,9 @@ bool avi_recorder_open(avi_recorder_t* rec, const char* filename,
     put_u32(fp, 0);                /* size placeholder */
     put_fourcc(fp, "AVI ");
 
-    /* LIST 'hdrl' (fixed size 192) */
+    /* LIST 'hdrl' (192 video-only, +102 with the audio strl) */
     put_fourcc(fp, "LIST");
-    put_u32(fp, 192);
+    put_u32(fp, rec->has_audio ? AVI_HDRL_SIZE_AV : AVI_HDRL_SIZE_VIDEO);
     put_fourcc(fp, "hdrl");
 
     /* avih (56 bytes) */
@@ -146,7 +170,7 @@ bool avi_recorder_open(avi_recorder_t* rec, const char* filename,
     put_u32(fp, 0x10);             /* dwFlags = AVIF_HASINDEX */
     put_u32(fp, 0);                /* dwTotalFrames (patched) */
     put_u32(fp, 0);                /* dwInitialFrames */
-    put_u32(fp, 1);                /* dwStreams */
+    put_u32(fp, rec->has_audio ? 2 : 1); /* dwStreams */
     put_u32(fp, 0);                /* dwSuggestedBufferSize (patched) */
     put_u32(fp, (uint32_t)width);  /* dwWidth */
     put_u32(fp, (uint32_t)height); /* dwHeight */
@@ -196,6 +220,47 @@ bool avi_recorder_open(avi_recorder_t* rec, const char* filename,
     put_u32(fp, 0);                /* biClrUsed */
     put_u32(fp, 0);                /* biClrImportant */
 
+    /* Second stream : PCM audio ('auds'). Layout must match the offsets in
+     * AVI_AUDIO_STRH_* and the size in AVI_HDRL_SIZE_AV. */
+    if (rec->has_audio) {
+        /* LIST 'strl' (fixed size 94) */
+        put_fourcc(fp, "LIST");
+        put_u32(fp, 94);
+        put_fourcc(fp, "strl");
+
+        /* strh (56 bytes) */
+        put_fourcc(fp, "strh");
+        put_u32(fp, 56);
+        put_fourcc(fp, "auds");        /* fccType */
+        put_u32(fp, 1);                /* fccHandler = WAVE_FORMAT_PCM */
+        put_u32(fp, 0);                /* dwFlags */
+        put_u16(fp, 0);                /* wPriority */
+        put_u16(fp, 0);                /* wLanguage */
+        put_u32(fp, 0);                /* dwInitialFrames */
+        put_u32(fp, 1);                /* dwScale */
+        put_u32(fp, (uint32_t)audio_rate); /* dwRate → dwLength/dwRate = seconds */
+        put_u32(fp, 0);                /* dwStart */
+        put_u32(fp, 0);                /* dwLength = sample-frames (patched) */
+        put_u32(fp, 0);                /* dwSuggestedBufferSize (patched) */
+        put_u32(fp, 0xFFFFFFFFu);      /* dwQuality */
+        put_u32(fp, block_align);      /* dwSampleSize = block align */
+        put_u16(fp, 0);                /* rcFrame.left */
+        put_u16(fp, 0);                /* rcFrame.top */
+        put_u16(fp, 0);                /* rcFrame.right */
+        put_u16(fp, 0);                /* rcFrame.bottom */
+
+        /* strf = WAVEFORMATEX (18 bytes) */
+        put_fourcc(fp, "strf");
+        put_u32(fp, 18);
+        put_u16(fp, 1);                        /* wFormatTag = PCM */
+        put_u16(fp, (uint16_t)audio_channels); /* nChannels */
+        put_u32(fp, (uint32_t)audio_rate);     /* nSamplesPerSec */
+        put_u32(fp, avg_bps);                  /* nAvgBytesPerSec */
+        put_u16(fp, (uint16_t)block_align);    /* nBlockAlign */
+        put_u16(fp, 16);                       /* wBitsPerSample */
+        put_u16(fp, 0);                        /* cbSize */
+    }
+
     /* LIST 'movi' (size patched on close). Record the position of the
      * 'movi' fourcc: idx1 offsets and movi_size are measured from here. */
     put_fourcc(fp, "LIST");
@@ -233,6 +298,7 @@ bool avi_recorder_add_frame(avi_recorder_t* rec, const uint8_t* rgb) {
     long chunk_pos = ftell(fp);
     rec->index[rec->index_len].offset = (uint32_t)(chunk_pos - rec->movi_pos);
     rec->index[rec->index_len].size = jlen;
+    rec->index[rec->index_len].is_audio = 0;
     rec->index_len++;
 
     /* Write '00dc' chunk: fourcc, size, payload, pad to even. */
@@ -249,6 +315,43 @@ bool avi_recorder_add_frame(avi_recorder_t* rec, const uint8_t* rgb) {
     return !ferror(fp);
 }
 
+bool avi_recorder_add_audio(avi_recorder_t* rec, const int16_t* samples,
+                            int nframes) {
+    if (!rec || !rec->fp) return false;
+    if (!rec->has_audio) return true;              /* no audio stream: no-op */
+    if (!samples || nframes <= 0) return true;
+    FILE* fp = rec->fp;
+
+    uint32_t bytes = (uint32_t)nframes * (uint32_t)(rec->audio_channels * 2);
+
+    if (rec->index_len >= rec->index_cap) {
+        uint32_t cap = rec->index_cap ? rec->index_cap * 2 : 1024;
+        avi_index_entry_t* ni =
+            (avi_index_entry_t*)realloc(rec->index, cap * sizeof(*ni));
+        if (!ni) return false;
+        rec->index = ni;
+        rec->index_cap = cap;
+    }
+    long chunk_pos = ftell(fp);
+    rec->index[rec->index_len].offset = (uint32_t)(chunk_pos - rec->movi_pos);
+    rec->index[rec->index_len].size = bytes;
+    rec->index[rec->index_len].is_audio = 1;
+    rec->index_len++;
+
+    /* Write '01wb' chunk: fourcc, size, PCM payload, pad to even. */
+    put_fourcc(fp, "01wb");
+    put_u32(fp, bytes);
+    fwrite(samples, 1, bytes, fp);
+    if (bytes & 1) {
+        uint8_t pad = 0;
+        fwrite(&pad, 1, 1, fp);
+    }
+
+    if (bytes > rec->max_audio_chunk) rec->max_audio_chunk = bytes;
+    rec->audio_frames += (uint32_t)nframes;
+    return !ferror(fp);
+}
+
 bool avi_recorder_close(avi_recorder_t* rec) {
     if (!rec || !rec->fp) {
         if (rec) { free(rec->index); free(rec->jpeg_buf);
@@ -261,12 +364,18 @@ bool avi_recorder_close(avi_recorder_t* rec) {
     long movi_end = ftell(fp);
     uint32_t movi_size = (uint32_t)(movi_end - rec->movi_pos); /* incl 'movi' fourcc */
 
-    /* idx1 index. */
+    /* idx1 index. Each entry carries its own fourcc: video '00dc' (keyframe)
+     * or audio '01wb' (no keyframe flag). */
     put_fourcc(fp, "idx1");
     put_u32(fp, rec->index_len * 16u);
     for (uint32_t i = 0; i < rec->index_len; i++) {
-        put_fourcc(fp, "00dc");
-        put_u32(fp, 0x10);                 /* AVIIF_KEYFRAME */
+        if (rec->index[i].is_audio) {
+            put_fourcc(fp, "01wb");
+            put_u32(fp, 0);                /* audio: no AVIIF_KEYFRAME */
+        } else {
+            put_fourcc(fp, "00dc");
+            put_u32(fp, 0x10);             /* AVIIF_KEYFRAME */
+        }
         put_u32(fp, rec->index[i].offset);
         put_u32(fp, rec->index[i].size);
     }
@@ -280,6 +389,10 @@ bool avi_recorder_close(avi_recorder_t* rec) {
     patch_u32(fp, AVI_AVIH_SUGGBUF_POS, rec->max_jpeg_size);
     patch_u32(fp, AVI_STRH_LENGTH_POS, rec->frame_count);
     patch_u32(fp, AVI_STRH_SUGGBUF_POS, rec->max_jpeg_size);
+    if (rec->has_audio) {
+        patch_u32(fp, AVI_AUDIO_STRH_LENGTH_POS, rec->audio_frames);
+        patch_u32(fp, AVI_AUDIO_STRH_SUGGBUF_POS, rec->max_audio_chunk);
+    }
 
     bool ok = !ferror(fp);
     fclose(fp);

@@ -83,6 +83,25 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Sprint 133: AVI sonorisé — `--video` embarque une piste audio PCM (v1.91.0-alpha) - DONE
+Suite de Sprint 132. Constat mesuré : `--video` produisait un MJPEG **muet** (1 flux
+`vids`, aucun `auds`). Le recorder gagne un **2e flux `auds` PCM 16-bit** entrelacé.
+- `avi_recorder_open_av(...audio_rate, channels)` : déclare le 2e `strl`/`auds` +
+  `WAVEFORMATEX`, `dwStreams=2`, `hdrl` 192→294 ; `avi_recorder_open` = wrapper
+  (rate 0 → sortie **byte-identique**). `avi_recorder_add_audio` écrit les chunks
+  `01wb` ; `idx1` fourcc/flags par entrée ; back-patch `dwLength` audio à la fermeture.
+- `main.c` : audio dans l'AVI **headless uniquement** (GUI = SDL possède `ay_generate`) ;
+  génération audio par trame **consolidée** (un seul `ay_generate`/trame → WAV + AVI,
+  jamais deux drains de la file d'événements PSG).
+Vérifié (ffprobe/ffmpeg) : AVI PING = 2 flux (mjpeg 6,02 s + pcm_s16le 44100 stéréo),
+audio extrait 265482 frames **non silencieux**, vidéo 301 trames OK, `dwLength` correct,
+0 erreur conteneur. Tests : `test-avi` 9/9 (+2 : flux auds + dwLength ; non-régression
+vidéo-seul), `test-audio-capture` 5/5 (+1 : AVI headless a `auds`+`01wb`).
+`make tests` complet vert (exit 0 ; le harnais n'émet pas de total agrégé).
+Builds natif + SDL2 OK.
+
+---
+
 ### Sprint 132: Capture audio headless — `--audio-wav` + `--psg-trace` (v1.90.0-alpha) - DONE
 Équivalent audio de `--screenshot-at` : valider le son PSG dans un run headless
 automatique (mesuré, pas déduit). Motivé par le volet son du portage Spellbinder

@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.91.0-alpha] - 2026-07-17
+
+### Added — AVI sonorisé : `--video` embarque une piste audio PCM en headless
+
+Suite directe de la capture audio (v1.90.0) : `--video` produisait un MJPEG AVI
+**muet** (constat mesuré : 1 seul flux `vids`, aucun `auds`). Le recorder gagne un
+**second flux `auds` PCM 16-bit** entrelacé avec les trames vidéo.
+
+- `avi_recorder.c` : nouvelle `avi_recorder_open_av(..., audio_rate, audio_channels)`
+  (déclare le 2e `strl`/`auds` + `WAVEFORMATEX`, `dwStreams=2`, `hdrl` 192→294) ;
+  `avi_recorder_open` devient un wrapper (`audio_rate=0` → sortie **byte-identique**
+  à avant). `avi_recorder_add_audio(rec, samples, nframes)` écrit un chunk `01wb` ;
+  `idx1` porte le bon fourcc/flags par entrée (`00dc` keyframe / `01wb`) ; back-patch
+  de la longueur audio (`dwLength` = sample-frames) à la fermeture.
+- `main.c` : `--video` ouvre avec audio **uniquement en headless** (en GUI le
+  callback SDL possède déjà `ay_generate`). La génération audio par trame est
+  **consolidée** : un seul `ay_generate` par trame nourrit le WAV (`--audio-wav`)
+  ET l'AVI (jamais deux drains de la file d'événements PSG).
+
+Vérifié (ffprobe/ffmpeg dispo sur l'hôte) : AVI PING = 2 flux (`mjpeg` 6,02 s +
+`pcm_s16le` 44100 Hz stéréo), audio extrait = 265482 frames **non silencieux**
+(42280 éch. ≠ 0, identique au `--audio-wav`), vidéo = 301 trames décodées sans
+erreur, `dwLength` audio = 265482 (back-patch correct), aucune erreur de conteneur.
+
+Tests : `test-avi` +2 (flux `auds` + `dwLength` patché ; non-régression vidéo-seul
+`dwStreams=1`/pas de `auds`) → 9/9 ; `test-audio-capture` +1 (AVI headless contient
+`auds`+`01wb`) → 5/5. `avi_recorder_open` inchangé pour ses 8 appels de test. Suite
+complète verte. EMU_VERSION 1.90.0-alpha → 1.91.0-alpha ; builds natif + SDL2 OK.
+
 ## [1.90.0-alpha] - 2026-07-17
 
 ### Added — Capture audio headless : `--audio-wav` et `--psg-trace`
