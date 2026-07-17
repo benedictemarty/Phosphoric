@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.81.0-alpha] - 2026-07-17
+
+### Changed — Bus de périphériques `io_device_t` : le main ne câble plus les périphériques en dur
+
+Réponse au constat architectural « que fait le code du LOCI dans le main de
+l'émulateur ? ». Le routage I/O ($0300-$03FF) était une longue cascade de `if`
+codés en dur dans `io_read_callback`/`io_write_callback` de `main.c`. On
+introduit une **abstraction de bus** (`io_device_t` : `claims`/`read`/`write`
+recevant le contexte `emulator_t*`) et on migre les périphériques par la
+méthode *strangler*, sans changement de comportement observable.
+
+- **Nouveau** : `include/io/io_device.h` (contrat `io_device_t`), table `io_bus[]`
+  + `io_bus_find()` dans `main.c`. L'ordre de la table = priorité de claim.
+- **Migrés vers le bus** : DTL2000 ($03F8-$03FD, déjà fait sprint précédent),
+  puis **ACIA 6551**, **Mageco/ORICON MIDI** et **Microdisc WD1793**. Les blocs
+  `if` correspondants sont retirés de `io_read_callback`/`io_write_callback`.
+- **LOCI reste câblé en dur, en tête** : ses fenêtres TAP $0315-$0317 / DSK
+  chevauchent le Microdisc avec une priorité supérieure ; il est donc évalué
+  *avant* la boucle de bus. L'ULA-NG reste câblée *après* le bus (repli avant
+  VIA). Le wrapper ACIA conserve le cas particulier picowifi-over-LOCI ($0380,
+  MIA non fiable → écriture ignorée) ; le wrapper Microdisc conserve le
+  `fdc_trace` et la synchro des drapeaux d'overlay
+  (`memory.basic_rom_disabled`/`overlay_active`).
+- Doc : `docs/architecture/io-bus.md` (contrat, taxonomie cœur/bus/port-attaché,
+  ordre de migration, extensions futures init/reset/savestate/tick).
+
+### Fixed — `test-savestate` ne compilait plus depuis le retrait d'OCULA
+
+Le retrait d'OCULA (1.80.0-alpha) avait laissé `tests/unit/test_savestate.c`
+référençant des symboles supprimés (`ULA_PROFILE_OCULA/HCS10017`,
+`memory_ocula_*`, `emu.ocula_gpu`, `video.ocula_scroll_*`) → `test-savestate`
+ne compilait plus (régression non détectée sur `main`). Retrait des 3 tests
+OCULA obsolètes (profil ULA / banking OCB / GPU OGP). Le format `.ost` reste
+rétro-compatible : les sections OCB/OGP d'anciens fichiers sont ignorées à la
+lecture. Suite de tests de nouveau intégralement verte (923).
+
+EMU_VERSION 1.80.0-alpha → 1.81.0-alpha.
+
 ## [1.80.0-alpha] - 2026-07-17
 
 ### Removed — Retrait complet d'OCULA du mainline (sur demande)

@@ -6,6 +6,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 121: Bus de périphériques `io_device_t` (v1.81.0-alpha) - DONE
+Réponse au constat architectural « que fait le code du LOCI dans le `main` de
+l'émulateur ? ». Le routage I/O ($0300-$03FF) était une cascade de `if` codés
+en dur dans `io_read_callback`/`io_write_callback`. On introduit une
+**abstraction de bus** et on migre les périphériques par la méthode *strangler*,
+sans changement de comportement observable.
+- [x] `include/io/io_device.h` : contrat `io_device_t` (`claims`/`read`/`write`
+      recevant `emulator_t*`). Table `io_bus[]` + `io_bus_find()` dans `main.c`
+      (l'ordre de la table = priorité de claim).
+- [x] Migrés vers le bus : DTL2000 (sprint précédent), puis **ACIA 6551**,
+      **Mageco/ORICON MIDI**, **Microdisc WD1793** → blocs `if` retirés des deux
+      callbacks. Wrappers conservant les cas particuliers (picowifi-over-LOCI
+      $0380, `fdc_trace` + synchro overlay Microdisc).
+- [x] LOCI reste câblé **en tête** (TAP $0315-$0317 / DSK chevauchent le
+      Microdisc, priorité +) ; ULA-NG reste câblée **après** le bus (repli VIA).
+- [x] Doc `docs/architecture/io-bus.md` (contrat, taxonomie, ordre de migration).
+- [x] Fix : `test-savestate` ne compilait plus depuis le retrait d'OCULA
+      (symboles supprimés) → 3 tests OCULA obsolètes retirés (.ost rétro-compatible).
+      Suite complète verte : 923 tests.
+> **backlog** : migrer LOCI et ULA-NG vers le bus (dernier ressort — priorités
+> croisées) ; hooks génériques init/reset/savestate/tick sur `io_device_t`.
+
+---
+
 ### Sprint 117: VDU intégré ULA-NG v0.1 (v1.77.0-alpha) - DONE
 Port de commandes de style VDU (`NG_VDU` $0357) : le 6502 streame des octets,
 l'interpréteur vit **dans l'ULA-NG** (stand-in du firmware soft-core FPGA).

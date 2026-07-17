@@ -7,7 +7,8 @@
  *
  * Implements .ost (Oric Save sTate) format:
  * - 48-byte header (magic, version, file size, CRC32, emu version)
- * - Sequential sections: CPU, MEM, VIA, PSG, VID, OCB, KBD, FDC, MDC, TAP, SER, META
+ * - Sequential sections: CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, SER, META
+ *   (sections OCULA OCB/OGP retirées ; ignorées si présentes dans un ancien .ost)
  *  
  * - CRC32 integrity check over all data after the header
  */

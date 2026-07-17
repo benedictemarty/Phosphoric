@@ -919,9 +919,59 @@ static bool loci_resume_session_cb(void* ctx) {
 /* ── Bus I/O : périphériques enregistrés (docs/architecture/io-bus.md) ──────
  * Migration progressive de la cascade de `if` en dur vers cette table. Chaque
  * périphérique fournit claims/read/write ; le dispatch parcourt la table.
- * Étape 1 (preuve du modèle) : Digitelec DTL 2000 ($03F8-$03FD, plage exclusive
- * → migration iso-comportement). Les autres périphériques restent câblés en dur
- * pour l'instant (pattern « strangler »). */
+ * Le LOCI (priorité haute, recouvre le Microdisc via TAP $0315-$0317) reste
+ * câblé en dur AVANT la boucle ; ULA-NG reste câblée APRÈS. L'ordre de la table
+ * = la priorité (ACIA avant Microdisc : l'ACIA possède $031C-$031F si présente).
+ * Pattern « strangler ». */
+
+/* ACIA 6551 ($031C-$031F par défaut, base configurable). */
+static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_serial && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
+}
+static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
+    /* picowifi-over-LOCI : ACIA à $0380 échantillonnée via la fenêtre MIA ;
+     * une tior mal réglée corrompt la lecture (modem injoignable). */
+    if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
+        return 0xFF;
+    return acia_read(&emu->acia, addr);
+}
+static void acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
+        return;
+    acia_write(&emu->acia, addr, value);
+}
+
+/* Mageco / ORICON MIDI (ACIA 6850) : $03FE-$03FF ou $031C-$031E. */
+static bool mageco_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_mageco && mageco_addr_in_range(&emu->mageco, addr);
+}
+static uint8_t mageco_dev_read(emulator_t* emu, uint16_t addr) {
+    return mageco_read(&emu->mageco, addr);
+}
+static void mageco_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    mageco_write(&emu->mageco, addr, value);
+}
+
+/* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
+ * $031C-$031F si présente → pas de test interne ici). */
+static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_microdisc && addr >= 0x0310 && addr <= 0x031F;
+}
+static uint8_t microdisc_dev_read(emulator_t* emu, uint16_t addr) {
+    return microdisc_read(&emu->microdisc, addr);
+}
+static void microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    if (fdc_trace_enabled()) {
+        fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
+                emu->cpu.PC, (unsigned long long)emu->cpu.cycles, addr, value);
+    }
+    microdisc_write(&emu->microdisc, addr, value);
+    /* Sync overlay flags to memory system */
+    emu->memory.basic_rom_disabled = emu->microdisc.romdis;
+    emu->memory.overlay_active = emu->microdisc.diskrom;
+}
+
+/* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
 static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
 }
@@ -933,7 +983,10 @@ static void dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 }
 
 static const io_device_t io_bus[] = {
-    { "dtl2000", dtl2000_dev_claims, dtl2000_dev_read, dtl2000_dev_write },
+    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write },
+    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write },
+    { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write },
+    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write },
 };
 static const int io_bus_count = (int)(sizeof(io_bus) / sizeof(io_bus[0]));
 
@@ -948,10 +1001,6 @@ static const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
 /* I/O callback: route VIA and Microdisc register access */
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
-
-    /* Bus I/O : périphériques enregistrés (voir io_bus). */
-    const io_device_t* dev = io_bus_find(emu, address);
-    if (dev) return dev->read(emu, address);
 
     /* LOCI MIA: $03A0-$03BF (checked first — independent of other peripherals) */
     if (emu->has_loci && loci_addr_in_mia(address)) {
@@ -970,34 +1019,10 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return loci_dsk_read(&emu->loci, address);
     }
 
-    /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
-    if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
-        /* picowifi-over-LOCI: the ACIA at $0380 is sampled through the MIA bus
-         * window. A mis-tuned tior corrupts the read (modem unreachable). */
-        if (emu->has_loci && emu->acia_base_addr == 0x0380 &&
-            !loci_mia_io_reliable(&emu->loci)) {
-            return 0xFF;
-        }
-        return acia_read(&emu->acia, address);
-    }
-
-    /* Mageco / ORICON MIDI (ACIA 6850): $03FE-$03FF (Mageco) or $031C-$031F
-     * (ORICON). Checked before Microdisc since ORICON's window overlaps the
-     * Microdisc range — ORICON is LOCI-based and not used with a Microdisc. */
-    if (emu->has_mageco && mageco_addr_in_range(&emu->mageco, address)) {
-        return mageco_read(&emu->mageco, address);
-    }
-
-    /* Microdisc I/O: $0310-$031B (reduced when ACIA present) */
-    if (emu->has_microdisc && address >= 0x0310 && address <= 0x031F) {
-        /* If serial is active, ACIA owns $031C-$031F */
-        if (emu->has_serial && address >= emu->acia_base_addr) {
-            return acia_read(&emu->acia, address);
-        }
-        return microdisc_read(&emu->microdisc, address);
-    }
-
-    /* (Digitelec DTL 2000 $03F8-$03FD → migré vers io_bus, en tête.) */
+    /* Bus I/O : périphériques enregistrés (ACIA, Mageco, Microdisc, DTL2000) —
+     * après le LOCI prioritaire, avant le repli VIA. */
+    const io_device_t* dev = io_bus_find(emu, address);
+    if (dev) return dev->read(emu, address);
 
     /* ULA-NG registers $0340-$035F : intercepted only once unlocked ; while
      * locked the read falls through to the VIA mirror (indiscernable). */
@@ -1126,10 +1151,6 @@ static uint8_t portb_read_callback(void* userdata) {
 static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* Bus I/O : périphériques enregistrés (voir io_bus). */
-    const io_device_t* dev = io_bus_find(emu, address);
-    if (dev) { dev->write(emu, address, value); return; }
-
     /* LOCI MIA: $03A0-$03BF */
     if (emu->has_loci && loci_addr_in_mia(address)) {
         loci_write(&emu->loci, address, value);
@@ -1146,47 +1167,10 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
         return;
     }
 
-
-    /* ACIA 6551 serial: $031C-$031F */
-    if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
-        /* picowifi-over-LOCI: a mis-tuned MIA tior drops the write (the Oric
-         * cannot reach the modem). The register-select still updates so reads
-         * stay consistent, but the data never reaches the ACIA. */
-        if (emu->has_loci && emu->acia_base_addr == 0x0380 &&
-            !loci_mia_io_reliable(&emu->loci)) {
-            return;
-        }
-        acia_write(&emu->acia, address, value);
-        return;
-    }
-
-    /* Mageco / ORICON MIDI (ACIA 6850): $03FE-$03FF (Mageco) or $031C-$031F
-     * (ORICON) — before Microdisc since ORICON's window overlaps that range. */
-    if (emu->has_mageco && mageco_addr_in_range(&emu->mageco, address)) {
-        mageco_write(&emu->mageco, address, value);
-        return;
-    }
-
-    /* Microdisc I/O: $0310-$031F */
-    if (emu->has_microdisc && address >= 0x0310 && address <= 0x031F) {
-        /* If serial is active, ACIA owns $031C-$031F */
-        if (emu->has_serial && address >= emu->acia_base_addr) {
-            acia_write(&emu->acia, address, value);
-            return;
-        }
-        if (fdc_trace_enabled()) {
-            fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
-                    emu->cpu.PC, (unsigned long long)emu->cpu.cycles,
-                    address, value);
-        }
-        microdisc_write(&emu->microdisc, address, value);
-        /* Sync overlay flags to memory system */
-        emu->memory.basic_rom_disabled = emu->microdisc.romdis;
-        emu->memory.overlay_active = emu->microdisc.diskrom;
-        return;
-    }
-
-    /* (Digitelec DTL 2000 $03F8-$03FD → migré vers io_bus, en tête.) */
+    /* Bus I/O : périphériques enregistrés (ACIA, Mageco, Microdisc, DTL2000) —
+     * après le LOCI prioritaire, avant le repli VIA. */
+    const io_device_t* dev = io_bus_find(emu, address);
+    if (dev) { dev->write(emu, address, value); return; }
 
     /* ULA-NG registers $0340-$035F. Unlocked : ULA-NG owns the window (consume).
      * Locked : silently watch $0340 for the 'N','G' unlock sequence and let the
