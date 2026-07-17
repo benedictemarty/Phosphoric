@@ -1041,16 +1041,27 @@ static bool ula_ng_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
     return true;
 }
+/* Savestate (section "UNG") : délégué au module (POD, même-build, garde taille). */
+static bool ula_ng_dev_save(emulator_t* emu, FILE* fp) {
+    return ula_ng_save(&emu->ula_ng, fp);
+}
+static void ula_ng_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    ula_ng_load(&emu->ula_ng, fp, size);
+}
 
 static const io_device_t io_bus[] = {
-    { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL },
-    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL },
-    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL },
-    { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL },
-    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL },
+    /* (save_tag/save/load à NULL : ces devices n'ont pas encore de section .ost —
+     * à migrer sur le même modèle que l'ULA-NG ; LOCI a la réserve des handles OS.) */
+    { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL, NULL, NULL, NULL },
+    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL, NULL, NULL, NULL },
+    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL, NULL, NULL, NULL },
+    { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },
+    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL, NULL, NULL, NULL },
     /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
-     * écritures de sa fenêtre même verrouillée (guet 'N','G'). */
-    { "ula-ng",    ula_ng_dev_claims,    ula_ng_dev_read,    ula_ng_dev_write,    ula_ng_dev_claims_write },
+     * écritures de sa fenêtre même verrouillée (guet 'N','G'). Sérialisée via la
+     * section "UNG" (émise seulement si déverrouillée → .ost inchangé sinon). */
+    { "ula-ng",    ula_ng_dev_claims,    ula_ng_dev_read,    ula_ng_dev_write,    ula_ng_dev_claims_write,
+      "UNG\0",     ula_ng_dev_save,      ula_ng_dev_load },
 };
 static const int io_bus_count = (int)(sizeof(io_bus) / sizeof(io_bus[0]));
 
@@ -1608,6 +1619,10 @@ static bool emulator_init(emulator_t* emu) {
     /* Wire up I/O callbacks */
     memory_set_io_callbacks(&emu->memory, io_read_callback, io_write_callback, emu);
     via_set_irq_callback(&emu->via, irq_callback, emu);
+
+    /* Expose la table de bus à la sérialisation : les devices qui fournissent un
+     * hook save/load (ex. ULA-NG → section "UNG") persistent leur état .ost. */
+    savestate_set_io_devices(io_bus, io_bus_count);
 
     /* Drive PHI2-clocked peripherals from the CPU's per-cycle clock (replaces
      * the post-instruction batch ticking in the frame loop). */

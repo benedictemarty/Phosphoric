@@ -6,6 +6,31 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+### Sprint 124: Hooks de sérialisation `io_device_t` — l'ULA-NG persiste dans le `.ost` (v1.84.0-alpha) - DONE
+Extension du contrat au-delà du dispatch I/O. **Constat honnête** : les devices
+bus (DTL2000, Mageco, LOCI, ULA-NG) n'avaient **aucune section savestate** — état
+non persisté. Le hook corrige cette lacune, ULA-NG en premier.
+- [x] Contrat (`io_device.h`) : `save_tag` + `save(emu,fp)` (retourne `false` →
+      aucune section, `.ost` byte-identique si état par défaut) + `load(emu,fp,size)`.
+- [x] Plomberie découplée : `savestate.c` ignore `io_bus` ; `main.c` la fournit
+      via `savestate_set_io_devices()`. Save = une section par device à hook ;
+      load route les tags non gérés en dur vers le `load` du device correspondant
+      (tags vraiment inconnus toujours ignorés → compat ascendante).
+- [x] ULA-NG (section « UNG ») : `ula_ng_save`/`load` dans le module. POD sans
+      pointeur (30696 o) → blob + **garde par taille** au chargement = savestate
+      *même-build* (quicksave/load F2/F4) ; section émise seulement si déverrouillée
+      → `.ost` d'un boot normal inchangé.
+- [x] Preuves : `test-savestate` +2 (round-trip `memcmp==0` ; verrouillée = pas
+      de section, cible pré-existante non écrasée) 12/12 ; e2e réel `--ula-ng-poke`
+      → `.ost` 96503 o **avec** UNG (30704 o) vs boot normal 65799 o **sans**.
+- [x] Doc `docs/architecture/io-bus.md` §6.
+> **backlog** : migrer DTL2000 et Mageco sur le même modèle (petits jeux de
+> registres). **LOCI = réserve réelle** : ses handles de fichiers OS ne sont pas
+> sérialisables tels quels (ne pas prétendre le contraire). Hooks reset/tick :
+> non uniformes (reset F5 = CPU+LOCI seulement ; ordre de tick ≠ ordre de table).
+
+---
+
 ### Sprint 123: ULA-NG migrée vers le bus — dispatch I/O = boucle + repli VIA (v1.83.0-alpha) - DONE
 Dernier périphérique à plage encore câblé en dur. Sa migration a nécessité
 d'**étendre le contrat `io_device_t`** (sa sémantique d'écriture ne rentrait pas

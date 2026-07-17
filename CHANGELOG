@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.84.0-alpha] - 2026-07-17
+
+### Added — Hooks de sérialisation `io_device_t` : chaque device peut persister sa section `.ost` (ULA-NG en premier)
+
+Extension du contrat de bus au-delà du dispatch I/O. **Constat honnête à
+l'origine** : les périphériques de bus (DTL2000, Mageco, LOCI, **ULA-NG**)
+n'avaient **aucune section savestate** — leur état n'était pas persisté (lacune
+latente). Le hook systématise leur sérialisation et corrige cette lacune, en
+commençant par l'ULA-NG.
+
+- **Contrat** (`io_device.h`) : ajout de `save_tag` (tag 4 o de section, NULL =
+  non sérialisé), `save(emu, fp)` (écrit le payload ; **renvoie `false` → aucune
+  section émise**, pour un `.ost` byte-identique quand l'état est par défaut) et
+  `load(emu, fp, size)`.
+- **Plomberie découplée** : `savestate.c` ne connaît pas `io_bus` ; `main.c` la
+  lui fournit via `savestate_set_io_devices(io_bus, io_bus_count)`. À la sauvegarde,
+  une section est émise par device fournissant un hook ; au chargement, un tag
+  non géré en dur est routé vers le `load` du device dont `save_tag` correspond
+  (les tags réellement inconnus restent ignorés → compat ascendante préservée).
+- **Premier device migré : l'ULA-NG** (section « UNG »). `ula_ng_save`/`ula_ng_load`
+  vivent dans le module (il possède son format). L'état ULA-NG est un **POD sans
+  pointeur ni handle OS** (30696 o) → sérialisation en **blob** avec **garde par
+  taille** au chargement : c'est un savestate *même-build* (cas réel quicksave/load
+  F2/F4) ; un `.ost` d'un autre build/arch (layout différent) est ignoré
+  proprement plutôt que corrompu. La section n'est émise que si l'ULA-NG est
+  **déverrouillée** → `.ost` d'un boot normal **inchangé** (vérifié : tag « UNG »
+  absent, taille identique au pré-hook).
+
+Non-régression et preuves : `test-savestate` +2 tests (round-trip complet
+`memcmp==0` ; verrouillée → aucune section, un état cible pré-existant n'est pas
+écrasé) → 12/12. Suite complète verte. E2e émulateur réel : `--ula-ng-poke`
+(déverrouillage) → `.ost` 96503 o **avec** section UNG (30704 o = sizeof + en-tête) ;
+boot normal → 65799 o **sans** UNG. Restent DTL2000/Mageco à migrer sur ce modèle ;
+**LOCI a une réserve réelle** (handles de fichiers OS non sérialisables tels quels).
+Doc `docs/architecture/io-bus.md` §6.
+
+EMU_VERSION 1.83.0-alpha → 1.84.0-alpha.
+
 ## [1.83.0-alpha] - 2026-07-17
 
 ### Changed — ULA-NG migrée vers le bus : le dispatch I/O est désormais « boucle + repli VIA »

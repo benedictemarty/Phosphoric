@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>   /* FILE* pour les hooks de sérialisation */
 
 struct emulator_s;   /* contexte complet (forward-decl : évite le cycle d'includes) */
 
@@ -45,6 +46,23 @@ typedef struct io_device_s {
      *  lecture : l'ULA-NG verrouillée doit recevoir les écritures de sa fenêtre
      *  (pour repérer 'N','G') alors que ses lectures retombent sur le VIA. */
     bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);
+
+    /* ── Sérialisation d'état (savestate .ost), optionnelle ──────────────────
+     * Comble une lacune : les devices bus n'avaient aucune section .ost. Chaque
+     * device sérialise SA section, sans que savestate.c le connaisse (couplage
+     * évité : la table lui est fournie via savestate_set_io_devices).
+     * Le format .ost est à sections auto-décrites (tag+taille) ; les sections
+     * inconnues sont ignorées → rétro/ascendant-compatible. */
+
+    /** Tag de section 4 octets (ex. "UNG\0"). NULL → device non sérialisé. */
+    const char* save_tag;
+    /** Écrit le payload de la section sur `fp` (l'en-tête tag/taille est géré
+     *  par l'appelant). Retourne **false pour n'émettre AUCUNE section** (état
+     *  par défaut → `.ost` inchangé, zéro régression sur l'usage courant). */
+    bool    (*save)(struct emulator_s* emu, FILE* fp);
+    /** Relit `size` octets de payload écrits par `save` (appelé si un tag de
+     *  section correspond à `save_tag`). */
+    void    (*load)(struct emulator_s* emu, FILE* fp, uint32_t size);
 } io_device_t;
 
 #endif /* IO_DEVICE_H */

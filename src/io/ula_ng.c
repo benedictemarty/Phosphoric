@@ -58,6 +58,26 @@ void ula_ng_init(ula_ng_t* u) {
     ula_ng_reset(u);
 }
 
+/* ── Savestate (hooks io_device_t) ──────────────────────────────────────────
+ * L'état ULA-NG est un POD sans pointeur ni handle OS : on le sérialise en blob.
+ * C'est un savestate *même-build* (quicksave/load dans une session) ; le
+ * chargement est gardé par taille, donc un .ost d'un autre build/arch/version
+ * (layout différent) est ignoré proprement au lieu de corrompre l'état. */
+bool ula_ng_save(const ula_ng_t* u, FILE* fp) {
+    if (!u->unlocked)
+        return false;   /* verrouillée = état par défaut → n'émet aucune section */
+    return fwrite(u, sizeof(*u), 1, fp) == 1;
+}
+
+void ula_ng_load(ula_ng_t* u, FILE* fp, uint32_t size) {
+    if (size != sizeof(*u))
+        return;         /* layout différent → on n'écrase pas (garde par taille) */
+    if (fread(u, sizeof(*u), 1, fp) != 1) {
+        /* Lecture partielle : réinitialiser pour éviter un état incohérent. */
+        ula_ng_reset(u);
+    }
+}
+
 bool ula_ng_active(const ula_ng_t* u) {
     return u->unlocked;
 }

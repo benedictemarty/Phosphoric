@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>   /* FILE* : sérialisation savestate (ula_ng_save/load) */
 
 #define ULA_NG_WINDOW_LO   0x0340u
 #define ULA_NG_WINDOW_HI   0x035Fu
@@ -167,6 +168,17 @@ void ula_ng_init(ula_ng_t* u);
 
 /** Reset matériel : re-verrouille tout et remet les registres à 0. */
 void ula_ng_reset(ula_ng_t* u);
+
+/** Hook savestate — écrit l'état ULA-NG sur `fp`. Renvoie **false quand il n'y a
+ *  rien à sauver** (verrouillée = état par défaut) pour n'émettre AUCUNE section
+ *  (.ost byte-identique en usage courant). Sérialisation en blob (l'état est un
+ *  POD sans pointeur) → savestate *même-build* : voir ula_ng_load. */
+bool ula_ng_save(const ula_ng_t* u, FILE* fp);
+
+/** Hook savestate — relit l'état ULA-NG. **Garde par taille** : si `size` ne
+ *  correspond pas à sizeof(ula_ng_t) (autre build/arch/version), l'état n'est
+ *  PAS écrasé (reste par défaut) plutôt que corrompu. */
+void ula_ng_load(ula_ng_t* u, FILE* fp, uint32_t size);
 
 /** Vrai si l'adresse est dans la fenêtre registres $0340-$035F. */
 static inline int ula_ng_addr_in_window(uint16_t addr) {

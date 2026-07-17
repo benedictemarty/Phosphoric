@@ -101,15 +101,29 @@ les périphériques à plage (LOCI et ULA-NG compris) sont sur `io_device_t`.
 ## 6. Étapes suivantes (au-delà du dispatch I/O)
 
 Le même principe s'étend à ce qui rend main.c monolithique :
-- **init / reset / cleanup** : `io_device_t` pourrait porter `init/reset/cleanup`
-  → boucles génériques (au lieu du câblage manuel).
-- **savestate** : chaque device écrit/lit **sa** section .ost via le contrat →
-  supprime les sections codées en dur (le point qui a fait mal avec OCB/OGP).
-- **tick / IRQ** : hook `tick(emu, cycles)` optionnel pour les périphériques
-  temporisés (ACIA baud, FDC).
 
-Ces extensions se feront **après** que le dispatch I/O soit entièrement migré et
-vert, une étape à la fois.
+- **savestate** : ✅ *hook amorcé*. Le contrat porte `save_tag` + `save(emu,fp)`
+  + `load(emu,fp,size)`. `savestate.c` reçoit la table via
+  `savestate_set_io_devices()` (couplage évité), écrit une section par device qui
+  fournit un hook, et au chargement route les tags inconnus vers le `load` du
+  device correspondant. `save` peut renvoyer **false → aucune section** (état par
+  défaut → `.ost` byte-identique, zéro régression). **Premier device migré :
+  l'ULA-NG** (section « UNG ») — comble une vraie lacune (son état n'était pas
+  persisté). Sérialisation en **blob** (POD sans pointeur) avec **garde par
+  taille** au chargement ⇒ savestate *même-build* (le cas quicksave/load ; un
+  `.ost` d'un autre build/arch est ignoré, jamais corrompu). Restent à migrer sur
+  ce modèle : DTL2000, Mageco (petits jeux de registres) ; **LOCI a une réserve
+  réelle** — ses handles de fichiers OS ne sont pas sérialisables tels quels.
+  À terme, on pourra retirer les sections codées en dur (le mal OCB/OGP).
+- **init / reset / cleanup** : `io_device_t` pourrait porter ces hooks → boucles
+  génériques. *Non fait* : le reset n'est pas uniforme (le warm reset F5 ne reset
+  que CPU + LOCI, ce dernier avec une sémantique « garde les montages »).
+- **tick / IRQ** : hook `tick(emu, cycles)` optionnel pour les périphériques
+  temporisés (ACIA baud, FDC). *Non fait* : l'ordre de tick actuel (microdisc,
+  loci, acia, dtl2000, mageco) diffère de l'ordre de la table ; à valider
+  byte-identique avant de basculer.
+
+Ces extensions se font **une étape à la fois**, chacune vérifiée verte.
 
 ## 7. Contrainte opérationnelle
 

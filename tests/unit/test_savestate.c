@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include "emulator.h"
 #include "savestate.h"
+#include "io/ula_ng.h"
+#include "io/io_device.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -537,6 +539,84 @@ TEST(test_save_load_disk_image) {
  * les sections OCB/OGP absentes sont simplement ignorées au chargement.) */
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  TEST 12-13 : hooks de sérialisation io_device_t (section "UNG")     */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Wrappers de test reproduisant l'enregistrement fait par main.c (io_bus).
+ * savestate.c itère la table opaque fournie via savestate_set_io_devices. */
+static bool t_ula_ng_save(emulator_t* emu, FILE* fp) {
+    return ula_ng_save(&emu->ula_ng, fp);
+}
+static void t_ula_ng_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    ula_ng_load(&emu->ula_ng, fp, size);
+}
+static const io_device_t t_io_devices[] = {
+    { "ula-ng", NULL, NULL, NULL, NULL, "UNG\0", t_ula_ng_save, t_ula_ng_load },
+};
+
+/* Déverrouille l'ULA-NG ('N','G' sur $0340) et programme un état distinctif. */
+static void unlock_and_program_ula_ng(emulator_t* emu) {
+    ula_ng_init(&emu->ula_ng);
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_LOCK, 'N');
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_LOCK, 'G');
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_MODE, 0x01);     /* extensions actives */
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_SCROLLX, 3);
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_SCROLLY, 5);
+}
+
+TEST(test_save_load_ula_ng_roundtrip) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+    ula_ng_init(&emu1.ula_ng);
+    ula_ng_init(&emu2.ula_ng);
+    savestate_set_io_devices(t_io_devices, 1);
+
+    unlock_and_program_ula_ng(&emu1);
+    ASSERT_TRUE(emu1.ula_ng.unlocked);
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    /* La section "UNG" a restauré l'état ULA-NG à l'identique. */
+    ASSERT_TRUE(emu2.ula_ng.unlocked);
+    ASSERT_TRUE(emu2.ula_ng.active);
+    ASSERT_EQ(emu2.ula_ng.scrollx, 3);
+    ASSERT_EQ(emu2.ula_ng.scrolly, 5);
+    ASSERT_EQ(memcmp(&emu1.ula_ng, &emu2.ula_ng, sizeof(ula_ng_t)), 0);
+
+    savestate_set_io_devices(NULL, 0);
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* Verrouillée (= état par défaut) : aucune section "UNG" émise → un émulateur
+ * cible avec un état ULA-NG pré-existant n'est PAS écrasé au chargement. */
+TEST(test_save_load_ula_ng_locked_no_section) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+    ula_ng_init(&emu1.ula_ng);          /* emu1 verrouillée (défaut) */
+    unlock_and_program_ula_ng(&emu2);   /* emu2 a un état ULA-NG à préserver */
+    savestate_set_io_devices(t_io_devices, 1);
+
+    ASSERT_FALSE(emu1.ula_ng.unlocked);
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    /* Pas de section UNG dans le .ost → l'ULA-NG d'emu2 reste intacte. */
+    ASSERT_TRUE(emu2.ula_ng.unlocked);
+    ASSERT_EQ(emu2.ula_ng.scrollx, 3);
+    ASSERT_EQ(emu2.ula_ng.scrolly, 5);
+
+    savestate_set_io_devices(NULL, 0);
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -557,6 +637,8 @@ int main(void) {
     RUN(test_save_load_with_microdisc);
     RUN(test_save_load_bad_sectors);
     RUN(test_save_load_disk_image);
+    RUN(test_save_load_ula_ng_roundtrip);
+    RUN(test_save_load_ula_ng_locked_no_section);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
