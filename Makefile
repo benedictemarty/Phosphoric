@@ -131,6 +131,7 @@ SOURCES = src/main.c \
           src/io/mageco.c \
           src/io/serial_picowifi.c \
           src/io/ula_ng.c \
+          src/io/io_bus.c \
           src/video/video.c \
           src/video/textmode.c \
           src/video/hires.c \

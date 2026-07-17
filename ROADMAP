@@ -27,12 +27,16 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > verte. Incident : un `sed` mal délimité a corrompu 2 fichiers → restaurés via
 > `git checkout`, refaits avec Edit (leçon : pas de `sed` sur des lignes `#include`).
 
-### US 2 — Extraire le device ULA-NG et les wrappers bus (Sprint 126)
-- [ ] Déplacer les wrappers `*_dev_{claims,read,write,save,load}` (~120 L) hors
-      de `main.c` vers chaque module `io/*` (ou un `io/<dev>_device.c`).
-- [ ] `main.c` ne garde que la table `io_bus[]` et le dispatch.
-> Gain : le câblage de chaque device vit *dans* son module. Risque : bas
-> (déplacement mécanique, iso-comportement).
+### US 2 — Extraire le bus I/O de main.c (Sprint 126) — DONE (v1.86.0-alpha)
+- [x] Bloc du bus (6 wrappers `*_dev_*` + table `io_bus[]` + `io_bus_find`/
+      `io_bus_find_write`, ~170 L) extrait vers `src/io/io_bus.c` +
+      `include/io/io_bus.h`. `main.c` appelle les dispatch externes ;
+      registration savestate via `io_bus_devices(&count)`.
+> **Écart assumé** vs le plan (« dans chaque module ») : les wrappers ont besoin
+> d'`emulator_t` (claims croisés) → les mettre dans `acia6551.c`/`microdisc.c`
+> réintroduirait le couplage `emulator.h` retiré en US1. Le bon foyer est un
+> **adaptateur unique** (`io_bus.c`, seul io/ à inclure emulator.h). Modules purs
+> préservés. Iso-comportement golden 4/4 ; main.c 4690 → 4425 L.
 
 ### US 3 — Module argparse déclaratif (Sprint 127)
 - [ ] `struct cli_args_t` + table déclarative des ~79 options + boucle générique

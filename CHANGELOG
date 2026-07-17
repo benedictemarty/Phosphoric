@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.86.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US2 (Sprint 126) : bus I/O extrait de `main.c` vers un adaptateur dédié
+
+Le bloc du bus `io_device_t` (6 wrappers `*_dev_*` + table `io_bus[]` + dispatch
+`io_bus_find`/`io_bus_find_write`, ~170 lignes) quitte `main.c` pour un module
+d'adaptation dédié `src/io/io_bus.c` (+ `include/io/io_bus.h`).
+
+- **Écart assumé vs le plan initial** : le ROADMAP proposait de déplacer les
+  wrappers *dans chaque module* `io/*`. Je ne l'ai **pas** fait, car ces wrappers
+  accèdent à `emulator_t` complet (claims croisés : l'ACIA à $0380 consulte le
+  LOCI ; le Microdisc synchronise la mémoire d'overlay) → les mettre dans
+  `acia6551.c`/`microdisc.c` **réintroduirait** le couplage `emulator.h` que
+  l'US1 venait de retirer (et que l'audit saluait). Le bon foyer est une **couche
+  d'adaptation unique** qui a le droit de connaître `emulator_t`, laissant les
+  modules purs découplés.
+- `io_bus.c` est le seul nouveau fichier `io/` à inclure `emulator.h` (assumé :
+  c'est sa raison d'être). `main.c` garde `io_read/write_callback` (VIA/PSG/
+  imprimante/snoop LOCI) et appelle `io_bus_find*` désormais externes ;
+  l'enregistrement savestate passe par `io_bus_devices(&count)`.
+
+Non-régression : suite complète verte ; golden 4/4 iso-comportement (BASIC,
+Sedoric/Microdisc, LOCI SD, ULA-NG). `main.c` : 4690 → **4425** lignes (US1+US2).
+
+EMU_VERSION 1.85.0-alpha → 1.86.0-alpha.
+
 ## [1.85.0-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US1 (Sprint 125) : nettoyage à risque nul de `main.c`
