@@ -49,17 +49,20 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > Backlog : élargir la couverture de tests CLI d'abord, puis extraire le parser
 > par petits lots vérifiables. main.c 4425 → 4342 L.
 - [~] **Prérequis EN COURS — filet de tests CLI** : `tests/integration/test_cli_parsing.sh`
-      (cible `make test-cli-parsing`, **15/15**) verrouille le comportement **mesuré** du
-      parser avant tout refactor : `--help` (usage, rc 0), option inconnue **non-fatale**
-      (usage, rc 0), formats `CYCLES:VALUE` malformés → rc 1 message précis
-      (`--dump-ram-at`/`--screenshot-at`/`--type-keys`), validation enum/borne fatale
-      (`--serial`/`--model`/`--dtl2000` bogus → rc 1, `--scale 99` → rc 1 « must be 1-4 »)
-      vs **non-fatale** (`--joystick`/`--keyboard` bogus, `--acia-addr` hex invalide,
-      `--load-state` fichier absent → rc 0), contrôle positif `--dump-ram-at` bien formé
-      → dump 64K. Ces comportements non évidents (rc 0 vs rc 1 selon l'option) sont
-      capturés **tels quels** : un futur parser devra les reproduire ou les changer
-      consciemment. Binaire inchangé (test seul). Reste à étendre aux options à effets
-      de bord lourds (fopen/malloc/init) avant d'attaquer l'extraction.
+      (cible `make test-cli-parsing`, **22/22**) verrouille le comportement **mesuré** du
+      parser avant tout refactor. Couvre : `--help` (usage, rc 0), option inconnue
+      **non-fatale** (rc 0), formats `CYCLES:VALUE` malformés → rc 1 message précis
+      (`--dump-ram-at`/`--screenshot-at`/`--type-keys`), validation enum/borne **fatale**
+      (`--serial`/`--model`/`--dtl2000` bogus, `--scale 99` → rc 1) vs **non-fatale**
+      (`--joystick`/`--keyboard` bogus, `--acia-addr` hex invalide → rc 0), et surtout les
+      **options à effets de bord** (fopen/load au parsing) avec leurs divergences de
+      fatalité non évidentes : succès = artefact produit (`--trace`/`--profile` créent le
+      fichier) ; ressource absente = **fatale** (`--disk`, `--symbols` → rc 1) **ou
+      non-fatale** (`--tape` warning, `--load-state`, `--breakpoint` bad hex, `--trace`
+      vers chemin non inscriptible → rc 0). Ces comportements sont capturés **tels quels** :
+      un futur parser devra les reproduire ou les changer consciemment. Binaire inchangé
+      (test seul). Le filet couvre maintenant les cas d'erreur + succès des principales
+      familles d'options ; l'extraction du parser peut s'appuyer dessus, par petits lots.
 
 ### US 4 — Savestate DTL2000/Mageco via séparation état/transport (Sprints 128-129) — DONE (v1.88.0-alpha)
 - [x] Sections **« DTL »** / **« MAG »** via les hooks `io_device_t`.

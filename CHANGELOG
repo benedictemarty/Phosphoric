@@ -36,16 +36,19 @@ complète verte. EMU_VERSION 1.90.0-alpha → 1.91.0-alpha ; builds natif + SDL2
 
 ### Tests — filet de caractérisation du parser CLI (prérequis Epic 7 / US3)
 
-`tests/integration/test_cli_parsing.sh` (cible `make test-cli-parsing`, **15/15**) verrouille
+`tests/integration/test_cli_parsing.sh` (cible `make test-cli-parsing`, **22/22**) verrouille
 le comportement **mesuré** du parsing d'options avant tout refactor du parser : `--help`
 (usage, rc 0), **option inconnue non-fatale** (usage, rc 0), formats `CYCLES:VALUE`
 malformés → rc 1 + message précis (`--dump-ram-at`/`--screenshot-at`/`--type-keys`),
 validation enum/borne **fatale** (`--serial`/`--model`/`--dtl2000` bogus, `--scale 99`
 → rc 1) vs **non-fatale** (`--joystick`/`--keyboard` bogus, `--acia-addr` hex invalide,
-`--load-state` fichier absent → rc 0), + contrôle positif (`--dump-ram-at` bien formé →
-dump 64K). Ces comportements non évidents sont capturés tels quels (un futur parser devra
-les reproduire ou les changer consciemment). **Aucune modification de code** — binaire
-inchangé, EMU_VERSION reste 1.91.0-alpha.
+`--load-state` fichier absent → rc 0), et les **options à effets de bord** (fopen/load au
+parsing) : succès = artefact produit (`--trace`/`--profile` créent le fichier) ; ressource
+absente **fatale** (`--disk`/`--symbols` → rc 1) ou **non-fatale** (`--tape` warning,
+`--breakpoint` bad hex, `--trace` chemin non inscriptible → rc 0). Ces comportements non
+évidents sont capturés tels quels (un futur parser devra les reproduire ou les changer
+consciemment). **Aucune modification de code** — binaire inchangé, EMU_VERSION reste
+1.91.0-alpha.
 
 ## [1.90.0-alpha] - 2026-07-17
 

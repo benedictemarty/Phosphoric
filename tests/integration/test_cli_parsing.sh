@@ -114,6 +114,41 @@ else
     note_fail "well-formed --dump-ram-at (rc=$RC, size=$(stat -c%s "$TMP/ram.bin" 2>/dev/null || echo 0))"
 fi
 
+# ── side-effect options (fopen / load at parse time) : the delicate part of
+#    US3 — a future parser must reproduce these exactly. All measured. ──────
+
+# Success : the artifact is actually produced.
+run "$EMU" -r "$ROM" -n --trace "$TMP/tr.log" -c 200000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/tr.log" ]; then
+    note_pass "--trace FILE parses and writes the trace file"
+else
+    note_fail "--trace FILE (rc=$RC, file empty/missing)"
+fi
+
+run "$EMU" -r "$ROM" -n --profile "$TMP/pr.txt" -c 200000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/pr.txt" ]; then
+    note_pass "--profile FILE parses and writes the profile on exit"
+else
+    note_fail "--profile FILE (rc=$RC, file empty/missing)"
+fi
+
+# Missing/invalid resource : note the NON-obvious fatality divergences.
+run "$EMU" -r "$ROM" -n --tape "$TMP/nope.tap" -c 1000
+expect "--tape missing file is non-fatal (warning, exit 0)" 0 "Failed to open tape"
+
+run "$EMU" -r "$ROM" -n --disk "$TMP/nope.dsk" -c 1000
+expect "--disk missing file is FATAL (exit 1)" 1 "Failed to load disk image"
+
+run "$EMU" -r "$ROM" -n --symbols "$TMP/nope.sym" -c 1000
+expect "--symbols missing file is FATAL (exit 1)" 1 "cannot open"
+
+run "$EMU" -r "$ROM" -n --breakpoint ZZZZ -c 1000
+expect "--breakpoint bad hex is non-fatal (exit 0)" 0
+
+# fopen failure on an unwritable path : logged as error but NON-fatal (exit 0).
+run "$EMU" -r "$ROM" -n --trace /proc/nonexistent-dir/x.log -c 1000
+expect "--trace unwritable path is non-fatal (error logged, exit 0)" 0 "Cannot open trace file"
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]
