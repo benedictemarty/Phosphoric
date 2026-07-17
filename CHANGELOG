@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.92.0-alpha] - 2026-07-17
+
+### Added — Screenshot texte : `--screenshot-text` et `--screenshot-ansi`
+
+Deux nouvelles sorties d'écran en headless, réponse à « existe-t-il un screenshot
+texte ? » — la réponse mesurée était : `video_export_ascii()` existait déjà mais
+**n'était pas branchée au CLI** (aucune option, appelée seulement par les tests) et
+produit une **image ANSI**, pas un dump texte ; le **contenu texte réel** de l'écran
+n'existait pas.
+
+- **`--screenshot-text FILE`** — dump du **contenu texte réel** de l'écran ORIC
+  (`$BB80`, 40×28) en ASCII lisible à la sortie. Nouvelle fonction
+  `video_export_screen_text(memory, fp)` : décode chaque octet par `octet & 0x7F`
+  (masque le bit vidéo inverse), remplace les codes de contrôle/attributs (< 0x20)
+  par un espace, écrit 40 colonnes max par ligne, espaces de fin supprimés.
+  **Limite assumée et documentée** : suppose le jeu de caractères standard ORIC
+  (0x20-0x7F ≈ ASCII) — un charset redéfini n'est pas résolu ; lit toujours les 28
+  lignes de `$BB80` quel que soit le mode (TEXT/HIRES).
+- **`--screenshot-ansi FILE`** — image ANSI true-color du framebuffer à la sortie,
+  via le nouveau wrapper fichier `video_export_ascii_file(vid, filename, sx, sy)`
+  autour de `video_export_ascii()` existant.
+
+**Vérifié par la mesure** (pas déduit) : boot Atmos à 3M cycles, `--screenshot-text`
+restitue `ORIC EXTENDED BASIC V1.1` / `© 1983 TANGERINE` / `37631 BYTES FREE` /
+indicateur `CAPS` (le `©` sort en `` ` ``, code 0x60 du charset ORIC — la limite ASCII
+documentée). `--screenshot-ansi` : ~264 Ko, séquences `ESC[48;2;R;G;Bm` présentes,
+structure de l'écran visible dans le terminal. Tests : `make test-video` 16/16
+(+2 : `test_ascii_export_file`, `test_screen_text_export` — décodage inverse/contrôle
++ rtrim + paramètres NULL). `make tests` complet vert (exit 0).
+
+EMU_VERSION 1.91.3-alpha → 1.92.0-alpha ; builds natif + SDL2 OK.
+
 ## [1.91.3-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US3 : 3e tranche — factorise le parsing d'adresse hex CLI

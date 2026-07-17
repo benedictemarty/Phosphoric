@@ -321,6 +321,8 @@ static void print_usage(const char* program_name) {
     printf("  -v, --verbose              Verbose logging\n");
     printf("      --screenshot FILE      Take screenshot at exit (.ppm or .bmp)\n");
     printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
+    printf("      --screenshot-text FILE Dump screen text ($BB80, 40x28) as ASCII at exit\n");
+    printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
     printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
@@ -1458,6 +1460,8 @@ static bool emulator_init(emulator_t* emu) {
     emu->screenshot_file = NULL;
     emu->screenshot_at_cycles = -1;
     emu->screenshot_at_file = NULL;
+    emu->screenshot_text_file = NULL;
+    emu->screenshot_ansi_file = NULL;
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
     emu->dump_ram_at_cycles = -1;
@@ -2982,6 +2986,27 @@ static void emulator_run(emulator_t* emu) {
         emu_export_image(emu, emu->screenshot_file);
     }
 
+    /* End-of-run text screenshot : contenu texte réel de l'écran ($BB80). */
+    if (emu->screenshot_text_file) {
+        FILE* tf = fopen(emu->screenshot_text_file, "w");
+        if (tf) {
+            video_export_screen_text(emu->memory.ram, tf);
+            fclose(tf);
+            log_info("Exit text screenshot -> %s", emu->screenshot_text_file);
+        } else {
+            log_error("Cannot open text screenshot file: %s", emu->screenshot_text_file);
+        }
+    }
+
+    /* End-of-run ANSI screenshot : image true-color du framebuffer. */
+    if (emu->screenshot_ansi_file) {
+        video_render_frame(&emu->video, emu->memory.ram);
+        if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_file, 2, 2))
+            log_info("Exit ANSI screenshot -> %s", emu->screenshot_ansi_file);
+        else
+            log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_file);
+    }
+
     log_info("Emulation stopped. Total cycles: %llu, frames: %llu",
              (unsigned long long)total_executed, (unsigned long long)frame_count);
 
@@ -3068,6 +3093,8 @@ int main(int argc, char* argv[]) {
     const char* screenshot_file = NULL;
     const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
     const char* screenshot_at_arg = NULL;
+    const char* screenshot_text_file = NULL;
+    const char* screenshot_ansi_file = NULL;
     const char* frame_dump_dir = NULL;
     int frame_dump_interval = 50;
     const char* video_avi_file = NULL;
@@ -3157,6 +3184,8 @@ int main(int argc, char* argv[]) {
             case 'c': max_cycles = atoll(optarg); break;
             case 'v': verbose = true; break;
             case OPT_SCREENSHOT: screenshot_file = optarg; break;
+            case OPT_SCREENSHOT_TEXT: screenshot_text_file = optarg; break;
+            case OPT_SCREENSHOT_ANSI: screenshot_ansi_file = optarg; break;
             case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
             case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
@@ -3380,6 +3409,8 @@ int main(int argc, char* argv[]) {
 
     emu.max_cycles = max_cycles;
     emu.screenshot_file = screenshot_file;
+    emu.screenshot_text_file = screenshot_text_file;
+    emu.screenshot_ansi_file = screenshot_ansi_file;
 
     /* Set keyboard layout */
     if (keyboard_layout && strcasecmp(keyboard_layout, "azerty") == 0) {
