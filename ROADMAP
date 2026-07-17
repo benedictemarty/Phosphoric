@@ -6,6 +6,62 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Epic 7 — Assainissement architectural (PLANIFIÉ)
+
+Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette
+est **périphérique** (main.c god-object d'assemblage ; état émulé mêlé aux handles
+hôte ; contrat `io_device_t` incomplet), pas centrale. On la traite par
+**extraction incrémentale à iso-comportement** — chaque étape vérifiée
+byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
+= risque croissant ; on peut s'arrêter à n'importe quelle US.
+
+### US 1 — Nettoyage à risque nul (Sprint 125)
+- [ ] Retirer les `#include "emulator.h"` inutilisés (`microdisc.c:17`,
+      `loci_core.c:16` ; 0 usage vérifié) → recompiler.
+- [ ] Extraire les fonctions pures de `main.c` vers `src/utils/` :
+      `signal_handler`, `parse_host_port`, `tap_strip_header_padding`.
+- [ ] Cible `strip`/build « release » dans le Makefile (distribution).
+> Gain : -~80 L de main.c, couplage réduit. Risque : nul (fonctions pures).
+
+### US 2 — Extraire le device ULA-NG et les wrappers bus (Sprint 126)
+- [ ] Déplacer les wrappers `*_dev_{claims,read,write,save,load}` (~120 L) hors
+      de `main.c` vers chaque module `io/*` (ou un `io/<dev>_device.c`).
+- [ ] `main.c` ne garde que la table `io_bus[]` et le dispatch.
+> Gain : le câblage de chaque device vit *dans* son module. Risque : bas
+> (déplacement mécanique, iso-comportement).
+
+### US 3 — Module argparse déclaratif (Sprint 127)
+- [ ] `struct cli_args_t` + table déclarative des ~79 options + boucle générique
+      de parsing → `src/cli/args.c`.
+- [ ] `main()` reçoit un `cli_args_t` rempli ; validation centralisée.
+> Gain : -~250 L de main(). Risque : moyen (combinaisons implicites `--control ⟹
+> headless+debug` à préserver ; e2e de non-régression CLI requis).
+
+### US 4 — Séparer état émulé / transport hôte (série) (Sprint 128-129)
+- [ ] Scinder `dtl2000_t`/`mageco_t`/`serial_backend_t` en **modèle POD
+      sérialisable** (registres, compteurs) vs **liaison hôte** (backend, FILE*,
+      callbacks) reliés par pointeur.
+- [ ] Débloque le savestate DTL2000/Mageco (sections « DTL »/« MAG », registres
+      seulement, transport explicitement non restauré et documenté).
+> Gain : dette structurelle #1 résorbée ; savestate cohérent. Risque : moyen
+> (refactor de structs cœur ; couvert par tests série + savestate).
+
+### US 5 — Compléter le contrat `io_device_t` (lifecycle) (Sprint 130-131)
+- [ ] Ajouter hooks optionnels `reset(emu)` et `tick(emu, cycles)`.
+- [ ] Migrer `cpu_cycle_tick` vers une boucle de bus **après** avoir prouvé
+      l'équivalence byte-identique de l'ordre (VIA tické en premier, hors bus).
+- [ ] Migrer les save/load DTL2000/Mageco (dépend de l'US 4).
+> Gain : `io_read/write_callback` + `cpu_cycle_tick` deviennent des boucles
+> génériques ; main.c allégé d'autant. Risque : moyen-élevé (l'ordre de tick est
+> timing-sensible ; garde-fou = captures byte-identiques).
+
+### Hors périmètre (assumé)
+- `emulator_run()` en event-loop : risque temporel > bénéfice, **non planifié**.
+- Savestate **LOCI** complet : bloqué par les handles OS (montages/descripteurs) ;
+  au mieux une restauration *partielle* des montages, jamais du transport live.
+
+---
+
 ### Sprint 124: Hooks de sérialisation `io_device_t` — l'ULA-NG persiste dans le `.ost` (v1.84.0-alpha) - DONE
 Extension du contrat au-delà du dispatch I/O. **Constat honnête** : les devices
 bus (DTL2000, Mageco, LOCI, ULA-NG) n'avaient **aucune section savestate** — état

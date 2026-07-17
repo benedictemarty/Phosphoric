@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.84.1-alpha] - 2026-07-17
+
+### Docs — Audit architectural critique + Epic 7 « Assainissement architectural »
+
+Audit complet et **critique** de l'architecture (`docs/architecture/AUDIT-ARCHITECTURE.md`),
+appuyé sur des mesures réelles (graphe d'includes, ventilation de `main.c`, ordre
+des ticks, threads) et des références `fichier:ligne`.
+
+- **Solide** : découplage des modules de base (cpu/memory/video/audio/storage
+  n'incluent pas `emulator.h` ; ~11 % des fichiers seulement), zéro cycle
+  d'includes (forward-decls), timing per-cycle + IRQ level-triggered corrects,
+  concurrence défensive (3 threads, mutations via `control_queue` uniquement,
+  framebuffer copié sous mutex, série non-bloquante).
+- **Dette** (priorisée) : ① `main.c` god-object d'assemblage (4690 L, `main()`
+  ≈ 1487 L) ; ② état émulé **mêlé aux handles hôte** dans `dtl2000_t`/`mageco_t`/
+  `serial_backend_t` (bloque le savestate série) ; ③ contrat `io_device_t`
+  incomplet (pas de `init/reset/tick` ; save/load ULA-NG seul ; ordre de tick ≠
+  ordre de table) ; ④ monolithes `debugger.c`/`control.c` ; ⑤ includes
+  `emulator.h` inutilisés (`microdisc.c`, `loci_core.c`, vérifié 0 usage).
+- **Epic 7** ajouté au `ROADMAP` : 5 US (Sprints 125-131) d'extraction
+  incrémentale à iso-comportement, du risque nul (nettoyage, fonctions pures) au
+  moyen-élevé (séparation état/transport série ; lifecycle `io_device_t`).
+  Hors périmètre assumé : `emulator_run()` en event-loop (risque temporel),
+  savestate LOCI complet (handles OS).
+
+Note d'honnêteté : les explorations automatiques ont par endroits **surévalué**
+la propreté (« état émulé vs ressource hôte clairement séparé ») ; l'audit tranche
+sur le fait vérifié (ils sont **mélangés** dans la même struct — c'est la dette #2).
+
+EMU_VERSION 1.84.0-alpha → 1.84.1-alpha.
+
 ## [1.84.0-alpha] - 2026-07-17
 
 ### Added — Hooks de sérialisation `io_device_t` : chaque device peut persister sa section `.ost` (ULA-NG en premier)
