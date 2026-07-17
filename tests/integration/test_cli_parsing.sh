@@ -149,6 +149,18 @@ expect "--breakpoint bad hex is non-fatal (exit 0)" 0
 run "$EMU" -r "$ROM" -n --trace /proc/nonexistent-dir/x.log -c 1000
 expect "--trace unwritable path is non-fatal (error logged, exit 0)" 0 "Cannot open trace file"
 
+# ... whereas these three sibling file options are FATAL on open failure (rc 1),
+# with the same 'Cannot open --NAME file' message. This non-obvious divergence
+# (--trace non-fatal vs --trace-irq fatal) is exactly what the parser must keep.
+run "$EMU" -r "$ROM" -n --trace-irq /proc/nonexistent-dir/x.log -c 1000
+expect "--trace-irq unwritable path is FATAL (exit 1)" 1 "Cannot open --trace-irq file"
+
+run "$EMU" -r "$ROM" -n --psg-trace /proc/nonexistent-dir/x.psg -c 1000
+expect "--psg-trace unwritable path is FATAL (exit 1)" 1 "Cannot open --psg-trace file"
+
+run "$EMU" -r "$ROM" -n --audio-wav /proc/nonexistent-dir/x.wav -c 1000
+expect "--audio-wav unwritable path is FATAL (exit 1)" 1 "Cannot open --audio-wav file"
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]

@@ -69,6 +69,12 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       vs binaire d'avant reconstruit depuis git : dump 65536 o + screenshot 161295 o
       identiques) + test-cli-parsing 22/22. `--type-keys` (CYCLES:TEXT) laissé de côté
       (motif différent). Méthode validée pour la suite : petites tranches, chacune prouvée.
+- [x] **2e tranche livrée (v1.91.2-alpha)** : motif `fopen` + « Cannot open --NAME file »
+      + cleanup + `return 1`, identique entre `--trace-irq`/`--psg-trace`/`--audio-wav`,
+      factorisé dans `cli_open_out(file, mode, optname)`. `--trace` (non-fatal, message
+      différent) non touché. Iso-comportement PROUVÉ : échec (3 cas test-cli-parsing
+      **25/25**, ajoutés AVANT le refactor) + succès (octet à octet `.psg`/`.wav`/`.irq`
+      byte-identiques refactoré vs binaire d'avant).
 
 ### US 4 — Savestate DTL2000/Mageco via séparation état/transport (Sprints 128-129) — DONE (v1.88.0-alpha)
 - [x] Sections **« DTL »** / **« MAG »** via les hooks `io_device_t`.

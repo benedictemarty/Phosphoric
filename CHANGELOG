@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.91.2-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 : 2e tranche — factorise l'ouverture de fichier de sortie CLI
+
+Suite de v1.91.1. Le motif `fopen` + « Cannot open --NAME file: PATH » + `cleanup` +
+`return 1`, **identique** entre `--trace-irq`, `--psg-trace` et `--audio-wav` (seul le
+mode `w`/`wb` et les en-têtes post-ouverture diffèrent), est factorisé dans
+`cli_open_out(file, mode, optname)`. Message reproduit **exactement** via `optname`.
+`--trace` (message « Cannot open trace file » **sans** nom d'option, et **non-fatal**)
+est **délibérément non touché** — divergence de fatalité mesurée, à préserver.
+
+**Iso-comportement prouvé** (les deux côtés) :
+- **Échec** : 3 nouveaux cas dans `test_cli_parsing.sh` verrouillent que `--trace-irq` /
+  `--psg-trace` / `--audio-wav` sur chemin non inscriptible → rc 1 + message exact (25/25) —
+  ajoutés et vérifiés **avant** le refactor, re-vérifiés après.
+- **Succès** : comparaison **octet à octet** des artefacts refactoré vs binaire d'avant
+  (reconstruit depuis git) — `.psg` (1436 o), `.wav` (709172 o), `.irq` (21439 o)
+  **byte-identiques**.
+- `make tests` complet exit 0.
+
+EMU_VERSION 1.91.1-alpha → 1.91.2-alpha ; builds natif + SDL2 OK.
+
 ## [1.91.1-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US3 : 1re tranche d'extraction du parser CLI (iso-comportement prouvé)

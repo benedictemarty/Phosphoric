@@ -3028,6 +3028,19 @@ static bool cli_split_cycles_file(const char* arg, const char* optname,
     return true;
 }
 
+/* Open an output file for a CLI option, logging the exact "Cannot open --NAME
+ * file: PATH" error those sites used on failure. Returns the stream, or NULL —
+ * the caller then cleans up and exits 1. Shared verbatim by --trace-irq /
+ * --psg-trace / --audio-wav (identical open-or-fail pattern; only the mode and
+ * the post-open headers differ). Covered by test_cli_parsing.sh (the fatal
+ * open-failure cases for the three options). */
+static FILE* cli_open_out(const char* file, const char* mode, const char* optname) {
+    FILE* fp = fopen(file, mode);
+    if (!fp)
+        log_error("Cannot open --%s file: %s", optname, file);
+    return fp;
+}
+
 int main(int argc, char* argv[]) {
     emulator_t emu;
     memset(&emu, 0, sizeof(emu));
@@ -3669,12 +3682,8 @@ int main(int argc, char* argv[]) {
 
     /* Open --trace-irq FILE */
     if (trace_irq_file) {
-        FILE* fp = fopen(trace_irq_file, "w");
-        if (!fp) {
-            log_error("Cannot open --trace-irq file: %s", trace_irq_file);
-            emulator_cleanup(&emu);
-            return 1;
-        }
+        FILE* fp = cli_open_out(trace_irq_file, "w", "trace-irq");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
         fprintf(fp, "# Phosphoric IRQ trace — Oric-1/Atmos\n");
         fprintf(fp, "# Format: <cycle> <event> <details>\n");
         fprintf(fp, "# IRQ-ENTRY: PC before, target (= vector at $FFFE/F), IFR/IER snapshot, srcmask\n");
@@ -3687,12 +3696,8 @@ int main(int argc, char* argv[]) {
 
     /* Open --psg-trace FILE (log of AY sound-register writes) */
     if (psg_trace_file) {
-        FILE* fp = fopen(psg_trace_file, "w");
-        if (!fp) {
-            log_error("Cannot open --psg-trace file: %s", psg_trace_file);
-            emulator_cleanup(&emu);
-            return 1;
-        }
+        FILE* fp = cli_open_out(psg_trace_file, "w", "psg-trace");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
         fprintf(fp, "# Phosphoric PSG trace — AY-3-8910 sound-register writes\n");
         fprintf(fp, "# Format: <cpu_cycle> R<reg>=<hex>  (reg 0-13 ; ports 14/15 = keyboard, excluded)\n");
         fprintf(fp, "# NB: reg 7 (mixer) is hammered to 7F by the keyboard scan — kept as measured.\n");
@@ -3708,12 +3713,8 @@ int main(int argc, char* argv[]) {
             emulator_cleanup(&emu);
             return 1;
         }
-        FILE* fp = fopen(audio_wav_file, "wb");
-        if (!fp) {
-            log_error("Cannot open --audio-wav file: %s", audio_wav_file);
-            emulator_cleanup(&emu);
-            return 1;
-        }
+        FILE* fp = cli_open_out(audio_wav_file, "wb", "audio-wav");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
         wav_write_header(fp, 0);   /* placeholder — sizes patched at cleanup */
         emu.audio_wav_fp = fp;
         emu.audio_wav_data_bytes = 0;
