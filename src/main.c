@@ -359,6 +359,9 @@ static void print_usage(const char* program_name) {
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
     printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
+    printf("      --psg-trace FILE       Log AY sound-register writes (reg 0-13) with CPU cycle\n");
+    printf("      --audio-wav FILE       Capture PSG audio to a 16-bit stereo 44.1 kHz WAV\n");
+    printf("                             (headless only; renders per frame via ay_generate)\n");
     printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
     printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
     printf("      --bad-sector [D:]S:T:N Mark drive D (default A) side S track T sector N\n");
@@ -871,6 +874,37 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
  * The ROM toggles CA2/CB2 via PCR writes, so this function must
  * be called when PCR, ORA, or ORB change.
  */
+/* --audio-wav : write/patch a 44-byte canonical WAV header (PCM, 16-bit, stereo,
+ * 44.1 kHz — matches ay_generate's interleaved output). Called with data_bytes=0
+ * at open (placeholder) and with the real payload size at close. */
+static void wav_put_le16(uint8_t* p, uint16_t v) {
+    p[0] = (uint8_t)(v & 0xFF); p[1] = (uint8_t)((v >> 8) & 0xFF);
+}
+static void wav_put_le32(uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)(v & 0xFF);         p[1] = (uint8_t)((v >> 8) & 0xFF);
+    p[2] = (uint8_t)((v >> 16) & 0xFF); p[3] = (uint8_t)((v >> 24) & 0xFF);
+}
+static void wav_write_header(FILE* f, uint32_t data_bytes) {
+    const uint32_t rate = AUDIO_SAMPLE_RATE, chans = 2, bits = 16;
+    const uint32_t byte_rate = rate * chans * bits / 8;
+    uint8_t h[44];
+    memcpy(h + 0, "RIFF", 4);
+    wav_put_le32(h + 4, 36 + data_bytes);
+    memcpy(h + 8, "WAVE", 4);
+    memcpy(h + 12, "fmt ", 4);
+    wav_put_le32(h + 16, 16);                 /* subchunk1 size = 16 (PCM) */
+    wav_put_le16(h + 20, 1);                  /* audio format = PCM */
+    wav_put_le16(h + 22, (uint16_t)chans);
+    wav_put_le32(h + 24, rate);
+    wav_put_le32(h + 28, byte_rate);
+    wav_put_le16(h + 32, (uint16_t)(chans * bits / 8));   /* block align */
+    wav_put_le16(h + 34, (uint16_t)bits);
+    memcpy(h + 36, "data", 4);
+    wav_put_le32(h + 40, data_bytes);
+    fseek(f, 0, SEEK_SET);
+    fwrite(h, 1, 44, f);
+}
+
 static void psg_decode(emulator_t* emu) {
     /* BC1 = CA2 output state (PCR bits 1-3) */
     uint8_t ca2_mode = (emu->via.pcr >> 1) & 0x07;
@@ -887,6 +921,16 @@ static void psg_decode(emulator_t* emu) {
         /* Write Data — timestamped with the current CPU cycle so audio-rate
          * register hammering (digidrums) is reproduced sample-accurately. */
         ay_write_data_timed(&emu->psg, emu->via.ora, emu->cpu.cycles);
+        /* --psg-trace : log the sound-register writes (0..13). Ports 14/15 are
+         * the keyboard matrix, not audio, so they are skipped. NB : reg 7
+         * (mixer) is hammered to $7F by the keyboard scan — that is real bus
+         * activity, kept as-is (measured, not filtered). */
+        if (emu->psg_trace_fp) {
+            uint8_t reg = emu->psg.selected_reg;
+            if (reg < 14)
+                fprintf(emu->psg_trace_fp, "%llu R%u=%02X\n",
+                        (unsigned long long)emu->cpu.cycles, reg, emu->via.ora);
+        }
     } else if (!bdir && bc1) {
         /* Read Data - PSG data goes onto VIA input for Port A reads */
         emu->via.ira = ay_read_data(&emu->psg);
@@ -1424,6 +1468,9 @@ static bool emulator_init(emulator_t* emu) {
     emu->irq_trace_depth = 0;
     emu->cpu.irq_trace_fp = NULL;
     emu->cpu.irq_trace_count = 0;
+    emu->psg_trace_fp = NULL;
+    emu->audio_wav_fp = NULL;
+    emu->audio_wav_data_bytes = 0;
 
     log_info("Emulator initialized successfully");
     return true;
@@ -1448,6 +1495,20 @@ static void emulator_cleanup(emulator_t* emu) {
         fclose((FILE*)emu->irq_trace_fp);
         emu->irq_trace_fp = NULL;
         emu->cpu.irq_trace_fp = NULL;
+    }
+    if (emu->psg_trace_fp) {
+        fclose(emu->psg_trace_fp);
+        emu->psg_trace_fp = NULL;
+    }
+    if (emu->audio_wav_fp) {
+        /* Backpatch the RIFF/data sizes now that the payload length is known. */
+        wav_write_header(emu->audio_wav_fp, emu->audio_wav_data_bytes);
+        log_info("Audio WAV: %u bytes PCM (%.2f s @ %d Hz stereo)",
+                 emu->audio_wav_data_bytes,
+                 (double)emu->audio_wav_data_bytes / (AUDIO_SAMPLE_RATE * 2 * 2),
+                 AUDIO_SAMPLE_RATE);
+        fclose(emu->audio_wav_fp);
+        emu->audio_wav_fp = NULL;
     }
     if (!emu->headless) {
         audio_cleanup();
@@ -2166,6 +2227,19 @@ static void emulator_run(emulator_t* emu) {
         }
 
         total_executed += (uint64_t)frame_cycles;
+
+        /* --audio-wav : render one frame of PSG audio and append it as 16-bit
+         * stereo PCM. ay_generate is the same routine the SDL callback uses ;
+         * this path is only armed in headless (SDL audio is not opened there),
+         * so the main loop is the sole consumer of the PSG event queue. */
+        if (emu->audio_wav_fp) {
+            enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
+            int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
+            ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
+            fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
+            emu->audio_wav_data_bytes +=
+                (uint32_t)(WAV_FRAME_SAMPLES * 2 * (int)sizeof(int16_t));
+        }
 
         /* Sprint 35a freeze — async pause: once per frame, peek at stdin.
          * If the IDE sent `pause`, hand control back to the REPL right
@@ -2991,6 +3065,8 @@ int main(int argc, char* argv[]) {
     int  loci_usb_count = 0;
     bool loci_usb_autoscan = true;
     const char* trace_irq_file = NULL;
+    const char* psg_trace_file = NULL;
+    const char* audio_wav_file = NULL;
     const char* symbols_file = NULL;
     bool tui_mode = false;
     bool control_mode = false;
@@ -3130,6 +3206,8 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_FDC_TIMING: fdc_timing_arg = optarg; break;
             case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
+            case OPT_PSG_TRACE: psg_trace_file = optarg; break;
+            case OPT_AUDIO_WAV: audio_wav_file = optarg; break;
             case OPT_SYMBOLS: symbols_file = optarg; break;
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
             case OPT_CONTROL:
@@ -3577,6 +3655,41 @@ int main(int argc, char* argv[]) {
         emu.irq_trace_active = true;
         emu.cpu.irq_trace_fp = fp;
         log_info("IRQ trace → %s", trace_irq_file);
+    }
+
+    /* Open --psg-trace FILE (log of AY sound-register writes) */
+    if (psg_trace_file) {
+        FILE* fp = fopen(psg_trace_file, "w");
+        if (!fp) {
+            log_error("Cannot open --psg-trace file: %s", psg_trace_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        fprintf(fp, "# Phosphoric PSG trace — AY-3-8910 sound-register writes\n");
+        fprintf(fp, "# Format: <cpu_cycle> R<reg>=<hex>  (reg 0-13 ; ports 14/15 = keyboard, excluded)\n");
+        fprintf(fp, "# NB: reg 7 (mixer) is hammered to 7F by the keyboard scan — kept as measured.\n");
+        emu.psg_trace_fp = fp;
+        log_info("PSG trace → %s", psg_trace_file);
+    }
+
+    /* Open --audio-wav FILE (PCM capture ; headless only to avoid racing the
+     * SDL audio thread, which is the other consumer of the PSG generator). */
+    if (audio_wav_file) {
+        if (!emu.headless) {
+            log_error("--audio-wav requires --headless (SDL audio owns the PSG generator)");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        FILE* fp = fopen(audio_wav_file, "wb");
+        if (!fp) {
+            log_error("Cannot open --audio-wav file: %s", audio_wav_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        wav_write_header(fp, 0);   /* placeholder — sizes patched at cleanup */
+        emu.audio_wav_fp = fp;
+        emu.audio_wav_data_bytes = 0;
+        log_info("Audio WAV → %s (16-bit stereo %d Hz)", audio_wav_file, AUDIO_SAMPLE_RATE);
     }
 
     /* Enable LOCI peripheral (--loci) */

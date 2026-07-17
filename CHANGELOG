@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.90.0-alpha] - 2026-07-17
+
+### Added — Capture audio headless : `--audio-wav` et `--psg-trace`
+
+Deux options de mesure du son, pensées comme l'équivalent audio de
+`--screenshot-at` : permettre à un run headless automatique de **valider** la
+sortie PSG (mesurée, pas déduite). Motivation : le portage Spellbinder (BBC→Oric,
+projet `~/spillbender`) aborde son volet son (routines encore vides) et a besoin
+d'un outil de vérification *avant* d'implémenter — même méthodo « ne rien inventer »
+que pour la vidéo et le clavier.
+
+- `--audio-wav FILE` : rend le PSG en PCM une fois par trame (882 échantillons à
+  44,1 kHz) via `ay_generate` — **le même moteur que la lecture SDL** — et écrit un
+  WAV 16-bit stéréo canonique (en-tête backpatché à la fermeture). **Headless
+  uniquement** : en GUI le callback audio SDL est déjà l'unique consommateur du
+  générateur PSG ; un garde-fou refuse `--audio-wav` sans `--headless` (exit 1).
+- `--psg-trace FILE` : journalise chaque écriture des registres son AY (reg 0-13)
+  avec le cycle CPU (`<cycle> R<reg>=<hex>`). Les ports 14/15 (matrice clavier)
+  sont exclus ; le registre 7 (mixer) martelé à `$7F` par le scan clavier est
+  conservé tel quel (mesuré, non filtré).
+
+Nouveau helper WAV LE (`wav_write_header`), hook non intrusif dans `psg_decode`,
+génération par trame dans `emulator_run`, fermeture/backpatch dans
+`emulator_cleanup`. Options déclarées dans `include/cli/cli_options.h`.
+
+Preuves : test d'intégration `tests/integration/test_audio_capture.sh` (nouvelle
+cible `make test-audio-capture`, 4/4) — garde-fou headless, capture d'un son ROM
+(`PING`) donnant un WAV valide **non silencieux** + une trace contenant les
+écritures R0-R13, et **déterminisme** (deux runs → WAV byte-identique). Suite
+complète verte (943 → 947 checks). EMU_VERSION 1.89.0-alpha → 1.90.0-alpha ;
+builds natif + SDL2 OK.
+
 ## [1.89.0-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US5 (Sprints 130-131) : tick des périphériques déplacé hors de `main.c`

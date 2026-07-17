@@ -83,6 +83,22 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Sprint 132: Capture audio headless — `--audio-wav` + `--psg-trace` (v1.90.0-alpha) - DONE
+Équivalent audio de `--screenshot-at` : valider le son PSG dans un run headless
+automatique (mesuré, pas déduit). Motivé par le volet son du portage Spellbinder
+(`~/spillbender`), encore à zéro : avoir l'outil de mesure **avant** d'implémenter.
+- `--audio-wav FILE` : rend le PSG en PCM par trame (882 éch. @ 44,1 kHz) via
+  `ay_generate` (le même moteur que la lecture SDL) → WAV 16-bit stéréo, en-tête
+  backpatché à la fermeture. Headless uniquement (garde-fou : sans `--headless`,
+  le callback SDL est déjà l'unique consommateur du générateur → exit 1).
+- `--psg-trace FILE` : journal des écritures registre son AY (reg 0-13) + cycle CPU.
+  Ports 14/15 (clavier) exclus ; reg 7 mixer conservé tel quel (mesuré, non filtré).
+Preuves : `make test-audio-capture` (`tests/integration/test_audio_capture.sh`, 4/4)
+— garde-fou + son ROM PING → WAV non silencieux + trace R0-R13 + déterminisme
+(WAV byte-identique sur 2 runs). Suite 943 → 947. Builds natif + SDL2 OK.
+
+---
+
 ### Sprint 124: Hooks de sérialisation `io_device_t` — l'ULA-NG persiste dans le `.ost` (v1.84.0-alpha) - DONE
 Extension du contrat au-delà du dispatch I/O. **Constat honnête** : les devices
 bus (DTL2000, Mageco, LOCI, ULA-NG) n'avaient **aucune section savestate** — état

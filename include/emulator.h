@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.89.0-alpha"
+#define EMU_VERSION "1.90.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -263,6 +263,14 @@ typedef struct emulator_s {
     FILE* irq_trace_fp;
     bool irq_trace_active;
     int32_t irq_trace_depth;  /* Track IRQ nesting (incremented on IRQ, decremented on RTI) */
+
+    /* Audio capture (headless-friendly, mirrors --screenshot-at for sound) :
+     * --psg-trace  logs each AY sound-register write (reg 0..13) with its CPU cycle ;
+     * --audio-wav  renders the PSG to PCM once per frame and writes a 16-bit stereo
+     *              44.1 kHz WAV (uses ay_generate, the same engine as SDL playback). */
+    FILE* psg_trace_fp;
+    FILE* audio_wav_fp;
+    uint32_t audio_wav_data_bytes;   /* PCM payload written so far (for the header patch) */
 
     /* Auto-type: inject keystrokes at specified cycle count */
     const char* type_keys_text;

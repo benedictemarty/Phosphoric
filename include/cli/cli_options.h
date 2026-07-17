@@ -35,7 +35,7 @@ enum {
     OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_NO_BORDER,
     OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING,
     OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT,
-    OPT_ULA_NG_POKE
+    OPT_ULA_NG_POKE, OPT_PSG_TRACE, OPT_AUDIO_WAV
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -110,6 +110,8 @@ static const struct option long_options[] = {
     {"bad-sector",          required_argument, 0, OPT_BAD_SECTOR},
     {"fdc-timing",          required_argument, 0, OPT_FDC_TIMING},
     {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
+    {"psg-trace",           required_argument, 0, OPT_PSG_TRACE},
+    {"audio-wav",           required_argument, 0, OPT_AUDIO_WAV},
     {"symbols",             required_argument, 0, OPT_SYMBOLS},
     {"tui",                 no_argument,       0, OPT_TUI},
     {"loci",                no_argument,       0, OPT_LOCI},
