@@ -59,6 +59,8 @@
 #endif
 #include "hostfs/hostfs.h"
 #include "utils/logging.h"
+#include "utils/netutil.h"     /* parse_host_port (Epic 7/US1) */
+#include "utils/appsignal.h"   /* app_should_run / app_install_signal_handlers */
 #ifdef HAS_CAST
 #include <arpa/inet.h>
 #endif
@@ -194,87 +196,6 @@ void renderer_set_scale(int scale);
 int renderer_get_scale(void);
 void renderer_cycle_scale(void);
 
-static volatile bool g_running = true;
-
-static void signal_handler(int sig) {
-    (void)sig;
-    g_running = false;
-}
-
-/**
- * @brief Strip padding bytes from TAP block headers in tape buffer.
- *
- * Some TAP files (from real tape captures) have extra $00 padding bytes
- * between the $24 marker and the actual header fields. The ORIC ROM
- * reads bytes sequentially via readbyte, so these extra bytes cause
- * the header to be mis-parsed (wrong start/end addresses).
- *
- * This function scans the buffer for each block header (sync + $24),
- * detects padding by checking that the null separator byte (7th byte
- * after header fields) is $00, and removes extra bytes in-place.
- *
- * @param buf    Tape buffer (modified in place)
- * @param len    Buffer length (updated with new length)
- * @param offset Starting offset (updated if it falls after removed bytes)
- */
-static void tap_strip_header_padding(uint8_t* buf, int* len, int* offset) {
-    int src = 0, dst = 0;
-    int orig_offset = *offset;
-    int new_offset = orig_offset;
-    int removed_before_offset = 0;
-
-    while (src < *len) {
-        /* Look for sync pattern: 3+ consecutive $16 followed by $24 */
-        if (buf[src] == 0x16) {
-            /* Copy sync bytes and count them */
-            int sync_start = src;
-            int sync_count = 0;
-            while (src < *len && buf[src] == 0x16) {
-                buf[dst++] = buf[src++];
-                sync_count++;
-            }
-            if (src >= *len) break;
-
-            if (buf[src] == 0x24 && sync_count >= 3) {
-                /* Valid sync pattern (3+ $16 bytes) — copy $24 marker */
-                buf[dst++] = buf[src++];
-
-                /* Now check for padding: try skip 0..4, find where
-                 * the null separator byte (offset +6 from type) is $00 */
-                int best_skip = 0;
-                for (int skip = 0; skip <= 4 && src + skip + 7 <= *len; skip++) {
-                    uint8_t type_byte = buf[src + skip];
-                    uint8_t null_byte = buf[src + skip + 6];
-                    bool valid_type = (type_byte == 0x00 || type_byte == 0x80 ||
-                                       type_byte == 0xC0);
-                    if (null_byte == 0x00 && valid_type) {
-                        best_skip = skip;
-                        break;
-                    }
-                }
-
-                if (best_skip > 0) {
-                    log_info("TAP: stripped %d padding byte(s) at offset %d",
-                             best_skip, src);
-                    /* Track bytes removed before the CLOAD offset */
-                    if (src <= orig_offset) {
-                        removed_before_offset += best_skip;
-                    }
-                    src += best_skip; /* Skip padding bytes */
-                }
-            }
-        } else {
-            buf[dst++] = buf[src++];
-        }
-    }
-
-    if (dst < *len) {
-        new_offset = orig_offset - removed_before_offset;
-        if (new_offset < 0) new_offset = 0;
-        *offset = new_offset;
-        *len = dst;
-    }
-}
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  ROM patch tables (version-specific tape loading addresses)         */
@@ -1360,25 +1281,7 @@ static void mageco_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_MAGECO);
 }
 
-/* Parse a "host[:port]" spec into @p host / @p port, defaulting to @p def_port
- * when no port is given. The host buffer is always NUL-terminated. */
-static void parse_host_port(const char* spec, char* host, size_t host_sz,
-                            uint16_t* port, uint16_t def_port)
-{
-    *port = def_port;
-    host[0] = '\0';
-    const char* colon = strrchr(spec, ':');
-    if (colon && colon != spec) {
-        size_t hlen = (size_t)(colon - spec);
-        if (hlen >= host_sz) hlen = host_sz - 1;
-        memcpy(host, spec, hlen);
-        host[hlen] = '\0';
-        *port = (uint16_t)atoi(colon + 1);
-    } else {
-        strncpy(host, spec, host_sz - 1);
-        host[host_sz - 1] = '\0';
-    }
-}
+/* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
 /* Réécrit le .dsk du lecteur @p drv sur disque s'il a été modifié par le jeu
  * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
@@ -2299,7 +2202,7 @@ static void emulator_run(emulator_t* emu) {
     if (emu->realtime) clock_gettime(CLOCK_MONOTONIC, &rt_next);
 #endif
 
-    while (emu->running && g_running) {
+    while (emu->running && app_should_run()) {
 #ifdef HAS_SDL2
         frame_start_ticks = SDL_GetTicks();
 #endif
@@ -3557,8 +3460,7 @@ int main(int argc, char* argv[]) {
 
     log_init(verbose ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO);
 
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    app_install_signal_handlers();
     /* Pilotage par un agent (--control) : stdout/stdin sont des *pipes*, pas un
      * terminal. Si le pair ferme/cesse de lire, une écriture d'événement
      * lèverait SIGPIPE et tuerait l'émulateur (mort par signal, invisible en

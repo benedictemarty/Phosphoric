@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.85.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US1 (Sprint 125) : nettoyage à risque nul de `main.c`
+
+Première étape de l'assainissement architectural (`docs/architecture/AUDIT-ARCHITECTURE.md`),
+à **iso-comportement vérifié** (golden PPM byte-identiques : boots BASIC, Sedoric/
+Microdisc, LOCI SD, ULA-NG).
+
+- Suppression du **code mort** `tap_strip_header_padding` (0 usage vérifié) →
+  supprime aussi le warning « defined but not used ».
+- Retrait des `#include "emulator.h"` **inutilisés** de `src/io/microdisc.c` et
+  `src/io/loci_core.c` (0 usage de `emulator_t`/`emu->`/`EMU_VERSION` vérifié).
+- Extraction de la fonction pure `parse_host_port` → nouveau `src/utils/netutil.c`
+  (+ header). 3 appelants inchangés.
+- Extraction du drapeau d'arrêt `g_running` + `signal_handler` → nouveau
+  `src/utils/appsignal.c` (`app_should_run()` / `app_install_signal_handlers()`).
+- Nouvelle cible Makefile **`release`** : produit une copie strippée
+  `oric1-emu-release` (447 Ko vs 495 Ko) **sans toucher** au binaire de travail.
+
+Non-régression : suite complète verte ; golden 4/4 iso-comportement. `main.c`
+allégé (~100 lignes retirées ; god-object entamé). Aucun test nouveau/retiré.
+
+EMU_VERSION 1.84.1-alpha → 1.85.0-alpha.
+
 ## [1.84.1-alpha] - 2026-07-17
 
 ### Docs — Audit architectural critique + Epic 7 « Assainissement architectural »

@@ -15,13 +15,17 @@ hôte ; contrat `io_device_t` incomplet), pas centrale. On la traite par
 byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 = risque croissant ; on peut s'arrêter à n'importe quelle US.
 
-### US 1 — Nettoyage à risque nul (Sprint 125)
-- [ ] Retirer les `#include "emulator.h"` inutilisés (`microdisc.c:17`,
-      `loci_core.c:16` ; 0 usage vérifié) → recompiler.
-- [ ] Extraire les fonctions pures de `main.c` vers `src/utils/` :
-      `signal_handler`, `parse_host_port`, `tap_strip_header_padding`.
-- [ ] Cible `strip`/build « release » dans le Makefile (distribution).
-> Gain : -~80 L de main.c, couplage réduit. Risque : nul (fonctions pures).
+### US 1 — Nettoyage à risque nul (Sprint 125) — DONE (v1.85.0-alpha)
+- [x] Retirer les `#include "emulator.h"` inutilisés (`microdisc.c`,
+      `loci_core.c` ; 0 usage vérifié).
+- [x] `tap_strip_header_padding` était du **code mort** (0 usage) → supprimé
+      plutôt qu'extrait. `parse_host_port` → `src/utils/netutil.c`.
+      `g_running`+`signal_handler` → `src/utils/appsignal.c`.
+- [x] Cible `release` (copie strippée `oric1-emu-release`, sans toucher au
+      binaire de travail).
+> Fait : -~100 L de main.c, couplage réduit. Iso-comportement golden 4/4, suite
+> verte. Incident : un `sed` mal délimité a corrompu 2 fichiers → restaurés via
+> `git checkout`, refaits avec Edit (leçon : pas de `sed` sur des lignes `#include`).
 
 ### US 2 — Extraire le device ULA-NG et les wrappers bus (Sprint 126)
 - [ ] Déplacer les wrappers `*_dev_{claims,read,write,save,load}` (~120 L) hors
