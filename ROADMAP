@@ -6,7 +6,7 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
-## Epic 7 — Assainissement architectural (PLANIFIÉ)
+## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
 
 Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette
 est **périphérique** (main.c god-object d'assemblage ; état émulé mêlé aux handles
@@ -964,7 +964,7 @@ isolé dans l'Epic 2.
 
 ---
 
-## Phase 4: Integration & Release (Sprint 12-15) - IN PROGRESS
+## Phase 4: Integration & Release (Sprint 12-15) - DONE
 
 ### Sprint 12-13: Integration (v1.0.0-alpha) - DONE
 - [x] Full emulation loop (CPU + VIA per frame)
@@ -1076,7 +1076,7 @@ isolé dans l'Epic 2.
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
-### Sprint 66: Cadençage temps réel headless + Write Track WD1793 (v1.25.6-alpha) - EN COURS
+### Sprint 66: Cadençage temps réel headless + Write Track WD1793 (v1.25.6-alpha) - DONE
 
 > Deux limites concrètes rencontrées en produisant une vidéo terminal↔BBS,
 > consignées ici avec fichier:ligne, impact et piste. **Les deux sont
@@ -1202,7 +1202,7 @@ isolé dans l'Epic 2.
   - [ ] Poster l'amendement sur le forum t=2709 + intégrer le retour
         sodiumlb/Dbug.
 
-### Sprint 63 (EN COURS): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
+### Sprint 63 (DONE): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
 
 > Noté en fin de session : besoin d'un système **côté hôte** pour changer la
 > cassette (.tap/k7) **ou** le disque (.dsk) **sans sortir de l'émulateur**.
