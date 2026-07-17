@@ -41,6 +41,7 @@
 #include "storage/sedoric.h"
 #include "io/microdisc.h"
 #include "io/loci_sdimg.h"
+#include "io/io_device.h"
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -915,9 +916,42 @@ static bool loci_resume_session_cb(void* ctx) {
     return true;
 }
 
+/* ── Bus I/O : périphériques enregistrés (docs/architecture/io-bus.md) ──────
+ * Migration progressive de la cascade de `if` en dur vers cette table. Chaque
+ * périphérique fournit claims/read/write ; le dispatch parcourt la table.
+ * Étape 1 (preuve du modèle) : Digitelec DTL 2000 ($03F8-$03FD, plage exclusive
+ * → migration iso-comportement). Les autres périphériques restent câblés en dur
+ * pour l'instant (pattern « strangler »). */
+static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
+}
+static uint8_t dtl2000_dev_read(emulator_t* emu, uint16_t addr) {
+    return dtl2000_read(&emu->dtl2000, addr);
+}
+static void dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    dtl2000_write(&emu->dtl2000, addr, value);
+}
+
+static const io_device_t io_bus[] = {
+    { "dtl2000", dtl2000_dev_claims, dtl2000_dev_read, dtl2000_dev_write },
+};
+static const int io_bus_count = (int)(sizeof(io_bus) / sizeof(io_bus[0]));
+
+/* Renvoie le device qui possède `addr` (NULL sinon). Ordre de la table = priorité. */
+static const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
+    for (int i = 0; i < io_bus_count; i++)
+        if (io_bus[i].claims(emu, addr))
+            return &io_bus[i];
+    return NULL;
+}
+
 /* I/O callback: route VIA and Microdisc register access */
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
+
+    /* Bus I/O : périphériques enregistrés (voir io_bus). */
+    const io_device_t* dev = io_bus_find(emu, address);
+    if (dev) return dev->read(emu, address);
 
     /* LOCI MIA: $03A0-$03BF (checked first — independent of other peripherals) */
     if (emu->has_loci && loci_addr_in_mia(address)) {
@@ -963,11 +997,7 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
         return microdisc_read(&emu->microdisc, address);
     }
 
-    /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD.
-     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
-    if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
-        return dtl2000_read(&emu->dtl2000, address);
-    }
+    /* (Digitelec DTL 2000 $03F8-$03FD → migré vers io_bus, en tête.) */
 
     /* ULA-NG registers $0340-$035F : intercepted only once unlocked ; while
      * locked the read falls through to the VIA mirror (indiscernable). */
@@ -1096,6 +1126,10 @@ static uint8_t portb_read_callback(void* userdata) {
 static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
+    /* Bus I/O : périphériques enregistrés (voir io_bus). */
+    const io_device_t* dev = io_bus_find(emu, address);
+    if (dev) { dev->write(emu, address, value); return; }
+
     /* LOCI MIA: $03A0-$03BF */
     if (emu->has_loci && loci_addr_in_mia(address)) {
         loci_write(&emu->loci, address, value);
@@ -1152,12 +1186,7 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
         return;
     }
 
-    /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD.
-     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
-    if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
-        dtl2000_write(&emu->dtl2000, address, value);
-        return;
-    }
+    /* (Digitelec DTL 2000 $03F8-$03FD → migré vers io_bus, en tête.) */
 
     /* ULA-NG registers $0340-$035F. Unlocked : ULA-NG owns the window (consume).
      * Locked : silently watch $0340 for the 'N','G' unlock sequence and let the
