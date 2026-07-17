@@ -75,6 +75,17 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       différent) non touché. Iso-comportement PROUVÉ : échec (3 cas test-cli-parsing
       **25/25**, ajoutés AVANT le refactor) + succès (octet à octet `.psg`/`.wav`/`.irq`
       byte-identiques refactoré vs binaire d'avant).
+- [x] **3e tranche livrée (v1.91.3-alpha)** : `parse_hex16(s)` remplace les 4 copies
+      identiques de `(uint16_t)strtol(arg,NULL,16)` (`--acia-addr`/`--dtl2000-addr`/
+      `--mageco-addr`/`--break`). Iso PROUVÉ : test-cli-parsing 25/25 + golden octet à octet
+      (`--acia-addr 0500 --break C000`).
+- **BORNE HONNÊTE atteinte** : les 3 tranches ci-dessus épuisent la duplication *propre*
+      (motifs strictement identiques). Le reste est **couplé aux périphériques** (blocs
+      dtl2000/mageco : warnings/erreurs/init spécifiques) → non factorisable sans couplage.
+      Aller plus loin = le parser générique `cli_args_t`, qui reste **non prouvable
+      iso-comportement** (filet à 25 cas ≠ couverture des 80 options × tous comportements).
+      Recommandation : **s'arrêter là** pour US3 (part sûre livrée), ou d'abord étendre le
+      filet à ~toutes les options avant d'oser le parser générique.
 
 ### US 4 — Savestate DTL2000/Mageco via séparation état/transport (Sprints 128-129) — DONE (v1.88.0-alpha)
 - [x] Sections **« DTL »** / **« MAG »** via les hooks `io_device_t`.

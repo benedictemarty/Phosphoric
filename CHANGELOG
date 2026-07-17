@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.91.3-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 : 3e tranche — factorise le parsing d'adresse hex CLI
+
+`parse_hex16(s)` remplace les **4 copies identiques** de `(uint16_t)strtol(arg, NULL, 16)`
+(`--acia-addr`, `--dtl2000-addr`, `--mageco-addr`, `--break`) et nomme l'intention.
+Sémantique lenient de `strtol` préservée verbatim (entrée invalide → 0, sans erreur — cf.
+`--acia-addr` hex invalide non-fatal dans le filet).
+
+**Iso-comportement prouvé** : `make test-cli-parsing` 25/25 (dont `--acia-addr`), golden
+**octet à octet** d'un run `--acia-addr 0500 --break C000` (dump 64K) refactoré vs binaire
+d'avant depuis git = **identique**, `make tests` exit 0.
+
+**Note (honnête) : c'est la dernière tranche d'extraction « propre » à ce stade.** La
+duplication restante dans le parsing est **couplée aux périphériques** (blocs dtl2000/mageco :
+warnings, messages d'erreur et init spécifiques) — non factorisable sans introduire du
+couplage. Poursuivre US3 exigerait le parser générique `cli_args_t`, toujours **non prouvable
+iso-comportement** même avec le filet à 25 cas (couverture partielle des 80 options).
+
+EMU_VERSION 1.91.2-alpha → 1.91.3-alpha ; builds natif + SDL2 OK.
+
 ## [1.91.2-alpha] - 2026-07-17
 
 ### Changed — Epic 7 / US3 : 2e tranche — factorise l'ouverture de fichier de sortie CLI

@@ -3041,6 +3041,14 @@ static FILE* cli_open_out(const char* file, const char* mode, const char* optnam
     return fp;
 }
 
+/* Parse a 16-bit hexadecimal address argument (--acia-addr / --dtl2000-addr /
+ * --mageco-addr / --break). Same lenient strtol semantics as the four inlined
+ * copies it replaces: invalid input yields 0 (no error) — behaviour preserved
+ * verbatim (see test_cli_parsing.sh, --acia-addr invalid hex = non-fatal). */
+static uint16_t parse_hex16(const char* s) {
+    return (uint16_t)strtol(s, NULL, 16);
+}
+
 int main(int argc, char* argv[]) {
     emulator_t emu;
     memset(&emu, 0, sizeof(emu));
@@ -3414,7 +3422,7 @@ int main(int argc, char* argv[]) {
 
     /* Serial interface (ACIA 6551) */
     if (acia_addr_arg) {
-        emu.acia_base_addr = (uint16_t)strtol(acia_addr_arg, NULL, 16);
+        emu.acia_base_addr = parse_hex16(acia_addr_arg);
         log_info("ACIA base address: $%04X", emu.acia_base_addr);
     } else if (loci_enabled && serial_arg) {
         /* LOCI firmware exposes its ACIA at $0380-$0383 (acia.c). Under
@@ -3541,7 +3549,7 @@ int main(int argc, char* argv[]) {
     if (dtl2000_arg) {
         uint16_t base = DTL2000_DEFAULT_BASE;
         if (dtl2000_addr_arg) {
-            base = (uint16_t)strtol(dtl2000_addr_arg, NULL, 16);
+            base = parse_hex16(dtl2000_addr_arg);
         }
         if (emu.has_microdisc) {
             log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
@@ -3594,7 +3602,7 @@ int main(int argc, char* argv[]) {
     if (mageco_arg) {
         uint16_t base = mageco_oricon ? MAGECO_ORICON_BASE : MAGECO_DEFAULT_BASE;
         if (mageco_addr_arg) {
-            base = (uint16_t)strtol(mageco_addr_arg, NULL, 16);
+            base = parse_hex16(mageco_addr_arg);
         }
         const char* mode = mageco_oricon ? "ORICON" : "Mageco";
         if (emu.has_microdisc) {
@@ -4241,7 +4249,7 @@ int main(int argc, char* argv[]) {
         log_info("Debugger mode enabled (will break at first instruction)");
     }
     if (debug_break_addr) {
-        uint16_t addr = (uint16_t)strtol(debug_break_addr, NULL, 16);
+        uint16_t addr = parse_hex16(debug_break_addr);
         debugger_add_breakpoint(&emu.debugger, addr);
         log_info("Debugger breakpoint set at $%04X", addr);
     }
