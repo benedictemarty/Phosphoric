@@ -200,3 +200,22 @@ const io_device_t* io_bus_devices(int* count) {
     if (count) *count = io_bus_count;
     return io_bus;
 }
+
+/* Tick des périphériques de bus temporisés. ORDRE HISTORIQUE PRÉSERVÉ à
+ * l'identique de l'ancien cpu_cycle_tick (microdisc → loci → acia → dtl → mageco)
+ * → iso-comportement par construction (et non par la simple indépendance des
+ * ticks). Une boucle générique sur `io_bus[]` réordonnerait ; on ne le fait donc
+ * pas ici (cf. docs/architecture/io-bus.md §6 : hooks lifecycle non uniformes). */
+void io_bus_tick(emulator_t* emu, int cycles) {
+    if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
+    if (emu->has_loci) {
+        fdc_ticktock(&emu->loci.dsk_fdc, cycles);
+        loci_adj_tick(&emu->loci, cycles);
+    }
+    if (emu->has_serial) {
+        acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
+        acia_tick(&emu->acia, cycles);
+    }
+    if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
+    if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
+}

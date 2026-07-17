@@ -1046,17 +1046,9 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
-    if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
-    if (emu->has_loci) {
-        fdc_ticktock(&emu->loci.dsk_fdc, cycles);
-        loci_adj_tick(&emu->loci, cycles);
-    }
-    if (emu->has_serial) {
-        acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
-        acia_tick(&emu->acia, cycles);
-    }
-    if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
-    if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
+    /* Périphériques de bus temporisés (FDC/ACIA/DTL/Mageco), ordre historique
+     * préservé dans io_bus_tick (Epic 7/US5). */
+    io_bus_tick(emu, cycles);
 }
 
 /* Microdisc CPU IRQ callbacks - level-triggered: set/clear DISK IRQ source bit */

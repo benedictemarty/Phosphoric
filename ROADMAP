@@ -63,14 +63,18 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > Gain : dette structurelle #2 (savestate série) résorbée. Reste hors périmètre :
 > savestate **LOCI** (handles OS, cf. US5 backlog).
 
-### US 5 — Compléter le contrat `io_device_t` (lifecycle) (Sprint 130-131)
-- [ ] Ajouter hooks optionnels `reset(emu)` et `tick(emu, cycles)`.
-- [ ] Migrer `cpu_cycle_tick` vers une boucle de bus **après** avoir prouvé
-      l'équivalence byte-identique de l'ordre (VIA tické en premier, hors bus).
-- [ ] Migrer les save/load DTL2000/Mageco (dépend de l'US 4).
-> Gain : `io_read/write_callback` + `cpu_cycle_tick` deviennent des boucles
-> génériques ; main.c allégé d'autant. Risque : moyen-élevé (l'ordre de tick est
-> timing-sensible ; garde-fou = captures byte-identiques).
+### US 5 — Lifecycle `io_device_t` (Sprints 130-131) — DONE avec écarts assumés (v1.89.0-alpha)
+- [x] Tick des périphériques déplacé de `cpu_cycle_tick` (main.c) vers
+      `io_bus_tick(emu, cycles)` (io_bus.c), **ordre historique préservé** →
+      iso-comportement par construction. VIA/cassette restent dans main.c.
+- [x] save/load DTL2000/Mageco : faits en US4.
+- [ ] **NON fait (assumé)** : boucle de tick générique sur `io_bus[]` (ordre ≠
+      ordre de dispatch ; non prouvable byte-identique pour le timing série) ;
+      hooks `reset`/`tick` dans le contrat (reset non uniforme → changerait F5 ;
+      champ non câblable = poids mort). Contrat gardé limité à ce qui s'itère
+      uniformément (claims/read/write/save/load).
+> Gain : main.c ne connaît plus les détails de tick des périphériques.
+> Bilan Epic 7 : main.c **4690 → 4334 L**, golden 4/4 à chaque étape, suite verte.
 
 ### Hors périmètre (assumé)
 - `emulator_run()` en event-loop : risque temporel > bénéfice, **non planifié**.

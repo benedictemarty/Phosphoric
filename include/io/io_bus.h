@@ -30,4 +30,10 @@ const io_device_t* io_bus_find_write(struct emulator_s* emu, uint16_t addr);
  *  @param count  reçoit le nombre d'entrées. */
 const io_device_t* io_bus_devices(int* count);
 
+/** Avance d'un pas de `cycles` cycles CPU les périphériques de bus temporisés
+ *  (FDC Microdisc/LOCI, ACIA, DTL2000, Mageco), dans l'ORDRE HISTORIQUE exact de
+ *  `cpu_cycle_tick` (iso-comportement). Le VIA et la cassette (cœur/port) restent
+ *  câblés dans main.c. Epic 7 / US5. */
+void io_bus_tick(struct emulator_s* emu, int cycles);
+
 #endif /* IO_BUS_H */

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.89.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US5 (Sprints 130-131) : tick des périphériques déplacé hors de `main.c`
+
+Dernière US de l'assainissement. Le bloc de tick des périphériques de bus
+temporisés (FDC Microdisc/LOCI, ACIA baud, DTL2000, Mageco) quitte
+`cpu_cycle_tick` (`main.c`) pour `io_bus_tick(emu, cycles)` dans `io_bus.c`.
+
+- **Iso-comportement par construction** : l'ordre historique exact
+  (microdisc → loci → acia → dtl → mageco) est **préservé**. Le VIA et la cassette
+  (cœur/port-attaché) restent câblés dans `main.c`.
+- **Écarts assumés vs le plan US5 (honnêteté)** : (1) **pas de boucle générique**
+  sur `io_bus[]` — son ordre (priorité de dispatch) diffère de l'ordre de tick ;
+  bien que les ticks soient probablement indépendants dans un même lot, je ne le
+  prouve pas byte-identique pour le timing série avec le filet actuel, donc je
+  préserve l'ordre explicitement. (2) **hooks `reset`/`tick` non ajoutés au
+  contrat `io_device_t`** : le reset n'est pas uniforme (F5 ne reset que
+  CPU + LOCI) → un hook générique changerait le comportement ; un champ de contrat
+  non câblable serait du poids mort. Le contrat reste limité à ce qui s'itère
+  uniformément (claims/read/write/save/load).
+
+Non-régression : suite complète verte (943) ; golden 4/4 iso-comportement (les
+chemins FDC passent désormais par `io_bus_tick`) ; e2e ACIA-over-LOCI (tick ACIA)
+inclus dans la suite. `main.c` : **4690 → 4334 lignes** sur l'ensemble de l'Epic 7
+(US1→US5). Doc `docs/architecture/io-bus.md` §6.
+
+EMU_VERSION 1.88.0-alpha → 1.89.0-alpha.
+
 ## [1.88.0-alpha] - 2026-07-17
 
 ### Added — Epic 7 / US4 (Sprints 128-129) : savestate DTL2000 + Mageco (séparation état/transport à la sérialisation)

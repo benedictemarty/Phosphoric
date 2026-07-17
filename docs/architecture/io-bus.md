@@ -119,15 +119,22 @@ Le même principe s'étend à ce qui rend main.c monolithique :
   émulé en blob + **pointeurs hôte préservés** au chargement (backend/trace/
   callbacks non sérialisables) ; transport live non restauré (même-build). Reste
   **LOCI** : réserve réelle (montages/descripteurs OS).
-- **init / reset / cleanup** : `io_device_t` pourrait porter ces hooks → boucles
-  génériques. *Non fait* : le reset n'est pas uniforme (le warm reset F5 ne reset
-  que CPU + LOCI, ce dernier avec une sémantique « garde les montages »).
-- **tick / IRQ** : hook `tick(emu, cycles)` optionnel pour les périphériques
-  temporisés (ACIA baud, FDC). *Non fait* : l'ordre de tick actuel (microdisc,
-  loci, acia, dtl2000, mageco) diffère de l'ordre de la table ; à valider
-  byte-identique avant de basculer.
+- **tick** (Epic 7/US5) : ✅ *déplacé* de `main.c` vers `io_bus_tick(emu, cycles)`
+  (ce module). L'ORDRE HISTORIQUE est **préservé à l'identique** (microdisc → loci
+  → acia → dtl → mageco) → iso-comportement par construction. Le VIA et la
+  cassette (cœur/port) restent dans `main.c`. **Choix assumé** : PAS de boucle
+  générique sur `io_bus[]` — son ordre (priorité de dispatch) diffère de l'ordre
+  de tick, et bien que les ticks soient probablement indépendants dans un même
+  lot, je ne le prouve pas byte-identique pour le timing série avec le filet
+  actuel ; on préserve donc l'ordre explicitement.
+- **init / reset / cleanup** : hooks *non ajoutés au contrat*. Raison honnête :
+  le reset n'est **pas uniforme** (le warm reset F5 ne reset que CPU + LOCI, ce
+  dernier « garde les montages ») → une boucle de reset générique changerait le
+  comportement. Ajouter un champ de contrat non câblable serait du poids mort.
 
-Ces extensions se font **une étape à la fois**, chacune vérifiée verte.
+Ces extensions se font **une étape à la fois**, chacune vérifiée verte. Le
+contrat `io_device_t` reste volontairement limité à ce qui s'itère uniformément
+(claims/read/write/save/load) ; le tick, ordonné, est orchestré à part.
 
 ## 7. Contrainte opérationnelle
 
