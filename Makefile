@@ -598,6 +598,9 @@ test-ula-ng-visible: $(TARGET)
 test-audio-capture: $(TARGET)
 	@bash tests/integration/test_audio_capture.sh
 
+test-cli-parsing: $(TARGET)
+	@bash tests/integration/test_cli_parsing.sh
+
 # Sprint 36a — throughput benchmark. Runs 4 scenarios headless and
 # reports MHz-equivalent / speed ratio vs real ORIC (1 MHz).
 # Usage: `make bench`               human-readable table
@@ -613,7 +616,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-ula-ng test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture
+tests: test-cpu test-memory test-io test-ula-ng test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-symbols test-loci test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-cli-parsing
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

@@ -34,6 +34,17 @@ Tests : `test-avi` +2 (flux `auds` + `dwLength` patché ; non-régression vidéo
 `auds`+`01wb`) → 5/5. `avi_recorder_open` inchangé pour ses 8 appels de test. Suite
 complète verte. EMU_VERSION 1.90.0-alpha → 1.91.0-alpha ; builds natif + SDL2 OK.
 
+### Tests — filet de caractérisation du parser CLI (prérequis Epic 7 / US3)
+
+`tests/integration/test_cli_parsing.sh` (cible `make test-cli-parsing`, 8/8) verrouille
+le comportement **mesuré** du parsing d'options avant tout refactor du parser : `--help`
+(usage, rc 0), **option inconnue non-fatale** (usage, rc 0), formats `CYCLES:VALUE`
+malformés → rc 1 + message précis (`--dump-ram-at`/`--screenshot-at`/`--type-keys`),
+`--joystick` bogus **non-fatal** (rc 0) vs `--serial` bogus **fatal** (rc 1), + contrôle
+positif (`--dump-ram-at` bien formé → dump 64K). Ces comportements non évidents sont
+capturés tels quels (un futur parser devra les reproduire ou les changer consciemment).
+**Aucune modification de code** — binaire inchangé, EMU_VERSION reste 1.91.0-alpha.
+
 ## [1.90.0-alpha] - 2026-07-17
 
 ### Added — Capture audio headless : `--audio-wav` et `--psg-trace`
