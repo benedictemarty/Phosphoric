@@ -63,7 +63,8 @@ Preuves : test d'intégration `tests/integration/test_audio_capture.sh` (nouvell
 cible `make test-audio-capture`, 4/4) — garde-fou headless, capture d'un son ROM
 (`PING`) donnant un WAV valide **non silencieux** + une trace contenant les
 écritures R0-R13, et **déterminisme** (deux runs → WAV byte-identique). Suite
-complète verte (943 → 947 checks). EMU_VERSION 1.89.0-alpha → 1.90.0-alpha ;
+complète verte (`make tests` exit 0 ; le harnais n'émet pas de total agrégé).
+EMU_VERSION 1.89.0-alpha → 1.90.0-alpha ;
 builds natif + SDL2 OK.
 
 ## [1.89.0-alpha] - 2026-07-17

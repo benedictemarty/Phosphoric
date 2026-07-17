@@ -114,7 +114,7 @@ automatique (mesuré, pas déduit). Motivé par le volet son du portage Spellbin
   Ports 14/15 (clavier) exclus ; reg 7 mixer conservé tel quel (mesuré, non filtré).
 Preuves : `make test-audio-capture` (`tests/integration/test_audio_capture.sh`, 4/4)
 — garde-fou + son ROM PING → WAV non silencieux + trace R0-R13 + déterminisme
-(WAV byte-identique sur 2 runs). Suite 943 → 947. Builds natif + SDL2 OK.
+(WAV byte-identique sur 2 runs). `make tests` complet vert (exit 0). Builds natif + SDL2 OK.
 
 ---
 
