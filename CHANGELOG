@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.91.1-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 : 1re tranche d'extraction du parser CLI (iso-comportement prouvé)
+
+Premier pas concret de l'extraction du parser (au-delà de la relocation de données de
+v1.87.0), rendu **prouvable** par le filet de tests CLI (v1.91.0). Le motif de parsing
+`CYCLES:FILE`, dupliqué **à l'identique** entre `--dump-ram-at` et `--screenshot-at`
+(`strchr(':')` + `atoll` + même erreur), est factorisé dans un helper
+`cli_split_cycles_file(arg, optname, &cycles, &file)`. Le message d'erreur est reproduit
+**exactement** via `optname` (`Invalid --%s format. Use CYCLES:FILE`). `--type-keys`
+(CYCLES:TEXT, séquencé, préfixe `loci-hid`) est **délibérément non touché** (motif différent).
+
+**Iso-comportement prouvé** (pas supposé) :
+- Comparaison **octet à octet** des sorties refactoré vs binaire d'avant reconstruit depuis
+  git : `--dump-ram-at` (65536 o) et `--screenshot-at` (161295 o) **byte-identiques**.
+- `make test-cli-parsing` 22/22 (couvre les 2 messages d'erreur + le dump 64K), `make tests`
+  complet exit 0.
+
+EMU_VERSION 1.91.0-alpha → 1.91.1-alpha ; builds natif + SDL2 OK.
+
 ## [1.91.0-alpha] - 2026-07-17
 
 ### Added — AVI sonorisé : `--video` embarque une piste audio PCM en headless

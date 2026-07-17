@@ -3010,6 +3010,24 @@ static void emulator_run(emulator_t* emu) {
     }
 }
 
+/* Parse a "CYCLES:FILE" CLI argument, shared verbatim by --dump-ram-at and
+ * --screenshot-at. On success stores the cycle count and a pointer past the
+ * colon (into `arg`) and returns true. On a missing colon it logs the exact
+ * same error those sites used (via optname) and returns false — the caller
+ * then cleans up and exits 1. Behaviour is identical to the two inlined copies
+ * it replaces (covered by tests/integration/test_cli_parsing.sh). */
+static bool cli_split_cycles_file(const char* arg, const char* optname,
+                                  int64_t* out_cycles, const char** out_file) {
+    const char* colon = strchr(arg, ':');
+    if (!colon) {
+        log_error("Invalid --%s format. Use CYCLES:FILE", optname);
+        return false;
+    }
+    *out_cycles = atoll(arg);
+    *out_file = colon + 1;
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     emulator_t emu;
     memset(&emu, 0, sizeof(emu));
@@ -3635,18 +3653,14 @@ int main(int argc, char* argv[]) {
 
     /* Parse --dump-ram-at CYCLES:FILE */
     if (dump_ram_at_arg) {
-        const char* colon = strchr(dump_ram_at_arg, ':');
-        if (colon) {
-            emu.dump_ram_at_cycles = atoll(dump_ram_at_arg);
-            emu.dump_ram_at_file = colon + 1;
-            emu.dump_ram_at_done = false;
-            log_info("RAM dump scheduled at %lld cycles → %s",
-                     (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
-        } else {
-            log_error("Invalid --dump-ram-at format. Use CYCLES:FILE");
+        if (!cli_split_cycles_file(dump_ram_at_arg, "dump-ram-at",
+                                   &emu.dump_ram_at_cycles, &emu.dump_ram_at_file)) {
             emulator_cleanup(&emu);
             return 1;
         }
+        emu.dump_ram_at_done = false;
+        log_info("RAM dump scheduled at %lld cycles → %s",
+                 (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
     } else {
         emu.dump_ram_at_cycles = -1;
         emu.dump_ram_at_file = NULL;
@@ -3829,12 +3843,8 @@ int main(int argc, char* argv[]) {
 
     /* Parse --screenshot-at CYCLES:FILE */
     if (screenshot_at_arg) {
-        const char* colon = strchr(screenshot_at_arg, ':');
-        if (colon) {
-            emu.screenshot_at_cycles = atoll(screenshot_at_arg);
-            emu.screenshot_at_file = colon + 1;
-        } else {
-            log_error("Invalid --screenshot-at format. Use CYCLES:FILE");
+        if (!cli_split_cycles_file(screenshot_at_arg, "screenshot-at",
+                                   &emu.screenshot_at_cycles, &emu.screenshot_at_file)) {
             emulator_cleanup(&emu);
             return 1;
         }

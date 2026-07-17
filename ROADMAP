@@ -63,6 +63,12 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       un futur parser devra les reproduire ou les changer consciemment. Binaire inchangé
       (test seul). Le filet couvre maintenant les cas d'erreur + succès des principales
       familles d'options ; l'extraction du parser peut s'appuyer dessus, par petits lots.
+- [x] **1re tranche d'extraction livrée (v1.91.1-alpha)** : le motif `CYCLES:FILE` dupliqué
+      à l'identique entre `--dump-ram-at` et `--screenshot-at` factorisé dans
+      `cli_split_cycles_file()`. **Iso-comportement PROUVÉ octet à octet** (sorties refactoré
+      vs binaire d'avant reconstruit depuis git : dump 65536 o + screenshot 161295 o
+      identiques) + test-cli-parsing 22/22. `--type-keys` (CYCLES:TEXT) laissé de côté
+      (motif différent). Méthode validée pour la suite : petites tranches, chacune prouvée.
 
 ### US 4 — Savestate DTL2000/Mageco via séparation état/transport (Sprints 128-129) — DONE (v1.88.0-alpha)
 - [x] Sections **« DTL »** / **« MAG »** via les hooks `io_device_t`.
