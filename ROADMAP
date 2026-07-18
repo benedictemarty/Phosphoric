@@ -6,17 +6,6 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
-## Statut de release — **BÊTA** (v1.93.0-beta, 2026-07-18)
-
-Le projet passe en phase **bêta** : le chantier d'assainissement architectural
-(**Epic 7 / `feature/io-device-bus`**) est mené à son terme (dispatch I/O
-entièrement sur le bus `io_device_t`, savestate par device, tick extrait de
-main.c), le cœur (6502/mémoire/VIA/ULA/PSG) est stable et la suite de tests
-complète est verte. Reste au backlog (post-bêta) : parser CLI générique (US3),
-extraction des monolithes secondaires (`debugger.c`/`control.c`), savestate LOCI.
-
----
-
 ## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
 
 Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette

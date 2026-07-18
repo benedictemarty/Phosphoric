@@ -1,26 +1,26 @@
-# Phosphoric 1.93.0-beta — I/O device bus redesign + headless capture tools
+# Phosphoric 1.93.0-alpha — I/O device bus redesign + headless capture tools
 
 *Draft for forum.defence-force.org (Emulators / Oric section). English, as per the
 forum's convention. A French version can be produced on request.*
 
 ---
 
-**Subject:** Phosphoric enters BETA — full I/O bus redesign + new headless capture tools
+**Subject:** Phosphoric 1.93.0-alpha — full I/O bus redesign + new headless capture tools
 
 Hi everyone,
 
-Phosphoric — my cycle-accurate ORIC-1 / Atmos emulator written in C11 — has just
-reached its first **beta** milestone (v1.93.0-beta). This release does not add flashy
-end-user features; instead it closes a long internal cleanup effort and ships a few
-tools that people building demos, automated tests or captures should find handy. Here
-is what changed, and — more importantly — *why the architecture rework matters*.
+Phosphoric — my cycle-accurate ORIC-1 / Atmos emulator written in C11 — has a new
+development release (**v1.93.0-alpha**). It does not add flashy end-user features;
+instead it closes a long internal cleanup effort and ships a few tools that people
+building demos, automated tests or captures should find handy. Here is what changed,
+and — more importantly — *why the architecture rework matters*.
 
 ## The headline: a real I/O device bus
 
 Like most 8-bit emulators, Phosphoric grew organically. Every device that lives in the
 ORIC's page-3 I/O window ($0300–$03FF) — the Microdisc WD1793 FDC, the ACIA 6551 serial
-chip, the ULA-NG extended video mode, the LOCI SD interface, the Digitelec DTL 2000
-modem, the Mageco/ORICON MIDI board — was wired **by hand** into a giant `main.c`.
+chip, the LOCI SD interface, the Digitelec DTL 2000 modem, the Mageco/ORICON MIDI
+board — was wired **by hand** into a giant `main.c`.
 
 The read/write dispatch was a cascade of hard-coded conditions:
 
@@ -55,27 +55,27 @@ typedef struct io_device_s {
 
 Devices are registered in an ordered table `io_bus[]`; the order **is** the priority.
 The read/write callbacks collapse to *a single loop over the bus plus the VIA
-fall-back*. Every page-3 device — Microdisc, ACIA, ULA-NG, LOCI and its three disjoint
+fall-back*. Every page-3 device — Microdisc, ACIA, LOCI and its three disjoint
 sub-windows, DTL2000, Mageco — now lives on the bus. Adding a device is one table entry;
 no more surgery on the core.
 
-A couple of details that turned out to matter for correctness:
+A couple of contract details that turned out to matter for correctness:
 
-- **`write` returns "consumed".** The ULA-NG needs to *see* writes to its window even
-  when locked (to watch for the `'N','G'` unlock sequence) while still letting neutral
-  bytes pass through to the VIA unchanged. So a write can decline (`false`) and fall
-  back to the VIA — impossible to express with a plain `void` write.
-- **`claims_write` is separate from `claims`.** Same ULA-NG reason: its write claim
-  (window only) differs from its read claim (unlocked *and* in window). Exclusive-range
-  devices simply leave it `NULL`.
+- **`write` returns "consumed".** A device can decline a write (return `false`) and let
+  it fall back to the VIA — needed when a device must *observe* writes to its window
+  without necessarily overriding the default VIA behaviour. Impossible to express with a
+  plain `void` write.
+- **`claims_write` is separate from `claims`.** A device's write claim can differ from
+  its read claim. Exclusive-range devices simply leave it `NULL` and always return
+  `true`.
 
 Beyond the dispatch, two more pieces of the monolith were extracted the same way:
 
 - **Savestate is now per-device.** Each device can persist its own `.ost` section
-  through the contract (ULA-NG, DTL2000 and Mageco done). A device that has nothing to
-  save emits no section, so a normal-boot save file stays byte-for-byte identical — zero
-  regression for existing save states. LOCI is deliberately left out for now (its OS
-  file handles aren't serialisable as-is).
+  through the contract (DTL2000 and Mageco done). A device that has nothing to save emits
+  no section, so a normal-boot save file stays byte-for-byte identical — zero regression
+  for existing save states. LOCI is deliberately left out for now (its OS file handles
+  aren't serialisable as-is).
 - **Peripheral tick moved out of `main.c`** into `io_bus_tick()`, preserving the exact
   historical order so timing stays identical.
 
@@ -85,11 +85,12 @@ VIA, ULA, PSG) was not touched at all.
 ## Proven iso-behaviour — the part I care about most
 
 Every single step of this rework was verified **byte-for-byte identical** against the
-previous binary: golden PPM screenshots of a BASIC boot, a Sedoric/Microdisc boot, a
-LOCI SD boot and an ULA-NG session were compared before and after each migration, and
-the full test suite (900+ checks) stayed green throughout. The whole point of a
+previous binary: golden PPM screenshots of a BASIC boot, a Sedoric/Microdisc boot and a
+LOCI SD boot were compared before and after each migration, and the full test suite
+(900+ checks) stayed green throughout. The whole point of a
 "strangler" refactor is that nothing observable changes — so if you were happy with
-Phosphoric before, this beta behaves exactly the same, just on far cleaner foundations.
+Phosphoric before, this release behaves exactly the same, just on far cleaner
+foundations.
 
 If you're curious about the gory details, the design notes and the critical
 architecture audit that kicked this off are in the repo under
@@ -120,8 +121,8 @@ make                        # native + SDL2 build
 ```
 
 Feedback, bug reports and — especially — testing on real ORIC software are very
-welcome. This is a beta precisely because I'd like more eyes on it before calling it
-stable.
+welcome. This is still an alpha, so I'd like as many eyes on it as possible before
+moving towards a stable release.
 
 Thanks, and happy hacking,
 bmarty

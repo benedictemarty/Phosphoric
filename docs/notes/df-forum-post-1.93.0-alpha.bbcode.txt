@@ -1,14 +1,14 @@
-[b][size=150]Phosphoric enters BETA — full I/O device-bus redesign + new headless capture tools[/size][/b]
+[b][size=150]Phosphoric 1.93.0-alpha — full I/O device-bus redesign + new headless capture tools[/size][/b]
 
 Hi everyone,
 
-Phosphoric — my cycle-accurate ORIC-1 / Atmos emulator written in C11 — has just reached its first [b]beta[/b] milestone ([b]v1.93.0-beta[/b]). This release does not add flashy end-user features; instead it closes a long internal cleanup effort and ships a few tools that people building demos, automated tests or captures should find handy. Here is what changed, and — more importantly — [i]why the architecture rework matters[/i].
+Phosphoric — my cycle-accurate ORIC-1 / Atmos emulator written in C11 — has a new development release ([b]v1.93.0-alpha[/b]). It does not add flashy end-user features; instead it closes a long internal cleanup effort and ships a few tools that people building demos, automated tests or captures should find handy. Here is what changed, and — more importantly — [i]why the architecture rework matters[/i].
 
 [hr][/hr]
 
 [b][size=125]The headline: a real I/O device bus[/size][/b]
 
-Like most 8-bit emulators, Phosphoric grew organically. Every device that lives in the ORIC's page-3 I/O window ([b]$0300–$03FF[/b]) — the Microdisc WD1793 FDC, the ACIA 6551 serial chip, the ULA-NG extended video mode, the LOCI SD interface, the Digitelec DTL 2000 modem, the Mageco/ORICON MIDI board — was wired [b]by hand[/b] into a giant [i]main.c[/i].
+Like most 8-bit emulators, Phosphoric grew organically. Every device that lives in the ORIC's page-3 I/O window ([b]$0300–$03FF[/b]) — the Microdisc WD1793 FDC, the ACIA 6551 serial chip, the LOCI SD interface, the Digitelec DTL 2000 modem, the Mageco/ORICON MIDI board — was wired [b]by hand[/b] into a giant [i]main.c[/i].
 
 The read/write dispatch was a cascade of hard-coded conditions:
 
@@ -30,19 +30,19 @@ The nasty part is the [i]cross-dependencies[/i]: the ACIA and the Microdisc over
     /* + save_tag / save / load hooks for savestate */
 } io_device_t;[/code]
 
-Devices are registered in an ordered table [i]io_bus[][/i]; the order [b]is[/b] the priority. The read/write callbacks collapse to [i]a single loop over the bus plus the VIA fall-back[/i]. Every page-3 device — Microdisc, ACIA, ULA-NG, LOCI and its three disjoint sub-windows, DTL2000, Mageco — now lives on the bus. Adding a device is one table entry; no more surgery on the core.
+Devices are registered in an ordered table [i]io_bus[][/i]; the order [b]is[/b] the priority. The read/write callbacks collapse to [i]a single loop over the bus plus the VIA fall-back[/i]. Every page-3 device — Microdisc, ACIA, LOCI and its three disjoint sub-windows, DTL2000, Mageco — now lives on the bus. Adding a device is one table entry; no more surgery on the core.
 
-A couple of details that turned out to matter for correctness:
+A couple of contract details that turned out to matter for correctness:
 
 [list]
-[*][b]write returns "consumed".[/b] The ULA-NG needs to [i]see[/i] writes to its window even when locked (to watch for the 'N','G' unlock sequence) while still letting neutral bytes pass through to the VIA unchanged. So a write can decline (false) and fall back to the VIA — impossible to express with a plain void write.
-[*][b]claims_write is separate from claims.[/b] Same ULA-NG reason: its write claim (window only) differs from its read claim (unlocked [i]and[/i] in window). Exclusive-range devices simply leave it NULL.
+[*][b]write returns "consumed".[/b] A device can decline a write (return false) and let it fall back to the VIA — needed when a device must [i]observe[/i] writes to its window without necessarily overriding the default VIA behaviour. Impossible to express with a plain void write.
+[*][b]claims_write is separate from claims.[/b] A device's write claim can differ from its read claim. Exclusive-range devices simply leave it NULL and always return true.
 [/list]
 
 Beyond the dispatch, two more pieces of the monolith were extracted the same way:
 
 [list]
-[*][b]Savestate is now per-device.[/b] Each device can persist its own .ost section through the contract (ULA-NG, DTL2000 and Mageco done). A device that has nothing to save emits no section, so a normal-boot save file stays byte-for-byte identical — zero regression for existing save states. LOCI is deliberately left out for now (its OS file handles aren't serialisable as-is).
+[*][b]Savestate is now per-device.[/b] Each device can persist its own .ost section through the contract (DTL2000 and Mageco done). A device that has nothing to save emits no section, so a normal-boot save file stays byte-for-byte identical — zero regression for existing save states. LOCI is deliberately left out for now (its OS file handles aren't serialisable as-is).
 [*][b]Peripheral tick moved out of main.c[/b] into io_bus_tick(), preserving the exact historical order so timing stays identical.
 [/list]
 
@@ -50,7 +50,7 @@ The result: [i]main.c[/i] went from [b]4690 down to 4334 lines[/b], and the core
 
 [b][size=125]Proven iso-behaviour — the part I care about most[/size][/b]
 
-Every single step of this rework was verified [b]byte-for-byte identical[/b] against the previous binary: golden PPM screenshots of a BASIC boot, a Sedoric/Microdisc boot, a LOCI SD boot and an ULA-NG session were compared before and after each migration, and the full test suite (900+ checks) stayed green throughout. The whole point of a "strangler" refactor is that nothing observable changes — so if you were happy with Phosphoric before, this beta behaves exactly the same, just on far cleaner foundations.
+Every single step of this rework was verified [b]byte-for-byte identical[/b] against the previous binary: golden PPM screenshots of a BASIC boot, a Sedoric/Microdisc boot and a LOCI SD boot were compared before and after each migration, and the full test suite (900+ checks) stayed green throughout. The whole point of a "strangler" refactor is that nothing observable changes — so if you were happy with Phosphoric before, this release behaves exactly the same, just on far cleaner foundations.
 
 If you're curious about the gory details, the design notes and the critical architecture audit that kicked this off are in the repo under [i]docs/architecture/io-bus.md[/i] and [i]docs/architecture/AUDIT-ARCHITECTURE.md[/i].
 
@@ -71,7 +71,7 @@ Alongside the cleanup, a few headless capture features landed (handy for CI, for
 ./oric1-emu -r roms/basic11b.rom
 ./oric1-emu -r roms/basic11b.rom --headless --screenshot-text-at 3000000:boot.txt[/code]
 
-Feedback, bug reports and — especially — testing on real ORIC software are very welcome. This is a beta precisely because I'd like more eyes on it before calling it stable.
+Feedback, bug reports and — especially — testing on real ORIC software are very welcome. This is still an alpha, so I'd like as many eyes on it as possible before moving towards a stable release.
 
 Thanks, and happy hacking,
 bmarty
