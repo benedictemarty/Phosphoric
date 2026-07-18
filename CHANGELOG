@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.93.0-beta] - 2026-07-18
+
+### Changed — Passage en phase **bêta**
+
+Jalon de maturité. Le chantier d'assainissement architectural (**Epic 7 /
+`feature/io-device-bus`**) est mené à son terme : le dispatch I/O de la page 3
+passe désormais **entièrement** par le bus de périphériques `io_device_t` (plus
+aucun périphérique à plage câblé en dur dans `main.c`), le savestate est
+migré par device (ULA-NG, DTL2000, Mageco), et le tick des périphériques est
+sorti de `main.c` vers `io_bus_tick()`. Le cœur (6502, mémoire, VIA, ULA, PSG)
+reste inchangé et éprouvé.
+
+- Aucune modification fonctionnelle par rapport à `1.93.0-alpha` : simple
+  changement d'étiquette de maturité `-alpha` → `-beta`.
+- `EMU_VERSION` 1.93.0-alpha → **1.93.0-beta**.
+- Suite de tests complète verte (`make tests`, exit 0) ; builds natif + SDL2 OK.
+
 ## [1.93.0-alpha] - 2026-07-17
 
 ### Added — Screenshot texte/ANSI à un cycle donné : `--screenshot-text-at` + `--screenshot-ansi-at`

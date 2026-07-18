@@ -357,11 +357,12 @@ TEST(test_save_file_header) {
                    ((uint32_t)crc_buf[2] << 16) | ((uint32_t)crc_buf[3] << 24);
     ASSERT_TRUE(crc != 0);
 
-    /* Emulator version at offset 16 */
+    /* Emulator version at offset 16 — doit correspondre à EMU_VERSION
+       (indépendant du label de maturité alpha/beta/release) */
     fseek(fp, 16, SEEK_SET);
     char emu_ver[32];
     fread(emu_ver, 1, 32, fp);
-    ASSERT_TRUE(strstr(emu_ver, "alpha") != NULL);
+    ASSERT_TRUE(strstr(emu_ver, EMU_VERSION) != NULL);
 
     fclose(fp);
     memory_cleanup(&emu1.memory);
