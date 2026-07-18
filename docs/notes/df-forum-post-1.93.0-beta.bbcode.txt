@@ -1,0 +1,77 @@
+[b][size=150]Phosphoric enters BETA — full I/O device-bus redesign + new headless capture tools[/size][/b]
+
+Hi everyone,
+
+Phosphoric — my cycle-accurate ORIC-1 / Atmos emulator written in C11 — has just reached its first [b]beta[/b] milestone ([b]v1.93.0-beta[/b]). This release does not add flashy end-user features; instead it closes a long internal cleanup effort and ships a few tools that people building demos, automated tests or captures should find handy. Here is what changed, and — more importantly — [i]why the architecture rework matters[/i].
+
+[hr][/hr]
+
+[b][size=125]The headline: a real I/O device bus[/size][/b]
+
+Like most 8-bit emulators, Phosphoric grew organically. Every device that lives in the ORIC's page-3 I/O window ([b]$0300–$03FF[/b]) — the Microdisc WD1793 FDC, the ACIA 6551 serial chip, the ULA-NG extended video mode, the LOCI SD interface, the Digitelec DTL 2000 modem, the Mageco/ORICON MIDI board — was wired [b]by hand[/b] into a giant [i]main.c[/i].
+
+The read/write dispatch was a cascade of hard-coded conditions:
+
+[code]if (has_loci   && loci_in_range(addr))     return loci_read(...);
+if (has_acia   && acia_in_range(addr))     return acia_read(...);
+if (has_microdisc && mdc_in_range(addr))   return microdisc_read(...);
+/* ... and so on, with cross-dependencies between them ... */[/code]
+
+The nasty part is the [i]cross-dependencies[/i]: the ACIA and the Microdisc overlap; the ORICON window sits on top of the Microdisc; an ACIA relocated to $0380 has to consult the LOCI's MIA reliability. All of that priority logic lived inline, duplicated across the read path, the write path, the tick loop, the savestate code and the CLI glue. [i]main.c[/i] had swollen to ~4690 lines and adding or removing a device meant touching it in five or more places. (Removing the old OCULA experiment earlier had shown just how painful that was.)
+
+[b]The redesign replaces the cascade with a device bus.[/b] There is now a single small contract:
+
+[code]typedef struct io_device_s {
+    const char* name;
+    bool    (*claims)(emulator_t* emu, uint16_t addr);           /* does this device own this address? */
+    uint8_t (*read)(emulator_t* emu, uint16_t addr);
+    bool    (*write)(emulator_t* emu, uint16_t addr, uint8_t v); /* true = consumed, false = fall back to VIA */
+    bool    (*claims_write)(emulator_t* emu, uint16_t addr);     /* optional, for asymmetric read/write claims */
+    /* + save_tag / save / load hooks for savestate */
+} io_device_t;[/code]
+
+Devices are registered in an ordered table [i]io_bus[][/i]; the order [b]is[/b] the priority. The read/write callbacks collapse to [i]a single loop over the bus plus the VIA fall-back[/i]. Every page-3 device — Microdisc, ACIA, ULA-NG, LOCI and its three disjoint sub-windows, DTL2000, Mageco — now lives on the bus. Adding a device is one table entry; no more surgery on the core.
+
+A couple of details that turned out to matter for correctness:
+
+[list]
+[*][b]write returns "consumed".[/b] The ULA-NG needs to [i]see[/i] writes to its window even when locked (to watch for the 'N','G' unlock sequence) while still letting neutral bytes pass through to the VIA unchanged. So a write can decline (false) and fall back to the VIA — impossible to express with a plain void write.
+[*][b]claims_write is separate from claims.[/b] Same ULA-NG reason: its write claim (window only) differs from its read claim (unlocked [i]and[/i] in window). Exclusive-range devices simply leave it NULL.
+[/list]
+
+Beyond the dispatch, two more pieces of the monolith were extracted the same way:
+
+[list]
+[*][b]Savestate is now per-device.[/b] Each device can persist its own .ost section through the contract (ULA-NG, DTL2000 and Mageco done). A device that has nothing to save emits no section, so a normal-boot save file stays byte-for-byte identical — zero regression for existing save states. LOCI is deliberately left out for now (its OS file handles aren't serialisable as-is).
+[*][b]Peripheral tick moved out of main.c[/b] into io_bus_tick(), preserving the exact historical order so timing stays identical.
+[/list]
+
+The result: [i]main.c[/i] went from [b]4690 down to 4334 lines[/b], and the core (6502, memory, VIA, ULA, PSG) was not touched at all.
+
+[b][size=125]Proven iso-behaviour — the part I care about most[/size][/b]
+
+Every single step of this rework was verified [b]byte-for-byte identical[/b] against the previous binary: golden PPM screenshots of a BASIC boot, a Sedoric/Microdisc boot, a LOCI SD boot and an ULA-NG session were compared before and after each migration, and the full test suite (900+ checks) stayed green throughout. The whole point of a "strangler" refactor is that nothing observable changes — so if you were happy with Phosphoric before, this beta behaves exactly the same, just on far cleaner foundations.
+
+If you're curious about the gory details, the design notes and the critical architecture audit that kicked this off are in the repo under [i]docs/architecture/io-bus.md[/i] and [i]docs/architecture/AUDIT-ARCHITECTURE.md[/i].
+
+[b][size=125]New tools for headless / automation users[/size][/b]
+
+Alongside the cleanup, a few headless capture features landed (handy for CI, for demo-making, and for anyone validating output without a screen):
+
+[list]
+[*][b]--screenshot-text FILE[/b] / [b]--screenshot-ansi FILE[/b] — dump the actual text content of the screen ($BB80, 40×28) as plain ASCII, or a true-colour ANSI rendering of the framebuffer.
+[*][b]--screenshot-text-at C:FILE[/b] / [b]--screenshot-ansi-at C:FILE[/b] — same, but captured at a given CPU cycle (same model as the existing --screenshot-at).
+[*][b]--audio-wav FILE[/b] / [b]--psg-trace FILE[/b] — render the AY-3-8910 PSG to a 16-bit stereo WAV, or log every sound-register write with its CPU cycle. Same audio engine as the SDL2 path, so what you hear is what you capture.
+[*][b]--video[/b] now embeds a PCM audio track in the headless AVI recording (it used to be a silent MJPEG).
+[/list]
+
+[b][size=125]Try it[/size][/b]
+
+[code]make                        # native + SDL2 build
+./oric1-emu -r roms/basic11b.rom
+./oric1-emu -r roms/basic11b.rom --headless --screenshot-text-at 3000000:boot.txt[/code]
+
+Feedback, bug reports and — especially — testing on real ORIC software are very welcome. This is a beta precisely because I'd like more eyes on it before calling it stable.
+
+Thanks, and happy hacking,
+bmarty
