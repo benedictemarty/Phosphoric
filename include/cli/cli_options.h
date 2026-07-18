@@ -36,7 +36,8 @@ enum {
     OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING,
     OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT,
     OPT_ULA_NG_POKE, OPT_PSG_TRACE, OPT_AUDIO_WAV, OPT_SCREENSHOT_TEXT,
-    OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT
+    OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT,
+    OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -65,6 +66,8 @@ static const struct option long_options[] = {
     {"screenshot-ansi",     required_argument, 0, OPT_SCREENSHOT_ANSI},
     {"screenshot-text-at",  required_argument, 0, OPT_SCREENSHOT_TEXT_AT},
     {"screenshot-ansi-at",  required_argument, 0, OPT_SCREENSHOT_ANSI_AT},
+    {"screenshot-when",     required_argument, 0, OPT_SCREENSHOT_WHEN},
+    {"screenshot-text-when",required_argument, 0, OPT_SCREENSHOT_TEXT_WHEN},
     {"frame-dump",          required_argument, 0, OPT_FRAME_DUMP},
     {"frame-dump-interval", required_argument, 0, OPT_FRAME_DUMP_INTERVAL},
     {"video",               required_argument, 0, OPT_VIDEO},
@@ -112,6 +115,7 @@ static const struct option long_options[] = {
     {"mageco-addr",         required_argument, 0, OPT_MAGECO_ADDR},
     {"oricon",              required_argument, 0, OPT_ORICON},
     {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
+    {"dump-ram-when",       required_argument, 0, OPT_DUMP_RAM_WHEN},
     {"bad-sector",          required_argument, 0, OPT_BAD_SECTOR},
     {"fdc-timing",          required_argument, 0, OPT_FDC_TIMING},
     {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},

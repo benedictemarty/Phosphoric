@@ -80,6 +80,16 @@ expect "--screenshot-ansi-at without ':' → exit 1" 1 "Invalid --screenshot-ans
 run "$EMU" -r "$ROM" -n --type-keys NOCOLON -c 1000
 expect "--type-keys without ':' → exit 1" 1 "Invalid --type-keys format"
 
+# ── state-triggered captures ADDR:VAL:FILE : malformed → fatal ─────────
+run "$EMU" -r "$ROM" -n --screenshot-when NOCOLON -c 1000
+expect "--screenshot-when without ':' → exit 1" 1 "Invalid --screenshot-when format"
+
+run "$EMU" -r "$ROM" -n --dump-ram-when 9C55:AB -c 1000
+expect "--dump-ram-when with only one ':' → exit 1" 1 "Invalid --dump-ram-when format"
+
+run "$EMU" -r "$ROM" -n --screenshot-text-when 9C55:AB: -c 1000
+expect "--screenshot-text-when with empty FILE → exit 1" 1 "Invalid --screenshot-text-when format"
+
 # ── enum-valued options : bogus values ─────────────────────────────────
 run "$EMU" -r "$ROM" -n --joystick BOGUS -c 1000
 expect "--joystick bogus is non-fatal (exit 0)" 0 "Unknown joystick mode"
@@ -134,6 +144,35 @@ if [ "$RC" -eq 0 ] && [ -s "$TMP/at.ansi" ]; then
     note_pass "well-formed --screenshot-ansi-at 3000000:FILE parses and writes ANSI"
 else
     note_fail "well-formed --screenshot-ansi-at (rc=$RC, size=$(stat -c%s "$TMP/at.ansi" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --dump-ram-when : la condition RAM[$0000]==$00 est vraie très tôt
+# (page zéro nulle au boot) → dump 64K écrit, exit 0.
+run "$EMU" -r "$ROM" -n --dump-ram-when 0000:00:"$TMP/when.bin" -c 2000000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/when.bin" ] \
+        && [ "$(stat -c%s "$TMP/when.bin")" -eq 65536 ]; then
+    note_pass "well-formed --dump-ram-when 0000:00:FILE triggers and writes 64K"
+else
+    note_fail "well-formed --dump-ram-when (rc=$RC, size=$(stat -c%s "$TMP/when.bin" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --screenshot-text-when : même condition, dump texte non vide.
+run "$EMU" -r "$ROM" -n --screenshot-text-when 0000:00:"$TMP/when.txt" -c 2000000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/when.txt" ]; then
+    note_pass "well-formed --screenshot-text-when 0000:00:FILE triggers and writes text"
+else
+    note_fail "well-formed --screenshot-text-when (rc=$RC, size=$(stat -c%s "$TMP/when.txt" 2>/dev/null || echo 0))"
+fi
+
+# VAL est hexa (comme ADDR) : "AB" = $AB, pas décimal. Une condition
+# introuvable avant --cycles est un échec FRANC → exit 2 + message dédié,
+# pour que le CI distingue « état jamais atteint » d'une erreur d'usage.
+run "$EMU" -r "$ROM" -n --screenshot-when 9C55:AB:"$TMP/never.ppm" -c 500000
+expect "--screenshot-when never satisfied → exit 2" 2 "condition jamais atteinte"
+if [ ! -e "$TMP/never.ppm" ]; then
+    note_pass "--screenshot-when never satisfied writes no file"
+else
+    note_fail "--screenshot-when never satisfied still wrote $TMP/never.ppm"
 fi
 
 # ── side-effect options (fopen / load at parse time) : the delicate part of

@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.93.0-alpha"
+#define EMU_VERSION "1.94.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -264,6 +264,24 @@ typedef struct emulator_s {
     int64_t dump_ram_at_cycles;
     const char* dump_ram_at_file;
     bool dump_ram_at_done;
+
+    /* Captures déclenchées par un ÉTAT mémoire (front montant : 1re fois que
+     * RAM[addr] == val, échantillonné en fin de frame comme les variantes -at).
+     * addr = -1 → désarmé. Filet : si armé mais jamais déclenché avant la fin
+     * de la course (--cycles), when_condition_unmet est levé → exit 2. */
+    int32_t screenshot_when_addr;      /* -1 = off */
+    uint8_t screenshot_when_val;
+    const char* screenshot_when_file;
+    bool screenshot_when_done;
+    int32_t dump_ram_when_addr;        /* -1 = off */
+    uint8_t dump_ram_when_val;
+    const char* dump_ram_when_file;
+    bool dump_ram_when_done;
+    int32_t screenshot_text_when_addr; /* -1 = off */
+    uint8_t screenshot_text_when_val;
+    const char* screenshot_text_when_file;
+    bool screenshot_text_when_done;
+    bool when_condition_unmet;         /* levé si un -when armé n'a jamais tiré */
 
     /* IRQ trace: log each IRQ entry + RTI to FILE */
     FILE* irq_trace_fp;

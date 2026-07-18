@@ -325,6 +325,9 @@ Display & Export:
   --screenshot-ansi FILE    Dump framebuffer as ANSI true-color text at exit
   --screenshot-text-at N:FILE  Dump screen text after N cycles
   --screenshot-ansi-at N:FILE  Dump ANSI framebuffer after N cycles
+  --screenshot-when A:V:FILE   Screenshot when RAM[A]==V (A,V hex; exit 2 if never before --cycles)
+  --screenshot-text-when A:V:FILE  Dump screen text when RAM[A]==V (A,V hex)
+  --dump-ram-when A:V:FILE     Dump 64KB when RAM[A]==V (A,V hex; exit 2 if never before --cycles)
   --video FILE              Record video to a Motion-JPEG AVI file
   --video-fps N             Recording frame rate (default: 50)
   --video-quality N         JPEG quality 1..100 (default: 85)

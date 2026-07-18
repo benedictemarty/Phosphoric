@@ -325,6 +325,9 @@ static void print_usage(const char* program_name) {
     printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
     printf("      --screenshot-text-at C:FILE  Dump screen text after C cycles to FILE\n");
     printf("      --screenshot-ansi-at C:FILE  Dump ANSI framebuffer after C cycles to FILE\n");
+    printf("      --screenshot-when A:V:FILE   Screenshot when RAM[A]==V (A,V hex; exit 2 if never)\n");
+    printf("      --screenshot-text-when A:V:FILE  Text screenshot when RAM[A]==V (A,V hex)\n");
+    printf("      --dump-ram-when A:V:FILE     Dump 64KB when RAM[A]==V (A,V hex; exit 2 if never)\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
     printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
@@ -1473,6 +1476,16 @@ static bool emulator_init(emulator_t* emu) {
     emu->dump_ram_at_cycles = -1;
     emu->dump_ram_at_file = NULL;
     emu->dump_ram_at_done = true;
+    emu->screenshot_when_addr = -1;
+    emu->screenshot_when_file = NULL;
+    emu->screenshot_when_done = false;
+    emu->dump_ram_when_addr = -1;
+    emu->dump_ram_when_file = NULL;
+    emu->dump_ram_when_done = false;
+    emu->screenshot_text_when_addr = -1;
+    emu->screenshot_text_when_file = NULL;
+    emu->screenshot_text_when_done = false;
+    emu->when_condition_unmet = false;
     emu->irq_trace_fp = NULL;
     emu->irq_trace_active = false;
     emu->irq_trace_depth = 0;
@@ -2060,6 +2073,17 @@ static void feed_kbd_inject(emulator_t* emu) {
         emu->kbd_inject_pos++;
         emu->kbd_inject_delay = 2;          /* gap before the next key */
     }
+}
+
+/* Read a byte for the state-triggered captures. Below the ROM/overlay window
+ * ($<C000) we read raw RAM directly — no banking, no I/O side effects (the I/O
+ * page $0300-$03FF is never a sensible game-state trigger, so it reads the
+ * shadow RAM there, matching --dump-ram-at). At $C000+ we take the CPU view
+ * (memory_read) to honour the active BASIC-ROM / overlay banking. */
+static uint8_t when_read(const emulator_t* emu, uint16_t addr) {
+    if (addr < 0xC000)
+        return emu->memory.ram[addr];
+    return memory_read((memory_t*)&emu->memory, addr);
 }
 
 static void emulator_run(emulator_t* emu) {
@@ -2938,6 +2962,53 @@ static void emulator_run(emulator_t* emu) {
             emu->dump_ram_at_done = true;
         }
 
+        /* State-triggered captures : front montant sur RAM[addr] == val,
+         * échantillonné ici en fin de frame (même cadence que les variantes
+         * -at). when_read() lit la RAM brute hors overlay ($<C000, sans effet
+         * de bord) et la vue CPU au-delà. --cycles reste la borne max. */
+        if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0 &&
+            when_read(emu, (uint16_t)emu->screenshot_when_addr) == emu->screenshot_when_val) {
+            log_info("Screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                     (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val,
+                     (unsigned long long)total_executed, emu->screenshot_when_file);
+            emu_export_image(emu, emu->screenshot_when_file);
+            emu->screenshot_when_done = true;
+        }
+
+        if (!emu->screenshot_text_when_done && emu->screenshot_text_when_addr >= 0 &&
+            when_read(emu, (uint16_t)emu->screenshot_text_when_addr) == emu->screenshot_text_when_val) {
+            FILE* tf = fopen(emu->screenshot_text_when_file, "w");
+            if (tf) {
+                video_export_screen_text(emu->memory.ram, tf);
+                fclose(tf);
+                log_info("Text screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                         (unsigned)emu->screenshot_text_when_addr, emu->screenshot_text_when_val,
+                         (unsigned long long)total_executed, emu->screenshot_text_when_file);
+            } else {
+                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_when_file);
+            }
+            emu->screenshot_text_when_done = true;
+        }
+
+        if (!emu->dump_ram_when_done && emu->dump_ram_when_addr >= 0 &&
+            when_read(emu, (uint16_t)emu->dump_ram_when_addr) == emu->dump_ram_when_val) {
+            FILE* rf = fopen(emu->dump_ram_when_file, "wb");
+            if (rf) {
+                fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
+                for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                    uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                    fwrite(&b, 1, 1, rf);
+                }
+                fclose(rf);
+                log_info("RAM dump on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                         (unsigned)emu->dump_ram_when_addr, emu->dump_ram_when_val,
+                         (unsigned long long)total_executed, emu->dump_ram_when_file);
+            } else {
+                log_error("Cannot open RAM dump file: %s", emu->dump_ram_when_file);
+            }
+            emu->dump_ram_when_done = true;
+        }
+
 #ifdef HAS_SDL2
         /* Frame limiter: 50 Hz PAL = 20ms per frame.
          * Without this, the emulator runs at monitor refresh rate (60 Hz+)
@@ -3041,6 +3112,25 @@ static void emulator_run(emulator_t* emu) {
             log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_file);
     }
 
+    /* Filet de sécurité : un -when armé qui n'a jamais tiré = échec franc.
+     * main() renverra 2 pour que le CI le voie plutôt que de croire à une
+     * capture silencieuse manquante. */
+    if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0) {
+        log_error("--screenshot-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
+                  (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val);
+        emu->when_condition_unmet = true;
+    }
+    if (!emu->screenshot_text_when_done && emu->screenshot_text_when_addr >= 0) {
+        log_error("--screenshot-text-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
+                  (unsigned)emu->screenshot_text_when_addr, emu->screenshot_text_when_val);
+        emu->when_condition_unmet = true;
+    }
+    if (!emu->dump_ram_when_done && emu->dump_ram_when_addr >= 0) {
+        log_error("--dump-ram-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
+                  (unsigned)emu->dump_ram_when_addr, emu->dump_ram_when_val);
+        emu->when_condition_unmet = true;
+    }
+
     log_info("Emulation stopped. Total cycles: %llu, frames: %llu",
              (unsigned long long)total_executed, (unsigned long long)frame_count);
 
@@ -3084,6 +3174,33 @@ static bool cli_split_cycles_file(const char* arg, const char* optname,
     }
     *out_cycles = atoll(arg);
     *out_file = colon + 1;
+    return true;
+}
+
+/* Parse the "ADDR:VAL:FILE" argument shared by the state-triggered captures
+ * (--screenshot-when / --dump-ram-when / --screenshot-text-when). ADDR is a
+ * 16-bit hexadecimal address (e.g. 9C55), VAL a hexadecimal byte — consistent
+ * with ADDR — so "AB", "07" and "0x07" all parse (strtol base 16 accepts the
+ * optional 0x prefix), FILE is the rest after the second colon. On success
+ * stores addr/val/file and returns true; on a malformed argument logs the
+ * canonical "Invalid --NAME format. Use ADDR:VAL:FILE" error and returns false
+ * (caller cleans up and exits 1). Covered by test_cli_parsing.sh. */
+static bool cli_split_addr_val_file(const char* arg, const char* optname,
+                                    int32_t* out_addr, uint8_t* out_val,
+                                    const char** out_file) {
+    const char* c1 = strchr(arg, ':');
+    if (!c1) {
+        log_error("Invalid --%s format. Use ADDR:VAL:FILE", optname);
+        return false;
+    }
+    const char* c2 = strchr(c1 + 1, ':');
+    if (!c2 || c2 == c1 + 1 || *(c2 + 1) == '\0') {
+        log_error("Invalid --%s format. Use ADDR:VAL:FILE", optname);
+        return false;
+    }
+    *out_addr = (int32_t)(strtol(arg, NULL, 16) & 0xFFFF);
+    *out_val  = (uint8_t)(strtol(c1 + 1, NULL, 16) & 0xFF);
+    *out_file = c2 + 1;
     return true;
 }
 
@@ -3167,6 +3284,9 @@ int main(int argc, char* argv[]) {
     bool render_software = false;
     const char* trace_file = NULL;
     const char* dump_ram_at_arg = NULL;
+    const char* screenshot_when_arg = NULL;
+    const char* dump_ram_when_arg = NULL;
+    const char* screenshot_text_when_arg = NULL;
     const char* bad_sector_args[FDC_MAX_BAD_SECTORS];
     int bad_sector_arg_count = 0;
     const char* fdc_timing_arg = NULL;
@@ -3226,6 +3346,9 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT_ANSI_AT: screenshot_ansi_at_arg = optarg; break;
             case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
             case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
+            case OPT_SCREENSHOT_WHEN: screenshot_when_arg = optarg; break;
+            case OPT_SCREENSHOT_TEXT_WHEN: screenshot_text_when_arg = optarg; break;
+            case OPT_DUMP_RAM_WHEN: dump_ram_when_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
             case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
             case OPT_VIDEO: video_avi_file = optarg; break;
@@ -3944,6 +4067,32 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /* Parse des captures déclenchées par état ADDR:VAL:FILE */
+    if (screenshot_when_arg) {
+        if (!cli_split_addr_val_file(screenshot_when_arg, "screenshot-when",
+                                     &emu.screenshot_when_addr, &emu.screenshot_when_val,
+                                     &emu.screenshot_when_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    if (screenshot_text_when_arg) {
+        if (!cli_split_addr_val_file(screenshot_text_when_arg, "screenshot-text-when",
+                                     &emu.screenshot_text_when_addr, &emu.screenshot_text_when_val,
+                                     &emu.screenshot_text_when_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    if (dump_ram_when_arg) {
+        if (!cli_split_addr_val_file(dump_ram_when_arg, "dump-ram-when",
+                                     &emu.dump_ram_when_addr, &emu.dump_ram_when_val,
+                                     &emu.dump_ram_when_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+
     /* Parse --type-keys CYCLES:TEXT (Sprint 34av: TEXT may start with
      * "loci-hid:" to route keys via the LOCI HID bitmap instead of the
      * ORIC keyboard matrix — useful for automating the LOCI TUI).
@@ -4558,8 +4707,13 @@ int main(int argc, char* argv[]) {
     }
 
     trace_close(&emu.trace);
+
+    /* Un --*-when armé mais jamais déclenché = échec explicite (exit 2), pour
+     * que le CI SCUMM distingue « état de jeu jamais atteint » d'une erreur
+     * d'usage (exit 1) ou d'un succès (exit 0). */
+    bool when_unmet = emu.when_condition_unmet;
     emulator_cleanup(&emu);
     log_cleanup();
 
-    return 0;
+    return when_unmet ? 2 : 0;
 }

@@ -121,6 +121,34 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Sprint 136: Captures déclenchées par un ÉTAT mémoire — `--screenshot-when` / `--screenshot-text-when` / `--dump-ram-when` (v1.94.0-alpha) - DONE
+Réponse à la demande du projet SCUMM-Oric (`docs/CR/2026-07-18_Demande_Equipe_Capture_Declenchee_Par_Etat.md`).
+**Besoin mesuré** : les captures headless (`--screenshot-at`, `--dump-ram-at`, …) se
+déclenchent sur un **nombre de cycles fixe**. Or le cycle où un état de jeu apparaît
+dépend du layout mémoire du binaire → tout refactor décale la timeline et casse des
+tests byte-exact/screenshot alors que le comportement est correct. Un refactor SCUMM
+(unifier l'état d'acteur) était **bloqué** par ça.
+**Livré** : 3 variantes déclenchées sur une **condition mémoire** (`RAM[ADDR] == VAL`),
+indépendantes du timing/layout :
+- `--screenshot-when ADDR:VAL:FILE` : image (PPM/BMP) au premier passage.
+- `--screenshot-text-when ADDR:VAL:FILE` : dump texte `$BB80` (40×28).
+- `--dump-ram-when ADDR:VAL:FILE` : dump 64 Ko (RAM + vue CPU `$C000-$FFFF`).
+Sémantique calquée sur `--screenshot-at` : `ADDR` **et** `VAL` en **hexa** (helper
+`cli_split_addr_val_file()`, `strtol` base 16 → `9C55`/`07`/`AB`/`0x07`) ; front montant
+(1re fois, une seule) ; échantillonné en fin de frame (même cadence que les `-at`) ;
+lecture via `when_read()` (RAM brute sous `$C000`, vue CPU au-delà). Filet : `--cycles N`
+reste la borne max ; condition jamais atteinte → message dédié + **exit 2** (distinct de
+rc 1 usage / rc 0 succès) pour un échec CI franc ; malformé → rc 1
+`Invalid --NAME format. Use ADDR:VAL:FILE`.
+Vérifié **par la mesure** (boot Atmos headless) : `--dump-ram-when 0000:00:FILE` → 64 Ko
+au cycle 19971 ; `--screenshot-text-when 0000:00:FILE` → texte non vide ;
+`--screenshot-when 9C55:AB:FILE -c 500000` → exit 2 + aucun fichier écrit.
+Tests : `test-cli-parsing` 29/29 → **36/36** (+7 : 3 malformés fatals, 2 positifs `-when`,
+1 filet exit 2, 1 « aucun fichier »). `make clean && make tests` exit 0.
+EMU_VERSION 1.93.0-alpha → 1.94.0-alpha ; builds natif + SDL2 OK.
+**Impact SCUMM** : migration des tests layout-sensibles vers `-when` (déclencheur = valeur
+d'état stable) → suppression des « trous » BSS, refactor d'état d'acteur débloqué.
+
 ### Sprint 135: Screenshot texte/ANSI à un cycle donné — `--screenshot-text-at` + `--screenshot-ansi-at` (v1.93.0-alpha) - DONE
 Suite de Sprint 134 (les `--screenshot-text`/`--screenshot-ansi` étaient des sorties
 « fin de run » ; l'équivalent « à un cycle donné » manquait, cf. limite notée au
