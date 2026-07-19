@@ -7,7 +7,8 @@
  *
  * Implements .ost (Oric Save sTate) format:
  * - 48-byte header (magic, version, file size, CRC32, emu version)
- * - Sequential sections: CPU, MEM, VIA, PSG, VID, OCB, KBD, FDC, MDC, TAP, SER, META
+ * - Sequential sections: CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, SER, META
+ *   (sections OCULA OCB/OGP retirées ; ignorées si présentes dans un ancien .ost)
  *  
  * - CRC32 integrity check over all data after the header
  */
@@ -18,6 +19,16 @@
 #include "savestate.h"
 #include "emulator.h"
 #include "utils/logging.h"
+
+/* Table des périphériques de bus enregistrée par main.c (hooks save/load).
+ * savestate.c ne connaît pas io_bus : il itère cette table opaque. */
+static const io_device_t* s_io_devices = NULL;
+static int                 s_io_device_count = 0;
+
+void savestate_set_io_devices(const io_device_t* devices, int count) {
+    s_io_devices = devices;
+    s_io_device_count = (devices && count > 0) ? count : 0;
+}
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  CRC32 (table-driven, ISO 3309 / ITU-T V.42)                     */
@@ -357,6 +368,21 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         write_bool(fp, emu->acia.dsr);
         write_bool(fp, emu->acia.cts);
         end_section(fp, sec);
+    }
+
+    /* ── Sections des périphériques de bus (hooks io_device_t) ──────────────
+     * Chaque device enregistré qui fournit save_tag+save écrit SA section. Le
+     * hook peut renvoyer false → aucune section émise (état par défaut), ce qui
+     * laisse le .ost byte-identique pour l'usage courant (zéro régression). */
+    for (int i = 0; i < s_io_device_count; i++) {
+        const io_device_t* dev = &s_io_devices[i];
+        if (!dev->save_tag || !dev->save) continue;
+        long dpos = begin_section(fp, dev->save_tag);
+        if (dev->save((emulator_t*)emu, fp)) {
+            end_section(fp, dpos);
+        } else {
+            fseek(fp, dpos, SEEK_SET);   /* rembobine : pas de section */
+        }
     }
 
     /* ── META Section ── */
@@ -704,8 +730,22 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             fread(meta_buf, 1, to_read, fp);
             log_info("savestate: metadata: rom='%s'", meta_buf);
         } else {
-            /* Unknown section — skip for forward compatibility */
-            log_info("savestate: skipping unknown section '%.4s' (%u bytes)", tag, sec_size);
+            /* Section non gérée en dur : la proposer aux hooks des devices bus
+             * (save_tag) avant de la considérer comme inconnue. */
+            const io_device_t* dev = NULL;
+            for (int i = 0; i < s_io_device_count; i++) {
+                if (s_io_devices[i].save_tag && s_io_devices[i].load &&
+                    memcmp(tag, s_io_devices[i].save_tag, 4) == 0) {
+                    dev = &s_io_devices[i];
+                    break;
+                }
+            }
+            if (dev) {
+                dev->load(emu, fp, sec_size);
+            } else {
+                /* Unknown section — skip for forward compatibility */
+                log_info("savestate: skipping unknown section '%.4s' (%u bytes)", tag, sec_size);
+            }
         }
 
         /* Ensure we're at the right position for the next section */

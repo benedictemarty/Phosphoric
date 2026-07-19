@@ -6,6 +6,296 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
+
+Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette
+est **périphérique** (main.c god-object d'assemblage ; état émulé mêlé aux handles
+hôte ; contrat `io_device_t` incomplet), pas centrale. On la traite par
+**extraction incrémentale à iso-comportement** — chaque étape vérifiée
+byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
+= risque croissant ; on peut s'arrêter à n'importe quelle US.
+
+### US 1 — Nettoyage à risque nul (Sprint 125) — DONE (v1.85.0-alpha)
+- [x] Retirer les `#include "emulator.h"` inutilisés (`microdisc.c`,
+      `loci_core.c` ; 0 usage vérifié).
+- [x] `tap_strip_header_padding` était du **code mort** (0 usage) → supprimé
+      plutôt qu'extrait. `parse_host_port` → `src/utils/netutil.c`.
+      `g_running`+`signal_handler` → `src/utils/appsignal.c`.
+- [x] Cible `release` (copie strippée `oric1-emu-release`, sans toucher au
+      binaire de travail).
+> Fait : -~100 L de main.c, couplage réduit. Iso-comportement golden 4/4, suite
+> verte. Incident : un `sed` mal délimité a corrompu 2 fichiers → restaurés via
+> `git checkout`, refaits avec Edit (leçon : pas de `sed` sur des lignes `#include`).
+
+### US 2 — Extraire le bus I/O de main.c (Sprint 126) — DONE (v1.86.0-alpha)
+- [x] Bloc du bus (6 wrappers `*_dev_*` + table `io_bus[]` + `io_bus_find`/
+      `io_bus_find_write`, ~170 L) extrait vers `src/io/io_bus.c` +
+      `include/io/io_bus.h`. `main.c` appelle les dispatch externes ;
+      registration savestate via `io_bus_devices(&count)`.
+> **Écart assumé** vs le plan (« dans chaque module ») : les wrappers ont besoin
+> d'`emulator_t` (claims croisés) → les mettre dans `acia6551.c`/`microdisc.c`
+> réintroduirait le couplage `emulator.h` retiré en US1. Le bon foyer est un
+> **adaptateur unique** (`io_bus.c`, seul io/ à inclure emulator.h). Modules purs
+> préservés. Iso-comportement golden 4/4 ; main.c 4690 → 4425 L.
+
+### US 3 — Module argparse déclaratif (Sprint 127) — PARTIEL (v1.87.0-alpha)
+- [x] **Données** extraites : enum `OPT_*` + table `long_options[]` +
+      `CLI_SHORT_OPTIONS` → `include/cli/cli_options.h`. Iso-comportement par
+      construction (relocation de données) ; golden 4/4 + `--help` + suite verte.
+- [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
+      63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
+      **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre
+      plutôt que prétendre une garantie intenable.
+> Backlog : élargir la couverture de tests CLI d'abord, puis extraire le parser
+> par petits lots vérifiables. main.c 4425 → 4342 L.
+- [~] **Prérequis EN COURS — filet de tests CLI** : `tests/integration/test_cli_parsing.sh`
+      (cible `make test-cli-parsing`, **22/22**) verrouille le comportement **mesuré** du
+      parser avant tout refactor. Couvre : `--help` (usage, rc 0), option inconnue
+      **non-fatale** (rc 0), formats `CYCLES:VALUE` malformés → rc 1 message précis
+      (`--dump-ram-at`/`--screenshot-at`/`--type-keys`), validation enum/borne **fatale**
+      (`--serial`/`--model`/`--dtl2000` bogus, `--scale 99` → rc 1) vs **non-fatale**
+      (`--joystick`/`--keyboard` bogus, `--acia-addr` hex invalide → rc 0), et surtout les
+      **options à effets de bord** (fopen/load au parsing) avec leurs divergences de
+      fatalité non évidentes : succès = artefact produit (`--trace`/`--profile` créent le
+      fichier) ; ressource absente = **fatale** (`--disk`, `--symbols` → rc 1) **ou
+      non-fatale** (`--tape` warning, `--load-state`, `--breakpoint` bad hex, `--trace`
+      vers chemin non inscriptible → rc 0). Ces comportements sont capturés **tels quels** :
+      un futur parser devra les reproduire ou les changer consciemment. Binaire inchangé
+      (test seul). Le filet couvre maintenant les cas d'erreur + succès des principales
+      familles d'options ; l'extraction du parser peut s'appuyer dessus, par petits lots.
+- [x] **1re tranche d'extraction livrée (v1.91.1-alpha)** : le motif `CYCLES:FILE` dupliqué
+      à l'identique entre `--dump-ram-at` et `--screenshot-at` factorisé dans
+      `cli_split_cycles_file()`. **Iso-comportement PROUVÉ octet à octet** (sorties refactoré
+      vs binaire d'avant reconstruit depuis git : dump 65536 o + screenshot 161295 o
+      identiques) + test-cli-parsing 22/22. `--type-keys` (CYCLES:TEXT) laissé de côté
+      (motif différent). Méthode validée pour la suite : petites tranches, chacune prouvée.
+- [x] **2e tranche livrée (v1.91.2-alpha)** : motif `fopen` + « Cannot open --NAME file »
+      + cleanup + `return 1`, identique entre `--trace-irq`/`--psg-trace`/`--audio-wav`,
+      factorisé dans `cli_open_out(file, mode, optname)`. `--trace` (non-fatal, message
+      différent) non touché. Iso-comportement PROUVÉ : échec (3 cas test-cli-parsing
+      **25/25**, ajoutés AVANT le refactor) + succès (octet à octet `.psg`/`.wav`/`.irq`
+      byte-identiques refactoré vs binaire d'avant).
+- [x] **3e tranche livrée (v1.91.3-alpha)** : `parse_hex16(s)` remplace les 4 copies
+      identiques de `(uint16_t)strtol(arg,NULL,16)` (`--acia-addr`/`--dtl2000-addr`/
+      `--mageco-addr`/`--break`). Iso PROUVÉ : test-cli-parsing 25/25 + golden octet à octet
+      (`--acia-addr 0500 --break C000`).
+- **BORNE HONNÊTE atteinte** : les 3 tranches ci-dessus épuisent la duplication *propre*
+      (motifs strictement identiques). Le reste est **couplé aux périphériques** (blocs
+      dtl2000/mageco : warnings/erreurs/init spécifiques) → non factorisable sans couplage.
+      Aller plus loin = le parser générique `cli_args_t`, qui reste **non prouvable
+      iso-comportement** (filet à 25 cas ≠ couverture des 80 options × tous comportements).
+      Recommandation : **s'arrêter là** pour US3 (part sûre livrée), ou d'abord étendre le
+      filet à ~toutes les options avant d'oser le parser générique.
+
+### US 4 — Savestate DTL2000/Mageco via séparation état/transport (Sprints 128-129) — DONE (v1.88.0-alpha)
+- [x] Sections **« DTL »** / **« MAG »** via les hooks `io_device_t`.
+      `dtl2000_save`/`load`, `mageco_save`/`load` dans leurs modules.
+- [x] Séparation état/transport faite **à la (dé)sérialisation** (pas de découpage
+      physique des structs cœur, jugé risqué et non nécessaire) : état émulé sauvé
+      en blob, **14 pointeurs hôte de dtl2000_t / 7 de mageco_t préservés** au
+      chargement. Garde par taille ; section émise seulement si présent → `.ost`
+      normal inchangé. Transport non restauré (même-build, documenté).
+- [x] Preuves : test-dtl2000 16/16 (+round-trip pointeurs sentinelles),
+      test-midi 19/19, suite 941 → 943, golden 4/4, e2e réel `--dtl2000` +
+      `--load-state` OK.
+> Gain : dette structurelle #2 (savestate série) résorbée. Reste hors périmètre :
+> savestate **LOCI** (handles OS, cf. US5 backlog).
+
+### US 5 — Lifecycle `io_device_t` (Sprints 130-131) — DONE avec écarts assumés (v1.89.0-alpha)
+- [x] Tick des périphériques déplacé de `cpu_cycle_tick` (main.c) vers
+      `io_bus_tick(emu, cycles)` (io_bus.c), **ordre historique préservé** →
+      iso-comportement par construction. VIA/cassette restent dans main.c.
+- [x] save/load DTL2000/Mageco : faits en US4.
+- [ ] **NON fait (assumé)** : boucle de tick générique sur `io_bus[]` (ordre ≠
+      ordre de dispatch ; non prouvable byte-identique pour le timing série) ;
+      hooks `reset`/`tick` dans le contrat (reset non uniforme → changerait F5 ;
+      champ non câblable = poids mort). Contrat gardé limité à ce qui s'itère
+      uniformément (claims/read/write/save/load).
+> Gain : main.c ne connaît plus les détails de tick des périphériques.
+> Bilan Epic 7 : main.c **4690 → 4334 L**, golden 4/4 à chaque étape, suite verte.
+
+### Hors périmètre (assumé)
+- `emulator_run()` en event-loop : risque temporel > bénéfice, **non planifié**.
+- Savestate **LOCI** complet : bloqué par les handles OS (montages/descripteurs) ;
+  au mieux une restauration *partielle* des montages, jamais du transport live.
+
+---
+
+### Sprint 135: Screenshot texte/ANSI à un cycle donné — `--screenshot-text-at` + `--screenshot-ansi-at` (v1.93.0-alpha) - DONE
+Suite de Sprint 134 (les `--screenshot-text`/`--screenshot-ansi` étaient des sorties
+« fin de run » ; l'équivalent « à un cycle donné » manquait, cf. limite notée au
+Sprint 134). Équivalents sur le **modèle exact de `--screenshot-at`**, réutilisant le
+helper `cli_split_cycles_file()` (mutualisé en v1.91.1).
+- `--screenshot-text-at C:FILE` : dumpe le texte `$BB80` dès que les cycles atteignent C.
+- `--screenshot-ansi-at C:FILE` : image ANSI true-color du framebuffer dès le cycle C.
+- Erreur **identique** à `--screenshot-at` : format sans `:` → fatal rc 1
+  (`Invalid --screenshot-text-at format. Use CYCLES:FILE`).
+Vérifié **par la mesure** : boot Atmos, `--screenshot-text-at 3000000:FILE` → écrit au
+cycle 3015456 (`ORIC EXTENDED BASIC V1.1`/`© 1983 TANGERINE`/`37631 BYTES FREE`) ;
+`--screenshot-ansi-at` → 264654 o ; formats malformés → rc 1 (mesuré sans pipe).
+Tests : `make test-cli-parsing` **29/29** (+4 : 2 malformés fatals + 2 contrôles positifs
+fichier non vide). `make clean && make tests` complet vert (exit 0). Builds natif + SDL2 OK.
+
+---
+
+### Sprint 134: Screenshot texte — `--screenshot-text` + `--screenshot-ansi` (v1.92.0-alpha) - DONE
+Réponse à « existe-t-il un screenshot texte ? ». Constat **mesuré** avant tout code :
+`video_export_ascii()` existait dans `export.c` mais **n'était branchée à aucune option
+CLI** (appelée seulement par les tests) et produit une **image ANSI** (pixel → couleur de
+fond), pas un dump texte ; le **contenu texte réel** de l'écran n'existait pas.
+- `--screenshot-text FILE` : dumpe le **contenu texte réel** de l'écran (`$BB80`, 40×28)
+  en ASCII lisible à la sortie. Nouvelle `video_export_screen_text(memory, fp)` : décode
+  `octet & 0x7F` (masque le bit vidéo inverse), codes de contrôle/attributs (< 0x20) →
+  espace, 40 col max/ligne, espaces de fin supprimés (rtrim).
+- `--screenshot-ansi FILE` : image ANSI true-color du framebuffer à la sortie, via le
+  wrapper fichier `video_export_ascii_file(vid, filename, sx, sy)` autour de l'existant.
+- **Limite assumée/documentée** : suppose le charset standard ORIC (0x20-0x7F ≈ ASCII),
+  un charset redéfini n'est pas résolu ; lit toujours les 28 lignes de `$BB80` quel que
+  soit le mode (TEXT/HIRES).
+Vérifié **par la mesure** (pas déduit) : boot Atmos 3M cycles → `ORIC EXTENDED BASIC V1.1`
+/ `© 1983 TANGERINE` / `37631 BYTES FREE` / `CAPS` (le `©` sort en `` ` ``, code 0x60 du
+charset ORIC = la limite ASCII documentée) ; ANSI ~264 Ko avec `ESC[48;2;R;G;Bm`.
+Tests : `test-video` 16/16 (+2 : `test_ascii_export_file`, `test_screen_text_export` —
+décodage inverse/contrôle + rtrim + paramètres NULL). `make tests` complet vert (exit 0).
+**Fausse alerte tranchée par la mesure** : 7 échecs de `test-control-dispatch` observés
+dans un `make tests` = **artefact de build incrémental** (objets SDL2/headless mélangés) —
+`git stash` → 26/0 sur HEAD, `make clean` → 26/0 avec les changements. Pas une régression.
+Builds natif + SDL2 OK.
+
+---
+
+### Sprint 133: AVI sonorisé — `--video` embarque une piste audio PCM (v1.91.0-alpha) - DONE
+Suite de Sprint 132. Constat mesuré : `--video` produisait un MJPEG **muet** (1 flux
+`vids`, aucun `auds`). Le recorder gagne un **2e flux `auds` PCM 16-bit** entrelacé.
+- `avi_recorder_open_av(...audio_rate, channels)` : déclare le 2e `strl`/`auds` +
+  `WAVEFORMATEX`, `dwStreams=2`, `hdrl` 192→294 ; `avi_recorder_open` = wrapper
+  (rate 0 → sortie **byte-identique**). `avi_recorder_add_audio` écrit les chunks
+  `01wb` ; `idx1` fourcc/flags par entrée ; back-patch `dwLength` audio à la fermeture.
+- `main.c` : audio dans l'AVI **headless uniquement** (GUI = SDL possède `ay_generate`) ;
+  génération audio par trame **consolidée** (un seul `ay_generate`/trame → WAV + AVI,
+  jamais deux drains de la file d'événements PSG).
+Vérifié (ffprobe/ffmpeg) : AVI PING = 2 flux (mjpeg 6,02 s + pcm_s16le 44100 stéréo),
+audio extrait 265482 frames **non silencieux**, vidéo 301 trames OK, `dwLength` correct,
+0 erreur conteneur. Tests : `test-avi` 9/9 (+2 : flux auds + dwLength ; non-régression
+vidéo-seul), `test-audio-capture` 5/5 (+1 : AVI headless a `auds`+`01wb`).
+`make tests` complet vert (exit 0 ; le harnais n'émet pas de total agrégé).
+Builds natif + SDL2 OK.
+
+---
+
+### Sprint 132: Capture audio headless — `--audio-wav` + `--psg-trace` (v1.90.0-alpha) - DONE
+Équivalent audio de `--screenshot-at` : valider le son PSG dans un run headless
+automatique (mesuré, pas déduit). Motivé par le volet son du portage Spellbinder
+(`~/spillbender`), encore à zéro : avoir l'outil de mesure **avant** d'implémenter.
+- `--audio-wav FILE` : rend le PSG en PCM par trame (882 éch. @ 44,1 kHz) via
+  `ay_generate` (le même moteur que la lecture SDL) → WAV 16-bit stéréo, en-tête
+  backpatché à la fermeture. Headless uniquement (garde-fou : sans `--headless`,
+  le callback SDL est déjà l'unique consommateur du générateur → exit 1).
+- `--psg-trace FILE` : journal des écritures registre son AY (reg 0-13) + cycle CPU.
+  Ports 14/15 (clavier) exclus ; reg 7 mixer conservé tel quel (mesuré, non filtré).
+Preuves : `make test-audio-capture` (`tests/integration/test_audio_capture.sh`, 4/4)
+— garde-fou + son ROM PING → WAV non silencieux + trace R0-R13 + déterminisme
+(WAV byte-identique sur 2 runs). `make tests` complet vert (exit 0). Builds natif + SDL2 OK.
+
+---
+
+### Sprint 124: Hooks de sérialisation `io_device_t` — l'ULA-NG persiste dans le `.ost` (v1.84.0-alpha) - DONE
+Extension du contrat au-delà du dispatch I/O. **Constat honnête** : les devices
+bus (DTL2000, Mageco, LOCI, ULA-NG) n'avaient **aucune section savestate** — état
+non persisté. Le hook corrige cette lacune, ULA-NG en premier.
+- [x] Contrat (`io_device.h`) : `save_tag` + `save(emu,fp)` (retourne `false` →
+      aucune section, `.ost` byte-identique si état par défaut) + `load(emu,fp,size)`.
+- [x] Plomberie découplée : `savestate.c` ignore `io_bus` ; `main.c` la fournit
+      via `savestate_set_io_devices()`. Save = une section par device à hook ;
+      load route les tags non gérés en dur vers le `load` du device correspondant
+      (tags vraiment inconnus toujours ignorés → compat ascendante).
+- [x] ULA-NG (section « UNG ») : `ula_ng_save`/`load` dans le module. POD sans
+      pointeur (30696 o) → blob + **garde par taille** au chargement = savestate
+      *même-build* (quicksave/load F2/F4) ; section émise seulement si déverrouillée
+      → `.ost` d'un boot normal inchangé.
+- [x] Preuves : `test-savestate` +2 (round-trip `memcmp==0` ; verrouillée = pas
+      de section, cible pré-existante non écrasée) 12/12 ; e2e réel `--ula-ng-poke`
+      → `.ost` 96503 o **avec** UNG (30704 o) vs boot normal 65799 o **sans**.
+- [x] Doc `docs/architecture/io-bus.md` §6.
+> **backlog** : migrer DTL2000 et Mageco sur le même modèle (petits jeux de
+> registres). **LOCI = réserve réelle** : ses handles de fichiers OS ne sont pas
+> sérialisables tels quels (ne pas prétendre le contraire). Hooks reset/tick :
+> non uniformes (reset F5 = CPU+LOCI seulement ; ordre de tick ≠ ordre de table).
+
+---
+
+### Sprint 123: ULA-NG migrée vers le bus — dispatch I/O = boucle + repli VIA (v1.83.0-alpha) - DONE
+Dernier périphérique à plage encore câblé en dur. Sa migration a nécessité
+d'**étendre le contrat `io_device_t`** (sa sémantique d'écriture ne rentrait pas
+dans le contrat précédent, dit honnêtement).
+- [x] `write` renvoie désormais `bool` « consommé » (au lieu de `void`) : une
+      écriture peut décliner et retomber sur le VIA. Périphériques à plage
+      exclusive → toujours `true` ; ULA-NG → verdict de `ula_ng_write`
+      (verrouillée, octet neutre non consommé → repli VIA bit-à-bit).
+- [x] `claims_write` optionnel (NULL → `claims`) : l'ULA-NG voit les écritures de
+      sa fenêtre même verrouillée (guet 'N','G') alors que ses lectures ne
+      répondent que déverrouillée. `io_bus_find_write` = `claims_write ?: claims`.
+- [x] Wrapper ULA-NG synchronise l'IRQ raster quand l'écriture est consommée.
+      Blocs ULA-NG retirés des 2 callbacks → `io_read/write_callback` = boucle du
+      bus + repli VIA. **Plus aucun périphérique à plage câblé en dur.**
+- [x] Non-régression : `test-ula-ng` 60/60 + garde visible 2/2 (déverrouillage +
+      palette/copper + IRQ raster via le dispatch réel), boots byte-identiques au
+      pré-migration. `make tests` = 939 checks (outils construits ; 923 sans,
+      écart = e2e `bas2tap` skippés qui s'exécutent après `make tools`).
+- [x] Doc `docs/architecture/io-bus.md` §3/§5 (contrat étendu, ULA-NG ✅).
+> **backlog** : la migration du **dispatch I/O** est terminée. Étendre ensuite
+> `io_device_t` aux hooks `init`/`reset`/`savestate`/`tick` (§6 io-bus.md) —
+> notamment chaque device sérialisant sa propre section `.ost` (le point qui a
+> fait mal avec OCB/OGP).
+
+---
+
+### Sprint 122: LOCI migré vers le bus `io_device_t` (v1.82.0-alpha) - DONE
+Suite de la migration du bus I/O. Le **LOCI** — le périphérique précisément
+pointé par le constat « que fait le code du LOCI dans le `main` ? » — quitte le
+câblage en dur des callbacks pour rejoindre la table `io_bus[]`, en tête.
+- [x] Un seul `io_device_t` « loci » modélise les 3 sous-fenêtres disjointes
+      (MIA $03A0-$03BF, TAP $0315-$0317 recouvrant le Microdisc, DSK
+      $0310-$0314/$0318-$0319 si `!has_microdisc`). `claims` encode la priorité,
+      `read`/`write` dispatchent en interne.
+- [x] 6 blocs `if (has_loci && ...)` retirés → `io_read/write_callback` = boucle
+      de bus + cas ULA-NG + repli VIA. Snoop VIA ORB $0300 (`loci_tap_motor`)
+      conservé hors bus (pas un claim).
+- [x] Non-régression : suite verte (923), boots LOCI (MIA + image SD/DSK)
+      byte-identiques au binaire pré-bus, e2e ACIA-over-LOCI $0380 OK.
+- [x] Doc `docs/architecture/io-bus.md` §5 (LOCI ✅, ULA-NG ⏳ justifiée).
+> **backlog** : l'ULA-NG reste câblée après la boucle (claim à effet de bord :
+> l'écriture doit toujours recevoir l'octet en fenêtre pour guetter 'N','G' et
+> renvoie si consommée). La migrer suppose d'étendre le contrat `io_device_t`
+> (`write` renvoyant « consommé », `claims` distinct lecture/écriture) → à faire
+> avec les hooks génériques init/reset/savestate/tick.
+
+---
+
+### Sprint 121: Bus de périphériques `io_device_t` (v1.81.0-alpha) - DONE
+Réponse au constat architectural « que fait le code du LOCI dans le `main` de
+l'émulateur ? ». Le routage I/O ($0300-$03FF) était une cascade de `if` codés
+en dur dans `io_read_callback`/`io_write_callback`. On introduit une
+**abstraction de bus** et on migre les périphériques par la méthode *strangler*,
+sans changement de comportement observable.
+- [x] `include/io/io_device.h` : contrat `io_device_t` (`claims`/`read`/`write`
+      recevant `emulator_t*`). Table `io_bus[]` + `io_bus_find()` dans `main.c`
+      (l'ordre de la table = priorité de claim).
+- [x] Migrés vers le bus : DTL2000 (sprint précédent), puis **ACIA 6551**,
+      **Mageco/ORICON MIDI**, **Microdisc WD1793** → blocs `if` retirés des deux
+      callbacks. Wrappers conservant les cas particuliers (picowifi-over-LOCI
+      $0380, `fdc_trace` + synchro overlay Microdisc).
+- [x] LOCI reste câblé **en tête** (TAP $0315-$0317 / DSK chevauchent le
+      Microdisc, priorité +) ; ULA-NG reste câblée **après** le bus (repli VIA).
+- [x] Doc `docs/architecture/io-bus.md` (contrat, taxonomie, ordre de migration).
+- [x] Fix : `test-savestate` ne compilait plus depuis le retrait d'OCULA
+      (symboles supprimés) → 3 tests OCULA obsolètes retirés (.ost rétro-compatible).
+      Suite complète verte : 923 tests.
+> **backlog** : migrer LOCI et ULA-NG vers le bus (dernier ressort — priorités
+> croisées) ; hooks génériques init/reset/savestate/tick sur `io_device_t`.
+
+---
+
 ### Sprint 117: VDU intégré ULA-NG v0.1 (v1.77.0-alpha) - DONE
 Port de commandes de style VDU (`NG_VDU` $0357) : le 6502 streame des octets,
 l'interpréteur vit **dans l'ULA-NG** (stand-in du firmware soft-core FPGA).
@@ -755,7 +1045,7 @@ isolé dans l'Epic 2.
 
 ---
 
-## Phase 4: Integration & Release (Sprint 12-15) - IN PROGRESS
+## Phase 4: Integration & Release (Sprint 12-15) - DONE
 
 ### Sprint 12-13: Integration (v1.0.0-alpha) - DONE
 - [x] Full emulation loop (CPU + VIA per frame)
@@ -867,7 +1157,7 @@ isolé dans l'Epic 2.
 
 ## Phase 5: Advanced Features (Sprint 19+) - IN PROGRESS
 
-### Sprint 66: Cadençage temps réel headless + Write Track WD1793 (v1.25.6-alpha) - EN COURS
+### Sprint 66: Cadençage temps réel headless + Write Track WD1793 (v1.25.6-alpha) - DONE
 
 > Deux limites concrètes rencontrées en produisant une vidéo terminal↔BBS,
 > consignées ici avec fichier:ligne, impact et piste. **Les deux sont
@@ -993,7 +1283,7 @@ isolé dans l'Epic 2.
   - [ ] Poster l'amendement sur le forum t=2709 + intégrer le retour
         sodiumlb/Dbug.
 
-### Sprint 63 (EN COURS): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
+### Sprint 63 (DONE): Changement de média « hors Oric » à chaud — k7 / .dsk sans quitter l'émulateur
 
 > Noté en fin de session : besoin d'un système **côté hôte** pour changer la
 > cassette (.tap/k7) **ou** le disque (.dsk) **sans sortir de l'émulateur**.

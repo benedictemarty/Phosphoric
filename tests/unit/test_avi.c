@@ -235,6 +235,67 @@ TEST(test_avi_open_invalid_args) {
     ASSERT_TRUE(!avi_recorder_open(&rec, NULL, 16, 16, 50, 80));
 }
 
+TEST(test_avi_audio_stream) {
+    /* open_av with audio declares a second 'auds' PCM stream and interleaves
+     * '01wb' chunks with the video frames. */
+    avi_recorder_t rec;
+    const int W = 16, H = 16, RATE = 44100, CH = 2, NF = 100, FRAMES = 3;
+    ASSERT_TRUE(avi_recorder_open_av(&rec, TMP_AVI, W, H, 50, 80, RATE, CH));
+    ASSERT_TRUE(rec.has_audio);
+
+    uint8_t* frame = (uint8_t*)malloc((size_t)(W * H * 3));
+    ASSERT_TRUE(frame != NULL);
+    int16_t samples[100 * 2];
+    for (int i = 0; i < NF * 2; i++) samples[i] = (int16_t)(i * 7 - 1000);
+
+    for (int f = 0; f < FRAMES; f++) {
+        make_frame(frame, W, H, f);
+        ASSERT_TRUE(avi_recorder_add_frame(&rec, frame));
+        ASSERT_TRUE(avi_recorder_add_audio(&rec, samples, NF));
+    }
+    free(frame);
+    ASSERT_EQ(rec.audio_frames, (uint32_t)(FRAMES * NF));
+    ASSERT_TRUE(avi_recorder_close(&rec));
+
+    uint8_t* buf = NULL;
+    long len = slurp(TMP_AVI, &buf);
+    ASSERT_TRUE(len > 0);
+
+    /* avih dwStreams = 2 (data+24). */
+    int avih = find_fourcc(buf, len, "avih");
+    ASSERT_TRUE(avih > 0);
+    ASSERT_EQ(rd_u32(buf + avih + 8 + 24), 2u);
+
+    /* Audio stream header present, dwLength patched = total sample-frames.
+     * 'auds' is the strh fccType (strh data start); dwLength is at +32. */
+    int auds = find_fourcc(buf, len, "auds");
+    ASSERT_TRUE(auds > 0);
+    ASSERT_EQ(rd_u32(buf + auds + 32), (uint32_t)(FRAMES * NF));
+
+    /* Interleaved audio chunks + idx1 has both video and audio entries. */
+    ASSERT_TRUE(find_fourcc(buf, len, "01wb") > 0);
+    int idx1 = find_fourcc(buf, len, "idx1");
+    ASSERT_TRUE(idx1 > 0);
+    ASSERT_EQ(rd_u32(buf + idx1 + 4), (uint32_t)((FRAMES * 2) * 16));
+    free(buf);
+}
+
+TEST(test_avi_no_audio_is_video_only) {
+    /* open_av with rate 0 is byte-equivalent to plain open : one stream, no 'auds'. */
+    avi_recorder_t rec;
+    ASSERT_TRUE(avi_recorder_open_av(&rec, TMP_AVI, 16, 16, 50, 80, 0, 0));
+    ASSERT_TRUE(!rec.has_audio);
+    ASSERT_TRUE(avi_recorder_close(&rec));
+
+    uint8_t* buf = NULL;
+    long len = slurp(TMP_AVI, &buf);
+    ASSERT_TRUE(len > 0);
+    int avih = find_fourcc(buf, len, "avih");
+    ASSERT_EQ(rd_u32(buf + avih + 8 + 24), 1u);      /* dwStreams = 1 */
+    ASSERT_EQ(find_fourcc(buf, len, "auds"), -1);     /* no audio stream */
+    free(buf);
+}
+
 int main(void) {
     printf("Running AVI recorder tests...\n\n");
 
@@ -245,6 +306,8 @@ int main(void) {
     RUN(test_avi_empty_recording);
     RUN(test_avi_close_noop_safe);
     RUN(test_avi_open_invalid_args);
+    RUN(test_avi_audio_stream);
+    RUN(test_avi_no_audio_is_video_only);
 
     remove(TMP_AVI);
 

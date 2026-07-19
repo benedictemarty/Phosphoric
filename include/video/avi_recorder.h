@@ -22,10 +22,11 @@
 #include <stdint.h>
 #include <stdio.h>
 
-/** @brief One entry of the AVI `idx1` index (per frame). */
+/** @brief One entry of the AVI `idx1` index (per chunk). */
 typedef struct {
-    uint32_t offset;  /**< chunk header offset, relative to `movi` fourcc */
-    uint32_t size;    /**< JPEG payload size (excluding pad byte) */
+    uint32_t offset;   /**< chunk header offset, relative to `movi` fourcc */
+    uint32_t size;     /**< payload size (excluding pad byte) */
+    uint8_t  is_audio; /**< 0 = video '00dc' chunk, 1 = audio '01wb' chunk */
 } avi_index_entry_t;
 
 /** @brief MJPEG AVI recorder state. */
@@ -48,6 +49,15 @@ typedef struct {
     uint8_t* jpeg_buf;
     size_t   jpeg_len;
     size_t   jpeg_cap;
+
+    /* Optional PCM audio stream (16-bit LE). Enabled via avi_recorder_open_av
+     * with audio_rate > 0 ; a second `auds` stream is then declared and '01wb'
+     * chunks are interleaved with the video frames. */
+    bool     has_audio;
+    int      audio_rate;      /**< samples/sec (e.g. 44100) */
+    int      audio_channels;  /**< 1 or 2 */
+    uint32_t audio_frames;    /**< total sample-frames written (strh dwLength) */
+    uint32_t max_audio_chunk; /**< largest '01wb' payload (suggested buffer) */
 } avi_recorder_t;
 
 /**
@@ -64,10 +74,31 @@ bool avi_recorder_open(avi_recorder_t* rec, const char* filename,
                        int width, int height, int fps, int quality);
 
 /**
+ * @brief Like avi_recorder_open, but also declares a PCM audio stream.
+ *
+ * When audio_rate > 0 and audio_channels > 0, the file gains a second
+ * `auds` stream (16-bit PCM LE) and callers feed it via avi_recorder_add_audio;
+ * with audio_rate == 0 the result is byte-identical to avi_recorder_open.
+ * @return true on success
+ */
+bool avi_recorder_open_av(avi_recorder_t* rec, const char* filename,
+                          int width, int height, int fps, int quality,
+                          int audio_rate, int audio_channels);
+
+/**
  * @brief Append one RGB888 frame (top-down, width*height*3 bytes).
  * @return true on success
  */
 bool avi_recorder_add_frame(avi_recorder_t* rec, const uint8_t* rgb);
+
+/**
+ * @brief Append one block of interleaved 16-bit PCM samples (nframes per
+ * channel) as an '01wb' audio chunk. No-op returning true if the recorder has
+ * no audio stream. Call once per video frame to keep the streams interleaved.
+ * @return true on success
+ */
+bool avi_recorder_add_audio(avi_recorder_t* rec, const int16_t* samples,
+                            int nframes);
 
 /**
  * @brief Finalize: write `idx1`, back-patch sizes, close the file.

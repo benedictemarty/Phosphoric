@@ -122,6 +122,39 @@ bool video_export_ascii(const video_t* vid, FILE* fp, unsigned int scale_x, unsi
     return true;
 }
 
+bool video_export_ascii_file(const video_t* vid, const char* filename,
+                             unsigned int scale_x, unsigned int scale_y) {
+    if (!vid || !filename) return false;
+    FILE* fp = fopen(filename, "w");
+    if (!fp) return false;
+    bool ok = video_export_ascii(vid, fp, scale_x, scale_y);
+    fclose(fp);
+    return ok;
+}
+
+/* Contenu texte réel de l'écran ORIC ($BB80, 40x28). Voir export.h pour le
+ * décodage (octet & 0x7F ; codes < 0x20 -> espace) et ses limites. */
+bool video_export_screen_text(const uint8_t* memory, FILE* fp) {
+    if (!memory || !fp) return false;
+
+    static const int TEXT_BASE = 0xBB80;
+    static const int COLS = 40;
+    static const int ROWS = 28;
+
+    char line[41];
+    for (int row = 0; row < ROWS; row++) {
+        int len = 0;
+        for (int col = 0; col < COLS; col++) {
+            uint8_t ch = (uint8_t)(memory[TEXT_BASE + row * COLS + col] & 0x7F);
+            line[col] = (ch < 0x20) ? ' ' : (char)ch;
+            if (line[col] != ' ') len = col + 1;   /* dernière colonne non blanche */
+        }
+        line[len] = '\0';                          /* rtrim des espaces de fin */
+        fprintf(fp, "%s\n", line);
+    }
+    return true;
+}
+
 bool video_export_auto(const video_t* vid, const char* filename) {
     if (!vid || !filename) return false;
 

@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include "emulator.h"
 #include "savestate.h"
+#include "io/ula_ng.h"
+#include "io/io_device.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -532,84 +534,83 @@ TEST(test_save_load_disk_image) {
     cleanup_test();
 }
 
+/* (Tests 9-11 OCULA — profils ULA / banking OCB / GPU OGP — retirés avec la
+ * suppression du code OCULA du main. Le format .ost reste rétro-compatible :
+ * les sections OCB/OGP absentes sont simplement ignorées au chargement.) */
+
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  TEST 9: ULA profile (OCULA) roundtrip in VID section               */
+/*  TEST 12-13 : hooks de sérialisation io_device_t (section "UNG")     */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-TEST(test_save_load_ula_profile) {
+/* Wrappers de test reproduisant l'enregistrement fait par main.c (io_bus).
+ * savestate.c itère la table opaque fournie via savestate_set_io_devices. */
+static bool t_ula_ng_save(emulator_t* emu, FILE* fp) {
+    return ula_ng_save(&emu->ula_ng, fp);
+}
+static void t_ula_ng_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    ula_ng_load(&emu->ula_ng, fp, size);
+}
+static const io_device_t t_io_devices[] = {
+    { "ula-ng", NULL, NULL, NULL, NULL, "UNG\0", t_ula_ng_save, t_ula_ng_load },
+};
+
+/* Déverrouille l'ULA-NG ('N','G' sur $0340) et programme un état distinctif. */
+static void unlock_and_program_ula_ng(emulator_t* emu) {
+    ula_ng_init(&emu->ula_ng);
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_LOCK, 'N');
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_LOCK, 'G');
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_MODE, 0x01);     /* extensions actives */
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_SCROLLX, 3);
+    ula_ng_write(&emu->ula_ng, ULA_NG_REG_SCROLLY, 5);
+}
+
+TEST(test_save_load_ula_ng_roundtrip) {
     emulator_t emu1, emu2;
     init_test_emu(&emu1);
     init_test_emu(&emu2);
+    ula_ng_init(&emu1.ula_ng);
+    ula_ng_init(&emu2.ula_ng);
+    savestate_set_io_devices(t_io_devices, 1);
 
-    video_set_profile(&emu1.video, ULA_PROFILE_OCULA);
+    unlock_and_program_ula_ng(&emu1);
+    ASSERT_TRUE(emu1.ula_ng.unlocked);
 
     ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
     ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
-    ASSERT_EQ(video_get_profile(&emu2.video), ULA_PROFILE_OCULA);
 
-    /* And the stock profile roundtrips too */
-    video_set_profile(&emu1.video, ULA_PROFILE_HCS10017);
-    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
-    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
-    ASSERT_EQ(video_get_profile(&emu2.video), ULA_PROFILE_HCS10017);
+    /* La section "UNG" a restauré l'état ULA-NG à l'identique. */
+    ASSERT_TRUE(emu2.ula_ng.unlocked);
+    ASSERT_TRUE(emu2.ula_ng.active);
+    ASSERT_EQ(emu2.ula_ng.scrollx, 3);
+    ASSERT_EQ(emu2.ula_ng.scrolly, 5);
+    ASSERT_EQ(memcmp(&emu1.ula_ng, &emu2.ula_ng, sizeof(ula_ng_t)), 0);
 
+    savestate_set_io_devices(NULL, 0);
     memory_cleanup(&emu1.memory);
     memory_cleanup(&emu2.memory);
     cleanup_test();
 }
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/*  TEST 10: OCULA banking (OCB section) roundtrip                     */
-/* ═══════════════════════════════════════════════════════════════════ */
-
-TEST(test_save_load_ocula_banks) {
+/* Verrouillée (= état par défaut) : aucune section "UNG" émise → un émulateur
+ * cible avec un état ULA-NG pré-existant n'est PAS écrasé au chargement. */
+TEST(test_save_load_ula_ng_locked_no_section) {
     emulator_t emu1, emu2;
     init_test_emu(&emu1);
     init_test_emu(&emu2);
+    ula_ng_init(&emu1.ula_ng);          /* emu1 verrouillée (défaut) */
+    unlock_and_program_ula_ng(&emu2);   /* emu2 a un état ULA-NG à préserver */
+    savestate_set_io_devices(t_io_devices, 1);
 
-    /* Write a marker in bank 0, then a different one in side bank 3 */
-    emu1.memory.ram[0xA123] = 0x11;
-    memory_ocula_set_bank(&emu1.memory, 3);
-    memory_write(&emu1.memory, 0xA123, 0x5A);
-
+    ASSERT_FALSE(emu1.ula_ng.unlocked);
     ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
     ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
 
-    ASSERT_EQ(memory_ocula_get_bank(&emu2.memory), 3);
-    ASSERT_EQ(memory_read(&emu2.memory, 0xA123), 0x5A);   /* bank 3 */
-    memory_ocula_set_bank(&emu2.memory, 0);
-    ASSERT_EQ(memory_read(&emu2.memory, 0xA123), 0x11);   /* bank 0 */
+    /* Pas de section UNG dans le .ost → l'ULA-NG d'emu2 reste intacte. */
+    ASSERT_TRUE(emu2.ula_ng.unlocked);
+    ASSERT_EQ(emu2.ula_ng.scrollx, 3);
+    ASSERT_EQ(emu2.ula_ng.scrolly, 5);
 
-    memory_cleanup(&emu1.memory);
-    memory_cleanup(&emu2.memory);
-    cleanup_test();
-}
-
-/* ═══════════════════════════════════════════════════════════════════ */
-/*  TEST 11: OCULA-GPU registers + scroll (OGP section) roundtrip      */
-/* ═══════════════════════════════════════════════════════════════════ */
-
-TEST(test_save_load_ocula_gpu) {
-    emulator_t emu1, emu2;
-    init_test_emu(&emu1);
-    init_test_emu(&emu2);
-
-    video_set_profile(&emu1.video, ULA_PROFILE_OCULA);
-    emu1.ocula_gpu.status = 0x01;
-    emu1.ocula_gpu.arg_ptr = 0x0420;
-    emu1.ocula_gpu.wait_vbl = true;
-    emu1.video.ocula_scroll_x = 17;
-    emu1.video.ocula_scroll_y = 42;
-
-    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
-    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
-
-    ASSERT_EQ(emu2.ocula_gpu.status, 0x01);
-    ASSERT_EQ(emu2.ocula_gpu.arg_ptr, 0x0420);
-    ASSERT_TRUE(emu2.ocula_gpu.wait_vbl);
-    ASSERT_EQ(emu2.video.ocula_scroll_x, 17);
-    ASSERT_EQ(emu2.video.ocula_scroll_y, 42);
-
+    savestate_set_io_devices(NULL, 0);
     memory_cleanup(&emu1.memory);
     memory_cleanup(&emu2.memory);
     cleanup_test();
@@ -636,9 +637,8 @@ int main(void) {
     RUN(test_save_load_with_microdisc);
     RUN(test_save_load_bad_sectors);
     RUN(test_save_load_disk_image);
-    RUN(test_save_load_ula_profile);
-    RUN(test_save_load_ocula_banks);
-    RUN(test_save_load_ocula_gpu);
+    RUN(test_save_load_ula_ng_roundtrip);
+    RUN(test_save_load_ula_ng_locked_no_section);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

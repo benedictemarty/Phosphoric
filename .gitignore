@@ -185,3 +185,6 @@ test_gdbstub
 test_movie
 *.ost
 test_ula_ng
+
+# US1 : binaire de distribution strippé
+oric1-emu-release

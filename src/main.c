@@ -41,6 +41,9 @@
 #include "storage/sedoric.h"
 #include "io/microdisc.h"
 #include "io/loci_sdimg.h"
+#include "io/io_device.h"
+#include "io/io_bus.h"        /* table de bus + dispatch (Epic 7/US2) */
+#include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -58,6 +61,8 @@
 #endif
 #include "hostfs/hostfs.h"
 #include "utils/logging.h"
+#include "utils/netutil.h"     /* parse_host_port (Epic 7/US1) */
+#include "utils/appsignal.h"   /* app_should_run / app_install_signal_handlers */
 #ifdef HAS_CAST
 #include <arpa/inet.h>
 #endif
@@ -193,87 +198,6 @@ void renderer_set_scale(int scale);
 int renderer_get_scale(void);
 void renderer_cycle_scale(void);
 
-static volatile bool g_running = true;
-
-static void signal_handler(int sig) {
-    (void)sig;
-    g_running = false;
-}
-
-/**
- * @brief Strip padding bytes from TAP block headers in tape buffer.
- *
- * Some TAP files (from real tape captures) have extra $00 padding bytes
- * between the $24 marker and the actual header fields. The ORIC ROM
- * reads bytes sequentially via readbyte, so these extra bytes cause
- * the header to be mis-parsed (wrong start/end addresses).
- *
- * This function scans the buffer for each block header (sync + $24),
- * detects padding by checking that the null separator byte (7th byte
- * after header fields) is $00, and removes extra bytes in-place.
- *
- * @param buf    Tape buffer (modified in place)
- * @param len    Buffer length (updated with new length)
- * @param offset Starting offset (updated if it falls after removed bytes)
- */
-static void tap_strip_header_padding(uint8_t* buf, int* len, int* offset) {
-    int src = 0, dst = 0;
-    int orig_offset = *offset;
-    int new_offset = orig_offset;
-    int removed_before_offset = 0;
-
-    while (src < *len) {
-        /* Look for sync pattern: 3+ consecutive $16 followed by $24 */
-        if (buf[src] == 0x16) {
-            /* Copy sync bytes and count them */
-            int sync_start = src;
-            int sync_count = 0;
-            while (src < *len && buf[src] == 0x16) {
-                buf[dst++] = buf[src++];
-                sync_count++;
-            }
-            if (src >= *len) break;
-
-            if (buf[src] == 0x24 && sync_count >= 3) {
-                /* Valid sync pattern (3+ $16 bytes) — copy $24 marker */
-                buf[dst++] = buf[src++];
-
-                /* Now check for padding: try skip 0..4, find where
-                 * the null separator byte (offset +6 from type) is $00 */
-                int best_skip = 0;
-                for (int skip = 0; skip <= 4 && src + skip + 7 <= *len; skip++) {
-                    uint8_t type_byte = buf[src + skip];
-                    uint8_t null_byte = buf[src + skip + 6];
-                    bool valid_type = (type_byte == 0x00 || type_byte == 0x80 ||
-                                       type_byte == 0xC0);
-                    if (null_byte == 0x00 && valid_type) {
-                        best_skip = skip;
-                        break;
-                    }
-                }
-
-                if (best_skip > 0) {
-                    log_info("TAP: stripped %d padding byte(s) at offset %d",
-                             best_skip, src);
-                    /* Track bytes removed before the CLOAD offset */
-                    if (src <= orig_offset) {
-                        removed_before_offset += best_skip;
-                    }
-                    src += best_skip; /* Skip padding bytes */
-                }
-            }
-        } else {
-            buf[dst++] = buf[src++];
-        }
-    }
-
-    if (dst < *len) {
-        new_offset = orig_offset - removed_before_offset;
-        if (new_offset < 0) new_offset = 0;
-        *offset = new_offset;
-        *len = dst;
-    }
-}
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  ROM patch tables (version-specific tape loading addresses)         */
@@ -397,6 +321,10 @@ static void print_usage(const char* program_name) {
     printf("  -v, --verbose              Verbose logging\n");
     printf("      --screenshot FILE      Take screenshot at exit (.ppm or .bmp)\n");
     printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
+    printf("      --screenshot-text FILE Dump screen text ($BB80, 40x28) as ASCII at exit\n");
+    printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
+    printf("      --screenshot-text-at C:FILE  Dump screen text after C cycles to FILE\n");
+    printf("      --screenshot-ansi-at C:FILE  Dump ANSI framebuffer after C cycles to FILE\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
     printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
@@ -435,6 +363,9 @@ static void print_usage(const char* program_name) {
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
     printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
+    printf("      --psg-trace FILE       Log AY sound-register writes (reg 0-13) with CPU cycle\n");
+    printf("      --audio-wav FILE       Capture PSG audio to a 16-bit stereo 44.1 kHz WAV\n");
+    printf("                             (headless only; renders per frame via ay_generate)\n");
     printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
     printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
     printf("      --bad-sector [D:]S:T:N Mark drive D (default A) side S track T sector N\n");
@@ -919,61 +850,12 @@ static bool loci_resume_session_cb(void* ctx) {
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* LOCI MIA: $03A0-$03BF (checked first — independent of other peripherals) */
-    if (emu->has_loci && loci_addr_in_mia(address)) {
-        return loci_read(&emu->loci, address);
-    }
-    /* LOCI TAP $0315-$0317 (Sprint 34af). Overlaps Microdisc $0310-$031F
-     * — LOCI claims priority when active since it replaces the cassette
-     * interface. */
-    if (emu->has_loci && loci_addr_in_tap(address)) {
-        return loci_tap_read(&emu->loci, address);
-    }
-    /* LOCI DSK $0310-$0314 + $0318-$0319 (Sprint 34ae). Only when no real
-     * Microdisc is present — otherwise the existing microdisc handler
-     * owns the range. */
-    if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
-        return loci_dsk_read(&emu->loci, address);
-    }
-
-    /* ACIA 6551 serial: $031C-$031F (checked first — overlaps Microdisc range) */
-    if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
-        /* picowifi-over-LOCI: the ACIA at $0380 is sampled through the MIA bus
-         * window. A mis-tuned tior corrupts the read (modem unreachable). */
-        if (emu->has_loci && emu->acia_base_addr == 0x0380 &&
-            !loci_mia_io_reliable(&emu->loci)) {
-            return 0xFF;
-        }
-        return acia_read(&emu->acia, address);
-    }
-
-    /* Mageco / ORICON MIDI (ACIA 6850): $03FE-$03FF (Mageco) or $031C-$031F
-     * (ORICON). Checked before Microdisc since ORICON's window overlaps the
-     * Microdisc range — ORICON is LOCI-based and not used with a Microdisc. */
-    if (emu->has_mageco && mageco_addr_in_range(&emu->mageco, address)) {
-        return mageco_read(&emu->mageco, address);
-    }
-
-    /* Microdisc I/O: $0310-$031B (reduced when ACIA present) */
-    if (emu->has_microdisc && address >= 0x0310 && address <= 0x031F) {
-        /* If serial is active, ACIA owns $031C-$031F */
-        if (emu->has_serial && address >= emu->acia_base_addr) {
-            return acia_read(&emu->acia, address);
-        }
-        return microdisc_read(&emu->microdisc, address);
-    }
-
-    /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD.
-     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
-    if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
-        return dtl2000_read(&emu->dtl2000, address);
-    }
-
-    /* ULA-NG registers $0340-$035F : intercepted only once unlocked ; while
-     * locked the read falls through to the VIA mirror (indiscernable). */
-    if (ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(address)) {
-        return ula_ng_read(&emu->ula_ng, address);
-    }
+    /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
+     * Microdisc, DTL2000, ULA-NG). Repli sur le VIA.
+     * ULA-NG en lecture : ne réclame que déverrouillée ; verrouillée, la fenêtre
+     * retombe sur le miroir VIA (indiscernable). */
+    const io_device_t* dev = io_bus_find(emu, address);
+    if (dev) return dev->read(emu, address);
 
     /* VIA 6522: $0300-$030F (mirrored in $0300-$03FF) */
     return via_read(&emu->via, (uint8_t)(address & 0x0F));
@@ -996,6 +878,37 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
  * The ROM toggles CA2/CB2 via PCR writes, so this function must
  * be called when PCR, ORA, or ORB change.
  */
+/* --audio-wav : write/patch a 44-byte canonical WAV header (PCM, 16-bit, stereo,
+ * 44.1 kHz — matches ay_generate's interleaved output). Called with data_bytes=0
+ * at open (placeholder) and with the real payload size at close. */
+static void wav_put_le16(uint8_t* p, uint16_t v) {
+    p[0] = (uint8_t)(v & 0xFF); p[1] = (uint8_t)((v >> 8) & 0xFF);
+}
+static void wav_put_le32(uint8_t* p, uint32_t v) {
+    p[0] = (uint8_t)(v & 0xFF);         p[1] = (uint8_t)((v >> 8) & 0xFF);
+    p[2] = (uint8_t)((v >> 16) & 0xFF); p[3] = (uint8_t)((v >> 24) & 0xFF);
+}
+static void wav_write_header(FILE* f, uint32_t data_bytes) {
+    const uint32_t rate = AUDIO_SAMPLE_RATE, chans = 2, bits = 16;
+    const uint32_t byte_rate = rate * chans * bits / 8;
+    uint8_t h[44];
+    memcpy(h + 0, "RIFF", 4);
+    wav_put_le32(h + 4, 36 + data_bytes);
+    memcpy(h + 8, "WAVE", 4);
+    memcpy(h + 12, "fmt ", 4);
+    wav_put_le32(h + 16, 16);                 /* subchunk1 size = 16 (PCM) */
+    wav_put_le16(h + 20, 1);                  /* audio format = PCM */
+    wav_put_le16(h + 22, (uint16_t)chans);
+    wav_put_le32(h + 24, rate);
+    wav_put_le32(h + 28, byte_rate);
+    wav_put_le16(h + 32, (uint16_t)(chans * bits / 8));   /* block align */
+    wav_put_le16(h + 34, (uint16_t)bits);
+    memcpy(h + 36, "data", 4);
+    wav_put_le32(h + 40, data_bytes);
+    fseek(f, 0, SEEK_SET);
+    fwrite(h, 1, 44, f);
+}
+
 static void psg_decode(emulator_t* emu) {
     /* BC1 = CA2 output state (PCR bits 1-3) */
     uint8_t ca2_mode = (emu->via.pcr >> 1) & 0x07;
@@ -1012,6 +925,16 @@ static void psg_decode(emulator_t* emu) {
         /* Write Data — timestamped with the current CPU cycle so audio-rate
          * register hammering (digidrums) is reproduced sample-accurately. */
         ay_write_data_timed(&emu->psg, emu->via.ora, emu->cpu.cycles);
+        /* --psg-trace : log the sound-register writes (0..13). Ports 14/15 are
+         * the keyboard matrix, not audio, so they are skipped. NB : reg 7
+         * (mixer) is hammered to $7F by the keyboard scan — that is real bus
+         * activity, kept as-is (measured, not filtered). */
+        if (emu->psg_trace_fp) {
+            uint8_t reg = emu->psg.selected_reg;
+            if (reg < 14)
+                fprintf(emu->psg_trace_fp, "%llu R%u=%02X\n",
+                        (unsigned long long)emu->cpu.cycles, reg, emu->via.ora);
+        }
     } else if (!bdir && bc1) {
         /* Read Data - PSG data goes onto VIA input for Port A reads */
         emu->via.ira = ay_read_data(&emu->psg);
@@ -1096,78 +1019,17 @@ static uint8_t portb_read_callback(void* userdata) {
 static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* LOCI MIA: $03A0-$03BF */
-    if (emu->has_loci && loci_addr_in_mia(address)) {
-        loci_write(&emu->loci, address, value);
-        return;
-    }
-    /* LOCI TAP $0315-$0317 (Sprint 34af). */
-    if (emu->has_loci && loci_addr_in_tap(address)) {
-        loci_tap_write(&emu->loci, address, value);
-        return;
-    }
-    /* LOCI DSK $0310-$0314 + $0318-$0319 (Sprint 34ae). */
-    if (emu->has_loci && !emu->has_microdisc && loci_addr_in_dsk(address)) {
-        loci_dsk_write(&emu->loci, address, value);
-        return;
-    }
-
-
-    /* ACIA 6551 serial: $031C-$031F */
-    if (emu->has_serial && address >= emu->acia_base_addr && address <= (emu->acia_base_addr + 3)) {
-        /* picowifi-over-LOCI: a mis-tuned MIA tior drops the write (the Oric
-         * cannot reach the modem). The register-select still updates so reads
-         * stay consistent, but the data never reaches the ACIA. */
-        if (emu->has_loci && emu->acia_base_addr == 0x0380 &&
-            !loci_mia_io_reliable(&emu->loci)) {
-            return;
-        }
-        acia_write(&emu->acia, address, value);
-        return;
-    }
-
-    /* Mageco / ORICON MIDI (ACIA 6850): $03FE-$03FF (Mageco) or $031C-$031F
-     * (ORICON) — before Microdisc since ORICON's window overlaps that range. */
-    if (emu->has_mageco && mageco_addr_in_range(&emu->mageco, address)) {
-        mageco_write(&emu->mageco, address, value);
-        return;
-    }
-
-    /* Microdisc I/O: $0310-$031F */
-    if (emu->has_microdisc && address >= 0x0310 && address <= 0x031F) {
-        /* If serial is active, ACIA owns $031C-$031F */
-        if (emu->has_serial && address >= emu->acia_base_addr) {
-            acia_write(&emu->acia, address, value);
-            return;
-        }
-        if (fdc_trace_enabled()) {
-            fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
-                    emu->cpu.PC, (unsigned long long)emu->cpu.cycles,
-                    address, value);
-        }
-        microdisc_write(&emu->microdisc, address, value);
-        /* Sync overlay flags to memory system */
-        emu->memory.basic_rom_disabled = emu->microdisc.romdis;
-        emu->memory.overlay_active = emu->microdisc.diskrom;
-        return;
-    }
-
-    /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD.
-     * Intercepted ahead of the VIA mirror that otherwise aliases this range. */
-    if (emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, address)) {
-        dtl2000_write(&emu->dtl2000, address, value);
-        return;
-    }
-
-    /* ULA-NG registers $0340-$035F. Unlocked : ULA-NG owns the window (consume).
-     * Locked : silently watch $0340 for the 'N','G' unlock sequence and let the
-     * write fall through to the VIA mirror (bit-exact, indiscernable). */
-    if (ula_ng_addr_in_window(address) && ula_ng_write(&emu->ula_ng, address, value)) {
-        /* Sync the raster IRQ line (NG_STATUS write acknowledges → deassert). */
-        if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
-        else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
-        return;
-    }
+    /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
+     * Microdisc, DTL2000, ULA-NG). Le device peut **décliner** l'écriture
+     * (write → false) : c'est le cas de l'ULA-NG verrouillée, qui guette la
+     * séquence 'N','G' en fenêtre mais laisse retomber les octets neutres sur le
+     * VIA (bit-à-bit, indiscernable). Sinon repli VIA.
+     *
+     * NB : le snoop LOCI sur l'écriture VIA ORB $0300 (ligne moteur cassette,
+     * cf. loci_tap_motor plus bas) n'est PAS un claim — l'écriture va au VIA ;
+     * il reste donc hors bus, dans le chemin VIA. */
+    const io_device_t* dev = io_bus_find_write(emu, address);
+    if (dev && dev->write(emu, address, value)) return;
 
     uint8_t reg = (uint8_t)(address & 0x0F);
 
@@ -1232,17 +1094,9 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
-    if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
-    if (emu->has_loci) {
-        fdc_ticktock(&emu->loci.dsk_fdc, cycles);
-        loci_adj_tick(&emu->loci, cycles);
-    }
-    if (emu->has_serial) {
-        acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
-        acia_tick(&emu->acia, cycles);
-    }
-    if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
-    if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
+    /* Périphériques de bus temporisés (FDC/ACIA/DTL/Mageco), ordre historique
+     * préservé dans io_bus_tick (Epic 7/US5). */
+    io_bus_tick(emu, cycles);
 }
 
 /* Microdisc CPU IRQ callbacks - level-triggered: set/clear DISK IRQ source bit */
@@ -1299,25 +1153,7 @@ static void mageco_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_MAGECO);
 }
 
-/* Parse a "host[:port]" spec into @p host / @p port, defaulting to @p def_port
- * when no port is given. The host buffer is always NUL-terminated. */
-static void parse_host_port(const char* spec, char* host, size_t host_sz,
-                            uint16_t* port, uint16_t def_port)
-{
-    *port = def_port;
-    host[0] = '\0';
-    const char* colon = strrchr(spec, ':');
-    if (colon && colon != spec) {
-        size_t hlen = (size_t)(colon - spec);
-        if (hlen >= host_sz) hlen = host_sz - 1;
-        memcpy(host, spec, hlen);
-        host[hlen] = '\0';
-        *port = (uint16_t)atoi(colon + 1);
-    } else {
-        strncpy(host, spec, host_sz - 1);
-        host[host_sz - 1] = '\0';
-    }
-}
+/* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
 /* Réécrit le .dsk du lecteur @p drv sur disque s'il a été modifié par le jeu
  * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
@@ -1559,6 +1395,12 @@ static bool emulator_init(emulator_t* emu) {
     memory_set_io_callbacks(&emu->memory, io_read_callback, io_write_callback, emu);
     via_set_irq_callback(&emu->via, irq_callback, emu);
 
+    /* Expose la table de bus à la sérialisation : les devices qui fournissent un
+     * hook save/load (ex. ULA-NG → section "UNG") persistent leur état .ost. */
+    int io_bus_n = 0;
+    const io_device_t* io_bus_tbl = io_bus_devices(&io_bus_n);
+    savestate_set_io_devices(io_bus_tbl, io_bus_n);
+
     /* Drive PHI2-clocked peripherals from the CPU's per-cycle clock (replaces
      * the post-instruction batch ticking in the frame loop). */
     cpu_set_cycle_callback(&emu->cpu, cpu_cycle_tick, emu);
@@ -1620,6 +1462,12 @@ static bool emulator_init(emulator_t* emu) {
     emu->screenshot_file = NULL;
     emu->screenshot_at_cycles = -1;
     emu->screenshot_at_file = NULL;
+    emu->screenshot_text_file = NULL;
+    emu->screenshot_ansi_file = NULL;
+    emu->screenshot_text_at_cycles = -1;
+    emu->screenshot_text_at_file = NULL;
+    emu->screenshot_ansi_at_cycles = -1;
+    emu->screenshot_ansi_at_file = NULL;
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
     emu->dump_ram_at_cycles = -1;
@@ -1630,6 +1478,9 @@ static bool emulator_init(emulator_t* emu) {
     emu->irq_trace_depth = 0;
     emu->cpu.irq_trace_fp = NULL;
     emu->cpu.irq_trace_count = 0;
+    emu->psg_trace_fp = NULL;
+    emu->audio_wav_fp = NULL;
+    emu->audio_wav_data_bytes = 0;
 
     log_info("Emulator initialized successfully");
     return true;
@@ -1654,6 +1505,20 @@ static void emulator_cleanup(emulator_t* emu) {
         fclose((FILE*)emu->irq_trace_fp);
         emu->irq_trace_fp = NULL;
         emu->cpu.irq_trace_fp = NULL;
+    }
+    if (emu->psg_trace_fp) {
+        fclose(emu->psg_trace_fp);
+        emu->psg_trace_fp = NULL;
+    }
+    if (emu->audio_wav_fp) {
+        /* Backpatch the RIFF/data sizes now that the payload length is known. */
+        wav_write_header(emu->audio_wav_fp, emu->audio_wav_data_bytes);
+        log_info("Audio WAV: %u bytes PCM (%.2f s @ %d Hz stereo)",
+                 emu->audio_wav_data_bytes,
+                 (double)emu->audio_wav_data_bytes / (AUDIO_SAMPLE_RATE * 2 * 2),
+                 AUDIO_SAMPLE_RATE);
+        fclose(emu->audio_wav_fp);
+        emu->audio_wav_fp = NULL;
     }
     if (!emu->headless) {
         audio_cleanup();
@@ -2221,6 +2086,8 @@ static void emulator_run(emulator_t* emu) {
     uint64_t total_executed = 0;
     uint64_t frame_count = 0;
     bool screenshot_at_done = false;
+    bool screenshot_text_at_done = false;
+    bool screenshot_ansi_at_done = false;
 
 #ifdef HAS_SDL2
     uint32_t frame_start_ticks = SDL_GetTicks();
@@ -2234,7 +2101,7 @@ static void emulator_run(emulator_t* emu) {
     if (emu->realtime) clock_gettime(CLOCK_MONOTONIC, &rt_next);
 #endif
 
-    while (emu->running && g_running) {
+    while (emu->running && app_should_run()) {
 #ifdef HAS_SDL2
         frame_start_ticks = SDL_GetTicks();
 #endif
@@ -2372,6 +2239,26 @@ static void emulator_run(emulator_t* emu) {
         }
 
         total_executed += (uint64_t)frame_cycles;
+
+        /* Headless audio sinks : render THIS frame's PSG audio ONCE via
+         * ay_generate (the same routine the SDL callback uses) and feed every
+         * active sink — the --audio-wav file and/or the AVI's PCM stream.
+         * Generating once is essential : ay_generate consumes the PSG event
+         * queue, so two calls per frame would double-drain it. Armed only in
+         * headless (in GUI the SDL audio device is the generator's owner). */
+        bool avi_audio = emu->video_avi_active && emu->video_avi_rec.has_audio;
+        if (emu->audio_wav_fp || avi_audio) {
+            enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
+            int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
+            ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
+            if (emu->audio_wav_fp) {
+                fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
+                emu->audio_wav_data_bytes +=
+                    (uint32_t)(WAV_FRAME_SAMPLES * 2 * (int)sizeof(int16_t));
+            }
+            if (avi_audio)
+                avi_recorder_add_audio(&emu->video_avi_rec, wav_buf, WAV_FRAME_SAMPLES);
+        }
 
         /* Sprint 35a freeze — async pause: once per frame, peek at stdin.
          * If the IDE sent `pause`, hand control back to the REPL right
@@ -2979,6 +2866,32 @@ static void emulator_run(emulator_t* emu) {
             screenshot_at_done = true;
         }
 
+        /* Text screenshot at specific cycle count (contenu texte réel $BB80) */
+        if (!screenshot_text_at_done && emu->screenshot_text_at_cycles >= 0 &&
+            (int64_t)total_executed >= emu->screenshot_text_at_cycles) {
+            FILE* tf = fopen(emu->screenshot_text_at_file, "w");
+            if (tf) {
+                video_export_screen_text(emu->memory.ram, tf);
+                fclose(tf);
+                log_info("Text screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, emu->screenshot_text_at_file);
+            } else {
+                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_at_file);
+            }
+            screenshot_text_at_done = true;
+        }
+
+        /* ANSI screenshot at specific cycle count (image true-color du framebuffer) */
+        if (!screenshot_ansi_at_done && emu->screenshot_ansi_at_cycles >= 0 &&
+            (int64_t)total_executed >= emu->screenshot_ansi_at_cycles) {
+            if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_at_file, 2, 2))
+                log_info("ANSI screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, emu->screenshot_ansi_at_file);
+            else
+                log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_at_file);
+            screenshot_ansi_at_done = true;
+        }
+
         /* Frame dump */
         if (emu->frame_dump_dir && (frame_count % (uint64_t)emu->frame_dump_interval == 0)) {
             char path[512];
@@ -3107,6 +3020,27 @@ static void emulator_run(emulator_t* emu) {
         emu_export_image(emu, emu->screenshot_file);
     }
 
+    /* End-of-run text screenshot : contenu texte réel de l'écran ($BB80). */
+    if (emu->screenshot_text_file) {
+        FILE* tf = fopen(emu->screenshot_text_file, "w");
+        if (tf) {
+            video_export_screen_text(emu->memory.ram, tf);
+            fclose(tf);
+            log_info("Exit text screenshot -> %s", emu->screenshot_text_file);
+        } else {
+            log_error("Cannot open text screenshot file: %s", emu->screenshot_text_file);
+        }
+    }
+
+    /* End-of-run ANSI screenshot : image true-color du framebuffer. */
+    if (emu->screenshot_ansi_file) {
+        video_render_frame(&emu->video, emu->memory.ram);
+        if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_file, 2, 2))
+            log_info("Exit ANSI screenshot -> %s", emu->screenshot_ansi_file);
+        else
+            log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_file);
+    }
+
     log_info("Emulation stopped. Total cycles: %llu, frames: %llu",
              (unsigned long long)total_executed, (unsigned long long)frame_count);
 
@@ -3135,6 +3069,45 @@ static void emulator_run(emulator_t* emu) {
     }
 }
 
+/* Parse a "CYCLES:FILE" CLI argument, shared verbatim by --dump-ram-at and
+ * --screenshot-at. On success stores the cycle count and a pointer past the
+ * colon (into `arg`) and returns true. On a missing colon it logs the exact
+ * same error those sites used (via optname) and returns false — the caller
+ * then cleans up and exits 1. Behaviour is identical to the two inlined copies
+ * it replaces (covered by tests/integration/test_cli_parsing.sh). */
+static bool cli_split_cycles_file(const char* arg, const char* optname,
+                                  int64_t* out_cycles, const char** out_file) {
+    const char* colon = strchr(arg, ':');
+    if (!colon) {
+        log_error("Invalid --%s format. Use CYCLES:FILE", optname);
+        return false;
+    }
+    *out_cycles = atoll(arg);
+    *out_file = colon + 1;
+    return true;
+}
+
+/* Open an output file for a CLI option, logging the exact "Cannot open --NAME
+ * file: PATH" error those sites used on failure. Returns the stream, or NULL —
+ * the caller then cleans up and exits 1. Shared verbatim by --trace-irq /
+ * --psg-trace / --audio-wav (identical open-or-fail pattern; only the mode and
+ * the post-open headers differ). Covered by test_cli_parsing.sh (the fatal
+ * open-failure cases for the three options). */
+static FILE* cli_open_out(const char* file, const char* mode, const char* optname) {
+    FILE* fp = fopen(file, mode);
+    if (!fp)
+        log_error("Cannot open --%s file: %s", optname, file);
+    return fp;
+}
+
+/* Parse a 16-bit hexadecimal address argument (--acia-addr / --dtl2000-addr /
+ * --mageco-addr / --break). Same lenient strtol semantics as the four inlined
+ * copies it replaces: invalid input yields 0 (no error) — behaviour preserved
+ * verbatim (see test_cli_parsing.sh, --acia-addr invalid hex = non-fatal). */
+static uint16_t parse_hex16(const char* s) {
+    return (uint16_t)strtol(s, NULL, 16);
+}
+
 int main(int argc, char* argv[]) {
     emulator_t emu;
     memset(&emu, 0, sizeof(emu));
@@ -3154,6 +3127,10 @@ int main(int argc, char* argv[]) {
     const char* screenshot_file = NULL;
     const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
     const char* screenshot_at_arg = NULL;
+    const char* screenshot_text_at_arg = NULL;
+    const char* screenshot_ansi_at_arg = NULL;
+    const char* screenshot_text_file = NULL;
+    const char* screenshot_ansi_file = NULL;
     const char* frame_dump_dir = NULL;
     int frame_dump_interval = 50;
     const char* video_avi_file = NULL;
@@ -3197,6 +3174,8 @@ int main(int argc, char* argv[]) {
     int  loci_usb_count = 0;
     bool loci_usb_autoscan = true;
     const char* trace_irq_file = NULL;
+    const char* psg_trace_file = NULL;
+    const char* audio_wav_file = NULL;
     const char* symbols_file = NULL;
     bool tui_mode = false;
     bool control_mode = false;
@@ -3221,95 +3200,11 @@ int main(int argc, char* argv[]) {
     int serial_baud = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
-    /* Long option codes for options without short equivalents */
-    enum { OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL, OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT, OPT_DEBUG_BREAK, OPT_CAST_SERVER, OPT_CAST_DISCOVER, OPT_CAST_TO, OPT_SAVE_STATE, OPT_LOAD_STATE, OPT_MODEL, OPT_JOYSTICK, OPT_PRINTER, OPT_PRINTER_TYPE, OPT_SCALE, OPT_TRACE, OPT_TRACE_MAX, OPT_PROFILE, OPT_ROM_INFO, OPT_SERIAL, OPT_SERIAL_V23, OPT_ACIA_ADDR, OPT_SERIAL_BUFFER, OPT_SERIAL_BAUD, OPT_SERIAL_IRQ_RDRF, OPT_SERIAL_TRACE, OPT_DTL2000, OPT_DTL2000_ADDR, OPT_MAGECO, OPT_MAGECO_ADDR, OPT_ORICON, OPT_DISK_WRITEBACK, OPT_DUMP_RAM_AT, OPT_TRACE_IRQ, OPT_SYMBOLS, OPT_TUI, OPT_LOCI, OPT_LOCI_FLASH, OPT_LOCI_SDIMG, OPT_LOCI_MIA_WINDOW, OPT_CONTROL, OPT_BENCH, OPT_RENDER_SOFTWARE, OPT_VIDEO, OPT_VIDEO_FPS, OPT_VIDEO_QUALITY, OPT_GDB, OPT_RECORD, OPT_REPLAY, OPT_NO_BORDER, OPT_EXPORT_BORDER, OPT_REALTIME, OPT_DISK_CREATE, OPT_BAD_SECTOR, OPT_FDC_TIMING, OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT, OPT_ULA_NG_POKE };
-
-    static struct option long_options[] = {
-        {"tape",                required_argument, 0, 't'},
-        {"disk",                required_argument, 0, 'd'},
-        {"disk1",               required_argument, 0, OPT_DISK1},
-        {"disk2",               required_argument, 0, OPT_DISK2},
-        {"disk3",               required_argument, 0, OPT_DISK3},
-        {"disk-writeback",      no_argument,       0, OPT_DISK_WRITEBACK},
-        {"disk-create",         required_argument, 0, OPT_DISK_CREATE},
-        {"rom",                 required_argument, 0, 'r'},
-        {"hostfs",              required_argument, 0, 'h'},
-        {"fast-load",           no_argument,       0, 'f'},
-        {"headless",            no_argument,       0, 'n'},
-        {"realtime",            no_argument,       0, OPT_REALTIME},
-        {"tape-signal",         no_argument,       0, OPT_TAPE_SIGNAL},
-        {"cycles",              required_argument, 0, 'c'},
-        {"verbose",             no_argument,       0, 'v'},
-        {"screenshot",          required_argument, 0, OPT_SCREENSHOT},
-        {"screenshot-at",       required_argument, 0, OPT_SCREENSHOT_AT},
-        {"frame-dump",          required_argument, 0, OPT_FRAME_DUMP},
-        {"frame-dump-interval", required_argument, 0, OPT_FRAME_DUMP_INTERVAL},
-        {"video",               required_argument, 0, OPT_VIDEO},
-        {"video-fps",           required_argument, 0, OPT_VIDEO_FPS},
-        {"video-quality",       required_argument, 0, OPT_VIDEO_QUALITY},
-        {"gdb",                 optional_argument, 0, OPT_GDB},
-        {"record",              required_argument, 0, OPT_RECORD},
-        {"replay",              required_argument, 0, OPT_REPLAY},
-        {"keyboard",            required_argument, 0, 'k'},
-        {"type-keys",           required_argument, 0, OPT_TYPE_KEYS},
-        {"disk-rom",            required_argument, 0, OPT_DISK_ROM},
-        {"breakpoint",          required_argument, 0, 'b'},
-        {"debug",               no_argument,       0, 'D'},
-        {"break",               required_argument, 0, OPT_DEBUG_BREAK},
-        {"cast-server",         optional_argument, 0, OPT_CAST_SERVER},
-        {"http-api",            optional_argument, 0, OPT_HTTP_API},
-        {"http-api-bind",       required_argument, 0, OPT_HTTP_API_BIND},
-        {"http-api-root",       required_argument, 0, OPT_HTTP_API_ROOT},
-        {"cast-to",             optional_argument, 0, OPT_CAST_TO},
-        {"cast-discover",       no_argument,       0, OPT_CAST_DISCOVER},
-        {"save-state",          required_argument, 0, OPT_SAVE_STATE},
-        {"load-state",          required_argument, 0, OPT_LOAD_STATE},
-        {"model",               required_argument, 0, 'm'},
-        {"joystick",            required_argument, 0, 'j'},
-        {"printer",             required_argument, 0, 'p'},
-        {"printer-type",        required_argument, 0, OPT_PRINTER_TYPE},
-        {"scale",               required_argument, 0, OPT_SCALE},
-        {"render-software",     no_argument,       0, OPT_RENDER_SOFTWARE},
-        {"no-border",           no_argument,       0, OPT_NO_BORDER},
-        {"export-border",       no_argument,       0, OPT_EXPORT_BORDER},
-        {"trace",               required_argument, 0, OPT_TRACE},
-        {"trace-max",           required_argument, 0, OPT_TRACE_MAX},
-        {"profile",             required_argument, 0, OPT_PROFILE},
-        {"rom-info",            optional_argument, 0, OPT_ROM_INFO},
-        {"serial",              required_argument, 0, OPT_SERIAL},
-        {"serial-v23",          no_argument,       0, OPT_SERIAL_V23},
-        {"serial-buffer",       required_argument, 0, OPT_SERIAL_BUFFER},
-        {"serial-baud",         required_argument, 0, OPT_SERIAL_BAUD},
-        {"serial-irq-on-rdrf",  no_argument,       0, OPT_SERIAL_IRQ_RDRF},
-        {"serial-trace",        required_argument, 0, OPT_SERIAL_TRACE},
-        {"acia-addr",           required_argument, 0, OPT_ACIA_ADDR},
-        {"dtl2000",             required_argument, 0, OPT_DTL2000},
-        {"dtl2000-addr",        required_argument, 0, OPT_DTL2000_ADDR},
-        {"mageco",              required_argument, 0, OPT_MAGECO},
-        {"mageco-addr",         required_argument, 0, OPT_MAGECO_ADDR},
-        {"oricon",              required_argument, 0, OPT_ORICON},
-        {"dump-ram-at",         required_argument, 0, OPT_DUMP_RAM_AT},
-        {"bad-sector",          required_argument, 0, OPT_BAD_SECTOR},
-        {"fdc-timing",          required_argument, 0, OPT_FDC_TIMING},
-        {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
-        {"symbols",             required_argument, 0, OPT_SYMBOLS},
-        {"tui",                 no_argument,       0, OPT_TUI},
-        {"loci",                no_argument,       0, OPT_LOCI},
-        {"loci-flash",          required_argument, 0, OPT_LOCI_FLASH},
-        {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
-        {"loci-usb",            required_argument, 0, OPT_LOCI_USB},
-        {"loci-mia-window",     required_argument, 0, OPT_LOCI_MIA_WINDOW},
-        {"ula-ng-poke",         required_argument, 0, OPT_ULA_NG_POKE},
-        {"control",             no_argument,       0, OPT_CONTROL},
-        {"bench",               no_argument,       0, OPT_BENCH},
-        {"help",                no_argument,       0, '?'},
-        {0, 0, 0, 0}
-    };
 
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "t:d:r:h:fnc:vm:k:j:p:b:D?", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, CLI_SHORT_OPTIONS, long_options, &option_index)) != -1) {
         switch (opt) {
             case 't': tape_file = optarg; break;
             case 'd': disk_files[0] = optarg; break;
@@ -3325,6 +3220,10 @@ int main(int argc, char* argv[]) {
             case 'c': max_cycles = atoll(optarg); break;
             case 'v': verbose = true; break;
             case OPT_SCREENSHOT: screenshot_file = optarg; break;
+            case OPT_SCREENSHOT_TEXT: screenshot_text_file = optarg; break;
+            case OPT_SCREENSHOT_ANSI: screenshot_ansi_file = optarg; break;
+            case OPT_SCREENSHOT_TEXT_AT: screenshot_text_at_arg = optarg; break;
+            case OPT_SCREENSHOT_ANSI_AT: screenshot_ansi_at_arg = optarg; break;
             case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
             case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
@@ -3420,6 +3319,8 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_FDC_TIMING: fdc_timing_arg = optarg; break;
             case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
+            case OPT_PSG_TRACE: psg_trace_file = optarg; break;
+            case OPT_AUDIO_WAV: audio_wav_file = optarg; break;
             case OPT_SYMBOLS: symbols_file = optarg; break;
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
             case OPT_CONTROL:
@@ -3492,8 +3393,7 @@ int main(int argc, char* argv[]) {
 
     log_init(verbose ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO);
 
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    app_install_signal_handlers();
     /* Pilotage par un agent (--control) : stdout/stdin sont des *pipes*, pas un
      * terminal. Si le pair ferme/cesse de lire, une écriture d'événement
      * lèverait SIGPIPE et tuerait l'émulateur (mort par signal, invisible en
@@ -3547,6 +3447,8 @@ int main(int argc, char* argv[]) {
 
     emu.max_cycles = max_cycles;
     emu.screenshot_file = screenshot_file;
+    emu.screenshot_text_file = screenshot_text_file;
+    emu.screenshot_ansi_file = screenshot_ansi_file;
 
     /* Set keyboard layout */
     if (keyboard_layout && strcasecmp(keyboard_layout, "azerty") == 0) {
@@ -3589,7 +3491,7 @@ int main(int argc, char* argv[]) {
 
     /* Serial interface (ACIA 6551) */
     if (acia_addr_arg) {
-        emu.acia_base_addr = (uint16_t)strtol(acia_addr_arg, NULL, 16);
+        emu.acia_base_addr = parse_hex16(acia_addr_arg);
         log_info("ACIA base address: $%04X", emu.acia_base_addr);
     } else if (loci_enabled && serial_arg) {
         /* LOCI firmware exposes its ACIA at $0380-$0383 (acia.c). Under
@@ -3716,7 +3618,7 @@ int main(int argc, char* argv[]) {
     if (dtl2000_arg) {
         uint16_t base = DTL2000_DEFAULT_BASE;
         if (dtl2000_addr_arg) {
-            base = (uint16_t)strtol(dtl2000_addr_arg, NULL, 16);
+            base = parse_hex16(dtl2000_addr_arg);
         }
         if (emu.has_microdisc) {
             log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
@@ -3769,7 +3671,7 @@ int main(int argc, char* argv[]) {
     if (mageco_arg) {
         uint16_t base = mageco_oricon ? MAGECO_ORICON_BASE : MAGECO_DEFAULT_BASE;
         if (mageco_addr_arg) {
-            base = (uint16_t)strtol(mageco_addr_arg, NULL, 16);
+            base = parse_hex16(mageco_addr_arg);
         }
         const char* mode = mageco_oricon ? "ORICON" : "Mageco";
         if (emu.has_microdisc) {
@@ -3821,11 +3723,18 @@ int main(int argc, char* argv[]) {
          * border, so the stream geometry grows by the border on each side. */
         int avi_w = emu.export_border ? ORIC_SCREEN_W + 2 * VIDEO_BORDER_W : ORIC_SCREEN_W;
         int avi_h = emu.export_border ? ORIC_SCREEN_H + 2 * VIDEO_BORDER_H : ORIC_SCREEN_H;
-        if (avi_recorder_open(&emu.video_avi_rec, video_avi_file,
-                              avi_w, avi_h,
-                              emu.video_avi_fps, emu.video_avi_quality)) {
+        /* Audio is muxed into the AVI only in headless : in GUI the SDL audio
+         * callback already owns the PSG generator (ay_generate), so the main
+         * loop must not also drive it. Headless has no SDL audio device. */
+        int avi_arate = emu.headless ? AUDIO_SAMPLE_RATE : 0;
+        int avi_achan = emu.headless ? 2 : 0;
+        if (avi_recorder_open_av(&emu.video_avi_rec, video_avi_file,
+                                 avi_w, avi_h,
+                                 emu.video_avi_fps, emu.video_avi_quality,
+                                 avi_arate, avi_achan)) {
             emu.video_avi_active = true;
-            log_info("Video recording (MJPEG AVI) -> %s (%d fps, q%d)",
+            log_info("Video recording (MJPEG AVI%s) -> %s (%d fps, q%d)",
+                     emu.headless ? " + PCM audio" : "",
                      video_avi_file, emu.video_avi_fps, emu.video_avi_quality);
         } else {
             log_error("Cannot open video file for recording: %s", video_avi_file);
@@ -3834,18 +3743,14 @@ int main(int argc, char* argv[]) {
 
     /* Parse --dump-ram-at CYCLES:FILE */
     if (dump_ram_at_arg) {
-        const char* colon = strchr(dump_ram_at_arg, ':');
-        if (colon) {
-            emu.dump_ram_at_cycles = atoll(dump_ram_at_arg);
-            emu.dump_ram_at_file = colon + 1;
-            emu.dump_ram_at_done = false;
-            log_info("RAM dump scheduled at %lld cycles → %s",
-                     (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
-        } else {
-            log_error("Invalid --dump-ram-at format. Use CYCLES:FILE");
+        if (!cli_split_cycles_file(dump_ram_at_arg, "dump-ram-at",
+                                   &emu.dump_ram_at_cycles, &emu.dump_ram_at_file)) {
             emulator_cleanup(&emu);
             return 1;
         }
+        emu.dump_ram_at_done = false;
+        log_info("RAM dump scheduled at %lld cycles → %s",
+                 (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
     } else {
         emu.dump_ram_at_cycles = -1;
         emu.dump_ram_at_file = NULL;
@@ -3854,12 +3759,8 @@ int main(int argc, char* argv[]) {
 
     /* Open --trace-irq FILE */
     if (trace_irq_file) {
-        FILE* fp = fopen(trace_irq_file, "w");
-        if (!fp) {
-            log_error("Cannot open --trace-irq file: %s", trace_irq_file);
-            emulator_cleanup(&emu);
-            return 1;
-        }
+        FILE* fp = cli_open_out(trace_irq_file, "w", "trace-irq");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
         fprintf(fp, "# Phosphoric IRQ trace — Oric-1/Atmos\n");
         fprintf(fp, "# Format: <cycle> <event> <details>\n");
         fprintf(fp, "# IRQ-ENTRY: PC before, target (= vector at $FFFE/F), IFR/IER snapshot, srcmask\n");
@@ -3868,6 +3769,33 @@ int main(int argc, char* argv[]) {
         emu.irq_trace_active = true;
         emu.cpu.irq_trace_fp = fp;
         log_info("IRQ trace → %s", trace_irq_file);
+    }
+
+    /* Open --psg-trace FILE (log of AY sound-register writes) */
+    if (psg_trace_file) {
+        FILE* fp = cli_open_out(psg_trace_file, "w", "psg-trace");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
+        fprintf(fp, "# Phosphoric PSG trace — AY-3-8910 sound-register writes\n");
+        fprintf(fp, "# Format: <cpu_cycle> R<reg>=<hex>  (reg 0-13 ; ports 14/15 = keyboard, excluded)\n");
+        fprintf(fp, "# NB: reg 7 (mixer) is hammered to 7F by the keyboard scan — kept as measured.\n");
+        emu.psg_trace_fp = fp;
+        log_info("PSG trace → %s", psg_trace_file);
+    }
+
+    /* Open --audio-wav FILE (PCM capture ; headless only to avoid racing the
+     * SDL audio thread, which is the other consumer of the PSG generator). */
+    if (audio_wav_file) {
+        if (!emu.headless) {
+            log_error("--audio-wav requires --headless (SDL audio owns the PSG generator)");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        FILE* fp = cli_open_out(audio_wav_file, "wb", "audio-wav");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
+        wav_write_header(fp, 0);   /* placeholder — sizes patched at cleanup */
+        emu.audio_wav_fp = fp;
+        emu.audio_wav_data_bytes = 0;
+        log_info("Audio WAV → %s (16-bit stereo %d Hz)", audio_wav_file, AUDIO_SAMPLE_RATE);
     }
 
     /* Enable LOCI peripheral (--loci) */
@@ -3993,12 +3921,24 @@ int main(int argc, char* argv[]) {
 
     /* Parse --screenshot-at CYCLES:FILE */
     if (screenshot_at_arg) {
-        const char* colon = strchr(screenshot_at_arg, ':');
-        if (colon) {
-            emu.screenshot_at_cycles = atoll(screenshot_at_arg);
-            emu.screenshot_at_file = colon + 1;
-        } else {
-            log_error("Invalid --screenshot-at format. Use CYCLES:FILE");
+        if (!cli_split_cycles_file(screenshot_at_arg, "screenshot-at",
+                                   &emu.screenshot_at_cycles, &emu.screenshot_at_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+
+    /* Parse --screenshot-text-at CYCLES:FILE et --screenshot-ansi-at CYCLES:FILE */
+    if (screenshot_text_at_arg) {
+        if (!cli_split_cycles_file(screenshot_text_at_arg, "screenshot-text-at",
+                                   &emu.screenshot_text_at_cycles, &emu.screenshot_text_at_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    if (screenshot_ansi_at_arg) {
+        if (!cli_split_cycles_file(screenshot_ansi_at_arg, "screenshot-ansi-at",
+                                   &emu.screenshot_ansi_at_cycles, &emu.screenshot_ansi_at_file)) {
             emulator_cleanup(&emu);
             return 1;
         }
@@ -4394,7 +4334,7 @@ int main(int argc, char* argv[]) {
         log_info("Debugger mode enabled (will break at first instruction)");
     }
     if (debug_break_addr) {
-        uint16_t addr = (uint16_t)strtol(debug_break_addr, NULL, 16);
+        uint16_t addr = parse_hex16(debug_break_addr);
         debugger_add_breakpoint(&emu.debugger, addr);
         log_info("Debugger breakpoint set at $%04X", addr);
     }

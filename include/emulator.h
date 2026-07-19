@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.80.0-alpha"
+#define EMU_VERSION "1.93.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -239,6 +239,12 @@ typedef struct emulator_s {
     const char* screenshot_file;
     int64_t screenshot_at_cycles;
     const char* screenshot_at_file;
+    const char* screenshot_text_file; /* dump contenu texte écran $BB80 (sortie) */
+    const char* screenshot_ansi_file; /* image ANSI true-color du framebuffer (sortie) */
+    int64_t screenshot_text_at_cycles; /* dump texte à un cycle donné (-1 = off) */
+    const char* screenshot_text_at_file;
+    int64_t screenshot_ansi_at_cycles; /* image ANSI à un cycle donné (-1 = off) */
+    const char* screenshot_ansi_at_file;
 
     /* Frame dump options */
     const char* frame_dump_dir;
@@ -263,6 +269,14 @@ typedef struct emulator_s {
     FILE* irq_trace_fp;
     bool irq_trace_active;
     int32_t irq_trace_depth;  /* Track IRQ nesting (incremented on IRQ, decremented on RTI) */
+
+    /* Audio capture (headless-friendly, mirrors --screenshot-at for sound) :
+     * --psg-trace  logs each AY sound-register write (reg 0..13) with its CPU cycle ;
+     * --audio-wav  renders the PSG to PCM once per frame and writes a 16-bit stereo
+     *              44.1 kHz WAV (uses ay_generate, the same engine as SDL playback). */
+    FILE* psg_trace_fp;
+    FILE* audio_wav_fp;
+    uint32_t audio_wav_data_bytes;   /* PCM payload written so far (for the header patch) */
 
     /* Auto-type: inject keystrokes at specified cycle count */
     const char* type_keys_text;

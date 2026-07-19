@@ -5,6 +5,510 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.93.0-alpha] - 2026-07-17
+
+### Added — Screenshot texte/ANSI à un cycle donné : `--screenshot-text-at` + `--screenshot-ansi-at`
+
+Suite de v1.92.0 (`--screenshot-text`/`--screenshot-ansi` étaient des sorties « à la
+fin du run »). Équivalents « à un cycle donné » sur le modèle exact de
+`--screenshot-at`, réutilisant le helper `cli_split_cycles_file()` (mutualisé en v1.91.1).
+
+- **`--screenshot-text-at C:FILE`** — dumpe le contenu texte de l'écran (`$BB80`, 40×28)
+  dès que le compteur de cycles atteint C.
+- **`--screenshot-ansi-at C:FILE`** — image ANSI true-color du framebuffer dès le cycle C.
+
+Comportement d'erreur **identique** à `--screenshot-at` : format sans `:` → fatal (rc 1)
+avec message `Invalid --screenshot-text-at format. Use CYCLES:FILE` (idem `-ansi-at`).
+
+**Vérifié par la mesure** : boot Atmos, `--screenshot-text-at 3000000:FILE` → fichier
+écrit au cycle 3015456 avec `ORIC EXTENDED BASIC V1.1` / `© 1983 TANGERINE` /
+`37631 BYTES FREE` ; `--screenshot-ansi-at` → 264 654 o ; formats malformés → rc 1
+(mesuré sans pipe). Tests : `make test-cli-parsing` **29/29** (+4 : 2 malformés fatals +
+2 contrôles positifs fichier non vide). `make clean && make tests` complet vert (exit 0).
+
+EMU_VERSION 1.92.0-alpha → 1.93.0-alpha ; builds natif + SDL2 OK.
+
+## [1.92.0-alpha] - 2026-07-17
+
+### Added — Screenshot texte : `--screenshot-text` et `--screenshot-ansi`
+
+Deux nouvelles sorties d'écran en headless, réponse à « existe-t-il un screenshot
+texte ? » — la réponse mesurée était : `video_export_ascii()` existait déjà mais
+**n'était pas branchée au CLI** (aucune option, appelée seulement par les tests) et
+produit une **image ANSI**, pas un dump texte ; le **contenu texte réel** de l'écran
+n'existait pas.
+
+- **`--screenshot-text FILE`** — dump du **contenu texte réel** de l'écran ORIC
+  (`$BB80`, 40×28) en ASCII lisible à la sortie. Nouvelle fonction
+  `video_export_screen_text(memory, fp)` : décode chaque octet par `octet & 0x7F`
+  (masque le bit vidéo inverse), remplace les codes de contrôle/attributs (< 0x20)
+  par un espace, écrit 40 colonnes max par ligne, espaces de fin supprimés.
+  **Limite assumée et documentée** : suppose le jeu de caractères standard ORIC
+  (0x20-0x7F ≈ ASCII) — un charset redéfini n'est pas résolu ; lit toujours les 28
+  lignes de `$BB80` quel que soit le mode (TEXT/HIRES).
+- **`--screenshot-ansi FILE`** — image ANSI true-color du framebuffer à la sortie,
+  via le nouveau wrapper fichier `video_export_ascii_file(vid, filename, sx, sy)`
+  autour de `video_export_ascii()` existant.
+
+**Vérifié par la mesure** (pas déduit) : boot Atmos à 3M cycles, `--screenshot-text`
+restitue `ORIC EXTENDED BASIC V1.1` / `© 1983 TANGERINE` / `37631 BYTES FREE` /
+indicateur `CAPS` (le `©` sort en `` ` ``, code 0x60 du charset ORIC — la limite ASCII
+documentée). `--screenshot-ansi` : ~264 Ko, séquences `ESC[48;2;R;G;Bm` présentes,
+structure de l'écran visible dans le terminal. Tests : `make test-video` 16/16
+(+2 : `test_ascii_export_file`, `test_screen_text_export` — décodage inverse/contrôle
++ rtrim + paramètres NULL). `make tests` complet vert (exit 0).
+
+EMU_VERSION 1.91.3-alpha → 1.92.0-alpha ; builds natif + SDL2 OK.
+
+## [1.91.3-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 : 3e tranche — factorise le parsing d'adresse hex CLI
+
+`parse_hex16(s)` remplace les **4 copies identiques** de `(uint16_t)strtol(arg, NULL, 16)`
+(`--acia-addr`, `--dtl2000-addr`, `--mageco-addr`, `--break`) et nomme l'intention.
+Sémantique lenient de `strtol` préservée verbatim (entrée invalide → 0, sans erreur — cf.
+`--acia-addr` hex invalide non-fatal dans le filet).
+
+**Iso-comportement prouvé** : `make test-cli-parsing` 25/25 (dont `--acia-addr`), golden
+**octet à octet** d'un run `--acia-addr 0500 --break C000` (dump 64K) refactoré vs binaire
+d'avant depuis git = **identique**, `make tests` exit 0.
+
+**Note (honnête) : c'est la dernière tranche d'extraction « propre » à ce stade.** La
+duplication restante dans le parsing est **couplée aux périphériques** (blocs dtl2000/mageco :
+warnings, messages d'erreur et init spécifiques) — non factorisable sans introduire du
+couplage. Poursuivre US3 exigerait le parser générique `cli_args_t`, toujours **non prouvable
+iso-comportement** même avec le filet à 25 cas (couverture partielle des 80 options).
+
+EMU_VERSION 1.91.2-alpha → 1.91.3-alpha ; builds natif + SDL2 OK.
+
+## [1.91.2-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 : 2e tranche — factorise l'ouverture de fichier de sortie CLI
+
+Suite de v1.91.1. Le motif `fopen` + « Cannot open --NAME file: PATH » + `cleanup` +
+`return 1`, **identique** entre `--trace-irq`, `--psg-trace` et `--audio-wav` (seul le
+mode `w`/`wb` et les en-têtes post-ouverture diffèrent), est factorisé dans
+`cli_open_out(file, mode, optname)`. Message reproduit **exactement** via `optname`.
+`--trace` (message « Cannot open trace file » **sans** nom d'option, et **non-fatal**)
+est **délibérément non touché** — divergence de fatalité mesurée, à préserver.
+
+**Iso-comportement prouvé** (les deux côtés) :
+- **Échec** : 3 nouveaux cas dans `test_cli_parsing.sh` verrouillent que `--trace-irq` /
+  `--psg-trace` / `--audio-wav` sur chemin non inscriptible → rc 1 + message exact (25/25) —
+  ajoutés et vérifiés **avant** le refactor, re-vérifiés après.
+- **Succès** : comparaison **octet à octet** des artefacts refactoré vs binaire d'avant
+  (reconstruit depuis git) — `.psg` (1436 o), `.wav` (709172 o), `.irq` (21439 o)
+  **byte-identiques**.
+- `make tests` complet exit 0.
+
+EMU_VERSION 1.91.1-alpha → 1.91.2-alpha ; builds natif + SDL2 OK.
+
+## [1.91.1-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 : 1re tranche d'extraction du parser CLI (iso-comportement prouvé)
+
+Premier pas concret de l'extraction du parser (au-delà de la relocation de données de
+v1.87.0), rendu **prouvable** par le filet de tests CLI (v1.91.0). Le motif de parsing
+`CYCLES:FILE`, dupliqué **à l'identique** entre `--dump-ram-at` et `--screenshot-at`
+(`strchr(':')` + `atoll` + même erreur), est factorisé dans un helper
+`cli_split_cycles_file(arg, optname, &cycles, &file)`. Le message d'erreur est reproduit
+**exactement** via `optname` (`Invalid --%s format. Use CYCLES:FILE`). `--type-keys`
+(CYCLES:TEXT, séquencé, préfixe `loci-hid`) est **délibérément non touché** (motif différent).
+
+**Iso-comportement prouvé** (pas supposé) :
+- Comparaison **octet à octet** des sorties refactoré vs binaire d'avant reconstruit depuis
+  git : `--dump-ram-at` (65536 o) et `--screenshot-at` (161295 o) **byte-identiques**.
+- `make test-cli-parsing` 22/22 (couvre les 2 messages d'erreur + le dump 64K), `make tests`
+  complet exit 0.
+
+EMU_VERSION 1.91.0-alpha → 1.91.1-alpha ; builds natif + SDL2 OK.
+
+## [1.91.0-alpha] - 2026-07-17
+
+### Added — AVI sonorisé : `--video` embarque une piste audio PCM en headless
+
+Suite directe de la capture audio (v1.90.0) : `--video` produisait un MJPEG AVI
+**muet** (constat mesuré : 1 seul flux `vids`, aucun `auds`). Le recorder gagne un
+**second flux `auds` PCM 16-bit** entrelacé avec les trames vidéo.
+
+- `avi_recorder.c` : nouvelle `avi_recorder_open_av(..., audio_rate, audio_channels)`
+  (déclare le 2e `strl`/`auds` + `WAVEFORMATEX`, `dwStreams=2`, `hdrl` 192→294) ;
+  `avi_recorder_open` devient un wrapper (`audio_rate=0` → sortie **byte-identique**
+  à avant). `avi_recorder_add_audio(rec, samples, nframes)` écrit un chunk `01wb` ;
+  `idx1` porte le bon fourcc/flags par entrée (`00dc` keyframe / `01wb`) ; back-patch
+  de la longueur audio (`dwLength` = sample-frames) à la fermeture.
+- `main.c` : `--video` ouvre avec audio **uniquement en headless** (en GUI le
+  callback SDL possède déjà `ay_generate`). La génération audio par trame est
+  **consolidée** : un seul `ay_generate` par trame nourrit le WAV (`--audio-wav`)
+  ET l'AVI (jamais deux drains de la file d'événements PSG).
+
+Vérifié (ffprobe/ffmpeg dispo sur l'hôte) : AVI PING = 2 flux (`mjpeg` 6,02 s +
+`pcm_s16le` 44100 Hz stéréo), audio extrait = 265482 frames **non silencieux**
+(42280 éch. ≠ 0, identique au `--audio-wav`), vidéo = 301 trames décodées sans
+erreur, `dwLength` audio = 265482 (back-patch correct), aucune erreur de conteneur.
+
+Tests : `test-avi` +2 (flux `auds` + `dwLength` patché ; non-régression vidéo-seul
+`dwStreams=1`/pas de `auds`) → 9/9 ; `test-audio-capture` +1 (AVI headless contient
+`auds`+`01wb`) → 5/5. `avi_recorder_open` inchangé pour ses 8 appels de test. Suite
+complète verte. EMU_VERSION 1.90.0-alpha → 1.91.0-alpha ; builds natif + SDL2 OK.
+
+### Tests — filet de caractérisation du parser CLI (prérequis Epic 7 / US3)
+
+`tests/integration/test_cli_parsing.sh` (cible `make test-cli-parsing`, **22/22**) verrouille
+le comportement **mesuré** du parsing d'options avant tout refactor du parser : `--help`
+(usage, rc 0), **option inconnue non-fatale** (usage, rc 0), formats `CYCLES:VALUE`
+malformés → rc 1 + message précis (`--dump-ram-at`/`--screenshot-at`/`--type-keys`),
+validation enum/borne **fatale** (`--serial`/`--model`/`--dtl2000` bogus, `--scale 99`
+→ rc 1) vs **non-fatale** (`--joystick`/`--keyboard` bogus, `--acia-addr` hex invalide,
+`--load-state` fichier absent → rc 0), et les **options à effets de bord** (fopen/load au
+parsing) : succès = artefact produit (`--trace`/`--profile` créent le fichier) ; ressource
+absente **fatale** (`--disk`/`--symbols` → rc 1) ou **non-fatale** (`--tape` warning,
+`--breakpoint` bad hex, `--trace` chemin non inscriptible → rc 0). Ces comportements non
+évidents sont capturés tels quels (un futur parser devra les reproduire ou les changer
+consciemment). **Aucune modification de code** — binaire inchangé, EMU_VERSION reste
+1.91.0-alpha.
+
+## [1.90.0-alpha] - 2026-07-17
+
+### Added — Capture audio headless : `--audio-wav` et `--psg-trace`
+
+Deux options de mesure du son, pensées comme l'équivalent audio de
+`--screenshot-at` : permettre à un run headless automatique de **valider** la
+sortie PSG (mesurée, pas déduite). Motivation : le portage Spellbinder (BBC→Oric,
+projet `~/spillbender`) aborde son volet son (routines encore vides) et a besoin
+d'un outil de vérification *avant* d'implémenter — même méthodo « ne rien inventer »
+que pour la vidéo et le clavier.
+
+- `--audio-wav FILE` : rend le PSG en PCM une fois par trame (882 échantillons à
+  44,1 kHz) via `ay_generate` — **le même moteur que la lecture SDL** — et écrit un
+  WAV 16-bit stéréo canonique (en-tête backpatché à la fermeture). **Headless
+  uniquement** : en GUI le callback audio SDL est déjà l'unique consommateur du
+  générateur PSG ; un garde-fou refuse `--audio-wav` sans `--headless` (exit 1).
+- `--psg-trace FILE` : journalise chaque écriture des registres son AY (reg 0-13)
+  avec le cycle CPU (`<cycle> R<reg>=<hex>`). Les ports 14/15 (matrice clavier)
+  sont exclus ; le registre 7 (mixer) martelé à `$7F` par le scan clavier est
+  conservé tel quel (mesuré, non filtré).
+
+Nouveau helper WAV LE (`wav_write_header`), hook non intrusif dans `psg_decode`,
+génération par trame dans `emulator_run`, fermeture/backpatch dans
+`emulator_cleanup`. Options déclarées dans `include/cli/cli_options.h`.
+
+Preuves : test d'intégration `tests/integration/test_audio_capture.sh` (nouvelle
+cible `make test-audio-capture`, 4/4) — garde-fou headless, capture d'un son ROM
+(`PING`) donnant un WAV valide **non silencieux** + une trace contenant les
+écritures R0-R13, et **déterminisme** (deux runs → WAV byte-identique). Suite
+complète verte (`make tests` exit 0 ; le harnais n'émet pas de total agrégé).
+EMU_VERSION 1.89.0-alpha → 1.90.0-alpha ;
+builds natif + SDL2 OK.
+
+## [1.89.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US5 (Sprints 130-131) : tick des périphériques déplacé hors de `main.c`
+
+Dernière US de l'assainissement. Le bloc de tick des périphériques de bus
+temporisés (FDC Microdisc/LOCI, ACIA baud, DTL2000, Mageco) quitte
+`cpu_cycle_tick` (`main.c`) pour `io_bus_tick(emu, cycles)` dans `io_bus.c`.
+
+- **Iso-comportement par construction** : l'ordre historique exact
+  (microdisc → loci → acia → dtl → mageco) est **préservé**. Le VIA et la cassette
+  (cœur/port-attaché) restent câblés dans `main.c`.
+- **Écarts assumés vs le plan US5 (honnêteté)** : (1) **pas de boucle générique**
+  sur `io_bus[]` — son ordre (priorité de dispatch) diffère de l'ordre de tick ;
+  bien que les ticks soient probablement indépendants dans un même lot, je ne le
+  prouve pas byte-identique pour le timing série avec le filet actuel, donc je
+  préserve l'ordre explicitement. (2) **hooks `reset`/`tick` non ajoutés au
+  contrat `io_device_t`** : le reset n'est pas uniforme (F5 ne reset que
+  CPU + LOCI) → un hook générique changerait le comportement ; un champ de contrat
+  non câblable serait du poids mort. Le contrat reste limité à ce qui s'itère
+  uniformément (claims/read/write/save/load).
+
+Non-régression : suite complète verte (943) ; golden 4/4 iso-comportement (les
+chemins FDC passent désormais par `io_bus_tick`) ; e2e ACIA-over-LOCI (tick ACIA)
+inclus dans la suite. `main.c` : **4690 → 4334 lignes** sur l'ensemble de l'Epic 7
+(US1→US5). Doc `docs/architecture/io-bus.md` §6.
+
+EMU_VERSION 1.88.0-alpha → 1.89.0-alpha.
+
+## [1.88.0-alpha] - 2026-07-17
+
+### Added — Epic 7 / US4 (Sprints 128-129) : savestate DTL2000 + Mageco (séparation état/transport à la sérialisation)
+
+Comble la lacune identifiée par l'audit : DTL2000 et Mageco n'avaient aucune
+section `.ost`. Nouvelles sections **« DTL »** et **« MAG »** via les hooks
+`io_device_t`.
+
+- **Choix assumé** : plutôt qu'un **découpage physique** des structs cœur
+  (`dtl2000_t`/`mageco_t`, risqué et non nécessaire), la « séparation état émulé /
+  transport hôte » de l'US4 se fait **à la (dé)sérialisation** : l'état émulé
+  (registres PIA/ACIA, baud, compteurs, clkgen) est sauvé en blob, et **les
+  pointeurs hôte sont préservés** de l'instance vivante au chargement — j'ai
+  vérifié exactement les 14 pointeurs de `dtl2000_t` (pia 7 + acia 2 + device 5)
+  et les 7 de `mageco_t`. Une connexion TCP/PTY et les octets en vol ne se
+  sérialisent pas : savestate **même-build**, transport non restauré (documenté).
+- Garde par taille au chargement (layout différent → ignoré, jamais corrompu).
+  Section émise **seulement si le périphérique est présent** → `.ost` d'un boot
+  normal **inchangé** (vérifié : tag absent, 65799 o identiques).
+- `dtl2000_save`/`load`, `mageco_save`/`load` dans leurs modules ; wrappers +
+  `save_tag` "DTL"/"MAG" dans `io_bus.c`.
+
+Non-régression et preuves : `test-dtl2000` +1 (round-trip : état restauré,
+**pointeurs hôte sentinelles préservés**, garde par taille) → 16/16 ; `test-midi`
++1 → 19/19 ; suite complète 941 → **943**. Golden 4/4 iso-comportement. E2e réel :
+`--dtl2000 loopback` → section « DTL » (65991 o) puis `--load-state` OK (aucun
+crash → callbacks préservés). Doc `docs/architecture/io-bus.md` §6.
+
+EMU_VERSION 1.87.0-alpha → 1.88.0-alpha.
+
+## [1.87.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US3 **partiel** (Sprint 127) : déclarations d'options CLI extraites (parser NON réécrit — honnêteté)
+
+Extraction des **données déclaratives** des options CLI (l'enum `OPT_*` + la
+table getopt `long_options[]` + la chaîne d'options courtes) de `main()` vers un
+header dédié `include/cli/cli_options.h`.
+
+- **Ce qui est fait, sûr et vérifié** : relocation de données pures (zéro
+  changement de logique). Le switch de parsing reste dans `main()`. Iso-
+  comportement par construction ; golden 4/4 + `--help` OK + option inconnue
+  toujours rejetée + suite complète verte.
+- **Ce qui n'est PAS fait, et pourquoi (dit franchement)** : la réécriture
+  déclarative complète (parser générique + `cli_args_t`) envisagée par l'US3
+  **n'est pas livrée**. Mesure à l'appui : le switch a **63 `case` dont 43
+  portent des effets de bord au parsing** (fopen/malloc/exit/appels d'init) et
+  ~89 variables locales seraient à router à la main. Ce n'est **pas prouvable
+  iso-comportement** avec le filet de tests actuel (golden 4 scénarios + suite) ;
+  une régression sur une option obscure passerait inaperçue. Je préfère livrer la
+  part sûre et documenter le reste plutôt que prétendre à une garantie que je ne
+  peux pas tenir. Reste au backlog : élargir d'abord la couverture de tests CLI,
+  puis extraire le parser par petits lots vérifiables.
+
+`main.c` : 4425 → **4342** lignes. EMU_VERSION 1.86.0-alpha → 1.87.0-alpha.
+
+## [1.86.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US2 (Sprint 126) : bus I/O extrait de `main.c` vers un adaptateur dédié
+
+Le bloc du bus `io_device_t` (6 wrappers `*_dev_*` + table `io_bus[]` + dispatch
+`io_bus_find`/`io_bus_find_write`, ~170 lignes) quitte `main.c` pour un module
+d'adaptation dédié `src/io/io_bus.c` (+ `include/io/io_bus.h`).
+
+- **Écart assumé vs le plan initial** : le ROADMAP proposait de déplacer les
+  wrappers *dans chaque module* `io/*`. Je ne l'ai **pas** fait, car ces wrappers
+  accèdent à `emulator_t` complet (claims croisés : l'ACIA à $0380 consulte le
+  LOCI ; le Microdisc synchronise la mémoire d'overlay) → les mettre dans
+  `acia6551.c`/`microdisc.c` **réintroduirait** le couplage `emulator.h` que
+  l'US1 venait de retirer (et que l'audit saluait). Le bon foyer est une **couche
+  d'adaptation unique** qui a le droit de connaître `emulator_t`, laissant les
+  modules purs découplés.
+- `io_bus.c` est le seul nouveau fichier `io/` à inclure `emulator.h` (assumé :
+  c'est sa raison d'être). `main.c` garde `io_read/write_callback` (VIA/PSG/
+  imprimante/snoop LOCI) et appelle `io_bus_find*` désormais externes ;
+  l'enregistrement savestate passe par `io_bus_devices(&count)`.
+
+Non-régression : suite complète verte ; golden 4/4 iso-comportement (BASIC,
+Sedoric/Microdisc, LOCI SD, ULA-NG). `main.c` : 4690 → **4425** lignes (US1+US2).
+
+EMU_VERSION 1.85.0-alpha → 1.86.0-alpha.
+
+## [1.85.0-alpha] - 2026-07-17
+
+### Changed — Epic 7 / US1 (Sprint 125) : nettoyage à risque nul de `main.c`
+
+Première étape de l'assainissement architectural (`docs/architecture/AUDIT-ARCHITECTURE.md`),
+à **iso-comportement vérifié** (golden PPM byte-identiques : boots BASIC, Sedoric/
+Microdisc, LOCI SD, ULA-NG).
+
+- Suppression du **code mort** `tap_strip_header_padding` (0 usage vérifié) →
+  supprime aussi le warning « defined but not used ».
+- Retrait des `#include "emulator.h"` **inutilisés** de `src/io/microdisc.c` et
+  `src/io/loci_core.c` (0 usage de `emulator_t`/`emu->`/`EMU_VERSION` vérifié).
+- Extraction de la fonction pure `parse_host_port` → nouveau `src/utils/netutil.c`
+  (+ header). 3 appelants inchangés.
+- Extraction du drapeau d'arrêt `g_running` + `signal_handler` → nouveau
+  `src/utils/appsignal.c` (`app_should_run()` / `app_install_signal_handlers()`).
+- Nouvelle cible Makefile **`release`** : produit une copie strippée
+  `oric1-emu-release` (447 Ko vs 495 Ko) **sans toucher** au binaire de travail.
+
+Non-régression : suite complète verte ; golden 4/4 iso-comportement. `main.c`
+allégé (~100 lignes retirées ; god-object entamé). Aucun test nouveau/retiré.
+
+EMU_VERSION 1.84.1-alpha → 1.85.0-alpha.
+
+## [1.84.1-alpha] - 2026-07-17
+
+### Docs — Audit architectural critique + Epic 7 « Assainissement architectural »
+
+Audit complet et **critique** de l'architecture (`docs/architecture/AUDIT-ARCHITECTURE.md`),
+appuyé sur des mesures réelles (graphe d'includes, ventilation de `main.c`, ordre
+des ticks, threads) et des références `fichier:ligne`.
+
+- **Solide** : découplage des modules de base (cpu/memory/video/audio/storage
+  n'incluent pas `emulator.h` ; ~11 % des fichiers seulement), zéro cycle
+  d'includes (forward-decls), timing per-cycle + IRQ level-triggered corrects,
+  concurrence défensive (3 threads, mutations via `control_queue` uniquement,
+  framebuffer copié sous mutex, série non-bloquante).
+- **Dette** (priorisée) : ① `main.c` god-object d'assemblage (4690 L, `main()`
+  ≈ 1487 L) ; ② état émulé **mêlé aux handles hôte** dans `dtl2000_t`/`mageco_t`/
+  `serial_backend_t` (bloque le savestate série) ; ③ contrat `io_device_t`
+  incomplet (pas de `init/reset/tick` ; save/load ULA-NG seul ; ordre de tick ≠
+  ordre de table) ; ④ monolithes `debugger.c`/`control.c` ; ⑤ includes
+  `emulator.h` inutilisés (`microdisc.c`, `loci_core.c`, vérifié 0 usage).
+- **Epic 7** ajouté au `ROADMAP` : 5 US (Sprints 125-131) d'extraction
+  incrémentale à iso-comportement, du risque nul (nettoyage, fonctions pures) au
+  moyen-élevé (séparation état/transport série ; lifecycle `io_device_t`).
+  Hors périmètre assumé : `emulator_run()` en event-loop (risque temporel),
+  savestate LOCI complet (handles OS).
+
+Note d'honnêteté : les explorations automatiques ont par endroits **surévalué**
+la propreté (« état émulé vs ressource hôte clairement séparé ») ; l'audit tranche
+sur le fait vérifié (ils sont **mélangés** dans la même struct — c'est la dette #2).
+
+EMU_VERSION 1.84.0-alpha → 1.84.1-alpha.
+
+## [1.84.0-alpha] - 2026-07-17
+
+### Added — Hooks de sérialisation `io_device_t` : chaque device peut persister sa section `.ost` (ULA-NG en premier)
+
+Extension du contrat de bus au-delà du dispatch I/O. **Constat honnête à
+l'origine** : les périphériques de bus (DTL2000, Mageco, LOCI, **ULA-NG**)
+n'avaient **aucune section savestate** — leur état n'était pas persisté (lacune
+latente). Le hook systématise leur sérialisation et corrige cette lacune, en
+commençant par l'ULA-NG.
+
+- **Contrat** (`io_device.h`) : ajout de `save_tag` (tag 4 o de section, NULL =
+  non sérialisé), `save(emu, fp)` (écrit le payload ; **renvoie `false` → aucune
+  section émise**, pour un `.ost` byte-identique quand l'état est par défaut) et
+  `load(emu, fp, size)`.
+- **Plomberie découplée** : `savestate.c` ne connaît pas `io_bus` ; `main.c` la
+  lui fournit via `savestate_set_io_devices(io_bus, io_bus_count)`. À la sauvegarde,
+  une section est émise par device fournissant un hook ; au chargement, un tag
+  non géré en dur est routé vers le `load` du device dont `save_tag` correspond
+  (les tags réellement inconnus restent ignorés → compat ascendante préservée).
+- **Premier device migré : l'ULA-NG** (section « UNG »). `ula_ng_save`/`ula_ng_load`
+  vivent dans le module (il possède son format). L'état ULA-NG est un **POD sans
+  pointeur ni handle OS** (30696 o) → sérialisation en **blob** avec **garde par
+  taille** au chargement : c'est un savestate *même-build* (cas réel quicksave/load
+  F2/F4) ; un `.ost` d'un autre build/arch (layout différent) est ignoré
+  proprement plutôt que corrompu. La section n'est émise que si l'ULA-NG est
+  **déverrouillée** → `.ost` d'un boot normal **inchangé** (vérifié : tag « UNG »
+  absent, taille identique au pré-hook).
+
+Non-régression et preuves : `test-savestate` +2 tests (round-trip complet
+`memcmp==0` ; verrouillée → aucune section, un état cible pré-existant n'est pas
+écrasé) → 12/12. Suite complète verte. E2e émulateur réel : `--ula-ng-poke`
+(déverrouillage) → `.ost` 96503 o **avec** section UNG (30704 o = sizeof + en-tête) ;
+boot normal → 65799 o **sans** UNG. Restent DTL2000/Mageco à migrer sur ce modèle ;
+**LOCI a une réserve réelle** (handles de fichiers OS non sérialisables tels quels).
+Doc `docs/architecture/io-bus.md` §6.
+
+EMU_VERSION 1.83.0-alpha → 1.84.0-alpha.
+
+## [1.83.0-alpha] - 2026-07-17
+
+### Changed — ULA-NG migrée vers le bus : le dispatch I/O est désormais « boucle + repli VIA »
+
+Dernier périphérique à plage encore câblé en dur. Sa migration a nécessité
+d'**étendre le contrat `io_device_t`**, car son écriture a une sémantique
+particulière (honnêtement irréductible au contrat précédent) :
+
+- **`write` renvoie maintenant `bool` « consommé »** (au lieu de `void`) : une
+  écriture peut **décliner** et retomber sur le VIA. Les périphériques à plage
+  exclusive renvoient toujours `true` ; l'ULA-NG renvoie le verdict de
+  `ula_ng_write` — verrouillée, un octet neutre n'est pas consommé et retombe sur
+  le miroir VIA (bit-à-bit, indiscernable).
+- **`claims_write` optionnel** (NULL → réutilise `claims`) : l'ULA-NG doit *voir*
+  les écritures de sa fenêtre **même verrouillée** (pour guetter la séquence de
+  déverrouillage 'N','G'), alors que ses **lectures** ne répondent que
+  déverrouillée. Ces deux claims diffèrent → un prédicat d'écriture distinct.
+- Dispatch : `io_bus_find_write` utilise `claims_write ?: claims` ; le write
+  respecte le verdict (`false` → repli VIA). Le wrapper ULA-NG synchronise l'IRQ
+  raster quand l'écriture est consommée (un write de NG_STATUS acquitte).
+- Les blocs ULA-NG en dur sont retirés des deux callbacks. **`io_read_callback`
+  et `io_write_callback` se réduisent à la boucle du bus + le repli VIA** : plus
+  aucun périphérique à plage câblé en dur (LOCI et ULA-NG compris).
+
+Non-régression : `test-ula-ng` 60/60 + garde visible end-to-end 2/2 (déverrouillage
+'N','G' + palette/copper via le dispatch réel, IRQ raster inclus) ; boots headless
+déverrouillage+palette **byte-identiques** au binaire pré-migration ; suite complète
+verte. Doc `docs/architecture/io-bus.md` §3/§5 mise à jour (contrat étendu, ULA-NG ✅).
+
+Décompte de tests : `make tests` = **939 checks passants outils construits**
+(923 sans outils ; l'écart = e2e dépendant de `bas2tap` qui étaient *skippés* et
+s'exécutent une fois `make tools` fait — aucun test nouveau ni retiré ici).
+
+EMU_VERSION 1.82.0-alpha → 1.83.0-alpha.
+
+## [1.82.0-alpha] - 2026-07-17
+
+### Changed — LOCI migré vers le bus `io_device_t` (réponse directe à « que fait le LOCI dans le main ? »)
+
+Suite de la migration du bus I/O. Le **LOCI** (sodiumlb) — le périphérique
+précisément pointé par le constat architectural — quitte le câblage en dur des
+callbacks pour rejoindre la table `io_bus[]`, **en tête** (priorité maximale).
+
+- Un seul `io_device_t` « loci » modélise les **3 sous-fenêtres disjointes** :
+  MIA $03A0-$03BF, TAP $0315-$0317 (remplace la cassette, recouvre le Microdisc),
+  DSK $0310-$0314/$0318-$0319 (seulement `!has_microdisc`). Le `claims` encode la
+  priorité ; `read`/`write` dispatchent en interne vers
+  `loci_read`/`loci_tap_read`/`loci_dsk_read` (resp. write).
+- Les 6 blocs `if (emu->has_loci && ...)` sont retirés de `io_read_callback` et
+  `io_write_callback`. Ces callbacks se réduisent désormais à : **boucle de bus →
+  cas ULA-NG → repli VIA**.
+- Le snoop LOCI sur l'écriture VIA ORB $0300 (`loci_tap_motor`, ligne moteur
+  cassette) **n'est pas un claim** (l'écriture va au VIA) → conservé dans le
+  chemin VIA, hors bus.
+- **ULA-NG reste câblée après la boucle** (documenté) : son écriture doit
+  toujours recevoir l'octet en fenêtre (guet de la séquence 'N','G' même
+  verrouillée) et `ula_ng_write` renvoie si elle a consommé — ce claim à effet de
+  bord + repli ne rentre pas dans le contrat `void` sans l'étendre (§6 io-bus.md).
+
+Non-régression vérifiée : suite complète verte (923 tests) ; boots LOCI headless
+(MIA passif + image SD → chemin DSK) **byte-identiques** au binaire pré-bus ;
+e2e ACIA-over-LOCI $0380 (cas particulier picowifi via le bus) OK. Les 5 échecs
+de `test-loci-e2e` (assertions de texte écran, hors `make tests`) préexistent à
+la migration (identiques avec le binaire stable). Doc `docs/architecture/io-bus.md`
+§5 mise à jour (LOCI ✅, ULA-NG ⏳ avec justification).
+
+EMU_VERSION 1.81.0-alpha → 1.82.0-alpha.
+
+## [1.81.0-alpha] - 2026-07-17
+
+### Changed — Bus de périphériques `io_device_t` : le main ne câble plus les périphériques en dur
+
+Réponse au constat architectural « que fait le code du LOCI dans le main de
+l'émulateur ? ». Le routage I/O ($0300-$03FF) était une longue cascade de `if`
+codés en dur dans `io_read_callback`/`io_write_callback` de `main.c`. On
+introduit une **abstraction de bus** (`io_device_t` : `claims`/`read`/`write`
+recevant le contexte `emulator_t*`) et on migre les périphériques par la
+méthode *strangler*, sans changement de comportement observable.
+
+- **Nouveau** : `include/io/io_device.h` (contrat `io_device_t`), table `io_bus[]`
+  + `io_bus_find()` dans `main.c`. L'ordre de la table = priorité de claim.
+- **Migrés vers le bus** : DTL2000 ($03F8-$03FD, déjà fait sprint précédent),
+  puis **ACIA 6551**, **Mageco/ORICON MIDI** et **Microdisc WD1793**. Les blocs
+  `if` correspondants sont retirés de `io_read_callback`/`io_write_callback`.
+- **LOCI reste câblé en dur, en tête** : ses fenêtres TAP $0315-$0317 / DSK
+  chevauchent le Microdisc avec une priorité supérieure ; il est donc évalué
+  *avant* la boucle de bus. L'ULA-NG reste câblée *après* le bus (repli avant
+  VIA). Le wrapper ACIA conserve le cas particulier picowifi-over-LOCI ($0380,
+  MIA non fiable → écriture ignorée) ; le wrapper Microdisc conserve le
+  `fdc_trace` et la synchro des drapeaux d'overlay
+  (`memory.basic_rom_disabled`/`overlay_active`).
+- Doc : `docs/architecture/io-bus.md` (contrat, taxonomie cœur/bus/port-attaché,
+  ordre de migration, extensions futures init/reset/savestate/tick).
+
+### Fixed — `test-savestate` ne compilait plus depuis le retrait d'OCULA
+
+Le retrait d'OCULA (1.80.0-alpha) avait laissé `tests/unit/test_savestate.c`
+référençant des symboles supprimés (`ULA_PROFILE_OCULA/HCS10017`,
+`memory_ocula_*`, `emu.ocula_gpu`, `video.ocula_scroll_*`) → `test-savestate`
+ne compilait plus (régression non détectée sur `main`). Retrait des 3 tests
+OCULA obsolètes (profil ULA / banking OCB / GPU OGP). Le format `.ost` reste
+rétro-compatible : les sections OCB/OGP d'anciens fichiers sont ignorées à la
+lecture. Suite de tests de nouveau intégralement verte (923).
+
+EMU_VERSION 1.80.0-alpha → 1.81.0-alpha.
+
 ## [1.80.0-alpha] - 2026-07-17
 
 ### Removed — Retrait complet d'OCULA du mainline (sur demande)

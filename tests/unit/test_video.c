@@ -333,6 +333,69 @@ TEST(test_ascii_export_nonempty) {
     video_cleanup(&vid);
 }
 
+/* video_export_ascii_file() : wrapper fichier de video_export_ascii(). */
+TEST(test_ascii_export_file) {
+    video_t vid;
+    video_init(&vid);
+    uint8_t* mem = (uint8_t*)calloc(49152, 1);
+    ASSERT_TRUE(mem != NULL);
+    for (int i = 0; i < 40; i++) mem[0xBB80 + i] = 'A';
+    uint8_t charset[2048];
+    make_test_charset(charset);
+    vid.charset = charset;
+    video_render_frame(&vid, mem);
+
+    const char* path = "/tmp/test_video_ascii_file.txt";
+    ASSERT_TRUE(video_export_ascii_file(&vid, path, 2, 2));
+    ASSERT_TRUE(file_size(path) > 100);
+    /* Erreurs : chemin/vid NULL -> false */
+    ASSERT_TRUE(!video_export_ascii_file(&vid, NULL, 2, 2));
+    ASSERT_TRUE(!video_export_ascii_file(NULL, path, 2, 2));
+    unlink(path);
+    free(mem);
+    video_cleanup(&vid);
+}
+
+/* video_export_screen_text() : dump du contenu texte réel de $BB80. */
+TEST(test_screen_text_export) {
+    uint8_t* mem = (uint8_t*)calloc(65536, 1);
+    ASSERT_TRUE(mem != NULL);
+    /* Remplit tout l'écran d'espaces (rtrim -> lignes vides). */
+    memset(mem + 0xBB80, 0x20, 40 * 28);
+    /* Ligne 0 : "HI" à partir de la colonne 2, puis rien. */
+    mem[0xBB80 + 2] = 'H';
+    mem[0xBB80 + 3] = 'I';
+    /* Ligne 1 : un code de contrôle (attribut) doit devenir un espace. */
+    mem[0xBB80 + 40 + 0] = 0x1B;   /* < 0x20 -> espace */
+    mem[0xBB80 + 40 + 1] = 'X';
+    /* Bit vidéo inverse (0x80) doit être masqué : 'A'|0x80 -> 'A'. */
+    mem[0xBB80 + 2 * 40 + 0] = (uint8_t)('A' | 0x80);
+
+    const char* path = "/tmp/test_screen_text.txt";
+    FILE* fp = fopen(path, "w");
+    ASSERT_TRUE(fp != NULL);
+    ASSERT_TRUE(video_export_screen_text(mem, fp));
+    fclose(fp);
+
+    FILE* rf = fopen(path, "r");
+    ASSERT_TRUE(rf != NULL);
+    char line[128];
+    ASSERT_TRUE(fgets(line, sizeof(line), rf) != NULL);
+    ASSERT_TRUE(strcmp(line, "  HI\n") == 0);        /* rtrim, 2 espaces + HI */
+    ASSERT_TRUE(fgets(line, sizeof(line), rf) != NULL);
+    ASSERT_TRUE(strcmp(line, " X\n") == 0);          /* 0x1B -> espace */
+    ASSERT_TRUE(fgets(line, sizeof(line), rf) != NULL);
+    ASSERT_TRUE(strcmp(line, "A\n") == 0);           /* bit inverse masqué */
+    fclose(rf);
+
+    /* Erreurs : paramètres NULL -> false. */
+    ASSERT_TRUE(!video_export_screen_text(NULL, stdout));
+    ASSERT_TRUE(!video_export_screen_text(mem, NULL));
+
+    unlink(path);
+    free(mem);
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  AUTO EXPORT (extension detection)                              */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -601,6 +664,8 @@ int main(void) {
     RUN(test_hires_inverse_complement);
     RUN(test_bmp_export_valid_header);
     RUN(test_ascii_export_nonempty);
+    RUN(test_ascii_export_file);
+    RUN(test_screen_text_export);
     RUN(test_auto_export_ppm);
     RUN(test_auto_export_bmp);
     RUN(test_ppm_exact_pixel_data);

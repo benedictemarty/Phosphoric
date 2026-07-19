@@ -399,6 +399,59 @@ TEST(test_irq_on_tx_with_tie) {
     teardown();
 }
 
+/* Savestate (Epic 7 / US4) : l'état émulé est restauré, les pointeurs hôte
+ * (backend/callbacks) sont PRÉSERVÉS de l'instance cible (jamais écrasés par les
+ * valeurs périmées du blob). */
+TEST(test_savestate_roundtrip_preserves_host_pointers) {
+    setup();
+    /* État émulé distinctif (posé directement : ce test cible la sérialisation,
+     * pas le décodage des registres). */
+    dev.line_connected = true;
+    dev.rx_count = 7;
+    dev.tx_count = 9;
+    dev.acia.control = 0x35;
+    ASSERT_TRUE(dev.line_connected);
+
+    /* Sauvegarde */
+    FILE* f = fopen("/tmp/dtl_savestate_test.bin", "wb");
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(dtl2000_save(&dev, f));
+    fclose(f);
+
+    /* Instance cible avec des pointeurs hôte SENTINELLES à préserver */
+    dtl2000_t d2;
+    memset(&d2, 0, sizeof(d2));
+    d2.backend        = (serial_backend_t*)0x1234;
+    d2.acia.userdata  = (void*)0x5678;
+    d2.pia.userdata   = (void*)0x9ABC;
+
+    FILE* g = fopen("/tmp/dtl_savestate_test.bin", "rb");
+    ASSERT_TRUE(g != NULL);
+    dtl2000_load(&d2, g, (uint32_t)sizeof(dtl2000_t));
+    fclose(g);
+
+    /* État émulé restauré */
+    ASSERT_TRUE(d2.line_connected);
+    ASSERT_EQ(d2.rx_count, 7);
+    ASSERT_EQ(d2.tx_count, 9);
+    /* Pointeurs hôte préservés (sentinelles, PAS les valeurs sauvées) */
+    ASSERT_TRUE(d2.backend == (serial_backend_t*)0x1234);
+    ASSERT_TRUE(d2.acia.userdata == (void*)0x5678);
+    ASSERT_TRUE(d2.pia.userdata == (void*)0x9ABC);
+
+    /* Garde par taille : une taille erronée ne touche à rien */
+    dtl2000_t d3;
+    memset(&d3, 0, sizeof(d3));
+    d3.rx_count = 123;
+    FILE* h = fopen("/tmp/dtl_savestate_test.bin", "rb");
+    dtl2000_load(&d3, h, 999999);   /* mauvaise taille → ignorée */
+    fclose(h);
+    ASSERT_EQ(d3.rx_count, 123);
+
+    remove("/tmp/dtl_savestate_test.bin");
+    teardown();
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Main
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -421,6 +474,7 @@ int main(void) {
     RUN(test_irq_disabled_by_default);
     RUN(test_irq_on_rx_with_rie);
     RUN(test_irq_on_tx_with_tie);
+    RUN(test_savestate_roundtrip_preserves_host_pointers);
 
     printf("\n=== Results: %d passed, %d failed ===\n\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;

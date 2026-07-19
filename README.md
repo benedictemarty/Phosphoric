@@ -321,6 +321,10 @@ Display & Export:
   --cycles N                Run N cycles then exit
   --screenshot FILE         Screenshot at exit (.ppm/.bmp)
   --screenshot-at N:FILE    Screenshot after N cycles
+  --screenshot-text FILE    Dump screen text ($BB80, 40x28) as ASCII at exit
+  --screenshot-ansi FILE    Dump framebuffer as ANSI true-color text at exit
+  --screenshot-text-at N:FILE  Dump screen text after N cycles
+  --screenshot-ansi-at N:FILE  Dump ANSI framebuffer after N cycles
   --video FILE              Record video to a Motion-JPEG AVI file
   --video-fps N             Recording frame rate (default: 50)
   --video-quality N         JPEG quality 1..100 (default: 85)

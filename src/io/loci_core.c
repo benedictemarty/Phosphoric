@@ -13,7 +13,6 @@
 #define _XOPEN_SOURCE 500
 #endif
 
-#include "emulator.h"
 #include "io/loci.h"
 #include "io/loci_internal.h"
 #include "io/loci_sdimg.h"
