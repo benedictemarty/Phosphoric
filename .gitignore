@@ -42,6 +42,7 @@ test_control_queue
 test_coverage
 test_joystick
 test_keyboard
+test_autotype
 test_loci
 test_loci_sdimg
 test_loci_sdimg_write

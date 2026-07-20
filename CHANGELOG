@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.95.0-alpha] - 2026-07-20
+
+### Added — Auto-frappe fiabilisée : pacing synchronisé sur le scan clavier réel + `--type-keys-when`
+
+`--type-keys` cadençait chaque transition de touche (presser/tenir/relâcher) sur un
+**nombre de cycles fixe** (`CYCLES_PER_FRAME * N`). C'est fragile : un programme qui
+scrute la matrice clavier **plus lentement** qu'une frame perd des touches, car une
+touche peut être pressée **et** relâchée à l'intérieur de sa fenêtre aveugle de scan
+(la ROM / le jeu ne voit jamais le front). C'est la cause racine du « mur clavier
+headless » rencontré sur les portages (SCUMM, Spellbinder), contourné jusqu'ici en
+bricolant le timing d'injection au cas par cas.
+
+**Correctif — pacing piloté par le scan (`include/io/autotype.h`).** L'auto-frappe
+se synchronise désormais sur le vrai scanner matériel. Le clavier ORIC est lu via VIA
+Port B (PB3), la ROM balayant les 8 colonnes 7→0 à chaque passe (mesuré : ~8 lectures
+par passe, une passe toutes les ~696 cycles au prompt READY). `portb_read_callback`
+compte une **passe de scan** à chaque remontée de colonne (le balayage descendant
+recommence). L'auto-frappe refuse alors de modifier la matrice tant que le scanner n'a
+pas complété `AUTOTYPE_MIN_PASS` (2) passes depuis la dernière transition → le
+programme est **garanti** d'avoir observé l'état courant des touches avant qu'il change.
+
+- **Additif, jamais plus rapide qu'avant** : l'ancien calendrier en cycles est conservé
+  tel quel ; au prompt READY (où les passes défilent ~28×/frame) le comportement est
+  **identique** (le cycle domine), et seuls les programmes qui scrutent lentement sont
+  throttlés → plus de touches perdues.
+- **Watchdog anti-blocage** : un programme qui ne scrute jamais le clavier ne peut pas
+  figer l'injecteur (`AUTOTYPE_WATCHDOG_CYCLES` = 30 frames au-delà du calendrier).
+- **Chemin LOCI HID inchangé** : device distinct (pas de matrice ORIC) → pacing purement
+  cyclique, la porte de scan est court-circuitée.
+
+**Nouveau — `--type-keys-when ADDR:VAL:TEXT`** : arme l'auto-frappe quand `RAM[ADDR]==VAL`
+au lieu de deviner un cycle de boot (réutilise le patron `--screenshot-when`). `TEXT`
+garde les mêmes échappements que `--type-keys` et accepte le préfixe `loci-hid:`. Retire
+le besoin de calibrer un délai de démarrage à la main.
+
+Vérifié PAR LA MESURE (build SDL2, mode headless, `roms/basic10.rom`) :
+- non-régression : `--type-keys "6000000:PRINT 2+3\n"` → `5` à l'écran ;
+- déclencheur : `--type-keys-when "BC9A:52:PRINT 7*6\n"` (le `R` de « Ready » à `$BC9A`)
+  s'arme au cycle 2 855 632 dès que le prompt apparaît → `PRINT 7*6` → `42` ;
+- compteur de passes confirmé par instrumentation (balayage 7→0, passe/~696 cycles).
+
+Tests : nouveau `make test-autotype` (`tests/unit/test_autotype.c`, 10/10 — détection de
+passe, porte cycle+passe, bypass LOCI, watchdog) ; `make clean && make tests` exit 0
+(build SDL2 par défaut). EMU_VERSION 1.94.0-alpha → 1.95.0-alpha.
+
 ## [1.94.0-alpha] - 2026-07-18
 
 ### Added — Captures déclenchées par un ÉTAT mémoire : `--screenshot-when` / `--screenshot-text-when` / `--dump-ram-when`

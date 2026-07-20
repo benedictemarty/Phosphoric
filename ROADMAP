@@ -121,6 +121,40 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Sprint 137: Auto-frappe fiabilisée — pacing synchronisé sur le scan clavier + `--type-keys-when` (v1.95.0-alpha) - DONE
+**Besoin mesuré** : `--type-keys` cadençait chaque transition de touche (presser/tenir/
+relâcher) sur un **nombre de cycles fixe** (`CYCLES_PER_FRAME * N`). Fragile : un programme
+qui scrute la matrice **plus lentement** qu'une frame perd des touches (touche pressée
+**et** relâchée dans sa fenêtre aveugle de scan → le front n'est jamais vu). C'est la
+cause racine du « mur clavier headless » contourné au cas par cas sur les portages
+(SCUMM, Spellbinder).
+**Livré** : pacing **piloté par le scan** (`include/io/autotype.h`). Le clavier ORIC est
+lu via VIA Port B/PB3, la ROM balayant les colonnes 7→0 (mesuré par instrumentation :
+~8 lectures/passe, une passe/~696 cycles au prompt READY). `portb_read_callback` compte
+une **passe de scan** à chaque remontée de colonne ; l'auto-frappe refuse de modifier la
+matrice avant `AUTOTYPE_MIN_PASS`=2 passes depuis la dernière transition → le programme
+est **garanti** d'avoir lu l'état courant avant qu'il change.
+- **Additif** (jamais plus rapide qu'avant) : le calendrier cycles est conservé ; à READY
+  (~28 passes/frame) le comportement est **identique** (cycle dominant), seuls les
+  programmes lents sont throttlés → **fin des drops**.
+- **Watchdog anti-blocage** (`AUTOTYPE_WATCHDOG_CYCLES`=30 frames) : un programme qui ne
+  scrute jamais le clavier ne fige pas l'injecteur.
+- **Chemin LOCI HID inchangé** : device distinct, pacing cyclique, porte de scan
+  court-circuitée.
+- **Nouveau `--type-keys-when ADDR:VAL:TEXT`** : arme l'auto-frappe quand `RAM[ADDR]==VAL`
+  au lieu de deviner un cycle de boot (réutilise `cli_split_addr_val_file()` ; `TEXT` garde
+  les échappements + préfixe `loci-hid:`).
+Vérifié **par la mesure** (build SDL2, headless, `basic10`) : non-régression
+`--type-keys "6000000:PRINT 2+3\n"` → `5` ; déclencheur
+`--type-keys-when "BC9A:52:PRINT 7*6\n"` (le `R` de « Ready » à `$BC9A`) armé au cycle
+2 855 632 → `42`.
+Tests : nouveau `make test-autotype` (`tests/unit/test_autotype.c`, 10/10 : détection de
+passe, porte cycle+passe, bypass LOCI, watchdog). `make clean && make tests` exit 0
+(build SDL2 par défaut).
+EMU_VERSION 1.94.0-alpha → 1.95.0-alpha ; builds natif + SDL2 OK.
+**Impact portages** : les parcours automatisés (menus de jeux, TUI, BBS) qui scrutent la
+matrice à leur propre cadence n'ont plus besoin de calibrage de timing manuel.
+
 ### Sprint 136: Captures déclenchées par un ÉTAT mémoire — `--screenshot-when` / `--screenshot-text-when` / `--dump-ram-when` (v1.94.0-alpha) - DONE
 Réponse à la demande du projet SCUMM-Oric (`docs/CR/2026-07-18_Demande_Equipe_Capture_Declenchee_Par_Etat.md`).
 **Besoin mesuré** : les captures headless (`--screenshot-at`, `--dump-ram-at`, …) se

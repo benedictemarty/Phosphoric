@@ -173,7 +173,7 @@ make SDL2=1
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/SEDORIC.md](docs/SEDORIC.md)
-- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
+- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Key pacing is **synchronised on the real keyboard scanner** (VIA PB3 matrix sweep), so no keystroke is dropped even when the target program polls the matrix slower than a frame. `--type-keys-when ADDR:VAL:TEXT` arms typing when `RAM[ADDR]==VAL` (hex) instead of a guessed boot cycle. Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
 
 ## Building
 
@@ -335,6 +335,8 @@ Display & Export:
   --replay FILE             Replay a recorded input movie (ignores live keys)
   --type-keys N:TEXT        Simulate keyboard input (escapes: \n \e \u \d \l \r
                             \Cx=Ctrl+x \Fx=Funct+x \Lx/\Rx=Left/Right Shift+x \pN)
+                            Pacing synced on the real keyboard scan (no dropped keys)
+  --type-keys-when A:V:TEXT Arm --type-keys when RAM[A]==V (A,V hex) instead of a cycle
   -v, --verbose             Debug logging
 ```
 

@@ -37,7 +37,8 @@ enum {
     OPT_LOCI_USB, OPT_TAPE_SIGNAL, OPT_HTTP_API, OPT_HTTP_API_BIND, OPT_HTTP_API_ROOT,
     OPT_ULA_NG_POKE, OPT_PSG_TRACE, OPT_AUDIO_WAV, OPT_SCREENSHOT_TEXT,
     OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT,
-    OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN
+    OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN,
+    OPT_TYPE_KEYS_WHEN
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -78,6 +79,7 @@ static const struct option long_options[] = {
     {"replay",              required_argument, 0, OPT_REPLAY},
     {"keyboard",            required_argument, 0, 'k'},
     {"type-keys",           required_argument, 0, OPT_TYPE_KEYS},
+    {"type-keys-when",      required_argument, 0, OPT_TYPE_KEYS_WHEN},
     {"disk-rom",            required_argument, 0, OPT_DISK_ROM},
     {"breakpoint",          required_argument, 0, 'b'},
     {"debug",               no_argument,       0, 'D'},

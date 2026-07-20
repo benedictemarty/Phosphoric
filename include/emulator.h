@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.94.0-alpha"
+#define EMU_VERSION "1.95.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -322,6 +322,28 @@ typedef struct emulator_s {
     } type_keys_seq[TYPE_KEYS_SEQ_MAX];
     int type_keys_seq_count; /* nombre d'entrées valides */
     int type_keys_seq_idx;   /* prochaine entrée à activer */
+
+    /* Scan-driven pacing (cf. include/io/autotype.h). kbd_scan_passes counts
+     * completed keyboard-matrix scan passes (VIA Port B sweep), updated in
+     * portb_read_callback. The auto-typer refuses to change the matrix until
+     * the scanner has completed >= AUTOTYPE_MIN_PASS passes since the last
+     * transition (type_keys_last_pass), so a program is guaranteed to have
+     * observed the current key state before it changes — no dropped keys on
+     * programs that scan slower than one frame. Additive to the existing
+     * cycle schedule (never faster than before); a cycle watchdog prevents a
+     * stall when the target never scans the keyboard. */
+    uint32_t kbd_scan_passes;
+    uint8_t  kbd_scan_prev_col;   /* last column read (0xFF = none yet) */
+    uint32_t type_keys_last_pass; /* kbd_scan_passes at last transition */
+
+    /* --type-keys-when A:V:TEXT : arm the auto-typer when RAM[A]==V instead of
+     * at a guessed cycle count (reuses the --screenshot-when trigger idea).
+     * addr = -1 disables. Fires once. */
+    int32_t     type_keys_when_addr;
+    uint8_t     type_keys_when_val;
+    const char* type_keys_when_text;
+    bool        type_keys_when_loci_hid;
+    bool        type_keys_when_done;
 
     /* Dynamic keyboard injection (sprint 95, API REST Epic 4). A growable
      * byte buffer appended to by the `keys` control command and consumed one

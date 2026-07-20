@@ -43,6 +43,7 @@
 #include "io/loci_sdimg.h"
 #include "io/io_device.h"
 #include "io/io_bus.h"        /* table de bus + dispatch (Epic 7/US2) */
+#include "io/autotype.h"      /* pacing scan-driven de --type-keys */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
@@ -354,6 +355,11 @@ static void print_usage(const char* program_name) {
     printf("                             \\Rx=RShift+x \\pN=pause N sec (cycles emules)\n");
     printf("                             Repetable : plusieurs --type-keys sont\n");
     printf("                             sequences par cycle d'armement croissant.\n");
+    printf("                             Pacing synchronise sur le scan clavier reel\n");
+    printf("                             (aucune touche perdue meme si le programme\n");
+    printf("                             scrute lentement).\n");
+    printf("      --type-keys-when A:V:TEXT  Arme --type-keys quand RAM[A]==V (A,V hex)\n");
+    printf("                             au lieu de deviner le cycle de boot.\n");
     printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
     printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
     printf("      --break ADDR           Set initial debugger breakpoint (hex)\n");
@@ -1010,6 +1016,14 @@ static uint8_t portb_read_callback(void* userdata) {
     uint8_t col = emu->via.orb & 0x07;
     uint8_t reg14 = emu->psg.registers[14];
 
+    /* Scan-driven --type-keys pacing: count a completed keyboard scan pass
+     * every time the descending column sweep (7->0) restarts. This is the
+     * real hardware handshake the auto-typer synchronises on so it never
+     * changes the matrix faster than the program reads it. */
+    if (autotype_is_new_pass(emu->kbd_scan_prev_col, col))
+        emu->kbd_scan_passes++;
+    emu->kbd_scan_prev_col = col;
+
     /* Check: any pressed key in column matches the inverted mask?
      * ~key_matrix = pressed keys (1=pressed), ~reg14 = rows to test */
     uint8_t pressed = (~emu->keyboard.matrix[col]) & (~reg14) & 0xFF;
@@ -1476,6 +1490,10 @@ static bool emulator_init(emulator_t* emu) {
     emu->dump_ram_at_cycles = -1;
     emu->dump_ram_at_file = NULL;
     emu->dump_ram_at_done = true;
+    emu->kbd_scan_prev_col = 0xFF;   /* sentinel: first read starts no pass */
+    emu->type_keys_when_addr = -1;
+    emu->type_keys_when_text = NULL;
+    emu->type_keys_when_done = false;
     emu->screenshot_when_addr = -1;
     emu->screenshot_when_file = NULL;
     emu->screenshot_when_done = false;
@@ -2393,6 +2411,33 @@ static void emulator_run(emulator_t* emu) {
             emu->type_keys_done = false;
             emu->type_keys_last_char = 0;
             emu->type_keys_debounce = 0;
+            emu->type_keys_last_pass = emu->kbd_scan_passes;
+        }
+
+        /* --type-keys-when : arm the auto-typer the moment RAM[addr]==val,
+         * instead of a guessed cycle. Fires once, and only when no other
+         * auto-type text is currently in flight. Removes the need to hand-tune
+         * a boot delay (cf. include/io/autotype.h rationale). */
+        if (emu->type_keys_when_text && !emu->type_keys_when_done &&
+            emu->type_keys_when_addr >= 0 &&
+            (!emu->type_keys_text || emu->type_keys_done) &&
+            when_read(emu, (uint16_t)emu->type_keys_when_addr) ==
+                emu->type_keys_when_val) {
+            oric_keyboard_release_all(&emu->keyboard);
+            if (emu->has_loci) loci_kbd_clear(&emu->loci);
+            emu->type_keys_text = emu->type_keys_when_text;
+            emu->type_keys_loci_hid = emu->type_keys_when_loci_hid;
+            emu->type_keys_at = (int64_t)total_executed;
+            emu->type_keys_next_cycle = (int64_t)total_executed;
+            emu->type_keys_idx = 0;
+            emu->type_keys_done = false;
+            emu->type_keys_last_char = 0;
+            emu->type_keys_debounce = 0;
+            emu->type_keys_last_pass = emu->kbd_scan_passes;
+            emu->type_keys_when_done = true;
+            log_info("Auto-type armed: RAM[$%04X]==$%02X reached at %lld cycles",
+                     (unsigned)emu->type_keys_when_addr, emu->type_keys_when_val,
+                     (long long)total_executed);
         }
 
         /* Auto-type: inject keystrokes at specified cycle count.
@@ -2400,7 +2445,15 @@ static void emulator_run(emulator_t* emu) {
          * This simulates realistic typing speed for the ROM keyboard scanner. */
         if (emu->type_keys_text && !emu->type_keys_done &&
             (int64_t)total_executed >= emu->type_keys_at) {
-            if ((int64_t)total_executed >= emu->type_keys_next_cycle) {
+            if (autotype_should_fire(emu->type_keys_loci_hid,
+                                     (int64_t)total_executed,
+                                     emu->type_keys_next_cycle,
+                                     emu->kbd_scan_passes,
+                                     emu->type_keys_last_pass)) {
+                /* Record the scan-pass baseline for the *next* transition, so
+                 * the scanner is guaranteed to observe this matrix state
+                 * before it changes again (cf. include/io/autotype.h). */
+                emu->type_keys_last_pass = emu->kbd_scan_passes;
                 int idx = emu->type_keys_idx;
                 char c = emu->type_keys_text[idx];
                 /* Sprint 34av : LOCI HID injection path. Each char/escape
@@ -3287,6 +3340,7 @@ int main(int argc, char* argv[]) {
     const char* screenshot_when_arg = NULL;
     const char* dump_ram_when_arg = NULL;
     const char* screenshot_text_when_arg = NULL;
+    const char* type_keys_when_arg = NULL;
     const char* bad_sector_args[FDC_MAX_BAD_SECTORS];
     int bad_sector_arg_count = 0;
     const char* fdc_timing_arg = NULL;
@@ -3349,6 +3403,7 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT_WHEN: screenshot_when_arg = optarg; break;
             case OPT_SCREENSHOT_TEXT_WHEN: screenshot_text_when_arg = optarg; break;
             case OPT_DUMP_RAM_WHEN: dump_ram_when_arg = optarg; break;
+            case OPT_TYPE_KEYS_WHEN: type_keys_when_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
             case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
             case OPT_VIDEO: video_avi_file = optarg; break;
@@ -4091,6 +4146,26 @@ int main(int argc, char* argv[]) {
             emulator_cleanup(&emu);
             return 1;
         }
+    }
+    /* --type-keys-when ADDR:VAL:TEXT : arm the auto-typer when RAM[ADDR]==VAL
+     * instead of guessing a boot cycle. TEXT keeps the same escapes as
+     * --type-keys and may start with "loci-hid:" to route via the LOCI HID. */
+    if (type_keys_when_arg) {
+        const char* text = NULL;
+        if (!cli_split_addr_val_file(type_keys_when_arg, "type-keys-when",
+                                     &emu.type_keys_when_addr, &emu.type_keys_when_val,
+                                     &text)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        if (strncmp(text, "loci-hid:", 9) == 0) {
+            emu.type_keys_when_loci_hid = true;
+            text += 9;
+        }
+        emu.type_keys_when_text = text;
+        log_info("Auto-type armed when RAM[$%04X]==$%02X (%s): \"%s\"",
+                 (unsigned)emu.type_keys_when_addr, emu.type_keys_when_val,
+                 emu.type_keys_when_loci_hid ? "LOCI HID" : "ORIC matrix", text);
     }
 
     /* Parse --type-keys CYCLES:TEXT (Sprint 34av: TEXT may start with
