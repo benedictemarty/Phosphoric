@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.96.0-alpha] - 2026-08-03
+
+### Added — Écritures mémoire déclenchées : `--poke-at` / `--poke-when` (actionneur symétrique des captures `-when`)
+
+Les captures headless déclenchées par un état (`--screenshot-when` / `--dump-ram-when`,
+v1.94.0) *observent* la RAM ; il manquait l'actionneur symétrique pour l'*écrire*. Motivation
+concrète (portage SCUMM-Oric, `~/scum`) : le test end-to-end « sélectionner 2 kids puis START »
+est impraticable via `--type-keys` parce que le curseur du jeu est **level-triggered** (il lit
+l'état *maintenu* de la touche et avance d'un pas fixe par tour de boucle). Ni le tap bref (avalé
+pendant le gel de frame d'un `render_room` → sous-course) ni `\pN` (maintien → sur-course massive,
+clic mesuré à ~x200 au lieu de x132) ne peuvent viser une coordonnée exacte : aucun réglage de
+cadence n'y change rien puisque la distance dépend d'un temps de maintien que `--type-keys` ne
+contrôle pas au tour-de-boucle. La solution déterministe : piloter la position directement en RAM.
+
+**`--poke-at C:ADDR=VAL`** écrit `RAM[ADDR]=VAL` une seule fois dès que `total_executed >= C`
+(C décimal, `ADDR`/`VAL` hexa — cohérent avec `--screenshot-when`). **`--poke-when A:V:ADDR=VAL`**
+écrit `RAM[ADDR]=VAL` une seule fois au front montant `RAM[A]==V` (tout en hexa). Les deux options
+sont **répétables** (jusqu'à `POKE_MAX`=32 entrées) et appliquées dans l'ordre de la ligne de
+commande, ce qui garantit le regroupement voulu (ex. `cx`, `cy`, puis un drapeau de clic écrits au
+même instant côté programme). Échantillonné en fin de frame comme les `-when` ; borné par `--cycles`.
+Écriture via `poke_write()` : directe en RAM brute sous `$C000` (sans effet de bord), via
+`memory_write` au-delà (overlay/banking, page I/O respectée). Chaînage same-frame prouvé : un
+`--poke-when` placé après un `--poke-at` visant la même adresse tire dans la même passe.
+
+Format malformé (`:` ou `=` manquant, table pleine) → fatal rc 1 avec message dédié
+(`Invalid --poke-at format. Use CYCLES:ADDR=VAL` / `Invalid --poke-when format. Use ADDR:VAL:ADDR=VAL`).
+
+Vérifié PAR LA MESURE (boot basic10 headless) : `--poke-at 1000000:04FA=42` → `RAM[$04FA]=$42`
+(dump à 2M) ; chaîne `--poke-at 1000000:04FB=99` + `--poke-when 04FB:99:04FC=77` → les deux écrites
+au même cycle (1018444). Tests : `test-cli-parsing` 36/36 → **41/41** (+5 : 4 malformés fatals
+`--poke-at`/`--poke-when`, 1 positif e2e poke-at + poke-when chaîné vérifié par dump). `make clean &&
+make SDL2=0 tests` : toutes les suites vertes (0 échec). EMU_VERSION 1.95.0-alpha → 1.96.0-alpha.
+
 ## [1.95.0-alpha] - 2026-07-20
 
 ### Added — Auto-frappe fiabilisée : pacing synchronisé sur le scan clavier réel + `--type-keys-when`

@@ -121,6 +121,34 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Sprint 138: Écritures mémoire déclenchées — `--poke-at` / `--poke-when` (v1.96.0-alpha) - DONE
+**Besoin mesuré** : les captures déclenchées par un état (`--screenshot-when` / `--dump-ram-when`,
+Sprint 136) *observent* la RAM ; il manquait l'actionneur symétrique pour l'*écrire*. Origine
+concrète — portage SCUMM-Oric (`~/scum`) : le test end-to-end « sélectionner 2 kids puis START »
+est impraticable via `--type-keys` parce que le curseur du jeu est **level-triggered** (il lit
+l'état *maintenu* de la touche → avance d'un pas fixe par tour de boucle). Ni le tap bref (avalé
+pendant le gel de frame d'un `render_room` → sous-course) ni `\pN` (maintien → sur-course, clic
+mesuré à ~x200 au lieu de x132) ne peuvent viser une coordonnée exacte : aucun réglage de cadence
+n'y change rien puisque la distance dépend d'un temps de maintien que `--type-keys` ne contrôle pas
+au tour-de-boucle. Solution déterministe : piloter la position directement en RAM.
+**Livré** :
+- `--poke-at C:ADDR=VAL` : écrit `RAM[ADDR]=VAL` une seule fois dès `total_executed >= C`
+  (C décimal, ADDR/VAL hexa — cohérent avec `--screenshot-when`).
+- `--poke-when A:V:ADDR=VAL` : écrit `RAM[ADDR]=VAL` une seule fois au front `RAM[A]==V` (tout hexa).
+- Répétables (`POKE_MAX`=32), appliqués dans l'ordre de la ligne de commande → regroupement garanti
+  (ex. `cx`, `cy`, puis un drapeau de clic écrits au même instant côté programme).
+- Échantillonné en fin de frame (comme les `-when`), borné par `--cycles` ; `poke_write()` écrit en
+  RAM brute sous `$C000` (sans effet de bord), via `memory_write` au-delà. Chaînage same-frame prouvé.
+- Malformé (`:`/`=` manquant, table pleine) → fatal rc 1 message dédié.
+**Vérifié PAR LA MESURE** (basic10 headless) : `--poke-at 1000000:04FA=42` → `$04FA=$42` (dump 2M) ;
+chaîne `--poke-at 1000000:04FB=99` + `--poke-when 04FB:99:04FC=77` → les deux écrites au cycle 1018444.
+Tests : `test-cli-parsing` 36 → **41/41** (+5) ; `make clean && make SDL2=0 tests` toutes suites vertes.
+EMU_VERSION 1.95.0-alpha → 1.96.0-alpha ; builds natif + SDL2 OK. **Suite** : côté jeu (`~/scum`),
+exposer `cx`/`cy` + un drapeau de clic à des adresses RAM fixes et bâtir le test e2e « 2 kids → START »
+piloté par ces pokes.
+
+---
+
 ### Sprint 137: Auto-frappe fiabilisée — pacing synchronisé sur le scan clavier + `--type-keys-when` (v1.95.0-alpha) - DONE
 **Besoin mesuré** : `--type-keys` cadençait chaque transition de touche (presser/tenir/
 relâcher) sur un **nombre de cycles fixe** (`CYCLES_PER_FRAME * N`). Fragile : un programme

@@ -329,6 +329,8 @@ static void print_usage(const char* program_name) {
     printf("      --screenshot-when A:V:FILE   Screenshot when RAM[A]==V (A,V hex; exit 2 if never)\n");
     printf("      --screenshot-text-when A:V:FILE  Text screenshot when RAM[A]==V (A,V hex)\n");
     printf("      --dump-ram-when A:V:FILE     Dump 64KB when RAM[A]==V (A,V hex; exit 2 if never)\n");
+    printf("      --poke-at C:ADDR=VAL        Write RAM[ADDR]=VAL once after C cycles (hex ADDR/VAL; repeatable)\n");
+    printf("      --poke-when A:V:ADDR=VAL     Write RAM[ADDR]=VAL once when RAM[A]==V (all hex; repeatable)\n");
     printf("      --frame-dump DIR       Dump frames to directory\n");
     printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
     printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
@@ -1504,6 +1506,7 @@ static bool emulator_init(emulator_t* emu) {
     emu->screenshot_text_when_file = NULL;
     emu->screenshot_text_when_done = false;
     emu->when_condition_unmet = false;
+    emu->poke_count = 0;
     emu->irq_trace_fp = NULL;
     emu->irq_trace_active = false;
     emu->irq_trace_depth = 0;
@@ -2102,6 +2105,16 @@ static uint8_t when_read(const emulator_t* emu, uint16_t addr) {
     if (addr < 0xC000)
         return emu->memory.ram[addr];
     return memory_read((memory_t*)&emu->memory, addr);
+}
+
+/* Symétrique de when_read pour --poke-* : écrit RAM[addr]. En dessous de $C000
+ * l'écriture est directe (RAM brute, sans effet de bord) ; au-delà elle passe
+ * par memory_write (overlay/banking, page I/O respectée). */
+static void poke_write(emulator_t* emu, uint16_t addr, uint8_t val) {
+    if (addr < 0xC000)
+        emu->memory.ram[addr] = val;
+    else
+        memory_write(&emu->memory, addr, val);
 }
 
 static void emulator_run(emulator_t* emu) {
@@ -3062,6 +3075,33 @@ static void emulator_run(emulator_t* emu) {
             emu->dump_ram_when_done = true;
         }
 
+        /* Écritures déclenchées (--poke-at / --poke-when) : actionneur symétrique
+         * des captures ci-dessus, échantillonné à la même cadence (fin de frame).
+         * Une entrée à seuil de cycles tire dès total_executed >= at_cycles ; une
+         * entrée conditionnelle tire au 1er échantillon où RAM[when_addr]==when_val.
+         * Chaque poke ne tire qu'une fois (done). Plusieurs pokes au même seuil
+         * s'appliquent dans l'ordre de la ligne de commande (ex. cx, cy, puis le
+         * drapeau de clic) au même instant côté programme. */
+        for (int pi = 0; pi < emu->poke_count; pi++) {
+            struct poke_action* p = &emu->pokes[pi];
+            if (p->done) continue;
+            bool fire = (p->at_cycles >= 0 && (int64_t)total_executed >= p->at_cycles) ||
+                        (p->when_addr >= 0 &&
+                         when_read(emu, (uint16_t)p->when_addr) == p->when_val);
+            if (!fire) continue;
+            poke_write(emu, p->target, p->value);
+            if (p->when_addr >= 0)
+                log_info("Poke RAM[$%04X]=$%02X on RAM[$%04X]==$%02X at %llu cycles",
+                         (unsigned)p->target, p->value,
+                         (unsigned)p->when_addr, p->when_val,
+                         (unsigned long long)total_executed);
+            else
+                log_info("Poke RAM[$%04X]=$%02X at %llu cycles",
+                         (unsigned)p->target, p->value,
+                         (unsigned long long)total_executed);
+            p->done = true;
+        }
+
 #ifdef HAS_SDL2
         /* Frame limiter: 50 Hz PAL = 20ms per frame.
          * Without this, the emulator runs at monitor refresh rate (60 Hz+)
@@ -3257,6 +3297,62 @@ static bool cli_split_addr_val_file(const char* arg, const char* optname,
     return true;
 }
 
+/* Parse an "ADDR=VAL" pair (both hexadecimal) shared by --poke-at / --poke-when.
+ * On success stores the 16-bit addr and the byte value and returns true; on a
+ * missing/empty '=' returns false (caller logs the canonical format error). */
+static bool cli_split_addr_eq_val(const char* s, uint16_t* out_addr, uint8_t* out_val) {
+    const char* eq = strchr(s, '=');
+    if (!eq || eq == s || *(eq + 1) == '\0')
+        return false;
+    *out_addr = (uint16_t)(strtol(s, NULL, 16) & 0xFFFF);
+    *out_val  = (uint8_t)(strtol(eq + 1, NULL, 16) & 0xFF);
+    return true;
+}
+
+/* Append a --poke-at CYCLES:ADDR=VAL entry to emu->pokes[]. Fires once when
+ * total_executed >= CYCLES. Returns false (logging the format error) on a
+ * malformed argument or when the table is full. */
+static bool cli_add_poke_at(emulator_t* emu, const char* arg) {
+    const char* colon = strchr(arg, ':');
+    uint16_t addr; uint8_t val;
+    if (!colon || !cli_split_addr_eq_val(colon + 1, &addr, &val)) {
+        log_error("Invalid --poke-at format. Use CYCLES:ADDR=VAL");
+        return false;
+    }
+    if (emu->poke_count >= POKE_MAX) {
+        log_error("--poke-at: too many pokes (max %d)", POKE_MAX);
+        return false;
+    }
+    struct poke_action* p = &emu->pokes[emu->poke_count++];
+    p->at_cycles = atoll(arg);
+    p->when_addr = -1; p->when_val = 0;
+    p->target = addr; p->value = val; p->done = false;
+    return true;
+}
+
+/* Append a --poke-when ADDR:VAL:ADDR=VAL entry to emu->pokes[]. Fires once on
+ * the rising edge RAM[ADDR]==VAL. Returns false (logging the format error) on a
+ * malformed argument or when the table is full. */
+static bool cli_add_poke_when(emulator_t* emu, const char* arg) {
+    const char* c1 = strchr(arg, ':');
+    const char* c2 = c1 ? strchr(c1 + 1, ':') : NULL;
+    uint16_t addr; uint8_t val;
+    if (!c1 || !c2 || !cli_split_addr_eq_val(c2 + 1, &addr, &val)) {
+        log_error("Invalid --poke-when format. Use ADDR:VAL:ADDR=VAL");
+        return false;
+    }
+    if (emu->poke_count >= POKE_MAX) {
+        log_error("--poke-when: too many pokes (max %d)", POKE_MAX);
+        return false;
+    }
+    struct poke_action* p = &emu->pokes[emu->poke_count++];
+    p->at_cycles = -1;
+    p->when_addr = (int32_t)(strtol(arg, NULL, 16) & 0xFFFF);
+    p->when_val  = (uint8_t)(strtol(c1 + 1, NULL, 16) & 0xFF);
+    p->target = addr; p->value = val; p->done = false;
+    return true;
+}
+
 /* Open an output file for a CLI option, logging the exact "Cannot open --NAME
  * file: PATH" error those sites used on failure. Returns the stream, or NULL —
  * the caller then cleans up and exits 1. Shared verbatim by --trace-irq /
@@ -3314,6 +3410,10 @@ int main(int argc, char* argv[]) {
 
     const char* type_keys_args[TYPE_KEYS_SEQ_MAX];
     int type_keys_arg_count = 0;
+    /* --poke-at / --poke-when : arguments collectés pendant getopt puis parsés
+     * après emulator_init (les pokes vivent dans emu, initialisé plus tard). */
+    struct { const char* arg; bool is_when; } poke_args[POKE_MAX];
+    int poke_arg_count = 0;
     const char* disk_rom_file = NULL;
     bool debug_mode = false;
     const char* debug_break_addr = NULL;
@@ -3403,6 +3503,16 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT_WHEN: screenshot_when_arg = optarg; break;
             case OPT_SCREENSHOT_TEXT_WHEN: screenshot_text_when_arg = optarg; break;
             case OPT_DUMP_RAM_WHEN: dump_ram_when_arg = optarg; break;
+            case OPT_POKE_AT:
+            case OPT_POKE_WHEN:
+                if (poke_arg_count >= POKE_MAX) {
+                    log_error("Too many --poke-at/--poke-when (max %d)", POKE_MAX);
+                    return 1;
+                }
+                poke_args[poke_arg_count].arg = optarg;
+                poke_args[poke_arg_count].is_when = (opt == OPT_POKE_WHEN);
+                poke_arg_count++;
+                break;
             case OPT_TYPE_KEYS_WHEN: type_keys_when_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
             case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
@@ -4143,6 +4253,18 @@ int main(int argc, char* argv[]) {
         if (!cli_split_addr_val_file(dump_ram_when_arg, "dump-ram-when",
                                      &emu.dump_ram_when_addr, &emu.dump_ram_when_val,
                                      &emu.dump_ram_when_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    /* --poke-at / --poke-when : parsés maintenant que emu (et emu.poke_count=0)
+     * est initialisé. Chaque entrée est ajoutée à emu.pokes[] dans l'ordre de la
+     * ligne de commande, préservant le regroupement voulu (ex. cx, cy, clic). */
+    for (int i = 0; i < poke_arg_count; i++) {
+        bool ok = poke_args[i].is_when
+                    ? cli_add_poke_when(&emu, poke_args[i].arg)
+                    : cli_add_poke_at(&emu, poke_args[i].arg);
+        if (!ok) {
             emulator_cleanup(&emu);
             return 1;
         }

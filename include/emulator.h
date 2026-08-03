@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.95.0-alpha"
+#define EMU_VERSION "1.96.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -112,6 +112,9 @@ typedef struct rom_patches_s {
 
 /* Nombre max d'entrées --type-keys séquençables sur une ligne de commande */
 #define TYPE_KEYS_SEQ_MAX    16
+
+/* Nombre max d'écritures mémoire différées (--poke-at / --poke-when) */
+#define POKE_MAX             32
 
 typedef struct emulator_s {
     /* Machine model */
@@ -282,6 +285,22 @@ typedef struct emulator_s {
     const char* screenshot_text_when_file;
     bool screenshot_text_when_done;
     bool when_condition_unmet;         /* levé si un -when armé n'a jamais tiré */
+
+    /* Écritures mémoire déclenchées (poke) : actionneur symétrique des captures
+     * -when/-at. Chaque entrée écrit RAM[target]=value une seule fois, soit à un
+     * seuil de cycles (at_cycles >= 0), soit sur front montant RAM[when_addr]==
+     * when_val (when_addr >= 0). Échantillonné en fin de frame comme les -when.
+     * Sert à piloter un état applicatif de façon déterministe (ex. positionner
+     * un curseur + demander un clic) sans passer par le clavier. */
+    struct poke_action {
+        int64_t  at_cycles;   /* >= 0 : tire quand total_executed >= at_cycles   */
+        int32_t  when_addr;   /* >= 0 : tire quand RAM[when_addr] == when_val     */
+        uint8_t  when_val;
+        uint16_t target;      /* adresse écrite                                   */
+        uint8_t  value;       /* octet écrit                                      */
+        bool     done;        /* déjà tiré (une seule fois)                       */
+    } pokes[POKE_MAX];
+    int poke_count;
 
     /* IRQ trace: log each IRQ entry + RTI to FILE */
     FILE* irq_trace_fp;

@@ -90,6 +90,19 @@ expect "--dump-ram-when with only one ':' → exit 1" 1 "Invalid --dump-ram-when
 run "$EMU" -r "$ROM" -n --screenshot-text-when 9C55:AB: -c 1000
 expect "--screenshot-text-when with empty FILE → exit 1" 1 "Invalid --screenshot-text-when format"
 
+# ── écritures déclenchées --poke-at / --poke-when : malformées → fatal ──
+run "$EMU" -r "$ROM" -n --poke-at NOCOLON -c 1000
+expect "--poke-at without ':' → exit 1" 1 "Invalid --poke-at format"
+
+run "$EMU" -r "$ROM" -n --poke-at 1000:04FA -c 2000
+expect "--poke-at without '=' → exit 1" 1 "Invalid --poke-at format"
+
+run "$EMU" -r "$ROM" -n --poke-when 9C55:AB -c 1000
+expect "--poke-when with only one ':' → exit 1" 1 "Invalid --poke-when format"
+
+run "$EMU" -r "$ROM" -n --poke-when 9C55:AB:04FA -c 1000
+expect "--poke-when without '=' → exit 1" 1 "Invalid --poke-when format"
+
 # ── enum-valued options : bogus values ─────────────────────────────────
 run "$EMU" -r "$ROM" -n --joystick BOGUS -c 1000
 expect "--joystick bogus is non-fatal (exit 0)" 0 "Unknown joystick mode"
@@ -162,6 +175,21 @@ if [ "$RC" -eq 0 ] && [ -s "$TMP/when.txt" ]; then
     note_pass "well-formed --screenshot-text-when 0000:00:FILE triggers and writes text"
 else
     note_fail "well-formed --screenshot-text-when (rc=$RC, size=$(stat -c%s "$TMP/when.txt" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --poke-at + --poke-when chaînés : poke-at écrit $04FA=42 après 1M
+# cycles ; poke-when voit RAM[$04FA]==42 et écrit $04FB=77 (même passe, l'ordre
+# de la ligne de commande garantit le chaînage). --dump-ram-at vérifie les deux.
+run "$EMU" -r "$ROM" -n \
+    --poke-at 1000000:04FA=42 \
+    --poke-when 04FA:42:04FB=77 \
+    --dump-ram-at 2000000:"$TMP/poke.bin" -c 2500000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/poke.bin" ] \
+        && [ "$(od -An -tx1 -j$((0x04FA)) -N1 "$TMP/poke.bin" | tr -d ' ')" = "42" ] \
+        && [ "$(od -An -tx1 -j$((0x04FB)) -N1 "$TMP/poke.bin" | tr -d ' ')" = "77" ]; then
+    note_pass "well-formed --poke-at + chained --poke-when both write RAM"
+else
+    note_fail "well-formed --poke-at/--poke-when (rc=$RC)"
 fi
 
 # VAL est hexa (comme ADDR) : "AB" = $AB, pas décimal. Une condition
