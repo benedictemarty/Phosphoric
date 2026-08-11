@@ -1063,6 +1063,17 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     if (emu->has_loci && address == 0x0300) {
         loci_tap_motor(&emu->loci, (value & 0x40) != 0);
     }
+    /* --tape-signal-free : gate le moteur cassette signal-level sur ORB PB6 (le
+     * moteur piloté par la ROM), pour les ROM clean-room dont le layout n'atteint
+     * pas la plage PC tape-read de la 1.1 (cf. tape_patches). */
+    if (emu->cassette.free_gate && address == 0x0300) {
+        bool on = (value & 0x40) != 0;
+        if (on && !emu->cassette.started) {
+            cassette_rewind(&emu->cassette);
+            emu->cassette.started = true;
+        }
+        cassette_set_motor(&emu->cassette, on);
+    }
     /* Signal-level cassette motor is gated on the ROM tape-read routine PC in
      * tape_patches() (Sprint 90), not on ORB PB6 — the keyboard column scan
      * clobbers PB6 identically at the READY prompt and during CLOAD. */
@@ -1714,6 +1725,10 @@ static void tape_patches(emulator_t* emu) {
      * pauses (position preserved) while the caller processes a byte or block —
      * exactly what multi-block custom loaders need. */
     if (emu->cassette.signal_mode) {
+        /* --tape-signal-free : le moteur est piloté par ORB PB6 (cf. via write),
+         * pas par le PC 1.1 -> ne pas l'écraser ici (ROM clean-room). */
+        if (emu->cassette.free_gate)
+            return;
         bool reading = (pc >= p->readbyte_entry && pc <= p->getsync_end);
         if (reading && !emu->cassette.started) {
             cassette_rewind(&emu->cassette);
@@ -3387,6 +3402,7 @@ int main(int argc, char* argv[]) {
     const char* hostfs_path = NULL;
     bool fast_load = false;
     bool tape_signal = false;   /* --tape-signal: signal-level cassette (Sprint 90) */
+    bool tape_signal_free = false; /* --tape-signal-free: gate moteur sur ORB PB6 (clean-room ROM) */
     bool verbose = false;
     bool headless = false;
     int64_t max_cycles = -1;
@@ -3571,6 +3587,7 @@ int main(int argc, char* argv[]) {
             case OPT_EXPORT_BORDER: emu.export_border = true; break;
             case OPT_REALTIME: emu.realtime = true; break;
             case OPT_TAPE_SIGNAL: tape_signal = true; break;
+            case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
@@ -4527,8 +4544,10 @@ int main(int argc, char* argv[]) {
                         if (tape_signal) {
                             cassette_signal_begin(&emu.cassette, emu.tapebuf,
                                                   emu.tapelen);
+                            emu.cassette.free_gate = tape_signal_free;
                             log_info("Signal-level cassette enabled: %d bytes on "
-                                     "CB1 waveform (real ROM read)", emu.tapelen);
+                                     "CB1 waveform (real ROM read)%s", emu.tapelen,
+                                     tape_signal_free ? " [free-gate ORB PB6]" : "");
                         }
                     } else {
                         log_warning("Tape read incomplete: %zu/%d bytes", rd, emu.tapelen);

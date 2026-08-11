@@ -71,6 +71,9 @@ typedef struct cassette_s {
     bool           cb1_level;     /**< Current CB1 line level */
     bool           finished;      /**< Whole tape emitted */
     bool           started;       /**< Playback armed (rewound on first read) */
+    bool           free_gate;     /**< --tape-signal-free : gate le moteur sur ORB PB6
+                                       (moteur ROM) au lieu du PC 1.1 -> supporte les
+                                       ROM clean-room (layout different). */
 } cassette_t;
 
 /* Forward decl to avoid pulling emulator.h into this header. */
