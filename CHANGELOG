@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.3-alpha] - 2026-08-12
+
+### Changed — Dégonfler `main.c` (2/2) : `tape_patches` → `src/io/tape_patches.c` (iso-comportement)
+
+Suite de la réduction de `main.c`. La logique de patch ROM CLOAD/CSAVE
+(`tape_patches`, 381 l : interception PC des routines cassette + capture CSAVE)
+est **remarquablement autonome** — elle n'appelle aucun helper static de
+`main.c`, seulement des champs `emu->` et des API publiques (`cassette_*`,
+`loci_sdimg_*`, `memory_write`, `log_*`). Déplacée verbatim vers
+`src/io/tape_patches.{c,h}` (dé-staticifiée + déclarée).
+
+**`main.c` : 4723 → 4329 lignes** (-394 ; cumul 4988 → 4329 = **-659** sur les
+deux étapes). Aucun changement de comportement.
+
+Iso-comportement **prouvé** : `test-tape-roundtrip` 3/3 (roundtrip CSAVE→
+capture→CLOAD sur programme à octets non nuls), `test-cassette` 8/8,
+`make clean && make SDL2=0 tests` toutes suites vertes ; builds natif + SDL2 OK.
+
+EMU_VERSION 1.99.2-alpha → 1.99.3-alpha.
+
 ## [1.99.2-alpha] - 2026-08-12
 
 ### Changed — Enrayer la croissance de `main.c` : module `src/cli/` (Epic 7/US3, iso-comportement)
