@@ -302,6 +302,8 @@ static void print_usage(const char* program_name) {
     printf("  -t, --tape FILE            Load .TAP tape file\n");
     printf("      --tape-signal          Signal-level tape (VIA CB1 waveform, real ROM\n");
     printf("                             read) — for custom/protected loaders; excludes -f\n");
+    printf("      --tape-out-capture FILE Capture CSAVE waveform (PB7/Timer1) and decode\n");
+    printf("                             it to a .TAP (voie A CSAVE; disables CSAVE hooks)\n");
     printf("  -d, --disk FILE            Load .DSK disk file in drive A\n");
     printf("      --disk1 FILE           Load .DSK disk file in drive B\n");
     printf("      --disk2 FILE           Load .DSK disk file in drive C\n");
@@ -1124,6 +1126,11 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
+    /* Tape-OUT capture : échantillonne PB7 (Timer1) pour reconstruire le .TAP.
+     * Résolution = 1 bus-tick (~1-7 cy) << période bit (416/624), sans effet
+     * sur le seuil 512. */
+    if (emu->tape_capture.active)
+        tape_capture_sample(&emu->tape_capture, &emu->via, emu->cpu.cycles);
     /* Périphériques de bus temporisés (FDC/ACIA/DTL/Mageco), ordre historique
      * préservé dans io_bus_tick (Epic 7/US5). */
     io_bus_tick(emu, cycles);
@@ -1703,6 +1710,12 @@ static void basic_rechain(memory_t* mem) {
  */
 static void tape_patches(emulator_t* emu) {
     if (!emu->rom_patches)
+        return;
+
+    /* Mode capture tape-OUT (voie A CSAVE) : la ROM bit-bange la vraie broche
+     * PB7 (Timer 1). Neutraliser TOUS les hooks CSAVE PC-1.1, sinon ils
+     * court-circuitent l'encodeur (cf. SPEC-voie-A §1). */
+    if (emu->tape_capture.active)
         return;
 
     const rom_patches_t* p = emu->rom_patches;
@@ -3403,6 +3416,7 @@ int main(int argc, char* argv[]) {
     bool fast_load = false;
     bool tape_signal = false;   /* --tape-signal: signal-level cassette (Sprint 90) */
     bool tape_signal_free = false; /* --tape-signal-free: gate moteur sur ORB PB6 (clean-room ROM) */
+    const char* tape_out_capture_arg = NULL; /* --tape-out-capture FILE: capture PB7 -> .TAP */
     bool verbose = false;
     bool headless = false;
     int64_t max_cycles = -1;
@@ -3588,6 +3602,7 @@ int main(int argc, char* argv[]) {
             case OPT_REALTIME: emu.realtime = true; break;
             case OPT_TAPE_SIGNAL: tape_signal = true; break;
             case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
+            case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
@@ -4860,8 +4875,32 @@ int main(int argc, char* argv[]) {
     g_web_emu = &emu;
 #endif
 
+    /* --tape-out-capture : arme la capture de l'onde tape-OUT (PB7 piloté par
+     * Timer 1). Indépendant de -t (CSAVE écrit, aucun tape d'entrée requis). En
+     * mode capture, les hooks CSAVE PC-1.1 sont neutralisés (cf. tape write). */
+    if (tape_out_capture_arg) {
+        emu.tape_out_path = tape_out_capture_arg;
+        tape_capture_begin(&emu.tape_capture);
+        log_info("Tape-OUT capture armed (PB7/Timer1) -> %s", tape_out_capture_arg);
+    }
+
     /* Run emulation */
     emulator_run(&emu);
+
+    /* Écrit le .TAP reconstruit depuis l'onde PB7 capturée. */
+    if (tape_out_capture_arg && emu.tape_capture.active) {
+        FILE* tf = fopen(tape_out_capture_arg, "wb");
+        if (tf) {
+            if (emu.tape_capture.out_len > 0)
+                fwrite(emu.tape_capture.out, 1, (size_t)emu.tape_capture.out_len, tf);
+            fclose(tf);
+            log_info("Tape-OUT capture written: %d bytes -> %s",
+                     emu.tape_capture.out_len, tape_out_capture_arg);
+        } else {
+            log_error("Tape-OUT capture: cannot write %s", tape_out_capture_arg);
+        }
+        tape_capture_free(&emu.tape_capture);
+    }
 
     if (gdb_enabled && emu.gdb_stub) {
         gdb_stub_close(&gdb_stub);

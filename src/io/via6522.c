@@ -119,6 +119,7 @@ void via_reset(via6522_t* via) {
     via->sr_active = false;
     via->sr_clk_acc = 0;
     via->pb6_pin = true;   /* PB6 idle high */
+    via->pb7_pin = false;  /* PB7 (T1-driven cassette out) low until armed */
 }
 
 uint8_t via_read(via6522_t* via, uint8_t reg) {
@@ -144,7 +145,13 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
         via_check_irq(via);
         /* NOTE: on the 6522, reading ORB does NOT trigger the CB2
          * handshake/pulse — only writing ORB does (write handshake). */
-        return (via->orb & via->ddrb) | (input & ~via->ddrb);
+        {
+            uint8_t rb = (via->orb & via->ddrb) | (input & ~via->ddrb);
+            /* ACR bit7: PB7 is driven by Timer 1, overriding ORB/DDRB. */
+            if (via->acr & 0x80)
+                rb = via->pb7_pin ? (rb | 0x80) : (rb & 0x7F);
+            return rb;
+        }
     }
     case VIA_ORA: {
         /* PSG drives IRA only when in READ mode (psg_decode updates ira).
@@ -252,6 +259,10 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->t1_counter = via->t1_latch;
         via->t1_running = true;
         via->ifr &= ~VIA_INT_T1;
+        /* ACR bit7 one-shot PB7 mode (bit6=0): writing T1CH pulls PB7 low for
+         * the duration of the count; the underflow drives it high again. */
+        if ((via->acr & 0xC0) == 0x80)
+            via->pb7_pin = false;
         via_check_irq(via);
         break;
     case VIA_T1LH:
@@ -336,6 +347,17 @@ void via_update(via6522_t* via, int cycles) {
             /* Timer 1 underflow */
             via->ifr |= VIA_INT_T1;
             via_check_irq(via);
+
+            /* ACR bit7: PB7 driven by Timer 1 (Oric cassette WRITE output).
+             * Square-wave mode (bit6=1) toggles PB7 on every underflow; one-shot
+             * mode (bit6=0) drives PB7 high for a single pulse (it was pulled low
+             * when T1CH was written). */
+            if (via->acr & 0x80) {
+                if (via->acr & 0x40)
+                    via->pb7_pin = !via->pb7_pin;   /* square wave */
+                else
+                    via->pb7_pin = true;            /* one-shot pulse high */
+            }
 
             if (via->acr & 0x40) {
                 /* Free-running: reload from latch */
@@ -531,4 +553,13 @@ bool via_get_cb2(via6522_t* via) {
     if (cb2 == 0xC0) return false;        /* 110: manual output low */
     if (cb2 == 0xE0) return true;         /* 111: manual output high */
     return via->cb2_pin;                  /* 100/101: handshake/pulse level */
+}
+
+bool via_get_pb7(via6522_t* via) {
+    /* ACR bit7: PB7 driven by Timer 1 (Oric cassette WRITE line). */
+    if (via->acr & 0x80) return via->pb7_pin;
+    /* Otherwise PB7 is a normal port pin: output register bit7 if configured
+     * as output, else idle high (pulled up). */
+    if (via->ddrb & 0x80) return (via->orb & 0x80) != 0;
+    return true;
 }

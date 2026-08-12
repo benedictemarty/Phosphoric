@@ -10,6 +10,7 @@
  */
 
 #include <stddef.h>
+#include <stdlib.h>
 
 #include "io/cassette.h"
 #include "io/via6522.h"
@@ -123,6 +124,100 @@ static int32_t cassette_step(cassette_t* c, bool* level) {
     }
     return dur;
 }
+
+/* ---- Tape-OUT capture/decoder (voie A CSAVE) --------------------------- */
+
+void tape_capture_init(tape_capture_t* tc) {
+    if (!tc) return;
+    tc->active = false;
+    tc->last_pb7 = false;
+    tc->have_prev_edge = false;
+    tc->prev_edge_cyc = 0;
+    tc->state = 0;
+    tc->bitcount = 0;
+    tc->cur_byte = 0;
+    tc->out = NULL;
+    tc->out_len = 0;
+    tc->out_cap = 0;
+}
+
+void tape_capture_begin(tape_capture_t* tc) {
+    if (!tc) return;
+    tape_capture_init(tc);
+    tc->out_cap = 1024;
+    tc->out = (uint8_t*)malloc((size_t)tc->out_cap);
+    tc->out_len = 0;
+    tc->active = (tc->out != NULL);
+    /* PB7 idles high before the ROM arms Timer 1; seed last level so the first
+     * genuine rising edge is detected. */
+    tc->last_pb7 = true;
+}
+
+void tape_capture_free(tape_capture_t* tc) {
+    if (!tc) return;
+    if (tc->out) free(tc->out);
+    tc->out = NULL;
+    tc->out_cap = tc->out_len = 0;
+    tc->active = false;
+}
+
+static void tape_capture_emit(tape_capture_t* tc, uint8_t b) {
+    if (tc->out_len >= tc->out_cap) {
+        int ncap = tc->out_cap ? tc->out_cap * 2 : 1024;
+        uint8_t* n = (uint8_t*)realloc(tc->out, (size_t)ncap);
+        if (!n) return;              /* drop byte rather than crash on OOM */
+        tc->out = n;
+        tc->out_cap = ncap;
+    }
+    tc->out[tc->out_len++] = b;
+}
+
+/* Feed one decoded bit into the frame re-assembler (mirror of ROM read_byte:
+ * seek start '0', 8 data bits LSB, then skip parity + 4 stop bits). */
+static void tape_capture_bit(tape_capture_t* tc, int bit) {
+    switch (tc->state) {
+    case 0: /* seek start bit (a '0'); '1's are leader/stop idle */
+        if (bit == 0) {
+            tc->state = 1;
+            tc->bitcount = 0;
+            tc->cur_byte = 0;
+        }
+        break;
+    case 1: /* 8 data bits, LSB first (ROR-style) */
+        tc->cur_byte = (uint8_t)((tc->cur_byte >> 1) | (bit ? 0x80 : 0x00));
+        if (++tc->bitcount >= 8) {
+            tc->state = 2;
+            tc->bitcount = 0;
+        }
+        break;
+    case 2: /* skip parity (1) + stop (4) = 5 bits, then emit */
+        if (++tc->bitcount >= 5) {
+            tape_capture_emit(tc, tc->cur_byte);
+            tc->state = 0;
+            tc->bitcount = 0;
+        }
+        break;
+    }
+}
+
+void tape_capture_sample(tape_capture_t* tc, via6522_t* via, uint64_t cyc) {
+    if (!tc || !tc->active || !via) return;
+    bool pb7 = via_get_pb7(via);
+    bool rising = (!tc->last_pb7 && pb7);
+    tc->last_pb7 = pb7;
+    if (!rising) return;
+    if (!tc->have_prev_edge) {
+        tc->have_prev_edge = true;
+        tc->prev_edge_cyc = cyc;
+        return;
+    }
+    uint64_t period = cyc - tc->prev_edge_cyc;
+    tc->prev_edge_cyc = cyc;
+    int bit = (period < CAS_PERIOD_THRESH) ? 1 : 0;
+    tape_capture_bit(tc, bit);
+}
+
+/* ------------------------------------------------------------------------ */
 
 void cassette_tick(cassette_t* c, via6522_t* via, int cycles) {
     if (!c || !via) return;

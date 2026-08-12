@@ -174,6 +174,11 @@ typedef struct emulator_s {
      * signal. Enabled via --tape-signal; disables the getsync/readbyte patches. */
     cassette_t cassette;
 
+    /* Tape-OUT capture (voie A CSAVE): samples PB7 (Timer-1 driven) and
+     * reconstructs the .TAP the ROM emits. Armed by --tape-out-capture. */
+    tape_capture_t tape_capture;
+    const char*    tape_out_path;   /* Destination .TAP for the capture, or NULL */
+
     /* Deferred fast-load (inject after RAM test completes) */
     uint8_t* fastload_buf;       /* Buffered TAP data */
     uint16_t fastload_addr;      /* Target start address */

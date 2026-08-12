@@ -38,7 +38,7 @@ enum {
     OPT_ULA_NG_POKE, OPT_PSG_TRACE, OPT_AUDIO_WAV, OPT_SCREENSHOT_TEXT,
     OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT,
     OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN,
-    OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN
+    OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -60,6 +60,7 @@ static const struct option long_options[] = {
     {"realtime",            no_argument,       0, OPT_REALTIME},
     {"tape-signal",         no_argument,       0, OPT_TAPE_SIGNAL},
     {"tape-signal-free",    no_argument,       0, OPT_TAPE_SIGNAL_FREE},
+    {"tape-out-capture",    required_argument, 0, OPT_TAPE_OUT_CAPTURE},
     {"cycles",              required_argument, 0, 'c'},
     {"verbose",             no_argument,       0, 'v'},
     {"screenshot",          required_argument, 0, OPT_SCREENSHOT},
