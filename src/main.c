@@ -45,6 +45,8 @@
 #include "io/io_bus.h"        /* table de bus + dispatch (Epic 7/US2) */
 #include "io/autotype.h"      /* pacing scan-driven de --type-keys */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
+#include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
+#include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -295,152 +297,6 @@ static const rom_patches_t* get_rom_patches(oric_model_t model) {
     }
 }
 
-static void print_usage(const char* program_name) {
-    printf("Phosphoric v%s\n", EMU_VERSION);
-    printf("Usage: %s [options]\n\n", program_name);
-    printf("Options:\n");
-    printf("  -t, --tape FILE            Load .TAP tape file\n");
-    printf("      --tape-signal          Signal-level tape (VIA CB1 waveform, real ROM\n");
-    printf("                             read) — for custom/protected loaders; excludes -f\n");
-    printf("      --tape-out-capture FILE Capture CSAVE waveform (PB7/Timer1) and decode\n");
-    printf("                             it to a .TAP (voie A CSAVE; disables CSAVE hooks)\n");
-    printf("  -d, --disk FILE            Load .DSK disk file in drive A\n");
-    printf("      --disk1 FILE           Load .DSK disk file in drive B\n");
-    printf("      --disk2 FILE           Load .DSK disk file in drive C\n");
-    printf("      --disk3 FILE           Load .DSK disk file in drive D\n");
-    printf("      --disk-rom FILE        Load Microdisc ROM (microdis.rom)\n");
-    printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
-    printf("                             (overwrites in place; only drives actually written are saved)\n");
-    printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");
-    printf("                             (then INIT/format inside; changes are saved back on exit)\n");
-    printf("  -r, --rom FILE             Load custom ROM file\n");
-    printf("  -h, --hostfs PATH          Mount host directory\n");
-    printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
-    printf("  -n, --headless             Run without display (headless mode)\n");
-    printf("      --realtime             Pace to 50 Hz PAL even in headless (nanosleep, no SDL);\n");
-    printf("                             needed for network serial timing (modem/XMODEM) and\n");
-    printf("                             deterministic --type-keys without a display\n");
-    printf("  -c, --cycles NUM           Run for N cycles then exit\n");
-    printf("  -v, --verbose              Verbose logging\n");
-    printf("      --screenshot FILE      Take screenshot at exit (.ppm or .bmp)\n");
-    printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
-    printf("      --screenshot-text FILE Dump screen text ($BB80, 40x28) as ASCII at exit\n");
-    printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
-    printf("      --screenshot-text-at C:FILE  Dump screen text after C cycles to FILE\n");
-    printf("      --screenshot-ansi-at C:FILE  Dump ANSI framebuffer after C cycles to FILE\n");
-    printf("      --screenshot-when A:V:FILE   Screenshot when RAM[A]==V (A,V hex; exit 2 if never)\n");
-    printf("      --screenshot-text-when A:V:FILE  Text screenshot when RAM[A]==V (A,V hex)\n");
-    printf("      --dump-ram-when A:V:FILE     Dump 64KB when RAM[A]==V (A,V hex; exit 2 if never)\n");
-    printf("      --poke-at C:ADDR=VAL        Write RAM[ADDR]=VAL once after C cycles (hex ADDR/VAL; repeatable)\n");
-    printf("      --poke-when A:V:ADDR=VAL     Write RAM[ADDR]=VAL once when RAM[A]==V (all hex; repeatable)\n");
-    printf("      --frame-dump DIR       Dump frames to directory\n");
-    printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
-    printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
-    printf("      --replay FILE          Replay a recorded input movie (ignores live keys)\n");
-    printf("      --video FILE           Record video to a Motion-JPEG AVI file\n");
-    printf("      --video-fps N          Recording frame rate (default: 50)\n");
-    printf("      --video-quality N      JPEG quality 1..100 (default: 85)\n");
-    printf("  -m, --model MODEL          Machine model: oric1 or atmos (default: auto-detect)\n");
-    printf("  -k, --keyboard LAYOUT      Keyboard layout: qwerty (default) or azerty\n");
-    printf("  -j, --joystick MODE        Joystick: keys (arrow keys), gamepad (SDL2 controller)\n");
-    printf("  -p, --printer FILE         Capture printer output to FILE (LPRINT/LLIST)\n");
-    printf("      --printer-type TYPE    Printer type: text (default) or mcp40 (4-color plotter)\n");
-    printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
-    printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
-    printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
-    printf("      --no-border            Disable the overscan border in the window (on by default)\n");
-    printf("      --export-border        Include the overscan border in image/AVI exports (off by default)\n");
-    printf("      --ula-ng-poke SEQ      Program ULA-NG registers ($0340-$035F) at startup,\n");
-    printf("                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n");
-    printf("                             Ex: 340=4E,340=47,341=01,348=07,349=00,34A=F0 (palette)\n");
-    printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
-    printf("                             \\n=Return \\e=Esc \\b=Del \\u \\d \\l \\r=arrows\n");
-    printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
-    printf("                             \\Rx=RShift+x \\pN=pause N sec (cycles emules)\n");
-    printf("                             Repetable : plusieurs --type-keys sont\n");
-    printf("                             sequences par cycle d'armement croissant.\n");
-    printf("                             Pacing synchronise sur le scan clavier reel\n");
-    printf("                             (aucune touche perdue meme si le programme\n");
-    printf("                             scrute lentement).\n");
-    printf("      --type-keys-when A:V:TEXT  Arme --type-keys quand RAM[A]==V (A,V hex)\n");
-    printf("                             au lieu de deviner le cycle de boot.\n");
-    printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
-    printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
-    printf("      --break ADDR           Set initial debugger breakpoint (hex)\n");
-    printf("      --cast-server[=PORT]   Start MJPEG cast server (default port: 8080)\n");
-    printf("      --cast-to[=DEVICE]     Cast to Chromecast (native CASTV2 protocol)\n");
-    printf("      --cast-discover        Discover Chromecast devices on network\n");
-    printf("      --http-api[=PORT]      HTTP control API (REST) on PORT (default 8888, HTTPAPI=1 build)\n");
-    printf("      --http-api-bind ADDR   Bind address for the HTTP API (default 127.0.0.1)\n");
-    printf("      --http-api-root DIR    Sandbox root for HTTP file ops /tape,/disk (default CWD)\n");
-    printf("      --trace FILE           Log CPU instruction trace to FILE\n");
-    printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
-    printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
-    printf("      --psg-trace FILE       Log AY sound-register writes (reg 0-13) with CPU cycle\n");
-    printf("      --audio-wav FILE       Capture PSG audio to a 16-bit stereo 44.1 kHz WAV\n");
-    printf("                             (headless only; renders per frame via ay_generate)\n");
-    printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
-    printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
-    printf("      --bad-sector [D:]S:T:N Mark drive D (default A) side S track T sector N\n");
-    printf("                             unreadable (RNF), repeatable; damage follows the media\n");
-    printf("      --fdc-timing MODE      Microdisc WD1793 timing: real (default, mechanical\n");
-    printf("                             3\" drive) or fast (legacy short delays)\n");
-    printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
-    printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
-    printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
-    printf("      --gdb[=PORT]           GDB remote stub on TCP PORT (default 1234).\n");
-    printf("                             Waits for `gdb` ... `target remote :PORT`.\n");
-    printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");
-    printf("                             logs to stderr, see docs/control_protocol.md)\n");
-    printf("      --bench                Headless throughput bench: prints `BENCH cycles=... mhz_eq=... ...`\n");
-    printf("                             on stdout at exit. Use with -c N for fixed-cycle run.\n");
-    printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");
-    printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
-    printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
-    printf("                             Mutually exclusive with --loci-flash\n");
-    printf("      --loci-usb DIR|none    Attach DIR as a LOCI USB key (repeatable, 4 max);\n");
-    printf("                             host media in /media/$USER auto-attach — 'none' disables\n");
-    printf("      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31).\n");
-    printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
-    printf("                             is outside it (reproduces real-HW modem block;\n");
-    printf("                             software tunes via MAP_TUNE_TIOR / ADJ_SCAN)\n");
-    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n");
-    printf("                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n");
-    printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
-    printf("                            (auto-enabled with digitelec backend)\n");
-    printf("      --serial-buffer N     RX FIFO buffer N bytes (prevents overrun, default: off)\n");
-    printf("      --serial-baud N       External-clock baud (ACIA 6551): realistic timing\n");
-    printf("                            instead of instant transfer when baud index = 0\n");
-    printf("      --serial-irq-on-rdrf  WDC 65C51 IRQ mode (re-trigger while RDRF set)\n");
-    printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
-    printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
-    printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
-    printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");
-    printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
-    printf("      --mageco TRANSPORT    Mageco MIDI interface (ACIA 6850) at $03FE, 31250 baud\n");
-    printf("                            Transports (raw MIDI bytes): file:IN[:OUT], midi[:TARGET], smf:FILE[:loop], loopback, tcp:H:P, pty\n");
-    printf("                            file::out.mid captures Oric MIDI OUT ; midi = live ALSA port (MIDI=1) ; smf:song.mid replays a .mid into the Oric\n");
-    printf("      --mageco-addr ADDR    Mageco base address in hex (default: 03FE)\n");
-    printf("      --oricon TRANSPORT    ORICON MIDI variant (MC6850 at $031C-$031D + clock gen $031E-$031F, LOCI-compat)\n");
-    printf("                            Same transports as --mageco ; overlaps --serial/Microdisc at $031C\n");
-    printf("      --save-state FILE      Save emulator state to FILE on exit\n");
-    printf("      --load-state FILE      Load emulator state from FILE at startup\n");
-    printf("  -?, --help                 Show this help\n");
-    printf("\n");
-    printf("Controls:\n");
-    printf("  F1  - Help menu\n");
-    printf("  F2  - Quick save state\n");
-    printf("  F3  - Cycle display scale (x1 → x2 → x3 → x4)\n");
-    printf("  F4  - Quick load state\n");
-    printf("  F5  - Reset (with --loci : also resets MIA state, keeps mounts)\n");
-    printf("  F6  - OSD : changer la cassette/disquette a chaud (fleches, RET, ESC)\n");
-    printf("  F8  - LOCI Action button (warm short press / release on key up)\n");
-    printf("  F9  - Enter debugger\n");
-    printf("  F10 - Quit\n");
-    printf("  F11 - Fullscreen\n");
-    printf("  F12 - Screenshot\n");
-    printf("\n");
-}
 
 /* emulator_t is defined in include/emulator.h */
 
@@ -3294,127 +3150,6 @@ static void emulator_run(emulator_t* emu) {
     }
 }
 
-/* Parse a "CYCLES:FILE" CLI argument, shared verbatim by --dump-ram-at and
- * --screenshot-at. On success stores the cycle count and a pointer past the
- * colon (into `arg`) and returns true. On a missing colon it logs the exact
- * same error those sites used (via optname) and returns false — the caller
- * then cleans up and exits 1. Behaviour is identical to the two inlined copies
- * it replaces (covered by tests/integration/test_cli_parsing.sh). */
-static bool cli_split_cycles_file(const char* arg, const char* optname,
-                                  int64_t* out_cycles, const char** out_file) {
-    const char* colon = strchr(arg, ':');
-    if (!colon) {
-        log_error("Invalid --%s format. Use CYCLES:FILE", optname);
-        return false;
-    }
-    *out_cycles = atoll(arg);
-    *out_file = colon + 1;
-    return true;
-}
-
-/* Parse the "ADDR:VAL:FILE" argument shared by the state-triggered captures
- * (--screenshot-when / --dump-ram-when / --screenshot-text-when). ADDR is a
- * 16-bit hexadecimal address (e.g. 9C55), VAL a hexadecimal byte — consistent
- * with ADDR — so "AB", "07" and "0x07" all parse (strtol base 16 accepts the
- * optional 0x prefix), FILE is the rest after the second colon. On success
- * stores addr/val/file and returns true; on a malformed argument logs the
- * canonical "Invalid --NAME format. Use ADDR:VAL:FILE" error and returns false
- * (caller cleans up and exits 1). Covered by test_cli_parsing.sh. */
-static bool cli_split_addr_val_file(const char* arg, const char* optname,
-                                    int32_t* out_addr, uint8_t* out_val,
-                                    const char** out_file) {
-    const char* c1 = strchr(arg, ':');
-    if (!c1) {
-        log_error("Invalid --%s format. Use ADDR:VAL:FILE", optname);
-        return false;
-    }
-    const char* c2 = strchr(c1 + 1, ':');
-    if (!c2 || c2 == c1 + 1 || *(c2 + 1) == '\0') {
-        log_error("Invalid --%s format. Use ADDR:VAL:FILE", optname);
-        return false;
-    }
-    *out_addr = (int32_t)(strtol(arg, NULL, 16) & 0xFFFF);
-    *out_val  = (uint8_t)(strtol(c1 + 1, NULL, 16) & 0xFF);
-    *out_file = c2 + 1;
-    return true;
-}
-
-/* Parse an "ADDR=VAL" pair (both hexadecimal) shared by --poke-at / --poke-when.
- * On success stores the 16-bit addr and the byte value and returns true; on a
- * missing/empty '=' returns false (caller logs the canonical format error). */
-static bool cli_split_addr_eq_val(const char* s, uint16_t* out_addr, uint8_t* out_val) {
-    const char* eq = strchr(s, '=');
-    if (!eq || eq == s || *(eq + 1) == '\0')
-        return false;
-    *out_addr = (uint16_t)(strtol(s, NULL, 16) & 0xFFFF);
-    *out_val  = (uint8_t)(strtol(eq + 1, NULL, 16) & 0xFF);
-    return true;
-}
-
-/* Append a --poke-at CYCLES:ADDR=VAL entry to emu->pokes[]. Fires once when
- * total_executed >= CYCLES. Returns false (logging the format error) on a
- * malformed argument or when the table is full. */
-static bool cli_add_poke_at(emulator_t* emu, const char* arg) {
-    const char* colon = strchr(arg, ':');
-    uint16_t addr; uint8_t val;
-    if (!colon || !cli_split_addr_eq_val(colon + 1, &addr, &val)) {
-        log_error("Invalid --poke-at format. Use CYCLES:ADDR=VAL");
-        return false;
-    }
-    if (emu->poke_count >= POKE_MAX) {
-        log_error("--poke-at: too many pokes (max %d)", POKE_MAX);
-        return false;
-    }
-    struct poke_action* p = &emu->pokes[emu->poke_count++];
-    p->at_cycles = atoll(arg);
-    p->when_addr = -1; p->when_val = 0;
-    p->target = addr; p->value = val; p->done = false;
-    return true;
-}
-
-/* Append a --poke-when ADDR:VAL:ADDR=VAL entry to emu->pokes[]. Fires once on
- * the rising edge RAM[ADDR]==VAL. Returns false (logging the format error) on a
- * malformed argument or when the table is full. */
-static bool cli_add_poke_when(emulator_t* emu, const char* arg) {
-    const char* c1 = strchr(arg, ':');
-    const char* c2 = c1 ? strchr(c1 + 1, ':') : NULL;
-    uint16_t addr; uint8_t val;
-    if (!c1 || !c2 || !cli_split_addr_eq_val(c2 + 1, &addr, &val)) {
-        log_error("Invalid --poke-when format. Use ADDR:VAL:ADDR=VAL");
-        return false;
-    }
-    if (emu->poke_count >= POKE_MAX) {
-        log_error("--poke-when: too many pokes (max %d)", POKE_MAX);
-        return false;
-    }
-    struct poke_action* p = &emu->pokes[emu->poke_count++];
-    p->at_cycles = -1;
-    p->when_addr = (int32_t)(strtol(arg, NULL, 16) & 0xFFFF);
-    p->when_val  = (uint8_t)(strtol(c1 + 1, NULL, 16) & 0xFF);
-    p->target = addr; p->value = val; p->done = false;
-    return true;
-}
-
-/* Open an output file for a CLI option, logging the exact "Cannot open --NAME
- * file: PATH" error those sites used on failure. Returns the stream, or NULL —
- * the caller then cleans up and exits 1. Shared verbatim by --trace-irq /
- * --psg-trace / --audio-wav (identical open-or-fail pattern; only the mode and
- * the post-open headers differ). Covered by test_cli_parsing.sh (the fatal
- * open-failure cases for the three options). */
-static FILE* cli_open_out(const char* file, const char* mode, const char* optname) {
-    FILE* fp = fopen(file, mode);
-    if (!fp)
-        log_error("Cannot open --%s file: %s", optname, file);
-    return fp;
-}
-
-/* Parse a 16-bit hexadecimal address argument (--acia-addr / --dtl2000-addr /
- * --mageco-addr / --break). Same lenient strtol semantics as the four inlined
- * copies it replaces: invalid input yields 0 (no error) — behaviour preserved
- * verbatim (see test_cli_parsing.sh, --acia-addr invalid hex = non-fatal). */
-static uint16_t parse_hex16(const char* s) {
-    return (uint16_t)strtol(s, NULL, 16);
-}
 
 int main(int argc, char* argv[]) {
     emulator_t emu;
@@ -3720,7 +3455,7 @@ int main(int argc, char* argv[]) {
                 break;
             case '?':
             default:
-                print_usage(argv[0]);
+                cli_print_usage(argv[0]);
                 return 0;
         }
     }

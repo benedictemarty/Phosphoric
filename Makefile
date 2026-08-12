@@ -160,7 +160,9 @@ SOURCES = src/main.c \
           src/utils/symbols.c \
           src/utils/movie.c \
           src/utils/netutil.c \
-          src/utils/appsignal.c
+          src/utils/appsignal.c \
+          src/cli/cli_usage.c \
+          src/cli/cli_parse.c
 
 ifeq ($(CAST), 1)
     SOURCES += src/network/cast_server.c src/network/castv2.c

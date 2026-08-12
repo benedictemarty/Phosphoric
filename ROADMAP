@@ -84,10 +84,16 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > **adaptateur unique** (`io_bus.c`, seul io/ à inclure emulator.h). Modules purs
 > préservés. Iso-comportement golden 4/4 ; main.c 4690 → 4425 L.
 
-### US 3 — Module argparse déclaratif (Sprint 127) — PARTIEL (v1.87.0-alpha)
+### US 3 — Module argparse déclaratif (Sprint 127) — PARTIEL (v1.87.0-alpha), suite (v1.99.2-alpha)
 - [x] **Données** extraites : enum `OPT_*` + table `long_options[]` +
       `CLI_SHORT_OPTIONS` → `include/cli/cli_options.h`. Iso-comportement par
       construction (relocation de données) ; golden 4/4 + `--help` + suite verte.
+- [x] **Code CLI extractible** sorti de `main.c` (v1.99.2, réaction au regonflement
+      à 4988 l) : `src/cli/cli_usage.{c,h}` (bannière `--help`, `print_usage` →
+      `cli_print_usage`) + `src/cli/cli_parse.{c,h}` (7 helpers de parsing déplacés
+      verbatim). **main.c 4988 → 4722 (-266).** Iso-comportement prouvé : `--help`
+      byte-identique + `test-cli-parsing` 41/41. `src/cli/` est désormais le foyer
+      du futur code CLI (enraye la croissance de `main.c`).
 - [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
       63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
       **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre

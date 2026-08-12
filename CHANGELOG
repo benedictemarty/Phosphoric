@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.2-alpha] - 2026-08-12
+
+### Changed — Enrayer la croissance de `main.c` : module `src/cli/` (Epic 7/US3, iso-comportement)
+
+`main.c` avait regrossi à **4988 lignes** (l'Epic 7 l'avait ramené à 4334 ;
+les features CLI récentes — poke, captures, autotype — l'avaient regonflé). On
+crée un vrai module `src/cli/` qui donne un **foyer** au code CLI et sort de
+`main.c` ce qui est extractible **sans changement de comportement** :
+
+- **`src/cli/cli_usage.{c,h}`** : la bannière `--help` (`print_usage`, ~146 l de
+  `printf`) → `cli_print_usage()`. Seule dépendance : `EMU_VERSION`.
+- **`src/cli/cli_parse.{c,h}`** : les 7 helpers de parsing (`cli_split_cycles_file`,
+  `cli_split_addr_val_file`, `cli_split_addr_eq_val`, `cli_add_poke_at/when`,
+  `cli_open_out`, `parse_hex16`) déplacés verbatim (dé-staticifiés + déclarés).
+
+**`main.c` : 4988 → 4722 lignes** (-266). Aucun changement de comportement.
+
+Iso-comportement **prouvé** : `--help` **byte-identique** (md5 égal, capturé
+avant/après l'extraction, avant le bump de version) ; `test-cli-parsing` 41/41
+(couvre les 7 helpers) ; `make clean && make SDL2=0 tests` toutes suites vertes ;
+builds natif + SDL2 OK.
+
+Le parseur `getopt` géant (~63 case à effets de bord) reste dans `main()` — son
+extraction n'est pas prouvable iso-comportement avec le filet actuel (cf. Epic 7
+US3) ; mais le module `src/cli/` existe désormais pour accueillir le futur code
+CLI au lieu de gonfler `main.c`.
+
+EMU_VERSION 1.99.1-alpha → 1.99.2-alpha.
+
 ## [1.99.1-alpha] - 2026-08-12
 
 ### Fixed — Décodeur de capture tape-OUT (voie A CSAVE) : front montant + framing chasse-start
