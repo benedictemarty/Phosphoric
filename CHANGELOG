@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.5-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US2 : créer `src/io/loci_glue.c` + migrer les callbacks bus/IRQ LOCI
+
+Première extraction de code de l'Epic 9 (sortir la glue LOCI de `main.c` vers un
+adaptateur dédié, comme `io_bus.c`). Après l'US1 (cartographie + oracle de
+déterminisme), on migre le **lot sûr** — les 4 callbacks les plus simples, sans
+dépendance SDL ni appel à un static de `main.c` :
+
+- `loci_dsk_cpu_irq_set` / `loci_dsk_cpu_irq_clr` (ligne d'IRQ disque Microdisc
+  servie par la fenêtre DSK du LOCI),
+- `loci_dsk_sync_overlay` (report du banking overlay/BASIC-ROM),
+- `loci_rom_poke_hook` (écriture d'un octet dans l'overlay ROM $C000+).
+
+Déplacés verbatim vers **`src/io/loci_glue.{c,h}`** (dé-staticifiés + déclarés).
+`main.c` garde l'**enregistrement** (`loci_set_rom_poke_callback`,
+`loci_set_dsk_bus_callbacks`) — le seam `ctx=&emu` rend l'appel transparent.
+
+**`main.c` : 4255 → 4235 lignes** (-20).
+
+Iso-comportement **prouvé par l'oracle US1** : le boot LOCI headless reste
+**byte-identique** à la référence pré-Epic-9 (`md5 bf4dff781e05175ad8050815eccd6a42`) ;
+`test-loci-golden` vert, `make clean && make SDL2=0 tests` toutes suites vertes ;
+builds `SDL2=1`, `SDL2=0` et **`SDL2=1 HTTPAPI=1`** OK.
+
+EMU_VERSION 1.99.4-alpha → 1.99.5-alpha.
+
 ## [1.99.4-alpha] - 2026-08-12
 
 ### Changed — Dégonfler `main.c` (3) : `serial_transport_create` → `src/io/serial_backend.c`

@@ -88,10 +88,12 @@ Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
       **`test-loci-golden`** (déterminisme auto-référentiel + écran non vide)
       **ajouté à `make tests`** (3/3).
 
-### US 2 — Créer `loci_glue.{c,h}` + migrer les callbacks bus/IRQ (lot sûr)
-- [ ] `loci_dsk_cpu_irq_set`/`_clr`, `loci_dsk_sync_overlay`, `loci_rom_poke_hook`
-      (petits, couplage borné cpu/loci/overlay) → `loci_glue.c` ; `main.c` garde
-      l'enregistrement `loci_set_*`. Vérif : golden byte-identique + suite verte.
+### US 2 — Créer `loci_glue.{c,h}` + migrer les callbacks bus/IRQ (lot sûr) — DONE (v1.99.5)
+- [x] `loci_dsk_cpu_irq_set`/`_clr`, `loci_dsk_sync_overlay`, `loci_rom_poke_hook`
+      → `src/io/loci_glue.{c,h}` ; `main.c` garde l'enregistrement `loci_set_*`.
+      **main.c 4255 → 4235 (-20).** Iso prouvé par l'oracle US1 : boot LOCI
+      byte-identique (md5 `bf4dff…`) + `test-loci-golden` vert ; builds SDL2=1,
+      SDL2=0, SDL2=1 HTTPAPI=1 OK.
 
 ### US 3 — Migrer les callbacks ROM / tape / resume (lot moyen)
 - [ ] `loci_tape_mount_cb`, `loci_rom_swap_cb`, `loci_resume_session_cb`,

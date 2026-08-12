@@ -45,6 +45,7 @@
 #include "io/io_bus.h"        /* table de bus + dispatch (Epic 7/US2) */
 #include "io/autotype.h"      /* pacing scan-driven de --type-keys */
 #include "io/tape_patches.h" /* ROM CLOAD/CSAVE PC patches (ex-main.c) */
+#include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
@@ -611,12 +612,6 @@ static void loci_scan_host_usb(emulator_t* emu) {
 
 /* Live ROM byte poke (ADJ_SCAN progress: the menu ROM polls its TIMINGS
  * byte at $FFF0 while the firmware sweeps tior). */
-static void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (emu && addr >= 0xC000)
-        emu->memory.rom[addr - 0xC000] = val;
-}
-
 /* LOCI action-button install hook (Sprint 34ai + 85).
  * Snapshots the session (the menu's "resume" needs the machine exactly
  * as it was — press time is a clean instruction boundary, before the
@@ -1006,20 +1001,6 @@ static void microdisc_cpu_irq_clr(emulator_t* emu) {
  * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
  * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
  * bloqué après le RESTORE command — il attend l'IRQ et la commutation. */
-static void loci_dsk_cpu_irq_set(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    cpu_irq_set(&emu->cpu, IRQF_DISK);
-}
-static void loci_dsk_cpu_irq_clr(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    cpu_irq_clear(&emu->cpu, IRQF_DISK);
-}
-static void loci_dsk_sync_overlay(void* ctx, bool basic_disabled, bool overlay_active) {
-    emulator_t* emu = (emulator_t*)ctx;
-    emu->memory.basic_rom_disabled = basic_disabled;
-    emu->memory.overlay_active     = overlay_active;
-}
-
 /* ACIA 6551 serial IRQ callbacks */
 static void acia_cpu_irq_set(emulator_t* emu) {
     cpu_irq_set(&emu->cpu, IRQF_SERIAL);
