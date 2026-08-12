@@ -314,6 +314,31 @@ expect "--trace-max N parses (exit 0)" 0
 run "$EMU" -r "$ROM" -n --serial loopback --serial-baud 1200 -c 1000
 expect "--serial-baud N parses (exit 0)" 0
 
+# ── media / ROM loading (parse + accepted) ─────────────────────────────
+# Reuse the blank disk written by the --disk-create test above.
+run "$EMU" -r "$ROM" -n --disk1 "$TMP/blank.dsk" -c 1000
+expect "--disk1 FILE loads a disk in drive B (exit 0)" 0
+run "$EMU" -r "$ROM" -n --disk-rom roms/microdis.rom -c 1000
+expect "--disk-rom FILE loads the Microdisc ROM (exit 0)" 0
+
+# ── tape signal-mode + state-triggered auto-type flags (exit 0) ─────────
+run "$EMU" -r "$ROM" -n --tape-signal -c 1000
+expect "--tape-signal parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --tape-signal-free -c 1000
+expect "--tape-signal-free parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --type-keys-when 'BC9A:52:PRINT 1\n' -c 3000000
+expect "--type-keys-when A:V:TEXT parses (exit 0)" 0
+
+# ── frame / video capture (parse + observed side effect) ───────────────
+mkdir -p "$TMP/frames"
+run "$EMU" -r "$ROM" -n --frame-dump "$TMP/frames" --frame-dump-interval 30 -c 2000000
+expect "--frame-dump DIR + --frame-dump-interval parse (exit 0)" 0
+if [ "$(ls "$TMP/frames" 2>/dev/null | wc -l)" -gt 0 ]; then note_pass "--frame-dump wrote frame files"; else note_fail "--frame-dump wrote no frames"; fi
+
+run "$EMU" -r "$ROM" -n --video "$TMP/v.avi" -c 2000000
+expect "--video FILE parses (exit 0)" 0
+if [ -s "$TMP/v.avi" ]; then note_pass "--video wrote a non-empty AVI"; else note_fail "--video wrote no file"; fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]

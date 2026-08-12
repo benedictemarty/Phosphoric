@@ -98,13 +98,17 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       CLOAD/CSAVE (381 l, autonome — aucun helper static de main.c) → verbatim
       dans `src/io/tape_patches.{c,h}`. **main.c 4722 → 4329 (cumul -659 depuis
       4988).** Iso prouvé : `test-tape-roundtrip` 3/3 + `test-cassette` 8/8.
-- [~] **Prérequis parseur — filet élargi** : `test-cli-parsing` 41 → **66**
-      (2 lots, +25) ; **47/92 options couvertes** (46 restantes). Lot 1 :
-      `parse_hex16` (`--dtl2000-addr`/`--mageco-addr`/`--break`), `--rom-info`,
-      `--verbose`, `--screenshot`, `--disk-create`. Lot 2 : `--screenshot-text`/
-      `-ansi`, `--save-state`, `--record` (effet de bord fichier observé),
-      `--fdc-timing` real/bogus (lenient), `--printer`, `--hostfs`, `--no-border`,
-      `--trace-max`, `--serial-baud`. Chaque attente MESURÉE contre le binaire.
+- [~] **Prérequis parseur — filet élargi** : `test-cli-parsing` 41 → **75**
+      (3 lots, +34) ; **55/92 options couvertes**. Lot 1 : `parse_hex16`
+      (`--dtl2000-addr`/`--mageco-addr`/`--break`), `--rom-info`, `--verbose`,
+      `--screenshot`, `--disk-create`. Lot 2 : `--screenshot-text`/`-ansi`,
+      `--save-state`, `--record` (effet fichier), `--fdc-timing` real/bogus,
+      `--printer`, `--hostfs`, `--no-border`, `--trace-max`, `--serial-baud`.
+      Lot 3 : `--disk1`, `--disk-rom`, `--tape-signal(-free)`, `--type-keys-when`,
+      `--frame-dump(+interval)`, `--video` (effet fichier). Chaque attente MESURÉE.
+      Les 38 restantes sont soit des **variantes** (disk2/3, video-fps/quality,
+      serial-*, export-border), soit **dures à tester en CI** (cast-*/http-api-*/
+      gdb/tui/debug/control/replay/render-software/loci-*/realtime).
 - [ ] **Restant** : le parseur `getopt` géant (~63 case à effets de bord) et
       `emulator_run` (~1197 l) — extraction non prouvable iso-comportement tant
       que le filet ne couvre pas les case à effets de bord. Continuer à élargir
