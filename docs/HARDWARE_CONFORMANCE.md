@@ -66,7 +66,38 @@ MSB→bit0, cadence T2=N+2, φ2=÷2, mode 4 free-run sans flag).
 
 ---
 
+---
+
+## 3. PSG AY-3-8912 (`src/audio/ay3891x.c`) vs datasheet *General Instrument AY-3-8910/8912*
+
+Rendu par accumulateurs fractionnaires à 44,1 kHz, horloge maître 1 MHz.
+
+### Conforme (vérifié par recalcul)
+- **Ton** = `clock/(16×TP)` ✓ (`tone_rate = clock/8` avec bascule = demi-cycle).
+- **Enveloppe** : pas = `clock/(16×EP)`, cycle 16 états = `clock/(256×EP)` ✓.
+- **LFSR bruit** 17 bits, taps bit0 ⊕ bit3 ✓.
+- **Mixer** R7 : bit=1 désactive ton/bruit du canal ✓.
+- Largeurs : ton 12 bits, bruit 5 bits, enveloppe 16 bits ✓ ; `TP=0→1` ✓ ;
+  formes d'enveloppe 0-15 ✓ ; table de volume log 16 niveaux ✓.
+
+### Corrigé (v1.99.0-alpha)
+| Écart | Détail | Correctif |
+|-------|--------|-----------|
+| **Bruit 2× trop rapide** | Le générateur de bruit réutilisait `tone_rate` (`clock/8` = cadence de **bascule** du ton) pour cadencer le LFSR. Or le bruit n'a pas de bascule ÷2 : la datasheet donne `clock/(16×NP)` (même prescaler /16 que le ton). MAME modélise ce ÷2 manquant via son `prescale_noise`. | Nouveau `noise_rate = clock/16` passé à `ay_step_sample()` (distinct de `tone_rate`). Test `test_ay_noise_rate_clock_div16` (LFSR de référence sur le nombre de pas exact). **Preuve empirique** : capture `--audio-wav` — `PING` (ton) byte-à-byte identique au binaire HEAD, `EXPLODE` (bruit) diffère → seul le bruit change, aucune régression du ton/enveloppe. |
+
+### Déviations assumées
+| Écart | Raison |
+|-------|--------|
+| L'AY-3-8912 n'a **pas de Port B** (reg 15) mais le code le modélise (`audio.h`, init 0xFF) | Sans effet sur Oric (Port B inutilisé) ; cosmétique. |
+| Sémantique R7 bit 6 (direction Port A) : le code renvoie l'entrée clavier quand bit6=1, alors que la datasheet décrit R7 bits 6/7 comme la direction des ports | **Empiriquement validé** sur Oric (clavier testé de façon extensive) → modèle Oric-spécifique délibéré ; non modifié sans confirmation (principe : ne pas inventer). |
+
+---
+
 ## Historique
+- **v1.99.0-alpha** (2026-08-12) — Correction PSG AY-3-8912 : cadence du bruit
+  ramenée à `clock/(16×NP)` (était 2× trop rapide). +1 test `test-audio` (13).
+  Preuve empirique `--audio-wav` (ton inchangé, bruit modifié). Déviations
+  assumées : Port B absent sur 8912, sémantique R7 bit6.
 - **v1.98.0-alpha** (2026-08-12) — Corrections VIA 6522 : one-shot T1/T2 qui
   continue à décrémenter après timeout (`t1_active/t2_active`), et gating DDRB.7
   sur la sortie PB7 timer. +3 tests `test-io` (46). Restent en déviation assumée

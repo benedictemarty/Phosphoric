@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.0-alpha] - 2026-08-12
+
+### Fixed — Conformité PSG AY-3-8912 vs datasheet General Instrument (bruit 2× trop rapide)
+
+Suite de l'audit matériel (`docs/HARDWARE_CONFORMANCE.md`). Le générateur de
+bruit du PSG cadençait son LFSR à `clock/(8×NP)` au lieu de `clock/(16×NP)` :
+il réutilisait `tone_rate` (= `clock/8`), qui est la cadence de **bascule** du
+ton. Le ton produit la bonne fréquence `clock/(16×TP)` car une onde carrée
+bascule deux fois par période, mais le LFSR de bruit **n'a pas ce ÷2** →
+il tournait 2× trop vite (datasheet : même prescaler /16 que le ton ; MAME
+modélise ce ÷2 manquant via son `prescale_noise`).
+
+Correctif dans `src/audio/ay3891x.c` : `ay_step_sample()` reçoit un `noise_rate`
+distinct (`clock/16`) au lieu de réutiliser `tone_rate`.
+
+Vérification :
+- Test unitaire `test_ay_noise_rate_clock_div16` : compare `ay.noise_shift` à un
+  LFSR de référence avancé du nombre de pas exact prédit par `clock/16` (et
+  vérifie qu'il diffère du nombre de pas de l'ancienne cadence `clock/8`).
+- Preuve empirique `--audio-wav` (basic11b headless) : `PING` (ton pur) produit
+  un WAV **byte-à-byte identique** au binaire HEAD → chemin ton/enveloppe
+  intact ; `EXPLODE` (bruit) **diffère** → seule la cadence du bruit change ;
+  les deux restent non silencieux (aucune régression).
+
+Tests : `test-audio` 12 → **13** (+1). `make clean && make SDL2=0 tests` toutes
+suites vertes (0 échec) ; builds natif + SDL2 OK.
+
+Déviations PSG **assumées** (documentées) : l'AY-3-8912 n'a pas de Port B (reg
+15) mais le code le modélise (sans effet sur Oric) ; sémantique R7 bit 6
+(direction Port A) empiriquement validée sur Oric mais divergente de la
+convention datasheet → non modifiée sans confirmation.
+
+EMU_VERSION 1.98.0-alpha → 1.99.0-alpha.
+
 ## [1.98.0-alpha] - 2026-08-12
 
 ### Fixed — Conformité VIA 6522 vs datasheet Rockwell R6522 Rev.9 (2 écarts corrigés)

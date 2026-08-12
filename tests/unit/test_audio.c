@@ -402,6 +402,45 @@ TEST(test_ay_resync_clears_queue) {
     ASSERT_EQ(ay.play.sregs[8], 15);
 }
 
+/* The noise LFSR must advance at clock/(16*NP) — half the tone toggle rate
+ * (datasheet: same /16 prescaler as the tone, but no square-wave ÷2). We
+ * generate a known number of samples and compare the LFSR against a reference
+ * advanced by exactly the number of steps the clock/16 rate predicts. With the
+ * old (buggy) clock/8 rate the LFSR would have advanced ~twice as far. */
+TEST(test_ay_noise_rate_clock_div16) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    const uint8_t np = 5;
+    ay_write_reg(&ay, 6, np);            /* noise period */
+    ay_write_reg(&ay, 7, 0x07);          /* tone off (bits0-2), noise on chans A/B/C */
+
+    const int K = 40;                    /* samples to render */
+    int16_t buf[40 * 2];
+    ay_generate(&ay, buf, K);
+
+    /* Steps taken = floor(noise_rate * K / (NP * SAMPLE_RATE)), noise_rate = clock/16. */
+    uint64_t noise_rate = ay.clock_rate / 16;
+    uint64_t steps = noise_rate * (uint64_t)K / ((uint64_t)np * AUDIO_SAMPLE_RATE);
+    ASSERT_TRUE(steps > 0);
+
+    /* Reference 17-bit LFSR (taps bit0 ^ bit3) advanced `steps` times from seed 1. */
+    uint32_t ref = 1;
+    for (uint64_t s = 0; s < steps; s++) {
+        uint32_t bit = ((ref >> 0) ^ (ref >> 3)) & 1;
+        ref = (ref >> 1) | (bit << 16);
+    }
+    ASSERT_EQ(ay.noise_shift, ref);
+
+    /* Sanity: the buggy clock/8 rate would have advanced ~2x as many steps,
+     * yielding a different LFSR state. */
+    uint32_t ref_fast = 1;
+    for (uint64_t s = 0; s < steps * 2; s++) {
+        uint32_t bit = ((ref_fast >> 0) ^ (ref_fast >> 3)) & 1;
+        ref_fast = (ref_fast >> 1) | (bit << 16);
+    }
+    ASSERT_TRUE(ay.noise_shift != ref_fast);
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -420,6 +459,7 @@ int main(void) {
     RUN(test_ay_generate_silence);
     RUN(test_ay_generate_tone);
     RUN(test_ay_mixer);
+    RUN(test_ay_noise_rate_clock_div16);
     RUN(test_ay_timed_mode_flag);
     RUN(test_ay_timed_port_not_queued);
     RUN(test_ay_digidrum_subbuffer_timing);

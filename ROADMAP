@@ -32,6 +32,14 @@ Audit dans `docs/HARDWARE_CONFORMANCE.md`. 2 écarts corrigés (sûrs, prouvable
       (divergence datasheets MOS/Rockwell) → pas de correction sans confirmation.
 - [ ] Reset : préserver compteurs/latches/SR — DÉVIATION ASSUMÉE (négligeable).
 
+### US 3 — PSG AY-3-8912 vs datasheet GI (v1.99.0-alpha) — DONE (1 correction)
+- [x] Bruit 2× trop rapide : LFSR cadencé à `clock/(16×NP)` au lieu de
+      `clock/(8×NP)` (le code réutilisait `tone_rate`, la cadence de bascule du
+      ton). `noise_rate = clock/16` distinct. Test `test_ay_noise_rate_clock_div16`
+      + preuve empirique `--audio-wav` (PING inchangé, EXPLODE modifié).
+- Déviations assumées : Port B absent sur l'8912 (modélisé, sans effet Oric),
+  sémantique R7 bit 6 (validée empiriquement sur Oric mais divergente datasheet).
+
 ---
 
 ## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
