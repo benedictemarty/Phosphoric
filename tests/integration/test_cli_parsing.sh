@@ -279,6 +279,41 @@ run "$EMU" -r "$ROM" -n --disk-create "$TMP/blank.dsk" -c 500000
 expect "--disk-create parses (exit 0)" 0
 if [ -s "$TMP/blank.dsk" ]; then note_pass "--disk-create wrote a non-empty .dsk"; else note_fail "--disk-create wrote no file"; fi
 
+# ── more exit-time file writers (parse + observed side effect) ──────────
+run "$EMU" -r "$ROM" -n --screenshot-text "$TMP/st.txt" -c 2000000
+expect "--screenshot-text parses (exit 0)" 0
+if [ -s "$TMP/st.txt" ]; then note_pass "--screenshot-text wrote a non-empty file"; else note_fail "--screenshot-text wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --screenshot-ansi "$TMP/sa.txt" -c 2000000
+expect "--screenshot-ansi parses (exit 0)" 0
+if [ -s "$TMP/sa.txt" ]; then note_pass "--screenshot-ansi wrote a non-empty file"; else note_fail "--screenshot-ansi wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --save-state "$TMP/s.ost" -c 1000000
+expect "--save-state parses (exit 0)" 0
+if [ -s "$TMP/s.ost" ]; then note_pass "--save-state wrote a non-empty .ost"; else note_fail "--save-state wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --record "$TMP/m.phm" -c 500000
+expect "--record parses (exit 0)" 0
+if [ -s "$TMP/m.phm" ]; then note_pass "--record wrote a non-empty .phm"; else note_fail "--record wrote no file"; fi
+
+# ── flag / value options accepted (exit 0) ─────────────────────────────
+# --fdc-timing accepts real|fast; a bogus value is LENIENT (non-fatal) — locked
+# as-is (observed), so a future parser must not start rejecting it silently.
+run "$EMU" -r "$ROM" -n --fdc-timing real -c 1000
+expect "--fdc-timing real parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --fdc-timing bogus -c 1000
+expect "--fdc-timing bogus value is lenient (exit 0)" 0
+run "$EMU" -r "$ROM" -n --printer "$TMP/pr.txt" -c 1000
+expect "--printer parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --hostfs /tmp -c 1000
+expect "--hostfs DIR parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --no-border -c 1000
+expect "--no-border parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --trace "$TMP/t.log" --trace-max 100 -c 100000
+expect "--trace-max N parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --serial loopback --serial-baud 1200 -c 1000
+expect "--serial-baud N parses (exit 0)" 0
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]
