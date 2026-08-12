@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.6-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US3 : migrer les callbacks ROM/tape/resume LOCI + module `rom_patches`
+
+Deuxième lot de code de l'Epic 9. Migrés vers `src/io/loci_glue.c` (verbatim,
+dé-staticifiés + déclarés) : `loci_resume_snapshot_path`, `loci_find_rom_file`,
+`loci_find_menu_rom`, `loci_patch_rom_info`, `loci_tape_mount_cb`,
+`loci_rom_swap_cb`, `loci_resume_session_cb`. Les 2 prototypes forward associés
+sont retirés de `main.c`.
+
+**Déblocage `get_rom_patches`.** `loci_rom_swap_cb` re-sélectionne les patches
+ROM après un swap via `get_rom_patches`, jusqu'ici static dans `main.c`. Comme
+`loci_glue.c` fait partie de `LIB_OBJECTS` (linké par des tests sans `main.o`),
+une simple déclaration ne suffit pas : la **définition** doit être dans LIB. Les
+tables `rom_patches_basic10/11` + `detect_rom_version` + `get_rom_patches` sont
+donc extraites vers un **nouveau module `src/rom_patches.{c,h}`** (main.c ne
+possède plus ces données ROM). `main.c` et `loci_glue.c` incluent `rom_patches.h`.
+
+**`main.c` : 4235 → 3921 lignes** (-314 ; cumul 4988 → 3921 = **-1067**).
+
+**Header public intact** : `include/emulator.h` reste **inchangé** (la déclaration
+`get_rom_patches` vit dans `rom_patches.h`, pas dans `emulator.h`) → aucun impact
+sur les projets qui embarquent/incluent le header de l'émulateur.
+
+Iso-comportement **prouvé par l'oracle US1** : boot LOCI headless **byte-identique**
+à la référence pré-Epic-9 (`md5 bf4dff781e05175ad8050815eccd6a42`) ;
+`test-control-dispatch` (qui cassait au link) 26/26 ; `test-loci-golden` vert ;
+`make clean && make SDL2=0 tests` toutes suites vertes ; builds `SDL2=1`,
+`SDL2=0` et `SDL2=1 HTTPAPI=1` OK.
+
+EMU_VERSION 1.99.5-alpha → 1.99.6-alpha.
+
 ## [1.99.5-alpha] - 2026-08-12
 
 ### Changed — Epic 9 / US2 : créer `src/io/loci_glue.c` + migrer les callbacks bus/IRQ LOCI

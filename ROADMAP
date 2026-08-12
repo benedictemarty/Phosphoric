@@ -95,11 +95,17 @@ Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
       byte-identique (md5 `bf4dff…`) + `test-loci-golden` vert ; builds SDL2=1,
       SDL2=0, SDL2=1 HTTPAPI=1 OK.
 
-### US 3 — Migrer les callbacks ROM / tape / resume (lot moyen)
-- [ ] `loci_tape_mount_cb`, `loci_rom_swap_cb`, `loci_resume_session_cb`,
+### US 3 — Migrer les callbacks ROM / tape / resume (lot moyen) — DONE (v1.99.6)
+- [x] `loci_tape_mount_cb`, `loci_rom_swap_cb`, `loci_resume_session_cb`,
       `loci_patch_rom_info`, `loci_find_rom_file`/`_menu_rom`,
-      `loci_resume_snapshot_path`. Couplage memory/tapebuf/rom via `emulator.h`.
-      Vérif golden + suite.
+      `loci_resume_snapshot_path` → `src/io/loci_glue.c` (+ 2 prototypes retirés).
+- [x] **Déblocage `get_rom_patches`** : comme `loci_glue.c` ∈ `LIB_OBJECTS`
+      (linké par des tests sans `main.o`), la *définition* devait être en LIB →
+      tables `rom_patches_*` + `detect_rom_version` + `get_rom_patches` extraites
+      vers **nouveau `src/rom_patches.{c,h}`**. `emulator.h` reste inchangé (pas
+      d'impact sur les projets embarquant l'émulateur). **main.c 4235 → 3921
+      (cumul -1067 depuis 4988).** Golden byte-identique + `test-control-dispatch`
+      26/26 + suite verte ; builds SDL2=1/0/HTTPAPI OK.
 
 ### US 4 — Migrer les hooks USB + actions IRQ-trap (lot moyen)
 - [ ] `loci_attach_usb_dir`, `loci_scan_host_usb`, `loci_action_install_irq_trap`,

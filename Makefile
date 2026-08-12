@@ -105,6 +105,7 @@ endif
 
 # Source files
 SOURCES = src/main.c \
+          src/rom_patches.c \
           src/cpu/cpu6502.c \
           src/cpu/opcodes.c \
           src/cpu/addressing.c \
