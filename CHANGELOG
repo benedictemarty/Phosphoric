@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.100.0-alpha] - 2026-08-12
+
+### Added — Captures déclenchées par cycle RÉPÉTABLES (`--screenshot-at` & famille `-at`)
+
+Les 4 options déclenchées par cycle (`--screenshot-at`, `--screenshot-text-at`,
+`--screenshot-ansi-at`, `--dump-ram-at`) étaient **single-shot** : chacune sur
+une variable unique, écrasée si répétée → seul le dernier `C:FILE` déclenchait.
+Elles deviennent **répétables** (même motif tableau que `--poke-at` /
+`--type-keys`).
+
+Mécanisme unifié : un tableau `emu.timed_captures[]` (`timed_capture_t` :
+cycles, file, type ∈ image/text/ansi/dump-ram, done ; `TIMED_CAPTURE_MAX`=64).
+Le parsing collecte les `(arg, type)`, les résout après la boucle getopt, et une
+**seule** boucle par frame tire chaque entrée à son seuil (remplace 4 blocs +
+4 champs uniques dans `emulator.h`).
+
+Motivation (portage SCUMM-Oric) : atteindre une room coûte ~20 Mcy de chargement
+LOCI par boot ; le single-shot imposait **un reboot par capture** pour balayer un
+arc de dialogue. Le `-at` répétable capture tout l'arc en **un seul boot** →
+planche de références (une image par réplique) triviale.
+
+Vérifié : 2×`--screenshot-at` (C1/C2) → 2 fichiers **distincts** aux bons cycles ;
+mix `screenshot-at` + `dump-ram-at`×2 + `text-at` → 4 fichiers en un run.
+`test-cli-parsing` 75 → **78** (+3) ; single-shot iso-comportement (malformé →
+exit 1, well-formed → fichier) ; `test-loci-golden` (utilise `--dump-ram-at`)
+vert ; `make clean && make SDL2=0 tests` toutes suites vertes.
+
+EMU_VERSION 1.99.9-alpha → 1.100.0-alpha.
+
 ## [1.99.9-alpha] - 2026-08-12
 
 ### Fixed — Conformité WD1793 : disque absent → NOT READY (bit 7) au lieu de RNF

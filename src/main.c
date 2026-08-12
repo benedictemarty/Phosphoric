@@ -768,19 +768,11 @@ static bool emulator_init(emulator_t* emu) {
     emu->running = true;
     /* Note: fast_load, headless, max_cycles are set by caller before init */
     emu->screenshot_file = NULL;
-    emu->screenshot_at_cycles = -1;
-    emu->screenshot_at_file = NULL;
     emu->screenshot_text_file = NULL;
     emu->screenshot_ansi_file = NULL;
-    emu->screenshot_text_at_cycles = -1;
-    emu->screenshot_text_at_file = NULL;
-    emu->screenshot_ansi_at_cycles = -1;
-    emu->screenshot_ansi_at_file = NULL;
+    emu->timed_capture_count = 0;   /* captures -at répétables (voir timed_capture_t) */
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
-    emu->dump_ram_at_cycles = -1;
-    emu->dump_ram_at_file = NULL;
-    emu->dump_ram_at_done = true;
     emu->kbd_scan_prev_col = 0xFF;   /* sentinel: first read starts no pass */
     emu->type_keys_when_addr = -1;
     emu->type_keys_when_text = NULL;
@@ -1045,9 +1037,6 @@ static void emulator_run(emulator_t* emu) {
 
     uint64_t total_executed = 0;
     uint64_t frame_count = 0;
-    bool screenshot_at_done = false;
-    bool screenshot_text_at_done = false;
-    bool screenshot_ansi_at_done = false;
 
 #ifdef HAS_SDL2
     uint32_t frame_start_ticks = SDL_GetTicks();
@@ -1866,39 +1855,60 @@ static void emulator_run(emulator_t* emu) {
 #endif
         }
 
-        /* Screenshot at specific cycle count */
-        if (!screenshot_at_done && emu->screenshot_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->screenshot_at_cycles) {
-            log_info("Taking screenshot at %llu cycles -> %s",
-                     (unsigned long long)total_executed, emu->screenshot_at_file);
-            emu_export_image(emu, emu->screenshot_at_file);
-            screenshot_at_done = true;
-        }
-
-        /* Text screenshot at specific cycle count (contenu texte réel $BB80) */
-        if (!screenshot_text_at_done && emu->screenshot_text_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->screenshot_text_at_cycles) {
-            FILE* tf = fopen(emu->screenshot_text_at_file, "w");
-            if (tf) {
-                video_export_screen_text(emu->memory.ram, tf);
-                fclose(tf);
-                log_info("Text screenshot at %llu cycles -> %s",
-                         (unsigned long long)total_executed, emu->screenshot_text_at_file);
-            } else {
-                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_at_file);
+        /* Cycle-triggered captures (--screenshot-at / -text-at / -ansi-at /
+         * --dump-ram-at), RÉPÉTABLES : chaque entrée du tableau tire une fois
+         * quand total_executed atteint son seuil. Échantillonné une fois par
+         * frame comme avant (le contenu ne dépend que du cycle courant). */
+        for (int ci = 0; ci < emu->timed_capture_count; ci++) {
+            timed_capture_t* tc = &emu->timed_captures[ci];
+            if (tc->done || tc->cycles < 0 ||
+                (int64_t)total_executed < tc->cycles)
+                continue;
+            switch (tc->type) {
+            case TCAP_IMAGE:
+                log_info("Taking screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, tc->file);
+                emu_export_image(emu, tc->file);
+                break;
+            case TCAP_TEXT: {
+                FILE* tf = fopen(tc->file, "w");
+                if (tf) {
+                    video_export_screen_text(emu->memory.ram, tf);
+                    fclose(tf);
+                    log_info("Text screenshot at %llu cycles -> %s",
+                             (unsigned long long)total_executed, tc->file);
+                } else {
+                    log_error("Cannot open text screenshot file: %s", tc->file);
+                }
+                break;
             }
-            screenshot_text_at_done = true;
-        }
-
-        /* ANSI screenshot at specific cycle count (image true-color du framebuffer) */
-        if (!screenshot_ansi_at_done && emu->screenshot_ansi_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->screenshot_ansi_at_cycles) {
-            if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_at_file, 2, 2))
-                log_info("ANSI screenshot at %llu cycles -> %s",
-                         (unsigned long long)total_executed, emu->screenshot_ansi_at_file);
-            else
-                log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_at_file);
-            screenshot_ansi_at_done = true;
+            case TCAP_ANSI:
+                if (video_export_ascii_file(&emu->video, tc->file, 2, 2))
+                    log_info("ANSI screenshot at %llu cycles -> %s",
+                             (unsigned long long)total_executed, tc->file);
+                else
+                    log_error("Cannot write ANSI screenshot file: %s", tc->file);
+                break;
+            case TCAP_DUMP_RAM: {
+                FILE* rf = fopen(tc->file, "wb");
+                if (rf) {
+                    fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
+                    /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay / upper
+                     * RAM). memory_read est sans effet de bord hors page I/O. */
+                    for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                        uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                        fwrite(&b, 1, 1, rf);
+                    }
+                    fclose(rf);
+                    log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
+                             (unsigned long long)total_executed, tc->file);
+                } else {
+                    log_error("Cannot open RAM dump file: %s", tc->file);
+                }
+                break;
+            }
+            }
+            tc->done = true;
         }
 
         /* Frame dump */
@@ -1924,28 +1934,6 @@ static void emulator_run(emulator_t* emu) {
         }
 
         frame_count++;
-
-        /* RAM dump at cycle: write 64KB once when threshold reached */
-        if (!emu->dump_ram_at_done && emu->dump_ram_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->dump_ram_at_cycles) {
-            FILE* rf = fopen(emu->dump_ram_at_file, "wb");
-            if (rf) {
-                fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
-                /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay /
-                 * upper RAM). memory_read est sans effet de bord hors
-                 * page I/O ($0300-$03FF), jamais atteinte ici. */
-                for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
-                    uint8_t b = memory_read(&emu->memory, (uint16_t)a);
-                    fwrite(&b, 1, 1, rf);
-                }
-                fclose(rf);
-                log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
-                         (unsigned long long)total_executed, emu->dump_ram_at_file);
-            } else {
-                log_error("Cannot open RAM dump file: %s", emu->dump_ram_at_file);
-            }
-            emu->dump_ram_at_done = true;
-        }
 
         /* State-triggered captures : front montant sur RAM[addr] == val,
          * échantillonné ici en fin de frame (même cadence que les variantes
@@ -2192,9 +2180,10 @@ int main(int argc, char* argv[]) {
     int64_t max_cycles = -1;
     const char* screenshot_file = NULL;
     const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
-    const char* screenshot_at_arg = NULL;
-    const char* screenshot_text_at_arg = NULL;
-    const char* screenshot_ansi_at_arg = NULL;
+    /* Captures -at RÉPÉTABLES : on collecte (arg, type) au parsing, puis on
+     * résout chaque "CYCLES:FILE" après la boucle getopt (comme --poke-at). */
+    struct { const char* arg; timed_capture_type_t type; } tcap_cli[TIMED_CAPTURE_MAX];
+    int tcap_cli_count = 0;
     const char* screenshot_text_file = NULL;
     const char* screenshot_ansi_file = NULL;
     const char* frame_dump_dir = NULL;
@@ -2236,7 +2225,6 @@ int main(int argc, char* argv[]) {
     int scale_factor = 3;
     bool render_software = false;
     const char* trace_file = NULL;
-    const char* dump_ram_at_arg = NULL;
     const char* screenshot_when_arg = NULL;
     const char* dump_ram_when_arg = NULL;
     const char* screenshot_text_when_arg = NULL;
@@ -2296,10 +2284,10 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT: screenshot_file = optarg; break;
             case OPT_SCREENSHOT_TEXT: screenshot_text_file = optarg; break;
             case OPT_SCREENSHOT_ANSI: screenshot_ansi_file = optarg; break;
-            case OPT_SCREENSHOT_TEXT_AT: screenshot_text_at_arg = optarg; break;
-            case OPT_SCREENSHOT_ANSI_AT: screenshot_ansi_at_arg = optarg; break;
+            case OPT_SCREENSHOT_TEXT_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_TEXT;} break;
+            case OPT_SCREENSHOT_ANSI_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_ANSI;} break;
             case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
-            case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
+            case OPT_SCREENSHOT_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_IMAGE;} break;
             case OPT_SCREENSHOT_WHEN: screenshot_when_arg = optarg; break;
             case OPT_SCREENSHOT_TEXT_WHEN: screenshot_text_when_arg = optarg; break;
             case OPT_DUMP_RAM_WHEN: dump_ram_when_arg = optarg; break;
@@ -2399,7 +2387,7 @@ int main(int argc, char* argv[]) {
             case OPT_SERIAL_TRACE:
                 serial_trace_file = optarg;
                 break;
-            case OPT_DUMP_RAM_AT: dump_ram_at_arg = optarg; break;
+            case OPT_DUMP_RAM_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_DUMP_RAM;} break;
             case OPT_BAD_SECTOR:
                 if (bad_sector_arg_count < FDC_MAX_BAD_SECTORS)
                     bad_sector_args[bad_sector_arg_count++] = optarg;
@@ -2831,22 +2819,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Parse --dump-ram-at CYCLES:FILE */
-    if (dump_ram_at_arg) {
-        if (!cli_split_cycles_file(dump_ram_at_arg, "dump-ram-at",
-                                   &emu.dump_ram_at_cycles, &emu.dump_ram_at_file)) {
-            emulator_cleanup(&emu);
-            return 1;
-        }
-        emu.dump_ram_at_done = false;
-        log_info("RAM dump scheduled at %lld cycles → %s",
-                 (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
-    } else {
-        emu.dump_ram_at_cycles = -1;
-        emu.dump_ram_at_file = NULL;
-        emu.dump_ram_at_done = true;
-    }
-
     /* Open --trace-irq FILE */
     if (trace_irq_file) {
         FILE* fp = cli_open_out(trace_irq_file, "w", "trace-irq");
@@ -3009,28 +2981,26 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Parse --screenshot-at CYCLES:FILE */
-    if (screenshot_at_arg) {
-        if (!cli_split_cycles_file(screenshot_at_arg, "screenshot-at",
-                                   &emu.screenshot_at_cycles, &emu.screenshot_at_file)) {
-            emulator_cleanup(&emu);
-            return 1;
-        }
-    }
-
-    /* Parse --screenshot-text-at CYCLES:FILE et --screenshot-ansi-at CYCLES:FILE */
-    if (screenshot_text_at_arg) {
-        if (!cli_split_cycles_file(screenshot_text_at_arg, "screenshot-text-at",
-                                   &emu.screenshot_text_at_cycles, &emu.screenshot_text_at_file)) {
-            emulator_cleanup(&emu);
-            return 1;
-        }
-    }
-    if (screenshot_ansi_at_arg) {
-        if (!cli_split_cycles_file(screenshot_ansi_at_arg, "screenshot-ansi-at",
-                                   &emu.screenshot_ansi_at_cycles, &emu.screenshot_ansi_at_file)) {
-            emulator_cleanup(&emu);
-            return 1;
+    /* Résolution des captures -at RÉPÉTABLES (--screenshot-at / -text-at /
+     * -ansi-at / --dump-ram-at) collectées dans tcap_cli : chaque "CYCLES:FILE"
+     * devient une entrée timed_captures[]. Format malformé = fatal (comme avant). */
+    {
+        static const char* const tcap_optname[] = {
+            "screenshot-at", "screenshot-text-at", "screenshot-ansi-at", "dump-ram-at"
+        };
+        for (int i = 0; i < tcap_cli_count; i++) {
+            int64_t cyc; const char* file;
+            if (!cli_split_cycles_file(tcap_cli[i].arg, tcap_optname[tcap_cli[i].type],
+                                       &cyc, &file)) {
+                emulator_cleanup(&emu);
+                return 1;
+            }
+            if (emu.timed_capture_count < TIMED_CAPTURE_MAX) {
+                timed_capture_t* t = &emu.timed_captures[emu.timed_capture_count++];
+                t->cycles = cyc; t->file = file; t->type = tcap_cli[i].type; t->done = false;
+            }
+            log_info("Capture %s armée à %lld cycles -> %s",
+                     tcap_optname[tcap_cli[i].type], (long long)cyc, file);
         }
     }
 

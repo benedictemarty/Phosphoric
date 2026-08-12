@@ -339,6 +339,26 @@ run "$EMU" -r "$ROM" -n --video "$TMP/v.avi" -c 2000000
 expect "--video FILE parses (exit 0)" 0
 if [ -s "$TMP/v.avi" ]; then note_pass "--video wrote a non-empty AVI"; else note_fail "--video wrote no file"; fi
 
+# ── repeatable cycle-triggered captures (the -at family is now an array) ────
+# Two --screenshot-at at different cycles must BOTH fire → two distinct files
+# (previously only the last was honoured). And the whole -at family can mix in
+# one run (screenshot + dump-ram + text).
+run "$EMU" -r "$ROM" -n \
+    --screenshot-at 1000000:"$TMP/r1.ppm" --screenshot-at 2500000:"$TMP/r2.ppm" \
+    --dump-ram-at 1500000:"$TMP/r.bin" --screenshot-text-at 2000000:"$TMP/r.txt" \
+    -c 3000000
+expect "repeatable -at family parses (exit 0)" 0
+if [ -s "$TMP/r1.ppm" ] && [ -s "$TMP/r2.ppm" ] && ! cmp -s "$TMP/r1.ppm" "$TMP/r2.ppm"; then
+    note_pass "two --screenshot-at both fired → two distinct files"
+else
+    note_fail "repeatable --screenshot-at: files missing or identical (single-shot regression?)"
+fi
+if [ -s "$TMP/r.bin" ] && [ -s "$TMP/r.txt" ]; then
+    note_pass "mixed -at family (screenshot + dump-ram + text) all fired in one run"
+else
+    note_fail "mixed -at family: dump-ram or text capture missing"
+fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]

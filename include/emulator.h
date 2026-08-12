@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.99.9-alpha"
+#define EMU_VERSION "1.100.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -115,6 +115,23 @@ typedef struct rom_patches_s {
 
 /* Nombre max d'écritures mémoire différées (--poke-at / --poke-when) */
 #define POKE_MAX             32
+
+/* Captures déclenchées par cycle, RÉPÉTABLES (--screenshot-at / -text-at /
+ * -ansi-at / --dump-ram-at) : chaque entrée tire une fois quand total_executed
+ * atteint son seuil. Motif tableau homogène avec --poke-at / --type-keys. */
+#define TIMED_CAPTURE_MAX    64
+typedef enum {
+    TCAP_IMAGE = 0,   /* --screenshot-at      : image PPM/BMP */
+    TCAP_TEXT,        /* --screenshot-text-at : texte écran $BB80 */
+    TCAP_ANSI,        /* --screenshot-ansi-at : image ANSI du framebuffer */
+    TCAP_DUMP_RAM     /* --dump-ram-at        : 64K RAM (RAM + vue CPU $C000+) */
+} timed_capture_type_t;
+typedef struct {
+    int64_t cycles;               /* seuil de déclenchement (-1 = inutilisé) */
+    const char* file;             /* chemin de sortie */
+    timed_capture_type_t type;
+    bool done;                    /* déjà tiré */
+} timed_capture_t;
 
 typedef struct emulator_s {
     /* Machine model */
@@ -243,16 +260,15 @@ typedef struct emulator_s {
      * clobber the loaded PC/cycles and drop back to the reset vector. */
     bool startup_state_loaded;
 
-    /* Screenshot options */
+    /* Screenshot options (sorties « fin de run ») */
     const char* screenshot_file;
-    int64_t screenshot_at_cycles;
-    const char* screenshot_at_file;
     const char* screenshot_text_file; /* dump contenu texte écran $BB80 (sortie) */
     const char* screenshot_ansi_file; /* image ANSI true-color du framebuffer (sortie) */
-    int64_t screenshot_text_at_cycles; /* dump texte à un cycle donné (-1 = off) */
-    const char* screenshot_text_at_file;
-    int64_t screenshot_ansi_at_cycles; /* image ANSI à un cycle donné (-1 = off) */
-    const char* screenshot_ansi_at_file;
+
+    /* Captures déclenchées par cycle, répétables (voir timed_capture_t) :
+     * --screenshot-at / -text-at / -ansi-at / --dump-ram-at. */
+    timed_capture_t timed_captures[TIMED_CAPTURE_MAX];
+    int             timed_capture_count;
 
     /* Frame dump options */
     const char* frame_dump_dir;
@@ -268,10 +284,6 @@ typedef struct emulator_s {
     avi_recorder_t video_avi_rec; /* recorder state */
     bool video_avi_active;        /* true once the file is open */
 
-    /* RAM dump at cycle: write 64KB of RAM to FILE when cycle >= threshold */
-    int64_t dump_ram_at_cycles;
-    const char* dump_ram_at_file;
-    bool dump_ram_at_done;
 
     /* Captures déclenchées par un ÉTAT mémoire (front montant : 1re fois que
      * RAM[addr] == val, échantillonné en fin de frame comme les variantes -at).

@@ -40,6 +40,9 @@ void cli_print_usage(const char* program_name) {
     printf("  -v, --verbose              Verbose logging\n");
     printf("      --screenshot FILE      Take screenshot at exit (.ppm or .bmp)\n");
     printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
+    printf("                             (the -at family is REPEATABLE: pass several\n");
+    printf("                             --screenshot-at/-text-at/-ansi-at/--dump-ram-at\n");
+    printf("                             to capture many instants in one run)\n");
     printf("      --screenshot-text FILE Dump screen text ($BB80, 40x28) as ASCII at exit\n");
     printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
     printf("      --screenshot-text-at C:FILE  Dump screen text after C cycles to FILE\n");
