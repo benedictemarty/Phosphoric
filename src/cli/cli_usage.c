@@ -93,7 +93,9 @@ void cli_print_usage(const char* program_name) {
     printf("      --http-api-bind ADDR   Bind address for the HTTP API (default 127.0.0.1)\n");
     printf("      --http-api-root DIR    Sandbox root for HTTP file ops /tape,/disk (default CWD)\n");
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
-    printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
+    printf("      --trace-max N          Max instructions to trace (keeps the FIRST N)\n");
+    printf("      --trace-ring N         Keep only the LAST N instructions (ring buffer,\n");
+    printf("                             saved to --trace FILE at exit; ideal for a hang)\n");
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
     printf("      --psg-trace FILE       Log AY sound-register writes (reg 0-13) with CPU cycle\n");
     printf("      --audio-wav FILE       Capture PSG audio to a 16-bit stereo 44.1 kHz WAV\n");

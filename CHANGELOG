@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.101.0-alpha] - 2026-08-12
+
+### Added — `--trace-ring N` (trace « queue ») + `--symbols` branché au `--trace` streaming
+
+Deux manques bornés, révélés en debug de hang (portage SCUMM-Oric) :
+
+- **`--trace-ring N`** : garde en mémoire les **N DERNIÈRES** instructions (ring
+  buffer) et les écrit dans `--trace FILE` à la sortie. Complète `--trace-max N`
+  qui garde les **PREMIÈRES** N (le boot) — inutile pour un hang profond, où c'est
+  la boucle finale qu'on veut. L'infra ring existait (Epic 6, `trace_arm`/
+  `trace_save_ring`) mais n'était exposée qu'en IPC/debugger ; elle l'est
+  désormais en CLI simple.
+- **`--symbols` annote le `--trace` streaming**. Auparavant `trace_set_symbols`
+  n'était appelé que depuis `control.c`/`debugger.c` : `--trace FILE --symbols X`
+  produisait une trace **sans** labels. Corrigé pour les deux modes (ring +
+  streaming), en armant `with_symbols` sur le fp ouvert.
+
+Vérifié PAR LA MESURE (basic11b headless) : `--trace-ring 12` → 12 lignes, 1re au
+cycle ~3 015 406 (la queue, pas le boot) ; `--trace-max 12` → 1re au cycle 0 (le
+boot) ; `--symbols` → annotation `; SCAN_BPL` présente, absente sans `--symbols`.
+`test-cli-parsing` 78 → **82** (+4). `make clean && make SDL2=0 tests` toutes
+suites vertes ; `test-trace` 16/16.
+
+EMU_VERSION 1.100.0-alpha → 1.101.0-alpha.
+
 ## [1.100.0-alpha] - 2026-08-12
 
 ### Added — Captures déclenchées par cycle RÉPÉTABLES (`--screenshot-at` & famille `-at`)

@@ -2247,6 +2247,7 @@ int main(int argc, char* argv[]) {
     const char* loci_sdimg_path = NULL;
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int64_t trace_max = 0;
+    int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
     bool rom_info_enabled = false;
@@ -2363,6 +2364,7 @@ int main(int argc, char* argv[]) {
             case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
+            case OPT_TRACE_RING: trace_ring = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
             case OPT_ROM_INFO:
                 rom_info_enabled = true;
@@ -3569,11 +3571,29 @@ int main(int argc, char* argv[]) {
     /* CPU trace logging */
     trace_init(&emu.trace);
     if (trace_file) {
-        if (trace_max > 0) {
-            trace_set_max(&emu.trace, (uint64_t)trace_max);
-        }
-        if (!trace_open(&emu.trace, trace_file)) {
-            log_error("Failed to open trace file: %s", trace_file);
+        /* --symbols annote la trace avec les labels, dans LES DEUX modes.
+         * (Avant : seuls le trace conditionnel IPC/debugger l'exploitaient ; le
+         * --trace streaming ignorait --symbols.) */
+        bool trace_syms = (symbols_file != NULL);
+        if (trace_syms) trace_set_symbols(&emu.trace, &emu.symbols);
+        if (trace_ring > 0) {
+            /* Mode ring/tail : garde en mémoire les N DERNIÈRES instructions
+             * (idéal pour un hang profond, là où --trace-max ne garde que les
+             * PREMIÈRES) et les écrit à la sortie via trace_save_ring(). */
+            trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
+                      (uint32_t)trace_ring, trace_syms);
+            log_info("CPU trace ring armed (last %lld instructions) -> %s",
+                     (long long)trace_ring, trace_file);
+        } else {
+            if (trace_max > 0) trace_set_max(&emu.trace, (uint64_t)trace_max);
+            if (!trace_open(&emu.trace, trace_file)) {
+                log_error("Failed to open trace file: %s", trace_file);
+            } else if (trace_syms) {
+                /* Streaming + symboles : (re)arme en mode "now" (ring_cap=0) pour
+                 * activer l'annotation symbolique sur le fp déjà ouvert. */
+                trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
+                          0, true);
+            }
         }
     }
 
@@ -3701,6 +3721,16 @@ int main(int argc, char* argv[]) {
         profiler_report_to_file(&emu.profiler, profile_file);
     }
 
+    /* --trace-ring : à la fin du run, écrire les N dernières instructions
+     * gardées en mémoire (ordre ancien → récent) dans le fichier de trace. */
+    if (trace_file && trace_ring > 0) {
+        if (trace_save_ring(&emu.trace, trace_file))
+            log_info("CPU trace ring saved (%u instructions) -> %s",
+                     trace_ring_count(&emu.trace), trace_file);
+        else
+            log_warning("CPU trace ring empty (no instructions recorded) -> %s",
+                        trace_file);
+    }
     trace_close(&emu.trace);
 
     /* Un --*-when armé mais jamais déclenché = échec explicite (exit 2), pour

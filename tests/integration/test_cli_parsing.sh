@@ -359,6 +359,37 @@ else
     note_fail "mixed -at family: dump-ram or text capture missing"
 fi
 
+# ── --trace-ring : keep the LAST N instructions (tail), not the first N ────
+# For hang debugging: --trace-max keeps the boot (first N, cycle 0); --trace-ring
+# keeps the tail (last N, high cycle). And --symbols annotates the trace.
+printf 'SCAN_BPL = $C5EB\n' > "$TMP/t.sym"
+run "$EMU" -r "$ROM" -n --trace "$TMP/ring.log" --trace-ring 12 --symbols "$TMP/t.sym" -c 3000000
+expect "--trace-ring parses (exit 0)" 0
+if [ -s "$TMP/ring.log" ]; then
+    n=$(wc -l < "$TMP/ring.log")
+    first_cyc=$(awk 'NR==1{print $1+0; exit}' "$TMP/ring.log")
+    # tail: the first recorded line must be far from the boot (cycle 0)
+    if [ "$n" -le 12 ] && [ "$n" -gt 0 ] && [ "${first_cyc:-0}" -gt 1000000 ]; then
+        note_pass "--trace-ring kept the LAST $n instructions (tail, first cycle=$first_cyc)"
+    else
+        note_fail "--trace-ring: got $n lines, first cycle=$first_cyc (expected tail, not boot)"
+    fi
+    if grep -q '; SCAN_BPL' "$TMP/ring.log"; then
+        note_pass "--symbols annotates the trace (; SCAN_BPL present)"
+    else
+        note_fail "--symbols did not annotate the trace"
+    fi
+else
+    note_fail "--trace-ring wrote no file"
+fi
+# contrast: --trace-max keeps the FIRST N (boot, cycle 0)
+run "$EMU" -r "$ROM" -n --trace "$TMP/head.log" --trace-max 12 -c 3000000
+if [ -s "$TMP/head.log" ] && [ "$(awk 'NR==1{print $1+0;exit}' "$TMP/head.log")" -eq 0 ]; then
+    note_pass "--trace-max keeps the FIRST N (boot, cycle 0) — the documented contrast"
+else
+    note_fail "--trace-max did not keep the boot head"
+fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]
