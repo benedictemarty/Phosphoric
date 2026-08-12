@@ -99,6 +99,8 @@ void via_reset(via6522_t* via) {
     via->t2_latch = 0xFF;
     via->t1_running = false;
     via->t2_running = false;
+    via->t1_active = false;
+    via->t2_active = false;
     via->sr = 0;
     via->sr_count = 0;
     via->acr = 0;
@@ -147,8 +149,9 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
          * handshake/pulse — only writing ORB does (write handshake). */
         {
             uint8_t rb = (via->orb & via->ddrb) | (input & ~via->ddrb);
-            /* ACR bit7: PB7 is driven by Timer 1, overriding ORB/DDRB. */
-            if (via->acr & 0x80)
+            /* PB7 is driven by Timer 1 only when BOTH DDRB bit7 and ACR bit7
+             * are set (datasheet p.9); otherwise it is a normal port pin. */
+            if ((via->acr & 0x80) && (via->ddrb & 0x80))
                 rb = via->pb7_pin ? (rb | 0x80) : (rb & 0x7F);
             return rb;
         }
@@ -258,10 +261,13 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->t1_latch = (via->t1_latch & 0x00FF) | ((uint16_t)value << 8);
         via->t1_counter = via->t1_latch;
         via->t1_running = true;
+        via->t1_active = true;
         via->ifr &= ~VIA_INT_T1;
         /* ACR bit7 one-shot PB7 mode (bit6=0): writing T1CH pulls PB7 low for
-         * the duration of the count; the underflow drives it high again. */
-        if ((via->acr & 0xC0) == 0x80)
+         * the duration of the count; the underflow drives it high again. PB7 is
+         * the timer output only when BOTH DDRB bit7 and ACR bit7 are set
+         * (datasheet p.9); otherwise it is a normal port pin. */
+        if ((via->acr & 0xC0) == 0x80 && (via->ddrb & 0x80))
             via->pb7_pin = false;
         via_check_irq(via);
         break;
@@ -276,6 +282,7 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
     case VIA_T2CH:
         via->t2_counter = ((uint16_t)value << 8) | via->t2_latch;
         via->t2_running = true;
+        via->t2_active = true;
         via->ifr &= ~VIA_INT_T2;
         via_check_irq(via);
         break;
@@ -339,45 +346,57 @@ void via_update(via6522_t* via, int cycles) {
         }
     }
 
-    /* Timer 1 */
-    if (via->t1_running) {
+    /* Timer 1. The 16-bit counter keeps decrementing at φ2 as long as the timer
+     * is active — even after a one-shot has timed out (datasheet p.8: the host
+     * can read the counter to know the time since the interrupt). Only an
+     * underflow with t1_running still set fires the flag / toggles PB7 / reloads. */
+    if (via->t1_active) {
         int old = via->t1_counter;
         via->t1_counter -= (uint16_t)cycles;
         if (via->t1_counter > (uint16_t)old || via->t1_counter == 0xFFFF || via->t1_counter == 0) {
-            /* Timer 1 underflow */
-            via->ifr |= VIA_INT_T1;
-            via_check_irq(via);
+            if (via->t1_running) {
+                /* Timer 1 underflow */
+                via->ifr |= VIA_INT_T1;
+                via_check_irq(via);
 
-            /* ACR bit7: PB7 driven by Timer 1 (Oric cassette WRITE output).
-             * Square-wave mode (bit6=1) toggles PB7 on every underflow; one-shot
-             * mode (bit6=0) drives PB7 high for a single pulse (it was pulled low
-             * when T1CH was written). */
-            if (via->acr & 0x80) {
-                if (via->acr & 0x40)
-                    via->pb7_pin = !via->pb7_pin;   /* square wave */
-                else
-                    via->pb7_pin = true;            /* one-shot pulse high */
-            }
+                /* PB7 is the Timer-1 output (Oric cassette WRITE) only when BOTH
+                 * DDRB bit7 and ACR bit7 are set (datasheet p.9). Square-wave
+                 * mode (bit6=1) toggles PB7 on every underflow; one-shot mode
+                 * (bit6=0) drives PB7 high for a single pulse (pulled low on
+                 * the T1CH write). */
+                if ((via->acr & 0x80) && (via->ddrb & 0x80)) {
+                    if (via->acr & 0x40)
+                        via->pb7_pin = !via->pb7_pin;   /* square wave */
+                    else
+                        via->pb7_pin = true;            /* one-shot pulse high */
+                }
 
-            if (via->acr & 0x40) {
-                /* Free-running: reload from latch */
-                via->t1_counter = via->t1_latch;
-            } else {
-                /* One-shot: stop */
-                via->t1_running = false;
+                if (via->acr & 0x40) {
+                    /* Free-running: reload from latch, keep firing */
+                    via->t1_counter = via->t1_latch;
+                } else {
+                    /* One-shot: no further interrupts (but the counter keeps
+                     * running because t1_active stays set) */
+                    via->t1_running = false;
+                }
             }
+            /* underflow while !t1_running (one-shot already fired): the counter
+             * simply wraps and continues — no flag, no reload. */
         }
     }
 
     /* Timer 2 (one-shot only in timer mode; pulse-counting mode is driven by
      * via_pb6_pulse() instead of φ2). */
-    if (via->t2_running && !(via->acr & 0x20)) {
+    if (via->t2_active && !(via->acr & 0x20)) {
         int old = via->t2_counter;
         via->t2_counter -= (uint16_t)cycles;
         if (via->t2_counter > (uint16_t)old || via->t2_counter == 0xFFFF || via->t2_counter == 0) {
-            via->ifr |= VIA_INT_T2;
-            via_check_irq(via);
-            via->t2_running = false;
+            if (via->t2_running) {
+                via->ifr |= VIA_INT_T2;
+                via_check_irq(via);
+                via->t2_running = false;   /* one-shot: no further interrupts */
+            }
+            /* counter keeps running after time-out (t2_active stays set) */
         }
     }
 
@@ -526,13 +545,17 @@ void via_set_cb2_input(via6522_t* via, bool level) {
 }
 
 void via_pb6_pulse(via6522_t* via) {
-    /* Each call models one PB6 negative edge. */
-    if (!via->t2_running || !(via->acr & 0x20)) return;
+    /* Each call models one PB6 negative edge. The counter keeps counting pulses
+     * even after a one-shot time-out (t2_active); only the first underflow with
+     * t2_running set raises the flag (datasheet Fig 19). */
+    if (!via->t2_active || !(via->acr & 0x20)) return;
     if (via->t2_counter == 0) {
         via->t2_counter = 0xFFFF;         /* underflow */
-        via->ifr |= VIA_INT_T2;
-        via_check_irq(via);
-        via->t2_running = false;
+        if (via->t2_running) {
+            via->ifr |= VIA_INT_T2;
+            via_check_irq(via);
+            via->t2_running = false;
+        }
     } else {
         via->t2_counter--;
     }
@@ -556,8 +579,9 @@ bool via_get_cb2(via6522_t* via) {
 }
 
 bool via_get_pb7(via6522_t* via) {
-    /* ACR bit7: PB7 driven by Timer 1 (Oric cassette WRITE line). */
-    if (via->acr & 0x80) return via->pb7_pin;
+    /* PB7 driven by Timer 1 (Oric cassette WRITE line) only when BOTH DDRB bit7
+     * and ACR bit7 are set (datasheet p.9). */
+    if ((via->acr & 0x80) && (via->ddrb & 0x80)) return via->pb7_pin;
     /* Otherwise PB7 is a normal port pin: output register bit7 if configured
      * as output, else idle high (pulled up). */
     if (via->ddrb & 0x80) return (via->orb & 0x80) != 0;

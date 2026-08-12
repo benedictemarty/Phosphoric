@@ -17,16 +17,20 @@ Traçabilité dans `docs/HARDWARE_CONFORMANCE.md`.
 - [x] Force Interrupt : D0 = pas d'INTRQ, D8 = INTRQ immédiat.
 - [x] +3 tests `test-storage` (24 FDC) ; suite complète verte.
 
-### US 2 — VIA 6522 vs R6522 Rev.9 — BACKLOG (audit fait, corrections reportées)
-Audit livré dans `docs/HARDWARE_CONFORMANCE.md` ; 5 déviations identifiées.
-Reportées car elles ripplent sur du comportement délibéré verrouillé par des
-tests existants — sprint dédié requis (réécriture de tests + vérif intégration) :
-- [ ] One-shot T1/T2 : continuer à décrémenter après timeout (impacte `t1_running`
-      utilisé par savestate/control/debugger + `test_timer1/2_one_shot`).
-- [ ] T1 free-run : période N+2 (rechargement + `==0`) — risque calibration IRQ 100 Hz.
-- [ ] PB7 sortie timer : exiger DDRB.7 & ACR.7 — besoin d'un test d'intégration CSAVE.
-- [ ] Écriture T1L-H : confirmer le comportement sur le flag T1 avant correction.
-- [ ] Reset : préserver compteurs/latches/SR (négligeable ; `test_via_reset` à revoir).
+### US 2 — VIA 6522 vs R6522 Rev.9 (v1.98.0-alpha) — PARTIEL (2/5)
+Audit dans `docs/HARDWARE_CONFORMANCE.md`. 2 écarts corrigés (sûrs, prouvables) ;
+3 restent en déviation assumée.
+- [x] One-shot T1/T2 : le compteur continue à décrémenter après timeout — via
+      champ `t1_active/t2_active` séparé de `t1_running/t2_running` (sémantique
+      `running=false` après timeout préservée → savestate/control/debugger/tests
+      intacts). Tests `test_timer1/2_one_shot_counter_continues`.
+- [x] PB7 sortie timer : exiger DDRB.7 & ACR.7 (4 sites) — `test_pb7_timer_requires_ddrb7`
+      + capture CSAVE byte-à-byte identique au binaire HEAD (aucune régression).
+- [ ] T1 free-run : période N+2 (rechargement + `==0`) — DÉVIATION ASSUMÉE :
+      corriger décalerait toutes les baselines byte-exact + risque IRQ 100 Hz.
+- [ ] Écriture T1L-H efface le flag T1 — DÉVIATION ASSUMÉE : comportement incertain
+      (divergence datasheets MOS/Rockwell) → pas de correction sans confirmation.
+- [ ] Reset : préserver compteurs/latches/SR — DÉVIATION ASSUMÉE (négligeable).
 
 ---
 

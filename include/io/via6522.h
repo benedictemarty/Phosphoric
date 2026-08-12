@@ -65,8 +65,14 @@ typedef struct via6522_s {
     uint16_t t1_latch;      /**< Timer 1 Latch */
     uint16_t t2_counter;    /**< Timer 2 Counter */
     uint8_t  t2_latch;      /**< Timer 2 Latch (low byte only) */
-    bool     t1_running;    /**< Timer 1 running flag */
-    bool     t2_running;    /**< Timer 2 running flag */
+    bool     t1_running;    /**< Timer 1 will still fire (free-run, or one-shot
+                                 not yet timed out). Cleared on one-shot time-out. */
+    bool     t2_running;    /**< Timer 2 will still fire (one-shot not yet timed out) */
+    bool     t1_active;     /**< Timer 1 counter is counting. Set on T1C-H write,
+                                 stays true after a one-shot time-out so the counter
+                                 keeps decrementing at φ2 (datasheet p.8: lets the
+                                 host read the time since interrupt). */
+    bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
 
     /* Shift Register */
     uint8_t sr;         /**< Shift Register */

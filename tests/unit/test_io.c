@@ -624,6 +624,70 @@ TEST(test_porta_latching_on_ca1) {
     ASSERT_EQ(via_read(&via, VIA_ORA), 0x0F);
 }
 
+/* After a one-shot Timer 1 times out, the counter keeps decrementing (so the
+ * host can read the time since the interrupt) but the flag must NOT re-arm
+ * (datasheet p.8). */
+TEST(test_timer1_one_shot_counter_continues) {
+    via6522_t via;
+    via_init(&via);
+    via_reset(&via);
+    via.acr &= ~0x40;                 /* one-shot */
+    via_write(&via, VIA_T1CL, 0x64);  /* latch = 100 */
+    via_write(&via, VIA_T1CH, 0x00);
+    via_update(&via, 105);            /* past time-out */
+    ASSERT_FALSE(via.t1_running);
+    ASSERT_TRUE(via.ifr & VIA_INT_T1);
+    via_read(&via, VIA_T1CL);         /* clear the T1 flag */
+    ASSERT_FALSE(via.ifr & VIA_INT_T1);
+    uint16_t c1 = via.t1_counter;
+    via_update(&via, 20);
+    ASSERT_TRUE(via.t1_counter != c1);   /* still counting */
+    ASSERT_FALSE(via.ifr & VIA_INT_T1);  /* one-shot does not re-fire */
+}
+
+/* Same for Timer 2 (one-shot timer mode). */
+TEST(test_timer2_one_shot_counter_continues) {
+    via6522_t via;
+    via_init(&via);
+    via_reset(&via);
+    via.acr &= ~0x20;                 /* timer mode */
+    via_write(&via, VIA_T2CL, 0x64);
+    via_write(&via, VIA_T2CH, 0x00);
+    via_update(&via, 105);
+    ASSERT_FALSE(via.t2_running);
+    ASSERT_TRUE(via.ifr & VIA_INT_T2);
+    via_read(&via, VIA_T2CL);         /* clear the T2 flag */
+    ASSERT_FALSE(via.ifr & VIA_INT_T2);
+    uint16_t c1 = via.t2_counter;
+    via_update(&via, 20);
+    ASSERT_TRUE(via.t2_counter != c1);
+    ASSERT_FALSE(via.ifr & VIA_INT_T2);
+}
+
+/* PB7 is the Timer-1 output only when BOTH DDRB bit7 and ACR bit7 are set
+ * (datasheet p.9); with DDRB bit7 = 0, PB7 stays a normal port pin. */
+TEST(test_pb7_timer_requires_ddrb7) {
+    via6522_t via;
+    via_init(&via);
+    via_reset(&via);
+    via_write(&via, VIA_ACR, 0x80);   /* one-shot PB7 timer mode (bit7=1,bit6=0) */
+
+    /* DDRB.7 = 0 → PB7 is NOT the timer output: T1CH write must not pull it low,
+     * and via_get_pb7 falls back to the input rule (pulled high). */
+    via_write(&via, VIA_DDRB, 0x00);
+    via_write(&via, VIA_T1CL, 0x05);
+    via_write(&via, VIA_T1CH, 0x00);
+    ASSERT_TRUE(via_get_pb7(&via));
+
+    /* DDRB.7 = 1 → PB7 IS the timer output: pulled low on T1CH, high on underflow. */
+    via_write(&via, VIA_DDRB, 0x80);
+    via_write(&via, VIA_T1CL, 0x05);
+    via_write(&via, VIA_T1CH, 0x00);
+    ASSERT_FALSE(via_get_pb7(&via));  /* one-shot armed → low */
+    via_update(&via, 10);             /* underflow → high */
+    ASSERT_TRUE(via_get_pb7(&via));
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -643,11 +707,14 @@ int main(void) {
     printf("\n  Timer 1:\n");
     RUN(test_timer1_load);
     RUN(test_timer1_one_shot);
+    RUN(test_timer1_one_shot_counter_continues);
     RUN(test_timer1_free_running);
     RUN(test_timer1_read_clears_ifr);
+    RUN(test_pb7_timer_requires_ddrb7);
 
     printf("\n  Timer 2:\n");
     RUN(test_timer2_one_shot);
+    RUN(test_timer2_one_shot_counter_continues);
     RUN(test_timer2_read_clears_ifr);
 
     printf("\n  Interrupts:\n");

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.98.0-alpha] - 2026-08-12
+
+### Fixed — Conformité VIA 6522 vs datasheet Rockwell R6522 Rev.9 (2 écarts corrigés)
+
+Suite de l'audit VIA documenté en v1.97.0-alpha (`docs/HARDWARE_CONFORMANCE.md`).
+Deux écarts corrigés dans `src/io/via6522.c`, choisis pour être **sûrs et
+prouvables** :
+
+- **One-shot T1/T2 : le compteur gelait après timeout.** Datasheet p.8/p.9 : le
+  compteur continue à décrémenter (seul le flag cesse de se réarmer) pour laisser
+  l'hôte lire le temps écoulé depuis l'interruption. Ajout d'un champ
+  `t1_active`/`t2_active` (compteur en cours de comptage) distinct de
+  `t1_running`/`t2_running` (tir encore possible) : le décompte est gaté sur
+  `*_active` (reste vrai après timeout), le tir/reload sur `*_running`. La
+  sémantique `t1_running=false` après timeout est **préservée** → savestate,
+  control, debugger et les tests one-shot existants restent intacts.
+- **Sortie PB7 par Timer 1 : condition DDRB.7 manquante.** Datasheet p.9 : PB7
+  n'est la sortie timer que si **DDRB.7 ET ACR.7 = 1** ; le code ne testait que
+  ACR.7. Gate `(acr & 0x80) && (ddrb & 0x80)` appliqué aux 4 sites (lecture ORB,
+  pull-low sur écriture T1CH, toggle à l'underflow, `via_get_pb7`).
+
+Vérification : test unitaire `test_pb7_timer_requires_ddrb7` (DDRB.7=0 → pin
+normal ; DDRB.7=1 → sortie timer) + preuve d'intégration : capture CSAVE
+`--tape-out-capture` **byte-à-byte identique** au binaire HEAD (md5 égal) →
+aucune régression du chemin cassette (non couvert par `make tests`).
+
+Tests : `test-io` 43 → **46** (+3 : one-shot T1/T2 counter-continues, PB7 DDRB.7).
+`make clean && make SDL2=0 tests` toutes suites vertes (0 échec) ; builds natif +
+SDL2 OK.
+
+Trois déviations VIA restent **assumées** (documentées) : période T1 free-run
+N+1 vs N+2 (corriger décalerait les baselines byte-exact + risque IRQ 100 Hz),
+effacement du flag T1 sur écriture T1L-H (incertain entre datasheets MOS/Rockwell
+→ non modifié par principe), reset qui efface les compteurs (négligeable).
+
+EMU_VERSION 1.97.0-alpha → 1.98.0-alpha.
+
 ## [1.97.0-alpha] - 2026-08-12
 
 ### Fixed — Conformité FDC WD1793 vs datasheet Western Digital FD179X-02

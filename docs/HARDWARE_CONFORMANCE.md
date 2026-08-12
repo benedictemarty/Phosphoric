@@ -51,23 +51,26 @@ d'interruption indépendants CA2/CB2 ; latch d'entrée (ACR 0-1) ;
 handshake/pulse CA2/CB2 ; les 8 modes du registre à décalage (rotation
 MSB→bit0, cadence T2=N+2, φ2=÷2, mode 4 free-run sans flag).
 
-### Déviations assumées (non corrigées ce round — voir raison)
-Ces écarts ripplent tous sur du **comportement délibérément modélisé et
-verrouillé par des tests existants** ; les corriger relève d'un sprint VIA
-dédié (avec réécriture de tests et vérification d'intégration), pas d'un patch
-opportuniste.
+### Corrigé (v1.98.0-alpha)
+| Écart | Détail | Correctif |
+|-------|--------|-----------|
+| **One-shot T1/T2 gelait après timeout** | Datasheet p.8/p.9 : le compteur continue à décrémenter (seul le flag cesse de se réarmer) pour laisser l'hôte lire le temps écoulé depuis l'interruption. | Nouveau champ `t1_active/t2_active` (compteur qui compte) distinct de `t1_running/t2_running` (tir encore possible). Le décompte est gaté sur `*_active` (reste vrai après timeout) ; le tir/reload sur `*_running`. Sémantique `t1_running=false` après timeout **préservée** (savestate/control/debugger + tests existants intacts). Tests `test_timer1/2_one_shot_counter_continues`. |
+| **PB7 sortie timer : condition DDRB.7 manquante** | Datasheet p.9 : PB7 n'est la sortie Timer 1 que si **DDRB.7 ET ACR.7 = 1** ; le code ne testait que ACR.7. | Gate `(acr & 0x80) && (ddrb & 0x80)` sur les 4 sites (lecture ORB, pull-low T1CH, toggle underflow, `via_get_pb7`). Test unitaire `test_pb7_timer_requires_ddrb7` + **preuve d'intégration** : capture CSAVE `--tape-out-capture` **byte-à-byte identique** au binaire HEAD (md5 égal) → aucune régression du chemin cassette. |
 
-| # | Écart | Datasheet | Raison du report |
-|---|-------|-----------|------------------|
-| 1 | One-shot T1/T2 : le compteur **gèle** après timeout | p.8/p.9 : il continue à décrémenter (seul le flag cesse) pour permettre de lire le temps écoulé | `t1_running/t2_running=false` est une sémantique utilisée par `savestate.c`, `control.c`, `debugger.c` et affirmée par `test_timer1_one_shot`/`test_timer2_one_shot`. |
-| 2 | T1 free-run : période ≈ N+1 (rechargement immédiat), `==0` déclenche 1 cycle tôt, résidu de dépassement perdu | Fig 16 : période N+2 | Le pas est groupé par instruction (choix documenté du projet, « bénéfice per-cycle quasi nul sur ORIC ») ; toucher au décompte risque la calibration de l'IRQ 100 Hz. |
-| 3 | Sortie PB7 par Timer 1 : condition **DDRB.7** manquante (le code ne teste que ACR.7) | p.9 : PB7 = sortie timer seulement si DDRB.7 **et** ACR.7 = 1 | En pratique nul (la ROM Oric configure DDRB.7=1 pour CSAVE) ; mais `via_get_pb7` n'est exercé que par le chemin de capture CSAVE, **non couvert par `make tests`** → correction risquée sans test d'intégration. |
-| 4 | Écriture T1L-H (reg 7) efface le flag T1 | Fig 12/13 : seule l'écriture T1C-H (reg 5) doit l'effacer | Comportement exact de reg 7 sur le flag **incertain** selon les sources → pas de correction sans confirmation (principe : ne pas inventer). |
+### Déviations assumées (restantes)
+| # | Écart | Datasheet | Raison |
+|---|-------|-----------|--------|
+| 2 | T1 free-run : période ≈ N+1 (rechargement immédiat), `==0` déclenche 1 cycle tôt, résidu de dépassement perdu | Fig 16 : période N+2 | Le pas est groupé par instruction (choix documenté du projet, « bénéfice per-cycle quasi nul sur ORIC ») ; toucher au décompte **décalerait toutes les baselines byte-exact** (screenshots/captures calées sur le cycle) et risquerait la calibration de l'IRQ 100 Hz. |
+| 4 | Écriture T1L-H (reg 7) efface le flag T1 | Fig 12/13 : seule l'écriture T1C-H (reg 5) l'efface explicitement | Comportement exact de reg 7 sur le flag **incertain** (divergence entre datasheets MOS et Rockwell) → pas de correction sans confirmation (principe : ne pas inventer). |
 | 5 | RESET efface compteurs/latches/SR | La datasheet dit qu'ils sont **préservés** | Sans conséquence (état power-on indéfini) ; `test_via_reset` verrouille l'état actuel. |
 
 ---
 
 ## Historique
+- **v1.98.0-alpha** (2026-08-12) — Corrections VIA 6522 : one-shot T1/T2 qui
+  continue à décrémenter après timeout (`t1_active/t2_active`), et gating DDRB.7
+  sur la sortie PB7 timer. +3 tests `test-io` (46). Restent en déviation assumée
+  T1 free-run N+2 (risque baselines), flag T1L-H (incertain), reset compteurs.
 - **v1.97.0-alpha** (2026-08-12) — Audit WD1793 (datasheet FD179X-02) + VIA 6522
   (datasheet R6522 Rev.9). 3 corrections WD1793 (Read Address, flag T, Force
   Interrupt D0/D8) + 3 tests. Déviations VIA documentées.
