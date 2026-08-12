@@ -39,9 +39,13 @@ fi
 echo "Tape-OUT capture / CLOAD roundtrip (voie A) tests:"
 
 # ── Step 1: type a program and CSAVE it, capturing the PB7 waveform ────────
+# A deliberately NON-TRIVIAL program (string, tokens, multi-digit numbers, DATA)
+# so the roundtrip exercises many non-zero bytes: a 1-bit framing drift is
+# invisible on 0x00 bytes (x2 of 0 is 0) but corrupts the first non-zero byte,
+# which is exactly the failure mode a leaderless/mis-phased decoder shows.
 "$EMU" -r "$ROM" -n \
-    --type-keys-when 'BC9A:52:10 END\nCSAVE"RT"\n' \
-    --tape-out-capture "$TMP/rt.tap" -c 20000000 >/dev/null 2>&1
+    --type-keys-when 'BC9A:52:10 PRINT"ABCDEFG":X=12345:GOTO 10\n20 DATA 99,88,77\nCSAVE"RT"\n' \
+    --tape-out-capture "$TMP/rt.tap" -c 25000000 >/dev/null 2>&1
 
 if [ ! -s "$TMP/rt.tap" ]; then
     note_fail "capture produced no file"
@@ -66,13 +70,16 @@ fi
 # ── Step 2: CLOAD the captured .tap and LIST — the program must round-trip ─
 "$EMU" -r "$ROM" -n -t "$TMP/rt.tap" -f \
     --type-keys-when 'BC9A:52:CLOAD"RT"\nLIST\n' \
-    --screenshot-text "$TMP/list.txt" -c 15000000 >/dev/null 2>&1
+    --screenshot-text "$TMP/list.txt" -c 18000000 >/dev/null 2>&1
 
-if [ -f "$TMP/list.txt" ] && grep -qE '10 END' "$TMP/list.txt"; then
-    note_pass "CSAVE->capture->CLOAD roundtrip: '10 END' listed back identically"
+# Both lines must come back byte-for-byte — a framing drift mangles the tokens.
+if [ -f "$TMP/list.txt" ] \
+   && grep -qE '10 PRINT"ABCDEFG":X=12345:GOTO 10' "$TMP/list.txt" \
+   && grep -qE '20 DATA 99,88,77' "$TMP/list.txt"; then
+    note_pass "CSAVE->capture->CLOAD roundtrip: non-zero-byte program listed back identically"
 else
-    note_fail "roundtrip: program did not LIST back as '10 END'"
-    [ -f "$TMP/list.txt" ] && sed -n '5,12p' "$TMP/list.txt"
+    note_fail "roundtrip: program did not LIST back identically (framing drift?)"
+    [ -f "$TMP/list.txt" ] && sed -n '5,14p' "$TMP/list.txt"
 fi
 
 echo "  Results: $pass passed, $fail failed"
