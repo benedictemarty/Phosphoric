@@ -470,13 +470,62 @@ TEST(test_fdc_write_track) {
     free(disk_data);
 }
 
+/* Force Interrupt D0 (i3-i0 = 0): terminates the current command WITHOUT
+ * generating an interrupt (datasheet p.15). It must still drop BUSY and
+ * reload the Type I status. */
 TEST(test_fdc_force_interrupt) {
     fdc_t fdc;
     fdc_init_test(&fdc);
     fdc.currentop = FDC_OP_READ_SECTOR;
-    fdc_write(&fdc, 0, 0xD0); /* Force interrupt */
+    fdc_write(&fdc, 0, 0xD0); /* Force interrupt, no interrupt condition */
     ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
-    ASSERT_TRUE(test_intrq_set);
+    ASSERT_FALSE(fdc.status & FDC_ST_BUSY);
+    ASSERT_FALSE(test_intrq_set);   /* D0 must NOT raise INTRQ */
+}
+
+/* Force Interrupt D8 (i3 = 1): immediate interrupt. */
+TEST(test_fdc_force_interrupt_immediate) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    fdc.currentop = FDC_OP_READ_SECTOR;
+    fdc_write(&fdc, 0, 0xD8); /* Force interrupt, i3 = immediate */
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
+    ASSERT_TRUE(test_intrq_set);    /* D8 raises INTRQ immediately */
+}
+
+/* Read Address writes the TRACK address (ID byte 1), not the sector number,
+ * into the sector register (datasheet p.13). */
+TEST(test_fdc_read_address_loads_track) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+    fdc.c_track = 7;            /* head over physical track 7 */
+    fdc.sector  = 3;            /* sector register holds something else */
+    fdc_write(&fdc, 0, 0xC0);  /* Read Address (Type III) */
+    /* First DATA read yields ID byte 0 (track) and loads it into sector reg */
+    fdc_read(&fdc, 3);
+    ASSERT_EQ(fdc.sector, 7);
+    free(disk_data);
+}
+
+/* Step-in without the T (track-update) flag must move the head (c_track) but
+ * leave the track register untouched; with T set it updates both. */
+TEST(test_fdc_step_track_update_flag) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    fdc_set_disk(&fdc, disk_data, 80 * 17 * 256);
+    fdc.c_track = 5;
+    fdc.track   = 5;
+    fdc_write(&fdc, 0, 0x40);   /* Step-in, T = 0 → no track-register update */
+    ASSERT_EQ(fdc.c_track, 6);  /* head moved */
+    ASSERT_EQ(fdc.track, 5);    /* register unchanged */
+    fdc_ticktock(&fdc, 25);
+    fdc_write(&fdc, 0, 0x50);   /* Step-in, T = 1 → update track register */
+    ASSERT_EQ(fdc.c_track, 7);
+    ASSERT_EQ(fdc.track, 7);
+    free(disk_data);
 }
 
 TEST(test_fdc_status_read_clears_intrq) {
@@ -620,6 +669,9 @@ int main(void) {
     RUN(test_fdc_write_track);
     RUN(test_fdc_write_sets_modified);
     RUN(test_fdc_force_interrupt);
+    RUN(test_fdc_force_interrupt_immediate);
+    RUN(test_fdc_read_address_loads_track);
+    RUN(test_fdc_step_track_update_flag);
     RUN(test_fdc_status_read_clears_intrq);
 
     printf("\n  Disk persistence:\n");

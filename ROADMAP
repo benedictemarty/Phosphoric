@@ -6,6 +6,30 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Epic 8 — Conformité matérielle (audits datasheet) — EN COURS
+
+Croisement ligne à ligne des cœurs d'émulation avec les datasheets constructeur.
+Traçabilité dans `docs/HARDWARE_CONFORMANCE.md`.
+
+### US 1 — FDC WD1793 vs FD179X-02 (v1.97.0-alpha) — DONE
+- [x] Read Address : registre secteur reçoit la piste (octet ID 1), pas le n° secteur.
+- [x] STEP/STEP-IN/STEP-OUT : registre piste conditionné au flag T (bit 4).
+- [x] Force Interrupt : D0 = pas d'INTRQ, D8 = INTRQ immédiat.
+- [x] +3 tests `test-storage` (24 FDC) ; suite complète verte.
+
+### US 2 — VIA 6522 vs R6522 Rev.9 — BACKLOG (audit fait, corrections reportées)
+Audit livré dans `docs/HARDWARE_CONFORMANCE.md` ; 5 déviations identifiées.
+Reportées car elles ripplent sur du comportement délibéré verrouillé par des
+tests existants — sprint dédié requis (réécriture de tests + vérif intégration) :
+- [ ] One-shot T1/T2 : continuer à décrémenter après timeout (impacte `t1_running`
+      utilisé par savestate/control/debugger + `test_timer1/2_one_shot`).
+- [ ] T1 free-run : période N+2 (rechargement + `==0`) — risque calibration IRQ 100 Hz.
+- [ ] PB7 sortie timer : exiger DDRB.7 & ACR.7 — besoin d'un test d'intégration CSAVE.
+- [ ] Écriture T1L-H : confirmer le comportement sur le flag T1 avant correction.
+- [ ] Reset : préserver compteurs/latches/SR (négligeable ; `test_via_reset` à revoir).
+
+---
+
 ## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
 
 Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette

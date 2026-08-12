@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.97.0-alpha] - 2026-08-12
+
+### Fixed — Conformité FDC WD1793 vs datasheet Western Digital FD179X-02
+
+Audit de conformité du cœur WD1793 (`src/storage/disk.c`) croisé ligne à ligne
+avec la datasheet FD179X-02. Trois écarts corrigés (les seuls susceptibles
+d'affecter du logiciel Oric réel) :
+
+- **Read Address** écrivait le numéro de secteur dans le registre secteur ; la
+  datasheet (p.13) y écrit la **piste** (octet 1 du champ ID) pour comparaison
+  hôte. Corrigé : `fdc->sector = addr_field[0]`.
+- **STEP / STEP-IN / STEP-OUT** mettaient toujours à jour le registre piste ;
+  Table 2 (Type I bit 4 = Track Update) exige que ce ne soit fait que si T=1.
+  La tête bouge toujours (c_track), mais le registre piste devient conditionnel
+  (`fdc_seek_track(..., bool update_track)` ; Restore/Seek = toujours vrai).
+- **Force Interrupt** générait toujours un INTRQ ; datasheet p.15 : HEX **D0**
+  (i3-i0=0) termine la commande **sans** interruption, seul **D8** (i3) déclenche
+  un INTRQ immédiat. Corrigé : `if (value & 0x08) set_intrq(...)`.
+
+Tests : `test-storage` FDC 21 → **24** (+3 : `test_fdc_read_address_loads_track`,
+`test_fdc_step_track_update_flag`, `test_fdc_force_interrupt_immediate` ;
+`test_fdc_force_interrupt` mis à jour pour D0 = pas d'INTRQ). Suite complète
+`make clean && make SDL2=0 tests` : toutes les suites vertes (0 échec), aucune
+régression sur les boots Sedoric (system/rom).
+
+### Added — Document de conformité matérielle `docs/HARDWARE_CONFORMANCE.md`
+
+Trace les audits datasheet (WD1793, VIA 6522) : écarts corrigés vs déviations
+assumées avec leur raison. L'audit VIA 6522 (datasheet Rockwell R6522 Rev.9) est
+documenté : 5 déviations identifiées (one-shot T1/T2 qui gèle, période T1
+free-run N+1 vs N+2, condition DDRB.7 manquante sur PB7, effacement flag T1L-H,
+reset qui efface les compteurs) **non corrigées ce round** car elles ripplent
+sur du comportement délibéré verrouillé par des tests existants
+(`t1_running`/`test_via_reset`) et le chemin de capture CSAVE non couvert par
+`make tests` — reportées à un sprint VIA dédié.
+
+EMU_VERSION 1.96.0-alpha → 1.97.0-alpha.
+
 ## [1.96.0-alpha] - 2026-08-03
 
 ### Added — Écritures mémoire déclenchées : `--poke-at` / `--poke-when` (actionneur symétrique des captures `-when`)
