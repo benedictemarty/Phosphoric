@@ -130,6 +130,7 @@ static int32_t cassette_step(cassette_t* c, bool* level) {
 void tape_capture_init(tape_capture_t* tc) {
     if (!tc) return;
     tc->active = false;
+    tc->primed = false;
     tc->last_pb7 = false;
     tc->have_prev_edge = false;
     tc->prev_edge_cyc = 0;
@@ -148,9 +149,8 @@ void tape_capture_begin(tape_capture_t* tc) {
     tc->out = (uint8_t*)malloc((size_t)tc->out_cap);
     tc->out_len = 0;
     tc->active = (tc->out != NULL);
-    /* PB7 idles high before the ROM arms Timer 1; seed last level so the first
-     * genuine rising edge is detected. */
-    tc->last_pb7 = true;
+    /* last_pb7 is seeded from the first real sample (tc->primed), avoiding a
+     * spurious startup edge regardless of the idle PB7 level. */
 }
 
 void tape_capture_free(tape_capture_t* tc) {
@@ -203,9 +203,20 @@ static void tape_capture_bit(tape_capture_t* tc, int bit) {
 void tape_capture_sample(tape_capture_t* tc, via6522_t* via, uint64_t cyc) {
     if (!tc || !tc->active || !via) return;
     bool pb7 = via_get_pb7(via);
-    bool rising = (!tc->last_pb7 && pb7);
+    /* Seed the level from the first real sample so an idle-level mismatch does
+     * not fabricate a spurious startup edge (which would inject one garbage
+     * bit and desync the framing). */
+    if (!tc->primed) {
+        tc->primed = true;
+        tc->last_pb7 = pb7;
+        return;
+    }
+    /* One PB7 edge per bit (ROM CSAVE single-edge encoding): each Timer-1
+     * underflow toggles PB7 once per bit, so the period between CONSECUTIVE
+     * edges (either direction) is the bit period (416 '1' / 624 '0'). */
+    bool edge = (tc->last_pb7 != pb7);
     tc->last_pb7 = pb7;
-    if (!rising) return;
+    if (!edge) return;
     if (!tc->have_prev_edge) {
         tc->have_prev_edge = true;
         tc->prev_edge_cyc = cyc;

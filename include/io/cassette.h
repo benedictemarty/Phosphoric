@@ -96,6 +96,8 @@ struct via6522_s;
  */
 typedef struct tape_capture_s {
     bool      active;         /**< Capture enabled (--tape-out-capture) */
+    bool      primed;         /**< last_pb7 seeded from a real sample (no spurious
+                                   startup edge) */
     bool      last_pb7;       /**< Previous PB7 sample (edge detection) */
     bool      have_prev_edge; /**< A prior rising edge exists (period valid) */
     uint64_t  prev_edge_cyc;  /**< Cycle of the previous PB7 rising edge */
