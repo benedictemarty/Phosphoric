@@ -98,9 +98,14 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       CLOAD/CSAVE (381 l, autonome — aucun helper static de main.c) → verbatim
       dans `src/io/tape_patches.{c,h}`. **main.c 4722 → 4329 (cumul -659 depuis
       4988).** Iso prouvé : `test-tape-roundtrip` 3/3 + `test-cassette` 8/8.
+- [~] **Prérequis parseur — filet élargi** : `test-cli-parsing` 41 → **51**
+      (+10 : `--dtl2000-addr`/`--mageco-addr`/`--break` exerçant `parse_hex16`,
+      `--rom-info`, `--verbose`, `--screenshot`, `--disk-create`). Chaque
+      attente MESURÉE contre le binaire. 62 options restent non couvertes.
 - [ ] **Restant** : le parseur `getopt` géant (~63 case à effets de bord) et
-      `emulator_run` (~1197 l) — extraction non prouvable iso-comportement sans
-      élargir d'abord le filet de tests. Prochain lot : widen `test-cli-parsing`.
+      `emulator_run` (~1197 l) — extraction non prouvable iso-comportement tant
+      que le filet ne couvre pas les case à effets de bord. Continuer à élargir
+      `test-cli-parsing`, puis extraire le parseur par petits lots vérifiables.
 - [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
       63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
       **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre

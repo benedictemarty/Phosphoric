@@ -250,6 +250,35 @@ expect "--psg-trace unwritable path is FATAL (exit 1)" 1 "Cannot open --psg-trac
 run "$EMU" -r "$ROM" -n --audio-wav /proc/nonexistent-dir/x.wav -c 1000
 expect "--audio-wav unwritable path is FATAL (exit 1)" 1 "Cannot open --audio-wav file"
 
+# ── parse_hex16-backed address options ─────────────────────────────────
+# --dtl2000-addr / --mageco-addr / --break all share the parse_hex16 helper
+# (src/cli/cli_parse.c). Valid hex parses; invalid hex is LENIENT (strtol -> 0)
+# and NON-fatal. Locked so extracting/altering parse_hex16 cannot silently
+# change the semantics of these four sites.
+run "$EMU" -r "$ROM" -n --dtl2000-addr 0400 -c 1000
+expect "--dtl2000-addr valid hex parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --dtl2000-addr zz -c 1000
+expect "--dtl2000-addr invalid hex is lenient (exit 0)" 0
+run "$EMU" -r "$ROM" -n --mageco-addr 0320 -c 1000
+expect "--mageco-addr valid hex parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --break C000 -c 1000
+expect "--break valid hex parses (exit 0)" 0
+
+# ── informational / flag options ───────────────────────────────────────
+run "$EMU" -r "$ROM" -n --rom-info -c 1000
+expect "--rom-info prints the analysis report (exit 0)" 0 "ROM Analysis Report"
+run "$EMU" -r "$ROM" -n --verbose -c 1000
+expect "--verbose is accepted (exit 0)" 0
+
+# ── exit-time file-writing options (parse + side effect observed) ───────
+run "$EMU" -r "$ROM" -n --screenshot "$TMP/ss.ppm" -c 2000000
+expect "--screenshot parses (exit 0)" 0
+if [ -s "$TMP/ss.ppm" ]; then note_pass "--screenshot wrote a non-empty PPM"; else note_fail "--screenshot wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --disk-create "$TMP/blank.dsk" -c 500000
+expect "--disk-create parses (exit 0)" 0
+if [ -s "$TMP/blank.dsk" ]; then note_pass "--disk-create wrote a non-empty .dsk"; else note_fail "--disk-create wrote no file"; fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]
