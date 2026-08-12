@@ -52,7 +52,7 @@ Diagnostiqué par instrumentation, **contre-signé silicium** (RTL FPGA + ROM
 
 ---
 
-## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — BACKLOG
+## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — TERMINÉ (US1→US6, v1.99.5→1.99.8)
 
 **Vision.** Extraire les ~15 fonctions `loci_*` de `main.c` (~400 l de câblage
 LOCI-spécifique) vers un adaptateur dédié `src/io/loci_glue.c` — le seul fichier
@@ -121,10 +121,13 @@ Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
       `loci_*`. **main.c 3785 → 3744 (cumul -1244).** Golden byte-identique ;
       builds SDL2=0/1/HTTPAPI OK.
 
-### US 6 — Nettoyage + doc
-- [ ] `main.c` ne garde que l'enregistrement des callbacks (le câblage), pas leur
-      corps. Mesurer le gain (~-400 l attendu). Doc `docs/architecture/loci-glue.md`
-      (miroir de `io-bus.md`).
+### US 6 — Nettoyage + doc — DONE
+- [x] Vérifié : `main.c` ne contient plus aucune **définition** `loci_*`, seulement
+      le câblage (`loci_init` + `loci_set_*` + appels de setup). Adaptateur
+      `src/io/loci_glue.c` = 436 l (16 fonctions).
+- [x] Doc `docs/architecture/loci-glue.md` (miroir de `io-bus.md`) : problème,
+      contrat/seam, répartition, les 2 découplages (`get_rom_patches`, SDL),
+      oracle. Bilan main.c : **4988 → 3744** sur l'ensemble du dégonflement.
 
 **Écart assumé possible.** Si un callback appelle un static de `main.c` non
 extractible proprement, deux options documentées : l'extraire aussi, ou garder
