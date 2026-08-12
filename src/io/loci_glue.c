@@ -397,3 +397,40 @@ void loci_action_release_irq_trap(void* ctx) {
         log_info("LOCI: warm boot -> menu ROM %s", rom);
     }
 }
+/* --- Epic 9 / US5 : SDL keyboard sync (only SDL dependency of the glue) --- */
+#ifdef HAS_SDL2
+#include <SDL2/SDL.h>
+/* Sync the LOCI keyboard report from the current SDL keyboard state: SDL
+ * scancodes map 1:1 to HID usage IDs, so collect the first six down keys +
+ * pack the SDL modifiers into the HID modifier byte. Moved from main.c. */
+void loci_sync_kbd_from_sdl(emulator_t* emu) {
+    if (!emu || !emu->has_loci) return;
+
+    int numkeys = 0;
+    const Uint8* state = SDL_GetKeyboardState(&numkeys);
+    if (!state) return;
+
+    SDL_Keymod m = SDL_GetModState();
+    uint8_t hid_mod = 0;
+    if (m & KMOD_LCTRL)  hid_mod |= 0x01;
+    if (m & KMOD_LSHIFT) hid_mod |= 0x02;
+    if (m & KMOD_LALT)   hid_mod |= 0x04;
+    if (m & KMOD_LGUI)   hid_mod |= 0x08;
+    if (m & KMOD_RCTRL)  hid_mod |= 0x10;
+    if (m & KMOD_RSHIFT) hid_mod |= 0x20;
+    if (m & KMOD_RALT)   hid_mod |= 0x40;
+    if (m & KMOD_RGUI)   hid_mod |= 0x80;
+
+    uint8_t keys[6] = {0};
+    int kn = 0;
+    /* HID modifier keys live at 0xE0+ — skip those, they're already in
+     * hid_mod. Standard usage page tops out around 0xE7; clamp. */
+    int max = numkeys < 0xE0 ? numkeys : 0xE0;
+    for (int sc = SDL_SCANCODE_A; sc < max && kn < 6; sc++) {
+        if (state[sc]) {
+            keys[kn++] = (uint8_t)sc;
+        }
+    }
+    loci_kbd_set_report(&emu->loci, hid_mod, keys);
+}
+#endif /* HAS_SDL2 */

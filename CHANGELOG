@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.8-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US5 : isoler la glue SDL LOCI (`loci_sync_kbd_from_sdl`)
+
+Dernier callback LOCI de `main.c` : `loci_sync_kbd_from_sdl` (synchronise le
+report clavier HID du LOCI depuis l'état clavier SDL) — la **seule** fonction de
+la glue qui dépend de SDL. Déplacée vers `src/io/loci_glue.c` sous
+`#ifdef HAS_SDL2`, avec l'`#include <SDL2/SDL.h>` **à l'intérieur** du garde, et
+déclarée sous `#ifdef HAS_SDL2` dans `loci_glue.h`. Les appels dans `main.c`
+(boucle d'événements SDL) étaient déjà sous `#ifdef HAS_SDL2`.
+
+**Résultat** : `src/io/loci_glue.c` builde proprement en **`SDL2=0`** (la
+fonction est exclue par le préprocesseur → aucune dépendance SDL) comme en
+`SDL2=1`. **`main.c` ne contient plus AUCUNE définition de fonction `loci_*`** —
+uniquement le câblage (`loci_set_*_callback`, scan USB). L'objectif de l'Epic 9
+(sortir la glue LOCI de `main.c`) est atteint.
+
+**`main.c` : 3785 → 3744 lignes** (-41 ; cumul 4988 → 3744 = **-1244**).
+
+Iso-comportement **prouvé** : boot LOCI headless **byte-identique**
+(`md5 bf4dff781e05175ad8050815eccd6a42`) ; `make clean && make SDL2=0 tests`
+toutes suites vertes ; builds **`SDL2=0`**, **`SDL2=1`** et **`SDL2=1 HTTPAPI=1`**
+OK. `emulator.h` inchangé (aucun impact sur les projets embarquant l'émulateur).
+
+EMU_VERSION 1.99.7-alpha → 1.99.8-alpha.
+
 ## [1.99.7-alpha] - 2026-08-12
 
 ### Changed — Epic 9 / US4 : migrer les hooks USB + actions IRQ-trap LOCI

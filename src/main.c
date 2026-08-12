@@ -215,47 +215,6 @@ void renderer_cycle_scale(void);
  * for now (BASIC ROM swap); $A000 (Microdisc overlay) returns true
  * without actually swapping — handled by the existing --disk-rom path. */
 
-/* Sync the LOCI keyboard report from the current SDL keyboard state.
- *
- * SDL_Scancode values map 1:1 to HID Usage IDs from the Keyboard/Keypad
- * usage page (deliberately, per the SDL docs), so the boot keyboard
- * report we hand to LOCI just collects the first six scancodes whose
- * state is "down" and packs the SDL modifier flags into the HID byte.
- *
- * Called on every KEYDOWN/KEYUP — cheap (one SDL state read + up to
- * ~230 iterations bounded by the standard usage page). */
-#ifdef HAS_SDL2
-static void loci_sync_kbd_from_sdl(emulator_t* emu) {
-    if (!emu || !emu->has_loci) return;
-
-    int numkeys = 0;
-    const Uint8* state = SDL_GetKeyboardState(&numkeys);
-    if (!state) return;
-
-    SDL_Keymod m = SDL_GetModState();
-    uint8_t hid_mod = 0;
-    if (m & KMOD_LCTRL)  hid_mod |= 0x01;
-    if (m & KMOD_LSHIFT) hid_mod |= 0x02;
-    if (m & KMOD_LALT)   hid_mod |= 0x04;
-    if (m & KMOD_LGUI)   hid_mod |= 0x08;
-    if (m & KMOD_RCTRL)  hid_mod |= 0x10;
-    if (m & KMOD_RSHIFT) hid_mod |= 0x20;
-    if (m & KMOD_RALT)   hid_mod |= 0x40;
-    if (m & KMOD_RGUI)   hid_mod |= 0x80;
-
-    uint8_t keys[6] = {0};
-    int kn = 0;
-    /* HID modifier keys live at 0xE0+ — skip those, they're already in
-     * hid_mod. Standard usage page tops out around 0xE7; clamp. */
-    int max = numkeys < 0xE0 ? numkeys : 0xE0;
-    for (int sc = SDL_SCANCODE_A; sc < max && kn < 6; sc++) {
-        if (state[sc]) {
-            keys[kn++] = (uint8_t)sc;
-        }
-    }
-    loci_kbd_set_report(&emu->loci, hid_mod, keys);
-}
-#endif
 
 
 /* Live ROM byte poke (ADJ_SCAN progress: the menu ROM polls its TIMINGS

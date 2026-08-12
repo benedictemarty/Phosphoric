@@ -48,4 +48,10 @@ void loci_scan_host_usb(emulator_t* emu);
 void loci_action_install_irq_trap(void* ctx);
 void loci_action_release_irq_trap(void* ctx);
 
+/* --- Epic 9 / US5 : SDL keyboard sync (SDL-only) --- */
+#ifdef HAS_SDL2
+/* Sync the LOCI keyboard report from the live SDL keyboard state. */
+void loci_sync_kbd_from_sdl(emulator_t* emu);
+#endif
+
 #endif /* LOCI_GLUE_H */

@@ -114,9 +114,12 @@ Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
       3921 → 3785 (cumul -1203).** Golden byte-identique + suite verte ; builds
       SDL2=1/0/HTTPAPI OK.
 
-### US 5 — Isoler la glue SDL (`loci_sync_kbd_from_sdl`)
-- [ ] Déplacer sous `#ifdef HAS_SDL2` ; `loci_glue.c` **doit builder en SDL2=0**.
-      Vérif : builds natif ET SDL2=0 OK + golden SDL identique.
+### US 5 — Isoler la glue SDL (`loci_sync_kbd_from_sdl`) — DONE (v1.99.8)
+- [x] Déplacé vers `src/io/loci_glue.c` sous `#ifdef HAS_SDL2` (include SDL dans
+      le garde), déclaré sous `#ifdef` dans le header. **`loci_glue.c` builde en
+      SDL2=0 comme en SDL2=1.** `main.c` ne contient plus AUCUNE définition
+      `loci_*`. **main.c 3785 → 3744 (cumul -1244).** Golden byte-identique ;
+      builds SDL2=0/1/HTTPAPI OK.
 
 ### US 6 — Nettoyage + doc
 - [ ] `main.c` ne garde que l'enregistrement des callbacks (le câblage), pas leur
