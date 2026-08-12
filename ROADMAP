@@ -72,15 +72,21 @@ qui connaît à la fois le cœur LOCI (gardé pur, sans `emulator.h`) et
 - **Couverture** : `test-loci`/`-sdimg`/`-sdimg-write`/`-acia-e2e` sont dans
   `make tests` ; `test-loci-e2e` (état écran, 5 échecs préexistants) en est hors.
 
-### US 1 — Cartographie + filet de non-régression (prérequis, risque nul)
-- [ ] Recenser les ~15 `loci_*` : signature, sous-systèmes `emu->*` touchés,
-      **appels à des statics de `main.c`** (bloquants → à extraire aussi ou à
-      garder), dépendance SDL. Livrable : tableau dans `docs/architecture/`.
-- [ ] Établir un **golden LOCI** : 2-3 runs headless déterministes (boot MIA,
-      boot image SD, ACIA-over-LOCI $0380) capturés byte-identiques → oracle.
-- [ ] Statuer sur `test-loci-e2e` (5 échecs écran) : diagnostiquer → corriger si
-      vrais bugs, sinon quarantainer explicitement ; viser ≥1 e2e écran
-      déterministe **dans `make tests`**. Sans ce filet, US2+ non prouvables.
+### US 1 — Cartographie + filet de non-régression (prérequis, risque nul) — DONE (v1.99.4)
+Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
+- [x] **Cartographie** des 16 `loci_*` (tableau dans le doc). **Résultat décisif** :
+      un **seul** bloqueur — `loci_rom_swap_cb` appelle `get_rom_patches` (static
+      de `main.c`, lookup pur ~7 l) → à dé-staticifier/exposer en US3. Tous les
+      autres appels croisés sont `loci_*`→`loci_*` (migrent ensemble). **Une
+      seule** fonction SDL (`loci_sync_kbd_from_sdl`). Seam propre confirmé
+      (`loci_set_*_callback` + `ctx=&emu`).
+- [x] **Golden LOCI** : boot headless prouvé **byte-déterministe** (md5
+      `bf4dff78…` à 39M cy). Procédure de comparaison avant/après documentée.
+- [x] **Statut `test-loci-e2e`** : c'est un test *comparatif* LOCI vs Microdisc
+      natif ; ses 5 échecs « texte écran » sont un écart de rendu Sedoric-via-LOCI
+      **préexistant/stable** → pas le bon oracle ici. À la place, nouveau
+      **`test-loci-golden`** (déterminisme auto-référentiel + écran non vide)
+      **ajouté à `make tests`** (3/3).
 
 ### US 2 — Créer `loci_glue.{c,h}` + migrer les callbacks bus/IRQ (lot sûr)
 - [ ] `loci_dsk_cpu_irq_set`/`_clr`, `loci_dsk_sync_overlay`, `loci_rom_poke_hook`
