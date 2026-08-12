@@ -200,8 +200,16 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       *nombre* de cases + le wiring → seule réduction restante = refactor
       `cli_args_t` (~89 variables), **gros et risqué, sprint dédié** (pas un
       petit lot). Le filet (75 tests) est prêt pour l'amorcer quand décidé.
-- [ ] **Restant** : refactor `cli_args_t` (parseur) + `emulator_run` (~1197 l) —
-      les deux gros blocs, à traiter en sprints dédiés avec le filet actuel.
+- [✗] **Refactor `cli_args_t` (parseur) — ABANDONNÉ après mesure (v1.99.8)**.
+      Analyse fine du switch getopt : (1) les `case` sont déjà lean (affectations
+      pures, peu d'effets de bord) ; (2) **14 des 93 variables collisionnent**
+      avec des champs `emu->xxx` / d'autres fonctions → un renommage `nom→a.nom`
+      est un champ de mines silencieux ; (3) la variante « copie-locales » sûre
+      coûte **+186 lignes pour -64 net** ; (4) `return 0/1` au milieu de la boucle
+      à propager. Verdict : ni sûr ni rentable, et le parseur n'est **pas** de la
+      dette (juste beaucoup d'options lean). `main.c` déjà à 3744 (-25 %). On
+      **laisse le parseur tel quel**.
+- [ ] **Restant** : `emulator_run` (~1197 l) — gros bloc, sprint dédié si besoin.
 - [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
       63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
       **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre
