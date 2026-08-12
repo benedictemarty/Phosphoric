@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.4-alpha] - 2026-08-12
+
+### Changed — Dégonfler `main.c` (3) : `serial_transport_create` → `src/io/serial_backend.c`
+
+Constat mesuré : le parseur `getopt` n'a **pas de gros `case` à extraire** — les
+`case OPT_*` sont déjà lean (6-13 l) ; le volume vient du *nombre* de cases + le
+wiring, dont l'extraction exige le refactor `cli_args_t` (~89 variables, gros/
+risqué, sprint dédié). Donc, plutôt qu'un move risqué, on continue par la
+méthode **prouvée sûre** : extraire une fonction autonome.
+
+`serial_transport_create` (60 l : construit un backend série *transparent* depuis
+un spec `loopback`/`tcp:`/`pty`/`com:`/`midi`/`smf:`/`file:`) n'appelait aucun
+static de `main.c`, seulement l'API `serial_backend_*` + `parse_host_port`
+(netutil). Déplacée verbatim vers `src/io/serial_backend.c` (sa place naturelle,
+au milieu des `serial_backend_*_create`), déclarée dans `serial_backend.h`
+(visible via `emulator.h`). Rationale d'exclusion modem/digitelec/picowifi
+conservée en commentaire.
+
+**`main.c` : 4329 → 4255 lignes** (-74 ; cumul 4988 → 4255 = **-733**).
+
+Effet de bord Makefile : `serial_backend.c` dépend désormais de `netutil.c`
+(`parse_host_port`) → `netutil.c` ajouté aux 3 listes de sources de test qui
+linkaient `serial_backend.c` sans lui (`test-serial`, `test-midi`,
+`test-dtl2000`).
+
+Iso-comportement **prouvé** : `test-cli-parsing` 75/75 (dont `--serial`),
+`test-serial` 22/22, `test-midi` 19/19, `test-dtl2000` 16/16, `test-picowifi`
+72/72 ; `make clean && make SDL2=0 tests` toutes suites vertes ; builds natif +
+SDL2 OK.
+
+EMU_VERSION 1.99.3-alpha → 1.99.4-alpha.
+
 ## [1.99.3-alpha] - 2026-08-12
 
 ### Changed — Dégonfler `main.c` (2/2) : `tape_patches` → `src/io/tape_patches.c` (iso-comportement)

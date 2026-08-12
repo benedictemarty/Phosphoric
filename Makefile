@@ -469,7 +469,7 @@ test-loci-sdimg-write: $(TEST_LOCI_SDIMG_WRITE_SRCS)
 	@./test_loci_sdimg_write
 
 TEST_SERIAL_SRCS = tests/unit/test_serial.c src/io/acia6551.c \
-                   src/io/serial_backend.c src/io/smf.c src/utils/logging.c
+                   src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/utils/logging.c
 
 test-serial: $(TEST_SERIAL_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_SERIAL_SRCS) $(LDFLAGS) -lutil -o test_serial
@@ -489,7 +489,7 @@ test-acia6850: $(TEST_ACIA6850_SRCS)
 
 TEST_DTL2000_SRCS = tests/unit/test_dtl2000.c src/io/dtl2000.c src/io/pia6821.c \
                     src/io/acia6850.c \
-                    src/io/serial_backend.c src/io/smf.c src/io/acia6551.c src/utils/logging.c
+                    src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/io/acia6551.c src/utils/logging.c
 
 test-dtl2000: $(TEST_DTL2000_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_DTL2000_SRCS) $(LDFLAGS) -lutil -o test_dtl2000
@@ -497,7 +497,7 @@ test-dtl2000: $(TEST_DTL2000_SRCS)
 
 # Mageco MIDI interface — MC6850 ACIA at $03FE, 31250 baud (forum t=2525)
 TEST_MIDI_SRCS = tests/unit/test_midi.c src/io/mageco.c src/io/acia6850.c \
-                 src/io/serial_backend.c src/io/smf.c src/io/acia6551.c src/utils/logging.c
+                 src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/io/acia6551.c src/utils/logging.c
 
 test-midi: $(TEST_MIDI_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_MIDI_SRCS) $(LDFLAGS) -lutil -o test_midi

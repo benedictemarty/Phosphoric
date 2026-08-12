@@ -64,6 +64,7 @@
 #endif
 
 #include "io/serial_backend.h"
+#include "utils/netutil.h"   /* parse_host_port (serial_transport_create) */
 #include "utils/logging.h"
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1888,4 +1889,74 @@ void serial_backend_destroy(serial_backend_t* backend)
     if (!backend) return;
     if (backend->close) backend->close(backend);
     free(backend);
+}
+
+/* Create a *transparent* serial transport from spec: a raw byte pipe that passes
+ * data through unchanged, faithful behind any UART (the ACIA 6551 of --serial as
+ * well as the ACIA 6850 of the --dtl2000 card): loopback, tcp:H:P, pty, com:,
+ * file:IN[:OUT], midi[:TARGET] (ALSA, MIDI=1 build), smf:FILE[:loop].
+ * Deliberately EXCLUDES the protocol-injecting backends — modem (in-process
+ * Hayes AT interpreter), digitelec and picowifi (which emulate their own UART);
+ * those only make sense in front of the ACIA 6551 the host drives with AT
+ * commands. Returns NULL for a non-transparent spec so the caller can try the
+ * protocol backends or report the error. Moved verbatim from main.c. */
+serial_backend_t* serial_transport_create(const char* spec)
+{
+    if (strcmp(spec, "loopback") == 0) {
+        return serial_backend_loopback_create();
+    }
+    if (strncmp(spec, "tcp:", 4) == 0) {
+        char host[256];
+        uint16_t port;
+        parse_host_port(spec + 4, host, sizeof(host), &port, 23);
+        return serial_backend_tcp_create(host, port);
+    }
+    if (strcmp(spec, "pty") == 0) {
+        return serial_backend_pty_create();
+    }
+    if (strncmp(spec, "com:", 4) == 0) {
+        /* com:baud,bits,parity,stop,device */
+        return serial_backend_com_create(spec + 4);
+    }
+    if (strcmp(spec, "midi") == 0) {
+        return serial_backend_midi_create(NULL);
+    }
+    if (strncmp(spec, "midi:", 5) == 0) {
+        /* midi:TARGET — auto-connect to an ALSA address ("128:0" or a name) */
+        return serial_backend_midi_create(spec + 5);
+    }
+    if (strncmp(spec, "smf:", 4) == 0) {
+        /* smf:FILE[:loop] — Standard MIDI File → timed MIDI IN replay */
+        const char* rest = spec + 4;
+        const char* loopsfx = strstr(rest, ":loop");
+        bool loop = (loopsfx != NULL);
+        char path[512];
+        size_t plen = loop ? (size_t)(loopsfx - rest) : strlen(rest);
+        if (plen >= sizeof(path)) plen = sizeof(path) - 1;
+        memcpy(path, rest, plen);
+        path[plen] = '\0';
+        return serial_backend_smf_create(path, loop);
+    }
+    if (strncmp(spec, "file:", 5) == 0) {
+        /* file:IN[:OUT] — deterministic replay (RX) / capture (TX).
+         *   file:in.bin            replay only
+         *   file:in.bin:out.bin    replay + capture
+         *   file::out.bin          capture only (empty IN) */
+        const char* rest = spec + 5;
+        char in_path[256] = {0};
+        char out_path[256] = {0};
+        const char* colon = strchr(rest, ':');
+        if (colon) {
+            size_t ilen = (size_t)(colon - rest);
+            if (ilen >= sizeof(in_path)) ilen = sizeof(in_path) - 1;
+            memcpy(in_path, rest, ilen);
+            in_path[ilen] = '\0';
+            strncpy(out_path, colon + 1, sizeof(out_path) - 1);
+        } else {
+            strncpy(in_path, rest, sizeof(in_path) - 1);
+        }
+        return serial_backend_file_create(in_path[0] ? in_path : NULL,
+                                          out_path[0] ? out_path : NULL);
+    }
+    return NULL;  /* not a transparent transport */
 }
