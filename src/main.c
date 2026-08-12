@@ -354,7 +354,7 @@ static void print_usage(const char* program_name) {
     printf("                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n");
     printf("                             Ex: 340=4E,340=47,341=01,348=07,349=00,34A=F0 (palette)\n");
     printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
-    printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
+    printf("                             \\n=Return \\e=Esc \\b=Del \\u \\d \\l \\r=arrows\n");
     printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
     printf("                             \\Rx=RShift+x \\pN=pause N sec (cycles emules)\n");
     printf("                             Repetable : plusieurs --type-keys sont\n");
@@ -2638,6 +2638,20 @@ static void emulator_run(emulator_t* emu) {
                         oric_keyboard_release_all(&emu->keyboard);
                         oric_keyboard_press_char(&emu->keyboard, 0x1B);
                         emu->type_keys_last_char = 0x1B;
+                        emu->type_keys_idx += 2;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+                    }
+                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'b') {
+                    /* \b = DEL (backspace) — édition de ligne (readline). Presse
+                     * la touche DEL (matrix 5,5) via le sentinel 0x84 de press_char. */
+                    if (emu->type_keys_last_char == (char)0x84) {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        emu->type_keys_last_char = 0;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                    } else {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        oric_keyboard_press_char(&emu->keyboard, (char)0x84);
+                        emu->type_keys_last_char = (char)0x84;
                         emu->type_keys_idx += 2;
                         emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
                     }
