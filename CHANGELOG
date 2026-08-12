@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.7-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US4 : migrer les hooks USB + actions IRQ-trap LOCI
+
+Troisième lot de code de l'Epic 9. Migrés vers `src/io/loci_glue.c` (verbatim,
+dé-staticifiés + déclarés) : `loci_attach_usb_dir`, `loci_scan_host_usb`,
+`loci_action_install_irq_trap`, `loci_action_release_irq_trap`. Aucun nouveau
+bloqueur — leurs seuls appels « inter-fonctions » visent des `loci_*` déjà
+migrées en US3 (dans le même module). Includes ajoutés à `loci_glue.c` :
+`<dirent.h>`, `<sys/stat.h>`, `utils/oscompat.h`. `main.c` garde le câblage
+(appels directs de scan USB + `loci_set_action_callbacks`).
+
+**`main.c` : 3921 → 3785 lignes** (-136 ; cumul 4988 → 3785 = **-1203**).
+
+Iso-comportement **prouvé par l'oracle US1** : boot LOCI headless **byte-identique**
+(`md5 bf4dff781e05175ad8050815eccd6a42`) ; `make clean && make SDL2=0 tests`
+toutes suites vertes ; builds `SDL2=1`, `SDL2=0` et `SDL2=1 HTTPAPI=1` OK.
+`emulator.h` inchangé (aucun impact sur les projets embarquant l'émulateur).
+
+EMU_VERSION 1.99.6-alpha → 1.99.7-alpha.
+
 ## [1.99.6-alpha] - 2026-08-12
 
 ### Changed — Epic 9 / US3 : migrer les callbacks ROM/tape/resume LOCI + module `rom_patches`

@@ -107,9 +107,12 @@ Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
       (cumul -1067 depuis 4988).** Golden byte-identique + `test-control-dispatch`
       26/26 + suite verte ; builds SDL2=1/0/HTTPAPI OK.
 
-### US 4 — Migrer les hooks USB + actions IRQ-trap (lot moyen)
-- [ ] `loci_attach_usb_dir`, `loci_scan_host_usb`, `loci_action_install_irq_trap`,
-      `loci_action_release_irq_trap`. Vérif golden + suite.
+### US 4 — Migrer les hooks USB + actions IRQ-trap (lot moyen) — DONE (v1.99.7)
+- [x] `loci_attach_usb_dir`, `loci_scan_host_usb`, `loci_action_install_irq_trap`,
+      `loci_action_release_irq_trap` → `src/io/loci_glue.c` (aucun nouveau
+      bloqueur ; includes `<dirent.h>`/`<sys/stat.h>`/`oscompat.h`). **main.c
+      3921 → 3785 (cumul -1203).** Golden byte-identique + suite verte ; builds
+      SDL2=1/0/HTTPAPI OK.
 
 ### US 5 — Isoler la glue SDL (`loci_sync_kbd_from_sdl`)
 - [ ] Déplacer sous `#ifdef HAS_SDL2` ; `loci_glue.c` **doit builder en SDL2=0**.

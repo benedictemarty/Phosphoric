@@ -13,6 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>        /* access */
+#include <dirent.h>        /* opendir/readdir/closedir (USB scan) */
+#include <sys/stat.h>      /* stat */
+#include "utils/oscompat.h" /* oscompat_statvfs */
 
 void loci_dsk_cpu_irq_set(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
@@ -256,4 +259,141 @@ bool loci_resume_session_cb(void* ctx) {
     emu->loci_menu_active = false;
     log_info("LOCI: session resumed from %s", snap);
     return true;
+}
+/* --- Epic 9 / US4 : USB host scan + IRQ-trap (moved verbatim from main.c) --- */
+
+/* Attach a host directory as a LOCI USB mass-storage device: it appears
+ * in the menu's device list with the volume label and its "N:" paths
+ * resolve inside the directory — a real USB key plugged into the host,
+ * served to the Oric like on real hardware. */
+void loci_attach_usb_dir(emulator_t* emu, const char* dir) {
+    struct stat st;
+    if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        log_warning("LOCI USB: %s is not a directory — ignored", dir);
+        return;
+    }
+    const char* label = strrchr(dir, '/');
+    label = (label && label[1]) ? label + 1 : dir;
+    char status[64];
+    struct oscompat_statvfs vs;
+    double gb = (oscompat_statvfs(dir, &vs) == 0)
+              ? (double)vs.f_blocks * (double)vs.f_frsize
+                / (1024.0 * 1024.0 * 1024.0) : 0.0;
+    if (gb >= 1.0)
+        snprintf(status, sizeof(status), "MSC %.1f GB %.40s", gb, label);
+    else
+        snprintf(status, sizeof(status), "MSC %.1f MB %.40s", gb * 1024.0, label);
+    int n = loci_add_usb_storage(&emu->loci, status, dir);
+    if (n > 0)
+        log_info("LOCI: USB storage %d: (%s) -> %s", n, label, dir);
+    else
+        log_warning("LOCI USB: device table full, %s ignored", dir);
+}
+
+/* Auto-detect removable media mounted on the host (udisks convention:
+ * /media/$USER and /run/media/$USER) and attach them as USB devices —
+ * plug a real key in, it shows up in the LOCI menu. */
+void loci_scan_host_usb(emulator_t* emu) {
+    const char* user = getenv("USER");
+    if (!user || !user[0]) user = getenv("USERNAME");   /* Windows */
+    if (!user || !user[0]) return;
+    const char* bases[] = { "/media", "/run/media" };
+    for (size_t b = 0; b < sizeof(bases) / sizeof(bases[0]); b++) {
+        char root[300];
+        snprintf(root, sizeof(root), "%s/%s", bases[b], user);
+        DIR* d = opendir(root);
+        if (!d) continue;
+        struct dirent* de;
+        while ((de = readdir(d)) != NULL) {
+            if (de->d_name[0] == '.') continue;
+            char vol[560];
+            snprintf(vol, sizeof(vol), "%s/%s", root, de->d_name);
+            struct stat st;
+            if (stat(vol, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
+            loci_attach_usb_dir(emu, vol);
+        }
+        closedir(d);
+    }
+}
+
+/* LOCI action-button install hook (Sprint 34ai + 85).
+ * Snapshots the session (the menu's "resume" needs the machine exactly
+ * as it was — press time is a clean instruction boundary, before the
+ * trap hijacks the vectors), saves the current IRQ vector at $FFFE/F,
+ * redirects it to the trap at $03BA, then pulses the CPU IRQ line. The
+ * trap bytes themselves were already mirrored into the MIA register
+ * file by loci_action_button_short. */
+void loci_action_install_irq_trap(void* ctx) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return;
+    if (!emu->loci_menu_active) {   /* inside the menu: keep the session snapshot */
+        char snap[512];
+        loci_resume_snapshot_path(emu, snap, sizeof(snap));
+        if (savestate_save(emu, snap))
+            log_info("LOCI: session snapshot -> %s (menu resume)", snap);
+    }
+    /* Save current vector. The ORIC IRQ vector lives in ROM at $FFFE/F,
+     * backed by mem->rom (offset $3FFE/F since rom starts at $C000). */
+    uint8_t lo = emu->memory.rom[0x3FFE];
+    uint8_t hi = emu->memory.rom[0x3FFF];
+    emu->loci.saved_irq_vector = (uint16_t)lo | ((uint16_t)hi << 8);
+    /* Redirect to the trap at $03BA. */
+    emu->memory.rom[0x3FFE] = 0xBA;
+    emu->memory.rom[0x3FFF] = 0x03;
+    /* Pulse the IRQ line. Source bit is arbitrary — VIA works because
+     * the CPU handler doesn't introspect the source for this trap. */
+    cpu_irq_set(&emu->cpu, IRQF_VIA);
+}
+
+/* LOCI action-button release hook (Sprint 34ai + 85).
+ * Sets the 6502 V flag so the BVC -2 spin falls through, restores the
+ * original IRQ vector, then performs the firmware's EXT_CAPTURE_IRQ →
+ * EXT_BOOT_LOCI sequence: boot the LOCI menu ROM. On real hardware the
+ * trap's JMP ($FFFA) lands in the freshly mapped LOCI ROM whose
+ * save-state routine runs before the menu; our snapshot was taken at
+ * press time, so we go straight to the menu via the ROM's reset vector. */
+void loci_action_release_irq_trap(void* ctx) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return;
+    emu->cpu.P |= FLAG_OVERFLOW;
+    uint16_t v = emu->loci.saved_irq_vector;
+    emu->memory.rom[0x3FFE] = (uint8_t)(v & 0xFF);
+    emu->memory.rom[0x3FFF] = (uint8_t)(v >> 8);
+    /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
+    cpu_irq_clear(&emu->cpu, IRQF_VIA);
+
+    if (emu->loci_button_long) {
+        /* Firmware warm long hold (≥ 2 s): EXT_BOOT_DIAG — boot Mike
+         * Brown's diagnostic ROM (test108k, embedded in real firmware
+         * builds with his permission). No resume path: it is a hardware
+         * test reboot; F5/menu brings the machine back afterwards. */
+        emu->loci_button_long = false;
+        char diag[512];
+        if (!loci_find_rom_file(emu, "test108k.rom", diag, sizeof(diag))) {
+            log_warning("LOCI: diag ROM introuvable (test108k.rom dans le flash "
+                        "root ou roms/loci/) — appui long sans effet");
+            return;
+        }
+        if (loci_rom_swap_cb(emu, diag, 0xC000)) {
+            emu->loci_menu_active = false;
+            cpu_reset(&emu->cpu);
+            log_info("LOCI: long press -> diag ROM %s", diag);
+        }
+        return;
+    }
+    if (emu->loci_menu_active) {
+        log_info("LOCI: Action button inside the menu — ignored");
+        return;
+    }
+    char rom[512];
+    if (!loci_find_menu_rom(emu, rom, sizeof(rom))) {
+        log_warning("LOCI: menu ROM introuvable (LOCIROM/locirom dans le flash "
+                    "root, ou roms/loci/locirom) — bouton Action sans effet");
+        return;
+    }
+    if (loci_rom_swap_cb(emu, rom, 0xC000)) {
+        emu->loci_menu_active = true;
+        cpu_reset(&emu->cpu);
+        log_info("LOCI: warm boot -> menu ROM %s", rom);
+    }
 }

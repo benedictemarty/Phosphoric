@@ -39,4 +39,13 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
 /* LOCI callback: restore a resume session snapshot. */
 bool loci_resume_session_cb(void* ctx);
 
+/* --- Epic 9 / US4 : USB host scan + IRQ-trap actions --- */
+/* Attach a host directory as a LOCI USB mass-storage source. */
+void loci_attach_usb_dir(emulator_t* emu, const char* dir);
+/* Scan the host for USB directories to expose to the LOCI. */
+void loci_scan_host_usb(emulator_t* emu);
+/* LOCI action callbacks: install / release the IRQ-trap resume mechanism. */
+void loci_action_install_irq_trap(void* ctx);
+void loci_action_release_irq_trap(void* ctx);
+
 #endif /* LOCI_GLUE_H */
