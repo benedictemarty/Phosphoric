@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.1-alpha] - 2026-08-12
+
+### Fixed — Décodeur de capture tape-OUT (voie A CSAVE) : front montant + framing chasse-start
+
+Régression + défaut de framing dans le décodeur `--tape-out-capture`
+(`src/io/cassette.c`), diagnostiqués par instrumentation et **contre-signés
+côté silicium** (RTL FPGA + désassemblage ROM `GetTapeByte $E6C9`).
+
+- **Détection de front (régression).** Le décodeur mesurait *tout* front
+  (`last_pb7 != pb7`). Or l'onde CSAVE émet **deux demi-pulses par bit** (bas
+  208, haut 208 pour `1` / 416 pour `0`) — le même modèle que `cassette_step`.
+  Mesurer tout front donne les demi-pulses (208/416, tous < seuil 512 → **chaque
+  bit lu `1`** → capture d'1 octet). La ROM chronomètre **front montant → front
+  montant** = période de bit complète (416 `1` / 624 `0`). Rétabli
+  `(!last_pb7 && pb7)`.
+- **Framing (doublements de octets).** Le réassembleur comptait un nombre fixe
+  de bits d'arrêt (parité + 4 stops = 5 périodes), ce qui dérive d'un bit par
+  trame quand le nombre de stops réels diffère (3,5 réels vs 4 modélisés) →
+  motifs doublés/alternés. Reproduit désormais `GetTapeByte` : après les 8 bits
+  data, **brûler 1 période (parité)** puis **chasser le premier front long =
+  start** (les stops courts sont sautés, quel qu'en soit le nombre).
+- L'amorçage `primed` (1er échantillon seede le niveau, pas de front parasite au
+  démarrage) est **conservé** — il était correct.
+
+Vérification : nouveau **test d'intégration `test-tape-roundtrip`**
+(`tests/integration/test_tape_roundtrip.sh`, 3/3) — capture non triviale (282 o
+vs 1 o de la régression), leader `0x16` propre, et **roundtrip CSAVE→capture→
+CLOAD de bout en bout** (`10 END` re-LISTé à l'identique). Ajouté à `make tests`.
+`make clean && make SDL2=0 tests` toutes suites vertes ; builds natif + SDL2 OK.
+
+EMU_VERSION 1.99.0-alpha → 1.99.1-alpha.
+
 ## [1.99.0-alpha] - 2026-08-12
 
 ### Fixed — Conformité PSG AY-3-8912 vs datasheet General Instrument (bruit 2× trop rapide)

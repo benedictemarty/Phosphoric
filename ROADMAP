@@ -40,6 +40,16 @@ Audit dans `docs/HARDWARE_CONFORMANCE.md`. 2 écarts corrigés (sûrs, prouvable
 - Déviations assumées : Port B absent sur l'8912 (modélisé, sans effet Oric),
   sémantique R7 bit 6 (validée empiriquement sur Oric mais divergente datasheet).
 
+### US 4 — Décodeur capture tape-OUT voie A (v1.99.1-alpha) — DONE
+Diagnostiqué par instrumentation, **contre-signé silicium** (RTL FPGA + ROM
+`GetTapeByte $E6C9`).
+- [x] Régression front : rétabli front montant seul (l'onde CSAVE fait 2
+      demi-pulses/bit → tout-front mesurait des demi-pulses → 1 octet).
+- [x] Framing : reproduit la ROM (brûler parité, chasser 1er front long = start)
+      au lieu d'un comptage fixe → fin des doublements d'octets.
+- [x] Nouveau test d'intégration `test-tape-roundtrip` (roundtrip CSAVE→capture
+      →CLOAD verrouillé) dans `make tests` — la voie A n'avait aucun test.
+
 ---
 
 ## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)

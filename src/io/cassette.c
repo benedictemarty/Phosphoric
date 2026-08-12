@@ -172,11 +172,17 @@ static void tape_capture_emit(tape_capture_t* tc, uint8_t b) {
     tc->out[tc->out_len++] = b;
 }
 
-/* Feed one decoded bit into the frame re-assembler (mirror of ROM read_byte:
- * seek start '0', 8 data bits LSB, then skip parity + 4 stop bits). */
+/* Feed one decoded bit into the frame re-assembler. Mirrors ROM GetTapeByte
+ * ($E6C9 on BASIC 1.1): it does NOT clock a fixed-length frame — it hunts the
+ * start bit. After a byte it burns one period (parity) then skips the short '1'
+ * periods (stop bits, however many) and takes the first long '0' period as the
+ * next start. Counting a fixed number of stop bits would drift the framing by
+ * one bit per frame whenever the real stop count differs from the model (3.5
+ * real vs 4 encoded, or a stop truncated at end of CSAVE) — which is what
+ * produced the doubled/alternating byte patterns. */
 static void tape_capture_bit(tape_capture_t* tc, int bit) {
     switch (tc->state) {
-    case 0: /* seek start bit (a '0'); '1's are leader/stop idle */
+    case 0: /* hunt start: skip short '1's, the first long '0' is the start */
         if (bit == 0) {
             tc->state = 1;
             tc->bitcount = 0;
@@ -186,16 +192,13 @@ static void tape_capture_bit(tape_capture_t* tc, int bit) {
     case 1: /* 8 data bits, LSB first (ROR-style) */
         tc->cur_byte = (uint8_t)((tc->cur_byte >> 1) | (bit ? 0x80 : 0x00));
         if (++tc->bitcount >= 8) {
-            tc->state = 2;
-            tc->bitcount = 0;
+            tape_capture_emit(tc, tc->cur_byte);   /* byte complete */
+            tc->state = 2;                          /* burn parity next */
         }
         break;
-    case 2: /* skip parity (1) + stop (4) = 5 bits, then emit */
-        if (++tc->bitcount >= 5) {
-            tape_capture_emit(tc, tc->cur_byte);
-            tc->state = 0;
-            tc->bitcount = 0;
-        }
+    case 2: /* burn exactly one period (the parity bit, any value), then hunt
+             * the next start — stop-bit count is irrelevant to the framing */
+        tc->state = 0;
         break;
     }
 }
@@ -211,10 +214,15 @@ void tape_capture_sample(tape_capture_t* tc, via6522_t* via, uint64_t cyc) {
         tc->last_pb7 = pb7;
         return;
     }
-    /* One PB7 edge per bit (ROM CSAVE single-edge encoding): each Timer-1
-     * underflow toggles PB7 once per bit, so the period between CONSECUTIVE
-     * edges (either direction) is the bit period (416 '1' / 624 '0'). */
-    bool edge = (tc->last_pb7 != pb7);
+    /* CSAVE emits TWO half-pulses per bit (low 208, then high 208 for '1' or
+     * 416 for '0') — the same waveform cassette_step() generates. The ROM times
+     * RISING edge to RISING edge, so only rising edges are counted; the period
+     * between consecutive rising edges is the full bit period (416 '1' / 624
+     * '0'). Counting every edge would instead measure half-pulses (208/416,
+     * both below the 512 threshold → every bit read as '1'), which breaks the
+     * decode. Confirmed against the FPGA RTL injector and the ROM disassembly
+     * of GetTapeByte ($E6C9, Timer 2, threshold ~520). */
+    bool edge = (!tc->last_pb7 && pb7);
     tc->last_pb7 = pb7;
     if (!edge) return;
     if (!tc->have_prev_edge) {
