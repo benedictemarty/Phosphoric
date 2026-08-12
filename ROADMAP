@@ -52,6 +52,66 @@ Diagnostiqué par instrumentation, **contre-signé silicium** (RTL FPGA + ROM
 
 ---
 
+## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — BACKLOG
+
+**Vision.** Extraire les ~15 fonctions `loci_*` de `main.c` (~400 l de câblage
+LOCI-spécifique) vers un adaptateur dédié `src/io/loci_glue.c` — le seul fichier
+qui connaît à la fois le cœur LOCI (gardé pur, sans `emulator.h`) et
+`emulator_t`. Même rôle et même patron que `io_bus.c` (Epic 7/US2). Extraction
+**incrémentale à iso-comportement**, ordre = risque croissant.
+
+**Contexte mesuré (ce qui rend l'Epic faisable).**
+- **Seam propre** : les callbacks sont enregistrés par `loci_set_*_callback(&emu.loci,
+  cb, &emu)` et reçoivent un `void* ctx` (= `&emu`) → déjà découplés, l'extraction
+  est mécaniquement identique à `tape_patches`/`serial_transport_create`.
+- **SDL borné** : une **seule** fonction dépend de SDL (`loci_sync_kbd_from_sdl`,
+  `SDL_GetKeyboardState`/`GetModState`) → à isoler sous `#ifdef HAS_SDL2`.
+- **Couplage large mais à `emulator_t`** (memory/cpu/video/osd/keyboard/disks),
+  accessible via `emulator.h` — pas (a priori) à des statics de `main.c` (à
+  confirmer en US1, seul point bloquant possible).
+- **Couverture** : `test-loci`/`-sdimg`/`-sdimg-write`/`-acia-e2e` sont dans
+  `make tests` ; `test-loci-e2e` (état écran, 5 échecs préexistants) en est hors.
+
+### US 1 — Cartographie + filet de non-régression (prérequis, risque nul)
+- [ ] Recenser les ~15 `loci_*` : signature, sous-systèmes `emu->*` touchés,
+      **appels à des statics de `main.c`** (bloquants → à extraire aussi ou à
+      garder), dépendance SDL. Livrable : tableau dans `docs/architecture/`.
+- [ ] Établir un **golden LOCI** : 2-3 runs headless déterministes (boot MIA,
+      boot image SD, ACIA-over-LOCI $0380) capturés byte-identiques → oracle.
+- [ ] Statuer sur `test-loci-e2e` (5 échecs écran) : diagnostiquer → corriger si
+      vrais bugs, sinon quarantainer explicitement ; viser ≥1 e2e écran
+      déterministe **dans `make tests`**. Sans ce filet, US2+ non prouvables.
+
+### US 2 — Créer `loci_glue.{c,h}` + migrer les callbacks bus/IRQ (lot sûr)
+- [ ] `loci_dsk_cpu_irq_set`/`_clr`, `loci_dsk_sync_overlay`, `loci_rom_poke_hook`
+      (petits, couplage borné cpu/loci/overlay) → `loci_glue.c` ; `main.c` garde
+      l'enregistrement `loci_set_*`. Vérif : golden byte-identique + suite verte.
+
+### US 3 — Migrer les callbacks ROM / tape / resume (lot moyen)
+- [ ] `loci_tape_mount_cb`, `loci_rom_swap_cb`, `loci_resume_session_cb`,
+      `loci_patch_rom_info`, `loci_find_rom_file`/`_menu_rom`,
+      `loci_resume_snapshot_path`. Couplage memory/tapebuf/rom via `emulator.h`.
+      Vérif golden + suite.
+
+### US 4 — Migrer les hooks USB + actions IRQ-trap (lot moyen)
+- [ ] `loci_attach_usb_dir`, `loci_scan_host_usb`, `loci_action_install_irq_trap`,
+      `loci_action_release_irq_trap`. Vérif golden + suite.
+
+### US 5 — Isoler la glue SDL (`loci_sync_kbd_from_sdl`)
+- [ ] Déplacer sous `#ifdef HAS_SDL2` ; `loci_glue.c` **doit builder en SDL2=0**.
+      Vérif : builds natif ET SDL2=0 OK + golden SDL identique.
+
+### US 6 — Nettoyage + doc
+- [ ] `main.c` ne garde que l'enregistrement des callbacks (le câblage), pas leur
+      corps. Mesurer le gain (~-400 l attendu). Doc `docs/architecture/loci-glue.md`
+      (miroir de `io-bus.md`).
+
+**Écart assumé possible.** Si un callback appelle un static de `main.c` non
+extractible proprement, deux options documentées : l'extraire aussi, ou garder
+ce callback en `main.c` (le seam `loci_set_*` le permet sans tout bloquer).
+
+---
+
 ## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
 
 Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette
