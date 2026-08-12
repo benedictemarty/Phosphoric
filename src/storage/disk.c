@@ -182,6 +182,19 @@ static void fdc_record_not_found(fdc_t* fdc) {
     }
 }
 
+/* Type II/III commands sample the READY line first (datasheet p.7): with no
+ * media loaded the command is NOT executed — status = NOT READY (bit 7) + INTRQ,
+ * and NOT Record Not Found (which means "media present but sector/ID absent").
+ * Returns true (command aborted) when no disk is loaded. */
+static bool fdc_not_ready(fdc_t* fdc) {
+    if (fdc->disk_data) return false;
+    fdc->clr_drq(fdc->drq_userdata);
+    fdc->currentop = FDC_OP_NONE;
+    fdc->status = FDC_ST_NOT_READY;
+    fdc->set_intrq(fdc->intrq_userdata);
+    return true;
+}
+
 /**
  * Process FDC timer ticks. Must be called with CPU cycle count
  * after each instruction to handle delayed DRQ/INTRQ.
@@ -389,6 +402,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
 
         case 0x80: /* Read sector (Type II) */
             fdc->status_type1 = false;
+            if (fdc_not_ready(fdc)) break;   /* no media → NOT READY, not RNF */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (fdc_trace_enabled()) {
@@ -415,6 +429,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
 
         case 0xA0: /* Write sector (Type II) */
             fdc->status_type1 = false;
+            if (fdc_not_ready(fdc)) break;   /* no media → NOT READY, not RNF */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (!fdc->cur_sector_data) {
@@ -436,6 +451,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             if ((value & 0x10) == 0x00) {
                 /* Read Address (Type III) */
                 fdc->status_type1 = false;
+                if (fdc_not_ready(fdc)) break;   /* no media → NOT READY */
                 fdc->cur_offset = 0;
                 /* Use first available sector on current track */
                 fdc->cur_sector_data = fdc_find_sector(fdc, 1);
@@ -477,6 +493,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
 
         case 0xE0: /* Read Track / Write Track */
             fdc->status_type1 = false;
+            if (fdc_not_ready(fdc)) break;   /* no media → NOT READY */
             if ((value & 0x10) == 0x00) {
                 /* Read Track (Type III) - not fully implemented */
                 fdc->status = FDC_ST_BUSY | FDC_ST_NOT_READY;

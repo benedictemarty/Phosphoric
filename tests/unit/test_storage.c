@@ -483,6 +483,23 @@ TEST(test_fdc_force_interrupt) {
     ASSERT_FALSE(test_intrq_set);   /* D0 must NOT raise INTRQ */
 }
 
+/* Type II/III with NO media loaded: the WD1793 samples READY and does not
+ * execute the command — status = NOT READY (bit 7) + INTRQ, NOT Record Not
+ * Found (bit 4, which means media present but sector absent). Datasheet p.7. */
+TEST(test_fdc_no_disk_is_not_ready) {
+    fdc_t fdc;
+    fdc_init_test(&fdc);   /* no fdc_set_disk → disk_data == NULL */
+    fdc_write(&fdc, 0, 0x80);          /* Read Sector (Type II) */
+    ASSERT_TRUE(fdc.status & FDC_ST_NOT_READY);   /* bit 7 */
+    ASSERT_FALSE(fdc.status & FDC_ST_NOT_FOUND);  /* NOT the RNF path */
+    ASSERT_TRUE(test_intrq_set);
+    /* Write Sector and Read Address behave the same. */
+    test_intrq_set = false;
+    fdc_write(&fdc, 0, 0xA0);          /* Write Sector */
+    ASSERT_TRUE(fdc.status & FDC_ST_NOT_READY);
+    ASSERT_FALSE(fdc.status & FDC_ST_NOT_FOUND);
+}
+
 /* Force Interrupt D8 (i3 = 1): immediate interrupt. */
 TEST(test_fdc_force_interrupt_immediate) {
     fdc_t fdc;
@@ -669,6 +686,7 @@ int main(void) {
     RUN(test_fdc_write_track);
     RUN(test_fdc_write_sets_modified);
     RUN(test_fdc_force_interrupt);
+    RUN(test_fdc_no_disk_is_not_ready);
     RUN(test_fdc_force_interrupt_immediate);
     RUN(test_fdc_read_address_loads_track);
     RUN(test_fdc_step_track_update_flag);

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.99.9-alpha] - 2026-08-12
+
+### Fixed — Conformité WD1793 : disque absent → NOT READY (bit 7) au lieu de RNF
+
+Épic 8 (conformité datasheet), suite. Les commandes Type II/III (Read/Write
+Sector, Read Address, Read/Write Track) échantillonnent la ligne READY
+(datasheet p.7) : sans média chargé, la commande n'est PAS exécutée et le status
+doit être NOT READY (bit 7) + INTRQ. Le code posait Record Not Found (bit 4, qui
+signifie « média présent mais secteur/ID absent ») aussi bien pour un disque
+absent que pour un secteur introuvable. Nouveau helper `fdc_not_ready()` :
+`fdc_find_sector` distingue désormais no-média (NOT READY) de secteur-absent (RNF).
+
+Tests : `test-storage` 24 → **25** (+1 : `test_fdc_no_disk_is_not_ready`) ; le
+test bad-sector (disque présent → RNF) reste vert. `make clean && make SDL2=0
+tests` toutes suites vertes.
+
+EMU_VERSION 1.99.8-alpha → 1.99.9-alpha.
+
 ## [1.99.8-alpha] - 2026-08-12
 
 ### Changed — Epic 9 / US5 : isoler la glue SDL LOCI (`loci_sync_kbd_from_sdl`)
