@@ -173,7 +173,7 @@ make SDL2=1
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/SEDORIC.md](docs/SEDORIC.md)
-- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
+- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Key pacing is **synchronised on the real keyboard scanner** (VIA PB3 matrix sweep), so no keystroke is dropped even when the target program polls the matrix slower than a frame. `--type-keys-when ADDR:VAL:TEXT` arms typing when `RAM[ADDR]==VAL` (hex) instead of a guessed boot cycle. Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
 
 ## Building
 
@@ -319,12 +319,15 @@ Display & Export:
   --keyboard LAYOUT         qwerty (default) or azerty
   --headless                No display
   --cycles N                Run N cycles then exit
-  --screenshot FILE         Screenshot at exit (.ppm/.bmp)
-  --screenshot-at N:FILE    Screenshot after N cycles
+  --screenshot FILE         Screenshot at exit (.ppm/.bmp/.png)
+  --screenshot-at N:FILE    Screenshot after N cycles (.ppm/.bmp/.png)
   --screenshot-text FILE    Dump screen text ($BB80, 40x28) as ASCII at exit
   --screenshot-ansi FILE    Dump framebuffer as ANSI true-color text at exit
   --screenshot-text-at N:FILE  Dump screen text after N cycles
   --screenshot-ansi-at N:FILE  Dump ANSI framebuffer after N cycles
+  --screenshot-when A:V:FILE   Screenshot when RAM[A]==V (A,V hex; exit 2 if never before --cycles)
+  --screenshot-text-when A:V:FILE  Dump screen text when RAM[A]==V (A,V hex)
+  --dump-ram-when A:V:FILE     Dump 64KB when RAM[A]==V (A,V hex; exit 2 if never before --cycles)
   --video FILE              Record video to a Motion-JPEG AVI file
   --video-fps N             Recording frame rate (default: 50)
   --video-quality N         JPEG quality 1..100 (default: 85)
@@ -332,6 +335,8 @@ Display & Export:
   --replay FILE             Replay a recorded input movie (ignores live keys)
   --type-keys N:TEXT        Simulate keyboard input (escapes: \n \e \u \d \l \r
                             \Cx=Ctrl+x \Fx=Funct+x \Lx/\Rx=Left/Right Shift+x \pN)
+                            Pacing synced on the real keyboard scan (no dropped keys)
+  --type-keys-when A:V:TEXT Arm --type-keys when RAM[A]==V (A,V hex) instead of a cycle
   -v, --verbose             Debug logging
 ```
 
@@ -441,7 +446,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 | F9 | Enter debugger |
 | F10 | Quit |
 | F11 | Fullscreen |
-| F12 | Screenshot |
+| F12 | Screenshot PNG (`screenshot.png`, ou horodaté si déjà présent) |
 
 ## Testing
 

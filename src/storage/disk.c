@@ -126,7 +126,7 @@ static int fdc_rot_wait(fdc_t* fdc, uint8_t sec_id) {
  * Sets delayed INTRQ and proper status bits. CMD carries the command byte
  * (r1r0 step rate + V verify flag) for the REAL timing model.
  */
-static void fdc_seek_track(fdc_t* fdc, uint8_t target, uint8_t cmd) {
+static void fdc_seek_track(fdc_t* fdc, uint8_t target, uint8_t cmd, bool update_track) {
     if (fdc_trace_enabled()) {
         fprintf(stderr, "[FDC] seek target=%u (c_track=%u track_reg=%u data=%02X)\n",
                 target, fdc->c_track, fdc->track, fdc->data);
@@ -152,7 +152,11 @@ static void fdc_seek_track(fdc_t* fdc, uint8_t target, uint8_t cmd) {
         }
         fdc->c_track = target;
         fdc->c_sector = 0;
-        fdc->track = target;
+        /* The head always moves physically (c_track). The track REGISTER is
+         * updated only when the caller asks: Restore/Seek always update it,
+         * but Step/Step-in/Step-out update it solely when the T flag (bit 4)
+         * is set (Table 2, Type I bit 4 = Track Update). */
+        if (update_track) fdc->track = target;
         if (fdc->c_track == 0) fdc->di_status |= FDC_STI_TRK0;
     } else {
         /* No disk: immediate INTRQ with error */
@@ -176,6 +180,19 @@ static void fdc_record_not_found(fdc_t* fdc) {
         fdc->status = FDC_ST_NOT_FOUND;
         fdc->set_intrq(fdc->intrq_userdata);
     }
+}
+
+/* Type II/III commands sample the READY line first (datasheet p.7): with no
+ * media loaded the command is NOT executed — status = NOT READY (bit 7) + INTRQ,
+ * and NOT Record Not Found (which means "media present but sector/ID absent").
+ * Returns true (command aborted) when no disk is loaded. */
+static bool fdc_not_ready(fdc_t* fdc) {
+    if (fdc->disk_data) return false;
+    fdc->clr_drq(fdc->drq_userdata);
+    fdc->currentop = FDC_OP_NONE;
+    fdc->status = FDC_ST_NOT_READY;
+    fdc->set_intrq(fdc->intrq_userdata);
+    return true;
 }
 
 /**
@@ -305,7 +322,10 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                 addr_field[3] = 1;               /* Size code (1 = 256 bytes) */
                 addr_field[4] = 0;               /* CRC hi */
                 addr_field[5] = 0;               /* CRC lo */
-                if (fdc->cur_offset == 0) fdc->sector = addr_field[2];
+                /* Datasheet (Read Address): the TRACK address of the ID field
+                 * (byte 1) is written into the sector register so the host can
+                 * compare it — not the sector number. */
+                if (fdc->cur_offset == 0) fdc->sector = addr_field[0];
                 fdc->data = addr_field[fdc->cur_offset++];
             }
             fdc->status &= ~FDC_ST_DRQ;
@@ -339,11 +359,11 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             if ((value & 0x10) == 0x00) {
-                /* Restore (Type I) */
-                fdc_seek_track(fdc, 0, value);
+                /* Restore (Type I) — always updates the track register (to 0) */
+                fdc_seek_track(fdc, 0, value, true);
             } else {
-                /* Seek (Type I) */
-                fdc_seek_track(fdc, fdc->data, value);
+                /* Seek (Type I) — always updates the track register */
+                fdc_seek_track(fdc, fdc->data, value, true);
             }
             fdc->currentop = FDC_OP_NONE;
             break;
@@ -352,10 +372,12 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             fdc->status = FDC_ST_BUSY;
             fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
+            /* Step*: track register updated only if the T flag (bit 4) is set */
             if (fdc->direction == 0)
-                fdc_seek_track(fdc, fdc->c_track + 1, value);
+                fdc_seek_track(fdc, fdc->c_track + 1, value, (value & 0x10) != 0);
             else
-                fdc_seek_track(fdc, fdc->c_track > 0 ? fdc->c_track - 1 : 0, value);
+                fdc_seek_track(fdc, fdc->c_track > 0 ? fdc->c_track - 1 : 0, value,
+                               (value & 0x10) != 0);
             fdc->currentop = FDC_OP_NONE;
             break;
 
@@ -364,7 +386,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             fdc->status_type1 = true;
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             fdc->direction = 0;
-            fdc_seek_track(fdc, fdc->c_track + 1, value);
+            fdc_seek_track(fdc, fdc->c_track + 1, value, (value & 0x10) != 0);
             fdc->currentop = FDC_OP_NONE;
             break;
 
@@ -374,12 +396,13 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             if (value & 0x08) fdc->status |= FDC_STI_HEADL;
             fdc->direction = 1;
             if (fdc->c_track > 0)
-                fdc_seek_track(fdc, fdc->c_track - 1, value);
+                fdc_seek_track(fdc, fdc->c_track - 1, value, (value & 0x10) != 0);
             fdc->currentop = FDC_OP_NONE;
             break;
 
         case 0x80: /* Read sector (Type II) */
             fdc->status_type1 = false;
+            if (fdc_not_ready(fdc)) break;   /* no media → NOT READY, not RNF */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (fdc_trace_enabled()) {
@@ -406,6 +429,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
 
         case 0xA0: /* Write sector (Type II) */
             fdc->status_type1 = false;
+            if (fdc_not_ready(fdc)) break;   /* no media → NOT READY, not RNF */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (!fdc->cur_sector_data) {
@@ -427,6 +451,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
             if ((value & 0x10) == 0x00) {
                 /* Read Address (Type III) */
                 fdc->status_type1 = false;
+                if (fdc_not_ready(fdc)) break;   /* no media → NOT READY */
                 fdc->cur_offset = 0;
                 /* Use first available sector on current track */
                 fdc->cur_sector_data = fdc_find_sector(fdc, 1);
@@ -446,19 +471,29 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 }
             } else {
                 /* Force Interrupt (Type IV). The WD1793 reloads the status
-                 * register with Type I bits after a Force Interrupt. */
+                 * register with Type I bits after a Force Interrupt. The low
+                 * nibble selects the interrupt condition (datasheet p.15):
+                 *   i3 (0x08) = immediate INTRQ (HEX D8)
+                 *   i2 (0x04) = every index pulse    } conditional — not
+                 *   i1/i0     = ready transitions     } modelled here
+                 *   i3-i0 = 0 (HEX D0) = terminate the current command WITHOUT
+                 *                        generating an interrupt.
+                 * The command-register write already cleared INTRQ above, so a
+                 * bare D0 simply leaves the /INTRQ line inactive. */
                 fdc->status = 0;
                 fdc->status_type1 = true;
                 fdc->clr_drq(fdc->drq_userdata);
-                fdc->set_intrq(fdc->intrq_userdata);
                 fdc->delayed_int = 0;
                 fdc->delayed_drq = 0;
                 fdc->currentop = FDC_OP_NONE;
+                if (value & 0x08)   /* i3: immediate interrupt (HEX D8) */
+                    fdc->set_intrq(fdc->intrq_userdata);
             }
             break;
 
         case 0xE0: /* Read Track / Write Track */
             fdc->status_type1 = false;
+            if (fdc_not_ready(fdc)) break;   /* no media → NOT READY */
             if ((value & 0x10) == 0x00) {
                 /* Read Track (Type III) - not fully implemented */
                 fdc->status = FDC_ST_BUSY | FDC_ST_NOT_READY;

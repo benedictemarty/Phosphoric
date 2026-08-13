@@ -30,6 +30,7 @@
 #endif
 
 #include "emulator.h"
+#include "rom_patches.h"
 #include "io/keyboard.h"
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
@@ -43,7 +44,12 @@
 #include "io/loci_sdimg.h"
 #include "io/io_device.h"
 #include "io/io_bus.h"        /* table de bus + dispatch (Epic 7/US2) */
+#include "io/autotype.h"      /* pacing scan-driven de --type-keys */
+#include "io/tape_patches.h" /* ROM CLOAD/CSAVE PC patches (ex-main.c) */
+#include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
+#include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
+#include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -199,235 +205,7 @@ int renderer_get_scale(void);
 void renderer_cycle_scale(void);
 
 
-/* ═══════════════════════════════════════════════════════════════════ */
-/*  ROM patch tables (version-specific tape loading addresses)         */
-/* ═══════════════════════════════════════════════════════════════════ */
 
-static const rom_patches_t rom_patches_basic10 = {
-    .name              = "BASIC 1.0 (ORIC-1)",
-    .getsync_entry     = 0xE696,
-    .getsync_end       = 0xE6B9,
-    .getsync_loop      = 0xE681,
-    .readbyte_entry    = 0xE630,
-    .readbyte_end      = 0xE65B,
-    .readbyte_store    = 0x002F,
-    .readbyte_storezero= 0,         /* GetTapeByte on Oric-1 does not maintain $02B1 */
-    .readbyte_setcarry = false,     /* and exits with C=0 */
-    .csave_header_buf  = 0x005E,    /* Sprint 34at — ZP staging buffer $5E..$66
-                                      * (read via LDX#9 / LDA $5D,X / DEX, see
-                                      * disasm at $E585). Senior-approved. */
-    .csave_filename_buf= 0x0035,    /* filename at $0035 (16 bytes, null-term) */
-    .writefileheader_entry = 0xE57B,/* Snapshot trap point — captures $5E..$66
-                                      * + $0035 BEFORE the data-write loop
-                                      * mutates $5F/$60 as a work pointer. */
-    .cload_data_rts    = 0xE502,
-    .putbyte_entry     = 0xE5C6,
-    .putbyte_end       = 0xE5F2,
-    .csave_end         = 0xE80A,    /* Sprint 34at (senior-approved Option A):
-                                      * $E80A is the JMP $EBD0 that terminates
-                                      * the CSAVE outer routine. $E7FE never
-                                      * fires on ORIC-1 (verified via PCLOG in
-                                      * cpu_step) — the JSR $E804 at $E7F5 calls
-                                      * a sub-routine that JMPs to warm-start
-                                      * instead of RTSing. The PHP-orphaned
-                                      * stack is reset by the warm-start handler. */
-    .writeleader_entry = 0xE6BA,
-    .writeleader_end   = 0xE6C9,
-    .tape_type_addr    = 0x0064     /* CLOAD header read at $E4BC stores the 9
-                                      * header bytes reversed (STA $5D,X / DEX),
-                                      * so on-tape byte 3 (file type) lands at
-                                      * $64 — NOT $66 ($66 = reserved byte 1). */
-};
-
-static const rom_patches_t rom_patches_basic11 = {
-    .name              = "BASIC 1.1 (ORIC Atmos)",
-    .getsync_entry     = 0xE735,
-    .getsync_end       = 0xE759,
-    .getsync_loop      = 0xE720,
-    .readbyte_entry    = 0xE6C9,
-    .readbyte_end      = 0xE6FB,
-    .readbyte_store    = 0x002F,
-    .readbyte_storezero= 0x02B1,    /* Atmos GetTapeByte zeroes the parity accumulator */
-    .readbyte_setcarry = true,      /* and exits with C=1 — VERIFY logic relies on both */
-    .csave_header_buf  = 0x02A8,    /* Atmos WriteFileHeader staging : $02A8..$02B0 (reversed
-                                      * on-tape order, see disasm at $E60F-$E618) */
-    .csave_filename_buf= 0x027F,    /* Atmos filename buffer (16 chars, null-terminated) */
-    .writefileheader_entry = 0xE607,/* Sprint 34at: snapshot point for Atmos —
-                                      * same defensive pattern (cheap, harmless
-                                      * if $02A8..$02B0 isn't mutated post-call). */
-    .cload_data_rts    = 0xE50A,
-    .putbyte_entry     = 0xE65E,
-    .putbyte_end       = 0xE68A,
-    .csave_end         = 0xE93C,
-    .writeleader_entry = 0xE75A,
-    .writeleader_end   = 0xE769,
-    .tape_type_addr    = 0x02AE    /* CLOAD header read at $E4B9 stores the 9
-                                     * header bytes reversed (STA $02A7,X / DEX),
-                                     * so on-tape byte 3 (file type) lands at
-                                     * $02AE. */
-};
-
-/**
- * @brief Auto-detect ROM version from loaded ROM data
- *
- * Checks the JMP target at ROM offset 0 (address $C000):
- * - BASIC 1.0: JMP $EA59 (4C 59 EA)
- * - BASIC 1.1: JMP $ECCC (4C CC EC)
- *
- * @return Detected model, or ORIC_MODEL_ORIC1 as default
- */
-static oric_model_t detect_rom_version(const memory_t* mem) {
-    /* ROM starts at $C000, which is rom[0] */
-    if (mem->rom[0] == 0x4C) {  /* JMP instruction */
-        uint16_t target = (uint16_t)mem->rom[1] | ((uint16_t)mem->rom[2] << 8);
-        if (target == 0xECCC) {
-            return ORIC_MODEL_ATMOS;
-        }
-    }
-    return ORIC_MODEL_ORIC1;
-}
-
-static const rom_patches_t* get_rom_patches(oric_model_t model) {
-    switch (model) {
-        case ORIC_MODEL_ATMOS: return &rom_patches_basic11;
-        default:               return &rom_patches_basic10;
-    }
-}
-
-static void print_usage(const char* program_name) {
-    printf("Phosphoric v%s\n", EMU_VERSION);
-    printf("Usage: %s [options]\n\n", program_name);
-    printf("Options:\n");
-    printf("  -t, --tape FILE            Load .TAP tape file\n");
-    printf("      --tape-signal          Signal-level tape (VIA CB1 waveform, real ROM\n");
-    printf("                             read) — for custom/protected loaders; excludes -f\n");
-    printf("  -d, --disk FILE            Load .DSK disk file in drive A\n");
-    printf("      --disk1 FILE           Load .DSK disk file in drive B\n");
-    printf("      --disk2 FILE           Load .DSK disk file in drive C\n");
-    printf("      --disk3 FILE           Load .DSK disk file in drive D\n");
-    printf("      --disk-rom FILE        Load Microdisc ROM (microdis.rom)\n");
-    printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
-    printf("                             (overwrites in place; only drives actually written are saved)\n");
-    printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");
-    printf("                             (then INIT/format inside; changes are saved back on exit)\n");
-    printf("  -r, --rom FILE             Load custom ROM file\n");
-    printf("  -h, --hostfs PATH          Mount host directory\n");
-    printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
-    printf("  -n, --headless             Run without display (headless mode)\n");
-    printf("      --realtime             Pace to 50 Hz PAL even in headless (nanosleep, no SDL);\n");
-    printf("                             needed for network serial timing (modem/XMODEM) and\n");
-    printf("                             deterministic --type-keys without a display\n");
-    printf("  -c, --cycles NUM           Run for N cycles then exit\n");
-    printf("  -v, --verbose              Verbose logging\n");
-    printf("      --screenshot FILE      Take screenshot at exit (.ppm or .bmp)\n");
-    printf("      --screenshot-at C:FILE Screenshot after C cycles to FILE\n");
-    printf("      --screenshot-text FILE Dump screen text ($BB80, 40x28) as ASCII at exit\n");
-    printf("      --screenshot-ansi FILE Dump framebuffer as ANSI true-color text at exit\n");
-    printf("      --screenshot-text-at C:FILE  Dump screen text after C cycles to FILE\n");
-    printf("      --screenshot-ansi-at C:FILE  Dump ANSI framebuffer after C cycles to FILE\n");
-    printf("      --frame-dump DIR       Dump frames to directory\n");
-    printf("      --frame-dump-interval N  Dump every Nth frame (default: 50)\n");
-    printf("      --record FILE          Record keyboard input to a movie (deterministic replay)\n");
-    printf("      --replay FILE          Replay a recorded input movie (ignores live keys)\n");
-    printf("      --video FILE           Record video to a Motion-JPEG AVI file\n");
-    printf("      --video-fps N          Recording frame rate (default: 50)\n");
-    printf("      --video-quality N      JPEG quality 1..100 (default: 85)\n");
-    printf("  -m, --model MODEL          Machine model: oric1 or atmos (default: auto-detect)\n");
-    printf("  -k, --keyboard LAYOUT      Keyboard layout: qwerty (default) or azerty\n");
-    printf("  -j, --joystick MODE        Joystick: keys (arrow keys), gamepad (SDL2 controller)\n");
-    printf("  -p, --printer FILE         Capture printer output to FILE (LPRINT/LLIST)\n");
-    printf("      --printer-type TYPE    Printer type: text (default) or mcp40 (4-color plotter)\n");
-    printf("      --scale N              Display scale factor: 1, 2, 3 (default), or 4\n");
-    printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
-    printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
-    printf("      --no-border            Disable the overscan border in the window (on by default)\n");
-    printf("      --export-border        Include the overscan border in image/AVI exports (off by default)\n");
-    printf("      --ula-ng-poke SEQ      Program ULA-NG registers ($0340-$035F) at startup,\n");
-    printf("                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n");
-    printf("                             Ex: 340=4E,340=47,341=01,348=07,349=00,34A=F0 (palette)\n");
-    printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
-    printf("                             \\n=Return \\e=Esc \\u \\d \\l \\r=arrows\n");
-    printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
-    printf("                             \\Rx=RShift+x \\pN=pause N sec (cycles emules)\n");
-    printf("                             Repetable : plusieurs --type-keys sont\n");
-    printf("                             sequences par cycle d'armement croissant.\n");
-    printf("  -b, --breakpoint ADDR      Break when PC reaches address (hex, e.g. ED8A)\n");
-    printf("  -D, --debug                Start in debugger mode (break at first instruction)\n");
-    printf("      --break ADDR           Set initial debugger breakpoint (hex)\n");
-    printf("      --cast-server[=PORT]   Start MJPEG cast server (default port: 8080)\n");
-    printf("      --cast-to[=DEVICE]     Cast to Chromecast (native CASTV2 protocol)\n");
-    printf("      --cast-discover        Discover Chromecast devices on network\n");
-    printf("      --http-api[=PORT]      HTTP control API (REST) on PORT (default 8888, HTTPAPI=1 build)\n");
-    printf("      --http-api-bind ADDR   Bind address for the HTTP API (default 127.0.0.1)\n");
-    printf("      --http-api-root DIR    Sandbox root for HTTP file ops /tape,/disk (default CWD)\n");
-    printf("      --trace FILE           Log CPU instruction trace to FILE\n");
-    printf("      --trace-max N          Max instructions to trace (default: unlimited)\n");
-    printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
-    printf("      --psg-trace FILE       Log AY sound-register writes (reg 0-13) with CPU cycle\n");
-    printf("      --audio-wav FILE       Capture PSG audio to a 16-bit stereo 44.1 kHz WAV\n");
-    printf("                             (headless only; renders per frame via ay_generate)\n");
-    printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
-    printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
-    printf("      --bad-sector [D:]S:T:N Mark drive D (default A) side S track T sector N\n");
-    printf("                             unreadable (RNF), repeatable; damage follows the media\n");
-    printf("      --fdc-timing MODE      Microdisc WD1793 timing: real (default, mechanical\n");
-    printf("                             3\" drive) or fast (legacy short delays)\n");
-    printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");
-    printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
-    printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
-    printf("      --gdb[=PORT]           GDB remote stub on TCP PORT (default 1234).\n");
-    printf("                             Waits for `gdb` ... `target remote :PORT`.\n");
-    printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");
-    printf("                             logs to stderr, see docs/control_protocol.md)\n");
-    printf("      --bench                Headless throughput bench: prints `BENCH cycles=... mhz_eq=... ...`\n");
-    printf("                             on stdout at exit. Use with -c N for fixed-cycle run.\n");
-    printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");
-    printf("      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)\n");
-    printf("      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only, implies --loci)\n");
-    printf("                             Mutually exclusive with --loci-flash\n");
-    printf("      --loci-usb DIR|none    Attach DIR as a LOCI USB key (repeatable, 4 max);\n");
-    printf("                             host media in /media/$USER auto-attach — 'none' disables\n");
-    printf("      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31).\n");
-    printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
-    printf("                             is outside it (reproduces real-HW modem block;\n");
-    printf("                             software tunes via MAP_TUNE_TIOR / ADJ_SCAN)\n");
-    printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n");
-    printf("                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n");
-    printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");
-    printf("                            (auto-enabled with digitelec backend)\n");
-    printf("      --serial-buffer N     RX FIFO buffer N bytes (prevents overrun, default: off)\n");
-    printf("      --serial-baud N       External-clock baud (ACIA 6551): realistic timing\n");
-    printf("                            instead of instant transfer when baud index = 0\n");
-    printf("      --serial-irq-on-rdrf  WDC 65C51 IRQ mode (re-trigger while RDRF set)\n");
-    printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
-    printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
-    printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
-    printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");
-    printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
-    printf("      --mageco TRANSPORT    Mageco MIDI interface (ACIA 6850) at $03FE, 31250 baud\n");
-    printf("                            Transports (raw MIDI bytes): file:IN[:OUT], midi[:TARGET], smf:FILE[:loop], loopback, tcp:H:P, pty\n");
-    printf("                            file::out.mid captures Oric MIDI OUT ; midi = live ALSA port (MIDI=1) ; smf:song.mid replays a .mid into the Oric\n");
-    printf("      --mageco-addr ADDR    Mageco base address in hex (default: 03FE)\n");
-    printf("      --oricon TRANSPORT    ORICON MIDI variant (MC6850 at $031C-$031D + clock gen $031E-$031F, LOCI-compat)\n");
-    printf("                            Same transports as --mageco ; overlaps --serial/Microdisc at $031C\n");
-    printf("      --save-state FILE      Save emulator state to FILE on exit\n");
-    printf("      --load-state FILE      Load emulator state from FILE at startup\n");
-    printf("  -?, --help                 Show this help\n");
-    printf("\n");
-    printf("Controls:\n");
-    printf("  F1  - Help menu\n");
-    printf("  F2  - Quick save state\n");
-    printf("  F3  - Cycle display scale (x1 → x2 → x3 → x4)\n");
-    printf("  F4  - Quick load state\n");
-    printf("  F5  - Reset (with --loci : also resets MIA state, keeps mounts)\n");
-    printf("  F6  - OSD : changer la cassette/disquette a chaud (fleches, RET, ESC)\n");
-    printf("  F8  - LOCI Action button (warm short press / release on key up)\n");
-    printf("  F9  - Enter debugger\n");
-    printf("  F10 - Quit\n");
-    printf("  F11 - Fullscreen\n");
-    printf("  F12 - Screenshot\n");
-    printf("\n");
-}
 
 /* emulator_t is defined in include/emulator.h */
 
@@ -436,416 +214,11 @@ static void print_usage(const char* program_name) {
  * so the new reset vector is honoured. Only base_addr = $C000 is wired
  * for now (BASIC ROM swap); $A000 (Microdisc overlay) returns true
  * without actually swapping — handled by the existing --disk-rom path. */
-/* Sprint 34ao: LOCI tape-mount hook. Loads a TAP into emu.tapebuf so
- * the CLOAD ROM patches find data. Path is the already-extracted
- * /tmp/loci_extract_* file produced by sdimg_extract_to_temp. */
-static bool loci_tape_mount_cb(void* ctx, const char* host_tape_path) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (!emu || !host_tape_path) return false;
-    FILE* f = fopen(host_tape_path, "rb");
-    if (!f) {
-        log_warning("LOCI tape mount: cannot open %s", host_tape_path);
-        return false;
-    }
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz <= 0) { fclose(f); return false; }
 
-    if (emu->tapebuf) { free(emu->tapebuf); emu->tapebuf = NULL; }
-    emu->tapebuf = (uint8_t*)malloc((size_t)sz);
-    if (!emu->tapebuf) { fclose(f); return false; }
-    size_t rd = fread(emu->tapebuf, 1, (size_t)sz, f);
-    fclose(f);
-    if ((long)rd != sz) {
-        free(emu->tapebuf); emu->tapebuf = NULL;
-        return false;
-    }
-    emu->tapelen = (int)sz;
-    emu->tapeoffs = 0;
-    emu->tape_loaded = true;
-    emu->tape_syncstack = -1;
-    /* Do NOT trigger auto-CLOAD here: when LOCI mounts the tape, the
-     * LOCI ROM is still in control. Auto-typed keystrokes would land
-     * in the LOCI TUI, not BASIC. The user will type CLOAD"" after
-     * MIA_BOOT swaps in BASIC. */
-    emu->tape_auto_cload_pending = false;
-    log_info("LOCI tape mount: %s buffered (%ld bytes, type CLOAD\"\" in BASIC)",
-             host_tape_path, sz);
-    return true;
-}
 
-static void loci_patch_rom_info(emulator_t* emu);
-
-static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (!emu || !rom_path || !*rom_path) return false;
-
-    if (base_addr == 0xA000) {
-        /* Sprint 34aw : LOCI MIA_BOOT FDC flag → microdis.rom overlay.
-         * Le mapping réel Microdisc place l'overlay à $E000-$FFFF (8 KB).
-         * On charge le fichier dans un buffer persistant et on active
-         * l'overlay du système mémoire (même mécanisme que Microdisc
-         * card avec --disk-rom). */
-        FILE* fp = fopen(rom_path, "rb");
-        if (!fp) {
-            log_error("LOCI ROM swap: cannot open %s", rom_path);
-            return false;
-        }
-        fseek(fp, 0, SEEK_END);
-        long sz = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-        if (sz <= 0 || sz > 16384) { fclose(fp); return false; }
-        /* Sprint 34c hardening : buffer owned by emulator_t now (was a
-         * function-scope static with an "acceptable leak at shutdown"
-         * comment). Freed by emulator_cleanup. */
-        if (emu->loci_overlay_buf) {
-            free(emu->loci_overlay_buf);
-            emu->loci_overlay_buf = NULL;
-        }
-        emu->loci_overlay_buf = (uint8_t*)malloc((size_t)sz);
-        if (!emu->loci_overlay_buf) { fclose(fp); return false; }
-        if (fread(emu->loci_overlay_buf, 1, (size_t)sz, fp) != (size_t)sz) {
-            free(emu->loci_overlay_buf); emu->loci_overlay_buf = NULL;
-            fclose(fp);
-            return false;
-        }
-        fclose(fp);
-        emu->memory.overlay_rom         = emu->loci_overlay_buf;
-        emu->memory.overlay_rom_size    = (uint32_t)sz;
-        emu->memory.overlay_active      = true;
-        emu->memory.basic_rom_disabled  = true;   /* romdis = ROM disable signal */
-        log_info("LOCI ROM swap: microdisc overlay activated ($E000+, %ld bytes from %s)",
-                 sz, rom_path);
-        /* Re-reset CPU so $FFFC reset vector is fetched from Microdisc
-         * overlay instead of the BASIC ROM loaded in the prior $C000 call. */
-        cpu_reset(&emu->cpu);
-        return true;
-    }
-
-    if (base_addr != 0xC000) {
-        log_info("LOCI ROM swap: ignored base $%04X (only $C000 / $A000 supported)",
-                 base_addr);
-        return true;
-    }
-    log_info("LOCI ROM swap: loading %s at $C000", rom_path);
-    /* Firmware bootstrap seeds basic11b.rom/basic10.rom/microdis.rom into
-     * its internal LittleFS; our flash root may not carry them. Fall back
-     * to the directory of the -r ROM (the repo's roms/) so the menu's
-     * "boot Atmos / Oric-1" entries work without --loci-flash tweaking. */
-    char fallback[512];
-    const char* load_path = rom_path;
-    if (access(rom_path, R_OK) != 0 && emu->rom_path) {
-        const char* dirend = strrchr(emu->rom_path, '/');
-        const char* base = strrchr(rom_path, '/');
-        base = base ? base + 1 : rom_path;
-        if (dirend) {
-            snprintf(fallback, sizeof(fallback), "%.*s/%s",
-                     (int)(dirend - emu->rom_path), emu->rom_path, base);
-            if (access(fallback, R_OK) == 0) {
-                log_info("LOCI ROM swap: %s not in flash root, using %s",
-                         base, fallback);
-                load_path = fallback;
-            }
-        }
-    }
-    if (!memory_load_rom(&emu->memory, load_path, 0)) {
-        log_error("LOCI ROM swap: failed to load %s", load_path);
-        return false;
-    }
-    /* Any successful $C000 swap unmaps the menu (MIA_BOOT into BASIC,
-     * resume...). The warm-boot path re-arms the flag right after. */
-    emu->loci_menu_active = false;
-    /* Firmware behaviour: version + timing bytes are patched into the
-     * freshly loaded ROM (only the LOCI menu ROM has the placeholders). */
-    loci_patch_rom_info(emu);
-    /* Sprint 34ao: when LOCI swaps to BASIC 1.1 (Atmos) the previous
-     * BASIC 1.0 CLOAD patches no longer match — re-detect from the
-     * filename so cassette interception keeps working. */
-    const char* base = strrchr(rom_path, '/');
-    base = base ? base + 1 : rom_path;
-    bool is_b11 = (strstr(base, "11") != NULL) ||
-                  (strstr(base, "atmos") != NULL) ||
-                  (strstr(base, "ATMOS") != NULL);
-    const rom_patches_t* new_patches = get_rom_patches(
-        is_b11 ? ORIC_MODEL_ATMOS : ORIC_MODEL_ORIC1);
-    if (new_patches != emu->rom_patches) {
-        emu->rom_patches = new_patches;
-        emu->model = is_b11 ? ORIC_MODEL_ATMOS : ORIC_MODEL_ORIC1;
-        log_info("LOCI ROM swap: patches → %s", emu->rom_patches->name);
-    }
-    /* Reset the 6502 so it re-reads the new $FFFC reset vector. */
-    cpu_reset(&emu->cpu);
-    return true;
-}
-
-/* Sync the LOCI keyboard report from the current SDL keyboard state.
- *
- * SDL_Scancode values map 1:1 to HID Usage IDs from the Keyboard/Keypad
- * usage page (deliberately, per the SDL docs), so the boot keyboard
- * report we hand to LOCI just collects the first six scancodes whose
- * state is "down" and packs the SDL modifier flags into the HID byte.
- *
- * Called on every KEYDOWN/KEYUP — cheap (one SDL state read + up to
- * ~230 iterations bounded by the standard usage page). */
-#ifdef HAS_SDL2
-static void loci_sync_kbd_from_sdl(emulator_t* emu) {
-    if (!emu || !emu->has_loci) return;
-
-    int numkeys = 0;
-    const Uint8* state = SDL_GetKeyboardState(&numkeys);
-    if (!state) return;
-
-    SDL_Keymod m = SDL_GetModState();
-    uint8_t hid_mod = 0;
-    if (m & KMOD_LCTRL)  hid_mod |= 0x01;
-    if (m & KMOD_LSHIFT) hid_mod |= 0x02;
-    if (m & KMOD_LALT)   hid_mod |= 0x04;
-    if (m & KMOD_LGUI)   hid_mod |= 0x08;
-    if (m & KMOD_RCTRL)  hid_mod |= 0x10;
-    if (m & KMOD_RSHIFT) hid_mod |= 0x20;
-    if (m & KMOD_RALT)   hid_mod |= 0x40;
-    if (m & KMOD_RGUI)   hid_mod |= 0x80;
-
-    uint8_t keys[6] = {0};
-    int kn = 0;
-    /* HID modifier keys live at 0xE0+ — skip those, they're already in
-     * hid_mod. Standard usage page tops out around 0xE7; clamp. */
-    int max = numkeys < 0xE0 ? numkeys : 0xE0;
-    for (int sc = SDL_SCANCODE_A; sc < max && kn < 6; sc++) {
-        if (state[sc]) {
-            keys[kn++] = (uint8_t)sc;
-        }
-    }
-    loci_kbd_set_report(&emu->loci, hid_mod, keys);
-}
-#endif
-
-/* Host path of the LOCI warm-session snapshot (firmware: the session is
- * captured so the menu can resume it). Lives in the flash root. */
-static void loci_resume_snapshot_path(emulator_t* emu, char* out, size_t outsz) {
-    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
-    snprintf(out, outsz, "%s/loci_resume.ost", root);
-}
-
-/* Locate a LOCI system ROM by name: flash root (the internal storage,
- * where the firmware's LittleFS keeps them), then roms/loci/ next to the
- * loaded BASIC ROM (works from any CWD), then relative to the CWD. */
-static bool loci_find_rom_file(emulator_t* emu, const char* name,
-                               char* out, size_t outsz) {
-    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
-    snprintf(out, outsz, "%s/%s", root, name);
-    if (access(out, R_OK) == 0) return true;
-    if (emu->rom_path) {
-        const char* slash = strrchr(emu->rom_path, '/');
-        if (slash) {
-            snprintf(out, outsz, "%.*s/loci/%s",
-                     (int)(slash - emu->rom_path), emu->rom_path, name);
-            if (access(out, R_OK) == 0) return true;
-        }
-    }
-    snprintf(out, outsz, "roms/loci/%s", name);
-    return access(out, R_OK) == 0;
-}
-
-/* Locate the LOCI menu ROM, mirroring the firmware's boot priority
- * (ext_boot_loci: locirom.rp6502 on USB → LOCIROM in internal flash →
- * embedded copy). The .rp6502 container is not parsed — raw 16 KB
- * images only; roms/loci/locirom is the repo's "embedded" copy. */
-static bool loci_find_menu_rom(emulator_t* emu, char* out, size_t outsz) {
-    return loci_find_rom_file(emu, "LOCIROM", out, outsz) ||
-           loci_find_rom_file(emu, "locirom", out, outsz);
-}
-
-static bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
-
-/* Firmware ext_patch_version / ext_patch_timings: after a ROM lands at
- * $C000, patch the placeholder bytes the LOCI menu ROM reserves for the
- * firmware version (VERSIONS segment, $FFF7-9 = F0 F1 F2) and the current
- * bus timings (TIMINGS segment, $FFEF-F3 = FA FB FC FD FE). Placeholder
- * guards mean BASIC ROMs pass through untouched. */
-static void loci_patch_rom_info(emulator_t* emu) {
-    uint8_t* rom = emu->memory.rom;
-    if (rom[0x3FF7] == 0xF0 && rom[0x3FF8] == 0xF1 && rom[0x3FF9] == 0xF2) {
-        rom[0x3FF7] = LOCI_FW_VERSION_PATCH;
-        rom[0x3FF8] = LOCI_FW_VERSION_MINOR;
-        rom[0x3FF9] = LOCI_FW_VERSION_MAJOR;
-    }
-    if (rom[0x3FEF] == 0xFA && rom[0x3FF0] == 0xFB && rom[0x3FF1] == 0xFC &&
-        rom[0x3FF2] == 0xFD && rom[0x3FF3] == 0xFE) {
-        rom[0x3FEF] = emu->loci.mia_tmap;
-        rom[0x3FF0] = emu->loci.mia_tior;
-        rom[0x3FF1] = emu->loci.mia_tiow;
-        rom[0x3FF2] = emu->loci.mia_tiod;
-        rom[0x3FF3] = emu->loci.mia_tadr;
-        log_info("LOCI: menu ROM patched (FW %d.%d.%d, timings %u/%u/%u/%u/%u)",
-                 LOCI_FW_VERSION_MAJOR, LOCI_FW_VERSION_MINOR, LOCI_FW_VERSION_PATCH,
-                 emu->loci.mia_tmap, emu->loci.mia_tior, emu->loci.mia_tiow,
-                 emu->loci.mia_tiod, emu->loci.mia_tadr);
-    }
-}
-
-/* Attach a host directory as a LOCI USB mass-storage device: it appears
- * in the menu's device list with the volume label and its "N:" paths
- * resolve inside the directory — a real USB key plugged into the host,
- * served to the Oric like on real hardware. */
-static void loci_attach_usb_dir(emulator_t* emu, const char* dir) {
-    struct stat st;
-    if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        log_warning("LOCI USB: %s is not a directory — ignored", dir);
-        return;
-    }
-    const char* label = strrchr(dir, '/');
-    label = (label && label[1]) ? label + 1 : dir;
-    char status[64];
-    struct oscompat_statvfs vs;
-    double gb = (oscompat_statvfs(dir, &vs) == 0)
-              ? (double)vs.f_blocks * (double)vs.f_frsize
-                / (1024.0 * 1024.0 * 1024.0) : 0.0;
-    if (gb >= 1.0)
-        snprintf(status, sizeof(status), "MSC %.1f GB %.40s", gb, label);
-    else
-        snprintf(status, sizeof(status), "MSC %.1f MB %.40s", gb * 1024.0, label);
-    int n = loci_add_usb_storage(&emu->loci, status, dir);
-    if (n > 0)
-        log_info("LOCI: USB storage %d: (%s) -> %s", n, label, dir);
-    else
-        log_warning("LOCI USB: device table full, %s ignored", dir);
-}
-
-/* Auto-detect removable media mounted on the host (udisks convention:
- * /media/$USER and /run/media/$USER) and attach them as USB devices —
- * plug a real key in, it shows up in the LOCI menu. */
-static void loci_scan_host_usb(emulator_t* emu) {
-    const char* user = getenv("USER");
-    if (!user || !user[0]) user = getenv("USERNAME");   /* Windows */
-    if (!user || !user[0]) return;
-    const char* bases[] = { "/media", "/run/media" };
-    for (size_t b = 0; b < sizeof(bases) / sizeof(bases[0]); b++) {
-        char root[300];
-        snprintf(root, sizeof(root), "%s/%s", bases[b], user);
-        DIR* d = opendir(root);
-        if (!d) continue;
-        struct dirent* de;
-        while ((de = readdir(d)) != NULL) {
-            if (de->d_name[0] == '.') continue;
-            char vol[560];
-            snprintf(vol, sizeof(vol), "%s/%s", root, de->d_name);
-            struct stat st;
-            if (stat(vol, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
-            loci_attach_usb_dir(emu, vol);
-        }
-        closedir(d);
-    }
-}
 
 /* Live ROM byte poke (ADJ_SCAN progress: the menu ROM polls its TIMINGS
  * byte at $FFF0 while the firmware sweeps tior). */
-static void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (emu && addr >= 0xC000)
-        emu->memory.rom[addr - 0xC000] = val;
-}
-
-/* LOCI action-button install hook (Sprint 34ai + 85).
- * Snapshots the session (the menu's "resume" needs the machine exactly
- * as it was — press time is a clean instruction boundary, before the
- * trap hijacks the vectors), saves the current IRQ vector at $FFFE/F,
- * redirects it to the trap at $03BA, then pulses the CPU IRQ line. The
- * trap bytes themselves were already mirrored into the MIA register
- * file by loci_action_button_short. */
-static void loci_action_install_irq_trap(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (!emu) return;
-    if (!emu->loci_menu_active) {   /* inside the menu: keep the session snapshot */
-        char snap[512];
-        loci_resume_snapshot_path(emu, snap, sizeof(snap));
-        if (savestate_save(emu, snap))
-            log_info("LOCI: session snapshot -> %s (menu resume)", snap);
-    }
-    /* Save current vector. The ORIC IRQ vector lives in ROM at $FFFE/F,
-     * backed by mem->rom (offset $3FFE/F since rom starts at $C000). */
-    uint8_t lo = emu->memory.rom[0x3FFE];
-    uint8_t hi = emu->memory.rom[0x3FFF];
-    emu->loci.saved_irq_vector = (uint16_t)lo | ((uint16_t)hi << 8);
-    /* Redirect to the trap at $03BA. */
-    emu->memory.rom[0x3FFE] = 0xBA;
-    emu->memory.rom[0x3FFF] = 0x03;
-    /* Pulse the IRQ line. Source bit is arbitrary — VIA works because
-     * the CPU handler doesn't introspect the source for this trap. */
-    cpu_irq_set(&emu->cpu, IRQF_VIA);
-}
-
-/* LOCI action-button release hook (Sprint 34ai + 85).
- * Sets the 6502 V flag so the BVC -2 spin falls through, restores the
- * original IRQ vector, then performs the firmware's EXT_CAPTURE_IRQ →
- * EXT_BOOT_LOCI sequence: boot the LOCI menu ROM. On real hardware the
- * trap's JMP ($FFFA) lands in the freshly mapped LOCI ROM whose
- * save-state routine runs before the menu; our snapshot was taken at
- * press time, so we go straight to the menu via the ROM's reset vector. */
-static void loci_action_release_irq_trap(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (!emu) return;
-    emu->cpu.P |= FLAG_OVERFLOW;
-    uint16_t v = emu->loci.saved_irq_vector;
-    emu->memory.rom[0x3FFE] = (uint8_t)(v & 0xFF);
-    emu->memory.rom[0x3FFF] = (uint8_t)(v >> 8);
-    /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
-    cpu_irq_clear(&emu->cpu, IRQF_VIA);
-
-    if (emu->loci_button_long) {
-        /* Firmware warm long hold (≥ 2 s): EXT_BOOT_DIAG — boot Mike
-         * Brown's diagnostic ROM (test108k, embedded in real firmware
-         * builds with his permission). No resume path: it is a hardware
-         * test reboot; F5/menu brings the machine back afterwards. */
-        emu->loci_button_long = false;
-        char diag[512];
-        if (!loci_find_rom_file(emu, "test108k.rom", diag, sizeof(diag))) {
-            log_warning("LOCI: diag ROM introuvable (test108k.rom dans le flash "
-                        "root ou roms/loci/) — appui long sans effet");
-            return;
-        }
-        if (loci_rom_swap_cb(emu, diag, 0xC000)) {
-            emu->loci_menu_active = false;
-            cpu_reset(&emu->cpu);
-            log_info("LOCI: long press -> diag ROM %s", diag);
-        }
-        return;
-    }
-    if (emu->loci_menu_active) {
-        log_info("LOCI: Action button inside the menu — ignored");
-        return;
-    }
-    char rom[512];
-    if (!loci_find_menu_rom(emu, rom, sizeof(rom))) {
-        log_warning("LOCI: menu ROM introuvable (LOCIROM/locirom dans le flash "
-                    "root, ou roms/loci/locirom) — bouton Action sans effet");
-        return;
-    }
-    if (loci_rom_swap_cb(emu, rom, 0xC000)) {
-        emu->loci_menu_active = true;
-        cpu_reset(&emu->cpu);
-        log_info("LOCI: warm boot -> menu ROM %s", rom);
-    }
-}
-
-/* LOCI session-resume callback (menu "resume" entry → MIA_BOOT with
- * LOCI_BOOT_RESUME): swap the pre-warm BASIC ROM back, then restore the
- * snapshot taken when the Action button was pressed. */
-static bool loci_resume_session_cb(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    if (!emu) return false;
-    char snap[512];
-    loci_resume_snapshot_path(emu, snap, sizeof(snap));
-    if (access(snap, R_OK) != 0) return false;
-    if (emu->rom_path && !loci_rom_swap_cb(emu, emu->rom_path, 0xC000))
-        return false;
-    if (!savestate_load(emu, snap)) return false;
-    emu->loci_menu_active = false;
-    log_info("LOCI: session resumed from %s", snap);
-    return true;
-}
-
 /* I/O callback: route VIA and Microdisc register access */
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
@@ -1007,6 +380,14 @@ static uint8_t portb_read_callback(void* userdata) {
     uint8_t col = emu->via.orb & 0x07;
     uint8_t reg14 = emu->psg.registers[14];
 
+    /* Scan-driven --type-keys pacing: count a completed keyboard scan pass
+     * every time the descending column sweep (7->0) restarts. This is the
+     * real hardware handshake the auto-typer synchronises on so it never
+     * changes the matrix faster than the program reads it. */
+    if (autotype_is_new_pass(emu->kbd_scan_prev_col, col))
+        emu->kbd_scan_passes++;
+    emu->kbd_scan_prev_col = col;
+
     /* Check: any pressed key in column matches the inverted mask?
      * ~key_matrix = pressed keys (1=pressed), ~reg14 = rows to test */
     uint8_t pressed = (~emu->keyboard.matrix[col]) & (~reg14) & 0xFF;
@@ -1044,6 +425,17 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     if (emu->has_loci && address == 0x0300) {
         loci_tap_motor(&emu->loci, (value & 0x40) != 0);
     }
+    /* --tape-signal-free : gate le moteur cassette signal-level sur ORB PB6 (le
+     * moteur piloté par la ROM), pour les ROM clean-room dont le layout n'atteint
+     * pas la plage PC tape-read de la 1.1 (cf. tape_patches). */
+    if (emu->cassette.free_gate && address == 0x0300) {
+        bool on = (value & 0x40) != 0;
+        if (on && !emu->cassette.started) {
+            cassette_rewind(&emu->cassette);
+            emu->cassette.started = true;
+        }
+        cassette_set_motor(&emu->cassette, on);
+    }
     /* Signal-level cassette motor is gated on the ROM tape-read routine PC in
      * tape_patches() (Sprint 90), not on ORB PB6 — the keyboard column scan
      * clobbers PB6 identically at the READY prompt and during CLOAD. */
@@ -1075,6 +467,30 @@ static bool emu_export_image(emulator_t* emu, const char* path) {
                               : video_export_auto(&emu->video, path);
 }
 
+/* Compose un nom de fichier de capture qui n'écrase pas un fichier existant.
+ * Base = "screenshot", extension = ".ppm". Si "screenshot.ppm" est libre, il
+ * est utilisé ; sinon on insère un horodatage local "screenshot-YYYYMMDD-HHMMSS"
+ * (déterministe et parlant), et en cas de collision improbable dans la même
+ * seconde on suffixe un index "-NN". Le nom retenu est écrit dans out. */
+static void screenshot_unique_name(char* out, size_t out_sz) {
+    const char* base = "screenshot";
+    const char* ext  = ".png";
+
+    snprintf(out, out_sz, "%s%s", base, ext);
+    if (access(out, F_OK) != 0)
+        return; /* nom par défaut libre */
+
+    time_t now = time(NULL);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    char stamp[32];
+    strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tmv);
+
+    snprintf(out, out_sz, "%s-%s%s", base, stamp, ext);
+    for (int i = 1; access(out, F_OK) == 0 && i < 100; i++)
+        snprintf(out, out_sz, "%s-%s-%02d%s", base, stamp, i, ext);
+}
+
 /* VIA IRQ callback - level-triggered: set/clear VIA IRQ source bit */
 static void irq_callback(bool state, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
@@ -1094,6 +510,11 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
+    /* Tape-OUT capture : échantillonne PB7 (Timer1) pour reconstruire le .TAP.
+     * Résolution = 1 bus-tick (~1-7 cy) << période bit (416/624), sans effet
+     * sur le seuil 512. */
+    if (emu->tape_capture.active)
+        tape_capture_sample(&emu->tape_capture, &emu->via, emu->cpu.cycles);
     /* Périphériques de bus temporisés (FDC/ACIA/DTL/Mageco), ordre historique
      * préservé dans io_bus_tick (Epic 7/US5). */
     io_bus_tick(emu, cycles);
@@ -1112,20 +533,6 @@ static void microdisc_cpu_irq_clr(emulator_t* emu) {
  * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
  * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
  * bloqué après le RESTORE command — il attend l'IRQ et la commutation. */
-static void loci_dsk_cpu_irq_set(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    cpu_irq_set(&emu->cpu, IRQF_DISK);
-}
-static void loci_dsk_cpu_irq_clr(void* ctx) {
-    emulator_t* emu = (emulator_t*)ctx;
-    cpu_irq_clear(&emu->cpu, IRQF_DISK);
-}
-static void loci_dsk_sync_overlay(void* ctx, bool basic_disabled, bool overlay_active) {
-    emulator_t* emu = (emulator_t*)ctx;
-    emu->memory.basic_rom_disabled = basic_disabled;
-    emu->memory.overlay_active     = overlay_active;
-}
-
 /* ACIA 6551 serial IRQ callbacks */
 static void acia_cpu_irq_set(emulator_t* emu) {
     cpu_irq_set(&emu->cpu, IRQF_SERIAL);
@@ -1267,81 +674,6 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
     osd_close(&emu->osd);
 }
 
-/* Create a *transparent* serial transport from @p spec: a raw byte pipe that
- * passes data through unchanged, faithful behind any UART (the ACIA 6551 of
- * --serial as well as the ACIA 6850 of the --dtl2000 card): loopback, tcp:H:P,
- * pty, com:, file:IN[:OUT], midi[:TARGET] (ALSA, MIDI=1 build), smf:FILE[:loop].
- *
- * Deliberately excludes the *protocol-injecting* backends — modem (an in-process
- * Hayes AT interpreter), digitelec and picowifi (which emulate a UART of their
- * own). Those only make sense in front of the ACIA 6551 the host program drives
- * with AT commands; the DTL 2000 is instead dialled by its PIA 6821 line bit and
- * carries raw V23 data, so a Hayes layer behind it would be unfaithful.
- *
- * Returns NULL when @p spec is not a transparent transport — the caller may then
- * try the protocol backends or report the error. This is the single source of
- * truth shared by --serial and --dtl2000 so the two never drift apart again. */
-static serial_backend_t* serial_transport_create(const char* spec)
-{
-    if (strcmp(spec, "loopback") == 0) {
-        return serial_backend_loopback_create();
-    }
-    if (strncmp(spec, "tcp:", 4) == 0) {
-        char host[256];
-        uint16_t port;
-        parse_host_port(spec + 4, host, sizeof(host), &port, 23);
-        return serial_backend_tcp_create(host, port);
-    }
-    if (strcmp(spec, "pty") == 0) {
-        return serial_backend_pty_create();
-    }
-    if (strncmp(spec, "com:", 4) == 0) {
-        /* com:baud,bits,parity,stop,device */
-        return serial_backend_com_create(spec + 4);
-    }
-    if (strcmp(spec, "midi") == 0) {
-        return serial_backend_midi_create(NULL);
-    }
-    if (strncmp(spec, "midi:", 5) == 0) {
-        /* midi:TARGET — auto-connect to an ALSA address ("128:0" or a name) */
-        return serial_backend_midi_create(spec + 5);
-    }
-    if (strncmp(spec, "smf:", 4) == 0) {
-        /* smf:FILE[:loop] — Standard MIDI File → timed MIDI IN replay */
-        const char* rest = spec + 4;
-        const char* loopsfx = strstr(rest, ":loop");
-        bool loop = (loopsfx != NULL);
-        char path[512];
-        size_t plen = loop ? (size_t)(loopsfx - rest) : strlen(rest);
-        if (plen >= sizeof(path)) plen = sizeof(path) - 1;
-        memcpy(path, rest, plen);
-        path[plen] = '\0';
-        return serial_backend_smf_create(path, loop);
-    }
-    if (strncmp(spec, "file:", 5) == 0) {
-        /* file:IN[:OUT] — deterministic replay (RX) / capture (TX).
-         *   file:in.bin            replay only
-         *   file:in.bin:out.bin    replay + capture
-         *   file::out.bin          capture only (empty IN) */
-        const char* rest = spec + 5;
-        char in_path[256] = {0};
-        char out_path[256] = {0};
-        const char* colon = strchr(rest, ':');
-        if (colon) {
-            size_t ilen = (size_t)(colon - rest);
-            if (ilen >= sizeof(in_path)) ilen = sizeof(in_path) - 1;
-            memcpy(in_path, rest, ilen);
-            in_path[ilen] = '\0';
-            strncpy(out_path, colon + 1, sizeof(out_path) - 1);
-        } else {
-            strncpy(in_path, rest, sizeof(in_path) - 1);
-        }
-        return serial_backend_file_create(in_path[0] ? in_path : NULL,
-                                          out_path[0] ? out_path : NULL);
-    }
-    return NULL;  /* not a transparent transport */
-}
-
 static bool emulator_init(emulator_t* emu) {
     log_info("Initializing Phosphoric v%s", EMU_VERSION);
 
@@ -1460,19 +792,26 @@ static bool emulator_init(emulator_t* emu) {
     emu->running = true;
     /* Note: fast_load, headless, max_cycles are set by caller before init */
     emu->screenshot_file = NULL;
-    emu->screenshot_at_cycles = -1;
-    emu->screenshot_at_file = NULL;
     emu->screenshot_text_file = NULL;
     emu->screenshot_ansi_file = NULL;
-    emu->screenshot_text_at_cycles = -1;
-    emu->screenshot_text_at_file = NULL;
-    emu->screenshot_ansi_at_cycles = -1;
-    emu->screenshot_ansi_at_file = NULL;
+    emu->timed_capture_count = 0;   /* captures -at répétables (voir timed_capture_t) */
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
-    emu->dump_ram_at_cycles = -1;
-    emu->dump_ram_at_file = NULL;
-    emu->dump_ram_at_done = true;
+    emu->kbd_scan_prev_col = 0xFF;   /* sentinel: first read starts no pass */
+    emu->type_keys_when_addr = -1;
+    emu->type_keys_when_text = NULL;
+    emu->type_keys_when_done = false;
+    emu->screenshot_when_addr = -1;
+    emu->screenshot_when_file = NULL;
+    emu->screenshot_when_done = false;
+    emu->dump_ram_when_addr = -1;
+    emu->dump_ram_when_file = NULL;
+    emu->dump_ram_when_done = false;
+    emu->screenshot_text_when_addr = -1;
+    emu->screenshot_text_when_file = NULL;
+    emu->screenshot_text_when_done = false;
+    emu->when_condition_unmet = false;
+    emu->poke_count = 0;
     emu->irq_trace_fp = NULL;
     emu->irq_trace_active = false;
     emu->irq_trace_depth = 0;
@@ -1644,390 +983,6 @@ static void basic_rechain(memory_t* mem) {
     }
 }
 
-/**
- * @brief ROM patching for CLOAD support
- *
- * Intercepts ROM cassette routines by checking CPU PC after each instruction.
- * When PC hits known ROM entry points (getsync, readbyte), we inject tape
- * data directly into CPU registers and skip to the routine's RTS.
- * This is the same approach used by Oricutron.
- *
- * Addresses are ROM-version-specific, loaded from emu->rom_patches:
- *   BASIC 1.0 (ORIC-1):  getsync=$E696, readbyte=$E630, loop=$E681
- *   BASIC 1.1 (Atmos):   getsync=$E735, readbyte=$E6C9, loop=$E720
- */
-static void tape_patches(emulator_t* emu) {
-    if (!emu->rom_patches)
-        return;
-
-    const rom_patches_t* p = emu->rom_patches;
-    uint16_t pc = emu->cpu.PC;
-
-    /* CSAVE patches work even without a tape loaded */
-    if (pc == p->writeleader_entry || pc == p->putbyte_entry || pc == p->csave_end ||
-        (p->writefileheader_entry && pc == p->writefileheader_entry)) {
-        goto do_patch;  /* Skip tape_loaded check for CSAVE */
-    }
-
-    /* Signal-level mode (Sprint 90): the real ROM read routine samples the
-     * waveform on CB1, so the getsync/readbyte read patches must stay off.
-     * CSAVE (write) patches above still apply via the goto.
-     *
-     * The PB6 motor line is unusable as a gate: the keyboard column scan writes
-     * the same ORB bits during CLOAD and at the READY prompt. Instead gate the
-     * waveform on the CPU executing inside the ROM tape-read routines
-     * [readbyte_entry .. getsync_end], rewinding at the first entry. Emission
-     * pauses (position preserved) while the caller processes a byte or block —
-     * exactly what multi-block custom loaders need. */
-    if (emu->cassette.signal_mode) {
-        bool reading = (pc >= p->readbyte_entry && pc <= p->getsync_end);
-        if (reading && !emu->cassette.started) {
-            cassette_rewind(&emu->cassette);
-            emu->cassette.started = true;
-        }
-        cassette_set_motor(&emu->cassette, reading);
-        return;
-    }
-
-    if (!emu->tape_loaded)
-        return;
-
-do_patch:
-    if (pc == p->getsync_entry) {
-        /* getsync: scan forward to first 0x16 sync byte.
-         * Leave tapeoffs pointing AT the 0x16 so readbyte will
-         * read the sync bytes (ROM confirmation loop needs them).
-         * The ORIC ROM reads 9 header bytes after $24, which
-         * correctly parses start/end addresses from the raw TAP. */
-        if (emu->tapebuf[emu->tapeoffs] != 0x16) {
-            while (emu->tapeoffs < emu->tapelen &&
-                   emu->tapebuf[emu->tapeoffs] != 0x16) {
-                emu->tapeoffs++;
-            }
-            if (emu->tapeoffs >= emu->tapelen)
-                return;
-        }
-        log_info("TAPE: getsync at tapeoffs=%d/%d", emu->tapeoffs, emu->tapelen);
-        /* Save stack pointer for sync loop recovery */
-        emu->tape_syncstack = emu->cpu.SP;
-        /* Jump to end of getsync */
-        emu->cpu.PC = p->getsync_end;
-    } else if (pc == p->readbyte_entry) {
-        /* readbyte: feed next byte from tape buffer to ROM. Sprint 34ar
-         * (senior-review fix): mirror what the real GetTapeByte does
-         * version-by-version — on Atmos, $02B1 is the parity accumulator
-         * and the routine exits with C=1 ; on Oric-1, neither applies.
-         * Without these two effects, BASIC 1.1's VERIFY logic accumulates
-         * a phantom error count and prints "Errors found" cosmetically
-         * even though the data loaded correctly. Reference: Oricutron's
-         * .pch tape patch + Atmos GetTapeByte disassembly. */
-        if (emu->tapeoffs < emu->tapelen) {
-            uint8_t byte = emu->tapebuf[emu->tapeoffs++];
-            emu->cpu.A = byte;
-            if (byte == 0) emu->cpu.P |= FLAG_ZERO;
-            else           emu->cpu.P &= ~FLAG_ZERO;
-            if (p->readbyte_setcarry) emu->cpu.P |=  FLAG_CARRY;
-            else                      emu->cpu.P &= ~FLAG_CARRY;
-            memory_write(&emu->memory, p->readbyte_store, byte);
-            if (p->readbyte_storezero) {
-                memory_write(&emu->memory, p->readbyte_storezero, 0x00);
-            }
-            emu->cpu.PC = p->readbyte_end;
-            emu->tape_readbyte_active = true;
-        }
-        /* Tape exhausted: don't intercept — let the ROM bit-decoder time
-         * out naturally. With $02B1/carry now correct, the silence handler
-         * is no longer needed to avoid spurious "Errors found", and not
-         * patching here means BASIC's CLOAD termination signals the end
-         * of tape via its own logic instead of running on synthesised $00. */
-    } else if (pc == p->getsync_loop) {
-        /* Sync loop recovery */
-        if (emu->tape_syncstack >= 0) {
-            emu->cpu.SP = (uint8_t)emu->tape_syncstack;
-            emu->tape_syncstack = -1;
-            if (emu->tapebuf[emu->tapeoffs] != 0x16) {
-                while (emu->tapeoffs < emu->tapelen &&
-                       emu->tapebuf[emu->tapeoffs] != 0x16)
-                    emu->tapeoffs++;
-                if (emu->tapeoffs >= emu->tapelen) {
-                    emu->tape_loaded = false;
-                    return;
-                }
-            }
-            emu->cpu.PC = p->getsync_end;
-        }
-    } else if (p->writefileheader_entry && pc == p->writefileheader_entry) {
-        /* Sprint 34at : snapshot the header staging buffer and the
-         * filename buffer at WriteFileHeader entry — before any data-write
-         * loop reuses the staging ZP as a work pointer. On ORIC-1, $5F/$60
-         * holds TXTTAB right now but will be advanced to VARTAB during the
-         * data write, so reading it at csave_end would give the WRONG
-         * start address. */
-        if (p->csave_header_buf) {
-            for (int i = 0; i < 9; i++) {
-                emu->csave_header_snap[i] = emu->memory.ram[p->csave_header_buf + i];
-            }
-        }
-        if (p->csave_filename_buf) {
-            for (int i = 0; i < 16; i++) {
-                emu->csave_fname_snap[i] = (char)emu->memory.ram[p->csave_filename_buf + i];
-            }
-            emu->csave_fname_snap[16] = 0;
-        }
-        emu->csave_snap_valid = true;
-        /* Do NOT modify PC — let the ROM execute WriteFileHeader normally. */
-    } else if (pc == p->writeleader_entry) {
-        /* CSAVE: write tape leader — open output file if needed */
-        if (!emu->csave_file) {
-            /* Read filename from $0035 keeping only [A-Z0-9_-.] up to 11
-             * chars. BASIC stores the name with surrounding quotes and
-             * sometimes a length-prefix byte; the raw bytes are not
-             * filesystem-safe. */
-            char csave_name[16] = {0};
-            int nlen = 0;
-            for (int i = 0; i < 16 && nlen < 11; i++) {
-                unsigned char ch = emu->memory.ram[0x0035 + i];
-                if (ch == 0) break;
-                if (ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
-                if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
-                    ch == '_' || ch == '-' || ch == '.') {
-                    csave_name[nlen++] = (char)ch;
-                }
-            }
-
-            /* Build filename: name.tap (or csave_output.tap if empty) */
-            char csave_path[64];
-            if (nlen > 0) {
-                snprintf(csave_path, sizeof(csave_path), "%s.tap", csave_name);
-            } else {
-                snprintf(csave_path, sizeof(csave_path), "csave_output.tap");
-            }
-
-            emu->csave_file = fopen(csave_path, "wb");
-            if (emu->csave_file) {
-                uint8_t leader[] = { 0x16, 0x16, 0x16 };
-                fwrite(leader, 1, 3, emu->csave_file);
-                emu->csave_byte_count = 0;
-                emu->csave_snap_valid = false;  /* 34at : reset between CSAVEs */
-                emu->csave_in_progress = true;  /* 34at : guard against shared-path re-entry */
-                strncpy(emu->csave_last_path, csave_path,
-                        sizeof(emu->csave_last_path) - 1);
-                emu->csave_last_path[sizeof(emu->csave_last_path) - 1] = 0;
-                log_info("CSAVE: saving to %s", csave_path);
-            }
-        } else {
-            /* Subsequent leader (between header and data) */
-            uint8_t leader[] = { 0x16, 0x16, 0x16 };
-            fwrite(leader, 1, 3, emu->csave_file);
-        }
-        emu->cpu.PC = p->writeleader_end;
-    } else if (pc == p->putbyte_entry) {
-        /* CSAVE: putbyte is intercepted but we ignore the byte. The TAP
-         * is rebuilt from RAM at csave_end (which produces a properly
-         * structured Oric TAP, unlike the byte-stream produced here by
-         * the BASIC ROM, which proved unreliable). */
-        emu->csave_byte_count++;
-        emu->cpu.PC = p->putbyte_end;
-    } else if (pc == p->csave_end) {
-        /* 34at : guard against re-entry on shared code paths (ORIC-1
-         * $E80A is reached from CLOAD's exit too). */
-        if (!emu->csave_in_progress) return;
-        emu->csave_in_progress = false;
-        /* CSAVE complete — rebuild the TAP (Sprint 34as).
-         *
-         * Sourcing priority :
-         *  1. If p->csave_header_buf is set (Atmos), read the 9-byte
-         *     header staging buffer the ROM populated before WriteFileHeader.
-         *     This buffer is CSAVE-variant-agnostic : works for BASIC
-         *     programs AND machine-code (`,A start,E end`) without any
-         *     special-casing.
-         *  2. Fallback (BASIC 1.0 for now) : TXTTAB/VARTAB pointers in
-         *     zero-page. Works for BASIC programs only.
-         *
-         * The header buffer layout (Atmos, memory address → tape byte) :
-         *   $02A8 → byte 9 (null sep)
-         *   $02A9 → byte 8 (start_lo)
-         *   $02AA → byte 7 (start_hi)
-         *   $02AB → byte 6 (end_lo)
-         *   $02AC → byte 5 (end_hi)
-         *   $02AD → byte 4 (auto-flag, $C7)
-         *   $02AE → byte 3 (type, $00=BASIC)
-         *   $02AF → byte 2 (padding)
-         *   $02B0 → byte 1 (padding)
-         * Tape order is the buffer read in reverse (X=9 down to X=1).
-         */
-        if (emu->csave_file) {
-            fclose(emu->csave_file);
-            emu->csave_file = NULL;
-            emu->csave_byte_count = 0;
-        }
-
-        uint16_t start_addr, end_addr;
-        uint8_t  header_type, header_auto;
-        /* Sprint 34at : prefer the snapshot captured at writefileheader_entry,
-         * because data-write loops on ORIC-1 reuse $5F/$60 as a work pointer
-         * and the live RAM no longer holds the original start address. */
-        if (emu->csave_snap_valid) {
-            /* Snapshot layout matches the live buffer indexing. */
-            start_addr  = (uint16_t)(emu->csave_header_snap[1] |
-                                     (emu->csave_header_snap[2] << 8));
-            end_addr    = (uint16_t)(emu->csave_header_snap[3] |
-                                     (emu->csave_header_snap[4] << 8));
-            header_auto = emu->csave_header_snap[5];
-            header_type = emu->csave_header_snap[6];
-        } else if (p->csave_header_buf) {
-            uint16_t b = p->csave_header_buf;
-            start_addr  = (uint16_t)(emu->memory.ram[b + 1] |
-                                     (emu->memory.ram[b + 2] << 8));
-            end_addr    = (uint16_t)(emu->memory.ram[b + 3] |
-                                     (emu->memory.ram[b + 4] << 8));
-            header_auto = emu->memory.ram[b + 5];
-            header_type = emu->memory.ram[b + 6];
-        } else {
-            /* Legacy fallback : TXTTAB / VARTAB. */
-            start_addr =
-                (uint16_t)(emu->memory.ram[0x9A] | (emu->memory.ram[0x9B] << 8));
-            end_addr =
-                (uint16_t)(emu->memory.ram[0x9C] | (emu->memory.ram[0x9D] << 8));
-            /* VARTAB points to first byte AFTER program → subtract 1. */
-            if (end_addr > start_addr) end_addr--;
-            header_auto = 0xC7;
-            header_type = 0x00;
-        }
-        int prog_len = (int)end_addr - (int)start_addr + 1;
-        if (prog_len < 0) prog_len = 0;
-
-        /* Sanitize the filename. Prefer snapshot if valid (consistent with
-         * the header source). */
-        char clean_name[12] = {0};
-        int ci = 0;
-        for (int i = 0; i < 16 && ci < 11; i++) {
-            unsigned char c;
-            if (emu->csave_snap_valid) {
-                c = (unsigned char)emu->csave_fname_snap[i];
-            } else {
-                uint16_t fn_addr =
-                    p->csave_filename_buf ? p->csave_filename_buf : 0x0035;
-                c = emu->memory.ram[fn_addr + i];
-            }
-            if (c == 0) break;
-            if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
-            if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                c == '_' || c == '-' || c == '.') {
-                clean_name[ci++] = (char)c;
-            }
-        }
-        if (ci == 0) snprintf(clean_name, sizeof(clean_name), "CSAVE");
-
-        /* Build the canonical TAP. Single data block — Atmos BASIC's
-         * CLOAD verify still prints "Errors found" cosmetically even
-         * when data loads correctly (parity counters set by tape
-         * input mock), but the program is fully loaded and auto-runs. */
-        int tap_cap = 4 /*leader+sync*/ + 9 /*header: 2 pad+type+auto+2 end+2 start+1 reserved*/ +
-                      (int)strlen(clean_name) + 1 + prog_len;
-        uint8_t* tap = (uint8_t*)malloc((size_t)tap_cap);
-        if (tap) {
-            int t = 0;
-            tap[t++] = 0x16; tap[t++] = 0x16; tap[t++] = 0x16;
-            tap[t++] = 0x24;
-            tap[t++] = 0x00; tap[t++] = 0x00;                    /* 2 padding */
-            tap[t++] = header_type;                              /* $00=BASIC, $80=array, $C0=string, ... */
-            tap[t++] = header_auto;                              /* $C7 auto-run usually */
-            tap[t++] = (uint8_t)(end_addr >> 8);
-            tap[t++] = (uint8_t)(end_addr & 0xFF);
-            tap[t++] = (uint8_t)(start_addr >> 8);
-            tap[t++] = (uint8_t)(start_addr & 0xFF);
-            tap[t++] = 0x00;                                     /* reserved */
-            size_t nlen = strlen(clean_name);
-            memcpy(tap + t, clean_name, nlen); t += (int)nlen;
-            tap[t++] = 0x00;                                     /* name null */
-            for (int i = 0; i < prog_len; i++) {
-                tap[t++] = emu->memory.ram[start_addr + i];
-            }
-
-            /* Non-regression invariant (Sprint 58): the hand-computed tap_cap
-             * MUST equal the number of bytes the tap[t++] sequence wrote. A
-             * mismatch means the allocation and the writer have drifted apart
-             * — exactly the +8/+9 heap overflow this guard exists to catch.
-             * Kept always-on: the release build defines NDEBUG, which would
-             * strip a bare assert(). Under ASan the overflow itself fires at
-             * the offending write; here we flag the drift and refuse to emit
-             * a corrupt TAP if t < tap_cap (or after-the-fact if t > tap_cap). */
-            if (t != tap_cap) {
-                log_error("CSAVE: TAP size invariant violated (wrote %d bytes, "
-                          "allocated %d) — aborting TAP emission", t, tap_cap);
-                free(tap);
-                /* Mirror the normal-path cleanup: drop the stale snapshot so a
-                 * later csave_end hit at the same PC does not rebuild from it. */
-                emu->csave_snap_valid = false;
-                return;
-            }
-
-            /* Overwrite the host file with the proper TAP. */
-            FILE* fw = fopen(emu->csave_last_path, "wb");
-            if (fw) {
-                fwrite(tap, 1, (size_t)t, fw);
-                fclose(fw);
-                log_info("CSAVE: built TAP %s (%d bytes, prog $%04X-$%04X)",
-                         emu->csave_last_path, t, start_addr, end_addr);
-            }
-
-            /* Re-buffer for in-session CLOAD. */
-            if (emu->tapebuf) free(emu->tapebuf);
-            emu->tapebuf = (uint8_t*)malloc((size_t)t);
-            if (emu->tapebuf) {
-                memcpy(emu->tapebuf, tap, (size_t)t);
-                emu->tapelen = t;
-                emu->tapeoffs = 0;
-                emu->tape_loaded = true;
-                emu->tape_syncstack = -1;
-                log_info("CSAVE: re-buffered %d bytes for CLOAD", t);
-            }
-
-            /* Persist to SDIMG so the file survives a restart. */
-            if (emu->has_loci && emu->loci.sdimg && t > 0) {
-                char sd_name[16] = {0};
-                int sci = 0;
-                for (int i = 0; clean_name[i] && sci < 8 && clean_name[i] != '.'; i++) {
-                    sd_name[sci++] = clean_name[i];
-                }
-                if (sci == 0) {
-                    snprintf(sd_name, sizeof(sd_name), "CSAVE.TAP");
-                } else {
-                    sd_name[sci] = 0;
-                    snprintf(sd_name + sci, sizeof(sd_name) - sci, ".TAP");
-                }
-                int fd = loci_sdimg_fopen_ex(
-                    (loci_sdimg_t*)emu->loci.sdimg, sd_name, 1);
-                if (fd >= 0) {
-                    int written = 0;
-                    while (written < t) {
-                        int chunk = t - written;
-                        if (chunk > 256) chunk = 256;
-                        int bw = loci_sdimg_fwrite(
-                            (loci_sdimg_t*)emu->loci.sdimg, fd,
-                            tap + written, (uint16_t)chunk);
-                        if (bw <= 0) break;
-                        written += bw;
-                    }
-                    loci_sdimg_fclose((loci_sdimg_t*)emu->loci.sdimg, fd);
-                    loci_sdimg_sync((loci_sdimg_t*)emu->loci.sdimg);
-                    log_info("CSAVE: persisted %d bytes to SDIMG as %s",
-                             written, sd_name);
-                } else {
-                    log_warning("CSAVE: SDIMG persist failed (errno=%d)", -fd);
-                }
-            }
-            free(tap);
-            /* 34at : invalidate snapshot so a subsequent csave_end hit that
-             * shares the same PC (ORIC-1 $E80A is reached from CLOAD's exit
-             * path too) does not re-rebuild from stale state. */
-            emu->csave_snap_valid = false;
-        } else {
-            log_warning("CSAVE: OOM rebuilding TAP");
-        }
-    }
-}
 
 /* Sprint 95 (API REST Epic 4) — feed queued keystrokes (from the `keys`
  * control command / HTTP POST /keys) into the keyboard matrix, one key every
@@ -2062,6 +1017,27 @@ static void feed_kbd_inject(emulator_t* emu) {
     }
 }
 
+/* Read a byte for the state-triggered captures. Below the ROM/overlay window
+ * ($<C000) we read raw RAM directly — no banking, no I/O side effects (the I/O
+ * page $0300-$03FF is never a sensible game-state trigger, so it reads the
+ * shadow RAM there, matching --dump-ram-at). At $C000+ we take the CPU view
+ * (memory_read) to honour the active BASIC-ROM / overlay banking. */
+static uint8_t when_read(const emulator_t* emu, uint16_t addr) {
+    if (addr < 0xC000)
+        return emu->memory.ram[addr];
+    return memory_read((memory_t*)&emu->memory, addr);
+}
+
+/* Symétrique de when_read pour --poke-* : écrit RAM[addr]. En dessous de $C000
+ * l'écriture est directe (RAM brute, sans effet de bord) ; au-delà elle passe
+ * par memory_write (overlay/banking, page I/O respectée). */
+static void poke_write(emulator_t* emu, uint16_t addr, uint8_t val) {
+    if (addr < 0xC000)
+        emu->memory.ram[addr] = val;
+    else
+        memory_write(&emu->memory, addr, val);
+}
+
 static void emulator_run(emulator_t* emu) {
     /* Skip the power-on reset when a save state was restored at startup —
      * otherwise the loaded PC/cycles are wiped back to the reset vector. */
@@ -2085,9 +1061,6 @@ static void emulator_run(emulator_t* emu) {
 
     uint64_t total_executed = 0;
     uint64_t frame_count = 0;
-    bool screenshot_at_done = false;
-    bool screenshot_text_at_done = false;
-    bool screenshot_ansi_at_done = false;
 
 #ifdef HAS_SDL2
     uint32_t frame_start_ticks = SDL_GetTicks();
@@ -2369,6 +1342,33 @@ static void emulator_run(emulator_t* emu) {
             emu->type_keys_done = false;
             emu->type_keys_last_char = 0;
             emu->type_keys_debounce = 0;
+            emu->type_keys_last_pass = emu->kbd_scan_passes;
+        }
+
+        /* --type-keys-when : arm the auto-typer the moment RAM[addr]==val,
+         * instead of a guessed cycle. Fires once, and only when no other
+         * auto-type text is currently in flight. Removes the need to hand-tune
+         * a boot delay (cf. include/io/autotype.h rationale). */
+        if (emu->type_keys_when_text && !emu->type_keys_when_done &&
+            emu->type_keys_when_addr >= 0 &&
+            (!emu->type_keys_text || emu->type_keys_done) &&
+            when_read(emu, (uint16_t)emu->type_keys_when_addr) ==
+                emu->type_keys_when_val) {
+            oric_keyboard_release_all(&emu->keyboard);
+            if (emu->has_loci) loci_kbd_clear(&emu->loci);
+            emu->type_keys_text = emu->type_keys_when_text;
+            emu->type_keys_loci_hid = emu->type_keys_when_loci_hid;
+            emu->type_keys_at = (int64_t)total_executed;
+            emu->type_keys_next_cycle = (int64_t)total_executed;
+            emu->type_keys_idx = 0;
+            emu->type_keys_done = false;
+            emu->type_keys_last_char = 0;
+            emu->type_keys_debounce = 0;
+            emu->type_keys_last_pass = emu->kbd_scan_passes;
+            emu->type_keys_when_done = true;
+            log_info("Auto-type armed: RAM[$%04X]==$%02X reached at %lld cycles",
+                     (unsigned)emu->type_keys_when_addr, emu->type_keys_when_val,
+                     (long long)total_executed);
         }
 
         /* Auto-type: inject keystrokes at specified cycle count.
@@ -2376,7 +1376,15 @@ static void emulator_run(emulator_t* emu) {
          * This simulates realistic typing speed for the ROM keyboard scanner. */
         if (emu->type_keys_text && !emu->type_keys_done &&
             (int64_t)total_executed >= emu->type_keys_at) {
-            if ((int64_t)total_executed >= emu->type_keys_next_cycle) {
+            if (autotype_should_fire(emu->type_keys_loci_hid,
+                                     (int64_t)total_executed,
+                                     emu->type_keys_next_cycle,
+                                     emu->kbd_scan_passes,
+                                     emu->type_keys_last_pass)) {
+                /* Record the scan-pass baseline for the *next* transition, so
+                 * the scanner is guaranteed to observe this matrix state
+                 * before it changes again (cf. include/io/autotype.h). */
+                emu->type_keys_last_pass = emu->kbd_scan_passes;
                 int idx = emu->type_keys_idx;
                 char c = emu->type_keys_text[idx];
                 /* Sprint 34av : LOCI HID injection path. Each char/escape
@@ -2520,6 +1528,20 @@ static void emulator_run(emulator_t* emu) {
                         oric_keyboard_release_all(&emu->keyboard);
                         oric_keyboard_press_char(&emu->keyboard, 0x1B);
                         emu->type_keys_last_char = 0x1B;
+                        emu->type_keys_idx += 2;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+                    }
+                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'b') {
+                    /* \b = DEL (backspace) — édition de ligne (readline). Presse
+                     * la touche DEL (matrix 5,5) via le sentinel 0x84 de press_char. */
+                    if (emu->type_keys_last_char == (char)0x84) {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        emu->type_keys_last_char = 0;
+                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                    } else {
+                        oric_keyboard_release_all(&emu->keyboard);
+                        oric_keyboard_press_char(&emu->keyboard, (char)0x84);
+                        emu->type_keys_last_char = (char)0x84;
                         emu->type_keys_idx += 2;
                         emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
                     }
@@ -2765,10 +1787,13 @@ static void emulator_run(emulator_t* emu) {
                     case SDLK_F11:
                         renderer_toggle_fullscreen();
                         break;
-                    case SDLK_F12:
-                        emu_export_image(emu, "screenshot.ppm");
-                        log_info("Screenshot saved to screenshot.ppm");
+                    case SDLK_F12: {
+                        char shot[64];
+                        screenshot_unique_name(shot, sizeof(shot));
+                        emu_export_image(emu, shot);
+                        log_info("Screenshot saved to %s", shot);
                         break;
+                    }
                     default:
                         break;
                     }
@@ -2857,39 +1882,60 @@ static void emulator_run(emulator_t* emu) {
 #endif
         }
 
-        /* Screenshot at specific cycle count */
-        if (!screenshot_at_done && emu->screenshot_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->screenshot_at_cycles) {
-            log_info("Taking screenshot at %llu cycles -> %s",
-                     (unsigned long long)total_executed, emu->screenshot_at_file);
-            emu_export_image(emu, emu->screenshot_at_file);
-            screenshot_at_done = true;
-        }
-
-        /* Text screenshot at specific cycle count (contenu texte réel $BB80) */
-        if (!screenshot_text_at_done && emu->screenshot_text_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->screenshot_text_at_cycles) {
-            FILE* tf = fopen(emu->screenshot_text_at_file, "w");
-            if (tf) {
-                video_export_screen_text(emu->memory.ram, tf);
-                fclose(tf);
-                log_info("Text screenshot at %llu cycles -> %s",
-                         (unsigned long long)total_executed, emu->screenshot_text_at_file);
-            } else {
-                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_at_file);
+        /* Cycle-triggered captures (--screenshot-at / -text-at / -ansi-at /
+         * --dump-ram-at), RÉPÉTABLES : chaque entrée du tableau tire une fois
+         * quand total_executed atteint son seuil. Échantillonné une fois par
+         * frame comme avant (le contenu ne dépend que du cycle courant). */
+        for (int ci = 0; ci < emu->timed_capture_count; ci++) {
+            timed_capture_t* tc = &emu->timed_captures[ci];
+            if (tc->done || tc->cycles < 0 ||
+                (int64_t)total_executed < tc->cycles)
+                continue;
+            switch (tc->type) {
+            case TCAP_IMAGE:
+                log_info("Taking screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, tc->file);
+                emu_export_image(emu, tc->file);
+                break;
+            case TCAP_TEXT: {
+                FILE* tf = fopen(tc->file, "w");
+                if (tf) {
+                    video_export_screen_text(emu->memory.ram, tf);
+                    fclose(tf);
+                    log_info("Text screenshot at %llu cycles -> %s",
+                             (unsigned long long)total_executed, tc->file);
+                } else {
+                    log_error("Cannot open text screenshot file: %s", tc->file);
+                }
+                break;
             }
-            screenshot_text_at_done = true;
-        }
-
-        /* ANSI screenshot at specific cycle count (image true-color du framebuffer) */
-        if (!screenshot_ansi_at_done && emu->screenshot_ansi_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->screenshot_ansi_at_cycles) {
-            if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_at_file, 2, 2))
-                log_info("ANSI screenshot at %llu cycles -> %s",
-                         (unsigned long long)total_executed, emu->screenshot_ansi_at_file);
-            else
-                log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_at_file);
-            screenshot_ansi_at_done = true;
+            case TCAP_ANSI:
+                if (video_export_ascii_file(&emu->video, tc->file, 2, 2))
+                    log_info("ANSI screenshot at %llu cycles -> %s",
+                             (unsigned long long)total_executed, tc->file);
+                else
+                    log_error("Cannot write ANSI screenshot file: %s", tc->file);
+                break;
+            case TCAP_DUMP_RAM: {
+                FILE* rf = fopen(tc->file, "wb");
+                if (rf) {
+                    fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
+                    /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay / upper
+                     * RAM). memory_read est sans effet de bord hors page I/O. */
+                    for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                        uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                        fwrite(&b, 1, 1, rf);
+                    }
+                    fclose(rf);
+                    log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
+                             (unsigned long long)total_executed, tc->file);
+                } else {
+                    log_error("Cannot open RAM dump file: %s", tc->file);
+                }
+                break;
+            }
+            }
+            tc->done = true;
         }
 
         /* Frame dump */
@@ -2916,26 +1962,78 @@ static void emulator_run(emulator_t* emu) {
 
         frame_count++;
 
-        /* RAM dump at cycle: write 64KB once when threshold reached */
-        if (!emu->dump_ram_at_done && emu->dump_ram_at_cycles >= 0 &&
-            (int64_t)total_executed >= emu->dump_ram_at_cycles) {
-            FILE* rf = fopen(emu->dump_ram_at_file, "wb");
+        /* State-triggered captures : front montant sur RAM[addr] == val,
+         * échantillonné ici en fin de frame (même cadence que les variantes
+         * -at). when_read() lit la RAM brute hors overlay ($<C000, sans effet
+         * de bord) et la vue CPU au-delà. --cycles reste la borne max. */
+        if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0 &&
+            when_read(emu, (uint16_t)emu->screenshot_when_addr) == emu->screenshot_when_val) {
+            log_info("Screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                     (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val,
+                     (unsigned long long)total_executed, emu->screenshot_when_file);
+            emu_export_image(emu, emu->screenshot_when_file);
+            emu->screenshot_when_done = true;
+        }
+
+        if (!emu->screenshot_text_when_done && emu->screenshot_text_when_addr >= 0 &&
+            when_read(emu, (uint16_t)emu->screenshot_text_when_addr) == emu->screenshot_text_when_val) {
+            FILE* tf = fopen(emu->screenshot_text_when_file, "w");
+            if (tf) {
+                video_export_screen_text(emu->memory.ram, tf);
+                fclose(tf);
+                log_info("Text screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                         (unsigned)emu->screenshot_text_when_addr, emu->screenshot_text_when_val,
+                         (unsigned long long)total_executed, emu->screenshot_text_when_file);
+            } else {
+                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_when_file);
+            }
+            emu->screenshot_text_when_done = true;
+        }
+
+        if (!emu->dump_ram_when_done && emu->dump_ram_when_addr >= 0 &&
+            when_read(emu, (uint16_t)emu->dump_ram_when_addr) == emu->dump_ram_when_val) {
+            FILE* rf = fopen(emu->dump_ram_when_file, "wb");
             if (rf) {
                 fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
-                /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay /
-                 * upper RAM). memory_read est sans effet de bord hors
-                 * page I/O ($0300-$03FF), jamais atteinte ici. */
                 for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
                     uint8_t b = memory_read(&emu->memory, (uint16_t)a);
                     fwrite(&b, 1, 1, rf);
                 }
                 fclose(rf);
-                log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
-                         (unsigned long long)total_executed, emu->dump_ram_at_file);
+                log_info("RAM dump on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                         (unsigned)emu->dump_ram_when_addr, emu->dump_ram_when_val,
+                         (unsigned long long)total_executed, emu->dump_ram_when_file);
             } else {
-                log_error("Cannot open RAM dump file: %s", emu->dump_ram_at_file);
+                log_error("Cannot open RAM dump file: %s", emu->dump_ram_when_file);
             }
-            emu->dump_ram_at_done = true;
+            emu->dump_ram_when_done = true;
+        }
+
+        /* Écritures déclenchées (--poke-at / --poke-when) : actionneur symétrique
+         * des captures ci-dessus, échantillonné à la même cadence (fin de frame).
+         * Une entrée à seuil de cycles tire dès total_executed >= at_cycles ; une
+         * entrée conditionnelle tire au 1er échantillon où RAM[when_addr]==when_val.
+         * Chaque poke ne tire qu'une fois (done). Plusieurs pokes au même seuil
+         * s'appliquent dans l'ordre de la ligne de commande (ex. cx, cy, puis le
+         * drapeau de clic) au même instant côté programme. */
+        for (int pi = 0; pi < emu->poke_count; pi++) {
+            struct poke_action* p = &emu->pokes[pi];
+            if (p->done) continue;
+            bool fire = (p->at_cycles >= 0 && (int64_t)total_executed >= p->at_cycles) ||
+                        (p->when_addr >= 0 &&
+                         when_read(emu, (uint16_t)p->when_addr) == p->when_val);
+            if (!fire) continue;
+            poke_write(emu, p->target, p->value);
+            if (p->when_addr >= 0)
+                log_info("Poke RAM[$%04X]=$%02X on RAM[$%04X]==$%02X at %llu cycles",
+                         (unsigned)p->target, p->value,
+                         (unsigned)p->when_addr, p->when_val,
+                         (unsigned long long)total_executed);
+            else
+                log_info("Poke RAM[$%04X]=$%02X at %llu cycles",
+                         (unsigned)p->target, p->value,
+                         (unsigned long long)total_executed);
+            p->done = true;
         }
 
 #ifdef HAS_SDL2
@@ -3041,6 +2139,25 @@ static void emulator_run(emulator_t* emu) {
             log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_file);
     }
 
+    /* Filet de sécurité : un -when armé qui n'a jamais tiré = échec franc.
+     * main() renverra 2 pour que le CI le voie plutôt que de croire à une
+     * capture silencieuse manquante. */
+    if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0) {
+        log_error("--screenshot-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
+                  (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val);
+        emu->when_condition_unmet = true;
+    }
+    if (!emu->screenshot_text_when_done && emu->screenshot_text_when_addr >= 0) {
+        log_error("--screenshot-text-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
+                  (unsigned)emu->screenshot_text_when_addr, emu->screenshot_text_when_val);
+        emu->when_condition_unmet = true;
+    }
+    if (!emu->dump_ram_when_done && emu->dump_ram_when_addr >= 0) {
+        log_error("--dump-ram-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
+                  (unsigned)emu->dump_ram_when_addr, emu->dump_ram_when_val);
+        emu->when_condition_unmet = true;
+    }
+
     log_info("Emulation stopped. Total cycles: %llu, frames: %llu",
              (unsigned long long)total_executed, (unsigned long long)frame_count);
 
@@ -3069,44 +2186,6 @@ static void emulator_run(emulator_t* emu) {
     }
 }
 
-/* Parse a "CYCLES:FILE" CLI argument, shared verbatim by --dump-ram-at and
- * --screenshot-at. On success stores the cycle count and a pointer past the
- * colon (into `arg`) and returns true. On a missing colon it logs the exact
- * same error those sites used (via optname) and returns false — the caller
- * then cleans up and exits 1. Behaviour is identical to the two inlined copies
- * it replaces (covered by tests/integration/test_cli_parsing.sh). */
-static bool cli_split_cycles_file(const char* arg, const char* optname,
-                                  int64_t* out_cycles, const char** out_file) {
-    const char* colon = strchr(arg, ':');
-    if (!colon) {
-        log_error("Invalid --%s format. Use CYCLES:FILE", optname);
-        return false;
-    }
-    *out_cycles = atoll(arg);
-    *out_file = colon + 1;
-    return true;
-}
-
-/* Open an output file for a CLI option, logging the exact "Cannot open --NAME
- * file: PATH" error those sites used on failure. Returns the stream, or NULL —
- * the caller then cleans up and exits 1. Shared verbatim by --trace-irq /
- * --psg-trace / --audio-wav (identical open-or-fail pattern; only the mode and
- * the post-open headers differ). Covered by test_cli_parsing.sh (the fatal
- * open-failure cases for the three options). */
-static FILE* cli_open_out(const char* file, const char* mode, const char* optname) {
-    FILE* fp = fopen(file, mode);
-    if (!fp)
-        log_error("Cannot open --%s file: %s", optname, file);
-    return fp;
-}
-
-/* Parse a 16-bit hexadecimal address argument (--acia-addr / --dtl2000-addr /
- * --mageco-addr / --break). Same lenient strtol semantics as the four inlined
- * copies it replaces: invalid input yields 0 (no error) — behaviour preserved
- * verbatim (see test_cli_parsing.sh, --acia-addr invalid hex = non-fatal). */
-static uint16_t parse_hex16(const char* s) {
-    return (uint16_t)strtol(s, NULL, 16);
-}
 
 int main(int argc, char* argv[]) {
     emulator_t emu;
@@ -3121,14 +2200,17 @@ int main(int argc, char* argv[]) {
     const char* hostfs_path = NULL;
     bool fast_load = false;
     bool tape_signal = false;   /* --tape-signal: signal-level cassette (Sprint 90) */
+    bool tape_signal_free = false; /* --tape-signal-free: gate moteur sur ORB PB6 (clean-room ROM) */
+    const char* tape_out_capture_arg = NULL; /* --tape-out-capture FILE: capture PB7 -> .TAP */
     bool verbose = false;
     bool headless = false;
     int64_t max_cycles = -1;
     const char* screenshot_file = NULL;
     const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
-    const char* screenshot_at_arg = NULL;
-    const char* screenshot_text_at_arg = NULL;
-    const char* screenshot_ansi_at_arg = NULL;
+    /* Captures -at RÉPÉTABLES : on collecte (arg, type) au parsing, puis on
+     * résout chaque "CYCLES:FILE" après la boucle getopt (comme --poke-at). */
+    struct { const char* arg; timed_capture_type_t type; } tcap_cli[TIMED_CAPTURE_MAX];
+    int tcap_cli_count = 0;
     const char* screenshot_text_file = NULL;
     const char* screenshot_ansi_file = NULL;
     const char* frame_dump_dir = NULL;
@@ -3144,6 +2226,10 @@ int main(int argc, char* argv[]) {
 
     const char* type_keys_args[TYPE_KEYS_SEQ_MAX];
     int type_keys_arg_count = 0;
+    /* --poke-at / --poke-when : arguments collectés pendant getopt puis parsés
+     * après emulator_init (les pokes vivent dans emu, initialisé plus tard). */
+    struct { const char* arg; bool is_when; } poke_args[POKE_MAX];
+    int poke_arg_count = 0;
     const char* disk_rom_file = NULL;
     bool debug_mode = false;
     const char* debug_break_addr = NULL;
@@ -3166,7 +2252,10 @@ int main(int argc, char* argv[]) {
     int scale_factor = 3;
     bool render_software = false;
     const char* trace_file = NULL;
-    const char* dump_ram_at_arg = NULL;
+    const char* screenshot_when_arg = NULL;
+    const char* dump_ram_when_arg = NULL;
+    const char* screenshot_text_when_arg = NULL;
+    const char* type_keys_when_arg = NULL;
     const char* bad_sector_args[FDC_MAX_BAD_SECTORS];
     int bad_sector_arg_count = 0;
     const char* fdc_timing_arg = NULL;
@@ -3185,6 +2274,7 @@ int main(int argc, char* argv[]) {
     const char* loci_sdimg_path = NULL;
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int64_t trace_max = 0;
+    int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
     bool rom_info_enabled = false;
@@ -3222,10 +2312,24 @@ int main(int argc, char* argv[]) {
             case OPT_SCREENSHOT: screenshot_file = optarg; break;
             case OPT_SCREENSHOT_TEXT: screenshot_text_file = optarg; break;
             case OPT_SCREENSHOT_ANSI: screenshot_ansi_file = optarg; break;
-            case OPT_SCREENSHOT_TEXT_AT: screenshot_text_at_arg = optarg; break;
-            case OPT_SCREENSHOT_ANSI_AT: screenshot_ansi_at_arg = optarg; break;
+            case OPT_SCREENSHOT_TEXT_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_TEXT;} break;
+            case OPT_SCREENSHOT_ANSI_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_ANSI;} break;
             case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
-            case OPT_SCREENSHOT_AT: screenshot_at_arg = optarg; break;
+            case OPT_SCREENSHOT_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_IMAGE;} break;
+            case OPT_SCREENSHOT_WHEN: screenshot_when_arg = optarg; break;
+            case OPT_SCREENSHOT_TEXT_WHEN: screenshot_text_when_arg = optarg; break;
+            case OPT_DUMP_RAM_WHEN: dump_ram_when_arg = optarg; break;
+            case OPT_POKE_AT:
+            case OPT_POKE_WHEN:
+                if (poke_arg_count >= POKE_MAX) {
+                    log_error("Too many --poke-at/--poke-when (max %d)", POKE_MAX);
+                    return 1;
+                }
+                poke_args[poke_arg_count].arg = optarg;
+                poke_args[poke_arg_count].is_when = (opt == OPT_POKE_WHEN);
+                poke_arg_count++;
+                break;
+            case OPT_TYPE_KEYS_WHEN: type_keys_when_arg = optarg; break;
             case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
             case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
             case OPT_VIDEO: video_avi_file = optarg; break;
@@ -3283,8 +2387,11 @@ int main(int argc, char* argv[]) {
             case OPT_EXPORT_BORDER: emu.export_border = true; break;
             case OPT_REALTIME: emu.realtime = true; break;
             case OPT_TAPE_SIGNAL: tape_signal = true; break;
+            case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
+            case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
+            case OPT_TRACE_RING: trace_ring = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
             case OPT_ROM_INFO:
                 rom_info_enabled = true;
@@ -3309,7 +2416,7 @@ int main(int argc, char* argv[]) {
             case OPT_SERIAL_TRACE:
                 serial_trace_file = optarg;
                 break;
-            case OPT_DUMP_RAM_AT: dump_ram_at_arg = optarg; break;
+            case OPT_DUMP_RAM_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_DUMP_RAM;} break;
             case OPT_BAD_SECTOR:
                 if (bad_sector_arg_count < FDC_MAX_BAD_SECTORS)
                     bad_sector_args[bad_sector_arg_count++] = optarg;
@@ -3386,7 +2493,7 @@ int main(int argc, char* argv[]) {
                 break;
             case '?':
             default:
-                print_usage(argv[0]);
+                cli_print_usage(argv[0]);
                 return 0;
         }
     }
@@ -3741,22 +2848,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Parse --dump-ram-at CYCLES:FILE */
-    if (dump_ram_at_arg) {
-        if (!cli_split_cycles_file(dump_ram_at_arg, "dump-ram-at",
-                                   &emu.dump_ram_at_cycles, &emu.dump_ram_at_file)) {
-            emulator_cleanup(&emu);
-            return 1;
-        }
-        emu.dump_ram_at_done = false;
-        log_info("RAM dump scheduled at %lld cycles → %s",
-                 (long long)emu.dump_ram_at_cycles, emu.dump_ram_at_file);
-    } else {
-        emu.dump_ram_at_cycles = -1;
-        emu.dump_ram_at_file = NULL;
-        emu.dump_ram_at_done = true;
-    }
-
     /* Open --trace-irq FILE */
     if (trace_irq_file) {
         FILE* fp = cli_open_out(trace_irq_file, "w", "trace-irq");
@@ -3919,29 +3010,85 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Parse --screenshot-at CYCLES:FILE */
-    if (screenshot_at_arg) {
-        if (!cli_split_cycles_file(screenshot_at_arg, "screenshot-at",
-                                   &emu.screenshot_at_cycles, &emu.screenshot_at_file)) {
-            emulator_cleanup(&emu);
-            return 1;
+    /* Résolution des captures -at RÉPÉTABLES (--screenshot-at / -text-at /
+     * -ansi-at / --dump-ram-at) collectées dans tcap_cli : chaque "CYCLES:FILE"
+     * devient une entrée timed_captures[]. Format malformé = fatal (comme avant). */
+    {
+        static const char* const tcap_optname[] = {
+            "screenshot-at", "screenshot-text-at", "screenshot-ansi-at", "dump-ram-at"
+        };
+        for (int i = 0; i < tcap_cli_count; i++) {
+            int64_t cyc; const char* file;
+            if (!cli_split_cycles_file(tcap_cli[i].arg, tcap_optname[tcap_cli[i].type],
+                                       &cyc, &file)) {
+                emulator_cleanup(&emu);
+                return 1;
+            }
+            if (emu.timed_capture_count < TIMED_CAPTURE_MAX) {
+                timed_capture_t* t = &emu.timed_captures[emu.timed_capture_count++];
+                t->cycles = cyc; t->file = file; t->type = tcap_cli[i].type; t->done = false;
+            }
+            log_info("Capture %s armée à %lld cycles -> %s",
+                     tcap_optname[tcap_cli[i].type], (long long)cyc, file);
         }
     }
 
-    /* Parse --screenshot-text-at CYCLES:FILE et --screenshot-ansi-at CYCLES:FILE */
-    if (screenshot_text_at_arg) {
-        if (!cli_split_cycles_file(screenshot_text_at_arg, "screenshot-text-at",
-                                   &emu.screenshot_text_at_cycles, &emu.screenshot_text_at_file)) {
+    /* Parse des captures déclenchées par état ADDR:VAL:FILE */
+    if (screenshot_when_arg) {
+        if (!cli_split_addr_val_file(screenshot_when_arg, "screenshot-when",
+                                     &emu.screenshot_when_addr, &emu.screenshot_when_val,
+                                     &emu.screenshot_when_file)) {
             emulator_cleanup(&emu);
             return 1;
         }
     }
-    if (screenshot_ansi_at_arg) {
-        if (!cli_split_cycles_file(screenshot_ansi_at_arg, "screenshot-ansi-at",
-                                   &emu.screenshot_ansi_at_cycles, &emu.screenshot_ansi_at_file)) {
+    if (screenshot_text_when_arg) {
+        if (!cli_split_addr_val_file(screenshot_text_when_arg, "screenshot-text-when",
+                                     &emu.screenshot_text_when_addr, &emu.screenshot_text_when_val,
+                                     &emu.screenshot_text_when_file)) {
             emulator_cleanup(&emu);
             return 1;
         }
+    }
+    if (dump_ram_when_arg) {
+        if (!cli_split_addr_val_file(dump_ram_when_arg, "dump-ram-when",
+                                     &emu.dump_ram_when_addr, &emu.dump_ram_when_val,
+                                     &emu.dump_ram_when_file)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    /* --poke-at / --poke-when : parsés maintenant que emu (et emu.poke_count=0)
+     * est initialisé. Chaque entrée est ajoutée à emu.pokes[] dans l'ordre de la
+     * ligne de commande, préservant le regroupement voulu (ex. cx, cy, clic). */
+    for (int i = 0; i < poke_arg_count; i++) {
+        bool ok = poke_args[i].is_when
+                    ? cli_add_poke_when(&emu, poke_args[i].arg)
+                    : cli_add_poke_at(&emu, poke_args[i].arg);
+        if (!ok) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+    }
+    /* --type-keys-when ADDR:VAL:TEXT : arm the auto-typer when RAM[ADDR]==VAL
+     * instead of guessing a boot cycle. TEXT keeps the same escapes as
+     * --type-keys and may start with "loci-hid:" to route via the LOCI HID. */
+    if (type_keys_when_arg) {
+        const char* text = NULL;
+        if (!cli_split_addr_val_file(type_keys_when_arg, "type-keys-when",
+                                     &emu.type_keys_when_addr, &emu.type_keys_when_val,
+                                     &text)) {
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        if (strncmp(text, "loci-hid:", 9) == 0) {
+            emu.type_keys_when_loci_hid = true;
+            text += 9;
+        }
+        emu.type_keys_when_text = text;
+        log_info("Auto-type armed when RAM[$%04X]==$%02X (%s): \"%s\"",
+                 (unsigned)emu.type_keys_when_addr, emu.type_keys_when_val,
+                 emu.type_keys_when_loci_hid ? "LOCI HID" : "ORIC matrix", text);
     }
 
     /* Parse --type-keys CYCLES:TEXT (Sprint 34av: TEXT may start with
@@ -4181,8 +3328,10 @@ int main(int argc, char* argv[]) {
                         if (tape_signal) {
                             cassette_signal_begin(&emu.cassette, emu.tapebuf,
                                                   emu.tapelen);
+                            emu.cassette.free_gate = tape_signal_free;
                             log_info("Signal-level cassette enabled: %d bytes on "
-                                     "CB1 waveform (real ROM read)", emu.tapelen);
+                                     "CB1 waveform (real ROM read)%s", emu.tapelen,
+                                     tape_signal_free ? " [free-gate ORB PB6]" : "");
                         }
                     } else {
                         log_warning("Tape read incomplete: %zu/%d bytes", rd, emu.tapelen);
@@ -4449,11 +3598,29 @@ int main(int argc, char* argv[]) {
     /* CPU trace logging */
     trace_init(&emu.trace);
     if (trace_file) {
-        if (trace_max > 0) {
-            trace_set_max(&emu.trace, (uint64_t)trace_max);
-        }
-        if (!trace_open(&emu.trace, trace_file)) {
-            log_error("Failed to open trace file: %s", trace_file);
+        /* --symbols annote la trace avec les labels, dans LES DEUX modes.
+         * (Avant : seuls le trace conditionnel IPC/debugger l'exploitaient ; le
+         * --trace streaming ignorait --symbols.) */
+        bool trace_syms = (symbols_file != NULL);
+        if (trace_syms) trace_set_symbols(&emu.trace, &emu.symbols);
+        if (trace_ring > 0) {
+            /* Mode ring/tail : garde en mémoire les N DERNIÈRES instructions
+             * (idéal pour un hang profond, là où --trace-max ne garde que les
+             * PREMIÈRES) et les écrit à la sortie via trace_save_ring(). */
+            trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
+                      (uint32_t)trace_ring, trace_syms);
+            log_info("CPU trace ring armed (last %lld instructions) -> %s",
+                     (long long)trace_ring, trace_file);
+        } else {
+            if (trace_max > 0) trace_set_max(&emu.trace, (uint64_t)trace_max);
+            if (!trace_open(&emu.trace, trace_file)) {
+                log_error("Failed to open trace file: %s", trace_file);
+            } else if (trace_syms) {
+                /* Streaming + symboles : (re)arme en mode "now" (ring_cap=0) pour
+                 * activer l'annotation symbolique sur le fp déjà ouvert. */
+                trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
+                          0, true);
+            }
         }
     }
 
@@ -4495,8 +3662,32 @@ int main(int argc, char* argv[]) {
     g_web_emu = &emu;
 #endif
 
+    /* --tape-out-capture : arme la capture de l'onde tape-OUT (PB7 piloté par
+     * Timer 1). Indépendant de -t (CSAVE écrit, aucun tape d'entrée requis). En
+     * mode capture, les hooks CSAVE PC-1.1 sont neutralisés (cf. tape write). */
+    if (tape_out_capture_arg) {
+        emu.tape_out_path = tape_out_capture_arg;
+        tape_capture_begin(&emu.tape_capture);
+        log_info("Tape-OUT capture armed (PB7/Timer1) -> %s", tape_out_capture_arg);
+    }
+
     /* Run emulation */
     emulator_run(&emu);
+
+    /* Écrit le .TAP reconstruit depuis l'onde PB7 capturée. */
+    if (tape_out_capture_arg && emu.tape_capture.active) {
+        FILE* tf = fopen(tape_out_capture_arg, "wb");
+        if (tf) {
+            if (emu.tape_capture.out_len > 0)
+                fwrite(emu.tape_capture.out, 1, (size_t)emu.tape_capture.out_len, tf);
+            fclose(tf);
+            log_info("Tape-OUT capture written: %d bytes -> %s",
+                     emu.tape_capture.out_len, tape_out_capture_arg);
+        } else {
+            log_error("Tape-OUT capture: cannot write %s", tape_out_capture_arg);
+        }
+        tape_capture_free(&emu.tape_capture);
+    }
 
     if (gdb_enabled && emu.gdb_stub) {
         gdb_stub_close(&gdb_stub);
@@ -4557,9 +3748,24 @@ int main(int argc, char* argv[]) {
         profiler_report_to_file(&emu.profiler, profile_file);
     }
 
+    /* --trace-ring : à la fin du run, écrire les N dernières instructions
+     * gardées en mémoire (ordre ancien → récent) dans le fichier de trace. */
+    if (trace_file && trace_ring > 0) {
+        if (trace_save_ring(&emu.trace, trace_file))
+            log_info("CPU trace ring saved (%u instructions) -> %s",
+                     trace_ring_count(&emu.trace), trace_file);
+        else
+            log_warning("CPU trace ring empty (no instructions recorded) -> %s",
+                        trace_file);
+    }
     trace_close(&emu.trace);
+
+    /* Un --*-when armé mais jamais déclenché = échec explicite (exit 2), pour
+     * que le CI SCUMM distingue « état de jeu jamais atteint » d'une erreur
+     * d'usage (exit 1) ou d'un succès (exit 0). */
+    bool when_unmet = emu.when_condition_unmet;
     emulator_cleanup(&emu);
     log_cleanup();
 
-    return 0;
+    return when_unmet ? 2 : 0;
 }

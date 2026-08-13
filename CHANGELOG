@@ -5,6 +5,548 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.102.0-alpha] - 2026-08-13
+
+### Added — Capture PNG + screenshot F12 auto-nommé (anti-écrasement)
+
+Deux améliorations d'ergonomie sur les captures d'écran :
+
+- **Export PNG** : nouvelle fonction `video_export_png()` (RGB888 compressé via
+  `stb_image_write`, déjà compilé pour l'AVI/MJPEG). `video_export_auto()` et sa
+  variante bordée routent désormais `.png`/`.PNG` vers l'encodeur PNG (comme
+  `.bmp` déjà). Comme stb est bâti avec `STBI_WRITE_NO_STDIO`, on passe par
+  `stbi_write_png_to_func` + un callback `fwrite`. Bénéfice transverse :
+  `--screenshot-at C:FILE.png` (et toute la famille auto-détectée) produit
+  maintenant du PNG, pas seulement PPM/BMP.
+- **F12 auto-nommé** : la capture interactive (SDL) n'écrase plus
+  `screenshot.ppm`. Elle vise d'abord `screenshot.png` ; si ce fichier existe
+  déjà dans le répertoire courant, elle bascule sur un nom horodaté
+  `screenshot-YYYYMMDD-HHMMSS.png` (avec suffixe `-NN` en cas de collision dans
+  la même seconde). Le nom retenu est journalisé (`log_info`).
+
+Vérifié : test-video 16 → **18** (+2 : signature PNG `89 50 4E 47`, routage
+`video_export_auto`) ; e2e CLI `--screenshot-at …:e2e.png` → `PNG image data,
+240 x 224, 8-bit/color RGB`. Suite complète verte. EMU_VERSION → 1.102.0-alpha.
+
+## [1.101.0-alpha] - 2026-08-12
+
+### Added — `--trace-ring N` (trace « queue ») + `--symbols` branché au `--trace` streaming
+
+Deux manques bornés, révélés en debug de hang (portage SCUMM-Oric) :
+
+- **`--trace-ring N`** : garde en mémoire les **N DERNIÈRES** instructions (ring
+  buffer) et les écrit dans `--trace FILE` à la sortie. Complète `--trace-max N`
+  qui garde les **PREMIÈRES** N (le boot) — inutile pour un hang profond, où c'est
+  la boucle finale qu'on veut. L'infra ring existait (Epic 6, `trace_arm`/
+  `trace_save_ring`) mais n'était exposée qu'en IPC/debugger ; elle l'est
+  désormais en CLI simple.
+- **`--symbols` annote le `--trace` streaming**. Auparavant `trace_set_symbols`
+  n'était appelé que depuis `control.c`/`debugger.c` : `--trace FILE --symbols X`
+  produisait une trace **sans** labels. Corrigé pour les deux modes (ring +
+  streaming), en armant `with_symbols` sur le fp ouvert.
+
+Vérifié PAR LA MESURE (basic11b headless) : `--trace-ring 12` → 12 lignes, 1re au
+cycle ~3 015 406 (la queue, pas le boot) ; `--trace-max 12` → 1re au cycle 0 (le
+boot) ; `--symbols` → annotation `; SCAN_BPL` présente, absente sans `--symbols`.
+`test-cli-parsing` 78 → **82** (+4). `make clean && make SDL2=0 tests` toutes
+suites vertes ; `test-trace` 16/16.
+
+EMU_VERSION 1.100.0-alpha → 1.101.0-alpha.
+
+## [1.100.0-alpha] - 2026-08-12
+
+### Added — Captures déclenchées par cycle RÉPÉTABLES (`--screenshot-at` & famille `-at`)
+
+Les 4 options déclenchées par cycle (`--screenshot-at`, `--screenshot-text-at`,
+`--screenshot-ansi-at`, `--dump-ram-at`) étaient **single-shot** : chacune sur
+une variable unique, écrasée si répétée → seul le dernier `C:FILE` déclenchait.
+Elles deviennent **répétables** (même motif tableau que `--poke-at` /
+`--type-keys`).
+
+Mécanisme unifié : un tableau `emu.timed_captures[]` (`timed_capture_t` :
+cycles, file, type ∈ image/text/ansi/dump-ram, done ; `TIMED_CAPTURE_MAX`=64).
+Le parsing collecte les `(arg, type)`, les résout après la boucle getopt, et une
+**seule** boucle par frame tire chaque entrée à son seuil (remplace 4 blocs +
+4 champs uniques dans `emulator.h`).
+
+Motivation (portage SCUMM-Oric) : atteindre une room coûte ~20 Mcy de chargement
+LOCI par boot ; le single-shot imposait **un reboot par capture** pour balayer un
+arc de dialogue. Le `-at` répétable capture tout l'arc en **un seul boot** →
+planche de références (une image par réplique) triviale.
+
+Vérifié : 2×`--screenshot-at` (C1/C2) → 2 fichiers **distincts** aux bons cycles ;
+mix `screenshot-at` + `dump-ram-at`×2 + `text-at` → 4 fichiers en un run.
+`test-cli-parsing` 75 → **78** (+3) ; single-shot iso-comportement (malformé →
+exit 1, well-formed → fichier) ; `test-loci-golden` (utilise `--dump-ram-at`)
+vert ; `make clean && make SDL2=0 tests` toutes suites vertes.
+
+EMU_VERSION 1.99.9-alpha → 1.100.0-alpha.
+
+## [1.99.9-alpha] - 2026-08-12
+
+### Fixed — Conformité WD1793 : disque absent → NOT READY (bit 7) au lieu de RNF
+
+Épic 8 (conformité datasheet), suite. Les commandes Type II/III (Read/Write
+Sector, Read Address, Read/Write Track) échantillonnent la ligne READY
+(datasheet p.7) : sans média chargé, la commande n'est PAS exécutée et le status
+doit être NOT READY (bit 7) + INTRQ. Le code posait Record Not Found (bit 4, qui
+signifie « média présent mais secteur/ID absent ») aussi bien pour un disque
+absent que pour un secteur introuvable. Nouveau helper `fdc_not_ready()` :
+`fdc_find_sector` distingue désormais no-média (NOT READY) de secteur-absent (RNF).
+
+Tests : `test-storage` 24 → **25** (+1 : `test_fdc_no_disk_is_not_ready`) ; le
+test bad-sector (disque présent → RNF) reste vert. `make clean && make SDL2=0
+tests` toutes suites vertes.
+
+EMU_VERSION 1.99.8-alpha → 1.99.9-alpha.
+
+## [1.99.8-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US5 : isoler la glue SDL LOCI (`loci_sync_kbd_from_sdl`)
+
+Dernier callback LOCI de `main.c` : `loci_sync_kbd_from_sdl` (synchronise le
+report clavier HID du LOCI depuis l'état clavier SDL) — la **seule** fonction de
+la glue qui dépend de SDL. Déplacée vers `src/io/loci_glue.c` sous
+`#ifdef HAS_SDL2`, avec l'`#include <SDL2/SDL.h>` **à l'intérieur** du garde, et
+déclarée sous `#ifdef HAS_SDL2` dans `loci_glue.h`. Les appels dans `main.c`
+(boucle d'événements SDL) étaient déjà sous `#ifdef HAS_SDL2`.
+
+**Résultat** : `src/io/loci_glue.c` builde proprement en **`SDL2=0`** (la
+fonction est exclue par le préprocesseur → aucune dépendance SDL) comme en
+`SDL2=1`. **`main.c` ne contient plus AUCUNE définition de fonction `loci_*`** —
+uniquement le câblage (`loci_set_*_callback`, scan USB). L'objectif de l'Epic 9
+(sortir la glue LOCI de `main.c`) est atteint.
+
+**`main.c` : 3785 → 3744 lignes** (-41 ; cumul 4988 → 3744 = **-1244**).
+
+Iso-comportement **prouvé** : boot LOCI headless **byte-identique**
+(`md5 bf4dff781e05175ad8050815eccd6a42`) ; `make clean && make SDL2=0 tests`
+toutes suites vertes ; builds **`SDL2=0`**, **`SDL2=1`** et **`SDL2=1 HTTPAPI=1`**
+OK. `emulator.h` inchangé (aucun impact sur les projets embarquant l'émulateur).
+
+EMU_VERSION 1.99.7-alpha → 1.99.8-alpha.
+
+## [1.99.7-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US4 : migrer les hooks USB + actions IRQ-trap LOCI
+
+Troisième lot de code de l'Epic 9. Migrés vers `src/io/loci_glue.c` (verbatim,
+dé-staticifiés + déclarés) : `loci_attach_usb_dir`, `loci_scan_host_usb`,
+`loci_action_install_irq_trap`, `loci_action_release_irq_trap`. Aucun nouveau
+bloqueur — leurs seuls appels « inter-fonctions » visent des `loci_*` déjà
+migrées en US3 (dans le même module). Includes ajoutés à `loci_glue.c` :
+`<dirent.h>`, `<sys/stat.h>`, `utils/oscompat.h`. `main.c` garde le câblage
+(appels directs de scan USB + `loci_set_action_callbacks`).
+
+**`main.c` : 3921 → 3785 lignes** (-136 ; cumul 4988 → 3785 = **-1203**).
+
+Iso-comportement **prouvé par l'oracle US1** : boot LOCI headless **byte-identique**
+(`md5 bf4dff781e05175ad8050815eccd6a42`) ; `make clean && make SDL2=0 tests`
+toutes suites vertes ; builds `SDL2=1`, `SDL2=0` et `SDL2=1 HTTPAPI=1` OK.
+`emulator.h` inchangé (aucun impact sur les projets embarquant l'émulateur).
+
+EMU_VERSION 1.99.6-alpha → 1.99.7-alpha.
+
+## [1.99.6-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US3 : migrer les callbacks ROM/tape/resume LOCI + module `rom_patches`
+
+Deuxième lot de code de l'Epic 9. Migrés vers `src/io/loci_glue.c` (verbatim,
+dé-staticifiés + déclarés) : `loci_resume_snapshot_path`, `loci_find_rom_file`,
+`loci_find_menu_rom`, `loci_patch_rom_info`, `loci_tape_mount_cb`,
+`loci_rom_swap_cb`, `loci_resume_session_cb`. Les 2 prototypes forward associés
+sont retirés de `main.c`.
+
+**Déblocage `get_rom_patches`.** `loci_rom_swap_cb` re-sélectionne les patches
+ROM après un swap via `get_rom_patches`, jusqu'ici static dans `main.c`. Comme
+`loci_glue.c` fait partie de `LIB_OBJECTS` (linké par des tests sans `main.o`),
+une simple déclaration ne suffit pas : la **définition** doit être dans LIB. Les
+tables `rom_patches_basic10/11` + `detect_rom_version` + `get_rom_patches` sont
+donc extraites vers un **nouveau module `src/rom_patches.{c,h}`** (main.c ne
+possède plus ces données ROM). `main.c` et `loci_glue.c` incluent `rom_patches.h`.
+
+**`main.c` : 4235 → 3921 lignes** (-314 ; cumul 4988 → 3921 = **-1067**).
+
+**Header public intact** : `include/emulator.h` reste **inchangé** (la déclaration
+`get_rom_patches` vit dans `rom_patches.h`, pas dans `emulator.h`) → aucun impact
+sur les projets qui embarquent/incluent le header de l'émulateur.
+
+Iso-comportement **prouvé par l'oracle US1** : boot LOCI headless **byte-identique**
+à la référence pré-Epic-9 (`md5 bf4dff781e05175ad8050815eccd6a42`) ;
+`test-control-dispatch` (qui cassait au link) 26/26 ; `test-loci-golden` vert ;
+`make clean && make SDL2=0 tests` toutes suites vertes ; builds `SDL2=1`,
+`SDL2=0` et `SDL2=1 HTTPAPI=1` OK.
+
+EMU_VERSION 1.99.5-alpha → 1.99.6-alpha.
+
+## [1.99.5-alpha] - 2026-08-12
+
+### Changed — Epic 9 / US2 : créer `src/io/loci_glue.c` + migrer les callbacks bus/IRQ LOCI
+
+Première extraction de code de l'Epic 9 (sortir la glue LOCI de `main.c` vers un
+adaptateur dédié, comme `io_bus.c`). Après l'US1 (cartographie + oracle de
+déterminisme), on migre le **lot sûr** — les 4 callbacks les plus simples, sans
+dépendance SDL ni appel à un static de `main.c` :
+
+- `loci_dsk_cpu_irq_set` / `loci_dsk_cpu_irq_clr` (ligne d'IRQ disque Microdisc
+  servie par la fenêtre DSK du LOCI),
+- `loci_dsk_sync_overlay` (report du banking overlay/BASIC-ROM),
+- `loci_rom_poke_hook` (écriture d'un octet dans l'overlay ROM $C000+).
+
+Déplacés verbatim vers **`src/io/loci_glue.{c,h}`** (dé-staticifiés + déclarés).
+`main.c` garde l'**enregistrement** (`loci_set_rom_poke_callback`,
+`loci_set_dsk_bus_callbacks`) — le seam `ctx=&emu` rend l'appel transparent.
+
+**`main.c` : 4255 → 4235 lignes** (-20).
+
+Iso-comportement **prouvé par l'oracle US1** : le boot LOCI headless reste
+**byte-identique** à la référence pré-Epic-9 (`md5 bf4dff781e05175ad8050815eccd6a42`) ;
+`test-loci-golden` vert, `make clean && make SDL2=0 tests` toutes suites vertes ;
+builds `SDL2=1`, `SDL2=0` et **`SDL2=1 HTTPAPI=1`** OK.
+
+EMU_VERSION 1.99.4-alpha → 1.99.5-alpha.
+
+## [1.99.4-alpha] - 2026-08-12
+
+### Changed — Dégonfler `main.c` (3) : `serial_transport_create` → `src/io/serial_backend.c`
+
+Constat mesuré : le parseur `getopt` n'a **pas de gros `case` à extraire** — les
+`case OPT_*` sont déjà lean (6-13 l) ; le volume vient du *nombre* de cases + le
+wiring, dont l'extraction exige le refactor `cli_args_t` (~89 variables, gros/
+risqué, sprint dédié). Donc, plutôt qu'un move risqué, on continue par la
+méthode **prouvée sûre** : extraire une fonction autonome.
+
+`serial_transport_create` (60 l : construit un backend série *transparent* depuis
+un spec `loopback`/`tcp:`/`pty`/`com:`/`midi`/`smf:`/`file:`) n'appelait aucun
+static de `main.c`, seulement l'API `serial_backend_*` + `parse_host_port`
+(netutil). Déplacée verbatim vers `src/io/serial_backend.c` (sa place naturelle,
+au milieu des `serial_backend_*_create`), déclarée dans `serial_backend.h`
+(visible via `emulator.h`). Rationale d'exclusion modem/digitelec/picowifi
+conservée en commentaire.
+
+**`main.c` : 4329 → 4255 lignes** (-74 ; cumul 4988 → 4255 = **-733**).
+
+Effet de bord Makefile : `serial_backend.c` dépend désormais de `netutil.c`
+(`parse_host_port`) → `netutil.c` ajouté aux 3 listes de sources de test qui
+linkaient `serial_backend.c` sans lui (`test-serial`, `test-midi`,
+`test-dtl2000`).
+
+Iso-comportement **prouvé** : `test-cli-parsing` 75/75 (dont `--serial`),
+`test-serial` 22/22, `test-midi` 19/19, `test-dtl2000` 16/16, `test-picowifi`
+72/72 ; `make clean && make SDL2=0 tests` toutes suites vertes ; builds natif +
+SDL2 OK.
+
+EMU_VERSION 1.99.3-alpha → 1.99.4-alpha.
+
+## [1.99.3-alpha] - 2026-08-12
+
+### Changed — Dégonfler `main.c` (2/2) : `tape_patches` → `src/io/tape_patches.c` (iso-comportement)
+
+Suite de la réduction de `main.c`. La logique de patch ROM CLOAD/CSAVE
+(`tape_patches`, 381 l : interception PC des routines cassette + capture CSAVE)
+est **remarquablement autonome** — elle n'appelle aucun helper static de
+`main.c`, seulement des champs `emu->` et des API publiques (`cassette_*`,
+`loci_sdimg_*`, `memory_write`, `log_*`). Déplacée verbatim vers
+`src/io/tape_patches.{c,h}` (dé-staticifiée + déclarée).
+
+**`main.c` : 4723 → 4329 lignes** (-394 ; cumul 4988 → 4329 = **-659** sur les
+deux étapes). Aucun changement de comportement.
+
+Iso-comportement **prouvé** : `test-tape-roundtrip` 3/3 (roundtrip CSAVE→
+capture→CLOAD sur programme à octets non nuls), `test-cassette` 8/8,
+`make clean && make SDL2=0 tests` toutes suites vertes ; builds natif + SDL2 OK.
+
+EMU_VERSION 1.99.2-alpha → 1.99.3-alpha.
+
+## [1.99.2-alpha] - 2026-08-12
+
+### Changed — Enrayer la croissance de `main.c` : module `src/cli/` (Epic 7/US3, iso-comportement)
+
+`main.c` avait regrossi à **4988 lignes** (l'Epic 7 l'avait ramené à 4334 ;
+les features CLI récentes — poke, captures, autotype — l'avaient regonflé). On
+crée un vrai module `src/cli/` qui donne un **foyer** au code CLI et sort de
+`main.c` ce qui est extractible **sans changement de comportement** :
+
+- **`src/cli/cli_usage.{c,h}`** : la bannière `--help` (`print_usage`, ~146 l de
+  `printf`) → `cli_print_usage()`. Seule dépendance : `EMU_VERSION`.
+- **`src/cli/cli_parse.{c,h}`** : les 7 helpers de parsing (`cli_split_cycles_file`,
+  `cli_split_addr_val_file`, `cli_split_addr_eq_val`, `cli_add_poke_at/when`,
+  `cli_open_out`, `parse_hex16`) déplacés verbatim (dé-staticifiés + déclarés).
+
+**`main.c` : 4988 → 4722 lignes** (-266). Aucun changement de comportement.
+
+Iso-comportement **prouvé** : `--help` **byte-identique** (md5 égal, capturé
+avant/après l'extraction, avant le bump de version) ; `test-cli-parsing` 41/41
+(couvre les 7 helpers) ; `make clean && make SDL2=0 tests` toutes suites vertes ;
+builds natif + SDL2 OK.
+
+Le parseur `getopt` géant (~63 case à effets de bord) reste dans `main()` — son
+extraction n'est pas prouvable iso-comportement avec le filet actuel (cf. Epic 7
+US3) ; mais le module `src/cli/` existe désormais pour accueillir le futur code
+CLI au lieu de gonfler `main.c`.
+
+EMU_VERSION 1.99.1-alpha → 1.99.2-alpha.
+
+## [1.99.1-alpha] - 2026-08-12
+
+### Fixed — Décodeur de capture tape-OUT (voie A CSAVE) : front montant + framing chasse-start
+
+Régression + défaut de framing dans le décodeur `--tape-out-capture`
+(`src/io/cassette.c`), diagnostiqués par instrumentation et **contre-signés
+côté silicium** (RTL FPGA + désassemblage ROM `GetTapeByte $E6C9`).
+
+- **Détection de front (régression).** Le décodeur mesurait *tout* front
+  (`last_pb7 != pb7`). Or l'onde CSAVE émet **deux demi-pulses par bit** (bas
+  208, haut 208 pour `1` / 416 pour `0`) — le même modèle que `cassette_step`.
+  Mesurer tout front donne les demi-pulses (208/416, tous < seuil 512 → **chaque
+  bit lu `1`** → capture d'1 octet). La ROM chronomètre **front montant → front
+  montant** = période de bit complète (416 `1` / 624 `0`). Rétabli
+  `(!last_pb7 && pb7)`.
+- **Framing (doublements de octets).** Le réassembleur comptait un nombre fixe
+  de bits d'arrêt (parité + 4 stops = 5 périodes), ce qui dérive d'un bit par
+  trame quand le nombre de stops réels diffère (3,5 réels vs 4 modélisés) →
+  motifs doublés/alternés. Reproduit désormais `GetTapeByte` : après les 8 bits
+  data, **brûler 1 période (parité)** puis **chasser le premier front long =
+  start** (les stops courts sont sautés, quel qu'en soit le nombre).
+- L'amorçage `primed` (1er échantillon seede le niveau, pas de front parasite au
+  démarrage) est **conservé** — il était correct.
+
+Vérification : nouveau **test d'intégration `test-tape-roundtrip`**
+(`tests/integration/test_tape_roundtrip.sh`, 3/3) — capture non triviale (282 o
+vs 1 o de la régression), leader `0x16` propre, et **roundtrip CSAVE→capture→
+CLOAD de bout en bout** (`10 END` re-LISTé à l'identique). Ajouté à `make tests`.
+`make clean && make SDL2=0 tests` toutes suites vertes ; builds natif + SDL2 OK.
+
+EMU_VERSION 1.99.0-alpha → 1.99.1-alpha.
+
+## [1.99.0-alpha] - 2026-08-12
+
+### Fixed — Conformité PSG AY-3-8912 vs datasheet General Instrument (bruit 2× trop rapide)
+
+Suite de l'audit matériel (`docs/HARDWARE_CONFORMANCE.md`). Le générateur de
+bruit du PSG cadençait son LFSR à `clock/(8×NP)` au lieu de `clock/(16×NP)` :
+il réutilisait `tone_rate` (= `clock/8`), qui est la cadence de **bascule** du
+ton. Le ton produit la bonne fréquence `clock/(16×TP)` car une onde carrée
+bascule deux fois par période, mais le LFSR de bruit **n'a pas ce ÷2** →
+il tournait 2× trop vite (datasheet : même prescaler /16 que le ton ; MAME
+modélise ce ÷2 manquant via son `prescale_noise`).
+
+Correctif dans `src/audio/ay3891x.c` : `ay_step_sample()` reçoit un `noise_rate`
+distinct (`clock/16`) au lieu de réutiliser `tone_rate`.
+
+Vérification :
+- Test unitaire `test_ay_noise_rate_clock_div16` : compare `ay.noise_shift` à un
+  LFSR de référence avancé du nombre de pas exact prédit par `clock/16` (et
+  vérifie qu'il diffère du nombre de pas de l'ancienne cadence `clock/8`).
+- Preuve empirique `--audio-wav` (basic11b headless) : `PING` (ton pur) produit
+  un WAV **byte-à-byte identique** au binaire HEAD → chemin ton/enveloppe
+  intact ; `EXPLODE` (bruit) **diffère** → seule la cadence du bruit change ;
+  les deux restent non silencieux (aucune régression).
+
+Tests : `test-audio` 12 → **13** (+1). `make clean && make SDL2=0 tests` toutes
+suites vertes (0 échec) ; builds natif + SDL2 OK.
+
+Déviations PSG **assumées** (documentées) : l'AY-3-8912 n'a pas de Port B (reg
+15) mais le code le modélise (sans effet sur Oric) ; sémantique R7 bit 6
+(direction Port A) empiriquement validée sur Oric mais divergente de la
+convention datasheet → non modifiée sans confirmation.
+
+EMU_VERSION 1.98.0-alpha → 1.99.0-alpha.
+
+## [1.98.0-alpha] - 2026-08-12
+
+### Fixed — Conformité VIA 6522 vs datasheet Rockwell R6522 Rev.9 (2 écarts corrigés)
+
+Suite de l'audit VIA documenté en v1.97.0-alpha (`docs/HARDWARE_CONFORMANCE.md`).
+Deux écarts corrigés dans `src/io/via6522.c`, choisis pour être **sûrs et
+prouvables** :
+
+- **One-shot T1/T2 : le compteur gelait après timeout.** Datasheet p.8/p.9 : le
+  compteur continue à décrémenter (seul le flag cesse de se réarmer) pour laisser
+  l'hôte lire le temps écoulé depuis l'interruption. Ajout d'un champ
+  `t1_active`/`t2_active` (compteur en cours de comptage) distinct de
+  `t1_running`/`t2_running` (tir encore possible) : le décompte est gaté sur
+  `*_active` (reste vrai après timeout), le tir/reload sur `*_running`. La
+  sémantique `t1_running=false` après timeout est **préservée** → savestate,
+  control, debugger et les tests one-shot existants restent intacts.
+- **Sortie PB7 par Timer 1 : condition DDRB.7 manquante.** Datasheet p.9 : PB7
+  n'est la sortie timer que si **DDRB.7 ET ACR.7 = 1** ; le code ne testait que
+  ACR.7. Gate `(acr & 0x80) && (ddrb & 0x80)` appliqué aux 4 sites (lecture ORB,
+  pull-low sur écriture T1CH, toggle à l'underflow, `via_get_pb7`).
+
+Vérification : test unitaire `test_pb7_timer_requires_ddrb7` (DDRB.7=0 → pin
+normal ; DDRB.7=1 → sortie timer) + preuve d'intégration : capture CSAVE
+`--tape-out-capture` **byte-à-byte identique** au binaire HEAD (md5 égal) →
+aucune régression du chemin cassette (non couvert par `make tests`).
+
+Tests : `test-io` 43 → **46** (+3 : one-shot T1/T2 counter-continues, PB7 DDRB.7).
+`make clean && make SDL2=0 tests` toutes suites vertes (0 échec) ; builds natif +
+SDL2 OK.
+
+Trois déviations VIA restent **assumées** (documentées) : période T1 free-run
+N+1 vs N+2 (corriger décalerait les baselines byte-exact + risque IRQ 100 Hz),
+effacement du flag T1 sur écriture T1L-H (incertain entre datasheets MOS/Rockwell
+→ non modifié par principe), reset qui efface les compteurs (négligeable).
+
+EMU_VERSION 1.97.0-alpha → 1.98.0-alpha.
+
+## [1.97.0-alpha] - 2026-08-12
+
+### Fixed — Conformité FDC WD1793 vs datasheet Western Digital FD179X-02
+
+Audit de conformité du cœur WD1793 (`src/storage/disk.c`) croisé ligne à ligne
+avec la datasheet FD179X-02. Trois écarts corrigés (les seuls susceptibles
+d'affecter du logiciel Oric réel) :
+
+- **Read Address** écrivait le numéro de secteur dans le registre secteur ; la
+  datasheet (p.13) y écrit la **piste** (octet 1 du champ ID) pour comparaison
+  hôte. Corrigé : `fdc->sector = addr_field[0]`.
+- **STEP / STEP-IN / STEP-OUT** mettaient toujours à jour le registre piste ;
+  Table 2 (Type I bit 4 = Track Update) exige que ce ne soit fait que si T=1.
+  La tête bouge toujours (c_track), mais le registre piste devient conditionnel
+  (`fdc_seek_track(..., bool update_track)` ; Restore/Seek = toujours vrai).
+- **Force Interrupt** générait toujours un INTRQ ; datasheet p.15 : HEX **D0**
+  (i3-i0=0) termine la commande **sans** interruption, seul **D8** (i3) déclenche
+  un INTRQ immédiat. Corrigé : `if (value & 0x08) set_intrq(...)`.
+
+Tests : `test-storage` FDC 21 → **24** (+3 : `test_fdc_read_address_loads_track`,
+`test_fdc_step_track_update_flag`, `test_fdc_force_interrupt_immediate` ;
+`test_fdc_force_interrupt` mis à jour pour D0 = pas d'INTRQ). Suite complète
+`make clean && make SDL2=0 tests` : toutes les suites vertes (0 échec), aucune
+régression sur les boots Sedoric (system/rom).
+
+### Added — Document de conformité matérielle `docs/HARDWARE_CONFORMANCE.md`
+
+Trace les audits datasheet (WD1793, VIA 6522) : écarts corrigés vs déviations
+assumées avec leur raison. L'audit VIA 6522 (datasheet Rockwell R6522 Rev.9) est
+documenté : 5 déviations identifiées (one-shot T1/T2 qui gèle, période T1
+free-run N+1 vs N+2, condition DDRB.7 manquante sur PB7, effacement flag T1L-H,
+reset qui efface les compteurs) **non corrigées ce round** car elles ripplent
+sur du comportement délibéré verrouillé par des tests existants
+(`t1_running`/`test_via_reset`) et le chemin de capture CSAVE non couvert par
+`make tests` — reportées à un sprint VIA dédié.
+
+EMU_VERSION 1.96.0-alpha → 1.97.0-alpha.
+
+## [1.96.0-alpha] - 2026-08-03
+
+### Added — Écritures mémoire déclenchées : `--poke-at` / `--poke-when` (actionneur symétrique des captures `-when`)
+
+Les captures headless déclenchées par un état (`--screenshot-when` / `--dump-ram-when`,
+v1.94.0) *observent* la RAM ; il manquait l'actionneur symétrique pour l'*écrire*. Motivation
+concrète (portage SCUMM-Oric, `~/scum`) : le test end-to-end « sélectionner 2 kids puis START »
+est impraticable via `--type-keys` parce que le curseur du jeu est **level-triggered** (il lit
+l'état *maintenu* de la touche et avance d'un pas fixe par tour de boucle). Ni le tap bref (avalé
+pendant le gel de frame d'un `render_room` → sous-course) ni `\pN` (maintien → sur-course massive,
+clic mesuré à ~x200 au lieu de x132) ne peuvent viser une coordonnée exacte : aucun réglage de
+cadence n'y change rien puisque la distance dépend d'un temps de maintien que `--type-keys` ne
+contrôle pas au tour-de-boucle. La solution déterministe : piloter la position directement en RAM.
+
+**`--poke-at C:ADDR=VAL`** écrit `RAM[ADDR]=VAL` une seule fois dès que `total_executed >= C`
+(C décimal, `ADDR`/`VAL` hexa — cohérent avec `--screenshot-when`). **`--poke-when A:V:ADDR=VAL`**
+écrit `RAM[ADDR]=VAL` une seule fois au front montant `RAM[A]==V` (tout en hexa). Les deux options
+sont **répétables** (jusqu'à `POKE_MAX`=32 entrées) et appliquées dans l'ordre de la ligne de
+commande, ce qui garantit le regroupement voulu (ex. `cx`, `cy`, puis un drapeau de clic écrits au
+même instant côté programme). Échantillonné en fin de frame comme les `-when` ; borné par `--cycles`.
+Écriture via `poke_write()` : directe en RAM brute sous `$C000` (sans effet de bord), via
+`memory_write` au-delà (overlay/banking, page I/O respectée). Chaînage same-frame prouvé : un
+`--poke-when` placé après un `--poke-at` visant la même adresse tire dans la même passe.
+
+Format malformé (`:` ou `=` manquant, table pleine) → fatal rc 1 avec message dédié
+(`Invalid --poke-at format. Use CYCLES:ADDR=VAL` / `Invalid --poke-when format. Use ADDR:VAL:ADDR=VAL`).
+
+Vérifié PAR LA MESURE (boot basic10 headless) : `--poke-at 1000000:04FA=42` → `RAM[$04FA]=$42`
+(dump à 2M) ; chaîne `--poke-at 1000000:04FB=99` + `--poke-when 04FB:99:04FC=77` → les deux écrites
+au même cycle (1018444). Tests : `test-cli-parsing` 36/36 → **41/41** (+5 : 4 malformés fatals
+`--poke-at`/`--poke-when`, 1 positif e2e poke-at + poke-when chaîné vérifié par dump). `make clean &&
+make SDL2=0 tests` : toutes les suites vertes (0 échec). EMU_VERSION 1.95.0-alpha → 1.96.0-alpha.
+
+## [1.95.0-alpha] - 2026-07-20
+
+### Added — Auto-frappe fiabilisée : pacing synchronisé sur le scan clavier réel + `--type-keys-when`
+
+`--type-keys` cadençait chaque transition de touche (presser/tenir/relâcher) sur un
+**nombre de cycles fixe** (`CYCLES_PER_FRAME * N`). C'est fragile : un programme qui
+scrute la matrice clavier **plus lentement** qu'une frame perd des touches, car une
+touche peut être pressée **et** relâchée à l'intérieur de sa fenêtre aveugle de scan
+(la ROM / le jeu ne voit jamais le front). C'est la cause racine du « mur clavier
+headless » rencontré sur les portages (SCUMM, Spellbinder), contourné jusqu'ici en
+bricolant le timing d'injection au cas par cas.
+
+**Correctif — pacing piloté par le scan (`include/io/autotype.h`).** L'auto-frappe
+se synchronise désormais sur le vrai scanner matériel. Le clavier ORIC est lu via VIA
+Port B (PB3), la ROM balayant les 8 colonnes 7→0 à chaque passe (mesuré : ~8 lectures
+par passe, une passe toutes les ~696 cycles au prompt READY). `portb_read_callback`
+compte une **passe de scan** à chaque remontée de colonne (le balayage descendant
+recommence). L'auto-frappe refuse alors de modifier la matrice tant que le scanner n'a
+pas complété `AUTOTYPE_MIN_PASS` (2) passes depuis la dernière transition → le
+programme est **garanti** d'avoir observé l'état courant des touches avant qu'il change.
+
+- **Additif, jamais plus rapide qu'avant** : l'ancien calendrier en cycles est conservé
+  tel quel ; au prompt READY (où les passes défilent ~28×/frame) le comportement est
+  **identique** (le cycle domine), et seuls les programmes qui scrutent lentement sont
+  throttlés → plus de touches perdues.
+- **Watchdog anti-blocage** : un programme qui ne scrute jamais le clavier ne peut pas
+  figer l'injecteur (`AUTOTYPE_WATCHDOG_CYCLES` = 30 frames au-delà du calendrier).
+- **Chemin LOCI HID inchangé** : device distinct (pas de matrice ORIC) → pacing purement
+  cyclique, la porte de scan est court-circuitée.
+
+**Nouveau — `--type-keys-when ADDR:VAL:TEXT`** : arme l'auto-frappe quand `RAM[ADDR]==VAL`
+au lieu de deviner un cycle de boot (réutilise le patron `--screenshot-when`). `TEXT`
+garde les mêmes échappements que `--type-keys` et accepte le préfixe `loci-hid:`. Retire
+le besoin de calibrer un délai de démarrage à la main.
+
+Vérifié PAR LA MESURE (build SDL2, mode headless, `roms/basic10.rom`) :
+- non-régression : `--type-keys "6000000:PRINT 2+3\n"` → `5` à l'écran ;
+- déclencheur : `--type-keys-when "BC9A:52:PRINT 7*6\n"` (le `R` de « Ready » à `$BC9A`)
+  s'arme au cycle 2 855 632 dès que le prompt apparaît → `PRINT 7*6` → `42` ;
+- compteur de passes confirmé par instrumentation (balayage 7→0, passe/~696 cycles).
+
+Tests : nouveau `make test-autotype` (`tests/unit/test_autotype.c`, 10/10 — détection de
+passe, porte cycle+passe, bypass LOCI, watchdog) ; `make clean && make tests` exit 0
+(build SDL2 par défaut). EMU_VERSION 1.94.0-alpha → 1.95.0-alpha.
+
+## [1.94.0-alpha] - 2026-07-18
+
+### Added — Captures déclenchées par un ÉTAT mémoire : `--screenshot-when` / `--screenshot-text-when` / `--dump-ram-when`
+
+Réponse à la demande du projet SCUMM-Oric (`docs/CR/2026-07-18_Demande_Equipe_Capture_Declenchee_Par_Etat.md`) :
+toutes les captures headless existantes se déclenchent sur un **nombre de cycles**
+fixe (`--screenshot-at`, `--dump-ram-at`, …). Or le cycle où un état de jeu apparaît
+dépend du layout mémoire du binaire testé → tout refactor décale la timeline et casse
+des tests byte-exact/screenshot alors que le comportement est correct. Ces trois
+variantes déclenchent la capture sur une **condition mémoire** (`RAM[ADDR] == VAL`),
+donc de manière **indépendante du timing/layout**.
+
+- **`--screenshot-when ADDR:VAL:FILE`** — capture image (PPM/BMP) au premier passage.
+- **`--screenshot-text-when ADDR:VAL:FILE`** — dump texte `$BB80` (40×28).
+- **`--dump-ram-when ADDR:VAL:FILE`** — dump 64 Ko (RAM + vue CPU `$C000-$FFFF`).
+
+Sémantique (calquée sur le patron `--screenshot-at`) :
+
+- `ADDR` **et** `VAL` en **hexadécimal** (cohérent : `9C55`, `07`, `AB`, `0x07` acceptés).
+- **Front montant** : déclenche la 1re fois que la condition passe vraie, une seule fois.
+- Échantillonné en **fin de frame** (même cadence que les variantes `-at`) ; un état de
+  jeu persiste sur plusieurs frames, donc capturé à la frontière de frame suivante.
+- Lecture via `when_read()` : RAM brute sous `$C000` (aucun effet de bord I/O), vue CPU
+  au-delà (banking BASIC/overlay honoré).
+- **Filet de sécurité** : `--cycles N` reste la borne max. Si la condition n'est **jamais**
+  atteinte avant la fin de la course, message `condition jamais atteinte (RAM[$XXXX] != $VV)`
+  et **exit 2** (distinct de l'exit 1 d'erreur d'usage et de l'exit 0 de succès), pour que
+  le CI échoue franchement plutôt que silencieusement.
+- Format malformé (`:` manquant, `FILE` vide) → fatal `rc 1`, message
+  `Invalid --NAME format. Use ADDR:VAL:FILE`.
+
+**Vérifié par la mesure** (boot Atmos, headless) : `--dump-ram-when 0000:00:FILE` → dump
+64 Ko écrit dès le premier échantillonnage (cycle 19971, page zéro nulle au boot) ;
+`--screenshot-text-when 0000:00:FILE` → dump texte non vide ; `--screenshot-when
+9C55:AB:FILE -c 500000` → condition jamais atteinte → **exit 2** + aucun fichier écrit.
+
+Tests : `test-cli-parsing` 29/29 → **36/36** (+7 : 3 malformés fatals, 2 contrôles
+positifs `-when` qui écrivent le fichier, 1 filet exit 2, 1 « aucun fichier écrit »).
+`make clean && make tests` exit 0. EMU_VERSION 1.93.0-alpha → 1.94.0-alpha ;
+builds natif + SDL2 OK.
+
 ## [1.93.0-alpha] - 2026-07-17
 
 ### Added — Screenshot texte/ANSI à un cycle donné : `--screenshot-text-at` + `--screenshot-ansi-at`

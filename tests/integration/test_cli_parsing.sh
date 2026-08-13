@@ -80,6 +80,29 @@ expect "--screenshot-ansi-at without ':' → exit 1" 1 "Invalid --screenshot-ans
 run "$EMU" -r "$ROM" -n --type-keys NOCOLON -c 1000
 expect "--type-keys without ':' → exit 1" 1 "Invalid --type-keys format"
 
+# ── state-triggered captures ADDR:VAL:FILE : malformed → fatal ─────────
+run "$EMU" -r "$ROM" -n --screenshot-when NOCOLON -c 1000
+expect "--screenshot-when without ':' → exit 1" 1 "Invalid --screenshot-when format"
+
+run "$EMU" -r "$ROM" -n --dump-ram-when 9C55:AB -c 1000
+expect "--dump-ram-when with only one ':' → exit 1" 1 "Invalid --dump-ram-when format"
+
+run "$EMU" -r "$ROM" -n --screenshot-text-when 9C55:AB: -c 1000
+expect "--screenshot-text-when with empty FILE → exit 1" 1 "Invalid --screenshot-text-when format"
+
+# ── écritures déclenchées --poke-at / --poke-when : malformées → fatal ──
+run "$EMU" -r "$ROM" -n --poke-at NOCOLON -c 1000
+expect "--poke-at without ':' → exit 1" 1 "Invalid --poke-at format"
+
+run "$EMU" -r "$ROM" -n --poke-at 1000:04FA -c 2000
+expect "--poke-at without '=' → exit 1" 1 "Invalid --poke-at format"
+
+run "$EMU" -r "$ROM" -n --poke-when 9C55:AB -c 1000
+expect "--poke-when with only one ':' → exit 1" 1 "Invalid --poke-when format"
+
+run "$EMU" -r "$ROM" -n --poke-when 9C55:AB:04FA -c 1000
+expect "--poke-when without '=' → exit 1" 1 "Invalid --poke-when format"
+
 # ── enum-valued options : bogus values ─────────────────────────────────
 run "$EMU" -r "$ROM" -n --joystick BOGUS -c 1000
 expect "--joystick bogus is non-fatal (exit 0)" 0 "Unknown joystick mode"
@@ -136,6 +159,50 @@ else
     note_fail "well-formed --screenshot-ansi-at (rc=$RC, size=$(stat -c%s "$TMP/at.ansi" 2>/dev/null || echo 0))"
 fi
 
+# well-formed --dump-ram-when : la condition RAM[$0000]==$00 est vraie très tôt
+# (page zéro nulle au boot) → dump 64K écrit, exit 0.
+run "$EMU" -r "$ROM" -n --dump-ram-when 0000:00:"$TMP/when.bin" -c 2000000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/when.bin" ] \
+        && [ "$(stat -c%s "$TMP/when.bin")" -eq 65536 ]; then
+    note_pass "well-formed --dump-ram-when 0000:00:FILE triggers and writes 64K"
+else
+    note_fail "well-formed --dump-ram-when (rc=$RC, size=$(stat -c%s "$TMP/when.bin" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --screenshot-text-when : même condition, dump texte non vide.
+run "$EMU" -r "$ROM" -n --screenshot-text-when 0000:00:"$TMP/when.txt" -c 2000000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/when.txt" ]; then
+    note_pass "well-formed --screenshot-text-when 0000:00:FILE triggers and writes text"
+else
+    note_fail "well-formed --screenshot-text-when (rc=$RC, size=$(stat -c%s "$TMP/when.txt" 2>/dev/null || echo 0))"
+fi
+
+# well-formed --poke-at + --poke-when chaînés : poke-at écrit $04FA=42 après 1M
+# cycles ; poke-when voit RAM[$04FA]==42 et écrit $04FB=77 (même passe, l'ordre
+# de la ligne de commande garantit le chaînage). --dump-ram-at vérifie les deux.
+run "$EMU" -r "$ROM" -n \
+    --poke-at 1000000:04FA=42 \
+    --poke-when 04FA:42:04FB=77 \
+    --dump-ram-at 2000000:"$TMP/poke.bin" -c 2500000
+if [ "$RC" -eq 0 ] && [ -s "$TMP/poke.bin" ] \
+        && [ "$(od -An -tx1 -j$((0x04FA)) -N1 "$TMP/poke.bin" | tr -d ' ')" = "42" ] \
+        && [ "$(od -An -tx1 -j$((0x04FB)) -N1 "$TMP/poke.bin" | tr -d ' ')" = "77" ]; then
+    note_pass "well-formed --poke-at + chained --poke-when both write RAM"
+else
+    note_fail "well-formed --poke-at/--poke-when (rc=$RC)"
+fi
+
+# VAL est hexa (comme ADDR) : "AB" = $AB, pas décimal. Une condition
+# introuvable avant --cycles est un échec FRANC → exit 2 + message dédié,
+# pour que le CI distingue « état jamais atteint » d'une erreur d'usage.
+run "$EMU" -r "$ROM" -n --screenshot-when 9C55:AB:"$TMP/never.ppm" -c 500000
+expect "--screenshot-when never satisfied → exit 2" 2 "condition jamais atteinte"
+if [ ! -e "$TMP/never.ppm" ]; then
+    note_pass "--screenshot-when never satisfied writes no file"
+else
+    note_fail "--screenshot-when never satisfied still wrote $TMP/never.ppm"
+fi
+
 # ── side-effect options (fopen / load at parse time) : the delicate part of
 #    US3 — a future parser must reproduce these exactly. All measured. ──────
 
@@ -182,6 +249,146 @@ expect "--psg-trace unwritable path is FATAL (exit 1)" 1 "Cannot open --psg-trac
 
 run "$EMU" -r "$ROM" -n --audio-wav /proc/nonexistent-dir/x.wav -c 1000
 expect "--audio-wav unwritable path is FATAL (exit 1)" 1 "Cannot open --audio-wav file"
+
+# ── parse_hex16-backed address options ─────────────────────────────────
+# --dtl2000-addr / --mageco-addr / --break all share the parse_hex16 helper
+# (src/cli/cli_parse.c). Valid hex parses; invalid hex is LENIENT (strtol -> 0)
+# and NON-fatal. Locked so extracting/altering parse_hex16 cannot silently
+# change the semantics of these four sites.
+run "$EMU" -r "$ROM" -n --dtl2000-addr 0400 -c 1000
+expect "--dtl2000-addr valid hex parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --dtl2000-addr zz -c 1000
+expect "--dtl2000-addr invalid hex is lenient (exit 0)" 0
+run "$EMU" -r "$ROM" -n --mageco-addr 0320 -c 1000
+expect "--mageco-addr valid hex parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --break C000 -c 1000
+expect "--break valid hex parses (exit 0)" 0
+
+# ── informational / flag options ───────────────────────────────────────
+run "$EMU" -r "$ROM" -n --rom-info -c 1000
+expect "--rom-info prints the analysis report (exit 0)" 0 "ROM Analysis Report"
+run "$EMU" -r "$ROM" -n --verbose -c 1000
+expect "--verbose is accepted (exit 0)" 0
+
+# ── exit-time file-writing options (parse + side effect observed) ───────
+run "$EMU" -r "$ROM" -n --screenshot "$TMP/ss.ppm" -c 2000000
+expect "--screenshot parses (exit 0)" 0
+if [ -s "$TMP/ss.ppm" ]; then note_pass "--screenshot wrote a non-empty PPM"; else note_fail "--screenshot wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --disk-create "$TMP/blank.dsk" -c 500000
+expect "--disk-create parses (exit 0)" 0
+if [ -s "$TMP/blank.dsk" ]; then note_pass "--disk-create wrote a non-empty .dsk"; else note_fail "--disk-create wrote no file"; fi
+
+# ── more exit-time file writers (parse + observed side effect) ──────────
+run "$EMU" -r "$ROM" -n --screenshot-text "$TMP/st.txt" -c 2000000
+expect "--screenshot-text parses (exit 0)" 0
+if [ -s "$TMP/st.txt" ]; then note_pass "--screenshot-text wrote a non-empty file"; else note_fail "--screenshot-text wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --screenshot-ansi "$TMP/sa.txt" -c 2000000
+expect "--screenshot-ansi parses (exit 0)" 0
+if [ -s "$TMP/sa.txt" ]; then note_pass "--screenshot-ansi wrote a non-empty file"; else note_fail "--screenshot-ansi wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --save-state "$TMP/s.ost" -c 1000000
+expect "--save-state parses (exit 0)" 0
+if [ -s "$TMP/s.ost" ]; then note_pass "--save-state wrote a non-empty .ost"; else note_fail "--save-state wrote no file"; fi
+
+run "$EMU" -r "$ROM" -n --record "$TMP/m.phm" -c 500000
+expect "--record parses (exit 0)" 0
+if [ -s "$TMP/m.phm" ]; then note_pass "--record wrote a non-empty .phm"; else note_fail "--record wrote no file"; fi
+
+# ── flag / value options accepted (exit 0) ─────────────────────────────
+# --fdc-timing accepts real|fast; a bogus value is LENIENT (non-fatal) — locked
+# as-is (observed), so a future parser must not start rejecting it silently.
+run "$EMU" -r "$ROM" -n --fdc-timing real -c 1000
+expect "--fdc-timing real parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --fdc-timing bogus -c 1000
+expect "--fdc-timing bogus value is lenient (exit 0)" 0
+run "$EMU" -r "$ROM" -n --printer "$TMP/pr.txt" -c 1000
+expect "--printer parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --hostfs /tmp -c 1000
+expect "--hostfs DIR parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --no-border -c 1000
+expect "--no-border parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --trace "$TMP/t.log" --trace-max 100 -c 100000
+expect "--trace-max N parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --serial loopback --serial-baud 1200 -c 1000
+expect "--serial-baud N parses (exit 0)" 0
+
+# ── media / ROM loading (parse + accepted) ─────────────────────────────
+# Reuse the blank disk written by the --disk-create test above.
+run "$EMU" -r "$ROM" -n --disk1 "$TMP/blank.dsk" -c 1000
+expect "--disk1 FILE loads a disk in drive B (exit 0)" 0
+run "$EMU" -r "$ROM" -n --disk-rom roms/microdis.rom -c 1000
+expect "--disk-rom FILE loads the Microdisc ROM (exit 0)" 0
+
+# ── tape signal-mode + state-triggered auto-type flags (exit 0) ─────────
+run "$EMU" -r "$ROM" -n --tape-signal -c 1000
+expect "--tape-signal parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --tape-signal-free -c 1000
+expect "--tape-signal-free parses (exit 0)" 0
+run "$EMU" -r "$ROM" -n --type-keys-when 'BC9A:52:PRINT 1\n' -c 3000000
+expect "--type-keys-when A:V:TEXT parses (exit 0)" 0
+
+# ── frame / video capture (parse + observed side effect) ───────────────
+mkdir -p "$TMP/frames"
+run "$EMU" -r "$ROM" -n --frame-dump "$TMP/frames" --frame-dump-interval 30 -c 2000000
+expect "--frame-dump DIR + --frame-dump-interval parse (exit 0)" 0
+if [ "$(ls "$TMP/frames" 2>/dev/null | wc -l)" -gt 0 ]; then note_pass "--frame-dump wrote frame files"; else note_fail "--frame-dump wrote no frames"; fi
+
+run "$EMU" -r "$ROM" -n --video "$TMP/v.avi" -c 2000000
+expect "--video FILE parses (exit 0)" 0
+if [ -s "$TMP/v.avi" ]; then note_pass "--video wrote a non-empty AVI"; else note_fail "--video wrote no file"; fi
+
+# ── repeatable cycle-triggered captures (the -at family is now an array) ────
+# Two --screenshot-at at different cycles must BOTH fire → two distinct files
+# (previously only the last was honoured). And the whole -at family can mix in
+# one run (screenshot + dump-ram + text).
+run "$EMU" -r "$ROM" -n \
+    --screenshot-at 1000000:"$TMP/r1.ppm" --screenshot-at 2500000:"$TMP/r2.ppm" \
+    --dump-ram-at 1500000:"$TMP/r.bin" --screenshot-text-at 2000000:"$TMP/r.txt" \
+    -c 3000000
+expect "repeatable -at family parses (exit 0)" 0
+if [ -s "$TMP/r1.ppm" ] && [ -s "$TMP/r2.ppm" ] && ! cmp -s "$TMP/r1.ppm" "$TMP/r2.ppm"; then
+    note_pass "two --screenshot-at both fired → two distinct files"
+else
+    note_fail "repeatable --screenshot-at: files missing or identical (single-shot regression?)"
+fi
+if [ -s "$TMP/r.bin" ] && [ -s "$TMP/r.txt" ]; then
+    note_pass "mixed -at family (screenshot + dump-ram + text) all fired in one run"
+else
+    note_fail "mixed -at family: dump-ram or text capture missing"
+fi
+
+# ── --trace-ring : keep the LAST N instructions (tail), not the first N ────
+# For hang debugging: --trace-max keeps the boot (first N, cycle 0); --trace-ring
+# keeps the tail (last N, high cycle). And --symbols annotates the trace.
+printf 'SCAN_BPL = $C5EB\n' > "$TMP/t.sym"
+run "$EMU" -r "$ROM" -n --trace "$TMP/ring.log" --trace-ring 12 --symbols "$TMP/t.sym" -c 3000000
+expect "--trace-ring parses (exit 0)" 0
+if [ -s "$TMP/ring.log" ]; then
+    n=$(wc -l < "$TMP/ring.log")
+    first_cyc=$(awk 'NR==1{print $1+0; exit}' "$TMP/ring.log")
+    # tail: the first recorded line must be far from the boot (cycle 0)
+    if [ "$n" -le 12 ] && [ "$n" -gt 0 ] && [ "${first_cyc:-0}" -gt 1000000 ]; then
+        note_pass "--trace-ring kept the LAST $n instructions (tail, first cycle=$first_cyc)"
+    else
+        note_fail "--trace-ring: got $n lines, first cycle=$first_cyc (expected tail, not boot)"
+    fi
+    if grep -q '; SCAN_BPL' "$TMP/ring.log"; then
+        note_pass "--symbols annotates the trace (; SCAN_BPL present)"
+    else
+        note_fail "--symbols did not annotate the trace"
+    fi
+else
+    note_fail "--trace-ring wrote no file"
+fi
+# contrast: --trace-max keeps the FIRST N (boot, cycle 0)
+run "$EMU" -r "$ROM" -n --trace "$TMP/head.log" --trace-max 12 -c 3000000
+if [ -s "$TMP/head.log" ] && [ "$(awk 'NR==1{print $1+0;exit}' "$TMP/head.log")" -eq 0 ]; then
+    note_pass "--trace-max keeps the FIRST N (boot, cycle 0) — the documented contrast"
+else
+    note_fail "--trace-max did not keep the boot head"
+fi
 
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"

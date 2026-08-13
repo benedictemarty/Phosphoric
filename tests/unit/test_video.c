@@ -445,6 +445,64 @@ TEST(test_auto_export_bmp) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  PNG EXPORT                                                      */
+/* ═══════════════════════════════════════════════════════════════ */
+
+TEST(test_png_export_valid_signature) {
+    video_t vid;
+    video_init(&vid);
+    uint8_t* mem = (uint8_t*)calloc(49152, 1);
+    ASSERT_TRUE(mem != NULL);
+    video_render_frame(&vid, mem);
+
+    const char* path = "/tmp/test_video.png";
+    ASSERT_TRUE(video_export_png(&vid, path));
+    long sz = file_size(path);
+    ASSERT_TRUE(sz > 8);
+
+    /* Signature PNG : 89 50 4E 47 0D 0A 1A 0A */
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    unsigned char sig[8];
+    size_t rd = fread(sig, 1, 8, fp);
+    fclose(fp);
+    ASSERT_EQ((long)rd, 8L);
+    ASSERT_EQ(sig[0], 0x89);
+    ASSERT_EQ(sig[1], 'P');
+    ASSERT_EQ(sig[2], 'N');
+    ASSERT_EQ(sig[3], 'G');
+
+    unlink(path);
+    free(mem);
+    video_cleanup(&vid);
+}
+
+TEST(test_auto_export_png) {
+    video_t vid;
+    video_init(&vid);
+    uint8_t* mem = (uint8_t*)calloc(49152, 1);
+    ASSERT_TRUE(mem != NULL);
+    video_render_frame(&vid, mem);
+
+    const char* path = "/tmp/test_auto.png";
+    ASSERT_TRUE(video_export_auto(&vid, path));
+
+    /* video_export_auto doit router .png vers l'encodeur PNG */
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    unsigned char sig[4];
+    size_t rd = fread(sig, 1, 4, fp);
+    fclose(fp);
+    ASSERT_EQ((long)rd, 4L);
+    ASSERT_EQ(sig[0], 0x89);
+    ASSERT_EQ(sig[3], 'G');
+
+    unlink(path);
+    free(mem);
+    video_cleanup(&vid);
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  PPM FILE SIZE VERIFICATION                                     */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -668,6 +726,8 @@ int main(void) {
     RUN(test_screen_text_export);
     RUN(test_auto_export_ppm);
     RUN(test_auto_export_bmp);
+    RUN(test_png_export_valid_signature);
+    RUN(test_auto_export_png);
     RUN(test_ppm_exact_pixel_data);
     RUN(test_export_null_params);
     RUN(test_rom_boot_screenshot);

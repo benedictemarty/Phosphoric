@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.93.0-alpha"
+#define EMU_VERSION "1.102.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -113,6 +113,26 @@ typedef struct rom_patches_s {
 /* Nombre max d'entrées --type-keys séquençables sur une ligne de commande */
 #define TYPE_KEYS_SEQ_MAX    16
 
+/* Nombre max d'écritures mémoire différées (--poke-at / --poke-when) */
+#define POKE_MAX             32
+
+/* Captures déclenchées par cycle, RÉPÉTABLES (--screenshot-at / -text-at /
+ * -ansi-at / --dump-ram-at) : chaque entrée tire une fois quand total_executed
+ * atteint son seuil. Motif tableau homogène avec --poke-at / --type-keys. */
+#define TIMED_CAPTURE_MAX    64
+typedef enum {
+    TCAP_IMAGE = 0,   /* --screenshot-at      : image PPM/BMP */
+    TCAP_TEXT,        /* --screenshot-text-at : texte écran $BB80 */
+    TCAP_ANSI,        /* --screenshot-ansi-at : image ANSI du framebuffer */
+    TCAP_DUMP_RAM     /* --dump-ram-at        : 64K RAM (RAM + vue CPU $C000+) */
+} timed_capture_type_t;
+typedef struct {
+    int64_t cycles;               /* seuil de déclenchement (-1 = inutilisé) */
+    const char* file;             /* chemin de sortie */
+    timed_capture_type_t type;
+    bool done;                    /* déjà tiré */
+} timed_capture_t;
+
 typedef struct emulator_s {
     /* Machine model */
     oric_model_t model;
@@ -170,6 +190,11 @@ typedef struct emulator_s {
      * CB1 so the real ROM read routine / custom loaders sample a genuine
      * signal. Enabled via --tape-signal; disables the getsync/readbyte patches. */
     cassette_t cassette;
+
+    /* Tape-OUT capture (voie A CSAVE): samples PB7 (Timer-1 driven) and
+     * reconstructs the .TAP the ROM emits. Armed by --tape-out-capture. */
+    tape_capture_t tape_capture;
+    const char*    tape_out_path;   /* Destination .TAP for the capture, or NULL */
 
     /* Deferred fast-load (inject after RAM test completes) */
     uint8_t* fastload_buf;       /* Buffered TAP data */
@@ -235,16 +260,15 @@ typedef struct emulator_s {
      * clobber the loaded PC/cycles and drop back to the reset vector. */
     bool startup_state_loaded;
 
-    /* Screenshot options */
+    /* Screenshot options (sorties « fin de run ») */
     const char* screenshot_file;
-    int64_t screenshot_at_cycles;
-    const char* screenshot_at_file;
     const char* screenshot_text_file; /* dump contenu texte écran $BB80 (sortie) */
     const char* screenshot_ansi_file; /* image ANSI true-color du framebuffer (sortie) */
-    int64_t screenshot_text_at_cycles; /* dump texte à un cycle donné (-1 = off) */
-    const char* screenshot_text_at_file;
-    int64_t screenshot_ansi_at_cycles; /* image ANSI à un cycle donné (-1 = off) */
-    const char* screenshot_ansi_at_file;
+
+    /* Captures déclenchées par cycle, répétables (voir timed_capture_t) :
+     * --screenshot-at / -text-at / -ansi-at / --dump-ram-at. */
+    timed_capture_t timed_captures[TIMED_CAPTURE_MAX];
+    int             timed_capture_count;
 
     /* Frame dump options */
     const char* frame_dump_dir;
@@ -260,10 +284,40 @@ typedef struct emulator_s {
     avi_recorder_t video_avi_rec; /* recorder state */
     bool video_avi_active;        /* true once the file is open */
 
-    /* RAM dump at cycle: write 64KB of RAM to FILE when cycle >= threshold */
-    int64_t dump_ram_at_cycles;
-    const char* dump_ram_at_file;
-    bool dump_ram_at_done;
+
+    /* Captures déclenchées par un ÉTAT mémoire (front montant : 1re fois que
+     * RAM[addr] == val, échantillonné en fin de frame comme les variantes -at).
+     * addr = -1 → désarmé. Filet : si armé mais jamais déclenché avant la fin
+     * de la course (--cycles), when_condition_unmet est levé → exit 2. */
+    int32_t screenshot_when_addr;      /* -1 = off */
+    uint8_t screenshot_when_val;
+    const char* screenshot_when_file;
+    bool screenshot_when_done;
+    int32_t dump_ram_when_addr;        /* -1 = off */
+    uint8_t dump_ram_when_val;
+    const char* dump_ram_when_file;
+    bool dump_ram_when_done;
+    int32_t screenshot_text_when_addr; /* -1 = off */
+    uint8_t screenshot_text_when_val;
+    const char* screenshot_text_when_file;
+    bool screenshot_text_when_done;
+    bool when_condition_unmet;         /* levé si un -when armé n'a jamais tiré */
+
+    /* Écritures mémoire déclenchées (poke) : actionneur symétrique des captures
+     * -when/-at. Chaque entrée écrit RAM[target]=value une seule fois, soit à un
+     * seuil de cycles (at_cycles >= 0), soit sur front montant RAM[when_addr]==
+     * when_val (when_addr >= 0). Échantillonné en fin de frame comme les -when.
+     * Sert à piloter un état applicatif de façon déterministe (ex. positionner
+     * un curseur + demander un clic) sans passer par le clavier. */
+    struct poke_action {
+        int64_t  at_cycles;   /* >= 0 : tire quand total_executed >= at_cycles   */
+        int32_t  when_addr;   /* >= 0 : tire quand RAM[when_addr] == when_val     */
+        uint8_t  when_val;
+        uint16_t target;      /* adresse écrite                                   */
+        uint8_t  value;       /* octet écrit                                      */
+        bool     done;        /* déjà tiré (une seule fois)                       */
+    } pokes[POKE_MAX];
+    int poke_count;
 
     /* IRQ trace: log each IRQ entry + RTI to FILE */
     FILE* irq_trace_fp;
@@ -304,6 +358,28 @@ typedef struct emulator_s {
     } type_keys_seq[TYPE_KEYS_SEQ_MAX];
     int type_keys_seq_count; /* nombre d'entrées valides */
     int type_keys_seq_idx;   /* prochaine entrée à activer */
+
+    /* Scan-driven pacing (cf. include/io/autotype.h). kbd_scan_passes counts
+     * completed keyboard-matrix scan passes (VIA Port B sweep), updated in
+     * portb_read_callback. The auto-typer refuses to change the matrix until
+     * the scanner has completed >= AUTOTYPE_MIN_PASS passes since the last
+     * transition (type_keys_last_pass), so a program is guaranteed to have
+     * observed the current key state before it changes — no dropped keys on
+     * programs that scan slower than one frame. Additive to the existing
+     * cycle schedule (never faster than before); a cycle watchdog prevents a
+     * stall when the target never scans the keyboard. */
+    uint32_t kbd_scan_passes;
+    uint8_t  kbd_scan_prev_col;   /* last column read (0xFF = none yet) */
+    uint32_t type_keys_last_pass; /* kbd_scan_passes at last transition */
+
+    /* --type-keys-when A:V:TEXT : arm the auto-typer when RAM[A]==V instead of
+     * at a guessed cycle count (reuses the --screenshot-when trigger idea).
+     * addr = -1 disables. Fires once. */
+    int32_t     type_keys_when_addr;
+    uint8_t     type_keys_when_val;
+    const char* type_keys_when_text;
+    bool        type_keys_when_loci_hid;
+    bool        type_keys_when_done;
 
     /* Dynamic keyboard injection (sprint 95, API REST Epic 4). A growable
      * byte buffer appended to by the `keys` control command and consumed one

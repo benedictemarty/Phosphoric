@@ -19,7 +19,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Encodeur PNG partagé (stb_image_write). L'implémentation vit dans une seule
+ * unité de traduction (src/video/stb_image_write_impl.c) ; ici on n'a besoin
+ * que de la déclaration de stbi_write_png. */
+#include "../../third_party/stb_image_write.h"
+
 /* ── low-level encoders: raw RGB888 buffer (w*h*3) ───────────────── */
+
+/* stb_image_write est compilé avec STBI_WRITE_NO_STDIO (voir
+ * stb_image_write_impl.c) : seules les variantes *_to_func existent. On ouvre
+ * donc le fichier nous-mêmes et on relaie les blocs vers fwrite via ce callback. */
+static void png_write_cb(void* context, void* data, int size) {
+    fwrite(data, 1, (size_t)size, (FILE*)context);
+}
+
+static bool write_png_buffer(const uint8_t* rgb, int w, int h, const char* filename) {
+    FILE* fp = fopen(filename, "wb");
+    if (!fp) return false;
+    /* stride = w*3 (RGB888 contigu), 3 composantes */
+    int ok = stbi_write_png_to_func(png_write_cb, fp, w, h, 3, rgb, w * 3);
+    /* succès = encodage OK ET flush disque sans erreur */
+    return (fclose(fp) == 0) && ok != 0;
+}
 
 static bool write_ppm_buffer(const uint8_t* rgb, int w, int h, const char* filename) {
     FILE* fp = fopen(filename, "wb");
@@ -103,6 +124,11 @@ bool video_export_bmp(const video_t* vid, const char* filename) {
     return write_bmp_buffer(vid->framebuffer, vid->native_w, vid->native_h, filename);
 }
 
+bool video_export_png(const video_t* vid, const char* filename) {
+    if (!vid || !filename) return false;
+    return write_png_buffer(vid->framebuffer, vid->native_w, vid->native_h, filename);
+}
+
 bool video_export_ascii(const video_t* vid, FILE* fp, unsigned int scale_x, unsigned int scale_y) {
     if (!vid || !fp) return false;
     if (scale_x == 0) scale_x = 2;
@@ -162,6 +188,9 @@ bool video_export_auto(const video_t* vid, const char* filename) {
     if (ext && (strcmp(ext, ".bmp") == 0 || strcmp(ext, ".BMP") == 0)) {
         return video_export_bmp(vid, filename);
     }
+    if (ext && (strcmp(ext, ".png") == 0 || strcmp(ext, ".PNG") == 0)) {
+        return video_export_png(vid, filename);
+    }
     /* Default to PPM for .ppm or any other/absent extension */
     return video_export_ppm(vid, filename);
 }
@@ -185,6 +214,8 @@ bool video_export_auto_bordered(const video_t* vid, const char* filename) {
     const char* ext = strrchr(filename, '.');
     if (ext && (strcmp(ext, ".bmp") == 0 || strcmp(ext, ".BMP") == 0)) {
         ok = write_bmp_buffer(buf, w, h, filename);
+    } else if (ext && (strcmp(ext, ".png") == 0 || strcmp(ext, ".PNG") == 0)) {
+        ok = write_png_buffer(buf, w, h, filename);
     } else {
         ok = write_ppm_buffer(buf, w, h, filename);
     }

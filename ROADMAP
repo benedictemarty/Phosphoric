@@ -6,6 +6,135 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Epic 8 — Conformité matérielle (audits datasheet) — EN COURS
+
+Croisement ligne à ligne des cœurs d'émulation avec les datasheets constructeur.
+Traçabilité dans `docs/HARDWARE_CONFORMANCE.md`.
+
+### US 1 — FDC WD1793 vs FD179X-02 (v1.97.0-alpha) — DONE
+- [x] Read Address : registre secteur reçoit la piste (octet ID 1), pas le n° secteur.
+- [x] STEP/STEP-IN/STEP-OUT : registre piste conditionné au flag T (bit 4).
+- [x] Force Interrupt : D0 = pas d'INTRQ, D8 = INTRQ immédiat.
+- [x] +3 tests `test-storage` (24 FDC) ; suite complète verte.
+
+### US 2 — VIA 6522 vs R6522 Rev.9 (v1.98.0-alpha) — PARTIEL (2/5)
+Audit dans `docs/HARDWARE_CONFORMANCE.md`. 2 écarts corrigés (sûrs, prouvables) ;
+3 restent en déviation assumée.
+- [x] One-shot T1/T2 : le compteur continue à décrémenter après timeout — via
+      champ `t1_active/t2_active` séparé de `t1_running/t2_running` (sémantique
+      `running=false` après timeout préservée → savestate/control/debugger/tests
+      intacts). Tests `test_timer1/2_one_shot_counter_continues`.
+- [x] PB7 sortie timer : exiger DDRB.7 & ACR.7 (4 sites) — `test_pb7_timer_requires_ddrb7`
+      + capture CSAVE byte-à-byte identique au binaire HEAD (aucune régression).
+- [ ] T1 free-run : période N+2 (rechargement + `==0`) — DÉVIATION ASSUMÉE :
+      corriger décalerait toutes les baselines byte-exact + risque IRQ 100 Hz.
+- [ ] Écriture T1L-H efface le flag T1 — DÉVIATION ASSUMÉE : comportement incertain
+      (divergence datasheets MOS/Rockwell) → pas de correction sans confirmation.
+- [ ] Reset : préserver compteurs/latches/SR — DÉVIATION ASSUMÉE (négligeable).
+
+### US 3 — PSG AY-3-8912 vs datasheet GI (v1.99.0-alpha) — DONE (1 correction)
+- [x] Bruit 2× trop rapide : LFSR cadencé à `clock/(16×NP)` au lieu de
+      `clock/(8×NP)` (le code réutilisait `tone_rate`, la cadence de bascule du
+      ton). `noise_rate = clock/16` distinct. Test `test_ay_noise_rate_clock_div16`
+      + preuve empirique `--audio-wav` (PING inchangé, EXPLODE modifié).
+- Déviations assumées : Port B absent sur l'8912 (modélisé, sans effet Oric),
+  sémantique R7 bit 6 (validée empiriquement sur Oric mais divergente datasheet).
+
+### US 4 — Décodeur capture tape-OUT voie A (v1.99.1-alpha) — DONE
+Diagnostiqué par instrumentation, **contre-signé silicium** (RTL FPGA + ROM
+`GetTapeByte $E6C9`).
+- [x] Régression front : rétabli front montant seul (l'onde CSAVE fait 2
+      demi-pulses/bit → tout-front mesurait des demi-pulses → 1 octet).
+- [x] Framing : reproduit la ROM (brûler parité, chasser 1er front long = start)
+      au lieu d'un comptage fixe → fin des doublements d'octets.
+- [x] Nouveau test d'intégration `test-tape-roundtrip` (roundtrip CSAVE→capture
+      →CLOAD verrouillé) dans `make tests` — la voie A n'avait aucun test.
+
+---
+
+## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — TERMINÉ (US1→US6, v1.99.5→1.99.8)
+
+**Vision.** Extraire les ~15 fonctions `loci_*` de `main.c` (~400 l de câblage
+LOCI-spécifique) vers un adaptateur dédié `src/io/loci_glue.c` — le seul fichier
+qui connaît à la fois le cœur LOCI (gardé pur, sans `emulator.h`) et
+`emulator_t`. Même rôle et même patron que `io_bus.c` (Epic 7/US2). Extraction
+**incrémentale à iso-comportement**, ordre = risque croissant.
+
+**Contexte mesuré (ce qui rend l'Epic faisable).**
+- **Seam propre** : les callbacks sont enregistrés par `loci_set_*_callback(&emu.loci,
+  cb, &emu)` et reçoivent un `void* ctx` (= `&emu`) → déjà découplés, l'extraction
+  est mécaniquement identique à `tape_patches`/`serial_transport_create`.
+- **SDL borné** : une **seule** fonction dépend de SDL (`loci_sync_kbd_from_sdl`,
+  `SDL_GetKeyboardState`/`GetModState`) → à isoler sous `#ifdef HAS_SDL2`.
+- **Couplage large mais à `emulator_t`** (memory/cpu/video/osd/keyboard/disks),
+  accessible via `emulator.h` — pas (a priori) à des statics de `main.c` (à
+  confirmer en US1, seul point bloquant possible).
+- **Couverture** : `test-loci`/`-sdimg`/`-sdimg-write`/`-acia-e2e` sont dans
+  `make tests` ; `test-loci-e2e` (état écran, 5 échecs préexistants) en est hors.
+
+### US 1 — Cartographie + filet de non-régression (prérequis, risque nul) — DONE (v1.99.4)
+Livrables : `docs/architecture/loci-glue-carto.md` + `test-loci-golden`.
+- [x] **Cartographie** des 16 `loci_*` (tableau dans le doc). **Résultat décisif** :
+      un **seul** bloqueur — `loci_rom_swap_cb` appelle `get_rom_patches` (static
+      de `main.c`, lookup pur ~7 l) → à dé-staticifier/exposer en US3. Tous les
+      autres appels croisés sont `loci_*`→`loci_*` (migrent ensemble). **Une
+      seule** fonction SDL (`loci_sync_kbd_from_sdl`). Seam propre confirmé
+      (`loci_set_*_callback` + `ctx=&emu`).
+- [x] **Golden LOCI** : boot headless prouvé **byte-déterministe** (md5
+      `bf4dff78…` à 39M cy). Procédure de comparaison avant/après documentée.
+- [x] **Statut `test-loci-e2e`** : c'est un test *comparatif* LOCI vs Microdisc
+      natif ; ses 5 échecs « texte écran » sont un écart de rendu Sedoric-via-LOCI
+      **préexistant/stable** → pas le bon oracle ici. À la place, nouveau
+      **`test-loci-golden`** (déterminisme auto-référentiel + écran non vide)
+      **ajouté à `make tests`** (3/3).
+
+### US 2 — Créer `loci_glue.{c,h}` + migrer les callbacks bus/IRQ (lot sûr) — DONE (v1.99.5)
+- [x] `loci_dsk_cpu_irq_set`/`_clr`, `loci_dsk_sync_overlay`, `loci_rom_poke_hook`
+      → `src/io/loci_glue.{c,h}` ; `main.c` garde l'enregistrement `loci_set_*`.
+      **main.c 4255 → 4235 (-20).** Iso prouvé par l'oracle US1 : boot LOCI
+      byte-identique (md5 `bf4dff…`) + `test-loci-golden` vert ; builds SDL2=1,
+      SDL2=0, SDL2=1 HTTPAPI=1 OK.
+
+### US 3 — Migrer les callbacks ROM / tape / resume (lot moyen) — DONE (v1.99.6)
+- [x] `loci_tape_mount_cb`, `loci_rom_swap_cb`, `loci_resume_session_cb`,
+      `loci_patch_rom_info`, `loci_find_rom_file`/`_menu_rom`,
+      `loci_resume_snapshot_path` → `src/io/loci_glue.c` (+ 2 prototypes retirés).
+- [x] **Déblocage `get_rom_patches`** : comme `loci_glue.c` ∈ `LIB_OBJECTS`
+      (linké par des tests sans `main.o`), la *définition* devait être en LIB →
+      tables `rom_patches_*` + `detect_rom_version` + `get_rom_patches` extraites
+      vers **nouveau `src/rom_patches.{c,h}`**. `emulator.h` reste inchangé (pas
+      d'impact sur les projets embarquant l'émulateur). **main.c 4235 → 3921
+      (cumul -1067 depuis 4988).** Golden byte-identique + `test-control-dispatch`
+      26/26 + suite verte ; builds SDL2=1/0/HTTPAPI OK.
+
+### US 4 — Migrer les hooks USB + actions IRQ-trap (lot moyen) — DONE (v1.99.7)
+- [x] `loci_attach_usb_dir`, `loci_scan_host_usb`, `loci_action_install_irq_trap`,
+      `loci_action_release_irq_trap` → `src/io/loci_glue.c` (aucun nouveau
+      bloqueur ; includes `<dirent.h>`/`<sys/stat.h>`/`oscompat.h`). **main.c
+      3921 → 3785 (cumul -1203).** Golden byte-identique + suite verte ; builds
+      SDL2=1/0/HTTPAPI OK.
+
+### US 5 — Isoler la glue SDL (`loci_sync_kbd_from_sdl`) — DONE (v1.99.8)
+- [x] Déplacé vers `src/io/loci_glue.c` sous `#ifdef HAS_SDL2` (include SDL dans
+      le garde), déclaré sous `#ifdef` dans le header. **`loci_glue.c` builde en
+      SDL2=0 comme en SDL2=1.** `main.c` ne contient plus AUCUNE définition
+      `loci_*`. **main.c 3785 → 3744 (cumul -1244).** Golden byte-identique ;
+      builds SDL2=0/1/HTTPAPI OK.
+
+### US 6 — Nettoyage + doc — DONE
+- [x] Vérifié : `main.c` ne contient plus aucune **définition** `loci_*`, seulement
+      le câblage (`loci_init` + `loci_set_*` + appels de setup). Adaptateur
+      `src/io/loci_glue.c` = 436 l (16 fonctions).
+- [x] Doc `docs/architecture/loci-glue.md` (miroir de `io-bus.md`) : problème,
+      contrat/seam, répartition, les 2 découplages (`get_rom_patches`, SDL),
+      oracle. Bilan main.c : **4988 → 3744** sur l'ensemble du dégonflement.
+
+**Écart assumé possible.** Si un callback appelle un static de `main.c` non
+extractible proprement, deux options documentées : l'extraire aussi, ou garder
+ce callback en `main.c` (le seam `loci_set_*` le permet sans tout bloquer).
+
+---
+
 ## Epic 7 — Assainissement architectural (FAIT — US1/US2/US4/US5 livrées ; US3 partiel : parser générique en backlog)
 
 Suite de l'audit `docs/architecture/AUDIT-ARCHITECTURE.md` (2026-07-17). La dette
@@ -38,10 +167,49 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 > **adaptateur unique** (`io_bus.c`, seul io/ à inclure emulator.h). Modules purs
 > préservés. Iso-comportement golden 4/4 ; main.c 4690 → 4425 L.
 
-### US 3 — Module argparse déclaratif (Sprint 127) — PARTIEL (v1.87.0-alpha)
+### US 3 — Module argparse déclaratif (Sprint 127) — PARTIEL (v1.87.0-alpha), suite (v1.99.2-alpha)
 - [x] **Données** extraites : enum `OPT_*` + table `long_options[]` +
       `CLI_SHORT_OPTIONS` → `include/cli/cli_options.h`. Iso-comportement par
       construction (relocation de données) ; golden 4/4 + `--help` + suite verte.
+- [x] **Code CLI extractible** sorti de `main.c` (v1.99.2, réaction au regonflement
+      à 4988 l) : `src/cli/cli_usage.{c,h}` (bannière `--help`, `print_usage` →
+      `cli_print_usage`) + `src/cli/cli_parse.{c,h}` (7 helpers de parsing déplacés
+      verbatim). **main.c 4988 → 4722 (-266).** Iso-comportement prouvé : `--help`
+      byte-identique + `test-cli-parsing` 41/41. `src/cli/` est désormais le foyer
+      du futur code CLI (enraye la croissance de `main.c`).
+- [x] **`tape_patches` sorti de `main.c`** (v1.99.3) : logique de patch ROM
+      CLOAD/CSAVE (381 l, autonome — aucun helper static de main.c) → verbatim
+      dans `src/io/tape_patches.{c,h}`. **main.c 4722 → 4329 (cumul -659 depuis
+      4988).** Iso prouvé : `test-tape-roundtrip` 3/3 + `test-cassette` 8/8.
+- [~] **Prérequis parseur — filet élargi** : `test-cli-parsing` 41 → **75**
+      (3 lots, +34) ; **55/92 options couvertes**. Lot 1 : `parse_hex16`
+      (`--dtl2000-addr`/`--mageco-addr`/`--break`), `--rom-info`, `--verbose`,
+      `--screenshot`, `--disk-create`. Lot 2 : `--screenshot-text`/`-ansi`,
+      `--save-state`, `--record` (effet fichier), `--fdc-timing` real/bogus,
+      `--printer`, `--hostfs`, `--no-border`, `--trace-max`, `--serial-baud`.
+      Lot 3 : `--disk1`, `--disk-rom`, `--tape-signal(-free)`, `--type-keys-when`,
+      `--frame-dump(+interval)`, `--video` (effet fichier). Chaque attente MESURÉE.
+      Les 38 restantes sont soit des **variantes** (disk2/3, video-fps/quality,
+      serial-*, export-border), soit **dures à tester en CI** (cast-*/http-api-*/
+      gdb/tui/debug/control/replay/render-software/loci-*/realtime).
+- [x] **`serial_transport_create` sorti de `main.c`** (v1.99.4) : fonction
+      autonome (60 l, backend série transparent depuis un spec) → verbatim dans
+      `src/io/serial_backend.c`. **main.c 4255 (cumul -733 depuis 4988).**
+- [!] **Constat mesuré** : le parseur `getopt` n'a **pas de gros `case` à
+      extraire** — les `case OPT_*` sont déjà lean (6-13 l). Le volume vient du
+      *nombre* de cases + le wiring → seule réduction restante = refactor
+      `cli_args_t` (~89 variables), **gros et risqué, sprint dédié** (pas un
+      petit lot). Le filet (75 tests) est prêt pour l'amorcer quand décidé.
+- [✗] **Refactor `cli_args_t` (parseur) — ABANDONNÉ après mesure (v1.99.8)**.
+      Analyse fine du switch getopt : (1) les `case` sont déjà lean (affectations
+      pures, peu d'effets de bord) ; (2) **14 des 93 variables collisionnent**
+      avec des champs `emu->xxx` / d'autres fonctions → un renommage `nom→a.nom`
+      est un champ de mines silencieux ; (3) la variante « copie-locales » sûre
+      coûte **+186 lignes pour -64 net** ; (4) `return 0/1` au milieu de la boucle
+      à propager. Verdict : ni sûr ni rentable, et le parseur n'est **pas** de la
+      dette (juste beaucoup d'options lean). `main.c` déjà à 3744 (-25 %). On
+      **laisse le parseur tel quel**.
+- [ ] **Restant** : `emulator_run` (~1197 l) — gros bloc, sprint dédié si besoin.
 - [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
       63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
       **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre
@@ -120,6 +288,112 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
   au mieux une restauration *partielle* des montages, jamais du transport live.
 
 ---
+
+### Ergonomie captures — PNG + F12 auto-nommé (v1.102.0-alpha) - DONE
+**Besoin** : (1) la seule sortie image « moderne » manquante était PNG (on avait
+PPM/BMP/ASCII) alors que `stb_image_write` est déjà compilé pour l'AVI/MJPEG ;
+(2) la capture interactive F12 écrasait toujours `screenshot.ppm`, perdant la
+précédente.
+- [x] `video_export_png()` (RGB888 via `stbi_write_png_to_func` + callback
+      `fwrite`, car stb bâti `STBI_WRITE_NO_STDIO`). `video_export_auto()` et sa
+      variante bordée routent `.png`/`.PNG`. Effet transverse : `--screenshot-at
+      C:FILE.png` et toute la famille auto-détectée exportent en PNG.
+- [x] F12 anti-écrasement : vise `screenshot.png` ; si présent →
+      `screenshot-YYYYMMDD-HHMMSS.png` (+ suffixe `-NN` si collision même
+      seconde) ; nom retenu journalisé.
+- [x] Preuves : test-video 16 → **18** (signature PNG `89 50 4E 47`, routage
+      auto) ; e2e CLI `--screenshot-at …:e2e.png` → `PNG image data, 240 x 224,
+      8-bit/color RGB` ; suite complète verte.
+
+### Sprint 138: Écritures mémoire déclenchées — `--poke-at` / `--poke-when` (v1.96.0-alpha) - DONE
+**Besoin mesuré** : les captures déclenchées par un état (`--screenshot-when` / `--dump-ram-when`,
+Sprint 136) *observent* la RAM ; il manquait l'actionneur symétrique pour l'*écrire*. Origine
+concrète — portage SCUMM-Oric (`~/scum`) : le test end-to-end « sélectionner 2 kids puis START »
+est impraticable via `--type-keys` parce que le curseur du jeu est **level-triggered** (il lit
+l'état *maintenu* de la touche → avance d'un pas fixe par tour de boucle). Ni le tap bref (avalé
+pendant le gel de frame d'un `render_room` → sous-course) ni `\pN` (maintien → sur-course, clic
+mesuré à ~x200 au lieu de x132) ne peuvent viser une coordonnée exacte : aucun réglage de cadence
+n'y change rien puisque la distance dépend d'un temps de maintien que `--type-keys` ne contrôle pas
+au tour-de-boucle. Solution déterministe : piloter la position directement en RAM.
+**Livré** :
+- `--poke-at C:ADDR=VAL` : écrit `RAM[ADDR]=VAL` une seule fois dès `total_executed >= C`
+  (C décimal, ADDR/VAL hexa — cohérent avec `--screenshot-when`).
+- `--poke-when A:V:ADDR=VAL` : écrit `RAM[ADDR]=VAL` une seule fois au front `RAM[A]==V` (tout hexa).
+- Répétables (`POKE_MAX`=32), appliqués dans l'ordre de la ligne de commande → regroupement garanti
+  (ex. `cx`, `cy`, puis un drapeau de clic écrits au même instant côté programme).
+- Échantillonné en fin de frame (comme les `-when`), borné par `--cycles` ; `poke_write()` écrit en
+  RAM brute sous `$C000` (sans effet de bord), via `memory_write` au-delà. Chaînage same-frame prouvé.
+- Malformé (`:`/`=` manquant, table pleine) → fatal rc 1 message dédié.
+**Vérifié PAR LA MESURE** (basic10 headless) : `--poke-at 1000000:04FA=42` → `$04FA=$42` (dump 2M) ;
+chaîne `--poke-at 1000000:04FB=99` + `--poke-when 04FB:99:04FC=77` → les deux écrites au cycle 1018444.
+Tests : `test-cli-parsing` 36 → **41/41** (+5) ; `make clean && make SDL2=0 tests` toutes suites vertes.
+EMU_VERSION 1.95.0-alpha → 1.96.0-alpha ; builds natif + SDL2 OK. **Suite** : côté jeu (`~/scum`),
+exposer `cx`/`cy` + un drapeau de clic à des adresses RAM fixes et bâtir le test e2e « 2 kids → START »
+piloté par ces pokes.
+
+---
+
+### Sprint 137: Auto-frappe fiabilisée — pacing synchronisé sur le scan clavier + `--type-keys-when` (v1.95.0-alpha) - DONE
+**Besoin mesuré** : `--type-keys` cadençait chaque transition de touche (presser/tenir/
+relâcher) sur un **nombre de cycles fixe** (`CYCLES_PER_FRAME * N`). Fragile : un programme
+qui scrute la matrice **plus lentement** qu'une frame perd des touches (touche pressée
+**et** relâchée dans sa fenêtre aveugle de scan → le front n'est jamais vu). C'est la
+cause racine du « mur clavier headless » contourné au cas par cas sur les portages
+(SCUMM, Spellbinder).
+**Livré** : pacing **piloté par le scan** (`include/io/autotype.h`). Le clavier ORIC est
+lu via VIA Port B/PB3, la ROM balayant les colonnes 7→0 (mesuré par instrumentation :
+~8 lectures/passe, une passe/~696 cycles au prompt READY). `portb_read_callback` compte
+une **passe de scan** à chaque remontée de colonne ; l'auto-frappe refuse de modifier la
+matrice avant `AUTOTYPE_MIN_PASS`=2 passes depuis la dernière transition → le programme
+est **garanti** d'avoir lu l'état courant avant qu'il change.
+- **Additif** (jamais plus rapide qu'avant) : le calendrier cycles est conservé ; à READY
+  (~28 passes/frame) le comportement est **identique** (cycle dominant), seuls les
+  programmes lents sont throttlés → **fin des drops**.
+- **Watchdog anti-blocage** (`AUTOTYPE_WATCHDOG_CYCLES`=30 frames) : un programme qui ne
+  scrute jamais le clavier ne fige pas l'injecteur.
+- **Chemin LOCI HID inchangé** : device distinct, pacing cyclique, porte de scan
+  court-circuitée.
+- **Nouveau `--type-keys-when ADDR:VAL:TEXT`** : arme l'auto-frappe quand `RAM[ADDR]==VAL`
+  au lieu de deviner un cycle de boot (réutilise `cli_split_addr_val_file()` ; `TEXT` garde
+  les échappements + préfixe `loci-hid:`).
+Vérifié **par la mesure** (build SDL2, headless, `basic10`) : non-régression
+`--type-keys "6000000:PRINT 2+3\n"` → `5` ; déclencheur
+`--type-keys-when "BC9A:52:PRINT 7*6\n"` (le `R` de « Ready » à `$BC9A`) armé au cycle
+2 855 632 → `42`.
+Tests : nouveau `make test-autotype` (`tests/unit/test_autotype.c`, 10/10 : détection de
+passe, porte cycle+passe, bypass LOCI, watchdog). `make clean && make tests` exit 0
+(build SDL2 par défaut).
+EMU_VERSION 1.94.0-alpha → 1.95.0-alpha ; builds natif + SDL2 OK.
+**Impact portages** : les parcours automatisés (menus de jeux, TUI, BBS) qui scrutent la
+matrice à leur propre cadence n'ont plus besoin de calibrage de timing manuel.
+
+### Sprint 136: Captures déclenchées par un ÉTAT mémoire — `--screenshot-when` / `--screenshot-text-when` / `--dump-ram-when` (v1.94.0-alpha) - DONE
+Réponse à la demande du projet SCUMM-Oric (`docs/CR/2026-07-18_Demande_Equipe_Capture_Declenchee_Par_Etat.md`).
+**Besoin mesuré** : les captures headless (`--screenshot-at`, `--dump-ram-at`, …) se
+déclenchent sur un **nombre de cycles fixe**. Or le cycle où un état de jeu apparaît
+dépend du layout mémoire du binaire → tout refactor décale la timeline et casse des
+tests byte-exact/screenshot alors que le comportement est correct. Un refactor SCUMM
+(unifier l'état d'acteur) était **bloqué** par ça.
+**Livré** : 3 variantes déclenchées sur une **condition mémoire** (`RAM[ADDR] == VAL`),
+indépendantes du timing/layout :
+- `--screenshot-when ADDR:VAL:FILE` : image (PPM/BMP) au premier passage.
+- `--screenshot-text-when ADDR:VAL:FILE` : dump texte `$BB80` (40×28).
+- `--dump-ram-when ADDR:VAL:FILE` : dump 64 Ko (RAM + vue CPU `$C000-$FFFF`).
+Sémantique calquée sur `--screenshot-at` : `ADDR` **et** `VAL` en **hexa** (helper
+`cli_split_addr_val_file()`, `strtol` base 16 → `9C55`/`07`/`AB`/`0x07`) ; front montant
+(1re fois, une seule) ; échantillonné en fin de frame (même cadence que les `-at`) ;
+lecture via `when_read()` (RAM brute sous `$C000`, vue CPU au-delà). Filet : `--cycles N`
+reste la borne max ; condition jamais atteinte → message dédié + **exit 2** (distinct de
+rc 1 usage / rc 0 succès) pour un échec CI franc ; malformé → rc 1
+`Invalid --NAME format. Use ADDR:VAL:FILE`.
+Vérifié **par la mesure** (boot Atmos headless) : `--dump-ram-when 0000:00:FILE` → 64 Ko
+au cycle 19971 ; `--screenshot-text-when 0000:00:FILE` → texte non vide ;
+`--screenshot-when 9C55:AB:FILE -c 500000` → exit 2 + aucun fichier écrit.
+Tests : `test-cli-parsing` 29/29 → **36/36** (+7 : 3 malformés fatals, 2 positifs `-when`,
+1 filet exit 2, 1 « aucun fichier »). `make clean && make tests` exit 0.
+EMU_VERSION 1.93.0-alpha → 1.94.0-alpha ; builds natif + SDL2 OK.
+**Impact SCUMM** : migration des tests layout-sensibles vers `-when` (déclencheur = valeur
+d'état stable) → suppression des « trous » BSS, refactor d'état d'acteur débloqué.
 
 ### Sprint 135: Screenshot texte/ANSI à un cycle donné — `--screenshot-text-at` + `--screenshot-ansi-at` (v1.93.0-alpha) - DONE
 Suite de Sprint 134 (les `--screenshot-text`/`--screenshot-ansi` étaient des sorties

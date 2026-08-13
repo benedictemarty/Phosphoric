@@ -29,6 +29,14 @@ bool video_export_ppm(const video_t* vid, const char* filename);
 bool video_export_bmp(const video_t* vid, const char* filename);
 
 /**
+ * @brief Export framebuffer as PNG (RGB888, compressé, via stb_image_write)
+ * @param vid Video context with rendered framebuffer
+ * @param filename Output file path (.png)
+ * @return true on success
+ */
+bool video_export_png(const video_t* vid, const char* filename);
+
+/**
  * @brief Export framebuffer as ANSI true-color text to a file
  * @param vid Video context with rendered framebuffer
  * @param fp Output FILE pointer (e.g. stdout)

@@ -65,8 +65,14 @@ typedef struct via6522_s {
     uint16_t t1_latch;      /**< Timer 1 Latch */
     uint16_t t2_counter;    /**< Timer 2 Counter */
     uint8_t  t2_latch;      /**< Timer 2 Latch (low byte only) */
-    bool     t1_running;    /**< Timer 1 running flag */
-    bool     t2_running;    /**< Timer 2 running flag */
+    bool     t1_running;    /**< Timer 1 will still fire (free-run, or one-shot
+                                 not yet timed out). Cleared on one-shot time-out. */
+    bool     t2_running;    /**< Timer 2 will still fire (one-shot not yet timed out) */
+    bool     t1_active;     /**< Timer 1 counter is counting. Set on T1C-H write,
+                                 stays true after a one-shot time-out so the counter
+                                 keeps decrementing at φ2 (datasheet p.8: lets the
+                                 host read the time since interrupt). */
+    bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
 
     /* Shift Register */
     uint8_t sr;         /**< Shift Register */
@@ -99,6 +105,10 @@ typedef struct via6522_s {
     bool     sr_active;   /**< a shift sequence is in progress */
     uint32_t sr_clk_acc;  /**< cycle accumulator for φ2/T2 shift clocking */
     bool     pb6_pin;     /**< last PB6 level (T2 pulse-count edge detection) */
+    bool     pb7_pin;     /**< PB7 output level when driven by Timer 1 (ACR bit7):
+                               square-wave (bit6=1, toggles on each T1 underflow) or
+                               one-shot (bit6=0, low on T1CH write, high on underflow).
+                               Oric cassette WRITE output (voie A CSAVE). */
 
     /* CA2/CB2 pulse output (PCR mode 101): pin low for one φ2 cycle after
      * the port access, restored by via_update(). 0 = no pulse pending. */
@@ -297,5 +307,18 @@ bool via_get_ca2(via6522_t* via);
  * @return CB2 level (true = high)
  */
 bool via_get_cb2(via6522_t* via);
+
+/**
+ * @brief Effective PB7 output level.
+ *
+ * When ACR bit7 is set, PB7 is driven by Timer 1 (via->pb7_pin, toggled on
+ * T1 underflow). Otherwise PB7 follows ORB bit7 gated by DDRB bit7 (normal
+ * output), or reads high (idle) when configured as input. This is the Oric
+ * cassette WRITE line (voie A CSAVE).
+ *
+ * @param via Pointer to VIA structure
+ * @return PB7 level (true = high)
+ */
+bool via_get_pb7(via6522_t* via);
 
 #endif /* VIA6522_H */

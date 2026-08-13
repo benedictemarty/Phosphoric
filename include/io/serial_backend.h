@@ -347,6 +347,17 @@ serial_backend_t* serial_backend_midi_create(const char* target);
 serial_backend_t* serial_backend_smf_create(const char* path, bool loop);
 
 /**
+ * @brief Build a serial backend from a CLI transport spec string.
+ *
+ * Recognises the "transparent" transports: loopback, tcp:host:port, pty,
+ * com:..., midi[:target], smf:file[:loop], file:in[:out]. Returns NULL for any
+ * other spec (e.g. modem/digitelec/picowifi handled by the caller). Moved out
+ * of main.c; shared by --serial / --dtl2000 / --mageco. Covered by the --serial
+ * cases in tests/integration/test_cli_parsing.sh.
+ */
+serial_backend_t* serial_transport_create(const char* spec);
+
+/**
  * @brief Destroy a backend and free resources
  */
 void serial_backend_destroy(serial_backend_t* backend);

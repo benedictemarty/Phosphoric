@@ -214,7 +214,8 @@ static uint8_t envelope_volume(uint8_t shape, uint8_t step) {
 /* Advance the generation state by one output sample and return the mixed,
  * stereo-mono sample value. Operates purely on `st` so it serves both the
  * immediate and timestamped paths. */
-static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate, uint32_t env_rate) {
+static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate,
+                              uint32_t noise_rate, uint32_t env_rate) {
     uint8_t mixer = st->sregs[7];
 
     for (int ch = 0; ch < 3; ch++) {
@@ -228,8 +229,12 @@ static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate, uint32_t env_ra
     }
 
     {
+        /* The noise LFSR steps at clock/(16*NP) — the tone uses clock/8 because
+         * a square wave toggles twice per period, but the LFSR has no such ÷2,
+         * so it clocks at half the tone rate (datasheet: same /16 prescaler as
+         * the tone; MAME models the missing ÷2 as its "prescale_noise"). */
         uint32_t np = st->noise_period ? st->noise_period : 1;
-        st->noise_counter += tone_rate;
+        st->noise_counter += noise_rate;
         while (st->noise_counter >= np * AUDIO_SAMPLE_RATE) {
             st->noise_counter -= np * AUDIO_SAMPLE_RATE;
             /* 17-bit LFSR */
@@ -311,17 +316,20 @@ static void copy_play_runtime_to_main(ay3891x_t* ay) {
 }
 
 void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
-    /* AY-3-8912 clock dividers (matching Oricutron):
-     * - Tone/Noise: master clock / 8   - Envelope: master clock / 16 */
-    uint32_t tone_rate = ay->clock_rate / 8;
-    uint32_t env_rate  = ay->clock_rate / 16;
+    /* AY-3-8912 clock dividers:
+     * - Tone:     master clock / 8  (clock/16 base × 2 for the square-wave toggle)
+     * - Noise:    master clock / 16 (LFSR clocked at clock/(16*NP), no toggle ÷2)
+     * - Envelope: master clock / 16 */
+    uint32_t tone_rate  = ay->clock_rate / 8;
+    uint32_t noise_rate = ay->clock_rate / 16;
+    uint32_t env_rate   = ay->clock_rate / 16;
     ay_play_t* st = &ay->play;
 
     if (!ay->timed_mode) {
         /* Immediate path: render from current state, byte-exact with history. */
         mirror_main_to_play(ay);
         for (int i = 0; i < num_samples; i++) {
-            int16_t s = ay_step_sample(st, tone_rate, env_rate);
+            int16_t s = ay_step_sample(st, tone_rate, noise_rate, env_rate);
             buffer[i * 2] = s;
             buffer[i * 2 + 1] = s;
         }
@@ -357,7 +365,7 @@ void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
             apply_sound_play(st, ay->evq[ev].reg);
             ev = (ev + 1) & (AY_EVENT_QUEUE_SIZE - 1);
         }
-        int16_t s = ay_step_sample(st, tone_rate, env_rate);
+        int16_t s = ay_step_sample(st, tone_rate, noise_rate, env_rate);
         buffer[i * 2] = s;
         buffer[i * 2 + 1] = s;
     }
