@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.102.0-alpha] - 2026-08-13
+
+### Added — Capture PNG + screenshot F12 auto-nommé (anti-écrasement)
+
+Deux améliorations d'ergonomie sur les captures d'écran :
+
+- **Export PNG** : nouvelle fonction `video_export_png()` (RGB888 compressé via
+  `stb_image_write`, déjà compilé pour l'AVI/MJPEG). `video_export_auto()` et sa
+  variante bordée routent désormais `.png`/`.PNG` vers l'encodeur PNG (comme
+  `.bmp` déjà). Comme stb est bâti avec `STBI_WRITE_NO_STDIO`, on passe par
+  `stbi_write_png_to_func` + un callback `fwrite`. Bénéfice transverse :
+  `--screenshot-at C:FILE.png` (et toute la famille auto-détectée) produit
+  maintenant du PNG, pas seulement PPM/BMP.
+- **F12 auto-nommé** : la capture interactive (SDL) n'écrase plus
+  `screenshot.ppm`. Elle vise d'abord `screenshot.png` ; si ce fichier existe
+  déjà dans le répertoire courant, elle bascule sur un nom horodaté
+  `screenshot-YYYYMMDD-HHMMSS.png` (avec suffixe `-NN` en cas de collision dans
+  la même seconde). Le nom retenu est journalisé (`log_info`).
+
+Vérifié : test-video 16 → **18** (+2 : signature PNG `89 50 4E 47`, routage
+`video_export_auto`) ; e2e CLI `--screenshot-at …:e2e.png` → `PNG image data,
+240 x 224, 8-bit/color RGB`. Suite complète verte. EMU_VERSION → 1.102.0-alpha.
+
 ## [1.101.0-alpha] - 2026-08-12
 
 ### Added — `--trace-ring N` (trace « queue ») + `--symbols` branché au `--trace` streaming

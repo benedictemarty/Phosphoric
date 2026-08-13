@@ -306,6 +306,7 @@ test-rom: $(TEST_ROM_SRCS)
 	@./test_rom
 
 TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/export.c \
+                  src/video/stb_image_write_impl.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/io/via6522.c \
                   src/io/ula_ng.c src/utils/logging.c

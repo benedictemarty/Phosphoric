@@ -319,8 +319,8 @@ Display & Export:
   --keyboard LAYOUT         qwerty (default) or azerty
   --headless                No display
   --cycles N                Run N cycles then exit
-  --screenshot FILE         Screenshot at exit (.ppm/.bmp)
-  --screenshot-at N:FILE    Screenshot after N cycles
+  --screenshot FILE         Screenshot at exit (.ppm/.bmp/.png)
+  --screenshot-at N:FILE    Screenshot after N cycles (.ppm/.bmp/.png)
   --screenshot-text FILE    Dump screen text ($BB80, 40x28) as ASCII at exit
   --screenshot-ansi FILE    Dump framebuffer as ANSI true-color text at exit
   --screenshot-text-at N:FILE  Dump screen text after N cycles
@@ -446,7 +446,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 | F9 | Enter debugger |
 | F10 | Quit |
 | F11 | Fullscreen |
-| F12 | Screenshot |
+| F12 | Screenshot PNG (`screenshot.png`, ou horodaté si déjà présent) |
 
 ## Testing
 

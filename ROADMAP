@@ -289,6 +289,22 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Ergonomie captures — PNG + F12 auto-nommé (v1.102.0-alpha) - DONE
+**Besoin** : (1) la seule sortie image « moderne » manquante était PNG (on avait
+PPM/BMP/ASCII) alors que `stb_image_write` est déjà compilé pour l'AVI/MJPEG ;
+(2) la capture interactive F12 écrasait toujours `screenshot.ppm`, perdant la
+précédente.
+- [x] `video_export_png()` (RGB888 via `stbi_write_png_to_func` + callback
+      `fwrite`, car stb bâti `STBI_WRITE_NO_STDIO`). `video_export_auto()` et sa
+      variante bordée routent `.png`/`.PNG`. Effet transverse : `--screenshot-at
+      C:FILE.png` et toute la famille auto-détectée exportent en PNG.
+- [x] F12 anti-écrasement : vise `screenshot.png` ; si présent →
+      `screenshot-YYYYMMDD-HHMMSS.png` (+ suffixe `-NN` si collision même
+      seconde) ; nom retenu journalisé.
+- [x] Preuves : test-video 16 → **18** (signature PNG `89 50 4E 47`, routage
+      auto) ; e2e CLI `--screenshot-at …:e2e.png` → `PNG image data, 240 x 224,
+      8-bit/color RGB` ; suite complète verte.
+
 ### Sprint 138: Écritures mémoire déclenchées — `--poke-at` / `--poke-when` (v1.96.0-alpha) - DONE
 **Besoin mesuré** : les captures déclenchées par un état (`--screenshot-when` / `--dump-ram-when`,
 Sprint 136) *observent* la RAM ; il manquait l'actionneur symétrique pour l'*écrire*. Origine

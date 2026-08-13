@@ -467,6 +467,30 @@ static bool emu_export_image(emulator_t* emu, const char* path) {
                               : video_export_auto(&emu->video, path);
 }
 
+/* Compose un nom de fichier de capture qui n'écrase pas un fichier existant.
+ * Base = "screenshot", extension = ".ppm". Si "screenshot.ppm" est libre, il
+ * est utilisé ; sinon on insère un horodatage local "screenshot-YYYYMMDD-HHMMSS"
+ * (déterministe et parlant), et en cas de collision improbable dans la même
+ * seconde on suffixe un index "-NN". Le nom retenu est écrit dans out. */
+static void screenshot_unique_name(char* out, size_t out_sz) {
+    const char* base = "screenshot";
+    const char* ext  = ".png";
+
+    snprintf(out, out_sz, "%s%s", base, ext);
+    if (access(out, F_OK) != 0)
+        return; /* nom par défaut libre */
+
+    time_t now = time(NULL);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    char stamp[32];
+    strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tmv);
+
+    snprintf(out, out_sz, "%s-%s%s", base, stamp, ext);
+    for (int i = 1; access(out, F_OK) == 0 && i < 100; i++)
+        snprintf(out, out_sz, "%s-%s-%02d%s", base, stamp, i, ext);
+}
+
 /* VIA IRQ callback - level-triggered: set/clear VIA IRQ source bit */
 static void irq_callback(bool state, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
@@ -1763,10 +1787,13 @@ static void emulator_run(emulator_t* emu) {
                     case SDLK_F11:
                         renderer_toggle_fullscreen();
                         break;
-                    case SDLK_F12:
-                        emu_export_image(emu, "screenshot.ppm");
-                        log_info("Screenshot saved to screenshot.ppm");
+                    case SDLK_F12: {
+                        char shot[64];
+                        screenshot_unique_name(shot, sizeof(shot));
+                        emu_export_image(emu, shot);
+                        log_info("Screenshot saved to %s", shot);
                         break;
+                    }
                     default:
                         break;
                     }
