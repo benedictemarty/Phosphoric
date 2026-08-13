@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.0-alpha] - 2026-08-13
+
+### Added — Son dans l'AVI aussi en mode GUI (`--video` + tap audio SDL)
+
+`--video FILE` muxait déjà une piste audio PCM, mais **uniquement en headless**
+(la boucle générait le son via `ay_generate`). En **GUI**, l'AVI était muet car
+le callback audio SDL possède le générateur PSG (drainage unique de la file
+d'événements) : la boucle ne pouvait pas re-générer sans voler le son temps réel.
+
+- **Tap audio thread-safe** (`audio_avi_tap_*` dans `audio_output.c`) : le
+  callback SDL copie le PCM qu'il vient de produire dans un ring FIFO stéréo, que
+  la boucle principale draine une fois par frame vidéo (`avi_recorder_add_audio`).
+  Exclusion mutuelle des deux threads via `SDL_LockAudioDevice` (le drain
+  verrouille le device — donc le callback ; le push tourne *dans* le callback).
+  Overflow → drop des plus anciens ; drain final à la fermeture pour ne pas
+  perdre la fin du son ; buffer libéré à la fermeture (+ filet idempotent).
+- Le setup active désormais la piste 44.1 kHz stéréo en GUI comme en headless ; le
+  bloc de génération inline reste **headless-only** (garde `emu->headless`) pour
+  éviter le double-drainage du PSG.
+- Stubs headless (`SDL2=0`) : tap no-op / drain 0.
+
+Vérifié PAR LA MESURE (drivers SDL dummy) : GUI `EXPLODE` → **max −6.0 dB**
+(signal fort) vs −91 dB au silence ; AVI GUI = 2 flux (MJPEG + PCM 44.1 kHz
+stéréo). Nouveau test `test-audio-capture` 5 → **6** (Test 5 : muxing GUI via le
+tap, skip propre si build headless). Suite complète verte ; builds SDL2=1 et
+SDL2=0 OK. EMU_VERSION → 1.103.0-alpha.
+
 ## [1.102.0-alpha] - 2026-08-13
 
 ### Added — Capture PNG + screenshot F12 auto-nommé (anti-écrasement)

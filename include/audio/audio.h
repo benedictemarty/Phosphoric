@@ -110,6 +110,15 @@ bool audio_init(ay3891x_t* psg);
 void audio_cleanup(void);
 void audio_pause(bool pause);
 
+/* AVI audio tap (GUI muxing). In GUI the SDL audio callback owns the PSG
+ * generator, so --video capture cannot re-run ay_generate on the main thread.
+ * Instead the callback copies its PCM into a thread-safe ring FIFO which the
+ * main loop drains once per video frame. No-op / returns 0 in headless builds
+ * (there the AVI audio is generated inline). */
+bool audio_avi_tap_enable(void);
+void audio_avi_tap_disable(void);
+int  audio_avi_tap_drain(int16_t* out, int max_frames);
+
 /* Cast server audio forwarding */
 typedef struct cast_server_s cast_server_t;
 void audio_set_cast_server(cast_server_t* server);

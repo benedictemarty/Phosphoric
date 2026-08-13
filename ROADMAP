@@ -289,6 +289,25 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
 
 ---
 
+### Ergonomie captures — son dans l'AVI en mode GUI (v1.103.0-alpha) - DONE
+**Besoin** : `--video FILE` muxait déjà une piste audio, mais **uniquement en
+headless**. En GUI l'AVI était muet, car le callback audio SDL possède le
+générateur PSG (`ay_generate` draine la file d'événements une seule fois) — la
+boucle ne pouvait pas re-générer sans voler le son temps réel de la fenêtre.
+- [x] **Tap audio thread-safe** (`audio_avi_tap_*`, `src/audio/audio_output.c`) :
+      le callback SDL copie le PCM qu'il vient de produire dans un ring FIFO
+      stéréo ; la boucle principale le draine une fois par frame vidéo
+      (`avi_recorder_add_audio`). Exclusion mutuelle des deux threads via
+      `SDL_LockAudioDevice` (le drain verrouille le device donc le callback ; le
+      push tourne *dans* le callback). Overflow → drop des plus anciens ; drain
+      final à la fermeture ; buffer libéré (+ filet idempotent).
+- [x] Setup : piste 44.1 kHz stéréo activée en GUI comme en headless ; le bloc de
+      génération inline reste **headless-only** (anti double-drain). Stubs `SDL2=0`.
+- [x] Preuves (drivers SDL dummy) : GUI `EXPLODE` → **max −6.0 dB** vs −91 dB au
+      silence ; AVI GUI = 2 flux (MJPEG + PCM). `test-audio-capture` 5 → **6**
+      (Test 5 : muxing GUI via le tap, skip si build headless) ; suite verte ;
+      builds SDL2=1 & SDL2=0 OK.
+
 ### Ergonomie captures — PNG + F12 auto-nommé (v1.102.0-alpha) - DONE
 **Besoin** : (1) la seule sortie image « moderne » manquante était PNG (on avait
 PPM/BMP/ASCII) alors que `stb_image_write` est déjà compilé pour l'AVI/MJPEG ;

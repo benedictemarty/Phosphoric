@@ -860,6 +860,7 @@ static void emulator_cleanup(emulator_t* emu) {
         emu->audio_wav_fp = NULL;
     }
     if (!emu->headless) {
+        audio_avi_tap_disable();   /* idempotent safety net (freed at AVI close) */
         audio_cleanup();
         renderer_cleanup();
     }
@@ -1219,7 +1220,7 @@ static void emulator_run(emulator_t* emu) {
          * Generating once is essential : ay_generate consumes the PSG event
          * queue, so two calls per frame would double-drain it. Armed only in
          * headless (in GUI the SDL audio device is the generator's owner). */
-        bool avi_audio = emu->video_avi_active && emu->video_avi_rec.has_audio;
+        bool avi_audio = emu->headless && emu->video_avi_active && emu->video_avi_rec.has_audio;
         if (emu->audio_wav_fp || avi_audio) {
             enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
             int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
@@ -1957,6 +1958,17 @@ static void emulator_run(emulator_t* emu) {
                 avi_recorder_add_frame(&emu->video_avi_rec, avi_border_buf);
             } else {
                 avi_recorder_add_frame(&emu->video_avi_rec, emu->video.framebuffer);
+            }
+            /* GUI audio muxing : drain the SDL callback's PCM tap and append it
+             * as this frame's audio chunk (headless feeds the stream inline
+             * above, so this path is GUI-only). Buffer sized for a few frames
+             * of jitter (~882 sample-frames/frame @44.1k/50fps). */
+            if (!emu->headless && emu->video_avi_rec.has_audio) {
+                enum { TAP_DRAIN_MAX = (AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE) * 4 };
+                static int16_t tap_pcm[TAP_DRAIN_MAX * 2];  /* interleaved L/R */
+                int got = audio_avi_tap_drain(tap_pcm, TAP_DRAIN_MAX);
+                if (got > 0)
+                    avi_recorder_add_audio(&emu->video_avi_rec, tap_pcm, got);
             }
         }
 
@@ -2830,20 +2842,23 @@ int main(int argc, char* argv[]) {
          * border, so the stream geometry grows by the border on each side. */
         int avi_w = emu.export_border ? ORIC_SCREEN_W + 2 * VIDEO_BORDER_W : ORIC_SCREEN_W;
         int avi_h = emu.export_border ? ORIC_SCREEN_H + 2 * VIDEO_BORDER_H : ORIC_SCREEN_H;
-        /* Audio is muxed into the AVI only in headless : in GUI the SDL audio
-         * callback already owns the PSG generator (ay_generate), so the main
-         * loop must not also drive it. Headless has no SDL audio device. */
-        int avi_arate = emu.headless ? AUDIO_SAMPLE_RATE : 0;
-        int avi_achan = emu.headless ? 2 : 0;
+        /* Audio muxing. Headless generates PCM inline (ay_generate) in the main
+         * loop. GUI can't : the SDL audio callback owns the PSG generator, so we
+         * tap the PCM it produces via a thread-safe ring (audio_avi_tap_*) and
+         * drain it per frame. Either path declares a 44.1 kHz stereo stream. */
+        bool avi_gui_audio = !emu.headless && audio_avi_tap_enable();
+        int avi_arate = (emu.headless || avi_gui_audio) ? AUDIO_SAMPLE_RATE : 0;
+        int avi_achan = (emu.headless || avi_gui_audio) ? 2 : 0;
         if (avi_recorder_open_av(&emu.video_avi_rec, video_avi_file,
                                  avi_w, avi_h,
                                  emu.video_avi_fps, emu.video_avi_quality,
                                  avi_arate, avi_achan)) {
             emu.video_avi_active = true;
             log_info("Video recording (MJPEG AVI%s) -> %s (%d fps, q%d)",
-                     emu.headless ? " + PCM audio" : "",
+                     (emu.headless || avi_gui_audio) ? " + PCM audio" : "",
                      video_avi_file, emu.video_avi_fps, emu.video_avi_quality);
         } else {
+            if (avi_gui_audio) audio_avi_tap_disable();
             log_error("Cannot open video file for recording: %s", video_avi_file);
         }
     }
@@ -3701,6 +3716,16 @@ int main(int argc, char* argv[]) {
     /* Finalize video recording (write index, back-patch sizes). */
     if (emu.video_avi_active) {
         uint32_t nframes = emu.video_avi_rec.frame_count;
+        /* GUI: flush any PCM still in the tap so the tail of the sound isn't
+         * dropped, then release the ring (still safe: audio device is alive). */
+        if (!emu.headless && emu.video_avi_rec.has_audio) {
+            enum { TAP_DRAIN_MAX = (AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE) * 4 };
+            static int16_t tap_pcm[TAP_DRAIN_MAX * 2];
+            int got;
+            while ((got = audio_avi_tap_drain(tap_pcm, TAP_DRAIN_MAX)) > 0)
+                avi_recorder_add_audio(&emu.video_avi_rec, tap_pcm, got);
+            audio_avi_tap_disable();
+        }
         if (avi_recorder_close(&emu.video_avi_rec)) {
             log_info("Video recording finalized: %s (%u frames)",
                      video_avi_file, nframes);

@@ -87,6 +87,25 @@ else
     note_fail "--video AVI has no audio stream"
 fi
 
+# ── Test 5: --video in GUI muxes audio via the SDL callback tap ─────────
+# In GUI the PSG generator is owned by the SDL audio thread, so the main loop
+# taps the callback's PCM into a ring FIFO (audio_avi_tap_*) and drains it per
+# frame. Exercised here with SDL's dummy video+audio drivers (no hardware): the
+# real callback runs and feeds the tap. Skipped on a headless (SDL2=0) build.
+if ldd "$EMU" 2>/dev/null | grep -qi 'libSDL2'; then
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+        "$EMU" -r "$ROM" --render-software \
+        --video "$TMP/gui.avi" -c 1500000 >/dev/null 2>&1
+    if [ -s "$TMP/gui.avi" ] && grep -qa "auds" "$TMP/gui.avi" \
+            && grep -qa "01wb" "$TMP/gui.avi"; then
+        note_pass "--video (GUI) muxes audio via the SDL tap ('auds'+'01wb')"
+    else
+        note_fail "--video (GUI) AVI has no audio stream (tap not wired)"
+    fi
+else
+    echo "  SKIP: GUI audio-in-AVI (headless build, no SDL2 linked)"
+fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]
