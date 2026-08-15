@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.4-alpha] - 2026-08-15
+
+### Added — Autoboot Sedoric natif LOCI depuis le web (`--loci --loci-web`)
+
+`--loci-web` déclenche désormais un **autoboot natif LOCI** : après le montage
+web, l'émulateur installe l'overlay ROM Microdisc à `$A000` (comme `MIA_BOOT`
+avec `LOCI_BOOT_FDC`) pour que le code de boot lise le disque via `$0310` (routé
+vers le FDC LOCI web-backed) et démarre Sedoric **sans passer par le menu**.
+Le ROM `-r` (BASIC) reste chargé à `$C000`. Fichier : `src/main.c` (via
+`loci_rom_swap_cb($A000)`). microdis.rom résolu près de la ROM `-r`, puis
+`roms/microdis.rom`, puis `--disk-rom`.
+
+Runtime : `--loci --loci-web http://.../disk/sedoric3.dsk` boote
+`WELCOME TO SEDORIC DOS V3.0`, 15 pistes récupérées par HTTP via le FDC LOCI.
+
+Aussi : entrées d'aide `--disk-web` / `--loci-web` (`src/cli/cli_usage.c`).
+
 ## [1.103.3-alpha] - 2026-08-15
 
 ### Added — Montage web natif LOCI `--loci-web URL` (projet loci-webdisk, archi B)

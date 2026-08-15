@@ -29,6 +29,9 @@ void cli_print_usage(const char* program_name) {
     printf("                             (overwrites in place; only drives actually written are saved)\n");
     printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");
     printf("                             (then INIT/format inside; changes are saved back on exit)\n");
+    printf("      --disk-web URL         Drive A servi par un serveur web (loci-webdisk archi B) :\n");
+    printf("                             pistes MFM lues par HTTP a la demande, via le Microdisc.\n");
+    printf("                             Ex: --disk-rom microdis.rom --disk-web http://h:8091/disk/x.dsk\n");
     printf("  -r, --rom FILE             Load custom ROM file\n");
     printf("  -h, --hostfs PATH          Mount host directory\n");
     printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
@@ -121,6 +124,9 @@ void cli_print_usage(const char* program_name) {
     printf("                             Mutually exclusive with --loci-flash\n");
     printf("      --loci-usb DIR|none    Attach DIR as a LOCI USB key (repeatable, 4 max);\n");
     printf("                             host media in /media/$USER auto-attach — 'none' disables\n");
+    printf("      --loci-web URL         Drive A LOCI servi par un serveur web (loci-webdisk archi B) :\n");
+    printf("                             pistes MFM par HTTP a la demande + autoboot Sedoric natif LOCI.\n");
+    printf("                             Ex: --loci --loci-web http://h:8092/disk/x.dsk (implies --loci)\n");
     printf("      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31).\n");
     printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
     printf("                             is outside it (reproduces real-HW modem block;\n");

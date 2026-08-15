@@ -3515,6 +3515,33 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /* --loci-web : autoboot NATIF LOCI. Le disque web est déjà monté sur le FDC
+     * de la LOCI (loci_dsk_open_web) ; il ne reste qu'à installer l'overlay ROM
+     * Microdisc à $A000 — exactement ce que fait MIA_BOOT avec LOCI_BOOT_FDC —
+     * pour que le code de boot lise le disque via $0310 (routé vers le FDC LOCI,
+     * web-backed sous --loci) et démarre Sedoric sans passer par le menu. Le ROM
+     * -r (BASIC) est déjà chargé à $C000 ; on ne touche donc que $A000. */
+    if (loci_web_url && emu.has_loci) {
+        char disc[512] = {0};
+        const char* cand = disk_rom_file;                 /* --disk-rom si fourni */
+        if ((!cand || access(cand, R_OK) != 0) && rom_file) {
+            const char* slash = strrchr(rom_file, '/');   /* voisin de la ROM -r */
+            if (slash) {
+                snprintf(disc, sizeof(disc), "%.*s/microdis.rom",
+                         (int)(slash - rom_file), rom_file);
+                if (access(disc, R_OK) == 0) cand = disc;
+            }
+        }
+        if (!cand || access(cand, R_OK) != 0) { if (access("roms/microdis.rom", R_OK) == 0) cand = "roms/microdis.rom"; }
+        if (!cand || access(cand, R_OK) != 0) { if (access("microdis.rom", R_OK) == 0) cand = "microdis.rom"; }
+        if (cand && access(cand, R_OK) == 0 && loci_rom_swap_cb(&emu, cand, 0xA000)) {
+            log_info("--loci-web: autoboot LOCI (overlay Microdisc %s → boot depuis le FDC web)", cand);
+        } else {
+            log_warning("--loci-web: microdis.rom introuvable — disque monté mais "
+                        "pas d'autoboot (bootez via le menu LOCI ou fournissez --disk-rom)");
+        }
+    }
+
     /* Apply --bad-sector [D:]S:T:N fault injections. Damage follows the
      * media: the maps live per drive at the controller layer (Microdisc
      * and/or LOCI) and are wiped when a new disk is inserted. Applied after
