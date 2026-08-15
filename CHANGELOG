@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.6-alpha] - 2026-08-15
+
+### Added — Watchpoint écriture mémoire piloté par env `ORIC_WATCH` (diagnostic)
+
+Nouvel outil de diagnostic headless : la variable d'environnement
+`ORIC_WATCH=lo:hi:fichier` (adresses hexa) fait logger **toute écriture** dans la
+plage `[lo,hi]` avec le **PC et le cycle de l'instruction courante**, au format
+`<cycle> W $ADDR=VAL PC=XXXX`. Comble l'absence de watchpoint en écriture en mode
+headless (`-b`/breakpoint PC fait *hang*). Sans `ORIC_WATCH`, coût = un test de flag
+(désactivé). Le CPU expose son PC/cycle courant (`g_watch_cur_pc/_cyc` dans
+`cpu6502.c::cpu_step`) que `memory_write` (`memory.c`) consulte sur écriture surveillée.
+A permis d'isoler la corruption `$C300` du portage Ozmoo-Oric (banking V5) : le writer
+était un `sta (zp_colourline),y` d'affichage identifié par son PC en un seul run.
+Fichiers : `src/memory/memory.c`, `src/cpu/cpu6502.c`.
+
 ## [1.103.5-alpha] - 2026-08-15
 
 ### Added — L'op MOUNT accepte une URL http(s):// (projet loci-webdisk, archi B)

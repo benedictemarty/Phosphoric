@@ -20,6 +20,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* ── Watchpoint écriture (diagnostic, piloté par env ORIC_WATCH=lo:hi:fichier) ──
+ * Loggue toute écriture dans [lo,hi] avec le PC/cycle de l'instruction courante
+ * (posés par le CPU dans g_watch_cur_pc/_cyc). Adresses en hexa. Sans ORIC_WATCH
+ * : coût = 1 test de flag, désactivé. */
+uint16_t g_watch_cur_pc  = 0;   /* posé par cpu_step avant chaque instruction */
+uint64_t g_watch_cur_cyc = 0;
+static int      g_watch_done = 0;
+static uint16_t g_watch_lo = 1, g_watch_hi = 0;   /* lo>hi => désactivé */
+static FILE*    g_watch_fp = NULL;
+static void watch_lazy_init(void) {
+    g_watch_done = 1;
+    const char* s = getenv("ORIC_WATCH");
+    if (!s) return;
+    unsigned lo = 0, hi = 0; char path[512] = {0};
+    if (sscanf(s, "%x:%x:%511s", &lo, &hi, path) == 3) {
+        g_watch_lo = (uint16_t)lo; g_watch_hi = (uint16_t)hi;
+        g_watch_fp = fopen(path, "w");
+    }
+}
+
 bool memory_init(memory_t* mem) {
     memset(mem, 0, sizeof(memory_t));
 
@@ -146,6 +166,11 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
 }
 
 void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
+    if (!g_watch_done) watch_lazy_init();
+    if (g_watch_fp && address >= g_watch_lo && address <= g_watch_hi) {
+        fprintf(g_watch_fp, "%08llu W $%04X=%02X PC=%04X\n",
+                (unsigned long long)g_watch_cur_cyc, address, value, g_watch_cur_pc);
+    }
     mem_notify(mem, address, value, MEM_WRITE);
 
     /* I/O space: VIA at $0300-$030F */

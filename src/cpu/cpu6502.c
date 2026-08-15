@@ -98,6 +98,11 @@ int cpu_step(cpu6502_t* cpu) {
 
     uint64_t before = cpu->cycles;
 
+    /* Watchpoint écriture (memory.c) : expose le PC/cycle de l'instruction en
+     * cours d'exécution, pour attribuer une écriture surveillée à son STA. */
+    extern uint16_t g_watch_cur_pc; extern uint64_t g_watch_cur_cyc;
+    g_watch_cur_pc = cpu->PC; g_watch_cur_cyc = cpu->cycles;
+
     /* Fetch opcode */
     uint8_t opcode = cpu_fetch_byte(cpu);
 
