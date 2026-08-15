@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.7-alpha] - 2026-08-15
+
+### Added — Pseudo-device « W: Web disks » dans le menu LOCI (Route B, loci-webdisk)
+
+Le menu LOCI (`locirom`) **non modifié** peut désormais parcourir et monter des
+disques web comme une clé USB, via un **périphérique virtuel** côté émulateur :
+
+- `--loci-web-base http://host:port` : ajoute une entrée **« W: Web disks »** à la
+  liste des périphériques (`opendir("")`/`readdir`).
+- `opendir("W:")` interroge `GET {base}/disks` et `readdir` renvoie chaque `.dsk`
+  (JSON parsé). Sélectionner un disque appelle `mount(drive,"W:","<nom>")` que
+  l'op MOUNT mappe vers `{base}/disk/<nom>` → `loci_dsk_open_web`.
+- Fichiers : `src/io/loci_fs.c` (device-list, opendir/readdir/closedir web,
+  mapping mount `W:`), `include/io/loci.h` (champs `web_base`/`web_disks`…),
+  option CLI (`src/main.c`, `cli_options.h`, `cli_usage.c`).
+
+Validé **runtime** avec le vrai `locirom` v0.3.0 **non modifié** : lecteur A →
+« W: Web disks » listé → sélection → liste des `.dsk` du serveur → `Citadelle.dsk`
+→ `A: Citadelle.dsk` monté (log `servi par …/disk/Citadelle.dsk`). Test :
+`test_web_device_browse_and_mount` (`tests/unit/test_loci.c`) → **loci 166/166**.
+
 ## [1.103.6-alpha] - 2026-08-15
 
 ### Added — Watchpoint écriture mémoire piloté par env `ORIC_WATCH` (diagnostic)

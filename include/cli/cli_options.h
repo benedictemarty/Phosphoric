@@ -39,7 +39,7 @@ enum {
     OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT,
     OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN,
     OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE,
-    OPT_DISK_WEB, OPT_LOCI_WEB
+    OPT_DISK_WEB, OPT_LOCI_WEB, OPT_LOCI_WEB_BASE
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -137,6 +137,7 @@ static const struct option long_options[] = {
     {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
     {"loci-usb",            required_argument, 0, OPT_LOCI_USB},
     {"loci-web",            required_argument, 0, OPT_LOCI_WEB},
+    {"loci-web-base",       required_argument, 0, OPT_LOCI_WEB_BASE},
     {"loci-mia-window",     required_argument, 0, OPT_LOCI_MIA_WINDOW},
     {"ula-ng-poke",         required_argument, 0, OPT_ULA_NG_POKE},
     {"control",             no_argument,       0, OPT_CONTROL},

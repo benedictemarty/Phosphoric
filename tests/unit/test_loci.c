@@ -1957,6 +1957,109 @@ TEST(test_op_mount_http_url_mounts_web_disk) {
     unlink(path); rmdir(tmpdir); free(tmpdir);
 }
 
+/* Route B : serveur forké qui répond à GET /disks (JSON) ET aux plages de
+ * fichier (?offset=&len=), pour tester le pseudo-device « W: Web disks ». */
+static void web_serve_list_and_file(int listen_fd, const char* path) {
+    for (;;) {
+        int c = accept(listen_fd, NULL, NULL);
+        if (c < 0) continue;
+        char req[1024]; ssize_t rn = read(c, req, sizeof(req) - 1);
+        if (rn <= 0) { close(c); continue; }
+        req[rn] = '\0';
+        if (strstr(req, "/disks?") || strstr(req, "/disks ")) {
+            const char* json = "{\"disks\":[{\"name\":\"web.dsk\",\"size\":6656}]}";
+            char hdr[128];
+            int hn = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n",
+                (int)strlen(json));
+            (void)!write(c, hdr, (size_t)hn);
+            (void)!write(c, json, strlen(json));
+        } else {
+            long off = 0, len = 0;
+            char* o = strstr(req, "offset="); if (o) off = atol(o + 7);
+            char* l = strstr(req, "len=");    if (l) len = atol(l + 4);
+            FILE* fp = fopen(path, "rb");
+            uint8_t* buf = calloc(1, (size_t)(len > 0 ? len : 1));
+            long got = 0;
+            if (fp) { fseek(fp, off, SEEK_SET); got = (long)fread(buf, 1, (size_t)len, fp); fclose(fp); }
+            char hdr[160];
+            int hn = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 206 Partial Content\r\nContent-Length: %ld\r\n"
+                "Connection: close\r\n\r\n", got);
+            (void)!write(c, hdr, (size_t)hn);
+            (void)!write(c, buf, (size_t)got);
+            free(buf);
+        }
+        close(c);
+    }
+}
+
+/* Le flux exact du menu LOCI NON modifié pour un disque web (Route B) :
+ * opendir("W:") -> readdir (liste GET /disks) -> mount(drive,"W:","web.dsk").
+ * Tout passe par l'ABI MIA ; le firmware/emulateur mappe "W:/nom" vers l'URL. */
+TEST(test_web_device_browse_and_mount) {
+    char* tmpdir = make_tmpdir();
+    char path[300]; snprintf(path, sizeof(path), "%s/web.dsk", tmpdir);
+    loci_make_minimal_mfm(path);
+
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_TRUE(lfd >= 0);
+    int one = 1; setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in sa; memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET; sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK); sa.sin_port = 0;
+    ASSERT_TRUE(bind(lfd, (struct sockaddr*)&sa, sizeof(sa)) == 0);
+    ASSERT_TRUE(listen(lfd, 4) == 0);
+    socklen_t sl = sizeof(sa); getsockname(lfd, (struct sockaddr*)&sa, &sl);
+    uint16_t port = ntohs(sa.sin_port);
+
+    pid_t pid = fork();
+    ASSERT_TRUE(pid >= 0);
+    if (pid == 0) { web_serve_list_and_file(lfd, path); _exit(0); }
+    close(lfd);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    snprintf(l.web_base, sizeof(l.web_base), "http://127.0.0.1:%u", port);
+
+    /* 1) Le device « W: Web disks » apparaît dans la liste (opendir "" + readdir). */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_OPENDIR);   /* xstack vide = device list */
+    bool seen_web = false;
+    for (int i = 0; i < 8 && !seen_web; i++) {
+        loci_write(&l, 0x03A0 + LOCI_REG_API_A, 0);
+        loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_READDIR);
+        const char* nm = (const char*)&l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 2];
+        if (strncmp(nm, "W: Web disks", 12) == 0) seen_web = true;
+    }
+    ASSERT_TRUE(seen_web);
+
+    /* 2) opendir("W:") -> fd web, readdir -> "web.dsk" (issu de GET /disks). */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, 0);
+    loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, ':');
+    loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, 'W');
+    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_OPENDIR);
+    int fd = loci_read(&l, 0x03A0 + LOCI_REG_API_A);
+    ASSERT_TRUE(fd == 200);
+    loci_write(&l, 0x03A0 + LOCI_REG_API_A, (uint8_t)fd);
+    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_READDIR);
+    const char* nm = (const char*)&l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 2];
+    ASSERT_TRUE(strcmp(nm, "web.dsk") == 0);
+
+    /* 3) mount(0,"W:","web.dsk") : le menu pousse "W:/web.dsk" puis op MOUNT. */
+    const char* mp = "W:/web.dsk";
+    loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, 0);
+    for (int i = (int)strlen(mp) - 1; i >= 0; i--)
+        loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, (uint8_t)mp[i]);
+    loci_write(&l, 0x03A0 + LOCI_REG_API_A, 0);            /* lecteur A */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_MOUNT);
+    ASSERT_EQ(loci_read(&l, 0x03A0 + LOCI_REG_API_A), 0);
+    ASSERT_TRUE(l.dsk_web[0]);
+    ASSERT_TRUE(strstr(l.dsk_web_url[0], "/disk/web.dsk") != NULL);
+
+    kill(pid, SIGKILL); waitpid(pid, NULL, 0);
+    loci_cleanup(&l);
+    unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
 /* opendir with an EMPTY path returns the device-list iterator (fd 0 =
  * firmware FD_OFFS_DEV): readdir yields "0: Internal storage [15MB]",
  * then one usb_set_status line per declared USB device (MSC key,
@@ -3479,6 +3582,7 @@ int main(void) {
     RUN(test_dsk_mount_opens_drive_image);
     RUN(test_loci_web_disk_reads_over_http);
     RUN(test_op_mount_http_url_mounts_web_disk);
+    RUN(test_web_device_browse_and_mount);
     RUN(test_dsk_umount_closes);
     RUN(test_dsk_bad_sector_seeded_at_mount);
     RUN(test_opendir_empty_lists_devices);

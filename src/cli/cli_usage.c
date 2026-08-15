@@ -127,6 +127,9 @@ void cli_print_usage(const char* program_name) {
     printf("      --loci-web URL         Drive A LOCI servi par un serveur web (loci-webdisk archi B) :\n");
     printf("                             pistes MFM par HTTP a la demande + autoboot Sedoric natif LOCI.\n");
     printf("                             Ex: --loci --loci-web http://h:8092/disk/x.dsk (implies --loci)\n");
+    printf("      --loci-web-base URL    Ajoute un pseudo-device « W: Web disks » au menu LOCI :\n");
+    printf("                             opendir/readdir listent GET URL/disks ; monter un .dsk\n");
+    printf("                             sert URL/disk/<nom>. Menu locirom NON modifie. (implies --loci)\n");
     printf("      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31).\n");
     printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
     printf("                             is outside it (reproduces real-HW modem block;\n");

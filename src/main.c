@@ -2288,6 +2288,7 @@ int main(int argc, char* argv[]) {
     const char* loci_flash_root = NULL;
     const char* loci_sdimg_path = NULL;
     const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
+    const char* loci_web_base = NULL;  /* Route B : racine serveur pour le device « W: Web disks » */
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int64_t trace_max = 0;
     int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
@@ -2466,6 +2467,7 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_LOCI_WEB: loci_web_url = optarg; loci_enabled = true; break;
+            case OPT_LOCI_WEB_BASE: loci_web_base = optarg; loci_enabled = true; break;
             case OPT_LOCI_USB:
                 if (strcmp(optarg, "none") == 0) {
                     loci_usb_autoscan = false;
@@ -2915,6 +2917,12 @@ int main(int argc, char* argv[]) {
         loci_init(&emu.loci);
         emu.loci.enabled = true;
         emu.has_loci = true;
+        /* Route B : base du serveur pour le pseudo-device « W: Web disks ». */
+        if (loci_web_base) {
+            snprintf(emu.loci.web_base, sizeof(emu.loci.web_base), "%s", loci_web_base);
+            log_info("LOCI: device web « W: Web disks » -> %s (menu: opendir/readdir GET /disks)",
+                     loci_web_base);
+        }
         if (loci_mia_win_lo >= 0) {
             loci_set_mia_window(&emu.loci, (uint8_t)loci_mia_win_lo, (uint8_t)loci_mia_win_hi);
             log_info("LOCI MIA reliable tior window: %d-%d (picowifi ACIA $0380 "

@@ -359,6 +359,14 @@ typedef struct loci_s {
      * (fdc_set_web sur dsk_fdc lors de la sélection). Voir loci_dsk_open_web. */
     bool     dsk_web[4];             /* true = drive servi par le web */
     char     dsk_web_url[4][512];    /* URL de base http:// du disque */
+    /* Route B : pseudo-périphérique « W: Web disks » présenté au menu LOCI.
+     * web_base = racine du serveur (--loci-web-base http://host:port). readdir
+     * "W:" liste GET {web_base}/disks ; mount "W:/nom" → {web_base}/disk/nom. */
+    char     web_base[256];          /* "" = pas de device web */
+    char     web_disks[32][40];      /* noms des .dsk servis (GET /disks) */
+    int      web_disk_count;         /* nb d'entrées listées */
+    int      web_dir_pos;            /* itérateur readdir du device web */
+    bool     web_dir_open;           /* un opendir("W:") est actif */
     /* Per-drive bad sector maps (fault injection). dsk_bad_map = damage of
      * the media currently mounted; dsk_bad_cli = CLI-injected damage seeded
      * into every media mounted in that drive (mounts happen at runtime via
