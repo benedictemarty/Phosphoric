@@ -9,6 +9,7 @@
 #include "io/loci.h"
 #include "io/loci_internal.h"
 #include "storage/sedoric.h"
+#include "storage/disk_http.h"   /* loci-webdisk archi B : montage disque web */
 #include "utils/logging.h"
 
 #include <string.h>
@@ -291,6 +292,9 @@ static void loci_apply_dsk_selection(loci_t* loci) {
                  loci->dsk_image_size[drv]);
     loci->dsk_fdc.tracks            = loci->dsk_tracks[drv];
     loci->dsk_fdc.sectors_per_track = loci->dsk_sectors[drv];
+    /* Web-backed media: re-arm on-demand HTTP track fetch for this drive
+     * (fdc_set_disk cleared it). loci-webdisk archi B. */
+    fdc_set_web(&loci->dsk_fdc, loci->dsk_web[drv] ? loci->dsk_web_url[drv] : NULL);
     /* Damage follows the media: load this drive's media map */
     fdc_set_bad_map(&loci->dsk_fdc, &loci->dsk_bad_map[drv]);
 }
@@ -318,6 +322,7 @@ bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
         loci->dsk_image[drive] = NULL;
         loci->dsk_image_size[drive] = 0;
     }
+    loci->dsk_web[drive] = false;   /* a file mount replaces any web backing */
     size_t pn = strlen(host_path);
     if (pn >= sizeof(loci->dsk_host_path[drive])) pn = sizeof(loci->dsk_host_path[drive]) - 1;
     memcpy(loci->dsk_host_path[drive], host_path, pn);
@@ -372,6 +377,53 @@ bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
     return true;
 }
 
+/* loci-webdisk (archi B) : monter dans un lecteur LOCI un disque dont les
+ * secteurs sont servis par HTTP. On lit l'en-tête MFM_DISK distant (256 o)
+ * pour la géométrie, on alloue une image à plat VIDE, et le FDC de la LOCI va
+ * chercher chaque piste MFM de 6400 o à la demande (fdc_set_web via
+ * loci_apply_dsk_selection). Chemin natif LOCI, jumeau de --disk-web (Microdisc). */
+bool loci_dsk_open_web(loci_t* loci, uint8_t drive, const char* url) {
+    if (drive >= 4 || !url || !url[0]) return false;
+
+    uint8_t hdr[256];
+    long hn = disk_http_get(url, 0, (long)sizeof(hdr), hdr, (long)sizeof(hdr));
+    if (hn < 16 || memcmp(hdr, "MFM_DISK", 8) != 0) {
+        log_error("LOCI --loci-web drive %d: en-tête MFM_DISK illisible depuis %s", drive, url);
+        return false;
+    }
+    uint32_t sides  = hdr[8]  | ((uint32_t)hdr[9]  << 8) |
+                      ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+    uint32_t tracks = hdr[12] | ((uint32_t)hdr[13] << 8) |
+                      ((uint32_t)hdr[14] << 16) | ((uint32_t)hdr[15] << 24);
+    if (sides < 1)  sides  = 1;
+    if (sides > 2)  sides  = 2;
+    if (tracks > 82) tracks = 82;
+    uint8_t spt = 17;
+
+    if (loci->dsk_fp[drive]) { fclose((FILE*)loci->dsk_fp[drive]); loci->dsk_fp[drive] = NULL; }
+    if (loci->dsk_image[drive]) { free(loci->dsk_image[drive]); loci->dsk_image[drive] = NULL; }
+
+    uint32_t flat = sides * tracks * spt * 256u;
+    uint8_t* buf = (uint8_t*)calloc(1, flat);
+    if (!buf) { log_error("LOCI --loci-web drive %d: allocation image impossible", drive); return false; }
+
+    loci->dsk_image[drive]      = buf;
+    loci->dsk_image_size[drive] = flat;
+    loci->dsk_tracks[drive]     = (uint8_t)tracks;
+    loci->dsk_sectors[drive]    = spt;
+    loci->dsk_is_mfm[drive]     = false;   /* pas de write-back host */
+    loci->dsk_web[drive]        = true;
+    snprintf(loci->dsk_web_url[drive], sizeof(loci->dsk_web_url[drive]), "%s", url);
+    loci->dsk_host_path[drive][0] = '\0';
+    loci->dsk_bad_map[drive] = loci->dsk_bad_cli[drive];
+
+    log_info("LOCI --loci-web drive %d: servi par %s (%u faces x %u pistes x %u s., "
+             "pistes à la demande)", drive, url, sides, tracks, spt);
+    if (loci->dsk_selected == drive)
+        loci_apply_dsk_selection(loci);
+    return true;
+}
+
 void loci_dsk_flush(loci_t* loci, uint8_t drive) {
     if (drive >= 4) return;
     if (loci->dsk_is_mfm[drive]) return;
@@ -411,6 +463,7 @@ void loci_dsk_close(loci_t* loci, uint8_t drive) {
     }
     loci->dsk_host_path[drive][0] = '\0';
     loci->dsk_is_mfm[drive] = false;
+    loci->dsk_web[drive] = false;
     memset(&loci->dsk_bad_map[drive], 0, sizeof(loci->dsk_bad_map[drive]));
     if (loci->dsk_selected == drive) {
         fdc_set_disk(&loci->dsk_fdc, NULL, 0);

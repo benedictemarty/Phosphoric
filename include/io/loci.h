@@ -354,6 +354,11 @@ typedef struct loci_s {
      * with a warning logged at mount-time. */
     bool     dsk_is_mfm[4];          /* true = sedoric_load MFM→flat path */
     char     dsk_host_path[4][256];  /* host path used for write-back */
+    /* loci-webdisk (archi B) : disque servi par HTTP. dsk_image[] est alloué
+     * vide ; les pistes MFM 6400 o sont récupérées à la demande par le FDC
+     * (fdc_set_web sur dsk_fdc lors de la sélection). Voir loci_dsk_open_web. */
+    bool     dsk_web[4];             /* true = drive servi par le web */
+    char     dsk_web_url[4][512];    /* URL de base http:// du disque */
     /* Per-drive bad sector maps (fault injection). dsk_bad_map = damage of
      * the media currently mounted; dsk_bad_cli = CLI-injected damage seeded
      * into every media mounted in that drive (mounts happen at runtime via

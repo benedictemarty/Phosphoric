@@ -10,6 +10,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+#include "../../include/storage/disk_http.h"   /* loci-webdisk archi B */
 
 #include "../../include/emulator.h"   /* EMU_VERSION (test_uname release) */
 #include "../../include/io/loci.h"
@@ -1806,6 +1812,101 @@ TEST(test_dsk_umount_closes) {
     loci_cleanup(&l); free(dsk_path); free(tmpdir);
 }
 
+/* ── loci-webdisk (archi B) : disque LOCI natif servi par HTTP ──────────
+ * loci_dsk_open_web() monte en lecteur A un disque dont les pistes MFM sont
+ * récupérées à la demande. Une commande READ SECTOR sur le FDC PROPRE de la
+ * LOCI (l.dsk_fdc) déclenche le fetch HTTP + extraction dans dsk_image[0]. */
+
+/* One-track MFM_DISK image (track 0/side 0/sector 1 rempli de 0x55) → fichier. */
+static void loci_make_minimal_mfm(const char* path) {
+    uint8_t* img = calloc(256 + 6400, 1);
+    memcpy(img, "MFM_DISK", 8);
+    img[8] = 1;    /* sides = 1 */
+    img[12] = 1;   /* tracks = 1 */
+    uint8_t* trk = img + 256;
+    int p = 20;
+    trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xFE; /* ID mark */
+    trk[p++] = 0; trk[p++] = 0; trk[p++] = 1; trk[p++] = 1;             /* trk/side/sec/size */
+    trk[p++] = 0; trk[p++] = 0; p += 12;
+    trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xA1; trk[p++] = 0xFB; /* data mark */
+    for (int k = 0; k < 256; k++) trk[p++] = 0x55;
+    FILE* fp = fopen(path, "wb");
+    fwrite(img, 1, 256 + 6400, fp);
+    fclose(fp);
+    free(img);
+}
+
+/* Serve a file forever by HTTP byte range (?offset=&len=). Runs in a child. */
+static void loci_web_serve(int listen_fd, const char* path) {
+    for (;;) {
+        int c = accept(listen_fd, NULL, NULL);
+        if (c < 0) continue;
+        char req[1024]; ssize_t rn = read(c, req, sizeof(req) - 1);
+        if (rn <= 0) { close(c); continue; }
+        req[rn] = '\0';
+        long off = 0, len = 0;
+        char* o = strstr(req, "offset="); if (o) off = atol(o + 7);
+        char* l = strstr(req, "len=");    if (l) len = atol(l + 4);
+        FILE* fp = fopen(path, "rb");
+        uint8_t* buf = calloc(1, (size_t)(len > 0 ? len : 1));
+        long got = 0;
+        if (fp) { fseek(fp, off, SEEK_SET); got = (long)fread(buf, 1, (size_t)len, fp); fclose(fp); }
+        char hdr[160];
+        int hn = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 206 Partial Content\r\nContent-Length: %ld\r\nConnection: close\r\n\r\n", got);
+        (void)!write(c, hdr, (size_t)hn);
+        (void)!write(c, buf, (size_t)got);
+        free(buf); close(c);
+    }
+}
+
+TEST(test_loci_web_disk_reads_over_http) {
+    char* tmpdir = make_tmpdir();
+    char path[300]; snprintf(path, sizeof(path), "%s/web.dsk", tmpdir);
+    loci_make_minimal_mfm(path);
+
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_TRUE(lfd >= 0);
+    int one = 1; setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in sa; memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET; sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK); sa.sin_port = 0;
+    ASSERT_TRUE(bind(lfd, (struct sockaddr*)&sa, sizeof(sa)) == 0);
+    ASSERT_TRUE(listen(lfd, 4) == 0);
+    socklen_t sl = sizeof(sa); getsockname(lfd, (struct sockaddr*)&sa, &sl);
+    uint16_t port = ntohs(sa.sin_port);
+
+    pid_t pid = fork();
+    ASSERT_TRUE(pid >= 0);
+    if (pid == 0) { loci_web_serve(lfd, path); _exit(0); }
+    close(lfd);
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%u/disk/web.dsk", port);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    /* Native LOCI web mount on drive A. */
+    ASSERT_TRUE(loci_dsk_open_web(&l, 0, url));
+    ASSERT_TRUE(l.dsk_web[0]);
+    ASSERT_TRUE(l.dsk_image[0] != NULL);
+    ASSERT_TRUE(l.dsk_fdc.web);                 /* armed by apply_dsk_selection */
+
+    /* READ SECTOR on the LOCI's own FDC → fetches track 0 from HTTP and
+     * extracts it. The command itself calls fdc_find_sector (the web hook). */
+    l.dsk_fdc.timing_mode = FDC_TIMING_FAST;
+    l.dsk_fdc.c_track = 0; l.dsk_fdc.side = 0;
+    l.dsk_fdc.track = 0;   l.dsk_fdc.sector = 1;
+    fdc_write(&l.dsk_fdc, 0, 0x80);             /* READ SECTOR */
+
+    /* The 0x55 sector must now be present in the flat image (came over HTTP). */
+    ASSERT_EQ(l.dsk_image[0][0], 0x55);
+    ASSERT_EQ(l.dsk_image[0][255], 0x55);
+
+    kill(pid, SIGKILL); waitpid(pid, NULL, 0);
+    loci_cleanup(&l);
+    unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
 /* opendir with an EMPTY path returns the device-list iterator (fd 0 =
  * firmware FD_OFFS_DEV): readdir yields "0: Internal storage [15MB]",
  * then one usb_set_status line per declared USB device (MSC key,
@@ -3326,6 +3427,7 @@ int main(void) {
     RUN(test_tap_io_stat_reports_not_ready_when_empty);
     RUN(test_tap_io_cmd_rewind_resets_counter);
     RUN(test_dsk_mount_opens_drive_image);
+    RUN(test_loci_web_disk_reads_over_http);
     RUN(test_dsk_umount_closes);
     RUN(test_dsk_bad_sector_seeded_at_mount);
     RUN(test_opendir_empty_lists_devices);

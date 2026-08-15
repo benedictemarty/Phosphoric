@@ -73,6 +73,7 @@ bool sdimg_extract_to_temp(loci_t* loci, const char* sd_path,
 bool loci_tap_open(loci_t* loci, const char* host_path);
 void loci_tap_close(loci_t* loci);
 bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path);
+bool loci_dsk_open_web(loci_t* loci, uint8_t drive, const char* url);
 void loci_dsk_close(loci_t* loci, uint8_t drive);
 void loci_dsk_flush(loci_t* loci, uint8_t drive);
 /* FDC DRQ/INTRQ callbacks bridged to fdc_t (registered by loci_init). */

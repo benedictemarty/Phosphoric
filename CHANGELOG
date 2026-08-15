@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.3-alpha] - 2026-08-15
+
+### Added — Montage web natif LOCI `--loci-web URL` (projet loci-webdisk, archi B)
+
+Deuxième voie pour un disque servi par le web, cette fois sur le **FDC propre de
+la LOCI** (`loci->dsk_fdc`) et non plus le contrôleur Microdisc (`--disk-web`).
+
+- `--loci-web http://host[:port]/disk/<nom>` : lit l'en-tête MFM_DISK distant,
+  monte le lecteur A avec une image à plat vide, pistes MFM 6400 o à la demande.
+- `loci_dsk_open_web()` (`src/io/loci_bus.c`), champs `dsk_web[4]`/`dsk_web_url[4]`
+  dans `loci_t`, ré-armement `fdc_set_web()` dans `loci_apply_dsk_selection()`
+  (le web suit la sélection de lecteur ; annulé par un montage fichier / umount).
+- Option CLI dans `src/main.c` + `include/cli/cli_options.h`.
+
+Test : `test_loci_web_disk_reads_over_http` (`tests/unit/test_loci.c`, serveur
+HTTP forké) → loci **164/164** ; storage 26/26, picowifi 74/74 — aucune régression.
+
+Note : l'autoboot Sedoric au runtime sous `--loci` passe par le flow de boot LOCI
+(`LOCI_BOOT_FDC`/menu), pas par le seul flag ; le chemin de LECTURE web via le FDC
+LOCI est prouvé par le test unitaire, et le boot runtime complet l'est via la voie
+Microdisc partagée (même `fdc_find_sector`).
+
 ## [1.103.2-alpha] - 2026-08-15
 
 ### Added — Disque servi par le web `--disk-web URL` (projet loci-webdisk, archi B)

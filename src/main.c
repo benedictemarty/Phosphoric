@@ -48,6 +48,7 @@
 #include "io/autotype.h"      /* pacing scan-driven de --type-keys */
 #include "io/tape_patches.h" /* ROM CLOAD/CSAVE PC patches (ex-main.c) */
 #include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
+#include "io/loci_internal.h"  /* loci_dsk_open_web (loci-webdisk archi B) */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
@@ -2286,6 +2287,7 @@ int main(int argc, char* argv[]) {
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
     const char* loci_sdimg_path = NULL;
+    const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int64_t trace_max = 0;
     int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
@@ -2463,6 +2465,7 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI: loci_enabled = true; break;
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
+            case OPT_LOCI_WEB: loci_web_url = optarg; loci_enabled = true; break;
             case OPT_LOCI_USB:
                 if (strcmp(optarg, "none") == 0) {
                     loci_usb_autoscan = false;
@@ -2990,6 +2993,17 @@ int main(int argc, char* argv[]) {
         } else {
             log_info("LOCI MIA enabled at $%04X-$%04X (flash root: CWD)",
                      LOCI_MIA_BASE, LOCI_MIA_END);
+        }
+
+        /* --loci-web URL : montage NATIF LOCI d'un disque servi par HTTP en
+         * lecteur A (loci-webdisk archi B). Jumeau de --disk-web (Microdisc),
+         * mais sur le FDC propre de la LOCI. Les pistes MFM 6400 o sont
+         * récupérées à la demande. */
+        if (loci_web_url) {
+            if (!loci_dsk_open_web(&emu.loci, 0, loci_web_url)) {
+                log_error("--loci-web: montage du disque web impossible (%s)", loci_web_url);
+                return 1;
+            }
         }
     }
 
