@@ -1907,6 +1907,56 @@ TEST(test_loci_web_disk_reads_over_http) {
     unlink(path); rmdir(tmpdir); free(tmpdir);
 }
 
+/* Le chemin exact de l'utilitaire Oric WEBMOUNT : pousser une URL sur la xstack
+ * MIA ($03AC), poser le lecteur en A ($03B4), déclencher l'op MOUNT ($03AF=0x90)
+ * — la LOCI détecte http:// et monte le disque web (miroir de mnt.c::mnt_mount). */
+TEST(test_op_mount_http_url_mounts_web_disk) {
+    char* tmpdir = make_tmpdir();
+    char path[300]; snprintf(path, sizeof(path), "%s/web.dsk", tmpdir);
+    loci_make_minimal_mfm(path);
+
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_TRUE(lfd >= 0);
+    int one = 1; setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in sa; memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET; sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK); sa.sin_port = 0;
+    ASSERT_TRUE(bind(lfd, (struct sockaddr*)&sa, sizeof(sa)) == 0);
+    ASSERT_TRUE(listen(lfd, 4) == 0);
+    socklen_t sl = sizeof(sa); getsockname(lfd, (struct sockaddr*)&sa, &sl);
+    uint16_t port = ntohs(sa.sin_port);
+
+    pid_t pid = fork();
+    ASSERT_TRUE(pid >= 0);
+    if (pid == 0) { loci_web_serve(lfd, path); _exit(0); }
+    close(lfd);
+
+    char url[128];
+    int ulen = snprintf(url, sizeof(url), "http://127.0.0.1:%u/disk/web.dsk", port);
+
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+
+    /* Push exactly as WEBMOUNT does: 0 terminator first, then the URL in reverse
+     * (writing $03AC decrements the xstack pointer, so it ends up pointing at
+     * the first char and pop_zstring reads forward to the 0). */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, 0);
+    for (int i = ulen - 1; i >= 0; i--)
+        loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, (uint8_t)url[i]);
+
+    loci_write(&l, 0x03A0 + LOCI_REG_API_A, 0);        /* drive A */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_MOUNT);   /* trigger */
+
+    /* Return A = 0 (success), drive mounted and web-backed. */
+    ASSERT_EQ(loci_read(&l, 0x03A0 + LOCI_REG_API_A), 0);
+    ASSERT_TRUE(l.mnt_mounted[0]);
+    ASSERT_TRUE(l.dsk_web[0]);
+    ASSERT_TRUE(strcmp(l.mnt_paths[0], url) == 0);
+
+    kill(pid, SIGKILL); waitpid(pid, NULL, 0);
+    loci_cleanup(&l);
+    unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
 /* opendir with an EMPTY path returns the device-list iterator (fd 0 =
  * firmware FD_OFFS_DEV): readdir yields "0: Internal storage [15MB]",
  * then one usb_set_status line per declared USB device (MSC key,
@@ -3428,6 +3478,7 @@ int main(void) {
     RUN(test_tap_io_cmd_rewind_resets_counter);
     RUN(test_dsk_mount_opens_drive_image);
     RUN(test_loci_web_disk_reads_over_http);
+    RUN(test_op_mount_http_url_mounts_web_disk);
     RUN(test_dsk_umount_closes);
     RUN(test_dsk_bad_sector_seeded_at_mount);
     RUN(test_opendir_empty_lists_devices);

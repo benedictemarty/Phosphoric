@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.5-alpha] - 2026-08-15
+
+### Added — L'op MOUNT accepte une URL http(s):// (projet loci-webdisk, archi B)
+
+L'op API **MOUNT** de la LOCI émulée détecte désormais un chemin `http://` /
+`https://` et monte un disque web (`loci_dsk_open_web`), **miroir fidèle du vrai
+firmware** (`loci-firmware` `mia/api/mnt.c::mnt_mount`). Permet à un programme
+Oric d'**indiquer l'URL du disque** via l'API MIA, comme sur le matériel réel.
+Fichier : `src/io/loci_fs.c` (op_mount).
+
+Test : `test_op_mount_http_url_mounts_web_disk` (`tests/unit/test_loci.c`) —
+pousse l'URL sur la xstack (`$03AC`), pose le lecteur en A (`$03B4`), déclenche
+l'op (`$03AF`=0x90), vérifie le montage web → **loci 165/165**.
+
+Utilitaire Oric associé (`WEBMOUNT.BAS`) : dans le dépôt loci-webdisk.
+
 ## [1.103.4-alpha] - 2026-08-15
 
 ### Added — Autoboot Sedoric natif LOCI depuis le web (`--loci --loci-web`)

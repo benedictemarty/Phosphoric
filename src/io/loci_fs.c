@@ -652,6 +652,22 @@ void op_mount(loci_t* loci) {
         api_return_errno(loci, LOCI_EINVAL);
         return;
     }
+    /* loci-webdisk (archi B) : une URL http(s):// monte un disque servi par le
+     * web, exactement comme le vrai firmware (mnt.c::mnt_mount). Réservé aux
+     * lecteurs 0..3. Permet à un programme Oric (ex. WEBMOUNT) d'indiquer l'URL
+     * du disque via l'op MOUNT — le même chemin qu'une disquette ordinaire. */
+    if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
+        if (drive >= 4) { api_return_errno(loci, LOCI_EINVAL); return; }
+        if (!loci_dsk_open_web(loci, drive, path)) {
+            api_return_errno(loci, LOCI_EIO);   /* pas de serveur / en-tête invalide */
+            return;
+        }
+        loci->mnt_mounted[drive] = true;
+        strncpy(loci->mnt_paths[drive], path, sizeof(loci->mnt_paths[drive]) - 1);
+        loci->mnt_paths[drive][sizeof(loci->mnt_paths[drive]) - 1] = '\0';
+        api_return_ax(loci, 0);
+        return;
+    }
     char host_path[512];
     if (loci->sdimg) {
         if (!sdimg_extract_to_temp(loci, path, host_path, sizeof(host_path))) {
