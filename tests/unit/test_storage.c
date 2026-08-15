@@ -12,8 +12,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <unistd.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include "storage/sedoric.h"
 #include "storage/disk.h"
+#include "storage/disk_http.h"
 #include "io/microdisc.h"
 
 static int tests_passed = 0;
@@ -661,6 +668,90 @@ TEST(test_sedoric_mfm_writeback_roundtrip) {
     remove(path);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Web-backed disk (loci-webdisk archi B): the FDC pulls raw MFM tracks from
+ *  an HTTP disk server on demand. A forked one-shot server serves a synthetic
+ *  MFM_DISK image by byte range (?offset=&len=), exactly like disk_server.py.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* Serve @path forever by HTTP byte-range (?offset=&len=), one request at a
+ * time. Runs in the child; the parent kills it when the test ends. */
+static void web_serve_file(int listen_fd, const char* path) {
+    for (;;) {
+        int c = accept(listen_fd, NULL, NULL);
+        if (c < 0) continue;
+        char req[1024]; ssize_t rn = read(c, req, sizeof(req) - 1);
+        if (rn <= 0) { close(c); continue; }
+        req[rn] = '\0';
+        long off = 0, len = 0;
+        char* o = strstr(req, "offset="); if (o) off = atol(o + 7);
+        char* l = strstr(req, "len=");    if (l) len = atol(l + 4);
+        FILE* fp = fopen(path, "rb");
+        uint8_t* buf = calloc(1, (size_t)(len > 0 ? len : 1));
+        long got = 0;
+        if (fp) { fseek(fp, off, SEEK_SET); got = (long)fread(buf, 1, (size_t)len, fp); fclose(fp); }
+        char hdr[160];
+        int hn = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 206 Partial Content\r\nContent-Length: %ld\r\n"
+            "Connection: close\r\n\r\n", got);
+        (void)!write(c, hdr, (size_t)hn);
+        (void)!write(c, buf, (size_t)got);
+        free(buf); close(c);
+    }
+}
+
+TEST(test_fdc_web_read_sector) {
+    /* Synthetic MFM disk (track 0, side 0, sector 1 filled with 0x55). */
+    const char* path = "test_storage_web.dsk";
+    make_minimal_mfm(path);
+
+    int lfd = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_TRUE(lfd >= 0);
+    int one = 1; setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in sa; memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET; sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK); sa.sin_port = 0;
+    ASSERT_TRUE(bind(lfd, (struct sockaddr*)&sa, sizeof(sa)) == 0);
+    ASSERT_TRUE(listen(lfd, 4) == 0);
+    socklen_t sl = sizeof(sa); getsockname(lfd, (struct sockaddr*)&sa, &sl);
+    uint16_t port = ntohs(sa.sin_port);
+
+    pid_t pid = fork();
+    ASSERT_TRUE(pid >= 0);
+    if (pid == 0) { web_serve_file(lfd, path); _exit(0); }
+    close(lfd);
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%u/disk/%s", port, path);
+
+    /* FDC with an EMPTY flat image + web backing: the track must be fetched. */
+    fdc_t fdc;
+    fdc_init_test(&fdc);
+    uint8_t* flat = calloc(1 * 17 * 256, 1);        /* 1 track, zeroed */
+    fdc_set_disk(&fdc, flat, 1 * 17 * 256);
+    fdc.tracks = 1; fdc.sectors_per_track = 17;
+    fdc_set_web(&fdc, url);
+    ASSERT_TRUE(fdc.web);
+
+    fdc.c_track = 0; fdc.track = 0; fdc.sector = 1;
+    fdc_write(&fdc, 0, 0x80);                        /* Read sector 1 */
+    ASSERT_EQ(fdc.currentop, FDC_OP_READ_SECTOR);
+    fdc_ticktock(&fdc, 65);
+    ASSERT_TRUE(test_drq_set);
+
+    /* All 256 bytes must equal 0x55 — proving the track came from HTTP and
+     * was MFM-extracted into the flat image. */
+    uint8_t first = fdc_read(&fdc, 3);
+    ASSERT_EQ(first, 0x55);
+    for (int i = 1; i < 256; i++) {
+        fdc_ticktock(&fdc, 35);
+        uint8_t b = fdc_read(&fdc, 3);
+        ASSERT_EQ(b, 0x55);
+    }
+
+    kill(pid, SIGKILL); waitpid(pid, NULL, 0);
+    free(flat); remove(path);
+}
+
 int main(void) {
     printf("Running Storage tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -695,6 +786,7 @@ int main(void) {
     printf("\n  Disk persistence:\n");
     RUN(test_sedoric_save_roundtrip);
     RUN(test_sedoric_mfm_writeback_roundtrip);
+    RUN(test_fdc_web_read_sector);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

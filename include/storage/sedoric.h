@@ -60,4 +60,18 @@ uint8_t* sedoric_get_sector(sedoric_disk_t* disk, uint8_t track, uint8_t sector)
 bool sedoric_read_sector(const sedoric_disk_t* disk, uint8_t track, uint8_t sector, uint8_t* buffer);
 bool sedoric_write_sector(sedoric_disk_t* disk, uint8_t track, uint8_t sector, const uint8_t* buffer);
 
+/**
+ * @brief Extract the 256-byte sectors of one raw 6400-byte MFM track into a
+ *        flat sector array (public wrapper over the internal extractor).
+ *
+ * Used by the web-backed disk (loci-webdisk archi B): raw MFM tracks fetched
+ * over HTTP are decoded straight into the FDC's flat image. Each sector's
+ * destination offset is derived from the track's own ID address marks
+ * (side/track/sector), so @p flat must be sized sides*num_tracks*spt*256.
+ *
+ * @return number of sectors extracted.
+ */
+int sedoric_mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
+                              uint8_t sectors_per_track, uint8_t num_tracks);
+
 #endif /* SEDORIC_H */

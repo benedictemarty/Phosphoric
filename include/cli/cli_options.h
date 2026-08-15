@@ -38,7 +38,8 @@ enum {
     OPT_ULA_NG_POKE, OPT_PSG_TRACE, OPT_AUDIO_WAV, OPT_SCREENSHOT_TEXT,
     OPT_SCREENSHOT_ANSI, OPT_SCREENSHOT_TEXT_AT, OPT_SCREENSHOT_ANSI_AT,
     OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN,
-    OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE
+    OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE,
+    OPT_DISK_WEB
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -53,6 +54,7 @@ static const struct option long_options[] = {
     {"disk3",               required_argument, 0, OPT_DISK3},
     {"disk-writeback",      no_argument,       0, OPT_DISK_WRITEBACK},
     {"disk-create",         required_argument, 0, OPT_DISK_CREATE},
+    {"disk-web",            required_argument, 0, OPT_DISK_WEB},
     {"rom",                 required_argument, 0, 'r'},
     {"hostfs",              required_argument, 0, 'h'},
     {"fast-load",           no_argument,       0, 'f'},

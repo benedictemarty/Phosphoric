@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "io/serial_backend.h"
@@ -740,6 +741,123 @@ TEST(test_atget_http_request) {
     tn_disconnect();
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  loci-webdisk (architecture B) — ATDISKRD / ATDISKWR raw disk transfer
+ *
+ *  These exercise the real network path against a forked one-shot HTTP server
+ *  (a stand-in for disk_server.py). ATDISKRD is synchronous inside the command
+ *  handler, so the responder must run concurrently → we fork it.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* Drain the RX ring into a byte buffer (binary-safe, unlike pw_drain's C-str);
+ * pumps recv() a bounded number of times to let a synchronous handler settle. */
+static int pw_drain_bytes(uint8_t* out, int max) {
+    int i = 0; uint8_t b;
+    for (int t = 0; t < 8000 && i < max; t++) {
+        if (pw->recv(pw, &b)) out[i++] = b;
+    }
+    return i;
+}
+
+TEST(test_atdiskrd_e2e) {
+    /* ATDISKRD http://host/path → GET, strip HTTP, stream body to the Oric as
+     * \r\n+DISK:<len>\r\n<bytes> then OK. The forked server returns 7 raw bytes. */
+    uint16_t port = tn_make_listener();
+    const char* body = "SEDORIC";                 /* 7 bytes, no embedded NUL */
+
+    pid_t pid = fork();
+    ASSERT_TRUE(pid >= 0);
+    if (pid == 0) {                               /* child: one HTTP response */
+        int c = accept(g_listener, NULL, NULL);
+        if (c >= 0) {
+            char req[512]; (void)!read(c, req, sizeof(req));
+            char resp[128];
+            int rn = snprintf(resp, sizeof(resp),
+                "HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\n%s",
+                body);
+            (void)!write(c, resp, (size_t)rn);
+            close(c);
+        }
+        _exit(0);
+    }
+
+    pw_setup("Net", NULL);
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd),
+             "ATDISKRD http://127.0.0.1:%u/disk/test.dsk?offset=0&len=7", port);
+    for (const char* p = cmd; *p; p++) pw->send(pw, (uint8_t)*p);
+    pw->send(pw, '\r');                           /* synchronous fetch happens here */
+
+    uint8_t out[512];
+    int n = pw_drain_bytes(out, sizeof(out));
+    waitpid(pid, NULL, 0);
+    close(g_listener); g_listener = -1;
+
+    ASSERT_TRUE(memmem(out, (size_t)n, "+DISK:7", 7) != NULL);      /* length marker */
+    ASSERT_TRUE(memmem(out, (size_t)n, body, 7) != NULL);          /* raw disk bytes */
+    ASSERT_TRUE(memmem(out, (size_t)n, "OK", 2) != NULL);          /* result code */
+    pw_teardown();
+}
+
+TEST(test_atdiskwr_e2e) {
+    /* ATDISKWR http://host/path?offset=&len=8 → capture 8 raw bytes from the
+     * Oric, PUT them as the body, reply OK. Child echoes the request via a pipe
+     * so we can assert the method, Content-Length and the exact body sent. */
+    uint16_t port = tn_make_listener();
+    const uint8_t body[8] = { 'W','E','B','D','I','S','K','!' };
+
+    int rep[2];
+    ASSERT_TRUE(pipe(rep) == 0);
+    pid_t pid = fork();
+    ASSERT_TRUE(pid >= 0);
+    if (pid == 0) {                               /* child: read PUT, reply 200 */
+        close(rep[0]);
+        int c = accept(g_listener, NULL, NULL);
+        char buf[1024]; int total = 0;
+        if (c >= 0) {
+            for (int t = 0; t < 200 && total < (int)sizeof(buf); t++) {
+                ssize_t r = read(c, buf + total, sizeof(buf) - (size_t)total);
+                if (r > 0) total += (int)r;
+                char* hdr_end = memmem(buf, (size_t)total, "\r\n\r\n", 4);
+                if (hdr_end && (buf + total) - (hdr_end + 4) >= 8) break;
+                if (r == 0) break;
+            }
+            const char* resp =
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            (void)!write(c, resp, strlen(resp));
+            close(c);
+        }
+        (void)!write(rep[1], buf, (size_t)total);
+        close(rep[1]);
+        _exit(0);
+    }
+    close(rep[1]);
+
+    pw_setup("Net", NULL);
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd),
+             "ATDISKWR http://127.0.0.1:%u/disk/test.dsk?offset=512&len=8", port);
+    for (const char* p = cmd; *p; p++) pw->send(pw, (uint8_t)*p);
+    pw->send(pw, '\r');                           /* → raw-capture mode */
+    for (int i = 0; i < 8; i++) pw->send(pw, body[i]);   /* 8th byte triggers PUT */
+
+    uint8_t out[256];
+    int n = pw_drain_bytes(out, sizeof(out));
+
+    char got[1024];
+    int gn = (int)read(rep[0], got, sizeof(got) - 1);
+    if (gn < 0) gn = 0;
+    got[gn] = '\0';
+    waitpid(pid, NULL, 0);
+    close(rep[0]); close(g_listener); g_listener = -1;
+
+    ASSERT_TRUE(memmem(out, (size_t)n, "OK", 2) != NULL);              /* PUT ok */
+    ASSERT_TRUE(memmem(got, (size_t)gn, "PUT /disk/test.dsk", 18) != NULL);
+    ASSERT_TRUE(memmem(got, (size_t)gn, "Content-Length: 8", 17) != NULL);
+    ASSERT_TRUE(memmem(got, (size_t)gn, body, 8) != NULL);            /* exact body */
+    pw_teardown();
+}
+
 TEST(test_dial_by_alias) {
     /* AT&Z5 = localhost,mybbs ; ATDTmybbs resolves the alias and connects. */
     uint16_t port = tn_make_listener();
@@ -1155,6 +1273,8 @@ int main(void) {
     RUN(test_busy_message_default);
     RUN(test_busy_message_set);
     RUN(test_atget_http_request);
+    RUN(test_atdiskrd_e2e);
+    RUN(test_atdiskwr_e2e);
     RUN(test_dial_by_alias);
     RUN(test_dial_seven_digits);
     RUN(test_dial_host_starting_with_p);

@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.2-alpha] - 2026-08-15
+
+### Added — Disque servi par le web `--disk-web URL` (projet loci-webdisk, archi B)
+
+Nouveau backend disque : les **secteurs sont servis par un serveur HTTP** au lieu
+d'un fichier `.dsk` local. Le FDC (WD1793, partagé Microdisc **et** LOCI) récupère
+les **pistes MFM brutes de 6400 o à la demande** via HTTP (`?offset=&len=`, statut
+200/206), puis les décode avec l'extracteur MFM existant. C'est le pendant, côté
+émulateur, du chemin réel LOCI `dsk_web.c` (lecture par piste de 6400 o via ATDISKRD).
+
+- `--disk-web http://host[:port]/disk/<nom>` : lit l'en-tête `MFM_DISK` distant pour
+  la géométrie, monte le lecteur A avec une image à plat **vide**, remplie piste par
+  piste à la première lecture.
+- **Boot end-to-end validé** : `SEDORIC V3.0` boote depuis un disque servi par
+  `disk_server.py`, identique au boot local, pistes chargées à la demande.
+
+Fichiers : `src/storage/disk_http.{c,h}` (client HTTP minimal), champs `web`/`web_url`
+/`web_track_loaded` + `fdc_web_ensure_track()`/`fdc_set_web()` dans `src/storage/disk.c`,
+`sedoric_mfm_extract_track()` (wrapper public) dans `src/storage/sedoric.c`, option CLI
+dans `src/main.c` + `include/cli/cli_options.h`.
+
+Tests : `test_fdc_web_read_sector` (`tests/unit/test_storage.c`, serveur HTTP forké,
+image MFM synthétique) → storage **26/26** ; loci 163/163, savestate 12/12 — aucune
+régression.
+
+## [1.103.1-alpha] - 2026-08-15
+
+### Added — Modem picowifi : commandes `ATDISKRD` / `ATDISKWR` (projet loci-webdisk, archi B)
+
+Le backend `--serial picowifi` gagne les deux commandes AT propriétaires du
+projet **loci-webdisk** (disque Oric servi par un serveur web via le modem) :
+
+- **`ATDISKRD http://host[:port]/path?offset=&len=`** — `GET` puis suppression
+  de tout le framing HTTP : renvoie à l'Oric `\r\n+DISK:<len>\r\n` suivi des
+  octets bruts, puis `OK`. Statuts 200 **et** 206 acceptés (les serveurs de
+  disque répondent `206 Partial Content` sur une plage). Traitement **synchrone**.
+- **`ATDISKWR http://host[:port]/path?offset=&len=<n>`** — capture ensuite `<n>`
+  octets **bruts** venus de l'Oric (nouveau mode `disk_wr_capture`, calqué sur
+  l'upload `AT$CA`), puis les `PUT` comme corps de requête ; répond `OK`/`ERROR`.
+
+Réimplémentation fidèle de `picowifi-modem` (branche `webdisk`,
+`at_basic.h::httpDiskRead/httpDiskWrite`), HTTP seul (pas de TLS). Le dispatch
+est inséré **avant** le `D` de numérotation pour que `DISK…` ne soit pas lu
+comme un appel. Fichier : `src/io/serial_picowifi.c`.
+
+Tests : `tests/unit/test_picowifi.c` + `test_atdiskrd_e2e` / `test_atdiskwr_e2e`
+(serveur HTTP forké, sockets réelles) → **74/74** via `make test-picowifi`.
+
 ## [1.103.0-alpha] - 2026-08-13
 
 ### Added — Son dans l'AVI aussi en mode GUI (`--video` + tap audio SDL)

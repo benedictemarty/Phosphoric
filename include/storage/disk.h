@@ -145,6 +145,14 @@ typedef struct fdc_s {
     fdc_signal_cb clr_intrq;
     void* intrq_userdata;
 
+    /* Web-backed media (loci-webdisk archi B): the flat image starts empty and
+     * raw 6400-byte MFM tracks are fetched from an HTTP disk server on demand
+     * (per track, on first sector access), then extracted into disk_data.
+     * web=false → ordinary in-RAM disk (behaviour unchanged). */
+    bool     web;                       /* sectors served by HTTP on demand */
+    char     web_url[512];              /* base disk URL (http:// only) */
+    uint8_t  web_track_loaded[2 * 82];  /* 1 once (side*tracks+track) fetched */
+
     /* Bad sector map of the media currently under the head (fault injection
      * for robustness testing). Sectors listed here become invisible to
      * fdc_find_sector -> the command layer reports Record Not Found
@@ -160,6 +168,10 @@ typedef struct fdc_s {
 void fdc_init(fdc_t* fdc);
 void fdc_reset(fdc_t* fdc);
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size);
+/* loci-webdisk (archi B): make the current media web-backed (raw MFM tracks
+ * fetched over HTTP on demand). Call after fdc_set_disk() with a zeroed flat
+ * image of the right geometry; url="" or NULL disables web backing. */
+void fdc_set_web(fdc_t* fdc, const char* url);
 /* Mark side/track/sector (sector is 1-based) as unreadable in MAP.
  * Returns 0 on success, -1 if the map is full. */
 int fdc_bad_map_add(fdc_bad_map_t* map, uint8_t side, uint8_t track, uint8_t sector);

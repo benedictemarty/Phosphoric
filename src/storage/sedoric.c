@@ -144,6 +144,12 @@ static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat,
     return written;
 }
 
+int sedoric_mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
+                              uint8_t sectors_per_track, uint8_t num_tracks) {
+    /* side/track are read from the track's own ID marks → 0 as "expected". */
+    return mfm_extract_track(track_data, flat, 0, 0, sectors_per_track, num_tracks);
+}
+
 sedoric_disk_t* sedoric_load(const char* filename) {
     FILE* fp = fopen(filename, "rb");
     if (!fp) return NULL;

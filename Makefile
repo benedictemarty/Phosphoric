@@ -146,6 +146,7 @@ SOURCES = src/main.c \
           src/storage/tap.c \
           src/storage/sedoric.c \
           src/storage/disk.c \
+          src/storage/disk_http.c \
           src/hostfs/hostfs.c \
           src/hostfs/vfs.c \
           src/savestate.c \
@@ -263,7 +264,8 @@ TEST_ULA_NG_SRCS = tests/unit/test_ula_ng.c src/io/ula_ng.c
 TEST_CASSETTE_SRCS = tests/unit/test_cassette.c src/io/cassette.c src/io/via6522.c
 
 TEST_STORAGE_SRCS = tests/unit/test_storage.c src/storage/sedoric.c \
-                    src/storage/disk.c src/io/microdisc.c src/utils/logging.c
+                    src/storage/disk.c src/storage/disk_http.c \
+                    src/io/microdisc.c src/utils/logging.c
 
 TEST_SYSTEM_SRCS = tests/unit/test_full_system.c src/cpu/cpu6502.c \
                    src/cpu/opcodes.c src/cpu/addressing.c src/memory/memory.c \
@@ -368,7 +370,7 @@ TEST_SAVESTATE_SRCS = tests/unit/test_savestate.c src/savestate.c \
                       src/memory/memory.c src/memory/banking.c \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
                       src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
-                      src/storage/disk.c src/storage/sedoric.c \
+                      src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
                       src/utils/logging.c
 
 test-savestate: $(TEST_SAVESTATE_SRCS)
@@ -449,7 +451,7 @@ test-symbols: $(TEST_SYMBOLS_SRCS)
 TEST_LOCI_SRCS = tests/unit/test_loci.c \
                  src/io/loci_core.c src/io/loci_fs.c \
                  src/io/loci_bus.c src/io/loci_boot.c src/io/loci_sdimg.c \
-                 src/utils/logging.c src/storage/disk.c src/storage/sedoric.c \
+                 src/utils/logging.c src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                  src/memory/memory.c src/memory/banking.c
 
@@ -547,7 +549,7 @@ TEST_COVERAGE_SRCS = tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcode
                      src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
-                     src/storage/sedoric.c src/storage/disk.c \
+                     src/storage/sedoric.c src/storage/disk.c src/storage/disk_http.c \
                      src/savestate.c src/debugger.c \
                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c

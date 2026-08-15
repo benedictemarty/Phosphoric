@@ -40,6 +40,7 @@
 #include "storage/tap.h"
 #include "storage/disk.h"
 #include "storage/sedoric.h"
+#include "storage/disk_http.h"   /* loci-webdisk archi B : disque servi par HTTP */
 #include "io/microdisc.h"
 #include "io/loci_sdimg.h"
 #include "io/io_device.h"
@@ -2207,6 +2208,7 @@ int main(int argc, char* argv[]) {
     const char* tape_file = NULL;
     const char* disk_files[MICRODISC_MAX_DRIVES] = {NULL, NULL, NULL, NULL};
     const char* disk_create_file = NULL;
+    const char* disk_web_url = NULL;   /* loci-webdisk archi B: disque servi par HTTP */
     bool disk_writeback = false;
     const char* rom_file = NULL;
     const char* hostfs_path = NULL;
@@ -2315,6 +2317,7 @@ int main(int argc, char* argv[]) {
             case OPT_DISK3: disk_files[3] = optarg; break;
             case OPT_DISK_WRITEBACK: disk_writeback = true; break;
             case OPT_DISK_CREATE: disk_create_file = optarg; disk_writeback = true; break;
+            case OPT_DISK_WEB: disk_web_url = optarg; break;
             case 'r': rom_file = optarg; break;
             case 'h': hostfs_path = optarg; break;
             case 'f': fast_load = true; break;
@@ -3427,6 +3430,49 @@ int main(int argc, char* argv[]) {
             log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
                      'A' + i, emu.disks[i]->size, emu.disks[i]->sides,
                      emu.disks[i]->tracks, emu.disks[i]->sectors);
+        }
+
+        /* --disk-web URL : monte en lecteur A un disque dont les secteurs sont
+         * servis par un serveur HTTP (projet loci-webdisk, architecture B). On
+         * lit d'abord l'en-tête MFM_DISK distant (256 o) pour la géométrie, on
+         * alloue une image à plat VIDE, et le FDC va chercher chaque piste MFM
+         * de 6400 o à la demande (fidèle au chemin réel LOCI dsk_web / ATDISKRD). */
+        if (disk_web_url && !emu.disks[0]) {
+            uint8_t hdr[MFM_DISK_HEADER_SIZE];
+            long hn = disk_http_get(disk_web_url, 0, MFM_DISK_HEADER_SIZE,
+                                    hdr, sizeof(hdr));
+            if (hn < 16 || memcmp(hdr, "MFM_DISK", 8) != 0) {
+                log_error("--disk-web: en-tête MFM_DISK illisible depuis %s", disk_web_url);
+                emulator_cleanup(&emu);
+                return 1;
+            }
+            uint32_t sides  = hdr[8]  | ((uint32_t)hdr[9]  << 8) |
+                              ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+            uint32_t tracks = hdr[12] | ((uint32_t)hdr[13] << 8) |
+                              ((uint32_t)hdr[14] << 16) | ((uint32_t)hdr[15] << 24);
+            if (sides < 1) sides = 1;
+            if (sides > MFM_MAX_SIDES)  sides  = MFM_MAX_SIDES;
+            if (tracks > MFM_MAX_TRACKS) tracks = MFM_MAX_TRACKS;
+            uint8_t spt = MFM_MAX_SECTORS;   /* 17 */
+
+            emu.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+            uint32_t flat = sides * tracks * spt * SEDORIC_SECTOR_SIZE;
+            if (!emu.disks[0] || !(emu.disks[0]->data = (uint8_t*)calloc(1, flat))) {
+                log_error("--disk-web: allocation image à plat impossible");
+                emulator_cleanup(&emu);
+                return 1;
+            }
+            emu.disks[0]->size    = flat;
+            emu.disks[0]->tracks  = (uint8_t)tracks;
+            emu.disks[0]->sectors = spt;
+            emu.disks[0]->sides   = (uint8_t)sides;
+            emu.disks[0]->is_mfm  = false;   /* pas de write-back local */
+
+            microdisc_set_disk(&emu.microdisc, 0, emu.disks[0]->data, emu.disks[0]->size,
+                               emu.disks[0]->tracks, emu.disks[0]->sectors);
+            fdc_set_web(&emu.microdisc.fdc, disk_web_url);   /* après set_disk */
+            log_info("--disk-web: lecteur A servi par %s (%u faces x %u pistes x %u s., "
+                     "pistes chargées à la demande)", disk_web_url, sides, tracks, spt);
         }
 
         /* --disk-create : monte une disquette Sedoric vierge en lecteur A et

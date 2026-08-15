@@ -16,6 +16,9 @@
  */
 
 #include "storage/disk.h"
+#include "storage/sedoric.h"     /* SEDORIC/MFM constants + sedoric_mfm_extract_track */
+#include "storage/disk_http.h"   /* web-backed disk (loci-webdisk archi B) */
+#include "utils/logging.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +68,19 @@ void fdc_reset(fdc_t* fdc) {
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size) {
     fdc->disk_data = data;
     fdc->disk_size = size;
+    /* A plain disk clears any web-backing from a previously selected drive. */
+    fdc->web = false;
+    fdc->web_url[0] = '\0';
+    memset(fdc->web_track_loaded, 0, sizeof(fdc->web_track_loaded));
+}
+
+/* loci-webdisk (archi B): turn the current media into a web-backed disk. Call
+ * AFTER fdc_set_disk() with a zeroed flat image of the right geometry. */
+void fdc_set_web(fdc_t* fdc, const char* url) {
+    if (!url || !url[0]) { fdc->web = false; fdc->web_url[0] = '\0'; return; }
+    fdc->web = true;
+    snprintf(fdc->web_url, sizeof(fdc->web_url), "%s", url);
+    memset(fdc->web_track_loaded, 0, sizeof(fdc->web_track_loaded));
 }
 
 int fdc_bad_map_add(fdc_bad_map_t* map, uint8_t side, uint8_t track, uint8_t sector) {
@@ -89,10 +105,34 @@ void fdc_set_bad_map(fdc_t* fdc, const fdc_bad_map_t* map) {
  * Get pointer to sector data within flat disk image.
  * Layout: side * (tracks * spt) + track * spt + (sector_id - 1)
  */
+/* Web-backed disk (loci-webdisk archi B): fetch the raw 6400-byte MFM track
+ * from the HTTP disk server on first access and extract its sectors into the
+ * flat image. Mirrors the real LOCI dsk_web path (per-track, 6400 o via
+ * ATDISKRD). Marked loaded even on failure so a missing track doesn't storm
+ * the server on every retry. */
+static void fdc_web_ensure_track(fdc_t* fdc, uint8_t side, uint8_t track) {
+    if (!fdc->web || track >= fdc->tracks) return;
+    uint32_t idx = (uint32_t)side * fdc->tracks + track;
+    if (idx >= sizeof(fdc->web_track_loaded) || fdc->web_track_loaded[idx]) return;
+
+    long off = (long)MFM_DISK_HEADER_SIZE + (long)idx * MFM_TRACK_SIZE;
+    uint8_t raw[MFM_TRACK_SIZE];
+    long n = disk_http_get(fdc->web_url, off, MFM_TRACK_SIZE, raw, sizeof(raw));
+    if (n == MFM_TRACK_SIZE) {
+        int got = sedoric_mfm_extract_track(raw, fdc->disk_data,
+                                            fdc->sectors_per_track, fdc->tracks);
+        log_info("disk_http: track s%u/t%u fetched (%d sectors)", side, track, got);
+    } else {
+        log_error("disk_http: track s%u/t%u fetch failed (%ld bytes)", side, track, n);
+    }
+    fdc->web_track_loaded[idx] = 1;
+}
+
 static uint8_t* fdc_find_sector(fdc_t* fdc, uint8_t sec_id) {
     if (!fdc->disk_data) return NULL;
     if (fdc->c_track >= fdc->tracks || sec_id == 0 || sec_id > fdc->sectors_per_track)
         return NULL;
+    if (fdc->web) fdc_web_ensure_track(fdc, fdc->side, fdc->c_track);
     /* Bad sector map: injected faults read as Record Not Found */
     for (uint8_t i = 0; i < fdc->bad.count; i++) {
         if (fdc->bad.entry[i].side == fdc->side &&

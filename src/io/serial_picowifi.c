@@ -211,6 +211,19 @@ typedef struct {
     bool     ca_capture;            /* inside an AT$CA= multi-line PEM upload */
     size_t   ca_stage_len;          /* bytes accumulated during the upload */
     size_t   ca_line_beg;           /* start of the current PEM line in ca_cert */
+
+    /* ── LOCI web-disk raw transfer (loci-webdisk, architecture B) ──
+     * Mirrors picowifi-modem httpDiskRead/httpDiskWrite (webdisk branch): the
+     * modem strips all HTTP framing so LOCI receives disk bytes directly.
+     * ATDISKWR streams its raw body in AFTER the command line, so we capture
+     * the next disk_wr_len bytes from the Oric here (like ca_capture). */
+    bool     disk_wr_capture;       /* inside an ATDISKWR raw-body upload */
+    uint8_t* disk_wr_buf;           /* accumulated body bytes (malloc'd) */
+    uint32_t disk_wr_len;           /* total body bytes expected */
+    uint32_t disk_wr_got;           /* bytes accumulated so far */
+    char     disk_wr_host[256];     /* target host, parsed at command time */
+    char     disk_wr_path[300];     /* target path (carries ?offset=&len=) */
+    uint16_t disk_wr_port;          /* target port */
 #ifdef HAS_PICOTLS
     SSL_CTX* ssl_ctx;               /* per-call client context */
     SSL*     ssl;                   /* active TLS session (NULL = plain) */
@@ -1224,6 +1237,206 @@ static void pw_scan(picowifi_t* pw)
 /* Dispatch one token. Returns the pointer just past the consumed token
  * (config commands emit OK only if at end; dial/info emit their own
  * result), or NULL if the token is unknown. */
+/* ═══════════════════════════════════════════════════════════════════════
+ *  LOCI web-disk raw transfer — ATDISKRD / ATDISKWR (loci-webdisk, archi B)
+ *
+ *  Reimplementation of the picowifi-modem "webdisk" branch commands
+ *  (at_basic.h::httpDiskRead / httpDiskWrite) inside the emulator so the whole
+ *  chain can be exercised end-to-end against the Python disk_server.py:
+ *
+ *    ATDISKRD http://host[:port]/path?offset=&len=
+ *        GET the URL, strip ALL HTTP framing, stream the raw body back to the
+ *        Oric as:  \r\n+DISK:<len>\r\n <len raw bytes>   then OK.  (synchronous)
+ *    ATDISKWR http://host[:port]/path?offset=&len=<n>
+ *        read exactly <n> raw bytes from the Oric (captured after the command),
+ *        PUT them as the body, then OK / ERROR.
+ *
+ *  HTTP only (no TLS) — enough to validate architecture B locally.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* Blocking write of the whole buffer to a non-blocking fd (bounded wait). */
+static bool pw_write_full(int fd, const void* buf, size_t n)
+{
+    size_t sent = 0;
+    int waited = 0;
+    while (sent < n) {
+        ssize_t r = pw_write(fd, (const char*)buf + sent, n - sent);
+        if (r > 0) { sent += (size_t)r; waited = 0; continue; }
+        if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return false;
+        if (waited >= 8000) return false;
+        struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+        poll(&pfd, 1, 50); waited += 50;
+    }
+    return true;
+}
+
+/* Read exactly n bytes from a non-blocking fd (bounded idle wait).
+ * Returns the number of bytes actually read (< n on timeout / peer close). */
+static size_t pw_read_full_timeout(int fd, uint8_t* buf, size_t n, int timeout_ms)
+{
+    size_t got = 0;
+    int waited = 0;
+    while (got < n) {
+        ssize_t r = pw_read(fd, buf + got, n - got);
+        if (r > 0) { got += (size_t)r; waited = 0; continue; }
+        if (r == 0) break;                    /* peer closed */
+        if (waited >= timeout_ms) break;      /* idle timeout */
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        poll(&pfd, 1, 50); waited += 50;
+    }
+    return got;
+}
+
+/* Read one CRLF-terminated line from a non-blocking fd; CR dropped, LF ends
+ * the line. Returns the line length; 0 means a blank line (header/body split). */
+static int pw_disk_read_line(int fd, char* buf, size_t sz, int timeout_ms)
+{
+    size_t n = 0;
+    int waited = 0;
+    while (n < sz - 1) {
+        char c;
+        ssize_t r = pw_read(fd, &c, 1);
+        if (r == 1) {
+            waited = 0;
+            if (c == '\n') break;             /* LF terminates the line */
+            if (c != '\r') buf[n++] = c;      /* keep byte, drop CR */
+            continue;
+        }
+        if (r == 0) break;                    /* peer closed */
+        if (waited >= timeout_ms) break;
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        poll(&pfd, 1, 50); waited += 50;
+    }
+    buf[n] = '\0';
+    return (int)n;
+}
+
+/* Parse "http://host[:port]/path" (path without the leading slash, "" if none).
+ * Returns false when the scheme is not plain http://. */
+static bool pw_disk_parse_url(const char* url, char* host, size_t hsz,
+                              uint16_t* port, char* path, size_t psz)
+{
+    const char* h = pw_match(url, "http://");
+    if (!h) return false;                     /* http only (no TLS here) */
+    while (*h == ' ') h++;
+    char hostport[300];
+    const char* slash = strchr(h, '/');
+    if (slash) {
+        size_t hl = (size_t)(slash - h);
+        if (hl >= sizeof(hostport)) hl = sizeof(hostport) - 1;
+        memcpy(hostport, h, hl); hostport[hl] = '\0';
+        snprintf(path, psz, "%s", slash + 1);
+    } else {
+        snprintf(hostport, sizeof(hostport), "%s", h);
+        path[0] = '\0';
+    }
+    pw_parse_hostport(hostport, host, hsz, port);
+    if (!strchr(hostport, ':')) *port = 80;   /* scheme default (not telnet 23) */
+    return true;
+}
+
+/* ATDISKRD — fully synchronous: fetch, strip HTTP, stream body to the Oric. */
+static void pw_disk_read(picowifi_t* pw, const char* arg)
+{
+    char host[256], path[300];
+    uint16_t port;
+    if (!pw_disk_parse_url(arg, host, sizeof(host), &port, path, sizeof(path))) {
+        pw_result(pw, PW_ERROR); return;
+    }
+    int fd = pw_tcp_connect(host, port);
+    if (fd < 0) { pw_result(pw, PW_ERROR); return; }
+
+    char req[700];
+    int rn = snprintf(req, sizeof(req),
+                      "GET /%s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n",
+                      path, host);
+    if (!pw_write_full(fd, req, (size_t)rn)) { close(fd); pw_result(pw, PW_ERROR); return; }
+
+    /* Status line + headers → capture status and Content-Length. */
+    char line[256];
+    int  status = 0;
+    long clen = -1;
+    int  n = pw_disk_read_line(fd, line, sizeof(line), 8000);
+    if (n > 0) { char* sp = strchr(line, ' '); if (sp) status = atoi(sp + 1); }
+    for (;;) {
+        n = pw_disk_read_line(fd, line, sizeof(line), 8000);
+        if (n <= 0) break;                                     /* blank line/EOF */
+        if (!strncasecmp(line, "Content-Length:", 15)) clen = atol(line + 15);
+    }
+    if ((status != 200 && status != 206) || clen < 0 || clen > 60000) {
+        close(fd); pw_result(pw, PW_ERROR); return;
+    }
+
+    /* Frame the body back to the Oric, then stream the raw bytes. */
+    char hdr[32];
+    snprintf(hdr, sizeof(hdr), "\r\n+DISK:%ld\r\n", clen);
+    pw_rx_str(pw, hdr);
+
+    long remaining = clen;
+    uint8_t chunk[1024];
+    while (remaining > 0) {
+        size_t want = remaining > (long)sizeof(chunk) ? sizeof(chunk) : (size_t)remaining;
+        size_t got = pw_read_full_timeout(fd, chunk, want, 8000);
+        if (got == 0) break;
+        for (size_t i = 0; i < got; i++) pw_rx_push(pw, chunk[i]);
+        remaining -= (long)got;
+    }
+    close(fd);
+    pw_result(pw, remaining > 0 ? PW_ERROR : PW_OK);
+}
+
+/* ATDISKWR (part 2) — PUT the captured body, called once all bytes arrived. */
+static void pw_disk_write_flush(picowifi_t* pw)
+{
+    pw->disk_wr_capture = false;
+    int fd = pw_tcp_connect(pw->disk_wr_host, pw->disk_wr_port);
+    if (fd < 0) { free(pw->disk_wr_buf); pw->disk_wr_buf = NULL; pw_result(pw, PW_ERROR); return; }
+
+    char req[700];
+    int rn = snprintf(req, sizeof(req),
+                      "PUT /%s HTTP/1.1\r\nHost: %s\r\nContent-Length: %u\r\n"
+                      "Connection: close\r\n\r\n",
+                      pw->disk_wr_path, pw->disk_wr_host, pw->disk_wr_len);
+    bool ok = pw_write_full(fd, req, (size_t)rn) &&
+              pw_write_full(fd, pw->disk_wr_buf, pw->disk_wr_len);
+    free(pw->disk_wr_buf); pw->disk_wr_buf = NULL;
+
+    int status = 0;
+    if (ok) {
+        char line[256];
+        int n = pw_disk_read_line(fd, line, sizeof(line), 8000);
+        if (n > 0) { char* sp = strchr(line, ' '); if (sp) status = atoi(sp + 1); }
+    }
+    close(fd);
+    pw_result(pw, (ok && status / 100 == 2) ? PW_OK : PW_ERROR);
+}
+
+/* ATDISKWR (part 1) — parse the URL/len, then enter raw-capture mode. The OK/
+ * ERROR result is emitted later by pw_disk_write_flush once the body is in. */
+static const char* pw_disk_write_begin(picowifi_t* pw, const char* arg)
+{
+    const char* end = arg + strlen(arg);
+    char host[256], path[300];
+    uint16_t port;
+    if (!pw_disk_parse_url(arg, host, sizeof(host), &port, path, sizeof(path))) {
+        pw_result(pw, PW_ERROR); return end;
+    }
+    uint32_t len = 0;
+    char* lp = strstr(path, "len=");
+    if (lp) len = (uint32_t)strtoul(lp + 4, NULL, 10);
+    if (len == 0 || len > 60000) { pw_result(pw, PW_ERROR); return end; }
+
+    pw->disk_wr_buf = (uint8_t*)malloc(len);
+    if (!pw->disk_wr_buf) { pw_result(pw, PW_ERROR); return end; }
+    snprintf(pw->disk_wr_host, sizeof(pw->disk_wr_host), "%s", host);
+    snprintf(pw->disk_wr_path, sizeof(pw->disk_wr_path), "%s", path);
+    pw->disk_wr_port    = port;
+    pw->disk_wr_len     = len;
+    pw->disk_wr_got     = 0;
+    pw->disk_wr_capture = true;                /* subsequent Oric bytes = body */
+    return end;
+}
+
 static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
 {
     const char* a;
@@ -1433,6 +1646,18 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         if (*a == '?') { char b[4]; snprintf(b, sizeof(b), "%d", pw->telnet); pw_qval(pw, b); return pw_end(pw, a + 1); }
         if (*a >= '0' && *a <= '2') { pw->telnet = *a - '0'; return pw_end(pw, a + 1); }
         return pw_end(pw, a);
+    }
+
+    /* ── LOCI web-disk raw transfer (loci-webdisk, archi B) — MUST come before
+     * the generic "D" dial below, or "DISKRD"/"DISKWR" would be read as a dial. */
+    if ((a = pw_match(p, "DISKRD"))) {
+        while (*a == ' ') a++;
+        pw_disk_read(pw, a);
+        return a + strlen(a);
+    }
+    if ((a = pw_match(p, "DISKWR"))) {
+        while (*a == ' ') a++;
+        return pw_disk_write_begin(pw, a);
     }
 
     /* ── Dialing (consumes rest of line, emits own result) ── */
@@ -1708,6 +1933,7 @@ static void picowifi_close(serial_backend_t* self)
     if (!pw) return;
     pw_conn_close(pw);
     if (pw->listen_fd >= 0) { close(pw->listen_fd); pw->listen_fd = -1; }
+    if (pw->disk_wr_buf) { free(pw->disk_wr_buf); pw->disk_wr_buf = NULL; }
     free(pw->rx_buf);
     pw->rx_buf = NULL;
     free(pw);
@@ -1755,6 +1981,16 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
                 return false;
             }
         }
+        return true;
+    }
+
+    /* ── ATDISKWR raw-body capture (loci-webdisk, archi B): collect exactly
+     * disk_wr_len binary bytes from the Oric (no echo, count-based), then PUT. ── */
+    if (pw->disk_wr_capture) {
+        if (pw->disk_wr_buf && pw->disk_wr_got < pw->disk_wr_len)
+            pw->disk_wr_buf[pw->disk_wr_got++] = byte;
+        if (pw->disk_wr_got >= pw->disk_wr_len)
+            pw_disk_write_flush(pw);
         return true;
     }
 
