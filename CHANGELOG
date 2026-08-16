@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.8-alpha] - 2026-08-16
+
+### Documentation — options de test audio dans le README
+
+- `README.md` : ajout des options `--psg-trace FILE` (journal des écritures registres
+  AY 0-13 horodatées en cycles CPU) et `--audio-wav FILE` (capture PSG en WAV 16 bits
+  stéréo 44,1 kHz) à la référence CLI — le bloc était désynchronisé de `--help`.
+- Note : ces options rendent le **son auto-testable en headless/CI** (aucune sortie SDL
+  requise). Correction documentaire uniquement — aucun changement de code, aucun test impacté.
+
 ## [1.103.7-alpha] - 2026-08-15
 
 ### Added — Pseudo-device « W: Web disks » dans le menu LOCI (Route B, loci-webdisk)

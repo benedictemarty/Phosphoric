@@ -255,6 +255,11 @@ Display:
 Trace:
   --trace FILE              Log CPU instruction trace to FILE
   --trace-max N             Max instructions to trace (default: unlimited)
+  --psg-trace FILE          Log AY sound-register writes (reg 0-13) with CPU cycle
+
+Audio:
+  --audio-wav FILE          Capture PSG audio to a 16-bit stereo 44.1 kHz WAV
+                            (headless-friendly: sound is auto-testable in CI)
 
 Profiler:
   --profile FILE            Write CPU performance profile to FILE on exit
