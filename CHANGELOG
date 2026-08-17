@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.9-alpha] - 2026-08-17
+
+### Documentation — guide de pilotage pour Claude Code (nouveaux projets)
+
+- Ajout de `docs/CLAUDE_CODE_EMULATOR_GUIDE.md` : guide destiné à Claude Code (ou tout
+  agent) pour **développer et tester automatiquement** un programme ORIC-1/Atmos avec
+  Phosphoric en headless. Couvre : boucle de test auto, `--type-keys`/`--type-keys-when`,
+  captures (`--screenshot-text*`, `--screenshot*`, `--dump-ram*`, `--audio-wav`,
+  `--psg-trace`), pokes déterministes (`--poke-at`/`--poke-when`), débogage, rejeu
+  déterministe, squelette de script de test, et pièges connus (`--render-software`,
+  `--realtime`, fenêtre de cycles, objets stale).
+- Toutes les options citées sont vérifiées contre `./oric1-emu --help` (v1.103.0-alpha).
+- Correction documentaire uniquement — aucun changement de code, aucun test impacté.
+
 ## [1.103.8-alpha] - 2026-08-16
 
 ### Documentation — options de test audio dans le README
