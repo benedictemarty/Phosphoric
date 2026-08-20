@@ -73,9 +73,18 @@ def main():
 
     # --- carte des secteurs déjà occupés (multi-fichiers sûr) : parcours du
     #     catalogue puis des cartes de secteurs des descripteurs existants ---
+    # ROBUSTESSE (bornage) : les pointeurs (piste,secteur) du catalogue peuvent
+    # porter le DRAPEAU DE FACE de Sedoric (bit 7 de l'octet piste : piste 131 =
+    # 0x83 = face 1, piste 3) ou être des rémanences hors image. rd() ne lit que
+    # la face 0 ; suivre un tel pointeur renvoie un secteur tronqué et lève une
+    # IndexError. On BORNE donc chaque accès, comme build_game_disk._catalog_used
+    # (les fichiers de face 1 ne sont pas alloués ici : l'allocation reste en
+    # face 0 à partir de la piste 21, donc les ignorer est sûr).
+    def ok(t, s):
+        return 0 <= t < tracks and 1 <= s <= sectors
     used = set()
     dt, ds, guard = DIR_TRACK, DIR_SECTOR, 0
-    while guard < 64:
+    while guard < 64 and ok(dt, ds):
         guard += 1
         dirs = rd(dt, ds)
         used.add((dt, ds))                   # le secteur catalogue lui-même
@@ -85,7 +94,7 @@ def main():
             if dirs[e + 15] & 0x80:          # supprimé
                 continue
             cdt, cds, dg, first = dirs[e + 12], dirs[e + 13], 0, True
-            while dg < 64:
+            while dg < 64 and ok(cdt, cds):
                 dg += 1
                 desc = rd(cdt, cds)
                 used.add((cdt, cds))         # le secteur descripteur lui-même
@@ -93,7 +102,8 @@ def main():
                 while p + 1 < SECSZ:
                     if desc[p] == 0 and desc[p + 1] == 0:
                         break
-                    used.add((desc[p], desc[p + 1]))
+                    if ok(desc[p], desc[p + 1]):
+                        used.add((desc[p], desc[p + 1]))
                     p += 2
                 if desc[0] == 0 and desc[1] == 0:
                     break
@@ -171,6 +181,9 @@ def main():
     # pour trouver un slot libre ; si toute la chaîne est pleine, on alloue un
     # secteur libre et on le chaîne (les secteurs catalogue sont localisés par
     # lien piste/secteur, pas par zone fixe -- manuel SEDORIC 3.0, ANNEXE 7).
+    # cat_t/cat_s reste TOUJOURS sur un secteur catalogue VALIDE en face 0 : on
+    # ne suit un lien de chaîne que s'il est borné (voir note ci-dessus : la
+    # chaîne d'un master 2-faces peut repartir en face 1 = piste >= 128).
     cat_t, cat_s, slot, new_cat, guard = DIR_TRACK, DIR_SECTOR, None, False, 0
     while guard < 64:
         guard += 1
@@ -180,9 +193,10 @@ def main():
         if s + 16 <= SECSZ:
             slot = s
             break
-        if dirs[0] == 0 and dirs[1] == 0:
-            break                            # fin de chaîne, tout est plein
-        cat_t, cat_s = dirs[0], dirs[1]
+        nxt_t, nxt_s = dirs[0], dirs[1]
+        if (nxt_t == 0 and nxt_s == 0) or not ok(nxt_t, nxt_s):
+            break            # fin de chaîne (ou lien hors image/face 1) : on ajoutera un secteur
+        cat_t, cat_s = nxt_t, nxt_s
     if slot is None:
         used.add((desc_t, desc_s))
         for (dt2, ds2) in alloc[1:]:
