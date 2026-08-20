@@ -338,7 +338,7 @@ static bool eval_cond(const bp_condition_t* c, const emulator_t* emu) {
         case BP_OPERAND_P:  lhs = emu->cpu.P;  break;
         case BP_OPERAND_PC: lhs = emu->cpu.PC; break;
         case BP_OPERAND_MEM:
-            lhs = memory_read((memory_t*)&emu->memory, c->mem_addr);
+            lhs = memory_peek((memory_t*)&emu->memory, c->mem_addr);
             break;
         default: return false;
     }
@@ -680,11 +680,11 @@ static uint16_t show_disassembly(emulator_t* emu, uint16_t addr, int count) {
         printf("  $%04X: ", addr);
         for (int b = 0; b < 3; b++) {
             if (b < bytes)
-                printf("%02X ", memory_read(&emu->memory, (uint16_t)(addr + b)));
+                printf("%02X ", memory_peek(&emu->memory, (uint16_t)(addr + b)));
             else
                 printf("   ");
         }
-        uint8_t opc = memory_read(&emu->memory, addr);
+        uint8_t opc = memory_peek(&emu->memory, addr);
         printf(" %-18s ; %u cyc", buf, cpu_opcode_cycles(opc));
         append_operand_symbols(&emu->symbols, buf);   /* sprint 34d1 P0-A */
         if (addr == emu->cpu.PC)
@@ -731,7 +731,7 @@ static void show_stack(emulator_t* emu) {
     printf("  SP=$%02X, depth=%d bytes\n", sp, 0xFF - sp);
     printf("  $01%02X: ", (uint8_t)(sp + 1));
     for (int i = 1; i <= depth; i++) {
-        printf("%02X ", memory_read(&emu->memory, (uint16_t)(0x0100 + sp + i)));
+        printf("%02X ", memory_peek(&emu->memory, (uint16_t)(0x0100 + sp + i)));
         if (i % 16 == 0 && i < depth)
             printf("\n         ");
     }
@@ -1175,7 +1175,7 @@ static void show_help(void) {
  * the side-effect-free CPU view (ROM/overlay) for $C000-$FFFF. */
 static uint8_t dbg_peek(emulator_t* emu, uint16_t a) {
     if (a < RAM_SIZE) return emu->memory.ram[a];
-    return memory_read(&emu->memory, a);
+    return memory_peek(&emu->memory, a);
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1502,7 +1502,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         else if (strcmp(cmd, "n") == 0 || strcmp(cmd, "next") == 0) {
             undo_push(dbg, emu);   /* sprint 34d5 P2-F */
             /* Check if current instruction is JSR ($20) */
-            uint8_t opcode = memory_read(&emu->memory, emu->cpu.PC);
+            uint8_t opcode = memory_peek(&emu->memory, emu->cpu.PC);
             if (opcode == 0x20) {
                 /* JSR abs: set temp breakpoint at PC+3 */
                 dbg->temp_breakpoint = (uint16_t)(emu->cpu.PC + 3);

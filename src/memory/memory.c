@@ -165,6 +165,38 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
     return val;
 }
 
+uint8_t memory_peek(memory_t* mem, uint16_t address)
+{
+    /* I/O space ($0300-$03FF): non-destructive route. Reading DATA/STATUS via
+     * io_read would consume RX bytes / clear IRQ — forbidden for observers. No
+     * mem_notify either (a peek must not trip watchpoints/trace). */
+    if (address >= 0x0300 && address <= 0x03FF) {
+        if (mem->io_peek)  return mem->io_peek(address, mem->io_userdata);
+        if (mem->io_read)  return mem->io_read(address, mem->io_userdata);
+        return 0xFF;
+    }
+
+    /* RAM: $0000-$BFFF (same stuck-bit model as memory_read, no notify). */
+    if (address < 0xC000) {
+        uint8_t val = mem->ram[address];
+        if (mem->stuck0 | mem->stuck1)
+            val = (uint8_t)((val & (uint8_t)~mem->stuck0) | mem->stuck1);
+        return val;
+    }
+
+    /* ROM/overlay area: $C000-$FFFF — mirror memory_read's banking exactly. */
+    if (mem->basic_rom_disabled) {
+        if (mem->overlay_active && mem->overlay_rom && address >= 0xE000) {
+            uint16_t rom_offset = address - 0xE000;
+            if (rom_offset < mem->overlay_rom_size)
+                return mem->overlay_rom[rom_offset];
+            return mem->upper_ram[address - 0xC000];
+        }
+        return mem->upper_ram[address - 0xC000];
+    }
+    return mem->rom[address - 0xC000];
+}
+
 void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     if (!g_watch_done) watch_lazy_init();
     if (g_watch_fp && address >= g_watch_lo && address <= g_watch_hi) {
@@ -220,6 +252,11 @@ void memory_set_io_callbacks(memory_t* mem,
     mem->io_read = read_cb;
     mem->io_write = write_cb;
     mem->io_userdata = userdata;
+}
+
+void memory_set_io_peek(memory_t* mem, uint8_t (*peek_cb)(uint16_t, void*))
+{
+    mem->io_peek = peek_cb;
 }
 
 void memory_set_trace(memory_t* mem, bool enabled,

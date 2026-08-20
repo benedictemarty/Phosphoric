@@ -229,6 +229,21 @@ void acia_reset(acia6551_t* acia);
 uint8_t acia_read(acia6551_t* acia, uint16_t addr);
 
 /**
+ * @brief Peek an ACIA register WITHOUT side effects (observers only)
+ *
+ * Reading DATA ($xxx0) on a real 6551 is destructive: it clears RDRF and
+ * "consumes" the received byte. Reading STATUS clears the IRQ flag. That is
+ * correct for the CPU, but a debugger / monitor / remote display that samples
+ * memory must NOT perturb the receiver — otherwise it silently steals RX bytes
+ * (no OVERRUN, eventual CPU starvation). acia_peek() returns the same value as
+ * acia_read() but mutates nothing. Used by memory_peek() for non-CPU accesses.
+ *
+ * @param addr Address (low 2 bits select the register)
+ * @return Register value (rdr/status/command/control), no state change
+ */
+uint8_t acia_peek(const acia6551_t* acia, uint16_t addr);
+
+/**
  * @brief Write ACIA register
  * @param addr Address ($031C-$031F)
  * @param value Data to write

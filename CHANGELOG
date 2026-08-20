@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.104.0-alpha] - 2026-08-20
+
+### Fixed — lecture d'observation destructive de l'ACIA (vol silencieux d'octets RX)
+
+- **Symptôme rapporté** (terminal HIRES déporté, réception soutenue à 19200 sur ACIA
+  $0380) : sur 8000 octets livrés (tracés RX), le CPU n'en lisait que ~6522 puis se
+  bloquait dans la boucle `acia_getc`, **sans aucun OVERRUN tracé**. Contradiction
+  apparente avec le code (toute perte en mode classique passe par la branche OVERRUN
+  et repose RDRF → le CPU ne devrait jamais se bloquer).
+- **Cause racine** : `memory_read()` (memory.c) route **tout** accès $0300-$03FF vers
+  le callback io **pour n'importe quel appelant, pas seulement le CPU**. Or lire le
+  registre DATA de l'ACIA est **destructif** (`acia_read` case 0 : efface RDRF,
+  « consomme » l'octet, sans passer par OVERRUN). Résultat : tout observateur non-CPU
+  qui échantillonne la mémoire dans la plage $0380 via `memory_read` (débogueur,
+  `--control`/HTTP `control.c`, gdbstub, TUI, dump `--dump-ram-*`, affichage déporté)
+  **vole des octets RX silencieusement** — exactement les trois symptômes : perte sans
+  OVERRUN, corruption de séquence, et famine CPU quand le dernier octet est volé.
+- **Correctif** : chemin de lecture **sans effet de bord** pour les observateurs.
+  - `acia_peek()` (nouveau) : lit rdr/status/command/control **sans** effacer RDRF/IRQ
+    ni popper la FIFO.
+  - `io_device_t::peek` (champ optionnel ; NULL → repli sur `read`, zéro régression) ;
+    l'ACIA fournit `acia_dev_peek` (io_bus.c).
+  - `memory_peek()` (nouveau) : identique à `memory_read` pour RAM/ROM, mais route la
+    fenêtre I/O vers le callback `io_peek` (non destructif) et ne déclenche PAS les
+    hooks de trace/watchpoint. `memory_set_io_peek()` + `io_peek_callback` (main.c).
+  - **Tous les appelants non-CPU** de `memory_read` (`control.c`, `debugger.c`,
+    `network/gdbstub.c`, `tui.c`, et les 4 lectures d'inspection de `main.c` :
+    `when_read` + boucles de dump) basculés vers `memory_peek`.
+  - Le chemin d'exécution CPU (`addressing.c` → `cpu_mem_read` → `memory_read`) est
+    **inchangé** : la lecture DATA reste destructive pour le CPU, comme le vrai 6551.
+- **Vérifié PAR LA MESURE** : (1) repro exact `recv_count.tap` rejoué headless, ligne de
+  commande nue → **count = 8000/8000** (chemin CPU intact, aucune régression) ; (2)
+  démonstration unitaire contre le vrai `acia6551.o` : un observateur parasite lisant
+  DATA périodiquement → `acia_read` (avant) = flux corrompu (mismatches massifs), vol
+  silencieux ; `acia_peek` (après) = **8000 reçus, 0 mismatch, 0 perte**. Portée honnête :
+  le repli VIA utilise encore `via_read` (pas de `via_peek` — sans objet pour l'ACIA,
+  et non pire que l'historique où les observateurs appelaient `memory_read` directement).
+- Nouveau test `test_peek_non_destructive` (test-serial **22 → 23**) : peek DATA répété
+  ne consomme pas l'octet, ne vide pas RDRF, n'efface pas l'IRQ ; la vraie lecture CPU
+  consomme ensuite. `make clean && make tests` : toutes suites vertes (0 échec) ;
+  builds SDL2=0 & SDL2=1 OK. EMU_VERSION 1.103.0-alpha → 1.104.0-alpha.
+
 ## [1.103.9-alpha] - 2026-08-17
 
 ### Documentation — guide de pilotage pour Claude Code (nouveaux projets)

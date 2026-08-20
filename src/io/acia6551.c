@@ -363,6 +363,22 @@ uint8_t acia_read(acia6551_t* acia, uint16_t addr)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Register Peek — side-effect-free read for observers (debugger, monitor,
+ *  memory dump, remote display). NEVER clears RDRF/IRQ nor pops the FIFO.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+uint8_t acia_peek(const acia6551_t* acia, uint16_t addr)
+{
+    switch (addr & ACIA_ADDR_MASK) {
+    case 0x00: return acia->rdr;      /* DATA: no RDRF clear, no FIFO pop */
+    case 0x01: return acia->status;   /* STATUS: no IRQ clear */
+    case 0x02: return acia->command;
+    case 0x03: return acia->control;
+    default:   return 0xFF;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Register Write
  * ═══════════════════════════════════════════════════════════════════════ */
 

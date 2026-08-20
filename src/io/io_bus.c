@@ -65,6 +65,13 @@ static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     acia_write(&emu->acia, addr, value);
     return true;
 }
+/* Lecture d'observation non destructive (débogueur/moniteur/dump/déporté) :
+ * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. */
+static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
+    if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
+        return 0xFF;
+    return acia_peek(&emu->acia, addr);
+}
 
 /* Mageco / ORICON MIDI (ACIA 6850) : $03FE-$03FF ou $031C-$031E. */
 static bool mageco_dev_claims(emulator_t* emu, uint16_t addr) {
@@ -165,7 +172,8 @@ static const io_device_t io_bus[] = {
     /* (save_tag/save/load à NULL : ces devices n'ont pas encore de section .ost —
      * à migrer sur le même modèle que l'ULA-NG ; LOCI a la réserve des handles OS.) */
     { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL, NULL, NULL, NULL },
-    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL, NULL, NULL, NULL },
+    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL, NULL, NULL, NULL,
+      acia_dev_peek },
     { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL,
       "MAG\0",     mageco_dev_save,      mageco_dev_load },
     { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },

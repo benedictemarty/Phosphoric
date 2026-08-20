@@ -236,6 +236,19 @@ static uint8_t io_read_callback(uint16_t address, void* userdata) {
     return via_read(&emu->via, (uint8_t)(address & 0x0F));
 }
 
+/* Side-effect-free I/O read for observers (memory_peek): debugger, control API,
+ * memory dumps, remote display. Uses the device's peek() when available (ACIA →
+ * no RDRF clear), else falls back to read() — identical to io_read_callback for
+ * devices without destructive reads. NB: the VIA fallback still uses via_read
+ * (no via_peek yet); reading most VIA regs is harmless, and this is no worse
+ * than the historical behavior where observers called memory_read directly. */
+static uint8_t io_peek_callback(uint16_t address, void* userdata) {
+    emulator_t* emu = (emulator_t*)userdata;
+    const io_device_t* dev = io_bus_find(emu, address);
+    if (dev) return dev->peek ? dev->peek(emu, address) : dev->read(emu, address);
+    return via_read(&emu->via, (uint8_t)(address & 0x0F));
+}
+
 /**
  * @brief Decode PSG bus state and execute operation
  *
@@ -727,6 +740,7 @@ static bool emulator_init(emulator_t* emu) {
 
     /* Wire up I/O callbacks */
     memory_set_io_callbacks(&emu->memory, io_read_callback, io_write_callback, emu);
+    memory_set_io_peek(&emu->memory, io_peek_callback);  /* observateurs non destructifs */
     via_set_irq_callback(&emu->via, irq_callback, emu);
 
     /* Expose la table de bus à la sérialisation : les devices qui fournissent un
@@ -1028,7 +1042,7 @@ static void feed_kbd_inject(emulator_t* emu) {
 static uint8_t when_read(const emulator_t* emu, uint16_t addr) {
     if (addr < 0xC000)
         return emu->memory.ram[addr];
-    return memory_read((memory_t*)&emu->memory, addr);
+    return memory_peek((memory_t*)&emu->memory, addr);
 }
 
 /* Symétrique de when_read pour --poke-* : écrit RAM[addr]. En dessous de $C000
@@ -1770,7 +1784,7 @@ static void emulator_run(emulator_t* emu) {
                             /* $C000-$FFFF : vue CPU bankée (même contrat 64 Ko
                              * que --dump-ram-at, cf. sprint 38) */
                             for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
-                                uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                                uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
                                 fwrite(&b, 1, 1, df);
                             }
                             fclose(df);
@@ -1926,7 +1940,7 @@ static void emulator_run(emulator_t* emu) {
                     /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay / upper
                      * RAM). memory_read est sans effet de bord hors page I/O. */
                     for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
-                        uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                        uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
                         fwrite(&b, 1, 1, rf);
                     }
                     fclose(rf);
@@ -2010,7 +2024,7 @@ static void emulator_run(emulator_t* emu) {
             if (rf) {
                 fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
                 for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
-                    uint8_t b = memory_read(&emu->memory, (uint16_t)a);
+                    uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
                     fwrite(&b, 1, 1, rf);
                 }
                 fclose(rf);

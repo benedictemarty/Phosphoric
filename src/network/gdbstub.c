@@ -74,7 +74,7 @@ uint8_t gdb_checksum(const char* data, size_t len) {
 
 static uint8_t gdb_peek(emulator_t* emu, uint16_t a) {
     if (a < RAM_SIZE) return emu->memory.ram[a];
-    return memory_read(&emu->memory, a);
+    return memory_peek(&emu->memory, a);
 }
 
 /* ─── target description ─────────────────────────────────────────────── */

@@ -238,6 +238,38 @@ TEST(test_overrun) {
     teardown();
 }
 
+/* Régression : acia_peek() (lecture d'observation) NE DOIT PAS consommer l'octet
+ * RX ni effacer RDRF/IRQ. Un moniteur/débogueur/affichage déporté qui échantillonne
+ * $0380 via memory_peek volait sinon des octets silencieusement (0 OVERRUN, famine
+ * CPU). Voir memory_peek()/io_device_t::peek. */
+TEST(test_peek_non_destructive) {
+    setup();
+
+    /* 19200 8N1, DTR on, RX IRQ activé (IRD=0) pour vérifier aussi l'IRQ. */
+    acia_write(&acia, ACIA_REG_CONTROL, 0x1F);
+    acia_write(&acia, ACIA_REG_COMMAND, 0x01);
+
+    loopback->send(loopback, 0x5A);
+    tick_one_byte(19200);
+
+    /* Octet reçu : RDRF + IRQ posés. */
+    ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);
+    ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_IRQ);
+
+    /* Peek DATA plusieurs fois : renvoie l'octet, NE consomme RIEN. */
+    for (int i = 0; i < 5; i++) {
+        ASSERT_EQ(acia_peek(&acia, ACIA_REG_DATA), 0x5A);
+        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);  /* toujours plein */
+        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_IRQ);   /* IRQ non effacé */
+    }
+
+    /* La vraie lecture CPU consomme enfin l'octet et efface RDRF. */
+    ASSERT_EQ(acia_read(&acia, ACIA_REG_DATA), 0x5A);
+    ASSERT_FALSE(acia_read(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);
+
+    teardown();
+}
+
 TEST(test_v23_mode) {
     setup();
 
@@ -646,6 +678,7 @@ int main(void) {
     RUN(test_tx_irq);
     RUN(test_rx_irq);
     RUN(test_overrun);
+    RUN(test_peek_non_destructive);
     RUN(test_v23_mode);
     RUN(test_ext_clock_baud);
     RUN(test_dcd_dsr_status);

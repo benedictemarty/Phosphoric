@@ -63,6 +63,15 @@ typedef struct io_device_s {
     /** Relit `size` octets de payload écrits par `save` (appelé si un tag de
      *  section correspond à `save_tag`). */
     void    (*load)(struct emulator_s* emu, FILE* fp, uint32_t size);
+
+    /* ── Lecture d'observation, sans effet de bord (optionnelle) ─────────────
+     * `read()` peut muter l'état (lire DATA de l'ACIA vide RDRF ; lire STATUS
+     * efface l'IRQ). Un observateur (débogueur, moniteur, dump, affichage
+     * déporté) doit voir le registre SANS le consommer, sinon il vole des
+     * octets RX silencieusement. NULL → l'appelant retombe sur `read` (identique
+     * au comportement historique). Seuls les devices à lecture destructive
+     * (ACIA) fournissent un `peek`. */
+    uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);
 } io_device_t;
 
 #endif /* IO_DEVICE_H */

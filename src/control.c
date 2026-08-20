@@ -355,7 +355,7 @@ static void cmd_bread(emulator_t* emu, control_sink_t* s,
      * flush, so a partial write can't interleave with another reply. */
     static uint8_t buf[0x10000];
     for (uint32_t i = 0; i < len; i++) {
-        buf[i] = memory_read(&emu->memory, (uint16_t)(addr + i));
+        buf[i] = memory_peek(&emu->memory, (uint16_t)(addr + i));
     }
     sink_printf(s, "OK bread len=%u\n", len);
     sink_write(s, buf, len);
@@ -1230,7 +1230,7 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
         return CONTROL_RESUME;
     }
     else if (strcmp(cmd, "next") == 0) {
-        uint8_t opc = memory_read(&emu->memory, emu->cpu.PC);
+        uint8_t opc = memory_peek(&emu->memory, emu->cpu.PC);
         if (opc == 0x20) {
             emu->debugger.temp_breakpoint = (uint16_t)(emu->cpu.PC + 3);
             emu->debugger.has_temp_breakpoint = true;
@@ -1248,8 +1248,8 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
          * so JSR stores PC-1 with hi at $0100+SP+2 and lo at SP+1).
          * RTS adds +1 to land on the instruction after JSR. */
         uint16_t sp = (uint16_t)(0x0100 + emu->cpu.SP);
-        uint8_t lo = memory_read(&emu->memory, (uint16_t)(sp + 1));
-        uint8_t hi = memory_read(&emu->memory, (uint16_t)(sp + 2));
+        uint8_t lo = memory_peek(&emu->memory, (uint16_t)(sp + 1));
+        uint8_t hi = memory_peek(&emu->memory, (uint16_t)(sp + 2));
         uint16_t ret = (uint16_t)(((uint16_t)hi << 8) | lo) + 1;
         emu->debugger.temp_breakpoint = ret;
         emu->debugger.has_temp_breakpoint = true;

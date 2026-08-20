@@ -64,6 +64,9 @@ typedef struct memory_s {
     /* I/O device callbacks */
     uint8_t (*io_read)(uint16_t address, void* userdata);
     void (*io_write)(uint16_t address, uint8_t value, void* userdata);
+    /* Side-effect-free I/O read for observers (memory_peek). NULL → memory_peek
+     * falls back to io_read. See memory_peek() and io_device_t::peek. */
+    uint8_t (*io_peek)(uint16_t address, void* userdata);
     void* io_userdata;
 
     /* Memory access tracing (for debugging) */
@@ -127,6 +130,22 @@ bool memory_load_charset(memory_t* mem, const char* filename);
 uint8_t memory_read(memory_t* mem, uint16_t address);
 
 /**
+ * @brief Peek a byte WITHOUT side effects (observers: debugger, monitor, dump)
+ *
+ * Identical to memory_read() for RAM/ROM, but for the I/O window ($0300-$03FF)
+ * it routes to the side-effect-free io_peek callback instead of io_read. This
+ * prevents an observer that samples memory from perturbing hardware — notably
+ * from silently consuming ACIA RX bytes (reading DATA clears RDRF). It also
+ * does NOT fire memory trace/watchpoint hooks. If no io_peek is registered it
+ * falls back to io_read (historical behavior).
+ *
+ * @param mem Pointer to memory structure
+ * @param address Address to read from
+ * @return Byte value (no state change)
+ */
+uint8_t memory_peek(memory_t* mem, uint16_t address);
+
+/**
  * @brief Write byte to memory
  *
  * @param mem Pointer to memory structure
@@ -165,6 +184,15 @@ void memory_set_io_callbacks(memory_t* mem,
                              uint8_t (*read_cb)(uint16_t, void*),
                              void (*write_cb)(uint16_t, uint8_t, void*),
                              void* userdata);
+
+/**
+ * @brief Register the side-effect-free I/O read callback used by memory_peek()
+ *
+ * @param mem Pointer to memory structure
+ * @param peek_cb Peek callback (routes to io_device_t::peek, non-destructive)
+ */
+void memory_set_io_peek(memory_t* mem,
+                        uint8_t (*peek_cb)(uint16_t, void*));
 
 /**
  * @brief Enable/disable memory access tracing

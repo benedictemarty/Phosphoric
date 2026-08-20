@@ -154,7 +154,7 @@ static void draw_stack(emulator_t* emu) {
     for (int i = 0; i < max_h - 2 && i < 16; i++) {
         uint16_t addr = (uint16_t)(0x0100 + sp + 1 + i);
         if (addr > 0x01FF) break;
-        uint8_t v = memory_read(&emu->memory, addr);
+        uint8_t v = memory_peek(&emu->memory, addr);
         mvwprintw(w_stack, row++, 2, "$%04X: %02X", addr, v);
     }
     if (row == 1)
@@ -181,7 +181,7 @@ static void draw_disasm(emulator_t* emu) {
         if (is_pc) wattron(w_disasm, COLOR_PAIR(2) | A_BOLD);
         else if (is_bp) wattron(w_disasm, COLOR_PAIR(4));
         char prefix = is_pc ? '>' : (is_bp ? '*' : ' ');
-        uint8_t opc = memory_read(&emu->memory, addr);
+        uint8_t opc = memory_peek(&emu->memory, addr);
         uint8_t cyc = cpu_opcode_cycles(opc);
         if (sym) {
             mvwprintw(w_disasm, row, 2, "%c $%04X: %-18s [%u] ; %s",
@@ -213,11 +213,11 @@ static void draw_mem(emulator_t* emu) {
         int n = snprintf(line, sizeof(line), "$%04X:", a);
         for (int c = 0; c < bpr; c++) {
             n += snprintf(line + n, sizeof(line) - n, " %02X",
-                          memory_read(&emu->memory, (uint16_t)(a + c)));
+                          memory_peek(&emu->memory, (uint16_t)(a + c)));
         }
         n += snprintf(line + n, sizeof(line) - n, "  ");
         for (int c = 0; c < bpr; c++) {
-            uint8_t b = memory_read(&emu->memory, (uint16_t)(a + c));
+            uint8_t b = memory_peek(&emu->memory, (uint16_t)(a + c));
             line[n++] = (b >= 0x20 && b < 0x7F) ? (char)b : '.';
         }
         line[n] = '\0';
@@ -336,7 +336,7 @@ void tui_repl(emulator_t* emu) {
             case 'n': case 'N':
                 /* Step-over: if current insn is JSR, set temp breakpoint */
                 {
-                    uint8_t opc = memory_read(&emu->memory, emu->cpu.PC);
+                    uint8_t opc = memory_peek(&emu->memory, emu->cpu.PC);
                     if (opc == 0x20) {
                         dbg->temp_breakpoint = (uint16_t)(emu->cpu.PC + 3);
                         dbg->has_temp_breakpoint = true;
