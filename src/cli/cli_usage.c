@@ -143,6 +143,9 @@ void cli_print_usage(const char* program_name) {
     printf("                            instead of instant transfer when baud index = 0\n");
     printf("      --serial-irq-on-rdrf  WDC 65C51 IRQ mode (re-trigger while RDRF set)\n");
     printf("      --serial-trace FILE   Serial debug trace (TX/RX/signals with timestamps)\n");
+    printf("      --serial-tcp-backpressure[=N]  Bounded RX for tcp:: stop draining the socket\n");
+    printf("                            when the RX FIFO is full + cap kernel SO_RCVBUF to N\n");
+    printf("                            bytes (default N=FIFO size or 512) → real TCP flow control\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
     printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
     printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");

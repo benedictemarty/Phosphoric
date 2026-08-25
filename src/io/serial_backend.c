@@ -201,6 +201,28 @@ static bool tcp_open(serial_backend_t* self)
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
+    /* Optional bounded receive buffer (--serial-tcp-backpressure). Without
+     * this the kernel autotunes SO_RCVBUF into the megabytes, so a burst is
+     * absorbed in-kernel and the sender never blocks. Capping it — together
+     * with an ACIA that refuses to drain a full FIFO — makes TCP flow control
+     * stall the remote sender, faithful to a real bounded UART FIFO.
+     * Note: the kernel doubles the requested value (bookkeeping) and enforces
+     * a floor (~SOCK_MIN_RCVBUF, typically 2 KiB), so tiny caps clamp up. */
+    if (self->state.tcp.rcvbuf > 0) {
+        int rb = self->state.tcp.rcvbuf;
+        if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rb, sizeof(rb)) != 0) {
+            log_warning("Serial TCP: SO_RCVBUF=%d failed: %s (backpressure may be loose)",
+                        rb, strerror(errno));
+        } else {
+            int actual = 0;
+            socklen_t alen = sizeof(actual);
+            if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &actual, &alen) == 0) {
+                log_info("Serial TCP: SO_RCVBUF capped to %d bytes (kernel granted %d)",
+                         rb, actual);
+            }
+        }
+    }
+
     self->state.tcp.sockfd = fd;
     log_info("Serial TCP: connected to %s:%u (fd=%d)",
              self->state.tcp.host, self->state.tcp.port, fd);
@@ -265,7 +287,14 @@ serial_backend_t* serial_backend_tcp_create(const char* host, uint16_t port)
     strncpy(b->state.tcp.host, host, sizeof(b->state.tcp.host) - 1);
     b->state.tcp.port = port;
     b->state.tcp.sockfd = -1;
+    b->state.tcp.rcvbuf = 0;
     return b;
+}
+
+void serial_backend_tcp_set_rcvbuf(serial_backend_t* backend, int bytes)
+{
+    if (!backend || backend->type != SERIAL_BACKEND_TCP) return;
+    backend->state.tcp.rcvbuf = (bytes > 0) ? bytes : 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

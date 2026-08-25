@@ -2321,6 +2321,8 @@ int main(int argc, char* argv[]) {
     int serial_baud = 0;
     bool serial_irq_on_rdrf = false;
     const char* serial_trace_file = NULL;
+    bool serial_tcp_backpressure = false;  /* --serial-tcp-backpressure */
+    int  serial_tcp_rcvbuf = 0;            /* explicit SO_RCVBUF cap (0 = auto) */
 
     int opt;
     int option_index = 0;
@@ -2447,6 +2449,13 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_SERIAL_TRACE:
                 serial_trace_file = optarg;
+                break;
+            case OPT_SERIAL_TCP_BACKPRESSURE:
+                serial_tcp_backpressure = true;
+                if (optarg) {
+                    serial_tcp_rcvbuf = atoi(optarg);
+                    if (serial_tcp_rcvbuf < 0) serial_tcp_rcvbuf = 0;
+                }
                 break;
             case OPT_DUMP_RAM_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_DUMP_RAM;} break;
             case OPT_BAD_SECTOR:
@@ -2727,6 +2736,17 @@ int main(int argc, char* argv[]) {
         }
 
         if (sb) {
+            /* Bounded RX (--serial-tcp-backpressure): cap the kernel socket
+             * buffer BEFORE open() so it takes effect on the live fd. Default
+             * cap tracks the RX FIFO depth (or 512) when N is not given. */
+            if (serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
+                int cap = serial_tcp_rcvbuf;
+                if (cap <= 0) cap = (serial_buffer_size > 0) ? serial_buffer_size : 512;
+                serial_backend_tcp_set_rcvbuf(sb, cap);
+            } else if (serial_tcp_backpressure) {
+                log_warning("--serial-tcp-backpressure has no effect on non-TCP backend '%s' "
+                            "(only tcp: has a kernel socket buffer to bound)", serial_arg);
+            }
             if (sb->open(sb)) {
                 acia_set_backend(&emu.acia, sb);
                 emu.serial_backend = sb;
@@ -2742,6 +2762,9 @@ int main(int argc, char* argv[]) {
                 }
                 if (serial_irq_on_rdrf) {
                     acia_set_irq_on_rdrf(&emu.acia, true);
+                }
+                if (serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
+                    acia_set_rx_backpressure(&emu.acia, true);
                 }
                 if (serial_trace_file) {
                     acia_set_trace(&emu.acia, serial_trace_file);

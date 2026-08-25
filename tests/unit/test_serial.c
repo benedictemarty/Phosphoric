@@ -501,6 +501,71 @@ TEST(test_rx_fifo) {
     teardown();
 }
 
+/* --serial-tcp-backpressure : quand le FIFO RX est plein, acia_tick NE DOIT PAS
+ * drainer le backend. Les octets excédentaires restent dans le transport (ici le
+ * tampon loopback, un vrai socket TCP pour tcp:) → la contre-pression remonte à
+ * l'émetteur au lieu d'un OVERRUN silencieux. Aucun octet n'est perdu ni réordonné. */
+TEST(test_rx_backpressure) {
+    setup();
+
+    /* FIFO 2 octets → capacité RX = RDR(1) + FIFO(2) = 3 slots. */
+    acia_set_rx_fifo(&acia, 2);
+    acia_set_rx_backpressure(&acia, true);
+
+    /* 19200 8N1, DTR on, IRQ RX désactivé. */
+    acia_write(&acia, ACIA_REG_CONTROL, 0x1F);
+    acia_write(&acia, ACIA_REG_COMMAND, 0x03);
+
+    /* 5 octets poussés « sur la ligne » : plus que la capacité RX. */
+    for (uint8_t v = 0x41; v <= 0x45; v++) {
+        loopback->send(loopback, v);
+    }
+
+    /* Tick largement : sans contre-pression les 5 seraient tirés (2 perdus + OVRN).
+     * Avec contre-pression, seuls 3 sont tirés, les 2 autres restent dans loopback. */
+    for (int i = 0; i < 8; i++) tick_one_byte(19200);
+
+    /* Le backend a encore des données (contre-pression active) et AUCUN overrun. */
+    ASSERT_TRUE(loopback->poll(loopback));
+    ASSERT_FALSE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_OVRN);
+
+    /* Drainage complet : on relit tout, dans l'ordre, sans perte. Chaque lecture
+     * libère un slot → le tick suivant tire l'octet resté sur la ligne. */
+    for (uint8_t expected = 0x41; expected <= 0x45; expected++) {
+        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);
+        ASSERT_EQ(acia_read(&acia, ACIA_REG_DATA), expected);
+        tick_one_byte(19200);  /* laisse remonter l'octet suivant depuis le backend */
+    }
+
+    /* Toujours aucun overrun sur tout le parcours. */
+    ASSERT_FALSE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_OVRN);
+
+    acia_set_rx_backpressure(&acia, false);
+    acia_set_rx_fifo(&acia, 0);
+    teardown();
+}
+
+/* serial_backend_tcp_set_rcvbuf : pose le cap SO_RCVBUF sur un backend TCP,
+ * et reste un no-op sûr sur un backend non-TCP (loopback). */
+TEST(test_tcp_rcvbuf_setter) {
+    /* No-op sur loopback (pas de champ tcp) : ne doit pas planter. */
+    serial_backend_t* lb = serial_backend_loopback_create();
+    serial_backend_tcp_set_rcvbuf(lb, 4096);  /* ignoré */
+    serial_backend_tcp_set_rcvbuf(NULL, 4096); /* NULL sûr */
+    serial_backend_destroy(lb);
+
+    /* Sur un backend TCP (non ouvert : pas de connexion réseau en test), le champ
+     * rcvbuf est bien mémorisé pour application à l'open(). */
+    serial_backend_t* tb = serial_backend_tcp_create("127.0.0.1", 65000);
+    ASSERT_TRUE(tb != NULL);
+    ASSERT_EQ(tb->state.tcp.rcvbuf, 0);
+    serial_backend_tcp_set_rcvbuf(tb, 2048);
+    ASSERT_EQ(tb->state.tcp.rcvbuf, 2048);
+    serial_backend_tcp_set_rcvbuf(tb, -1);   /* valeur négative → 0 (OS défaut) */
+    ASSERT_EQ(tb->state.tcp.rcvbuf, 0);
+    serial_backend_destroy(tb);
+}
+
 TEST(test_irq_65c51_mode) {
     setup();
 
@@ -690,6 +755,8 @@ int main(void) {
     RUN(test_bitmask_applied);
     RUN(test_modem_backend_create);
     RUN(test_rx_fifo);
+    RUN(test_rx_backpressure);
+    RUN(test_tcp_rcvbuf_setter);
     RUN(test_irq_65c51_mode);
     RUN(test_state_preservation);
     RUN(test_dcd_deadlock_autodial);

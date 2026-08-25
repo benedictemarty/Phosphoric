@@ -67,6 +67,24 @@ $0380 volait des octets RX silencieusement.
 - Déviation restante ASSUMÉE : le repli VIA du peek utilise encore `via_read` (pas de
   `via_peek` — hors sujet ACIA, et non pire que l'historique).
 
+### US 6 — Contre-pression bornée TCP→ACIA (`--serial-tcp-backpressure`) (v1.105.0-alpha) — DONE
+Demande équipe oric-hires-remote (banc de débit serveur) : `--serial tcp:` n'appliquait
+aucune contre-pression (écriture jamais bloquée, ~480 Ko en ~1 ms). Diagnostic (correction
+du rapport) : le tampon « sans borne » est le **tampon noyau `SO_RCVBUF`** (autotuné en Mo),
+pas un tampon émulateur — `tcp_recv` lit 1 octet/baud ; réduire `SO_SNDBUF` côté émetteur est
+donc inopérant (la contre-pression dépend du RCVBUF du récepteur). En prime, FIFO plein,
+`acia_tick` jetait l'octet (OVERRUN) tout en drainant le socket → jamais de contre-pression.
+- [x] `acia_set_rx_backpressure()` + helper `acia_rx_has_space()` : `acia_tick` ne draine plus
+      le backend tant que le FIFO/RDR RX est plein (l'octet reste dans le transport).
+- [x] `serial_backend_tcp_set_rcvbuf()` : cap `SO_RCVBUF` posé avant `connect`/`open`
+      (défaut N = `--serial-buffer`, sinon 512) ; getsockopt trace la valeur accordée.
+- [x] CLI `--serial-tcp-backpressure[=N]` (opt-in, défaut 6551 « propre » inchangé) ; no-op
+      tracé sur backend non-TCP ; ordre : rcvbuf posé AVANT open, backpressure ACIA après.
+- [x] Tests `test_rx_backpressure` (FIFO plein → 0 OVERRUN, 5 octets relus dans l'ordre sans
+      perte) + `test_tcp_rcvbuf_setter` (setter TCP + no-op sûr non-TCP/NULL) — test-serial 23→25.
+- Intel documentée (LOCI réel) : baud cosmétique (`tuh_cdc_set_baudrate` ignoré), goulot réel
+  = 6502 (~25-35 Ko/s) → pacing baud Phosphoric plus lent qu'un vrai LOCI (comportement voulu).
+
 ---
 
 ## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — TERMINÉ (US1→US6, v1.99.5→1.99.8)

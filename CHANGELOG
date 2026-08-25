@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.105.0-alpha] - 2026-08-25
+
+### Added — contre-pression bornée du chemin TCP→ACIA (`--serial-tcp-backpressure`)
+
+- **Demande** (équipe oric-hires-remote, terminal HIRES déporté) : un banc de débit
+  serveur voulait s'appuyer sur la contre-pression TCP, mais contre `--serial tcp:`
+  l'écriture ne bloquait jamais (~480 Ko / 60 trames poussés en ~1 ms) — la
+  contre-pression ne remontait pas à l'émetteur.
+- **Diagnostic** (par lecture du code, correction du rapport) : le tampon « sans
+  borne » n'est PAS dans l'émulateur. Le backend TCP (`tcp_recv`) lit **1 octet par
+  intervalle baud** ; les octets en excès s'accumulent dans le **tampon de réception
+  du noyau (`SO_RCVBUF`)**, autotuné en Mo. C'est pourquoi réduire `SO_SNDBUF` côté
+  serveur reste sans effet : la contre-pression TCP dépend du `SO_RCVBUF` du
+  *récepteur* (Phosphoric), pas du `SO_SNDBUF` de l'émetteur. De plus, FIFO plein,
+  `acia_tick` lisait quand même l'octet puis le **jetait** (OVERRUN) → le socket
+  restait drainé en continu, empêchant toute contre-pression même avec un RCVBUF petit.
+- **Correctif (opt-in, défaut 6551 « propre » inchangé)** : `--serial-tcp-backpressure[=N]`
+  active deux leviers. (1) `acia_set_rx_backpressure()` : `acia_tick` ne draine plus le
+  backend tant que le FIFO/RDR RX est plein (helper `acia_rx_has_space()`) — l'octet
+  reste dans le transport. (2) `serial_backend_tcp_set_rcvbuf()` : cap `SO_RCVBUF` posé
+  sur le socket **avant** `connect`/`open` (défaut N = taille FIFO `--serial-buffer`, ou
+  512). Ensemble : la fenêtre TCP se ferme, l'émetteur est mis en attente, fidèle à un
+  vrai FIFO UART borné. Garde-fou : sur un backend non-TCP, l'option est un no-op tracé.
+- **Intel documentée** (rapport LOCI) : sur un vrai LOCI le baud est cosmétique
+  (`tuh_cdc_set_baudrate`, line coding USB-CDC ignorée) — le goulot réel est le 6502
+  (~25-35 Ko/s), pas 9600/19200 baud. Le pacing au baud de Phosphoric est donc plus
+  lent qu'un LOCI réel ; c'est le comportement 6551 « propre » attendu par défaut.
+- **Tests** : `test-serial` 23→**25** (`test_rx_backpressure` : FIFO plein → backend non
+  drainé, 0 OVERRUN, 5 octets relus dans l'ordre sans perte ; `test_tcp_rcvbuf_setter` :
+  setter TCP + no-op sûr non-TCP/NULL). `make clean && make tests` toutes suites vertes ;
+  builds SDL2=0 & SDL2=1 OK. EMU_VERSION 1.104.0-alpha → 1.105.0-alpha.
+
 ## [1.104.0-alpha] - 2026-08-20
 
 ### Fixed — lecture d'observation destructive de l'ACIA (vol silencieux d'octets RX)

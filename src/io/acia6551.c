@@ -157,6 +157,17 @@ static bool fifo_pop(acia6551_t* acia, uint8_t* byte)
     return true;
 }
 
+/* True if the RX path can accept one more byte right now. In FIFO mode there
+ * is room when the RDR holding slot is empty or the ring is not full; in the
+ * classic 1-byte mode there is room only while RDR is unread. Used to gate the
+ * backend drain under --serial-tcp-backpressure. */
+static bool acia_rx_has_space(const acia6551_t* acia)
+{
+    if (acia->rx_fifo)
+        return !acia->rx_full || acia->rx_fifo_count < acia->rx_fifo_size;
+    return !acia->rx_full;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  IRQ management
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -463,6 +474,14 @@ void acia_tick(acia6551_t* acia, int cycles)
         bool rx_ready = acia->backend->poll &&
                         acia->backend->poll(acia->backend);
 
+        /* Backpressure: if enabled and the RX FIFO/RDR is full, do NOT drain
+         * the backend this tick. Leaving the byte in the transport (kernel TCP
+         * socket buffer) lets flow control stall the sender, faithful to a
+         * bounded UART FIFO. Default keeps the read-then-drop OVRN behavior. */
+        if (acia->rx_backpressure && rx_ready && !acia_rx_has_space(acia)) {
+            rx_ready = false;
+        }
+
         if (acia->dcd && rx_ready) {
             uint8_t byte;
             if (acia->backend->recv(acia->backend, &byte)) {
@@ -582,6 +601,14 @@ void acia_set_irq_on_rdrf(acia6551_t* acia, bool enabled)
     acia->irq_on_rdrf = enabled;
     if (enabled) {
         log_info("ACIA IRQ mode: WDC 65C51 (re-trigger while RDRF set)");
+    }
+}
+
+void acia_set_rx_backpressure(acia6551_t* acia, bool enabled)
+{
+    acia->rx_backpressure = enabled;
+    if (enabled) {
+        log_info("ACIA RX backpressure: bounded FIFO (backend not drained when full)");
     }
 }
 

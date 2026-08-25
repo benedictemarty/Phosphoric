@@ -294,6 +294,10 @@ Serial (ACIA 6551 at $031C; $0380 under --loci):
                             instant transfer (baud index 0) — ACIA 6551 only
   --serial-irq-on-rdrf      WDC 65C51 IRQ mode — ACIA 6551 only
   --serial-trace FILE       Trace TX/RX/signals (ACIA 6551 + DTL 2000)
+  --serial-tcp-backpressure[=N]  Bounded RX for tcp:: stop draining the socket
+                            when the RX FIFO is full + cap kernel SO_RCVBUF to N
+                            bytes (default = --serial-buffer size, or 512) so TCP
+                            flow control stalls the sender — real bounded FIFO
   --acia-addr XXXX          Override ACIA base address (default $031C)
 
 Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD):

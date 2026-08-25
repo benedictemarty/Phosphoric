@@ -100,6 +100,11 @@ typedef struct serial_backend_s {
             int      sockfd;        /**< Socket file descriptor (-1 = closed) */
             char     host[256];     /**< Remote host */
             uint16_t port;          /**< Remote port */
+            int      rcvbuf;        /**< SO_RCVBUF cap in bytes (0 = OS default).
+                                     *  Set by --serial-tcp-backpressure to bound
+                                     *  the kernel RX buffer so TCP flow control
+                                     *  stalls the sender instead of unbounded
+                                     *  in-kernel buffering. */
         } tcp;
 
         /* PTY */
@@ -243,6 +248,19 @@ serial_backend_t* serial_backend_loopback_create(void);
  * @param port  Remote port number
  */
 serial_backend_t* serial_backend_tcp_create(const char* host, uint16_t port);
+
+/**
+ * @brief Cap the TCP socket's kernel receive buffer (SO_RCVBUF).
+ *
+ * Bounds in-kernel RX buffering so that, combined with an ACIA that stops
+ * draining a full FIFO (acia_set_rx_backpressure), TCP flow control stalls
+ * the remote sender instead of the kernel silently absorbing a burst.
+ * No-op on non-TCP backends. Applied at open() time (safe to call before open).
+ *
+ * @param backend  Serial backend (must be SERIAL_BACKEND_TCP to take effect)
+ * @param bytes    SO_RCVBUF cap in bytes (<=0 leaves the OS default)
+ */
+void serial_backend_tcp_set_rcvbuf(serial_backend_t* backend, int bytes);
 
 /**
  * @brief Create a PTY backend (pseudo-terminal)

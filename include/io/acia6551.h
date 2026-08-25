@@ -187,6 +187,13 @@ typedef struct acia6551_s {
     /* Enhanced IRQ mode (WDC 65C51 behavior) */
     bool    irq_on_rdrf;        /**< Re-trigger IRQ while RDRF set (--serial-irq-on-rdrf) */
 
+    /* RX backpressure (--serial-tcp-backpressure). When true, acia_tick does
+     * NOT drain a byte from the backend while the RX FIFO/RDR is full; the byte
+     * is left in the transport (e.g. the kernel TCP socket buffer) so flow
+     * control stalls the sender instead of silently overrunning. Default false
+     * preserves the faithful 6551 behavior (read-then-drop with OVRN). */
+    bool    rx_backpressure;
+
     /* External-clock baud rate (--serial-baud N). When the control register
      * selects the external clock (baud index 0), the default is "instant
      * transfer" (1 cycle/byte); a non-zero value here substitutes a realistic
@@ -298,6 +305,17 @@ void acia_set_rx_fifo(acia6551_t* acia, int size);
  * during simultaneous TX/RX (the MOS 6551 bug).
  */
 void acia_set_irq_on_rdrf(acia6551_t* acia, bool enabled);
+
+/**
+ * @brief Enable RX backpressure (bounded FIFO flow control)
+ *
+ * When enabled, acia_tick will not pull a byte from the backend while the
+ * RX FIFO/RDR has no room; the byte stays in the transport so the sender is
+ * stalled (e.g. TCP flow control) rather than silently overrun. Pair with
+ * serial_backend_tcp_set_rcvbuf() to also bound the kernel socket buffer.
+ * Default (false) keeps the faithful 6551 read-then-drop OVRN behavior.
+ */
+void acia_set_rx_backpressure(acia6551_t* acia, bool enabled);
 
 /**
  * @brief Set the baud rate used when the program selects the external clock.
