@@ -85,6 +85,25 @@ donc inopérant (la contre-pression dépend du RCVBUF du récepteur). En prime, 
 - Intel documentée (LOCI réel) : baud cosmétique (`tuh_cdc_set_baudrate` ignoré), goulot réel
   = 6502 (~25-35 Ko/s) → pacing baud Phosphoric plus lent qu'un vrai LOCI (comportement voulu).
 
+### US 7 — Coût de transport I2C des IRQ LOCI (`--loci-irq-latency US`) (v1.106.0-alpha) — DONE
+Demande équipe OricTel (terminal Minitel via LOCI + PicoWiFiModemUSB) : reproduire un artefact
+du vrai LOCI. Selon SodiumLB (forum df p34982), recevoir l'ACIA **par IRQ** plafonne à ~100 o/s
+car le LOCI achemine les IRQ via **I2C** (« extremely slow »), le **polling** de $0380–$0383
+étant « an order of magnitude faster » — artefact du transport physique, pas du 6551. Constat
+(par le code) : `acia_update_irq()` assère directement `/IRQ` sans coût → l'asymétrie n'apparaît
+pas ; `--serial-baud` limite symétriquement (ligne), `--serial-irq-on-rdrf` ne touche que WDC.
+- [x] Livraison `/IRQ` scindée en `acia_assert_irq`/`acia_deassert_irq` (la décision logique du
+      registre de statut, `acia_update_irq`, reste intacte → polling non pénalisé).
+- [x] Sous latence, l'assertion passe « en transit » et est livrée par `acia_tick()` après le
+      délai (`irq_transit_cycles`, décompté avant les gardes DTR/backend) ; une dé-assertion
+      (lecture STATUS, reset) annule un transit en cours.
+- [x] Setter `acia_set_irq_latency()` + CLI `--loci-irq-latency US` (1 µs = 1 cycle @ 1 MHz),
+      opt-in contexte LOCI ; avertissement si utilisé sans `--loci` (6551 nu = pas de coût).
+- [x] Tests (test-serial 25→**29**) : `test_loci_irq_latency_defers_assertion`,
+      `_polling_unaffected`, `_zero_immediate`, `_throughput_cap` (~10 o/100 ms, cap tenu).
+- Validation OricTel : justifie objectivement le choix **polling** (Command $0B, IRQ off) vs
+  une approche IRQ façon ORICOMMS, et offre un banc réaliste pour tout logiciel ACIA du LOCI.
+
 ---
 
 ## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — TERMINÉ (US1→US6, v1.99.5→1.99.8)

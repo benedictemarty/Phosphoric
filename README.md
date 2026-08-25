@@ -298,6 +298,10 @@ Serial (ACIA 6551 at $031C; $0380 under --loci):
                             when the RX FIFO is full + cap kernel SO_RCVBUF to N
                             bytes (default = --serial-buffer size, or 512) so TCP
                             flow control stalls the sender — real bounded FIFO
+  --loci-irq-latency US     LOCI I2C IRQ transport cost: defer each ACIA /IRQ by
+                            US microseconds (e.g. 10000 → ~100 B/s IRQ-driven RX
+                            cap; polling stays fast). LOCI context only — a bare
+                            6551 has no such transport cost
   --acia-addr XXXX          Override ACIA base address (default $031C)
 
 Digitelec DTL 2000 (faithful PIA 6821 + ACIA 6850 at $03F8-$03FD):

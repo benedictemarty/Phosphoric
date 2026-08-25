@@ -310,6 +310,18 @@ Le MOS 6551 a un bug : lire le status ($031D) efface le bit IRQ. Si on lit le st
 
 **Quand l'utiliser** : quand le programme utilise les IRQ en TX+RX simultané.
 
+### Coût de transport I2C des IRQ LOCI
+
+```bash
+--loci-irq-latency 10000
+```
+
+Sur le **vrai LOCI**, la ligne `/IRQ` de l'ACIA n'est pas câblée directement au 6502 : elle transite par le bus **I2C**, un transport « extremely slow » (SodiumLB, forum defence-force p34982). Conséquence : recevoir les données **par interruption** plafonne à ~100 octets/s, alors que le **polling** des registres $0380–$0383 est « an order of magnitude faster ». C'est un artefact du transport physique de l'IRQ, pas du 6551.
+
+Par défaut l'émulateur assère `/IRQ` sans coût de transport (comme un 6551 nu), donc l'IRQ y est aussi rapide que le polling. `--loci-irq-latency US` diffère chaque **assertion physique** de `/IRQ` de `US` microsecondes (à 1 MHz, 1 µs = 1 cycle) ; la décision logique du registre de statut est inchangée, donc **le polling n'est pas pénalisé**. À ~10 000 µs/IRQ (10 ms), le handler ne tourne que ~100×/s → RX plafonné ~100 o/s en IRQ.
+
+**Quand l'utiliser** : pour reproduire fidèlement le plafond IRQ du LOCI réel, comparer objectivement une réception **polling** (Command $0B, IRQ off) à une approche IRQ, ou tester un logiciel Oric qui exploite l'ACIA du LOCI. Option spécifique au contexte LOCI (un 6551 « nu » n'a pas ce coût ; un avertissement le rappelle si utilisé sans `--loci`).
+
 ### V23 Minitel
 
 ```bash

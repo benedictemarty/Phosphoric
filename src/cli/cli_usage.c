@@ -146,6 +146,9 @@ void cli_print_usage(const char* program_name) {
     printf("      --serial-tcp-backpressure[=N]  Bounded RX for tcp:: stop draining the socket\n");
     printf("                            when the RX FIFO is full + cap kernel SO_RCVBUF to N\n");
     printf("                            bytes (default N=FIFO size or 512) → real TCP flow control\n");
+    printf("      --loci-irq-latency US LOCI I2C IRQ transport cost: defer each ACIA /IRQ\n");
+    printf("                            by US microseconds (e.g. 10000 → ~100 B/s IRQ-driven\n");
+    printf("                            RX cap; polling stays fast). LOCI-context only.\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
     printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
     printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");

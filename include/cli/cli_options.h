@@ -40,7 +40,7 @@ enum {
     OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN,
     OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE,
     OPT_DISK_WEB, OPT_LOCI_WEB, OPT_LOCI_WEB_BASE,
-    OPT_SERIAL_TCP_BACKPRESSURE
+    OPT_SERIAL_TCP_BACKPRESSURE, OPT_LOCI_IRQ_LATENCY
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -117,6 +117,7 @@ static const struct option long_options[] = {
     {"serial-irq-on-rdrf",  no_argument,       0, OPT_SERIAL_IRQ_RDRF},
     {"serial-trace",        required_argument, 0, OPT_SERIAL_TRACE},
     {"serial-tcp-backpressure", optional_argument, 0, OPT_SERIAL_TCP_BACKPRESSURE},
+    {"loci-irq-latency",    required_argument, 0, OPT_LOCI_IRQ_LATENCY},
     {"acia-addr",           required_argument, 0, OPT_ACIA_ADDR},
     {"dtl2000",             required_argument, 0, OPT_DTL2000},
     {"dtl2000-addr",        required_argument, 0, OPT_DTL2000_ADDR},

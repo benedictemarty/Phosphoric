@@ -69,6 +69,14 @@ static void teardown(void) {
     }
 }
 
+/* IRQ delivery counters — hooked into acia.irq_set/irq_clr to observe the
+ * *physical* /IRQ line (the LOCI I2C transport target), not just the status
+ * bit. The callbacks take an emulator_t* they ignore. */
+static int g_irq_asserts = 0;
+static int g_irq_deasserts = 0;
+static void count_irq_set(emulator_t* e) { (void)e; g_irq_asserts++; }
+static void count_irq_clr(emulator_t* e) { (void)e; g_irq_deasserts++; }
+
 /* Helper: tick ACIA enough cycles for one byte at given baud */
 static void tick_one_byte(int baud) {
     int total = (1000000 / baud) * 10 + 10;  /* extra margin */
@@ -603,6 +611,129 @@ TEST(test_irq_65c51_mode) {
     teardown();
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ *  LOCI I2C IRQ transport latency (--loci-irq-latency)
+ *
+ *  On real LOCI the ACIA /IRQ travels over I2C ("extremely slow"), capping
+ *  IRQ-driven RX to ~100 bytes/s while polling stays fast (SodiumLB, df p34982).
+ *  Modeled by deferring each *physical* /IRQ assertion; the status-bit logic
+ *  (and thus polling) is untouched.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* The physical /IRQ is deferred by the configured latency, but the byte and
+ * the status IRQ bit are available immediately. */
+TEST(test_loci_irq_latency_defers_assertion) {
+    setup();
+    g_irq_asserts = 0; g_irq_deasserts = 0;
+    acia.irq_set = count_irq_set;
+    acia.irq_clr = count_irq_clr;
+    acia.irq_userdata = NULL;
+
+    acia_set_irq_latency(&acia, 1000);          /* 1000-cycle I2C transport */
+
+    acia_write(&acia, ACIA_REG_CONTROL, 0x1F);  /* 19200 8N1 */
+    acia_write(&acia, ACIA_REG_COMMAND, 0x01);  /* DTR, IRD=0 (RX IRQ enabled) */
+
+    loopback->send(loopback, 0xAA);
+    tick_one_byte(19200);                       /* ~530 cyc: byte in, /IRQ in transit */
+
+    /* Logical condition is present, but /IRQ has NOT reached the CPU yet. */
+    ASSERT_TRUE(acia.status & ACIA_STATUS_RDRF);
+    ASSERT_FALSE(acia.irq_line);
+    ASSERT_EQ(g_irq_asserts, 0);
+
+    /* Advance past the remaining latency: /IRQ is now delivered exactly once. */
+    acia_tick(&acia, 1000);
+    ASSERT_TRUE(acia.irq_line);
+    ASSERT_EQ(g_irq_asserts, 1);
+
+    teardown();
+}
+
+/* Polling (RX IRQ disabled) is entirely unaffected by the transport cost. */
+TEST(test_loci_irq_latency_polling_unaffected) {
+    setup();
+    g_irq_asserts = 0;
+    acia.irq_set = count_irq_set;
+    acia.irq_clr = count_irq_clr;
+    acia.irq_userdata = NULL;
+
+    acia_set_irq_latency(&acia, 10000);         /* heavy 10 ms transport */
+
+    acia_write(&acia, ACIA_REG_CONTROL, 0x1F);
+    acia_write(&acia, ACIA_REG_COMMAND, 0x03);  /* DTR + IRD=1 (IRQ disabled = polling) */
+
+    loopback->send(loopback, 0x5A);
+    tick_one_byte(19200);
+
+    /* Byte is immediately readable; no /IRQ is ever asserted. */
+    ASSERT_TRUE(acia.status & ACIA_STATUS_RDRF);
+    ASSERT_EQ(acia_read(&acia, ACIA_REG_DATA), 0x5A);
+    ASSERT_FALSE(acia.irq_line);
+    ASSERT_EQ(g_irq_asserts, 0);
+
+    teardown();
+}
+
+/* Latency 0 = a bare 6551: immediate assertion, unchanged behavior. */
+TEST(test_loci_irq_latency_zero_immediate) {
+    setup();
+    g_irq_asserts = 0;
+    acia.irq_set = count_irq_set;
+    acia.irq_clr = count_irq_clr;
+    acia.irq_userdata = NULL;
+
+    acia_set_irq_latency(&acia, 0);
+
+    acia_write(&acia, ACIA_REG_CONTROL, 0x1F);
+    acia_write(&acia, ACIA_REG_COMMAND, 0x01);
+
+    loopback->send(loopback, 0xAA);
+    tick_one_byte(19200);
+
+    ASSERT_TRUE(acia.irq_line);                 /* asserted immediately */
+    ASSERT_EQ(g_irq_asserts, 1);
+
+    teardown();
+}
+
+/* End-to-end: with a fast RX line and a serviced IRQ handler, the throughput
+ * is capped by the IRQ delivery rate (~1 byte per latency window), not by the
+ * line — reproducing the forum's IRQ-vs-polling asymmetry. */
+TEST(test_loci_irq_latency_throughput_cap) {
+    setup();
+    acia_set_rx_fifo(&acia, 256);               /* queue bytes during the window */
+    acia_set_irq_latency(&acia, 10000);         /* 10 ms/IRQ @ 1 MHz → ~100 IRQ/s */
+    g_irq_asserts = 0; g_irq_deasserts = 0;
+    acia.irq_set = count_irq_set;
+    acia.irq_clr = count_irq_clr;
+    acia.irq_userdata = NULL;
+
+    acia_write(&acia, ACIA_REG_CONTROL, 0x00);  /* baud 0 = instant line (fast RX) */
+    acia_write(&acia, ACIA_REG_COMMAND, 0x01);  /* DTR, RX IRQ enabled */
+
+    /* Sender has far more bytes than the window can deliver. */
+    for (int i = 0; i < 200; i++) loopback->send(loopback, (uint8_t)i);
+
+    /* Run ~100 ms of emulated time, servicing /IRQ like a real handler:
+     * on each physical assertion, read STATUS then DATA (consume one byte). */
+    int delivered = 0;
+    for (int c = 0; c < 100000; c += 8) {
+        acia_tick(&acia, 8);
+        if (acia.irq_line) {
+            acia_read(&acia, ACIA_REG_STATUS);  /* handler entry clears /IRQ */
+            acia_read(&acia, ACIA_REG_DATA);    /* consume one byte */
+            delivered++;
+        }
+    }
+
+    /* ~100 ms / 10 ms ≈ 10 bytes. Without the latency this loop would drain all
+     * 200 queued bytes in the first few hundred cycles. Assert the cap holds. */
+    ASSERT_TRUE(delivered >= 8 && delivered <= 12);
+
+    teardown();
+}
+
 TEST(test_state_preservation) {
     /* Verify that ACIA state fields survive a simulated save/restore cycle.
      * We don't test the actual savestate file format here — just that the
@@ -758,6 +889,10 @@ int main(void) {
     RUN(test_rx_backpressure);
     RUN(test_tcp_rcvbuf_setter);
     RUN(test_irq_65c51_mode);
+    RUN(test_loci_irq_latency_defers_assertion);
+    RUN(test_loci_irq_latency_polling_unaffected);
+    RUN(test_loci_irq_latency_zero_immediate);
+    RUN(test_loci_irq_latency_throughput_cap);
     RUN(test_state_preservation);
     RUN(test_dcd_deadlock_autodial);
 

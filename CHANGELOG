@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.106.0-alpha] - 2026-08-25
+
+### Added — coût de transport I2C des IRQ LOCI (`--loci-irq-latency US`)
+
+- **Demande** (équipe OricTel, terminal Minitel sur Oric-1/Atmos via LOCI +
+  PicoWiFiModemUSB) : reproduire un artefact propre au vrai LOCI, non modélisé
+  jusqu'ici. D'après SodiumLB (auteur du PicoWiFiModem, forum defence-force
+  p34982), recevoir les données de l'ACIA **par interruption** plafonne à
+  ~100 octets/s sur LOCI, parce que le LOCI achemine les IRQ via **I2C**, un
+  transport « extremely slow » ; le **polling** des registres $0380–$0383 est en
+  revanche « an order of magnitude faster ». C'est un artefact du transport
+  physique de l'IRQ, pas du 6551.
+- **Constat (par lecture du code)** : `acia_update_irq()` assère directement la
+  ligne `/IRQ` du 6502 émulé, sans coût de transport → en émulation une réception
+  par IRQ est aussi rapide que le polling ; l'asymétrie (le bug) n'apparaît pas.
+  Les options existantes ne la reproduisent pas : `--serial-baud` limite le débit
+  **symétriquement** (ligne, pas surcoût par-IRQ) ; `--serial-irq-on-rdrf` ne
+  concerne que la sémantique WDC 65C51.
+- **Correctif (opt-in, contexte LOCI ; défaut 6551 « nu » inchangé)** :
+  `--loci-irq-latency US` diffère chaque **assertion physique** de `/IRQ` de
+  `US` microsecondes (à 1 MHz, 1 µs = 1 cycle). La **décision logique** du
+  registre de statut (`acia_update_irq`) est intacte → le polling n'est pas
+  pénalisé. Implémentation : la livraison de `/IRQ` est scindée en deux helpers
+  (`acia_assert_irq`/`acia_deassert_irq`) ; sous latence, l'assertion est mise
+  « en transit » et livrée par `acia_tick()` une fois le délai écoulé (compteur
+  `irq_transit_cycles`, indépendant des gardes DTR/backend). Une dé-assertion
+  (lecture STATUS, reset) annule une assertion encore en transit. À ~10 000
+  cycles/IRQ (10 ms @ 1 MHz) le handler ne tourne que ~100×/s → RX plafonné
+  ~100 o/s en IRQ, polling rapide → asymétrie du forum fidèlement reproduite.
+- **Garde-fou** : setter générique `acia_set_irq_latency()`, mais l'option est
+  documentée LOCI-only ; sans `--loci`, un avertissement rappelle qu'un vrai 6551
+  n'a pas ce coût de transport (l'option reste appliquée pour les bancs de test).
+- **Utilité** : (1) valider objectivement le choix **polling** d'OricTel (Command
+  $0B, IRQ off) face à une approche IRQ façon ORICOMMS ; (2) offrir un banc de
+  test réaliste à tout logiciel Oric utilisant l'ACIA du LOCI.
+- **Tests** : `test-serial` 25→**29** — `test_loci_irq_latency_defers_assertion`
+  (octet + bit statut immédiats, `/IRQ` physique différé puis livré 1×),
+  `test_loci_irq_latency_polling_unaffected` (IRQ off → octet lisible tout de
+  suite, aucune assertion), `test_loci_irq_latency_zero_immediate` (latence 0 =
+  6551 nu, assertion immédiate), `test_loci_irq_latency_throughput_cap` (ligne
+  instantanée + handler servi → ~10 octets sur ~100 ms, cap tenu vs 200 en file).
+  `make clean && make tests` toutes suites vertes ; builds SDL2=0 & SDL2=1 OK.
+  EMU_VERSION 1.105.0-alpha → 1.106.0-alpha.
+
 ## [1.105.0-alpha] - 2026-08-25
 
 ### Added — contre-pression bornée du chemin TCP→ACIA (`--serial-tcp-backpressure`)

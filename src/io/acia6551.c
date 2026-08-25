@@ -172,6 +172,38 @@ static bool acia_rx_has_space(const acia6551_t* acia)
  *  IRQ management
  * ═══════════════════════════════════════════════════════════════════════ */
 
+/* Physical delivery of the /IRQ line to the CPU. Split out from the logical
+ * IRQ decision (acia_update_irq) so the LOCI I2C transport latency can defer the
+ * actual assertion without perturbing the status-register logic. With no latency
+ * (irq_latency_cycles == 0) this asserts immediately, exactly as a bare 6551. */
+static void acia_assert_irq(acia6551_t* acia)
+{
+    if (acia->irq_line || acia->irq_in_transit)
+        return;                     /* already asserted, or already in flight */
+
+    if (acia->irq_latency_cycles > 0) {
+        /* LOCI: queue the assertion; acia_tick delivers it once the slow I2C
+         * transport latency has elapsed. */
+        acia->irq_in_transit = true;
+        acia->irq_transit_cycles = acia->irq_latency_cycles;
+    } else {
+        acia->irq_line = true;
+        if (acia->irq_set) acia->irq_set(acia->irq_userdata);
+    }
+}
+
+/* Physical de-assertion of /IRQ. Also cancels any assertion still in transit:
+ * the condition that wanted the IRQ went away before the slow transport could
+ * deliver it (e.g. STATUS was polled), so nothing is delivered. */
+static void acia_deassert_irq(acia6551_t* acia)
+{
+    acia->irq_in_transit = false;
+    if (acia->irq_line) {
+        acia->irq_line = false;
+        if (acia->irq_clr) acia->irq_clr(acia->irq_userdata);
+    }
+}
+
 static void acia_update_irq(acia6551_t* acia)
 {
     bool irq_wanted = false;
@@ -194,35 +226,17 @@ static void acia_update_irq(acia6551_t* acia)
         acia->status &= ~ACIA_STATUS_IRQ;
     }
 
-    if (acia->irq_on_rdrf) {
-        /* WDC 65C51 mode: IRQ is level-triggered on RDRF.
-         * Assert /IRQ whenever irq_wanted is true, regardless of previous state.
-         * Deassert only when irq_wanted goes false.
-         * This means: even if irq_line is already true and status was read
-         * (which clears irq_line), the NEXT call to acia_update_irq will
-         * re-assert it if RDRF is still set. */
-        if (irq_wanted) {
-            if (!acia->irq_line) {
-                acia->irq_line = true;
-                if (acia->irq_set) acia->irq_set(acia->irq_userdata);
-            }
-        } else {
-            if (acia->irq_line) {
-                acia->irq_line = false;
-                if (acia->irq_clr) acia->irq_clr(acia->irq_userdata);
-            }
-        }
+    /* Both the WDC 65C51 (level-triggered on RDRF) and the standard MOS 6551
+     * (edge-triggered, held until STATUS read) reduce to the same call here:
+     * assert when wanted, deassert otherwise. acia_assert_irq is idempotent
+     * (no-op while already asserted or in transit), so re-asserting after a
+     * STATUS read that cleared irq_line still works — preserving the 65C51
+     * re-trigger semantics. The physical assertion may be deferred by the LOCI
+     * I2C transport latency (see acia_assert_irq / acia_tick). */
+    if (irq_wanted) {
+        acia_assert_irq(acia);
     } else {
-        /* Standard MOS 6551: edge-triggered IRQ.
-         * Only fires on false→true transition. Once irq_line is true,
-         * it stays true until cleared by reading STATUS register. */
-        if (irq_wanted && !acia->irq_line) {
-            acia->irq_line = true;
-            if (acia->irq_set) acia->irq_set(acia->irq_userdata);
-        } else if (!irq_wanted && acia->irq_line) {
-            acia->irq_line = false;
-            if (acia->irq_clr) acia->irq_clr(acia->irq_userdata);
-        }
+        acia_deassert_irq(acia);
     }
 }
 
@@ -304,11 +318,8 @@ void acia_reset(acia6551_t* acia)
     acia->rx_fifo_tail = 0;
     acia->rx_fifo_count = 0;
 
-    /* Deassert IRQ */
-    if (acia->irq_line) {
-        acia->irq_line = false;
-        if (acia->irq_clr) acia->irq_clr(acia->irq_userdata);
-    }
+    /* Deassert IRQ (also drops any assertion still in the I2C transport) */
+    acia_deassert_irq(acia);
 
     trace_event(acia, "PROGRAMMED RESET");
     log_debug("ACIA 6551 programmed reset");
@@ -349,10 +360,7 @@ uint8_t acia_read(acia6551_t* acia, uint16_t addr)
 
         /* Clear IRQ on status read (MOS 6551 datasheet) */
         acia->status &= ~ACIA_STATUS_IRQ;
-        if (acia->irq_line) {
-            acia->irq_line = false;
-            if (acia->irq_clr) acia->irq_clr(acia->irq_userdata);
-        }
+        acia_deassert_irq(acia);
 
         /* 65C51 mode: immediately re-evaluate IRQ (re-assert if RDRF set) */
         if (acia->irq_on_rdrf) {
@@ -439,6 +447,20 @@ void acia_write(acia6551_t* acia, uint16_t addr, uint8_t value)
 
 void acia_tick(acia6551_t* acia, int cycles)
 {
+    /* LOCI I2C IRQ transport: once the transport latency has elapsed, deliver
+     * the queued /IRQ assertion to the CPU. Runs before the DTR/backend guards
+     * so the delayed assertion is honored regardless of line/backend state. */
+    if (acia->irq_in_transit) {
+        acia->irq_transit_cycles -= cycles;
+        if (acia->irq_transit_cycles <= 0) {
+            acia->irq_in_transit = false;
+            if (!acia->irq_line) {
+                acia->irq_line = true;
+                if (acia->irq_set) acia->irq_set(acia->irq_userdata);
+            }
+        }
+    }
+
     if (!acia->backend) return;
     if (!(acia->command & ACIA_CMD_DTR)) return;
 
@@ -601,6 +623,19 @@ void acia_set_irq_on_rdrf(acia6551_t* acia, bool enabled)
     acia->irq_on_rdrf = enabled;
     if (enabled) {
         log_info("ACIA IRQ mode: WDC 65C51 (re-trigger while RDRF set)");
+    }
+}
+
+void acia_set_irq_latency(acia6551_t* acia, uint32_t cycles)
+{
+    acia->irq_latency_cycles = (int32_t)cycles;
+    /* Drop any in-flight assertion so a mid-run change takes clean effect. */
+    acia->irq_in_transit = false;
+    acia->irq_transit_cycles = 0;
+    if (cycles > 0) {
+        log_info("ACIA LOCI I2C IRQ latency: %u cycles/IRQ "
+                 "(~%u bytes/s IRQ-driven RX cap; polling unaffected)",
+                 cycles, 1000000u / cycles);
     }
 }
 

@@ -2323,6 +2323,7 @@ int main(int argc, char* argv[]) {
     const char* serial_trace_file = NULL;
     bool serial_tcp_backpressure = false;  /* --serial-tcp-backpressure */
     int  serial_tcp_rcvbuf = 0;            /* explicit SO_RCVBUF cap (0 = auto) */
+    long loci_irq_latency_us = 0;          /* --loci-irq-latency (LOCI I2C IRQ cost) */
 
     int opt;
     int option_index = 0;
@@ -2456,6 +2457,10 @@ int main(int argc, char* argv[]) {
                     serial_tcp_rcvbuf = atoi(optarg);
                     if (serial_tcp_rcvbuf < 0) serial_tcp_rcvbuf = 0;
                 }
+                break;
+            case OPT_LOCI_IRQ_LATENCY:
+                loci_irq_latency_us = atol(optarg);
+                if (loci_irq_latency_us < 0) loci_irq_latency_us = 0;
                 break;
             case OPT_DUMP_RAM_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_DUMP_RAM;} break;
             case OPT_BAD_SECTOR:
@@ -2762,6 +2767,20 @@ int main(int argc, char* argv[]) {
                 }
                 if (serial_irq_on_rdrf) {
                     acia_set_irq_on_rdrf(&emu.acia, true);
+                }
+                if (loci_irq_latency_us > 0) {
+                    /* LOCI I2C IRQ transport cost. At 1 MHz, 1 µs = 1 cycle;
+                     * compute from the master clock so it stays correct if the
+                     * clock ever changes. LOCI-context only: warn on a bare 6551
+                     * so nobody penalizes a plain ACIA card by accident. */
+                    uint32_t cyc = (uint32_t)((uint64_t)loci_irq_latency_us *
+                                              ORIC_CLOCK_HZ / 1000000u);
+                    if (!loci_enabled) {
+                        log_warning("--loci-irq-latency models a LOCI I2C artifact but "
+                                    "--loci is not set; applying to the ACIA anyway "
+                                    "(a real bare 6551 has no such transport cost)");
+                    }
+                    acia_set_irq_latency(&emu.acia, cyc);
                 }
                 if (serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
                     acia_set_rx_backpressure(&emu.acia, true);

@@ -187,6 +187,18 @@ typedef struct acia6551_s {
     /* Enhanced IRQ mode (WDC 65C51 behavior) */
     bool    irq_on_rdrf;        /**< Re-trigger IRQ while RDRF set (--serial-irq-on-rdrf) */
 
+    /* LOCI I2C IRQ transport latency (--loci-irq-latency US). On real LOCI the
+     * ACIA /IRQ is not wired straight to the 6502: it travels across the I2C
+     * bus, an "extremely slow" transport that caps IRQ-driven RX to ~100 bytes/s
+     * while register polling stays an order of magnitude faster (SodiumLB,
+     * defence-force p34982). We model that artifact by deferring each *physical*
+     * /IRQ assertion by irq_latency_cycles CPU cycles — the logical status-bit
+     * decision (acia_update_irq) is untouched, so polling is unaffected. A bare
+     * 6551 has no such transport: 0 = immediate assertion (default). */
+    int32_t irq_latency_cycles; /**< Cycles to defer each /IRQ assertion (0=off) */
+    bool    irq_in_transit;     /**< An assertion is queued, awaiting delivery */
+    int32_t irq_transit_cycles; /**< Countdown until the queued /IRQ asserts */
+
     /* RX backpressure (--serial-tcp-backpressure). When true, acia_tick does
      * NOT drain a byte from the backend while the RX FIFO/RDR is full; the byte
      * is left in the transport (e.g. the kernel TCP socket buffer) so flow
@@ -305,6 +317,21 @@ void acia_set_rx_fifo(acia6551_t* acia, int size);
  * during simultaneous TX/RX (the MOS 6551 bug).
  */
 void acia_set_irq_on_rdrf(acia6551_t* acia, bool enabled);
+
+/**
+ * @brief Set the LOCI I2C IRQ transport latency (per-IRQ delivery cost).
+ *
+ * Models the LOCI-specific artifact where the ACIA /IRQ is routed to the 6502
+ * over I2C, an "extremely slow" transport. Each physical /IRQ assertion is
+ * deferred by @p cycles CPU cycles; register polling ($0380-$0383) is not
+ * affected. At ~10000 cycles (10 ms @ 1 MHz) the IRQ handler runs ~100x/s, so
+ * IRQ-driven RX plateaus around ~100 bytes/s — faithful to SodiumLB's report
+ * (defence-force p34982). 0 disables the cost (a bare 6551, immediate /IRQ).
+ * This is a LOCI-context option: do not enable it for a plain ACIA card.
+ *
+ * @param cycles  Per-IRQ transport latency in CPU cycles (0 = immediate)
+ */
+void acia_set_irq_latency(acia6551_t* acia, uint32_t cycles);
 
 /**
  * @brief Enable RX backpressure (bounded FIFO flow control)
