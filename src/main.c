@@ -387,29 +387,45 @@ static uint8_t portb_read_callback(void* userdata) {
      * This matches Oricutron's ay_update_keybits() behavior.
      * Programs that play sound with reg7 bit 6=0 must restore it to
      * enable keyboard scanning (e.g. ay_write(7, $7F)). */
-    if (!(emu->psg.registers[7] & 0x40)) {
+    uint8_t col = emu->via.orb & 0x07;
+    uint8_t reg7 = emu->psg.registers[7];
+    uint8_t reg14 = emu->psg.registers[14];
+    uint8_t mcol = emu->keyboard.matrix[col];
+    uint8_t result;
+
+    if (!(reg7 & 0x40)) {
         /* Port A in output mode → PB3 always 0 (no key detected) */
-        return 0xF7;
+        result = 0xF7;
+    } else {
+        /* Scan-driven --type-keys pacing: count a completed keyboard scan pass
+         * every time the descending column sweep (7->0) restarts. This is the
+         * real hardware handshake the auto-typer synchronises on so it never
+         * changes the matrix faster than the program reads it. */
+        if (autotype_is_new_pass(emu->kbd_scan_prev_col, col))
+            emu->kbd_scan_passes++;
+        emu->kbd_scan_prev_col = col;
+
+        /* Check: any pressed key in column matches the inverted mask?
+         * ~key_matrix = pressed keys (1=pressed), ~reg14 = rows to test */
+        uint8_t pressed = (~mcol) & (~reg14) & 0xFF;
+
+        /* PB3 = 1 if any key matches, 0 otherwise.
+         * Other input bits default to 1 (no external input). */
+        result = pressed ? 0xFF : 0xF7;
     }
 
-    uint8_t col = emu->via.orb & 0x07;
-    uint8_t reg14 = emu->psg.registers[14];
-
-    /* Scan-driven --type-keys pacing: count a completed keyboard scan pass
-     * every time the descending column sweep (7->0) restarts. This is the
-     * real hardware handshake the auto-typer synchronises on so it never
-     * changes the matrix faster than the program reads it. */
-    if (autotype_is_new_pass(emu->kbd_scan_prev_col, col))
-        emu->kbd_scan_passes++;
-    emu->kbd_scan_prev_col = col;
-
-    /* Check: any pressed key in column matches the inverted mask?
-     * ~key_matrix = pressed keys (1=pressed), ~reg14 = rows to test */
-    uint8_t pressed = (~emu->keyboard.matrix[col]) & (~reg14) & 0xFF;
-
-    /* PB3 = 1 if any key matches, 0 otherwise.
-     * Other input bits default to 1 (no external input). */
-    return pressed ? 0xFF : 0xF7;
+    /* --kbd-scan-trace : one line per Port B read, so a custom (non-ROM)
+     * keyboard scanner can see exactly what the emulator returns — column,
+     * the two AY gate registers (reg7 direction, reg14 row mask), the matrix
+     * byte for that column, and the rendered PB3. reg7 bit6=0 or matrix[col]
+     * broadly ≠ 0xFF are the two classic "scan reads garbage" causes. */
+    if (emu->kbd_trace_fp) {
+        fprintf(emu->kbd_trace_fp,
+                "%llu col=%u reg7=%02X reg14=%02X matrix=%02X PB3=%u\n",
+                (unsigned long long)emu->cpu.cycles, col, reg7, reg14, mcol,
+                (result & 0x08) ? 1u : 0u);
+    }
+    return result;
 }
 
 static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
@@ -834,6 +850,7 @@ static bool emulator_init(emulator_t* emu) {
     emu->cpu.irq_trace_fp = NULL;
     emu->cpu.irq_trace_count = 0;
     emu->psg_trace_fp = NULL;
+    emu->kbd_trace_fp = NULL;
     emu->audio_wav_fp = NULL;
     emu->audio_wav_data_bytes = 0;
 
@@ -864,6 +881,10 @@ static void emulator_cleanup(emulator_t* emu) {
     if (emu->psg_trace_fp) {
         fclose(emu->psg_trace_fp);
         emu->psg_trace_fp = NULL;
+    }
+    if (emu->kbd_trace_fp) {
+        fclose(emu->kbd_trace_fp);
+        emu->kbd_trace_fp = NULL;
     }
     if (emu->audio_wav_fp) {
         /* Backpatch the RIFF/data sizes now that the payload length is known. */
@@ -2293,6 +2314,7 @@ int main(int argc, char* argv[]) {
     bool loci_usb_autoscan = true;
     const char* trace_irq_file = NULL;
     const char* psg_trace_file = NULL;
+    const char* kbd_trace_file = NULL;
     const char* audio_wav_file = NULL;
     const char* symbols_file = NULL;
     bool tui_mode = false;
@@ -2473,6 +2495,7 @@ int main(int argc, char* argv[]) {
             case OPT_FDC_TIMING: fdc_timing_arg = optarg; break;
             case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
             case OPT_PSG_TRACE: psg_trace_file = optarg; break;
+            case OPT_KBD_TRACE: kbd_trace_file = optarg; break;
             case OPT_AUDIO_WAV: audio_wav_file = optarg; break;
             case OPT_SYMBOLS: symbols_file = optarg; break;
             case OPT_TUI: tui_mode = true; debug_mode = true; break;
@@ -2950,6 +2973,17 @@ int main(int argc, char* argv[]) {
         fprintf(fp, "# NB: reg 7 (mixer) is hammered to 7F by the keyboard scan — kept as measured.\n");
         emu.psg_trace_fp = fp;
         log_info("PSG trace → %s", psg_trace_file);
+    }
+
+    /* Open --kbd-scan-trace FILE (log of every VIA Port B keyboard read) */
+    if (kbd_trace_file) {
+        FILE* fp = cli_open_out(kbd_trace_file, "w", "kbd-scan-trace");
+        if (!fp) { emulator_cleanup(&emu); return 1; }
+        fprintf(fp, "# Phosphoric keyboard-scan trace — one line per VIA Port B ($0300) read\n");
+        fprintf(fp, "# Format: <cpu_cycle> col=<0-7> reg7=<hex> reg14=<hex> matrix=<hex> PB3=<0|1>\n");
+        fprintf(fp, "# reg7 bit6 must be 1 (Port A input) and matrix=FF means no key in that column.\n");
+        emu.kbd_trace_fp = fp;
+        log_info("Keyboard-scan trace → %s", kbd_trace_file);
     }
 
     /* Open --audio-wav FILE (PCM capture ; headless only to avoid racing the

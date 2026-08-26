@@ -42,7 +42,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.106.0-alpha"
+#define EMU_VERSION "1.107.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -329,6 +329,8 @@ typedef struct emulator_s {
      * --audio-wav  renders the PSG to PCM once per frame and writes a 16-bit stereo
      *              44.1 kHz WAV (uses ay_generate, the same engine as SDL playback). */
     FILE* psg_trace_fp;
+    FILE* kbd_trace_fp;              /* --kbd-scan-trace : one line per VIA Port B read
+                                      * (col, reg7, reg14, matrix[col], rendered PB3) */
     FILE* audio_wav_fp;
     uint32_t audio_wav_data_bytes;   /* PCM payload written so far (for the header patch) */
 

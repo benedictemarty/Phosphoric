@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.107.0-alpha] - 2026-08-26
+
+### Added — trace de scan clavier (`--kbd-scan-trace FILE`)
+
+- **Demande** (équipe civilization_asm, jeu ASM natif Atmos qui scanne le clavier
+  lui-même via VIA+PSG, sans ROM BASIC) : un scanner maison ne captait plus aucune
+  touche `--type-keys` (motif parasite constant, PB3=1 en masse), alors que le
+  scanner ROM BASIC fonctionnait. Il manquait un moyen de voir ce que l'émulateur
+  renvoie réellement à chaque lecture clavier — `--psg-trace` **exclut** reg 14/15
+  (matrice clavier), donc n'aide pas à déboguer un scan maison.
+- **Constat (par lecture + repro)** : le chemin lecture/écriture est sain. Un
+  harnais liant les vrais `keyboard.c` + `ay3891x.c` et rejouant la séquence exacte
+  du demandeur (`reg7=$7F`, sweep `reg14=~(1<<ligne)`, décodage PCR `$EE/$EC/$CC`)
+  donne : repos (matrice `0xFF`) → **0/64** lecture PB3=1 ; touche 'A' injectée →
+  **1/64** (position exacte) ; après `release_all` → 0/64. `reg14` se stocke bien
+  (`ay_write_data_timed` écrit `registers[reg]` inconditionnellement, même Port A en
+  entrée) et la matrice s'initialise à `0xFF` (`oric_keyboard_init`, appelé par
+  `emulator_init`). Le symptôme « 89 % pressé » vient donc d'un état matrice ≠ `0xFF`
+  dans le run réel, pas de la séquence ni du décodage.
+- **Livraison** : `--kbd-scan-trace FILE` écrit une ligne par lecture VIA Port B
+  (`$0300`) dans `portb_read_callback` : `<cycle> col=<0-7> reg7=<hex> reg14=<hex>
+  matrix=<hex> PB3=<0|1>`. Rend visibles les deux causes classiques d'un scan qui
+  « lit du bruit » : `reg7` bit6=0 (Port A en sortie → PB3 forcé 0) et `matrix`
+  largement ≠ `0xFF` (touches pressées/maintenues). Câblé comme `--psg-trace`
+  (champ `kbd_trace_fp`, ouverture/fermeture, entrée `OPT_KBD_TRACE`).
+- **Vérifié** : boot BASIC 1.1 + `--type-keys "3000000:'A'"` + `--kbd-scan-trace` →
+  repos `matrix=FF PB3=0` (2418/2452 lectures), touche 'A' `col=6 reg14=DF matrix=DF
+  PB3=1` (position col6/row5 exacte). `make clean && make tests` toutes suites vertes.
+  EMU_VERSION → 1.107.0-alpha.
+
 ## [1.106.0-alpha] - 2026-08-25
 
 ### Added — coût de transport I2C des IRQ LOCI (`--loci-irq-latency US`)

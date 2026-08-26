@@ -101,6 +101,7 @@ void cli_print_usage(const char* program_name) {
     printf("                             saved to --trace FILE at exit; ideal for a hang)\n");
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");
     printf("      --psg-trace FILE       Log AY sound-register writes (reg 0-13) with CPU cycle\n");
+    printf("      --kbd-scan-trace FILE  Log every VIA Port B read (col, reg7, reg14, matrix, PB3)\n");
     printf("      --audio-wav FILE       Capture PSG audio to a 16-bit stereo 44.1 kHz WAV\n");
     printf("                             (headless only; renders per frame via ay_generate)\n");
     printf("      --profile FILE         Write CPU performance profile to FILE on exit\n");
