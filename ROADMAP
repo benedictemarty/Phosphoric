@@ -104,6 +104,25 @@ pas ; `--serial-baud` limite symétriquement (ligne), `--serial-irq-on-rdrf` ne 
 - Validation OricTel : justifie objectivement le choix **polling** (Command $0B, IRQ off) vs
   une approche IRQ façon ORICOMMS, et offre un banc réaliste pour tout logiciel ACIA du LOCI.
 
+### US 8 — Trace de scan clavier (`--kbd-scan-trace`) (v1.107.0-alpha) — DONE
+Demande équipe civilization_asm (jeu ASM natif Atmos qui balaie la matrice VIA+PSG lui-même,
+sans ROM BASIC) : un scanner maison ne captait plus aucune touche `--type-keys` (PB3=1 en masse
+~89 %), le scanner ROM marchant. `--psg-trace` **exclut** reg 14/15 (matrice), donc n'aidait pas.
+Constat (par le code + repro) : le chemin lecture/écriture est **sain** — un harnais liant les
+vrais `keyboard.c`+`ay3891x.c` et rejouant la séquence exacte (`reg7=$7F`, sweep `reg14=~(1<<ligne)`,
+décodage PCR `$EE/$EC/$CC`) donne repos **0/64** PB3=1, touche 'A' **1/64** (position exacte),
+`release_all` 0/64 ; `reg14` se stocke inconditionnellement (`ay_write_data_timed`, même Port A en
+entrée) et la matrice s'initialise à `0xFF` (`oric_keyboard_init` via `emulator_init`). Le
+« 89 % pressé » vient donc d'un état matrice ≠ `0xFF` dans le run réel, pas de la séquence.
+- [x] `--kbd-scan-trace FILE` : une ligne par lecture VIA Port B (`$0300`) dans
+      `portb_read_callback` — `<cycle> col reg7 reg14 matrix PB3` — rendant visibles les deux
+      causes classiques (`reg7` bit6=0 → PB3 forcé 0 ; `matrix` largement ≠ `0xFF`).
+- [x] Câblé comme `--psg-trace` (champ `emulator_t::kbd_trace_fp`, entrée `OPT_KBD_TRACE`,
+      ouverture `cli_open_out`/en-tête, fermeture au cleanup) ; refactor `portb_read_callback`
+      pour calculer `result` puis journaliser (comportement inchangé).
+- [x] Vérifié : boot BASIC 1.1 + `--type-keys "…:'A'"` → repos `matrix=FF PB3=0` (2418/2452),
+      touche 'A' `col=6 reg14=DF matrix=DF PB3=1`. `make clean && make tests` toutes suites vertes.
+
 ---
 
 ## Epic 9 — Adaptateur LOCI : sortir la glue de `main.c` (`src/io/loci_glue.c`) — TERMINÉ (US1→US6, v1.99.5→1.99.8)

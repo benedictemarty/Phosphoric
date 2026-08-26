@@ -91,6 +91,13 @@ Pour piloter un programme sans humain :
 > Pour un timing déterministe des injections **et** pour la série réseau (modem/XMODEM),
 > ajouter `--realtime` (cadence le headless à 50 Hz).
 
+> **Déboguer un scanner clavier maison** (jeu ASM natif qui balaie la matrice VIA+PSG
+> lui-même, sans la ROM) : `--kbd-scan-trace FILE` écrit une ligne par lecture VIA
+> Port B (`$0300`) — `<cycle> col reg7 reg14 matrix PB3`. Deux causes classiques de
+> « scan muet » deviennent visibles : `reg7` bit6=0 (Port A en sortie → PB3 forcé à 0)
+> et `matrix`≠`FF` (touches pressées/maintenues). `--psg-trace` **exclut** reg 14/15
+> (matrice), d'où cet outil dédié.
+
 ---
 
 ## 4. Capturer un résultat (le cœur du test auto)

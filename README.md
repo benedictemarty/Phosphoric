@@ -173,7 +173,7 @@ make SDL2=1
 - **Headless mode** — No display, for CI/automation
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/SEDORIC.md](docs/SEDORIC.md)
-- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Key pacing is **synchronised on the real keyboard scanner** (VIA PB3 matrix sweep), so no keystroke is dropped even when the target program polls the matrix slower than a frame. `--type-keys-when ADDR:VAL:TEXT` arms typing when `RAM[ADDR]==VAL` (hex) instead of a guessed boot cycle. Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos)
+- **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Key pacing is **synchronised on the real keyboard scanner** (VIA PB3 matrix sweep), so no keystroke is dropped even when the target program polls the matrix slower than a frame. `--type-keys-when ADDR:VAL:TEXT` arms typing when `RAM[ADDR]==VAL` (hex) instead of a guessed boot cycle. Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos). Debugging a **custom (non-ROM) keyboard scanner** (a native game that sweeps the VIA+PSG matrix itself)? `--kbd-scan-trace FILE` logs one line per VIA Port B read — `col reg7 reg14 matrix PB3` — so you can see exactly what the emulator returns (`reg7` bit6=0 → PB3 forced low; `matrix`≠`FF` → keys held)
 
 ## Building
 
@@ -256,6 +256,8 @@ Trace:
   --trace FILE              Log CPU instruction trace to FILE
   --trace-max N             Max instructions to trace (default: unlimited)
   --psg-trace FILE          Log AY sound-register writes (reg 0-13) with CPU cycle
+  --kbd-scan-trace FILE     Log every VIA Port B read (col, reg7, reg14, matrix, PB3)
+                            — debug a custom (non-ROM) keyboard scanner
 
 Audio:
   --audio-wav FILE          Capture PSG audio to a 16-bit stereo 44.1 kHz WAV
