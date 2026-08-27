@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.107.1-alpha] - 2026-08-27
+
+### Fixed — bundle WASM cassé sous Content-Security-Policy stricte (`canvas is undefined`)
+
+- **Rapport** (page hébergée sous CSP stricte, ex. `script-src 'self' 'wasm-unsafe-eval'`) :
+  erreur fatale `TypeError: can't access property "getContextSafariWebGL2Fixed", canvas is
+  undefined` au `createContext` WebGL, précédée d'avertissements CSP `script-src-elem` et
+  `script-src-attr`.
+- **Cause** : `web/shell.html` posait toute sa logique (`var Module = { … canvas:
+  document.getElementById('canvas') … }`, UI, clavier, drag&drop) dans un **`<script>`
+  inline**, et le `<canvas>` avait un **attribut inline `oncontextmenu`**. Sous CSP stricte,
+  le script inline est bloqué (`script-src-elem`) → `Module` jamais défini → `Module.canvas`
+  `undefined` → l'init WASM échoue. (`phosphoric.js` était déjà chargé en externe par
+  Emscripten, donc non affecté.)
+- **Correctif** : logique du shell **externalisée** vers `web/shell.js` (chargé via
+  `<script src="shell.js">`), attribut `oncontextmenu` remplacé par un écouteur DOM
+  (`addEventListener('contextmenu', …)`). `phosphoric.html` (généré par `make wasm`) n'a
+  désormais **aucun script ni gestionnaire inline** → tourne sous CSP stricte comme sous une
+  politique permissive. `shell.js` est un **asset à déployer** à côté de `phosphoric.*`
+  (documenté dans `docs/wasm.md`).
+- **Vérifié** : `node --check web/shell.js` OK ; `web/shell.html` sans aucun inline (grep) ;
+  extraction iso (même code, fichier externe). Rebuild `make wasm` nécessite emsdk (non
+  reconstruit ici — seule la source `shell.html`/`shell.js` change ; `phosphoric.*` régénérés
+  au déploiement). EMU_VERSION → 1.107.1-alpha.
+
 ## [1.107.0-alpha] - 2026-08-26
 
 ### Added — trace de scan clavier (`--kbd-scan-trace FILE`)

@@ -28,6 +28,24 @@ make wasm
 préchargées dans le système de fichiers virtuel). La page démarre l'Atmos
 (`-r /roms/basic11b.rom`) ; cliquez l'écran pour le focus clavier et l'audio.
 
+## Déploiement : assets requis + CSP
+
+La page charge sa logique (définition de `Module`, UI, clavier, glisser-déposer)
+depuis **`web/shell.js`** — un fichier externe qu'il faut **déployer à côté** de
+`phosphoric.html`/`.js`/`.wasm`/`.data`. `shell.js` est versionné (source) et
+référencé par `phosphoric.html` via `<script src="shell.js">`.
+
+Cette externalisation rend le bundle **compatible Content-Security-Policy stricte**.
+Un hôte qui sert la page sous `script-src 'self' 'wasm-unsafe-eval'` bloquerait un
+`<script>` inline (`script-src-elem`) → `Module` jamais défini → `Module.canvas`
+`undefined` → erreur fatale « can't access property … canvas is undefined » au
+`createContext` WebGL. En externalisant tout le JS (et en remplaçant l'attribut
+inline `oncontextmenu` du canvas par un écouteur DOM), `phosphoric.html` n'a plus
+**aucun script/gestionnaire inline** : il tourne sous CSP stricte comme sous une
+politique permissive (GitHub Pages). `phosphoric.js` est déjà chargé en externe
+par Emscripten (`<script async src=phosphoric.js>`), et la compilation WASM exige
+`'wasm-unsafe-eval'` dans `script-src`.
+
 ## Interface (page web)
 
 La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
