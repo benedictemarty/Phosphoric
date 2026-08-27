@@ -46,6 +46,27 @@ politique permissive (GitHub Pages). `phosphoric.js` est déjà chargé en exter
 par Emscripten (`<script async src=phosphoric.js>`), et la compilation WASM exige
 `'wasm-unsafe-eval'` dans `script-src`.
 
+### CSP minimale requise
+
+```
+Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'
+```
+
+- **`'self'`** — autorise `shell.js` et `phosphoric.js` (tous deux externes).
+- **`'wasm-unsafe-eval'`** — **obligatoire** : `phosphoric.js` compile le module via
+  `WebAssembly.instantiateStreaming`/`instantiate`, bloqués sous `script-src 'self'`
+  seul. C'est le sous-token WASM (≠ `'unsafe-eval'`, bien plus large) — sûr.
+
+⚠️ **Ne pas retirer `'wasm-unsafe-eval'`** : sous `script-src 'self'` nu, la
+compilation WebAssembly est refusée et **l'émulateur ne démarre pas** (aucun log
+`Initializing Phosphoric …`). Après le fix d'externalisation, ni `'unsafe-inline'`
+ni hash/nonce ne sont nécessaires — seul le token WASM l'est.
+
+> Un blocage `script-src-elem` dont la source est `sandbox eval code` (et non
+> `phosphoric.html`) provient d'une **extension navigateur** (content script), pas
+> de Phosphoric : la page n'injecte aucun script inline ni `eval`. Sans effet sur
+> l'émulateur.
+
 ## Interface (page web)
 
 La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
