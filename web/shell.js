@@ -56,9 +56,11 @@ function maybeLoadUrlMedia(){
         var ok = (kind==='tap')
           ? Module.ccall('web_insert_tap','number',['string'],[path])
           : Module.ccall('web_insert_disk','number',['number','string'],[0,path]);
-        if(ok){ sessionStorage.setItem('phos_media_name', name); sessionStorage.setItem('phos_media_kind', kind); refreshUI(); }
+        if(ok){ idbPut(name, buf, function(){}); sessionStorage.setItem('phos_media_name', name); sessionStorage.setItem('phos_media_kind', kind); refreshUI(); }
         else if(n>0) setTimeout(function(){tryInsert(n-1);}, 100);
-        else console.warn('?media: insert failed (disk needs Microdisc, or engine not ready)');
+        else console.warn('?media: insert failed — "'+name+'" is not a valid '+kind.toUpperCase()+
+          ' (server may have returned an HTML page instead of the binary — check it downloads raw),'+
+          (kind==='dsk'?' or the disk needs the Microdisc ROM,':'')+' or the engine was not ready.');
       })(50);
     }).catch(function(e){ console.warn('?media load failed:',e); });
 }

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.107.2-alpha] - 2026-08-27
+
+### Fixed — WASM : média `?media=` non persistant + message d'échec trompeur
+
+- **Rapport** (page WASM, après le fix CSP 1.107.1 qui démarre bien) : au boot,
+  `Failed to open tape: /media/3DFONGUS.TAP`, puis `?media: insert failed`.
+- **Cause 1 (bug shell)** : le handler `?media=<file>` (`web/shell.js`) mémorisait le
+  **nom** du média en `sessionStorage` mais **n'appelait jamais `idbPut`** pour persister
+  le fichier dans IndexedDB — contrairement au drag-drop (`loadMedia`, qui fait `idbPut`).
+  Au reload, `args` demande `-t /media/<name> -f` et `preRun`/`idbGet` ne trouve rien →
+  fichier non écrit dans le VFS → **« Failed to open tape »**. Fix : `idbPut(name, buf, …)`
+  dans la branche succès de `maybeLoadUrlMedia` (miroir du drag-drop).
+- **Cause 2 (message)** : `?media: insert failed` accusait « disk needs Microdisc, or engine
+  not ready », trompeur pour un `.tap`. `web_insert_tap` renvoie 0 quand `tap_open_read`/
+  `tap_read_header` échoue → le contenu fetché **n'est pas un TAP valide** (typiquement le
+  serveur renvoie une **page HTML de fallback en 200** au lieu du binaire). Message reformulé :
+  pointe le fichier invalide/mal servi (télécharger en brut), garde le hint Microdisc pour `.dsk`.
+- **Vérifié** : `node --check web/shell.js` OK ; `idbPut` désormais dans les deux chemins
+  (`?media=` + drag-drop). Rebuild `make wasm` = emsdk requis (source seule modifiée).
+  EMU_VERSION → 1.107.2-alpha.
+
 ## [1.107.1-alpha] - 2026-08-27
 
 ### Fixed — bundle WASM cassé sous Content-Security-Policy stricte (`canvas is undefined`)
