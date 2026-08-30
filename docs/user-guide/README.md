@@ -618,66 +618,157 @@ est `.COM` (un `.BIN` donnerait `?FILE NOT FOUND ERROR`).
 
 ## Reference CLI complete
 
+> Liste exhaustive alignee sur `./oric1-emu --help` (v1.107.3-alpha).
+> Certaines options exigent un build specifique : `--tui` (TUI=1),
+> `--http-api` (HTTPAPI=1), `--cast-*` (CAST=1), backend `midi:` (MIDI=1).
+
 ```
 ./oric1-emu [OPTIONS]
 
-ROM et modele :
-  -r, --rom FILE             Charger la ROM BASIC (obligatoire)
-  -m, --model MODEL          Forcer le modele : oric1, atmos, 1.0, 1.1
+ROM, modele et hote :
+  -r, --rom FILE             Charger un fichier ROM (BASIC 1.0/1.1)
+  -m, --model MODEL          Modele : oric1 ou atmos (defaut : auto-detection)
+  -k, --keyboard LAYOUT      Disposition clavier : qwerty (defaut) ou azerty
+  -h, --hostfs PATH          Monter un repertoire hote (partage de fichiers)
 
-Cassette et disquette :
+Cassette :
   -t, --tape FILE            Charger un fichier cassette .TAP
-  -f, --fast-load            Chargement rapide (injection memoire)
-  -d, --disk FILE            Charger une image .DSK (lecteur A)
-      --disk-rom FILE        Charger la ROM Microdisc
-      --disk1 FILE           Lecteur B
-      --disk2 FILE           Lecteur C
-      --disk3 FILE           Lecteur D
+  -f, --fast-load            Chargement rapide (injection memoire, sans CLOAD)
+      --tape-signal          Cassette au niveau signal (onde VIA CB1, lecture ROM
+                             reelle) — loaders custom/proteges ; exclut -f
+      --tape-out-capture FILE  Capturer l'onde CSAVE (PB7/Timer1) et la decoder
+                             en .TAP (voie A ; desactive les hooks CSAVE)
+
+Disquette (Microdisc WD1793) :
+  -d, --disk FILE            Charger une image .DSK dans le lecteur A
+      --disk1 FILE           Image .DSK dans le lecteur B
+      --disk2 FILE           Image .DSK dans le lecteur C
+      --disk3 FILE           Image .DSK dans le lecteur D
+      --disk-rom FILE        Charger la ROM Microdisc (microdis.rom)
+      --disk-writeback       Reecrire les modifications disque dans les .dsk a la
+                             sortie (en place ; seuls les lecteurs ecrits sont sauves)
+      --disk-create FILE     Creer une disquette Sedoric vierge (lecteur A) -> FILE
+      --disk-web URL         Lecteur A servi par un serveur web (loci-webdisk archi B),
+                             pistes MFM lues par HTTP a la demande via le Microdisc
+      --fdc-timing MODE      Timing WD1793 : real (defaut, 3" mecanique) ou fast
+      --bad-sector [D:]S:T:N Marquer secteur illisible (RNF) : lecteur D (defaut A),
+                             face S, piste T, secteur N ; repetable
 
 Sauvegarde d'etat :
-      --save-state FILE      Sauvegarder l'etat a la fermeture
+      --save-state FILE      Sauvegarder l'etat a la fermeture (.ost)
       --load-state FILE      Charger l'etat au demarrage
 
-Joystick :
-  -j, --joystick MODE        Mode joystick : keys, gamepad
+Video et affichage :
+      --scale N              Echelle : 1, 2, 3 (defaut) ou 4
+      --render-software      Forcer le renderer SDL logiciel (corrige fenetre noire
+                             sur certains GPU/pilotes)
+      --no-border            Desactiver la bordure d'overscan dans la fenetre
+      --export-border        Inclure la bordure d'overscan dans les exports image/AVI
+      --ula-ng-poke SEQ      Programmer les registres ULA-NG ($0340-$035F) au boot,
+                             SEQ = paires AAA=VV hex separees par des virgules
 
-Imprimante :
-  -p, --printer FILE         Capturer la sortie imprimante
-      --printer-type TYPE    Type : text (defaut), mcp40
+Captures et export :
+      --screenshot FILE          Capture a la fermeture (.ppm ou .bmp ; .png supporte)
+      --screenshot-at C:FILE     Capture apres C cycles (famille -at REPETABLE)
+      --screenshot-when A:V:FILE Capture quand RAM[A]==V (A,V hex ; exit 2 si jamais)
+      --screenshot-text FILE     Dump texte ecran ($BB80, 40x28) en ASCII a la fermeture
+      --screenshot-text-at C:FILE   Dump texte apres C cycles
+      --screenshot-text-when A:V:FILE  Dump texte quand RAM[A]==V (A,V hex)
+      --screenshot-ansi FILE     Dump framebuffer en texte ANSI true-color a la fermeture
+      --screenshot-ansi-at C:FILE   Dump ANSI apres C cycles
+      --dump-ram-at C:FILE       Dump 64 Ko RAM quand cycle >= C
+      --dump-ram-when A:V:FILE   Dump 64 Ko quand RAM[A]==V (A,V hex ; exit 2 si jamais)
+      --frame-dump DIR           Dump periodique des frames dans un repertoire
+      --frame-dump-interval N    Dumper une frame sur N (defaut 50)
+      --video FILE               Enregistrer une video Motion-JPEG AVI
+      --video-fps N              Cadence d'enregistrement (defaut 50)
+      --video-quality N          Qualite JPEG 1..100 (defaut 85)
 
-Affichage :
-      --scale N              Echelle : 1, 2, 3 (defaut), 4
+Audio :
+      --audio-wav FILE       Capturer le PSG en WAV 16 bits stereo 44,1 kHz (headless)
+      --psg-trace FILE       Journaliser les ecritures registres AY (0-13) + cycle CPU
 
-Trace et profiling :
+Headless et automation :
+  -n, --headless             Sans affichage (mode headless)
+      --realtime             Cadencer a 50 Hz PAL meme en headless (nanosleep) ;
+                             requis pour le timing serie reseau et --type-keys deterministe
+  -c, --cycles NUM           Executer N cycles puis quitter
+  -v, --verbose              Logs verbeux
+      --type-keys C:TEXT     Saisie clavier auto apres C cycles (echappements \n \e
+                             \b \u \d \l \r \Cx \Fx \Lx \Rx \pN ; repetable)
+      --type-keys-when A:V:TEXT  Armer --type-keys quand RAM[A]==V (A,V hex)
+      --poke-at C:ADDR=VAL       Ecrire RAM[ADDR]=VAL une fois apres C cycles (hex ; repetable)
+      --poke-when A:V:ADDR=VAL   Ecrire RAM[ADDR]=VAL une fois quand RAM[A]==V (hex ; repetable)
+      --record FILE          Enregistrer les entrees clavier (replay deterministe)
+      --replay FILE          Rejouer un film d'entrees (ignore le clavier live)
+      --bench                Bench de debit headless (`BENCH cycles=... mhz_eq=...`)
+
+Peripheriques d'entree/sortie :
+  -j, --joystick MODE        Joystick : keys (fleches) ou gamepad (manette SDL2)
+  -p, --printer FILE         Capturer la sortie imprimante (LPRINT/LLIST)
+      --printer-type TYPE    Type : text (defaut) ou mcp40 (traceur 4 couleurs)
+
+Debogueur, trace et profil :
+  -D, --debug                Demarrer dans le debogueur (break a la 1re instruction)
+  -b, --breakpoint ADDR      Break quand PC atteint ADDR (hex)
+      --break ADDR           Breakpoint initial du debogueur interactif (hex)
+      --tui                  Debogueur TUI ncurses (build TUI=1)
+      --gdb[=PORT]           Stub GDB distant sur TCP PORT (defaut 1234)
+      --control              Mode IPC pour integration IDE (protocole stdin)
+      --symbols FILE         Charger une table de symboles (.sym/.lab/.sym65)
       --trace FILE           Trace CPU instruction par instruction
-      --trace-max N          Limite du nombre d'instructions tracees
-      --profile FILE         Rapport de performance CPU a la fermeture
-
-Analyse :
+      --trace-max N          Limite d'instructions tracees (garde les N PREMIERES)
+      --trace-ring N         Garder les N DERNIERES instructions (ring, ecrit a la sortie)
+      --trace-irq FILE       Journaliser chaque entree IRQ + RTI
+      --kbd-scan-trace FILE  Journaliser chaque lecture VIA Port B (col, reg7, reg14, matrix, PB3)
+      --profile FILE         Ecrire un profil de performance CPU a la fermeture
       --rom-info [FILE]      Analyser la ROM (vecteurs, cibles, chaines)
 
-Debogueur :
-  -D, --debug                Demarrer dans le debogueur
-  -b, --breakpoint ADDR      Breakpoint legacy (hex)
-      --break ADDR           Breakpoint debogueur interactif (hex)
+Serie (ACIA 6551) et modems :
+      --serial TYPE          loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV,
+                             file:IN[:OUT], picowifi[:SSID[:PASS]]
+      --serial-v23           Mode V23 : 1200/75 baud (Minitel/Prestel/Digitelec)
+      --serial-buffer N      FIFO RX de N octets (anti-overrun ; defaut : off)
+      --serial-baud N        Baud horloge externe (timing realiste vs transfert instantane)
+      --serial-irq-on-rdrf   Mode IRQ WDC 65C51 (re-declenche tant que RDRF pose)
+      --serial-trace FILE    Trace serie (TX/RX/signaux horodates)
+      --serial-tcp-backpressure[=N]  Contre-pression bornee pour tcp: (cap SO_RCVBUF)
+      --acia-addr ADDR       Adresse de base ACIA en hex (defaut 031C)
+
+Cartes serie/MIDI dediees :
+      --dtl2000 TRANSPORT    Digitelec DTL 2000 (PIA 6821 + ACIA 6850) a $03F8
+      --dtl2000-addr ADDR    Adresse de base DTL 2000 en hex (defaut 03F8)
+      --mageco TRANSPORT     Interface MIDI Mageco (ACIA 6850) a $03FE, 31250 baud
+      --mageco-addr ADDR     Adresse de base Mageco en hex (defaut 03FE)
+      --oricon TRANSPORT     Variante MIDI ORICON (MC6850 a $031C-$031F, compat LOCI)
+
+LOCI (Lovely Oric Computer Interface) :
+      --loci                 Activer la MIA LOCI a $03A0-$03BF
+      --loci-flash DIR       Racine sandbox des ops fichier LOCI (implique --loci)
+      --loci-sdimg PATH      Image SD FAT16/32 brute (lecture seule ; exclut --loci-flash)
+      --loci-usb DIR|none    Attacher DIR comme cle USB LOCI (repetable, 4 max ; 'none' desactive)
+      --loci-web URL         Lecteur A LOCI servi par serveur web + autoboot Sedoric natif
+      --loci-web-base URL    Pseudo-device « W: Web disks » dans le menu LOCI
+      --loci-mia-window LO-HI  Modeliser la plage MIA tior fiable (0-31)
+      --loci-irq-latency US  Cout transport I2C des IRQ LOCI (differe chaque /IRQ de US us)
 
 Chromecast :
-      --cast-server[=PORT]   Demarrer le serveur MJPEG (defaut 8080)
-      --cast-to[=DEVICE]     Caster vers un Chromecast
+      --cast-server[=PORT]   Serveur MJPEG (defaut 8080)
+      --cast-to[=DEVICE]     Caster vers un Chromecast (CASTV2 natif)
       --cast-discover        Decouvrir les Chromecast sur le reseau
 
-Affichage et export :
-  -k, --keyboard LAYOUT      qwerty (defaut) ou azerty
-  -n, --headless              Sans affichage
-  -c, --cycles N              Executer N cycles puis quitter
-      --screenshot FILE       Capture a la fermeture (.ppm/.bmp)
-      --screenshot-at N:FILE  Capture apres N cycles
-      --frame-dump DIR        Dump periodique des frames
-      --frame-dump-interval N Intervalle de dump (defaut 50)
-      --type-keys N:TEXT      Saisie clavier automatique
-  -h, --hostfs PATH           Monter un repertoire hote
-  -v, --verbose               Logs de debogage
-  -?, --help                  Afficher l'aide
+API HTTP (build HTTPAPI=1) :
+      --http-api[=PORT]      API de controle HTTP/REST (defaut 8888)
+      --http-api-bind ADDR   Adresse d'ecoute de l'API (defaut 127.0.0.1)
+      --http-api-root DIR    Racine sandbox des ops fichier /tape,/disk (defaut CWD)
+
+Aide :
+  -?, --help                 Afficher l'aide
+
+Touches de fonction (fenetre SDL) :
+  F1 Aide  F2 Save rapide  F3 Echelle  F4 Load rapide  F5 Reset
+  F6 OSD cassette/disquette a chaud  F8 Bouton Action LOCI  F9 Debogueur
+  F10 Quitter  F11 Plein ecran  F12 Capture d'ecran
 ```
 
 ---
