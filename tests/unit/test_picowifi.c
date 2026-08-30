@@ -502,17 +502,21 @@ static void tn_disconnect(void) {
     pw_teardown();
 }
 
-/* Read up to max bytes from the server side, retrying for EAGAIN. Sleep on an
- * empty poll so the loop spans enough wall-time for loopback delivery — the
- * kernel loopback is near-instant on Linux but has real latency on macOS. */
+/* Read from the server side, ACCUMULATING until the burst is complete. A
+ * single read() may return only the first TCP segment: the Oric sends its
+ * bytes one send() at a time, and while Linux loopback coalesces them into one
+ * read, macOS can deliver them across several segments. Keep reading (g_srv is
+ * non-blocking → EAGAIN when idle) until no more data arrives for ~5 ms after
+ * having received some, so multi-segment outbound data is fully captured. */
 static int tn_srv_read(uint8_t* buf, int max) {
-    for (int t = 0; t < 4000; t++) {
-        ssize_t r = read(g_srv, buf, (size_t)max);
-        if (r > 0) return (int)r;
-        if (r == 0) return 0;
-        usleep(100);   /* EAGAIN : laisser les données loopback arriver */
+    int total = 0, idle = 0;
+    for (int t = 0; t < 8000 && total < max; t++) {
+        ssize_t r = read(g_srv, buf + total, (size_t)(max - total));
+        if (r > 0)       { total += (int)r; idle = 0; }
+        else if (r == 0) break;                                  /* EOF */
+        else { if (total > 0 && ++idle >= 50) break; usleep(100); }
     }
-    return 0;
+    return total;
 }
 
 /* Pump the backend's recv (reads socket → telnet → rx) draining data bytes
