@@ -63,14 +63,17 @@ typedef struct jasmin_s {
     uint8_t drive;             /* Selected drive (0-3) via $03FC-$03FF     */
     uint8_t side;              /* $03F8: selected side (0-1)               */
 
-    /* INTRQ/DRQ latches (active-low convention like the Microdisc) */
+    /* INTRQ/DRQ latches (active-low convention like the Microdisc).
+     * NOTE: on the Jasmin it is DRQ — not INTRQ — that drives the CPU IRQ
+     * line (IRQF_DISK); INTRQ is not wired to the CPU (Oricutron
+     * jasmin_setintrq is a no-op). There is no INTENA gate. */
     uint8_t intrq;             /* 0x00 = INTRQ active, 0x80 = inactive     */
     uint8_t drq;               /* 0x00 = DRQ active, 0x80 = inactive       */
 
     /* Jasmin boot ROM ($F800-$FFFF), loaded via --jasmin-rom */
     uint8_t rom[JASMIN_ROM_SIZE];
     bool    rom_valid;         /* true once a 2 KB Jasmin ROM is loaded    */
-    bool    rom_active;        /* Jasmin ROM currently paged at $F800+     */
+    bool    autoboot_done;     /* one-shot: ROM-PC-trap auto-boot fired     */
 
     /* Per-drive disk data (A, B, C, D) — same model as the Microdisc */
     uint8_t* disk_data[JASMIN_MAX_DRIVES];
@@ -79,22 +82,27 @@ typedef struct jasmin_s {
     uint8_t  disk_sectors[JASMIN_MAX_DRIVES];
     bool     disk_dirty[JASMIN_MAX_DRIVES];
 
-    emulator_t* emu;           /* Back-pointer for memory overlay/IRQ hooks */
+    /* Per-drive bad-sector map: damage belongs to the inserted media. */
+    fdc_bad_map_t bad_map[JASMIN_MAX_DRIVES];
+
+    /* CPU IRQ line (IRQF_DISK). Driven by DRQ on the Jasmin. Wired in main.c
+     * to keep this module decoupled from the CPU (same as the Microdisc). */
+    void (*cpu_irq_set)(emulator_t* emu);
+    void (*cpu_irq_clr)(emulator_t* emu);
+    emulator_t* cpu_userdata;
 } jasmin_t;
 
 /* Lifecycle */
-void jasmin_init(jasmin_t* j, emulator_t* emu);
+void jasmin_init(jasmin_t* j);
 void jasmin_reset(jasmin_t* j);
 
 /* CPU I/O (routed by io_bus for $03F4-$03FF) */
 uint8_t jasmin_read(jasmin_t* j, uint16_t addr);
 void    jasmin_write(jasmin_t* j, uint16_t addr, uint8_t value);
 
-/* Per-frame/step FDC servicing (DRQ/INTRQ timing) */
-void jasmin_tick(jasmin_t* j, uint32_t cycles);
-
 /* ROM + media */
 bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size);
-void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size);
+void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
+                     uint8_t tracks, uint8_t sectors_per_track);
 
 #endif /* JASMIN_H */

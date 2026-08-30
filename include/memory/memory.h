@@ -61,6 +61,14 @@ typedef struct memory_s {
     bool overlay_active;          /**< Overlay ROM mapped at $E000-$FFFF */
     bool basic_rom_disabled;      /**< BASIC ROM disabled (romdis) */
 
+    /* Jasmin disk interface banking ($F800-$FFFF boot ROM). Distinct from the
+     * Microdisc overlay: olay=RAM everywhere, romdis pages the 2 KB Jasmin ROM
+     * at $F800 with RAM at $C000-$F7FF (Oricutron jasmin_atmosread). */
+    bool jasmin_active;           /**< Jasmin present → use Jasmin banking */
+    const uint8_t* jasmin_rom;    /**< 2 KB Jasmin boot ROM ($F800-$FFFF) */
+    bool jasmin_olay;             /**< $03FA overlay RAM: RAM everywhere */
+    bool jasmin_romdis;           /**< $03FB: Jasmin ROM in, BASIC ROM out */
+
     /* I/O device callbacks */
     uint8_t (*io_read)(uint16_t address, void* userdata);
     void (*io_write)(uint16_t address, uint8_t value, void* userdata);

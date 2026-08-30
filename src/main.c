@@ -1179,6 +1179,25 @@ static void emulator_run(emulator_t* emu) {
 
             tape_patches(emu);
 
+            /* Jasmin auto-boot (Oricutron 8912.c): while the BASIC ROM is still
+             * mapped, when the ROM boot reaches a fixed PC, page in the Jasmin
+             * ROM ($3FB=1) and reset — the Jasmin ROM's reset vector then boots
+             * the disk. One-shot per boot. Confirmed traps: Atmos $EB78, ORIC-1
+             * $E905. */
+            if (emu->has_jasmin && !emu->jasmin.autoboot_done && !emu->jasmin.romdis) {
+                uint16_t jtrap = (emu->model == ORIC_MODEL_ATMOS) ? 0xEB78 : 0xE905;
+                if (emu->cpu.PC == jtrap) {
+                    jasmin_write(&emu->jasmin, JASMIN_ROMDIS, 1);
+                    emu->memory.jasmin_romdis = emu->jasmin.romdis;
+                    emu->memory.jasmin_olay   = emu->jasmin.olay;
+                    cpu_reset(&emu->cpu);
+                    if (fdc_trace_enabled())
+                        fprintf(stderr, "[JASMIN] autoboot @ %04X → ROMDIS, "
+                                "reset PC=%04X\n", jtrap, emu->cpu.PC);
+                    emu->jasmin.autoboot_done = true;
+                }
+            }
+
             int step = cpu_step(&emu->cpu);
             frame_cycles += step;
             emu->frame_cycles = frame_cycles;   /* expose for raster bps */
@@ -2281,6 +2300,7 @@ int main(int argc, char* argv[]) {
     struct { const char* arg; bool is_when; } poke_args[POKE_MAX];
     int poke_arg_count = 0;
     const char* disk_rom_file = NULL;
+    const char* jasmin_rom_file = NULL;  /* --jasmin-rom : Jasmin boot ROM (2 KB) */
     bool debug_mode = false;
     const char* debug_break_addr = NULL;
     bool cast_server_enabled = false;
@@ -2408,6 +2428,7 @@ int main(int argc, char* argv[]) {
                 }
                 break;
             case OPT_DISK_ROM: disk_rom_file = optarg; break;
+            case OPT_JASMIN_ROM: jasmin_rom_file = optarg; break;
             case 'b': emu.breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
             case 'D': debug_mode = true; break;
             case OPT_DEBUG_BREAK: debug_break_addr = optarg; break;
@@ -3476,12 +3497,86 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /* Jasmin disk interface (--jasmin-rom): the 2nd Oric disk standard (WD177x
+     * at $03F4-$03FF, 2 KB boot ROM at $F800). Alternative to the Microdisc and
+     * mutually exclusive with it and with DTL2000/Mageco ($03F8-$03FF overlap). */
+    if (jasmin_rom_file) {
+        if (disk_rom_file) {
+            log_error("--jasmin-rom and --disk-rom are mutually exclusive "
+                      "(Jasmin vs Microdisc)");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        if (emu.has_dtl2000 || emu.has_mageco) {
+            log_error("--jasmin-rom conflicts with --dtl2000/--mageco "
+                      "(both claim $03F8-$03FF)");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        /* Load the 2 KB Jasmin boot ROM. */
+        FILE* jf = fopen(jasmin_rom_file, "rb");
+        if (!jf) {
+            log_error("Failed to open Jasmin ROM: %s", jasmin_rom_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        uint8_t jbuf[JASMIN_ROM_SIZE];
+        size_t jrd = fread(jbuf, 1, JASMIN_ROM_SIZE, jf);
+        fclose(jf);
+
+        jasmin_init(&emu.jasmin);
+        if (jrd != JASMIN_ROM_SIZE || !jasmin_load_rom(&emu.jasmin, jbuf, (uint32_t)jrd)) {
+            log_error("Jasmin ROM must be exactly %d bytes (got %zu): %s",
+                      JASMIN_ROM_SIZE, jrd, jasmin_rom_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        emu.jasmin.cpu_irq_set = microdisc_cpu_irq_set;   /* IRQF_DISK (shared) */
+        emu.jasmin.cpu_irq_clr = microdisc_cpu_irq_clr;
+        emu.jasmin.cpu_userdata = &emu;
+        emu.has_jasmin = true;
+
+        /* Wire the Jasmin banking into the memory system. At boot the Jasmin
+         * ROM is NOT paged (romdis=olay=0 → BASIC ROM visible); the auto-boot
+         * PC-trap pages it in ($3FB=1) at $EB78/$E905. */
+        emu.memory.jasmin_active = true;
+        emu.memory.jasmin_rom = emu.jasmin.rom;
+        emu.memory.jasmin_olay = emu.jasmin.olay;
+        emu.memory.jasmin_romdis = emu.jasmin.romdis;
+
+        if (fdc_timing_arg && strcmp(fdc_timing_arg, "fast") == 0)
+            emu.jasmin.fdc.timing_mode = FDC_TIMING_FAST;
+
+        log_info("Jasmin disk interface enabled (WD177x $03F4-$03FF, ROM $F800)");
+
+        /* Load disk images into drives A-D (same MFM_DISK container as the
+         * Microdisc — sedoric_load). */
+        for (int i = 0; i < JASMIN_MAX_DRIVES; i++) {
+            if (!disk_files[i]) continue;
+            log_info("Loading Jasmin disk drive %c: %s", 'A' + i, disk_files[i]);
+            emu.disks[i] = sedoric_load(disk_files[i]);
+            if (!emu.disks[i]) {
+                log_error("Failed to load disk image: %s", disk_files[i]);
+                emulator_cleanup(&emu);
+                return 1;
+            }
+            emu.disk_paths[i] = disk_files[i];
+            jasmin_set_disk(&emu.jasmin, (uint8_t)i,
+                            emu.disks[i]->data, emu.disks[i]->size,
+                            emu.disks[i]->tracks, emu.disks[i]->sectors);
+            log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
+                     'A' + i, emu.disks[i]->size, emu.disks[i]->sides,
+                     emu.disks[i]->tracks, emu.disks[i]->sectors);
+        }
+    }
+
     /* Load disks with Microdisc controller. A Microdisc ROM on its own is
      * enough to bring the controller up (a real Microdisc is present even with
      * no disk in the drives) — this enables hot-swapping a .dsk in later via
      * the OSD or the --control `load-disk` command. */
-    bool any_disk = (disk_create_file != NULL) || (disk_rom_file != NULL);
-    for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+    bool any_disk = !jasmin_rom_file &&
+                    ((disk_create_file != NULL) || (disk_rom_file != NULL));
+    for (int i = 0; !jasmin_rom_file && i < MICRODISC_MAX_DRIVES; i++) {
         if (disk_files[i]) { any_disk = true; break; }
     }
 

@@ -118,6 +118,7 @@ SOURCES = src/main.c \
           src/io/mcp40.c \
           src/io/cassette.c \
           src/io/microdisc.c \
+          src/io/jasmin.c \
           src/io/loci_core.c \
           src/io/loci_fs.c \
           src/io/loci_bus.c \
