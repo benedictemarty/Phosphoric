@@ -1,6 +1,6 @@
-# Liste de Compatibilite — Phosphoric v1.13.0-alpha
+# Liste de Compatibilite — Phosphoric v1.107.3-alpha
 
-Derniere mise a jour : 2026-03-02
+Derniere mise a jour : 2026-08-30
 
 ---
 

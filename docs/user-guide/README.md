@@ -1,6 +1,6 @@
 # Guide Utilisateur Phosphoric
 
-**Version 1.14.3-alpha** | Emulateur ORIC-1 / Atmos
+**Version 1.107.3-alpha** | Emulateur ORIC-1 / Atmos
 
 ---
 
@@ -58,7 +58,7 @@ sudo make install              # Installation dans /usr/local
 ### Verification
 
 ```bash
-make tests                     # 256 tests (100% doivent passer)
+make tests                     # 908 tests (100% doivent passer)
 ```
 
 ---
@@ -698,5 +698,5 @@ Affichage et export :
 
 ---
 
-*Phosphoric v1.14.3-alpha — Guide utilisateur*
-*Derniere mise a jour : 2026-03-16*
+*Phosphoric v1.107.3-alpha — Guide utilisateur*
+*Derniere mise a jour : 2026-08-30*
