@@ -2837,6 +2837,24 @@ Finitions du Sprint 78 après un test réel (jeu poker dans le navigateur).
 - [x] Diag poker : jeu **ORIC-1** (plante en `ILLEGAL QUANTITY` sur Atmos) ;
       rendu rouge correct. → `?rom=oric1&media=poker-asn.tap`. 850 tests.
 
+#### Maintenance shell WASM (`web/shell.js`) — hotfix 1.107.1 → 1.107.3
+Correctifs du shell web après externalisation, sans changement du cœur émulateur
+(source JS seule ; rebuild `make wasm` = emsdk requis) :
+- [x] **1.107.1** — bundle cassé sous **CSP stricte** (`canvas is undefined`) :
+      logique inline de `shell.html` externalisée vers `web/shell.js`
+      (`<script src>`), `oncontextmenu` → `addEventListener` → tourne sous
+      `script-src 'self' 'wasm-unsafe-eval'`.
+- [x] **1.107.2** — `?media=` non persistant : `maybeLoadUrlMedia` mémorisait le
+      nom en `sessionStorage` sans `idbPut` → au reload le VFS était vide
+      (« Failed to open tape ») ; `idbPut` ajouté (miroir du drag-drop) + message
+      d'échec reformulé (contenu fetché non-TAP/DSK, ex. page HTML 200 de repli).
+- [x] **1.107.3** — `?media=X.dsk` ne démarrait pas le **Microdisc** au premier
+      chargement : `mediaKind` n'était lu que depuis `sessionStorage` (vide au 1er
+      hit) → pas de `--disk-rom microdis.rom` → boot sans FDC → `web_insert_disk`
+      échouait. Type déduit désormais aussi de l'extension de `?media=`
+      (`.dsk`/`.tap`) ; Microdisc activé au boot dès qu'une disquette est visée
+      (session **ou** URL). Doc `docs/wasm.md` (section liens profonds).
+
 ### Sprint 78: Insertion de média à chaud dans le build WASM (v1.38.0-alpha) - DONE
 
 Comble la dernière lacune du hot-swap (Sprint 63) : dans le navigateur, déposer

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.107.3-alpha] - 2026-08-30
+
+### Fixed — WASM : `?media=X.dsk` ne démarrait pas le Microdisc au premier chargement
+
+- **Problème** : un lien profond `?media=<fichier>.dsk` échouait au **tout premier**
+  chargement. Le type de média (`mediaKind`) n'était lu que depuis `sessionStorage`,
+  peuplé uniquement par le drag-drop ou un rechargement ultérieur. Au premier hit d'URL,
+  `mediaKind` était vide → `args` ne poussait **jamais** `--disk-rom microdis.rom` → la
+  machine bootait **sans contrôleur Microdisc** (`has_microdisc=false`) → l'insertion
+  différée `web_insert_disk` échouait (`?media: insert failed`).
+- **Cause** : `web/shell.js` déduisait le type seulement pour le nom stocké en session,
+  jamais depuis l'extension du fichier ciblé par l'URL au démarrage.
+- **Fix** : `mediaKind` se déduit désormais aussi de l'extension de `?media=` (`.dsk`→`dsk`,
+  `.tap`→`tap`) dès le premier chargement (`urlKind`). Le contrôleur Microdisc est activé
+  au boot (`--disk-rom microdis.rom`) **dès qu'une disquette est visée** (session **ou** URL),
+  indépendamment de la présence de `-d` (l'image est insérée à chaud ensuite).
+- **Vérifié** : `node --check web/shell.js` OK. Rebuild `make wasm` = emsdk requis
+  (seule la source `shell.js` change). EMU_VERSION → 1.107.3-alpha.
+
 ## [1.107.2-alpha] - 2026-08-27
 
 ### Fixed — WASM : média `?media=` non persistant + message d'échec trompeur

@@ -19,6 +19,7 @@ web/phosphoric.data
 *.exe
 *.out
 oric1-emu
+oric1-emu-web
 bas2tap
 bin2tap
 tap2sedoric

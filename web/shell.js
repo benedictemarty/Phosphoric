@@ -11,10 +11,18 @@ var ROMS = { atmos: '/roms/basic11b.rom', oric1: '/roms/basic10.rom' };
 var urlRom = new URLSearchParams(location.search).get('rom');
 var rom = (urlRom==='oric1'||urlRom==='atmos') ? urlRom : (sessionStorage.getItem('phos_rom') || 'atmos');
 var mediaName = sessionStorage.getItem('phos_media_name') || '';
-var mediaKind = sessionStorage.getItem('phos_media_kind') || '';
+// Type du média : sessionStorage (drag&drop / rechargement) OU déduit de l'URL ?media=
+// dès le PREMIER chargement — sinon un ?media=X.dsk démarrerait sans Microdisc
+// (has_microdisc=false) et web_insert_disk échouerait.
+var urlMedia = new URLSearchParams(location.search).get('media') || '';
+var urlKind = /\.dsk$/i.test(urlMedia) ? 'dsk' : (/\.tap$/i.test(urlMedia) ? 'tap' : '');
+var mediaKind = sessionStorage.getItem('phos_media_kind') || urlKind;
 var args = ['-r', ROMS[rom] || ROMS.atmos];
 if (mediaName && mediaKind === 'tap') args.push('-t', '/media/' + mediaName, '-f');
-if (mediaName && mediaKind === 'dsk') args.push('--disk-rom', '/roms/microdis.rom', '-d', '/media/' + mediaName);
+// Active le contrôleur Microdisc au boot dès qu'une disquette est visée (session ou URL)
+// afin que l'insertion différée du .dsk (web_insert_disk) réussisse.
+if (mediaKind === 'dsk') args.push('--disk-rom', '/roms/microdis.rom');
+if (mediaName && mediaKind === 'dsk') args.push('-d', '/media/' + mediaName);
 
 function idb(cb){ var r=indexedDB.open('phosphoric',1);
   r.onupgradeneeded=function(){r.result.createObjectStore('media');};

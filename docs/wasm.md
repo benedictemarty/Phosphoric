@@ -77,6 +77,14 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
 - **LOAD** + **glisser-déposer** d'un `.tap`/`.dsk` sur l'écran : le fichier est
   inséré et la machine redémarre dessus (cassette `-t …-f`, ou disquette
   `--disk-rom microdis.rom -d …`). Bouton **EJECT** pour le retirer.
+- **Liens profonds (paramètres URL)** — `?rom=oric1|atmos` choisit la machine et
+  `?media=<fichier>` charge un média dès le premier chargement. Le **type** est
+  déduit de l'extension : `.tap` → cassette (`-t … -f`), `.dsk` → disquette. Pour
+  un `.dsk`, le **contrôleur Microdisc est activé au boot** (`--disk-rom
+  microdis.rom`) dès que l'URL vise une disquette, puis l'image est insérée à
+  chaud — sans cela le boot se ferait sans FDC et l'insertion échouerait. Le
+  fichier ciblé doit être servi en **binaire** (un serveur renvoyant une page
+  HTML de repli en 200 fait échouer l'insertion : « not a valid TAP/DSK »).
 - **RESET** — reboot à froid en conservant ROM et média.
 - **KEYS** — affiche/masque le clavier virtuel.
 - **FULL** — plein écran (le canvas est centré et mis à la hauteur de l'écran,
