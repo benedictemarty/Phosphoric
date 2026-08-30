@@ -2,7 +2,7 @@
 
 A cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.107.3-alpha** | **908 tests, 100% pass** | **Zero memory leaks** | **Runs natively & in the browser (WebAssembly)**
+**Version: 1.110.0-alpha** | **908 tests, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -161,18 +161,22 @@ make SDL2=1
 ### Modern Features
 - **Video export** — PPM, BMP, ASCII screenshots; Motion-JPEG AVI recording (`--video`)
 - **Input record/replay** — deterministic "TAS movie" of keyboard input (`--record`/`--replay`). Replay is bit-deterministic — tool-assisted runs, bug repro, CI regression. *(No other Oric emulator offers this.)*
-- **Windows 11** — three ways: **browser** (the WebAssembly build is live at
-  <https://benedictemarty.github.io/Phosphoric/> — zero install), **native
-  .exe** (cross-built by CI: `windows-build` workflow artifact with
-  `oric1-emu.exe` + `SDL2.dll` + roms; or `make WIN=1 SDL2=1` with
-  MinGW-w64. v1 limits: serial tcp/pty/modem/com/picowifi, --gdb,
-  --control async-pause, CAST and host MIDI are Linux-only), and **WSL2**
-  (full-featured Linux build under WSLg)
-- **macOS** (Intel & Apple Silicon) — native build via Apple clang + Homebrew
-  SDL2 (`brew install sdl2 pkg-config` then `make`). PTY/COM serial use the
-  BSD/POSIX paths, host MIDI uses CoreMIDI. See [docs/macos.md](docs/macos.md).
-  *(Portable but first verified on a real Mac is pending — Linux/Windows are the
-  CI-tested targets.)*
+- **Three native platforms + browser** — Linux, Windows and macOS all build
+  natively and are **CI-verified** (build + full test suite), plus a zero-install
+  WebAssembly build:
+  - **Linux** — the reference platform (`make`; GCC/Clang + SDL2). Full feature set.
+  - **Windows 11** — native `.exe` cross-built by CI (`windows-build` workflow:
+    `oric1-emu.exe` + `SDL2.dll` + roms; or `make WIN=1 SDL2=1` with MinGW-w64).
+    Also **WSL2** (full Linux build under WSLg). v1 native limits: serial
+    tcp/pty/modem/com/picowifi, `--gdb`, `--control` async-pause, CAST and host
+    MIDI are Linux/WSL2-only.
+  - **macOS** (Intel & Apple Silicon) — native build via Apple clang + Homebrew
+    SDL2 (`brew install sdl2 pkg-config` then `make`). PTY/COM serial use the
+    BSD/POSIX paths, host MIDI uses CoreMIDI. **Verified on real Apple Silicon**
+    by the `macos-build` CI (headless + SDL2 + full test suite). See
+    [docs/macos.md](docs/macos.md).
+  - **Browser** — the WebAssembly build is live at
+    <https://benedictemarty.github.io/Phosphoric/> (zero install).
 - **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, a JOric-style left icon rail (ROM selector, `.tap`/`.dsk` drag-drop, Reset, fullscreen, **CRT filter**, **`.ost` save/restore**), **TAPE/DISK activity LEDs**, and a faithful ORIC-1/Atmos on-screen keyboard — semi-transparent overlay, toggleable, with sticky CTRL/FUNCT/SHIFT (FUNCT hidden on ORIC-1). **Deep-link URL params** `?rom=oric1|atmos` and `?media=<file>.tap|.dsk` boot straight into a program (a `.dsk` auto-enables the Microdisc controller). Output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
@@ -689,4 +693,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Phosphoric v1.107.3-alpha | 908 tests | ORIC-1 + Atmos | native + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 timing mecanique reel + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-08-30
+Phosphoric v1.110.0-alpha | 908 tests | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-08-30
