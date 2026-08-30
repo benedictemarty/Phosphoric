@@ -17,12 +17,18 @@
 9. [Sauvegarde d'etat](#sauvegarde-detat)
 10. [Debogueur interactif](#debogueur-interactif)
 11. [Trace CPU et profileur](#trace-cpu-et-profileur)
-12. [Analyse de ROM](#analyse-de-rom)
-13. [Chromecast](#chromecast)
-14. [Mode headless et automation](#mode-headless-et-automation)
-15. [Outils de conversion](#outils-de-conversion)
-16. [Reference CLI complete](#reference-cli-complete)
-17. [Depannage](#depannage)
+12. [Debogage avance (GDB, IPC, API HTTP)](#debogage-avance-gdb-ipc-api-http)
+13. [Analyse de ROM](#analyse-de-rom)
+14. [Serie et modems](#serie-et-modems)
+15. [LOCI](#loci)
+16. [Enregistrement video et replay](#enregistrement-video-et-replay)
+17. [ULA-NG (extensions video)](#ula-ng-extensions-video)
+18. [Chromecast](#chromecast)
+19. [Mode headless et automation](#mode-headless-et-automation)
+20. [WebAssembly (navigateur)](#webassembly-navigateur)
+21. [Outils de conversion](#outils-de-conversion)
+22. [Reference CLI complete](#reference-cli-complete)
+23. [Depannage](#depannage)
 
 ---
 
@@ -445,6 +451,56 @@ Le rapport contient :
 
 ---
 
+## Debogage avance (GDB, IPC, API HTTP)
+
+Au-dela du debogueur interactif (F9 / `--debug`), Phosphoric expose plusieurs
+canaux de pilotage et d'inspection externes.
+
+### GDB remote (`--gdb`)
+
+Serveur **GDB Remote Serial Protocol** : on attache `gdb`, `lldb` ou un IDE
+(VS Code, CLion) au 6502 emule pour poser des breakpoints, single-stepper et
+lire/ecrire registres et memoire.
+
+```bash
+./oric1-emu -r basic11b.rom --gdb=1234      # attend `target remote :1234`
+```
+
+Details, exemples de session et mapping registres : [docs/gdb_remote.md](../gdb_remote.md).
+
+### Controle IPC (`--control`)
+
+Protocole texte ligne a ligne sur stdin/stdout (logs sur stderr) pour piloter
+l'emulateur depuis un IDE ou un script : injection clavier, lecture memoire,
+save/load state, hot-swap media, evenements. C'est le socle d'OricForge.
+
+```bash
+./oric1-emu -r basic11b.rom -n --control
+```
+
+Grammaire complete des messages : [docs/control_protocol.md](../control_protocol.md).
+
+### API HTTP/REST (`--http-api`, build `HTTPAPI=1`)
+
+Meme dispatch que `--control`, expose en HTTP/JSON : pilotage clavier, etat,
+fichiers cassette/disque en sandbox.
+
+```bash
+make HTTPAPI=1
+./oric1-emu -r basic11b.rom -n --http-api=8888 --http-api-root ./sandbox
+```
+
+`--http-api-bind` (defaut 127.0.0.1), `--http-api-root` (sandbox `/tape`,`/disk`).
+Reference : [docs/http-api.md](../http-api.md).
+
+### Debogueur TUI et symboles
+
+- `--tui` — debogueur plein ecran ncurses (build `TUI=1`).
+- `--symbols FILE` — charge une table de symboles (`.sym`/`.lab`/`.sym65`) pour
+  annoter trace et desassemblage.
+
+---
+
 ## Analyse de ROM
 
 Analyser une ROM pour extraire des informations structurelles :
@@ -462,6 +518,122 @@ Le rapport contient :
 - **Carte des sous-routines** : toutes les cibles JSR/JMP avec le nombre de references
 - **Chaines ASCII** : textes detectes dans la ROM (minimum 4 caracteres)
 - **Statistiques d'utilisation** : octets de code vs donnees vs remplissage ($00/$FF)
+
+---
+
+## Serie et modems
+
+Phosphoric emule une **ACIA 6551** (base `$031C` par defaut, `--acia-addr`)
+et plusieurs cartes serie/MIDI historiques. Le backend se choisit avec
+`--serial TYPE` :
+
+| Backend | Description |
+|---|---|
+| `loopback` | Boucle locale (TX -> RX), pour tester un protocole |
+| `tcp:H:P` | Socket TCP (serveur BBS, terminal distant) |
+| `pty` | Pseudo-terminal hote (`/dev/pts/N`) |
+| `modem:H:P` | Modem Hayes (commandes AT) vers TCP |
+| `com:B,D,P,S,DEV` | Vrai port serie hote (baud,bits,parite,stop,device) |
+| `file:IN[:OUT]` | Rejoue/capture des octets bruts dans des fichiers |
+| `picowifi[:SSID[:PASS]]` | Modem WiFi PicoWiFiModemUSB (ACIA LOCI $0380) |
+
+Options associees : `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
+(timing horloge externe realiste), `--serial-buffer N` (FIFO RX anti-overrun),
+`--serial-irq-on-rdrf` (mode WDC 65C51), `--serial-tcp-backpressure`
+(contre-pression TCP bornee), `--serial-trace FILE` (trace TX/RX horodatee).
+
+```bash
+# BBS via TCP, cadence temps reel (indispensable pour le timing reseau)
+./oric1-emu -r basic11b.rom --serial tcp:bbs.example.org:6502 --realtime
+
+# Modem WiFi LOCI
+./oric1-emu -r basic11b.rom --loci --serial picowifi:MonWiFi:motdepasse
+```
+
+### Cartes dediees
+
+- **Digitelec DTL 2000** — `--dtl2000 TRANSPORT` : carte V23 fidele (PIA 6821 +
+  ACIA 6850) a `$03F8` (`--dtl2000-addr`). Voir
+  [docs/digitelec-dtl2000/](../digitelec-dtl2000/README.md).
+- **Mageco MIDI** — `--mageco TRANSPORT` : interface MIDI (ACIA 6850) a `$03FE`,
+  31250 baud (`--mageco-addr`) ; transports `midi:` (ALSA, build `MIDI=1`),
+  `smf:song.mid`, `file::out.mid`, etc.
+- **ORICON** — `--oricon TRANSPORT` : variante MIDI (MC6850 a `$031C-$031F`,
+  compatible LOCI).
+
+Guide serie cote programme ORIC : [docs/orictel-serial-guide.md](../orictel-serial-guide.md),
+modem Hayes : [docs/orictel-modem-hayes.md](../orictel-modem-hayes.md).
+
+---
+
+## LOCI
+
+**LOCI** (Lovely Oric Computer Interface, sodiumlb 2024) est une cartouche
+RP2040 branchee sur le bus de l'Oric : stockage de masse (USB / SD / flash
+interne), clavier-souris-manettes USB HID et modem WiFi. Phosphoric emule sa
+MIA (interface memoire) a `$03A0-$03BF` avec `--loci`.
+
+| Option | Role |
+|---|---|
+| `--loci` | Active la MIA LOCI a `$03A0-$03BF` |
+| `--loci-flash DIR` | Racine sandbox pour les operations fichier LOCI |
+| `--loci-sdimg PATH` | Image SD FAT16/32 brute (lecture seule) |
+| `--loci-usb DIR\|none` | Attache DIR comme cle USB (repetable, 4 max) |
+| `--loci-web URL` | Lecteur A servi par un serveur web + autoboot Sedoric natif |
+| `--loci-web-base URL` | Pseudo-device « W: Web disks » dans le menu LOCI |
+| `--loci-mia-window LO-HI` | Modelise la plage MIA `tior` fiable (0-31) |
+| `--loci-irq-latency US` | Cout de transport I2C des IRQ LOCI |
+
+Le **bouton Action** (F8) declenche un snapshot de session puis le menu LOCI
+(appui court) ou le diagnostic ROM (appui long). Boote un master Sedoric V4
+complet via le firmware LOCI.
+
+```bash
+./oric1-emu -r basic11b.rom --loci --loci-flash ./loci_files
+```
+
+Documentation complete (menu, ABI firmware, timings, cles USB) :
+[docs/loci.md](../loci.md).
+
+---
+
+## Enregistrement video et replay
+
+- **Video AVI** — `--video FILE` enregistre un AVI Motion-JPEG (`--video-fps`,
+  defaut 50 ; `--video-quality` 1..100, defaut 85). Le son PSG est muxe (headless
+  comme GUI). `--export-border` inclut la bordure d'overscan.
+- **Audio WAV** — `--audio-wav FILE` capture le PSG en WAV 16 bits stereo
+  44,1 kHz (mode headless).
+- **Dump de frames** — `--frame-dump DIR` + `--frame-dump-interval N`.
+- **Record / replay deterministe** — `--record FILE` enregistre les entrees
+  clavier d'une session, `--replay FILE` les rejoue a l'identique (style « TAS » :
+  seule la matrice clavier est non deterministe, elle est capturee par frame).
+
+```bash
+# Enregistrer une demo puis la rejouer en video
+./oric1-emu -r basic11b.rom --record demo.phm
+./oric1-emu -r basic11b.rom --replay demo.phm --video demo.avi
+```
+
+Details : [docs/movie_replay.md](../movie_replay.md).
+
+---
+
+## ULA-NG (extensions video)
+
+**ULA-NG** est une ULA « next-generation » : extensions video (palette indirecte,
+IRQ raster, scroll fin, sprites materiels, chunky 4bpp, texte 80 colonnes)
+activees par un mecanisme de deverrouillage — **indiscernable d'une ULA HCS 10017
+standard tant qu'elle reste verrouillee**. Registres a `$0340-$035F`.
+
+`--ula-ng-poke SEQ` programme ces registres au demarrage (`SEQ` = paires
+`AAA=VV` hex separees par des virgules) :
+
+```bash
+./oric1-emu -r basic11b.rom --ula-ng-poke 340=4E,340=47,341=01,348=07,349=00,34A=F0
+```
+
+Specification et guide : [docs/ula-ng/](../ula-ng/README-ULA-NG.md).
 
 ---
 
@@ -527,6 +699,26 @@ Simuler des frappes clavier apres un delai en cycles :
 ```bash
 ./oric1-emu -r basic10.rom -v    # Logs DEBUG
 ```
+
+---
+
+## WebAssembly (navigateur)
+
+Phosphoric compile en **WebAssembly** via Emscripten : l'emulateur complet tourne
+dans un onglet, rendu sur un `<canvas>`, audio via Web Audio, clavier via le DOM.
+
+```bash
+make wasm     # necessite l'emsdk Emscripten (voir docs/wasm.md)
+```
+
+La page (`web/shell.html` + `web/shell.js`) offre un rail d'icones facon JOric
+(selecteur ROM, glisser-deposer `.tap`/`.dsk`, Reset, plein ecran, filtre CRT,
+save/restore `.ost`), des LEDs d'activite TAPE/DISK et un clavier ORIC fidele en
+overlay. **Liens profonds** : `?rom=oric1|atmos` et `?media=<fichier>.tap|.dsk`
+demarrent directement sur un programme (un `.dsk` active automatiquement le
+Microdisc). Sortie **byte-identique** au build natif.
+
+Guide de deploiement (dont la CSP requise) : [docs/wasm.md](../wasm.md).
 
 ---
 
