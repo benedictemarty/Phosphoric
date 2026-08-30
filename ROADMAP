@@ -21,8 +21,8 @@ déjà partiellement conscient de macOS : CoreMIDI, gardes `__APPLE__`).
 - [x] Doc `docs/macos.md` + mention README.
 - [x] Non-régression Linux : builds défaut / `HTTPAPI=1` / `CAST=1` OK,
       `make tests` 908/908.
-- [ ] **Build vérifié sur un vrai Mac** (env. de dev = Linux) — à confirmer.
-- [ ] CI macOS (runner GitHub `macos-latest`) — backlog.
+- [x] **Build vérifié sur un vrai Mac** — CI `macos-build` VERTE (macos-latest, Apple Silicon) : build headless + SDL2 + suite de tests complète + HTTPAPI.
+- [x] CI macOS (runner `macos-latest`, `.github/workflows/macos-build.yml`).
 - [ ] Valider les backends CoreMIDI et `com:`/`pty` sur matériel Mac réel.
 
 ---

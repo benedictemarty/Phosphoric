@@ -32,8 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Doc** : nouveau `docs/macos.md` (dépendances Homebrew, compilation, options,
   détails de portabilité) + mention macOS dans le README.
 - **Vérifié sur Linux** (aucune régression) : builds défaut, `HTTPAPI=1` et
-  `CAST=1` OK ; `make tests` **908/908**. ⚠️ La compilation sur un **vrai Mac
-  reste à confirmer** (environnement de dev = Linux). EMU_VERSION → 1.110.0-alpha.
+  `CAST=1` OK ; `make tests` **908/908**. EMU_VERSION → 1.110.0-alpha.
+- **CI macOS + build vérifié sur du vrai Apple Silicon** (`.github/workflows/
+  macos-build.yml`, runner `macos-latest`) : build headless + SDL2 + suite de
+  tests complète + `HTTPAPI=1` **verts**. La CI a révélé 7 écarts macOS
+  invisibles sous Linux, tous corrigés : `clock_nanosleep`/`TIMER_ABSTIME`
+  (→ `nanosleep`), `_DARWIN_C_SOURCE` requis dans les fichiers `_POSIX_C_SOURCE`/
+  `_XOPEN_SOURCE` (masquaient `snprintf`/`MSG_DONTWAIT`/`INADDR_LOOPBACK`),
+  symbole `weak` savestate (définition weak portable Mach-O), timing loopback
+  des tests picowifi (drain + lecture segmentée), bash moderne pour les scripts
+  d'intégration. Tous les correctifs sont no-op hors macOS (0 régression Linux).
 
 ## [1.109.0-alpha] - 2026-08-30
 

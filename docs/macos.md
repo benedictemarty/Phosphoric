@@ -3,10 +3,11 @@
 Phosphoric compile et tourne nativement sur macOS (Intel et Apple Silicon) via
 les Command Line Tools d'Apple (clang) et SDL2 installé par Homebrew.
 
-> **Statut** : le code est **portable macOS** (les dépendances Linux-spécifiques
-> sont désormais gardées par plateforme) mais, à la date de rédaction, la
-> compilation n'a été **vérifiée que sur Linux** (environnement de développement).
-> Un premier build sur un vrai Mac reste à confirmer — remontez tout écart.
+> **Statut** : **vérifié sur du vrai macOS** (Apple Silicon) par la CI
+> `macos-build` (`.github/workflows/macos-build.yml`, runner `macos-latest`) :
+> build headless (`SDL2=0`), build complet (`SDL2=1`), **suite de tests complète**
+> et build `HTTPAPI=1` passent tous au vert. La CI a d'ailleurs révélé plusieurs
+> écarts macOS invisibles sous Linux (voir « Détails de portabilité »).
 
 ## Dépendances
 
@@ -57,6 +58,19 @@ Les adaptations qui rendent le build macOS possible :
   (`oscompat_ignore_sigpipe()`), écrire sur une socket morte renvoie `EPIPE`
   au lieu de tuer l'émulateur.
 - **SDL2** : détection `pkg-config` → repli `sdl2-config` dans le `Makefile`.
+- **`clock_nanosleep`/`TIMER_ABSTIME`** : absents sur macOS ; le pacing
+  `--realtime` retombe sur un `nanosleep` relatif (`src/main.c`, garde
+  `__APPLE__`).
+- **`_DARWIN_C_SOURCE`** : les fichiers définissant `_POSIX_C_SOURCE`/
+  `_XOPEN_SOURCE` (loci, gdbstub, control, plusieurs tests…) ajoutent
+  `_DARWIN_C_SOURCE` sous `__APPLE__` — sans lui, macOS masque `snprintf`,
+  `MSG_DONTWAIT`, `INADDR_LOOPBACK` et autres extensions BSD dans `<stdio.h>`/
+  `<netinet/in.h>`.
+- **Symbole `weak` optionnel** : un *undefined weak* résolu à NULL marche en ELF
+  mais pas en Mach-O ; le save-state optionnel de `debugger.c` utilise une
+  *définition* weak (portable), écrasée par le vrai `savestate.c`.
+- **bash** : macOS ne fournit que bash 3.2 ; les scripts de test d'intégration
+  ciblent bash moderne → la CI installe `bash` par Homebrew.
 
 ## Non couvert (backends Linux-only)
 
