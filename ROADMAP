@@ -6,6 +6,37 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Synthétiseur vocal Mageco (GI SP0256-AL2) — LIVRÉ (v1.111.0-alpha)
+
+Branche `feature/sp0256-speech`. Carte Mageco « Synthétiseur Vocal » sur le bus
+d'extension Oric (puce GI SP0256-AL2, allophones, LPC 12 pôles, ROM masquée 2 Ko).
+Objectif : que les jeux vocaux (**Frelon**, **Cobra Pinball**) parlent.
+- [x] Device `src/io/sp0256.{c,h}` : microséquenceur + décodeur d'opcodes +
+      filtre treillis LPC-12 + tables coeff **portés fidèlement de MAME
+      `sound/sp0256.cpp`** (BSD-3-Clause, © Zbiciak & Lindner ; attribution
+      conservée). FIFO SPB-640 omis (port ALD unique côté Mageco).
+- [x] Adresse `$03F1` confirmée 2× (trace empirique Frelon + PassionOric « 03x1 »).
+- [x] Registre : écriture ALD (allophone 6 bits, drop si occupé) ; lecture LRQ
+      (bit 7) + SBY (bit 6).
+- [x] Cadencement `sp0256_tick()` ~10 kHz (3,12 MHz/312, 100 cyc/échantillon) →
+      statut LRQ/SBY avance en temps CPU sans blocage de la scrutation.
+- [x] `sp0256_generate()` rééchantillonne 10 k→44,1 kHz et **mixe au PSG**
+      (callback SDL en GUI + inline en headless).
+- [x] ROM `al2.bin` (md5 `54db0ac2…`) stockée bit-inversée → `bitrev` par défaut
+      (`$1000` = « JMP @@PA1 » vérifié, allophones terminent RTS→HALT).
+- [x] CLI `--sp0256-rom FILE` (ROM 2 Ko au runtime, non distribuée) + `--sp0256-addr`.
+- [x] Device sur `io_bus[]` + tick dans `io_bus_tick`.
+- [x] Tests `test-sp0256` (+15) : registre/timing (ROM factice déterministe) +
+      synthèse réelle optionnelle gated `SP0256_ROM=al2.bin`.
+- [x] Validé : synthèse réelle `al2.bin` (durées d'allophones réalistes ;
+      « HELLO » WAV à enveloppe RMS articulée = parole). `make tests` 923/923.
+- [ ] **Calibrer le bit de statut vs Frelon en jeu réel** (polarité/bit exact de
+      la boucle de scrutation) + validation audio in-game Frelon/Cobra Pinball.
+- [ ] (Optionnel) 2ᵉ carte Mageco **MEA8000** (phonèmes français, `$03F0/$03F1`,
+      sans ROM — datasheet complète, test « BONJOUR » auto-contenu).
+
+---
+
 ## Support macOS (build natif Intel & Apple Silicon) — EN COURS (v1.110.0-alpha)
 
 Branche `feature/macos-support`. Portabilité du build vers macOS (le code était

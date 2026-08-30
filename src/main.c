@@ -1284,6 +1284,15 @@ static void emulator_run(emulator_t* emu) {
             enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
             int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
             ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
+            /* Mix in the SP0256 speech synth (mono → both channels), if active. */
+            if (emu->has_sp0256 && emu->sp0256.rom_valid) {
+                int16_t sbuf[WAV_FRAME_SAMPLES];
+                sp0256_generate(&emu->sp0256, sbuf, WAV_FRAME_SAMPLES);
+                for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
+                    wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + sbuf[i]) / 2);
+                    wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + sbuf[i]) / 2);
+                }
+            }
             if (emu->audio_wav_fp) {
                 fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
                 emu->audio_wav_data_bytes +=
@@ -2318,6 +2327,8 @@ int main(int argc, char* argv[]) {
     int poke_arg_count = 0;
     const char* disk_rom_file = NULL;
     const char* jasmin_rom_file = NULL;  /* --jasmin-rom : Jasmin boot ROM (2 KB) */
+    const char* sp0256_rom_file = NULL;  /* --sp0256-rom : SP0256-AL2 ROM (2 KB) */
+    uint16_t    sp0256_base_addr = SP0256_BASE_DEFAULT;  /* --sp0256-addr (hex) */
     bool debug_mode = false;
     const char* debug_break_addr = NULL;
     bool cast_server_enabled = false;
@@ -2446,6 +2457,8 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_DISK_ROM: disk_rom_file = optarg; break;
             case OPT_JASMIN_ROM: jasmin_rom_file = optarg; break;
+            case OPT_SP0256_ROM: sp0256_rom_file = optarg; break;
+            case OPT_SP0256_ADDR: sp0256_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
             case 'b': emu.breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
             case 'D': debug_mode = true; break;
             case OPT_DEBUG_BREAK: debug_break_addr = optarg; break;
@@ -3585,6 +3598,34 @@ int main(int argc, char* argv[]) {
                      'A' + i, emu.disks[i]->size, emu.disks[i]->sides,
                      emu.disks[i]->tracks, emu.disks[i]->sectors);
         }
+    }
+
+    /* SP0256 Mageco "Synthétiseur Vocal" (--sp0256-rom): GI SP0256-AL2 speech
+     * chip at $03F1 (or --sp0256-addr). Loads the 2 KB allophone ROM; output is
+     * mixed into the PSG audio. Used by Frelon, Cobra Pinball, … */
+    if (sp0256_rom_file) {
+        FILE* sf = fopen(sp0256_rom_file, "rb");
+        if (!sf) {
+            log_error("Failed to open SP0256 ROM: %s", sp0256_rom_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        uint8_t sbuf[SP0256_ROM_SIZE];
+        size_t srd = fread(sbuf, 1, SP0256_ROM_SIZE, sf);
+        fclose(sf);
+
+        sp0256_init(&emu.sp0256, sp0256_base_addr);
+        if (srd != SP0256_ROM_SIZE || !sp0256_load_rom(&emu.sp0256, sbuf, (uint32_t)srd)) {
+            log_error("SP0256 ROM must be exactly %d bytes (got %zu): %s",
+                      SP0256_ROM_SIZE, srd, sp0256_rom_file);
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        emu.sp0256.emu = &emu;
+        emu.has_sp0256 = true;
+        audio_set_sp0256(&emu.sp0256);   /* mix speech into the GUI audio callback */
+        log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
+                 sp0256_base_addr);
     }
 
     /* Load disks with Microdisc controller. A Microdisc ROM on its own is

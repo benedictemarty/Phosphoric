@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.111.0-alpha] - 2026-08-31
+
+### Added — Synthétiseur vocal Mageco (GI SP0256-AL2) : les jeux parlent
+
+- **Matériel** : carte **Mageco « Synthétiseur Vocal »** sur le bus d'extension
+  Oric, à base de **GI SP0256-AL2** (synthèse par allophones, LPC filtre 12
+  pôles, ROM masquée interne de 2 Ko). Pilote logiciel de M. Tortosa (cassette) ;
+  jeux : **Frelon**, **Cobra Pinball** (Cobra Soft). Adresse `$03F1` **confirmée
+  2×** : trace empirique de Frelon (`ORIC_WATCH=03F0:03FF`) + PassionOric (« 03x1 »).
+- **Nouveau device** `src/io/sp0256.{c,h}` : cœur de synthèse (microséquenceur,
+  décodeur d'opcodes, filtre en treillis LPC-12, table de quantification `qtbl`,
+  tables `sp0256_datafmt`/`sp0256_df_idx`) **porté fidèlement** de MAME
+  `src/devices/sound/sp0256.cpp` — licence **BSD-3-Clause** (© Joseph Zbiciak,
+  Tim Lindner), permissive, **attribution conservée** dans l'en-tête. Le FIFO
+  SPB-640 est omis (la carte Mageco n'expose qu'un port ALD unique).
+- **Interface registre** (`$03F1`) : écriture = ALD (allophone 6 bits 0-63 → la
+  puce le prononce, chargement ignoré si occupée) ; lecture = statut LRQ (prêt,
+  bit 7) + SBY (standby/fin, bit 6). *Le bit exact vu par Frelon reste à calibrer
+  empiriquement (suivi) ; défaut fondé sur la datasheet SP0256.*
+- **Cadencement** : `sp0256_tick()` produit des échantillons à ~10 kHz (3,12 MHz
+  / 312) au fil des cycles CPU (100 cyc/échantillon) — le statut LRQ/SBY avance
+  en temps CPU même sans consommation audio (pas de blocage de la boucle de
+  scrutation). `sp0256_generate()` **rééchantillonne** 10 kHz → 44100 Hz et
+  **mixe la parole au PSG** (callback SDL en GUI + inline en headless).
+- **ROM bit-reversée** : le dump standard `sp0256-al2.bin` (md5 `54db0ac2…`) est
+  stocké **bit-inversé par octet** vs l'ordre logique du microséquenceur →
+  `bitrev` activé par défaut (`$1000` décode « JMP @@PA1 », vérifié ; chaque
+  allophone termine par un RTS→HALT à durée réaliste). Toggle pour l'autre variante.
+- **CLI** : `--sp0256-rom FILE` (charge la ROM 2 Ko au runtime, comme les autres
+  ROM — non distribuée car masque GI), `--sp0256-addr XXXX` (base I/O hex, défaut
+  `03F1`). Device câblé sur `io_bus[]` + tick dans `io_bus_tick`.
+- **Tests** (`tests/unit/test_sp0256.c`, cible `test-sp0256`, **+15**) : défauts
+  init/reset, chargement ROM (taille), statut LRQ/SBY, handshake ALD (busy/drop/
+  masque 6 bits), cadencement CPU→standby avec ROM factice (zéro = RTS/HALT
+  déterministe, aucune donnée copyrightée), silence hors-ROM/au repos, et
+  **synthèse réelle optionnelle** (gated `SP0256_ROM=al2.bin`) vérifiant que
+  l'allophone **se termine** (microcode correct) et produit un signal audible.
+- **Validé** : synthèse LPC réelle avec le vrai `al2.bin` — allophones terminant
+  à durées réalistes (@AA≈60 ms, @HH1≈210 ms, @OW≈410 ms) ; « HELLO » synthétisé
+  en WAV montre une **enveloppe RMS articulée** (70→682) = formants/parole, pas un
+  bourdon. `make tests` **923/923** (908 → 923, 0 régression) ; builds SDL2=0 &
+  SDL2=1 OK. EMU_VERSION → 1.111.0-alpha
+
 ## [1.110.0-alpha] - 2026-08-30
 
 ### Added — Support de build macOS (portabilité Intel & Apple Silicon)

@@ -7,6 +7,7 @@
  */
 
 #include "audio/audio.h"
+#include "io/sp0256.h"
 #include "network/cast_server.h"
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,13 @@ static cast_server_t* cast_server_ref = NULL;
 
 void audio_set_cast_server(cast_server_t* server) {
     cast_server_ref = server;
+}
+
+/* Optional SP0256 speech synth mixed into the PSG stream (GUI callback). */
+static sp0256_t* sp0256_ref = NULL;
+
+void audio_set_sp0256(struct sp0256_s* sp) {
+    sp0256_ref = sp;
 }
 
 #ifdef HAS_SDL2
@@ -57,6 +65,23 @@ static void audio_callback(void* userdata, uint8_t* stream, int len) {
     int num_samples = len / (2 * sizeof(int16_t)); /* stereo */
     if (psg_ref) ay_generate(psg_ref, buf, num_samples);
     else memset(stream, 0, len);
+
+    /* Mix in the SP0256 speech synth (mono → both channels), if active. */
+    if (sp0256_ref && sp0256_ref->rom_valid) {
+        int16_t sbuf[512];
+        int done = 0;
+        while (done < num_samples) {
+            int chunk = num_samples - done;
+            if (chunk > (int)(sizeof(sbuf) / sizeof(sbuf[0]))) chunk = 512;
+            sp0256_generate(sp0256_ref, sbuf, chunk);
+            for (int i = 0; i < chunk; i++) {
+                int idx = (done + i) * 2;
+                buf[idx]     = (int16_t)((buf[idx]     + sbuf[i]) / 2);
+                buf[idx + 1] = (int16_t)((buf[idx + 1] + sbuf[i]) / 2);
+            }
+            done += chunk;
+        }
+    }
 
     /* Copy the freshly generated PCM into the AVI tap (no-op if disabled). */
     tap_push(buf, num_samples);

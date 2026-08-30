@@ -134,6 +134,19 @@ static bool jasmin_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
+/* SP0256 Mageco "Synthétiseur Vocal" (GI SP0256-AL2) : port unique à
+ * emu->sp0256.base_addr (défaut $03F1). Sortie audio mixée au PSG. */
+static bool sp0256_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_sp0256 && addr == emu->sp0256.base_addr;
+}
+static uint8_t sp0256_dev_read(emulator_t* emu, uint16_t addr) {
+    return sp0256_read(&emu->sp0256, addr);
+}
+static bool sp0256_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    sp0256_write(&emu->sp0256, addr, value);
+    return true;
+}
+
 /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
 static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
@@ -198,6 +211,7 @@ static const io_device_t io_bus[] = {
       "MAG\0",     mageco_dev_save,      mageco_dev_load },
     { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },
     { "jasmin",    jasmin_dev_claims,    jasmin_dev_read,    jasmin_dev_write,    NULL, NULL, NULL, NULL },
+    { "sp0256",    sp0256_dev_claims,    sp0256_dev_read,    sp0256_dev_write,    NULL, NULL, NULL, NULL },
     { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL,
       "DTL\0",     dtl2000_dev_save,     dtl2000_dev_load },
     /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
@@ -248,4 +262,5 @@ void io_bus_tick(emulator_t* emu, int cycles) {
     }
     if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
     if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
+    if (emu->has_sp0256)  sp0256_tick(&emu->sp0256, cycles);
 }
