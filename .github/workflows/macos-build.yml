@@ -24,8 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install SDL2 (Homebrew)
-        run: brew install sdl2 pkg-config
+      - name: Install SDL2 + modern bash (Homebrew)
+        # bash : macOS ne fournit que bash 3.2 (2007) ; les scripts de test
+        # d'intégration ciblent bash moderne (comme le CI Linux en bash 5.x).
+        # Homebrew le place en tête de PATH (/opt/homebrew/bin).
+        run: brew install sdl2 pkg-config bash
 
       - name: Toolchain info
         run: |
