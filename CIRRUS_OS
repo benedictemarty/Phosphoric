@@ -189,7 +189,7 @@ BUILD STATUS
 [V] Sedoric Keyboard      - Fixed (T1 IRQ reasserts after Sedoric init)
 [V] Audio Output          - Connected (PSG → SDL2 audio callback ; écritures registre horodatées au cycle → digidrums sample-accurate)
 [V] PSG Envelopes         - Fixed (shapes 0-7 single cycle, HOLD shapes, continuous shapes)
-[V] Mageco Speech Synth   - Complete (GI SP0256-AL2 allophone speech at $03F1, LPC-12 lattice + microsequencer ported from MAME sound/sp0256.cpp BSD-3, bitrev al2.bin, ~10 kHz→44.1 kHz resample mixed into PSG, --sp0256-rom/--sp0256-addr, test-sp0256 ; Frelon/Cobra Pinball ; status bit polarity vs Frelon to calibrate)
+[V] Mageco Speech Synth   - Complete (GI SP0256-AL2 allophone speech at $03F1, LPC-12 lattice + microsequencer ported from MAME sound/sp0256.cpp BSD-3, bitrev al2.bin, ~10 kHz→44.1 kHz resample mixed into PSG, --sp0256-rom/--sp0256-addr, test-sp0256 ; Frelon/Cobra Pinball ; validated in-game: Frelon .dsk writes 58 allophones to $03F1, status polarity LRQ=bit7/SBY=bit6 CONFIRMED — inverting freezes it after 2 writes)
 [V] Interactive Debugger   - Complete (breakpoints cond+raster, watchpoints, step, undo/rewind, disasm paginé, symboles, édition mémoire, assembleur inline `a`, recherche mémoire `find`, REPL)
 [V] GDB Remote Stub        - Complete (--gdb[=PORT], GDB RSP server, gdb/lldb/IDE attach, breakpoints/step/regs/mem, target.xml)
 [V] Input Record/Replay    - Complete (--record/--replay, deterministic TAS movie, frame-quantized keyboard matrix, CI regression)

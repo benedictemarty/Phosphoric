@@ -42,11 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   déterministe, aucune donnée copyrightée), silence hors-ROM/au repos, et
   **synthèse réelle optionnelle** (gated `SP0256_ROM=al2.bin`) vérifiant que
   l'allophone **se termine** (microcode correct) et produit un signal audible.
-- **Validé** : synthèse LPC réelle avec le vrai `al2.bin` — allophones terminant
+- **Validé (synthèse)** : LPC réelle avec le vrai `al2.bin` — allophones terminant
   à durées réalistes (@AA≈60 ms, @HH1≈210 ms, @OW≈410 ms) ; « HELLO » synthétisé
   en WAV montre une **enveloppe RMS articulée** (70→682) = formants/parole, pas un
   bourdon. `make tests` **923/923** (908 → 923, 0 régression) ; builds SDL2=0 &
-  SDL2=1 OK. EMU_VERSION → 1.111.0-alpha
+  SDL2=1 OK.
+- **Validé (in-game, Frelon)** : la version disquette (`FRELONe.DSK` sous Sedoric,
+  qui autoboote — le turbo-loader cassette bloque le chargement `.tap`) écrit
+  **58 allophones à `$03F1`** (`ORIC_WATCH=0320:03FF`, valeurs 0x00-0x3F depuis
+  `PC=$D955`), 1ère = **`$80`** (strobe init, masqué → pause inaudible). **Polarité
+  du statut CONFIRMÉE par expérience discriminante** : polarité normale → **32
+  écritures** (énoncé complet) ; polarité inversée → **2 puis blocage** — ce qui
+  **prouve que Frelon scrute LRQ** et que le mapping **LRQ=bit 7 / SBY=bit 6 est
+  correct**. Audio in-game capturé (fenêtre de parole active). EMU_VERSION → 1.111.0-alpha
 
 ## [1.110.0-alpha] - 2026-08-30
 

@@ -28,9 +28,10 @@
  * Register interface (single port at the base address, Mageco board):
  *   write : ALD — load a 6-bit allophone number (0-63) → the chip speaks it.
  *   read  : status — the SP0256 LRQ (Load ReQuest, ready for next allophone) is
- *           exposed on bit 7 and SBY (Standby, all speech finished) on bit 6
- *           (convention; the exact board bit mapping is calibrated against
- *           Frelon's polling loop — see SP0256_STAT_* and the .c notes).
+ *           exposed on bit 7 and SBY (Standby, all speech finished) on bit 6.
+ *           CONFIRMED in-game: Frelon polls this register and speaks its full
+ *           utterance with this mapping, but freezes if the polarity is inverted
+ *           (see the .c note in sp0256_read).
  */
 
 #ifndef SP0256_H

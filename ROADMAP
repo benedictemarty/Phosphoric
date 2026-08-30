@@ -30,8 +30,15 @@ Objectif : que les jeux vocaux (**Frelon**, **Cobra Pinball**) parlent.
       synthèse réelle optionnelle gated `SP0256_ROM=al2.bin`.
 - [x] Validé : synthèse réelle `al2.bin` (durées d'allophones réalistes ;
       « HELLO » WAV à enveloppe RMS articulée = parole). `make tests` 923/923.
-- [ ] **Calibrer le bit de statut vs Frelon en jeu réel** (polarité/bit exact de
-      la boucle de scrutation) + validation audio in-game Frelon/Cobra Pinball.
+- [x] **Calibration statut CONFIRMÉE in-game (Frelon, version disquette Sedoric)**.
+      `ORIC_WATCH=0320:03FF` : Frelon écrit **58 allophones à `$03F1`** (valeurs
+      0x00-0x3F depuis `PC=$D955`), 1ère = **`$80`** (strobe init, masqué → pause).
+      Expérience discriminante : polarité **normale → 32 écritures** (énoncé
+      complet) ; polarité **inversée → 2 puis blocage** → **prouve que Frelon poll
+      LRQ ET que ma polarité (LRQ bit 7 / SBY bit 6) est correcte**. Audio in-game
+      capturé (`--audio-wav`) montrant une fenêtre de parole active (t≈9,4 s+).
+      (Le turbo-loader cassette bloque le chargement `.tap` dans l'émulateur ; la
+      version `.dsk` Sedoric autoboote — c'est elle qui a servi.)
 - [ ] (Optionnel) 2ᵉ carte Mageco **MEA8000** (phonèmes français, `$03F0/$03F1`,
       sans ROM — datasheet complète, test « BONJOUR » auto-contenu).
 

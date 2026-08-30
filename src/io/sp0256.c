@@ -662,7 +662,11 @@ bool sp0256_load_rom(sp0256_t* sp, const uint8_t* data, uint32_t size)
 void sp0256_write(sp0256_t* sp, uint16_t addr, uint8_t value)
 {
     if (addr != sp->base_addr) return;
-    /* ALD write. Drop if the chip is still busy (LRQ low). */
+    /* ALD write. Drop if the chip is still busy (LRQ low) — Frelon polls LRQ and
+     * only writes when ready, so drops don't occur in practice. The 6-bit ALD
+     * latches A1-A6; Frelon's first write is $80 (bit 7 set, not a valid 0-63
+     * allophone) → masked to 0 (a ~10 ms @@PA1 pause, inaudible), which the game
+     * uses as an init strobe. */
     if (!sp->lrq) return;
     sp->lrq = 0;
     sp->ald = (int)(value & 0x3F) << 4;  /* 6-bit allophone → 2-byte jump entry */
@@ -672,6 +676,11 @@ void sp0256_write(sp0256_t* sp, uint16_t addr, uint8_t value)
 uint8_t sp0256_read(sp0256_t* sp, uint16_t addr)
 {
     if (addr != sp->base_addr) return 0xFF;
+    /* Polarity CONFIRMED in-game against Frelon: it polls this register before
+     * each allophone; with LRQ on bit 7 (1 = ready) Frelon speaks its full
+     * utterance (32 allophones), whereas inverting the polarity freezes it after
+     * the 2nd write — proving both that Frelon polls and that this mapping is
+     * correct for the Mageco board. */
     uint8_t s = 0;
     if (sp->lrq) s |= SP0256_STAT_LRQ;   /* ready for next allophone */
     if (sp->sby) s |= SP0256_STAT_SBY;   /* all speech finished      */
