@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.107.4-alpha] - 2026-08-30
+
+### Fixed — Cross-build Windows cassé (CI `windows-build` en échec depuis l'ajout du web-disk)
+
+- **Symptôme** : le workflow CI `windows-build` (cross-build MinGW-w64) échouait
+  sur **tous** les runs récents à l'étape *Build (WIN=1 SDL2=1)* :
+  `src/storage/disk_http.c:15:10: fatal error: sys/socket.h: No such file or directory`.
+- **Cause** : `src/storage/disk_http.c` (client HTTP du disque web `loci-webdisk`,
+  ajouté après le Sprint 89 qui avait mis en place le build Windows) inclut
+  `<sys/socket.h>`/`<netdb.h>` **sans garde** — headers POSIX absents sur MinGW
+  (Windows utilise Winsock). Contrairement aux autres modules réseau
+  (`serial_backend.c`, `gdbstub.c`) il n'avait pas de variante Windows, et n'était
+  pas exclu du build WIN → erreur de compilation fatale.
+- **Fix** (pattern établi des stubs `*_win.c`) : nouveau
+  `src/storage/disk_http_win.c` — `disk_http_get()` renvoie `-1` avec un message
+  clair (« --disk-web / --loci-web non disponible dans le build Windows v1 »),
+  cohérent avec le périmètre v1 (transports réseau = Linux/WSL2). Le `Makefile`
+  exclut `disk_http.c` et lie `disk_http_win.c` sous `WIN=1` (comme
+  `serial_backend_win.c`/`gdbstub_win.c`).
+- **Audit** : scan de tous les fichiers compilés sous WIN — `disk_http.c` était le
+  **seul** régresseur (headers socket POSIX non gardés) ; `control.c` (`<sys/select.h>`)
+  est déjà gardé `#ifndef _WIN32`. Build Linux inchangé (le swap n'agit que sous WIN=1).
+- **Vérification** : stub compile (`gcc -fsyntax-only`) ; build Windows revalidé par
+  la CI sur la branche `feature/windows-port`. EMU_VERSION → 1.107.4-alpha.
+
 ## [1.107.3-alpha] - 2026-08-30
 
 ### Fixed — WASM : `?media=X.dsk` ne démarrait pas le Microdisc au premier chargement
