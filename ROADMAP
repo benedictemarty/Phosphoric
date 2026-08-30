@@ -6,6 +6,22 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Interface disque Jasmin (WD177x) — LIVRÉ (v1.109.0-alpha)
+
+2e standard disque Oric (concurrent du Microdisc). Branche `feature/jasmin-disk`.
+Spec entièrement fondée sur Oricutron (`disk.c`/`machine.c`/`8912.c`/`jasmin.sym`).
+- [x] Device `src/io/jasmin.{c,h}` : WD177x `$03F4-$03FF`, réutilise `fdc_t`,
+      DRQ→IRQ (spécificité Jasmin vs INTRQ du Microdisc), side externe `$03F8`.
+- [x] Overlay mémoire ROM 2 Ko `$F800-$FFFF` + banking olay/romdis (`memory.c`).
+- [x] Auto-boot PC-trap `$EB78` (Atmos)/`$E905` (ORIC-1) → ROMDIS + reset → `$FD00`.
+- [x] CLI `--jasmin-rom FILE` (partage `-d`/`--disk1..3`) + garde exclusion.
+- [x] Tick FDC dans `io_bus_tick` (indispensable : BUSY sinon jamais libéré).
+- [x] **Boot TDOS vérifié** : `arcade1j.dsk` → « T.R.A.N. DOS V2-2 © 1984 » headless.
+- [x] `make tests` 908/908 (0 régression — `memory.c` n'affecte pas le Microdisc).
+- [ ] Backlog : `test-jasmin` unitaire, write-back `.dsk`, side-2, raffiner WD1772.
+
+---
+
 ## Correctif cross-build Windows (CI `windows-build`) — v1.107.4-alpha
 
 Branche `feature/windows-port`. La CI Windows (cross-build MinGW-w64) était en

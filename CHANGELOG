@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.109.0-alpha] - 2026-08-30
+
+### Added — Interface disque Jasmin (WD177x) : 2e standard disque Oric, boote TDOS
+
+- **Objectif** : émuler l'interface **Jasmin** (Tangerine), concurrente du Microdisc
+  et 2e standard disque de l'Oric — de nombreux `.dsk` et logiciels d'époque sont
+  en format Jasmin, jusqu'ici inchargeables. **Toute la spec est fondée sur
+  Oricutron** (`disk.c`/`machine.c`/`8912.c`/`jasmin.sym`) — rien inventé.
+- **Nouveau device** (`src/io/jasmin.c`, `include/io/jasmin.h`) : WD177x mappé à
+  `$03F4-$03FF` (FDC `$03F4-$03F7`, side `$03F8`, reset `$03F9`, overlay `$03FA`,
+  ROMDIS `$03FB`, sélection lecteur `$03FC-$03FF`). Réutilise le cœur `fdc_t`
+  (WD1793) ; le WD1770/1772 n'a **pas de pin SIDE** → side piloté par `$03F8`.
+  **Spécificité Jasmin** : c'est le **DRQ** (pas l'INTRQ) qui pilote l'IRQ CPU
+  (`IRQF_DISK`) ; INTRQ n'est pas câblé (Oricutron `jasmin_setintrq` = no-op).
+- **Overlay mémoire** (`src/memory/memory.c`, 3 sites read/peek/write) : ROM
+  Jasmin 2 Ko à `$F800-$FFFF`, banking `olay`/`romdis` (olay→RAM partout ;
+  romdis→ROM Jasmin `$F800`+RAM `$C000-$F7FF` ; sinon ROM BASIC).
+- **Auto-boot** (`src/main.c`) : PC-trap ROM `$EB78` (Atmos) / `$E905` (ORIC-1) →
+  écrit ROMDIS=1 + reset CPU → le vecteur RESET Jasmin (`$FD00` = `jsEntryPoint`)
+  prend la main et boote le disque.
+- **CLI** `--jasmin-rom FILE` : active l'interface (partage `-d`/`--disk1..3`) ;
+  garde d'exclusion mutuelle avec `--disk-rom`/`--dtl2000`/`--mageco` (recouvrent
+  `$03F8-$03FF`). Le conteneur `.dsk` est le **MFM_DISK déjà lu** (aucun parseur).
+- **Câblage bus** : device `io_bus` `jasmin` + **tick FDC** (`fdc_ticktock` dans
+  `io_bus_tick` — sans lui, BUSY ne se libérait jamais après RESTORE).
+- **Vérifié de bout en bout** : `roms/jasmin.rom` (2 Ko) + `arcade1j.dsk` bootent
+  **TDOS** (« T.R.A.N. DISK OPERATING SYSTEM V 2-2 © 1984 ») headless. `make tests`
+  908/908 (0 régression : `memory.c` n'affecte pas le Microdisc). EMU_VERSION →
+  1.109.0-alpha. Réf fidèle : Oricutron.
+
 ## [1.107.4-alpha] - 2026-08-30
 
 ### Fixed — Cross-build Windows cassé (CI `windows-build` en échec depuis l'ajout du web-disk)

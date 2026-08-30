@@ -114,6 +114,26 @@ static bool microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
+/* Jasmin WD177x : $03F4-$03FF (mutuellement exclusif avec DTL2000/Mageco, qui
+ * recouvrent $03F8-$03FF — garde à l'activation dans main.c). */
+static bool jasmin_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_jasmin && addr >= JASMIN_BASE && addr <= JASMIN_END;
+}
+static uint8_t jasmin_dev_read(emulator_t* emu, uint16_t addr) {
+    return jasmin_read(&emu->jasmin, addr);
+}
+static bool jasmin_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    if (fdc_trace_enabled()) {
+        fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
+                emu->cpu.PC, (unsigned long long)emu->cpu.cycles, addr, value);
+    }
+    jasmin_write(&emu->jasmin, addr, value);
+    /* Sync Jasmin banking flags to the memory system. */
+    emu->memory.jasmin_olay   = emu->jasmin.olay;
+    emu->memory.jasmin_romdis = emu->jasmin.romdis;
+    return true;
+}
+
 /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
 static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
@@ -177,6 +197,7 @@ static const io_device_t io_bus[] = {
     { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL,
       "MAG\0",     mageco_dev_save,      mageco_dev_load },
     { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },
+    { "jasmin",    jasmin_dev_claims,    jasmin_dev_read,    jasmin_dev_write,    NULL, NULL, NULL, NULL },
     { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL,
       "DTL\0",     dtl2000_dev_save,     dtl2000_dev_load },
     /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
@@ -216,6 +237,7 @@ const io_device_t* io_bus_devices(int* count) {
  * pas ici (cf. docs/architecture/io-bus.md §6 : hooks lifecycle non uniformes). */
 void io_bus_tick(emulator_t* emu, int cycles) {
     if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
+    if (emu->has_jasmin)    fdc_ticktock(&emu->jasmin.fdc, cycles);
     if (emu->has_loci) {
         fdc_ticktock(&emu->loci.dsk_fdc, cycles);
         loci_adj_tick(&emu->loci, cycles);

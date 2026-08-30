@@ -28,6 +28,7 @@
 #include "io/printer.h"
 #include "io/cassette.h"
 #include "io/microdisc.h"
+#include "io/jasmin.h"
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
 #include "io/dtl2000.h"
@@ -42,7 +43,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.107.4-alpha"
+#define EMU_VERSION "1.109.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -178,6 +179,11 @@ typedef struct emulator_s {
     const char* disk_paths[MICRODISC_MAX_DRIVES]; /* fichier .dsk par lecteur (write-back/éjection) */
     bool disk_writeback;     /* --disk-writeback : réécrire les .dsk modifiés */
     bool has_microdisc;
+
+    /* Jasmin disk interface (WD177x at $03F4-$03FF, boot ROM $F800-$FFFF).
+     * Alternative to the Microdisc; mutually exclusive at boot. */
+    jasmin_t jasmin;
+    bool has_jasmin;
 
     /* Tape buffer for ROM patching (CLOAD support) */
     uint8_t* tapebuf;       /* TAP file data loaded in memory */

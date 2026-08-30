@@ -135,6 +135,30 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
 
     /* ROM area: $C000-$FFFF
      *
+     * Jasmin memory map (matching Oricutron jasmin_atmosread):
+     * | olay | romdis | $C000-$F7FF | $F800-$FFFF |
+     * |------|--------|-------------|-------------|
+     * |  1   |  any   | RAM         | RAM         |
+     * |  0   |  1     | RAM         | jasmin.rom  |
+     * |  0   |  0     | BASIC ROM   | BASIC ROM   |
+     */
+    if (mem->jasmin_active) {
+        if (mem->jasmin_olay) {
+            val = mem->upper_ram[address - 0xC000];
+        } else if (mem->jasmin_romdis) {
+            if (address >= 0xF800 && mem->jasmin_rom)   /* Jasmin ROM $F800-$FFFF */
+                val = mem->jasmin_rom[address - 0xF800];
+            else
+                val = mem->upper_ram[address - 0xC000];
+        } else {
+            val = mem->rom[address - 0xC000];
+        }
+        mem_notify(mem, address, val, MEM_READ);
+        return val;
+    }
+
+    /* ROM area: $C000-$FFFF
+     *
      * Microdisc memory map (matching Oricutron):
      * | romdis | diskrom | $C000-$DFFF | $E000-$FFFF      |
      * |--------|---------|-------------|-------------------|
@@ -185,6 +209,16 @@ uint8_t memory_peek(memory_t* mem, uint16_t address)
     }
 
     /* ROM/overlay area: $C000-$FFFF — mirror memory_read's banking exactly. */
+    if (mem->jasmin_active) {
+        if (mem->jasmin_olay)
+            return mem->upper_ram[address - 0xC000];
+        if (mem->jasmin_romdis) {
+            if (address >= 0xF800 && mem->jasmin_rom)
+                return mem->jasmin_rom[address - 0xF800];
+            return mem->upper_ram[address - 0xC000];
+        }
+        return mem->rom[address - 0xC000];
+    }
     if (mem->basic_rom_disabled) {
         if (mem->overlay_active && mem->overlay_rom && address >= 0xE000) {
             uint16_t rom_offset = address - 0xE000;
@@ -220,6 +254,19 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     }
 
     /* ROM overlay area: $C000-$FFFF */
+    if (mem->jasmin_active) {
+        /* Jasmin: RAM writable except where ROM is currently mapped
+         * (Oricutron jasmin_atmoswrite). */
+        if (mem->jasmin_olay) {
+            mem->upper_ram[address - 0xC000] = value;            /* RAM everywhere */
+        } else if (mem->jasmin_romdis) {
+            if (address < 0xF800)                                 /* $C000-$F7FF RAM */
+                mem->upper_ram[address - 0xC000] = value;
+            /* $F800-$FFFF: Jasmin ROM, writes ignored */
+        }
+        /* olay=0, romdis=0: BASIC ROM everywhere, writes ignored */
+        return;
+    }
     if (mem->basic_rom_disabled) {
         /* Microdisc mode: RAM writable at $C000-$FFFF (except overlay ROM) */
         if (mem->overlay_active && address >= 0xE000) {
