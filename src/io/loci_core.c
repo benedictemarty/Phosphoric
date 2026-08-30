@@ -12,6 +12,11 @@
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 500
 #endif
+/* macOS : _XOPEN_SOURCE seul restreint le namespace et masque snprintf + les
+ * extensions BSD dans <stdio.h>. _DARWIN_C_SOURCE réexpose l'API complète. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
 
 #include "io/loci.h"
 #include "io/loci_internal.h"
