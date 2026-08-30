@@ -502,22 +502,27 @@ static void tn_disconnect(void) {
     pw_teardown();
 }
 
-/* Read up to max bytes from the server side, retrying for EAGAIN. */
+/* Read up to max bytes from the server side, retrying for EAGAIN. Sleep on an
+ * empty poll so the loop spans enough wall-time for loopback delivery — the
+ * kernel loopback is near-instant on Linux but has real latency on macOS. */
 static int tn_srv_read(uint8_t* buf, int max) {
     for (int t = 0; t < 4000; t++) {
         ssize_t r = read(g_srv, buf, (size_t)max);
         if (r > 0) return (int)r;
         if (r == 0) return 0;
+        usleep(100);   /* EAGAIN : laisser les données loopback arriver */
     }
     return 0;
 }
 
 /* Pump the backend's recv (reads socket → telnet → rx) draining data bytes
- * destined for the Oric into out. */
+ * destined for the Oric into out. Sleep on an empty poll (see tn_srv_read):
+ * spinning without a wait drains before macOS loopback delivers the bytes. */
 static int tn_drain_oric(uint8_t* out, int max) {
     int i = 0; uint8_t b;
     for (int t = 0; t < 4000 && i < max; t++) {
         if (pw->recv(pw, &b)) out[i++] = b;
+        else                  usleep(100);
     }
     return i;
 }
