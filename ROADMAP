@@ -39,8 +39,13 @@ Objectif : que les jeux vocaux (**Frelon**, **Cobra Pinball**) parlent.
       capturé (`--audio-wav`) montrant une fenêtre de parole active (t≈9,4 s+).
       (Le turbo-loader cassette bloque le chargement `.tap` dans l'émulateur ; la
       version `.dsk` Sedoric autoboote — c'est elle qui a servi.)
-- [ ] (Optionnel) 2ᵉ carte Mageco **MEA8000** (phonèmes français, `$03F0/$03F1`,
-      sans ROM — datasheet complète, test « BONJOUR » auto-contenu).
+- [ ] (Optionnel) 2ᵉ carte **TMPI MEA8000** (TMPI = Techni-Music / Parole
+      Informatique ; phonèmes français, `$03F0/$03F1`, sans ROM — datasheet
+      complète, logiciels VOCA1/FR + PHON, test « BONJOUR » auto-contenu).
+      Source : Internet Archive « VOCA 1/FR … synthétiseur vocal TMPI … MEA8000 »
+      (crédit « TECHNI-MUSIC et PAROLE INFORMATIQUE »). NB : le plan manuscrit
+      fourni est légendé « MAGECO 19/11/84 » — probable board proto distinct ;
+      le SP0256 (Frelon), lui, reste bien **Mageco**.
 
 ---
 
