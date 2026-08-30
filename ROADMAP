@@ -17,7 +17,11 @@ Branche `feature/windows-port`. La CI Windows (cross-build MinGW-w64) était en
       exclut `disk_http.c` et lie le stub sous `WIN=1`.
 - [x] Audit : seul régresseur (`control.c` `<sys/select.h>` déjà gardé `_WIN32`).
 - [x] Build Linux inchangé (swap uniquement sous `WIN=1`).
-- [ ] Confirmation verte du run CI `windows-build` sur `feature/windows-port`.
+- [x] Confirmation verte du run CI `windows-build` sur `feature/windows-port`
+      (run 33322524244 = success ; artefact `phosphoric-windows-x86_64`, 1,7 Mo).
+      2ᵉ correctif nécessaire : stub `serial_backend_win.c` figé au Sprint 89 ne
+      fournissait plus `serial_transport_create`/`serial_backend_tcp_set_rcvbuf`
+      (ajoutées depuis) → complété (dispatch loopback/file: fonctionnel).
 - [ ] Suivi : portage Winsock du client HTTP web-disk (activer `--disk-web` sur
       Windows), comme les autres transports réseau v1.
 
