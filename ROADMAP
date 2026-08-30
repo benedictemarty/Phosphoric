@@ -6,6 +6,27 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Support macOS (build natif Intel & Apple Silicon) — EN COURS (v1.110.0-alpha)
+
+Branche `feature/macos-support`. Portabilité du build vers macOS (le code était
+déjà partiellement conscient de macOS : CoreMIDI, gardes `__APPLE__`).
+- [x] PTY : `openpty()` via `<util.h>` sur macOS/BSD (pas `<pty.h>`) — inclusion
+      conditionnelle (`src/io/serial_backend.c`).
+- [x] COM série : `HAS_COM` couvre `__APPLE__` (termios POSIX standard).
+- [x] `MSG_NOSIGNAL` : repli `0` en branche POSIX de `include/utils/oscompat.h`
+      (SIGPIPE ignoré process-wide → `EPIPE` sûr) ; `http_api.c`/`cast_server.c`
+      incluent `oscompat.h`.
+- [x] SDL2 : détection `pkg-config` + repli `sdl2-config` dans le `Makefile`
+      (robuste Homebrew / Apple Silicon).
+- [x] Doc `docs/macos.md` + mention README.
+- [x] Non-régression Linux : builds défaut / `HTTPAPI=1` / `CAST=1` OK,
+      `make tests` 908/908.
+- [ ] **Build vérifié sur un vrai Mac** (env. de dev = Linux) — à confirmer.
+- [ ] CI macOS (runner GitHub `macos-latest`) — backlog.
+- [ ] Valider les backends CoreMIDI et `com:`/`pty` sur matériel Mac réel.
+
+---
+
 ## Interface disque Jasmin (WD177x) — LIVRÉ (v1.109.0-alpha)
 
 2e standard disque Oric (concurrent du Microdisc). Branche `feature/jasmin-disk`.

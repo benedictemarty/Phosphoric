@@ -42,8 +42,16 @@ ifeq ($(WIN), 1)
     CFLAGS += -DHAS_SDL2 -I$(SDL2_WIN_PREFIX)/include -I$(SDL2_WIN_PREFIX)/include/SDL2 -Dmain=SDL_main
     LDFLAGS += -L$(SDL2_WIN_PREFIX)/lib -lmingw32 -lSDL2main -lSDL2 -mwindows
 else
-    CFLAGS += -DHAS_SDL2 $(shell pkg-config --cflags sdl2 2>/dev/null)
-    LDFLAGS += $(shell pkg-config --libs sdl2 2>/dev/null)
+    # Prefer pkg-config; fall back to sdl2-config (robust on macOS/Homebrew where
+    # PKG_CONFIG_PATH may not point at the keg — `brew install sdl2` ships both).
+    SDL2_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
+    SDL2_LIBS   := $(shell pkg-config --libs sdl2 2>/dev/null)
+    ifeq ($(strip $(SDL2_LIBS)),)
+        SDL2_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null)
+        SDL2_LIBS   := $(shell sdl2-config --libs 2>/dev/null)
+    endif
+    CFLAGS  += -DHAS_SDL2 $(SDL2_CFLAGS)
+    LDFLAGS += $(SDL2_LIBS)
 endif
 endif
 

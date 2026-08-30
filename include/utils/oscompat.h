@@ -84,6 +84,13 @@ static inline void oscompat_net_init(void) {}
 #define oscompat_mkdir(path, mode) mkdir((path), (mode))
 #define oscompat_ignore_sigpipe()  signal(SIGPIPE, SIG_IGN)
 
+/* macOS/BSD have no MSG_NOSIGNAL send() flag. SIGPIPE is ignored process-wide
+ * via oscompat_ignore_sigpipe() (main.c), so falling back to 0 is safe: a write
+ * to a dead socket returns EPIPE instead of raising SIGPIPE. */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 #define oscompat_statvfs statvfs_wrap
 struct oscompat_statvfs { unsigned long long f_blocks, f_frsize; };
 static inline int statvfs_wrap(const char* path, struct oscompat_statvfs* out) {
