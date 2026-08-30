@@ -25,6 +25,10 @@ void cli_print_usage(const char* program_name) {
     printf("      --disk2 FILE           Load .DSK disk file in drive C\n");
     printf("      --disk3 FILE           Load .DSK disk file in drive D\n");
     printf("      --disk-rom FILE        Load Microdisc ROM (microdis.rom)\n");
+    printf("      --jasmin-rom FILE      Enable the Jasmin disk interface (WD177x $03F4-$03FF,\n");
+    printf("                             2 KB boot ROM at $F800). Alternative to the Microdisc;\n");
+    printf("                             boots Jasmin/TDOS disks. Shares -d/--disk1..3. Mutually\n");
+    printf("                             exclusive with --disk-rom/--dtl2000/--mageco.\n");
     printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
     printf("                             (overwrites in place; only drives actually written are saved)\n");
     printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");

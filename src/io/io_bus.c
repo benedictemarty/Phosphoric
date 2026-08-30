@@ -237,6 +237,7 @@ const io_device_t* io_bus_devices(int* count) {
  * pas ici (cf. docs/architecture/io-bus.md §6 : hooks lifecycle non uniformes). */
 void io_bus_tick(emulator_t* emu, int cycles) {
     if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
+    if (emu->has_jasmin)    fdc_ticktock(&emu->jasmin.fdc, cycles);
     if (emu->has_loci) {
         fdc_ticktock(&emu->loci.dsk_fdc, cycles);
         loci_adj_tick(&emu->loci, cycles);
