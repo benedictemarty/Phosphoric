@@ -6,6 +6,9 @@
  */
 
 #define _XOPEN_SOURCE 700
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE  /* macOS: expose INADDR_LOOPBACK + extensions BSD */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
