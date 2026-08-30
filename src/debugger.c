@@ -28,9 +28,18 @@
 /* Save-state is an optional link dependency: the `ss`/`sl` REPL commands use it,
  * but unit-test binaries that link debugger.c standalone must not drag in the
  * whole emulator serializer. Declared weak so those binaries still link; the
- * commands NULL-guard the calls and report gracefully when absent. */
-extern bool savestate_save(const emulator_t* emu, const char* filename) __attribute__((weak));
-extern bool savestate_load(emulator_t* emu, const char* filename) __attribute__((weak));
+ * commands NULL-guard the calls and report gracefully when absent.
+ *
+ * ELF (Linux) resolves an undefined weak symbol to NULL. Mach-O (macOS) does
+ * NOT for a plain `weak` symbol — it needs `weak_import` for an optional symbol
+ * that may be absent at link time and resolve to NULL. */
+#if defined(__APPLE__)
+#  define SS_WEAK_OPTIONAL __attribute__((weak_import))
+#else
+#  define SS_WEAK_OPTIONAL __attribute__((weak))
+#endif
+extern bool savestate_save(const emulator_t* emu, const char* filename) SS_WEAK_OPTIONAL;
+extern bool savestate_load(emulator_t* emu, const char* filename) SS_WEAK_OPTIONAL;
 
 /* Parse an address argument: tries the symbol table first (case-insensitive),
  * then falls back to numeric parsing. Hex is the default base; `$`/`0x` force
