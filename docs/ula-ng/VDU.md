@@ -137,7 +137,8 @@ le motif (pas interprété comme commande). Extensible plus tard aux fontes/bitm
 
 ## 7. Interpréteur (FSM)
 
-État minimal, sans allocation : `vdu_cmd`, `vdu_params[8]`, `vdu_need`,
+État minimal, sans allocation : `vdu_cmd`, `vdu_params[ULA_NG_VDU_MAXPARAMS]`
+(= `vdu_params[4]`), `vdu_need`,
 `vdu_got`. Quand `vdu_need==0` l'octet reçu est un **code** (on lit son nombre de
 paramètres) ; sinon c'est un **paramètre** ; à `got==need` on **exécute** puis on
 repart en attente de code. L'exécution se contente d'appeler la logique de

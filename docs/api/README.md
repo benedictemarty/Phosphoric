@@ -260,7 +260,7 @@ typedef struct {
 
 ### Constantes (bits actifs bas)
 
-`IJK_LEFT` (bit 0), `IJK_RIGHT` (bit 1), `IJK_DOWN` (bit 3), `IJK_UP` (bit 4), `IJK_FIRE` (bit 5)
+`IJK_RIGHT` (bit 0), `IJK_LEFT` (bit 1), `IJK_FIRE` (bit 2), `IJK_DOWN` (bit 3), `IJK_UP` (bit 4)
 
 ### Fonctions
 
@@ -764,7 +764,7 @@ typedef enum { LOG_LEVEL_DEBUG, LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERR
 
 | Metrique | Valeur |
 |----------|--------|
-| Fichiers d'en-tete | 24 |
+| Fichiers d'en-tete | ~58 |
 | Fonctions publiques | ~200 |
 | Structures publiques | ~40 |
 | Enumerations | ~30 |

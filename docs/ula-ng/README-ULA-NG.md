@@ -21,10 +21,8 @@ différence** tant qu'il ne déverrouille pas explicitement l'ULA-NG.
 Autrement dit : *ne rien faire = ULA normale*. Il n'y a **aucun flag à passer**
 à l'émulateur — les démos se déverrouillent elles-mêmes (`-t ng_chunky.tap -f`).
 
-> **À ne pas confondre avec `--ula PROFILE`** : c'est un axe différent
-> (`hcs10017`, défaut / `ocula`, le projet de remplacement RP2350). L'ULA-NG est
-> une couche indépendante, dormante par défaut, qui fonctionne quel que soit le
-> profil.
+> L'ULA-NG est une couche indépendante, dormante par défaut : tant qu'elle n'est
+> pas déverrouillée, la puce reste indiscernable d'une ULA HCS 10017 standard.
 
 ---
 

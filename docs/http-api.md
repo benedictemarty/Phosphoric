@@ -171,6 +171,10 @@ avec les paging overrides de b2) :
 Même paramètre côté `--control` (`read <addr> <len> [bank]`) et REPL
 (`m addr [len] [bank]`). Cap `mem-bank`.
 
+> **`POST /mem`** attend les paramètres de corps **`addr=`** et **`bytes=`**
+> (octets hex séparés par des espaces) — mappé sur la ligne `write <addr> <bytes>`.
+> Une racine `GET /` renvoie une page d'aide auto-listant toutes les routes.
+
 ```bash
 curl -s "localhost:8888/mem?addr=C000&len=1&bank=rom"   # 1er octet ROM BASIC
 curl -s "localhost:8888/mem?addr=C000&len=1&bank=ram"   # RAM cachée derrière

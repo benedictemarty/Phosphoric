@@ -90,26 +90,13 @@ Derniere mise a jour : 2026-08-30
 
 ## Resultats des tests unitaires
 
-| Sous-systeme | Tests | Statut |
-|-------------|-------|--------|
-| CPU 6502 | 74/74 | Tous passent |
-| Memoire | 19/19 | Tous passent |
-| VIA 6522 I/O | 29/29 | Tous passent |
-| Stockage (Sedoric/FDC) | 12/12 | Tous passent |
-| Integration systeme | 7/7 | Tous passent |
-| Export video | 11/11 | Tous passent |
-| Audio PSG | 8/8 | Tous passent |
-| Debogueur | 8/8 | Tous passent |
-| Sauvegarde d'etat | 8/8 | Tous passent |
-| Atmos | 10/10 | Tous passent |
-| Joystick | 10/10 | Tous passent |
-| Imprimante | 10/10 | Tous passent |
-| Traceur MCP-40 | 10/10 | Tous passent |
-| Rendu / Scaling | 10/10 | Tous passent |
-| Trace CPU | 10/10 | Tous passent |
-| Profileur CPU | 10/10 | Tous passent |
-| Analyse ROM | 10/10 | Tous passent |
-| **Total** | **256/256** | **100%** |
+`make tests` : **908 tests, 100% pass** (35 suites), verifie le 2026-08-30.
+
+Le detail par suite evolue a chaque version ; la source faisant autorite
+(compteur total + statut par composant) est maintenue dans **VERSION_TRACKING**
+et **CIRRUS_OS** a la racine du depot. Voir aussi `make test-<suite>` (cpu,
+memory, io, storage, system, video, audio, debugger, savestate, atmos,
+joystick, printer, mcp40, renderer, trace, profiler, rominfo, serial, loci…).
 
 ---
 

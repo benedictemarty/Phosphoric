@@ -1,4 +1,4 @@
-# Phosphoric IPC Control Protocol (sprint 35a)
+# Phosphoric IPC Control Protocol
 
 Activate with `--control`. The emulator speaks a line-based text protocol
 on stdin/stdout. Logs go to **stderr** so stdout stays a clean channel.
@@ -35,11 +35,11 @@ decimal-vs-hex surprises.
 | `hello [client=… proto=…]` | `OK server=phosphoric/X.Y proto=N caps=…` | recommended at session start |
 | `regs` | `OK A=XX X=XX Y=XX SP=XX P=XX PC=XXXX cycles=N` | snapshot |
 | `set <reg> <val>` | `OK` | reg = A/X/Y/SP/P/PC |
-| `read <addr> <len>` | `OK XX XX XX ...` | bulk hex bytes, len ≤ 4096 (HEX!) |
+| `read <addr> <len> [bank]` | `OK XX XX XX ...` | bulk hex bytes, len ≤ 4096 (HEX!) ; optional bank selector |
 | `bread <addr> <len>` | `OK bread len=N\n<N raw bytes>\n` | length-prefixed binary, len ≤ 65536 |
 | `write <addr> <b0> <b1> ...` | `OK count=N` | at least one byte |
-| `peek <subsystem>` | `OK k=v k=v ...` | sub = `via`/`psg`/`disk`/`acia`/`tape`/`loci` |
-| `break <addr>` | `OK id=N addr=XXXX` | adds PC breakpoint |
+| `peek <subsystem>` | `OK k=v k=v ...` | sub = `via`/`psg`/`disk`/`fdc`/`acia`/`serial`/`tape`/`cassette`/`loci`/`video`/`ula`/`kbd`/`keyboard`/`joy`/`joystick`/`printer`/`mcp40` |
+| `break <addr> [if <expr>]` | `OK id=N addr=XXXX` | PC breakpoint ; optional conditional expression |
 | `unbreak <id>` | `OK` | removes by index |
 | `break-list` | `OK id=N:addr=XXXX [id=… …]` | |
 | `step` | `OK` then `EVT stopped reason=step` | single instruction |
@@ -49,7 +49,7 @@ decimal-vs-hex surprises.
 | `pause` | `OK pc=… cycles=…` then `EVT stopped reason=user` | works both when stopped AND while running |
 | `reset` | `OK pc=…` | warm reset |
 | `quit` | `OK` then process exits | |
-| `watch <addr>` | `OK id=N addr=XXXX` | break on write (sprint 35b) |
+| `watch <addr> [mode]` | `OK id=N addr=XXXX` | watchpoint ; mode = `w` write (défaut), `r` read, `a` access, `c` change |
 | `unwatch <id>` | `OK` | |
 | `watch-list` | `OK id=N:addr=XXXX [id=… …]` | |
 | `raster <line>` | `OK id=N line=L` | break when PAL line reached (0..311) |
@@ -58,6 +58,30 @@ decimal-vs-hex surprises.
 | `load-rom <path>` | `OK size=N pc=XXXX` | replaces BASIC ROM, warm reset |
 | `load-sym <path>` | `OK count=N total=M` | merges into the existing symbol table |
 | `disasm <addr> <n>` | `OK addr=XXXX bytes=K disasm="…" [label=NAME]` (N lines) | server-side disassembly cross-check |
+
+## Commandes additionnelles (post-35b)
+
+Ces commandes sont implémentées dans `src/control.c` (dispatch `control_dispatch`)
+et exposées aussi via l'API HTTP. Les réponses suivent la convention `OK …`/`ERR …`.
+
+| CMD | Usage | Rôle |
+|-----|-------|------|
+| `keys <texte>` | reste brut de la ligne (espaces préservés) | injecte des frappes clavier |
+| `hunt` puis `hunt <op> [val]` | op ∈ `eq,same,changed,up,down,list,clear` | recherche de valeur en mémoire (snapshots successifs) |
+| `watch-region <start> <end> [rwx]` | bornes hex, flags sous-ensemble de `rwx` | surveille une plage mémoire |
+| `watch-region-clear` | — | efface toutes les régions surveillées |
+| `watch-region-list` | — | liste les régions surveillées |
+| `save-mem <file> <addr> <len>` | | écrit une zone mémoire dans un fichier |
+| `load-mem <file> <addr>` | | charge un fichier en mémoire à `addr` |
+| `state-save <file>` | | sauvegarde l'état (`.ost`) |
+| `state-load <file>` | | restaure un état (`.ost`) |
+| `load-disk <drive A-D> <path>` | nécessite `--disk-rom` | insère une disquette à chaud |
+| `eject-disk <drive A-D>` | | éjecte la disquette d'un lecteur |
+| `eject-tape` | — | éjecte la cassette |
+| `loci-button [long]` | défaut = appui court | déclenche le bouton Action LOCI (`--loci`) |
+| `sym-group <N> <on\|off>` | | active/désactive un groupe de symboles |
+| `stuck-bits <s0> [s1]` | masques hex | injecte des bits RAM bloqués |
+| `trace <sub> …` | sub = `start`/`stop`/`save` ; spec `start` : `now\|pc:HEX stop:cycle:N\|brk\|write:HEX\|read:HEX ring:N sym` | pilote la trace CPU |
 
 ## Async commands while running
 
@@ -111,9 +135,10 @@ OK
 
 ## Future sprints
 
-- **35c** : `bread <addr> <len>` (framing binaire pour les memory inspectors
-  ≥ 32 KB), strict framing with line numbers and ACK sequences,
-  server-side timeouts, exhaustive client reference in Python.
+- `bread <addr> <len>` (framing binaire pour les memory inspectors ≥ 32 KB) est
+  **livré** (cf. tableau des commandes). Restent en backlog : strict framing avec
+  numéros de ligne et séquences d'ACK, timeouts serveur, référence client
+  exhaustive en Python.
 
 ## Error handling
 

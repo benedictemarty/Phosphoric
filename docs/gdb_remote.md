@@ -49,7 +49,7 @@ Puis, dans GDB :
 ## Commandes RSP gérées
 
 `?` · `g`/`G` · `p`/`P` · `m`/`M` · `c`/`s` · `Z0`/`z0`, `Z1`/`z1` (breakpoints) ·
-`Z2`/`z2` (write watchpoint) · `H` · `D` · `k` ·
+`Z2`/`z2` (write watch), `Z3`/`z3` (read watch), `Z4`/`z4` (access watch) · `H` · `D` · `k` ·
 `qSupported`, `qAttached`, `qC`, `qfThreadInfo`/`qsThreadInfo`, `qOffsets`,
 `qSymbol`, `qXfer:features:read:target.xml` · `QStartNoAckMode` · `vCont?`/`vCont`.
 
