@@ -180,8 +180,9 @@ endif
 # Windows v1 : swap the POSIX-only modules for their Windows variants
 ifeq ($(WIN), 1)
     SOURCES := $(filter-out src/io/serial_backend.c src/io/serial_picowifi.c \
-                            src/network/gdbstub.c, $(SOURCES))
-    SOURCES += src/io/serial_backend_win.c src/network/gdbstub_win.c
+                            src/network/gdbstub.c src/storage/disk_http.c, $(SOURCES))
+    SOURCES += src/io/serial_backend_win.c src/network/gdbstub_win.c \
+               src/storage/disk_http_win.c
 endif
 
 ifeq ($(TUI), 1)

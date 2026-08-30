@@ -6,6 +6,27 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Correctif cross-build Windows (CI `windows-build`) — v1.107.4-alpha
+
+Branche `feature/windows-port`. La CI Windows (cross-build MinGW-w64) était en
+échec depuis l'ajout du disque web `loci-webdisk`.
+- [x] Diagnostic : `src/storage/disk_http.c` inclut `<sys/socket.h>`/`<netdb.h>`
+      sans garde (absents sur MinGW) → `fatal error` à la compilation.
+- [x] Fix (pattern `*_win.c`) : `src/storage/disk_http_win.c` (stub `disk_http_get`
+      → -1 + message clair, `--disk-web`/`--loci-web` = Linux/WSL2 en v1) ; Makefile
+      exclut `disk_http.c` et lie le stub sous `WIN=1`.
+- [x] Audit : seul régresseur (`control.c` `<sys/select.h>` déjà gardé `_WIN32`).
+- [x] Build Linux inchangé (swap uniquement sous `WIN=1`).
+- [x] Confirmation verte du run CI `windows-build` sur `feature/windows-port`
+      (run 33322524244 = success ; artefact `phosphoric-windows-x86_64`, 1,7 Mo).
+      2ᵉ correctif nécessaire : stub `serial_backend_win.c` figé au Sprint 89 ne
+      fournissait plus `serial_transport_create`/`serial_backend_tcp_set_rcvbuf`
+      (ajoutées depuis) → complété (dispatch loopback/file: fonctionnel).
+- [ ] Suivi : portage Winsock du client HTTP web-disk (activer `--disk-web` sur
+      Windows), comme les autres transports réseau v1.
+
+---
+
 ## Epic 8 — Conformité matérielle (audits datasheet) — EN COURS
 
 Croisement ligne à ligne des cœurs d'émulation avec les datasheets constructeur.
