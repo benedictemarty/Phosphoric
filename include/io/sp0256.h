@@ -3,13 +3,21 @@
  * @brief Mageco "Synthétiseur Vocal" — GI SP0256-AL2 speech synthesizer for ORIC
  * @author bmarty <bmarty@mailo.com>
  *
- * Mageco Electronic "Periph'Oric" speech box: a General Instrument SP0256-AL2
- * allophone speech chip on the ORIC expansion bus. Driver software by
- * M. Tortosa (cassette); used by games such as Cobra Pinball (Cobra Soft) and
- * Frelon.
+ * Mageco speech box: a General Instrument SP0256-AL2 allophone speech chip on
+ * the ORIC expansion bus. Manufacturer attested by a period review — Théoric
+ * n°02 (banc d'essai): "SYNTHÉTISEUR VOCAL (fabriqué par MAGECO), Bâti autour
+ * d'un SP0256 … 64 [allophones] stockés en ROM … accent d'Outre-Manche". Used
+ * by games such as Cobra Pinball (Cobra Soft) and Frelon.
  *
- * I/O address CONFIRMED two ways: empirical trace of Frelon (writes to $03F1
- * from its speech routine) + PassionOric reference ("03x1"). Base configurable
+ * That same review documents the exact programming model this code implements:
+ * a modifiable I/O address ("le concepteur a prévu une modification possible de
+ * son adressage" → --sp0256-addr), an init POKE ("un POKE bien placé
+ * initialisera l'extension" → Frelon's first $80 write), and the handshake
+ * ("envoyer l'octet du diphone 0-63 par un POKE et attendre par un PEEK que le
+ * synthétiseur soit prêt" → the LRQ poll, corroborated by tracing Frelon).
+ *
+ * I/O address CONFIRMED: empirical trace of Frelon (58 writes of allophones
+ * 0-63 to $03F1, first = $80) + PassionOric ("03x1"). Base configurable
  * (--sp0256-addr), default $03F1.
  *
  * The SP0256 uses Linear Predictive Coding (LPC): a 12-pole lattice filter
