@@ -16,6 +16,7 @@
 #include "network/http_api.h"
 #include "control_queue.h"
 #include "utils/logging.h"
+#include "utils/oscompat.h"   /* MSG_NOSIGNAL fallback (macOS/BSD) */
 
 #include <pthread.h>
 #include <stdio.h>

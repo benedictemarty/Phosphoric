@@ -26,6 +26,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include "utils/oscompat.h"   /* MSG_NOSIGNAL fallback (macOS/BSD) */
 
 /* stb_image_write for JPEG encoding. The implementation lives in a single
  * TU (src/video/stb_image_write_impl.c); here we only need the declarations. */

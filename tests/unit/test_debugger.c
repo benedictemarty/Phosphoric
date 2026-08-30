@@ -7,6 +7,9 @@
  */
 
 #define _POSIX_C_SOURCE 200809L   /* fileno, dup, dup2 under -std=c11 */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE  /* macOS: expose INADDR_LOOPBACK + extensions BSD */
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

@@ -7,6 +7,9 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#endif
 #include "utils/trace.h"
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"

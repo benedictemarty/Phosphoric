@@ -8,6 +8,9 @@
 
 /* clock_gettime/CLOCK_MONOTONIC (bench timer) under strict -std=c11. */
 #define _POSIX_C_SOURCE 200809L
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2150,7 +2153,21 @@ static void emulator_run(emulator_t* emu) {
             if (lag_ns > 20000000LL) {
                 rt_next = now;  /* trop en retard : on recale sur l'instant courant */
             } else {
+                /* Dormir jusqu'à rt_next. clock_nanosleep(TIMER_ABSTIME) existe
+                 * sur Linux/BSD mais PAS sur macOS → repli sur un nanosleep
+                 * relatif du temps restant (lag_ns < 0 = on est en avance). */
+#if defined(__APPLE__)
+                if (lag_ns < 0) {
+                    int64_t rem_ns = -lag_ns;
+                    struct timespec rem = {
+                        .tv_sec  = (time_t)(rem_ns / 1000000000LL),
+                        .tv_nsec = (long)(rem_ns % 1000000000LL)
+                    };
+                    nanosleep(&rem, NULL);
+                }
+#else
                 clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &rt_next, NULL);
+#endif
             }
         }
 #endif

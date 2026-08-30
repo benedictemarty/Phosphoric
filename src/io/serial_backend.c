@@ -23,9 +23,13 @@
 #include <netdb.h>
 #include <poll.h>
 
-/* PTY support (POSIX) */
-#if defined(__linux__) || defined(__APPLE__) || defined(__unix__)
+/* PTY support (POSIX) — openpty() lives in <pty.h> on Linux but in <util.h>
+ * on macOS/BSD (there is no <pty.h> there). */
+#if defined(__linux__)
 #include <pty.h>
+#define HAS_PTY 1
+#elif defined(__APPLE__) || defined(__unix__)
+#include <util.h>
 #define HAS_PTY 1
 #else
 #define HAS_PTY 0
@@ -54,8 +58,8 @@
 #  endif
 #endif
 
-/* COM (real serial port) support — Linux only */
-#if defined(__linux__)
+/* COM (real serial port) support — POSIX termios (Linux + macOS) */
+#if defined(__linux__) || defined(__APPLE__)
 #include <termios.h>
 #include <sys/ioctl.h>
 #define HAS_COM 1
@@ -814,7 +818,7 @@ serial_backend_t* serial_backend_modem_create(const char* host, uint16_t port, b
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  COM backend — Real serial port via termios (Linux only)
+ *  COM backend — Real serial port via termios (Linux + macOS)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #if HAS_COM

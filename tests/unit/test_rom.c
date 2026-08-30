@@ -10,6 +10,9 @@
  */
 
 #define _POSIX_C_SOURCE 199309L
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE  /* macOS: expose INADDR_LOOPBACK + extensions BSD */
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <time.h>

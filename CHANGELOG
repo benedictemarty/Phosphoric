@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.110.0-alpha] - 2026-08-30
+
+### Added — Support de build macOS (portabilité Intel & Apple Silicon)
+
+- **Objectif** : permettre la compilation native sur macOS (branche
+  `feature/macos-support`). Le code était déjà partiellement conscient de macOS
+  (backend MIDI CoreMIDI présent, gardes `__APPLE__` sur la sélection MIDI) mais
+  plusieurs dépendances Linux-spécifiques empêchaient le build.
+- **PTY** (`src/io/serial_backend.c`) : `openpty()` est déclaré dans `<util.h>`
+  sur macOS/BSD, pas `<pty.h>` (qui n'existe pas). Inclusion désormais
+  conditionnelle : `<pty.h>` sur Linux, `<util.h>` sur `__APPLE__`/`__unix__`.
+- **COM série** (`src/io/serial_backend.c`) : `HAS_COM` couvre maintenant
+  `__APPLE__` — le backend `--serial com:` utilise du termios POSIX standard
+  (`tcgetattr`/`cfsetispeed`/`B110`-`B230400`), pleinement disponible sur macOS.
+  Il n'était artificiellement limité qu'à Linux.
+- **`MSG_NOSIGNAL`** (`include/utils/oscompat.h`) : absent sur macOS/BSD ; repli
+  sur `0` ajouté dans la branche POSIX (il n'existait que dans la branche
+  `_WIN32`). SIGPIPE étant déjà ignoré au niveau du process
+  (`oscompat_ignore_sigpipe()`, `main.c`), un `send()` sur socket morte renvoie
+  `EPIPE` au lieu de tuer l'émulateur. `http_api.c` et `cast_server.c` incluent
+  désormais `oscompat.h` pour récupérer ce repli (builds `HTTPAPI=1`/`CAST=1`).
+- **SDL2** (`Makefile`) : détection `pkg-config` avec repli sur **`sdl2-config`**
+  si `PKG_CONFIG_PATH` ne trouve pas le keg — robuste sur Apple Silicon
+  (Homebrew dans `/opt/homebrew`).
+- **Doc** : nouveau `docs/macos.md` (dépendances Homebrew, compilation, options,
+  détails de portabilité) + mention macOS dans le README.
+- **Vérifié sur Linux** (aucune régression) : builds défaut, `HTTPAPI=1` et
+  `CAST=1` OK ; `make tests` **908/908**. EMU_VERSION → 1.110.0-alpha.
+- **CI macOS + build vérifié sur du vrai Apple Silicon** (`.github/workflows/
+  macos-build.yml`, runner `macos-latest`) : build headless + SDL2 + suite de
+  tests complète + `HTTPAPI=1` **verts**. La CI a révélé 7 écarts macOS
+  invisibles sous Linux, tous corrigés : `clock_nanosleep`/`TIMER_ABSTIME`
+  (→ `nanosleep`), `_DARWIN_C_SOURCE` requis dans les fichiers `_POSIX_C_SOURCE`/
+  `_XOPEN_SOURCE` (masquaient `snprintf`/`MSG_DONTWAIT`/`INADDR_LOOPBACK`),
+  symbole `weak` savestate (définition weak portable Mach-O), timing loopback
+  des tests picowifi (drain + lecture segmentée), bash moderne pour les scripts
+  d'intégration. Tous les correctifs sont no-op hors macOS (0 régression Linux).
+
 ## [1.109.0-alpha] - 2026-08-30
 
 ### Added — Interface disque Jasmin (WD177x) : 2e standard disque Oric, boote TDOS

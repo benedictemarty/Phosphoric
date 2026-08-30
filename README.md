@@ -168,6 +168,11 @@ make SDL2=1
   MinGW-w64. v1 limits: serial tcp/pty/modem/com/picowifi, --gdb,
   --control async-pause, CAST and host MIDI are Linux-only), and **WSL2**
   (full-featured Linux build under WSLg)
+- **macOS** (Intel & Apple Silicon) — native build via Apple clang + Homebrew
+  SDL2 (`brew install sdl2 pkg-config` then `make`). PTY/COM serial use the
+  BSD/POSIX paths, host MIDI uses CoreMIDI. See [docs/macos.md](docs/macos.md).
+  *(Portable but first verified on a real Mac is pending — Linux/Windows are the
+  CI-tested targets.)*
 - **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, a JOric-style left icon rail (ROM selector, `.tap`/`.dsk` drag-drop, Reset, fullscreen, **CRT filter**, **`.ost` save/restore**), **TAPE/DISK activity LEDs**, and a faithful ORIC-1/Atmos on-screen keyboard — semi-transparent overlay, toggleable, with sticky CTRL/FUNCT/SHIFT (FUNCT hidden on ORIC-1). **Deep-link URL params** `?rom=oric1|atmos` and `?media=<file>.tap|.dsk` boot straight into a program (a `.dsk` auto-enables the Microdisc controller). Output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation

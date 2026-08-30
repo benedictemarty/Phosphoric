@@ -1,0 +1,56 @@
+# Build + tests natifs macOS (Apple clang + SDL2 Homebrew) sur runner macos-latest.
+# Valide la portabilité macOS (PTY <util.h>, HAS_COM, MSG_NOSIGNAL, SDL2 sdl2-config).
+name: macos-build
+
+on:
+  push:
+    branches: [main, feature/macos-support]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'Makefile'
+      - '.github/workflows/macos-build.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'Makefile'
+      - '.github/workflows/macos-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2 + modern bash (Homebrew)
+        # bash : macOS ne fournit que bash 3.2 (2007) ; les scripts de test
+        # d'intégration ciblent bash moderne (comme le CI Linux en bash 5.x).
+        # Homebrew le place en tête de PATH (/opt/homebrew/bin).
+        run: brew install sdl2 pkg-config bash
+
+      - name: Toolchain info
+        run: |
+          cc --version
+          make --version | head -1
+          pkg-config --modversion sdl2 || sdl2-config --version
+
+      # Build headless d'abord : isole le cœur (pas de SDL2) — vérifie PTY/COM/
+      # MSG_NOSIGNAL sans dépendre de la couche graphique.
+      - name: Build headless (SDL2=0)
+        run: make clean && make SDL2=0 -j3
+
+      # Build complet avec SDL2 (Homebrew) : vérifie la détection pkg-config /
+      # repli sdl2-config du Makefile.
+      - name: Build with SDL2 (Homebrew)
+        run: make clean && make SDL2=1 -j3
+
+      # Suite de tests complète (doit être verte, comme sur Linux/Windows).
+      - name: Run test suite
+        run: make tests
+
+      # Builds optionnels réseau : valident le repli MSG_NOSIGNAL sur macOS
+      # (http_api.c / cast_server.c incluent oscompat.h).
+      - name: Build HTTPAPI=1 (MSG_NOSIGNAL fallback)
+        run: make clean && make SDL2=1 HTTPAPI=1 -j3
