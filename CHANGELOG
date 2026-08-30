@@ -55,6 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EMU_VERSION`, README, CHANGELOG, VERSION_TRACKING, CIRRUS_OS, docs) sont
   désormais identiques.
 
+### Changed — Licence : MIT → EUPL-1.2
+
+- Le projet passe de la **licence MIT** à l'**European Union Public Licence v. 1.2
+  (EUPL-1.2)** — texte officiel EU (source SPDX) dans `LICENSE`. L'EUPL-1.2 est
+  une licence copyleft **compatible GPL** (Appendice de compatibilité), ce qui
+  permet à Phosphoric de réutiliser du code de référence sous GPL là où
+  nécessaire (ex. modèles d'émulation de puces). Les portions antérieurement
+  sous MIT conservent leur mention MIT (la permission MIT autorise leur
+  inclusion). README mis à jour.
+
 ## [1.109.0-alpha] - 2026-08-30
 
 ### Added — Interface disque Jasmin (WD177x) : 2e standard disque Oric, boote TDOS

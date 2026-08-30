@@ -684,7 +684,11 @@ make SDL2=1
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the **[European Union Public Licence v. 1.2
+(EUPL-1.2)](LICENSE)**. The EUPL-1.2 is a copyleft licence that is **compatible
+with the GPL** (per its compatibility Appendix), which lets Phosphoric reuse
+GPL-licensed reference code where needed. Portions previously distributed under
+the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ## Contact
 
