@@ -1,4 +1,4 @@
-# Reference API — Phosphoric v1.107.3-alpha
+# Reference API — Phosphoric v1.110.0-alpha
 
 Derniere mise a jour : 2026-08-30
 
@@ -39,7 +39,7 @@ Derniere mise a jour : 2026-08-30
 
 | Constante | Valeur | Description |
 |-----------|--------|-------------|
-| `EMU_VERSION` | `"1.107.3-alpha"` | Version de l'emulateur |
+| `EMU_VERSION` | `"1.110.0-alpha"` | Version de l'emulateur |
 | `ORIC_CLOCK_HZ` | 1000000 | Frequence CPU 1 MHz |
 | `ORIC_FRAME_RATE` | 50 | Taux de rafraichissement PAL |
 | `CYCLES_PER_FRAME` | 19968 | Cycles CPU par frame |

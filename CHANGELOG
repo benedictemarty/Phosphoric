@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   des tests picowifi (drain + lecture segmentée), bash moderne pour les scripts
   d'intégration. Tous les correctifs sont no-op hors macOS (0 régression Linux).
 
+### Docs — README tri-plateforme + synchronisation des versions
+
+- **README** : section plateformes restructurée en **3 natives CI-vérifiées**
+  (Linux référence, Windows `.exe` MinGW + WSL2, **macOS** Apple Silicon vérifié
+  par la CI) **+ navigateur** WASM ; bandeau et footer passés à `1.110.0-alpha`
+  avec la mention tri-plateforme ; footer enrichi du **Jasmin (WD177x, boot TDOS)**.
+- **Cohérence des versions** : `docs/user-guide/README.md`, `docs/api/README.md`
+  (dont la valeur du macro `EMU_VERSION`) et `docs/COMPATIBILITY.md` réalignés de
+  `1.107.3-alpha` vers `1.110.0-alpha` — toutes les références de version (source
+  `EMU_VERSION`, README, CHANGELOG, VERSION_TRACKING, CIRRUS_OS, docs) sont
+  désormais identiques.
+
 ## [1.109.0-alpha] - 2026-08-30
 
 ### Added — Interface disque Jasmin (WD177x) : 2e standard disque Oric, boote TDOS

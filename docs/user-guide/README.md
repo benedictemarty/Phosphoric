@@ -1,6 +1,6 @@
 # Guide Utilisateur Phosphoric
 
-**Version 1.107.3-alpha** | Emulateur ORIC-1 / Atmos
+**Version 1.110.0-alpha** | Emulateur ORIC-1 / Atmos
 
 ---
 
@@ -810,7 +810,7 @@ est `.COM` (un `.BIN` donnerait `?FILE NOT FOUND ERROR`).
 
 ## Reference CLI complete
 
-> Liste exhaustive alignee sur `./oric1-emu --help` (v1.107.3-alpha).
+> Liste exhaustive alignee sur `./oric1-emu --help` (v1.110.0-alpha).
 > Certaines options exigent un build specifique : `--tui` (TUI=1),
 > `--http-api` (HTTPAPI=1), `--cast-*` (CAST=1), backend `midi:` (MIDI=1).
 
@@ -981,5 +981,5 @@ Touches de fonction (fenetre SDL) :
 
 ---
 
-*Phosphoric v1.107.3-alpha — Guide utilisateur*
+*Phosphoric v1.110.0-alpha — Guide utilisateur*
 *Derniere mise a jour : 2026-08-30*
