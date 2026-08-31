@@ -33,6 +33,30 @@ multi-valeurs repoussées sur le xstack.
   transcendantes, round-trip MBF byte-exact `1.0={81 00 00 00 00}`, erreurs,
   garde opt-in). `make tests` **1059** (0 régression), SDL2=0 & SDL2=1 OK.
 
+### Added — Mode ACIA fiable LOCI `$AA` (RX non destructif, seqlock + ACK)
+
+Spec `~/loci/extensions/acia-fiable-AA/spec-acia-fiable.md` (v0.1). Rend la
+réception fiable face aux ratés de lecture `$0380` (course PHI2) : la donnée RX
+devient **non destructive** tant que le 6502 n'a pas **accusé réception**, sur le
+canal d'écriture (toujours fiable). **Opt-in** (opcode `$AA`, `API_A` bit0 EN) →
+sans lui, ACIA strictement 6551 (RX destructif standard).
+
+- Opcode `LOCI_OP_ACIA_RELIABLE=$AA` (handler `op_acia_reliable`, `loci_core.c`) +
+  état dans `loci_t` (`acia_reliable`, `acia_rx_seq`, `acia_rx_presented`) ; setter
+  `loci_set_acia_reliable()`.
+- Registres additionnels dans la fenêtre ACIA (actifs seulement en mode fiable,
+  `io_bus.c`) : **RXSEQ `$0384` (R)** = n° de séquence de l'octet présenté (le
+  claim ACIA s'étend à `base+5`) ; **RXACK `$0385` (W)** = accusé du 6502.
+- Protocole (spec §4) : un octet présenté fixe RDRF + attribue un `RXSEQ` ;
+  `DATA $0380` est lu **sans consommer** (peek) ; la consommation n'a lieu que
+  sur `RXACK == RXSEQ` (canal d'écriture fiable). Combiné à la course PHI2
+  (v1.114-116), un raté de lecture renvoie l'open-bus **sans perdre l'octet** →
+  rattrapé par relecture. `peek` observateur ne fait pas avancer la séquence.
+- Tests `test-loci-acia-miss` **+5** (13→18) : DATA non destructif + conso
+  ACK-gated, seqlock multi-octets dans l'ordre, **survie à un raté de lecture**,
+  **zéro perte de bout en bout avec 1 tour/2 en course perdue**, registres inertes
+  hors mode. `make tests` **1064** (0 régression), SDL2=0 & SDL2=1 OK.
+
 ## [1.116.0-alpha] - 2026-08-31
 
 ### Added — Jitter seedé de la course PHI2 — Épic B, Phase 2

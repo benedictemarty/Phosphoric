@@ -74,6 +74,7 @@ static const char* op_name(uint8_t op) {
         case LOCI_OP_MAP_TUNE_TADR:   return "MAP_TUNE_TADR";
         case LOCI_OP_ADJ_SCAN:        return "ADJ_SCAN";
         case LOCI_OP_MATH:            return "MATH";
+        case LOCI_OP_ACIA_RELIABLE:   return "ACIA_RELIABLE";
         default:                      return "?";
     }
 }
@@ -129,6 +130,9 @@ bool loci_init(loci_t* loci) {
     loci->mia_serve_jitter = 0;                     /* pas de jitter par défaut */
     loci->mia_jitter_state = bus_jitter_seed(0);
     loci->coproc_enabled = false;                   /* EXPERIMENTAL $A9 : opt-in */
+    loci->acia_reliable = false;                    /* EXPERIMENTAL $AA : opt-in */
+    loci->acia_rx_seq = 0;
+    loci->acia_rx_presented = false;
     loci->dir_dev = -1;    /* device-list iterator closed */
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);
@@ -408,6 +412,24 @@ void api_return_errno(loci_t* loci, uint16_t e) {
     api_return_axsreg(loci, 0xFFFFFFFFu);
 }
 
+/* EXPERIMENTAL — opcode $AA : bascule le mode ACIA fiable. API_A bit0 = EN
+ * (1 = activer, 0 = revenir au 6551 standard). Réinitialise l'état de séquence.
+ * La mécanique des registres RXSEQ/RXACK et le RX non destructif vivent dans
+ * io_bus.c (qui a accès à l'ACIA). Voir spec-acia-fiable.md. */
+void op_acia_reliable(loci_t* loci) {
+    uint8_t en = loci->regs[LOCI_REG_API_A] & 0x01u;
+    loci->acia_reliable = (en != 0);
+    loci->acia_rx_seq = 0;
+    loci->acia_rx_presented = false;
+    api_return_ax(loci, loci->acia_reliable ? 1 : 0);
+}
+
+void loci_set_acia_reliable(loci_t* loci, bool enabled) {
+    loci->acia_reliable = enabled;
+    loci->acia_rx_seq = 0;
+    loci->acia_rx_presented = false;
+}
+
 /* ─── System / RTC / RNG handlers ──────────────────────────────── */
 
 void op_pix_xreg(loci_t* loci) {
@@ -617,6 +639,7 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_MAP_TUNE_TADR:   op_map_tune_tadr(loci);  break;
         case LOCI_OP_ADJ_SCAN:        op_adj_scan(loci);       break;
         case LOCI_OP_MATH:            op_math(loci);           break;
+        case LOCI_OP_ACIA_RELIABLE:   op_acia_reliable(loci);  break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));

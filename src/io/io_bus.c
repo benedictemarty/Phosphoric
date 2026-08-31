@@ -47,8 +47,15 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 }
 
 /* ACIA 6551 ($031C-$031F par défaut, base configurable). */
+/* EXPERIMENTAL ($AA) : le mode ACIA fiable étend la fenêtre revendiquée à base+5
+ * (RXSEQ $0384 / RXACK $0385), présents seulement quand le mode est actif. */
+static inline bool acia_reliable_active(const emulator_t* emu) {
+    return emu->has_loci && emu->acia_base_addr == 0x0380 && emu->loci.acia_reliable;
+}
 static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_serial && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
+    if (!emu->has_serial) return false;
+    uint16_t hi = (uint16_t)(emu->acia_base_addr + (acia_reliable_active(emu) ? 5 : 3));
+    return addr >= emu->acia_base_addr && addr <= hi;
 }
 /* picowifi-over-LOCI : l'ACIA 6551 émulée vit à $0380, servie par une COURSE
  * PHI2. Le MIA (RP2040 : PIO core1 + serve logiciel lent, ~I²C/DMA) doit poser
@@ -73,31 +80,84 @@ static inline bool acia_serve_lost(const emulator_t* emu) {
     return emu->has_loci && emu->acia_base_addr == 0x0380 &&
            !loci_mia_io_reliable(&emu->loci);
 }
+
+/* EXPERIMENTAL ($AA) — mode ACIA fiable. Attribue (paresseusement) un n° de
+ * séquence à la tête de FIFO RX dès qu'un octet est présent et pas encore
+ * numéroté : c'est le « un octet arrive → RXSEQ++ » de la spec. Idempotent entre
+ * deux consommations (seqlock stable). */
+static void acia_reliable_present(emulator_t* emu) {
+    if (!emu->loci.acia_rx_presented &&
+        (acia_peek(&emu->acia, (uint16_t)(emu->acia_base_addr + ACIA_REG_STATUS))
+             & ACIA_STATUS_RDRF)) {
+        emu->loci.acia_rx_seq++;
+        emu->loci.acia_rx_presented = true;
+    }
+}
+
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
-     * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
-     * nominale déterministe. */
+    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). */
     bool lost = emu->has_loci && emu->acia_base_addr == 0x0380 &&
                 loci_mia_serve_lost_sampled(&emu->loci);
+
+    if (acia_reliable_active(emu)) {
+        /* Mode fiable : RXSEQ/RXACK + RX NON destructif. La course peut faire
+         * latcher l'open-bus, mais l'octet n'est JAMAIS consommé en lecture (seul
+         * l'ACK écrit consomme) → un raté est rattrapable par relecture. */
+        uint16_t off = (uint16_t)(addr - emu->acia_base_addr);
+        if (off == LOCI_ACIA_OFF_RXSEQ) {
+            if (lost) return memory_open_bus(&emu->memory);   /* idempotent : relisible */
+            acia_reliable_present(emu);
+            return emu->loci.acia_rx_seq;
+        }
+        if (off == LOCI_ACIA_OFF_RXACK)
+            return memory_open_bus(&emu->memory);             /* RXACK est en écriture seule */
+        if (off == ACIA_REG_DATA) {
+            if (lost) return memory_open_bus(&emu->memory);   /* raté : rien consommé */
+            acia_reliable_present(emu);
+            return acia_peek(&emu->acia, addr);               /* DATA non destructif (peek) */
+        }
+        /* STAT/CMD/CTRL : idempotents, lecture normale (open-bus si course perdue). */
+        if (lost) return memory_open_bus(&emu->memory);
+        return acia_read(&emu->acia, addr);
+    }
+
+    /* Mode 6551 standard (course PHI2 fidèle, cf. v1.114). */
     if (lost) {
-        /* Course perdue : sur DATA, LOCI a consommé l'octet en aveugle (perdu) ;
-         * le 6502 latche l'open-bus. Sur STAT/CMD/CTRL, rien n'est consommé. */
         if ((addr & ACIA_ADDR_MASK) == ACIA_REG_DATA)
             (void)acia_read(&emu->acia, addr);   /* consomme et jette : octet perdu */
         return memory_open_bus(&emu->memory);
     }
     return acia_read(&emu->acia, addr);
 }
+
 static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    /* Écriture toujours fiable (write_enable_map = 0xFFFFFFFF sur le vrai LOCI) :
-     * elle passe même course perdue. */
+    /* Écriture toujours fiable (write_enable_map = 0xFFFFFFFF sur le vrai LOCI). */
+    if (acia_reliable_active(emu)) {
+        uint16_t off = (uint16_t)(addr - emu->acia_base_addr);
+        if (off == LOCI_ACIA_OFF_RXACK) {
+            /* ACK : si == RXSEQ présenté, consommer l'octet (canal fiable). */
+            acia_reliable_present(emu);
+            if (emu->loci.acia_rx_presented && value == emu->loci.acia_rx_seq) {
+                (void)acia_read(&emu->acia, (uint16_t)(emu->acia_base_addr + ACIA_REG_DATA));
+                emu->loci.acia_rx_presented = false;   /* prochain octet → nouveau seq */
+            }
+            return true;
+        }
+        if (off == LOCI_ACIA_OFF_RXSEQ) return true;   /* lecture seule : write ignorée */
+    }
     acia_write(&emu->acia, addr, value);
     return true;
 }
+
 /* Lecture d'observation non destructive (débogueur/moniteur/dump/déporté) :
- * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. Modélise l'open-bus
- * SANS consommer (un observateur ne participe pas à la course PHI2 du 6502). */
+ * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ ; ne fait pas non plus
+ * avancer la séquence du mode fiable (un observateur ne participe pas au protocole). */
 static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
+    if (acia_reliable_active(emu)) {
+        uint16_t off = (uint16_t)(addr - emu->acia_base_addr);
+        if (off == LOCI_ACIA_OFF_RXSEQ) return emu->loci.acia_rx_seq;   /* sans muter */
+        if (off == LOCI_ACIA_OFF_RXACK) return 0;
+    }
     if (acia_serve_lost(emu))
         return memory_open_bus(&emu->memory);
     return acia_peek(&emu->acia, addr);

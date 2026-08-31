@@ -118,6 +118,8 @@ void op_tap_read_header(loci_t* loci);
 
 /* In loci_math.c (EXPERIMENTAL : coprocesseur arithmétique $A9). */
 void op_math(loci_t* loci);
+/* In loci_core.c (EXPERIMENTAL : mode ACIA fiable $AA). */
+void op_acia_reliable(loci_t* loci);
 
 /* In loci_boot.c. */
 void op_mia_boot(loci_t* loci);
