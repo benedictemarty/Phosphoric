@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.113.0-alpha] - 2026-08-31
+
+### Added — Outils de conversion « magnétique » : `tap2wav` et `dsk2hfe`
+
+- **`tap2wav`** — convertit un `.tap` ORIC en **`.wav` audio cassette** (mode
+  standard/rapide), rejouable sur l'entrée K7 d'une vraie machine ou archivable.
+  L'encodage bit/octet est repris **verbatim** du générateur signal de
+  l'émulateur (`cassette_encode_frame`, `src/io/cassette.c`, calqué sur la ROM
+  CSAVE `$E619`) : trame 14 bits LSB d'abord (start 0 · 8 data · parité impaire ·
+  4 stop), chaque bit = demi‑pulse LOW 208 cyc puis HIGH 208 cyc (« 1 ») ou 416
+  cyc (« 0 »), précédé d'un leader de 0x16. Options `--rate` `--leader` `--amp`
+  `--lead-silence` `--tail-silence`. **Validé par round‑trip** : le WAV re‑décodé
+  (seuil ROM 512 cyc, reframing) restitue les octets d'origine (« SYNTHOR »
+  retrouvé, leader intact).
+- **`dsk2hfe`** — convertit un `.dsk` ORIC (format **MFM_DISK**) en image
+  **magnétique HFE v1** (`HXCPICFE`) pour piloter/écrire de vraies disquettes via
+  **HxC, Gotek/FlashFloppy ou Greaseweazle** — l'équivalent disque de `tap2wav`.
+  MFM‑encode chaque piste de 6400 octets en flux de cellules (16 cellules/octet,
+  paires clock/data, règle MFM standard), avec les marques de sync **A1=`0x4489`
+  / C2=`0x5224`** (clock manquant) sur les triplets précédant un address mark.
+  Sortie conforme à la spec HxC : header 512 o, LUT de pistes, faces entrelacées
+  par blocs de 256 o, bits **LSB d'abord**, cell rate = 2×bitrate (défaut 250
+  kbit/s, 300 RPM ; `--bitrate` `--rpm`). **Validé par round‑trip** : le HFE
+  re‑décodé retrouve les **17 IDAM `A1A1A1FE`** de la piste 0 avec les bons
+  numéros (track 0, side 0, secteurs 1‑17).
+- Ajoutés à `make tools` (aux côtés de `bas2tap`/`bin2tap`/`tap2sedoric`/
+  `sedoric-info`). Aucun impact émulateur ; `make tests` **935/935** inchangé ;
+  builds SDL2=0 & SDL2=1 OK. EMU_VERSION → 1.113.0-alpha
+
 ## [1.112.0-alpha] - 2026-08-31
 
 ### Added — Synthétiseur vocal TMPI (Philips MEA 8000) : 2e carte vocale Oric

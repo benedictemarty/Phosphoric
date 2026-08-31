@@ -213,7 +213,7 @@ TOOL_OBJECTS = src/storage/tap.o src/utils/logging.o
 
 # Targets
 TARGET = oric1-emu$(EXE)
-TOOLS = bas2tap bin2tap tap2sedoric sedoric-info
+TOOLS = bas2tap bin2tap tap2sedoric sedoric-info tap2wav dsk2hfe
 
 # Install paths
 PREFIX ?= /usr/local
@@ -249,6 +249,12 @@ tap2sedoric: tools/tap2sedoric.c $(TOOL_OBJECTS) src/storage/sedoric.o
 
 sedoric-info: tools/sedoric_info.c
 	$(CC) $(CFLAGS) tools/sedoric_info.c $(LDFLAGS) -o sedoric-info
+
+tap2wav: tools/tap2wav.c
+	$(CC) $(CFLAGS) tools/tap2wav.c $(LDFLAGS) -o tap2wav
+
+dsk2hfe: tools/dsk2hfe.c
+	$(CC) $(CFLAGS) tools/dsk2hfe.c $(LDFLAGS) -o dsk2hfe
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

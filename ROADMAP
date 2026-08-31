@@ -43,6 +43,20 @@ Objectif : que les jeux vocaux (**Frelon**, **Cobra Pinball**) parlent.
 
 ---
 
+## Outils de conversion « magnétique » — LIVRÉ (v1.113.0-alpha)
+
+- [x] **`tap2wav`** : `.tap` ORIC → `.wav` audio cassette (mode standard),
+      rejouable sur l'entrée K7 d'une vraie machine. Encodage repris verbatim de
+      `cassette_encode_frame` (`src/io/cassette.c`). Validé round‑trip.
+- [x] **`dsk2hfe`** : `.dsk` MFM_DISK ORIC → image magnétique **HFE v1** (HxC/
+      Gotek‑FlashFloppy/Greaseweazle). MFM 16 cellules/octet, marques A1/C2 à
+      clock manquant, faces entrelacées, bits LSB. Validé round‑trip (17 IDAM).
+- [x] Doc `docs/TOOLS.md` (tous les outils de `make tools`).
+- [ ] (Optionnel) `dsk2hfe` : accepter aussi les `.dsk` plats/Sedoric (les
+      convertir en MFM_DISK à la volée) ; `wav2tap`/`hfe2dsk` (sens inverse).
+
+---
+
 ## Synthétiseur vocal TMPI (Philips MEA 8000) — LIVRÉ (v1.112.0-alpha)
 
 Branche `feature/mea8000-speech`. Extension **TMPI** (Techni-Musique et Parole

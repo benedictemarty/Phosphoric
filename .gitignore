@@ -24,6 +24,8 @@ bas2tap
 bin2tap
 tap2sedoric
 sedoric-info
+tap2wav
+dsk2hfe
 
 # Test binaries
 test_cpu
