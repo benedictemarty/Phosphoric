@@ -50,9 +50,14 @@ par l'analyse : le VIA est prouvé inhibé).
 - [x] **Écriture toujours fiable** (`write_enable_map=0xFFFFFFFF`) : plus avalée.
 - [x] **`peek()`** (observateur) = open-bus sans consommer.
 - [x] `test-loci-acia-miss` (+7, dispatch `io_bus` réel) ; `make tests` 942/942.
-- [ ] (backlog) Mode « fiable » `$AA` (RXSEQ `$0384`/RXACK `$0385`, seqlock+ACK,
-      RX non destructif) — spec `~/loci/extensions/acia-fiable-AA/`, hors périmètre
-      « à l'identique » (extension additive à prototyper ultérieurement).
+- [x] Mode « fiable » `$AA` — **LIVRÉ (EXPERIMENTAL, non mergé main)** : RXSEQ
+      `$0384`/RXACK `$0385`, seqlock + ACK par écriture, RX non destructif, opt-in
+      (OFF → 6551 strict). Spec `~/loci/extensions/acia-fiable-AA/`. Implémenté +
+      testé (`test-loci-acia-miss` **20/20**, e2e comparatif : `HELLO` intact en
+      mode fiable vs corrompu en 6551 standard sous ratés injectés). Branche
+      `experiment/loci-coproc-acia-reliable`, **PR #97 (draft)**, commits `fb8c4b4`
+      + `e0185b7` — **pas encore mergé dans `main`**, et validé Phosphoric, **pas sur
+      Oric silicium**.
 
 ---
 
