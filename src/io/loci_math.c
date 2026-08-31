@@ -37,6 +37,7 @@ enum {
     /* Transcendantes */
     MATH_FSQRT = 0x20, MATH_FSIN = 0x21, MATH_FCOS = 0x22, MATH_FTAN = 0x23,
     MATH_FATAN = 0x24, MATH_FLOG = 0x25, MATH_FEXP = 0x26, MATH_FPOW = 0x27,
+    MATH_FLOG10 = 0x28,   /* log base 10 (le LOG du BASIC Oric est en base 10) */
     /* Pont MBF ↔ IEEE754 */
     MATH_MBF_TO_IEEE = 0x30, MATH_IEEE_TO_MBF = 0x31,
 };
@@ -213,6 +214,7 @@ void op_math(loci_t* loci) {
         return;
     }
     case MATH_FLOG:  { float f; if (!pop_f32(loci,&f)){api_return_errno(loci,LOCI_EINVAL);return;} return_f32(loci, logf(f)); return; }
+    case MATH_FLOG10:{ float f; if (!pop_f32(loci,&f)){api_return_errno(loci,LOCI_EINVAL);return;} return_f32(loci, log10f(f)); return; }
     case MATH_FEXP:  { float f; if (!pop_f32(loci,&f)){api_return_errno(loci,LOCI_EINVAL);return;} return_f32(loci, expf(f)); return; }
     case MATH_FPOW:  { float b, a; if (!pop_f32(loci,&b)||!pop_f32(loci,&a)){api_return_errno(loci,LOCI_EINVAL);return;} return_f32(loci, powf(a, b)); return; }
     /* ── Pont MBF ↔ IEEE754 ───────────────────────────────────────────── */

@@ -24,7 +24,8 @@ multi-valeurs repoussées sur le xstack.
   renvoie `ENOSYS`, identique à un firmware non patché, détectable côté 6502).
 - Sous-codes **déterministes** implémentés : entiers `$00-$06` (mul/divmod 16/32,
   signés/non signés), flottant IEEE754 `$10-$16` (add/sub/mul/div/cmp/itof/ftoi),
-  transcendantes `$20-$27` (sqrt/sin/cos/tan/atan+atan2/log/exp/pow, via libm),
+  transcendantes `$20-$28` (sqrt/sin/cos/tan/atan+atan2/log/exp/pow/**log10**, libm ;
+  `$28` log10 pour le `LOG` du BASIC Oric qui est en base 10, pas naturel),
   pont **MBF 5 octets ↔ IEEE754** `$30-$31` (format BASIC Oric ; conversions pures,
   sans adresse ZP/FAC — le point ouvert spec §7.1 ne concerne que l'accélération
   BASIC). Div par zéro → `EINVAL` ; MBF d'un Inf/NaN/overflow → `ERANGE`.

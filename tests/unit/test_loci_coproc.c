@@ -126,6 +126,12 @@ TEST(t_fpow_flog_fexp) {
     begin(0x25); push_f32((float)M_E); L.regs[LOCI_REG_API_A]=0x25; ASSERT_TRUE(approx(call_f32(), 1.0f));
     PASS();
 }
+/* log base 10 ($28) : le LOG du BASIC Oric est en base 10 (LOG(2)=.30103). */
+TEST(t_flog10) {
+    begin(0x28); push_f32(2.0f); L.regs[LOCI_REG_API_A]=0x28; ASSERT_TRUE(approx(call_f32(), log10f(2.0f)));
+    begin(0x28); push_f32(1000.0f); L.regs[LOCI_REG_API_A]=0x28; ASSERT_TRUE(approx(call_f32(), 3.0f));
+    PASS();
+}
 TEST(t_fatan_vs_fatan2) {
     begin(0x24); push_f32(1.0f); L.regs[LOCI_REG_API_A]=0x24; ASSERT_TRUE(approx(call_f32(), atanf(1.0f)));       /* 1 arg */
     begin(0x24); push_f32(1.0f); push_f32(1.0f); L.regs[LOCI_REG_API_A]=0x24; ASSERT_TRUE(approx(call_f32(), atan2f(1.0f,1.0f))); /* 2 args */
@@ -205,7 +211,7 @@ int main(void) {
     RUN(t_mul_u16); RUN(t_mul_i16_negative); RUN(t_divmod_u16);
     RUN(t_divmod_u16_by_zero_errno); RUN(t_mul_u32); RUN(t_divmod_i32);
     RUN(t_fadd); RUN(t_fsub); RUN(t_fmul); RUN(t_fdiv); RUN(t_fcmp); RUN(t_itof_ftoi);
-    RUN(t_fsqrt); RUN(t_fsin_fcos); RUN(t_fpow_flog_fexp); RUN(t_fatan_vs_fatan2);
+    RUN(t_fsqrt); RUN(t_fsin_fcos); RUN(t_fpow_flog_fexp); RUN(t_flog10); RUN(t_fatan_vs_fatan2);
     RUN(t_ieee_to_mbf_one); RUN(t_mbf_to_ieee_one); RUN(t_mbf_roundtrip);
     RUN(t_ieee_to_mbf_golden_oric_rom);
     RUN(t_ieee_to_mbf_inf_errno);
