@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.115.0-alpha] - 2026-08-31
+
+### Added — Base de temps sous-cycle du bus d'extension (modèle PHI2) — Épic B, Phase 1
+
+Suite de la fidélité LOCI (v1.114.0) : le vrai raté `$0380` est une **course
+sous-cycle** (le MIA doit poser la donnée avant le front PHI2), invisible à la
+granularité du cycle entier qu'utilise Phosphoric. Découverte structurante :
+`cpu_tick()` avance déjà l'horloge **à chaque accès bus** (`cpu->cycles` exact) et
+un hook `on_cycle` existe — il ne manquait que la **phase intra-PHI2**. On la
+modélise, fondée sur `sys_clk = PHI2×30` (`cpu.c:158`).
+
+- **Nouveau module `include/io/bus_timing.h`** (header-only) : grille
+  `BUS_PHI2_SUBTICKS = 30`, instant de latch 6502 `BUS_LATCH_SUBTICK_DEFAULT = 27`,
+  prédicat `bus_serve_wins_race(valid, latch)` = « donnée valide ≤ latch → lecture
+  propre, sinon open-bus ». Les périphériques **on-board** (RAM/ROM/VIA/ULA) sont
+  valides tôt (`valid=0`) → gagnent toujours → **coût nul pour l'existant** (couche
+  globale mais non routée pour eux).
+- **Client LOCI — deux modèles exclusifs de fiabilité du serve MIA** (`loci_t` +
+  `loci_mia_io_reliable`) : **WINDOW** (défaut, historique : fiable ssi
+  `tior ∈ [lo,hi]`, la calibration par carte d'`adj_scan`) et **PHASE** (opt-in,
+  physiquement fondé : le serve arrive à `tior + serve_subticks`, propre ssi
+  `≤ latch_subtick`). Le modèle PHASE rend explicites le **budget de serve** (≈ le
+  build : `-Os` ~26 cyc, `-O2` ~36) et l'indépendance à la fréquence PHI2. À
+  `latch=27` : `serve=26 → propre`, `serve=36 → raté` → **reproduit exactement le
+  rapport de bug** (le rebuild `-Os` corrige `$0380`). `loci_set_serve_timing()`
+  bascule sur PHASE, `loci_set_mia_window()` sur WINDOW.
+- **CLI `--loci-serve-timing SERVE[,LATCH]`** (subticks PHI2×30) active le modèle
+  PHASE (défaut LATCH=27). `--loci-mia-window` reste le modèle WINDOW.
+- **Défaut inchangé** : au reset le modèle est WINDOW `[0,31]` → tout tior fiable →
+  **iso-comportement** (aucun test/jeu LOCI existant affecté ; les champs de timing
+  ne sont pas sérialisés, comme `mia_tior`).
+- Doc `docs/architecture/phi2-bus-timing.md` (modèle + feuille de route épic B :
+  Phase 2 autres périphériques d'extension + jitter, Phase 3 horodatage sous-cycle
+  CPU, Phase 4 calibration matérielle).
+
+Tests `test-loci-acia-miss` **+3** (7→10) : course PHASE `tior+serve` vs latch ;
+reproduction `-Os`/`-O2` ; prédicat `bus_serve_wins_race`. `make clean && make
+tests` **945/945** (942→945, 0 régression), builds SDL2=0 & SDL2=1 OK.
+EMU_VERSION → 1.115.0-alpha.
+
+## [1.114.0-alpha] - 2026-08-31
+
+### Changed — Reproduction fidèle de la course PHI2 du LOCI sur l'ACIA `$0380` (picowifi)
+
+Le modèle « picowifi-over-LOCI » de `io_bus.c` capturait le *symptôme fonctionnel*
+(lecture `$0380` corrompue quand la fenêtre `tior` du MIA est mal réglée) mais
+s'écartait du matériel sur trois points, révélés par l'analyse du firmware
+`sodiumlb/loci-firmware` + du schéma LOCI 1.3
+(`~/loci/extensions/analyse/read-serve-et-inhibition-via.md`). Le vrai LOCI sert
+l'octet par une **course entre deux fronts PHI2 montants** : le MIA (RP2040, PIO
+core1 + serve logiciel lent) doit poser la donnée sur le data bus **avant** le
+front ; `tior` hors fenêtre → course perdue.
+
+- **Valeur de raté = OPEN-BUS, plus le VIA ni `0xFF`.** Le VIA est décodé-inhibé
+  **symétriquement** sur tout `$03x0-$03xF` (`IO_CONTROL = IO·(A4+A5+A6+A7)`,
+  prouvé par netlist + 3 annotations du concepteur). Course perdue ⇒ **rien ne
+  pilote le bus** ⇒ le 6502 latche l'**open-bus** (dernier octet piloté), pas le
+  VIA (le `$36`/`$76` du rapport de bug était un bus flottant, pas le VIA). Ajout
+  d'un latch open-bus dans `memory.c` (`memory_open_bus()` / `last_bus_value`,
+  posé sur chaque lecture via `mem_notify`).
+- **Lecture DATA ratée = DESTRUCTIVE côté LOCI (octet perdu).** Le serve exécute
+  `acia_read()` « en aveugle » (il consomme l'octet RX) pendant que le 6502 ne
+  latche que du bus flottant → **octet perdu, non relisable**. C'est le mécanisme
+  exact du « modem injoignable ». `acia_dev_read` consomme donc l'octet DATA sur
+  un raté puis renvoie l'open-bus ; STAT/CMD/CTRL restent **idempotents** (open-bus
+  ce tour-ci, registre relisible au suivant, comme le polling disque/MIA). D'où
+  **disque OK / modem KO sous la même marge** — sans modèle probabiliste : c'est
+  la nature destructive-vs-idempotente qui crée l'asymétrie.
+- **Écriture toujours fiable.** L'écriture avait tort d'être « avalée » en course
+  perdue ; sur le vrai LOCI `write_enable_map = 0xFFFFFFFF` → une écriture
+  `$0380-$0383` **atteint toujours** l'ACIA. `acia_dev_write` écrit désormais
+  inconditionnellement.
+- **`peek()` (observateur : débogueur/moniteur/déporté)** renvoie l'open-bus
+  **sans consommer** (il ne participe pas à la course PHI2 du 6502).
+
+Nouveau test `test-loci-acia-miss` (**+7**, dispatch `io_bus` réel via
+`io_bus_find`) : `$0380` revendiqué par l'ACIA ; DATA raté = open-bus + octet
+perdu (RDRF retombe) ; STATUS raté = open-bus idempotent (octet préservé) ;
+écriture toujours livrée ; `peek` open-bus non destructif ; fenêtre fiable =
+6551 strictement inchangé ; sans LOCI, aucune course. `make clean && make tests`
+**942/942** (935→942, 0 régression), builds SDL2=0 & SDL2=1 OK.
+EMU_VERSION → 1.114.0-alpha.
+
 ## [1.113.0-alpha] - 2026-08-31
 
 ### Added — Outils de conversion « magnétique » : `tap2wav` et `dsk2hfe`

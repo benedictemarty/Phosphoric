@@ -147,6 +147,10 @@ void cli_print_usage(const char* program_name) {
     printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
     printf("                             is outside it (reproduces real-HW modem block;\n");
     printf("                             software tunes via MAP_TUNE_TIOR / ADJ_SCAN)\n");
+    printf("      --loci-serve-timing SERVE[,LATCH]  Sub-cycle PHI2 race model (PHI2x30):\n");
+    printf("                             MIA read is clean iff tior+SERVE <= LATCH (default\n");
+    printf("                             LATCH=27). Short serve (-Os ~26) works, long\n");
+    printf("                             (-O2 ~36) misses (models the read-serve bug report)\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n");
     printf("                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");

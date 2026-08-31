@@ -91,6 +91,12 @@ typedef struct memory_s {
     uint8_t stuck0;   /* bits forced to 0 */
     uint8_t stuck1;   /* bits forced to 1 */
 
+    /* Open-bus latch : dernier octet effectivement piloté sur le data bus lors
+     * d'une lecture (fetch d'instruction, opérande, lecture mémoire). Sur un vrai
+     * 6502 un accès non piloté (aucun périphérique ne pose la donnée à temps)
+     * latche ce résidu de bus, pas une valeur fixe. Sert à modéliser la course
+     * PHI2 perdue du LOCI à $0380 (VIA inhibé → bus flottant). Voir io_bus.c. */
+    uint8_t last_bus_value;
 
 } memory_t;
 
@@ -220,6 +226,11 @@ void memory_set_trace2(memory_t* mem,
 /** @brief Set RAM stuck-bit masks (Epic 6/US6). stuck0 = bits forced to 0,
  *  stuck1 = bits forced to 1, applied to $0000-$BFFF reads. 0,0 = disabled. */
 void memory_set_stuck_bits(memory_t* mem, uint8_t stuck0, uint8_t stuck1);
+
+/** @brief Dernier octet piloté sur le data bus (open-bus). Renvoie la valeur
+ *  qu'un accès non servi latcherait sur un vrai 6502. Utilisé pour modéliser la
+ *  course PHI2 perdue du LOCI ($0380, VIA inhibé). */
+uint8_t memory_open_bus(const memory_t* mem);
 
 /**
  * @brief Clear all RAM

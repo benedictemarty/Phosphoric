@@ -33,6 +33,7 @@
 #endif
 
 #include "emulator.h"
+#include "io/bus_timing.h"
 #include "rom_patches.h"
 #include "io/keyboard.h"
 #include "cpu/cpu6502.h"
@@ -2385,6 +2386,7 @@ int main(int argc, char* argv[]) {
     const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
     const char* loci_web_base = NULL;  /* Route B : racine serveur pour le device « W: Web disks » */
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
+    int loci_serve_subticks = -1, loci_latch_subtick = -1;  /* -1 = phase model off */
     int64_t trace_max = 0;
     int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
     const char* profile_file = NULL;
@@ -2603,6 +2605,22 @@ int main(int argc, char* argv[]) {
                     loci_mia_win_hi = hi;
                 } else {
                     log_error("--loci-mia-window: expected LO-HI (e.g. 12-18)");
+                    return 1;
+                }
+                break;
+            }
+            case OPT_LOCI_SERVE_TIMING: {
+                /* Modèle de course PHI2 sous-cycle (bus_timing.h, épic B) :
+                 * "SERVE[,LATCH]" en subticks PHI2×30. Le serve arrive à
+                 * (tior + SERVE) ; propre ssi ≤ LATCH (défaut 27). SERVE court
+                 * (build -Os ≈ 26) passe, long (-O2 ≈ 36) rate. */
+                int serve = 0, latch = BUS_LATCH_SUBTICK_DEFAULT;
+                int n = sscanf(optarg, "%d,%d", &serve, &latch);
+                if (n >= 1 && serve >= 0) {
+                    loci_serve_subticks = serve;
+                    loci_latch_subtick = (n == 2) ? latch : BUS_LATCH_SUBTICK_DEFAULT;
+                } else {
+                    log_error("--loci-serve-timing: expected SERVE[,LATCH] (e.g. 26,27)");
                     return 1;
                 }
                 break;
@@ -3082,6 +3100,15 @@ int main(int argc, char* argv[]) {
             log_info("LOCI MIA reliable tior window: %d-%d (picowifi ACIA $0380 "
                      "corrupted outside it; tune via MAP_TUNE_TIOR / ADJ_SCAN)",
                      emu.loci.mia_tior_lo, emu.loci.mia_tior_hi);
+        }
+        if (loci_serve_subticks >= 0) {
+            /* Modèle de course PHI2 sous-cycle (épic B) — remplace la fenêtre. */
+            loci_set_serve_timing(&emu.loci, (uint8_t)loci_serve_subticks,
+                                  (uint8_t)loci_latch_subtick);
+            log_info("LOCI MIA phase model: serve=%d latch=%d subticks (PHI2x%d) — "
+                     "picowifi $0380 propre ssi tior+serve<=latch",
+                     emu.loci.mia_serve_subticks, emu.loci.mia_latch_subtick,
+                     BUS_PHI2_SUBTICKS);
         }
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);

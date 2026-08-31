@@ -194,3 +194,4 @@ test_ula_ng
 
 # US1 : binaire de distribution strippé
 oric1-emu-release
+test_loci_acia_miss

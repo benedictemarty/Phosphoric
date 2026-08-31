@@ -21,6 +21,7 @@
 #include "io/loci.h"
 #include "io/loci_internal.h"
 #include "io/loci_sdimg.h"
+#include "io/bus_timing.h"
 #include "utils/logging.h"
 
 #include <string.h>
@@ -118,6 +119,12 @@ bool loci_init(loci_t* loci) {
     loci->mia_tadr = 0;
     loci->mia_tior_lo = 0;
     loci->mia_tior_hi = 31;
+    /* Épic B / Phase 1 : modèle de course PHI2. Défaut WINDOW [0,31] = tout tior
+     * fiable → iso-comportement. Paramètres PHASE pré-réglés « fits » (serve tôt,
+     * latch défaut) pour rester fiable si on bascule sans calibrer. */
+    loci->mia_timing_model = LOCI_TIMING_WINDOW;
+    loci->mia_serve_subticks = 0;
+    loci->mia_latch_subtick = BUS_LATCH_SUBTICK_DEFAULT;
     loci->dir_dev = -1;    /* device-list iterator closed */
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);

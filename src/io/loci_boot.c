@@ -8,6 +8,7 @@
 
 #include "io/loci.h"
 #include "io/loci_internal.h"
+#include "io/bus_timing.h"
 #include "utils/logging.h"
 
 #include <string.h>
@@ -117,6 +118,13 @@ static void op_map_tune_store(loci_t* loci, const char* name, uint8_t* field) {
 }
 
 bool loci_mia_io_reliable(const loci_t* loci) {
+    if (loci->mia_timing_model == LOCI_TIMING_PHASE) {
+        /* Course PHI2 sous-cycle : le serve arrive au subtick (tior + serve) ;
+         * propre ssi il gagne le latch 6502 (bus_timing.h). */
+        uint16_t valid = (uint16_t)loci->mia_tior + loci->mia_serve_subticks;
+        return bus_serve_wins_race(valid, loci->mia_latch_subtick);
+    }
+    /* WINDOW (défaut) : calibration par carte, fiable ssi tior ∈ [lo,hi]. */
     return loci->mia_tior >= loci->mia_tior_lo && loci->mia_tior <= loci->mia_tior_hi;
 }
 
@@ -126,6 +134,13 @@ void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi) {
     if (lo > hi) { uint8_t t = lo; lo = hi; hi = t; }
     loci->mia_tior_lo = lo;
     loci->mia_tior_hi = hi;
+    loci->mia_timing_model = LOCI_TIMING_WINDOW;
+}
+
+void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_subtick) {
+    loci->mia_serve_subticks = serve_subticks;
+    loci->mia_latch_subtick = latch_subtick ? latch_subtick : BUS_LATCH_SUBTICK_DEFAULT;
+    loci->mia_timing_model = LOCI_TIMING_PHASE;
 }
 
 void op_adj_scan(loci_t* loci) {
