@@ -56,10 +56,11 @@ sans lui, ACIA strictement 6551 (RX destructif standard).
   sur `RXACK == RXSEQ` (canal d'écriture fiable). Combiné à la course PHI2
   (v1.114-116), un raté de lecture renvoie l'open-bus **sans perdre l'octet** →
   rattrapé par relecture. `peek` observateur ne fait pas avancer la séquence.
-- Tests `test-loci-acia-miss` **+5** (13→18) : DATA non destructif + conso
+- Tests `test-loci-acia-miss` **+7** (13→20) : DATA non destructif + conso
   ACK-gated, seqlock multi-octets dans l'ordre, **survie à un raté de lecture**,
   **zéro perte de bout en bout avec 1 tour/2 en course perdue**, registres inertes
-  hors mode. `make tests` **1064** (0 régression), SDL2=0 & SDL2=1 OK.
+  hors mode, **+ e2e comparatif « HELLO »** (6551 standard corrompt le `'E'` en
+  octet parasite du bus / mode fiable rend `HELLO` intact). SDL2=0 & SDL2=1 OK.
 
 ## [1.116.0-alpha] - 2026-08-31
 

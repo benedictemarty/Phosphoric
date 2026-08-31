@@ -409,6 +409,46 @@ TEST(test_reliable_off_registers_inert) {
     PASS();
 }
 
+/* ── e2e comparatif « HELLO » : standard corrompt sous ratés, fiable intact ── */
+
+/* 6551 STANDARD (RX destructif) : un raté sur l'octet 'E' le perd → l'open-bus le
+ * remplace. La chaîne reçue est corrompue (H·<parasite>·L·L·O ≠ HELLO). */
+TEST(test_standard_corrupts_hello_under_miss) {
+    setup();                                  /* mode fiable OFF (6551 nu) */
+    const char* H = "HELLO";
+    for (int i = 0; i < 5; i++) inject_rx((uint8_t)H[i]);
+    uint8_t got[8]; int n = 0;
+    for (int i = 0; i < 5; i++) {
+        set_reliable(i != 1);                 /* course perdue sur l'octet index 1 ('E') */
+        g_emu->memory.last_bus_value = 0xEE;  /* open-bus distinctif */
+        got[n++] = bus_read(0x0380);          /* lecture destructive (pilote naïf) */
+    }
+    ASSERT_EQ(got[1], 0xEE);                  /* 'E' perdu → bus flottant */
+    ASSERT_FALSE(got[0]=='H' && got[1]=='E' && got[2]=='L' && got[3]=='L' && got[4]=='O');
+    teardown();
+    PASS();
+}
+
+/* Mode FIABLE $AA : mêmes ratés (1 tour/2), seqlock + ACK → HELLO reçu INTACT. */
+TEST(test_reliable_hello_intact_under_misses) {
+    setup();
+    loci_set_acia_reliable(&g_emu->loci, true);
+    const char* H = "HELLO";
+    for (int i = 0; i < 5; i++) inject_rx((uint8_t)H[i]);
+    uint8_t got[8]; int n = 0, tick = 0;
+    while (n < 5 && tick < 400) {
+        set_reliable((tick % 2) == 0);        /* 1 tour sur 2 en course perdue */
+        g_emu->memory.last_bus_value = 0xEE;
+        uint8_t b; int r = rx_recv_reliable(&b);
+        if (r == 1 && b != 0xEE) got[n++] = b;
+        tick++;
+    }
+    ASSERT_EQ(n, 5);
+    ASSERT_TRUE(got[0]=='H' && got[1]=='E' && got[2]=='L' && got[3]=='L' && got[4]=='O');
+    teardown();
+    PASS();
+}
+
 int main(void) {
     printf("\n=== LOCI ACIA $0380 — course PHI2 (picowifi) ===\n");
     RUN(test_acia_claims_0380);
@@ -429,6 +469,8 @@ int main(void) {
     RUN(test_reliable_survives_read_miss);
     RUN(test_reliable_zero_loss_under_misses);
     RUN(test_reliable_off_registers_inert);
+    RUN(test_standard_corrupts_hello_under_miss);
+    RUN(test_reliable_hello_intact_under_misses);
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
 }
