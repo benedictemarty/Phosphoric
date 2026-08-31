@@ -116,6 +116,11 @@ void audio_pause(bool pause);
 struct sp0256_s;
 void audio_set_sp0256(struct sp0256_s* sp);
 
+/* Optional MEA8000 (TMPI) formant speech synth, mixed into the PSG stream by the
+ * GUI audio callback (headless mixing is done inline in main.c). NULL disables. */
+struct mea8000_s;
+void audio_set_mea8000(struct mea8000_s* m);
+
 /* AVI audio tap (GUI muxing). In GUI the SDL audio callback owns the PSG
  * generator, so --video capture cannot re-run ay_generate on the main thread.
  * Instead the callback copies its PCM into a thread-safe ring FIFO which the

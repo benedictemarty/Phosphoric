@@ -30,6 +30,7 @@
 #include "io/microdisc.h"
 #include "io/jasmin.h"
 #include "io/sp0256.h"
+#include "io/mea8000.h"
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
 #include "io/dtl2000.h"
@@ -44,7 +45,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.111.0-alpha"
+#define EMU_VERSION "1.112.0-alpha"
 
 /**
  * @brief ORIC machine model
@@ -190,6 +191,12 @@ typedef struct emulator_s {
      * Output mixed into the PSG audio; mutually exclusive with a $03F1 conflict. */
     sp0256_t sp0256;
     bool has_sp0256;
+
+    /* MEA8000 TMPI "Synthétiseur Vocal" — Philips formant speech at $03F0/$03F1.
+     * No speech ROM (host streams frames); mixed into the PSG audio. Mutually
+     * exclusive with the SP0256 ($03F1 overlap). */
+    mea8000_t mea8000;
+    bool has_mea8000;
 
     /* Tape buffer for ROM patching (CLOAD support) */
     uint8_t* tapebuf;       /* TAP file data loaded in memory */

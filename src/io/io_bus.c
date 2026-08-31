@@ -147,6 +147,21 @@ static bool sp0256_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
+/* MEA8000 TMPI "Synthétiseur Vocal" (Philips formant) : data à base_addr,
+ * commande à base_addr+1 (défaut $03F0/$03F1). Exclusif du SP0256 ($03F1). */
+static bool mea8000_dev_claims(emulator_t* emu, uint16_t addr) {
+    return emu->has_mea8000 &&
+           (addr == emu->mea8000.base_addr ||
+            addr == (uint16_t)(emu->mea8000.base_addr + 1));
+}
+static uint8_t mea8000_dev_read(emulator_t* emu, uint16_t addr) {
+    return mea8000_read(&emu->mea8000, addr);
+}
+static bool mea8000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    mea8000_write(&emu->mea8000, addr, value);
+    return true;
+}
+
 /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
 static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
@@ -212,6 +227,7 @@ static const io_device_t io_bus[] = {
     { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },
     { "jasmin",    jasmin_dev_claims,    jasmin_dev_read,    jasmin_dev_write,    NULL, NULL, NULL, NULL },
     { "sp0256",    sp0256_dev_claims,    sp0256_dev_read,    sp0256_dev_write,    NULL, NULL, NULL, NULL },
+    { "mea8000",   mea8000_dev_claims,   mea8000_dev_read,   mea8000_dev_write,   NULL, NULL, NULL, NULL },
     { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL,
       "DTL\0",     dtl2000_dev_save,     dtl2000_dev_load },
     /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
@@ -263,4 +279,5 @@ void io_bus_tick(emulator_t* emu, int cycles) {
     if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
     if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
     if (emu->has_sp0256)  sp0256_tick(&emu->sp0256, cycles);
+    if (emu->has_mea8000) mea8000_tick(&emu->mea8000, cycles);
 }

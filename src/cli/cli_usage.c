@@ -33,6 +33,10 @@ void cli_print_usage(const char* program_name) {
     printf("                             loads the 2 KB allophone ROM (sp0256-al2.bin). Speech is\n");
     printf("                             mixed into the PSG audio (Frelon, Cobra Pinball, …).\n");
     printf("      --sp0256-addr ADDR     SP0256 I/O address in hex (default 03F1)\n");
+    printf("      --mea8000              Enable the TMPI speech synth (Philips MEA 8000 formant\n");
+    printf("                             chip at $03FE/$03FF). No ROM (host streams frames);\n");
+    printf("                             speech mixed into the PSG. Exclusive with --sp0256-rom.\n");
+    printf("      --mea8000-addr ADDR    MEA8000 base I/O address in hex (default 03FE)\n");
     printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
     printf("                             (overwrites in place; only drives actually written are saved)\n");
     printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");

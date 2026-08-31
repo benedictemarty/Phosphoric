@@ -8,6 +8,7 @@
 
 #include "audio/audio.h"
 #include "io/sp0256.h"
+#include "io/mea8000.h"
 #include "network/cast_server.h"
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,13 @@ static sp0256_t* sp0256_ref = NULL;
 
 void audio_set_sp0256(struct sp0256_s* sp) {
     sp0256_ref = sp;
+}
+
+/* Optional MEA8000 (TMPI) speech synth mixed into the PSG stream. */
+static mea8000_t* mea8000_ref = NULL;
+
+void audio_set_mea8000(struct mea8000_s* m) {
+    mea8000_ref = m;
 }
 
 #ifdef HAS_SDL2
@@ -78,6 +86,23 @@ static void audio_callback(void* userdata, uint8_t* stream, int len) {
                 int idx = (done + i) * 2;
                 buf[idx]     = (int16_t)((buf[idx]     + sbuf[i]) / 2);
                 buf[idx + 1] = (int16_t)((buf[idx + 1] + sbuf[i]) / 2);
+            }
+            done += chunk;
+        }
+    }
+
+    /* Mix in the MEA8000 (TMPI) speech synth (mono → both channels), if active. */
+    if (mea8000_ref) {
+        int16_t mbuf[512];
+        int done = 0;
+        while (done < num_samples) {
+            int chunk = num_samples - done;
+            if (chunk > (int)(sizeof(mbuf) / sizeof(mbuf[0]))) chunk = 512;
+            mea8000_generate(mea8000_ref, mbuf, chunk);
+            for (int i = 0; i < chunk; i++) {
+                int idx = (done + i) * 2;
+                buf[idx]     = (int16_t)((buf[idx]     + mbuf[i]) / 2);
+                buf[idx + 1] = (int16_t)((buf[idx + 1] + mbuf[i]) / 2);
             }
             done += chunk;
         }

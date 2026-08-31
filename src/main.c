@@ -1293,6 +1293,15 @@ static void emulator_run(emulator_t* emu) {
                     wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + sbuf[i]) / 2);
                 }
             }
+            /* Mix in the MEA8000 (TMPI) speech synth, if active. */
+            if (emu->has_mea8000) {
+                int16_t mbuf[WAV_FRAME_SAMPLES];
+                mea8000_generate(&emu->mea8000, mbuf, WAV_FRAME_SAMPLES);
+                for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
+                    wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + mbuf[i]) / 2);
+                    wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + mbuf[i]) / 2);
+                }
+            }
             if (emu->audio_wav_fp) {
                 fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
                 emu->audio_wav_data_bytes +=
@@ -2329,6 +2338,8 @@ int main(int argc, char* argv[]) {
     const char* jasmin_rom_file = NULL;  /* --jasmin-rom : Jasmin boot ROM (2 KB) */
     const char* sp0256_rom_file = NULL;  /* --sp0256-rom : SP0256-AL2 ROM (2 KB) */
     uint16_t    sp0256_base_addr = SP0256_BASE_DEFAULT;  /* --sp0256-addr (hex) */
+    bool        mea8000_enabled = false;                 /* --mea8000 (TMPI, no ROM) */
+    uint16_t    mea8000_base_addr = MEA8000_BASE_DEFAULT; /* --mea8000-addr (hex)   */
     bool debug_mode = false;
     const char* debug_break_addr = NULL;
     bool cast_server_enabled = false;
@@ -2459,6 +2470,8 @@ int main(int argc, char* argv[]) {
             case OPT_JASMIN_ROM: jasmin_rom_file = optarg; break;
             case OPT_SP0256_ROM: sp0256_rom_file = optarg; break;
             case OPT_SP0256_ADDR: sp0256_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
+            case OPT_MEA8000: mea8000_enabled = true; break;
+            case OPT_MEA8000_ADDR: mea8000_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
             case 'b': emu.breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
             case 'D': debug_mode = true; break;
             case OPT_DEBUG_BREAK: debug_break_addr = optarg; break;
@@ -3626,6 +3639,33 @@ int main(int argc, char* argv[]) {
         audio_set_sp0256(&emu.sp0256);   /* mix speech into the GUI audio callback */
         log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
                  sp0256_base_addr);
+    }
+
+    /* MEA8000 TMPI "Synthétiseur Vocal" (--mea8000): Philips/Signetics formant
+     * speech chip at $03FE/$03FF (TMPI card, confirmed in-game via SYNTHOR;
+     * configurable). No ROM — the host streams frame parameters. Output mixed
+     * into the PSG. Mutually exclusive with the SP0256 speech card. */
+    if (mea8000_enabled) {
+        if (emu.has_sp0256) {
+            log_error("--mea8000 and --sp0256-rom are mutually exclusive "
+                      "(both are speech cards)");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        /* Default $03FE/$03FF overlaps the Mageco MIDI interface ($03FE-$03FF).
+         * Relocate one of them (--mea8000-addr / --mageco-addr) to coexist. */
+        if (emu.has_mageco && mea8000_base_addr >= 0x03FE) {
+            log_error("--mea8000 (default $03FE/$03FF) overlaps the Mageco MIDI "
+                      "interface — relocate with --mea8000-addr or --mageco-addr");
+            emulator_cleanup(&emu);
+            return 1;
+        }
+        mea8000_init(&emu.mea8000, mea8000_base_addr);
+        emu.mea8000.emu = &emu;
+        emu.has_mea8000 = true;
+        audio_set_mea8000(&emu.mea8000);
+        log_info("MEA8000 TMPI speech synthesizer enabled at $%04X/$%04X (formant, no ROM)",
+                 mea8000_base_addr, (uint16_t)(mea8000_base_addr + 1));
     }
 
     /* Load disks with Microdisc controller. A Microdisc ROM on its own is

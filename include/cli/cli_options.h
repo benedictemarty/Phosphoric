@@ -41,7 +41,8 @@ enum {
     OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE,
     OPT_DISK_WEB, OPT_LOCI_WEB, OPT_LOCI_WEB_BASE, OPT_JASMIN_ROM,
     OPT_SERIAL_TCP_BACKPRESSURE, OPT_LOCI_IRQ_LATENCY,
-    OPT_SP0256_ROM, OPT_SP0256_ADDR
+    OPT_SP0256_ROM, OPT_SP0256_ADDR,
+    OPT_MEA8000, OPT_MEA8000_ADDR
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -90,6 +91,8 @@ static const struct option long_options[] = {
     {"jasmin-rom",          required_argument, 0, OPT_JASMIN_ROM},
     {"sp0256-rom",          required_argument, 0, OPT_SP0256_ROM},
     {"sp0256-addr",         required_argument, 0, OPT_SP0256_ADDR},
+    {"mea8000",             no_argument,       0, OPT_MEA8000},
+    {"mea8000-addr",        required_argument, 0, OPT_MEA8000_ADDR},
     {"breakpoint",          required_argument, 0, 'b'},
     {"debug",               no_argument,       0, 'D'},
     {"break",               required_argument, 0, OPT_DEBUG_BREAK},

@@ -39,13 +39,35 @@ Objectif : que les jeux vocaux (**Frelon**, **Cobra Pinball**) parlent.
       capturé (`--audio-wav`) montrant une fenêtre de parole active (t≈9,4 s+).
       (Le turbo-loader cassette bloque le chargement `.tap` dans l'émulateur ; la
       version `.dsk` Sedoric autoboote — c'est elle qui a servi.)
-- [ ] (Optionnel) 2ᵉ carte **TMPI MEA8000** (TMPI = Techni-Music / Parole
-      Informatique ; phonèmes français, `$03F0/$03F1`, sans ROM — datasheet
-      complète, logiciels VOCA1/FR + PHON, test « BONJOUR » auto-contenu).
-      Source : Internet Archive « VOCA 1/FR … synthétiseur vocal TMPI … MEA8000 »
-      (crédit « TECHNI-MUSIC et PAROLE INFORMATIQUE »). NB : le plan manuscrit
-      fourni est légendé « MAGECO 19/11/84 » — probable board proto distinct ;
-      le SP0256 (Frelon), lui, reste bien **Mageco**.
+- [x] **2ᵉ carte vocale LIVRÉE : TMPI MEA8000** (v1.112.0) — voir section dédiée.
+
+---
+
+## Synthétiseur vocal TMPI (Philips MEA 8000) — LIVRÉ (v1.112.0-alpha)
+
+Branche `feature/mea8000-speech`. Extension **TMPI** (Techni-Musique et Parole
+Informatique) autour du **MEA 8000** (synthèse par **formants**, **sans ROM** —
+l'hôte diffuse les trames). 2ᵉ standard vocal Oric après le SP0256/Mageco.
+- [x] Device `src/io/mea8000.{c,h}` **porté fidèlement de MAME `sound/mea8000.cpp`**
+      (BSD-3-Clause, © Antoine Miné 2006 ; attribution conservée ; chemin uint16) :
+      tables de quantification, cascade de 4 filtres formants 2ᵉ ordre
+      freq/bande interpolés, décodeur de trame, séquenceur d'états.
+- [x] Interface 2 registres A0 : `$03FE` (data) / `$03FF` (commande) ; statut
+      bit 7 = prêt (poignée POKE/PEEK). Cadencé `mea8000_tick()` en temps CPU.
+- [x] Synthèse 8 kHz interne ×8 = 64 kHz → rééch. 44,1 kHz, **mixée au PSG**
+      (GUI + headless). Aucune ROM (`--mea8000`, pas de fichier).
+- [x] CLI `--mea8000` + `--mea8000-addr` ; gardes d'exclusion (SP0256, Mageco MIDI).
+- [x] Tests `test-mea8000` (+12, déterministe : état, statut, synthèse, BONJOUR).
+- [x] **VALIDÉ IN-GAME (SYNTHOR, démo officielle TMPI)** : fast-load + menu piloté
+      par `--type-keys-when 'BD13:32:2'` → « DÉMONSTRATION DE CHANT PAR PHONÈMES »
+      écrit **211× à `$03FE/$03FF`** (1ʳᵉ commande `$1A` = init power-on datasheet),
+      mon device produit **~20 s de chant formant articulé** (RMS 1855→4537).
+- [x] **Adresse réelle `$03FE/$03FF` révélée par SYNTHOR** — le `$03F0` du plan
+      manuscrit « MAGECO 19/11/84 » était un proto distinct/trompeur ; défaut corrigé.
+- Sources fabricant : CEO-Mag, Théoric n°26, Internet Archive VOCA1/FR
+      (« TECHNI-MUSIC et PAROLE INFORMATIQUE »), MAME header mea8000.cpp.
+- [ ] (Optionnel) charger d'autres logiciels TMPI (VOCA1/FR, PHON) ; caler la
+      version disque si dispo.
 
 ---
 

@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.112.0-alpha] - 2026-08-31
+
+### Added — Synthétiseur vocal TMPI (Philips MEA 8000) : 2e carte vocale Oric
+
+- **Matériel** : extension vocale **TMPI** (*Techni-Musique et Parole
+  Informatique*) pour l'ORIC, bâtie autour du **Philips/Signetics MEA 8000**
+  (synthèse **par formants**, PAS d'allophones). Attesté par CEO-Mag, Théoric
+  n°26 et l'Internet Archive (VOCA1/FR). Contrairement au SP0256 (carte Mageco),
+  le MEA 8000 **n'a AUCUNE ROM de parole** : l'hôte diffuse les paramètres de
+  trame et la puce les synthétise → aucun fichier ROM requis.
+- **Nouveau device** `src/io/mea8000.{c,h}` : cœur de synthèse (tables de
+  quantification, cascade de **4 filtres formants** du 2e ordre à fréquence/bande
+  programmables + interpolées sur la trame, décodeur de trame, séquenceur
+  d'états STOPPED/WAIT_FIRST/STARTED/SLOWING) **porté fidèlement** de MAME
+  `src/devices/sound/mea8000.cpp` — licence **BSD-3-Clause** (© Antoine Miné
+  2006), permissive, **attribution conservée** ; chemin entier (uint16) porté.
+- **Interface** (2 registres A0, `$03FE/$03FF` par défaut, `--mea8000-addr`) :
+  écriture `$03FE` = DONNÉES (1er octet = pitch initial, puis trames de 4 octets),
+  écriture `$03FF` = COMMANDE (bit4 STOP, bit3→2 CONT/répète, bit1→0 ROE) ;
+  lecture `$03FE/$03FF` = STATUT (bit 7 = prêt). Le pilote scrute ce bit (POKE
+  l'octet, PEEK jusqu'à D7=1). **Adresse `$03FE/$03FF` CONFIRMÉE in-game** (SYNTHOR,
+  ci-dessous) ; le `$03F0/$03F1` du plan proto MAGECO était trompeur.
+- **Synthèse** : source dent-de-scie (voisé) ou bruit (non voisé) → gain → 4
+  résonateurs formants cascadés ; interne 8 kHz (3,84 MHz/480), **suréchantillonné
+  ×8 à 64 kHz**, puis **rééchantillonné → 44100 Hz et mixé au PSG** (GUI +
+  headless). Cadencé par `mea8000_tick()` au fil des cycles CPU → le statut avance
+  en temps CPU (poignée de main POKE/PEEK sans blocage).
+- **CLI** `--mea8000` (active, **sans ROM**) + `--mea8000-addr XXXX`. Device câblé
+  sur `io_bus[]` + tick. **Gardes d'exclusion** : avec `--sp0256-rom` (autre carte
+  vocale) et avec `--mageco` MIDI (chevauchement `$03FE/$03FF`).
+- **Tests** (`tests/unit/test_mea8000.c`, cible `test-mea8000`, **+12**) : défauts
+  init/reset, statut prêt, machine à états (pitch→WAIT_FIRST, 4 octets→STARTED,
+  STOP), bascule prêt/occupé du tampon, débordement sûr, silence au repos, et
+  **synthèse** d'une trame voisée (audio formant audible puis slow-stop → idle) +
+  la séquence « BONJOUR » du board. Déterministe (table de bruit à graine fixe).
+- **Validé (synthèse isolée)** : trame voisée → sortie formant à enveloppe
+  décroissante réaliste (peak ~31000 puis fade sur ~4 trames) ; retour propre à
+  l'idle.
+- **Validé (in-game, SYNTHOR)** : le programme BASIC **SYNTHOR** (démo officielle
+  TMPI, écran-titre « SYNTHETISEUR VOCAL TECHNI-MUSIQUE ») — chargé par fast-load,
+  menu piloté par `--type-keys-when`, option « 2 DÉMONSTRATION DE CHANT PAR
+  PHONÈMES » — écrit **211 fois à `$03FE`/`$03FF`** (data/commande, 1ʳᵉ commande
+  `$1A` = init power-on MEA8000 de la datasheet), et mon device produit **~20 s de
+  chant formant articulé** (RMS 1855→4537, pics à 16383). C'est ce qui a **révélé
+  l'adresse réelle `$03FE/$03FF`** (≠ `$03F0` du proto). `make tests` **935/935**
+  (923 → 935, 0 régression) ; builds SDL2=0 & SDL2=1 OK. EMU_VERSION → 1.112.0-alpha
+
 ## [1.111.0-alpha] - 2026-08-31
 
 ### Added — Synthétiseur vocal Mageco (GI SP0256-AL2) : les jeux parlent

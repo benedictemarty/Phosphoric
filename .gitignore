@@ -43,6 +43,7 @@ test_control_queue
 test_coverage
 test_joystick
 test_sp0256
+test_mea8000
 test_keyboard
 test_autotype
 test_loci
