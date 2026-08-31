@@ -2388,6 +2388,7 @@ int main(int argc, char* argv[]) {
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int loci_serve_subticks = -1, loci_latch_subtick = -1;  /* -1 = phase model off */
     int loci_serve_jitter = -1; unsigned loci_jitter_seed = 0;  /* -1 = no jitter */
+    bool loci_coproc = false;   /* EXPERIMENTAL : opcode $A9 coprocesseur math */
     int64_t trace_max = 0;
     int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
     const char* profile_file = NULL;
@@ -2640,6 +2641,9 @@ int main(int argc, char* argv[]) {
                 }
                 break;
             }
+            case OPT_LOCI_COPROC:
+                loci_coproc = true;   /* EXPERIMENTAL : active l'opcode $A9 */
+                break;
             case OPT_ACIA_ADDR:
                 acia_addr_arg = optarg;
                 break;
@@ -3130,6 +3134,11 @@ int main(int argc, char* argv[]) {
             log_info("LOCI MIA serve jitter: +/-%d subticks (seed=%u) — ratés "
                      "occasionnels reproductibles pres du latch",
                      emu.loci.mia_serve_jitter, loci_jitter_seed);
+        }
+        if (loci_coproc) {
+            loci_set_coproc(&emu.loci, true);
+            log_info("LOCI coprocesseur math $A9 ACTIF (EXPERIMENTAL) — "
+                     "entiers/IEEE754/transcendantes/MBF");
         }
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);

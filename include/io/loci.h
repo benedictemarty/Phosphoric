@@ -83,6 +83,8 @@ typedef enum {
     LOCI_OP_MAP_TUNE_TIOD    = 0xA4,
     LOCI_OP_MAP_TUNE_TADR    = 0xA5,
     LOCI_OP_ADJ_SCAN         = 0xA6,
+    LOCI_OP_MATH             = 0xA9,   /* EXPERIMENTAL : coprocesseur arithmétique */
+    LOCI_OP_ACIA_RELIABLE    = 0xAA,   /* EXPERIMENTAL : mode ACIA fiable (seqlock+ACK) */
     LOCI_OP_RESET_SENTINEL   = 0xFF
 } loci_op_t;
 
@@ -491,6 +493,17 @@ typedef struct loci_s {
     uint8_t mia_latch_subtick;  /* instant de latch 6502 (subticks), modèle PHASE */
     uint8_t mia_serve_jitter;   /* amplitude jitter du serve (subticks), 0 = off */
     uint32_t mia_jitter_state;  /* état PRNG jitter (avancé par accès CPU) */
+
+    /* ── EXPERIMENTAL (branche experiment/loci-coproc-acia-reliable) ─────────
+     * Extensions opt-in validées sur banc Phosphoric avant matériel. OFF par
+     * défaut → opcodes/registres inertes = comportement LOCI identique. */
+    bool coproc_enabled;        /* opcode $A9 (coprocesseur math) actif */
+    /* Mode ACIA fiable ($AA) : RX non destructif via seqlock + ACK-par-écriture.
+     * RXSEQ ($0384 R) = n° de l'octet présenté ; RXACK ($0385 W) = accusé du 6502.
+     * OFF → ACIA strictement 6551 (RX destructif standard). */
+    bool acia_reliable;         /* mode fiable actif (opcode $AA / EN) */
+    uint8_t acia_rx_seq;        /* séquence de l'octet RX actuellement présenté */
+    bool acia_rx_presented;     /* un n° a été attribué à la tête de FIFO courante */
 } loci_t;
 
 #define LOCI_TIMING_WINDOW  0
@@ -521,6 +534,21 @@ void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed);
  * (ou hors modèle PHASE), équivaut à !loci_mia_io_reliable(). L'observation
  * (peek/débogueur) doit rester sur loci_mia_io_reliable() (const, nominal). */
 bool loci_mia_serve_lost_sampled(loci_t* loci);
+
+/* EXPERIMENTAL : active/désactive le coprocesseur arithmétique (opcode $A9).
+ * OFF par défaut → $A9 renvoie ENOSYS (identique à un firmware non patché,
+ * détectable côté 6502). Voir extensions/coprocessor-A9/spec-coprocesseur-math.md. */
+void loci_set_coproc(loci_t* loci, bool enabled);
+
+/* EXPERIMENTAL : active/désactive le mode ACIA fiable (opcode $AA). OFF par
+ * défaut → ACIA strictement 6551 (RX destructif). ON → RX non destructif,
+ * consommé seulement sur ACK écrit en $0385 == RXSEQ ($0384). Réinitialise l'état
+ * de séquence. Voir extensions/acia-fiable-AA/spec-acia-fiable.md. */
+void loci_set_acia_reliable(loci_t* loci, bool enabled);
+
+/* Offsets des registres additionnels du mode fiable (dans la fenêtre ACIA). */
+#define LOCI_ACIA_OFF_RXSEQ  4   /* base+4 ($0384) : n° de séquence RX (R) */
+#define LOCI_ACIA_OFF_RXACK  5   /* base+5 ($0385) : accusé de réception RX (W) */
 
 bool    loci_init(loci_t* loci);
 void    loci_reset(loci_t* loci);

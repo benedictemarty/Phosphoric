@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — EXPERIMENTAL (branche `experiment/loci-coproc-acia-reliable`)
+
+> Extensions LOCI opt-in validées sur banc Phosphoric avant matériel (l'auteur a
+> une carte LOCI mais pas d'Oric). **Non mergé dans `main`, réversible, OFF par
+> défaut** (comportement LOCI identique sans le flag). Version release inchangée.
+
+### Added — Coprocesseur arithmétique LOCI `$A9` (`--loci-coproc`)
+
+Spec `~/loci/extensions/coprocessor-A9/spec-coprocesseur-math.md` (v0.2). Le 6502
+n'a ni mul/div ni flottant matériels ; on délègue au « coprocesseur » via l'ABI
+fastcall existante : **un opcode `$A9`, sous-code d'opération dans `API_A`,
+opérandes sur le xstack** (little-endian), retour scalaire en `AX:SREG` ou
+multi-valeurs repoussées sur le xstack.
+
+- Fichier **isolé** `src/io/loci_math.c` (`op_math`), branché au dispatch LOCI ;
+  opcode `LOCI_OP_MATH=$A9`. **Gaté par `--loci-coproc`** (défaut OFF → `$A9`
+  renvoie `ENOSYS`, identique à un firmware non patché, détectable côté 6502).
+- Sous-codes **déterministes** implémentés : entiers `$00-$06` (mul/divmod 16/32,
+  signés/non signés), flottant IEEE754 `$10-$16` (add/sub/mul/div/cmp/itof/ftoi),
+  transcendantes `$20-$28` (sqrt/sin/cos/tan/atan+atan2/log/exp/pow/**log10**, libm ;
+  `$28` log10 pour le `LOG` du BASIC Oric qui est en base 10, pas naturel),
+  pont **MBF 5 octets ↔ IEEE754** `$30-$31` (format BASIC Oric ; conversions pures,
+  sans adresse ZP/FAC — le point ouvert spec §7.1 ne concerne que l'accélération
+  BASIC). Div par zéro → `EINVAL` ; MBF d'un Inf/NaN/overflow → `ERANGE`.
+- Ops par bloc XRAM `$40-$42` (pointeurs + course mémoire PIO) **différées**.
+- **Format MBF CONFIRMÉ contre la vraie ROM BASIC 1.1** (§7.1) : dump RAM headless
+  d'une variable BASIC (`A=1.5`→`81 40 00 00 00`, `-0.5`→`80 80 00 00 00`, `100`→
+  `87 48 00 00 00`, à `$0503`) = byte-exact avec `ieee_to_mbf`. Pointeurs ZP relevés :
+  VARTAB=`$9C/$9D`. FAC dépaqueté non localisé (réservé §7.5, non inventé).
+- Nouveau `test-loci-coproc` (**23 tests** déterministes : vecteurs entiers/float/
+  transcendantes, round-trip MBF + **vecteurs golden confirmés ROM**, erreurs,
+  garde opt-in). `make tests` (0 régression), SDL2=0 & SDL2=1 OK.
+
+### Added — Mode ACIA fiable LOCI `$AA` (RX non destructif, seqlock + ACK)
+
+Spec `~/loci/extensions/acia-fiable-AA/spec-acia-fiable.md` (v0.1). Rend la
+réception fiable face aux ratés de lecture `$0380` (course PHI2) : la donnée RX
+devient **non destructive** tant que le 6502 n'a pas **accusé réception**, sur le
+canal d'écriture (toujours fiable). **Opt-in** (opcode `$AA`, `API_A` bit0 EN) →
+sans lui, ACIA strictement 6551 (RX destructif standard).
+
+- Opcode `LOCI_OP_ACIA_RELIABLE=$AA` (handler `op_acia_reliable`, `loci_core.c`) +
+  état dans `loci_t` (`acia_reliable`, `acia_rx_seq`, `acia_rx_presented`) ; setter
+  `loci_set_acia_reliable()`.
+- Registres additionnels dans la fenêtre ACIA (actifs seulement en mode fiable,
+  `io_bus.c`) : **RXSEQ `$0384` (R)** = n° de séquence de l'octet présenté (le
+  claim ACIA s'étend à `base+5`) ; **RXACK `$0385` (W)** = accusé du 6502.
+- Protocole (spec §4) : un octet présenté fixe RDRF + attribue un `RXSEQ` ;
+  `DATA $0380` est lu **sans consommer** (peek) ; la consommation n'a lieu que
+  sur `RXACK == RXSEQ` (canal d'écriture fiable). Combiné à la course PHI2
+  (v1.114-116), un raté de lecture renvoie l'open-bus **sans perdre l'octet** →
+  rattrapé par relecture. `peek` observateur ne fait pas avancer la séquence.
+- Tests `test-loci-acia-miss` **+7** (13→20) : DATA non destructif + conso
+  ACK-gated, seqlock multi-octets dans l'ordre, **survie à un raté de lecture**,
+  **zéro perte de bout en bout avec 1 tour/2 en course perdue**, registres inertes
+  hors mode, **+ e2e comparatif « HELLO »** (6551 standard corrompt le `'E'` en
+  octet parasite du bus / mode fiable rend `HELLO` intact). SDL2=0 & SDL2=1 OK.
+
 ## [1.116.0-alpha] - 2026-08-31
 
 ### Added — Jitter seedé de la course PHI2 — Épic B, Phase 2

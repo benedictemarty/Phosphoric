@@ -52,6 +52,7 @@ static void setup(void) {
     g_emu = (emulator_t*)calloc(1, sizeof(emulator_t));
     memory_init(&g_emu->memory);
     acia_init(&g_emu->acia);
+    acia_set_rx_fifo(&g_emu->acia, 16);   /* FIFO RX (sinon mode 1 octet) */
     g_loop = serial_backend_loopback_create();
     g_loop->open(g_loop);
     acia_set_backend(&g_emu->acia, g_loop);
@@ -295,6 +296,159 @@ TEST(test_jitter_peek_uses_nominal) {
     PASS();
 }
 
+/* ── EXPERIMENTAL $AA : mode ACIA fiable (seqlock + ACK, RX non destructif) ── */
+
+#define RXSEQ_ADDR 0x0384
+#define RXACK_ADDR 0x0385
+
+/* Un tour du protocole seqlock côté 6502. Renvoie 1 (octet reçu+ACK, *out posé),
+ * 0 (pas d'octet), -1 (raté détecté → retry). */
+static int rx_recv_reliable(uint8_t* out) {
+    if (!(bus_read(0x0381) & ACIA_STATUS_RDRF)) return 0;
+    uint8_t s1 = bus_read(RXSEQ_ADDR);
+    uint8_t d  = bus_read(0x0380);          /* non destructif */
+    uint8_t s2 = bus_read(RXSEQ_ADDR);
+    if (s1 != s2) return -1;                 /* changement pendant la lecture → retry */
+    bus_write(RXACK_ADDR, s1);               /* ACK par écriture (canal fiable) */
+    *out = d;
+    return 1;
+}
+
+/* DATA fiable = non destructif ; consommation seulement sur ACK == RXSEQ. */
+TEST(test_reliable_data_nondestructive_ack_gated) {
+    setup();
+    set_reliable(true);                              /* serve OK (harnais = perdu par défaut) */
+    loci_set_acia_reliable(&g_emu->loci, true);
+    inject_rx(0xA1);
+
+    ASSERT_EQ(bus_read(RXSEQ_ADDR), 1);              /* 1er octet présenté → seq 1 */
+    ASSERT_EQ(bus_read(0x0380), 0xA1);
+    ASSERT_EQ(bus_read(0x0380), 0xA1);               /* relecture : non destructif */
+    ASSERT_TRUE(bus_read(0x0381) & ACIA_STATUS_RDRF);
+
+    bus_write(RXACK_ADDR, 99);                        /* mauvais ACK → pas de conso */
+    ASSERT_TRUE(bus_read(0x0381) & ACIA_STATUS_RDRF);
+    ASSERT_EQ(bus_read(0x0380), 0xA1);
+
+    bus_write(RXACK_ADDR, 1);                         /* bon ACK → conso */
+    ASSERT_FALSE(bus_read(0x0381) & ACIA_STATUS_RDRF);
+    teardown();
+    PASS();
+}
+
+/* Protocole complet multi-octets, sans raté : tout reçu, dans l'ordre, seq croissante. */
+TEST(test_reliable_seqlock_multibyte) {
+    setup();
+    set_reliable(true);
+    loci_set_acia_reliable(&g_emu->loci, true);
+    uint8_t src[] = { 0xB1, 0xB2, 0xB3 };
+    for (unsigned i = 0; i < 3; i++) inject_rx(src[i]);
+
+    uint8_t got[3]; int n = 0, guard = 0;
+    while (n < 3 && guard++ < 100) {
+        uint8_t b; int r = rx_recv_reliable(&b);
+        if (r == 1) got[n++] = b;
+        else if (r == 0) break;
+    }
+    ASSERT_EQ(n, 3);
+    ASSERT_TRUE(got[0] == 0xB1 && got[1] == 0xB2 && got[2] == 0xB3);
+    teardown();
+    PASS();
+}
+
+/* Cœur de la spec : un raté de lecture DATA NE PERD PAS l'octet (RX non destructif ;
+ * seul l'ACK consomme). Après retour en lecture fiable, l'octet est toujours là. */
+TEST(test_reliable_survives_read_miss) {
+    setup();
+    loci_set_acia_reliable(&g_emu->loci, true);
+    inject_rx(0xC7);
+
+    set_reliable(false);                              /* course perdue (fenêtre) */
+    g_emu->memory.last_bus_value = 0x5E;
+    ASSERT_EQ(bus_read(0x0380), 0x5E);               /* raté = open-bus... */
+    ASSERT_TRUE(acia_peek(&g_emu->acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF); /* ...mais rien consommé */
+
+    set_reliable(true);                               /* serve OK */
+    ASSERT_EQ(bus_read(0x0380), 0xC7);               /* octet survécu, relisible */
+    bus_write(RXACK_ADDR, bus_read(RXSEQ_ADDR));     /* ACK → conso */
+    ASSERT_FALSE(bus_read(0x0381) & ACIA_STATUS_RDRF);
+    teardown();
+    PASS();
+}
+
+/* Zéro perte de bout en bout : N octets, la moitié des tours en course perdue,
+ * le protocole rattrape tout (aucun octet perdu, ordre préservé). */
+TEST(test_reliable_zero_loss_under_misses) {
+    setup();
+    loci_set_acia_reliable(&g_emu->loci, true);
+    const int N = 6;
+    for (int i = 0; i < N; i++) inject_rx((uint8_t)(0x40 + i));
+
+    uint8_t got[16]; int n = 0, tick = 0;
+    while (n < N && tick < 1000) {
+        set_reliable((tick % 2) == 0);               /* 1 tour sur 2 : course perdue */
+        g_emu->memory.last_bus_value = 0xEE;         /* open-bus distinct des données */
+        uint8_t b; int r = rx_recv_reliable(&b);
+        if (r == 1 && b != 0xEE) got[n++] = b;       /* n'accepte pas l'open-bus */
+        tick++;
+    }
+    ASSERT_EQ(n, N);
+    for (int i = 0; i < N; i++) ASSERT_EQ(got[i], 0x40 + i);
+    teardown();
+    PASS();
+}
+
+/* OFF par défaut : RXSEQ/RXACK non revendiqués (ACIA strictement 6551). */
+TEST(test_reliable_off_registers_inert) {
+    setup();
+    ASSERT_TRUE(io_bus_find(g_emu, RXSEQ_ADDR) == NULL);   /* $0384 non revendiqué */
+    loci_set_acia_reliable(&g_emu->loci, true);
+    const io_device_t* d = io_bus_find(g_emu, RXSEQ_ADDR);
+    ASSERT_TRUE(d != NULL && strcmp(d->name, "acia") == 0);
+    teardown();
+    PASS();
+}
+
+/* ── e2e comparatif « HELLO » : standard corrompt sous ratés, fiable intact ── */
+
+/* 6551 STANDARD (RX destructif) : un raté sur l'octet 'E' le perd → l'open-bus le
+ * remplace. La chaîne reçue est corrompue (H·<parasite>·L·L·O ≠ HELLO). */
+TEST(test_standard_corrupts_hello_under_miss) {
+    setup();                                  /* mode fiable OFF (6551 nu) */
+    const char* H = "HELLO";
+    for (int i = 0; i < 5; i++) inject_rx((uint8_t)H[i]);
+    uint8_t got[8]; int n = 0;
+    for (int i = 0; i < 5; i++) {
+        set_reliable(i != 1);                 /* course perdue sur l'octet index 1 ('E') */
+        g_emu->memory.last_bus_value = 0xEE;  /* open-bus distinctif */
+        got[n++] = bus_read(0x0380);          /* lecture destructive (pilote naïf) */
+    }
+    ASSERT_EQ(got[1], 0xEE);                  /* 'E' perdu → bus flottant */
+    ASSERT_FALSE(got[0]=='H' && got[1]=='E' && got[2]=='L' && got[3]=='L' && got[4]=='O');
+    teardown();
+    PASS();
+}
+
+/* Mode FIABLE $AA : mêmes ratés (1 tour/2), seqlock + ACK → HELLO reçu INTACT. */
+TEST(test_reliable_hello_intact_under_misses) {
+    setup();
+    loci_set_acia_reliable(&g_emu->loci, true);
+    const char* H = "HELLO";
+    for (int i = 0; i < 5; i++) inject_rx((uint8_t)H[i]);
+    uint8_t got[8]; int n = 0, tick = 0;
+    while (n < 5 && tick < 400) {
+        set_reliable((tick % 2) == 0);        /* 1 tour sur 2 en course perdue */
+        g_emu->memory.last_bus_value = 0xEE;
+        uint8_t b; int r = rx_recv_reliable(&b);
+        if (r == 1 && b != 0xEE) got[n++] = b;
+        tick++;
+    }
+    ASSERT_EQ(n, 5);
+    ASSERT_TRUE(got[0]=='H' && got[1]=='E' && got[2]=='L' && got[3]=='L' && got[4]=='O');
+    teardown();
+    PASS();
+}
+
 int main(void) {
     printf("\n=== LOCI ACIA $0380 — course PHI2 (picowifi) ===\n");
     RUN(test_acia_claims_0380);
@@ -310,6 +464,13 @@ int main(void) {
     RUN(test_jitter_makes_losses_occasional);
     RUN(test_jitter_is_deterministic_per_seed);
     RUN(test_jitter_peek_uses_nominal);
+    RUN(test_reliable_data_nondestructive_ack_gated);
+    RUN(test_reliable_seqlock_multibyte);
+    RUN(test_reliable_survives_read_miss);
+    RUN(test_reliable_zero_loss_under_misses);
+    RUN(test_reliable_off_registers_inert);
+    RUN(test_standard_corrupts_hello_under_miss);
+    RUN(test_reliable_hello_intact_under_misses);
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
 }
