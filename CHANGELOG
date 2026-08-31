@@ -29,9 +29,13 @@ multi-valeurs repoussées sur le xstack.
   sans adresse ZP/FAC — le point ouvert spec §7.1 ne concerne que l'accélération
   BASIC). Div par zéro → `EINVAL` ; MBF d'un Inf/NaN/overflow → `ERANGE`.
 - Ops par bloc XRAM `$40-$42` (pointeurs + course mémoire PIO) **différées**.
-- Nouveau `test-loci-coproc` (**22 tests** déterministes : vecteurs entiers/float/
-  transcendantes, round-trip MBF byte-exact `1.0={81 00 00 00 00}`, erreurs,
-  garde opt-in). `make tests` **1059** (0 régression), SDL2=0 & SDL2=1 OK.
+- **Format MBF CONFIRMÉ contre la vraie ROM BASIC 1.1** (§7.1) : dump RAM headless
+  d'une variable BASIC (`A=1.5`→`81 40 00 00 00`, `-0.5`→`80 80 00 00 00`, `100`→
+  `87 48 00 00 00`, à `$0503`) = byte-exact avec `ieee_to_mbf`. Pointeurs ZP relevés :
+  VARTAB=`$9C/$9D`. FAC dépaqueté non localisé (réservé §7.5, non inventé).
+- Nouveau `test-loci-coproc` (**23 tests** déterministes : vecteurs entiers/float/
+  transcendantes, round-trip MBF + **vecteurs golden confirmés ROM**, erreurs,
+  garde opt-in). `make tests` (0 régression), SDL2=0 & SDL2=1 OK.
 
 ### Added — Mode ACIA fiable LOCI `$AA` (RX non destructif, seqlock + ACK)
 

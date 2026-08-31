@@ -162,6 +162,22 @@ TEST(t_mbf_roundtrip) {
     }
     PASS();
 }
+/* Golden : octets MBF CONFIRMÉS contre la vraie ROM BASIC 1.1 Oric (variable
+ * stockée en $0503, lue par dump RAM headless). Prouve la compatibilité binaire
+ * du pont $31 avec le flottant du BASIC Oric — pas une hypothèse. */
+TEST(t_ieee_to_mbf_golden_oric_rom) {
+    struct { float f; uint8_t mbf[5]; } vec[] = {
+        {  1.5f, { 0x81, 0x40, 0x00, 0x00, 0x00 } },  /* A=1.5  → ROM $0503 */
+        { -0.5f, { 0x80, 0x80, 0x00, 0x00, 0x00 } },  /* A=-0.5 → ROM */
+        { 100.0f,{ 0x87, 0x48, 0x00, 0x00, 0x00 } },  /* A=100  → ROM */
+    };
+    for (unsigned i = 0; i < sizeof(vec)/sizeof(vec[0]); i++) {
+        begin(0x31); push_f32(vec[i].f); L.regs[LOCI_REG_API_A]=0x31; op_math(&L);
+        ASSERT_EQ(L.regs[LOCI_REG_API_A], 0);
+        for (int b = 0; b < 5; b++) ASSERT_EQ(L.xstack[L.xstack_ptr+b], vec[i].mbf[b]);
+    }
+    PASS();
+}
 TEST(t_ieee_to_mbf_inf_errno) {
     begin(0x31); push_f32(INFINITY); L.regs[LOCI_REG_API_A]=0x31;
     ASSERT_EQ(call_axsreg(), 0xFFFFFFFFu);
@@ -191,6 +207,7 @@ int main(void) {
     RUN(t_fadd); RUN(t_fsub); RUN(t_fmul); RUN(t_fdiv); RUN(t_fcmp); RUN(t_itof_ftoi);
     RUN(t_fsqrt); RUN(t_fsin_fcos); RUN(t_fpow_flog_fexp); RUN(t_fatan_vs_fatan2);
     RUN(t_ieee_to_mbf_one); RUN(t_mbf_to_ieee_one); RUN(t_mbf_roundtrip);
+    RUN(t_ieee_to_mbf_golden_oric_rom);
     RUN(t_ieee_to_mbf_inf_errno);
     RUN(t_disabled_returns_enosys); RUN(t_unknown_subcode_enosys);
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
