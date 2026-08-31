@@ -73,6 +73,7 @@ static const char* op_name(uint8_t op) {
         case LOCI_OP_MAP_TUNE_TIOD:   return "MAP_TUNE_TIOD";
         case LOCI_OP_MAP_TUNE_TADR:   return "MAP_TUNE_TADR";
         case LOCI_OP_ADJ_SCAN:        return "ADJ_SCAN";
+        case LOCI_OP_MATH:            return "MATH";
         default:                      return "?";
     }
 }
@@ -127,6 +128,7 @@ bool loci_init(loci_t* loci) {
     loci->mia_latch_subtick = BUS_LATCH_SUBTICK_DEFAULT;
     loci->mia_serve_jitter = 0;                     /* pas de jitter par défaut */
     loci->mia_jitter_state = bus_jitter_seed(0);
+    loci->coproc_enabled = false;                   /* EXPERIMENTAL $A9 : opt-in */
     loci->dir_dev = -1;    /* device-list iterator closed */
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);
@@ -614,6 +616,7 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_MAP_TUNE_TIOD:   op_map_tune_tiod(loci);  break;
         case LOCI_OP_MAP_TUNE_TADR:   op_map_tune_tadr(loci);  break;
         case LOCI_OP_ADJ_SCAN:        op_adj_scan(loci);       break;
+        case LOCI_OP_MATH:            op_math(loci);           break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",
                       op, op_name(op));

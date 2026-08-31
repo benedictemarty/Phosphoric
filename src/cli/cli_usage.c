@@ -154,6 +154,8 @@ void cli_print_usage(const char* program_name) {
     printf("      --loci-serve-jitter AMP[,SEED]  Seeded jitter (+/-AMP subticks) on the\n");
     printf("                             PHASE model: near the latch, misses become\n");
     printf("                             occasional yet reproducible for a given SEED\n");
+    printf("      --loci-coproc          [EXPERIMENTAL] enable the $A9 math coprocessor\n");
+    printf("                             (int/IEEE754/transcendental/MBF); off = ENOSYS\n");
     printf("      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n");
     printf("                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n");
     printf("      --serial-v23          V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)\n");

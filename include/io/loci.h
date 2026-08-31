@@ -83,6 +83,7 @@ typedef enum {
     LOCI_OP_MAP_TUNE_TIOD    = 0xA4,
     LOCI_OP_MAP_TUNE_TADR    = 0xA5,
     LOCI_OP_ADJ_SCAN         = 0xA6,
+    LOCI_OP_MATH             = 0xA9,   /* EXPERIMENTAL : coprocesseur arithmétique */
     LOCI_OP_RESET_SENTINEL   = 0xFF
 } loci_op_t;
 
@@ -491,6 +492,11 @@ typedef struct loci_s {
     uint8_t mia_latch_subtick;  /* instant de latch 6502 (subticks), modèle PHASE */
     uint8_t mia_serve_jitter;   /* amplitude jitter du serve (subticks), 0 = off */
     uint32_t mia_jitter_state;  /* état PRNG jitter (avancé par accès CPU) */
+
+    /* ── EXPERIMENTAL (branche experiment/loci-coproc-acia-reliable) ─────────
+     * Extensions opt-in validées sur banc Phosphoric avant matériel. OFF par
+     * défaut → opcodes/registres inertes = comportement LOCI identique. */
+    bool coproc_enabled;        /* opcode $A9 (coprocesseur math) actif */
 } loci_t;
 
 #define LOCI_TIMING_WINDOW  0
@@ -521,6 +527,11 @@ void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed);
  * (ou hors modèle PHASE), équivaut à !loci_mia_io_reliable(). L'observation
  * (peek/débogueur) doit rester sur loci_mia_io_reliable() (const, nominal). */
 bool loci_mia_serve_lost_sampled(loci_t* loci);
+
+/* EXPERIMENTAL : active/désactive le coprocesseur arithmétique (opcode $A9).
+ * OFF par défaut → $A9 renvoie ENOSYS (identique à un firmware non patché,
+ * détectable côté 6502). Voir extensions/coprocessor-A9/spec-coprocesseur-math.md. */
+void loci_set_coproc(loci_t* loci, bool enabled);
 
 bool    loci_init(loci_t* loci);
 void    loci_reset(loci_t* loci);

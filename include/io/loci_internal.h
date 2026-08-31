@@ -116,6 +116,9 @@ void op_tap_seek(loci_t* loci);
 void op_tap_tell(loci_t* loci);
 void op_tap_read_header(loci_t* loci);
 
+/* In loci_math.c (EXPERIMENTAL : coprocesseur arithmétique $A9). */
+void op_math(loci_t* loci);
+
 /* In loci_boot.c. */
 void op_mia_boot(loci_t* loci);
 void op_cpu_phi2(loci_t* loci);

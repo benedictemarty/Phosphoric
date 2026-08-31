@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — EXPERIMENTAL (branche `experiment/loci-coproc-acia-reliable`)
+
+> Extensions LOCI opt-in validées sur banc Phosphoric avant matériel (l'auteur a
+> une carte LOCI mais pas d'Oric). **Non mergé dans `main`, réversible, OFF par
+> défaut** (comportement LOCI identique sans le flag). Version release inchangée.
+
+### Added — Coprocesseur arithmétique LOCI `$A9` (`--loci-coproc`)
+
+Spec `~/loci/extensions/coprocessor-A9/spec-coprocesseur-math.md` (v0.2). Le 6502
+n'a ni mul/div ni flottant matériels ; on délègue au « coprocesseur » via l'ABI
+fastcall existante : **un opcode `$A9`, sous-code d'opération dans `API_A`,
+opérandes sur le xstack** (little-endian), retour scalaire en `AX:SREG` ou
+multi-valeurs repoussées sur le xstack.
+
+- Fichier **isolé** `src/io/loci_math.c` (`op_math`), branché au dispatch LOCI ;
+  opcode `LOCI_OP_MATH=$A9`. **Gaté par `--loci-coproc`** (défaut OFF → `$A9`
+  renvoie `ENOSYS`, identique à un firmware non patché, détectable côté 6502).
+- Sous-codes **déterministes** implémentés : entiers `$00-$06` (mul/divmod 16/32,
+  signés/non signés), flottant IEEE754 `$10-$16` (add/sub/mul/div/cmp/itof/ftoi),
+  transcendantes `$20-$27` (sqrt/sin/cos/tan/atan+atan2/log/exp/pow, via libm),
+  pont **MBF 5 octets ↔ IEEE754** `$30-$31` (format BASIC Oric ; conversions pures,
+  sans adresse ZP/FAC — le point ouvert spec §7.1 ne concerne que l'accélération
+  BASIC). Div par zéro → `EINVAL` ; MBF d'un Inf/NaN/overflow → `ERANGE`.
+- Ops par bloc XRAM `$40-$42` (pointeurs + course mémoire PIO) **différées**.
+- Nouveau `test-loci-coproc` (**22 tests** déterministes : vecteurs entiers/float/
+  transcendantes, round-trip MBF byte-exact `1.0={81 00 00 00 00}`, erreurs,
+  garde opt-in). `make tests` **1059** (0 régression), SDL2=0 & SDL2=1 OK.
+
 ## [1.116.0-alpha] - 2026-08-31
 
 ### Added — Jitter seedé de la course PHI2 — Épic B, Phase 2
