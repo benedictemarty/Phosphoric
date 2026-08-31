@@ -105,6 +105,11 @@ bool memory_load_charset(memory_t* mem, const char* filename) {
  * the independent secondary hook (conditional CPU trace), if set. */
 static inline void mem_notify(memory_t* mem, uint16_t addr, uint8_t val,
                               mem_access_type_t type) {
+    /* Latch open-bus : toute lecture pilote le data bus. Un accès ultérieur non
+     * servi (course PHI2 perdue à $0380) latchera ce résidu (cf. memory_open_bus).
+     * Placé ici pour couvrir tous les chemins de lecture (RAM/ROM/I/O) d'un point. */
+    if (type == MEM_READ)
+        mem->last_bus_value = val;
     if (mem->trace_enabled && mem->trace_callback)
         mem->trace_callback(addr, val, type);
     if (mem->trace_callback2)
@@ -320,6 +325,10 @@ void memory_set_trace2(memory_t* mem,
 void memory_set_stuck_bits(memory_t* mem, uint8_t stuck0, uint8_t stuck1) {
     mem->stuck0 = stuck0;
     mem->stuck1 = stuck1;
+}
+
+uint8_t memory_open_bus(const memory_t* mem) {
+    return mem->last_bus_value;
 }
 
 void memory_clear_ram(memory_t* mem, uint8_t pattern) {

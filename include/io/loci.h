@@ -478,15 +478,49 @@ typedef struct loci_s {
     uint8_t mia_tula;     /* ULA snoop delay, firmware default 10 */
     uint8_t mia_tior_lo;  /* reliable-window low bound for tior (default 0) */
     uint8_t mia_tior_hi;  /* reliable-window high bound for tior (default 31) */
+
+    /* ── Épic B / Phase 1 : modèle de course PHI2 sous-cycle (bus_timing.h) ──
+     * Deux modèles de fiabilité du serve MIA, exclusifs :
+     *  - WINDOW (défaut, historique) : fiable ssi tior ∈ [lo,hi]. C'est la
+     *    calibration par carte (adj_scan trouve la plage qui marche). Iso-comportement.
+     *  - PHASE (opt-in) : physiquement fondé. Le serve arrive au subtick
+     *    (tior + serve_subticks) ; propre ssi ≤ latch_subtick. Rend explicites
+     *    le budget de serve (≈ build -Os/-O2) et l'indépendance à la fréquence PHI2. */
+    uint8_t mia_timing_model;   /* 0 = LOCI_TIMING_WINDOW, 1 = LOCI_TIMING_PHASE */
+    uint8_t mia_serve_subticks; /* latence serve modélisée (PHI2×30), modèle PHASE */
+    uint8_t mia_latch_subtick;  /* instant de latch 6502 (subticks), modèle PHASE */
+    uint8_t mia_serve_jitter;   /* amplitude jitter du serve (subticks), 0 = off */
+    uint32_t mia_jitter_state;  /* état PRNG jitter (avancé par accès CPU) */
 } loci_t;
 
-/* True when the modelled MIA I/O sampling is reliable (tior in window). When
- * false, accesses routed through the MIA I/O window (the picowifi ACIA) are
- * corrupted, reproducing the real-hardware "modem unreachable" symptom. */
+#define LOCI_TIMING_WINDOW  0
+#define LOCI_TIMING_PHASE   1
+
+/* True when the modelled MIA I/O sampling is reliable. Selon le modèle actif :
+ * WINDOW → tior ∈ [lo,hi] ; PHASE → (tior + serve_subticks) ≤ latch_subtick
+ * (course PHI2 gagnée, cf. bus_timing.h). Quand false, les accès routés par la
+ * fenêtre I/O du MIA (l'ACIA picowifi) sont corrompus → « modem injoignable ». */
 bool loci_mia_io_reliable(const loci_t* loci);
 
-/* Set the reliable tior window (models a board where only this range works). */
+/* Set the reliable tior window (models a board where only this range works).
+ * Bascule le modèle sur WINDOW (comportement historique). */
 void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi);
+
+/* Active le modèle de course PHASE (physiquement fondé) : serve_subticks = latence
+ * de serve (grille PHI2×30, ≈ budget du build), latch_subtick = instant de latch
+ * 6502. Bascule le modèle sur PHASE. */
+void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_subtick);
+
+/* Règle le jitter du serve (modèle PHASE) : amplitude en subticks (0 = off),
+ * graine du PRNG (0 → valeur par défaut). Près de la frontière de latch, la
+ * fiabilité devient occasionnelle mais reste reproductible pour une graine donnée. */
+void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed);
+
+/* Prédicat de course AVEC jitter, à usage du chemin d'accès CPU (non-const :
+ * avance le PRNG). Renvoie true si le serve PERD la course ce tour-ci. Sans jitter
+ * (ou hors modèle PHASE), équivaut à !loci_mia_io_reliable(). L'observation
+ * (peek/débogueur) doit rester sur loci_mia_io_reliable() (const, nominal). */
+bool loci_mia_serve_lost_sampled(loci_t* loci);
 
 bool    loci_init(loci_t* loci);
 void    loci_reset(loci_t* loci);

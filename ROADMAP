@@ -6,6 +6,56 @@ including host filesystem sharing and conversion tools for legacy BASIC/machine 
 
 ---
 
+## Épic B — Base de temps sous-cycle du bus d'extension (modèle PHI2)
+
+Design complet : `docs/architecture/phi2-bus-timing.md`. Objectif : simuler la
+course sous-cycle du bus d'extension (le serve doit poser la donnée avant le front
+PHI2), phénomène invisible à la granularité du cycle entier. Socle : `cpu_tick()`
+avance déjà l'horloge à chaque accès bus + hook `on_cycle` → il ne manquait que la
+phase intra-PHI2 (grille `sys_clk = PHI2×30`).
+- [x] **Phase 1 (v1.115.0)** — `include/io/bus_timing.h` (grille 30 subticks, latch,
+      prédicat `bus_serve_wins_race`) + client LOCI (modèle PHASE opt-in : serve
+      arrive à `tior+serve_subticks`, propre ssi ≤ latch ; reproduit `-Os`/`-O2` du
+      rapport de bug) + CLI `--loci-serve-timing SERVE[,LATCH]`. Défaut WINDOW =
+      iso-comportement. `test-loci-acia-miss` +3 (7→10).
+- [x] **Phase 2 (v1.116.0)** — **jitter seedé** de la course : PRNG xorshift32
+      (`bus_timing.h`), `loci_set_serve_jitter(amp,seed)` + chemin CPU
+      `loci_mia_serve_lost_sampled()`, CLI `--loci-serve-jitter AMP[,SEED]`. Près du
+      latch, ratés occasionnels **reproductibles** ; peek reste sur le nominal.
+      `test-loci-acia-miss` +3 (10→13). Reste à faire : brancher d'autres
+      périphériques d'extension (aucun autre « racer » lent aujourd'hui — le
+      prédicat `bus_serve_wins_race` est prêt pour eux).
+- [ ] **Phase 3** — horodatage sous-cycle des accès au niveau CPU (chaque accès
+      porte sa phase) ; setup/hold on-board si un cas réel l'exige.
+- [ ] **Phase 4** — calibration des constantes (latch, budgets de serve) contre
+      matériel réel (valeurs actuelles = plages de l'analyse, non mesurées).
+
+---
+
+## Fidélité LOCI : course PHI2 sur l'ACIA `$0380` (picowifi) — LIVRÉ (v1.114.0-alpha)
+
+Reproduction à l'identique du comportement du vrai LOCI + PicoWiFiModemUSB, à
+partir de l'analyse du firmware `sodiumlb/loci-firmware` et du schéma LOCI 1.3
+(`~/loci/extensions/analyse/`). Le LOCI sert la donnée par une **course entre
+deux fronts PHI2 montants** (MIA : PIO core1 + serve logiciel lent) ; `tior` hors
+fenêtre → course perdue. Le modèle `io_bus.c` capturait le symptôme mais divergeait
+sur trois points (le point « renvoyer le VIA » de la note initiale était **réfuté**
+par l'analyse : le VIA est prouvé inhibé).
+- [x] **Raté = OPEN-BUS** (dernier octet piloté), pas le VIA ni `0xFF` — VIA
+      décodé-inhibé symétriquement `IO_CONTROL = IO·(A4+A5+A6+A7)`. Latch
+      `memory_open_bus()`/`last_bus_value` (`memory.c`, posé via `mem_notify`).
+- [x] **Lecture DATA ratée = DESTRUCTIVE côté LOCI** : `acia_read()` en aveugle
+      consomme l'octet RX → perdu (« modem injoignable ») ; STAT/CMD/CTRL
+      idempotents → disque OK / modem KO sous la même marge, sans probabilisme.
+- [x] **Écriture toujours fiable** (`write_enable_map=0xFFFFFFFF`) : plus avalée.
+- [x] **`peek()`** (observateur) = open-bus sans consommer.
+- [x] `test-loci-acia-miss` (+7, dispatch `io_bus` réel) ; `make tests` 942/942.
+- [ ] (backlog) Mode « fiable » `$AA` (RXSEQ `$0384`/RXACK `$0385`, seqlock+ACK,
+      RX non destructif) — spec `~/loci/extensions/acia-fiable-AA/`, hors périmètre
+      « à l'identique » (extension additive à prototyper ultérieurement).
+
+---
+
 ## Synthétiseur vocal Mageco (GI SP0256-AL2) — LIVRÉ (v1.111.0-alpha)
 
 Branche `feature/sp0256-speech`. Carte Mageco « Synthétiseur Vocal » sur le bus

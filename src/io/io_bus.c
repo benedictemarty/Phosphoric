@@ -50,26 +50,56 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_serial && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
 }
+/* picowifi-over-LOCI : l'ACIA 6551 émulée vit à $0380, servie par une COURSE
+ * PHI2. Le MIA (RP2040 : PIO core1 + serve logiciel lent, ~I²C/DMA) doit poser
+ * l'octet sur le data bus AVANT le front PHI2 montant du 6502. Si la marge de
+ * timing `tior` est mal réglée (hors fenêtre auto-tunée par ADJ_SCAN), le serve
+ * perd la course. Le VIA étant décodé-inhibé symétriquement sur tout $03x0-$03xF
+ * (IO_CONTROL = IO·(A4+A5+A6+A7), prouvé matériellement), RIEN ne pilote alors
+ * le bus → le 6502 latche l'OPEN-BUS (dernier octet piloté), PAS le VIA.
+ *
+ * Asymétrie fidèle au HW (rapport de bug + spec-acia-fiable) :
+ *  - ÉCRITURE toujours fiable : `write_enable_map = 0xFFFFFFFF` → une write
+ *    $0380-$0383 atteint TOUJOURS l'ACIA, course perdue ou non.
+ *  - LECTURE fragile ET, sur le registre DATA, DESTRUCTIVE côté LOCI : le serve
+ *    exécute `acia_read()` « en aveugle » (il consomme l'octet RX) pendant que
+ *    le 6502 ne latche que du bus flottant → OCTET PERDU, non relisable. C'est
+ *    précisément le « modem injoignable ».
+ *  - STAT/CMD/CTRL sont idempotents (relisibles) → une course perdue renvoie du
+ *    bus flottant CE tour-ci mais le registre reste lisible au suivant (raté
+ *    pardonné, comme le polling disque/MIA). D'où : disque OK / modem KO sous la
+ *    MÊME marge, sans avoir besoin d'un modèle probabiliste. */
+static inline bool acia_serve_lost(const emulator_t* emu) {
+    return emu->has_loci && emu->acia_base_addr == 0x0380 &&
+           !loci_mia_io_reliable(&emu->loci);
+}
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
-    /* picowifi-over-LOCI : ACIA à $0380 échantillonnée via la fenêtre MIA ;
-     * une tior mal réglée corrompt la lecture (modem injoignable). */
-    if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
-        return 0xFF;
+    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
+     * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
+     * nominale déterministe. */
+    bool lost = emu->has_loci && emu->acia_base_addr == 0x0380 &&
+                loci_mia_serve_lost_sampled(&emu->loci);
+    if (lost) {
+        /* Course perdue : sur DATA, LOCI a consommé l'octet en aveugle (perdu) ;
+         * le 6502 latche l'open-bus. Sur STAT/CMD/CTRL, rien n'est consommé. */
+        if ((addr & ACIA_ADDR_MASK) == ACIA_REG_DATA)
+            (void)acia_read(&emu->acia, addr);   /* consomme et jette : octet perdu */
+        return memory_open_bus(&emu->memory);
+    }
     return acia_read(&emu->acia, addr);
 }
 static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    /* picowifi-over-LOCI : la write est avalée si le MIA n'est pas fiable, mais
-     * elle est bien « consommée » (l'ACIA possède la plage) → true. */
-    if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
-        return true;
+    /* Écriture toujours fiable (write_enable_map = 0xFFFFFFFF sur le vrai LOCI) :
+     * elle passe même course perdue. */
     acia_write(&emu->acia, addr, value);
     return true;
 }
 /* Lecture d'observation non destructive (débogueur/moniteur/dump/déporté) :
- * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. */
+ * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. Modélise l'open-bus
+ * SANS consommer (un observateur ne participe pas à la course PHI2 du 6502). */
 static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
-    if (emu->has_loci && emu->acia_base_addr == 0x0380 && !loci_mia_io_reliable(&emu->loci))
-        return 0xFF;
+    if (acia_serve_lost(emu))
+        return memory_open_bus(&emu->memory);
     return acia_peek(&emu->acia, addr);
 }
 
