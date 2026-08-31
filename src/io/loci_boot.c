@@ -143,6 +143,23 @@ void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_s
     loci->mia_timing_model = LOCI_TIMING_PHASE;
 }
 
+void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed) {
+    loci->mia_serve_jitter = amplitude;
+    loci->mia_jitter_state = bus_jitter_seed(seed);
+}
+
+bool loci_mia_serve_lost_sampled(loci_t* loci) {
+    /* Sans jitter (ou hors PHASE) : décision nominale déterministe. */
+    if (loci->mia_serve_jitter == 0 || loci->mia_timing_model != LOCI_TIMING_PHASE)
+        return !loci_mia_io_reliable(loci);
+    /* PHASE + jitter : le subtick de validité du serve est bruité autour de sa
+     * valeur nominale → près du latch, la course est perdue occasionnellement. */
+    int j = bus_jitter_sample(&loci->mia_jitter_state, loci->mia_serve_jitter);
+    int valid = (int)loci->mia_tior + (int)loci->mia_serve_subticks + j;
+    if (valid < 0) valid = 0;
+    return !bus_serve_wins_race((uint16_t)valid, loci->mia_latch_subtick);
+}
+
 void op_adj_scan(loci_t* loci) {
     /* Firmware (adj.c): asynchronous sweep of tior 0-31 (~100 ms lead-in
      * then one step per 5 ms) with live progress in the menu ROM's

@@ -74,7 +74,12 @@ static inline bool acia_serve_lost(const emulator_t* emu) {
            !loci_mia_io_reliable(&emu->loci);
 }
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
-    if (acia_serve_lost(emu)) {
+    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
+     * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
+     * nominale déterministe. */
+    bool lost = emu->has_loci && emu->acia_base_addr == 0x0380 &&
+                loci_mia_serve_lost_sampled(&emu->loci);
+    if (lost) {
         /* Course perdue : sur DATA, LOCI a consommé l'octet en aveugle (perdu) ;
          * le 6502 latche l'open-bus. Sur STAT/CMD/CTRL, rien n'est consommé. */
         if ((addr & ACIA_ADDR_MASK) == ACIA_REG_DATA)

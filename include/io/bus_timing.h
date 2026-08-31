@@ -59,4 +59,38 @@ static inline bool bus_serve_wins_race(uint16_t valid_subtick, uint8_t latch_sub
     return valid_subtick <= (uint16_t)latch_subtick;
 }
 
+/* ── Jitter déterministe (Phase 2) ──────────────────────────────────────────
+ * Sur le vrai bus, la marge de timing n'est pas binaire : bruit d'horloge,
+ * température, tolérances → près de la frontière de latch, certains accès passent
+ * et d'autres ratent (le rapport de bug le note : « occasionnel », dépend du
+ * build/carte). On modélise ça par un décalage aléatoire du subtick de validité
+ * du serve, tiré d'un PRNG **seedé** → reproductible (tests déterministes), pas
+ * de dépendance à l'horloge murale. */
+
+/** xorshift32 : PRNG déterministe minimal. `*state` ne doit jamais valoir 0. */
+static inline uint32_t bus_jitter_rand(uint32_t* state) {
+    uint32_t x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+/**
+ * @brief Tire un décalage de jitter symétrique dans [-amp, +amp] subticks.
+ * @param state PRNG (avancé à chaque appel ; à seeder via bus_jitter_seed()).
+ * @param amp Amplitude (0 = pas de jitter → renvoie 0 sans avancer l'état).
+ */
+static inline int bus_jitter_sample(uint32_t* state, uint8_t amp) {
+    if (amp == 0) return 0;
+    uint32_t span = (uint32_t)amp * 2u + 1u;         /* [-amp .. +amp] */
+    return (int)(bus_jitter_rand(state) % span) - (int)amp;
+}
+
+/** Seed du PRNG de jitter (jamais 0 : xorshift dégénère à 0). */
+static inline uint32_t bus_jitter_seed(uint32_t seed) {
+    return seed ? seed : 0xA5A5A5A5u;
+}
+
 #endif /* BUS_TIMING_H */

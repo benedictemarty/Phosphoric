@@ -245,6 +245,56 @@ TEST(test_bus_serve_wins_race_predicate) {
     PASS();
 }
 
+/* ── Phase 2 : jitter seedé — ratés occasionnels, déterministes ── */
+
+/* Compte les ratés sur N accès (via le chemin CPU qui échantillonne le jitter). */
+static int count_losses(int n) {
+    int lost = 0;
+    for (int i = 0; i < n; i++)
+        if (loci_mia_serve_lost_sampled(&g_emu->loci)) lost++;
+    return lost;
+}
+
+/* Pile sur la frontière (tior+serve == latch) : sans jitter tout passe ; avec
+ * jitter symétrique, une PART des accès rate (occasionnel, pas tout-ou-rien). */
+TEST(test_jitter_makes_losses_occasional) {
+    setup();
+    loci_set_serve_timing(&g_emu->loci, 27, 27);     /* nominal pile au latch → propre */
+    g_emu->loci.mia_tior = 0;
+    ASSERT_EQ(count_losses(200), 0);                  /* sans jitter : jamais raté */
+
+    loci_set_serve_jitter(&g_emu->loci, 3, 12345);    /* ±3 subticks */
+    int lost = count_losses(200);
+    ASSERT_TRUE(lost > 0 && lost < 200);              /* mélange propre/raté */
+    teardown();
+    PASS();
+}
+
+/* Reproductibilité : même graine → même séquence exacte de ratés. */
+TEST(test_jitter_is_deterministic_per_seed) {
+    setup();
+    loci_set_serve_timing(&g_emu->loci, 27, 27);
+    loci_set_serve_jitter(&g_emu->loci, 3, 999);
+    int a = count_losses(100);
+    loci_set_serve_jitter(&g_emu->loci, 3, 999);      /* re-seed identique */
+    int b = count_losses(100);
+    ASSERT_EQ(a, b);                                   /* même graine → séquence identique */
+    teardown();
+    PASS();
+}
+
+/* Le jitter n'affecte que le chemin CPU : peek (observateur) reste sur le nominal
+ * const, sans avancer le PRNG ni voler d'octet. */
+TEST(test_jitter_peek_uses_nominal) {
+    setup();
+    loci_set_serve_timing(&g_emu->loci, 20, 27);      /* nominal largement propre */
+    loci_set_serve_jitter(&g_emu->loci, 3, 7);
+    inject_rx(0xC3);
+    ASSERT_EQ(bus_peek(0x0380), 0xC3);                /* peek nominal : donnée réelle */
+    teardown();
+    PASS();
+}
+
 int main(void) {
     printf("\n=== LOCI ACIA $0380 — course PHI2 (picowifi) ===\n");
     RUN(test_acia_claims_0380);
@@ -257,6 +307,9 @@ int main(void) {
     RUN(test_phase_model_serve_race);
     RUN(test_phase_reproduces_build_os_vs_o2);
     RUN(test_bus_serve_wins_race_predicate);
+    RUN(test_jitter_makes_losses_occasional);
+    RUN(test_jitter_is_deterministic_per_seed);
+    RUN(test_jitter_peek_uses_nominal);
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
 }

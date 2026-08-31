@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.116.0-alpha] - 2026-08-31
+
+### Added — Jitter seedé de la course PHI2 — Épic B, Phase 2
+
+Suite de la Phase 1 : la marge de timing du bus n'est pas binaire (le rapport de
+bug note des ratés **occasionnels**, dépendants du build/carte — bruit d'horloge,
+température, tolérances). On modélise ça par un **décalage aléatoire seedé** du
+subtick de validité du serve, autour de sa valeur nominale du modèle PHASE.
+
+- **PRNG déterministe** (xorshift32) + tirage symétrique `[-AMP,+AMP]` dans
+  `bus_timing.h` (`bus_jitter_rand`/`bus_jitter_sample`/`bus_jitter_seed`) → **pas
+  de dépendance à l'horloge murale**, entièrement **reproductible pour une graine**.
+- **Client LOCI** : champs `mia_serve_jitter`/`mia_jitter_state`, setter
+  `loci_set_serve_jitter(amp, seed)`, et **nouveau chemin d'accès CPU**
+  `loci_mia_serve_lost_sampled()` (non-const : avance le PRNG). Près du latch, la
+  fiabilité devient **occasionnelle** ; loin, inchangée. Sans jitter (ou hors
+  PHASE), équivaut à la décision nominale déterministe.
+- **Séparation lecture/observation** : `io_bus.c` route la **lecture CPU**
+  (`acia_dev_read`) sur l'échantillonnage jittéré, mais le **peek** (débogueur/
+  moniteur/déporté) reste sur le nominal const `loci_mia_io_reliable()` — un
+  observateur n'avance pas le PRNG et ne vole pas d'octet.
+- **CLI `--loci-serve-jitter AMP[,SEED]`**. Défaut : amplitude 0 = **iso** (aucun
+  jitter, comportement Phase 1 préservé).
+
+Tests `test-loci-acia-miss` **+3** (10→13) : à la frontière (`tior+serve==latch`),
+sans jitter 0 raté / avec jitter un **mélange** propre-raté ; **reproductibilité**
+(même graine → même séquence) ; peek sur le nominal (donnée préservée).
+`make clean && make tests` **948/948** (945→948, 0 régression), builds SDL2=0 &
+SDL2=1 OK. EMU_VERSION → 1.116.0-alpha.
+
 ## [1.115.0-alpha] - 2026-08-31
 
 ### Added — Base de temps sous-cycle du bus d'extension (modèle PHI2) — Épic B, Phase 1

@@ -125,6 +125,8 @@ bool loci_init(loci_t* loci) {
     loci->mia_timing_model = LOCI_TIMING_WINDOW;
     loci->mia_serve_subticks = 0;
     loci->mia_latch_subtick = BUS_LATCH_SUBTICK_DEFAULT;
+    loci->mia_serve_jitter = 0;                     /* pas de jitter par défaut */
+    loci->mia_jitter_state = bus_jitter_seed(0);
     loci->dir_dev = -1;    /* device-list iterator closed */
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);

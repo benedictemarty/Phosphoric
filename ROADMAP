@@ -18,8 +18,13 @@ phase intra-PHI2 (grille `sys_clk = PHI2×30`).
       arrive à `tior+serve_subticks`, propre ssi ≤ latch ; reproduit `-Os`/`-O2` du
       rapport de bug) + CLI `--loci-serve-timing SERVE[,LATCH]`. Défaut WINDOW =
       iso-comportement. `test-loci-acia-miss` +3 (7→10).
-- [ ] **Phase 2** — brancher les autres périphériques du port d'extension sur le
-      prédicat (valid_subtick propre à chacun) + jitter seedé optionnel (bande marginale).
+- [x] **Phase 2 (v1.116.0)** — **jitter seedé** de la course : PRNG xorshift32
+      (`bus_timing.h`), `loci_set_serve_jitter(amp,seed)` + chemin CPU
+      `loci_mia_serve_lost_sampled()`, CLI `--loci-serve-jitter AMP[,SEED]`. Près du
+      latch, ratés occasionnels **reproductibles** ; peek reste sur le nominal.
+      `test-loci-acia-miss` +3 (10→13). Reste à faire : brancher d'autres
+      périphériques d'extension (aucun autre « racer » lent aujourd'hui — le
+      prédicat `bus_serve_wins_race` est prêt pour eux).
 - [ ] **Phase 3** — horodatage sous-cycle des accès au niveau CPU (chaque accès
       porte sa phase) ; setup/hold on-board si un cas réel l'exige.
 - [ ] **Phase 4** — calibration des constantes (latch, budgets de serve) contre

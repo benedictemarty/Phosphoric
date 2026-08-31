@@ -489,6 +489,8 @@ typedef struct loci_s {
     uint8_t mia_timing_model;   /* 0 = LOCI_TIMING_WINDOW, 1 = LOCI_TIMING_PHASE */
     uint8_t mia_serve_subticks; /* latence serve modélisée (PHI2×30), modèle PHASE */
     uint8_t mia_latch_subtick;  /* instant de latch 6502 (subticks), modèle PHASE */
+    uint8_t mia_serve_jitter;   /* amplitude jitter du serve (subticks), 0 = off */
+    uint32_t mia_jitter_state;  /* état PRNG jitter (avancé par accès CPU) */
 } loci_t;
 
 #define LOCI_TIMING_WINDOW  0
@@ -508,6 +510,17 @@ void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi);
  * de serve (grille PHI2×30, ≈ budget du build), latch_subtick = instant de latch
  * 6502. Bascule le modèle sur PHASE. */
 void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_subtick);
+
+/* Règle le jitter du serve (modèle PHASE) : amplitude en subticks (0 = off),
+ * graine du PRNG (0 → valeur par défaut). Près de la frontière de latch, la
+ * fiabilité devient occasionnelle mais reste reproductible pour une graine donnée. */
+void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed);
+
+/* Prédicat de course AVEC jitter, à usage du chemin d'accès CPU (non-const :
+ * avance le PRNG). Renvoie true si le serve PERD la course ce tour-ci. Sans jitter
+ * (ou hors modèle PHASE), équivaut à !loci_mia_io_reliable(). L'observation
+ * (peek/débogueur) doit rester sur loci_mia_io_reliable() (const, nominal). */
+bool loci_mia_serve_lost_sampled(loci_t* loci);
 
 bool    loci_init(loci_t* loci);
 void    loci_reset(loci_t* loci);
