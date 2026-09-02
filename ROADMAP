@@ -168,7 +168,11 @@ Spec entièrement fondée sur Oricutron (`disk.c`/`machine.c`/`8912.c`/`jasmin.s
 - [x] Tick FDC dans `io_bus_tick` (indispensable : BUSY sinon jamais libéré).
 - [x] **Boot TDOS vérifié** : `arcade1j.dsk` → « T.R.A.N. DOS V2-2 © 1984 » headless.
 - [x] `make tests` 908/908 (0 régression — `memory.c` n'affecte pas le Microdisc).
-- [ ] Backlog : `test-jasmin` unitaire, write-back `.dsk`, side-2, raffiner WD1772.
+- [x] **`test-jasmin` unitaire (5), write-back `.dsk`, hot-swap, `peek disk`
+      `iface=`, `--bad-sector`, double face side-2** (v1.117.0-alpha, rapports
+      bbsoric) : helpers `emu_disk_*`/`emu_disk_wire()` sur l'interface active,
+      `jasmin_add_bad_sector()`, side-select `$03F8` validé.
+- [ ] Backlog : raffiner les step rates WD1770/72 vs WD1793, cross-check Oricutron.
 
 ---
 
@@ -1938,6 +1942,10 @@ isolé dans l'Epic 2.
 - [x] CLI: --cast-discover (standalone discovery mode)
 - [x] Conditional build: CAST=1 (-DHAS_CAST -lpthread)
 - [x] No-op stubs when CAST=1 not set
+- [x] **`/audio` alimenté en headless** (v1.117.0-alpha, rapport oriced) : le bloc
+      audio headless par frame (`main.c`) s'arme aussi sur `has_cast_server` et
+      pousse le buffer stéréo au cast (pendant du callback SDL, jamais exécuté en
+      headless). Gaté sur `--cast-server`. e2e `SOUND` → PCM ; `test-cast` 24/24.
 - [x] 13 cast server unit tests (181 total, 100% pass)
 
 ### Sprint 21: Native CASTV2 Client (v1.3.0-alpha) - DONE

@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.117.0-alpha] - 2026-09-02
+
+Correctifs remontés par les projets partenaires (bbsoric, oriced), fusionnés
+depuis la branche `experiment/loci-coproc-acia-reliable` **sans** les extensions
+LOCI expérimentales (celles-ci restent hors `main`, opt-in, sur leur branche).
+
+### Fixed — flux audio du cast (`/audio`) muet en headless (`-n`)
+
+Rapport oriced (`docs/NOTE-EQUIPE-AUDIO-CAST-HEADLESS.md`). En headless le serveur
+cast diffusait la vidéo (`/stream`) mais **aucun son** via `/audio` — le seul
+appelant de `cast_server_push_audio()` était `audio_callback()`, le callback du
+device audio SDL, jamais ouvert en headless. Le bloc de génération PSG par frame
+headless (`ay_generate`, `src/main.c`) s'arme désormais aussi quand
+`emu->has_cast_server` et pousse le **même buffer stéréo entrelacé** au cast —
+pendant headless exact du callback SDL (une génération/frame, l'anneau PSG n'est
+pas drainé deux fois ; mixe SP0256/MEA8000). Pas de nouveau flag : gaté sur le
+serveur cast (opt-in via `--cast-server`). Build sans CAST : `has_cast_server`
+toujours faux + stub no-op. Vérifié e2e (`-n --realtime --cast-server` +
+`10 SOUND 1,1000,15:20 GOTO 20`) : `/audio` diffuse du PCM (baseline 0 échantillon
+→ ~100 k, crête 5461). `make test-cast` **24/24** (link réparé : ajout de
+`stb_image_write_impl.c` à `TEST_CAST_SRCS`, `stbi_write_jpg_to_func` manquait).
+
+### Fixed — flux cast (MJPEG) figé à l'arrêt en mode `--control`
+
+Au point d'arrêt/watchpoint en `--control`, la boucle de rendu ne tournant plus,
+le flux MJPEG restait figé sur une frame antérieure. On rend désormais une frame
+depuis la RAM écran et on la pousse au serveur cast avant d'entrer dans le REPL
+(`video_render_frame` + `cast_server_push_frame`), avec double diffusion (~30 ms)
+pour évincer la frame en vol côté navigateur.
+
+### Fixed — write-back Jasmin : les `SAVE` invité n'étaient jamais persistés
+
+Rapport bbsoric. Sur `--jasmin-rom`, un `SAVE` invité mutait l'image RAM et posait
+`jasmin.disk_dirty[]`, mais les trois sites de write-back
+(`osd_writeback_drive` + flush de sortie dans `main.c`, `control_writeback_drive`
+dans `control.c`) ne consultaient que `microdisc.disk_dirty[]` → `.dsk` jamais
+réécrit, sauvegarde perdue même avec `--disk-writeback`. Nouveaux helpers inline
+`emu_disk_dirty()`/`emu_disk_clear_dirty()`/`emu_disk_max_drives()`
+(`include/emulator.h`) qui consultent l'interface **active** (`has_jasmin` →
+Jasmin, sinon Microdisc) ; les trois sites y délèguent, le flush de sortie s'arme
+aussi sur `has_jasmin`. Buffer déjà partagé (`jasmin_set_disk` câblé sur
+`emu->disks[i]->data`) → persistance byte-exact.
+
+### Added — Jasmin : hot-swap, diagnostic `peek disk`, `--bad-sector`, double face
+
+- **Hot-swap** : OSD F6/Suppr (`osd_do_load`/`osd_do_eject`), `control`
+  `load-disk`/`eject-disk` et `web_insert_disk` (WASM) routent vers l'interface
+  active via un nouveau helper `emu_disk_wire()` (auparavant gardés
+  `has_microdisc` + `microdisc_set_disk` en dur → inopérants sur Jasmin).
+- **`peek disk`/`fdc`** expose l'état du contrôleur actif, préfixé
+  `iface=jasmin|microdisc` (variante Jasmin : `romdis`/`olay`/`drq`/`intrq`).
+  Vérifié live : `iface=jasmin … drives_mounted=1000`.
+- **`--bad-sector`** : nouveau `jasmin_add_bad_sector()` (miroir Microdisc),
+  injecté aussi quand `has_jasmin`.
+- **Double face (side-2)** validée : le side-select externe `$03F8` alimente
+  `fdc->side`, consommé par l'offset partagé `side*(tracks*spt)` (déjà correct ;
+  couverture ajoutée).
+- Nouvelle suite **`make test-jasmin`** (5 tests) couvrant les points ci-dessus.
+
 ## [1.116.0-alpha] - 2026-08-31
 
 ### Added — Jitter seedé de la course PHI2 — Épic B, Phase 2
