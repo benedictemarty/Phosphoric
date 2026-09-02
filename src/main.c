@@ -1163,6 +1163,17 @@ static void emulator_run(emulator_t* emu) {
                     /* Clear last_break_reason after emitting so the next
                      * stop starts fresh. */
                     emu->debugger.last_break_reason[0] = '\0';
+                    /* Refresh the cast (MJPEG) frame with the current screen
+                     * before blocking in the REPL: the render loop won't run
+                     * while stopped, so otherwise the stream stays frozen on an
+                     * earlier frame. When debugging, the user must see the screen
+                     * as it is at the breakpoint. */
+                    if (emu->has_cast_server) {
+                        video_render_frame(&emu->video, emu->memory.ram);
+                        cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
+                                               (unsigned int)emu->video.native_w,
+                                               (unsigned int)emu->video.native_h);
+                    }
                     control_repl(emu);
                 } else if (emu->tui_mode) {
                     tui_repl(emu);
