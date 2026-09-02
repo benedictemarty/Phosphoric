@@ -499,4 +499,25 @@ typedef struct emulator_s {
     const char* tape_path;
 } emulator_t;
 
+/* ── Active disk interface helpers ───────────────────────────────────────
+ * The emulator boots either the Microdisc or the Jasmin (mutually exclusive),
+ * and each carries its own per-drive dirty flag. Write-back sites must consult
+ * the *active* interface, not hard-code the Microdisc. Both share the flat
+ * emu->disks[]/emu->disk_paths[] arrays and the same 4-drive layout. */
+static inline int emu_disk_max_drives(const emulator_t* emu) {
+    return emu->has_jasmin ? JASMIN_MAX_DRIVES : MICRODISC_MAX_DRIVES;
+}
+
+static inline bool emu_disk_dirty(const emulator_t* emu, int drv) {
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
+    return emu->has_jasmin ? emu->jasmin.disk_dirty[drv]
+                           : emu->microdisc.disk_dirty[drv];
+}
+
+static inline void emu_disk_clear_dirty(emulator_t* emu, int drv) {
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) return;
+    if (emu->has_jasmin) emu->jasmin.disk_dirty[drv] = false;
+    else                 emu->microdisc.disk_dirty[drv] = false;
+}
+
 #endif /* EMULATOR_H */

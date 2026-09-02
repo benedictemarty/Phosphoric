@@ -598,13 +598,13 @@ static int control_drive_index(const char* s) {
  * in main.c. Opt-in via --disk-writeback; only when the drive is dirty and has a
  * known source path. Returns true if a write-back actually happened. */
 static bool control_writeback_drive(emulator_t* emu, int drv) {
-    if (!emu->disk_writeback || drv < 0 || drv >= MICRODISC_MAX_DRIVES) return false;
-    if (!emu->microdisc.disk_dirty[drv] || !emu->disks[drv] || !emu->disk_paths[drv])
+    if (!emu->disk_writeback || drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
+    if (!emu_disk_dirty(emu, drv) || !emu->disks[drv] || !emu->disk_paths[drv])
         return false;
     bool ok = sedoric_save(emu->disks[drv], emu->disk_paths[drv]);
     log_info("control: write-back drive %c -> %s (%s)", 'A' + drv,
              emu->disk_paths[drv], ok ? "OK" : "FAIL");
-    emu->microdisc.disk_dirty[drv] = false;
+    emu_disk_clear_dirty(emu, drv);
     return ok;
 }
 

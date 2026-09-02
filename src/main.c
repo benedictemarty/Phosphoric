@@ -601,13 +601,13 @@ static void mageco_cpu_irq_clr(emulator_t* emu) {
  * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
  * pas perdre les écritures. Retourne true si une sauvegarde a eu lieu. */
 static bool osd_writeback_drive(emulator_t* emu, int drv) {
-    if (!emu->disk_writeback || drv < 0 || drv >= MICRODISC_MAX_DRIVES) return false;
-    if (!emu->microdisc.disk_dirty[drv] || !emu->disks[drv] || !emu->disk_paths[drv])
+    if (!emu->disk_writeback || drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
+    if (!emu_disk_dirty(emu, drv) || !emu->disks[drv] || !emu->disk_paths[drv])
         return false;
     bool ok = sedoric_save(emu->disks[drv], emu->disk_paths[drv]);
     log_info("OSD: write-back lecteur %c -> %s (%s)", 'A' + drv, emu->disk_paths[drv],
              ok ? "OK" : "ECHEC");
-    emu->microdisc.disk_dirty[drv] = false;
+    emu_disk_clear_dirty(emu, drv);
     return ok;
 }
 
@@ -4191,11 +4191,11 @@ int main(int argc, char* argv[]) {
      * dirty only if the guest actually wrote a sector to it this session. The
      * original file is overwritten in place, so this is gated behind an explicit
      * flag to never clobber a .dsk by accident. */
-    if (disk_writeback && emu.has_microdisc) {
-        for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+    if (disk_writeback && (emu.has_microdisc || emu.has_jasmin)) {
+        for (int i = 0; i < emu_disk_max_drives(&emu); i++) {
             /* disk_paths[] suit les swaps OSD ; disk_files[] ne voit qu'argv. */
             const char* path = emu.disk_paths[i];
-            if (!emu.microdisc.disk_dirty[i] || !path || !emu.disks[i])
+            if (!emu_disk_dirty(&emu, i) || !path || !emu.disks[i])
                 continue;
             if (sedoric_save(emu.disks[i], path)) {
                 /* Report the bytes actually written to the file: an MFM image

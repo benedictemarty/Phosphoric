@@ -221,7 +221,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release clean tools tests test-cpu test-memory test-io test-ula-ng test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release clean tools tests test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -285,6 +285,10 @@ TEST_STORAGE_SRCS = tests/unit/test_storage.c src/storage/sedoric.c \
                     src/storage/disk.c src/storage/disk_http.c \
                     src/io/microdisc.c src/utils/logging.c
 
+TEST_JASMIN_SRCS = tests/unit/test_jasmin.c src/io/jasmin.c \
+                   src/storage/sedoric.c src/storage/disk.c \
+                   src/storage/disk_http.c src/utils/logging.c
+
 TEST_SYSTEM_SRCS = tests/unit/test_full_system.c src/cpu/cpu6502.c \
                    src/cpu/opcodes.c src/cpu/addressing.c src/memory/memory.c \
                    src/memory/banking.c src/io/via6522.c src/utils/logging.c
@@ -308,6 +312,10 @@ test-io: $(TEST_IO_SRCS)
 test-cassette: $(TEST_CASSETTE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_CASSETTE_SRCS) $(LDFLAGS) -o test_cassette
 	@./test_cassette
+
+test-jasmin: $(TEST_JASMIN_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_JASMIN_SRCS) $(LDFLAGS) -o test_jasmin
+	@./test_jasmin
 
 test-storage: $(TEST_STORAGE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_STORAGE_SRCS) $(LDFLAGS) -o test_storage
@@ -685,7 +693,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-ula-ng test-cassette test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing
+tests: test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -737,7 +745,7 @@ security-check: cppcheck flawfinder
 	@echo "  Security check complet : cppcheck + flawfinder OK"
 	@echo "═══════════════════════════════════════════════════════"
 
-valgrind: test-cpu test-memory test-io test-storage test-system test-rom test-video test-audio test-debugger test-cast
+valgrind: test-cpu test-memory test-io test-jasmin test-jasmin test-storage test-system test-rom test-video test-audio test-debugger test-cast
 	@echo "Running tests under Valgrind..."
 	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_cpu
 	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_memory

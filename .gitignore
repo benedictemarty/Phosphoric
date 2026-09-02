@@ -32,6 +32,7 @@ test_cpu
 test_memory
 test_io
 test_cassette
+test_jasmin
 test_storage
 test_system
 test_rom
