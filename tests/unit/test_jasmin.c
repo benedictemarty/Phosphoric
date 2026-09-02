@@ -208,12 +208,62 @@ TEST(test_jasmin_bad_sector_injection) {
     ASSERT_EQ(jasmin_add_bad_sector(&j, JASMIN_MAX_DRIVES, 0, 1, 1), -1);
 }
 
+/* ── Double-sided Jasmin (side-2). The WD1770/1772 has no SIDE pin; the Jasmin
+ * drives it externally via $03F8. A guest write with side 1 selected must land
+ * in the side-1 region of the flat image — offset side*(tracks*spt) — and leave
+ * side 0 untouched. This proves the $03F8 side-select feeds fdc->side, which the
+ * offset formula (disk.c) consumes. */
+TEST(test_jasmin_side_select_double_sided) {
+    const uint8_t TPS = 2;                       /* tracks per side (small) */
+    sedoric_disk_t* disk = sedoric_create_blank(TPS, 2);  /* 2 sides */
+    ASSERT_TRUE(disk != NULL);
+    ASSERT_EQ(disk->sides, 2);
+    ASSERT_EQ(disk->data[0], 'S');               /* side-0/t0/s1 signature */
+
+    jasmin_t j;
+    memset(&j, 0, sizeof(j));
+    jasmin_init(&j);
+    j.fdc.timing_mode = FDC_TIMING_FAST;
+    jasmin_set_disk(&j, 0, disk->data, disk->size, disk->tracks, disk->sectors);
+
+    /* Select side 1 via $03F8 (external side-select). */
+    jasmin_write(&j, JASMIN_SIDE, 1);
+    ASSERT_EQ(j.side, 1);
+    ASSERT_EQ(j.fdc.side, 1);
+
+    /* Write track 0 / sector 1 on side 1. */
+    j.fdc.c_track = 0;
+    j.fdc.track = 0;
+    j.fdc.sector = 1;
+    jasmin_write(&j, JASMIN_FDC_BASE, 0xA0);
+    ASSERT_EQ(j.fdc.currentop, FDC_OP_WRITE_SECTOR);
+    fdc_ticktock(&j.fdc, 505);
+    ASSERT_EQ(j.drq, 0x00);
+    for (int i = 0; i < 256; i++) {
+        jasmin_write(&j, JASMIN_FDC_BASE + 3, (uint8_t)i);
+        if (i < 255) fdc_ticktock(&j.fdc, 35);
+    }
+    ASSERT_EQ(j.fdc.currentop, FDC_OP_NONE);
+
+    /* side1/t0/s1 lands at offset side*(tracks*spt) = 1*(2*17)=34 sectors. */
+    uint32_t off = (uint32_t)1 * TPS * disk->sectors * 256;
+    ASSERT_EQ(disk->data[off + 1], 0x01);
+    ASSERT_EQ(disk->data[off + 255], 0xFF);
+    /* Side 0 must be untouched: its signature is still intact. */
+    ASSERT_EQ(disk->data[0], 'S');
+    ASSERT_EQ(disk->data[1], 'E');
+    ASSERT_EQ(disk->data[2], 'D');
+
+    sedoric_destroy(disk);
+}
+
 int main(void) {
     printf("Jasmin disk interface tests\n");
     printf("═══════════════════════════════════════════════════════\n");
     RUN(test_emu_disk_helpers_follow_active_iface);
     RUN(test_emu_disk_wire_routes_to_active_iface);
     RUN(test_jasmin_bad_sector_injection);
+    RUN(test_jasmin_side_select_double_sided);
     RUN(test_jasmin_guest_write_persists);
     printf("═══════════════════════════════════════════════════════\n");
     printf("  %d passed, %d failed\n", tests_passed, tests_failed);
