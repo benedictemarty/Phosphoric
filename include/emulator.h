@@ -520,4 +520,24 @@ static inline void emu_disk_clear_dirty(emulator_t* emu, int drv) {
     else                 emu->microdisc.disk_dirty[drv] = false;
 }
 
+/* Install (or, with nd==NULL, eject) a disk into drive @p drv on the active
+ * controller, so hot-swap paths (OSD/control load-disk/eject-disk) don't
+ * hard-code the Microdisc. Both controllers share this exact signature. */
+static inline void emu_disk_wire(emulator_t* emu, int drv, sedoric_disk_t* nd) {
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) return;
+    uint8_t* data    = nd ? nd->data    : NULL;
+    uint32_t size    = nd ? nd->size    : 0;
+    uint8_t  tracks  = nd ? nd->tracks  : 0;
+    uint8_t  sectors = nd ? nd->sectors : 0;
+    if (emu->has_jasmin)
+        jasmin_set_disk(&emu->jasmin, (uint8_t)drv, data, size, tracks, sectors);
+    else
+        microdisc_set_disk(&emu->microdisc, (uint8_t)drv, data, size, tracks, sectors);
+}
+
+/* True when a disk controller (Microdisc or Jasmin) is present. */
+static inline bool emu_has_disk_iface(const emulator_t* emu) {
+    return emu->has_microdisc || emu->has_jasmin;
+}
+
 #endif /* EMULATOR_H */

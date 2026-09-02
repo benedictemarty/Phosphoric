@@ -179,21 +179,20 @@ EMSCRIPTEN_KEEPALIVE int web_insert_tap(const char* path) {
     return 1;
 }
 
-/* Hot-insert a .dsk into drive (0..3) from a VFS path. Requires the Microdisc
- * to be active (the machine was started with --disk-rom). Returns 0 if there is
- * no Microdisc, so the JS side can fall back to a reload that brings it up.
+/* Hot-insert a .dsk into drive (0..3) from a VFS path. Requires a disk
+ * controller (Microdisc via --disk-rom, or Jasmin via --jasmin-rom). Returns 0
+ * if none is active, so the JS side can fall back to a reload that brings it up.
  * No write-back: the WASM build does not enable --disk-writeback. */
 EMSCRIPTEN_KEEPALIVE int web_insert_disk(int drive, const char* path) {
     if (!g_web_emu || !path) return 0;
-    if (!g_web_emu->has_microdisc) return 0;
-    if (drive < 0 || drive >= MICRODISC_MAX_DRIVES) return 0;
+    if (!emu_has_disk_iface(g_web_emu)) return 0;
+    if (drive < 0 || drive >= emu_disk_max_drives(g_web_emu)) return 0;
     sedoric_disk_t* nd = sedoric_load(path);
     if (!nd) return 0;
     if (g_web_emu->disks[drive]) sedoric_destroy(g_web_emu->disks[drive]);
     g_web_emu->disks[drive] = nd;
-    g_web_emu->microdisc.disk_dirty[drive] = false;
-    microdisc_set_disk(&g_web_emu->microdisc, (uint8_t)drive, nd->data, nd->size,
-                       nd->tracks, nd->sectors);
+    emu_disk_clear_dirty(g_web_emu, drive);
+    emu_disk_wire(g_web_emu, drive, nd);
     g_web_emu->disk_paths[drive] = strdup(path);
     return 1;
 }
@@ -613,13 +612,13 @@ static bool osd_writeback_drive(emulator_t* emu, int drv) {
 
 /* OSD : éjecte la disquette du lecteur cible (write-back préalable si activé). */
 static void osd_do_eject(emulator_t* emu) {
-    if (!emu->has_microdisc) {
+    if (!emu_has_disk_iface(emu)) {
         snprintf(emu->osd.status, sizeof(emu->osd.status),
-                 "Pas de Microdisc (--disk-rom requis)");
+                 "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
         return;
     }
     int drv = emu->osd.disk_drive;
-    if (drv < 0 || drv >= MICRODISC_MAX_DRIVES) drv = 0;
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
     if (!emu->disks[drv]) {
         snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c deja vide", 'A' + drv);
         return;
@@ -628,7 +627,7 @@ static void osd_do_eject(emulator_t* emu) {
     sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = NULL;
     emu->disk_paths[drv] = NULL;
-    microdisc_set_disk(&emu->microdisc, (uint8_t)drv, NULL, 0, 0, 0);
+    emu_disk_wire(emu, drv, NULL);
     if (drv == 0) emu->disk_path = NULL;
     snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c ejecte", 'A' + drv);
     log_info("OSD: lecteur %c ejecte", 'A' + drv);
@@ -655,13 +654,13 @@ static void osd_do_eject_tape(emulator_t* emu) {
  * disquette lecteur A) sans quitter l'émulateur. */
 static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
     if (e->is_disk) {
-        if (!emu->has_microdisc) {
+        if (!emu_has_disk_iface(emu)) {
             snprintf(emu->osd.status, sizeof(emu->osd.status),
-                     "Pas de Microdisc (--disk-rom requis)");
+                     "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
             return;
         }
         int drv = emu->osd.disk_drive;
-        if (drv < 0 || drv >= MICRODISC_MAX_DRIVES) drv = 0;
+        if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
         sedoric_disk_t* nd = sedoric_load(e->path);
         if (!nd) {
             snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
@@ -671,9 +670,8 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
         osd_writeback_drive(emu, drv);
         if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
         emu->disks[drv] = nd;
-        emu->microdisc.disk_dirty[drv] = false;
-        microdisc_set_disk(&emu->microdisc, (uint8_t)drv, nd->data, nd->size,
-                           nd->tracks, nd->sectors);
+        emu_disk_clear_dirty(emu, drv);
+        emu_disk_wire(emu, drv, nd);
         /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). Les
          * pointeurs initiaux viennent d'argv (non libérables) → on réaffecte. */
         emu->disk_paths[drv] = strdup(e->path);

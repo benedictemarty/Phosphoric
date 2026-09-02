@@ -285,7 +285,7 @@ TEST_STORAGE_SRCS = tests/unit/test_storage.c src/storage/sedoric.c \
                     src/storage/disk.c src/storage/disk_http.c \
                     src/io/microdisc.c src/utils/logging.c
 
-TEST_JASMIN_SRCS = tests/unit/test_jasmin.c src/io/jasmin.c \
+TEST_JASMIN_SRCS = tests/unit/test_jasmin.c src/io/jasmin.c src/io/microdisc.c \
                    src/storage/sedoric.c src/storage/disk.c \
                    src/storage/disk_http.c src/utils/logging.c
 

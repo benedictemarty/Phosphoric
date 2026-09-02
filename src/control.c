@@ -617,8 +617,8 @@ static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
         sink_err(s, "load-disk: usage `load-disk <drive A-D> <path>`");
         return;
     }
-    if (!emu->has_microdisc) {
-        sink_err(s, "load-disk: no microdisc (need --disk-rom)");
+    if (!emu_has_disk_iface(emu)) {
+        sink_err(s, "load-disk: no disk controller (need --disk-rom or --jasmin-rom)");
         return;
     }
     int drv = control_drive_index(drive_s);
@@ -630,9 +630,8 @@ static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
     control_writeback_drive(emu, drv);
     if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = nd;
-    emu->microdisc.disk_dirty[drv] = false;
-    microdisc_set_disk(&emu->microdisc, (uint8_t)drv, nd->data, nd->size,
-                       nd->tracks, nd->sectors);
+    emu_disk_clear_dirty(emu, drv);
+    emu_disk_wire(emu, drv, nd);
     emu->disk_paths[drv] = strdup(path);
     if (drv == 0) emu->disk_path = emu->disk_paths[drv];
     log_info("control: disk %c <- %s", 'A' + drv, path);
@@ -643,7 +642,7 @@ static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
 /* eject-disk <drive> — empty drive A-D, writing back first if dirty. */
 static void cmd_eject_disk(emulator_t* emu, control_sink_t* s,
                            const char* drive_s) {
-    if (!emu->has_microdisc) { sink_err(s, "eject-disk: no microdisc"); return; }
+    if (!emu_has_disk_iface(emu)) { sink_err(s, "eject-disk: no disk controller"); return; }
     int drv = control_drive_index(drive_s);
     if (drv < 0) { sink_err(s, "eject-disk: usage `eject-disk <drive A-D>`"); return; }
     if (!emu->disks[drv]) { sink_err(s, "eject-disk: drive %c already empty", 'A' + drv); return; }
@@ -652,7 +651,7 @@ static void cmd_eject_disk(emulator_t* emu, control_sink_t* s,
     sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = NULL;
     emu->disk_paths[drv] = NULL;
-    microdisc_set_disk(&emu->microdisc, (uint8_t)drv, NULL, 0, 0, 0);
+    emu_disk_wire(emu, drv, NULL);
     if (drv == 0) emu->disk_path = NULL;
     log_info("control: drive %c ejected", 'A' + drv);
     sink_ok(s, "drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);

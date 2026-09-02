@@ -154,10 +154,41 @@ TEST(test_jasmin_guest_write_persists) {
     unlink(path);
 }
 
+/* ── Hot-swap routing: emu_disk_wire() installs/ejects on the ACTIVE controller.
+ * The OSD (F6/Suppr) and control (load-disk/eject-disk) hot-swap paths now route
+ * through this helper, so on a Jasmin machine the media must land in the Jasmin
+ * controller (not the Microdisc), and an eject (nd==NULL) must clear it. */
+TEST(test_emu_disk_wire_routes_to_active_iface) {
+    emulator_t* emu = calloc(1, sizeof(*emu));
+    ASSERT_TRUE(emu != NULL);
+    emu->has_jasmin = true;
+    emu->has_microdisc = false;
+    jasmin_init(&emu->jasmin);
+
+    sedoric_disk_t* disk = sedoric_create();
+    ASSERT_TRUE(disk != NULL);
+
+    /* Install into drive B: the Jasmin drive-B slot must point at the buffer,
+     * and the Microdisc must stay untouched. */
+    emu_disk_wire(emu, 1, disk);
+    ASSERT_TRUE(emu->jasmin.disk_data[1] == disk->data);
+    ASSERT_EQ(emu->jasmin.disk_size[1], disk->size);
+    ASSERT_TRUE(emu->microdisc.disk_data[1] == NULL);
+
+    /* Eject: the Jasmin slot must be cleared. */
+    emu_disk_wire(emu, 1, NULL);
+    ASSERT_TRUE(emu->jasmin.disk_data[1] == NULL);
+    ASSERT_EQ(emu->jasmin.disk_size[1], 0u);
+
+    sedoric_destroy(disk);
+    free(emu);
+}
+
 int main(void) {
     printf("Jasmin disk interface tests\n");
     printf("═══════════════════════════════════════════════════════\n");
     RUN(test_emu_disk_helpers_follow_active_iface);
+    RUN(test_emu_disk_wire_routes_to_active_iface);
     RUN(test_jasmin_guest_write_persists);
     printf("═══════════════════════════════════════════════════════\n");
     printf("  %d passed, %d failed\n", tests_passed, tests_failed);
