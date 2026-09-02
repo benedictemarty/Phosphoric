@@ -105,4 +105,10 @@ bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size);
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
                      uint8_t tracks, uint8_t sectors_per_track);
 
+/* Mark a sector unreadable (RNF/CRC) on @p drive — mirrors the Microdisc; the
+ * damage belongs to the media and is swapped in on drive select. Returns 0 on
+ * success, -1 on out-of-range drive or a full map. */
+int jasmin_add_bad_sector(jasmin_t* j, uint8_t drive,
+                          uint8_t side, uint8_t track, uint8_t sector);
+
 #endif /* JASMIN_H */

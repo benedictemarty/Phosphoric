@@ -3913,6 +3913,11 @@ int main(int argc, char* argv[]) {
             if (emu.has_microdisc)
                 rc = microdisc_add_bad_sector(&emu.microdisc, (uint8_t)d,
                                               (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
+            if (emu.has_jasmin) {
+                int rc2 = jasmin_add_bad_sector(&emu.jasmin, (uint8_t)d,
+                                                (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
+                if (rc != 0) rc = rc2;
+            }
             if (emu.has_loci) {
                 int rc2 = loci_add_bad_sector(&emu.loci, (uint8_t)d,
                                               (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
@@ -3922,7 +3927,7 @@ int main(int argc, char* argv[]) {
                 log_info("Bad sector injected: drive %c side %u track %u sector %u",
                          'A' + d, s, trk, sec);
             } else {
-                log_error("--bad-sector %s: no disk subsystem (use -d/--disk-rom or --loci)",
+                log_error("--bad-sector %s: no disk subsystem (use -d/--disk-rom, --jasmin-rom or --loci)",
                           bad_sector_args[i]);
                 emulator_cleanup(&emu);
                 return 1;

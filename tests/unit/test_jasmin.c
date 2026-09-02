@@ -184,11 +184,36 @@ TEST(test_emu_disk_wire_routes_to_active_iface) {
     free(emu);
 }
 
+/* ── Bad-sector injection (--bad-sector on a Jasmin machine). The damage lives
+ * with the media (per-drive map) and is synced into the live FDC map when the
+ * target is the selected drive. Mirrors the Microdisc. */
+TEST(test_jasmin_bad_sector_injection) {
+    jasmin_t j;
+    memset(&j, 0, sizeof(j));
+    jasmin_init(&j);                 /* selects drive 0 */
+
+    /* Inject on the selected drive: recorded in the media map AND synced live. */
+    ASSERT_EQ(jasmin_add_bad_sector(&j, 0, 0, 10, 3), 0);
+    ASSERT_EQ(j.bad_map[0].count, 1);
+    ASSERT_EQ(j.bad_map[0].entry[0].track, 10);
+    ASSERT_EQ(j.bad_map[0].entry[0].sector, 3);
+    ASSERT_EQ(j.fdc.bad.count, 1);   /* live FDC map re-pointed (selected drive) */
+
+    /* Inject on a non-selected drive: recorded on its media, live map untouched. */
+    ASSERT_EQ(jasmin_add_bad_sector(&j, 2, 0, 5, 7), 0);
+    ASSERT_EQ(j.bad_map[2].count, 1);
+    ASSERT_EQ(j.fdc.bad.count, 1);   /* still drive 0's map under the head */
+
+    /* Out-of-range drive is rejected. */
+    ASSERT_EQ(jasmin_add_bad_sector(&j, JASMIN_MAX_DRIVES, 0, 1, 1), -1);
+}
+
 int main(void) {
     printf("Jasmin disk interface tests\n");
     printf("═══════════════════════════════════════════════════════\n");
     RUN(test_emu_disk_helpers_follow_active_iface);
     RUN(test_emu_disk_wire_routes_to_active_iface);
+    RUN(test_jasmin_bad_sector_injection);
     RUN(test_jasmin_guest_write_persists);
     printf("═══════════════════════════════════════════════════════\n");
     printf("  %d passed, %d failed\n", tests_passed, tests_failed);

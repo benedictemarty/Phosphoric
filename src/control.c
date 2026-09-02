@@ -940,10 +940,27 @@ static void cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
         sink_flush(s);
     }
     else if (strcmp(sub, "disk") == 0 || strcmp(sub, "fdc") == 0) {
-        if (!emu->has_microdisc) { sink_err(s, "disk: microdisc inactive"); return; }
+        if (emu->has_jasmin) {
+            /* Jasmin has no diskrom/intena gate; DRQ (not INTRQ) drives the CPU
+             * IRQ, and the side is selected externally ($03F8). */
+            jasmin_t* j = &emu->jasmin;
+            fdc_t* f = &j->fdc;
+            sink_ok(s, "iface=jasmin intrq=%d drq=%d romdis=%d olay=%d "
+                    "drive=%d side=%d cmd=%02X status=%02X trk=%02X sec=%02X "
+                    "data=%02X dir=%d c_trk=%02X c_sec=%02X cur_off=%04X "
+                    "drives_mounted=%d%d%d%d",
+                    j->intrq == 0x00 ? 1 : 0, j->drq == 0x00 ? 1 : 0,
+                    j->romdis, j->olay, j->drive, j->side,
+                    f->command, f->status, f->track, f->sector, f->data,
+                    f->direction, f->c_track, f->c_sector, f->cur_offset,
+                    j->disk_data[0] != NULL, j->disk_data[1] != NULL,
+                    j->disk_data[2] != NULL, j->disk_data[3] != NULL);
+            return;
+        }
+        if (!emu->has_microdisc) { sink_err(s, "disk: no disk controller"); return; }
         microdisc_t* md = &emu->microdisc;
         fdc_t* f = &md->fdc;
-        sink_ok(s, "ctrl=%02X intrq=%d drq=%d diskrom=%d romdis=%d intena=%d "
+        sink_ok(s, "iface=microdisc ctrl=%02X intrq=%d drq=%d diskrom=%d romdis=%d intena=%d "
                 "drive=%d side=%d cmd=%02X status=%02X trk=%02X sec=%02X "
                 "data=%02X dir=%d c_trk=%02X c_sec=%02X cur_off=%04X "
                 "drives_mounted=%d%d%d%d",

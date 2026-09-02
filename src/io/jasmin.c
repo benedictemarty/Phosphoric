@@ -143,6 +143,16 @@ bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size) {
     return true;
 }
 
+int jasmin_add_bad_sector(jasmin_t* j, uint8_t drive,
+                          uint8_t side, uint8_t track, uint8_t sector) {
+    if (drive >= JASMIN_MAX_DRIVES) return -1;
+    if (fdc_bad_map_add(&j->bad_map[drive], side, track, sector) != 0) return -1;
+    /* Re-point the live FDC map if this is the selected drive. */
+    if (drive == j->drive)
+        fdc_set_bad_map(&j->fdc, &j->bad_map[drive]);
+    return 0;
+}
+
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
                      uint8_t tracks, uint8_t sectors_per_track) {
     if (drive >= JASMIN_MAX_DRIVES) return;
