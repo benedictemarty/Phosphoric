@@ -1173,6 +1173,15 @@ static void emulator_run(emulator_t* emu) {
                         cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
                                                (unsigned int)emu->video.native_w,
                                                (unsigned int)emu->video.native_h);
+                        /* Double diffusion : les clients MJPEG (<img> navigateur)
+                         * affichent souvent la frame précédente et gardent la
+                         * dernière « en vol ». On laisse le thread cast diffuser
+                         * cette frame (tick ~20 ms) puis on la re-signale : la 2e
+                         * diffusion pousse l'écran du point d'arrêt au premier plan. */
+                        nanosleep(&(struct timespec){0, 30000000L}, NULL); /* 30 ms */
+                        cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
+                                               (unsigned int)emu->video.native_w,
+                                               (unsigned int)emu->video.native_h);
                     }
                     control_repl(emu);
                 } else if (emu->tui_mode) {
