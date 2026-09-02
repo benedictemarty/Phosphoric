@@ -385,7 +385,8 @@ test-debugger: $(TEST_DEBUGGER_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_DEBUGGER_SRCS) $(LDFLAGS) -o test_debugger
 	@./test_debugger
 
-TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c src/utils/logging.c
+TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c \
+                 src/video/stb_image_write_impl.c src/utils/logging.c
 
 test-cast: $(TEST_CAST_SRCS)
 	@$(CC) $(CFLAGS) -DHAS_CAST $(TEST_CAST_SRCS) $(LDFLAGS) -lpthread -lssl -lcrypto -o test_cast

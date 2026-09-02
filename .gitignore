@@ -38,6 +38,7 @@ test_system
 test_rom
 test_video
 test_avi
+test_cast
 test_audio
 test_debugger
 test_atmos

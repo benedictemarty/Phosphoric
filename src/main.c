@@ -1299,7 +1299,13 @@ static void emulator_run(emulator_t* emu) {
          * queue, so two calls per frame would double-drain it. Armed only in
          * headless (in GUI the SDL audio device is the generator's owner). */
         bool avi_audio = emu->headless && emu->video_avi_active && emu->video_avi_rec.has_audio;
-        if (emu->audio_wav_fp || avi_audio) {
+        /* Cast /audio in headless : the SDL callback (the GUI's audio generator +
+         * cast pusher) never runs, so feed the cast ring here — the exact
+         * headless counterpart of what audio_callback does in GUI. Gated on the
+         * cast server being active (itself opt-in via --cast-server); no extra
+         * flag. In non-CAST builds has_cast_server is always false. */
+        bool cast_audio = emu->headless && emu->has_cast_server;
+        if (emu->audio_wav_fp || avi_audio || cast_audio) {
             enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
             int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
             ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
@@ -1328,6 +1334,9 @@ static void emulator_run(emulator_t* emu) {
             }
             if (avi_audio)
                 avi_recorder_add_audio(&emu->video_avi_rec, wav_buf, WAV_FRAME_SAMPLES);
+            /* Same interleaved-stereo buffer the SDL callback pushes in GUI. */
+            if (cast_audio)
+                cast_server_push_audio(&emu->cast_server, wav_buf, WAV_FRAME_SAMPLES);
         }
 
         /* Sprint 35a freeze — async pause: once per frame, peek at stdin.

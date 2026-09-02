@@ -1,3 +1,12 @@
+> **RÉSOLU (2026-09-02, branche `experiment/loci-coproc-acia-reliable`).** Le bloc
+> de génération audio headless par frame (`src/main.c`) s'arme désormais aussi
+> quand `emu->has_cast_server` et pousse le buffer stéréo de la frame au cast via
+> `cast_server_push_audio()` — pendant headless exact du callback SDL. **Aucun flag
+> ajouté** : gaté sur le serveur cast (déjà opt-in via `--cast-server`) ; le coût
+> `ay_generate`/frame est négligeable. Vérifié e2e : `-n --realtime --cast-server`
+> + `10 SOUND 1,1000,15:20 GOTO 20` → `/audio` diffuse du PCM (baseline muet →
+> ~100 k échantillons, crête 5461). oriced peut brancher son proxy `/emu/audio`.
+
 # Un mot à l'équipe Phosphoric — le flux audio du cast (`/audio`) est muet en headless (`-n`)
 
 **Date** : 2026-09-02
