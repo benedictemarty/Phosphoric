@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — Article de vulgarisation « extensions LOCI » (docs)
+
+Nouvel article pour tachibana.eu décrivant les cinq extensions LOCI expérimentales
+(coprocesseur `$A9`, ACIA fiable `$AA` + nag RX, banque `$A7`, streamer `$A8`,
+modèle de tearing) : ABI *fastcall*, carte des registres MIA, schémas ASCII.
+Fichiers `docs/articles/loci-extensions-tachibana.md` (source) et
+`.html` (page autonome, CSS inline, prête à servir — serveur Go). Emplacements
+photo réservés (`/static/img/loci/`, à fournir). Documentation seulement, aucun
+changement de code ni de version.
+
 ## [1.117.0-alpha] - 2026-09-02
 
 Correctifs remontés par les projets partenaires (bbsoric, oriced), fusionnés

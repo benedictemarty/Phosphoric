@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="author" content="bmarty">
+<meta name="description" content="Cinq extensions expérimentales pour la carte LOCI de l'Oric, prototypées et validées sur l'émulateur cycle-exact Phosphoric : coprocesseur $A9, ACIA fiable $AA, banque $A7, streamer $A8 et modèle de tearing.">
+<title>Repousser les limites de l'Oric : cinq extensions pour la carte LOCI</title>
+<style>
+  :root{
+    --bg:#12141a; --fg:#d7dae0; --muted:#8b93a1; --accent:#e8b24c;
+    --accent2:#5fb3d6; --rule:#2a2e38; --code-bg:#0c0e13; --code-fg:#c9d1d9;
+    --note-bg:#1a1d26; --note-brd:#e8b24c;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  main{max-width:820px; margin:0 auto; padding:2.5rem 1.25rem 4rem}
+  h1{font-size:1.9rem; line-height:1.2; margin:.2em 0 .1em; color:#fff}
+  h2{font-size:1.35rem; margin:2.2em 0 .6em; padding-bottom:.25em;
+     border-bottom:1px solid var(--rule); color:var(--accent)}
+  h3{font-size:1.1rem; margin:1.8em 0 .5em; color:var(--accent2)}
+  .lede{color:var(--muted); font-style:italic; font-size:1.05rem; margin:.2em 0 1.5em}
+  p{margin:.9em 0}
+  a{color:var(--accent2); text-decoration:none; border-bottom:1px solid transparent}
+  a:hover{border-bottom-color:var(--accent2)}
+  strong{color:#fff}
+  code{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+       font-size:.9em; background:var(--code-bg); color:var(--code-fg);
+       padding:.1em .35em; border-radius:4px}
+  pre{background:var(--code-bg); color:var(--code-fg); border:1px solid var(--rule);
+      border-radius:8px; padding:1rem 1.1rem; overflow-x:auto; line-height:1.45;
+      font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+      font-size:.82rem; margin:1.3em 0}
+  pre code{background:none; padding:0; font-size:inherit}
+  .fig{margin:1.5em 0}
+  .fig figcaption{color:var(--muted); font-size:.82rem; text-align:center; margin-top:.4em}
+  .photo img{display:block; width:100%; height:auto; border-radius:8px;
+      border:1px solid var(--rule); background:var(--code-bg)}
+  /* Placeholder visible tant que le fichier image n'existe pas encore.
+     'alt' s'affiche sur fond pointillé si l'image est absente/cassée. */
+  .photo img{min-height:120px; color:var(--muted); font-size:.85rem; text-align:center;
+      line-height:120px; outline:1px dashed var(--rule); outline-offset:-8px}
+  blockquote,.note{background:var(--note-bg); border-left:3px solid var(--note-brd);
+      margin:1.5em 0; padding:.8em 1.1em; border-radius:0 8px 8px 0; color:var(--fg)}
+  blockquote p:first-child{margin-top:0} blockquote p:last-child{margin-bottom:0}
+  hr{border:none; border-top:1px solid var(--rule); margin:2.5em 0}
+  ul{padding-left:1.3em} li{margin:.35em 0}
+  .meta{color:var(--muted); font-size:.85rem; margin-top:.6em}
+  footer{margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--rule);
+         color:var(--muted); font-size:.85rem}
+  footer a{color:var(--muted)} footer a:hover{color:var(--accent2)}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Repousser les limites de l'Oric : cinq extensions expérimentales pour la carte LOCI</h1>
+<p class="lede">Comment un émulateur cycle-exact sert de banc d'essai matériel — avec l'ABI, les registres et les schémas.</p>
+<p class="meta">Par bmarty · Phosphoric</p>
+
+<div class="note">
+  <p><strong>À propos des photos.</strong> Les clichés de la carte LOCI appartiennent
+  à leurs auteurs (RAXISS / sodiumlb). Liens fournis à titre d'illustration et
+  d'attribution — <strong>à remplacer idéalement par tes propres photos</strong> (tu
+  possèdes une carte) ou par des images dont tu as l'autorisation de republication.</p>
+  <ul>
+    <li>Carte LOCI, vues produit : <a href="https://www.raxiss.com/article/id/38-LOCI">raxiss.com/article/id/38-LOCI</a></li>
+    <li>Page revendeur / photos : <a href="https://www.tindie.com/products/8bitclub/loci-oric-bus-expansion-port-and-floppy-emulator/">Tindie — 8BitClub</a></li>
+    <li>Fil de développement (nombreuses photos in situ) : <a href="https://forum.defence-force.org/viewtopic.php?t=2593">forum.defence-force.org t=2593</a></li>
+  </ul>
+</div>
+
+<h2>1. Le contexte matériel</h2>
+
+<figure class="fig photo">
+  <!-- REMPLACER par ta propre photo : /static/img/loci/loci-board.jpg -->
+  <img src="/static/img/loci/loci-board.jpg"
+       alt="[ Photo à insérer : la carte LOCI vue de dessus ]"
+       loading="lazy" width="820" height="461">
+  <figcaption>La carte LOCI (RP2040/RP2350 + MIA) — vue de dessus.
+    <em>Photo à fournir.</em></figcaption>
+</figure>
+
+<p>L'<strong>Oric-1</strong> et l'<strong>Atmos</strong> (1983) reposent sur un
+<strong>MOS 6502</strong> à 1 MHz, 64 Ko d'espace d'adressage dont le haut
+(<code>$C000-$FFFF</code>) est occupé par la <strong>ROM BASIC</strong>. Pas de
+multiplication câblée, pas de banques mémoire, pas de stockage moderne : tout passe
+par le <strong>bus d'extension</strong> en fond de machine.</p>
+
+<p>La carte <strong>LOCI</strong> (<em>Lovely Oric Computer Interface</em>) de
+<strong>sodiumlb</strong> se branche sur ce bus. Techniquement, c'est un dérivé du
+<em>Picocomputer 6502</em> (RP6502) : un microcontrôleur <strong>RP2040/RP2350</strong>
+joue le rôle d'un <strong>MIA</strong> (<em>Media Interface Adapter</em>) qui s'expose
+à l'Oric comme un périphérique d'entrées/sorties. Il émule lecteurs de disquettes et
+cassettes, gère une carte SD, l'USB HID, et un <strong>modem Wi-Fi</strong>. Deux
+surfaces d'adressage nous intéressent ici :</p>
+
+<figure class="fig photo">
+  <!-- REMPLACER par ta propre photo : /static/img/loci/loci-on-oric.jpg -->
+  <img src="/static/img/loci/loci-on-oric.jpg"
+       alt="[ Photo à insérer : la carte LOCI branchée sur le bus d'extension d'un Oric Atmos ]"
+       loading="lazy" width="820" height="461">
+  <figcaption>La LOCI enfichée sur le bus d'extension de l'Oric.
+    <em>Photo à fournir.</em></figcaption>
+</figure>
+
+<figure class="fig">
+<pre><code>         Espace d'adressage Oric (64 Ko)
+   $0000 ┌──────────────────────────────┐
+         │ RAM                          │
+   $0300 ├──────────────────────────────┤
+         │ VIA 6522        $0300-$030F  │
+   $0310 │ Microdisc WD1793 $0310-$031F │
+         ├──────────────────────────────┤
+   $0380 │ ACIA 6551 (LOCI) $0380-$0383 │ ← console série / modem
+         ├──────────────────────────────┤
+   $03A0 │ MIA (LOCI)      $03A0-$03BF  │ ← fenêtre API 32 octets
+         ├──────────────────────────────┤
+   $C000 │ ROM BASIC       $C000-$FFFF  │ ← cible de l'overlay de banque
+   $FFFF └──────────────────────────────┘</code></pre>
+<figcaption>Mappage I/O de l'Oric vu par la carte LOCI.</figcaption>
+</figure>
+
+<p>L'émulateur <strong>Phosphoric</strong> (cycle-exact, C11) reproduit fidèlement
+cette carte, ce qui autorise une démarche rare : <strong>écrire la spec d'une
+extension, la coder, et la valider par des tests déterministes — avant de toucher au
+fer à souder</strong>. Détail qui compte : l'auteur possède une carte LOCI, mais pas
+d'Oric. Le banc logiciel n'est pas un luxe, c'est la seule salle d'essai.</p>
+
+<h2>2. L'ABI <em>fastcall</em> — comment le 6502 appelle la carte</h2>
+<p>Tout repose sur une <strong>fenêtre de 32 registres</strong> en
+<code>$03A0-$03BF</code> (le MIA). Voici la carte réelle des registres utilisés par
+l'ABI (noms fidèles au firmware) :</p>
+
+<figure class="fig">
+<pre><code> Offset  Adresse  Registre          Rôle
+ ------  -------  ----------------  ------------------------------------------
+  $00    $03A0    CONS_FLAGS        bit7 = TX libre, bit6 = RX prêt
+  $01    $03A1    CONS_TX           écriture console (UART)
+  $02    $03A2    CONS_CHAR         lecture console (consomme l'octet)
+  $0C    $03AC    API_STACK         pointeur de xstack (pile d'arguments)
+  $0D    $03AD    API_ERRNO_LO      errno bas
+  $0E    $03AE    API_ERRNO_HI      errno haut
+  $0F    $03AF    API_OP            ← ÉCRIRE ICI déclenche l'opération
+  $12    $03B2    BUSY              bit7 = carte occupée
+  $14    $03B4    API_A             valeur de retour A
+  $16    $03B6    API_X             valeur de retour X
+  $18    $03B8    API_SREG          retour 16 bits (SREG)</code></pre>
+<figcaption>Registres MIA de l'ABI (extraits de <code>include/io/loci.h</code>).</figcaption>
+</figure>
+
+<p>Le protocole d'appel (<em>fastcall</em>) tient en quatre temps :</p>
+
+<figure class="fig">
+<pre><code>   6502 (Oric)                         MIA (LOCI, µC)
+   ───────────                         ──────────────
+   1. push args ──► xstack ($03AC)
+   2. set A/X (paramètres directs)
+   3. write op ──► API_OP ($03AF) ───► déclenche le handler
+                                       ├─ BUSY=1
+      poll BUSY ($03B2) ◄──────────────┤  exécute
+                                       └─ BUSY=0, remplit API_A/X/SREG, ERRNO
+   4. read API_A/API_X ($03B4/$03B6) ◄─ résultat</code></pre>
+<figcaption>Séquence d'un appel fastcall LOCI.</figcaption>
+</figure>
+
+<p>Chaque valeur d'opcode encore libre est un <strong>point d'entrée</strong> pour une
+nouvelle fonction. Les opérations standard vont de <code>$01</code> à <code>$98</code>
+(horloge, <code>open</code>/<code>read</code>/<code>lseek</code>, répertoires, montage
+d'images, TAP…). C'est dans les opcodes <strong>inutilisés</strong> que se logent nos
+cinq extensions :</p>
+
+<figure class="fig">
+<pre><code>  $A7  SET_BANK        banque commutable 16 Ko      (--loci-bank)
+  $A8  STREAM_BANK     streamer d'assets            (--loci-bank)
+  $A9  MATH            coprocesseur arithmétique    (--loci-coproc)
+  $AA  ACIA_RELIABLE   mode ACIA fiable (seqlock)   (mode opt-in)
+       + acia_stat_checked : handshake RX lossless  (--loci-acia-rx-nag)</code></pre>
+</figure>
+
+<blockquote>
+  <p><strong>Garde-fou by design.</strong> Sans le drapeau d'activation
+  correspondant, l'opcode renvoie <code>ENOSYS</code> (errno 13) — exactement comme un
+  firmware non patché. Le logiciel Oric peut donc <strong>détecter</strong> la présence
+  de l'extension et retomber sur ses propres routines. Le comportement par défaut de
+  la LOCI reste <strong>strictement</strong> celui du matériel d'origine.</p>
+</blockquote>
+
+<h2>3. Coprocesseur arithmétique — <code>$A9</code></h2>
+<p><strong>Le problème.</strong> Le 6502 n'a ni multiplication, ni division, ni
+flottant câblés. Chaque opération est une routine logicielle : lente, volumineuse,
+coûteuse en cycles. Sur une machine à 1 MHz, une multiplication 16×16 se compte en
+centaines de cycles.</p>
+<p><strong>L'idée.</strong> Déléguer le calcul au microcontrôleur de la carte, bien
+plus rapide, via l'ABI <em>fastcall</em> existante — un seul opcode <code>$A9</code>,
+le sous-code d'opération dans <code>API_A</code>, les opérandes sur la xstack, le
+résultat dans <code>API_A</code>/<code>SREG</code>.</p>
+
+<figure class="fig">
+<pre><code>   ; exemple conceptuel : A×B via le coprocesseur
+   LDA #&lt;op_mul  : STA API_A     ; sous-code d'opération
+   ... push A, B sur la xstack ($03AC)
+   LDA #$A9      : STA API_OP     ; déclenche MATH
+   ; poll BUSY, puis lire le résultat 32 bits dans SREG</code></pre>
+</figure>
+
+<p><strong>L'implémentation.</strong> Un fichier <strong>isolé</strong>,
+<code>src/io/loci_math.c</code> (<code>op_math</code>), branché sur le dispatch.
+Entiers, flottants, opérations vectorielles. Gaté par <code>--loci-coproc</code>.
+Couverture : <strong>23 tests déterministes</strong> (vecteurs entiers, flottants, cas
+limites). Zéro aléatoire — mêmes entrées, mêmes sorties, condition d'un banc
+reproductible.</p>
+
+<h2>4. Mode ACIA fiable — <code>$AA</code> (seqlock + ACK)</h2>
+
+<figure class="fig photo">
+  <!-- REMPLACER par ta propre photo : /static/img/loci/loci-wifi-modem.jpg -->
+  <img src="/static/img/loci/loci-wifi-modem.jpg"
+       alt="[ Photo à insérer : le modem Wi-Fi de la LOCI / la liaison série en action ]"
+       loading="lazy" width="820" height="461">
+  <figcaption>Le modem Wi-Fi de la LOCI — c'est lui qui sature l'ACIA à haut débit.
+    <em>Photo à fournir.</em></figcaption>
+</figure>
+
+<p><strong>Le problème.</strong> L'<strong>ACIA 6551</strong> réel a un travers connu :
+si le 6502 ne lit pas le registre de données à temps, l'octet reçu est
+<strong>écrasé</strong> par le suivant. À haut débit — un modem Wi-Fi, par exemple —
+on perd des octets, et le lien devient inexploitable. C'est fidèle au silicium, mais
+handicapant.</p>
+<p><strong>La solution : un seqlock.</strong> Un compteur de séquence de réception et
+un accusé côté 6502. L'octet n'est <strong>consommé</strong> qu'une fois
+<strong>acquitté</strong> — jamais perdu, même si la lecture tarde ou rate.</p>
+
+<figure class="fig">
+<pre><code>     Réception classique 6551 (destructive)
+     ─────────────────────────────────────
+     RX octet1 ──► RDR   (6502 n'a pas lu…)
+     RX octet2 ──► RDR   ✗ octet1 ÉCRASÉ, perdu
+
+     Mode fiable $AA (seqlock + ACK)
+     ───────────────────────────────
+        RXSEQ $0384  (compteur, incrémenté à chaque octet présenté)
+        RXACK $0385  (accusé écrit par le 6502)
+
+     RX octet1 ─► présente, RXSEQ++          consommé := (RXACK == RXSEQ)
+     6502 lit octet1, écrit RXACK = RXSEQ ─► octet1 acquitté → avance
+     RX octet2 ─► présente seulement si acquitté  ✓ aucun octet perdu</code></pre>
+<figcaption>Réception 6551 destructive vs mode fiable par seqlock.</figcaption>
+</figure>
+
+<p>Le canal d'<strong>émission</strong> reste inchangé (toujours fiable). État porté
+par <code>loci_t</code> (<code>acia_reliable</code>, <code>acia_rx_seq</code>,
+<code>acia_rx_presented</code>), opcode <code>$AA</code>, activation via
+<code>API_A</code> bit0. Couverture : <strong>+7 tests</strong>
+(<code>test-loci-acia-miss</code>, 13 → 20) — DATA non destructif, consommation
+<em>ACK-gated</em>, seqlock multi-octets <strong>dans l'ordre</strong>, et surtout
+<strong>survie à un raté de lecture</strong>.</p>
+
+<h3>4bis. Handshake RX <em>lossless</em> — <code>acia_stat_checked</code> (<code>--loci-acia-rx-nag</code>)</h3>
+<p>Raffinement adjacent, calqué sur le firmware réel
+(<code>feature/acia-rx-lossless</code>). Sur le vrai LOCI, l'<code>/IRQ</code> de
+l'ACIA est un signal de <strong>niveau</strong>, pas une impulsion. On modélise ce
+niveau par un « nag » : tant que l'octet n'a pas été lu (<code>stat_checked</code>
+faux), l'interruption est <strong>ré-émise</strong> périodiquement (défaut : tous les
+1000 cycles), puis <strong>se tait</strong> dès que le 6502 a consulté le registre
+d'état.</p>
+
+<figure class="fig">
+<pre><code>   RDRF=1 (octet dispo) ──┐
+                          │  nag: deassert+assert /IRQ tous les 1000 cyc
+   /IRQ  ▁▔▁▔▁▔▁▔▁▔▁▔▁▔▁▔ │  tant que  RDRF && !stat_checked && RX-IRQ activée
+                          │
+   6502 lit STATUS ───────┘  stat_checked = true  ──►  /IRQ silencieux</code></pre>
+<figcaption>Le « nag » modélise l'IRQ de niveau du 6551 réel.</figcaption>
+</figure>
+
+<p>Sans <code>--loci-acia-rx-nag</code>, l'ACIA reste <strong>strictement</strong> un
+6551 (pas de nag). Couverture dans <code>test-loci-acia-miss</code> : nag
+<strong>observé avant</strong> acquittement, <strong>silence après</strong>, buffer
+vide ⇒ aucune IRQ.</p>
+
+<h2>5. Banque commutable de 16 Ko — <code>$A7</code> (<code>--loci-bank</code>)</h2>
+<p><strong>Le problème.</strong> Comment donner plus de mémoire à une machine dont
+l'espace est saturé par la ROM ?</p>
+<p><strong>La solution.</strong> Superposer temporairement 16 Ko de la RAM de la carte
+(<em>xram</em>) dans la fenêtre <code>$C000-$FFFF</code>, là où siège la ROM.</p>
+
+<figure class="fig">
+<pre><code>        $A7 désactivé                 $A7 EN | SEL=n
+   $C000 ┌───────────┐          $C000 ┌───────────────┐
+         │ ROM BASIC │   ─────►        │ xram[n*0x4000]│  overlay (lecture)
+   $FFFF └───────────┘          $FFFF  └───────────────┘
+                                       └─ ROM intacte DESSOUS (non écrasée)
+   base xram = SEL * 0x4000 ; SEL clampé à 0..3 (comme mia_set_bank)</code></pre>
+<figcaption>Overlay de banque non destructif sur la fenêtre ROM.</figcaption>
+</figure>
+
+<p><strong>Le point clé : overlay non destructif.</strong> La banque prend priorité en
+lecture (et pour l'inspection mémoire) <strong>sans jamais écraser</strong> le tableau
+ROM. Une désactivation restaure la machine <strong>octet pour octet</strong>.
+L'ancienne approche prototype par <code>memcpy</code> + sauvegarde a été abandonnée au
+profit de cette superposition propre (<code>memory_set_loci_bank()</code> dans
+<code>memory.c</code>).</p>
+
+<p><strong>Double mode via <code>reset</code>.</strong> L'activation par
+<code>$A7 EN</code> déclenche un <strong>reset</strong> : le 6502 relit son vecteur
+<code>$FFFC</code> <strong>depuis la banque</strong> (on peut donc <em>booter</em> du
+code de banque). Le hot-swap (utilisé par le streamer <code>$A8</code>) bascule au
+contraire <strong>sans reset CPU</strong> — prérequis absolu du double-buffering.
+Couverture : <code>test-loci</code> <strong>170/170</strong> (+4 : enable/état,
+disable, gaté OFF → <code>ENOSYS</code>, clamp SEL 15→3) et un
+<code>test-loci-bank-e2e</code> bout-en-bout.</p>
+
+<h2>6. Streamer d'assets — <code>$A8</code></h2>
+<p><strong>L'idée.</strong> Une fois la banque en place, y <strong>déverser des
+données depuis un fichier</strong> (flash ou carte SD) en <strong>un seul
+fastcall</strong> : <code>lseek(SEEK_SET)</code> + <code>read</code> → banque 16 Ko,
+avec mapping optionnel en <code>$C000-$FFFF</code>. Un logiciel Oric peut alors
+<strong>dépasser les 48 Ko utiles</strong> : overlays, décors, niveaux à la demande.</p>
+
+<figure class="fig">
+<pre><code>   Double-buffering (dépasser 48 Ko sans reset)
+   ─────────────────────────────────────────────
+   $A8 MAP=0 SEL=1 ─► précharge la banque 1 (invisible)   ┐ pendant
+   (le 6502 continue d'exécuter/afficher la banque 0)      ┘ ce temps
+   $A8 MAP=1 SEL=1 ─► bascule banque 1 en $C000 (hot-swap, PC intact)</code></pre>
+<figcaption>Streaming + double-buffering d'assets.</figcaption>
+</figure>
+
+<p>Détails : <code>API_A</code> bit7 = <code>MAP</code>, bits3:0 = <code>SEL</code>
+(<strong>0..3 valides ; &gt;3 = <code>EINVAL</code>, pas de clamp</strong>
+contrairement à <code>$A7</code>). Arguments sur la xstack LIFO
+(<code>len, dst, off, fd</code>), écriture bornée à la taille de banque, retour
+<code>AX</code> = octets lus. Deux chemins de lecture : fichier hôte <strong>et</strong>
+image SD. Réutilise l'opt-in <code>--loci-bank</code>.</p>
+
+<h2>7. Le modèle de <em>tearing</em> — la question des deux cœurs</h2>
+<p>L'extension la plus subtile, et la plus honnête intellectuellement.</p>
+<p><strong>La question.</strong> Quand on bascule une banque <strong>pendant</strong>
+qu'un cycle de bus est en cours, que latche le 6502 ? Sur l'émulateur mono-thread, le
+swap est <strong>atomique</strong> : invisible, la question ne se pose pas. Mais le
+matériel réel a <strong>deux cœurs</strong> ; un swap concomitant d'un accès mémoire
+peut produire un <em>tearing</em>.</p>
+<p><strong>La réponse : modéliser explicitement le pire cas.</strong> Avec
+<code>--loci-bank-tearing</code>, un hot-swap <code>$A8 MAP</code> concomitant d'une
+<strong>course de bus PHI2 perdue</strong> fait latcher l'<strong>open-bus</strong> au
+6502 sur la <strong>première lecture</strong> de la fenêtre (comportement one-shot),
+puis la banque prend le relais.</p>
+
+<figure class="fig">
+<pre><code>   Cycle bus PHI2  ─┬─ course gagnée ─► banque servie proprement (atomique)
+                    │
+                    └─ course PERDUE ─► 1re lecture = OPEN-BUS (valeur latchée)
+                                        puis  ─► banque   (one-shot consommé)
+   (réutilise loci_mia_serve_lost_sampled + jitter seedé, déterministe)</code></pre>
+<figcaption>Modèle de tearing : course PHI2 perdue → open-bus one-shot.</figcaption>
+</figure>
+
+<p>Le test associé est <strong>auto-diagnostiquant</strong> : il vérifie d'abord la
+<strong>précondition</strong> (la course est bien perdue), puis que le modèle
+<strong>arme</strong> le drapeau de <em>tearing</em>, puis que le one-shot est
+<strong>consommé</strong>. Un build incomplet échoue désormais sur une assertion claire
+plutôt qu'un cryptique <code>torn != pat[0]</code>. Déterministe (jitter 0) : trois
+builds propres, résultats identiques. <code>test-loci-bank-e2e</code>
+<strong>8/8</strong>.</p>
+
+<h2>8. Ce que l'exercice apprend</h2>
+
+<figure class="fig photo">
+  <!-- REMPLACER par ta propre capture : /static/img/loci/phosphoric-loci.png -->
+  <img src="/static/img/loci/phosphoric-loci.png"
+       alt="[ Capture à insérer : Phosphoric exécutant un test LOCI (banc headless / écran émulé) ]"
+       loading="lazy" width="820" height="461">
+  <figcaption>Phosphoric exécutant la suite <code>test-loci</code> — le banc de
+    prototypage. <em>Capture à fournir.</em></figcaption>
+</figure>
+
+<p>Cinq extensions, cinq additions <strong>minimales</strong> à une ABI existante,
+<strong>zéro régression</strong> sur le comportement par défaut. Chacune est réversible
+(drapeau à l'appui), gatée <code>ENOSYS</code> sans son opt-in, et adossée à des tests
+<strong>déterministes</strong>.</p>
+<p>Le vrai enseignement tient peut-être là : sur une machine de 1983, la difficulté
+n'est pas d'imaginer des fonctions modernes, mais de les <strong>greffer sans
+trahir</strong> le comportement d'origine — et de le <strong>prouver</strong> avant de
+sortir le fer à souder.</p>
+<p>L'émulateur cycle-exact cesse d'être un simple musée jouable : il devient un
+<strong>banc de prototypage matériel</strong>. On y écrit la spec, on y code
+l'extension, on y passe les tests… et le silicium n'arrive qu'en dernier, cahier de
+recette déjà rempli.</p>
+
+<hr>
+<p><em>Les cinq extensions vivent sur la branche
+<code>experiment/loci-coproc-acia-reliable</code> de Phosphoric — opt-in, réversibles,
+hors version stable. À tester, critiquer, améliorer.</em></p>
+
+<footer>
+  <strong>Sources &amp; liens</strong>
+  <ul>
+    <li>Firmware / matériel LOCI (sodiumlb) :
+      <a href="https://github.com/sodiumlb/loci-firmware">loci-firmware</a>,
+      <a href="https://github.com/sodiumlb/loci-hardware">loci-hardware</a>,
+      <a href="https://github.com/sodiumlb/loci-rom">loci-rom</a></li>
+    <li>Manuel utilisateur (FR) :
+      <a href="https://github.com/sodiumlb/loci-hardware/wiki/LOCI-Mode-d'emploi">wiki LOCI</a>,
+      <a href="https://ceo.oric.org/loci-mode-demploi/">ceo.oric.org</a></li>
+    <li>Revendeur &amp; photos :
+      <a href="https://www.raxiss.com/article/id/38-LOCI">RAXISS</a>,
+      <a href="https://www.tindie.com/products/8bitclub/loci-oric-bus-expansion-port-and-floppy-emulator/">Tindie</a></li>
+    <li>Fil de développement :
+      <a href="https://forum.defence-force.org/viewtopic.php?t=2593">forum.defence-force.org</a></li>
+    <li>Émulateur Phosphoric :
+      <a href="https://github.com/benedictemarty/Phosphoric">github.com/benedictemarty/Phosphoric</a></li>
+  </ul>
+</footer>
+
+</main>
+</body>
+</html>
