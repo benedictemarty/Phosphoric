@@ -27,10 +27,13 @@ tout passe par le **bus d'extension** en fond de machine.
 
 La carte **LOCI** (*Lovely Oric Computer Interface*) de **sodiumlb** se branche sur
 ce bus. Techniquement, c'est un dérivé du *Picocomputer 6502* (RP6502) : un
-microcontrôleur **RP2040/RP2350** joue le rôle d'un **MIA** (*Media Interface
-Adapter*) qui s'expose à l'Oric comme un périphérique d'entrées/sorties. Il émule
-lecteurs de disquettes et cassettes, gère une carte SD, l'USB HID, et un **modem
-Wi-Fi**. Deux surfaces d'adressage nous intéressent ici :
+microcontrôleur **RP2040** (un Raspberry Pi Pico) joue le rôle d'un **MIA** (*Media
+Interface Adapter*) qui s'expose à l'Oric comme un périphérique d'entrées/sorties. Il
+émule lecteurs de disquettes et cassettes, gère une carte SD et joue le rôle d'**hôte
+USB** — c'est par ce port USB qu'un **modem Wi-Fi** (dongle séparé, le
+*PicoWiFiModemUSB*) ou un périphérique HID (souris, manette) se branche ; le Wi-Fi
+n'est *pas* embarqué sur la carte LOCI elle-même. Deux surfaces d'adressage nous
+intéressent ici :
 
 ```
          Espace d'adressage Oric (64 Ko)

@@ -93,11 +93,14 @@ par le <strong>bus d'extension</strong> en fond de machine.</p>
 
 <p>La carte <strong>LOCI</strong> (<em>Lovely Oric Computer Interface</em>) de
 <strong>sodiumlb</strong> se branche sur ce bus. Techniquement, c'est un dérivé du
-<em>Picocomputer 6502</em> (RP6502) : un microcontrôleur <strong>RP2040/RP2350</strong>
-joue le rôle d'un <strong>MIA</strong> (<em>Media Interface Adapter</em>) qui s'expose
-à l'Oric comme un périphérique d'entrées/sorties. Il émule lecteurs de disquettes et
-cassettes, gère une carte SD, l'USB HID, et un <strong>modem Wi-Fi</strong>. Deux
-surfaces d'adressage nous intéressent ici :</p>
+<em>Picocomputer 6502</em> (RP6502) : un microcontrôleur <strong>RP2040</strong> (un
+Raspberry Pi Pico) joue le rôle d'un <strong>MIA</strong> (<em>Media Interface
+Adapter</em>) qui s'expose à l'Oric comme un périphérique d'entrées/sorties. Il émule
+lecteurs de disquettes et cassettes, gère une carte SD et joue le rôle d'<strong>hôte
+USB</strong> — c'est par ce port USB qu'un <strong>modem Wi-Fi</strong> (dongle séparé,
+le <em>PicoWiFiModemUSB</em>) ou un périphérique HID (souris, manette) se branche ; le
+Wi-Fi n'est <em>pas</em> embarqué sur la carte LOCI elle-même. Deux surfaces
+d'adressage nous intéressent ici :</p>
 
 <figure class="fig photo">
   <!-- REMPLACER par ta propre photo : /static/img/loci/loci-on-oric.jpg -->
@@ -220,9 +223,10 @@ reproductible.</p>
 <figure class="fig photo">
   <!-- REMPLACER par ta propre photo : /static/img/loci/loci-wifi-modem.jpg -->
   <img src="/static/img/loci/loci-wifi-modem.jpg"
-       alt="[ Photo à insérer : le modem Wi-Fi de la LOCI / la liaison série en action ]"
+       alt="[ Photo à insérer : le dongle modem Wi-Fi USB branché sur la LOCI ]"
        loading="lazy" width="820" height="461">
-  <figcaption>Le modem Wi-Fi de la LOCI — c'est lui qui sature l'ACIA à haut débit.
+  <figcaption>Le modem Wi-Fi (dongle USB <em>PicoWiFiModemUSB</em>) branché sur
+    l'hôte USB de la LOCI — c'est lui qui sature l'ACIA à haut débit.
     <em>Photo à fournir.</em></figcaption>
 </figure>
 
