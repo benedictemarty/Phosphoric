@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 AND BSD-3-Clause */
 /**
  * @file mea8000.h
  * @brief TMPI "Synthétiseur Vocal" — Philips/Signetics MEA 8000 formant speech.

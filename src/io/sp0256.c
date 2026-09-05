@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 AND BSD-3-Clause */
 /**
  * @file sp0256.c
  * @brief Mageco "Synthétiseur Vocal" — GI SP0256-AL2 speech synthesizer core.
