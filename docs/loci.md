@@ -110,3 +110,13 @@ plage fiable (défaut 0-31 = toujours fiable) ; hors fenêtre, `$0380` lit
 - Le `dsk_fdc` du LOCI reste en timing FDC rapide — fidèle : sur le vrai
   matériel son « lecteur » est le RP2040 + SD, sans mécanique (le Microdisc,
   lui, est en timing mécanique réel par défaut).
+
+## Pour aller plus loin
+
+- **Article de vulgarisation** — [Cinq extensions expérimentales pour la carte
+  LOCI](articles/loci-extensions-tachibana.md) (ABI *fastcall*, carte des registres
+  MIA, schémas) : coprocesseur `$A9`, ACIA fiable `$AA`, banque `$A7`, streamer
+  `$A8`, modèle de *tearing*. Ces extensions sont **expérimentales, opt-in et hors
+  `main`** (branche `experiment/loci-coproc-acia-reliable`).
+- **Architecture interne** — [`architecture/loci-glue.md`](architecture/loci-glue.md),
+  [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
