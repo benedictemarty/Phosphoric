@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file disk.h
  * @brief FDC WD1793 disk controller emulation - public API

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_jasmin.c
  * @brief Jasmin disk interface tests (WD177x FDC + .dsk write-back wiring)

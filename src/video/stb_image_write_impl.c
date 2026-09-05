@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file stb_image_write_impl.c
  * @brief Single translation unit hosting the stb_image_write implementation.

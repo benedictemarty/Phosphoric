@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file io_device.h
  * @brief Contrat « périphérique de bus I/O » — abstraction du dispatch page 3.

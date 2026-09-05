@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file rom_patches.h
  * @brief ROM-version patch tables + model detection/selection.

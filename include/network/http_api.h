@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file http_api.h
  * @brief Optional HTTP control API (sprint 94, API REST Epic 3).

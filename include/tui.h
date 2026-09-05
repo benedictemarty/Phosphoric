@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file tui.h
  * @brief Optional ncurses TUI debugger

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cpu_internal.h
  * @brief Internal CPU functions shared between cpu6502.c, addressing.c, opcodes.c

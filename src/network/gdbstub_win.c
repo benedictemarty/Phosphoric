@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file gdbstub_win.c
  * @brief GDB remote stub — Windows (MinGW-w64) placeholder, Sprint 89

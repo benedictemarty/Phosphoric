@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cassette.h
  * @brief Signal-level cassette interface (VIA CB1 + Timer 2)

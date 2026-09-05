@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file autotype.h
  * @brief Scan-driven pacing primitives for the --type-keys auto-typer.

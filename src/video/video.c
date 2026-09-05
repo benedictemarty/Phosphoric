@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file video.c
  * @brief ORIC-1 video system - text mode 40x28 + HIRES 240x200

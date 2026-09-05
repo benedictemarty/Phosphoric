@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file keyboard.c
  * @brief ORIC-1 keyboard matrix emulation with SDL2 key mapping

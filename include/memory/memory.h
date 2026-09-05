@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file memory.h
  * @brief ORIC-1 Memory management (64KB addressable)

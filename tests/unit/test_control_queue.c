@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_control_queue.c
  * @brief Concurrency tests for the control command queue (sprint 93, Epic 2).

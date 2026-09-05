@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file disk_http.h
  * @brief Minimal blocking HTTP client for the web-backed disk (loci-webdisk).

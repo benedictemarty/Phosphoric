@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file memory.c
  * @brief ORIC-1 Memory management - complete implementation

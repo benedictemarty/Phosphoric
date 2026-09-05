@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file hostfs.h
  * @brief Host filesystem sharing for ORIC emulator

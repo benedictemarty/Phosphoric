@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_cassette.c
  * @brief Signal-level cassette generator unit tests (Sprint 90)

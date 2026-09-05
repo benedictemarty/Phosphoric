@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /* LOCI SD raw image backend (Sprint 34ao).
  *
  * Read-only FAT16/FAT32 reader operating on a raw .img file. Activated

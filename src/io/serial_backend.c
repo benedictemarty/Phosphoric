@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file serial_backend.c
  * @brief Serial backend implementations: loopback, TCP, PTY

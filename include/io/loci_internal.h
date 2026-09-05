@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_internal.h
  * @brief Shared private declarations for the 4 LOCI translation units.

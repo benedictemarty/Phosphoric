@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file avi_recorder.c
  * @brief Motion-JPEG AVI video recorder (see avi_recorder.h)

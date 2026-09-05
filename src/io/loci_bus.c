@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_bus.c
  * @brief LOCI bus-facing peripherals — TAP cassette ($0315-$0317) and

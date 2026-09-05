@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_avi.c
  * @brief Motion-JPEG AVI recorder tests

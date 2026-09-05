@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control.h
  * @brief IPC control mode for OricForge IDE integration (sprint 35a)

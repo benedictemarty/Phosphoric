@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_options.h
  * @brief Déclarations des options CLI (enum de codes longs + table getopt).

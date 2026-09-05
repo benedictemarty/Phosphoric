@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_loci_acia_miss.c
  * @brief Reproduction fidèle de la course PHI2 du LOCI sur l'ACIA $0380 (picowifi).

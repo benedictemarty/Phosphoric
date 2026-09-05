@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file trace.h
  * @brief CPU trace logging — instruction-level execution trace to file

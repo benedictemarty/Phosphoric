@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file serial_backend_win.c
  * @brief Serial backends — Windows (MinGW-w64) variant, Sprint 89

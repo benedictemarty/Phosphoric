@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file sedoric.h
  * @brief Sedoric disk filesystem - public API

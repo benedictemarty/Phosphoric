@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_sp0256.c
  * @brief GI SP0256-AL2 (Mageco "Synthétiseur Vocal") unit tests

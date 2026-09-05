@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_autotype.c
  * @brief Unit tests for the scan-driven --type-keys pacing primitives.

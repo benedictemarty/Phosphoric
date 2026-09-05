@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file tap2wav.c
  * @brief Convert an ORIC .TAP file to a cassette-audio .WAV (fast/standard mode).

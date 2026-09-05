@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file sedoric_info.c
  * @brief Sedoric disk inspector -- dumps the VTOC counters, the directory and,

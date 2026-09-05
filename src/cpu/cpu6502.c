@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cpu6502.c
  * @brief 6502 CPU core - fetch/decode/execute loop, interrupts, disassembly

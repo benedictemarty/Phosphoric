@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file oscompat.h
  * @brief Windows (MinGW-w64) compatibility layer — Sprint 89

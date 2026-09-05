@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_acia6850.c
  * @brief Motorola MC6850 ACIA unit tests

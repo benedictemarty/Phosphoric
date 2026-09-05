@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file serial_picowifi.c
  * @brief PicoWiFiModemUSB (sodiumlb) backend for the ACIA 6551

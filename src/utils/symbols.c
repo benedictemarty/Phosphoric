@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file symbols.c
  * @brief Symbol table loader for the debugger

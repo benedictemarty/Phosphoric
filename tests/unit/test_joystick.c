@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_joystick.c
  * @brief IJK joystick interface unit tests

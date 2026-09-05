@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_video.c
  * @brief Video export & rendering tests - PPM, BMP, ASCII export

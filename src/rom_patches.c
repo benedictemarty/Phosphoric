@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file rom_patches.c
  * @brief ROM-patch tables + detection — moved verbatim from main.c (Epic 9/US3).

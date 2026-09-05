@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file mcp40.h
  * @brief MCP-40 4-color pen plotter emulation for Phosphoric

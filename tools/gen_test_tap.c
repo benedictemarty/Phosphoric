@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file gen_test_tap.c
  * @brief Generate test .TAP files for CLOAD testing

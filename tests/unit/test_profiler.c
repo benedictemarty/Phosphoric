@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_profiler.c
  * @brief Unit tests for CPU performance profiler

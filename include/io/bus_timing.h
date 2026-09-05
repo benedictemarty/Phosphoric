@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file bus_timing.h
  * @brief Base de temps sous-cycle du bus d'extension Oric (modèle PHI2). Épic B, Phase 1.

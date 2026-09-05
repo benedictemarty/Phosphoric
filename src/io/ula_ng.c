@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file ula_ng.c
  * @brief ULA-NG étape 1 : déverrouillage NG_LOCK/NG_ID + garde verrou.

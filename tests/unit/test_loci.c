@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_loci.c
  * @brief Unit tests for LOCI emulation (Sprint 34y skeleton)

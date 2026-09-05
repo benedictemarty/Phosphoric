@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file netutil.h
  * @brief Utilitaires réseau — parsing d'adresses hôte:port.

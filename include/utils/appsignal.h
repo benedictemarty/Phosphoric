@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file appsignal.h
  * @brief Gestion des signaux d'arrêt (SIGINT/SIGTERM) du processus.

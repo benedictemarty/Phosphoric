@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cpu6502.h
  * @brief MOS 6502 CPU emulation (cycle-accurate)

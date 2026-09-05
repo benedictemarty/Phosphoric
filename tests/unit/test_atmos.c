@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_atmos.c
  * @brief ORIC Atmos support unit tests (ROM detection, model selection)

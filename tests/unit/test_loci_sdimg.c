@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /* tests/unit/test_loci_sdimg.c — Sprint 34ao
  *
  * Unit tests for the SD raw image backend. Generates a minimal FAT16

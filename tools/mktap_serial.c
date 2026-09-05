@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file mktap_serial.c
  * @brief Generate a tokenized ORIC BASIC .TAP for serial port test

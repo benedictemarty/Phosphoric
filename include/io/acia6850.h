@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file acia6850.h
  * @brief Motorola MC6850 ACIA (Asynchronous Communications Interface Adapter)

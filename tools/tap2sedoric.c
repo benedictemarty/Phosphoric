@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file tap2sedoric.c
  * @brief TAP to Sedoric disk converter -- injects an Oric .tap file into a copy

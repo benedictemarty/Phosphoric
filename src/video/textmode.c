@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file textmode.c
  * @brief Text mode helpers (40x28)

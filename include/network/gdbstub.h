@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file gdbstub.h
  * @brief GDB Remote Serial Protocol (RSP) stub — debug the 6502 from GDB/IDEs

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file via6522.c
  * @brief MOS 6522 VIA - complete implementation with timers and interrupts

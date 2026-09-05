@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_savestate.c
  * @brief Save state serialization/deserialization unit tests

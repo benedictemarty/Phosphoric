@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file pia6821.h
  * @brief Motorola MC6821 PIA (Peripheral Interface Adapter) — faithful model

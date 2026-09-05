@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_picowifi.c
  * @brief PicoWiFiModemUSB backend unit tests

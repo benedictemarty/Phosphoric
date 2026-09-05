@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file symbols.h
  * @brief Symbol table for debugger — load .sym / .lab / .sym65 files

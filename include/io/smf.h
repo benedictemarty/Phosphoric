@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file smf.h
  * @brief Standard MIDI File (SMF / .mid) parser → timed wire-byte event list

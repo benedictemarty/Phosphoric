@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file tui.c
  * @brief ncurses-based multi-pane debugger

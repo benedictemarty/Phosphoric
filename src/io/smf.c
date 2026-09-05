@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file smf.c
  * @brief Standard MIDI File parser — see smf.h

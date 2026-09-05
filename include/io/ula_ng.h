@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file ula_ng.h
  * @brief ULA-NG — ULA "next-gen" pour Oric (référence logicielle d'un futur

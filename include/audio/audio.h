@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file audio.h
  * @brief AY-3-8910 PSG and audio output interface

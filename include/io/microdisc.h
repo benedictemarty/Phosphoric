@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file microdisc.h
  * @brief Microdisc disk controller interface for ORIC

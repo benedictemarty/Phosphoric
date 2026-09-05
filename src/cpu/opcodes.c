@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file opcodes.c
  * @brief Complete 6502 opcode implementations (151 official + 105 illegal/undocumented)

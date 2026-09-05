@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file disk_http_win.c
  * @brief Web-backed disk HTTP client — Windows (MinGW-w64) placeholder.

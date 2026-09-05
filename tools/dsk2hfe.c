@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file dsk2hfe.c
  * @brief Convert an ORIC MFM_DISK .dsk to an HxC .HFE (v1) magnetic image.

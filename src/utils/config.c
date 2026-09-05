@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file config.c
  * @brief Configuration system - .ini file parser

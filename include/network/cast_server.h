@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cast_server.h
  * @brief MJPEG Cast server + mDNS Chromecast discovery + CASTV2 client

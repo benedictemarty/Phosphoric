@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file osd.c
  * @brief On-Screen Display — overlay de changement de média à chaud.

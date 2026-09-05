@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /* tools/mkloci_sd.c — Sprint 34ao polish
  *
  * Builds a FAT16 superfloppy SD image populated with the host files

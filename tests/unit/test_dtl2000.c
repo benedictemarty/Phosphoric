@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_dtl2000.c
  * @brief Digitelec DTL 2000 (PIA 6821 + ACIA 6850) unit tests

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_core.c
  * @brief LOCI core — init/lifecycle, action button, HID, errno/xstack/

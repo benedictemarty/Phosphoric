@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file acia6551.h
  * @brief MOS 6551 ACIA (Asynchronous Communication Interface Adapter)

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file jasmin.c
  * @brief Jasmin disk interface for ORIC (WD177x FDC)

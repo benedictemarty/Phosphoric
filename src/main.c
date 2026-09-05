@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file main.c
  * @brief Phosphoric — ORIC-1 Emulator main entry point - full emulation loop

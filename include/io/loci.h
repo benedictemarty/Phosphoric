@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci.h
  * @brief LOCI (Lovely Oric Computer Interface) emulation — Sprint 34y skeleton

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_control_dispatch.c
  * @brief Unit tests for the transport-agnostic control dispatch (sprint 92).

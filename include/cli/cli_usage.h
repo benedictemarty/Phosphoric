@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_usage.h
  * @brief CLI --help / usage text (extracted from main.c, Epic 7/US3).

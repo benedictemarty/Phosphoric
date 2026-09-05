@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_queue.h
  * @brief Thread-safe command queue bridging producer threads to the

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_coverage.c
  * @brief Unified coverage test — exercises low-coverage code paths

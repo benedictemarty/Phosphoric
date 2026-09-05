@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file bin2tap.c
  * @brief Binary to TAP converter

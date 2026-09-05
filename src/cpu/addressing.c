@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file addressing.c
  * @brief 6502 Addressing mode implementations

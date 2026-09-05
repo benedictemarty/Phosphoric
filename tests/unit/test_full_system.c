@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_full_system.c
  * @brief Integration tests - CPU + Memory + VIA wired together

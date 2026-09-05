@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_storage.c
  * @brief Storage subsystem tests (Sedoric, FDC)

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_rom.c
  * @brief ROM compatibility tests - validates real ORIC-1 BASIC 1.0 ROM

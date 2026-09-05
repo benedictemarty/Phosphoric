@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file tape_patches.h
  * @brief ROM CLOAD/CSAVE PC-matching patches (extracted from main.c).

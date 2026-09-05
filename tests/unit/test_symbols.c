@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_symbols.c
  * @brief Unit tests for symbol table loader

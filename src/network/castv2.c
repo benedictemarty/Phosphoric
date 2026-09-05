@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file castv2.c
  * @brief Native Google Cast V2 protocol client

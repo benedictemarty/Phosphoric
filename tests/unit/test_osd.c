@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_osd.c
  * @brief Tests de l'OSD (overlay changement de média) — logique + rendu.

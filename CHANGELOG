@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — En-têtes SPDX (EUPL-1.2) sur les fichiers source
+
+Ajout de `/* SPDX-License-Identifier: EUPL-1.2 */` en première ligne de **197**
+fichiers `.c`/`.h` (`src/`, `include/`, `tools/`, `tests/`), rendant la licence du
+projet explicite et lisible par outil (REUSE/SPDX). **Exclus** : les 4 fichiers
+portés de MAME (`src/io/sp0256.c`, `src/io/mea8000.c` et leurs `.h`) qui conservent
+intacte leur attribution **BSD-3-Clause** (Joseph Zbiciak, Tim Lindner). Aucun
+changement fonctionnel ; suite de tests **82/82** après `make clean && make tests`.
+
 ### Added — Article de vulgarisation « extensions LOCI » (docs)
 
 Nouvel article pour tachibana.eu décrivant les cinq extensions LOCI expérimentales

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_gdbstub.c
  * @brief GDB Remote Serial Protocol stub — protocol unit tests

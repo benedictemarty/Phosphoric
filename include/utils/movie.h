@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file movie.h
  * @brief Deterministic input record/replay ("TAS movie")

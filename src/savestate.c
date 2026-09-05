@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file savestate.c
  * @brief Phosphoric save state serialization/deserialization

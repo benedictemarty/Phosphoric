@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_smf.c
  * @brief Standard MIDI File parser unit tests

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file profiler.c
  * @brief CPU performance profiler — execution hotspots and opcode statistics

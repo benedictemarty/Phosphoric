@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_pia6821.c
  * @brief Motorola MC6821 PIA unit tests

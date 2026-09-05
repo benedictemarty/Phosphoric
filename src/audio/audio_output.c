@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file audio_output.c
  * @brief Audio output backend (SDL2 or headless)

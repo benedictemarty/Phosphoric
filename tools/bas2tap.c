@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file bas2tap.c
  * @brief BASIC to TAP converter

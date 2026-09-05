@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_queue.c
  * @brief Thread-safe command queue (sprint 93, API REST Epic 2).

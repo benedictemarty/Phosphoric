@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_rominfo.c
  * @brief Unit tests for ROM analysis tools

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file rominfo.c
  * @brief ROM analysis tools — vector detection, subroutine map, string search

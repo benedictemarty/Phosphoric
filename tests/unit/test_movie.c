@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_movie.c
  * @brief Deterministic input record/replay — movie format tests

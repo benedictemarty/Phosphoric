@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file tap.c
  * @brief ORIC .TAP tape format - complete implementation

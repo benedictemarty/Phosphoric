@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_mea8000.c
  * @brief Philips MEA 8000 (TMPI "Synthétiseur Vocal") unit tests

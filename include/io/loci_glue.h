@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_glue.h
  * @brief LOCI ↔ emulator adapter callbacks (extracted from main.c, Epic 9).

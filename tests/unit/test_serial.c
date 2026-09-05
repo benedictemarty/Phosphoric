@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_serial.c
  * @brief ACIA 6551 serial interface unit tests

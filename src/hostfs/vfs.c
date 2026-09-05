@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file vfs.c
  * @brief Virtual Filesystem layer - abstracts tape, disk, and host access

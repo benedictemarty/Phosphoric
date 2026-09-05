@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /* LOCI SD raw image backend — FAT16/32 reader+writer. See header.
  *
  * Layout assumed (no MBR, "superfloppy" image):

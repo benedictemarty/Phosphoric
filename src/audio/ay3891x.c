@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file ay3891x.c
  * @brief AY-3-8910 PSG emulation - 3 tone channels, noise, envelopes

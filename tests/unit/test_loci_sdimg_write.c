@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /* tests/unit/test_loci_sdimg_write.c — Sprint 34ap
  *
  * Write-path tests for the SDIMG backend. Builds a fresh FAT16 image

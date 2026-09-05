@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file banking.c
  * @brief Memory banking implementation (ROM/RAM overlay)

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file renderer.c
  * @brief SDL2 renderer (headless mode if SDL2 not available)

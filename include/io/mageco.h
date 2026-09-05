@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file mageco.h
  * @brief Mageco MIDI interface — MC6850 ACIA at $03FE-$03FF

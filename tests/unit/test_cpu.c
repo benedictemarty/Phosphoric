@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_cpu.c
  * @brief Comprehensive CPU 6502 unit tests

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file debugger.c
  * @brief Interactive debugger for Phosphoric

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file logging.h
  * @brief Logging system for Phosphoric

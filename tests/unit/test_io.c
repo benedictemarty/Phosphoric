@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_io.c
  * @brief Comprehensive VIA 6522 and I/O unit tests

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_usage.c
  * @brief CLI --help / usage banner — moved verbatim from main.c (Epic 7/US3).

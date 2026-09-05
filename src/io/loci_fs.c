@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_fs.c
  * @brief LOCI File I/O — open/close/read/write/lseek/unlink/rename,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file export.c
  * @brief Video framebuffer export - PPM, BMP, ASCII

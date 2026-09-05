@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file pia6821.c
  * @brief Motorola MC6821 PIA — faithful model (see pia6821.h for the register map)

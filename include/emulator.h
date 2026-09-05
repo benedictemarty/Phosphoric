@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file emulator.h
  * @brief Phosphoric — ORIC-1 Emulator core structure and API

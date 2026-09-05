@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_memory.c
  * @brief Comprehensive memory subsystem unit tests

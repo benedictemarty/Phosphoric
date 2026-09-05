@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file via6522.h
  * @brief MOS 6522 VIA (Versatile Interface Adapter) emulation

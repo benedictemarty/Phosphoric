@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_audio.c
  * @brief AY-3-8910 PSG audio unit tests

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_parse.h
  * @brief Small CLI argument-parsing helpers, extracted from main.c (Epic 7/US3).

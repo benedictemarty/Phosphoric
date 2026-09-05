@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_midi.c
  * @brief Mageco MIDI interface (MC6850 ACIA at $03FE) unit tests

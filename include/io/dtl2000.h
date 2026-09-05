@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file dtl2000.h
  * @brief Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 modem card

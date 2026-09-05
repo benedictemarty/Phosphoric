@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file gdbstub.c
  * @brief GDB Remote Serial Protocol stub (see gdbstub.h)

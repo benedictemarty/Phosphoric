@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file acia6850.c
  * @brief Motorola MC6850 ACIA — faithful UART register/IRQ model

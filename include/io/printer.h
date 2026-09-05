@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file printer.h
  * @brief Centronics parallel printer interface for Phosphoric

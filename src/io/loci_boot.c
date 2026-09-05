@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_boot.c
  * @brief LOCI MIA_BOOT runtime ROM swap + Sprint 34au tuning / config stubs

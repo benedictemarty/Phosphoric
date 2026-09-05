@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file io_bus.c
  * @brief Adaptateur bus I/O — wrappers `io_device_t`, table et dispatch.

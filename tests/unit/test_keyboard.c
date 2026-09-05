@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_keyboard.c
  * @brief ORIC keyboard matrix and SDL2 key mapping unit tests

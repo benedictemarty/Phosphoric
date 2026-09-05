@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file joystick.c
  * @brief IJK joystick interface for Phosphoric
