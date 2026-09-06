@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Doc : cadres de pile GOSUB/FOR de BASIC 1.1 (`docs/BASIC_STACK_FRAMES.md`)
+
+Nouveau document de référence décrivant le format exact des cadres poussés par
+`FOR` (18 octets, marqueur `$8D`) et `GOSUB` (5 octets, marqueur `$9B`) sur la
+pile 6502, pour ORIC BASIC 1.1 (Atmos). **Toutes les valeurs extraites
+empiriquement de l'émulateur** par méthode différentielle (variation contrôlée du
+programme + diff des dumps RAM), aucune devinée. Faits non triviaux documentés :
+endianness **mixte** dans le cadre FOR (pointeur variable et n° ligne
+little-endian, pointeur texte **big-endian**), signe du STEP porté par un octet
+séparé (`$01`/`$FF`) et non par le flottant, pointeur texte du GOSUB
+little-endian (asymétrie réelle vs FOR). Inclut la recette reproductible
+(`--type-keys-when` + sentinelle `POKE`/`--dump-ram-when`, localisation par
+marqueur) et deux garde-fous (`--headless` obligatoire ; numérotation FOR haute
+pour franchir une page). Documente aussi la dette technique du tokeniseur C
+`bas2tap` (cas `FORI` non tokenisé). Documentation seulement, aucun changement de
+code ni de version.
+
 ### Added — En-têtes SPDX (EUPL-1.2) sur les fichiers source
 
 Ajout de `/* SPDX-License-Identifier: EUPL-1.2 */` en première ligne de **197**

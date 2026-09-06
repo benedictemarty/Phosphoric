@@ -32,6 +32,24 @@ phase intra-PHI2 (grille `sys_clk = PHI2×30`).
 
 ---
 
+## Référence : cadres de pile GOSUB/FOR de BASIC 1.1 — LIVRÉ
+
+Document `docs/BASIC_STACK_FRAMES.md` : format exact des cadres poussés par `FOR`
+(18 octets, marqueur `$8D`) et `GOSUB` (5 octets, marqueur `$9B`) sur la pile
+6502, **dérivé empiriquement** de l'émulateur (méthode différentielle : frappe du
+programme par le tokeniseur ROM via `--type-keys-when`, sentinelle `POKE`
+capturée par `--dump-ram-when`, localisation par marqueur). Faits établis :
+endianness mixte du cadre FOR (varptr + n° ligne little-endian, pointeur texte
+big-endian), signe du STEP dans un octet séparé (`$01`/`$FF`), pointeur texte
+GOSUB little-endian. Utile aux outils tiers décodant l'état BASIC (p. ex.
+traçage de pile d'appels).
+- [x] Doc de référence + recette reproductible + garde-fous headless.
+- [ ] Dette technique repérée : tokeniseur C `tools/bas2tap.c` incomplet (cas
+      `FORI` laissé en ASCII) — corriger `basic_tokenize_line` **ou** faire
+      échouer bruyamment `tap_from_basic` au lieu d'un « faux succès ».
+
+---
+
 ## Fidélité LOCI : course PHI2 sur l'ACIA `$0380` (picowifi) — LIVRÉ (v1.114.0-alpha)
 
 Reproduction à l'identique du comportement du vrai LOCI + PicoWiFiModemUSB, à
