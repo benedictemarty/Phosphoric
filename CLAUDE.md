@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Phosphoric** — Cycle-accurate ORIC-1/Atmos emulator written in C11. Emulates the complete ORIC 8-bit computer (1983): MOS 6502 CPU, 64KB memory with ROM/RAM banking, VIA 6522, AY-3-8910 PSG audio, ULA video (text 40x28 + HIRES 240x200), Microdisc WD1793 FDC, and cassette TAP format. Supports both ORIC-1 (BASIC 1.0) and Atmos (BASIC 1.1) with ROM auto-detection. Optional SDL2 for display/audio/input.
+**Phosphoric** — Bus-cycle-accurate ORIC-1/Atmos emulator written in C11 (exact per-opcode cycle counts and bus accesses clocked at the right cycle; internal non-bus cycles are reconciled by end-of-instruction padding, not micro-cycle stepped; IRQs sampled at instruction boundaries). Emulates the complete ORIC 8-bit computer (1983): MOS 6502 CPU, 64KB memory with ROM/RAM banking, VIA 6522, AY-3-8910 PSG audio, ULA video (text 40x28 + HIRES 240x200), Microdisc WD1793 FDC, and cassette TAP format. Supports both ORIC-1 (BASIC 1.0) and Atmos (BASIC 1.1) with ROM auto-detection. Optional SDL2 for display/audio/input.
 
 ## Build Commands
 
@@ -59,7 +59,7 @@ Test framework is custom C macros redefined in each test file (no shared header,
 Central struct containing all hardware subsystems. Passed as pointer to most subsystem functions. Key constants: `CYCLES_PER_FRAME = 19968` (PAL: 312 lines x 64 cycles), `ORIC_CLOCK_HZ = 1000000`, `ORIC_FRAME_RATE = 50`.
 
 ### Hardware subsystems (src/)
-- **cpu/** — MOS 6502: 151 opcodes, 13 addressing modes, cycle-accurate, level-triggered IRQ (IRQF_VIA, IRQF_DISK)
+- **cpu/** — MOS 6502: 151 opcodes, 13 addressing modes, bus-cycle-accurate, level-triggered IRQ (IRQF_VIA, IRQF_DISK)
 - **memory/** — 64KB: RAM ($0000-$BFFF), VIA I/O ($0300-$030F), Microdisc I/O ($0310-$031F), ROM/RAM overlay ($C000-$FFFF)
 - **io/via6522.c** — VIA 6522: 16 registers, Timer 1/2, IFR/IER interrupts, Port A/B callbacks, keyboard matrix scanning
 - **io/keyboard.c** — 8x8 matrix: VIA ORB bits 0-2 select column, Port A reads rows (active low)

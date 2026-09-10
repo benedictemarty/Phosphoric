@@ -217,7 +217,7 @@ install(FILES docs/user-guide/README.md
 # CPack configuration
 set(CPACK_PACKAGE_NAME "phosphoric")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Phosphoric — Cycle-accurate ORIC-1/Atmos emulator")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Phosphoric — Bus-cycle-accurate ORIC-1/Atmos emulator")
 set(CPACK_PACKAGE_CONTACT "bmarty <bmarty@mailo.com>")
 set(CPACK_GENERATOR "DEB;RPM;TGZ")
 

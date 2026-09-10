@@ -1,6 +1,6 @@
 # Repousser les limites de l'Oric : cinq extensions expérimentales pour la carte LOCI
 
-*Comment un émulateur cycle-exact sert de banc d'essai matériel — avec l'ABI, les
+*Comment un émulateur précis au cycle bus sert de banc d'essai matériel — avec l'ABI, les
 registres et les schémas.*
 
 ---
@@ -51,7 +51,7 @@ intéressent ici :
    $FFFF └──────────────────────────────┘
 ```
 
-L'émulateur **Phosphoric** (cycle-exact, C11) reproduit fidèlement cette carte, ce
+L'émulateur **Phosphoric** (précis au cycle bus, C11) reproduit fidèlement cette carte, ce
 qui autorise une démarche rare : **écrire la spec d'une extension, la coder, et la
 valider par des tests déterministes — avant de toucher au fer à souder**. Détail
 qui compte : l'auteur possède une carte LOCI, mais pas d'Oric. Le banc logiciel
@@ -277,7 +277,7 @@ Le vrai enseignement tient peut-être là : sur une machine de 1983, la difficul
 n'est pas d'imaginer des fonctions modernes, mais de les **greffer sans trahir** le
 comportement d'origine — et de le **prouver** avant de sortir le fer à souder.
 
-L'émulateur cycle-exact cesse d'être un simple musée jouable : il devient un **banc
+L'émulateur précis au cycle bus cesse d'être un simple musée jouable : il devient un **banc
 de prototypage matériel**. On y écrit la spec, on y code l'extension, on y passe les
 tests… et le silicium n'arrive qu'en dernier, cahier de recette déjà rempli.
 

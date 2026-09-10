@@ -130,7 +130,7 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
 La sortie WASM est **byte-identique au build natif** pour des entrées
 identiques : un boot Atmos headless (`-n -c N --screenshot`) compilé en WASM et
 exécuté sous Node.js produit la **même capture PPM exacte** que le binaire natif
-(testé à 2M et 5M cycles). Le déterminisme cycle-exact du cœur est préservé à
+(testé à 2M et 5M cycles). Le déterminisme au cycle bus du cœur est préservé à
 travers la compilation WebAssembly.
 
 Le rendu **navigateur** a aussi été validé : la page chargée dans Chromium

@@ -1,7 +1,7 @@
 # PLAN AGILE - Phosphoric
 ## Document de Planification Agile Complet
 
-**Projet**: Phosphoric — Emulateur ORIC-1/Atmos Cycle-Accurate
+**Projet**: Phosphoric — Emulateur ORIC-1/Atmos précis au cycle bus
 **Version du document**: 1.0.0
 **Date de création**: 2026-02-22
 **Responsable**: bmarty <bmarty@mailo.com>
@@ -12,7 +12,7 @@
 
 ## Vision Produit
 
-> Créer Phosphoric, un émulateur ORIC-1/Atmos fidèle au cycle près, écrit en C,
+> Créer Phosphoric, un émulateur ORIC-1/Atmos précis au cycle bus, écrit en C,
 > intégrant des fonctionnalités modernes (partage de fichiers hôte, outils de
 > conversion) pour préserver et faire revivre l'écosystème logiciel de l'ORIC (1983).
 
@@ -196,8 +196,10 @@ structure de répertoires, documentation agile, CI/CD.
 **Sprints**: S1, S2
 
 ## Description
-Implémentation complète et fidèle au cycle près du processeur MOS Technology
-6502 cadencé à 1 MHz tel qu'utilisé dans l'ORIC-1. C'est le composant le plus
+Implémentation complète et précise au cycle bus du processeur MOS Technology
+6502 cadencé à 1 MHz tel qu'utilisé dans l'ORIC-1 (comptage de cycles exact
+par opcode et accès bus cadencés au bon cycle ; les cycles internes non-bus
+sont rattrapés en fin d'instruction plutôt que micro-cyclés). C'est le composant le plus
 critique de l'émulateur.
 
 ## User Stories

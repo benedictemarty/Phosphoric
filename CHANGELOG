@@ -121,6 +121,24 @@ cibles qui exercent réellement le bus LOCI (`test-loci`, `test-loci-acia-miss`,
 `test-control-dispatch`, `test-control-queue`) lient la vraie `loci_emu.c`/`loci_gfx.c`
 + `libemul.a`. `make tests` : **1043 tests, 100 % pass**.
 
+### Changed — Documentation : « cycle-accurate » → « précis au cycle bus » (précision technique)
+
+Remplacement de l'affirmation trop forte « cycle-accurate / cycle-exact / fidèle
+au cycle près » appliquée au **cœur 6502 et à l'émulateur global** par la
+formulation exacte **« bus-cycle-accurate / précis au cycle bus »**. Motif : le
+CPU (`cpu6502.c`) est *instruction-stepped avec cadençage à l'accès bus* — comptage
+de cycles par opcode exact et accès bus (fetch/read/write) cadencés au bon cycle,
+mais les cycles internes non-bus sont **rattrapés par padding en fin d'instruction**
+(pas micro-cyclés) et les IRQ sont échantillonnées **aux frontières d'instruction**.
+Sans impact observable sur ORIC (IRQ VIA level-triggered de toute façon
+échantillonnée aux frontières d'instruction). Fichiers mis à jour : `README.md`,
+`CLAUDE.md`, `CMakeLists.txt`, `include/cpu/cpu6502.h`, `docs/COMPATIBILITY.md`,
+`docs/AGILE_PLAN.md`, `docs/wasm.md`, `docs/movie_replay.md`,
+`docs/articles/loci-extensions-tachibana.md`. **Conservés tels quels** (fidélité
+réelle au niveau composant) : WD1793 FDC « cycle-accurate », écritures PSG
+timestampées digidrums, et spec ULA-NG (lecture mémoire cycle-exact). Doc seule,
+aucun changement de code ni de version.
+
 ### Added — Doc : cadres de pile GOSUB/FOR de BASIC 1.1 (`docs/BASIC_STACK_FRAMES.md`)
 
 Nouveau document de référence décrivant le format exact des cadres poussés par

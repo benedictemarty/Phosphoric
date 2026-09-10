@@ -1,13 +1,17 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cpu6502.h
- * @brief MOS 6502 CPU emulation (cycle-accurate)
+ * @brief MOS 6502 CPU emulation (bus-cycle-accurate)
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-01-31
  * @version 0.1.0-alpha
  *
- * This module implements a cycle-accurate emulation of the MOS 6502 CPU
- * as used in the ORIC-1 computer (running at 1 MHz).
+ * This module implements a bus-cycle-accurate emulation of the MOS 6502 CPU
+ * as used in the ORIC-1 computer (running at 1 MHz): exact per-opcode cycle
+ * counts and bus accesses clocked at the right cycle (peripherals see reads/
+ * writes at the correct intra-instruction cycle). Internal non-bus cycles are
+ * reconciled by padding at the end of each instruction rather than stepped
+ * micro-cycle by micro-cycle; IRQs are sampled at instruction boundaries.
  */
 
 #ifndef CPU6502_H

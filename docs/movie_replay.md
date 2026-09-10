@@ -32,7 +32,7 @@ qui rend la régression CI fiable — on commite un movie + une capture de
 référence, et la CI rejoue + compare.
 
 Le déterminisme repose sur : même ROM/modèle, init RAM fixe (compatible
-Oricutron), CPU cycle-exact. Le movie stocke le modèle (`model 0|1`) et un
+Oricutron), CPU déterministe au cycle bus. Le movie stocke le modèle (`model 0|1`) et un
 avertissement est émis si le modèle de rejeu diffère.
 
 ## Format de fichier (texte, diffable)

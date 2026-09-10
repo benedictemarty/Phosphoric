@@ -114,7 +114,7 @@ joystick, printer, mcp40, renderer, trace, profiler, rominfo, serial, loci…).
 
 | Composant | Precision | Notes |
 |-----------|----------|-------|
-| 6502 CPU | Cycle-accurate | 151 opcodes officiels, BCD, bug JMP indirect |
+| 6502 CPU | Précis au cycle bus | 151 opcodes officiels, BCD, bug JMP indirect |
 | VIA 6522 | Fonctionnel | Timers, interruptions, callbacks ports, CB1 edge |
 | AY-3-8910 PSG | Precis | Courbe DAC Oricutron, diviseurs d'horloge |
 | ULA Video | Fonctionnel | Texte + HIRES, attributs serie, timing PAL |

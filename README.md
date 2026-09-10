@@ -1,8 +1,8 @@
 # Phosphoric
 
-A cycle-accurate ORIC-1 / Atmos emulator written in C11.
+A bus-cycle-accurate ORIC-1 / Atmos emulator written in C11.
 
-**Version: 1.110.0-alpha** | **908 tests, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 1.110.0-alpha** | **1043 tests, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -41,7 +41,7 @@ make SDL2=1
 ## Features
 
 ### Core Emulation
-- **MOS 6502 CPU** — Cycle-accurate, 151 official opcodes, 13 addressing modes, BCD, level-triggered IRQ
+- **MOS 6502 CPU** — Bus-cycle-accurate (exact per-opcode cycle counts, bus accesses clocked at the right cycle; not micro-cycle stepped), 151 official opcodes, 13 addressing modes, BCD, level-triggered IRQ
 - **64KB Memory** — RAM ($0000-$BFFF), ROM ($C000-$FFFF), banking, I/O routing
 - **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, keyboard matrix, shift register (8 modes), T2 pulse counting, **complete CA2/CB2 PCR modes** (input edges, independent interrupts, handshake — CB2 write-only like silicon —, 1-cycle pulse, manual) and IRA/IRB input latching (ACR bits 0-1)
 - **ULA Video** — Text mode (40x28) + HIRES (240x200), serial attributes, PAL timing (312 lines x 64 cycles)
