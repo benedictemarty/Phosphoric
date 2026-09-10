@@ -119,6 +119,7 @@ SOURCES = src/main.c \
           src/cpu/cpu6502.c \
           src/cpu/opcodes.c \
           src/cpu/addressing.c \
+          src/cpu/microseq.c \
           src/memory/memory.c \
           src/memory/banking.c \
           src/io/via6522.c \
@@ -292,7 +293,7 @@ dsk2hfe: tools/dsk2hfe.c
 # ═══════════════════════════════════════════════════════════════
 
 TEST_CPU_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
+                src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c src/memory/banking.c \
                 src/utils/logging.c
 
 TEST_MEM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_memory.c src/memory/memory.c \
@@ -313,7 +314,7 @@ TEST_JASMIN_SRCS = tests/unit/test_jasmin.c src/io/jasmin.c src/io/microdisc.c \
                    src/storage/disk_http.c src/utils/logging.c
 
 TEST_SYSTEM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_full_system.c src/cpu/cpu6502.c \
-                   src/cpu/opcodes.c src/cpu/addressing.c src/memory/memory.c \
+                   src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c \
                    src/memory/banking.c src/io/via6522.c src/utils/logging.c
 
 test-cpu: $(TEST_CPU_SRCS)
@@ -349,7 +350,7 @@ test-system: $(TEST_SYSTEM_SRCS)
 	@./test_system
 
 TEST_ROM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rom.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
+                src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c src/memory/banking.c \
                 src/io/via6522.c src/utils/logging.c
 
 test-rom: $(TEST_ROM_SRCS)
@@ -358,7 +359,7 @@ test-rom: $(TEST_ROM_SRCS)
 
 TEST_VIDEO_SRCS = tests/support/loci_emu_stub.c tests/unit/test_video.c src/video/video.c src/video/export.c \
                   src/video/stb_image_write_impl.c \
-                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                   src/memory/memory.c src/memory/banking.c src/io/via6522.c \
                   src/io/ula_ng.c src/utils/logging.c
 
@@ -383,7 +384,7 @@ test-movie-replay: $(TARGET)
 	@bash tests/integration/test_movie_replay.sh
 
 TEST_GDB_SRCS = tests/support/loci_emu_stub.c tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
-                src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                 src/memory/memory.c src/memory/banking.c \
                 src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
                 src/utils/trace.c
@@ -399,7 +400,7 @@ test-audio: $(TEST_AUDIO_SRCS)
 	@./test_audio
 
 TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c src/debugger.c \
-                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                      src/memory/memory.c src/memory/banking.c \
                      src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
                      src/utils/trace.c
@@ -416,7 +417,7 @@ test-cast: $(TEST_CAST_SRCS)
 	@./test_cast
 
 TEST_SAVESTATE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_savestate.c src/savestate.c \
-                      src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                      src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                       src/memory/memory.c src/memory/banking.c \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
                       src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
@@ -480,7 +481,7 @@ test-osd: $(TEST_OSD_SRCS)
 
 
 TEST_TRACE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_trace.c src/utils/trace.c \
-                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c \
                   src/utils/symbols.c
 
@@ -489,7 +490,7 @@ test-trace: $(TEST_TRACE_SRCS)
 	@./test_trace
 
 TEST_PROFILER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_profiler.c src/utils/profiler.c \
-                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                      src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
 test-profiler: $(TEST_PROFILER_SRCS)
@@ -497,7 +498,7 @@ test-profiler: $(TEST_PROFILER_SRCS)
 	@./test_profiler
 
 TEST_ROMINFO_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rominfo.c src/utils/rominfo.c \
-                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                     src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
 test-rominfo: $(TEST_ROMINFO_SRCS)
@@ -514,7 +515,7 @@ TEST_LOCI_SRCS = tests/support/loci_emu_stub.c tests/unit/test_loci.c \
                  src/io/loci_core.c src/io/loci_gfx.c src/io/loci_fs.c \
                  src/io/loci_bus.c src/io/loci_boot.c src/io/loci_sdimg.c \
                  src/utils/logging.c src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
-                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                  src/memory/memory.c src/memory/banking.c
 
 test-loci: $(TEST_LOCI_SRCS)
@@ -532,7 +533,7 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/io/pia6821.c src/io/acia6850.c src/io/dtl2000.c \
                  src/io/sp0256.c src/io/mea8000.c src/io/ula_ng.c \
                  src/video/video.c src/audio/ay3891x.c \
-                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                  src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
                  src/memory/memory.c src/memory/banking.c \
                  src/utils/logging.c src/utils/netutil.c
@@ -628,7 +629,7 @@ test-autotype: $(TEST_AUTOTYPE_SRCS)
 	@./test_autotype
 
 TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                     src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
+                     src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c src/memory/banking.c \
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c src/storage/disk_http.c \
@@ -710,7 +711,7 @@ test-cli-parsing: $(TARGET)
 #   make test-cycle CYCLE_MAX_CASES=0    les 10 000 cas par opcode
 #   make test-cycle CYCLE_OPCODES=a9,b1  un sous-ensemble, en verbeux utile
 TEST_CYCLE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu_cycles.c \
-                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
 test-cycle: $(TEST_CYCLE_SRCS)
@@ -718,7 +719,7 @@ test-cycle: $(TEST_CYCLE_SRCS)
 	@./test_cpu_cycles
 
 TEST_DORMANN_SRCS = tests/support/loci_emu_stub.c tests/unit/test_dormann.c \
-                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                     src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
 test-dormann: $(TEST_DORMANN_SRCS)

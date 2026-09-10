@@ -20,7 +20,7 @@ vérifiable, classe chaque composant, et sert de référence d'acceptation au pl
 
 | Composant | Niveau réel | Ce qui manque pour N3 |
 |-----------|-------------|------------------------|
-| **CPU 6502** (`src/cpu/`) | **N2** (mesuré : N2 à 100 %, N3 à 44,26 %) | Accès **factices** absents (page-cross indexé, `zp,X`, RMW `abs,X`, store `abs,X/Y`, re-fetch de branche) ; cycles internes bourrés en bloc (`cpu_step`) ; IRQ échantillonnée **avant** l'instruction, pas au cycle pénultième ; pas de sémantique retardée du drapeau I (`CLI`/`SEI`/`PLP`) ; pas de détournement NMI/BRK. Acquis : 256/256 opcodes, double-écriture RMW, bourrage exact du total, et **oracle cycle par cycle dans la suite de tests** (`make test-cycle`, V2-S1). |
+| **CPU 6502** (`src/cpu/`) | **N2** par défaut (mesuré : N2 100 %, N3 44,26 %)<br>**N3 à 100 %** avec `--cpu-microseq` | Accès **factices** absents (page-cross indexé, `zp,X`, RMW `abs,X`, store `abs,X/Y`, re-fetch de branche) ; cycles internes bourrés en bloc (`cpu_step`) ; IRQ échantillonnée **avant** l'instruction, pas au cycle pénultième ; pas de sémantique retardée du drapeau I (`CLI`/`SEI`/`PLP`) ; pas de détournement NMI/BRK. **Le moteur `--cpu-microseq` (V2-E1) comble tout cela sauf l'instant de prise des interruptions** : 100 % de séquence bus exacte sur 2 440 000 cas. Acquis : 256/256 opcodes, double-écriture RMW, bourrage exact du total, et **oracle cycle par cycle dans la suite de tests** (`make test-cycle`, V2-S1). |
 | **VIA 6522** (`src/io/via6522.c`) | **N2 / N1 mixte** | `via_update(cycles)` reçoit des **paquets** (1 cycle par accès bus, puis le reste de l'instruction d'un coup) : les compteurs T1/T2 atterrissent juste, mais l'instant de pose de l'IFR à l'intérieur du paquet est approché (≤ 6 cycles). Conformité datasheet déjà auditée (`docs/HARDWARE_CONFORMANCE.md` §2). |
 | **ULA vidéo** (`src/video/video.c`) | **N1 (ligne)** | Rendu par **scanline de 64 cycles**, la ligne entière échantillonnée à un instant unique → une écriture en milieu de ligne s'applique à toute la ligne. Pas de modèle de *fetch* octet par cycle, pas de bordure/blanking temporisés, 224 lignes rendues sur 312. |
 | **PSG AY-3-8910** (`src/audio/ay3891x.c`) | **N1 (échantillon)** | Machine d'état cadencée à **44,1 kHz** (accumulateurs de débit) au lieu de `horloge/16` = 62,5 kHz ; LFSR de bruit et enveloppe cadencés au taux d'échantillonnage. Acquis : écritures registres **horodatées en cycles CPU** (file d'événements) → digidrums corrects. |
@@ -78,6 +78,31 @@ décimal, stores instables `SHA`/`SHX`/`SHY`/`SHS` en traversée de page) — vo
 CHANGELOG. Le test fonctionnel de Klaus Dormann passe intégralement
 (`make test-dormann`), ce qui confirme que le déficit du cœur est **temporel, pas
 logique**.
+
+### Deux cœurs, un seul calcul (V2-S2)
+
+Depuis la v1.123.0-alpha, le CPU a **deux moteurs** qui partagent la même
+sémantique (mêmes fonctions de calcul : drapeaux, BCD, opcodes illégaux) et ne
+diffèrent que par l'ordonnancement des cycles :
+
+| | historique (défaut) | `--cpu-microseq` (V2-E1) |
+|---|---|---|
+| séquence bus exacte (N3) | 44,26 % | **100,00 %** |
+| cycles sans adresse | 12,8 % des cycles au boot | **0** |
+| accès factices du NMOS | absents | tous émis |
+| coût (trame, budget 20 ms) | 1,9 % | 2,7 % |
+| prise des interruptions | frontière d'instruction | frontière d'instruction (US1.3 à faire) |
+
+Le moteur micro-séquencé est **opt-in** le temps de la migration : le chemin par
+défaut reste l'historique, donc aucune régression possible. Preuves
+d'intégration à l'identique : boot ORIC-1 et Atmos **byte-identiques**, jeu
+disquette (Citadelle, Sedoric + FDC + IRQ) identique, test Dormann réussi au
+**même nombre de cycles** (96 241 367) sur les deux moteurs.
+
+Ce qui manque encore pour dire « CPU exact au cycle » sans réserve : l'instant de
+prise des interruptions (le vrai 6502 échantillonne IRQ/NMI au cycle pénultième,
+les deux moteurs décident en frontière d'instruction), le drapeau I retardé de
+`CLI`/`SEI`/`PLP`, et le détournement NMI pendant BRK. C'est l'US1.3 du plan.
 
 La trace `--cycle-trace FICHIER` (une ligne par cycle : type d'accès, adresse,
 donnée, registres, lignes d'interruption) sert à diffuser un écart ligne à ligne

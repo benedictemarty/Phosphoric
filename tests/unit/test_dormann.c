@@ -24,9 +24,11 @@
  * Variables d'environnement :
  *   DORMANN_DIR        répertoire du binaire (défaut third_party/vectors/dormann)
  *   DORMANN_MAX_CYCLES plafond de sécurité     (défaut 120 000 000)
+ *   DORMANN_ENGINE     « legacy » (défaut) ou « microseq » — quel cœur exécute
  */
 
 #include "cpu/cpu6502.h"
+#include "cpu/microseq.h"
 #include "memory/memory.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,6 +89,13 @@ static bool load_image(const char* path) {
     memcpy(mem.ram, img, 0xC000);
     memcpy(mem.rom, img + 0xC000, 0x4000);
     cpu_init(&cpu, &mem);
+    {
+        const char* engine = getenv("DORMANN_ENGINE");
+        if (engine && strcmp(engine, "microseq") == 0) {
+            cpu_set_microseq(&cpu, true);
+            printf("  Cœur : micro-séquencé (V2-E1)\n");
+        }
+    }
     cpu.PC = DORMANN_START_PC;
     cpu.SP = 0xFD;
     cpu.P = FLAG_UNUSED | FLAG_INTERRUPT;

@@ -30,10 +30,15 @@ if [ ! -x "$EMU" ]; then
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────
+# ENGINE=microseq → ajoute --cpu-microseq à tous les scénarios, pour comparer le
+# coût du cœur cycle-par-cycle (V2-E1) au cœur historique.
+EXTRA_ARGS=()
+[ "${ENGINE:-legacy}" = "microseq" ] && EXTRA_ARGS=(--cpu-microseq)
+
 run_bench() {
     local label="$1"; shift
     local out
-    out=$("$EMU" "$@" --bench -c "$CYCLES_DEFAULT" 2>/dev/null \
+    out=$("$EMU" "$@" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" --bench -c "$CYCLES_DEFAULT" 2>/dev/null \
           | grep -F "BENCH " | head -n 1)
     if [ -z "$out" ]; then
         echo "FAIL  ${label}: no BENCH line"

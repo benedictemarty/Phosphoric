@@ -105,6 +105,24 @@ typedef struct {
      * accuracy level N2 those have no address (see docs/ACCURACY.md). */
     void (*on_bus)(void* ctx, uint16_t addr, uint8_t value, bool write);
     void* bus_ctx;
+
+    /* ─── Micro-séquenceur (V2-E1, include/cpu/microseq.h) ───
+     * État du cœur cycle-par-cycle. Inerte tant que ms_enabled est faux : le
+     * chemin par défaut reste le moteur historique. */
+    bool     ms_enabled;   /**< moteur micro-séquencé actif */
+    bool     ms_active;    /**< une instruction/séquence est en cours */
+    uint8_t  ms_opcode;    /**< opcode en cours */
+    uint8_t  ms_pc;        /**< index de la micro-op courante dans le plan */
+    uint8_t  ms_plan[10];  /**< plan de micro-opérations (une par cycle) */
+    uint8_t  ms_len;       /**< longueur du plan */
+    uint8_t  ms_rmw;       /**< cpu_rmw_t de l'instruction, si RMW */
+    uint8_t  ms_idx;       /**< index appliqué après l'adresse : 0 aucun, 1 X, 2 Y */
+    uint8_t  ms_ptr;       /**< pointeur page zéro en construction */
+    uint8_t  ms_adl;       /**< octet bas de l'adresse effective */
+    uint8_t  ms_data;      /**< donnée lue (opérande, valeur RMW) */
+    uint16_t ms_addr;      /**< adresse effective (après index) */
+    uint16_t ms_base;      /**< adresse avant index (pour factices et stores instables) */
+    bool     ms_crossed;   /**< l'indexation a franchi une page */
 } cpu6502_t;
 
 /**

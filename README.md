@@ -45,7 +45,13 @@ make SDL2=1
 ## Features
 
 ### Core Emulation
-- **MOS 6502 CPU** — Bus-cycle-accurate (exact per-opcode cycle counts, bus accesses clocked at the right cycle; not micro-cycle stepped), 151 official opcodes, 13 addressing modes, BCD, level-triggered IRQ
+- **MOS 6502 CPU** — Two interchangeable cores, same semantics, different cycle scheduling:
+  the default is bus-cycle ordered (exact per-opcode cycle counts, bus accesses at the right
+  intra-instruction cycle, internal cycles padded); **`--cpu-microseq` is cycle-stepped** —
+  every cycle emits its own bus access, NMOS dummy accesses included, and scores **100,00 %
+  exact bus sequence on 2 440 000 oracle cases** (vs 44,26 % for the default core).
+  256/256 opcodes (151 official + 105 illegal), 13 addressing modes, NMOS decimal mode,
+  level-triggered IRQ. See [docs/ACCURACY.md](docs/ACCURACY.md).
 - **64KB Memory** — RAM ($0000-$BFFF), ROM ($C000-$FFFF), banking, I/O routing
 - **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, keyboard matrix, shift register (8 modes), T2 pulse counting, **complete CA2/CB2 PCR modes** (input edges, independent interrupts, handshake — CB2 write-only like silicon —, 1-cycle pulse, manual) and IRA/IRB input latching (ACR bits 0-1)
 - **ULA Video** — Text mode (40x28) + HIRES (240x200), serial attributes, PAL timing (312 lines x 64 cycles)
@@ -160,7 +166,8 @@ make SDL2=1
 - **`make test-cycle`** — replays SingleStepTests/65x02 (10 000 cases per opcode,
   with the expected cycle-by-cycle bus trace) and scores four separate properties:
   final state, cycle totals, bus **subsequence** (the N2 property) and **exact bus
-  sequence** (the N3 property).
+  sequence** (the N3 property). **Both cores are judged in one run**, so neither can
+  progress by breaking the other.
 - **`make test-dormann`** — Klaus Dormann's `6502_functional_test`: **passes in full**
   (success trap `$3469`, ~96 M emulated cycles).
 - **Vectors are not vendored** — `tools/fetch_vectors.sh` (or `make fetch-vectors`)
@@ -286,6 +293,7 @@ Display:
 Trace:
   --trace FILE              Log CPU instruction trace to FILE
   --trace-max N             Max instructions to trace (default: unlimited)
+  --cpu-microseq            Cycle-stepped 6502 core (every cycle emits its bus access)
   --cycle-trace FILE        Log ONE LINE PER CYCLE (bus addr, data, R/W, registers)
   --cycle-trace-max N       Max lines for --cycle-trace (0 = unlimited)
   --psg-trace FILE          Log AY sound-register writes (reg 0-13) with CPU cycle

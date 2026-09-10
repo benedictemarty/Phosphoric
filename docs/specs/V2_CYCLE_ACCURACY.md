@@ -140,16 +140,26 @@ transforme « je crois que c'est juste » en « c'est mesuré ».
 
 ### V2-E1 — Cœur 6502 micro-séquencé
 
-- **US1.1 — Squelette micro-séquenceur.** `cpu_cycle()` + état de micro-op dans
-  `cpu6502_t` ; `cpu_step()` réécrit par-dessus. Tous les opcodes migrés, à
-  totaux de cycles inchangés. *Acceptation* : les 1001 tests passent inchangés.
-- **US1.2 — Accès factices.** Page-cross indexé (lecture à l'adresse non
-  corrigée), `zp,X`/`zp,Y` (lecture de la base avant l'index), `(zp,X)`,
-  `(zp),Y`, RMW `abs,X` (toujours 7 cycles avec factice), stores `abs,X/Y`
-  (toujours 5), re-fetch de branche sur page-cross, cycles factices de pile
-  (`PHA`/`PLA`/`JSR`/`RTS`/`RTI`/`BRK`). *Acceptation* : score `test-cycle` sur
-  les accès ≥ 99,9 % ; test dédié montrant qu'un factice sur un registre I/O à
-  effet de bord est bien observé.
+- **US1.1 — Squelette micro-séquenceur. ✅ livré (v1.123.0-alpha)** —
+  `src/cpu/microseq.c` : chaque instruction est décomposée en un **plan de
+  micro-opérations, une par cycle** ; `cpu_cycle()` en exécute exactement une et
+  `cpu_step()` n'est plus qu'un enrouleur. Les 256 opcodes sont couverts, classés
+  en 17 familles de séquence ; le MODE d'adressage vient d'`opcode_table` (source
+  unique) et la SÉMANTIQUE des fonctions partagées d'`opcodes.c`
+  (`cpu_rmw_apply`, `cpu_op_adc/sbc/cmp/lax`, `cpu_sh_unstable`, `cpu_update_nz`)
+  — les deux moteurs ne diffèrent **que** par l'ordonnancement, jamais par le
+  calcul. Moteur **opt-in** (`--cpu-microseq`) le temps de la migration.
+  *Acceptation tenue* : totaux de cycles identiques (Dormann réussit au même
+  cycle près : 96 241 367 sur les deux moteurs), `make tests` inchangé.
+- **US1.2 — Accès factices. ✅ livré (v1.123.0-alpha)** — tous présents dans les
+  plans : lecture à l'adresse non corrigée (en traversée de page pour les
+  lectures, **systématique** pour écritures et RMW), lecture de la base avant
+  index en `zp,X`/`zp,Y` et `(zp,X)`, écriture-retour RMW, lectures de pile
+  mortes (`PLA`/`PLP`/`JSR`/`RTS`/`RTI`), lecture morte des implicites, re-fetch
+  de branche et cycle de correction de page. *Acceptation dépassée* :
+  **100,00 %** de séquence bus exacte sur **2 440 000 cas** (l'objectif était
+  « ≥ 99,9 % »), plus des tests unitaires qui montrent l'accès factice observé
+  sur le bus et l'absence de ce même accès sur le moteur historique (`test-cpu`).
 - **US1.3 — Interruptions au bon cycle.** Échantillonnage IRQ/NMI au cycle
   pénultième ; latch de front NMI ; détournement `BRK`→NMI ; sémantique
   retardée de `CLI`/`SEI`/`PLP` ; comportement IRQ pendant une branche.
@@ -260,8 +270,8 @@ Le gain le plus visible pour l'utilisateur.
 |--------|---------|--------|
 | **V2-S0** | US0.1 (vérité de la communication) + `docs/ACCURACY.md` + garde anti-récidive | 1.121.0-alpha |
 | **V2-S1** | US0.2/0.3/0.4 — oracle 65x02, Dormann, `--cycle-trace`, **score de base publié** | 1.122.0-alpha |
-| **V2-S2** | US1.1 — micro-séquenceur, totaux inchangés | branche |
-| **V2-S3** | US1.2 — accès factices | branche |
+| **V2-S2** | US1.1 + US1.2 — micro-séquenceur **et** accès factices : 100 % d'un coup (l'oracle a permis d'aller plus loin que prévu) | 1.123.0-alpha |
+| **V2-S3** | US1.3/1.4 — interruptions au cycle pénultième, drapeau I retardé, détournement NMI/BRK, puis bascule du moteur par défaut | branche |
 | **V2-S4** | US1.3/1.4 + US2.1 — interruptions au cycle, `emu_cycle()` | 2.0.0-alpha.1 |
 | **V2-S5** | US2.2/2.3/2.4 + US3.1 | 2.0.0-alpha.2 |
 | **V2-S6** | US3.2/3.3/3.4 + US4.1 | 2.0.0-alpha.3 |

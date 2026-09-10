@@ -70,6 +70,7 @@
 #include "savestate.h"
 #include "utils/trace.h"
 #include "utils/cycle_trace.h"
+#include "cpu/microseq.h"
 #include "utils/rominfo.h"
 #ifdef HAS_SDL2
 #include <SDL2/SDL.h>
@@ -2472,6 +2473,7 @@ int main(int argc, char* argv[]) {
     bool render_software = false;
     const char* trace_file = NULL;
     const char* cycle_trace_file = NULL;
+    bool cpu_microseq = false;
     uint64_t cycle_trace_max = 0;
     const char* screenshot_when_arg = NULL;
     const char* dump_ram_when_arg = NULL;
@@ -2628,6 +2630,7 @@ int main(int argc, char* argv[]) {
             case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
             case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
             case OPT_TRACE: trace_file = optarg; break;
+            case OPT_CPU_MICROSEQ: cpu_microseq = true; break;
             case OPT_CYCLE_TRACE: cycle_trace_file = optarg; break;
             case OPT_CYCLE_TRACE_MAX: cycle_trace_max = strtoull(optarg, NULL, 10); break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
@@ -4205,6 +4208,15 @@ int main(int argc, char* argv[]) {
                           0, true);
             }
         }
+    }
+
+    /* Cœur micro-séquencé (--cpu-microseq, V2-E1) : chaque cycle émet son
+     * propre accès bus, accès factices du NMOS inclus. Opt-in le temps de la
+     * migration ; sémantique identique au moteur historique (mêmes fonctions
+     * de calcul), seul l'ordonnancement des cycles change. */
+    if (cpu_microseq) {
+        cpu_set_microseq(&emu.cpu, true);
+        log_info("CPU: cœur micro-séquencé actif (un accès bus par cycle)");
     }
 
     /* Trace bus cycle par cycle (--cycle-trace) — instrument de la V2.

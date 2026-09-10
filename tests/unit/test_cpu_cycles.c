@@ -33,9 +33,11 @@
  *   CYCLE_MAX_CASES    cas par opcode, 0 = tous    (défaut 200)
  *   CYCLE_OPCODES      liste « a9,b1,9d » à tester (défaut : tous les fichiers présents)
  *   CYCLE_VERBOSE      1 = détail par opcode + premiers écarts
+ *   CYCLE_ENGINE       « legacy » (défaut) ou « microseq » — quel cœur juger
  */
 
 #include "cpu/cpu6502.h"
+#include "cpu/microseq.h"
 #include "memory/memory.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -301,12 +303,14 @@ typedef struct {
     long exact_ok;
 } score_t;
 
-static score_t g;                     /* total, hors opcodes JAM */
+static score_t g;                     /* total, hors opcodes JAM (moteur courant) */
 static score_t gj;                    /* opcodes JAM, comptés à part */
+static score_t g_legacy, g_ms;        /* scores conservés par moteur */
 static int  g_files = 0;              /* fichiers d'opcodes rejoués */
 static int  g_opcodes_clean = 0;      /* opcodes 100 % sur état+RAM+cycles */
 static int  g_jam_files = 0;          /* fichiers JAM rencontrés */
 static bool g_have_vectors = false;
+static bool g_microseq = false;        /* cœur jugé : micro-séquencé ? */
 static char g_worst[256] = "";        /* pire opcode sur l'état final */
 
 /* Les 12 opcodes JAM/KIL bloquent le bus sur un vrai NMOS 6502 (boucle sans
@@ -403,6 +407,7 @@ static void run_opcode_file(const char* path, const char* opname,
     mem.io_write = flat_io_write;
     mem.io_userdata = &mem;
     cpu_init(&cpu, &mem);
+    cpu_set_microseq(&cpu, g_microseq);
     cpu_set_bus_callback(&cpu, bus_cb, NULL);
     dirty_n = 0;
 
@@ -515,6 +520,7 @@ TEST(test_embedded_sample_executes) {
     mem.io_write = flat_io_write;
     mem.io_userdata = &mem;
     cpu_init(&cpu, &mem);
+    cpu_set_microseq(&cpu, g_microseq);
     cpu_set_bus_callback(&cpu, bus_cb, NULL);
     dirty_n = 0;
 
@@ -566,12 +572,31 @@ TEST(test_bus_subsequence_conformance) {
 }
 
 TEST(test_bus_exact_baseline) {
+    if (g_microseq) {
+        /* Le moteur micro-séquencé vise 100 % : c'est sa raison d'être. */
+        long bpm = pct_bp(g.exact_ok, g.cases);
+        printf("    séquence bus exacte (micro-séquencé) : %ld.%02ld %%\n",
+               bpm / 100, bpm % 100);
+        ASSERT_EQ(g.exact_ok, g.cases);
+        return;
+    }
     /* Propriété 4 : la séquence exacte, cycle par cycle (N3). Attendue
      * incomplète aujourd'hui ; on verrouille le socle contre les régressions. */
     long bp = pct_bp(g.exact_ok, g.cases);
     printf("    séquence bus exacte : %ld.%02ld %% (socle %d.%02d %%)\n",
            bp / 100, bp % 100, BUS_EXACT_FLOOR_BP / 100, BUS_EXACT_FLOOR_BP % 100);
     ASSERT_TRUE(bp >= BUS_EXACT_FLOOR_BP);
+}
+
+TEST(test_microseq_dominates_legacy) {
+    /* Garde-fou de migration : sur le même jeu de cas, le cœur micro-séquencé
+     * est au moins aussi conforme que l'historique sur chaque propriété. */
+    ASSERT_TRUE(g_ms.state_ok  >= g_legacy.state_ok);
+    ASSERT_TRUE(g_ms.cycles_ok >= g_legacy.cycles_ok);
+    ASSERT_TRUE(g_ms.subseq_ok >= g_legacy.subseq_ok);
+    ASSERT_TRUE(g_ms.exact_ok  >  g_legacy.exact_ok);
+    printf("    séquence bus exacte : historique %ld vs micro-séquencé %ld (sur %ld cas)\n",
+           g_legacy.exact_ok, g_ms.exact_ok, g_legacy.cases);
 }
 
 int main(void) {
@@ -586,15 +611,35 @@ int main(void) {
     long max_cases = maxs ? strtol(maxs, NULL, 10) : 200;
     const char* only = getenv("CYCLE_OPCODES");
     bool verbose = getenv("CYCLE_VERBOSE") && *getenv("CYCLE_VERBOSE") == '1';
+    const char* engine = getenv("CYCLE_ENGINE");
 
-    DIR* d = opendir(dir);
-    if (!d) {
-        printf("\n  SKIP : vecteurs absents (%s)\n", dir);
-        printf("  → tools/fetch_vectors.sh 65x02   (~1 Go, une seule fois)\n");
-    } else {
+    /* Les DEUX cœurs sont jugés dans la même exécution (sauf si CYCLE_ENGINE
+     * en désigne un) : le moteur historique doit tenir son socle, le moteur
+     * micro-séquencé doit être à 100 %. C'est la comparaison qui fait la
+     * démonstration — et elle interdit de faire progresser l'un en cassant
+     * l'autre. */
+    for (int pass = 0; pass < 2; pass++) {
+        g_microseq = (pass == 1);
+        if (engine && *engine) {
+            bool want_ms = (strcmp(engine, "microseq") == 0);
+            if (g_microseq != want_ms) continue;
+        }
+
+        /* remise à zéro des compteurs pour ce moteur */
+        memset(&g, 0, sizeof(g));
+        memset(&gj, 0, sizeof(gj));
+        g_files = 0; g_jam_files = 0; g_opcodes_clean = 0; g_worst[0] = '\0';
+
+        DIR* d = opendir(dir);
+        if (!d) {
+            printf("\n  SKIP : vecteurs absents (%s)\n", dir);
+            printf("  → tools/fetch_vectors.sh 65x02   (~1 Go, une seule fois)\n");
+            break;
+        }
         g_have_vectors = true;
-        printf("\n  Vecteurs : %s (max %ld cas/opcode)\n", dir,
-               max_cases ? max_cases : 10000);
+        printf("\n  ══ Cœur %s ══  (vecteurs %s, max %ld cas/opcode)\n",
+               g_microseq ? "MICRO-SÉQUENCÉ (V2-E1)" : "HISTORIQUE (N2)",
+               dir, max_cases ? max_cases : 10000);
         char path[1024];
         struct dirent* e;
         while ((e = readdir(d)) != NULL) {
@@ -606,10 +651,10 @@ int main(void) {
             run_opcode_file(path, op, max_cases, verbose);
         }
         closedir(d);
-    }
 
-    if (g_have_vectors && g.cases > 0) {
-        printf("\n  ── Score de conformité (%d opcodes, %ld cas) ──\n", g_files, g.cases);
+        if (g.cases == 0) continue;
+
+        printf("\n  ── Score (%d opcodes, %ld cas) ──\n", g_files, g.cases);
         print_rate("etat final (regs)", g.state_ok, g.cases);
         print_rate("etat final (RAM)", g.ram_ok, g.cases);
         print_rate("total de cycles", g.cycles_ok, g.cases);
@@ -618,17 +663,22 @@ int main(void) {
         printf("    opcodes 100 %% (etat+RAM+cycles) : %d / %d\n",
                g_opcodes_clean, g_files - g_jam_files);
         if (*g_worst) printf("    opcodes avec ecart : %s\n", g_worst);
-
-        if (gj.cases) {
+        if (gj.cases)
             printf("    opcodes JAM (hors échelle, comptés à part) : %d fichiers, %ld cas\n",
                    g_jam_files, gj.cases);
-        }
 
         RUN(test_jam_divergence_is_documented);
         RUN(test_final_state_conformance);
         RUN(test_cycle_count_conformance);
         RUN(test_bus_subsequence_conformance);
         RUN(test_bus_exact_baseline);
+
+        if (g_microseq) g_ms = g; else g_legacy = g;
+    }
+
+    /* Le micro-séquenceur ne doit jamais être MOINS bon que l'historique. */
+    if (g_legacy.cases && g_ms.cases) {
+        RUN(test_microseq_dominates_legacy);
     }
 
     printf("\n---\nTests passed: %d\nTests failed: %d\n", tests_passed, tests_failed);

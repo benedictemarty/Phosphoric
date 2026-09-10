@@ -18,8 +18,8 @@
 #include <string.h>
 #include <stdio.h>
 
-/* Helper: update N and Z flags based on value */
-static inline void update_nz(cpu6502_t* cpu, uint8_t val) {
+/* Helper: update N and Z flags based on value (partagé avec microseq.c) */
+void cpu_update_nz(cpu6502_t* cpu, uint8_t val) {
     cpu_set_flag(cpu, FLAG_ZERO, val == 0);
     cpu_set_flag(cpu, FLAG_NEGATIVE, (val & 0x80) != 0);
 }
@@ -172,7 +172,7 @@ const opcode_info_t opcode_table[256] = {
 };
 
 /* ─── ADC: Add with Carry ─── */
-static void op_adc(cpu6502_t* cpu, uint8_t val) {
+void cpu_op_adc(cpu6502_t* cpu, uint8_t val) {
     if (cpu_get_flag(cpu, FLAG_DECIMAL)) {
         /* Mode décimal du NMOS 6502 — sémantique exacte des drapeaux, révélée
          * par l'oracle 65x02 (V2-S1, opcodes 61/63) et conforme à la référence
@@ -204,12 +204,12 @@ static void op_adc(cpu6502_t* cpu, uint8_t val) {
         cpu_set_flag(cpu, FLAG_CARRY, sum > 0xFF);
         cpu_set_flag(cpu, FLAG_OVERFLOW, (~(cpu->A ^ val) & (cpu->A ^ (uint8_t)sum) & 0x80) != 0);
         cpu->A = (uint8_t)sum;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
     }
 }
 
 /* ─── SBC: Subtract with Carry ─── */
-static void op_sbc(cpu6502_t* cpu, uint8_t val) {
+void cpu_op_sbc(cpu6502_t* cpu, uint8_t val) {
     if (cpu_get_flag(cpu, FLAG_DECIMAL)) {
         uint16_t bin = (uint16_t)cpu->A - (uint16_t)val - (cpu_get_flag(cpu, FLAG_CARRY) ? 0 : 1);
         int16_t lo = (cpu->A & 0x0F) - (val & 0x0F) - (cpu_get_flag(cpu, FLAG_CARRY) ? 0 : 1);
@@ -231,26 +231,32 @@ static void op_sbc(cpu6502_t* cpu, uint8_t val) {
         cpu_set_flag(cpu, FLAG_CARRY, diff < 0x100);
         cpu_set_flag(cpu, FLAG_OVERFLOW, ((cpu->A ^ val) & (cpu->A ^ (uint8_t)diff) & 0x80) != 0);
         cpu->A = (uint8_t)diff;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
     }
 }
 
 /* ─── Compare helper ─── */
-static void op_cmp(cpu6502_t* cpu, uint8_t reg, uint8_t val) {
+void cpu_op_cmp(cpu6502_t* cpu, uint8_t reg, uint8_t val) {
     uint16_t diff = (uint16_t)reg - (uint16_t)val;
     cpu_set_flag(cpu, FLAG_CARRY, reg >= val);
-    update_nz(cpu, (uint8_t)diff);
+    cpu_update_nz(cpu, (uint8_t)diff);
 }
 
 /* ─── Stores « instables » (SHA/SHX/SHY/SHS) ───
  * `addr` est l'adresse indexée corrigée, `idx` l'index utilisé (pour retrouver
  * la base), `reg` la source déjà combinée (A&X pour SHA, SP pour SHS…). */
-static void op_sh_store(cpu6502_t* cpu, uint16_t addr, uint8_t idx, uint8_t reg) {
-    uint16_t base  = (uint16_t)(addr - idx);
+void cpu_sh_unstable(uint16_t base, uint16_t addr, uint8_t reg,
+                     uint8_t* out_value, uint16_t* out_target) {
     uint8_t  value = (uint8_t)(reg & (uint8_t)((base >> 8) + 1));
     bool crossed   = ((base & 0xFF00) != (addr & 0xFF00));
-    uint16_t target = crossed ? (uint16_t)(((uint16_t)value << 8) | (addr & 0x00FF))
-                              : addr;
+    *out_value  = value;
+    *out_target = crossed ? (uint16_t)(((uint16_t)value << 8) | (addr & 0x00FF))
+                          : addr;
+}
+
+static void op_sh_store(cpu6502_t* cpu, uint16_t addr, uint8_t idx, uint8_t reg) {
+    uint8_t value; uint16_t target;
+    cpu_sh_unstable((uint16_t)(addr - idx), addr, reg, &value, &target);
     cpu_mem_write(cpu, target, value);
 }
 
@@ -279,127 +285,107 @@ static int do_branch(cpu6502_t* cpu, bool condition) {
  * value. Invisible on RAM but observable on write-sensitive I/O registers
  * (e.g. a VIA timer-high or IFR latch reacts to the dummy write). */
 
-/* SLO (ASO): mem <<= 1 (carry from bit7), then A |= mem */
-static void op_slo(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
-    v <<= 1;
-    cpu_mem_write(cpu, addr, v);
-    cpu->A |= v;
-    update_nz(cpu, cpu->A);
+/* Sémantique RMW unique, sans accès bus : partagée par le moteur historique
+ * (helpers ci-dessous) et par le micro-séquenceur (microseq.c). */
+uint8_t cpu_rmw_apply(cpu6502_t* cpu, cpu_rmw_t op, uint8_t v) {
+    uint8_t c_in = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
+    switch (op) {
+    case RMW_ASL:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
+        v = (uint8_t)(v << 1);
+        cpu_update_nz(cpu, v);
+        break;
+    case RMW_LSR:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
+        v = (uint8_t)(v >> 1);
+        cpu_update_nz(cpu, v);
+        break;
+    case RMW_ROL:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
+        v = (uint8_t)((v << 1) | c_in);
+        cpu_update_nz(cpu, v);
+        break;
+    case RMW_ROR:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
+        v = (uint8_t)((v >> 1) | (c_in ? 0x80 : 0));
+        cpu_update_nz(cpu, v);
+        break;
+    case RMW_INC:
+        v = (uint8_t)(v + 1);
+        cpu_update_nz(cpu, v);
+        break;
+    case RMW_DEC:
+        v = (uint8_t)(v - 1);
+        cpu_update_nz(cpu, v);
+        break;
+    /* Formes combinées illégales : l'opération mémoire d'abord, puis le
+     * repliement dans A (ou la comparaison contre A). */
+    case RMW_SLO:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
+        v = (uint8_t)(v << 1);
+        cpu->A |= v;
+        cpu_update_nz(cpu, cpu->A);
+        break;
+    case RMW_RLA:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
+        v = (uint8_t)((v << 1) | c_in);
+        cpu->A &= v;
+        cpu_update_nz(cpu, cpu->A);
+        break;
+    case RMW_SRE:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
+        v = (uint8_t)(v >> 1);
+        cpu->A ^= v;
+        cpu_update_nz(cpu, cpu->A);
+        break;
+    case RMW_RRA:
+        cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
+        v = (uint8_t)((v >> 1) | (c_in ? 0x80 : 0));
+        cpu_op_adc(cpu, v);
+        break;
+    case RMW_DCP:
+        v = (uint8_t)(v - 1);
+        cpu_op_cmp(cpu, cpu->A, v);
+        break;
+    case RMW_ISC:
+        v = (uint8_t)(v + 1);
+        cpu_op_sbc(cpu, v);
+        break;
+    }
+    return v;
 }
 
-/* RLA: mem = ROL(mem), then A &= mem */
-static void op_rla(cpu6502_t* cpu, uint16_t addr) {
+/* Moteur historique : read, write-back de la valeur d'origine (cycle factice
+ * NMOS), puis write de la valeur modifiée. */
+static void op_rmw_mem(cpu6502_t* cpu, uint16_t addr, cpu_rmw_t op) {
     uint8_t v = cpu_mem_read(cpu, addr);
     cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
-    v = (uint8_t)((v << 1) | c);
+    v = cpu_rmw_apply(cpu, op, v);
     cpu_mem_write(cpu, addr, v);
-    cpu->A &= v;
-    update_nz(cpu, cpu->A);
 }
 
-/* SRE (LSE): mem >>= 1 (carry from bit0), then A ^= mem */
-static void op_sre(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
-    v >>= 1;
-    cpu_mem_write(cpu, addr, v);
-    cpu->A ^= v;
-    update_nz(cpu, cpu->A);
-}
-
-/* RRA: mem = ROR(mem), then ADC mem */
-static void op_rra(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
-    v = (uint8_t)((v >> 1) | c);
-    cpu_mem_write(cpu, addr, v);
-    op_adc(cpu, v);
-}
-
-/* DCP (DCM): mem -= 1, then CMP A with mem */
-static void op_dcp(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    v = (uint8_t)(v - 1);
-    cpu_mem_write(cpu, addr, v);
-    op_cmp(cpu, cpu->A, v);
-}
-
-/* ISC (ISB/INS): mem += 1, then SBC mem */
-static void op_isc(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    v = (uint8_t)(v + 1);
-    cpu_mem_write(cpu, addr, v);
-    op_sbc(cpu, v);
-}
+static void op_slo(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_SLO); }
+static void op_rla(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_RLA); }
+static void op_sre(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_SRE); }
+static void op_rra(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_RRA); }
+static void op_dcp(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_DCP); }
+static void op_isc(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_ISC); }
 
 /* LAX: A = X = mem */
-static void op_lax(cpu6502_t* cpu, uint8_t v) {
+void cpu_op_lax(cpu6502_t* cpu, uint8_t v) {
     cpu->A = v;
     cpu->X = v;
-    update_nz(cpu, v);
+    cpu_update_nz(cpu, v);
 }
 
-/* ─── Official read-modify-write memory helpers (with dummy write) ─── */
-static void op_asl_m(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
-    v = (uint8_t)(v << 1);
-    cpu_mem_write(cpu, addr, v);
-    update_nz(cpu, v);
-}
-static void op_lsr_m(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
-    v = (uint8_t)(v >> 1);
-    cpu_mem_write(cpu, addr, v);
-    update_nz(cpu, v);
-}
-static void op_rol_m(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x80) != 0);
-    v = (uint8_t)((v << 1) | c);
-    cpu_mem_write(cpu, addr, v);
-    update_nz(cpu, v);
-}
-static void op_ror_m(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-    cpu_set_flag(cpu, FLAG_CARRY, (v & 0x01) != 0);
-    v = (uint8_t)((v >> 1) | c);
-    cpu_mem_write(cpu, addr, v);
-    update_nz(cpu, v);
-}
-static void op_inc_m(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    v = (uint8_t)(v + 1);
-    cpu_mem_write(cpu, addr, v);
-    update_nz(cpu, v);
-}
-static void op_dec_m(cpu6502_t* cpu, uint16_t addr) {
-    uint8_t v = cpu_mem_read(cpu, addr);
-    cpu_mem_write(cpu, addr, v);                 /* RMW dummy write */
-    v = (uint8_t)(v - 1);
-    cpu_mem_write(cpu, addr, v);
-    update_nz(cpu, v);
-}
+/* ─── RMW officiels : même moteur, même sémantique ─── */
+static void op_asl_m(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_ASL); }
+static void op_lsr_m(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_LSR); }
+static void op_rol_m(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_ROL); }
+static void op_ror_m(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_ROR); }
+static void op_inc_m(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_INC); }
+static void op_dec_m(cpu6502_t* cpu, uint16_t addr) { op_rmw_mem(cpu, addr, RMW_DEC); }
 
-/* ─── Execute a single opcode. Returns total cycles used. ─── */
 int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     int cycles = opcode_table[opcode].cycles;
     int extra = 0;
@@ -409,28 +395,28 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
 
     switch (opcode) {
     /* ── LDA ── */
-    case 0xA9: val = cpu_mem_read(cpu, addr_immediate(cpu)); cpu->A = val; update_nz(cpu, cpu->A); break;
-    case 0xA5: val = cpu_mem_read(cpu, addr_zero_page(cpu)); cpu->A = val; update_nz(cpu, cpu->A); break;
-    case 0xB5: val = cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu->A = val; update_nz(cpu, cpu->A); break;
-    case 0xAD: val = cpu_mem_read(cpu, addr_absolute(cpu)); cpu->A = val; update_nz(cpu, cpu->A); break;
-    case 0xBD: addr = addr_absolute_x(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->A = val; update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0xB9: addr = addr_absolute_y(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->A = val; update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0xA1: val = cpu_mem_read(cpu, addr_indexed_indirect(cpu)); cpu->A = val; update_nz(cpu, cpu->A); break;
-    case 0xB1: addr = addr_indirect_indexed(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->A = val; update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0xA9: val = cpu_mem_read(cpu, addr_immediate(cpu)); cpu->A = val; cpu_update_nz(cpu, cpu->A); break;
+    case 0xA5: val = cpu_mem_read(cpu, addr_zero_page(cpu)); cpu->A = val; cpu_update_nz(cpu, cpu->A); break;
+    case 0xB5: val = cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu->A = val; cpu_update_nz(cpu, cpu->A); break;
+    case 0xAD: val = cpu_mem_read(cpu, addr_absolute(cpu)); cpu->A = val; cpu_update_nz(cpu, cpu->A); break;
+    case 0xBD: addr = addr_absolute_x(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->A = val; cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0xB9: addr = addr_absolute_y(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->A = val; cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0xA1: val = cpu_mem_read(cpu, addr_indexed_indirect(cpu)); cpu->A = val; cpu_update_nz(cpu, cpu->A); break;
+    case 0xB1: addr = addr_indirect_indexed(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->A = val; cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
 
     /* ── LDX ── */
-    case 0xA2: val = cpu_mem_read(cpu, addr_immediate(cpu)); cpu->X = val; update_nz(cpu, cpu->X); break;
-    case 0xA6: val = cpu_mem_read(cpu, addr_zero_page(cpu)); cpu->X = val; update_nz(cpu, cpu->X); break;
-    case 0xB6: val = cpu_mem_read(cpu, addr_zero_page_y(cpu)); cpu->X = val; update_nz(cpu, cpu->X); break;
-    case 0xAE: val = cpu_mem_read(cpu, addr_absolute(cpu)); cpu->X = val; update_nz(cpu, cpu->X); break;
-    case 0xBE: addr = addr_absolute_y(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->X = val; update_nz(cpu, cpu->X); if(page_crossed) extra=1; break;
+    case 0xA2: val = cpu_mem_read(cpu, addr_immediate(cpu)); cpu->X = val; cpu_update_nz(cpu, cpu->X); break;
+    case 0xA6: val = cpu_mem_read(cpu, addr_zero_page(cpu)); cpu->X = val; cpu_update_nz(cpu, cpu->X); break;
+    case 0xB6: val = cpu_mem_read(cpu, addr_zero_page_y(cpu)); cpu->X = val; cpu_update_nz(cpu, cpu->X); break;
+    case 0xAE: val = cpu_mem_read(cpu, addr_absolute(cpu)); cpu->X = val; cpu_update_nz(cpu, cpu->X); break;
+    case 0xBE: addr = addr_absolute_y(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->X = val; cpu_update_nz(cpu, cpu->X); if(page_crossed) extra=1; break;
 
     /* ── LDY ── */
-    case 0xA0: val = cpu_mem_read(cpu, addr_immediate(cpu)); cpu->Y = val; update_nz(cpu, cpu->Y); break;
-    case 0xA4: val = cpu_mem_read(cpu, addr_zero_page(cpu)); cpu->Y = val; update_nz(cpu, cpu->Y); break;
-    case 0xB4: val = cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu->Y = val; update_nz(cpu, cpu->Y); break;
-    case 0xAC: val = cpu_mem_read(cpu, addr_absolute(cpu)); cpu->Y = val; update_nz(cpu, cpu->Y); break;
-    case 0xBC: addr = addr_absolute_x(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->Y = val; update_nz(cpu, cpu->Y); if(page_crossed) extra=1; break;
+    case 0xA0: val = cpu_mem_read(cpu, addr_immediate(cpu)); cpu->Y = val; cpu_update_nz(cpu, cpu->Y); break;
+    case 0xA4: val = cpu_mem_read(cpu, addr_zero_page(cpu)); cpu->Y = val; cpu_update_nz(cpu, cpu->Y); break;
+    case 0xB4: val = cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu->Y = val; cpu_update_nz(cpu, cpu->Y); break;
+    case 0xAC: val = cpu_mem_read(cpu, addr_absolute(cpu)); cpu->Y = val; cpu_update_nz(cpu, cpu->Y); break;
+    case 0xBC: addr = addr_absolute_x(cpu, &page_crossed); val = cpu_mem_read(cpu, addr); cpu->Y = val; cpu_update_nz(cpu, cpu->Y); if(page_crossed) extra=1; break;
 
     /* ── STA ── */
     case 0x85: cpu_mem_write(cpu, addr_zero_page(cpu), cpu->A); break;
@@ -452,75 +438,75 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x8C: cpu_mem_write(cpu, addr_absolute(cpu), cpu->Y); break;
 
     /* ── ADC ── */
-    case 0x69: op_adc(cpu, cpu_mem_read(cpu, addr_immediate(cpu))); break;
-    case 0x65: op_adc(cpu, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
-    case 0x75: op_adc(cpu, cpu_mem_read(cpu, addr_zero_page_x(cpu))); break;
-    case 0x6D: op_adc(cpu, cpu_mem_read(cpu, addr_absolute(cpu))); break;
-    case 0x7D: addr = addr_absolute_x(cpu, &page_crossed); op_adc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0x79: addr = addr_absolute_y(cpu, &page_crossed); op_adc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0x61: op_adc(cpu, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
-    case 0x71: addr = addr_indirect_indexed(cpu, &page_crossed); op_adc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0x69: cpu_op_adc(cpu, cpu_mem_read(cpu, addr_immediate(cpu))); break;
+    case 0x65: cpu_op_adc(cpu, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
+    case 0x75: cpu_op_adc(cpu, cpu_mem_read(cpu, addr_zero_page_x(cpu))); break;
+    case 0x6D: cpu_op_adc(cpu, cpu_mem_read(cpu, addr_absolute(cpu))); break;
+    case 0x7D: addr = addr_absolute_x(cpu, &page_crossed); cpu_op_adc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0x79: addr = addr_absolute_y(cpu, &page_crossed); cpu_op_adc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0x61: cpu_op_adc(cpu, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
+    case 0x71: addr = addr_indirect_indexed(cpu, &page_crossed); cpu_op_adc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
 
     /* ── SBC ── */
-    case 0xE9: op_sbc(cpu, cpu_mem_read(cpu, addr_immediate(cpu))); break;
-    case 0xEB: op_sbc(cpu, cpu_mem_read(cpu, addr_immediate(cpu))); break; /* unofficial SBC */
-    case 0xE5: op_sbc(cpu, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
-    case 0xF5: op_sbc(cpu, cpu_mem_read(cpu, addr_zero_page_x(cpu))); break;
-    case 0xED: op_sbc(cpu, cpu_mem_read(cpu, addr_absolute(cpu))); break;
-    case 0xFD: addr = addr_absolute_x(cpu, &page_crossed); op_sbc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0xF9: addr = addr_absolute_y(cpu, &page_crossed); op_sbc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0xE1: op_sbc(cpu, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
-    case 0xF1: addr = addr_indirect_indexed(cpu, &page_crossed); op_sbc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xE9: cpu_op_sbc(cpu, cpu_mem_read(cpu, addr_immediate(cpu))); break;
+    case 0xEB: cpu_op_sbc(cpu, cpu_mem_read(cpu, addr_immediate(cpu))); break; /* unofficial SBC */
+    case 0xE5: cpu_op_sbc(cpu, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
+    case 0xF5: cpu_op_sbc(cpu, cpu_mem_read(cpu, addr_zero_page_x(cpu))); break;
+    case 0xED: cpu_op_sbc(cpu, cpu_mem_read(cpu, addr_absolute(cpu))); break;
+    case 0xFD: addr = addr_absolute_x(cpu, &page_crossed); cpu_op_sbc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xF9: addr = addr_absolute_y(cpu, &page_crossed); cpu_op_sbc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xE1: cpu_op_sbc(cpu, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
+    case 0xF1: addr = addr_indirect_indexed(cpu, &page_crossed); cpu_op_sbc(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
 
     /* ── AND ── */
-    case 0x29: cpu->A &= cpu_mem_read(cpu, addr_immediate(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x25: cpu->A &= cpu_mem_read(cpu, addr_zero_page(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x35: cpu->A &= cpu_mem_read(cpu, addr_zero_page_x(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x2D: cpu->A &= cpu_mem_read(cpu, addr_absolute(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x3D: addr = addr_absolute_x(cpu, &page_crossed); cpu->A &= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0x39: addr = addr_absolute_y(cpu, &page_crossed); cpu->A &= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0x21: cpu->A &= cpu_mem_read(cpu, addr_indexed_indirect(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x31: addr = addr_indirect_indexed(cpu, &page_crossed); cpu->A &= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x29: cpu->A &= cpu_mem_read(cpu, addr_immediate(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x25: cpu->A &= cpu_mem_read(cpu, addr_zero_page(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x35: cpu->A &= cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x2D: cpu->A &= cpu_mem_read(cpu, addr_absolute(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x3D: addr = addr_absolute_x(cpu, &page_crossed); cpu->A &= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x39: addr = addr_absolute_y(cpu, &page_crossed); cpu->A &= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x21: cpu->A &= cpu_mem_read(cpu, addr_indexed_indirect(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x31: addr = addr_indirect_indexed(cpu, &page_crossed); cpu->A &= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
 
     /* ── ORA ── */
-    case 0x09: cpu->A |= cpu_mem_read(cpu, addr_immediate(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x05: cpu->A |= cpu_mem_read(cpu, addr_zero_page(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x15: cpu->A |= cpu_mem_read(cpu, addr_zero_page_x(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x0D: cpu->A |= cpu_mem_read(cpu, addr_absolute(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x1D: addr = addr_absolute_x(cpu, &page_crossed); cpu->A |= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0x19: addr = addr_absolute_y(cpu, &page_crossed); cpu->A |= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0x01: cpu->A |= cpu_mem_read(cpu, addr_indexed_indirect(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x11: addr = addr_indirect_indexed(cpu, &page_crossed); cpu->A |= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x09: cpu->A |= cpu_mem_read(cpu, addr_immediate(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x05: cpu->A |= cpu_mem_read(cpu, addr_zero_page(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x15: cpu->A |= cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x0D: cpu->A |= cpu_mem_read(cpu, addr_absolute(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x1D: addr = addr_absolute_x(cpu, &page_crossed); cpu->A |= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x19: addr = addr_absolute_y(cpu, &page_crossed); cpu->A |= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x01: cpu->A |= cpu_mem_read(cpu, addr_indexed_indirect(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x11: addr = addr_indirect_indexed(cpu, &page_crossed); cpu->A |= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
 
     /* ── EOR ── */
-    case 0x49: cpu->A ^= cpu_mem_read(cpu, addr_immediate(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x45: cpu->A ^= cpu_mem_read(cpu, addr_zero_page(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x55: cpu->A ^= cpu_mem_read(cpu, addr_zero_page_x(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x4D: cpu->A ^= cpu_mem_read(cpu, addr_absolute(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x5D: addr = addr_absolute_x(cpu, &page_crossed); cpu->A ^= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0x59: addr = addr_absolute_y(cpu, &page_crossed); cpu->A ^= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
-    case 0x41: cpu->A ^= cpu_mem_read(cpu, addr_indexed_indirect(cpu)); update_nz(cpu, cpu->A); break;
-    case 0x51: addr = addr_indirect_indexed(cpu, &page_crossed); cpu->A ^= cpu_mem_read(cpu, addr); update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x49: cpu->A ^= cpu_mem_read(cpu, addr_immediate(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x45: cpu->A ^= cpu_mem_read(cpu, addr_zero_page(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x55: cpu->A ^= cpu_mem_read(cpu, addr_zero_page_x(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x4D: cpu->A ^= cpu_mem_read(cpu, addr_absolute(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x5D: addr = addr_absolute_x(cpu, &page_crossed); cpu->A ^= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x59: addr = addr_absolute_y(cpu, &page_crossed); cpu->A ^= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
+    case 0x41: cpu->A ^= cpu_mem_read(cpu, addr_indexed_indirect(cpu)); cpu_update_nz(cpu, cpu->A); break;
+    case 0x51: addr = addr_indirect_indexed(cpu, &page_crossed); cpu->A ^= cpu_mem_read(cpu, addr); cpu_update_nz(cpu, cpu->A); if(page_crossed) extra=1; break;
 
     /* ── CMP ── */
-    case 0xC9: op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_immediate(cpu))); break;
-    case 0xC5: op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
-    case 0xD5: op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_zero_page_x(cpu))); break;
-    case 0xCD: op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_absolute(cpu))); break;
-    case 0xDD: addr = addr_absolute_x(cpu, &page_crossed); op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0xD9: addr = addr_absolute_y(cpu, &page_crossed); op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0xC1: op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
-    case 0xD1: addr = addr_indirect_indexed(cpu, &page_crossed); op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xC9: cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_immediate(cpu))); break;
+    case 0xC5: cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
+    case 0xD5: cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_zero_page_x(cpu))); break;
+    case 0xCD: cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_absolute(cpu))); break;
+    case 0xDD: addr = addr_absolute_x(cpu, &page_crossed); cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xD9: addr = addr_absolute_y(cpu, &page_crossed); cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xC1: cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
+    case 0xD1: addr = addr_indirect_indexed(cpu, &page_crossed); cpu_op_cmp(cpu, cpu->A, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
 
     /* ── CPX ── */
-    case 0xE0: op_cmp(cpu, cpu->X, cpu_mem_read(cpu, addr_immediate(cpu))); break;
-    case 0xE4: op_cmp(cpu, cpu->X, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
-    case 0xEC: op_cmp(cpu, cpu->X, cpu_mem_read(cpu, addr_absolute(cpu))); break;
+    case 0xE0: cpu_op_cmp(cpu, cpu->X, cpu_mem_read(cpu, addr_immediate(cpu))); break;
+    case 0xE4: cpu_op_cmp(cpu, cpu->X, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
+    case 0xEC: cpu_op_cmp(cpu, cpu->X, cpu_mem_read(cpu, addr_absolute(cpu))); break;
 
     /* ── CPY ── */
-    case 0xC0: op_cmp(cpu, cpu->Y, cpu_mem_read(cpu, addr_immediate(cpu))); break;
-    case 0xC4: op_cmp(cpu, cpu->Y, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
-    case 0xCC: op_cmp(cpu, cpu->Y, cpu_mem_read(cpu, addr_absolute(cpu))); break;
+    case 0xC0: cpu_op_cmp(cpu, cpu->Y, cpu_mem_read(cpu, addr_immediate(cpu))); break;
+    case 0xC4: cpu_op_cmp(cpu, cpu->Y, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
+    case 0xCC: cpu_op_cmp(cpu, cpu->Y, cpu_mem_read(cpu, addr_absolute(cpu))); break;
 
     /* ── BIT ── */
     case 0x24: val = cpu_mem_read(cpu, addr_zero_page(cpu));
@@ -538,7 +524,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x0A:
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x80) != 0);
         cpu->A <<= 1;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
     /* ── ASL (Memory) ── */
     case 0x06: op_asl_m(cpu, addr_zero_page(cpu)); break;
@@ -550,7 +536,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x4A:
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x01) != 0);
         cpu->A >>= 1;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
     /* ── LSR (Memory) ── */
     case 0x46: op_lsr_m(cpu, addr_zero_page(cpu)); break;
@@ -563,7 +549,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x80) != 0);
         cpu->A = (cpu->A << 1) | c;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
     }
     /* ── ROL (Memory) ── */
@@ -577,7 +563,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x01) != 0);
         cpu->A = (cpu->A >> 1) | c;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
     }
     /* ── ROR (Memory) ── */
@@ -599,22 +585,22 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0xDE: op_dec_m(cpu, addr_absolute_x(cpu, NULL)); break;
 
     /* ── INX, INY, DEX, DEY ── */
-    case 0xE8: cpu->X++; update_nz(cpu, cpu->X); break;
-    case 0xC8: cpu->Y++; update_nz(cpu, cpu->Y); break;
-    case 0xCA: cpu->X--; update_nz(cpu, cpu->X); break;
-    case 0x88: cpu->Y--; update_nz(cpu, cpu->Y); break;
+    case 0xE8: cpu->X++; cpu_update_nz(cpu, cpu->X); break;
+    case 0xC8: cpu->Y++; cpu_update_nz(cpu, cpu->Y); break;
+    case 0xCA: cpu->X--; cpu_update_nz(cpu, cpu->X); break;
+    case 0x88: cpu->Y--; cpu_update_nz(cpu, cpu->Y); break;
 
     /* ── Transfers ── */
-    case 0xAA: cpu->X = cpu->A; update_nz(cpu, cpu->X); break;  /* TAX */
-    case 0x8A: cpu->A = cpu->X; update_nz(cpu, cpu->A); break;  /* TXA */
-    case 0xA8: cpu->Y = cpu->A; update_nz(cpu, cpu->Y); break;  /* TAY */
-    case 0x98: cpu->A = cpu->Y; update_nz(cpu, cpu->A); break;  /* TYA */
-    case 0xBA: cpu->X = cpu->SP; update_nz(cpu, cpu->X); break; /* TSX */
+    case 0xAA: cpu->X = cpu->A; cpu_update_nz(cpu, cpu->X); break;  /* TAX */
+    case 0x8A: cpu->A = cpu->X; cpu_update_nz(cpu, cpu->A); break;  /* TXA */
+    case 0xA8: cpu->Y = cpu->A; cpu_update_nz(cpu, cpu->Y); break;  /* TAY */
+    case 0x98: cpu->A = cpu->Y; cpu_update_nz(cpu, cpu->A); break;  /* TYA */
+    case 0xBA: cpu->X = cpu->SP; cpu_update_nz(cpu, cpu->X); break; /* TSX */
     case 0x9A: cpu->SP = cpu->X; break;                          /* TXS */
 
     /* ── Stack ── */
     case 0x48: cpu_push(cpu, cpu->A); break;                     /* PHA */
-    case 0x68: cpu->A = cpu_pull(cpu); update_nz(cpu, cpu->A); break; /* PLA */
+    case 0x68: cpu->A = cpu_pull(cpu); cpu_update_nz(cpu, cpu->A); break; /* PLA */
     case 0x08: cpu_push(cpu, cpu->P | FLAG_BREAK | FLAG_UNUSED); break; /* PHP */
     case 0x28: cpu->P = (cpu_pull(cpu) & ~FLAG_BREAK) | FLAG_UNUSED; break; /* PLP */
 
@@ -657,11 +643,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x40:
         cpu->P = (cpu_pull(cpu) & ~FLAG_BREAK) | FLAG_UNUSED;
         cpu->PC = cpu_pull_word(cpu);
-        if (cpu->irq_trace_fp) {
-            fprintf((FILE*)cpu->irq_trace_fp,
-                    "%010llu RTI       PC_return=$%04X P=$%02X SP=$%02X\n",
-                    (unsigned long long)cpu->cycles, cpu->PC, cpu->P, cpu->SP);
-        }
+        cpu_irq_trace_rti(cpu);
         break;
 
     /* ── BRK ── */
@@ -744,12 +726,12 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0xF3: op_isc(cpu, addr_indirect_indexed(cpu, NULL)); break;
 
     /* ── LAX (LDA+LDX) ── */
-    case 0xA7: op_lax(cpu, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
-    case 0xB7: op_lax(cpu, cpu_mem_read(cpu, addr_zero_page_y(cpu))); break;
-    case 0xAF: op_lax(cpu, cpu_mem_read(cpu, addr_absolute(cpu))); break;
-    case 0xBF: addr = addr_absolute_y(cpu, &page_crossed); op_lax(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
-    case 0xA3: op_lax(cpu, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
-    case 0xB3: addr = addr_indirect_indexed(cpu, &page_crossed); op_lax(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xA7: cpu_op_lax(cpu, cpu_mem_read(cpu, addr_zero_page(cpu))); break;
+    case 0xB7: cpu_op_lax(cpu, cpu_mem_read(cpu, addr_zero_page_y(cpu))); break;
+    case 0xAF: cpu_op_lax(cpu, cpu_mem_read(cpu, addr_absolute(cpu))); break;
+    case 0xBF: addr = addr_absolute_y(cpu, &page_crossed); cpu_op_lax(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
+    case 0xA3: cpu_op_lax(cpu, cpu_mem_read(cpu, addr_indexed_indirect(cpu))); break;
+    case 0xB3: addr = addr_indirect_indexed(cpu, &page_crossed); cpu_op_lax(cpu, cpu_mem_read(cpu, addr)); if(page_crossed) extra=1; break;
 
     /* ── SAX (store A&X) ── */
     case 0x87: cpu_mem_write(cpu, addr_zero_page(cpu), cpu->A & cpu->X); break;
@@ -761,7 +743,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x0B:
     case 0x2B:
         cpu->A &= cpu_mem_read(cpu, addr_immediate(cpu));
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x80) != 0);
         break;
 
@@ -770,7 +752,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         cpu->A &= cpu_mem_read(cpu, addr_immediate(cpu));
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x01) != 0);
         cpu->A >>= 1;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
 
     /* ── ARR (AND #imm puis ROR A, drapeaux atypiques) ──
@@ -782,7 +764,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         uint8_t t = (uint8_t)(cpu->A & cpu_mem_read(cpu, addr_immediate(cpu)));
         uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
         uint8_t r = (uint8_t)((t >> 1) | c);
-        update_nz(cpu, r);
+        cpu_update_nz(cpu, r);
         cpu_set_flag(cpu, FLAG_OVERFLOW, ((r ^ t) & 0x40) != 0);
         if (cpu_get_flag(cpu, FLAG_DECIMAL)) {
             if (((t & 0x0F) + (t & 0x01)) > 0x05)
@@ -806,7 +788,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         uint8_t tmp = cpu->A & cpu->X;
         cpu_set_flag(cpu, FLAG_CARRY, tmp >= imm);
         cpu->X = (uint8_t)(tmp - imm);
-        update_nz(cpu, cpu->X);
+        cpu_update_nz(cpu, cpu->X);
         break;
     }
 
@@ -814,7 +796,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x8B: {
         uint8_t imm = cpu_mem_read(cpu, addr_immediate(cpu));
         cpu->A = (uint8_t)((cpu->A | 0xEE) & cpu->X & imm);
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
     }
 
@@ -823,7 +805,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         uint8_t imm = cpu_mem_read(cpu, addr_immediate(cpu));
         cpu->A = (uint8_t)((cpu->A | 0xEE) & imm);
         cpu->X = cpu->A;
-        update_nz(cpu, cpu->A);
+        cpu_update_nz(cpu, cpu->A);
         break;
     }
 
@@ -831,7 +813,7 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0xBB: addr = addr_absolute_y(cpu, &page_crossed); {
         uint8_t v = cpu_mem_read(cpu, addr) & cpu->SP;
         cpu->A = v; cpu->X = v; cpu->SP = v;
-        update_nz(cpu, v);
+        cpu_update_nz(cpu, v);
     } if(page_crossed) extra=1; break;
 
     /* ── SHA/SHX/SHY/SHS : les stores « instables » ──

@@ -35,9 +35,18 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] `--cycle-trace FICHIER` + `--cycle-trace-max N` (crochet `cpu_set_bus_callback()`,
             une ligne par cycle ; les cycles internes N2 sortent en `i`)
       - [x] `tools/fetch_vectors.sh` / `make fetch-vectors` (vecteurs tiers non versionnés)
-- [ ] **V2-E1 — Cœur 6502 micro-séquencé** (S2-S4) : `cpu_cycle()`, accès factices
-      (page-cross, `zp,X`, RMW/store `abs,X`, re-fetch de branche, pile),
-      échantillonnage IRQ/NMI au cycle pénultième, drapeau I retardé, fin du bourrage
+- [~] **V2-E1 — Cœur 6502 micro-séquencé** (S2-S4)
+      - [x] US1.1 `cpu_cycle()` + plan de micro-ops par cycle (`src/cpu/microseq.c`,
+            256 opcodes, 17 familles de séquence, sémantique partagée avec opcodes.c)
+      - [x] US1.2 **tous** les accès factices (page-cross, `zp,X`, `(zp,X)`,
+            RMW/store indexés, pile, implicites, branches)
+      - [x] **Score : séquence bus exacte 44,26 % → 100,00 %** sur 2 440 000 cas ;
+            opt-in `--cpu-microseq` ; coût 1,9 % → 2,7 % du budget trame
+      - [x] Intégration vérifiée : boots ORIC-1/Atmos byte-identiques, Citadelle
+            (Sedoric+FDC+IRQ) identique, Dormann au même cycle (96 241 367)
+      - [ ] US1.3 échantillonnage IRQ/NMI au cycle pénultième, drapeau I retardé
+            (`CLI`/`SEI`/`PLP`), détournement NMI pendant BRK
+      - [ ] US1.4 bascule du micro-séquenceur en moteur par défaut
 - [ ] **V2-E2 — Horloge maître & ordonnancement** (S4-S5) : `emu_cycle()`, ordre
       intra-cycle figé (φ1 ULA / φ2 CPU / fronts périphériques), fin des paquets
       `via_update(n)` / `io_bus_tick(n)`, jonction avec l'Épic B (30 sous-ticks φ2)

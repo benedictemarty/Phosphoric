@@ -14,6 +14,7 @@
 #include "cpu/cpu6502.h"
 #include "cpu/cpu_internal.h"
 #include "memory/memory.h"
+#include "cpu/microseq.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -1386,6 +1387,131 @@ TEST(test_shy_unstable_no_cross) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/*  CŒUR MICRO-SÉQUENCÉ (V2-E1) — un cycle, un accès                   */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Une lecture indexée qui traverse une page coûte un cycle de plus, et ce cycle
+ * est un VRAI accès : le 6502 lit d'abord à l'adresse non corrigée. Invisible
+ * sur de la RAM, décisif sur un registre à effet de bord. */
+TEST(test_microseq_dummy_read_on_page_cross) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_microseq(&cpu, true);
+    uint8_t code[] = { 0xBD, 0xFF, 0x04 };       /* LDA $04FF,X */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    memory_write(&mem, 0x0500, 0x11);            /* l'adresse corrigée */
+    memory_write(&mem, 0x0400, 0x99);            /* l'adresse NON corrigée */
+    cpu.PC = 0x0200;
+    cpu.X = 0x01;
+    g_buslog_n = 0;
+    cpu_set_bus_callback(&cpu, buslog_cb, NULL);
+    int cyc = cpu_step(&cpu);
+    cpu_set_bus_callback(&cpu, NULL, NULL);
+
+    ASSERT_EQ(cyc, 5);                           /* 4 + 1 pour la traversée */
+    ASSERT_EQ(g_buslog_n, 5);                    /* CHAQUE cycle a son accès */
+    ASSERT_EQ(g_buslog[3].addr, 0x0400);         /* lecture factice, adresse non corrigée */
+    ASSERT_EQ(g_buslog[3].val, 0x99);            /* l'octet lu pour rien */
+    ASSERT_EQ(g_buslog[4].addr, 0x0500);         /* la vraie lecture */
+    ASSERT_EQ(cpu.A, 0x11);                      /* seule la seconde compte */
+}
+
+/* Le moteur historique, lui, n'émet que 4 accès pour la même instruction : le
+ * cycle supplémentaire est compté mais n'a pas d'adresse. C'est exactement
+ * l'écart que la V2 comble (docs/ACCURACY.md). */
+TEST(test_legacy_lacks_the_dummy_read) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    uint8_t code[] = { 0xBD, 0xFF, 0x04 };       /* LDA $04FF,X */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    memory_write(&mem, 0x0500, 0x11);
+    cpu.PC = 0x0200;
+    cpu.X = 0x01;
+    g_buslog_n = 0;
+    cpu_set_bus_callback(&cpu, buslog_cb, NULL);
+    int cyc = cpu_step(&cpu);
+    cpu_set_bus_callback(&cpu, NULL, NULL);
+
+    ASSERT_EQ(cyc, 5);                           /* même total de cycles… */
+    ASSERT_EQ(g_buslog_n, 4);                    /* …mais un cycle sans accès */
+}
+
+/* Un store indexé paie TOUJOURS sa lecture factice, même sans traversée. */
+TEST(test_microseq_store_dummy_read) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_microseq(&cpu, true);
+    uint8_t code[] = { 0x9D, 0x00, 0x04 };       /* STA $0400,X */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu.PC = 0x0200;
+    cpu.X = 0x05;
+    cpu.A = 0x7E;
+    g_buslog_n = 0;
+    cpu_set_bus_callback(&cpu, buslog_cb, NULL);
+    int cyc = cpu_step(&cpu);
+    cpu_set_bus_callback(&cpu, NULL, NULL);
+
+    ASSERT_EQ(cyc, 5);
+    ASSERT_EQ(g_buslog_n, 5);
+    ASSERT_EQ(g_buslog[3].addr, 0x0405); ASSERT_FALSE(g_buslog[3].write); /* factice */
+    ASSERT_EQ(g_buslog[4].addr, 0x0405); ASSERT_TRUE(g_buslog[4].write);  /* l'écriture */
+    ASSERT_EQ(memory_read(&mem, 0x0405), 0x7E);
+}
+
+/* cpu_cycle() avance d'un cycle exactement et signale le dernier. */
+TEST(test_microseq_cycle_granularity) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    cpu_set_microseq(&cpu, true);
+    uint8_t code[] = { 0x20, 0x00, 0x03 };       /* JSR $0300 = 6 cycles */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu.PC = 0x0200;
+    int n = 0;
+    bool done = false;
+    while (!done && n < 16) {
+        uint64_t before = cpu.cycles;
+        done = cpu_cycle(&cpu);
+        ASSERT_EQ((int)(cpu.cycles - before), 1);   /* un cycle par appel */
+        n++;
+    }
+    ASSERT_TRUE(done);
+    ASSERT_EQ(n, 6);
+    ASSERT_EQ(cpu.PC, 0x0300);
+}
+
+/* Les deux moteurs calculent la même chose : même état final, même total de
+ * cycles, sur une séquence qui mêle RMW, indexation et pile. */
+TEST(test_microseq_matches_legacy_state) {
+    uint8_t code[] = {
+        0xA9, 0x40,        /* LDA #$40    */
+        0x85, 0x10,        /* STA $10     */
+        0xA2, 0x05,        /* LDX #$05    */
+        0xF6, 0x0B,        /* INC $0B,X   (RMW zp,X) */
+        0x48,              /* PHA         */
+        0xE6, 0x10,        /* INC $10     */
+        0x68,              /* PLA         */
+        0x20, 0x20, 0x02,  /* JSR $0220   */
+    };
+    cpu6502_t c1, c2; memory_t m1, m2;
+    setup(&c1, &m1); setup(&c2, &m2);
+    cpu_set_microseq(&c2, true);
+    write_program(&m1, 0x0200, code, sizeof(code));
+    write_program(&m2, 0x0200, code, sizeof(code));
+    c1.PC = c2.PC = 0x0200;
+    for (int i = 0; i < 8; i++) { cpu_step(&c1); cpu_step(&c2); }
+
+    ASSERT_EQ(c1.A, c2.A);
+    ASSERT_EQ(c1.X, c2.X);
+    ASSERT_EQ(c1.Y, c2.Y);
+    ASSERT_EQ(c1.SP, c2.SP);
+    ASSERT_EQ(c1.P, c2.P);
+    ASSERT_EQ(c1.PC, c2.PC);
+    ASSERT_EQ((int)c1.cycles, (int)c2.cycles);
+    ASSERT_EQ(memory_read(&m1, 0x0010), memory_read(&m2, 0x0010));
+    ASSERT_EQ(memory_read(&m1, 0x0011), memory_read(&m2, 0x0011));
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -1530,6 +1656,13 @@ int main(void) {
     RUN(test_arr_decimal_nmos);
     RUN(test_shy_unstable_page_cross);
     RUN(test_shy_unstable_no_cross);
+
+    printf("\n  Cœur micro-séquencé (V2-E1):\n");
+    RUN(test_microseq_dummy_read_on_page_cross);
+    RUN(test_legacy_lacks_the_dummy_read);
+    RUN(test_microseq_store_dummy_read);
+    RUN(test_microseq_cycle_granularity);
+    RUN(test_microseq_matches_legacy_state);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

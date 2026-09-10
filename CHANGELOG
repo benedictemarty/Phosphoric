@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — cœur 6502 micro-séquencé : 100 % de conformité cycle par cycle (V2-S2)
+
+Le sprint précédent a livré l'oracle et chiffré l'écart : **44,26 %** de séquences
+bus exactes. Ce sprint livre le cœur qui comble l'écart — et l'oracle valide
+**100,00 %** sur **2 440 000 cas**.
+
+#### Le moteur
+
+`src/cpu/microseq.c` (+ `include/cpu/microseq.h`) décompose chaque instruction en
+un **plan de micro-opérations, une par cycle** ; `cpu_cycle()` en exécute
+exactement une et renvoie si l'instruction est terminée, `cpu_step()` n'étant plus
+qu'un enrouleur autour d'elle. Les 256 opcodes sont couverts, classés en 17
+familles de séquence (lecture, écriture, écriture instable, RMW, branche, JMP,
+JMP indirect, JSR, RTS, RTI, empilements, dépilements, BRK, JAM, implicites).
+
+**Tous les accès factices du NMOS sont maintenant émis** : lecture à l'adresse non
+corrigée (en traversée de page pour les lectures, **systématiquement** pour les
+écritures et les RMW), lecture de la base avant indexation en `zp,X`/`zp,Y` et
+`(zp,X)`, écriture-retour RMW, lectures de pile mortes (`PLA`/`PLP`/`JSR`/`RTS`/
+`RTI`), lecture morte des implicites, re-fetch de branche et cycle de correction
+de page. Les séquences d'interruption deviennent elles aussi 7 cycles explicites
+(2 cycles internes, 3 empilements, 2 lectures de vecteur).
+
+**Un seul endroit où réside le calcul** : la sémantique vient des fonctions
+partagées d'`opcodes.c` — `cpu_rmw_apply()` (nouvelle, qui factorise d'un coup les
+12 RMW officiels et illégaux du moteur historique), `cpu_op_adc/sbc/cmp/lax`,
+`cpu_sh_unstable`, `cpu_update_nz`. Les deux moteurs ne diffèrent **que** par
+l'ordonnancement des cycles, jamais par le résultat. `--trace-irq` fonctionne
+identiquement sur les deux (traces factorisées).
+
+#### Mesures
+
+| | historique (défaut) | `--cpu-microseq` |
+|---|---|---|
+| séquence bus exacte (N3) | 44,26 % | **100,00 %** |
+| cycles sans adresse (boot Atmos) | 642 / 5000 | **0 / 5000** |
+| état final, RAM, total de cycles, sous-séquence | 100 % | 100 % |
+| coût par trame émulée (budget 20 ms) | 373 µs (1,9 %) | 533 µs (2,7 %) |
+
+`make test-cycle` juge désormais **les deux cœurs dans la même exécution** (34
+tests) : le moteur historique doit tenir son socle, le micro-séquencé doit être à
+100 %, et un test de domination interdit de faire progresser l'un en cassant
+l'autre.
+
+#### Intégration vérifiée
+
+- boot **ORIC-1** et **Atmos** : écrans **byte-identiques** entre les deux moteurs ;
+- **Citadelle** (disquette Sedoric, FDC, IRQ VIA, 15 M cycles) : identique ;
+- test fonctionnel **Klaus Dormann** : réussi sur les deux moteurs, au **même
+  nombre de cycles** (96 241 367) — preuve que les totaux sont préservés sur
+  ~30 M d'instructions ;
+- 5 nouveaux tests unitaires (`test-cpu` 98 → **103**) dont un qui montre l'accès
+  factice observé sur le bus et son absence sur le moteur historique.
+
+#### Statut
+
+Le moteur est **opt-in** (`--cpu-microseq`) le temps de la migration : le chemin
+par défaut reste l'historique, donc aucune régression possible. Il reste à traiter
+avant de le passer par défaut (US1.3) : échantillonnage IRQ/NMI au **cycle
+pénultième** (les deux moteurs décident encore en frontière d'instruction), drapeau
+I retardé de `CLI`/`SEI`/`PLP`, détournement NMI pendant `BRK`.
+
+`make clean && make tests` : toutes suites vertes, builds SDL2=0 et SDL2=1 OK.
+EMU_VERSION 1.122.0 → **1.123.0-alpha**.
+
 ### Added — oracle de conformité cycle par cycle, test Dormann, `--cycle-trace` (V2-S1)
 
 Deuxième sprint de la [V2](docs/specs/V2_CYCLE_ACCURACY.md) : avant de toucher au

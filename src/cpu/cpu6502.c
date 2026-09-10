@@ -8,6 +8,7 @@
  */
 
 #include "cpu/cpu_internal.h"
+#include "cpu/microseq.h"
 #include "memory/memory.h"
 #include <stdio.h>
 #include <string.h>
@@ -55,6 +56,27 @@ static void handle_nmi(cpu6502_t* cpu) {
     /* Cycle total (7) is reconciled by cpu_step's padding. */
 }
 
+/* Trace --trace-irq : partagée avec le micro-séquenceur (microseq.c) pour que
+ * l'option garde le même comportement sur les deux moteurs. */
+void cpu_irq_trace_entry(cpu6502_t* cpu, uint16_t pc_before) {
+    if (!cpu->irq_trace_fp) return;
+    /* VIA à $0300-$030F : IFR=$0D, IER=$0E. Lues par memory_read (sans tick
+     * bus) pour ne pas perturber l'horloge ni l'état des périphériques. */
+    uint8_t ifr = memory_read(cpu->memory, 0x030D);
+    uint8_t ier = memory_read(cpu->memory, 0x030E);
+    fprintf((FILE*)cpu->irq_trace_fp,
+            "%010llu IRQ-ENTRY PC_pre=$%04X target=$%04X IFR=$%02X IER=$%02X srcmask=$%02X\n",
+            (unsigned long long)cpu->cycles, pc_before, cpu->PC, ifr, ier, cpu->irq);
+    cpu->irq_trace_count++;
+}
+
+void cpu_irq_trace_rti(cpu6502_t* cpu) {
+    if (!cpu->irq_trace_fp) return;
+    fprintf((FILE*)cpu->irq_trace_fp,
+            "%010llu RTI       PC_return=$%04X P=$%02X SP=$%02X\n",
+            (unsigned long long)cpu->cycles, cpu->PC, cpu->P, cpu->SP);
+}
+
 static void handle_irq(cpu6502_t* cpu) {
     uint16_t pc_before = cpu->PC;
     cpu_push_word(cpu, cpu->PC);
@@ -66,21 +88,20 @@ static void handle_irq(cpu6502_t* cpu) {
      * its IRQ bit when the CPU acknowledges it (e.g. reading VIA IFR).
      * Cycle total (7) is reconciled by cpu_step's padding. */
 
-    if (cpu->irq_trace_fp) {
-        /* VIA registers at $0300-$030F : IFR=$0D, IER=$0E. Read directly
-         * (memory_read, no bus tick) so the diagnostic trace does not perturb
-         * the cycle clock or peripheral state. */
-        uint8_t ifr = memory_read(cpu->memory, 0x030D);
-        uint8_t ier = memory_read(cpu->memory, 0x030E);
-        fprintf((FILE*)cpu->irq_trace_fp,
-                "%010llu IRQ-ENTRY PC_pre=$%04X target=$%04X IFR=$%02X IER=$%02X srcmask=$%02X\n",
-                (unsigned long long)cpu->cycles, pc_before, cpu->PC, ifr, ier, cpu->irq);
-        cpu->irq_trace_count++;
-    }
+    cpu_irq_trace_entry(cpu, pc_before);
 }
 
 int cpu_step(cpu6502_t* cpu) {
     if (cpu->halted) return 0;
+
+    /* Moteur micro-séquencé (V2-E1, opt-in) : une instruction = la suite de ses
+     * cycles. cpu_step devient un simple enrouleur autour de cpu_cycle(), et
+     * c'est le séquenceur qui décide des interruptions. */
+    if (cpu->ms_enabled) {
+        uint64_t ms_before = cpu->cycles;
+        while (!cpu_cycle(cpu)) { }
+        return (int)(cpu->cycles - ms_before);
+    }
 
     /* Each bus access advances the clock by one cycle (cpu_tick, via the
      * memory accessors). An instruction's internal (non-bus) cycles are

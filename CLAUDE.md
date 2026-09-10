@@ -75,7 +75,11 @@ Test framework is custom C macros redefined in each test file (no shared header,
 Central struct containing all hardware subsystems. Passed as pointer to most subsystem functions. Key constants: `CYCLES_PER_FRAME = 19968` (PAL: 312 lines x 64 cycles), `ORIC_CLOCK_HZ = 1000000`, `ORIC_FRAME_RATE = 50`.
 
 ### Hardware subsystems (src/)
-- **cpu/** — MOS 6502: 151 opcodes, 13 addressing modes, bus-cycle-accurate, level-triggered IRQ (IRQF_VIA, IRQF_DISK)
+- **cpu/** — MOS 6502, 256/256 opcodes, 13 addressing modes, level-triggered IRQ (IRQF_VIA, IRQF_DISK).
+  **Two cores sharing one semantics**: `opcodes.c` (historical, bus-cycle ordered, default) and
+  `microseq.c` (cycle-stepped, `--cpu-microseq`, 100% oracle-conformant). Calculations live in
+  `opcodes.c` only (`cpu_rmw_apply`, `cpu_op_adc/sbc/cmp/lax`, `cpu_sh_unstable`) — never
+  duplicate an operation's semantics into the sequencer.
 - **memory/** — 64KB: RAM ($0000-$BFFF), VIA I/O ($0300-$030F), Microdisc I/O ($0310-$031F), ROM/RAM overlay ($C000-$FFFF)
 - **io/via6522.c** — VIA 6522: 16 registers, Timer 1/2, IFR/IER interrupts, Port A/B callbacks, keyboard matrix scanning
 - **io/keyboard.c** — 8x8 matrix: VIA ORB bits 0-2 select column, Port A reads rows (active low)
