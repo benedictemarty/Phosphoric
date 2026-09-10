@@ -91,4 +91,16 @@ void    loci_emu_acia_tick(void);
  * n'est pas terminé. */
 void loci_emu_tick(long steps);
 
+/* Souris USB HID (co-sim). Le firmware co-simulé n'énumère pas l'USB : sans
+ * ce pont, la souris de l'hôte n'atteint jamais `mou_report()` et le 6502 lit
+ * un `mou_xram` vide (le chemin `loci_mou_report()` du modèle interne écrit
+ * dans un xram que le 6502 ne lit plus dès que loci_emu_active()). Deltas
+ * accumulés côté firmware, exactement comme un vrai rapport HID.
+ * No-op si le boot n'est pas terminé. Renvoie true si le rapport a été appliqué. */
+bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy,
+                         int8_t wheel, int8_t pan);
+
+/* true si le 6502 a armé la souris via XREG (sinon le firmware n'écrit rien). */
+bool loci_emu_mou_armed(void);
+
 #endif /* LOCI_EMU_H */

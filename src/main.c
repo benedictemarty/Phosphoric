@@ -1084,6 +1084,23 @@ static void poke_write(emulator_t* emu, uint16_t addr, uint8_t val) {
         memory_write(&emu->memory, addr, val);
 }
 
+
+#ifdef HAS_SDL2
+/* Souris LOCI : route un rapport vers le bon destinataire. En co-simulation
+ * (--loci-emu), le 6502 ne lit plus le xram du modèle interne — io_bus.c
+ * envoie tout le MIA au firmware réel — donc écrire dans loci->xram serait
+ * sans effet : on injecte alors le rapport dans le firmware co-simulé
+ * (loci_emu_mou_report → mou_report côté RP2040). Modèle interne sinon. */
+static void mou_report_route(emulator_t* emu, uint8_t buttons,
+                             int8_t dx, int8_t dy, int8_t wheel, int8_t pan)
+{
+    if (loci_emu_active())
+        loci_emu_mou_report(buttons, dx, dy, wheel, pan);
+    else
+        loci_mou_report(&emu->loci, buttons, dx, dy, wheel, pan);
+}
+#endif /* HAS_SDL2 */
+
 static void emulator_run(emulator_t* emu) {
     /* Skip the power-on reset when a save state was restored at startup —
      * otherwise the loaded PC/cycles are wiped back to the reset vector. */
@@ -2019,10 +2036,10 @@ static void emulator_run(emulator_t* emu) {
                         if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
                         if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
                         if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
-                        loci_mou_report(&emu->loci, btn,
-                                        (int8_t)event.motion.xrel,
-                                        (int8_t)event.motion.yrel,
-                                        0, 0);
+                        mou_report_route(emu, btn,
+                                         (int8_t)event.motion.xrel,
+                                         (int8_t)event.motion.yrel,
+                                         0, 0);
                     }
                     break;
                 case SDL_MOUSEBUTTONDOWN:
@@ -2033,14 +2050,14 @@ static void emulator_run(emulator_t* emu) {
                         if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
                         if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
                         if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
-                        loci_mou_report(&emu->loci, btn, 0, 0, 0, 0);
+                        mou_report_route(emu, btn, 0, 0, 0, 0);
                     }
                     break;
                 case SDL_MOUSEWHEEL:
                     if (emu->has_loci) {
-                        loci_mou_report(&emu->loci, 0, 0, 0,
-                                        (int8_t)event.wheel.y,
-                                        (int8_t)event.wheel.x);
+                        mou_report_route(emu, 0, 0, 0,
+                                         (int8_t)event.wheel.y,
+                                         (int8_t)event.wheel.x);
                     }
                     break;
                 /* SDL game controller / joystick events */

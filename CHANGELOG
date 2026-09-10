@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — souris LOCI en co-simulation (`--loci-emu`)
+
+La souris fonctionnait avec le modèle interne LOCI (`--loci`, pont SDL →
+`loci_mou_report()` → `mou_xram`) mais **pas en co-simulation** : dès que
+`loci_emu_active()`, `io_bus.c` route tout le MIA `$03A0-$03BF` vers le firmware
+réel, si bien que les rapports SDL continuaient d'être écrits dans le `xram` du
+modèle interne — que le 6502 ne lit plus. Ils partaient dans le vide.
+
+Cause de fond : le co-sim ne modélise pas le contrôleur USB du RP2040, et seules
+les classes MSC (clé USB) et CDC (modem) étaient HLE'ées ; **la classe HID n'avait
+aucun pont**, donc `mou_report()` du firmware n'était jamais appelé.
+
+Côté `~/loci/emul` (nouveau `src/emul_hid.c`) : le rapport est injecté là où le
+firmware l'aurait reçu, sans HLE de toute la pile TinyUSB HID. `mou_report()`
+(`usb/mou.c`) est autonome — il accumule 5 octets et les recopie dans `xram`.
+`emul_loci_mou_report()` le réplique côté hôte (statics `mou_xram_data`/`mou_xram`
+résolus **par nom** dans l'ELF : symboles locaux, adresses variables d'un build à
+l'autre) ; `emul_loci_mou_report_guest()` appelle le **vrai** `mou_report()` via
+`emul_guest_call()` et sert d'oracle d'équivalence. Nouvelle suite `test_hid`
+(16ᵉ, 18/18) : même séquence de 4 rapports rejouée par les deux chemins,
+incréments comparés octet à octet dans `xram`.
+
+Côté Phosphoric : `loci_emu_mou_report()` / `loci_emu_mou_armed()`
+(`src/io/loci_emu.c`), et les trois événements souris SDL passent par un routeur
+`mou_report_route()` qui choisit le firmware co-simulé ou le modèle interne selon
+`loci_emu_active()`. Le clavier HID LOCI reste sans pont en co-sim (même cause).
+
+Non vérifié de bout en bout en interactif : il faudrait un logiciel 6502 qui arme
+la souris via XREG (sans quoi `mou_xram` reste à `0xFFFF` et le firmware n'écrit
+rien, pont ou pas). La preuve est unitaire, contre le vrai firmware.
+
+`make clean && make tests` **1001/1001**, 0 régression, builds SDL2=0 et SDL2=1 OK.
+EMU_VERSION 1.118.1 → **1.119.0-alpha**.
+
 ### Fixed — 5 options livrées mais absentes de `--help` (dont la co-simulation LOCI)
 
 `--loci-emu`, `--loci-usb-image`, `--loci-cdc`, `--loci-menu-at` et `--tape-signal-free`

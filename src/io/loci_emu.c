@@ -150,6 +150,23 @@ void loci_emu_stop(void) { }   /* plus de thread persistant (mono-thread post-bo
 
 bool loci_emu_active(void) { return g_boot_done != 0; }
 
+/* ── Souris USB HID (co-sim) ─────────────────────────────────────────
+ * Pont vers le firmware réel : voir emul_hid.c côté ~/loci/emul. Sans lui,
+ * les rapports SDL partaient dans le xram du modèle interne, que le 6502 ne
+ * lit plus en co-sim (io_bus.c route tout le MIA vers le firmware). */
+bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy,
+                         int8_t wheel, int8_t pan)
+{
+    if (!g_boot_done) return false;
+    return emul_loci_mou_report(&g_emul, buttons, dx, dy, wheel, pan) != 0;
+}
+
+bool loci_emu_mou_armed(void)
+{
+    if (!g_boot_done) return false;
+    return emul_loci_mou_armed(&g_emul, NULL) != 0;
+}
+
 bool loci_emu_menu_button(void)
 {
     if (!g_boot_started) return false;

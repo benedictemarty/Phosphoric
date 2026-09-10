@@ -194,6 +194,24 @@ Spec entièrement fondée sur Oricutron (`disk.c`/`machine.c`/`8912.c`/`jasmin.s
 
 ---
 
+## Souris LOCI en co-simulation — v1.119.0-alpha
+
+La souris marchait avec le modèle interne (`--loci`) mais pas sous `--loci-emu`.
+- [x] Diagnostic : `io_bus.c` route tout le MIA au firmware dès `loci_emu_active()`
+      → les rapports SDL écrits dans le `xram` du modèle interne ne sont plus lus.
+- [x] Cause de fond : contrôleur USB RP2040 non modélisé, classes MSC/CDC HLE'ées,
+      **HID sans pont** → `mou_report()` du firmware jamais appelé.
+- [x] `~/loci/emul` : `src/emul_hid.c` (réplication hôte + variante `_guest` qui
+      appelle le vrai `mou_report()`), symboles locaux résolus par nom dans l'ELF.
+- [x] Suite `test_hid` (18/18) : équivalence des deux chemins, octet à octet.
+- [x] Phosphoric : `loci_emu_mou_report()`/`_armed()` + `mou_report_route()`.
+- [ ] Backlog : même pont pour le **clavier** HID LOCI en co-sim (`kbd.c`,
+      symboles `kbd_report`/`kbd_prev_report` présents dans l'ELF).
+- [ ] Backlog : valider en interactif avec un logiciel 6502 qui arme la souris
+      par XREG (sans quoi `mou_xram` reste à `0xFFFF`).
+
+---
+
 ## Automatisation clavier : auto-RUN du fast-load vs `--type-keys` — v1.118.0-alpha
 
 Signalé en pilotant OricTel headless : dès la première touche injectée, la machine
