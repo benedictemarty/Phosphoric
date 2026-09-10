@@ -1233,6 +1233,158 @@ TEST(test_cycle_callback_rmw_count) {
     ASSERT_EQ(memory_read(&mem, 0x0010), 0x02);
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  CONFORMITÉ RÉVÉLÉE PAR L'ORACLE 65x02 (V2-S1)                      */
+/*                                                                    */
+/*  Les cas ci-dessous sont recopiés TELS QUELS de vecteurs            */
+/*  SingleStepTests/65x02 (état initial, état final, séquence bus).    */
+/*  Les vecteurs eux-mêmes ne sont pas versionnés (~850 Mo) : ces      */
+/*  tests verrouillent les correctifs sans dépendre du téléchargement. */
+/*  Voir docs/ACCURACY.md et docs/specs/V2_CYCLE_ACCURACY.md.          */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Journal des accès bus, via cpu_set_bus_callback(). */
+#define BUSLOG_MAX 16
+static struct { uint16_t addr; uint8_t val; bool write; } g_buslog[BUSLOG_MAX];
+static int g_buslog_n;
+static void buslog_cb(void* ctx, uint16_t addr, uint8_t val, bool write) {
+    (void)ctx;
+    if (g_buslog_n < BUSLOG_MAX) {
+        g_buslog[g_buslog_n].addr = addr;
+        g_buslog[g_buslog_n].val = val;
+        g_buslog[g_buslog_n].write = write;
+        g_buslog_n++;
+    }
+}
+
+/* Vecteur « 20 c2 8f » : JSR $8FC2 depuis $5289, SP=$3E.
+ * Séquence bus du NMOS : fetch $5289, fetch ADL $528A, [lecture pile factice],
+ * write $013E=$52 (PCH), write $013D=$8B (PCL), fetch ADH $528B.
+ * L'octet HAUT de l'adresse est donc lu APRÈS l'empilement : c'est l'ordre que
+ * l'ancienne implémentation inversait (elle lisait l'adresse complète d'abord).
+ * Le cycle factice de pile n'est pas émis au niveau N2 (il le sera en V2-E1). */
+TEST(test_jsr_bus_access_order) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x5289, 0x20);
+    memory_write(&mem, 0x528A, 0xC2);
+    memory_write(&mem, 0x528B, 0x8F);
+    cpu.PC = 0x5289;
+    cpu.SP = 0x3E;
+    g_buslog_n = 0;
+    cpu_set_bus_callback(&cpu, buslog_cb, NULL);
+    int cyc = cpu_step(&cpu);
+    cpu_set_bus_callback(&cpu, NULL, NULL);
+
+    ASSERT_EQ(cyc, 6);
+    ASSERT_EQ(cpu.PC, 0x8FC2);
+    ASSERT_EQ(cpu.SP, 0x3C);
+    ASSERT_EQ(memory_read(&mem, 0x013E), 0x52);   /* PCH */
+    ASSERT_EQ(memory_read(&mem, 0x013D), 0x8B);   /* PCL */
+
+    /* 5 accès bus réels, dans cet ordre exact. */
+    ASSERT_EQ(g_buslog_n, 5);
+    ASSERT_EQ(g_buslog[0].addr, 0x5289); ASSERT_FALSE(g_buslog[0].write);
+    ASSERT_EQ(g_buslog[1].addr, 0x528A); ASSERT_FALSE(g_buslog[1].write);
+    ASSERT_EQ(g_buslog[2].addr, 0x013E); ASSERT_TRUE(g_buslog[2].write);
+    ASSERT_EQ(g_buslog[2].val, 0x52);
+    ASSERT_EQ(g_buslog[3].addr, 0x013D); ASSERT_TRUE(g_buslog[3].write);
+    ASSERT_EQ(g_buslog[3].val, 0x8B);
+    ASSERT_EQ(g_buslog[4].addr, 0x528B); ASSERT_FALSE(g_buslog[4].write);
+}
+
+/* Vecteur « 69 0a e1 » : ADC #$0A en mode décimal, A=$02, P=$AF (D+C+Z+N+I).
+ * Attendu A=$13, P=$2C — donc N=0 alors que le résultat final est $13 : N se
+ * lit sur le résultat INTERMÉDIAIRE de l'additionneur BCD, pas sur A. */
+TEST(test_adc_decimal_flags_nmos) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    memory_write(&mem, 0x5AFA, 0x69);
+    memory_write(&mem, 0x5AFB, 0x0A);
+    cpu.PC = 0x5AFA;
+    cpu.A = 0x02;
+    cpu.P = 0xAF;
+    int cyc = cpu_step(&cpu);
+    ASSERT_EQ(cyc, 2);
+    ASSERT_EQ(cpu.A, 0x13);
+    ASSERT_EQ(cpu.P, 0x2C);
+}
+
+/* Vecteur « 61 de e9 » : ADC ($DE,X) en mode décimal, X=$3B, A=$92, opérande
+ * $56 en $1813. Attendu A=$48 et P=$A9 (C posé par la correction du quartet
+ * haut, N sur l'intermédiaire, Z sur la somme BINAIRE). */
+TEST(test_adc_decimal_high_nibble_carry) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    mem.rom_enabled = false;     /* le cas vit en $D3EE : RAM, pas ROM */
+    memory_write(&mem, 0xD3EE, 0x61);
+    memory_write(&mem, 0xD3EF, 0xDE);
+    memory_write(&mem, 0x0019, 0x13);   /* ($DE + $3B) & $FF = $19 */
+    memory_write(&mem, 0x001A, 0x18);
+    memory_write(&mem, 0x1813, 0x56);
+    cpu.PC = 0xD3EE;
+    cpu.A = 0x92;
+    cpu.X = 0x3B;
+    cpu.P = 0xA8;
+    int cyc = cpu_step(&cpu);
+    ASSERT_EQ(cyc, 6);
+    ASSERT_EQ(cpu.A, 0x48);
+    ASSERT_EQ(cpu.P, 0xA9);
+}
+
+/* Vecteur « 6b 39 ee » : ARR #$39 en mode décimal, A=$30, P=$2B (D+C).
+ * Attendu A=$98, P=$A8 : en décimal le report d'ARR sort de la correction du
+ * quartet haut, pas du bit décalé. */
+TEST(test_arr_decimal_nmos) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    mem.rom_enabled = false;     /* le cas vit en $DA36 : RAM, pas ROM */
+    memory_write(&mem, 0xDA36, 0x6B);
+    memory_write(&mem, 0xDA37, 0x39);
+    cpu.PC = 0xDA36;
+    cpu.A = 0x30;
+    cpu.P = 0x2B;
+    int cyc = cpu_step(&cpu);
+    ASSERT_EQ(cyc, 2);
+    ASSERT_EQ(cpu.A, 0x98);
+    ASSERT_EQ(cpu.P, 0xA8);
+}
+
+/* Vecteur « 9c 3 » : SHY $7C61,X avec X=$CC, Y=$B6 — l'indexation traverse une
+ * page, donc le bus d'adresse reste corrompu : la valeur écrite est
+ * Y & (high(base)+1) = $B6 & $7D = $34, et elle part en $342D (l'octet haut
+ * émis EST la valeur) au lieu de $7D2D. Écart classique des stores instables. */
+TEST(test_shy_unstable_page_cross) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    uint8_t code[] = { 0x9C, 0x61, 0x7C };       /* SHY $7C61,X */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu.PC = 0x0200;
+    cpu.X = 0xCC;
+    cpu.Y = 0xB6;
+    int cyc = cpu_step(&cpu);
+    ASSERT_EQ(cyc, 5);
+    ASSERT_EQ(memory_read(&mem, 0x342D), 0x34);  /* destination corrompue */
+    ASSERT_EQ(memory_read(&mem, 0x7D2D), 0x00);  /* l'adresse « propre » n'est PAS écrite */
+}
+
+/* Même mécanique sans traversée de page : la valeur et la destination sont
+ * celles de l'adressage normal (vecteur « 9c 2 » : base $CC8A + X=$37). */
+TEST(test_shy_unstable_no_cross) {
+    cpu6502_t cpu; memory_t mem;
+    setup(&cpu, &mem);
+    mem.rom_enabled = false;     /* destination en $CCC1 */
+    uint8_t code[] = { 0x9C, 0x8A, 0xCC };       /* SHY $CC8A,X */
+    write_program(&mem, 0x0200, code, sizeof(code));
+    cpu.PC = 0x0200;
+    cpu.X = 0x37;
+    cpu.Y = 0xB6;
+    int cyc = cpu_step(&cpu);
+    ASSERT_EQ(cyc, 5);
+    ASSERT_EQ(memory_read(&mem, 0xCCC1), 0x84);  /* $B6 & ($CC+1) */
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1370,6 +1522,14 @@ int main(void) {
     printf("\n  Per-Cycle Clock Callback:\n");
     RUN(test_cycle_callback_total);
     RUN(test_cycle_callback_rmw_count);
+
+    printf("\n  Conformité révélée par l'oracle 65x02 (V2-S1):\n");
+    RUN(test_jsr_bus_access_order);
+    RUN(test_adc_decimal_flags_nmos);
+    RUN(test_adc_decimal_high_nibble_carry);
+    RUN(test_arr_decimal_nmos);
+    RUN(test_shy_unstable_page_cross);
+    RUN(test_shy_unstable_no_cross);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

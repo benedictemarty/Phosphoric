@@ -148,6 +148,24 @@ make SDL2=1
 - **CLI** — `--trace FILE` to enable, `--trace-max N` to limit
 - **Output** — `CYCLES  PC  BYTES  DISASM  A=XX X=XX Y=XX SP=XX P=XX`
 
+### Cycle Trace (accuracy instrument)
+- **One line per CPU cycle** — `--cycle-trace FILE` (`--cycle-trace-max N` to cap):
+  `CYCLE T ADDR DATA PC A X Y SP P FLAGS IRQ`, where `T` is `R`ead, `W`rite or
+  `i`nternal. Meant to be diffed against another emulator or instrumented hardware.
+- **Honest about the current level** — `i` lines are the internal cycles that the
+  N2 core reconciles by end-of-instruction padding: they carry no address yet.
+  See [docs/ACCURACY.md](docs/ACCURACY.md) and the [V2 plan](docs/specs/V2_CYCLE_ACCURACY.md).
+
+### CPU conformance oracles
+- **`make test-cycle`** — replays SingleStepTests/65x02 (10 000 cases per opcode,
+  with the expected cycle-by-cycle bus trace) and scores four separate properties:
+  final state, cycle totals, bus **subsequence** (the N2 property) and **exact bus
+  sequence** (the N3 property).
+- **`make test-dormann`** — Klaus Dormann's `6502_functional_test`: **passes in full**
+  (success trap `$3469`, ~96 M emulated cycles).
+- **Vectors are not vendored** — `tools/fetch_vectors.sh` (or `make fetch-vectors`)
+  downloads them; both targets SKIP cleanly when they are absent.
+
 ### CPU Performance Profiler
 - **Execution profiling** — Per-address hit counts and cycle usage across full 64K space
 - **Opcode histogram** — Frequency distribution of all 256 opcodes
@@ -268,6 +286,8 @@ Display:
 Trace:
   --trace FILE              Log CPU instruction trace to FILE
   --trace-max N             Max instructions to trace (default: unlimited)
+  --cycle-trace FILE        Log ONE LINE PER CYCLE (bus addr, data, R/W, registers)
+  --cycle-trace-max N       Max lines for --cycle-trace (0 = unlimited)
   --psg-trace FILE          Log AY sound-register writes (reg 0-13) with CPU cycle
   --kbd-scan-trace FILE     Log every VIA Port B read (col, reg7, reg14, matrix, PB3)
                             — debug a custom (non-ROM) keyboard scanner
@@ -499,6 +519,9 @@ make test-printer        # Printer tests
 make test-mcp40          # MCP-40 plotter tests
 make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
+make test-cycle          # Cycle-by-cycle CPU conformance oracle (65x02 vectors)
+make test-dormann        # Klaus Dormann 6502 functional test
+make fetch-vectors       # Download the oracle vectors (third-party, not vendored)
 make test-profiler       # CPU profiler tests
 make test-rominfo        # ROM analysis tests
 make test-serial         # ACIA 6551 serial tests

@@ -172,6 +172,7 @@ SOURCES = src/main.c \
           src/utils/logging.c \
           src/utils/config.c \
           src/utils/trace.c \
+          src/utils/cycle_trace.c \
           src/utils/profiler.c \
           src/utils/rominfo.c \
           src/utils/symbols.c \
@@ -225,7 +226,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-cycle test-dormann fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -702,6 +703,32 @@ test-tape-roundtrip: $(TARGET)
 test-cli-parsing: $(TARGET)
 	@bash tests/integration/test_cli_parsing.sh
 
+# V2-S1 — oracle de conformité cycle par cycle (SingleStepTests/65x02) et test
+# fonctionnel de Klaus Dormann. Les vecteurs ne sont pas versionnés : les deux
+# cibles se mettent en SKIP quand ils sont absents (`tools/fetch_vectors.sh`).
+#   make test-cycle                      200 cas par opcode (défaut)
+#   make test-cycle CYCLE_MAX_CASES=0    les 10 000 cas par opcode
+#   make test-cycle CYCLE_OPCODES=a9,b1  un sous-ensemble, en verbeux utile
+TEST_CYCLE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu_cycles.c \
+                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                  src/memory/memory.c src/memory/banking.c src/utils/logging.c
+
+test-cycle: $(TEST_CYCLE_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_CYCLE_SRCS) $(LDFLAGS) -o test_cpu_cycles
+	@./test_cpu_cycles
+
+TEST_DORMANN_SRCS = tests/support/loci_emu_stub.c tests/unit/test_dormann.c \
+                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
+                    src/memory/memory.c src/memory/banking.c src/utils/logging.c
+
+test-dormann: $(TEST_DORMANN_SRCS)
+	@$(CC) $(CFLAGS) $(TEST_DORMANN_SRCS) $(LDFLAGS) -o test_dormann
+	@./test_dormann
+
+# Récupération des vecteurs d'oracle (tiers, non versionnés, ~1 Go).
+fetch-vectors:
+	@bash tools/fetch_vectors.sh $(VECTORS)
+
 # V2-S0 — garde-fou sur les allégations de précision temporelle (docs/ACCURACY.md).
 # Échoue si « cycle-accurate » réapparaît non qualifié dans un document de vitrine.
 test-docs-claims:
@@ -722,7 +749,7 @@ bench:
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims
+tests: test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-cycle test-dormann
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

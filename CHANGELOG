@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — oracle de conformité cycle par cycle, test Dormann, `--cycle-trace` (V2-S1)
+
+Deuxième sprint de la [V2](docs/specs/V2_CYCLE_ACCURACY.md) : avant de toucher au
+cœur, se doter de l'**instrument de mesure**. Le principe du sprint était « l'oracle
+d'abord » — et il a immédiatement payé : il a révélé **cinq défauts réels** du cœur,
+tous corrigés ici.
+
+#### Les instruments
+
+- **`make test-cycle`** (`tests/unit/test_cpu_cycles.c`) rejoue les vecteurs
+  **SingleStepTests/65x02** : 10 000 cas par opcode, chacun donnant l'état initial,
+  l'état final **et la séquence des accès bus attendus, cycle par cycle**. Parseur
+  JSON maison (aucune dépendance ajoutée), machine d'essai **64 Ko plats**
+  (`rom_enabled=0` + callbacks d'I/O triviaux, sinon `$0300-$03FF` serait avalé par
+  le bus I/O de l'ORIC et `$C000-$FFFF` serait en lecture seule), remise à zéro
+  ciblée des seules adresses salies (2 M cas en ~4 s).
+  **Quatre propriétés mesurées séparément**, de la plus faible à la plus forte :
+  état final, total de cycles, **sous-séquence** bus (aucun accès parasite, aucune
+  inversion — c'est la propriété du niveau **N2**), **séquence bus exacte** (un
+  accès au bon cycle pour *chaque* cycle — la propriété du niveau **N3**).
+  Les 12 opcodes JAM sont comptés à part : divergence de *modélisation* (le vrai
+  NMOS bloque le bus, Phosphoric arrête le CPU), hors échelle N1→N4.
+- **`make test-dormann`** (`tests/unit/test_dormann.c`) exécute
+  `6502_functional_test` de Klaus Dormann jusqu'au `jmp *` : **il passe
+  intégralement** (piège de succès `$3469`, ~96 M cycles émulés en 0,7 s de temps
+  hôte). Le cœur est donc fonctionnellement sain — son déficit est bien temporel.
+  Le test décimal n'existe qu'en source `.a65` en amont (il faudrait `as65`) : hors
+  périmètre, le test fonctionnel couvrant déjà le mode décimal.
+- **`--cycle-trace FICHIER`** + **`--cycle-trace-max N`**
+  (`src/utils/cycle_trace.c`) : une ligne par cycle — `cycle, type (R/W/i),
+  adresse, donnée, PC, A X Y SP P, drapeaux, ligne d'IRQ`. Les lignes `i` sont les
+  cycles internes bourrés du N2 (sans adresse) ; elles rendent le déficit visible à
+  l'œil et porteront leur accès réel après V2-E1.
+- **Crochet `cpu_set_bus_callback()`** (`cpu6502_t::on_bus`) : une notification par
+  accès bus réel, partagée par l'oracle et par la trace. Aucun coût quand il est nul.
+- **`tools/fetch_vectors.sh`** / **`make fetch-vectors`** : les vecteurs sont des
+  dépôts tiers volumineux (~1 Go) sous leurs propres licences → **non versionnés**,
+  et les deux cibles se mettent en **SKIP** propre quand ils sont absents (elles
+  restent donc dans `make tests` et en CI). Le parseur, lui, reste testé sur un cas
+  embarqué.
+
+#### Les cinq défauts que l'oracle a trouvés (tous corrigés)
+
+1. **Ordre des accès bus de `JSR`** ($20) — le 6502 lit l'octet **haut** de
+   l'adresse de destination **après** avoir empilé le PC ; Phosphoric lisait
+   l'adresse complète d'abord. Valeur empilée et total de cycles inchangés, mais
+   l'ordre était faux — ce qui compte dès qu'un accès touche un registre à effet de
+   bord. *Sous-séquence bus : 0 % → 100 % sur cet opcode.*
+2. **Drapeaux `ADC` en mode décimal** — sur NMOS, `Z` vient de la somme
+   **binaire**, tandis que `N` et `V` viennent du résultat **intermédiaire** (après
+   la correction du quartet bas, avant celle du quartet haut). Phosphoric prenait
+   `N` sur le résultat final ajusté et `V` sur le binaire : **faux dans un tiers
+   des cas tirés au hasard**.
+3. **Drapeau `N` de `SBC` en mode décimal** — en décimal, tous les drapeaux de
+   `SBC` viennent de la soustraction binaire ; seule la *valeur* est ajustée. `N`
+   était pris sur la valeur ajustée.
+4. **`ARR` ($6B) en mode décimal** — cet opcode illégal passe par l'additionneur
+   BCD : les deux corrections de quartet s'appliquent et le report sort de la
+   correction haute, pas du bit décalé.
+5. **Stores « instables » `SHA`/`SHX`/`SHY`/`SHS`** ($93/$9B/$9C/$9E/$9F) — la
+   valeur est `registre & (octet haut de l'adresse de **base** + 1)`, et **en cas
+   de traversée de page le bus d'adresse reste corrompu** : l'octet haut émis est
+   la valeur elle-même, donc l'écriture part ailleurs. Phosphoric utilisait l'octet
+   haut de l'adresse *corrigée* et écrivait toujours à l'adresse propre : valeur
+   **et** destination fausses à chaque traversée.
+
+Les cinq correctifs sont verrouillés par **6 nouveaux tests unitaires** dans
+`test_cpu` (92 → 98), recopiés **tels quels** de vecteurs réels (état initial,
+état final, séquence bus) : la non-régression ne dépend donc pas du téléchargement
+des vecteurs.
+
+#### Score de référence V2-S1
+
+Exécution exhaustive : 244 opcodes (hors les 12 JAM) × 10 000 cas =
+**2 440 000 cas**, en 6,4 s.
+
+| Propriété | Score |
+|-----------|-------|
+| état final (registres) | **100,00 %** |
+| état final (RAM) | **100,00 %** |
+| total de cycles (niveau N1) | **100,00 %** |
+| sous-séquence bus (**niveau N2**) | **100,00 %** |
+| séquence bus exacte (**niveau N3**) | **44,26 %** |
+
+Autrement dit : le niveau **N2 est désormais prouvé à 100 %** — ce que le projet
+revendique est exact — et il manque **55,74 %** de cycles portant leur accès réel
+pour atteindre N3. C'est le point de départ chiffré de V2-E1, verrouillé par le
+socle `BUS_EXACT_FLOOR_BP` (aucune régression possible sous 44 %). Le taux est
+stable à ±0,1 % dès 100 cas par opcode : l'exécution échantillonnée par défaut
+(200 cas) suffit à surveiller.
+
+`make clean && make tests` : toutes suites vertes (`test-cpu` 92 → **98**,
+nouvelles suites `test-cycle` **23** et `test-dormann` **3**).
+EMU_VERSION 1.121.0 → **1.122.0-alpha**.
+
 ### Changed — rectification des allégations de précision + plan V2 (V2-S0)
 
 Le projet a communiqué « cycle-accurate » alors que l'implémentation ne l'est pas

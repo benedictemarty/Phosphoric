@@ -112,6 +112,10 @@ void cli_print_usage(const char* program_name) {
     printf("      --http-api-root DIR    Sandbox root for HTTP file ops /tape,/disk (default CWD)\n");
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
     printf("      --trace-max N          Max instructions to trace (keeps the FIRST N)\n");
+    printf("      --cycle-trace FILE     Log ONE LINE PER CYCLE (bus address, data, R/W,\n");
+    printf("                             registers) to FILE — V2 accuracy instrument;\n");
+    printf("                             internal cycles appear as 'i' (see docs/ACCURACY.md)\n");
+    printf("      --cycle-trace-max N    Max lines for --cycle-trace (0 = unlimited)\n");
     printf("      --trace-ring N         Keep only the LAST N instructions (ring buffer,\n");
     printf("                             saved to --trace FILE at exit; ideal for a hang)\n");
     printf("      --trace-irq FILE       Log every IRQ entry + RTI to FILE (debug IRQ handlers)\n");

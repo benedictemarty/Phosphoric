@@ -174,19 +174,31 @@ const opcode_info_t opcode_table[256] = {
 /* ─── ADC: Add with Carry ─── */
 static void op_adc(cpu6502_t* cpu, uint8_t val) {
     if (cpu_get_flag(cpu, FLAG_DECIMAL)) {
-        /* BCD mode */
-        uint16_t lo = (cpu->A & 0x0F) + (val & 0x0F) + (cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0);
-        uint16_t hi = (cpu->A & 0xF0) + (val & 0xF0);
+        /* Mode décimal du NMOS 6502 — sémantique exacte des drapeaux, révélée
+         * par l'oracle 65x02 (V2-S1, opcodes 61/63) et conforme à la référence
+         * de Bruce Clark (« Decimal mode in the NMOS 6502 ») :
+         *   Z : calculé sur la somme BINAIRE, pas sur le résultat décimal ;
+         *   N et V : calculés sur le résultat INTERMÉDIAIRE — après la
+         *            correction du quartet bas (+6) mais AVANT celle du quartet
+         *            haut (+0x60) ;
+         *   C : posé par la correction du quartet haut.
+         * L'ancien code prenait N sur le résultat final ajusté et V sur le
+         * résultat binaire : faux dans un tiers des cas tirés au hasard. */
+        uint8_t  carry_in = cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0;
+        uint16_t lo = (uint16_t)(cpu->A & 0x0F) + (uint16_t)(val & 0x0F) + carry_in;
+        uint16_t hi = (uint16_t)(cpu->A & 0xF0) + (uint16_t)(val & 0xF0);
         if (lo > 0x09) { lo += 0x06; hi += 0x10; }
-        /* Overflow uses binary result */
-        uint16_t bin = (uint16_t)cpu->A + (uint16_t)val + (cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0);
-        cpu_set_flag(cpu, FLAG_OVERFLOW, (~(cpu->A ^ val) & (cpu->A ^ (uint8_t)bin) & 0x80) != 0);
-        uint16_t sum = hi + (lo & 0x0F);
-        if (sum > 0x9F) sum += 0x60;
-        cpu_set_flag(cpu, FLAG_CARRY, sum > 0xFF);
-        cpu->A = (uint8_t)sum;
-        cpu_set_flag(cpu, FLAG_NEGATIVE, (cpu->A & 0x80) != 0);
+
+        uint16_t bin = (uint16_t)cpu->A + (uint16_t)val + carry_in;
         cpu_set_flag(cpu, FLAG_ZERO, (uint8_t)bin == 0);
+        cpu_set_flag(cpu, FLAG_NEGATIVE, (hi & 0x80) != 0);
+        cpu_set_flag(cpu, FLAG_OVERFLOW,
+                     (~((uint16_t)cpu->A ^ (uint16_t)val) &
+                      ((uint16_t)cpu->A ^ hi) & 0x80) != 0);
+
+        if (hi > 0x90) hi += 0x60;
+        cpu_set_flag(cpu, FLAG_CARRY, (hi & 0xFF00) != 0);
+        cpu->A = (uint8_t)((hi & 0xF0) | (lo & 0x0F));
     } else {
         uint16_t sum = (uint16_t)cpu->A + (uint16_t)val + (cpu_get_flag(cpu, FLAG_CARRY) ? 1 : 0);
         cpu_set_flag(cpu, FLAG_CARRY, sum > 0xFF);
@@ -208,7 +220,11 @@ static void op_sbc(cpu6502_t* cpu, uint8_t val) {
         cpu_set_flag(cpu, FLAG_CARRY, bin < 0x100);
         cpu_set_flag(cpu, FLAG_OVERFLOW, ((cpu->A ^ val) & (cpu->A ^ (uint8_t)bin) & 0x80) != 0);
         cpu->A = (uint8_t)sum;
-        cpu_set_flag(cpu, FLAG_NEGATIVE, (cpu->A & 0x80) != 0);
+        /* SBC en mode décimal (NMOS) : TOUS les drapeaux viennent de la
+         * soustraction binaire — seule la VALEUR est ajustée en BCD. N était
+         * pris sur le résultat ajusté : faux dès que l'ajustement change le
+         * bit 7 (oracle 65x02, V2-S1). */
+        cpu_set_flag(cpu, FLAG_NEGATIVE, (bin & 0x80) != 0);
         cpu_set_flag(cpu, FLAG_ZERO, (uint8_t)bin == 0);
     } else {
         uint16_t diff = (uint16_t)cpu->A - (uint16_t)val - (cpu_get_flag(cpu, FLAG_CARRY) ? 0 : 1);
@@ -224,6 +240,18 @@ static void op_cmp(cpu6502_t* cpu, uint8_t reg, uint8_t val) {
     uint16_t diff = (uint16_t)reg - (uint16_t)val;
     cpu_set_flag(cpu, FLAG_CARRY, reg >= val);
     update_nz(cpu, (uint8_t)diff);
+}
+
+/* ─── Stores « instables » (SHA/SHX/SHY/SHS) ───
+ * `addr` est l'adresse indexée corrigée, `idx` l'index utilisé (pour retrouver
+ * la base), `reg` la source déjà combinée (A&X pour SHA, SP pour SHS…). */
+static void op_sh_store(cpu6502_t* cpu, uint16_t addr, uint8_t idx, uint8_t reg) {
+    uint16_t base  = (uint16_t)(addr - idx);
+    uint8_t  value = (uint8_t)(reg & (uint8_t)((base >> 8) + 1));
+    bool crossed   = ((base & 0xFF00) != (addr & 0xFF00));
+    uint16_t target = crossed ? (uint16_t)(((uint16_t)value << 8) | (addr & 0x00FF))
+                              : addr;
+    cpu_mem_write(cpu, target, value);
 }
 
 /* ─── Branch helper ─── */
@@ -604,12 +632,21 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
     case 0x4C: cpu->PC = addr_absolute(cpu); break;
     case 0x6C: cpu->PC = addr_indirect(cpu); break;
 
-    /* ── JSR ── */
-    case 0x20:
-        addr = addr_absolute(cpu);
-        cpu_push_word(cpu, cpu->PC - 1);
-        cpu->PC = addr;
+    /* ── JSR ──
+     * Ordre des accès bus du NMOS 6502 (révélé par l'oracle 65x02, V2-S1) :
+     *   1. fetch opcode   2. fetch ADL   3. cycle interne (lecture pile factice)
+     *   4. push PCH       5. push PCL    6. fetch ADH
+     * L'octet haut de l'adresse est lu APRÈS l'empilement : lire l'adresse
+     * complète d'abord (addr_absolute) émettait les deux accès dans le mauvais
+     * ordre. Valeur empilée et total de cycles inchangés — seul l'ordre change,
+     * ce qui compte dès qu'un des accès touche un registre à effet de bord. */
+    case 0x20: {
+        uint8_t adl = cpu_fetch_byte(cpu);
+        cpu_push_word(cpu, cpu->PC);    /* PC pointe sur ADH = ancien PC-1 après les 2 fetches */
+        uint8_t adh = cpu_fetch_byte(cpu);
+        cpu->PC = (uint16_t)((adh << 8) | adl);
         break;
+    }
 
     /* ── RTS ── */
     case 0x60:
@@ -736,14 +773,30 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         update_nz(cpu, cpu->A);
         break;
 
-    /* ── ARR (AND #imm, then ROR A, with quirky C/V flags) ── */
+    /* ── ARR (AND #imm puis ROR A, drapeaux atypiques) ──
+     * Cet opcode illégal passe par l'additionneur BCD : en mode décimal la
+     * valeur subit les deux corrections de quartet, et le report sort de la
+     * correction haute — pas du bit décalé. Comportement aligné sur l'oracle
+     * 65x02 (V2-S1, opcode 6b) et sur « NMOS 6510 Unintended Opcodes ». */
     case 0x6B: {
-        cpu->A &= cpu_mem_read(cpu, addr_immediate(cpu));
+        uint8_t t = (uint8_t)(cpu->A & cpu_mem_read(cpu, addr_immediate(cpu)));
         uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
-        cpu->A = (uint8_t)((cpu->A >> 1) | c);
-        update_nz(cpu, cpu->A);
-        cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x40) != 0);
-        cpu_set_flag(cpu, FLAG_OVERFLOW, (((cpu->A >> 6) ^ (cpu->A >> 5)) & 0x01) != 0);
+        uint8_t r = (uint8_t)((t >> 1) | c);
+        update_nz(cpu, r);
+        cpu_set_flag(cpu, FLAG_OVERFLOW, ((r ^ t) & 0x40) != 0);
+        if (cpu_get_flag(cpu, FLAG_DECIMAL)) {
+            if (((t & 0x0F) + (t & 0x01)) > 0x05)
+                r = (uint8_t)((r & 0xF0) | ((r + 0x06) & 0x0F));
+            if (((t & 0xF0) + (t & 0x10)) > 0x50) {
+                r = (uint8_t)(r + 0x60);
+                cpu_set_flag(cpu, FLAG_CARRY, true);
+            } else {
+                cpu_set_flag(cpu, FLAG_CARRY, false);
+            }
+        } else {
+            cpu_set_flag(cpu, FLAG_CARRY, (t & 0x80) != 0);
+        }
+        cpu->A = r;
         break;
     }
 
@@ -781,24 +834,27 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         update_nz(cpu, v);
     } if(page_crossed) extra=1; break;
 
-    /* ── SHA/AHX (store A & X & (high(addr)+1)) — unstable ── */
+    /* ── SHA/SHX/SHY/SHS : les stores « instables » ──
+     * Leur vraie mécanique, dérivée des vecteurs 65x02 (V2-S1, opcodes
+     * 93/9b/9c/9e) et conforme à « NMOS 6510 Unintended Opcodes » :
+     *   valeur = registre & (octet HAUT de l'adresse de BASE + 1)
+     *   si l'indexation traverse une page, le bus d'adresse reste corrompu :
+     *   l'octet haut émis est la VALEUR elle-même → l'écriture part ailleurs,
+     *   à (valeur << 8) | octet bas.
+     * L'ancien code prenait l'octet haut de l'adresse CORRIGÉE (donc base+1
+     * en cas de traversée) et écrivait toujours à l'adresse corrigée : valeur
+     * ET destination fausses dès qu'il y avait traversée de page. */
     case 0x9F: addr = addr_absolute_y(cpu, NULL);
-        cpu_mem_write(cpu, addr, cpu->A & cpu->X & (uint8_t)((addr >> 8) + 1)); break;
+        op_sh_store(cpu, addr, cpu->Y, (uint8_t)(cpu->A & cpu->X)); break;
     case 0x93: addr = addr_indirect_indexed(cpu, NULL);
-        cpu_mem_write(cpu, addr, cpu->A & cpu->X & (uint8_t)((addr >> 8) + 1)); break;
-
-    /* ── SHX (store X & (high(addr)+1)) — unstable ── */
+        op_sh_store(cpu, addr, cpu->Y, (uint8_t)(cpu->A & cpu->X)); break;
     case 0x9E: addr = addr_absolute_y(cpu, NULL);
-        cpu_mem_write(cpu, addr, cpu->X & (uint8_t)((addr >> 8) + 1)); break;
-
-    /* ── SHY (store Y & (high(addr)+1)) — unstable ── */
+        op_sh_store(cpu, addr, cpu->Y, cpu->X); break;
     case 0x9C: addr = addr_absolute_x(cpu, NULL);
-        cpu_mem_write(cpu, addr, cpu->Y & (uint8_t)((addr >> 8) + 1)); break;
-
-    /* ── TAS/SHS (SP = A & X, store SP & (high(addr)+1)) — unstable ── */
+        op_sh_store(cpu, addr, cpu->X, cpu->Y); break;
     case 0x9B: addr = addr_absolute_y(cpu, NULL);
-        cpu->SP = cpu->A & cpu->X;
-        cpu_mem_write(cpu, addr, cpu->SP & (uint8_t)((addr >> 8) + 1)); break;
+        cpu->SP = (uint8_t)(cpu->A & cpu->X);
+        op_sh_store(cpu, addr, cpu->Y, cpu->SP); break;
 
     /* ── Undocumented multi-byte NOPs: still perform a dummy operand read ── */
     case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2:        /* NOP #imm */

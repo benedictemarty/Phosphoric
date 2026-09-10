@@ -30,6 +30,8 @@ dsk2hfe
 
 # Test binaries
 test_cpu
+test_cpu_cycles
+test_dormann
 test_memory
 test_io
 test_cassette
@@ -198,3 +200,6 @@ test_ula_ng
 # US1 : binaire de distribution strippé
 oric1-emu-release
 test_loci_acia_miss
+
+# Vecteurs d oracle CPU (V2-S1), telecharges par tools/fetch_vectors.sh
+third_party/vectors/

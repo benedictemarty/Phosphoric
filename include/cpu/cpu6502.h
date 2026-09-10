@@ -95,6 +95,16 @@ typedef struct {
      * When NULL the CPU only accumulates cycles (callers tick peripherals). */
     void (*on_cycle)(void* ctx, int cycles);
     void* cycle_ctx;
+
+    /* Optional bus-access callback (V2-S1). Fires once per REAL bus cycle —
+     * every cpu_mem_read/cpu_mem_write the CPU performs — with the address,
+     * the byte on the data bus and the direction. This is the observation
+     * point used by the cycle-by-cycle conformance harness (tests/unit/
+     * test_cpu_cycles.c) and by --cycle-trace. It does NOT fire for the
+     * internal (non-bus) cycles that cpu_step reconciles by padding: at
+     * accuracy level N2 those have no address (see docs/ACCURACY.md). */
+    void (*on_bus)(void* ctx, uint16_t addr, uint8_t value, bool write);
+    void* bus_ctx;
 } cpu6502_t;
 
 /**
@@ -138,6 +148,17 @@ void cpu_reset(cpu6502_t* cpu);
  * @return Number of cycles consumed
  */
 int cpu_step(cpu6502_t* cpu);
+
+/**
+ * @brief Install the per-bus-access callback (NULL to remove)
+ *
+ * @param cpu Pointer to CPU structure
+ * @param cb  Called for each bus cycle: (ctx, address, data, write?)
+ * @param ctx Opaque context handed back to the callback
+ */
+void cpu_set_bus_callback(cpu6502_t* cpu,
+                          void (*cb)(void*, uint16_t, uint8_t, bool),
+                          void* ctx);
 
 /**
  * @brief Execute N cycles

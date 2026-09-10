@@ -69,6 +69,7 @@
 #include "network/gdbstub.h"
 #include "savestate.h"
 #include "utils/trace.h"
+#include "utils/cycle_trace.h"
 #include "utils/rominfo.h"
 #ifdef HAS_SDL2
 #include <SDL2/SDL.h>
@@ -547,6 +548,9 @@ static uint64_t g_loci_menu_at = 0;
 
 static void cpu_cycle_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
+    /* --cycle-trace : une ligne par cycle (l'accès bus mémorisé, puis les
+     * cycles internes du lot). No-op quand la trace n'est pas armée. */
+    if (cycle_trace_active()) cycle_trace_cycles(&emu->cpu, cycles);
     via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
@@ -2467,6 +2471,8 @@ int main(int argc, char* argv[]) {
     int scale_factor = 3;
     bool render_software = false;
     const char* trace_file = NULL;
+    const char* cycle_trace_file = NULL;
+    uint64_t cycle_trace_max = 0;
     const char* screenshot_when_arg = NULL;
     const char* dump_ram_when_arg = NULL;
     const char* screenshot_text_when_arg = NULL;
@@ -2622,6 +2628,8 @@ int main(int argc, char* argv[]) {
             case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
             case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
             case OPT_TRACE: trace_file = optarg; break;
+            case OPT_CYCLE_TRACE: cycle_trace_file = optarg; break;
+            case OPT_CYCLE_TRACE_MAX: cycle_trace_max = strtoull(optarg, NULL, 10); break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
             case OPT_TRACE_RING: trace_ring = atoll(optarg); break;
             case OPT_PROFILE: profile_file = optarg; break;
@@ -4199,6 +4207,19 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /* Trace bus cycle par cycle (--cycle-trace) — instrument de la V2.
+     * Branchée sur le crochet d'accès bus du CPU ; les cycles internes sont
+     * émis par cpu_cycle_tick(), qui appelle cycle_trace_cycles(). */
+    if (cycle_trace_file) {
+        if (!cycle_trace_open(cycle_trace_file, cycle_trace_max)) {
+            log_error("Failed to open cycle trace file: %s", cycle_trace_file);
+        } else {
+            cpu_set_bus_callback(&emu.cpu, cycle_trace_bus, NULL);
+            log_info("Cycle trace -> %s%s", cycle_trace_file,
+                     cycle_trace_max ? " (capped)" : "");
+        }
+    }
+
     /* CPU performance profiler */
     profiler_init(&emu.profiler);
     if (profile_file) {
@@ -4344,6 +4365,11 @@ int main(int argc, char* argv[]) {
                         trace_file);
     }
     trace_close(&emu.trace);
+    if (cycle_trace_file) {
+        uint64_t ct_lines = cycle_trace_close();
+        log_info("Cycle trace: %llu lines -> %s",
+                 (unsigned long long)ct_lines, cycle_trace_file);
+    }
 
     /* Un --*-when armé mais jamais déclenché = échec explicite (exit 2), pour
      * que le CI SCUMM distingue « état de jeu jamais atteint » d'une erreur

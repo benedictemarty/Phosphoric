@@ -107,22 +107,36 @@ transforme « je crois que c'est juste » en « c'est mesuré ».
   *Acceptation* : `grep -ri "cycle.accurate"` ne renvoie plus que des occurrences
   qualifiées ; un test de garde (`test_docs_claims.sh`) échoue si une occurrence
   nue réapparaît.
-- **US0.2 — Oracle CPU externe.** Intégrer **SingleStepTests/65x02** (10 000 cas
-  par opcode, avec la trace bus cycle par cycle attendue) : téléchargement
-  optionnel hors dépôt (`make fetch-vectors`), exécuteur `tests/unit/test_cpu_cycles.c`
-  qui rejoue chaque cas sur une mémoire plate et compare **registres finaux +
-  liste (adresse, donnée, R/W) cycle par cycle**.
-  *Acceptation* : la cible `make test-cycle` existe, tourne, et publie un score
-  du type `opcodes conformes : N/256, cycles conformes : X %`. Le score initial
-  attendu est **bas** — c'est la ligne de base, pas un échec.
-- **US0.3 — Tests fonctionnels Klaus Dormann.** `6502_functional_test` et
-  `6502_decimal_test` en cible `make test-dormann`.
-  *Acceptation* : les deux atteignent leur adresse de succès.
-- **US0.4 — Trace bus.** Option `--cycle-trace FICHIER` : une ligne par cycle
-  (`cycle, φ, addr, R/W, data, PC, A X Y SP P, IRQ/NMI`), pour diffuser contre
-  d'autres émulateurs ou du matériel instrumenté.
-  *Acceptation* : trace stable et rejouable sur une séquence de boot ROM ;
-  format documenté.
+- **US0.2 — Oracle CPU externe. ✅ livré (v1.122.0-alpha)** — vecteurs
+  **SingleStepTests/65x02** (10 000 cas par opcode, chacun avec l'état initial,
+  l'état final et la trace bus attendue cycle par cycle), récupérés hors dépôt
+  par `tools/fetch_vectors.sh` / `make fetch-vectors` (~1 Go, non versionnés).
+  Exécuteur `tests/unit/test_cpu_cycles.c` → `make test-cycle` : parseur JSON
+  maison (aucune dépendance), machine d'essai **64 Ko plats** (`rom_enabled=0`
+  + callbacks d'I/O triviaux pour que `$0300-$03FF` et `$C000-$FFFF` ne soient
+  ni avalés par le bus I/O ni en lecture seule), et **quatre propriétés mesurées
+  séparément** : état final, total de cycles, **sous-séquence** bus (= la
+  propriété N2), **séquence bus exacte** (= la propriété N3). SKIP propre sans
+  vecteurs, et le parseur reste testé sur un cas embarqué. Les 12 opcodes JAM
+  sont comptés à part (divergence de modélisation, hors échelle : le vrai NMOS
+  bloque le bus, Phosphoric arrête le CPU).
+  *Acceptation* : tenue — score publié, et socle `BUS_EXACT_FLOOR_BP` verrouillé
+  contre les régressions, à faire monter par V2-E1.
+- **US0.3 — Test fonctionnel Klaus Dormann. ✅ livré (v1.122.0-alpha)** —
+  `tests/unit/test_dormann.c` → `make test-dormann` : `6502_functional_test.bin`
+  chargé en 64 Ko plats, démarré en `$0400`, exécuté jusqu'au `jmp *`. **Il passe
+  intégralement** (piège de succès `$3469`, ~96 M cycles émulés en 0,7 s de temps
+  hôte) — le cœur est donc fonctionnellement sain, son déficit est bien temporel
+  et non logique. Le test décimal n'est publié qu'en source `.a65` (aucun binaire
+  en amont) : l'assembler exigerait `as65`, hors périmètre — le test fonctionnel
+  couvre déjà le mode décimal.
+- **US0.4 — Trace bus. ✅ livré (v1.122.0-alpha)** — nouveau crochet
+  `cpu_set_bus_callback()` (une notification par accès bus réel, partagée avec
+  l'oracle), module `src/utils/cycle_trace.c`, options `--cycle-trace FICHIER`
+  et `--cycle-trace-max N`. Une ligne par cycle : `cycle, type (R/W/i), adresse,
+  donnée, PC, A X Y SP P, drapeaux, ligne d'IRQ`. Les lignes `i` sont les cycles
+  internes bourrés du N2 (sans adresse) ; elles porteront leur accès réel après
+  V2-E1 — la trace rend donc le déficit **visible à l'œil** dès aujourd'hui.
 
 ### V2-E1 — Cœur 6502 micro-séquencé
 

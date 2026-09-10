@@ -12,6 +12,13 @@ may be used publicly; `docs/specs/V2_CYCLE_ACCURACY.md` is the V2 plan that take
 CPU/VIA/ULA/PSG to N3. The accuracy claim must always carry its `bus-` qualifier —
 `make test-docs-claims` fails on an unqualified one.
 
+The measuring instruments exist (V2-S1): `make test-cycle` replays the
+SingleStepTests/65x02 vectors and scores four separate properties (final state,
+cycle totals, bus subsequence = N2, exact bus sequence = N3); `make test-dormann`
+runs Klaus Dormann's functional test. Both SKIP when the (unvendored) vectors are
+missing — `tools/fetch_vectors.sh`. When touching the CPU core, run them: the
+oracle is what turns a timing claim into a number.
+
 ## Build Commands
 
 ```bash
@@ -45,6 +52,9 @@ make test-printer        # Printer tests
 make test-mcp40          # MCP-40 plotter tests
 make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
+make test-cycle          # Cycle-by-cycle CPU conformance oracle (SingleStepTests/65x02)
+make test-dormann        # Klaus Dormann 6502 functional test
+make fetch-vectors       # Fetch oracle vectors (third-party, not vendored, ~1GB)
 make test-profiler       # CPU profiler tests
 make test-rominfo        # ROM analysis tests
 make test-serial         # ACIA 6551 serial tests
@@ -81,7 +91,8 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 - **audio/** — AY-3-8910 PSG: 3 tone + noise + envelope, SDL2 audio callback
 - **storage/** — TAP format, Sedoric filesystem, WD1793 disk controller
 - **hostfs/** — Host filesystem sharing (--hostfs DIR), VFS abstraction layer
-- **utils/** — Logging, INI config parser, CPU trace, CPU profiler, ROM analysis
+- **utils/** — Logging, INI config parser, CPU trace, cycle trace (`--cycle-trace`,
+  fed by `cpu_set_bus_callback()`), CPU profiler, ROM analysis
 - **network/** — MJPEG cast server, CASTV2 Chromecast client (requires CAST=1)
 - **debugger.c** — Interactive REPL: breakpoints (16 max), watchpoints (8 max), step/continue, register/memory inspection
 - **savestate.c** — Binary .ost format: 10 sections (CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, META) with CRC32

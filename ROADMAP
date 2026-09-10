@@ -19,14 +19,22 @@ Objectif : passer CPU, VIA, ULA et PSG du niveau **N2/N1** au niveau **N3**
 maître `emu_cycle()`), et le **prouver** par un oracle externe cycle par cycle
 plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
 
-- [ ] **V2-E0 — Vérité de la communication + harnais d'oracle** (S0-S1)
+- [x] **V2-E0 — Vérité de la communication + harnais d'oracle** (S0-S1) — **TERMINÉ**
+      Score de référence : état final **100 %**, total de cycles **100 %**,
+      sous-séquence bus **100 %** (→ **N2 prouvé**), séquence bus exacte **44,26 %**
+      (2 440 000 cas). 5 défauts du cœur trouvés par l'oracle et corrigés (ordre
+      `JSR`, `ADC`/`SBC` décimal, `ARR` décimal, stores instables en traversée de page).
       - [x] `docs/ACCURACY.md` (échelle N1→N4, classement composant, vocabulaire autorisé)
       - [x] `docs/specs/V2_CYCLE_ACCURACY.md` (plan agile V2 complet)
       - [x] Reformulation des allégations (README, CLAUDE.md, ROADMAP, CIRRUS_OS, LOCI)
       - [x] Garde-fou anti-récidive (`tests/integration/test_docs_claims.sh`)
-      - [ ] Oracle **SingleStepTests/65x02** cycle par cycle → `make test-cycle` + score de base
-      - [ ] Tests fonctionnels Klaus Dormann → `make test-dormann`
-      - [ ] `--cycle-trace FICHIER` (une ligne par cycle : φ, addr, R/W, data, registres, IRQ/NMI)
+      - [x] Oracle **SingleStepTests/65x02** cycle par cycle → `make test-cycle`
+            (parseur maison, 64 Ko plats, 4 propriétés mesurées, JAM à part, SKIP propre)
+      - [x] Test fonctionnel Klaus Dormann → `make test-dormann` — **passe intégralement**
+            (piège `$3469`, ~96 M cycles) ; test décimal indisponible en binaire amont
+      - [x] `--cycle-trace FICHIER` + `--cycle-trace-max N` (crochet `cpu_set_bus_callback()`,
+            une ligne par cycle ; les cycles internes N2 sortent en `i`)
+      - [x] `tools/fetch_vectors.sh` / `make fetch-vectors` (vecteurs tiers non versionnés)
 - [ ] **V2-E1 — Cœur 6502 micro-séquencé** (S2-S4) : `cpu_cycle()`, accès factices
       (page-cross, `zp,X`, RMW/store `abs,X`, re-fetch de branche, pile),
       échantillonnage IRQ/NMI au cycle pénultième, drapeau I retardé, fin du bourrage

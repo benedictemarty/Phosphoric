@@ -12,12 +12,14 @@
 
 uint8_t cpu_mem_read(cpu6502_t* cpu, uint16_t addr) {
     uint8_t v = memory_read(cpu->memory, addr);
+    if (cpu->on_bus) cpu->on_bus(cpu->bus_ctx, addr, v, false);
     cpu_tick(cpu, 1);   /* one bus cycle */
     return v;
 }
 
 void cpu_mem_write(cpu6502_t* cpu, uint16_t addr, uint8_t val) {
     memory_write(cpu->memory, addr, val);
+    if (cpu->on_bus) cpu->on_bus(cpu->bus_ctx, addr, val, true);
     cpu_tick(cpu, 1);   /* one bus cycle */
 }
 

@@ -22,6 +22,12 @@ void cpu_set_cycle_callback(cpu6502_t* cpu, void (*cb)(void*, int), void* ctx) {
     cpu->cycle_ctx = ctx;
 }
 
+void cpu_set_bus_callback(cpu6502_t* cpu,
+                          void (*cb)(void*, uint16_t, uint8_t, bool), void* ctx) {
+    cpu->on_bus = cb;
+    cpu->bus_ctx = ctx;
+}
+
 void cpu_init(cpu6502_t* cpu, memory_t* memory) {
     memset(cpu, 0, sizeof(cpu6502_t));
     cpu->memory = memory;
