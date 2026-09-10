@@ -225,7 +225,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release clean tools tests test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -243,6 +243,20 @@ release: $(TARGET)
 	cp $(TARGET) $(TARGET)-release
 	strip $(TARGET)-release
 	@echo "Binaire de distribution : $(TARGET)-release ($$(stat -c%s $(TARGET)-release) o, vs $$(stat -c%s $(TARGET)) o non strippé)"
+
+# Binaire de distribution UNIQUE : une seule version « riche » au lieu d'une
+# multitude de variantes de build. TOUTES les fonctionnalités optionnelles sont
+# compilées (SDL2, CAST, HTTPAPI, MIDI, PICOTLS) ; c'est ensuite au runtime que
+# les flags CLI (--http-api, --cast, --serial midi/picowifi…) décident de ce qui
+# est actif. Link dynamique : SDL2/OpenSSL/ALSA restent des dépendances système
+# à déclarer dans le paquet (.deb/.rpm). Produit $(TARGET)-dist strippé.
+# Rappel : Linux, Windows (WIN=1) et WASM restent des cibles distinctes.
+dist:
+	$(MAKE) SDL2=1 CAST=1 HTTPAPI=1 MIDI=1 PICOTLS=1
+	cp $(TARGET) $(TARGET)-dist
+	strip $(TARGET)-dist
+	@echo "Binaire de distribution complet : $(TARGET)-dist ($$(stat -c%s $(TARGET)-dist) o)"
+	@echo "Dépendances runtime : libSDL2, libssl/libcrypto, libasound (ALSA)"
 
 tools: $(TOOLS)
 
@@ -866,6 +880,8 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all          - Build emulator (default)"
+	@echo "  dist         - Build the single all-in-one distribution binary"
+	@echo "  release      - Strip current build into a distribution copy"
 	@echo "  tools        - Build conversion tools"
 	@echo "  tests        - Build and run all tests"
 	@echo "  test-cpu     - Run CPU tests only"

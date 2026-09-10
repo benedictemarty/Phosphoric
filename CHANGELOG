@@ -139,6 +139,20 @@ réelle au niveau composant) : WD1793 FDC « cycle-accurate », écritures PSG
 timestampées digidrums, et spec ULA-NG (lecture mémoire cycle-exact). Doc seule,
 aucun changement de code ni de version.
 
+### Added — Cible `make dist` : binaire de distribution unique tout-en-un
+
+Nouvelle cible Makefile `dist` produisant **une seule version** du binaire au lieu
+de la multitude de variantes de build. Elle compile *toutes* les fonctionnalités
+optionnelles en une fois (`SDL2=1 CAST=1 HTTPAPI=1 MIDI=1 PICOTLS=1`) ; le choix
+de ce qui est actif se fait ensuite au **runtime** via les flags CLI existants
+(`--http-api`, `--cast-server`, `--serial midi/picowifi`…). Link dynamique :
+SDL2, OpenSSL (libssl/libcrypto) et ALSA (libasound) restent des dépendances
+système à déclarer côté paquet. Produit `oric1-emu-dist` strippé (~558 Ko) et
+affiche la liste des dépendances runtime. Ajoutée à `.PHONY` et au `help`.
+Rappel documenté : Linux, Windows (`WIN=1`) et WASM restent des cibles distinctes
+(pas de binaire universel multi-OS). Infra de build seulement, aucun changement
+de version.
+
 ### Added — Doc : cadres de pile GOSUB/FOR de BASIC 1.1 (`docs/BASIC_STACK_FRAMES.md`)
 
 Nouveau document de référence décrivant le format exact des cadres poussés par
