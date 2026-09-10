@@ -17,6 +17,7 @@
  */
 
 #include "memory/memory.h"
+#include "io/loci_emu.h"   /* backend co-sim : overlay ROM servi par le vrai firmware */
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -137,6 +138,17 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
             val = (uint8_t)((val & (uint8_t)~mem->stuck0) | mem->stuck1);
         mem_notify(mem, address, val, MEM_READ);
         return val;
+    }
+
+    /* Backend co-sim LOCI (--loci-emu) : le VRAI firmware RP2040 sert la ROM de
+     * boot ($C000-$FFFF) via son read-serve quand nROMDIS est actif. Priorité sur
+     * toute ROM/overlay interne → le 6502 démarre dans le menu LOCI réel. */
+    if (loci_emu_active()) {
+        uint8_t served;
+        if (loci_emu_rom_read(address, &served)) {
+            mem_notify(mem, address, served, MEM_READ);
+            return served;
+        }
     }
 
     /* ROM area: $C000-$FFFF

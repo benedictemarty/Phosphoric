@@ -9,6 +9,7 @@
  * périphériques restent découplés d'`emulator.h`. Voir docs/architecture/io-bus.md.
  */
 #include "io/io_bus.h"
+#include "io/loci_emu.h"   /* backend co-sim : API MIA $03xx servie par le vrai firmware (--loci-emu) */
 #include "emulator.h"
 
 #include <stdio.h>
@@ -36,12 +37,29 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     return false;
 }
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
-    if (loci_addr_in_mia(addr)) return loci_read(&emu->loci, addr);
+    /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
+     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core). */
+    if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
+                                                         : loci_read(&emu->loci, addr);
     if (loci_addr_in_tap(addr)) return loci_tap_read(&emu->loci, addr);
     return loci_dsk_read(&emu->loci, addr);   /* DSK (claims l'a garanti) */
 }
+/* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
+ * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
+ * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
+ * un poll de NIVEAU le manquerait (déjà retombé). L'émulateur latche chaque front
+ * montant ; on draine ces pulses ici, juste après la transaction, et on les délivre
+ * au 6502 en EDGE / TIR UNIQUE (cpu_irq_pulse) — une IRQ par pulse, sans maintien
+ * de niveau donc sans tempête. main.c draine aussi une fois par frame (filet pour
+ * les pulses hors écriture MIA, ex. trap IRQ sur bouton). */
+static void loci_emu_reflect_nirq(emulator_t* emu) {
+    int pulses = loci_emu_irq_take();
+    for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
+}
 static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    if (loci_addr_in_mia(addr))      loci_write(&emu->loci, addr, value);
+    if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
+                                                           loci_emu_reflect_nirq(emu); }
+                                  else                   loci_write(&emu->loci, addr, value); }
     else if (loci_addr_in_tap(addr)) loci_tap_write(&emu->loci, addr, value);
     else                             loci_dsk_write(&emu->loci, addr, value);  /* DSK */
     return true;
@@ -75,6 +93,13 @@ static inline bool acia_serve_lost(const emulator_t* emu) {
            !loci_mia_io_reliable(&emu->loci);
 }
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
+    /* Backend co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
+     * (oric/acia.c ↔ modem USB CDC) au lieu du 6551 comportemental. */
+    if (loci_emu_acia_active()) {
+        uint8_t v = loci_emu_acia_read(addr);
+        loci_emu_reflect_nirq(emu);
+        return v;
+    }
     /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
      * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
      * nominale déterministe. */
@@ -90,6 +115,12 @@ static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
     return acia_read(&emu->acia, addr);
 }
 static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    /* Backend co-sim (--loci-cdc) : écriture $0380-$0383 traitée par le vrai firmware. */
+    if (loci_emu_acia_active()) {
+        loci_emu_acia_write(addr, value);
+        loci_emu_reflect_nirq(emu);
+        return true;
+    }
     /* Écriture toujours fiable (write_enable_map = 0xFFFFFFFF sur le vrai LOCI) :
      * elle passe même course perdue. */
     acia_write(&emu->acia, addr, value);
@@ -99,6 +130,8 @@ static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
  * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. Modélise l'open-bus
  * SANS consommer (un observateur ne participe pas à la course PHI2 du 6502). */
 static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
+    if (loci_emu_acia_active())          /* co-sim : lecture non destructive de l'io-page */
+        return loci_emu_acia_peek(addr);
     if (acia_serve_lost(emu))
         return memory_open_bus(&emu->memory);
     return acia_peek(&emu->acia, addr);

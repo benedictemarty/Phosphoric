@@ -55,6 +55,72 @@ affichée. Ancien flux (`RUN` tapé à la main) iso : auto-RUN inhibé, pas de d
 `test-autotype` 10 → **13**. `make clean && make tests` **1000/1000**, 0 régression.
 EMU_VERSION 1.117.0 → **1.118.0-alpha**.
 
+### Added — LOCI co-sim : trace du dialogue ACIA `$0380-$0383` (`LOCI_ACIA_TRACE`)
+
+Outil de diagnostic pour le chemin ACIA co-simulé (`--loci-emu` + `--loci-cdc`).
+La variable d'environnement `LOCI_ACIA_TRACE=<fichier>` (ou `-` pour stderr)
+journalise **chaque** accès 6502 aux registres du 6551 servis par le firmware réel :
+horodatage relatif en ms, sens (R/W), registre (DATA/STAT/CMD/CTRL), valeur et ASCII.
+Reconstituer le dialogue AT complet tient alors en une ligne d'`awk`, ce qui permet de
+comparer ce que le 6502 lit avec ce que le dongle a réellement émis — et de distinguer
+un défaut de co-simulation d'un problème d'état du modem. Aucun coût quand la variable
+est absente (`src/io/loci_emu.c`).
+
+**Premier usage** — diagnostic « OricTel : écran noir après ATDT » : la trace a montré
+que la co-sim ACIA est **saine** (`ATZ`→`OK`, `ATI`, `ATDT`→`CONNECT 9600`, page
+Videotex intacte, **zéro OVRN/FE/PE**), et que l'écran noir survient quand le
+PicoWiFiModemUSB est **resté en communication** d'un lancement à l'autre : `ATZ` tombe
+alors dans le flux Videotex, OricTel ne voit pas `OK`, ne compose jamais, et décode un
+flux commencé en cours de page. Modem raccroché au préalable, la première page
+s'affiche correctement en co-sim.
+
+### Fixed — LOCI co-sim (--loci-emu) : menu figé à la sélection d'un .dsk (régression free-run tick)
+
+Dans le menu LOCI servi par le firmware co-sim, sélectionner un fichier (`.dsk`)
+**figeait** le menu : le 6502 restait bloqué dans le spin `BVC $03B1` (attente de la
+fin d'une opération MIA multi-étapes, ex. ouverture de fichier). **Cause = le
+free-run borné `loci_emu_tick()` appelé une fois par frame** (introduit avec le nIRQ
+EDGE) : avancer le firmware avec Phi2 maintenu HAUT **entre** deux transactions
+désynchronise la machine à états de service du bus au milieu d'une opération → elle
+ne se termine jamais. **Correctif** : suppression de l'appel `loci_emu_tick()` dans
+`main.c` (le firmware n'avance plus QU'EN SYNC avec les transactions bus). Le nIRQ
+**synchrone** (drainé après chaque transaction dans `io_bus.c` + par frame) reste en
+place ; conséquence assumée : pas de nIRQ purement asynchrone hors transaction.
+`loci_emu_tick()` conservée mais documentée « ne pas appeler en vol » et non appelée.
+Note connexe — **PÉRIMÉE, corrigée depuis côté `emul_lib`** (snapshot **format v3** : les
+pages flash écrites par le firmware sont incluses, `bootrom_flash_dirty_reset`) : le
+snapshot persiste bien la flash/littlefs, plus de `Corrupted dir pair` au restore.
+Vérifié le 2026-09-10 : le FS restauré contient ses fichiers (`test108k.rom` retrouvé
+dans les pages flash du `.snap`) et le menu **entre dans `0:`** sans figer. Une liste
+vide dans le navigateur n'est donc pas un défaut : le menu **filtre `.dsk`** et le FS
+interne n'en contient aucun.
+
+### Added — LOCI co-sim (--loci-emu) : nIRQ en modèle EDGE (drain synchrone après transaction)
+
+Finalisation du modèle d'interruption du backend co-sim LOCI. Le firmware RP2040
+**pulse** la ligne nIRQ (`ext_put(EXT_IRQ,true→false)`) ; un poll de niveau le
+manquerait. Modèle EDGE, **strictement synchrone des transactions bus** :
+- **io_bus.c** : draine les pulses (`loci_emu_irq_take()`) juste après chaque
+  transaction MIA → nIRQ délivrés en tir unique (`cpu_irq_pulse`) — une IRQ par
+  pulse, sans maintien de niveau donc sans tempête.
+- **main.c** : une fois par frame, draine les pulses restants (`loci_emu_irq_take`
+  → `cpu_irq_pulse`). **Pas de free-run entre transactions** : le firmware n'avance
+  qu'en sync avec le bus (un free-run avec Phi2 HAUT casse le handshake MIA — cf.
+  correctif « menu figé » ci-dessus). Conséquence : pas de nIRQ purement asynchrone.
+- **cpu6502** : `cpu_irq_pulse()` + champ `irq_pulse` (compteur saturant, consommé
+  dans `cpu_step`, remis à zéro au reset). `loci_emu_tick()` existe mais n'est PAS
+  appelée (documentée « ne pas appeler en vol »).
+
+### Fixed — Build : suites de test liées au backend co-sim LOCI
+
+`memory.c` et `io_bus.c` dépendent désormais de `loci_emu`/`op_gfx` (nouveaux
+`loci_emu.c`, `loci_gfx.c`). Les cibles de test ne les liaient pas → erreurs de
+link. Ajout d'un **stub léger** `tests/support/loci_emu_stub.c` (overlay ROM inactif)
+aux suites qui linkent `memory.c` sans avoir besoin du vrai firmware RP2040 ; les
+cibles qui exercent réellement le bus LOCI (`test-loci`, `test-loci-acia-miss`,
+`test-control-dispatch`, `test-control-queue`) lient la vraie `loci_emu.c`/`loci_gfx.c`
++ `libemul.a`. `make tests` : **1043 tests, 100 % pass**.
+
 ### Added — Doc : cadres de pile GOSUB/FOR de BASIC 1.1 (`docs/BASIC_STACK_FRAMES.md`)
 
 Nouveau document de référence décrivant le format exact des cadres poussés par

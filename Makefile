@@ -4,7 +4,9 @@
 CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
-CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include -MMD -MP
+# Émulateur RP2040 embarqué (backend --loci-emu). Chemin surchargeable.
+LOCI_EMUL_DIR ?= $(HOME)/loci/emul
+CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include -I$(LOCI_EMUL_DIR)/src -MMD -MP
 # -lpthread: control_queue (sprint 93) hands commands from producer threads
 # (e.g. the future HTTP API) to the single-threaded emulator loop. Harmless on
 # glibc >= 2.34 where pthread is folded into libc. WIN redefines LDFLAGS below
@@ -131,6 +133,7 @@ SOURCES = src/main.c \
           src/io/mea8000.c \
           src/io/loci_core.c \
           src/io/loci_gfx.c \
+          src/io/loci_emu.c \
           src/io/loci_fs.c \
           src/io/loci_bus.c \
           src/io/loci_boot.c \
@@ -226,8 +229,12 @@ DOCDIR = $(PREFIX)/share/doc/phosphoric
 
 all: $(TARGET)
 
-$(TARGET): $(OBJECTS)
-	$(CC) $(OBJECTS) $(LDFLAGS) -o $(TARGET)
+$(TARGET): $(OBJECTS) $(LOCI_EMUL_DIR)/libemul.a
+	$(CC) $(OBJECTS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -o $(TARGET)
+
+# Construit la bibliothèque de l'émulateur RP2040 si absente.
+$(LOCI_EMUL_DIR)/libemul.a:
+	$(MAKE) -C $(LOCI_EMUL_DIR) lib
 
 # Copie strippée pour la distribution (symboles retirés → binaire plus petit).
 # Produit $(TARGET)-release SANS toucher au binaire de travail $(TARGET)
@@ -269,11 +276,11 @@ dsk2hfe: tools/dsk2hfe.c
 #  TESTS
 # ═══════════════════════════════════════════════════════════════
 
-TEST_CPU_SRCS = tests/unit/test_cpu.c src/cpu/cpu6502.c src/cpu/opcodes.c \
+TEST_CPU_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu.c src/cpu/cpu6502.c src/cpu/opcodes.c \
                 src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
                 src/utils/logging.c
 
-TEST_MEM_SRCS = tests/unit/test_memory.c src/memory/memory.c \
+TEST_MEM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_memory.c src/memory/memory.c \
                 src/memory/banking.c src/utils/logging.c
 
 TEST_IO_SRCS = tests/unit/test_io.c src/io/via6522.c src/utils/logging.c
@@ -290,7 +297,7 @@ TEST_JASMIN_SRCS = tests/unit/test_jasmin.c src/io/jasmin.c src/io/microdisc.c \
                    src/storage/sedoric.c src/storage/disk.c \
                    src/storage/disk_http.c src/utils/logging.c
 
-TEST_SYSTEM_SRCS = tests/unit/test_full_system.c src/cpu/cpu6502.c \
+TEST_SYSTEM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_full_system.c src/cpu/cpu6502.c \
                    src/cpu/opcodes.c src/cpu/addressing.c src/memory/memory.c \
                    src/memory/banking.c src/io/via6522.c src/utils/logging.c
 
@@ -326,7 +333,7 @@ test-system: $(TEST_SYSTEM_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_SYSTEM_SRCS) $(LDFLAGS) -o test_system
 	@./test_system
 
-TEST_ROM_SRCS = tests/unit/test_rom.c src/cpu/cpu6502.c src/cpu/opcodes.c \
+TEST_ROM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rom.c src/cpu/cpu6502.c src/cpu/opcodes.c \
                 src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
                 src/io/via6522.c src/utils/logging.c
 
@@ -334,7 +341,7 @@ test-rom: $(TEST_ROM_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_ROM_SRCS) $(LDFLAGS) -o test_rom
 	@./test_rom
 
-TEST_VIDEO_SRCS = tests/unit/test_video.c src/video/video.c src/video/export.c \
+TEST_VIDEO_SRCS = tests/support/loci_emu_stub.c tests/unit/test_video.c src/video/video.c src/video/export.c \
                   src/video/stb_image_write_impl.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/io/via6522.c \
@@ -360,7 +367,7 @@ test-movie: $(TEST_MOVIE_SRCS)
 test-movie-replay: $(TARGET)
 	@bash tests/integration/test_movie_replay.sh
 
-TEST_GDB_SRCS = tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
+TEST_GDB_SRCS = tests/support/loci_emu_stub.c tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                 src/memory/memory.c src/memory/banking.c \
                 src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
@@ -376,7 +383,7 @@ test-audio: $(TEST_AUDIO_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_AUDIO_SRCS) $(LDFLAGS) -o test_audio
 	@./test_audio
 
-TEST_DEBUGGER_SRCS = tests/unit/test_debugger.c src/debugger.c \
+TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c src/debugger.c \
                      src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                      src/memory/memory.c src/memory/banking.c \
                      src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
@@ -393,7 +400,7 @@ test-cast: $(TEST_CAST_SRCS)
 	@$(CC) $(CFLAGS) -DHAS_CAST $(TEST_CAST_SRCS) $(LDFLAGS) -lpthread -lssl -lcrypto -o test_cast
 	@./test_cast
 
-TEST_SAVESTATE_SRCS = tests/unit/test_savestate.c src/savestate.c \
+TEST_SAVESTATE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_savestate.c src/savestate.c \
                       src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                       src/memory/memory.c src/memory/banking.c \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
@@ -405,7 +412,7 @@ test-savestate: $(TEST_SAVESTATE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_SAVESTATE_SRCS) $(LDFLAGS) -o test_savestate
 	@./test_savestate
 
-TEST_ATMOS_SRCS = tests/unit/test_atmos.c src/memory/memory.c \
+TEST_ATMOS_SRCS = tests/support/loci_emu_stub.c tests/unit/test_atmos.c src/memory/memory.c \
                   src/memory/banking.c src/utils/logging.c
 
 test-atmos: $(TEST_ATMOS_SRCS)
@@ -442,7 +449,7 @@ test-mea8000: $(TEST_MEA8000_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_MEA8000_SRCS) $(LDFLAGS) -lm -o test_mea8000
 	@./test_mea8000
 
-TEST_RENDERER_SRCS = tests/unit/test_renderer.c src/video/video.c src/video/renderer.c \
+TEST_RENDERER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_renderer.c src/video/video.c src/video/renderer.c \
                      src/io/ula_ng.c \
                      src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
@@ -457,7 +464,7 @@ test-osd: $(TEST_OSD_SRCS)
 	@./test_osd
 
 
-TEST_TRACE_SRCS = tests/unit/test_trace.c src/utils/trace.c \
+TEST_TRACE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_trace.c src/utils/trace.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c \
                   src/utils/symbols.c
@@ -466,7 +473,7 @@ test-trace: $(TEST_TRACE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_TRACE_SRCS) $(LDFLAGS) -o test_trace
 	@./test_trace
 
-TEST_PROFILER_SRCS = tests/unit/test_profiler.c src/utils/profiler.c \
+TEST_PROFILER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_profiler.c src/utils/profiler.c \
                      src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                      src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
@@ -474,7 +481,7 @@ test-profiler: $(TEST_PROFILER_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_PROFILER_SRCS) $(LDFLAGS) -o test_profiler
 	@./test_profiler
 
-TEST_ROMINFO_SRCS = tests/unit/test_rominfo.c src/utils/rominfo.c \
+TEST_ROMINFO_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rominfo.c src/utils/rominfo.c \
                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
                     src/memory/memory.c src/memory/banking.c src/utils/logging.c
 
@@ -488,8 +495,8 @@ test-symbols: $(TEST_SYMBOLS_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_SYMBOLS_SRCS) $(LDFLAGS) -o test_symbols
 	@./test_symbols
 
-TEST_LOCI_SRCS = tests/unit/test_loci.c \
-                 src/io/loci_core.c src/io/loci_fs.c \
+TEST_LOCI_SRCS = tests/support/loci_emu_stub.c tests/unit/test_loci.c \
+                 src/io/loci_core.c src/io/loci_gfx.c src/io/loci_fs.c \
                  src/io/loci_bus.c src/io/loci_boot.c src/io/loci_sdimg.c \
                  src/utils/logging.c src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c \
@@ -503,6 +510,7 @@ test-loci: $(TEST_LOCI_SRCS)
 # tout l'arbre des périphériques de page 3 est lié.
 TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/io/acia6551.c src/io/serial_backend.c src/io/smf.c \
+                 src/io/loci_emu.c src/io/loci_gfx.c \
                  src/io/loci_core.c src/io/loci_fs.c src/io/loci_bus.c \
                  src/io/loci_boot.c src/io/loci_sdimg.c \
                  src/io/microdisc.c src/io/jasmin.c src/io/mageco.c \
@@ -514,8 +522,8 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/memory/memory.c src/memory/banking.c \
                  src/utils/logging.c src/utils/netutil.c
 
-test-loci-acia-miss: $(TEST_LOCI_ACIA_MISS_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_LOCI_ACIA_MISS_SRCS) $(LDFLAGS) -lutil -o test_loci_acia_miss
+test-loci-acia-miss: $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_DIR)/libemul.a
+	@$(CC) $(CFLAGS) $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -lutil -o test_loci_acia_miss
 	@./test_loci_acia_miss
 
 TEST_LOCI_SDIMG_SRCS = tests/unit/test_loci_sdimg.c src/io/loci_sdimg.c \
@@ -604,7 +612,7 @@ test-autotype: $(TEST_AUTOTYPE_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_AUTOTYPE_SRCS) $(LDFLAGS) -o test_autotype
 	@./test_autotype
 
-TEST_COVERAGE_SRCS = tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcodes.c \
+TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcodes.c \
                      src/cpu/addressing.c src/memory/memory.c src/memory/banking.c \
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
@@ -636,15 +644,15 @@ test-control: $(TARGET)
 # Sprint 92 (Epic 1) — transport-agnostic control_dispatch via a buffer sink.
 # Links the core library objects (no main) and drives control_dispatch()
 # directly, asserting byte-exact replies + CONTINUE/RESUME/QUIT results.
-test-control-dispatch: $(LIB_OBJECTS)
-	@$(CC) $(CFLAGS) tests/unit/test_control_dispatch.c $(LIB_OBJECTS) $(LDFLAGS) -o test_control_dispatch
+test-control-dispatch: $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a
+	@$(CC) $(CFLAGS) tests/unit/test_control_dispatch.c $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -o test_control_dispatch
 	@./test_control_dispatch
 
 # Sprint 93 (Epic 2) — thread-safe command queue. Spawns producer threads that
 # submit() concurrently while a consumer thread drain()s per "frame", asserting
 # correct per-producer routing (unique addr write/read) and zero corruption.
-test-control-queue: $(LIB_OBJECTS)
-	@$(CC) $(CFLAGS) tests/unit/test_control_queue.c $(LIB_OBJECTS) $(LDFLAGS) -o test_control_queue
+test-control-queue: $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a
+	@$(CC) $(CFLAGS) tests/unit/test_control_queue.c $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -o test_control_queue
 	@./test_control_queue
 
 # Sprint 94 (Epic 3) — HTTP control API end-to-end (curl vs a live headless

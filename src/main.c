@@ -54,6 +54,7 @@
 #include "io/tape_patches.h" /* ROM CLOAD/CSAVE PC patches (ex-main.c) */
 #include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
 #include "io/loci_internal.h"  /* loci_dsk_open_web (loci-webdisk archi B) */
+#include "io/loci_emu.h"       /* backend émulation du vrai firmware RP2040 (--loci-emu) */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
@@ -540,6 +541,10 @@ static void irq_callback(bool state, void* userdata) {
  * every bus cycle it consumes, so PHI2-clocked peripherals advance in step with
  * the CPU's memory accesses instead of in one post-instruction batch. The total
  * cycles delivered per instruction equals the instruction's cycle count. */
+/* --loci-menu-at N : à N cycles, simuler l'appui bouton MENU LOCI (test headless
+ * du backend --loci-emu). 0 = désactivé. Déclenché une seule fois. */
+static uint64_t g_loci_menu_at = 0;
+
 static void cpu_cycle_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
     via_update(&emu->via, cycles);
@@ -1293,6 +1298,38 @@ static void emulator_run(emulator_t* emu) {
 
         total_executed += (uint64_t)frame_cycles;
 
+        /* LOCI co-sim (--loci-emu) — modèle EDGE : le firmware PULSE nIRQ ; l'émulateur
+         * latche chaque pulse. io_bus.c en draine juste après chaque transaction MIA
+         * (pulses SYNCHRONES). ICI, une fois par frame, on draine les pulses restants
+         * et on les délivre en EDGE / tir unique (cpu_irq_pulse) → une IRQ par pulse,
+         * sans tempête. nRESET reste piloté par le bouton MENU (ci-dessous).
+         *
+         * ⚠️ PAS de free-run borné (loci_emu_tick) ici : avancer le firmware avec Phi2
+         * maintenu HAUT ENTRE deux transactions désynchronise la machine à états de
+         * service du bus pendant une opération MIA multi-étapes (ex. ouverture de
+         * fichier à la sélection d'un .dsk) → l'opération ne se termine jamais, le 6502
+         * reste bloqué sur `BVC *` → MENU FIGÉ. Le firmware ne doit avancer QU'EN SYNC
+         * avec les transactions bus. Conséquence assumée : pas de nIRQ purement
+         * asynchrone (timers) hors transaction ; le nIRQ synchrone suffit. */
+        if (loci_emu_active()) {
+            /* Pompe l'échange modem CDC↔ACIA (RX ASYNCHRONE : octets arrivant du dongle
+             * hors accès 6502). Sûr entre transactions : acia_task (guest-call core0,
+             * borné) ne pilote PAS le bus/action-SM (≠ loci_emu_tick), il ne fait que
+             * déplacer des octets et mettre à jour l'io-page. No-op si pas de --loci-cdc. */
+            loci_emu_acia_tick();
+            int loci_irq_pulses = loci_emu_irq_take();
+            for (int i = 0; i < loci_irq_pulses; i++) cpu_irq_pulse(&emu->cpu);
+        }
+
+        /* --loci-menu-at : simuler l'appui bouton MENU LOCI puis reset (test).
+         * loci_emu_menu_button() attend la fin du boot arrière-plan si besoin. */
+        if (g_loci_menu_at && total_executed >= g_loci_menu_at) {
+            g_loci_menu_at = 0;   /* une seule fois */
+            log_info("LOCI-emu: --loci-menu-at → appui bouton MENU");
+            if (loci_emu_menu_button())
+                cpu_reset(&emu->cpu);   /* redémarre dans le menu LOCI servi */
+        }
+
         /* Headless audio sinks : render THIS frame's PSG audio ONCE via
          * ay_generate (the same routine the SDL callback uses) and feed every
          * active sink — the --audio-wav file and/or the AVI's PCM stream.
@@ -1957,6 +1994,12 @@ static void emulator_run(emulator_t* emu) {
                         log_info("LOCI: Action button released (F8%s)",
                                  longp ? ", long press" : "");
                     }
+                    /* Backend émulateur : F8 = bouton MENU LOCI → arme le service
+                     * ROM (le vrai firmware) puis reset → boot dans le menu LOCI. */
+                    if (event.key.keysym.sym == SDLK_F8 && loci_emu_active()) {
+                        if (loci_emu_menu_button())
+                            cpu_reset(&emu->cpu);
+                    }
                     if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
                         oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
                     }
@@ -2444,6 +2487,9 @@ int main(int argc, char* argv[]) {
     bool bench_mode = false;
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
+    const char* loci_emu_path = NULL;   /* --loci-emu : exécute le vrai firmware RP2040 (émulateur) */
+    const char* loci_emu_usb_image = NULL;  /* --loci-usb-image : image FAT servie comme disque USB émulé */
+    const char* loci_emu_cdc_dev = NULL;    /* --loci-cdc : dongle CDC (ex. /dev/ttyACM0) servi comme ACIA $0380 */
     const char* loci_sdimg_path = NULL;
     const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
     const char* loci_web_base = NULL;  /* Route B : racine serveur pour le device « W: Web disks » */
@@ -2645,6 +2691,10 @@ int main(int argc, char* argv[]) {
                 break;
             case OPT_LOCI: loci_enabled = true; break;
             case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
+            case OPT_LOCI_EMU: loci_emu_path = optarg; loci_enabled = true; break;
+            case OPT_LOCI_EMU_USB_IMAGE: loci_emu_usb_image = optarg; break;
+            case OPT_LOCI_EMU_CDC: loci_emu_cdc_dev = optarg; break;
+            case OPT_LOCI_MENU_AT: g_loci_menu_at = strtoull(optarg, NULL, 0); break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_LOCI_WEB: loci_web_url = optarg; loci_enabled = true; break;
             case OPT_LOCI_WEB_BASE: loci_web_base = optarg; loci_enabled = true; break;
@@ -2835,9 +2885,17 @@ int main(int argc, char* argv[]) {
          * --loci, default there so LOCI client software finds it. */
         emu.acia_base_addr = 0x0380;
         log_info("ACIA base address: $0380 (LOCI default — override with --acia-addr)");
+    } else if (loci_emu_cdc_dev) {
+        /* Co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
+         * (oric/acia.c ↔ dongle CDC) — pas de backend série comportemental. */
+        emu.acia_base_addr = 0x0380;
+        log_info("ACIA base address: $0380 (co-sim firmware via --loci-cdc %s)", loci_emu_cdc_dev);
     } else {
         emu.acia_base_addr = ACIA_DEFAULT_BASE;
     }
+    /* Co-sim (--loci-cdc) : active l'ACIA sans backend (le firmware réel la sert via
+     * loci_emu_acia_*). has_serial doit être vrai pour que le device ACIA claim $0380. */
+    if (loci_emu_cdc_dev && loci_emu_path) emu.has_serial = true;
     /* Garde-fou : sous --loci, la MIA occupe $03A0-$03BF et est routée AVANT
      * l'ACIA dans les callbacks I/O. Si l'ACIA y est forcée (--acia-addr dans
      * cette plage), la MIA la masque ET pilote le PSG/clavier → le scan clavier
@@ -3159,6 +3217,15 @@ int main(int argc, char* argv[]) {
         emu.audio_wav_fp = fp;
         emu.audio_wav_data_bytes = 0;
         log_info("Audio WAV → %s (16-bit stereo %d Hz)", audio_wav_file, AUDIO_SAMPLE_RATE);
+    }
+
+    /* --loci-emu : exécuter le VRAI firmware RP2040 dans l'émulateur (smoke test :
+     * boot + bannière). Co-sim bus non encore câblé -> le backend comportemental
+     * reste actif en parallèle pour le runtime. */
+    if (loci_emu_path) {
+        if (loci_emu_usb_image) loci_emu_set_usb_image(loci_emu_usb_image);
+        if (loci_emu_cdc_dev) loci_emu_set_cdc_device(loci_emu_cdc_dev);
+        loci_emu_start(loci_emu_path);
     }
 
     /* Enable LOCI peripheral (--loci) */

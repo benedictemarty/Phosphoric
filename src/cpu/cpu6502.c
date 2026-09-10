@@ -37,6 +37,7 @@ void cpu_reset(cpu6502_t* cpu) {
     cpu->halted = false;
     cpu->nmi_pending = false;
     cpu->irq = 0;
+    cpu->irq_pulse = 0;
 }
 
 static void handle_nmi(cpu6502_t* cpu) {
@@ -89,7 +90,8 @@ int cpu_step(cpu6502_t* cpu) {
         if (done < 7) cpu_tick(cpu, 7 - done);
         return 7;
     }
-    if (cpu->irq && !cpu_get_flag(cpu, FLAG_INTERRUPT)) {
+    if ((cpu->irq || cpu->irq_pulse) && !cpu_get_flag(cpu, FLAG_INTERRUPT)) {
+        if (cpu->irq_pulse) cpu->irq_pulse--;   /* IRQ à tir unique : consommée à la prise */
         uint64_t before = cpu->cycles;
         handle_irq(cpu);
         int done = (int)(cpu->cycles - before);
@@ -133,6 +135,10 @@ void cpu_irq_set(cpu6502_t* cpu, cpu_irq_source_t source) {
 
 void cpu_irq_clear(cpu6502_t* cpu, cpu_irq_source_t source) {
     cpu->irq &= ~(uint8_t)source;
+}
+
+void cpu_irq_pulse(cpu6502_t* cpu) {
+    if (cpu->irq_pulse < 255) cpu->irq_pulse++;   /* saturant */
 }
 
 void cpu_irq(cpu6502_t* cpu) {

@@ -47,7 +47,8 @@ typedef enum {
     IRQF_SERIAL  = 0x04,  /**< ACIA 6551 serial IRQ */
     IRQF_DTL2000 = 0x08,  /**< Digitelec DTL 2000 ACIA 6850 IRQ */
     IRQF_MAGECO  = 0x10,  /**< Mageco MIDI interface ACIA 6850 IRQ */
-    IRQF_ULANG   = 0x20   /**< ULA-NG raster IRQ (NG_RASTERLINE / NG_STATUS) */
+    IRQF_ULANG   = 0x20,  /**< ULA-NG raster IRQ (NG_RASTERLINE / NG_STATUS) */
+    IRQF_LOCI    = 0x40   /**< LOCI cartouche nIRQ (backend co-sim --loci-emu : ligne pilotée par le vrai firmware) */
 } cpu_irq_source_t;
 
 /**
@@ -67,6 +68,9 @@ typedef struct {
     bool     halted;        /**< CPU halted flag */
     bool     nmi_pending;   /**< Non-Maskable Interrupt pending */
     uint8_t  irq;           /**< IRQ source bitfield (level-triggered) */
+    uint8_t  irq_pulse;     /**< IRQ à tir unique en attente (edge/pulse) : décrémenté à la prise.
+                                 Pour les sources qui PULSENT la ligne (ex. LOCI nIRQ) — une IRQ
+                                 par pulse, sans maintien de niveau (pas de tempête). */
 
     memory_t* memory;       /**< Pointer to memory subsystem */
 
@@ -172,6 +176,18 @@ void cpu_irq_set(cpu6502_t* cpu, cpu_irq_source_t source);
  * @param source IRQ source flag to clear
  */
 void cpu_irq_clear(cpu6502_t* cpu, cpu_irq_source_t source);
+
+/**
+ * @brief Met en attente une IRQ à TIR UNIQUE (pulse/edge)
+ *
+ * Pour les sources qui PULSENT physiquement la ligne nIRQ (le firmware LOCI :
+ * ext_put(EXT_IRQ,true) puis false) : une IRQ sera prise dès que le drapeau I est
+ * bas, PUIS l'attente est consommée (pas de maintien de niveau → pas de tempête).
+ * Compteur saturant (plusieurs pulses → plusieurs IRQ).
+ *
+ * @param cpu Pointeur sur la structure CPU
+ */
+void cpu_irq_pulse(cpu6502_t* cpu);
 
 /**
  * @brief Trigger IRQ (legacy edge-triggered, deprecated)
