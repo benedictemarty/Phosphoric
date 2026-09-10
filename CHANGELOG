@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `--type-keys` n'annule plus l'auto-RUN du fast-load
+
+Après un fast-load `-f` d'un programme BASIC, la phase 2 tape `RUN` automatiquement.
+Cet auto-RUN était supprimé dès qu'un **quelconque** `--type-keys` figurait sur la
+ligne de commande (`!emu->type_keys_text`), en supposant que l'utilisateur pilotait
+lui-même le démarrage. L'hypothèse est fausse pour le cas courant de l'automatisation
+des **menus** d'un programme : des touches programmées des dizaines de millions de
+cycles plus tard annulaient l'auto-RUN, le programme était injecté en RAM mais jamais
+lancé, et la machine restait au prompt BASIC où les touches injectées se contentaient
+de s'afficher — symptôme facilement pris pour « le programme est reparti au BASIC ».
+
+L'arbitrage devient **temporel** (`autotype_autorun_allowed()`, `include/io/autotype.h`) :
+l'auto-RUN n'est inhibé que si la prochaine frappe utilisateur tombe **dans la fenêtre
+de l'auto-RUN** (`AUTOTYPE_AUTORUN_DELAY_CYCLES` + `AUTOTYPE_AUTORUN_TYPING_CYCLES`,
+soit ~10 + ~30 trames) — c'est-à-dire quand l'utilisateur pilote réellement le boot
+(il tape son propre `RUN`, un `CLOAD`…). Une frappe plus tardive laisse l'auto-RUN se
+faire, puis la file `--type-keys` se rejoue **dans l'ordre derrière lui** (l'entrée
+active non entamée est rendue à la file). Le journal indique lequel des deux cas
+s'applique.
+
+Diagnostiqué sur OricTel (terminal Minitel, scanner clavier maison via VIA/PSG) : le
+scanner du programme recevait parfaitement les touches (~48 000 lectures de Port B sur
+25 M cycles, `reg7=$7F`, balayage 7→0 — vérifié avec `--kbd-scan-trace`), seul l'auto-RUN
+manquait. **Validé de bout en bout** : `--type-keys` sur les seuls menus → accueil →
+écran Interface série → mode Modem AT → connexion réelle à PAVI 3617, page Télétel
+affichée. Ancien flux (`RUN` tapé à la main) iso : auto-RUN inhibé, pas de double-RUN.
+
+`test-autotype` 10 → **13**. `make clean && make tests` **1000/1000**, 0 régression.
+EMU_VERSION 1.117.0 → **1.118.0-alpha**.
+
 ### Added — Doc : cadres de pile GOSUB/FOR de BASIC 1.1 (`docs/BASIC_STACK_FRAMES.md`)
 
 Nouveau document de référence décrivant le format exact des cadres poussés par

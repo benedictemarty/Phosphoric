@@ -108,6 +108,32 @@ TEST(test_gate_watchdog_breaks_stall) {
                  next + AUTOTYPE_WATCHDOG_CYCLES, next, last, last));
 }
 
+/* ---- autotype_autorun_allowed ------------------------------------------- */
+
+/* No user keystrokes at all: the fast-load auto-RUN always fires. */
+TEST(test_autorun_allowed_without_user_keys) {
+    ASSERT_TRUE(autotype_autorun_allowed(-1, 1000000));
+}
+
+/* Keys aimed at the program's menus (scheduled well after the auto-RUN
+ * window) must NOT cancel the auto-RUN — the regression this fixes. */
+TEST(test_autorun_allowed_when_user_keys_come_later) {
+    int64_t end = 5000000 + AUTOTYPE_AUTORUN_DELAY_CYCLES
+                          + AUTOTYPE_AUTORUN_TYPING_CYCLES;
+    ASSERT_TRUE(autotype_autorun_allowed(20000000, end));
+    ASSERT_TRUE(autotype_autorun_allowed(end, end));  /* boundary: allowed */
+}
+
+/* The user drives the boot themselves (typing inside the window): the
+ * auto-RUN stands down so the two never fight over the matrix. */
+TEST(test_autorun_suppressed_when_user_types_in_window) {
+    int64_t end = 5000000 + AUTOTYPE_AUTORUN_DELAY_CYCLES
+                          + AUTOTYPE_AUTORUN_TYPING_CYCLES;
+    ASSERT_FALSE(autotype_autorun_allowed(end - 1, end));
+    ASSERT_FALSE(autotype_autorun_allowed(0, end));        /* typed at boot */
+    ASSERT_FALSE(autotype_autorun_allowed(5200000, end));  /* own RUN */
+}
+
 int main(void) {
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("  Auto-type scan-driven pacing tests\n");
@@ -126,6 +152,11 @@ int main(void) {
     RUN(test_gate_waits_for_scan_passes);
     RUN(test_gate_loci_bypasses_passes);
     RUN(test_gate_watchdog_breaks_stall);
+
+    printf("\n  autotype_autorun_allowed — fast-load auto-RUN arbitration:\n");
+    RUN(test_autorun_allowed_without_user_keys);
+    RUN(test_autorun_allowed_when_user_keys_come_later);
+    RUN(test_autorun_suppressed_when_user_types_in_window);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

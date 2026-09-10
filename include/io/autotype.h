@@ -82,4 +82,43 @@ static inline bool autotype_should_fire(bool loci_hid,
     return cycles >= next_cycle + AUTOTYPE_WATCHDOG_CYCLES;
 }
 
+/* ---- Fast-load auto-RUN arbitration ------------------------------------- *
+ *
+ * After a `-f` fast-load of a BASIC program, phase 2 auto-types "RUN\n" so
+ * the program actually starts. Historically that was skipped as soon as ANY
+ * --type-keys was passed on the command line, on the assumption that the user
+ * was driving the boot themselves. That assumption is wrong for the common
+ * case of automating a program's *menus*: keystrokes scheduled tens of
+ * millions of cycles later silently cancelled the auto-RUN, so the program
+ * was injected into RAM but never started and the machine sat at the BASIC
+ * prompt — where the injected keys merely echoed (a symptom easily misread as
+ * "the program crashed back to BASIC").
+ *
+ * The arbitration is now temporal: the auto-RUN is suppressed only when the
+ * user's own typing would collide with it, i.e. when the next scheduled
+ * keystroke falls inside the auto-RUN window. Later keystrokes let the
+ * auto-RUN proceed and then replay in order behind it.
+ */
+
+/** Delay between phase 2 firing and the auto-RUN's first keystroke. */
+#define AUTOTYPE_AUTORUN_DELAY_CYCLES (10 * 19968)
+
+/** Budget for typing "RUN\n": 4 keys at ~4 frames each, plus margin. */
+#define AUTOTYPE_AUTORUN_TYPING_CYCLES (30 * 19968)
+
+/**
+ * @brief Decide whether the fast-load auto-RUN may be armed.
+ *
+ * @param next_user_at Cycle of the next user keystroke still to come, or a
+ *                     negative value when the user scheduled none.
+ * @param autorun_end  Cycle by which the auto-RUN's own typing is finished.
+ * @return true if arming the auto-RUN cannot collide with the user's keys.
+ */
+static inline bool autotype_autorun_allowed(int64_t next_user_at,
+                                            int64_t autorun_end) {
+    if (next_user_at < 0)
+        return true;              /* no user keys at all — always auto-RUN */
+    return next_user_at >= autorun_end;
+}
+
 #endif /* AUTOTYPE_H */

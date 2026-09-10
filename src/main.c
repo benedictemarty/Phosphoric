@@ -1397,14 +1397,48 @@ static void emulator_run(emulator_t* emu) {
          * stable (~5M cycles, ROM in READY idle loop). Cf. rapport
          * docs/phosphoric-autorun-timing.md de l'équipe Asteroids. */
         if (emu->fastload_autoexec_pending && total_executed > 5000000) {
-            if (emu->fastload_type == 0x00 && !emu->type_keys_text) {
+            /* Le --type-keys de l'utilisateur ne neutralise l'auto-RUN que
+             * s'il tape *pendant* la fenêtre de l'auto-RUN (il pilote alors
+             * le boot lui-même). Une frappe programmée plus tard vise les
+             * menus du programme : l'auto-RUN doit avoir lieu, puis la file
+             * de frappes se rejoue derrière (cf. include/io/autotype.h). */
+            int64_t autorun_at = (int64_t)total_executed + AUTOTYPE_AUTORUN_DELAY_CYCLES;
+            int64_t autorun_end = autorun_at + AUTOTYPE_AUTORUN_TYPING_CYCLES;
+            int64_t next_user_at = -1;
+            bool user_entry_pristine = false;
+            if (emu->type_keys_text && !emu->type_keys_done) {
+                next_user_at = emu->type_keys_at;
+                /* Entrée active pas encore entamée : on peut la rendre à la
+                 * file pour la rejouer après l'auto-RUN. */
+                user_entry_pristine = (emu->type_keys_idx == 0 &&
+                                       emu->type_keys_seq_idx > 0);
+            } else if (emu->type_keys_seq_idx < emu->type_keys_seq_count) {
+                next_user_at = emu->type_keys_seq[emu->type_keys_seq_idx].at;
+            }
+
+            if (emu->fastload_type == 0x00 &&
+                autotype_autorun_allowed(next_user_at, autorun_end)) {
+                if (user_entry_pristine)
+                    emu->type_keys_seq_idx--;  /* rendue à la file */
                 emu->type_keys_text = "RUN\\n";
-                emu->type_keys_at = (int64_t)total_executed + CYCLES_PER_FRAME * 10;
+                emu->type_keys_loci_hid = false;
+                emu->type_keys_at = autorun_at;
                 emu->type_keys_idx = 0;
                 emu->type_keys_next_cycle = emu->type_keys_at;
                 emu->type_keys_done = false;
                 emu->type_keys_last_char = 0;
-                log_info("Auto-typing RUN after fast-load (phase 2)");
+                emu->type_keys_debounce = 0;
+                emu->type_keys_last_pass = emu->kbd_scan_passes;
+                if (next_user_at >= 0)
+                    log_info("Auto-typing RUN after fast-load (phase 2) — "
+                             "%d frappe(s) utilisateur rejouée(s) ensuite",
+                             emu->type_keys_seq_count - emu->type_keys_seq_idx);
+                else
+                    log_info("Auto-typing RUN after fast-load (phase 2)");
+            } else if (emu->fastload_type == 0x00) {
+                log_info("Auto-RUN inhibé : --type-keys programmé à %lld cycles, "
+                         "dans la fenêtre de l'auto-RUN (fin %lld)",
+                         (long long)next_user_at, (long long)autorun_end);
             } else if (emu->fastload_type == 0x80 &&
                        (emu->fastload_auto_run & 0x80)) {
                 emu->cpu.PC = emu->fastload_addr;

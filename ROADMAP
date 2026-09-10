@@ -194,6 +194,29 @@ Spec entièrement fondée sur Oricutron (`disk.c`/`machine.c`/`8912.c`/`jasmin.s
 
 ---
 
+## Automatisation clavier : auto-RUN du fast-load vs `--type-keys` — v1.118.0-alpha
+
+Signalé en pilotant OricTel headless : dès la première touche injectée, la machine
+« repartait au BASIC ». Diagnostic mené avec `--kbd-scan-trace` et `--trace-ring`.
+- [x] Réfuter la cause supposée (« `--type-keys` alimente la ROM, pas la matrice ») :
+      l'injection passe par `oric_keyboard_press_char()` → `keyboard.matrix[]`, lue
+      par `portb_read_callback` (VIA PB3) — le même chemin qu'un scanner maison ; le
+      pacing est même **piloté par le scan réel** (`autotype.h`).
+- [x] Mesurer : OricTel scanne bien (~48 k lectures Port B / 25 M cycles, `reg7=$7F`,
+      balayage 7→0) ; la trace CPU montre la boucle READY BASIC **avant** l'injection.
+- [x] Cause racine : l'auto-RUN de la phase 2 du fast-load était inhibé par
+      `!emu->type_keys_text`, donc par **tout** `--type-keys`, même très tardif →
+      programme injecté mais jamais lancé.
+- [x] Correctif : arbitrage temporel `autotype_autorun_allowed()` — inhibition
+      seulement si la prochaine frappe tombe dans la fenêtre de l'auto-RUN ; sinon
+      auto-RUN puis rejeu ordonné de la file `--type-keys`.
+- [x] `test-autotype` 10 → 13 ; `make clean && make tests` 1000/1000.
+- [x] Validé e2e sur OricTel : menus pilotés au clavier → connexion réelle PAVI 3617.
+- [ ] Backlog : appliquer le même arbitrage à l'auto-`CLOAD""` (tape sans `-f`), dont
+      la fenêtre est bien plus difficile à borner (durée de chargement variable).
+
+---
+
 ## Correctif cross-build Windows (CI `windows-build`) — v1.107.4-alpha
 
 Branche `feature/windows-port`. La CI Windows (cross-build MinGW-w64) était en
