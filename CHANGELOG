@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — rectification des allégations de précision + plan V2 (V2-S0)
+
+Le projet a communiqué « cycle-accurate » alors que l'implémentation ne l'est pas
+au sens strict. Audit du cœur et des périphériques, puis mise en conformité du
+discours et ouverture de la **V2** qui comblera l'écart.
+
+**Constat (docs/ACCURACY.md, échelle N1→N4)** : le CPU est **N2** (ordonné au
+cycle bus — totaux exacts par opcode, accès bus au bon cycle intra-instruction,
+mais cycles internes bourrés en fin d'instruction, **accès factices absents**
+(page-cross indexé, `zp,X`, RMW/store `abs,X`, re-fetch de branche) et IRQ
+échantillonnée aux frontières d'instruction au lieu du cycle pénultième). Le VIA
+reçoit des **paquets** de cycles (`via_update(n)`). L'ULA est **N1 (ligne)** :
+scanline de 64 cycles échantillonnée à un instant unique, pas de fetch octet par
+cycle, 224 lignes sur 312. Le PSG est **N1 (échantillon)** : machine d'état
+cadencée à 44,1 kHz au lieu de `horloge/16` = 62,5 kHz. Le FDC utilise des
+délais forfaitaires. Seul le bus d'extension LOCI est réellement sous-cycle
+(Épic B, grille 30 sous-ticks φ2).
+
+- **`docs/ACCURACY.md`** (nouveau) : échelle N1→N4 avec définition **opérationnelle**
+  et test de preuve pour chaque niveau, classement composant par composant, et
+  **vocabulaire autorisé** (« précis au cycle bus » oui, « cycle-accurate » nu non)
+  avec le critère unique de bascule : `make test-cycle` vert.
+- **`docs/specs/V2_CYCLE_ACCURACY.md`** (nouveau) : plan agile V2 complet —
+  architecture cible (horloge maître `emu_cycle()`, ordre intra-cycle φ1 ULA /
+  φ2 CPU / fronts, cœur 6502 micro-séquencé), 9 épics (V2-E0 à V2-E8), 27 user
+  stories avec critères d'acceptation, 12 sprints, risques et parades,
+  Definition of Done.
+- **Allégations corrigées** : `README.md`, `CLAUDE.md`, `ROADMAP` (vision +
+  *Success Metrics* : la coche « Cycle-accurate timing » devient « N2 atteint,
+  N3 = périmètre V2 »), en-tête `CIRRUS_OS`, en-tête `include/cpu/cpu6502.h`, et
+  les deux « WD1793 cycle-accurate » (`README.md`, `include/io/loci.h`) qui
+  désignaient en fait un FDC *cadencé* en cycles sur image plate.
+  Les journaux historiques (sprints du ROADMAP, `docs/CR/**`) ne sont pas réécrits.
+- **Épic V2 ajouté au ROADMAP** avec les 4 premières tâches de V2-E0 cochées.
+- **Garde-fou anti-récidive** : `tests/integration/test_docs_claims.sh` +
+  cible `make test-docs-claims` (dans `make tests`) — échoue si
+  « cycle-accurate » réapparaît sans son qualificatif « bus- » dans un document
+  de vitrine, et vérifie que le plan V2 reste référencé par le ROADMAP. Validé
+  par violation volontaire (ajout d'une ligne au README → échec nommant la ligne).
+
+Aucun changement de comportement de l'émulateur : ce sprint ne touche que la
+documentation, l'en-tête de deux fichiers et la suite de tests.
+`make clean && make tests` **1007/1007** (1001 → +6, 0 régression).
+EMU_VERSION 1.120.0 → **1.121.0-alpha**.
+
 ### Added — clavier LOCI en co-simulation + routage HID unifié
 
 Complète la souris (v1.119.0) : le clavier HID passe lui aussi au firmware

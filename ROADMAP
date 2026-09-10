@@ -1,8 +1,54 @@
 # ROADMAP - Phosphoric
 
 ## Vision
-Phosphoric: create a cycle-accurate ORIC-1/Atmos emulator in C with modern features
-including host filesystem sharing and conversion tools for legacy BASIC/machine code programs.
+Phosphoric: create an ORIC-1/Atmos emulator in C with modern features including host
+filesystem sharing and conversion tools for legacy BASIC/machine code programs.
+
+Précision temporelle : niveau **N2** (ordonné au cycle bus) aujourd'hui — voir
+`docs/ACCURACY.md` pour l'échelle N1→N4 et le classement composant par composant.
+Le niveau **N3** (pas-à-pas au cycle, vérifié contre un oracle externe) est
+l'objectif de la **V2** : plan complet dans `docs/specs/V2_CYCLE_ACCURACY.md`.
+
+---
+
+## Épic V2 — Précision au cycle réelle (release 2.0.0)
+
+Plan complet : `docs/specs/V2_CYCLE_ACCURACY.md` · État des lieux : `docs/ACCURACY.md`.
+Objectif : passer CPU, VIA, ULA et PSG du niveau **N2/N1** au niveau **N3**
+(pas-à-pas au cycle, tous les composants avançant en verrou sur une horloge
+maître `emu_cycle()`), et le **prouver** par un oracle externe cycle par cycle
+plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
+
+- [ ] **V2-E0 — Vérité de la communication + harnais d'oracle** (S0-S1)
+      - [x] `docs/ACCURACY.md` (échelle N1→N4, classement composant, vocabulaire autorisé)
+      - [x] `docs/specs/V2_CYCLE_ACCURACY.md` (plan agile V2 complet)
+      - [x] Reformulation des allégations (README, CLAUDE.md, ROADMAP, CIRRUS_OS, LOCI)
+      - [x] Garde-fou anti-récidive (`tests/integration/test_docs_claims.sh`)
+      - [ ] Oracle **SingleStepTests/65x02** cycle par cycle → `make test-cycle` + score de base
+      - [ ] Tests fonctionnels Klaus Dormann → `make test-dormann`
+      - [ ] `--cycle-trace FICHIER` (une ligne par cycle : φ, addr, R/W, data, registres, IRQ/NMI)
+- [ ] **V2-E1 — Cœur 6502 micro-séquencé** (S2-S4) : `cpu_cycle()`, accès factices
+      (page-cross, `zp,X`, RMW/store `abs,X`, re-fetch de branche, pile),
+      échantillonnage IRQ/NMI au cycle pénultième, drapeau I retardé, fin du bourrage
+- [ ] **V2-E2 — Horloge maître & ordonnancement** (S4-S5) : `emu_cycle()`, ordre
+      intra-cycle figé (φ1 ULA / φ2 CPU / fronts périphériques), fin des paquets
+      `via_update(n)` / `io_bus_tick(n)`, jonction avec l'Épic B (30 sous-ticks φ2)
+- [ ] **V2-E3 — VIA 6522 au cycle** (S5-S6) : pas d'un cycle, timings d'arête IFR/PB7,
+      vecteurs de chronogrammes datasheet
+- [ ] **V2-E4 — ULA vidéo au cycle** (S6-S8) : balayage 312×64 complet (bordure,
+      blanking), **fetch octet par cycle**, attributs latchés au fetch, corpus de
+      référence incluant une démo à split raster
+- [ ] **V2-E5 — PSG AY-3-8910 à `horloge/16`** (S8-S9) : 62,5 kHz, LFSR 17 bits réel,
+      enveloppe `horloge/256`, rééchantillonnage filtré vers 44,1 kHz, contrôle spectral
+- [ ] **V2-E6 — Cassette & FDC dérivés du temps réel** (S9-S10) : bande au signal par
+      défaut, DRQ/INTRQ dérivés de la rotation (LOST DATA possible), piste MFM optionnelle
+- [ ] **V2-E7 — Perf, savestate, non-régression, CI** (transverse) : `make bench`
+      bloquant (≤ 5 % du budget trame), `.ost` v2 (reprise en milieu d'instruction,
+      lecture des `.ost` 1.x), corpus des 41 programmes rejoué à chaque fin d'épic
+- [ ] **V2-E8 — Documentation, communication, release 2.0.0** (S11)
+
+**Jalons de vocabulaire** : « CPU exact au cycle » autorisé à la fin de V2-S4
+(oracle 65x02 vert) ; « émulateur exact au cycle » à la fin de V2-S8.
 
 ---
 
@@ -4343,7 +4389,9 @@ activées par défaut, clairement signalées dans l'aide CLI.
 
 ### Technical
 - [x] 100% CPU instruction compatibility (256/256 opcodes : 151 officiels + 105 illégaux NMOS)
-- [x] Cycle-accurate timing
+- [~] Timing : niveau N2 (ordonné au cycle bus) atteint et documenté ; le niveau
+      N3 (pas-à-pas au cycle, oracle 65x02) est le périmètre de la V2 —
+      `docs/ACCURACY.md`, `docs/specs/V2_CYCLE_ACCURACY.md`
 - [x] 100% game compatibility (41/41 programs tested: 26 TAP + 11 DSK + 4 demos)
 - [x] Code coverage measured: 72.2% global, 78.9% excluding interactive REPL
 - [x] <5% CPU overhead on modern hardware — mesuré sprint 36a : ~1% overhead réel (201 µs / 20000 µs frame budget, basic-idle). Voir `make bench`.

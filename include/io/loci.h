@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "storage/disk.h"   /* fdc_t — WD1793 cycle-accurate (Sprint 34aw) */
+#include "storage/disk.h"   /* fdc_t — WD1793 cadencé en cycles (Sprint 34aw) */
 
 /* MIA bus range — the API surface lives in this 32-byte window. */
 #define LOCI_MIA_BASE   0x03A0
@@ -345,7 +345,7 @@ typedef struct loci_s {
     uint8_t  dsk_ctrl;         /* $0314 — last write */
     uint8_t  dsk_drq;          /* $0318 — current DRQ flag byte */
     /* Sprint 34aw : real WD1793 backed by the shared fdc_t module. */
-    fdc_t    dsk_fdc;          /* cycle-accurate WD1793 (src/storage/disk.c) */
+    fdc_t    dsk_fdc;          /* WD1793 cadencé en cycles (src/storage/disk.c) */
     uint8_t* dsk_image[4];     /* raw .DSK bytes per drive (NULL = unmounted) */
     uint32_t dsk_image_size[4];/* size in bytes per drive */
     uint8_t  dsk_tracks[4];    /* derived from DSK header (default 41) */

@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phosphoric** — Bus-cycle-accurate ORIC-1/Atmos emulator written in C11 (exact per-opcode cycle counts and bus accesses clocked at the right cycle; internal non-bus cycles are reconciled by end-of-instruction padding, not micro-cycle stepped; IRQs sampled at instruction boundaries). Emulates the complete ORIC 8-bit computer (1983): MOS 6502 CPU, 64KB memory with ROM/RAM banking, VIA 6522, AY-3-8910 PSG audio, ULA video (text 40x28 + HIRES 240x200), Microdisc WD1793 FDC, and cassette TAP format. Supports both ORIC-1 (BASIC 1.0) and Atmos (BASIC 1.1) with ROM auto-detection. Optional SDL2 for display/audio/input.
 
+**Accuracy level: N2 (bus-cycle ordered), not N3 (cycle-stepped).** `docs/ACCURACY.md`
+holds the N1→N4 scale, the per-component classification, and the only wording that
+may be used publicly; `docs/specs/V2_CYCLE_ACCURACY.md` is the V2 plan that takes
+CPU/VIA/ULA/PSG to N3. The accuracy claim must always carry its `bus-` qualifier —
+`make test-docs-claims` fails on an unqualified one.
+
 ## Build Commands
 
 ```bash

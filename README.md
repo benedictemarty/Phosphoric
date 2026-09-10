@@ -1,6 +1,10 @@
 # Phosphoric
 
-A bus-cycle-accurate ORIC-1 / Atmos emulator written in C11.
+An ORIC-1 / Atmos emulator written in C11, **bus-cycle ordered** (level N2 :
+exact per-opcode cycle totals, bus accesses emitted at the right intra-instruction
+cycle). It is **not** cycle-stepped: see [docs/ACCURACY.md](docs/ACCURACY.md) for
+the precise scale and what each component actually does — true cycle stepping is
+the scope of [V2](docs/specs/V2_CYCLE_ACCURACY.md).
 
 **Version: 1.110.0-alpha** | **1043 tests, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
@@ -52,7 +56,7 @@ make SDL2=1
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
 - **Mageco / ORICON MIDI** — MC6850 ACIA driving the MIDI DIN sockets (31250 baud 8-N-1, forum t=2525). Two designs from the thread: the original **Mageco** card at $03FE-$03FF (`--mageco`) and the modern **ORICON** reboot at $031C-$031D + clock generator $031E-$031F, LOCI-compatible (`--oricon`). Capture/replay the raw MIDI stream with `--mageco file:in[:out]`; play a Standard MIDI File **into** the Oric with `--mageco smf:song.mid[:loop]` (timed MIDI IN at the song's tempo); or — in a `MIDI=1` build — `--mageco midi[:TARGET]` opens a live host MIDI port (ALSA "Phosphoric MIDI" on Linux, CoreMIDI on macOS, WinMM on Windows) so the emulated Oric drives FluidSynth/a DAW and a MIDI keyboard plays into the Oric. The byte stream matches a real Oric+Mageco card through a USB-MIDI interface
 - **PicoWiFiModemUSB** — Émulation du modem WiFi de sodiumlb (Pico W, USB CDC ↔ WiFi) exposé par LOCI comme ACIA à $0380. Jeu de commandes AT v0.1.0 complet (`--serial picowifi[:SSID[:PASS]]`). WiFi simulé, connexions de données en TCP réel.
-- **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 36/36 API ops (ABI errno FatFS 32+FRESULT, dir fd 64+, xstack 512 conformes firmware), USB HID, WD1793 cycle-accurate, FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). **Bouton Action (F8)** : appui court → snapshot de session + menu LOCI (locirom v0.3.0, version FW et timings patchés dans la ROM comme le vrai firmware), entrée *resume* du menu → retour à la session ; **appui long (≥ 2 s) → diag ROM de Mike Brown** (test108k). **Liste des périphériques** dans le navigateur du menu (« 0: Internal storage », clé USB, picowifi « CDC modem mounted ») et **vraies clés USB du host** servies à l'Oric (`--loci-usb DIR`, auto-détection /media/$USER, chemins volume `N:`). Timing bus MIA réglable (`MAP_TUNE_*`, balayage `ADJ_SCAN` visible en direct). Boote Sedoric V4 master complet via le firmware LOCI. Voir [docs/loci.md](docs/loci.md).
+- **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 36/36 API ops (ABI errno FatFS 32+FRESULT, dir fd 64+, xstack 512 conformes firmware), USB HID, WD1793 cadencé en cycles (modèle image plate), FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). **Bouton Action (F8)** : appui court → snapshot de session + menu LOCI (locirom v0.3.0, version FW et timings patchés dans la ROM comme le vrai firmware), entrée *resume* du menu → retour à la session ; **appui long (≥ 2 s) → diag ROM de Mike Brown** (test108k). **Liste des périphériques** dans le navigateur du menu (« 0: Internal storage », clé USB, picowifi « CDC modem mounted ») et **vraies clés USB du host** servies à l'Oric (`--loci-usb DIR`, auto-détection /media/$USER, chemins volume `N:`). Timing bus MIA réglable (`MAP_TUNE_*`, balayage `ADJ_SCAN` visible en direct). Boote Sedoric V4 master complet via le firmware LOCI. Voir [docs/loci.md](docs/loci.md).
 
 ### ORIC-1 & Atmos Support
 - **ROM auto-detection** — Detects BASIC 1.0 (ORIC-1) or 1.1 (Atmos) from ROM header

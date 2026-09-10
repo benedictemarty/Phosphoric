@@ -12,6 +12,11 @@
  * writes at the correct intra-instruction cycle). Internal non-bus cycles are
  * reconciled by padding at the end of each instruction rather than stepped
  * micro-cycle by micro-cycle; IRQs are sampled at instruction boundaries.
+ *
+ * Accuracy level: N2 (bus-cycle ordered), NOT N3 (cycle-stepped). See
+ * docs/ACCURACY.md for the scale and the exact list of what is missing
+ * (dummy accesses, penultimate-cycle IRQ sampling, delayed I flag);
+ * docs/specs/V2_CYCLE_ACCURACY.md is the plan that closes that gap.
  */
 
 #ifndef CPU6502_H
