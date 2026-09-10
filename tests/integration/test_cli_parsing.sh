@@ -390,6 +390,30 @@ else
     note_fail "--trace-max did not keep the boot head"
 fi
 
+# --- Couverture de --help ------------------------------------------------
+# Toute option longue déclarée dans cli_options.h doit apparaître dans l'aide.
+# Sans ce garde-fou, une option livrée mais non documentée est invisible : un
+# utilisateur qui ne la voit pas dans --help en conclut qu'elle manque à son
+# build (cas vécu : --loci-emu/--loci-cdc, pourtant fonctionnelles).
+OPTS_H="$(dirname "$0")/../../include/cli/cli_options.h"
+USAGE_C="$(dirname "$0")/../../src/cli/cli_usage.c"
+if [ -r "$OPTS_H" ] && [ -r "$USAGE_C" ]; then
+    undocumented=""
+    while read -r opt; do
+        [ -n "$opt" ] || continue
+        grep -q -- "--$opt" "$USAGE_C" || undocumented="$undocumented --$opt"
+    done <<EOF
+$(grep -oE '^[[:space:]]*\{"[a-z0-9-]+"' "$OPTS_H" | grep -oE '"[a-z0-9-]+"' | tr -d '"')
+EOF
+    if [ -z "$undocumented" ]; then
+        note_pass "every long option in cli_options.h is documented in --help"
+    else
+        note_fail "options missing from --help:$undocumented"
+    fi
+else
+    note_fail "cli option coverage: source files not readable"
+fi
+
 echo ""
 echo "  Results: $pass passed, $fail failed (total: $((pass + fail)))"
 [ "$fail" -eq 0 ]

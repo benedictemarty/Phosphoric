@@ -214,6 +214,10 @@ Signalé en pilotant OricTel headless : dès la première touche injectée, la m
 - [x] Validé e2e sur OricTel : menus pilotés au clavier → connexion réelle PAVI 3617.
 - [ ] Backlog : appliquer le même arbitrage à l'auto-`CLOAD""` (tape sans `-f`), dont
       la fenêtre est bien plus difficile à borner (durée de chargement variable).
+- [x] **v1.118.1** — 5 options livrées mais absentes de `--help` (`--loci-emu`,
+      `--loci-usb-image`, `--loci-cdc`, `--loci-menu-at`, `--tape-signal-free`)
+      documentées ; garde-fou `test_cli_parsing.sh` : toute option longue de
+      `cli_options.h` doit figurer dans `cli_usage.c` (82 → 83).
 
 ---
 

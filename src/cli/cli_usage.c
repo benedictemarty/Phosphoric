@@ -19,6 +19,8 @@ void cli_print_usage(const char* program_name) {
     printf("  -t, --tape FILE            Load .TAP tape file\n");
     printf("      --tape-signal          Signal-level tape (VIA CB1 waveform, real ROM\n");
     printf("                             read) — for custom/protected loaders; excludes -f\n");
+    printf("      --tape-signal-free     Comme --tape-signal, mais le moteur est piloté par\n");
+    printf("                             ORB PB6 (free-gate) — loaders clean-room sans ROM\n");
     printf("      --tape-out-capture FILE Capture CSAVE waveform (PB7/Timer1) and decode\n");
     printf("                             it to a .TAP (voie A CSAVE; disables CSAVE hooks)\n");
     printf("  -d, --disk FILE            Load .DSK disk file in drive A\n");
@@ -170,6 +172,13 @@ void cli_print_usage(const char* program_name) {
     printf("      --loci-irq-latency US LOCI I2C IRQ transport cost: defer each ACIA /IRQ\n");
     printf("                            by US microseconds (e.g. 10000 → ~100 B/s IRQ-driven\n");
     printf("                            RX cap; polling stays fast). LOCI-context only.\n");
+    printf("      --loci-emu FILE       Co-simulation : exécute le VRAI firmware LOCI\n");
+    printf("                            (ELF RP2040) au lieu du modèle interne (implies --loci)\n");
+    printf("      --loci-usb-image FILE Image FAT servie au firmware co-simulé comme\n");
+    printf("                            clé USB émulée (avec --loci-emu)\n");
+    printf("      --loci-cdc DEV        Dongle CDC réel (ex. /dev/ttyACM0) servi par le\n");
+    printf("                            firmware co-simulé comme ACIA $0380 (avec --loci-emu)\n");
+    printf("      --loci-menu-at N      Déclenche le menu LOCI une seule fois au cycle N\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
     printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
     printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");

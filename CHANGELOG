@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — 5 options livrées mais absentes de `--help` (dont la co-simulation LOCI)
+
+`--loci-emu`, `--loci-usb-image`, `--loci-cdc`, `--loci-menu-at` et `--tape-signal-free`
+étaient parfaitement fonctionnelles (déclarées dans `cli_options.h`, traitées dans
+`main.c`, sans garde de compilation) mais n'apparaissaient nulle part dans l'aide.
+Conséquence rapportée par l'équipe OricTel : ne trouvant pas `--loci-emu`/`--loci-cdc`
+dans `--help`, on en conclut que **le build ne les contient pas** et qu'il faut
+rebâtir Phosphoric — alors qu'il n'y avait rien à rebâtir. Les 5 options sont
+maintenant documentées.
+
+Garde-fou contre la récidive (`tests/integration/test_cli_parsing.sh`) : toute option
+longue déclarée dans `cli_options.h` doit apparaître dans `cli_usage.c`, sinon la suite
+échoue en nommant les options manquantes. Vérifié en retirant une ligne d'aide :
+`FAIL: options missing from --help: --loci-cdc`.
+
+`test-cli-parsing` 82 → **83**. `make clean && make tests` **1001/1001**, 0 régression.
+EMU_VERSION 1.118.0 → **1.118.1-alpha**.
+
+### Added — LOCI : assist graphique `$AE`, lot 1 « composition pure » (`src/io/loci_gfx.c`)
+
+Émulation de l'opcode MIA `$AE` (sous-code dans API_A, paramètres et retours sur le
+xstack — mêmes conventions que les autres `op_*`) : back-buffer en **banque XRAM 16 Ko**
+(`loci->xram[(bank<<14)+off]`), carte de **dirty spans déterministe**, primitives
+d'octets et détection de collision.
+
+Sous-codes couverts : `INIT` (0x00), `RESET_DIRTY` (0x01), `GET_DIRTY` (0x02), `CLEAR`
+(0x03), `BLIT_RECT` (0x11), `COMPOSE_RECT` (0x18, modes COPY/OR/AND/XOR) et `COLLIDE`
+(0x28, boîte englobante). Géométries HIRES 40×200 (8000 o) et TEXT 40×28 ; budget de
+100 spans par relevé.
+
+Le **blit final vers l'écran reste au 6502** (aucun DMA) : il sort du périmètre de ce
+lot. Le fichier est le **miroir** de la logique du firmware (`firmware/src/mia/api/gfx.c`)
+et des tests natifs (`extensions/graphics-assist-AE/tests/gfx_ops_test.c`) — 3ᵉ
+implémentation de la même sémantique pure, seule la couche d'accès diffère. Spec :
+`extensions/graphics-assist-AE` §4 et §8.
+
 ### Added — LOCI : assist graphique `$AE`, lot 1 « composition pure » (`src/io/loci_gfx.c`)
 
 Émulation de l'opcode MIA `$AE` (sous-code dans API_A, paramètres et retours sur le
