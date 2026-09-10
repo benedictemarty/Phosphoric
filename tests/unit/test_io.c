@@ -420,34 +420,184 @@ TEST(test_register_mask) {
 /*  TIMER EXACT-ZERO TESTS                                            */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-TEST(test_via_t1_exact_zero) {
+/* Le sous-dépassement du 6522 n'est PAS l'atteinte de zéro : c'est le passage de
+ * $0000 à $FFFF, un cycle plus tard (V2-E3). Avec N=2 : deux décomptes (2→1, 1→0)
+ * puis le cycle de sous-dépassement qui pose le flag. */
+TEST(test_via_t1_underflow_one_cycle_after_zero) {
     via6522_t via;
     via_init(&via);
-    /* Set T1 latch to 2, start timer */
     via_write(&via, VIA_T1CL, 2);
-    via_write(&via, VIA_T1CH, 0);  /* starts timer */
-    /* Clear IFR T1 flag that may have been set */
+    via_write(&via, VIA_T1CH, 0);  /* démarre le timer */
     via.ifr = 0;
-    /* Update by exactly 2 cycles: counter goes from 2 to 0 */
-    via_update(&via, 2);
-    /* IFR bit 6 (T1) should be set */
+    via_update(&via, 2);           /* le compteur atteint zéro… */
+    ASSERT_EQ(via.ifr & 0x40, 0x00);   /* …et le flag n'est pas encore posé */
+    via_update(&via, 1);           /* $0000 → $FFFF : sous-dépassement */
     ASSERT_EQ(via.ifr & 0x40, 0x40);
 }
 
-TEST(test_via_t2_exact_zero) {
+/* Même mécanique pour Timer 2 (one-shot). */
+TEST(test_via_t2_underflow_one_cycle_after_zero) {
     via6522_t via;
     via_init(&via);
-    /* Set T2 latch to 4 */
     via_write(&via, VIA_T2CL, 4);
-    via_write(&via, VIA_T2CH, 0);  /* starts timer */
-    /* Clear IFR */
+    via_write(&via, VIA_T2CH, 0);  /* démarre le timer */
     via.ifr = 0;
-    /* ACR bit 5 clear = timer mode (not pulse counting) */
-    via.acr &= ~0x20;
-    /* Update by exactly 4 cycles: counter goes from 4 to 0 */
+    via.acr &= ~0x20;              /* mode timer, pas comptage d'impulsions */
     via_update(&via, 4);
-    /* IFR bit 5 (T2) should be set */
+    ASSERT_EQ(via.ifr & 0x20, 0x00);
+    via_update(&via, 1);
     ASSERT_EQ(via.ifr & 0x20, 0x20);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  VECTEURS DE TIMING DU VIA (V2-E3 / US3.3)                          */
+/*                                                                    */
+/*  La propriété déterminante du Timer 1 est sa PÉRIODE en mode        */
+/*  continu : N+2 cycles (N décomptes + 1 cycle de sous-dépassement    */
+/*  + 1 cycle de rechargement). C'est elle qui fixe la fréquence des   */
+/*  IRQ, des sons et des impulsions cassette sur PB7. L'ancienne       */
+/*  implémentation donnait N, soit 2 cycles de trop peu par période —  */
+/*  0,02 % à 100 Hz, mais 20 % pour N=10.                              */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Mesure la période entre deux poses du flag T1 en mode continu. */
+static int measure_t1_period(int n) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x40);            /* Timer 1 continu */
+    via_write(&via, VIA_T1CL, n & 0xFF);
+    via_write(&via, VIA_T1CH, (n >> 8) & 0xFF);
+    int first = -1;
+    for (int c = 1; c <= 4 * (n + 8); c++) {
+        via_update(&via, 1);
+        if (via.ifr & 0x40) {
+            via_write(&via, VIA_IFR, 0x40);    /* efface le flag */
+            if (first < 0) first = c;
+            else return c - first;
+        }
+    }
+    return -1;
+}
+
+TEST(test_via_t1_freerun_period_is_n_plus_2) {
+    static const int ns[] = { 1, 2, 5, 10, 100, 999, 9998 };
+    for (unsigned i = 0; i < sizeof(ns) / sizeof(ns[0]); i++)
+        ASSERT_EQ(measure_t1_period(ns[i]), ns[i] + 2);
+}
+
+/* Le time-out one-shot tombe N+1 cycles après l'écriture de T1C-H : N décomptes
+ * puis le cycle de sous-dépassement. (La datasheet parle de N+1,5 : le demi-cycle
+ * n'est pas modélisable à la granularité du cycle entier — voir docs/ACCURACY.md.) */
+TEST(test_via_t1_oneshot_timeout_cycle) {
+    static const int ns[] = { 1, 5, 50, 500 };
+    for (unsigned i = 0; i < sizeof(ns) / sizeof(ns[0]); i++) {
+        via6522_t via;
+        via_init(&via);
+        via_write(&via, VIA_ACR, 0x00);        /* one-shot */
+        via_write(&via, VIA_T1CL, ns[i] & 0xFF);
+        via_write(&via, VIA_T1CH, (ns[i] >> 8) & 0xFF);
+        int fired = -1;
+        for (int c = 1; c <= ns[i] + 8 && fired < 0; c++) {
+            via_update(&via, 1);
+            if (via.ifr & 0x40) fired = c;
+        }
+        ASSERT_EQ(fired, ns[i] + 1);
+    }
+}
+
+/* One-shot : le compteur continue de décompter après le time-out (datasheet p.8,
+ * l'hôte lit le temps écoulé), mais il ne tire plus. */
+TEST(test_via_t1_oneshot_counter_keeps_running_without_refiring) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x00);
+    via_write(&via, VIA_T1CL, 3);
+    via_write(&via, VIA_T1CH, 0);
+    for (int c = 0; c < 4; c++) via_update(&via, 1);    /* tir au 4e cycle */
+    ASSERT_EQ(via.ifr & 0x40, 0x40);
+    via_write(&via, VIA_IFR, 0x40);                     /* acquitte */
+    uint16_t after_fire = via.t1_counter;
+    for (int c = 0; c < 10; c++) via_update(&via, 1);
+    ASSERT_TRUE(via.t1_counter != after_fire);           /* il compte toujours */
+    ASSERT_EQ(via.ifr & 0x40, 0x00);                     /* mais ne retire pas */
+}
+
+/* PB7 en signal carré : une bascule par sous-dépassement, donc une période
+ * électrique de 2 × (N+2) cycles. C'est ce qui cadence l'écriture cassette. */
+TEST(test_via_pb7_square_wave_period) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_DDRB, 0x80);           /* PB7 en sortie */
+    via_write(&via, VIA_ACR, 0xC0);            /* T1 continu + sortie PB7 */
+    via_write(&via, VIA_T1CL, 10);
+    via_write(&via, VIA_T1CH, 0);
+    bool prev = via_get_pb7(&via);
+    int edges = 0, first_edge = -1, second_edge = -1;
+    for (int c = 1; c <= 200; c++) {
+        via_update(&via, 1);
+        bool now = via_get_pb7(&via);
+        if (now != prev) {
+            edges++;
+            if (first_edge < 0) first_edge = c;
+            else if (second_edge < 0) second_edge = c;
+            prev = now;
+        }
+    }
+    ASSERT_TRUE(edges >= 2);
+    ASSERT_EQ(second_edge - first_edge, 12);   /* N+2 entre deux fronts */
+}
+
+/* Handshake CA2 en mode impulsion (PCR 101) : CA2 passe bas à l'accès ORA puis
+ * remonte après exactement UN cycle (datasheet, « pulse output »). */
+TEST(test_via_ca2_pulse_lasts_one_cycle) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_PCR, 0x0A);        /* CA2 = sortie impulsion */
+    via_write(&via, VIA_ORA, 0x55);        /* l'accès déclenche l'impulsion */
+    ASSERT_FALSE(via_get_ca2(&via));       /* bas pendant le cycle */
+    via_update(&via, 1);
+    ASSERT_TRUE(via_get_ca2(&via));        /* remonté au cycle suivant */
+}
+
+/* La lecture de T1C-L/T1C-H doit rendre la valeur courante du compteur : c'est
+ * ainsi qu'un programme mesure le temps écoulé depuis le démarrage du timer. */
+TEST(test_via_t1_counter_readback) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_ACR, 0x00);
+    via_write(&via, VIA_T1CL, 0xE8);       /* N = 1000 */
+    via_write(&via, VIA_T1CH, 0x03);
+    via_update(&via, 400);
+    uint8_t lo = via_read(&via, VIA_T1CL);
+    uint8_t hi = via_read(&via, VIA_T1CH);
+    ASSERT_EQ((hi << 8) | lo, 1000 - 400);
+    /* Lire T1C-L efface le flag T1, lire T1C-H ne l'efface pas (datasheet). */
+    via_update(&via, 601);                 /* sous-dépassement */
+    ASSERT_EQ(via.ifr & 0x40, 0x40);
+    (void)via_read(&via, VIA_T1CH);
+    ASSERT_EQ(via.ifr & 0x40, 0x40);       /* T1C-H : flag intact */
+    (void)via_read(&via, VIA_T1CL);
+    ASSERT_EQ(via.ifr & 0x40, 0x00);       /* T1C-L : flag effacé */
+}
+
+/* Intégration : Timer 1 continu programmé à la période d'une trame PAL doit
+ * produire exactement une interruption par trame sur 50 trames — le test qui
+ * attrape une dérive de période, même d'un seul cycle. */
+TEST(test_via_t1_frame_rate_over_50_frames) {
+    via6522_t via;
+    via_init(&via);
+    via_write(&via, VIA_IER, 0xC0);            /* autorise T1 */
+    via_write(&via, VIA_ACR, 0x40);            /* continu */
+    /* Une trame PAL = 19968 cycles ; période N+2 → N = 19966. */
+    const int n = 19966;
+    via_write(&via, VIA_T1CL, n & 0xFF);
+    via_write(&via, VIA_T1CH, (n >> 8) & 0xFF);
+    int fires = 0;
+    for (int c = 0; c < 50 * 19968; c++) {
+        via_update(&via, 1);
+        if (via.ifr & 0x40) { via_write(&via, VIA_IFR, 0x40); fires++; }
+    }
+    ASSERT_EQ(fires, 50);
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -764,8 +914,17 @@ int main(void) {
     RUN(test_register_mask);
 
     printf("\n  Timer Exact-Zero:\n");
-    RUN(test_via_t1_exact_zero);
-    RUN(test_via_t2_exact_zero);
+    RUN(test_via_t1_underflow_one_cycle_after_zero);
+    RUN(test_via_t2_underflow_one_cycle_after_zero);
+
+    printf("\n  Vecteurs de timing du VIA (V2-E3):\n");
+    RUN(test_via_t1_freerun_period_is_n_plus_2);
+    RUN(test_via_t1_oneshot_timeout_cycle);
+    RUN(test_via_t1_oneshot_counter_keeps_running_without_refiring);
+    RUN(test_via_pb7_square_wave_period);
+    RUN(test_via_ca2_pulse_lasts_one_cycle);
+    RUN(test_via_t1_counter_readback);
+    RUN(test_via_t1_frame_rate_over_50_frames);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

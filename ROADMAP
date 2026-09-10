@@ -62,8 +62,15 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] US2.4 jonction Épic B : les 30 sous-ticks φ2 sont une subdivision de φ2
       - [x] Doc `docs/architecture/master-clock.md` ; coût 521 µs/trame (2,6 % du budget)
       - [x] Corpus : boot + 13 programmes réels identiques après la bascule
-- [ ] **V2-E3 — VIA 6522 au cycle** (S5-S6) : pas d'un cycle, timings d'arête IFR/PB7,
-      vecteurs de chronogrammes datasheet
+- [x] **V2-E3 — VIA 6522 au cycle** (S5) — **TERMINÉ**
+      - [x] US3.1 pas d'un cycle (acquis avec l'horloge maître)
+      - [x] US3.2 **sous-dépassement exact** `$0000 → $FFFF` + cycle de rechargement
+            → période **N+2** conforme (l'ancien modèle donnait N : 20 % d'erreur à N=10) ;
+            PB7 signal carré, relecture du compteur, impulsion CA2 d'un cycle
+      - [x] US3.3 vecteurs de timing (`test-io` 46 → 53) dont « 50 IRQ en 50 trames »
+      - [x] US3.4 **déviation assumée n° 2 levée** : la raison invoquée (« décalerait
+            les baselines byte-exact ») était infondée — corpus et suites intacts
+      - [ ] Demi-cycle du time-out one-shot (N+1,5) : hors modèle au cycle entier (N4)
 - [ ] **V2-E4 — ULA vidéo au cycle** (S6-S8) : balayage 312×64 complet (bordure,
       blanking), **fetch octet par cycle**, attributs latchés au fetch, corpus de
       référence incluant une démo à split raster

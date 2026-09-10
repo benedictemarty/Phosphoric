@@ -214,16 +214,33 @@ transforme « je crois que c'est juste » en « c'est mesuré ».
 
 ### V2-E3 — VIA 6522 au cycle
 
-- **US3.1 — Pas d'un cycle** pour T1/T2, registre à décalage, latches.
-- **US3.2 — Timings d'arête exacts** : instant de pose de l'IFR après
-  sous-dépassement, valeur lue du compteur pendant le cycle de rechargement,
-  bascule PB7, N+2 / N+1,5 selon mode, handshakes CA1/CA2/CB1/CB2.
-- **US3.3 — Vecteurs de timing** dérivés des chronogrammes de la datasheet
-  (nouvelle section dans `docs/HARDWARE_CONFORMANCE.md`), plus un test
-  d'intégration « IRQ timer 1 en mode continu à la période trame » qui vérifie
-  la stabilité du décompte sur 50 trames.
-- **US3.4 — Reprise des déviations assumées** listées en §2 du document de
-  conformité, réévaluées à la lumière de N3.
+- **US3.1 — Pas d'un cycle. ✅ livré (acquis en 2.0.0-alpha.1)** — `via_update()`
+  reçoit toujours `cycles = 1` depuis la bascule de l'horloge maître, et le
+  décompte des timers se fait maintenant cycle par cycle dans la fonction.
+- **US3.2 — Timings d'arête exacts. ✅ livré pour les timers (2.0.0-alpha.2)** —
+  le sous-dépassement n'est plus l'atteinte de zéro mais le passage
+  `$0000 → $FFFF`, suivi d'un **cycle de rechargement** (`t1_reload`) : la période
+  du mode continu devient **N+2**, conforme à la datasheet, là où le code donnait
+  **N** — 0,02 % d'erreur à 100 Hz mais **20 % pour N=10**, audible sur les sons
+  courts et les digidrums. Même mécanique pour Timer 2. Vérifiés aussi : compteur
+  qui continue de décompter après un time-out one-shot sans retirer, signal carré
+  PB7 (front tous les N+2 cycles), relecture du compteur et effacement du flag par
+  T1C-L mais pas par T1C-H, impulsion CA2 d'exactement un cycle.
+  *Reste hors modèle* : le **demi-cycle** du time-out one-shot (N+1,5 → posé à
+  N+1), non représentable au cycle entier.
+- **US3.3 — Vecteurs de timing. ✅ livré (2.0.0-alpha.2)** — 7 tests dans
+  `test-io` (46 → **53**), dont l'intégration **« Timer 1 continu à la période
+  trame : exactement 50 interruptions en 50 trames »**, qui échoue pour un seul
+  cycle de dérive.
+- **US3.4 — Reprise des déviations assumées. ✅ livré (2.0.0-alpha.2)** — la
+  déviation n° 2 de `docs/HARDWARE_CONFORMANCE.md` §2 (« période ≈ N+1 ») est
+  **levée**, et la raison qui la justifiait (« toucher au décompte décalerait
+  toutes les baselines byte-exact ») s'est révélée **infondée** : corpus et suites
+  intacts. Ce qui a rendu la correction sûre, c'est que la machine avance
+  désormais cycle par cycle (E1/E2). Les déviations 4 (effet de l'écriture T1L-H
+  sur le flag, datasheets divergentes) et 5 (RESET qui efface les compteurs)
+  restent assumées, faute de source fiable — on ne comble pas une incertitude par
+  une invention.
 
 ### V2-E4 — ULA vidéo au cycle
 
@@ -272,7 +289,13 @@ Le gain le plus visible pour l'utilisateur.
 
 ### V2-E7 — Perf, savestate, non-régression (transverse)
 
-- **US7.1 — Budget de performance** : `make bench` devient bloquant. Cible :
+- **US7.1 — Budget de performance** : `make bench` devient bloquant. Suivi :
+  491 µs/trame (E1) → 521 µs (E2, horloge maître) → **555 µs (E3, timers au
+  cycle)**, soit **2,8 %** du budget de 20 ms. La marge reste large, mais E4 (ULA
+  au fetch par cycle) sera bien plus coûteux : si le budget se tend, la piste est
+  un **ordonnanceur d'événements** pour les timers (calculer le cycle du prochain
+  sous-dépassement au lieu de décrémenter à chaque cycle) — refonte locale au VIA,
+  sans effet observable. Cible :
   temps CPU hôte par trame émulée **≤ 5 %** du budget 20 ms sur la machine de
   référence. Le passage N3 coûte typiquement ×2 à ×3 sur le cœur ; la marge
   actuelle (~1 %) l'absorbe, mais la mesure décide.
@@ -305,7 +328,7 @@ Le gain le plus visible pour l'utilisateur.
 | **V2-S2** | US1.1 + US1.2 — micro-séquenceur **et** accès factices : 100 % d'un coup (l'oracle a permis d'aller plus loin que prévu) | 1.123.0-alpha |
 | **V2-S3** | US1.3 + US1.4 — interruptions au cycle pénultième, drapeau I retardé, détournement NMI/BRK, **bascule du moteur par défaut** → **Épic V2-E1 terminé** | 1.124.0-alpha |
 | **V2-S4** | US2.1 + US2.2 + US2.3 + US2.4 — horloge maître, fin des paquets, ordre intra-cycle testé → **Épic V2-E2 terminé** | 2.0.0-alpha.1 |
-| **V2-S5** | US3.1 à 3.4 — VIA 6522 : timings d'arête exacts | 2.0.0-alpha.2 |
+| **V2-S5** | US3.1 à 3.4 — VIA 6522 : sous-dépassement et période N+2 exacts → **Épic V2-E3 terminé** | 2.0.0-alpha.2 |
 | **V2-S6** | US3.2/3.3/3.4 + US4.1 | 2.0.0-alpha.3 |
 | **V2-S7** | US4.2 — fetch octet par cycle | branche |
 | **V2-S8** | US4.3/4.4 + US5.1 | 2.0.0-alpha.4 |
