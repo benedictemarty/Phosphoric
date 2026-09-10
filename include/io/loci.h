@@ -84,6 +84,7 @@ typedef enum {
     LOCI_OP_MAP_TUNE_TIOD    = 0xA4,
     LOCI_OP_MAP_TUNE_TADR    = 0xA5,
     LOCI_OP_ADJ_SCAN         = 0xA6,
+    LOCI_OP_GFX              = 0xAE,
     LOCI_OP_RESET_SENTINEL   = 0xFF
 } loci_op_t;
 

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — LOCI : assist graphique `$AE`, lot 1 « composition pure » (`src/io/loci_gfx.c`)
+
+Émulation de l'opcode MIA `$AE` (sous-code dans API_A, paramètres et retours sur le
+xstack — mêmes conventions que les autres `op_*`) : back-buffer en **banque XRAM 16 Ko**
+(`loci->xram[(bank<<14)+off]`), carte de **dirty spans déterministe**, primitives
+d'octets et détection de collision.
+
+Sous-codes couverts : `INIT` (0x00), `RESET_DIRTY` (0x01), `GET_DIRTY` (0x02), `CLEAR`
+(0x03), `BLIT_RECT` (0x11), `COMPOSE_RECT` (0x18, modes COPY/OR/AND/XOR) et `COLLIDE`
+(0x28, boîte englobante). Géométries HIRES 40×200 (8000 o) et TEXT 40×28 ; budget de
+100 spans par relevé.
+
+Le **blit final vers l'écran reste au 6502** (aucun DMA) : il sort du périmètre de ce
+lot. Le fichier est le **miroir** de la logique du firmware (`firmware/src/mia/api/gfx.c`)
+et des tests natifs (`extensions/graphics-assist-AE/tests/gfx_ops_test.c`) — 3ᵉ
+implémentation de la même sémantique pure, seule la couche d'accès diffère. Spec :
+`extensions/graphics-assist-AE` §4 et §8.
+
 ### Fixed — `--type-keys` n'annule plus l'auto-RUN du fast-load
 
 Après un fast-load `-f` d'un programme BASIC, la phase 2 tape `RUN` automatiquement.

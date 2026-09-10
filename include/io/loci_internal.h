@@ -128,5 +128,6 @@ void op_map_tune_tiow(loci_t* loci);
 void op_map_tune_tiod(loci_t* loci);
 void op_map_tune_tadr(loci_t* loci);
 void op_adj_scan(loci_t* loci);
+void op_gfx(loci_t* loci);       /* assist graphique $AE (loci_gfx.c) */
 
 #endif /* LOCI_INTERNAL_H */

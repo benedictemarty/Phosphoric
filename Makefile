@@ -130,6 +130,7 @@ SOURCES = src/main.c \
           src/io/sp0256.c \
           src/io/mea8000.c \
           src/io/loci_core.c \
+          src/io/loci_gfx.c \
           src/io/loci_fs.c \
           src/io/loci_bus.c \
           src/io/loci_boot.c \

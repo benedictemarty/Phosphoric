@@ -63,6 +63,7 @@ set(IO_SOURCES
     src/io/cassette.c
     src/io/microdisc.c
     src/io/loci_core.c
+    src/io/loci_gfx.c
     src/io/loci_fs.c
     src/io/loci_bus.c
     src/io/loci_boot.c
