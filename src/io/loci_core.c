@@ -21,6 +21,7 @@
 
 #include "io/loci.h"
 #include "io/loci_internal.h"
+#include "io/loci_emu.h"   /* routage HID vers le firmware en co-sim */
 #include "io/loci_sdimg.h"
 #include "io/bus_timing.h"
 #include "utils/logging.h"
@@ -446,6 +447,13 @@ void op_pix_xreg(loci_t* loci) {
 
 void loci_kbd_set_report(loci_t* loci, uint8_t modifier,
                           const uint8_t keycodes[6]) {
+    /* Co-simulation : le 6502 ne lit plus ce xram (io_bus.c route tout le MIA
+     * vers le firmware réel) — le rapport doit donc partir au vrai kbd_report()
+     * du firmware, qui fait bien plus que remplir un bitmap (layouts, file
+     * stdio, répétition, LED). Routé ici plutôt qu'à chaque appelant pour que
+     * TOUS les chemins d'injection en profitent : glue SDL et --type-keys
+     * loci-hid:. Modèle interne inchangé hors co-sim. */
+    if (loci_emu_active()) { loci_emu_kbd_report(modifier, keycodes); return; }
     if (!loci || !loci->enabled) return;
     if (loci->kbd_xram == 0xFFFF) return;
     if ((uint32_t)loci->kbd_xram + 32 > LOCI_XRAM_SIZE) return;
@@ -472,6 +480,11 @@ void loci_kbd_clear(loci_t* loci) {
 void loci_mou_report(loci_t* loci, uint8_t buttons,
                      int8_t dx, int8_t dy,
                      int8_t wheel, int8_t pan) {
+    /* Idem clavier : en co-sim le rapport va au firmware (cf. emul_hid.c). */
+    if (loci_emu_active()) {
+        loci_emu_mou_report(buttons, dx, dy, wheel, pan);
+        return;
+    }
     if (!loci || !loci->enabled) return;
     if (loci->mou_xram == 0xFFFF) return;
     if ((uint32_t)loci->mou_xram + 5 > LOCI_XRAM_SIZE) return;

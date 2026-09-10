@@ -205,8 +205,13 @@ La souris marchait avec le modèle interne (`--loci`) mais pas sous `--loci-emu`
       appelle le vrai `mou_report()`), symboles locaux résolus par nom dans l'ELF.
 - [x] Suite `test_hid` (18/18) : équivalence des deux chemins, octet à octet.
 - [x] Phosphoric : `loci_emu_mou_report()`/`_armed()` + `mou_report_route()`.
-- [ ] Backlog : même pont pour le **clavier** HID LOCI en co-sim (`kbd.c`,
-      symboles `kbd_report`/`kbd_prev_report` présents dans l'ELF).
+- [x] **v1.120.0** — même pont pour le **clavier** : le vrai `kbd_report()` du
+      firmware est APPELÉ (`emul_guest_call`), pas répliqué — layouts, file
+      stdio, répétition, LED, bitmap 32 o (octet 28 = modificateurs).
+- [x] **v1.120.0** — routage HID unifié dans `loci_core.c` : couvre la glue SDL
+      et `--type-keys loci-hid:` sans router les 11 appelants ; le routeur
+      `main.c` de v1.119.0 disparaît (main.c redevient identique à son état
+      d'avant).
 - [ ] Backlog : valider en interactif avec un logiciel 6502 qui arme la souris
       par XREG (sans quoi `mou_xram` reste à `0xFFFF`).
 

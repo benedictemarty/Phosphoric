@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — clavier LOCI en co-simulation + routage HID unifié
+
+Complète la souris (v1.119.0) : le clavier HID passe lui aussi au firmware
+co-simulé. `loci_emu_kbd_report()` / `loci_emu_kbd_armed()` appellent le **vrai**
+`kbd_report()` du firmware (côté `~/loci/emul`, `emul_guest_call`) — contrairement
+à la souris il n'est pas répliqué, car il fait bien plus que remplir un bitmap :
+traduction de layout (5 tables), file de touches stdio, répétition temporisée,
+LED HID, phantom keys, puis bitmap de 32 octets (1 bit par usage HID, octet 28 =
+modificateurs).
+
+**Routage unifié** : la bascule modèle interne / firmware co-simulé se fait
+désormais dans `loci_kbd_set_report()` et `loci_mou_report()` (`src/io/loci_core.c`),
+et non plus chez les appelants. Tous les chemins d'injection en profitent d'un
+coup — glue SDL **et** `--type-keys loci-hid:` — au lieu des onze sites d'appel
+qu'il aurait fallu router un par un. Même motif que `memory.c`, qui interroge déjà
+`loci_emu_active()` pour l'overlay ROM ; `tests/support/loci_emu_stub.c` est étendu
+en conséquence. Le routeur `mou_report_route()` introduit dans `main.c` en v1.119.0
+devient de ce fait redondant et disparaît : `src/main.c` revient à l'identique de
+son état d'avant, un seul point de routage subsiste.
+
+Côté `emul`, `test_hid` passe à 24/24 (cas E : armement par `kbd_xreg()`, `'A'`
+→ bit du usage `0x04`, `LeftCtrl` → octet 28 = `0x01`, relâchement → bit de repos).
+
+`make clean && make tests` **1001/1001**, 0 régression, builds SDL2=0 et SDL2=1 OK.
+EMU_VERSION 1.119.0 → **1.120.0-alpha**.
+
 ### Added — souris LOCI en co-simulation (`--loci-emu`)
 
 La souris fonctionnait avec le modèle interne LOCI (`--loci`, pont SDL →

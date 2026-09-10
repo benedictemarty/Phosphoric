@@ -167,6 +167,18 @@ bool loci_emu_mou_armed(void)
     return emul_loci_mou_armed(&g_emul, NULL) != 0;
 }
 
+bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
+{
+    if (!g_boot_done) return false;
+    return emul_loci_kbd_report(&g_emul, modifier, keycodes) != 0;
+}
+
+bool loci_emu_kbd_armed(void)
+{
+    if (!g_boot_done) return false;
+    return emul_loci_kbd_armed(&g_emul, NULL) != 0;
+}
+
 bool loci_emu_menu_button(void)
 {
     if (!g_boot_started) return false;

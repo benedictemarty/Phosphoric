@@ -14,3 +14,19 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
     (void)address; (void)out;
     return false;
 }
+
+/* loci_core.c route les rapports HID vers le firmware quand la co-sim est
+ * active ; inactive ici, ces stubs ne sont jamais atteints mais doivent
+ * exister au link. */
+bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy,
+                         int8_t wheel, int8_t pan)
+{
+    (void)buttons; (void)dx; (void)dy; (void)wheel; (void)pan;
+    return false;
+}
+
+bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
+{
+    (void)modifier; (void)keycodes;
+    return false;
+}

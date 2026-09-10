@@ -103,4 +103,10 @@ bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy,
 /* true si le 6502 a armé la souris via XREG (sinon le firmware n'écrit rien). */
 bool loci_emu_mou_armed(void);
 
+/* Clavier USB HID (co-sim). Appelle le VRAI kbd_report() du firmware — il fait
+ * bien plus que remplir un bitmap (layouts, file stdio, répétition, LED), le
+ * répliquer serait fragile. `keycodes` = 6 usages HID (0 = vide). */
+bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6]);
+bool loci_emu_kbd_armed(void);
+
 #endif /* LOCI_EMU_H */
