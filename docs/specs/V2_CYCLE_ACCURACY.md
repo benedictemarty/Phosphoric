@@ -184,15 +184,33 @@ transforme « je crois que c'est juste » en « c'est mesuré ».
 
 ### V2-E2 — Horloge maître & ordonnancement
 
-- **US2.1 — `emu_cycle()`** et migration de la boucle principale, du débogueur,
-  du mode headless, du replay et de l'API `--control`/HTTP sur ce point unique.
-- **US2.2 — Suppression de `via_update(paquet)`** au profit d'un pas d'un
-  cycle ; idem `io_bus_tick`, `fdc_ticktock`, `cassette_tick`.
-- **US2.3 — Ordre intra-cycle documenté et testé** (φ1 ULA / φ2 CPU / fronts),
-  avec un test qui vérifie qu'une écriture CPU dans la mémoire écran au cycle
-  *c* est vue par l'ULA au cycle *c+1* et pas *c*.
-- **US2.4 — Point de jonction Épic B** : les 30 sous-ticks φ2 du bus
-  d'extension deviennent une subdivision de l'étape φ2 de `emu_cycle()`.
+- **US2.1 — `emu_cycle()`. ✅ livré (2.0.0-alpha.1)** — `src/emu_clock.c` :
+  point d'entrée unique du temps, avec l'ordre intra-cycle **figé et documenté**
+  (φ1 ULA → φ2 CPU → périphériques φ2). Les compteurs de balayage
+  (`raster_cycle`, `raster_rendered`, `raster_ng_line`, `raster_next_line`),
+  jusque-là variables locales de la boucle principale, vivent désormais dans
+  `emulator_t` : n'importe quel appelant peut cadencer la machine.
+  `emu_step()` enroule `emu_cycle()` ; `emu_raster_pos()` donne la position du
+  faisceau (ligne PAL 0-311, cycle dans la ligne 0-63) — la base du fetch par
+  cycle de l'épic E4. Contrat complet dans
+  [docs/architecture/master-clock.md](../architecture/master-clock.md).
+- **US2.2 — Suppression des paquets. ✅ livré (acquis par US1.4, vérifié ici)** —
+  avec le cœur micro-séquencé, chaque cycle est un accès bus : le rappel
+  d'horloge reçoit **toujours `cycles = 1`**, donc `via_update`, `io_bus_tick`,
+  `fdc_ticktock` et `cassette_tick` avancent d'un cycle à la fois. Mesuré :
+  40 appels pour 40 cycles, maximum 1 cycle par appel
+  (`test_peripherals_get_one_cycle_at_a_time`) — le test échouerait si un paquet
+  réapparaissait.
+- **US2.3 — Ordre intra-cycle documenté et testé. ✅ livré (2.0.0-alpha.1)** —
+  `test_ula_reads_before_cpu_writes` monte le cas limite : une écriture du CPU
+  tombant **exactement** au cycle où la scanline 0 est émise n'est pas visible
+  dans cette ligne, mais l'est dans la suivante. C'est la convention de
+  visibilité du matériel (l'ULA accède à la RAM en φ1, le CPU en φ2).
+  Nouvelle suite `make test-clock` (8 tests).
+- **US2.4 — Jonction Épic B. ✅ livré (documentaire)** — les 30 sous-ticks φ2 du
+  bus d'extension (`include/io/bus_timing.h`) sont désormais explicitement
+  décrits comme une **subdivision de la phase φ2** de `emu_cycle()` ; les
+  périphériques de la carte mère gagnent toujours la course, leur coût reste nul.
 
 ### V2-E3 — VIA 6522 au cycle
 
@@ -286,8 +304,8 @@ Le gain le plus visible pour l'utilisateur.
 | **V2-S1** | US0.2/0.3/0.4 — oracle 65x02, Dormann, `--cycle-trace`, **score de base publié** | 1.122.0-alpha |
 | **V2-S2** | US1.1 + US1.2 — micro-séquenceur **et** accès factices : 100 % d'un coup (l'oracle a permis d'aller plus loin que prévu) | 1.123.0-alpha |
 | **V2-S3** | US1.3 + US1.4 — interruptions au cycle pénultième, drapeau I retardé, détournement NMI/BRK, **bascule du moteur par défaut** → **Épic V2-E1 terminé** | 1.124.0-alpha |
-| **V2-S4** | US2.1 — `emu_cycle()`, horloge maître | 2.0.0-alpha.1 |
-| **V2-S5** | US2.2/2.3/2.4 + US3.1 | 2.0.0-alpha.2 |
+| **V2-S4** | US2.1 + US2.2 + US2.3 + US2.4 — horloge maître, fin des paquets, ordre intra-cycle testé → **Épic V2-E2 terminé** | 2.0.0-alpha.1 |
+| **V2-S5** | US3.1 à 3.4 — VIA 6522 : timings d'arête exacts | 2.0.0-alpha.2 |
 | **V2-S6** | US3.2/3.3/3.4 + US4.1 | 2.0.0-alpha.3 |
 | **V2-S7** | US4.2 — fetch octet par cycle | branche |
 | **V2-S8** | US4.3/4.4 + US5.1 | 2.0.0-alpha.4 |

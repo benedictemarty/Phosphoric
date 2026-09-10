@@ -155,6 +155,14 @@ make SDL2=1
 - **CLI** — `--trace FILE` to enable, `--trace-max N` to limit
 - **Output** — `CYCLES  PC  BYTES  DISASM  A=XX X=XX Y=XX SP=XX P=XX`
 
+### Master clock
+- **One call, one machine cycle** — `emu_cycle()` (`src/emu_clock.c`) advances the whole
+  machine with a fixed intra-cycle order: φ1 ULA → φ2 CPU → φ2 peripherals. Peripherals
+  are never batched: the clock hook always receives exactly one cycle.
+- **Observable consequence** — a CPU write during cycle *c* is not seen by the scanline
+  emitted at that same cycle, only from *c+1* (the ULA reads RAM in φ1). Verified by
+  `make test-clock`. Contract: [docs/architecture/master-clock.md](docs/architecture/master-clock.md).
+
 ### Cycle Trace (accuracy instrument)
 - **One line per CPU cycle** — `--cycle-trace FILE` (`--cycle-trace-max N` to cap):
   `CYCLE T ADDR DATA PC A X Y SP P FLAGS IRQ`, where `T` is `R`ead, `W`rite or
@@ -528,6 +536,7 @@ make test-printer        # Printer tests
 make test-mcp40          # MCP-40 plotter tests
 make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
+make test-clock          # Master clock: one call = one machine cycle, intra-cycle order
 make test-cycle          # Cycle-by-cycle CPU conformance oracle (65x02 vectors)
 make test-dormann        # Klaus Dormann 6502 functional test
 make fetch-vectors       # Download the oracle vectors (third-party, not vendored)

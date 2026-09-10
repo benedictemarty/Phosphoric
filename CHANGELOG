@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.1] - 2026-09-11
+
+### Changed — horloge maître : un appel, un cycle de toute la machine (V2-S4)
+
+Fin de l'**épic V2-E2**, et **bascule de version majeure** : l'ordonnancement du
+temps change d'architecture, ce qui était le jalon prévu pour `2.0.0-alpha.1`.
+
+#### Le problème
+
+Le temps de la machine vivait à trois endroits : le CPU avançait son horloge, un
+rappel par cycle **défini dans `main.c`** faisait avancer les périphériques, et
+**la boucle principale calculait elle-même la position du balayage**
+(`frame_cycles / 64`) pour décider quand émettre une scanline. Résultat : seule la
+boucle principale savait cadencer la machine. Le débogueur, les tests, le replay
+et les outils ne pouvaient pas demander « avance d'un cycle ».
+
+#### L'horloge maître (US2.1)
+
+Nouveau module `src/emu_clock.c` :
+
+```c
+bool emu_cycle(emulator_t* emu);   /* un cycle de TOUTE la machine */
+int  emu_step (emulator_t* emu);   /* une instruction, via emu_cycle */
+void emu_raster_pos(const emulator_t*, int* line, int* dot);
+```
+
+avec un **ordre intra-cycle figé** : **φ1 l'ULA** (avancement du balayage,
+scanlines dues, tick raster ULA-NG) → **φ2 le CPU** (son unique accès bus) → **fin
+de cycle, les périphériques φ2** (VIA, FDC, ACIA, DTL, Mageco, cassette). Les
+compteurs de balayage, jusque-là variables locales de la boucle principale, vivent
+désormais dans `emulator_t` : c'est ce qui permet à n'importe quel appelant de
+cadencer la machine. Contrat complet dans
+`docs/architecture/master-clock.md`.
+
+#### Fin des paquets, vérifiée (US2.2)
+
+Avec le cœur micro-séquencé devenu défaut en v1.124.0, chaque cycle est un accès
+bus : le rappel d'horloge reçoit **toujours `cycles = 1`**. Mesuré sur un mélange
+d'instructions (implicites, RMW, indexées, pile) : **40 appels pour 40 cycles,
+maximum 1 cycle par appel**. `via_update`, `io_bus_tick`, `fdc_ticktock` et
+`cassette_tick` avancent donc d'un cycle à la fois — le VIA n'est plus approché à
+±6 cycles sur l'instant de pose de son IFR.
+
+#### L'ordre est testé, pas seulement déclaré (US2.3)
+
+Nouvelle suite **`make test-clock`** (8 tests). Le test clé monte le cas limite :
+une écriture du CPU tombant **exactement** au cycle où la scanline 0 est émise
+n'apparaît **pas** dans cette ligne, mais apparaît dans la suivante. C'est la
+convention de visibilité du matériel (l'ULA lit la RAM en φ1, le CPU écrit en φ2),
+et elle est maintenant vérifiable plutôt qu'affirmée.
+
+#### Performance
+
+L'horloge est appelée un million de fois par seconde émulée : la division par 64 a
+été remplacée par une **sortie rapide** (63 cycles sur 64 ne font que deux
+additions et un test). Coût final : **521 µs par trame émulée = 2,6 %** du budget
+de 20 ms, contre 491 µs avant ce sprint. Le plafond du plan est 5 %.
+
+#### Validation
+
+- `make tests` intégralement vert ;
+- boot Atmos **byte-identique** à celui d'avant la bascule ;
+- **13 programmes réels identiques** (6 disquettes Sedoric, 7 cassettes) ;
+- `--cpu-legacy` donne toujours le même écran que le cœur par défaut.
+
+#### Où en est la V2
+
+Épics **E1 (CPU) et E2 (horloge) terminés**. Le CPU est exact au cycle, et toute la
+machine avance maintenant cycle par cycle sur une horloge unique. Restent les
+modèles internes : **VIA** (timings d'arête, E3), **ULA** (fetch octet par cycle,
+E4 — le gain le plus visible), **PSG** (`horloge/16` au lieu du taux
+d'échantillonnage, E5), **cassette/FDC** (E6).
+
+EMU_VERSION 1.124.0-alpha → **2.0.0-alpha.1**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

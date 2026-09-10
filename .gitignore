@@ -203,3 +203,5 @@ test_loci_acia_miss
 
 # Vecteurs d oracle CPU (V2-S1), telecharges par tools/fetch_vectors.sh
 third_party/vectors/
+
+test_clock

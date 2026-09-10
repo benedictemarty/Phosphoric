@@ -46,7 +46,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "1.124.0-alpha"
+#define EMU_VERSION "2.0.0-alpha.1"
 
 /**
  * @brief ORIC machine model
@@ -255,9 +255,21 @@ typedef struct emulator_s {
     int64_t max_cycles;
 
     /* Sprint 34d4 (P2-G audit) — current cycle position within the PAL frame.
-     * Updated by the main emulation loop after each cpu_step so the debugger
-     * can derive the raster line via `frame_cycles / PAL_CYCLES_PER_LINE`. */
+     * Maintained by the master clock (emu_cycle, src/emu_clock.c) so the
+     * debugger can derive the raster line via `frame_cycles / PAL_CYCLES_PER_LINE`. */
     int frame_cycles;
+
+    /* ─── Horloge maître (V2-E2, src/emu_clock.c) ───
+     * Position du balayage dans la trame PAL et avancement du rendu. Ces
+     * compteurs étaient des variables locales de la boucle principale : les
+     * porter dans l'émulateur est ce qui permet à `emu_cycle()` de faire
+     * avancer TOUTE la machine d'un cycle, depuis n'importe quel appelant
+     * (boucle principale, débogueur, tests, replay). */
+    int raster_cycle;     /**< cycle courant dans la trame (0 … CYCLES_PER_FRAME-1) */
+    int raster_rendered;  /**< scanlines visibles déjà rendues (0 … 224) */
+    int raster_ng_line;   /**< ligne ULA-NG déjà traitée (0 … 311) */
+    int raster_next_line; /**< cycle du prochain franchissement de ligne (sortie
+                           *   rapide : 63 cycles sur 64 n'ont rien à émettre) */
 
     /* Sprint 35a — IPC control mode for OricForge IDE integration. When set,
      * stdin/stdout speak a line-based protocol (CMD/REP/EVT). Logs are
@@ -499,6 +511,34 @@ typedef struct emulator_s {
     const char* diskrom_path;
     const char* tape_path;
 } emulator_t;
+
+/* ════════════════════════════════════════════════════════════════════
+ *  Horloge maître (V2-E2, src/emu_clock.c)
+ *
+ *  Point d'entrée unique du temps : un appel = un cycle de TOUTE la machine,
+ *  dans un ordre intra-cycle figé (φ1 ULA → φ2 CPU → périphériques φ2).
+ * ══════════════════════════════════════════════════════════════════ */
+
+/**
+ * @brief Fait avancer la machine entière d'un cycle
+ * @return true si le cycle exécuté terminait une instruction
+ *
+ * Avec le cœur historique (`--cpu-legacy`), qui ne sait pas s'arrêter entre deux
+ * cycles, exécute une instruction entière et renvoie toujours true.
+ */
+bool emu_cycle(emulator_t* emu);
+
+/** @brief Exécute une instruction complète via emu_cycle() ; renvoie ses cycles */
+int emu_step(emulator_t* emu);
+
+/** @brief Remet à zéro la position du balayage (début de trame) */
+void emu_clock_frame_begin(emulator_t* emu);
+
+/** @brief Termine le rendu de la trame en cours (lignes restantes) */
+void emu_clock_frame_end(emulator_t* emu);
+
+/** @brief Position courante du faisceau : ligne PAL (0-311) et cycle dans la ligne (0-63) */
+void emu_raster_pos(const emulator_t* emu, int* line, int* dot);
 
 /* ── Active disk interface helpers ───────────────────────────────────────
  * The emulator boots either the Microdisc or the Jasmin (mutually exclusive),

@@ -51,9 +51,17 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             plus aucun cycle bourré sur le chemin normal
       - [x] Corpus : boots ORIC-1/Atmos + **13 programmes réels** (6 disquettes,
             7 cassettes) identiques entre les deux moteurs ; coût 2,5 % du budget trame
-- [ ] **V2-E2 — Horloge maître & ordonnancement** (S4-S5) : `emu_cycle()`, ordre
-      intra-cycle figé (φ1 ULA / φ2 CPU / fronts périphériques), fin des paquets
-      `via_update(n)` / `io_bus_tick(n)`, jonction avec l'Épic B (30 sous-ticks φ2)
+- [x] **V2-E2 — Horloge maître & ordonnancement** (S4) — **TERMINÉ**
+      - [x] US2.1 `emu_cycle()` / `emu_step()` / `emu_raster_pos()` (`src/emu_clock.c`),
+            ordre intra-cycle **figé** φ1 ULA → φ2 CPU → périphériques φ2 ;
+            compteurs de balayage portés dans `emulator_t` (plus dans la boucle)
+      - [x] US2.2 **fin des paquets** : le rappel d'horloge reçoit toujours 1 cycle
+            (40 appels / 40 cycles, max 1 — mesuré, acquis grâce à US1.4)
+      - [x] US2.3 ordre intra-cycle **testé** : une écriture CPU au cycle où la
+            scanline est émise n'est vue qu'à la ligne suivante (`make test-clock`, 8 tests)
+      - [x] US2.4 jonction Épic B : les 30 sous-ticks φ2 sont une subdivision de φ2
+      - [x] Doc `docs/architecture/master-clock.md` ; coût 521 µs/trame (2,6 % du budget)
+      - [x] Corpus : boot + 13 programmes réels identiques après la bascule
 - [ ] **V2-E3 — VIA 6522 au cycle** (S5-S6) : pas d'un cycle, timings d'arête IFR/PB7,
       vecteurs de chronogrammes datasheet
 - [ ] **V2-E4 — ULA vidéo au cycle** (S6-S8) : balayage 312×64 complet (bordure,

@@ -53,6 +53,7 @@ make test-printer        # Printer tests
 make test-mcp40          # MCP-40 plotter tests
 make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
+make test-clock          # Master clock (emu_cycle): one call = one machine cycle
 make test-cycle          # Cycle-by-cycle CPU conformance oracle (SingleStepTests/65x02)
 make test-dormann        # Klaus Dormann 6502 functional test
 make fetch-vectors       # Fetch oracle vectors (third-party, not vendored, ~1GB)
@@ -103,8 +104,15 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 - **debugger.c** — Interactive REPL: breakpoints (16 max), watchpoints (8 max), step/continue, register/memory inspection
 - **savestate.c** — Binary .ost format: 10 sections (CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, META) with CRC32
 
-### Emulation loop (src/main.c)
-Runs `CYCLES_PER_FRAME` (19968) CPU cycles per frame at 50 FPS. Each cycle: debugger check → cpu_step → tape patches → via_tick → PSG decode. After frame: video render → SDL2 present.
+### Emulation loop (src/main.c) and master clock (src/emu_clock.c)
+Runs `CYCLES_PER_FRAME` (19968) cycles per frame at 50 FPS. The loop does the
+per-INSTRUCTION work (debugger, trace, profiler, tape patches) and calls
+`emu_step()`; the **master clock** `emu_cycle()` owns the per-CYCLE work with a
+fixed intra-cycle order: **φ1 ULA** (raster advance, due scanlines, ULA-NG tick)
+→ **φ2 CPU** (its single bus access) → **end of cycle** peripherals (VIA, FDC,
+ACIA, DTL, Mageco, cassette, one cycle at a time — never a batch). Never compute
+a raster position in the loop again: ask `emu_raster_pos()`. Contract in
+`docs/architecture/master-clock.md`.
 
 ### I/O routing
 Memory reads/writes in the I/O range trigger `io_read_callback()`/`io_write_callback()` which route to:

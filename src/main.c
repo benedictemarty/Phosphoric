@@ -1140,8 +1140,7 @@ static void emulator_run(emulator_t* emu) {
 
         /* Execute one frame worth of CPU cycles */
         int frame_cycles = 0;
-        int rendered_scanlines = 0;
-        int ng_line = 0;            /* ULA-NG raster tick, full PAL frame (0-311) */
+        emu_clock_frame_begin(emu);   /* horloge maître : début de trame */
         bool vsync_triggered = false;
         while (frame_cycles < CYCLES_PER_FRAME && !emu->cpu.halted) {
             /* Legacy single breakpoint (--breakpoint / -b) */
@@ -1231,9 +1230,11 @@ static void emulator_run(emulator_t* emu) {
                 }
             }
 
-            int step = cpu_step(&emu->cpu);
+            /* Horloge maître (V2-E2) : une instruction, cycle par cycle, avec
+             * l'ULA et les périphériques avançant en verrou (src/emu_clock.c).
+             * Remplace `cpu_step` + le calcul de scanline qui vivait ici. */
+            int step = emu_step(emu);
             frame_cycles += step;
-            emu->frame_cycles = frame_cycles;   /* expose for raster bps */
 
             /* Post-CLOAD BASIC rechain: the ORIC ROM does NOT rechain
              * line pointers after CLOAD. TAP files may have stale pointers
@@ -1271,35 +1272,13 @@ static void emulator_run(emulator_t* emu) {
              * to the hardware. */
             (void)vsync_triggered;
 
-            /* Scanline-accurate ULA rendering: emit one scanline every
-             * PAL_CYCLES_PER_LINE (64) CPU cycles. The visible area is
-             * 224 lines (200 HIRES/TEXT + 24 bottom text rows). Lines
-             * 224-311 are vertical blanking (not rendered). Mimics real
-             * Oric ULA behavior where the electron beam paints in real
-             * time as the CPU runs, so each scanline samples the memory
-             * state at its precise emission cycle (e.g. mid-fill state
-             * during HIRES init). */
-            int target_scanline = frame_cycles / PAL_CYCLES_PER_LINE;
-            while (rendered_scanlines < target_scanline && rendered_scanlines < 224) {
-                video_render_scanline(&emu->video, emu->memory.ram, rendered_scanlines);
-                rendered_scanlines++;
-            }
-            /* ULA-NG raster tick over the FULL PAL frame (0-311), decoupled from
-             * the visible render (0-223). Asserts the raster IRQ line when the
-             * programmed NG_RASTERLINE is crossed (level, cleared by NG_STATUS
-             * ack). No-op unless unlocked + NG_MODE.b0 + raster enable. */
-            while (ng_line < target_scanline && ng_line < ULA_NG_FRAME_LINES) {
-                ula_ng_scanline(&emu->ula_ng, ng_line);
-                if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
-                ng_line++;
-            }
+            /* Le rendu scanline et le tick raster ULA-NG sont désormais
+             * émis par l'horloge maître, en phase φ1 de chaque cycle
+             * (src/emu_clock.c) — plus de calcul de position ici. */
         }
 
-        /* Flush any remaining scanlines (e.g. if CPU halted mid-frame) */
-        while (rendered_scanlines < 224) {
-            video_render_scanline(&emu->video, emu->memory.ram, rendered_scanlines);
-            rendered_scanlines++;
-        }
+        /* Termine la trame (lignes restantes si le CPU s'est arrêté en cours). */
+        emu_clock_frame_end(emu);
 
         total_executed += (uint64_t)frame_cycles;
 
