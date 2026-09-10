@@ -112,9 +112,10 @@ void cli_print_usage(const char* program_name) {
     printf("      --http-api-root DIR    Sandbox root for HTTP file ops /tape,/disk (default CWD)\n");
     printf("      --trace FILE           Log CPU instruction trace to FILE\n");
     printf("      --trace-max N          Max instructions to trace (keeps the FIRST N)\n");
-    printf("      --cpu-microseq         Cycle-stepped 6502 core (V2-E1): every cycle emits its\n");
-    printf("                             own bus access, dummy accesses included. 100%% conformant\n");
-    printf("                             to the 65x02 cycle-by-cycle oracle; see docs/ACCURACY.md\n");
+    printf("      --cpu-microseq         Cycle-stepped 6502 core — now the DEFAULT (kept for\n");
+    printf("                             scripts; every cycle emits its own bus access)\n");
+    printf("      --cpu-legacy           Fall back to the historical core (cycle totals exact,\n");
+    printf("                             no dummy accesses, IRQ decided at instruction boundary)\n");
     printf("      --cycle-trace FILE     Log ONE LINE PER CYCLE (bus address, data, R/W,\n");
     printf("                             registers) to FILE — V2 accuracy instrument;\n");
     printf("                             internal cycles appear as 'i' (see docs/ACCURACY.md)\n");

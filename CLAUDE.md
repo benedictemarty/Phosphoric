@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Phosphoric** — Bus-cycle-accurate ORIC-1/Atmos emulator written in C11 (exact per-opcode cycle counts and bus accesses clocked at the right cycle; internal non-bus cycles are reconciled by end-of-instruction padding, not micro-cycle stepped; IRQs sampled at instruction boundaries). Emulates the complete ORIC 8-bit computer (1983): MOS 6502 CPU, 64KB memory with ROM/RAM banking, VIA 6522, AY-3-8910 PSG audio, ULA video (text 40x28 + HIRES 240x200), Microdisc WD1793 FDC, and cassette TAP format. Supports both ORIC-1 (BASIC 1.0) and Atmos (BASIC 1.1) with ROM auto-detection. Optional SDL2 for display/audio/input.
 
-**Accuracy level: N2 (bus-cycle ordered), not N3 (cycle-stepped).** `docs/ACCURACY.md`
+**Accuracy level: the CPU core is N3 (cycle-stepped, verified 100% against the 65x02
+oracle); the rest of the machine is N2 or N1.** `docs/ACCURACY.md`
 holds the N1→N4 scale, the per-component classification, and the only wording that
 may be used publicly; `docs/specs/V2_CYCLE_ACCURACY.md` is the V2 plan that takes
 CPU/VIA/ULA/PSG to N3. The accuracy claim must always carry its `bus-` qualifier —
@@ -76,10 +77,11 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 
 ### Hardware subsystems (src/)
 - **cpu/** — MOS 6502, 256/256 opcodes, 13 addressing modes, level-triggered IRQ (IRQF_VIA, IRQF_DISK).
-  **Two cores sharing one semantics**: `opcodes.c` (historical, bus-cycle ordered, default) and
-  `microseq.c` (cycle-stepped, `--cpu-microseq`, 100% oracle-conformant). Calculations live in
-  `opcodes.c` only (`cpu_rmw_apply`, `cpu_op_adc/sbc/cmp/lax`, `cpu_sh_unstable`) — never
-  duplicate an operation's semantics into the sequencer.
+  **Two cores sharing one semantics**: `microseq.c` (cycle-stepped, **the default**, 100%
+  conformant to the 65x02 oracle, IRQ sampled at the penultimate cycle) and `opcodes.c`
+  (historical, bus-cycle ordered, `--cpu-legacy`). Calculations live in `opcodes.c` only
+  (`cpu_rmw_apply`, `cpu_op_adc/sbc/cmp/lax`, `cpu_sh_unstable`, `cpu_update_nz`) — never
+  duplicate an operation's semantics into the sequencer, which only schedules cycles.
 - **memory/** — 64KB: RAM ($0000-$BFFF), VIA I/O ($0300-$030F), Microdisc I/O ($0310-$031F), ROM/RAM overlay ($C000-$FFFF)
 - **io/via6522.c** — VIA 6522: 16 registers, Timer 1/2, IFR/IER interrupts, Port A/B callbacks, keyboard matrix scanning
 - **io/keyboard.c** — 8x8 matrix: VIA ORB bits 0-2 select column, Port A reads rows (active low)

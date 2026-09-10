@@ -160,13 +160,27 @@ transforme « je crois que c'est juste » en « c'est mesuré ».
   **100,00 %** de séquence bus exacte sur **2 440 000 cas** (l'objectif était
   « ≥ 99,9 % »), plus des tests unitaires qui montrent l'accès factice observé
   sur le bus et l'absence de ce même accès sur le moteur historique (`test-cpu`).
-- **US1.3 — Interruptions au bon cycle.** Échantillonnage IRQ/NMI au cycle
-  pénultième ; latch de front NMI ; détournement `BRK`→NMI ; sémantique
-  retardée de `CLI`/`SEI`/`PLP` ; comportement IRQ pendant une branche.
-  *Acceptation* : vecteurs dédiés + non-régression sur le boot ROM 1.0/1.1 et
-  sur les jeux du corpus.
-- **US1.4 — Bourrage supprimé.** Plus aucun `cpu_tick(n>1)` dans le cœur.
-  *Acceptation* : garde de compilation/test (`grep` + assertion runtime).
+- **US1.3 — Interruptions au bon cycle. ✅ livré (v1.124.0-alpha)** —
+  échantillonnage de /IRQ et /NMI **à chaque cycle**, la décision de fin
+  d'instruction se fondant sur l'échantillon du **cycle pénultième**
+  (`ms_irq_sampled`/`ms_nmi_sampled`). Le masque I est pris en compte **au moment
+  de l'échantillonnage**, ce qui produit « gratuitement » la sémantique retardée
+  de `CLI`/`SEI`/`PLP` (ils modifient I à leur dernier cycle). Latch de front NMI
+  conservé ; **détournement NMI** si /NMI tombe avant le cycle qui empile P d'un
+  `BRK` ou d'une séquence d'IRQ. *Acceptation tenue* : 7 tests unitaires dédiés
+  (IRQ armée au dernier cycle vue trop tard + sa contre-épreuve, `SEI` qui ne
+  protège pas, `CLI` et `PLP` qui retardent, détournement NMI/BRK, séquence
+  d'interruption = 7 cycles tous porteurs d'un accès) ; boots ORIC-1/Atmos et
+  **13 programmes du corpus** (6 disquettes + 7 cassettes) identiques.
+  *A corrigé au passage* un défaut introduit en V2-S2 : la séquence
+  d'interruption durait 8 cycles au lieu de 7 (un `M_DUMMY_PC` de trop) — invisible
+  à l'écran, mais faux ; trouvé par le test « 7 cycles ».
+- **US1.4 — Bourrage supprimé, moteur par défaut. ✅ livré (v1.124.0-alpha)** —
+  le micro-séquenceur devient le moteur **par défaut** (`cpu_init`), donc plus
+  aucun cycle bourré sur le chemin normal : tout cycle porte son accès. Le moteur
+  historique reste disponible par `--cpu-legacy` (et `--cpu-microseq` est conservé
+  en no-op pour les scripts existants). *Acceptation tenue* : `make tests`
+  intégralement vert avec le nouveau défaut.
 
 ### V2-E2 — Horloge maître & ordonnancement
 
@@ -271,8 +285,8 @@ Le gain le plus visible pour l'utilisateur.
 | **V2-S0** | US0.1 (vérité de la communication) + `docs/ACCURACY.md` + garde anti-récidive | 1.121.0-alpha |
 | **V2-S1** | US0.2/0.3/0.4 — oracle 65x02, Dormann, `--cycle-trace`, **score de base publié** | 1.122.0-alpha |
 | **V2-S2** | US1.1 + US1.2 — micro-séquenceur **et** accès factices : 100 % d'un coup (l'oracle a permis d'aller plus loin que prévu) | 1.123.0-alpha |
-| **V2-S3** | US1.3/1.4 — interruptions au cycle pénultième, drapeau I retardé, détournement NMI/BRK, puis bascule du moteur par défaut | branche |
-| **V2-S4** | US1.3/1.4 + US2.1 — interruptions au cycle, `emu_cycle()` | 2.0.0-alpha.1 |
+| **V2-S3** | US1.3 + US1.4 — interruptions au cycle pénultième, drapeau I retardé, détournement NMI/BRK, **bascule du moteur par défaut** → **Épic V2-E1 terminé** | 1.124.0-alpha |
+| **V2-S4** | US2.1 — `emu_cycle()`, horloge maître | 2.0.0-alpha.1 |
 | **V2-S5** | US2.2/2.3/2.4 + US3.1 | 2.0.0-alpha.2 |
 | **V2-S6** | US3.2/3.3/3.4 + US4.1 | 2.0.0-alpha.3 |
 | **V2-S7** | US4.2 — fetch octet par cycle | branche |
@@ -281,8 +295,9 @@ Le gain le plus visible pour l'utilisateur.
 | **V2-S10** | US6.2/6.3 + US7.2 | 2.0.0-beta.1 |
 | **V2-S11** | US7.1/7.3/7.4 + Épic E8 | 2.0.0 |
 
-Jalon de bascule du vocabulaire : **fin de V2-S4** pour le CPU (« CPU exact au
-cycle, vérifié contre 65x02 »), **fin de V2-S8** pour la machine entière.
+Jalon de bascule du vocabulaire : **atteint pour le CPU à la fin de V2-S3**
+(« cœur CPU exact au cycle, vérifié contre l'oracle 65x02 ») ; **fin de V2-S8**
+pour la machine entière.
 
 ---
 

@@ -123,6 +123,17 @@ typedef struct {
     uint16_t ms_addr;      /**< adresse effective (après index) */
     uint16_t ms_base;      /**< adresse avant index (pour factices et stores instables) */
     bool     ms_crossed;   /**< l'indexation a franchi une page */
+
+    /* Échantillonnage des lignes d'interruption (V2-E1, US1.3).
+     * Le 6502 NMOS échantillonne /IRQ et /NMI à chaque cycle, mais la décision
+     * de prendre l'interruption à la fin d'une instruction se fonde sur
+     * l'échantillon du cycle **pénultième** : une ligne qui s'active pendant le
+     * DERNIER cycle arrive trop tard et l'interruption ne sera prise qu'après
+     * l'instruction suivante. Ces deux champs portent cet échantillon retardé —
+     * c'est aussi ce qui produit « gratuitement » le drapeau I retardé de
+     * CLI/SEI/PLP, qui modifient I à leur dernier cycle. */
+    bool     ms_nmi_sampled;
+    bool     ms_irq_sampled;
 } cpu6502_t;
 
 /**

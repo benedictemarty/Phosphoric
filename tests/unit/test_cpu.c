@@ -846,7 +846,13 @@ TEST(test_irq) {
     uint8_t code[] = {0xEA};
     write_program(&mem, 0x0200, code, sizeof(code));
     cpu_irq(&cpu);
-    cpu_step(&cpu);
+    /* Cœur cycle-par-cycle (V2-E1) : une IRQ ne peut pas être prise avant la fin
+     * de l'instruction en cours. Elle est échantillonnée pendant le NOP, puis la
+     * séquence de 7 cycles s'exécute ensuite. L'ancien cœur la prenait AVANT le
+     * NOP, ce qui n'existe pas sur le matériel. */
+    cpu_step(&cpu);                       /* le NOP s'exécute */
+    ASSERT_EQ(cpu.PC, 0x0201);
+    cpu_step(&cpu);                       /* puis la séquence d'interruption */
     ASSERT_EQ(cpu.PC, 0x1000);
     ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
 }
@@ -871,6 +877,9 @@ TEST(test_nmi) {
     uint8_t code[] = {0xEA}; /* NOP */
     write_program(&mem, 0x0200, code, sizeof(code));
     cpu_nmi(&cpu);
+    /* Même règle que pour l'IRQ : l'instruction en cours se termine d'abord. */
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.PC, 0x0201);
     cpu_step(&cpu);
     ASSERT_EQ(cpu.PC, 0x2000);
 }
@@ -1260,11 +1269,12 @@ static void buslog_cb(void* ctx, uint16_t addr, uint8_t val, bool write) {
 }
 
 /* Vecteur « 20 c2 8f » : JSR $8FC2 depuis $5289, SP=$3E.
- * Séquence bus du NMOS : fetch $5289, fetch ADL $528A, [lecture pile factice],
+ * Séquence bus du NMOS : fetch $5289, fetch ADL $528A, lecture pile factice,
  * write $013E=$52 (PCH), write $013D=$8B (PCL), fetch ADH $528B.
  * L'octet HAUT de l'adresse est donc lu APRÈS l'empilement : c'est l'ordre que
  * l'ancienne implémentation inversait (elle lisait l'adresse complète d'abord).
- * Le cycle factice de pile n'est pas émis au niveau N2 (il le sera en V2-E1). */
+ * Depuis V2-E1 le cycle factice de pile est émis lui aussi : 6 accès pour
+ * 6 cycles. */
 TEST(test_jsr_bus_access_order) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
@@ -1284,15 +1294,16 @@ TEST(test_jsr_bus_access_order) {
     ASSERT_EQ(memory_read(&mem, 0x013E), 0x52);   /* PCH */
     ASSERT_EQ(memory_read(&mem, 0x013D), 0x8B);   /* PCL */
 
-    /* 5 accès bus réels, dans cet ordre exact. */
-    ASSERT_EQ(g_buslog_n, 5);
+    /* 6 accès bus pour 6 cycles, dans cet ordre exact. */
+    ASSERT_EQ(g_buslog_n, 6);
     ASSERT_EQ(g_buslog[0].addr, 0x5289); ASSERT_FALSE(g_buslog[0].write);
     ASSERT_EQ(g_buslog[1].addr, 0x528A); ASSERT_FALSE(g_buslog[1].write);
-    ASSERT_EQ(g_buslog[2].addr, 0x013E); ASSERT_TRUE(g_buslog[2].write);
-    ASSERT_EQ(g_buslog[2].val, 0x52);
-    ASSERT_EQ(g_buslog[3].addr, 0x013D); ASSERT_TRUE(g_buslog[3].write);
-    ASSERT_EQ(g_buslog[3].val, 0x8B);
-    ASSERT_EQ(g_buslog[4].addr, 0x528B); ASSERT_FALSE(g_buslog[4].write);
+    ASSERT_EQ(g_buslog[2].addr, 0x013E); ASSERT_FALSE(g_buslog[2].write); /* pile, factice */
+    ASSERT_EQ(g_buslog[3].addr, 0x013E); ASSERT_TRUE(g_buslog[3].write);
+    ASSERT_EQ(g_buslog[3].val, 0x52);
+    ASSERT_EQ(g_buslog[4].addr, 0x013D); ASSERT_TRUE(g_buslog[4].write);
+    ASSERT_EQ(g_buslog[4].val, 0x8B);
+    ASSERT_EQ(g_buslog[5].addr, 0x528B); ASSERT_FALSE(g_buslog[5].write);
 }
 
 /* Vecteur « 69 0a e1 » : ADC #$0A en mode décimal, A=$02, P=$AF (D+C+Z+N+I).
@@ -1422,6 +1433,7 @@ TEST(test_microseq_dummy_read_on_page_cross) {
 TEST(test_legacy_lacks_the_dummy_read) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
+    cpu_set_microseq(&cpu, false);               /* le moteur historique, explicitement */
     uint8_t code[] = { 0xBD, 0xFF, 0x04 };       /* LDA $04FF,X */
     write_program(&mem, 0x0200, code, sizeof(code));
     memory_write(&mem, 0x0500, 0x11);
@@ -1494,7 +1506,8 @@ TEST(test_microseq_matches_legacy_state) {
     };
     cpu6502_t c1, c2; memory_t m1, m2;
     setup(&c1, &m1); setup(&c2, &m2);
-    cpu_set_microseq(&c2, true);
+    cpu_set_microseq(&c1, false);                /* historique */
+    cpu_set_microseq(&c2, true);                 /* micro-séquencé */
     write_program(&m1, 0x0200, code, sizeof(code));
     write_program(&m2, 0x0200, code, sizeof(code));
     c1.PC = c2.PC = 0x0200;
@@ -1509,6 +1522,161 @@ TEST(test_microseq_matches_legacy_state) {
     ASSERT_EQ((int)c1.cycles, (int)c2.cycles);
     ASSERT_EQ(memory_read(&m1, 0x0010), memory_read(&m2, 0x0010));
     ASSERT_EQ(memory_read(&m1, 0x0011), memory_read(&m2, 0x0011));
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  TIMING DES INTERRUPTIONS (V2-E1 / US1.3)                           */
+/*                                                                    */
+/*  Le 6502 échantillonne /IRQ et /NMI à chaque cycle, mais la décision*/
+/*  de prendre l'interruption se fonde sur l'échantillon du cycle      */
+/*  PÉNULTIÈME. D'où deux comportements que seul un cœur cycle-par-    */
+/*  cycle peut reproduire : une ligne qui s'active au dernier cycle    */
+/*  arrive trop tard, et CLI/SEI/PLP voient leur effet sur I « décalé »*/
+/*  d'une instruction.                                                 */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Prépare un CPU micro-séquencé avec un handler d'IRQ en $0300 et du code
+ * en $0200. Le handler est un simple RTI précédé d'un marqueur. */
+static void setup_irq(cpu6502_t* cpu, memory_t* mem, const uint8_t* code, size_t n) {
+    setup(cpu, mem);
+    cpu_set_microseq(cpu, true);
+    write_program(mem, 0x0200, code, n);
+    mem->rom[0x3FFE] = 0x00;      /* vecteur IRQ $FFFE -> $0300 */
+    mem->rom[0x3FFF] = 0x03;
+    mem->rom[0x3FFA] = 0x80;      /* vecteur NMI $FFFA -> $0380 */
+    mem->rom[0x3FFB] = 0x03;
+    memory_write(mem, 0x0300, 0x40);   /* RTI */
+    memory_write(mem, 0x0380, 0x40);
+    cpu->PC = 0x0200;
+    cpu->P &= (uint8_t)~FLAG_INTERRUPT;   /* interruptions autorisées */
+}
+
+/* Une IRQ qui s'active pendant le DERNIER cycle d'une instruction n'est pas
+ * prise à la fin de celle-ci : elle le sera après l'instruction suivante. */
+TEST(test_irq_asserted_on_last_cycle_is_late) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0xEA, 0xA9, 0x42 };        /* NOP ; LDA #$42 */
+    setup_irq(&cpu, &mem, code, sizeof(code));
+
+    /* NOP = 2 cycles. On arme l'IRQ juste avant son DERNIER cycle. */
+    cpu_cycle(&cpu);                               /* cycle 1 (fetch) */
+    cpu_irq_set(&cpu, IRQF_VIA);                   /* ligne active pendant le cycle 2 */
+    bool done = cpu_cycle(&cpu);                   /* cycle 2 = dernier */
+    ASSERT_TRUE(done);
+
+    /* L'instruction suivante doit s'exécuter AVANT le handler. */
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.A, 0x42);                        /* LDA #$42 a bien tourné */
+    ASSERT_TRUE(cpu.PC != 0x0300);
+
+    /* Et c'est seulement ensuite que l'IRQ est prise. */
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.PC, 0x0300);
+}
+
+/* La même IRQ, armée un cycle plus tôt (donc présente au pénultième), est prise
+ * dès la fin de l'instruction : c'est la contre-épreuve du test précédent. */
+TEST(test_irq_asserted_before_penultimate_is_taken) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0xA2, 0x07, 0xA9, 0x42 };   /* LDX #$07 (2 cy) ; LDA #$42 */
+    setup_irq(&cpu, &mem, code, sizeof(code));
+
+    cpu_irq_set(&cpu, IRQF_VIA);                   /* active dès avant le cycle 1 */
+    cpu_step(&cpu);                                /* LDX #$07 */
+    ASSERT_EQ(cpu.X, 0x07);
+    cpu_step(&cpu);                                /* doit entrer dans le handler */
+    ASSERT_EQ(cpu.PC, 0x0300);
+    ASSERT_EQ(cpu.A, 0x00);                        /* LDA #$42 n'a PAS tourné */
+}
+
+/* SEI ne protège pas l'instruction qui le suit : au cycle pénultième de SEI,
+ * le drapeau I valait encore 0, donc l'IRQ pendante est prise juste après. */
+TEST(test_sei_does_not_block_already_pending_irq) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0x78, 0xA9, 0x42 };         /* SEI ; LDA #$42 */
+    setup_irq(&cpu, &mem, code, sizeof(code));
+
+    cpu_irq_set(&cpu, IRQF_VIA);
+    cpu_step(&cpu);                                /* SEI */
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));   /* I est bien posé */
+    cpu_step(&cpu);                                /* l'IRQ passe quand même */
+    ASSERT_EQ(cpu.PC, 0x0300);
+    ASSERT_EQ(cpu.A, 0x00);
+}
+
+/* Symétriquement, CLI retarde l'IRQ d'une instruction : au pénultième de CLI,
+ * I valait encore 1. */
+TEST(test_cli_delays_irq_by_one_instruction) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0x58, 0xA9, 0x42, 0xEA };   /* CLI ; LDA #$42 ; NOP */
+    setup_irq(&cpu, &mem, code, sizeof(code));
+    cpu_set_flag(&cpu, FLAG_INTERRUPT, true);      /* interruptions masquées */
+
+    cpu_irq_set(&cpu, IRQF_VIA);
+    cpu_step(&cpu);                                /* CLI */
+    ASSERT_FALSE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
+    cpu_step(&cpu);                                /* LDA #$42 s'exécute d'abord */
+    ASSERT_EQ(cpu.A, 0x42);
+    ASSERT_TRUE(cpu.PC != 0x0300);
+    cpu_step(&cpu);                                /* puis l'IRQ */
+    ASSERT_EQ(cpu.PC, 0x0300);
+}
+
+/* PLP a le même effet retardé que CLI quand la valeur dépilée démasque l'IRQ. */
+TEST(test_plp_delays_irq_by_one_instruction) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0x28, 0xA9, 0x42, 0xEA };   /* PLP ; LDA #$42 ; NOP */
+    setup_irq(&cpu, &mem, code, sizeof(code));
+    cpu_set_flag(&cpu, FLAG_INTERRUPT, true);
+    /* Prépare la pile : la valeur dépilée a I à 0. */
+    cpu.SP = 0xFC;
+    memory_write(&mem, 0x01FD, FLAG_UNUSED);
+
+    cpu_irq_set(&cpu, IRQF_VIA);
+    cpu_step(&cpu);                                /* PLP : I passe à 0 */
+    ASSERT_FALSE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
+    cpu_step(&cpu);                                /* LDA #$42 d'abord */
+    ASSERT_EQ(cpu.A, 0x42);
+    cpu_step(&cpu);
+    ASSERT_EQ(cpu.PC, 0x0300);
+}
+
+/* Une NMI qui tombe pendant un BRK détourne la séquence : c'est le vecteur NMI
+ * qui est lu, alors que le drapeau B empilé reste celui du BRK. */
+TEST(test_nmi_hijacks_brk) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0x00, 0xEA };               /* BRK ; NOP */
+    setup_irq(&cpu, &mem, code, sizeof(code));
+    uint8_t sp0 = cpu.SP;
+
+    /* BRK = 7 cycles ; la NMI est armée avant le cycle qui empile P (le 5e). */
+    cpu_cycle(&cpu); cpu_cycle(&cpu); cpu_cycle(&cpu); cpu_cycle(&cpu);
+    cpu_nmi(&cpu);
+    while (!cpu_cycle(&cpu)) { }
+
+    ASSERT_EQ(cpu.PC, 0x0380);                     /* vecteur NMI, pas $0300 */
+    ASSERT_EQ(cpu.SP, (uint8_t)(sp0 - 3));
+    ASSERT_TRUE((memory_read(&mem, (uint16_t)(0x0100 + cpu.SP + 1)) & FLAG_BREAK) != 0);
+    ASSERT_FALSE(cpu.nmi_pending);                 /* la NMI a été consommée */
+}
+
+/* La séquence d'interruption elle-même dure 7 cycles, tous porteurs d'un accès. */
+TEST(test_irq_sequence_is_seven_cycles) {
+    cpu6502_t cpu; memory_t mem;
+    uint8_t code[] = { 0xEA, 0xEA };
+    setup_irq(&cpu, &mem, code, sizeof(code));
+
+    cpu_irq_set(&cpu, IRQF_VIA);
+    cpu_step(&cpu);                                /* NOP, échantillonne l'IRQ */
+    g_buslog_n = 0;
+    cpu_set_bus_callback(&cpu, buslog_cb, NULL);
+    int cyc = cpu_step(&cpu);                      /* la séquence d'IRQ */
+    cpu_set_bus_callback(&cpu, NULL, NULL);
+
+    ASSERT_EQ(cyc, 7);
+    ASSERT_EQ(g_buslog_n, 7);                      /* aucun cycle sans accès */
+    ASSERT_EQ(cpu.PC, 0x0300);
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1663,6 +1831,15 @@ int main(void) {
     RUN(test_microseq_store_dummy_read);
     RUN(test_microseq_cycle_granularity);
     RUN(test_microseq_matches_legacy_state);
+
+    printf("\n  Timing des interruptions (V2-E1 / US1.3):\n");
+    RUN(test_irq_asserted_on_last_cycle_is_late);
+    RUN(test_irq_asserted_before_penultimate_is_taken);
+    RUN(test_sei_does_not_block_already_pending_irq);
+    RUN(test_cli_delays_irq_by_one_instruction);
+    RUN(test_plp_delays_irq_by_one_instruction);
+    RUN(test_nmi_hijacks_brk);
+    RUN(test_irq_sequence_is_seven_cycles);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

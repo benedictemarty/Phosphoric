@@ -45,13 +45,14 @@ make SDL2=1
 ## Features
 
 ### Core Emulation
-- **MOS 6502 CPU** — Two interchangeable cores, same semantics, different cycle scheduling:
-  the default is bus-cycle ordered (exact per-opcode cycle counts, bus accesses at the right
-  intra-instruction cycle, internal cycles padded); **`--cpu-microseq` is cycle-stepped** —
-  every cycle emits its own bus access, NMOS dummy accesses included, and scores **100,00 %
-  exact bus sequence on 2 440 000 oracle cases** (vs 44,26 % for the default core).
-  256/256 opcodes (151 official + 105 illegal), 13 addressing modes, NMOS decimal mode,
-  level-triggered IRQ. See [docs/ACCURACY.md](docs/ACCURACY.md).
+- **MOS 6502 CPU — cycle-stepped** (default since v1.124.0): every cycle emits its own bus
+  access, NMOS dummy accesses included; **100,00 % exact bus sequence on 2 440 000 cases** of
+  the SingleStepTests/65x02 oracle. IRQ/NMI are sampled at the **penultimate cycle**, so
+  `SEI` does not shield the next instruction from an already-pending IRQ, `CLI`/`PLP` delay it
+  by one instruction, and an NMI hijacks a `BRK` in flight. 256/256 opcodes (151 official +
+  105 illegal), 13 addressing modes, NMOS decimal mode, level-triggered IRQ. The historical
+  core (bus-cycle ordered, 44,26 % exact) stays available via `--cpu-legacy`.
+  See [docs/ACCURACY.md](docs/ACCURACY.md).
 - **64KB Memory** — RAM ($0000-$BFFF), ROM ($C000-$FFFF), banking, I/O routing
 - **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, keyboard matrix, shift register (8 modes), T2 pulse counting, **complete CA2/CB2 PCR modes** (input edges, independent interrupts, handshake — CB2 write-only like silicon —, 1-cycle pulse, manual) and IRA/IRB input latching (ACR bits 0-1)
 - **ULA Video** — Text mode (40x28) + HIRES (240x200), serial attributes, PAL timing (312 lines x 64 cycles)
@@ -293,7 +294,7 @@ Display:
 Trace:
   --trace FILE              Log CPU instruction trace to FILE
   --trace-max N             Max instructions to trace (default: unlimited)
-  --cpu-microseq            Cycle-stepped 6502 core (every cycle emits its bus access)
+  --cpu-legacy              Fall back to the historical core (no dummy accesses)
   --cycle-trace FILE        Log ONE LINE PER CYCLE (bus addr, data, R/W, registers)
   --cycle-trace-max N       Max lines for --cycle-trace (0 = unlimited)
   --psg-trace FILE          Log AY sound-register writes (reg 0-13) with CPU cycle

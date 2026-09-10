@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)
+
+Fin de l'**épic V2-E1** : le CPU de Phosphoric est désormais **exact au cycle**, et
+c'est le chemin par défaut.
+
+#### Interruptions au bon cycle (US1.3)
+
+/IRQ et /NMI sont maintenant **échantillonnées à chaque cycle**, et la décision de
+prendre l'interruption à la fin d'une instruction se fonde sur l'échantillon du
+**cycle pénultième** — comme le matériel. Le masque I est pris en compte **au moment
+de l'échantillonnage**, ce qui produit par construction la sémantique retardée des
+instructions qui le modifient à leur dernier cycle. Conséquences observables, toutes
+couvertes par des tests :
+
+- une interruption ne peut plus être prise **avant** l'instruction en cours (le
+  matériel n'en est pas capable ; l'ancien cœur le faisait) ;
+- une ligne qui s'active pendant le **dernier** cycle d'une instruction arrive trop
+  tard : elle n'est honorée qu'après l'instruction suivante ;
+- **`SEI` ne protège pas** l'instruction qui le suit d'une IRQ déjà pendante ;
+- **`CLI` et `PLP` retardent** symétriquement l'arrivée de l'IRQ d'une instruction ;
+- une **NMI détourne un `BRK`** en vol (vecteur `$FFFA`, drapeau B empilé conservé).
+
+Ce sprint a par ailleurs **corrigé un défaut introduit en V2-S2** : la séquence
+d'interruption du micro-séquenceur durait **8 cycles au lieu de 7** (un cycle interne
+de trop). Invisible à l'écran, mais faux — trouvé par le test « la séquence
+d'interruption fait 7 cycles, tous porteurs d'un accès ». L'oracle 65x02 ne couvre
+pas les interruptions : ce sont les tests dédiés de ce sprint qui l'ont attrapé.
+
+#### Bascule du moteur par défaut (US1.4)
+
+`cpu_init()` active le micro-séquenceur : plus aucun cycle bourré sur le chemin
+normal, tout cycle porte son accès. Le moteur historique reste accessible par
+**`--cpu-legacy`** (et `--cpu-microseq` est conservé sans effet pour les scripts).
+Trois tests qui encodaient l'ancien comportement ont été mis à jour, commentaire à
+l'appui : ils attendaient une IRQ prise avant l'instruction en cours, et un `JSR`
+sans sa lecture de pile factice.
+
+#### Validation
+
+- `make tests` **intégralement vert** avec le nouveau défaut ;
+- boots **ORIC-1** et **Atmos** byte-identiques entre les deux moteurs ;
+- **13 programmes réels identiques** à l'écran : 6 disquettes Sedoric (Citadelle,
+  3D Fongus, Le Manoir du Dr Genius, OricChess, L'Aigle d'Or, HHGG) et 7 cassettes
+  (007, Acheron, Atlantis, Manic Miner, Airline, Batnav, Chopper) ;
+- Klaus Dormann réussi au **même nombre de cycles** (96 241 367) sur les deux cœurs ;
+- oracle 65x02 : **100,00 %** sur les quatre propriétés pour le micro-séquencé ;
+- coût : **2,5 %** du budget de 20 ms par trame (491 µs), contre 1,9 % pour
+  l'ancien cœur — très loin du plafond de 5 % fixé par le plan.
+
+#### Vocabulaire
+
+« **cœur CPU exact au cycle** » devient une affirmation justifiée et mesurée. La
+machine entière, elle, **reste N2** : le VIA reçoit encore des paquets de cycles,
+l'ULA rend par ligne de 64 cycles et le PSG tourne au taux d'échantillonnage. C'est
+l'objet des épics V2-E2 à V2-E5.
+
+`make clean && make tests` : toutes suites vertes, builds SDL2=0 et SDL2=1 OK.
+EMU_VERSION 1.123.0 → **1.124.0-alpha**.
+
 ### Added — cœur 6502 micro-séquencé : 100 % de conformité cycle par cycle (V2-S2)
 
 Le sprint précédent a livré l'oracle et chiffré l'écart : **44,26 %** de séquences

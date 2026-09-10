@@ -541,6 +541,13 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->cpu.P = read_u8(fp);
             emu->cpu.cycles = read_u64le(fp);
             emu->cpu.irq = read_u8(fp);
+            /* Les savestates sont pris en frontière d'instruction : l'état du
+             * micro-séquenceur n'a donc rien à persister. On repart seulement
+             * d'échantillons d'interruption neutres — une IRQ déjà pendante sera
+             * prise une instruction plus tard, ce qui est déterministe. */
+            emu->cpu.ms_active = false;
+            emu->cpu.ms_nmi_sampled = false;
+            emu->cpu.ms_irq_sampled = false;
         } else if (memcmp(tag, "MEM\0", 4) == 0) {
             fread(emu->memory.ram, 1, RAM_SIZE, fp);
             fread(emu->memory.upper_ram, 1, ROM_SIZE, fp);

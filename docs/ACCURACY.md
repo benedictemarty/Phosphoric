@@ -20,7 +20,7 @@ vérifiable, classe chaque composant, et sert de référence d'acceptation au pl
 
 | Composant | Niveau réel | Ce qui manque pour N3 |
 |-----------|-------------|------------------------|
-| **CPU 6502** (`src/cpu/`) | **N2** par défaut (mesuré : N2 100 %, N3 44,26 %)<br>**N3 à 100 %** avec `--cpu-microseq` | Accès **factices** absents (page-cross indexé, `zp,X`, RMW `abs,X`, store `abs,X/Y`, re-fetch de branche) ; cycles internes bourrés en bloc (`cpu_step`) ; IRQ échantillonnée **avant** l'instruction, pas au cycle pénultième ; pas de sémantique retardée du drapeau I (`CLI`/`SEI`/`PLP`) ; pas de détournement NMI/BRK. **Le moteur `--cpu-microseq` (V2-E1) comble tout cela sauf l'instant de prise des interruptions** : 100 % de séquence bus exacte sur 2 440 000 cas. Acquis : 256/256 opcodes, double-écriture RMW, bourrage exact du total, et **oracle cycle par cycle dans la suite de tests** (`make test-cycle`, V2-S1). |
+| **CPU 6502** (`src/cpu/`) | **N3 atteint** (défaut depuis v1.124.0) | Plus rien d'identifié. Séquence bus exacte **100,00 %** sur 2 440 000 cas de l'oracle 65x02 ; tous les accès factices du NMOS ; interruptions échantillonnées au **cycle pénultième** (donc drapeau I retardé de `CLI`/`SEI`/`PLP`) ; détournement NMI pendant `BRK`. Divergence assumée : les 12 opcodes **JAM** arrêtent le CPU au lieu de bloquer le bus. Le moteur historique (N2) reste disponible par `--cpu-legacy`. |
 | **VIA 6522** (`src/io/via6522.c`) | **N2 / N1 mixte** | `via_update(cycles)` reçoit des **paquets** (1 cycle par accès bus, puis le reste de l'instruction d'un coup) : les compteurs T1/T2 atterrissent juste, mais l'instant de pose de l'IFR à l'intérieur du paquet est approché (≤ 6 cycles). Conformité datasheet déjà auditée (`docs/HARDWARE_CONFORMANCE.md` §2). |
 | **ULA vidéo** (`src/video/video.c`) | **N1 (ligne)** | Rendu par **scanline de 64 cycles**, la ligne entière échantillonnée à un instant unique → une écriture en milieu de ligne s'applique à toute la ligne. Pas de modèle de *fetch* octet par cycle, pas de bordure/blanking temporisés, 224 lignes rendues sur 312. |
 | **PSG AY-3-8910** (`src/audio/ay3891x.c`) | **N1 (échantillon)** | Machine d'état cadencée à **44,1 kHz** (accumulateurs de débit) au lieu de `horloge/16` = 62,5 kHz ; LFSR de bruit et enveloppe cadencés au taux d'échantillonnage. Acquis : écritures registres **horodatées en cycles CPU** (file d'événements) → digidrums corrects. |
@@ -79,30 +79,35 @@ CHANGELOG. Le test fonctionnel de Klaus Dormann passe intégralement
 (`make test-dormann`), ce qui confirme que le déficit du cœur est **temporel, pas
 logique**.
 
-### Deux cœurs, un seul calcul (V2-S2)
+### Deux cœurs, un seul calcul (V2-S2/S3)
 
-Depuis la v1.123.0-alpha, le CPU a **deux moteurs** qui partagent la même
-sémantique (mêmes fonctions de calcul : drapeaux, BCD, opcodes illégaux) et ne
-diffèrent que par l'ordonnancement des cycles :
+Le CPU a **deux moteurs** qui partagent la même sémantique (mêmes fonctions de
+calcul : drapeaux, BCD, opcodes illégaux) et ne diffèrent que par
+l'ordonnancement des cycles. Depuis la v1.124.0-alpha, le **micro-séquencé est
+le moteur par défaut** ; l'historique reste accessible par `--cpu-legacy`.
 
-| | historique (défaut) | `--cpu-microseq` (V2-E1) |
+| | historique (`--cpu-legacy`) | micro-séquencé (**défaut**) |
 |---|---|---|
 | séquence bus exacte (N3) | 44,26 % | **100,00 %** |
 | cycles sans adresse | 12,8 % des cycles au boot | **0** |
 | accès factices du NMOS | absents | tous émis |
-| coût (trame, budget 20 ms) | 1,9 % | 2,7 % |
-| prise des interruptions | frontière d'instruction | frontière d'instruction (US1.3 à faire) |
+| prise des interruptions | frontière d'instruction | **cycle pénultième** |
+| drapeau I retardé (`CLI`/`SEI`/`PLP`) | non | **oui** |
+| détournement NMI pendant `BRK` | non | **oui** |
+| coût (trame, budget 20 ms) | 1,9 % | 2,5 % |
 
-Le moteur micro-séquencé est **opt-in** le temps de la migration : le chemin par
-défaut reste l'historique, donc aucune régression possible. Preuves
-d'intégration à l'identique : boot ORIC-1 et Atmos **byte-identiques**, jeu
-disquette (Citadelle, Sedoric + FDC + IRQ) identique, test Dormann réussi au
-**même nombre de cycles** (96 241 367) sur les deux moteurs.
+Preuves d'intégration à l'identique entre les deux moteurs : boots **ORIC-1** et
+**Atmos** byte-identiques, **13 programmes réels** (6 disquettes Sedoric dont
+Citadelle, OricChess, L'Aigle d'Or, HHGG + 7 cassettes dont Manic Miner,
+Atlantis, Acheron) identiques à l'écran, test Dormann réussi au **même nombre de
+cycles** (96 241 367).
 
-Ce qui manque encore pour dire « CPU exact au cycle » sans réserve : l'instant de
-prise des interruptions (le vrai 6502 échantillonne IRQ/NMI au cycle pénultième,
-les deux moteurs décident en frontière d'instruction), le drapeau I retardé de
-`CLI`/`SEI`/`PLP`, et le détournement NMI pendant BRK. C'est l'US1.3 du plan.
+**Conséquence observable de la fidélité retrouvée** : une interruption ne peut
+plus être prise *avant* l'instruction en cours (le matériel n'en est pas
+capable) ; une ligne qui s'active pendant le **dernier** cycle d'une instruction
+est vue trop tard et n'est honorée qu'après l'instruction suivante ; `SEI` ne
+protège pas l'instruction qui le suit d'une IRQ déjà pendante, et `CLI`/`PLP`
+retardent symétriquement son arrivée d'une instruction.
 
 La trace `--cycle-trace FICHIER` (une ligne par cycle : type d'accès, adresse,
 donnée, registres, lignes d'interruption) sert à diffuser un écart ligne à ligne
@@ -114,7 +119,13 @@ porteront leur accès réel quand V2-E1 aura livré le cœur micro-séquencé.
 
 Tant que V2 n'a pas livré son harnais de preuve :
 
-- ✅ « précis au cycle bus » / « bus-cycle accurate », **accompagné** de la définition N2.
+- ✅ **« cœur CPU exact au cycle » / « cycle-stepped CPU core »** — acquis depuis
+  la v1.124.0-alpha : 100 % de séquence bus exacte sur 2 440 000 cas de l'oracle,
+  interruptions au cycle pénultième. La portée doit rester **le CPU** : le reste
+  de la machine n'y est pas encore.
+- ✅ « précis au cycle bus » / « bus-cycle accurate » pour la **machine entière**,
+  **accompagné** de la définition N2 (le VIA reçoit encore des paquets, l'ULA
+  rend par ligne, le PSG tourne au taux d'échantillonnage).
 - ✅ « compteurs de cycles exacts par opcode (256/256) ».
 - ❌ « cycle-accurate » **seul**, « cycle exact », « cycle-par-cycle », « émulation au cycle près ».
 - ❌ « WD1793 cycle-accurate » → dire « WD1793 cadencé en cycles, modèle image plate ».

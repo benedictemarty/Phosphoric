@@ -342,7 +342,8 @@ static void ms_build_interrupt(cpu6502_t* cpu, uint16_t vector) {
     cpu->ms_crossed = false;
     ms_vector = vector;
     cpu->ms_base = cpu->PC;   /* PC d'avant l'interruption, pour --trace-irq */
-    plan_add(cpu, M_DUMMY_PC);
+    /* 7 cycles au total : le premier (lecture morte) est émis par le bloc de
+     * démarrage de cpu_cycle(), ce plan porte les 6 suivants. */
     plan_add(cpu, M_DUMMY_PC);
     plan_add(cpu, M_PUSH_PCH);
     plan_add(cpu, M_PUSH_PCL);
@@ -530,6 +531,18 @@ static uint16_t ms_unfixed(const cpu6502_t* cpu) {
     return (uint16_t)((cpu->ms_base & 0xFF00) | (cpu->ms_addr & 0x00FF));
 }
 
+/* Détournement par la NMI : si /NMI tombe avant le cycle qui empile P d'un BRK
+ * ou d'une séquence d'IRQ, c'est le vecteur NMI qui est lu — l'interruption
+ * basse priorité est « détournée ». Le drapeau B empilé reste celui de la
+ * séquence d'origine (BRK garde son B à 1). */
+static void ms_nmi_hijack(cpu6502_t* cpu) {
+    if (cpu->nmi_pending && ms_vector != 0xFFFA) {
+        ms_vector = 0xFFFA;
+        cpu->nmi_pending = false;
+        cpu->ms_nmi_sampled = false;
+    }
+}
+
 void cpu_set_microseq(cpu6502_t* cpu, bool enabled) {
     cpu->ms_enabled = enabled;
     cpu->ms_active = false;
@@ -540,28 +553,51 @@ bool cpu_microseq_enabled(const cpu6502_t* cpu) {
     return cpu->ms_enabled;
 }
 
+/* Échantillonne /NMI et /IRQ à la fin d'un cycle. Le dernier cycle d'une
+ * instruction n'échantillonne PAS : la décision qui suit doit se fonder sur
+ * l'état du cycle pénultième (US1.3). */
+static void ms_sample_interrupts(cpu6502_t* cpu, bool last_cycle) {
+    if (last_cycle) return;
+    cpu->ms_nmi_sampled = cpu->nmi_pending;
+    cpu->ms_irq_sampled = (cpu->irq || cpu->irq_pulse) &&
+                          !cpu_get_flag(cpu, FLAG_INTERRUPT);
+}
+
 bool cpu_cycle(cpu6502_t* cpu) {
     if (cpu->halted) return true;
 
     /* ─── Premier cycle : interruption ou lecture de l'opcode ─── */
     if (!cpu->ms_active) {
-        if (cpu->nmi_pending) {
+        /* Décision prise sur l'échantillon du cycle PÉNULTIÈME de l'instruction
+         * précédente, pas sur l'état courant des lignes. */
+        if (cpu->ms_nmi_sampled && cpu->nmi_pending) {
             cpu->nmi_pending = false;
+            cpu->ms_nmi_sampled = false;
             ms_build_interrupt(cpu, 0xFFFA);
             (void)cpu_mem_read(cpu, cpu->PC);    /* cycle 1 : lecture morte */
             cpu->ms_active = true;
+            ms_sample_interrupts(cpu, false);
             return false;
         }
-        if ((cpu->irq || cpu->irq_pulse) && !cpu_get_flag(cpu, FLAG_INTERRUPT)) {
+        /* Noter l'absence de test sur FLAG_INTERRUPT : le masque a déjà été
+         * pris en compte au moment de l'échantillonnage (cycle pénultième). Le
+         * retester ici ferait protéger l'instruction suivante par un SEI, ce que
+         * le matériel ne fait pas. */
+        if (cpu->ms_irq_sampled) {
             if (cpu->irq_pulse) cpu->irq_pulse--;
+            cpu->ms_irq_sampled = false;
             ms_build_interrupt(cpu, 0xFFFE);
             (void)cpu_mem_read(cpu, cpu->PC);
             cpu->ms_active = true;
+            ms_sample_interrupts(cpu, false);
             return false;
         }
         uint8_t opcode = cpu_fetch_byte(cpu);    /* cycle 1 : fetch opcode */
         ms_build_plan(cpu, opcode);
         cpu->ms_active = true;
+        /* Une instruction d'un seul cycle n'existe pas : ce cycle n'est jamais
+         * le dernier, on échantillonne donc toujours. */
+        ms_sample_interrupts(cpu, false);
         return false;
     }
 
@@ -645,6 +681,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
     case M_BRANCH_TAKEN:
         if (!ms_branch_taken(cpu, op)) {
             cpu->ms_active = false;              /* branche non prise : 2 cycles */
+            ms_sample_interrupts(cpu, true);
             return true;
         }
         (void)cpu_mem_read(cpu, cpu->PC);        /* lecture morte de l'opcode suivant */
@@ -657,6 +694,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         }
         if (!cpu->ms_crossed) {
             cpu->ms_active = false;              /* 3 cycles */
+            ms_sample_interrupts(cpu, true);
             return true;
         }
         break;
@@ -699,12 +737,16 @@ bool cpu_cycle(cpu6502_t* cpu) {
                       (uint8_t)((cpu->P & ~FLAG_BREAK) | FLAG_UNUSED));
         cpu->SP--;
         cpu_set_flag(cpu, FLAG_INTERRUPT, true);
+        ms_nmi_hijack(cpu);
         break;
     case M_PUSH_P_BRK:
         cpu_mem_write(cpu, (uint16_t)(0x0100 + cpu->SP),
                       (uint8_t)(cpu->P | FLAG_BREAK | FLAG_UNUSED));
         cpu->SP--;
-        if (op == 0x00) cpu_set_flag(cpu, FLAG_INTERRUPT, true);   /* BRK, pas PHP */
+        if (op == 0x00) {                          /* BRK, pas PHP */
+            cpu_set_flag(cpu, FLAG_INTERRUPT, true);
+            ms_nmi_hijack(cpu);
+        }
         break;
     case M_PUSH_A:
         cpu_mem_write(cpu, (uint16_t)(0x0100 + cpu->SP), cpu->A);
@@ -750,6 +792,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
     case M_JAM:
         cpu->halted = true;
         cpu->ms_active = false;
+        ms_sample_interrupts(cpu, true);
         return true;
     case M_END:
     default:
@@ -759,5 +802,6 @@ bool cpu_cycle(cpu6502_t* cpu) {
     cpu->ms_pc++;
     last = (cpu->ms_pc >= cpu->ms_len);
     if (last) cpu->ms_active = false;
+    ms_sample_interrupts(cpu, last);
     return last;
 }

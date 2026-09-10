@@ -33,6 +33,11 @@ void cpu_init(cpu6502_t* cpu, memory_t* memory) {
     memset(cpu, 0, sizeof(cpu6502_t));
     cpu->memory = memory;
     cpu->P = FLAG_UNUSED | FLAG_INTERRUPT;
+    /* V2-E1 / US1.4 : le cœur micro-séquencé est désormais le moteur par défaut
+     * (un cycle = un accès bus, accès factices du NMOS inclus, interruptions
+     * échantillonnées au cycle pénultième). Le moteur historique reste
+     * disponible par cpu_set_microseq(cpu, false) / --cpu-legacy. */
+    cpu->ms_enabled = true;
 }
 
 void cpu_reset(cpu6502_t* cpu) {
@@ -45,6 +50,9 @@ void cpu_reset(cpu6502_t* cpu) {
     cpu->nmi_pending = false;
     cpu->irq = 0;
     cpu->irq_pulse = 0;
+    cpu->ms_active = false;
+    cpu->ms_nmi_sampled = false;
+    cpu->ms_irq_sampled = false;
 }
 
 static void handle_nmi(cpu6502_t* cpu) {

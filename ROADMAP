@@ -35,7 +35,7 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] `--cycle-trace FICHIER` + `--cycle-trace-max N` (crochet `cpu_set_bus_callback()`,
             une ligne par cycle ; les cycles internes N2 sortent en `i`)
       - [x] `tools/fetch_vectors.sh` / `make fetch-vectors` (vecteurs tiers non versionnés)
-- [~] **V2-E1 — Cœur 6502 micro-séquencé** (S2-S4)
+- [x] **V2-E1 — Cœur 6502 micro-séquencé** (S2-S3) — **TERMINÉ : le CPU est exact au cycle**
       - [x] US1.1 `cpu_cycle()` + plan de micro-ops par cycle (`src/cpu/microseq.c`,
             256 opcodes, 17 familles de séquence, sémantique partagée avec opcodes.c)
       - [x] US1.2 **tous** les accès factices (page-cross, `zp,X`, `(zp,X)`,
@@ -44,9 +44,13 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             opt-in `--cpu-microseq` ; coût 1,9 % → 2,7 % du budget trame
       - [x] Intégration vérifiée : boots ORIC-1/Atmos byte-identiques, Citadelle
             (Sedoric+FDC+IRQ) identique, Dormann au même cycle (96 241 367)
-      - [ ] US1.3 échantillonnage IRQ/NMI au cycle pénultième, drapeau I retardé
-            (`CLI`/`SEI`/`PLP`), détournement NMI pendant BRK
-      - [ ] US1.4 bascule du micro-séquenceur en moteur par défaut
+      - [x] US1.3 échantillonnage IRQ/NMI au **cycle pénultième**, drapeau I retardé
+            (`CLI`/`SEI`/`PLP`) obtenu par construction, détournement NMI pendant `BRK`
+            (7 tests dédiés ; a révélé une séquence d'IRQ à 8 cycles au lieu de 7, corrigée)
+      - [x] US1.4 **micro-séquenceur par défaut** (`--cpu-legacy` pour le repli) ;
+            plus aucun cycle bourré sur le chemin normal
+      - [x] Corpus : boots ORIC-1/Atmos + **13 programmes réels** (6 disquettes,
+            7 cassettes) identiques entre les deux moteurs ; coût 2,5 % du budget trame
 - [ ] **V2-E2 — Horloge maître & ordonnancement** (S4-S5) : `emu_cycle()`, ordre
       intra-cycle figé (φ1 ULA / φ2 CPU / fronts périphériques), fin des paquets
       `via_update(n)` / `io_bus_tick(n)`, jonction avec l'Épic B (30 sous-ticks φ2)
