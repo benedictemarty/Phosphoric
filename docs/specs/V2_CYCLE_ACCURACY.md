@@ -415,7 +415,9 @@ variabilité de la machine (±5 %), pas du code.
 - **US8.3 — ✅ (2.0.0-beta.1)** `docs/articles/v2-cycle-stepped.md` : ce qu'on
   avait dit et pourquoi c'était faux, ce que la V2 change de visible, les deux
   défauts que seule une autre méthode pouvait révéler, ce qu'on ne dit toujours pas.
-- **US8.4** — Release 2.0.0, tags, binaires, pages de distribution.
+- **US8.4 — ✅ (2.0.0)** tag `v2.0.0` sur les quatre remotes, release GitHub
+  (binaire Linux strippé + zip Windows du workflow). *Backlog* : page WASM
+  (`gh-pages`) à reconstruire, l'emsdk n'étant pas installé ici.
 
 ---
 
@@ -434,7 +436,7 @@ variabilité de la machine (±5 %), pas du code.
 | **V2-S8** | Étage de sortie audio sur schéma (alpha.5) ; US6.2 FDC : LOST DATA, write-protect, RNF terminal (alpha.6) ; US6.1 écartée sur mesure, parité cassette corrigée (alpha.7) → **Épic V2-E6 terminé** (US6.3 en backlog) | 2.0.0-alpha.5 → alpha.7 |
 | **V2-S9** | US7.1 budget bloquant + US7.2 savestate point de reprise exact + US7.3 corpus + US7.4 CI ; **cycle fantôme du branchement non pris corrigé** (le balayage prenait 410 cycles/trame sur le CPU) → **Épic V2-E7 livré** (US7.3 sur le corpus local, pas les 41 d'OricProgramsLib) | 2.0.0-alpha.8 |
 | **V2-S10** | Épic E8 : `docs/ACCURACY.md` en état final, note technique publique (`docs/articles/v2-cycle-stepped.md`), `README` — **US8.1/8.2/8.3 livrées** | 2.0.0-beta.1 |
-| **V2-S11** | Release 2.0.0, tags, binaires, pages de distribution | 2.0.0 |
+| **V2-S11** | Release **2.0.0 publiée** (tag, release GitHub Linux + Windows, CI verte après deux correctifs de build/test) ; page WASM en backlog (emsdk) | 2.0.0 |
 
 Jalon de bascule du vocabulaire : **atteint pour le CPU à la fin de V2-S3**
 (« cœur CPU exact au cycle, vérifié contre l'oracle 65x02 »). Pour la machine

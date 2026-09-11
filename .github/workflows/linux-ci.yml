@@ -5,8 +5,9 @@
 # Les ROMs ne sont pas versionnées (*.rom ignoré) : les tests qui en dépendent
 # se mettent en SKIP d'eux-mêmes ; la CI valide donc le cœur (CPU, horloge
 # maître, VIA, ULA, PSG, savestate, FDC sur images synthétiques), pas le boot
-# BASIC. Le budget de performance est jugé en BENCH_STRICT sur le runner, avec
-# un plafond relevé : un runner partagé n'est pas la machine de référence.
+# BASIC — le budget de performance (qui boote la ROM) se met donc en SKIP ici ;
+# BENCH_STRICT et le plafond relevé ne serviraient que si une ROM était fournie
+# au runner (un runner partagé n'est pas la machine de référence).
 name: linux-ci
 
 on:

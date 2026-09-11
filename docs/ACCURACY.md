@@ -1,7 +1,7 @@
 # Niveaux de précision temporelle de Phosphoric — état des lieux
 
 **Première version** : 2026-09-10 (1.120.0-alpha, audit) · **État courant** :
-2026-09-11, 2.0.0-beta.1 (fin de la V2, épics E0 à E7 livrés)
+2026-09-11, 2.0.0 (V2 terminée, épics E0 à E8 livrés)
 
 Ce document existe parce que le projet a communiqué « cycle-accurate » alors que
 l'implémentation ne l'était pas au sens strict du terme. Il fixe un vocabulaire

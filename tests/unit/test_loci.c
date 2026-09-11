@@ -1286,8 +1286,11 @@ TEST(test_uname_release_uses_emu_version) {
      */
     char release[9] = {0};
     memcpy(release, &l.xstack[l.xstack_ptr + 26], 8);
-    /* Should start with EMU_VERSION's leading chars ("1.16.64-alpha" → "1.16.64-"). */
-    ASSERT_TRUE(strncmp(release, EMU_VERSION, 8) == 0);
+    /* Should start with EMU_VERSION's leading chars ("1.16.64-alpha" → "1.16.64-").
+     * Le champ fait 8 caractères complétés par des espaces : une version plus
+     * courte ("2.0.0") ne se compare que sur sa propre longueur. */
+    size_t n = strlen(EMU_VERSION) < 8 ? strlen(EMU_VERSION) : 8;
+    ASSERT_TRUE(strncmp(release, EMU_VERSION, n) == 0);
     /* And NOT the frozen literal. */
     ASSERT_TRUE(strncmp(release, "1.16.27", 7) != 0);
 }

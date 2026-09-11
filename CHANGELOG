@@ -663,6 +663,43 @@ Reste pour la 2.0.0 (US8.4) : tag, binaires, pages de distribution.
 `make clean && make tests` : toutes suites vertes.
 EMU_VERSION 2.0.0-alpha.8 → **2.0.0-beta.1**.
 
+## [2.0.0] - 2026-09-11
+
+### Released — Phosphoric 2.0.0 : la machine cadencée au cycle (V2-S11, US8.4)
+
+Première version majeure depuis la 1.x. Ce qui change entre 1.120.0-alpha et
+2.0.0 est résumé dans `docs/articles/v2-cycle-stepped.md` et détaillé, épic par
+épic, dans les entrées 1.121.0-alpha → 2.0.0-beta.1 ci-dessus :
+
+- cœur 6502 micro-séquencé, **100,00 %** de séquence bus exacte sur l'oracle
+  65x02 (2 440 000 cas), interruptions au cycle pénultième ;
+- horloge maître : un appel, un cycle de toute la machine, jamais à vide ;
+- VIA au cycle (période N+2), ULA une cellule par cycle (splits raster), PSG à
+  `horloge/8` (enveloppe corrigée, plus de repliement, étage de sortie sur
+  schéma), FDC LOST DATA / write-protect, cassette parité impaire ;
+- savestate point de reprise exact, budget de performance bloquant, corpus,
+  CI Linux (les trois workflows sont verts sur ce commit).
+
+**Ce qu'elle ne revendique pas** : « exacte au cycle » pour la machine entière
+— FDC N1+, calage horizontal ULA non calibré, demi-cycle du one-shot VIA. La
+formulation exacte est dans `docs/ACCURACY.md`.
+
+**Distribution** : tag `v2.0.0` sur les quatre remotes ; release GitHub avec le
+binaire Linux x86_64 (SDL2, strippé) et le zip Windows x86_64 produit par le
+workflow `windows-build` sur ce commit. La page WebAssembly
+(`benedictemarty.github.io/Phosphoric`) reste sur le build de juillet 2026
+(1.49.0) : l'emsdk n'est pas installé sur la machine de développement — à
+reconstruire (`make wasm`) avant de republier `gh-pages`.
+
+**Correctif de test** : `test_uname_release_uses_emu_version` comparait 8
+caractères du champ `release` (complété par des espaces) à `EMU_VERSION` —
+faux pour toute version de moins de 8 caractères, donc pour « 2.0.0 » ; il
+compare désormais sur la longueur de la version.
+
+**Suivi** : CHANGELOG, VERSION_TRACKING, CIRRUS_OS, ROADMAP à jour.
+`make clean && make tests` : toutes suites vertes (LOCI_EMU=1 et 0).
+EMU_VERSION 2.0.0-beta.1 → **2.0.0**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)
