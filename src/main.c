@@ -1100,1228 +1100,1210 @@ static void poke_write(emulator_t* emu, uint16_t addr, uint8_t val) {
         memory_write(&emu->memory, addr, val);
 }
 
-static void emulator_run(emulator_t* emu) {
-    /* Skip the power-on reset when a save state was restored at startup —
-     * otherwise the loaded PC/cycles are wiped back to the reset vector. */
-    if (!emu->startup_state_loaded)
-        cpu_reset(&emu->cpu);
-
-    log_info("Starting emulation at PC=$%04X", emu->cpu.PC);
-
-    /* Sprint 35a — emit the IPC ready banner once everything is wired up
-     * so the client knows the channel is live. */
-    if (emu->control_mode) {
-        control_emit_ready(emu);
-    }
-
-    /* Sprint 36a — start wall clock for --bench. CLOCK_MONOTONIC is what
-     * we want : insensitive to NTP / RTC adjustments. */
-    struct timespec bench_t0 = {0};
-    if (emu->bench_mode) {
-        clock_gettime(CLOCK_MONOTONIC, &bench_t0);
-    }
-
-    uint64_t total_executed = 0;
-    uint64_t frame_count = 0;
-
+/* ─── Boucle principale : état d'un run ───
+ * Les compteurs et horloges que les hooks de trame se partagent. Ils étaient
+ * des variables locales d'une fonction de 1300 lignes (Epic 7, dette signalée) ;
+ * les porter ici permet de découper la boucle en étapes nommées, chacune
+ * lisible seule, sans rien changer à l'ordre d'exécution. */
+typedef struct {
+    uint64_t total_executed;      /* cycles exécutés depuis le début du run */
+    uint64_t frame_count;         /* trames terminées */
+    struct timespec bench_t0;     /* --bench : départ de l'horloge murale */
 #ifdef HAS_SDL2
-    uint32_t frame_start_ticks = SDL_GetTicks();
+    uint32_t frame_start_ticks;   /* limiteur 50 Hz : début de la trame (ms SDL) */
 #endif
-
 #ifndef __EMSCRIPTEN__
-    /* Real-time pacing deadline (--realtime, headless/no-SDL). Absolute
-     * CLOCK_MONOTONIC target advanced by one PAL frame each iteration so the
-     * pacing never drifts. */
-    struct timespec rt_next;
-    if (emu->realtime) clock_gettime(CLOCK_MONOTONIC, &rt_next);
+    struct timespec rt_next;      /* --realtime : échéance absolue de la trame */
 #endif
+} run_state_t;
 
-    while (emu->running && app_should_run()) {
-#ifdef HAS_SDL2
-        frame_start_ticks = SDL_GetTicks();
-#endif
-        /* Movie record/replay: the keyboard matrix is the only deterministic
-         * input. Apply this frame's state BEFORE the CPU runs so the VIA scan
-         * sees it. Replay overwrites live input; record samples it. */
-        if (emu->movie.mode == MOVIE_REPLAY) {
-            movie_replay_frame(&emu->movie, frame_count, emu->keyboard.matrix);
-        } else if (emu->movie.mode == MOVIE_RECORD) {
-            movie_record_frame(&emu->movie, frame_count, emu->keyboard.matrix);
+/* Une trame de cycles : la boucle par INSTRUCTION (débogueur, trace,
+ * profileur, patches bande) autour de l'horloge maître emu_step(). */
+static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
+    /* Execute one frame worth of CPU cycles */
+    emu_clock_frame_begin(emu);   /* horloge maître : début (ou reprise) de trame */
+    /* La position dans la trame est celle de l'horloge maître : un savestate
+     * chargé en cours de route (F4, `state-load`) y reprend, la boucle suit. */
+    int frame_cycles = 0;
+    int frame_start = emu->raster_cycle;
+    bool vsync_triggered = false;
+    while (emu->raster_cycle < CYCLES_PER_FRAME && !emu->cpu.halted) {
+        if (emu->clock_resume_pending) {       /* état chargé en pleine trame */
+            emu_clock_resume(emu);
+            frame_start = emu->raster_cycle - frame_cycles;
         }
-
-        /* Execute one frame worth of CPU cycles */
-        emu_clock_frame_begin(emu);   /* horloge maître : début (ou reprise) de trame */
-        /* La position dans la trame est celle de l'horloge maître : un savestate
-         * chargé en cours de route (F4, `state-load`) y reprend, la boucle suit. */
-        int frame_cycles = 0;
-        int frame_start = emu->raster_cycle;
-        bool vsync_triggered = false;
-        while (emu->raster_cycle < CYCLES_PER_FRAME && !emu->cpu.halted) {
-            if (emu->clock_resume_pending) {       /* état chargé en pleine trame */
-                emu_clock_resume(emu);
-                frame_start = emu->raster_cycle - frame_cycles;
-            }
-            /* Legacy single breakpoint (--breakpoint / -b) */
-            if (emu->breakpoint >= 0 && emu->cpu.PC == (uint16_t)emu->breakpoint) {
-                /* Promote to interactive debugger if available */
-                emu->debugger.active = true;
-            }
-
-            /* Interactive debugger check */
-            if (emu->debugger.active || debugger_should_break(&emu->debugger, emu)) {
-                if (emu->control_mode) {
-                    /* Pick the reason for the EVT stopped: async pause wins
-                     * over CPU-side break causes; otherwise use the explicit
-                     * last_break_reason populated by debugger_should_break
-                     * (sprint 35b). Fallback "break" for the first entry
-                     * when active was set pre-loop. */
-                    const char* reason =
-                        emu->control_async_pause_pending ? "user" :
-                        emu->debugger.last_break_reason[0]
-                            ? emu->debugger.last_break_reason
-                            : "break";
-                    emu->control_async_pause_pending = false;
-                    /* Reset step_mode so the next `continue` doesn't fire
-                     * stepping; control_repl will set it again on a `step`
-                     * command. */
-                    emu->debugger.step_mode = false;
-                    control_emit_stopped(emu, reason);
-                    /* Clear last_break_reason after emitting so the next
-                     * stop starts fresh. */
-                    emu->debugger.last_break_reason[0] = '\0';
-                    /* Refresh the cast (MJPEG) frame with the current screen
-                     * before blocking in the REPL: the render loop won't run
-                     * while stopped, so otherwise the stream stays frozen on an
-                     * earlier frame. When debugging, the user must see the screen
-                     * as it is at the breakpoint. */
-                    if (emu->has_cast_server) {
-                        emu_refresh_for_capture(emu);
-                        cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
-                                               (unsigned int)emu->video.native_w,
-                                               (unsigned int)emu->video.native_h);
-                        /* Double diffusion : les clients MJPEG (<img> navigateur)
-                         * affichent souvent la frame précédente et gardent la
-                         * dernière « en vol ». On laisse le thread cast diffuser
-                         * cette frame (tick ~20 ms) puis on la re-signale : la 2e
-                         * diffusion pousse l'écran du point d'arrêt au premier plan. */
-                        nanosleep(&(struct timespec){0, 30000000L}, NULL); /* 30 ms */
-                        cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
-                                               (unsigned int)emu->video.native_w,
-                                               (unsigned int)emu->video.native_h);
-                    }
-                    control_repl(emu);
-                } else if (emu->tui_mode) {
-                    tui_repl(emu);
-                } else if (emu->gdb_mode) {
-                    gdb_stub_stopped((gdb_stub_t*)emu->gdb_stub, emu);
-                } else {
-                    debugger_repl(&emu->debugger, emu);
-                }
-                if (!emu->running) break;
-            }
-
-            /* CPU trace logging (before step, captures pre-execution state) */
-            trace_log_instruction(&emu->trace, &emu->cpu);
-
-            /* CPU profiler (record address and opcode before step) */
-            profiler_record_instruction(&emu->profiler, &emu->cpu);
-            uint16_t prof_pc = emu->cpu.PC;
-
-            tape_patches(emu);
-
-            /* Jasmin auto-boot (Oricutron 8912.c): while the BASIC ROM is still
-             * mapped, when the ROM boot reaches a fixed PC, page in the Jasmin
-             * ROM ($3FB=1) and reset — the Jasmin ROM's reset vector then boots
-             * the disk. One-shot per boot. Confirmed traps: Atmos $EB78, ORIC-1
-             * $E905. */
-            if (emu->has_jasmin && !emu->jasmin.autoboot_done && !emu->jasmin.romdis) {
-                uint16_t jtrap = (emu->model == ORIC_MODEL_ATMOS) ? 0xEB78 : 0xE905;
-                if (emu->cpu.PC == jtrap) {
-                    jasmin_write(&emu->jasmin, JASMIN_ROMDIS, 1);
-                    emu->memory.jasmin_romdis = emu->jasmin.romdis;
-                    emu->memory.jasmin_olay   = emu->jasmin.olay;
-                    cpu_reset(&emu->cpu);
-                    if (fdc_trace_enabled())
-                        fprintf(stderr, "[JASMIN] autoboot @ %04X → ROMDIS, "
-                                "reset PC=%04X\n", jtrap, emu->cpu.PC);
-                    emu->jasmin.autoboot_done = true;
-                }
-            }
-
-            /* Horloge maître (V2-E2) : une instruction, cycle par cycle, avec
-             * l'ULA et les périphériques avançant en verrou (src/emu_clock.c).
-             * Remplace `cpu_step` + le calcul de scanline qui vivait ici. */
-            int step = emu_step(emu);
-            frame_cycles = emu->raster_cycle - frame_start;
-
-            /* Post-CLOAD BASIC rechain: the ORIC ROM does NOT rechain
-             * line pointers after CLOAD. TAP files may have stale pointers
-             * (e.g. TYRANN.TAP). Detect when the CLOAD data loop completes
-             * (PC hits cload_data_rts after readbyte was active) and fix
-             * all next-line pointers so GOTO/GOSUB can traverse the chain. */
-            if (emu->tape_readbyte_active && emu->rom_patches &&
-                emu->cpu.PC == emu->rom_patches->cload_data_rts) {
-                /* Only rechain BASIC programs (header file-type byte $00).
-                 * Machine code loads ($80, $C0) must not be rechained —
-                 * rechaining would overwrite program bytes with bogus
-                 * next-line pointers (seen with Asteroids at $0500: 12
-                 * "fixed" pointers corrupted the code, crashing the ROM
-                 * 1.0 autorun JMP ($5F)). The type byte address is
-                 * ROM-specific: $64 on ORIC-1, $02AE on Atmos. */
-                if (emu->memory.ram[emu->rom_patches->tape_type_addr] == 0x00) {
-                    basic_rechain(&emu->memory);
-                }
-                emu->tape_readbyte_active = false;
-            }
-
-            /* CPU profiler (record cycle cost after step) */
-            profiler_record_cycles(&emu->profiler, prof_pc, step);
-
-            /* PHI2-clocked peripherals (VIA timers, Microdisc/LOCI FDC, ACIA,
-             * DTL 2000, Mageco MIDI) are now advanced per-cycle by the CPU's
-             * cpu_cycle_tick() callback, in step with the bus accesses, rather
-             * than in a single post-instruction batch here. */
-
-            /* NOTE: real Oric hardware does NOT expose VSync via VIA CB1.
-             * VSync detection on a real Oric is done by polling memory
-             * (ULA-driven counters), or by programming VIA Timer 1 in
-             * continuous mode at the frame period (20 ms PAL). No VIA
-             * signal is toggled here on purpose — Phosphoric stays faithful
-             * to the hardware. */
-            (void)vsync_triggered;
-
-            /* Le rendu scanline et le tick raster ULA-NG sont désormais
-             * émis par l'horloge maître, en phase φ1 de chaque cycle
-             * (src/emu_clock.c) — plus de calcul de position ici. */
-        }
-
-        /* Termine la trame (lignes restantes si le CPU s'est arrêté en cours). */
-        emu_clock_frame_end(emu);
-
-        total_executed += (uint64_t)frame_cycles;
-
-        /* LOCI co-sim (--loci-emu) — modèle EDGE : le firmware PULSE nIRQ ; l'émulateur
-         * latche chaque pulse. io_bus.c en draine juste après chaque transaction MIA
-         * (pulses SYNCHRONES). ICI, une fois par frame, on draine les pulses restants
-         * et on les délivre en EDGE / tir unique (cpu_irq_pulse) → une IRQ par pulse,
-         * sans tempête. nRESET reste piloté par le bouton MENU (ci-dessous).
-         *
-         * ⚠️ PAS de free-run borné (loci_emu_tick) ici : avancer le firmware avec Phi2
-         * maintenu HAUT ENTRE deux transactions désynchronise la machine à états de
-         * service du bus pendant une opération MIA multi-étapes (ex. ouverture de
-         * fichier à la sélection d'un .dsk) → l'opération ne se termine jamais, le 6502
-         * reste bloqué sur `BVC *` → MENU FIGÉ. Le firmware ne doit avancer QU'EN SYNC
-         * avec les transactions bus. Conséquence assumée : pas de nIRQ purement
-         * asynchrone (timers) hors transaction ; le nIRQ synchrone suffit. */
-        if (loci_emu_active()) {
-            /* Pompe l'échange modem CDC↔ACIA (RX ASYNCHRONE : octets arrivant du dongle
-             * hors accès 6502). Sûr entre transactions : acia_task (guest-call core0,
-             * borné) ne pilote PAS le bus/action-SM (≠ loci_emu_tick), il ne fait que
-             * déplacer des octets et mettre à jour l'io-page. No-op si pas de --loci-cdc. */
-            loci_emu_acia_tick();
-            int loci_irq_pulses = loci_emu_irq_take();
-            for (int i = 0; i < loci_irq_pulses; i++) cpu_irq_pulse(&emu->cpu);
-        }
-
-        /* --loci-menu-at : simuler l'appui bouton MENU LOCI puis reset (test).
-         * loci_emu_menu_button() attend la fin du boot arrière-plan si besoin. */
-        if (g_loci_menu_at && total_executed >= g_loci_menu_at) {
-            g_loci_menu_at = 0;   /* une seule fois */
-            log_info("LOCI-emu: --loci-menu-at → appui bouton MENU");
-            if (loci_emu_menu_button())
-                cpu_reset(&emu->cpu);   /* redémarre dans le menu LOCI servi */
-        }
-
-        /* Headless audio sinks : render THIS frame's PSG audio ONCE via
-         * ay_generate (the same routine the SDL callback uses) and feed every
-         * active sink — the --audio-wav file and/or the AVI's PCM stream.
-         * Generating once is essential : ay_generate consumes the PSG event
-         * queue, so two calls per frame would double-drain it. Armed only in
-         * headless (in GUI the SDL audio device is the generator's owner). */
-        bool avi_audio = emu->headless && emu->video_avi_active && emu->video_avi_rec.has_audio;
-        /* Cast /audio in headless : the SDL callback (the GUI's audio generator +
-         * cast pusher) never runs, so feed the cast ring here — the exact
-         * headless counterpart of what audio_callback does in GUI. Gated on the
-         * cast server being active (itself opt-in via --cast-server); no extra
-         * flag. In non-CAST builds has_cast_server is always false. */
-        bool cast_audio = emu->headless && emu->has_cast_server;
-        if (emu->audio_wav_fp || avi_audio || cast_audio) {
-            enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
-            int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
-            ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
-            /* Mix in the SP0256 speech synth (mono → both channels), if active. */
-            if (emu->has_sp0256 && emu->sp0256.rom_valid) {
-                int16_t sbuf[WAV_FRAME_SAMPLES];
-                sp0256_generate(&emu->sp0256, sbuf, WAV_FRAME_SAMPLES);
-                for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
-                    wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + sbuf[i]) / 2);
-                    wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + sbuf[i]) / 2);
-                }
-            }
-            /* Mix in the MEA8000 (TMPI) speech synth, if active. */
-            if (emu->has_mea8000) {
-                int16_t mbuf[WAV_FRAME_SAMPLES];
-                mea8000_generate(&emu->mea8000, mbuf, WAV_FRAME_SAMPLES);
-                for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
-                    wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + mbuf[i]) / 2);
-                    wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + mbuf[i]) / 2);
-                }
-            }
-            if (emu->audio_wav_fp) {
-                fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
-                emu->audio_wav_data_bytes +=
-                    (uint32_t)(WAV_FRAME_SAMPLES * 2 * (int)sizeof(int16_t));
-            }
-            if (avi_audio)
-                avi_recorder_add_audio(&emu->video_avi_rec, wav_buf, WAV_FRAME_SAMPLES);
-            /* Same interleaved-stereo buffer the SDL callback pushes in GUI. */
-            if (cast_audio)
-                cast_server_push_audio(&emu->cast_server, wav_buf, WAV_FRAME_SAMPLES);
-        }
-
-        /* Sprint 35a freeze — async pause: once per frame, peek at stdin.
-         * If the IDE sent `pause`, hand control back to the REPL right
-         * after this frame ends. Latency = at most one frame (~20 ms). */
-        if (emu->control_mode && control_poll_pause(emu)) {
+        /* Legacy single breakpoint (--breakpoint / -b) */
+        if (emu->breakpoint >= 0 && emu->cpu.PC == (uint16_t)emu->breakpoint) {
+            /* Promote to interactive debugger if available */
             emu->debugger.active = true;
         }
 
-        /* GDB stub: once per frame, check for a Ctrl-C interrupt or a client
-         * disconnect; either forces a stop into gdb_stub_stopped() next loop. */
-        if (emu->gdb_mode && gdb_stub_poll_interrupt((gdb_stub_t*)emu->gdb_stub)) {
-            emu->debugger.active = true;
+        /* Interactive debugger check */
+        if (emu->debugger.active || debugger_should_break(&emu->debugger, emu)) {
+            if (emu->control_mode) {
+                /* Pick the reason for the EVT stopped: async pause wins
+                 * over CPU-side break causes; otherwise use the explicit
+                 * last_break_reason populated by debugger_should_break
+                 * (sprint 35b). Fallback "break" for the first entry
+                 * when active was set pre-loop. */
+                const char* reason =
+                    emu->control_async_pause_pending ? "user" :
+                    emu->debugger.last_break_reason[0]
+                        ? emu->debugger.last_break_reason
+                        : "break";
+                emu->control_async_pause_pending = false;
+                /* Reset step_mode so the next `continue` doesn't fire
+                 * stepping; control_repl will set it again on a `step`
+                 * command. */
+                emu->debugger.step_mode = false;
+                control_emit_stopped(emu, reason);
+                /* Clear last_break_reason after emitting so the next
+                 * stop starts fresh. */
+                emu->debugger.last_break_reason[0] = '\0';
+                /* Refresh the cast (MJPEG) frame with the current screen
+                 * before blocking in the REPL: the render loop won't run
+                 * while stopped, so otherwise the stream stays frozen on an
+                 * earlier frame. When debugging, the user must see the screen
+                 * as it is at the breakpoint. */
+                if (emu->has_cast_server) {
+                    emu_refresh_for_capture(emu);
+                    cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
+                                           (unsigned int)emu->video.native_w,
+                                           (unsigned int)emu->video.native_h);
+                    /* Double diffusion : les clients MJPEG (<img> navigateur)
+                     * affichent souvent la frame précédente et gardent la
+                     * dernière « en vol ». On laisse le thread cast diffuser
+                     * cette frame (tick ~20 ms) puis on la re-signale : la 2e
+                     * diffusion pousse l'écran du point d'arrêt au premier plan. */
+                    nanosleep(&(struct timespec){0, 30000000L}, NULL); /* 30 ms */
+                    cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
+                                           (unsigned int)emu->video.native_w,
+                                           (unsigned int)emu->video.native_h);
+                }
+                control_repl(emu);
+            } else if (emu->tui_mode) {
+                tui_repl(emu);
+            } else if (emu->gdb_mode) {
+                gdb_stub_stopped((gdb_stub_t*)emu->gdb_stub, emu);
+            } else {
+                debugger_repl(&emu->debugger, emu);
+            }
+            if (!emu->running) break;
         }
 
-        /* Fast-load phase 1: inject TAP data into RAM as soon as the ROM
-         * RAM test is done (~3M cycles). Injecting early ensures the binary
-         * is in place when the BASIC READY prompt appears (~3.6M cycles) so
-         * a user typing CALL/USR manually finds valid opcodes at start_addr.
-         * The ROM init writes to its own zero-page/system area, not to
-         * $0500+ where our binary goes, so no overwrite race. */
-        if (emu->fastload_pending && total_executed > 3000000) {
-            for (int i = 0; i < emu->fastload_size; i++) {
-                memory_write(&emu->memory, (uint16_t)(emu->fastload_addr + i),
-                             emu->fastload_buf[i]);
-            }
-            log_info("Deferred fast-load: injected %d bytes at $%04X-$%04X (after %llu cycles)",
-                     emu->fastload_size, emu->fastload_addr,
-                     emu->fastload_addr + emu->fastload_size - 1,
-                     (unsigned long long)total_executed);
+        /* CPU trace logging (before step, captures pre-execution state) */
+        trace_log_instruction(&emu->trace, &emu->cpu);
 
-            if (emu->fastload_type == 0x00) {
-                /* BASIC: rechain + VARTAB now (binary fully in RAM) */
+        /* CPU profiler (record address and opcode before step) */
+        profiler_record_instruction(&emu->profiler, &emu->cpu);
+        uint16_t prof_pc = emu->cpu.PC;
+
+        tape_patches(emu);
+
+        /* Jasmin auto-boot (Oricutron 8912.c): while the BASIC ROM is still
+         * mapped, when the ROM boot reaches a fixed PC, page in the Jasmin
+         * ROM ($3FB=1) and reset — the Jasmin ROM's reset vector then boots
+         * the disk. One-shot per boot. Confirmed traps: Atmos $EB78, ORIC-1
+         * $E905. */
+        if (emu->has_jasmin && !emu->jasmin.autoboot_done && !emu->jasmin.romdis) {
+            uint16_t jtrap = (emu->model == ORIC_MODEL_ATMOS) ? 0xEB78 : 0xE905;
+            if (emu->cpu.PC == jtrap) {
+                jasmin_write(&emu->jasmin, JASMIN_ROMDIS, 1);
+                emu->memory.jasmin_romdis = emu->jasmin.romdis;
+                emu->memory.jasmin_olay   = emu->jasmin.olay;
+                cpu_reset(&emu->cpu);
+                if (fdc_trace_enabled())
+                    fprintf(stderr, "[JASMIN] autoboot @ %04X → ROMDIS, "
+                            "reset PC=%04X\n", jtrap, emu->cpu.PC);
+                emu->jasmin.autoboot_done = true;
+            }
+        }
+
+        /* Horloge maître (V2-E2) : une instruction, cycle par cycle, avec
+         * l'ULA et les périphériques avançant en verrou (src/emu_clock.c).
+         * Remplace `cpu_step` + le calcul de scanline qui vivait ici. */
+        int step = emu_step(emu);
+        frame_cycles = emu->raster_cycle - frame_start;
+
+        /* Post-CLOAD BASIC rechain: the ORIC ROM does NOT rechain
+         * line pointers after CLOAD. TAP files may have stale pointers
+         * (e.g. TYRANN.TAP). Detect when the CLOAD data loop completes
+         * (PC hits cload_data_rts after readbyte was active) and fix
+         * all next-line pointers so GOTO/GOSUB can traverse the chain. */
+        if (emu->tape_readbyte_active && emu->rom_patches &&
+            emu->cpu.PC == emu->rom_patches->cload_data_rts) {
+            /* Only rechain BASIC programs (header file-type byte $00).
+             * Machine code loads ($80, $C0) must not be rechained —
+             * rechaining would overwrite program bytes with bogus
+             * next-line pointers (seen with Asteroids at $0500: 12
+             * "fixed" pointers corrupted the code, crashing the ROM
+             * 1.0 autorun JMP ($5F)). The type byte address is
+             * ROM-specific: $64 on ORIC-1, $02AE on Atmos. */
+            if (emu->memory.ram[emu->rom_patches->tape_type_addr] == 0x00) {
                 basic_rechain(&emu->memory);
-                uint16_t vartab = emu->fastload_end + 1;
-                memory_write(&emu->memory, 0x9C, (uint8_t)(vartab & 0xFF));
-                memory_write(&emu->memory, 0x9D, (uint8_t)(vartab >> 8));
-                memory_write(&emu->memory, 0x9E, (uint8_t)(vartab & 0xFF));
-                memory_write(&emu->memory, 0x9F, (uint8_t)(vartab >> 8));
-                memory_write(&emu->memory, 0xA0, (uint8_t)(vartab & 0xFF));
-                memory_write(&emu->memory, 0xA1, (uint8_t)(vartab >> 8));
-                log_info("BASIC: VARTAB=$%04X", vartab);
             }
-
-            /* Phase 2 (auto-exec / auto-RUN) is fired later from a separate
-             * block, once the ROM has finished its full init and reached the
-             * READY idle loop — at that point VIA PCR/IER/IFR and ULA are
-             * fully configured, so machine-code binaries don't inherit a
-             * half-initialized I/O state. */
-            emu->fastload_autoexec_pending = true;
-            free(emu->fastload_buf);
-            emu->fastload_buf = NULL;
-            emu->fastload_pending = false;
+            emu->tape_readbyte_active = false;
         }
 
-        /* Fast-load phase 2: fire auto-exec / auto-RUN once VIA + ULA are
-         * stable (~5M cycles, ROM in READY idle loop). Cf. rapport
-         * docs/phosphoric-autorun-timing.md de l'équipe Asteroids. */
-        if (emu->fastload_autoexec_pending && total_executed > 5000000) {
-            /* Le --type-keys de l'utilisateur ne neutralise l'auto-RUN que
-             * s'il tape *pendant* la fenêtre de l'auto-RUN (il pilote alors
-             * le boot lui-même). Une frappe programmée plus tard vise les
-             * menus du programme : l'auto-RUN doit avoir lieu, puis la file
-             * de frappes se rejoue derrière (cf. include/io/autotype.h). */
-            int64_t autorun_at = (int64_t)total_executed + AUTOTYPE_AUTORUN_DELAY_CYCLES;
-            int64_t autorun_end = autorun_at + AUTOTYPE_AUTORUN_TYPING_CYCLES;
-            int64_t next_user_at = -1;
-            bool user_entry_pristine = false;
-            if (emu->type_keys_text && !emu->type_keys_done) {
-                next_user_at = emu->type_keys_at;
-                /* Entrée active pas encore entamée : on peut la rendre à la
-                 * file pour la rejouer après l'auto-RUN. */
-                user_entry_pristine = (emu->type_keys_idx == 0 &&
-                                       emu->type_keys_seq_idx > 0);
-            } else if (emu->type_keys_seq_idx < emu->type_keys_seq_count) {
-                next_user_at = emu->type_keys_seq[emu->type_keys_seq_idx].at;
-            }
+        /* CPU profiler (record cycle cost after step) */
+        profiler_record_cycles(&emu->profiler, prof_pc, step);
 
-            if (emu->fastload_type == 0x00 &&
-                autotype_autorun_allowed(next_user_at, autorun_end)) {
-                if (user_entry_pristine)
-                    emu->type_keys_seq_idx--;  /* rendue à la file */
-                emu->type_keys_text = "RUN\\n";
-                emu->type_keys_loci_hid = false;
-                emu->type_keys_at = autorun_at;
-                emu->type_keys_idx = 0;
-                emu->type_keys_next_cycle = emu->type_keys_at;
-                emu->type_keys_done = false;
-                emu->type_keys_last_char = 0;
-                emu->type_keys_debounce = 0;
-                emu->type_keys_last_pass = emu->kbd_scan_passes;
-                if (next_user_at >= 0)
-                    log_info("Auto-typing RUN after fast-load (phase 2) — "
-                             "%d frappe(s) utilisateur rejouée(s) ensuite",
-                             emu->type_keys_seq_count - emu->type_keys_seq_idx);
-                else
-                    log_info("Auto-typing RUN after fast-load (phase 2)");
-            } else if (emu->fastload_type == 0x00) {
-                log_info("Auto-RUN inhibé : --type-keys programmé à %lld cycles, "
-                         "dans la fenêtre de l'auto-RUN (fin %lld)",
-                         (long long)next_user_at, (long long)autorun_end);
-            } else if (emu->fastload_type == 0x80 &&
-                       (emu->fastload_auto_run & 0x80)) {
-                emu->cpu.PC = emu->fastload_addr;
-                log_info("Auto-exec machine code at $%04X (auto-run flag=$%02X, phase 2)",
-                         emu->fastload_addr, emu->fastload_auto_run);
+        /* PHI2-clocked peripherals (VIA timers, Microdisc/LOCI FDC, ACIA,
+         * DTL 2000, Mageco MIDI) are now advanced per-cycle by the CPU's
+         * cpu_cycle_tick() callback, in step with the bus accesses, rather
+         * than in a single post-instruction batch here. */
+
+        /* NOTE: real Oric hardware does NOT expose VSync via VIA CB1.
+         * VSync detection on a real Oric is done by polling memory
+         * (ULA-driven counters), or by programming VIA Timer 1 in
+         * continuous mode at the frame period (20 ms PAL). No VIA
+         * signal is toggled here on purpose — Phosphoric stays faithful
+         * to the hardware. */
+        (void)vsync_triggered;
+
+        /* Le rendu scanline et le tick raster ULA-NG sont désormais
+         * émis par l'horloge maître, en phase φ1 de chaque cycle
+         * (src/emu_clock.c) — plus de calcul de position ici. */
+    }
+
+    /* Termine la trame (lignes restantes si le CPU s'est arrêté en cours). */
+    emu_clock_frame_end(emu);
+    rs->total_executed += (uint64_t)frame_cycles;
+}
+
+/* LOCI co-sim : IRQ en fin de trame, --loci-menu-at. */
+static void run_loci_frame_hooks(emulator_t* emu, uint64_t total_executed) {
+
+    /* LOCI co-sim (--loci-emu) — modèle EDGE : le firmware PULSE nIRQ ; l'émulateur
+     * latche chaque pulse. io_bus.c en draine juste après chaque transaction MIA
+     * (pulses SYNCHRONES). ICI, une fois par frame, on draine les pulses restants
+     * et on les délivre en EDGE / tir unique (cpu_irq_pulse) → une IRQ par pulse,
+     * sans tempête. nRESET reste piloté par le bouton MENU (ci-dessous).
+     *
+     * ⚠️ PAS de free-run borné (loci_emu_tick) ici : avancer le firmware avec Phi2
+     * maintenu HAUT ENTRE deux transactions désynchronise la machine à états de
+     * service du bus pendant une opération MIA multi-étapes (ex. ouverture de
+     * fichier à la sélection d'un .dsk) → l'opération ne se termine jamais, le 6502
+     * reste bloqué sur `BVC *` → MENU FIGÉ. Le firmware ne doit avancer QU'EN SYNC
+     * avec les transactions bus. Conséquence assumée : pas de nIRQ purement
+     * asynchrone (timers) hors transaction ; le nIRQ synchrone suffit. */
+    if (loci_emu_active()) {
+        /* Pompe l'échange modem CDC↔ACIA (RX ASYNCHRONE : octets arrivant du dongle
+         * hors accès 6502). Sûr entre transactions : acia_task (guest-call core0,
+         * borné) ne pilote PAS le bus/action-SM (≠ loci_emu_tick), il ne fait que
+         * déplacer des octets et mettre à jour l'io-page. No-op si pas de --loci-cdc. */
+        loci_emu_acia_tick();
+        int loci_irq_pulses = loci_emu_irq_take();
+        for (int i = 0; i < loci_irq_pulses; i++) cpu_irq_pulse(&emu->cpu);
+    }
+
+    /* --loci-menu-at : simuler l'appui bouton MENU LOCI puis reset (test).
+     * loci_emu_menu_button() attend la fin du boot arrière-plan si besoin. */
+    if (g_loci_menu_at && total_executed >= g_loci_menu_at) {
+        g_loci_menu_at = 0;   /* une seule fois */
+        log_info("LOCI-emu: --loci-menu-at → appui bouton MENU");
+        if (loci_emu_menu_button())
+            cpu_reset(&emu->cpu);   /* redémarre dans le menu LOCI servi */
+    }
+}
+
+/* Son en headless : une génération PSG par trame, vers WAV / AVI / cast. */
+static void run_headless_audio_sinks(emulator_t* emu) {
+    /* Headless audio sinks : render THIS frame's PSG audio ONCE via
+     * ay_generate (the same routine the SDL callback uses) and feed every
+     * active sink — the --audio-wav file and/or the AVI's PCM stream.
+     * Generating once is essential : ay_generate consumes the PSG event
+     * queue, so two calls per frame would double-drain it. Armed only in
+     * headless (in GUI the SDL audio device is the generator's owner). */
+    bool avi_audio = emu->headless && emu->video_avi_active && emu->video_avi_rec.has_audio;
+    /* Cast /audio in headless : the SDL callback (the GUI's audio generator +
+     * cast pusher) never runs, so feed the cast ring here — the exact
+     * headless counterpart of what audio_callback does in GUI. Gated on the
+     * cast server being active (itself opt-in via --cast-server); no extra
+     * flag. In non-CAST builds has_cast_server is always false. */
+    bool cast_audio = emu->headless && emu->has_cast_server;
+    if (emu->audio_wav_fp || avi_audio || cast_audio) {
+        enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
+        int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
+        ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
+        /* Mix in the SP0256 speech synth (mono → both channels), if active. */
+        if (emu->has_sp0256 && emu->sp0256.rom_valid) {
+            int16_t sbuf[WAV_FRAME_SAMPLES];
+            sp0256_generate(&emu->sp0256, sbuf, WAV_FRAME_SAMPLES);
+            for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
+                wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + sbuf[i]) / 2);
+                wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + sbuf[i]) / 2);
             }
-            emu->fastload_autoexec_pending = false;
+        }
+        /* Mix in the MEA8000 (TMPI) speech synth, if active. */
+        if (emu->has_mea8000) {
+            int16_t mbuf[WAV_FRAME_SAMPLES];
+            mea8000_generate(&emu->mea8000, mbuf, WAV_FRAME_SAMPLES);
+            for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
+                wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + mbuf[i]) / 2);
+                wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + mbuf[i]) / 2);
+            }
+        }
+        if (emu->audio_wav_fp) {
+            fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
+            emu->audio_wav_data_bytes +=
+                (uint32_t)(WAV_FRAME_SAMPLES * 2 * (int)sizeof(int16_t));
+        }
+        if (avi_audio)
+            avi_recorder_add_audio(&emu->video_avi_rec, wav_buf, WAV_FRAME_SAMPLES);
+        /* Same interleaved-stereo buffer the SDL callback pushes in GUI. */
+        if (cast_audio)
+            cast_server_push_audio(&emu->cast_server, wav_buf, WAV_FRAME_SAMPLES);
+    }
+}
+
+/* Fast-load différé (phases 1 et 2) et auto-CLOAD"" de la bande insérée. */
+static void run_fastload_hooks(emulator_t* emu, uint64_t total_executed) {
+    /* Fast-load phase 1: inject TAP data into RAM as soon as the ROM
+     * RAM test is done (~3M cycles). Injecting early ensures the binary
+     * is in place when the BASIC READY prompt appears (~3.6M cycles) so
+     * a user typing CALL/USR manually finds valid opcodes at start_addr.
+     * The ROM init writes to its own zero-page/system area, not to
+     * $0500+ where our binary goes, so no overwrite race. */
+    if (emu->fastload_pending && total_executed > 3000000) {
+        for (int i = 0; i < emu->fastload_size; i++) {
+            memory_write(&emu->memory, (uint16_t)(emu->fastload_addr + i),
+                         emu->fastload_buf[i]);
+        }
+        log_info("Deferred fast-load: injected %d bytes at $%04X-$%04X (after %llu cycles)",
+                 emu->fastload_size, emu->fastload_addr,
+                 emu->fastload_addr + emu->fastload_size - 1,
+                 (unsigned long long)total_executed);
+
+        if (emu->fastload_type == 0x00) {
+            /* BASIC: rechain + VARTAB now (binary fully in RAM) */
+            basic_rechain(&emu->memory);
+            uint16_t vartab = emu->fastload_end + 1;
+            memory_write(&emu->memory, 0x9C, (uint8_t)(vartab & 0xFF));
+            memory_write(&emu->memory, 0x9D, (uint8_t)(vartab >> 8));
+            memory_write(&emu->memory, 0x9E, (uint8_t)(vartab & 0xFF));
+            memory_write(&emu->memory, 0x9F, (uint8_t)(vartab >> 8));
+            memory_write(&emu->memory, 0xA0, (uint8_t)(vartab & 0xFF));
+            memory_write(&emu->memory, 0xA1, (uint8_t)(vartab >> 8));
+            log_info("BASIC: VARTAB=$%04X", vartab);
         }
 
-        /* Auto-CLOAD: when a tape was provided without -f, the BASIC prompt
-         * is now ready (RAM test done) — auto-type CLOAD"" so the ROM CLOAD
-         * routine runs and triggers the on-tape auto-run flag normally.
-         * Only fires once; user can override by setting --type-keys. */
-        if (emu->tape_auto_cload_pending && total_executed > 5000000 &&
-            !emu->type_keys_text) {
-            emu->type_keys_text = "CLOAD\"\"\\n";
-            emu->type_keys_at = (int64_t)total_executed + CYCLES_PER_FRAME * 10;
+        /* Phase 2 (auto-exec / auto-RUN) is fired later from a separate
+         * block, once the ROM has finished its full init and reached the
+         * READY idle loop — at that point VIA PCR/IER/IFR and ULA are
+         * fully configured, so machine-code binaries don't inherit a
+         * half-initialized I/O state. */
+        emu->fastload_autoexec_pending = true;
+        free(emu->fastload_buf);
+        emu->fastload_buf = NULL;
+        emu->fastload_pending = false;
+    }
+
+    /* Fast-load phase 2: fire auto-exec / auto-RUN once VIA + ULA are
+     * stable (~5M cycles, ROM in READY idle loop). Cf. rapport
+     * docs/phosphoric-autorun-timing.md de l'équipe Asteroids. */
+    if (emu->fastload_autoexec_pending && total_executed > 5000000) {
+        /* Le --type-keys de l'utilisateur ne neutralise l'auto-RUN que
+         * s'il tape *pendant* la fenêtre de l'auto-RUN (il pilote alors
+         * le boot lui-même). Une frappe programmée plus tard vise les
+         * menus du programme : l'auto-RUN doit avoir lieu, puis la file
+         * de frappes se rejoue derrière (cf. include/io/autotype.h). */
+        int64_t autorun_at = (int64_t)total_executed + AUTOTYPE_AUTORUN_DELAY_CYCLES;
+        int64_t autorun_end = autorun_at + AUTOTYPE_AUTORUN_TYPING_CYCLES;
+        int64_t next_user_at = -1;
+        bool user_entry_pristine = false;
+        if (emu->type_keys_text && !emu->type_keys_done) {
+            next_user_at = emu->type_keys_at;
+            /* Entrée active pas encore entamée : on peut la rendre à la
+             * file pour la rejouer après l'auto-RUN. */
+            user_entry_pristine = (emu->type_keys_idx == 0 &&
+                                   emu->type_keys_seq_idx > 0);
+        } else if (emu->type_keys_seq_idx < emu->type_keys_seq_count) {
+            next_user_at = emu->type_keys_seq[emu->type_keys_seq_idx].at;
+        }
+
+        if (emu->fastload_type == 0x00 &&
+            autotype_autorun_allowed(next_user_at, autorun_end)) {
+            if (user_entry_pristine)
+                emu->type_keys_seq_idx--;  /* rendue à la file */
+            emu->type_keys_text = "RUN\\n";
+            emu->type_keys_loci_hid = false;
+            emu->type_keys_at = autorun_at;
             emu->type_keys_idx = 0;
             emu->type_keys_next_cycle = emu->type_keys_at;
             emu->type_keys_done = false;
             emu->type_keys_last_char = 0;
-            emu->tape_auto_cload_pending = false;
-            log_info("Auto-typing CLOAD\"\" for inserted tape");
-        }
-
-        /* Séquençage multi --type-keys : dès que l'entrée active est terminée
-         * et que le cycle d'armement de la suivante est atteint, on la charge
-         * dans les champs type_keys_* actifs. Garantit un vrai relâchement
-         * (release_all + reset des compteurs de debounce) entre deux entrées,
-         * même à touches identiques — ce que wait_release des TUI exige. */
-        if (emu->type_keys_done &&
-            emu->type_keys_seq_idx < emu->type_keys_seq_count &&
-            (int64_t)total_executed >= emu->type_keys_seq[emu->type_keys_seq_idx].at) {
-            int s = emu->type_keys_seq_idx++;
-            oric_keyboard_release_all(&emu->keyboard);
-            if (emu->has_loci) loci_kbd_clear(&emu->loci);
-            emu->type_keys_at = emu->type_keys_seq[s].at;
-            emu->type_keys_text = emu->type_keys_seq[s].text;
-            emu->type_keys_loci_hid = emu->type_keys_seq[s].loci_hid;
-            emu->type_keys_idx = 0;
-            emu->type_keys_next_cycle = emu->type_keys_seq[s].at;
-            emu->type_keys_done = false;
-            emu->type_keys_last_char = 0;
             emu->type_keys_debounce = 0;
             emu->type_keys_last_pass = emu->kbd_scan_passes;
+            if (next_user_at >= 0)
+                log_info("Auto-typing RUN after fast-load (phase 2) — "
+                         "%d frappe(s) utilisateur rejouée(s) ensuite",
+                         emu->type_keys_seq_count - emu->type_keys_seq_idx);
+            else
+                log_info("Auto-typing RUN after fast-load (phase 2)");
+        } else if (emu->fastload_type == 0x00) {
+            log_info("Auto-RUN inhibé : --type-keys programmé à %lld cycles, "
+                     "dans la fenêtre de l'auto-RUN (fin %lld)",
+                     (long long)next_user_at, (long long)autorun_end);
+        } else if (emu->fastload_type == 0x80 &&
+                   (emu->fastload_auto_run & 0x80)) {
+            emu->cpu.PC = emu->fastload_addr;
+            log_info("Auto-exec machine code at $%04X (auto-run flag=$%02X, phase 2)",
+                     emu->fastload_addr, emu->fastload_auto_run);
         }
+        emu->fastload_autoexec_pending = false;
+    }
 
-        /* --type-keys-when : arm the auto-typer the moment RAM[addr]==val,
-         * instead of a guessed cycle. Fires once, and only when no other
-         * auto-type text is currently in flight. Removes the need to hand-tune
-         * a boot delay (cf. include/io/autotype.h rationale). */
-        if (emu->type_keys_when_text && !emu->type_keys_when_done &&
-            emu->type_keys_when_addr >= 0 &&
-            (!emu->type_keys_text || emu->type_keys_done) &&
-            when_read(emu, (uint16_t)emu->type_keys_when_addr) ==
-                emu->type_keys_when_val) {
-            oric_keyboard_release_all(&emu->keyboard);
-            if (emu->has_loci) loci_kbd_clear(&emu->loci);
-            emu->type_keys_text = emu->type_keys_when_text;
-            emu->type_keys_loci_hid = emu->type_keys_when_loci_hid;
-            emu->type_keys_at = (int64_t)total_executed;
-            emu->type_keys_next_cycle = (int64_t)total_executed;
-            emu->type_keys_idx = 0;
-            emu->type_keys_done = false;
-            emu->type_keys_last_char = 0;
-            emu->type_keys_debounce = 0;
-            emu->type_keys_last_pass = emu->kbd_scan_passes;
-            emu->type_keys_when_done = true;
-            log_info("Auto-type armed: RAM[$%04X]==$%02X reached at %lld cycles",
-                     (unsigned)emu->type_keys_when_addr, emu->type_keys_when_val,
-                     (long long)total_executed);
-        }
+    /* Auto-CLOAD: when a tape was provided without -f, the BASIC prompt
+     * is now ready (RAM test done) — auto-type CLOAD"" so the ROM CLOAD
+     * routine runs and triggers the on-tape auto-run flag normally.
+     * Only fires once; user can override by setting --type-keys. */
+    if (emu->tape_auto_cload_pending && total_executed > 5000000 &&
+        !emu->type_keys_text) {
+        emu->type_keys_text = "CLOAD\"\"\\n";
+        emu->type_keys_at = (int64_t)total_executed + CYCLES_PER_FRAME * 10;
+        emu->type_keys_idx = 0;
+        emu->type_keys_next_cycle = emu->type_keys_at;
+        emu->type_keys_done = false;
+        emu->type_keys_last_char = 0;
+        emu->tape_auto_cload_pending = false;
+        log_info("Auto-typing CLOAD\"\" for inserted tape");
+    }
+}
 
-        /* Auto-type: inject keystrokes at specified cycle count.
-         * Each key is pressed for ~2 frames (40ms) then released for ~2 frames.
-         * This simulates realistic typing speed for the ROM keyboard scanner. */
-        if (emu->type_keys_text && !emu->type_keys_done &&
-            (int64_t)total_executed >= emu->type_keys_at) {
-            if (autotype_should_fire(emu->type_keys_loci_hid,
-                                     (int64_t)total_executed,
-                                     emu->type_keys_next_cycle,
-                                     emu->kbd_scan_passes,
-                                     emu->type_keys_last_pass)) {
-                /* Record the scan-pass baseline for the *next* transition, so
-                 * the scanner is guaranteed to observe this matrix state
-                 * before it changes again (cf. include/io/autotype.h). */
-                emu->type_keys_last_pass = emu->kbd_scan_passes;
-                int idx = emu->type_keys_idx;
-                char c = emu->type_keys_text[idx];
-                /* Sprint 34av : LOCI HID injection path. Each char/escape
-                 * yields a HID usage code that's pushed into the LOCI kbd
-                 * bitmap for ~2 frames, then released. */
-                if (emu->type_keys_loci_hid && emu->has_loci) {
-                    if (c == '\0') {
-                        loci_kbd_clear(&emu->loci);
-                        emu->type_keys_done = true;
-                    } else if (emu->type_keys_debounce > 0) {
-                        loci_kbd_clear(&emu->loci);
-                        emu->type_keys_debounce--;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else if (c == '\\') {
-                        /* Escape : \n \e \u \d \l \r \pN */
-                        char esc = emu->type_keys_text[idx+1];
-                        uint8_t hid = 0;
-                        switch (esc) {
-                            case 'n': hid = 0x28; break;  /* Enter */
-                            case 'e': hid = 0x29; break;  /* Escape */
-                            case 'u': hid = 0x52; break;  /* Up */
-                            case 'd': hid = 0x51; break;  /* Down */
-                            case 'l': hid = 0x50; break;  /* Left */
-                            case 'r': hid = 0x4F; break;  /* Right */
-                            case 'C': case 'F': case 'L': case 'R': {
-                                /* \Cx=CTRL+x, \Lx=LEFT-shift+x, \Rx=RIGHT-shift+x,
-                                 * \Fx=FUNCT+x. The LOCI MIA firmware (loci-firmware
-                                 * kbd.c) exposes a raw USB HID keyboard bitmap in
-                                 * XRAM: the modifiers are the standard HID bits
-                                 * (LEFTCTRL=0x01, LEFTSHIFT=0x02, RIGHTSHIFT=0x20)
-                                 * — firmware-exact. FUNCT has NO HID usage code and
-                                 * no concept in the firmware, so it is sent as a
-                                 * USB Tab (0x2B) chord by convention. */
-                                char keyc = emu->type_keys_text[idx+2];
-                                char lc = (keyc >= 'A' && keyc <= 'Z')
-                                            ? (char)(keyc - 'A' + 'a') : keyc;
-                                uint8_t khid = 0;
-                                if (lc >= 'a' && lc <= 'z') khid = (uint8_t)(0x04 + (lc - 'a'));
-                                else if (lc == '0') khid = 0x27;
-                                else if (lc >= '1' && lc <= '9') khid = (uint8_t)(0x1E + (lc - '1'));
-                                else if (lc == ' ') khid = 0x2C;
-                                if (keyc == '\0' || !khid) {
-                                    emu->type_keys_idx += 2;  /* dangling/unknown — skip */
-                                    goto type_keys_done_frame;
-                                }
-                                if (esc == 'F') {
-                                    uint8_t keys[6] = { 0x2B, khid, 0, 0, 0, 0 };
-                                    loci_kbd_set_report(&emu->loci, 0, keys);
-                                } else {
-                                    uint8_t hmod = (esc == 'C') ? 0x01
-                                                 : (esc == 'L') ? 0x02 : 0x20;
-                                    uint8_t keys[6] = { khid, 0, 0, 0, 0, 0 };
-                                    loci_kbd_set_report(&emu->loci, hmod, keys);
-                                }
-                                emu->type_keys_last_char = esc;
-                                emu->type_keys_idx += 3;
-                                emu->type_keys_debounce = 2;
-                                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
-                                goto type_keys_done_frame;
-                            }
-                            case 'p': {
-                                int secs = emu->type_keys_text[idx+2] - '0';
-                                if (secs < 1) secs = 1;
-                                if (secs > 9) secs = 9;
-                                loci_kbd_clear(&emu->loci);
-                                emu->type_keys_idx += 3;
-                                emu->type_keys_next_cycle = (int64_t)total_executed + ORIC_CLOCK_HZ * secs;
-                                goto type_keys_done_frame;
-                            }
-                            default: hid = 0; break;
-                        }
-                        if (hid) {
-                            uint8_t keys[6] = { hid, 0, 0, 0, 0, 0 };
-                            loci_kbd_set_report(&emu->loci, 0, keys);
-                            emu->type_keys_last_char = esc;
-                            emu->type_keys_idx += 2;
-                            emu->type_keys_debounce = 2;  /* release for 2 frames after */
-                            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
-                        } else {
-                            emu->type_keys_idx += 2;  /* unknown escape — skip */
-                        }
-                    } else {
-                        /* Regular char → HID code */
-                        uint8_t hid = 0;
-                        char lc = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
-                        if (lc >= 'a' && lc <= 'z') hid = (uint8_t)(0x04 + (lc - 'a'));
-                        else if (lc == '0') hid = 0x27;
-                        else if (lc >= '1' && lc <= '9') hid = (uint8_t)(0x1E + (lc - '1'));
-                        else if (lc == ' ') hid = 0x2C;
-                        if (hid) {
-                            if (c == emu->type_keys_last_char) {
-                                /* Same char twice : release first */
-                                loci_kbd_clear(&emu->loci);
-                                emu->type_keys_debounce = 1;
-                                emu->type_keys_last_char = 0;
-                                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                            } else {
-                                uint8_t mod = (c >= 'A' && c <= 'Z') ? 0x02 : 0;  /* L-Shift */
-                                uint8_t keys[6] = { hid, 0, 0, 0, 0, 0 };
-                                loci_kbd_set_report(&emu->loci, mod, keys);
-                                emu->type_keys_last_char = c;
-                                emu->type_keys_idx++;
-                                emu->type_keys_debounce = 2;
-                                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
-                            }
-                        } else {
-                            emu->type_keys_idx++;  /* unknown char — skip */
-                        }
-                    }
-                    type_keys_done_frame:;
-                } else
-                if (c == '\0') {
-                    /* Done typing */
-                    oric_keyboard_release_all(&emu->keyboard);
-                    emu->type_keys_done = true;
-                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'n') {
-                    /* \n = RETURN. Si deux \n consécutifs, insert un frame de
-                     * relâche entre les deux : le scanner ROM voit sinon une
-                     * pression longue unique au lieu de deux RETURN distincts.
-                     * On réutilise last_char sans toucher à type_keys_debounce
-                     * (qui est réservé au branch caractère ordinaire). */
-                    if (emu->type_keys_last_char == '\n') {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_last_char = 0;
-                        /* idx non avancé : on re-traitera ce \n au prochain frame */
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        oric_keyboard_press_char(&emu->keyboard, '\n');
-                        emu->type_keys_last_char = '\n';
-                        emu->type_keys_idx += 2;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
-                    }
-                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'e') {
-                    /* Sprint 34av : \e = ESC. Touche utile pour le TUI LOCI. */
-                    if (emu->type_keys_last_char == 0x1B) {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_last_char = 0;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        oric_keyboard_press_char(&emu->keyboard, 0x1B);
-                        emu->type_keys_last_char = 0x1B;
-                        emu->type_keys_idx += 2;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
-                    }
-                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'b') {
-                    /* \b = DEL (backspace) — édition de ligne (readline). Presse
-                     * la touche DEL (matrix 5,5) via le sentinel 0x84 de press_char. */
-                    if (emu->type_keys_last_char == (char)0x84) {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_last_char = 0;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        oric_keyboard_press_char(&emu->keyboard, (char)0x84);
-                        emu->type_keys_last_char = (char)0x84;
-                        emu->type_keys_idx += 2;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
-                    }
-                } else if (c == '\\' && (emu->type_keys_text[idx+1] == 'u' ||
-                                          emu->type_keys_text[idx+1] == 'd' ||
-                                          emu->type_keys_text[idx+1] == 'l' ||
-                                          emu->type_keys_text[idx+1] == 'r')) {
-                    /* Sprint 34av : flèches pour navigation TUI LOCI. */
-                    char dir = emu->type_keys_text[idx+1];
-                    char arrow = (dir == 'u') ? (char)0x80
-                              : (dir == 'd') ? (char)0x81
-                              : (dir == 'l') ? (char)0x82
-                              : (char)0x83;  /* r */
-                    if (emu->type_keys_last_char == arrow) {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_last_char = 0;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        oric_keyboard_press_char(&emu->keyboard, arrow);
-                        emu->type_keys_last_char = arrow;
-                        emu->type_keys_idx += 2;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
-                    }
-                } else if (c == '\\' && (emu->type_keys_text[idx+1] == 'C' ||
-                                          emu->type_keys_text[idx+1] == 'F' ||
-                                          emu->type_keys_text[idx+1] == 'L' ||
-                                          emu->type_keys_text[idx+1] == 'R')) {
-                    /* \Cx=CTRL+x, \Fx=FUNCT+x, \Lx=LEFT-shift+x, \Rx=RIGHT-shift+x.
-                     * The modifier is held while the companion key x is pressed
-                     * (3 chars consumed). A distinct sentinel per modifier forces
-                     * a release frame between two consecutive combos so the ROM
-                     * scanner sees separate keystrokes. */
-                    char mod = emu->type_keys_text[idx+1];
-                    char keyc = emu->type_keys_text[idx+2];
-                    /* Single shared sentinel (0x90) for ALL modifier combos so
-                     * that two consecutive combos — even with the same base key
-                     * (e.g. \L1\R1) — are always separated by a release frame,
-                     * which the ROM/app keyboard scanner needs to see as two
-                     * distinct keystrokes. */
-                    char sentinel = (char)0x90;
-                    if (emu->type_keys_last_char == sentinel) {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_last_char = 0;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else if (keyc == '\0') {
-                        emu->type_keys_idx += 2;  /* dangling modifier — skip */
-                    } else {
-                        oric_keyboard_release_all(&emu->keyboard);
-                        if (mod == 'C')      oric_keyboard_press_ctrl(&emu->keyboard);
-                        else if (mod == 'F') oric_keyboard_press_funct(&emu->keyboard);
-                        else if (mod == 'L') oric_keyboard_press_lshift(&emu->keyboard);
-                        else                 oric_keyboard_press_rshift(&emu->keyboard);
-                        oric_keyboard_press_char(&emu->keyboard, keyc);
-                        emu->type_keys_last_char = sentinel;
-                        emu->type_keys_idx += 3;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
-                    }
-                } else if (c == '\\' && emu->type_keys_text[idx+1] == 'p') {
-                    /* \pN = pause N seconds (N = single digit) */
-                    int secs = emu->type_keys_text[idx+2] - '0';
-                    if (secs < 1) secs = 1;
-                    if (secs > 9) secs = 9;
-                    oric_keyboard_release_all(&emu->keyboard);
-                    emu->type_keys_idx += 3;
-                    emu->type_keys_next_cycle = (int64_t)total_executed + ORIC_CLOCK_HZ * secs;
+/* Armement de la frappe automatique : séquence multi --type-keys, --type-keys-when. */
+static void run_autotype_arm(emulator_t* emu, uint64_t total_executed) {
+    /* Séquençage multi --type-keys : dès que l'entrée active est terminée
+     * et que le cycle d'armement de la suivante est atteint, on la charge
+     * dans les champs type_keys_* actifs. Garantit un vrai relâchement
+     * (release_all + reset des compteurs de debounce) entre deux entrées,
+     * même à touches identiques — ce que wait_release des TUI exige. */
+    if (emu->type_keys_done &&
+        emu->type_keys_seq_idx < emu->type_keys_seq_count &&
+        (int64_t)total_executed >= emu->type_keys_seq[emu->type_keys_seq_idx].at) {
+        int s = emu->type_keys_seq_idx++;
+        oric_keyboard_release_all(&emu->keyboard);
+        if (emu->has_loci) loci_kbd_clear(&emu->loci);
+        emu->type_keys_at = emu->type_keys_seq[s].at;
+        emu->type_keys_text = emu->type_keys_seq[s].text;
+        emu->type_keys_loci_hid = emu->type_keys_seq[s].loci_hid;
+        emu->type_keys_idx = 0;
+        emu->type_keys_next_cycle = emu->type_keys_seq[s].at;
+        emu->type_keys_done = false;
+        emu->type_keys_last_char = 0;
+        emu->type_keys_debounce = 0;
+        emu->type_keys_last_pass = emu->kbd_scan_passes;
+    }
+
+    /* --type-keys-when : arm the auto-typer the moment RAM[addr]==val,
+     * instead of a guessed cycle. Fires once, and only when no other
+     * auto-type text is currently in flight. Removes the need to hand-tune
+     * a boot delay (cf. include/io/autotype.h rationale). */
+    if (emu->type_keys_when_text && !emu->type_keys_when_done &&
+        emu->type_keys_when_addr >= 0 &&
+        (!emu->type_keys_text || emu->type_keys_done) &&
+        when_read(emu, (uint16_t)emu->type_keys_when_addr) ==
+            emu->type_keys_when_val) {
+        oric_keyboard_release_all(&emu->keyboard);
+        if (emu->has_loci) loci_kbd_clear(&emu->loci);
+        emu->type_keys_text = emu->type_keys_when_text;
+        emu->type_keys_loci_hid = emu->type_keys_when_loci_hid;
+        emu->type_keys_at = (int64_t)total_executed;
+        emu->type_keys_next_cycle = (int64_t)total_executed;
+        emu->type_keys_idx = 0;
+        emu->type_keys_done = false;
+        emu->type_keys_last_char = 0;
+        emu->type_keys_debounce = 0;
+        emu->type_keys_last_pass = emu->kbd_scan_passes;
+        emu->type_keys_when_done = true;
+        log_info("Auto-type armed: RAM[$%04X]==$%02X reached at %lld cycles",
+                 (unsigned)emu->type_keys_when_addr, emu->type_keys_when_val,
+                 (long long)total_executed);
+    }
+}
+
+/* Un pas de frappe automatique (matrice native ou HID LOCI), cadencé par le
+ * scanner clavier — cf. include/io/autotype.h. */
+/* Frappe automatique, chemin LOCI HID (sprint 34av) : chaque caractère ou
+ * séquence d'échappement devient un usage HID poussé dans le bitmap clavier
+ * LOCI pendant ~2 trames, puis relâché. */
+static void autotype_step_loci_hid(emulator_t* emu, uint64_t total_executed,
+                                   int idx, char c) {
+    if (c == '\0') {
+        loci_kbd_clear(&emu->loci);
+        emu->type_keys_done = true;
+    } else if (emu->type_keys_debounce > 0) {
+        loci_kbd_clear(&emu->loci);
+        emu->type_keys_debounce--;
+        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+    } else if (c == '\\') {
+        /* Escape : \n \e \u \d \l \r \pN */
+        char esc = emu->type_keys_text[idx+1];
+        uint8_t hid = 0;
+        switch (esc) {
+            case 'n': hid = 0x28; break;  /* Enter */
+            case 'e': hid = 0x29; break;  /* Escape */
+            case 'u': hid = 0x52; break;  /* Up */
+            case 'd': hid = 0x51; break;  /* Down */
+            case 'l': hid = 0x50; break;  /* Left */
+            case 'r': hid = 0x4F; break;  /* Right */
+            case 'C': case 'F': case 'L': case 'R': {
+                /* \Cx=CTRL+x, \Lx=LEFT-shift+x, \Rx=RIGHT-shift+x,
+                 * \Fx=FUNCT+x. The LOCI MIA firmware (loci-firmware
+                 * kbd.c) exposes a raw USB HID keyboard bitmap in
+                 * XRAM: the modifiers are the standard HID bits
+                 * (LEFTCTRL=0x01, LEFTSHIFT=0x02, RIGHTSHIFT=0x20)
+                 * — firmware-exact. FUNCT has NO HID usage code and
+                 * no concept in the firmware, so it is sent as a
+                 * USB Tab (0x2B) chord by convention. */
+                char keyc = emu->type_keys_text[idx+2];
+                char lc = (keyc >= 'A' && keyc <= 'Z')
+                            ? (char)(keyc - 'A' + 'a') : keyc;
+                uint8_t khid = 0;
+                if (lc >= 'a' && lc <= 'z') khid = (uint8_t)(0x04 + (lc - 'a'));
+                else if (lc == '0') khid = 0x27;
+                else if (lc >= '1' && lc <= '9') khid = (uint8_t)(0x1E + (lc - '1'));
+                else if (lc == ' ') khid = 0x2C;
+                if (keyc == '\0' || !khid) {
+                    emu->type_keys_idx += 2;  /* dangling/unknown — skip */
+                    return;
+                }
+                if (esc == 'F') {
+                    uint8_t keys[6] = { 0x2B, khid, 0, 0, 0, 0 };
+                    loci_kbd_set_report(&emu->loci, 0, keys);
                 } else {
-                    /* Regular character */
-                    if (emu->type_keys_debounce > 0) {
-                        /* Debounce phase: release all keys and wait */
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_debounce--;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else if (c == emu->type_keys_last_char) {
-                        /* Same char as previous: insert release phase */
-                        oric_keyboard_release_all(&emu->keyboard);
-                        emu->type_keys_debounce = 1; /* 1 more frame of release */
-                        emu->type_keys_last_char = 0;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
-                    } else {
-                        /* New character: press immediately */
-                        oric_keyboard_release_all(&emu->keyboard);
-                        oric_keyboard_press_char(&emu->keyboard, c);
-                        emu->type_keys_last_char = c;
-                        emu->type_keys_idx++;
-                        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
-                    }
+                    uint8_t hmod = (esc == 'C') ? 0x01
+                                 : (esc == 'L') ? 0x02 : 0x20;
+                    uint8_t keys[6] = { khid, 0, 0, 0, 0, 0 };
+                    loci_kbd_set_report(&emu->loci, hmod, keys);
                 }
+                emu->type_keys_last_char = esc;
+                emu->type_keys_idx += 3;
+                emu->type_keys_debounce = 2;
+                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
+                return;
             }
-        }
-
-        /* Flush serial trace once per frame (not per byte) */
-        if (emu->has_serial) {
-            acia_trace_flush(&emu->acia);
-        }
-
-        /* Video frame already rendered scanline-by-scanline above
-         * (interleaved with CPU cycles, ULA-accurate timing). No final
-         * pass needed; the framebuffer reflects the per-scanline memory
-         * snapshots. */
-
-        /* Push frame to cast server if active */
-        if (emu->has_cast_server) {
-            cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
-                                   (unsigned int)emu->video.native_w,
-                                   (unsigned int)emu->video.native_h);
-        }
-
-        /* Drain any HTTP-API commands at this frame boundary (sprint 94). The
-         * server thread parked in control_queue_submit() is unblocked here, so
-         * state-mutating commands run on the emulator thread. No-op when the
-         * API is disabled (control_queue is NULL). */
-        control_queue_drain(emu->control_queue, emu);
-
-        /* Inject any keystrokes queued by the `keys` command (sprint 95). */
-        feed_kbd_inject(emu);
-
-        /* Present to screen and handle events if not headless */
-        if (!emu->headless) {
-            /* OSD : garde une copie fraîche du charset Oric (valide en mode
-             * texte) puis dessine l'overlay par-dessus le framebuffer. */
-            if (!emu->video.hires_mode)
-                osd_snapshot_font(&emu->osd, emu->memory.ram);
-            osd_render(&emu->osd, &emu->video);
-            renderer_present(&emu->video);
-#ifdef HAS_SDL2
-            /* Poll SDL events (keyboard, window close, etc.) */
-            SDL_Event event;
-            static Uint32 loci_f8_down_ms;   /* Action button hold timing */
-            while (SDL_PollEvent(&event)) {
-                switch (event.type) {
-                case SDL_QUIT:
-                    emu->running = false;
-                    break;
-                case SDL_KEYDOWN:
-                    /* OSD média (F6) : quand l'overlay est ouvert, les flèches /
-                     * Entrée / Échap le pilotent et n'atteignent pas l'Oric. */
-                    if (event.key.keysym.sym == SDLK_F6) {
-                        osd_toggle(&emu->osd);
-                        break;
-                    }
-                    if (emu->osd.open) {
-                        int k = 0;
-                        switch (event.key.keysym.sym) {
-                        case SDLK_UP:       k = OSD_KEY_UP;    break;
-                        case SDLK_DOWN:     k = OSD_KEY_DOWN;  break;
-                        case SDLK_LEFT:     k = OSD_KEY_LEFT;  break;
-                        case SDLK_RIGHT:    k = OSD_KEY_RIGHT; break;
-                        case SDLK_RETURN:
-                        case SDLK_KP_ENTER: k = OSD_KEY_ENTER; break;
-                        case SDLK_DELETE:
-                        case SDLK_BACKSPACE: k = OSD_KEY_EJECT; break;
-                        case SDLK_ESCAPE:   k = OSD_KEY_ESC;   break;
-                        default: break;
-                        }
-                        if (k) {
-                            osd_action_t act = osd_key(&emu->osd, k);
-                            if (act == OSD_ACTIVATE)
-                                osd_do_load(emu, &emu->osd.entries[emu->osd.selected]);
-                            else if (act == OSD_EJECT)
-                                osd_do_eject(emu);
-                            else if (act == OSD_EJECT_TAPE)
-                                osd_do_eject_tape(emu);
-                        }
-                        break;  /* consomme l'événement */
-                    }
-                    /* F5 = Reset, F10 = Quit, F11 = Fullscreen, F12 = Screenshot */
-                    switch (event.key.keysym.sym) {
-                    case SDLK_F2:
-                        if (savestate_save(emu, "oric1_quicksave.ost")) {
-                            log_info("Quick save state saved (F2)");
-                        } else {
-                            log_error("Quick save state failed (F2)");
-                        }
-                        break;
-                    case SDLK_F3:
-                        renderer_cycle_scale();
-                        log_info("Display scale: x%d", renderer_get_scale());
-                        break;
-                    case SDLK_F4:
-                        if (savestate_load(emu, "oric1_quicksave.ost")) {
-                            log_info("Quick save state loaded (F4)");
-                        } else {
-                            log_error("Quick save state load failed (F4)");
-                        }
-                        break;
-                    case SDLK_F5:
-                        cpu_reset(&emu->cpu);
-                        if (emu->has_loci) {
-                            /* Sprint 34aj: LOCI reset button — clears MIA
-                             * state (regs/xstack/active_op) but keeps the
-                             * mount table and open file handles so the
-                             * user's drives stay attached. Equivalent to
-                             * the Pi Pico reset on real LOCI hardware. */
-                            loci_reset(&emu->loci);
-                            log_info("LOCI: MIA state reset (mounts preserved)");
-                        }
-                        break;
-                    case SDLK_F8:
-                        /* Sprint 34ai: LOCI Action button (warm press).
-                         * Installs the IRQ trap and triggers an interrupt so
-                         * the LOCI ROM can take over. Release on KEYUP below:
-                         * short = menu, held ≥ 2 s = diag ROM (firmware
-                         * EXT_BTN_LONGPRESS_MS). */
-                        if (emu->has_loci && !event.key.repeat) {
-                            loci_f8_down_ms = SDL_GetTicks();
-                            loci_action_button_short(&emu->loci);
-                            log_info("LOCI: Action button pressed (F8)");
-                        }
-                        break;
-                    case SDLK_F7: {
-                        /* Memory dump: save 64KB RAM to timestamped file */
-                        time_t now = time(NULL);
-                        struct tm* tm = localtime(&now);
-                        char dumpname[64];
-                        snprintf(dumpname, sizeof(dumpname),
-                                 "memdump_%04d%02d%02d_%02d%02d%02d.bin",
-                                 tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday,
-                                 tm->tm_hour, tm->tm_min, tm->tm_sec);
-                        FILE* df = fopen(dumpname, "wb");
-                        if (df) {
-                            fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), df);
-                            /* $C000-$FFFF : vue CPU bankée (même contrat 64 Ko
-                             * que --dump-ram-at, cf. sprint 38) */
-                            for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
-                                uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
-                                fwrite(&b, 1, 1, df);
-                            }
-                            fclose(df);
-                            log_info("Memory dump: %s (64KB, $C000-$FFFF = CPU view, PC=$%04X, cycle=%llu)",
-                                     dumpname, emu->cpu.PC,
-                                     (unsigned long long)total_executed);
-                        }
-                        break;
-                    }
-                    case SDLK_F9:
-                        /* Enter interactive debugger */
-                        emu->debugger.active = true;
-                        break;
-                    case SDLK_F10:
-                        emu->running = false;
-                        break;
-                    case SDLK_F11:
-                        renderer_toggle_fullscreen();
-                        break;
-                    case SDLK_F12: {
-                        char shot[64];
-                        screenshot_unique_name(shot, sizeof(shot));
-                        emu_export_image(emu, shot);
-                        log_info("Screenshot saved to %s", shot);
-                        break;
-                    }
-                    default:
-                        break;
-                    }
-                    /* Fall through to keyboard/joystick handler */
-                    if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
-                        oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
-                    }
-                    /* Sprint 34ak: mirror SDL keyboard state into the
-                     * LOCI kbd bitmap so the LOCI ROM TUI can navigate. */
-                    loci_sync_kbd_from_sdl(emu);
-                    break;
-                case SDL_KEYUP:
-                    if (event.key.keysym.sym == SDLK_F8 && emu->has_loci) {
-                        /* Sprint 34ai: Action button release sets V flag
-                         * so the BVC spin exits and JMP ($FFFA) runs the
-                         * save-state handler. Held ≥ 2 s = diag ROM. */
-                        bool longp = SDL_GetTicks() - loci_f8_down_ms >= 2000;
-                        emu->loci_button_long = longp;
-                        loci_action_button_release(&emu->loci);
-                        log_info("LOCI: Action button released (F8%s)",
-                                 longp ? ", long press" : "");
-                    }
-                    /* Backend émulateur : F8 = bouton MENU LOCI → arme le service
-                     * ROM (le vrai firmware) puis reset → boot dans le menu LOCI. */
-                    if (event.key.keysym.sym == SDLK_F8 && loci_emu_active()) {
-                        if (loci_emu_menu_button())
-                            cpu_reset(&emu->cpu);
-                    }
-                    if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
-                        oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
-                    }
-                    /* Sprint 34ak: sync after KEYUP so released keys
-                     * disappear from the LOCI bitmap. */
-                    loci_sync_kbd_from_sdl(emu);
-                    break;
-                case SDL_TEXTINPUT:
-                    /* Symbolic mode: character -> ORIC key mapping */
-                    oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
-                    break;
-                /* Sprint 34al: bridge SDL mouse → LOCI mou_xram. */
-                case SDL_MOUSEMOTION:
-                    if (emu->has_loci) {
-                        uint32_t bs = SDL_GetMouseState(NULL, NULL);
-                        uint8_t btn = 0;
-                        if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
-                        if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
-                        if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
-                        loci_mou_report(&emu->loci, btn,
-                                        (int8_t)event.motion.xrel,
-                                        (int8_t)event.motion.yrel,
-                                        0, 0);
-                    }
-                    break;
-                case SDL_MOUSEBUTTONDOWN:
-                case SDL_MOUSEBUTTONUP:
-                    if (emu->has_loci) {
-                        uint32_t bs = SDL_GetMouseState(NULL, NULL);
-                        uint8_t btn = 0;
-                        if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
-                        if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
-                        if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
-                        loci_mou_report(&emu->loci, btn, 0, 0, 0, 0);
-                    }
-                    break;
-                case SDL_MOUSEWHEEL:
-                    if (emu->has_loci) {
-                        loci_mou_report(&emu->loci, 0, 0, 0,
-                                        (int8_t)event.wheel.y,
-                                        (int8_t)event.wheel.x);
-                    }
-                    break;
-                /* SDL game controller / joystick events */
-                case SDL_CONTROLLERBUTTONDOWN:
-                case SDL_CONTROLLERBUTTONUP:
-                case SDL_CONTROLLERAXISMOTION:
-                case SDL_JOYHATMOTION:
-                case SDL_JOYBUTTONDOWN:
-                case SDL_JOYBUTTONUP:
-                    oric_joystick_handle_sdl_event(&emu->joystick, &event);
-                    break;
-                case SDL_CONTROLLERDEVICEADDED:
-                    if (emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD &&
-                        emu->joystick.controller == NULL &&
-                        emu->joystick.joystick == NULL) {
-                        oric_joystick_open_sdl(&emu->joystick, event.cdevice.which);
-                    }
-                    break;
-                default:
-                    break;
-                }
+            case 'p': {
+                int secs = emu->type_keys_text[idx+2] - '0';
+                if (secs < 1) secs = 1;
+                if (secs > 9) secs = 9;
+                loci_kbd_clear(&emu->loci);
+                emu->type_keys_idx += 3;
+                emu->type_keys_next_cycle = (int64_t)total_executed + ORIC_CLOCK_HZ * secs;
+                return;
             }
-#endif
+            default: hid = 0; break;
         }
-
-        /* Cycle-triggered captures (--screenshot-at / -text-at / -ansi-at /
-         * --dump-ram-at), RÉPÉTABLES : chaque entrée du tableau tire une fois
-         * quand total_executed atteint son seuil. Échantillonné une fois par
-         * frame comme avant (le contenu ne dépend que du cycle courant). */
-        for (int ci = 0; ci < emu->timed_capture_count; ci++) {
-            timed_capture_t* tc = &emu->timed_captures[ci];
-            if (tc->done || tc->cycles < 0 ||
-                (int64_t)total_executed < tc->cycles)
-                continue;
-            switch (tc->type) {
-            case TCAP_IMAGE:
-                log_info("Taking screenshot at %llu cycles -> %s",
-                         (unsigned long long)total_executed, tc->file);
-                emu_export_image(emu, tc->file);
-                break;
-            case TCAP_TEXT: {
-                FILE* tf = fopen(tc->file, "w");
-                if (tf) {
-                    video_export_screen_text(emu->memory.ram, tf);
-                    fclose(tf);
-                    log_info("Text screenshot at %llu cycles -> %s",
-                             (unsigned long long)total_executed, tc->file);
-                } else {
-                    log_error("Cannot open text screenshot file: %s", tc->file);
-                }
-                break;
-            }
-            case TCAP_ANSI:
-                if (video_export_ascii_file(&emu->video, tc->file, 2, 2))
-                    log_info("ANSI screenshot at %llu cycles -> %s",
-                             (unsigned long long)total_executed, tc->file);
-                else
-                    log_error("Cannot write ANSI screenshot file: %s", tc->file);
-                break;
-            case TCAP_DUMP_RAM: {
-                FILE* rf = fopen(tc->file, "wb");
-                if (rf) {
-                    fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
-                    /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay / upper
-                     * RAM). memory_read est sans effet de bord hors page I/O. */
-                    for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
-                        uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
-                        fwrite(&b, 1, 1, rf);
-                    }
-                    fclose(rf);
-                    log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
-                             (unsigned long long)total_executed, tc->file);
-                } else {
-                    log_error("Cannot open RAM dump file: %s", tc->file);
-                }
-                break;
-            }
-            }
-            tc->done = true;
+        if (hid) {
+            uint8_t keys[6] = { hid, 0, 0, 0, 0, 0 };
+            loci_kbd_set_report(&emu->loci, 0, keys);
+            emu->type_keys_last_char = esc;
+            emu->type_keys_idx += 2;
+            emu->type_keys_debounce = 2;  /* release for 2 frames after */
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
+        } else {
+            emu->type_keys_idx += 2;  /* unknown escape — skip */
         }
-
-        /* Frame dump */
-        if (emu->frame_dump_dir && (frame_count % (uint64_t)emu->frame_dump_interval == 0)) {
-            char path[512];
-            snprintf(path, sizeof(path), "%s/frame_%06llu.ppm",
-                     emu->frame_dump_dir, (unsigned long long)frame_count);
-            emu_export_image(emu, path);
-        }
-
-        /* Video recording: append this frame to the MJPEG AVI. With
-         * --export-border, composite the overscan border into a scratch buffer
-         * (matches the larger geometry the recorder was opened with). */
-        if (emu->video_avi_active) {
-            if (emu->export_border) {
-                static uint8_t avi_border_buf[VIDEO_BORDERED_MAX_W * VIDEO_BORDERED_MAX_H * 3];
-                int bw = 0, bh = 0;
-                video_compose_bordered(&emu->video, avi_border_buf, &bw, &bh);
-                avi_recorder_add_frame(&emu->video_avi_rec, avi_border_buf);
+    } else {
+        /* Regular char → HID code */
+        uint8_t hid = 0;
+        char lc = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+        if (lc >= 'a' && lc <= 'z') hid = (uint8_t)(0x04 + (lc - 'a'));
+        else if (lc == '0') hid = 0x27;
+        else if (lc >= '1' && lc <= '9') hid = (uint8_t)(0x1E + (lc - '1'));
+        else if (lc == ' ') hid = 0x2C;
+        if (hid) {
+            if (c == emu->type_keys_last_char) {
+                /* Same char twice : release first */
+                loci_kbd_clear(&emu->loci);
+                emu->type_keys_debounce = 1;
+                emu->type_keys_last_char = 0;
+                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
             } else {
-                avi_recorder_add_frame(&emu->video_avi_rec, emu->video.framebuffer);
+                uint8_t mod = (c >= 'A' && c <= 'Z') ? 0x02 : 0;  /* L-Shift */
+                uint8_t keys[6] = { hid, 0, 0, 0, 0, 0 };
+                loci_kbd_set_report(&emu->loci, mod, keys);
+                emu->type_keys_last_char = c;
+                emu->type_keys_idx++;
+                emu->type_keys_debounce = 2;
+                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 2;
             }
-            /* GUI audio muxing : drain the SDL callback's PCM tap and append it
-             * as this frame's audio chunk (headless feeds the stream inline
-             * above, so this path is GUI-only). Buffer sized for a few frames
-             * of jitter (~882 sample-frames/frame @44.1k/50fps). */
-            if (!emu->headless && emu->video_avi_rec.has_audio) {
-                enum { TAP_DRAIN_MAX = (AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE) * 4 };
-                static int16_t tap_pcm[TAP_DRAIN_MAX * 2];  /* interleaved L/R */
-                int got = audio_avi_tap_drain(tap_pcm, TAP_DRAIN_MAX);
-                if (got > 0)
-                    avi_recorder_add_audio(&emu->video_avi_rec, tap_pcm, got);
+        } else {
+            emu->type_keys_idx++;  /* unknown char — skip */
+        }
+    }
+}
+
+/* Frappe automatique, chemin natif : la matrice clavier ORIC, avec un frame de
+ * relâche entre deux touches identiques pour que le scanner ROM les distingue. */
+static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
+                                 int idx, char c) {
+    if (c == '\0') {
+        /* Done typing */
+        oric_keyboard_release_all(&emu->keyboard);
+        emu->type_keys_done = true;
+    } else if (c == '\\' && emu->type_keys_text[idx+1] == 'n') {
+        /* \n = RETURN. Si deux \n consécutifs, insert un frame de
+         * relâche entre les deux : le scanner ROM voit sinon une
+         * pression longue unique au lieu de deux RETURN distincts.
+         * On réutilise last_char sans toucher à type_keys_debounce
+         * (qui est réservé au branch caractère ordinaire). */
+        if (emu->type_keys_last_char == '\n') {
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_last_char = 0;
+            /* idx non avancé : on re-traitera ce \n au prochain frame */
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else {
+            oric_keyboard_release_all(&emu->keyboard);
+            oric_keyboard_press_char(&emu->keyboard, '\n');
+            emu->type_keys_last_char = '\n';
+            emu->type_keys_idx += 2;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+        }
+    } else if (c == '\\' && emu->type_keys_text[idx+1] == 'e') {
+        /* Sprint 34av : \e = ESC. Touche utile pour le TUI LOCI. */
+        if (emu->type_keys_last_char == 0x1B) {
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_last_char = 0;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else {
+            oric_keyboard_release_all(&emu->keyboard);
+            oric_keyboard_press_char(&emu->keyboard, 0x1B);
+            emu->type_keys_last_char = 0x1B;
+            emu->type_keys_idx += 2;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+        }
+    } else if (c == '\\' && emu->type_keys_text[idx+1] == 'b') {
+        /* \b = DEL (backspace) — édition de ligne (readline). Presse
+         * la touche DEL (matrix 5,5) via le sentinel 0x84 de press_char. */
+        if (emu->type_keys_last_char == (char)0x84) {
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_last_char = 0;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else {
+            oric_keyboard_release_all(&emu->keyboard);
+            oric_keyboard_press_char(&emu->keyboard, (char)0x84);
+            emu->type_keys_last_char = (char)0x84;
+            emu->type_keys_idx += 2;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+        }
+    } else if (c == '\\' && (emu->type_keys_text[idx+1] == 'u' ||
+                              emu->type_keys_text[idx+1] == 'd' ||
+                              emu->type_keys_text[idx+1] == 'l' ||
+                              emu->type_keys_text[idx+1] == 'r')) {
+        /* Sprint 34av : flèches pour navigation TUI LOCI. */
+        char dir = emu->type_keys_text[idx+1];
+        char arrow = (dir == 'u') ? (char)0x80
+                  : (dir == 'd') ? (char)0x81
+                  : (dir == 'l') ? (char)0x82
+                  : (char)0x83;  /* r */
+        if (emu->type_keys_last_char == arrow) {
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_last_char = 0;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else {
+            oric_keyboard_release_all(&emu->keyboard);
+            oric_keyboard_press_char(&emu->keyboard, arrow);
+            emu->type_keys_last_char = arrow;
+            emu->type_keys_idx += 2;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+        }
+    } else if (c == '\\' && (emu->type_keys_text[idx+1] == 'C' ||
+                              emu->type_keys_text[idx+1] == 'F' ||
+                              emu->type_keys_text[idx+1] == 'L' ||
+                              emu->type_keys_text[idx+1] == 'R')) {
+        /* \Cx=CTRL+x, \Fx=FUNCT+x, \Lx=LEFT-shift+x, \Rx=RIGHT-shift+x.
+         * The modifier is held while the companion key x is pressed
+         * (3 chars consumed). A distinct sentinel per modifier forces
+         * a release frame between two consecutive combos so the ROM
+         * scanner sees separate keystrokes. */
+        char mod = emu->type_keys_text[idx+1];
+        char keyc = emu->type_keys_text[idx+2];
+        /* Single shared sentinel (0x90) for ALL modifier combos so
+         * that two consecutive combos — even with the same base key
+         * (e.g. \L1\R1) — are always separated by a release frame,
+         * which the ROM/app keyboard scanner needs to see as two
+         * distinct keystrokes. */
+        char sentinel = (char)0x90;
+        if (emu->type_keys_last_char == sentinel) {
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_last_char = 0;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else if (keyc == '\0') {
+            emu->type_keys_idx += 2;  /* dangling modifier — skip */
+        } else {
+            oric_keyboard_release_all(&emu->keyboard);
+            if (mod == 'C')      oric_keyboard_press_ctrl(&emu->keyboard);
+            else if (mod == 'F') oric_keyboard_press_funct(&emu->keyboard);
+            else if (mod == 'L') oric_keyboard_press_lshift(&emu->keyboard);
+            else                 oric_keyboard_press_rshift(&emu->keyboard);
+            oric_keyboard_press_char(&emu->keyboard, keyc);
+            emu->type_keys_last_char = sentinel;
+            emu->type_keys_idx += 3;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+        }
+    } else if (c == '\\' && emu->type_keys_text[idx+1] == 'p') {
+        /* \pN = pause N seconds (N = single digit) */
+        int secs = emu->type_keys_text[idx+2] - '0';
+        if (secs < 1) secs = 1;
+        if (secs > 9) secs = 9;
+        oric_keyboard_release_all(&emu->keyboard);
+        emu->type_keys_idx += 3;
+        emu->type_keys_next_cycle = (int64_t)total_executed + ORIC_CLOCK_HZ * secs;
+    } else {
+        /* Regular character */
+        if (emu->type_keys_debounce > 0) {
+            /* Debounce phase: release all keys and wait */
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_debounce--;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else if (c == emu->type_keys_last_char) {
+            /* Same char as previous: insert release phase */
+            oric_keyboard_release_all(&emu->keyboard);
+            emu->type_keys_debounce = 1; /* 1 more frame of release */
+            emu->type_keys_last_char = 0;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        } else {
+            /* New character: press immediately */
+            oric_keyboard_release_all(&emu->keyboard);
+            oric_keyboard_press_char(&emu->keyboard, c);
+            emu->type_keys_last_char = c;
+            emu->type_keys_idx++;
+            emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
+        }
+    }
+}
+
+static void run_autotype_step(emulator_t* emu, uint64_t total_executed) {
+    /* Auto-type: inject keystrokes at specified cycle count.
+     * Each key is pressed for ~2 frames (40ms) then released for ~2 frames.
+     * This simulates realistic typing speed for the ROM keyboard scanner. */
+    if (emu->type_keys_text && !emu->type_keys_done &&
+        (int64_t)total_executed >= emu->type_keys_at) {
+        if (autotype_should_fire(emu->type_keys_loci_hid,
+                                 (int64_t)total_executed,
+                                 emu->type_keys_next_cycle,
+                                 emu->kbd_scan_passes,
+                                 emu->type_keys_last_pass)) {
+            /* Record the scan-pass baseline for the *next* transition, so
+             * the scanner is guaranteed to observe this matrix state
+             * before it changes again (cf. include/io/autotype.h). */
+            emu->type_keys_last_pass = emu->kbd_scan_passes;
+            int idx = emu->type_keys_idx;
+            char c = emu->type_keys_text[idx];
+            /* Sprint 34av : LOCI HID injection path. Each char/escape
+             * yields a HID usage code that's pushed into the LOCI kbd
+             * bitmap for ~2 frames, then released. */
+            if (emu->type_keys_loci_hid && emu->has_loci) {
+                autotype_step_loci_hid(emu, total_executed, idx, c);
+            } else {
+                autotype_step_native(emu, total_executed, idx, c);
             }
         }
+    }
+}
 
-        frame_count++;
+/* GUI : OSD, présentation SDL et événements (clavier, F-keys, souris, manette). */
+#ifdef HAS_SDL2
+/* Bouton Action LOCI (F8) : instant de l'appui, pour distinguer court / long. */
+static Uint32 loci_f8_down_ms;
 
-        /* State-triggered captures : front montant sur RAM[addr] == val,
-         * échantillonné ici en fin de frame (même cadence que les variantes
-         * -at). when_read() lit la RAM brute hors overlay ($<C000, sans effet
-         * de bord) et la vue CPU au-delà. --cycles reste la borne max. */
-        if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0 &&
-            when_read(emu, (uint16_t)emu->screenshot_when_addr) == emu->screenshot_when_val) {
-            log_info("Screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
-                     (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val,
-                     (unsigned long long)total_executed, emu->screenshot_when_file);
-            emu_export_image(emu, emu->screenshot_when_file);
-            emu->screenshot_when_done = true;
+/* OSD média (F6) ouvert : les flèches / Entrée / Échap le pilotent et
+ * n'atteignent pas l'Oric. Renvoie true si l'événement est consommé. */
+static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
+    if (!emu->osd.open) return false;
+    int k = 0;
+    switch (sym) {
+    case SDLK_UP:       k = OSD_KEY_UP;    break;
+    case SDLK_DOWN:     k = OSD_KEY_DOWN;  break;
+    case SDLK_LEFT:     k = OSD_KEY_LEFT;  break;
+    case SDLK_RIGHT:    k = OSD_KEY_RIGHT; break;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER: k = OSD_KEY_ENTER; break;
+    case SDLK_DELETE:
+    case SDLK_BACKSPACE: k = OSD_KEY_EJECT; break;
+    case SDLK_ESCAPE:   k = OSD_KEY_ESC;   break;
+    default: break;
+    }
+    if (k) {
+        osd_action_t act = osd_key(&emu->osd, k);
+        if (act == OSD_ACTIVATE)
+            osd_do_load(emu, &emu->osd.entries[emu->osd.selected]);
+        else if (act == OSD_EJECT)
+            osd_do_eject(emu);
+        else if (act == OSD_EJECT_TAPE)
+            osd_do_eject_tape(emu);
+    }
+    return true;  /* consomme l'événement */
+}
+
+/* Touches de fonction de l'émulateur (F2/F4 savestate, F3 échelle, F5 reset,
+ * F7 dump mémoire, F8 bouton LOCI, F9 débogueur, F10 quitter, F11 plein écran,
+ * F12 capture). Les autres touches passent ensuite au clavier ORIC / manette. */
+static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
+                             uint64_t total_executed) {
+    switch (sym) {
+    case SDLK_F2:
+        if (savestate_save(emu, "oric1_quicksave.ost")) {
+            log_info("Quick save state saved (F2)");
+        } else {
+            log_error("Quick save state failed (F2)");
         }
+        break;
+    case SDLK_F3:
+        renderer_cycle_scale();
+        log_info("Display scale: x%d", renderer_get_scale());
+        break;
+    case SDLK_F4:
+        if (savestate_load(emu, "oric1_quicksave.ost")) {
+            log_info("Quick save state loaded (F4)");
+        } else {
+            log_error("Quick save state load failed (F4)");
+        }
+        break;
+    case SDLK_F5:
+        cpu_reset(&emu->cpu);
+        if (emu->has_loci) {
+            /* Sprint 34aj: LOCI reset button — clears MIA
+             * state (regs/xstack/active_op) but keeps the
+             * mount table and open file handles so the
+             * user's drives stay attached. Equivalent to
+             * the Pi Pico reset on real LOCI hardware. */
+            loci_reset(&emu->loci);
+            log_info("LOCI: MIA state reset (mounts preserved)");
+        }
+        break;
+    case SDLK_F8:
+        /* Sprint 34ai: LOCI Action button (warm press).
+         * Installs the IRQ trap and triggers an interrupt so
+         * the LOCI ROM can take over. Release on KEYUP below:
+         * short = menu, held ≥ 2 s = diag ROM (firmware
+         * EXT_BTN_LONGPRESS_MS). */
+        if (emu->has_loci && !repeat) {
+            loci_f8_down_ms = SDL_GetTicks();
+            loci_action_button_short(&emu->loci);
+            log_info("LOCI: Action button pressed (F8)");
+        }
+        break;
+    case SDLK_F7: {
+        /* Memory dump: save 64KB RAM to timestamped file */
+        time_t now = time(NULL);
+        struct tm* tm = localtime(&now);
+        char dumpname[64];
+        snprintf(dumpname, sizeof(dumpname),
+                 "memdump_%04d%02d%02d_%02d%02d%02d.bin",
+                 tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday,
+                 tm->tm_hour, tm->tm_min, tm->tm_sec);
+        FILE* df = fopen(dumpname, "wb");
+        if (df) {
+            fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), df);
+            /* $C000-$FFFF : vue CPU bankée (même contrat 64 Ko
+             * que --dump-ram-at, cf. sprint 38) */
+            for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
+                fwrite(&b, 1, 1, df);
+            }
+            fclose(df);
+            log_info("Memory dump: %s (64KB, $C000-$FFFF = CPU view, PC=$%04X, cycle=%llu)",
+                     dumpname, emu->cpu.PC,
+                     (unsigned long long)total_executed);
+        }
+        break;
+    }
+    case SDLK_F9:
+        /* Enter interactive debugger */
+        emu->debugger.active = true;
+        break;
+    case SDLK_F10:
+        emu->running = false;
+        break;
+    case SDLK_F11:
+        renderer_toggle_fullscreen();
+        break;
+    case SDLK_F12: {
+        char shot[64];
+        screenshot_unique_name(shot, sizeof(shot));
+        emu_export_image(emu, shot);
+        log_info("Screenshot saved to %s", shot);
+        break;
+    }
+    default:
+        break;
+    }
+}
 
-        if (!emu->screenshot_text_when_done && emu->screenshot_text_when_addr >= 0 &&
-            when_read(emu, (uint16_t)emu->screenshot_text_when_addr) == emu->screenshot_text_when_val) {
-            FILE* tf = fopen(emu->screenshot_text_when_file, "w");
+/* Souris SDL → LOCI mou_xram (sprint 34al). Ne concerne que --loci. */
+static void sdl_mouse_event(emulator_t* emu, const SDL_Event* event) {
+    switch (event->type) {
+    case SDL_MOUSEMOTION:
+        if (emu->has_loci) {
+            uint32_t bs = SDL_GetMouseState(NULL, NULL);
+            uint8_t btn = 0;
+            if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
+            if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
+            if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
+            loci_mou_report(&emu->loci, btn,
+                            (int8_t)event->motion.xrel,
+                            (int8_t)event->motion.yrel,
+                            0, 0);
+        }
+        break;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP:
+        if (emu->has_loci) {
+            uint32_t bs = SDL_GetMouseState(NULL, NULL);
+            uint8_t btn = 0;
+            if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
+            if (bs & SDL_BUTTON(SDL_BUTTON_RIGHT))  btn |= 0x02;
+            if (bs & SDL_BUTTON(SDL_BUTTON_MIDDLE)) btn |= 0x04;
+            loci_mou_report(&emu->loci, btn, 0, 0, 0, 0);
+        }
+        break;
+    case SDL_MOUSEWHEEL:
+        if (emu->has_loci) {
+            loci_mou_report(&emu->loci, 0, 0, 0,
+                            (int8_t)event->wheel.y,
+                            (int8_t)event->wheel.x);
+        }
+        break;
+    default: break;
+    }
+}
+#endif /* HAS_SDL2 */
+
+static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
+    /* Present to screen and handle events if not headless */
+    if (!emu->headless) {
+        /* OSD : garde une copie fraîche du charset Oric (valide en mode
+         * texte) puis dessine l'overlay par-dessus le framebuffer. */
+        if (!emu->video.hires_mode)
+            osd_snapshot_font(&emu->osd, emu->memory.ram);
+        osd_render(&emu->osd, &emu->video);
+        renderer_present(&emu->video);
+#ifdef HAS_SDL2
+        /* Poll SDL events (keyboard, window close, etc.) */
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+            case SDL_QUIT:
+                emu->running = false;
+                break;
+            case SDL_KEYDOWN:
+                /* OSD média (F6) : quand l'overlay est ouvert, les flèches /
+                 * Entrée / Échap le pilotent et n'atteignent pas l'Oric. */
+                if (event.key.keysym.sym == SDLK_F6) {
+                    osd_toggle(&emu->osd);
+                    break;
+                }
+                if (sdl_osd_key(emu, event.key.keysym.sym))
+                    break;  /* consomme l'événement */
+                /* F5 = Reset, F10 = Quit, F11 = Fullscreen, F12 = Screenshot */
+                sdl_function_key(emu, event.key.keysym.sym, event.key.repeat != 0,
+                                 total_executed);
+                /* Fall through to keyboard/joystick handler */
+                if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
+                    oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
+                }
+                /* Sprint 34ak: mirror SDL keyboard state into the
+                 * LOCI kbd bitmap so the LOCI ROM TUI can navigate. */
+                loci_sync_kbd_from_sdl(emu);
+                break;
+            case SDL_KEYUP:
+                if (event.key.keysym.sym == SDLK_F8 && emu->has_loci) {
+                    /* Sprint 34ai: Action button release sets V flag
+                     * so the BVC spin exits and JMP ($FFFA) runs the
+                     * save-state handler. Held ≥ 2 s = diag ROM. */
+                    bool longp = SDL_GetTicks() - loci_f8_down_ms >= 2000;
+                    emu->loci_button_long = longp;
+                    loci_action_button_release(&emu->loci);
+                    log_info("LOCI: Action button released (F8%s)",
+                             longp ? ", long press" : "");
+                }
+                /* Backend émulateur : F8 = bouton MENU LOCI → arme le service
+                 * ROM (le vrai firmware) puis reset → boot dans le menu LOCI. */
+                if (event.key.keysym.sym == SDLK_F8 && loci_emu_active()) {
+                    if (loci_emu_menu_button())
+                        cpu_reset(&emu->cpu);
+                }
+                if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
+                    oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
+                }
+                /* Sprint 34ak: sync after KEYUP so released keys
+                 * disappear from the LOCI bitmap. */
+                loci_sync_kbd_from_sdl(emu);
+                break;
+            case SDL_TEXTINPUT:
+                /* Symbolic mode: character -> ORIC key mapping */
+                oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
+                break;
+            /* Sprint 34al: bridge SDL mouse → LOCI mou_xram. */
+            case SDL_MOUSEMOTION:
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
+            case SDL_MOUSEWHEEL:
+                sdl_mouse_event(emu, &event);
+                break;
+            /* SDL game controller / joystick events */
+            case SDL_CONTROLLERBUTTONDOWN:
+            case SDL_CONTROLLERBUTTONUP:
+            case SDL_CONTROLLERAXISMOTION:
+            case SDL_JOYHATMOTION:
+            case SDL_JOYBUTTONDOWN:
+            case SDL_JOYBUTTONUP:
+                oric_joystick_handle_sdl_event(&emu->joystick, &event);
+                break;
+            case SDL_CONTROLLERDEVICEADDED:
+                if (emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD &&
+                    emu->joystick.controller == NULL &&
+                    emu->joystick.joystick == NULL) {
+                    oric_joystick_open_sdl(&emu->joystick, event.cdevice.which);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+#endif
+    }
+}
+
+/* Captures à seuil de cycles (--screenshot-at / -text-at / -ansi-at / --dump-ram-at). */
+static void run_timed_captures(emulator_t* emu, uint64_t total_executed) {
+    /* Cycle-triggered captures (--screenshot-at / -text-at / -ansi-at /
+     * --dump-ram-at), RÉPÉTABLES : chaque entrée du tableau tire une fois
+     * quand total_executed atteint son seuil. Échantillonné une fois par
+     * frame comme avant (le contenu ne dépend que du cycle courant). */
+    for (int ci = 0; ci < emu->timed_capture_count; ci++) {
+        timed_capture_t* tc = &emu->timed_captures[ci];
+        if (tc->done || tc->cycles < 0 ||
+            (int64_t)total_executed < tc->cycles)
+            continue;
+        switch (tc->type) {
+        case TCAP_IMAGE:
+            log_info("Taking screenshot at %llu cycles -> %s",
+                     (unsigned long long)total_executed, tc->file);
+            emu_export_image(emu, tc->file);
+            break;
+        case TCAP_TEXT: {
+            FILE* tf = fopen(tc->file, "w");
             if (tf) {
                 video_export_screen_text(emu->memory.ram, tf);
                 fclose(tf);
-                log_info("Text screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
-                         (unsigned)emu->screenshot_text_when_addr, emu->screenshot_text_when_val,
-                         (unsigned long long)total_executed, emu->screenshot_text_when_file);
+                log_info("Text screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, tc->file);
             } else {
-                log_error("Cannot open text screenshot file: %s", emu->screenshot_text_when_file);
+                log_error("Cannot open text screenshot file: %s", tc->file);
             }
-            emu->screenshot_text_when_done = true;
+            break;
         }
-
-        if (!emu->dump_ram_when_done && emu->dump_ram_when_addr >= 0 &&
-            when_read(emu, (uint16_t)emu->dump_ram_when_addr) == emu->dump_ram_when_val) {
-            FILE* rf = fopen(emu->dump_ram_when_file, "wb");
+        case TCAP_ANSI:
+            if (video_export_ascii_file(&emu->video, tc->file, 2, 2))
+                log_info("ANSI screenshot at %llu cycles -> %s",
+                         (unsigned long long)total_executed, tc->file);
+            else
+                log_error("Cannot write ANSI screenshot file: %s", tc->file);
+            break;
+        case TCAP_DUMP_RAM: {
+            FILE* rf = fopen(tc->file, "wb");
             if (rf) {
                 fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
+                /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay / upper
+                 * RAM). memory_read est sans effet de bord hors page I/O. */
                 for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
                     uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
                     fwrite(&b, 1, 1, rf);
                 }
                 fclose(rf);
-                log_info("RAM dump on RAM[$%04X]==$%02X at %llu cycles -> %s",
-                         (unsigned)emu->dump_ram_when_addr, emu->dump_ram_when_val,
-                         (unsigned long long)total_executed, emu->dump_ram_when_file);
+                log_info("RAM dump (64KB, $C000-$FFFF = CPU view) at %llu cycles → %s",
+                         (unsigned long long)total_executed, tc->file);
             } else {
-                log_error("Cannot open RAM dump file: %s", emu->dump_ram_when_file);
+                log_error("Cannot open RAM dump file: %s", tc->file);
             }
-            emu->dump_ram_when_done = true;
+            break;
         }
-
-        /* Écritures déclenchées (--poke-at / --poke-when) : actionneur symétrique
-         * des captures ci-dessus, échantillonné à la même cadence (fin de frame).
-         * Une entrée à seuil de cycles tire dès total_executed >= at_cycles ; une
-         * entrée conditionnelle tire au 1er échantillon où RAM[when_addr]==when_val.
-         * Chaque poke ne tire qu'une fois (done). Plusieurs pokes au même seuil
-         * s'appliquent dans l'ordre de la ligne de commande (ex. cx, cy, puis le
-         * drapeau de clic) au même instant côté programme. */
-        for (int pi = 0; pi < emu->poke_count; pi++) {
-            struct poke_action* p = &emu->pokes[pi];
-            if (p->done) continue;
-            bool fire = (p->at_cycles >= 0 && (int64_t)total_executed >= p->at_cycles) ||
-                        (p->when_addr >= 0 &&
-                         when_read(emu, (uint16_t)p->when_addr) == p->when_val);
-            if (!fire) continue;
-            poke_write(emu, p->target, p->value);
-            if (p->when_addr >= 0)
-                log_info("Poke RAM[$%04X]=$%02X on RAM[$%04X]==$%02X at %llu cycles",
-                         (unsigned)p->target, p->value,
-                         (unsigned)p->when_addr, p->when_val,
-                         (unsigned long long)total_executed);
-            else
-                log_info("Poke RAM[$%04X]=$%02X at %llu cycles",
-                         (unsigned)p->target, p->value,
-                         (unsigned long long)total_executed);
-            p->done = true;
         }
+        tc->done = true;
+    }
+}
 
+/* Enregistrement AVI : image de la trame + son (tap SDL en GUI). */
+static void run_video_recording(emulator_t* emu) {
+    /* Video recording: append this frame to the MJPEG AVI. With
+     * --export-border, composite the overscan border into a scratch buffer
+     * (matches the larger geometry the recorder was opened with). */
+    if (emu->video_avi_active) {
+        if (emu->export_border) {
+            static uint8_t avi_border_buf[VIDEO_BORDERED_MAX_W * VIDEO_BORDERED_MAX_H * 3];
+            int bw = 0, bh = 0;
+            video_compose_bordered(&emu->video, avi_border_buf, &bw, &bh);
+            avi_recorder_add_frame(&emu->video_avi_rec, avi_border_buf);
+        } else {
+            avi_recorder_add_frame(&emu->video_avi_rec, emu->video.framebuffer);
+        }
+        /* GUI audio muxing : drain the SDL callback's PCM tap and append it
+         * as this frame's audio chunk (headless feeds the stream inline
+         * above, so this path is GUI-only). Buffer sized for a few frames
+         * of jitter (~882 sample-frames/frame @44.1k/50fps). */
+        if (!emu->headless && emu->video_avi_rec.has_audio) {
+            enum { TAP_DRAIN_MAX = (AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE) * 4 };
+            static int16_t tap_pcm[TAP_DRAIN_MAX * 2];  /* interleaved L/R */
+            int got = audio_avi_tap_drain(tap_pcm, TAP_DRAIN_MAX);
+            if (got > 0)
+                avi_recorder_add_audio(&emu->video_avi_rec, tap_pcm, got);
+        }
+    }
+}
+
+/* Captures conditionnelles (--screenshot-when / -text-when / --dump-ram-when). */
+static void run_when_captures(emulator_t* emu, uint64_t total_executed) {
+    /* State-triggered captures : front montant sur RAM[addr] == val,
+     * échantillonné ici en fin de frame (même cadence que les variantes
+     * -at). when_read() lit la RAM brute hors overlay ($<C000, sans effet
+     * de bord) et la vue CPU au-delà. --cycles reste la borne max. */
+    if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0 &&
+        when_read(emu, (uint16_t)emu->screenshot_when_addr) == emu->screenshot_when_val) {
+        log_info("Screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                 (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val,
+                 (unsigned long long)total_executed, emu->screenshot_when_file);
+        emu_export_image(emu, emu->screenshot_when_file);
+        emu->screenshot_when_done = true;
+    }
+
+    if (!emu->screenshot_text_when_done && emu->screenshot_text_when_addr >= 0 &&
+        when_read(emu, (uint16_t)emu->screenshot_text_when_addr) == emu->screenshot_text_when_val) {
+        FILE* tf = fopen(emu->screenshot_text_when_file, "w");
+        if (tf) {
+            video_export_screen_text(emu->memory.ram, tf);
+            fclose(tf);
+            log_info("Text screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                     (unsigned)emu->screenshot_text_when_addr, emu->screenshot_text_when_val,
+                     (unsigned long long)total_executed, emu->screenshot_text_when_file);
+        } else {
+            log_error("Cannot open text screenshot file: %s", emu->screenshot_text_when_file);
+        }
+        emu->screenshot_text_when_done = true;
+    }
+
+    if (!emu->dump_ram_when_done && emu->dump_ram_when_addr >= 0 &&
+        when_read(emu, (uint16_t)emu->dump_ram_when_addr) == emu->dump_ram_when_val) {
+        FILE* rf = fopen(emu->dump_ram_when_file, "wb");
+        if (rf) {
+            fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
+            for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
+                uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
+                fwrite(&b, 1, 1, rf);
+            }
+            fclose(rf);
+            log_info("RAM dump on RAM[$%04X]==$%02X at %llu cycles -> %s",
+                     (unsigned)emu->dump_ram_when_addr, emu->dump_ram_when_val,
+                     (unsigned long long)total_executed, emu->dump_ram_when_file);
+        } else {
+            log_error("Cannot open RAM dump file: %s", emu->dump_ram_when_file);
+        }
+        emu->dump_ram_when_done = true;
+    }
+}
+
+/* Écritures déclenchées (--poke-at / --poke-when). */
+static void run_pokes(emulator_t* emu, uint64_t total_executed) {
+    /* Écritures déclenchées (--poke-at / --poke-when) : actionneur symétrique
+     * des captures ci-dessus, échantillonné à la même cadence (fin de frame).
+     * Une entrée à seuil de cycles tire dès total_executed >= at_cycles ; une
+     * entrée conditionnelle tire au 1er échantillon où RAM[when_addr]==when_val.
+     * Chaque poke ne tire qu'une fois (done). Plusieurs pokes au même seuil
+     * s'appliquent dans l'ordre de la ligne de commande (ex. cx, cy, puis le
+     * drapeau de clic) au même instant côté programme. */
+    for (int pi = 0; pi < emu->poke_count; pi++) {
+        struct poke_action* p = &emu->pokes[pi];
+        if (p->done) continue;
+        bool fire = (p->at_cycles >= 0 && (int64_t)total_executed >= p->at_cycles) ||
+                    (p->when_addr >= 0 &&
+                     when_read(emu, (uint16_t)p->when_addr) == p->when_val);
+        if (!fire) continue;
+        poke_write(emu, p->target, p->value);
+        if (p->when_addr >= 0)
+            log_info("Poke RAM[$%04X]=$%02X on RAM[$%04X]==$%02X at %llu cycles",
+                     (unsigned)p->target, p->value,
+                     (unsigned)p->when_addr, p->when_val,
+                     (unsigned long long)total_executed);
+        else
+            log_info("Poke RAM[$%04X]=$%02X at %llu cycles",
+                     (unsigned)p->target, p->value,
+                     (unsigned long long)total_executed);
+        p->done = true;
+    }
+}
+
+/* Cadence : limiteur 50 Hz en GUI, --realtime en headless. */
+static void run_frame_pacing(emulator_t* emu, run_state_t* rs) {
 #ifdef HAS_SDL2
-        /* Frame limiter: 50 Hz PAL = 20ms per frame.
-         * Without this, the emulator runs at monitor refresh rate (60 Hz+)
-         * which is 20% faster than real ORIC hardware.
-         * SDL_Delay has ~1ms resolution, good enough for frame pacing. */
-        if (!emu->headless) {
-            uint32_t frame_elapsed = SDL_GetTicks() - frame_start_ticks;
-            uint32_t budget = 20;
+    /* Frame limiter: 50 Hz PAL = 20ms per frame.
+     * Without this, the emulator runs at monitor refresh rate (60 Hz+)
+     * which is 20% faster than real ORIC hardware.
+     * SDL_Delay has ~1ms resolution, good enough for frame pacing. */
+    if (!emu->headless) {
+        uint32_t frame_elapsed = SDL_GetTicks() - rs->frame_start_ticks;
+        uint32_t budget = 20;
 #ifdef __EMSCRIPTEN__
-            /* In the browser the C while-loop must yield to the event loop
-             * each frame (Asyncify rewinds/unwinds the stack here). This both
-             * paces to ~50 Hz and keeps the tab responsive. */
-            emscripten_sleep(frame_elapsed < budget ? budget - frame_elapsed : 0);
+        /* In the browser the C while-loop must yield to the event loop
+         * each frame (Asyncify rewinds/unwinds the stack here). This both
+         * paces to ~50 Hz and keeps the tab responsive. */
+        emscripten_sleep(frame_elapsed < budget ? budget - frame_elapsed : 0);
 #else
-            if (frame_elapsed < budget) {
-                SDL_Delay(budget - frame_elapsed);
-            }
-#endif
+        if (frame_elapsed < budget) {
+            SDL_Delay(budget - frame_elapsed);
         }
+#endif
+    }
 #endif
 
 #ifndef __EMSCRIPTEN__
-        /* Real-time pacing (--realtime) for headless / no-SDL runs: the SDL
-         * limiter above only runs in GUI mode, so without this a headless run
-         * sprints at ~45x real time — which breaks network serial timing
-         * (modem/XMODEM round-trips) and --type-keys sequencing. Sleep to the
-         * absolute per-frame deadline (20 ms @ 50 Hz PAL); a frame that already
-         * overran returns immediately. If we fall more than a frame behind
-         * (e.g. a blocking network read), resync so we don't burst-catch-up. */
-        if (emu->realtime
+    /* Real-time pacing (--realtime) for headless / no-SDL runs: the SDL
+     * limiter above only runs in GUI mode, so without this a headless run
+     * sprints at ~45x real time — which breaks network serial timing
+     * (modem/XMODEM round-trips) and --type-keys sequencing. Sleep to the
+     * absolute per-frame deadline (20 ms @ 50 Hz PAL); a frame that already
+     * overran returns immediately. If we fall more than a frame behind
+     * (e.g. a blocking network read), resync so we don't burst-catch-up. */
+    if (emu->realtime
 #ifdef HAS_SDL2
-            && emu->headless
+        && emu->headless
 #endif
-           ) {
-            rt_next.tv_nsec += 20000000L;  /* 20 ms */
-            if (rt_next.tv_nsec >= 1000000000L) {
-                rt_next.tv_nsec -= 1000000000L;
-                rt_next.tv_sec++;
-            }
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            int64_t lag_ns = (now.tv_sec - rt_next.tv_sec) * 1000000000LL
-                           + (now.tv_nsec - rt_next.tv_nsec);
-            if (lag_ns > 20000000LL) {
-                rt_next = now;  /* trop en retard : on recale sur l'instant courant */
-            } else {
-                /* Dormir jusqu'à rt_next. clock_nanosleep(TIMER_ABSTIME) existe
-                 * sur Linux/BSD mais PAS sur macOS → repli sur un nanosleep
-                 * relatif du temps restant (lag_ns < 0 = on est en avance). */
+       ) {
+        rs->rt_next.tv_nsec += 20000000L;  /* 20 ms */
+        if (rs->rt_next.tv_nsec >= 1000000000L) {
+            rs->rt_next.tv_nsec -= 1000000000L;
+            rs->rt_next.tv_sec++;
+        }
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        int64_t lag_ns = (now.tv_sec - rs->rt_next.tv_sec) * 1000000000LL
+                       + (now.tv_nsec - rs->rt_next.tv_nsec);
+        if (lag_ns > 20000000LL) {
+            rs->rt_next = now;  /* trop en retard : on recale sur l'instant courant */
+        } else {
+            /* Dormir jusqu'à rs->rt_next. clock_nanosleep(TIMER_ABSTIME) existe
+             * sur Linux/BSD mais PAS sur macOS → repli sur un nanosleep
+             * relatif du temps restant (lag_ns < 0 = on est en avance). */
 #if defined(__APPLE__)
-                if (lag_ns < 0) {
-                    int64_t rem_ns = -lag_ns;
-                    struct timespec rem = {
-                        .tv_sec  = (time_t)(rem_ns / 1000000000LL),
-                        .tv_nsec = (long)(rem_ns % 1000000000LL)
-                    };
-                    nanosleep(&rem, NULL);
-                }
-#else
-                clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &rt_next, NULL);
-#endif
+            if (lag_ns < 0) {
+                int64_t rem_ns = -lag_ns;
+                struct timespec rem = {
+                    .tv_sec  = (time_t)(rem_ns / 1000000000LL),
+                    .tv_nsec = (long)(rem_ns % 1000000000LL)
+                };
+                nanosleep(&rem, NULL);
             }
-        }
+#else
+            clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &rs->rt_next, NULL);
 #endif
-
-        /* Headless replay: once the movie is fully drained, exit so a recorded
-         * session replays to completion unattended (CI regression). The GUI
-         * keeps running so playback can be watched. */
-        if (emu->headless && movie_replay_done(&emu->movie) &&
-            frame_count > emu->movie.end_frame) {
-            log_info("Movie replay complete (%u frames)",
-                     (unsigned)emu->movie.end_frame);
-            break;
-        }
-
-        /* Check cycle limit for headless/test mode */
-        if (emu->max_cycles >= 0 && (int64_t)total_executed >= emu->max_cycles) {
-            log_info("Cycle limit reached (%lld cycles)", (long long)emu->max_cycles);
-            if (emu->control_mode) control_emit_halt(emu, "cycle_limit");
-            break;
-        }
-
-        if (emu->cpu.halted) {
-            log_info("CPU halted after %llu cycles", (unsigned long long)total_executed);
-            if (emu->control_mode) control_emit_halt(emu, "jam");
-            break;
         }
     }
+#endif
+}
 
+/* Sorties de fin de run : captures, filet -when, état final, rapport --bench. */
+static void run_end_of_run(emulator_t* emu, const run_state_t* rs) {
     /* End-of-run screenshot */
     if (emu->screenshot_file) {
         log_info("Taking exit screenshot -> %s", emu->screenshot_file);
@@ -2370,7 +2352,7 @@ static void emulator_run(emulator_t* emu) {
     }
 
     log_info("Emulation stopped. Total cycles: %llu, frames: %llu",
-             (unsigned long long)total_executed, (unsigned long long)frame_count);
+             (unsigned long long)rs->total_executed, (unsigned long long)rs->frame_count);
 
     char state[128];
     cpu_get_state_string(&emu->cpu, state, sizeof(state));
@@ -2382,20 +2364,147 @@ static void emulator_run(emulator_t* emu) {
     if (emu->bench_mode) {
         struct timespec t1;
         clock_gettime(CLOCK_MONOTONIC, &t1);
-        double wall_s = (double)(t1.tv_sec - bench_t0.tv_sec)
-                      + (double)(t1.tv_nsec - bench_t0.tv_nsec) * 1e-9;
+        double wall_s = (double)(t1.tv_sec - rs->bench_t0.tv_sec)
+                      + (double)(t1.tv_nsec - rs->bench_t0.tv_nsec) * 1e-9;
         if (wall_s <= 0.0) wall_s = 1e-9;
-        double mhz_eq = (double)total_executed / (wall_s * 1e6);
+        double mhz_eq = (double)rs->total_executed / (wall_s * 1e6);
         double speed_ratio = mhz_eq / 1.0;   /* ORIC is 1 MHz */
-        double frame_us = wall_s * 1e6 / (frame_count > 0 ? (double)frame_count : 1.0);
+        double frame_us = wall_s * 1e6 / (rs->frame_count > 0 ? (double)rs->frame_count : 1.0);
         printf("BENCH cycles=%llu frames=%llu wall_ms=%.3f mhz_eq=%.2f "
                "speed_ratio=%.1fx frame_us=%.1f\n",
-               (unsigned long long)total_executed,
-               (unsigned long long)frame_count,
+               (unsigned long long)rs->total_executed,
+               (unsigned long long)rs->frame_count,
                wall_s * 1000.0, mhz_eq, speed_ratio, frame_us);
         fflush(stdout);
     }
 }
+static void emulator_run(emulator_t* emu) {
+    /* Skip the power-on reset when a save state was restored at startup —
+     * otherwise the loaded PC/cycles are wiped back to the reset vector. */
+    if (!emu->startup_state_loaded)
+        cpu_reset(&emu->cpu);
+
+    log_info("Starting emulation at PC=$%04X", emu->cpu.PC);
+
+    /* Sprint 35a — emit the IPC ready banner once everything is wired up
+     * so the client knows the channel is live. */
+    if (emu->control_mode) {
+        control_emit_ready(emu);
+    }
+
+    run_state_t rs = {0};
+    /* Sprint 36a — start wall clock for --bench. CLOCK_MONOTONIC is what
+     * we want : insensitive to NTP / RTC adjustments. */
+    if (emu->bench_mode) {
+        clock_gettime(CLOCK_MONOTONIC, &rs.bench_t0);
+    }
+#ifdef HAS_SDL2
+    rs.frame_start_ticks = SDL_GetTicks();
+#endif
+#ifndef __EMSCRIPTEN__
+    /* Real-time pacing deadline (--realtime, headless/no-SDL). Absolute
+     * CLOCK_MONOTONIC target advanced by one PAL frame each iteration so the
+     * pacing never drifts. */
+    if (emu->realtime) clock_gettime(CLOCK_MONOTONIC, &rs.rt_next);
+#endif
+
+    while (emu->running && app_should_run()) {
+#ifdef HAS_SDL2
+        rs.frame_start_ticks = SDL_GetTicks();
+#endif
+        /* Movie record/replay: the keyboard matrix is the only deterministic
+         * input. Apply this frame's state BEFORE the CPU runs so the VIA scan
+         * sees it. Replay overwrites live input; record samples it. */
+        if (emu->movie.mode == MOVIE_REPLAY) {
+            movie_replay_frame(&emu->movie, rs.frame_count, emu->keyboard.matrix);
+        } else if (emu->movie.mode == MOVIE_RECORD) {
+            movie_record_frame(&emu->movie, rs.frame_count, emu->keyboard.matrix);
+        }
+
+        /* Une trame de machine, puis les hooks de fin de trame — dans l'ordre
+         * historique, qui est observable (captures, frappes, cadence). */
+        run_frame_instructions(emu, &rs);
+        run_loci_frame_hooks(emu, rs.total_executed);
+        run_headless_audio_sinks(emu);
+
+        /* Sprint 35a freeze — async pause: once per frame, peek at stdin.
+         * If the IDE sent `pause`, hand control back to the REPL right
+         * after this frame ends. Latency = at most one frame (~20 ms). */
+        if (emu->control_mode && control_poll_pause(emu)) {
+            emu->debugger.active = true;
+        }
+        /* GDB stub: once per frame, check for a Ctrl-C interrupt or a client
+         * disconnect; either forces a stop into gdb_stub_stopped() next loop. */
+        if (emu->gdb_mode && gdb_stub_poll_interrupt((gdb_stub_t*)emu->gdb_stub)) {
+            emu->debugger.active = true;
+        }
+
+        run_fastload_hooks(emu, rs.total_executed);
+        run_autotype_arm(emu, rs.total_executed);
+        run_autotype_step(emu, rs.total_executed);
+
+        /* Flush serial trace once per frame (not per byte) */
+        if (emu->has_serial) {
+            acia_trace_flush(&emu->acia);
+        }
+        /* Video frame already rendered scanline-by-scanline (per-cycle ULA). */
+        if (emu->has_cast_server) {
+            cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
+                                   (unsigned int)emu->video.native_w,
+                                   (unsigned int)emu->video.native_h);
+        }
+        /* Drain any HTTP-API commands at this frame boundary (sprint 94); the
+         * server thread parked in control_queue_submit() is unblocked here, so
+         * state-mutating commands run on the emulator thread. No-op when the
+         * API is disabled (control_queue is NULL). */
+        control_queue_drain(emu->control_queue, emu);
+        /* Inject any keystrokes queued by the `keys` command (sprint 95). */
+        feed_kbd_inject(emu);
+
+        run_present_and_events(emu, rs.total_executed);
+        run_timed_captures(emu, rs.total_executed);
+
+        /* Frame dump */
+        if (emu->frame_dump_dir &&
+            (rs.frame_count % (uint64_t)emu->frame_dump_interval == 0)) {
+            char path[512];
+            snprintf(path, sizeof(path), "%s/frame_%06llu.ppm",
+                     emu->frame_dump_dir, (unsigned long long)rs.frame_count);
+            emu_export_image(emu, path);
+        }
+        run_video_recording(emu);
+
+        rs.frame_count++;
+
+        run_when_captures(emu, rs.total_executed);
+        run_pokes(emu, rs.total_executed);
+        run_frame_pacing(emu, &rs);
+
+        /* Headless replay: once the movie is fully drained, exit so a recorded
+         * session replays to completion unattended (CI regression). The GUI
+         * keeps running so playback can be watched. */
+        if (emu->headless && movie_replay_done(&emu->movie) &&
+            rs.frame_count > emu->movie.end_frame) {
+            log_info("Movie replay complete (%u frames)",
+                     (unsigned)emu->movie.end_frame);
+            break;
+        }
+        /* Check cycle limit for headless/test mode */
+        if (emu->max_cycles >= 0 && (int64_t)rs.total_executed >= emu->max_cycles) {
+            log_info("Cycle limit reached (%lld cycles)", (long long)emu->max_cycles);
+            if (emu->control_mode) control_emit_halt(emu, "cycle_limit");
+            break;
+        }
+        if (emu->cpu.halted) {
+            log_info("CPU halted after %llu cycles", (unsigned long long)rs.total_executed);
+            if (emu->control_mode) control_emit_halt(emu, "jam");
+            break;
+        }
+    }
+
+    run_end_of_run(emu, &rs);
+}
+
 
 
 int main(int argc, char* argv[]) {

@@ -770,6 +770,38 @@ https://oric.signal11.org.uk/html/ula1.htm
 
 EMU_VERSION 2.0.1 → **2.0.2**.
 
+## [2.0.3] - 2026-09-12
+
+### Changed — `emulator_run` découpée en étapes nommées (Epic 7, dette restante)
+
+La boucle principale de `main.c` était une fonction de **1 296 lignes** : la
+boucle par instruction, puis une vingtaine de « hooks » de fin de trame
+(son headless, fast-load, frappe automatique, événements SDL, captures,
+pokes, cadence) empilés dans un seul `while`, partageant des variables
+locales. C'était la dette signalée à la fin de l'Epic 7.
+
+- `emulator_run` fait désormais **126 lignes** et se lit comme la liste des
+  étapes d'une trame, dans l'ordre historique (qui est observable : captures,
+  frappes, cadence — il n'a pas bougé).
+- L'état partagé (`total_executed`, `frame_count`, horloges bench/realtime,
+  ticks du limiteur) vit dans `run_state_t`, passé aux étapes qui en ont
+  besoin.
+- Étapes extraites (chacune `static`, ≤ 150 lignes) : `run_frame_instructions`,
+  `run_loci_frame_hooks`, `run_headless_audio_sinks`, `run_fastload_hooks`,
+  `run_autotype_arm`, `run_autotype_step` (→ `autotype_step_loci_hid` /
+  `autotype_step_native`), `run_present_and_events` (→ `sdl_osd_key`,
+  `sdl_function_key`, `sdl_mouse_event`), `run_timed_captures`,
+  `run_video_recording`, `run_when_captures`, `run_pokes`, `run_frame_pacing`,
+  `run_end_of_run`.
+- Aucune logique modifiée : extraction mécanique par plages, les `goto` de la
+  frappe HID devenus des `return`, la variable statique du bouton F8 remontée
+  au niveau du fichier.
+
+Vérifié : builds `SDL2=0` et `SDL2=1`, `make tests` vert, corpus 36/36
+identique, `test-savestate-determinism`, boot GUI sous SDL dummy jusqu'au
+READY. Pas de release (aucun changement visible) ; EMU_VERSION 2.0.2 →
+**2.0.3**.
+
 ## [Unreleased]
 
 ### Added — release automatique sur tag (`.github/workflows/release.yml`)

@@ -688,7 +688,7 @@ byte-identique, dans l'esprit du chantier `io_device_t` (Sprints 121-124). Ordre
       à propager. Verdict : ni sûr ni rentable, et le parseur n'est **pas** de la
       dette (juste beaucoup d'options lean). `main.c` déjà à 3744 (-25 %). On
       **laisse le parseur tel quel**.
-- [ ] **Restant** : `emulator_run` (~1197 l) — gros bloc, sprint dédié si besoin.
+- [x] **Restant** : `emulator_run` (~1297 l) — **FAIT en 2.0.3** : 126 lignes + 17 étapes nommées (`run_state_t`), extraction mécanique, ordre inchangé, tests/corpus/GUI dummy verts.
 - [ ] **NON fait (assumé)** : le parser générique + `cli_args_t`. Mesure :
       63 `case` dont **43 à effets de bord** au parsing + ~89 variables locales →
       **non prouvable iso-comportement** avec le filet actuel. Livrer la part sûre
