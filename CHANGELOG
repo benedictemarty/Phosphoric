@@ -327,6 +327,82 @@ remplace pas une approximation par une autre.
 `make clean && make tests` : toutes suites vertes, aucun WAV de référence à
 re-baseliner. EMU_VERSION 2.0.0-alpha.3 → **2.0.0-alpha.4**.
 
+## [2.0.0-alpha.5] - 2026-09-11
+
+### Fixed — étage de sortie audio : le continu bloqué, deux « déviations assumées » levées
+
+Le sprint précédent laissait deux points en suspens avec la formule « sans mesure
+sur matériel, je ne remplace pas une approximation par une autre ». C'était
+prudent, mais insuffisant : le **schéma officiel** de l'ORIC répond à une partie
+des questions. Il a été relevé — feuille *PSG 1 Keyboard*, révision Issue 6.1 —
+et documenté dans `docs/architecture/oric-audio-output.md`.
+
+#### Ce que le schéma dit
+
+```
+CH_C ──┬──────────── R2 ──┬──┬──── C4 ──── SOUND_OUT ──► R33 ──► LM386 (+)
+CH_B ──┤             4,7k │  │                            22k
+CH_A ──┘                  │  │
+       └── R4 ── AGND   C5│  │R3
+           1k          10n│  │470
+```
+
+**1. Le mixage moyenne les canaux — notre `somme/3` était déjà juste.** Les trois
+sorties ne passent pas par des résistances de sommation : elles sont **reliées
+directement** au même point, chargé par `R4` = 1 kΩ. Une mesure rapportée sur le
+forum Defence Force le confirme : un canal seul à 1 V donne **≈ 0,33 V**, pas 1 V.
+La déviation « le vrai AY somme des courants, la somme n'est pas linéaire » était
+donc **fausse**. Verrouillée à l'endroit : `test_ay_parallel_mixing_averages_channels`.
+
+**2. Le passe-bas coupe à 37 kHz — hors sujet.** `C5` = 10 nF voit `R2 ∥ R3` =
+427 Ω, soit **f_c = 37,2 kHz** : au-dessus de Nyquist, rien à modéliser. La
+déviation « pas de filtre passe-bas analogique » est **sans objet**. Le diviseur
+`R2`/`R3` (−20,8 dB) n'est que du gain, repris par le LM386.
+
+**3. Le couplage bloque le continu — et ça, on ne le faisait pas.** Le signal du
+PSG est **unipolaire** : mesuré, un continu de **+8188** pour trois canaux à plein
+volume, la moitié de l'amplitude. Sur la machine, `C4` couple le PSG à l'ampli et
+ne laisse pas passer ce continu. On envoyait donc au DAC un décalage permanent —
+dynamique gaspillée, et un « clic » à chaque début et fin de son.
+
+Corrigé par un blocage du continu en virgule fixe (coupure **≈ 1,7 Hz**, donc
+inaudible ; désarmable par `dc_block_off` pour observer le générateur nu).
+Mesuré après correction :
+
+| | avant | après |
+|---|---|---|
+| composante continue (3 canaux, vol. 15) | **+8188** | **+15** |
+| excursion | 0 … +16383 (unipolaire) | −8232 … +8252 (**symétrique**) |
+| énergie du signal | référence | inchangée (< 2 %) |
+
+#### Ce qui reste indéterminé, et pourquoi on ne l'invente pas
+
+La valeur de `C4` n'est **pas déterminable** sur ce document : elle y est notée
+« 2k2 », sans unité, alors que tous les autres condensateurs de la feuille portent
+la leur (`10n`, `47n`, `220uF`). Les deux lectures plausibles donnent des circuits
+radicalement différents :
+
+| Hypothèse | coupure | conséquence |
+|-----------|---------|-------------|
+| 2,2 nF | ≈ **4,7 kHz** | passe-haut sévère : le son perd tous ses graves |
+| 2,2 µF | ≈ **4,7 Hz** | simple blocage du continu |
+
+Un facteur mille sur le résultat audible. Seul l'effet **certain** est donc
+modélisé. Une mesure sur machine réelle, ou une photo lisible du PCB, lèverait le
+doute — rien d'autre ne le lèvera. Idem pour la réponse du LM386 et du
+haut-parleur interne : ce que l'émulateur restitue est le **signal électrique**,
+ce qu'attend quiconque écoute au casque.
+
+#### Tests
+
+`test-audio` passe de 17 à **20**. Quatre tests existants ont été ajustés : ils
+observaient le **générateur** à travers un niveau continu, que l'étage de sortie
+supprime désormais — ils désarment explicitement le blocage (`dc_block_off`), ce
+qui sépare proprement « ce que produit la puce » de « ce qui sort de la carte ».
+
+`make clean && make tests` : toutes suites vertes.
+EMU_VERSION 2.0.0-alpha.4 → **2.0.0-alpha.5**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

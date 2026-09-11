@@ -99,6 +99,12 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] US5.4 digidrums (chemin horodaté) conservés
       - [x] Coût **nul**, mesuré contre le binaire du sprint précédent dans la
             même session (611 vs 614 µs/trame)
+      - [x] **Étage de sortie relevé sur le schéma officiel**
+            (`docs/architecture/oric-audio-output.md`) : mixage parallèle qui
+            **moyenne** (notre somme/3 était juste — déviation fausse), passe-bas
+            à **37 kHz** (hors bande), **blocage du continu** ajouté
+            (+8188 → +15, signal symétrique). Coupure exacte du couplage `C4`
+            indéterminée sur le document (facteur 1000) → non modélisée, documentée
 - [ ] **V2-E6 — Cassette & FDC dérivés du temps réel** (S9-S10) : bande au signal par
       défaut, DRQ/INTRQ dérivés de la rotation (LOST DATA possible), piste MFM optionnelle
 - [ ] **V2-E7 — Perf, savestate, non-régression, CI** (transverse) : `make bench`

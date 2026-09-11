@@ -311,6 +311,17 @@ Le gain le plus visible pour l'utilisateur.
   file d'événements rejouée à la position d'échantillon exacte) est inchangé et
   bénéficie directement du cadencement matériel.
 
+- **US5.5 — Étage de sortie (ajouté après coup, sur demande). ✅ livré
+  (2.0.0-alpha.5)** — plutôt que de laisser deux « déviations assumées » reposer
+  sur une incertitude, le **schéma officiel** a été relevé
+  (`docs/architecture/oric-audio-output.md`). Résultat : le mixage parallèle
+  **moyenne** les canaux — notre `somme/3` était donc **déjà juste**, la déviation
+  était fausse ; le seul passe-bas du circuit coupe à **37 kHz**, donc hors bande ;
+  et le couplage capacitif **bloque le continu**, ce qu'on ne faisait pas. Corrigé :
+  continu **+8188 → +15**, signal symétrique. Reste indéterminée et documentée : la
+  coupure exacte du couplage (valeur notée « 2k2 » sans unité — 2,2 nF ⇒ 4,7 kHz ou
+  2,2 µF ⇒ 4,7 Hz, un facteur mille). `test-audio` 17 → **20**.
+
 **Coût : nul.** Mesuré dans la même session contre le binaire du sprint précédent
 (3 passes, avec et sans génération audio) : 611 µs contre 614 µs par trame, soit
 l'équivalent du bruit de mesure. Les écarts apparents entre sprints venaient de la

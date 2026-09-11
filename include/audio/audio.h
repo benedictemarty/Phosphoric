@@ -56,6 +56,19 @@ typedef struct ay3891x_s {
     uint8_t registers[AY_NUM_REGISTERS];
     uint8_t selected_reg;
 
+    /* ─── Étage de sortie (V2-E5, d'après le schéma officiel Oric-1/Atmos) ───
+     * Les trois sorties CH_A/CH_B/CH_C de l'AY-3-8912 sont reliées ensemble sur
+     * une charge commune (R4 = 1 kΩ), puis le signal traverse un condensateur de
+     * COUPLAGE (C4) avant l'ampli LM386. Ce couplage bloque la composante
+     * continue : le signal du PSG est unipolaire (0 → +max), et sans ce blocage
+     * on enverrait au DAC un décalage continu qu'aucun haut-parleur ne restitue.
+     *
+     * Estimateur de continu en virgule fixe Q16, constante de temps 2^12
+     * échantillons (≈ 1,7 Hz à 44,1 kHz) : assez bas pour être inaudible, assez
+     * haut pour suivre les changements de niveau. Entier, donc déterministe. */
+    int32_t dc_acc;
+    bool    dc_block_off;   /* true = sortie brute, sans blocage (diagnostic) */
+
     /* Tone generators */
     uint16_t tone_period[3];
     uint32_t tone_counter[3];   /* Fractional accumulator for clock rate conversion */

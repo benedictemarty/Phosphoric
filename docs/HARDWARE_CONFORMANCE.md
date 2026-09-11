@@ -100,13 +100,40 @@ fractionnaires au taux d'échantillonnage de 44,1 kHz).
 |-------|--------|-----------|
 | **Bruit 2× trop rapide** | Le générateur de bruit réutilisait `tone_rate` (`clock/8` = cadence de **bascule** du ton) pour cadencer le LFSR. Or le bruit n'a pas de bascule ÷2 : la datasheet donne `clock/(16×NP)` (même prescaler /16 que le ton). MAME modélise ce ÷2 manquant via son `prescale_noise`. | Nouveau `noise_rate = clock/16` passé à `ay_step_sample()` (distinct de `tone_rate`). Test `test_ay_noise_rate_clock_div16` (LFSR de référence sur le nombre de pas exact). **Preuve empirique** : capture `--audio-wav` — `PING` (ton) byte-à-byte identique au binaire HEAD, `EXPLODE` (bruit) diffère → seul le bruit change, aucune régression du ton/enveloppe. |
 
+### L'étage de sortie de l'ORIC (relevé sur le schéma officiel)
+
+Ces valeurs viennent du schéma Oric-1/Atmos (feuille *PSG 1 Keyboard*, `audio.sch`,
+révision Issue 6.1) — voir `docs/architecture/oric-audio-output.md` pour le détail
+et les calculs. Elles ont permis de **lever deux déviations** précédemment
+« assumées », et d'en préciser une troisième.
+
+| Élément | Valeur | Rôle | Modélisé ? |
+|---------|--------|------|------------|
+| `R4` | 1 kΩ | charge commune sur laquelle CH_A, CH_B et CH_C sont **reliés ensemble** | **oui** — c'est ce mixage parallèle qui *moyenne* les trois canaux |
+| `R2` / `R3` | 4,7 kΩ / 470 Ω | diviseur de tension (−20,8 dB) | non — c'est du **gain**, repris par l'ampli LM386 (×20) |
+| `C5` | 10 nF | passe-bas sur `R2 ∥ R3` = 427 Ω → **f_c = 37,2 kHz** | non — **hors bande** : au-dessus de Nyquist à 44,1 kHz, et l'intégration par échantillon couvre déjà cette zone |
+| `C4` | *ambiguë* | couplage vers l'ampli → **bloque le continu** | **oui**, pour le blocage du continu seulement (voir ci-dessous) |
+| `LM386` + `SP1` | — | ampli et haut-parleur interne | non — réponse non mesurée |
+
+### Corrigé (2.0.0-alpha.5)
+| Écart | Détail | Correctif |
+|-------|--------|-----------|
+| **Composante continue en sortie** | Le signal du PSG est unipolaire (0 → +max) : mesuré, un continu de **+8188** pour trois canaux à plein volume, soit la moitié de l'amplitude. Sur la machine, `C4` couple le PSG à l'ampli et ne laisse **pas** passer ce continu. On envoyait donc au DAC un décalage permanent — dynamique gaspillée et « clic » à chaque début et fin de son. | Blocage du continu en virgule fixe (estimateur Q16, constante de temps 4096 échantillons ≈ **1,7 Hz**, donc inaudible), désarmable par `dc_block_off` pour observer le générateur nu. Mesuré après correction : continu **+8188 → +15**, et signal **symétrique** (−8232 / +8252 au lieu de 0 / +16383). Tests `test_ay_output_has_no_dc_offset`, `test_ay_dc_block_preserves_audio`. |
+
+### Déviations levées (2.0.0-alpha.5)
+| Ancienne déviation | Verdict |
+|--------------------|---------|
+| « Mixage des trois canaux par somme divisée par 3 — le vrai AY somme des **courants**, la somme n'est pas parfaitement linéaire » | **Infondée.** Le schéma montre CH_A/CH_B/CH_C **reliés ensemble** sur `R4` : en parallèle, les sorties ne s'additionnent pas, elles se **moyennent**. La mesure rapportée sur le forum Defence Force le confirme : un canal seul à 1 V donne ≈ 0,33 V, pas 1 V. Notre `somme / 3` **est** ce comportement. Verrouillé par `test_ay_parallel_mixing_averages_channels` (la dynamique de 3 canaux vaut 3× celle d'un seul, à 5 % près). |
+| « Pas de filtre passe-bas analogique » | **Sans objet à 44,1 kHz.** Le seul passe-bas du circuit (`C5` sur `R2 ∥ R3`) coupe à **37,2 kHz**, au-dessus de la bande représentable. |
+
 ### Déviations assumées
 | Écart | Raison |
 |-------|--------|
+| Le **couplage `C4` n'est pas modélisé comme passe-haut audible** : seul le blocage du continu l'est, à 1,7 Hz | La valeur de `C4` n'est **pas déterminable** sur ce document : elle y est notée « 2k2 », sans unité, alors que les autres condensateurs de la feuille portent la leur (`10n`, `47n`, `220uF`). Les deux lectures plausibles donnent des circuits très différents — **2,2 nF → passe-haut à ≈ 3,3 kHz** (le son perdrait tous ses graves) ou **2,2 µF → ≈ 3,3 Hz** (simple blocage du continu). On ne tranche pas au jugé : seul l'effet **certain** est modélisé. Une mesure sur machine réelle (ou une photo du PCB) lèverait le doute. |
+| Réponse du LM386 et du haut-parleur interne | Non mesurée. Ce que l'émulateur restitue est le **signal électrique**, pas la réponse du petit haut-parleur — c'est aussi ce qu'attend quiconque écoute au casque. |
 | L'AY-3-8912 n'a **pas de Port B** (reg 15) mais le code le modélise (`audio.h`, init 0xFF) | Sans effet sur Oric (Port B inutilisé) ; cosmétique. |
 | Sémantique R7 bit 6 (direction Port A) : le code renvoie l'entrée clavier quand bit6=1, alors que la datasheet décrit R7 bits 6/7 comme la direction des ports | **Empiriquement validé** sur Oric (clavier testé de façon extensive) → modèle Oric-spécifique délibéré ; non modifié sans confirmation (principe : ne pas inventer). |
-| Mixage des trois canaux par somme divisée par 3 | Le vrai AY somme des **courants** dans une charge commune : la somme n'est pas parfaitement linéaire. Sans mesure sur matériel, on ne remplace pas une approximation par une autre. |
-| Pas de filtre passe-bas analogique (haut-parleur + circuit de sortie de l'ORIC) | L'intégration par échantillon atténue déjà l'ultrasonique ; un vrai filtre demanderait une réponse mesurée. |
+
 
 ---
 

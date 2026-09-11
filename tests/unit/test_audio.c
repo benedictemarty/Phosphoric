@@ -305,6 +305,10 @@ TEST(test_ay_mixer) {
     ay_write_reg(&ay, 10, 15);  /* Chan C vol = max */
 
     /* Mixer: all tone AND noise disabled (0x3F) → silence */
+    /* Ce test observe le GÉNÉRATEUR, qui produit ici un niveau continu. L'étage
+     * de sortie de l'ORIC (couplage capacitif) le supprimerait : on le désarme
+     * pour mesurer la source, pas la chaîne. */
+    ay.dc_block_off = true;
     ay_write_reg(&ay, 7, 0x3F);
     memset(buf, 0xAA, sizeof(buf));
     ay_generate(&ay, buf, 256);
@@ -322,6 +326,7 @@ TEST(test_ay_mixer) {
 
     /* Mixer: only channel A tone enabled (bit 0=0, rest=1) */
     ay_init(&ay, 1000000);
+    ay.dc_block_off = true;
     ay_write_reg(&ay, 0, 50);
     ay_write_reg(&ay, 7, 0x3E);  /* Only chan A tone enabled */
     ay_write_reg(&ay, 8, 15);    /* Chan A vol = max */
@@ -377,6 +382,7 @@ TEST(test_ay_digidrum_subbuffer_timing) {
      * mid-buffer. Only channel A carries volume (B/C stay 0). */
     ay_write_reg_timed(&ay, 7, 0x3F, 0);   /* mixer: all tone+noise disabled */
     ay_write_reg_timed(&ay, 8, 15, 0);     /* chan A volume = max */
+    ay.dc_block_off = true;                /* on mesure le générateur, pas l'étage de sortie */
     ay_write_reg_timed(&ay, 8, 0, 500);    /* chan A volume -> 0 at cycle 500 */
     ay_write_reg_timed(&ay, 9, 0, 1000);   /* dummy: extend span_end to cycle 1000 */
 
@@ -464,6 +470,7 @@ static int16_t spec_buf[SPEC_SAMPLES * 2];
 static double measure_tone_hz(int period) {
     ay3891x_t ay;
     ay_init(&ay, 1000000);
+    ay.dc_block_off = true;                /* propriété du générateur */
     ay_write_reg(&ay, 0, period & 0xFF);
     ay_write_reg(&ay, 1, (period >> 8) & 0x0F);
     ay_write_reg(&ay, 7, 0x3E);            /* canal A : ton seul */
@@ -483,6 +490,7 @@ static double measure_tone_hz(int period) {
 static double measure_rms(int period) {
     ay3891x_t ay;
     ay_init(&ay, 1000000);
+    ay.dc_block_off = true;
     ay_write_reg(&ay, 0, period & 0xFF);
     ay_write_reg(&ay, 1, (period >> 8) & 0x0F);
     ay_write_reg(&ay, 7, 0x3E);
@@ -527,6 +535,7 @@ TEST(test_ay_envelope_period_matches_datasheet) {
     for (unsigned i = 0; i < sizeof(eps) / sizeof(eps[0]); i++) {
         ay3891x_t ay;
         ay_init(&ay, 1000000);
+        ay.dc_block_off = true;            /* l'enveloppe est une propriété du générateur */
         ay_write_reg(&ay, 7, 0x3F);        /* ton et bruit coupés */
         ay_write_reg(&ay, 8, 0x10);        /* volume piloté par l'enveloppe */
         ay_write_reg(&ay, 11, eps[i] & 0xFF);
@@ -570,6 +579,7 @@ TEST(test_ay_no_aliasing_above_nyquist) {
 TEST(test_ay_noise_lfsr_is_healthy) {
     ay3891x_t ay;
     ay_init(&ay, 1000000);
+    ay.dc_block_off = true;
     ay_write_reg(&ay, 6, 1);               /* période de bruit minimale */
     ay_write_reg(&ay, 7, 0x07);            /* bruit sur les trois canaux */
     ASSERT_EQ(ay.noise_shift, 1u);
@@ -585,6 +595,102 @@ TEST(test_ay_noise_lfsr_is_healthy) {
     /* Bruit équilibré : la proportion de 1 doit rester proche de la moitié. */
     double ratio = (double)ones / (double)total;
     ASSERT_TRUE(ratio > 0.45 && ratio < 0.55);
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  ÉTAGE DE SORTIE (V2-E5) — d'après le schéma officiel Oric-1/Atmos   */
+/*                                                                    */
+/*  Les trois sorties CH_A/CH_B/CH_C sont reliées ensemble sur une     */
+/*  charge commune (R4 = 1 kΩ) : le mixage parallèle MOYENNE les       */
+/*  tensions au lieu de les additionner. Puis un condensateur de       */
+/*  couplage (C4) rejoint l'ampli LM386 : il bloque le continu.        */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Mesure (moyenne, min, max, RMS) sur la seconde moitié du rendu, une fois le
+ * blocage de continu convergé (sa constante de temps vaut 4096 échantillons). */
+static void measure_output(ay3891x_t* ay, double* mean, double* mn, double* mx,
+                           double* rms) {
+    ay_generate(ay, spec_buf, SPEC_SAMPLES);
+    int from = SPEC_SAMPLES / 2, n = SPEC_SAMPLES - from;
+    double m = 0, lo = 32767, hi = -32768;
+    for (int i = from; i < SPEC_SAMPLES; i++) {
+        double v = spec_buf[i * 2];
+        m += v;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    m /= n;
+    double s2 = 0;
+    for (int i = from; i < SPEC_SAMPLES; i++) {
+        double d = spec_buf[i * 2] - m;
+        s2 += d * d;
+    }
+    if (mean) *mean = m;
+    if (mn) *mn = lo;
+    if (mx) *mx = hi;
+    if (rms) *rms = sqrt(s2 / n);
+}
+
+static void setup_three_tones(ay3891x_t* ay, int nch, int vol) {
+    ay_init(ay, 1000000);
+    ay_write_reg(ay, 0, 100);              /* trois périodes distinctes */
+    ay_write_reg(ay, 2, 120);
+    ay_write_reg(ay, 4, 150);
+    uint8_t mixer = 0x3F;                  /* tout coupé */
+    for (int c = 0; c < nch; c++) mixer &= (uint8_t)~(1 << c);
+    ay_write_reg(ay, 7, mixer);
+    for (int c = 0; c < 3; c++) ay_write_reg(ay, 8 + c, c < nch ? vol : 0);
+}
+
+/* La sortie ne doit pas porter de composante continue : sur la machine, le
+ * condensateur de couplage C4 la bloque avant l'ampli. Sans ce blocage, le
+ * signal du PSG est unipolaire (0 → +max) et son continu vaut la moitié de son
+ * amplitude — un décalage qu'aucun haut-parleur ne restitue. */
+TEST(test_ay_output_has_no_dc_offset) {
+    for (int nch = 1; nch <= 3; nch++) {
+        ay3891x_t ay;
+        setup_three_tones(&ay, nch, 15);
+        double mean, mn, mx, rms;
+        measure_output(&ay, &mean, &mn, &mx, &rms);
+        /* Continu résiduel négligeable devant l'amplitude du signal. */
+        ASSERT_TRUE(fabs(mean) < rms * 0.02);
+        /* …et signal centré : les excursions sont symétriques à 5 % près. */
+        ASSERT_TRUE(fabs(mx + mn) < (mx - mn) * 0.05);
+    }
+}
+
+/* Le blocage du continu ne doit rien retirer d'audible : coupant à ~1,7 Hz, il
+ * laisse le contenu intact. On compare l'énergie avec et sans. */
+TEST(test_ay_dc_block_preserves_audio) {
+    ay3891x_t a, b;
+    setup_three_tones(&a, 3, 15);
+    setup_three_tones(&b, 3, 15);
+    b.dc_block_off = true;                 /* sortie brute, pour comparaison */
+
+    double rms_filtered, rms_raw;
+    measure_output(&a, NULL, NULL, NULL, &rms_filtered);
+    measure_output(&b, NULL, NULL, NULL, &rms_raw);
+    ASSERT_TRUE(fabs(rms_filtered - rms_raw) < rms_raw * 0.02);
+}
+
+/* Mixage parallèle : sur le PCB de l'ORIC, les trois sorties sont reliées à une
+ * charge commune, ce qui MOYENNE les tensions au lieu de les sommer — un canal
+ * seul à 1 V donne ≈ 0,33 V, mesure rapportée sur le forum Defence Force. La
+ * dynamique crête à crête de trois canaux doit donc valoir trois fois celle d'un
+ * seul, et non rester identique. */
+TEST(test_ay_parallel_mixing_averages_channels) {
+    double pp[4];
+    for (int nch = 1; nch <= 3; nch++) {
+        ay3891x_t ay;
+        setup_three_tones(&ay, nch, 15);
+        double mn, mx;
+        measure_output(&ay, NULL, &mn, &mx, NULL);
+        pp[nch] = mx - mn;
+    }
+    ASSERT_TRUE(pp[1] > 0);
+    /* rapports 2/1 et 3/1 à 5 % près */
+    ASSERT_TRUE(fabs(pp[2] / pp[1] - 2.0) < 0.05);
+    ASSERT_TRUE(fabs(pp[3] / pp[1] - 3.0) < 0.05);
 }
 
 int main(void) {
@@ -612,6 +718,11 @@ int main(void) {
     RUN(test_ay_envelope_period_matches_datasheet);
     RUN(test_ay_no_aliasing_above_nyquist);
     RUN(test_ay_noise_lfsr_is_healthy);
+
+    printf("\n  Étage de sortie, d'après le schéma Oric (V2-E5):\n");
+    RUN(test_ay_output_has_no_dc_offset);
+    RUN(test_ay_dc_block_preserves_audio);
+    RUN(test_ay_parallel_mixing_averages_channels);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

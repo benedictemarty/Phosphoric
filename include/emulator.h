@@ -46,7 +46,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.0.0-alpha.4"
+#define EMU_VERSION "2.0.0-alpha.5"
 
 /**
  * @brief ORIC machine model

@@ -296,6 +296,19 @@ static int32_t ay_mix(const ay_play_t* st) {
     return output / 3;
 }
 
+/* Blocage du continu : l'étage de sortie de l'ORIC couple le PSG à l'ampli par
+ * un condensateur (C4 sur le schéma), qui ne laisse pas passer le continu. Sans
+ * lui, la sortie reste unipolaire — un décalage permanent qui gaspille la moitié
+ * de la dynamique et produit un « clic » à chaque démarrage ou arrêt d'un son. */
+static int16_t ay_dc_block(ay3891x_t* ay, int32_t x) {
+    if (ay->dc_block_off) return (int16_t)x;
+    ay->dc_acc += ((x << 16) - ay->dc_acc) >> 12;   /* ≈ 1,7 Hz à 44,1 kHz */
+    int32_t y = x - (ay->dc_acc >> 16);
+    if (y > 32767) y = 32767;
+    if (y < -32768) y = -32768;
+    return (int16_t)y;
+}
+
 /* Produit un échantillon de sortie : avance la machine des pas d'horloge
  * couverts par la durée de l'échantillon, en INTÉGRANT la sortie sur ces pas.
  * `steps_q16` = pas d'horloge interne par échantillon, en virgule fixe Q16. */
@@ -361,7 +374,7 @@ void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
         /* Immediate path: render from current state, byte-exact with history. */
         mirror_main_to_play(ay);
         for (int i = 0; i < num_samples; i++) {
-            int16_t s = ay_step_sample(st, steps_q16);
+            int16_t s = ay_dc_block(ay, ay_step_sample(st, steps_q16));
             buffer[i * 2] = s;
             buffer[i * 2 + 1] = s;
         }
@@ -397,7 +410,7 @@ void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
             apply_sound_play(st, ay->evq[ev].reg);
             ev = (ev + 1) & (AY_EVENT_QUEUE_SIZE - 1);
         }
-        int16_t s = ay_step_sample(st, steps_q16);
+        int16_t s = ay_dc_block(ay, ay_step_sample(st, steps_q16));
         buffer[i * 2] = s;
         buffer[i * 2 + 1] = s;
     }
