@@ -124,9 +124,10 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 Runs `CYCLES_PER_FRAME` (19968) cycles per frame at 50 FPS. The loop does the
 per-INSTRUCTION work (debugger, trace, profiler, tape patches) and calls
 `emu_step()`; the **master clock** `emu_cycle()` owns the per-CYCLE work with a
-fixed intra-cycle order: **φ1 ULA** (raster advance, due scanlines, ULA-NG tick)
-→ **φ2 CPU** (its single bus access) → **end of cycle** peripherals (VIA, FDC,
-ACIA, DTL, Mageco, cassette, one cycle at a time — never a batch). Never compute
+fixed intra-cycle order **measured on hardware** (Mike Brown's ULA guide): **CPU**
+(its single bus access) → **φ2 peripherals** (VIA, FDC, ACIA, DTL, Mageco, cassette,
+one cycle at a time — never a batch) → **ULA** (fetch of the cell of the same count,
+raster advance, due scanlines, ULA-NG tick). A CPU write at cycle c is seen by cell c. Never compute
 a raster position in the loop again: ask `emu_raster_pos()`. **Every `emu_cycle()`
 call must cost the CPU exactly one bus cycle** — a micro-op returning without a bus
 access desyncs the ULA from CPU/VIA while the oracle stays green (`test-clock` guards

@@ -144,6 +144,8 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] US8.4 release 2.0.0 : tag `v2.0.0` (4 remotes), release GitHub (Linux + Windows) ; page WASM reconstruite et publiée (2.0.1 : emsdk installé, 2 correctifs de build wasm)
       - [x] CI : dépendance externe `~/loci/emul` rendue optionnelle (`LOCI_EMU` auto), 3 workflows verts
 
+- [x] **Calage horizontal ULA — CLOS (2.0.2)** : repère = compteur du chip (Mike Brown, mesuré), ordre intra-cycle CPU→ULA corrigé (split une cellule trop à droite jusqu'en 2.0.1), phase absolue inobservable sans VSYNC hack (non émulé — backlog si un cas concret)
+
 **Jalons de vocabulaire** : « CPU exact au cycle » acquis (fin V2-S3, oracle
 65x02 100 %) ; « machine cadencée au cycle » acquis (fin V2-S8) ; « exact au
 cycle » pour la machine entière **non revendiqué** (FDC N1+, calage horizontal ULA

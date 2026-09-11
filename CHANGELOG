@@ -717,6 +717,59 @@ EMU_VERSION 2.0.0-beta.1 → **2.0.0**.
 
 EMU_VERSION 2.0.0 → **2.0.1**.
 
+## [2.0.2] - 2026-09-12
+
+### Fixed — ordre intra-cycle CPU/ULA inversé : chaque split raster tombait une cellule trop à droite
+
+La « calibration horizontale de l'ULA » laissée ouverte en 2.0.0 est réglée par
+la lecture d'une source mesurée, pas par une mesure nouvelle : le **« ORIC
+1/ATMOS Unofficial ULA Guide » 1.02 de Mike Brown** (déconstruction de l'ULA
+HCS10017, mesures à l'oscilloscope sur machine réelle, schéma reconstitué du
+die en 2018).
+
+#### Ce que dit la source
+
+- Le compteur horizontal de l'ULA compte **0-63** à 1 MHz ; les colonnes 0-39
+  sont fetchées aux **counts 0-39**, le blanking occupe 40-63
+  (`HBLANK = H5·(H4+H3)`), l'impulsion de synchro les counts **49-52**.
+  « Colonne 0 au cycle 0 de la ligne » n'était donc pas une convention de
+  l'émulateur : c'est le compteur du chip. `--ula-fetch-offset` reste un outil
+  d'expérimentation, sa valeur juste est 0.
+- **Dans le cycle, le 6502 accède d'abord, l'ULA ensuite** : au front montant
+  de l'horloge 1 MHz le compteur s'incrémente et le 6502 fait son accès DRAM
+  (« *it is asserting CAS here that performs the write* ») ; puis « *the ULA
+  access cycle begins* » — le fetch de l'octet écran du **même count**, pendant
+  la moitié basse du cycle, la plus longue (d'où l'horloge asymétrique).
+- La phase absolue raster/CPU est **inobservable** sur un ORIC non modifié
+  (compteurs libres, reset asynchrone) ; elle n'existe qu'avec le VSYNC hack,
+  non émulé. Il n'y avait donc rien d'autre à calibrer.
+
+#### Ce qui était faux
+
+`emu_cycle()` faisait fetcher l'ULA **avant** l'accès du CPU : une écriture au
+cycle *c* n'était vue qu'à *c+1*. Sur le matériel elle est vue par la cellule
+*c*. Tout split raster était donc décalé d'**une cellule (6 pixels) vers la
+droite** — et `test_ula_reads_before_cpu_writes` verrouillait ce comportement,
+au nom d'une hypothèse (« l'ULA accède en φ1 ») que le guide contredit.
+
+#### La correction
+
+Ordre `emu_cycle()` : CPU → périphériques φ2 → fetch ULA du même count.
+Test remplacé par `test_cpu_write_visible_in_the_same_cell` (STA sur la
+cellule 13 au 14e cycle : la cellule 12 reste pleine, la 13 devient vide) —
+rouge sur l'ancien ordre. `test-raster-split`, `test-savestate-determinism`
+et le corpus (36 médias) inchangés ; `make tests` vert.
+
+Documents alignés : `docs/architecture/master-clock.md` (ordre mesuré,
+repère du compteur, phase absolue), `docs/ACCURACY.md` (ULA : « N3 pour le
+fetch », la réserve « calage non calibré » retirée), `README.md`,
+`docs/articles/v2-cycle-stepped.md`, `CLAUDE.md`.
+
+Sources : http://oric.free.fr/HARDWARE/ula.html ·
+https://oric.signal11.org.uk/html/ula1.htm
+
+EMU_VERSION 2.0.1 → **2.0.2**.
+
 ## [Unreleased]
 
 ### Added — release automatique sur tag (`.github/workflows/release.yml`)

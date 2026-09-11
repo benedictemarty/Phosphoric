@@ -40,8 +40,10 @@ Les deux cœurs partagent le même calcul (drapeaux, BCD, opcodes illégaux) :
 seul l'ordonnancement diffère. L'ancien reste disponible (`--cpu-legacy`).
 
 **Une horloge maître.** `emu_cycle()` fait avancer **toute** la machine d'un
-cycle, dans un ordre figé : φ1 l'ULA fetche sa cellule, φ2 le CPU fait son
-accès bus, puis les périphériques avancent d'un cycle — jamais d'un paquet. La
+cycle, dans un ordre figé : le CPU fait son accès bus, les périphériques
+avancent d'un cycle — jamais d'un paquet —, puis l'ULA fetche la cellule de ce
+même cycle (l'ordre mesuré sur le matériel par Mike Brown ; jusqu'en 2.0.1
+l'ULA passait avant, et chaque split tombait une cellule trop à droite). La
 boucle principale ne calcule plus rien : elle demande.
 
 **Les composants, un par un.** Le VIA compte au cycle et son Timer 1 a retrouvé
@@ -93,9 +95,10 @@ arrêts raster tombent exactement au même cycle.
 
 « Phosphoric est exact au cycle » — non. Le FDC reste cadencé par des délais
 forfaitaires sur une image plate (pas de flux MFM, donc pas de vraie perte
-d'octet ni de CRC). Le cycle exact où l'ULA fetche la colonne 0 n'est pas
-calibré contre du matériel réel : la *structure* est exacte, le calage
-horizontal absolu est une convention (`--ula-fetch-offset`). Le demi-cycle du
+d'octet ni de CRC). Le repère horizontal, lui, n'est plus une convention : le
+compteur de l'ULA (mesuré) place la colonne 0 au count 0 — mais la phase
+absolue entre ce compteur et le CPU n'est observable sur un vrai ORIC qu'avec
+le « VSYNC hack », que nous n'émulons pas. Le demi-cycle du
 one-shot du VIA n'est pas représenté. Le chargement de cassette par défaut
 reste le patch ROM, par choix : même contenu chargé, 2,4× moins de cycles.
 

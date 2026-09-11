@@ -5,11 +5,11 @@ advances the whole machine one cycle at a time (ULA fetch → CPU bus access →
 peripherals), the 6502 core is **100 % exact against the SingleStepTests/65x02
 oracle** (2 440 000 cases, NMOS dummy accesses included), and VIA, ULA and PSG
 are clocked at hardware rate. What that claim covers — and what it does not (the
-FDC is still timed by fixed delays, the ULA's horizontal phase is not calibrated
-against real hardware) — is spelled out component by component in
+FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservable
+on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.0.1** | **1208 tests in 60 suites, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.0.2** | **1208 tests in 60 suites, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -177,18 +177,22 @@ make SDL2=1
   text attributes are a per-line serial state, as on the hardware.
 - **`--ula-line`** restores the pre-V2 behaviour (whole scanline sampled at one
   instant); `--cpu-legacy` forces it, since an instruction is indivisible there.
-- **Not calibrated**: the cycle at which column 0 is fetched is a convention
-  (`--ula-fetch-offset`, default 0) — the structure is exact, the absolute
-  horizontal alignment is not. Proof: `make test-raster-split` (a real 6502
-  program) and `make test-clock`.
+- **Horizontal reference = the ULA's own counter** (Mike Brown's *Unofficial ULA
+  Guide*, measured on hardware): columns 0-39 are fetched at counts 0-39 of the
+  64-count line, blanking at 40-63, hsync at 49-52. `--ula-fetch-offset` stays as an
+  experiment knob; its correct value is 0. The absolute raster/CPU phase is not
+  observable by software on an unmodified ORIC (free-running counters, asynchronous
+  reset). Proof: `make test-raster-split` (a real 6502 program) and `make test-clock`.
 
 ### Master clock
 - **One call, one machine cycle** — `emu_cycle()` (`src/emu_clock.c`) advances the whole
-  machine with a fixed intra-cycle order: φ1 ULA → φ2 CPU → φ2 peripherals. Peripherals
-  are never batched: the clock hook always receives exactly one cycle.
-- **Observable consequence** — a CPU write during cycle *c* is not seen by the scanline
-  emitted at that same cycle, only from *c+1* (the ULA reads RAM in φ1). Verified by
-  `make test-clock`. Contract: [docs/architecture/master-clock.md](docs/architecture/master-clock.md).
+  machine with a fixed intra-cycle order: CPU bus access → φ2 peripherals → ULA fetch of
+  the same count. Peripherals are never batched: the clock hook always receives exactly
+  one cycle.
+- **Observable consequence** — a CPU write during cycle *c* is seen by cell *c* (the 6502
+  accesses DRAM first, the ULA fetches afterwards in the same 1 µs — measured by Mike
+  Brown). Until 2.0.1 the order was inverted and every raster split landed one cell too
+  far right. Verified by `make test-clock`. Contract: [docs/architecture/master-clock.md](docs/architecture/master-clock.md).
 
 ### Cycle Trace (accuracy instrument)
 - **One line per CPU cycle** — `--cycle-trace FILE` (`--cycle-trace-max N` to cap):

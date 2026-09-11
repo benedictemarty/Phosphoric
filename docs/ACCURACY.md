@@ -17,16 +17,16 @@ c'est la trajectoire qui rend le résultat crédible.
 | Le **CPU** est exact au cycle : un accès bus par cycle, accès factices du NMOS compris, interruptions au cycle pénultième — **100,00 %** de séquence bus exacte sur 2 440 000 cas | `make test-cycle CYCLE_MAX_CASES=0`, `make test-dormann` |
 | La **machine** est cadencée au cycle : `emu_cycle()` fait avancer ULA, CPU et périphériques d'exactement un cycle, **jamais à vide** | `make test-clock` (14 tests, dont compteur CPU = position raster sur une trame) |
 | Le **VIA** compte au cycle : sous-dépassement `$0000 → $FFFF`, période N+2, PB7, CA2 | `make test-io` (vecteurs de timing) |
-| L'**ULA** fetche une cellule de 6 pixels par cycle : une écriture en milieu de ligne n'atteint que les cellules pas encore balayées | `make test-raster-split`, `make test-clock` |
+| L'**ULA** fetche une cellule de 6 pixels par cycle, après l'accès CPU du même cycle (ordre et repère mesurés par Mike Brown) : une écriture au cycle *c* atteint la cellule *c* et les suivantes | `make test-raster-split`, `make test-clock` |
 | Le **PSG** tourne à `horloge/8`, sortie intégrée (pas de repliement), étage de sortie relevé sur le schéma | `make test-audio` (mesure du signal : fréquences, enveloppe, LFSR) |
 | Un **savestate** est un point de reprise exact, même pris en pleine trame | `make test-savestate-determinism` |
 | À cycle égal, le **corpus** local donne la même image | `make test-corpus` |
 
 Ce qui **n'est pas** vrai, et qu'on ne dit donc pas : « l'émulateur est exact au
-cycle ». Le FDC reste N1+ (délais DRQ/INTRQ forfaitaires, image plate), le cycle
-exact où l'ULA fetche la colonne 0 n'est pas calibré contre du matériel, le
-demi-cycle du one-shot du VIA n'est pas représenté, et le mode cassette par
-défaut reste le patch ROM. Détail composant par composant ci-dessous.
+cycle ». Le FDC reste N1+ (délais DRQ/INTRQ forfaitaires, image plate), le
+demi-cycle du one-shot du VIA n'est pas représenté, le mode cassette par défaut
+reste le patch ROM, et la phase absolue raster/CPU n'est pas modélisée — elle
+est inobservable sur un ORIC non modifié (VSYNC hack non émulé). Détail composant par composant ci-dessous.
 
 ## Échelle de référence
 
@@ -43,7 +43,7 @@ défaut reste le patch ROM. Détail composant par composant ci-dessous.
 |-----------|-------------|------------------------|
 | **CPU 6502** (`src/cpu/`) | **N3 atteint** (défaut depuis v1.124.0) | Plus rien d'identifié. Séquence bus exacte **100,00 %** sur 2 440 000 cas de l'oracle 65x02 ; tous les accès factices du NMOS ; interruptions échantillonnées au **cycle pénultième** (donc drapeau I retardé de `CLI`/`SEI`/`PLP`) ; détournement NMI pendant `BRK`. Divergence assumée : les 12 opcodes **JAM** arrêtent le CPU au lieu de bloquer le bus. Le moteur historique (N2) reste disponible par `--cpu-legacy`. |
 | **VIA 6522** (`src/io/via6522.c`) | **N3 pour les timers** (2.0.0-alpha.2) | Cadencé au cycle (`via_update()` reçoit toujours **1**, vérifié par `test-clock`) et **sous-dépassement exact** : `$0000 → $FFFF` puis cycle de rechargement, donc période **N+2** conforme (l'ancien modèle donnait N — 20 % d'erreur de fréquence à N=10). Vérifiés par vecteurs : période continue, time-out one-shot, compteur qui continue après time-out, signal carré PB7, relecture du compteur, impulsion CA2 d'un cycle, et 50 interruptions en 50 trames. Reste hors modèle : le **demi-cycle** du time-out one-shot (N+1,5 → posé à N+1 ; il faudrait le niveau N4). Conformité registre/fonction auditée (`docs/HARDWARE_CONFORMANCE.md` §2). |
-| **ULA vidéo** (`src/video/video.c`) | **fetch au cycle** (2.0.0-alpha.3) ; position horizontale non calibrée | Une **cellule de 6 pixels fetchée par cycle**, à l'instant où le faisceau la lit : une écriture du CPU en milieu de ligne n'affecte plus que les cellules pas encore balayées (**splits raster**). Encre, papier et attributs texte sont un état de ligne persistant entre les cellules. Ce qui reste : le **cycle exact où la colonne 0 est fetchée** n'est pas calibré contre du matériel réel (défaut 0, réglable par `--ula-fetch-offset`) — seule la *structure* est exacte, pas le calage horizontal absolu ; bordure et blanking ne sont toujours pas rendus (224 lignes visibles sur 312) ; les modes étendus ULA-NG plein écran restent rendus par ligne. Repli : `--ula-line`. |
+| **ULA vidéo** (`src/video/video.c`) | **N3 pour le fetch** (2.0.0-alpha.3, ordre intra-cycle corrigé en 2.0.2) | Une **cellule de 6 pixels fetchée par cycle**, à l'instant où le faisceau la lit : une écriture du CPU en milieu de ligne n'affecte plus que les cellules pas encore scannées (**splits raster**). Encre, papier et attributs texte sont un état de ligne persistant entre les cellules. **Repère et ordre pris sur le matériel** (Mike Brown, *Unofficial ULA Guide* 1.02, mesures oscilloscope) : colonnes 0-39 aux counts 0-39 du compteur horizontal, blanking 40-63, sync 49-52 ; dans le cycle, le 6502 accède d'abord, l'ULA fetche ensuite le même count → une écriture au cycle *c* est vue par la cellule *c* (jusqu'en 2.0.1 : *c+1*, une cellule trop à droite). Ce qui reste : bordure et blanking non rendus (224 lignes visibles sur 312) ; phase absolue raster/CPU non modélisée (inobservable sans VSYNC hack) ; modes étendus ULA-NG plein écran rendus par ligne. Repli : `--ula-line`. |
 | **PSG AY-3-8910** (`src/audio/ay3891x.c`) | **cadencé au matériel** (2.0.0-alpha.4) | Machine cadencée à `horloge/8` = 125 kHz, le pas interne réel du chip : ton `clock/(16·TP)`, LFSR `clock/(16·NP)`, enveloppe `clock/(8·EP)` — cette dernière était **2× trop lente**. La sortie est **intégrée** sur les pas couverts par chaque échantillon : au-dessus de Nyquist le signal s'atténue au lieu de **replier** (un ton à 62,5 kHz ressortait à 18,4 kHz à pleine amplitude). Vérifié par **mesure du signal** (fréquences ±0,1 %, enveloppe ±2 %, LFSR équilibré), pas par comparaison à des octets figés. Acquis conservé : écritures registres **horodatées en cycles CPU** → digidrums. **Étage de sortie** relevé sur le schéma officiel (`docs/architecture/oric-audio-output.md`) : le mixage parallèle **moyenne** les canaux (notre somme/3 est donc juste — l'ancienne « déviation » était fausse), le seul passe-bas du circuit coupe à **37 kHz** (hors bande), et le couplage capacitif **bloque le continu** — désormais modélisé (continu +8188 → +15, signal symétrique). Hors modèle et documenté : la coupure exacte du couplage `C4` (valeur illisible sur le schéma : 2,2 nF ⇒ 4,7 kHz ou 2,2 µF ⇒ 4,7 Hz, un facteur mille), la réponse du LM386 et du haut-parleur interne. |
 | **FDC WD1793** (`src/storage/disk.c`) | **N1+** (cadencé au cycle ; latence rotationnelle réelle par défaut, `LOST DATA` et write-protect modélisés depuis la 2.0.0-alpha.6 — voir `docs/HARDWARE_CONFORMANCE.md` §1) | Délais DRQ/INTRQ **forfaitaires** (ex. 60 cycles) au lieu d'être dérivés de la position rotationnelle ; modèle image plate, donc LOST DATA / CRC structurellement impossibles (`docs/HARDWARE_CONFORMANCE.md` §1). Le label « cycle-accurate » utilisé dans les CR LOCI est **abusif** — il désigne le fait d'être cadencé en cycles, pas d'être exact au cycle. |
 | **Cassette** | **N3 en mode signal** (cadencée au cycle par l'horloge maître, parité de trame corrigée en 2.0.0-alpha.7) | Le chemin par défaut reste le **patch ROM** (fast-load), hors modèle temporel — choix assumé (US6.1) : même contenu chargé, 2,4× moins de cycles. |
@@ -176,9 +176,8 @@ contre un autre émulateur ou du matériel instrumenté. Les lignes marquées `i
 - ✅ « précis au cycle bus » / « bus-cycle accurate » pour la **machine entière**.
 - ✅ « compteurs de cycles exacts par opcode (256/256) ».
 - ❌ « cycle-accurate » **seul** ou « exacte au cycle » pour la **machine entière** :
-  le FDC reste N1+ (délais DRQ/INTRQ forfaitaires), le calage horizontal de
-  l'ULA n'est pas calibré contre du matériel, le demi-cycle du one-shot du VIA
-  n'est pas modélisé.
+  le FDC reste N1+ (délais DRQ/INTRQ forfaitaires), le demi-cycle du one-shot du
+  VIA n'est pas modélisé, la phase absolue raster/CPU (VSYNC hack) non plus.
 - ❌ « WD1793 cycle-accurate » → dire « WD1793 cadencé en cycles, modèle image plate ».
 
 Chaque formulation est adossée à un test qui la ferait tomber : `make test-cycle`

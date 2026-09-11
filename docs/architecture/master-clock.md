@@ -28,21 +28,39 @@ int  emu_step (emulator_t* emu);   /* une instruction, via emu_cycle */
 `emu_cycle()` renvoie `true` quand le cycle exécuté terminait une instruction.
 L'ordre intra-cycle est **figé** :
 
-| Phase | Qui | Quoi |
+| Ordre | Qui | Quoi |
 |-------|-----|------|
-| **φ1** | ULA | fetch d'**une cellule de 6 pixels** (la colonne balayée à ce cycle), avancement du balayage, tick raster ULA-NG |
-| **φ2** | CPU | l'unique accès bus du cycle (lecture, écriture, ou accès factice du NMOS) |
-| fin de cycle | périphériques φ2 | VIA, FDC, ACIA, DTL, Mageco, cassette — avancés d'exactement **un** cycle par le rappel d'horloge du CPU, juste après l'accès bus |
+| 1 | CPU | l'unique accès bus du cycle (lecture, écriture, ou accès factice du NMOS) — sur le matériel, c'est le premier événement après le front montant de l'horloge 1 MHz |
+| 2 | périphériques φ2 | VIA, FDC, ACIA, DTL, Mageco, cassette — avancés d'exactement **un** cycle par le rappel d'horloge du CPU, juste après l'accès bus |
+| 3 | ULA | fetch d'**une cellule de 6 pixels** (la colonne = le count horizontal de ce cycle), puis avancement du balayage, tick raster ULA-NG |
 
-### Pourquoi l'ULA avant le CPU
+### Pourquoi le CPU avant l'ULA — c'est mesuré, pas choisi
 
-Le vrai ULA de l'ORIC accède à la RAM pendant **φ1**, le CPU pendant **φ2** : les
-deux ne se disputent jamais le bus (pas de vol de cycle à modéliser,
-contrairement à un ZX Spectrum). L'ordre n'est donc pas un arbitrage mais une
-**convention de visibilité**, et elle est observable : une écriture du CPU
-pendant le cycle *c* n'est pas vue par la scanline émise à ce même cycle — elle
-ne l'est qu'à partir du cycle *c+1*. C'est vérifié par
-`test_ula_reads_before_cpu_writes` (`make test-clock`).
+Le vrai ULA de l'ORIC et le 6502 se partagent la DRAM en deux moitiés du même
+cycle de 1 µs, sans jamais se la disputer (pas de vol de cycle à modéliser,
+contrairement à un ZX Spectrum). **L'ordre des deux moitiés a été mesuré à
+l'oscilloscope** par Mike Brown (*ORIC 1/ATMOS Unofficial ULA Guide* 1.02,
+§ Control and Sequencing) : au front montant de l'horloge 1 MHz, le compteur
+horizontal s'incrémente et le 6502 fait son accès (« *it is asserting CAS here
+that performs the write* ») ; **ensuite** « *the ULA access cycle begins* » —
+l'ULA fetche l'octet écran de ce même count pendant la moitié basse, plus longue
+(d'où l'horloge 1 MHz asymétrique). Conséquence observable : une écriture du CPU
+au cycle *c* est vue par la cellule *c*. Vérifié par
+`test_cpu_write_visible_in_the_same_cell` (`make test-clock`), qui échoue sur
+l'ordre inverse.
+
+Jusqu'en 2.0.1, Phosphoric faisait l'inverse (ULA d'abord, écriture visible en
+*c+1*) : chaque split raster tombait **une cellule (6 pixels) trop à droite**.
+
+Le même guide fixe le **repère horizontal** : le compteur de l'ULA compte 0-63,
+les colonnes 0-39 sont fetchées aux counts 0-39, le blanking occupe 40-63 et
+l'impulsion de synchro les counts 49-52. « Colonne 0 au cycle 0 de la ligne »
+n'est donc pas une convention de l'émulateur mais le compteur du chip ;
+`--ula-fetch-offset` reste un outil d'expérimentation, sa valeur juste est 0.
+Quant à la **phase absolue** (quel cycle CPU depuis le reset tombe sur le count 0
+de la ligne 0) : les compteurs de l'ULA tournent librement et le reset du 6502
+est asynchrone, donc aucun logiciel ne peut l'observer sur un ORIC non modifié —
+seul le « VSYNC hack » (fil ULA → VIA), non émulé, la rendrait visible.
 
 ### Pas de paquets
 

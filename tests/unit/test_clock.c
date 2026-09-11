@@ -142,37 +142,39 @@ TEST(test_frame_begin_and_end) {
  * L'écriture du CPU tombe exactement au cycle 64, celui où la scanline 0 est
  * émise. Si l'ULA passe bien AVANT le CPU (φ1 puis φ2), la ligne 0 montre
  * l'ancien contenu ; la ligne 1, émise au cycle 128, montre le nouveau. */
-TEST(test_ula_reads_before_cpu_writes) {
-    /* 30 NOP (60 cycles) puis STA $BB80 : fetches aux cycles 61-63, écriture au
-     * cycle 64 — exactement le cycle où la ligne 0 est émise. */
-    uint8_t code[128];
-    size_t n = 0;
-    for (int i = 0; i < 30; i++) code[n++] = 0xEA;
-    code[n++] = 0x8D; code[n++] = 0x80; code[n++] = 0xBB;   /* STA $BB80 */
-    setup(code, n, true);
+/* Ordre intra-cycle MESURÉ sur le matériel (Mike Brown, Unofficial ULA Guide
+ * 1.02) : le 6502 accède à la DRAM d'abord, l'ULA fetche ensuite l'octet du même
+ * count. Une écriture au cycle c est donc vue par la cellule c — et pas par la
+ * cellule c-1, fetchée au cycle précédent. Jusqu'en 2.0.1 l'émulateur faisait
+ * l'inverse et décalait tout split d'une cellule vers la droite. */
+TEST(test_cpu_write_visible_in_the_same_cell) {
+    /* 5 NOP (10 cycles) puis STA $BB8D : l'écriture est le 4e cycle du STA, soit
+     * le 14e cycle → count 13 de la ligne 0 → la cellule 13 ($BB80+13). */
+    uint8_t code[] = { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0x8D, 0x8D, 0xBB };
+    setup(code, sizeof(code), true);
+    g_emu.ula_per_cycle = true;
+    g_emu.ula_fetch_offset = 0;
 
-    /* Écran : 'A' partout ; le CPU va écrire un espace en $BB80. */
     memset(&g_emu.memory.ram[0xBB80], 'A', 40 * 28);
-    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);   /* charset : tout encre… */
+    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);      /* charset : tout encre… */
     memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);  /* …sauf l'espace, vide */
     g_emu.cpu.A = ' ';
 
-    for (int i = 0; i < 64; i++) emu_cycle(&g_emu);
-
-    /* L'écriture a bien eu lieu pendant ce 64e cycle… */
-    ASSERT_EQ((int)g_emu.cpu.cycles, 64);
-    ASSERT_EQ(g_emu.memory.ram[0xBB80], ' ');
-    /* …mais la ligne 0 avait déjà été émise : elle porte encore de l'encre. */
-    ASSERT_EQ(g_emu.raster_rendered, 1);
-    int ink0 = line_ink(&g_emu.video, 0);
-    ASSERT_TRUE(ink0 > 0);
-
-    /* La ligne 1, émise au cycle 128, voit le changement : la première cellule
-     * devient vide, donc elle porte STRICTEMENT moins d'encre que la ligne 0. */
     for (int i = 0; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
-    ASSERT_EQ(g_emu.raster_rendered, 2);
-    int ink1 = line_ink(&g_emu.video, 1);
-    ASSERT_TRUE(ink1 < ink0);
+    ASSERT_EQ(g_emu.memory.ram[0xBB8D], ' ');
+    ASSERT_EQ(g_emu.raster_rendered, 1);
+
+    int cell12 = 0, cell13 = 0;
+    for (int x = 12 * 6; x < 13 * 6; x++) {
+        const uint8_t* p = &g_emu.video.framebuffer[x * 3];
+        if (p[0] || p[1] || p[2]) cell12++;
+    }
+    for (int x = 13 * 6; x < 14 * 6; x++) {
+        const uint8_t* p = &g_emu.video.framebuffer[x * 3];
+        if (p[0] || p[1] || p[2]) cell13++;
+    }
+    ASSERT_EQ(cell12, 6);   /* fetchée au cycle 13, avant l'écriture : intacte */
+    ASSERT_EQ(cell13, 0);   /* fetchée au cycle 14, APRÈS l'écriture du CPU : vide */
 }
 
 /* ── ULA au cycle : le split raster (V2-E4 / US4.2) ──
@@ -351,7 +353,7 @@ int main(void) {
     RUN(test_raster_position_advances_by_line);
     RUN(test_frame_is_312_lines_of_64_cycles);
     RUN(test_frame_begin_and_end);
-    RUN(test_ula_reads_before_cpu_writes);
+    RUN(test_cpu_write_visible_in_the_same_cell);
     RUN(test_ula_per_cycle_mid_line_split);
     RUN(test_line_render_cannot_split);
     RUN(test_ula_fetch_offset_moves_the_split);

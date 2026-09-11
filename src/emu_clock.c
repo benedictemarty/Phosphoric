@@ -15,22 +15,28 @@
  *
  * `emu_cycle()` est ce point unique, avec un **ordre intra-cycle figé** :
  *
- *   1. **φ1 — l'ULA** consomme son cycle (avancement du balayage, émission des
- *      scanlines dues, tick raster ULA-NG). Le vrai ULA de l'ORIC accède à la
- *      RAM pendant φ1, donc AVANT l'accès du CPU : une écriture du CPU au cycle
- *      *c* n'est visible par l'ULA qu'au cycle *c+1*.
- *   2. **φ2 — le CPU** exécute son unique cycle : un accès bus (lecture,
- *      écriture, ou accès factice du NMOS) avec le cœur micro-séquencé.
- *   3. **fin de cycle — les périphériques φ2** (VIA, FDC, ACIA, DTL, Mageco,
- *      cassette) sont avancés d'exactement un cycle par le rappel d'horloge du
- *      CPU, juste après l'accès bus. Avec le cœur par défaut ce rappel reçoit
- *      toujours `cycles = 1` : les périphériques sont donc déjà au cycle, sans
- *      paquet (vérifié par `test-clock`).
+ *   1. **le CPU** exécute son unique cycle : un accès bus (lecture, écriture,
+ *      ou accès factice du NMOS) avec le cœur micro-séquencé. Sur le matériel,
+ *      c'est la première chose qui se passe après le front montant de l'horloge
+ *      1 MHz : le compteur horizontal de l'ULA s'incrémente et le 6502 fait son
+ *      accès DRAM (c'est son CAS qui écrit).
+ *   2. **les périphériques φ2** (VIA, FDC, ACIA, DTL, Mageco, cassette) sont
+ *      avancés d'exactement un cycle par le rappel d'horloge du CPU, juste après
+ *      l'accès bus. Avec le cœur par défaut ce rappel reçoit toujours
+ *      `cycles = 1` : les périphériques sont donc déjà au cycle, sans paquet
+ *      (vérifié par `test-clock`).
+ *   3. **l'ULA** fetche ENSUITE l'octet écran de ce même count (moitié basse du
+ *      cycle — l'ULA prend plus de la moitié, d'où l'horloge 1 MHz asymétrique),
+ *      puis le balayage avance et les scanlines dues / le tick ULA-NG sont émis.
+ *      Une écriture du CPU au cycle *c* est donc vue par la cellule *c*.
  *
+ * Cet ordre est celui MESURÉ à l'oscilloscope par Mike Brown (Unofficial ULA
+ * Guide 1.02, « Control and Sequencing ») : 6502 d'abord, puis « the ULA access
+ * cycle begins ». Jusqu'en 2.0.1 Phosphoric faisait l'inverse (ULA puis CPU,
+ * écriture visible à c+1) : un split raster tombait une cellule trop à droite.
  * Sur l'ORIC, l'ULA et le CPU ne se disputent pas la RAM (accès en phases
  * opposées) : il n'y a donc pas de vol de cycle à modéliser, contrairement à un
- * ZX Spectrum. L'ordre ci-dessus n'est pas un arbitrage, c'est une convention de
- * visibilité — et elle est testée.
+ * ZX Spectrum.
  *
  * Le cœur historique (`--cpu-legacy`) ne sait pas s'arrêter entre deux cycles :
  * `emu_cycle()` y exécute alors une instruction entière puis rattrape le
@@ -45,9 +51,10 @@
 
 /* ─── ULA au cycle (V2-E4) ───
  * Émet le travail vidéo du cycle courant : début de ligne, fetch d'une cellule,
- * fin de ligne. C'est la phase φ1 : elle a lieu AVANT l'accès du CPU, donc une
- * écriture du CPU pendant ce cycle ne sera vue qu'au cycle suivant — et une
- * écriture en milieu de ligne n'affecte que les cellules pas encore fetchées.
+ * fin de ligne. Elle a lieu APRÈS l'accès du CPU du même cycle (ordre mesuré sur
+ * le matériel), donc une écriture du CPU pendant ce cycle est vue par la cellule
+ * fetchée ce cycle — et une écriture en milieu de ligne n'affecte que les
+ * cellules pas encore fetchées.
  *
  * `dot` est le cycle dans la ligne (0-63). La colonne fetchée est
  * `dot - ula_fetch_offset` : 40 cellules visibles, le reste de la ligne étant
@@ -107,13 +114,17 @@ static void clock_advance_raster(emulator_t* emu, int cycles) {
 
 bool emu_cycle(emulator_t* emu) {
     if (cpu_microseq_enabled(&emu->cpu)) {
-        /* φ1 : l'ULA d'abord. En mode au cycle, elle fetche sa cellule du cycle
-         * courant ; sinon elle ne fait qu'avancer et émettre les lignes dues. */
+        /* Ordre MESURÉ sur le matériel (Mike Brown, Unofficial ULA Guide 1.02) :
+         * au front montant de l'horloge 1 MHz, le compteur horizontal s'incrémente
+         * et le 6502 fait son accès (c'est son CAS qui écrit) ; l'ULA fetche
+         * ENSUITE l'octet de ce même count, pendant la moitié basse du cycle.
+         * Une écriture du CPU au cycle c est donc vue par la cellule c. */
+        bool last = cpu_cycle(&emu->cpu);    /* le CPU, puis ses périphériques φ2 */
         if (ula_cycle_in_use(emu))
             ula_cycle(emu, emu->raster_cycle / PAL_CYCLES_PER_LINE,
                       emu->raster_cycle % PAL_CYCLES_PER_LINE);
         clock_advance_raster(emu, 1);
-        return cpu_cycle(&emu->cpu);         /* φ2 : le CPU, puis ses périphériques */
+        return last;
     }
     /* Cœur historique : indivisible. Une instruction, puis le balayage. */
     int n = cpu_step(&emu->cpu);
