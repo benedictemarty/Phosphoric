@@ -137,6 +137,9 @@ void cli_print_usage(const char* program_name) {
     printf("      --dump-ram-at C:FILE   Dump 64KB RAM to FILE when cycle >= C\n");
     printf("      --bad-sector [D:]S:T:N Mark drive D (default A) side S track T sector N\n");
     printf("                             unreadable (RNF), repeatable; damage follows the media\n");
+    printf("      --disk-write-protect   Write-protect tab on: writes are refused with status\n");
+    printf("                             bit 6, as on a real drive (also implied when the .dsk\n");
+    printf("                             file itself is read-only)\n");
     printf("      --fdc-timing MODE      Microdisc WD1793 timing: real (default, mechanical\n");
     printf("                             3\" drive) or fast (legacy short delays)\n");
     printf("      --rom-info [FILE]      Analyze ROM and print report (or write to FILE)\n");

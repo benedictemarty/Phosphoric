@@ -329,13 +329,36 @@ variabilité de la machine (±5 %), pas du code.
 
 ### V2-E6 — Cassette & FDC dérivés du temps réel
 
-- **US6.1 — Bande au signal par défaut** : `--tape-signal` devient le chemin
-  nominal, le patch ROM (fast-load) restant explicite (`-f`).
-- **US6.2 — FDC : délais dérivés de la rotation** — DRQ et INTRQ calculés
-  depuis `rot_pos` et le débit MFM (≈ 1 octet / 32 µs à 250 kbit/s) au lieu des
-  constantes forfaitaires ; LOST DATA devient possible et testé.
-- **US6.3 — Piste MFM optionnelle** (`--fdc-mfm`) réutilisant le parseur
-  existant, pour les protections sensibles au timing. Option, pas défaut.
+- **US6.1 — Bande au signal par défaut. ❌ non retenue, sur mesure** — le mode
+  signal existe (`--tape-signal`), fonctionne et reste **indispensable** aux
+  chargeurs maison et aux protections ; mais en faire le **défaut** dégraderait
+  l'usage sans rien gagner en fidélité utile : le contenu chargé est identique au
+  fast-load (vérifié en mémoire), pour un coût de **60 M cycles au lieu de 25 M**
+  (le temps réel d'une vraie cassette, ce qui est précisément le but… et le
+  problème). Décision : le fast-load reste le chemin par défaut, le mode signal
+  reste explicite.
+  *Défaut identifié au passage, à traiter* : un `CLOAD""` au signal **charge
+  correctement** le programme sur ORIC-1 **comme sur Atmos** (présence vérifiée
+  en mémoire après chargement), mais l'Atmos affiche **« Errors found »** en fin
+  d'opération — la détection de fin de bloc diverge alors que le décodage est bon.
+  Le document de sprint 90 annonçait le portage Atmos comme « non couvert v1 » :
+  il est en réalité **partiellement** fonctionnel.
+- **US6.2 — Délais dérivés de la rotation. ✅ livré pour l'essentiel
+  (2.0.0-alpha.6)** — la latence rotationnelle réelle était déjà le **défaut**
+  (`--fdc-timing real`), et le débit inter-octets était déjà exact (32 cycles =
+  32 µs à 250 kbit/s). Ce sprint ajoute ce qui manquait vraiment :
+  **`LOST DATA` (S2)** signalé quand un DRQ n'est pas servi dans le temps d'un
+  octet, **protection en écriture (S6)** — refus des commandes d'écriture, bit 6
+  au statut, déduite du fichier `.dsk` en lecture seule ou forcée par
+  `--disk-write-protect` — et le **RNF terminal** des commandes multi-secteur.
+  `test-storage` 26 → **31**, aucun faux positif sur les 6 disquettes du corpus.
+  *Limite assumée* : l'octet n'est pas **réellement** perdu (le modèle d'image
+  plate n'a pas de flux MFM continu) ; le bit est signalé au bon moment, les
+  données restent intactes. Faire défiler le flux exige US6.3.
+- **US6.3 — Piste MFM optionnelle. ⏸ backlog** — c'est elle qui permettrait la
+  perte réelle d'octets, `READ TRACK` et `CRC ERROR`. Le socle existe (parseur MFM
+  de `Write Track`, encodeur de `dsk2hfe`), mais la valeur reste faible pour l'ORIC
+  (peu de protections au flux) face au risque sur le chargement disque.
 
 ### V2-E7 — Perf, savestate, non-régression (transverse)
 

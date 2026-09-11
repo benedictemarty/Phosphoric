@@ -105,8 +105,19 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             à **37 kHz** (hors bande), **blocage du continu** ajouté
             (+8188 → +15, signal symétrique). Coupure exacte du couplage `C4`
             indéterminée sur le document (facteur 1000) → non modélisée, documentée
-- [ ] **V2-E6 — Cassette & FDC dérivés du temps réel** (S9-S10) : bande au signal par
-      défaut, DRQ/INTRQ dérivés de la rotation (LOST DATA possible), piste MFM optionnelle
+- [~] **V2-E6 — Cassette & FDC dérivés du temps réel** (S8)
+      - [x] US6.2 **`LOST DATA` (S2)** signalé quand un DRQ n'est pas servi dans le
+            temps d'un octet (32 µs à 250 kbit/s) ; compteur + avertissement de session
+      - [x] **Protection en écriture (S6)** : commandes d'écriture refusées, bit 6 au
+            statut (Type I inclus), déduite du `.dsk` en lecture seule ou `--disk-write-protect`
+      - [x] **RNF terminal** des commandes multi-secteur (lecture et écriture)
+      - [x] `test-storage` 26 → 31 ; 6 disquettes du corpus identiques, 0 faux positif
+      - [x] Latence rotationnelle réelle : **déjà le défaut** ; débit inter-octets déjà exact
+      - [ ] US6.1 bande au signal par défaut — **non retenue** : même contenu chargé,
+            60 M cycles au lieu de 25 M. Le mode reste explicite (`--tape-signal`)
+      - [ ] **À traiter** : `CLOAD""` au signal charge bien sur Atmos (vérifié en
+            mémoire) mais affiche « Errors found » en fin — détection de fin de bloc
+      - [ ] US6.3 piste MFM (perte réelle d'octets, READ TRACK, CRC) — backlog
 - [ ] **V2-E7 — Perf, savestate, non-régression, CI** (transverse) : `make bench`
       bloquant (≤ 5 % du budget trame), `.ost` v2 (reprise en milieu d'instruction,
       lecture des `.ost` 1.x), corpus des 41 programmes rejoué à chaque fin d'épic

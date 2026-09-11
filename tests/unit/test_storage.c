@@ -753,6 +753,108 @@ TEST(test_fdc_web_read_sector) {
     free(flat); remove(path);
 }
 
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  FIDÉLITÉ WD1793 (V2-E6) — déviations réexaminées                   */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* LOST DATA (S2) : le plateau n'attend pas le CPU. Si le DRQ précédent n'a pas
+ * été servi quand l'octet suivant arrive, le WD1793 lève S2 et poursuit. À
+ * 250 kbit/s, le programme n'a que 32 µs par octet. */
+TEST(test_fdc_lost_data_when_cpu_too_slow) {
+    fdc_t fdc;
+    uint8_t* disk = calloc(80 * 17 * 256, 1);
+    fdc_init_test(&fdc);
+    fdc_set_disk(&fdc, disk, 80 * 17 * 256);
+    fdc.timing_mode = FDC_TIMING_FAST;
+
+    fdc_write(&fdc, FDC_TRACK, 0);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0x80);      /* Read Sector */
+
+    /* On laisse filer le temps sans jamais lire le registre de données :
+     * chaque DRQ non servi doit coûter un octet perdu. */
+    for (int i = 0; i < 20; i++) fdc_ticktock(&fdc, 64);
+
+    ASSERT_TRUE((fdc_read(&fdc, FDC_STATUS) & FDC_ST_LOST_DATA) != 0);
+    ASSERT_TRUE(fdc.lost_data_count > 0);
+    free(disk);
+}
+
+/* …et le transfert reste propre quand le CPU lit à temps : aucun octet perdu. */
+TEST(test_fdc_no_lost_data_when_cpu_keeps_up) {
+    fdc_t fdc;
+    uint8_t* disk = calloc(80 * 17 * 256, 1);
+    fdc_init_test(&fdc);
+    fdc_set_disk(&fdc, disk, 80 * 17 * 256);
+    fdc.timing_mode = FDC_TIMING_FAST;
+
+    fdc_write(&fdc, FDC_TRACK, 0);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0x80);
+
+    for (int i = 0; i < 256; i++) {
+        int guard = 0;
+        while (!(fdc.status & FDC_ST_DRQ) && guard++ < 10000) fdc_ticktock(&fdc, 1);
+        if (!(fdc.status & FDC_ST_DRQ)) break;
+        (void)fdc_read(&fdc, FDC_DATA);      /* servi immédiatement */
+    }
+    ASSERT_EQ(fdc.lost_data_count, 0u);
+    ASSERT_TRUE((fdc.status & FDC_ST_LOST_DATA) == 0);
+    free(disk);
+}
+
+/* Languette de protection (S6) : la commande d'écriture n'est pas exécutée, le
+ * statut porte le bit 6, et le contenu du disque reste intact. */
+TEST(test_fdc_write_protect_refuses_write) {
+    fdc_t fdc;
+    uint8_t* disk = calloc(80 * 17 * 256, 1);
+    fdc_init_test(&fdc);
+    fdc_set_disk(&fdc, disk, 80 * 17 * 256);
+    fdc_set_write_protect(&fdc, true);
+
+    uint8_t before = disk[0];
+    fdc_write(&fdc, FDC_TRACK, 0);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0xA0);      /* Write Sector */
+
+    ASSERT_TRUE((fdc.status & FDC_ST_WRITE_PROT) != 0);
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);   /* commande non exécutée */
+    fdc_write(&fdc, FDC_DATA, 0x5A);         /* une écriture égarée ne passe pas */
+    ASSERT_EQ(disk[0], before);
+    free(disk);
+}
+
+/* Sans languette, la même séquence écrit bien. */
+TEST(test_fdc_write_allowed_without_protect) {
+    fdc_t fdc;
+    uint8_t* disk = calloc(80 * 17 * 256, 1);
+    fdc_init_test(&fdc);
+    fdc_set_disk(&fdc, disk, 80 * 17 * 256);
+    fdc.timing_mode = FDC_TIMING_FAST;
+
+    fdc_write(&fdc, FDC_TRACK, 0);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0xA0);
+    ASSERT_TRUE((fdc.status & FDC_ST_WRITE_PROT) == 0);
+    ASSERT_TRUE(fdc.currentop == FDC_OP_WRITE_SECTOR);
+    free(disk);
+}
+
+/* En Type I, le bit 6 du statut reporte lui aussi la languette. */
+TEST(test_fdc_write_protect_visible_in_type1_status) {
+    fdc_t fdc;
+    uint8_t* disk = calloc(80 * 17 * 256, 1);
+    fdc_init_test(&fdc);
+    fdc_set_disk(&fdc, disk, 80 * 17 * 256);
+    fdc.timing_mode = FDC_TIMING_REAL;
+    fdc_set_write_protect(&fdc, true);
+
+    fdc_write(&fdc, FDC_COMMAND, 0x00);      /* Restore (Type I) */
+    for (int i = 0; i < 200; i++) fdc_ticktock(&fdc, 1000);
+    ASSERT_TRUE((fdc_read(&fdc, FDC_STATUS) & FDC_ST_WRITE_PROT) != 0);
+    free(disk);
+}
+
 int main(void) {
     printf("Running Storage tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -788,6 +890,13 @@ int main(void) {
     RUN(test_sedoric_save_roundtrip);
     RUN(test_sedoric_mfm_writeback_roundtrip);
     RUN(test_fdc_web_read_sector);
+
+    printf("\n  Fidélité WD1793 (V2-E6):\n");
+    RUN(test_fdc_lost_data_when_cpu_too_slow);
+    RUN(test_fdc_no_lost_data_when_cpu_keeps_up);
+    RUN(test_fdc_write_protect_refuses_write);
+    RUN(test_fdc_write_allowed_without_protect);
+    RUN(test_fdc_write_protect_visible_in_type1_status);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

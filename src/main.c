@@ -2401,6 +2401,7 @@ int main(int argc, char* argv[]) {
     const char* disk_create_file = NULL;
     const char* disk_web_url = NULL;   /* loci-webdisk archi B: disque servi par HTTP */
     bool disk_writeback = false;
+    bool disk_write_protect = false;
     const char* rom_file = NULL;
     const char* hostfs_path = NULL;
     bool fast_load = false;
@@ -2528,6 +2529,7 @@ int main(int argc, char* argv[]) {
             case OPT_DISK2: disk_files[2] = optarg; break;
             case OPT_DISK3: disk_files[3] = optarg; break;
             case OPT_DISK_WRITEBACK: disk_writeback = true; break;
+            case OPT_DISK_WRITE_PROTECT: disk_write_protect = true; break;
             case OPT_DISK_CREATE: disk_create_file = optarg; disk_writeback = true; break;
             case OPT_DISK_WEB: disk_web_url = optarg; break;
             case 'r': rom_file = optarg; break;
@@ -3870,6 +3872,20 @@ int main(int argc, char* argv[]) {
         emu.microdisc.cpu_userdata = &emu;
         emu.has_microdisc = true;
 
+        /* Languette de protection en écriture : posée explicitement, ou déduite
+         * du fichier lui-même — un .dsk en lecture seule sur l'hôte se comporte
+         * comme une disquette dont la languette est ouverte. */
+        {
+            bool wp = disk_write_protect;
+            if (!wp && disk_files[0] && access(disk_files[0], W_OK) != 0)
+                wp = true;
+            if (wp) {
+                fdc_set_write_protect(&emu.microdisc.fdc, true);
+                log_info("Disque protégé en écriture (statut WD1793 bit 6)%s",
+                         disk_write_protect ? "" : " — fichier en lecture seule");
+            }
+        }
+
         /* WD1793 timing profile: mechanical (real) by default, --fdc-timing
          * fast restores the legacy short delays (instant-feel loading). */
         if (fdc_timing_arg) {
@@ -4380,6 +4396,12 @@ int main(int argc, char* argv[]) {
             log_warning("CPU trace ring empty (no instructions recorded) -> %s",
                         trace_file);
     }
+    /* Diagnostic : un transfert disque sain ne perd aucun octet. Si le compteur
+     * n'est pas nul, le logiciel a servi un DRQ trop tard (ou le modèle dérive). */
+    if (emu.has_microdisc && emu.microdisc.fdc.lost_data_count)
+        log_warning("FDC: %u octet(s) signalé(s) perdus (LOST DATA) pendant la session",
+                    emu.microdisc.fdc.lost_data_count);
+
     trace_close(&emu.trace);
     if (cycle_trace_file) {
         uint64_t ct_lines = cycle_trace_close();

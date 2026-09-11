@@ -403,6 +403,81 @@ qui sépare proprement « ce que produit la puce » de « ce qui sort de la cart
 `make clean && make tests` : toutes suites vertes.
 EMU_VERSION 2.0.0-alpha.4 → **2.0.0-alpha.5**.
 
+## [2.0.0-alpha.6] - 2026-09-11
+
+### Fixed — WD1793 : LOST DATA, protection en écriture, RNF terminal (V2-S8)
+
+Épic **V2-E6**, appliqué au FDC. Comme pour le VIA et le PSG, la méthode a été de
+reprendre les **déviations assumées** du document de conformité une à une,
+maintenant que la machine est cycle-exacte — et l'une d'elles était simplement
+**périmée**.
+
+#### LOST DATA (S2) — le plateau n'attend pas le CPU
+
+À 250 kbit/s en MFM, un octet défile toutes les **32 µs** : passé ce délai, un DRQ
+non servi signifie que l'octet suivant est déjà là et que le précédent est perdu.
+Le WD1793 lève S2 et poursuit — c'est ainsi qu'un logiciel sait qu'il a raté le
+train. Le bit n'était **jamais** levé.
+
+Ajouté : un chien de garde sur l'âge du DRQ (`FDC_BYTE_CYCLES` = 32, justifié par
+le débit), avec un compteur `lost_data_count` et un avertissement en fin de
+session. Vérifié : **aucun faux positif** sur les 6 disquettes du corpus, dont
+Sedoric — leurs boucles de lecture tiennent le rythme, comme sur la machine.
+
+*Limite assumée, et dite* : l'octet est signalé perdu **au bon moment**, mais il
+n'est pas **réellement** perdu. Notre modèle d'image plate n'a pas de flux MFM
+continu : les octets sont servis à la demande du CPU, pas par la rotation. Un
+logiciel qui teste S2 voit la bonne condition ; un logiciel qui l'ignore obtient
+des données intactes là où le matériel lui en donnerait de fausses. Faire défiler
+réellement le flux exige le modèle de piste MFM (backlog) — et ferait courir un
+risque au chargement disque pour un gain théorique, aucun logiciel Oric connu
+n'étant trop lent.
+
+#### Protection en écriture (S6)
+
+Elle n'existait pas : les écritures étaient toujours acceptées. Désormais
+`Write Sector` et `Write Track` sont **refusées sans rien modifier**, avec le
+bit 6 au statut et l'interruption — le bit apparaît aussi dans le statut Type I,
+comme sur le 1793.
+
+La languette est posée par `--disk-write-protect`, **ou déduite du fichier
+lui-même** : un `.dsk` en lecture seule sur l'hôte se comporte comme une
+disquette protégée, ce qui est le comportement attendu sans rien avoir à
+demander.
+
+#### RNF terminal des commandes multi-secteur
+
+Une commande multi-secteur s'arrêtait silencieusement en fin de piste. Le WD1793
+continue de chercher le secteur suivant et termine sur **RECORD NOT FOUND** :
+c'est ce qui indique au logiciel où la piste s'achève. Corrigé en lecture comme
+en écriture.
+
+#### Une déviation périmée
+
+« Disque absent en Type II/III → RNF au lieu de NOT READY » : déjà corrigé
+avant ce sprint (`fdc_not_ready()` est appelé par les quatre commandes Type II/III).
+La ligne du document ne décrivait plus le code.
+
+#### Ce que je n'ai pas fait, et pourquoi
+
+**La bande au signal ne devient pas le défaut.** Le mode existe, fonctionne et
+reste indispensable aux chargeurs maison et aux protections — mais en faire le
+défaut dégraderait l'usage sans gain utile : le contenu chargé est **identique**
+au fast-load (vérifié en mémoire), pour **60 M cycles au lieu de 25 M**, c'est-à-dire
+le temps réel d'une vraie cassette. C'est précisément le but du mode… et la raison
+de ne pas l'imposer.
+
+**Un défaut identifié au passage, à traiter** : un `CLOAD""` au signal **charge
+correctement** le programme sur ORIC-1 **comme sur Atmos** (présence vérifiée en
+mémoire), mais l'Atmos affiche **« Errors found »** en fin d'opération — le
+décodage est bon, la détection de fin de bloc diverge. Le document du sprint 90
+annonçait le portage Atmos comme « non couvert » : il est en réalité
+**partiellement** fonctionnel. Consigné dans le ROADMAP.
+
+`test-storage` 26 → **31**. `make clean && make tests` : toutes suites vertes,
+6 disquettes du corpus byte-identiques.
+EMU_VERSION 2.0.0-alpha.5 → **2.0.0-alpha.6**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

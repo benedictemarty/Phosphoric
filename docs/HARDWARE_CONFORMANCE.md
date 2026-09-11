@@ -30,14 +30,20 @@ rotationnelle 200 ms/rev, bit BUSY, patch live INDEX/TRK0 en status Type I.
 | **STEP/STEP-IN/STEP-OUT : flag T ignoré** | Table 2 (Type I bit 4 = Track Update) : le registre piste n'est mis à jour que si T=1 ; le code l'écrivait toujours. | `fdc_seek_track(...args, bool update_track)` ; Restore/Seek passent `true`, Step\* passent `(value & 0x10) != 0`. La tête (c_track) bouge toujours. Test `test_fdc_step_track_update_flag`. |
 | **Force Interrupt : INTRQ inconditionnel** | Datasheet p.15 : HEX **D0** (i3-i0=0) termine la commande **sans** interruption ; seul **D8** (i3) génère un INTRQ immédiat. Le code déclenchait toujours l'INTRQ. | `if (value & 0x08) set_intrq(...)`. Tests `test_fdc_force_interrupt` (D0 = pas d'INTRQ) + `test_fdc_force_interrupt_immediate` (D8). |
 
+### Corrigé (2.0.0-alpha.6, épic V2-E6)
+| Écart | Détail | Correctif |
+|-------|--------|-----------|
+| **LOST DATA (S2) jamais posé** | À 250 kbit/s en MFM, un octet défile toutes les **32 µs** : au-delà, un DRQ non servi signifie que l'octet suivant est déjà là. Le WD1793 lève S2 et poursuit — c'est ainsi qu'un logiciel sait qu'il a raté le train. Le bit n'était jamais levé. | Chien de garde sur l'âge du DRQ (`FDC_BYTE_CYCLES` = 32, justifié par le débit) : au-delà d'un temps d'octet, S2 est levé et compté (`lost_data_count`, rapporté en fin de session). Tests `test_fdc_lost_data_when_cpu_too_slow` et sa contre-épreuve `test_fdc_no_lost_data_when_cpu_keeps_up`. Vérifié : **aucun faux positif** sur les 6 disquettes du corpus. |
+| **Write-protect (S6) non modélisé** | Les écritures étaient toujours acceptées, même sur un support protégé. | `fdc_set_write_protect()` : Write Sector et Write Track sont refusées sans rien modifier, statut bit 6 + interruption ; le bit apparaît aussi dans le statut Type I. Câblé sur `--disk-write-protect` **et déduit du fichier lui-même** (un `.dsk` en lecture seule sur l'hôte se comporte comme une disquette dont la languette est ouverte). 3 tests. |
+| **Multi-secteur : pas de RNF terminal** | Une commande multi-secteur s'arrêtait silencieusement en fin de piste. Le WD1793 continue de chercher le secteur suivant et termine sur **RECORD NOT FOUND** : c'est ce qui indique au logiciel où la piste s'achève. | RNF ajouté au statut de fin, en lecture comme en écriture. |
+| **Disque absent en Type II/III → RNF au lieu de NOT READY** | — | Déjà corrigé avant ce sprint (`fdc_not_ready()`, appelé par les quatre commandes Type II/III) ; la ligne de ce document était **périmée**. |
+
 ### Déviations assumées
 | Écart | Raison |
 |-------|--------|
-| Disque absent en Type II/III → RNF au lieu de NOT READY (bit 7) | Faible impact ; à traiter dans un sprint FDC dédié. |
-| READ TRACK sans complétion (pas de case dans `fdc_read`) | Commande quasi inutilisée par le logiciel Oric. |
-| Write-protect (S6) non modélisé | Aucune notion de WP dans le modèle d'image ; écritures toujours acceptées. |
-| Multi-secteur : pas de RNF terminal en fin de piste | Terminé par Force Interrupt en pratique. |
-| S3 CRC ERROR / S2 LOST DATA jamais posés | Impossibles structurellement sur image plate + I/O programmée octet-par-octet ; secteurs endommagés remontent en RNF (S4). |
+| **L'octet perdu n'est pas réellement perdu** : S2 est signalé au bon moment, mais les données restent intactes | Notre modèle d'image plate n'a pas de flux MFM continu : les octets sont servis à la demande du CPU, pas par la rotation. Le logiciel qui teste S2 voit la bonne condition ; celui qui l'ignore obtient des données correctes là où le matériel lui en donnerait de fausses. Faire défiler réellement le flux exige le modèle de piste MFM (backlog V2-E6/US6.3) — et ferait courir un risque au chargement disque pour un gain théorique : aucun logiciel Oric connu n'est trop lent. |
+| READ TRACK sans complétion (pas de case dans `fdc_read`) | Commande quasi inutilisée par le logiciel Oric, et une implémentation correcte demanderait de **synthétiser une piste MFM** (gaps, marques d'adresse) — c'est le modèle de piste du backlog. |
+| S3 CRC ERROR jamais posé | Impossible structurellement sur image plate ; les secteurs endommagés remontent en RNF (S4). |
 | Flags C/S (side compare) et a0 (Deleted DAM) ignorés | Le side est piloté par le registre de contrôle Microdisc. |
 
 ---
