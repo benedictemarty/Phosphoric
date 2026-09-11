@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <stdlib.h>
 #include "audio/audio.h"
 
@@ -446,6 +447,146 @@ TEST(test_ay_noise_rate_clock_div16) {
 /*  MAIN                                                               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  CADENCEMENT MATÉRIEL DU PSG (V2-E5)                                */
+/*                                                                    */
+/*  Le PSG tourne à clock/8 (125 kHz sur l'ORIC), pas au taux          */
+/*  d'échantillonnage. Ces tests mesurent le SIGNAL produit et le      */
+/*  comparent aux formules de la datasheet, plutôt que de comparer des */
+/*  octets à une référence figée : une comparaison spectrale reste     */
+/*  vraie même si le rendu évolue.                                     */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+#define SPEC_SAMPLES 44100
+static int16_t spec_buf[SPEC_SAMPLES * 2];
+
+/* Fréquence d'un signal, par comptage des passages par sa valeur moyenne. */
+static double measure_tone_hz(int period) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    ay_write_reg(&ay, 0, period & 0xFF);
+    ay_write_reg(&ay, 1, (period >> 8) & 0x0F);
+    ay_write_reg(&ay, 7, 0x3E);            /* canal A : ton seul */
+    ay_write_reg(&ay, 8, 15);              /* volume maximal */
+    ay_generate(&ay, spec_buf, SPEC_SAMPLES);
+
+    long sum = 0;
+    for (int i = 0; i < SPEC_SAMPLES; i++) sum += spec_buf[i * 2];
+    double mean = (double)sum / SPEC_SAMPLES;
+    int crossings = 0;
+    for (int i = 1; i < SPEC_SAMPLES; i++)
+        if ((spec_buf[(i - 1) * 2] > mean) != (spec_buf[i * 2] > mean)) crossings++;
+    return crossings / 2.0;                /* une période = deux passages */
+}
+
+/* Énergie du signal autour de sa moyenne. */
+static double measure_rms(int period) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    ay_write_reg(&ay, 0, period & 0xFF);
+    ay_write_reg(&ay, 1, (period >> 8) & 0x0F);
+    ay_write_reg(&ay, 7, 0x3E);
+    ay_write_reg(&ay, 8, 15);
+    ay_generate(&ay, spec_buf, SPEC_SAMPLES);
+
+    double mean = 0;
+    for (int i = 0; i < SPEC_SAMPLES; i++) mean += spec_buf[i * 2];
+    mean /= SPEC_SAMPLES;
+    double s2 = 0;
+    for (int i = 0; i < SPEC_SAMPLES; i++) {
+        double d = spec_buf[i * 2] - mean;
+        s2 += d * d;
+    }
+    return sqrt(s2 / SPEC_SAMPLES);
+}
+
+/* La fréquence d'un ton doit valoir clock/(16·P) — la formule de la datasheet. */
+TEST(test_ay_tone_frequency_matches_datasheet) {
+    static const int periods[] = { 4, 8, 16, 50, 100, 284, 500 };
+    for (unsigned i = 0; i < sizeof(periods) / sizeof(periods[0]); i++) {
+        double theory = 1000000.0 / (16.0 * periods[i]);
+        double measured = measure_tone_hz(periods[i]);
+        /* Tolérance : 0,5 % ou 1 Hz (résolution du comptage sur une seconde). */
+        double tol = theory * 0.005;
+        if (tol < 1.0) tol = 1.0;
+        if (fabs(measured - theory) > tol) {
+            printf("FAIL\n    P=%d: attendu %.2f Hz, mesuré %.2f Hz\n",
+                   periods[i], theory, measured);
+            tests_failed++;
+            return;
+        }
+    }
+}
+
+/* L'enveloppe avance d'un pas tous les EP pas d'horloge interne, soit
+ * clock/(8·EP) : un cycle de 32 pas dure donc 256·EP/clock, la formule de la
+ * datasheet. La forme $00 décroît de 15 à 0 en 15 pas puis se tait : on mesure
+ * l'instant d'extinction. Avant la V2, l'enveloppe était DEUX FOIS trop lente. */
+TEST(test_ay_envelope_period_matches_datasheet) {
+    static const int eps[] = { 100, 200, 500, 1000 };
+    for (unsigned i = 0; i < sizeof(eps) / sizeof(eps[0]); i++) {
+        ay3891x_t ay;
+        ay_init(&ay, 1000000);
+        ay_write_reg(&ay, 7, 0x3F);        /* ton et bruit coupés */
+        ay_write_reg(&ay, 8, 0x10);        /* volume piloté par l'enveloppe */
+        ay_write_reg(&ay, 11, eps[i] & 0xFF);
+        ay_write_reg(&ay, 12, (eps[i] >> 8) & 0xFF);
+        ay_write_reg(&ay, 13, 0x00);       /* décroissance simple puis silence */
+        ay_generate(&ay, spec_buf, SPEC_SAMPLES);
+
+        int silent_at = -1;
+        for (int k = 0; k < SPEC_SAMPLES; k++)
+            if (spec_buf[k * 2] == 0) { silent_at = k; break; }
+        ASSERT_TRUE(silent_at > 0);
+
+        double measured = silent_at / (double)AUDIO_SAMPLE_RATE;
+        double theory = 15.0 * 8.0 * eps[i] / 1000000.0;   /* 15 pas */
+        if (fabs(measured - theory) > theory * 0.02) {
+            printf("FAIL\n    EP=%d: attendu %.5f s, mesuré %.5f s\n",
+                   eps[i], theory, measured);
+            tests_failed++;
+            return;
+        }
+    }
+}
+
+/* Au-delà de Nyquist, la sortie doit s'ATTÉNUER, pas se replier en bruit : le
+ * PSG étant cadencé au matériel, chaque échantillon intègre les transitions
+ * qu'il couvre (filtre boîte). P=1 vaut 62,5 kHz, bien au-dessus des 22 kHz
+ * représentables — son énergie doit s'effondrer. */
+TEST(test_ay_no_aliasing_above_nyquist) {
+    double rms_audible = measure_rms(50);     /* 1250 Hz */
+    double rms_ultra   = measure_rms(1);      /* 62,5 kHz */
+    ASSERT_TRUE(rms_audible > 2000.0);
+    ASSERT_TRUE(rms_ultra < rms_audible / 2.0);
+}
+
+/* Le générateur de bruit est un LFSR 17 bits (x^17 + x^14 + 1). Deux propriétés
+ * vérifiables sans dépendre de la phase d'échantillonnage : il ne se bloque
+ * jamais sur l'état zéro (un LFSR qui y tombe reste muet à jamais), et sa sortie
+ * est équilibrée — un bruit blanc, pas un motif. La conformité de la SÉQUENCE
+ * est vérifiée séparément par test_ay_noise_rate_clock_div16, qui la compare pas
+ * à pas à un LFSR de référence. */
+TEST(test_ay_noise_lfsr_is_healthy) {
+    ay3891x_t ay;
+    ay_init(&ay, 1000000);
+    ay_write_reg(&ay, 6, 1);               /* période de bruit minimale */
+    ay_write_reg(&ay, 7, 0x07);            /* bruit sur les trois canaux */
+    ASSERT_EQ(ay.noise_shift, 1u);
+
+    int16_t one[2];
+    long ones = 0;
+    const long total = 200000;
+    for (long k = 0; k < total; k++) {
+        ay_generate(&ay, one, 1);
+        ASSERT_TRUE(ay.noise_shift != 0u);   /* jamais bloqué à zéro */
+        ones += ay.noise_output ? 1 : 0;
+    }
+    /* Bruit équilibré : la proportion de 1 doit rester proche de la moitié. */
+    double ratio = (double)ones / (double)total;
+    ASSERT_TRUE(ratio > 0.45 && ratio < 0.55);
+}
+
 int main(void) {
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
@@ -465,6 +606,12 @@ int main(void) {
     RUN(test_ay_timed_port_not_queued);
     RUN(test_ay_digidrum_subbuffer_timing);
     RUN(test_ay_resync_clears_queue);
+
+    printf("\n  Cadencement matériel du PSG (V2-E5):\n");
+    RUN(test_ay_tone_frequency_matches_datasheet);
+    RUN(test_ay_envelope_period_matches_datasheet);
+    RUN(test_ay_no_aliasing_above_nyquist);
+    RUN(test_ay_noise_lfsr_is_healthy);
 
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Results: %d passed, %d failed\n", tests_passed, tests_failed);

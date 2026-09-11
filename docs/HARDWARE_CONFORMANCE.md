@@ -75,15 +75,25 @@ MSB→bit0, cadence T2=N+2, φ2=÷2, mode 4 free-run sans flag).
 
 ## 3. PSG AY-3-8912 (`src/audio/ay3891x.c`) vs datasheet *General Instrument AY-3-8910/8912*
 
-Rendu par accumulateurs fractionnaires à 44,1 kHz, horloge maître 1 MHz.
+Depuis la 2.0.0-alpha.4 : machine cadencée à **clock/8** (125 kHz), sortie
+**intégrée** sur les pas couverts par chaque échantillon (avant : accumulateurs
+fractionnaires au taux d'échantillonnage de 44,1 kHz).
 
-### Conforme (vérifié par recalcul)
-- **Ton** = `clock/(16×TP)` ✓ (`tone_rate = clock/8` avec bascule = demi-cycle).
-- **Enveloppe** : pas = `clock/(16×EP)`, cycle 16 états = `clock/(256×EP)` ✓.
-- **LFSR bruit** 17 bits, taps bit0 ⊕ bit3 ✓.
+### Conforme (vérifié par la MESURE du signal produit)
+- **Ton** = `clock/(16×TP)` ✓ — mesuré à ±0,1 % pour TP = 4, 8, 16, 50, 100, 284, 500.
+- **Enveloppe** : pas = `clock/(8×EP)`, cycle de **32** états = `clock/(256×EP)` ✓ —
+  mesuré à ±2 % pour EP = 100, 200, 500, 1000.
+- **LFSR bruit** 17 bits, taps bit0 ⊕ bit3 ✓ (séquence comparée pas à pas à une
+  référence ; jamais bloqué à zéro ; sortie équilibrée à ±5 %).
 - **Mixer** R7 : bit=1 désactive ton/bruit du canal ✓.
 - Largeurs : ton 12 bits, bruit 5 bits, enveloppe 16 bits ✓ ; `TP=0→1` ✓ ;
   formes d'enveloppe 0-15 ✓ ; table de volume log 16 niveaux ✓.
+
+### Corrigé (2.0.0-alpha.4, épic V2-E5)
+| Écart | Détail | Correctif |
+|-------|--------|-----------|
+| **Enveloppe 2× trop lente** | Un pas tous les `clock/(16×EP)` au lieu de `clock/(8×EP)`. Ce document la déclarait pourtant **conforme** : son recalcul supposait un cycle de **16 états**, alors que le compteur d'enveloppe en a **32**. Avec 32 états, `clock/(16×EP)` par pas donne un cycle en `clock/(512×EP)` — deux fois trop lent par rapport aux `clock/(256×EP)` de la datasheet. **Une erreur d'hypothèse invisible au recalcul, révélée par la mesure du signal.** | Compteur d'enveloppe cadencé à l'horloge interne `clock/8`, un pas tous les `EP`. Mesuré : durée de décroissance conforme à ±2 % sur EP = 100…1000 (test `test_ay_envelope_period_matches_datasheet`). |
+| **Repliement au-dessus de Nyquist** | Les compteurs étaient cadencés par accumulateurs au taux d'échantillonnage : toute transition plus rapide que 44,1 kHz se repliait en bruit audible au lieu de s'atténuer. Mesuré : un ton à TP=1 (62,5 kHz) ressortait à 18,4 kHz avec sa pleine amplitude. | Machine cadencée à `clock/8` et sortie **intégrée** sur les pas couverts par chaque échantillon (filtre boîte). TP=1 s'atténue désormais (RMS divisé par ~3) au lieu de replier — ce que fait aussi le haut-parleur d'un vrai ORIC. Test `test_ay_no_aliasing_above_nyquist`. |
 
 ### Corrigé (v1.99.0-alpha)
 | Écart | Détail | Correctif |
@@ -95,6 +105,8 @@ Rendu par accumulateurs fractionnaires à 44,1 kHz, horloge maître 1 MHz.
 |-------|--------|
 | L'AY-3-8912 n'a **pas de Port B** (reg 15) mais le code le modélise (`audio.h`, init 0xFF) | Sans effet sur Oric (Port B inutilisé) ; cosmétique. |
 | Sémantique R7 bit 6 (direction Port A) : le code renvoie l'entrée clavier quand bit6=1, alors que la datasheet décrit R7 bits 6/7 comme la direction des ports | **Empiriquement validé** sur Oric (clavier testé de façon extensive) → modèle Oric-spécifique délibéré ; non modifié sans confirmation (principe : ne pas inventer). |
+| Mixage des trois canaux par somme divisée par 3 | Le vrai AY somme des **courants** dans une charge commune : la somme n'est pas parfaitement linéaire. Sans mesure sur matériel, on ne remplace pas une approximation par une autre. |
+| Pas de filtre passe-bas analogique (haut-parleur + circuit de sortie de l'ORIC) | L'intégration par échantillon atténue déjà l'ultrasonique ; un vrai filtre demanderait une réponse mesurée. |
 
 ---
 

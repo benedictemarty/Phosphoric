@@ -259,6 +259,74 @@ Suivi V2 : 491 (E1) → 521 (E2) → 555 (E3) → 601 µs (E4).
 
 EMU_VERSION 2.0.0-alpha.2 → **2.0.0-alpha.3**.
 
+## [2.0.0-alpha.4] - 2026-09-11
+
+### Fixed — PSG cadencé au matériel : enveloppe 2× trop lente, et fin du repliement (V2-S7)
+
+Fin de l'**épic V2-E5**. Le PSG était le dernier composant encore cadencé au taux
+d'échantillonnage plutôt qu'à son horloge.
+
+#### L'enveloppe était deux fois trop lente — et l'audit disait « conforme »
+
+Le compteur d'enveloppe avançait d'un pas tous les `clock/(16·EP)` au lieu de
+`clock/(8·EP)`. Toutes les enveloppes de tous les programmes duraient donc le
+double.
+
+Le plus instructif est **pourquoi personne ne l'avait vu** :
+`docs/HARDWARE_CONFORMANCE.md` §3 déclarait l'enveloppe conforme, « vérifié par
+recalcul » — mais ce recalcul supposait un cycle de **16 états**, alors que le
+compteur d'enveloppe en a **32**. Avec 32 états, `clock/(16·EP)` par pas donne un
+cycle en `clock/(512·EP)`, deux fois plus lent que les `clock/(256·EP)` de la
+datasheet. Une erreur d'hypothèse est invisible à la relecture : elle ne se voit
+qu'en **mesurant le signal produit**. C'est ce que fait désormais la suite de
+tests.
+
+Mesuré, rapport à la théorie : **exactement 2,0** avant correction, **1,00** après.
+
+#### Le repliement au-dessus de Nyquist
+
+Les compteurs étaient cadencés par accumulateurs à 44,1 kHz : toute transition
+plus rapide que la fréquence d'échantillonnage se **repliait** en bruit audible au
+lieu de s'atténuer. Mesuré : un ton programmé à 62,5 kHz (TP=1) ressortait à
+**18,4 kHz avec sa pleine amplitude** — un sifflement qui n'existe pas sur la
+machine.
+
+La machine tourne maintenant à **`clock/8` = 125 kHz**, le pas interne réel du
+chip, et chaque échantillon de sortie **intègre** les pas qu'il couvre (filtre
+boîte, accumulateur Q16 de 2,834 pas par échantillon). TP=1 s'atténue désormais
+(RMS divisé par ~3) au lieu de replier, comme le ferait le haut-parleur d'un vrai
+ORIC.
+
+#### Cadences, toutes vérifiées par la mesure
+
+| Générateur | Formule | Vérification |
+|------------|---------|--------------|
+| Ton | `clock/(16·TP)` | ±0,1 % sur TP = 4, 8, 16, 50, 100, 284, 500 |
+| Enveloppe | `clock/(8·EP)` par pas, cycle 32 états = `clock/(256·EP)` | ±2 % sur EP = 100…1000 |
+| Bruit | LFSR 17 bits (x¹⁷+x¹⁴+1), `clock/(16·NP)` | séquence comparée pas à pas à une référence ; jamais bloqué à zéro ; sortie équilibrée à ±5 % |
+
+`test-audio` passe de 13 à **17 tests**. La vérification est **spectrale** et non
+octet à octet : elle reste vraie même si le rendu évolue, là où une référence WAV
+figée aurait interdit toute correction.
+
+#### Coût : nul
+
+Mesuré dans la **même session** contre le binaire du sprint précédent, 3 passes,
+avec et sans génération audio : **611 µs contre 614 µs** par trame émulée. Les
+écarts apparents que j'avais d'abord relevés (jusqu'à +20 %) venaient de la
+variabilité de la machine (±5 %), pas du code — d'où la comparaison en session
+unique.
+
+#### Non fait, et dit
+
+Le mixage des trois canaux reste une somme divisée par 3, alors que le vrai AY
+somme des **courants** dans une charge commune (somme non parfaitement linéaire),
+et il n'y a pas de filtre analogique de sortie. Sans mesure sur matériel, on ne
+remplace pas une approximation par une autre.
+
+`make clean && make tests` : toutes suites vertes, aucun WAV de référence à
+re-baseliner. EMU_VERSION 2.0.0-alpha.3 → **2.0.0-alpha.4**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

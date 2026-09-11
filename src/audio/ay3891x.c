@@ -212,33 +212,47 @@ static uint8_t envelope_volume(uint8_t shape, uint8_t step) {
     return attack ? pos : (15 - pos);
 }
 
-/* Advance the generation state by one output sample and return the mixed,
- * stereo-mono sample value. Operates purely on `st` so it serves both the
- * immediate and timestamped paths. */
-static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate,
-                              uint32_t noise_rate, uint32_t env_rate) {
-    uint8_t mixer = st->sregs[7];
+/* ════════════════════════════════════════════════════════════════════
+ *  Cœur du PSG cadencé au matériel (V2-E5)
+ *
+ *  L'AY-3-8910 divise son horloge d'entrée par 16 pour les générateurs, mais la
+ *  sortie carrée bascule DEUX fois par période : le pas interne naturel est donc
+ *  **clock/8** (125 kHz sur l'ORIC). À ce rythme :
+ *
+ *    ton       : bascule tous les TP pas      → f = clock / (16·TP)
+ *    bruit     : LFSR avancé tous les 2·NP    → f = clock / (16·NP)
+ *    enveloppe : un pas tous les EP           → f = clock / (8·EP),
+ *                soit un cycle de 32 pas en clock/(256·EP), la formule de la
+ *                datasheet.
+ *
+ *  Avant la V2, ces compteurs étaient cadencés par ACCUMULATEURS au taux
+ *  d'échantillonnage (44,1 kHz) : les fréquences moyennes des tons tombaient
+ *  juste, mais l'enveloppe était **deux fois trop lente** (clock/16 par pas) et
+ *  toute transition plus rapide que 44,1 kHz repliait au lieu de se moyenner.
+ *  Ici, la machine tourne à son vrai rythme et la sortie est **intégrée** sur les
+ *  pas couverts par chaque échantillon (filtre boîte) : plus de repliement, et
+ *  les périodes très courtes donnent une amplitude faible au lieu d'un bruit
+ *  parasite — ce que fait aussi le haut-parleur d'un vrai ORIC.
+ * ══════════════════════════════════════════════════════════════════ */
 
+/* Un pas d'horloge interne (clock/8). */
+static void ay_tick(ay_play_t* st) {
     for (int ch = 0; ch < 3; ch++) {
         uint32_t period = st->tone_period[ch];
-        if (period == 0) period = 1;
-        st->tone_counter[ch] += tone_rate;
-        while (st->tone_counter[ch] >= period * AUDIO_SAMPLE_RATE) {
-            st->tone_counter[ch] -= period * AUDIO_SAMPLE_RATE;
+        if (period == 0) period = 1;      /* période 0 se comporte comme 1 */
+        if (++st->tone_counter[ch] >= period) {
+            st->tone_counter[ch] = 0;
             st->tone_output[ch] ^= 1;
         }
     }
 
     {
-        /* The noise LFSR steps at clock/(16*NP) — the tone uses clock/8 because
-         * a square wave toggles twice per period, but the LFSR has no such ÷2,
-         * so it clocks at half the tone rate (datasheet: same /16 prescaler as
-         * the tone; MAME models the missing ÷2 as its "prescale_noise"). */
+        /* Le LFSR n'a pas le ÷2 de la bascule carrée : il avance tous les 2·NP
+         * pas d'horloge interne, soit clock/(16·NP). */
         uint32_t np = st->noise_period ? st->noise_period : 1;
-        st->noise_counter += noise_rate;
-        while (st->noise_counter >= np * AUDIO_SAMPLE_RATE) {
-            st->noise_counter -= np * AUDIO_SAMPLE_RATE;
-            /* 17-bit LFSR */
+        if (++st->noise_counter >= np * 2u) {
+            st->noise_counter = 0;
+            /* LFSR 17 bits, polynôme x^17 + x^14 + 1 */
             uint32_t bit = ((st->noise_shift >> 0) ^ (st->noise_shift >> 3)) & 1;
             st->noise_shift = (st->noise_shift >> 1) | (bit << 16);
             st->noise_output = st->noise_shift & 1;
@@ -246,10 +260,8 @@ static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate,
     }
 
     if (st->env_period && !st->env_holding) {
-        uint32_t ep = (uint32_t)st->env_period;
-        st->env_counter += env_rate;
-        while (st->env_counter >= ep * AUDIO_SAMPLE_RATE) {
-            st->env_counter -= ep * AUDIO_SAMPLE_RATE;
+        if (++st->env_counter >= (uint32_t)st->env_period) {
+            st->env_counter = 0;
             st->env_step++;
             if (st->env_step >= 32) {
                 if (!(st->env_shape & 0x08)) {
@@ -265,7 +277,11 @@ static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate,
         }
     }
     st->env_volume = envelope_volume(st->env_shape, st->env_step);
+}
 
+/* Mixage instantané des trois canaux. */
+static int32_t ay_mix(const ay_play_t* st) {
+    uint8_t mixer = st->sregs[7];
     int32_t output = 0;
     for (int ch = 0; ch < 3; ch++) {
         bool tone_dis = (mixer >> ch) & 1;
@@ -277,7 +293,25 @@ static int16_t ay_step_sample(ay_play_t* st, uint32_t tone_rate,
             output += voltab[vol_idx];
         }
     }
-    return (int16_t)(output / 3);
+    return output / 3;
+}
+
+/* Produit un échantillon de sortie : avance la machine des pas d'horloge
+ * couverts par la durée de l'échantillon, en INTÉGRANT la sortie sur ces pas.
+ * `steps_q16` = pas d'horloge interne par échantillon, en virgule fixe Q16. */
+static int16_t ay_step_sample(ay_play_t* st, uint32_t steps_q16) {
+    st->step_acc += steps_q16;
+    uint32_t nsteps = st->step_acc >> 16;
+    st->step_acc &= 0xFFFFu;
+
+    if (nsteps == 0) return (int16_t)ay_mix(st);   /* sur-échantillonnage */
+
+    int64_t sum = 0;
+    for (uint32_t k = 0; k < nsteps; k++) {
+        ay_tick(st);
+        sum += ay_mix(st);
+    }
+    return (int16_t)(sum / (int64_t)nsteps);
 }
 
 /* Mirror the authoritative state into a transient playback state (immediate
@@ -317,20 +351,17 @@ static void copy_play_runtime_to_main(ay3891x_t* ay) {
 }
 
 void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
-    /* AY-3-8912 clock dividers:
-     * - Tone:     master clock / 8  (clock/16 base × 2 for the square-wave toggle)
-     * - Noise:    master clock / 16 (LFSR clocked at clock/(16*NP), no toggle ÷2)
-     * - Envelope: master clock / 16 */
-    uint32_t tone_rate  = ay->clock_rate / 8;
-    uint32_t noise_rate = ay->clock_rate / 16;
-    uint32_t env_rate   = ay->clock_rate / 16;
+    /* Pas d'horloge interne (clock/8) par échantillon de sortie, en Q16.
+     * Sur l'ORIC : 125 000 / 44 100 ≈ 2,834 pas par échantillon. */
+    uint32_t steps_q16 = (uint32_t)(((uint64_t)(ay->clock_rate / 8) << 16)
+                                    / (uint64_t)AUDIO_SAMPLE_RATE);
     ay_play_t* st = &ay->play;
 
     if (!ay->timed_mode) {
         /* Immediate path: render from current state, byte-exact with history. */
         mirror_main_to_play(ay);
         for (int i = 0; i < num_samples; i++) {
-            int16_t s = ay_step_sample(st, tone_rate, noise_rate, env_rate);
+            int16_t s = ay_step_sample(st, steps_q16);
             buffer[i * 2] = s;
             buffer[i * 2 + 1] = s;
         }
@@ -366,7 +397,7 @@ void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
             apply_sound_play(st, ay->evq[ev].reg);
             ev = (ev + 1) & (AY_EVENT_QUEUE_SIZE - 1);
         }
-        int16_t s = ay_step_sample(st, tone_rate, noise_rate, env_rate);
+        int16_t s = ay_step_sample(st, steps_q16);
         buffer[i * 2] = s;
         buffer[i * 2 + 1] = s;
     }

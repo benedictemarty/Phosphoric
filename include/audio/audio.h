@@ -46,6 +46,10 @@ typedef struct {
     uint8_t  env_step;
     uint8_t  env_volume;
     bool     env_holding;
+    /* V2-E5 : accumulateur fractionnaire (Q16) du nombre de pas d'horloge
+     * interne (clock/8) à exécuter pour produire un échantillon de sortie.
+     * Le PSG est cadencé au matériel, pas au taux d'échantillonnage. */
+    uint32_t step_acc;
 } ay_play_t;
 
 typedef struct ay3891x_s {

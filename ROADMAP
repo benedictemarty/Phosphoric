@@ -86,8 +86,19 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] Corpus : 13 programmes réels → captures PNG identiques ; coût +4 % seulement
       - [ ] US4.1 bordure/blanking rendus (image toujours 240×224) — si besoin réel
       - [ ] Calage horizontal absolu du fetch non calibré (`--ula-fetch-offset`)
-- [ ] **V2-E5 — PSG AY-3-8910 à `horloge/16`** (S8-S9) : 62,5 kHz, LFSR 17 bits réel,
-      enveloppe `horloge/256`, rééchantillonnage filtré vers 44,1 kHz, contrôle spectral
+- [x] **V2-E5 — PSG cadencé au matériel** (S7) — **TERMINÉ**
+      - [x] US5.1 machine à **`clock/8` = 125 kHz** (pas interne réel) : ton
+            `clock/(16·TP)`, LFSR `clock/(16·NP)`, enveloppe `clock/(8·EP)`
+      - [x] **Enveloppe 2× trop lente corrigée** — le doc de conformité la disait
+            conforme : son recalcul supposait 16 états par cycle au lieu de 32
+      - [x] US5.2 sortie **intégrée** sur les pas couverts (filtre boîte) :
+            au-dessus de Nyquist le signal s'atténue au lieu de replier
+            (TP=1 ressortait à 18,4 kHz à pleine amplitude)
+      - [x] US5.3 vérification **spectrale** (`test-audio` 13 → 17), aucun WAV
+            de référence à re-baseliner
+      - [x] US5.4 digidrums (chemin horodaté) conservés
+      - [x] Coût **nul**, mesuré contre le binaire du sprint précédent dans la
+            même session (611 vs 614 µs/trame)
 - [ ] **V2-E6 — Cassette & FDC dérivés du temps réel** (S9-S10) : bande au signal par
       défaut, DRQ/INTRQ dérivés de la rotation (LOST DATA possible), piste MFM optionnelle
 - [ ] **V2-E7 — Perf, savestate, non-régression, CI** (transverse) : `make bench`

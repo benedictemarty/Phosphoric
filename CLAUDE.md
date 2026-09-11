@@ -101,7 +101,12 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
   `--ula-line` renders a whole scanline at once. Never re-render a frame before a
   capture in per-cycle mode — it would erase the scan (see `emu_refresh_for_capture`).
   PPM/BMP/PNG/ASCII export, `renderer.c` for SDL2 scaling (x1-x4)
-- **audio/** — AY-3-8910 PSG: 3 tone + noise + envelope, SDL2 audio callback
+- **audio/** — AY-3-8910 PSG **clocked at hardware rate** (`clock/8` = 125 kHz), output
+  **integrated** over the steps each sample covers (no aliasing above Nyquist): tone
+  `clock/(16·TP)`, noise LFSR `clock/(16·NP)`, envelope `clock/(8·EP)`. Verify audio by
+  **measuring the signal** (frequency, envelope duration), never by diffing WAV bytes —
+  a recalculation once declared the envelope conformant while it was 2x too slow.
+  Register writes are CPU-cycle timestamped (digidrums). SDL2 audio callback.
 - **storage/** — TAP format, Sedoric filesystem, WD1793 disk controller
 - **hostfs/** — Host filesystem sharing (--hostfs DIR), VFS abstraction layer
 - **utils/** — Logging, INI config parser, CPU trace, cycle trace (`--cycle-trace`,

@@ -285,17 +285,36 @@ Le gain le plus visible pour l'utilisateur.
 
 ### V2-E5 — PSG AY-3-8910 à `horloge/16`
 
-- **US5.1 — Cadencement matériel** : compteurs de ton à `1 MHz/16` (62,5 kHz),
-  bruit sur LFSR 17 bits réel, enveloppe à `horloge/256`, toutes les formes
-  d'onde des 16 valeurs de R13.
-- **US5.2 — Rééchantillonnage** propre vers 44,1 kHz (intégration par
-  fenêtre / décimation filtrée) au lieu de l'échantillonnage direct actuel.
-- **US5.3 — Non-régression audio** : les WAV de référence existants sont
-  re-baselinés, et on ajoute une vérification **spectrale** (fréquence
-  fondamentale mesurée à ±0,5 % de la valeur théorique `1e6/(16·période)`)
-  plutôt qu'une comparaison octet à octet fragile.
-- **US5.4 — Digidrums** : le chemin horodaté existant (`ay_write_data_timed`)
-  est branché sur l'horloge maître ; test avec un lecteur de samples du corpus.
+- **US5.1 — Cadencement matériel. ✅ livré (2.0.0-alpha.4)** — la machine tourne à
+  **`clock/8` = 125 kHz**, le pas interne réel du chip (le `/16` de la datasheet
+  porte sur la période, et la sortie carrée bascule deux fois par période). Ton
+  `clock/(16·TP)`, LFSR de bruit 17 bits `clock/(16·NP)`, enveloppe
+  **`clock/(8·EP)`** — soit un cycle de 32 états en `clock/(256·EP)`, la formule
+  de la datasheet. **L'enveloppe était deux fois trop lente**, et le document de
+  conformité la déclarait pourtant conforme : son recalcul supposait un cycle de
+  16 états au lieu de 32. Une erreur d'hypothèse qu'aucune relecture n'aurait
+  attrapée — seule la **mesure du signal** l'a révélée.
+- **US5.2 — Rééchantillonnage. ✅ livré (2.0.0-alpha.4)** — chaque échantillon de
+  sortie **intègre** la sortie sur les pas d'horloge qu'il couvre (filtre boîte,
+  accumulateur Q16 de 2,834 pas par échantillon sur l'ORIC). Conséquence mesurée :
+  un ton à TP=1 (62,5 kHz) ressortait auparavant **replié à 18,4 kHz avec sa pleine
+  amplitude** ; il s'atténue désormais (RMS divisé par ~3), comme le ferait le
+  haut-parleur d'une vraie machine.
+- **US5.3 — Non-régression audio. ✅ livré (2.0.0-alpha.4)** — la vérification est
+  **spectrale**, pas octet à octet : fréquence de ton comparée à `clock/(16·TP)`
+  pour 7 périodes (±0,5 %, mesuré ±0,1 %), durée d'enveloppe comparée à
+  `clock/(8·EP)` pour 4 périodes (±2 %), atténuation au-dessus de Nyquist, LFSR
+  jamais bloqué à zéro et sortie équilibrée. `test-audio` 13 → **17**. Aucun WAV de
+  référence n'a eu besoin d'être re-baseliné : les suites audio existantes
+  (`test-audio-capture`, AVI, cast) passent inchangées.
+- **US5.4 — Digidrums. ✅ conservé** — le chemin horodaté (`ay_write_data_timed`,
+  file d'événements rejouée à la position d'échantillon exacte) est inchangé et
+  bénéficie directement du cadencement matériel.
+
+**Coût : nul.** Mesuré dans la même session contre le binaire du sprint précédent
+(3 passes, avec et sans génération audio) : 611 µs contre 614 µs par trame, soit
+l'équivalent du bruit de mesure. Les écarts apparents entre sprints venaient de la
+variabilité de la machine (±5 %), pas du code.
 
 ### V2-E6 — Cassette & FDC dérivés du temps réel
 
@@ -350,7 +369,7 @@ Le gain le plus visible pour l'utilisateur.
 | **V2-S4** | US2.1 + US2.2 + US2.3 + US2.4 — horloge maître, fin des paquets, ordre intra-cycle testé → **Épic V2-E2 terminé** | 2.0.0-alpha.1 |
 | **V2-S5** | US3.1 à 3.4 — VIA 6522 : sous-dépassement et période N+2 exacts → **Épic V2-E3 terminé** | 2.0.0-alpha.2 |
 | **V2-S6** | US4.1 à 4.4 — ULA : fetch d'une cellule par cycle, splits raster → **Épic V2-E4 terminé** | 2.0.0-alpha.3 |
-| **V2-S7** | US5.1 à 5.4 — PSG à `horloge/16` | 2.0.0-alpha.4 |
+| **V2-S7** | US5.1 à 5.4 — PSG cadencé au matériel (`clock/8`), enveloppe corrigée, anti-repliement → **Épic V2-E5 terminé** | 2.0.0-alpha.4 |
 | **V2-S9** | US5.2/5.3/5.4 + US6.1 | 2.0.0-alpha.5 |
 | **V2-S10** | US6.2/6.3 + US7.2 | 2.0.0-beta.1 |
 | **V2-S11** | US7.1/7.3/7.4 + Épic E8 | 2.0.0 |

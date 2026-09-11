@@ -155,6 +155,16 @@ make SDL2=1
 - **CLI** — `--trace FILE` to enable, `--trace-max N` to limit
 - **Output** — `CYCLES  PC  BYTES  DISASM  A=XX X=XX Y=XX SP=XX P=XX`
 
+### AY-3-8910 PSG — hardware-rate clocking
+- **Clocked at `clock/8` (125 kHz)**, the chip's real internal step, not at the output
+  sample rate: tone `clock/(16·TP)`, noise LFSR `clock/(16·NP)`, envelope `clock/(8·EP)`
+  — the last one used to be **2x too slow**.
+- **Integrated output**: each sample averages the steps it covers, so anything above
+  Nyquist **attenuates instead of aliasing** (a 62.5 kHz tone used to come out at
+  18.4 kHz at full amplitude).
+- Verified by **measuring the signal** (`make test-audio`): tone frequency within 0.1%
+  of the datasheet formula, envelope within 2%, LFSR balanced and never stuck at zero.
+
 ### ULA video — cycle-level fetch
 - **One 6-pixel cell per cycle** — the ULA fetches each cell at the cycle the real
   beam reads it, so a **mid-line CPU write only affects the cells not yet scanned**:
