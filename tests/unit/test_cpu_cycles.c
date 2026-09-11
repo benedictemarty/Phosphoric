@@ -585,6 +585,14 @@ TEST(test_bus_exact_baseline) {
     long bp = pct_bp(g.exact_ok, g.cases);
     printf("    séquence bus exacte : %ld.%02ld %% (socle %d.%02d %%)\n",
            bp / 100, bp % 100, BUS_EXACT_FLOOR_BP / 100, BUS_EXACT_FLOOR_BP % 100);
+    /* Le socle a été mesuré sur les 244 opcodes : sur un ÉCHANTILLON (la CI ne
+     * télécharge qu'une vingtaine d'opcodes, choisis là où l'historique diffère)
+     * le taux n'est pas comparable. On ne juge le socle que sur le jeu complet. */
+    if (g_files < 240) {
+        printf("    (échantillon de %d opcodes : socle non jugé, il vaut pour le jeu complet)\n",
+               g_files);
+        return;
+    }
     ASSERT_TRUE(bp >= BUS_EXACT_FLOOR_BP);
 }
 
