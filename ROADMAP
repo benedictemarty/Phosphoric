@@ -85,7 +85,7 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             partiellement différentes) + cas déterministes dans `make test-clock`
       - [x] Corpus : 13 programmes réels → captures PNG identiques ; coût +4 % seulement
       - [ ] US4.1 bordure/blanking rendus (image toujours 240×224) — si besoin réel
-      - [ ] Calage horizontal absolu du fetch non calibré (`--ula-fetch-offset`)
+      - [x] Calage horizontal : repère = compteur du chip, ordre CPU→ULA corrigé (2.0.2, Mike Brown)
 - [x] **V2-E5 — PSG cadencé au matériel** (S7) — **TERMINÉ**
       - [x] US5.1 machine à **`clock/8` = 125 kHz** (pas interne réel) : ton
             `clock/(16·TP)`, LFSR `clock/(16·NP)`, enveloppe `clock/(8·EP)`
@@ -432,8 +432,8 @@ Audit dans `docs/HARDWARE_CONFORMANCE.md`. 2 écarts corrigés (sûrs, prouvable
       intacts). Tests `test_timer1/2_one_shot_counter_continues`.
 - [x] PB7 sortie timer : exiger DDRB.7 & ACR.7 (4 sites) — `test_pb7_timer_requires_ddrb7`
       + capture CSAVE byte-à-byte identique au binaire HEAD (aucune régression).
-- [ ] T1 free-run : période N+2 (rechargement + `==0`) — DÉVIATION ASSUMÉE :
-      corriger décalerait toutes les baselines byte-exact + risque IRQ 100 Hz.
+- [x] T1 free-run : période N+2 — CORRIGÉ en V2-S5 (2.0.0-alpha.2), la justification
+      de la déviation était infondée (baselines intactes).
 - [ ] Écriture T1L-H efface le flag T1 — DÉVIATION ASSUMÉE : comportement incertain
       (divergence datasheets MOS/Rockwell) → pas de correction sans confirmation.
 - [ ] Reset : préserver compteurs/latches/SR — DÉVIATION ASSUMÉE (négligeable).
