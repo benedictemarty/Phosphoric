@@ -246,22 +246,42 @@ transforme « je crois que c'est juste » en « c'est mesuré ».
 
 Le gain le plus visible pour l'utilisateur.
 
-- **US4.1 — Modèle de balayage complet** : 312 lignes × 64 cycles, zones
-  active / bordure / blanking horizontal et vertical, position raster exposée
-  (`emu_raster_pos()`) au débogueur et aux points d'arrêt raster.
-- **US4.2 — Fetch octet par cycle** : chaque cellule caractère est lue au cycle
-  où le vrai ULA la lit ; les attributs série sont latchés à leur fetch. Une
-  écriture CPU en milieu de ligne n'affecte **que** la partie non encore
-  balayée. Remplace `video_render_scanline()` (conservé comme chemin de repli
-  pour l'export d'images statiques).
-- **US4.3 — Modes** : TEXT 40×28, HIRES 240×200, lignes de texte basses,
-  inversion, clignotement (compteur trame), double hauteur, intégration
-  ULA-NG (`ula_ng_scanline` recadencé sur le nouveau modèle).
-- **US4.4 — Corpus de référence** : images PPM de référence par démo/jeu du
-  corpus existant, plus au moins **une démo à split raster** ajoutée au corpus
-  et validée à l'œil puis figée en référence.
-  *Acceptation* : `make test-video` étendu, aucune régression sur les
-  références actuelles hors changements expliqués et re-baselinés explicitement.
+- **US4.1 — Modèle de balayage. ✅ partiellement livré** — la position du faisceau
+  (ligne PAL 0-311, cycle dans la ligne 0-63) est exposée par `emu_raster_pos()`
+  depuis l'horloge maître, et c'est elle qui pilote le fetch. **Non livré** :
+  le rendu des zones de bordure et de blanking (l'image reste 240×224, les
+  88 lignes de blanking vertical ne sont pas peintes) — à traiter si un besoin
+  réel apparaît (overscan).
+- **US4.2 — Fetch octet par cycle. ✅ livré (2.0.0-alpha.3)** — le rendu est
+  décomposé en `video_line_begin()` / `video_render_cell()` / `video_line_end()` ;
+  l'encre, le papier, les attributs texte et le scroll fin deviennent un **état de
+  ligne** porté par `video_t`, ce qui rend le rendu cellule-par-cellule strictement
+  équivalent au rendu ligne-par-ligne quand la mémoire ne change pas. L'horloge
+  appelle une cellule par cycle en phase φ1. **Par défaut** depuis cette version ;
+  `--ula-line` restaure l'ancien comportement, et `--cpu-legacy` le force (une
+  instruction y est indivisible). *Conséquence corrigée au passage* : la capture
+  d'écran re-rendait toute la trame d'un bloc, ce qui **effaçait** le résultat du
+  balayage — elle prend maintenant le framebuffer tel quel.
+  *Réserve assumée* : le cycle auquel la colonne 0 est fetchée n'est pas calibré
+  contre du matériel réel (`--ula-fetch-offset`, défaut 0) — c'est la même
+  démarche que les constantes non mesurées de l'épic B.
+- **US4.3 — Modes. ✅ livré** — TEXT 40×28, HIRES, pied de texte 200-223,
+  inversion, clignotement, double hauteur, attributs sériels et ULA-NG (start
+  address, scroll fin, attributs parallèles) passent tous par le chemin par
+  cellule. Les modes ULA-NG **plein écran** (chunky 4bpp, texte 80 colonnes) et la
+  composition des sprites restent rendus en bloc en fin de ligne : ce ne sont pas
+  du matériel d'origine, et leur pipeline n'est pas sériel.
+- **US4.4 — Corpus de référence. ✅ livré (2.0.0-alpha.3)** — nouveau
+  `make test-raster-split` : un programme 6502 (32 octets, assemblé à la main dans
+  le test) réécrit l'écran en boucle pendant le balayage ; le test compare les deux
+  rendus et exige des lignes **partiellement** différentes — une différence qui ne
+  couvre qu'une partie de la largeur prouve que l'échantillonnage est intra-ligne.
+  Mesuré : **57 lignes** dans ce cas. Le cas déterministe et exact est dans
+  `make test-clock` (`test_ula_per_cycle_mid_line_split` et sa contre-épreuve
+  `test_line_render_cannot_split`), plus une équivalence stricte sur écran statique
+  (framebuffer byte-identique entre les deux chemins sur une trame entière).
+  **13 programmes du corpus** (6 disquettes, 7 cassettes) donnent des captures PNG
+  identiques entre les deux modes.
 
 ### V2-E5 — PSG AY-3-8910 à `horloge/16`
 
@@ -329,9 +349,8 @@ Le gain le plus visible pour l'utilisateur.
 | **V2-S3** | US1.3 + US1.4 — interruptions au cycle pénultième, drapeau I retardé, détournement NMI/BRK, **bascule du moteur par défaut** → **Épic V2-E1 terminé** | 1.124.0-alpha |
 | **V2-S4** | US2.1 + US2.2 + US2.3 + US2.4 — horloge maître, fin des paquets, ordre intra-cycle testé → **Épic V2-E2 terminé** | 2.0.0-alpha.1 |
 | **V2-S5** | US3.1 à 3.4 — VIA 6522 : sous-dépassement et période N+2 exacts → **Épic V2-E3 terminé** | 2.0.0-alpha.2 |
-| **V2-S6** | US3.2/3.3/3.4 + US4.1 | 2.0.0-alpha.3 |
-| **V2-S7** | US4.2 — fetch octet par cycle | branche |
-| **V2-S8** | US4.3/4.4 + US5.1 | 2.0.0-alpha.4 |
+| **V2-S6** | US4.1 à 4.4 — ULA : fetch d'une cellule par cycle, splits raster → **Épic V2-E4 terminé** | 2.0.0-alpha.3 |
+| **V2-S7** | US5.1 à 5.4 — PSG à `horloge/16` | 2.0.0-alpha.4 |
 | **V2-S9** | US5.2/5.3/5.4 + US6.1 | 2.0.0-alpha.5 |
 | **V2-S10** | US6.2/6.3 + US7.2 | 2.0.0-beta.1 |
 | **V2-S11** | US7.1/7.3/7.4 + Épic E8 | 2.0.0 |

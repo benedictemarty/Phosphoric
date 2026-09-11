@@ -54,6 +54,17 @@ struct ula_ng_s;   /* io/ula_ng.h — sprites §5.7 (couplage évité) */
 
 typedef struct video_s {
     uint8_t framebuffer[VIDEO_MAX_W * VIDEO_MAX_H * 3]; /* RGB888, native_w x native_h used */
+
+    /* ─── État sériel de la ligne en cours (V2-E4) ───
+     * L'encre et le papier de l'ORIC sont « sériels » : un octet d'attribut les
+     * change pour toutes les cellules SUIVANTES de la ligne. Quand la ligne est
+     * rendue cellule par cellule (un fetch par cycle), cet état doit survivre
+     * entre deux cycles — d'où sa présence ici plutôt qu'en variable locale. */
+    uint8_t line_ink;       /* encre courante (réinitialisée à blanc en début de ligne) */
+    uint8_t line_paper;     /* papier courant (réinitialisé à noir) */
+    int     line_sx;        /* scroll fin X latché pour la ligne (ULA-NG) */
+    int     line_sy;        /* scroll fin Y latché pour la ligne (ULA-NG) */
+    int     line_last_col;  /* dernière colonne à fetcher (39, ou 40 si scroll X) */
     int native_w;           /* Active framebuffer width (stride) in pixels */
     int native_h;           /* Active framebuffer height in pixels */
     bool hires_mode;
@@ -114,6 +125,16 @@ void video_reset(video_t* vid);
 void video_set_mode(video_t* vid, bool hires);
 void video_render_frame(video_t* vid, const uint8_t* memory);
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y);
+
+/* ─── Rendu décomposé (V2-E4) ───
+ * Une ligne = `video_line_begin()`, puis une cellule de 6 pixels par fetch, puis
+ * `video_line_end()`. `video_render_scanline()` enchaîne les trois d'un coup (la
+ * ligne entière est alors échantillonnée au même instant) ; l'horloge maître, en
+ * mode ULA au cycle, appelle les trois séparément pour que chaque cellule voie
+ * la mémoire à l'instant exact de son fetch. */
+void video_line_begin(video_t* vid, const uint8_t* memory, int y);
+void video_render_cell(video_t* vid, const uint8_t* memory, int y, int col);
+void video_line_end(video_t* vid, const uint8_t* memory, int y);
 void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b);
 
 /* Couleur de bordure overscan pour la scanline y (0-223), RGB888 (noire en

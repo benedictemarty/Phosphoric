@@ -30,7 +30,7 @@ L'ordre intra-cycle est **figé** :
 
 | Phase | Qui | Quoi |
 |-------|-----|------|
-| **φ1** | ULA | avancement du balayage, émission des scanlines dues, tick raster ULA-NG |
+| **φ1** | ULA | fetch d'**une cellule de 6 pixels** (la colonne balayée à ce cycle), avancement du balayage, tick raster ULA-NG |
 | **φ2** | CPU | l'unique accès bus du cycle (lecture, écriture, ou accès factice du NMOS) |
 | fin de cycle | périphériques φ2 | VIA, FDC, ACIA, DTL, Mageco, cassette — avancés d'exactement **un** cycle par le rappel d'horloge du CPU, juste après l'accès bus |
 
@@ -105,8 +105,8 @@ L'horloge est appelée un million de fois par seconde émulée. Deux précaution
 
 - la division par 64 a été remplacée par une **sortie rapide** sur
   `raster_next_line` : 63 cycles sur 64 ne font que deux additions et un test ;
-- le rendu reste à la granularité de la ligne (l'ULA au fetch par cycle viendra
-  avec l'épic E4, qui devra amortir son coût par un rendu paresseux).
+- le fetch par cycle (épic E4) n'a coûté que **+4 %** : le travail total est le
+  même (40 cellules par ligne), seule sa répartition change.
 
-Mesuré : **521 µs par trame émulée** sur la machine de référence, soit **2,6 %**
+Mesuré : **601 µs par trame émulée** sur la machine de référence, soit **3,0 %**
 du budget de 20 ms — le plafond fixé par le plan est de 5 %.

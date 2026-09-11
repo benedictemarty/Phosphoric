@@ -54,6 +54,7 @@ make test-mcp40          # MCP-40 plotter tests
 make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
 make test-clock          # Master clock (emu_cycle): one call = one machine cycle
+make test-raster-split   # ULA per-cycle fetch proof (mid-line raster split)
 make test-cycle          # Cycle-by-cycle CPU conformance oracle (SingleStepTests/65x02)
 make test-dormann        # Klaus Dormann 6502 functional test
 make fetch-vectors       # Fetch oracle vectors (third-party, not vendored, ~1GB)
@@ -94,7 +95,12 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 - **io/serial_backend.c** — Serial backends: loopback, TCP, PTY, modem Hayes (AT commands, 64KB buffers), COM (termios), Digitelec DTL 2000
 - **io/serial_picowifi.c** — PicoWiFiModemUSB (sodiumlb): WiFi modem emulation with full v0.1.0 AT command set, exposed via LOCI as ACIA at $0380 (`--serial picowifi[:SSID[:PASS]]`)
 - **io/microdisc.c** — Microdisc: WD1793 FDC at $0310-$031F, 4 drives, overlay ROM banking
-- **video/** — ULA: text/HIRES framebuffer, PPM/BMP/ASCII export, `renderer.c` for SDL2 scaling (x1-x4)
+- **video/** — ULA: **one 6-pixel cell fetched per cycle** (`video_line_begin` /
+  `video_render_cell` / `video_line_end`; ink/paper/attributes are a per-line serial
+  state in `video_t`), so a mid-line write only affects cells not yet scanned.
+  `--ula-line` renders a whole scanline at once. Never re-render a frame before a
+  capture in per-cycle mode — it would erase the scan (see `emu_refresh_for_capture`).
+  PPM/BMP/PNG/ASCII export, `renderer.c` for SDL2 scaling (x1-x4)
 - **audio/** — AY-3-8910 PSG: 3 tone + noise + envelope, SDL2 audio callback
 - **storage/** — TAP format, Sedoric filesystem, WD1793 disk controller
 - **hostfs/** — Host filesystem sharing (--hostfs DIR), VFS abstraction layer

@@ -505,6 +505,17 @@ static bool emu_export_image(emulator_t* emu, const char* path) {
                               : video_export_auto(&emu->video, path);
 }
 
+/* Rafraîchit le framebuffer avant une capture.
+ *
+ * Avec l'ULA au cycle (V2-E4), le framebuffer EST déjà le résultat du balayage :
+ * le re-rendre d'un bloc écraserait précisément ce qu'on veut voir (les splits en
+ * milieu de ligne reflètent l'état mémoire au cycle de chaque cellule). On ne
+ * recompose donc que dans le mode de rendu par ligne. */
+static void emu_refresh_for_capture(emulator_t* emu) {
+    if (!emu->ula_per_cycle || !cpu_microseq_enabled(&emu->cpu))
+        video_render_frame(&emu->video, emu->memory.ram);
+}
+
 /* Compose un nom de fichier de capture qui n'écrase pas un fichier existant.
  * Base = "screenshot", extension = ".ppm". Si "screenshot.ppm" est libre, il
  * est utilisé ; sinon on insère un horodatage local "screenshot-YYYYMMDD-HHMMSS"
@@ -1177,7 +1188,7 @@ static void emulator_run(emulator_t* emu) {
                      * earlier frame. When debugging, the user must see the screen
                      * as it is at the breakpoint. */
                     if (emu->has_cast_server) {
-                        video_render_frame(&emu->video, emu->memory.ram);
+                        emu_refresh_for_capture(emu);
                         cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
                                                (unsigned int)emu->video.native_w,
                                                (unsigned int)emu->video.native_h);
@@ -2307,7 +2318,7 @@ static void emulator_run(emulator_t* emu) {
     /* End-of-run screenshot */
     if (emu->screenshot_file) {
         log_info("Taking exit screenshot -> %s", emu->screenshot_file);
-        video_render_frame(&emu->video, emu->memory.ram);
+        emu_refresh_for_capture(emu);
         emu_export_image(emu, emu->screenshot_file);
     }
 
@@ -2325,7 +2336,7 @@ static void emulator_run(emulator_t* emu) {
 
     /* End-of-run ANSI screenshot : image true-color du framebuffer. */
     if (emu->screenshot_ansi_file) {
-        video_render_frame(&emu->video, emu->memory.ram);
+        emu_refresh_for_capture(emu);
         if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_file, 2, 2))
             log_info("Exit ANSI screenshot -> %s", emu->screenshot_ansi_file);
         else
@@ -2453,6 +2464,8 @@ int main(int argc, char* argv[]) {
     const char* trace_file = NULL;
     const char* cycle_trace_file = NULL;
     bool cpu_microseq = true;   /* V2-E1/US1.4 : cœur cycle-par-cycle par défaut */
+    bool ula_per_cycle = true;  /* V2-E4/US4.2 : ULA au fetch par cycle par défaut */
+    int  ula_fetch_offset = 0;
     uint64_t cycle_trace_max = 0;
     const char* screenshot_when_arg = NULL;
     const char* dump_ram_when_arg = NULL;
@@ -2611,6 +2624,9 @@ int main(int argc, char* argv[]) {
             case OPT_TRACE: trace_file = optarg; break;
             case OPT_CPU_MICROSEQ: cpu_microseq = true; break;   /* défaut, conservé pour les scripts */
             case OPT_CPU_LEGACY: cpu_microseq = false; break;
+            case OPT_ULA_CYCLE: ula_per_cycle = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_ULA_LINE: ula_per_cycle = false; break;
+            case OPT_ULA_FETCH_OFFSET: ula_fetch_offset = atoi(optarg); break;
             case OPT_CYCLE_TRACE: cycle_trace_file = optarg; break;
             case OPT_CYCLE_TRACE_MAX: cycle_trace_max = strtoull(optarg, NULL, 10); break;
             case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
@@ -4195,6 +4211,15 @@ int main(int argc, char* argv[]) {
      * migration ; sémantique identique au moteur historique (mêmes fonctions
      * de calcul), seul l'ordonnancement des cycles change. */
     cpu_set_microseq(&emu.cpu, cpu_microseq);
+    /* ULA au cycle (V2-E4) : une cellule fetchée par cycle, à l'instant où le
+     * vrai ULA la lit. Opt-in le temps de la validation. */
+    emu.ula_per_cycle = ula_per_cycle;
+    emu.ula_fetch_offset = ula_fetch_offset;
+    if (!ula_per_cycle)
+        log_info("ULA: rendu par ligne (--ula-line) — pas de split en milieu de ligne");
+    else if (!cpu_microseq)
+        log_warning("ULA: --cpu-legacy impose le rendu par ligne "
+                    "(une instruction y est indivisible)");
     if (!cpu_microseq)
         log_info("CPU: cœur historique (--cpu-legacy) — pas d'accès factices");
 

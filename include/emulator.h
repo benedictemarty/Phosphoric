@@ -46,7 +46,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.0.0-alpha.2"
+#define EMU_VERSION "2.0.0-alpha.3"
 
 /**
  * @brief ORIC machine model
@@ -270,6 +270,19 @@ typedef struct emulator_s {
     int raster_ng_line;   /**< ligne ULA-NG déjà traitée (0 … 311) */
     int raster_next_line; /**< cycle du prochain franchissement de ligne (sortie
                            *   rapide : 63 cycles sur 64 n'ont rien à émettre) */
+
+    /* ─── ULA au cycle (V2-E4) ───
+     * Quand `ula_per_cycle` est vrai, le balayage ne rend plus une ligne d'un
+     * bloc en fin de ligne : il fetche **une cellule de 6 pixels par cycle**, à
+     * l'instant où le vrai ULA la lit. Une écriture du CPU en milieu de ligne
+     * n'affecte alors que les cellules pas encore balayées (splits raster).
+     *
+     * `ula_fetch_offset` est le cycle de la ligne auquel la colonne 0 est lue.
+     * ⚠️ Cette valeur n'est PAS calibrée contre du matériel réel : seule la
+     * structure (une cellule par cycle) l'est. Réglable par --ula-fetch-offset
+     * pour la calibration (même démarche que les constantes de l'épic B). */
+    bool ula_per_cycle;
+    int  ula_fetch_offset;
 
     /* Sprint 35a — IPC control mode for OricForge IDE integration. When set,
      * stdin/stdout speak a line-based protocol (CMD/REP/EVT). Logs are

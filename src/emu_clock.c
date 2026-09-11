@@ -43,6 +43,38 @@
 #include "video/video.h"
 #include "io/ula_ng.h"
 
+/* ─── ULA au cycle (V2-E4) ───
+ * Émet le travail vidéo du cycle courant : début de ligne, fetch d'une cellule,
+ * fin de ligne. C'est la phase φ1 : elle a lieu AVANT l'accès du CPU, donc une
+ * écriture du CPU pendant ce cycle ne sera vue qu'au cycle suivant — et une
+ * écriture en milieu de ligne n'affecte que les cellules pas encore fetchées.
+ *
+ * `dot` est le cycle dans la ligne (0-63). La colonne fetchée est
+ * `dot - ula_fetch_offset` : 40 cellules visibles, le reste de la ligne étant
+ * bordure et blanking. */
+/* Le fetch par cycle exige un cœur capable de s'arrêter entre deux cycles : avec
+ * `--cpu-legacy`, l'instruction est indivisible, donc on retombe sur le rendu par
+ * ligne. Sans cette garde, l'écran resterait noir dans ce mode. */
+static bool ula_cycle_in_use(const emulator_t* emu) {
+    return emu->ula_per_cycle && cpu_microseq_enabled(&emu->cpu);
+}
+
+static void ula_cycle(emulator_t* emu, int line, int dot) {
+    if (line >= 224) return;                    /* blanking vertical */
+    const uint8_t* mem = emu->memory.ram;
+
+    if (dot == 0) video_line_begin(&emu->video, mem, line);
+
+    int col = dot - emu->ula_fetch_offset;
+    if (col >= 0 && col <= 40)
+        video_render_cell(&emu->video, mem, line, col);
+
+    if (dot == PAL_CYCLES_PER_LINE - 1) {
+        video_line_end(&emu->video, mem, line);
+        emu->raster_rendered = line + 1;        /* cette ligne est complète */
+    }
+}
+
 /* Fait avancer le balayage de `cycles` cycles : émet les scanlines visibles dues
  * (zone active 0-223) et les ticks raster ULA-NG (trame complète 0-311). */
 static void clock_advance_raster(emulator_t* emu, int cycles) {
@@ -55,10 +87,10 @@ static void clock_advance_raster(emulator_t* emu, int cycles) {
     if (emu->raster_cycle < emu->raster_next_line) return;
 
     do {
-        /* Rendu scanline : chaque ligne échantillonne la mémoire à l'instant
-         * exact où le faisceau l'émet (l'ULA au fetch octet par cycle est
-         * l'objet de V2-E4 ; ici la granularité reste la ligne). */
-        if (emu->raster_rendered < 224) {
+        /* Rendu scanline : la ligne entière échantillonne la mémoire à l'instant
+         * où le faisceau l'achève. En mode ULA au cycle, le rendu a déjà été
+         * fait cellule par cellule par ula_cycle() — rien à faire ici. */
+        if (!ula_cycle_in_use(emu) && emu->raster_rendered < 224) {
             video_render_scanline(&emu->video, emu->memory.ram, emu->raster_rendered);
             emu->raster_rendered++;
         }
@@ -75,7 +107,12 @@ static void clock_advance_raster(emulator_t* emu, int cycles) {
 
 bool emu_cycle(emulator_t* emu) {
     if (cpu_microseq_enabled(&emu->cpu)) {
-        clock_advance_raster(emu, 1);        /* φ1 : l'ULA d'abord */
+        /* φ1 : l'ULA d'abord. En mode au cycle, elle fetche sa cellule du cycle
+         * courant ; sinon elle ne fait qu'avancer et émettre les lignes dues. */
+        if (ula_cycle_in_use(emu))
+            ula_cycle(emu, emu->raster_cycle / PAL_CYCLES_PER_LINE,
+                      emu->raster_cycle % PAL_CYCLES_PER_LINE);
+        clock_advance_raster(emu, 1);
         return cpu_cycle(&emu->cpu);         /* φ2 : le CPU, puis ses périphériques */
     }
     /* Cœur historique : indivisible. Une instruction, puis le balayage. */
@@ -102,7 +139,9 @@ void emu_clock_frame_begin(emulator_t* emu) {
 
 void emu_clock_frame_end(emulator_t* emu) {
     /* Termine la trame même si le CPU s'est arrêté en plein écran (halt, point
-     * d'arrêt) : l'image affichée doit être complète. */
+     * d'arrêt) : l'image affichée doit être complète. Les lignes restantes sont
+     * alors rendues d'un bloc — elles n'ont pas été balayées, il n'y a pas de
+     * position intermédiaire à respecter. */
     while (emu->raster_rendered < 224) {
         video_render_scanline(&emu->video, emu->memory.ram, emu->raster_rendered);
         emu->raster_rendered++;

@@ -158,6 +158,107 @@ pour les timers, sans effet observable.
 
 EMU_VERSION 2.0.0-alpha.1 → **2.0.0-alpha.2**.
 
+## [2.0.0-alpha.3] - 2026-09-11
+
+### Changed — l'ULA fetche une cellule par cycle : les splits raster deviennent possibles (V2-S6)
+
+Fin de l'**épic V2-E4**, le plus visible de la V2 pour l'utilisateur.
+
+#### Avant
+
+`video_render_scanline()` rendait une ligne entière d'un bloc, en échantillonnant
+la mémoire à l'instant où la ligne s'achève. Conséquence : une écriture du CPU au
+milieu d'une ligne s'appliquait à **toute** la ligne, y compris aux cellules déjà
+balayées. Les splits raster à l'intérieur d'une scanline — que les démos Oric
+exploitent — étaient structurellement impossibles.
+
+#### Maintenant
+
+Le rendu est décomposé en `video_line_begin()` / `video_render_cell()` /
+`video_line_end()`, et l'horloge maître fetche **une cellule de 6 pixels par
+cycle**, en phase φ1, à l'instant où le vrai faisceau la lit. L'encre, le papier,
+les attributs texte et le scroll fin deviennent un **état de ligne** porté par
+`video_t` : c'est ce qui rend le color clash sériel de l'ORIC correct
+cellule par cellule.
+
+Une écriture du CPU en milieu de ligne n'affecte donc plus que les cellules pas
+encore balayées.
+
+**Par défaut** depuis cette version. `--ula-line` restaure l'ancien comportement,
+et `--cpu-legacy` le force (une instruction y est indivisible, il n'y a pas de
+position intra-ligne à respecter).
+
+#### Un effet de bord qui annulait tout
+
+La capture d'écran appelait `video_render_frame()` avant d'exporter : elle
+**re-rendait toute la trame d'un bloc**, effaçant précisément le résultat du
+balayage. Invisible sur un écran statique (d'où la découverte tardive), fatal sur
+un écran en mouvement. Les captures prennent désormais le framebuffer tel qu'il a
+été balayé — ce que l'utilisateur voit réellement.
+
+#### Preuves
+
+- **`make test-raster-split`** (nouveau) : un programme 6502 de 32 octets,
+  assemblé à la main dans le test, réécrit l'écran en boucle pendant le balayage.
+  Le test compare les deux rendus et exige des lignes **partiellement**
+  différentes — une différence qui ne couvre qu'une partie de la largeur prouve
+  que l'échantillonnage est intra-ligne. Mesuré : **57 lignes**.
+- **`make test-clock`** (8 → 12 tests) : le cas déterministe et exact — les
+  20 premières cellules gardent l'ancien contenu, les 20 suivantes le nouveau —
+  avec sa contre-épreuve montrant que le rendu par ligne en est incapable, plus
+  l'effet de `--ula-fetch-offset` et une **équivalence stricte sur écran statique**
+  (framebuffer byte-identique entre les deux chemins sur une trame entière).
+- **13 programmes réels** (6 disquettes Sedoric, 7 cassettes) : captures PNG
+  **identiques** entre les deux modes.
+- `make tests` intégralement vert, goldens PPM inclus.
+
+#### Ce qui n'est pas fait, et qu'il faut dire
+
+- Le **cycle auquel la colonne 0 est fetchée** n'est pas calibré contre du matériel
+  réel : c'est une convention (défaut 0), réglable par `--ula-fetch-offset`. La
+  *structure* est exacte (une cellule par cycle), le calage horizontal absolu ne
+  l'est pas. Même démarche que les constantes non mesurées de l'épic B.
+- La **bordure** et le **blanking** ne sont toujours pas rendus : l'image reste
+  240×224 sur les 312 lignes de la trame.
+- Les modes ULA-NG **plein écran** (chunky 4bpp, texte 80 colonnes) et la
+  composition des sprites restent rendus en bloc : ce n'est pas du matériel
+  d'origine et leur pipeline n'est pas sériel.
+
+#### Découverte : les accès factices atteignent les registres à effet de bord
+
+Ce sprint a exécuté pour la première fois `test-serial-file` avec les outils
+construits (il était **silencieusement sauté** quand `bas2tap` manquait), et il a
+échoué — révélant une conséquence de la fidélité gagnée en V2-E1, pas un défaut :
+
+`POKE 1021,C` écrit dans le registre de données d'un ACIA. La routine POKE de la
+ROM BASIC utilise `STA (zp),Y`, dont le 6502 NMOS fait une **lecture factice de
+l'adresse avant d'écrire** — et lire le registre de données d'un ACIA
+**consomme l'octet reçu**. La trace `--cycle-trace` le montre en deux lignes :
+
+```
+R $03FD $52    <- lecture factice du POKE : l'octet « R » est mangé
+W $03FD $4F    <- l'écriture voulue
+```
+
+D'où un écho « ORIC! » qui ressortait « OI! ». Ce programme perdrait ses octets
+**sur une machine réelle aussi** : avant la V2, Phosphoric n'émettait pas ces
+accès et se montrait plus permissif que le matériel.
+
+Corrigé côté test, pas côté émulateur : le round-trip de `test-serial-file` passe
+par un écho en **assembleur** (57 octets, `STA`/`STY` absolus — aucun cycle
+factice), ce qui est de toute façon la seule façon correcte d'écrire un pilote
+série sur 6502. L'exemple BASIC est conservé, avec un avertissement explicite sur
+le piège. Le test était par ailleurs fragile : il dépendait d'une course entre le
+rejeu du fichier et l'initialisation en BASIC ; la version ML est déterministe.
+
+#### Performance
+
+579 → **601 µs par trame émulée** (+4 %), soit **3,0 %** du budget de 20 ms. Le
+travail total est le même — 40 cellules par ligne — seule sa répartition change.
+Suivi V2 : 491 (E1) → 521 (E2) → 555 (E3) → 601 µs (E4).
+
+EMU_VERSION 2.0.0-alpha.2 → **2.0.0-alpha.3**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

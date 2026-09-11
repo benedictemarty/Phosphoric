@@ -71,9 +71,21 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
       - [x] US3.4 **déviation assumée n° 2 levée** : la raison invoquée (« décalerait
             les baselines byte-exact ») était infondée — corpus et suites intacts
       - [ ] Demi-cycle du time-out one-shot (N+1,5) : hors modèle au cycle entier (N4)
-- [ ] **V2-E4 — ULA vidéo au cycle** (S6-S8) : balayage 312×64 complet (bordure,
-      blanking), **fetch octet par cycle**, attributs latchés au fetch, corpus de
-      référence incluant une démo à split raster
+- [x] **V2-E4 — ULA vidéo au cycle** (S6) — **TERMINÉ**
+      - [x] US4.2 **fetch d'une cellule (6 px) par cycle** : rendu décomposé en
+            `video_line_begin`/`video_render_cell`/`video_line_end`, encre/papier/
+            attributs portés en **état de ligne** ; **par défaut** (`--ula-line` = repli)
+      - [x] Une écriture CPU en milieu de ligne n'affecte que les cellules pas encore
+            balayées → **splits raster** possibles pour la première fois
+      - [x] Corrigé au passage : la capture d'écran re-rendait la trame d'un bloc et
+            **effaçait** le résultat du balayage
+      - [x] US4.3 tous les modes d'origine par le chemin par cellule (TEXT, HIRES,
+            pied de texte, inversion, clignotement, double hauteur, ULA-NG sériel)
+      - [x] US4.4 `make test-raster-split` (programme 6502 réel, 57 lignes
+            partiellement différentes) + cas déterministes dans `make test-clock`
+      - [x] Corpus : 13 programmes réels → captures PNG identiques ; coût +4 % seulement
+      - [ ] US4.1 bordure/blanking rendus (image toujours 240×224) — si besoin réel
+      - [ ] Calage horizontal absolu du fetch non calibré (`--ula-fetch-offset`)
 - [ ] **V2-E5 — PSG AY-3-8910 à `horloge/16`** (S8-S9) : 62,5 kHz, LFSR 17 bits réel,
       enveloppe `horloge/256`, rééchantillonnage filtré vers 44,1 kHz, contrôle spectral
 - [ ] **V2-E6 — Cassette & FDC dérivés du temps réel** (S9-S10) : bande au signal par

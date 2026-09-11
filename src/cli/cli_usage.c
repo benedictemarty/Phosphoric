@@ -114,6 +114,12 @@ void cli_print_usage(const char* program_name) {
     printf("      --trace-max N          Max instructions to trace (keeps the FIRST N)\n");
     printf("      --cpu-microseq         Cycle-stepped 6502 core — now the DEFAULT (kept for\n");
     printf("                             scripts; every cycle emits its own bus access)\n");
+    printf("      --ula-cycle            ULA fetches one cell per cycle — now the DEFAULT\n");
+    printf("                             (kept for scripts)\n");
+    printf("      --ula-line             Render a whole scanline at once (pre-V2 behaviour:\n");
+    printf("                             no mid-line raster split possible)\n");
+    printf("      --ula-fetch-offset N   Cycle within the line at which column 0 is fetched\n");
+    printf("                             (default 0; NOT calibrated against real hardware)\n");
     printf("      --cpu-legacy           Fall back to the historical core (cycle totals exact,\n");
     printf("                             no dummy accesses, IRQ decided at instruction boundary)\n");
     printf("      --cycle-trace FILE     Log ONE LINE PER CYCLE (bus address, data, R/W,\n");

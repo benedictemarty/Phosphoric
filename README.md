@@ -155,6 +155,18 @@ make SDL2=1
 - **CLI** — `--trace FILE` to enable, `--trace-max N` to limit
 - **Output** — `CYCLES  PC  BYTES  DISASM  A=XX X=XX Y=XX SP=XX P=XX`
 
+### ULA video — cycle-level fetch
+- **One 6-pixel cell per cycle** — the ULA fetches each cell at the cycle the real
+  beam reads it, so a **mid-line CPU write only affects the cells not yet scanned**:
+  raster splits inside a scanline are possible for the first time. Ink, paper and
+  text attributes are a per-line serial state, as on the hardware.
+- **`--ula-line`** restores the pre-V2 behaviour (whole scanline sampled at one
+  instant); `--cpu-legacy` forces it, since an instruction is indivisible there.
+- **Not calibrated**: the cycle at which column 0 is fetched is a convention
+  (`--ula-fetch-offset`, default 0) — the structure is exact, the absolute
+  horizontal alignment is not. Proof: `make test-raster-split` (a real 6502
+  program) and `make test-clock`.
+
 ### Master clock
 - **One call, one machine cycle** — `emu_cycle()` (`src/emu_clock.c`) advances the whole
   machine with a fixed intra-cycle order: φ1 ULA → φ2 CPU → φ2 peripherals. Peripherals
@@ -303,6 +315,8 @@ Trace:
   --trace FILE              Log CPU instruction trace to FILE
   --trace-max N             Max instructions to trace (default: unlimited)
   --cpu-legacy              Fall back to the historical core (no dummy accesses)
+  --ula-line                Render a whole scanline at once (no mid-line split)
+  --ula-fetch-offset N      Cycle at which column 0 is fetched (default 0)
   --cycle-trace FILE        Log ONE LINE PER CYCLE (bus addr, data, R/W, registers)
   --cycle-trace-max N       Max lines for --cycle-trace (0 = unlimited)
   --psg-trace FILE          Log AY sound-register writes (reg 0-13) with CPU cycle
@@ -537,6 +551,7 @@ make test-mcp40          # MCP-40 plotter tests
 make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
 make test-clock          # Master clock: one call = one machine cycle, intra-cycle order
+make test-raster-split   # Proof the ULA fetches per cycle (real 6502 program)
 make test-cycle          # Cycle-by-cycle CPU conformance oracle (65x02 vectors)
 make test-dormann        # Klaus Dormann 6502 functional test
 make fetch-vectors       # Download the oracle vectors (third-party, not vendored)

@@ -275,32 +275,31 @@ static bool blink_phase_on(video_t* vid) {
 /* Rangées de statut 200-223 : toujours TEXT depuis $BB80 (rows 25-27). Factorisé
  * pour être réutilisé par le mode chunky NG (§5.8), dont seules les lignes
  * 0-199 sont chunky. */
-static void render_bottom_text_scanline(video_t* vid, const uint8_t* memory, int y) {
+/* Une cellule du pied de texte (lignes 200-223, toujours TEXT depuis $BB80).
+ * L'encre et le papier viennent de l'état sériel de la ligne (vid->line_*). */
+static void render_bottom_text_cell(video_t* vid, const uint8_t* memory, int y, int col) {
     int row = 25 + (y - 200) / 8;
     int chline = (y - 200) & 7;
-    uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
+    uint8_t byte = memory[0xBB80 + row * 40 + col];
 
-    for (int col = 0; col < 40; col++) {
-        uint8_t byte = memory[0xBB80 + row * 40 + col];
-        if ((byte & 0x60) == 0) {
-            bool inverse = false;
-            decode_attr(vid, byte, &ink, &paper, &inverse);
-            render_attr_block(vid, col * 6, y, paper, 1, (byte & 0x80) != 0);
-        } else {
-            bool char_inv = (byte & 0x80) != 0;
-            if (blink_phase_on(vid)) char_inv = !char_inv;
-            uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
-            uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
-            uint8_t ir, ig, ib, pr, pg, pb;
-            get_rgb(vid, fg, &ir, &ig, &ib);
-            get_rgb(vid, bg, &pr, &pg, &pb);
-            int erow = effective_chline(vid, chline, row);
-            uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
-            for (int bx = 5; bx >= 0; bx--) {
-                bool on = (bits & (1 << bx)) != 0;
-                if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
-                else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
-            }
+    if ((byte & 0x60) == 0) {
+        bool inverse = false;
+        decode_attr(vid, byte, &vid->line_ink, &vid->line_paper, &inverse);
+        render_attr_block(vid, col * 6, y, vid->line_paper, 1, (byte & 0x80) != 0);
+    } else {
+        bool char_inv = (byte & 0x80) != 0;
+        if (blink_phase_on(vid)) char_inv = !char_inv;
+        uint8_t fg = char_inv ? (uint8_t)(vid->line_ink ^ 0x07) : vid->line_ink;
+        uint8_t bg = char_inv ? (uint8_t)(vid->line_paper ^ 0x07) : vid->line_paper;
+        uint8_t ir, ig, ib, pr, pg, pb;
+        get_rgb(vid, fg, &ir, &ig, &ib);
+        get_rgb(vid, bg, &pr, &pg, &pb);
+        int erow = effective_chline(vid, chline, row);
+        uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
+        for (int bx = 5; bx >= 0; bx--) {
+            bool on = (bits & (1 << bx)) != 0;
+            if (on) set_pixel(vid, col * 6 + (5 - bx), y, ir, ig, ib);
+            else    set_pixel(vid, col * 6 + (5 - bx), y, pr, pg, pb);
         }
     }
 }
@@ -370,9 +369,63 @@ static void render_ng_text80_scanline(video_t* vid, const uint8_t* memory, int y
     }
 }
 
-void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
-    if (!memory) return;
-    if (y < 0 || y >= 224) return;
+/* Une cellule de la zone principale (lignes 0-199 : TEXT ou HIRES selon
+ * vid_mode, qui peut changer en plein milieu de ligne par un attribut sériel).
+ * L'encre, le papier et le mode viennent de l'état de ligne : c'est ce qui rend
+ * le rendu cellule-par-cellule équivalent au rendu ligne-par-ligne. */
+static void render_main_cell(video_t* vid, const uint8_t* memory, int y, int col) {
+    int src_y = y + vid->line_sy;     /* scroll fin Y : décale la ligne source */
+    int row = src_y / 8;
+    int chline = src_y & 7;
+    int sx = vid->line_sx;
+
+    bool hires = (vid->vid_mode & 0x04) != 0;
+    /* ULA-NG start-address (§5.3) : remplace la base du fetch ($A000 HIRES /
+     * $BB80 TEXT) quand actif (double buffer / scroll vertical grossier). */
+    uint16_t scr_base = hires ? 0xA000 : 0xBB80;
+    if (vid->ng_active && *vid->ng_active && vid->ng_scrstart && *vid->ng_scrstart)
+        scr_base = *vid->ng_scrstart;
+    uint16_t base = hires ? (uint16_t)(scr_base + src_y * 40)
+                          : (uint16_t)(scr_base + row * 40);
+    uint8_t byte = memory[base + col];
+    int px = col * 6 - sx;            /* scroll fin X (set_pixel clippe) */
+
+    /* ULA-NG attributs parallèles (§5.6) : encre+papier par cellule depuis le
+     * plan NG, indépendamment du flux pixel (pas de color clash sériel). */
+    bool ng_attr_on = vid->ng_attr_active && *vid->ng_attr_active && vid->ng_attr;
+    if (ng_attr_on) {
+        uint8_t a = vid->ng_attr[(y * 40 + col) & (ORIC_NG_ATTR_MASK)];
+        vid->line_ink = a & 0x07;
+        vid->line_paper = (uint8_t)((a >> 3) & 0x07);
+    }
+
+    if (!ng_attr_on && (byte & 0x60) == 0) {
+        bool inverse = false;
+        decode_attr(vid, byte, &vid->line_ink, &vid->line_paper, &inverse);
+        render_attr_block(vid, px, y, vid->line_paper, 1, (byte & 0x80) != 0);
+    } else if (hires) {
+        render_hires_block(vid, px, y, byte, vid->line_ink, vid->line_paper);
+    } else {
+        bool char_inv = (byte & 0x80) != 0;
+        if (blink_phase_on(vid)) char_inv = !char_inv;
+        /* L'inverse complémente encre et papier (XOR 7), il ne les échange pas. */
+        uint8_t fg = char_inv ? (uint8_t)(vid->line_ink ^ 0x07) : vid->line_ink;
+        uint8_t bg = char_inv ? (uint8_t)(vid->line_paper ^ 0x07) : vid->line_paper;
+        uint8_t ir, ig, ib, pr, pg, pb;
+        get_rgb(vid, fg, &ir, &ig, &ib);
+        get_rgb(vid, bg, &pr, &pg, &pb);
+        int erow = effective_chline(vid, chline, row);
+        uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
+        for (int bx = 5; bx >= 0; bx--) {
+            bool on = (bits & (1 << bx)) != 0;
+            if (on) set_pixel(vid, px + (5 - bx), y, ir, ig, ib);
+            else    set_pixel(vid, px + (5 - bx), y, pr, pg, pb);
+        }
+    }
+}
+
+void video_line_begin(video_t* vid, const uint8_t* memory, int y) {
+    if (!memory || y < 0 || y >= 224) return;
 
     if (y == 0) {
         vid->frame_counter++;
@@ -395,100 +448,49 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     /* Palette relue au début de chaque scanline (LUT ULA-NG §5.1 si active). */
     palette_latch(vid, memory);
 
-    /* ULA resets attributes at start of every scanline. */
+    /* L'ULA réinitialise encre, papier et attributs texte à chaque début de
+     * ligne : c'est ce qui rend le color clash « sériel » propre à l'ORIC. */
     vid->text_attr = 0;
+    vid->line_ink = ORIC_WHITE;
+    vid->line_paper = ORIC_BLACK;
 
-    /* ext-HIRES lines 200-223 fall through to the standard bottom text
-     * rows ($BB80): serial attributes still decode there, which is the
-     * in-band escape hatch out of the bitmap-only extended mode. */
+    /* ULA-NG scroll fin (§5.5) : latché pour toute la ligne. */
+    vid->line_sx = 0;
+    vid->line_sy = 0;
+    if (vid->ng_active && *vid->ng_active) {
+        if (vid->ng_scrollx) vid->line_sx = *vid->ng_scrollx;
+        if (vid->ng_scrolly) vid->line_sy = *vid->ng_scrolly;
+    }
+    /* Une cellule de plus à fetcher quand le scroll X découvre le bord droit. */
+    vid->line_last_col = vid->line_sx > 0 ? 40 : 39;
+}
+
+void video_render_cell(video_t* vid, const uint8_t* memory, int y, int col) {
+    if (!memory || y < 0 || y >= 224) return;
+    if (vid->ng_text80 || vid->ng_chunky) return;   /* rendus en bloc en fin de ligne */
+    if (y < 200) {
+        if (col < 0 || col > vid->line_last_col) return;
+        render_main_cell(vid, memory, y, col);
+    } else {
+        if (col < 0 || col >= 40) return;
+        render_bottom_text_cell(vid, memory, y, col);
+    }
+}
+
+void video_line_end(video_t* vid, const uint8_t* memory, int y) {
+    if (!memory || y < 0 || y >= 224) return;
 
     /* ULA-NG modes étendus (§5.8) : chunky 4bpp (320) / texte 80 col (480).
-     * Modes bitmap/texte plein écran (0-223) — pas de pied de texte 40 col
-     * (évite le trou noir 240-319 de la bande de statut hérité du HIRES).
-     * Sprites composés en fin de rendu comme les autres modes. */
+     * Plein écran (0-223), pas de pied de texte 40 col. Ces modes ne sont pas du
+     * matériel d'origine : ils restent rendus en bloc, pas cellule par cycle. */
     if (vid->ng_text80) {
         render_ng_text80_scanline(vid, memory, y);
-        if (vid->ng_dev)
-            ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
-                                      vid->native_w, vid->native_h, y);
-        if (y == 223) vid->need_refresh = false;
-        return;
+    } else if (vid->ng_chunky) {
+        render_ng_chunky_scanline(vid, memory, y);
+    } else if (y == 199) {
+        vid->hires_mode = (vid->vid_mode & 0x04) != 0;
     }
-    if (vid->ng_chunky) {
-        render_ng_chunky_scanline(vid, memory, y);   /* plein écran 0-223 */
-        if (vid->ng_dev)
-            ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
-                                      vid->native_w, vid->native_h, y);
-        if (y == 223) vid->need_refresh = false;
-        return;
-    }
-
-    if (y < 200) {
-        uint8_t ink = ORIC_WHITE, paper = ORIC_BLACK;
-        /* ULA-NG scroll fin (§5.5) : décalage pixel X (0-5) / Y (0-7) à la
-         * composition, quand actif. Inactif → 0 (compat, rendu identique). */
-        int sx = 0, sy = 0;
-        if (vid->ng_active && *vid->ng_active) {
-            if (vid->ng_scrollx) sx = *vid->ng_scrollx;
-            if (vid->ng_scrolly) sy = *vid->ng_scrolly;
-        }
-        int src_y = y + sy;              /* fine Y : décale la ligne source (contenu vers le haut) */
-        int row = src_y / 8;
-        int chline = src_y & 7;
-        int last_col = sx > 0 ? 40 : 39; /* cellule en plus pour combler le bord droit */
-
-        for (int col = 0; col <= last_col; col++) {
-            bool hires = (vid->vid_mode & 0x04) != 0;
-            /* ULA-NG start-address (§5.3) : remplace la base du fetch ($A000
-             * HIRES / $BB80 TEXT) par NG_SCRSTART quand actif (double buffer /
-             * scroll vertical grossier). 0 ou inactif = base par défaut (compat). */
-            uint16_t scr_base = hires ? 0xA000 : 0xBB80;
-            if (vid->ng_active && *vid->ng_active && vid->ng_scrstart && *vid->ng_scrstart)
-                scr_base = *vid->ng_scrstart;
-            uint16_t base = hires ? (uint16_t)(scr_base + src_y * 40)
-                                  : (uint16_t)(scr_base + row * 40);
-            uint8_t byte = memory[base + col];
-            int px = col * 6 - sx;       /* fine X : décale l'affichage (set_pixel clippe) */
-
-            /* ULA-NG attributs parallèles (§5.6) : encre+papier par cellule
-             * depuis le plan NG, indépendamment du flux pixel (pas de color
-             * clash sériel). Actif → tous les octets sont du contenu. */
-            bool ng_attr_on = vid->ng_attr_active && *vid->ng_attr_active && vid->ng_attr;
-            if (ng_attr_on) {
-                uint8_t a = vid->ng_attr[(y * 40 + col) & (ORIC_NG_ATTR_MASK)];
-                ink = a & 0x07; paper = (uint8_t)((a >> 3) & 0x07);
-            }
-
-            if (!ng_attr_on && (byte & 0x60) == 0) {
-                bool inverse = false;
-                decode_attr(vid, byte, &ink, &paper, &inverse);
-                render_attr_block(vid, px, y, paper, 1, (byte & 0x80) != 0);
-            } else if (hires) {
-                render_hires_block(vid, px, y, byte, ink, paper);
-            } else {
-                bool char_inv = (byte & 0x80) != 0;
-                if (blink_phase_on(vid)) char_inv = !char_inv;
-                /* Inverse complements ink/paper (XOR 7), it does not swap. */
-                uint8_t fg = char_inv ? (uint8_t)(ink ^ 0x07) : ink;
-                uint8_t bg = char_inv ? (uint8_t)(paper ^ 0x07) : paper;
-                uint8_t ir, ig, ib, pr, pg, pb;
-                get_rgb(vid, fg, &ir, &ig, &ib);
-                get_rgb(vid, bg, &pr, &pg, &pb);
-                int erow = effective_chline(vid, chline, row);
-                uint8_t bits = get_charset_byte(vid, memory, byte & 0x7F, erow);
-                for (int bx = 5; bx >= 0; bx--) {
-                    bool on = (bits & (1 << bx)) != 0;
-                    if (on) set_pixel(vid, px + (5 - bx), y, ir, ig, ib);
-                    else    set_pixel(vid, px + (5 - bx), y, pr, pg, pb);
-                }
-            }
-        }
-
-        if (y == 199) vid->hires_mode = (vid->vid_mode & 0x04) != 0;
-    } else {
-        render_bottom_text_scanline(vid, memory, y);   /* rangées 200-223 ($BB80) */
-        if (y == 223) vid->need_refresh = false;
-    }
+    if (y == 223) vid->need_refresh = false;
 
     /* ULA-NG sprites (§5.7) : composition sur le fond de cette scanline (après
      * le fond, avant présentation) — no-op si inactif. Le module ula_ng possède
@@ -496,6 +498,20 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (vid->ng_dev)
         ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
                                   vid->native_w, vid->native_h, y);
+}
+
+void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
+    if (!memory) return;
+    if (y < 0 || y >= 224) return;
+
+    /* Chemin « par ligne » : la ligne entière est échantillonnée au même
+     * instant. Conservé pour l'export d'images statiques, le cœur historique et
+     * comme référence d'équivalence du chemin par cycle (V2-E4). */
+    video_line_begin(vid, memory, y);
+    int last = (y < 200) ? vid->line_last_col : 39;
+    for (int col = 0; col <= last; col++)
+        video_render_cell(vid, memory, y, col);
+    video_line_end(vid, memory, y);
 }
 
 void video_render_frame(video_t* vid, const uint8_t* memory) {

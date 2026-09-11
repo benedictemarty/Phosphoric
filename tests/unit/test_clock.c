@@ -175,6 +175,117 @@ TEST(test_ula_reads_before_cpu_writes) {
     ASSERT_TRUE(ink1 < ink0);
 }
 
+/* ── ULA au cycle : le split raster (V2-E4 / US4.2) ──
+ * Une écriture du CPU au milieu d'une ligne ne doit affecter QUE les cellules
+ * pas encore fetchées. C'est l'effet que le rendu ligne-par-ligne rendait
+ * impossible : il échantillonnait toute la ligne au même instant. */
+TEST(test_ula_per_cycle_mid_line_split) {
+    uint8_t code[] = { 0xEA };
+    setup(code, sizeof(code), true);
+    g_emu.ula_per_cycle = true;
+    g_emu.ula_fetch_offset = 0;
+
+    memset(&g_emu.memory.ram[0xBB80], 'A', 40 * 28);
+    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);   /* charset plein… */
+    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);  /* …sauf l'espace */
+
+    /* Les 20 premières cellules de la ligne 0 sont fetchées. */
+    for (int i = 0; i < 20; i++) emu_cycle(&g_emu);
+    /* Le « CPU » efface toute la ligne 0 à cet instant. */
+    memset(&g_emu.memory.ram[0xBB80], ' ', 40);
+    /* Le reste de la ligne est balayé. */
+    for (int i = 20; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
+
+    ASSERT_EQ(g_emu.raster_rendered, 1);
+    /* Moitié gauche : l'encre du 'A' fetché avant l'écriture. */
+    int left = 0, right = 0;
+    for (int x = 0; x < 20 * 6; x++) {
+        const uint8_t* p = &g_emu.video.framebuffer[x * 3];
+        if (p[0] || p[1] || p[2]) left++;
+    }
+    for (int x = 20 * 6; x < 40 * 6; x++) {
+        const uint8_t* p = &g_emu.video.framebuffer[x * 3];
+        if (p[0] || p[1] || p[2]) right++;
+    }
+    ASSERT_EQ(left, 20 * 6);    /* fetché avant l'écriture : plein */
+    ASSERT_EQ(right, 0);        /* fetché après : vide */
+}
+
+/* Sans le mode au cycle, la même séquence donne une ligne uniformément vide :
+ * la ligne entière est échantillonnée à la fin, donc après l'écriture. C'est la
+ * contre-épreuve — et l'écart que l'épic E4 comble. */
+TEST(test_line_render_cannot_split) {
+    uint8_t code[] = { 0xEA };
+    setup(code, sizeof(code), true);
+    g_emu.ula_per_cycle = false;
+
+    memset(&g_emu.memory.ram[0xBB80], 'A', 40 * 28);
+    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);
+    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);
+
+    for (int i = 0; i < 20; i++) emu_cycle(&g_emu);
+    memset(&g_emu.memory.ram[0xBB80], ' ', 40);
+    for (int i = 20; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
+
+    ASSERT_EQ(g_emu.raster_rendered, 1);
+    int ink = line_ink(&g_emu.video, 0);
+    ASSERT_EQ(ink, 0);          /* toute la ligne voit l'écriture */
+}
+
+/* L'offset de fetch décale la colonne lue à un cycle donné : avec un offset de
+ * 10, la colonne 0 est fetchée au cycle 10, donc la coupure se déplace d'autant. */
+TEST(test_ula_fetch_offset_moves_the_split) {
+    uint8_t code[] = { 0xEA };
+    setup(code, sizeof(code), true);
+    g_emu.ula_per_cycle = true;
+    g_emu.ula_fetch_offset = 10;
+
+    memset(&g_emu.memory.ram[0xBB80], 'A', 40 * 28);
+    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);
+    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);
+
+    for (int i = 0; i < 20; i++) emu_cycle(&g_emu);   /* colonnes 0..9 fetchées */
+    memset(&g_emu.memory.ram[0xBB80], ' ', 40);
+    for (int i = 20; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
+
+    int left = 0;
+    for (int x = 0; x < 10 * 6; x++) {
+        const uint8_t* p = &g_emu.video.framebuffer[x * 3];
+        if (p[0] || p[1] || p[2]) left++;
+    }
+    int right = 0;
+    for (int x = 10 * 6; x < 40 * 6; x++) {
+        const uint8_t* p = &g_emu.video.framebuffer[x * 3];
+        if (p[0] || p[1] || p[2]) right++;
+    }
+    ASSERT_EQ(left, 10 * 6);
+    ASSERT_EQ(right, 0);
+}
+
+/* Écran statique : les deux chemins doivent donner EXACTEMENT la même image.
+ * C'est la garantie de non-régression du mode au cycle. */
+TEST(test_static_screen_identical_both_paths) {
+    uint8_t code[] = { 0xEA };
+    static uint8_t fb_line[VIDEO_MAX_W * VIDEO_MAX_H * 3];
+
+    setup(code, sizeof(code), true);
+    g_emu.ula_per_cycle = false;
+    for (int i = 0; i < 0xBB80; i++) g_emu.memory.ram[i] = 0;
+    for (int i = 0; i < 40 * 28; i++) g_emu.memory.ram[0xBB80 + i] = (uint8_t)(' ' + (i % 60));
+    memset(&g_emu.memory.ram[0xB400], 0x5A, 128 * 8);
+    for (int i = 0; i < CYCLES_PER_FRAME; i++) emu_cycle(&g_emu);
+    memcpy(fb_line, g_emu.video.framebuffer, sizeof(fb_line));
+
+    setup(code, sizeof(code), true);
+    g_emu.ula_per_cycle = true;
+    for (int i = 0; i < 0xBB80; i++) g_emu.memory.ram[i] = 0;
+    for (int i = 0; i < 40 * 28; i++) g_emu.memory.ram[0xBB80 + i] = (uint8_t)(' ' + (i % 60));
+    memset(&g_emu.memory.ram[0xB400], 0x5A, 128 * 8);
+    for (int i = 0; i < CYCLES_PER_FRAME; i++) emu_cycle(&g_emu);
+
+    ASSERT_EQ(memcmp(fb_line, g_emu.video.framebuffer, sizeof(fb_line)), 0);
+}
+
 /* Le cœur historique ne sait pas s'arrêter entre deux cycles : emu_cycle() y
  * exécute une instruction entière, et le balayage rattrape d'autant. */
 TEST(test_legacy_core_advances_by_instruction) {
@@ -205,6 +316,10 @@ int main(void) {
     RUN(test_frame_is_312_lines_of_64_cycles);
     RUN(test_frame_begin_and_end);
     RUN(test_ula_reads_before_cpu_writes);
+    RUN(test_ula_per_cycle_mid_line_split);
+    RUN(test_line_render_cannot_split);
+    RUN(test_ula_fetch_offset_moves_the_split);
+    RUN(test_static_screen_identical_both_paths);
     RUN(test_legacy_core_advances_by_instruction);
     RUN(test_emu_step_returns_instruction_cycles);
     printf("\n═══════════════════════════════════════════════════════════\n");

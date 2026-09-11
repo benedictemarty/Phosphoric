@@ -22,7 +22,7 @@ vérifiable, classe chaque composant, et sert de référence d'acceptation au pl
 |-----------|-------------|------------------------|
 | **CPU 6502** (`src/cpu/`) | **N3 atteint** (défaut depuis v1.124.0) | Plus rien d'identifié. Séquence bus exacte **100,00 %** sur 2 440 000 cas de l'oracle 65x02 ; tous les accès factices du NMOS ; interruptions échantillonnées au **cycle pénultième** (donc drapeau I retardé de `CLI`/`SEI`/`PLP`) ; détournement NMI pendant `BRK`. Divergence assumée : les 12 opcodes **JAM** arrêtent le CPU au lieu de bloquer le bus. Le moteur historique (N2) reste disponible par `--cpu-legacy`. |
 | **VIA 6522** (`src/io/via6522.c`) | **N3 pour les timers** (2.0.0-alpha.2) | Cadencé au cycle (`via_update()` reçoit toujours **1**, vérifié par `test-clock`) et **sous-dépassement exact** : `$0000 → $FFFF` puis cycle de rechargement, donc période **N+2** conforme (l'ancien modèle donnait N — 20 % d'erreur de fréquence à N=10). Vérifiés par vecteurs : période continue, time-out one-shot, compteur qui continue après time-out, signal carré PB7, relecture du compteur, impulsion CA2 d'un cycle, et 50 interruptions en 50 trames. Reste hors modèle : le **demi-cycle** du time-out one-shot (N+1,5 → posé à N+1 ; il faudrait le niveau N4). Conformité registre/fonction auditée (`docs/HARDWARE_CONFORMANCE.md` §2). |
-| **ULA vidéo** (`src/video/video.c`) | **N1 (ligne)** | Rendu par **scanline de 64 cycles**, la ligne entière échantillonnée à un instant unique → une écriture en milieu de ligne s'applique à toute la ligne. Pas de modèle de *fetch* octet par cycle, pas de bordure/blanking temporisés, 224 lignes rendues sur 312. |
+| **ULA vidéo** (`src/video/video.c`) | **fetch au cycle** (2.0.0-alpha.3) ; position horizontale non calibrée | Une **cellule de 6 pixels fetchée par cycle**, à l'instant où le faisceau la lit : une écriture du CPU en milieu de ligne n'affecte plus que les cellules pas encore balayées (**splits raster**). Encre, papier et attributs texte sont un état de ligne persistant entre les cellules. Ce qui reste : le **cycle exact où la colonne 0 est fetchée** n'est pas calibré contre du matériel réel (défaut 0, réglable par `--ula-fetch-offset`) — seule la *structure* est exacte, pas le calage horizontal absolu ; bordure et blanking ne sont toujours pas rendus (224 lignes visibles sur 312) ; les modes étendus ULA-NG plein écran restent rendus par ligne. Repli : `--ula-line`. |
 | **PSG AY-3-8910** (`src/audio/ay3891x.c`) | **N1 (échantillon)** | Machine d'état cadencée à **44,1 kHz** (accumulateurs de débit) au lieu de `horloge/16` = 62,5 kHz ; LFSR de bruit et enveloppe cadencés au taux d'échantillonnage. Acquis : écritures registres **horodatées en cycles CPU** (file d'événements) → digidrums corrects. |
 | **FDC WD1793** (`src/storage/disk.c`) | **N1** (cadencé au cycle, modèle interne forfaitaire) | Délais DRQ/INTRQ **forfaitaires** (ex. 60 cycles) au lieu d'être dérivés de la position rotationnelle ; modèle image plate, donc LOST DATA / CRC structurellement impossibles (`docs/HARDWARE_CONFORMANCE.md` §1). Le label « cycle-accurate » utilisé dans les CR LOCI est **abusif** — il désigne le fait d'être cadencé en cycles, pas d'être exact au cycle. |
 | **Cassette** | **N2 en mode signal** | `--tape-signal` échantillonne PB7 au tick bus ; le chemin par défaut reste le **patch ROM** (fast-load), hors modèle temporel. |
@@ -102,12 +102,35 @@ Citadelle, OricChess, L'Aigle d'Or, HHGG + 7 cassettes dont Manic Miner,
 Atlantis, Acheron) identiques à l'écran, test Dormann réussi au **même nombre de
 cycles** (96 241 367).
 
-**Conséquence observable de la fidélité retrouvée** : une interruption ne peut
+**Conséquences observables de la fidélité retrouvée** : une interruption ne peut
 plus être prise *avant* l'instruction en cours (le matériel n'en est pas
 capable) ; une ligne qui s'active pendant le **dernier** cycle d'une instruction
 est vue trop tard et n'est honorée qu'après l'instruction suivante ; `SEI` ne
 protège pas l'instruction qui le suit d'une IRQ déjà pendante, et `CLI`/`PLP`
 retardent symétriquement son arrivée d'une instruction.
+
+### Les accès factices atteignent les registres à effet de bord
+
+C'est la conséquence la plus surprenante, et elle est **voulue** : un cycle
+factice est un vrai cycle de bus, et une puce ne sait pas qu'il est factice.
+
+Cas rencontré en 2.0.0-alpha.3 : `POKE 1021,C` en BASIC écrit dans le registre de
+données d'un ACIA. La routine POKE de la ROM utilise `STA (zp),Y`, dont le 6502
+NMOS fait une **lecture factice de l'adresse avant d'écrire** — et lire le
+registre de données d'un ACIA **consomme l'octet reçu**. Un programme d'écho
+écrit en BASIC perd donc des octets, sur l'émulateur **comme sur une machine
+réelle**. La trace le montre en deux lignes :
+
+```
+R $03FD $52    <- lecture factice du POKE : l'octet « R » est mangé
+W $03FD $4F    <- l'écriture voulue
+```
+
+Un pilote série s'écrit donc en assembleur, avec des `STA`/`STY` **absolus**, qui
+n'ont pas de cycle factice. Les mêmes précautions valent pour tout registre à
+lecture destructive (ACIA 6551/6850, registres FIFO). Avant la V2, Phosphoric
+n'émettait pas ces accès et laissait passer ces programmes : il était plus
+permissif que le matériel.
 
 La trace `--cycle-trace FICHIER` (une ligne par cycle : type d'accès, adresse,
 donnée, registres, lignes d'interruption) sert à diffuser un écart ligne à ligne
