@@ -3082,7 +3082,7 @@ active) depuis le sprint 45 ; ce sprint rend aussi le *reporting* réel.
 - [x] CI windows-build : artifact oric1-emu.exe (PE32+) + SDL2.dll +
       libwinpthread + roms + LISEZMOI ; verte au 2ᵉ run
 - [ ] v2 (backlog) : Winsock pour tcp/modem/picowifi/gdb, async-pause
-      via thread, test smoke wine en CI, release automatique sur tag
+      via thread, test smoke wine en CI, release automatique sur tag — **LIVRÉ** (`release.yml`, 2026-09-11)
 
 ### Sprint 88b: README resynchronisé (v1.48.3-alpha) - DONE
 

@@ -719,6 +719,15 @@ EMU_VERSION 2.0.0 → **2.0.1**.
 
 ## [Unreleased]
 
+### Added — release automatique sur tag (`.github/workflows/release.yml`)
+
+Un tag `vX.Y.Z` poussé sur GitHub construit, sur le commit tagué, le tarball
+Linux x86_64 (SDL2, strippé, docs) et le zip Windows x86_64 (MinGW, mêmes
+étapes que `windows-build.yml`), crée la release GitHub si elle n'existe pas
+(notes = la section du CHANGELOG correspondante) et y attache les deux
+archives. Testé par `workflow_dispatch` sur `v2.0.1` : release créée avec ses
+deux fichiers. Backlog v2 de la distribution Windows (sprint 89) clos.
+
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)
 
 Fin de l'**épic V2-E1** : le CPU de Phosphoric est désormais **exact au cycle**, et
