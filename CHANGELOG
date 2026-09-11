@@ -478,6 +478,54 @@ annonçait le portage Atmos comme « non couvert » : il est en réalité
 6 disquettes du corpus byte-identiques.
 EMU_VERSION 2.0.0-alpha.5 → **2.0.0-alpha.6**.
 
+## [2.0.0-alpha.7] - 2026-09-11
+
+### Fixed — parité de trame cassette : impaire, pas paire
+
+Le défaut relevé au sprint précédent est résolu, et il allait plus loin que
+l'émulateur.
+
+#### Le symptôme
+
+Un `CLOAD""` en mode `--tape-signal` chargeait **correctement** le programme sur
+Atmos — vérifié en mémoire — puis affichait **« Errors found »**. Sur ORIC-1, pas
+de message.
+
+#### La cause
+
+`cassette_encode_frame()` calculait `parité = (nombre de 1) & 1`, ce qui rend la
+somme totale **paire**. Le format cassette de l'ORIC est en parité **impaire**.
+La ROM 1.0 ne vérifie pas ce bit ; la ROM 1.1 le vérifie, et signale l'erreur
+après avoir chargé les données correctes.
+
+Ce qui rend ce défaut intéressant : **le code, son commentaire et son test
+unitaire étaient cohérents dans la même erreur**. Le commentaire annonçait
+« odd parity over the 8 data bits », le test s'appelait
+`test_encode_frame_odd_parity`… et vérifiait `parité = ones & 1`, c'est-à-dire
+exactement l'inverse. Aucune relecture ne pouvait le révéler : il a fallu que la
+vraie ROM 1.1 tranche.
+
+#### La portée réelle
+
+L'encodeur est **partagé avec `tap2wav`**, l'outil qui produit des WAV destinés à
+être rejoués sur de **vraies machines**. Ces fichiers partaient donc avec une
+parité fausse.
+
+#### Le test qui manquait
+
+`test_tape_roundtrip` capture bien un `CSAVE` au niveau signal, mais recharge
+ensuite en **fast-load** : le chemin « CLOAD au signal » n'était couvert par aucun
+test — c'est pour cela que le défaut a survécu.
+
+Nouveau **`make test-tape-signal`** : charge un `.tap` au signal sur **les deux
+ROM**, et vérifie deux choses, le programme réellement présent en mémoire *et*
+l'absence d'erreur signalée. Plus un test unitaire exhaustif sur les 256 valeurs
+d'octet (`test-cassette` 8 → 9), et le test existant corrigé — avec le commentaire
+qui explique pourquoi il affirmait le contraire de ce qu'il vérifiait.
+
+`make clean && make tests` : toutes suites vertes.
+EMU_VERSION 2.0.0-alpha.6 → **2.0.0-alpha.7**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

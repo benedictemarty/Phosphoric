@@ -337,12 +337,16 @@ variabilité de la machine (±5 %), pas du code.
   (le temps réel d'une vraie cassette, ce qui est précisément le but… et le
   problème). Décision : le fast-load reste le chemin par défaut, le mode signal
   reste explicite.
-  *Défaut identifié au passage, à traiter* : un `CLOAD""` au signal **charge
-  correctement** le programme sur ORIC-1 **comme sur Atmos** (présence vérifiée
-  en mémoire après chargement), mais l'Atmos affiche **« Errors found »** en fin
-  d'opération — la détection de fin de bloc diverge alors que le décodage est bon.
-  Le document de sprint 90 annonçait le portage Atmos comme « non couvert v1 » :
-  il est en réalité **partiellement** fonctionnel.
+  *Défaut identifié au passage, **résolu** (2.0.0-alpha.7)* : le « Errors found »
+  affiché par l'Atmos après un `CLOAD` au signal venait d'une **parité de trame
+  paire au lieu d'impaire** dans `cassette_encode_frame()`. La ROM 1.0 ne vérifie
+  pas la parité, la ROM 1.1 si — d'où un chargement correct suivi d'un message
+  d'erreur. Le code, son commentaire (« odd parity ») **et** le test unitaire
+  (nommé `test_encode_frame_odd_parity`) étaient cohérents dans la **même
+  erreur** : seul le matériel pouvait trancher. `tap2wav`, qui partage cet
+  encodeur, envoyait donc une parité fausse vers de **vraies machines**. Nouveau
+  `make test-tape-signal` : le chemin CLOAD-au-signal n'était couvert par aucun
+  test (`test_tape_roundtrip` recharge en fast-load).
 - **US6.2 — Délais dérivés de la rotation. ✅ livré pour l'essentiel
   (2.0.0-alpha.6)** — la latence rotationnelle réelle était déjà le **défaut**
   (`--fdc-timing real`), et le débit inter-octets était déjà exact (32 cycles =

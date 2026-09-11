@@ -68,11 +68,18 @@ TEST(test_encode_frame_data_lsb_first) {
 }
 
 TEST(test_encode_frame_odd_parity) {
-    /* Parity bit (position 9) = (number of data ones) & 1. */
-    ASSERT_EQ((cassette_encode_frame(0x16) >> 9) & 1u, 1u); /* 0x16 has 3 ones -> 1 */
-    ASSERT_EQ((cassette_encode_frame(0x00) >> 9) & 1u, 0u); /* 0 ones -> 0 */
-    ASSERT_EQ((cassette_encode_frame(0xFF) >> 9) & 1u, 0u); /* 8 ones -> 0 */
-    ASSERT_EQ((cassette_encode_frame(0x01) >> 9) & 1u, 1u); /* 1 one  -> 1 */
+    /* Le bit de parité (position 9) complète les données pour que le nombre
+     * TOTAL de 1 soit impair.
+     *
+     * Ce test vérifiait auparavant `parité = (nombre de 1) & 1`, c'est-à-dire la
+     * parité PAIRE — sous un nom qui affirmait le contraire. Le code, son
+     * commentaire et ce test étaient cohérents dans la même erreur : rien ne
+     * pouvait la révéler, sauf la vraie ROM 1.1, qui vérifie la parité et
+     * affichait « Errors found » après un chargement pourtant correct. */
+    ASSERT_EQ((cassette_encode_frame(0x16) >> 9) & 1u, 0u); /* 3 ones (impair) -> 0 */
+    ASSERT_EQ((cassette_encode_frame(0x00) >> 9) & 1u, 1u); /* 0 one  (pair)   -> 1 */
+    ASSERT_EQ((cassette_encode_frame(0xFF) >> 9) & 1u, 1u); /* 8 ones (pair)   -> 1 */
+    ASSERT_EQ((cassette_encode_frame(0x01) >> 9) & 1u, 0u); /* 1 one  (impair) -> 0 */
 }
 
 /* ── Init / motor / rewind ──────────────────────────────────────────── */
@@ -176,6 +183,28 @@ TEST(test_roundtrip_pulse_widths_distinguish_bits) {
     ASSERT_EQ(out[CAS_LEADER_SYNCS + 3], 0xFFu);
 }
 
+/* La trame cassette de l'ORIC porte une parité IMPAIRE sur les 8 bits de
+ * données : le bit est choisi pour que le nombre total de 1 (données + parité)
+ * soit impair. L'encodeur posait l'inverse, ce que la ROM 1.1 détectait
+ * (« Errors found » après un chargement pourtant correct) et que `tap2wav`
+ * propageait jusqu'à de vraies machines. */
+TEST(test_cassette_frame_parity_is_odd) {
+    for (int b = 0; b < 256; b++) {
+        uint16_t frame = cassette_encode_frame((uint8_t)b);
+
+        /* Structure : bit0 = start (0), bits 1..8 = données LSB d'abord,
+         * bit9 = parité, bits 10..13 = stop (1). */
+        ASSERT_EQ(frame & 1u, 0u);
+        ASSERT_EQ((frame >> 10) & 0x0Fu, 0x0Fu);
+        ASSERT_EQ((frame >> 1) & 0xFFu, (unsigned)b);
+
+        int ones = 0;
+        for (int i = 0; i < 8; i++) ones += (b >> i) & 1;
+        int parity = (frame >> 9) & 1;
+        ASSERT_EQ((ones + parity) & 1, 1);      /* total impair */
+    }
+}
+
 int main(void) {
     printf("\n=== Signal-level Cassette Tests (Sprint 90) ===\n\n");
 
@@ -187,6 +216,7 @@ int main(void) {
     RUN(test_roundtrip_leader_is_sync_bytes);
     RUN(test_roundtrip_payload_matches);
     RUN(test_roundtrip_pulse_widths_distinguish_bits);
+    RUN(test_cassette_frame_parity_is_odd);
 
     printf("\n  Results: %d passed, %d failed\n\n", tests_passed, tests_failed);
     return tests_failed > 0 ? 1 : 0;
