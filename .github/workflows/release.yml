@@ -1,0 +1,125 @@
+# Release automatique sur tag (backlog distribution v2, livré en 2.0.2).
+#
+# Un tag `vX.Y.Z` poussé sur GitHub produit, sur le commit tagué :
+#   - phosphoric-<ver>-linux-x86_64.tar.gz  (build SDL2 strippé + docs)
+#   - phosphoric-<ver>-windows-x86_64.zip   (cross-build MinGW, mêmes étapes
+#                                            que windows-build.yml)
+# et les attache à la release GitHub du tag (créée si absente, notes = la
+# section correspondante du CHANGELOG). `--clobber` : relancer remplace.
+# Test sans tag : workflow_dispatch avec le nom d'un tag existant.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag existant à (re)publier, ex. v2.0.1'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev pkg-config
+      - name: Build and strip
+        run: make -j4 && make release
+      - name: Package
+        run: |
+          ver=$(sed -n 's/.*EMU_VERSION "\(.*\)".*/\1/p' include/emulator.h)
+          d=phosphoric-$ver-linux-x86_64
+          mkdir -p dist/$d
+          cp oric1-emu-release dist/$d/oric1-emu
+          cp README.md CHANGELOG LICENSE dist/$d/ 2>/dev/null || true
+          cp -r docs dist/$d/
+          tar -C dist -czf dist/$d.tar.gz $d
+          echo "ASSET=dist/$d.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: ${{ env.ASSET }}
+
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - name: Install MinGW-w64
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64 zip
+      - name: Fetch SDL2 MinGW development package
+        run: |
+          SDL2_VER=2.30.9
+          curl -sL -o /tmp/sdl2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VER}/SDL2-devel-${SDL2_VER}-mingw.tar.gz"
+          sudo mkdir -p /opt/sdl2-mingw
+          sudo tar xzf /tmp/sdl2.tar.gz -C /opt/sdl2-mingw --strip-components=1
+      - name: Build (WIN=1 SDL2=1)
+        run: make WIN=1 SDL2=1 -j4
+      - name: Package
+        run: |
+          ver=$(sed -n 's/.*EMU_VERSION "\(.*\)".*/\1/p' include/emulator.h)
+          d=phosphoric-$ver-windows-x86_64
+          mkdir -p dist/$d
+          cp oric1-emu.exe dist/$d/
+          cp /opt/sdl2-mingw/x86_64-w64-mingw32/bin/SDL2.dll dist/$d/
+          cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll dist/$d/ 2>/dev/null || \
+            cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libwinpthread-1.dll dist/$d/ 2>/dev/null || true
+          cp README.md CHANGELOG LICENSE dist/$d/ 2>/dev/null || true
+          cp docs/loci.md dist/$d/ 2>/dev/null || true
+          cat > dist/$d/LISEZMOI-WINDOWS.txt <<'TXT'
+          Phosphoric — émulateur ORIC-1/Atmos pour Windows 11 (x86_64)
+
+          Lancer :  oric1-emu.exe -r roms\basic11b.rom
+          Disque :  oric1-emu.exe -r roms\basic11b.rom --disk-rom roms\microdis.rom -d MONJEU.DSK
+          LOCI  :   oric1-emu.exe -r roms\basic11b.rom --loci    (F8 = menu, F8 long = diag ROM)
+
+          Les ROM ne sont pas fournies : placer basic10.rom / basic11b.rom / microdis.rom dans roms\.
+
+          Limites du build Windows v1 (utilisez la version Linux/WSL2 pour) :
+          - transports série tcp/pty/modem/com/picowifi (loopback et file: disponibles)
+          - --gdb (stub GDB), --control async-pause, Chromecast, MIDI hôte
+          TXT
+          (cd dist && zip -qr $d.zip $d)
+          echo "ASSET=dist/$d.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: ${{ env.ASSET }}
+
+  publish:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+      - name: Release notes from CHANGELOG
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          ver="${tag#v}"
+          # La section "## [ver] - date" du CHANGELOG, jusqu'à la suivante.
+          awk -v v="$ver" '
+            /^## \[/ { if (on) exit; on = index($0, "## [" v "]") == 1 }
+            on { print }' CHANGELOG > notes.md
+          [ -s notes.md ] || echo "Phosphoric $ver" > notes.md
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Phosphoric ${TAG#v}" -F notes.md
+          fi
+          gh release upload "$TAG" --clobber assets/*/*
