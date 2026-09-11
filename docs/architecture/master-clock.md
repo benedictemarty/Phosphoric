@@ -52,6 +52,18 @@ périphériques φ2 sont avancés **un cycle à la fois**. C'est vérifié par
 `test_peripherals_get_one_cycle_at_a_time`, qui échouerait si un paquet
 réapparaissait.
 
+### Jamais d'appel à vide
+
+Le contrat a une réciproque : **chaque appel à `emu_cycle()` coûte exactement un
+cycle au CPU**. Une micro-op qui rendrait la main sans accès bus ferait avancer
+l'ULA d'un cycle que ni le CPU ni le VIA n'auraient vécu — le compteur du CPU
+resterait juste, l'oracle 65x02 ne verrait rien, et pourtant l'image dériverait.
+C'est arrivé (2.0.0-alpha.8) : la décision « branchement non pris » était prise
+un cycle trop tard, à vide, soit ~410 cycles d'avance du balayage par trame sur
+la ROM BASIC. Depuis, `test_branch_not_taken_costs_no_phantom_cycle` et
+`test_raster_and_cpu_stay_in_step_over_a_frame` (compteur CPU **=** position
+raster sur une trame entière) le verrouillent.
+
 ### Sous-cycle (φ2 subdivisé)
 
 La phase φ2 est elle-même subdivisée en **30 sous-ticks** pour le bus
@@ -89,6 +101,18 @@ emu_clock_frame_end(emu);     /* termine les lignes restantes */
 
 `emu_clock_frame_end()` existe pour le cas où le CPU s'arrête en plein écran
 (halt, point d'arrêt) : l'image affichée doit rester complète.
+
+La boucle principale ne compte pas ses propres cycles : elle lit `raster_cycle`.
+C'est ce qui permet la **reprise d'un savestate en pleine trame** (V2-E7) : la
+section `CLK` du `.ost` restaure `raster_cycle` / `raster_rendered` /
+`raster_ng_line` et arme `clock_resume_pending` ; `emu_clock_resume()` — appelé
+par `emu_clock_frame_begin()` ou par la boucle si le chargement a eu lieu en
+cours de trame — recale `raster_next_line`, reconstruit depuis la RAM les lignes
+déjà balayées (le framebuffer n'est pas sauvé) et, en mode ULA au cycle, rejoue
+les cellules déjà fetchées de la ligne en cours pour retrouver l'état série de
+ligne. Un état sauvé après une fin de trame (`-c`, `--save-state`) repart
+simplement à zéro. Vérifié par `make test-savestate-determinism` : mêmes arrêts
+raster, même VIA, même RAM qu'un run ininterrompu.
 
 ## Cœur historique
 

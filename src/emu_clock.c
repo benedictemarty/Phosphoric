@@ -129,7 +129,48 @@ int emu_step(emulator_t* emu) {
     return (int)(emu->cpu.cycles - before);
 }
 
+void emu_clock_resume(emulator_t* emu) {
+    if (!emu->clock_resume_pending) return;
+    emu->clock_resume_pending = false;
+
+    /* État sauvé après une fin de trame (sortie sur `-c`, `--save-state`) : la
+     * trame était terminée, la suivante commence à zéro. */
+    if (emu->raster_cycle >= CYCLES_PER_FRAME || emu->raster_cycle < 0) {
+        emu->raster_cycle = 0;
+        emu->raster_rendered = 0;
+        emu->raster_ng_line = 0;
+        emu->raster_next_line = PAL_CYCLES_PER_LINE;
+        emu->frame_cycles = 0;
+        return;
+    }
+
+    int line = emu->raster_cycle / PAL_CYCLES_PER_LINE;
+    int dot  = emu->raster_cycle % PAL_CYCLES_PER_LINE;
+    emu->raster_next_line = (line + 1) * PAL_CYCLES_PER_LINE;
+    emu->frame_cycles = emu->raster_cycle;
+
+    /* Lignes déjà balayées avant la sauvegarde : rendues d'un bloc depuis la RAM
+     * restaurée (même approximation que la fin de trame après un halt). */
+    int done = line < 224 ? line : 224;
+    for (int y = 0; y < done; y++)
+        video_render_scanline(&emu->video, emu->memory.ram, y);
+    emu->raster_rendered = done;
+
+    /* Ligne en cours en mode ULA au cycle : rejoue les cellules déjà fetchées
+     * pour reconstituer l'état série de ligne (encre, papier, attributs). */
+    if (ula_cycle_in_use(emu) && line < 224) {
+        video_line_begin(&emu->video, emu->memory.ram, line);
+        int col_end = dot - emu->ula_fetch_offset;
+        for (int col = 0; col < col_end && col <= 40; col++)
+            video_render_cell(&emu->video, emu->memory.ram, line, col);
+    }
+}
+
 void emu_clock_frame_begin(emulator_t* emu) {
+    if (emu->clock_resume_pending) {
+        emu_clock_resume(emu);
+        return;
+    }
     emu->raster_cycle = 0;
     emu->raster_rendered = 0;
     emu->raster_ng_line = 0;

@@ -140,19 +140,28 @@ porteront leur accès réel quand V2-E1 aura livré le cœur micro-séquencé.
 
 ## Formulation autorisée
 
-Tant que V2 n'a pas livré son harnais de preuve :
+État à la fin de V2-S9 (2.0.0-alpha.8) :
 
 - ✅ **« cœur CPU exact au cycle » / « cycle-stepped CPU core »** — acquis depuis
   la v1.124.0-alpha : 100 % de séquence bus exacte sur 2 440 000 cas de l'oracle,
-  interruptions au cycle pénultième. La portée doit rester **le CPU** : le reste
-  de la machine n'y est pas encore.
-- ✅ « précis au cycle bus » / « bus-cycle accurate » pour la **machine entière**,
-  **accompagné** de la définition N2 (le VIA reçoit encore des paquets, l'ULA
-  rend par ligne, le PSG tourne au taux d'échantillonnage).
+  interruptions au cycle pénultième.
+- ✅ **« machine cadencée au cycle » / « cycle-stepped machine »** — acquis depuis
+  la 2.0.0-alpha.8 : l'horloge maître fait avancer **tous** les composants d'un
+  cycle par cycle, **jamais à vide** (le cycle fantôme du branchement non pris,
+  qui faisait dériver l'ULA de ~410 cycles par trame, est corrigé et verrouillé
+  par `test-clock`), et un savestate est un point de reprise exact
+  (`test-savestate-determinism`). VIA timers, fetch ULA et PSG sont exacts **à
+  leur niveau documenté dans le tableau ci-dessus**.
+- ✅ « précis au cycle bus » / « bus-cycle accurate » pour la **machine entière**.
 - ✅ « compteurs de cycles exacts par opcode (256/256) ».
-- ❌ « cycle-accurate » **seul**, « cycle exact », « cycle-par-cycle », « émulation au cycle près ».
+- ❌ « cycle-accurate » **seul** ou « exacte au cycle » pour la **machine entière** :
+  le FDC reste N1+ (délais DRQ/INTRQ forfaitaires), le calage horizontal de
+  l'ULA n'est pas calibré contre du matériel, le demi-cycle du one-shot du VIA
+  n'est pas modélisé.
 - ❌ « WD1793 cycle-accurate » → dire « WD1793 cadencé en cycles, modèle image plate ».
 
-La bascule de vocabulaire est conditionnée à un critère unique et mesurable :
-**la suite `make test-cycle` passe** (oracle 65x02 cycle par cycle + Dormann +
-vecteurs VIA + images ULA de référence). Voir [le plan V2](specs/V2_CYCLE_ACCURACY.md).
+Chaque formulation est adossée à un test qui la ferait tomber : `make test-cycle`
+(oracle 65x02 + Dormann), `make test-clock` (un appel = un cycle, jamais à vide),
+`make test-io` (vecteurs VIA), `make test-raster-split` (fetch ULA au cycle),
+`make test-savestate-determinism`, `make test-corpus` (empreintes d'écran du
+corpus local). Voir [le plan V2](specs/V2_CYCLE_ACCURACY.md).

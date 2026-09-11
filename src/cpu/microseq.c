@@ -611,6 +611,17 @@ bool cpu_cycle(cpu6502_t* cpu) {
         cpu->ms_adl = cpu->ms_ptr;
         cpu->ms_addr = cpu->ms_ptr;              /* utile en page zéro */
         cpu->ms_base = cpu->ms_addr;
+        /* Branchement non pris : l'instruction fait 2 cycles et CELUI-CI est le
+         * dernier — la décision se prend ici, pas au cycle suivant. Décider un
+         * cycle plus tard coûtait un appel à cpu_cycle() sans accès bus : le
+         * compteur CPU restait juste (l'oracle ne voyait rien) mais l'horloge
+         * maître avait avancé d'un cycle de plus — l'ULA prenait ~410 cycles
+         * d'avance par trame sur le CPU et le VIA (V2-E7, US7.3). */
+        if (ms_table[op].cls == C_BRANCH && !ms_branch_taken(cpu, op)) {
+            cpu->ms_active = false;
+            ms_sample_interrupts(cpu, true);
+            return true;
+        }
         break;
     case M_FETCH_HI:
         cpu->ms_addr = (uint16_t)((cpu_fetch_byte(cpu) << 8) | cpu->ms_adl);
@@ -678,12 +689,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         (void)cpu_mem_read(cpu, cpu->PC);        /* lecture morte, PC inchangé */
         ms_implied(cpu, op);
         break;
-    case M_BRANCH_TAKEN:
-        if (!ms_branch_taken(cpu, op)) {
-            cpu->ms_active = false;              /* branche non prise : 2 cycles */
-            ms_sample_interrupts(cpu, true);
-            return true;
-        }
+    case M_BRANCH_TAKEN:                         /* la condition est vraie (cf. M_FETCH_LO) */
         (void)cpu_mem_read(cpu, cpu->PC);        /* lecture morte de l'opcode suivant */
         {
             uint16_t target = (uint16_t)(cpu->PC + (int8_t)cpu->ms_ptr);

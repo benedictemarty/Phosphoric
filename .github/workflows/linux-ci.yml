@@ -1,0 +1,78 @@
+# V2-E7 (US7.4) — intégration continue Linux : la suite complète, les deux
+# builds (SDL2=0/1), l'oracle CPU (Dormann + un échantillon 65x02), le budget
+# de performance et Valgrind sur les suites cœur.
+#
+# Les ROMs ne sont pas versionnées (*.rom ignoré) : les tests qui en dépendent
+# se mettent en SKIP d'eux-mêmes ; la CI valide donc le cœur (CPU, horloge
+# maître, VIA, ULA, PSG, savestate, FDC sur images synthétiques), pas le boot
+# BASIC. Le budget de performance est jugé en BENCH_STRICT sur le runner, avec
+# un plafond relevé : un runner partagé n'est pas la machine de référence.
+name: linux-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'Makefile'
+      - '.github/workflows/linux-ci.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2, Valgrind, Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev pkg-config valgrind python3
+
+      - name: Toolchain info
+        run: |
+          cc --version | head -1
+          make --version | head -1
+          pkg-config --modversion sdl2
+
+      # Vecteurs d'oracle : Dormann en entier (~150 Ko) et un échantillon 65x02
+      # d'opcodes où le cœur historique diffère du micro-séquencé (accès
+      # factices d'indexation, écriture-retour RMW, pile, BRK/RTI, branchements)
+      # — assez pour que `make test-cycle` tranche, sans le Go complet.
+      - name: Fetch oracle vectors (Dormann + 65x02 sample)
+        run: |
+          tools/fetch_vectors.sh dormann
+          tools/fetch_vectors.sh 65x02 a9 7d 9d fe b1 91 20 60 00 40 48 68 d0 f0 4c 6c 95 e6 3e 1e
+
+      - name: Build headless (SDL2=0)
+        run: make clean && make SDL2=0 -j4
+
+      - name: Build with SDL2 (default)
+        run: make clean && make -j4
+
+      # Suite complète (le mélange d'objets SDL2=0/1 casse test-control-dispatch :
+      # on repart toujours d'un `make clean` avant `make tests`).
+      - name: Run test suite
+        run: make tests
+
+      - name: CPU oracle (cycle-by-cycle) and Dormann
+        run: |
+          make test-cycle CYCLE_MAX_CASES=0
+          make test-dormann
+
+      # Budget de performance : verdict forcé (BENCH_STRICT), plafond relevé à
+      # 2000 µs (10 % de la trame) pour un runner partagé — le chiffre de
+      # référence (≤ 1000 µs) se lit sur la machine de référence.
+      - name: Performance budget
+        run: BENCH_STRICT=1 BENCH_BUDGET_US=2000 make test-bench
+
+      - name: Valgrind (core suites)
+        run: |
+          make test-cpu test-memory test-io test-clock test-savestate test-audio
+          for t in test_cpu test_memory test_io test_clock test_savestate test_audio; do
+            valgrind --leak-check=full --error-exitcode=1 --quiet ./$t >/dev/null
+          done

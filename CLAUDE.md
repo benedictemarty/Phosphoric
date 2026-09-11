@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Phosphoric** — Bus-cycle-accurate ORIC-1/Atmos emulator written in C11 (exact per-opcode cycle counts and bus accesses clocked at the right cycle; internal non-bus cycles are reconciled by end-of-instruction padding, not micro-cycle stepped; IRQs sampled at instruction boundaries). Emulates the complete ORIC 8-bit computer (1983): MOS 6502 CPU, 64KB memory with ROM/RAM banking, VIA 6522, AY-3-8910 PSG audio, ULA video (text 40x28 + HIRES 240x200), Microdisc WD1793 FDC, and cassette TAP format. Supports both ORIC-1 (BASIC 1.0) and Atmos (BASIC 1.1) with ROM auto-detection. Optional SDL2 for display/audio/input.
+**Phosphoric** — Bus-cycle-accurate ORIC-1/Atmos emulator written in C11 (cycle-stepped 6502 core: one bus access per cycle, NMOS dummy accesses included, IRQ/NMI sampled at the penultimate cycle; the historical padded core remains as `--cpu-legacy`). Emulates the complete ORIC 8-bit computer (1983): MOS 6502 CPU, 64KB memory with ROM/RAM banking, VIA 6522, AY-3-8910 PSG audio, ULA video (text 40x28 + HIRES 240x200), Microdisc WD1793 FDC, and cassette TAP format. Supports both ORIC-1 (BASIC 1.0) and Atmos (BASIC 1.1) with ROM auto-detection. Optional SDL2 for display/audio/input.
 
 **Accuracy level: the CPU core is N3 (cycle-stepped, verified 100% against the 65x02
-oracle); the rest of the machine is N2 or N1.** `docs/ACCURACY.md`
+oracle); the whole machine is cycle-stepped since 2.0.0-alpha.8 (VIA timers, ULA fetch
+and PSG at their documented level; FDC still N1+).** `docs/ACCURACY.md`
 holds the N1→N4 scale, the per-component classification, and the only wording that
 may be used publicly; `docs/specs/V2_CYCLE_ACCURACY.md` is the V2 plan that takes
 CPU/VIA/ULA/PSG to N3. The accuracy claim must always carry its `bus-` qualifier —
@@ -55,6 +56,10 @@ make test-renderer       # Display scaling tests
 make test-trace          # CPU trace logging tests
 make test-clock          # Master clock (emu_cycle): one call = one machine cycle
 make test-raster-split   # ULA per-cycle fetch proof (mid-line raster split)
+make test-savestate-determinism  # a mid-frame savestate resumes EXACTLY (raster stops, VIA, RAM)
+make test-bench          # blocking perf budget (≤ 1000 µs/frame; motivated SKIP on a throttled host)
+make test-corpus         # local media replayed at fixed cycles vs tests/corpus/manifest.sha256
+                         # (re-baseline on purpose: tools/corpus_replay.sh snapshot)
 make test-cycle          # Cycle-by-cycle CPU conformance oracle (SingleStepTests/65x02)
 make test-dormann        # Klaus Dormann 6502 functional test
 make fetch-vectors       # Fetch oracle vectors (third-party, not vendored, ~1GB)
@@ -122,7 +127,11 @@ per-INSTRUCTION work (debugger, trace, profiler, tape patches) and calls
 fixed intra-cycle order: **φ1 ULA** (raster advance, due scanlines, ULA-NG tick)
 → **φ2 CPU** (its single bus access) → **end of cycle** peripherals (VIA, FDC,
 ACIA, DTL, Mageco, cassette, one cycle at a time — never a batch). Never compute
-a raster position in the loop again: ask `emu_raster_pos()`. Contract in
+a raster position in the loop again: ask `emu_raster_pos()`. **Every `emu_cycle()`
+call must cost the CPU exactly one bus cycle** — a micro-op returning without a bus
+access desyncs the ULA from CPU/VIA while the oracle stays green (`test-clock` guards
+it). The loop follows `emu->raster_cycle`; a savestate restores it (section `CLK`)
+and `emu_clock_resume()` picks the frame up mid-way. Contract in
 `docs/architecture/master-clock.md`.
 
 ### I/O routing

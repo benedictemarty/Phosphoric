@@ -366,23 +366,43 @@ variabilité de la machine (±5 %), pas du code.
 
 ### V2-E7 — Perf, savestate, non-régression (transverse)
 
-- **US7.1 — Budget de performance** : `make bench` devient bloquant. Suivi :
-  491 µs/trame (E1) → 521 µs (E2, horloge maître) → **555 µs (E3, timers au
-  cycle)**, soit **2,8 %** du budget de 20 ms. La marge reste large, mais E4 (ULA
-  au fetch par cycle) sera bien plus coûteux : si le budget se tend, la piste est
-  un **ordonnanceur d'événements** pour les timers (calculer le cycle du prochain
-  sous-dépassement au lieu de décrémenter à chaque cycle) — refonte locale au VIA,
-  sans effet observable. Cible :
-  temps CPU hôte par trame émulée **≤ 5 %** du budget 20 ms sur la machine de
-  référence. Le passage N3 coûte typiquement ×2 à ×3 sur le cœur ; la marge
-  actuelle (~1 %) l'absorbe, mais la mesure décide.
-- **US7.2 — Savestate `.ost` v2** : section `CPUµ`, reprise en milieu
-  d'instruction, lecture rétrocompatible des `.ost` 1.x.
-- **US7.3 — Corpus de non-régression** : les 41 programmes du corpus de
-  compatibilité rejoués (`--movie-replay` + captures d'écran horodatées) avant
-  et après chaque épic.
-- **US7.4 — CI** : `make test-cycle`, `make test-dormann`, `make bench`,
-  builds `SDL2=0/1`, Valgrind.
+- **US7.1 — Budget de performance. ✅ livré (2.0.0-alpha.8)** —
+  `make test-bench` (`tools/bench_check.sh`) tranche : boot BASIC **≤ 1000 µs
+  par trame (5 % du budget de 20 ms)**, meilleur de 3 runs, dans `make tests`.
+  Suivi : 491 µs (E1) → 521 (E2) → 555 (E3) → 601 (E4) → 611 (E5).
+  *Limite assumée* : la mesure dépend de la machine hôte — sur batterie à 1,2 GHz
+  le même binaire donne 1010-1050 µs (et celui de l'alpha.3 aussi, dans les
+  mêmes conditions). Le script détecte la machine bridée (profil « low-power »,
+  batterie, fréquence sous la moitié du maximum) et rend alors un **SKIP
+  motivé**, pas un FAIL ; `BENCH_STRICT=1` force le verdict (CI : plafond relevé
+  à 2000 µs sur runner partagé). Piste si le budget se tend : ordonnanceur
+  d'événements pour les timers du VIA.
+- **US7.2 — Savestate point de reprise exact. ✅ livré (2.0.0-alpha.8)** —
+  reformulée : les savestates sont pris en frontière d'instruction, « reprise
+  en milieu d'instruction » était sans objet. Ce qui manquait vraiment : la
+  **position du balayage** (nouvelle section `CLK`), l'état au cycle du VIA
+  (`t1_active`, `t1_reload`, broches, registre à décalage), l'échantillon
+  d'interruption du cycle pénultième, la phase du PSG. Sections étendues **en
+  queue**, lecture des `.ost` antérieurs par la taille de section.
+  `emu_clock_resume()` reprend la trame à la position restaurée.
+  `make test-savestate-determinism` : arrêts raster, VIA et RAM identiques
+  entre run continu et run repris. *Trouvé au passage* : le **cycle fantôme du
+  branchement non pris** (ULA en avance de ~410 cycles par trame sur le CPU),
+  corrigé et verrouillé dans `test-clock`.
+- **US7.3 — Corpus de non-régression. ✅ livré sur le corpus local
+  (2.0.0-alpha.8)** — `tools/corpus_replay.sh snapshot|check` +
+  `make test-corpus` : chaque média local rejoué un nombre fixe de cycles,
+  empreinte de l'écran comparée au manifeste versionné
+  `tests/corpus/manifest.sha256` (médias non versionnés : absent = SKIP).
+  *Limite* : le corpus de 41 programmes d'OricProgramsLib n'est pas disponible
+  sur la machine de développement ; le manifeste couvre 24 cassettes et
+  12 disquettes. Ce que ça prouve : à cycle égal, la même image qu'à la
+  baseline — pas que l'image est celle du matériel.
+- **US7.4 — CI. ✅ livré (2.0.0-alpha.8)** — `.github/workflows/linux-ci.yml` :
+  builds `SDL2=0/1`, `make tests`, Dormann + échantillon 65x02 (20 opcodes
+  où le cœur historique diffère : `make test-cycle` y tranche sans le Go
+  complet), `test-bench` strict, Valgrind sur les suites cœur. Les ROM ne sont
+  pas versionnées : les tests qui en dépendent se mettent en SKIP en CI.
 
 ### V2-E8 — Documentation, communication, release
 
@@ -408,13 +428,18 @@ variabilité de la machine (±5 %), pas du code.
 | **V2-S5** | US3.1 à 3.4 — VIA 6522 : sous-dépassement et période N+2 exacts → **Épic V2-E3 terminé** | 2.0.0-alpha.2 |
 | **V2-S6** | US4.1 à 4.4 — ULA : fetch d'une cellule par cycle, splits raster → **Épic V2-E4 terminé** | 2.0.0-alpha.3 |
 | **V2-S7** | US5.1 à 5.4 — PSG cadencé au matériel (`clock/8`), enveloppe corrigée, anti-repliement → **Épic V2-E5 terminé** | 2.0.0-alpha.4 |
-| **V2-S9** | US5.2/5.3/5.4 + US6.1 | 2.0.0-alpha.5 |
-| **V2-S10** | US6.2/6.3 + US7.2 | 2.0.0-beta.1 |
-| **V2-S11** | US7.1/7.3/7.4 + Épic E8 | 2.0.0 |
+| **V2-S8** | Étage de sortie audio sur schéma (alpha.5) ; US6.2 FDC : LOST DATA, write-protect, RNF terminal (alpha.6) ; US6.1 écartée sur mesure, parité cassette corrigée (alpha.7) → **Épic V2-E6 terminé** (US6.3 en backlog) | 2.0.0-alpha.5 → alpha.7 |
+| **V2-S9** | US7.1 budget bloquant + US7.2 savestate point de reprise exact + US7.3 corpus + US7.4 CI ; **cycle fantôme du branchement non pris corrigé** (le balayage prenait 410 cycles/trame sur le CPU) → **Épic V2-E7 livré** (US7.3 sur le corpus local, pas les 41 d'OricProgramsLib) | 2.0.0-alpha.8 |
+| **V2-S10** | Épic E8 : `docs/ACCURACY.md` en état final, note technique publique, `README`/guide | 2.0.0-beta.1 |
+| **V2-S11** | Release 2.0.0, tags, binaires, pages de distribution | 2.0.0 |
 
 Jalon de bascule du vocabulaire : **atteint pour le CPU à la fin de V2-S3**
-(« cœur CPU exact au cycle, vérifié contre l'oracle 65x02 ») ; **fin de V2-S8**
-pour la machine entière.
+(« cœur CPU exact au cycle, vérifié contre l'oracle 65x02 »). Pour la machine
+entière, la fin de V2-S8 autorise **« machine cadencée au cycle »** (chaque
+composant avance d'un cycle par cycle, CPU/VIA/ULA/PSG exacts à leur niveau
+documenté) — pas « exacte au cycle » sans qualification : le FDC reste N1+ (délais
+DRQ/INTRQ forfaitaires) et le calage horizontal de l'ULA n'est pas calibré. Voir
+`docs/ACCURACY.md` § Formulation autorisée.
 
 ---
 

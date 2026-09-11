@@ -526,6 +526,102 @@ qui explique pourquoi il affirmait le contraire de ce qu'il vérifiait.
 `make clean && make tests` : toutes suites vertes.
 EMU_VERSION 2.0.0-alpha.6 → **2.0.0-alpha.7**.
 
+## [2.0.0-alpha.8] - 2026-09-11
+
+### Fixed — le balayage prenait 410 cycles d'avance par trame sur le CPU (V2-S9)
+
+Trouvé en écrivant le test de déterminisme des savestates (ci-dessous) : les
+arrêts raster d'un run repris ne tombaient pas au même cycle que ceux du run de
+référence, **et les arrêts du run de référence lui-même** ne tombaient pas à
+19 968 cycles d'intervalle.
+
+#### La cause
+
+Un **branchement non pris** dure 2 cycles : lecture de l'opcode, lecture de
+l'offset. Le micro-séquenceur prenait la décision « non pris » **au cycle
+suivant**, dans une micro-op qui rendait alors la main **sans accès bus**. Le
+compteur de cycles du CPU restait juste (2), donc l'oracle 65x02 — qui compare
+les accès bus et le total de cycles — ne voyait rien. Mais l'horloge maître
+avait été appelée **une fois de plus** : l'ULA avait avancé d'un cycle que ni le
+CPU ni le VIA n'avaient vécu. Sur la ROM BASIC, ~410 branchements non pris par
+trame → **le balayage avait un cycle d'avance par branchement**, soit **une
+trame entière de dérive par seconde** entre l'image et le reste de la machine.
+
+Concrètement, avant : une trame de 19 968 appels d'horloge ne contenait que
+19 558 cycles CPU. Après : 19 968 sur 19 968.
+
+#### La correction
+
+La décision se prend **au cycle de l'offset**, qui est le dernier cycle de
+l'instruction quand la condition est fausse (`microseq.c`, `M_FETCH_LO`). Le
+cycle pénultième — où s'échantillonnent les interruptions — redevient la lecture
+de l'opcode, comme sur le NMOS.
+
+#### Ce qui le garantit désormais
+
+`make test-clock` 12 → **14** : `test_branch_not_taken_costs_no_phantom_cycle`
+(CLC / BCS non pris / BCC pris / NOP : jamais un appel à vide) et
+`test_raster_and_cpu_stay_in_step_over_a_frame` (une trame entière d'une boucle
+riche en branchements non pris : compteur CPU **=** position raster). Les deux
+échouent sur le code d'avant. Oracle 65x02 : toujours **48 800 / 48 800**
+séquences bus exactes ; Dormann vert.
+
+### Added — un savestate est un point de reprise exact (V2-E7, US7.2)
+
+« Sauver à l'instant T puis reprendre » doit produire la même machine que
+« continuer sans s'arrêter ». Ce n'était pas le cas : la position du balayage,
+l'état au cycle du VIA (`t1_active`, `t1_reload`, broches), l'échantillon
+d'interruption du cycle pénultième et la phase du PSG n'étaient pas dans le
+`.ost`.
+
+- **Nouvelle section `CLK`** (position dans la trame, lignes rendues, ligne
+  ULA-NG) ; sections **`CPU`**, **`VIA`**, **`PSG`** étendues **en queue** —
+  un `.ost` antérieur se lit toujours, la taille de section décide, et ses
+  champs manquants repartent d'une valeur neutre documentée.
+- **`emu_clock_resume()`** : la boucle principale reprend la trame à la position
+  restaurée (les lignes déjà balayées sont reconstruites depuis la RAM, la ligne
+  en cours rejoue ses cellules en mode ULA au cycle) ; la boucle suit désormais
+  `raster_cycle`, pas un compteur local.
+- **Nouveau `make test-savestate-determinism`** (8 vérifications) : sauvegarde
+  après 37 instructions — en pleine trame, ligne 1 —, puis **4 arrêts raster
+  consécutifs**, le VIA et **48 Ko de RAM** comparés entre le run continu et le
+  run repris : **identiques**. Sans la correction, chaque arrêt divergeait.
+
+Les savestates restent pris en frontière d'instruction (c'est la seule chose que
+le plan de micro-opérations n'a pas besoin de persister) ; « reprise en milieu
+d'instruction » est donc sans objet et l'US est reformulée ainsi.
+
+### Added — budget de performance bloquant (US7.1), corpus (US7.3), CI (US7.4)
+
+- **`make test-bench`** (`tools/bench_check.sh`) : le scénario boot BASIC doit
+  tenir en **≤ 1000 µs/trame (5 % du budget de 20 ms)**, meilleur de 3 runs.
+  Sur une machine **bridée** (batterie, profil « low-power », fréquence sous la
+  moitié du maximum) la mesure est affichée mais **non concluante → SKIP**, pas
+  FAIL ; `BENCH_STRICT=1` force le verdict. Mesuré ici sur batterie à 1,2 GHz :
+  **1010-1050 µs**, le binaire de la 2.0.0-alpha.3 donnant la même chose dans
+  les mêmes conditions — la référence historique (601 µs) tient à pleine
+  vitesse, pas la machine d'aujourd'hui. Intégré à `make tests`.
+- **`tools/corpus_replay.sh snapshot|check`** + `make test-corpus` : rejoue
+  chaque cassette et disquette locale un nombre fixe de cycles, compare
+  l'empreinte de l'écran au manifeste versionné `tests/corpus/manifest.sha256`
+  (les médias, eux, ne le sont pas : absent = SKIP). Ce que ça prouve : à cycle
+  égal, la même image qu'à la baseline. Le corpus « 41 programmes »
+  d'OricProgramsLib n'est pas disponible sur cette machine — le manifeste
+  couvre les 36 médias locaux (24 cassettes, 12 disquettes).
+- **`.github/workflows/linux-ci.yml`** : builds `SDL2=0` et `SDL2=1`,
+  `make tests`, Dormann + un échantillon 65x02 (20 opcodes où le cœur
+  historique diffère), `test-bench` en strict à 2000 µs (runner partagé),
+  Valgrind sur les suites cœur.
+
+### Changed — clôture de V2-E6, docs
+
+- `docs/ACCURACY.md`, `docs/specs/V2_CYCLE_ACCURACY.md` (§4 : ligne V2-S8
+  manquante ajoutée, S9-S11 réalignés), `docs/architecture/master-clock.md`
+  (contrat : jamais d'appel sans accès bus ; reprise de trame), ROADMAP.
+
+`make clean && make tests` : toutes suites vertes.
+EMU_VERSION 2.0.0-alpha.7 → **2.0.0-alpha.8**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

@@ -308,8 +308,44 @@ TEST(test_emu_step_returns_instruction_cycles) {
     ASSERT_EQ(g_emu.cpu.PC, 0x0300);
 }
 
+/* V2-E7 : le contrat « un appel = un cycle » vaut pour TOUTES les instructions,
+ * y compris celles dont la longueur se décide en cours de route. Un branchement
+ * non pris (2 cycles) coûtait un troisième appel sans accès bus : le compteur
+ * CPU restait juste, mais le balayage prenait un cycle d'avance à chaque
+ * branchement non pris — ~410 cycles par trame sur la ROM BASIC. */
+TEST(test_branch_not_taken_costs_no_phantom_cycle) {
+    uint8_t code[] = { 0x18,             /* CLC              : 2 cycles */
+                       0xB0, 0x10,       /* BCS +16 (non pris) : 2 cycles */
+                       0x90, 0x00,       /* BCC +0  (pris)     : 3 cycles */
+                       0xEA };           /* NOP              : 2 cycles */
+    setup(code, sizeof(code), true);
+    for (int i = 0; i < 9; i++) {
+        emu_cycle(&g_emu);
+        ASSERT_EQ((int)g_emu.cpu.cycles, i + 1);   /* jamais un appel à vide */
+        ASSERT_EQ(g_emu.raster_cycle, i + 1);
+    }
+    ASSERT_EQ(g_emu.cpu.PC, 0x0206);
+}
+
+/* Toute la ROM en fait foi : sur une trame de boot BASIC, le balayage et le
+ * compteur CPU doivent rester au pas (au dépassement de la dernière
+ * instruction près). Sans ROM, une boucle synthétique riche en branchements
+ * non pris joue le même rôle. */
+TEST(test_raster_and_cpu_stay_in_step_over_a_frame) {
+    uint8_t code[] = { 0xA2, 0x00,       /* LDX #0 */
+                       0xE8,             /* loop: INX */
+                       0xF0, 0xFD,       /* BEQ loop (non pris 255 fois sur 256) */
+                       0xD0, 0xFB };     /* BNE loop (pris) */
+    setup(code, sizeof(code), true);
+    emu_clock_frame_begin(&g_emu);
+    while (g_emu.raster_cycle < CYCLES_PER_FRAME) emu_cycle(&g_emu);
+    ASSERT_EQ((int)g_emu.cpu.cycles, g_emu.raster_cycle);
+}
+
 int main(void) {
     printf("=== Horloge maître (V2-E2) ===\n\n");
+    RUN(test_branch_not_taken_costs_no_phantom_cycle);
+    RUN(test_raster_and_cpu_stay_in_step_over_a_frame);
     RUN(test_one_call_is_one_cycle);
     RUN(test_peripherals_get_one_cycle_at_a_time);
     RUN(test_raster_position_advances_by_line);

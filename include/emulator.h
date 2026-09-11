@@ -46,7 +46,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.0.0-alpha.7"
+#define EMU_VERSION "2.0.0-alpha.8"
 
 /**
  * @brief ORIC machine model
@@ -270,6 +270,9 @@ typedef struct emulator_s {
     int raster_ng_line;   /**< ligne ULA-NG déjà traitée (0 … 311) */
     int raster_next_line; /**< cycle du prochain franchissement de ligne (sortie
                            *   rapide : 63 cycles sur 64 n'ont rien à émettre) */
+    bool clock_resume_pending; /**< V2-E7 : un savestate vient de restaurer la
+                                *   position du balayage ; la boucle doit reprendre
+                                *   la trame à cet endroit (emu_clock_resume) */
 
     /* ─── ULA au cycle (V2-E4) ───
      * Quand `ula_per_cycle` est vrai, le balayage ne rend plus une ligne d'un
@@ -544,8 +547,20 @@ bool emu_cycle(emulator_t* emu);
 /** @brief Exécute une instruction complète via emu_cycle() ; renvoie ses cycles */
 int emu_step(emulator_t* emu);
 
-/** @brief Remet à zéro la position du balayage (début de trame) */
+/** @brief Remet à zéro la position du balayage (début de trame).
+ *  Si un savestate vient de restaurer une position (clock_resume_pending), la
+ *  trame reprend à cette position au lieu de repartir de zéro. */
 void emu_clock_frame_begin(emulator_t* emu);
+
+/**
+ * @brief Reprend la trame à la position restaurée par un savestate (V2-E7)
+ *
+ * Consomme `clock_resume_pending` : recale le prochain franchissement de ligne
+ * et reconstruit, depuis la RAM restaurée, les lignes que le faisceau avait déjà
+ * balayées (le framebuffer n'est pas dans le .ost). Sans effet si rien n'est
+ * en attente. Appelée par la boucle principale avant chaque instruction.
+ */
+void emu_clock_resume(emulator_t* emu);
 
 /** @brief Termine le rendu de la trame en cours (lignes restantes) */
 void emu_clock_frame_end(emulator_t* emu);

@@ -8,7 +8,9 @@
  *
  * Implements .ost (Oric Save sTate) format:
  * - 48-byte header (magic, version, file size, CRC32, emu version)
- * - Sequential sections: CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, SER, META
+ * - Sequential sections: CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, TAP, SER, META
+ *   (CLK = horloge maître, V2-E7 ; CPU/VIA/PSG étendus en queue de section,
+ *   lecture rétrocompatible des .ost antérieurs par la taille de section)
  *   (sections OCULA OCB/OGP retirées ; ignorées si présentes dans un ancien .ost)
  *  
  * - CRC32 integrity check over all data after the header
@@ -202,6 +204,11 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->cpu.P);
     write_u64le(fp, emu->cpu.cycles);
     write_u8(fp, emu->cpu.irq);
+    /* V2-E7 (US7.2) : l'échantillon d'interruption du cycle pénultième survit à
+     * la frontière d'instruction — sans lui, une IRQ déjà échantillonnée serait
+     * prise une instruction trop tard après reprise. */
+    write_bool(fp, emu->cpu.ms_irq_sampled);
+    write_bool(fp, emu->cpu.ms_nmi_sampled);
     end_section(fp, sec);
 
     /* ── MEM Section ── */
@@ -236,6 +243,17 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->via.ier);
     write_bool(fp, emu->via.cb1_pin);
     write_bool(fp, emu->via.irq_line);
+    /* V2-E7 : état au cycle des timers (V2-E3) et des broches, absent des .ost
+     * antérieurs. `t1_reload` est le cycle mort qui fait la période N+2. */
+    write_bool(fp, emu->via.t1_active);
+    write_bool(fp, emu->via.t2_active);
+    write_bool(fp, emu->via.t1_reload);
+    write_bool(fp, emu->via.pb7_pin);
+    write_bool(fp, emu->via.pb6_pin);
+    write_bool(fp, emu->via.ca1_pin);
+    write_bool(fp, emu->via.ca2_in);
+    write_bool(fp, emu->via.sr_active);
+    write_u32le(fp, emu->via.sr_clk_acc);
     end_section(fp, sec);
 
     /* ── PSG Section ── */
@@ -256,6 +274,11 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->psg.env_volume);
     write_bool(fp, emu->psg.env_holding);
     write_u32le(fp, emu->psg.clock_rate);
+    /* V2-E7 : phase fractionnaire du cadencement au matériel (V2-E5) et
+     * estimateur de continu de l'étage de sortie — pour qu'une reprise produise
+     * le même signal qu'un run ininterrompu. */
+    write_u32le(fp, emu->psg.play.step_acc);
+    write_i32le(fp, emu->psg.dc_acc);
     end_section(fp, sec);
 
     /* ── VID Section ── */
@@ -263,6 +286,15 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->video.hires_mode ? 1 : 0);
     write_u8(fp, emu->video.vid_mode);
     write_u8(fp, 0);   /* réservé (ancien profil ULA, retiré) */
+    end_section(fp, sec);
+
+    /* ── CLK Section (V2-E7) ── position de l'horloge maître dans la trame.
+     * Sans elle, une reprise repartait en début de trame : même CPU, même VIA,
+     * mais un balayage décalé — captures et son différaient d'un run continu. */
+    sec = begin_section(fp, "CLK\0");
+    write_i32le(fp, emu->raster_cycle);
+    write_i32le(fp, emu->raster_rendered);
+    write_i32le(fp, emu->raster_ng_line);
     end_section(fp, sec);
 
     /* ── KBD Section ── */
@@ -541,13 +573,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->cpu.P = read_u8(fp);
             emu->cpu.cycles = read_u64le(fp);
             emu->cpu.irq = read_u8(fp);
-            /* Les savestates sont pris en frontière d'instruction : l'état du
-             * micro-séquenceur n'a donc rien à persister. On repart seulement
-             * d'échantillons d'interruption neutres — une IRQ déjà pendante sera
-             * prise une instruction plus tard, ce qui est déterministe. */
+            /* Les savestates sont pris en frontière d'instruction : le plan de
+             * micro-opérations n'a rien à persister. Seul l'échantillon
+             * d'interruption du cycle pénultième traverse la frontière ; un .ost
+             * antérieur (16 octets) ne l'a pas → échantillons neutres, l'IRQ
+             * pendante est alors prise une instruction plus tard. */
             emu->cpu.ms_active = false;
-            emu->cpu.ms_nmi_sampled = false;
-            emu->cpu.ms_irq_sampled = false;
+            emu->cpu.ms_irq_sampled = (sec_size >= 18) ? read_bool(fp) : false;
+            emu->cpu.ms_nmi_sampled = (sec_size >= 18) ? read_bool(fp) : false;
         } else if (memcmp(tag, "MEM\0", 4) == 0) {
             fread(emu->memory.ram, 1, RAM_SIZE, fp);
             fread(emu->memory.upper_ram, 1, ROM_SIZE, fp);
@@ -576,6 +609,23 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->via.ier = read_u8(fp);
             emu->via.cb1_pin = read_bool(fp);
             emu->via.irq_line = read_bool(fp);
+            if (sec_size >= 35) {
+                emu->via.t1_active  = read_bool(fp);
+                emu->via.t2_active  = read_bool(fp);
+                emu->via.t1_reload  = read_bool(fp);
+                emu->via.pb7_pin    = read_bool(fp);
+                emu->via.pb6_pin    = read_bool(fp);
+                emu->via.ca1_pin    = read_bool(fp);
+                emu->via.ca2_in     = read_bool(fp);
+                emu->via.sr_active  = read_bool(fp);
+                emu->via.sr_clk_acc = read_u32le(fp);
+            } else {
+                /* .ost antérieur : un timer dont le compteur a été sauvé comptait ;
+                 * le reste repart neutre. */
+                emu->via.t1_active = emu->via.t1_running;
+                emu->via.t2_active = emu->via.t2_running;
+                emu->via.t1_reload = false;
+            }
         } else if (memcmp(tag, "PSG\0", 4) == 0) {
             fread(emu->psg.registers, 1, AY_NUM_REGISTERS, fp);
             emu->psg.selected_reg = read_u8(fp);
@@ -593,9 +643,13 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->psg.env_volume = read_u8(fp);
             emu->psg.env_holding = read_bool(fp);
             emu->psg.clock_rate = read_u32le(fp);
+            uint32_t step_acc = (sec_size >= 71) ? read_u32le(fp) : 0;
+            int32_t  dc_acc   = (sec_size >= 71) ? (int32_t)read_u32le(fp) : 0;
             /* Mirror restored sound state into the playback shadow and clear
              * any stale timestamped-write queue. */
             ay_sound_resync(&emu->psg);
+            emu->psg.play.step_acc = step_acc;
+            emu->psg.dc_acc = dc_acc;
         } else if (memcmp(tag, "VID\0", 4) == 0) {
             bool hires = read_u8(fp) != 0;
             emu->video.vid_mode = read_u8(fp);
@@ -731,6 +785,12 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->acia.cts = read_bool(fp);
             /* Recalculate timing from restored registers */
             // Note: acia_update_timing needs to exist - just call it if possible
+        } else if (memcmp(tag, "CLK\0", 4) == 0) {
+            emu->raster_cycle    = (int)read_u32le(fp);
+            emu->raster_rendered = (int)read_u32le(fp);
+            emu->raster_ng_line  = (int)read_u32le(fp);
+            /* Normalisation (fin de trame, valeurs hors bornes) : emu_clock_resume() */
+            emu->clock_resume_pending = true;   /* consommé par emu_clock_resume() */
         } else if (memcmp(tag, "META", 4) == 0) {
             /* Read and log metadata (info only, don't override loaded paths) */
             char meta_buf[1024] = {0};

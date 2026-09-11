@@ -1150,10 +1150,17 @@ static void emulator_run(emulator_t* emu) {
         }
 
         /* Execute one frame worth of CPU cycles */
+        emu_clock_frame_begin(emu);   /* horloge maître : début (ou reprise) de trame */
+        /* La position dans la trame est celle de l'horloge maître : un savestate
+         * chargé en cours de route (F4, `state-load`) y reprend, la boucle suit. */
         int frame_cycles = 0;
-        emu_clock_frame_begin(emu);   /* horloge maître : début de trame */
+        int frame_start = emu->raster_cycle;
         bool vsync_triggered = false;
-        while (frame_cycles < CYCLES_PER_FRAME && !emu->cpu.halted) {
+        while (emu->raster_cycle < CYCLES_PER_FRAME && !emu->cpu.halted) {
+            if (emu->clock_resume_pending) {       /* état chargé en pleine trame */
+                emu_clock_resume(emu);
+                frame_start = emu->raster_cycle - frame_cycles;
+            }
             /* Legacy single breakpoint (--breakpoint / -b) */
             if (emu->breakpoint >= 0 && emu->cpu.PC == (uint16_t)emu->breakpoint) {
                 /* Promote to interactive debugger if available */
@@ -1245,7 +1252,7 @@ static void emulator_run(emulator_t* emu) {
              * l'ULA et les périphériques avançant en verrou (src/emu_clock.c).
              * Remplace `cpu_step` + le calcul de scanline qui vivait ici. */
             int step = emu_step(emu);
-            frame_cycles += step;
+            frame_cycles = emu->raster_cycle - frame_start;
 
             /* Post-CLOAD BASIC rechain: the ORIC ROM does NOT rechain
              * line pointers after CLOAD. TAP files may have stale pointers

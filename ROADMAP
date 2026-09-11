@@ -105,7 +105,7 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             à **37 kHz** (hors bande), **blocage du continu** ajouté
             (+8188 → +15, signal symétrique). Coupure exacte du couplage `C4`
             indéterminée sur le document (facteur 1000) → non modélisée, documentée
-- [~] **V2-E6 — Cassette & FDC dérivés du temps réel** (S8)
+- [x] **V2-E6 — Cassette & FDC dérivés du temps réel** (S8, clos en 2.0.0-alpha.8 ; US6.3 backlog)
       - [x] US6.2 **`LOST DATA` (S2)** signalé quand un DRQ n'est pas servi dans le
             temps d'un octet (32 µs à 250 kbit/s) ; compteur + avertissement de session
       - [x] **Protection en écriture (S6)** : commandes d'écriture refusées, bit 6 au
@@ -123,13 +123,26 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             fausse vers de **vraies machines**. Nouveau `make test-tape-signal`
             (chemin CLOAD-au-signal, jusque-là couvert par aucun test)
       - [ ] US6.3 piste MFM (perte réelle d'octets, READ TRACK, CRC) — backlog
-- [ ] **V2-E7 — Perf, savestate, non-régression, CI** (transverse) : `make bench`
-      bloquant (≤ 5 % du budget trame), `.ost` v2 (reprise en milieu d'instruction,
-      lecture des `.ost` 1.x), corpus des 41 programmes rejoué à chaque fin d'épic
-- [ ] **V2-E8 — Documentation, communication, release 2.0.0** (S11)
+- [x] **V2-E7 — Perf, savestate, non-régression, CI** (S9, 2.0.0-alpha.8)
+      - [x] **Cycle fantôme corrigé** : un branchement non pris coûtait un appel
+            d'horloge sans accès bus → l'ULA prenait ~410 cycles/trame d'avance sur
+            CPU et VIA (une trame de dérive par seconde). Invisible à l'oracle
+            (compteur CPU juste). `test-clock` 12 → 14, oracle toujours 100 %
+      - [x] US7.1 `make test-bench` bloquant, ≤ 1000 µs/trame (5 %) ; SKIP motivé
+            sur machine bridée (mesuré ici sur batterie : 1010-1050 µs, idem alpha.3)
+      - [x] US7.2 savestate = point de reprise exact : section `CLK`, CPU/VIA/PSG
+            étendus en queue (lecture des `.ost` antérieurs), `emu_clock_resume()`,
+            `make test-savestate-determinism` (arrêts raster, VIA, RAM identiques)
+      - [x] US7.3 `tools/corpus_replay.sh` + `make test-corpus` sur les 36 médias
+            locaux (manifeste versionné) — les 41 d'OricProgramsLib : indisponibles ici
+      - [x] US7.4 `linux-ci.yml` : SDL2=0/1, tests, Dormann + échantillon 65x02,
+            bench strict, Valgrind
+- [ ] **V2-E8 — Documentation, communication, release 2.0.0** (S10-S11)
 
-**Jalons de vocabulaire** : « CPU exact au cycle » autorisé à la fin de V2-S4
-(oracle 65x02 vert) ; « émulateur exact au cycle » à la fin de V2-S8.
+**Jalons de vocabulaire** : « CPU exact au cycle » acquis (fin V2-S3, oracle
+65x02 100 %) ; « machine cadencée au cycle » acquis (fin V2-S8) ; « exact au
+cycle » pour la machine entière **non revendiqué** (FDC N1+, calage horizontal ULA
+non calibré) — voir `docs/ACCURACY.md`.
 
 ---
 
