@@ -5,8 +5,21 @@ CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
 # Émulateur RP2040 embarqué (backend --loci-emu). Chemin surchargeable.
+# Dépendance EXTERNE non versionnée : détectée automatiquement. Sans elle
+# (CI, machine neuve), src/io/loci_emu_stub.c prend la place de loci_emu.c :
+# tout se construit, seul `--loci-emu` refuse de démarrer. Forcer : LOCI_EMU=0/1.
 LOCI_EMUL_DIR ?= $(HOME)/loci/emul
-CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include -I$(LOCI_EMUL_DIR)/src -MMD -MP
+LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
+ifeq ($(LOCI_EMU),1)
+LOCI_EMU_SRC = src/io/loci_emu.c
+LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
+LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src
+else
+LOCI_EMU_SRC = src/io/loci_emu_stub.c
+LOCI_EMUL_LIB =
+LOCI_EMU_CFLAGS = -DNO_LOCI_EMU
+endif
+CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include $(LOCI_EMU_CFLAGS) -MMD -MP
 # -lpthread: control_queue (sprint 93) hands commands from producer threads
 # (e.g. the future HTTP API) to the single-threaded emulator loop. Harmless on
 # glibc >= 2.34 where pthread is folded into libc. WIN redefines LDFLAGS below
@@ -134,7 +147,7 @@ SOURCES = src/main.c \
           src/io/mea8000.c \
           src/io/loci_core.c \
           src/io/loci_gfx.c \
-          src/io/loci_emu.c \
+          $(LOCI_EMU_SRC) \
           src/io/loci_fs.c \
           src/io/loci_bus.c \
           src/io/loci_boot.c \
@@ -232,12 +245,14 @@ DOCDIR = $(PREFIX)/share/doc/phosphoric
 
 all: $(TARGET)
 
-$(TARGET): $(OBJECTS) $(LOCI_EMUL_DIR)/libemul.a
-	$(CC) $(OBJECTS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -o $(TARGET)
+$(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
+	$(CC) $(OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o $(TARGET)
 
-# Construit la bibliothèque de l'émulateur RP2040 si absente.
+# Construit la bibliothèque de l'émulateur RP2040 si absente (LOCI_EMU=1 seulement).
+ifeq ($(LOCI_EMU),1)
 $(LOCI_EMUL_DIR)/libemul.a:
 	$(MAKE) -C $(LOCI_EMUL_DIR) lib
+endif
 
 # Copie strippée pour la distribution (symboles retirés → binaire plus petit).
 # Produit $(TARGET)-release SANS toucher au binaire de travail $(TARGET)
@@ -527,7 +542,7 @@ test-loci: $(TEST_LOCI_SRCS)
 # tout l'arbre des périphériques de page 3 est lié.
 TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/io/acia6551.c src/io/serial_backend.c src/io/smf.c \
-                 src/io/loci_emu.c src/io/loci_gfx.c \
+                 $(LOCI_EMU_SRC) src/io/loci_gfx.c \
                  src/io/loci_core.c src/io/loci_fs.c src/io/loci_bus.c \
                  src/io/loci_boot.c src/io/loci_sdimg.c \
                  src/io/microdisc.c src/io/jasmin.c src/io/mageco.c \
@@ -539,8 +554,8 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/memory/memory.c src/memory/banking.c \
                  src/utils/logging.c src/utils/netutil.c
 
-test-loci-acia-miss: $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_DIR)/libemul.a
-	@$(CC) $(CFLAGS) $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -lutil -o test_loci_acia_miss
+test-loci-acia-miss: $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_LIB)
+	@$(CC) $(CFLAGS) $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_LIB) $(LDFLAGS) -lutil -o test_loci_acia_miss
 	@./test_loci_acia_miss
 
 TEST_LOCI_SDIMG_SRCS = tests/unit/test_loci_sdimg.c src/io/loci_sdimg.c \
@@ -661,15 +676,15 @@ test-control: $(TARGET)
 # Sprint 92 (Epic 1) — transport-agnostic control_dispatch via a buffer sink.
 # Links the core library objects (no main) and drives control_dispatch()
 # directly, asserting byte-exact replies + CONTINUE/RESUME/QUIT results.
-test-control-dispatch: $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a
-	@$(CC) $(CFLAGS) tests/unit/test_control_dispatch.c $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -o test_control_dispatch
+test-control-dispatch: $(LIB_OBJECTS) $(LOCI_EMUL_LIB)
+	@$(CC) $(CFLAGS) tests/unit/test_control_dispatch.c $(LIB_OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o test_control_dispatch
 	@./test_control_dispatch
 
 # Sprint 93 (Epic 2) — thread-safe command queue. Spawns producer threads that
 # submit() concurrently while a consumer thread drain()s per "frame", asserting
 # correct per-producer routing (unique addr write/read) and zero corruption.
-test-control-queue: $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a
-	@$(CC) $(CFLAGS) tests/unit/test_control_queue.c $(LIB_OBJECTS) $(LOCI_EMUL_DIR)/libemul.a $(LDFLAGS) -o test_control_queue
+test-control-queue: $(LIB_OBJECTS) $(LOCI_EMUL_LIB)
+	@$(CC) $(CFLAGS) tests/unit/test_control_queue.c $(LIB_OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o test_control_queue
 	@./test_control_queue
 
 # Sprint 94 (Epic 3) — HTTP control API end-to-end (curl vs a live headless

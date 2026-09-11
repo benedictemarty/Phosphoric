@@ -647,6 +647,17 @@ le code fait, et dit publiquement ce qui a été retiré.
   changer de méthode (enveloppe PSG « conforme par recalcul », cycle fantôme
   invisible à l'oracle), et ce qu'on ne dit toujours pas.
 
+#### Fixed — le build cassait sans l'émulateur RP2040 (CI rouge depuis 9a9b262)
+
+`src/io/loci_emu.c` inclut `emul_lib.h` de `~/loci/emul`, une dépendance
+**externe et non versionnée** : les trois workflows GitHub échouaient dès
+`make SDL2=0` (« emul_lib.h: No such file »), donc aucun binaire de release ne
+pouvait sortir. Le Makefile détecte désormais la bibliothèque (`LOCI_EMU`,
+auto 0/1, forçable) et lie sinon `src/io/loci_emu_stub.c` : tout se construit
+et `make tests` est vert sans elle (vérifié en local en `LOCI_EMU=0`) ;
+`--loci` (backend comportemental) fonctionne, seul `--loci-emu` refuse de
+démarrer avec un message clair.
+
 Reste pour la 2.0.0 (US8.4) : tag, binaires, pages de distribution.
 
 `make clean && make tests` : toutes suites vertes.
