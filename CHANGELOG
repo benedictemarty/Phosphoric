@@ -622,6 +622,36 @@ d'instruction » est donc sans objet et l'US est reformulée ainsi.
 `make clean && make tests` : toutes suites vertes.
 EMU_VERSION 2.0.0-alpha.7 → **2.0.0-alpha.8**.
 
+## [2.0.0-beta.1] - 2026-09-11
+
+### Changed — documentation en état final, note technique publique (V2-S10, épic E8)
+
+Fin des épics de code (E0 à E7) : ce sprint met les documents au niveau de ce que
+le code fait, et dit publiquement ce qui a été retiré.
+
+- **`docs/ACCURACY.md`** (US8.1) : nouveau résumé « état final V2 » en tête —
+  sept affirmations, chacune avec le test qui la ferait tomber — et la liste
+  explicite de ce qui **n'est pas** vrai (FDC N1+, calage horizontal ULA non
+  calibré, demi-cycle du one-shot VIA, cassette par patch ROM). L'historique du
+  document (44,26 % de départ, étapes) est conservé : c'est la trajectoire qui
+  rend le résultat crédible. Phrases périmées corrigées (les lignes `i` de la
+  trace n'existent plus qu'en `--cpu-legacy` ; cassette au signal N3).
+- **`README.md`** (US8.2) : l'en-tête ne dit plus « bus-cycle ordered, not
+  cycle-stepped » mais ce qui est vrai depuis la V2, périmètre et limites
+  compris ; badge de version et compte de tests remis à jour (**1208 tests,
+  60 suites**, comptés sur la sortie de `make tests`) ; section Save States
+  (14 sections, point de reprise exact) ; cibles de test ajoutées.
+- **`docs/articles/v2-cycle-stepped.md`** (US8.3) : note technique publique —
+  ce qu'on avait dit et pourquoi c'était faux, ce que la V2 a changé, ce que ça
+  change de visible, les deux défauts qui n'auraient jamais été vus sans
+  changer de méthode (enveloppe PSG « conforme par recalcul », cycle fantôme
+  invisible à l'oracle), et ce qu'on ne dit toujours pas.
+
+Reste pour la 2.0.0 (US8.4) : tag, binaires, pages de distribution.
+
+`make clean && make tests` : toutes suites vertes.
+EMU_VERSION 2.0.0-alpha.8 → **2.0.0-beta.1**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

@@ -137,7 +137,11 @@ plutôt que par affirmation. Branche longue `v2/cycle-accuracy`.
             locaux (manifeste versionné) — les 41 d'OricProgramsLib : indisponibles ici
       - [x] US7.4 `linux-ci.yml` : SDL2=0/1, tests, Dormann + échantillon 65x02,
             bench strict, Valgrind
-- [ ] **V2-E8 — Documentation, communication, release 2.0.0** (S10-S11)
+- [~] **V2-E8 — Documentation, communication, release 2.0.0** (S10-S11)
+      - [x] US8.1 `docs/ACCURACY.md` en état final (résumé + limites explicites) — 2.0.0-beta.1
+      - [x] US8.2 README (fin du « not cycle-stepped »), badge 1208 tests / 60 suites, CLAUDE.md
+      - [x] US8.3 note technique publique `docs/articles/v2-cycle-stepped.md`
+      - [ ] US8.4 release 2.0.0 : tag, binaires, pages de distribution
 
 **Jalons de vocabulaire** : « CPU exact au cycle » acquis (fin V2-S3, oracle
 65x02 100 %) ; « machine cadencée au cycle » acquis (fin V2-S8) ; « exact au

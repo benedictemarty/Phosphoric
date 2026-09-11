@@ -406,12 +406,15 @@ variabilité de la machine (±5 %), pas du code.
 
 ### V2-E8 — Documentation, communication, release
 
-- **US8.1** — `docs/ACCURACY.md` repassé en « N3 atteint », preuves à l'appui.
-- **US8.2** — `docs/architecture/master-clock.md` (ordre intra-cycle, contrat
-  `emu_cycle`), mise à jour de `CLAUDE.md`, `README.md`, guide utilisateur.
-- **US8.3** — Note technique publique : ce qui change de visible (splits
-  raster, audio, chargements bande), et la rectification assumée de l'annonce
-  initiale.
+- **US8.1 — ✅ (2.0.0-beta.1)** `docs/ACCURACY.md` : résumé « état final V2 »
+  (chaque affirmation adossée au test qui la ferait tomber) + limites explicites ;
+  « N3 atteint » pour le CPU, « machine cadencée au cycle » pour l'ensemble, pas
+  « exacte au cycle » (FDC N1+, calage ULA).
+- **US8.2 — ✅ (2.0.0-beta.1)** `master-clock.md` (S4/S9), `CLAUDE.md` (S9),
+  `README.md` (S10 : en-tête, badge, savestates, cibles de test).
+- **US8.3 — ✅ (2.0.0-beta.1)** `docs/articles/v2-cycle-stepped.md` : ce qu'on
+  avait dit et pourquoi c'était faux, ce que la V2 change de visible, les deux
+  défauts que seule une autre méthode pouvait révéler, ce qu'on ne dit toujours pas.
 - **US8.4** — Release 2.0.0, tags, binaires, pages de distribution.
 
 ---
@@ -430,7 +433,7 @@ variabilité de la machine (±5 %), pas du code.
 | **V2-S7** | US5.1 à 5.4 — PSG cadencé au matériel (`clock/8`), enveloppe corrigée, anti-repliement → **Épic V2-E5 terminé** | 2.0.0-alpha.4 |
 | **V2-S8** | Étage de sortie audio sur schéma (alpha.5) ; US6.2 FDC : LOST DATA, write-protect, RNF terminal (alpha.6) ; US6.1 écartée sur mesure, parité cassette corrigée (alpha.7) → **Épic V2-E6 terminé** (US6.3 en backlog) | 2.0.0-alpha.5 → alpha.7 |
 | **V2-S9** | US7.1 budget bloquant + US7.2 savestate point de reprise exact + US7.3 corpus + US7.4 CI ; **cycle fantôme du branchement non pris corrigé** (le balayage prenait 410 cycles/trame sur le CPU) → **Épic V2-E7 livré** (US7.3 sur le corpus local, pas les 41 d'OricProgramsLib) | 2.0.0-alpha.8 |
-| **V2-S10** | Épic E8 : `docs/ACCURACY.md` en état final, note technique publique, `README`/guide | 2.0.0-beta.1 |
+| **V2-S10** | Épic E8 : `docs/ACCURACY.md` en état final, note technique publique (`docs/articles/v2-cycle-stepped.md`), `README` — **US8.1/8.2/8.3 livrées** | 2.0.0-beta.1 |
 | **V2-S11** | Release 2.0.0, tags, binaires, pages de distribution | 2.0.0 |
 
 Jalon de bascule du vocabulaire : **atteint pour le CPU à la fin de V2-S3**

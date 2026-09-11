@@ -1,12 +1,15 @@
 # Phosphoric
 
-An ORIC-1 / Atmos emulator written in C11, **bus-cycle ordered** (level N2 :
-exact per-opcode cycle totals, bus accesses emitted at the right intra-instruction
-cycle). It is **not** cycle-stepped: see [docs/ACCURACY.md](docs/ACCURACY.md) for
-the precise scale and what each component actually does — true cycle stepping is
-the scope of [V2](docs/specs/V2_CYCLE_ACCURACY.md).
+An ORIC-1 / Atmos emulator written in C11, **cycle-stepped**: the master clock
+advances the whole machine one cycle at a time (ULA fetch → CPU bus access →
+peripherals), the 6502 core is **100 % exact against the SingleStepTests/65x02
+oracle** (2 440 000 cases, NMOS dummy accesses included), and VIA, ULA and PSG
+are clocked at hardware rate. What that claim covers — and what it does not (the
+FDC is still timed by fixed delays, the ULA's horizontal phase is not calibrated
+against real hardware) — is spelled out component by component in
+[docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 1.110.0-alpha** | **1043 tests, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.0.0-beta.1** | **1208 tests in 60 suites, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -86,7 +89,9 @@ make SDL2=1
 
 ### Save States
 - **`.ost` format** — Binary save state with CRC32 integrity check
-- **13 sections** — CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, DSK, BAD, TAP, SER, META (CRC32, sections inconnues ignorées = rétro/avant-compatible)
+- **14 sections** — CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, DSK, BAD, TAP, SER, META (CRC32, sections inconnues ignorées = rétro/avant-compatible)
+- **Exact resume point** — a state taken mid-frame resumes with the same raster position,
+  VIA cycle state and interrupt sample as an uninterrupted run (`make test-savestate-determinism`)
 - **Hotkeys** — F2 (quick save), F4 (quick load)
 - **CLI** — `--save-state FILE`, `--load-state FILE`
 
@@ -189,9 +194,9 @@ make SDL2=1
 - **One line per CPU cycle** — `--cycle-trace FILE` (`--cycle-trace-max N` to cap):
   `CYCLE T ADDR DATA PC A X Y SP P FLAGS IRQ`, where `T` is `R`ead, `W`rite or
   `i`nternal. Meant to be diffed against another emulator or instrumented hardware.
-- **Honest about the current level** — `i` lines are the internal cycles that the
-  N2 core reconciles by end-of-instruction padding: they carry no address yet.
-  See [docs/ACCURACY.md](docs/ACCURACY.md) and the [V2 plan](docs/specs/V2_CYCLE_ACCURACY.md).
+- **`i` lines only with `--cpu-legacy`** — they are the padded internal cycles of the
+  historical core; the default core emits a real bus access on every cycle.
+  See [docs/ACCURACY.md](docs/ACCURACY.md).
 
 ### CPU conformance oracles
 - **`make test-cycle`** — replays SingleStepTests/65x02 (10 000 cases per opcode,
@@ -540,7 +545,11 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 ## Testing
 
 ```bash
-make tests               # Full suite — 876 tests (100% pass)
+make tests               # Full suite — 1208 tests, 60 suites (100% pass)
+make test-clock          # Master clock: one call = one cycle of the whole machine, never idle
+make test-savestate-determinism  # mid-frame savestate = exact resume point
+make test-bench          # blocking perf budget (≤ 1000 µs/frame; motivated SKIP on a throttled host)
+make test-corpus         # local media replayed at fixed cycles vs a versioned screen manifest
 make test-cpu            # CPU tests (92 — incl. 105 illegal NMOS opcodes)
 make test-memory         # Memory tests
 make test-io             # VIA/I/O tests
@@ -655,6 +664,8 @@ docs/            User guide, control_protocol.md, CR review docs
 
 ## Documentation
 
+- [Accuracy levels — what is exact, what is not](docs/ACCURACY.md)
+- [Technical note: the V2 cycle-stepped machine, and the claim we withdrew](docs/articles/v2-cycle-stepped.md)
 - [User Guide](docs/user-guide/README.md)
 - [API Reference](docs/api/README.md)
 - [Compatibility List](docs/COMPATIBILITY.md)
