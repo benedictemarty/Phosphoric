@@ -958,8 +958,11 @@ WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
                -sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all,_web_io_activity,_web_save_state,_web_load_state,_web_insert_tap,_web_insert_disk,_malloc,_free \
                --preload-file roms@/roms --shell-file web/shell.html
 
+# La co-simulation RP2040 (libemul, natif) n'existe pas en WebAssembly : le stub
+# prend toujours la place de loci_emu.c ici, quel que soit LOCI_EMU.
+WASM_SOURCES = $(subst src/io/loci_emu.c,src/io/loci_emu_stub.c,$(LIB_SOURCES))
 wasm: web/shell.html
-	$(EMCC) $(WASM_CFLAGS) $(LIB_SOURCES) src/main.c $(WASM_LDFLAGS) -o $(WASM_OUT)
+	$(EMCC) $(WASM_CFLAGS) -DNO_LOCI_EMU $(WASM_SOURCES) src/main.c $(WASM_LDFLAGS) -o $(WASM_OUT)
 	@echo "WASM ready → serve web/ over HTTP and open phosphoric.html"
 	@echo "  e.g.  (cd web && python3 -m http.server 8000)  then  http://localhost:8000/phosphoric.html"
 

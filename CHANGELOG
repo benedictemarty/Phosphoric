@@ -700,6 +700,23 @@ compare désormais sur la longueur de la version.
 `make clean && make tests` : toutes suites vertes (LOCI_EMU=1 et 0).
 EMU_VERSION 2.0.0-beta.1 → **2.0.0**.
 
+## [2.0.1] - 2026-09-11
+
+### Fixed — le build WebAssembly cassait depuis le port macOS ; page Pages en 2.0.0
+
+- `serial_backend.c` incluait `<util.h>` sous Emscripten (branche `__unix__` du
+  port macOS, 6398377) : `make wasm` échouait. Sous `__EMSCRIPTEN__`, pas de
+  pseudo-terminal (`HAS_PTY 0`).
+- `make wasm` liait `loci_emu.c` (émulateur RP2040 natif) dès que `~/loci/emul`
+  existait : le stub est désormais toujours utilisé en WebAssembly.
+- emsdk 6.0.9 installé, build reconstruit, **gh-pages** publiée sur les trois
+  forges avec `shell.js` (la page de juillet, antérieure à l'externalisation du
+  script, n'aurait plus fonctionné avec un `phosphoric.html` récent).
+  https://benedictemarty.github.io/Phosphoric — vérifié : `phosphoric.wasm`
+  servi porte « 2.0.0 ».
+
+EMU_VERSION 2.0.0 → **2.0.1**.
+
 ## [Unreleased]
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)

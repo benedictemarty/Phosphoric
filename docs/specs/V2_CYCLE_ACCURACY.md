@@ -416,8 +416,8 @@ variabilité de la machine (±5 %), pas du code.
   avait dit et pourquoi c'était faux, ce que la V2 change de visible, les deux
   défauts que seule une autre méthode pouvait révéler, ce qu'on ne dit toujours pas.
 - **US8.4 — ✅ (2.0.0)** tag `v2.0.0` sur les quatre remotes, release GitHub
-  (binaire Linux strippé + zip Windows du workflow). *Backlog* : page WASM
-  (`gh-pages`) à reconstruire, l'emsdk n'étant pas installé ici.
+  (binaire Linux strippé + zip Windows du workflow) ; page WASM `gh-pages`
+  reconstruite et publiée en 2.0.0 (2.0.1 : build wasm réparé).
 
 ---
 

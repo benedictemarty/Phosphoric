@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the ULA's horizontal phase is not calibrated
 against real hardware) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.0.0** | **1208 tests in 60 suites, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.0.1** | **1208 tests in 60 suites, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
