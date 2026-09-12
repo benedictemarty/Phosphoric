@@ -47,6 +47,12 @@ bool loci_emu_active(void);
  * (cpu_reset) pour qu'il redémarre dans le menu LOCI servi. */
 bool loci_emu_menu_button(void);
 
+/** @brief Appui LONG (≥ 2 s) sur le bouton MENU : le firmware boote sa ROM de
+ *  diagnostic embarquée (test108k, EXT_BOOT_DIAG). Renvoie true si le service ROM
+ *  est armé — l'hôte doit alors réinitialiser son 6502. false si le firmware n'a
+ *  pas de ROM de diagnostic embarquée (build sans EMBEDDED_TEST108K_ROM). */
+bool loci_emu_diag_button(void);
+
 /* Overlay ROM co-sim : si le firmware sert cette adresse (nROMDIS actif +
  * $C000-$FFFF), écrit l'octet servi dans *out et renvoie true ; sinon renvoie
  * false (memory_read() garde alors la ROM/RAM Oric). À appeler AVANT de servir

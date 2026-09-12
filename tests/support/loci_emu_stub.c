@@ -8,6 +8,8 @@
 #include "io/loci_emu.h"
 
 bool loci_emu_active(void) { return false; }
+bool loci_emu_menu_button(void) { return false; }
+bool loci_emu_diag_button(void) { return false; }
 
 bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 {

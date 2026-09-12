@@ -198,6 +198,26 @@ bool loci_emu_menu_button(void)
     return armed != 0;
 }
 
+bool loci_emu_diag_button(void)
+{
+    if (!g_boot_started) return false;
+    ensure_booted();
+    int armed = emul_loci_diag_button(&g_emul);
+    int nromdis = 0;
+    emul_ext_lines(&g_emul, NULL, NULL, &nromdis);
+    if (armed) {
+        uint8_t lo = 0, hi = 0;
+        emul_loci_serve_read(&g_emul, 0xFFFC, &lo); emul_loci_serve_read(&g_emul, 0xFFFD, &hi);
+        log_info("LOCI-emu: bouton MENU (appui long) → ROM de diagnostic servie (nROMDIS=%d), "
+                 "vecteur reset = $%04X", nromdis, (unsigned)(lo | (hi << 8)));
+    } else {
+        log_warning("LOCI-emu: appui long sans effet — le firmware n'embarque pas de ROM de "
+                    "diagnostic (EMBEDDED_TEST108K_ROM) ou le service n'est pas armé (nROMDIS=%d)",
+                    nromdis);
+    }
+    return armed != 0;
+}
+
 bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 {
     if (!g_boot_done) return false;   /* pendant le boot arrière-plan : Oric transparent */

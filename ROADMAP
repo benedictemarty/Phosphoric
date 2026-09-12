@@ -359,6 +359,7 @@ La souris marchait avec le modèle interne (`--loci`) mais pas sous `--loci-emu`
       et `--type-keys loci-hid:` sans router les 11 appelants ; le routeur
       `main.c` de v1.119.0 disparaît (main.c redevient identique à son état
       d'avant).
+- [ ] Backlog : injection clavier headless (`--type-keys` natif/HID) dans le menu LOCI co-simulé : la ROM cesse de balayer après la 1re touche (vu 2026-09-12, préexistant) — à diagnostiquer
 - [ ] Backlog : valider en interactif avec un logiciel 6502 qui arme la souris
       par XREG (sans quoi `mou_xram` reste à `0xFFFF`).
 

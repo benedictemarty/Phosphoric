@@ -802,6 +802,42 @@ identique, `test-savestate-determinism`, boot GUI sous SDL dummy jusqu'au
 READY. Pas de release (aucun changement visible) ; EMU_VERSION 2.0.2 →
 **2.0.3**.
 
+## [2.0.4] - 2026-09-12
+
+### Fixed — co-simulation LOCI : F8 faisait agir DEUX modèles à la fois (« Booting » figé)
+
+Rapporté sous `--loci-emu` : booter la ROM de diagnostic (test108k) laissait
+l'écran sur « Booting ». Le journal montrait la cause : à l'appui sur **F8**,
+le **modèle interne** swappait la ROM hôte (menu `locirom`, ou `test108k.rom`
+sur appui long), posait ses patches et reset le 6502 — **et** au relâchement
+le **firmware co-simulé** recevait aussi le bouton (`loci_emu_menu_button()`)
+et armait son propre service ROM. Deux modèles répondaient au même bouton ;
+sur appui long, la ROM de diagnostic chargée par l'un était aussitôt
+remplacée par le menu servi par l'autre.
+
+- **Un seul propriétaire du bouton** : sous `--loci-emu`, F8 (GUI) et
+  `loci-button` (`--control`) ne touchent plus au modèle interne ; le
+  firmware traite l'appui — court = menu LOCI, **long (≥ 2 s) = sa ROM de
+  diagnostic embarquée** (`EXT_BOOT_DIAG`), puis reset du 6502 sur le vecteur
+  servi. Sans co-simulation, rien ne change.
+- Nouveau **`loci_emu_diag_button()`** (Phosphoric) sur
+  **`emul_loci_diag_button()`** (`~/loci/emul`, commit d1626e0) : le maintien
+  de 2 s est simulé par un saut du TIMER du RP2040, pas par deux secondes de
+  firmware.
+- Vérifié headless (`--control`, firmware `build-xip`) : appui long → « Oric
+  Diag ROM V1.08k (C) 2023 Mike Brown — RAM Test Passed » ; appui court →
+  menu LOCI. `make tests` vert, build `LOCI_EMU=0` (stubs complétés) OK.
+
+*Non résolu, faute de reproduction* : le chemin « menu → `rom:` →
+`test108k` → ESC ». Sous `--loci-emu` le sélecteur de fichiers est servi par
+le firmware, dont la flash ne contient que `basic11b/basic10/microdis.rom` ;
+d'où vient l'entrée `test108k` reste à établir. Et l'injection de touches
+headless (`--type-keys`, natif ou HID) ne fait pas naviguer le menu co-simulé
+(la ROM cesse de balayer le clavier après la première touche — préexistant,
+identique en 2.0.0-alpha.7), ce qui empêche de scripter ce scénario.
+
+EMU_VERSION 2.0.3 → **2.0.4**.
+
 ## [Unreleased]
 
 ### Added — release automatique sur tag (`.github/workflows/release.yml`)

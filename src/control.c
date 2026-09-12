@@ -17,6 +17,7 @@
 #define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
+#include "io/loci_emu.h"
 #include "emulator.h"
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
@@ -667,6 +668,15 @@ static void cmd_loci_button(emulator_t* emu, control_sink_t* s, const char* mode
         return;
     }
     bool longp = (mode && strcmp(mode, "long") == 0);
+    if (loci_emu_active()) {
+        /* Co-simulation : le vrai firmware possède le bouton (même règle que F8
+         * dans la GUI) — court = menu, long = ROM de diagnostic embarquée. */
+        bool armed = longp ? loci_emu_diag_button() : loci_emu_menu_button();
+        if (armed) cpu_reset(&emu->cpu);
+        sink_ok(s, "action-button pulsed%s (firmware, %s)", longp ? " (long)" : "",
+                armed ? "ROM service armed, CPU reset" : "not armed");
+        return;
+    }
     emu->loci_button_long = longp;
     loci_action_button_short(&emu->loci);
     loci_action_button_release(&emu->loci);

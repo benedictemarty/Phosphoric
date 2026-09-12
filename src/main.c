@@ -1881,7 +1881,13 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
          * EXT_BTN_LONGPRESS_MS). */
         if (emu->has_loci && !repeat) {
             loci_f8_down_ms = SDL_GetTicks();
-            loci_action_button_short(&emu->loci);
+            /* Co-simulation (--loci-emu) : c'est le VRAI firmware qui possède le
+             * bouton — le modèle interne ne doit pas swapper sa ROM en parallèle
+             * (les deux se marchaient dessus : ROM de diagnostic chargée par
+             * l'un, menu servi par l'autre → « Booting » figé). Le firmware
+             * n'est sollicité qu'au relâchement, où l'on connaît la durée. */
+            if (!loci_emu_active())
+                loci_action_button_short(&emu->loci);
             log_info("LOCI: Action button pressed (F8)");
         }
         break;
@@ -2010,20 +2016,24 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 break;
             case SDL_KEYUP:
                 if (event.key.keysym.sym == SDLK_F8 && emu->has_loci) {
-                    /* Sprint 34ai: Action button release sets V flag
-                     * so the BVC spin exits and JMP ($FFFA) runs the
-                     * save-state handler. Held ≥ 2 s = diag ROM. */
                     bool longp = SDL_GetTicks() - loci_f8_down_ms >= 2000;
-                    emu->loci_button_long = longp;
-                    loci_action_button_release(&emu->loci);
                     log_info("LOCI: Action button released (F8%s)",
                              longp ? ", long press" : "");
-                }
-                /* Backend émulateur : F8 = bouton MENU LOCI → arme le service
-                 * ROM (le vrai firmware) puis reset → boot dans le menu LOCI. */
-                if (event.key.keysym.sym == SDLK_F8 && loci_emu_active()) {
-                    if (loci_emu_menu_button())
-                        cpu_reset(&emu->cpu);
+                    if (loci_emu_active()) {
+                        /* Co-simulation : le vrai firmware traite l'appui —
+                         * court = menu LOCI, long (≥ 2 s) = sa ROM de diagnostic
+                         * embarquée (EXT_BOOT_DIAG). Puis reset du 6502, qui
+                         * redémarre sur le vecteur servi par LOCI. */
+                        bool armed = longp ? loci_emu_diag_button()
+                                           : loci_emu_menu_button();
+                        if (armed) cpu_reset(&emu->cpu);
+                    } else {
+                        /* Modèle interne (sprint 34ai) : le relâchement pose V,
+                         * le spin BVC sort et JMP ($FFFA) exécute le handler de
+                         * sauvegarde de session. Maintien ≥ 2 s = ROM diag. */
+                        emu->loci_button_long = longp;
+                        loci_action_button_release(&emu->loci);
+                    }
                 }
                 if (!oric_joystick_handle_sdl_event(&emu->joystick, &event)) {
                     oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
