@@ -47,6 +47,10 @@ uint8_t loci_emu_api_read(uint16_t address) { (void)address; return 0xFF; }
 int     loci_emu_irq_take(void) { return 0; }
 
 void    loci_emu_set_cdc_device(const char *path) { (void)path; }
+void    loci_emu_dsk_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
+uint8_t loci_emu_dsk_read(uint16_t address) { (void)address; return 0xFF; }
+bool    loci_emu_romdis(void) { return false; }
+void    loci_emu_dsk_tick(void) { }
 bool    loci_emu_acia_active(void) { return false; }
 void    loci_emu_acia_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_acia_read(uint16_t address) { (void)address; return 0xFF; }

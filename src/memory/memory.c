@@ -149,6 +149,13 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
             mem_notify(mem, address, served, MEM_READ);
             return served;
         }
+        /* ROMDIS actif mais adresse non servie = MAP asserté par LOCI (fenêtre
+         * $C000 ou $E000) : RAM overlay de l'Oric, comme en mode Microdisc. */
+        if (loci_emu_romdis()) {
+            val = mem->upper_ram[address - 0xC000];
+            mem_notify(mem, address, val, MEM_READ);
+            return val;
+        }
     }
 
     /* ROM area: $C000-$FFFF
@@ -227,6 +234,11 @@ uint8_t memory_peek(memory_t* mem, uint16_t address)
     }
 
     /* ROM/overlay area: $C000-$FFFF — mirror memory_read's banking exactly. */
+    if (loci_emu_active()) {
+        uint8_t served;
+        if (loci_emu_rom_read(address, &served)) return served;
+        if (loci_emu_romdis()) return mem->upper_ram[address - 0xC000];
+    }
     if (mem->jasmin_active) {
         if (mem->jasmin_olay)
             return mem->upper_ram[address - 0xC000];
@@ -272,6 +284,12 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
     }
 
     /* ROM overlay area: $C000-$FFFF */
+    if (loci_emu_active() && loci_emu_romdis()) {
+        /* Co-sim, ROMDIS actif : la RAM overlay de l'Oric est écrite (la ROM servie
+         * par LOCI est en lecture seule ; sous MAP la RAM répond aussi en lecture). */
+        mem->upper_ram[address - 0xC000] = value;
+        return;
+    }
     if (mem->jasmin_active) {
         /* Jasmin: RAM writable except where ROM is currently mapped
          * (Oricutron jasmin_atmoswrite). */

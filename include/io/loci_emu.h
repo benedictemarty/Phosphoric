@@ -67,6 +67,12 @@ bool loci_emu_diag_button(void);
  * la ROM interne dans memory_read(). */
 bool loci_emu_rom_read(uint16_t address, uint8_t *out);
 
+/* true quand le firmware asserte ROMDIS (ROM BASIC interne coupée). Une adresse
+ * haute que loci_emu_rom_read ne sert PAS alors que ROMDIS est actif est sous
+ * MAP : c'est la RAM overlay de l'Oric qui répond (Microdisc : $C000-$DFFF en RAM
+ * pendant que microdis.rom est servie sur $E000-$FFFF) — et les écritures y vont. */
+bool loci_emu_romdis(void);
+
 /* État des lignes de contrôle pilotées par le firmware (via l'expandeur I²C) :
  * renvoie 1 quand la ligne est active. Permet à l'hôte de refléter nROMDIS/
  * nRESET/nIRQ sur son 6502/ULA. */
@@ -78,6 +84,18 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis);
  * n'a pas fini de booter, write est ignorée et read renvoie 0xFF (bus flottant). */
 void    loci_emu_api_write(uint16_t address, uint8_t value);
 uint8_t loci_emu_api_read(uint16_t address);
+
+/* Microdisc $0310-$0314/$0318 co-simulé : le contrôleur WD1793 émulé par le VRAI
+ * firmware (oric/dsk.c) sert le 6502 — lecture/écriture de secteurs, seek, RNF,
+ * IRQ de fin de commande (drainée comme pour l'API). Tant que le boot n'est pas
+ * terminé : write ignorée, read = 0xFF. La fenêtre cassette $0315-$0317 (TAP)
+ * reste servie par le modèle interne. */
+void    loci_emu_dsk_write(uint16_t address, uint8_t value);
+uint8_t loci_emu_dsk_read(uint16_t address);
+/* Une fois par frame : fait progresser une commande WD en cours sans accès 6502
+ * (la ROM Microdisc attend l'IRQ de fin de RESTORE/SEEK sans rien lire). Drainer
+ * ensuite loci_emu_irq_take(). No-op tant que le boot n'est pas terminé. */
+void    loci_emu_dsk_tick(void);
 
 /* Nombre de pulses nIRQ assertés par le firmware depuis le dernier appel (remis à
  * zéro). À appeler une fois par frame ; délivrer autant d'IRQ EDGE au 6502. */

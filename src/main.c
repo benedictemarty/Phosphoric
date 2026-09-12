@@ -1294,6 +1294,10 @@ static void run_loci_frame_hooks(emulator_t* emu, uint64_t total_executed) {
          * borné) ne pilote PAS le bus/action-SM (≠ loci_emu_tick), il ne fait que
          * déplacer des octets et mettre à jour l'io-page. No-op si pas de --loci-cdc. */
         loci_emu_acia_tick();
+        /* Microdisc co-simulé : une commande WD en cours (RESTORE/SEEK) doit finir
+         * — et pulser son IRQ — même si le 6502 n'accède plus au contrôleur.
+         * Guest-call dsk_task borné, ne pilote pas le bus (≠ loci_emu_tick). */
+        loci_emu_dsk_tick();
         int loci_irq_pulses = loci_emu_irq_take();
         for (int i = 0; i < loci_irq_pulses; i++) cpu_irq_pulse(&emu->cpu);
     }

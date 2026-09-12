@@ -36,14 +36,6 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
     return false;
 }
-static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
-     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core). */
-    if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
-                                                         : loci_read(&emu->loci, addr);
-    if (loci_addr_in_tap(addr)) return loci_tap_read(&emu->loci, addr);
-    return loci_dsk_read(&emu->loci, addr);   /* DSK (claims l'a garanti) */
-}
 /* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
  * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
  * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
@@ -56,11 +48,28 @@ static void loci_emu_reflect_nirq(emulator_t* emu) {
     int pulses = loci_emu_irq_take();
     for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
 }
+static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
+    /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
+     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core). */
+    if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
+                                                         : loci_read(&emu->loci, addr);
+    if (loci_addr_in_tap(addr)) return loci_tap_read(&emu->loci, addr);
+    /* DSK (claims l'a garanti). En co-sim, le WD1793 est celui du firmware (oric/dsk.c) :
+     * un .dsk monté sur A: dans le VRAI menu LOCI est enfin lu par le 6502. */
+    if (loci_emu_active()) {
+        uint8_t v = loci_emu_dsk_read(addr);
+        loci_emu_reflect_nirq(emu);   /* fin de secteur : l'IRQ naît sur la DERNIÈRE lecture DATA */
+        return v;
+    }
+    return loci_dsk_read(&emu->loci, addr);
+}
 static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }
                                   else                   loci_write(&emu->loci, addr, value); }
     else if (loci_addr_in_tap(addr)) loci_tap_write(&emu->loci, addr, value);
+    else if (loci_emu_active())    { loci_emu_dsk_write(addr, value);           /* DSK co-sim */
+                                     loci_emu_reflect_nirq(emu); }
     else                             loci_dsk_write(&emu->loci, addr, value);  /* DSK */
     return true;
 }

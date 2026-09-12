@@ -252,6 +252,14 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
     return emul_loci_serve_read(&g_emul, address, out) != 0;
 }
 
+bool loci_emu_romdis(void)
+{
+    if (!g_boot_done) return false;
+    int nromdis = 0;
+    emul_ext_lines(&g_emul, NULL, NULL, &nromdis);
+    return nromdis != 0;
+}
+
 void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
 {
     if (!g_boot_done) { if (nirq) *nirq = 0; if (nreset) *nreset = 0; if (nromdis) *nromdis = 0; return; }
@@ -269,6 +277,56 @@ uint8_t loci_emu_api_read(uint16_t address)
 {
     if (!g_boot_done) return 0xFF;            /* bus flottant tant que non booté */
     return emul_loci_api_read(&g_emul, address);
+}
+
+/* ── Microdisc $031x co-simulé (oric/dsk.c du firmware) ──
+ * Trace de diagnostic : LOCI_DSK_TRACE=<fichier> (ou "-" = stderr), un accès par
+ * ligne (dir, registre, valeur) — les polls répétés identiques sont comptés, pas
+ * répétés. Même esprit que LOCI_ACIA_TRACE. */
+static FILE *g_dsk_trace; static int g_dsk_trace_init;
+static void dsk_trace(char dir, uint16_t address, uint8_t value)
+{
+    static const char *reg[16] = { "CMD/STAT", "TRACK", "SECT", "DATA", "CTRL/IRQ", "?5", "?6", "?7",
+                                   "DRQ", "?9", "?A", "?B", "?C", "?D", "?E", "?F" };
+    static char last_dir; static uint16_t last_addr; static uint8_t last_val; static unsigned repeat;
+    if (!g_dsk_trace_init) {
+        const char *path = getenv("LOCI_DSK_TRACE");
+        g_dsk_trace_init = 1;
+        if (path && *path) {
+            g_dsk_trace = (path[0] == '-' && !path[1]) ? stderr : fopen(path, "w");
+            if (g_dsk_trace) { setvbuf(g_dsk_trace, NULL, _IOLBF, 0);
+                               fprintf(g_dsk_trace, "# trace Microdisc co-sim ($0310-$0318) — dir reg val [xN]\n"); }
+        }
+    }
+    if (!g_dsk_trace) return;
+    if (dir == last_dir && address == last_addr && value == last_val) { repeat++; return; }
+    if (repeat) fprintf(g_dsk_trace, "   (x%u)\n", repeat + 1);
+    repeat = 0; last_dir = dir; last_addr = address; last_val = value;
+    uint8_t st = 0; uint32_t pos = 0, start = 0, len = 0;
+    emul_loci_dsk_debug(&g_emul, &st, &pos, &start, &len);
+    fprintf(g_dsk_trace, "%c $%04X %-8s %02X   [state=%u pos=%u start=%u len=%u]\n", dir, address,
+            reg[address & 0xF], value, st, pos, start, len);
+}
+
+void loci_emu_dsk_tick(void)
+{
+    if (!g_boot_done) return;
+    emul_loci_dsk_tick(&g_emul);
+}
+
+void loci_emu_dsk_write(uint16_t address, uint8_t value)
+{
+    if (!g_boot_done) return;
+    dsk_trace('W', address, value);
+    emul_loci_dsk_write(&g_emul, address, value);
+}
+
+uint8_t loci_emu_dsk_read(uint16_t address)
+{
+    if (!g_boot_done) return 0xFF;
+    uint8_t v = emul_loci_dsk_read(&g_emul, address);
+    dsk_trace('R', address, v);
+    return v;
 }
 
 /* Pulses nIRQ captés par l'émulateur depuis le dernier appel (le firmware pulse la
