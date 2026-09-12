@@ -94,7 +94,36 @@ void microdisc_reset(microdisc_t* md) {
     md->side = 0;
 }
 
+/* Trace de diagnostic des accès registres ($0310-$0318) : MICRODISC_TRACE=<fichier>
+ * (ou "-" = stderr). Même format que LOCI_DSK_TRACE (co-sim) pour comparer les deux
+ * backends sur un même scénario ; les polls identiques consécutifs sont comptés. */
+#include <stdlib.h>
+static FILE *g_md_trace; static int g_md_trace_init;
+static void md_trace(char dir, uint16_t addr, uint8_t value)
+{
+    static char last_dir; static uint16_t last_addr; static uint8_t last_val; static unsigned repeat;
+    if (!g_md_trace_init) {
+        const char *path = getenv("MICRODISC_TRACE");
+        g_md_trace_init = 1;
+        if (path && *path) {
+            g_md_trace = (path[0] == '-' && !path[1]) ? stderr : fopen(path, "w");
+            if (g_md_trace) setvbuf(g_md_trace, NULL, _IOLBF, 0);
+        }
+    }
+    if (!g_md_trace) return;
+    if (dir == last_dir && addr == last_addr && value == last_val) { repeat++; return; }
+    if (repeat) fprintf(g_md_trace, "   (x%u)\n", repeat + 1);
+    repeat = 0; last_dir = dir; last_addr = addr; last_val = value;
+    fprintf(g_md_trace, "%c $%04X %02X\n", dir, addr, value);
+}
+
+static uint8_t microdisc_read_raw(microdisc_t* md, uint16_t addr);
 uint8_t microdisc_read(microdisc_t* md, uint16_t addr) {
+    uint8_t v = microdisc_read_raw(md, addr);
+    md_trace('R', addr, v);
+    return v;
+}
+static uint8_t microdisc_read_raw(microdisc_t* md, uint16_t addr) {
     if (addr >= 0x0310 && addr <= 0x0313) {
         return fdc_read(&md->fdc, (uint8_t)(addr & 3));
     }
@@ -113,6 +142,7 @@ uint8_t microdisc_read(microdisc_t* md, uint16_t addr) {
 }
 
 void microdisc_write(microdisc_t* md, uint16_t addr, uint8_t value) {
+    md_trace('W', addr, value);
     if (addr >= 0x0310 && addr <= 0x0313) {
         fdc_write(&md->fdc, (uint8_t)(addr & 3), value);
         /* If the FDC just mutated the in-memory image, mark this drive dirty. */

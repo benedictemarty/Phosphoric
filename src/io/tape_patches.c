@@ -12,6 +12,7 @@
 #include "io/tape_patches.h"
 #include "io/cassette.h"
 #include "io/loci_sdimg.h"
+#include "io/loci_emu.h"
 #include "memory/memory.h"
 #include "utils/logging.h"
 
@@ -35,6 +36,15 @@ void tape_patches(emulator_t* emu) {
      * PB7 (Timer 1). Neutraliser TOUS les hooks CSAVE PC-1.1, sinon ils
      * court-circuitent l'encodeur (cf. SPEC-voie-A §1). */
     if (emu->tape_capture.active)
+        return;
+
+    /* Co-sim LOCI (--loci-emu) : la ROM est SERVIE par le firmware (BASIC 1.0 ou
+     * 1.1 au choix du menu) et le haut de mémoire peut être de la RAM overlay
+     * (Sedoric). Les hooks par PC ne savent pas ce qui s'exécute à ces adresses :
+     * le patch « writeleader » BASIC 1.0 ($E6BA→$E6C9) sautait 15 octets du code
+     * d'allocation de Sedoric (SAVE → « WRITE FAULT » sur un secteur fantôme). Les
+     * cassettes en co-sim passent par le device TAP du firmware, pas par ces hooks. */
+    if (loci_emu_active())
         return;
 
     const rom_patches_t* p = emu->rom_patches;

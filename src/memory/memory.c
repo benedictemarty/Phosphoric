@@ -285,9 +285,14 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
 
     /* ROM overlay area: $C000-$FFFF */
     if (loci_emu_active() && loci_emu_romdis()) {
-        /* Co-sim, ROMDIS actif : la RAM overlay de l'Oric est écrite (la ROM servie
-         * par LOCI est en lecture seule ; sous MAP la RAM répond aussi en lecture). */
-        mem->upper_ram[address - 0xC000] = value;
+        /* Co-sim, ROMDIS actif : même modèle que le mode Microdisc ci-dessous
+         * (Oricutron) — la RAM overlay n'est écrite QUE là où elle est mappée
+         * (MAP asserté = adresse non servie par LOCI) ; sous une ROM servie,
+         * l'écriture est ignorée. Écrire quand même corrompait le code Sedoric
+         * en overlay (SAVE → « WRITE FAULT » sur un secteur fantôme). */
+        uint8_t served;
+        if (!loci_emu_rom_read(address, &served))
+            mem->upper_ram[address - 0xC000] = value;
         return;
     }
     if (mem->jasmin_active) {
