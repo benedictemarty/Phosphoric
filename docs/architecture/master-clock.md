@@ -132,6 +132,18 @@ ligne. Un état sauvé après une fin de trame (`-c`, `--save-state`) repart
 simplement à zéro. Vérifié par `make test-savestate-determinism` : mêmes arrêts
 raster, même VIA, même RAM qu'un run ininterrompu.
 
+### La boucle principale, par étapes
+
+Depuis la 2.0.3, `emulator_run()` (src/main.c) ne fait plus que dérouler, pour
+chaque trame, des **étapes nommées** — `run_frame_instructions` (la boucle par
+instruction autour de `emu_step`), puis les hooks de fin de trame (LOCI, son
+headless, fast-load, frappe automatique, présentation et événements SDL,
+captures, enregistrement, pokes, cadence) — en partageant un `run_state_t`
+(cycles exécutés, trames, horloges). L'ordre des étapes est **observable** (une
+capture `--screenshot-at` voit l'écran après la frappe automatique de la même
+trame, jamais avant) : il est celui de la boucle historique et ne doit pas être
+réordonné sans raison mesurée.
+
 ## Cœur historique
 
 `--cpu-legacy` exécute une instruction d'un bloc et ne sait pas s'arrêter entre

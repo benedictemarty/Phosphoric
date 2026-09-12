@@ -47,6 +47,12 @@ cohérents sur tout le dépôt.
 
 ## 2. La dette (priorisée)
 
+> **Mise à jour 2026-09-12 (2.0.3)** : `emulator_run()` (1 296 l) a été découpée
+> en 17 étapes nommées autour d'un `run_state_t` (126 l), sans changer l'ordre
+> d'exécution — la réserve du § 3 (« ne pas la moderniser en event-loop ») reste
+> valable et respectée : c'est une extraction, pas une refonte. `main.c` fait
+> 4 536 l ; il reste `main()` et son parser d'options (US3 de l'Epic 7, non fait).
+
 ### 2.1 🔴 `main.c` = god-object périphérique (4690 L, `main()` ≈ 1487 L)
 `main()` fait tout : ~79 options CLI (getopt_long), init des sous-systèmes,
 création des backends série (≈ 390 L pour modem/digitelec/picowifi), boucle

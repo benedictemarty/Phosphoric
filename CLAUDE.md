@@ -121,8 +121,14 @@ Central struct containing all hardware subsystems. Passed as pointer to most sub
 - **savestate.c** — Binary .ost format: 10 sections (CPU, MEM, VIA, PSG, VID, KBD, FDC, MDC, TAP, META) with CRC32
 
 ### Emulation loop (src/main.c) and master clock (src/emu_clock.c)
-Runs `CYCLES_PER_FRAME` (19968) cycles per frame at 50 FPS. The loop does the
-per-INSTRUCTION work (debugger, trace, profiler, tape patches) and calls
+Runs `CYCLES_PER_FRAME` (19968) cycles per frame at 50 FPS. `emulator_run()` is
+126 lines that dispatch **named per-frame steps** (`run_frame_instructions`,
+`run_fastload_hooks`, `run_autotype_step`, `run_present_and_events`,
+`run_timed_captures`, `run_frame_pacing`, `run_end_of_run`, …) sharing a
+`run_state_t` (cycles, frames, clocks). **Their order is observable** (captures,
+keystrokes, pacing) — add a new hook as one more `static` step at the right place,
+never inline in the loop. `run_frame_instructions` does the per-INSTRUCTION work
+(debugger, trace, profiler, tape patches) and calls
 `emu_step()`; the **master clock** `emu_cycle()` owns the per-CYCLE work with a
 fixed intra-cycle order **measured on hardware** (Mike Brown's ULA guide): **CPU**
 (its single bus access) → **φ2 peripherals** (VIA, FDC, ACIA, DTL, Mageco, cassette,

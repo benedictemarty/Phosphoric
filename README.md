@@ -192,7 +192,20 @@ make SDL2=1
 - **Observable consequence** — a CPU write during cycle *c* is seen by cell *c* (the 6502
   accesses DRAM first, the ULA fetches afterwards in the same 1 µs — measured by Mike
   Brown). Until 2.0.1 the order was inverted and every raster split landed one cell too
-  far right. Verified by `make test-clock`. Contract: [docs/architecture/master-clock.md](docs/architecture/master-clock.md).
+  far right. Verified by `make test-clock`.
+
+### Frame loop (`emulator_run`, src/main.c)
+- **One frame = one instruction loop + named end-of-frame steps**, in a fixed,
+  observable order: `run_frame_instructions` (debugger, trace, profiler, tape patches
+  around `emu_step`) → LOCI co-sim hooks → headless audio sinks → control/GDB polling →
+  fast-load phases → auto-type arming and stepping (native matrix or LOCI HID) → serial
+  trace flush, cast frame, HTTP-API drain, queued keys → `run_present_and_events` (OSD,
+  SDL events: `sdl_osd_key`, `sdl_function_key`, `sdl_mouse_event`) → timed captures →
+  frame dump / AVI → conditional captures → pokes → pacing (50 Hz limiter or `--realtime`)
+  → exit conditions (movie done, `-c` limit, JAM).
+- The shared run state (cycles, frames, bench and real-time clocks) lives in `run_state_t`;
+  each step is a `static` function of at most ~150 lines (2.0.3 — was a single
+  1 300-line function). Contract: [docs/architecture/master-clock.md](docs/architecture/master-clock.md).
 
 ### Cycle Trace (accuracy instrument)
 - **One line per CPU cycle** — `--cycle-trace FILE` (`--cycle-trace-max N` to cap):
@@ -638,8 +651,10 @@ src/
   hostfs/        Host filesystem sharing, VFS abstraction
   utils/         Logging, INI config parser, CPU trace, profiler,
                  ROM info, symbols loader
-  main.c         Emulation loop, CLI, I/O wiring
-  savestate.c    Save/load state (.ost format)
+  emu_clock.c    Master clock: emu_cycle() = one cycle of the whole machine
+  main.c         CLI, I/O wiring, and the frame loop (emulator_run: 126 lines
+                 dispatching 17 named per-frame steps, see below)
+  savestate.c    Save/load state (.ost format, 14 sections, exact resume point)
   debugger.c     Interactive REPL debugger
   control.c      IPC control mode (--control, OricForge integration)
   tui.c          ncurses TUI debugger (TUI=1 build)
@@ -647,8 +662,11 @@ src/
 include/         Public headers
 tests/unit/      unit tests across CPU, memory, I/O, video, audio, storage,
                  debugger, GDB stub, movie, AVI, savestate, LOCI, symbols, etc.
-tests/integration/ E2E regression (Sedoric boot, IPC control, Python smoke client)
-tools/           bas2tap, bin2tap, tap2sedoric, sedoric-info, sedoric_*.py/dsk_raw2mfm.py
+tests/integration/ E2E regression (Sedoric boot, IPC control, Python smoke client,
+                 savestate determinism, tape signal, raster split)
+tests/corpus/    Screen fingerprints of the local media corpus (make test-corpus)
+tools/           bas2tap, bin2tap, tap2sedoric, sedoric-info, sedoric_*.py/dsk_raw2mfm.py,
+                 bench.sh / bench_check.sh (perf budget), corpus_replay.sh, fetch_vectors.sh
 examples/        Example BASIC programs (.bas + .tap)
 roms/            ROM files (not distributed)
 docs/            User guide, control_protocol.md, CR review docs
