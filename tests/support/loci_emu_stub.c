@@ -35,3 +35,4 @@ bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
 
 /* memory.c : RAM overlay sous MAP en co-sim (inactif ici → jamais atteint). */
 bool loci_emu_romdis(void) { return false; }
+void loci_emu_tap_motor(uint8_t via_orb) { (void)via_orb; }

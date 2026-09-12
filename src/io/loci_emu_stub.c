@@ -51,6 +51,9 @@ void    loci_emu_dsk_write(uint16_t address, uint8_t value) { (void)address; (vo
 uint8_t loci_emu_dsk_read(uint16_t address) { (void)address; return 0xFF; }
 bool    loci_emu_romdis(void) { return false; }
 void    loci_emu_dsk_tick(void) { }
+void    loci_emu_tap_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
+uint8_t loci_emu_tap_read(uint16_t address) { (void)address; return 0xFF; }
+void    loci_emu_tap_motor(uint8_t via_orb) { (void)via_orb; }
 bool    loci_emu_acia_active(void) { return false; }
 void    loci_emu_acia_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_acia_read(uint16_t address) { (void)address; return 0xFF; }

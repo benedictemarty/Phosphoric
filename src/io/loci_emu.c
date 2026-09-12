@@ -308,6 +308,25 @@ static void dsk_trace(char dir, uint16_t address, uint8_t value)
             reg[address & 0xF], value, st, pos, start, len);
 }
 
+/* ── Cassette $031x co-simulée (oric/tap.c du firmware) ── */
+void loci_emu_tap_write(uint16_t address, uint8_t value)
+{
+    if (!g_boot_done) return;
+    emul_loci_tap_write(&g_emul, address, value);
+}
+
+uint8_t loci_emu_tap_read(uint16_t address)
+{
+    if (!g_boot_done) return 0xFF;
+    return emul_loci_tap_read(&g_emul, address);
+}
+
+void loci_emu_tap_motor(uint8_t via_orb)
+{
+    if (!g_boot_done) return;
+    emul_loci_tap_motor(&g_emul, via_orb);
+}
+
 void loci_emu_dsk_tick(void)
 {
     if (!g_boot_done) return;

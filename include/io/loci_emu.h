@@ -92,6 +92,13 @@ uint8_t loci_emu_api_read(uint16_t address);
  * reste servie par le modèle interne. */
 void    loci_emu_dsk_write(uint16_t address, uint8_t value);
 uint8_t loci_emu_dsk_read(uint16_t address);
+/* Cassette $0315-$0317 co-simulée (oric/tap.c) : les patchs ROM du firmware
+ * pilotent CMD/STAT/DATA ; le moteur (VIA ORB PB6, $0300) est snoopé comme sur
+ * le vrai bus — main.c appelle loci_emu_tap_motor à chaque écriture ORB. */
+void    loci_emu_tap_write(uint16_t address, uint8_t value);
+uint8_t loci_emu_tap_read(uint16_t address);
+void    loci_emu_tap_motor(uint8_t via_orb);
+
 /* Une fois par frame : fait progresser une commande WD en cours sans accès 6502
  * (la ROM Microdisc attend l'IRQ de fin de RESTORE/SEEK sans rien lire). Drainer
  * ensuite loci_emu_irq_take(). No-op tant que le boot n'est pas terminé. */

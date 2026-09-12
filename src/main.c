@@ -462,6 +462,7 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
      * (PB6), like the firmware tap_act() hook (Sprint 36f). */
     if (emu->has_loci && address == 0x0300) {
         loci_tap_motor(&emu->loci, (value & 0x40) != 0);
+        loci_emu_tap_motor(value);     /* co-sim : tap_act() du firmware (no-op sinon) */
     }
     /* --tape-signal-free : gate le moteur cassette signal-level sur ORB PB6 (le
      * moteur piloté par la ROM), pour les ROM clean-room dont le layout n'atteint

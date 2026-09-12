@@ -53,7 +53,8 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
      * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core). */
     if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
                                                          : loci_read(&emu->loci, addr);
-    if (loci_addr_in_tap(addr)) return loci_tap_read(&emu->loci, addr);
+    if (loci_addr_in_tap(addr)) return loci_emu_active() ? loci_emu_tap_read(addr)
+                                                         : loci_tap_read(&emu->loci, addr);
     /* DSK (claims l'a garanti). En co-sim, le WD1793 est celui du firmware (oric/dsk.c) :
      * un .dsk monté sur A: dans le VRAI menu LOCI est enfin lu par le 6502. */
     if (loci_emu_active()) {
@@ -67,7 +68,8 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }
                                   else                   loci_write(&emu->loci, addr, value); }
-    else if (loci_addr_in_tap(addr)) loci_tap_write(&emu->loci, addr, value);
+    else if (loci_addr_in_tap(addr)) { if (loci_emu_active()) loci_emu_tap_write(addr, value);
+                                       else                   loci_tap_write(&emu->loci, addr, value); }
     else if (loci_emu_active())    { loci_emu_dsk_write(addr, value);           /* DSK co-sim */
                                      loci_emu_reflect_nirq(emu); }
     else                             loci_dsk_write(&emu->loci, addr, value);  /* DSK */
