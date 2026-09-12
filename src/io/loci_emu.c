@@ -33,6 +33,7 @@ static pthread_t g_boot_thread;
 static volatile int g_boot_done;   /* 1 quand le firmware a fini de booter (idle) */
 static int       g_boot_started, g_joined;
 static char      g_snap_path[512]; /* cache d'état « boot terminé » = <elf>.snap  */
+static char      g_flash_path[1024]; /* image flash persistante = <elf>.flash ("-" = volatile) */
 static char      g_usb_image[1024]; /* image FAT servie comme disque USB émulé (option) */
 static char      g_cdc_dev[1024];  /* dongle CDC (ex. /dev/ttyACM0 ou PTY) servi comme modem $0380 */
 static int       g_cdc_fd = -1;    /* descripteur ouvert du dongle (>=0 = ACIA routée vers le firmware) */
@@ -123,6 +124,16 @@ int loci_emu_start(const char *elf_path)
         return -1;
     }
     snprintf(g_snap_path, sizeof(g_snap_path), "%s.snap", elf_path);
+    /* Flash persistante : réapplique l'image de la session précédente AVANT le
+     * boot/restore. emul_flash_persist_load recalcule la signature → un snapshot
+     * pris sur une autre image flash est refusé (boot complet, puis réécrit). */
+    if (!g_flash_path[0]) snprintf(g_flash_path, sizeof(g_flash_path), "%s.flash", elf_path);
+    if (strcmp(g_flash_path, "-") != 0) {
+        if (emul_flash_persist_load(&g_emul, g_flash_path))
+            log_info("LOCI-emu: flash restaurée depuis « %s » (FS interne 0: de la session précédente)", g_flash_path);
+        else
+            log_info("LOCI-emu: pas d'image flash « %s » — FS interne vierge (sera persisté en fin de session)", g_flash_path);
+    }
     /* Enregistre l'HLE USB MSC AVANT le boot (les hooks doivent être posés avant
      * le montage ; le snapshot restore ne les écrase pas — hors cpu_snap_t). */
     if (g_usb_image[0] && !emul_loci_set_usb_image(&g_emul, g_usb_image)) {
@@ -146,7 +157,24 @@ void loci_emu_set_usb_image(const char *path)
     if (path) snprintf(g_usb_image, sizeof(g_usb_image), "%s", path);
 }
 
-void loci_emu_stop(void) { }   /* plus de thread persistant (mono-thread post-boot) */
+void loci_emu_set_flash_image(const char *path)
+{
+    if (path) snprintf(g_flash_path, sizeof(g_flash_path), "%s", path);
+}
+
+/* Fin de session : la flash émulée (pages écrites par littlefs) est persistée dans
+ * l'image — comme la NOR de la cartouche, le drive 0: survit au prochain lancement.
+ * Plus de thread persistant à arrêter (mono-thread post-boot). */
+void loci_emu_stop(void)
+{
+    if (!g_boot_started) return;
+    ensure_booted();
+    if (!g_flash_path[0] || !strcmp(g_flash_path, "-")) return;
+    if (emul_flash_persist_save(&g_emul, g_flash_path))
+        log_info("LOCI-emu: flash persistée dans « %s » (FS interne 0: conservé)", g_flash_path);
+    else
+        log_warning("LOCI-emu: échec d'écriture de l'image flash « %s » — FS de la session perdu", g_flash_path);
+}
 
 bool loci_emu_active(void) { return g_boot_done != 0; }
 

@@ -23,6 +23,7 @@ int loci_emu_start(const char *elf_path)
 }
 
 void loci_emu_set_usb_image(const char *path) { (void)path; }
+void loci_emu_set_flash_image(const char *path) { (void)path; }
 void loci_emu_stop(void) { }
 bool loci_emu_active(void) { return false; }
 bool loci_emu_menu_button(void) { return false; }

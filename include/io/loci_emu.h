@@ -34,7 +34,15 @@ int loci_emu_start(const char *elf_path);
  * loci_emu_start (le montage a lieu juste après le boot). */
 void loci_emu_set_usb_image(const char *path);
 
-/* Arrête proprement le thread émulateur (optionnel — sûr de ne pas l'appeler). */
+/* Image flash PERSISTANTE (FS interne littlefs, drive 0:) — comme la flash NOR de
+ * la cartouche, elle survit d'une session à l'autre. Défaut : <elf>.flash ; « - »
+ * = volatile (flash vierge à chaque lancement, comme avant). À appeler AVANT
+ * loci_emu_start. */
+void loci_emu_set_flash_image(const char *path);
+
+/* Fin de session : persiste la flash (pages écrites) dans l'image ci-dessus.
+ * No-op si le backend n'est pas actif. Sûr de ne pas l'appeler (alors le FS
+ * de la session est perdu). */
 void loci_emu_stop(void);
 
 /* Vrai quand le firmware a fini de booter (idle). Faux pendant le boot arrière-plan

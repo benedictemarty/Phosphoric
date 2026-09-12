@@ -886,6 +886,7 @@ static void emulator_cleanup(emulator_t* emu) {
     if (emu->has_loci) {
         loci_cleanup(&emu->loci);
     }
+    loci_emu_stop();   /* co-sim : persiste la flash (FS interne 0:) — no-op sans --loci-emu */
     if (emu->loci_overlay_buf) {
         free(emu->loci_overlay_buf);
         emu->loci_overlay_buf = NULL;
@@ -2643,6 +2644,7 @@ int main(int argc, char* argv[]) {
     const char* loci_emu_path = NULL;   /* --loci-emu : exécute le vrai firmware RP2040 (émulateur) */
     const char* loci_emu_usb_image = NULL;  /* --loci-usb-image : image FAT servie comme disque USB émulé */
     const char* loci_emu_cdc_dev = NULL;    /* --loci-cdc : dongle CDC (ex. /dev/ttyACM0) servi comme ACIA $0380 */
+    const char* loci_emu_flash = NULL;      /* --loci-flash : image flash persistante (FS interne 0:) */
     const char* loci_sdimg_path = NULL;
     const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
     const char* loci_web_base = NULL;  /* Route B : racine serveur pour le device « W: Web disks » */
@@ -2855,6 +2857,7 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI_EMU: loci_emu_path = optarg; loci_enabled = true; break;
             case OPT_LOCI_EMU_USB_IMAGE: loci_emu_usb_image = optarg; break;
             case OPT_LOCI_EMU_CDC: loci_emu_cdc_dev = optarg; break;
+            case OPT_LOCI_EMU_FLASH: loci_emu_flash = optarg; break;
             case OPT_LOCI_MENU_AT: g_loci_menu_at = strtoull(optarg, NULL, 0); break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_LOCI_WEB: loci_web_url = optarg; loci_enabled = true; break;
@@ -3386,6 +3389,7 @@ int main(int argc, char* argv[]) {
     if (loci_emu_path) {
         if (loci_emu_usb_image) loci_emu_set_usb_image(loci_emu_usb_image);
         if (loci_emu_cdc_dev) loci_emu_set_cdc_device(loci_emu_cdc_dev);
+        if (loci_emu_flash) loci_emu_set_flash_image(loci_emu_flash);
         loci_emu_start(loci_emu_path);
     }
 
