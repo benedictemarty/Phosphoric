@@ -158,7 +158,7 @@ static const struct option long_options[] = {
     {"loci-emu",            required_argument, 0, OPT_LOCI_EMU},
     {"loci-usb-image",      required_argument, 0, OPT_LOCI_EMU_USB_IMAGE},
     {"loci-cdc",            required_argument, 0, OPT_LOCI_EMU_CDC},
-    {"loci-flash",          required_argument, 0, OPT_LOCI_EMU_FLASH},
+    {"loci-emu-flash",      required_argument, 0, OPT_LOCI_EMU_FLASH},
     {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
     {"loci-usb",            required_argument, 0, OPT_LOCI_USB},
     {"loci-web",            required_argument, 0, OPT_LOCI_WEB},

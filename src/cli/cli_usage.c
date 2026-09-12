@@ -195,7 +195,7 @@ void cli_print_usage(const char* program_name) {
     printf("                            clé USB émulée (avec --loci-emu)\n");
     printf("      --loci-cdc DEV        Dongle CDC réel (ex. /dev/ttyACM0) servi par le\n");
     printf("                            firmware co-simulé comme ACIA $0380 (avec --loci-emu)\n");
-    printf("      --loci-flash FILE     Image flash persistante du firmware co-simulé (FS\n");
+    printf("      --loci-emu-flash FILE Image flash persistante du firmware co-simulé (FS\n");
     printf("                            interne 0:) ; défaut <ELF>.flash, « - » = volatile\n");
     printf("      --loci-menu-at N      Déclenche le menu LOCI une seule fois au cycle N\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");

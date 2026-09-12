@@ -44,8 +44,19 @@ void tape_patches(emulator_t* emu) {
      * le patch « writeleader » BASIC 1.0 ($E6BA→$E6C9) sautait 15 octets du code
      * d'allocation de Sedoric (SAVE → « WRITE FAULT » sur un secteur fantôme). Les
      * cassettes en co-sim passent par le device TAP du firmware, pas par ces hooks. */
-    if (loci_emu_active())
-        return;
+    if (loci_emu_active()) {
+        /* Les hooks ne sont légitimes que si l'octet à PC est bien la ROM que
+         * Phosphoric connaît : (1) LOCI sert la ROM à cette adresse (pas de RAM
+         * overlay sous MAP), (2) l'octet servi est celui de la ROM chargée par -r
+         * (même version → mêmes adresses). Sinon le PC appartient à du code
+         * étranger (Sedoric, menu LOCI) et le hook sauterait des instructions.
+         * `--tape X.tap -f` reste donc utilisable en co-sim avec -r (nettest). */
+        uint8_t served;
+        uint16_t pc0 = emu->cpu.PC;
+        if (pc0 < 0xC000 || !loci_emu_rom_read(pc0, &served) ||
+            served != emu->memory.rom[pc0 - 0xC000])
+            return;
+    }
 
     const rom_patches_t* p = emu->rom_patches;
     uint16_t pc = emu->cpu.PC;

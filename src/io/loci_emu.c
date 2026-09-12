@@ -266,17 +266,65 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
     emul_ext_lines(&g_emul, nirq, nreset, nromdis);
 }
 
-/* ── API MIA $03xx co-simulée (étape 2) ── */
+/* ── API MIA $03xx co-simulée (étape 2) ──
+ * Trace : LOCI_API_TRACE=<fichier> (ou "-") — chaque appel (op, A, X, octets empilés
+ * en ASCII) et son résultat (AX, SREG, errno) au premier poll libéré. */
+static FILE *g_api_trace; static int g_api_trace_init;
+static char g_api_push[300]; static int g_api_pushn;
+static uint8_t g_api_a, g_api_x; static int g_api_pending;
+static void api_trace_init(void)
+{
+    g_api_trace_init = 1;
+    const char *path = getenv("LOCI_API_TRACE");
+    if (path && *path) {
+        g_api_trace = (path[0] == '-' && !path[1]) ? stderr : fopen(path, "w");
+        if (g_api_trace) setvbuf(g_api_trace, NULL, _IOLBF, 0);
+    }
+}
+static void api_trace_write(uint16_t address, uint8_t value)
+{
+    if (!g_api_trace_init) api_trace_init();
+    if (!g_api_trace) return;
+    switch (address & 0xFF) {
+    case 0xAC: if (g_api_pushn < (int)sizeof g_api_push - 1) g_api_push[g_api_pushn++] = (char)value; break;
+    case 0xB4: g_api_a = value; break;
+    case 0xB6: g_api_x = value; break;
+    case 0xAF: {
+        fprintf(g_api_trace, "OP %02X A=%02X X=%02X push[%d]=\"", value, g_api_a, g_api_x, g_api_pushn);
+        for (int i = g_api_pushn - 1; i >= 0; i--) {   /* dernier empilé = 1er caractère */
+            unsigned char c = (unsigned char)g_api_push[i];
+            if (c >= 0x20 && c < 0x7F) fputc(c, g_api_trace); else fprintf(g_api_trace, "\\x%02X", c);
+        }
+        fprintf(g_api_trace, "\"\n");
+        g_api_pushn = 0; g_api_pending = (value != 0);
+        break; }
+    default: break;
+    }
+}
+static void api_trace_result(void)
+{
+    if (!g_api_trace || !g_api_pending) return;
+    uint8_t *io = g_emul.cpu0.sram + (0x20040000u - 0x20000000u);
+    if (io[0xB2] == 0xFE) return;             /* encore bloqué */
+    g_api_pending = 0;
+    fprintf(g_api_trace, "   -> AX=%04X SREG=%04X errno=%u\n", io[0xB4] | (io[0xB6] << 8),
+            io[0xB8] | (io[0xB9] << 8), io[0xAD] | (io[0xAE] << 8));
+}
+
 void loci_emu_api_write(uint16_t address, uint8_t value)
 {
     if (!g_boot_done) return;                 /* boot pas fini : LOCI transparent */
+    api_trace_write(address, value);
     emul_loci_api_write(&g_emul, address, value);
+    api_trace_result();
 }
 
 uint8_t loci_emu_api_read(uint16_t address)
 {
     if (!g_boot_done) return 0xFF;            /* bus flottant tant que non booté */
-    return emul_loci_api_read(&g_emul, address);
+    uint8_t v = emul_loci_api_read(&g_emul, address);
+    api_trace_result();
+    return v;
 }
 
 /* ── Microdisc $031x co-simulé (oric/dsk.c du firmware) ──
@@ -323,7 +371,13 @@ uint8_t loci_emu_tap_read(uint16_t address)
 
 void loci_emu_tap_motor(uint8_t via_orb)
 {
-    if (!g_boot_done) return;
+    /* La ROM réécrit ORB à chaque colonne du balayage clavier : ne rejouer
+     * tap_act() (guest-call = coûteux) que sur un CHANGEMENT de PB6, sinon la
+     * co-sim s'effondre (×50) dès que BASIC attend une touche. */
+    static int last = -1;
+    int motor = (via_orb >> 6) & 1;
+    if (!g_boot_done || motor == last) return;
+    last = motor;
     emul_loci_tap_motor(&g_emul, via_orb);
 }
 
