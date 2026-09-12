@@ -554,6 +554,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 | F6 | OSD — hot-swap tape/disk media |
 | F7 | Memory dump (64KB RAM to timestamped .bin file) |
 | F8 | LOCI Action button — short press: session snapshot + LOCI menu; hold ≥ 2 s: diag ROM |
+| Ctrl+Alt+M / Ctrl+Alt+D | Same LOCI button (short / long) for keyboards where F8 is a media key the desktop grabs first (Fn-Lock toggled) |
 | F9 | Enter debugger |
 | F10 | Quit |
 | F11 | Fullscreen |

@@ -840,6 +840,17 @@ EMU_VERSION 2.0.3 → **2.0.4**.
 
 ## [Unreleased]
 
+### Added — Ctrl+Alt+M / Ctrl+Alt+D : le bouton LOCI sans F8
+
+Rapporté : « au bout d'un certain nombre de tests, F8 revient à GNOME (volume)
+même quand Phosphoric a le focus ». Sur beaucoup de portables F8 est aussi une
+touche multimédia que le bureau capture **avant** l'application dès que le
+verrouillage Fn bascule — et F12, la capture d'écran de Phosphoric, est la
+touche Fn-Lock de certains claviers. Phosphoric ne voit alors plus F8 du tout.
+Nouvelles cordes **Ctrl+Alt+M** (appui court, menu) et **Ctrl+Alt+D** (appui
+long, ROM de diagnostic), jamais transmises à l'Oric, mêmes chemins que F8
+(modèle interne ou firmware co-simulé).
+
 ### Added — release automatique sur tag (`.github/workflows/release.yml`)
 
 Un tag `vX.Y.Z` poussé sur GitHub construit, sur le commit tagué, le tarball

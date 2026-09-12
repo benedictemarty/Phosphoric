@@ -588,6 +588,12 @@ Le **bouton Action** (F8) declenche un snapshot de session puis le menu LOCI
 (appui court) ou le diagnostic ROM (appui long). Boote un master Sedoric V4
 complet via le firmware LOCI.
 
+Si F8 ne parvient plus a Phosphoric (sur beaucoup de portables F8 est aussi
+une touche multimedia — volume — que le bureau capture avant l'application des
+que le verrouillage Fn bascule), **Ctrl+Alt+M** = appui court (menu) et
+**Ctrl+Alt+D** = appui long (ROM de diagnostic) font la meme chose et ne sont
+jamais transmis a l'Oric.
+
 ```bash
 ./oric1-emu -r basic11b.rom --loci --loci-flash ./loci_files
 ```

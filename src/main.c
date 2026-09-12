@@ -1840,6 +1840,29 @@ static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
 /* Touches de fonction de l'émulateur (F2/F4 savestate, F3 échelle, F5 reset,
  * F7 dump mémoire, F8 bouton LOCI, F9 débogueur, F10 quitter, F11 plein écran,
  * F12 capture). Les autres touches passent ensuite au clavier ORIC / manette. */
+/* Bouton LOCI sans F8 : sur beaucoup de portables F8 est aussi une touche
+ * multimédia (volume) que GNOME capture AVANT l'application dès que le
+ * verrouillage Fn bascule — et F12 (capture d'écran ici) est justement la
+ * touche Fn-Lock de certains claviers. Ctrl+Alt+M = appui court (menu),
+ * Ctrl+Alt+D = appui long (ROM de diagnostic) ; jamais transmis à l'Oric. */
+static bool sdl_loci_button_chord(emulator_t* emu, SDL_Keycode sym, uint16_t mod) {
+    if (!emu->has_loci) return false;
+    if (!(mod & KMOD_CTRL) || !(mod & KMOD_ALT)) return false;
+    if (sym != SDLK_m && sym != SDLK_d) return false;
+    bool longp = (sym == SDLK_d);
+    log_info("LOCI: Action button via Ctrl+Alt+%c (%s)", longp ? 'D' : 'M',
+             longp ? "long press" : "short press");
+    if (loci_emu_active()) {
+        bool armed = longp ? loci_emu_diag_button() : loci_emu_menu_button();
+        if (armed) cpu_reset(&emu->cpu);
+    } else {
+        emu->loci_button_long = longp;
+        loci_action_button_short(&emu->loci);
+        loci_action_button_release(&emu->loci);
+    }
+    return true;
+}
+
 static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
                              uint64_t total_executed) {
     switch (sym) {
@@ -2004,6 +2027,9 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 if (sdl_osd_key(emu, event.key.keysym.sym))
                     break;  /* consomme l'événement */
                 /* F5 = Reset, F10 = Quit, F11 = Fullscreen, F12 = Screenshot */
+                if (!event.key.repeat &&
+                    sdl_loci_button_chord(emu, event.key.keysym.sym, event.key.keysym.mod))
+                    break;  /* consommé : ne va pas au clavier Oric */
                 sdl_function_key(emu, event.key.keysym.sym, event.key.repeat != 0,
                                  total_executed);
                 /* Fall through to keyboard/joystick handler */
