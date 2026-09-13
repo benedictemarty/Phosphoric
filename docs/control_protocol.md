@@ -66,7 +66,7 @@ et exposées aussi via l'API HTTP. Les réponses suivent la convention `OK …`/
 
 | CMD | Usage | Rôle |
 |-----|-------|------|
-| `keys <texte>` | reste brut de la ligne (espaces préservés) | injecte des frappes clavier |
+| `keys <texte>` | reste brut de la ligne (espaces préservés) | injecte des frappes clavier ; `\n` Return, `\e` Esc, `\s<c>` = `<c>` avec SHIFT |
 | `hunt` puis `hunt <op> [val]` | op ∈ `eq,same,changed,up,down,list,clear` | recherche de valeur en mémoire (snapshots successifs) |
 | `watch-region <start> <end> [rwx]` | bornes hex, flags sous-ensemble de `rwx` | surveille une plage mémoire |
 | `watch-region-clear` | — | efface toutes les régions surveillées |

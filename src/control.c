@@ -674,7 +674,9 @@ static void cmd_loci_button(emulator_t* emu, control_sink_t* s, const char* mode
         bool armed = longp ? loci_emu_diag_button() : loci_emu_menu_button();
         if (armed) cpu_reset(&emu->cpu);
         sink_ok(s, "action-button pulsed%s (firmware, %s)", longp ? " (long)" : "",
-                armed ? "ROM service armed, CPU reset" : "not armed");
+                armed ? "ROM service armed, CPU reset"
+                      : loci_emu_button_was_warm() ? "warm freeze: IRQ trap, no reset"
+                                                   : "not armed");
         return;
     }
     emu->loci_button_long = longp;
@@ -1089,6 +1091,11 @@ static void cmd_keys(emulator_t* emu, control_sink_t* s, const char* text) {
                 case 'n': case 'r': c = '\n'; break;   /* RETURN */
                 case 't': c = '\t'; break;
                 case 'e': c = (char)0x1B; break;       /* ESC */
+                case 's':                              /* \s<c> : <c> avec SHIFT (ex. \sn) */
+                    if (p[1] && (unsigned char)p[1] >= 0x20 && (unsigned char)p[1] < 0x80) {
+                        p++; c = (char)((unsigned char)*p | 0x80); break;
+                    }
+                    c = 's'; break;
                 case '\\': c = '\\'; break;
                 default: c = *p; break;                /* literal */
             }

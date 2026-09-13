@@ -207,14 +207,31 @@ bool loci_emu_kbd_armed(void)
     return emul_loci_kbd_armed(&g_emul, NULL) != 0;
 }
 
+static bool g_button_warm;   /* dernier appui MENU = gel à chaud (trap IRQ, pas de reset) */
+bool loci_emu_button_was_warm(void) { return g_button_warm; }
+
 bool loci_emu_menu_button(void)
 {
     if (!g_boot_started) return false;
     ensure_booted();               /* si l'utilisateur presse MENU avant la fin du boot, on attend */
 
+    int nromdis_before = 0;
+    emul_ext_lines(&g_emul, NULL, NULL, &nromdis_before);
     int armed = emul_loci_menu_button(&g_emul);
     int nromdis = 0;
     emul_ext_lines(&g_emul, NULL, NULL, &nromdis);
+    /* Gel À CHAUD (ROM déjà servie) : ext.c a posé le trap IRQ et pulsé nIRQ. Le
+     * pulse reste latché : io_bus/main le délivrent au 6502 en EDGE au prochain
+     * drain (loci_emu_irq_take). Surtout PAS de reset : le 6502 doit spinner en
+     * $03BA jusqu'à ce que le firmware libère le trap vers restore.s du menu. */
+    g_button_warm = nromdis_before &&
+                    (emul_loci_irq_peek(&g_emul) > 0 || emul_loci_irq_trap_armed(&g_emul));
+    if (g_button_warm) {
+        log_info("LOCI-emu: bouton MENU à chaud → trap IRQ posé, nIRQ pulsé (%d) — "
+                 "le 6502 gèle dans le menu via $03BA, pas de reset",
+                 emul_loci_irq_peek(&g_emul));
+        return false;
+    }
     if (armed) {
         uint8_t lo = 0, hi = 0;
         emul_loci_serve_read(&g_emul, 0xFFFC, &lo); emul_loci_serve_read(&g_emul, 0xFFFD, &hi);

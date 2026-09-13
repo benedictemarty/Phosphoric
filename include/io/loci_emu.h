@@ -54,6 +54,10 @@ bool loci_emu_active(void);
  * true si le service est armé. L'appelant doit ENSUITE réinitialiser le 6502
  * (cpu_reset) pour qu'il redémarre dans le menu LOCI servi. */
 bool loci_emu_menu_button(void);
+/* true si le dernier loci_emu_menu_button() était un gel À CHAUD : le firmware a
+ * posé son trap IRQ et pulsé nIRQ (délivré par le drain habituel) ; la fonction a
+ * renvoyé false exprès (ne pas resetter le 6502). */
+bool loci_emu_button_was_warm(void);
 
 /** @brief Appui LONG (≥ 2 s) sur le bouton MENU : le firmware boote sa ROM de
  *  diagnostic embarquée (test108k, EXT_BOOT_DIAG). Renvoie true si le service ROM

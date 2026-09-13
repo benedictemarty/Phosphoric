@@ -1069,8 +1069,16 @@ static void feed_kbd_inject(emulator_t* emu) {
 
     if (!emu->kbd_inject_pressed) {
         oric_keyboard_release_all(&emu->keyboard);
-        oric_keyboard_press_char(&emu->keyboard,
-                                 emu->kbd_inject_buf[emu->kbd_inject_pos]);
+        {
+            /* Octet ≥ 0xA0 = caractère 7 bits + SHIFT (escape \s de `keys`) ; les
+             * sentinelles flèches/DEL restent 0x80-0x84. */
+            unsigned char ic = (unsigned char)emu->kbd_inject_buf[emu->kbd_inject_pos];
+            if (ic >= 0xA0) {
+                oric_keyboard_press_char(&emu->keyboard, (char)(ic & 0x7F));
+                oric_keyboard_press_lshift(&emu->keyboard);
+            } else
+                oric_keyboard_press_char(&emu->keyboard, (char)ic);
+        }
         emu->kbd_inject_pressed = true;
         emu->kbd_inject_delay = 3;          /* hold ~3 frames ≈ 60 ms */
     } else {
