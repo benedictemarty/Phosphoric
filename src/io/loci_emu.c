@@ -328,8 +328,25 @@ static void api_trace_result(void)
             io[0xB8] | (io[0xB9] << 8), io[0xAD] | (io[0xAE] << 8));
 }
 
+/* Un accès 6502 à la page MIA pendant le boot arrière-plan (1er lancement d'un
+ * ELF, sans snapshot) : on ATTEND la fin du boot plutôt que de servir un bus
+ * flottant. Sur matériel, aucun programme chargé de cassette n'appelle l'API
+ * avant que LOCI (≈ 1 s) soit prêt ; ici `--tape X.tap -f` y arrive en quelques
+ * millions de cycles, et un `open("N:…")` échouait au premier lancement seulement
+ * (artefact du banc, pas du firmware). Sans `--loci-emu`, on n'arrive pas ici. */
+static void api_wait_boot(void)
+{
+    if (!g_boot_done && g_boot_started) ensure_booted();
+}
+bool loci_emu_wait_boot(void)
+{
+    api_wait_boot();
+    return g_boot_done != 0;
+}
+
 void loci_emu_api_write(uint16_t address, uint8_t value)
 {
+    api_wait_boot();
     if (!g_boot_done) return;                 /* boot pas fini : LOCI transparent */
     api_trace_write(address, value);
     emul_loci_api_write(&g_emul, address, value);
@@ -338,6 +355,7 @@ void loci_emu_api_write(uint16_t address, uint8_t value)
 
 uint8_t loci_emu_api_read(uint16_t address)
 {
+    api_wait_boot();
     if (!g_boot_done) return 0xFF;            /* bus flottant tant que non booté */
     uint8_t v = emul_loci_api_read(&g_emul, address);
     api_trace_result();

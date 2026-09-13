@@ -840,6 +840,15 @@ EMU_VERSION 2.0.3 → **2.0.4**.
 
 ## [Unreleased]
 
+### Fixed — co-simulation LOCI : au premier lancement, le modèle interne répondait à la place du firmware
+
+Sans snapshot (premier lancement d'un ELF), le firmware boote en arrière-plan
+pendant que l'Oric démarre. Un programme lancé par `--tape X.tap -f` qui touche
+la page LOCI avant la fin de ce boot (quelques millions de cycles) était servi
+par le backend comportemental `loci_core` — `open("N:…")` rendait `FR_NO_FILE`,
+puis tout marchait au lancement suivant. `io_bus` attend désormais la fin du boot
+(`loci_emu_wait_boot()`, join du thread) avant le premier accès LOCI.
+
 ### Fixed — co-simulation LOCI : le bouton MENU pendant un programme resettait le 6502
 
 Le gel « à chaud » du vrai firmware (bouton court alors qu'une ROM est déjà

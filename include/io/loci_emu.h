@@ -48,6 +48,9 @@ void loci_emu_stop(void);
 /* Vrai quand le firmware a fini de booter (idle). Faux pendant le boot arrière-plan
  * → l'hôte laisse l'Oric servir sa propre ROM. */
 bool loci_emu_active(void);
+/* Si un boot arrière-plan est en cours, l'attend (le 6502 touche la page LOCI :
+ * on ne sert pas le modèle interne à sa place). Renvoie loci_emu_active(). */
+bool loci_emu_wait_boot(void);
 
 /* Simule l'appui sur le BOUTON MENU physique de LOCI : le firmware charge sa ROM
  * de boot, arme le service ($C000-$FFFF via nROMDIS) et pilote nRESET. Renvoie

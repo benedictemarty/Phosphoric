@@ -55,7 +55,10 @@ static void loci_emu_reflect_nirq(emulator_t* emu) {
 }
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
-     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core). */
+     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core).
+     * Pendant le boot arrière-plan (1er lancement d'un ELF), on ATTEND : sinon le
+     * modèle interne répondait à la place du firmware (open("N:…") → FR_NO_FILE). */
+    loci_emu_wait_boot();
     if (loci_emu_ramx_claims(addr)) return loci_emu_api_read(addr);
     if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
                                                          : loci_read(&emu->loci, addr);
@@ -71,6 +74,7 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     return loci_dsk_read(&emu->loci, addr);
 }
 static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
+    loci_emu_wait_boot();
     if (loci_emu_ramx_claims(addr))  loci_emu_api_write(addr, value);
     else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }
