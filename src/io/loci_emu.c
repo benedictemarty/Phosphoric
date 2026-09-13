@@ -438,6 +438,13 @@ void loci_emu_set_cdc_device(const char *path)
 
 bool loci_emu_acia_active(void) { return g_boot_done && g_cdc_fd >= 0; }
 
+bool loci_emu_acia_served(uint16_t address)
+{
+    if (!g_boot_done) return false;
+    uint16_t base = emul_loci_acia_base(&g_emul);
+    return base && address >= base && address <= base + 3;
+}
+
 /* ── Trace du dialogue ACIA co-simulé (diagnostic) ───────────────────
  * Activée par la variable d'environnement LOCI_ACIA_TRACE=<fichier> (ou "-" pour
  * stderr). Journalise CHAQUE accès 6502 aux registres $0380-$0383 servis par le
@@ -482,14 +489,14 @@ static void acia_trace(char dir, uint16_t address, uint8_t value)
  * pour la fenêtre MIA. loci_emu.c ne touche pas au 6502 hôte. */
 void loci_emu_acia_write(uint16_t address, uint8_t value)
 {
-    if (!loci_emu_acia_active()) return;
+    if (!loci_emu_acia_served(address)) return;
     acia_trace('W', address, value);
     emul_loci_acia_write(&g_emul, address, value);
 }
 
 uint8_t loci_emu_acia_read(uint16_t address)
 {
-    if (!loci_emu_acia_active()) return 0xFF;
+    if (!loci_emu_acia_served(address)) return 0xFF;
     uint8_t v = emul_loci_acia_read(&g_emul, address);
     acia_trace('R', address, v);
     return v;
@@ -497,7 +504,7 @@ uint8_t loci_emu_acia_read(uint16_t address)
 
 uint8_t loci_emu_acia_peek(uint16_t address)
 {
-    if (!loci_emu_acia_active()) return 0xFF;
+    if (!loci_emu_acia_served(address)) return 0xFF;
     return emul_loci_acia_peek(&g_emul, address);
 }
 

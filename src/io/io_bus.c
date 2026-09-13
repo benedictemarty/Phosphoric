@@ -78,6 +78,10 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 
 /* ACIA 6551 ($031C-$031F par défaut, base configurable). */
 static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
+    /* Co-sim : le firmware sert sa fenêtre ACIA dès le boot, dongle ou non
+     * (sans modem : $0381 = $70). Sans ce claim, --loci-emu sans --loci-cdc
+     * laissait le miroir du VIA répondre en $0380 — infidèle au matériel. */
+    if (loci_emu_active() && loci_emu_acia_served(addr)) return true;
     return emu->has_serial && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
 }
 /* picowifi-over-LOCI : l'ACIA 6551 émulée vit à $0380, servie par une COURSE
@@ -106,7 +110,7 @@ static inline bool acia_serve_lost(const emulator_t* emu) {
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
     /* Backend co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
      * (oric/acia.c ↔ modem USB CDC) au lieu du 6551 comportemental. */
-    if (loci_emu_acia_active()) {
+    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         uint8_t v = loci_emu_acia_read(addr);
         loci_emu_reflect_nirq(emu);
         return v;
@@ -127,7 +131,7 @@ static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
 }
 static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     /* Backend co-sim (--loci-cdc) : écriture $0380-$0383 traitée par le vrai firmware. */
-    if (loci_emu_acia_active()) {
+    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         loci_emu_acia_write(addr, value);
         loci_emu_reflect_nirq(emu);
         return true;
@@ -141,7 +145,7 @@ static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
  * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. Modélise l'open-bus
  * SANS consommer (un observateur ne participe pas à la course PHI2 du 6502). */
 static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
-    if (loci_emu_acia_active())          /* co-sim : lecture non destructive de l'io-page */
+    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr)))   /* co-sim : peek io-page */
         return loci_emu_acia_peek(addr);
     if (acia_serve_lost(emu))
         return memory_open_bus(&emu->memory);

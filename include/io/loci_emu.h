@@ -117,6 +117,10 @@ int loci_emu_irq_take(void);
  * fois par frame. */
 void    loci_emu_set_cdc_device(const char *path);
 bool    loci_emu_acia_active(void);
+/* true si le firmware co-simulé SERT cette adresse comme registre ACIA (fenêtre
+ * $0380-$0383 en mode 1, $0340 en mode 2), modem monté ou non — sur un Oric
+ * réel LOCI répond là dès le boot ($0381 = $70 sans modem), jamais le VIA. */
+bool    loci_emu_acia_served(uint16_t address);
 void    loci_emu_acia_write(uint16_t address, uint8_t value);
 uint8_t loci_emu_acia_read(uint16_t address);
 uint8_t loci_emu_acia_peek(uint16_t address);   /* observation non destructive */
