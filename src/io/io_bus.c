@@ -29,9 +29,14 @@
  *    $0310-$031F → priorité (LOCI est en tête de table) ;
  *  - DSK $0310-$0314 + $0318-$0319 : seulement en l'absence de vrai Microdisc
  *    (sinon le Microdisc possède la plage). */
+/* Co-sim : fenêtre + registres de l'expansion RAM $AF ($03C0-$03E4), servis par le
+ * firmware (io-page) — inconnus du modèle interne. */
+static bool loci_emu_ramx_claims(uint16_t addr) {
+    return loci_emu_active() && addr >= 0x03C0 && addr <= 0x03E4;
+}
 static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->has_loci) return false;
-    if (loci_addr_in_mia(addr)) return true;
+    if (loci_addr_in_mia(addr) || loci_emu_ramx_claims(addr)) return true;
     if (loci_addr_in_tap(addr)) return true;
     if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
     return false;
@@ -51,6 +56,7 @@ static void loci_emu_reflect_nirq(emulator_t* emu) {
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
      * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core). */
+    if (loci_emu_ramx_claims(addr)) return loci_emu_api_read(addr);
     if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
                                                          : loci_read(&emu->loci, addr);
     if (loci_addr_in_tap(addr)) return loci_emu_active() ? loci_emu_tap_read(addr)
@@ -65,7 +71,8 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     return loci_dsk_read(&emu->loci, addr);
 }
 static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
+    if (loci_emu_ramx_claims(addr))  loci_emu_api_write(addr, value);
+    else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }
                                   else                   loci_write(&emu->loci, addr, value); }
     else if (loci_addr_in_tap(addr)) { if (loci_emu_active()) loci_emu_tap_write(addr, value);
