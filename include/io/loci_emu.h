@@ -158,5 +158,13 @@ bool loci_emu_mou_armed(void);
  * répliquer serait fragile. `keycodes` = 6 usages HID (0 = vide). */
 bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6]);
 bool loci_emu_kbd_armed(void);
+/* ── Backend MATÉRIEL RÉEL (loci_hw.c, `make LOCI_HW=1`, --loci-hw DEV) ──
+ * Nom du backend compilé : "emul" (loci_emu.c), "stub" (loci_emu_stub.c) ou "hw"
+ * (loci_hw.c, source ~/loci/loci-usb/phosphoric/). main.c refuse --loci-hw ailleurs. */
+const char *loci_emu_backend_name(void);
+/* Fronts nRESET pilotés par LOCI (bouton MENU physique, gel) depuis le dernier appel :
+ * l'hôte réinitialise alors son 6502 (une fois par frame, après loci_emu_irq_take).
+ * Toujours 0 hors backend matériel (en co-sim le bouton est simulé par l'hôte). */
+int loci_emu_reset_take(void);
 
 #endif /* LOCI_EMU_H */

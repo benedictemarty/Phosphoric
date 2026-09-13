@@ -197,6 +197,9 @@ void cli_print_usage(const char* program_name) {
     printf("                            firmware co-simulé comme ACIA $0380 (avec --loci-emu)\n");
     printf("      --loci-emu-flash FILE Image flash persistante du firmware co-simulé (FS\n");
     printf("                            interne 0:) ; défaut <ELF>.flash, « - » = volatile\n");
+    printf("      --loci-hw DEV         VRAIE cartouche LOCI par le pont USB loci-usb (ex.\n");
+    printf("                            /dev/ttyACM0) : le 6502 émulé accède au silicium\n");
+    printf("                            (binaire compilé avec make LOCI_HW=1 ; implies --loci)\n");
     printf("      --loci-menu-at N      Déclenche le menu LOCI une seule fois au cycle N\n");
     printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
     printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");

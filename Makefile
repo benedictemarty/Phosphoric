@@ -10,7 +10,16 @@ CC = gcc
 # tout se construit, seul `--loci-emu` refuse de démarrer. Forcer : LOCI_EMU=0/1.
 LOCI_EMUL_DIR ?= $(HOME)/loci/emul
 LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
-ifeq ($(LOCI_EMU),1)
+# Backend MATÉRIEL RÉEL (--loci-hw DEV) : `make LOCI_HW=1` remplace loci_emu.c par
+# src/io/loci_hw.c (copie de ~/loci/loci-usb/phosphoric/loci_hw.c) + le client du
+# protocole loci-usb. Un binaire = un backend (mêmes symboles loci_emu_*).
+LOCI_USB_DIR ?= $(HOME)/loci/loci-usb
+LOCI_HW ?= 0
+ifeq ($(LOCI_HW),1)
+LOCI_EMU_SRC = src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c
+LOCI_EMUL_LIB =
+LOCI_EMU_CFLAGS = -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto -DNO_LOCI_EMU
+else ifeq ($(LOCI_EMU),1)
 LOCI_EMU_SRC = src/io/loci_emu.c
 LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
 LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src

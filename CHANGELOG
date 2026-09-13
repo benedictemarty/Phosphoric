@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — backend LOCI « matériel réel » `--loci-hw DEV` (`make LOCI_HW=1`)
+
+Troisième backend derrière l'interface `loci_emu.h` : `src/io/loci_hw.c` (source de
+vérité : `~/loci/loci-usb/phosphoric/loci_hw.c`). Chaque accès du 6502 émulé à la
+page LOCI (`$03xx`) ou à la ROM servie devient une requête du protocole
+`loci-usb` (USB CDC ou PTY) vers la cartouche LOCI-USB — ou vers son pont
+virtuel `bridge_emul` (vrai firmware dans libemul), avec lequel le menu LOCI
+FW 0.3.1 boote et un `.dsk` USB se monte sur `A:` (suite `loci-usb/tests`).
+
+- `--loci-hw DEV` (`cli_options.h`, `cli_usage.c`, `main.c`) ; refusé sur un
+  binaire sans ce backend (`loci_emu_backend_name()`).
+- `loci_emu_reset_take()` : fronts nRESET pilotés par LOCI (bouton MENU physique)
+  → `cpu_reset` une fois par frame ; 0 en co-sim et stub.
+- `Makefile` : `LOCI_HW=1` remplace `loci_emu.c` par `loci_hw.c` + le client
+  `loci-usb/host/loci_usb_client.c` (`LOCI_USB_DIR`).
+
 ## [2.0.0-alpha.1] - 2026-09-11
 
 ### Changed — horloge maître : un appel, un cycle de toute la machine (V2-S4)

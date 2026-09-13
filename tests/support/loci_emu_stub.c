@@ -8,6 +8,8 @@
 #include "io/loci_emu.h"
 
 bool loci_emu_active(void) { return false; }
+const char *loci_emu_backend_name(void) { return "stub"; }
+int loci_emu_reset_take(void) { return 0; }
 bool loci_emu_menu_button(void) { return false; }
 bool loci_emu_button_was_warm(void) { return false; }
 bool loci_emu_wait_boot(void) { return false; }

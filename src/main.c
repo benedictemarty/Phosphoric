@@ -1309,6 +1309,9 @@ static void run_loci_frame_hooks(emulator_t* emu, uint64_t total_executed) {
         loci_emu_dsk_tick();
         int loci_irq_pulses = loci_emu_irq_take();
         for (int i = 0; i < loci_irq_pulses; i++) cpu_irq_pulse(&emu->cpu);
+        /* Matériel réel (--loci-hw) : LOCI a piloté nRESET (bouton MENU physique,
+         * gel) → l'Oric redémarre ; on fait de même. Toujours 0 en co-sim/stub. */
+        if (loci_emu_reset_take() > 0) cpu_reset(&emu->cpu);
     }
 
     /* --loci-menu-at : simuler l'appui bouton MENU LOCI puis reset (test).
@@ -2655,6 +2658,7 @@ int main(int argc, char* argv[]) {
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
     const char* loci_emu_path = NULL;   /* --loci-emu : exécute le vrai firmware RP2040 (émulateur) */
+    const char* loci_hw_dev = NULL;     /* --loci-hw : VRAIE cartouche via le pont USB loci-usb (backend loci_hw.c) */
     const char* loci_emu_usb_image = NULL;  /* --loci-usb-image : image FAT servie comme disque USB émulé */
     const char* loci_emu_cdc_dev = NULL;    /* --loci-cdc : dongle CDC (ex. /dev/ttyACM0) servi comme ACIA $0380 */
     const char* loci_emu_flash = NULL;      /* --loci-flash : image flash persistante (FS interne 0:) */
@@ -2871,6 +2875,7 @@ int main(int argc, char* argv[]) {
             case OPT_LOCI_EMU_USB_IMAGE: loci_emu_usb_image = optarg; break;
             case OPT_LOCI_EMU_CDC: loci_emu_cdc_dev = optarg; break;
             case OPT_LOCI_EMU_FLASH: loci_emu_flash = optarg; break;
+            case OPT_LOCI_HW: loci_hw_dev = optarg; loci_enabled = true; break;
             case OPT_LOCI_MENU_AT: g_loci_menu_at = strtoull(optarg, NULL, 0); break;
             case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
             case OPT_LOCI_WEB: loci_web_url = optarg; loci_enabled = true; break;
@@ -3404,6 +3409,17 @@ int main(int argc, char* argv[]) {
         if (loci_emu_cdc_dev) loci_emu_set_cdc_device(loci_emu_cdc_dev);
         if (loci_emu_flash) loci_emu_set_flash_image(loci_emu_flash);
         loci_emu_start(loci_emu_path);
+    }
+    /* --loci-hw : la VRAIE cartouche derrière le pont USB (loci-usb). Le backend
+     * loci_hw.c partage l'interface loci_emu.h : même chemin io_bus/memory, mais
+     * chaque accès est un vrai cycle de bus. Exige un binaire `make LOCI_HW=1`. */
+    if (loci_hw_dev) {
+        if (strcmp(loci_emu_backend_name(), "hw") != 0) {
+            log_error("--loci-hw : ce binaire embarque le backend LOCI « %s », pas « hw » — "
+                      "recompiler avec `make LOCI_HW=1`", loci_emu_backend_name());
+            return 1;
+        }
+        if (loci_emu_start(loci_hw_dev) != 0) return 1;
     }
 
     /* Enable LOCI peripheral (--loci) */
