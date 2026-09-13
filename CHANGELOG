@@ -840,6 +840,27 @@ EMU_VERSION 2.0.3 → **2.0.4**.
 
 ## [Unreleased]
 
+### Fixed — co-simulation LOCI : le bouton MENU pendant un programme resettait le 6502
+
+Le gel « à chaud » du vrai firmware (bouton court alors qu'une ROM est déjà
+servie) pose un trap IRQ (`$FFFE → $03BA`) et pulse nIRQ : le 6502 doit prendre
+l'IRQ, spinner en `$03BA` (la lecture de `$03BB` signale « Loop hit! » au
+firmware), puis, le trap libéré, sauter dans `restore.s` du menu — un gel avec
+reprise possible. Phosphoric traitait tout appui comme un boot à froid et
+resettait le CPU : le menu apparaissait, mais sans programme gelé (et le firmware
+attendait 2 s son trap). `loci_emu_menu_button()` renvoie désormais **false à
+chaud** — pas de reset, le pulse nIRQ latché est délivré par le drain habituel
+(`loci_emu_button_was_warm()` pour le message de `loci-button`). Validé par le
+cycle save-state `$B0` complet (gel → `n` → boot à froid → gel → `l` → reprise
+d'un compteur BASIC). Côté `~/loci/emul` : réplique du snoop `$03BB`, détection
+`EXT_CAPTURE_IRQ`, appui tenu 12 M pas.
+
+### Added — `keys \s<c>` : un caractère avec SHIFT
+
+Le menu LOCI est en CAPS : ses raccourcis lettres (`a`…`w`, `n`, `l`) exigent
+Shift, que `keys` ne savait pas produire. `\sn` = Shift+N (octet ≥ `0xA0` dans
+la file d'injection, sentinelles flèches/DEL inchangées). `docs/control_protocol.md`.
+
 ### Added — Ctrl+Alt+M / Ctrl+Alt+D : le bouton LOCI sans F8
 
 Rapporté : « au bout d'un certain nombre de tests, F8 revient à GNOME (volume)
