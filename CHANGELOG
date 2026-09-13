@@ -22,6 +22,11 @@ FW 0.3.1 boote et un `.dsk` USB se monte sur `A:` (suite `loci-usb/tests`).
   → `cpu_reset` une fois par frame ; 0 en co-sim et stub.
 - `Makefile` : `LOCI_HW=1` remplace `loci_emu.c` par `loci_hw.c` + le client
   `loci-usb/host/loci_usb_client.c` (`LOCI_USB_DIR`).
+- Protocole v3 : cache ROM invalidé sur la génération renvoyée par le pont (plus
+  sur l'écriture d'opcode) ; bouton MENU par `BTN` avec attente du relâchement de
+  nRESET ; clavier/souris relayés au firmware `LOCI_USB` ; `LOCI_HW_TRACE=<f>`
+  (journal des accès), `LOCI_HW_SETTLE_US=n` (banc émulé). Validé : SEDORIC V3
+  boote via le firmware `LOCI_USB` émulé.
 
 ## [2.0.0-alpha.1] - 2026-09-11
 
