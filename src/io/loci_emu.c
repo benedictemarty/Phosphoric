@@ -178,7 +178,8 @@ void loci_emu_stop(void)
 
 bool loci_emu_active(void) { return g_boot_done != 0; }
 const char *loci_emu_backend_name(void) { return "emul"; }
-int loci_emu_reset_take(void) { return 0; }   /* en co-sim, le bouton MENU est simulé par l'hôte */
+int loci_emu_reset_take(void) { return 0; }
+int loci_emu_idle_poll(int cycles) { (void)cycles; return 0; }   /* en co-sim, le bouton MENU est simulé par l'hôte */
 
 /* ── Souris USB HID (co-sim) ─────────────────────────────────────────
  * Pont vers le firmware réel : voir emul_hid.c côté ~/loci/emul. Sans lui,

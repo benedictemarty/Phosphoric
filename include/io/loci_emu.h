@@ -166,5 +166,12 @@ const char *loci_emu_backend_name(void);
  * l'hôte réinitialise alors son 6502 (une fois par frame, après loci_emu_irq_take).
  * Toujours 0 hors backend matériel (en co-sim le bouton est simulé par l'hôte). */
 int loci_emu_reset_take(void);
+/* Poll « en attente » (backend matériel) : appelé après CHAQUE instruction avec ses
+ * cycles ; le backend cumule et, sans accès LOCI depuis N cycles, interroge la
+ * cartouche. Renvoie le nombre d'impulsions nIRQ à délivrer (0 le plus souvent),
+ * ou -1 si seul un reset est survenu ; l'appelant relève loci_emu_reset_take quand
+ * la valeur est non nulle. Toujours 0 hors
+ * backend matériel. Doit rester quasi gratuit : un compteur. */
+int loci_emu_idle_poll(int cycles);
 
 #endif /* LOCI_EMU_H */

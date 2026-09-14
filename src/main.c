@@ -1235,6 +1235,18 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
         int step = emu_step(emu);
         frame_cycles = emu->raster_cycle - frame_start;
 
+        /* Matériel réel (--loci-hw) : « poll en attente » — si le 6502 n'a pas
+         * touché LOCI depuis N cycles (boucle d'attente en RAM/ROM cachée), le
+         * backend interroge la cartouche (nIRQ, nRESET, nROMDIS) pour borner la
+         * latence des événements asynchrones à ~1 ms Oric. 0 en co-sim/stub. */
+        {
+            int ev = loci_emu_idle_poll(step);      /* >0 : impulsions nIRQ ; -1 : reset seul */
+            if (ev) {
+                for (int i = 0; i < ev; i++) cpu_irq_pulse(&emu->cpu);
+                if (loci_emu_reset_take() > 0) cpu_reset(&emu->cpu);
+            }
+        }
+
         /* Post-CLOAD BASIC rechain: the ORIC ROM does NOT rechain
          * line pointers after CLOAD. TAP files may have stale pointers
          * (e.g. TYRANN.TAP). Detect when the CLOAD data loop completes

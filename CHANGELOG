@@ -27,6 +27,11 @@ FW 0.3.1 boote et un `.dsk` USB se monte sur `A:` (suite `loci-usb/tests`).
   nRESET ; clavier/souris relayés au firmware `LOCI_USB` ; `LOCI_HW_TRACE=<f>`
   (journal des accès), `LOCI_HW_SETTLE_US=n` (banc émulé). Validé : SEDORIC V3
   boote via le firmware `LOCI_USB` émulé.
+- **Poll « en attente »** : `loci_emu_idle_poll(cycles)` appelé après chaque
+  instruction (`main.c`) ; sans accès LOCI depuis `LOCI_HW_IDLE_POLL` cycles
+  (1000 par défaut, 0 = jamais), le backend interroge la cartouche → la latence
+  des nIRQ/nRESET asynchrones passe de 20 ms (trame) à ~1 ms Oric, sans coût
+  quand le programme parle à LOCI. 0 en co-sim et stub.
 
 ## [2.0.0-alpha.1] - 2026-09-11
 

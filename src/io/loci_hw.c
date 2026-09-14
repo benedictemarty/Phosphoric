@@ -40,6 +40,9 @@ static int  g_romdis;             /* dernier état connu de nROMDIS (1 = actif) 
 static int  g_reset_pending;      /* fronts nRESET vus depuis le dernier loci_emu_reset_take */
 static int  g_link_err_logged;
 static long g_settle_us;          /* LOCI_HW_SETTLE_US : pause après chaque accès $03xx (banc émulé) */
+static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL : cycles sans accès LOCI avant un LINES (0 = jamais) */
+static long g_idle_cycles;        /* cycles 6502 écoulés depuis le dernier accès LOCI */
+static unsigned long g_idle_polls, g_idle_polls_hit;
 
 /* Cache de la ROM servie ($C000-$FFFF) */
 static uint8_t g_rom[16384], g_rom_flags[16384];
@@ -106,6 +109,7 @@ static uint8_t bus_rd(uint16_t addr)
     note_flags(f);
     trace_access('R', addr, d, f);
     settle();
+    g_idle_cycles = 0;
     return d;
 }
 
@@ -117,6 +121,7 @@ static void bus_wr(uint16_t addr, uint8_t v)
     note_flags(f);
     trace_access('W', addr, v, f);
     settle();
+    g_idle_cycles = 0;
 }
 
 /* ── cycle de vie ── */
@@ -124,6 +129,7 @@ int loci_emu_start(const char *dev)
 {
     g_rom_nocache = getenv("LOCI_HW_ROM_NOCACHE") != NULL;
     g_settle_us = getenv("LOCI_HW_SETTLE_US") ? atol(getenv("LOCI_HW_SETTLE_US")) : 0;
+    g_idle_poll_cycles = getenv("LOCI_HW_IDLE_POLL") ? atol(getenv("LOCI_HW_IDLE_POLL")) : 1000;
     if (lup_open(&g_c, dev) != 0) {
         log_error("LOCI-hw: impossible d'ouvrir le pont « %s » : %s", dev, lup_client_error(&g_c));
         return -1;
@@ -142,6 +148,7 @@ int loci_emu_start(const char *dev)
              (g_c.caps & LUP_CAP_VIRTUAL) ? ", VIRTUEL" : "", g_romdis, (lines & LUP_L_NRESET) != 0,
              g_rom_nocache ? "désactivé" : "actif");
     if (g_settle_us > 0) log_info("LOCI-hw: stabilisation %ld µs après chaque accès (LOCI_HW_SETTLE_US)", g_settle_us);
+    log_info("LOCI-hw: poll en attente %s (LOCI_HW_IDLE_POLL=%ld cycles)", g_idle_poll_cycles > 0 ? "actif" : "désactivé", g_idle_poll_cycles);
     return 0;
 }
 
@@ -152,7 +159,8 @@ void loci_emu_set_cdc_device(const char *path)  { if (path) log_warning("LOCI-hw
 void loci_emu_stop(void)
 {
     if (!g_active) return;
-    log_info("LOCI-hw: fin de session — %lu requêtes, %lu rechargements du cache ROM", g_c.n_req, g_rom_refills);
+    log_info("LOCI-hw: fin de session — %lu requêtes, %lu rechargements du cache ROM, %lu polls en attente (%lu avec événement)",
+             g_c.n_req, g_rom_refills, g_idle_polls, g_idle_polls_hit);
     lup_close(&g_c);
     g_active = 0;
 }
@@ -255,7 +263,7 @@ void    loci_emu_dsk_tick(void)                             { }
 
 /* Fronts nIRQ comptés par le pont depuis le dernier drain (une fois par frame).
  * Profite du même aller-retour pour relever nROMDIS et les fronts nRESET. */
-int loci_emu_irq_take(void)
+static int lines_drain(void)
 {
     uint8_t lines = 0, irqs = 0, rsts = 0;
     if (!g_active) return 0;
@@ -265,6 +273,24 @@ int loci_emu_irq_take(void)
     note_gen();
     if (rsts) { g_reset_pending += rsts; rom_invalidate("front nRESET"); }
     return irqs;
+}
+
+int loci_emu_irq_take(void) { return lines_drain(); }
+
+/* Poll « en attente » : sans accès LOCI depuis LOCI_HW_IDLE_POLL cycles, un LINES.
+ * Gratuit quand le programme parle à LOCI (le compteur est remis à zéro à chaque
+ * accès), borne la latence des IRQ/reset asynchrones à N cycles quand il attend. */
+int loci_emu_idle_poll(int cycles)
+{
+    if (!g_active || g_idle_poll_cycles <= 0) return 0;
+    g_idle_cycles += cycles;
+    if (g_idle_cycles < g_idle_poll_cycles) return 0;
+    g_idle_cycles = 0;
+    g_idle_polls++;
+    int before = g_reset_pending;
+    int irqs = lines_drain();
+    if (irqs || g_reset_pending != before) g_idle_polls_hit++;
+    return irqs ? irqs : (g_reset_pending != before ? -1 : 0);  /* -1 = reset seul : l'appelant relève loci_emu_reset_take */
 }
 
 /* Fronts nRESET pilotés par LOCI (bouton MENU physique, gel) depuis le dernier
