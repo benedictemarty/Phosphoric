@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `$C000-$FFFF` jouées en vrais cycles bus PIO (boîte aux lettres en page `$FF`).
 - `loci_emu_rom_write()` : nouveau crochet de l'interface, appelé par `memory_write()` en
   `$C000-$FFFF` quand LOCI sert la ROM ; `false` (RAM overlay) dans les autres backends.
+- `LOCI_NEO_FILES="NOM=chemin,…"` : préchargement de fichiers dans le FS interne du firmware
+  (par la BAL, tranches de 190 octets) ; `loci_emu_reset_take()` livre au 6502 le /RESET affirmé
+  par le firmware (14/5 : ROM tierce) ; le firmware avance à chaque scrutation de `$FF00`.
+- Validé : `RO BASIC11` → le BASIC 1.1 boote sur loci-fw.
 - Validé : Phosphoric boote sur la ROM servie par loci-fw et affiche le motif de test (28/28
   lignes, `loci-fw/tools/check-emu.sh`). Tests `test-cpu`, `test-memory`, `test-loci`,
   `test-system` inchangés (110/20/166/12).

@@ -17,9 +17,52 @@
 #include "utils/logging.h"
 #include "emul_neo.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 static emul_t g_emul;
 static int    g_active;
+static int    g_reset_pending;   /* /RESET Oric affirmé par le firmware, à livrer au 6502 */
+
+/* Observe la ligne /RESET pendant que le firmware tourne (14/5 : ROM tierce). */
+static void neo_run(long steps)
+{
+    emul_step(&g_emul, steps);
+    int nreset = 0; emul_ext_lines(&g_emul, NULL, &nreset, NULL);
+    if (nreset) g_reset_pending = 1;
+}
+
+/* Préchargement de fichiers dans le FS interne (test) : LOCI_NEO_FILES="NOM=chemin,NOM=chemin".
+ * Écrit chaque fichier par la BAL (groupe 3, canal 7, tranches de 190 octets via $FF10). */
+static void neo_preload_files(void)
+{
+    const char *spec = getenv("LOCI_NEO_FILES");
+    if (!spec || !*spec) return;
+    char buf[4096]; strncpy(buf, spec, sizeof buf - 1); buf[sizeof buf - 1] = 0;
+    for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")) {
+        char *eq = strchr(tok, '=');
+        if (!eq) continue;
+        *eq = 0;
+        const char *name = tok, *path = eq + 1;
+        FILE *f = fopen(path, "rb");
+        if (!f) { log_warning("LOCI-neo: préchargement « %s » : %s illisible", name, path); continue; }
+        size_t nl = strlen(name); if (nl > 79) nl = 79;
+        neo_bus_write(&g_emul, 0xFF10, (uint8_t)nl);
+        for (size_t i = 0; i < nl; i++) neo_bus_write(&g_emul, (uint16_t)(0xFF11 + i), (uint8_t)name[i]);
+        uint8_t po[4] = { 7, 0x10, 0xFF, 3 };
+        if (!neo_bal_call(&g_emul, 3, 4, po, 4)) { fclose(f); continue; }
+        uint8_t chunk[190]; size_t n, total = 0;
+        while ((n = fread(chunk, 1, sizeof chunk, f)) > 0) {
+            for (size_t i = 0; i < n; i++) neo_bus_write(&g_emul, (uint16_t)(0xFF10 + i), chunk[i]);
+            uint8_t pw[5] = { 7, 0x10, 0xFF, (uint8_t)n, (uint8_t)(n >> 8) };
+            if (!neo_bal_call(&g_emul, 3, 9, pw, 5)) break;
+            total += n;
+        }
+        fclose(f);
+        uint8_t pc[1] = { 7 }; neo_bal_call(&g_emul, 3, 5, pc, 1);
+        log_info("LOCI-neo: préchargé « %s » (%zu octets) depuis %s", name, total, path);
+    }
+}
 
 int loci_emu_start(const char *elf_path)
 {
@@ -36,6 +79,7 @@ int loci_emu_start(const char *elf_path)
     uint8_t lo = 0, hi = 0;
     neo_serve_read(&g_emul, 0xFFFC, &lo); neo_serve_read(&g_emul, 0xFFFD, &hi);
     log_info("LOCI-neo: ROM servie, vecteur reset = $%02X%02X", hi, lo);
+    neo_preload_files();
     return 0;
 }
 
@@ -45,7 +89,19 @@ void loci_emu_set_cdc_device(const char *path) { (void)path; }
 void loci_emu_stop(void) { if (g_active) { emul_free(&g_emul); g_active = 0; } }
 bool loci_emu_active(void) { return g_active != 0; }
 const char *loci_emu_backend_name(void) { return "neo"; }
-int  loci_emu_reset_take(void) { return 0; }
+int  loci_emu_reset_take(void)
+{
+    if (!g_reset_pending) return 0;
+    /* attendre le relâchement de /RESET par le firmware */
+    for (int k = 0; k < 200; k++) {
+        int nreset = 0; emul_ext_lines(&g_emul, NULL, &nreset, NULL);
+        if (!nreset) break;
+        emul_step(&g_emul, 1000L);
+    }
+    g_reset_pending = 0;
+    log_info("LOCI-neo: /RESET Oric relâché par le firmware → redémarrage du 6502");
+    return 1;
+}
 int  loci_emu_idle_poll(int cycles) { (void)cycles; return 0; }
 bool loci_emu_wait_boot(void) { return g_active != 0; }
 bool loci_emu_menu_button(void) { return false; }
@@ -60,8 +116,8 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
      * le firmware ne tourne pas entre deux accès → l'avancer à chaque lecture, sinon une
      * commande longue (commit littlefs) ne se termine jamais (même principe que le poll de
      * loci_emu.c). */
-    if (served && address == 0xFF00u && out && *out != 0) {
-        emul_step(&g_emul, 2000L);
+    if (served && address == 0xFF00u && out && *out != 0 && !g_reset_pending) {
+        neo_run(2000L);
         neo_serve_read(&g_emul, address, out);
     }
     return served != 0;
@@ -78,8 +134,8 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
         for (int k = 0; k < 500; k++) {
             uint8_t g = 0xFF;
             neo_peek(&g_emul, 0xFF00, &g);
-            if (g == 0) break;
-            emul_step(&g_emul, 1000L);
+            if (g == 0 || g_reset_pending) break;
+            neo_run(1000L);
         }
     }
     return true;
@@ -117,7 +173,7 @@ uint8_t loci_emu_acia_peek(uint16_t address) { (void)address; return 0xFF; }
 void    loci_emu_acia_tick(void) { }
 
 /* Fond de tâche : le firmware avance librement (boucle principale) une fois par trame. */
-void loci_emu_tick(long steps) { if (g_active) emul_step(&g_emul, steps); }
+void loci_emu_tick(long steps) { if (g_active) neo_run(steps); }
 
 bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel, int8_t pan)
 { (void)buttons; (void)dx; (void)dy; (void)wheel; (void)pan; return false; }
