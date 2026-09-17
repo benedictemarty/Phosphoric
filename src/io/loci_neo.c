@@ -21,12 +21,16 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <termios.h>
 
 static emul_t g_emul;
 static int    g_active;
 static int    g_reset_pending;   /* /RESET Oric affirmé par le firmware, à livrer au 6502 */
 static char   g_usb_image[1024]; /* --loci-usb-image : clé USB émulée (image FAT) */
 static int    g_hid;             /* clavier/souris USB émulés (hooks usbhid_*) */
+static char   g_cdc_dev[1024];   /* --loci-cdc : dongle série émulé (PTY) */
 
 /* Observe la ligne /RESET pendant que le firmware tourne (14/5 : ROM tierce). */
 static void neo_run(long steps)
@@ -74,6 +78,12 @@ int loci_emu_start(const char *elf_path)
         log_error("LOCI-neo: emul_init a échoué (%s)", elf_path);
         return -1;
     }
+    if (g_cdc_dev[0]) {
+        int fd = open(g_cdc_dev, O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (fd >= 0) { struct termios t; if (tcgetattr(fd, &t) == 0) { t.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ISIG | IEXTEN); t.c_iflag &= ~(tcflag_t)(ICRNL | INLCR | IXON | ISTRIP); t.c_oflag &= ~(tcflag_t)OPOST; tcsetattr(fd, TCSANOW, &t); } }   /* brut : un PTY est canonique par défaut */
+        if (fd >= 0 && neo_serial_attach_fd(&g_emul, fd)) log_info("LOCI-neo: dongle série émulé sur « %s » (groupe 10)", g_cdc_dev);
+        else log_warning("LOCI-neo: dongle série « %s » indisponible", g_cdc_dev);
+    }
     g_hid = neo_hid_enable(&g_emul);
     if (!g_hid) log_warning("LOCI-neo: symboles usbhid_* absents — clavier/souris USB non émulés");
     if (g_usb_image[0]) {
@@ -95,7 +105,7 @@ int loci_emu_start(const char *elf_path)
 
 void loci_emu_set_usb_image(const char *path) { if (path) { strncpy(g_usb_image, path, sizeof g_usb_image - 1); g_usb_image[sizeof g_usb_image - 1] = 0; } }
 void loci_emu_set_flash_image(const char *path) { (void)path; }
-void loci_emu_set_cdc_device(const char *path) { (void)path; }
+void loci_emu_set_cdc_device(const char *path) { if (path) { strncpy(g_cdc_dev, path, sizeof g_cdc_dev - 1); g_cdc_dev[sizeof g_cdc_dev - 1] = 0; } }
 void loci_emu_stop(void) { if (g_active) { emul_free(&g_emul); g_active = 0; } }
 bool loci_emu_active(void) { return g_active != 0; }
 const char *loci_emu_backend_name(void) { return "neo"; }
