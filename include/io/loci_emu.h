@@ -79,6 +79,9 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out);
  * MAP : c'est la RAM overlay de l'Oric qui répond (Microdisc : $C000-$DFFF en RAM
  * pendant que microdis.rom est servie sur $E000-$FFFF) — et les écritures y vont. */
 bool loci_emu_romdis(void);
+/* Écriture 6502 en $C000-$FFFF pendant que LOCI sert la ROM : true si le backend l'a
+ * consommée (boîte aux lettres en page $FF du firmware loci-fw), false = RAM overlay. */
+bool loci_emu_rom_write(uint16_t address, uint8_t value);
 
 /* État des lignes de contrôle pilotées par le firmware (via l'expandeur I²C) :
  * renvoie 1 quand la ligne est active. Permet à l'hôte de refléter nROMDIS/

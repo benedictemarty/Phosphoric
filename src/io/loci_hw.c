@@ -332,3 +332,5 @@ bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
     return true;
 }
 bool loci_emu_kbd_armed(void) { return g_active && (g_c.caps & LUP_CAP_FIRMWARE); }
+
+bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }

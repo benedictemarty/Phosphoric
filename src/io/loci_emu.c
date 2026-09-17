@@ -553,3 +553,5 @@ void loci_emu_acia_tick(void)
     if (!loci_emu_acia_active()) return;
     emul_loci_acia_task(&g_emul);
 }
+
+bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — backend LOCI « neo » (nouveau firmware loci-fw, réécriture de zéro)
+
+- `src/io/loci_neo.c` : troisième backend de l'interface `loci_emu.h` (`make LOCI_NEO=1`),
+  pour le firmware **loci-fw** (`~/loci/loci-fw`, API Neo6502) via le pont `emul_neo` de
+  `~/loci/emul`. Boot synchrone jusqu'au service ROM, lectures `$C000-$FFFF` O(1), écritures
+  `$C000-$FFFF` jouées en vrais cycles bus PIO (boîte aux lettres en page `$FF`).
+- `loci_emu_rom_write()` : nouveau crochet de l'interface, appelé par `memory_write()` en
+  `$C000-$FFFF` quand LOCI sert la ROM ; `false` (RAM overlay) dans les autres backends.
+- Validé : Phosphoric boote sur la ROM servie par loci-fw et affiche le motif de test (28/28
+  lignes, `loci-fw/tools/check-emu.sh`). Tests `test-cpu`, `test-memory`, `test-loci`,
+  `test-system` inchangés (110/20/166/12).
+
 ## [2.0.0-alpha.1] - 2026-09-11
 
 ### Changed — horloge maître : un appel, un cycle de toute la machine (V2-S4)

@@ -291,6 +291,7 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
          * l'écriture est ignorée. Écrire quand même corrompait le code Sedoric
          * en overlay (SAVE → « WRITE FAULT » sur un secteur fantôme). */
         uint8_t served;
+        if (loci_emu_rom_write(address, value)) return;   /* BAL page $FF (loci-fw) */
         if (!loci_emu_rom_read(address, &served))
             mem->upper_ram[address - 0xC000] = value;
         return;

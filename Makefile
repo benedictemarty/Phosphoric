@@ -15,7 +15,14 @@ LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
 # protocole loci-usb. Un binaire = un backend (mêmes symboles loci_emu_*).
 LOCI_USB_DIR ?= $(HOME)/loci/loci-usb
 LOCI_HW ?= 0
-ifeq ($(LOCI_HW),1)
+# Backend du NOUVEAU firmware loci-fw (reprise de zéro, ~/loci/reprise) : `make LOCI_NEO=1`
+# remplace loci_emu.c par src/io/loci_neo.c (pont emul_neo de libemul).
+LOCI_NEO ?= 0
+ifeq ($(LOCI_NEO),1)
+LOCI_EMU_SRC = src/io/loci_neo.c
+LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
+LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src
+else ifeq ($(LOCI_HW),1)
 LOCI_EMU_SRC = src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c
 LOCI_EMUL_LIB =
 LOCI_EMU_CFLAGS = -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto -DNO_LOCI_EMU
