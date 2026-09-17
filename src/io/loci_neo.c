@@ -55,7 +55,16 @@ bool loci_emu_diag_button(void) { return false; }
 bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 {
     if (!g_active) return false;
-    return neo_serve_read(&g_emul, address, out) != 0;
+    int served = neo_serve_read(&g_emul, address, out);
+    /* Scrutation de $FF00 pendant une commande (WaitMessage) : le modèle est événementiel,
+     * le firmware ne tourne pas entre deux accès → l'avancer à chaque lecture, sinon une
+     * commande longue (commit littlefs) ne se termine jamais (même principe que le poll de
+     * loci_emu.c). */
+    if (served && address == 0xFF00u && out && *out != 0) {
+        emul_step(&g_emul, 2000L);
+        neo_serve_read(&g_emul, address, out);
+    }
+    return served != 0;
 }
 
 bool loci_emu_rom_write(uint16_t address, uint8_t value)
