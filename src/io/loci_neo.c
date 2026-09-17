@@ -16,6 +16,8 @@
 #include "io/loci_emu.h"
 #include "utils/logging.h"
 #include "emul_neo.h"
+#include "bus.h"
+#include "soc.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,7 +111,26 @@ int  loci_emu_reset_take(void)
 }
 int  loci_emu_idle_poll(int cycles) { (void)cycles; return 0; }
 bool loci_emu_wait_boot(void) { return g_active != 0; }
-bool loci_emu_menu_button(void) { return false; }
+/* Bouton de la cartouche (Ctrl+Alt+M) : appui court → le firmware ramène l'Oric sur le
+ * kernel (/RESET). Le firmware scrute le bouton toutes les 20 ms : on avance le temps émulé. */
+bool loci_emu_menu_button(void)
+{
+    if (!g_active) return false;
+    emul_ioexp_set(&g_emul, EXT_REG_IN, 0x00);            /* appuyé (actif bas) */
+    int seen = 0, nreset = 0;
+    for (int k = 0; k < 4000; k++) {
+        soc_timer_advance_us(5000);
+        emul_step(&g_emul, 1000L);
+        emul_ext_lines(&g_emul, NULL, &nreset, NULL);
+        if (nreset) seen = 1;
+        if (seen && !nreset) break;
+    }
+    emul_ioexp_set(&g_emul, EXT_REG_IN, 0x04);            /* relâché */
+    emul_step(&g_emul, 100000L);
+    g_reset_pending = 0;                                   /* livré ici : l'appelant fait cpu_reset */
+    if (seen) log_info("LOCI-neo: bouton → retour au kernel (/RESET)");
+    return seen != 0;
+}
 bool loci_emu_button_was_warm(void) { return false; }
 bool loci_emu_diag_button(void) { return false; }
 
