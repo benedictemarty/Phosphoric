@@ -62,6 +62,17 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
 {
     if (!g_active || address < 0xC000u) return false;
     neo_bus_write(&g_emul, address, value);
+    /* Écriture du groupe = début de commande : faire avancer le firmware jusqu'à la fin
+     * ($FF00 = 0) ou un plafond — le modèle est événementiel, le firmware ne tourne pas
+     * entre deux accès du 6502 (même principe que le poll de loci_emu.c). */
+    if (address == 0xFF00u && value) {
+        for (int k = 0; k < 500; k++) {
+            uint8_t g = 0xFF;
+            neo_peek(&g_emul, 0xFF00, &g);
+            if (g == 0) break;
+            emul_step(&g_emul, 1000L);
+        }
+    }
     return true;
 }
 
