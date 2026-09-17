@@ -23,6 +23,7 @@
 static emul_t g_emul;
 static int    g_active;
 static int    g_reset_pending;   /* /RESET Oric affirmé par le firmware, à livrer au 6502 */
+static char   g_usb_image[1024]; /* --loci-usb-image : clé USB émulée (image FAT) */
 
 /* Observe la ligne /RESET pendant que le firmware tourne (14/5 : ROM tierce). */
 static void neo_run(long steps)
@@ -70,6 +71,10 @@ int loci_emu_start(const char *elf_path)
         log_error("LOCI-neo: emul_init a échoué (%s)", elf_path);
         return -1;
     }
+    if (g_usb_image[0]) {
+        if (neo_usb_set_image(&g_emul, g_usb_image)) log_info("LOCI-neo: clé USB émulée « %s » (volume 1:)", g_usb_image);
+        else log_warning("LOCI-neo: image USB « %s » illisible ou symboles usbdisk_* absents", g_usb_image);
+    }
     log_info("LOCI-neo: firmware loci-fw (%s) — boot…", elf_path);
     if (!neo_boot(&g_emul)) {
         log_error("LOCI-neo: le firmware n'a pas armé le service ROM (/ROMDIS, nOE, /RESET)");
@@ -83,7 +88,7 @@ int loci_emu_start(const char *elf_path)
     return 0;
 }
 
-void loci_emu_set_usb_image(const char *path) { (void)path; }
+void loci_emu_set_usb_image(const char *path) { if (path) { strncpy(g_usb_image, path, sizeof g_usb_image - 1); g_usb_image[sizeof g_usb_image - 1] = 0; } }
 void loci_emu_set_flash_image(const char *path) { (void)path; }
 void loci_emu_set_cdc_device(const char *path) { (void)path; }
 void loci_emu_stop(void) { if (g_active) { emul_free(&g_emul); g_active = 0; } }
