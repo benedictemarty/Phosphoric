@@ -5,34 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added — backend LOCI « matériel réel » `--loci-hw DEV` (`make LOCI_HW=1`)
-
-Troisième backend derrière l'interface `loci_emu.h` : `src/io/loci_hw.c` (source de
-vérité : `~/loci/loci-usb/phosphoric/loci_hw.c`). Chaque accès du 6502 émulé à la
-page LOCI (`$03xx`) ou à la ROM servie devient une requête du protocole
-`loci-usb` (USB CDC ou PTY) vers la cartouche LOCI-USB — ou vers son pont
-virtuel `bridge_emul` (vrai firmware dans libemul), avec lequel le menu LOCI
-FW 0.3.1 boote et un `.dsk` USB se monte sur `A:` (suite `loci-usb/tests`).
-
-- `--loci-hw DEV` (`cli_options.h`, `cli_usage.c`, `main.c`) ; refusé sur un
-  binaire sans ce backend (`loci_emu_backend_name()`).
-- `loci_emu_reset_take()` : fronts nRESET pilotés par LOCI (bouton MENU physique)
-  → `cpu_reset` une fois par frame ; 0 en co-sim et stub.
-- `Makefile` : `LOCI_HW=1` remplace `loci_emu.c` par `loci_hw.c` + le client
-  `loci-usb/host/loci_usb_client.c` (`LOCI_USB_DIR`).
-- Protocole v3 : cache ROM invalidé sur la génération renvoyée par le pont (plus
-  sur l'écriture d'opcode) ; bouton MENU par `BTN` avec attente du relâchement de
-  nRESET ; clavier/souris relayés au firmware `LOCI_USB` ; `LOCI_HW_TRACE=<f>`
-  (journal des accès), `LOCI_HW_SETTLE_US=n` (banc émulé). Validé : SEDORIC V3
-  boote via le firmware `LOCI_USB` émulé.
-- **Poll « en attente »** : `loci_emu_idle_poll(cycles)` appelé après chaque
-  instruction (`main.c`) ; sans accès LOCI depuis `LOCI_HW_IDLE_POLL` cycles
-  (1000 par défaut, 0 = jamais), le backend interroge la cartouche → la latence
-  des nIRQ/nRESET asynchrones passe de 20 ms (trame) à ~1 ms Oric, sans coût
-  quand le programme parle à LOCI. 0 en co-sim et stub.
-
 ## [2.0.0-alpha.1] - 2026-09-11
 
 ### Changed — horloge maître : un appel, un cycle de toute la machine (V2-S4)
@@ -866,7 +838,34 @@ identique en 2.0.0-alpha.7), ce qui empêche de scripter ce scénario.
 
 EMU_VERSION 2.0.3 → **2.0.4**.
 
-## [Unreleased]
+## [2.1.0] - 2026-09-17
+
+### Added — backend LOCI « matériel réel » `--loci-hw DEV` (`make LOCI_HW=1`)
+
+Troisième backend derrière l'interface `loci_emu.h` : `src/io/loci_hw.c` (source de
+vérité : `~/loci/loci-usb/phosphoric/loci_hw.c`). Chaque accès du 6502 émulé à la
+page LOCI (`$03xx`) ou à la ROM servie devient une requête du protocole
+`loci-usb` (USB CDC ou PTY) vers la cartouche LOCI-USB — ou vers son pont
+virtuel `bridge_emul` (vrai firmware dans libemul), avec lequel le menu LOCI
+FW 0.3.1 boote et un `.dsk` USB se monte sur `A:` (suite `loci-usb/tests`).
+
+- `--loci-hw DEV` (`cli_options.h`, `cli_usage.c`, `main.c`) ; refusé sur un
+  binaire sans ce backend (`loci_emu_backend_name()`).
+- `loci_emu_reset_take()` : fronts nRESET pilotés par LOCI (bouton MENU physique)
+  → `cpu_reset` une fois par frame ; 0 en co-sim et stub.
+- `Makefile` : `LOCI_HW=1` remplace `loci_emu.c` par `loci_hw.c` + le client
+  `loci-usb/host/loci_usb_client.c` (`LOCI_USB_DIR`).
+- Protocole v3 : cache ROM invalidé sur la génération renvoyée par le pont (plus
+  sur l'écriture d'opcode) ; bouton MENU par `BTN` avec attente du relâchement de
+  nRESET ; clavier/souris relayés au firmware `LOCI_USB` ; `LOCI_HW_TRACE=<f>`
+  (journal des accès), `LOCI_HW_SETTLE_US=n` (banc émulé). Validé : SEDORIC V3
+  boote via le firmware `LOCI_USB` émulé.
+- **Poll « en attente »** : `loci_emu_idle_poll(cycles)` appelé après chaque
+  instruction (`main.c`) ; sans accès LOCI depuis `LOCI_HW_IDLE_POLL` cycles
+  (1000 par défaut, 0 = jamais), le backend interroge la cartouche → la latence
+  des nIRQ/nRESET asynchrones passe de 20 ms (trame) à ~1 ms Oric, sans coût
+  quand le programme parle à LOCI. 0 en co-sim et stub.
+
 
 ### Fixed — co-simulation LOCI : au premier lancement, le modèle interne répondait à la place du firmware
 
@@ -917,6 +916,34 @@ Linux x86_64 (SDL2, strippé, docs) et le zip Windows x86_64 (MinGW, mêmes
 (notes = la section du CHANGELOG correspondante) et y attache les deux
 archives. Testé par `workflow_dispatch` sur `v2.0.1` : release créée avec ses
 deux fichiers. Backlog v2 de la distribution Windows (sprint 89) clos.
+
+### Fixed — backend `picowifi` : contrôle de flux en réception (rapport ProphetOric, 2026-09-17)
+
+`picowifi_recv()` lisait 256 octets de la socket à chaque sondage de l'ACIA
+quel que soit l'état de l'anneau RX (64 Ko), et `pw_rx_push()` **jetait en
+silence** tout octet arrivant anneau plein. Dès qu'un serveur envoyait plus de
+64 Ko plus vite que l'Oric ne lit à 9600 bauds (toujours le cas sur une socket
+locale), la suite du flux était perdue : un `.dsk` de 1 Mo servi par un
+`prophetd` local s'arrêtait à ~69 Ko puis « peer closed connection » /
+`NO CARRIER`. Le vrai PicoWiFiModemUSB ne lit la socket qu'au rythme où il peut
+transmettre (fenêtre TCP de lwIP) : latence, jamais de perte.
+
+- `picowifi_recv()` ne lit que ce que l'anneau peut contenir
+  (`min(256, PW_RX_BUFSZ - rx_count)`, rien si plein) ; le reste attend dans le
+  noyau, dont la fenêtre TCP freine le pair comme sur le Pico. Le décodeur
+  telnet émet au plus un octet par octet reçu : la borne vaut dans les deux modes.
+- `pw_rx_push()` journalise toute perte (`log_warning`, une fois par épisode +
+  bilan des octets perdus à la reprise) au lieu de se taire — ne concerne plus que
+  le chemin `ATDISKRD` (corps lu d'un bloc, > 64 Ko).
+- `test-picowifi` 74 → **75** : `test_rx_flow_control_no_loss_over_ring_size`
+  (pair loopback poussant 200 Ko d'un trait, Oric drainant un octet à la fois,
+  séquence intégrale vérifiée — échoue sur l'ancien code à `got != TOTAL`).
+
+Contournement côté ProphetOric 0.5.0 (`Range:` par tranches de 32 Ko) devenu
+inutile pour l'émulateur ; un client lisant un gros flux d'un trait
+(`prophet.neo`, OricTel) n'est plus exposé.
+
+EMU_VERSION 2.0.4 → **2.1.0**.
 
 ### Changed — le cœur cycle-par-cycle devient le défaut ; interruptions au cycle pénultième (V2-S3)
 

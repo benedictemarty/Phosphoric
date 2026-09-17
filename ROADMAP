@@ -2973,6 +2973,21 @@ la **fidélité comportementale**. Périmètre = reproduire le firmware réel ;
 toute extension au-delà (ex. proxy TLS) est explicitement hors-périmètre
 (voir Future Enhancements).
 
+### Contrôle de flux RX du backend picowifi (2.1.0, 2026-09-17) - DONE
+
+Rapport ProphetOric : `picowifi_recv()` lisait la socket sans regarder l'anneau
+RX de 64 Ko et `pw_rx_push()` jetait en silence au-delà → un `.dsk` de 1 Mo
+s'arrêtait à ~69 Ko puis `NO CARRIER`. Le vrai Pico ne lit qu'au rythme de
+l'ACIA (fenêtre TCP lwIP).
+
+- [x] Lecture socket bornée par la place libre de l'anneau (`min(256, libre)`,
+      rien si plein) → le noyau applique la fenêtre TCP au pair
+- [x] Toute perte résiduelle journalisée (`log_warning`, une fois par épisode)
+- [x] `test_rx_flow_control_no_loss_over_ring_size` (200 Ko d'un trait, drain
+      octet par octet, séquence intégrale) — rouge sur l'ancien code
+- [ ] `ATDISKRD` : corps lu d'un bloc dans l'anneau → un corps > 64 Ko perd
+      encore (désormais journalisé) ; à rendre incrémental si un usage apparaît
+
 ### Sprint 46: PicoWiFi — défauts + codes résultat + parsing composé (v1.17.1-alpha) - DONE
 
 Corrige les divergences vs le code source (l'impl sprint 45 suivait le

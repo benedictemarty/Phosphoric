@@ -640,6 +640,34 @@ TEST(test_telnet_inbound_iac_iac_data) {
     tn_disconnect();
 }
 
+TEST(test_rx_flow_control_no_loss_over_ring_size) {
+    /* Regression (ProphetOric report, 2026-09-17): a peer pushing far more
+     * than the 64KB RX ring while the Oric drains slowly used to lose every
+     * byte beyond the ring, silently. The backend must now leave unread data
+     * in the kernel so the TCP window throttles the peer, like the Pico. */
+    tn_connect("-");                                  /* raw stream, no telnet */
+    enum { TOTAL = 200 * 1024 };
+    uint8_t* out = malloc(TOTAL);
+    ASSERT_TRUE(out != NULL);
+    int sent = 0, got = 0; uint8_t b;
+    for (int spin = 0; spin < 2000000 && got < TOTAL; spin++) {
+        if (sent < TOTAL) {                           /* peer: blast as fast as it can */
+            uint8_t chunk[4096]; int n = 0;
+            while (n < (int)sizeof(chunk) && sent + n < TOTAL) { chunk[n] = (uint8_t)((sent + n) % 251); n++; }
+            ssize_t w = write(g_srv, chunk, (size_t)n);
+            if (w > 0) sent += (int)w;                /* EAGAIN = window closed: fine */
+        }
+        /* Oric: ~one byte per spin, far slower than the peer. */
+        if (pw->recv(pw, &b)) out[got++] = b;
+    }
+    ASSERT_TRUE(sent == TOTAL);
+    ASSERT_TRUE(got == TOTAL);
+    for (int i = 0; i < TOTAL; i++)
+        if (out[i] != (uint8_t)(i % 251)) { printf("FAIL\n    byte %d: %02X\n", i, out[i]); tests_failed++; free(out); tn_disconnect(); return; }
+    free(out);
+    tn_disconnect();
+}
+
 TEST(test_telnet_inbound_ayt_response) {
     /* Server sends IAC AYT → backend answers "\r\n[Yes]\r\n" on the line. */
     tn_connect("=");
@@ -1274,6 +1302,7 @@ int main(void) {
     RUN(test_telnet_inbound_will_naws_dont);
     RUN(test_telnet_inbound_cr_nul_filter);
     RUN(test_telnet_inbound_iac_iac_data);
+    RUN(test_rx_flow_control_no_loss_over_ring_size);
     RUN(test_telnet_inbound_ayt_response);
     RUN(test_net0_default_via_atnet);
 

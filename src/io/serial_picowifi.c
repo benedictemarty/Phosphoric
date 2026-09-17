@@ -134,6 +134,7 @@ typedef struct {
     uint16_t port;                  /* preset/last dial port */
     uint8_t* rx_buf;                /* 64KB ring → Oric */
     int      rx_head, rx_tail, rx_count;
+    unsigned long rx_dropped;       /* bytes lost in the current overflow episode */
     time_t   connect_time;          /* set on dial, used for NO CARRIER (X1) */
 
     /* ── AT command state machine ── */
@@ -255,7 +256,19 @@ static ssize_t pw_write(int fd, const void* buf, size_t n)
 
 static void pw_rx_push(picowifi_t* pw, uint8_t b)
 {
-    if (pw->rx_count >= PW_RX_BUFSZ) return;
+    if (pw->rx_count >= PW_RX_BUFSZ) {
+        /* Should never happen on the socket path (picowifi_recv only reads
+         * what fits — the kernel then applies the TCP window to the peer, as
+         * lwIP does on the real Pico). Any loss is logged once per episode. */
+        if (pw->rx_dropped++ == 0)
+            log_warning("PicoWiFi: RX ring full (%d bytes), data lost", PW_RX_BUFSZ);
+        return;
+    }
+    if (pw->rx_dropped) {
+        log_warning("PicoWiFi: RX ring overflow ended, %lu byte(s) lost",
+                    (unsigned long)pw->rx_dropped);
+        pw->rx_dropped = 0;
+    }
     pw->rx_buf[pw->rx_head] = b;
     pw->rx_head = (pw->rx_head + 1) % PW_RX_BUFSZ;
     pw->rx_count++;
@@ -1879,6 +1892,7 @@ static bool picowifi_open(serial_backend_t* self)
         return false;
     }
     pw->rx_head = pw->rx_tail = pw->rx_count = 0;
+    pw->rx_dropped = 0;
     pw->sockfd = -1;
     pw->listen_fd = -1;
     pw->mode = 0;
@@ -2053,9 +2067,15 @@ static bool picowifi_recv(serial_backend_t* self, uint8_t* byte)
     picowifi_t* pw = (picowifi_t*)self->state.picowifi.impl;
     pw->silence++;
 
-    if (pw->mode == 1 && pw->sockfd >= 0) {
+    /* Flow control: only pull from the socket what the ring can hold. A
+     * chunk left unread stays in the kernel buffer, whose TCP window then
+     * throttles the peer — exactly what the Pico's lwIP stack does. The
+     * telnet decoder emits at most one byte per input byte, so `room` is a
+     * safe bound in both modes. */
+    size_t room = (size_t)(PW_RX_BUFSZ - pw->rx_count);
+    if (pw->mode == 1 && pw->sockfd >= 0 && room > 0) {
         uint8_t tmp[256];
-        ssize_t r = pw_conn_read(pw, tmp, sizeof(tmp));
+        ssize_t r = pw_conn_read(pw, tmp, room < sizeof(tmp) ? room : sizeof(tmp));
         if (r > 0) {
             for (ssize_t i = 0; i < r; i++) {
                 if (pw->session_telnet != TN_NONE) pw_tn_rx_byte(pw, tmp[i]);
