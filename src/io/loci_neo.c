@@ -26,6 +26,7 @@ static emul_t g_emul;
 static int    g_active;
 static int    g_reset_pending;   /* /RESET Oric affirmé par le firmware, à livrer au 6502 */
 static char   g_usb_image[1024]; /* --loci-usb-image : clé USB émulée (image FAT) */
+static int    g_hid;             /* clavier/souris USB émulés (hooks usbhid_*) */
 
 /* Observe la ligne /RESET pendant que le firmware tourne (14/5 : ROM tierce). */
 static void neo_run(long steps)
@@ -73,6 +74,8 @@ int loci_emu_start(const char *elf_path)
         log_error("LOCI-neo: emul_init a échoué (%s)", elf_path);
         return -1;
     }
+    g_hid = neo_hid_enable(&g_emul);
+    if (!g_hid) log_warning("LOCI-neo: symboles usbhid_* absents — clavier/souris USB non émulés");
     if (g_usb_image[0]) {
         if (neo_usb_set_image(&g_emul, g_usb_image)) log_info("LOCI-neo: clé USB émulée « %s » (volume 1:)", g_usb_image);
         else log_warning("LOCI-neo: image USB « %s » illisible ou symboles usbdisk_* absents", g_usb_image);
@@ -201,8 +204,10 @@ void    loci_emu_acia_tick(void) { }
 /* Fond de tâche : le firmware avance librement (boucle principale) une fois par trame. */
 void loci_emu_tick(long steps) { if (g_active) neo_run(steps); }
 
+/* HID USB émulé (clavier/souris de l'hôte → contrat usbhid_* du firmware). */
 bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel, int8_t pan)
-{ (void)buttons; (void)dx; (void)dy; (void)wheel; (void)pan; return false; }
-bool loci_emu_mou_armed(void) { return false; }
-bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6]) { (void)modifier; (void)keycodes; return false; }
-bool loci_emu_kbd_armed(void) { return false; }
+{ (void)pan; if (!g_hid) return false; neo_hid_mouse_report(buttons, dx, dy, wheel, 1); return true; }
+bool loci_emu_mou_armed(void) { return g_hid != 0; }
+bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
+{ if (!g_hid) return false; neo_hid_key_report(modifier, keycodes); return true; }
+bool loci_emu_kbd_armed(void) { return g_hid != 0; }
