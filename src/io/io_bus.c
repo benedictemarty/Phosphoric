@@ -36,6 +36,7 @@ static bool loci_emu_ramx_claims(uint16_t addr) {
 }
 static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->has_loci) return false;
+    if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* backend neo : /IO CONTROL */
     if (loci_addr_in_mia(addr) || loci_emu_ramx_claims(addr)) return true;
     if (loci_addr_in_tap(addr)) return true;
     if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
@@ -59,6 +60,12 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
      * Pendant le boot arrière-plan (1er lancement d'un ELF), on ATTEND : sinon le
      * modèle interne répondait à la place du firmware (open("N:…") → FR_NO_FILE). */
     loci_emu_wait_boot();
+    if (loci_emu_io_page()) {
+        uint8_t v;
+        bool drv = loci_emu_io_read(addr, &v);
+        loci_emu_reflect_nirq(emu);
+        return drv ? v : memory_open_bus(&emu->memory);
+    }
     if (loci_emu_ramx_claims(addr)) return loci_emu_api_read(addr);
     if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
                                                          : loci_read(&emu->loci, addr);
@@ -75,6 +82,7 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
 }
 static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     loci_emu_wait_boot();
+    if (loci_emu_io_page()) { loci_emu_io_write(addr, value); loci_emu_reflect_nirq(emu); return true; }
     if (loci_emu_ramx_claims(addr))  loci_emu_api_write(addr, value);
     else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }

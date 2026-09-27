@@ -95,6 +95,14 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis);
 void    loci_emu_api_write(uint16_t address, uint8_t value);
 uint8_t loci_emu_api_read(uint16_t address);
 
+/* Page I/O ENTIÈRE $0310-$03FF servie par de vrais cycles bus (backend neo : loci-fw,
+ * lot 8.0, ADR-009 — c'est ce que fait /IO CONTROL sur la carte). io_page() = true si le
+ * backend la revendique ; io_read() renvoie true si LOCI a piloté le bus (sinon bus
+ * flottant) ; les nIRQ éventuels sont drainés par loci_emu_irq_take(). */
+bool    loci_emu_io_page(void);
+bool    loci_emu_io_read(uint16_t address, uint8_t *out);
+void    loci_emu_io_write(uint16_t address, uint8_t value);
+
 /* Microdisc $0310-$0314/$0318 co-simulé : le contrôleur WD1793 émulé par le VRAI
  * firmware (oric/dsk.c) sert le 6502 — lecture/écriture de secteurs, seek, RNF,
  * IRQ de fin de commande (drainée comme pour l'API). Tant que le boot n'est pas

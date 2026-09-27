@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — backend neo : page I/O `$0310-$03FF` servie par le firmware (loci-fw lot 8.0)
+
+- `loci_emu_io_page/io_read/io_write` (interface `loci_emu.h`, bouchons dans les autres
+  backends) : avec `make LOCI_NEO=1`, toute la plage `$0310-$03FF` est confiée au firmware par
+  de vrais cycles bus (fidèle à `/IO CONTROL` câblé sur la carte) ; lecture non pilotée =
+  bus flottant (`memory_open_bus`).
+- `loci_emu_tap_motor` (neo) : les écritures ORB du VIA sont rejouées sur le bus à chaque
+  changement de PB6 (LOCI espionne le moteur cassette).
+
 ### Added — backend LOCI « neo » (nouveau firmware loci-fw, réécriture de zéro)
 
 - `src/io/loci_neo.c` : troisième backend de l'interface `loci_emu.h` (`make LOCI_NEO=1`),

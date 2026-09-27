@@ -555,3 +555,8 @@ void loci_emu_acia_tick(void)
 }
 
 bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }
+
+/* Page I/O entière par cycles bus : propre au backend neo (loci-fw). */
+bool    loci_emu_io_page(void) { return false; }
+bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
+void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }

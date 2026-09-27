@@ -197,11 +197,36 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
 /* Page $03xx : rien de décodé par loci-fw au lot 1. */
 void    loci_emu_api_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_api_read(uint16_t address) { (void)address; return 0xFF; }
+/* Page I/O $0310-$03FF (lot 8.0) : vrais cycles bus ; le firmware avance ensuite un peu
+ * (son cœur 1 traite l'accès capturé, le cœur 0 prépare la suite). */
+bool loci_emu_io_page(void) { return g_active != 0; }
+bool loci_emu_io_read(uint16_t address, uint8_t *out)
+{
+    if (!g_active) return false;
+    int drv = neo_io_read(&g_emul, address, out);
+    neo_run(200L);
+    return drv != 0;
+}
+void loci_emu_io_write(uint16_t address, uint8_t value)
+{
+    if (!g_active) return;
+    neo_bus_write(&g_emul, address, value);
+    neo_run(200L);
+}
 void    loci_emu_dsk_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_dsk_read(uint16_t address) { (void)address; return 0xFF; }
 void    loci_emu_tap_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_tap_read(uint16_t address) { (void)address; return 0xFF; }
-void    loci_emu_tap_motor(uint8_t via_orb) { (void)via_orb; }
+/* Moteur cassette (VIA ORB PB6) : LOCI espionne les écritures en $0300 sur le vrai bus ;
+ * rejouées ici seulement sur changement de PB6 (la ROM réécrit ORB à chaque colonne clavier). */
+void loci_emu_tap_motor(uint8_t via_orb)
+{
+    static int last = -1;
+    int motor = (via_orb >> 6) & 1;
+    if (!g_active || motor == last) return;
+    last = motor;
+    neo_bus_write(&g_emul, 0x0300, via_orb);
+}
 void    loci_emu_dsk_tick(void) { }
 int     loci_emu_irq_take(void) { return 0; }
 bool    loci_emu_acia_active(void) { return false; }
