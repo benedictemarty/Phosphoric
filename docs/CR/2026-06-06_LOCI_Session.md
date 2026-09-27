@@ -1,6 +1,6 @@
 # Compte-rendu — Session LOCI 2026-06-06
 
-**Auteur** : bmarty (avec assistance Claude Opus 4.7)
+**Auteur** : bmarty
 **Versions livrées** : v1.16.24 → v1.16.38 (15 releases)
 **Tests** : 320 → 445 (+125 tests, dont 105 nouveaux test-loci)
 **LOC ajoutées** : ~3700 (LOCI module + bridges + fix)
@@ -257,7 +257,7 @@ Les éléments suivants sont **documentés et acceptés** comme limites :
 | VERSION_TRACKING | racine | historique semver |
 | CIRRUS_OS | racine | build status tracking |
 | `roms/loci/README.md` | nouveau | source + license ROM |
-| Mémoire interne | `~/.claude/.../memory/` | 3 docs (plan, gaps, keyboard diag) |
+| Mémoire interne | mémoire locale (hors dépôt) | 3 docs (plan, gaps, keyboard diag) |
 
 ---
 

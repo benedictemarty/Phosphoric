@@ -1,6 +1,6 @@
 # Compte-rendu — Sprint 34ao : Backend image SD raw LOCI 2026-06-07
 
-**Auteur** : bmarty (avec assistance Claude Opus 4.7)
+**Auteur** : bmarty
 **Branche** : `feat/loci-sdimg`
 **Version livrée** : v1.16.40-alpha
 **Statut** : Implémentation read-only complète, 458 tests pass

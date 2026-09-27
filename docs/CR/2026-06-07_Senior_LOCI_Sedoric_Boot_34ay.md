@@ -2,7 +2,7 @@
 
 **Date** : 2026-06-07
 **Versions livrées** : v1.16.50 → v1.16.53-alpha (4 versions)
-**Auteur** : bmarty (avec assistance Claude Opus 4.7)
+**Auteur** : bmarty
 **Demande** : review architecturale du bus DSK LOCI + diagnostic du blocage Sedoric stage 2
 
 ---

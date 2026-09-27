@@ -99,7 +99,7 @@ définition même de N3.
 Rien n'est modifié dans le cœur tant que l'oracle n'existe pas : c'est lui qui
 transforme « je crois que c'est juste » en « c'est mesuré ».
 
-- **US0.1 — Reformulation des allégations.** `README.md`, `CLAUDE.md`,
+- **US0.1 — Reformulation des allégations.** `README.md`, les règles locales du projet,
   `ROADMAP`, `docs/AGILE_PLAN.md`, en-têtes `cpu6502.h`, pages de distribution,
   notes de forum : appliquer le vocabulaire autorisé de `docs/ACCURACY.md`.
   Retirer la coche « Cycle-accurate timing » des *Success Metrics* et la
@@ -410,7 +410,7 @@ variabilité de la machine (±5 %), pas du code.
   (chaque affirmation adossée au test qui la ferait tomber) + limites explicites ;
   « N3 atteint » pour le CPU, « machine cadencée au cycle » pour l'ensemble, pas
   « exacte au cycle » (FDC N1+, calage ULA).
-- **US8.2 — ✅ (2.0.0-beta.1)** `master-clock.md` (S4/S9), `CLAUDE.md` (S9),
+- **US8.2 — ✅ (2.0.0-beta.1)** `master-clock.md` (S4/S9), les règles locales du projet (S9),
   `README.md` (S10 : en-tête, badge, savestates, cibles de test).
 - **US8.3 — ✅ (2.0.0-beta.1)** `docs/articles/v2-cycle-stepped.md` : ce qu'on
   avait dit et pourquoi c'était faux, ce que la V2 change de visible, les deux

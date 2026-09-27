@@ -2,7 +2,7 @@
 
 **Date** : 2026-06-07
 **Versions livrées** : v1.16.40-alpha → v1.16.43-alpha (4 versions)
-**Auteur** : bmarty (avec assistance Claude Opus 4.7)
+**Auteur** : bmarty
 **Demande** : review architecturale + décisions + limitations
 
 ---

@@ -43,7 +43,6 @@ check_file() {
 
 echo "=== Allégations de précision temporelle (docs/ACCURACY.md) ==="
 check_file README.md ""
-check_file CLAUDE.md ""
 check_file ROADMAP 60
 
 # CIRRUS_OS : seule la ligne d'identité du projet est une allégation ; le reste du

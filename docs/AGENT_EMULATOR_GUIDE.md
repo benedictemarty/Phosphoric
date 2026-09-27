@@ -1,6 +1,6 @@
-# Piloter l'émulateur Phosphoric depuis Claude Code
+# Piloter l'émulateur Phosphoric depuis un agent de développement
 
-Guide destiné à **Claude Code** (ou tout agent) pour développer et **tester automatiquement**
+Guide destiné à **un agent de développement** pour développer et **tester automatiquement**
 un programme ORIC-1 / Atmos à l'aide de l'émulateur **Phosphoric** (`oric1-emu`).
 
 > Copiez ce fichier à la racine (ou dans `docs/`) d'un nouveau projet Oric.
@@ -244,4 +244,4 @@ média à chaud · `F9` débogueur · `F10` quitter · `F11` plein écran · `F1
 - `docs/user-guide/README.md` — guide utilisateur.
 - `docs/control_protocol.md` / `docs/http-api.md` — pilotage IPC / REST.
 - `docs/loci.md`, `docs/SEDORIC.md` — LOCI et filesystem Sedoric.
-- `CLAUDE.md` — conventions du dépôt Phosphoric.
+- les règles locales du projet — conventions du dépôt Phosphoric.

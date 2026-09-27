@@ -1,6 +1,6 @@
 # Modem Digitelec DTL 2000 — Référence technique
 
-> Document de contexte pour Claude Code.
+> Document de contexte pour l'agent de développement.
 > Cible : émulation (Phosphoric), pilote/driver, et écosystème télématique Oric / PAVI.
 > Statut des informations : **sourcé presse + manuels d'époque**. Les détails au bit
 > près de la variante **Oric** sont à confirmer sur les scans (voir §10), car le PDF

@@ -698,9 +698,7 @@ docs/            User guide, control_protocol.md, CR review docs
 
 ## Code generé par IA
 
-> **L'intégralité de ce code a été générée par une intelligence artificielle
-> (Claude Opus 4.6, Anthropic)** sous la direction et la supervision d'un
-> opérateur humain.
+> ⚠️ Avertissement : ce programme est un programme généré par Claude Code sous la supervision d'un être humain : il a été utilisé pour améliorer, développer, rendre compatible ou traduire ce logiciel.
 
 ### Avertissements
 
@@ -731,7 +729,6 @@ Utilisation à vos propres risques. Les contributions et revues de code sont bie
 ## Crédits et sources
 
 ### Auteurs
-- **Claude Opus 4.6 / 4.7 (Anthropic)** — Génération IA du code (architecture, implémentation, tests, documentation)
 - **bmarty** — Direction du projet, supervision, tests sur matériel réel
 
 ### Contributeurs

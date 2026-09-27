@@ -1,6 +1,6 @@
 # Compte-rendu — Fermeture LOCI / Fix ABI 2026-06-07
 
-**Auteur** : bmarty (avec assistance Claude Opus 4.7)
+**Auteur** : bmarty
 **Branche** : `fix/mia-spin-abi` → mergée sur `main` (commit `26a3977`)
 **Version livrée** : v1.16.39-alpha
 

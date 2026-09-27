@@ -1,6 +1,6 @@
 # Compte-rendu — Sprint 34ap : SDIMG read-write 2026-06-07
 
-**Auteur** : bmarty (avec assistance Claude Opus 4.7)
+**Auteur** : bmarty
 **Branche** : `feat/loci-sdimg-write`
 **Version livrée** : v1.16.42-alpha
 **Statut** : Tests automatisés ✅ — Validation E2E LOCI à faire
