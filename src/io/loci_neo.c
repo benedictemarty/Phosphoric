@@ -234,7 +234,15 @@ void loci_emu_tap_motor(uint8_t via_orb)
 /* Une fois par trame : le firmware avance aussi quand le 6502 n'accède pas à LOCI (il peut
  * attendre l'IRQ de fin de commande du WD1793 sans rien lire — lot 8.2). Φ2 reste au repos
  * haut : les SM de service attendent le prochain front, rien n'est désynchronisé. */
-void    loci_emu_dsk_tick(void) { if (g_active) neo_run(20000L); }
+void    loci_emu_dsk_tick(void)
+{
+    if (!g_active) return;
+    /* Appelé une fois par trame (20 ms de l'Oric) : le temps du firmware suit celui de l'Oric
+     * (sinon il n'avance que d'1 µs par lecture du timer — le moteur son, cadencé à 50 Hz,
+     * ne progressait pas ; lot 9.1). */
+    soc_timer_advance_us(20000);
+    neo_run(20000L);
+}
 /* Impulsions /IRQ du firmware (expandeur, bit 5), comptées par soc.c au front montant. */
 int     loci_emu_irq_take(void) { return g_active ? emul_loci_irq_take(&g_emul) : 0; }
 bool    loci_emu_acia_active(void) { return false; }

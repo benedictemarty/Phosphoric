@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — backend neo : le temps du firmware suit celui de l'Oric (loci-fw lot 9.1)
+
+- `loci_emu_dsk_tick` (une fois par trame) avance le timer du firmware émulé de 20 ms ; il
+  n'avançait que d'1 µs par lecture, sans lien avec l'Oric (le moteur son à 50 Hz stagnait).
+
 ### Fixed/Added — backend neo : Microdisc de loci-fw (lot 8.2)
 
 - `loci_emu_rom_write` (neo) ne revendique plus toute écriture ≥ `$C000` : seulement les
