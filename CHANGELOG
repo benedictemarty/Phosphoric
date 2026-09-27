@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed/Added — backend neo : Microdisc de loci-fw (lot 8.2)
+
+- `loci_emu_rom_write` (neo) ne revendique plus toute écriture ≥ `$C000` : seulement les
+  adresses servies par LOCI ; une fenêtre /MAP laisse `memory.c` écrire la RAM overlay (la ROM
+  Microdisc affichait « RV1 adjustment required »). Cycle bus réel pour la seule page `$FF`.
+- `loci_emu_irq_take` (neo) : fronts /IRQ du firmware (expandeur) ; `loci_emu_dsk_tick` fait
+  avancer le firmware une fois par trame (attente d'IRQ sans accès).
+
 ### Added — backend neo : page I/O `$0310-$03FF` servie par le firmware (loci-fw lot 8.0)
 
 - `loci_emu_io_page/io_read/io_write` (interface `loci_emu.h`, bouchons dans les autres

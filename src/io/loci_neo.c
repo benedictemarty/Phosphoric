@@ -165,7 +165,9 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 bool loci_emu_rom_write(uint16_t address, uint8_t value)
 {
     if (!g_active || address < 0xC000u) return false;
-    neo_bus_write(&g_emul, address, value);
+    /* Seule la page $FF est capturée par LOCI (BAL) : cycle bus réel. Ailleurs, la carte
+     * ignore l'écriture. */
+    if ((address & 0xFF00u) == 0xFF00u) neo_bus_write(&g_emul, address, value);
     /* Écriture du groupe = début de commande : faire avancer le firmware jusqu'à la fin
      * ($FF00 = 0) ou un plafond — le modèle est événementiel, le firmware ne tourne pas
      * entre deux accès du 6502 (même principe que le poll de loci_emu.c). */
@@ -177,7 +179,9 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
             neo_run(1000L);
         }
     }
-    return true;
+    /* Adresse servie par LOCI : l'écriture s'arrête là (la ROM masque la RAM). Fenêtre /MAP
+     * (lot 8.2) : non servie → false, memory.c écrit la RAM overlay de l'Oric. */
+    return neo_serve_read(&g_emul, address, NULL) != 0;
 }
 
 bool loci_emu_romdis(void)
@@ -227,8 +231,12 @@ void loci_emu_tap_motor(uint8_t via_orb)
     last = motor;
     neo_bus_write(&g_emul, 0x0300, via_orb);
 }
-void    loci_emu_dsk_tick(void) { }
-int     loci_emu_irq_take(void) { return 0; }
+/* Une fois par trame : le firmware avance aussi quand le 6502 n'accède pas à LOCI (il peut
+ * attendre l'IRQ de fin de commande du WD1793 sans rien lire — lot 8.2). Φ2 reste au repos
+ * haut : les SM de service attendent le prochain front, rien n'est désynchronisé. */
+void    loci_emu_dsk_tick(void) { if (g_active) neo_run(20000L); }
+/* Impulsions /IRQ du firmware (expandeur, bit 5), comptées par soc.c au front montant. */
+int     loci_emu_irq_take(void) { return g_active ? emul_loci_irq_take(&g_emul) : 0; }
 bool    loci_emu_acia_active(void) { return false; }
 bool    loci_emu_acia_served(uint16_t address) { (void)address; return false; }
 void    loci_emu_acia_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
