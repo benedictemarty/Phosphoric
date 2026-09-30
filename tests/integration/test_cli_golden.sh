@@ -1,7 +1,7 @@
 #!/bin/sh
-# test_cli_golden.sh — auto-test de tools/cli_golden.sh.
-# Un binaire comparé à lui-même : aucun écart. Un « mutant » (même binaire,
-# une ligne de plus sur stdout) : écart détecté. Ne demande aucune ROM (--help).
+# test_cli_golden.sh — self-test of tools/cli_golden.sh.
+# A binary compared with itself: no difference. A "mutant" (same binary, one
+# more line on stdout): difference detected. Needs no ROM (--help).
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 EMU="$ROOT/${EMU:-oric1-emu}"

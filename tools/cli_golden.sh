@@ -1,15 +1,15 @@
 #!/bin/sh
-# cli_golden.sh — comparaison différentielle de deux binaires sur un corpus de
-# lignes de commande (garde-fou des refactors de main()/du parseur).
+# cli_golden.sh — differential comparison of two binaries on a corpus of
+# command lines (safety net for refactors of main()/the parser).
 #
-# Usage : tools/cli_golden.sh ANCIEN NOUVEAU [CORPUS]
-#   CORPUS (défaut tests/cli_golden/cases.txt) : une ligne d'arguments par cas,
-#   lue par le shell (guillemets permis) ; « @OUT@ » = répertoire de sortie
-#   propre au cas et au binaire. Lignes vides et « # » ignorées.
-# Pour chaque cas, les deux binaires tournent depuis la racine du dépôt ; on
-# compare code de retour, stdout, stderr (horodatages et @OUT@ normalisés) et
-# chaque fichier produit sous @OUT@. Code de sortie 1 au premier écart signalé
-# (tous les cas sont quand même joués). GOLDEN_KEEP=1 garde les sorties.
+# Usage: tools/cli_golden.sh OLD NEW [CORPUS]
+#   CORPUS (default tests/cli_golden/cases.txt): one line of arguments per case,
+#   read by the shell (quotes allowed); "@OUT@" = output directory specific to
+#   the case and the binary. Blank lines and "#" lines are ignored.
+# For each case both binaries run from the repository root; exit code, stdout,
+# stderr (timestamps and @OUT@ normalised) and every file produced under @OUT@
+# are compared. Exit code 1 if any difference is reported (all cases are still
+# played). GOLDEN_KEEP=1 keeps the outputs.
 set -u
 OLD=${1:?usage: cli_golden.sh ANCIEN NOUVEAU [CORPUS]}
 NEW=${2:?usage: cli_golden.sh ANCIEN NOUVEAU [CORPUS]}
@@ -17,23 +17,23 @@ CASES=${3:-tests/cli_golden/cases.txt}
 T=$(mktemp -d) || exit 1
 [ "${GOLDEN_KEEP:-0}" = 1 ] && echo "sorties conservées : $T" || trap 'rm -rf "$T"' EXIT
 
-norm() {  # norm <fichier> <répertoire @OUT@>
+norm() {  # norm <file> <@OUT@ directory>
     sed -e "s|$2|@OUT@|g" \
         -e 's/\[[0-9]\{4\}-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]\]/[TS]/g' "$1" |
     sed -E '/^BENCH /s/(wall_ms|mhz_eq|speed_ratio|frame_us)=[0-9.x]*/\1=N/g'
 }
 
-# `timeout` (coreutils) est absent de macOS par défaut : sans lui, pas de limite.
+# `timeout` (coreutils) is missing on macOS by default: without it, no limit.
 TO=""
 command -v timeout >/dev/null 2>&1 && TO="timeout ${GOLDEN_TIMEOUT:-60}"
 
-# Les deux binaires tournent sous le MÊME chemin (lien symbolique) : argv[0]
-# apparaît dans l'aide et dans certains messages.
+# Both binaries run under the SAME path (symbolic link): argv[0] appears in
+# the help and in some messages.
 BIN="$T/oric1-emu"
 abs() { case "$1" in /*) echo "$1" ;; *) echo "$(pwd)/$1" ;; esac; }
 OLD=$(abs "$OLD"); NEW=$(abs "$NEW")
 
-run_one() {  # run_one <binaire> <répertoire> <arguments>
+run_one() {  # run_one <binary> <directory> <arguments>
     mkdir -p "$2/out"
     ln -sf "$1" "$BIN"
     args=$(printf '%s' "$3" | sed "s|@OUT@|$2/out|g")

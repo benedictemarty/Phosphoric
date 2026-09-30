@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_args.c
- * @brief Lecture de la ligne de commande (boucle getopt) dans un cli_opts_t.
+ * @brief Reading the command line (getopt loop) into a cli_opts_t.
  * @author bmarty <bmarty@mailo.com>
  *
- * Sprint C du plan d'architecture : la boucle getopt_long de main() est
- * déplacée ici À L'IDENTIQUE (mêmes cas, même ordre, mêmes messages, mêmes
- * codes de sortie). Seuls changent l'accès aux options (cfg->…), à l'émulateur
- * (emu->…) et --loci-menu-at, stocké dans cfg puis recopié par main().
- * Comportement verrouillé par tools/cli_golden.sh et test_cli_parsing.sh.
+ * Sprint C of the architecture plan: main()'s getopt_long loop is moved here
+ * VERBATIM (same cases, same order, same messages, same exit codes). Only the
+ * access to the options (cfg->…), to the emulator (emu->…) and --loci-menu-at,
+ * stored in cfg then copied by main(), change. Behaviour locked by
+ * tools/cli_golden.sh and test_cli_parsing.sh.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -127,9 +127,9 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_TAPE_SIGNAL_FREE: cfg->tape_signal = true; cfg->tape_signal_free = true; break;
             case OPT_TAPE_OUT_CAPTURE: cfg->tape_out_capture_arg = optarg; break;
             case OPT_TRACE: cfg->trace_file = optarg; break;
-            case OPT_CPU_MICROSEQ: cfg->cpu_microseq = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_CPU_MICROSEQ: cfg->cpu_microseq = true; break;   /* default, kept for scripts */
             case OPT_CPU_LEGACY: cfg->cpu_microseq = false; break;
-            case OPT_ULA_CYCLE: cfg->ula_per_cycle = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_ULA_CYCLE: cfg->ula_per_cycle = true; break;   /* default, kept for scripts */
             case OPT_ULA_LINE: cfg->ula_per_cycle = false; break;
             case OPT_ULA_FETCH_OFFSET: cfg->ula_fetch_offset = atoi(optarg); break;
             case OPT_CYCLE_TRACE: cfg->cycle_trace_file = optarg; break;
@@ -237,10 +237,10 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             }
             case OPT_LOCI_SERVE_TIMING: {
-                /* Modèle de course PHI2 sous-cycle (bus_timing.h, épic B) :
-                 * "SERVE[,LATCH]" en subticks PHI2×30. Le serve arrive à
-                 * (tior + SERVE) ; propre ssi ≤ LATCH (défaut 27). SERVE court
-                 * (build -Os ≈ 26) passe, long (-O2 ≈ 36) rate. */
+                /* Sub-cycle PHI2 race model (bus_timing.h, epic B):
+                 * "SERVE[,LATCH]" in PHI2×30 subticks. The serve arrives at
+                 * (tior + SERVE); clean iff ≤ LATCH (default 27). A short SERVE
+                 * (-Os build ≈ 26) passes, a long one (-O2 ≈ 36) misses. */
                 int serve = 0, latch = BUS_LATCH_SUBTICK_DEFAULT;
                 int n = sscanf(optarg, "%d,%d", &serve, &latch);
                 if (n >= 1 && serve >= 0) {
@@ -253,8 +253,8 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             }
             case OPT_LOCI_SERVE_JITTER: {
-                /* "AMP[,SEED]" : amplitude du jitter (subticks) + graine PRNG.
-                 * Rend les ratés occasionnels près du latch, reproductibles. */
+                /* "AMP[,SEED]": jitter amplitude (subticks) + PRNG seed.
+                 * Makes the occasional misses near the latch reproducible. */
                 int amp = 0; unsigned seed = 0;
                 int n = sscanf(optarg, "%d,%u", &amp, &seed);
                 if (n >= 1 && amp >= 0) {

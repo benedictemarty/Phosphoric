@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_opts.c
- * @brief Valeurs par défaut des options de la ligne de commande.
+ * @brief Default values of the command-line options.
  * @author bmarty <bmarty@mailo.com>
  */
 #include <string.h>
