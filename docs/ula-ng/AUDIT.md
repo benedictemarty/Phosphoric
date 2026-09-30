@@ -20,7 +20,7 @@
 ## 0.1 — Langage, build, tests
 
 - **Langage** : C11 (`-std=c11`), `Makefile:7` (`-Wall -Wextra -Wpedantic`).
-- **Build** : `make` (headless) / `make SDL2=1` (affichage) ; `CMakeLists.txt` en second.
+- **Build** : `make` (headless) / `make SDL2=1` (affichage) ; `CMakeLists.txt` en second (retiré en 2.1.3 : le `Makefile` est désormais le seul build).
 - **Tests** : suite maison (macros `TEST()/RUN()/ASSERT_*`, pas de dépendance). Vidéo :
   `make test-video` (`tests/unit/test_video.c`). `make tests` = suite complète (987 tests).
 

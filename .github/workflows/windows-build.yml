@@ -43,7 +43,7 @@ jobs:
           cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || \
             cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || true
           cp -r roms dist/phosphoric-windows/
-          cp README.md CHANGELOG LICENSE dist/phosphoric-windows/ 2>/dev/null || true
+          cp README.md VERSION_TRACKING LICENSE dist/phosphoric-windows/ 2>/dev/null || true
           cp docs/loci.md dist/phosphoric-windows/ 2>/dev/null || true
           cat > dist/phosphoric-windows/LISEZMOI-WINDOWS.txt <<'EOF'
           Phosphoric — émulateur ORIC-1/Atmos pour Windows 11 (x86_64)

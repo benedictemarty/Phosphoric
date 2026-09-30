@@ -10,6 +10,8 @@
 #
 # Hors périmètre volontairement : ROADMAP/CIRRUS_OS au-delà de l'en-tête et
 # docs/CR/** sont des journaux historiques — on ne réécrit pas l'histoire.
+# Le ROADMAP est tenu en local (non versionné) : il n'est vérifié que s'il est
+# présent, un checkout propre (CI) ne l'a pas.
 
 ROOT=$(dirname "$0")/../..
 cd "$ROOT" || exit 1
@@ -43,7 +45,11 @@ check_file() {
 
 echo "=== Allégations de précision temporelle (docs/ACCURACY.md) ==="
 check_file README.md ""
-check_file ROADMAP 60
+if [ -f ROADMAP ]; then
+    check_file ROADMAP 60
+else
+    echo "SKIP: ROADMAP absent (tenu en local, non versionné)"
+fi
 
 # CIRRUS_OS : seule la ligne d'identité du projet est une allégation ; le reste du
 # fichier est un journal de build qui peut légitimement CITER le terme fautif.
@@ -67,12 +73,12 @@ else
     fail=$((fail+1))
 fi
 
-# Le plan V2 doit exister et être référencé par le ROADMAP.
-if [ -f docs/specs/V2_CYCLE_ACCURACY.md ] && grep -q 'V2_CYCLE_ACCURACY.md' ROADMAP; then
-    echo "PASS: plan V2 présent et référencé par le ROADMAP"
+# Le plan V2 doit exister et être référencé par docs/ACCURACY.md (versionné).
+if [ -f docs/specs/V2_CYCLE_ACCURACY.md ] && grep -q 'V2_CYCLE_ACCURACY.md' docs/ACCURACY.md; then
+    echo "PASS: plan V2 présent et référencé par docs/ACCURACY.md"
     pass=$((pass+1))
 else
-    echo "FAIL: plan V2 absent ou non référencé par le ROADMAP"
+    echo "FAIL: plan V2 absent ou non référencé par docs/ACCURACY.md"
     fail=$((fail+1))
 fi
 

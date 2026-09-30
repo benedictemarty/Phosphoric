@@ -5,7 +5,7 @@
 #   - phosphoric-<ver>-windows-x86_64.zip   (cross-build MinGW, mêmes étapes
 #                                            que windows-build.yml)
 # et les attache à la release GitHub du tag (créée si absente, notes = la
-# section correspondante du CHANGELOG). `--clobber` : relancer remplace.
+# entrée correspondante de VERSION_TRACKING ; le CHANGELOG est tenu en local). `--clobber` : relancer remplace.
 # Test sans tag : workflow_dispatch avec le nom d'un tag existant.
 name: release
 
@@ -38,7 +38,7 @@ jobs:
           d=phosphoric-$ver-linux-x86_64
           mkdir -p dist/$d
           cp oric1-emu-release dist/$d/oric1-emu
-          cp README.md CHANGELOG LICENSE dist/$d/ 2>/dev/null || true
+          cp README.md VERSION_TRACKING LICENSE dist/$d/ 2>/dev/null || true
           cp -r docs dist/$d/
           tar -C dist -czf dist/$d.tar.gz $d
           echo "ASSET=dist/$d.tar.gz" >> "$GITHUB_ENV"
@@ -73,7 +73,7 @@ jobs:
           cp /opt/sdl2-mingw/x86_64-w64-mingw32/bin/SDL2.dll dist/$d/
           cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll dist/$d/ 2>/dev/null || \
             cp /usr/lib/gcc/x86_64-w64-mingw32/*-posix/libwinpthread-1.dll dist/$d/ 2>/dev/null || true
-          cp README.md CHANGELOG LICENSE dist/$d/ 2>/dev/null || true
+          cp README.md VERSION_TRACKING LICENSE dist/$d/ 2>/dev/null || true
           cp docs/loci.md dist/$d/ 2>/dev/null || true
           cat > dist/$d/LISEZMOI-WINDOWS.txt <<'TXT'
           Phosphoric — émulateur ORIC-1/Atmos pour Windows 11 (x86_64)
@@ -105,14 +105,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: assets
-      - name: Release notes from CHANGELOG
+      - name: Release notes from VERSION_TRACKING
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           ver="${tag#v}"
-          # La section "## [ver] - date" du CHANGELOG, jusqu'à la suivante.
+          # La ligne "Status…" de VERSION_TRACKING dont le titre finit par
+          # "— <ver>**" (le CHANGELOG, tenu en local, n'est pas dans le dépôt).
           awk -v v="$ver" '
-            /^## \[/ { if (on) exit; on = index($0, "## [" v "]") == 1 }
-            on { print }' CHANGELOG > notes.md
+            /^Status/ && index($0, "— " v "**") { sub(/^Status[^:]*: */, ""); print; exit }
+            ' VERSION_TRACKING > notes.md
           [ -s notes.md ] || echo "Phosphoric $ver" > notes.md
           echo "TAG=$tag" >> "$GITHUB_ENV"
       - name: Create or update the GitHub release

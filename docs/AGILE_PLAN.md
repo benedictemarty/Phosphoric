@@ -100,7 +100,7 @@ structure de répertoires, documentation agile, CI/CD.
 
 **Critères d'acceptation**:
 - [x] Makefile fonctionnel (compilation sans CMake)
-- [x] CMakeLists.txt configuré
+- [x] CMakeLists.txt configuré (retiré en 2.1.3, désynchronisé du Makefile)
 - [ ] Compilation sans warnings (-Wall -Wextra -Wpedantic)
 - [ ] Targets : all, tests, tools, clean, coverage
 - [ ] Build debug et release

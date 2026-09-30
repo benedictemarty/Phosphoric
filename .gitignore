@@ -205,3 +205,11 @@ test_loci_acia_miss
 third_party/vectors/
 
 test_clock
+
+# Suivi agile tenu en local uniquement (jamais versionné)
+/CHANGELOG
+/ROADMAP
+/CHANGELOG.md
+/ROADMAP.md
+/changelog.md
+/roadmap.md

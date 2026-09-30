@@ -300,8 +300,8 @@ sudo make install              # Install to /usr/local
 > **Affichage graphique :** depuis la v1.67, le défaut du `Makefile` est
 > **`SDL2=1`** (affichage/audio/clavier réels). Pour un build *headless*
 > (CI/automation, sans `libSDL2`), passer explicitement **`make SDL2=0`** ; un
-> tel binaire ne s'exécute qu'en `--headless`. Le build CMake (`CMakeLists.txt`)
-> active SDL2 inconditionnellement (`-DHAS_SDL2`).
+> tel binaire ne s'exécute qu'en `--headless`. Le `Makefile` est le seul système
+> de build du projet.
 
 ## Usage
 

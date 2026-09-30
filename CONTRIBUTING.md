@@ -8,13 +8,13 @@ Thank you for your interest in contributing to the Phosphoric project.
 
 ```bash
 # Debian/Ubuntu
-sudo apt-get install build-essential cmake libsdl2-dev
+sudo apt-get install build-essential libsdl2-dev
 
 # Fedora
-sudo dnf install gcc cmake SDL2-devel
+sudo dnf install gcc make SDL2-devel
 
 # Arch
-sudo pacman -S base-devel cmake sdl2
+sudo pacman -S base-devel sdl2
 ```
 
 ### Build
@@ -30,14 +30,8 @@ make DEBUG=1 SDL2=1
 make tests
 ```
 
-### CMake (alternative)
-
-```bash
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-ctest
-```
+Le `Makefile` est le seul système de build du projet (l'ancien `CMakeLists.txt`,
+qui ne compilait plus, a été retiré en 2.1.3).
 
 ## Project Layout
 
