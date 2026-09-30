@@ -693,8 +693,7 @@ docs/            User guide, control_protocol.md, CR review docs
 - [API Reference](docs/api/README.md)
 - [Compatibility List](docs/COMPATIBILITY.md)
 - [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG)
-- [Roadmap](ROADMAP)
+- [Version history](VERSION_TRACKING)
 
 ## Code generé par IA
 
