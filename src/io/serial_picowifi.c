@@ -71,6 +71,9 @@
 #include <openssl/x509v3.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "io/serial_backend.h"
 #include "utils/logging.h"
 
@@ -236,8 +239,115 @@ typedef struct {
  *  EINTR-safe socket I/O
  * ═══════════════════════════════════════════════════════════════════════ */
 
+#ifdef __EMSCRIPTEN__
+/* ── Transport navigateur (build WASM) ─────────────────────────────────────
+ * Un navigateur n'ouvre pas de socket TCP : chaque connexion du modem passe
+ * par un WebSocket vers un relais (tools/picowifi_ws_relay.py) qui ouvre le
+ * TCP — et termine le TLS quand `tls=1` — côté hôte :
+ *   <relais>?host=H&port=P&tls=0|1   (relais : Module.picowifiRelay,
+ *                                     défaut ws://127.0.0.1:8766/)
+ * Module.picowifiRelay === 'none' : pas de relais, sockets virtuelles de
+ * web/picowifi_js.js (HTTP rejoué par fetch(), DAYTIME local, rien d'autre).
+ * Les « fd » rendus sont PW_WS_FD_BASE + id. Les attentes (connexion,
+ * lectures bornées) rendent la main au navigateur via emscripten_sleep
+ * (Asyncify) : c'est là que les messages WebSocket arrivent. */
+#define PW_WS_FD_BASE 0x100000
+
+EM_JS(int, pw_js_open, (const char* host, int port, int secure), {
+    var base = Module.picowifiRelay || 'ws://127.0.0.1:8766/';
+    var S = Module.pwSocks || (Module.pwSocks = { next: 1, socks: {} });
+    var s;
+    if (base === 'none') {
+        /* Sans relais : sockets virtuelles de web/picowifi_js.js (HTTP via fetch). */
+        if (typeof PicoWifiJS === 'undefined') return -1;
+        s = PicoWifiJS.open(UTF8ToString(host), port, !!secure,
+                            { httpProxy: Module.picowifiHttpProxy || '',
+                              sameHosts: Module.picowifiSameHosts || [],
+                              log: function(t) { console.warn(t); } });
+    } else {
+        var url = base + (base.indexOf('?') < 0 ? '?' : '&') +
+                  'host=' + encodeURIComponent(UTF8ToString(host)) +
+                  '&port=' + port + '&tls=' + (secure ? 1 : 0);
+        s = { q: [], state: 0 };            /* 0 connexion, 1 ouvert, 2 fermé, 3 échec */
+        var ws;
+        try { ws = new WebSocket(url); } catch (e) { return -1; }
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = function() { s.state = 1; };
+        ws.onmessage = function(ev) {
+            if (typeof ev.data === 'string') return;
+            var d = new Uint8Array(ev.data); if (d.length) s.q.push(d);
+        };
+        ws.onerror = function() { if (s.state === 0) s.state = 3; };
+        ws.onclose = function() { s.state = (s.state === 0) ? 3 : 2; };
+        s.send = function(u8) { ws.send(u8); };
+        s.close = function() { try { ws.close(); } catch (e) {} };
+    }
+    var id = S.next++; S.socks[id] = s; return id;
+});
+EM_JS(int, pw_js_state, (int id), {
+    var s = Module.pwSocks && Module.pwSocks.socks[id]; return s ? s.state : 3;
+});
+EM_JS(int, pw_js_avail, (int id), {
+    var s = Module.pwSocks && Module.pwSocks.socks[id]; return (s && s.q.length) ? 1 : 0;
+});
+/* >0 octets lus ; 0 = pair fermé et file vide ; -1 = rien pour l'instant. */
+EM_JS(int, pw_js_read, (int id, unsigned char* buf, int n), {
+    var s = Module.pwSocks && Module.pwSocks.socks[id];
+    if (!s) return 0;
+    var got = 0;
+    while (got < n && s.q.length) {
+        var c = s.q[0], k = Math.min(n - got, c.length);
+        HEAPU8.set(c.subarray(0, k), buf + got); got += k;
+        if (k === c.length) s.q.shift(); else s.q[0] = c.subarray(k);
+    }
+    if (got) return got;
+    if (s.drainClose) s.state = 2;          /* socket virtuelle : fermée une fois vidée */
+    return (s.state >= 2) ? 0 : -1;
+});
+EM_JS(int, pw_js_write, (int id, const unsigned char* buf, int n), {
+    var s = Module.pwSocks && Module.pwSocks.socks[id];
+    if (!s || s.state !== 1) return -1;
+    s.send(HEAPU8.slice(buf, buf + n)); return n;
+});
+EM_JS(void, pw_js_close, (int id), {
+    var S = Module.pwSocks; var s = S && S.socks[id];
+    if (!s) return;
+    s.close();
+    delete S.socks[id];
+});
+EM_JS(int, pw_js_online, (void), {
+    return (typeof navigator === 'undefined' || navigator.onLine !== false) ? 1 : 0;
+});
+
+static bool pw_is_ws(int fd) { return fd >= PW_WS_FD_BASE; }
+
+/* Ouvre host:port via le relais ; attend l'ouverture (≤ 10 s). */
+static int pw_ws_connect(const char* host, uint16_t port, bool secure)
+{
+    int id = pw_js_open(host, port, secure ? 1 : 0);
+    if (id < 0) return -1;
+    for (int waited = 0; pw_js_state(id) == 0 && waited < 10000; waited += 10)
+        emscripten_sleep(10);
+    if (pw_js_state(id) != 1) {
+        log_error("PicoWiFi: connexion à %s:%u impossible (relais WebSocket lancé ? "
+                  "tools/picowifi_ws_relay.py — sans relais, HTTP et DAYTIME seulement)",
+                  host, port);
+        pw_js_close(id);
+        return -1;
+    }
+    return PW_WS_FD_BASE + id;
+}
+#endif /* __EMSCRIPTEN__ */
+
 static ssize_t pw_read(int fd, void* buf, size_t n)
 {
+#ifdef __EMSCRIPTEN__
+    if (pw_is_ws(fd)) {
+        int r = pw_js_read(fd - PW_WS_FD_BASE, (unsigned char*)buf, (int)n);
+        if (r < 0) errno = EAGAIN;
+        return r;
+    }
+#endif
     ssize_t r;
     do { r = read(fd, buf, n); } while (r < 0 && errno == EINTR);
     return r;
@@ -245,9 +355,41 @@ static ssize_t pw_read(int fd, void* buf, size_t n)
 
 static ssize_t pw_write(int fd, const void* buf, size_t n)
 {
+#ifdef __EMSCRIPTEN__
+    if (pw_is_ws(fd)) {
+        int r = pw_js_write(fd - PW_WS_FD_BASE, (const unsigned char*)buf, (int)n);
+        if (r < 0) errno = EPIPE;
+        return r;
+    }
+#endif
     ssize_t r;
     do { r = write(fd, buf, n); } while (r < 0 && errno == EINTR);
     return r;
+}
+
+/* Ferme une connexion du modem (socket natif ou WebSocket du navigateur). */
+static void pw_close(int fd)
+{
+#ifdef __EMSCRIPTEN__
+    if (pw_is_ws(fd)) { pw_js_close(fd - PW_WS_FD_BASE); return; }
+#endif
+    close(fd);
+}
+
+/* Attend jusqu'à `ms` que fd soit prêt pour `events` (POLLIN/POLLOUT). Dans le
+ * navigateur, rend la main à la boucle d'événements pendant l'attente. */
+static bool pw_wait(int fd, short events, int ms)
+{
+#ifdef __EMSCRIPTEN__
+    if (pw_is_ws(fd)) {
+        if (ms > 0) emscripten_sleep((unsigned)ms);
+        if (events & POLLIN) return pw_js_avail(fd - PW_WS_FD_BASE) ||
+                                    pw_js_state(fd - PW_WS_FD_BASE) >= 2;
+        return true;
+    }
+#endif
+    struct pollfd pfd = { .fd = fd, .events = events };
+    return poll(&pfd, 1, ms) > 0 && (pfd.revents & events);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -604,6 +746,9 @@ static void pw_display_settings(picowifi_t* pw, const picowifi_t* s)
 
 static int pw_tcp_connect(const char* host, uint16_t port)
 {
+#ifdef __EMSCRIPTEN__
+    return pw_ws_connect(host, port, false);
+#endif
     struct addrinfo hints, *res, *rp;
     char port_str[16];
     memset(&hints, 0, sizeof(hints));
@@ -718,7 +863,7 @@ static void pw_conn_close(picowifi_t* pw)
     if (pw->ssl)     { SSL_shutdown(pw->ssl); SSL_free(pw->ssl); pw->ssl = NULL; }
     if (pw->ssl_ctx) { SSL_CTX_free(pw->ssl_ctx); pw->ssl_ctx = NULL; }
 #endif
-    if (pw->sockfd >= 0) { close(pw->sockfd); pw->sockfd = -1; }
+    if (pw->sockfd >= 0) { pw_close(pw->sockfd); pw->sockfd = -1; }
     pw->session_secure = false;
 }
 
@@ -789,8 +934,7 @@ static int pw_read_line_timeout(int fd, char* buf, size_t sz, int timeout_ms)
         }
         if (r == 0) break;                   /* peer closed */
         if (waited >= timeout_ms) break;     /* timeout */
-        struct pollfd pfd = { .fd = fd, .events = POLLIN };
-        poll(&pfd, 1, 50);
+        pw_wait(fd, POLLIN, 50);
         waited += 50;
     }
     buf[n] = '\0';
@@ -967,6 +1111,9 @@ static void pw_host_local_ip(char* out, size_t osz)
  * the outbound route (fails with no route when offline). */
 static bool pw_host_online(void)
 {
+#ifdef __EMSCRIPTEN__
+    return pw_js_online() != 0;      /* navigator.onLine */
+#endif
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) return false;
     struct sockaddr_in sa;
@@ -1028,17 +1175,27 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port, bool secure
         pw_result(pw, PW_NO_CARRIER);
         return;
     }
+#ifdef __EMSCRIPTEN__
+    /* Navigateur : le relais WebSocket termine lui-même le TLS (tls=1). */
+    int fd = pw_ws_connect(host, port, secure);
+#else
     int fd = pw_tcp_connect(host, port);
+#endif
     if (fd < 0) {
         log_error("PicoWiFi: connect to %s:%u failed", host, port);
         pw_result(pw, PW_NO_CARRIER);
         return;
     }
     pw->session_secure = false;
+#ifdef __EMSCRIPTEN__
+    pw->session_secure = secure;
+    if (false) {
+#else
     if (secure) {
+#endif
 #ifdef HAS_PICOTLS
         if (!pw_tls_wrap(pw, fd, host)) {
-            close(fd);
+            pw_close(fd);
             pw_result(pw, PW_NO_CARRIER);   /* handshake/verify failed */
             return;
         }
@@ -1046,7 +1203,7 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port, bool secure
 #else
         log_warning("PicoWiFi: secure dial requested but TLS not compiled in "
                     "(rebuild with OpenSSL) — NO CARRIER");
-        close(fd);
+        pw_close(fd);
         pw_result(pw, PW_NO_CARRIER);
         return;
 #endif
@@ -1278,8 +1435,7 @@ static bool pw_write_full(int fd, const void* buf, size_t n)
         if (r > 0) { sent += (size_t)r; waited = 0; continue; }
         if (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return false;
         if (waited >= 8000) return false;
-        struct pollfd pfd = { .fd = fd, .events = POLLOUT };
-        poll(&pfd, 1, 50); waited += 50;
+        pw_wait(fd, POLLOUT, 50); waited += 50;
     }
     return true;
 }
@@ -1295,8 +1451,7 @@ static size_t pw_read_full_timeout(int fd, uint8_t* buf, size_t n, int timeout_m
         if (r > 0) { got += (size_t)r; waited = 0; continue; }
         if (r == 0) break;                    /* peer closed */
         if (waited >= timeout_ms) break;      /* idle timeout */
-        struct pollfd pfd = { .fd = fd, .events = POLLIN };
-        poll(&pfd, 1, 50); waited += 50;
+        pw_wait(fd, POLLIN, 50); waited += 50;
     }
     return got;
 }
@@ -1318,8 +1473,7 @@ static int pw_disk_read_line(int fd, char* buf, size_t sz, int timeout_ms)
         }
         if (r == 0) break;                    /* peer closed */
         if (waited >= timeout_ms) break;
-        struct pollfd pfd = { .fd = fd, .events = POLLIN };
-        poll(&pfd, 1, 50); waited += 50;
+        pw_wait(fd, POLLIN, 50); waited += 50;
     }
     buf[n] = '\0';
     return (int)n;
@@ -1364,7 +1518,7 @@ static void pw_disk_read(picowifi_t* pw, const char* arg)
     int rn = snprintf(req, sizeof(req),
                       "GET /%s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n",
                       path, host);
-    if (!pw_write_full(fd, req, (size_t)rn)) { close(fd); pw_result(pw, PW_ERROR); return; }
+    if (!pw_write_full(fd, req, (size_t)rn)) { pw_close(fd); pw_result(pw, PW_ERROR); return; }
 
     /* Status line + headers → capture status and Content-Length. */
     char line[256];
@@ -1378,7 +1532,7 @@ static void pw_disk_read(picowifi_t* pw, const char* arg)
         if (!strncasecmp(line, "Content-Length:", 15)) clen = atol(line + 15);
     }
     if ((status != 200 && status != 206) || clen < 0 || clen > 60000) {
-        close(fd); pw_result(pw, PW_ERROR); return;
+        pw_close(fd); pw_result(pw, PW_ERROR); return;
     }
 
     /* Frame the body back to the Oric, then stream the raw bytes. */
@@ -1395,7 +1549,7 @@ static void pw_disk_read(picowifi_t* pw, const char* arg)
         for (size_t i = 0; i < got; i++) pw_rx_push(pw, chunk[i]);
         remaining -= (long)got;
     }
-    close(fd);
+    pw_close(fd);
     pw_result(pw, remaining > 0 ? PW_ERROR : PW_OK);
 }
 
@@ -1421,7 +1575,7 @@ static void pw_disk_write_flush(picowifi_t* pw)
         int n = pw_disk_read_line(fd, line, sizeof(line), 8000);
         if (n > 0) { char* sp = strchr(line, ' '); if (sp) status = atoi(sp + 1); }
     }
-    close(fd);
+    pw_close(fd);
     pw_result(pw, (ok && status / 100 == 2) ? PW_OK : PW_ERROR);
 }
 
@@ -1743,7 +1897,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         /* DAYTIME starts with a blank line, then the timestamp line. */
         int got = pw_read_line_timeout(fd, line, sizeof(line), 2000);
         if (got <= 0) got = pw_read_line_timeout(fd, line, sizeof(line), 2000);
-        close(fd);
+        pw_close(fd);
         char out[64];
         if (got > 0 && pw_parse_daytime(line, out, sizeof(out))) {
             pw_qval(pw, out);
@@ -2097,8 +2251,7 @@ static bool picowifi_poll(serial_backend_t* self)
     if (pw->rx_count > 0) return true;
     if (pw->mode == 1 && pw->sockfd >= 0) {
         if (pw_conn_pending(pw)) return true;   /* buffered TLS plaintext */
-        struct pollfd pfd = { .fd = pw->sockfd, .events = POLLIN };
-        return poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN);
+        return pw_wait(pw->sockfd, POLLIN, 0);
     }
     return false;
 }

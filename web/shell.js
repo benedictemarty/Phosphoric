@@ -24,6 +24,63 @@ if (mediaName && mediaKind === 'tap') args.push('-t', '/media/' + mediaName, '-f
 if (mediaKind === 'dsk') args.push('--disk-rom', '/roms/microdis.rom');
 if (mediaName && mediaKind === 'dsk') args.push('-d', '/media/' + mediaName);
 
+// ── Mode LOCI (?loci=1 ou bouton LOCI) ────────────────────────────────────
+// La cartouche LOCI est émulée en HLE (--loci) : boot direct sur le menu
+// LOCI (roms/loci/locirom), stockage « flash interne » = /loci, un IDBFS
+// persistant dans IndexedDB. Les ROM système y sont semées au premier
+// lancement ; les fichiers déposés (.tap/.dsk/.rom…) y sont copiés et se
+// choisissent ensuite dans le menu LOCI, comme sur la vraie cartouche.
+var urlLoci = new URLSearchParams(location.search).get('loci');
+var loci = (urlLoci !== null) ? (urlLoci === '1') : (sessionStorage.getItem('phos_loci') === '1');
+var LOCI_DIR = '/loci';
+var LOCI_SEED = ['basic11b.rom', 'basic10.rom', 'microdis.rom'];
+if (loci) {
+  args.length = 0;
+  if (mediaKind === 'tap') {
+    // LOCI + cassette (?loci=1&media=x.tap) : boot BASIC direct sur la cassette,
+    // cartouche présente (ACIA picowifi en $0380, flash persistant) — comme
+    // `-t x.tap -f --loci --loci-flash …` en natif. Sans cassette : menu LOCI.
+    args.push('-r', ROMS[rom] || ROMS.atmos);
+    if (mediaName) args.push('-t', '/media/' + mediaName, '-f');
+  } else {
+    args.push('-r', '/roms/loci/locirom');
+    mediaName = ''; mediaKind = '';
+  }
+  args.push('--loci', '--loci-flash', LOCI_DIR);
+}
+// ── Modem picowifi (?modem=1 ou bouton MODEM) ─────────────────────────────
+// ACIA 6551 + firmware PicoWiFiModemUSB émulé (--serial picowifi). Le TCP passe
+// par un relais WebSocket (tools/picowifi_ws_relay.py) : ?relay=ws://hôte:port/
+// (défaut ws://127.0.0.1:8766/, mémorisé). WiFi simulé « Web » ; la NVRAM du
+// modem (AT&W) est persistée dans le flash LOCI quand il est actif.
+var urlModem = new URLSearchParams(location.search).get('modem');
+var modem = (urlModem !== null) ? (urlModem === '1') : (sessionStorage.getItem('phos_modem') === '1');
+var urlRelay = new URLSearchParams(location.search).get('relay');
+if (urlRelay) { try{ localStorage.setItem('phos_relay', urlRelay); }catch(e){} }
+var relay = urlRelay || (function(){ try{ return localStorage.getItem('phos_relay'); }catch(e){ return null; } })()
+            || 'ws://127.0.0.1:8766/';
+// ?relay=none : sans relais (web/picowifi_js.js — HTTP via fetch(), heure locale) ;
+// ?httpproxy=/proxy?url= : préfixe de proxy HTTP pour les sites sans CORS.
+var httpProxy = new URLSearchParams(location.search).get('httpproxy') || '';
+// ?httpsame=h1,h2 : requêtes HTTP vers ces hôtes envoyées à l'origine de la page.
+var sameHosts = (new URLSearchParams(location.search).get('httpsame') || '')
+  .split(',').map(function(h){ return h.trim().toLowerCase(); }).filter(Boolean);
+if (modem) args.push('--serial', 'picowifi:Web:web');
+// Arguments CLI supplémentaires (tests e2e : --type-keys…), posés en
+// sessionStorage 'phos_extra_args' (tableau JSON) avant le chargement.
+try{ var extraArgs=JSON.parse(sessionStorage.getItem('phos_extra_args')||'[]');
+  if(Array.isArray(extraArgs)) extraArgs.forEach(function(a){ args.push(String(a)); }); }catch(e){}
+function lociSync(populate, cb){
+  try{ FS.syncfs(populate, function(err){ if(err) console.warn('LOCI flash sync:', err); cb&&cb(); }); }
+  catch(e){ console.warn('LOCI flash sync:', e); cb&&cb(); }
+}
+function lociSeed(){
+  function copy(src, dst){ if(FS.analyzePath(dst).exists || !FS.analyzePath(src).exists) return;
+    FS.writeFile(dst, FS.readFile(src)); }
+  LOCI_SEED.forEach(function(n){ copy('/roms/'+n, LOCI_DIR+'/'+n); });
+  copy('/roms/loci/locirom', LOCI_DIR+'/locirom');
+}
+
 function idb(cb){ var r=indexedDB.open('phosphoric',1);
   r.onupgradeneeded=function(){r.result.createObjectStore('media');};
   r.onsuccess=function(){cb(r.result);}; r.onerror=function(){cb(null);}; }
@@ -37,13 +94,23 @@ function idbGet(k,d){ idb(function(db){ if(!db)return d(null);
 var statusEl = document.getElementById('status');
 var ready = false;
 var Module = {
-  arguments: args, canvas: document.getElementById('canvas'),
+  arguments: args, canvas: document.getElementById('canvas'), picowifiRelay: relay, picowifiHttpProxy: httpProxy, picowifiSameHosts: sameHosts,
   print:function(t){console.log(t);}, printErr:function(t){console.warn(t);},
-  preRun: [function(){ if(!mediaName) return; addRunDependency('media-file');
+  preRun: [function(){ if(modem && loci) ENV.PHOSPHORIC_PICOWIFI_NVRAM = LOCI_DIR + '/picowifi.cfg'; },
+    function(){ if(!loci) return;
+    // Monte le flash LOCI persistant avant main() et le recharge depuis IndexedDB.
+    try{ FS.mkdir(LOCI_DIR); }catch(e){}
+    FS.mount(FS.filesystems.IDBFS, {}, LOCI_DIR);
+    addRunDependency('loci-flash');
+    lociSync(true, function(){ removeRunDependency('loci-flash'); }); },
+    function(){ if(!mediaName) return; addRunDependency('media-file');
     idbGet(mediaName, function(buf){ try{ if(buf){ try{FS.mkdir('/media');}catch(e){}
       FS.writeFile('/media/'+mediaName, new Uint8Array(buf)); } }catch(e){console.warn(e);}
       removeRunDependency('media-file'); }); }],
-  onRuntimeInitialized: function(){ ready=true; refreshUI(); maybeLoadUrlMedia(); }
+  onRuntimeInitialized: function(){
+    // Les ROM préchargées (/roms) n'existent qu'à ce stade : semis du flash ici.
+    if(loci){ try{ lociSeed(); }catch(e){ console.warn('LOCI seed:', e); } lociSync(false); }
+    ready=true; refreshUI(); maybeLoadUrlMedia(); }
 };
 
 // ?media=<file> on the URL → fetch it from the server and hot-insert it live
@@ -76,11 +143,27 @@ function maybeLoadUrlMedia(){
 function refreshUI(){
   document.getElementById('machine-badge').textContent = (rom==='oric1')?'1':'A';
   var ej=document.getElementById('btn-eject'); ej.hidden=!mediaName; if(mediaName) ej.title='Eject '+mediaName;
-  var label=(rom==='oric1'?'ORIC-1 / BASIC 1.0':'Atmos / BASIC 1.1');
+  document.getElementById('btn-loci').classList.toggle('on', loci);
+  document.getElementById('btn-modem').classList.toggle('on', modem);
+  document.getElementById('btn-modem').title = 'picowifi modem on/off (cold restart) — relay ' + relay;
+  document.getElementById('file-input').accept = loci ? '' : '.tap,.dsk,.TAP,.DSK';
+  var label=loci?(mediaKind==='tap'?'LOCI + '+(rom==='oric1'?'ORIC-1':'Atmos'):'LOCI (menu · F8 = bouton Action)'):(rom==='oric1'?'ORIC-1 / BASIC 1.0':'Atmos / BASIC 1.1');
+  if(modem) label += ' · modem picowifi (ACIA $' + (loci?'0380':'031C') + ', ' +
+    (relay==='none' ? 'sans relais : HTTP seul' : 'relais ' + relay) + ')';
   if(mediaName) label += ' · '+mediaName+' ('+mediaKind+')';
   statusEl.textContent=(ready?'Running — ':'Loading — ')+label;
 }
 document.getElementById('btn-machine').onclick=function(){ sessionStorage.setItem('phos_rom', rom==='oric1'?'atmos':'oric1'); location.reload(); };
+document.getElementById('btn-loci').onclick=function(){
+  // Bascule LOCI : l'URL ?loci= prime sur la session, on la retire pour que le choix tienne.
+  sessionStorage.setItem('phos_loci', loci?'0':'1');
+  var u=new URL(location.href); u.searchParams.delete('loci'); location.href=u.toString(); };
+document.getElementById('btn-modem').onclick=function(){
+  sessionStorage.setItem('phos_modem', modem?'0':'1');
+  var u=new URL(location.href); u.searchParams.delete('modem'); location.href=u.toString(); };
+// Persistance du flash LOCI : écritures faites par le menu (sauvegardes, copies…).
+if(loci){ setInterval(function(){ if(ready) lociSync(false); }, 5000);
+  window.addEventListener('pagehide', function(){ if(ready) lociSync(false); }); }
 document.getElementById('btn-reset').onclick=function(){ location.reload(); };
 document.getElementById('btn-eject').onclick=function(){ sessionStorage.removeItem('phos_media_name'); sessionStorage.removeItem('phos_media_kind'); location.reload(); };
 document.getElementById('btn-load').onclick=function(){ document.getElementById('file-input').click(); };
@@ -130,6 +213,7 @@ document.getElementById('state-input').onchange=function(e){ var f=e.target.file
   }catch(err){ console.warn(err); alert('Restore failed'); } }); e.target.value=''; };
 
 function loadMedia(file){
+  if(loci){ lociImport(file); return; }
   var low=file.name.toLowerCase(); var kind=low.endsWith('.dsk')?'dsk':(low.endsWith('.tap')?'tap':'');
   if(!kind){ alert('Unsupported file — drop a .tap or .dsk'); return; }
   file.arrayBuffer().then(function(buf){ idbPut(file.name, buf, function(){
@@ -152,6 +236,17 @@ function loadMedia(file){
     }
     location.reload();
   }); });
+}
+// Mode LOCI : tout fichier déposé va dans le flash (/loci), à choisir dans le menu.
+function lociImport(file){
+  if(!ready){ alert('LOCI pas encore prêt'); return; }
+  var name=file.name.replace(/[\/\\]/g,'_');
+  file.arrayBuffer().then(function(buf){
+    try{ FS.writeFile(LOCI_DIR+'/'+name, new Uint8Array(buf)); }
+    catch(e){ console.warn(e); alert('Copie dans le flash LOCI impossible'); return; }
+    lociSync(false);
+    statusEl.textContent='Copié dans le flash LOCI : '+name+' — choisissez-le dans le menu (F8 = menu)';
+  });
 }
 var dd=0;
 window.addEventListener('dragenter',function(e){e.preventDefault(); if(dd++===0)document.body.classList.add('dragging');});

@@ -24,6 +24,13 @@ vérifiée sur pièces ; les écarts connus sont listés en fin de document.
 ./oric1-emu -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
+### Dans le navigateur (build WebAssembly)
+
+`phosphoric.html?loci=1` (ou le bouton **LOCI** du rail) démarre sur le menu
+LOCI, avec un flash interne persistant dans IndexedDB ; les fichiers chargés y
+sont copiés et se montent depuis le menu. Détails et limites (pas de picowifi,
+de clés USB ni d'image SD en web) : [wasm.md](wasm.md).
+
 ## Cartographie mémoire
 
 | Fenêtre | Contenu |

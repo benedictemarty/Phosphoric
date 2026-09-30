@@ -33,7 +33,8 @@ préchargées dans le système de fichiers virtuel). La page démarre l'Atmos
 La page charge sa logique (définition de `Module`, UI, clavier, glisser-déposer)
 depuis **`web/shell.js`** — un fichier externe qu'il faut **déployer à côté** de
 `phosphoric.html`/`.js`/`.wasm`/`.data`. `shell.js` est versionné (source) et
-référencé par `phosphoric.html` via `<script src="shell.js">`.
+référencé par `phosphoric.html` via `<script src="shell.js">`. Idem pour
+**`web/picowifi_js.js`** (transport du modem sans relais), chargé juste avant.
 
 Cette externalisation rend le bundle **compatible Content-Security-Policy stricte**.
 Un hôte qui sert la page sous `script-src 'self' 'wasm-unsafe-eval'` bloquerait un
@@ -52,7 +53,9 @@ par Emscripten (`<script async src=phosphoric.js>`), et la compilation WASM exig
 Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'
 ```
 
-- **`'self'`** — autorise `shell.js` et `phosphoric.js` (tous deux externes).
+- **`'self'`** — autorise `shell.js`, `picowifi_js.js` et `phosphoric.js` (externes).
+- Modem picowifi : si la politique restreint `connect-src`, y ajouter le relais
+  (`ws://127.0.0.1:8766`) ou, sans relais, les sites visés par `fetch()`.
 - **`'wasm-unsafe-eval'`** — **obligatoire** : `phosphoric.js` compile le module via
   `WebAssembly.instantiateStreaming`/`instantiate`, bloqués sous `script-src 'self'`
   seul. C'est le sous-token WASM (≠ `'unsafe-eval'`, bien plus large) — sûr.
@@ -85,6 +88,45 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
   chaud — sans cela le boot se ferait sans FDC et l'insertion échouerait. Le
   fichier ciblé doit être servi en **binaire** (un serveur renvoyant une page
   HTML de repli en 200 fait échouer l'insertion : « not a valid TAP/DSK »).
+- **LOCI** (ou `?loci=1` dans l'URL) — branche la **cartouche LOCI** (émulation
+  HLE `--loci`, relance à froid) : la machine démarre sur le **menu LOCI**
+  (`roms/loci/locirom`). Son **stockage « flash interne »** est `/loci`, un
+  système de fichiers **IDBFS persistant dans IndexedDB** du navigateur (il
+  survit aux rechargements), semé au premier lancement avec `basic11b.rom`,
+  `basic10.rom`, `microdis.rom` et `locirom`. En mode LOCI, **LOAD / glisser-
+  déposer copie le fichier dans ce flash** (`.dsk`, `.tap`, `.rom`, …) au lieu de
+  l'insérer : on le choisit ensuite dans le menu (**Espace** ouvre le sélecteur
+  du champ courant, **ESC** = boot), comme sur la vraie cartouche. **F8** =
+  bouton Action (retour au menu). `?loci=0` ou un nouveau clic sur LOCI
+  revient au mode normal. **LOCI + cassette** : `?loci=1&media=prog.tap` démarre
+  BASIC directement sur la cassette avec la cartouche présente (ACIA picowifi en
+  `$0380`, flash persistant) — équivalent de `-t prog.tap -f --loci --loci-flash …`
+  en natif (cas ProphetOric/OricTel, qui ne sondent l'ACIA qu'en `$0380`).
+  Non disponibles en web : co-simulation du vrai
+  firmware (`--loci-emu`), clés USB de l'hôte et image SD (`--loci-sdimg`).
+- **MODEM** (ou `?modem=1`) — modem **picowifi** (firmware PicoWiFiModemUSB
+  émulé, `--serial picowifi:Web:web`, WiFi simulé « Web ») sur l'ACIA 6551 :
+  `$0380` avec LOCI, `$031C` sinon. Le navigateur n'ouvrant pas de TCP, chaque
+  connexion (ATDT, ATGET, ATRD/ATRT, ATDISKRD…) passe par un **relais
+  WebSocket** à lancer sur la machine : `python3 tools/picowifi_ws_relay.py`
+  (défaut `ws://127.0.0.1:8766/`, autre relais : `?relay=ws://hôte:port/`,
+  mémorisé). Le relais termine aussi le **TLS** (`ATDT` sécurisé, `ATGET
+  https://`) avec vérification de certificat système. Avec LOCI, la NVRAM du
+  modem (`AT&W`) est persistée dans le flash (`/loci/picowifi.cfg`).
+  **Sans relais** (`?relay=none`, à la manière du `neomodem.js` de Phosphoneo) :
+  `web/picowifi_js.js` fournit des sockets virtuelles — les requêtes HTTP du
+  modem (`ATGET http(s)://`, `ATDISKRD/WR`) sont rejouées par `fetch()`
+  (sites autorisant CORS, ou via un proxy même origine `?httpproxy=/proxy?url=`)
+  et la réponse est rendue en HTTP/1.1 reconstitué ; `ATRD`/`ATRT` lisent
+  l'horloge du navigateur. Les en-têtes de la requête sont transmis (ex.
+  `ResponseFormat`), sauf ceux que `fetch()` refuse ou fixe (Host, Connection,
+  Content-Length, User-Agent…). **`?httpsame=h1,h2`** : une requête vers `h1`/`h2`
+  (quels que soient port et schéma, ex. `ATD-prophet.3617.fr:8998` puis HTTP
+  brut) part vers **l'origine de la page** + chemin — pour une page servie par le
+  même serveur sous CSP `connect-src 'self'`, sans contenu mixte. Telnet/BBS et
+  TCP brut exigent le relais : sans lui, la connexion est coupée au premier
+  octet non-HTTP (NO CARRIER).
+  Exemple : `phosphoric.html?loci=1&modem=1&relay=none&httpsame=prophet.3617.fr&media=prophetoric.tap`.
 - **RESET** — reboot à froid en conservant ROM et média.
 - **KEYS** — affiche/masque le clavier virtuel.
 - **FULL** — plein écran (le canvas est centré et mis à la hauteur de l'écran,
@@ -121,9 +163,37 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
   pile de `main()` ; le build force `-sSTACK_SIZE=8MB` (le défaut 64 Ko
   déborderait).
 - **Réseau** : les fonctionnalités qui exigent des sockets/threads natifs
-  (backends série TCP/PTY/COM, stub GDB, serveur Cast, terminaison TLS) se
-  lient en no-op dans le navigateur — le cœur machine, la vidéo, l'audio, le
-  clavier, la cassette et le disque fonctionnent.
+  (backends série TCP/PTY/COM, stub GDB, serveur Cast) se lient en no-op dans
+  le navigateur — sauf le modem picowifi, dont `serial_picowifi.c` route les
+  connexions (`pw_read`/`pw_write`/`pw_close`/`pw_wait`) vers des WebSocket JS
+  (`EM_JS`, fd ≥ `0x100000`) ouverts vers le relais
+  `?host=H&port=P&tls=0|1` ; les attentes rendent la main au navigateur par
+  `emscripten_sleep` (Asyncify). Relais : `tools/picowifi_ws_relay.py`
+  (stdlib Python, 127.0.0.1 par défaut, `--allow HOTE[:PORT]`, `--origin URL`) — le cœur machine, la vidéo, l'audio, le
+  clavier, la cassette et le disque fonctionnent. La cartouche LOCI (HLE)
+  fonctionne ; seule sa co-simulation RP2040 (`libemul`, native) est remplacée
+  par un bouchon (`loci_emu_stub.c`).
+- **Flash LOCI persistant** : lien `-lidbfs.js` ; `web/shell.js` monte IDBFS sur
+  `/loci` en `preRun` (dépendance de lancement le temps du `syncfs(true)`),
+  sème les ROM dans `onRuntimeInitialized` (les fichiers préchargés `/roms`
+  n'existent qu'à ce stade) puis resynchronise vers IndexedDB toutes les 5 s et
+  à `pagehide`.
+- **`web_peek(addr)`** : lecture mémoire sans effet de bord (`memory_peek`)
+  exportée pour l'UI et les tests e2e (lecture de l'écran texte `$BB80`).
+- **Test e2e navigateur** : `make test-web-loci` construit la build web, la sert
+  en local et la pilote dans Chrome headless via Playwright (menu LOCI au boot,
+  flash semé, import + persistance au rechargement, fichier listé par le
+  sélecteur, et montage + boot d'un vrai `.dsk` si `disks/3dfongus.dsk` existe).
+  SKIP si emsdk, node, Playwright ou Chrome manquent ; hors `make tests`.
+- **Test e2e modem** : `make test-web-picowifi` (7/7), programmes BASIC
+  tokenisés en `.tap` auto-run (`bas2tap`) et chargés par `?media=` :
+  1. relais : BASIC → ACIA `$031C` → picowifi WASM → WebSocket → relais →
+     serveur TCP local, et retour ;
+  2. sans relais : `ATGET` rejoué par `fetch()` (serveur CORS), `ATRD` local ;
+  3. LOCI + cassette + `?httpsame=` : ACIA `$0380`, `ATD-` puis HTTP brut
+     réécrit vers l'origine, `ResponseFormat` reçu par le serveur.
+- **Arguments de test** : un tableau JSON dans `sessionStorage`
+  `phos_extra_args` est ajouté à la ligne de commande (ex. `--type-keys`).
 
 ## Fidélité — vérifié
 

@@ -119,6 +119,13 @@ EMSCRIPTEN_KEEPALIVE int web_io_activity(void) {
     return bits;
 }
 
+/* Side-effect-free byte read (memory_peek) for the web UI and its e2e tests
+ * (e.g. reading the text screen at $BB80). -1 if the machine is not up. */
+EMSCRIPTEN_KEEPALIVE int web_peek(int addr) {
+    if (!g_web_emu) return -1;
+    return memory_peek(&g_web_emu->memory, (uint16_t)addr);
+}
+
 /* Save a snapshot to /state.ost in the virtual FS (JS downloads it). 1 = ok. */
 EMSCRIPTEN_KEEPALIVE int web_save_state(void) {
     return (g_web_emu && savestate_save(g_web_emu, "/state.ost")) ? 1 : 0;
