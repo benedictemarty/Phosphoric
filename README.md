@@ -774,9 +774,11 @@ Le comportement de Phosphoric s'appuie largement sur l'étude de ces émulateurs
 ## Repository
 
 ```bash
-# GitHub
+# English: GitHub, Codeberg
 git clone https://github.com/benedictemarty/Phosphoric.git
-# (mirror) self-hosted
+git clone https://codeberg.org/benedicte/Phosphoric.git
+# French: Framagit, self-hosted
+git clone https://framagit.org/benedictemarty/Phosphoric.git
 git clone https://git.nagominosato.fr:6775/chipinette/Phosphoric.git
 
 cd Phosphoric
