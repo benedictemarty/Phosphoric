@@ -54,12 +54,12 @@ static void via_do_shift(via6522_t* via) {
     }
 }
 
-/* Neo6502Vic20 : registre à décalage cadencé en interne (T2 ou φ2), sur le
- * modèle de VICE viacore.c (référence de comportement, aucun code copié) et
- * validé par testprogs/VIC20/via_sr du vrai VIC-20. Une séquence compte 16
- * demi-périodes de CB1 (sr_count 0..15) ; en sortie le décalage a lieu aux
- * états pairs, en entrée aux états impairs ; au 16e état, drapeau SR (sauf
- * sortie libre, mode 100, qui reboucle sans drapeau). */
+/* Neo6502Vic20: internally clocked shift register (T2 or φ2), modelled on
+ * VICE viacore.c (behavioural reference, no code copied) and validated by
+ * testprogs/VIC20/via_sr on a real VIC-20. A sequence counts 16 CB1
+ * half-periods (sr_count 0..15); in output mode the shift happens on even
+ * states, in input mode on odd states; on the 16th state, SR flag (except
+ * free-running output, mode 100, which loops without a flag). */
 static void via_sr_event(via6522_t* via) {
     uint8_t mode = via->acr & 0x1C;
     if (mode == 0 || !via->sr_active) return;
@@ -84,13 +84,13 @@ static void via_sr_event(via6522_t* via) {
     }
 }
 
-/* Accès (lecture ou écriture) au registre : démarre une séquence si aucune
- * n'est en cours, quel que soit le sens ; en φ2, premier événement au cycle
- * suivant. */
+/* Register access (read or write): starts a sequence if none is in
+ * progress, whatever the direction; in φ2 mode, first event on the next
+ * cycle. */
 static void via_sr_access(via6522_t* via) {
     uint8_t mode = via->acr & 0x1C;
-    if (mode == 0) return;               /* désactivé : ne démarre rien */
-    if (mode == 0x10) {                  /* sortie libre : parité conservée */
+    if (mode == 0) return;               /* disabled: starts nothing */
+    if (mode == 0x10) {                  /* free-running output: parity kept */
         via->sr_active = true;
         via->sr_count &= 0x0F;
         return;
@@ -153,7 +153,7 @@ void via_reset(via6522_t* via) {
     via->sr = 0;
     via->sr_count = 0;
     via->acr = 0;
-    via->t2_phi2 = true;   /* Neo6502Vic20 : ACR à 0, T2 compte φ2 */
+    via->t2_phi2 = true;   /* Neo6502Vic20: ACR at 0, T2 counts φ2 */
     via->t2_hold = false;
     via->pcr = 0;
     via->ifr = 0;
@@ -175,8 +175,8 @@ void via_reset(via6522_t* via) {
     via->sr_delay = 0;
     via->sr_t2_pending = 0;
     via->pb6_pin = true;   /* PB6 idle high */
-    via->pb7_pin = true;   /* Neo6502Vic20 : bascule PB7 à 1 au RESET (VICE t1_pb7 = 0x80 ;
-                            * référence viavarious via10-13 du vrai VIC-20) */
+    via->pb7_pin = true;   /* Neo6502Vic20: PB7 flip-flop at 1 on RESET (VICE t1_pb7 = 0x80;
+                            * reference viavarious via10-13 on a real VIC-20) */
 }
 
 uint8_t via_read(via6522_t* via, uint8_t reg) {
@@ -204,9 +204,9 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
          * handshake/pulse — only writing ORB does (write handshake). */
         {
             uint8_t rb = (via->orb & via->ddrb) | (input & ~via->ddrb);
-            /* Neo6502Vic20 : PB7 est la sortie de T1 dès que ACR bit7 = 1,
-             * quel que soit DDRB bit7 (référence viavarious via10-13 du vrai
-             * VIC-20 : PB7 piloté avec DDRB = 0). */
+            /* Neo6502Vic20: PB7 is the T1 output as soon as ACR bit7 = 1,
+             * whatever DDRB bit7 (reference viavarious via10-13 on a real
+             * VIC-20: PB7 driven with DDRB = 0). */
             if (via->acr & 0x80)
                 rb = via->pb7_pin ? (rb | 0x80) : (rb & 0x7F);
             return rb;
@@ -255,7 +255,7 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
     case VIA_SR:
         via->ifr &= ~VIA_INT_SR;
         via_check_irq(via);
-        via_sr_access(via);  /* Neo6502Vic20 : lecture ou écriture, tous sens */
+        via_sr_access(via);  /* Neo6502Vic20: read or write, any direction */
         return via->sr;
     case VIA_ACR: return via->acr;
     case VIA_PCR: return via->pcr;
@@ -310,17 +310,17 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->t1_counter = via->t1_latch;
         via->t1_running = true;
         via->t1_active = true;
-        /* Neo6502Vic20 : le compteur chargé ne décompte qu'au cycle suivant
-         * l'écriture (référence viavarious du vrai VIC-20 : lectures en
-         * avance d'un cycle sinon) ; le cycle de rechargement l'assure. */
+        /* Neo6502Vic20: the loaded counter only starts counting down on the
+         * cycle after the write (reference viavarious on a real VIC-20:
+         * reads are one cycle early otherwise); the reload cycle ensures it. */
         via->t1_reload = true;
         via->ifr &= ~VIA_INT_T1;
         /* ACR bit7 one-shot PB7 mode (bit6=0): writing T1CH pulls PB7 low for
          * the duration of the count; the underflow drives it high again. PB7 is
          * the timer output only when BOTH DDRB bit7 and ACR bit7 are set
          * (datasheet p.9); otherwise it is a normal port pin. */
-        /* Neo6502Vic20 : la bascule PB7 passe à 0 à chaque écriture de T1C-H
-         * (VICE viacore.c ; référence viavarious via10-13 du vrai VIC-20) */
+        /* Neo6502Vic20: the PB7 flip-flop goes to 0 on every write to T1C-H
+         * (VICE viacore.c; reference viavarious via10-13 on a real VIC-20) */
         via->pb7_pin = false;
         via_check_irq(via);
         break;
@@ -336,7 +336,7 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->t2_counter = ((uint16_t)value << 8) | via->t2_latch;
         via->t2_running = true;
         via->t2_active = true;
-        via->t2_hold = true;      /* Neo6502Vic20 : premier décompte au cycle suivant */
+        via->t2_hold = true;      /* Neo6502Vic20: first countdown on the next cycle */
         via->t2_reload = false;
         via->ifr &= ~VIA_INT_T2;
         via_check_irq(via);
@@ -345,25 +345,25 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->sr = value;
         via->ifr &= ~VIA_INT_SR;
         via_check_irq(via);
-        via_sr_access(via);  /* Neo6502Vic20 : lecture ou écriture, tous sens */
+        via_sr_access(via);  /* Neo6502Vic20: read or write, any direction */
         break;
     case VIA_ACR:
-        /* Neo6502Vic20 : ACR bit7 passant à 1 met la bascule PB7 à 1 (VICE
-         * viacore.c ; référence viavarious via10-13 du vrai VIC-20) */
+        /* Neo6502Vic20: ACR bit7 going to 1 sets the PB7 flip-flop to 1 (VICE
+         * viacore.c; reference viavarious via10-13 on a real VIC-20) */
         if (!(via->acr & 0x80) && (value & 0x80))
             via->pb7_pin = true;
         {
             uint8_t old = via->acr & 0x1C, mode = value & 0x1C;
             via->acr = value;
             if (mode == 0x10) {
-                via->sr_active = true;           /* sortie libre : tourne sans accès */
+                via->sr_active = true;           /* free-running output: runs without access */
             } else if (mode == 0x00) {
-                /* Désactivé : drapeau SR tenu à 0 (VICE) ; la séquence n'est
-                 * pas arrêtée */
+                /* Disabled: SR flag held at 0 (VICE); the sequence is not
+                 * stopped */
                 via->ifr &= ~VIA_INT_SR;
                 via_check_irq(via);
             }
-            /* φ2 : premier événement 3 cycles après l'écriture (VICE) */
+            /* φ2: first event 3 cycles after the write (VICE) */
             if ((mode == 0x08 || mode == 0x18) && old != 0x08 && old != 0x18)
                 via->sr_delay = 3;
         }
@@ -402,24 +402,24 @@ void via_update(via6522_t* via, int cycles) {
         }
     }
 
-    /* ─── Timer 1 (V2-E3 : décompte cycle par cycle) ───
+    /* ─── Timer 1 (V2-E3: cycle-by-cycle countdown) ───
      *
-     * Mécanique du 6522, et elle compte : le compteur décrémente à chaque φ2, et
-     * le sous-dépassement n'est PAS le passage à zéro — c'est le passage de
-     * $0000 à $FFFF, un cycle plus tard. En mode continu, le rechargement depuis
-     * le latch consomme encore un cycle. D'où la période **N+2** de la
-     * datasheet : N décomptes, un cycle de sous-dépassement, un cycle de
-     * rechargement. L'ancienne implémentation tirait dès l'atteinte de zéro et
-     * rechargeait dans le même cycle : période N, soit **2 cycles trop court par
-     * période** (0,02 % d'erreur à 100 Hz, mais 20 % pour N=10 — audible sur les
-     * sons et les digidrums).
+     * 6522 mechanics, and they matter: the counter decrements on every φ2, and
+     * the underflow is NOT reaching zero — it is the transition from
+     * $0000 to $FFFF, one cycle later. In free-run mode, the reload from
+     * the latch takes one more cycle. Hence the **N+2** period of the
+     * datasheet: N countdowns, one underflow cycle, one reload
+     * cycle. The old implementation fired as soon as zero was reached and
+     * reloaded in the same cycle: period N, i.e. **2 cycles too short per
+     * period** (0.02 % error at 100 Hz, but 20 % for N=10 — audible on
+     * sounds and digidrums).
      *
-     * Neo6502Vic20 : le compteur se recharge depuis le latch à chaque
-     * sous-dépassement, en one-shot comme en continu ; seule l'interruption
-     * (et PB7) est unique en one-shot (t1_running faux). Mesuré sur un vrai
-     * VIC-20 : référence de testprogs/VIC20/viavarious/via1 (lecture de T1
-     * après time-out) ; VICE viacore.c calcule T1 modulo (latch + 2) dans
-     * les deux modes. */
+     * Neo6502Vic20: the counter reloads from the latch on every underflow,
+     * in one-shot as well as free-run mode; only the interrupt (and PB7) is
+     * single in one-shot mode (t1_running false). Measured on a real
+     * VIC-20: reference testprogs/VIC20/viavarious/via1 (reading T1
+     * after time-out); VICE viacore.c computes T1 modulo (latch + 2) in
+     * both modes. */
     if (via->t1_active) {
         for (int i = 0; i < cycles; i++) {
             if (via->t1_reload) {
@@ -432,22 +432,22 @@ void via_update(via6522_t* via, int cycles) {
             via->t1_counter--;               /* $0000 → $FFFF on underflow */
             if (!underflow) continue;
 
-            via->t1_reload = true;           /* rechargement au cycle suivant, tous modes */
-            if (!via->t1_running) continue;  /* one-shot déjà tiré : pas d'interruption */
+            via->t1_reload = true;           /* reload on the next cycle, all modes */
+            if (!via->t1_running) continue;  /* one-shot already fired: no interrupt */
 
             via->ifr |= VIA_INT_T1;
             via_check_irq(via);
 
-            /* PB7 n'est la sortie de Timer 1 (WRITE cassette de l'ORIC) que si
-             * DDRB bit7 ET ACR bit7 sont à 1 (datasheet p.9). Mode signal carré
-             * (bit6=1) : bascule à chaque sous-dépassement ; one-shot (bit6=0) :
-             * une seule impulsion haute (PB7 ayant été tiré bas à l'écriture
-             * de T1C-H). */
-            /* Neo6502Vic20 : la bascule PB7 change d'état à chaque
-             * sous-dépassement qui interrompt (à chaque période en continu,
-             * une fois en one-shot), sans condition sur l'ACR ni DDRB ;
-             * l'ACR bit7 décide seulement si elle sort sur PB7 (référence
-             * viavarious via10-13 du vrai VIC-20). */
+            /* PB7 is the Timer 1 output (ORIC cassette WRITE) only if
+             * DDRB bit7 AND ACR bit7 are 1 (datasheet p.9). Square-wave mode
+             * (bit6=1): toggles on each underflow; one-shot (bit6=0):
+             * a single high pulse (PB7 having been pulled low on the write
+             * to T1C-H). */
+            /* Neo6502Vic20: the PB7 flip-flop toggles on every underflow
+             * that interrupts (every period in free-run mode, once in
+             * one-shot mode), with no condition on the ACR or DDRB;
+             * ACR bit7 only decides whether it is output on PB7 (reference
+             * viavarious via10-13 on a real VIC-20). */
             via->pb7_pin = !via->pb7_pin;
 
             if (!(via->acr & 0x40))
@@ -455,25 +455,25 @@ void via_update(via6522_t* via, int cycles) {
         }
     }
 
-    /* ─── Timer 2 (mode timer : one-shot seulement ; le mode comptage
-     * d'impulsions est piloté par via_pb6_pulse(), pas par φ2) ───
-     * Même mécanique de sous-dépassement que Timer 1, sans rechargement. */
-    /* Neo6502Vic20 : le mode de T2 choisi par l'ACR (bit 5 : φ2 ou PB6) ne
-     * prend effet qu'au cycle suivant l'écriture, dans les deux sens
-     * (références viavarious du vrai VIC-20 : via1 G, via2 E/I/K, via9). */
+    /* ─── Timer 2 (timer mode: one-shot only; pulse-counting mode
+     * is driven by via_pb6_pulse(), not by φ2) ───
+     * Same underflow mechanics as Timer 1, without reload. */
+    /* Neo6502Vic20: the T2 mode selected by the ACR (bit 5: φ2 or PB6) only
+     * takes effect on the cycle after the write, in both directions
+     * (references viavarious on a real VIC-20: via1 G, via2 E/I/K, via9). */
     for (int i = 0; i < cycles; i++) {
         if (via->sr_t2_pending && --via->sr_t2_pending == 0)
             via_sr_event(via);
         const bool phi2 = via->t2_phi2;
-        const bool hold = via->t2_hold;  /* cycle de l'écriture de T2C-H */
+        const bool hold = via->t2_hold;  /* cycle of the write to T2C-H */
         via->t2_phi2 = !(via->acr & 0x20);
         via->t2_hold = false;
         if (!via->t2_active || !phi2 || hold) continue;
-        /* Neo6502Vic20 : registre à décalage cadencé par T2 (ACR b4-2 = 001,
-         * 100, 101) : T2 compte sur 8 bits ; l'octet bas se recharge depuis
-         * le latch bas (période latch + 2) et chaque sous-dépassement
-         * décrémente l'octet haut ; le drapeau T2 se lève une fois, au passage
-         * des 16 bits à $FFFF (référence viavarious via20/via21 du vrai
+        /* Neo6502Vic20: shift register clocked by T2 (ACR b4-2 = 001,
+         * 100, 101): T2 counts on 8 bits; the low byte reloads from the
+         * low latch (period latch + 2) and each underflow decrements the
+         * high byte; the T2 flag is raised once, when the 16 bits
+         * roll over to $FFFF (reference viavarious via20/via21 on a real
          * VIC-20). */
         const uint8_t srm = via->acr & 0x1C;
         if (srm == 0x04 || srm == 0x10 || srm == 0x14) {
@@ -492,9 +492,9 @@ void via_update(via6522_t* via, int cycles) {
                 }
                 hi--;
                 via->t2_reload = true;
-                /* Horloge du registre à décalage : un événement (demi-période
-                 * de CB1) par sous-dépassement de l'octet bas, 2 cycles plus
-                 * tard (chronogramme de VICE viacore.c : t2_shift_alarm) */
+                /* Shift register clock: one event (CB1 half-period) per
+                 * low-byte underflow, 2 cycles later (timing diagram of
+                 * VICE viacore.c: t2_shift_alarm) */
                 via->sr_t2_pending = 2;
             }
             lo--;
@@ -512,9 +512,9 @@ void via_update(via6522_t* via, int cycles) {
         }
     }
 
-    /* Neo6502Vic20 : registre à décalage en φ2 (010, 110) : un événement
-     * par cycle (deux par bit) ; les modes T2 sont cadencés dans la boucle de
-     * Timer 2, les modes CB1 externes par via_shift_clock(). */
+    /* Neo6502Vic20: shift register in φ2 mode (010, 110): one event
+     * per cycle (two per bit); the T2 modes are clocked in the Timer 2
+     * loop, the external CB1 modes by via_shift_clock(). */
     {
         uint8_t srmode = via->acr & 0x1C;
         if (srmode == 0x08 || srmode == 0x18) {
@@ -687,7 +687,7 @@ bool via_get_cb2(via6522_t* via) {
 bool via_get_pb7(via6522_t* via) {
     /* PB7 driven by Timer 1 (Oric cassette WRITE line) only when BOTH DDRB bit7
      * and ACR bit7 are set (datasheet p.9). */
-    if (via->acr & 0x80) return via->pb7_pin;  /* Neo6502Vic20 : sans condition sur DDRB */
+    if (via->acr & 0x80) return via->pb7_pin;  /* Neo6502Vic20: no condition on DDRB */
     /* Otherwise PB7 is a normal port pin: output register bit7 if configured
      * as output, else idle high (pulled up). */
     if (via->ddrb & 0x80) return (via->orb & 0x80) != 0;
