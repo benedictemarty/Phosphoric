@@ -116,7 +116,8 @@ static void s_frame(iom_surface_t* s, int row, int col, int rows, int cols, uint
  *  File picker
  * ═══════════════════════════════════════════════════════════════════════ */
 
-static const char* const default_dirs[] = { "tapes", "disks", "snapshots", "demos/ula-ng", ".", NULL };
+/* « media » : là où la page web dépose les fichiers chargés (/media). */
+static const char* const default_dirs[] = { "tapes", "disks", "snapshots", "media", "demos/ula-ng", ".", NULL };
 
 static bool has_ext(const char* name, const char* ext) {
     size_t n = strlen(name), e = strlen(ext);
@@ -400,8 +401,8 @@ static int state(iom_surface_t* s, int row, int col, bool on, const char* text, 
 static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
     const iom_state_t* st = &m->st;
     char title[48], buf[96];
-    snprintf(title, sizeof(title), "Disquettes %s %s", st->disk_iface ? "—" : "",
-             st->disk_iface ? st->disk_iface : "(pas d'interface disque)");
+    if (st->disk_iface) snprintf(title, sizeof(title), "Disquettes — %s", st->disk_iface);
+    else snprintf(title, sizeof(title), "Disquettes (pas d'interface disque)");
     panel(s, 5, 2, 13, 76, IOM_FLOP_L, title);
     for (int d = 0; d < 4; d++) {
         const int row = 7 + 2 * d;

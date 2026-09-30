@@ -170,6 +170,14 @@ document.getElementById('btn-modem').onclick=function(){
 if(loci){ setInterval(function(){ if(ready) lociSync(false); }, 5000);
   window.addEventListener('pagehide', function(){ if(ready) lociSync(false); }); }
 document.getElementById('btn-reset').onclick=function(){ location.reload(); };
+// Menu des périphériques (F1) : bouton I/O, et F1 soustrait au navigateur (aide).
+function toggleIomenu(){ if(!ready) return;
+  var open=0; try{ open=Module.ccall('web_iomenu_toggle','number',[],[]); }catch(e){}
+  document.getElementById('btn-iomenu').classList.toggle('on', !!open);
+  var c=document.getElementById('canvas'); if(c) c.focus(); }
+document.getElementById('btn-iomenu').onclick=toggleIomenu;
+window.addEventListener('keydown', function(e){
+  if(e.key==='F1'){ e.preventDefault(); } }, true);
 document.getElementById('btn-eject').onclick=function(){ sessionStorage.removeItem('phos_media_name'); sessionStorage.removeItem('phos_media_kind'); location.reload(); };
 document.getElementById('btn-load').onclick=function(){ document.getElementById('file-input').click(); };
 document.getElementById('file-input').onchange=function(e){ if(e.target.files[0]) loadMedia(e.target.files[0]); };
@@ -195,11 +203,12 @@ if(localStorage.getItem('phos_crt')==='1'){ frame.classList.add('crt'); btnCrt.c
 btnCrt.onclick=function(){ var on=frame.classList.toggle('crt'); btnCrt.classList.toggle('on',on);
   localStorage.setItem('phos_crt', on?'1':'0'); };
 
-// I/O activity LEDs (poll bit0=tape, bit1=disk)
+// I/O activity LEDs (poll bit0=tape, bit1=disk, bit2=menu F1 ouvert)
 var ledTape=document.getElementById('led-tape'), ledDisk=document.getElementById('led-disk');
 setInterval(function(){ if(!ready) return;
   var b=0; try{ b=Module.ccall('web_io_activity',null,[],[])||0; }catch(e){}
-  ledTape.classList.toggle('on', (b&1)!==0); ledDisk.classList.toggle('on', (b&2)!==0); }, 120);
+  ledTape.classList.toggle('on', (b&1)!==0); ledDisk.classList.toggle('on', (b&2)!==0);
+  document.getElementById('btn-iomenu').classList.toggle('on', (b&4)!==0); }, 120);
 
 // Save state → download .ost
 document.getElementById('btn-savestate').onclick=function(){ if(!ready) return;

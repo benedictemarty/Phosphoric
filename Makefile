@@ -273,7 +273,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -665,6 +665,11 @@ test-web-loci:
 test-web-picowifi:
 	@bash tests/integration/test_web_picowifi.sh
 
+# E2E web : menu des périphériques (F1) dans la build WASM (F1 soustrait au
+# navigateur, pause, clavier virtuel, bouton I/O). Mêmes prérequis/SKIP, hors `make tests`.
+test-web-iomenu:
+	@bash tests/integration/test_web_iomenu.sh
+
 # E2E: BASIC drives the LOCI ACIA 6551 at $0380 (TX + RX round-trip).
 test-loci-acia-e2e: $(TARGET)
 	@bash tests/integration/test_loci_acia_e2e.sh
@@ -991,7 +996,7 @@ WASM_OUT = web/phosphoric.html
 WASM_CFLAGS  = -O2 -std=c11 -DHAS_SDL2 -sUSE_SDL=2 -I./include
 WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
                -sEXPORTED_RUNTIME_METHODS=ccall,FS,ENV,callMain \
-               -sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all,_web_io_activity,_web_peek,_web_save_state,_web_load_state,_web_insert_tap,_web_insert_disk,_malloc,_free \
+               -sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all,_web_io_activity,_web_peek,_web_save_state,_web_load_state,_web_insert_tap,_web_insert_disk,_web_iomenu_toggle,_malloc,_free \
                -lidbfs.js --preload-file roms@/roms --shell-file web/shell.html
 
 # The RP2040 co-simulation (libemul, native) does not exist in WebAssembly: the stub
