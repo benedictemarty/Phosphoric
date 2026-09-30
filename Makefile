@@ -799,7 +799,7 @@ fetch-vectors:
 test-docs-claims:
 	@bash tests/integration/test_docs_claims.sh
 
-# Miroir anglais main-en : seul le texte des commentaires peut différer de main.
+# English mirror main-en: only the text of comments may differ from main.
 test-comment-diff:
 	@sh tests/integration/test_comment_only_diff.sh
 

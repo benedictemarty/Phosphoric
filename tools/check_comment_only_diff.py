@@ -105,7 +105,7 @@ def normalize(path, s):
     elif path.endswith((".sh", ".yml", ".yaml", ".mk")) or path.endswith("Makefile"):
         s = strip_hash(s)
     else:
-        return s  # autres : aucune différence tolérée
+        return s  # others: no difference tolerated
     return "\n".join(l.rstrip() for l in s.split("\n") if l.strip())
 
 
