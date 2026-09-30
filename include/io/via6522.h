@@ -76,6 +76,9 @@ typedef struct via6522_s {
     bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
     bool     t2_phi2;       /**< Neo6502Vic20: effective T2 mode (φ2), since the ACR
                                  only takes effect on the next cycle */
+    uint16_t quiet;         /**< Neo6502Vic20 (US-31): upcoming cycles without any
+                                 event (plain countdowns) */
+    uint16_t pending;       /**< Neo6502Vic20 (US-31): skipped cycles, still to apply */
     uint8_t  sr_t2_pending; /**< Neo6502Vic20: cycles before the T2-driven SR event */
     uint8_t  sr_delay;      /**< Neo6502Vic20: cycles before the first φ2 event */
     bool     t2_reload;     /**< Neo6502Vic20: reload of the T2 low byte is
@@ -183,6 +186,30 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value);
  * @param cycles Number of cycles elapsed
  */
 void via_update(via6522_t* via, int cycles);
+
+/**
+ * @brief Neo6502Vic20 (US-31): applies the cycles skipped by via_tick().
+ * Called by every access function; call it before reading the internal
+ * state directly.
+ */
+void via_sync(via6522_t* via);
+
+/**
+ * @brief Neo6502Vic20 (US-31): one cycle, exact "lazy" path: as long as no
+ * event can happen, the cycle is only counted; it is applied at the next
+ * access or the next full step. VIA_NO_LAZY disables this path (reference
+ * replay, `make test-via-lazy`).
+ */
+static inline void via_tick(via6522_t* via) {
+#ifndef VIA_NO_LAZY
+    if (via->quiet) {
+        via->quiet--;
+        via->pending++;
+        return;
+    }
+#endif
+    via_update(via, 1);
+}
 
 /**
  * @brief Set port callbacks

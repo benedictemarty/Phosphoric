@@ -243,12 +243,19 @@ ifeq ($(TUI), 1)
     LDFLAGS += -lncursesw
 endif
 
+# VIA_NO_LAZY=1: VIA stepped on every cycle (reference for the equivalence
+# proof of the lazy path, `make test-via-lazy`).
+VIA_NO_LAZY ?= 0
+ifeq ($(VIA_NO_LAZY), 1)
+    CFLAGS += -DVIA_NO_LAZY
+endif
+
 # Out-of-tree build, one directory per configuration: the objects of one
 # variant (SDL2=0, HTTPAPI=1, LOCI backend…) never mix with those of another.
 # Final binaries are copied to the repository root (paths expected by the
 # scripts), only when their content changes.
 LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_HW)),hw,$(if $(filter 1,$(LOCI_EMU)),emu,stub)))
-CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)
+CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)$(if $(filter 1,$(VIA_NO_LAZY)),-vianolazy)
 BUILD ?= build/$(CONFIG)
 TBIN = $(BUILD)/tests
 # $(call obj,sources.c) → matching objects in $(BUILD)
@@ -273,7 +280,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core test-via-lazy test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -778,6 +785,13 @@ test-comment-diff:
 test-iomenu-cli: $(TARGET)
 	@sh tests/integration/test_iomenu_cli.sh
 
+# Equivalence proof of the VIA lazy path: same command-line corpus
+# (tools/cli_golden.sh) on the current binary and on a VIA_NO_LAZY=1
+# (stepped) binary — exit codes, outputs, produced files byte for byte.
+test-via-lazy: $(BUILD)/bin/$(TARGET)
+	@$(MAKE) --no-print-directory VIA_NO_LAZY=1 BUILD=$(BUILD)-vianolazy $(BUILD)-vianolazy/bin/$(TARGET) >/dev/null
+	@sh tools/cli_golden.sh $(BUILD)-vianolazy/bin/$(TARGET) $(BUILD)/bin/$(TARGET)
+
 # Self-test of tools/check_skips.sh (the `make tests-strict` checker).
 test-check-skips:
 	@sh tests/integration/test_check_skips.sh
@@ -827,7 +841,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu-cli test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu-cli test-via-lazy test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

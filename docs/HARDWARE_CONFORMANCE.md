@@ -91,6 +91,26 @@ On the Oric: corpus of 36 real programs identical on screen, boots, CSAVE/CLOAD 
 signal-level loading unchanged; the VIA `.ost` section grows by 5 bytes (T2 / SR state;
 an older `.ost` still loads). Measured cost: ≈ +4 % per frame.
 
+### Exact lazy path (2.7.0)
+
+Ported from Neo6502Vic20 (US-31). `via_quiet()` bounds the number of upcoming cycles
+during which `via_update()` would only decrement the counters: no underflow, no CA2/CB2
+pulse, no shift-register event, no pending T2 mode change. During those cycles,
+`via_tick()` merely counts them; `via_sync()` applies them in one go at the start of
+every access (read, write, CA1/CA2/CB1/CB2/PB6 pins) and before direct reads of the
+fields (savestate, debugger, `peek via`). The observable behaviour does not change: this
+is not an approximation.
+
+| Proof | Result |
+|-------|--------|
+| `make test-via-lazy`: 116 command lines (`tools/cli_golden.sh`) on the current binary and on a `VIA_NO_LAZY=1` (stepped) build, compared byte for byte (exit code, outputs, produced files) | 0 differences |
+| `test_via_lazy_matches_stepwise` (`test-io`): 2 million cycles of pseudo-random accesses on two VIAs; reads, /IRQ, PB7, CA2 and CB2 compared on every cycle | identical; a mutant (quiet bound one cycle too long) is caught |
+| `test-savestate-determinism`, corpus of 36 programs, `test-clock` | green |
+
+Throughput (`make bench`, 3 runs, 100 M cycles): +20 to +30 % depending on the workload
+(idle BASIC 13-15× → 18-20× real time), which more than cancels the +4 % of 2.6.0. The
+`--cpu-legacy` core, which passes batches of cycles, keeps the full step.
+
 ### Accepted deviations (remaining)
 | # | Discrepancy | Datasheet | Reason |
 |---|-------|-----------|--------|

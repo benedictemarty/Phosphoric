@@ -947,6 +947,65 @@ TEST(test_pb7_timer_output_ignores_ddrb7) {
     ASSERT_TRUE(via_get_pb7(&via));   /* input, pulled high */
 }
 
+/* Lazy path (via_tick, ported from Neo6502Vic20 US-31): two VIAs receive the
+ * same pseudo-random sequence of accesses, one stepped (via_update(1) every
+ * cycle), the other through via_tick. Every read, the /IRQ line, PB7, CA2 and
+ * CB2 must match on every cycle, and the full state at the end. */
+static unsigned lazy_irq[2];
+static void lazy_irq_cb(bool state, void* ud) { lazy_irq[(int)(size_t)ud] = state; }
+static uint32_t lazy_rng = 0x12345678u;
+static uint32_t lazy_rand(void) {
+    lazy_rng ^= lazy_rng << 13; lazy_rng ^= lazy_rng >> 17; lazy_rng ^= lazy_rng << 5;
+    return lazy_rng;
+}
+
+TEST(test_via_lazy_matches_stepwise) {
+    static const uint8_t regs[] = { VIA_T1CL, VIA_T1CH, VIA_T1LL, VIA_T1LH, VIA_T2CL,
+                                    VIA_T2CH, VIA_SR, VIA_ACR, VIA_PCR, VIA_IFR,
+                                    VIA_IER, VIA_ORB, VIA_ORA, VIA_DDRB };
+    via6522_t a, b;
+    via_init(&a); via_init(&b);
+    via_set_irq_callback(&a, lazy_irq_cb, (void*)0);
+    via_set_irq_callback(&b, lazy_irq_cb, (void*)1);
+    via_reset(&a); via_reset(&b);
+    lazy_irq[0] = lazy_irq[1] = 0;
+    for (long cyc = 0; cyc < 2000000; cyc++) {
+        uint32_t r = lazy_rand();
+        if ((r & 0x3FF) == 0) {              /* rare access: let the timers run */
+            uint8_t reg = regs[(r >> 10) % sizeof regs];
+            if (reg == VIA_ACR || reg == VIA_PCR || reg == VIA_IER) {
+                uint8_t v = (uint8_t)(r >> 16);
+                via_write(&a, reg, v); via_write(&b, reg, v);
+            } else if (r & 0x80000000u) {
+                uint8_t v = (uint8_t)(r >> 16);
+                via_write(&a, reg, v); via_write(&b, reg, v);
+            } else {
+                ASSERT_EQ(via_read(&b, reg), via_read(&a, reg));
+            }
+        } else if ((r & 0xFFF) == 0x400) {  /* CB1 edge (external SR clock, PB latch) */
+            bool lvl = (r >> 12) & 1;
+            via_set_cb1(&a, lvl); via_set_cb1(&b, lvl);
+        } else if ((r & 0xFFF) == 0x800) {
+            bool lvl = (r >> 12) & 1;
+            via_set_ca1(&a, lvl); via_set_ca1(&b, lvl);
+        }
+        via_update(&a, 1);
+        via_tick(&b);
+        ASSERT_EQ(lazy_irq[1], lazy_irq[0]);
+        ASSERT_EQ(via_get_pb7(&b), via_get_pb7(&a));
+        ASSERT_EQ(via_get_ca2(&b), via_get_ca2(&a));
+        ASSERT_EQ(via_get_cb2(&b), via_get_cb2(&a));
+    }
+    via_sync(&b);
+    ASSERT_EQ(b.t1_counter, a.t1_counter);
+    ASSERT_EQ(b.t2_counter, a.t2_counter);
+    ASSERT_EQ(b.ifr, a.ifr);
+    ASSERT_EQ(b.sr, a.sr);
+    ASSERT_EQ(b.sr_count, a.sr_count);
+    ASSERT_EQ(b.t1_active, a.t1_active);
+    ASSERT_EQ(b.t2_active, a.t2_active);
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                              */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -1038,6 +1097,7 @@ int main(void) {
     RUN(test_via_sr_any_access_starts_and_acr0_clears_flag);
     RUN(test_via_t1_counter_readback);
     RUN(test_via_t1_frame_rate_over_50_frames);
+    RUN(test_via_lazy_matches_stepwise);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

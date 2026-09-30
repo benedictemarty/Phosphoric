@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.6.0"
+#define EMU_VERSION "2.7.0"
 
 /**
  * @brief ORIC machine model
@@ -626,7 +626,6 @@ static inline void emu_disk_set_protected(emulator_t* emu, int drv, bool on) {
     else                 microdisc_set_write_protect(&emu->microdisc, (uint8_t)drv, on);
 }
 
-/* True when a disk controller (Microdisc or Jasmin) is present. */
 static inline bool emu_has_disk_iface(const emulator_t* emu) {
     return emu->has_microdisc || emu->has_jasmin;
 }

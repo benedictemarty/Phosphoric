@@ -48,7 +48,8 @@ static emulator_t g_emu;
 static int g_tick_calls, g_tick_cycles, g_tick_max;
 static void clock_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
-    via_update(&emu->via, cycles);
+    if (cycles == 1) via_tick(&emu->via);
+    else             via_update(&emu->via, cycles);
     g_tick_calls++;
     g_tick_cycles += cycles;
     if (cycles > g_tick_max) g_tick_max = cycles;

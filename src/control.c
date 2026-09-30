@@ -934,6 +934,7 @@ static void cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
     if (!sub) { sink_err(s, "peek: usage `peek <subsystem>`"); return; }
     if (strcmp(sub, "via") == 0) {
         via6522_t* v = &emu->via;
+        via_sync(v);   /* up-to-date counters (cycles skipped by via_tick) */
         sink_ok(s, "ora=%02X orb=%02X ddra=%02X ddrb=%02X "
                 "t1c=%04X t1l=%04X t2c=%04X t2l=%02X "
                 "acr=%02X pcr=%02X ifr=%02X ier=%02X sr=%02X "

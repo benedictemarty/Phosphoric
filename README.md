@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.5.2** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.7.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -57,7 +57,7 @@ make SDL2=1
   core (bus-cycle ordered, 44,26 % exact) stays available via `--cpu-legacy`.
   See [docs/ACCURACY.md](docs/ACCURACY.md).
 - **64KB Memory** — RAM ($0000-$BFFF), ROM ($C000-$FFFF), banking, I/O routing
-- **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, keyboard matrix, shift register (8 modes), T2 pulse counting, **complete CA2/CB2 PCR modes** (input edges, independent interrupts, handshake — CB2 write-only like silicon —, 1-cycle pulse, manual) and IRA/IRB input latching (ACR bits 0-1)
+- **VIA 6522** — 16 registers, Timer 1/2, IFR/IER interrupts, keyboard matrix, shift register (8 modes), T2 pulse counting, **complete CA2/CB2 PCR modes** (input edges, independent interrupts, handshake — CB2 write-only like silicon —, 1-cycle pulse, manual) and IRA/IRB input latching (ACR bits 0-1); timer, PB7 and shift-register behaviour **measured on a real 6522** (2.6.0, from Neo6502Vic20's VICE VIC-20 test runs); **exact lazy path** (2.7.0): cycles where nothing can happen are only counted and applied before the next access — same behaviour as stepping every cycle (`make test-via-lazy`), 20-30 % faster
 - **ULA Video** — Text mode (40x28) + HIRES (240x200), serial attributes, PAL timing (312 lines x 64 cycles)
 - **AY-3-8910 PSG** — 3 tone channels, noise, 16 envelope shapes, SDL2 audio output
 - **Microdisc** — WD1793 FDC, 4 drives (A-D), overlay ROM, Sedoric disk boot. **Real mechanical timing by default** (step rates 6/12/20/30 ms, 300 RPM rotational latency, Record-Not-Found after 5 index pulses, live Type I index pulse; `--fdc-timing fast` restores instant-feel legacy delays). **Bad-sector fault injection** (`--bad-sector [D:]S:T:N`, damage follows the media across drive select/hot-swap, persisted in save states)
@@ -864,4 +864,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.5.2 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
+Phosphoric v2.7.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30

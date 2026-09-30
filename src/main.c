@@ -601,7 +601,11 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     /* --cycle-trace: one line per cycle (the recorded bus access, then the
      * internal cycles of the batch). No-op when the trace is not armed. */
     if (cycle_trace_active()) cycle_trace_cycles(&emu->cpu, cycles);
-    via_update(&emu->via, cycles);
+    /* VIA: exact lazy path (via_tick, ported from Neo6502Vic20 US-31) —
+     * a cycle where no event can happen is only counted, applied at the
+     * next access. The --cpu-legacy core passes batches: full step. */
+    if (cycles == 1) via_tick(&emu->via);
+    else             via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
     /* Tape-OUT capture: samples PB7 (Timer1) to rebuild the .TAP.
@@ -1869,8 +1873,6 @@ static bool sdl_iomenu_key(emulator_t* emu, SDL_Keycode sym) {
     return true;
 }
 
-/* Media OSD (F6) open: the arrows / Enter / Escape drive it and
- * do not reach the Oric. Returns true if the event is consumed. */
 static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
     if (!emu->osd.open) return false;
     int k = 0;
@@ -2097,8 +2099,6 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 }
                 if (sdl_iomenu_key(emu, event.key.keysym.sym))
                     break;
-                /* Media OSD (F6): when the overlay is open, the arrows /
-                 * Enter / Escape drive it and do not reach the Oric. */
                 if (event.key.keysym.sym == SDLK_F6) {
                     osd_toggle(&emu->osd);
                     break;
