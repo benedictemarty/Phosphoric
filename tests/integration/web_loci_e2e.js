@@ -1,14 +1,14 @@
-// web_loci_e2e.js — pilote Chrome headless (Playwright) sur la build WASM en mode LOCI.
+// web_loci_e2e.js — drives headless Chrome (Playwright) on the WASM build in LOCI mode.
 //
-// Usage : node web_loci_e2e.js <base-url> [disk.dsk]
-// Code de sortie : 0 = OK, 1 = échec, 77 = SKIP (Playwright introuvable).
+// Usage: node web_loci_e2e.js <base-url> [disk.dsk]
+// Exit code: 0 = OK, 1 = failure, 77 = SKIP (Playwright not found).
 //
-// Vérifie, dans le navigateur :
-//   1. ?loci=1 démarre le menu LOCI (texte « LOCI ROM » à l'écran, lu via web_peek) ;
-//   2. le flash /loci (IDBFS) est semé avec les ROM système ;
-//   3. un fichier chargé (bouton LOAD) est copié dans le flash et survit au rechargement ;
-//   4. le sélecteur du menu (Espace, Espace) liste ce fichier ;
-//   5. si un vrai .dsk est fourni : montage en A: + ESC = boot → le disque démarre.
+// Checks, in the browser:
+//   1. ?loci=1 starts the LOCI menu ("LOCI ROM" text on screen, read via web_peek);
+//   2. the /loci flash (IDBFS) is seeded with the system ROMs;
+//   3. a loaded file (LOAD button) is copied into the flash and survives a reload;
+//   4. the menu's selector (Space, Space) lists that file;
+//   5. if a real .dsk is provided: mounted as A: + ESC = boot → the disk starts.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -33,7 +33,7 @@ const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 let failures = 0;
 function check(ok, msg) { console.log((ok ? '  PASS ' : '  FAIL ') + msg); if (!ok) failures++; }
 
-// Écran texte ORIC : 28 lignes × 40 colonnes à $BB80 (attributs < 0x20 → espace).
+// ORIC text screen: 28 lines × 40 columns at $BB80 (attributes < 0x20 → space).
 async function screenText(p) {
   return p.evaluate(() => {
     let out = '';
@@ -73,7 +73,7 @@ async function press(p, keys) {
     check(['basic11b.rom', 'basic10.rom', 'microdis.rom', 'locirom'].every(n => seeded.includes(n)),
           'flash /loci semé avec les ROM système');
 
-    // Fichier à importer : le vrai .dsk si fourni, sinon un factice (nom seul testé).
+    // File to import: the real .dsk if provided, otherwise a dummy (only the name is tested).
     let file = realDisk;
     if (!file) { file = path.join(os.tmpdir(), 'webloci.dsk'); fs.writeFileSync(file, Buffer.alloc(256)); }
     const name = path.basename(file);

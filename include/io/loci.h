@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "storage/disk.h"   /* fdc_t — WD1793 cadencé en cycles (Sprint 34aw) */
+#include "storage/disk.h"   /* fdc_t — cycle-clocked WD1793 (Sprint 34aw) */
 
 /* MIA bus range — the API surface lives in this 32-byte window. */
 #define LOCI_MIA_BASE   0x03A0
@@ -345,7 +345,7 @@ typedef struct loci_s {
     uint8_t  dsk_ctrl;         /* $0314 — last write */
     uint8_t  dsk_drq;          /* $0318 — current DRQ flag byte */
     /* Sprint 34aw : real WD1793 backed by the shared fdc_t module. */
-    fdc_t    dsk_fdc;          /* WD1793 cadencé en cycles (src/storage/disk.c) */
+    fdc_t    dsk_fdc;          /* cycle-clocked WD1793 (src/storage/disk.c) */
     uint8_t* dsk_image[4];     /* raw .DSK bytes per drive (NULL = unmounted) */
     uint32_t dsk_image_size[4];/* size in bytes per drive */
     uint8_t  dsk_tracks[4];    /* derived from DSK header (default 41) */
@@ -356,30 +356,30 @@ typedef struct loci_s {
      * with a warning logged at mount-time. */
     bool     dsk_is_mfm[4];          /* true = sedoric_load MFM→flat path */
     char     dsk_host_path[4][256];  /* host path used for write-back */
-    /* loci-webdisk (archi B) : disque servi par HTTP. dsk_image[] est alloué
-     * vide ; les pistes MFM 6400 o sont récupérées à la demande par le FDC
-     * (fdc_set_web sur dsk_fdc lors de la sélection). Voir loci_dsk_open_web. */
-    bool     dsk_web[4];             /* true = drive servi par le web */
-    char     dsk_web_url[4][512];    /* URL de base http:// du disque */
-    /* Route B : pseudo-périphérique « W: Web disks » présenté au menu LOCI.
-     * web_base = racine du serveur (--loci-web-base http://host:port). readdir
-     * "W:" liste GET {web_base}/disks ; mount "W:/nom" → {web_base}/disk/nom. */
-    char     web_base[256];          /* "" = pas de device web */
-    char     web_disks[32][40];      /* noms des .dsk servis (GET /disks) */
-    int      web_disk_count;         /* nb d'entrées listées */
-    int      web_dir_pos;            /* itérateur readdir du device web */
-    bool     web_dir_open;           /* un opendir("W:") est actif */
+    /* loci-webdisk (archi B): disk served over HTTP. dsk_image[] is allocated
+     * empty; the 6400-byte MFM tracks are fetched on demand by the FDC
+     * (fdc_set_web on dsk_fdc at selection time). See loci_dsk_open_web. */
+    bool     dsk_web[4];             /* true = drive served over the web */
+    char     dsk_web_url[4][512];    /* base http:// URL of the disk */
+    /* Route B: "W: Web disks" pseudo-device presented to the LOCI menu.
+     * web_base = server root (--loci-web-base http://host:port). readdir
+     * "W:" lists GET {web_base}/disks; mount "W:/nom" → {web_base}/disk/nom. */
+    char     web_base[256];          /* "" = no web device */
+    char     web_disks[32][40];      /* names of the served .dsk files (GET /disks) */
+    int      web_disk_count;         /* number of listed entries */
+    int      web_dir_pos;            /* readdir iterator of the web device */
+    bool     web_dir_open;           /* an opendir("W:") is active */
     /* Per-drive bad sector maps (fault injection). dsk_bad_map = damage of
      * the media currently mounted; dsk_bad_cli = CLI-injected damage seeded
      * into every media mounted in that drive (mounts happen at runtime via
      * op_mount, after the CLI has been parsed). */
     fdc_bad_map_t dsk_bad_map[4];
     fdc_bad_map_t dsk_bad_cli[4];
-    /* Sprint 34aw+ : INTRQ tracking pour matche le format Microdisc
-     * (read $0314 = intrq | $7F, comme microdisc_read). */
+    /* Sprint 34aw+: INTRQ tracking to match the Microdisc format
+     * (read $0314 = intrq | $7F, like microdisc_read). */
     uint8_t  dsk_intrq;        /* 0x00 = asserted, 0x80 = clear */
-    /* Sprint 34ax : CTRL semantics complets — INTENA pour CPU IRQ +
-     * sync ROMDIS/EPROM bits vers memory subsystem. */
+    /* Sprint 34ax: full CTRL semantics — INTENA for the CPU IRQ +
+     * sync of ROMDIS/EPROM bits to the memory subsystem. */
     bool     dsk_intena;       /* CTRL bit 0 : IRQ enable */
     void   (*dsk_cpu_irq_set)(void* ctx);
     void   (*dsk_cpu_irq_clr)(void* ctx);
@@ -481,47 +481,47 @@ typedef struct loci_s {
     uint8_t mia_tior_lo;  /* reliable-window low bound for tior (default 0) */
     uint8_t mia_tior_hi;  /* reliable-window high bound for tior (default 31) */
 
-    /* ── Épic B / Phase 1 : modèle de course PHI2 sous-cycle (bus_timing.h) ──
-     * Deux modèles de fiabilité du serve MIA, exclusifs :
-     *  - WINDOW (défaut, historique) : fiable ssi tior ∈ [lo,hi]. C'est la
-     *    calibration par carte (adj_scan trouve la plage qui marche). Iso-comportement.
-     *  - PHASE (opt-in) : physiquement fondé. Le serve arrive au subtick
-     *    (tior + serve_subticks) ; propre ssi ≤ latch_subtick. Rend explicites
-     *    le budget de serve (≈ build -Os/-O2) et l'indépendance à la fréquence PHI2. */
+    /* ── Epic B / Phase 1: sub-cycle PHI2 race model (bus_timing.h) ────────
+     * Two mutually exclusive reliability models for the MIA serve:
+     *  - WINDOW (default, historical): reliable iff tior ∈ [lo,hi]. This is the
+     *    per-board calibration (adj_scan finds the range that works). Same behaviour.
+     *  - PHASE (opt-in): physically grounded. The serve arrives at subtick
+     *    (tior + serve_subticks); clean iff ≤ latch_subtick. Makes explicit
+     *    the serve budget (≈ -Os/-O2 build) and the independence from the PHI2 frequency. */
     uint8_t mia_timing_model;   /* 0 = LOCI_TIMING_WINDOW, 1 = LOCI_TIMING_PHASE */
-    uint8_t mia_serve_subticks; /* latence serve modélisée (PHI2×30), modèle PHASE */
-    uint8_t mia_latch_subtick;  /* instant de latch 6502 (subticks), modèle PHASE */
-    uint8_t mia_serve_jitter;   /* amplitude jitter du serve (subticks), 0 = off */
-    uint32_t mia_jitter_state;  /* état PRNG jitter (avancé par accès CPU) */
+    uint8_t mia_serve_subticks; /* modelled serve latency (PHI2×30), PHASE model */
+    uint8_t mia_latch_subtick;  /* 6502 latch instant (subticks), PHASE model */
+    uint8_t mia_serve_jitter;   /* serve jitter amplitude (subticks), 0 = off */
+    uint32_t mia_jitter_state;  /* jitter PRNG state (advanced per CPU access) */
 } loci_t;
 
 #define LOCI_TIMING_WINDOW  0
 #define LOCI_TIMING_PHASE   1
 
-/* True when the modelled MIA I/O sampling is reliable. Selon le modèle actif :
- * WINDOW → tior ∈ [lo,hi] ; PHASE → (tior + serve_subticks) ≤ latch_subtick
- * (course PHI2 gagnée, cf. bus_timing.h). Quand false, les accès routés par la
- * fenêtre I/O du MIA (l'ACIA picowifi) sont corrompus → « modem injoignable ». */
+/* True when the modelled MIA I/O sampling is reliable. Depending on the active model:
+ * WINDOW → tior ∈ [lo,hi]; PHASE → (tior + serve_subticks) ≤ latch_subtick
+ * (PHI2 race won, see bus_timing.h). When false, the accesses routed through the
+ * MIA I/O window (the picowifi ACIA) are corrupted → "modem unreachable". */
 bool loci_mia_io_reliable(const loci_t* loci);
 
 /* Set the reliable tior window (models a board where only this range works).
- * Bascule le modèle sur WINDOW (comportement historique). */
+ * Switches the model to WINDOW (historical behaviour). */
 void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi);
 
-/* Active le modèle de course PHASE (physiquement fondé) : serve_subticks = latence
- * de serve (grille PHI2×30, ≈ budget du build), latch_subtick = instant de latch
- * 6502. Bascule le modèle sur PHASE. */
+/* Enables the PHASE race model (physically grounded): serve_subticks = serve
+ * latency (PHI2×30 grid, ≈ build budget), latch_subtick = 6502 latch
+ * instant. Switches the model to PHASE. */
 void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_subtick);
 
-/* Règle le jitter du serve (modèle PHASE) : amplitude en subticks (0 = off),
- * graine du PRNG (0 → valeur par défaut). Près de la frontière de latch, la
- * fiabilité devient occasionnelle mais reste reproductible pour une graine donnée. */
+/* Sets the serve jitter (PHASE model): amplitude in subticks (0 = off),
+ * PRNG seed (0 → default value). Near the latch boundary, reliability
+ * becomes occasional but stays reproducible for a given seed. */
 void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed);
 
-/* Prédicat de course AVEC jitter, à usage du chemin d'accès CPU (non-const :
- * avance le PRNG). Renvoie true si le serve PERD la course ce tour-ci. Sans jitter
- * (ou hors modèle PHASE), équivaut à !loci_mia_io_reliable(). L'observation
- * (peek/débogueur) doit rester sur loci_mia_io_reliable() (const, nominal). */
+/* Race predicate WITH jitter, for use by the CPU access path (non-const:
+ * advances the PRNG). Returns true if the serve LOSES the race this time. Without jitter
+ * (or outside the PHASE model), equivalent to !loci_mia_io_reliable(). Observation
+ * (peek/debugger) must stay on loci_mia_io_reliable() (const, nominal). */
 bool loci_mia_serve_lost_sampled(loci_t* loci);
 
 bool    loci_init(loci_t* loci);
@@ -572,10 +572,10 @@ void    loci_mou_report(loci_t* loci, uint8_t buttons,
 void    loci_set_tape_mount_callback(loci_t* loci,
         bool (*cb)(void*, const char*), void* ctx);
 
-/* Register the DSK bus callbacks (Sprint 34ax) — required pour permettre
- * au Microdisc ROM (chargé via MIA_BOOT FDC) d'actionner CPU IRQ + de
- * commuter overlay/ROMDIS via CTRL $0314 writes. Sans ces callbacks, le
- * boot Sedoric s'arrête à "Booting." après le RESTORE command. */
+/* Register the DSK bus callbacks (Sprint 34ax) — required to let
+ * the Microdisc ROM (loaded via MIA_BOOT FDC) drive the CPU IRQ and
+ * switch overlay/ROMDIS via CTRL $0314 writes. Without these callbacks, the
+ * Sedoric boot stops at "Booting." after the RESTORE command. */
 void    loci_set_dsk_bus_callbacks(loci_t* loci,
         void (*cpu_irq_set)(void*),
         void (*cpu_irq_clr)(void*),

@@ -49,7 +49,7 @@ decimal-vs-hex surprises.
 | `pause` | `OK pc=… cycles=…` then `EVT stopped reason=user` | works both when stopped AND while running |
 | `reset` | `OK pc=…` | warm reset |
 | `quit` | `OK` then process exits | |
-| `watch <addr> [mode]` | `OK id=N addr=XXXX` | watchpoint ; mode = `w` write (défaut), `r` read, `a` access, `c` change |
+| `watch <addr> [mode]` | `OK id=N addr=XXXX` | watchpoint ; mode = `w` write (default), `r` read, `a` access, `c` change |
 | `unwatch <id>` | `OK` | |
 | `watch-list` | `OK id=N:addr=XXXX [id=… …]` | |
 | `raster <line>` | `OK id=N line=L` | break when PAL line reached (0..311) |
@@ -59,29 +59,29 @@ decimal-vs-hex surprises.
 | `load-sym <path>` | `OK count=N total=M` | merges into the existing symbol table |
 | `disasm <addr> <n>` | `OK addr=XXXX bytes=K disasm="…" [label=NAME]` (N lines) | server-side disassembly cross-check |
 
-## Commandes additionnelles (post-35b)
+## Additional commands (post-35b)
 
-Ces commandes sont implémentées dans `src/control.c` (dispatch `control_dispatch`)
-et exposées aussi via l'API HTTP. Les réponses suivent la convention `OK …`/`ERR …`.
+These commands are implemented in `src/control.c` (`control_dispatch` dispatch)
+and are also exposed through the HTTP API. Replies follow the `OK …`/`ERR …` convention.
 
-| CMD | Usage | Rôle |
+| CMD | Usage | Role |
 |-----|-------|------|
-| `keys <texte>` | reste brut de la ligne (espaces préservés) | injecte des frappes clavier ; `\n` Return, `\e` Esc, `\s<c>` = `<c>` avec SHIFT |
-| `hunt` puis `hunt <op> [val]` | op ∈ `eq,same,changed,up,down,list,clear` | recherche de valeur en mémoire (snapshots successifs) |
-| `watch-region <start> <end> [rwx]` | bornes hex, flags sous-ensemble de `rwx` | surveille une plage mémoire |
-| `watch-region-clear` | — | efface toutes les régions surveillées |
-| `watch-region-list` | — | liste les régions surveillées |
-| `save-mem <file> <addr> <len>` | | écrit une zone mémoire dans un fichier |
-| `load-mem <file> <addr>` | | charge un fichier en mémoire à `addr` |
-| `state-save <file>` | | sauvegarde l'état (`.ost`) |
-| `state-load <file>` | | restaure un état (`.ost`) |
-| `load-disk <drive A-D> <path>` | nécessite `--disk-rom` | insère une disquette à chaud |
-| `eject-disk <drive A-D>` | | éjecte la disquette d'un lecteur |
-| `eject-tape` | — | éjecte la cassette |
-| `loci-button [long]` | défaut = appui court | déclenche le bouton Action LOCI (`--loci`) |
-| `sym-group <N> <on\|off>` | | active/désactive un groupe de symboles |
-| `stuck-bits <s0> [s1]` | masques hex | injecte des bits RAM bloqués |
-| `trace <sub> …` | sub = `start`/`stop`/`save` ; spec `start` : `now\|pc:HEX stop:cycle:N\|brk\|write:HEX\|read:HEX ring:N sym` | pilote la trace CPU |
+| `keys <texte>` | raw rest of the line (spaces preserved) | injects keystrokes; `\n` Return, `\e` Esc, `\s<c>` = `<c>` with SHIFT |
+| `hunt` then `hunt <op> [val]` | op ∈ `eq,same,changed,up,down,list,clear` | value search in memory (successive snapshots) |
+| `watch-region <start> <end> [rwx]` | hex bounds, flags a subset of `rwx` | watches a memory range |
+| `watch-region-clear` | — | clears all watched regions |
+| `watch-region-list` | — | lists the watched regions |
+| `save-mem <file> <addr> <len>` | | writes a memory area to a file |
+| `load-mem <file> <addr>` | | loads a file into memory at `addr` |
+| `state-save <file>` | | saves the state (`.ost`) |
+| `state-load <file>` | | restores a state (`.ost`) |
+| `load-disk <drive A-D> <path>` | requires `--disk-rom` | hot-inserts a disk |
+| `eject-disk <drive A-D>` | | ejects the disk from a drive |
+| `eject-tape` | — | ejects the tape |
+| `loci-button [long]` | default = short press | triggers the LOCI Action button (`--loci`) |
+| `sym-group <N> <on\|off>` | | enables/disables a symbol group |
+| `stuck-bits <s0> [s1]` | hex masks | injects stuck RAM bits |
+| `trace <sub> …` | sub = `start`/`stop`/`save`; `start` spec: `now\|pc:HEX stop:cycle:N\|brk\|write:HEX\|read:HEX ring:N sym` | drives the CPU trace |
 
 ## Async commands while running
 
@@ -135,10 +135,10 @@ OK
 
 ## Future sprints
 
-- `bread <addr> <len>` (framing binaire pour les memory inspectors ≥ 32 KB) est
-  **livré** (cf. tableau des commandes). Restent en backlog : strict framing avec
-  numéros de ligne et séquences d'ACK, timeouts serveur, référence client
-  exhaustive en Python.
+- `bread <addr> <len>` (binary framing for memory inspectors ≥ 32 KB) is
+  **delivered** (see the command table). Still in the backlog: strict framing with
+  line numbers and ACK sequences, server timeouts, an exhaustive Python
+  reference client.
 
 ## Error handling
 

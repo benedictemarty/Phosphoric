@@ -1,239 +1,239 @@
-# Format disque SEDORIC & outillage
+# SEDORIC disk format & tooling
 
-> Référence primaire : manuel **SEDORIC 3.0** (`sedna3_0.pdf`), recoupé avec
-> A. Chéramy « SEDORIC 3.0 à NU » et l'outillage du projet SCUMM-Oric / scoop-oric.
-> **Rien n'est inventé** : les offsets ci-dessous sont ceux du manuel, vérifiés
-> byte-exact contre le dump de descripteur donné en exemple par le manuel lui-même.
+> Primary reference: the **SEDORIC 3.0** manual (`sedna3_0.pdf`), cross-checked with
+> A. Chéramy's « SEDORIC 3.0 à NU » and the tooling of the SCUMM-Oric / scoop-oric project.
+> **Nothing is made up**: the offsets below are the manual's, verified
+> byte-exact against the descriptor dump given as an example by the manual itself.
 
-## 1. Conteneur MFM_DISK
+## 1. MFM_DISK container
 
-En-tête 256 o : `"MFM_DISK"` + `sides` (u32 LE) + `tracks` (u32 LE) + geometry (u32 LE).
-Puis un bloc de piste de **6400 o** par (face, piste), dans l'ordre **SIDE-MAJOR** :
-toutes les pistes de la face 0, puis toutes celles de la face 1
-(`bloc = side * tracks + track` ; cf `src/storage/sedoric.c`, `track_idx = s*tracks+t`).
+256-byte header: `"MFM_DISK"` + `sides` (u32 LE) + `tracks` (u32 LE) + geometry (u32 LE).
+Then one **6400-byte** track block per (side, track), in **SIDE-MAJOR** order:
+all tracks of side 0, then all tracks of side 1
+(`bloc = side * tracks + track`; see `src/storage/sedoric.c`, `track_idx = s*tracks+t`).
 
-Chaque bloc de piste : gap initial `60×$4E`, puis par secteur
+Each track block: initial gap `60×$4E`, then per sector
 `12×$00 | A1 A1 A1 FE [trk side sec size] CRC | 22×$4E | 12×$00 | A1 A1 A1 FB [256 data] CRC | 38×$4E`,
-padding `$4E` jusqu'à 6400 o. CRC-16/CCITT (poly `$1021`, init `$FFFF`) sur les
-4 octets de marque + les données.
+padded with `$4E` up to 6400 bytes. CRC-16/CCITT (poly `$1021`, init `$FFFF`) over the
+4 mark bytes + the data.
 
-Une image **RAW** (secteurs 256 o concaténés, même ordre side-major, sans cadrage)
-est acceptée par `sedoric-info` et produite par `oric1-emu --disk-create` /
-`tools/sedoric_inject.py`. `tools/dsk_raw2mfm.py` convertit RAW → MFM_DISK.
+A **RAW** image (concatenated 256-byte sectors, same side-major order, no framing)
+is accepted by `sedoric-info` and produced by `oric1-emu --disk-create` /
+`tools/sedoric_inject.py`. `tools/dsk_raw2mfm.py` converts RAW → MFM_DISK.
 
-## 2. Secteurs système (piste 20)
+## 2. System sectors (track 20)
 
-| Secteur | Rôle | Champs clés |
+| Sector | Role | Key fields |
 |---|---|---|
-| **s1** Système | nom disque + autoexec | `+9..+29` nom disque (21 o) · `+0x1E..+0x59` **INIST** (60 o : commandes ASCII de boot, séparées par `:`, terminées par `#00`) |
-| **s2** VTOC/bitmap | compteurs | `+2,+3` secteurs libres (LE) · `+4,+5` nb de fichiers (LE) |
-| **s4** Directory | catalogue | `+0,+1` lien vers secteur dir suivant (0=fin) · `+2` high-water mark · entrées de 16 o à partir de `+16` |
+| **s1** System | disk name + autoexec | `+9..+29` disk name (21 bytes) · `+0x1E..+0x59` **INIST** (60 bytes: ASCII boot commands, separated by `:`, terminated by `#00`) |
+| **s2** VTOC/bitmap | counters | `+2,+3` free sectors (LE) · `+4,+5` number of files (LE) |
+| **s4** Directory | catalogue | `+0,+1` link to next dir sector (0=end) · `+2` high-water mark · 16-byte entries starting at `+16` |
 
-Entrée directory (16 o) : `name[9]` `ext[3]` `track` `sector` `nsec` `status`
-(V4 fichier valide = `$40` ; bit 7 = supprimé).
+Directory entry (16 bytes): `name[9]` `ext[3]` `track` `sector` `nsec` `status`
+(V4 valid file = `$40`; bit 7 = deleted).
 
-> Note (constatée sur disques Master, cf `analyze_sedoric_vtoc.py`) : le compteur
-> `free`/`files` de la VTOC peut être un **template 80 pistes** plaqué sur une image
-> physique plus petite — c'est un modèle, pas un état recalculé. `sedoric-info`
-> rapporte donc à la fois le compteur VTOC et le nombre de fichiers réellement
-> parcourus dans le catalogue.
+> Note (observed on Master disks, see `analyze_sedoric_vtoc.py`): the VTOC
+> `free`/`files` counter can be an **80-track template** stamped onto a smaller
+> physical image — it is a model, not a recomputed state. `sedoric-info`
+> therefore reports both the VTOC counter and the number of files actually
+> walked in the catalogue.
 
-## 3. Secteur descripteur de fichier
+## 3. File descriptor sector
 
-Pointé par l'entrée directory (`track`,`sector`). **Dump réel du manuel** (descripteur
-du fichier système BANQUE n°7, p.16) :
+Pointed to by the directory entry (`track`,`sector`). **Real dump from the manual** (descriptor
+of system file BANQUE no. 7, p.16):
 
 ```
  0 1 2 3 4 5 6 7 8 9 A B C D E F
 00 00 FF 40 00 C4 FF C7 00 00 04 00 05 0B 05 0C 05 0D 05 0E 00 00
 ```
 
-| Offset | Champ | Exemple |
+| Offset | Field | Example |
 |---|---|---|
-| `+0,+1` | lien vers descripteur suivant (00 00 = aucun) | `00 00` |
-| `+2` | marqueur premier descripteur | `FF` |
-| `+3` | **type** : b0=AUTO, b6=bloc data, b7=BASIC → `$40`=ML, `$41`=AUTO ML | `40` |
-| `+4,+5` | adresse de chargement (LE) | `00 C4` = $C400 |
-| `+6,+7` | adresse de fin (LE) | `FF C7` = $C7FF |
-| `+8,+9` | **adresse d'exécution si AUTO** (LE) | `00 00` |
-| `+0xA,+0xB` | **nombre de secteurs data** (LE) | `04 00` = 4 |
-| `+0xC..` | carte des secteurs data `(track,sector)×n`, terminée `00 00` | `05 0B 05 0C 05 0D 05 0E 00 00` |
+| `+0,+1` | link to next descriptor (00 00 = none) | `00 00` |
+| `+2` | first-descriptor marker | `FF` |
+| `+3` | **type**: b0=AUTO, b6=data block, b7=BASIC → `$40`=ML, `$41`=AUTO ML | `40` |
+| `+4,+5` | load address (LE) | `00 C4` = $C400 |
+| `+6,+7` | end address (LE) | `FF C7` = $C7FF |
+| `+8,+9` | **execution address if AUTO** (LE) | `00 00` |
+| `+0xA,+0xB` | **number of data sectors** (LE) | `04 00` = 4 |
+| `+0xC..` | data sector map `(track,sector)×n`, terminated by `00 00` | `05 0B 05 0C 05 0D 05 0E 00 00` |
 
-Ce dump **corrige** l'ancienne implémentation de `tap2sedoric` qui laissait `+3=0`
-(type absent) et écrivait le nombre de secteurs en `+9,+10` **big-endian**
-(chevauchant l'adresse d'exécution). Corrigé depuis v1.64.0.
+This dump **corrects** the old implementation of `tap2sedoric`, which left `+3=0`
+(no type) and wrote the sector count at `+9,+10` **big-endian**
+(overlapping the execution address). Fixed since v1.64.0.
 
-### Descripteurs chaînés (fichiers > 122 secteurs) — validé
+### Chained descriptors (files > 122 sectors) — validated
 
-Un secteur descripteur ne contient qu'une partie de la carte : le **1ᵉʳ
-descripteur** porte l'en-tête (12 o) puis la carte dès `+0x0C` (**122 paires**
-max, `0x0C..0xFE`) ; chaque **descripteur suivant** ne porte que le lien `+0,+1`
-puis la carte dès `+0x02` (**127 paires** max). Le lien `+0,+1` pointe le
-descripteur suivant (`00 00` = dernier). `+0xA,+0xB` (1ᵉʳ descripteur) = nombre
-**total** de secteurs data ; le lecteur enchaîne les descripteurs et s'arrête sur
-ce compteur. **Validé in-situ** : fichier de 150 secteurs (2 descripteurs) chargé
-intégralement par `LOAD` (secteurs du 2ᵉ descripteur inclus). `tap2sedoric` et
-`sedoric_inject.py` chaînent depuis v1.65.0 (avant : mono-descripteur, plantage
-au-delà de ~121 secteurs).
+A descriptor sector holds only part of the map: the **1st
+descriptor** carries the header (12 bytes) then the map from `+0x0C` (**122 pairs**
+max, `0x0C..0xFE`); each **following descriptor** carries only the link `+0,+1`
+then the map from `+0x02` (**127 pairs** max). The link `+0,+1` points to the
+next descriptor (`00 00` = last). `+0xA,+0xB` (1st descriptor) = **total**
+number of data sectors; the reader follows the descriptor chain and stops at
+this count. **Validated in situ**: a 150-sector file (2 descriptors) fully loaded
+by `LOAD` (sectors of the 2nd descriptor included). `tap2sedoric` and
+`sedoric_inject.py` chain descriptors since v1.65.0 (before: single descriptor, crash
+beyond ~121 sectors).
 
-## 4. Outils
+## 4. Tools
 
-| Outil | Rôle |
+| Tool | Role |
 |---|---|
-| `tap2sedoric <in.tap> -o out.dsk -b base.dsk [-n NAME.EXT] [-a] [-e EXEC] [-i "INIST"]` | injecte un `.tap` CSAVE dans un disque MFM Sedoric (fichier + descripteur conforme + entrée dir + VTOC ; `-a`/`-e` AUTO, `-i` autoexec de boot) |
-| `sedoric-info <disk.dsk> [--check FREE:FILES]` | inspecte VTOC, nom disque, INIST, catalogue et descripteurs décodés ; `--check` = garde de régression sur les compteurs |
-| `tools/sedoric_inject.py <raw_in> <bin> <load> NAME.EXT <raw_out> [tracks] [sectors] [init] [exec]` | injection en RAW (offsets directs) |
-| `tools/dsk_raw2mfm.py <raw> <out.dsk> [order] [sides] [tracks] [sectors]` | RAW → MFM_DISK (blocs side-major) |
+| `tap2sedoric <in.tap> -o out.dsk -b base.dsk [-n NAME.EXT] [-a] [-e EXEC] [-i "INIST"]` | injects a CSAVE `.tap` into a Sedoric MFM disk (file + conformant descriptor + dir entry + VTOC; `-a`/`-e` AUTO, `-i` boot autoexec) |
+| `sedoric-info <disk.dsk> [--check FREE:FILES]` | inspects the VTOC, disk name, INIST, catalogue and decoded descriptors; `--check` = regression guard on the counters |
+| `tools/sedoric_inject.py <raw_in> <bin> <load> NAME.EXT <raw_out> [tracks] [sectors] [init] [exec]` | injection into RAW (direct offsets) |
+| `tools/dsk_raw2mfm.py <raw> <out.dsk> [order] [sides] [tracks] [sectors]` | RAW → MFM_DISK (side-major blocks) |
 
-Chaîne RAW type : `oric1-emu --disk-create base.raw` (puis INIT au boot pour une
-vraie VTOC) → `sedoric_inject.py` → `dsk_raw2mfm.py` → `oric1-emu --disk-rom microdis.rom -d`.
+Typical RAW chain: `oric1-emu --disk-create base.raw` (then INIT at boot for a
+real VTOC) → `sedoric_inject.py` → `dsk_raw2mfm.py` → `oric1-emu --disk-rom microdis.rom -d`.
 
-## 5. Injection multi-fichiers (limite levée)
+## 5. Multi-file injection (limitation lifted)
 
-Historiquement, `tap2sedoric` **et** `sedoric_inject.py` allouaient toujours à
-partir de la piste 21 secteur 1 sans consulter les secteurs déjà occupés : une
-**deuxième injection sur le même disque plaçait son descripteur au même secteur
-que la première et l'écrasait** (le fichier précédent disparaissait de `LOADM`).
+Historically, `tap2sedoric` **and** `sedoric_inject.py` always allocated
+from track 21 sector 1 without checking which sectors were already in use: a
+**second injection onto the same disk put its descriptor in the same sector
+as the first one and overwrote it** (the previous file vanished from `LOADM`).
 
-Depuis v1.64.0, les deux outils **parcourent le catalogue (chaîne complète) et
-les cartes de secteurs des descripteurs existants** — y compris les **secteurs
-catalogue chaînés eux-mêmes** — pour marquer les secteurs occupés avant
-d'allouer. Deux injections successives obtiennent des descripteurs distincts.
-Vérifié par `make test-sedoric-tools` (`tests/integration/test_sedoric_inject.sh`).
+Since v1.64.0, both tools **walk the catalogue (full chain) and
+the sector maps of the existing descriptors** — including the **chained catalogue
+sectors themselves** — to mark used sectors before
+allocating. Two successive injections get distinct descriptors.
+Verified by `make test-sedoric-tools` (`tests/integration/test_sedoric_inject.sh`).
 
-### Chaînage de secteurs directory (implémenté)
+### Directory sector chaining (implemented)
 
-Quand le secteur de catalogue courant est plein (15 entrées), les outils
-**parcourent la chaîne** via le lien `+0,+1` ; si toute la chaîne est pleine, ils
-**allouent un secteur libre, l'initialisent en catalogue vierge et l'y chaînent**.
-Les secteurs catalogue étant localisés **par lien piste/secteur** (pas par zone
-fixe, manuel ANNEXE 7), un catalogue chaîné peut résider sur n'importe quel
-secteur libre. **Validé in-situ** : un fichier posé dans le 2ᵉ secteur catalogue
-(y compris injecté *après* la création de ce secteur) est listé par `DIR` et
-chargé+exécuté par `LOAD"NAME"` dans l'émulateur.
+When the current catalogue sector is full (15 entries), the tools
+**walk the chain** via the `+0,+1` link; if the whole chain is full, they
+**allocate a free sector, initialise it as a blank catalogue and chain it in**.
+Since catalogue sectors are located **by track/sector link** (not by a fixed
+area, manual ANNEXE 7), a chained catalogue can live on any free
+sector. **Validated in situ**: a file placed in the 2nd catalogue sector
+(including one injected *after* this sector was created) is listed by `DIR` and
+loaded+executed by `LOAD"NAME"` in the emulator.
 
-## 6. Exécuter un fichier ML sous Sedoric (recette **validée in-situ**)
+## 6. Running an ML file under Sedoric (recipe **validated in situ**)
 
-Chargement/exécution vérifiés dans l'émulateur (boot bare + `LOAD` → `$5000`
-chargé et code exécuté). Pièges rencontrés et tranchés :
+Loading/execution verified in the emulator (bare boot + `LOAD` → `$5000`
+loaded and code executed). Pitfalls encountered and settled:
 
-| Commande / cas | Résultat |
+| Command / case | Result |
 |---|---|
-| taper `PROBE` (nom nu) au Ready | `?SYNTAX ERROR` — le nom nu ne lance qu'un **BASIC** AUTO (cf `MENU`) |
-| `LOADM"PROBE"` | `?TYPE MISMATCH` — `LOADM` est la commande **ROM cassette**, pas Sedoric |
-| `CLOAD"PROBE"` | pas d'erreur mais **ne charge rien** (`CLOAD`/`CLOAD,J` = fichiers BASIC) |
-| `LOAD"PROBE"` sur `.BIN` | `?FILE NOT FOUND` — **`.COM` est l'extension par défaut** de `LOAD` |
-| `LOAD"PROBE",J` sur AUTO | `BREAK ON BYTE #5000` — `,J` entre en conflit avec le flag AUTO |
-| **`LOAD"PROBE"`** sur **`.COM` AUTO (type $41)** | **charge ET exécute** (le flag AUTO saute à l'adresse d'exécution) ✅ |
+| typing `PROBE` (bare name) at Ready | `?SYNTAX ERROR` — the bare name only launches an AUTO **BASIC** file (see `MENU`) |
+| `LOADM"PROBE"` | `?TYPE MISMATCH` — `LOADM` is the **cassette ROM** command, not Sedoric |
+| `CLOAD"PROBE"` | no error but **loads nothing** (`CLOAD`/`CLOAD,J` = BASIC files) |
+| `LOAD"PROBE"` on `.BIN` | `?FILE NOT FOUND` — **`.COM` is the default extension** of `LOAD` |
+| `LOAD"PROBE",J` on AUTO | `BREAK ON BYTE #5000` — `,J` conflicts with the AUTO flag |
+| **`LOAD"PROBE"`** on **`.COM` AUTO (type $41)** | **loads AND executes** (the AUTO flag jumps to the execution address) ✅ |
 
-Recette : injecter en **`.COM` AUTO** (`tap2sedoric ... -n NAME.COM -a -e EXEC`), puis
-au Ready : **`LOAD"NAME"`**. La commande Sedoric est **`LOAD`** (auto-détecte
-BASIC vs binaire via l'octet de type `+3`), avec options `,A` (adresse) et `,J`
-(jump), cf manuel §VSALO1 (`C04E` : b6=`,A`, b7=`,J`).
+Recipe: inject as **`.COM` AUTO** (`tap2sedoric ... -n NAME.COM -a -e EXEC`), then
+at Ready: **`LOAD"NAME"`**. The Sedoric command is **`LOAD`** (auto-detects
+BASIC vs binary via the type byte `+3`), with options `,A` (address) and `,J`
+(jump), see manual §VSALO1 (`C04E`: b6=`,A`, b7=`,J`).
 
-### Master Sedoric « nu » bootable (déterministe)
+### Bootable "bare" Sedoric Master (deterministic)
 
-Pour valider un `.COM` maison, il faut un disque qui boote au `Ready` **sans
-application concurrente**. `tools/make_bootable_sedoric.sh` (INIT piloté par
-`--type-keys`) est **fragile** (échoue si le disque système maître boote sur un
-menu, ex. `SEDO40u`). Méthode robuste, sans timing, via l'outil dédié :
+To validate a home-made `.COM`, you need a disk that boots to `Ready` **with no
+competing application**. `tools/make_bootable_sedoric.sh` (INIT driven by
+`--type-keys`) is **fragile** (fails if the master system disk boots into a
+menu, e.g. `SEDO40u`). Robust method, with no timing, via the dedicated tool:
 
 ```
-tools/sedoric_mkbare.py disks/SEDO40u.DSK bare.dsk        # neutralise l'INIST
-tools/sedoric_mkbare.py disks/SEDO40u.DSK auto.dsk 'LOAD"PROBE"'   # ou autolance
+tools/sedoric_mkbare.py disks/SEDO40u.DSK bare.dsk        # neutralise the INIST
+tools/sedoric_mkbare.py disks/SEDO40u.DSK auto.dsk 'LOAD"PROBE"'   # or autorun
 ```
 
-Il **neutralise (ou remplace) l'INIST** (piste 20 secteur 1, `+0x1E..+0x59`, CRC
-du secteur MFM refait ; RAW aussi géré) → le disque tombe en `SEDORIC V4.0 /
-Ready` nu tout en restant bootable. Vérifié sur `SEDO40u` (INIST
-`CLS:MENU.LNG:MENU` → Ready nu).
+It **neutralises (or replaces) the INIST** (track 20 sector 1, `+0x1E..+0x59`, MFM
+sector CRC recomputed; RAW handled too) → the disk drops to a bare `SEDORIC V4.0 /
+Ready` while remaining bootable. Verified on `SEDO40u` (INIST
+`CLS:MENU.LNG:MENU` → bare Ready).
 
-> Note VTOC : `DIR` d'un tel Master affiche `D/80/17` (template 80 pistes) sur
-> une image physique de 42 pistes — cohabitation sûre tant que les fichiers
-> injectés restent dans les pistes physiques (cf `analyze_sedoric_vtoc`).
+> VTOC note: `DIR` on such a Master shows `D/80/17` (80-track template) on
+> a 42-track physical image — safe coexistence as long as the injected
+> files stay within the physical tracks (see `analyze_sedoric_vtoc`).
 
-### Charger un fichier depuis du code machine (recette **validée in-situ**)
+### Loading a file from machine code (recipe **validated in situ**)
 
-Depuis un programme ML en cours d'exécution (lancé par `LOAD`), l'**overlay RAM
-Sedoric n'est pas mappé** : appeler directement les routines DOS (`$DB2D`
-recherche, `$E0EA` lecture) **plante** (elles tombent dans la ROM BASIC). La voie
-robuste passe par le **vecteur « ! » `$0467`** (en RAM basse `$04xx`, toujours
-mappé), qui bascule sur l'overlay, exécute l'**interpréteur SEDORIC** (`$D3AE`)
-sur la ligne de commande pointée par **TXTPTR (`$00E9/$00EA`)**, puis rebascule
-sur la ROM et fait `RTS` (manuel : vecteur `!` en `$0467`, stub de bascule
+From a running ML program (launched by `LOAD`), the **Sedoric RAM
+overlay is not mapped**: calling the DOS routines directly (`$DB2D`
+search, `$E0EA` read) **crashes** (they land in the BASIC ROM). The robust
+way goes through the **"!" vector `$0467`** (in low RAM `$04xx`, always
+mapped), which switches to the overlay, runs the **SEDORIC interpreter** (`$D3AE`)
+on the command line pointed to by **TXTPTR (`$00E9/$00EA`)**, then switches back
+to the ROM and does `RTS` (manual: `!` vector at `$0467`, switch stub
 `$0477` → `STA $0314`).
 
 ```asm
-        LDA #<CMD : STA $E9        ; TXTPTR = adresse de la ligne de commande
+        LDA #<CMD : STA $E9        ; TXTPTR = address of the command line
         LDA #>CMD : STA $EA
-        JSR $0467                  ; vecteur "!" : execute la commande (overlay gere)
-        ; ... fichier charge ; poursuite normale ...
+        JSR $0467                  ; "!" vector: executes the command (overlay handled)
+        ; ... file loaded; normal continuation ...
         RTS
-CMD:    .byte "LOAD\"SCDATA\"", 0  ; ligne SEDORIC terminee par $00
+CMD:    .byte "LOAD\"SCDATA\"", 0  ; SEDORIC line terminated by $00
 ```
 
-C'est l'équivalent ML de taper `!LOAD"SCDATA"`. **Validé** : `LOAD"SCDATA"`
-appelé ainsi charge le fichier (`$6000..` = données exactes), le programme
-appelant reprend normalement.
+This is the ML equivalent of typing `!LOAD"SCDATA"`. **Validated**: `LOAD"SCDATA"`
+called this way loads the file (`$6000..` = exact data), and the calling
+program resumes normally.
 
-> **Piège (isolé par matrice de tests)** : la ligne doit être terminée par
-> **`$00`**, **jamais par CR (`$0D`)**. Avec CR l'interpréteur `$D3AE` n'aboutit
-> pas et **ne fait pas `RTS`** (fichier non chargé, TXTPTR n'avance pas, le
-> programme appelant ne reprend pas la main). L'emplacement du buffer (TIB
-> `$0035` ou RAM privée) est indifférent ; TXTPTR pointe sur le **premier
-> caractère** (le `L`), pas `cmd-1`. La séquence bas-niveau `$DB2D` (recherche →
-POSNMP `$C025`/POSNMS `$C026`/POSNMX `$C027`) puis `$E0EA` (lecture selon
-POSNMX/VSALO1 `$C04E`/DESALO `$C052`) est réelle mais exige de gérer soi-même la
-bascule overlay — préférer `$0467` sauf besoin de contrôle fin.
+> **Pitfall (isolated by a test matrix)**: the line must be terminated by
+> **`$00`**, **never by CR (`$0D`)**. With CR the `$D3AE` interpreter does not
+> complete and **does not `RTS`** (file not loaded, TXTPTR does not advance, the
+> calling program never regains control). The location of the buffer (TIB
+> `$0035` or private RAM) does not matter; TXTPTR points to the **first
+> character** (the `L`), not `cmd-1`. The low-level sequence `$DB2D` (search →
+POSNMP `$C025`/POSNMS `$C026`/POSNMX `$C027`) then `$E0EA` (read according to
+POSNMX/VSALO1 `$C04E`/DESALO `$C052`) is real but requires handling the overlay
+switch yourself — prefer `$0467` unless you need fine control.
 
-#### Bascule overlay RAM Sedoric ↔ ROM BASIC (validé)
+#### Switching Sedoric RAM overlay ↔ BASIC ROM (validated)
 
-Depuis un programme ML lancé par `LOAD`, la **ROM BASIC** est mappée en
-`$C000-$FFFF` : même les variables système (`BUFNOM $C029`, `DESALO $C052`,
-`POSNMX $C027`…) et les routines (`$DB2D`, `$E0EA`) sont **dans l'overlay** → il
-faut basculer l'overlay **avant** tout accès `$C000+`.
+From an ML program launched by `LOAD`, the **BASIC ROM** is mapped at
+`$C000-$FFFF`: even the system variables (`BUFNOM $C029`, `DESALO $C052`,
+`POSNMX $C027`…) and the routines (`$DB2D`, `$E0EA`) are **in the overlay** → you
+must switch in the overlay **before** any `$C000+` access.
 
-Le plus simple : **`JSR $0477`** (stub Sedoric en RAM basse, toujours mappé) —
-un *toggle* ROM↔overlay qui **préserve** lecteur/face/IRQ via le shadow `$04FB` :
+The simplest way: **`JSR $0477`** (Sedoric stub in low RAM, always mapped) —
+a ROM↔overlay *toggle* that **preserves** drive/side/IRQ via the `$04FB` shadow:
 `PHP:PHA:SEI : LDA $04FB : EOR #$02 : STA $04FB : STA $0314 : PLA:PLP:RTS`.
-Appeler une fois pour entrer dans l'overlay, une fois pour revenir.
+Call it once to enter the overlay, once to come back.
 
-Valeurs `$0314` (décodage `src/io/microdisc.c`) : **bit 1 (ROMDIS, `$02`)** = 0 →
-overlay RAM `$C000-$DFFF`, = 1 → ROM BASIC ; **bit 7 (EPROM, `$80`)** = 1 →
-overlay RAM `$E000-$FFFF`. `$0314` étant en écriture seule, ne pas écrire de
-constante brute (bits lecteur/face à préserver) : passer par le shadow `$04FB`
-ou `$0477`. **Validé in-situ** : `$0477` + `$DB2D` + `$E0EA` charge le fichier
+`$0314` values (decoding in `src/io/microdisc.c`): **bit 1 (ROMDIS, `$02`)** = 0 →
+RAM overlay at `$C000-$DFFF`, = 1 → BASIC ROM; **bit 7 (EPROM, `$80`)** = 1 →
+RAM overlay at `$E000-$FFFF`. Since `$0314` is write-only, do not write a
+raw constant (drive/side bits must be preserved): go through the `$04FB` shadow
+or `$0477`. **Validated in situ**: `$0477` + `$DB2D` + `$E0EA` loads the file
 (`$6000..` exact).
 
-Rappel adresses (manuel) : BUFNOM `$C028` drive + `$C029` nom(9) + `$C032`
-ext(3) ; XDEFLO `$DFE6` ; recherche `$DB2D` ; lecture `$E0EA` ; TXTPTR
-`$00E9/$00EA` ; TIB (tampon clavier) `$0035`-`$0084`.
+Address reminder (manual): BUFNOM `$C028` drive + `$C029` name(9) + `$C032`
+ext(3); XDEFLO `$DFE6`; search `$DB2D`; read `$E0EA`; TXTPTR
+`$00E9/$00EA`; TIB (keyboard buffer) `$0035`-`$0084`.
 
-### Lire un fichier par secteur à un offset (OSGBPB / accès aléatoire) — validé
+### Reading a file sector by sector at an offset (OSGBPB / random access) — validated
 
-Pour lire `N` octets à un offset **sans charger tout le fichier** (équivalent
-OSGBPB). Overlay ON (`$0477`) obligatoire — descripteur, routines et variables
-sont dans l'overlay.
+To read `N` bytes at an offset **without loading the whole file** (OSGBPB
+equivalent). Overlay ON (`$0477`) is mandatory — descriptor, routines and variables
+are in the overlay.
 
-1. `BUFNOM` rempli + `JSR $DB2D` (SEARCH) → `X = POSNMX`, secteur catalogue en BUF3.
-2. `LDA $C30C,X : LDY $C30D,X : JSR $DA5D` → **descripteur chargé dans BUF1 (`$C100`)**.
-3. Format BUF1 : `$C100/01` lien descr. suivant (`00 00`=fin) · `$C102`=`FF` ·
+1. `BUFNOM` filled in + `JSR $DB2D` (SEARCH) → `X = POSNMX`, catalogue sector in BUF3.
+2. `LDA $C30C,X : LDY $C30D,X : JSR $DA5D` → **descriptor loaded into BUF1 (`$C100`)**.
+3. BUF1 layout: `$C100/01` link to next descriptor (`00 00`=end) · `$C102`=`FF` ·
    `$C103` type · `$C104-05` load · `$C106-07` end · `$C108-09` exec · `$C10A-0B`
-   nb secteurs · **carte (piste,secteur) dès `$C10C`** : data sector *k* =
-   `[$C10C+2k]` (piste, b7=face B) / `[$C10C+2k+1]` (secteur). Au-delà de 122
-   secteurs, suivre le lien `$C100/01` vers le descripteur suivant.
-4. `sect_index = off/256`, `byte_in_sect = off & 255`. Poser **DRIVE `$C000`**,
-   **PISTE `$C001`** = `[$C10C+2*sect_index]`, **SECTEUR `$C002`** = `[+1]`,
-   **RWBUF `$C003/$C004`** = tampon destination.
-5. **`JSR $DA73`** (XPRSEC : lit un secteur selon DRIVE/PISTE/SECTEUR/RWBUF).
-   Copier `N` octets depuis `tampon + byte_in_sect` ; franchissement de 256 →
-   secteur suivant. (Alternative bas niveau : `XRWTS $CFCD` avec le code commande
-   FDC en X, p.ex. `#$88` lecture — mais XPRSEC est plus simple.)
+   sector count · **(track,sector) map from `$C10C`**: data sector *k* =
+   `[$C10C+2k]` (track, b7=side B) / `[$C10C+2k+1]` (sector). Beyond 122
+   sectors, follow the `$C100/01` link to the next descriptor.
+4. `sect_index = off/256`, `byte_in_sect = off & 255`. Set **DRIVE `$C000`**,
+   **PISTE (track) `$C001`** = `[$C10C+2*sect_index]`, **SECTEUR (sector) `$C002`** = `[+1]`,
+   **RWBUF `$C003/$C004`** = destination buffer.
+5. **`JSR $DA73`** (XPRSEC: reads one sector according to DRIVE/PISTE/SECTEUR/RWBUF).
+   Copy `N` bytes from `buffer + byte_in_sect`; crossing 256 →
+   next sector. (Low-level alternative: `XRWTS $CFCD` with the FDC command
+   code in X, e.g. `#$88` read — but XPRSEC is simpler.)
 
-**Validé in-situ** : lecture du secteur data #1 (offset 256) d'un fichier de
-512 o → octets exacts du 2ᵉ secteur, sans chargement du fichier.
+**Validated in situ**: reading data sector #1 (offset 256) of a
+512-byte file → exact bytes of the 2nd sector, without loading the file.
 
-> Interface XRWTS/XPRSEC (manuel, byte-exact) : DRIVE `$C000`, PISTE `$C001`
-> (b7=face B), SECTEUR `$C002`, RWBUF `$C003/$C004`. `$C009` = DRVDEF (lecteur
-> par défaut), `$C00A` = DRVSYS. (⚠ ne pas confondre avec `$C006-$C00A` = compteurs
-> de tentatives XRWTS.)
+> XRWTS/XPRSEC interface (manual, byte-exact): DRIVE `$C000`, PISTE `$C001`
+> (b7=side B), SECTEUR `$C002`, RWBUF `$C003/$C004`. `$C009` = DRVDEF (default
+> drive), `$C00A` = DRVSYS. (⚠ do not confuse with `$C006-$C00A` = XRWTS retry
+> counters.)

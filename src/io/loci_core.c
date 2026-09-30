@@ -13,15 +13,15 @@
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 500
 #endif
-/* macOS : _XOPEN_SOURCE seul restreint le namespace et masque snprintf + les
- * extensions BSD dans <stdio.h>. _DARWIN_C_SOURCE réexpose l'API complète. */
+/* macOS: _XOPEN_SOURCE alone restricts the namespace and hides snprintf + the
+ * BSD extensions in <stdio.h>. _DARWIN_C_SOURCE re-exposes the full API. */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
 #endif
 
 #include "io/loci.h"
 #include "io/loci_internal.h"
-#include "io/loci_emu.h"   /* routage HID vers le firmware en co-sim */
+#include "io/loci_emu.h"   /* HID routing to the firmware in co-sim */
 #include "io/loci_sdimg.h"
 #include "io/bus_timing.h"
 #include "utils/logging.h"
@@ -121,13 +121,13 @@ bool loci_init(loci_t* loci) {
     loci->mia_tadr = 0;
     loci->mia_tior_lo = 0;
     loci->mia_tior_hi = 31;
-    /* Épic B / Phase 1 : modèle de course PHI2. Défaut WINDOW [0,31] = tout tior
-     * fiable → iso-comportement. Paramètres PHASE pré-réglés « fits » (serve tôt,
-     * latch défaut) pour rester fiable si on bascule sans calibrer. */
+    /* Epic B / Phase 1: PHI2 race model. Default WINDOW [0,31] = every tior
+     * reliable → same behaviour. PHASE parameters preset to « fits » (early serve,
+     * default latch) so it stays reliable if switched without calibration. */
     loci->mia_timing_model = LOCI_TIMING_WINDOW;
     loci->mia_serve_subticks = 0;
     loci->mia_latch_subtick = BUS_LATCH_SUBTICK_DEFAULT;
-    loci->mia_serve_jitter = 0;                     /* pas de jitter par défaut */
+    loci->mia_serve_jitter = 0;                     /* no jitter by default */
     loci->mia_jitter_state = bus_jitter_seed(0);
     loci->dir_dev = -1;    /* device-list iterator closed */
     seed_initial_stub(loci);
@@ -447,12 +447,12 @@ void op_pix_xreg(loci_t* loci) {
 
 void loci_kbd_set_report(loci_t* loci, uint8_t modifier,
                           const uint8_t keycodes[6]) {
-    /* Co-simulation : le 6502 ne lit plus ce xram (io_bus.c route tout le MIA
-     * vers le firmware réel) — le rapport doit donc partir au vrai kbd_report()
-     * du firmware, qui fait bien plus que remplir un bitmap (layouts, file
-     * stdio, répétition, LED). Routé ici plutôt qu'à chaque appelant pour que
-     * TOUS les chemins d'injection en profitent : glue SDL et --type-keys
-     * loci-hid:. Modèle interne inchangé hors co-sim. */
+    /* Co-simulation: the 6502 no longer reads this xram (io_bus.c routes the whole
+     * MIA to the real firmware) — so the report must go to the firmware's real
+     * kbd_report(), which does far more than fill a bitmap (layouts, stdio
+     * queue, repeat, LED). Routed here rather than in each caller so that ALL
+     * injection paths benefit: SDL glue and --type-keys loci-hid:. Internal
+     * model unchanged outside co-sim. */
     if (loci_emu_active()) { loci_emu_kbd_report(modifier, keycodes); return; }
     if (!loci || !loci->enabled) return;
     if (loci->kbd_xram == 0xFFFF) return;
@@ -480,7 +480,7 @@ void loci_kbd_clear(loci_t* loci) {
 void loci_mou_report(loci_t* loci, uint8_t buttons,
                      int8_t dx, int8_t dy,
                      int8_t wheel, int8_t pan) {
-    /* Idem clavier : en co-sim le rapport va au firmware (cf. emul_hid.c). */
+    /* Same as the keyboard: in co-sim the report goes to the firmware (cf. emul_hid.c). */
     if (loci_emu_active()) {
         loci_emu_mou_report(buttons, dx, dy, wheel, pan);
         return;

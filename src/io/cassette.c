@@ -42,15 +42,14 @@ void cassette_reset(cassette_t* c) {
 }
 
 uint16_t cassette_encode_frame(uint8_t byte) {
-    /* Parité IMPAIRE sur les 8 bits de données (trame cassette de la ROM ORIC) :
-     * le bit est choisi pour que (nombre de 1 des données + parité) soit impair.
+    /* ODD parity over the 8 data bits (cassette frame of the ORIC ROM):
+     * the bit is chosen so that (number of 1s in the data + parity) is odd.
      *
-     * Le code posait `parity = ones & 1`, ce qui rend la somme PAIRE — l'inverse
-     * de ce que son propre commentaire annonçait. La ROM 1.0 ne s'en apercevait
-     * pas, mais la ROM 1.1 (Atmos) vérifie la parité : elle chargeait le
-     * programme correctement puis affichait « Errors found ». Le même encodeur
-     * sert à `tap2wav`, dont les WAV partaient donc avec une parité fausse vers
-     * de vraies machines. */
+     * The code used to set `parity = ones & 1`, which makes the sum EVEN — the
+     * opposite of what its own comment claimed. ROM 1.0 did not notice, but
+     * ROM 1.1 (Atmos) checks the parity: it loaded the program correctly and
+     * then displayed « Errors found ». The same encoder is used by `tap2wav`,
+     * whose WAVs therefore went out to real machines with a wrong parity. */
     uint8_t ones = 0;
     for (int i = 0; i < 8; i++) ones += (uint8_t)((byte >> i) & 1u);
     uint16_t parity = (uint16_t)((ones & 1u) ^ 1u);

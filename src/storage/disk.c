@@ -24,7 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Trace FDC sur stderr si FDC_TRACE est définie (évalué une seule fois) */
+/* FDC trace on stderr if FDC_TRACE is set (evaluated only once) */
 int fdc_trace_enabled(void) {
     static int enabled = -1;
     if (enabled < 0) enabled = (getenv("FDC_TRACE") != NULL);
@@ -223,8 +223,8 @@ static void fdc_record_not_found(fdc_t* fdc) {
     }
 }
 
-/* Opérations qui font défiler des octets : ce sont celles dont un DRQ non servi
- * coûte une donnée. */
+/* Operations that stream bytes past the head: these are the ones where an
+ * unserviced DRQ costs a data byte. */
 static bool fdc_op_transfers_data(int op) {
     return op == FDC_OP_READ_SECTOR || op == FDC_OP_READ_SECTORS ||
            op == FDC_OP_WRITE_SECTOR || op == FDC_OP_WRITE_SECTORS ||
@@ -235,9 +235,9 @@ void fdc_set_write_protect(fdc_t* fdc, bool protect) {
     fdc->write_protected = protect;
 }
 
-/* Commandes d'écriture sur un support protégé (datasheet p.7) : la commande
- * n'est PAS exécutée, le statut porte WRITE PROTECT (S6) et l'interruption part
- * immédiatement. Renvoie true si la commande doit être abandonnée. */
+/* Write commands on a protected medium (datasheet p.7): the command
+ * is NOT executed, the status carries WRITE PROTECT (S6) and the interrupt fires
+ * immediately. Returns true if the command must be aborted. */
 static bool fdc_write_protected(fdc_t* fdc) {
     if (!fdc->write_protected) return false;
     fdc->clr_drq(fdc->drq_userdata);
@@ -296,19 +296,19 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
         }
     }
 
-    /* LOST DATA (S2) — le plateau n'attend pas le CPU.
+    /* LOST DATA (S2) — the platter does not wait for the CPU.
      *
-     * À 250 kbit/s en MFM, un octet défile toutes les 32 µs : passé ce délai,
-     * un DRQ non servi signifie que l'octet suivant est déjà là et que le
-     * précédent est perdu. Le WD1793 lève S2 et poursuit le transfert, ce qui
-     * permet au logiciel de savoir qu'il a raté le train.
+     * At 250 kbit/s in MFM, one byte passes every 32 µs: past that delay,
+     * an unserviced DRQ means the next byte is already there and the
+     * previous one is lost. The WD1793 raises S2 and carries on with the
+     * transfer, which lets the software know it missed the train.
      *
-     * Limite assumée de notre modèle : le bit est signalé au bon moment, mais
-     * l'octet n'est PAS réellement perdu — le modèle d'image plate n'a pas de
-     * flux MFM continu (c'est la même limite qui rend CRC ERROR impossible, cf.
-     * docs/HARDWARE_CONFORMANCE.md). Le logiciel qui teste S2 voit donc la bonne
-     * condition ; celui qui l'ignore obtient des données intactes là où le
-     * matériel lui en donnerait de fausses. */
+     * Accepted limitation of our model: the bit is reported at the right time, but
+     * the byte is NOT actually lost — the flat image model has no continuous
+     * MFM stream (the same limitation that makes CRC ERROR impossible, cf.
+     * docs/HARDWARE_CONFORMANCE.md). Software that tests S2 therefore sees the right
+     * condition; software that ignores it gets intact data where the
+     * hardware would give it wrong data. */
     if ((fdc->status & FDC_ST_DRQ) && fdc_op_transfers_data(fdc->currentop)) {
         fdc->drq_age += (int)cycles;
         if (fdc->drq_age > FDC_BYTE_CYCLES && !(fdc->status & FDC_ST_LOST_DATA)) {
@@ -334,7 +334,7 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                 st |= FDC_STI_PULSE;
             if (fdc->c_track == 0)
                 st |= FDC_STI_TRK0;
-            /* En Type I, le bit 6 reporte la languette de protection. */
+            /* In Type I, bit 6 reports the write-protect tab. */
             if (fdc->write_protected) st |= FDC_ST_WRITE_PROT;
             return st;
         }
@@ -378,10 +378,10 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                     fdc->cur_offset = 0;
                     fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
                     if (!fdc->cur_sector_data) {
-                        /* Fin de piste : une commande multi-secteur ne s'arrête
-                         * pas d'elle-même. Le WD1793 continue de chercher le
-                         * secteur suivant et termine sur RECORD NOT FOUND — c'est
-                         * ainsi que le logiciel sait où la piste s'achève. */
+                        /* End of track: a multi-sector command does not stop
+                         * by itself. The WD1793 keeps searching for the
+                         * next sector and ends with RECORD NOT FOUND — this is
+                         * how the software knows where the track ends. */
                         fdc->delayed_int = 20;
                         fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND);
                         fdc->currentop = FDC_OP_NONE;
@@ -524,7 +524,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
         case 0xA0: /* Write sector (Type II) */
             fdc->status_type1 = false;
             if (fdc_not_ready(fdc)) break;   /* no media → NOT READY, not RNF */
-            if (fdc_write_protected(fdc)) break;   /* languette → S6, rien écrit */
+            if (fdc_write_protected(fdc)) break;   /* tab → S6, nothing written */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (!fdc->cur_sector_data) {
@@ -595,7 +595,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->delayed_drq = 60;
                 fdc->currentop = FDC_OP_READ_TRACK;
             } else {
-                if (fdc_write_protected(fdc)) break;   /* languette → S6, rien écrit */
+                if (fdc_write_protected(fdc)) break;   /* tab → S6, nothing written */
                 /* Write Track (Type III) - track formatting. The ROM streams a
                  * raw IBM/MFM track; fdc_write() DATA parses it into sectors.
                  * On real hardware formatting starts at the index pulse. */
@@ -647,7 +647,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                     fdc->cur_offset = 0;
                     fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
                     if (!fdc->cur_sector_data) {
-                        /* Idem en écriture : la commande se termine sur RNF. */
+                        /* Same for writes: the command ends with RNF. */
                         fdc->delayed_int = 20;
                         fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND);
                         fdc->currentop = FDC_OP_NONE;

@@ -1,95 +1,95 @@
-# Base de temps sous-cycle du bus d'extension (modèle PHI2) — Épic B
+# Sub-cycle time base for the expansion bus (PHI2 model) — Epic B
 
-- **Statut** : architecture (v1.0) — Phase 1 livrée
-- **Auteur** : bmarty
-- **Modules** : `include/io/bus_timing.h`, `src/io/loci_boot.c` (client LOCI),
-  `src/io/io_bus.c` (point de décision ACIA `$0380`)
-- **Grounding** : `~/loci/extensions/analyse/read-serve-et-inhibition-via.md`,
-  `robustesse-lien-6502.md` (firmware `sodiumlb/loci-firmware`, schéma LOCI 1.3).
+- **Status**: architecture (v1.0) — Phase 1 delivered
+- **Author**: bmarty
+- **Modules**: `include/io/bus_timing.h`, `src/io/loci_boot.c` (LOCI client),
+  `src/io/io_bus.c` (ACIA `$0380` decision point)
+- **Grounding**: `~/loci/extensions/analyse/read-serve-et-inhibition-via.md`,
+  `robustesse-lien-6502.md` (firmware `sodiumlb/loci-firmware`, LOCI 1.3 schematic).
 
-## 1. Problème
+## 1. Problem
 
-Le 6502 de l'Oric et les périphériques du **port d'extension** partagent un bus
-**asynchrone** cadencé par PHI2. Phosphoric modélise le temps à la granularité du
-**cycle entier** : `cpu_tick()` avance l'horloge à chaque accès bus (`cpu->cycles`
-est exact à chaque lecture), mais il n'existe **aucune notion de phase intra-PHI2**.
+The Oric's 6502 and the **expansion port** peripherals share an
+**asynchronous** bus clocked by PHI2. Phosphoric models time at the granularity of the
+**whole cycle**: `cpu_tick()` advances the clock on every bus access (`cpu->cycles`
+is exact at every read), but there is **no notion of intra-PHI2 phase**.
 
-Or certains conflits sont **sous-cycle** : la donnée doit être **stable sur le bus
-avant l'instant de latch** du 6502 (proche du front descendant de PHI2, après le
-setup). Un périphérique **lent** — typiquement le LOCI, dont le RP2040 échantillonne
-le bus par PIO à `sys_clk = PHI2×30` (`cpu.c:158`) puis pose la donnée — peut
-**manquer** ce latch. Le VIA étant décodé-inhibé (cf. `io-bus.md`), **rien ne pilote
-alors le bus** → le 6502 latche l'open-bus. À l'échelle du cycle entier, ce
-phénomène est **invisible** : la lecture 6502 et le serve tombent « dans le même
-cycle ». Il faut donc une base de temps **sous-cycle** pour le reproduire.
+Yet some conflicts are **sub-cycle**: the data must be **stable on the bus
+before the 6502's latch instant** (close to the falling edge of PHI2, after the
+setup time). A **slow** peripheral — typically the LOCI, whose RP2040 samples
+the bus through PIO at `sys_clk = PHI2×30` (`cpu.c:158`) and then drives the data — can
+**miss** that latch. Since the VIA is decode-inhibited (see `io-bus.md`), **nothing drives
+the bus** at that point → the 6502 latches open-bus. At whole-cycle scale, this
+phenomenon is **invisible**: the 6502 read and the serve fall "in the same
+cycle". A **sub-cycle** time base is therefore needed to reproduce it.
 
-## 2. Modèle (Phase 1)
+## 2. Model (Phase 1)
 
-Grille : la période PHI2 est divisée en `BUS_PHI2_SUBTICKS = 30` (rapport
-sys_clk/PHI2 du LOCI, indépendant de la fréquence PHI2 réelle → tout est en
-**fractions de période**).
+Grid: the PHI2 period is divided into `BUS_PHI2_SUBTICKS = 30` (the LOCI's
+sys_clk/PHI2 ratio, independent of the actual PHI2 frequency → everything is in
+**fractions of a period**).
 
-- Le 6502 **latche** la donnée au subtick `latch_subtick` (défaut 27 = fin de
-  PHI2 haut moins le setup).
-- Un périphérique rend sa donnée valide au subtick `valid_subtick`.
-- Lecture **propre** ssi `valid_subtick ≤ latch_subtick` ; sinon **course perdue**
-  (open-bus). Prédicat : `bus_serve_wins_race()` (`bus_timing.h`).
+- The 6502 **latches** the data at subtick `latch_subtick` (default 27 = end of
+  PHI2 high minus the setup time).
+- A peripheral makes its data valid at subtick `valid_subtick`.
+- **Clean** read iff `valid_subtick ≤ latch_subtick`; otherwise the **race is lost**
+  (open-bus). Predicate: `bus_serve_wins_race()` (`bus_timing.h`).
 
-Les périphériques **on-board** (RAM/ROM/VIA/ULA) sont valides tôt
-(`valid_subtick = 0`) → gagnent toujours → **aucun impact**. Seuls les périphériques
-du port d'extension à serve lent peuvent perdre. C'est la réalisation « globale »
-mais **à coût nul pour l'existant** : la couche est générale, mais on ne route pas
-les accès on-board à travers elle (ils gagneraient toujours).
+**On-board** peripherals (RAM/ROM/VIA/ULA) are valid early
+(`valid_subtick = 0`) → they always win → **no impact**. Only expansion-port
+peripherals with a slow serve can lose. This is the "global" implementation,
+but **at zero cost for existing code**: the layer is general, but on-board
+accesses are not routed through it (they would always win).
 
-### Client LOCI (`loci_mia_io_reliable`)
+### LOCI client (`loci_mia_io_reliable`)
 
-Deux modèles exclusifs de fiabilité du serve MIA :
+Two mutually exclusive reliability models for the MIA serve:
 
-- **WINDOW** (défaut, historique) : fiable ssi `tior ∈ [lo,hi]`. C'est la
-  **calibration par carte** (le firmware `adj_scan` balaie tior 0-31 pour trouver
-  la plage qui marche). Iso-comportement ; `--loci-mia-window LO-HI`.
-- **PHASE** (opt-in, physiquement fondé) : le serve arrive au subtick
-  `tior + serve_subticks` ; propre ssi `≤ latch_subtick`. `--loci-serve-timing
-  SERVE[,LATCH]`. Rend explicites deux facteurs que WINDOW cache :
-  - le **budget de serve** (≈ le build firmware) : l'analyse mesure ~26 cyc M0+ en
-    `-Os` (optimisé) vs ~36 en baseline. À `latch=27` : `serve=26 → propre`,
-    `serve=36 → raté`. **Reproduit exactement le rapport de bug** (le rebuild `-Os`
-    corrige la lecture `$0380`).
-  - l'**indépendance à la fréquence PHI2** (grille en fractions de période).
+- **WINDOW** (default, historical): reliable iff `tior ∈ [lo,hi]`. This is the
+  **per-board calibration** (the firmware's `adj_scan` sweeps tior 0-31 to find
+  the working range). Behaviour unchanged; `--loci-mia-window LO-HI`.
+- **PHASE** (opt-in, physically grounded): the serve arrives at subtick
+  `tior + serve_subticks`; clean iff `≤ latch_subtick`. `--loci-serve-timing
+  SERVE[,LATCH]`. Makes explicit two factors that WINDOW hides:
+  - the **serve budget** (≈ the firmware build): the analysis measures ~26 M0+ cycles with
+    `-Os` (optimised) vs ~36 at baseline. At `latch=27`: `serve=26 → clean`,
+    `serve=36 → missed`. **Reproduces the bug report exactly** (the `-Os` rebuild
+    fixes the `$0380` read).
+  - **independence from the PHI2 frequency** (grid in fractions of a period).
 
-`loci_set_mia_window()` bascule sur WINDOW, `loci_set_serve_timing()` sur PHASE.
-Défaut au reset : WINDOW `[0,31]` → tout tior fiable.
+`loci_set_mia_window()` switches to WINDOW, `loci_set_serve_timing()` to PHASE.
+Default at reset: WINDOW `[0,31]` → every tior is reliable.
 
-## 3. Ce que la Phase 1 ne fait pas (encore)
+## 3. What Phase 1 does not do (yet)
 
-- **Pas de réécriture sous-cycle du 6502.** `cpu_step` exécute une instruction
-  entière ; le modèle de phase vit au **point de décision de l'accès bus** (lecture
-  mémoire → périphérique io), là où la course compte. Une intégration sous-cycle
-  profonde du CPU (chaque accès = un cycle bus horodaté en phase) est une phase
-  ultérieure.
-- **Pas de jitter.** La décision est déterministe (tests reproductibles). Un jitter
-  seedé dans la bande marginale est une option future.
-- **Un seul client** (LOCI). Les autres périphériques du port d'extension
-  brancheraient le même prédicat via leur propre `valid_subtick`.
+- **No sub-cycle rewrite of the 6502.** `cpu_step` executes a whole
+  instruction; the phase model lives at the **bus access decision point** (memory
+  read → io peripheral), where the race matters. A deep sub-cycle integration
+  of the CPU (each access = one bus cycle timestamped with its phase) is a later
+  phase.
+- **No jitter.** The decision is deterministic (reproducible tests). Seeded
+  jitter within the marginal band is a future option.
+- **A single client** (LOCI). Other expansion-port peripherals
+  would plug into the same predicate through their own `valid_subtick`.
 
-## 4. Feuille de route (épic B)
+## 4. Roadmap (epic B)
 
-- [x] **Phase 1** — socle `bus_timing.h` (grille PHI2×30, latch, prédicat de
-      course) + client LOCI (modèle PHASE opt-in, CLI `--loci-serve-timing`) +
-      tests. Iso-comportement par défaut.
-- [ ] **Phase 2** — brancher les autres périphériques du port d'extension sur le
-      prédicat (valid_subtick propre à chacun) ; jitter seedé optionnel.
-- [ ] **Phase 3** — horodatage sous-cycle des accès au niveau CPU (chaque accès
-      porte sa phase) ; setup/hold on-board si un cas réel l'exige.
-- [ ] **Phase 4** — calibration des constantes (latch, budgets de serve) contre
-      matériel réel (les valeurs actuelles sont modélisées dans les plages de
-      l'analyse, pas mesurées au picoseconde).
+- [x] **Phase 1** — `bus_timing.h` foundation (PHI2×30 grid, latch, race
+      predicate) + LOCI client (opt-in PHASE model, CLI `--loci-serve-timing`) +
+      tests. Behaviour unchanged by default.
+- [ ] **Phase 2** — plug the other expansion-port peripherals into the
+      predicate (each with its own valid_subtick); optional seeded jitter.
+- [ ] **Phase 3** — sub-cycle timestamping of accesses at CPU level (each access
+      carries its phase); on-board setup/hold if a real case requires it.
+- [ ] **Phase 4** — calibrate the constants (latch, serve budgets) against
+      real hardware (the current values are modelled within the ranges of
+      the analysis, not measured to the picosecond).
 
-## 5. Références
+## 5. References
 
-- `include/io/bus_timing.h` — grille, prédicat.
+- `include/io/bus_timing.h` — grid, predicate.
 - `src/io/loci_boot.c` — `loci_mia_io_reliable`, `loci_set_serve_timing`.
-- `src/io/io_bus.c` — application à l'ACIA `$0380` (open-bus + lecture destructive).
-- `~/loci/extensions/analyse/read-serve-et-inhibition-via.md` — serve 26-36 cyc,
+- `src/io/io_bus.c` — application to the ACIA `$0380` (open-bus + destructive read).
+- `~/loci/extensions/analyse/read-serve-et-inhibition-via.md` — serve 26-36 cycles,
   sys_clk = PHI2×30, `-Os` vs `-O2`.
-- `docs/architecture/io-bus.md` — dispatch page 3, inhibition VIA.
+- `docs/architecture/io-bus.md` — page 3 dispatch, VIA inhibition.

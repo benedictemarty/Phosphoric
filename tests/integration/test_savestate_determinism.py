@@ -28,7 +28,7 @@ from phos_smoke_client import PhosClient  # noqa: E402
 
 EMU = "./oric1-emu"
 ROM = "roms/basic11b.rom" if os.path.exists("roms/basic11b.rom") else "roms/basic10.rom"
-STEPS_BEFORE_SAVE = 37       # arbitraire, pas aligné sur une trame ni une ligne
+STEPS_BEFORE_SAVE = 37       # arbitrary, aligned neither on a frame nor on a line
 RASTER_LINE = 100
 STOPS = 4
 RAM_END = 0xC000
@@ -84,7 +84,7 @@ def main():
         ram_ref = os.path.join(tmp, "ref.bin")
         ram_res = os.path.join(tmp, "res.bin")
 
-        # 1. Référence : step×N, sauvegarde en pleine trame, puis on CONTINUE.
+        # 1. Reference: step×N, save mid-frame, then CONTINUE.
         with PhosClient.spawn([EMU, "-r", ROM, "-n"]) as c:
             c.wait_ready()
             for _ in range(STEPS_BEFORE_SAVE):
@@ -100,7 +100,7 @@ def main():
             ko("state-save n'a rien écrit")
             return 1
 
-        # 2. Reprise : --load-state, puis le MÊME parcours.
+        # 2. Resume: --load-state, then the SAME run.
         with PhosClient.spawn([EMU, "-r", ROM, "-n", "--load-state", ost]) as c:
             c.wait_ready()
             at_load = c.regs()

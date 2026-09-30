@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-struct ula_ng_s;   /* io/ula_ng.h — sprites §5.7 (couplage évité) */
+struct ula_ng_s;   /* io/ula_ng.h — sprites §5.7 (coupling avoided) */
 
 #define ORIC_SCREEN_W   240
 #define ORIC_SCREEN_H   224
@@ -28,7 +28,7 @@ struct ula_ng_s;   /* io/ula_ng.h — sprites §5.7 (couplage évité) */
 #define ORIC_CHAR_H     8
 #define ORIC_FPS         50
 
-/* Largeur du mode « large » (chunky ULA-NG §5.8 : 160 px × 2 = 320). */
+/* Width of the « wide » mode (ULA-NG chunky §5.8: 160 px × 2 = 320). */
 #define VIDEO_WIDE_W     320
 
 /* Visible overscan band composited around the active image at presentation
@@ -55,16 +55,16 @@ struct ula_ng_s;   /* io/ula_ng.h — sprites §5.7 (couplage évité) */
 typedef struct video_s {
     uint8_t framebuffer[VIDEO_MAX_W * VIDEO_MAX_H * 3]; /* RGB888, native_w x native_h used */
 
-    /* ─── État sériel de la ligne en cours (V2-E4) ───
-     * L'encre et le papier de l'ORIC sont « sériels » : un octet d'attribut les
-     * change pour toutes les cellules SUIVANTES de la ligne. Quand la ligne est
-     * rendue cellule par cellule (un fetch par cycle), cet état doit survivre
-     * entre deux cycles — d'où sa présence ici plutôt qu'en variable locale. */
-    uint8_t line_ink;       /* encre courante (réinitialisée à blanc en début de ligne) */
-    uint8_t line_paper;     /* papier courant (réinitialisé à noir) */
-    int     line_sx;        /* scroll fin X latché pour la ligne (ULA-NG) */
-    int     line_sy;        /* scroll fin Y latché pour la ligne (ULA-NG) */
-    int     line_last_col;  /* dernière colonne à fetcher (39, ou 40 si scroll X) */
+    /* ─── Serial state of the current line (V2-E4) ───
+     * ORIC ink and paper are « serial »: an attribute byte changes them
+     * for all FOLLOWING cells of the line. When the line is
+     * rendered cell by cell (one fetch per cycle), this state must survive
+     * between two cycles — hence its presence here rather than as a local variable. */
+    uint8_t line_ink;       /* current ink (reset to white at start of line) */
+    uint8_t line_paper;     /* current paper (reset to black) */
+    int     line_sx;        /* fine X scroll latched for the line (ULA-NG) */
+    int     line_sy;        /* fine Y scroll latched for the line (ULA-NG) */
+    int     line_last_col;  /* last column to fetch (39, or 40 if X scroll) */
     int native_w;           /* Active framebuffer width (stride) in pixels */
     int native_h;           /* Active framebuffer height in pixels */
     bool hires_mode;
@@ -77,37 +77,37 @@ typedef struct video_s {
     /* ULA-NG palette-indirection (§5.1). Wired from emulator_t.ula_ng ; NULL in
      * the bare unit-test path. When active, the NG LUT overrides pal_rgb. */
     const uint8_t (*ng_pal)[3];       /**< -> ula_ng.pal[16][3] (RGB888) */
-    const bool*    ng_active;     /**< -> ula_ng.active (gate général NG) */
-    const uint16_t* ng_scrstart;  /**< -> ula_ng.scrstart (base fetch, 0=défaut, §5.3) */
+    const bool*    ng_active;     /**< -> ula_ng.active (general NG gate) */
+    const uint16_t* ng_scrstart;  /**< -> ula_ng.scrstart (fetch base, 0=default, §5.3) */
     const uint8_t*  ng_scrollx;   /**< -> ula_ng.scrollx (0-5, §5.5) */
     const uint8_t*  ng_scrolly;   /**< -> ula_ng.scrolly (0-7, §5.5) */
     const uint8_t*  ng_attr;      /**< -> ula_ng.attr[8192] (§5.6) */
     const bool*     ng_attr_active; /**< -> ula_ng.attr_active */
-#define ORIC_NG_ATTR_MASK 0x1FFFu /* masque du plan d'attributs (8192-1) */
+#define ORIC_NG_ATTR_MASK 0x1FFFu /* attribute plane mask (8192-1) */
 
-    /* ULA-NG sprites (§5.7) : le module ula_ng possède l'état sprite (table,
-     * palette, collision) ; video appelle ula_ng_composite_scanline en fin de
-     * scanline via ce pointeur. NULL dans le chemin de test unitaire (pas de
-     * sprites). Forward-declaré pour ne pas coupler video.h à io/ula_ng.h. */
-    struct ula_ng_s* ng_dev;      /**< -> emulator_t.ula_ng (composition sprites) */
+    /* ULA-NG sprites (§5.7): the ula_ng module owns the sprite state (table,
+     * palette, collision); video calls ula_ng_composite_scanline at the end of
+     * the scanline through this pointer. NULL in the unit-test path (no
+     * sprites). Forward-declared so as not to couple video.h to io/ula_ng.h. */
+    struct ula_ng_s* ng_dev;      /**< -> emulator_t.ula_ng (sprite compositing) */
 
-    /* ULA-NG modes vidéo étendus (§5.8). Pointeurs live vers les caches ula_ng
-     * (NULL en test unitaire) ; latchés au début de trame dans ng_chunky /
-     * ng_text80 (la résolution reste stable une trame entière). */
+    /* ULA-NG extended video modes (§5.8). Live pointers to the ula_ng caches
+     * (NULL in unit tests); latched at frame start into ng_chunky /
+     * ng_text80 (the resolution stays stable for a whole frame). */
     const bool* ng_chunky_active; /**< -> ula_ng.chunky_active (chunky 4bpp 320px) */
-    const bool* ng_text80_active; /**< -> ula_ng.text80_active (texte 80col 480px) */
-    bool        ng_chunky;        /**< latch trame : mode chunky actif */
-    bool        ng_text80;        /**< latch trame : mode 80 colonnes actif */
-    const uint8_t* ng_vram;       /**< -> ula_ng.vram (VRAM chunky ULA-NG, VDU v0.2) */
-    const bool*    ng_vram_active;/**< -> ula_ng.vram_active (chunky lit la VRAM) */
+    const bool* ng_text80_active; /**< -> ula_ng.text80_active (80-col text 480px) */
+    bool        ng_chunky;        /**< frame latch: chunky mode active */
+    bool        ng_text80;        /**< frame latch: 80-column mode active */
+    const uint8_t* ng_vram;       /**< -> ula_ng.vram (ULA-NG chunky VRAM, VDU v0.2) */
+    const bool*    ng_vram_active;/**< -> ula_ng.vram_active (chunky reads the VRAM) */
 
-    /* Active palette, RGB888 per Oric color 0-7 (palette standard ; la LUT
-     * ULA-NG §5.1 la remplace quand active). */
+    /* Active palette, RGB888 per Oric color 0-7 (standard palette; the
+     * ULA-NG LUT §5.1 replaces it when active). */
     uint8_t pal_rgb[8][3];
 
-    /* Couleur de bordure overscan par scanline (RGB888) — infra générique de
-     * compositing (video_compose_bordered). Reste noire (aucune source de
-     * couleur en standard) ; exposée via video_get_border_rgb(). */
+    /* Overscan border colour per scanline (RGB888) — generic compositing
+     * infrastructure (video_compose_bordered). Stays black (no colour
+     * source in standard mode); exposed via video_get_border_rgb(). */
     uint8_t video_border[VIDEO_MAX_H][3];
 
     /* Serial-attribute group 0x08-0x0F (text attrs).
@@ -126,19 +126,19 @@ void video_set_mode(video_t* vid, bool hires);
 void video_render_frame(video_t* vid, const uint8_t* memory);
 void video_render_scanline(video_t* vid, const uint8_t* memory, int y);
 
-/* ─── Rendu décomposé (V2-E4) ───
- * Une ligne = `video_line_begin()`, puis une cellule de 6 pixels par fetch, puis
- * `video_line_end()`. `video_render_scanline()` enchaîne les trois d'un coup (la
- * ligne entière est alors échantillonnée au même instant) ; l'horloge maître, en
- * mode ULA au cycle, appelle les trois séparément pour que chaque cellule voie
- * la mémoire à l'instant exact de son fetch. */
+/* ─── Decomposed rendering (V2-E4) ───
+ * A line = `video_line_begin()`, then one 6-pixel cell per fetch, then
+ * `video_line_end()`. `video_render_scanline()` chains all three at once (the
+ * whole line is then sampled at the same instant); the master clock, in
+ * cycle-level ULA mode, calls all three separately so that each cell sees
+ * the memory at the exact instant of its fetch. */
 void video_line_begin(video_t* vid, const uint8_t* memory, int y);
 void video_render_cell(video_t* vid, const uint8_t* memory, int y, int col);
 void video_line_end(video_t* vid, const uint8_t* memory, int y);
 void video_get_rgb(uint8_t oric_color, uint8_t* r, uint8_t* g, uint8_t* b);
 
-/* Couleur de bordure overscan pour la scanline y (0-223), RGB888 (noire en
- * standard — infra générique de compositing). */
+/* Overscan border colour for scanline y (0-223), RGB888 (black in
+ * standard mode — generic compositing infrastructure). */
 void video_get_border_rgb(const video_t* vid, int y,
                           uint8_t* r, uint8_t* g, uint8_t* b);
 

@@ -4,19 +4,19 @@
 CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
-# Émulateur RP2040 embarqué (backend --loci-emu). Chemin surchargeable.
-# Dépendance EXTERNE non versionnée : détectée automatiquement. Sans elle
-# (CI, machine neuve), src/io/loci_emu_stub.c prend la place de loci_emu.c :
-# tout se construit, seul `--loci-emu` refuse de démarrer. Forcer : LOCI_EMU=0/1.
+# Embedded RP2040 emulator (--loci-emu backend). Path can be overridden.
+# EXTERNAL, unversioned dependency: detected automatically. Without it
+# (CI, fresh machine), src/io/loci_emu_stub.c replaces loci_emu.c:
+# everything builds, only `--loci-emu` refuses to start. Force: LOCI_EMU=0/1.
 LOCI_EMUL_DIR ?= $(HOME)/loci/emul
 LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
-# Backend MATÉRIEL RÉEL (--loci-hw DEV) : `make LOCI_HW=1` remplace loci_emu.c par
-# src/io/loci_hw.c (copie de ~/loci/loci-usb/phosphoric/loci_hw.c) + le client du
-# protocole loci-usb. Un binaire = un backend (mêmes symboles loci_emu_*).
+# REAL HARDWARE backend (--loci-hw DEV): `make LOCI_HW=1` replaces loci_emu.c with
+# src/io/loci_hw.c (copy of ~/loci/loci-usb/phosphoric/loci_hw.c) + the loci-usb
+# protocol client. One binary = one backend (same loci_emu_* symbols).
 LOCI_USB_DIR ?= $(HOME)/loci/loci-usb
 LOCI_HW ?= 0
-# Backend du NOUVEAU firmware loci-fw (reprise de zéro, ~/loci/reprise) : `make LOCI_NEO=1`
-# remplace loci_emu.c par src/io/loci_neo.c (pont emul_neo de libemul).
+# Backend for the NEW loci-fw firmware (restart from scratch, ~/loci/reprise): `make LOCI_NEO=1`
+# replaces loci_emu.c with src/io/loci_neo.c (libemul's emul_neo bridge).
 LOCI_NEO ?= 0
 ifeq ($(LOCI_NEO),1)
 LOCI_EMU_SRC = src/io/loci_neo.c
@@ -65,8 +65,8 @@ else
     CFLAGS += -O2 -DNDEBUG
 endif
 
-# SDL2 support — ON by default (affichage/audio/clavier réels). Pour un build
-# headless (CI/automation, sans libSDL2), passer explicitement SDL2=0.
+# SDL2 support — ON by default (real display/audio/keyboard). For a
+# headless build (CI/automation, without libSDL2), pass SDL2=0 explicitly.
 SDL2 ?= 1
 ifeq ($(SDL2), 1)
 ifeq ($(WIN), 1)
@@ -264,27 +264,27 @@ all: $(TARGET)
 $(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
 	$(CC) $(OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o $(TARGET)
 
-# Construit la bibliothèque de l'émulateur RP2040 si absente (LOCI_EMU=1 seulement).
+# Builds the RP2040 emulator library if missing (LOCI_EMU=1 only).
 ifeq ($(LOCI_EMU),1)
 $(LOCI_EMUL_DIR)/libemul.a:
 	$(MAKE) -C $(LOCI_EMUL_DIR) lib
 endif
 
-# Copie strippée pour la distribution (symboles retirés → binaire plus petit).
-# Produit $(TARGET)-release SANS toucher au binaire de travail $(TARGET)
-# (utilisé par d'autres programmes). Epic 7 / US1, Sprint 125.
+# Stripped copy for distribution (symbols removed → smaller binary).
+# Produces $(TARGET)-release WITHOUT touching the working binary $(TARGET)
+# (used by other programs). Epic 7 / US1, Sprint 125.
 release: $(TARGET)
 	cp $(TARGET) $(TARGET)-release
 	strip $(TARGET)-release
 	@echo "Binaire de distribution : $(TARGET)-release ($$(stat -c%s $(TARGET)-release) o, vs $$(stat -c%s $(TARGET)) o non strippé)"
 
-# Binaire de distribution UNIQUE : une seule version « riche » au lieu d'une
-# multitude de variantes de build. TOUTES les fonctionnalités optionnelles sont
-# compilées (SDL2, CAST, HTTPAPI, MIDI, PICOTLS) ; c'est ensuite au runtime que
-# les flags CLI (--http-api, --cast, --serial midi/picowifi…) décident de ce qui
-# est actif. Link dynamique : SDL2/OpenSSL/ALSA restent des dépendances système
-# à déclarer dans le paquet (.deb/.rpm). Produit $(TARGET)-dist strippé.
-# Rappel : Linux, Windows (WIN=1) et WASM restent des cibles distinctes.
+# SINGLE distribution binary: one "full-featured" version instead of a
+# multitude of build variants. ALL optional features are
+# compiled in (SDL2, CAST, HTTPAPI, MIDI, PICOTLS); it is then at runtime that
+# the CLI flags (--http-api, --cast, --serial midi/picowifi…) decide what
+# is active. Dynamic link: SDL2/OpenSSL/ALSA remain system dependencies
+# to be declared in the package (.deb/.rpm). Produces a stripped $(TARGET)-dist.
+# Reminder: Linux, Windows (WIN=1) and WASM remain separate targets.
 dist:
 	$(MAKE) SDL2=1 CAST=1 HTTPAPI=1 MIDI=1 PICOTLS=1
 	cp $(TARGET) $(TARGET)-dist
@@ -554,8 +554,8 @@ test-loci: $(TEST_LOCI_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_LOCI_SRCS) $(LDFLAGS) -o test_loci
 	@./test_loci
 
-# Course PHI2 du LOCI sur l'ACIA $0380 (picowifi) — dispatch io_bus complet, donc
-# tout l'arbre des périphériques de page 3 est lié.
+# LOCI PHI2 race on the $0380 ACIA (picowifi) — full io_bus dispatch, so
+# the whole page 3 peripheral tree is linked.
 TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/io/acia6551.c src/io/serial_backend.c src/io/smf.c \
                  $(LOCI_EMU_SRC) src/io/loci_gfx.c \
@@ -678,14 +678,14 @@ test-coverage: $(TEST_COVERAGE_SRCS)
 test-loci-e2e:
 	@bash tests/integration/test_loci_sedoric_e2e.sh
 
-# E2E web : cartouche LOCI dans la build WASM (Chrome headless + Playwright ;
-# SKIP si emcc/node/Playwright/Chrome absents). Hors `make tests` (lourd).
+# Web E2E: LOCI cartridge in the WASM build (headless Chrome + Playwright;
+# SKIP if emcc/node/Playwright/Chrome are missing). Not part of `make tests` (heavy).
 test-web-loci:
 	@bash tests/integration/test_web_loci.sh
 
-# E2E web : modem picowifi WASM via tools/picowifi_ws_relay.py (BASIC -> ACIA ->
-# WebSocket -> relais -> TCP local, et retour ; sans relais : fetch, httpsame, LOCI+cassette).
-# Mêmes prérequis/SKIP, hors `make tests`.
+# Web E2E: WASM picowifi modem via tools/picowifi_ws_relay.py (BASIC -> ACIA ->
+# WebSocket -> relay -> local TCP, and back; without relay: fetch, httpsame, LOCI+cassette).
+# Same prerequisites/SKIP, not part of `make tests`.
 test-web-picowifi:
 	@bash tests/integration/test_web_picowifi.sh
 
@@ -747,17 +747,17 @@ test-tape-roundtrip: $(TARGET)
 test-cli-parsing: $(TARGET)
 	@bash tests/integration/test_cli_parsing.sh
 
-# V2-E6 — CLOAD au niveau signal sur les deux ROM (chemin non couvert jusque-là :
-# test_tape_roundtrip recharge en fast-load).
+# V2-E6 — signal-level CLOAD on both ROMs (path not covered until now:
+# test_tape_roundtrip reloads through fast-load).
 test-tape-signal: $(TARGET) tools
 	@bash tests/integration/test_tape_signal_load.sh
 
-# V2-E4 — preuve du fetch ULA par cycle : un programme 6502 réécrit l'écran
-# pendant le balayage ; la coupure doit tomber au milieu d'une ligne.
+# V2-E4 — proof of the per-cycle ULA fetch: a 6502 program rewrites the screen
+# during the scan; the split must fall in the middle of a line.
 test-raster-split: $(TARGET) tools
 	@bash tests/integration/test_raster_split.sh
 
-# V2-S4 — horloge maître : un appel = un cycle de toute la machine.
+# V2-S4 — master clock: one call = one cycle of the whole machine.
 TEST_CLOCK_SRCS = tests/support/loci_emu_stub.c tests/unit/test_clock.c \
                   src/emu_clock.c src/cpu/cpu6502.c src/cpu/opcodes.c \
                   src/cpu/addressing.c src/cpu/microseq.c \
@@ -768,12 +768,12 @@ test-clock: $(TEST_CLOCK_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_CLOCK_SRCS) $(LDFLAGS) -o test_clock
 	@./test_clock
 
-# V2-S1 — oracle de conformité cycle par cycle (SingleStepTests/65x02) et test
-# fonctionnel de Klaus Dormann. Les vecteurs ne sont pas versionnés : les deux
-# cibles se mettent en SKIP quand ils sont absents (`tools/fetch_vectors.sh`).
-#   make test-cycle                      200 cas par opcode (défaut)
-#   make test-cycle CYCLE_MAX_CASES=0    les 10 000 cas par opcode
-#   make test-cycle CYCLE_OPCODES=a9,b1  un sous-ensemble, en verbeux utile
+# V2-S1 — cycle-by-cycle conformance oracle (SingleStepTests/65x02) and Klaus
+# Dormann's functional test. The vectors are not versioned: both
+# targets SKIP when they are missing (`tools/fetch_vectors.sh`).
+#   make test-cycle                      200 cases per opcode (default)
+#   make test-cycle CYCLE_MAX_CASES=0    all 10,000 cases per opcode
+#   make test-cycle CYCLE_OPCODES=a9,b1  a subset, with useful verbose output
 TEST_CYCLE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu_cycles.c \
                   src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
                   src/memory/memory.c src/memory/banking.c src/utils/logging.c
@@ -790,12 +790,12 @@ test-dormann: $(TEST_DORMANN_SRCS)
 	@$(CC) $(CFLAGS) $(TEST_DORMANN_SRCS) $(LDFLAGS) -o test_dormann
 	@./test_dormann
 
-# Récupération des vecteurs d'oracle (tiers, non versionnés, ~1 Go).
+# Fetching the oracle vectors (third-party, unversioned, ~1 GB).
 fetch-vectors:
 	@bash tools/fetch_vectors.sh $(VECTORS)
 
-# V2-S0 — garde-fou sur les allégations de précision temporelle (docs/ACCURACY.md).
-# Échoue si « cycle-accurate » réapparaît non qualifié dans un document de vitrine.
+# V2-S0 — safeguard on timing-accuracy claims (docs/ACCURACY.md).
+# Fails if an unqualified "cycle-accurate" reappears in a showcase document.
 test-docs-claims:
 	@bash tests/integration/test_docs_claims.sh
 
@@ -807,21 +807,21 @@ test-docs-claims:
 bench:
 	@bash tools/bench.sh $(if $(BENCH_TSV),--tsv,)
 
-# V2-E7 (US7.1) — budget de performance BLOQUANT : ≤ 5 % de la trame (1000 µs)
-# sur le scénario boot BASIC. SKIP explicite sur machine bridée (batterie,
-# fréquence effondrée) ; BENCH_STRICT=1 pour trancher quand même.
-#   make test-bench BENCH_BUDGET_US=1500     # relever le plafond (CI lente)
+# V2-E7 (US7.1) — BLOCKING performance budget: ≤ 5 % of the frame (1000 µs)
+# on the BASIC boot scenario. Explicit SKIP on a throttled machine (battery,
+# collapsed frequency); BENCH_STRICT=1 to decide anyway.
+#   make test-bench BENCH_BUDGET_US=1500     # raise the ceiling (slow CI)
 test-bench: $(TARGET)
 	@bash tools/bench_check.sh
 
-# V2-E7 (US7.3) — corpus de non-régression : chaque média local rejoué un
-# nombre fixe de cycles, écran comparé au manifeste tests/corpus/manifest.sha256.
-# Re-baseline après un changement VOULU : tools/corpus_replay.sh snapshot
+# V2-E7 (US7.3) — non-regression corpus: each local medium is replayed for a
+# fixed number of cycles, screen compared to the manifest tests/corpus/manifest.sha256.
+# Re-baseline after an INTENDED change: tools/corpus_replay.sh snapshot
 test-corpus: $(TARGET)
 	@bash tools/corpus_replay.sh check
 
-# V2-E7 (US7.2) — un savestate pris en PLEINE trame est un point de reprise
-# exact : mêmes arrêts raster, même VIA, même RAM qu'un run ininterrompu.
+# V2-E7 (US7.2) — a savestate taken in the MIDDLE of a frame is an exact
+# resume point: same raster stops, same VIA, same RAM as an uninterrupted run.
 test-savestate-determinism: $(TARGET)
 	@python3 tests/integration/test_savestate_determinism.py
 
@@ -985,8 +985,8 @@ WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
                -sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all,_web_io_activity,_web_peek,_web_save_state,_web_load_state,_web_insert_tap,_web_insert_disk,_malloc,_free \
                -lidbfs.js --preload-file roms@/roms --shell-file web/shell.html
 
-# La co-simulation RP2040 (libemul, natif) n'existe pas en WebAssembly : le stub
-# prend toujours la place de loci_emu.c ici, quel que soit LOCI_EMU.
+# The RP2040 co-simulation (libemul, native) does not exist in WebAssembly: the stub
+# always replaces loci_emu.c here, whatever LOCI_EMU is.
 WASM_SOURCES = $(subst src/io/loci_emu.c,src/io/loci_emu_stub.c,$(LIB_SOURCES))
 wasm: web/shell.html
 	$(EMCC) $(WASM_CFLAGS) -DNO_LOCI_EMU $(WASM_SOURCES) src/main.c $(WASM_LDFLAGS) -o $(WASM_OUT)

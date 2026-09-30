@@ -27,7 +27,7 @@
 /* PTY support (POSIX) — openpty() lives in <pty.h> on Linux but in <util.h>
  * on macOS/BSD (there is no <pty.h> there). */
 #if defined(__EMSCRIPTEN__)
-#define HAS_PTY 0          /* pas de pseudo-terminal dans un navigateur */
+#define HAS_PTY 0          /* no pseudo-terminal in a browser */
 #elif defined(__linux__)
 #include <pty.h>
 #define HAS_PTY 1

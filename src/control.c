@@ -14,7 +14,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
 #include "io/loci_emu.h"
@@ -669,8 +669,8 @@ static void cmd_loci_button(emulator_t* emu, control_sink_t* s, const char* mode
     }
     bool longp = (mode && strcmp(mode, "long") == 0);
     if (loci_emu_active()) {
-        /* Co-simulation : le vrai firmware possède le bouton (même règle que F8
-         * dans la GUI) — court = menu, long = ROM de diagnostic embarquée. */
+        /* Co-simulation: the real firmware owns the button (same rule as F8
+         * in the GUI) -- short = menu, long = embedded diagnostic ROM. */
         bool armed = longp ? loci_emu_diag_button() : loci_emu_menu_button();
         if (armed) cpu_reset(&emu->cpu);
         sink_ok(s, "action-button pulsed%s (firmware, %s)", longp ? " (long)" : "",
@@ -1091,7 +1091,7 @@ static void cmd_keys(emulator_t* emu, control_sink_t* s, const char* text) {
                 case 'n': case 'r': c = '\n'; break;   /* RETURN */
                 case 't': c = '\t'; break;
                 case 'e': c = (char)0x1B; break;       /* ESC */
-                case 's':                              /* \s<c> : <c> avec SHIFT (ex. \sn) */
+                case 's':                              /* \s<c>: <c> with SHIFT (e.g. \sn) */
                     if (p[1] && (unsigned char)p[1] >= 0x20 && (unsigned char)p[1] < 0x80) {
                         p++; c = (char)((unsigned char)*p | 0x80); break;
                     }

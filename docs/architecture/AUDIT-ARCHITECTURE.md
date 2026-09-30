@@ -1,125 +1,125 @@
-# Audit architectural — Phosphoric
+# Architecture audit — Phosphoric
 
-> Audit critique du 2026-07-17 (v1.84.0-alpha). Appuyé sur des mesures réelles
-> (graphe d'includes, ventilation de `main.c`, ordre des ticks, threads).
-> Références `fichier:ligne` vérifiées ou marquées « approx. ». Ce document est
-> volontairement **critique** : il liste ce qui va, mais surtout la dette.
+> Critical audit of 2026-07-17 (v1.84.0-alpha). Based on real measurements
+> (include graph, breakdown of `main.c`, tick order, threads).
+> `file:line` references verified or marked "approx.". This document is
+> deliberately **critical**: it lists what works, but above all the debt.
 
-## 0. Verdict en une phrase
+## 0. Verdict in one sentence
 
-Le **cœur** de l'émulateur est proprement modularisé (couches découplées, zéro
-cycle d'includes, IRQ/timing per-cycle corrects), mais la **périphérie** est
-concentrée dans un `main.c` de 4690 lignes (dont `main()` ≈ 1487) et le contrat
-`io_device_t` est **incomplet** (dispatch migré, mais lifecycle et savestate
-seulement partiels). La dette est *périphérique*, pas *centrale* — c'est une
-bonne nouvelle : elle s'attaque par extraction, sans toucher au moteur.
+The emulator's **core** is cleanly modularised (decoupled layers, zero include
+cycles, correct per-cycle IRQ/timing), but the **periphery** is
+concentrated in a 4690-line `main.c` (of which `main()` ≈ 1487) and the
+`io_device_t` contract is **incomplete** (dispatch migrated, but lifecycle and
+savestate only partial). The debt is *peripheral*, not *central* — which is
+good news: it can be tackled by extraction, without touching the engine.
 
-## 1. Ce qui est solide (mesuré)
+## 1. What is solid (measured)
 
-### 1.1 Découplage des modules de base
-`cpu`, `memory`, `video`, `audio`, `storage` **n'incluent pas** `emulator.h`
-(0 dépendance) : chacun opère sur sa propre struct passée en pointeur. Sur ~166
-fichiers, seuls **18** incluent `emulator.h` (~11 %). C'est ce qui rend le
-framework de test « un exe par module » possible.
+### 1.1 Decoupling of the base modules
+`cpu`, `memory`, `video`, `audio`, `storage` **do not include** `emulator.h`
+(0 dependency): each one operates on its own struct passed by pointer. Out of ~166
+files, only **18** include `emulator.h` (~11 %). This is what makes the
+"one executable per module" test framework possible.
 
-### 1.2 Zéro cycle d'includes
-Graphe en DAG. Les cycles potentiels sont cassés par **forward-declarations**
-délibérées : `cpu ↔ memory` (`cpu6502.h`), `video ↔ ula_ng` (`video.h:12`),
-`cassette ↔ via6522` (`cassette.h`). `io_device.h` forward-déclare `emulator_s`.
+### 1.2 Zero include cycles
+The graph is a DAG. Potential cycles are broken by deliberate
+**forward declarations**: `cpu ↔ memory` (`cpu6502.h`), `video ↔ ula_ng` (`video.h:12`),
+`cassette ↔ via6522` (`cassette.h`). `io_device.h` forward-declares `emulator_s`.
 
-### 1.3 Fidélité temporelle per-cycle
-Chaque accès mémoire du 6502 déclenche `cpu_cycle_tick()` (src/main.c ≈ 1291),
-qui avance VIA, FDC, ACIA, DTL2000, Mageco **au cycle** — pas en lot post-
-instruction. IRQ **level-triggered** multi-sources via bitfield `IRQF_*`
-(cpu6502.h) : correct, chaque source gère son bit.
+### 1.3 Per-cycle timing fidelity
+Each 6502 memory access triggers `cpu_cycle_tick()` (src/main.c ≈ 1291),
+which advances VIA, FDC, ACIA, DTL2000, Mageco **per cycle** — not in a batch
+after the instruction. Multi-source **level-triggered** IRQ via the `IRQF_*` bitfield
+(cpu6502.h): correct, each source manages its own bit.
 
-### 1.4 Concurrence défensive
-3 threads auxiliaires (cast MJPEG, HTTP API, heartbeat CASTV2). **Aucun** ne mute
-`emulator_t` directement : tout passe par `control_queue` (MPSC, mutex +
-condition-var par commande), drainé au *frame boundary* par la boucle principale
-(consommateur unique). Le framebuffer est **copié sous mutex** une fois/trame
-vers le cast (`cast_server_push_frame`), jamais partagé brut. Backends série en
-I/O **non-bloquant** (pas de thread). Aucune race identifiée.
+### 1.4 Defensive concurrency
+3 auxiliary threads (MJPEG cast, HTTP API, CASTV2 heartbeat). **None** mutates
+`emulator_t` directly: everything goes through `control_queue` (MPSC, mutex +
+condition variable per command), drained at the *frame boundary* by the main loop
+(single consumer). The framebuffer is **copied under mutex** once per frame
+to the cast (`cast_server_push_frame`), never shared raw. Serial backends use
+**non-blocking** I/O (no thread). No race identified.
 
-### 1.5 Conventions homogènes
-Include guards, `snake_case`/`_t`/`_s`, en-têtes Doxygen, K&R 4 espaces :
-cohérents sur tout le dépôt.
+### 1.5 Consistent conventions
+Include guards, `snake_case`/`_t`/`_s`, Doxygen headers, K&R 4 spaces:
+consistent across the whole repository.
 
-## 2. La dette (priorisée)
+## 2. The debt (prioritised)
 
-> **Mise à jour 2026-09-12 (2.0.3)** : `emulator_run()` (1 296 l) a été découpée
-> en 17 étapes nommées autour d'un `run_state_t` (126 l), sans changer l'ordre
-> d'exécution — la réserve du § 3 (« ne pas la moderniser en event-loop ») reste
-> valable et respectée : c'est une extraction, pas une refonte. `main.c` fait
-> 4 536 l ; il reste `main()` et son parser d'options (US3 de l'Epic 7, non fait).
+> **Update 2026-09-12 (2.0.3)**: `emulator_run()` (1,296 lines) has been split
+> into 17 named steps around a `run_state_t` (126 lines), without changing the
+> execution order — the caveat of § 3 ("do not modernise it into an event loop")
+> remains valid and respected: it is an extraction, not a redesign. `main.c` is
+> 4,536 lines; what remains is `main()` and its option parser (US3 of Epic 7, not done).
 
-### 2.1 🔴 `main.c` = god-object périphérique (4690 L, `main()` ≈ 1487 L)
-`main()` fait tout : ~79 options CLI (getopt_long), init des sous-systèmes,
-création des backends série (≈ 390 L pour modem/digitelec/picowifi), boucle
-principale, événements SDL, touches de fonction, teardown. 79 fonctions dans un
-seul fichier, dont beaucoup de **callbacks de câblage** (io_read/write_callback,
-keyboard_matrix_read, les 12 wrappers `*_dev_*`, les paires `*_cpu_irq_set/clr`).
+### 2.1 🔴 `main.c` = peripheral god object (4690 L, `main()` ≈ 1487 L)
+`main()` does everything: ~79 CLI options (getopt_long), subsystem initialisation,
+creation of the serial backends (≈ 390 L for modem/digitelec/picowifi), main
+loop, SDL events, function keys, teardown. 79 functions in a
+single file, many of them **wiring callbacks** (io_read/write_callback,
+keyboard_matrix_read, the 12 `*_dev_*` wrappers, the `*_cpu_irq_set/clr` pairs).
 
-**Nuance honnête :** ce n'est pas un god-object *comportemental* (la logique vit
-dans les modules) mais un god-object *d'assemblage*. Le risque est la
-lisibilité/maintenabilité, pas la correction.
+**Honest nuance:** it is not a *behavioural* god object (the logic lives
+in the modules) but an *assembly* god object. The risk is
+readability/maintainability, not correctness.
 
-### 2.2 🔴 État émulé et ressource hôte mélangés dans la même struct
-`dtl2000_t`, `mageco_t` (et `serial_backend_t`) mêlent, dans **une seule
-struct**, des registres POD sérialisables **et** des handles non sérialisables
-(`serial_backend_t* backend`, `FILE* trace`, callbacks `irq_*`, `sockfd`,
-`master_fd`, handles ALSA). `pia6821_t` porte 7 pointeurs de callback,
-`acia6850_t` en porte 2.
+### 2.2 🔴 Emulated state and host resources mixed in the same struct
+`dtl2000_t`, `mageco_t` (and `serial_backend_t`) mix, in **a single
+struct**, serialisable POD registers **and** non-serialisable handles
+(`serial_backend_t* backend`, `FILE* trace`, `irq_*` callbacks, `sockfd`,
+`master_fd`, ALSA handles). `pia6821_t` carries 7 callback pointers,
+`acia6850_t` carries 2.
 
-**Conséquence concrète (vécue) :** c'est ce qui a rendu le savestate
-DTL2000/Mageco/LOCI **impossible proprement** — un blob corromprait les
-pointeurs, et le transport (connexion TCP/PTY, octets en vol) n'est de toute
-façon pas restaurable. C'est la dette structurelle la plus « rentable » à traiter.
+**Concrete (experienced) consequence:** this is what made the
+DTL2000/Mageco/LOCI savestate **impossible to do cleanly** — a blob would corrupt the
+pointers, and the transport (TCP/PTY connection, bytes in flight) cannot be
+restored anyway. It is the structural debt most "worth" addressing.
 
-### 2.3 🟠 Contrat `io_device_t` incomplet (lifecycle absent)
-Le contrat couvre `claims/read/write/save/load` mais **pas** `init/reset/tick`.
-Donc :
-- le dispatch I/O est bien passé sur le bus, mais **init/reset/tick restent
-  câblés en dur** dans `main.c` (`cpu_cycle_tick`, chemins de reset) ;
-- `save/load` n'est implémenté que pour **l'ULA-NG** ; les 5 autres entrées de
-  `io_bus[]` ont `save_tag=NULL`.
+### 2.3 🟠 Incomplete `io_device_t` contract (no lifecycle)
+The contract covers `claims/read/write/save/load` but **not** `init/reset/tick`.
+Therefore:
+- I/O dispatch has indeed moved onto the bus, but **init/reset/tick remain
+  hard-wired** in `main.c` (`cpu_cycle_tick`, reset paths);
+- `save/load` is only implemented for **the ULA-NG**; the other 5 entries of
+  `io_bus[]` have `save_tag=NULL`.
 
-**Incohérence à assumer :** l'ordre des ticks (`VIA→cassette→microdisc→loci→acia→
-dtl→mageco`) **diffère** de l'ordre de la table `io_bus[]`
-(`loci→acia→mageco→microdisc→dtl→ula-ng`). Unifier tick + dispatch dans une seule
-boucle exigerait de prouver l'équivalence byte-identique d'abord (le VIA doit
-être tické en premier — il pilote les timers).
+**Inconsistency to acknowledge:** the tick order (`VIA→cassette→microdisc→loci→acia→
+dtl→mageco`) **differs** from the order of the `io_bus[]` table
+(`loci→acia→mageco→microdisc→dtl→ula-ng`). Unifying tick + dispatch in a single
+loop would require first proving byte-identical equivalence (the VIA must
+be ticked first — it drives the timers).
 
-### 2.4 🟠 Monolithes secondaires
-`debugger.c` (2382 L) et `control.c` (1290 L) sont des blocs monolithiques
-(REPL de debug ; parseur + 30+ handlers de commandes + dispatch).
+### 2.4 🟠 Secondary monoliths
+`debugger.c` (2382 L) and `control.c` (1290 L) are monolithic blocks
+(debug REPL; parser + 30+ command handlers + dispatch).
 
-### 2.5 🟡 Includes `emulator.h` inutilisés (vérifié)
-`src/io/microdisc.c:17` et `src/io/loci_core.c:16` incluent `emulator.h` avec
-**0 usage** de `emulator_t`/`emu->`/`EMU_VERSION` → couplage inutile à retirer
-(sous réserve de recompilation).
+### 2.5 🟡 Unused `emulator.h` includes (verified)
+`src/io/microdisc.c:17` and `src/io/loci_core.c:16` include `emulator.h` with
+**0 use** of `emulator_t`/`emu->`/`EMU_VERSION` → needless coupling to remove
+(subject to recompilation).
 
-### 2.6 🟡 Résolution raster ULA-NG à la scanline
-L'IRQ raster et le copper sont évalués par **scanline logique** (toutes les 64
-cycles), pas mid-cycle. Acceptable pour du PAL 50 Hz, mais moins fin que l'ULA
-matérielle — à documenter comme limite connue.
+### 2.6 🟡 ULA-NG raster resolution per scanline
+The raster IRQ and the copper are evaluated per **logical scanline** (every 64
+cycles), not mid-cycle. Acceptable for PAL 50 Hz, but coarser than the hardware
+ULA — to be documented as a known limitation.
 
-## 3. Ce qu'il ne faut PAS refactorer (risque > bénéfice)
-- Le découplage des modules de base : déjà bon.
-- La struct racine `emulator_t` (agrégation par valeur) : pattern légitime.
-- La duplication des macros de test : choix « zéro dépendance » assumé.
-- `emulator_run()` (boucle principale, timing-critique) : ne pas la « moderniser »
-  en event-loop sans nécessité — le gain est théorique, le risque de régression
-  temporelle est réel.
+## 3. What NOT to refactor (risk > benefit)
+- Decoupling of the base modules: already good.
+- The root struct `emulator_t` (aggregation by value): a legitimate pattern.
+- Duplication of the test macros: a deliberate "zero dependency" choice.
+- `emulator_run()` (main loop, timing-critical): do not "modernise" it
+  into an event loop without need — the gain is theoretical, the risk of timing
+  regression is real.
 
-## 4. Zones non auditées (honnêteté)
-Non couvert par cet audit, donc **non jugé** : précision cycle *intra-instruction*
-(phase des accès), robustesse du gating cassette signal-mode sur PC ROM, design
-détaillé du protocole de contrôle au-delà de sa forme, sécurité des serveurs
-réseau exposés.
+## 4. Areas not audited (honesty)
+Not covered by this audit, hence **not assessed**: *intra-instruction* cycle
+precision (phase of the accesses), robustness of the cassette signal-mode gating on
+ROM PC, detailed design of the control protocol beyond its form, security of the
+exposed network servers.
 
-## 5. Plan d'action → voir Epic 7 (ROADMAP)
-La dette étant périphérique, elle s'attaque par **extraction incrémentale** à
-iso-comportement (chaque étape vérifiée byte-identique), dans l'esprit du chantier
-`io_device_t` déjà mené. Voir l'Epic 7 « Assainissement architectural » dans
+## 5. Action plan → see Epic 7 (ROADMAP)
+Since the debt is peripheral, it is tackled by **incremental extraction** with
+identical behaviour (each step verified byte-identical), in the spirit of the
+`io_device_t` work already carried out. See Epic 7 "Architectural clean-up" in
 `ROADMAP`.

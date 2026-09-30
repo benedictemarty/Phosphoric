@@ -45,7 +45,7 @@ static void dtl_recalc_timing(dtl2000_t* dev)
         dev->rx_baud = 1200;
         dev->tx_baud = 1200;
     } else {
-        /* V23 appel (terminal Minitel): receive fast, transmit slow */
+        /* V23 caller mode (Minitel terminal): receive fast, transmit slow */
         dev->rx_baud = DTL_V23_RX_BAUD;  /* 1200 */
         dev->tx_baud = DTL_V23_TX_BAUD;  /* 75   */
     }
@@ -172,11 +172,11 @@ bool dtl2000_addr_in_range(const dtl2000_t* dev, uint16_t addr)
 }
 
 /* ── Savestate (Epic 7 / US4) ───────────────────────────────────────────────
- * Sérialise l'état ÉMULÉ en blob (même-build, garde par taille). Le transport
- * hôte (backend série, trace, callbacks) N'EST PAS restauré : ses pointeurs sont
- * préservés depuis l'instance vivante (une connexion TCP/PTY ne se sérialise
- * pas). Concrètement, la « séparation état/transport » de l'US4 se fait ici, au
- * niveau de la (dé)sérialisation, sans restructurer les structs cœur. */
+ * Serialises the EMULATED state as a blob (same-build, size-guarded). The host
+ * transport (serial backend, trace, callbacks) is NOT restored: its pointers are
+ * preserved from the live instance (a TCP/PTY connection cannot be
+ * serialised). Concretely, US4's « state/transport separation » happens here, at
+ * the (de)serialisation level, without restructuring the core structs. */
 bool dtl2000_save(const dtl2000_t* dev, FILE* fp)
 {
     return fwrite(dev, sizeof(*dev), 1, fp) == 1;
@@ -185,13 +185,13 @@ bool dtl2000_save(const dtl2000_t* dev, FILE* fp)
 void dtl2000_load(dtl2000_t* dev, FILE* fp, uint32_t size)
 {
     if (size != sizeof(*dev))
-        return;                          /* layout différent → on n'écrase pas */
-    dtl2000_t keep = *dev;               /* capture les pointeurs hôte vivants */
+        return;                          /* different layout → do not overwrite */
+    dtl2000_t keep = *dev;               /* capture the live host pointers */
     if (fread(dev, sizeof(*dev), 1, fp) != 1) {
-        *dev = keep;                     /* lecture partielle → restaure l'instance */
+        *dev = keep;                     /* partial read → restore the instance */
         return;
     }
-    /* Restaure TOUS les pointeurs (le blob contenait des valeurs périmées). */
+    /* Restore ALL pointers (the blob held stale values). */
     dev->backend      = keep.backend;
     dev->trace        = keep.trace;
     dev->irq_set      = keep.irq_set;

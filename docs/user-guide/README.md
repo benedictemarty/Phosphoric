@@ -1,40 +1,40 @@
-# Guide Utilisateur Phosphoric
+# Phosphoric User Guide
 
-**Version 1.110.0-alpha** | Emulateur ORIC-1 / Atmos
+**Version 1.110.0-alpha** | ORIC-1 / Atmos emulator
 
 ---
 
-## Table des matieres
+## Table of contents
 
 1. [Installation](#installation)
-2. [Demarrage rapide](#demarrage-rapide)
-3. [Chargement de programmes](#chargement-de-programmes)
-4. [Clavier](#clavier)
+2. [Quick start](#quick-start)
+3. [Loading programs](#loading-programs)
+4. [Keyboard](#keyboard)
 5. [Joystick](#joystick)
-6. [Video et affichage](#video-et-affichage)
+6. [Video and display](#video-and-display)
 7. [Audio](#audio)
-8. [Imprimante et traceur](#imprimante-et-traceur)
-9. [Sauvegarde d'etat](#sauvegarde-detat)
-10. [Debogueur interactif](#debogueur-interactif)
-11. [Trace CPU et profileur](#trace-cpu-et-profileur)
-12. [Debogage avance (GDB, IPC, API HTTP)](#debogage-avance-gdb-ipc-api-http)
-13. [Analyse de ROM](#analyse-de-rom)
-14. [Serie et modems](#serie-et-modems)
+8. [Printer and plotter](#printer-and-plotter)
+9. [Save states](#save-states)
+10. [Interactive debugger](#interactive-debugger)
+11. [CPU trace and profiler](#cpu-trace-and-profiler)
+12. [Advanced debugging (GDB, IPC, HTTP API)](#advanced-debugging-gdb-ipc-http-api)
+13. [ROM analysis](#rom-analysis)
+14. [Serial and modems](#serial-and-modems)
 15. [LOCI](#loci)
-16. [Enregistrement video et replay](#enregistrement-video-et-replay)
-17. [ULA-NG (extensions video)](#ula-ng-extensions-video)
+16. [Video recording and replay](#video-recording-and-replay)
+17. [ULA-NG (video extensions)](#ula-ng-video-extensions)
 18. [Chromecast](#chromecast)
-19. [Mode headless et automation](#mode-headless-et-automation)
-20. [WebAssembly (navigateur)](#webassembly-navigateur)
-21. [Outils de conversion](#outils-de-conversion)
-22. [Reference CLI complete](#reference-cli-complete)
-23. [Depannage](#depannage)
+19. [Headless mode and automation](#headless-mode-and-automation)
+20. [WebAssembly (browser)](#webassembly-browser)
+21. [Conversion tools](#conversion-tools)
+22. [Complete CLI reference](#complete-cli-reference)
+23. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Installation
 
-### Dependances
+### Dependencies
 
 ```bash
 # Debian / Ubuntu
@@ -46,132 +46,132 @@ sudo dnf install gcc SDL2-devel
 # Arch Linux
 sudo pacman -S base-devel sdl2
 
-# Optionnel : support Chromecast
+# Optional: Chromecast support
 sudo apt-get install libssl-dev
 ```
 
-### Compilation
+### Building
 
 ```bash
-make SDL2=1                    # Build standard avec SDL2
-make                           # Build headless (sans SDL2)
-make DEBUG=1 SDL2=1            # Build debug (-g -O0)
-make SDL2=1 CAST=1             # Avec support Chromecast
-make tools                     # Outils de conversion
-sudo make install              # Installation dans /usr/local
+make SDL2=1                    # Standard build with SDL2
+make                           # Headless build (without SDL2)
+make DEBUG=1 SDL2=1            # Debug build (-g -O0)
+make SDL2=1 CAST=1             # With Chromecast support
+make tools                     # Conversion tools
+sudo make install              # Install into /usr/local
 ```
 
 ### Verification
 
 ```bash
-make tests                     # 908 tests (100% doivent passer)
+make tests                     # 908 tests (100% must pass)
 ```
 
 ---
 
-## Demarrage rapide
+## Quick start
 
-Phosphoric necessite un fichier ROM ORIC pour demarrer. Les ROM ne sont pas distribuees avec l'emulateur pour des raisons de copyright.
+Phosphoric needs an ORIC ROM file to start. The ROMs are not distributed with the emulator for copyright reasons.
 
 ```bash
-# ORIC-1 avec BASIC 1.0
+# ORIC-1 with BASIC 1.0
 ./oric1-emu -r roms/basic10.rom
 
-# ORIC Atmos avec BASIC 1.1 (auto-detecte)
+# ORIC Atmos with BASIC 1.1 (auto-detected)
 ./oric1-emu -r roms/basic11b.rom
 
-# Forcer le modele
+# Force the model
 ./oric1-emu -r roms/basic10.rom --model oric1
 ./oric1-emu -r roms/basic11b.rom --model atmos
 ```
 
-### ROMs supportees
+### Supported ROMs
 
-| ROM | Taille | Modele | Detection |
+| ROM | Size | Model | Detection |
 |-----|--------|--------|-----------|
-| basic10.rom | 16384 octets | ORIC-1 (BASIC 1.0) | JMP $EA59 |
-| basic11b.rom | 16384 octets | Atmos (BASIC 1.1) | JMP $ECCC |
+| basic10.rom | 16384 bytes | ORIC-1 (BASIC 1.0) | JMP $EA59 |
+| basic11b.rom | 16384 bytes | Atmos (BASIC 1.1) | JMP $ECCC |
 | microdis.rom | variable | Microdisc (overlay) | N/A |
 
 ---
 
-## Chargement de programmes
+## Loading programs
 
-### Cassettes (.TAP)
+### Tapes (.TAP)
 
-**Chargement interactif (CLOAD) :**
+**Interactive loading (CLOAD):**
 ```bash
 ./oric1-emu -r basic10.rom -t jeu.tap
 ```
-Au prompt BASIC, tapez `CLOAD""` puis Entree. Le programme se charge depuis la cassette virtuelle.
+At the BASIC prompt, type `CLOAD""` then Enter. The program loads from the virtual tape.
 
-**Chargement rapide (injection directe) :**
+**Fast loading (direct injection):**
 ```bash
 ./oric1-emu -r basic10.rom -t jeu.tap -f
 ```
-Le programme est injecte directement en memoire via le patch ROM, sans delai.
-Les programmes multi-blocs (ex: TYRANN.TAP) sont supportes : le premier bloc est injecte,
-les blocs suivants sont charges par CLOAD via les patches ROM. Les next-line pointers BASIC
-stale sont automatiquement recorrigees apres chaque chargement.
+The program is injected directly into memory via the ROM patch, with no delay.
+Multi-block programs (e.g. TYRANN.TAP) are supported: the first block is injected,
+the following blocks are loaded by CLOAD via the ROM patches. Stale BASIC next-line
+pointers are automatically fixed up after each load.
 
-**Chargement au niveau signal (`--tape-signal`) :**
+**Signal-level loading (`--tape-signal`):**
 ```bash
 ./oric1-emu -r basic10.rom -t jeu.tap --tape-signal
 ```
-Genere la vraie forme d'onde de la bande sur l'entree VIA CB1, lue par la
-routine CLOAD **reelle** de la ROM — comme sur une vraie machine ou sous
-Euphoric. A utiliser pour les **chargeurs cassette non standard / proteges**
-(turbo-loaders, routines de deprotection, sequencement multi-blocs maison) que
-les patches ROM ne savent pas reproduire — par exemple *Soccer Manager*
-(KnightSoft, dechiffrement `EOR #$55`), qui echoue en mode patch comme sous
-Oricutron. Au prompt, `CLOAD""` est tape automatiquement. Incompatible avec `-f`.
+Generates the real tape waveform on the VIA CB1 input, read by the ROM's
+**real** CLOAD routine — as on a real machine or under
+Euphoric. Use it for **non-standard / protected tape loaders**
+(turbo-loaders, deprotection routines, home-made multi-block sequencing) that
+the ROM patches cannot reproduce — for example *Soccer Manager*
+(KnightSoft, `EOR #$55` decryption), which fails in patch mode just as under
+Oricutron. At the prompt, `CLOAD""` is typed automatically. Incompatible with `-f`.
 
-> Le chargement se fait a la **vitesse reelle d'une cassette** (~5 min pour
-> 45 Ko en fenetre) : c'est le prix de la fidelite. Pour les jeux standard,
-> `-f` reste bien plus rapide.
+> Loading happens at **real tape speed** (~5 min for
+> 45 KB in windowed mode): that is the price of fidelity. For standard games,
+> `-f` remains much faster.
 
-**Sauvegarde cassette (CSAVE) :**
-Quand un programme BASIC execute `CSAVE"nom"`, les donnees sont capturees dans un fichier
-`nom.tap` dans le repertoire courant. Si le nom est vide (`CSAVE""`), le fichier sera
+**Tape saving (CSAVE):**
+When a BASIC program runs `CSAVE"name"`, the data is captured into a file
+`name.tap` in the current directory. If the name is empty (`CSAVE""`), the file will be
 `csave_output.tap`.
 
-### Disquettes (.DSK)
+### Disks (.DSK)
 
-Le boot disquette necessite le BASIC ROM et le Microdisc ROM :
+Booting from disk requires the BASIC ROM and the Microdisc ROM:
 
 ```bash
-# Un seul lecteur (A:)
+# A single drive (A:)
 ./oric1-emu -r basic10.rom --disk-rom microdis.rom -d SEDORIC.DSK
 
-# Plusieurs lecteurs (A: B: C: D:)
+# Several drives (A: B: C: D:)
 ./oric1-emu -r basic10.rom --disk-rom microdis.rom \
   -d systeme.dsk --disk1 donnees.dsk --disk2 jeux.dsk --disk3 outils.dsk
 ```
 
-### Systeme de fichiers hote
+### Host file system
 
-Partager un repertoire entre le PC et l'emulateur :
+Share a directory between the PC and the emulator:
 ```bash
 ./oric1-emu -r basic10.rom --hostfs /chemin/vers/dossier
 ```
 
 ---
 
-## Clavier
+## Keyboard
 
-### Disposition clavier
+### Keyboard layout
 
-Par defaut, l'emulateur utilise une disposition QWERTY. Pour passer en AZERTY :
+By default, the emulator uses a QWERTY layout. To switch to AZERTY:
 
 ```bash
 ./oric1-emu -r basic10.rom --keyboard azerty
 ```
 
-En mode AZERTY, l'emulateur utilise les evenements texte SDL2, donc la saisie fonctionne naturellement quelle que soit la disposition physique du clavier.
+In AZERTY mode, the emulator uses SDL2 text events, so typing works naturally whatever the physical keyboard layout.
 
-### Touches speciales ORIC
+### ORIC special keys
 
-| Touche PC | Touche ORIC |
+| PC key | ORIC key |
 |-----------|-------------|
 | Escape | ESC |
 | Backspace | DEL |
@@ -179,813 +179,813 @@ En mode AZERTY, l'emulateur utilise les evenements texte SDL2, donc la saisie fo
 | Left/Right Shift | SHIFT |
 | Return/Enter | RETURN |
 
-### Touches de fonction de l'emulateur
+### Emulator function keys
 
-| Touche | Fonction |
+| Key | Function |
 |--------|----------|
-| F1 | Menu aide |
-| F2 | Sauvegarde rapide (quicksave) |
-| F3 | Changer l'echelle d'affichage (x1 -> x2 -> x3 -> x4) |
-| F4 | Chargement rapide (quickload) |
-| F5 | Reset a chaud |
-| F7 | Dump memoire (64 Ko RAM dans fichier .bin horodate) |
-| F9 | Entrer dans le debogueur |
-| F10 | Quitter |
-| F11 | Plein ecran |
-| F12 | Capture d'ecran |
+| F1 | Help menu |
+| F2 | Quicksave |
+| F3 | Change the display scale (x1 -> x2 -> x3 -> x4) |
+| F4 | Quickload |
+| F5 | Warm reset |
+| F7 | Memory dump (64 KB of RAM into a timestamped .bin file) |
+| F9 | Enter the debugger |
+| F10 | Quit |
+| F11 | Full screen |
+| F12 | Screenshot |
 
 ---
 
 ## Joystick
 
-Phosphoric emule l'interface joystick IJK, l'adaptateur le plus courant pour l'ORIC. Le joystick est lu via le Port A du PSG (actif bas).
+Phosphoric emulates the IJK joystick interface, the most common adapter for the ORIC. The joystick is read via the PSG's Port A (active low).
 
-### Mode clavier
+### Keyboard mode
 
 ```bash
 ./oric1-emu -r basic10.rom -j keys
 ```
 
-| Touche | Direction |
+| Key | Direction |
 |--------|-----------|
-| Fleches haut/bas/gauche/droite | Directions |
-| Ctrl droit | Feu 1 |
-| Alt droit | Feu 2 |
+| Up/down/left/right arrows | Directions |
+| Right Ctrl | Fire 1 |
+| Right Alt | Fire 2 |
 
-### Mode manette SDL2
+### SDL2 gamepad mode
 
 ```bash
 ./oric1-emu -r basic10.rom -j gamepad
 ```
 
-Utilise la premiere manette SDL2 detectee. Les boutons A, B et X correspondent au feu. Le D-pad et le stick analogique gauche controlent les directions. Le branchement a chaud est supporte.
+Uses the first SDL2 gamepad detected. Buttons A, B and X map to fire. The D-pad and the left analogue stick control the directions. Hot-plugging is supported.
 
 ---
 
-## Video et affichage
+## Video and display
 
-### Modes video
+### Video modes
 
-L'ORIC possede deux modes d'affichage :
-- **Mode texte** : 40 colonnes x 28 lignes, 8 couleurs (attributs ink/paper)
-- **Mode HIRES** : 240 x 200 pixels, 6 couleurs avec attributs serie
+The ORIC has two display modes:
+- **Text mode**: 40 columns x 28 lines, 8 colours (ink/paper attributes)
+- **HIRES mode**: 240 x 200 pixels, 6 colours with serial attributes
 
-### Echelle d'affichage
+### Display scale
 
 ```bash
 ./oric1-emu -r basic10.rom --scale 2
 ```
 
-| Echelle | Resolution fenetre |
+| Scale | Window resolution |
 |---------|--------------------|
 | x1 | 240 x 224 |
 | x2 | 480 x 448 |
-| x3 (defaut) | 720 x 672 |
+| x3 (default) | 720 x 672 |
 | x4 | 960 x 896 |
 
-Le rendu utilise le scaling nearest-neighbor (pixel-perfect, sans flou). Appuyer sur **F3** pour changer l'echelle en temps reel. **F11** bascule en plein ecran.
+Rendering uses nearest-neighbour scaling (pixel-perfect, no blur). Press **F3** to change the scale in real time. **F11** toggles full screen.
 
-### Captures d'ecran
+### Screenshots
 
 ```bash
-# Capture a la fermeture
+# Capture on exit
 ./oric1-emu -r basic10.rom --screenshot sortie.bmp
 
-# Capture apres N cycles
+# Capture after N cycles
 ./oric1-emu -r basic10.rom --screenshot-at 1000000:sortie.ppm
 
-# Dump periodique de frames
+# Periodic frame dump
 ./oric1-emu -r basic10.rom --frame-dump /tmp/frames --frame-dump-interval 50
 ```
 
-Formats supportes : PPM (P6 binaire) et BMP (24 bits non compresse).
+Supported formats: PPM (binary P6) and BMP (uncompressed 24-bit).
 
 ---
 
 ## Audio
 
-L'ORIC utilise un PSG AY-3-8910 (General Instrument) :
-- 3 canaux tonaux independants (periode 12 bits)
-- 1 generateur de bruit (periode 5 bits, LFSR 17 bits)
-- 16 formes d'enveloppe (attaque, decroissance, maintien, alternance)
-- Controle mixer (activation tone/bruit par canal)
+The ORIC uses an AY-3-8910 PSG (General Instrument):
+- 3 independent tone channels (12-bit period)
+- 1 noise generator (5-bit period, 17-bit LFSR)
+- 16 envelope shapes (attack, decay, hold, alternate)
+- Mixer control (tone/noise enable per channel)
 
-La sortie audio se fait via SDL2 a 44100 Hz stereo. Le PSG tourne a 1 MHz, comme le materiel original.
+Audio output goes through SDL2 at 44100 Hz stereo. The PSG runs at 1 MHz, like the original hardware.
 
-### Commandes BASIC
+### BASIC commands
 
 ```basic
-REM Jouer un son sur le canal A
+REM Play a sound on channel A
 SOUND 1,100,15
 
-REM Jouer avec enveloppe
+REM Play with an envelope
 PLAY 0,0,0,0
 
-REM Musique simple
+REM Simple music
 MUSIC 1,4,1,15 : MUSIC 2,4,5,15 : PLAY 1,0,1,0
 ```
 
 ---
 
-## Imprimante et traceur
+## Printer and plotter
 
-### Imprimante texte (Centronics)
+### Text printer (Centronics)
 
-Capture la sortie LPRINT et LLIST dans un fichier texte :
+Captures LPRINT and LLIST output into a text file:
 
 ```bash
 ./oric1-emu -r basic10.rom -p sortie.txt
 ```
 
 ```basic
-REM Dans BASIC :
+REM In BASIC:
 LPRINT "Bonjour le monde"
 LLIST
 ```
 
-### Traceur MCP-40
+### MCP-40 plotter
 
-Emule le traceur 4 couleurs MCP-40 (Sharp CE-150 / CGP-115) :
+Emulates the MCP-40 4-colour plotter (Sharp CE-150 / CGP-115):
 
 ```bash
 ./oric1-emu -r basic10.rom -p traceur.bmp --printer-type mcp40
 ```
 
-Le traceur utilise un framebuffer 480x400 pixels et exporte en BMP a la fermeture.
+The plotter uses a 480x400-pixel framebuffer and exports to BMP on exit.
 
-**Commandes du traceur** (envoyees via LPRINT) :
+**Plotter commands** (sent via LPRINT):
 
-| Commande | Description |
+| Command | Description |
 |----------|-------------|
-| H | Home (retour a l'origine) |
-| D x,y | Draw (tracer une ligne jusqu'a x,y) |
-| M x,y | Move (deplacer sans tracer) |
-| J n | Color (changer de stylo : 0=noir, 1=bleu, 2=vert, 3=rouge) |
-| P texte | Print (ecrire du texte a la position courante) |
-| I | Init (reinitialiser le traceur) |
-| L n | LineType (type de trait : 0=continu, 1-4=pointille) |
-| Q n | CharSize (taille des caracteres) |
+| H | Home (return to the origin) |
+| D x,y | Draw (draw a line to x,y) |
+| M x,y | Move (move without drawing) |
+| J n | Color (change pen: 0=black, 1=blue, 2=green, 3=red) |
+| P text | Print (write text at the current position) |
+| I | Init (reset the plotter) |
+| L n | LineType (line style: 0=solid, 1-4=dotted) |
+| Q n | CharSize (character size) |
 
 ```basic
-REM Exemple : tracer un carre rouge
-LPRINT "J3"          : REM Stylo rouge
-LPRINT "M0,0"        : REM Aller a l'origine
-LPRINT "D100,0"      : REM Tracer vers la droite
-LPRINT "D100,100"    : REM Tracer vers le haut
-LPRINT "D0,100"      : REM Tracer vers la gauche
-LPRINT "D0,0"        : REM Fermer le carre
+REM Example: draw a red square
+LPRINT "J3"          : REM Red pen
+LPRINT "M0,0"        : REM Go to the origin
+LPRINT "D100,0"      : REM Draw to the right
+LPRINT "D100,100"    : REM Draw upwards
+LPRINT "D0,100"      : REM Draw to the left
+LPRINT "D0,0"        : REM Close the square
 ```
 
 ---
 
-## Sauvegarde d'etat
+## Save states
 
-### Sauvegarde et restauration rapide
+### Quick save and restore
 
-- **F2** : sauvegarde rapide (`oric1_quicksave.ost`)
-- **F4** : chargement rapide (`oric1_quicksave.ost`)
+- **F2**: quicksave (`oric1_quicksave.ost`)
+- **F4**: quickload (`oric1_quicksave.ost`)
 
-### Via la ligne de commande
+### From the command line
 
 ```bash
-# Sauvegarder a la fermeture
+# Save on exit
 ./oric1-emu -r basic10.rom --save-state partie.ost
 
-# Charger au demarrage
+# Load at startup
 ./oric1-emu -r basic10.rom --load-state partie.ost
 ```
 
-### Format .ost
+### .ost format
 
-Le format binaire `.ost` (Oric Save sTate) contient :
-- Header : magic "OST1", version, taille, CRC32
-- 10 sections : CPU, MEM (64 KB), VIA, PSG, VID, KBD, FDC, MDC, TAP, META
-- Taille typique : ~65 KB
-- Le framebuffer est regenere automatiquement au chargement
+The binary `.ost` format (Oric Save sTate) contains:
+- Header: magic "OST1", version, size, CRC32
+- 10 sections: CPU, MEM (64 KB), VIA, PSG, VID, KBD, FDC, MDC, TAP, META
+- Typical size: ~65 KB
+- The framebuffer is regenerated automatically on load
 
 ---
 
-## Debogueur interactif
+## Interactive debugger
 
-### Demarrage
+### Starting
 
 ```bash
-# Entrer dans le debogueur au lancement
+# Enter the debugger at launch
 ./oric1-emu -r basic10.rom --debug
 
-# Definir un breakpoint initial
+# Set an initial breakpoint
 ./oric1-emu -r basic10.rom --break ED8A
 ```
 
-Pendant l'emulation, appuyer sur **F9** pour entrer dans le debogueur.
+During emulation, press **F9** to enter the debugger.
 
-### Commandes
+### Commands
 
-| Commande | Alias | Description |
+| Command | Alias | Description |
 |----------|-------|-------------|
-| `s` | `step` | Executer une instruction |
-| `n` | `next` | Executer jusqu'au PC suivant (saute les JSR) |
-| `c` | `continue` | Reprendre l'emulation |
-| `r` | `regs` | Afficher les registres CPU |
-| `d [addr] [n]` | | Desassembler n instructions a addr |
-| `m addr [n]` | | Dump memoire de n octets a addr |
-| `b addr` | | Ajouter un breakpoint (max 16) |
-| `bd n` | | Supprimer le breakpoint #n |
-| `w addr` | | Ajouter un watchpoint memoire (max 8) |
-| `wd n` | | Supprimer le watchpoint #n |
-| `via` | | Afficher les registres VIA 6522 |
-| `psg` | | Afficher les registres PSG AY-3-8910 |
-| `stack` | | Afficher le contenu de la pile |
-| `set reg val` | | Modifier un registre (a, x, y, sp, pc, p) |
-| `q` | `quit` | Quitter l'emulateur |
-| `h` | `help` | Afficher l'aide |
+| `s` | `step` | Execute one instruction |
+| `n` | `next` | Execute up to the next PC (steps over JSRs) |
+| `c` | `continue` | Resume emulation |
+| `r` | `regs` | Show the CPU registers |
+| `d [addr] [n]` | | Disassemble n instructions at addr |
+| `m addr [n]` | | Dump n bytes of memory at addr |
+| `b addr` | | Add a breakpoint (max 16) |
+| `bd n` | | Delete breakpoint #n |
+| `w addr` | | Add a memory watchpoint (max 8) |
+| `wd n` | | Delete watchpoint #n |
+| `via` | | Show the VIA 6522 registers |
+| `psg` | | Show the AY-3-8910 PSG registers |
+| `stack` | | Show the stack contents |
+| `set reg val` | | Modify a register (a, x, y, sp, pc, p) |
+| `q` | `quit` | Quit the emulator |
+| `h` | `help` | Show help |
 
-### Exemples
+### Examples
 
 ```
-dbg> b C000          # Breakpoint a $C000
-dbg> c               # Continuer jusqu'au breakpoint
-dbg> r               # Voir les registres
-dbg> d C000 10       # Desassembler 10 instructions a $C000
-dbg> m 0400 64       # Dump 64 octets a $0400
-dbg> w 0300          # Watchpoint sur le VIA (port A)
+dbg> b C000          # Breakpoint at $C000
+dbg> c               # Continue to the breakpoint
+dbg> r               # Show the registers
+dbg> d C000 10       # Disassemble 10 instructions at $C000
+dbg> m 0400 64       # Dump 64 bytes at $0400
+dbg> w 0300          # Watchpoint on the VIA (port A)
 dbg> set a 42        # A = $42
 dbg> s               # Step
 ```
 
 ---
 
-## Trace CPU et profileur
+## CPU trace and profiler
 
-### Trace CPU
+### CPU trace
 
-Enregistre chaque instruction executee avec le desassemblage et l'etat des registres :
+Records every executed instruction with its disassembly and the register state:
 
 ```bash
 ./oric1-emu -r basic10.rom --trace trace.log
 
-# Limiter a N instructions
+# Limit to N instructions
 ./oric1-emu -r basic10.rom --trace trace.log --trace-max 10000
 ```
 
-**Format de sortie** (une ligne par instruction) :
+**Output format** (one line per instruction):
 ```
 CCCCCCCC  AAAA  XX XX XX  MNEMONIC OPERAND       A=XX X=XX Y=XX SP=XX P=XX
 00000000  F42D  4C 59 EA  JMP $EA59              A=00 X=00 Y=00 SP=FD P=24
 00000003  EA59  A2 FF     LDX #$FF               A=00 X=00 Y=00 SP=FD P=24
 ```
 
-### Profileur CPU
+### CPU profiler
 
-Genere un rapport de performance a la fermeture :
+Generates a performance report on exit:
 
 ```bash
 ./oric1-emu -r basic10.rom --profile profil.txt --cycles 1000000
 ```
 
-Le rapport contient :
-- Total instructions et cycles, moyenne cycles/instruction
-- Top 20 adresses les plus executees (avec % du total)
-- Top 20 adresses par consommation de cycles
-- Histogramme de frequence des opcodes
+The report contains:
+- Total instructions and cycles, average cycles/instruction
+- Top 20 most executed addresses (with % of the total)
+- Top 20 addresses by cycle consumption
+- Opcode frequency histogram
 
 ---
 
-## Debogage avance (GDB, IPC, API HTTP)
+## Advanced debugging (GDB, IPC, HTTP API)
 
-Au-dela du debogueur interactif (F9 / `--debug`), Phosphoric expose plusieurs
-canaux de pilotage et d'inspection externes.
+Beyond the interactive debugger (F9 / `--debug`), Phosphoric exposes several
+external control and inspection channels.
 
 ### GDB remote (`--gdb`)
 
-Serveur **GDB Remote Serial Protocol** : on attache `gdb`, `lldb` ou un IDE
-(VS Code, CLion) au 6502 emule pour poser des breakpoints, single-stepper et
-lire/ecrire registres et memoire.
+A **GDB Remote Serial Protocol** server: attach `gdb`, `lldb` or an IDE
+(VS Code, CLion) to the emulated 6502 to set breakpoints, single-step and
+read/write registers and memory.
 
 ```bash
-./oric1-emu -r basic11b.rom --gdb=1234      # attend `target remote :1234`
+./oric1-emu -r basic11b.rom --gdb=1234      # waits for `target remote :1234`
 ```
 
-Details, exemples de session et mapping registres : [docs/gdb_remote.md](../gdb_remote.md).
+Details, session examples and register mapping: [docs/gdb_remote.md](../gdb_remote.md).
 
-### Controle IPC (`--control`)
+### IPC control (`--control`)
 
-Protocole texte ligne a ligne sur stdin/stdout (logs sur stderr) pour piloter
-l'emulateur depuis un IDE ou un script : injection clavier, lecture memoire,
-save/load state, hot-swap media, evenements. C'est le socle d'OricForge.
+A line-based text protocol over stdin/stdout (logs on stderr) to drive
+the emulator from an IDE or a script: keyboard injection, memory reads,
+save/load state, media hot-swap, events. It is the foundation of OricForge.
 
 ```bash
 ./oric1-emu -r basic11b.rom -n --control
 ```
 
-Grammaire complete des messages : [docs/control_protocol.md](../control_protocol.md).
+Complete message grammar: [docs/control_protocol.md](../control_protocol.md).
 
-### API HTTP/REST (`--http-api`, build `HTTPAPI=1`)
+### HTTP/REST API (`--http-api`, build `HTTPAPI=1`)
 
-Meme dispatch que `--control`, expose en HTTP/JSON : pilotage clavier, etat,
-fichiers cassette/disque en sandbox.
+The same dispatch as `--control`, exposed over HTTP/JSON: keyboard control, state,
+tape/disk files in a sandbox.
 
 ```bash
 make HTTPAPI=1
 ./oric1-emu -r basic11b.rom -n --http-api=8888 --http-api-root ./sandbox
 ```
 
-`--http-api-bind` (defaut 127.0.0.1), `--http-api-root` (sandbox `/tape`,`/disk`).
-Reference : [docs/http-api.md](../http-api.md).
+`--http-api-bind` (default 127.0.0.1), `--http-api-root` (sandbox `/tape`,`/disk`).
+Reference: [docs/http-api.md](../http-api.md).
 
-### Debogueur TUI et symboles
+### TUI debugger and symbols
 
-- `--tui` — debogueur plein ecran ncurses (build `TUI=1`).
-- `--symbols FILE` — charge une table de symboles (`.sym`/`.lab`/`.sym65`) pour
-  annoter trace et desassemblage.
+- `--tui` — full-screen ncurses debugger (build `TUI=1`).
+- `--symbols FILE` — loads a symbol table (`.sym`/`.lab`/`.sym65`) to
+  annotate traces and disassembly.
 
 ---
 
-## Analyse de ROM
+## ROM analysis
 
-Analyser une ROM pour extraire des informations structurelles :
+Analyse a ROM to extract structural information:
 
 ```bash
-# Afficher sur stdout
+# Print to stdout
 ./oric1-emu -r basic10.rom --rom-info
 
-# Ecrire dans un fichier
+# Write to a file
 ./oric1-emu -r basic10.rom --rom-info rapport.txt
 ```
 
-Le rapport contient :
-- **Vecteurs materiels** : RESET, NMI, IRQ (adresses de la table des vecteurs)
-- **Carte des sous-routines** : toutes les cibles JSR/JMP avec le nombre de references
-- **Chaines ASCII** : textes detectes dans la ROM (minimum 4 caracteres)
-- **Statistiques d'utilisation** : octets de code vs donnees vs remplissage ($00/$FF)
+The report contains:
+- **Hardware vectors**: RESET, NMI, IRQ (addresses from the vector table)
+- **Subroutine map**: all JSR/JMP targets with their reference counts
+- **ASCII strings**: text detected in the ROM (minimum 4 characters)
+- **Usage statistics**: code bytes vs data vs padding ($00/$FF)
 
 ---
 
-## Serie et modems
+## Serial and modems
 
-Phosphoric emule une **ACIA 6551** (base `$031C` par defaut, `--acia-addr`)
-et plusieurs cartes serie/MIDI historiques. Le backend se choisit avec
-`--serial TYPE` :
+Phosphoric emulates a **6551 ACIA** (base `$031C` by default, `--acia-addr`)
+and several historical serial/MIDI cards. The backend is chosen with
+`--serial TYPE`:
 
 | Backend | Description |
 |---|---|
-| `loopback` | Boucle locale (TX -> RX), pour tester un protocole |
-| `tcp:H:P` | Socket TCP (serveur BBS, terminal distant) |
-| `pty` | Pseudo-terminal hote (`/dev/pts/N`) |
-| `modem:H:P` | Modem Hayes (commandes AT) vers TCP |
-| `com:B,D,P,S,DEV` | Vrai port serie hote (baud,bits,parite,stop,device) |
-| `file:IN[:OUT]` | Rejoue/capture des octets bruts dans des fichiers |
-| `picowifi[:SSID[:PASS]]` | Modem WiFi PicoWiFiModemUSB (ACIA LOCI $0380) |
+| `loopback` | Local loop (TX -> RX), for testing a protocol |
+| `tcp:H:P` | TCP socket (BBS server, remote terminal) |
+| `pty` | Host pseudo-terminal (`/dev/pts/N`) |
+| `modem:H:P` | Hayes modem (AT commands) to TCP |
+| `com:B,D,P,S,DEV` | Real host serial port (baud,bits,parity,stop,device) |
+| `file:IN[:OUT]` | Replays/captures raw bytes in files |
+| `picowifi[:SSID[:PASS]]` | PicoWiFiModemUSB WiFi modem (LOCI ACIA $0380) |
 
-Options associees : `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
-(timing horloge externe realiste), `--serial-buffer N` (FIFO RX anti-overrun),
-`--serial-irq-on-rdrf` (mode WDC 65C51), `--serial-tcp-backpressure`
-(contre-pression TCP bornee), `--serial-trace FILE` (trace TX/RX horodatee).
+Related options: `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
+(realistic external clock timing), `--serial-buffer N` (anti-overrun RX FIFO),
+`--serial-irq-on-rdrf` (WDC 65C51 mode), `--serial-tcp-backpressure`
+(bounded TCP back-pressure), `--serial-trace FILE` (timestamped TX/RX trace).
 
 ```bash
-# BBS via TCP, cadence temps reel (indispensable pour le timing reseau)
+# BBS over TCP, real-time pacing (essential for network timing)
 ./oric1-emu -r basic11b.rom --serial tcp:bbs.example.org:6502 --realtime
 
-# Modem WiFi LOCI
-./oric1-emu -r basic11b.rom --loci --serial picowifi:MonWiFi:motdepasse
+# LOCI WiFi modem
+./oric1-emu -r basic11b.rom --loci --serial picowifi:MyWiFi:password
 ```
 
-### Cartes dediees
+### Dedicated cards
 
-- **Digitelec DTL 2000** — `--dtl2000 TRANSPORT` : carte V23 fidele (PIA 6821 +
-  ACIA 6850) a `$03F8` (`--dtl2000-addr`). Voir
+- **Digitelec DTL 2000** — `--dtl2000 TRANSPORT`: faithful V23 card (PIA 6821 +
+  ACIA 6850) at `$03F8` (`--dtl2000-addr`). See
   [docs/digitelec-dtl2000/](../digitelec-dtl2000/README.md).
-- **Mageco MIDI** — `--mageco TRANSPORT` : interface MIDI (ACIA 6850) a `$03FE`,
-  31250 baud (`--mageco-addr`) ; transports `midi:` (ALSA, build `MIDI=1`),
+- **Mageco MIDI** — `--mageco TRANSPORT`: MIDI interface (ACIA 6850) at `$03FE`,
+  31250 baud (`--mageco-addr`); transports `midi:` (ALSA, build `MIDI=1`),
   `smf:song.mid`, `file::out.mid`, etc.
-- **ORICON** — `--oricon TRANSPORT` : variante MIDI (MC6850 a `$031C-$031F`,
-  compatible LOCI).
+- **ORICON** — `--oricon TRANSPORT`: MIDI variant (MC6850 at `$031C-$031F`,
+  LOCI compatible).
 
-Guide serie cote programme ORIC : [docs/orictel-serial-guide.md](../orictel-serial-guide.md),
-modem Hayes : [docs/orictel-modem-hayes.md](../orictel-modem-hayes.md).
+Serial guide from the ORIC program side: [docs/orictel-serial-guide.md](../orictel-serial-guide.md),
+Hayes modem: [docs/orictel-modem-hayes.md](../orictel-modem-hayes.md).
 
 ---
 
 ## LOCI
 
-**LOCI** (Lovely Oric Computer Interface, sodiumlb 2024) est une cartouche
-RP2040 branchee sur le bus de l'Oric : stockage de masse (USB / SD / flash
-interne), clavier-souris-manettes USB HID et modem WiFi. Phosphoric emule sa
-MIA (interface memoire) a `$03A0-$03BF` avec `--loci`.
+**LOCI** (Lovely Oric Computer Interface, sodiumlb 2024) is an RP2040
+cartridge plugged into the Oric's bus: mass storage (USB / SD / internal
+flash), USB HID keyboard-mouse-gamepads and a WiFi modem. Phosphoric emulates its
+MIA (memory interface) at `$03A0-$03BF` with `--loci`.
 
 | Option | Role |
 |---|---|
-| `--loci` | Active la MIA LOCI a `$03A0-$03BF` |
-| `--loci-flash DIR` | Racine sandbox pour les operations fichier LOCI |
-| `--loci-sdimg PATH` | Image SD FAT16/32 brute (lecture seule) |
-| `--loci-usb DIR\|none` | Attache DIR comme cle USB (repetable, 4 max) |
-| `--loci-web URL` | Lecteur A servi par un serveur web + autoboot Sedoric natif |
-| `--loci-web-base URL` | Pseudo-device « W: Web disks » dans le menu LOCI |
-| `--loci-mia-window LO-HI` | Modelise la plage MIA `tior` fiable (0-31) |
-| `--loci-irq-latency US` | Cout de transport I2C des IRQ LOCI |
+| `--loci` | Enables the LOCI MIA at `$03A0-$03BF` |
+| `--loci-flash DIR` | Sandbox root for LOCI file operations |
+| `--loci-sdimg PATH` | Raw FAT16/32 SD image (read-only) |
+| `--loci-usb DIR\|none` | Attaches DIR as a USB stick (repeatable, 4 max) |
+| `--loci-web URL` | Drive A served by a web server + native Sedoric autoboot |
+| `--loci-web-base URL` | "W: Web disks" pseudo-device in the LOCI menu |
+| `--loci-mia-window LO-HI` | Models the reliable MIA `tior` range (0-31) |
+| `--loci-irq-latency US` | I2C transport cost of LOCI IRQs |
 
-Le **bouton Action** (F8) declenche un snapshot de session puis le menu LOCI
-(appui court) ou le diagnostic ROM (appui long). Boote un master Sedoric V4
-complet via le firmware LOCI.
+The **Action button** (F8) triggers a session snapshot and then the LOCI menu
+(short press) or the ROM diagnostics (long press). It boots a complete Sedoric V4
+master via the LOCI firmware.
 
-Si F8 ne parvient plus a Phosphoric (sur beaucoup de portables F8 est aussi
-une touche multimedia — volume — que le bureau capture avant l'application des
-que le verrouillage Fn bascule), **Ctrl+Alt+M** = appui court (menu) et
-**Ctrl+Alt+D** = appui long (ROM de diagnostic) font la meme chose et ne sont
-jamais transmis a l'Oric.
+If F8 no longer reaches Phosphoric (on many laptops F8 is also
+a multimedia key — volume — that the desktop captures before the application as soon
+as the Fn lock toggles), **Ctrl+Alt+M** = short press (menu) and
+**Ctrl+Alt+D** = long press (diagnostic ROM) do the same thing and are
+never passed on to the Oric.
 
 ```bash
 ./oric1-emu -r basic11b.rom --loci --loci-flash ./loci_files
 ```
 
-Documentation complete (menu, ABI firmware, timings, cles USB) :
+Complete documentation (menu, firmware ABI, timings, USB sticks):
 [docs/loci.md](../loci.md).
 
 ---
 
-## Enregistrement video et replay
+## Video recording and replay
 
-- **Video AVI** — `--video FILE` enregistre un AVI Motion-JPEG (`--video-fps`,
-  defaut 50 ; `--video-quality` 1..100, defaut 85). Le son PSG est muxe (headless
-  comme GUI). `--export-border` inclut la bordure d'overscan.
-- **Audio WAV** — `--audio-wav FILE` capture le PSG en WAV 16 bits stereo
-  44,1 kHz (mode headless).
-- **Dump de frames** — `--frame-dump DIR` + `--frame-dump-interval N`.
-- **Record / replay deterministe** — `--record FILE` enregistre les entrees
-  clavier d'une session, `--replay FILE` les rejoue a l'identique (style « TAS » :
-  seule la matrice clavier est non deterministe, elle est capturee par frame).
+- **AVI video** — `--video FILE` records a Motion-JPEG AVI (`--video-fps`,
+  default 50; `--video-quality` 1..100, default 85). The PSG sound is muxed (headless
+  as well as GUI). `--export-border` includes the overscan border.
+- **WAV audio** — `--audio-wav FILE` captures the PSG as 16-bit stereo
+  44.1 kHz WAV (headless mode).
+- **Frame dump** — `--frame-dump DIR` + `--frame-dump-interval N`.
+- **Deterministic record / replay** — `--record FILE` records the keyboard
+  input of a session, `--replay FILE` replays it identically ("TAS" style:
+  only the keyboard matrix is non-deterministic, and it is captured per frame).
 
 ```bash
-# Enregistrer une demo puis la rejouer en video
+# Record a demo then replay it as video
 ./oric1-emu -r basic11b.rom --record demo.phm
 ./oric1-emu -r basic11b.rom --replay demo.phm --video demo.avi
 ```
 
-Details : [docs/movie_replay.md](../movie_replay.md).
+Details: [docs/movie_replay.md](../movie_replay.md).
 
 ---
 
-## ULA-NG (extensions video)
+## ULA-NG (video extensions)
 
-**ULA-NG** est une ULA « next-generation » : extensions video (palette indirecte,
-IRQ raster, scroll fin, sprites materiels, chunky 4bpp, texte 80 colonnes)
-activees par un mecanisme de deverrouillage — **indiscernable d'une ULA HCS 10017
-standard tant qu'elle reste verrouillee**. Registres a `$0340-$035F`.
+**ULA-NG** is a "next-generation" ULA: video extensions (indirect palette,
+raster IRQ, fine scroll, hardware sprites, chunky 4bpp, 80-column text)
+enabled by an unlocking mechanism — **indistinguishable from a standard HCS 10017 ULA
+as long as it stays locked**. Registers at `$0340-$035F`.
 
-`--ula-ng-poke SEQ` programme ces registres au demarrage (`SEQ` = paires
-`AAA=VV` hex separees par des virgules) :
+`--ula-ng-poke SEQ` programs these registers at startup (`SEQ` = hex
+`AAA=VV` pairs separated by commas):
 
 ```bash
 ./oric1-emu -r basic11b.rom --ula-ng-poke 340=4E,340=47,341=01,348=07,349=00,34A=F0
 ```
 
-Specification et guide : [docs/ula-ng/](../ula-ng/README-ULA-NG.md).
+Specification and guide: [docs/ula-ng/](../ula-ng/README-ULA-NG.md).
 
 ---
 
 ## Chromecast
 
-### Serveur MJPEG
+### MJPEG server
 
-Diffuse l'ecran de l'emulateur en streaming MJPEG :
+Streams the emulator screen as MJPEG:
 
 ```bash
 ./oric1-emu -r basic10.rom --cast-server
-# Serveur demarre sur http://localhost:8080/stream
+# Server started on http://localhost:8080/stream
 
 ./oric1-emu -r basic10.rom --cast-server=9090
-# Port personnalise
+# Custom port
 ```
 
-Points d'acces :
-- `/stream` : flux MJPEG video (720x672, 3x upscale)
-- `/audio` : flux WAV audio (PSG en temps reel)
+Endpoints:
+- `/stream`: MJPEG video stream (720x672, 3x upscale)
+- `/audio`: WAV audio stream (real-time PSG)
 
-### Cast natif Chromecast (CASTV2)
+### Native Chromecast casting (CASTV2)
 
 ```bash
-# Decouvrir les appareils Chromecast sur le reseau
+# Discover Chromecast devices on the network
 ./oric1-emu -r basic10.rom --cast-discover
 
-# Caster vers un Chromecast
+# Cast to a Chromecast
 ./oric1-emu -r basic10.rom --cast-server --cast-to
 ./oric1-emu -r basic10.rom --cast-server --cast-to="Salon"
 ```
 
-Le protocole CASTV2 natif inclut : TLS, protobuf, heartbeat PING/PONG, lancement DashCast.
+The native CASTV2 protocol includes: TLS, protobuf, PING/PONG heartbeat, DashCast launch.
 
 ---
 
-## Mode headless et automation
+## Headless mode and automation
 
-### Mode headless
+### Headless mode
 
-Executer sans affichage (pour CI, tests, scripting) :
+Run without a display (for CI, tests, scripting):
 
 ```bash
 ./oric1-emu -r basic10.rom --headless --cycles 1000000
 ```
 
-### Saisie clavier automatique
+### Automatic keyboard input
 
-Simuler des frappes clavier apres un delai en cycles :
+Simulate keystrokes after a delay in cycles:
 
 ```bash
-# Taper CLOAD"" + Entree apres 3M cycles
+# Type CLOAD"" + Enter after 3M cycles
 ./oric1-emu -r basic10.rom -t jeu.tap --headless \
   --type-keys '3000000:CLOAD""\n'
 
-# Sequences speciales :
-#   \n  = touche RETURN
-#   \pN = pause de N secondes (1-9)
+# Special sequences:
+#   \n  = RETURN key
+#   \pN = pause of N seconds (1-9)
 ```
 
-### Sortie verbose
+### Verbose output
 
 ```bash
-./oric1-emu -r basic10.rom -v    # Logs DEBUG
+./oric1-emu -r basic10.rom -v    # DEBUG logs
 ```
 
 ---
 
-## WebAssembly (navigateur)
+## WebAssembly (browser)
 
-Phosphoric compile en **WebAssembly** via Emscripten : l'emulateur complet tourne
-dans un onglet, rendu sur un `<canvas>`, audio via Web Audio, clavier via le DOM.
+Phosphoric compiles to **WebAssembly** via Emscripten: the complete emulator runs
+in a browser tab, rendered on a `<canvas>`, with audio via Web Audio and keyboard via the DOM.
 
 ```bash
-make wasm     # necessite l'emsdk Emscripten (voir docs/wasm.md)
+make wasm     # requires the Emscripten emsdk (see docs/wasm.md)
 ```
 
-La page (`web/shell.html` + `web/shell.js`) offre un rail d'icones facon JOric
-(selecteur ROM, glisser-deposer `.tap`/`.dsk`, Reset, plein ecran, filtre CRT,
-save/restore `.ost`), des LEDs d'activite TAPE/DISK et un clavier ORIC fidele en
-overlay. **Liens profonds** : `?rom=oric1|atmos` et `?media=<fichier>.tap|.dsk`
-demarrent directement sur un programme (un `.dsk` active automatiquement le
-Microdisc). Sortie **byte-identique** au build natif.
+The page (`web/shell.html` + `web/shell.js`) offers a JOric-style icon rail
+(ROM selector, drag-and-drop of `.tap`/`.dsk`, Reset, full screen, CRT filter,
+`.ost` save/restore), TAPE/DISK activity LEDs and a faithful ORIC keyboard
+overlay. **Deep links**: `?rom=oric1|atmos` and `?media=<fichier>.tap|.dsk`
+start directly on a program (a `.dsk` automatically enables the
+Microdisc). Output is **byte-identical** to the native build.
 
-Guide de deploiement (dont la CSP requise) : [docs/wasm.md](../wasm.md).
+Deployment guide (including the required CSP): [docs/wasm.md](../wasm.md).
 
 ---
 
-## Outils de conversion
+## Conversion tools
 
-### bas2tap — BASIC vers cassette
+### bas2tap — BASIC to tape
 
-Convertir un fichier texte BASIC en format .TAP :
+Convert a BASIC text file into .TAP format:
 
 ```bash
 ./bas2tap programme.bas -o programme.tap
 ```
 
-Le fichier BASIC doit contenir des lignes numerotees :
+The BASIC file must contain numbered lines:
 ```basic
 10 PRINT "BONJOUR LE MONDE"
 20 GOTO 10
 ```
 
-### bin2tap — Binaire vers cassette
+### bin2tap — Binary to tape
 
-Convertir un binaire machine en .TAP avec adresse de chargement/execution :
+Convert a machine-code binary into a .TAP with a load/execution address:
 
 ```bash
 ./bin2tap programme.bin --start 0x0400 --exec 0x0400 -o programme.tap
 ```
 
-### tap2sedoric — Cassette vers disquette Sedoric
+### tap2sedoric — Tape to Sedoric disk
 
-Injecter un fichier .TAP dans une copie d'une disquette Sedoric (MFM_DISK) : il
-apparait au catalogue (`DIR`) et peut etre charge/execute.
+Inject a .TAP file into a copy of a Sedoric disk (MFM_DISK): it
+shows up in the catalogue (`DIR`) and can be loaded/executed.
 
 ```bash
-# base.dsk = une disquette Sedoric MFM existante (ex. disks/SEDO40u.DSK)
+# base.dsk = an existing Sedoric MFM disk (e.g. disks/SEDO40u.DSK)
 ./tap2sedoric programme.tap -o disque.dsk -b base.dsk -n PROG.COM
 
-# fichier machine auto-executable (AUTO) : charge ET s'execute via LOAD"PROG"
+# auto-executing machine-code file (AUTO): loads AND runs via LOAD"PROG"
 ./tap2sedoric programme.tap -o disque.dsk -b base.dsk -n PROG.COM -a -e 0x5000
 
-# poser un autoexec de boot (INIST) qui lance le fichier au demarrage
+# set a boot autoexec (INIST) that launches the file at startup
 ./tap2sedoric programme.tap -o disque.dsk -b base.dsk -n PROG.COM -a -i 'LOAD"PROG"'
 ```
 
-Options : `-n NOM.EXT` (nom Sedoric), `-a` (AUTO), `-e EXEC_HEX` (adresse
-d'execution), `-i "INIST"` (autoexec de boot). Le catalogue est etendu
-automatiquement (chainage) au-dela de ~15 fichiers. Format et recette detailles
-dans [`docs/SEDORIC.md`](../SEDORIC.md).
+Options: `-n NOM.EXT` (Sedoric name), `-a` (AUTO), `-e EXEC_HEX` (execution
+address), `-i "INIST"` (boot autoexec). The catalogue is extended
+automatically (chaining) beyond ~15 files. Format and recipe detailed
+in [`docs/SEDORIC.md`](../SEDORIC.md).
 
-### sedoric-info — Inspecter une disquette Sedoric
+### sedoric-info — Inspecting a Sedoric disk
 
-Affiche la VTOC (secteurs libres / nombre de fichiers), le nom du disque,
-l'INIST, le catalogue et les descripteurs decodes (type / load / end / exec) :
+Shows the VTOC (free sectors / number of files), the disk name,
+the INIST, the catalogue and the decoded descriptors (type / load / end / exec):
 
 ```bash
 ./sedoric-info disque.dsk
-./sedoric-info disque.dsk --check 1445:95   # garde de regression sur la VTOC
+./sedoric-info disque.dsk --check 1445:95   # regression guard on the VTOC
 ```
 
-### Chaine RAW et master « nu » (scripts Python)
+### RAW chain and "bare" master (Python scripts)
 
-Alternative operant en RAW (offsets directs), puis conversion en MFM :
+An alternative working in RAW (direct offsets), followed by conversion to MFM:
 
 ```bash
-# injecter un binaire (exec fourni => fichier AUTO) puis convertir RAW -> MFM
+# inject a binary (exec given => AUTO file) then convert RAW -> MFM
 python3 tools/sedoric_inject.py base.raw prog.bin 0x5000 PROG.COM out.raw 42 17 "" 0x5000
 python3 tools/dsk_raw2mfm.py out.raw out.dsk sidemajor 2 42 17
 
-# master Sedoric « nu » : neutralise l'INIST -> boot direct au prompt Ready
+# "bare" Sedoric master: neutralises the INIST -> boots straight to the Ready prompt
 python3 tools/sedoric_mkbare.py disks/SEDO40u.DSK bare.dsk
-# ... ou remplace l'INIST pour autolancer un programme au boot
+# ... or replaces the INIST to autorun a program at boot
 python3 tools/sedoric_mkbare.py disks/SEDO40u.DSK auto.dsk 'LOAD"PROG"'
 ```
 
-### Lancer un programme machine sous Sedoric
+### Running a machine-code program under Sedoric
 
-Une fois le disque monte et Sedoric demarre (`Ready`), un fichier **`.COM`
-AUTO** se lance avec la commande **`LOAD`** de Sedoric :
+Once the disk is mounted and Sedoric has started (`Ready`), an **AUTO `.COM`**
+file is launched with Sedoric's **`LOAD`** command:
 
 ```
 LOAD"PROG"
 ```
 
-Attention : la commande est bien `LOAD` (et non `LOADM`, qui est la commande
-cassette de la ROM et renvoie `?TYPE MISMATCH ERROR`). Taper le nom nu ne lance
-qu'un programme BASIC (`?SYNTAX ERROR` pour un binaire). L'extension par defaut
-est `.COM` (un `.BIN` donnerait `?FILE NOT FOUND ERROR`).
+Beware: the command really is `LOAD` (not `LOADM`, which is the ROM's tape
+command and returns `?TYPE MISMATCH ERROR`). Typing the bare name only launches
+a BASIC program (`?SYNTAX ERROR` for a binary). The default extension
+is `.COM` (a `.BIN` would give `?FILE NOT FOUND ERROR`).
 
 ---
 
-## Reference CLI complete
+## Complete CLI reference
 
-> Liste exhaustive alignee sur `./oric1-emu --help` (v1.110.0-alpha).
-> Certaines options exigent un build specifique : `--tui` (TUI=1),
-> `--http-api` (HTTPAPI=1), `--cast-*` (CAST=1), backend `midi:` (MIDI=1).
+> Exhaustive list aligned with `./oric1-emu --help` (v1.110.0-alpha).
+> Some options require a specific build: `--tui` (TUI=1),
+> `--http-api` (HTTPAPI=1), `--cast-*` (CAST=1), `midi:` backend (MIDI=1).
 
 ```
 ./oric1-emu [OPTIONS]
 
-ROM, modele et hote :
-  -r, --rom FILE             Charger un fichier ROM (BASIC 1.0/1.1)
-  -m, --model MODEL          Modele : oric1 ou atmos (defaut : auto-detection)
-  -k, --keyboard LAYOUT      Disposition clavier : qwerty (defaut) ou azerty
-  -h, --hostfs PATH          Monter un repertoire hote (partage de fichiers)
+ROM, model and host:
+  -r, --rom FILE             Load a ROM file (BASIC 1.0/1.1)
+  -m, --model MODEL          Model: oric1 or atmos (default: auto-detection)
+  -k, --keyboard LAYOUT      Keyboard layout: qwerty (default) or azerty
+  -h, --hostfs PATH          Mount a host directory (file sharing)
 
-Cassette :
-  -t, --tape FILE            Charger un fichier cassette .TAP
-  -f, --fast-load            Chargement rapide (injection memoire, sans CLOAD)
-      --tape-signal          Cassette au niveau signal (onde VIA CB1, lecture ROM
-                             reelle) — loaders custom/proteges ; exclut -f
-      --tape-out-capture FILE  Capturer l'onde CSAVE (PB7/Timer1) et la decoder
-                             en .TAP (voie A ; desactive les hooks CSAVE)
+Tape:
+  -t, --tape FILE            Load a .TAP tape file
+  -f, --fast-load            Fast loading (memory injection, no CLOAD)
+      --tape-signal          Signal-level tape (VIA CB1 waveform, real ROM
+                             read) — custom/protected loaders; excludes -f
+      --tape-out-capture FILE  Capture the CSAVE waveform (PB7/Timer1) and decode it
+                             into a .TAP (path A; disables the CSAVE hooks)
 
-Disquette (Microdisc WD1793) :
-  -d, --disk FILE            Charger une image .DSK dans le lecteur A
-      --disk1 FILE           Image .DSK dans le lecteur B
-      --disk2 FILE           Image .DSK dans le lecteur C
-      --disk3 FILE           Image .DSK dans le lecteur D
-      --disk-rom FILE        Charger la ROM Microdisc (microdis.rom)
-      --disk-writeback       Reecrire les modifications disque dans les .dsk a la
-                             sortie (en place ; seuls les lecteurs ecrits sont sauves)
-      --disk-create FILE     Creer une disquette Sedoric vierge (lecteur A) -> FILE
-      --disk-web URL         Lecteur A servi par un serveur web (loci-webdisk archi B),
-                             pistes MFM lues par HTTP a la demande via le Microdisc
-      --fdc-timing MODE      Timing WD1793 : real (defaut, 3" mecanique) ou fast
-      --bad-sector [D:]S:T:N Marquer secteur illisible (RNF) : lecteur D (defaut A),
-                             face S, piste T, secteur N ; repetable
+Disk (Microdisc WD1793):
+  -d, --disk FILE            Load a .DSK image into drive A
+      --disk1 FILE           .DSK image in drive B
+      --disk2 FILE           .DSK image in drive C
+      --disk3 FILE           .DSK image in drive D
+      --disk-rom FILE        Load the Microdisc ROM (microdis.rom)
+      --disk-writeback       Write disk changes back to the .dsk files on
+                             exit (in place; only drives written to are saved)
+      --disk-create FILE     Create a blank Sedoric disk (drive A) -> FILE
+      --disk-web URL         Drive A served by a web server (loci-webdisk arch. B),
+                             MFM tracks read over HTTP on demand via the Microdisc
+      --fdc-timing MODE      WD1793 timing: real (default, 3" mechanics) or fast
+      --bad-sector [D:]S:T:N Mark a sector unreadable (RNF): drive D (default A),
+                             side S, track T, sector N; repeatable
 
-Sauvegarde d'etat :
-      --save-state FILE      Sauvegarder l'etat a la fermeture (.ost)
-      --load-state FILE      Charger l'etat au demarrage
+Save state:
+      --save-state FILE      Save the state on exit (.ost)
+      --load-state FILE      Load the state at startup
 
-Video et affichage :
-      --scale N              Echelle : 1, 2, 3 (defaut) ou 4
-      --render-software      Forcer le renderer SDL logiciel (corrige fenetre noire
-                             sur certains GPU/pilotes)
-      --no-border            Desactiver la bordure d'overscan dans la fenetre
-      --export-border        Inclure la bordure d'overscan dans les exports image/AVI
-      --ula-ng-poke SEQ      Programmer les registres ULA-NG ($0340-$035F) au boot,
-                             SEQ = paires AAA=VV hex separees par des virgules
+Video and display:
+      --scale N              Scale: 1, 2, 3 (default) or 4
+      --render-software      Force the software SDL renderer (fixes a black window
+                             on some GPUs/drivers)
+      --no-border            Disable the overscan border in the window
+      --export-border        Include the overscan border in image/AVI exports
+      --ula-ng-poke SEQ      Program the ULA-NG registers ($0340-$035F) at boot,
+                             SEQ = hex AAA=VV pairs separated by commas
 
-Captures et export :
-      --screenshot FILE          Capture a la fermeture (.ppm ou .bmp ; .png supporte)
-      --screenshot-at C:FILE     Capture apres C cycles (famille -at REPETABLE)
-      --screenshot-when A:V:FILE Capture quand RAM[A]==V (A,V hex ; exit 2 si jamais)
-      --screenshot-text FILE     Dump texte ecran ($BB80, 40x28) en ASCII a la fermeture
-      --screenshot-text-at C:FILE   Dump texte apres C cycles
-      --screenshot-text-when A:V:FILE  Dump texte quand RAM[A]==V (A,V hex)
-      --screenshot-ansi FILE     Dump framebuffer en texte ANSI true-color a la fermeture
-      --screenshot-ansi-at C:FILE   Dump ANSI apres C cycles
-      --dump-ram-at C:FILE       Dump 64 Ko RAM quand cycle >= C
-      --dump-ram-when A:V:FILE   Dump 64 Ko quand RAM[A]==V (A,V hex ; exit 2 si jamais)
-      --frame-dump DIR           Dump periodique des frames dans un repertoire
-      --frame-dump-interval N    Dumper une frame sur N (defaut 50)
-      --video FILE               Enregistrer une video Motion-JPEG AVI
-      --video-fps N              Cadence d'enregistrement (defaut 50)
-      --video-quality N          Qualite JPEG 1..100 (defaut 85)
+Captures and export:
+      --screenshot FILE          Capture on exit (.ppm or .bmp; .png supported)
+      --screenshot-at C:FILE     Capture after C cycles (-at family, REPEATABLE)
+      --screenshot-when A:V:FILE Capture when RAM[A]==V (A,V hex; exit 2 if never)
+      --screenshot-text FILE     Dump the text screen ($BB80, 40x28) as ASCII on exit
+      --screenshot-text-at C:FILE   Text dump after C cycles
+      --screenshot-text-when A:V:FILE  Text dump when RAM[A]==V (A,V hex)
+      --screenshot-ansi FILE     Dump the framebuffer as true-colour ANSI text on exit
+      --screenshot-ansi-at C:FILE   ANSI dump after C cycles
+      --dump-ram-at C:FILE       Dump 64 KB of RAM when cycle >= C
+      --dump-ram-when A:V:FILE   Dump 64 KB when RAM[A]==V (A,V hex; exit 2 if never)
+      --frame-dump DIR           Periodic dump of frames into a directory
+      --frame-dump-interval N    Dump one frame out of N (default 50)
+      --video FILE               Record a Motion-JPEG AVI video
+      --video-fps N              Recording frame rate (default 50)
+      --video-quality N          JPEG quality 1..100 (default 85)
 
-Audio :
-      --audio-wav FILE       Capturer le PSG en WAV 16 bits stereo 44,1 kHz (headless)
-      --psg-trace FILE       Journaliser les ecritures registres AY (0-13) + cycle CPU
+Audio:
+      --audio-wav FILE       Capture the PSG as 16-bit stereo 44.1 kHz WAV (headless)
+      --psg-trace FILE       Log AY register writes (0-13) + CPU cycle
 
-Headless et automation :
-  -n, --headless             Sans affichage (mode headless)
-      --realtime             Cadencer a 50 Hz PAL meme en headless (nanosleep) ;
-                             requis pour le timing serie reseau et --type-keys deterministe
-  -c, --cycles NUM           Executer N cycles puis quitter
-  -v, --verbose              Logs verbeux
-      --type-keys C:TEXT     Saisie clavier auto apres C cycles (echappements \n \e
-                             \b \u \d \l \r \Cx \Fx \Lx \Rx \pN ; repetable)
-      --type-keys-when A:V:TEXT  Armer --type-keys quand RAM[A]==V (A,V hex)
-      --poke-at C:ADDR=VAL       Ecrire RAM[ADDR]=VAL une fois apres C cycles (hex ; repetable)
-      --poke-when A:V:ADDR=VAL   Ecrire RAM[ADDR]=VAL une fois quand RAM[A]==V (hex ; repetable)
-      --record FILE          Enregistrer les entrees clavier (replay deterministe)
-      --replay FILE          Rejouer un film d'entrees (ignore le clavier live)
-      --bench                Bench de debit headless (`BENCH cycles=... mhz_eq=...`)
+Headless and automation:
+  -n, --headless             No display (headless mode)
+      --realtime             Pace at 50 Hz PAL even in headless (nanosleep);
+                             required for network serial timing and deterministic --type-keys
+  -c, --cycles NUM           Run N cycles then quit
+  -v, --verbose              Verbose logs
+      --type-keys C:TEXT     Automatic keyboard input after C cycles (escapes \n \e
+                             \b \u \d \l \r \Cx \Fx \Lx \Rx \pN; repeatable)
+      --type-keys-when A:V:TEXT  Arm --type-keys when RAM[A]==V (A,V hex)
+      --poke-at C:ADDR=VAL       Write RAM[ADDR]=VAL once after C cycles (hex; repeatable)
+      --poke-when A:V:ADDR=VAL   Write RAM[ADDR]=VAL once when RAM[A]==V (hex; repeatable)
+      --record FILE          Record keyboard input (deterministic replay)
+      --replay FILE          Replay an input movie (ignores the live keyboard)
+      --bench                Headless throughput bench (`BENCH cycles=... mhz_eq=...`)
 
-Peripheriques d'entree/sortie :
-  -j, --joystick MODE        Joystick : keys (fleches) ou gamepad (manette SDL2)
-  -p, --printer FILE         Capturer la sortie imprimante (LPRINT/LLIST)
-      --printer-type TYPE    Type : text (defaut) ou mcp40 (traceur 4 couleurs)
+Input/output peripherals:
+  -j, --joystick MODE        Joystick: keys (arrows) or gamepad (SDL2 gamepad)
+  -p, --printer FILE         Capture printer output (LPRINT/LLIST)
+      --printer-type TYPE    Type: text (default) or mcp40 (4-colour plotter)
 
-Debogueur, trace et profil :
-  -D, --debug                Demarrer dans le debogueur (break a la 1re instruction)
-  -b, --breakpoint ADDR      Break quand PC atteint ADDR (hex)
-      --break ADDR           Breakpoint initial du debogueur interactif (hex)
-      --tui                  Debogueur TUI ncurses (build TUI=1)
-      --gdb[=PORT]           Stub GDB distant sur TCP PORT (defaut 1234)
-      --control              Mode IPC pour integration IDE (protocole stdin)
-      --symbols FILE         Charger une table de symboles (.sym/.lab/.sym65)
-      --trace FILE           Trace CPU instruction par instruction
-      --trace-max N          Limite d'instructions tracees (garde les N PREMIERES)
-      --trace-ring N         Garder les N DERNIERES instructions (ring, ecrit a la sortie)
-      --trace-irq FILE       Journaliser chaque entree IRQ + RTI
-      --kbd-scan-trace FILE  Journaliser chaque lecture VIA Port B (col, reg7, reg14, matrix, PB3)
-      --profile FILE         Ecrire un profil de performance CPU a la fermeture
-      --rom-info [FILE]      Analyser la ROM (vecteurs, cibles, chaines)
+Debugger, trace and profile:
+  -D, --debug                Start in the debugger (break at the 1st instruction)
+  -b, --breakpoint ADDR      Break when PC reaches ADDR (hex)
+      --break ADDR           Initial breakpoint of the interactive debugger (hex)
+      --tui                  ncurses TUI debugger (build TUI=1)
+      --gdb[=PORT]           Remote GDB stub on TCP PORT (default 1234)
+      --control              IPC mode for IDE integration (stdin protocol)
+      --symbols FILE         Load a symbol table (.sym/.lab/.sym65)
+      --trace FILE           Instruction-by-instruction CPU trace
+      --trace-max N          Limit on traced instructions (keeps the FIRST N)
+      --trace-ring N         Keep the LAST N instructions (ring, written on exit)
+      --trace-irq FILE       Log every IRQ entry + RTI
+      --kbd-scan-trace FILE  Log every VIA Port B read (col, reg7, reg14, matrix, PB3)
+      --profile FILE         Write a CPU performance profile on exit
+      --rom-info [FILE]      Analyse the ROM (vectors, targets, strings)
 
-Serie (ACIA 6551) et modems :
+Serial (ACIA 6551) and modems:
       --serial TYPE          loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV,
                              file:IN[:OUT], picowifi[:SSID[:PASS]]
-      --serial-v23           Mode V23 : 1200/75 baud (Minitel/Prestel/Digitelec)
-      --serial-buffer N      FIFO RX de N octets (anti-overrun ; defaut : off)
-      --serial-baud N        Baud horloge externe (timing realiste vs transfert instantane)
-      --serial-irq-on-rdrf   Mode IRQ WDC 65C51 (re-declenche tant que RDRF pose)
-      --serial-trace FILE    Trace serie (TX/RX/signaux horodates)
-      --serial-tcp-backpressure[=N]  Contre-pression bornee pour tcp: (cap SO_RCVBUF)
-      --acia-addr ADDR       Adresse de base ACIA en hex (defaut 031C)
+      --serial-v23           V23 mode: 1200/75 baud (Minitel/Prestel/Digitelec)
+      --serial-buffer N      RX FIFO of N bytes (anti-overrun; default: off)
+      --serial-baud N        External clock baud rate (realistic timing vs instant transfer)
+      --serial-irq-on-rdrf   WDC 65C51 IRQ mode (re-triggers while RDRF is set)
+      --serial-trace FILE    Serial trace (timestamped TX/RX/signals)
+      --serial-tcp-backpressure[=N]  Bounded back-pressure for tcp: (SO_RCVBUF cap)
+      --acia-addr ADDR       ACIA base address in hex (default 031C)
 
-Cartes serie/MIDI dediees :
-      --dtl2000 TRANSPORT    Digitelec DTL 2000 (PIA 6821 + ACIA 6850) a $03F8
-      --dtl2000-addr ADDR    Adresse de base DTL 2000 en hex (defaut 03F8)
-      --mageco TRANSPORT     Interface MIDI Mageco (ACIA 6850) a $03FE, 31250 baud
-      --mageco-addr ADDR     Adresse de base Mageco en hex (defaut 03FE)
-      --oricon TRANSPORT     Variante MIDI ORICON (MC6850 a $031C-$031F, compat LOCI)
+Dedicated serial/MIDI cards:
+      --dtl2000 TRANSPORT    Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8
+      --dtl2000-addr ADDR    DTL 2000 base address in hex (default 03F8)
+      --mageco TRANSPORT     Mageco MIDI interface (ACIA 6850) at $03FE, 31250 baud
+      --mageco-addr ADDR     Mageco base address in hex (default 03FE)
+      --oricon TRANSPORT     ORICON MIDI variant (MC6850 at $031C-$031F, LOCI compatible)
 
-LOCI (Lovely Oric Computer Interface) :
-      --loci                 Activer la MIA LOCI a $03A0-$03BF
-      --loci-flash DIR       Racine sandbox des ops fichier LOCI (implique --loci)
-      --loci-sdimg PATH      Image SD FAT16/32 brute (lecture seule ; exclut --loci-flash)
-      --loci-usb DIR|none    Attacher DIR comme cle USB LOCI (repetable, 4 max ; 'none' desactive)
-      --loci-web URL         Lecteur A LOCI servi par serveur web + autoboot Sedoric natif
-      --loci-web-base URL    Pseudo-device « W: Web disks » dans le menu LOCI
-      --loci-mia-window LO-HI  Modeliser la plage MIA tior fiable (0-31)
-      --loci-irq-latency US  Cout transport I2C des IRQ LOCI (differe chaque /IRQ de US us)
+LOCI (Lovely Oric Computer Interface):
+      --loci                 Enable the LOCI MIA at $03A0-$03BF
+      --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)
+      --loci-sdimg PATH      Raw FAT16/32 SD image (read-only; excludes --loci-flash)
+      --loci-usb DIR|none    Attach DIR as a LOCI USB stick (repeatable, 4 max; 'none' disables)
+      --loci-web URL         LOCI drive A served by a web server + native Sedoric autoboot
+      --loci-web-base URL    "W: Web disks" pseudo-device in the LOCI menu
+      --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31)
+      --loci-irq-latency US  I2C transport cost of LOCI IRQs (delays each /IRQ by US µs)
 
-Chromecast :
-      --cast-server[=PORT]   Serveur MJPEG (defaut 8080)
-      --cast-to[=DEVICE]     Caster vers un Chromecast (CASTV2 natif)
-      --cast-discover        Decouvrir les Chromecast sur le reseau
+Chromecast:
+      --cast-server[=PORT]   MJPEG server (default 8080)
+      --cast-to[=DEVICE]     Cast to a Chromecast (native CASTV2)
+      --cast-discover        Discover Chromecasts on the network
 
-API HTTP (build HTTPAPI=1) :
-      --http-api[=PORT]      API de controle HTTP/REST (defaut 8888)
-      --http-api-bind ADDR   Adresse d'ecoute de l'API (defaut 127.0.0.1)
-      --http-api-root DIR    Racine sandbox des ops fichier /tape,/disk (defaut CWD)
+HTTP API (build HTTPAPI=1):
+      --http-api[=PORT]      HTTP/REST control API (default 8888)
+      --http-api-bind ADDR   API listen address (default 127.0.0.1)
+      --http-api-root DIR    Sandbox root for /tape,/disk file ops (default CWD)
 
-Aide :
-  -?, --help                 Afficher l'aide
+Help:
+  -?, --help                 Show help
 
-Touches de fonction (fenetre SDL) :
-  F1 Aide  F2 Save rapide  F3 Echelle  F4 Load rapide  F5 Reset
-  F6 OSD cassette/disquette a chaud  F8 Bouton Action LOCI  F9 Debogueur
-  F10 Quitter  F11 Plein ecran  F12 Capture d'ecran
+Function keys (SDL window):
+  F1 Help  F2 Quicksave  F3 Scale  F4 Quickload  F5 Reset
+  F6 Hot tape/disk OSD  F8 LOCI Action button  F9 Debugger
+  F10 Quit  F11 Full screen  F12 Screenshot
 ```
 
 ---
 
-## Depannage
+## Troubleshooting
 
-**Pas de son** : Verifier que le build utilise `SDL2=1` et que le volume systeme n'est pas coupe.
+**No sound**: Check that the build uses `SDL2=1` and that the system volume is not muted.
 
-**Clavier inactif apres boot Sedoric** : Bug corrige en v1.0.0-beta.8. Le timer T1 du VIA se reasserte correctement apres l'initialisation Sedoric.
+**Keyboard dead after a Sedoric boot**: Bug fixed in v1.0.0-beta.8. The VIA's T1 timer is correctly re-asserted after Sedoric initialisation.
 
-**Le programme ne se charge pas avec CLOAD** : Verifier que le fichier .TAP est valide. Essayer le mode chargement rapide (`-f`).
+**The program does not load with CLOAD**: Check that the .TAP file is valid. Try fast-load mode (`-f`).
 
-**Ecran noir** : Verifier que le fichier ROM est correct (16384 octets). L'emulateur necessite une ROM ORIC valide pour demarrer.
+**Black screen**: Check that the ROM file is correct (16384 bytes). The emulator needs a valid ORIC ROM to start.
 
-**Performance lente** : L'emulateur tourne a ~90+ MHz equivalent (90x temps reel). Si les performances sont insuffisantes, desactiver le tracage (`--trace`) et le profiling (`--profile`).
+**Slow performance**: The emulator runs at ~90+ MHz equivalent (90x real time). If performance is insufficient, disable tracing (`--trace`) and profiling (`--profile`).
 
-**Pas de Chromecast detecte** : Verifier que le PC et le Chromecast sont sur le meme reseau. Le build doit inclure `CAST=1` et les dependances OpenSSL.
+**No Chromecast detected**: Check that the PC and the Chromecast are on the same network. The build must include `CAST=1` and the OpenSSL dependencies.
 
 ---
 
-*Phosphoric v1.110.0-alpha — Guide utilisateur*
-*Derniere mise a jour : 2026-08-30*
+*Phosphoric v1.110.0-alpha — User guide*
+*Last updated: 2026-08-30*

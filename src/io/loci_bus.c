@@ -10,7 +10,7 @@
 #include "io/loci.h"
 #include "io/loci_internal.h"
 #include "storage/sedoric.h"
-#include "storage/disk_http.h"   /* loci-webdisk archi B : montage disque web */
+#include "storage/disk_http.h"   /* loci-webdisk archi B: web disk mount */
 #include "utils/logging.h"
 
 #include <string.h>
@@ -378,11 +378,11 @@ bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
     return true;
 }
 
-/* loci-webdisk (archi B) : monter dans un lecteur LOCI un disque dont les
- * secteurs sont servis par HTTP. On lit l'en-tête MFM_DISK distant (256 o)
- * pour la géométrie, on alloue une image à plat VIDE, et le FDC de la LOCI va
- * chercher chaque piste MFM de 6400 o à la demande (fdc_set_web via
- * loci_apply_dsk_selection). Chemin natif LOCI, jumeau de --disk-web (Microdisc). */
+/* loci-webdisk (archi B): mount in a LOCI drive a disk whose
+ * sectors are served over HTTP. The remote MFM_DISK header (256 bytes) is read
+ * for the geometry, an EMPTY flat image is allocated, and the LOCI FDC
+ * fetches each 6400-byte MFM track on demand (fdc_set_web via
+ * loci_apply_dsk_selection). Native LOCI path, twin of --disk-web (Microdisc). */
 bool loci_dsk_open_web(loci_t* loci, uint8_t drive, const char* url) {
     if (drive >= 4 || !url || !url[0]) return false;
 
@@ -412,7 +412,7 @@ bool loci_dsk_open_web(loci_t* loci, uint8_t drive, const char* url) {
     loci->dsk_image_size[drive] = flat;
     loci->dsk_tracks[drive]     = (uint8_t)tracks;
     loci->dsk_sectors[drive]    = spt;
-    loci->dsk_is_mfm[drive]     = false;   /* pas de write-back host */
+    loci->dsk_is_mfm[drive]     = false;   /* no host write-back */
     loci->dsk_web[drive]        = true;
     snprintf(loci->dsk_web_url[drive], sizeof(loci->dsk_web_url[drive]), "%s", url);
     loci->dsk_host_path[drive][0] = '\0';

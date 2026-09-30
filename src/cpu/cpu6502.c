@@ -33,10 +33,10 @@ void cpu_init(cpu6502_t* cpu, memory_t* memory) {
     memset(cpu, 0, sizeof(cpu6502_t));
     cpu->memory = memory;
     cpu->P = FLAG_UNUSED | FLAG_INTERRUPT;
-    /* V2-E1 / US1.4 : le cœur micro-séquencé est désormais le moteur par défaut
-     * (un cycle = un accès bus, accès factices du NMOS inclus, interruptions
-     * échantillonnées au cycle pénultième). Le moteur historique reste
-     * disponible par cpu_set_microseq(cpu, false) / --cpu-legacy. */
+    /* V2-E1 / US1.4: the micro-sequenced core is now the default engine
+     * (one cycle = one bus access, NMOS dummy accesses included, interrupts
+     * sampled on the penultimate cycle). The legacy engine remains
+     * available via cpu_set_microseq(cpu, false) / --cpu-legacy. */
     cpu->ms_enabled = true;
 }
 
@@ -64,12 +64,12 @@ static void handle_nmi(cpu6502_t* cpu) {
     /* Cycle total (7) is reconciled by cpu_step's padding. */
 }
 
-/* Trace --trace-irq : partagée avec le micro-séquenceur (microseq.c) pour que
- * l'option garde le même comportement sur les deux moteurs. */
+/* --trace-irq trace: shared with the micro-sequencer (microseq.c) so that
+ * the option behaves the same on both engines. */
 void cpu_irq_trace_entry(cpu6502_t* cpu, uint16_t pc_before) {
     if (!cpu->irq_trace_fp) return;
-    /* VIA à $0300-$030F : IFR=$0D, IER=$0E. Lues par memory_read (sans tick
-     * bus) pour ne pas perturber l'horloge ni l'état des périphériques. */
+    /* VIA at $0300-$030F: IFR=$0D, IER=$0E. Read through memory_read (no bus
+     * tick) so as not to disturb the clock or the peripherals' state. */
     uint8_t ifr = memory_read(cpu->memory, 0x030D);
     uint8_t ier = memory_read(cpu->memory, 0x030E);
     fprintf((FILE*)cpu->irq_trace_fp,
@@ -102,9 +102,9 @@ static void handle_irq(cpu6502_t* cpu) {
 int cpu_step(cpu6502_t* cpu) {
     if (cpu->halted) return 0;
 
-    /* Moteur micro-séquencé (V2-E1, opt-in) : une instruction = la suite de ses
-     * cycles. cpu_step devient un simple enrouleur autour de cpu_cycle(), et
-     * c'est le séquenceur qui décide des interruptions. */
+    /* Micro-sequenced engine (V2-E1, opt-in): one instruction = the sequence of
+     * its cycles. cpu_step becomes a simple wrapper around cpu_cycle(), and
+     * it is the sequencer that decides on interrupts. */
     if (cpu->ms_enabled) {
         uint64_t ms_before = cpu->cycles;
         while (!cpu_cycle(cpu)) { }
@@ -126,7 +126,7 @@ int cpu_step(cpu6502_t* cpu) {
         return 7;
     }
     if ((cpu->irq || cpu->irq_pulse) && !cpu_get_flag(cpu, FLAG_INTERRUPT)) {
-        if (cpu->irq_pulse) cpu->irq_pulse--;   /* IRQ à tir unique : consommée à la prise */
+        if (cpu->irq_pulse) cpu->irq_pulse--;   /* one-shot IRQ: consumed when taken */
         uint64_t before = cpu->cycles;
         handle_irq(cpu);
         int done = (int)(cpu->cycles - before);
@@ -136,8 +136,8 @@ int cpu_step(cpu6502_t* cpu) {
 
     uint64_t before = cpu->cycles;
 
-    /* Watchpoint écriture (memory.c) : expose le PC/cycle de l'instruction en
-     * cours d'exécution, pour attribuer une écriture surveillée à son STA. */
+    /* Write watchpoint (memory.c): exposes the PC/cycle of the instruction
+     * being executed, so a watched write can be attributed to its STA. */
     extern uint16_t g_watch_cur_pc; extern uint64_t g_watch_cur_cyc;
     g_watch_cur_pc = cpu->PC; g_watch_cur_cyc = cpu->cycles;
 

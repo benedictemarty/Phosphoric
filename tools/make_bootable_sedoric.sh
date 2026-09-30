@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# make_bootable_sedoric.sh — fabrique une disquette Sedoric *bootable*, hands-free.
+# make_bootable_sedoric.sh — builds a *bootable* Sedoric floppy, hands-free.
 #
-# Pilote l'émulateur en headless (--type-keys) pour :
-#   1. créer une disquette vierge double face (--disk-create) ;
-#   2. démarrer Sedoric depuis une disquette système maître ;
-#   3. INIT la disquette vierge (lecteur B) + la rendre « Master disc »
-#      (copie du DOS → bootable) ;
-#   4. vérifier qu'elle démarre seule (SEDORIC V4.0 / Ready).
+# Drives the emulator headless (--type-keys) to:
+#   1. create a blank double-sided floppy (--disk-create);
+#   2. boot Sedoric from a master system floppy;
+#   3. INIT the blank floppy (drive B) + make it a « Master disc »
+#      (copy of the DOS → bootable);
+#   4. check that it boots on its own (SEDORIC V4.0 / Ready).
 #
-# Repose sur :
-#   - le parseur FDC « Write Track » (v1.25.6),
-#   - --disk-create double face (v1.25.7-8).
+# Relies on:
+#   - the FDC « Write Track » parser (v1.25.6),
+#   - double-sided --disk-create (v1.25.7-8).
 #
-# Usage : tools/make_bootable_sedoric.sh [SORTIE.dsk] [SYSTEME_MAITRE.dsk]
+# Usage: tools/make_bootable_sedoric.sh [OUTPUT.dsk] [MASTER_SYSTEM.dsk]
 set -euo pipefail
 
 EMU=${EMU:-./oric1-emu}
@@ -31,10 +31,10 @@ echo "==> 1) disquette vierge double face -> $OUT"
 "$EMU" -r "$ROM" --disk-rom "$DISKROM" --disk-create "$OUT" -n -c 50000 >/dev/null 2>&1
 
 echo "==> 2/3) boot Sedoric, INIT B + Master disc (hands-free)"
-# Cadences (cycles) calées sur un format double face (~84 pistes) :
-#   3M  : choix langue (1)            6M  : touche -> BASIC
-#   9M  : INIT B                      11-12M : Y (lance le format, répété)
-#   160M: nom + RET                   165M : init statement vide (RET)
+# Timings (cycles) tuned for a double-sided format (~84 tracks):
+#   3M  : language choice (1)         6M  : key -> BASIC
+#   9M  : INIT B                      11-12M : Y (starts the format, repeated)
+#   160M: name + RET                  165M : empty init statement (RET)
 #   176M: Master disc -> Y            179M : Init another -> N
 "$EMU" -r "$ROM" --disk-rom "$DISKROM" -d "$MASTER" --disk1 "$OUT" --disk-writeback -n \
     --type-keys 3000000:1 --type-keys 6000000:'\n' --type-keys 9000000:'INIT B\n' \

@@ -31,11 +31,11 @@ import sys
 
 SECSZ = 256
 DIR_TRACK = 20
-SYS_SECTOR = 1          # Secteur Système (nom disque, INIST)
-VTOC_SECTOR = 2         # BITMAP (free / nb fichiers)
+SYS_SECTOR = 1          # System Sector (disk name, INIST)
+VTOC_SECTOR = 2         # BITMAP (free / file count)
 DIR_SECTOR = 4          # Directory
-INIST_OFF = 0x1E        # offset INIST dans le Secteur Système
-INIST_MAX = 60          # longueur max INIST
+INIST_OFF = 0x1E        # INIST offset in the System Sector
+INIST_MAX = 60          # max INIST length
 
 
 def main():
@@ -43,8 +43,8 @@ def main():
         sys.exit(__doc__)
     raw = bytearray(open(sys.argv[1], "rb").read())
     data = open(sys.argv[2], "rb").read()
-    # Le loader SEDORIC charge des secteurs entiers : padder au multiple de 256
-    # pour que tout le binaire soit chargé (pas de dernier secteur partiel perdu).
+    # The SEDORIC loader loads whole sectors: pad to a multiple of 256
+    # so the whole binary gets loaded (no partial last sector lost).
     if len(data) % SECSZ:
         data += b"\x00" * (SECSZ - len(data) % SECSZ)
     load = int(sys.argv[3], 16)
@@ -53,14 +53,14 @@ def main():
     tracks = int(sys.argv[6]) if len(sys.argv) > 6 else 42
     sectors = int(sys.argv[7]) if len(sys.argv) > 7 else 17
     init_cmd = sys.argv[8] if len(sys.argv) > 8 else ""
-    exec_given = len(sys.argv) > 9              # exec fourni => fichier AUTO
+    exec_given = len(sys.argv) > 9              # exec given => AUTO file
     execaddr = int(sys.argv[9], 16) if exec_given else load
 
     nm, _, ex = namespec.partition(".")
     name = (nm[:9] + " " * 9)[:9]
     ext = (ex[:3] + " " * 3)[:3]
 
-    def off(track, side, sec):              # side-major : bloc = side*tracks+track
+    def off(track, side, sec):              # side-major: block = side*tracks+track
         return ((side * tracks + track) * sectors + (sec - 1)) * SECSZ
 
     def rd(track, sec):
@@ -71,15 +71,15 @@ def main():
         o = off(track, 0, sec)
         raw[o:o + SECSZ] = (bytes(buf) + b"\x00" * SECSZ)[:SECSZ]
 
-    # --- carte des secteurs déjà occupés (multi-fichiers sûr) : parcours du
-    #     catalogue puis des cartes de secteurs des descripteurs existants ---
-    # ROBUSTESSE (bornage) : les pointeurs (piste,secteur) du catalogue peuvent
-    # porter le DRAPEAU DE FACE de Sedoric (bit 7 de l'octet piste : piste 131 =
-    # 0x83 = face 1, piste 3) ou être des rémanences hors image. rd() ne lit que
-    # la face 0 ; suivre un tel pointeur renvoie un secteur tronqué et lève une
-    # IndexError. On BORNE donc chaque accès, comme build_game_disk._catalog_used
-    # (les fichiers de face 1 ne sont pas alloués ici : l'allocation reste en
-    # face 0 à partir de la piste 21, donc les ignorer est sûr).
+    # --- map of already-used sectors (multi-file safe): walk the
+    #     catalogue then the sector maps of the existing descriptors ---
+    # ROBUSTNESS (bounds checking): the catalogue's (track,sector) pointers may
+    # carry Sedoric's SIDE FLAG (bit 7 of the track byte: track 131 =
+    # 0x83 = side 1, track 3) or be out-of-image leftovers. rd() only reads
+    # side 0; following such a pointer returns a truncated sector and raises an
+    # IndexError. So every access is BOUNDED, like build_game_disk._catalog_used
+    # (side-1 files are not allocated here: allocation stays on
+    # side 0 from track 21 onwards, so ignoring them is safe).
     def ok(t, s):
         return 0 <= t < tracks and 1 <= s <= sectors
     used = set()
@@ -87,18 +87,18 @@ def main():
     while guard < 64 and ok(dt, ds):
         guard += 1
         dirs = rd(dt, ds)
-        used.add((dt, ds))                   # le secteur catalogue lui-même
+        used.add((dt, ds))                   # the catalogue sector itself
         for e in range(16, SECSZ, 16):
             if dirs[e] == 0 and dirs[e + 15] == 0:
                 continue
-            if dirs[e + 15] & 0x80:          # supprimé
+            if dirs[e + 15] & 0x80:          # deleted
                 continue
             cdt, cds, dg, first = dirs[e + 12], dirs[e + 13], 0, True
             while dg < 64 and ok(cdt, cds):
                 dg += 1
                 desc = rd(cdt, cds)
-                used.add((cdt, cds))         # le secteur descripteur lui-même
-                p = 12 if first else 2       # carte dès +0x0C (1er) ou +0x02 (continuation)
+                used.add((cdt, cds))         # the descriptor sector itself
+                p = 12 if first else 2       # map from +0x0C (1st) or +0x02 (continuation)
                 while p + 1 < SECSZ:
                     if desc[p] == 0 and desc[p + 1] == 0:
                         break
@@ -116,18 +116,18 @@ def main():
     end = load + len(data) - 1
     ndata = (len(data) + SECSZ - 1) // SECSZ
 
-    # Descripteurs chaînés (validé in-situ, cf docs/SEDORIC.md) : le 1er
-    # descripteur porte l'en-tête (12 o) puis la carte (piste,secteur) dès +0x0C
-    # (122 paires max) ; chaque descripteur suivant = lien +0,+1 puis carte dès
-    # +0x02 (127 paires max). Le lien +0,+1 pointe le descripteur suivant.
-    FIRST_CAP = (SECSZ - 12) // 2          # 122 paires dans le 1er descripteur
-    CONT_CAP = (SECSZ - 2) // 2            # 127 paires par descripteur suivant
+    # Chained descriptors (validated in situ, see docs/SEDORIC.md): the 1st
+    # descriptor carries the header (12 bytes) then the (track,sector) map from +0x0C
+    # (122 pairs max); each following descriptor = link +0,+1 then map from
+    # +0x02 (127 pairs max). The +0,+1 link points to the next descriptor.
+    FIRST_CAP = (SECSZ - 12) // 2          # 122 pairs in the 1st descriptor
+    CONT_CAP = (SECSZ - 2) // 2            # 127 pairs per following descriptor
     ndesc = 1 if ndata <= FIRST_CAP else 1 + -(-(ndata - FIRST_CAP) // CONT_CAP)
-    total = ndesc + ndata                  # descripteurs + secteurs data
+    total = ndesc + ndata                  # descriptors + data sectors
     if total > 255:
         sys.exit("fichier trop gros : %d secteurs > 255 (nsec directory sur 1 octet)" % total)
 
-    # --- allouer total secteurs depuis piste 21, face 0, hors secteurs occupés ---
+    # --- allocate total sectors from track 21, side 0, skipping used sectors ---
     alloc = []
     t, s = 21, 1
     while len(alloc) < total and t < tracks:
@@ -143,17 +143,17 @@ def main():
     data_secs = alloc[ndesc:]
     desc_t, desc_s = desc_secs[0]
 
-    # AUTO ($41) dès qu'une adresse d'exécution est fournie (ou un INIST) :
-    # requis pour que `LOAD"NOM"` charge ET exécute le fichier (cf docs §6).
+    # AUTO ($41) as soon as an exec address is given (or an INIST):
+    # required for `LOAD"NOM"` to load AND execute the file (see docs §6).
     is_auto = bool(init_cmd) or exec_given
 
-    # --- secteurs descripteur (chaînés) ---
+    # --- descriptor sectors (chained) ---
     idx = 0
     for di in range(ndesc):
         d = bytearray(SECSZ)
         if di == 0:
-            d[2] = 0xFF                    # premier descripteur
-            d[3] = 0x41 if is_auto else 0x40   # b6=bloc data, b0=AUTO
+            d[2] = 0xFF                    # first descriptor
+            d[3] = 0x41 if is_auto else 0x40   # b6=data block, b0=AUTO
             d[4] = load & 0xFF; d[5] = (load >> 8) & 0xFF
             d[6] = end & 0xFF;  d[7] = (end >> 8) & 0xFF
             if is_auto:
@@ -161,29 +161,29 @@ def main():
             d[10] = ndata & 0xFF; d[11] = (ndata >> 8) & 0xFF
             p, cap = 12, FIRST_CAP
         else:
-            p, cap = 2, CONT_CAP           # descripteur suivant : lien puis carte dès +0x02
+            p, cap = 2, CONT_CAP           # following descriptor: link then map from +0x02
         n = min(cap, len(data_secs) - idx)
         for (dt2, ds2) in data_secs[idx:idx + n]:
             d[p] = dt2; d[p + 1] = ds2; p += 2
         idx += n
         if di < ndesc - 1:
-            d[0], d[1] = desc_secs[di + 1]    # lien -> descripteur suivant
+            d[0], d[1] = desc_secs[di + 1]    # link -> next descriptor
         elif p + 1 < SECSZ:
-            d[p] = 0; d[p + 1] = 0            # terminateur sur le dernier descripteur
+            d[p] = 0; d[p + 1] = 0            # terminator on the last descriptor
         wr(desc_secs[di][0], desc_secs[di][1], d)
 
-    # --- secteurs data ---
+    # --- data sectors ---
     for i, (dt2, ds2) in enumerate(data_secs):
         wr(dt2, ds2, data[i * SECSZ:(i + 1) * SECSZ])
 
-    # --- entrée directory (piste 20 sec 4) ---
-    # Parcours de la chaîne de secteurs catalogue (t20 s4 -> lien +0,+1 -> ...)
-    # pour trouver un slot libre ; si toute la chaîne est pleine, on alloue un
-    # secteur libre et on le chaîne (les secteurs catalogue sont localisés par
-    # lien piste/secteur, pas par zone fixe -- manuel SEDORIC 3.0, ANNEXE 7).
-    # cat_t/cat_s reste TOUJOURS sur un secteur catalogue VALIDE en face 0 : on
-    # ne suit un lien de chaîne que s'il est borné (voir note ci-dessus : la
-    # chaîne d'un master 2-faces peut repartir en face 1 = piste >= 128).
+    # --- directory entry (track 20 sec 4) ---
+    # Walk the chain of catalogue sectors (t20 s4 -> link +0,+1 -> ...)
+    # to find a free slot; if the whole chain is full, allocate a free
+    # sector and chain it (catalogue sectors are located by
+    # track/sector link, not by a fixed area -- SEDORIC 3.0 manual, ANNEXE 7).
+    # cat_t/cat_s ALWAYS stays on a VALID catalogue sector on side 0: a chain
+    # link is only followed if it is in bounds (see note above: the
+    # chain of a double-sided master may continue on side 1 = track >= 128).
     cat_t, cat_s, slot, new_cat, guard = DIR_TRACK, DIR_SECTOR, None, False, 0
     while guard < 64:
         guard += 1
@@ -195,7 +195,7 @@ def main():
             break
         nxt_t, nxt_s = dirs[0], dirs[1]
         if (nxt_t == 0 and nxt_s == 0) or not ok(nxt_t, nxt_s):
-            break            # fin de chaîne (ou lien hors image/face 1) : on ajoutera un secteur
+            break            # end of chain (or link out of image/side 1): a sector will be added
         cat_t, cat_s = nxt_t, nxt_s
     if slot is None:
         used.add((desc_t, desc_s))
@@ -210,9 +210,9 @@ def main():
                 ns = 1; nt += 1
         if ncat is None:
             sys.exit("plus de secteur libre pour un nouveau secteur catalogue")
-        dirs[0], dirs[1] = ncat            # lien précédent -> nouveau
+        dirs[0], dirs[1] = ncat            # previous link -> new
         wr(cat_t, cat_s, dirs)
-        dirs = bytearray(SECSZ)            # nouveau secteur catalogue vierge
+        dirs = bytearray(SECSZ)            # new blank catalogue sector
         cat_t, cat_s = ncat
         slot, new_cat = 16, True
     dirs[slot:slot + 9] = name.encode("ascii")
@@ -224,7 +224,7 @@ def main():
     dirs[2] = (slot + 16) & 0xFF            # high-water mark
     wr(cat_t, cat_s, dirs)
 
-    # --- VTOC (piste 20 sec 2) : free -= total (+1 si nouveau secteur cat.), files += 1 ---
+    # --- VTOC (track 20 sec 2): free -= total (+1 if new cat. sector), files += 1 ---
     v = bytearray(rd(DIR_TRACK, VTOC_SECTOR))
     free = (v[2] | v[3] << 8) - total - (1 if new_cat else 0)
     files = (v[4] | v[5] << 8) + 1
@@ -232,7 +232,7 @@ def main():
     v[4] = files & 0xFF; v[5] = (files >> 8) & 0xFF
     wr(DIR_TRACK, VTOC_SECTOR, v)
 
-    # --- INIST (autoexec) : piste 20 sec 1, offset 0x1E, ASCII + #00 ---
+    # --- INIST (autoexec): track 20 sec 1, offset 0x1E, ASCII + #00 ---
     if init_cmd:
         if len(init_cmd) >= INIST_MAX:
             sys.exit("INIST trop long (%d >= %d)" % (len(init_cmd), INIST_MAX))

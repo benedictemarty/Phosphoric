@@ -213,33 +213,33 @@ static uint8_t envelope_volume(uint8_t shape, uint8_t step) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  Cœur du PSG cadencé au matériel (V2-E5)
+ *  Hardware-clocked PSG core (V2-E5)
  *
- *  L'AY-3-8910 divise son horloge d'entrée par 16 pour les générateurs, mais la
- *  sortie carrée bascule DEUX fois par période : le pas interne naturel est donc
- *  **clock/8** (125 kHz sur l'ORIC). À ce rythme :
+ *  The AY-3-8910 divides its input clock by 16 for the generators, but the
+ *  square output toggles TWICE per period: the natural internal step is therefore
+ *  **clock/8** (125 kHz on the ORIC). At this rate:
  *
- *    ton       : bascule tous les TP pas      → f = clock / (16·TP)
- *    bruit     : LFSR avancé tous les 2·NP    → f = clock / (16·NP)
- *    enveloppe : un pas tous les EP           → f = clock / (8·EP),
- *                soit un cycle de 32 pas en clock/(256·EP), la formule de la
- *                datasheet.
+ *    tone      : toggles every TP steps       → f = clock / (16·TP)
+ *    noise     : LFSR advanced every 2·NP     → f = clock / (16·NP)
+ *    envelope  : one step every EP            → f = clock / (8·EP),
+ *                i.e. a 32-step cycle at clock/(256·EP), the datasheet
+ *                formula.
  *
- *  Avant la V2, ces compteurs étaient cadencés par ACCUMULATEURS au taux
- *  d'échantillonnage (44,1 kHz) : les fréquences moyennes des tons tombaient
- *  juste, mais l'enveloppe était **deux fois trop lente** (clock/16 par pas) et
- *  toute transition plus rapide que 44,1 kHz repliait au lieu de se moyenner.
- *  Ici, la machine tourne à son vrai rythme et la sortie est **intégrée** sur les
- *  pas couverts par chaque échantillon (filtre boîte) : plus de repliement, et
- *  les périodes très courtes donnent une amplitude faible au lieu d'un bruit
- *  parasite — ce que fait aussi le haut-parleur d'un vrai ORIC.
+ *  Before V2, these counters were clocked by ACCUMULATORS at the sampling
+ *  rate (44.1 kHz): the average tone frequencies came out right, but the
+ *  envelope was **twice too slow** (clock/16 per step) and any transition
+ *  faster than 44.1 kHz aliased instead of being averaged.
+ *  Here, the machine runs at its true rate and the output is **integrated** over
+ *  the steps covered by each sample (box filter): no more aliasing, and
+ *  very short periods give a low amplitude instead of spurious
+ *  noise — which is also what the loudspeaker of a real ORIC does.
  * ══════════════════════════════════════════════════════════════════ */
 
-/* Un pas d'horloge interne (clock/8). */
+/* One internal clock step (clock/8). */
 static void ay_tick(ay_play_t* st) {
     for (int ch = 0; ch < 3; ch++) {
         uint32_t period = st->tone_period[ch];
-        if (period == 0) period = 1;      /* période 0 se comporte comme 1 */
+        if (period == 0) period = 1;      /* period 0 behaves like 1 */
         if (++st->tone_counter[ch] >= period) {
             st->tone_counter[ch] = 0;
             st->tone_output[ch] ^= 1;
@@ -247,12 +247,12 @@ static void ay_tick(ay_play_t* st) {
     }
 
     {
-        /* Le LFSR n'a pas le ÷2 de la bascule carrée : il avance tous les 2·NP
-         * pas d'horloge interne, soit clock/(16·NP). */
+        /* The LFSR lacks the ÷2 of the square toggle: it advances every 2·NP
+         * internal clock steps, i.e. clock/(16·NP). */
         uint32_t np = st->noise_period ? st->noise_period : 1;
         if (++st->noise_counter >= np * 2u) {
             st->noise_counter = 0;
-            /* LFSR 17 bits, polynôme x^17 + x^14 + 1 */
+            /* 17-bit LFSR, polynomial x^17 + x^14 + 1 */
             uint32_t bit = ((st->noise_shift >> 0) ^ (st->noise_shift >> 3)) & 1;
             st->noise_shift = (st->noise_shift >> 1) | (bit << 16);
             st->noise_output = st->noise_shift & 1;
@@ -279,7 +279,7 @@ static void ay_tick(ay_play_t* st) {
     st->env_volume = envelope_volume(st->env_shape, st->env_step);
 }
 
-/* Mixage instantané des trois canaux. */
+/* Instantaneous mix of the three channels. */
 static int32_t ay_mix(const ay_play_t* st) {
     uint8_t mixer = st->sregs[7];
     int32_t output = 0;
@@ -296,28 +296,28 @@ static int32_t ay_mix(const ay_play_t* st) {
     return output / 3;
 }
 
-/* Blocage du continu : l'étage de sortie de l'ORIC couple le PSG à l'ampli par
- * un condensateur (C4 sur le schéma), qui ne laisse pas passer le continu. Sans
- * lui, la sortie reste unipolaire — un décalage permanent qui gaspille la moitié
- * de la dynamique et produit un « clic » à chaque démarrage ou arrêt d'un son. */
+/* DC blocking: the ORIC output stage couples the PSG to the amplifier through
+ * a capacitor (C4 on the schematic), which does not pass DC. Without
+ * it, the output stays unipolar — a permanent offset that wastes half
+ * of the dynamic range and produces a "click" whenever a sound starts or stops. */
 static int16_t ay_dc_block(ay3891x_t* ay, int32_t x) {
     if (ay->dc_block_off) return (int16_t)x;
-    ay->dc_acc += ((x << 16) - ay->dc_acc) >> 12;   /* ≈ 1,7 Hz à 44,1 kHz */
+    ay->dc_acc += ((x << 16) - ay->dc_acc) >> 12;   /* ≈ 1.7 Hz at 44.1 kHz */
     int32_t y = x - (ay->dc_acc >> 16);
     if (y > 32767) y = 32767;
     if (y < -32768) y = -32768;
     return (int16_t)y;
 }
 
-/* Produit un échantillon de sortie : avance la machine des pas d'horloge
- * couverts par la durée de l'échantillon, en INTÉGRANT la sortie sur ces pas.
- * `steps_q16` = pas d'horloge interne par échantillon, en virgule fixe Q16. */
+/* Produces one output sample: advances the machine by the clock steps
+ * covered by the sample duration, INTEGRATING the output over those steps.
+ * `steps_q16` = internal clock steps per sample, in Q16 fixed point. */
 static int16_t ay_step_sample(ay_play_t* st, uint32_t steps_q16) {
     st->step_acc += steps_q16;
     uint32_t nsteps = st->step_acc >> 16;
     st->step_acc &= 0xFFFFu;
 
-    if (nsteps == 0) return (int16_t)ay_mix(st);   /* sur-échantillonnage */
+    if (nsteps == 0) return (int16_t)ay_mix(st);   /* oversampling */
 
     int64_t sum = 0;
     for (uint32_t k = 0; k < nsteps; k++) {
@@ -364,8 +364,8 @@ static void copy_play_runtime_to_main(ay3891x_t* ay) {
 }
 
 void ay_generate(ay3891x_t* ay, int16_t* buffer, int num_samples) {
-    /* Pas d'horloge interne (clock/8) par échantillon de sortie, en Q16.
-     * Sur l'ORIC : 125 000 / 44 100 ≈ 2,834 pas par échantillon. */
+    /* Internal clock steps (clock/8) per output sample, in Q16.
+     * On the ORIC: 125,000 / 44,100 ≈ 2.834 steps per sample. */
     uint32_t steps_q16 = (uint32_t)(((uint64_t)(ay->clock_rate / 8) << 16)
                                     / (uint64_t)AUDIO_SAMPLE_RATE);
     ay_play_t* st = &ay->play;

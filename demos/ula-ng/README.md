@@ -1,82 +1,82 @@
-# Démos ULA-NG
+# ULA-NG demos
 
-Petites démos mettant en évidence les capacités de l'**ULA-NG** — l'ULA
-« next-generation » de Phosphoric, référence logicielle d'un futur portage
-Verilog sur Sipeed Tang Primer 20K (GOWIN GW2A). Voir la spec
+Small demos showing off the capabilities of the **ULA-NG** — Phosphoric's
+"next-generation" ULA, the software reference for a future Verilog port to the
+Sipeed Tang Primer 20K (GOWIN GW2A). See the spec
 `docs/ula-ng/ULA-NG-SPEC.md`.
 
-L'ULA-NG est **inerte au reset** (indiscernable d'une HCS10017 d'origine). Chaque
-démo la **déverrouille** elle-même en écrivant la séquence `'N','G'` (`$4E`,`$47`)
-sur `$0340`, puis programme les registres `$0340-$035F`. Aucune option
-d'émulateur particulière n'est requise — un simple `-t <démo>.tap -f` suffit.
+The ULA-NG is **inert at reset** (indistinguishable from an original HCS10017). Each
+demo **unlocks** it itself by writing the sequence `'N','G'` (`$4E`,`$47`)
+to `$0340`, then programs the registers `$0340-$035F`. No particular emulator
+option is required — a plain `-t <demo>.tap -f` is enough.
 
-> **Note d'affichage** : sur certaines configs GPU/pilote, le renderer SDL
-> accéléré donne une fenêtre noire. Les exemples ci-dessous utilisent
+> **Display note**: on some GPU/driver configurations, the accelerated SDL
+> renderer gives a black window. The examples below use
 > `--render-software`.
 
-## Menu interactif
+## Interactive menu
 
 ```bash
-make SDL2=1            # compile l'émulateur si besoin
+make SDL2=1            # build the emulator if needed
 demos/ula-ng/menu.sh
 ```
 
-Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
-`roms/basic11b.rom`), `--accel` (renderer accéléré au lieu du logiciel).
-`Ctrl+C` dans la fenêtre d'une démo revient au menu ; `q` quitte.
+Options: `--scale N` (SDL scale, default 2), `--rom PATH` (default
+`roms/basic11b.rom`), `--accel` (accelerated renderer instead of the software one).
+`Ctrl+C` in a demo's window goes back to the menu; `q` quits.
 
-## Lancer une démo manuellement
+## Running a demo manually
 
 ```bash
-# Chunky 4bpp 320x200, 16 couleurs, palette animée (machine code)
+# Chunky 4bpp 320x200, 16 colours, animated palette (machine code)
 ./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_chunky.tap -f --render-software --scale 2
 
-# Texte 80 colonnes (patiente ~30 s : le remplissage de l'écran $A000 est en BASIC)
+# 80-column text (wait ~30 s: filling the $A000 screen is done in BASIC)
 ./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_text80.tap -f --render-software --scale 2
 
-# Attributs parallèles : mosaïque de couleur PAR CELLULE (impossible sans color clash)
+# Parallel attributes: colour mosaic PER CELL (impossible without colour clash)
 ./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_attributes.tap -f --render-software --scale 2
 
-# Copper / palette relatchée par scanline : barres raster arc-en-ciel
+# Copper / palette re-latched per scanline: rainbow raster bars
 ./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_copper.tap -f --render-software --scale 2
 
-# Sprite matériel 16x16 : losange qui rebondit
+# 16x16 hardware sprite: bouncing diamond
 ./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_sprite.tap -f --render-software --scale 2
 ```
 
-## Les démos
+## The demos
 
-| Fichier | Feature (spec) | Ce qu'on voit | Source |
+| File | Feature (spec) | What you see | Source |
 |---|---|---|---|
-| `ng_chunky`     | Chunky 4bpp §5.8       | Image **plein écran 320×224** 16 couleurs (dégradé diagonal), palette animée en vagues | machine code |
-| `ng_text80`     | Texte 80 colonnes §5.8 | 80 caractères par ligne (480 px), charset RAM `$B400`                   | BASIC |
-| `ng_attributes` | Attributs parallèles §5.6 | **Mosaïque de couleur par cellule** (dégradé diagonal 8 couleurs) — un fond couleur différent dans **chaque** cellule, impossible sur l'ULA d'origine (color clash) | machine code |
-| `ng_copper`     | Copper / scanline §5.4 | Palette relatchée par ligne → barres raster arc-en-ciel                | BASIC |
-| `ng_sprite`     | Sprite matériel §5.7   | Sprite 16×16 (losange) composé sur le fond, rebondissant               | BASIC |
-| `ng_vdu`        | **VDU intégré** ([VDU.md](../../docs/ula-ng/VDU.md)) | Mosaïque de couleur par cellule pilotée **entièrement par un flux de commandes** écrit dans `NG_VDU` ($0357) — aucun pilote 6502 | machine code |
-| `ng_vdu_gfx`    | **VDU graphique** (v0.2) | Sunburst tracé par commandes VDU (`CLG`/`DRAW`) dans la **VRAM chunky portée par l'ULA-NG** — le VDU possède ses pixels | machine code |
-| `ng_vdu_spr`    | **VDU upload** (v0.3) | Sprite 16×16 (losange) **défini par un flux de 256 octets** (`VDU 23`) puis positionné (`VDU 24`) — protocole « buffered commands » | machine code |
+| `ng_chunky`     | Chunky 4bpp §5.8       | **Full-screen 320×224** 16-colour image (diagonal gradient), palette animated in waves | machine code |
+| `ng_text80`     | 80-column text §5.8 | 80 characters per line (480 px), RAM charset `$B400`                   | BASIC |
+| `ng_attributes` | Parallel attributes §5.6 | **Per-cell colour mosaic** (8-colour diagonal gradient) — a different background colour in **every** cell, impossible on the original ULA (colour clash) | machine code |
+| `ng_copper`     | Copper / scanline §5.4 | Palette re-latched per line → rainbow raster bars                | BASIC |
+| `ng_sprite`     | Hardware sprite §5.7   | 16×16 sprite (diamond) composited over the background, bouncing               | BASIC |
+| `ng_vdu`        | **Built-in VDU** ([VDU.md](../../docs/ula-ng/VDU.md)) | Per-cell colour mosaic driven **entirely by a command stream** written to `NG_VDU` ($0357) — no 6502 driver | machine code |
+| `ng_vdu_gfx`    | **Graphics VDU** (v0.2) | Sunburst drawn with VDU commands (`CLG`/`DRAW`) into the **chunky VRAM held by the ULA-NG** — the VDU owns its pixels | machine code |
+| `ng_vdu_spr`    | **VDU upload** (v0.3) | 16×16 sprite (diamond) **defined by a 256-byte stream** (`VDU 23`) then positioned (`VDU 24`) — "buffered commands" protocol | machine code |
 
-## Piloter/injecter sans BASIC
+## Driving/injecting without BASIC
 
-Pour tester une feature sans écrire de programme, l'émulateur accepte
-`--ula-ng-poke "AAA=VV,..."` : une séquence d'écritures hexadécimales dans les
-registres `$0340-$035F` appliquée au démarrage. Exemples (combinables avec
-`--screenshot-at C:FICHIER`) :
+To test a feature without writing a program, the emulator accepts
+`--ula-ng-poke "AAA=VV,..."`: a sequence of hexadecimal writes to the
+registers `$0340-$035F` applied at startup. Examples (can be combined with
+`--screenshot-at C:FILE`):
 
 ```bash
-# Chunky : déverrouillage + NG_MODE=$05 + palette index 0 = magenta
+# Chunky: unlock + NG_MODE=$05 + palette index 0 = magenta
 ./oric1-emu -r roms/basic11b.rom -n --ula-ng-poke "340=4E,340=47,341=05,348=00,349=0F,34A=0F" \
     --screenshot-at 4000000:/tmp/chunky.ppm -c 4500000
 
-# 80 colonnes : déverrouillage + NG_MODE=$09
+# 80 columns: unlock + NG_MODE=$09
 ./oric1-emu -r roms/basic11b.rom -n --ula-ng-poke "340=4E,340=47,341=09" \
     --screenshot-at 4000000:/tmp/t80.ppm -c 4500000
 ```
 
-## Reconstruire les .tap
+## Rebuilding the .tap files
 
-Sources BASIC (`*.bas`) → `.tap` avec `bas2tap` :
+BASIC sources (`*.bas`) → `.tap` with `bas2tap`:
 
 ```bash
 make tools
@@ -85,10 +85,10 @@ make tools
 ./bas2tap demos/ula-ng/ng_sprite.bas -o demos/ula-ng/ng_sprite.tap --auto-run
 ```
 
-Sources assembleur (`*.s`, syntaxe xa65) → `.bin` → `.tap` (chargé/exécuté en
-`$0500` ; **attention** : `bin2tap --start` utilise `strtol` base 0, donc
-préfixer en hexadécimal avec `0x` ; l'assembleur `xa` ne tolère pas les
-accents UTF-8 dans le source, d'où l'absence de commentaires dans les `.s`) :
+Assembly sources (`*.s`, xa65 syntax) → `.bin` → `.tap` (loaded/executed at
+`$0500`; **beware**: `bin2tap --start` uses `strtol` with base 0, so
+prefix hexadecimal values with `0x`; the `xa` assembler does not tolerate
+UTF-8 accented characters in the source, hence the lack of comments in the `.s` files):
 
 ```bash
 xa demos/ula-ng/ng_chunky.s -o /tmp/ng_chunky.bin
@@ -107,8 +107,8 @@ xa demos/ula-ng/ng_vdu_spr.s -o /tmp/ng_vdu_spr.bin
 ./bin2tap /tmp/ng_vdu_spr.bin --start 0x0500 --exec 0x0500 -o demos/ula-ng/ng_vdu_spr.tap --name NGVDUSPR
 ```
 
-## Référence
+## Reference
 
-Spécification ULA-NG : `docs/ula-ng/ULA-NG-SPEC.md`. Carte des registres
-(`$0340-$035F`), séquence de déverrouillage, et détail des 8 features (§5.1
-palette-indirection → §5.8 chunky/80col).
+ULA-NG specification: `docs/ula-ng/ULA-NG-SPEC.md`. Register map
+(`$0340-$035F`), unlock sequence, and details of the 8 features (§5.1
+palette indirection → §5.8 chunky/80col).

@@ -1,18 +1,18 @@
 #!/bin/sh
-# test_tape_signal_load.sh — CLOAD au niveau SIGNAL, sur les deux ROM (V2-E6).
+# test_tape_signal_load.sh -- CLOAD at SIGNAL level, on both ROMs (V2-E6).
 #
-# Le mode `--tape-signal` fait lire la bande par la vraie routine ROM, à partir
-# de la forme d'onde sur CB1 — c'est ce dont ont besoin les chargeurs maison et
-# les protections. Ce chemin n'était couvert par AUCUN test : `test_tape_roundtrip`
-# capture bien un CSAVE au signal, mais recharge ensuite en fast-load (`-f`).
+# The `--tape-signal` mode makes the real ROM routine read the tape from the
+# waveform on CB1 -- this is what custom loaders and copy protections need.
+# This path was covered by NO test: `test_tape_roundtrip` does capture a CSAVE
+# at signal level, but then reloads it with fast-load (`-f`).
 #
-# D'où ce test, qui vérifie les deux choses qui comptent, sur ORIC-1 ET Atmos :
-#   1. le programme arrive réellement en mémoire ;
-#   2. la ROM ne signale PAS d'erreur.
+# Hence this test, which checks the two things that matter, on ORIC-1 AND Atmos:
+#   1. the program actually reaches memory;
+#   2. the ROM reports NO error.
 #
-# C'est le point 2 qui manquait : la trame était encodée avec une parité PAIRE
-# alors que le format ORIC est en parité IMPAIRE. La ROM 1.0 ne le voyait pas,
-# la ROM 1.1 chargeait correctement puis affichait « Errors found ».
+# Point 2 was the missing one: the frame was encoded with EVEN parity whereas
+# the ORIC format uses ODD parity. ROM 1.0 did not notice, ROM 1.1 loaded
+# correctly and then displayed "Errors found".
 
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)

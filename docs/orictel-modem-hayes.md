@@ -1,37 +1,37 @@
-# Phosphoric — Support modem Hayes AT pour OricTel
+# Phosphoric — Hayes AT modem support for OricTel
 
-Bonjour,
+Hello,
 
-Phosphoric supporte maintenant un modem Hayes complet avec commandes AT, utilisable depuis le BASIC ou le code assembleur ORIC.
+Phosphoric now supports a complete Hayes modem with AT commands, usable from BASIC or from ORIC assembly code.
 
-## Lancement
+## Launching
 
 ```bash
-# Mode commande pur — le programme ORIC choisit la destination via ATD
+# Pure command mode — the ORIC program chooses the destination via ATD
 ./oric1-emu -r roms/basic10.rom --serial modem
 
-# Host prédéfini — ATD seul connecte à ce host
+# Predefined host — a bare ATD connects to this host
 ./oric1-emu -r roms/basic10.rom --serial modem:bbs.host:23
 
-# Mode serveur BBS — attend des connexions entrantes
+# BBS server mode — waits for incoming connections
 ./oric1-emu -r roms/basic10.rom --serial modem:listen:2323
 ```
 
-## Commandes AT supportées
+## Supported AT commands
 
-| Commande | Action | Réponse |
+| Command | Action | Response |
 |----------|--------|---------|
-| `AT` | Test modem | `OK` |
-| `ATZ` | Reset modem | `OK` |
+| `AT` | Modem test | `OK` |
+| `ATZ` | Modem reset | `OK` |
 | `ATE0` / `ATE1` | Echo off / on | `OK` |
-| `ATH` | Raccrocher | `OK` |
-| `ATD host:port` | Connecter via TCP | `CONNECT` ou `NO CARRIER` |
-| `ATDT host:port` | Idem (T ignoré) | `CONNECT` ou `NO CARRIER` |
-| `ATA` | Accepter connexion entrante (mode listen) | `CONNECT` ou `ERROR` |
-| `ATS0=N` | Auto-answer après N rings | `OK` |
+| `ATH` | Hang up | `OK` |
+| `ATD host:port` | Connect via TCP | `CONNECT` or `NO CARRIER` |
+| `ATDT host:port` | Same (T ignored) | `CONNECT` or `NO CARRIER` |
+| `ATA` | Accept incoming connection (listen mode) | `CONNECT` or `ERROR` |
+| `ATS0=N` | Auto-answer after N rings | `OK` |
 | `+++` | Escape data → command mode (guard time) | `OK` |
 
-## Exemple BASIC
+## BASIC example
 
 ```basic
 10 DA=796:ST=797:CM=798:CT=799
@@ -42,7 +42,7 @@ Phosphoric supporte maintenant un modem Hayes complet avec commandes AT, utilisa
 60 POKE DA,ASC(MID$(A$,I,1))
 70 FOR W=1 TO 100:NEXT W
 80 NEXT I
-90 REM == ATTENDRE CONNECT ==
+90 REM == WAIT FOR CONNECT ==
 100 R$=""
 110 S=PEEK(ST):IF (S AND 8)=0 THEN 110
 120 C=PEEK(DA)
@@ -67,18 +67,20 @@ Phosphoric supporte maintenant un modem Hayes complet avec commandes AT, utilisa
 360 PRINT"DECONNECTE":END
 ```
 
-## Autres options disponibles
+(The program prints `CONNECTE!` ("connected!") and `DECONNECTE` ("disconnected").)
+
+## Other available options
 
 ```bash
---serial-buffer 256      RX FIFO (évite overrun pendant clear screen)
---serial-irq-on-rdrf     Mode WDC 65C51 (IRQ re-trigger tant que RDRF set)
---serial-trace FILE      Debug trace TX/RX avec timestamps CPU
---serial-v23             Mode V23 1200/75 bauds (Minitel)
+--serial-buffer 256      RX FIFO (avoids overrun during clear screen)
+--serial-irq-on-rdrf     WDC 65C51 mode (IRQ re-triggers while RDRF is set)
+--serial-trace FILE      TX/RX debug trace with CPU timestamps
+--serial-v23             V23 1200/75 baud mode (Minitel)
 ```
 
-## Fix AY-3-8912 registre 7 (inclus dans cette version)
+## AY-3-8912 register 7 fix (included in this version)
 
-Le bug clavier après modification du registre 7 est corrigé. Phosphoric bloque maintenant le scan clavier quand le Port A du PSG est en output (reg7 bit 6 = 0), comme Oricutron et le vrai hardware. Le workaround `ay_write(7, $7F)` reste nécessaire côté programme.
+The keyboard bug after modifying register 7 is fixed. Phosphoric now blocks the keyboard scan when the PSG's Port A is set as output (reg7 bit 6 = 0), like Oricutron and the real hardware. The `ay_write(7, $7F)` workaround is still needed on the program side.
 
 ---
 

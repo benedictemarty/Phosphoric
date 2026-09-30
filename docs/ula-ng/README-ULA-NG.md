@@ -1,180 +1,180 @@
-# ULA-NG — Guide utilisateur
+# ULA-NG — User guide
 
-ULA « next-generation » pour Phosphoric : extensions vidéo activées par
-déverrouillage, **indiscernables d'une HCS 10017 tant que verrouillées**.
-Référence logicielle d'un futur portage FPGA (Sipeed Tang Primer 20K /
+A "next-generation" ULA for Phosphoric: video extensions enabled by
+unlocking, **indistinguishable from an HCS 10017 while locked**.
+Software reference for a future FPGA port (Sipeed Tang Primer 20K /
 GW2A-18).
 
-> État : **8 features implémentées et validées** (§5.1 palette-indirection →
-> §5.8 chunky/80col). Voir `ULA-NG-SPEC.md` (spec complète) et `AUDIT.md`
-> (architecture). Démos exécutables : `demos/ula-ng/`.
+> Status: **8 features implemented and validated** (§5.1 palette indirection →
+> §5.8 chunky/80col). See `ULA-NG-SPEC.md` (full spec) and `AUDIT.md`
+> (architecture). Runnable demos: `demos/ula-ng/`.
 
 ---
 
-## 0. Le mode « ULA normal » (par défaut)
+## 0. "Normal ULA" mode (the default)
 
-Au reset, **l'ULA-NG est verrouillée** : elle se comporte exactement comme
-l'ULA d'origine de l'ORIC-1/Atmos (HCS 10017), **bit pour bit**. La fenêtre de
-registres `$0340-$035F` retombe alors sur le VIA. **Aucun programme ne voit de
-différence** tant qu'il ne déverrouille pas explicitement l'ULA-NG.
+At reset, **the ULA-NG is locked**: it behaves exactly like
+the original ORIC-1/Atmos ULA (HCS 10017), **bit for bit**. The register
+window `$0340-$035F` then falls through to the VIA. **No program sees any
+difference** unless it explicitly unlocks the ULA-NG.
 
-Autrement dit : *ne rien faire = ULA normale*. Il n'y a **aucun flag à passer**
-à l'émulateur — les démos se déverrouillent elles-mêmes (`-t ng_chunky.tap -f`).
+In other words: *do nothing = normal ULA*. There is **no flag to pass**
+to the emulator — the demos unlock it themselves (`-t ng_chunky.tap -f`).
 
-> L'ULA-NG est une couche indépendante, dormante par défaut : tant qu'elle n'est
-> pas déverrouillée, la puce reste indiscernable d'une ULA HCS 10017 standard.
-
----
-
-## 1. Il n'y a pas de mot-clé BASIC
-
-Le BASIC de l'Oric est figé en ROM (1983) et ne connaît pas l'ULA-NG : **aucun
-mot-clé** du type `HIRES`/`TEXT` ne l'active. On pilote l'ULA-NG **en écrivant
-ses registres**, par trois moyens équivalents :
-
-1. **`POKE`** depuis le BASIC (adresses en décimal ou en `#hexa`).
-2. **`STA $034x`** en code machine (voir les démos `.s`).
-3. **`--ula-ng-poke "…"`** côté émulateur (injection au démarrage).
-
-C'est fidèle au vrai matériel : sur une carte FPGA, on piloterait aussi les
-registres au POKE, comme toute extension hardware Oric. Un jeu de mots-clés
-étendus nécessiterait une **ROM d'extension compagnon** (non fournie).
+> The ULA-NG is an independent layer, dormant by default: as long as it is
+> not unlocked, the chip remains indistinguishable from a standard HCS 10017 ULA.
 
 ---
 
-## 2. Déverrouillage
+## 1. There is no BASIC keyword
 
-Fenêtre registres : **`$0340`-`$035F`**. Séquence : écrire `'N'` (`$4E`) puis
-`'G'` (`$47`) dans **`$0340`**, sans autre écriture de la fenêtre entre les deux.
+The Oric's BASIC is frozen in ROM (1983) and knows nothing of the ULA-NG: **no
+keyword** such as `HIRES`/`TEXT` activates it. The ULA-NG is driven **by writing
+its registers**, through three equivalent means:
+
+1. **`POKE`** from BASIC (addresses in decimal or `#hex`).
+2. **`STA $034x`** in machine code (see the `.s` demos).
+3. **`--ula-ng-poke "…"`** on the emulator side (injection at startup).
+
+This is faithful to real hardware: on an FPGA board, the registers would also
+be driven with POKE, like any Oric hardware extension. A set of extended
+keywords would require a **companion extension ROM** (not provided).
+
+---
+
+## 2. Unlocking
+
+Register window: **`$0340`-`$035F`**. Sequence: write `'N'` (`$4E`) then
+`'G'` (`$47`) to **`$0340`**, with no other write to the window in between.
 
 ```asm
         LDA #$4E : STA $0340        ; 'N'
         LDA #$47 : STA $0340        ; 'G'
-        LDA $0340 : CMP #$1E : BNE no_ng             ; NG_ID = version ?
+        LDA $0340 : CMP #$1E : BNE no_ng             ; NG_ID = version?
         LDA $034F : EOR $0340 : CMP #$FF : BNE no_ng  ; handshake ~NG_ID
-        ; ULA-NG présente et déverrouillée
+        ; ULA-NG present and unlocked
 no_ng:
 ```
 
-En BASIC : `POKE#340,78:POKE#340,71` (78=`$4E`, 71=`$47`).
+In BASIC: `POKE#340,78:POKE#340,71` (78=`$4E`, 71=`$47`).
 
-Un **reset re-verrouille tout** → retour immédiat à l'ULA normale.
+A **reset re-locks everything** → immediate return to the normal ULA.
 
 ---
 
-## 3. Activer un mode (après déverrouillage)
+## 3. Enabling a mode (after unlocking)
 
-Chaque feature s'arme par un registre. `NG_MODE` (`$0341`) porte l'essentiel :
+Each feature is armed by a register. `NG_MODE` (`$0341`) carries most of them:
 
-| Feature (spec) | Registre / bits | Valeur `NG_MODE` |
+| Feature (spec) | Register / bits | `NG_MODE` value |
 |---|---|---|
-| Palette, copper, scroll fin, start-address, IRQ raster | `NG_MODE.b0` (extensions actives) | `$01` |
-| Attributs parallèles (§5.6) | `NG_MODE.b1` | `$02` |
+| Palette, copper, fine scroll, start address, raster IRQ | `NG_MODE.b0` (extensions active) | `$01` |
+| Parallel attributes (§5.6) | `NG_MODE.b1` | `$02` |
 | **Chunky 4bpp** (§5.8) | `NG_MODE` b0 + b2-3 = `01` | `$05` |
-| **Texte 80 colonnes** (§5.8) | `NG_MODE` b0 + b2-3 = `10` | `$09` |
-| **Sprites** (§5.7) | `NG_SPR_CTRL.b0` (`$0350`), **indépendant** de `NG_MODE` | — |
+| **80-column text** (§5.8) | `NG_MODE` b0 + b2-3 = `10` | `$09` |
+| **Sprites** (§5.7) | `NG_SPR_CTRL.b0` (`$0350`), **independent** of `NG_MODE` | — |
 
-**Revenir au normal** sans reset : écrire `NG_MODE=0` (et `NG_SPR_CTRL=0`) — les
-extensions visuelles se désactivent (rendu standard), la fenêtre restant
-possédée jusqu'au reset.
+**Returning to normal** without a reset: write `NG_MODE=0` (and `NG_SPR_CTRL=0`) — the
+visual extensions are disabled (standard rendering), while the window stays
+owned until reset.
 
 ---
 
-## 4. Carte des registres (`$0340`-`$035F`)
+## 4. Register map (`$0340`-`$035F`)
 
-| Adr | Nom | R/W | Rôle |
+| Addr | Name | R/W | Role |
 |---|---|---|---|
-| `$0340` | `NG_ID` (R) / `NG_LOCK` (W) | R/W | R : `$1E` si déverrouillé. W : séquence 'N','G'. |
-| `$0341` | `NG_MODE` | R/W | b0 = extensions actives ; b1 = attributs // ; b2-3 = mode vidéo (00 std, 01 chunky, 10 80col). |
-| `$0342`-`$0343` | `NG_SCRSTART` | W | Base du fetch vidéo (LSB/MSB). `$0000` = défaut. |
-| `$0344` | `NG_SCROLLX` | W | Décalage fin X (0-5 px). |
-| `$0345` | `NG_SCROLLY` | W | Décalage fin Y (0-7 px). |
-| `$0346` | `NG_RASTERLINE` | W | Ligne (0-255) déclenchant l'IRQ raster. |
-| `$0347` | `NG_STATUS` | R/W | R b7 = IRQ en attente. W = acquit + b0 = enable IRQ. |
-| `$0348` | `NG_PAL_IDX` | W | Index LUT palette (0-15), auto-incrément. |
+| `$0340` | `NG_ID` (R) / `NG_LOCK` (W) | R/W | R: `$1E` if unlocked. W: 'N','G' sequence. |
+| `$0341` | `NG_MODE` | R/W | b0 = extensions active; b1 = parallel attributes; b2-3 = video mode (00 std, 01 chunky, 10 80col). |
+| `$0342`-`$0343` | `NG_SCRSTART` | W | Video fetch base (LSB/MSB). `$0000` = default. |
+| `$0344` | `NG_SCROLLX` | W | Fine X offset (0-5 px). |
+| `$0345` | `NG_SCROLLY` | W | Fine Y offset (0-7 px). |
+| `$0346` | `NG_RASTERLINE` | W | Line (0-255) that triggers the raster IRQ. |
+| `$0347` | `NG_STATUS` | R/W | R b7 = IRQ pending. W = acknowledge + b0 = IRQ enable. |
+| `$0348` | `NG_PAL_IDX` | W | Palette LUT index (0-15), auto-increment. |
 | `$0349` | `NG_PAL_DATA` lo | W | `0000RRRR`. |
-| `$034A` | `NG_PAL_DATA` hi | W | `GGGGBBBB` (commit + incrément d'index). |
-| `$034B` | `NG_COP_CTRL` | W | Réinitialise la liste copper. |
-| `$034C` | `NG_COP_DATA` | W | Flux 3 o/entrée : `ligne`, `(idx<<4)|R`, `(G<<4)|B`. |
-| `$034D` | `NG_ATTR_FILL` | W | Remplit tout le plan d'attributs 8 Ko + reset pointeur. Octet = `(paper<<3)|ink`. |
-| `$034E` | `NG_ATTR_DATA` | W | Flux 1 o/cellule (auto-incrément, index `scanline*40+col`). |
+| `$034A` | `NG_PAL_DATA` hi | W | `GGGGBBBB` (commit + index increment). |
+| `$034B` | `NG_COP_CTRL` | W | Resets the copper list. |
+| `$034C` | `NG_COP_DATA` | W | 3-byte-per-entry stream: `ligne` (line), `(idx<<4)|R`, `(G<<4)|B`. |
+| `$034D` | `NG_ATTR_FILL` | W | Fills the whole 8 KB attribute plane + resets the pointer. Byte = `(paper<<3)|ink`. |
+| `$034E` | `NG_ATTR_DATA` | W | 1-byte-per-cell stream (auto-increment, index `scanline*40+col`). |
 | `$034F` | `NG_IDCHK` | R | `~NG_ID` (handshake). |
-| `$0350` | `NG_SPR_CTRL` | W | b0 = enable global sprites. |
-| `$0351` | `NG_SPR_SEL` | W | Sprite sélectionné (0-15) + reset pointeur motif. |
-| `$0352` | `NG_SPR_X` | W | Position X (0-255) du sprite. |
-| `$0353` | `NG_SPR_Y` | W | Position Y (0-255). |
+| `$0350` | `NG_SPR_CTRL` | W | b0 = global sprite enable. |
+| `$0351` | `NG_SPR_SEL` | W | Selected sprite (0-15) + resets the pattern pointer. |
+| `$0352` | `NG_SPR_X` | W | Sprite X position (0-255). |
+| `$0353` | `NG_SPR_Y` | W | Y position (0-255). |
 | `$0354` | `NG_SPR_ATTR` | W | b0 = sprite visible. |
-| `$0355` | `NG_SPR_DATA` | W | Flux motif 16×16 : 1 o/px (`0`=transparent, `1`-`7`=index LUT), auto-incr. |
-| `$0356` | `NG_SPR_STATUS` | R | b7 = collision sprite-sprite (clear on read). |
-| `$0357` | `NG_VDU` | W | Flux de commandes VDU intégré (voir [VDU.md](VDU.md)). |
+| `$0355` | `NG_SPR_DATA` | W | 16×16 pattern stream: 1 byte/px (`0`=transparent, `1`-`7`=LUT index), auto-increment. |
+| `$0356` | `NG_SPR_STATUS` | R | b7 = sprite-sprite collision (clear on read). |
+| `$0357` | `NG_VDU` | W | Built-in VDU command stream (see [VDU.md](VDU.md)). |
 
 ---
 
-## 5. Recettes `--ula-ng-poke` (émulateur)
+## 5. `--ula-ng-poke` recipes (emulator)
 
-Le flag CLI programme les registres au démarrage. `SEQ` = paires `AAA=VV` (hex)
-séparées par des virgules. Combinez avec `--screenshot-at CYCLES:FICHIER`.
+The CLI flag programs the registers at startup. `SEQ` = `AAA=VV` pairs (hex)
+separated by commas. Combine with `--screenshot-at CYCLES:FICHIER` (FICHIER = file).
 
 ```bash
-# Palette : couleur 7 (blanc) -> vert
+# Palette: colour 7 (white) -> green
 --ula-ng-poke "340=4E,340=47,341=01,348=07,349=00,34A=F0"
 
-# Copper : couleur 7 rouge (ligne 0) puis bleu (ligne 30) -> bandes
+# Copper: colour 7 red (line 0) then blue (line 30) -> bands
 --ula-ng-poke "340=4E,340=47,341=01,34B=00,34C=00,34C=7F,34C=00,34C=1E,34C=70,34C=0F"
 
-# Start-address : scroll d'une rangée texte ($BB80+40 = $BBA8)
+# Start address: scroll by one text row ($BB80+40 = $BBA8)
 --ula-ng-poke "340=4E,340=47,341=01,342=A8,343=BB"
 
-# Attributs parallèles : papier bleu (4) + encre rouge (1) = $21
+# Parallel attributes: blue paper (4) + red ink (1) = $21
 --ula-ng-poke "340=4E,340=47,341=02,34D=21"
 
-# Chunky 4bpp : NG_MODE=$05 + palette index 0 = magenta (écran 320px)
+# Chunky 4bpp: NG_MODE=$05 + palette index 0 = magenta (320px screen)
 --ula-ng-poke "340=4E,340=47,341=05,348=00,349=0F,34A=0F"
 
-# Texte 80 colonnes : NG_MODE=$09 (écran 480px)
+# 80-column text: NG_MODE=$09 (480px screen)
 --ula-ng-poke "340=4E,340=47,341=09"
 
-# IRQ raster ligne 100 (enable) : ATTENTION, sans ISR -> boucle d'IRQ
+# Raster IRQ at line 100 (enable): WARNING, without an ISR -> IRQ loop
 --ula-ng-poke "340=4E,340=47,341=01,346=64,347=01"
 ```
 
-Équivalent BASIC : `POKE` des mêmes adresses en décimal (`$0340`=832…). La limite
-de ligne BASIC (~80 car.) impose de découper les longues séquences.
+BASIC equivalent: `POKE` the same addresses in decimal (`$0340`=832…). The BASIC
+line length limit (~80 chars) means long sequences have to be split.
 
 ---
 
-## 6. Depuis du code machine
+## 6. From machine code
 
 ```asm
         LDA #$4E : STA $0340       ; unlock 'N'
         LDA #$47 : STA $0340       ; unlock 'G'
-        LDA #$01 : STA $0341       ; NG_MODE.b0 = extensions actives
-        LDA #$01 : STA $0348       ; index palette 1
+        LDA #$01 : STA $0341       ; NG_MODE.b0 = extensions active
+        LDA #$01 : STA $0348       ; palette index 1
         LDA #$0F : STA $0349       ; R=F
-        LDA #$F0 : STA $034A       ; G=F,B=0 -> jaune, commit
+        LDA #$F0 : STA $034A       ; G=F,B=0 -> yellow, commit
 ```
 
-Pour l'IRQ raster, installer un ISR qui acquitte (`STA $0347`) — nécessite un
-vecteur IRQ redirigeable (Sedoric/overlay ou ROM custom), pas le BASIC nu.
+For the raster IRQ, install an ISR that acknowledges (`STA $0347`) — this requires a
+redirectable IRQ vector (Sedoric/overlay or a custom ROM), not bare BASIC.
 
-Les données volumineuses (motifs de sprites, images chunky 16000 o, plan
-d'attributs 8000 cellules) se programment par flux et gagnent à être remplies en
-code machine plutôt qu'en `POKE` BASIC (lent).
+Bulky data (sprite patterns, 16000-byte chunky images, 8000-cell attribute
+plane) is programmed through streams and is best filled in
+machine code rather than with BASIC `POKE` (slow).
 
 ---
 
-## 7. Démos prêtes à l'emploi
+## 7. Ready-to-use demos
 
-`demos/ula-ng/` contient une démo par feature marquante, avec un menu de
-lancement (`menu.sh`) et un `README.md` détaillé :
+`demos/ula-ng/` contains one demo per headline feature, with a launch
+menu (`menu.sh`) and a detailed `README.md`:
 
-| Démo | Feature | Source |
+| Demo | Feature | Source |
 |---|---|---|
-| `ng_chunky`     | Chunky 4bpp plein écran 320×224, 16 couleurs, palette animée | machine code |
-| `ng_text80`     | Texte 80 colonnes (480 px)                                   | BASIC |
-| `ng_attributes` | Mosaïque de couleur par cellule (no color clash)             | machine code |
-| `ng_copper`     | Barres raster arc-en-ciel (palette par scanline)             | BASIC |
-| `ng_sprite`     | Sprite 16×16 rebondissant                                    | BASIC |
+| `ng_chunky`     | Full-screen chunky 4bpp 320×224, 16 colours, animated palette | machine code |
+| `ng_text80`     | 80-column text (480 px)                                        | BASIC |
+| `ng_attributes` | Per-cell colour mosaic (no colour clash)                       | machine code |
+| `ng_copper`     | Rainbow raster bars (palette per scanline)                     | BASIC |
+| `ng_sprite`     | Bouncing 16×16 sprite                                          | BASIC |
 
 ```bash
 make SDL2=1
@@ -183,25 +183,25 @@ demos/ula-ng/menu.sh
 
 ---
 
-## 7 bis. VDU intégré (`NG_VDU` $0357)
+## 7a. Built-in VDU (`NG_VDU` $0357)
 
-Au lieu d'écrire les registres un par un, on peut **streamer des commandes de
-style VDU** dans `$0357` ; l'interpréteur vit **dans l'ULA-NG** (le 6502 ne porte
-aucun pilote). Jeu v0.1 : `20` reset, `22 n` MODE (0 std/1 chunky/2 80col),
-`19 l r g b` palette, `18 a` fond couleur par cellule, `31 col row a` colorer une
-cellule (sans color clash). Exemple BASIC (fond bleu/encre rouge = `$21`) :
+Instead of writing the registers one by one, you can **stream VDU-style
+commands** into `$0357`; the interpreter lives **inside the ULA-NG** (the 6502 carries
+no driver). v0.1 set: `20` reset, `22 n` MODE (0 std/1 chunky/2 80col),
+`19 l r g b` palette, `18 a` per-cell background colour, `31 col row a` colour one
+cell (without colour clash). BASIC example (blue paper/red ink = `$21`):
 
 ```basic
-POKE#340,78:POKE#340,71 : REM deverrouille
+POKE#340,78:POKE#340,71 : REM unlock
 POKE#357,18:POKE#357,#21 : REM VDU 18, $21
 ```
 
-Détails, protocole d'upload (v0.2) et état de l'art : **[VDU.md](VDU.md)**.
+Details, upload protocol (v0.2) and state of the art: **[VDU.md](VDU.md)**.
 
-## 8. Référence
+## 8. Reference
 
-- `docs/ula-ng/VDU.md` — VDU intégré (port de commandes `NG_VDU`).
-- `docs/ula-ng/ULA-NG-SPEC.md` — spécification complète (registres, timing,
-  décisions d'implémentation, cible FPGA).
-- `docs/ula-ng/AUDIT.md` — architecture et frontières « miroir FPGA ».
-- `demos/ula-ng/README.md` — mode d'emploi des démos + reconstruction des `.tap`.
+- `docs/ula-ng/VDU.md` — built-in VDU (`NG_VDU` command port).
+- `docs/ula-ng/ULA-NG-SPEC.md` — full specification (registers, timing,
+  implementation decisions, FPGA target).
+- `docs/ula-ng/AUDIT.md` — architecture and "FPGA mirror" boundaries.
+- `demos/ula-ng/README.md` — how to use the demos + rebuilding the `.tap` files.

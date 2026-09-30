@@ -90,7 +90,7 @@ expect "--dump-ram-when with only one ':' → exit 1" 1 "Invalid --dump-ram-when
 run "$EMU" -r "$ROM" -n --screenshot-text-when 9C55:AB: -c 1000
 expect "--screenshot-text-when with empty FILE → exit 1" 1 "Invalid --screenshot-text-when format"
 
-# ── écritures déclenchées --poke-at / --poke-when : malformées → fatal ──
+# ── triggered writes --poke-at / --poke-when: malformed → fatal ─────────
 run "$EMU" -r "$ROM" -n --poke-at NOCOLON -c 1000
 expect "--poke-at without ':' → exit 1" 1 "Invalid --poke-at format"
 
@@ -143,7 +143,7 @@ else
     note_fail "well-formed --dump-ram-at (rc=$RC, size=$(stat -c%s "$TMP/ram.bin" 2>/dev/null || echo 0))"
 fi
 
-# well-formed --screenshot-text-at : dump du texte $BB80 non vide au cycle donné
+# well-formed --screenshot-text-at: non-empty dump of the $BB80 text at the given cycle
 run "$EMU" -r "$ROM" -n --screenshot-text-at 3000000:"$TMP/at.txt" -c 3200000
 if [ "$RC" -eq 0 ] && [ -s "$TMP/at.txt" ]; then
     note_pass "well-formed --screenshot-text-at 3000000:FILE parses and writes text"
@@ -151,7 +151,7 @@ else
     note_fail "well-formed --screenshot-text-at (rc=$RC, size=$(stat -c%s "$TMP/at.txt" 2>/dev/null || echo 0))"
 fi
 
-# well-formed --screenshot-ansi-at : image ANSI non vide au cycle donné
+# well-formed --screenshot-ansi-at: non-empty ANSI image at the given cycle
 run "$EMU" -r "$ROM" -n --screenshot-ansi-at 3000000:"$TMP/at.ansi" -c 3200000
 if [ "$RC" -eq 0 ] && [ -s "$TMP/at.ansi" ]; then
     note_pass "well-formed --screenshot-ansi-at 3000000:FILE parses and writes ANSI"
@@ -159,8 +159,8 @@ else
     note_fail "well-formed --screenshot-ansi-at (rc=$RC, size=$(stat -c%s "$TMP/at.ansi" 2>/dev/null || echo 0))"
 fi
 
-# well-formed --dump-ram-when : la condition RAM[$0000]==$00 est vraie très tôt
-# (page zéro nulle au boot) → dump 64K écrit, exit 0.
+# well-formed --dump-ram-when: the condition RAM[$0000]==$00 is true very early
+# (zero page zeroed at boot) → 64K dump written, exit 0.
 run "$EMU" -r "$ROM" -n --dump-ram-when 0000:00:"$TMP/when.bin" -c 2000000
 if [ "$RC" -eq 0 ] && [ -s "$TMP/when.bin" ] \
         && [ "$(stat -c%s "$TMP/when.bin")" -eq 65536 ]; then
@@ -169,7 +169,7 @@ else
     note_fail "well-formed --dump-ram-when (rc=$RC, size=$(stat -c%s "$TMP/when.bin" 2>/dev/null || echo 0))"
 fi
 
-# well-formed --screenshot-text-when : même condition, dump texte non vide.
+# well-formed --screenshot-text-when: same condition, non-empty text dump.
 run "$EMU" -r "$ROM" -n --screenshot-text-when 0000:00:"$TMP/when.txt" -c 2000000
 if [ "$RC" -eq 0 ] && [ -s "$TMP/when.txt" ]; then
     note_pass "well-formed --screenshot-text-when 0000:00:FILE triggers and writes text"
@@ -177,9 +177,9 @@ else
     note_fail "well-formed --screenshot-text-when (rc=$RC, size=$(stat -c%s "$TMP/when.txt" 2>/dev/null || echo 0))"
 fi
 
-# well-formed --poke-at + --poke-when chaînés : poke-at écrit $04FA=42 après 1M
-# cycles ; poke-when voit RAM[$04FA]==42 et écrit $04FB=77 (même passe, l'ordre
-# de la ligne de commande garantit le chaînage). --dump-ram-at vérifie les deux.
+# well-formed chained --poke-at + --poke-when: poke-at writes $04FA=42 after 1M
+# cycles; poke-when sees RAM[$04FA]==42 and writes $04FB=77 (same pass, the
+# command-line order guarantees the chaining). --dump-ram-at checks both.
 run "$EMU" -r "$ROM" -n \
     --poke-at 1000000:04FA=42 \
     --poke-when 04FA:42:04FB=77 \
@@ -192,9 +192,9 @@ else
     note_fail "well-formed --poke-at/--poke-when (rc=$RC)"
 fi
 
-# VAL est hexa (comme ADDR) : "AB" = $AB, pas décimal. Une condition
-# introuvable avant --cycles est un échec FRANC → exit 2 + message dédié,
-# pour que le CI distingue « état jamais atteint » d'une erreur d'usage.
+# VAL is hex (like ADDR): "AB" = $AB, not decimal. A condition
+# never met before --cycles is an OUTRIGHT failure → exit 2 + dedicated message,
+# so that the CI can tell « state never reached » from a usage error.
 run "$EMU" -r "$ROM" -n --screenshot-when 9C55:AB:"$TMP/never.ppm" -c 500000
 expect "--screenshot-when never satisfied → exit 2" 2 "condition jamais atteinte"
 if [ ! -e "$TMP/never.ppm" ]; then
@@ -390,11 +390,11 @@ else
     note_fail "--trace-max did not keep the boot head"
 fi
 
-# --- Couverture de --help ------------------------------------------------
-# Toute option longue déclarée dans cli_options.h doit apparaître dans l'aide.
-# Sans ce garde-fou, une option livrée mais non documentée est invisible : un
-# utilisateur qui ne la voit pas dans --help en conclut qu'elle manque à son
-# build (cas vécu : --loci-emu/--loci-cdc, pourtant fonctionnelles).
+# --- --help coverage -----------------------------------------------------
+# Every long option declared in cli_options.h must appear in the help.
+# Without this safeguard, a shipped but undocumented option is invisible: a
+# user who does not see it in --help concludes it is missing from their
+# build (real case: --loci-emu/--loci-cdc, which did work).
 OPTS_H="$(dirname "$0")/../../include/cli/cli_options.h"
 USAGE_C="$(dirname "$0")/../../src/cli/cli_usage.c"
 if [ -r "$OPTS_H" ] && [ -r "$USAGE_C" ]; then

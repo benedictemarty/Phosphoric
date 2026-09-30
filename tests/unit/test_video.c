@@ -334,7 +334,7 @@ TEST(test_ascii_export_nonempty) {
     video_cleanup(&vid);
 }
 
-/* video_export_ascii_file() : wrapper fichier de video_export_ascii(). */
+/* video_export_ascii_file(): file wrapper of video_export_ascii(). */
 TEST(test_ascii_export_file) {
     video_t vid;
     video_init(&vid);
@@ -349,7 +349,7 @@ TEST(test_ascii_export_file) {
     const char* path = "/tmp/test_video_ascii_file.txt";
     ASSERT_TRUE(video_export_ascii_file(&vid, path, 2, 2));
     ASSERT_TRUE(file_size(path) > 100);
-    /* Erreurs : chemin/vid NULL -> false */
+    /* Errors: NULL path/vid -> false */
     ASSERT_TRUE(!video_export_ascii_file(&vid, NULL, 2, 2));
     ASSERT_TRUE(!video_export_ascii_file(NULL, path, 2, 2));
     unlink(path);
@@ -357,19 +357,19 @@ TEST(test_ascii_export_file) {
     video_cleanup(&vid);
 }
 
-/* video_export_screen_text() : dump du contenu texte réel de $BB80. */
+/* video_export_screen_text(): dump of the actual text content of $BB80. */
 TEST(test_screen_text_export) {
     uint8_t* mem = (uint8_t*)calloc(65536, 1);
     ASSERT_TRUE(mem != NULL);
-    /* Remplit tout l'écran d'espaces (rtrim -> lignes vides). */
+    /* Fill the whole screen with spaces (rtrim -> empty lines). */
     memset(mem + 0xBB80, 0x20, 40 * 28);
-    /* Ligne 0 : "HI" à partir de la colonne 2, puis rien. */
+    /* Line 0: "HI" starting at column 2, then nothing. */
     mem[0xBB80 + 2] = 'H';
     mem[0xBB80 + 3] = 'I';
-    /* Ligne 1 : un code de contrôle (attribut) doit devenir un espace. */
-    mem[0xBB80 + 40 + 0] = 0x1B;   /* < 0x20 -> espace */
+    /* Line 1: a control code (attribute) must become a space. */
+    mem[0xBB80 + 40 + 0] = 0x1B;   /* < 0x20 -> space */
     mem[0xBB80 + 40 + 1] = 'X';
-    /* Bit vidéo inverse (0x80) doit être masqué : 'A'|0x80 -> 'A'. */
+    /* Inverse video bit (0x80) must be masked: 'A'|0x80 -> 'A'. */
     mem[0xBB80 + 2 * 40 + 0] = (uint8_t)('A' | 0x80);
 
     const char* path = "/tmp/test_screen_text.txt";
@@ -382,14 +382,14 @@ TEST(test_screen_text_export) {
     ASSERT_TRUE(rf != NULL);
     char line[128];
     ASSERT_TRUE(fgets(line, sizeof(line), rf) != NULL);
-    ASSERT_TRUE(strcmp(line, "  HI\n") == 0);        /* rtrim, 2 espaces + HI */
+    ASSERT_TRUE(strcmp(line, "  HI\n") == 0);        /* rtrim, 2 spaces + HI */
     ASSERT_TRUE(fgets(line, sizeof(line), rf) != NULL);
-    ASSERT_TRUE(strcmp(line, " X\n") == 0);          /* 0x1B -> espace */
+    ASSERT_TRUE(strcmp(line, " X\n") == 0);          /* 0x1B -> space */
     ASSERT_TRUE(fgets(line, sizeof(line), rf) != NULL);
-    ASSERT_TRUE(strcmp(line, "A\n") == 0);           /* bit inverse masqué */
+    ASSERT_TRUE(strcmp(line, "A\n") == 0);           /* inverse bit masked */
     fclose(rf);
 
-    /* Erreurs : paramètres NULL -> false. */
+    /* Errors: NULL parameters -> false. */
     ASSERT_TRUE(!video_export_screen_text(NULL, stdout));
     ASSERT_TRUE(!video_export_screen_text(mem, NULL));
 
@@ -461,7 +461,7 @@ TEST(test_png_export_valid_signature) {
     long sz = file_size(path);
     ASSERT_TRUE(sz > 8);
 
-    /* Signature PNG : 89 50 4E 47 0D 0A 1A 0A */
+    /* PNG signature: 89 50 4E 47 0D 0A 1A 0A */
     FILE* fp = fopen(path, "rb");
     ASSERT_TRUE(fp != NULL);
     unsigned char sig[8];
@@ -488,7 +488,7 @@ TEST(test_auto_export_png) {
     const char* path = "/tmp/test_auto.png";
     ASSERT_TRUE(video_export_auto(&vid, path));
 
-    /* video_export_auto doit router .png vers l'encodeur PNG */
+    /* video_export_auto must route .png to the PNG encoder */
     FILE* fp = fopen(path, "rb");
     ASSERT_TRUE(fp != NULL);
     unsigned char sig[4];

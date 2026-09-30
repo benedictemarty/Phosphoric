@@ -17,19 +17,19 @@
  */
 
 #include "memory/memory.h"
-#include "io/loci_emu.h"   /* backend co-sim : overlay ROM servi par le vrai firmware */
+#include "io/loci_emu.h"   /* co-sim backend: overlay ROM served by the real firmware */
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ── Watchpoint écriture (diagnostic, piloté par env ORIC_WATCH=lo:hi:fichier) ──
- * Loggue toute écriture dans [lo,hi] avec le PC/cycle de l'instruction courante
- * (posés par le CPU dans g_watch_cur_pc/_cyc). Adresses en hexa. Sans ORIC_WATCH
- * : coût = 1 test de flag, désactivé. */
-uint16_t g_watch_cur_pc  = 0;   /* posé par cpu_step avant chaque instruction */
+/* ── Write watchpoint (diagnostic, driven by env ORIC_WATCH=lo:hi:file) ──
+ * Logs every write in [lo,hi] with the PC/cycle of the current instruction
+ * (set by the CPU in g_watch_cur_pc/_cyc). Addresses in hex. Without ORIC_WATCH:
+ * cost = 1 flag test, disabled. */
+uint16_t g_watch_cur_pc  = 0;   /* set by cpu_step before each instruction */
 uint64_t g_watch_cur_cyc = 0;
 static int      g_watch_done = 0;
-static uint16_t g_watch_lo = 1, g_watch_hi = 0;   /* lo>hi => désactivé */
+static uint16_t g_watch_lo = 1, g_watch_hi = 0;   /* lo>hi => disabled */
 static FILE*    g_watch_fp = NULL;
 static void watch_lazy_init(void) {
     g_watch_done = 1;
@@ -107,9 +107,9 @@ bool memory_load_charset(memory_t* mem, const char* filename) {
  * the independent secondary hook (conditional CPU trace), if set. */
 static inline void mem_notify(memory_t* mem, uint16_t addr, uint8_t val,
                               mem_access_type_t type) {
-    /* Latch open-bus : toute lecture pilote le data bus. Un accès ultérieur non
-     * servi (course PHI2 perdue à $0380) latchera ce résidu (cf. memory_open_bus).
-     * Placé ici pour couvrir tous les chemins de lecture (RAM/ROM/I/O) d'un point. */
+    /* Open-bus latch: every read drives the data bus. A later unserved access
+     * (PHI2 race lost at $0380) will latch this residue (cf. memory_open_bus).
+     * Placed here to cover all read paths (RAM/ROM/I/O) at a single point. */
     if (type == MEM_READ)
         mem->last_bus_value = val;
     if (mem->trace_enabled && mem->trace_callback)
@@ -140,17 +140,17 @@ uint8_t memory_read(memory_t* mem, uint16_t address) {
         return val;
     }
 
-    /* Backend co-sim LOCI (--loci-emu) : le VRAI firmware RP2040 sert la ROM de
-     * boot ($C000-$FFFF) via son read-serve quand nROMDIS est actif. Priorité sur
-     * toute ROM/overlay interne → le 6502 démarre dans le menu LOCI réel. */
+    /* LOCI co-sim backend (--loci-emu): the REAL RP2040 firmware serves the boot
+     * ROM ($C000-$FFFF) through its read-serve when nROMDIS is active. Takes
+     * priority over any internal ROM/overlay → the 6502 boots into the real LOCI menu. */
     if (loci_emu_active()) {
         uint8_t served;
         if (loci_emu_rom_read(address, &served)) {
             mem_notify(mem, address, served, MEM_READ);
             return served;
         }
-        /* ROMDIS actif mais adresse non servie = MAP asserté par LOCI (fenêtre
-         * $C000 ou $E000) : RAM overlay de l'Oric, comme en mode Microdisc. */
+        /* ROMDIS active but address not served = MAP asserted by LOCI ($C000
+         * or $E000 window): Oric overlay RAM, as in Microdisc mode. */
         if (loci_emu_romdis()) {
             val = mem->upper_ram[address - 0xC000];
             mem_notify(mem, address, val, MEM_READ);
@@ -285,11 +285,11 @@ void memory_write(memory_t* mem, uint16_t address, uint8_t value) {
 
     /* ROM overlay area: $C000-$FFFF */
     if (loci_emu_active() && loci_emu_romdis()) {
-        /* Co-sim, ROMDIS actif : même modèle que le mode Microdisc ci-dessous
-         * (Oricutron) — la RAM overlay n'est écrite QUE là où elle est mappée
-         * (MAP asserté = adresse non servie par LOCI) ; sous une ROM servie,
-         * l'écriture est ignorée. Écrire quand même corrompait le code Sedoric
-         * en overlay (SAVE → « WRITE FAULT » sur un secteur fantôme). */
+        /* Co-sim, ROMDIS active: same model as the Microdisc mode below
+         * (Oricutron) — the overlay RAM is written ONLY where it is mapped
+         * (MAP asserted = address not served by LOCI); under a served ROM,
+         * the write is ignored. Writing anyway corrupted the Sedoric code
+         * in overlay (SAVE → "WRITE FAULT" on a phantom sector). */
         uint8_t served;
         if (loci_emu_rom_write(address, value)) return;   /* BAL page $FF (loci-fw) */
         if (!loci_emu_rom_read(address, &served))

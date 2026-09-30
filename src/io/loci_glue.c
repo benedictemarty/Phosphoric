@@ -40,7 +40,7 @@ void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
         emu->memory.rom[addr - 0xC000] = val;
 }
 
-/* --- Epic 9 / US3 : ROM / tape / resume (moved verbatim from main.c) --- */
+/* --- Epic 9 / US3: ROM / tape / resume (moved verbatim from main.c) --- */
 
 /* Host path of the LOCI warm-session snapshot (firmware: the session is
  * captured so the menu can resume it). Lives in the flash root. */
@@ -148,11 +148,11 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
     if (!emu || !rom_path || !*rom_path) return false;
 
     if (base_addr == 0xA000) {
-        /* Sprint 34aw : LOCI MIA_BOOT FDC flag → microdis.rom overlay.
-         * Le mapping réel Microdisc place l'overlay à $E000-$FFFF (8 KB).
-         * On charge le fichier dans un buffer persistant et on active
-         * l'overlay du système mémoire (même mécanisme que Microdisc
-         * card avec --disk-rom). */
+        /* Sprint 34aw: LOCI MIA_BOOT FDC flag → microdis.rom overlay.
+         * The real Microdisc mapping places the overlay at $E000-$FFFF (8 KB).
+         * The file is loaded into a persistent buffer and the memory
+         * system's overlay is enabled (same mechanism as the Microdisc
+         * card with --disk-rom). */
         FILE* fp = fopen(rom_path, "rb");
         if (!fp) {
             log_error("LOCI ROM swap: cannot open %s", rom_path);
@@ -162,7 +162,7 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
         long sz = ftell(fp);
         fseek(fp, 0, SEEK_SET);
         if (sz <= 0 || sz > 16384) { fclose(fp); return false; }
-        /* Sprint 34c hardening : buffer owned by emulator_t now (was a
+        /* Sprint 34c hardening: buffer owned by emulator_t now (was a
          * function-scope static with an "acceptable leak at shutdown"
          * comment). Freed by emulator_cleanup. */
         if (emu->loci_overlay_buf) {
@@ -261,7 +261,7 @@ bool loci_resume_session_cb(void* ctx) {
     log_info("LOCI: session resumed from %s", snap);
     return true;
 }
-/* --- Epic 9 / US4 : USB host scan + IRQ-trap (moved verbatim from main.c) --- */
+/* --- Epic 9 / US4: USB host scan + IRQ-trap (moved verbatim from main.c) --- */
 
 /* Attach a host directory as a LOCI USB mass-storage device: it appears
  * in the menu's device list with the volume label and its "N:" paths
@@ -398,7 +398,7 @@ void loci_action_release_irq_trap(void* ctx) {
         log_info("LOCI: warm boot -> menu ROM %s", rom);
     }
 }
-/* --- Epic 9 / US5 : SDL keyboard sync (only SDL dependency of the glue) --- */
+/* --- Epic 9 / US5: SDL keyboard sync (only SDL dependency of the glue) --- */
 #ifdef HAS_SDL2
 #include <SDL2/SDL.h>
 /* Sync the LOCI keyboard report from the current SDL keyboard state: SDL

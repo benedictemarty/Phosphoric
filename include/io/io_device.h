@@ -1,77 +1,77 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file io_device.h
- * @brief Contrat « périphérique de bus I/O » — abstraction du dispatch page 3.
+ * @brief "I/O bus peripheral" contract — abstraction of the page 3 dispatch.
  *
- * Objectif architectural : sortir de main.c la cascade de `if (has_X &&
- * X_addr_in_range(addr)) return X_read(...)` (25 périphériques câblés en dur)
- * au profit d'une **table de périphériques** que le dispatch parcourt.
- * Ajouter/retirer un périphérique = enregistrer/retirer une entrée, sans
- * toucher au cœur (cf docs/architecture/io-bus.md).
+ * Architectural goal: move out of main.c the cascade of `if (has_X &&
+ * X_addr_in_range(addr)) return X_read(...)` (25 hard-wired peripherals)
+ * in favour of a **peripheral table** that the dispatch walks through.
+ * Adding/removing a peripheral = registering/removing an entry, without
+ * touching the core (see docs/architecture/io-bus.md).
  *
- * Les fonctions reçoivent le contexte `emulator_t*` (et non un simple `self`)
- * parce que certains `claims` sont conditionnels et croisés (ACIA↔Microdisc,
- * fiabilité MIA du LOCI, etc.) : ils ont besoin de voir les autres sous-systèmes.
+ * The functions receive the `emulator_t*` context (and not a mere `self`)
+ * because some `claims` are conditional and cross-dependent (ACIA<->Microdisc,
+ * LOCI MIA reliability, etc.): they need to see the other subsystems.
  *
- * Ne concerne QUE les périphériques qui revendiquent une plage d'adresses
- * (Microdisc, ACIA, LOCI, DTL2000, Mageco, ULA-NG). Les périphériques
- * « attachés à un port » (joystick/PSG, imprimante/VIA, cassette/VIA) gardent
- * leur modèle de callback de port ; le cœur (CPU/mémoire/VIA/ULA/PSG) n'est
- * pas un périphérique.
+ * Concerns ONLY the peripherals that claim an address range
+ * (Microdisc, ACIA, LOCI, DTL2000, Mageco, ULA-NG). The peripherals
+ * "attached to a port" (joystick/PSG, printer/VIA, cassette/VIA) keep
+ * their port callback model; the core (CPU/memory/VIA/ULA/PSG) is
+ * not a peripheral.
  */
 #ifndef IO_DEVICE_H
 #define IO_DEVICE_H
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>   /* FILE* pour les hooks de sérialisation */
+#include <stdio.h>   /* FILE* for the serialization hooks */
 
-struct emulator_s;   /* contexte complet (forward-decl : évite le cycle d'includes) */
+struct emulator_s;   /* full context (forward-decl: avoids the include cycle) */
 
 typedef struct io_device_s {
     const char* name;
-    /** Vrai si le périphérique possède cette adresse *maintenant* en **lecture**
-     *  (présence + plage + éventuelles conditions croisées). Sert aussi de claim
-     *  d'écriture par défaut quand `claims_write` est NULL. */
+    /** True if the peripheral owns this address *right now* for **reading**
+     *  (presence + range + possible cross conditions). Also serves as the
+     *  default write claim when `claims_write` is NULL. */
     bool    (*claims)(struct emulator_s* emu, uint16_t addr);
-    /** Lecture d'un octet à `addr` (appelée uniquement si claims() a renvoyé vrai). */
+    /** Reads one byte at `addr` (called only if claims() returned true). */
     uint8_t (*read)(struct emulator_s* emu, uint16_t addr);
-    /** Écriture d'un octet à `addr`. Renvoie **true si l'écriture est consommée**,
-     *  **false pour la laisser retomber sur le VIA** (repli). Les périphériques
-     *  ordinaires (plage exclusive) renvoient toujours true ; ce faux permet à
-     *  l'ULA-NG de guetter sa séquence de déverrouillage en fenêtre tout en
-     *  laissant passer les écritures non reconnues, à l'identique du VIA. */
+    /** Writes one byte at `addr`. Returns **true if the write is consumed**,
+     *  **false to let it fall through to the VIA** (fallback). Ordinary
+     *  peripherals (exclusive range) always return true; this false lets
+     *  the ULA-NG watch for its unlock sequence in its window while
+     *  letting unrecognised writes through, exactly like the VIA. */
     bool    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value);
-    /** Claim d'écriture distinct (optionnel, NULL → réutilise `claims`). Utile
-     *  quand un périphérique doit voir des écritures qu'il n'intercepte pas en
-     *  lecture : l'ULA-NG verrouillée doit recevoir les écritures de sa fenêtre
-     *  (pour repérer 'N','G') alors que ses lectures retombent sur le VIA. */
+    /** Separate write claim (optional, NULL → reuses `claims`). Useful
+     *  when a peripheral must see writes it does not intercept on
+     *  reads: the locked ULA-NG must receive the writes to its window
+     *  (to spot 'N','G') while its reads fall through to the VIA. */
     bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);
 
-    /* ── Sérialisation d'état (savestate .ost), optionnelle ──────────────────
-     * Comble une lacune : les devices bus n'avaient aucune section .ost. Chaque
-     * device sérialise SA section, sans que savestate.c le connaisse (couplage
-     * évité : la table lui est fournie via savestate_set_io_devices).
-     * Le format .ost est à sections auto-décrites (tag+taille) ; les sections
-     * inconnues sont ignorées → rétro/ascendant-compatible. */
+    /* ── State serialization (savestate .ost), optional ──────────────────────
+     * Fills a gap: bus devices had no .ost section. Each device serializes
+     * ITS OWN section, without savestate.c knowing about it (coupling
+     * avoided: the table is handed to it via savestate_set_io_devices).
+     * The .ost format uses self-describing sections (tag+size); unknown
+     * sections are skipped → backward/forward compatible. */
 
-    /** Tag de section 4 octets (ex. "UNG\0"). NULL → device non sérialisé. */
+    /** 4-byte section tag (e.g. "UNG\0"). NULL → device not serialized. */
     const char* save_tag;
-    /** Écrit le payload de la section sur `fp` (l'en-tête tag/taille est géré
-     *  par l'appelant). Retourne **false pour n'émettre AUCUNE section** (état
-     *  par défaut → `.ost` inchangé, zéro régression sur l'usage courant). */
+    /** Writes the section payload to `fp` (the tag/size header is handled
+     *  by the caller). Returns **false to emit NO section at all** (default
+     *  state → `.ost` unchanged, zero regression for the usual use). */
     bool    (*save)(struct emulator_s* emu, FILE* fp);
-    /** Relit `size` octets de payload écrits par `save` (appelé si un tag de
-     *  section correspond à `save_tag`). */
+    /** Reads back `size` payload bytes written by `save` (called if a
+     *  section tag matches `save_tag`). */
     void    (*load)(struct emulator_s* emu, FILE* fp, uint32_t size);
 
-    /* ── Lecture d'observation, sans effet de bord (optionnelle) ─────────────
-     * `read()` peut muter l'état (lire DATA de l'ACIA vide RDRF ; lire STATUS
-     * efface l'IRQ). Un observateur (débogueur, moniteur, dump, affichage
-     * déporté) doit voir le registre SANS le consommer, sinon il vole des
-     * octets RX silencieusement. NULL → l'appelant retombe sur `read` (identique
-     * au comportement historique). Seuls les devices à lecture destructive
-     * (ACIA) fournissent un `peek`. */
+    /* ── Observation read, without side effect (optional) ────────────────────
+     * `read()` may mutate state (reading ACIA DATA clears RDRF; reading STATUS
+     * clears the IRQ). An observer (debugger, monitor, dump, remote
+     * display) must see the register WITHOUT consuming it, otherwise it
+     * silently steals RX bytes. NULL → the caller falls back to `read`
+     * (identical to the historical behaviour). Only devices with destructive
+     * reads (ACIA) provide a `peek`. */
     uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);
 } io_device_t;
 

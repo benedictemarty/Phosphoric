@@ -121,7 +121,7 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
         --headless -c 120000000 \
         --type-keys '15000000:\p3a\p2 \p2 \p2\e\p9\p9\p2\n\p310PRINT"HELLO LOCI"\n\p9\p3SAVE"TEST.BAS"\n\p9\p9\p9NEW\n\p3LOAD"TEST.BAS"\n\p9\p9\p9LIST\n\p9' \
         --dump-ram-at 119000000:"$LOC_BIN" >/dev/null 2>&1
-    # BASIC text area $0500 length 0x40 (line link + tokens + chaîne + term)
+    # BASIC text area $0500 length 0x40 (line link + tokens + string + term)
     cmp_region "34b2 BASIC text \$0500-\$053F" "$NAT_BIN" "$LOC_BIN" $((0x500)) $((0x40))
     rm -f "$NAT_BIN" "$LOC_BIN"
 fi

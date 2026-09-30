@@ -846,13 +846,13 @@ TEST(test_irq) {
     uint8_t code[] = {0xEA};
     write_program(&mem, 0x0200, code, sizeof(code));
     cpu_irq(&cpu);
-    /* Cœur cycle-par-cycle (V2-E1) : une IRQ ne peut pas être prise avant la fin
-     * de l'instruction en cours. Elle est échantillonnée pendant le NOP, puis la
-     * séquence de 7 cycles s'exécute ensuite. L'ancien cœur la prenait AVANT le
-     * NOP, ce qui n'existe pas sur le matériel. */
-    cpu_step(&cpu);                       /* le NOP s'exécute */
+    /* Cycle-by-cycle core (V2-E1): an IRQ cannot be taken before the end of
+     * the current instruction. It is sampled during the NOP, then the
+     * 7-cycle sequence runs afterwards. The old core took it BEFORE the
+     * NOP, which does not happen on the hardware. */
+    cpu_step(&cpu);                       /* the NOP executes */
     ASSERT_EQ(cpu.PC, 0x0201);
-    cpu_step(&cpu);                       /* puis la séquence d'interruption */
+    cpu_step(&cpu);                       /* then the interrupt sequence */
     ASSERT_EQ(cpu.PC, 0x1000);
     ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
 }
@@ -877,7 +877,7 @@ TEST(test_nmi) {
     uint8_t code[] = {0xEA}; /* NOP */
     write_program(&mem, 0x0200, code, sizeof(code));
     cpu_nmi(&cpu);
-    /* Même règle que pour l'IRQ : l'instruction en cours se termine d'abord. */
+    /* Same rule as for the IRQ: the current instruction completes first. */
     cpu_step(&cpu);
     ASSERT_EQ(cpu.PC, 0x0201);
     cpu_step(&cpu);
@@ -1245,16 +1245,16 @@ TEST(test_cycle_callback_rmw_count) {
 
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  CONFORMITÉ RÉVÉLÉE PAR L'ORACLE 65x02 (V2-S1)                      */
+/*  CONFORMANCE REVEALED BY THE 65x02 ORACLE (V2-S1)                   */
 /*                                                                    */
-/*  Les cas ci-dessous sont recopiés TELS QUELS de vecteurs            */
-/*  SingleStepTests/65x02 (état initial, état final, séquence bus).    */
-/*  Les vecteurs eux-mêmes ne sont pas versionnés (~850 Mo) : ces      */
-/*  tests verrouillent les correctifs sans dépendre du téléchargement. */
-/*  Voir docs/ACCURACY.md et docs/specs/V2_CYCLE_ACCURACY.md.          */
+/*  The cases below are copied VERBATIM from SingleStepTests/65x02     */
+/*  vectors (initial state, final state, bus sequence).                */
+/*  The vectors themselves are not versioned (~850 MB): these tests    */
+/*  lock in the fixes without depending on the download.               */
+/*  See docs/ACCURACY.md and docs/specs/V2_CYCLE_ACCURACY.md.          */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Journal des accès bus, via cpu_set_bus_callback(). */
+/* Bus access log, via cpu_set_bus_callback(). */
 #define BUSLOG_MAX 16
 static struct { uint16_t addr; uint8_t val; bool write; } g_buslog[BUSLOG_MAX];
 static int g_buslog_n;
@@ -1268,12 +1268,12 @@ static void buslog_cb(void* ctx, uint16_t addr, uint8_t val, bool write) {
     }
 }
 
-/* Vecteur « 20 c2 8f » : JSR $8FC2 depuis $5289, SP=$3E.
- * Séquence bus du NMOS : fetch $5289, fetch ADL $528A, lecture pile factice,
+/* Vector "20 c2 8f": JSR $8FC2 from $5289, SP=$3E.
+ * NMOS bus sequence: fetch $5289, fetch ADL $528A, dummy stack read,
  * write $013E=$52 (PCH), write $013D=$8B (PCL), fetch ADH $528B.
- * L'octet HAUT de l'adresse est donc lu APRÈS l'empilement : c'est l'ordre que
- * l'ancienne implémentation inversait (elle lisait l'adresse complète d'abord).
- * Depuis V2-E1 le cycle factice de pile est émis lui aussi : 6 accès pour
+ * The HIGH byte of the address is therefore read AFTER the push: this is the
+ * order the old implementation reversed (it read the full address first).
+ * Since V2-E1 the dummy stack cycle is emitted as well: 6 accesses for
  * 6 cycles. */
 TEST(test_jsr_bus_access_order) {
     cpu6502_t cpu; memory_t mem;
@@ -1294,11 +1294,11 @@ TEST(test_jsr_bus_access_order) {
     ASSERT_EQ(memory_read(&mem, 0x013E), 0x52);   /* PCH */
     ASSERT_EQ(memory_read(&mem, 0x013D), 0x8B);   /* PCL */
 
-    /* 6 accès bus pour 6 cycles, dans cet ordre exact. */
+    /* 6 bus accesses for 6 cycles, in this exact order. */
     ASSERT_EQ(g_buslog_n, 6);
     ASSERT_EQ(g_buslog[0].addr, 0x5289); ASSERT_FALSE(g_buslog[0].write);
     ASSERT_EQ(g_buslog[1].addr, 0x528A); ASSERT_FALSE(g_buslog[1].write);
-    ASSERT_EQ(g_buslog[2].addr, 0x013E); ASSERT_FALSE(g_buslog[2].write); /* pile, factice */
+    ASSERT_EQ(g_buslog[2].addr, 0x013E); ASSERT_FALSE(g_buslog[2].write); /* stack, dummy */
     ASSERT_EQ(g_buslog[3].addr, 0x013E); ASSERT_TRUE(g_buslog[3].write);
     ASSERT_EQ(g_buslog[3].val, 0x52);
     ASSERT_EQ(g_buslog[4].addr, 0x013D); ASSERT_TRUE(g_buslog[4].write);
@@ -1306,9 +1306,9 @@ TEST(test_jsr_bus_access_order) {
     ASSERT_EQ(g_buslog[5].addr, 0x528B); ASSERT_FALSE(g_buslog[5].write);
 }
 
-/* Vecteur « 69 0a e1 » : ADC #$0A en mode décimal, A=$02, P=$AF (D+C+Z+N+I).
- * Attendu A=$13, P=$2C — donc N=0 alors que le résultat final est $13 : N se
- * lit sur le résultat INTERMÉDIAIRE de l'additionneur BCD, pas sur A. */
+/* Vector "69 0a e1": ADC #$0A in decimal mode, A=$02, P=$AF (D+C+Z+N+I).
+ * Expected A=$13, P=$2C — so N=0 even though the final result is $13: N is
+ * taken from the INTERMEDIATE result of the BCD adder, not from A. */
 TEST(test_adc_decimal_flags_nmos) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
@@ -1323,13 +1323,13 @@ TEST(test_adc_decimal_flags_nmos) {
     ASSERT_EQ(cpu.P, 0x2C);
 }
 
-/* Vecteur « 61 de e9 » : ADC ($DE,X) en mode décimal, X=$3B, A=$92, opérande
- * $56 en $1813. Attendu A=$48 et P=$A9 (C posé par la correction du quartet
- * haut, N sur l'intermédiaire, Z sur la somme BINAIRE). */
+/* Vector "61 de e9": ADC ($DE,X) in decimal mode, X=$3B, A=$92, operand
+ * $56 at $1813. Expected A=$48 and P=$A9 (C set by the high-nibble
+ * correction, N from the intermediate, Z from the BINARY sum). */
 TEST(test_adc_decimal_high_nibble_carry) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
-    mem.rom_enabled = false;     /* le cas vit en $D3EE : RAM, pas ROM */
+    mem.rom_enabled = false;     /* the case lives at $D3EE: RAM, not ROM */
     memory_write(&mem, 0xD3EE, 0x61);
     memory_write(&mem, 0xD3EF, 0xDE);
     memory_write(&mem, 0x0019, 0x13);   /* ($DE + $3B) & $FF = $19 */
@@ -1345,13 +1345,13 @@ TEST(test_adc_decimal_high_nibble_carry) {
     ASSERT_EQ(cpu.P, 0xA9);
 }
 
-/* Vecteur « 6b 39 ee » : ARR #$39 en mode décimal, A=$30, P=$2B (D+C).
- * Attendu A=$98, P=$A8 : en décimal le report d'ARR sort de la correction du
- * quartet haut, pas du bit décalé. */
+/* Vector "6b 39 ee": ARR #$39 in decimal mode, A=$30, P=$2B (D+C).
+ * Expected A=$98, P=$A8: in decimal mode ARR's carry comes from the high-nibble
+ * correction, not from the shifted bit. */
 TEST(test_arr_decimal_nmos) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
-    mem.rom_enabled = false;     /* le cas vit en $DA36 : RAM, pas ROM */
+    mem.rom_enabled = false;     /* the case lives at $DA36: RAM, not ROM */
     memory_write(&mem, 0xDA36, 0x6B);
     memory_write(&mem, 0xDA37, 0x39);
     cpu.PC = 0xDA36;
@@ -1363,10 +1363,10 @@ TEST(test_arr_decimal_nmos) {
     ASSERT_EQ(cpu.P, 0xA8);
 }
 
-/* Vecteur « 9c 3 » : SHY $7C61,X avec X=$CC, Y=$B6 — l'indexation traverse une
- * page, donc le bus d'adresse reste corrompu : la valeur écrite est
- * Y & (high(base)+1) = $B6 & $7D = $34, et elle part en $342D (l'octet haut
- * émis EST la valeur) au lieu de $7D2D. Écart classique des stores instables. */
+/* Vector "9c 3": SHY $7C61,X with X=$CC, Y=$B6 — the indexing crosses a
+ * page, so the address bus stays corrupted: the value written is
+ * Y & (high(base)+1) = $B6 & $7D = $34, and it goes to $342D (the high byte
+ * emitted IS the value) instead of $7D2D. Classic unstable-store deviation. */
 TEST(test_shy_unstable_page_cross) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
@@ -1377,16 +1377,16 @@ TEST(test_shy_unstable_page_cross) {
     cpu.Y = 0xB6;
     int cyc = cpu_step(&cpu);
     ASSERT_EQ(cyc, 5);
-    ASSERT_EQ(memory_read(&mem, 0x342D), 0x34);  /* destination corrompue */
-    ASSERT_EQ(memory_read(&mem, 0x7D2D), 0x00);  /* l'adresse « propre » n'est PAS écrite */
+    ASSERT_EQ(memory_read(&mem, 0x342D), 0x34);  /* corrupted destination */
+    ASSERT_EQ(memory_read(&mem, 0x7D2D), 0x00);  /* the "clean" address is NOT written */
 }
 
-/* Même mécanique sans traversée de page : la valeur et la destination sont
- * celles de l'adressage normal (vecteur « 9c 2 » : base $CC8A + X=$37). */
+/* Same mechanism without a page crossing: the value and the destination are
+ * those of normal addressing (vector "9c 2": base $CC8A + X=$37). */
 TEST(test_shy_unstable_no_cross) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
-    mem.rom_enabled = false;     /* destination en $CCC1 */
+    mem.rom_enabled = false;     /* destination at $CCC1 */
     uint8_t code[] = { 0x9C, 0x8A, 0xCC };       /* SHY $CC8A,X */
     write_program(&mem, 0x0200, code, sizeof(code));
     cpu.PC = 0x0200;
@@ -1398,20 +1398,20 @@ TEST(test_shy_unstable_no_cross) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  CŒUR MICRO-SÉQUENCÉ (V2-E1) — un cycle, un accès                   */
+/*  MICRO-SEQUENCED CORE (V2-E1) — one cycle, one access               */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Une lecture indexée qui traverse une page coûte un cycle de plus, et ce cycle
- * est un VRAI accès : le 6502 lit d'abord à l'adresse non corrigée. Invisible
- * sur de la RAM, décisif sur un registre à effet de bord. */
+/* An indexed read that crosses a page costs one extra cycle, and that cycle
+ * is a REAL access: the 6502 first reads at the uncorrected address. Invisible
+ * on RAM, decisive on a register with side effects. */
 TEST(test_microseq_dummy_read_on_page_cross) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
     cpu_set_microseq(&cpu, true);
     uint8_t code[] = { 0xBD, 0xFF, 0x04 };       /* LDA $04FF,X */
     write_program(&mem, 0x0200, code, sizeof(code));
-    memory_write(&mem, 0x0500, 0x11);            /* l'adresse corrigée */
-    memory_write(&mem, 0x0400, 0x99);            /* l'adresse NON corrigée */
+    memory_write(&mem, 0x0500, 0x11);            /* the corrected address */
+    memory_write(&mem, 0x0400, 0x99);            /* the UNcorrected address */
     cpu.PC = 0x0200;
     cpu.X = 0x01;
     g_buslog_n = 0;
@@ -1419,21 +1419,21 @@ TEST(test_microseq_dummy_read_on_page_cross) {
     int cyc = cpu_step(&cpu);
     cpu_set_bus_callback(&cpu, NULL, NULL);
 
-    ASSERT_EQ(cyc, 5);                           /* 4 + 1 pour la traversée */
-    ASSERT_EQ(g_buslog_n, 5);                    /* CHAQUE cycle a son accès */
-    ASSERT_EQ(g_buslog[3].addr, 0x0400);         /* lecture factice, adresse non corrigée */
-    ASSERT_EQ(g_buslog[3].val, 0x99);            /* l'octet lu pour rien */
-    ASSERT_EQ(g_buslog[4].addr, 0x0500);         /* la vraie lecture */
-    ASSERT_EQ(cpu.A, 0x11);                      /* seule la seconde compte */
+    ASSERT_EQ(cyc, 5);                           /* 4 + 1 for the crossing */
+    ASSERT_EQ(g_buslog_n, 5);                    /* EVERY cycle has its access */
+    ASSERT_EQ(g_buslog[3].addr, 0x0400);         /* dummy read, uncorrected address */
+    ASSERT_EQ(g_buslog[3].val, 0x99);            /* the byte read for nothing */
+    ASSERT_EQ(g_buslog[4].addr, 0x0500);         /* the real read */
+    ASSERT_EQ(cpu.A, 0x11);                      /* only the second one counts */
 }
 
-/* Le moteur historique, lui, n'émet que 4 accès pour la même instruction : le
- * cycle supplémentaire est compté mais n'a pas d'adresse. C'est exactement
- * l'écart que la V2 comble (docs/ACCURACY.md). */
+/* The legacy engine, by contrast, emits only 4 accesses for the same instruction:
+ * the extra cycle is counted but has no address. This is exactly the gap
+ * that V2 closes (docs/ACCURACY.md). */
 TEST(test_legacy_lacks_the_dummy_read) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
-    cpu_set_microseq(&cpu, false);               /* le moteur historique, explicitement */
+    cpu_set_microseq(&cpu, false);               /* the legacy engine, explicitly */
     uint8_t code[] = { 0xBD, 0xFF, 0x04 };       /* LDA $04FF,X */
     write_program(&mem, 0x0200, code, sizeof(code));
     memory_write(&mem, 0x0500, 0x11);
@@ -1444,11 +1444,11 @@ TEST(test_legacy_lacks_the_dummy_read) {
     int cyc = cpu_step(&cpu);
     cpu_set_bus_callback(&cpu, NULL, NULL);
 
-    ASSERT_EQ(cyc, 5);                           /* même total de cycles… */
-    ASSERT_EQ(g_buslog_n, 4);                    /* …mais un cycle sans accès */
+    ASSERT_EQ(cyc, 5);                           /* same cycle total… */
+    ASSERT_EQ(g_buslog_n, 4);                    /* …but one cycle without an access */
 }
 
-/* Un store indexé paie TOUJOURS sa lecture factice, même sans traversée. */
+/* An indexed store ALWAYS pays for its dummy read, even without a crossing. */
 TEST(test_microseq_store_dummy_read) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
@@ -1465,12 +1465,12 @@ TEST(test_microseq_store_dummy_read) {
 
     ASSERT_EQ(cyc, 5);
     ASSERT_EQ(g_buslog_n, 5);
-    ASSERT_EQ(g_buslog[3].addr, 0x0405); ASSERT_FALSE(g_buslog[3].write); /* factice */
-    ASSERT_EQ(g_buslog[4].addr, 0x0405); ASSERT_TRUE(g_buslog[4].write);  /* l'écriture */
+    ASSERT_EQ(g_buslog[3].addr, 0x0405); ASSERT_FALSE(g_buslog[3].write); /* dummy */
+    ASSERT_EQ(g_buslog[4].addr, 0x0405); ASSERT_TRUE(g_buslog[4].write);  /* the write */
     ASSERT_EQ(memory_read(&mem, 0x0405), 0x7E);
 }
 
-/* cpu_cycle() avance d'un cycle exactement et signale le dernier. */
+/* cpu_cycle() advances by exactly one cycle and signals the last one. */
 TEST(test_microseq_cycle_granularity) {
     cpu6502_t cpu; memory_t mem;
     setup(&cpu, &mem);
@@ -1483,7 +1483,7 @@ TEST(test_microseq_cycle_granularity) {
     while (!done && n < 16) {
         uint64_t before = cpu.cycles;
         done = cpu_cycle(&cpu);
-        ASSERT_EQ((int)(cpu.cycles - before), 1);   /* un cycle par appel */
+        ASSERT_EQ((int)(cpu.cycles - before), 1);   /* one cycle per call */
         n++;
     }
     ASSERT_TRUE(done);
@@ -1491,8 +1491,8 @@ TEST(test_microseq_cycle_granularity) {
     ASSERT_EQ(cpu.PC, 0x0300);
 }
 
-/* Les deux moteurs calculent la même chose : même état final, même total de
- * cycles, sur une séquence qui mêle RMW, indexation et pile. */
+/* Both engines compute the same thing: same final state, same cycle total,
+ * on a sequence that mixes RMW, indexing and stack. */
 TEST(test_microseq_matches_legacy_state) {
     uint8_t code[] = {
         0xA9, 0x40,        /* LDA #$40    */
@@ -1506,8 +1506,8 @@ TEST(test_microseq_matches_legacy_state) {
     };
     cpu6502_t c1, c2; memory_t m1, m2;
     setup(&c1, &m1); setup(&c2, &m2);
-    cpu_set_microseq(&c1, false);                /* historique */
-    cpu_set_microseq(&c2, true);                 /* micro-séquencé */
+    cpu_set_microseq(&c1, false);                /* legacy */
+    cpu_set_microseq(&c2, true);                 /* micro-sequenced */
     write_program(&m1, 0x0200, code, sizeof(code));
     write_program(&m2, 0x0200, code, sizeof(code));
     c1.PC = c2.PC = 0x0200;
@@ -1525,72 +1525,72 @@ TEST(test_microseq_matches_legacy_state) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  TIMING DES INTERRUPTIONS (V2-E1 / US1.3)                           */
+/*  INTERRUPT TIMING (V2-E1 / US1.3)                                   */
 /*                                                                    */
-/*  Le 6502 échantillonne /IRQ et /NMI à chaque cycle, mais la décision*/
-/*  de prendre l'interruption se fonde sur l'échantillon du cycle      */
-/*  PÉNULTIÈME. D'où deux comportements que seul un cœur cycle-par-    */
-/*  cycle peut reproduire : une ligne qui s'active au dernier cycle    */
-/*  arrive trop tard, et CLI/SEI/PLP voient leur effet sur I « décalé »*/
-/*  d'une instruction.                                                 */
+/*  The 6502 samples /IRQ and /NMI on every cycle, but the decision    */
+/*  to take the interrupt is based on the sample from the PENULTIMATE  */
+/*  cycle. Hence two behaviours that only a cycle-by-cycle core can    */
+/*  reproduce: a line that becomes active on the last cycle arrives    */
+/*  too late, and CLI/SEI/PLP have their effect on I "shifted" by one  */
+/*  instruction.                                                       */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Prépare un CPU micro-séquencé avec un handler d'IRQ en $0300 et du code
- * en $0200. Le handler est un simple RTI précédé d'un marqueur. */
+/* Sets up a micro-sequenced CPU with an IRQ handler at $0300 and code
+ * at $0200. The handler is a simple RTI preceded by a marker. */
 static void setup_irq(cpu6502_t* cpu, memory_t* mem, const uint8_t* code, size_t n) {
     setup(cpu, mem);
     cpu_set_microseq(cpu, true);
     write_program(mem, 0x0200, code, n);
-    mem->rom[0x3FFE] = 0x00;      /* vecteur IRQ $FFFE -> $0300 */
+    mem->rom[0x3FFE] = 0x00;      /* IRQ vector $FFFE -> $0300 */
     mem->rom[0x3FFF] = 0x03;
-    mem->rom[0x3FFA] = 0x80;      /* vecteur NMI $FFFA -> $0380 */
+    mem->rom[0x3FFA] = 0x80;      /* NMI vector $FFFA -> $0380 */
     mem->rom[0x3FFB] = 0x03;
     memory_write(mem, 0x0300, 0x40);   /* RTI */
     memory_write(mem, 0x0380, 0x40);
     cpu->PC = 0x0200;
-    cpu->P &= (uint8_t)~FLAG_INTERRUPT;   /* interruptions autorisées */
+    cpu->P &= (uint8_t)~FLAG_INTERRUPT;   /* interrupts enabled */
 }
 
-/* Une IRQ qui s'active pendant le DERNIER cycle d'une instruction n'est pas
- * prise à la fin de celle-ci : elle le sera après l'instruction suivante. */
+/* An IRQ that becomes active during the LAST cycle of an instruction is not
+ * taken at the end of it: it will be taken after the next instruction. */
 TEST(test_irq_asserted_on_last_cycle_is_late) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0xEA, 0xA9, 0x42 };        /* NOP ; LDA #$42 */
     setup_irq(&cpu, &mem, code, sizeof(code));
 
-    /* NOP = 2 cycles. On arme l'IRQ juste avant son DERNIER cycle. */
+    /* NOP = 2 cycles. The IRQ is armed just before its LAST cycle. */
     cpu_cycle(&cpu);                               /* cycle 1 (fetch) */
-    cpu_irq_set(&cpu, IRQF_VIA);                   /* ligne active pendant le cycle 2 */
-    bool done = cpu_cycle(&cpu);                   /* cycle 2 = dernier */
+    cpu_irq_set(&cpu, IRQF_VIA);                   /* line active during cycle 2 */
+    bool done = cpu_cycle(&cpu);                   /* cycle 2 = last */
     ASSERT_TRUE(done);
 
-    /* L'instruction suivante doit s'exécuter AVANT le handler. */
+    /* The next instruction must execute BEFORE the handler. */
     cpu_step(&cpu);
-    ASSERT_EQ(cpu.A, 0x42);                        /* LDA #$42 a bien tourné */
+    ASSERT_EQ(cpu.A, 0x42);                        /* LDA #$42 did run */
     ASSERT_TRUE(cpu.PC != 0x0300);
 
-    /* Et c'est seulement ensuite que l'IRQ est prise. */
+    /* And only then is the IRQ taken. */
     cpu_step(&cpu);
     ASSERT_EQ(cpu.PC, 0x0300);
 }
 
-/* La même IRQ, armée un cycle plus tôt (donc présente au pénultième), est prise
- * dès la fin de l'instruction : c'est la contre-épreuve du test précédent. */
+/* The same IRQ, armed one cycle earlier (thus present on the penultimate), is taken
+ * right at the end of the instruction: this is the counter-check of the previous test. */
 TEST(test_irq_asserted_before_penultimate_is_taken) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0xA2, 0x07, 0xA9, 0x42 };   /* LDX #$07 (2 cy) ; LDA #$42 */
     setup_irq(&cpu, &mem, code, sizeof(code));
 
-    cpu_irq_set(&cpu, IRQF_VIA);                   /* active dès avant le cycle 1 */
+    cpu_irq_set(&cpu, IRQF_VIA);                   /* active from before cycle 1 */
     cpu_step(&cpu);                                /* LDX #$07 */
     ASSERT_EQ(cpu.X, 0x07);
-    cpu_step(&cpu);                                /* doit entrer dans le handler */
+    cpu_step(&cpu);                                /* must enter the handler */
     ASSERT_EQ(cpu.PC, 0x0300);
-    ASSERT_EQ(cpu.A, 0x00);                        /* LDA #$42 n'a PAS tourné */
+    ASSERT_EQ(cpu.A, 0x00);                        /* LDA #$42 did NOT run */
 }
 
-/* SEI ne protège pas l'instruction qui le suit : au cycle pénultième de SEI,
- * le drapeau I valait encore 0, donc l'IRQ pendante est prise juste après. */
+/* SEI does not protect the instruction that follows it: on SEI's penultimate cycle,
+ * the I flag was still 0, so the pending IRQ is taken right after. */
 TEST(test_sei_does_not_block_already_pending_irq) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0x78, 0xA9, 0x42 };         /* SEI ; LDA #$42 */
@@ -1598,83 +1598,83 @@ TEST(test_sei_does_not_block_already_pending_irq) {
 
     cpu_irq_set(&cpu, IRQF_VIA);
     cpu_step(&cpu);                                /* SEI */
-    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));   /* I est bien posé */
-    cpu_step(&cpu);                                /* l'IRQ passe quand même */
+    ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));   /* I is indeed set */
+    cpu_step(&cpu);                                /* the IRQ goes through anyway */
     ASSERT_EQ(cpu.PC, 0x0300);
     ASSERT_EQ(cpu.A, 0x00);
 }
 
-/* Symétriquement, CLI retarde l'IRQ d'une instruction : au pénultième de CLI,
- * I valait encore 1. */
+/* Symmetrically, CLI delays the IRQ by one instruction: on CLI's penultimate cycle,
+ * I was still 1. */
 TEST(test_cli_delays_irq_by_one_instruction) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0x58, 0xA9, 0x42, 0xEA };   /* CLI ; LDA #$42 ; NOP */
     setup_irq(&cpu, &mem, code, sizeof(code));
-    cpu_set_flag(&cpu, FLAG_INTERRUPT, true);      /* interruptions masquées */
+    cpu_set_flag(&cpu, FLAG_INTERRUPT, true);      /* interrupts masked */
 
     cpu_irq_set(&cpu, IRQF_VIA);
     cpu_step(&cpu);                                /* CLI */
     ASSERT_FALSE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
-    cpu_step(&cpu);                                /* LDA #$42 s'exécute d'abord */
+    cpu_step(&cpu);                                /* LDA #$42 executes first */
     ASSERT_EQ(cpu.A, 0x42);
     ASSERT_TRUE(cpu.PC != 0x0300);
-    cpu_step(&cpu);                                /* puis l'IRQ */
+    cpu_step(&cpu);                                /* then the IRQ */
     ASSERT_EQ(cpu.PC, 0x0300);
 }
 
-/* PLP a le même effet retardé que CLI quand la valeur dépilée démasque l'IRQ. */
+/* PLP has the same delayed effect as CLI when the pulled value unmasks the IRQ. */
 TEST(test_plp_delays_irq_by_one_instruction) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0x28, 0xA9, 0x42, 0xEA };   /* PLP ; LDA #$42 ; NOP */
     setup_irq(&cpu, &mem, code, sizeof(code));
     cpu_set_flag(&cpu, FLAG_INTERRUPT, true);
-    /* Prépare la pile : la valeur dépilée a I à 0. */
+    /* Prepare the stack: the pulled value has I at 0. */
     cpu.SP = 0xFC;
     memory_write(&mem, 0x01FD, FLAG_UNUSED);
 
     cpu_irq_set(&cpu, IRQF_VIA);
-    cpu_step(&cpu);                                /* PLP : I passe à 0 */
+    cpu_step(&cpu);                                /* PLP: I goes to 0 */
     ASSERT_FALSE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
-    cpu_step(&cpu);                                /* LDA #$42 d'abord */
+    cpu_step(&cpu);                                /* LDA #$42 first */
     ASSERT_EQ(cpu.A, 0x42);
     cpu_step(&cpu);
     ASSERT_EQ(cpu.PC, 0x0300);
 }
 
-/* Une NMI qui tombe pendant un BRK détourne la séquence : c'est le vecteur NMI
- * qui est lu, alors que le drapeau B empilé reste celui du BRK. */
+/* An NMI that arrives during a BRK hijacks the sequence: the NMI vector is
+ * the one read, while the pushed B flag remains that of the BRK. */
 TEST(test_nmi_hijacks_brk) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0x00, 0xEA };               /* BRK ; NOP */
     setup_irq(&cpu, &mem, code, sizeof(code));
     uint8_t sp0 = cpu.SP;
 
-    /* BRK = 7 cycles ; la NMI est armée avant le cycle qui empile P (le 5e). */
+    /* BRK = 7 cycles; the NMI is armed before the cycle that pushes P (the 5th). */
     cpu_cycle(&cpu); cpu_cycle(&cpu); cpu_cycle(&cpu); cpu_cycle(&cpu);
     cpu_nmi(&cpu);
     while (!cpu_cycle(&cpu)) { }
 
-    ASSERT_EQ(cpu.PC, 0x0380);                     /* vecteur NMI, pas $0300 */
+    ASSERT_EQ(cpu.PC, 0x0380);                     /* NMI vector, not $0300 */
     ASSERT_EQ(cpu.SP, (uint8_t)(sp0 - 3));
     ASSERT_TRUE((memory_read(&mem, (uint16_t)(0x0100 + cpu.SP + 1)) & FLAG_BREAK) != 0);
-    ASSERT_FALSE(cpu.nmi_pending);                 /* la NMI a été consommée */
+    ASSERT_FALSE(cpu.nmi_pending);                 /* the NMI was consumed */
 }
 
-/* La séquence d'interruption elle-même dure 7 cycles, tous porteurs d'un accès. */
+/* The interrupt sequence itself lasts 7 cycles, each carrying an access. */
 TEST(test_irq_sequence_is_seven_cycles) {
     cpu6502_t cpu; memory_t mem;
     uint8_t code[] = { 0xEA, 0xEA };
     setup_irq(&cpu, &mem, code, sizeof(code));
 
     cpu_irq_set(&cpu, IRQF_VIA);
-    cpu_step(&cpu);                                /* NOP, échantillonne l'IRQ */
+    cpu_step(&cpu);                                /* NOP, samples the IRQ */
     g_buslog_n = 0;
     cpu_set_bus_callback(&cpu, buslog_cb, NULL);
-    int cyc = cpu_step(&cpu);                      /* la séquence d'IRQ */
+    int cyc = cpu_step(&cpu);                      /* the IRQ sequence */
     cpu_set_bus_callback(&cpu, NULL, NULL);
 
     ASSERT_EQ(cyc, 7);
-    ASSERT_EQ(g_buslog_n, 7);                      /* aucun cycle sans accès */
+    ASSERT_EQ(g_buslog_n, 7);                      /* no cycle without an access */
     ASSERT_EQ(cpu.PC, 0x0300);
     ASSERT_TRUE(cpu_get_flag(&cpu, FLAG_INTERRUPT));
 }

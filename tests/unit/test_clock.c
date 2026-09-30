@@ -1,18 +1,18 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_clock.c
- * @brief Horloge maître : un cycle de machine, ordre intra-cycle (V2-E2)
+ * @brief Master clock: one machine cycle, intra-cycle order (V2-E2)
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-09-11
  *
- * Vérifie le contrat de `emu_cycle()` (src/emu_clock.c) :
- *   - un appel = un cycle CPU exactement, et la position du balayage avance avec ;
- *   - l'ordre intra-cycle **φ1 ULA → φ2 CPU** : une écriture du CPU pendant le
- *     cycle *c* n'est PAS visible par la scanline émise à ce même cycle ; elle ne
- *     l'est qu'à partir du cycle suivant (c'est la convention de visibilité du
- *     matériel, où l'ULA accède à la RAM en φ1) ;
- *   - les périphériques φ2 reçoivent bien **un** cycle à la fois (pas de paquet) ;
- *   - la trame PAL compte 312 lignes de 64 cycles et 224 lignes visibles.
+ * Checks the contract of `emu_cycle()` (src/emu_clock.c):
+ *   - one call = exactly one CPU cycle, and the scan position advances with it;
+ *   - the intra-cycle order **φ1 ULA → φ2 CPU**: a CPU write during
+ *     cycle *c* is NOT visible to the scanline emitted at that same cycle; it only
+ *     becomes visible from the next cycle on (this is the hardware visibility
+ *     convention, where the ULA accesses RAM in φ1);
+ *   - the φ2 peripherals do receive **one** cycle at a time (no batching);
+ *   - the PAL frame has 312 lines of 64 cycles and 224 visible lines.
  */
 
 #include "emulator.h"
@@ -39,12 +39,12 @@ static int tests_failed = 0;
                 tests_failed++; return; } \
 } while (0)
 
-/* Un émulateur minimal : mémoire, CPU, vidéo, VIA, ULA-NG. Pas de périphérique
- * de stockage ni de son — l'horloge n'en a pas besoin. */
+/* A minimal emulator: memory, CPU, video, VIA, ULA-NG. No storage
+ * or sound peripheral — the clock does not need them. */
 static emulator_t g_emu;
 
-/* Rappel d'horloge identique en esprit à celui de main.c : il sert ici à
- * compter les cycles livrés aux périphériques φ2. */
+/* Clock callback identical in spirit to the one in main.c: here it is used to
+ * count the cycles delivered to the φ2 peripherals. */
 static int g_tick_calls, g_tick_cycles, g_tick_max;
 static void clock_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
@@ -70,7 +70,7 @@ static void setup(const uint8_t* code, size_t n, bool microseq) {
     g_tick_calls = g_tick_cycles = g_tick_max = 0;
 }
 
-/* Compte les pixels non noirs de la ligne `y` du framebuffer. */
+/* Counts the non-black pixels of framebuffer line `y`. */
 static int line_ink(const video_t* vid, int y) {
     int n = 0;
     for (int x = 0; x < vid->native_w; x++) {
@@ -85,8 +85,8 @@ TEST(test_one_call_is_one_cycle) {
     setup(code, sizeof(code), true);
     for (int i = 1; i <= 8; i++) {
         emu_cycle(&g_emu);
-        ASSERT_EQ((int)g_emu.cpu.cycles, i);       /* un cycle CPU par appel */
-        ASSERT_EQ(g_emu.raster_cycle, i);          /* le balayage suit */
+        ASSERT_EQ((int)g_emu.cpu.cycles, i);       /* one CPU cycle per call */
+        ASSERT_EQ(g_emu.raster_cycle, i);          /* the scan follows */
     }
     ASSERT_EQ(g_emu.frame_cycles, 8);
 }
@@ -97,8 +97,8 @@ TEST(test_peripherals_get_one_cycle_at_a_time) {
     setup(code, sizeof(code), true);
     for (int i = 0; i < 40; i++) emu_cycle(&g_emu);
     ASSERT_EQ(g_tick_cycles, 40);
-    ASSERT_EQ(g_tick_calls, 40);     /* un appel par cycle… */
-    ASSERT_EQ(g_tick_max, 1);        /* …et jamais de paquet */
+    ASSERT_EQ(g_tick_calls, 40);     /* one call per cycle… */
+    ASSERT_EQ(g_tick_max, 1);        /* …and never batched */
 }
 
 TEST(test_raster_position_advances_by_line) {
@@ -109,7 +109,7 @@ TEST(test_raster_position_advances_by_line) {
     emu_raster_pos(&g_emu, &line, &dot);
     ASSERT_EQ(line, 3);
     ASSERT_EQ(dot, 0);
-    ASSERT_EQ(g_emu.raster_rendered, 3);   /* lignes 0,1,2 émises */
+    ASSERT_EQ(g_emu.raster_rendered, 3);   /* lines 0,1,2 emitted */
 }
 
 TEST(test_frame_is_312_lines_of_64_cycles) {
@@ -120,7 +120,7 @@ TEST(test_frame_is_312_lines_of_64_cycles) {
     uint8_t code[] = { 0xEA };
     setup(code, sizeof(code), true);
     for (int i = 0; i < CYCLES_PER_FRAME; i++) emu_cycle(&g_emu);
-    /* Zone visible : 224 lignes rendues, le reste est du blanking. */
+    /* Visible area: 224 lines rendered, the rest is blanking. */
     ASSERT_EQ(g_emu.raster_rendered, 224);
     ASSERT_EQ(g_emu.raster_ng_line, 312);
 }
@@ -130,7 +130,7 @@ TEST(test_frame_begin_and_end) {
     setup(code, sizeof(code), true);
     for (int i = 0; i < 100; i++) emu_cycle(&g_emu);
     ASSERT_EQ(g_emu.raster_rendered, 1);
-    emu_clock_frame_end(&g_emu);           /* termine la trame interrompue */
+    emu_clock_frame_end(&g_emu);           /* finishes the interrupted frame */
     ASSERT_EQ(g_emu.raster_rendered, 224);
     emu_clock_frame_begin(&g_emu);
     ASSERT_EQ(g_emu.raster_cycle, 0);
@@ -138,26 +138,26 @@ TEST(test_frame_begin_and_end) {
     ASSERT_EQ(g_emu.raster_ng_line, 0);
 }
 
-/* ── Le test d'ordre intra-cycle (US2.3) ──
- * L'écriture du CPU tombe exactement au cycle 64, celui où la scanline 0 est
- * émise. Si l'ULA passe bien AVANT le CPU (φ1 puis φ2), la ligne 0 montre
- * l'ancien contenu ; la ligne 1, émise au cycle 128, montre le nouveau. */
-/* Ordre intra-cycle MESURÉ sur le matériel (Mike Brown, Unofficial ULA Guide
- * 1.02) : le 6502 accède à la DRAM d'abord, l'ULA fetche ensuite l'octet du même
- * count. Une écriture au cycle c est donc vue par la cellule c — et pas par la
- * cellule c-1, fetchée au cycle précédent. Jusqu'en 2.0.1 l'émulateur faisait
- * l'inverse et décalait tout split d'une cellule vers la droite. */
+/* ── The intra-cycle order test (US2.3) ──
+ * The CPU write lands exactly on cycle 64, the one at which scanline 0 is
+ * emitted. If the ULA does run BEFORE the CPU (φ1 then φ2), line 0 shows
+ * the old content; line 1, emitted at cycle 128, shows the new one. */
+/* Intra-cycle order MEASURED on hardware (Mike Brown, Unofficial ULA Guide
+ * 1.02): the 6502 accesses DRAM first, then the ULA fetches the byte of the same
+ * count. A write at cycle c is therefore seen by cell c — and not by
+ * cell c-1, fetched at the previous cycle. Up to 2.0.1 the emulator did
+ * the opposite and shifted every split one cell to the right. */
 TEST(test_cpu_write_visible_in_the_same_cell) {
-    /* 5 NOP (10 cycles) puis STA $BB8D : l'écriture est le 4e cycle du STA, soit
-     * le 14e cycle → count 13 de la ligne 0 → la cellule 13 ($BB80+13). */
+    /* 5 NOP (10 cycles) then STA $BB8D: the write is the 4th cycle of the STA, i.e.
+     * the 14th cycle → count 13 of line 0 → cell 13 ($BB80+13). */
     uint8_t code[] = { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0x8D, 0x8D, 0xBB };
     setup(code, sizeof(code), true);
     g_emu.ula_per_cycle = true;
     g_emu.ula_fetch_offset = 0;
 
     memset(&g_emu.memory.ram[0xBB80], 'A', 40 * 28);
-    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);      /* charset : tout encre… */
-    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);  /* …sauf l'espace, vide */
+    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);      /* charset: all ink… */
+    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);  /* …except space, empty */
     g_emu.cpu.A = ' ';
 
     for (int i = 0; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
@@ -173,14 +173,14 @@ TEST(test_cpu_write_visible_in_the_same_cell) {
         const uint8_t* p = &g_emu.video.framebuffer[x * 3];
         if (p[0] || p[1] || p[2]) cell13++;
     }
-    ASSERT_EQ(cell12, 6);   /* fetchée au cycle 13, avant l'écriture : intacte */
-    ASSERT_EQ(cell13, 0);   /* fetchée au cycle 14, APRÈS l'écriture du CPU : vide */
+    ASSERT_EQ(cell12, 6);   /* fetched at cycle 13, before the write: intact */
+    ASSERT_EQ(cell13, 0);   /* fetched at cycle 14, AFTER the CPU write: empty */
 }
 
-/* ── ULA au cycle : le split raster (V2-E4 / US4.2) ──
- * Une écriture du CPU au milieu d'une ligne ne doit affecter QUE les cellules
- * pas encore fetchées. C'est l'effet que le rendu ligne-par-ligne rendait
- * impossible : il échantillonnait toute la ligne au même instant. */
+/* ── Per-cycle ULA: the raster split (V2-E4 / US4.2) ──
+ * A CPU write in the middle of a line must affect ONLY the cells
+ * not yet fetched. This is the effect that line-by-line rendering made
+ * impossible: it sampled the whole line at the same instant. */
 TEST(test_ula_per_cycle_mid_line_split) {
     uint8_t code[] = { 0xEA };
     setup(code, sizeof(code), true);
@@ -188,18 +188,18 @@ TEST(test_ula_per_cycle_mid_line_split) {
     g_emu.ula_fetch_offset = 0;
 
     memset(&g_emu.memory.ram[0xBB80], 'A', 40 * 28);
-    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);   /* charset plein… */
-    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);  /* …sauf l'espace */
+    memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);   /* full charset… */
+    memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);  /* …except space */
 
-    /* Les 20 premières cellules de la ligne 0 sont fetchées. */
+    /* The first 20 cells of line 0 are fetched. */
     for (int i = 0; i < 20; i++) emu_cycle(&g_emu);
-    /* Le « CPU » efface toute la ligne 0 à cet instant. */
+    /* The "CPU" clears the whole of line 0 at this instant. */
     memset(&g_emu.memory.ram[0xBB80], ' ', 40);
-    /* Le reste de la ligne est balayé. */
+    /* The rest of the line is scanned. */
     for (int i = 20; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
 
     ASSERT_EQ(g_emu.raster_rendered, 1);
-    /* Moitié gauche : l'encre du 'A' fetché avant l'écriture. */
+    /* Left half: the ink of the 'A' fetched before the write. */
     int left = 0, right = 0;
     for (int x = 0; x < 20 * 6; x++) {
         const uint8_t* p = &g_emu.video.framebuffer[x * 3];
@@ -209,13 +209,13 @@ TEST(test_ula_per_cycle_mid_line_split) {
         const uint8_t* p = &g_emu.video.framebuffer[x * 3];
         if (p[0] || p[1] || p[2]) right++;
     }
-    ASSERT_EQ(left, 20 * 6);    /* fetché avant l'écriture : plein */
-    ASSERT_EQ(right, 0);        /* fetché après : vide */
+    ASSERT_EQ(left, 20 * 6);    /* fetched before the write: full */
+    ASSERT_EQ(right, 0);        /* fetched after: empty */
 }
 
-/* Sans le mode au cycle, la même séquence donne une ligne uniformément vide :
- * la ligne entière est échantillonnée à la fin, donc après l'écriture. C'est la
- * contre-épreuve — et l'écart que l'épic E4 comble. */
+/* Without per-cycle mode, the same sequence yields a uniformly empty line:
+ * the whole line is sampled at the end, hence after the write. This is the
+ * counter-test — and the gap that epic E4 closes. */
 TEST(test_line_render_cannot_split) {
     uint8_t code[] = { 0xEA };
     setup(code, sizeof(code), true);
@@ -231,11 +231,11 @@ TEST(test_line_render_cannot_split) {
 
     ASSERT_EQ(g_emu.raster_rendered, 1);
     int ink = line_ink(&g_emu.video, 0);
-    ASSERT_EQ(ink, 0);          /* toute la ligne voit l'écriture */
+    ASSERT_EQ(ink, 0);          /* the whole line sees the write */
 }
 
-/* L'offset de fetch décale la colonne lue à un cycle donné : avec un offset de
- * 10, la colonne 0 est fetchée au cycle 10, donc la coupure se déplace d'autant. */
+/* The fetch offset shifts the column read at a given cycle: with an offset of
+ * 10, column 0 is fetched at cycle 10, so the split moves by the same amount. */
 TEST(test_ula_fetch_offset_moves_the_split) {
     uint8_t code[] = { 0xEA };
     setup(code, sizeof(code), true);
@@ -246,7 +246,7 @@ TEST(test_ula_fetch_offset_moves_the_split) {
     memset(&g_emu.memory.ram[0xB400], 0x3F, 128 * 8);
     memset(&g_emu.memory.ram[0xB400 + ' ' * 8], 0x00, 8);
 
-    for (int i = 0; i < 20; i++) emu_cycle(&g_emu);   /* colonnes 0..9 fetchées */
+    for (int i = 0; i < 20; i++) emu_cycle(&g_emu);   /* columns 0..9 fetched */
     memset(&g_emu.memory.ram[0xBB80], ' ', 40);
     for (int i = 20; i < PAL_CYCLES_PER_LINE; i++) emu_cycle(&g_emu);
 
@@ -264,8 +264,8 @@ TEST(test_ula_fetch_offset_moves_the_split) {
     ASSERT_EQ(right, 0);
 }
 
-/* Écran statique : les deux chemins doivent donner EXACTEMENT la même image.
- * C'est la garantie de non-régression du mode au cycle. */
+/* Static screen: both paths must yield EXACTLY the same image.
+ * This is the non-regression guarantee of per-cycle mode. */
 TEST(test_static_screen_identical_both_paths) {
     uint8_t code[] = { 0xEA };
     static uint8_t fb_line[VIDEO_MAX_W * VIDEO_MAX_H * 3];
@@ -288,8 +288,8 @@ TEST(test_static_screen_identical_both_paths) {
     ASSERT_EQ(memcmp(fb_line, g_emu.video.framebuffer, sizeof(fb_line)), 0);
 }
 
-/* Le cœur historique ne sait pas s'arrêter entre deux cycles : emu_cycle() y
- * exécute une instruction entière, et le balayage rattrape d'autant. */
+/* The legacy core cannot stop between two cycles: emu_cycle() there
+ * executes a whole instruction, and the scan catches up accordingly. */
 TEST(test_legacy_core_advances_by_instruction) {
     uint8_t code[] = { 0xA9, 0x42 };   /* LDA #$42 = 2 cycles */
     setup(code, sizeof(code), false);
@@ -310,34 +310,34 @@ TEST(test_emu_step_returns_instruction_cycles) {
     ASSERT_EQ(g_emu.cpu.PC, 0x0300);
 }
 
-/* V2-E7 : le contrat « un appel = un cycle » vaut pour TOUTES les instructions,
- * y compris celles dont la longueur se décide en cours de route. Un branchement
- * non pris (2 cycles) coûtait un troisième appel sans accès bus : le compteur
- * CPU restait juste, mais le balayage prenait un cycle d'avance à chaque
- * branchement non pris — ~410 cycles par trame sur la ROM BASIC. */
+/* V2-E7: the "one call = one cycle" contract holds for ALL instructions,
+ * including those whose length is decided along the way. A branch
+ * not taken (2 cycles) used to cost a third call without bus access: the CPU
+ * counter stayed correct, but the scan got one cycle ahead on every
+ * branch not taken — ~410 cycles per frame on the BASIC ROM. */
 TEST(test_branch_not_taken_costs_no_phantom_cycle) {
-    uint8_t code[] = { 0x18,             /* CLC              : 2 cycles */
-                       0xB0, 0x10,       /* BCS +16 (non pris) : 2 cycles */
-                       0x90, 0x00,       /* BCC +0  (pris)     : 3 cycles */
-                       0xEA };           /* NOP              : 2 cycles */
+    uint8_t code[] = { 0x18,             /* CLC                : 2 cycles */
+                       0xB0, 0x10,       /* BCS +16 (not taken): 2 cycles */
+                       0x90, 0x00,       /* BCC +0  (taken)    : 3 cycles */
+                       0xEA };           /* NOP                : 2 cycles */
     setup(code, sizeof(code), true);
     for (int i = 0; i < 9; i++) {
         emu_cycle(&g_emu);
-        ASSERT_EQ((int)g_emu.cpu.cycles, i + 1);   /* jamais un appel à vide */
+        ASSERT_EQ((int)g_emu.cpu.cycles, i + 1);   /* never an idle call */
         ASSERT_EQ(g_emu.raster_cycle, i + 1);
     }
     ASSERT_EQ(g_emu.cpu.PC, 0x0206);
 }
 
-/* Toute la ROM en fait foi : sur une trame de boot BASIC, le balayage et le
- * compteur CPU doivent rester au pas (au dépassement de la dernière
- * instruction près). Sans ROM, une boucle synthétique riche en branchements
- * non pris joue le même rôle. */
+/* The whole ROM is the reference: over a BASIC boot frame, the scan and the
+ * CPU counter must stay in step (up to the overrun of the last
+ * instruction). Without a ROM, a synthetic loop rich in branches
+ * not taken plays the same role. */
 TEST(test_raster_and_cpu_stay_in_step_over_a_frame) {
     uint8_t code[] = { 0xA2, 0x00,       /* LDX #0 */
                        0xE8,             /* loop: INX */
-                       0xF0, 0xFD,       /* BEQ loop (non pris 255 fois sur 256) */
-                       0xD0, 0xFB };     /* BNE loop (pris) */
+                       0xF0, 0xFD,       /* BEQ loop (not taken 255 times out of 256) */
+                       0xD0, 0xFB };     /* BNE loop (taken) */
     setup(code, sizeof(code), true);
     emu_clock_frame_begin(&g_emu);
     while (g_emu.raster_cycle < CYCLES_PER_FRAME) emu_cycle(&g_emu);

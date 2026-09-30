@@ -1,64 +1,64 @@
-# Senior Engineering Review — LOCI SDIMG + CSAVE série (sprints 34ao → 34aq)
+# Senior Engineering Review — LOCI SDIMG + CSAVE series (sprints 34ao → 34aq)
 
-**Date** : 2026-06-07
-**Versions livrées** : v1.16.40-alpha → v1.16.43-alpha (4 versions)
-**Auteur** : bmarty
-**Demande** : review architecturale + décisions + limitations
+**Date**: 2026-06-07
+**Versions delivered**: v1.16.40-alpha → v1.16.43-alpha (4 versions)
+**Author**: bmarty
+**Request**: architectural review + decisions + limitations
 
 ---
 
 ## 1. TL;DR
 
-Cette série étend Phosphoric d'un backend de stockage **SD raw image FAT16/32**
-pour LOCI (read + write), avec en cascade une réparation du format TAP produit
-par CSAVE. Trois PR mergés en cascade sur `main` :
+This series extends Phosphoric with an **SD raw image FAT16/32** storage backend
+for LOCI (read + write), followed by a fix of the TAP format produced
+by CSAVE. Three PRs merged one after the other into `main`:
 
-| PR | Sprint | Version | Fichiers majeurs | LOC |
+| PR | Sprint | Version | Main files | LOC |
 |----|--------|---------|------------------|-----|
 | #1 | 34ao + 34ao+ | 1.16.40 + 1.16.41 | `src/io/loci_sdimg.{c,h}`, `tools/mkloci_sd.c` | ~1500 |
-| #2 | 34ap | 1.16.42 | extension write API + routage loci.c + tests | ~1450 |
-| #3 | 34aq | 1.16.43 | reconstruction canonique TAP au csave_end | ~220 |
+| #2 | 34ap | 1.16.42 | write API extension + loci.c routing + tests | ~1450 |
+| #3 | 34aq | 1.16.43 | canonical TAP reconstruction at csave_end | ~220 |
 
-**État final** : 470 tests pass, 0 régression, validation E2E LOCI ROM →
-BASIC Atmos → CSAVE → CLOAD fonctionnel (avec une limitation cosmétique
-documentée plus bas).
+**Final state**: 470 tests pass, 0 regressions, E2E validation LOCI ROM →
+BASIC Atmos → CSAVE → CLOAD working (with one cosmetic limitation
+documented below).
 
 ---
 
-## 2. Contexte amont
+## 2. Upstream context
 
-### Avant cette série
+### Before this series
 
-- Sprint 34an avait livré le fix MIA spin ABI : LOCI ROM bootait correctement,
-  TUI navigable, MIA_BOOT vers BASIC 1.1 validé. Le stockage se limitait à
-  `--loci-flash DIR` (sandbox POSIX).
-- Le firmware LOCI réel utilise une carte microSD lue par le Pi Pico. Les
-  utilisateurs voulaient pouvoir :
-  - extraire une image SD réelle (`dd if=/dev/sdX`) et la booter
-  - préparer une image avec `mkfs.fat + mtools` et l'utiliser comme média
-  - éventuellement faire des CSAVE persistants dans cette image
+- Sprint 34an had delivered the MIA spin ABI fix: the LOCI ROM booted correctly,
+  the TUI was navigable, MIA_BOOT to BASIC 1.1 validated. Storage was limited to
+  `--loci-flash DIR` (POSIX sandbox).
+- The real LOCI firmware uses a microSD card read by the Pi Pico. Users
+  wanted to be able to:
+  - extract a real SD image (`dd if=/dev/sdX`) and boot it
+  - prepare an image with `mkfs.fat + mtools` and use it as media
+  - possibly make persistent CSAVEs into that image
 
-### Décision architecturale
+### Architectural decision
 
-J'ai choisi de **ne pas vendrer FatFs** (la lib standard utilisée par le
-firmware Pi Pico réel). Raisons :
+I chose **not to vendor FatFs** (the standard library used by the
+real Pi Pico firmware). Reasons:
 
-| Pour FatFs | Contre |
+| For FatFs | Against |
 |------------|--------|
-| Battle-tested | ~3500 LOC vendor, plus de surface d'attaque |
-| Mêmes garanties que le firmware réel | License un peu non-standard (custom) |
-| Write robuste | Couplage projet, modifications dans le code vendor à éviter |
+| Battle-tested | ~3500 LOC vendored, larger attack surface |
+| Same guarantees as the real firmware | Somewhat non-standard (custom) licence |
+| Robust write | Project coupling, changes in vendored code to be avoided |
 
-→ Choix : **implémentation FAT custom minimale (~700 LOC)**. Surface réduite,
-contrôle total, et le scope est précis (read+write 8.3 superfloppy, FAT16/32
-auto-détecté). Trade-off : si un cas pathologique surgit, je n'ai pas la
-base de tests de FatFs derrière moi — d'où les 22 tests cold-roundtrip.
+→ Choice: **minimal custom FAT implementation (~700 LOC)**. Smaller surface,
+full control, and the scope is precise (read+write 8.3 superfloppy, FAT16/32
+auto-detected). Trade-off: if a pathological case shows up, I don't have
+FatFs's test base behind me — hence the 22 cold-roundtrip tests.
 
 ---
 
-## 3. Architecture du backend SDIMG
+## 3. SDIMG backend architecture
 
-### Interface publique (`include/io/loci_sdimg.h`)
+### Public interface (`include/io/loci_sdimg.h`)
 
 ```c
 loci_sdimg_t* loci_sdimg_open(const char* path);
@@ -81,14 +81,14 @@ int  loci_sdimg_mkdir(img, path);
 int  loci_sdimg_sync(img);
 ```
 
-15 fonctions publiques, miroir 1:1 des ops POSIX que loci.c utilise déjà.
-**Aucune** dépendance sur loci.h : le backend est testable isolément.
+15 public functions, a 1:1 mirror of the POSIX ops loci.c already uses.
+**No** dependency on loci.h: the backend can be tested in isolation.
 
-### Layers internes
+### Internal layers
 
 ```
 ┌─────────────────────────────────────────┐
-│ Public API (15 fonctions)               │
+│ Public API (15 functions)               │
 ├─────────────────────────────────────────┤
 │ Path resolution + handle management     │
 │   - resolve_path(slash-separated)        │
@@ -100,53 +100,53 @@ int  loci_sdimg_sync(img);
 │   - alloc_free_cluster / free_chain     │
 │   - extend_chain                        │
 ├─────────────────────────────────────────┤
-│ BPB parsing + auto-détection FS         │
+│ BPB parsing + FS auto-detection         │
 │   - parse_bpb                           │
-│   - FAT12 rejeté (<4085 clusters)       │
+│   - FAT12 rejected (<4085 clusters)     │
 │   - FAT16/FAT32 (≥65525 = FAT32)        │
 ├─────────────────────────────────────────┤
 │ Low-level sector I/O (stdio)            │
 │   - read_sector / write_sector          │
-│   - EROFS si img->read_only             │
+│   - EROFS if img->read_only             │
 └─────────────────────────────────────────┘
 ```
 
-### Décisions notables
+### Notable decisions
 
-1. **`fopen("rb+")` puis fallback `fopen("rb")`** au moment de l'open de
-   l'image. Si l'image hôte est read-only (chmod 0444, mount RO), toutes
-   les ops d'écriture renvoient `-EROFS`. Pas besoin que l'utilisateur
-   ajoute un flag.
+1. **`fopen("rb+")` then fallback to `fopen("rb")`** when opening the
+   image. If the host image is read-only (chmod 0444, RO mount), all
+   write ops return `-EROFS`. No need for the user to
+   add a flag.
 
-2. **Mirror FAT update atomique par sector**. `write_fat_entry` lit le
-   sector concerné, modifie l'entry, puis le réécrit dans **toutes** les
-   `NumFATs` copies (typiquement 2). Si l'écriture du sector 0 échoue,
-   la modification du FAT1 est partielle, mais le FAT0 reste cohérent.
-   Pas de journaling — crash mid-write peut laisser FAT0 modifié et FAT1
-   pas à jour. Documenté comme limitation.
+2. **Atomic per-sector mirror FAT update**. `write_fat_entry` reads the
+   relevant sector, modifies the entry, then rewrites it into **all**
+   `NumFATs` copies (typically 2). If writing sector 0 fails,
+   the FAT1 modification is partial, but FAT0 stays consistent.
+   No journaling — a crash mid-write can leave FAT0 modified and FAT1
+   not updated. Documented as a limitation.
 
-3. **Allocation cluster = first-fit linéaire**. Pas de meilleur algorithme
-   (best-fit, next-fit). Sur des images <100 MB ça reste sous le µs.
-   Si l'usage scale, refactorer vers un cluster bitmap en RAM.
+3. **Cluster allocation = linear first-fit**. No better algorithm
+   (best-fit, next-fit). On images <100 MB it stays under a µs.
+   If usage scales, refactor towards an in-RAM cluster bitmap.
 
-4. **EOC mark immédiat à l'alloc**. `alloc_free_cluster` écrit la valeur
-   EOC (`0xFFFF` / `0x0FFFFFFF`) dans le FAT au moment de l'alloc,
-   AVANT que le caller link la chaîne. Si on reboot après crash, le
-   cluster apparaît alloué+terminé, pas free. Évite la double-alloc.
+4. **EOC mark written immediately at allocation**. `alloc_free_cluster` writes the
+   EOC value (`0xFFFF` / `0x0FFFFFFF`) into the FAT at allocation time,
+   BEFORE the caller links the chain. If we reboot after a crash, the
+   cluster appears allocated+terminated, not free. Avoids double allocation.
 
-### Tags sentinel pour les fds[]
+### Sentinel tags for fds[]
 
-Le backend POSIX historique stocke `FILE*` dans `loci_t.fds[]` et `DIR*`
-dans `loci_t.dirs[]`. Quand `loci->sdimg` est non-NULL, je stocke un
-**pointer-encoded tag** :
+The historical POSIX backend stores `FILE*` in `loci_t.fds[]` and `DIR*`
+in `loci_t.dirs[]`. When `loci->sdimg` is non-NULL, I store a
+**pointer-encoded tag**:
 
 ```c
 loci->fds[slot] = (void*)(uintptr_t)(0x1000000u | (uint32_t)slot);
 ```
 
-Le bit haut (`0x1000000`) distingue le tag d'un vrai `FILE*` (qui sera
-toujours `> 0x10000000` sur Linux glibc). Le cleanup conditionnel évite
-les `fclose()` sur ces sentinels :
+The high bit (`0x1000000`) distinguishes the tag from a real `FILE*` (which will
+always be `> 0x10000000` on Linux glibc). The conditional cleanup avoids
+`fclose()` on these sentinels:
 
 ```c
 if (loci->fds[i]) {
@@ -155,101 +155,101 @@ if (loci->fds[i]) {
 }
 ```
 
-**Critique potentielle** : c'est un hack. Une refactorisation propre serait
-une vtable backend (`loci_fs_vtable_t* fs;`) avec deux implémentations.
-J'ai préféré la voie minimaliste pour limiter la surface de régression
-(la base POSIX est utilisée par 105 tests existants).
+**Potential criticism**: this is a hack. A clean refactoring would be
+a backend vtable (`loci_fs_vtable_t* fs;`) with two implementations.
+I preferred the minimalist route to limit the regression surface
+(the POSIX base is used by 105 existing tests).
 
-### Intégration loci.c
+### loci.c integration
 
-Au début de chaque op file/dir, dispatch précoce :
+At the start of every file/dir op, early dispatch:
 
 ```c
 static void op_open(loci_t* loci) {
     if (loci->sdimg) { op_open_sdimg(loci); return; }
-    /* POSIX path inchangé */
+    /* POSIX path unchanged */
 }
 ```
 
-**11 ops dispatchées vers SDIMG**, **5 ops d'écriture rejetées EACCES** en
-v1.16.40 (puis re-routées proprement en v1.16.42 avec write API).
+**11 ops dispatched to SDIMG**, **5 write ops rejected with EACCES** in
+v1.16.40 (then properly re-routed in v1.16.42 with the write API).
 
 ---
 
-## 4. Sprint 34ap : passage en read-write
+## 4. Sprint 34ap: moving to read-write
 
-### Surface ajoutée
+### Added surface
 
-- 6 fonctions publiques (fwrite, unlink, rename, mkdir, fopen_ex, sync)
-- ~470 LOC helpers FAT bas niveau
-- `sdimg_handle_t` étendu : `writable` + `dir_entry_lba/off`
-- Sur fwrite : si le fichier était empty (`first_cluster < 2`), alloc d'un
-  cluster initial. Sur extend, `extend_chain(last_cluster)` rallonge la
-  liste. À chaque write, update du `size_bytes` dans la dir entry (lba/off
-  mémorisés au fopen).
+- 6 public functions (fwrite, unlink, rename, mkdir, fopen_ex, sync)
+- ~470 LOC of low-level FAT helpers
+- `sdimg_handle_t` extended: `writable` + `dir_entry_lba/off`
+- On fwrite: if the file was empty (`first_cluster < 2`), allocate an
+  initial cluster. On extend, `extend_chain(last_cluster)` lengthens the
+  list. On every write, update `size_bytes` in the dir entry (lba/off
+  remembered at fopen).
 
-### Tests cold-roundtrip
+### Cold-roundtrip tests
 
-Le pattern : `open → write → close → close img → reopen img → read → verify`.
-La fermeture/réouverture force un nouveau `loci_sdimg_open` qui re-parse le
-BPB et ne fait CONFIANCE qu'au disque. Garantit qu'on n'a pas un cache
-mémoire qui masque un bug FAT.
+The pattern: `open → write → close → close img → reopen img → read → verify`.
+Closing/reopening forces a new `loci_sdimg_open` which re-parses the
+BPB and TRUSTS only the disk. It guarantees that no in-memory
+cache is hiding a FAT bug.
 
-12 tests couvrent : create, list-after-create, cross-cluster extend,
-truncate, unlink, rename, mkdir avec `.`/`..`, file in subdir, seek+overwrite,
-RO-image, 8.3 validation.
+12 tests cover: create, list-after-create, cross-cluster extend,
+truncate, unlink, rename, mkdir with `.`/`..`, file in subdir, seek+overwrite,
+RO image, 8.3 validation.
 
-### Décision : pas de cache sector
+### Decision: no sector cache
 
-Chaque `fread` / `fwrite` SDIMG fait un `fseek + fread`/`fwrite` syscall.
-Sur des accès intensifs (CSAVE de plusieurs MB) c'est sous-optimal. Sur du
-1 MHz emulé Oric + tape patches qui buffer en RAM, le throughput est plus
-limité par BASIC que par notre I/O. Mesure : un CSAVE 13 bytes prend 4 ms
-côté SDIMG, négligeable.
+Every SDIMG `fread` / `fwrite` does an `fseek + fread`/`fwrite` syscall.
+For intensive accesses (multi-MB CSAVE) this is suboptimal. With a
+1 MHz emulated Oric + tape patches that buffer in RAM, throughput is
+limited by BASIC more than by our I/O. Measurement: a 13-byte CSAVE takes 4 ms
+on the SDIMG side, negligible.
 
-Si un sprint futur veut accélérer : LRU sector cache de ~16 entries dans
-`loci_sdimg_t`, invalidé sur write.
+If a future sprint wants to speed it up: an LRU sector cache of ~16 entries in
+`loci_sdimg_t`, invalidated on write.
 
 ---
 
-## 5. Sprint 34ao+ : intégration E2E (5 bugs en cascade)
+## 5. Sprint 34ao+: E2E integration (5 cascading bugs)
 
-C'était le sprint le plus chirurgical. Validation interactive utilisateur
-révèle 5 bugs de plomberie distincts :
+This was the most surgical sprint. Interactive validation by the user
+revealed 5 distinct plumbing bugs:
 
-| # | Bug | Cause racine | Fix |
+| # | Bug | Root cause | Fix |
 |---|-----|--------------|-----|
-| 1 | Picker TUI vide | `d_attrib` renvoyait bit ARCHIVE 0x20 brut, le firmware filtre sur 0x10 (DIR) | Normalisation : `(attr & 0x10) ? 0x10 : 0` |
-| 2 | OPENDIR("") rejeté | `pop_zstring` retourne false sur empty | Accepter empty = racine |
-| 3 | MIA_BOOT fail SDIMG | rom_swap_cb attend host path | Extract SDIMG → /tmp puis cb sur temp |
-| 4 | CLOAD bloqué Searching | LOCI mount TAP pas plumb dans cassette subsystem | Callback `tape_mount_cb` → `emu.tapebuf` |
-| 5 | rom_patches BASIC 1.0 après swap 1.1 | get_rom_patches non re-appelé | Auto-detect filename → re-piocher |
+| 1 | Empty TUI picker | `d_attrib` returned the raw ARCHIVE bit 0x20, the firmware filters on 0x10 (DIR) | Normalisation: `(attr & 0x10) ? 0x10 : 0` |
+| 2 | OPENDIR("") rejected | `pop_zstring` returns false on empty | Accept empty = root |
+| 3 | MIA_BOOT fails with SDIMG | rom_swap_cb expects a host path | Extract SDIMG → /tmp then cb on the temp file |
+| 4 | CLOAD stuck on Searching | LOCI TAP mount not plumbed into the cassette subsystem | Callback `tape_mount_cb` → `emu.tapebuf` |
+| 5 | BASIC 1.0 rom_patches after swapping to 1.1 | get_rom_patches not called again | Auto-detect from filename → re-select |
 
-**Leçon** : on découvre les bugs d'intégration uniquement en testant E2E avec
-le ROM réel. Mes 105 tests pre-existing du sprint 34an passaient
-parfaitement mais n'exerçaient PAS la chaîne complète (firmware → MIA op →
-host backend → return). L'utilisateur a fait office d'intégration test.
+**Lesson**: integration bugs are only found by testing E2E with
+the real ROM. My 105 pre-existing tests from sprint 34an passed
+perfectly but did NOT exercise the full chain (firmware → MIA op →
+host backend → return). The user acted as the integration test.
 
-### Décision : extraction vers /tmp plutôt que stream
+### Decision: extraction to /tmp rather than streaming
 
-Le ROM-swap callback dans main.c est wired à `memory_load_rom(path, ...)`
-qui fait `fopen + fread`. Au lieu de changer la signature du callback (qui
-toucherait toutes les ROMs supportées), j'extrait depuis SDIMG vers
-`/tmp/loci_extract_<basename>` à la demande, puis le callback fonctionne
-inchangé.
+The ROM-swap callback in main.c is wired to `memory_load_rom(path, ...)`
+which does `fopen + fread`. Instead of changing the callback signature (which
+would touch every supported ROM), I extract from SDIMG to
+`/tmp/loci_extract_<basename>` on demand, and the callback then works
+unchanged.
 
-Trade-off : si l'utilisateur a un /tmp en tmpfs avec peu de RAM, les ROMs
-extraites consomment ~24 KB chacune (BASIC + microdis). Acceptable.
+Trade-off: if the user has /tmp on tmpfs with little RAM, the extracted ROMs
+consume ~24 KB each (BASIC + microdis). Acceptable.
 
 ---
 
-## 6. Sprint 34aq : reconstruction TAP
+## 6. Sprint 34aq: TAP reconstruction
 
-### Le bug
+### The bug
 
-Le patch CSAVE historique (avant 34aq) capturait les bytes via une
-interception du `putbyte_entry` de la ROM BASIC. Je l'ai instrumenté
-pour comprendre :
+The historical CSAVE patch (before 34aq) captured bytes by
+intercepting the BASIC ROM's `putbyte_entry`. I instrumented it
+to understand:
 
 ```
 CSAVE TRACE: byte #1 = $24 (sync)
@@ -259,22 +259,22 @@ CSAVE TRACE: byte #4 = $00
 ...
 ```
 
-Les `$FF` ne devraient pas être là. Hexdump comparatif :
+The `$FF`s should not be there. Comparative hexdump:
 
 ```
 AIGLE.TAP : 16 16 16 24 00 00 00 c7 3f 37 05 01 00 41 49 47
 CSAVE T1  : 16 16 16 24 ff ff 00 00 05 0e 05 01 ff 54 31 00
 ```
 
-Cause : le BASIC ROM ne pose pas A=byte avant chaque `putbyte` ; il utilise
-des routes via X/Y/mémoire selon le contexte. Mon interception ne capture
-pas la sémantique réelle.
+Cause: the BASIC ROM does not set A=byte before each `putbyte`; it uses
+routes via X/Y/memory depending on the context. My interception does not capture
+the real semantics.
 
-### La décision : reconstruire depuis la RAM
+### The decision: rebuild from RAM
 
-Plutôt que de réverse-engineer chaque path de putbyte dans la ROM, je
-**ignore complètement les bytes** capturés et reconstruis un TAP canonique
-au moment du `csave_end` :
+Rather than reverse-engineering every putbyte path in the ROM, I
+**completely ignore the captured bytes** and rebuild a canonical TAP
+at `csave_end` time:
 
 ```c
 uint16_t start_addr = ram[0x9A] | (ram[0x9B] << 8);   /* TXTTAB */
@@ -283,57 +283,57 @@ if (end_addr > start_addr) end_addr--;
 /* Build TAP: 16×3 + 24 + 00 00 + 00 + C7 + end + start + 00 + name + 00 + data */
 ```
 
-Avantages :
-- Format garanti byte-compatible (testé vs AIGLE.TAP)
-- Aucune dépendance sur le détail ROM-version-specific
-- Fonctionne pour ORIC-1 et Atmos avec les mêmes adresses ZP
+Advantages:
+- Format guaranteed byte-compatible (tested against AIGLE.TAP)
+- No dependency on ROM-version-specific details
+- Works for ORIC-1 and Atmos with the same ZP addresses
 
-Limites :
-- Suppose un programme BASIC (pas un CSAVE machine code via `,A,E` etc.)
-- Si l'utilisateur fait `POKE 0x9C, ...` avant CSAVE, le TAP sera tronqué
+Limits:
+- Assumes a BASIC program (not a machine-code CSAVE via `,A,E` etc.)
+- If the user does `POKE 0x9C, ...` before CSAVE, the TAP will be truncated
 
-### Limitation cosmétique : "Errors found"
+### Cosmetic limitation: "Errors found"
 
-Après tout ce travail, BASIC Atmos affiche encore `Errors found` après
-CLOAD, malgré :
-- TAP byte-compatible avec AIGLE
-- `LIST` affiche correctement le programme chargé
-- Auto-run du programme fonctionne (PRINT "HI" → "HI")
+After all this work, BASIC Atmos still displays `Errors found` after
+CLOAD, despite:
+- A TAP byte-compatible with AIGLE
+- `LIST` correctly showing the loaded program
+- Program auto-run working (PRINT "HI" → "HI")
 
-J'ai essayé sans succès :
-1. Reset `tapeoffs` à 0 quand verify pass re-appelle getsync
-2. Duplication du data block dans le TAP (style cassette physique)
-3. Handler EOT silencieux (return 0x00 au lieu de garbage)
+I tried without success:
+1. Resetting `tapeoffs` to 0 when the verify pass calls getsync again
+2. Duplicating the data block in the TAP (physical-cassette style)
+3. A silent EOT handler (return 0x00 instead of garbage)
 
-Cause probable (non confirmée) : un compteur de parité tape dans BASIC qui
-n'est pas remis à zéro parce qu'on ne simule pas le bit-banging au niveau
-VIA/timer. Le supprimer demanderait soit :
-- Patcher la routine ROM qui imprime "Errors found" pour la skip (fragile,
+Probable cause (unconfirmed): a tape parity counter in BASIC that
+is not reset because we do not simulate the bit-banging at the
+VIA/timer level. Getting rid of it would require either:
+- Patching the ROM routine that prints "Errors found" to skip it (fragile,
   ROM-version-specific)
-- Implémenter une vraie sim cassette bit-niveau (gros sprint à part)
+- Implementing a real bit-level cassette simulation (a big separate sprint)
 
-**Décision** : accepter, documenter, ship. Le programme se charge et
-s'exécute, le message est cosmétique. Ce n'est pas un blocker.
+**Decision**: accept, document, ship. The program loads and
+runs, the message is cosmetic. It is not a blocker.
 
 ---
 
-## 7. Métriques finales
+## 7. Final metrics
 
-| Indicateur | Valeur |
+| Indicator | Value |
 |------------|--------|
-| Versions livrées | 4 (1.16.40 → 1.16.43) |
+| Versions delivered | 4 (1.16.40 → 1.16.43) |
 | Sprints | 4 (34ao, 34ao+, 34ap, 34aq) |
-| Commits sur main | 7 (3 PRs + 4 follow-up fixes) |
-| LOC ajoutées | ~3170 (code + tests + docs) |
-| Fichiers nouveaux | 8 (sdimg.{c,h}, tests×2, mkloci_sd, 3 CRs) |
-| API publique étendue | 17 fonctions (15 SDIMG + 2 loci) |
-| Tests SDIMG | 22 (10 read + 12 write) |
-| Tests global Phosphoric | **470** (vs 458 avant la série) |
-| Régressions | 0 |
-| Bugs trouvés en validation E2E | 5 (sprint 34ao+) |
-| Bug stubborn restant | 1 cosmétique ("Errors found") |
+| Commits on main | 7 (3 PRs + 4 follow-up fixes) |
+| LOC added | ~3170 (code + tests + docs) |
+| New files | 8 (sdimg.{c,h}, tests×2, mkloci_sd, 3 reports) |
+| Public API extended | 17 functions (15 SDIMG + 2 loci) |
+| SDIMG tests | 22 (10 read + 12 write) |
+| Phosphoric global tests | **470** (vs 458 before the series) |
+| Regressions | 0 |
+| Bugs found during E2E validation | 5 (sprint 34ao+) |
+| Remaining stubborn bug | 1 cosmetic ("Errors found") |
 
-### Tests cumulés
+### Cumulative tests
 
 ```
 test-cpu        : 74
@@ -357,56 +357,56 @@ test-serial     : 19
 test-keyboard   : 24
 test-symbols    : 10
 test-loci       : 108
-test-loci-sdimg : 10    ← nouveau 34ao
-test-loci-sdimg-write : 12  ← nouveau 34ap
+test-loci-sdimg : 10    ← new in 34ao
+test-loci-sdimg-write : 12  ← new in 34ap
 test-coverage   : 24
 TOTAL           : 470 PASS
 ```
 
 ---
 
-## 8. Risques et dette
+## 8. Risks and debt
 
-### Connus et documentés
+### Known and documented
 
-- **Pas de journaling FAT** : crash mid-write peut désaligner FAT0/FAT1.
-  Atténuation : `loci_sdimg_sync()` flush avant des points critiques.
-- **Pas de LFN** : le firmware LOCI n'utilise que 8.3 donc non bloquant
-  aujourd'hui ; à revoir si l'usage évolue.
-- **FAT12 rejeté à l'open** : trade-off conscient, scope reduction.
-- **Pas de MBR** : superfloppy seulement. Si on veut ouvrir un dump
-  d'une carte SD réelle qui a une table MBR, il faut extraire la
-  partition avant ou ajouter un parser MBR (~50 LOC).
-- **Tag sentinel dans fds[]/dirs[]** : voir §3.5, c'est un hack qui mérite
-  une refactorisation propre en vtable backend si la base se complexifie.
-- **CSAVE assume programme BASIC** : pas de support CSAVE machine-code
-  (`CSAVE "name",A start,E end`). Le firmware actuel utilise les pointeurs
-  TXTTAB/VARTAB ; pour machine-code il faudrait lire les params depuis
-  d'autres adresses ROM-version-specific.
+- **No FAT journaling**: a crash mid-write can misalign FAT0/FAT1.
+  Mitigation: `loci_sdimg_sync()` flushes before critical points.
+- **No LFN**: the LOCI firmware only uses 8.3, so not blocking
+  today; to be revisited if usage evolves.
+- **FAT12 rejected at open**: conscious trade-off, scope reduction.
+- **No MBR**: superfloppy only. To open a dump
+  of a real SD card that has an MBR table, the
+  partition must be extracted first or an MBR parser added (~50 LOC).
+- **Sentinel tag in fds[]/dirs[]**: see §3.5, it is a hack that deserves
+  a clean refactoring into a backend vtable if the codebase grows more complex.
+- **CSAVE assumes a BASIC program**: no support for machine-code CSAVE
+  (`CSAVE "name",A start,E end`). The current firmware uses the
+  TXTTAB/VARTAB pointers; for machine code, the parameters would have to be read from
+  other ROM-version-specific addresses.
 
-### Suggestions pour la review
+### Suggestions for the review
 
-Je voudrais ton avis sur 3 points :
+I would like your opinion on 3 points:
 
-1. **Tag sentinel vs vtable** : est-ce que tu pousserais à refactor
-   maintenant (avant que la base se durcisse) ou bien tu acceptes le hack
-   actuel avec un TODO ?
+1. **Sentinel tag vs vtable**: would you push for a refactor
+   now (before the codebase hardens) or do you accept the current
+   hack with a TODO?
 
-2. **Limitation cosmétique "Errors found"** : tu vois une voie élégante
-   que j'ai ratée ? Mon test avec reset de tapeoffs n'a rien donné, le
-   double-block non plus. Peut-être y a-t-il un compteur ROM qu'on
-   pourrait directement modifier en RAM (ZP) au csave_end avant que le
-   verify s'exécute ?
+2. **Cosmetic "Errors found" limitation**: do you see an elegant route
+   I missed? My test resetting tapeoffs gave nothing, nor did the
+   double block. Perhaps there is a ROM counter we
+   could modify directly in RAM (ZP) at csave_end before the
+   verify runs?
 
-3. **Reconstruction depuis RAM (sprint 34aq)** : c'est élégant pour
-   BASIC, mais ferme la porte à un support futur de CSAVE machine-code
-   sans changer cette logique. Vaut-il mieux garder une trace partielle
-   du contexte (track les valeurs poussées en X/Y autour des putbytes
-   pour deviner le format) ou rester sur reconstruction pure ?
+3. **Reconstruction from RAM (sprint 34aq)**: it is elegant for
+   BASIC, but closes the door to future machine-code CSAVE support
+   without changing this logic. Is it better to keep a partial trace
+   of the context (track the values pushed in X/Y around the putbytes
+   to guess the format) or stay with pure reconstruction?
 
 ---
 
-## 9. Reproductibilité
+## 9. Reproducibility
 
 ```bash
 git clone <repo> && cd Oric1
@@ -423,29 +423,29 @@ make tests                  # 470 PASS
 ./oric1-emu -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
     --keyboard azerty
 
-# Une fois en BASIC Atmos:
+# Once in BASIC Atmos:
 #   10 PRINT "HI"
-#   CSAVE "TEST"      # → TEST.TAP persisté dans loci_demo.img
+#   CSAVE "TEST"      # → TEST.TAP persisted in loci_demo.img
 #   NEW
-#   CLOAD "TEST"      # → "Errors found" (cosmétique) + programme chargé
-#   LIST              # → affiche 10 PRINT "HI"
+#   CLOAD "TEST"      # → "Errors found" (cosmetic) + program loaded
+#   LIST              # → shows 10 PRINT "HI"
 ```
 
 ---
 
-## 10. Liens utiles
+## 10. Useful links
 
-- PR #1 (sprint 34ao read) : https://github.com/benedictemarty/Phosphoric/pull/1
-- PR #2 (sprint 34ap write) : https://github.com/benedictemarty/Phosphoric/pull/2
-- PR #3 (sprint 34aq CSAVE fix) : https://github.com/benedictemarty/Phosphoric/pull/3
-- CR détaillés :
+- PR #1 (sprint 34ao read): https://github.com/benedictemarty/Phosphoric/pull/1
+- PR #2 (sprint 34ap write): https://github.com/benedictemarty/Phosphoric/pull/2
+- PR #3 (sprint 34aq CSAVE fix): https://github.com/benedictemarty/Phosphoric/pull/3
+- Detailed reports:
   - `docs/CR/2026-06-07_LOCI_SDimg_Backend.md` (sprint 34ao)
   - `docs/CR/2026-06-07_LOCI_SDimg_Write.md` (sprint 34ap)
 
 ---
 
-**Demande explicite** : tes critiques sur l'architecture, le tag sentinel,
-le "Errors found" résiduel, et toute clean-up que tu veux que j'attaque
-en sprint 34ar.
+**Explicit request**: your criticism of the architecture, the sentinel tag,
+the residual "Errors found", and any clean-up you want me to tackle
+in sprint 34ar.
 
-— Fin de la review
+— End of review

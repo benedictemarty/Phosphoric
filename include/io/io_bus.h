@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file io_bus.h
- * @brief Adaptateur bus I/O : table des périphériques + dispatch.
+ * @brief I/O bus adapter: device table + dispatch.
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US2, Sprint 126). Ce module est la **couche
- * d'adaptation** entre le contrat générique `io_device_t` et les modules de
- * périphériques concrets + le contexte `emulator_t`. Il a le droit de connaître
- * `emulator_t` (les claims sont croisés : l'ACIA à $0380 consulte le LOCI, le
- * Microdisc synchronise la mémoire d'overlay). Les modules purs (acia6551.c,
- * microdisc.c, …) restent, eux, découplés d'`emulator.h`.
+ * Extracted from main.c (Epic 7 / US2, Sprint 126). This module is the **adaptation
+ * layer** between the generic `io_device_t` contract and the concrete device
+ * modules + the `emulator_t` context. It is allowed to know
+ * `emulator_t` (claims are cross-linked: the ACIA at $0380 consults the LOCI, the
+ * Microdisc synchronises the overlay memory). The pure modules (acia6551.c,
+ * microdisc.c, …) remain decoupled from `emulator.h`.
  */
 #ifndef IO_BUS_H
 #define IO_BUS_H
@@ -19,22 +19,22 @@
 
 struct emulator_s;
 
-/** Renvoie le device qui possède `addr` en **lecture** (NULL sinon).
- *  Ordre de la table = priorité (LOCI en tête, ULA-NG en dernier). */
+/** Returns the device that owns `addr` for **reading** (NULL otherwise).
+ *  Table order = priority (LOCI first, ULA-NG last). */
 const io_device_t* io_bus_find(struct emulator_s* emu, uint16_t addr);
 
-/** Renvoie le device qui possède `addr` en **écriture** (claims_write si fourni,
- *  sinon claims). NULL si aucun. */
+/** Returns the device that owns `addr` for **writing** (claims_write if provided,
+ *  otherwise claims). NULL if none. */
 const io_device_t* io_bus_find_write(struct emulator_s* emu, uint16_t addr);
 
-/** Expose la table pour l'enregistrement savestate (`savestate_set_io_devices`).
- *  @param count  reçoit le nombre d'entrées. */
+/** Exposes the table for savestate registration (`savestate_set_io_devices`).
+ *  @param count  receives the number of entries. */
 const io_device_t* io_bus_devices(int* count);
 
-/** Avance d'un pas de `cycles` cycles CPU les périphériques de bus temporisés
- *  (FDC Microdisc/LOCI, ACIA, DTL2000, Mageco), dans l'ORDRE HISTORIQUE exact de
- *  `cpu_cycle_tick` (iso-comportement). Le VIA et la cassette (cœur/port) restent
- *  câblés dans main.c. Epic 7 / US5. */
+/** Advances the timed bus devices by one step of `cycles` CPU cycles
+ *  (Microdisc/LOCI FDC, ACIA, DTL2000, Mageco), in the exact HISTORICAL ORDER of
+ *  `cpu_cycle_tick` (same behaviour). The VIA and the cassette (core/port) stay
+ *  wired in main.c. Epic 7 / US5. */
 void io_bus_tick(struct emulator_s* emu, int cycles);
 
 #endif /* IO_BUS_H */

@@ -376,7 +376,7 @@ TEST(test_irq_on_tx_with_tie) {
     teardown();
 }
 
-/* Savestate (Epic 7 / US4) : état émulé restauré, pointeurs hôte préservés. */
+/* Savestate (Epic 7 / US4): emulated state restored, host pointers preserved. */
 TEST(test_savestate_roundtrip_preserves_host_pointers) {
     setup_loopback();
     dev.tx_count = 5;

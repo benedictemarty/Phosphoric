@@ -1,14 +1,14 @@
-# Terminal WiFi LOCI — PicoWiFiModemUSB réel via Phosphoric
+# LOCI WiFi terminal — real PicoWiFiModemUSB through Phosphoric
 
-Pilote le **vrai** PicoWiFiModemUSB (branché en USB sur l'hôte) depuis le Oric
-émulé, exactement comme sur un vrai LOCI : modem exposé en **ACIA 6551 à $0380**,
-`--loci` activé. Le backend `com:` relie l'ACIA émulée au périphérique réel.
+Drives the **real** PicoWiFiModemUSB (plugged into the host over USB) from the
+emulated Oric, exactly as on a real LOCI: modem exposed as an **ACIA 6551 at $0380**,
+`--loci` enabled. The `com:` backend connects the emulated ACIA to the real device.
 
-## Pré-requis
-- PicoWiFiModemUSB connecté → `/dev/ttyACM0` (vérifier : `lsusb | grep -i pico`).
-- Utilisateur dans le groupe `dialout` (accès au port).
+## Prerequisites
+- PicoWiFiModemUSB connected → `/dev/ttyACM0` (check: `lsusb | grep -i pico`).
+- User in the `dialout` group (port access).
 
-## Lancer le terminal (interactif, fenêtre SDL2)
+## Starting the terminal (interactive, SDL2 window)
 ```bash
 make SDL2=1
 make tools                                   # bas2tap
@@ -19,27 +19,27 @@ make tools                                   # bas2tap
     --serial-buffer 1024 \
     -t tools/modem/modem_term.tap -f
 ```
-Le programme s'auto-exécute. Tapez des commandes AT au clavier :
+The program runs automatically. Type AT commands on the keyboard:
 
-| Commande | Effet |
+| Command | Effect |
 |---|---|
-| `ATI` ⏎ | infos modem (WiFi, IP, RSSI…) |
+| `ATI` ⏎ | modem info (WiFi, IP, RSSI…) |
 | `AT` ⏎ | test → `OK` |
-| `ATDT host:port` ⏎ | appel telnet sortant (BBS, service…) |
-| `ATH` ⏎ | raccrocher |
-| `ATE0` / `ATE1` | écho modem off/on (le terminal n'a pas d'écho local) |
-| `CTRL-C` | quitter le terminal (BREAK BASIC) |
+| `ATDT host:port` ⏎ | outgoing telnet call (BBS, service…) |
+| `ATH` ⏎ | hang up |
+| `ATE0` / `ATE1` | modem echo off/on (the terminal has no local echo) |
+| `CTRL-C` | quit the terminal (BASIC BREAK) |
 
-## Cible de test confirmée — TELEHACK
+## Confirmed test target — TELEHACK
 
-`telehack.com:23` est un service telnet public, fiable et 100 % ASCII (idéal
-pour l'écran 40 colonnes du Oric). Une fois le terminal lancé :
+`telehack.com:23` is a public telnet service, reliable and 100 % ASCII (ideal
+for the Oric's 40-column screen). Once the terminal is running:
 
 ```
 ATDT telehack.com:23
 ```
 
-Réponse réelle obtenue (vrai modem, WiFi réel) :
+Actual response obtained (real modem, real WiFi):
 
 ```
 DIALLING telehack.com:23
@@ -53,21 +53,21 @@ Command, one of the following:
 Type HELP for a detailed command list.
 ```
 
-Commandes amusantes à essayer une fois connecté : `starwars`, `eliza`,
-`figlet hello`, `advent`, `2048`, `today`, `rfc 1`. `CTRL-C` interrompt une
-commande BBS (côté TELEHACK), pas le terminal.
+Fun commands to try once connected: `starwars`, `eliza`,
+`figlet hello`, `advent`, `2048`, `today`, `rfc 1`. `CTRL-C` interrupts a
+BBS command (on the TELEHACK side), not the terminal.
 
-Autres BBS telnet vérifiés joignables : `particlesbbs.dyndns.org:6400`,
+Other telnet BBSes verified as reachable: `particlesbbs.dyndns.org:6400`,
 `bbs.fozztexx.com:23`, `blackflag.acid.org:23`.
 
-> Note : si un `ATDT` renvoie `NO CARRIER (00:00:00)` immédiatement, c'est une
-> résolution DNS qui échoue (nom d'hôte inexistant) — pas un problème de la
-> chaîne d'émulation.
+> Note: if an `ATDT` immediately returns `NO CARRIER (00:00:00)`, it is a
+> failing DNS resolution (non-existent host name) — not a problem in the
+> emulation chain.
 
-## Usenet / NNTP (Eternal-September) — terminal CRLF
+## Usenet / NNTP (Eternal-September) — CRLF terminal
 
-NNTP exige des fins de ligne **CRLF**, alors que le terminal telehack envoie du
-CR seul. Utilise la variante `modem_nntp.bas` (envoie CR+LF sur RETURN) :
+NNTP requires **CRLF** line endings, whereas the telehack terminal sends
+CR only. Use the `modem_nntp.bas` variant (sends CR+LF on RETURN):
 
 ```bash
 ./oric1-emu -r roms/basic11b.rom --loci \
@@ -75,30 +75,30 @@ CR seul. Utilise la variante `modem_nntp.bas` (envoie CR+LF sur RETURN) :
     -t tools/modem/modem_nntp.tap -f
 ```
 
-Puis (le `-` = mode transparent/raw, requis pour NNTP) :
+Then (the `-` = transparent/raw mode, required for NNTP):
 ```
-ATDT-news.eternal-september.org:119      (compte gratuit requis)
+ATDT-news.eternal-september.org:119      (free account required)
 AUTHINFO USER <login>
-AUTHINFO PASS <motdepasse>
+AUTHINFO PASS <password>
 GROUP comp.sys.oric
 HEAD <n> / BODY <n> / ARTICLE <n>
-POST                                     (publier ; greeting "posting ok")
+POST                                     (post; greeting "posting ok")
 ```
-Compte gratuit : https://www.eternal-september.org/ . Lecture ET publication OK.
-NB : la frappe au clavier est cadencée par la main (pas de perte) ; un envoi
-programmatique de longue chaîne peut perdre des octets (ACIA en instant transfer).
+Free account: https://www.eternal-september.org/ . Reading AND posting OK.
+NB: keyboard typing is paced by hand (no loss); a programmatic send of a
+long string may lose bytes (ACIA in instant transfer).
 
-## Fichiers
-- `modem_term.bas` — terminal full-duplex interactif (clavier ↔ modem, CR).
-- `modem_nntp.bas` — terminal interactif **CRLF** (pour NNTP/Usenet).
-- `modem_probe.bas` — sonde minimale : envoie `ATI` et affiche la réponse
-  (auto-run, sans interaction). Test rapide.
+## Files
+- `modem_term.bas` — interactive full-duplex terminal (keyboard ↔ modem, CR).
+- `modem_nntp.bas` — interactive **CRLF** terminal (for NNTP/Usenet).
+- `modem_probe.bas` — minimal probe: sends `ATI` and displays the response
+  (auto-run, no interaction). Quick test.
 
-## Pilote ACIA (modem_term.bas)
-ACIA 6551 à `$0380` : data `$0380`, status `$0381` (TDRE=$10, RDRF=$08),
+## ACIA driver (modem_term.bas)
+ACIA 6551 at `$0380`: data `$0380`, status `$0381` (TDRE=$10, RDRF=$08),
 command `$0382` (`$0B` = DTR on, RX-IRQ off, RTS low), control `$0383` (`$1E`).
-Boucle full-duplex : draine le RX vers l'écran, puis `KEY$` → TX.
+Full-duplex loop: drains RX to the screen, then `KEY$` → TX.
 
-## Validé empiriquement
-`TX: ATI\r` → `RX: Pico WiFi modem … WiFi status: CONNECTED … OK` affiché à
-l'écran du Oric, via le vrai modem sur le WiFi réel (RSSI live).
+## Empirically validated
+`TX: ATI\r` → `RX: Pico WiFi modem … WiFi status: CONNECTED … OK` displayed on
+the Oric's screen, via the real modem over real WiFi (live RSSI).

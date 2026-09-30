@@ -1165,7 +1165,7 @@ TEST(test_unlink_nonempty_directory_returns_eacces) {
     loci_set_flash_root(&l, tmpdir);
     push_path(&l, "full_sub");
     loci_write(&l, 0x03AF, LOCI_OP_UNLINK);
-    ASSERT_EQ(errno_lo(&l), LOCI_EFATFS(LOCI_FR_DENIED));    /* f_unlink non-vide → 32+FR_DENIED */
+    ASSERT_EQ(errno_lo(&l), LOCI_EFATFS(LOCI_FR_DENIED));    /* f_unlink non-empty → 32+FR_DENIED */
     ASSERT_TRUE(access(subdir, F_OK) == 0);
 
     unlink(inner_path); rmdir(subdir); rmdir(tmpdir);
@@ -1287,8 +1287,8 @@ TEST(test_uname_release_uses_emu_version) {
     char release[9] = {0};
     memcpy(release, &l.xstack[l.xstack_ptr + 26], 8);
     /* Should start with EMU_VERSION's leading chars ("1.16.64-alpha" → "1.16.64-").
-     * Le champ fait 8 caractères complétés par des espaces : une version plus
-     * courte ("2.0.0") ne se compare que sur sa propre longueur. */
+     * The field is 8 characters padded with spaces: a shorter version
+     * ("2.0.0") is only compared over its own length. */
     size_t n = strlen(EMU_VERSION) < 8 ? strlen(EMU_VERSION) : 8;
     ASSERT_TRUE(strncmp(release, EMU_VERSION, n) == 0);
     /* And NOT the frozen literal. */
@@ -1819,12 +1819,12 @@ TEST(test_dsk_umount_closes) {
     loci_cleanup(&l); free(dsk_path); free(tmpdir);
 }
 
-/* ── loci-webdisk (archi B) : disque LOCI natif servi par HTTP ──────────
- * loci_dsk_open_web() monte en lecteur A un disque dont les pistes MFM sont
- * récupérées à la demande. Une commande READ SECTOR sur le FDC PROPRE de la
- * LOCI (l.dsk_fdc) déclenche le fetch HTTP + extraction dans dsk_image[0]. */
+/* ── loci-webdisk (archi B): native LOCI disk served over HTTP ──────────
+ * loci_dsk_open_web() mounts as drive A a disk whose MFM tracks are
+ * fetched on demand. A READ SECTOR command on the LOCI's OWN FDC
+ * (l.dsk_fdc) triggers the HTTP fetch + extraction into dsk_image[0]. */
 
-/* One-track MFM_DISK image (track 0/side 0/sector 1 rempli de 0x55) → fichier. */
+/* One-track MFM_DISK image (track 0/side 0/sector 1 filled with 0x55) → file. */
 static void loci_make_minimal_mfm(const char* path) {
     uint8_t* img = calloc(256 + 6400, 1);
     memcpy(img, "MFM_DISK", 8);
@@ -1914,9 +1914,9 @@ TEST(test_loci_web_disk_reads_over_http) {
     unlink(path); rmdir(tmpdir); free(tmpdir);
 }
 
-/* Le chemin exact de l'utilitaire Oric WEBMOUNT : pousser une URL sur la xstack
- * MIA ($03AC), poser le lecteur en A ($03B4), déclencher l'op MOUNT ($03AF=0x90)
- * — la LOCI détecte http:// et monte le disque web (miroir de mnt.c::mnt_mount). */
+/* The exact path of the Oric WEBMOUNT utility: push a URL onto the MIA xstack
+ * ($03AC), set the drive to A ($03B4), trigger the MOUNT op ($03AF=0x90)
+ * — the LOCI detects http:// and mounts the web disk (mirror of mnt.c::mnt_mount). */
 TEST(test_op_mount_http_url_mounts_web_disk) {
     char* tmpdir = make_tmpdir();
     char path[300]; snprintf(path, sizeof(path), "%s/web.dsk", tmpdir);
@@ -1964,8 +1964,8 @@ TEST(test_op_mount_http_url_mounts_web_disk) {
     unlink(path); rmdir(tmpdir); free(tmpdir);
 }
 
-/* Route B : serveur forké qui répond à GET /disks (JSON) ET aux plages de
- * fichier (?offset=&len=), pour tester le pseudo-device « W: Web disks ». */
+/* Route B: forked server answering GET /disks (JSON) AND file ranges
+ * (?offset=&len=), to test the "W: Web disks" pseudo-device. */
 static void web_serve_list_and_file(int listen_fd, const char* path) {
     for (;;) {
         int c = accept(listen_fd, NULL, NULL);
@@ -2001,9 +2001,9 @@ static void web_serve_list_and_file(int listen_fd, const char* path) {
     }
 }
 
-/* Le flux exact du menu LOCI NON modifié pour un disque web (Route B) :
- * opendir("W:") -> readdir (liste GET /disks) -> mount(drive,"W:","web.dsk").
- * Tout passe par l'ABI MIA ; le firmware/emulateur mappe "W:/nom" vers l'URL. */
+/* The exact flow of the UNMODIFIED LOCI menu for a web disk (Route B):
+ * opendir("W:") -> readdir (GET /disks list) -> mount(drive,"W:","web.dsk").
+ * Everything goes through the MIA ABI; the firmware/emulator maps "W:/name" to the URL. */
 TEST(test_web_device_browse_and_mount) {
     char* tmpdir = make_tmpdir();
     char path[300]; snprintf(path, sizeof(path), "%s/web.dsk", tmpdir);
@@ -2028,8 +2028,8 @@ TEST(test_web_device_browse_and_mount) {
     l.enabled = true;
     snprintf(l.web_base, sizeof(l.web_base), "http://127.0.0.1:%u", port);
 
-    /* 1) Le device « W: Web disks » apparaît dans la liste (opendir "" + readdir). */
-    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_OPENDIR);   /* xstack vide = device list */
+    /* 1) The "W: Web disks" device appears in the list (opendir "" + readdir). */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_OPENDIR);   /* empty xstack = device list */
     bool seen_web = false;
     for (int i = 0; i < 8 && !seen_web; i++) {
         loci_write(&l, 0x03A0 + LOCI_REG_API_A, 0);
@@ -2051,12 +2051,12 @@ TEST(test_web_device_browse_and_mount) {
     const char* nm = (const char*)&l.xstack[LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE + 2];
     ASSERT_TRUE(strcmp(nm, "web.dsk") == 0);
 
-    /* 3) mount(0,"W:","web.dsk") : le menu pousse "W:/web.dsk" puis op MOUNT. */
+    /* 3) mount(0,"W:","web.dsk"): the menu pushes "W:/web.dsk" then the MOUNT op. */
     const char* mp = "W:/web.dsk";
     loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, 0);
     for (int i = (int)strlen(mp) - 1; i >= 0; i--)
         loci_write(&l, 0x03A0 + LOCI_REG_API_STACK, (uint8_t)mp[i]);
-    loci_write(&l, 0x03A0 + LOCI_REG_API_A, 0);            /* lecteur A */
+    loci_write(&l, 0x03A0 + LOCI_REG_API_A, 0);            /* drive A */
     loci_write(&l, 0x03A0 + LOCI_REG_API_OP, LOCI_OP_MOUNT);
     ASSERT_EQ(loci_read(&l, 0x03A0 + LOCI_REG_API_A), 0);
     ASSERT_TRUE(l.dsk_web[0]);
@@ -2326,7 +2326,7 @@ TEST(test_dsk_id_register_ff_when_disabled) {
     ASSERT_EQ(loci_dsk_read(&l, 0x0319), 0xFF);
 }
 
-/* ── Sprint 36f : conformité firmware (console, TAP bas niveau, …) ── */
+/* ── Sprint 36f: firmware conformance (console, low-level TAP, …) ── */
 
 TEST(test_dsk_spare_registers_31a_31b) {
     loci_t l; loci_init(&l);
@@ -2561,9 +2561,9 @@ TEST(test_dsk_four_independent_drives) {
 /* ── Sprint 34aw : WD1793 cycle-accurate behind LOCI DSK bus ───── */
 
 TEST(test_dsk_wd1793_restore_command_clears_busy) {
-    /* Monte un .DSK minimal, envoie Restore (cmd $08), tickte le FDC, et
-     * vérifie que le bit BUSY redescend. Valide que le pipe LOCI → fdc_t
-     * route bien les commandes WD1793. */
+    /* Mounts a minimal .DSK, sends Restore (cmd $08), ticks the FDC, and
+     * checks that the BUSY bit drops. Validates that the LOCI → fdc_t pipe
+     * routes WD1793 commands correctly. */
     char* tmpdir = make_tmpdir();
     char* dsk_path = make_blob(tmpdir, "r.dsk", 256 * 17 * 41);
     loci_t l; loci_init(&l);
@@ -2584,8 +2584,8 @@ TEST(test_dsk_wd1793_restore_command_clears_busy) {
 }
 
 TEST(test_dsk_wd1793_ctrl_change_drive_repoints_fdc) {
-    /* Mount drives 0 et 1, switch selected, vérifie que le FDC pointe sur
-     * le bon buffer (taille distincte pour différencier). */
+    /* Mount drives 0 and 1, switch selected, check that the FDC points to
+     * the right buffer (distinct size to tell them apart). */
     char* tmpdir = make_tmpdir();
     char* d0 = make_blob(tmpdir, "0.dsk", 100);
     char* d1 = make_blob(tmpdir, "1.dsk", 200);
@@ -2611,27 +2611,27 @@ TEST(test_dsk_wd1793_ctrl_change_drive_repoints_fdc) {
 }
 
 TEST(test_dsk_drq_callback_updates_loci_byte) {
-    /* Le callback de fdc_t qu'on a wiré dans loci_init met à jour
-     * loci->dsk_drq. Vérifie le path en appelant directement. */
+    /* The fdc_t callback wired in loci_init updates
+     * loci->dsk_drq. Checks the path by calling it directly. */
     loci_t l; loci_init(&l);
     l.enabled = true;
     l.dsk_drq = 0xFF;   /* dummy initial */
-    /* Simule callback "DRQ set" comme le ferait fdc_t. */
+    /* Simulate the "DRQ set" callback as fdc_t would. */
     l.dsk_fdc.set_drq(&l);
     ASSERT_EQ(l.dsk_drq, 0x00);
     l.dsk_fdc.clr_drq(&l);
     ASSERT_EQ(l.dsk_drq, 0x80);
 }
 
-/* ── 34ah: scénarios d'intégration composés ──────────────────── */
+/* ── 34ah: composite integration scenarios ───────────────────── */
 
-/* Scénario : monter ROM + 2 disques + 1 tape ensemble, vérifier l'état
- * cohérent, puis tout démonter et vérifier le cleanup. */
+/* Scenario: mount ROM + 2 disks + 1 tape together, check the state is
+ * consistent, then unmount everything and check the cleanup. */
 TEST(test_integration_full_mount_session) {
     char* tmpdir = make_tmpdir();
     char path[300];
 
-    /* Pré-créer 4 fichiers cibles. */
+    /* Pre-create 4 target files. */
     snprintf(path, sizeof(path), "%s/rom.bin", tmpdir);
     FILE* fp = fopen(path, "wb"); fputc('R', fp); fclose(fp);
     snprintf(path, sizeof(path), "%s/d0.dsk", tmpdir);
@@ -2683,8 +2683,8 @@ TEST(test_integration_full_mount_session) {
     loci_cleanup(&l); free(tap_path); free(tmpdir);
 }
 
-/* Scénario : énumération complète d'un dossier avec 3 fichiers.
- * Vérifie qu'opendir + 3 readdir + 1 readdir vide + closedir convergent. */
+/* Scenario: full enumeration of a directory with 3 files.
+ * Checks that opendir + 3 readdir + 1 empty readdir + closedir converge. */
 TEST(test_integration_dir_enumeration) {
     char* tmpdir = make_tmpdir();
     const char* names[] = { "alpha.txt", "beta.bin", "gamma.dat" };
@@ -2734,14 +2734,14 @@ TEST(test_integration_dir_enumeration) {
     loci_cleanup(&l); free(tmpdir);
 }
 
-/* Scénario : TAP avec plusieurs headers consécutifs. Vérifie que des
- * READ_HEADER successifs trouvent chaque header sans se chevaucher. */
+/* Scenario: TAP with several consecutive headers. Checks that successive
+ * READ_HEADER calls find each header without overlapping. */
 TEST(test_integration_tap_multi_header_scan) {
     char* tmpdir = make_tmpdir();
     char path[300];
     snprintf(path, sizeof(path), "%s/multi.tap", tmpdir);
 
-    /* Construire un TAP avec 3 headers, séparés par des données filler. */
+    /* Build a TAP with 3 headers, separated by filler data. */
     FILE* fp = fopen(path, "wb");
     static const uint8_t hdr1[16] = {
         0,0,0,0xC7, 0x09,0xFF, 0x05,0x00, 0,
@@ -2789,8 +2789,8 @@ TEST(test_integration_tap_multi_header_scan) {
     loci_cleanup(&l); free(tmpdir);
 }
 
-/* Scénario : MIA_BOOT flow complet — préparer un ROM mounté, déclencher
- * boot, vérifier que le callback reçoit le bon path puis ax=0. */
+/* Scenario: complete MIA_BOOT flow — prepare a mounted ROM, trigger
+ * boot, check that the callback receives the right path then ax=0. */
 TEST(test_integration_mia_boot_with_mounted_rom) {
     char* tmpdir = make_tmpdir();
     char rom_path[300];
@@ -2824,8 +2824,8 @@ TEST(test_integration_mia_boot_with_mounted_rom) {
     loci_cleanup(&l); free(tmpdir);
 }
 
-/* Scénario : configuration HID kbd_xram puis injection d'une combo
- * Shift+A. Le bitmap doit refléter les deux états simultanément. */
+/* Scenario: HID kbd_xram configuration then injection of a Shift+A
+ * combo. The bitmap must reflect both states simultaneously. */
 TEST(test_integration_hid_combo_shift_a) {
     loci_t l; loci_init(&l);
     l.enabled = true;
@@ -2843,8 +2843,8 @@ TEST(test_integration_hid_combo_shift_a) {
     ASSERT_EQ(l.xram[0x4000] & 0x01, 0);
 }
 
-/* Scénario : la ROM LOCI binaire est cohérente — taille 16 KB, reset
- * vector pointe dans la plage ROM ($C000-$FFFF). */
+/* Scenario: the binary LOCI ROM is consistent — size 16 KB, reset
+ * vector points into the ROM range ($C000-$FFFF). */
 TEST(test_integration_locirom_binary_sanity) {
     FILE* fp = fopen("roms/loci/locirom", "rb");
     if (!fp) {
@@ -2855,7 +2855,7 @@ TEST(test_integration_locirom_binary_sanity) {
     long sz = ftell(fp);
     ASSERT_EQ(sz, 16384);
 
-    /* Reset vector lit à offset $3FFC-$3FFD (correspond à $FFFC). */
+    /* Reset vector read at offset $3FFC-$3FFD (corresponds to $FFFC). */
     fseek(fp, 0x3FFC, SEEK_SET);
     uint8_t lo = (uint8_t)fgetc(fp);
     uint8_t hi = (uint8_t)fgetc(fp);
@@ -2864,8 +2864,8 @@ TEST(test_integration_locirom_binary_sanity) {
     ASSERT_TRUE(reset >= 0xC000);
 }
 
-/* Scénario : mount d'un drive 0 + accès bus $0310 — la ROM peut probe
- * via le bus sans avoir à utiliser l'API. Vérifie la cohérence. */
+/* Scenario: mount of drive 0 + bus access at $0310 — the ROM can probe
+ * via the bus without having to use the API. Checks consistency. */
 TEST(test_integration_dsk_mount_then_bus_probe) {
     char* tmpdir = make_tmpdir();
     char* dsk_path = make_blob(tmpdir, "boot.dsk", 64);
@@ -2880,7 +2880,7 @@ TEST(test_integration_dsk_mount_then_bus_probe) {
     uint8_t st = loci_dsk_read(&l, 0x0310);
     ASSERT_EQ(st & LOCI_DSK_STAT_NOT_READY, 0);
 
-    /* Switch via CTRL to drive 1 (non monté) — should report NOT_READY. */
+    /* Switch via CTRL to drive 1 (not mounted) — should report NOT_READY. */
     loci_dsk_write(&l, 0x0314, 1u << LOCI_DSK_CTRL_DRV_SEL_SHIFT);
     ASSERT_EQ(l.dsk_selected, 1);
     st = loci_dsk_read(&l, 0x0310);
@@ -3041,11 +3041,11 @@ TEST(test_loci_reset_preserves_mounts) {
     loci_cleanup(&l); free(dsk_path); free(tap_path); free(tmpdir);
 }
 
-/* ── 34ak: SDL → HID bridge (mapping et bitmap conventions) ──── */
+/* ── 34ak: SDL → HID bridge (mapping and bitmap conventions) ─── */
 
-/* Pas de dépendance SDL ici — on teste juste que le format HID utilisé
- * par le bridge SDL est cohérent avec les keycodes documentés du firmware.
- * Le bridge lui-même est dans main.c et utilise SDL_GetKeyboardState. */
+/* No SDL dependency here — we just test that the HID format used
+ * by the SDL bridge is consistent with the firmware's documented keycodes.
+ * The bridge itself lives in main.c and uses SDL_GetKeyboardState. */
 
 TEST(test_hid_a_is_0x04) {
     /* Boot keyboard HID usage page : A = 0x04 (same as SDL_SCANCODE_A). */

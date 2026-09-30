@@ -65,8 +65,8 @@ make SDL2=1
 - **ACIA 6551** — Serial controller at $031C-$031F, transports loopback/TCP/PTY/COM/file + protocol backends (modem AT, PicoWiFiModemUSB; `digitelec` deprecated → use `--dtl2000`), V23 mode (Minitel/Digitelec). See the *chips × transports* matrix below
 - **Digitelec DTL 2000** — Faithful PIA 6821 + ACIA 6850 modem card at $03F8-$03FD (OCR-verified registers, V23 75/1200 & symmetric 1200, line/carrier control, IRQ wired)
 - **Mageco / ORICON MIDI** — MC6850 ACIA driving the MIDI DIN sockets (31250 baud 8-N-1, forum t=2525). Two designs from the thread: the original **Mageco** card at $03FE-$03FF (`--mageco`) and the modern **ORICON** reboot at $031C-$031D + clock generator $031E-$031F, LOCI-compatible (`--oricon`). Capture/replay the raw MIDI stream with `--mageco file:in[:out]`; play a Standard MIDI File **into** the Oric with `--mageco smf:song.mid[:loop]` (timed MIDI IN at the song's tempo); or — in a `MIDI=1` build — `--mageco midi[:TARGET]` opens a live host MIDI port (ALSA "Phosphoric MIDI" on Linux, CoreMIDI on macOS, WinMM on Windows) so the emulated Oric drives FluidSynth/a DAW and a MIDI keyboard plays into the Oric. The byte stream matches a real Oric+Mageco card through a USB-MIDI interface
-- **PicoWiFiModemUSB** — Émulation du modem WiFi de sodiumlb (Pico W, USB CDC ↔ WiFi) exposé par LOCI comme ACIA à $0380. Jeu de commandes AT v0.1.0 complet (`--serial picowifi[:SSID[:PASS]]`). WiFi simulé, connexions de données en TCP réel.
-- **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024) : MIA bus $03A0-$03BF, 36/36 API ops (ABI errno FatFS 32+FRESULT, dir fd 64+, xstack 512 conformes firmware), USB HID, WD1793 cadencé en cycles (modèle image plate), FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). **Bouton Action (F8)** : appui court → snapshot de session + menu LOCI (locirom v0.3.0, version FW et timings patchés dans la ROM comme le vrai firmware), entrée *resume* du menu → retour à la session ; **appui long (≥ 2 s) → diag ROM de Mike Brown** (test108k). **Liste des périphériques** dans le navigateur du menu (« 0: Internal storage », clé USB, picowifi « CDC modem mounted ») et **vraies clés USB du host** servies à l'Oric (`--loci-usb DIR`, auto-détection /media/$USER, chemins volume `N:`). Timing bus MIA réglable (`MAP_TUNE_*`, balayage `ADJ_SCAN` visible en direct). Boote Sedoric V4 master complet via le firmware LOCI. Voir [docs/loci.md](docs/loci.md).
+- **PicoWiFiModemUSB** — Emulation of sodiumlb's WiFi modem (Pico W, USB CDC ↔ WiFi) exposed by LOCI as an ACIA at $0380. Complete v0.1.0 AT command set (`--serial picowifi[:SSID[:PASS]]`). Simulated WiFi, data connections over real TCP.
+- **LOCI** — Lovely Oric Computer Interface (sodiumlb 2024): MIA bus $03A0-$03BF, 36/36 API ops (errno ABI FatFS 32+FRESULT, dir fd 64+, xstack 512, all firmware-compliant), USB HID, cycle-clocked WD1793 (flat image model), FAT16/32 SD image, runtime ROM swap (`--loci`, `--loci-flash DIR`, `--loci-sdimg PATH`). **Action button (F8)**: short press → session snapshot + LOCI menu (locirom v0.3.0, FW version and timings patched into the ROM like the real firmware), the menu's *resume* entry → back to the session; **long press (≥ 2 s) → Mike Brown's diag ROM** (test108k). **Device list** in the menu browser ("0: Internal storage", USB stick, picowifi "CDC modem mounted") and **real host USB sticks** served to the Oric (`--loci-usb DIR`, auto-detection of /media/$USER, volume paths `N:`). Adjustable MIA bus timing (`MAP_TUNE_*`, `ADJ_SCAN` sweep visible live). Boots a complete Sedoric V4 master through the LOCI firmware. See [docs/loci.md](docs/loci.md).
 
 ### ORIC-1 & Atmos Support
 - **ROM auto-detection** — Detects BASIC 1.0 (ORIC-1) or 1.1 (Atmos) from ROM header
@@ -89,7 +89,7 @@ make SDL2=1
 
 ### Save States
 - **`.ost` format** — Binary save state with CRC32 integrity check
-- **14 sections** — CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, DSK, BAD, TAP, SER, META (CRC32, sections inconnues ignorées = rétro/avant-compatible)
+- **14 sections** — CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, DSK, BAD, TAP, SER, META (CRC32, unknown sections ignored = backward/forward-compatible)
 - **Exact resume point** — a state taken mid-frame resumes with the same raster position,
   VIA cycle state and interrupt sample as an uninterrupted run (`make test-savestate-determinism`)
 - **Hotkeys** — F2 (quick save), F4 (quick load)
@@ -143,7 +143,7 @@ make SDL2=1
 - **Software reference** for a future Verilog/FPGA ULA (Sipeed Tang Primer 20K /
   GW2A-18). Register window `$0340-$035F`, **locked at reset** → bit-for-bit
   identical to a stock HCS 10017 until a program unlocks it (`'N','G'` on
-  `$0340`). Locked at reset (indiscernable d'une HCS 10017) ; no CLI flag needed.
+  `$0340`). Locked at reset (indistinguishable from an HCS 10017); no CLI flag needed.
 - **8 features** — palette-indirection (16×12-bit LUT), raster IRQ, start-address
   (double-buffer/scroll), scanline copper, fine scroll X/Y, **parallel attributes**
   (per-cell ink+paper, no color clash), **16 hardware sprites** 16×16 with
@@ -297,11 +297,11 @@ make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric
 sudo make install              # Install to /usr/local
 ```
 
-> **Affichage graphique :** depuis la v1.67, le défaut du `Makefile` est
-> **`SDL2=1`** (affichage/audio/clavier réels). Pour un build *headless*
-> (CI/automation, sans `libSDL2`), passer explicitement **`make SDL2=0`** ; un
-> tel binaire ne s'exécute qu'en `--headless`. Le `Makefile` est le seul système
-> de build du projet.
+> **Graphical display:** since v1.67, the `Makefile` default is
+> **`SDL2=1`** (real display/audio/keyboard). For a *headless* build
+> (CI/automation, without `libSDL2`), pass **`make SDL2=0`** explicitly; such
+> a binary only runs with `--headless`. The `Makefile` is the project's only build
+> system.
 
 ## Usage
 
@@ -558,7 +558,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 | F9 | Enter debugger |
 | F10 | Quit |
 | F11 | Fullscreen |
-| F12 | Screenshot PNG (`screenshot.png`, ou horodaté si déjà présent) |
+| F12 | Screenshot PNG (`screenshot.png`, or timestamped if it already exists) |
 
 ## Testing
 
@@ -696,80 +696,80 @@ docs/            User guide, control_protocol.md, CR review docs
 - [Changelog](CHANGELOG)
 - [Roadmap](ROADMAP)
 
-## Code generé par IA
+## AI-generated code
 
 > ⚠️ Avertissement : ce programme est un programme généré par Claude Code sous la supervision d'un être humain : il a été utilisé pour améliorer, développer, rendre compatible ou traduire ce logiciel.
 
-### Avertissements
+### Warnings
 
-- **Aucune vérification formelle** : le code n'a pas été audité par un
-  ingénieur logiciel professionnel. Bien que 876 tests (unitaires +
-  E2E) passent, la couverture de test n'est pas exhaustive et
-  des cas limites peuvent exister.
-- **Non adapté à la production** : il s'agit d'un projet expérimental et
-  éducatif. Il ne doit pas être utilisé dans des environnements critiques,
-  sensibles en termes de sécurité ou en production sans une revue
-  indépendante approfondie.
-- **Inexactitudes possibles** : la précision de l'émulation matérielle repose
-  sur la documentation disponible et des implémentations de référence
-  (Oricutron, EUPHORIC). Certains comportements peuvent différer du
-  matériel ORIC réel.
-- **Sécurité** : le code n'a fait l'objet d'aucun audit de sécurité. Les
-  fonctionnalités réseau (serveur cast, CASTV2) ne doivent être utilisées
-  que sur des réseaux de confiance.
-- **Limites de l'IA** : le code généré par IA peut contenir des erreurs de
-  logique subtiles, des pratiques non idiomatiques ou des choix
-  architecturaux qu'un développeur humain aborderait différemment.
-- **Maintenance** : les mises à jour futures dépendent de la disponibilité
-  du modèle IA et peuvent introduire des régressions ou des incohérences
-  entre sessions.
+- **No formal verification**: the code has not been audited by a
+  professional software engineer. Although 876 tests (unit +
+  E2E) pass, test coverage is not exhaustive and
+  edge cases may exist.
+- **Not suitable for production**: this is an experimental and
+  educational project. It must not be used in critical,
+  security-sensitive or production environments without a thorough
+  independent review.
+- **Possible inaccuracies**: the accuracy of the hardware emulation relies
+  on the available documentation and on reference implementations
+  (Oricutron, EUPHORIC). Some behaviours may differ from the
+  real ORIC hardware.
+- **Security**: the code has not undergone any security audit. The
+  network features (cast server, CASTV2) should only be used
+  on trusted networks.
+- **Limits of AI**: AI-generated code may contain subtle logic
+  errors, non-idiomatic practices or architectural
+  choices that a human developer would approach differently.
+- **Maintenance**: future updates depend on the availability
+  of the AI model and may introduce regressions or inconsistencies
+  between sessions.
 
-Utilisation à vos propres risques. Les contributions et revues de code sont bienvenues.
+Use at your own risk. Contributions and code reviews are welcome.
 
-## Crédits et sources
+## Credits and sources
 
-### Auteurs
-- **bmarty** — Direction du projet, supervision, tests sur matériel réel
+### Authors
+- **bmarty** — Project lead, supervision, testing on real hardware
 
-### Contributeurs
-- **[Xander Mol (xahmol)](https://github.com/xahmol)** — Conformité du backend LOCI au firmware réel `sodiumlb/loci-firmware`, découverte via les harnais de test [locifilemanager-v2](https://github.com/xahmol/locifilemanager-v2) et [OricScreenEditorLOCI](https://github.com/xahmol/OricScreenEditorLOCI) : `UNLINK` sur dossier vide (PR #10), protocole `WRITE_XSTACK` sans count explicite (PR #19)
+### Contributors
+- **[Xander Mol (xahmol)](https://github.com/xahmol)** — Compliance of the LOCI backend with the real `sodiumlb/loci-firmware` firmware, found through the [locifilemanager-v2](https://github.com/xahmol/locifilemanager-v2) and [OricScreenEditorLOCI](https://github.com/xahmol/OricScreenEditorLOCI) test harnesses: `UNLINK` on an empty folder (PR #10), `WRITE_XSTACK` protocol without an explicit count (PR #19)
 
-### Émulateurs de référence
+### Reference emulators
 
-Le comportement de Phosphoric s'appuie largement sur l'étude de ces émulateurs :
+Phosphoric's behaviour draws heavily on the study of these emulators:
 
-- **[Oricutron](https://github.com/pete-gordon/oricutron)** (Pete Gordon) — Émulateur ORIC de référence, source principale d'inspiration pour :
-  - Table de volume logarithmique du PSG AY-3-8910 (courbe DAC réelle)
-  - Diviseurs d'horloge du PSG (TONETIME=8, ENVTIME=16)
-  - Décodage du bus PSG via BDIR/BC1 sur PCR
-  - Mapping clavier SDL2 (64 touches, matrice QWERTY)
-  - Feedback PB3 du scan clavier VIA
-  - Pattern d'initialisation RAM (128x 0x00 + 128x 0xFF par page de 256 octets)
-  - Détection des attributs série HIRES (masque `(byte & 0x60) == 0`)
-  - Timing ULA et rendu vidéo texte/HIRES
-- **[EUPHORIC](http://music.riskweb.fr/Fabrice.Frances/Euphoric/english.html)** (Fabrice Frances) — Émulateur ORIC pionnier, travail fondateur sur l'émulation ORIC-1/Atmos
+- **[Oricutron](https://github.com/pete-gordon/oricutron)** (Pete Gordon) — The reference ORIC emulator, main source of inspiration for:
+  - Logarithmic volume table of the AY-3-8910 PSG (real DAC curve)
+  - PSG clock dividers (TONETIME=8, ENVTIME=16)
+  - PSG bus decoding through BDIR/BC1 on the PCR
+  - SDL2 keyboard mapping (64 keys, QWERTY matrix)
+  - PB3 feedback of the VIA keyboard scan
+  - RAM initialisation pattern (128x 0x00 + 128x 0xFF per 256-byte page)
+  - Detection of HIRES serial attributes (mask `(byte & 0x60) == 0`)
+  - ULA timing and text/HIRES video rendering
+- **[EUPHORIC](http://music.riskweb.fr/Fabrice.Frances/Euphoric/english.html)** (Fabrice Frances) — Pioneering ORIC emulator, foundational work on ORIC-1/Atmos emulation
 
-### Documentation technique
+### Technical documentation
 
-- **[MOS 6502 Programming Manual](http://archive.6502.org/datasheets/mos_6502_mpu.pdf)** — Jeu d'instructions, modes d'adressage, timing cycles, mode BCD, bug JMP indirect page boundary
-- **[MOS 6522 VIA Datasheet](http://archive.6502.org/datasheets/mos_6522_via.pdf)** — 16 registres, Timer 1/2, IFR/IER, Shift Register, contrôle CA1/CA2/CB1/CB2, protocole handshake Centronics
-- **[AY-3-8910 Datasheet](https://f.rdw.se/AY-3-8910-datasheet.pdf)** — PSG : 3 canaux tonaux, générateur de bruit (LFSR 17 bits), 16 formes d'enveloppe, registres I/O
-- **[WD1793 FDC Datasheet](https://www.datasheetarchive.com/WD1793-datasheet.html)** — Contrôleur disquette : commandes Type I-IV, registres status/track/sector/data, DRQ/INTRQ
-- **[Defence Force / oric.org](https://www.defence-force.org/)** — Documentation technique ORIC (mémoire, ULA, I/O, Microdisc, Sedoric)
-- **[ORIC Technical Manual](https://library.defence-force.org/books/)** — Schémas matériels, carte mémoire, interface clavier 8x8
-- **[Sedoric documentation](http://music.riskweb.fr/Fabrice.Frances/Sedoric/english.html)** — Système de fichiers disque : 42 pistes x 17 secteurs x 256 octets, structure SED
-- **[MCP-40 / CGP-115 Manual](https://www.manualslib.com/manual/1070534/Sharp-Ce-150.html)** — Table traçante 4 couleurs : protocole commandes (H, D, M, J, P, I, L, Q), résolution, interface Centronics
-- **[Google Cast V2 Protocol](https://github.com/niccoloterreri/chromecast-protocol)** — Protocole CASTV2 : framing protobuf, TLS, namespaces, CONNECT/LAUNCH/LOAD, heartbeat PING/PONG
+- **[MOS 6502 Programming Manual](http://archive.6502.org/datasheets/mos_6502_mpu.pdf)** — Instruction set, addressing modes, cycle timing, BCD mode, indirect JMP page-boundary bug
+- **[MOS 6522 VIA Datasheet](http://archive.6502.org/datasheets/mos_6522_via.pdf)** — 16 registers, Timer 1/2, IFR/IER, Shift Register, CA1/CA2/CB1/CB2 control, Centronics handshake protocol
+- **[AY-3-8910 Datasheet](https://f.rdw.se/AY-3-8910-datasheet.pdf)** — PSG: 3 tone channels, noise generator (17-bit LFSR), 16 envelope shapes, I/O registers
+- **[WD1793 FDC Datasheet](https://www.datasheetarchive.com/WD1793-datasheet.html)** — Floppy disk controller: Type I-IV commands, status/track/sector/data registers, DRQ/INTRQ
+- **[Defence Force / oric.org](https://www.defence-force.org/)** — ORIC technical documentation (memory, ULA, I/O, Microdisc, Sedoric)
+- **[ORIC Technical Manual](https://library.defence-force.org/books/)** — Hardware schematics, memory map, 8x8 keyboard interface
+- **[Sedoric documentation](http://music.riskweb.fr/Fabrice.Frances/Sedoric/english.html)** — Disk file system: 42 tracks x 17 sectors x 256 bytes, SED structure
+- **[MCP-40 / CGP-115 Manual](https://www.manualslib.com/manual/1070534/Sharp-Ce-150.html)** — 4-colour plotter: command protocol (H, D, M, J, P, I, L, Q), resolution, Centronics interface
+- **[Google Cast V2 Protocol](https://github.com/niccoloterreri/chromecast-protocol)** — CASTV2 protocol: protobuf framing, TLS, namespaces, CONNECT/LAUNCH/LOAD, PING/PONG heartbeat
 
-### Bibliothèques tierces
+### Third-party libraries
 
-- **[stb_image_write.h](https://github.com/nothings/stb)** (Sean Barrett) — Encodeur JPEG header-only, domaine public (v1.16). Utilisé pour le streaming MJPEG du serveur cast.
+- **[stb_image_write.h](https://github.com/nothings/stb)** (Sean Barrett) — Header-only JPEG encoder, public domain (v1.16). Used for the cast server's MJPEG streaming.
 
-### Communauté ORIC
+### ORIC community
 
-- **[Forum Defence Force](https://forum.defence-force.org/)** — Discussions techniques sur le matériel ORIC
-- **[CEO (Club Europe ORIC)](http://music.riskweb.fr/)** — Archives de programmes et documentation
-- **[ORIC International](https://www.oric.org/)** — Préservation du patrimoine ORIC
+- **[Defence Force forum](https://forum.defence-force.org/)** — Technical discussions about ORIC hardware
+- **[CEO (Club Europe ORIC)](http://music.riskweb.fr/)** — Program archives and documentation
+- **[ORIC International](https://www.oric.org/)** — Preservation of the ORIC heritage
 
 ## Repository
 
@@ -798,4 +798,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v1.110.0-alpha | 908 tests | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-08-30
+Phosphoric v1.110.0-alpha | 908 tests | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-08-30

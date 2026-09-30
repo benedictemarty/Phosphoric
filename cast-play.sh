@@ -1,6 +1,6 @@
 #!/bin/bash
-# cast-play.sh — Lance un programme ORIC et le caste automatiquement sur Chromecast
-# Utilise le client CASTV2 natif (zero dependance externe).
+# cast-play.sh — Launches an ORIC program and automatically casts it to a Chromecast
+# Uses the native CASTV2 client (zero external dependency).
 # Usage: ./cast-play.sh [fichier.dsk|fichier.tap] [options]
 
 set -e
@@ -18,7 +18,7 @@ CAST_DEVICE=""
 KEYBOARD="azerty"
 
 # ═══════════════════════════════════════════════════════
-#  Couleurs
+#  Colours
 # ═══════════════════════════════════════════════════════
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -65,7 +65,7 @@ usage() {
 }
 
 # ═══════════════════════════════════════════════════════
-#  Parsing des arguments
+#  Argument parsing
 # ═══════════════════════════════════════════════════════
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -91,7 +91,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ═══════════════════════════════════════════════════════
-#  Banniere
+#  Banner
 # ═══════════════════════════════════════════════════════
 echo -e "${BOLD}══════════════════════════════════════════${NC}"
 echo -e "${BOLD}  ORIC-1 Cast Player (natif CASTV2)${NC}"
@@ -99,7 +99,7 @@ echo -e "${BOLD}═════════════════════�
 echo ""
 
 # ═══════════════════════════════════════════════════════
-#  Etape 1 : Compilation
+#  Step 1: Build
 # ═══════════════════════════════════════════════════════
 if [[ ! -f "$EMU" ]] || ! strings "$EMU" 2>/dev/null | grep -q "castv2"; then
     echo -e "${YELLOW}[1/3] Compilation avec CAST=1 SDL2=1...${NC}"
@@ -111,7 +111,7 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════
-#  Mode decouverte seule
+#  Discovery-only mode
 # ═══════════════════════════════════════════════════════
 if $DISCOVER_ONLY; then
     echo ""
@@ -122,7 +122,7 @@ if $DISCOVER_ONLY; then
 fi
 
 # ═══════════════════════════════════════════════════════
-#  Etape 2 : Verification du programme
+#  Step 2: Program check
 # ═══════════════════════════════════════════════════════
 if [[ ! -f "$ROM" ]]; then
     echo -e "${RED}[!] ROM BASIC introuvable: $ROM${NC}"
@@ -132,7 +132,7 @@ fi
 if [[ -z "$PROGRAM" ]]; then
     echo -e "${GREEN}[2/3] Programme:${NC} BASIC (pas de programme, boot ROM)"
 else
-    # Resoudre le chemin relatif
+    # Resolve the relative path
     if [[ ! -f "$PROGRAM" ]] && [[ -f "$SCRIPT_DIR/$PROGRAM" ]]; then
         PROGRAM="$SCRIPT_DIR/$PROGRAM"
     fi
@@ -153,11 +153,11 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════
-#  Etape 3 : Lancer l'emulateur avec --cast-to natif
+#  Step 3: Launch the emulator with native --cast-to
 # ═══════════════════════════════════════════════════════
 CMD=("$EMU" -r "$ROM" -k "$KEYBOARD")
 
-# Ajouter le cast natif CASTV2 (sauf si --no-cast)
+# Add native CASTV2 casting (unless --no-cast)
 if ! $NO_CAST; then
     if [[ -n "$CAST_DEVICE" ]]; then
         CMD+=(--cast-to="$CAST_DEVICE")
@@ -204,7 +204,7 @@ echo -e "  Ctrl+C pour arreter"
 echo -e "${BOLD}══════════════════════════════════════════${NC}"
 echo ""
 
-# Lancer l'emulateur (bloquant, Ctrl+C envoie SIGINT → cleanup)
+# Launch the emulator (blocking, Ctrl+C sends SIGINT → cleanup)
 "${CMD[@]}" &
 EMU_PID=$!
 wait "$EMU_PID" 2>/dev/null || true

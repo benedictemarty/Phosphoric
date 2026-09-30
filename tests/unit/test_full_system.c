@@ -365,16 +365,16 @@ TEST(test_type_keys_debounce_field) {
     ASSERT_EQ(emu.type_keys_debounce, 2);
 }
 
-/* Sprint 60p : file de séquences multi --type-keys. Vérifie que les champs
- * existent, sont zéro-initialisés, et qu'une activation d'entrée reproduit
- * fidèlement le chargement fait par la boucle d'émulation. */
+/* Sprint 60p: queue of multiple --type-keys sequences. Checks that the fields
+ * exist, are zero-initialized, and that activating an entry faithfully
+ * reproduces the loading done by the emulation loop. */
 TEST(test_type_keys_seq_fields) {
     emulator_t emu;
     memset(&emu, 0, sizeof(emu));
     ASSERT_EQ(emu.type_keys_seq_count, 0);
     ASSERT_EQ(emu.type_keys_seq_idx, 0);
 
-    /* Empile deux entrées (volontairement dans le désordre de cycle). */
+    /* Push two entries (deliberately out of cycle order). */
     emu.type_keys_seq[0].at = 5500000;
     emu.type_keys_seq[0].text = "PRINT\"B\"\\n";
     emu.type_keys_seq[0].loci_hid = false;
@@ -386,7 +386,7 @@ TEST(test_type_keys_seq_fields) {
     ASSERT_TRUE(emu.type_keys_seq[1].loci_hid);
     ASSERT_EQ(emu.type_keys_seq[0].at, 5500000);
 
-    /* Simule l'activation de l'entrée 1 (comme le fait la boucle). */
+    /* Simulate activation of entry 1 (as the loop does). */
     int s = 1;
     emu.type_keys_at = emu.type_keys_seq[s].at;
     emu.type_keys_text = emu.type_keys_seq[s].text;

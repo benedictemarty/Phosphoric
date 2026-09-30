@@ -1,63 +1,63 @@
-# Débogage du 6502 via GDB remote (`--gdb`)
+# Debugging the 6502 via GDB remote (`--gdb`)
 
-Phosphoric embarque un serveur **GDB Remote Serial Protocol (RSP)** : on attache
-`gdb`, `lldb` ou un IDE (VS Code, CLion) à l'Oric émulé pour poser des
-breakpoints, single-stepper et inspecter/modifier registres et mémoire du 6502.
-Aucun autre émulateur Oric n'offre cela.
+Phosphoric embeds a **GDB Remote Serial Protocol (RSP)** server: you can attach
+`gdb`, `lldb` or an IDE (VS Code, CLion) to the emulated Oric to set
+breakpoints, single-step, and inspect/modify the 6502's registers and memory.
+No other Oric emulator offers this.
 
-## Démarrer
+## Starting
 
 ```bash
-./oric1-emu -r roms/basic11b.rom --gdb           # port 1234 (défaut)
-./oric1-emu -r roms/basic11b.rom --gdb=3333      # port au choix
+./oric1-emu -r roms/basic11b.rom --gdb           # port 1234 (default)
+./oric1-emu -r roms/basic11b.rom --gdb=3333      # port of your choice
 ```
 
-L'émulateur ouvre le port et **attend** la connexion du client. La machine
-démarre arrêtée au vecteur de reset ; c'est GDB qui pilote l'exécution.
+The emulator opens the port and **waits** for the client to connect. The machine
+starts halted at the reset vector; GDB drives the execution.
 
-## Attacher GDB
+## Attaching GDB
 
 ```bash
 gdb -ex 'target remote :1234'
 ```
 
-Puis, dans GDB :
+Then, in GDB:
 
 ```
 (gdb) info registers          # A X Y SP PC P
-(gdb) x/8xb 0xfffc            # lire la mémoire (vecteurs)
-(gdb) break *0xc000           # breakpoint sur une adresse
+(gdb) x/8xb 0xfffc            # read memory (vectors)
+(gdb) break *0xc000           # breakpoint on an address
 (gdb) continue
-(gdb) stepi                   # un pas d'instruction
-(gdb) set $pc = 0x0400        # forcer le PC
-(gdb) set {char}0x0400 = 0xa9 # écrire un octet
-(gdb) detach                  # se détacher (l'Oric continue)
+(gdb) stepi                   # one instruction step
+(gdb) set $pc = 0x0400        # force the PC
+(gdb) set {char}0x0400 = 0xa9 # write a byte
+(gdb) detach                  # detach (the Oric keeps running)
 ```
 
-> `gdb` mainline ne connaît pas l'architecture `mos6502` : il peut émettre un
-> avertissement, mais l'accès mémoire / breakpoints / step fonctionnent. La
-> description des registres est fournie par le stub via `target.xml`.
+> Mainline `gdb` does not know the `mos6502` architecture: it may print a
+> warning, but memory access / breakpoints / step all work. The
+> register description is provided by the stub via `target.xml`.
 
-## Modèle d'exécution
+## Execution model
 
-- Les breakpoints GDB et le REPL natif partagent le **même** `debugger_t` :
-  `Z0`/`z0` ajoutent/retirent dans la même table que la commande `b`.
-- **Ctrl-C** dans GDB interrompt l'exécution (signal SIGINT, `S02`) ; la latence
-  est d'au plus une frame (~20 ms).
-- Une déconnexion du client laisse l'Oric reprendre librement.
+- GDB breakpoints and the native REPL share the **same** `debugger_t`:
+  `Z0`/`z0` add/remove entries in the same table as the `b` command.
+- **Ctrl-C** in GDB interrupts execution (SIGINT signal, `S02`); the latency
+  is at most one frame (~20 ms).
+- A client disconnection lets the Oric resume freely.
 
-## Commandes RSP gérées
+## Supported RSP commands
 
 `?` · `g`/`G` · `p`/`P` · `m`/`M` · `c`/`s` · `Z0`/`z0`, `Z1`/`z1` (breakpoints) ·
 `Z2`/`z2` (write watch), `Z3`/`z3` (read watch), `Z4`/`z4` (access watch) · `H` · `D` · `k` ·
 `qSupported`, `qAttached`, `qC`, `qfThreadInfo`/`qsThreadInfo`, `qOffsets`,
 `qSymbol`, `qXfer:features:read:target.xml` · `QStartNoAckMode` · `vCont?`/`vCont`.
 
-Bloc registres (`g`/`G`) : `A X Y SP PClo PChi P` (7 octets, PC little-endian).
+Register block (`g`/`G`): `A X Y SP PClo PChi P` (7 bytes, PC little-endian).
 
 ## Notes
 
-- La lecture mémoire (`m`) est **sans effet de bord** : la zone $0000-$BFFF est
-  lue dans la RAM (les registres I/O VIA/ACIA ne sont jamais touchés), et
-  $C000-$FFFF via la vue CPU (ROM/overlay).
-- Le transport est du TCP brut (POSIX sockets), aucune dépendance externe.
+- Memory reads (`m`) have **no side effects**: the $0000-$BFFF range is
+  read from RAM (the VIA/ACIA I/O registers are never touched), and
+  $C000-$FFFF via the CPU view (ROM/overlay).
+- The transport is raw TCP (POSIX sockets), with no external dependency.

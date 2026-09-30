@@ -94,9 +94,9 @@ void microdisc_reset(microdisc_t* md) {
     md->side = 0;
 }
 
-/* Trace de diagnostic des accès registres ($0310-$0318) : MICRODISC_TRACE=<fichier>
- * (ou "-" = stderr). Même format que LOCI_DSK_TRACE (co-sim) pour comparer les deux
- * backends sur un même scénario ; les polls identiques consécutifs sont comptés. */
+/* Diagnostic trace of register accesses ($0310-$0318): MICRODISC_TRACE=<file>
+ * (or "-" = stderr). Same format as LOCI_DSK_TRACE (co-sim) so both backends can
+ * be compared on the same scenario; identical consecutive polls are counted. */
 #include <stdlib.h>
 static FILE *g_md_trace; static int g_md_trace_init;
 static void md_trace(char dir, uint16_t addr, uint8_t value)

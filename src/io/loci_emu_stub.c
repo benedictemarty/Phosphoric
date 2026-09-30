@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_emu_stub.c
- * @brief Remplaçant de loci_emu.c quand l'émulateur RP2040 (libemul) est absent
+ * @brief Replacement for loci_emu.c when the RP2040 emulator (libemul) is absent
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-09-11
  *
- * Le backend `--loci-emu` exécute le vrai firmware LOCI dans un émulateur
- * RP2040 externe (`~/loci/emul`, non versionné dans ce dépôt). Sans lui, le
- * Makefile lie ce fichier à la place : l'émulateur se construit et fonctionne
- * intégralement — y compris `--loci`, qui est le backend comportemental et ne
- * dépend pas du firmware — et `--loci-emu` échoue proprement au démarrage.
- * `make LOCI_EMU=1 LOCI_EMUL_DIR=...` rétablit la co-simulation.
+ * The `--loci-emu` backend runs the real LOCI firmware inside an external
+ * RP2040 emulator (`~/loci/emul`, not versioned in this repository). Without
+ * it, the Makefile links this file instead: the emulator builds and works
+ * fully -- including `--loci`, which is the behavioural backend and does not
+ * depend on the firmware -- and `--loci-emu` fails cleanly at startup.
+ * `make LOCI_EMU=1 LOCI_EMUL_DIR=...` restores the co-simulation.
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -84,7 +84,7 @@ bool loci_emu_kbd_armed(void) { return false; }
 
 bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }
 
-/* Page I/O entière par cycles bus : propre au backend neo (loci-fw). */
+/* Whole I/O page via bus cycles: specific to the neo backend (loci-fw). */
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }

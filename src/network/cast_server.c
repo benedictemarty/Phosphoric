@@ -233,9 +233,9 @@ static void broadcast_audio(cast_server_t* server) {
 /*  HTTP RESPONSES                                                     */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Page HTML avec fallback JS pour navigateurs sans support MJPEG (Chromecast).
- * Tente d'abord le flux MJPEG natif (/stream). Si l'image ne se charge pas
- * en 2s, bascule sur un rafraichissement JS via /snapshot (un JPEG par requete). */
+/* HTML page with a JS fallback for browsers without MJPEG support (Chromecast).
+ * First tries the native MJPEG stream (/stream). If the image does not load
+ * within 2 s, switches to a JS refresh via /snapshot (one JPEG per request). */
 static const char* HTML_PAGE =
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: text/html; charset=utf-8\r\n"

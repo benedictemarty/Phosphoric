@@ -1,21 +1,21 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file appsignal.h
- * @brief Gestion des signaux d'arrêt (SIGINT/SIGTERM) du processus.
+ * @brief Handling of the process termination signals (SIGINT/SIGTERM).
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US1, Sprint 125). Encapsule le drapeau global
- * « le processus doit-il continuer ? » et l'installation des handlers.
+ * Extracted from main.c (Epic 7 / US1, Sprint 125). Encapsulates the global
+ * "should the process keep running?" flag and the handler installation.
  */
 #ifndef APPSIGNAL_H
 #define APPSIGNAL_H
 
 #include <stdbool.h>
 
-/** Installe les handlers SIGINT/SIGTERM (mettent le drapeau à false). */
+/** Installs the SIGINT/SIGTERM handlers (they set the flag to false). */
 void app_install_signal_handlers(void);
 
-/** Vrai tant qu'aucun signal d'arrêt n'a été reçu. */
+/** True as long as no termination signal has been received. */
 bool app_should_run(void);
 
 #endif /* APPSIGNAL_H */

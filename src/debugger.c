@@ -1059,7 +1059,7 @@ static void show_loci_state(emulator_t* emu) {
     }
 }
 
-/* US 5 — élargissement de la couverture d'inspection (parité fenêtres b2). */
+/* US 5 — broadening the inspection coverage (b2 window parity). */
 static void show_video_state(emulator_t* emu) {
     video_t* v = &emu->video;
     printf("  ULA / Video State:\n");
@@ -2080,7 +2080,7 @@ static void process_repl_line(debugger_t* dbg, emulator_t* emu, const char* line
         else if (strcmp(cmd, "loci") == 0) {
             show_loci_state(emu);
         }
-        /* ── INSPECTION ÉLARGIE (US 5) ──────────────────── */
+        /* ── BROADER INSPECTION (US 5) ─────────────────── */
         else if (strcmp(cmd, "video") == 0 || strcmp(cmd, "ula") == 0) {
             show_video_state(emu);
         }

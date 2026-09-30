@@ -10,7 +10,7 @@
 /* clock_gettime/CLOCK_MONOTONIC (bench timer) under strict -std=c11. */
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 
 #include <stdio.h>
@@ -45,16 +45,16 @@
 #include "storage/tap.h"
 #include "storage/disk.h"
 #include "storage/sedoric.h"
-#include "storage/disk_http.h"   /* loci-webdisk archi B : disque servi par HTTP */
+#include "storage/disk_http.h"   /* loci-webdisk archi B: disk served over HTTP */
 #include "io/microdisc.h"
 #include "io/loci_sdimg.h"
 #include "io/io_device.h"
-#include "io/io_bus.h"        /* table de bus + dispatch (Epic 7/US2) */
-#include "io/autotype.h"      /* pacing scan-driven de --type-keys */
+#include "io/io_bus.h"        /* bus table + dispatch (Epic 7/US2) */
+#include "io/autotype.h"      /* scan-driven pacing of --type-keys */
 #include "io/tape_patches.h" /* ROM CLOAD/CSAVE PC patches (ex-main.c) */
 #include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
 #include "io/loci_internal.h"  /* loci_dsk_open_web (loci-webdisk archi B) */
-#include "io/loci_emu.h"       /* backend émulation du vrai firmware RP2040 (--loci-emu) */
+#include "io/loci_emu.h"       /* backend emulating the real RP2040 firmware (--loci-emu) */
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
@@ -239,10 +239,10 @@ void renderer_cycle_scale(void);
 static uint8_t io_read_callback(uint16_t address, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
-     * Microdisc, DTL2000, ULA-NG). Repli sur le VIA.
-     * ULA-NG en lecture : ne réclame que déverrouillée ; verrouillée, la fenêtre
-     * retombe sur le miroir VIA (indiscernable). */
+    /* I/O bus: registered devices (LOCI first, then ACIA, Mageco,
+     * Microdisc, DTL2000, ULA-NG). Falls back to the VIA.
+     * ULA-NG on read: only claims when unlocked; when locked, the window
+     * falls back to the VIA mirror (indistinguishable). */
     const io_device_t* dev = io_bus_find(emu, address);
     if (dev) return dev->read(emu, address);
 
@@ -445,15 +445,15 @@ static uint8_t portb_read_callback(void* userdata) {
 static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
     emulator_t* emu = (emulator_t*)userdata;
 
-    /* Bus I/O : périphériques enregistrés (LOCI en tête, puis ACIA, Mageco,
-     * Microdisc, DTL2000, ULA-NG). Le device peut **décliner** l'écriture
-     * (write → false) : c'est le cas de l'ULA-NG verrouillée, qui guette la
-     * séquence 'N','G' en fenêtre mais laisse retomber les octets neutres sur le
-     * VIA (bit-à-bit, indiscernable). Sinon repli VIA.
+    /* I/O bus: registered devices (LOCI first, then ACIA, Mageco,
+     * Microdisc, DTL2000, ULA-NG). The device can **decline** the write
+     * (write → false): this is the case of the locked ULA-NG, which watches for the
+     * 'N','G' sequence in its window but lets the neutral bytes fall through to the
+     * VIA (bit-for-bit, indistinguishable). Otherwise falls back to the VIA.
      *
-     * NB : le snoop LOCI sur l'écriture VIA ORB $0300 (ligne moteur cassette,
-     * cf. loci_tap_motor plus bas) n'est PAS un claim — l'écriture va au VIA ;
-     * il reste donc hors bus, dans le chemin VIA. */
+     * NB: the LOCI snoop on the VIA ORB write $0300 (cassette motor line,
+     * cf. loci_tap_motor below) is NOT a claim — the write goes to the VIA;
+     * it therefore stays off the bus, in the VIA path. */
     const io_device_t* dev = io_bus_find_write(emu, address);
     if (dev && dev->write(emu, address, value)) return;
 
@@ -469,11 +469,11 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
      * (PB6), like the firmware tap_act() hook (Sprint 36f). */
     if (emu->has_loci && address == 0x0300) {
         loci_tap_motor(&emu->loci, (value & 0x40) != 0);
-        loci_emu_tap_motor(value);     /* co-sim : tap_act() du firmware (no-op sinon) */
+        loci_emu_tap_motor(value);     /* co-sim: the firmware's tap_act() (no-op otherwise) */
     }
-    /* --tape-signal-free : gate le moteur cassette signal-level sur ORB PB6 (le
-     * moteur piloté par la ROM), pour les ROM clean-room dont le layout n'atteint
-     * pas la plage PC tape-read de la 1.1 (cf. tape_patches). */
+    /* --tape-signal-free: gates the signal-level cassette motor on ORB PB6 (the
+     * ROM-driven motor), for clean-room ROMs whose layout does not reach
+     * the tape-read PC range of 1.1 (cf. tape_patches). */
     if (emu->cassette.free_gate && address == 0x0300) {
         bool on = (value & 0x40) != 0;
         if (on && !emu->cassette.started) {
@@ -513,29 +513,29 @@ static bool emu_export_image(emulator_t* emu, const char* path) {
                               : video_export_auto(&emu->video, path);
 }
 
-/* Rafraîchit le framebuffer avant une capture.
+/* Refreshes the framebuffer before a capture.
  *
- * Avec l'ULA au cycle (V2-E4), le framebuffer EST déjà le résultat du balayage :
- * le re-rendre d'un bloc écraserait précisément ce qu'on veut voir (les splits en
- * milieu de ligne reflètent l'état mémoire au cycle de chaque cellule). On ne
- * recompose donc que dans le mode de rendu par ligne. */
+ * With the cycle-level ULA (V2-E4), the framebuffer IS already the result of the scan:
+ * re-rendering it in one block would overwrite precisely what we want to see (mid-line
+ * splits reflect the memory state at the cycle of each cell). So we only
+ * recompose in the per-line rendering mode. */
 static void emu_refresh_for_capture(emulator_t* emu) {
     if (!emu->ula_per_cycle || !cpu_microseq_enabled(&emu->cpu))
         video_render_frame(&emu->video, emu->memory.ram);
 }
 
-/* Compose un nom de fichier de capture qui n'écrase pas un fichier existant.
- * Base = "screenshot", extension = ".ppm". Si "screenshot.ppm" est libre, il
- * est utilisé ; sinon on insère un horodatage local "screenshot-YYYYMMDD-HHMMSS"
- * (déterministe et parlant), et en cas de collision improbable dans la même
- * seconde on suffixe un index "-NN". Le nom retenu est écrit dans out. */
+/* Builds a capture file name that does not overwrite an existing file.
+ * Base = "screenshot", extension = ".ppm". If "screenshot.ppm" is free, it
+ * is used; otherwise a local timestamp "screenshot-YYYYMMDD-HHMMSS" is inserted
+ * (deterministic and meaningful), and in case of an unlikely collision within the same
+ * second an index "-NN" is appended. The chosen name is written into out. */
 static void screenshot_unique_name(char* out, size_t out_sz) {
     const char* base = "screenshot";
     const char* ext  = ".png";
 
     snprintf(out, out_sz, "%s%s", base, ext);
     if (access(out, F_OK) != 0)
-        return; /* nom par défaut libre */
+        return; /* default name is free */
 
     time_t now = time(NULL);
     struct tm tmv;
@@ -562,25 +562,25 @@ static void irq_callback(bool state, void* userdata) {
  * every bus cycle it consumes, so PHI2-clocked peripherals advance in step with
  * the CPU's memory accesses instead of in one post-instruction batch. The total
  * cycles delivered per instruction equals the instruction's cycle count. */
-/* --loci-menu-at N : à N cycles, simuler l'appui bouton MENU LOCI (test headless
- * du backend --loci-emu). 0 = désactivé. Déclenché une seule fois. */
+/* --loci-menu-at N: at N cycles, simulate pressing the LOCI MENU button (headless test
+ * of the --loci-emu backend). 0 = disabled. Fired only once. */
 static uint64_t g_loci_menu_at = 0;
 
 static void cpu_cycle_tick(void* ctx, int cycles) {
     emulator_t* emu = (emulator_t*)ctx;
-    /* --cycle-trace : une ligne par cycle (l'accès bus mémorisé, puis les
-     * cycles internes du lot). No-op quand la trace n'est pas armée. */
+    /* --cycle-trace: one line per cycle (the recorded bus access, then the
+     * internal cycles of the batch). No-op when the trace is not armed. */
     if (cycle_trace_active()) cycle_trace_cycles(&emu->cpu, cycles);
     via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
-    /* Tape-OUT capture : échantillonne PB7 (Timer1) pour reconstruire le .TAP.
-     * Résolution = 1 bus-tick (~1-7 cy) << période bit (416/624), sans effet
-     * sur le seuil 512. */
+    /* Tape-OUT capture: samples PB7 (Timer1) to rebuild the .TAP.
+     * Resolution = 1 bus-tick (~1-7 cy) << bit period (416/624), no effect
+     * on the 512 threshold. */
     if (emu->tape_capture.active)
         tape_capture_sample(&emu->tape_capture, &emu->via, emu->cpu.cycles);
-    /* Périphériques de bus temporisés (FDC/ACIA/DTL/Mageco), ordre historique
-     * préservé dans io_bus_tick (Epic 7/US5). */
+    /* Timed bus devices (FDC/ACIA/DTL/Mageco), historical order
+     * preserved in io_bus_tick (Epic 7/US5). */
     io_bus_tick(emu, cycles);
 }
 
@@ -593,10 +593,10 @@ static void microdisc_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_DISK);
 }
 
-/* Sprint 34ax : LOCI DSK bus callbacks — réutilise IRQF_DISK level-triggered
- * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
- * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
- * bloqué après le RESTORE command — il attend l'IRQ et la commutation. */
+/* Sprint 34ax: LOCI DSK bus callbacks — reuses the level-triggered IRQF_DISK
+ * and synchronises overlay/ROMDIS in the memory subsystem on each
+ * CTRL write. Without it the Microdisc ROM (under LOCI MIA_BOOT FDC) stays
+ * stuck after the RESTORE command — it waits for the IRQ and the switch. */
 /* ACIA 6551 serial IRQ callbacks */
 static void acia_cpu_irq_set(emulator_t* emu) {
     cpu_irq_set(&emu->cpu, IRQF_SERIAL);
@@ -626,9 +626,9 @@ static void mageco_cpu_irq_clr(emulator_t* emu) {
 
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
-/* Réécrit le .dsk du lecteur @p drv sur disque s'il a été modifié par le jeu
- * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
- * pas perdre les écritures. Retourne true si une sauvegarde a eu lieu. */
+/* Writes the .dsk of drive @p drv back to disk if it was modified by the game
+ * and --disk-writeback is active. Called before any swap/eject so as not to
+ * lose the writes. Returns true if a save took place. */
 static bool osd_writeback_drive(emulator_t* emu, int drv) {
     if (!emu->disk_writeback || drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
     if (!emu_disk_dirty(emu, drv) || !emu->disks[drv] || !emu->disk_paths[drv])
@@ -640,7 +640,7 @@ static bool osd_writeback_drive(emulator_t* emu, int drv) {
     return ok;
 }
 
-/* OSD : éjecte la disquette du lecteur cible (write-back préalable si activé). */
+/* OSD: ejects the floppy from the target drive (prior write-back if enabled). */
 static void osd_do_eject(emulator_t* emu) {
     if (!emu_has_disk_iface(emu)) {
         snprintf(emu->osd.status, sizeof(emu->osd.status),
@@ -664,7 +664,7 @@ static void osd_do_eject(emulator_t* emu) {
     osd_close(&emu->osd);
 }
 
-/* OSD : éjecte la cassette (libère le tampon TAP, vide le pont de lecture). */
+/* OSD: ejects the cassette (frees the TAP buffer, empties the read bridge). */
 static void osd_do_eject_tape(emulator_t* emu) {
     if (!emu->tape_loaded && !emu->tapebuf) {
         snprintf(emu->osd.status, sizeof(emu->osd.status), "Aucune cassette");
@@ -680,8 +680,8 @@ static void osd_do_eject_tape(emulator_t* emu) {
     osd_close(&emu->osd);
 }
 
-/* OSD hot-swap : charge le média sélectionné dans l'overlay (cassette ou
- * disquette lecteur A) sans quitter l'émulateur. */
+/* OSD hot-swap: loads the selected media into the overlay (cassette or
+ * drive A floppy) without leaving the emulator. */
 static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
     if (e->is_disk) {
         if (!emu_has_disk_iface(emu)) {
@@ -696,14 +696,14 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
             snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
             return;
         }
-        /* Sauve l'ancien disque s'il a été modifié, avant de l'écraser. */
+        /* Save the old disk if it was modified, before overwriting it. */
         osd_writeback_drive(emu, drv);
         if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
         emu->disks[drv] = nd;
         emu_disk_clear_dirty(emu, drv);
         emu_disk_wire(emu, drv, nd);
-        /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). Les
-         * pointeurs initiaux viennent d'argv (non libérables) → on réaffecte. */
+        /* Per-drive path tracking (later write-back/eject). The
+         * initial pointers come from argv (not freeable) → reassign. */
         emu->disk_paths[drv] = strdup(e->path);
         if (drv == 0)
             emu->disk_path = emu->disk_paths[drv];
@@ -750,7 +750,7 @@ static bool emulator_init(emulator_t* emu) {
     via_init(&emu->via);
     via_reset(&emu->via);
 
-    ula_ng_init(&emu->ula_ng);   /* ULA-NG verrouillée au démarrage (état HCS10017) */
+    ula_ng_init(&emu->ula_ng);   /* ULA-NG locked at startup (HCS10017 state) */
 
     cassette_init(&emu->cassette);
 
@@ -788,11 +788,11 @@ static bool emulator_init(emulator_t* emu) {
 
     /* Wire up I/O callbacks */
     memory_set_io_callbacks(&emu->memory, io_read_callback, io_write_callback, emu);
-    memory_set_io_peek(&emu->memory, io_peek_callback);  /* observateurs non destructifs */
+    memory_set_io_peek(&emu->memory, io_peek_callback);  /* non-destructive observers */
     via_set_irq_callback(&emu->via, irq_callback, emu);
 
-    /* Expose la table de bus à la sérialisation : les devices qui fournissent un
-     * hook save/load (ex. ULA-NG → section "UNG") persistent leur état .ost. */
+    /* Exposes the bus table to serialisation: devices that provide a
+     * save/load hook (e.g. ULA-NG → section "UNG") persist their .ost state. */
     int io_bus_n = 0;
     const io_device_t* io_bus_tbl = io_bus_devices(&io_bus_n);
     savestate_set_io_devices(io_bus_tbl, io_bus_n);
@@ -819,8 +819,8 @@ static bool emulator_init(emulator_t* emu) {
     emu->video.ng_pal        = emu->ula_ng.pal;
     emu->video.ng_active     = &emu->ula_ng.active;
     emu->video.ng_scrstart   = &emu->ula_ng.scrstart;   /* start-address (§5.3) */
-    emu->video.ng_scrollx    = &emu->ula_ng.scrollx;    /* scroll fin X (§5.5) */
-    emu->video.ng_scrolly    = &emu->ula_ng.scrolly;    /* scroll fin Y (§5.5) */
+    emu->video.ng_scrollx    = &emu->ula_ng.scrollx;    /* fine X scroll (§5.5) */
+    emu->video.ng_scrolly    = &emu->ula_ng.scrolly;    /* fine Y scroll (§5.5) */
     emu->video.ng_attr       = emu->ula_ng.attr;        /* attributs // (§5.6) */
     emu->video.ng_attr_active = &emu->ula_ng.attr_active;
     emu->video.ng_dev        = &emu->ula_ng;            /* sprites (§5.7) */
@@ -858,7 +858,7 @@ static bool emulator_init(emulator_t* emu) {
     emu->screenshot_file = NULL;
     emu->screenshot_text_file = NULL;
     emu->screenshot_ansi_file = NULL;
-    emu->timed_capture_count = 0;   /* captures -at répétables (voir timed_capture_t) */
+    emu->timed_capture_count = 0;   /* repeatable -at captures (see timed_capture_t) */
     emu->frame_dump_dir = NULL;
     emu->frame_dump_interval = 50;
     emu->kbd_scan_prev_col = 0xFF;   /* sentinel: first read starts no pass */
@@ -894,7 +894,7 @@ static void emulator_cleanup(emulator_t* emu) {
     if (emu->has_loci) {
         loci_cleanup(&emu->loci);
     }
-    loci_emu_stop();   /* co-sim : persiste la flash (FS interne 0:) — no-op sans --loci-emu */
+    loci_emu_stop();   /* co-sim: persists the flash (internal FS 0:) — no-op without --loci-emu */
     if (emu->loci_overlay_buf) {
         free(emu->loci_overlay_buf);
         emu->loci_overlay_buf = NULL;
@@ -1077,8 +1077,8 @@ static void feed_kbd_inject(emulator_t* emu) {
     if (!emu->kbd_inject_pressed) {
         oric_keyboard_release_all(&emu->keyboard);
         {
-            /* Octet ≥ 0xA0 = caractère 7 bits + SHIFT (escape \s de `keys`) ; les
-             * sentinelles flèches/DEL restent 0x80-0x84. */
+            /* Byte ≥ 0xA0 = 7-bit character + SHIFT (escape \s of `keys`); the
+             * arrow/DEL sentinels stay 0x80-0x84. */
             unsigned char ic = (unsigned char)emu->kbd_inject_buf[emu->kbd_inject_pos];
             if (ic >= 0xA0) {
                 oric_keyboard_press_char(&emu->keyboard, (char)(ic & 0x7F));
@@ -1107,9 +1107,9 @@ static uint8_t when_read(const emulator_t* emu, uint16_t addr) {
     return memory_peek((memory_t*)&emu->memory, addr);
 }
 
-/* Symétrique de when_read pour --poke-* : écrit RAM[addr]. En dessous de $C000
- * l'écriture est directe (RAM brute, sans effet de bord) ; au-delà elle passe
- * par memory_write (overlay/banking, page I/O respectée). */
+/* Counterpart of when_read for --poke-*: writes RAM[addr]. Below $C000
+ * the write is direct (raw RAM, no side effect); above it goes
+ * through memory_write (overlay/banking, I/O page honoured). */
 static void poke_write(emulator_t* emu, uint16_t addr, uint8_t val) {
     if (addr < 0xC000)
         emu->memory.ram[addr] = val;
@@ -1117,35 +1117,35 @@ static void poke_write(emulator_t* emu, uint16_t addr, uint8_t val) {
         memory_write(&emu->memory, addr, val);
 }
 
-/* ─── Boucle principale : état d'un run ───
- * Les compteurs et horloges que les hooks de trame se partagent. Ils étaient
- * des variables locales d'une fonction de 1300 lignes (Epic 7, dette signalée) ;
- * les porter ici permet de découper la boucle en étapes nommées, chacune
- * lisible seule, sans rien changer à l'ordre d'exécution. */
+/* ─── Main loop: state of a run ───
+ * The counters and clocks shared by the frame hooks. They used to be
+ * local variables of a 1300-line function (Epic 7, reported debt);
+ * moving them here lets the loop be split into named steps, each
+ * readable on its own, without changing the execution order at all. */
 typedef struct {
-    uint64_t total_executed;      /* cycles exécutés depuis le début du run */
-    uint64_t frame_count;         /* trames terminées */
-    struct timespec bench_t0;     /* --bench : départ de l'horloge murale */
+    uint64_t total_executed;      /* cycles executed since the start of the run */
+    uint64_t frame_count;         /* completed frames */
+    struct timespec bench_t0;     /* --bench: wall-clock start */
 #ifdef HAS_SDL2
-    uint32_t frame_start_ticks;   /* limiteur 50 Hz : début de la trame (ms SDL) */
+    uint32_t frame_start_ticks;   /* 50 Hz limiter: start of the frame (SDL ms) */
 #endif
 #ifndef __EMSCRIPTEN__
-    struct timespec rt_next;      /* --realtime : échéance absolue de la trame */
+    struct timespec rt_next;      /* --realtime: absolute deadline of the frame */
 #endif
 } run_state_t;
 
-/* Une trame de cycles : la boucle par INSTRUCTION (débogueur, trace,
- * profileur, patches bande) autour de l'horloge maître emu_step(). */
+/* One frame of cycles: the per-INSTRUCTION loop (debugger, trace,
+ * profiler, tape patches) around the master clock emu_step(). */
 static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
     /* Execute one frame worth of CPU cycles */
-    emu_clock_frame_begin(emu);   /* horloge maître : début (ou reprise) de trame */
-    /* La position dans la trame est celle de l'horloge maître : un savestate
-     * chargé en cours de route (F4, `state-load`) y reprend, la boucle suit. */
+    emu_clock_frame_begin(emu);   /* master clock: start (or resume) of frame */
+    /* The position within the frame is that of the master clock: a savestate
+     * loaded midway (F4, `state-load`) resumes there, the loop follows. */
     int frame_cycles = 0;
     int frame_start = emu->raster_cycle;
     bool vsync_triggered = false;
     while (emu->raster_cycle < CYCLES_PER_FRAME && !emu->cpu.halted) {
-        if (emu->clock_resume_pending) {       /* état chargé en pleine trame */
+        if (emu->clock_resume_pending) {       /* state loaded mid-frame */
             emu_clock_resume(emu);
             frame_start = emu->raster_cycle - frame_cycles;
         }
@@ -1187,11 +1187,11 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
                     cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
                                            (unsigned int)emu->video.native_w,
                                            (unsigned int)emu->video.native_h);
-                    /* Double diffusion : les clients MJPEG (<img> navigateur)
-                     * affichent souvent la frame précédente et gardent la
-                     * dernière « en vol ». On laisse le thread cast diffuser
-                     * cette frame (tick ~20 ms) puis on la re-signale : la 2e
-                     * diffusion pousse l'écran du point d'arrêt au premier plan. */
+                    /* Double broadcast: MJPEG clients (browser <img>)
+                     * often display the previous frame and keep the
+                     * last one « in flight ». We let the cast thread broadcast
+                     * this frame (tick ~20 ms) then signal it again: the 2nd
+                     * broadcast brings the breakpoint screen to the foreground. */
                     nanosleep(&(struct timespec){0, 30000000L}, NULL); /* 30 ms */
                     cast_server_push_frame(&emu->cast_server, emu->video.framebuffer,
                                            (unsigned int)emu->video.native_w,
@@ -1236,18 +1236,18 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
             }
         }
 
-        /* Horloge maître (V2-E2) : une instruction, cycle par cycle, avec
-         * l'ULA et les périphériques avançant en verrou (src/emu_clock.c).
-         * Remplace `cpu_step` + le calcul de scanline qui vivait ici. */
+        /* Master clock (V2-E2): one instruction, cycle by cycle, with
+         * the ULA and the devices advancing in lockstep (src/emu_clock.c).
+         * Replaces `cpu_step` + the scanline computation that used to live here. */
         int step = emu_step(emu);
         frame_cycles = emu->raster_cycle - frame_start;
 
-        /* Matériel réel (--loci-hw) : « poll en attente » — si le 6502 n'a pas
-         * touché LOCI depuis N cycles (boucle d'attente en RAM/ROM cachée), le
-         * backend interroge la cartouche (nIRQ, nRESET, nROMDIS) pour borner la
-         * latence des événements asynchrones à ~1 ms Oric. 0 en co-sim/stub. */
+        /* Real hardware (--loci-hw): « idle poll » — if the 6502 has not
+         * touched LOCI for N cycles (wait loop in RAM/hidden ROM), the
+         * backend queries the cartridge (nIRQ, nRESET, nROMDIS) to bound the
+         * latency of asynchronous events to ~1 Oric ms. 0 in co-sim/stub. */
         {
-            int ev = loci_emu_idle_poll(step);      /* >0 : impulsions nIRQ ; -1 : reset seul */
+            int ev = loci_emu_idle_poll(step);      /* >0: nIRQ pulses; -1: reset only */
             if (ev) {
                 for (int i = 0; i < ev; i++) cpu_irq_pulse(&emu->cpu);
                 if (loci_emu_reset_take() > 0) cpu_reset(&emu->cpu);
@@ -1290,60 +1290,60 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
          * to the hardware. */
         (void)vsync_triggered;
 
-        /* Le rendu scanline et le tick raster ULA-NG sont désormais
-         * émis par l'horloge maître, en phase φ1 de chaque cycle
-         * (src/emu_clock.c) — plus de calcul de position ici. */
+        /* Scanline rendering and the ULA-NG raster tick are now
+         * emitted by the master clock, in the φ1 phase of each cycle
+         * (src/emu_clock.c) — no more position computation here. */
     }
 
-    /* Termine la trame (lignes restantes si le CPU s'est arrêté en cours). */
+    /* Finishes the frame (remaining lines if the CPU stopped midway). */
     emu_clock_frame_end(emu);
     rs->total_executed += (uint64_t)frame_cycles;
 }
 
-/* LOCI co-sim : IRQ en fin de trame, --loci-menu-at. */
+/* LOCI co-sim: end-of-frame IRQ, --loci-menu-at. */
 static void run_loci_frame_hooks(emulator_t* emu, uint64_t total_executed) {
 
-    /* LOCI co-sim (--loci-emu) — modèle EDGE : le firmware PULSE nIRQ ; l'émulateur
-     * latche chaque pulse. io_bus.c en draine juste après chaque transaction MIA
-     * (pulses SYNCHRONES). ICI, une fois par frame, on draine les pulses restants
-     * et on les délivre en EDGE / tir unique (cpu_irq_pulse) → une IRQ par pulse,
-     * sans tempête. nRESET reste piloté par le bouton MENU (ci-dessous).
+    /* LOCI co-sim (--loci-emu) — EDGE model: the firmware PULSES nIRQ; the emulator
+     * latches each pulse. io_bus.c drains them right after each MIA transaction
+     * (SYNCHRONOUS pulses). HERE, once per frame, the remaining pulses are drained
+     * and delivered as EDGE / single shot (cpu_irq_pulse) → one IRQ per pulse,
+     * without a storm. nRESET stays driven by the MENU button (below).
      *
-     * ⚠️ PAS de free-run borné (loci_emu_tick) ici : avancer le firmware avec Phi2
-     * maintenu HAUT ENTRE deux transactions désynchronise la machine à états de
-     * service du bus pendant une opération MIA multi-étapes (ex. ouverture de
-     * fichier à la sélection d'un .dsk) → l'opération ne se termine jamais, le 6502
-     * reste bloqué sur `BVC *` → MENU FIGÉ. Le firmware ne doit avancer QU'EN SYNC
-     * avec les transactions bus. Conséquence assumée : pas de nIRQ purement
-     * asynchrone (timers) hors transaction ; le nIRQ synchrone suffit. */
+     * ⚠️ NO bounded free-run (loci_emu_tick) here: advancing the firmware with Phi2
+     * held HIGH BETWEEN two transactions desynchronises the bus-service state
+     * machine during a multi-step MIA operation (e.g. opening a
+     * file when a .dsk is selected) → the operation never completes, the 6502
+     * stays stuck on `BVC *` → FROZEN MENU. The firmware must advance ONLY IN SYNC
+     * with bus transactions. Accepted consequence: no purely asynchronous nIRQ
+     * (timers) outside a transaction; the synchronous nIRQ is enough. */
     if (loci_emu_active()) {
-        /* Pompe l'échange modem CDC↔ACIA (RX ASYNCHRONE : octets arrivant du dongle
-         * hors accès 6502). Sûr entre transactions : acia_task (guest-call core0,
-         * borné) ne pilote PAS le bus/action-SM (≠ loci_emu_tick), il ne fait que
-         * déplacer des octets et mettre à jour l'io-page. No-op si pas de --loci-cdc. */
+        /* Pumps the CDC↔ACIA modem exchange (ASYNCHRONOUS RX: bytes arriving from the dongle
+         * outside 6502 accesses). Safe between transactions: acia_task (guest-call core0,
+         * bounded) does NOT drive the bus/action-SM (≠ loci_emu_tick), it only
+         * moves bytes and updates the io-page. No-op without --loci-cdc. */
         loci_emu_acia_tick();
-        /* Microdisc co-simulé : une commande WD en cours (RESTORE/SEEK) doit finir
-         * — et pulser son IRQ — même si le 6502 n'accède plus au contrôleur.
-         * Guest-call dsk_task borné, ne pilote pas le bus (≠ loci_emu_tick). */
+        /* Co-simulated Microdisc: a WD command in progress (RESTORE/SEEK) must finish
+         * — and pulse its IRQ — even if the 6502 no longer accesses the controller.
+         * Bounded dsk_task guest-call, does not drive the bus (≠ loci_emu_tick). */
         loci_emu_dsk_tick();
         int loci_irq_pulses = loci_emu_irq_take();
         for (int i = 0; i < loci_irq_pulses; i++) cpu_irq_pulse(&emu->cpu);
-        /* Matériel réel (--loci-hw) : LOCI a piloté nRESET (bouton MENU physique,
-         * gel) → l'Oric redémarre ; on fait de même. Toujours 0 en co-sim/stub. */
+        /* Real hardware (--loci-hw): LOCI drove nRESET (physical MENU button,
+         * freeze) → the Oric restarts; we do the same. Always 0 in co-sim/stub. */
         if (loci_emu_reset_take() > 0) cpu_reset(&emu->cpu);
     }
 
-    /* --loci-menu-at : simuler l'appui bouton MENU LOCI puis reset (test).
-     * loci_emu_menu_button() attend la fin du boot arrière-plan si besoin. */
+    /* --loci-menu-at: simulate pressing the LOCI MENU button then reset (test).
+     * loci_emu_menu_button() waits for the end of the background boot if needed. */
     if (g_loci_menu_at && total_executed >= g_loci_menu_at) {
-        g_loci_menu_at = 0;   /* une seule fois */
+        g_loci_menu_at = 0;   /* only once */
         log_info("LOCI-emu: --loci-menu-at → appui bouton MENU");
         if (loci_emu_menu_button())
-            cpu_reset(&emu->cpu);   /* redémarre dans le menu LOCI servi */
+            cpu_reset(&emu->cpu);   /* restarts in the served LOCI menu */
     }
 }
 
-/* Son en headless : une génération PSG par trame, vers WAV / AVI / cast. */
+/* Headless sound: one PSG generation per frame, to WAV / AVI / cast. */
 static void run_headless_audio_sinks(emulator_t* emu) {
     /* Headless audio sinks : render THIS frame's PSG audio ONCE via
      * ay_generate (the same routine the SDL callback uses) and feed every
@@ -1393,7 +1393,7 @@ static void run_headless_audio_sinks(emulator_t* emu) {
     }
 }
 
-/* Fast-load différé (phases 1 et 2) et auto-CLOAD"" de la bande insérée. */
+/* Deferred fast-load (phases 1 and 2) and auto-CLOAD"" of the inserted tape. */
 static void run_fastload_hooks(emulator_t* emu, uint64_t total_executed) {
     /* Fast-load phase 1: inject TAP data into RAM as soon as the ROM
      * RAM test is done (~3M cycles). Injecting early ensures the binary
@@ -1436,22 +1436,22 @@ static void run_fastload_hooks(emulator_t* emu, uint64_t total_executed) {
     }
 
     /* Fast-load phase 2: fire auto-exec / auto-RUN once VIA + ULA are
-     * stable (~5M cycles, ROM in READY idle loop). Cf. rapport
-     * docs/phosphoric-autorun-timing.md de l'équipe Asteroids. */
+     * stable (~5M cycles, ROM in READY idle loop). Cf. report
+     * docs/phosphoric-autorun-timing.md from the Asteroids team. */
     if (emu->fastload_autoexec_pending && total_executed > 5000000) {
-        /* Le --type-keys de l'utilisateur ne neutralise l'auto-RUN que
-         * s'il tape *pendant* la fenêtre de l'auto-RUN (il pilote alors
-         * le boot lui-même). Une frappe programmée plus tard vise les
-         * menus du programme : l'auto-RUN doit avoir lieu, puis la file
-         * de frappes se rejoue derrière (cf. include/io/autotype.h). */
+        /* The user's --type-keys only neutralises the auto-RUN
+         * if it types *during* the auto-RUN window (it then drives
+         * the boot itself). Keystrokes scheduled later target the
+         * program's menus: the auto-RUN must take place, then the keystroke
+         * queue replays behind it (cf. include/io/autotype.h). */
         int64_t autorun_at = (int64_t)total_executed + AUTOTYPE_AUTORUN_DELAY_CYCLES;
         int64_t autorun_end = autorun_at + AUTOTYPE_AUTORUN_TYPING_CYCLES;
         int64_t next_user_at = -1;
         bool user_entry_pristine = false;
         if (emu->type_keys_text && !emu->type_keys_done) {
             next_user_at = emu->type_keys_at;
-            /* Entrée active pas encore entamée : on peut la rendre à la
-             * file pour la rejouer après l'auto-RUN. */
+            /* Active entry not started yet: it can be returned to the
+             * queue to replay it after the auto-RUN. */
             user_entry_pristine = (emu->type_keys_idx == 0 &&
                                    emu->type_keys_seq_idx > 0);
         } else if (emu->type_keys_seq_idx < emu->type_keys_seq_count) {
@@ -1461,7 +1461,7 @@ static void run_fastload_hooks(emulator_t* emu, uint64_t total_executed) {
         if (emu->fastload_type == 0x00 &&
             autotype_autorun_allowed(next_user_at, autorun_end)) {
             if (user_entry_pristine)
-                emu->type_keys_seq_idx--;  /* rendue à la file */
+                emu->type_keys_seq_idx--;  /* returned to the queue */
             emu->type_keys_text = "RUN\\n";
             emu->type_keys_loci_hid = false;
             emu->type_keys_at = autorun_at;
@@ -1507,13 +1507,13 @@ static void run_fastload_hooks(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* Armement de la frappe automatique : séquence multi --type-keys, --type-keys-when. */
+/* Arming of automatic typing: multi --type-keys sequence, --type-keys-when. */
 static void run_autotype_arm(emulator_t* emu, uint64_t total_executed) {
-    /* Séquençage multi --type-keys : dès que l'entrée active est terminée
-     * et que le cycle d'armement de la suivante est atteint, on la charge
-     * dans les champs type_keys_* actifs. Garantit un vrai relâchement
-     * (release_all + reset des compteurs de debounce) entre deux entrées,
-     * même à touches identiques — ce que wait_release des TUI exige. */
+    /* Multi --type-keys sequencing: as soon as the active entry is finished
+     * and the arming cycle of the next one is reached, it is loaded
+     * into the active type_keys_* fields. Guarantees a real release
+     * (release_all + reset of the debounce counters) between two entries,
+     * even with identical keys — which the TUIs' wait_release requires. */
     if (emu->type_keys_done &&
         emu->type_keys_seq_idx < emu->type_keys_seq_count &&
         (int64_t)total_executed >= emu->type_keys_seq[emu->type_keys_seq_idx].at) {
@@ -1558,11 +1558,11 @@ static void run_autotype_arm(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* Un pas de frappe automatique (matrice native ou HID LOCI), cadencé par le
- * scanner clavier — cf. include/io/autotype.h. */
-/* Frappe automatique, chemin LOCI HID (sprint 34av) : chaque caractère ou
- * séquence d'échappement devient un usage HID poussé dans le bitmap clavier
- * LOCI pendant ~2 trames, puis relâché. */
+/* One automatic-typing step (native matrix or LOCI HID), paced by the
+ * keyboard scanner — cf. include/io/autotype.h. */
+/* Automatic typing, LOCI HID path (sprint 34av): each character or
+ * escape sequence becomes a HID usage pushed into the LOCI keyboard
+ * bitmap for ~2 frames, then released. */
 static void autotype_step_loci_hid(emulator_t* emu, uint64_t total_executed,
                                    int idx, char c) {
     if (c == '\0') {
@@ -1670,8 +1670,8 @@ static void autotype_step_loci_hid(emulator_t* emu, uint64_t total_executed,
     }
 }
 
-/* Frappe automatique, chemin natif : la matrice clavier ORIC, avec un frame de
- * relâche entre deux touches identiques pour que le scanner ROM les distingue. */
+/* Automatic typing, native path: the ORIC keyboard matrix, with a release
+ * frame between two identical keys so that the ROM scanner tells them apart. */
 static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
                                  int idx, char c) {
     if (c == '\0') {
@@ -1679,15 +1679,15 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
         oric_keyboard_release_all(&emu->keyboard);
         emu->type_keys_done = true;
     } else if (c == '\\' && emu->type_keys_text[idx+1] == 'n') {
-        /* \n = RETURN. Si deux \n consécutifs, insert un frame de
-         * relâche entre les deux : le scanner ROM voit sinon une
-         * pression longue unique au lieu de deux RETURN distincts.
-         * On réutilise last_char sans toucher à type_keys_debounce
-         * (qui est réservé au branch caractère ordinaire). */
+        /* \n = RETURN. If two consecutive \n, insert a release
+         * frame between them: otherwise the ROM scanner sees a
+         * single long press instead of two distinct RETURNs.
+         * last_char is reused without touching type_keys_debounce
+         * (which is reserved for the ordinary character branch). */
         if (emu->type_keys_last_char == '\n') {
             oric_keyboard_release_all(&emu->keyboard);
             emu->type_keys_last_char = 0;
-            /* idx non avancé : on re-traitera ce \n au prochain frame */
+            /* idx not advanced: this \n will be processed again on the next frame */
             emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
         } else {
             oric_keyboard_release_all(&emu->keyboard);
@@ -1697,7 +1697,7 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
             emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
         }
     } else if (c == '\\' && emu->type_keys_text[idx+1] == 'e') {
-        /* Sprint 34av : \e = ESC. Touche utile pour le TUI LOCI. */
+        /* Sprint 34av: \e = ESC. Useful key for the LOCI TUI. */
         if (emu->type_keys_last_char == 0x1B) {
             oric_keyboard_release_all(&emu->keyboard);
             emu->type_keys_last_char = 0;
@@ -1710,8 +1710,8 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
             emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME * 4;
         }
     } else if (c == '\\' && emu->type_keys_text[idx+1] == 'b') {
-        /* \b = DEL (backspace) — édition de ligne (readline). Presse
-         * la touche DEL (matrix 5,5) via le sentinel 0x84 de press_char. */
+        /* \b = DEL (backspace) — line editing (readline). Presses
+         * the DEL key (matrix 5,5) via the 0x84 sentinel of press_char. */
         if (emu->type_keys_last_char == (char)0x84) {
             oric_keyboard_release_all(&emu->keyboard);
             emu->type_keys_last_char = 0;
@@ -1727,7 +1727,7 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
                               emu->type_keys_text[idx+1] == 'd' ||
                               emu->type_keys_text[idx+1] == 'l' ||
                               emu->type_keys_text[idx+1] == 'r')) {
-        /* Sprint 34av : flèches pour navigation TUI LOCI. */
+        /* Sprint 34av: arrows for LOCI TUI navigation. */
         char dir = emu->type_keys_text[idx+1];
         char arrow = (dir == 'u') ? (char)0x80
                   : (dir == 'd') ? (char)0x81
@@ -1839,13 +1839,13 @@ static void run_autotype_step(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* GUI : OSD, présentation SDL et événements (clavier, F-keys, souris, manette). */
+/* GUI: OSD, SDL presentation and events (keyboard, F-keys, mouse, gamepad). */
 #ifdef HAS_SDL2
-/* Bouton Action LOCI (F8) : instant de l'appui, pour distinguer court / long. */
+/* LOCI Action button (F8): press instant, to distinguish short / long. */
 static Uint32 loci_f8_down_ms;
 
-/* OSD média (F6) ouvert : les flèches / Entrée / Échap le pilotent et
- * n'atteignent pas l'Oric. Renvoie true si l'événement est consommé. */
+/* Media OSD (F6) open: the arrows / Enter / Escape drive it and
+ * do not reach the Oric. Returns true if the event is consumed. */
 static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
     if (!emu->osd.open) return false;
     int k = 0;
@@ -1870,17 +1870,17 @@ static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
         else if (act == OSD_EJECT_TAPE)
             osd_do_eject_tape(emu);
     }
-    return true;  /* consomme l'événement */
+    return true;  /* event consumed */
 }
 
-/* Touches de fonction de l'émulateur (F2/F4 savestate, F3 échelle, F5 reset,
- * F7 dump mémoire, F8 bouton LOCI, F9 débogueur, F10 quitter, F11 plein écran,
- * F12 capture). Les autres touches passent ensuite au clavier ORIC / manette. */
-/* Bouton LOCI sans F8 : sur beaucoup de portables F8 est aussi une touche
- * multimédia (volume) que GNOME capture AVANT l'application dès que le
- * verrouillage Fn bascule — et F12 (capture d'écran ici) est justement la
- * touche Fn-Lock de certains claviers. Ctrl+Alt+M = appui court (menu),
- * Ctrl+Alt+D = appui long (ROM de diagnostic) ; jamais transmis à l'Oric. */
+/* Emulator function keys (F2/F4 savestate, F3 scale, F5 reset,
+ * F7 memory dump, F8 LOCI button, F9 debugger, F10 quit, F11 fullscreen,
+ * F12 capture). The other keys then go to the ORIC keyboard / gamepad. */
+/* LOCI button without F8: on many laptops F8 is also a multimedia key
+ * (volume) that GNOME grabs BEFORE the application as soon as the
+ * Fn lock toggles — and F12 (screenshot here) is precisely the
+ * Fn-Lock key of some keyboards. Ctrl+Alt+M = short press (menu),
+ * Ctrl+Alt+D = long press (diagnostic ROM); never passed to the Oric. */
 static bool sdl_loci_button_chord(emulator_t* emu, SDL_Keycode sym, uint16_t mod) {
     if (!emu->has_loci) return false;
     if (!(mod & KMOD_CTRL) || !(mod & KMOD_ALT)) return false;
@@ -1940,11 +1940,11 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
          * EXT_BTN_LONGPRESS_MS). */
         if (emu->has_loci && !repeat) {
             loci_f8_down_ms = SDL_GetTicks();
-            /* Co-simulation (--loci-emu) : c'est le VRAI firmware qui possède le
-             * bouton — le modèle interne ne doit pas swapper sa ROM en parallèle
-             * (les deux se marchaient dessus : ROM de diagnostic chargée par
-             * l'un, menu servi par l'autre → « Booting » figé). Le firmware
-             * n'est sollicité qu'au relâchement, où l'on connaît la durée. */
+            /* Co-simulation (--loci-emu): the REAL firmware owns the
+             * button — the internal model must not swap its ROM in parallel
+             * (the two trod on each other: diagnostic ROM loaded by
+             * one, menu served by the other → frozen « Booting »). The firmware
+             * is only called on release, when the duration is known. */
             if (!loci_emu_active())
                 loci_action_button_short(&emu->loci);
             log_info("LOCI: Action button pressed (F8)");
@@ -1962,8 +1962,8 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
         FILE* df = fopen(dumpname, "wb");
         if (df) {
             fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), df);
-            /* $C000-$FFFF : vue CPU bankée (même contrat 64 Ko
-             * que --dump-ram-at, cf. sprint 38) */
+            /* $C000-$FFFF: banked CPU view (same 64 KB contract
+             * as --dump-ram-at, cf. sprint 38) */
             for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
                 uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
                 fwrite(&b, 1, 1, df);
@@ -1997,7 +1997,7 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
     }
 }
 
-/* Souris SDL → LOCI mou_xram (sprint 34al). Ne concerne que --loci. */
+/* SDL mouse → LOCI mou_xram (sprint 34al). Only concerns --loci. */
 static void sdl_mouse_event(emulator_t* emu, const SDL_Event* event) {
     switch (event->type) {
     case SDL_MOUSEMOTION:
@@ -2039,8 +2039,8 @@ static void sdl_mouse_event(emulator_t* emu, const SDL_Event* event) {
 static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
     /* Present to screen and handle events if not headless */
     if (!emu->headless) {
-        /* OSD : garde une copie fraîche du charset Oric (valide en mode
-         * texte) puis dessine l'overlay par-dessus le framebuffer. */
+        /* OSD: keeps a fresh copy of the Oric charset (valid in text
+         * mode) then draws the overlay on top of the framebuffer. */
         if (!emu->video.hires_mode)
             osd_snapshot_font(&emu->osd, emu->memory.ram);
         osd_render(&emu->osd, &emu->video);
@@ -2054,18 +2054,18 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 emu->running = false;
                 break;
             case SDL_KEYDOWN:
-                /* OSD média (F6) : quand l'overlay est ouvert, les flèches /
-                 * Entrée / Échap le pilotent et n'atteignent pas l'Oric. */
+                /* Media OSD (F6): when the overlay is open, the arrows /
+                 * Enter / Escape drive it and do not reach the Oric. */
                 if (event.key.keysym.sym == SDLK_F6) {
                     osd_toggle(&emu->osd);
                     break;
                 }
                 if (sdl_osd_key(emu, event.key.keysym.sym))
-                    break;  /* consomme l'événement */
+                    break;  /* event consumed */
                 /* F5 = Reset, F10 = Quit, F11 = Fullscreen, F12 = Screenshot */
                 if (!event.key.repeat &&
                     sdl_loci_button_chord(emu, event.key.keysym.sym, event.key.keysym.mod))
-                    break;  /* consommé : ne va pas au clavier Oric */
+                    break;  /* consumed: does not go to the Oric keyboard */
                 sdl_function_key(emu, event.key.keysym.sym, event.key.repeat != 0,
                                  total_executed);
                 /* Fall through to keyboard/joystick handler */
@@ -2082,17 +2082,17 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                     log_info("LOCI: Action button released (F8%s)",
                              longp ? ", long press" : "");
                     if (loci_emu_active()) {
-                        /* Co-simulation : le vrai firmware traite l'appui —
-                         * court = menu LOCI, long (≥ 2 s) = sa ROM de diagnostic
-                         * embarquée (EXT_BOOT_DIAG). Puis reset du 6502, qui
-                         * redémarre sur le vecteur servi par LOCI. */
+                        /* Co-simulation: the real firmware handles the press —
+                         * short = LOCI menu, long (≥ 2 s) = its embedded diagnostic
+                         * ROM (EXT_BOOT_DIAG). Then reset of the 6502, which
+                         * restarts on the vector served by LOCI. */
                         bool armed = longp ? loci_emu_diag_button()
                                            : loci_emu_menu_button();
                         if (armed) cpu_reset(&emu->cpu);
                     } else {
-                        /* Modèle interne (sprint 34ai) : le relâchement pose V,
-                         * le spin BVC sort et JMP ($FFFA) exécute le handler de
-                         * sauvegarde de session. Maintien ≥ 2 s = ROM diag. */
+                        /* Internal model (sprint 34ai): the release sets V,
+                         * the BVC spin exits and JMP ($FFFA) runs the session
+                         * save handler. Hold ≥ 2 s = diag ROM. */
                         emu->loci_button_long = longp;
                         loci_action_button_release(&emu->loci);
                     }
@@ -2139,12 +2139,12 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* Captures à seuil de cycles (--screenshot-at / -text-at / -ansi-at / --dump-ram-at). */
+/* Cycle-threshold captures (--screenshot-at / -text-at / -ansi-at / --dump-ram-at). */
 static void run_timed_captures(emulator_t* emu, uint64_t total_executed) {
     /* Cycle-triggered captures (--screenshot-at / -text-at / -ansi-at /
-     * --dump-ram-at), RÉPÉTABLES : chaque entrée du tableau tire une fois
-     * quand total_executed atteint son seuil. Échantillonné une fois par
-     * frame comme avant (le contenu ne dépend que du cycle courant). */
+     * --dump-ram-at), REPEATABLE: each array entry fires once
+     * when total_executed reaches its threshold. Sampled once per
+     * frame as before (the content only depends on the current cycle). */
     for (int ci = 0; ci < emu->timed_capture_count; ci++) {
         timed_capture_t* tc = &emu->timed_captures[ci];
         if (tc->done || tc->cycles < 0 ||
@@ -2179,8 +2179,8 @@ static void run_timed_captures(emulator_t* emu, uint64_t total_executed) {
             FILE* rf = fopen(tc->file, "wb");
             if (rf) {
                 fwrite(emu->memory.ram, 1, sizeof(emu->memory.ram), rf);
-                /* $C000-$FFFF : vue CPU (banking BASIC ROM / overlay / upper
-                 * RAM). memory_read est sans effet de bord hors page I/O. */
+                /* $C000-$FFFF: CPU view (BASIC ROM / overlay / upper
+                 * RAM banking). memory_read has no side effect outside the I/O page. */
                 for (uint32_t a = 0xC000; a <= 0xFFFF; a++) {
                     uint8_t b = memory_peek(&emu->memory, (uint16_t)a);
                     fwrite(&b, 1, 1, rf);
@@ -2198,7 +2198,7 @@ static void run_timed_captures(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* Enregistrement AVI : image de la trame + son (tap SDL en GUI). */
+/* AVI recording: frame image + sound (SDL tap in GUI). */
 static void run_video_recording(emulator_t* emu) {
     /* Video recording: append this frame to the MJPEG AVI. With
      * --export-border, composite the overscan border into a scratch buffer
@@ -2228,10 +2228,10 @@ static void run_video_recording(emulator_t* emu) {
 
 /* Captures conditionnelles (--screenshot-when / -text-when / --dump-ram-when). */
 static void run_when_captures(emulator_t* emu, uint64_t total_executed) {
-    /* State-triggered captures : front montant sur RAM[addr] == val,
-     * échantillonné ici en fin de frame (même cadence que les variantes
-     * -at). when_read() lit la RAM brute hors overlay ($<C000, sans effet
-     * de bord) et la vue CPU au-delà. --cycles reste la borne max. */
+    /* State-triggered captures: rising edge on RAM[addr] == val,
+     * sampled here at end of frame (same rate as the
+     * -at variants). when_read() reads raw RAM outside the overlay ($<C000, no side
+     * effect) and the CPU view above. --cycles remains the max bound. */
     if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0 &&
         when_read(emu, (uint16_t)emu->screenshot_when_addr) == emu->screenshot_when_val) {
         log_info("Screenshot on RAM[$%04X]==$%02X at %llu cycles -> %s",
@@ -2276,15 +2276,15 @@ static void run_when_captures(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* Écritures déclenchées (--poke-at / --poke-when). */
+/* Triggered writes (--poke-at / --poke-when). */
 static void run_pokes(emulator_t* emu, uint64_t total_executed) {
-    /* Écritures déclenchées (--poke-at / --poke-when) : actionneur symétrique
-     * des captures ci-dessus, échantillonné à la même cadence (fin de frame).
-     * Une entrée à seuil de cycles tire dès total_executed >= at_cycles ; une
-     * entrée conditionnelle tire au 1er échantillon où RAM[when_addr]==when_val.
-     * Chaque poke ne tire qu'une fois (done). Plusieurs pokes au même seuil
-     * s'appliquent dans l'ordre de la ligne de commande (ex. cx, cy, puis le
-     * drapeau de clic) au même instant côté programme. */
+    /* Triggered writes (--poke-at / --poke-when): actuator symmetric to
+     * the captures above, sampled at the same rate (end of frame).
+     * A cycle-threshold entry fires as soon as total_executed >= at_cycles; a
+     * conditional entry fires on the 1st sample where RAM[when_addr]==when_val.
+     * Each poke fires only once (done). Several pokes at the same threshold
+     * are applied in command-line order (e.g. cx, cy, then the
+     * click flag) at the same instant from the program's point of view. */
     for (int pi = 0; pi < emu->poke_count; pi++) {
         struct poke_action* p = &emu->pokes[pi];
         if (p->done) continue;
@@ -2306,7 +2306,7 @@ static void run_pokes(emulator_t* emu, uint64_t total_executed) {
     }
 }
 
-/* Cadence : limiteur 50 Hz en GUI, --realtime en headless. */
+/* Pacing: 50 Hz limiter in GUI, --realtime in headless. */
 static void run_frame_pacing(emulator_t* emu, run_state_t* rs) {
 #ifdef HAS_SDL2
     /* Frame limiter: 50 Hz PAL = 20ms per frame.
@@ -2352,11 +2352,11 @@ static void run_frame_pacing(emulator_t* emu, run_state_t* rs) {
         int64_t lag_ns = (now.tv_sec - rs->rt_next.tv_sec) * 1000000000LL
                        + (now.tv_nsec - rs->rt_next.tv_nsec);
         if (lag_ns > 20000000LL) {
-            rs->rt_next = now;  /* trop en retard : on recale sur l'instant courant */
+            rs->rt_next = now;  /* too late: resync on the current instant */
         } else {
-            /* Dormir jusqu'à rs->rt_next. clock_nanosleep(TIMER_ABSTIME) existe
-             * sur Linux/BSD mais PAS sur macOS → repli sur un nanosleep
-             * relatif du temps restant (lag_ns < 0 = on est en avance). */
+            /* Sleep until rs->rt_next. clock_nanosleep(TIMER_ABSTIME) exists
+             * on Linux/BSD but NOT on macOS → fall back to a relative nanosleep
+             * of the remaining time (lag_ns < 0 = we are ahead). */
 #if defined(__APPLE__)
             if (lag_ns < 0) {
                 int64_t rem_ns = -lag_ns;
@@ -2374,7 +2374,7 @@ static void run_frame_pacing(emulator_t* emu, run_state_t* rs) {
 #endif
 }
 
-/* Sorties de fin de run : captures, filet -when, état final, rapport --bench. */
+/* End-of-run outputs: captures, -when safety net, final state, --bench report. */
 static void run_end_of_run(emulator_t* emu, const run_state_t* rs) {
     /* End-of-run screenshot */
     if (emu->screenshot_file) {
@@ -2383,7 +2383,7 @@ static void run_end_of_run(emulator_t* emu, const run_state_t* rs) {
         emu_export_image(emu, emu->screenshot_file);
     }
 
-    /* End-of-run text screenshot : contenu texte réel de l'écran ($BB80). */
+    /* End-of-run text screenshot: actual text content of the screen ($BB80). */
     if (emu->screenshot_text_file) {
         FILE* tf = fopen(emu->screenshot_text_file, "w");
         if (tf) {
@@ -2395,7 +2395,7 @@ static void run_end_of_run(emulator_t* emu, const run_state_t* rs) {
         }
     }
 
-    /* End-of-run ANSI screenshot : image true-color du framebuffer. */
+    /* End-of-run ANSI screenshot: true-color image of the framebuffer. */
     if (emu->screenshot_ansi_file) {
         emu_refresh_for_capture(emu);
         if (video_export_ascii_file(&emu->video, emu->screenshot_ansi_file, 2, 2))
@@ -2404,9 +2404,9 @@ static void run_end_of_run(emulator_t* emu, const run_state_t* rs) {
             log_error("Cannot write ANSI screenshot file: %s", emu->screenshot_ansi_file);
     }
 
-    /* Filet de sécurité : un -when armé qui n'a jamais tiré = échec franc.
-     * main() renverra 2 pour que le CI le voie plutôt que de croire à une
-     * capture silencieuse manquante. */
+    /* Safety net: an armed -when that never fired = outright failure.
+     * main() will return 2 so that the CI sees it rather than assuming a
+     * silently missing capture. */
     if (!emu->screenshot_when_done && emu->screenshot_when_addr >= 0) {
         log_error("--screenshot-when: condition jamais atteinte (RAM[$%04X] != $%02X)",
                   (unsigned)emu->screenshot_when_addr, emu->screenshot_when_val);
@@ -2493,8 +2493,8 @@ static void emulator_run(emulator_t* emu) {
             movie_record_frame(&emu->movie, rs.frame_count, emu->keyboard.matrix);
         }
 
-        /* Une trame de machine, puis les hooks de fin de trame — dans l'ordre
-         * historique, qui est observable (captures, frappes, cadence). */
+        /* One machine frame, then the end-of-frame hooks — in the
+         * historical order, which is observable (captures, keystrokes, pacing). */
         run_frame_instructions(emu, &rs);
         run_loci_frame_hooks(emu, rs.total_executed);
         run_headless_audio_sinks(emu);
@@ -2587,22 +2587,22 @@ int main(int argc, char* argv[]) {
     const char* tape_file = NULL;
     const char* disk_files[MICRODISC_MAX_DRIVES] = {NULL, NULL, NULL, NULL};
     const char* disk_create_file = NULL;
-    const char* disk_web_url = NULL;   /* loci-webdisk archi B: disque servi par HTTP */
+    const char* disk_web_url = NULL;   /* loci-webdisk archi B: disk served over HTTP */
     bool disk_writeback = false;
     bool disk_write_protect = false;
     const char* rom_file = NULL;
     const char* hostfs_path = NULL;
     bool fast_load = false;
     bool tape_signal = false;   /* --tape-signal: signal-level cassette (Sprint 90) */
-    bool tape_signal_free = false; /* --tape-signal-free: gate moteur sur ORB PB6 (clean-room ROM) */
+    bool tape_signal_free = false; /* --tape-signal-free: motor gate on ORB PB6 (clean-room ROM) */
     const char* tape_out_capture_arg = NULL; /* --tape-out-capture FILE: capture PB7 -> .TAP */
     bool verbose = false;
     bool headless = false;
     int64_t max_cycles = -1;
     const char* screenshot_file = NULL;
-    const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
-    /* Captures -at RÉPÉTABLES : on collecte (arg, type) au parsing, puis on
-     * résout chaque "CYCLES:FILE" après la boucle getopt (comme --poke-at). */
+    const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registers $0340-$035F) */
+    /* REPEATABLE -at captures: (arg, type) are collected during parsing, then
+     * each "CYCLES:FILE" is resolved after the getopt loop (like --poke-at). */
     struct { const char* arg; timed_capture_type_t type; } tcap_cli[TIMED_CAPTURE_MAX];
     int tcap_cli_count = 0;
     const char* screenshot_text_file = NULL;
@@ -2620,8 +2620,8 @@ int main(int argc, char* argv[]) {
 
     const char* type_keys_args[TYPE_KEYS_SEQ_MAX];
     int type_keys_arg_count = 0;
-    /* --poke-at / --poke-when : arguments collectés pendant getopt puis parsés
-     * après emulator_init (les pokes vivent dans emu, initialisé plus tard). */
+    /* --poke-at / --poke-when: arguments collected during getopt then parsed
+     * after emulator_init (the pokes live in emu, initialised later). */
     struct { const char* arg; bool is_when; } poke_args[POKE_MAX];
     int poke_arg_count = 0;
     const char* disk_rom_file = NULL;
@@ -2652,8 +2652,8 @@ int main(int argc, char* argv[]) {
     bool render_software = false;
     const char* trace_file = NULL;
     const char* cycle_trace_file = NULL;
-    bool cpu_microseq = true;   /* V2-E1/US1.4 : cœur cycle-par-cycle par défaut */
-    bool ula_per_cycle = true;  /* V2-E4/US4.2 : ULA au fetch par cycle par défaut */
+    bool cpu_microseq = true;   /* V2-E1/US1.4: cycle-by-cycle core by default */
+    bool ula_per_cycle = true;  /* V2-E4/US4.2: per-cycle ULA fetch by default */
     int  ula_fetch_offset = 0;
     uint64_t cycle_trace_max = 0;
     const char* screenshot_when_arg = NULL;
@@ -2676,19 +2676,19 @@ int main(int argc, char* argv[]) {
     bool bench_mode = false;
     bool loci_enabled = false;
     const char* loci_flash_root = NULL;
-    const char* loci_emu_path = NULL;   /* --loci-emu : exécute le vrai firmware RP2040 (émulateur) */
-    const char* loci_hw_dev = NULL;     /* --loci-hw : VRAIE cartouche via le pont USB loci-usb (backend loci_hw.c) */
-    const char* loci_emu_usb_image = NULL;  /* --loci-usb-image : image FAT servie comme disque USB émulé */
-    const char* loci_emu_cdc_dev = NULL;    /* --loci-cdc : dongle CDC (ex. /dev/ttyACM0) servi comme ACIA $0380 */
-    const char* loci_emu_flash = NULL;      /* --loci-flash : image flash persistante (FS interne 0:) */
+    const char* loci_emu_path = NULL;   /* --loci-emu: runs the real RP2040 firmware (emulator) */
+    const char* loci_hw_dev = NULL;     /* --loci-hw: REAL cartridge via the loci-usb USB bridge (backend loci_hw.c) */
+    const char* loci_emu_usb_image = NULL;  /* --loci-usb-image: FAT image served as the emulated USB disk */
+    const char* loci_emu_cdc_dev = NULL;    /* --loci-cdc: CDC dongle (e.g. /dev/ttyACM0) served as ACIA $0380 */
+    const char* loci_emu_flash = NULL;      /* --loci-flash: persistent flash image (internal FS 0:) */
     const char* loci_sdimg_path = NULL;
-    const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
-    const char* loci_web_base = NULL;  /* Route B : racine serveur pour le device « W: Web disks » */
+    const char* loci_web_url = NULL;   /* loci-webdisk archi B: native LOCI web disk */
+    const char* loci_web_base = NULL;  /* Route B: server root for the « W: Web disks » device */
     int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
     int loci_serve_subticks = -1, loci_latch_subtick = -1;  /* -1 = phase model off */
     int loci_serve_jitter = -1; unsigned loci_jitter_seed = 0;  /* -1 = no jitter */
     int64_t trace_max = 0;
-    int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
+    int64_t trace_ring = 0;   /* --trace-ring N: keep the LAST N instructions */
     const char* profile_file = NULL;
     const char* rom_info_file = NULL;
     bool rom_info_enabled = false;
@@ -2814,9 +2814,9 @@ int main(int argc, char* argv[]) {
             case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
             case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
             case OPT_TRACE: trace_file = optarg; break;
-            case OPT_CPU_MICROSEQ: cpu_microseq = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_CPU_MICROSEQ: cpu_microseq = true; break;   /* default, kept for scripts */
             case OPT_CPU_LEGACY: cpu_microseq = false; break;
-            case OPT_ULA_CYCLE: ula_per_cycle = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_ULA_CYCLE: ula_per_cycle = true; break;   /* default, kept for scripts */
             case OPT_ULA_LINE: ula_per_cycle = false; break;
             case OPT_ULA_FETCH_OFFSET: ula_fetch_offset = atoi(optarg); break;
             case OPT_CYCLE_TRACE: cycle_trace_file = optarg; break;
@@ -2924,10 +2924,10 @@ int main(int argc, char* argv[]) {
                 break;
             }
             case OPT_LOCI_SERVE_TIMING: {
-                /* Modèle de course PHI2 sous-cycle (bus_timing.h, épic B) :
-                 * "SERVE[,LATCH]" en subticks PHI2×30. Le serve arrive à
-                 * (tior + SERVE) ; propre ssi ≤ LATCH (défaut 27). SERVE court
-                 * (build -Os ≈ 26) passe, long (-O2 ≈ 36) rate. */
+                /* Sub-cycle PHI2 race model (bus_timing.h, epic B):
+                 * "SERVE[,LATCH]" in PHI2×30 subticks. The serve arrives at
+                 * (tior + SERVE); clean iff ≤ LATCH (default 27). A short SERVE
+                 * (-Os build ≈ 26) passes, a long one (-O2 ≈ 36) misses. */
                 int serve = 0, latch = BUS_LATCH_SUBTICK_DEFAULT;
                 int n = sscanf(optarg, "%d,%d", &serve, &latch);
                 if (n >= 1 && serve >= 0) {
@@ -2940,8 +2940,8 @@ int main(int argc, char* argv[]) {
                 break;
             }
             case OPT_LOCI_SERVE_JITTER: {
-                /* "AMP[,SEED]" : amplitude du jitter (subticks) + graine PRNG.
-                 * Rend les ratés occasionnels près du latch, reproductibles. */
+                /* "AMP[,SEED]": jitter amplitude (subticks) + PRNG seed.
+                 * Makes the occasional misses near the latch reproducible. */
                 int amp = 0; unsigned seed = 0;
                 int n = sscanf(optarg, "%d,%u", &amp, &seed);
                 if (n >= 1 && amp >= 0) {
@@ -2982,12 +2982,12 @@ int main(int argc, char* argv[]) {
     log_init(verbose ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO);
 
     app_install_signal_handlers();
-    /* Pilotage par un agent (--control) : stdout/stdin sont des *pipes*, pas un
-     * terminal. Si le pair ferme/cesse de lire, une écriture d'événement
-     * lèverait SIGPIPE et tuerait l'émulateur (mort par signal, invisible en
-     * terminal interactif). control.c veut pourtant s'arrêter PROPREMENT via
-     * ferror(stdout) — mais ce contrôle est inatteignable si SIGPIPE tue avant.
-     * On l'ignore : le tuyau cassé est alors géré proprement (arrêt net). */
+    /* Driven by an agent (--control): stdout/stdin are *pipes*, not a
+     * terminal. If the peer closes/stops reading, an event write
+     * would raise SIGPIPE and kill the emulator (death by signal, invisible in
+     * an interactive terminal). Yet control.c wants to stop CLEANLY via
+     * ferror(stdout) — but that check is unreachable if SIGPIPE kills first.
+     * It is ignored: the broken pipe is then handled cleanly (clean stop). */
     oscompat_ignore_sigpipe();
 
     /* Cast discover: standalone mode, list devices and exit */
@@ -3010,9 +3010,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    /* --ula-ng-poke "AAA=VV,..." : programme directement les registres ULA-NG
-     * ($0340-$035F) au démarrage (déverrouillage, palette, copper, raster…),
-     * sans passer par des POKE BASIC lents. Idéal pour démos/tests/captures. */
+    /* --ula-ng-poke "AAA=VV,...": programs the ULA-NG registers directly
+     * ($0340-$035F) at startup (unlock, palette, copper, raster…),
+     * without going through slow BASIC POKEs. Ideal for demos/tests/captures. */
     if (ula_ng_poke) {
         const char* p = ula_ng_poke;
         int n = 0;
@@ -3087,21 +3087,21 @@ int main(int argc, char* argv[]) {
         emu.acia_base_addr = 0x0380;
         log_info("ACIA base address: $0380 (LOCI default — override with --acia-addr)");
     } else if (loci_emu_cdc_dev) {
-        /* Co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
-         * (oric/acia.c ↔ dongle CDC) — pas de backend série comportemental. */
+        /* Co-sim (--loci-cdc): the ACIA at $0380 is served by the REAL firmware
+         * (oric/acia.c ↔ CDC dongle) — no behavioural serial backend. */
         emu.acia_base_addr = 0x0380;
         log_info("ACIA base address: $0380 (co-sim firmware via --loci-cdc %s)", loci_emu_cdc_dev);
     } else {
         emu.acia_base_addr = ACIA_DEFAULT_BASE;
     }
-    /* Co-sim (--loci-cdc) : active l'ACIA sans backend (le firmware réel la sert via
-     * loci_emu_acia_*). has_serial doit être vrai pour que le device ACIA claim $0380. */
+    /* Co-sim (--loci-cdc): enables the ACIA without a backend (the real firmware serves it via
+     * loci_emu_acia_*). has_serial must be true for the ACIA device to claim $0380. */
     if (loci_emu_cdc_dev && loci_emu_path) emu.has_serial = true;
-    /* Garde-fou : sous --loci, la MIA occupe $03A0-$03BF et est routée AVANT
-     * l'ACIA dans les callbacks I/O. Si l'ACIA y est forcée (--acia-addr dans
-     * cette plage), la MIA la masque ET pilote le PSG/clavier → le scan clavier
-     * lit du vide et get_key boucle → terminal « figé » (annuaire BBS gelé).
-     * Le vrai LOCI expose son modem USB-CDC à $0380, pas dans la MIA. */
+    /* Safeguard: under --loci, the MIA occupies $03A0-$03BF and is routed BEFORE
+     * the ACIA in the I/O callbacks. If the ACIA is forced there (--acia-addr in
+     * this range), the MIA masks it AND drives the PSG/keyboard → the keyboard scan
+     * reads nothing and get_key loops → « frozen » terminal (BBS directory frozen).
+     * The real LOCI exposes its USB-CDC modem at $0380, not in the MIA. */
     if (loci_enabled && serial_arg &&
         emu.acia_base_addr <= LOCI_MIA_END &&
         (uint16_t)(emu.acia_base_addr + 3) >= LOCI_MIA_BASE) {
@@ -3420,18 +3420,18 @@ int main(int argc, char* argv[]) {
         log_info("Audio WAV → %s (16-bit stereo %d Hz)", audio_wav_file, AUDIO_SAMPLE_RATE);
     }
 
-    /* --loci-emu : exécuter le VRAI firmware RP2040 dans l'émulateur (smoke test :
-     * boot + bannière). Co-sim bus non encore câblé -> le backend comportemental
-     * reste actif en parallèle pour le runtime. */
+    /* --loci-emu: run the REAL RP2040 firmware in the emulator (smoke test:
+     * boot + banner). Bus co-sim not wired yet -> the behavioural backend
+     * stays active in parallel for the runtime. */
     if (loci_emu_path) {
         if (loci_emu_usb_image) loci_emu_set_usb_image(loci_emu_usb_image);
         if (loci_emu_cdc_dev) loci_emu_set_cdc_device(loci_emu_cdc_dev);
         if (loci_emu_flash) loci_emu_set_flash_image(loci_emu_flash);
         loci_emu_start(loci_emu_path);
     }
-    /* --loci-hw : la VRAIE cartouche derrière le pont USB (loci-usb). Le backend
-     * loci_hw.c partage l'interface loci_emu.h : même chemin io_bus/memory, mais
-     * chaque accès est un vrai cycle de bus. Exige un binaire `make LOCI_HW=1`. */
+    /* --loci-hw: the REAL cartridge behind the USB bridge (loci-usb). The
+     * loci_hw.c backend shares the loci_emu.h interface: same io_bus/memory path, but
+     * each access is a real bus cycle. Requires a `make LOCI_HW=1` binary. */
     if (loci_hw_dev) {
         if (strcmp(loci_emu_backend_name(), "hw") != 0) {
             log_error("--loci-hw : ce binaire embarque le backend LOCI « %s », pas « hw » — "
@@ -3446,7 +3446,7 @@ int main(int argc, char* argv[]) {
         loci_init(&emu.loci);
         emu.loci.enabled = true;
         emu.has_loci = true;
-        /* Route B : base du serveur pour le pseudo-device « W: Web disks ». */
+        /* Route B: server base for the « W: Web disks » pseudo-device. */
         if (loci_web_base) {
             snprintf(emu.loci.web_base, sizeof(emu.loci.web_base), "%s", loci_web_base);
             log_info("LOCI: device web « W: Web disks » -> %s (menu: opendir/readdir GET /disks)",
@@ -3459,7 +3459,7 @@ int main(int argc, char* argv[]) {
                      emu.loci.mia_tior_lo, emu.loci.mia_tior_hi);
         }
         if (loci_serve_subticks >= 0) {
-            /* Modèle de course PHI2 sous-cycle (épic B) — remplace la fenêtre. */
+            /* Sub-cycle PHI2 race model (epic B) — replaces the window. */
             loci_set_serve_timing(&emu.loci, (uint8_t)loci_serve_subticks,
                                   (uint8_t)loci_latch_subtick);
             log_info("LOCI MIA phase model: serve=%d latch=%d subticks (PHI2x%d) — "
@@ -3547,10 +3547,10 @@ int main(int argc, char* argv[]) {
                      LOCI_MIA_BASE, LOCI_MIA_END);
         }
 
-        /* --loci-web URL : montage NATIF LOCI d'un disque servi par HTTP en
-         * lecteur A (loci-webdisk archi B). Jumeau de --disk-web (Microdisc),
-         * mais sur le FDC propre de la LOCI. Les pistes MFM 6400 o sont
-         * récupérées à la demande. */
+        /* --loci-web URL: NATIVE LOCI mount of a disk served over HTTP as
+         * drive A (loci-webdisk archi B). Twin of --disk-web (Microdisc),
+         * but on the LOCI's own FDC. The 6400-byte MFM tracks are
+         * fetched on demand. */
         if (loci_web_url) {
             if (!loci_dsk_open_web(&emu.loci, 0, loci_web_url)) {
                 log_error("--loci-web: montage du disque web impossible (%s)", loci_web_url);
@@ -3594,9 +3594,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Résolution des captures -at RÉPÉTABLES (--screenshot-at / -text-at /
-     * -ansi-at / --dump-ram-at) collectées dans tcap_cli : chaque "CYCLES:FILE"
-     * devient une entrée timed_captures[]. Format malformé = fatal (comme avant). */
+    /* Resolution of the REPEATABLE -at captures (--screenshot-at / -text-at /
+     * -ansi-at / --dump-ram-at) collected in tcap_cli: each "CYCLES:FILE"
+     * becomes a timed_captures[] entry. Malformed format = fatal (as before). */
     {
         static const char* const tcap_optname[] = {
             "screenshot-at", "screenshot-text-at", "screenshot-ansi-at", "dump-ram-at"
@@ -3617,7 +3617,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* Parse des captures déclenchées par état ADDR:VAL:FILE */
+    /* Parse the state-triggered captures ADDR:VAL:FILE */
     if (screenshot_when_arg) {
         if (!cli_split_addr_val_file(screenshot_when_arg, "screenshot-when",
                                      &emu.screenshot_when_addr, &emu.screenshot_when_val,
@@ -3642,9 +3642,9 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
-    /* --poke-at / --poke-when : parsés maintenant que emu (et emu.poke_count=0)
-     * est initialisé. Chaque entrée est ajoutée à emu.pokes[] dans l'ordre de la
-     * ligne de commande, préservant le regroupement voulu (ex. cx, cy, clic). */
+    /* --poke-at / --poke-when: parsed now that emu (and emu.poke_count=0)
+     * is initialised. Each entry is appended to emu.pokes[] in
+     * command-line order, preserving the intended grouping (e.g. cx, cy, click). */
     for (int i = 0; i < poke_arg_count; i++) {
         bool ok = poke_args[i].is_when
                     ? cli_add_poke_when(&emu, poke_args[i].arg)
@@ -3679,11 +3679,11 @@ int main(int argc, char* argv[]) {
      * "loci-hid:" to route keys via the LOCI HID bitmap instead of the
      * ORIC keyboard matrix — useful for automating the LOCI TUI).
      *
-     * Plusieurs --type-keys peuvent être passés : ils sont empilés dans une
-     * file (triée par cycle d'armement) et activés l'un après l'autre une
-     * fois le précédent terminé. Cela remplace l'ancien « un seul --type-keys
-     * retenu » et permet de séquencer proprement un parcours multi-écrans à
-     * touches répétées (1 au cycle X, 1 au cycle Y, …). */
+     * Several --type-keys may be given: they are stacked in a
+     * queue (sorted by arming cycle) and activated one after the other once
+     * the previous one is finished. This replaces the old « only one --type-keys
+     * kept » and allows cleanly sequencing a multi-screen walkthrough with
+     * repeated keys (1 at cycle X, 1 at cycle Y, …). */
     for (int i = 0; i < type_keys_arg_count; i++) {
         const char* arg = type_keys_args[i];
         const char* colon = strchr(arg, ':');
@@ -3704,7 +3704,7 @@ int main(int argc, char* argv[]) {
         emu.type_keys_seq_count++;
     }
     if (emu.type_keys_seq_count > 0) {
-        /* Tri stable par cycle d'armement croissant (insertion : N <= 16). */
+        /* Stable sort by increasing arming cycle (insertion: N <= 16). */
         for (int i = 1; i < emu.type_keys_seq_count; i++) {
             for (int j = i; j > 0 &&
                  emu.type_keys_seq[j].at < emu.type_keys_seq[j-1].at; j--) {
@@ -3717,8 +3717,8 @@ int main(int argc, char* argv[]) {
                 emu.type_keys_seq[j-1].loci_hid = thid;
             }
         }
-        /* Active la première entrée ; les suivantes le seront dans la boucle
-         * d'émulation par activate-next quand leur cycle sera atteint. */
+        /* Activates the first entry; the following ones will be activated in the
+         * emulation loop by activate-next when their cycle is reached. */
         emu.type_keys_at = emu.type_keys_seq[0].at;
         emu.type_keys_text = emu.type_keys_seq[0].text;
         emu.type_keys_loci_hid = emu.type_keys_seq[0].loci_hid;
@@ -3745,7 +3745,7 @@ int main(int argc, char* argv[]) {
     emu.diskrom_path = disk_rom_file;
     emu.tape_path = tape_file;
 
-    /* Suivi par lecteur pour le write-back / l'éjection depuis l'OSD. */
+    /* Per-drive tracking for write-back / ejection from the OSD. */
     emu.disk_writeback = disk_writeback;
     for (int i = 0; i < MICRODISC_MAX_DRIVES; i++)
         emu.disk_paths[i] = disk_files[i];
@@ -4076,9 +4076,9 @@ int main(int argc, char* argv[]) {
         emu.microdisc.cpu_userdata = &emu;
         emu.has_microdisc = true;
 
-        /* Languette de protection en écriture : posée explicitement, ou déduite
-         * du fichier lui-même — un .dsk en lecture seule sur l'hôte se comporte
-         * comme une disquette dont la languette est ouverte. */
+        /* Write-protect tab: set explicitly, or inferred
+         * from the file itself — a .dsk that is read-only on the host behaves
+         * like a floppy whose tab is open. */
         {
             bool wp = disk_write_protect;
             if (!wp && disk_files[0] && access(disk_files[0], W_OK) != 0)
@@ -4141,11 +4141,11 @@ int main(int argc, char* argv[]) {
                      emu.disks[i]->tracks, emu.disks[i]->sectors);
         }
 
-        /* --disk-web URL : monte en lecteur A un disque dont les secteurs sont
-         * servis par un serveur HTTP (projet loci-webdisk, architecture B). On
-         * lit d'abord l'en-tête MFM_DISK distant (256 o) pour la géométrie, on
-         * alloue une image à plat VIDE, et le FDC va chercher chaque piste MFM
-         * de 6400 o à la demande (fidèle au chemin réel LOCI dsk_web / ATDISKRD). */
+        /* --disk-web URL: mounts as drive A a disk whose sectors are
+         * served by an HTTP server (loci-webdisk project, architecture B). The
+         * remote MFM_DISK header (256 bytes) is read first for the geometry, an
+         * EMPTY flat image is allocated, and the FDC fetches each 6400-byte MFM track
+         * on demand (faithful to the real LOCI dsk_web / ATDISKRD path). */
         if (disk_web_url && !emu.disks[0]) {
             uint8_t hdr[MFM_DISK_HEADER_SIZE];
             long hn = disk_http_get(disk_web_url, 0, MFM_DISK_HEADER_SIZE,
@@ -4175,21 +4175,21 @@ int main(int argc, char* argv[]) {
             emu.disks[0]->tracks  = (uint8_t)tracks;
             emu.disks[0]->sectors = spt;
             emu.disks[0]->sides   = (uint8_t)sides;
-            emu.disks[0]->is_mfm  = false;   /* pas de write-back local */
+            emu.disks[0]->is_mfm  = false;   /* no local write-back */
 
             microdisc_set_disk(&emu.microdisc, 0, emu.disks[0]->data, emu.disks[0]->size,
                                emu.disks[0]->tracks, emu.disks[0]->sectors);
-            fdc_set_web(&emu.microdisc.fdc, disk_web_url);   /* après set_disk */
+            fdc_set_web(&emu.microdisc.fdc, disk_web_url);   /* after set_disk */
             log_info("--disk-web: lecteur A servi par %s (%u faces x %u pistes x %u s., "
                      "pistes chargées à la demande)", disk_web_url, sides, tracks, spt);
         }
 
-        /* --disk-create : monte une disquette Sedoric vierge en lecteur A et
-         * l'écrit aussitôt sur FILE. INIT/format à l'intérieur ; le write-back
-         * de sortie (armé avec cette option) persiste les changements. */
+        /* --disk-create: mounts a blank Sedoric floppy as drive A and
+         * writes it immediately to FILE. INIT/format inside; the exit
+         * write-back (armed with this option) persists the changes. */
         if (disk_create_file && !emu.disks[0]) {
-            /* Double face 42 pistes : géométrie que formate INIT B de Sedoric
-             * (un blank simple face était sous-dimensionné, Sprint 66). */
+            /* Double-sided 42 tracks: the geometry that Sedoric's INIT B formats
+             * (a single-sided blank was undersized, Sprint 66). */
             emu.disks[0] = sedoric_create_blank(SEDORIC_TRACKS, 2);
             if (!emu.disks[0]) {
                 log_error("disk-create: allocation de la disquette vierge impossible");
@@ -4210,17 +4210,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    /* --loci-web : autoboot NATIF LOCI. Le disque web est déjà monté sur le FDC
-     * de la LOCI (loci_dsk_open_web) ; il ne reste qu'à installer l'overlay ROM
-     * Microdisc à $A000 — exactement ce que fait MIA_BOOT avec LOCI_BOOT_FDC —
-     * pour que le code de boot lise le disque via $0310 (routé vers le FDC LOCI,
-     * web-backed sous --loci) et démarre Sedoric sans passer par le menu. Le ROM
-     * -r (BASIC) est déjà chargé à $C000 ; on ne touche donc que $A000. */
+    /* --loci-web: NATIVE LOCI autoboot. The web disk is already mounted on the
+     * LOCI's FDC (loci_dsk_open_web); all that remains is to install the Microdisc
+     * ROM overlay at $A000 — exactly what MIA_BOOT does with LOCI_BOOT_FDC —
+     * so that the boot code reads the disk via $0310 (routed to the LOCI FDC,
+     * web-backed under --loci) and boots Sedoric without going through the menu. The
+     * -r ROM (BASIC) is already loaded at $C000; so only $A000 is touched. */
     if (loci_web_url && emu.has_loci) {
         char disc[512] = {0};
-        const char* cand = disk_rom_file;                 /* --disk-rom si fourni */
+        const char* cand = disk_rom_file;                 /* --disk-rom if provided */
         if ((!cand || access(cand, R_OK) != 0) && rom_file) {
-            const char* slash = strrchr(rom_file, '/');   /* voisin de la ROM -r */
+            const char* slash = strrchr(rom_file, '/');   /* next to the -r ROM */
             if (slash) {
                 snprintf(disc, sizeof(disc), "%.*s/microdis.rom",
                          (int)(slash - rom_file), rom_file);
@@ -4400,15 +4400,15 @@ int main(int argc, char* argv[]) {
     /* CPU trace logging */
     trace_init(&emu.trace);
     if (trace_file) {
-        /* --symbols annote la trace avec les labels, dans LES DEUX modes.
-         * (Avant : seuls le trace conditionnel IPC/debugger l'exploitaient ; le
-         * --trace streaming ignorait --symbols.) */
+        /* --symbols annotates the trace with labels, in BOTH modes.
+         * (Before: only the conditional IPC/debugger trace used it; the
+         * streaming --trace ignored --symbols.) */
         bool trace_syms = (symbols_file != NULL);
         if (trace_syms) trace_set_symbols(&emu.trace, &emu.symbols);
         if (trace_ring > 0) {
-            /* Mode ring/tail : garde en mémoire les N DERNIÈRES instructions
-             * (idéal pour un hang profond, là où --trace-max ne garde que les
-             * PREMIÈRES) et les écrit à la sortie via trace_save_ring(). */
+            /* Ring/tail mode: keeps the N LAST instructions in memory
+             * (ideal for a deep hang, where --trace-max only keeps the
+             * FIRST ones) and writes them on exit via trace_save_ring(). */
             trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
                       (uint32_t)trace_ring, trace_syms);
             log_info("CPU trace ring armed (last %lld instructions) -> %s",
@@ -4418,21 +4418,21 @@ int main(int argc, char* argv[]) {
             if (!trace_open(&emu.trace, trace_file)) {
                 log_error("Failed to open trace file: %s", trace_file);
             } else if (trace_syms) {
-                /* Streaming + symboles : (re)arme en mode "now" (ring_cap=0) pour
-                 * activer l'annotation symbolique sur le fp déjà ouvert. */
+                /* Streaming + symbols: (re)arm in "now" mode (ring_cap=0) to
+                 * enable symbolic annotation on the already-open fp. */
                 trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
                           0, true);
             }
         }
     }
 
-    /* Cœur micro-séquencé (--cpu-microseq, V2-E1) : chaque cycle émet son
-     * propre accès bus, accès factices du NMOS inclus. Opt-in le temps de la
-     * migration ; sémantique identique au moteur historique (mêmes fonctions
-     * de calcul), seul l'ordonnancement des cycles change. */
+    /* Micro-sequenced core (--cpu-microseq, V2-E1): each cycle emits its
+     * own bus access, NMOS dummy accesses included. Opt-in during the
+     * migration; semantics identical to the historical engine (same computation
+     * functions), only the ordering of the cycles changes. */
     cpu_set_microseq(&emu.cpu, cpu_microseq);
-    /* ULA au cycle (V2-E4) : une cellule fetchée par cycle, à l'instant où le
-     * vrai ULA la lit. Opt-in le temps de la validation. */
+    /* Cycle-level ULA (V2-E4): one cell fetched per cycle, at the instant the
+     * real ULA reads it. Opt-in during validation. */
     emu.ula_per_cycle = ula_per_cycle;
     emu.ula_fetch_offset = ula_fetch_offset;
     if (!ula_per_cycle)
@@ -4443,9 +4443,9 @@ int main(int argc, char* argv[]) {
     if (!cpu_microseq)
         log_info("CPU: cœur historique (--cpu-legacy) — pas d'accès factices");
 
-    /* Trace bus cycle par cycle (--cycle-trace) — instrument de la V2.
-     * Branchée sur le crochet d'accès bus du CPU ; les cycles internes sont
-     * émis par cpu_cycle_tick(), qui appelle cycle_trace_cycles(). */
+    /* Cycle-by-cycle bus trace (--cycle-trace) — a V2 instrument.
+     * Hooked onto the CPU's bus-access hook; the internal cycles are
+     * emitted by cpu_cycle_tick(), which calls cycle_trace_cycles(). */
     if (cycle_trace_file) {
         if (!cycle_trace_open(cycle_trace_file, cycle_trace_max)) {
             log_error("Failed to open cycle trace file: %s", cycle_trace_file);
@@ -4494,9 +4494,9 @@ int main(int argc, char* argv[]) {
     g_web_emu = &emu;
 #endif
 
-    /* --tape-out-capture : arme la capture de l'onde tape-OUT (PB7 piloté par
-     * Timer 1). Indépendant de -t (CSAVE écrit, aucun tape d'entrée requis). En
-     * mode capture, les hooks CSAVE PC-1.1 sont neutralisés (cf. tape write). */
+    /* --tape-out-capture: arms the capture of the tape-OUT waveform (PB7 driven by
+     * Timer 1). Independent of -t (CSAVE writes, no input tape required). In
+     * capture mode, the CSAVE PC-1.1 hooks are neutralised (cf. tape write). */
     if (tape_out_capture_arg) {
         emu.tape_out_path = tape_out_capture_arg;
         tape_capture_begin(&emu.tape_capture);
@@ -4506,7 +4506,7 @@ int main(int argc, char* argv[]) {
     /* Run emulation */
     emulator_run(&emu);
 
-    /* Écrit le .TAP reconstruit depuis l'onde PB7 capturée. */
+    /* Writes the .TAP rebuilt from the captured PB7 waveform. */
     if (tape_out_capture_arg && emu.tape_capture.active) {
         FILE* tf = fopen(tape_out_capture_arg, "wb");
         if (tf) {
@@ -4564,7 +4564,7 @@ int main(int argc, char* argv[]) {
      * flag to never clobber a .dsk by accident. */
     if (disk_writeback && (emu.has_microdisc || emu.has_jasmin)) {
         for (int i = 0; i < emu_disk_max_drives(&emu); i++) {
-            /* disk_paths[] suit les swaps OSD ; disk_files[] ne voit qu'argv. */
+            /* disk_paths[] follows the OSD swaps; disk_files[] only sees argv. */
             const char* path = emu.disk_paths[i];
             if (!emu_disk_dirty(&emu, i) || !path || !emu.disks[i])
                 continue;
@@ -4590,8 +4590,8 @@ int main(int argc, char* argv[]) {
         profiler_report_to_file(&emu.profiler, profile_file);
     }
 
-    /* --trace-ring : à la fin du run, écrire les N dernières instructions
-     * gardées en mémoire (ordre ancien → récent) dans le fichier de trace. */
+    /* --trace-ring: at the end of the run, write the N last instructions
+     * kept in memory (oldest → newest) into the trace file. */
     if (trace_file && trace_ring > 0) {
         if (trace_save_ring(&emu.trace, trace_file))
             log_info("CPU trace ring saved (%u instructions) -> %s",
@@ -4600,8 +4600,8 @@ int main(int argc, char* argv[]) {
             log_warning("CPU trace ring empty (no instructions recorded) -> %s",
                         trace_file);
     }
-    /* Diagnostic : un transfert disque sain ne perd aucun octet. Si le compteur
-     * n'est pas nul, le logiciel a servi un DRQ trop tard (ou le modèle dérive). */
+    /* Diagnostic: a healthy disk transfer loses no byte. If the counter
+     * is non-zero, the software serviced a DRQ too late (or the model drifts). */
     if (emu.has_microdisc && emu.microdisc.fdc.lost_data_count)
         log_warning("FDC: %u octet(s) signalé(s) perdus (LOST DATA) pendant la session",
                     emu.microdisc.fdc.lost_data_count);
@@ -4613,9 +4613,9 @@ int main(int argc, char* argv[]) {
                  (unsigned long long)ct_lines, cycle_trace_file);
     }
 
-    /* Un --*-when armé mais jamais déclenché = échec explicite (exit 2), pour
-     * que le CI SCUMM distingue « état de jeu jamais atteint » d'une erreur
-     * d'usage (exit 1) ou d'un succès (exit 0). */
+    /* An armed --*-when that never fired = explicit failure (exit 2), so
+     * that the SCUMM CI can tell « game state never reached » from a usage
+     * error (exit 1) or a success (exit 0). */
     bool when_unmet = emu.when_condition_unmet;
     emulator_cleanup(&emu);
     log_cleanup();

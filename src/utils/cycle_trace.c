@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cycle_trace.c
- * @brief Trace bus cycle par cycle (--cycle-trace)
+ * @brief Cycle-by-cycle bus trace (--cycle-trace)
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-09-10
  *
- * Voir include/utils/cycle_trace.h pour le format et ses limites au niveau N2.
+ * See include/utils/cycle_trace.h for the format and its limits at level N2.
  */
 
 #include "utils/cycle_trace.h"
@@ -15,9 +15,9 @@ static FILE*    ct_fp = NULL;
 static uint64_t ct_lines = 0;
 static uint64_t ct_max = 0;
 
-/* Accès bus en attente d'écriture : posé par cycle_trace_bus(), consommé par
- * le premier cycle de cycle_trace_cycles() — l'ordre d'appel du cœur est
- * toujours « accès puis tick » (cpu_mem_read/cpu_mem_write). */
+/* Bus access pending output: set by cycle_trace_bus(), consumed by
+ * the first cycle of cycle_trace_cycles() -- the core's call order is
+ * always "access then tick" (cpu_mem_read/cpu_mem_write). */
 static bool     ct_pending = false;
 static uint16_t ct_addr;
 static uint8_t  ct_val;
@@ -74,8 +74,8 @@ static void ct_line(const cpu6502_t* cpu, uint64_t cycle, char type) {
 
 void cycle_trace_cycles(const cpu6502_t* cpu, int cycles) {
     if (!cycle_trace_active() || cycles <= 0) return;
-    /* cpu->cycles a déjà été avancé de `cycles` par cpu_tick() : le premier
-     * cycle de ce lot porte donc le numéro cycles_courants - cycles. */
+    /* cpu->cycles has already been advanced by `cycles` in cpu_tick(): the first
+     * cycle of this batch therefore has number current_cycles - cycles. */
     uint64_t base = cpu->cycles - (uint64_t)cycles;
     int i = 0;
     if (ct_pending) {

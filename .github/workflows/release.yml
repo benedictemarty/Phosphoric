@@ -1,12 +1,12 @@
-# Release automatique sur tag (backlog distribution v2, livré en 2.0.2).
+# Automatic release on tag (distribution backlog v2, delivered in 2.0.2).
 #
-# Un tag `vX.Y.Z` poussé sur GitHub produit, sur le commit tagué :
-#   - phosphoric-<ver>-linux-x86_64.tar.gz  (build SDL2 strippé + docs)
-#   - phosphoric-<ver>-windows-x86_64.zip   (cross-build MinGW, mêmes étapes
-#                                            que windows-build.yml)
-# et les attache à la release GitHub du tag (créée si absente, notes = la
-# entrée correspondante de VERSION_TRACKING ; le CHANGELOG est tenu en local). `--clobber` : relancer remplace.
-# Test sans tag : workflow_dispatch avec le nom d'un tag existant.
+# A `vX.Y.Z` tag pushed to GitHub produces, on the tagged commit:
+#   - phosphoric-<ver>-linux-x86_64.tar.gz  (stripped SDL2 build + docs)
+#   - phosphoric-<ver>-windows-x86_64.zip   (MinGW cross-build, same steps
+#                                            as windows-build.yml)
+# and attaches them to the tag's GitHub release (created if missing, notes = the
+# matching VERSION_TRACKING entry; the CHANGELOG is kept locally). `--clobber`: re-running replaces.
+# Test without a tag: workflow_dispatch with the name of an existing tag.
 name: release
 
 on:
@@ -109,8 +109,8 @@ jobs:
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           ver="${tag#v}"
-          # La ligne "Status…" de VERSION_TRACKING dont le titre finit par
-          # "— <ver>**" (le CHANGELOG, tenu en local, n'est pas dans le dépôt).
+          # The "Status…" line of VERSION_TRACKING whose title ends with
+          # "— <ver>**" (the CHANGELOG, kept locally, is not in the repository).
           awk -v v="$ver" '
             /^Status/ && index($0, "— " v "**") { sub(/^Status[^:]*: */, ""); print; exit }
             ' VERSION_TRACKING > notes.md

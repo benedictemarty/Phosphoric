@@ -1,36 +1,36 @@
-# Investigation : CSAVE BASIC 1.0 (ORIC-1) — `csave_end` jamais tiré
+# Investigation: CSAVE BASIC 1.0 (ORIC-1) — `csave_end` never fires
 
-**Pour** : ingé sénior, suite de la review v1.16.44 → v1.16.45
-**Date** : 2026-06-07
-**Versions concernées** : tout depuis v1.16.43 (sprint 34aq, première
-implémentation de la reconstruction TAP au `csave_end`)
-**État** : root cause identifiée par désassemblée, fix proposé en
-attente de ton OK
+**For**: senior engineer, follow-up to the v1.16.44 → v1.16.45 review
+**Date**: 2026-06-07
+**Versions affected**: everything since v1.16.43 (sprint 34aq, first
+implementation of TAP reconstruction at `csave_end`)
+**Status**: root cause identified by disassembly, fix proposed, awaiting
+your OK
 
 ---
 
-## 1. Symptôme
+## 1. Symptom
 
-Sur Atmos (BASIC 1.1) :
+On Atmos (BASIC 1.1):
 ```
 CSAVE "T1" → CSAVE: built TAP T1.tap (30 bytes, prog $0501-$050E) ✓
-CLOAD "T1" → programme chargé, LIST OK
+CLOAD "T1" → program loaded, LIST OK
 ```
 
-Sur Oric-1 (BASIC 1.0) avec le même scénario :
+On Oric-1 (BASIC 1.0) with the same scenario:
 ```
-CSAVE "T2" → fichier T2.tap créé mais 0 byte
-CLOAD "T2" → "Searching ..." infini
+CSAVE "T2" → file T2.tap created but 0 bytes
+CLOAD "T2" → endless "Searching ..."
 ```
 
 ---
 
-## 2. Reachability des traps
+## 2. Reachability of the traps
 
-Instrumentation `log_info` au tout début de chaque branche du
-gestionnaire `tape_patches()` (commits non poussés) :
+`log_info` instrumentation at the very beginning of each branch of the
+`tape_patches()` handler (unpushed commits):
 
-### Atmos (BASIC 1.1) — référence qui marche
+### Atmos (BASIC 1.1) — working reference
 ```
 TRACE: writeleader_entry $E75A (PC=$E75A SP=$F7)
 CSAVE: saving to T1.tap
@@ -43,7 +43,7 @@ TRACE: csave_end $E93C fired       ← ✓
 CSAVE: built TAP T1.tap (30 bytes, ...)
 ```
 
-### Oric-1 (BASIC 1.0) — qui ne marche pas
+### Oric-1 (BASIC 1.0) — not working
 ```
 TRACE: writeleader_entry $E6BA (PC=$E6BA SP=$F7)
 CSAVE: saving to T2.tap
@@ -52,117 +52,117 @@ TRACE: putbyte_entry $E5C6 cnt=1
 TRACE: putbyte_entry $E5C6 cnt=2
 TRACE: putbyte_entry $E5C6 cnt=3
 TRACE: putbyte_entry $E5C6 cnt=4
-<rien — csave_end $E7FE n'apparaît jamais>
+<nothing — csave_end $E7FE never shows up>
 ```
 
-Constat : writeleader et putbyte firent normalement. Le trap
-`csave_end = $E7FE` jamais.
+Finding: writeleader and putbyte fire normally. The trap
+`csave_end = $E7FE` never does.
 
 ---
 
-## 3. Désassemblée de la chaîne CSAVE Oric-1
+## 3. Disassembly of the Oric-1 CSAVE chain
 
-### Routine CSAVE outer à `$E7DB`
+### Outer CSAVE routine at `$E7DB`
 
 ```asm
 $E7DB: A5 9A         LDA $9A         ; TXTTAB lo
 $E7DD: A4 9B         LDY $9B         ; TXTTAB hi
-$E7DF: 85 5F         STA $5F         ; copie TXTTAB → $5F/$60
+$E7DF: 85 5F         STA $5F         ; copy TXTTAB → $5F/$60
 $E7E1: 84 60         STY $60
 $E7E3: A5 9C         LDA $9C         ; VARTAB lo
 $E7E5: A4 9D         LDY $9D         ; VARTAB hi
-$E7E7: 85 61         STA $61         ; copie VARTAB → $61/$62
+$E7E7: 85 61         STA $61         ; copy VARTAB → $61/$62
 $E7E9: 84 62         STY $62
 $E7EB: 08            PHP
 $E7EC: 20 25 E7      JSR $E725       ; ?? (setup)
 $E7EF: 20 CA E6      JSR $E6CA       ; SetupTapeOutput (PSG init)
-$E7F2: 20 7B E5      JSR $E57B       ; WriteFileHeader → écrit leader + sync + header + filename
-$E7F5: 20 04 E8      JSR $E804       ; WriteDataBlock — ne revient pas !
+$E7F2: 20 7B E5      JSR $E57B       ; WriteFileHeader → writes leader + sync + header + filename
+$E7F5: 20 04 E8      JSR $E804       ; WriteDataBlock — does not return!
 $E7F8: 28            PLP
 $E7F9: A6 A9         LDX $A9
 $E7FB: E8            INX
 $E7FC: F0 01         BEQ $E7FF
-$E7FE: 60            RTS              ← csave_end actuel (jamais atteint)
+$E7FE: 60            RTS              ← current csave_end (never reached)
 $E7FF: 68            PLA
 $E800: 68            PLA
 $E801: 4C 6B C9      JMP $C96B
 ```
 
-### La sub-routine `WriteDataBlock` à `$E804` (la « pierre angulaire »)
+### The `WriteDataBlock` subroutine at `$E804` (the "keystone")
 
 ```asm
-$E804: 20 63 E5      JSR $E563        ; écrit les données du programme
-$E807: 20 39 F4      JSR $F439        ; cleanup ?
-$E80A: 4C D0 EB      JMP $EBD0        ; ← JMP ! jamais retour !
+$E804: 20 63 E5      JSR $E563        ; writes the program data
+$E807: 20 39 F4      JSR $F439        ; cleanup?
+$E80A: 4C D0 EB      JMP $EBD0        ; ← JMP! never returns!
 ```
 
-**Cause racine** : `$E80A` est un `JMP`, pas un `RTS`. Le contrôle ne
-revient JAMAIS au `JSR $E804` du caller à `$E7F5`, et donc le `RTS` à
-`$E7FE` n'est jamais exécuté.
+**Root cause**: `$E80A` is a `JMP`, not an `RTS`. Control NEVER
+returns to the caller's `JSR $E804` at `$E7F5`, and therefore the `RTS` at
+`$E7FE` is never executed.
 
-`$EBD0` est très probablement le point d'entrée du « Ready » prompt
-BASIC (à confirmer par toi si tu as la table de symboles ORIC-1, mais
-le pattern `JMP $EBD0` après cleanup est canonique pour les commandes
-non-retournables comme NEW, CLOAD, CSAVE qui rebondissent direct au
+`$EBD0` is very probably the entry point of the BASIC "Ready" prompt
+(to be confirmed by you if you have the ORIC-1 symbol table, but
+the `JMP $EBD0` after cleanup pattern is canonical for non-returning
+commands like NEW, CLOAD, CSAVE that bounce straight back to the
 main loop).
 
 ---
 
-## 4. Comparaison avec Atmos (BASIC 1.1)
+## 4. Comparison with Atmos (BASIC 1.1)
 
-Sur Atmos, `csave_end = $E93C` fire normalement. Sans la table de
-symboles complète, je n'ai pas confirmé que `$E93C` soit un `RTS` ou si
-Atmos a une structure différente (peut-être un `RTS` propre, ou peut-être
-ma trap fire sur une instruction intermédiaire et la routine continue).
+On Atmos, `csave_end = $E93C` fires normally. Without the full symbol
+table, I have not confirmed whether `$E93C` is an `RTS` or whether
+Atmos has a different structure (maybe a clean `RTS`, or maybe
+my trap fires on an intermediate instruction and the routine carries on).
 
-Question pour toi : Atmos `CSAVE` revient-il vraiment proprement par RTS
-chain, ou est-ce que ma trap à `$E93C` fire par hasard parce que c'est
-une instruction commune dans le path et que `csave_byte_count` me
-permet de catch le premier hit ?
+Question for you: does the Atmos `CSAVE` really return cleanly through an RTS
+chain, or does my trap at `$E93C` fire by chance because it is
+a common instruction on the path and `csave_byte_count` lets me
+catch the first hit?
 
 ---
 
-## 5. Fixes envisagés
+## 5. Fixes considered
 
-### Option A — Trap au JMP `$E80A`
+### Option A — Trap on the JMP at `$E80A`
 
 ```c
 .csave_end = 0xE80A,   /* BASIC 1.0 — JMP $EBD0 marks end of CSAVE work */
 ```
 
-Avantage : minimum d'invasivité, suit exactement la sémantique « fin
-de tous les outputs CSAVE ». Mon code rebuilds le TAP avant que la JMP
-exécute, donc le file et `tapebuf` sont prêts quand BASIC revient au
+Advantage: minimally invasive, follows exactly the semantics of "end
+of all CSAVE output". My code rebuilds the TAP before the JMP
+executes, so the file and `tapebuf` are ready when BASIC returns to the
 prompt.
 
-Risque : pas vu. Le `JMP` est en fin de chain, pas en milieu de boucle.
-Pas d'effet de bord sur les registres CPU (on intercepte avant la JMP
-mais on laisse le PC inchangé sauf en sortant explicitement).
+Risk: none seen. The `JMP` is at the end of the chain, not in the middle of a loop.
+No side effect on CPU registers (we intercept before the JMP
+but leave PC unchanged unless explicitly exiting).
 
-### Option B — Trap au `JSR $F439` à `$E807`
+### Option B — Trap on the `JSR $F439` at `$E807`
 
 ```c
 .csave_end = 0xE807,
 ```
 
-Tire après `JSR $E563` (écriture des données du programme) mais avant
-le cleanup `JSR $F439`. Donne un point plus tôt, utile si on veut
-encore manipuler la RAM avant que BASIC fasse du cleanup. Mais on
-intercepte une instruction au milieu d'un cleanup → semantically less
-clean qu'Option A.
+Fires after `JSR $E563` (writing of the program data) but before
+the `JSR $F439` cleanup. Gives an earlier point, useful if we still want
+to manipulate RAM before BASIC does its cleanup. But we
+intercept an instruction in the middle of a cleanup → semantically less
+clean than Option A.
 
-### Option C — Étendre le mécanisme `csave_end` à plusieurs adresses
+### Option C — Extend the `csave_end` mechanism to several addresses
 
-Le champ `rom_patches_t.csave_end` est un seul `uint16_t`. Si une ROM
-finissait son CSAVE via plusieurs paths (par exemple JMP normal ou
-RTS d'erreur), un seul point ne suffirait pas. Un `uint16_t csave_ends[4]`
-+ comptage 0-terminé donnerait plus de flexibilité. **Pas justifié
-pour 34at**, juste à garder en tête.
+The `rom_patches_t.csave_end` field is a single `uint16_t`. If a ROM
+finished its CSAVE via several paths (for example a normal JMP or an
+error RTS), a single point would not be enough. A `uint16_t csave_ends[4]`
++ 0-terminated count would give more flexibility. **Not justified
+for 34at**, just something to keep in mind.
 
-### Option D — Sourcer le buffer staging Oric-1
+### Option D — Source the Oric-1 staging buffer
 
-Découverte additionnelle pendant l'investigation : la routine
-`$E57B WriteFileHeader` lit son header de buffer **`$5E..$66` (zero page)** :
+Additional discovery during the investigation: the routine
+`$E57B WriteFileHeader` reads its header from the buffer **`$5E..$66` (zero page)**:
 
 ```asm
 $E57B: 20 BA E6      JSR $E6BA       ; writeleader (writes 6 leader bytes)
@@ -170,7 +170,7 @@ $E57E: A9 24         LDA #$24        ; sync
 $E580: 20 C6 E5      JSR $E5C6       ; PutByte
 $E583: A2 09         LDX #$09        ; X = 9
 $E585: B5 5D         LDA $5D,X       ; ← header @ $5D+1..$5D+9 = $5E..$66
-$E587: 20 C6 E5      JSR $E5C6       ; PutByte chaque byte
+$E587: 20 C6 E5      JSR $E5C6       ; PutByte each byte
 $E58A: CA            DEX
 $E58B: D0 F8         BNE $E585
 $E58D: B5 35         LDA $35,X       ; X=0 → filename @ $0035
@@ -180,13 +180,13 @@ $E594: E8            INX
 $E595: D0 F6         BNE $E58D
 ```
 
-**Le buffer Oric-1 est en ZP à `$5E..$66`** (9 bytes, lus en reverse via
-LDX#9 / DEX / BNE — même pattern qu'Atmos). Filename à `$0035` (comme
-notre fallback historique).
+**The Oric-1 buffer is in ZP at `$5E..$66`** (9 bytes, read in reverse via
+LDX#9 / DEX / BNE — same pattern as Atmos). Filename at `$0035` (like
+our historical fallback).
 
-Mapping mémoire → tape (X=9..1) :
+Memory → tape mapping (X=9..1):
 
-| Adresse | Byte tape | Sens (présumé, à confirmer) |
+| Address | Tape byte | Meaning (presumed, to be confirmed) |
 |---------|-----------|------------------------------|
 | `$66` | #1 | padding |
 | `$65` | #2 | padding |
@@ -198,75 +198,75 @@ Mapping mémoire → tape (X=9..1) :
 | `$5F` | #8 | start_lo |
 | `$5E` | #9 | null sep |
 
-Confirmation : la routine CSAVE outer à `$E7DB` copie `TXTTAB → $5F/$60`
-et `VARTAB → $61/$62` juste avant d'appeler `$E57B`. Donc `$5F/$60 = start`
-et `$61/$62 = end`. Ça matche le mapping ci-dessus.
+Confirmation: the outer CSAVE routine at `$E7DB` copies `TXTTAB → $5F/$60`
+and `VARTAB → $61/$62` just before calling `$E57B`. So `$5F/$60 = start`
+and `$61/$62 = end`. This matches the mapping above.
 
-→ On peut donner à Oric-1 un `csave_header_buf = 0x005E` propre dans
-`rom_patches_t`, comme Atmos a `0x02A8`. Subsume la fallback
-TXTTAB/VARTAB et marche aussi pour les CSAVE machine-code Oric-1
-(`,A,E`) si le ROM les supporte.
+→ We can give Oric-1 its own proper `csave_header_buf = 0x005E` in
+`rom_patches_t`, just as Atmos has `0x02A8`. This subsumes the
+TXTTAB/VARTAB fallback and also works for Oric-1 machine-code CSAVEs
+(`,A,E`) if the ROM supports them.
 
 ---
 
-## 6. Plan d'attaque proposé pour 34at
+## 6. Proposed plan of attack for 34at
 
-1. **Fix `csave_end` Oric-1** : `0xE7FE` → `0xE80A` (Option A)
-2. **Ajouter `csave_header_buf = 0x005E`** pour `rom_patches_basic10`
-3. **Tester round-trip BASIC 1.0** : `10 PRINT "HI"` → `CSAVE "T2"` →
+1. **Fix Oric-1 `csave_end`**: `0xE7FE` → `0xE80A` (Option A)
+2. **Add `csave_header_buf = 0x005E`** for `rom_patches_basic10`
+3. **Test the BASIC 1.0 round trip**: `10 PRINT "HI"` → `CSAVE "T2"` →
    `NEW` → `CLOAD "T2"` → `LIST`
-4. **Valider que TAP `T2.tap` matche format AIGLE.TAP** byte-pour-byte
-   sur le header (sauf adresses)
-5. **Régression Atmos** : s'assurer que rien ne casse
+4. **Validate that TAP `T2.tap` matches the AIGLE.TAP format** byte for byte
+   on the header (except addresses)
+5. **Atmos regression**: make sure nothing breaks
 
-Questions ouvertes pour toi :
+Open questions for you:
 
-- Confirmation de `$EBD0` = main loop entry sur Oric-1 ? Si oui le
-  pattern de fix par JMP-trap est bon. Sinon, peut-être faut-il un
-  autre point.
+- Can you confirm `$EBD0` = main loop entry on Oric-1? If so, the
+  JMP-trap fix pattern is right. Otherwise, perhaps another point
+  is needed.
 
-- Sur Atmos, `$E93C` est-il vraiment le RTS de la routine CSAVE outer,
-  ou est-ce que la même structure JMP-au-main-loop existe et que ma
-  trap fire par accident sur une instruction au milieu ? Si c'est le
-  cas, on devrait peut-être migrer Atmos vers la même stratégie
-  (trap au JMP final, pas au RTS supposé) pour cohérence.
+- On Atmos, is `$E93C` really the RTS of the outer CSAVE routine,
+  or does the same JMP-to-main-loop structure exist, with my
+  trap firing by accident on an instruction in the middle? If so,
+  we should perhaps migrate Atmos to the same strategy
+  (trap on the final JMP, not on the presumed RTS) for consistency.
 
-- Y a-t-il un cas où `BEQ $E7FF` à `$E7FC` (sur Oric-1) est pris
-  (`X+1 == 0`) ? Si oui, le code à `$E7FF: PLA PLA JMP $C96B` est une
-  voie de sortie alternative (erreur ?). Mon trap à `$E80A` la rate.
-  Probablement pas grave (erreur ROM = pas de TAP à reconstruire) mais
-  je préfère vérifier avec toi.
+- Is there a case where `BEQ $E7FF` at `$E7FC` (on Oric-1) is taken
+  (`X+1 == 0`)? If so, the code at `$E7FF: PLA PLA JMP $C96B` is an
+  alternative exit path (error?). My trap at `$E80A` misses it.
+  Probably harmless (ROM error = no TAP to rebuild), but
+  I prefer to check with you.
 
 ---
 
-## 7. Métriques rapides
+## 7. Quick metrics
 
-| Item | Valeur |
+| Item | Value |
 |------|--------|
-| Versions impactées | Toutes depuis 1.16.43 (sprint 34aq) |
-| Sévérité | Non-bloquant (Atmos marche, l'usage principal LOCI passe par Atmos), mais embarrassant pour les utilisateurs Oric-1 |
-| Tests régression nécessaires | 470 tests existants + 1 nouveau test E2E Oric-1 round-trip |
-| LOC fix estimé | < 10 (2 lignes dans `rom_patches_basic10` + tests) |
-| Désassemblée nécessaire | Faite, attachée |
+| Versions affected | All since 1.16.43 (sprint 34aq) |
+| Severity | Non-blocking (Atmos works, the main LOCI use goes through Atmos), but embarrassing for Oric-1 users |
+| Regression tests needed | 470 existing tests + 1 new Oric-1 round-trip E2E test |
+| Estimated fix LOC | < 10 (2 lines in `rom_patches_basic10` + tests) |
+| Disassembly needed | Done, attached |
 
 ---
 
-## 8. Annexes
+## 8. Appendices
 
-### A.1 — `basic10.rom` bytes désassemblés
+### A.1 — Disassembled `basic10.rom` bytes
 
 ```
 $E5C6  PutByte:
-       85 2F           STA $2F          ; byte à écrire stocké en ZP
+       85 2F           STA $2F          ; byte to write stored in ZP
        8A 48           TXA PHA
        98 48           TYA PHA
        20 27 E6        JSR $E627
-       ... (logique de parité bit-bang)
+       ... (bit-bang parity logic)
 $E5F2  60              RTS              ; putbyte_end
 
-$E6BA  WriteLeader (6 bytes) :
-       A2 02           LDX #$02         ; 2 itérations externes
-       A0 03           LDY #$03         ; 3 itérations internes
+$E6BA  WriteLeader (6 bytes):
+       A2 02           LDX #$02         ; 2 outer iterations
+       A0 03           LDY #$03         ; 3 inner iterations
        A9 16           LDA #$16
        20 C6 E5        JSR $E5C6        ; PutByte
        88              DEY
@@ -275,12 +275,12 @@ $E6BA  WriteLeader (6 bytes) :
        D0 F5           BNE $E6BE
 $E6C9  60              RTS              ; writeleader_end
 
-$E57B  WriteFileHeader :
+$E57B  WriteFileHeader:
        20 BA E6        JSR $E6BA        ; → 6 leaders
        A9 24           LDA #$24
        20 C6 E5        JSR $E5C6        ; → sync $24
        A2 09           LDX #$09
-$E585: B5 5D           LDA $5D,X        ; ← BUFFER ZP $5E..$66
+$E585: B5 5D           LDA $5D,X        ; ← ZP BUFFER $5E..$66
        20 C6 E5        JSR $E5C6
        CA              DEX
        D0 F8           BNE $E585
@@ -289,9 +289,9 @@ $E585: B5 5D           LDA $5D,X        ; ← BUFFER ZP $5E..$66
        20 C6 E5        JSR $E5C6
        E8              INX
        D0 F6           BNE $E58D
-       20 C6 E5        JSR $E5C6        ; sépaateur final ?
+       20 C6 E5        JSR $E5C6        ; final separator?
 
-$E7DB  CSAVE outer routine :
+$E7DB  CSAVE outer routine:
        A5 9A           LDA $9A          ; TXTTAB → $5F/$60
        A4 9B           LDY $9B
        85 5F           STA $5F
@@ -304,38 +304,38 @@ $E7DB  CSAVE outer routine :
        20 25 E7        JSR $E725        ; ??
        20 CA E6        JSR $E6CA        ; SetupTapeOutput (PSG)
        20 7B E5        JSR $E57B        ; WriteFileHeader
-       20 04 E8        JSR $E804        ; ↓ ne revient JAMAIS
-$E7F8: 28              PLP              ; ← code mort sur le path normal
+       20 04 E8        JSR $E804        ; ↓ NEVER returns
+$E7F8: 28              PLP              ; ← dead code on the normal path
        A6 A9           LDX $A9
        E8              INX
        F0 01           BEQ $E7FF
-$E7FE: 60              RTS              ; ← csave_end actuel, jamais atteint
-$E7FF: 68 68           PLA PLA          ; chemin d'erreur ?
+$E7FE: 60              RTS              ; ← current csave_end, never reached
+$E7FF: 68 68           PLA PLA          ; error path?
        4C 6B C9        JMP $C96B
 
-$E804  WriteDataBlock :
-       20 63 E5        JSR $E563        ; écrit data du programme
+$E804  WriteDataBlock:
+       20 63 E5        JSR $E563        ; writes program data
        20 39 F4        JSR $F439
-$E80A: 4C D0 EB        JMP $EBD0        ; ← VRAI fin de CSAVE
+$E80A: 4C D0 EB        JMP $EBD0        ; ← REAL end of CSAVE
 ```
 
-### A.2 — Comparaison Atmos staging buffer
+### A.2 — Atmos staging buffer comparison
 
 | Sub | Oric-1 (BASIC 1.0) | Atmos (BASIC 1.1) |
 |-----|--------------------|---------------------|
 | WriteFileHeader | `$E57B` | `$E607` |
 | Header buffer base | `$005E` (ZP) | `$02A8` |
 | Filename buffer base | `$0035` | `$027F` |
-| Leader bytes count | 2×3 = 6 | (TBD vraisemblablement plus) |
+| Leader bytes count | 2×3 = 6 | (TBD, probably more) |
 | putbyte_entry | `$E5C6` | `$E65E` |
 | putbyte_end | `$E5F2` | `$E68A` |
-| csave_end (actuel, buggy) | `$E7FE` | `$E93C` (semble OK ?) |
-| csave_end (proposé) | `$E80A` | (à confirmer) |
+| csave_end (current, buggy) | `$E7FE` | `$E93C` (seems OK?) |
+| csave_end (proposed) | `$E80A` | (to be confirmed) |
 
 ---
 
-**Demande explicite** : ton OK sur l'Option A (`csave_end = $E80A`) +
-la table buffer Oric-1 (`csave_header_buf = $005E`), et tes réponses
-aux 3 questions ouvertes en section 6.
+**Explicit request**: your OK on Option A (`csave_end = $E80A`) +
+the Oric-1 buffer table (`csave_header_buf = $005E`), and your answers
+to the 3 open questions in section 6.
 
-— Fin de l'investigation
+— End of the investigation

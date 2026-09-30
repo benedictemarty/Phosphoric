@@ -263,7 +263,7 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
         via->t1_counter = via->t1_latch;
         via->t1_running = true;
         via->t1_active = true;
-        via->t1_reload = false;   /* une écriture annule un rechargement en attente */
+        via->t1_reload = false;   /* a write cancels a pending reload */
         via->ifr &= ~VIA_INT_T1;
         /* ACR bit7 one-shot PB7 mode (bit6=0): writing T1CH pulls PB7 low for
          * the duration of the count; the underflow drives it high again. PB7 is
@@ -348,66 +348,66 @@ void via_update(via6522_t* via, int cycles) {
         }
     }
 
-    /* ─── Timer 1 (V2-E3 : décompte cycle par cycle) ───
+    /* ─── Timer 1 (V2-E3: cycle-by-cycle countdown) ───
      *
-     * Mécanique du 6522, et elle compte : le compteur décrémente à chaque φ2, et
-     * le sous-dépassement n'est PAS le passage à zéro — c'est le passage de
-     * $0000 à $FFFF, un cycle plus tard. En mode continu, le rechargement depuis
-     * le latch consomme encore un cycle. D'où la période **N+2** de la
-     * datasheet : N décomptes, un cycle de sous-dépassement, un cycle de
-     * rechargement. L'ancienne implémentation tirait dès l'atteinte de zéro et
-     * rechargeait dans le même cycle : période N, soit **2 cycles trop court par
-     * période** (0,02 % d'erreur à 100 Hz, mais 20 % pour N=10 — audible sur les
-     * sons et les digidrums).
+     * 6522 mechanics, and they matter: the counter decrements on every φ2, and
+     * the underflow is NOT reaching zero — it is the transition from
+     * $0000 to $FFFF, one cycle later. In free-run mode, the reload from
+     * the latch takes one more cycle. Hence the **N+2** period of the
+     * datasheet: N countdowns, one underflow cycle, one reload
+     * cycle. The old implementation fired as soon as zero was reached and
+     * reloaded in the same cycle: period N, i.e. **2 cycles too short per
+     * period** (0.02 % error at 100 Hz, but 20 % for N=10 — audible on
+     * sounds and digidrums).
      *
-     * Le compteur continue de décompter après un time-out one-shot (datasheet
-     * p.8 : l'hôte peut lire le temps écoulé depuis l'interruption) ; seul le
-     * TIR est inhibé (t1_running faux). */
+     * The counter keeps counting down after a one-shot time-out (datasheet
+     * p.8: the host can read the time elapsed since the interrupt); only the
+     * TIR is inhibited (t1_running false). */
     if (via->t1_active) {
         for (int i = 0; i < cycles; i++) {
             if (via->t1_reload) {
-                /* Cycle de rechargement : le compteur ne décompte pas. */
+                /* Reload cycle: the counter does not count down. */
                 via->t1_counter = via->t1_latch;
                 via->t1_reload = false;
                 continue;
             }
             bool underflow = (via->t1_counter == 0x0000);
-            via->t1_counter--;               /* $0000 → $FFFF au sous-dépassement */
+            via->t1_counter--;               /* $0000 → $FFFF on underflow */
             if (!underflow) continue;
 
-            if (!via->t1_running) continue;  /* one-shot déjà tiré : il enroule */
+            if (!via->t1_running) continue;  /* one-shot already fired: it wraps */
 
             via->ifr |= VIA_INT_T1;
             via_check_irq(via);
 
-            /* PB7 n'est la sortie de Timer 1 (WRITE cassette de l'ORIC) que si
-             * DDRB bit7 ET ACR bit7 sont à 1 (datasheet p.9). Mode signal carré
-             * (bit6=1) : bascule à chaque sous-dépassement ; one-shot (bit6=0) :
-             * une seule impulsion haute (PB7 ayant été tiré bas à l'écriture
-             * de T1C-H). */
+            /* PB7 is the Timer 1 output (ORIC cassette WRITE) only if
+             * DDRB bit7 AND ACR bit7 are 1 (datasheet p.9). Square-wave mode
+             * (bit6=1): toggles on each underflow; one-shot (bit6=0):
+             * a single high pulse (PB7 having been pulled low on the write
+             * to T1C-H). */
             if ((via->acr & 0x80) && (via->ddrb & 0x80)) {
                 if (via->acr & 0x40)
-                    via->pb7_pin = !via->pb7_pin;   /* signal carré */
+                    via->pb7_pin = !via->pb7_pin;   /* square wave */
                 else
                     via->pb7_pin = true;            /* impulsion one-shot */
             }
 
             if (via->acr & 0x40)
-                via->t1_reload = true;       /* continu : rechargement au cycle suivant */
+                via->t1_reload = true;       /* free-run: reload on the next cycle */
             else
-                via->t1_running = false;     /* one-shot : plus d'interruption */
+                via->t1_running = false;     /* one-shot: no further interrupt */
         }
     }
 
-    /* ─── Timer 2 (mode timer : one-shot seulement ; le mode comptage
-     * d'impulsions est piloté par via_pb6_pulse(), pas par φ2) ───
-     * Même mécanique de sous-dépassement que Timer 1, sans rechargement. */
+    /* ─── Timer 2 (timer mode: one-shot only; pulse-counting mode
+     * is driven by via_pb6_pulse(), not by φ2) ───
+     * Same underflow mechanics as Timer 1, without reload. */
     if (via->t2_active && !(via->acr & 0x20)) {
         for (int i = 0; i < cycles; i++) {
             bool underflow = (via->t2_counter == 0x0000);
             via->t2_counter--;
             if (!underflow) continue;
-            if (!via->t2_running) continue;  /* déjà tiré : le compteur enroule */
+            if (!via->t2_running) continue;  /* already fired: the counter wraps */
             via->ifr |= VIA_INT_T2;
             via_check_irq(via);
             via->t2_running = false;         /* one-shot */

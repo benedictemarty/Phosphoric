@@ -1,24 +1,24 @@
-# Phosphoric — Guide technique liaison série pour OricTel
+# Phosphoric — Serial link technical guide for OricTel
 
 ## Architecture
 
 ```
-Programme ORIC (BASIC/ASM)
+ORIC program (BASIC/ASM)
         │
         │ POKE/PEEK $031C-$031F
         ▼
 ┌─────────────────────┐
-│   ACIA 6551         │  Émulation fidèle MOS 6551
-│   4 registres I/O   │  Cristal 1.8432 MHz / 16
-│   $031C = DATA      │  Frame format variable (5-8 bits + parité + stop)
-│   $031D = STATUS    │  IRQ TX/RX level-triggered
+│   ACIA 6551         │  Faithful MOS 6551 emulation
+│   4 I/O registers   │  1.8432 MHz crystal / 16
+│   $031C = DATA      │  Variable frame format (5-8 bits + parity + stop)
+│   $031D = STATUS    │  Level-triggered TX/RX IRQ
 │   $031E = COMMAND   │
 │   $031F = CONTROL   │
 └────────┬────────────┘
          │ send()/recv()/poll()
          ▼
 ┌─────────────────────┐
-│   Backend série     │  Abstraction vtable (6 implémentations)
+│   Serial backend    │  vtable abstraction (6 implementations)
 │   (interchangeable) │
 └────────┬────────────┘
          │
@@ -26,60 +26,60 @@ Programme ORIC (BASIC/ASM)
     TCP / PTY / COM / etc.
 ```
 
-## Les 4 registres ACIA
+## The 4 ACIA registers
 
 ### $031C — DATA (POKE 796 / PEEK 796)
 
-- **Écriture** : place un octet dans le Transmitter Data Register (TDR)
-  - Le bit TDRE (status bit 4) passe à 0
-  - L'octet est transmis après `tx_reload` cycles CPU
-  - Le masque `bitmask` est appliqué (7-bit mode → bit 7 forcé à 0)
+- **Write**: puts a byte into the Transmitter Data Register (TDR)
+  - The TDRE bit (status bit 4) goes to 0
+  - The byte is transmitted after `tx_reload` CPU cycles
+  - The `bitmask` is applied (7-bit mode → bit 7 forced to 0)
 
-- **Lecture** : lit le Receiver Data Register (RDR)
-  - Efface les flags RDRF, OVRN, PE, FE
-  - Si le FIFO est actif, charge automatiquement le byte suivant depuis la file
+- **Read**: reads the Receiver Data Register (RDR)
+  - Clears the RDRF, OVRN, PE, FE flags
+  - If the FIFO is enabled, automatically loads the next byte from the queue
 
 ### $031D — STATUS (PEEK 797) / RESET (POKE 797)
 
-- **Lecture** : retourne l'état courant
+- **Read**: returns the current state
 
   ```
-  Bit 7 : IRQ (1=IRQ active) — effacé par la lecture
+  Bit 7 : IRQ (1=IRQ active) — cleared by the read
   Bit 6 : DSR (1=DSR inactive, 0=DSR active)
-  Bit 5 : DCD (1=pas de porteuse, 0=porteuse détectée)
-  Bit 4 : TDRE (1=registre TX vide, prêt à envoyer)
-  Bit 3 : RDRF (1=donnée reçue disponible)
-  Bit 2 : OVRN (1=overrun, donnée précédente non lue)
+  Bit 5 : DCD (1=no carrier, 0=carrier detected)
+  Bit 4 : TDRE (1=TX register empty, ready to send)
+  Bit 3 : RDRF (1=received data available)
+  Bit 2 : OVRN (1=overrun, previous data not read)
   Bit 1 : FE (framing error)
   Bit 0 : PE (parity error)
   ```
 
-  **ATTENTION** : lire le status efface le bit IRQ ! C'est le comportement MOS 6551 réel. Si vous utilisez les IRQ en TX+RX simultané, activez `--serial-irq-on-rdrf` (mode WDC 65C51) pour que l'IRQ re-fire tant que RDRF est set.
+  **WARNING**: reading the status clears the IRQ bit! This is the real MOS 6551 behaviour. If you use IRQs with simultaneous TX+RX, enable `--serial-irq-on-rdrf` (WDC 65C51 mode) so that the IRQ re-fires as long as RDRF is set.
 
-- **Écriture** : programmed reset (n'importe quelle valeur)
-  - Remet TDRE=1, efface overrun
-  - Efface les bits 0-4 du Command Register (DTR off, IRQ off)
-  - Préserve les bits 5-7 du Command Register (parité)
-  - Ne touche PAS le Control Register (baud rate conservé)
+- **Write**: programmed reset (any value)
+  - Sets TDRE=1, clears overrun
+  - Clears bits 0-4 of the Command Register (DTR off, IRQ off)
+  - Preserves bits 5-7 of the Command Register (parity)
+  - Does NOT touch the Control Register (baud rate kept)
 
 ### $031E — COMMAND (POKE 798 / PEEK 798)
 
 ```
-Bit 0 : DTR (1=Data Terminal Ready — active le modem)
-Bit 1 : IRD (1=IRQ réception DÉSACTIVÉE, 0=IRQ RX active)
-Bits 3-2 : TIC (contrôle IRQ transmission)
+Bit 0 : DTR (1=Data Terminal Ready — enables the modem)
+Bit 1 : IRD (1=receive IRQ DISABLED, 0=RX IRQ enabled)
+Bits 3-2 : TIC (transmit IRQ control)
   00 = RTS high, TX IRQ off
   01 = RTS low, TX IRQ on
   10 = RTS low, TX IRQ off
   11 = RTS low, break on line
-Bit 4 : ECHO (1=mode écho, renvoie les bytes reçus)
-Bit 5 : PME (1=parité activée)
-Bits 7-6 : PMC (type de parité)
+Bit 4 : ECHO (1=echo mode, sends back the received bytes)
+Bit 5 : PME (1=parity enabled)
+Bits 7-6 : PMC (parity type)
 ```
 
-**Valeur recommandée : `POKE 798,3`** (DTR on + IRQ RX désactivée)
+**Recommended value: `POKE 798,3`** (DTR on + RX IRQ disabled)
 
-Si vous utilisez les IRQ, `POKE 798,1` active DTR + IRQ RX. Mais ATTENTION : chaque byte reçu génère une IRQ. Sans handler ASM, le CPU entre en boucle IRQ infinie car la ROM ne gère pas l'ACIA.
+If you use IRQs, `POKE 798,1` enables DTR + RX IRQ. But WARNING: every received byte generates an IRQ. Without an ASM handler, the CPU enters an infinite IRQ loop because the ROM does not handle the ACIA.
 
 ### $031F — CONTROL (POKE 799 / PEEK 799)
 
@@ -93,11 +93,11 @@ Bits 6-5 : Word Length (00=8bit, 01=7bit, 10=6bit, 11=5bit)
 Bit 7 : Stop Bits (0=1 stop, 1=2 stop)
 ```
 
-**Valeur recommandée : `POKE 799,31`** ($1F = 19200 baud, 8-N-1, clock interne)
+**Recommended value: `POKE 799,31`** ($1F = 19200 baud, 8-N-1, internal clock)
 
-Pour 1200 baud 8-N-1 : `POKE 799,24` ($18)
+For 1200 baud 8-N-1: `POKE 799,24` ($18)
 
-## Séquence d'initialisation minimale
+## Minimal initialisation sequence
 
 ```basic
 10 DA=796:ST=797:CM=798:CT=799
@@ -106,23 +106,23 @@ Pour 1200 baud 8-N-1 : `POKE 799,24` ($18)
 40 POKE CM,3          : REM DTR on, IRQ RX off
 ```
 
-## Envoi d'un octet
+## Sending a byte
 
 ```basic
-100 REM Attendre que le TX soit libre
+100 REM Wait until TX is free
 110 IF (PEEK(ST) AND 16)=0 THEN 110
 120 POKE DA, octet
 ```
 
-## Réception d'un octet
+## Receiving a byte
 
 ```basic
-200 REM Vérifier si un byte est disponible
+200 REM Check whether a byte is available
 210 IF (PEEK(ST) AND 8)=0 THEN GOTO 200
 220 C=PEEK(DA)
 ```
 
-## Vérification de la porteuse (DCD)
+## Checking the carrier (DCD)
 
 ```basic
 300 S=PEEK(ST)
@@ -130,7 +130,9 @@ Pour 1200 baud 8-N-1 : `POKE 799,24` ($18)
 320 IF (S AND 32)=0 THEN PRINT"CONNECTE"
 ```
 
-## Backends disponibles
+(The program prints "PAS DE PORTEUSE" = "no carrier" and "CONNECTE" = "connected".)
+
+## Available backends
 
 ### 1. Loopback (test)
 
@@ -138,55 +140,55 @@ Pour 1200 baud 8-N-1 : `POKE 799,24` ($18)
 ./oric1-emu -r roms/basic10.rom --serial loopback
 ```
 
-TX revient directement en RX. Buffer circulaire 256 octets. Utile pour vérifier que l'ACIA fonctionne sans réseau.
+TX comes straight back as RX. 256-byte circular buffer. Useful to check that the ACIA works without a network.
 
-### 2. TCP brut
+### 2. Raw TCP
 
 ```bash
 ./oric1-emu -r roms/basic10.rom --serial tcp:bbs.host:23
 ```
 
-Connexion TCP directe. Pas de commandes AT, pas de flow control modem. Les données sont envoyées/reçues byte par byte sur le socket. Connexion établie au démarrage.
+Direct TCP connection. No AT commands, no modem flow control. Data are sent/received byte by byte on the socket. Connection established at startup.
 
-### 3. Modem Hayes (commandes AT)
+### 3. Hayes modem (AT commands)
 
 ```bash
-# Mode commande pur — le programme ORIC dial via ATD
+# Pure command mode — the ORIC program dials via ATD
 ./oric1-emu -r roms/basic10.rom --serial modem
 
-# Host prédéfini — ATD seul connecte ici
+# Predefined host — a bare ATD connects here
 ./oric1-emu -r roms/basic10.rom --serial modem:bbs.host:23
 
-# Mode serveur — accepte les connexions entrantes
+# Server mode — accepts incoming connections
 ./oric1-emu -r roms/basic10.rom --serial modem:listen:2323
 ```
 
-Démarre en **mode commande**. L'ACIA voit les réponses AT comme des données reçues.
+Starts in **command mode**. The ACIA sees the AT responses as received data.
 
-Commandes supportées :
+Supported commands:
 - `AT` → `OK`
 - `ATZ` → reset → `OK`
 - `ATE0` / `ATE1` → echo off/on → `OK`
-- `ATH` → raccrocher → `OK`
-- `ATD host:port` → connecter via TCP → `CONNECT` ou `NO CARRIER`
-- `ATDT host:port` → idem (T ignoré)
-- `ATA` → accepter connexion (mode listen) → `CONNECT` ou `ERROR`
-- `ATS0=N` → auto-answer après N rings → `OK`
-- `+++` → retour mode commande (guard time) → `OK`
+- `ATH` → hang up → `OK`
+- `ATD host:port` → connect via TCP → `CONNECT` or `NO CARRIER`
+- `ATDT host:port` → same (T ignored)
+- `ATA` → accept connection (listen mode) → `CONNECT` or `ERROR`
+- `ATS0=N` → auto-answer after N rings → `OK`
+- `+++` → back to command mode (guard time) → `OK`
 
-Buffers internes 64 Ko RX/TX.
+64 KB internal RX/TX buffers.
 
-Exemple BASIC complet :
+Complete BASIC example:
 ```basic
 10 DA=796:ST=797:CM=798:CT=799
 20 POKE ST,0:POKE CT,31:POKE CM,3
-30 REM ENVOYER ATD
+30 REM SEND ATD
 40 A$="ATD pavi.3617.fr:3617"+CHR$(13)
 50 FOR I=1 TO LEN(A$)
 60 POKE DA,ASC(MID$(A$,I,1))
 70 FOR W=1 TO 100:NEXT W
 80 NEXT I
-90 REM ATTENDRE REPONSE
+90 REM WAIT FOR RESPONSE
 100 R$=""
 110 S=PEEK(ST):IF (S AND 8)=0 THEN 110
 120 C=PEEK(DA)
@@ -203,18 +205,20 @@ Exemple BASIC complet :
 250 POKE DA,ASC(K$):GOTO 210
 ```
 
+(`ECHEC` = "failure".)
+
 ### 4. Digitelec DTL 2000
 
 ```bash
 ./oric1-emu -r roms/basic10.rom --serial digitelec:minitel.host:516
 ```
 
-Émule le modem externe Digitelec DTL 2000 (1984). Pas de commandes AT. Contrôle par les lignes RS232 :
-- DTR on (POKE CM,3) → le modem connecte via TCP
-- DTR off (POKE CM,0) → le modem raccroche
-- DCD dans le status register → état de la connexion
-- CTS flow control automatique (buffer interne 512 octets)
-- V23 1200/75 activé automatiquement
+Emulates the Digitelec DTL 2000 external modem (1984). No AT commands. Controlled through the RS232 lines:
+- DTR on (POKE CM,3) → the modem connects via TCP
+- DTR off (POKE CM,0) → the modem hangs up
+- DCD in the status register → connection state
+- Automatic CTS flow control (512-byte internal buffer)
+- V23 1200/75 enabled automatically
 
 ### 5. PTY (pseudo-terminal)
 
@@ -222,47 +226,47 @@ Exemple BASIC complet :
 ./oric1-emu -r roms/basic10.rom --serial pty
 ```
 
-Crée un pseudo-terminal. Le log affiche le device path :
+Creates a pseudo-terminal. The log shows the device path:
 ```
 Serial PTY: opened /dev/pts/3 (master fd=5)
 ```
-Connectez minicom/screen/picocom sur ce device depuis un autre terminal.
+Connect minicom/screen/picocom to this device from another terminal.
 
-### 6. COM (port série réel)
+### 6. COM (real serial port)
 
 ```bash
 ./oric1-emu -r roms/basic10.rom --serial com:9600,8,N,1,/dev/ttyUSB0
 ```
 
-Vrai port série via termios (Linux). Format : `baud,databits,parité,stopbits,device`.
+Real serial port via termios (Linux). Format: `baud,databits,parity,stopbits,device`.
 
-### 7. PicoWiFiModemUSB (modem WiFi LOCI)
+### 7. PicoWiFiModemUSB (LOCI WiFi modem)
 
 ```bash
-# Sous --loci, l'ACIA est mappée à $0380 (défaut firmware LOCI)
+# Under --loci, the ACIA is mapped at $0380 (LOCI firmware default)
 ./oric1-emu -r roms/basic10.rom --loci --serial picowifi:MonWiFi:motdepasse
 ```
 
-Émule le modem WiFi de sodiumlb (Pico W exposée par LOCI comme ACIA). Le
-programme ORIC compose en commandes AT. Jeu v0.1.0 complet : `AT$SSID=`,
-`AT$PASS=`, `ATC1` (connexion WiFi), `ATDT host:port` (TCP), `ATNET`,
-numéros rapides `AT&Z`, registres S, etc. WiFi simulé, données = vrai TCP.
+Emulates sodiumlb's WiFi modem (a Pico W exposed by LOCI as an ACIA). The
+ORIC program dials with AT commands. Full v0.1.0 command set: `AT$SSID=`,
+`AT$PASS=`, `ATC1` (WiFi connection), `ATDT host:port` (TCP), `ATNET`,
+speed-dial numbers `AT&Z`, S registers, etc. WiFi simulated, data = real TCP.
 
-**⚠ Minitel / Vidéotex : forcer NET0.** Le mode telnet réel (NET1, défaut)
-traduit `CR`→`CR+NUL` et double `IAC` (0xFF) — ce qui **corrompt** un flux
-Vidéotex (où ces octets sont des données). Compose en NET0 pour un flux
-transparent :
+**⚠ Minitel / Videotex: force NET0.** Real telnet mode (NET1, the default)
+translates `CR`→`CR+NUL` and doubles `IAC` (0xFF) — which **corrupts** a
+Videotex stream (where these bytes are data). Dial in NET0 for a
+transparent stream:
 
 ```basic
-A$="ATDT-mon.serveur.minitel:516"+CHR$(13) : REM le '-' force NET0
+A$="ATDT-mon.serveur.minitel:516"+CHR$(13) : REM the '-' forces NET0
 ```
 
-Le préfixe `-` (NET0), `=` (NET1 réel), `+` (NET2 faux) fixe le mode telnet
-de la session. Pour du Vidéotex pur, le backend `digitelec` + `--serial-v23`
-reste l'option la plus idiomatique (V23 1200/75 natif, sans commandes AT).
+The prefix `-` (NET0), `=` (real NET1), `+` (fake NET2) sets the telnet mode
+of the session. For pure Videotex, the `digitelec` backend + `--serial-v23`
+remains the most idiomatic option (native V23 1200/75, no AT commands).
 
-**Exemple prêt à l'emploi** : `examples/picowifi_test.bas` dialogue avec le
-modem (ATI, AT$SSID, ATC1…) et affiche les réponses :
+**Ready-to-use example**: `examples/picowifi_test.bas` talks to the
+modem (ATI, AT$SSID, ATC1…) and displays the responses:
 
 ```bash
 ./oric1-emu -r roms/basic11b.rom \
@@ -270,57 +274,57 @@ modem (ATI, AT$SSID, ATC1…) et affiche les réponses :
   -t examples/picowifi_test.tap -f
 ```
 
-⚠ `--serial-buffer N` est important : sans FIFO RX, l'affichage BASIC est
-plus lent que le débit du modem → OVERRUN et octets perdus (l'ACIA n'a
-qu'un registre RX). Le FIFO bufferise les réponses.
+⚠ `--serial-buffer N` matters: without an RX FIFO, BASIC display is
+slower than the modem's data rate → OVERRUN and lost bytes (the ACIA has
+only one RX register). The FIFO buffers the responses.
 
-**Pont réseau réel.** Les connexions de données (`ATDT`/`ATGET`/`ATRD`)
-sortent déjà en vrai TCP par l'interface active de l'hôte (carte WiFi
-comprise). Pour que l'état WiFi *rapporté* (IP, connectivité, SSID) soit
-réel lui aussi — au lieu de simulé — exporte :
+**Real network bridge.** Data connections (`ATDT`/`ATGET`/`ATRD`)
+already go out as real TCP through the host's active interface (WiFi card
+included). To make the *reported* WiFi state (IP, connectivity, SSID)
+real as well — instead of simulated — export:
 
 ```bash
 PHOSPHORIC_PICOWIFI_REALNET=1 ./oric1-emu ... --serial picowifi ...
 ```
 
-`ATI` affiche alors l'IP locale réelle (`IP: 192.168.1.19 (host)`), `ATC?`
-reflète la vraie connectivité internet, et le SSID de l'hôte est adopté au
-boot. C'est en **lecture seule** : l'émulateur ne pilote jamais la carte
-WiFi (pas de scan/association). Désactivé par défaut (mode simulé).
+`ATI` then shows the real local IP (`IP: 192.168.1.19 (host)`), `ATC?`
+reflects the real internet connectivity, and the host's SSID is adopted at
+boot. It is **read-only**: the emulator never drives the WiFi
+card (no scan/association). Disabled by default (simulated mode).
 
-## Options d'amélioration
+## Improvement options
 
-### FIFO RX (anti-overrun)
+### RX FIFO (anti-overrun)
 
 ```bash
 --serial-buffer 256
 ```
 
-L'ACIA réelle a 1 seul octet RX. Si le CPU n'a pas lu avant l'arrivée du suivant → overrun. Le FIFO ajoute une file d'attente transparente. Quand on lit DATA ($031C), le byte suivant est chargé automatiquement. RDRF reste à 1 tant que la file n'est pas vide.
+The real ACIA has a single RX byte. If the CPU has not read it before the next one arrives → overrun. The FIFO adds a transparent queue. When DATA ($031C) is read, the next byte is loaded automatically. RDRF stays at 1 as long as the queue is not empty.
 
-**Quand l'utiliser** : quand le programme ORIC fait des opérations longues entre les lectures (clear screen, scroll, affichage Vidéotex).
+**When to use it**: when the ORIC program performs long operations between reads (clear screen, scroll, Videotex display).
 
-### IRQ WDC 65C51
+### WDC 65C51 IRQ
 
 ```bash
 --serial-irq-on-rdrf
 ```
 
-Le MOS 6551 a un bug : lire le status ($031D) efface le bit IRQ. Si on lit le status pour vérifier TDRE (TX), l'IRQ pour un byte RX en attente est perdue. Le mode WDC 65C51 re-fire l'IRQ tant que RDRF est set.
+The MOS 6551 has a bug: reading the status ($031D) clears the IRQ bit. If the status is read to check TDRE (TX), the IRQ for a pending RX byte is lost. WDC 65C51 mode re-fires the IRQ as long as RDRF is set.
 
-**Quand l'utiliser** : quand le programme utilise les IRQ en TX+RX simultané.
+**When to use it**: when the program uses IRQs with simultaneous TX+RX.
 
-### Coût de transport I2C des IRQ LOCI
+### I2C transport cost of LOCI IRQs
 
 ```bash
 --loci-irq-latency 10000
 ```
 
-Sur le **vrai LOCI**, la ligne `/IRQ` de l'ACIA n'est pas câblée directement au 6502 : elle transite par le bus **I2C**, un transport « extremely slow » (SodiumLB, forum defence-force p34982). Conséquence : recevoir les données **par interruption** plafonne à ~100 octets/s, alors que le **polling** des registres $0380–$0383 est « an order of magnitude faster ». C'est un artefact du transport physique de l'IRQ, pas du 6551.
+On the **real LOCI**, the ACIA's `/IRQ` line is not wired directly to the 6502: it goes through the **I2C** bus, an "extremely slow" transport (SodiumLB, defence-force forum p34982). Consequence: receiving data **by interrupt** caps out at ~100 bytes/s, whereas **polling** registers $0380–$0383 is "an order of magnitude faster". This is an artefact of the physical transport of the IRQ, not of the 6551.
 
-Par défaut l'émulateur assère `/IRQ` sans coût de transport (comme un 6551 nu), donc l'IRQ y est aussi rapide que le polling. `--loci-irq-latency US` diffère chaque **assertion physique** de `/IRQ` de `US` microsecondes (à 1 MHz, 1 µs = 1 cycle) ; la décision logique du registre de statut est inchangée, donc **le polling n'est pas pénalisé**. À ~10 000 µs/IRQ (10 ms), le handler ne tourne que ~100×/s → RX plafonné ~100 o/s en IRQ.
+By default the emulator asserts `/IRQ` with no transport cost (like a bare 6551), so IRQ there is as fast as polling. `--loci-irq-latency US` delays each **physical assertion** of `/IRQ` by `US` microseconds (at 1 MHz, 1 µs = 1 cycle); the logical decision of the status register is unchanged, so **polling is not penalised**. At ~10,000 µs/IRQ (10 ms), the handler runs only ~100×/s → RX capped at ~100 bytes/s with IRQs.
 
-**Quand l'utiliser** : pour reproduire fidèlement le plafond IRQ du LOCI réel, comparer objectivement une réception **polling** (Command $0B, IRQ off) à une approche IRQ, ou tester un logiciel Oric qui exploite l'ACIA du LOCI. Option spécifique au contexte LOCI (un 6551 « nu » n'a pas ce coût ; un avertissement le rappelle si utilisé sans `--loci`).
+**When to use it**: to faithfully reproduce the IRQ ceiling of the real LOCI, to compare objectively **polling** reception (Command $0B, IRQ off) with an IRQ approach, or to test Oric software that uses the LOCI's ACIA. Option specific to the LOCI context (a "bare" 6551 does not have this cost; a warning reminds you of it if used without `--loci`).
 
 ### V23 Minitel
 
@@ -328,7 +332,7 @@ Par défaut l'émulateur assère `/IRQ` sans coût de transport (comme un 6551 n
 --serial-v23
 ```
 
-Baud asymétrique : 1200 RX / 75 TX (standard Minitel/Prestel). Activé automatiquement avec le backend digitelec.
+Asymmetric baud rate: 1200 RX / 75 TX (Minitel/Prestel standard). Enabled automatically with the digitelec backend.
 
 ### Debug trace
 
@@ -336,46 +340,46 @@ Baud asymétrique : 1200 RX / 75 TX (standard Minitel/Prestel). Activé automati
 --serial-trace serial.log
 ```
 
-Log tous les TX/RX, écritures registres, changements de signaux avec timestamps CPU :
+Logs every TX/RX, register write and signal change, with CPU timestamps:
 ```
 CYCLE       DIR  HEX  CHR  STATUS    FIFO  SIGNALS
 0003689369  TX   42   B    ........    0   DTR=1 DCD=1 CTS=1 DSR=1
 0003689832  RX   42   B    ...T....    0   DTR=1 DCD=1 CTS=1 DSR=1
 ```
 
-### Offset ACIA
+### ACIA offset
 
 ```bash
 --acia-addr 0320
 ```
 
-Change l'adresse de base (défaut $031C). Pour les interfaces non-standard.
+Changes the base address (default $031C). For non-standard interfaces.
 
 ## Timing
 
-- **Horloge** : cristal 1.8432 MHz / 16 = 115200 Hz interne
-- **Cycles CPU par octet** : `(1000000 × framebits) / baud`
-  - 19200 baud 8-N-1 : 520 cycles
-  - 1200 baud 8-N-1 : 8333 cycles
-  - 75 baud 8-N-1 : 133333 cycles
-- **Frame limiter** : 50 Hz PAL (20 ms/frame) — même vitesse qu'un vrai ORIC
-- **tx_cycles/rx_cycles** : initialisés à tx_reload/rx_reload (pas 0), resynchronisés au changement de baud
+- **Clock**: 1.8432 MHz crystal / 16 = 115200 Hz internal
+- **CPU cycles per byte**: `(1000000 × framebits) / baud`
+  - 19200 baud 8-N-1: 520 cycles
+  - 1200 baud 8-N-1: 8333 cycles
+  - 75 baud 8-N-1: 133333 cycles
+- **Frame limiter**: 50 Hz PAL (20 ms/frame) — same speed as a real ORIC
+- **tx_cycles/rx_cycles**: initialised to tx_reload/rx_reload (not 0), resynchronised when the baud rate changes
 
-## Ligne de commande type pour OricTel
+## Typical command line for OricTel
 
 ```bash
-# Minitel via modem Hayes (le programme ORIC fait ATD)
+# Minitel via Hayes modem (the ORIC program does ATD)
 ./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
   --serial modem \
   --serial-buffer 256 \
   --serial-trace serial.log
 
-# Ou via Digitelec (DTR pour connecter, pas de commandes AT)
+# Or via Digitelec (DTR to connect, no AT commands)
 ./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
   --serial digitelec:pavi.3617.fr:3617 \
   --serial-trace serial.log
 
-# Ou TCP direct (connexion immédiate, pas de modem)
+# Or direct TCP (immediate connection, no modem)
 ./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
   --serial tcp:pavi.3617.fr:3617 \
   --serial-v23 \

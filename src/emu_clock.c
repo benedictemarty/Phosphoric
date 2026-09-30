@@ -1,47 +1,47 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file emu_clock.c
- * @brief Horloge maître : un appel = un cycle de TOUTE la machine (V2-E2)
+ * @brief Master clock: one call = one cycle of the WHOLE machine (V2-E2)
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-09-11
  *
- * Avant ce module, le temps de la machine était réparti entre trois endroits :
- * le CPU avançait son horloge, un rappel par cycle (`cpu_cycle_tick` dans
- * main.c) faisait avancer les périphériques φ2, et **la boucle principale
- * calculait elle-même la position du balayage** (`frame_cycles / 64`) pour
- * émettre les scanlines. Conséquence : seule la boucle principale savait
- * cadencer la machine ; le débogueur, les tests et les outils ne pouvaient pas
- * faire avancer « un cycle de machine ».
+ * Before this module, machine time was split across three places:
+ * the CPU advanced its clock, a per-cycle callback (`cpu_cycle_tick` in
+ * main.c) advanced the φ2 devices, and **the main loop computed the
+ * beam position itself** (`frame_cycles / 64`) to
+ * emit the scanlines. Consequence: only the main loop knew how to
+ * clock the machine; the debugger, the tests and the tools could not
+ * advance « one machine cycle ».
  *
- * `emu_cycle()` est ce point unique, avec un **ordre intra-cycle figé** :
+ * `emu_cycle()` is that single point, with a **fixed intra-cycle order**:
  *
- *   1. **le CPU** exécute son unique cycle : un accès bus (lecture, écriture,
- *      ou accès factice du NMOS) avec le cœur micro-séquencé. Sur le matériel,
- *      c'est la première chose qui se passe après le front montant de l'horloge
- *      1 MHz : le compteur horizontal de l'ULA s'incrémente et le 6502 fait son
- *      accès DRAM (c'est son CAS qui écrit).
- *   2. **les périphériques φ2** (VIA, FDC, ACIA, DTL, Mageco, cassette) sont
- *      avancés d'exactement un cycle par le rappel d'horloge du CPU, juste après
- *      l'accès bus. Avec le cœur par défaut ce rappel reçoit toujours
- *      `cycles = 1` : les périphériques sont donc déjà au cycle, sans paquet
- *      (vérifié par `test-clock`).
- *   3. **l'ULA** fetche ENSUITE l'octet écran de ce même count (moitié basse du
- *      cycle — l'ULA prend plus de la moitié, d'où l'horloge 1 MHz asymétrique),
- *      puis le balayage avance et les scanlines dues / le tick ULA-NG sont émis.
- *      Une écriture du CPU au cycle *c* est donc vue par la cellule *c*.
+ *   1. **the CPU** executes its single cycle: one bus access (read, write,
+ *      or NMOS dummy access) with the micro-sequenced core. On the hardware,
+ *      this is the first thing that happens after the rising edge of the
+ *      1 MHz clock: the ULA's horizontal counter increments and the 6502 makes its
+ *      DRAM access (its CAS is what writes).
+ *   2. **the φ2 devices** (VIA, FDC, ACIA, DTL, Mageco, cassette) are
+ *      advanced by exactly one cycle by the CPU clock callback, right after
+ *      the bus access. With the default core this callback always receives
+ *      `cycles = 1`: the devices are therefore already at cycle level, with no batching
+ *      (checked by `test-clock`).
+ *   3. **the ULA** THEN fetches the screen byte of that same count (low half of the
+ *      cycle — the ULA takes more than half, hence the asymmetric 1 MHz clock),
+ *      then the beam advances and the due scanlines / the ULA-NG tick are emitted.
+ *      A CPU write at cycle *c* is therefore seen by cell *c*.
  *
- * Cet ordre est celui MESURÉ à l'oscilloscope par Mike Brown (Unofficial ULA
- * Guide 1.02, « Control and Sequencing ») : 6502 d'abord, puis « the ULA access
- * cycle begins ». Jusqu'en 2.0.1 Phosphoric faisait l'inverse (ULA puis CPU,
- * écriture visible à c+1) : un split raster tombait une cellule trop à droite.
- * Sur l'ORIC, l'ULA et le CPU ne se disputent pas la RAM (accès en phases
- * opposées) : il n'y a donc pas de vol de cycle à modéliser, contrairement à un
+ * This order is the one MEASURED on the oscilloscope by Mike Brown (Unofficial ULA
+ * Guide 1.02, « Control and Sequencing »): 6502 first, then « the ULA access
+ * cycle begins ». Up to 2.0.1 Phosphoric did the opposite (ULA then CPU,
+ * write visible at c+1): a raster split landed one cell too far right.
+ * On the ORIC, the ULA and the CPU do not contend for RAM (accesses in opposite
+ * phases): there is therefore no cycle stealing to model, unlike a
  * ZX Spectrum.
  *
- * Le cœur historique (`--cpu-legacy`) ne sait pas s'arrêter entre deux cycles :
- * `emu_cycle()` y exécute alors une instruction entière puis rattrape le
- * balayage du même nombre de cycles. Le résultat est identique à l'ancienne
- * boucle, à l'ordonnancement interne près.
+ * The historical core (`--cpu-legacy`) cannot stop between two cycles:
+ * `emu_cycle()` then executes a whole instruction and catches the
+ * beam up by the same number of cycles. The result is identical to the old
+ * loop, except for the internal ordering.
  */
 
 #include "emulator.h"
@@ -49,25 +49,25 @@
 #include "video/video.h"
 #include "io/ula_ng.h"
 
-/* ─── ULA au cycle (V2-E4) ───
- * Émet le travail vidéo du cycle courant : début de ligne, fetch d'une cellule,
- * fin de ligne. Elle a lieu APRÈS l'accès du CPU du même cycle (ordre mesuré sur
- * le matériel), donc une écriture du CPU pendant ce cycle est vue par la cellule
- * fetchée ce cycle — et une écriture en milieu de ligne n'affecte que les
- * cellules pas encore fetchées.
+/* ─── Cycle-level ULA (V2-E4) ───
+ * Emits the video work of the current cycle: line start, fetch of one cell,
+ * line end. It happens AFTER the CPU access of the same cycle (order measured on
+ * the hardware), so a CPU write during this cycle is seen by the cell
+ * fetched in this cycle — and a mid-line write only affects the
+ * cells not yet fetched.
  *
- * `dot` est le cycle dans la ligne (0-63). La colonne fetchée est
- * `dot - ula_fetch_offset` : 40 cellules visibles, le reste de la ligne étant
- * bordure et blanking. */
-/* Le fetch par cycle exige un cœur capable de s'arrêter entre deux cycles : avec
- * `--cpu-legacy`, l'instruction est indivisible, donc on retombe sur le rendu par
- * ligne. Sans cette garde, l'écran resterait noir dans ce mode. */
+ * `dot` is the cycle within the line (0-63). The fetched column is
+ * `dot - ula_fetch_offset`: 40 visible cells, the rest of the line being
+ * border and blanking. */
+/* Per-cycle fetch requires a core able to stop between two cycles: with
+ * `--cpu-legacy`, the instruction is indivisible, so we fall back to per-line
+ * rendering. Without this guard, the screen would stay black in this mode. */
 static bool ula_cycle_in_use(const emulator_t* emu) {
     return emu->ula_per_cycle && cpu_microseq_enabled(&emu->cpu);
 }
 
 static void ula_cycle(emulator_t* emu, int line, int dot) {
-    if (line >= 224) return;                    /* blanking vertical */
+    if (line >= 224) return;                    /* vertical blanking */
     const uint8_t* mem = emu->memory.ram;
 
     if (dot == 0) video_line_begin(&emu->video, mem, line);
@@ -78,31 +78,31 @@ static void ula_cycle(emulator_t* emu, int line, int dot) {
 
     if (dot == PAL_CYCLES_PER_LINE - 1) {
         video_line_end(&emu->video, mem, line);
-        emu->raster_rendered = line + 1;        /* cette ligne est complète */
+        emu->raster_rendered = line + 1;        /* this line is complete */
     }
 }
 
-/* Fait avancer le balayage de `cycles` cycles : émet les scanlines visibles dues
- * (zone active 0-223) et les ticks raster ULA-NG (trame complète 0-311). */
+/* Advances the beam by `cycles` cycles: emits the due visible scanlines
+ * (active area 0-223) and the ULA-NG raster ticks (full frame 0-311). */
 static void clock_advance_raster(emulator_t* emu, int cycles) {
     emu->raster_cycle += cycles;
-    emu->frame_cycles = emu->raster_cycle;   /* exposé aux points d'arrêt raster */
+    emu->frame_cycles = emu->raster_cycle;   /* exposed to raster breakpoints */
 
-    /* Sortie rapide : 63 cycles sur 64 ne franchissent aucune fin de ligne et
-     * n'ont donc rien à émettre. Ce test remplace une division par cycle —
-     * l'horloge étant appelée un million de fois par seconde émulée, ça compte. */
+    /* Fast exit: 63 cycles out of 64 cross no end of line and
+     * therefore have nothing to emit. This test replaces a per-cycle division —
+     * the clock being called a million times per emulated second, it matters. */
     if (emu->raster_cycle < emu->raster_next_line) return;
 
     do {
-        /* Rendu scanline : la ligne entière échantillonne la mémoire à l'instant
-         * où le faisceau l'achève. En mode ULA au cycle, le rendu a déjà été
-         * fait cellule par cellule par ula_cycle() — rien à faire ici. */
+        /* Scanline rendering: the whole line samples memory at the instant
+         * the beam finishes it. In cycle-level ULA mode, rendering has already been
+         * done cell by cell by ula_cycle() — nothing to do here. */
         if (!ula_cycle_in_use(emu) && emu->raster_rendered < 224) {
             video_render_scanline(&emu->video, emu->memory.ram, emu->raster_rendered);
             emu->raster_rendered++;
         }
-        /* Raster ULA-NG sur la trame PAL complète, découplé de la zone visible :
-         * assère la ligne d'IRQ quand la ligne programmée est franchie. */
+        /* ULA-NG raster over the full PAL frame, decoupled from the visible area:
+         * asserts the IRQ line when the programmed line is crossed. */
         if (emu->raster_ng_line < ULA_NG_FRAME_LINES) {
             ula_ng_scanline(&emu->ula_ng, emu->raster_ng_line);
             if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
@@ -114,19 +114,19 @@ static void clock_advance_raster(emulator_t* emu, int cycles) {
 
 bool emu_cycle(emulator_t* emu) {
     if (cpu_microseq_enabled(&emu->cpu)) {
-        /* Ordre MESURÉ sur le matériel (Mike Brown, Unofficial ULA Guide 1.02) :
-         * au front montant de l'horloge 1 MHz, le compteur horizontal s'incrémente
-         * et le 6502 fait son accès (c'est son CAS qui écrit) ; l'ULA fetche
-         * ENSUITE l'octet de ce même count, pendant la moitié basse du cycle.
-         * Une écriture du CPU au cycle c est donc vue par la cellule c. */
-        bool last = cpu_cycle(&emu->cpu);    /* le CPU, puis ses périphériques φ2 */
+        /* Order MEASURED on the hardware (Mike Brown, Unofficial ULA Guide 1.02):
+         * on the rising edge of the 1 MHz clock, the horizontal counter increments
+         * and the 6502 makes its access (its CAS is what writes); the ULA THEN
+         * fetches the byte of that same count, during the low half of the cycle.
+         * A CPU write at cycle c is therefore seen by cell c. */
+        bool last = cpu_cycle(&emu->cpu);    /* the CPU, then its φ2 devices */
         if (ula_cycle_in_use(emu))
             ula_cycle(emu, emu->raster_cycle / PAL_CYCLES_PER_LINE,
                       emu->raster_cycle % PAL_CYCLES_PER_LINE);
         clock_advance_raster(emu, 1);
         return last;
     }
-    /* Cœur historique : indivisible. Une instruction, puis le balayage. */
+    /* Historical core: indivisible. One instruction, then the beam. */
     int n = cpu_step(&emu->cpu);
     clock_advance_raster(emu, n);
     return true;
@@ -144,8 +144,8 @@ void emu_clock_resume(emulator_t* emu) {
     if (!emu->clock_resume_pending) return;
     emu->clock_resume_pending = false;
 
-    /* État sauvé après une fin de trame (sortie sur `-c`, `--save-state`) : la
-     * trame était terminée, la suivante commence à zéro. */
+    /* State saved after an end of frame (exit on `-c`, `--save-state`): the
+     * frame was over, the next one starts at zero. */
     if (emu->raster_cycle >= CYCLES_PER_FRAME || emu->raster_cycle < 0) {
         emu->raster_cycle = 0;
         emu->raster_rendered = 0;
@@ -160,15 +160,15 @@ void emu_clock_resume(emulator_t* emu) {
     emu->raster_next_line = (line + 1) * PAL_CYCLES_PER_LINE;
     emu->frame_cycles = emu->raster_cycle;
 
-    /* Lignes déjà balayées avant la sauvegarde : rendues d'un bloc depuis la RAM
-     * restaurée (même approximation que la fin de trame après un halt). */
+    /* Lines already scanned before the save: rendered in one block from the restored
+     * RAM (same approximation as the end of frame after a halt). */
     int done = line < 224 ? line : 224;
     for (int y = 0; y < done; y++)
         video_render_scanline(&emu->video, emu->memory.ram, y);
     emu->raster_rendered = done;
 
-    /* Ligne en cours en mode ULA au cycle : rejoue les cellules déjà fetchées
-     * pour reconstituer l'état série de ligne (encre, papier, attributs). */
+    /* Current line in cycle-level ULA mode: replays the already-fetched cells
+     * to rebuild the serial line state (ink, paper, attributes). */
     if (ula_cycle_in_use(emu) && line < 224) {
         video_line_begin(&emu->video, emu->memory.ram, line);
         int col_end = dot - emu->ula_fetch_offset;
@@ -190,10 +190,10 @@ void emu_clock_frame_begin(emulator_t* emu) {
 }
 
 void emu_clock_frame_end(emulator_t* emu) {
-    /* Termine la trame même si le CPU s'est arrêté en plein écran (halt, point
-     * d'arrêt) : l'image affichée doit être complète. Les lignes restantes sont
-     * alors rendues d'un bloc — elles n'ont pas été balayées, il n'y a pas de
-     * position intermédiaire à respecter. */
+    /* Finishes the frame even if the CPU stopped mid-screen (halt,
+     * breakpoint): the displayed image must be complete. The remaining lines are
+     * then rendered in one block — they were not scanned, there is no
+     * intermediate position to honour. */
     while (emu->raster_rendered < 224) {
         video_render_scanline(&emu->video, emu->memory.ram, emu->raster_rendered);
         emu->raster_rendered++;

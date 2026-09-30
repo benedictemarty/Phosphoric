@@ -1,223 +1,223 @@
-# Étude de faisabilité — Interface MIDI Mageco pour Oric
+# Feasibility study — Mageco MIDI interface for the Oric
 
-- **Statut** : ✅ **IMPLÉMENTÉ — niveaux A + B** livrés au Sprint 61 (v1.21.25 → v1.21.26-alpha)
-- **Auteur** : bmarty
-- **Date** : 2026-06-23
-- **Source** : fil forum Defence-Force [« Mageco MIDI interface » (t=2525)](https://forum.defence-force.org/viewtopic.php?t=2525)
-- **Décision** : GO — sprint réalisé (`src/io/mageco.c`, `--mageco`, `make test-midi`)
+- **Status**: ✅ **IMPLEMENTED — levels A + B** delivered in Sprint 61 (v1.21.25 → v1.21.26-alpha)
+- **Author**: bmarty
+- **Date**: 2026-06-23
+- **Source**: Defence-Force forum thread ["Mageco MIDI interface" (t=2525)](https://forum.defence-force.org/viewtopic.php?t=2525)
+- **Decision**: GO — sprint completed (`src/io/mageco.c`, `--mageco`, `make test-midi`)
 
-> **Réalisation niveau A** (v1.21.25) : carte MC6850 à $03FE + backend MIDI fichier
-> + tests. Code : `src/io/mageco.c`, `include/io/mageco.h`. CLI : `--mageco
+> **Level A delivery** (v1.21.25): MC6850 card at $03FE + MIDI file backend
+> + tests. Code: `src/io/mageco.c`, `include/io/mageco.h`. CLI: `--mageco
 > file:in[:out]|loopback|tcp|pty` (+ `--mageco-addr`). 13 tests + e2e (`90 3C 7F`).
 >
-> **Réalisation niveau B** (v1.21.26) : backend **MIDI temps réel** multi-plateforme
-> (`SERIAL_BACKEND_MIDI`, `src/io/serial_backend.c`). CLI : `--mageco midi[:TARGET]`,
-> build optionnel `MIDI=1`. Branche **ALSA** (Linux, lie `-lasound`) : port nommé
-> « Phosphoric MIDI » connectable via `aconnect` à FluidSynth/DAW, validé temps réel
-> (`aseqdump` reçoit le Note On du BASIC). Branches **CoreMIDI (macOS)** / **WinMM
-> (Windows)** écrites selon les API mais non vérifiées sur cet hôte Linux.
+> **Level B delivery** (v1.21.26): cross-platform **real-time MIDI** backend
+> (`SERIAL_BACKEND_MIDI`, `src/io/serial_backend.c`). CLI: `--mageco midi[:TARGET]`,
+> optional build `MIDI=1`. **ALSA** branch (Linux, links `-lasound`): a port named
+> "Phosphoric MIDI" that can be connected via `aconnect` to FluidSynth/a DAW, validated in real time
+> (`aseqdump` receives the Note On sent from BASIC). **CoreMIDI (macOS)** / **WinMM
+> (Windows)** branches written against the APIs but not verified on this Linux host.
 >
-> **Réalisation extensions** (v1.21.27) : lecteur **Standard MIDI File** (`src/io/smf.c`,
-> format 0/1, carte de tempo) + transport **`smf:FILE[:loop]`** rejouant un `.mid`
-> dans l'Oric en MIDI IN cadencé (`CLOCK_MONOTONIC`). 6 tests (`make test-smf`),
-> validé temps réel.
+> **Extensions delivery** (v1.21.27): **Standard MIDI File** reader (`src/io/smf.c`,
+> format 0/1, tempo map) + **`smf:FILE[:loop]`** transport replaying a `.mid`
+> into the Oric as paced MIDI IN (`CLOCK_MONOTONIC`). 6 tests (`make test-smf`),
+> validated in real time.
 >
-> **Réalisation mode ORICON** (v1.21.28) : après lecture complète du fil (4 pages),
-> ajout de la variante **ORICON** — 6850 à **$031C/$031D** + générateur d'horloge
-> **$031E/$031F** (latches), décodage placé devant le Microdisc. Option `--oricon
-> TRANSPORT` (mode Mageco `--mageco` conservé). 4 tests, validé e2e (`POKE796/797`
-> → capture `90 3C 7F`). Le générateur d'horloge est modélisé en latches (encodage
-> du diviseur non publié dans le fil) ; la cadence reste 31250 baud.
+> **ORICON mode delivery** (v1.21.28): after reading the whole thread (4 pages),
+> added the **ORICON** variant — 6850 at **$031C/$031D** + clock generator
+> at **$031E/$031F** (latches), decoding placed in front of the Microdisc. Option `--oricon
+> TRANSPORT` (Mageco mode `--mageco` kept). 4 tests, validated e2e (`POKE796/797`
+> → capture `90 3C 7F`). The clock generator is modelled as latches (the divider
+> encoding is not published in the thread); the rate stays at 31250 baud.
 
 ---
 
-## 1. Contexte
+## 1. Context
 
-> **Correction (lecture des 4 pages / 48 messages du fil)** : la 1ʳᵉ version de cette
-> étude ne couvrait que la page 1. Le fil décrit **deux conceptions distinctes**, désormais
-> toutes deux émulées (`--mageco` / `--oricon`) :
+> **Correction (after reading the 4 pages / 48 posts of the thread)**: the 1st version of this
+> study only covered page 1. The thread describes **two distinct designs**, now
+> both emulated (`--mageco` / `--oricon`):
 >
-> | | Carte **Mageco** d'origine (p.1, Dbug) | **ORICON** moderne (p.3, iss, 2025) |
+> | | Original **Mageco** card (p.1, Dbug) | Modern **ORICON** (p.3, iss, 2025) |
 > |---|---|---|
 > | 6850 ACIA | **#3FE / #3FF** | **$31C / $31D** |
-> | Horloge | cristal fixe | **générateur d'horloge à $31E/$31F** |
-> | Décodage | risque de conflit | « 100% compatible LOCI » |
-> | Synthé | externe (DIN MIDI) | shield MIDI-2 avec **SAM2695** GM intégré |
-> | Logiciel | — | outil Lua **« midi2oric »** : pré-convertit le .mid en tableaux d'octets C (délais ms via attentes 6502) |
+> | Clock | fixed crystal | **clock generator at $31E/$31F** |
+> | Decoding | risk of conflict | "100% LOCI compatible" |
+> | Synth | external (MIDI DIN) | MIDI-2 shield with built-in GM **SAM2695** |
+> | Software | — | Lua tool **"midi2oric"**: pre-converts the .mid into C byte arrays (ms delays via 6502 waits) |
 >
-> Citation verbatim (iss, p.3, 26 oct. 2025) : *« The #ORICON uses standard serial I/O
+> Verbatim quote (iss, p.3, 26 Oct. 2025): *« The #ORICON uses standard serial I/O
 > only at $31C..#31F. $31C/$31D for MC6850 ACIA and $31E/$31F for clock generator. »*
 
-L'interface **Mageco MIDI** est une extension matérielle Oric des années 1980, dont
-Dbug a relancé la reconstruction (PCB modernes, projet modulaire « Oric-Con / ORICON »
-avec shield MIDI). Côté logiciel, l'outil Lua « midi2oric » pré-convertit le MIDI.
+The **Mageco MIDI** interface is a 1980s Oric hardware extension, whose
+reconstruction was revived by Dbug (modern PCBs, modular "Oric-Con / ORICON" project
+with a MIDI shield). On the software side, the Lua tool "midi2oric" pre-converts MIDI.
 
-Caractéristiques matérielles de la carte d'origine (page 1) :
+Hardware characteristics of the original card (page 1):
 
-| Élément | Détail |
+| Item | Detail |
 |---|---|
-| Cœur série | **Motorola MC6850 ACIA** |
-| Adresses I/O | **#3FE / #3FF** (RS=0 control/status, RS=1 data) |
-| Décodage | portes 7411 (AND), 7404 (NOT) |
-| Isolation entrée | optocoupleur **TIL 111** (MIDI IN uniquement) |
-| Connecteurs | 2× DIN-5 (MIDI IN / OUT) |
-| Horloge | cristaux dédiés (`xtal1`/`xtal2`) → débit MIDI **31250 bauds**, 8N1 |
+| Serial core | **Motorola MC6850 ACIA** |
+| I/O addresses | **#3FE / #3FF** (RS=0 control/status, RS=1 data) |
+| Decoding | 7411 (AND), 7404 (NOT) gates |
+| Input isolation | **TIL 111** optocoupler (MIDI IN only) |
+| Connectors | 2× DIN-5 (MIDI IN / OUT) |
+| Clock | dedicated crystals (`xtal1`/`xtal2`) → MIDI rate **31250 baud**, 8N1 |
 
-Le fil ne documente pas les bits de contrôle exacts ni la gestion d'IRQ : c'est du
-6850 standard, ce que nous savons déjà modéliser.
-
----
-
-## 2. Ce que Phosphoric possède déjà (forte réutilisation)
-
-L'étude du code montre que **l'essentiel du cœur existe**, ce qui change radicalement
-le coût estimé :
-
-1. **Modèle MC6850 autonome et réutilisable** — `src/io/acia6850.c` /
-   `include/io/acia6850.h`. Logique UART pure (registres control/status/data, RDRF,
-   TDRE, IRQ via callback `irq_out`, FE/OVRN/PE, DCD/CTS). C'est *exactement* le chip
-   de la carte Mageco. Déjà éprouvé par le Digitelec DTL 2000.
-   - Note : ce modèle laisse volontairement le débit et le transport d'octets à l'hôte
-     (« the clock is external, divided /1, /16 or /64 »). Le MIDI 31250 bauds se règle
-     donc côté cadence hôte, pas dans le chip — aucune modification du cœur 6850 requise.
-
-2. **Routage I/O configurable** — `main.c` route déjà un ACIA sur une base d'adresse
-   paramétrable (`--acia-addr`, `emu->acia_base_addr`, défaut $031C / $0380 LOCI). Le
-   cas #3FE/#3FF est juste une nouvelle base dans la zone $0300-$03FF.
-
-3. **Abstraction de backend série** — `serial_backend.h` (enum `SERIAL_BACKEND_*`,
-   struct `serial_backend_s`) avec déjà `FILE` (replay/capture), `PTY`, `COM`, `TCP`…
-   Le « transport transparent » de `main.c` est mutualisé entre `--serial` et
-   `--dtl2000` : on peut y greffer un backend MIDI sans dupliquer la plomberie.
-
-**Conclusion partielle** : on n'a *pas* à écrire de nouveau cœur ACIA. Le travail réel
-se concentre sur **(a) le câblage à #3FE/#3FF** et **(b) un backend MIDI**.
+The thread does not document the exact control bits or IRQ handling: it is a
+standard 6850, which we already know how to model.
 
 ---
 
-## 3. Travail restant (les vrais coûts)
+## 2. What Phosphoric already has (heavy reuse)
 
-### 3.1 Câblage de la carte à #3FE/#3FF
-- Nouveau « device » `--mageco` (ou `--midi`) instanciant un `acia6850_t` à la base
+Studying the code shows that **most of the core already exists**, which radically changes
+the estimated cost:
+
+1. **Standalone, reusable MC6850 model** — `src/io/acia6850.c` /
+   `include/io/acia6850.h`. Pure UART logic (control/status/data registers, RDRF,
+   TDRE, IRQ via the `irq_out` callback, FE/OVRN/PE, DCD/CTS). It is *exactly* the chip
+   on the Mageco card. Already proven by the Digitelec DTL 2000.
+   - Note: this model deliberately leaves the baud rate and byte transport to the host
+     ("the clock is external, divided /1, /16 or /64"). The 31250-baud MIDI rate is therefore
+     set on the host pacing side, not in the chip — no change to the 6850 core required.
+
+2. **Configurable I/O routing** — `main.c` already routes an ACIA to a configurable
+   base address (`--acia-addr`, `emu->acia_base_addr`, default $031C / $0380 LOCI). The
+   #3FE/#3FF case is just a new base in the $0300-$03FF area.
+
+3. **Serial backend abstraction** — `serial_backend.h` (enum `SERIAL_BACKEND_*`,
+   struct `serial_backend_s`) already with `FILE` (replay/capture), `PTY`, `COM`, `TCP`…
+   The "transparent transport" in `main.c` is shared between `--serial` and
+   `--dtl2000`: a MIDI backend can be grafted onto it without duplicating the plumbing.
+
+**Interim conclusion**: we do *not* have to write a new ACIA core. The real work
+focuses on **(a) wiring at #3FE/#3FF** and **(b) a MIDI backend**.
+
+---
+
+## 3. Remaining work (the real costs)
+
+### 3.1 Wiring the card at #3FE/#3FF
+- New `--mageco` (or `--midi`) "device" instantiating an `acia6850_t` at base
   $03FE.
-- Étendre le routage I/O de `main.c` (read/write callbacks) pour cette base, en gérant
-  le **conflit d'adresses** : #3FE/#3FF est dans le miroir VIA $0300-$03FF actuel
-  (`memory.c:94`). Il faut donner la priorité à la carte quand elle est active, comme
-  c'est déjà fait pour l'ACIA 6551 vs Microdisc.
-- **Risque connu et documenté dans le fil** : « #3FE and #3FF can rise
-  incompatibilities with other extensions ». À refléter dans `COMPATIBILITY.md`.
+- Extend the I/O routing of `main.c` (read/write callbacks) for this base, handling
+  the **address conflict**: #3FE/#3FF lies in the current $0300-$03FF VIA mirror
+  (`memory.c:94`). The card must take priority when active, as is
+  already done for the 6551 ACIA vs the Microdisc.
+- **Known risk, documented in the thread**: « #3FE and #3FF can rise
+  incompatibilities with other extensions ». To be reflected in `COMPATIBILITY.md`.
 
-### 3.2 Backend MIDI (le vrai morceau)
-Trois niveaux d'ambition, à choisir :
+### 3.2 MIDI backend (the real chunk)
+Three levels of ambition to choose from:
 
-| Niveau | Description | Effort |
+| Level | Description | Effort |
 |---|---|---|
-| **A. Capture/replay fichier** | TX → octets MIDI bruts dans un `.syx`/`.mid`, RX ← fichier. Réutilise `SERIAL_BACKEND_FILE`. Pas de son temps réel. | Faible |
-| **B. Port MIDI hôte (ALSA seq / CoreMIDI)** | TX/RX branchés sur un vrai port MIDI système → pilote un synthé/DAW réel. | Moyen (dépendance optionnelle, comme SDL2) |
-| **C. Synthé interne** | Rendu audio du flux MIDI dans l'émulateur (General MIDI). | Élevé, hors périmètre raisonnable |
+| **A. File capture/replay** | TX → raw MIDI bytes into a `.syx`/`.mid`, RX ← file. Reuses `SERIAL_BACKEND_FILE`. No real-time sound. | Low |
+| **B. Host MIDI port (ALSA seq / CoreMIDI)** | TX/RX wired to a real system MIDI port → drives a real synth/DAW. | Medium (optional dependency, like SDL2) |
+| **C. Internal synth** | Audio rendering of the MIDI stream inside the emulator (General MIDI). | High, beyond a reasonable scope |
 
-Recommandation : viser **A** d'abord (livrable testable sans dépendance), garder **B**
-en option de build (`MIDI=1`, façon `CAST=1`).
+Recommendation: aim for **A** first (testable deliverable with no dependency), keep **B**
+as a build option (`MIDI=1`, in the style of `CAST=1`).
 
 ### 3.3 Timing
-MIDI = 31250 bauds, 8N1, ~320 µs/octet (≈ 320 cycles CPU à 1 MHz). Le pas de timing
-existant (agrégation par instruction, `main.c:1679`) s'applique tel quel ; il suffit
-de fixer la cadence d'octet à 31250 bauds pour cette base.
+MIDI = 31250 baud, 8N1, ~320 µs/byte (≈ 320 CPU cycles at 1 MHz). The existing timing
+step (per-instruction aggregation, `main.c:1679`) applies as is; it is enough
+to set the byte rate to 31250 baud for this base.
 
-### 3.4 Tests & doc (obligatoires, méthode agile)
-- Nouvelle suite `make test-midi` (modèle : `test-serial`) : reset 6850, écriture
-  control, TX d'un octet → backend, RX → RDRF+IRQ, master reset, conflit d'adresses.
-- Mise à jour `CHANGELOG`, `VERSION_TRACKING`, `CIRRUS_OS`, `ROADMAP`, `EMU_VERSION`,
-  `COMPATIBILITY.md`, README (section `--mageco`/`--midi`).
+### 3.4 Tests & docs (mandatory, agile method)
+- New `make test-midi` suite (model: `test-serial`): 6850 reset, control
+  write, TX of one byte → backend, RX → RDRF+IRQ, master reset, address conflict.
+- Update `CHANGELOG`, `VERSION_TRACKING`, `CIRRUS_OS`, `ROADMAP`, `EMU_VERSION`,
+  `COMPATIBILITY.md`, README (`--mageco`/`--midi` section).
 
 ---
 
-## 4. Estimation (niveau A, capture fichier)
+## 4. Estimate (level A, file capture)
 
-| Lot | Description | Charge |
+| Batch | Description | Load |
 |---|---|---|
-| S1 | Device `--mageco`, instanciation 6850 à $03FE, routage I/O + priorité d'adresse | ~150 LOC |
-| S2 | Backend MIDI fichier (réutilise FILE), cadence 31250 bauds | ~120 LOC |
-| S3 | Suite `make test-midi` + doc agile complète | ~200 LOC tests |
+| S1 | `--mageco` device, 6850 instantiated at $03FE, I/O routing + address priority | ~150 LOC |
+| S2 | MIDI file backend (reuses FILE), 31250-baud pacing | ~120 LOC |
+| S3 | `make test-midi` suite + complete agile docs | ~200 LOC of tests |
 
-≈ **450–500 LOC** pour un MVP testable. Le niveau B (port ALSA réel) ajoute ~200 LOC
-et une dépendance optionnelle.
-
----
-
-## 5. Risques
-
-- **Conflit d'adresses #3FE/#3FF** avec le miroir VIA et d'autres extensions
-  (explicitement signalé par Dbug). Gérable par priorité conditionnelle, à tester.
-- **Absence de logiciel de validation côté émulé** : il faut un programme Oric qui
-  pilote la carte (le lecteur `.mid` de Fabrice) pour une validation de bout en bout ;
-  sinon les tests restent unitaires.
-- **Niveau B** introduit une dépendance plateforme (ALSA/CoreMIDI) → garder optionnel.
+≈ **450–500 LOC** for a testable MVP. Level B (real ALSA port) adds ~200 LOC
+and an optional dependency.
 
 ---
 
-## 6. Recommandation
+## 5. Risks
 
-**Faisable, et à coût modéré** grâce au modèle MC6850 déjà autonome et au routage ACIA
-paramétrable. Proposition : un sprint MVP « niveau A » (carte à #3FE/#3FF + backend
-fichier MIDI + tests), le port MIDI hôte temps réel (« niveau B ») étant un sprint
-suivant optionnel. Décision go/no-go à valider avant ouverture du backlog.
+- **#3FE/#3FF address conflict** with the VIA mirror and other extensions
+  (explicitly flagged by Dbug). Manageable with conditional priority, to be tested.
+- **No validation software on the emulated side**: an Oric program that
+  drives the card (Fabrice's `.mid` player) is needed for end-to-end validation;
+  otherwise the tests remain unit tests.
+- **Level B** introduces a platform dependency (ALSA/CoreMIDI) → keep it optional.
 
 ---
 
-## 7. Équivalence émulateur ↔ Oric réel + carte Mageco
+## 6. Recommendation
 
-Point central pour l'utilisateur : **du point de vue des données MIDI, l'émulateur
-et un vrai Oric équipé de la carte sont équivalents**, parce que le MIDI est une
-norme universelle. Un programme Oric écrit dans le 6850, qui émet des octets MIDI
-à 31250 bauds — que la puce soit physique ou émulée, **le flux d'octets est
-identique**. Seule la couche de transport physique diffère.
+**Feasible, at moderate cost** thanks to the already standalone MC6850 model and the configurable ACIA
+routing. Proposal: one "level A" MVP sprint (card at #3FE/#3FF + MIDI
+file backend + tests), with the real-time host MIDI port ("level B") as an optional
+follow-up sprint. Go/no-go decision to be validated before opening the backlog.
 
-### Oric physique + carte Mageco
+---
+
+## 7. Equivalence: emulator ↔ real Oric + Mageco card
+
+Key point for the user: **from the MIDI data point of view, the emulator
+and a real Oric fitted with the card are equivalent**, because MIDI is a
+universal standard. An Oric program writes to the 6850, which emits MIDI bytes
+at 31250 baud — whether the chip is physical or emulated, **the byte stream is
+identical**. Only the physical transport layer differs.
+
+### Physical Oric + Mageco card
 
 ```
-Oric réel ──6850──► prise DIN-5 MIDI OUT ──câble MIDI──► [interface USB-MIDI] ──USB──► PC
+Real Oric ──6850──► DIN-5 MIDI OUT socket ──MIDI cable──► [USB-MIDI interface] ──USB──► PC
 ```
 
-- Signal électrique MIDI réel (boucle de courant, optoisolée par le TIL 111 en
-  entrée) sur les prises DIN-5.
-- Pour relier au PC : **interface USB-MIDI** matérielle obligatoire.
-- Côté PC, **le même logiciel** qu'avec l'émulateur (FluidSynth, DAW, `aconnect`…).
-  Le PC ne distingue pas un Oric réel de l'émulateur.
+- Real MIDI electrical signal (current loop, opto-isolated by the TIL 111 on
+  input) on the DIN-5 sockets.
+- To connect to the PC: a hardware **USB-MIDI interface** is mandatory.
+- On the PC side, **the same software** as with the emulator (FluidSynth, DAW, `aconnect`…).
+  The PC cannot tell a real Oric from the emulator.
 
-### Tableau comparatif
+### Comparison table
 
-| | Oric réel + Mageco | Émulateur Phosphoric |
+| | Real Oric + Mageco | Phosphoric emulator |
 |---|---|---|
-| Flux MIDI / données | ✅ identique (norme MIDI) | ✅ identique |
-| Transport vers le PC | câbles DIN-5 + **interface USB-MIDI** | **port virtuel** (`file:`/loopback/tcp/pty) — aucun câble |
-| Isolation / électronique | optocoupleur réel, risque de bruit | sans objet (logique pure) |
-| Conflit d'adresses $03FE/$03FF | **risque réel** si autre extension branchée | priorité de routage logiciel (averti si Microdisc) |
-| Timing 31250 bauds | natif (vrai 1 MHz) | émulé fidèlement (320 cycles/octet) |
+| MIDI stream / data | ✅ identical (MIDI standard) | ✅ identical |
+| Transport to the PC | DIN-5 cables + **USB-MIDI interface** | **virtual port** (`file:`/loopback/tcp/pty) — no cable |
+| Isolation / electronics | real optocoupler, risk of noise | not applicable (pure logic) |
+| $03FE/$03FF address conflict | **real risk** if another extension is plugged in | software routing priority (warning if Microdisc) |
+| 31250-baud timing | native (real 1 MHz) | faithfully emulated (320 cycles/byte) |
 
-### Conséquence pratique
+### Practical consequence
 
-Comme l'émulation reproduit fidèlement le 6850 à $03FE/$03FF et le timing 31250
-bauds, **un logiciel MIDI Oric développé/testé sur l'émulateur tournera tel quel
-sur un Oric réel équipé de la carte**, et réciproquement. La preuve empirique est
-le test e2e : un `POKE` BASIC d'un Note On produit, dans la capture fichier, les
-octets `90 3C 7F` exacts — soit précisément ce qu'un vrai Oric+Mageco mettrait sur
-le fil MIDI OUT.
+Since the emulation faithfully reproduces the 6850 at $03FE/$03FF and the 31250-baud
+timing, **Oric MIDI software developed/tested on the emulator will run unchanged
+on a real Oric fitted with the card**, and vice versa. The empirical proof is
+the e2e test: a BASIC `POKE` of a Note On produces, in the file capture, the exact
+bytes `90 3C 7F` — precisely what a real Oric+Mageco would put on
+the MIDI OUT line.
 
-### Ce qu'un PC permet de faire (par niveau)
+### What a PC lets you do (by level)
 
-- **Niveau A livré (fichier)** : capturer le flux MIDI émis par l'Oric dans un
-  `.mid`/`.syx` (lisible par tout lecteur/DAW), ou injecter un fichier en MIDI IN.
-  Idéal pour développer/déboguer sans matériel, archiver, faire de la non-régression.
-- **Niveau B (à venir, port hôte temps réel)** : l'Oric émulé pilote un synthé
-  logiciel (FluidSynth + soundfont GM) ou une DAW, ou un clavier MIDI joue *vers*
-  l'Oric, via le séquenceur ALSA (`aconnect`, `a2jmidid`) / CoreMIDI / loopMIDI.
+- **Level A delivered (file)**: capture the MIDI stream emitted by the Oric into a
+  `.mid`/`.syx` (readable by any player/DAW), or inject a file as MIDI IN.
+  Ideal for developing/debugging without hardware, archiving, and non-regression testing.
+- **Level B (upcoming, real-time host port)**: the emulated Oric drives a software
+  synth (FluidSynth + GM soundfont) or a DAW, or a MIDI keyboard plays *into*
+  the Oric, via the ALSA sequencer (`aconnect`, `a2jmidid`) / CoreMIDI / loopMIDI.
 
 ---
 
-## Références code
-- `include/io/acia6850.h`, `src/io/acia6850.c` — cœur MC6850 réutilisable
-- `src/io/dtl2000.c` — exemple d'intégration d'un 6850 + backend
-- `include/io/serial_backend.h` — abstraction de transport (enum `SERIAL_BACKEND_*`)
-- `src/main.c:606-614`, `:762-771` — routage ACIA avec priorité d'adresse
-- `src/memory/memory.c:93-94` — miroir I/O $0300-$03FF (zone du conflit)
+## Code references
+- `include/io/acia6850.h`, `src/io/acia6850.c` — reusable MC6850 core
+- `src/io/dtl2000.c` — example of integrating a 6850 + backend
+- `include/io/serial_backend.h` — transport abstraction (enum `SERIAL_BACKEND_*`)
+- `src/main.c:606-614`, `:762-771` — ACIA routing with address priority
+- `src/memory/memory.c:93-94` — $0300-$03FF I/O mirror (the conflict area)

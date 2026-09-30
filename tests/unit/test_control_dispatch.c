@@ -243,7 +243,7 @@ TEST(buffer_sink_accumulates_across_calls) {
     PASS();
 }
 
-/* ─── Sprint 97: parité debug REST (couche --control) ──────────────── */
+/* ─── Sprint 97: REST debug parity (--control layer) ──────────────── */
 
 TEST(watch_mode_read) {
     emulator_t* emu = fresh_emu();

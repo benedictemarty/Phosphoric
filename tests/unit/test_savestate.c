@@ -358,8 +358,8 @@ TEST(test_save_file_header) {
                    ((uint32_t)crc_buf[2] << 16) | ((uint32_t)crc_buf[3] << 24);
     ASSERT_TRUE(crc != 0);
 
-    /* Emulator version at offset 16 — doit correspondre à EMU_VERSION
-       (indépendant du label de maturité alpha/beta/release) */
+    /* Emulator version at offset 16 — must match EMU_VERSION
+       (independent of the alpha/beta/release maturity label) */
     fseek(fp, 16, SEEK_SET);
     char emu_ver[32];
     fread(emu_ver, 1, 32, fp);
@@ -536,16 +536,16 @@ TEST(test_save_load_disk_image) {
     cleanup_test();
 }
 
-/* (Tests 9-11 OCULA — profils ULA / banking OCB / GPU OGP — retirés avec la
- * suppression du code OCULA du main. Le format .ost reste rétro-compatible :
- * les sections OCB/OGP absentes sont simplement ignorées au chargement.) */
+/* (Tests 9-11 OCULA — ULA profiles / OCB banking / OGP GPU — removed along with
+ * the OCULA code from main. The .ost format stays backward-compatible:
+ * absent OCB/OGP sections are simply ignored on load.) */
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  TEST 12-13 : hooks de sérialisation io_device_t (section "UNG")     */
+/*  TEST 12-13: io_device_t serialisation hooks (section "UNG")         */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Wrappers de test reproduisant l'enregistrement fait par main.c (io_bus).
- * savestate.c itère la table opaque fournie via savestate_set_io_devices. */
+/* Test wrappers reproducing the registration done by main.c (io_bus).
+ * savestate.c iterates the opaque table provided via savestate_set_io_devices. */
 static bool t_ula_ng_save(emulator_t* emu, FILE* fp) {
     return ula_ng_save(&emu->ula_ng, fp);
 }
@@ -556,7 +556,7 @@ static const io_device_t t_io_devices[] = {
     { "ula-ng", NULL, NULL, NULL, NULL, "UNG\0", t_ula_ng_save, t_ula_ng_load },
 };
 
-/* Déverrouille l'ULA-NG ('N','G' sur $0340) et programme un état distinctif. */
+/* Unlocks the ULA-NG ('N','G' on $0340) and programs a distinctive state. */
 static void unlock_and_program_ula_ng(emulator_t* emu) {
     ula_ng_init(&emu->ula_ng);
     ula_ng_write(&emu->ula_ng, ULA_NG_REG_LOCK, 'N');
@@ -580,7 +580,7 @@ TEST(test_save_load_ula_ng_roundtrip) {
     ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
     ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
 
-    /* La section "UNG" a restauré l'état ULA-NG à l'identique. */
+    /* The "UNG" section restored the ULA-NG state identically. */
     ASSERT_TRUE(emu2.ula_ng.unlocked);
     ASSERT_TRUE(emu2.ula_ng.active);
     ASSERT_EQ(emu2.ula_ng.scrollx, 3);
@@ -593,21 +593,21 @@ TEST(test_save_load_ula_ng_roundtrip) {
     cleanup_test();
 }
 
-/* Verrouillée (= état par défaut) : aucune section "UNG" émise → un émulateur
- * cible avec un état ULA-NG pré-existant n'est PAS écrasé au chargement. */
+/* Locked (= default state): no "UNG" section emitted → a target emulator
+ * with a pre-existing ULA-NG state is NOT overwritten on load. */
 TEST(test_save_load_ula_ng_locked_no_section) {
     emulator_t emu1, emu2;
     init_test_emu(&emu1);
     init_test_emu(&emu2);
-    ula_ng_init(&emu1.ula_ng);          /* emu1 verrouillée (défaut) */
-    unlock_and_program_ula_ng(&emu2);   /* emu2 a un état ULA-NG à préserver */
+    ula_ng_init(&emu1.ula_ng);          /* emu1 locked (default) */
+    unlock_and_program_ula_ng(&emu2);   /* emu2 has a ULA-NG state to preserve */
     savestate_set_io_devices(t_io_devices, 1);
 
     ASSERT_FALSE(emu1.ula_ng.unlocked);
     ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
     ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
 
-    /* Pas de section UNG dans le .ost → l'ULA-NG d'emu2 reste intacte. */
+    /* No UNG section in the .ost → emu2's ULA-NG stays intact. */
     ASSERT_TRUE(emu2.ula_ng.unlocked);
     ASSERT_EQ(emu2.ula_ng.scrollx, 3);
     ASSERT_EQ(emu2.ula_ng.scrolly, 5);

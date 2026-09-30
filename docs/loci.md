@@ -1,129 +1,129 @@
 # LOCI — Lovely Oric Computer Interface
 
-Émulation du périphérique LOCI de **Sodiumlightbaby** (sodiumlb, 2024) : une
-cartouche RP2040 qui se branche sur le bus de l'Oric et fournit stockage de
-masse (USB / SD / flash interne), clavier-souris-manettes USB HID, modem WiFi
-(PicoWiFiModemUSB), swap de ROM à chaud et menu intégré.
+Emulation of the LOCI peripheral by **Sodiumlightbaby** (sodiumlb, 2024): an
+RP2040 cartridge that plugs into the Oric bus and provides mass
+storage (USB / SD / internal flash), USB HID keyboard-mouse-gamepads, a WiFi modem
+(PicoWiFiModemUSB), hot ROM swapping and a built-in menu.
 
-Références : [loci-hardware](https://github.com/sodiumlb/loci-hardware) ·
+References: [loci-hardware](https://github.com/sodiumlb/loci-hardware) ·
 [loci-firmware](https://github.com/sodiumlb/loci-firmware) ·
-[loci-rom](https://github.com/sodiumlb/loci-rom) (menu). L'émulation est
-alignée sur la source du firmware (release de référence : **v0.3.1**) et
-vérifiée sur pièces ; les écarts connus sont listés en fin de document.
+[loci-rom](https://github.com/sodiumlb/loci-rom) (menu). The emulation is
+aligned with the firmware source (reference release: **v0.3.1**) and
+verified against it; known discrepancies are listed at the end of this document.
 
-## Démarrage rapide
+## Quick start
 
 ```bash
-# LOCI + modem WiFi picowifi (ACIA 6551 à $0380, adressez $0380 PAS $03A0)
+# LOCI + picowifi WiFi modem (ACIA 6551 at $0380, address $0380 NOT $03A0)
 ./oric1-emu -r roms/basic11b.rom --loci --serial picowifi
 
-# Menu LOCI directement au boot
+# LOCI menu straight at boot
 ./oric1-emu -r roms/loci/locirom --loci
 
-# Image SD FAT16/32 brute comme stockage
+# Raw FAT16/32 SD image as storage
 ./oric1-emu -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
-### Dans le navigateur (build WebAssembly)
+### In the browser (WebAssembly build)
 
-`phosphoric.html?loci=1` (ou le bouton **LOCI** du rail) démarre sur le menu
-LOCI, avec un flash interne persistant dans IndexedDB ; les fichiers chargés y
-sont copiés et se montent depuis le menu. Détails et limites (pas de picowifi,
-de clés USB ni d'image SD en web) : [wasm.md](wasm.md).
+`phosphoric.html?loci=1` (or the **LOCI** button in the rail) starts on the LOCI
+menu, with an internal flash persisted in IndexedDB; loaded files are
+copied into it and can be mounted from the menu. Details and limits (no picowifi,
+USB sticks or SD image on the web): [wasm.md](wasm.md).
 
-## Cartographie mémoire
+## Memory map
 
-| Fenêtre | Contenu |
-|---------|---------|
-| `$0310-$031F` | WD1793 + contrôle DSK (mode Microdisc du LOCI ; `$0319` = 'L') |
-| `$0315-$0317` | Protocole TAP bas niveau (PLAY/REC/READ_BIT, trame 14 bits) |
-| `$0380-$0383` | ACIA 6551 (modem picowifi) — défaut sous `--loci` |
-| `$03A0-$03BF` | MIA : console UART, registres API (xstack `$03AC`, errno `$03AD/E`, op `$03AF`), stub `$03B0` (spin/BLOCKED), BUSY `$03B2` bit 7, trap bouton `$03BA-$03BF` |
+| Window | Contents |
+|--------|----------|
+| `$0310-$031F` | WD1793 + DSK control (LOCI Microdisc mode; `$0319` = 'L') |
+| `$0315-$0317` | Low-level TAP protocol (PLAY/REC/READ_BIT, 14-bit frame) |
+| `$0380-$0383` | ACIA 6551 (picowifi modem) — default under `--loci` |
+| `$03A0-$03BF` | MIA: UART console, API registers (xstack `$03AC`, errno `$03AD/E`, op `$03AF`), stub `$03B0` (spin/BLOCKED), BUSY `$03B2` bit 7, button trap `$03BA-$03BF` |
 
-## API (op `$03AF`) — 36/36 ops implémentées
+## API (op `$03AF`) — 36/36 ops implemented
 
-Système (`PIX_XREG`, `CPU_PHI2`→1000 kHz, `OEM_CODEPAGE`, `RNG_LRAND`,
-`STDIN_OPT`), horloge (`CLOCK`, `CLK_GET/SETTIME`, `GETRES`), fichiers
-(`OPEN/CLOSE/READ/WRITE_XSTACK/XRAM/LSEEK/UNLINK/RENAME`), répertoires
-(`OPENDIR/CLOSEDIR/READDIR/MKDIR/GETCWD`), montage (`MOUNT/UMOUNT`, TAP
+System (`PIX_XREG`, `CPU_PHI2`→1000 kHz, `OEM_CODEPAGE`, `RNG_LRAND`,
+`STDIN_OPT`), clock (`CLOCK`, `CLK_GET/SETTIME`, `GETRES`), files
+(`OPEN/CLOSE/READ/WRITE_XSTACK/XRAM/LSEEK/UNLINK/RENAME`), directories
+(`OPENDIR/CLOSEDIR/READDIR/MKDIR/GETCWD`), mounting (`MOUNT/UMOUNT`, TAP
 `SEEK/TELL/READ_HEADER`, `UNAME`), boot/tuning (`MIA_BOOT`, `MAP_TUNE_*`,
-`ADJ_SCAN`), sentinelle `$FF` (exit → spin).
+`ADJ_SCAN`), `$FF` sentinel (exit → spin).
 
-### ABI conforme au firmware (vérifiée sur source)
+### Firmware-compliant ABI (checked against the source)
 
-- **errno** : erreurs filesystem = `32 + FRESULT` FatFS (fichier manquant → 36,
-  répertoire manquant → 37, refusé/non-vide/plein → 39, existe déjà → 40…) ;
-  les codes 1-18 sont réservés aux erreurs API (`EBADF`, `EMFILE`, `ENODEV`,
-  `ENOSYS`, garde anti-échappement) — exactement comme `api.h` du firmware.
-- **Descripteurs** : fichiers 3-18 (FAT, `STD_FIL_OFFS=3`), répertoires 64+
-  (`FD_OFFS_FAT`) ; l'itérateur de périphériques est le fd 0 (`FD_OFFS_DEV`).
-- **xstack** : 512 octets, push/pop et chaînes sans NUL conformes.
-- **`MAP_TUNE_*`** : valeur dans le registre A ; A ≤ 31 règle le délai, toute
-  autre valeur est une *requête* ; l'op renvoie toujours la valeur courante
-  dans AX. `ADJ_SCAN` balaye tior 0-31 (~100 ms + 5 ms/pas) avec progression
-  visible dans l'octet ROM `$FFF0` (`0x80|tior` puis tior configuré).
+- **errno**: filesystem errors = `32 + FRESULT` FatFS (missing file → 36,
+  missing directory → 37, denied/not empty/full → 39, already exists → 40…);
+  codes 1-18 are reserved for API errors (`EBADF`, `EMFILE`, `ENODEV`,
+  `ENOSYS`, anti-escape guard) — exactly as in the firmware's `api.h`.
+- **Descriptors**: files 3-18 (FAT, `STD_FIL_OFFS=3`), directories 64+
+  (`FD_OFFS_FAT`); the device iterator is fd 0 (`FD_OFFS_DEV`).
+- **xstack**: 512 bytes, compliant push/pop and NUL-less strings.
+- **`MAP_TUNE_*`**: value in register A; A ≤ 31 sets the delay, any
+  other value is a *query*; the op always returns the current value
+  in AX. `ADJ_SCAN` sweeps tior 0-31 (~100 ms + 5 ms/step) with progress
+  visible in ROM byte `$FFF0` (`0x80|tior` then the configured tior).
 
-## Stockage
+## Storage
 
-Le vrai LOCI a trois étages ; leurs équivalents dans Phosphoric :
+The real LOCI has three tiers; their equivalents in Phosphoric:
 
-| Matériel réel | Émulation |
+| Real hardware | Emulation |
 |---------------|-----------|
-| **Flash interne** (LittleFS du RP2040, pré-semée `basic11b.rom`, `basic10.rom`, `microdis.rom`, `locirom`) | **flash root** : `--loci-flash DIR` (défaut : répertoire courant). Chemins `0:` et nus. Les ROM système absentes du flash root sont résolues en repli dans le dossier de la ROM `-r` (donc `roms/`) |
-| **Clé USB** (FAT, port USB host) | `--loci-usb DIR` (répétable, 4 max) **ou auto-détection** des médias montés dans `/media/$USER` et `/run/media/$USER` au lancement. Chemins volume `1:`-`4:`. Label + taille affichés dans le menu (`N: MSC x.x GB <label>`). Pas de hot-plug : brancher avant de lancer |
-| **Carte SD** (image brute) | `--loci-sdimg PATH` (FAT16/32). NOTE : quand actif, ce backend possède toutes les ops fichiers (les clés USB restent listées mais non navigables) |
+| **Internal flash** (RP2040 LittleFS, pre-seeded with `basic11b.rom`, `basic10.rom`, `microdis.rom`, `locirom`) | **flash root**: `--loci-flash DIR` (default: current directory). `0:` and bare paths. System ROMs missing from the flash root are resolved as a fallback in the folder of the `-r` ROM (hence `roms/`) |
+| **USB stick** (FAT, USB host port) | `--loci-usb DIR` (repeatable, 4 max) **or auto-detection** of media mounted under `/media/$USER` and `/run/media/$USER` at startup. Volume paths `1:`-`4:`. Label + size shown in the menu (`N: MSC x.x GB <label>`). No hot-plug: plug in before launching |
+| **SD card** (raw image) | `--loci-sdimg PATH` (FAT16/32). NOTE: when active, this backend owns all file ops (USB sticks remain listed but cannot be browsed) |
 
-La **liste des périphériques** (sélecteur du menu) est servie par
-`opendir("")` : « 0: Internal storage [15MB] », puis une ligne par
-périphérique USB (`usb_set_status` du firmware — la clé MSC, le picowifi
-« CDC modem mounted »), puis un nom vide.
+The **device list** (menu selector) is served by
+`opendir("")`: "0: Internal storage [15MB]", then one line per
+USB device (the firmware's `usb_set_status` — the MSC stick, the picowifi
+"CDC modem mounted"), then an empty name.
 
-## Bouton Action (F8)
+## Action button (F8)
 
-Comportement du firmware (`ext.c`) reproduit :
+Firmware behaviour (`ext.c`) reproduced:
 
-- **Appui court** : snapshot de la session (→ `<flash root>/loci_resume.ost`),
-  trap IRQ `$03BA` (CLV; BVC -2; JMP ($FFFA)), puis **boot du menu LOCI**
-  (`LOCIROM`/`locirom` du flash root, repli `roms/loci/locirom`). Comme le
-  vrai firmware, la version FW (0.3.1) et les timings (tmap/tior/tiow/tiod/
-  tadr) sont **patchés dans la ROM** aux placeholders `$FFF7-9` / `$FFEF-F3`.
-  L'entrée *resume* du menu (`MIA_BOOT` + `LOCI_BOOT_RESUME`) re-swape la ROM
-  d'avant et restaure le snapshot. Appuyer sur F8 dans le menu est ignoré
-  (le snapshot de session est préservé).
-- **Appui long (≥ 2 s)** : boot de la **diag ROM de Mike Brown**
-  (`roms/loci/test108k.rom`, v1.08k, incluse dans les builds firmware réels
-  avec sa permission — variante 60 Hz fournie). Test pas-à-pas
-  CPU/ULA/DRAM/VIA/PSG.
-- En mode `--control` : commande `loci-button [long]`.
-- F5 = reset MIA (registres/xstack/op) en conservant les montages, comme le
-  bouton reset du Pico.
+- **Short press**: session snapshot (→ `<flash root>/loci_resume.ost`),
+  IRQ trap `$03BA` (CLV; BVC -2; JMP ($FFFA)), then **boot into the LOCI menu**
+  (`LOCIROM`/`locirom` from the flash root, fallback `roms/loci/locirom`). Like the
+  real firmware, the FW version (0.3.1) and the timings (tmap/tior/tiow/tiod/
+  tadr) are **patched into the ROM** at the placeholders `$FFF7-9` / `$FFEF-F3`.
+  The menu's *resume* entry (`MIA_BOOT` + `LOCI_BOOT_RESUME`) swaps the previous
+  ROM back in and restores the snapshot. Pressing F8 inside the menu is ignored
+  (the session snapshot is preserved).
+- **Long press (≥ 2 s)**: boots **Mike Brown's diag ROM**
+  (`roms/loci/test108k.rom`, v1.08k, included in the real firmware builds
+  with his permission — 60 Hz variant supplied). Step-by-step
+  CPU/ULA/DRAM/VIA/PSG test.
+- In `--control` mode: command `loci-button [long]`.
+- F5 = MIA reset (registers/xstack/op) keeping the mounts, like the
+  Pico's reset button.
 
-## Timing du bus MIA
+## MIA bus timing
 
-La MIA échantillonne le bus 6502 par PIO à des décalages sous-cycle réglés
-par `MAP_TUNE_*`. Un `tior` mal calé corrompt la fenêtre ACIA du picowifi —
-symptôme matériel réel reproduit : `--loci-mia-window LO-HI` définit la
-plage fiable (défaut 0-31 = toujours fiable) ; hors fenêtre, `$0380` lit
-`$FF` et ignore les écritures.
+The MIA samples the 6502 bus through PIO at sub-cycle offsets set
+by `MAP_TUNE_*`. A badly tuned `tior` corrupts the picowifi ACIA window —
+a real hardware symptom, reproduced: `--loci-mia-window LO-HI` defines the
+reliable range (default 0-31 = always reliable); outside the window, `$0380` reads
+`$FF` and ignores writes.
 
-## Divergences connues (hors périmètre)
+## Known discrepancies (out of scope)
 
-- Flash interne LittleFS non émulée en tant que telle (fichiers LFS 19-20,
-  répertoires 32+, errno `128-lfs_err`, volume « 0: » réel) — le flash root
-  joue ce rôle avec la sémantique FAT.
-- Répertoire dev « 0 » du firmware, pattern matcher ULA réel, BUSY observable
-  pendant une op longue.
-- Détection USB au démarrage uniquement (pas de hot-plug).
-- Le `dsk_fdc` du LOCI reste en timing FDC rapide — fidèle : sur le vrai
-  matériel son « lecteur » est le RP2040 + SD, sans mécanique (le Microdisc,
-  lui, est en timing mécanique réel par défaut).
+- The LittleFS internal flash is not emulated as such (LFS files 19-20,
+  directories 32+, errno `128-lfs_err`, real "0:" volume) — the flash root
+  plays that role with FAT semantics.
+- The firmware's dev directory "0", the real ULA pattern matcher, BUSY observable
+  during a long op.
+- USB detection at startup only (no hot-plug).
+- The LOCI's `dsk_fdc` keeps fast FDC timing — faithful: on real
+  hardware its "drive" is the RP2040 + SD, with no mechanics (the Microdisc,
+  on the other hand, uses real mechanical timing by default).
 
-## Pour aller plus loin
+## Going further
 
-- **Article de vulgarisation** — [Cinq extensions expérimentales pour la carte
-  LOCI](articles/loci-extensions-tachibana.md) (ABI *fastcall*, carte des registres
-  MIA, schémas) : coprocesseur `$A9`, ACIA fiable `$AA`, banque `$A7`, streamer
-  `$A8`, modèle de *tearing*. Ces extensions sont **expérimentales, opt-in et hors
-  `main`** (branche `experiment/loci-coproc-acia-reliable`).
-- **Architecture interne** — [`architecture/loci-glue.md`](architecture/loci-glue.md),
+- **Popular-science article** — [Five experimental extensions for the LOCI
+  board](articles/loci-extensions-tachibana.md) (*fastcall* ABI, MIA register map,
+  diagrams): `$A9` coprocessor, reliable ACIA `$AA`, `$A7` bank, `$A8`
+  streamer, *tearing* model. These extensions are **experimental, opt-in and not in
+  `main`** (branch `experiment/loci-coproc-acia-reliable`).
+- **Internal architecture** — [`architecture/loci-glue.md`](architecture/loci-glue.md),
   [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).

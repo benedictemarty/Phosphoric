@@ -114,27 +114,27 @@ typedef struct rom_patches_s {
 #define VSYNC_START_LINE     256
 #define VSYNC_CYCLE          (VSYNC_START_LINE * PAL_CYCLES_PER_LINE)     /* 16384 */
 
-/* Nombre max d'entrées --type-keys séquençables sur une ligne de commande */
+/* Max number of --type-keys entries that can be sequenced on one command line */
 #define TYPE_KEYS_SEQ_MAX    16
 
-/* Nombre max d'écritures mémoire différées (--poke-at / --poke-when) */
+/* Max number of deferred memory writes (--poke-at / --poke-when) */
 #define POKE_MAX             32
 
-/* Captures déclenchées par cycle, RÉPÉTABLES (--screenshot-at / -text-at /
- * -ansi-at / --dump-ram-at) : chaque entrée tire une fois quand total_executed
- * atteint son seuil. Motif tableau homogène avec --poke-at / --type-keys. */
+/* Cycle-triggered, REPEATABLE captures (--screenshot-at / -text-at /
+ * -ansi-at / --dump-ram-at): each entry fires once when total_executed
+ * reaches its threshold. Array pattern consistent with --poke-at / --type-keys. */
 #define TIMED_CAPTURE_MAX    64
 typedef enum {
-    TCAP_IMAGE = 0,   /* --screenshot-at      : image PPM/BMP */
-    TCAP_TEXT,        /* --screenshot-text-at : texte écran $BB80 */
-    TCAP_ANSI,        /* --screenshot-ansi-at : image ANSI du framebuffer */
-    TCAP_DUMP_RAM     /* --dump-ram-at        : 64K RAM (RAM + vue CPU $C000+) */
+    TCAP_IMAGE = 0,   /* --screenshot-at      : PPM/BMP image */
+    TCAP_TEXT,        /* --screenshot-text-at : $BB80 screen text */
+    TCAP_ANSI,        /* --screenshot-ansi-at : ANSI image of the framebuffer */
+    TCAP_DUMP_RAM     /* --dump-ram-at        : 64K RAM (RAM + CPU view $C000+) */
 } timed_capture_type_t;
 typedef struct {
-    int64_t cycles;               /* seuil de déclenchement (-1 = inutilisé) */
-    const char* file;             /* chemin de sortie */
+    int64_t cycles;               /* trigger threshold (-1 = unused) */
+    const char* file;             /* output path */
     timed_capture_type_t type;
-    bool done;                    /* déjà tiré */
+    bool done;                    /* already fired */
 } timed_capture_t;
 
 typedef struct emulator_s {
@@ -147,8 +147,8 @@ typedef struct emulator_s {
     via6522_t via;
     ay3891x_t psg;
     video_t video;
-    osd_t osd;                /* OSD overlay : changement de média à chaud (F6) */
-    ula_ng_t ula_ng;         /* ULA-NG : registres $0340-$035F (verrou/extensions) */
+    osd_t osd;                /* OSD overlay: hot media swap (F6) */
+    ula_ng_t ula_ng;         /* ULA-NG: registers $0340-$035F (lock/extensions) */
     hostfs_t hostfs;
 
     /* Keyboard */
@@ -179,8 +179,8 @@ typedef struct emulator_s {
     /* Microdisc controller */
     microdisc_t microdisc;
     sedoric_disk_t* disks[MICRODISC_MAX_DRIVES]; /* 4 drives: A, B, C, D */
-    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* fichier .dsk par lecteur (write-back/éjection) */
-    bool disk_writeback;     /* --disk-writeback : réécrire les .dsk modifiés */
+    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* .dsk file per drive (write-back/eject) */
+    bool disk_writeback;     /* --disk-writeback: write modified .dsk files back */
     bool has_microdisc;
 
     /* Jasmin disk interface (WD177x at $03F4-$03FF, boot ROM $F800-$FFFF).
@@ -211,7 +211,7 @@ typedef struct emulator_s {
      * signal. Enabled via --tape-signal; disables the getsync/readbyte patches. */
     cassette_t cassette;
 
-    /* Tape-OUT capture (voie A CSAVE): samples PB7 (Timer-1 driven) and
+    /* Tape-OUT capture (CSAVE path A): samples PB7 (Timer-1 driven) and
      * reconstructs the .TAP the ROM emits. Armed by --tape-out-capture. */
     tape_capture_t tape_capture;
     const char*    tape_out_path;   /* Destination .TAP for the capture, or NULL */
@@ -249,9 +249,9 @@ typedef struct emulator_s {
     bool running;
     bool fast_load;
     bool headless;
-    bool realtime;          /* --realtime : cadence à 50 Hz PAL même en headless
-                             * (pacing nanosleep, indépendant de SDL) pour les
-                             * E/S réseau (modem/XMODEM) et le séquençage clavier */
+    bool realtime;          /* --realtime: paces at 50 Hz PAL even in headless
+                             * (nanosleep pacing, independent of SDL) for
+                             * network I/O (modem/XMODEM) and keyboard sequencing */
     int64_t max_cycles;
 
     /* Sprint 34d4 (P2-G audit) — current cycle position within the PAL frame.
@@ -259,31 +259,31 @@ typedef struct emulator_s {
      * debugger can derive the raster line via `frame_cycles / PAL_CYCLES_PER_LINE`. */
     int frame_cycles;
 
-    /* ─── Horloge maître (V2-E2, src/emu_clock.c) ───
-     * Position du balayage dans la trame PAL et avancement du rendu. Ces
-     * compteurs étaient des variables locales de la boucle principale : les
-     * porter dans l'émulateur est ce qui permet à `emu_cycle()` de faire
-     * avancer TOUTE la machine d'un cycle, depuis n'importe quel appelant
-     * (boucle principale, débogueur, tests, replay). */
-    int raster_cycle;     /**< cycle courant dans la trame (0 … CYCLES_PER_FRAME-1) */
-    int raster_rendered;  /**< scanlines visibles déjà rendues (0 … 224) */
-    int raster_ng_line;   /**< ligne ULA-NG déjà traitée (0 … 311) */
-    int raster_next_line; /**< cycle du prochain franchissement de ligne (sortie
-                           *   rapide : 63 cycles sur 64 n'ont rien à émettre) */
-    bool clock_resume_pending; /**< V2-E7 : un savestate vient de restaurer la
-                                *   position du balayage ; la boucle doit reprendre
-                                *   la trame à cet endroit (emu_clock_resume) */
+    /* ─── Master clock (V2-E2, src/emu_clock.c) ───
+     * Scan position within the PAL frame and rendering progress. These
+     * counters used to be local variables of the main loop: moving them
+     * into the emulator is what lets `emu_cycle()` advance the WHOLE
+     * machine by one cycle, from any caller
+     * (main loop, debugger, tests, replay). */
+    int raster_cycle;     /**< current cycle within the frame (0 … CYCLES_PER_FRAME-1) */
+    int raster_rendered;  /**< visible scanlines already rendered (0 … 224) */
+    int raster_ng_line;   /**< ULA-NG line already processed (0 … 311) */
+    int raster_next_line; /**< cycle of the next line crossing (fast
+                           *   exit: 63 cycles out of 64 have nothing to emit) */
+    bool clock_resume_pending; /**< V2-E7: a savestate has just restored the
+                                *   scan position; the loop must resume
+                                *   the frame at that point (emu_clock_resume) */
 
-    /* ─── ULA au cycle (V2-E4) ───
-     * Quand `ula_per_cycle` est vrai, le balayage ne rend plus une ligne d'un
-     * bloc en fin de ligne : il fetche **une cellule de 6 pixels par cycle**, à
-     * l'instant où le vrai ULA la lit. Une écriture du CPU en milieu de ligne
-     * n'affecte alors que les cellules pas encore balayées (splits raster).
+    /* ─── Per-cycle ULA (V2-E4) ───
+     * When `ula_per_cycle` is true, the scan no longer renders a line in one
+     * go at the end of the line: it fetches **one 6-pixel cell per cycle**, at
+     * the moment the real ULA reads it. A CPU write in the middle of a line
+     * then only affects the cells not yet scanned (raster splits).
      *
-     * `ula_fetch_offset` est le cycle de la ligne auquel la colonne 0 est lue.
-     * ⚠️ Cette valeur n'est PAS calibrée contre du matériel réel : seule la
-     * structure (une cellule par cycle) l'est. Réglable par --ula-fetch-offset
-     * pour la calibration (même démarche que les constantes de l'épic B). */
+     * `ula_fetch_offset` is the cycle of the line at which column 0 is read.
+     * ⚠️ This value is NOT calibrated against real hardware: only the
+     * structure (one cell per cycle) is. Adjustable with --ula-fetch-offset
+     * for calibration (same approach as the epic B constants). */
     bool ula_per_cycle;
     int  ula_fetch_offset;
 
@@ -308,12 +308,12 @@ typedef struct emulator_s {
      * clobber the loaded PC/cycles and drop back to the reset vector. */
     bool startup_state_loaded;
 
-    /* Screenshot options (sorties « fin de run ») */
+    /* Screenshot options ("end of run" outputs) */
     const char* screenshot_file;
-    const char* screenshot_text_file; /* dump contenu texte écran $BB80 (sortie) */
-    const char* screenshot_ansi_file; /* image ANSI true-color du framebuffer (sortie) */
+    const char* screenshot_text_file; /* dump of the $BB80 screen text content (output) */
+    const char* screenshot_ansi_file; /* true-color ANSI image of the framebuffer (output) */
 
-    /* Captures déclenchées par cycle, répétables (voir timed_capture_t) :
+    /* Cycle-triggered, repeatable captures (see timed_capture_t):
      * --screenshot-at / -text-at / -ansi-at / --dump-ram-at. */
     timed_capture_t timed_captures[TIMED_CAPTURE_MAX];
     int             timed_capture_count;
@@ -333,10 +333,10 @@ typedef struct emulator_s {
     bool video_avi_active;        /* true once the file is open */
 
 
-    /* Captures déclenchées par un ÉTAT mémoire (front montant : 1re fois que
-     * RAM[addr] == val, échantillonné en fin de frame comme les variantes -at).
-     * addr = -1 → désarmé. Filet : si armé mais jamais déclenché avant la fin
-     * de la course (--cycles), when_condition_unmet est levé → exit 2. */
+    /* Captures triggered by a memory STATE (rising edge: 1st time that
+     * RAM[addr] == val, sampled at end of frame like the -at variants).
+     * addr = -1 → disarmed. Safety net: if armed but never fired before the end
+     * of the run (--cycles), when_condition_unmet is set → exit 2. */
     int32_t screenshot_when_addr;      /* -1 = off */
     uint8_t screenshot_when_val;
     const char* screenshot_when_file;
@@ -349,21 +349,21 @@ typedef struct emulator_s {
     uint8_t screenshot_text_when_val;
     const char* screenshot_text_when_file;
     bool screenshot_text_when_done;
-    bool when_condition_unmet;         /* levé si un -when armé n'a jamais tiré */
+    bool when_condition_unmet;         /* set if an armed -when never fired */
 
-    /* Écritures mémoire déclenchées (poke) : actionneur symétrique des captures
-     * -when/-at. Chaque entrée écrit RAM[target]=value une seule fois, soit à un
-     * seuil de cycles (at_cycles >= 0), soit sur front montant RAM[when_addr]==
-     * when_val (when_addr >= 0). Échantillonné en fin de frame comme les -when.
-     * Sert à piloter un état applicatif de façon déterministe (ex. positionner
-     * un curseur + demander un clic) sans passer par le clavier. */
+    /* Triggered memory writes (poke): actuator symmetric to the -when/-at
+     * captures. Each entry writes RAM[target]=value exactly once, either at a
+     * cycle threshold (at_cycles >= 0), or on the rising edge RAM[when_addr]==
+     * when_val (when_addr >= 0). Sampled at end of frame like the -when ones.
+     * Used to drive an application state deterministically (e.g. position
+     * a cursor + request a click) without going through the keyboard. */
     struct poke_action {
-        int64_t  at_cycles;   /* >= 0 : tire quand total_executed >= at_cycles   */
-        int32_t  when_addr;   /* >= 0 : tire quand RAM[when_addr] == when_val     */
+        int64_t  at_cycles;   /* >= 0: fires when total_executed >= at_cycles    */
+        int32_t  when_addr;   /* >= 0: fires when RAM[when_addr] == when_val      */
         uint8_t  when_val;
-        uint16_t target;      /* adresse écrite                                   */
-        uint8_t  value;       /* octet écrit                                      */
-        bool     done;        /* déjà tiré (une seule fois)                       */
+        uint16_t target;      /* address written                                  */
+        uint8_t  value;       /* byte written                                     */
+        bool     done;        /* already fired (only once)                        */
     } pokes[POKE_MAX];
     int poke_count;
 
@@ -390,24 +390,24 @@ typedef struct emulator_s {
     bool type_keys_done;
     char type_keys_last_char;       /* Last typed char (debounce repeated keys) */
     int type_keys_debounce;         /* Debounce frames remaining (0 = ready) */
-    /* Sprint 34av : si true, les chars sont injectés via le HID LOCI
-     * (loci_kbd_set_report) au lieu de la matrice ORIC. Activé par le
-     * préfixe "loci-hid:" dans le TEXT de --type-keys. Pour automatiser
-     * la navigation TUI LOCI sans une vraie SDL keyboard event. */
+    /* Sprint 34av: if true, chars are injected via the LOCI HID
+     * (loci_kbd_set_report) instead of the ORIC matrix. Enabled by the
+     * "loci-hid:" prefix in the TEXT of --type-keys. Used to automate
+     * LOCI TUI navigation without a real SDL keyboard event. */
     bool type_keys_loci_hid;
-    /* File de séquences --type-keys : permet de passer plusieurs
-     * --time-keys CYCLES:TEXT sur la même ligne de commande. Chaque entrée
-     * est activée (chargée dans les champs type_keys_* actifs ci-dessus) dès
-     * que son cycle d'armement est atteint ET que l'entrée précédente est
-     * terminée. Donne un séquençage par cycles propre pour les parcours
-     * multi-écrans automatisés (cf. wait_release des TUI/terminaux). */
+    /* Queue of --type-keys sequences: allows passing several
+     * --time-keys CYCLES:TEXT on the same command line. Each entry
+     * is activated (loaded into the active type_keys_* fields above) as soon
+     * as its arming cycle is reached AND the previous entry has
+     * finished. Gives clean cycle-based sequencing for automated
+     * multi-screen walkthroughs (cf. wait_release of TUIs/terminals). */
     struct {
-        int64_t at;          /* cycle d'armement absolu */
-        const char* text;    /* texte (sans le préfixe loci-hid:) */
-        bool loci_hid;       /* routage HID LOCI plutôt que matrice ORIC */
+        int64_t at;          /* absolute arming cycle */
+        const char* text;    /* text (without the loci-hid: prefix) */
+        bool loci_hid;       /* LOCI HID routing rather than ORIC matrix */
     } type_keys_seq[TYPE_KEYS_SEQ_MAX];
-    int type_keys_seq_count; /* nombre d'entrées valides */
-    int type_keys_seq_idx;   /* prochaine entrée à activer */
+    int type_keys_seq_count; /* number of valid entries */
+    int type_keys_seq_idx;   /* next entry to activate */
 
     /* Scan-driven pacing (cf. include/io/autotype.h). kbd_scan_passes counts
      * completed keyboard-matrix scan passes (VIA Port B sweep), updated in
@@ -529,43 +529,43 @@ typedef struct emulator_s {
 } emulator_t;
 
 /* ════════════════════════════════════════════════════════════════════
- *  Horloge maître (V2-E2, src/emu_clock.c)
+ *  Master clock (V2-E2, src/emu_clock.c)
  *
- *  Point d'entrée unique du temps : un appel = un cycle de TOUTE la machine,
- *  dans un ordre intra-cycle figé (φ1 ULA → φ2 CPU → périphériques φ2).
+ *  Single entry point for time: one call = one cycle of the WHOLE machine,
+ *  in a fixed intra-cycle order (φ1 ULA → φ2 CPU → φ2 peripherals).
  * ══════════════════════════════════════════════════════════════════ */
 
 /**
- * @brief Fait avancer la machine entière d'un cycle
- * @return true si le cycle exécuté terminait une instruction
+ * @brief Advances the whole machine by one cycle
+ * @return true if the executed cycle completed an instruction
  *
- * Avec le cœur historique (`--cpu-legacy`), qui ne sait pas s'arrêter entre deux
- * cycles, exécute une instruction entière et renvoie toujours true.
+ * With the legacy core (`--cpu-legacy`), which cannot stop between two
+ * cycles, executes a whole instruction and always returns true.
  */
 bool emu_cycle(emulator_t* emu);
 
-/** @brief Exécute une instruction complète via emu_cycle() ; renvoie ses cycles */
+/** @brief Executes a complete instruction via emu_cycle(); returns its cycles */
 int emu_step(emulator_t* emu);
 
-/** @brief Remet à zéro la position du balayage (début de trame).
- *  Si un savestate vient de restaurer une position (clock_resume_pending), la
- *  trame reprend à cette position au lieu de repartir de zéro. */
+/** @brief Resets the scan position (start of frame).
+ *  If a savestate has just restored a position (clock_resume_pending), the
+ *  frame resumes at that position instead of restarting from zero. */
 void emu_clock_frame_begin(emulator_t* emu);
 
 /**
- * @brief Reprend la trame à la position restaurée par un savestate (V2-E7)
+ * @brief Resumes the frame at the position restored by a savestate (V2-E7)
  *
- * Consomme `clock_resume_pending` : recale le prochain franchissement de ligne
- * et reconstruit, depuis la RAM restaurée, les lignes que le faisceau avait déjà
- * balayées (le framebuffer n'est pas dans le .ost). Sans effet si rien n'est
- * en attente. Appelée par la boucle principale avant chaque instruction.
+ * Consumes `clock_resume_pending`: realigns the next line crossing
+ * and rebuilds, from the restored RAM, the lines the beam had already
+ * scanned (the framebuffer is not in the .ost). No effect if nothing is
+ * pending. Called by the main loop before each instruction.
  */
 void emu_clock_resume(emulator_t* emu);
 
-/** @brief Termine le rendu de la trame en cours (lignes restantes) */
+/** @brief Finishes rendering the current frame (remaining lines) */
 void emu_clock_frame_end(emulator_t* emu);
 
-/** @brief Position courante du faisceau : ligne PAL (0-311) et cycle dans la ligne (0-63) */
+/** @brief Current beam position: PAL line (0-311) and cycle within the line (0-63) */
 void emu_raster_pos(const emulator_t* emu, int* line, int* dot);
 
 /* ── Active disk interface helpers ───────────────────────────────────────

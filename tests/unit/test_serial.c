@@ -247,32 +247,32 @@ TEST(test_overrun) {
     teardown();
 }
 
-/* Régression : acia_peek() (lecture d'observation) NE DOIT PAS consommer l'octet
- * RX ni effacer RDRF/IRQ. Un moniteur/débogueur/affichage déporté qui échantillonne
- * $0380 via memory_peek volait sinon des octets silencieusement (0 OVERRUN, famine
- * CPU). Voir memory_peek()/io_device_t::peek. */
+/* Regression: acia_peek() (observation read) MUST NOT consume the RX byte
+ * nor clear RDRF/IRQ. A monitor/debugger/remote display sampling
+ * $0380 via memory_peek would otherwise silently steal bytes (0 OVERRUN, CPU
+ * starvation). See memory_peek()/io_device_t::peek. */
 TEST(test_peek_non_destructive) {
     setup();
 
-    /* 19200 8N1, DTR on, RX IRQ activé (IRD=0) pour vérifier aussi l'IRQ. */
+    /* 19200 8N1, DTR on, RX IRQ enabled (IRD=0) to check the IRQ as well. */
     acia_write(&acia, ACIA_REG_CONTROL, 0x1F);
     acia_write(&acia, ACIA_REG_COMMAND, 0x01);
 
     loopback->send(loopback, 0x5A);
     tick_one_byte(19200);
 
-    /* Octet reçu : RDRF + IRQ posés. */
+    /* Byte received: RDRF + IRQ set. */
     ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);
     ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_IRQ);
 
-    /* Peek DATA plusieurs fois : renvoie l'octet, NE consomme RIEN. */
+    /* Peek DATA several times: returns the byte, consumes NOTHING. */
     for (int i = 0; i < 5; i++) {
         ASSERT_EQ(acia_peek(&acia, ACIA_REG_DATA), 0x5A);
-        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);  /* toujours plein */
-        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_IRQ);   /* IRQ non effacé */
+        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);  /* still full */
+        ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_IRQ);   /* IRQ not cleared */
     }
 
-    /* La vraie lecture CPU consomme enfin l'octet et efface RDRF. */
+    /* The real CPU read finally consumes the byte and clears RDRF. */
     ASSERT_EQ(acia_read(&acia, ACIA_REG_DATA), 0x5A);
     ASSERT_FALSE(acia_read(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);
 
@@ -510,43 +510,43 @@ TEST(test_rx_fifo) {
     teardown();
 }
 
-/* --serial-tcp-backpressure : quand le FIFO RX est plein, acia_tick NE DOIT PAS
- * drainer le backend. Les octets excédentaires restent dans le transport (ici le
- * tampon loopback, un vrai socket TCP pour tcp:) → la contre-pression remonte à
- * l'émetteur au lieu d'un OVERRUN silencieux. Aucun octet n'est perdu ni réordonné. */
+/* --serial-tcp-backpressure: when the RX FIFO is full, acia_tick MUST NOT
+ * drain the backend. Excess bytes stay in the transport (here the
+ * loopback buffer, a real TCP socket for tcp:) → back-pressure propagates to
+ * the sender instead of a silent OVERRUN. No byte is lost or reordered. */
 TEST(test_rx_backpressure) {
     setup();
 
-    /* FIFO 2 octets → capacité RX = RDR(1) + FIFO(2) = 3 slots. */
+    /* 2-byte FIFO → RX capacity = RDR(1) + FIFO(2) = 3 slots. */
     acia_set_rx_fifo(&acia, 2);
     acia_set_rx_backpressure(&acia, true);
 
-    /* 19200 8N1, DTR on, IRQ RX désactivé. */
+    /* 19200 8N1, DTR on, RX IRQ disabled. */
     acia_write(&acia, ACIA_REG_CONTROL, 0x1F);
     acia_write(&acia, ACIA_REG_COMMAND, 0x03);
 
-    /* 5 octets poussés « sur la ligne » : plus que la capacité RX. */
+    /* 5 bytes pushed "onto the line": more than the RX capacity. */
     for (uint8_t v = 0x41; v <= 0x45; v++) {
         loopback->send(loopback, v);
     }
 
-    /* Tick largement : sans contre-pression les 5 seraient tirés (2 perdus + OVRN).
-     * Avec contre-pression, seuls 3 sont tirés, les 2 autres restent dans loopback. */
+    /* Tick generously: without back-pressure all 5 would be pulled (2 lost + OVRN).
+     * With back-pressure, only 3 are pulled, the other 2 stay in loopback. */
     for (int i = 0; i < 8; i++) tick_one_byte(19200);
 
-    /* Le backend a encore des données (contre-pression active) et AUCUN overrun. */
+    /* The backend still has data (back-pressure active) and NO overrun. */
     ASSERT_TRUE(loopback->poll(loopback));
     ASSERT_FALSE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_OVRN);
 
-    /* Drainage complet : on relit tout, dans l'ordre, sans perte. Chaque lecture
-     * libère un slot → le tick suivant tire l'octet resté sur la ligne. */
+    /* Full drain: read everything back, in order, without loss. Each read
+     * frees a slot → the next tick pulls the byte left on the line. */
     for (uint8_t expected = 0x41; expected <= 0x45; expected++) {
         ASSERT_TRUE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_RDRF);
         ASSERT_EQ(acia_read(&acia, ACIA_REG_DATA), expected);
-        tick_one_byte(19200);  /* laisse remonter l'octet suivant depuis le backend */
+        tick_one_byte(19200);  /* lets the next byte come up from the backend */
     }
 
-    /* Toujours aucun overrun sur tout le parcours. */
+    /* Still no overrun over the whole run. */
     ASSERT_FALSE(acia_peek(&acia, ACIA_REG_STATUS) & ACIA_STATUS_OVRN);
 
     acia_set_rx_backpressure(&acia, false);
@@ -554,23 +554,23 @@ TEST(test_rx_backpressure) {
     teardown();
 }
 
-/* serial_backend_tcp_set_rcvbuf : pose le cap SO_RCVBUF sur un backend TCP,
- * et reste un no-op sûr sur un backend non-TCP (loopback). */
+/* serial_backend_tcp_set_rcvbuf: sets the SO_RCVBUF cap on a TCP backend,
+ * and remains a safe no-op on a non-TCP backend (loopback). */
 TEST(test_tcp_rcvbuf_setter) {
-    /* No-op sur loopback (pas de champ tcp) : ne doit pas planter. */
+    /* No-op on loopback (no tcp field): must not crash. */
     serial_backend_t* lb = serial_backend_loopback_create();
-    serial_backend_tcp_set_rcvbuf(lb, 4096);  /* ignoré */
-    serial_backend_tcp_set_rcvbuf(NULL, 4096); /* NULL sûr */
+    serial_backend_tcp_set_rcvbuf(lb, 4096);  /* ignored */
+    serial_backend_tcp_set_rcvbuf(NULL, 4096); /* NULL-safe */
     serial_backend_destroy(lb);
 
-    /* Sur un backend TCP (non ouvert : pas de connexion réseau en test), le champ
-     * rcvbuf est bien mémorisé pour application à l'open(). */
+    /* On a TCP backend (not opened: no network connection in tests), the rcvbuf
+     * field is indeed stored to be applied at open(). */
     serial_backend_t* tb = serial_backend_tcp_create("127.0.0.1", 65000);
     ASSERT_TRUE(tb != NULL);
     ASSERT_EQ(tb->state.tcp.rcvbuf, 0);
     serial_backend_tcp_set_rcvbuf(tb, 2048);
     ASSERT_EQ(tb->state.tcp.rcvbuf, 2048);
-    serial_backend_tcp_set_rcvbuf(tb, -1);   /* valeur négative → 0 (OS défaut) */
+    serial_backend_tcp_set_rcvbuf(tb, -1);   /* negative value → 0 (OS default) */
     ASSERT_EQ(tb->state.tcp.rcvbuf, 0);
     serial_backend_destroy(tb);
 }

@@ -1,299 +1,299 @@
-# Repousser les limites de l'Oric : cinq extensions expérimentales pour la carte LOCI
+# Pushing the Oric's limits: five experimental extensions for the LOCI board
 
-*Comment un émulateur précis au cycle bus sert de banc d'essai matériel — avec l'ABI, les
-registres et les schémas.*
+*How a bus-cycle-accurate emulator serves as a hardware test bench — with the ABI, the
+registers and the diagrams.*
 
 ---
 
-> **À propos des photos.** Les clichés de la carte LOCI ci-dessous appartiennent à
-> leurs auteurs (RAXISS / sodiumlb). Liens fournis à titre d'illustration et
-> d'attribution — **à remplacer idéalement par tes propres photos** (tu possèdes une
-> carte) ou par des images dont tu as l'autorisation de republication.
+> **About the photos.** The pictures of the LOCI board below belong to
+> their authors (RAXISS / sodiumlb). Links are provided for illustration and
+> attribution — **ideally to be replaced by your own photos** (you own a
+> board) or by images you have permission to republish.
 >
-> - Carte LOCI, vues produit : <https://www.raxiss.com/article/id/38-LOCI>
->   (ex. `https://www.raxiss.com/images/resized/800x600-loci02g.jpg`)
-> - Page revendeur / photos : <https://www.tindie.com/products/8bitclub/loci-oric-bus-expansion-port-and-floppy-emulator/>
-> - Fil de développement (nombreuses photos in situ) :
+> - LOCI board, product views: <https://www.raxiss.com/article/id/38-LOCI>
+>   (e.g. `https://www.raxiss.com/images/resized/800x600-loci02g.jpg`)
+> - Reseller page / photos: <https://www.tindie.com/products/8bitclub/loci-oric-bus-expansion-port-and-floppy-emulator/>
+> - Development thread (many in-situ photos):
 >   <https://forum.defence-force.org/viewtopic.php?t=2593>
 
 ---
 
-## 1. Le contexte matériel
+## 1. The hardware context
 
-L'**Oric-1** et l'**Atmos** (1983) reposent sur un **MOS 6502** à 1 MHz, 64 Ko
-d'espace d'adressage dont le haut (`$C000-$FFFF`) est occupé par la **ROM BASIC**.
-Pas de multiplication câblée, pas de banques mémoire, pas de stockage moderne :
-tout passe par le **bus d'extension** en fond de machine.
+The **Oric-1** and the **Atmos** (1983) are built around a **MOS 6502** at 1 MHz, with 64 KB
+of address space whose top (`$C000-$FFFF`) is taken by the **BASIC ROM**.
+No hardware multiplication, no memory banks, no modern storage:
+everything goes through the **expansion bus** at the back of the machine.
 
-La carte **LOCI** (*Lovely Oric Computer Interface*) de **sodiumlb** se branche sur
-ce bus. Techniquement, c'est un dérivé du *Picocomputer 6502* (RP6502) : un
-microcontrôleur **RP2040** (un Raspberry Pi Pico) joue le rôle d'un **MIA** (*Media
-Interface Adapter*) qui s'expose à l'Oric comme un périphérique d'entrées/sorties. Il
-émule lecteurs de disquettes et cassettes, gère une carte SD et joue le rôle d'**hôte
-USB** — c'est par ce port USB qu'un **modem Wi-Fi** (dongle séparé, le
-*PicoWiFiModemUSB*) ou un périphérique HID (souris, manette) se branche ; le Wi-Fi
-n'est *pas* embarqué sur la carte LOCI elle-même. Deux surfaces d'adressage nous
-intéressent ici :
+The **LOCI** board (*Lovely Oric Computer Interface*) by **sodiumlb** plugs into
+this bus. Technically, it is a derivative of the *Picocomputer 6502* (RP6502): an
+**RP2040** microcontroller (a Raspberry Pi Pico) plays the role of a **MIA** (*Media
+Interface Adapter*) that presents itself to the Oric as an input/output peripheral. It
+emulates floppy and cassette drives, manages an SD card and acts as a **USB
+host** — this USB port is where a **Wi-Fi modem** (a separate dongle, the
+*PicoWiFiModemUSB*) or an HID device (mouse, gamepad) is plugged in; Wi-Fi
+is *not* built into the LOCI board itself. Two address ranges
+matter here:
 
 ```
-         Espace d'adressage Oric (64 Ko)
+         Oric address space (64 KB)
    $0000 ┌──────────────────────────────┐
          │ RAM                          │
    $0300 ├──────────────────────────────┤
          │ VIA 6522        $0300-$030F  │
    $0310 │ Microdisc WD1793 $0310-$031F │
          ├──────────────────────────────┤
-   $0380 │ ACIA 6551 (LOCI) $0380-$0383 │ ← console série / modem
+   $0380 │ ACIA 6551 (LOCI) $0380-$0383 │ ← serial console / modem
          ├──────────────────────────────┤
-   $03A0 │ MIA (LOCI)      $03A0-$03BF  │ ← fenêtre API 32 octets
+   $03A0 │ MIA (LOCI)      $03A0-$03BF  │ ← 32-byte API window
          ├──────────────────────────────┤
-   $C000 │ ROM BASIC       $C000-$FFFF  │ ← cible de l'overlay de banque
+   $C000 │ BASIC ROM       $C000-$FFFF  │ ← target of the bank overlay
    $FFFF └──────────────────────────────┘
 ```
 
-L'émulateur **Phosphoric** (précis au cycle bus, C11) reproduit fidèlement cette carte, ce
-qui autorise une démarche rare : **écrire la spec d'une extension, la coder, et la
-valider par des tests déterministes — avant de toucher au fer à souder**. Détail
-qui compte : l'auteur possède une carte LOCI, mais pas d'Oric. Le banc logiciel
-n'est pas un luxe, c'est la seule salle d'essai.
+The **Phosphoric** emulator (bus-cycle-accurate, C11) faithfully reproduces this board, which
+allows an unusual approach: **write the spec of an extension, code it, and
+validate it with deterministic tests — before touching the soldering iron**. A detail
+that matters: the author owns a LOCI board, but no Oric. The software bench
+is not a luxury, it is the only test lab.
 
-## 2. L'ABI *fastcall* — comment le 6502 appelle la carte
+## 2. The *fastcall* ABI — how the 6502 calls the board
 
-Tout repose sur une **fenêtre de 32 registres** en `$03A0-$03BF` (le MIA). Voici la
-carte réelle des registres utilisés par l'ABI (noms fidèles au firmware) :
+Everything relies on a **window of 32 registers** at `$03A0-$03BF` (the MIA). Here is the
+actual map of the registers used by the ABI (names as in the firmware):
 
 ```
- Offset  Adresse  Registre          Rôle
+ Offset  Address  Register          Role
  ------  -------  ----------------  ------------------------------------------
-  $00    $03A0    CONS_FLAGS        bit7 = TX libre, bit6 = RX prêt
-  $01    $03A1    CONS_TX           écriture console (UART)
-  $02    $03A2    CONS_CHAR         lecture console (consomme l'octet)
-  $0C    $03AC    API_STACK         pointeur de xstack (pile d'arguments)
-  $0D    $03AD    API_ERRNO_LO      errno bas
-  $0E    $03AE    API_ERRNO_HI      errno haut
-  $0F    $03AF    API_OP            ← ÉCRIRE ICI déclenche l'opération
-  $12    $03B2    BUSY              bit7 = carte occupée
-  $14    $03B4    API_A             valeur de retour A
-  $16    $03B6    API_X             valeur de retour X
-  $18    $03B8    API_SREG          retour 16 bits (SREG)
+  $00    $03A0    CONS_FLAGS        bit7 = TX free, bit6 = RX ready
+  $01    $03A1    CONS_TX           console write (UART)
+  $02    $03A2    CONS_CHAR         console read (consumes the byte)
+  $0C    $03AC    API_STACK         xstack pointer (argument stack)
+  $0D    $03AD    API_ERRNO_LO      errno low
+  $0E    $03AE    API_ERRNO_HI      errno high
+  $0F    $03AF    API_OP            ← WRITING HERE triggers the operation
+  $12    $03B2    BUSY              bit7 = board busy
+  $14    $03B4    API_A             return value A
+  $16    $03B6    API_X             return value X
+  $18    $03B8    API_SREG          16-bit return (SREG)
 ```
 
-Le protocole d'appel (*fastcall*) tient en quatre temps :
+The calling protocol (*fastcall*) comes down to four steps:
 
 ```
    6502 (Oric)                         MIA (LOCI, µC)
    ───────────                         ──────────────
    1. push args ──► xstack ($03AC)
-   2. set A/X (paramètres directs)
-   3. write op ──► API_OP ($03AF) ───► déclenche le handler
+   2. set A/X (direct parameters)
+   3. write op ──► API_OP ($03AF) ───► triggers the handler
                                        ├─ BUSY=1
-      poll BUSY ($03B2) ◄──────────────┤  exécute
-                                       └─ BUSY=0, remplit API_A/X/SREG, ERRNO
-   4. read API_A/API_X ($03B4/$03B6) ◄─ résultat
+      poll BUSY ($03B2) ◄──────────────┤  executes
+                                       └─ BUSY=0, fills API_A/X/SREG, ERRNO
+   4. read API_A/API_X ($03B4/$03B6) ◄─ result
 ```
 
-Chaque valeur d'opcode encore libre est un **point d'entrée** pour une nouvelle
-fonction. Les opérations standard vont de `$01` à `$98` (horloge, `open`/`read`/
-`lseek`, répertoires, montage d'images, TAP…). C'est dans les opcodes **inutilisés**
-que se logent nos cinq extensions :
+Each opcode value still free is an **entry point** for a new
+function. The standard operations range from `$01` to `$98` (clock, `open`/`read`/
+`lseek`, directories, image mounting, TAP…). Our five extensions live in the
+**unused** opcodes:
 
 ```
-  $A7  SET_BANK        banque commutable 16 Ko      (--loci-bank)
-  $A8  STREAM_BANK     streamer d'assets            (--loci-bank)
-  $A9  MATH            coprocesseur arithmétique    (--loci-coproc)
-  $AA  ACIA_RELIABLE   mode ACIA fiable (seqlock)   (mode opt-in)
-       + acia_stat_checked : handshake RX lossless  (--loci-acia-rx-nag)
+  $A7  SET_BANK        16 KB switchable bank        (--loci-bank)
+  $A8  STREAM_BANK     asset streamer               (--loci-bank)
+  $A9  MATH            arithmetic coprocessor       (--loci-coproc)
+  $AA  ACIA_RELIABLE   reliable ACIA mode (seqlock) (opt-in mode)
+       + acia_stat_checked : lossless RX handshake  (--loci-acia-rx-nag)
 ```
 
-> **Garde-fou by design.** Sans le drapeau d'activation correspondant, l'opcode
-> renvoie `ENOSYS` (errno 13) — exactement comme un firmware non patché. Le logiciel
-> Oric peut donc **détecter** la présence de l'extension et retomber sur ses propres
-> routines. Le comportement par défaut de la LOCI reste **strictement** celui du
-> matériel d'origine.
+> **Safeguard by design.** Without the corresponding enabling flag, the opcode
+> returns `ENOSYS` (errno 13) — exactly like an unpatched firmware. Oric software
+> can therefore **detect** whether the extension is present and fall back to its own
+> routines. The LOCI's default behaviour remains **strictly** that of the
+> original hardware.
 
-## 3. Coprocesseur arithmétique — `$A9`
+## 3. Arithmetic coprocessor — `$A9`
 
-**Le problème.** Le 6502 n'a ni multiplication, ni division, ni flottant câblés.
-Chaque opération est une routine logicielle : lente, volumineuse, coûteuse en
-cycles. Sur une machine à 1 MHz, une multiplication 16×16 se compte en centaines de
+**The problem.** The 6502 has no hardware multiplication, division or floating point.
+Every operation is a software routine: slow, bulky, expensive in
+cycles. On a 1 MHz machine, a 16×16 multiplication costs hundreds of
 cycles.
 
-**L'idée.** Déléguer le calcul au microcontrôleur de la carte, bien plus rapide, via
-l'ABI *fastcall* existante — un seul opcode `$A9`, le sous-code d'opération dans
-`API_A`, les opérandes sur la xstack, le résultat dans `API_A`/`SREG`.
+**The idea.** Delegate the computation to the board's much faster microcontroller, through
+the existing *fastcall* ABI — a single opcode `$A9`, the operation sub-code in
+`API_A`, the operands on the xstack, the result in `API_A`/`SREG`.
 
 ```
-   ; exemple conceptuel : A×B via le coprocesseur
-   LDA #<op_mul  : STA API_A     ; sous-code d'opération
-   ... push A, B sur la xstack ($03AC)
-   LDA #$A9      : STA API_OF     ; déclenche MATH
-   ; poll BUSY, puis lire le résultat 32 bits dans SREG
+   ; conceptual example: A×B through the coprocessor
+   LDA #<op_mul  : STA API_A     ; operation sub-code
+   ... push A, B onto the xstack ($03AC)
+   LDA #$A9      : STA API_OF     ; triggers MATH
+   ; poll BUSY, then read the 32-bit result in SREG
 ```
 
-**L'implémentation.** Un fichier **isolé**, `src/io/loci_math.c` (`op_math`), branché
-sur le dispatch. Entiers, flottants, opérations vectorielles. Gaté par
-`--loci-coproc`. Couverture : **23 tests déterministes** (vecteurs entiers, flottants,
-cas limites). Zéro aléatoire — mêmes entrées, mêmes sorties, condition d'un banc
-reproductible.
+**The implementation.** An **isolated** file, `src/io/loci_math.c` (`op_math`), plugged
+into the dispatch. Integers, floats, vector operations. Gated by
+`--loci-coproc`. Coverage: **23 deterministic tests** (integer vectors, floats,
+edge cases). Zero randomness — same inputs, same outputs, the prerequisite for a
+reproducible bench.
 
-## 4. Mode ACIA fiable — `$AA` (seqlock + ACK)
+## 4. Reliable ACIA mode — `$AA` (seqlock + ACK)
 
-**Le problème.** L'**ACIA 6551** réel a un travers connu : si le 6502 ne lit pas le
-registre de données à temps, l'octet reçu est **écrasé** par le suivant. À haut
-débit — un modem Wi-Fi, par exemple — on perd des octets, et le lien devient
-inexploitable. C'est fidèle au silicium, mais handicapant.
+**The problem.** The real **ACIA 6551** has a known flaw: if the 6502 does not read the
+data register in time, the received byte is **overwritten** by the next one. At high
+speed — a Wi-Fi modem, for instance — bytes are lost, and the link becomes
+unusable. It is faithful to the silicon, but crippling.
 
-**La solution : un seqlock.** Un compteur de séquence de réception et un accusé
-côté 6502. L'octet n'est **consommé** qu'une fois **acquitté** — jamais perdu, même
-si la lecture tarde ou rate.
+**The solution: a seqlock.** A receive sequence counter and an acknowledgement
+from the 6502. The byte is only **consumed** once it is **acknowledged** — never lost, even
+if the read is late or missed.
 
 ```
-     Réception classique 6551 (destructive)
+     Classic 6551 reception (destructive)
      ─────────────────────────────────────
-     RX octet1 ──► RDR   (6502 n'a pas lu…)
-     RX octet2 ──► RDR   ✗ octet1 ÉCRASÉ, perdu
+     RX byte1 ──► RDR   (the 6502 has not read it…)
+     RX byte2 ──► RDR   ✗ byte1 OVERWRITTEN, lost
 
-     Mode fiable $AA (seqlock + ACK)
+     Reliable mode $AA (seqlock + ACK)
      ───────────────────────────────
-        RXSEQ $0384  (compteur, incrémenté à chaque octet présenté)
-        RXACK $0385  (accusé écrit par le 6502)
+        RXSEQ $0384  (counter, incremented for each byte presented)
+        RXACK $0385  (acknowledgement written by the 6502)
 
-     RX octet1 ─► présente, RXSEQ++          consommé := (RXACK == RXSEQ)
-     6502 lit octet1, écrit RXACK = RXSEQ ─► octet1 acquitté → avance
-     RX octet2 ─► présente seulement si acquitté  ✓ aucun octet perdu
+     RX byte1 ─► presented, RXSEQ++          consumed := (RXACK == RXSEQ)
+     6502 reads byte1, writes RXACK = RXSEQ ─► byte1 acknowledged → advances
+     RX byte2 ─► presented only once acknowledged  ✓ no byte lost
 ```
 
-Le canal d'**émission** reste inchangé (toujours fiable). État porté par `loci_t`
-(`acia_reliable`, `acia_rx_seq`, `acia_rx_presented`), opcode `$AA`, activation via
-`API_A` bit0. Couverture : **+7 tests** (`test-loci-acia-miss`, 13 → 20) — DATA non
-destructif, consommation *ACK-gated*, seqlock multi-octets **dans l'ordre**, et
-surtout **survie à un raté de lecture**.
+The **transmit** channel is unchanged (always reliable). State carried by `loci_t`
+(`acia_reliable`, `acia_rx_seq`, `acia_rx_presented`), opcode `$AA`, enabled via
+`API_A` bit0. Coverage: **+7 tests** (`test-loci-acia-miss`, 13 → 20) — non-destructive
+DATA, *ACK-gated* consumption, multi-byte seqlock **in order**, and
+above all **surviving a missed read**.
 
-### 4bis. Handshake RX *lossless* — `acia_stat_checked` (`--loci-acia-rx-nag`)
+### 4a. *Lossless* RX handshake — `acia_stat_checked` (`--loci-acia-rx-nag`)
 
-Raffinement adjacent, calqué sur le firmware réel (`feature/acia-rx-lossless`). Sur
-le vrai LOCI, l'`/IRQ` de l'ACIA est un signal de **niveau**, pas une impulsion. On
-modélise ce niveau par un « nag » : tant que l'octet n'a pas été lu (`stat_checked`
-faux), l'interruption est **ré-émise** périodiquement (défaut : tous les 1000
-cycles), puis **se tait** dès que le 6502 a consulté le registre d'état.
+An adjacent refinement, modelled on the real firmware (`feature/acia-rx-lossless`). On
+the real LOCI, the ACIA's `/IRQ` is a **level** signal, not a pulse. We
+model that level with a "nag": as long as the byte has not been read (`stat_checked`
+false), the interrupt is **re-asserted** periodically (default: every 1000
+cycles), then **goes quiet** as soon as the 6502 has read the status register.
 
 ```
-   RDRF=1 (octet dispo) ──┐
-                          │  nag: deassert+assert /IRQ tous les 1000 cyc
-   /IRQ  ▁▔▁▔▁▔▁▔▁▔▁▔▁▔▁▔ │  tant que  RDRF && !stat_checked && RX-IRQ activée
+   RDRF=1 (byte available) ──┐
+                          │  nag: deassert+assert /IRQ every 1000 cycles
+   /IRQ  ▁▔▁▔▁▔▁▔▁▔▁▔▁▔▁▔ │  while  RDRF && !stat_checked && RX-IRQ enabled
                           │
-   6502 lit STATUS ───────┘  stat_checked = true  ──►  /IRQ silencieux
+   6502 reads STATUS ─────┘  stat_checked = true  ──►  /IRQ silent
 ```
 
-Sans `--loci-acia-rx-nag`, l'ACIA reste **strictement** un 6551 (pas de nag).
-Couverture dans `test-loci-acia-miss` : nag **observé avant** acquittement, **silence
-après**, buffer vide ⇒ aucune IRQ.
+Without `--loci-acia-rx-nag`, the ACIA remains **strictly** a 6551 (no nag).
+Coverage in `test-loci-acia-miss`: nag **observed before** acknowledgement, **silence
+after**, empty buffer ⇒ no IRQ.
 
-## 5. Banque commutable de 16 Ko — `$A7` (`--loci-bank`)
+## 5. 16 KB switchable bank — `$A7` (`--loci-bank`)
 
-**Le problème.** Comment donner plus de mémoire à une machine dont l'espace est
-saturé par la ROM ?
+**The problem.** How do you give more memory to a machine whose address space is
+saturated by the ROM?
 
-**La solution.** Superposer temporairement 16 Ko de la RAM de la carte (*xram*) dans
-la fenêtre `$C000-$FFFF`, là où siège la ROM.
+**The solution.** Temporarily overlay 16 KB of the board's RAM (*xram*) onto
+the `$C000-$FFFF` window, where the ROM sits.
 
 ```
-        $A7 désactivé                 $A7 EN | SEL=n
+        $A7 disabled                  $A7 EN | SEL=n
    $C000 ┌───────────┐          $C000 ┌───────────────┐
-         │ ROM BASIC │   ─────►        │ xram[n*0x4000]│  overlay (lecture)
+         │ BASIC ROM │   ─────►        │ xram[n*0x4000]│  overlay (read)
    $FFFF └───────────┘          $FFFF  └───────────────┘
-                                       └─ ROM intacte DESSOUS (non écrasée)
-   base xram = SEL * 0x4000 ; SEL clampé à 0..3 (comme mia_set_bank)
+                                       └─ ROM intact UNDERNEATH (not overwritten)
+   xram base = SEL * 0x4000 ; SEL clamped to 0..3 (like mia_set_bank)
 ```
 
-**Le point clé : overlay non destructif.** La banque prend priorité en lecture (et
-pour l'inspection mémoire) **sans jamais écraser** le tableau ROM. Une désactivation
-restaure la machine **octet pour octet**. L'ancienne approche prototype par
-`memcpy` + sauvegarde a été abandonnée au profit de cette superposition propre
-(`memory_set_loci_bank()` dans `memory.c`).
+**The key point: a non-destructive overlay.** The bank takes priority for reads (and
+for memory inspection) **without ever overwriting** the ROM array. Disabling it
+restores the machine **byte for byte**. The earlier prototype approach using
+`memcpy` + backup was dropped in favour of this clean overlay
+(`memory_set_loci_bank()` in `memory.c`).
 
-**Double mode via `reset`.** L'activation par `$A7 EN` déclenche un **reset** : le
-6502 relit son vecteur `$FFFC` **depuis la banque** (on peut donc *booter* du code de
-banque). Le hot-swap (utilisé par le streamer `$A8`) bascule au contraire **sans
-reset CPU** — prérequis absolu du double-buffering. Couverture : `test-loci`
-**170/170** (+4 : enable/état, disable, gaté OFF → `ENOSYS`, clamp SEL 15→3) et un
-`test-loci-bank-e2e` bout-en-bout.
+**Two modes via `reset`.** Enabling through `$A7 EN` triggers a **reset**: the
+6502 re-reads its `$FFFC` vector **from the bank** (so you can *boot* code from the
+bank). The hot swap (used by the `$A8` streamer) on the contrary switches **without
+a CPU reset** — an absolute prerequisite for double buffering. Coverage: `test-loci`
+**170/170** (+4: enable/state, disable, gated OFF → `ENOSYS`, SEL clamp 15→3) and an
+end-to-end `test-loci-bank-e2e`.
 
-## 6. Streamer d'assets — `$A8`
+## 6. Asset streamer — `$A8`
 
-**L'idée.** Une fois la banque en place, y **déverser des données depuis un
-fichier** (flash ou carte SD) en **un seul fastcall** : `lseek(SEEK_SET)` + `read`
-→ banque 16 Ko, avec mapping optionnel en `$C000-$FFFF`. Un logiciel Oric peut alors
-**dépasser les 48 Ko utiles** : overlays, décors, niveaux à la demande.
+**The idea.** Once the bank is in place, **pour data into it from a
+file** (flash or SD card) in **a single fastcall**: `lseek(SEEK_SET)` + `read`
+→ 16 KB bank, with optional mapping at `$C000-$FFFF`. Oric software can then
+**go beyond the 48 usable KB**: overlays, backgrounds, levels on demand.
 
 ```
-   Double-buffering (dépasser 48 Ko sans reset)
+   Double buffering (beyond 48 KB without a reset)
    ─────────────────────────────────────────────
-   $A8 MAP=0 SEL=1 ─► précharge la banque 1 (invisible)   ┐ pendant
-   (le 6502 continue d'exécuter/afficher la banque 0)      ┘ ce temps
-   $A8 MAP=1 SEL=1 ─► bascule banque 1 en $C000 (hot-swap, PC intact)
+   $A8 MAP=0 SEL=1 ─► preloads bank 1 (invisible)          ┐ in the
+   (the 6502 keeps executing/displaying bank 0)            ┘ meantime
+   $A8 MAP=1 SEL=1 ─► switches bank 1 in at $C000 (hot swap, PC intact)
 ```
 
-Détails : `API_A` bit7 = `MAP`, bits3:0 = `SEL` (**0..3 valides ; >3 = `EINVAL`,
-pas de clamp** contrairement à `$A7`). Arguments sur la xstack LIFO (`len, dst, off,
-fd`), écriture bornée à la taille de banque, retour `AX` = octets lus. Deux chemins
-de lecture : fichier hôte **et** image SD. Réutilise l'opt-in `--loci-bank`.
+Details: `API_A` bit7 = `MAP`, bits3:0 = `SEL` (**0..3 valid; >3 = `EINVAL`,
+no clamping**, unlike `$A7`). Arguments on the LIFO xstack (`len, dst, off,
+fd`), writes bounded to the bank size, return `AX` = bytes read. Two read
+paths: host file **and** SD image. Reuses the `--loci-bank` opt-in.
 
-## 7. Le modèle de *tearing* — la question des deux cœurs
+## 7. The *tearing* model — the two-core question
 
-L'extension la plus subtile, et la plus honnête intellectuellement.
+The subtlest extension, and the most intellectually honest.
 
-**La question.** Quand on bascule une banque **pendant** qu'un cycle de bus est en
-cours, que latche le 6502 ? Sur l'émulateur mono-thread, le swap est **atomique** :
-invisible, la question ne se pose pas. Mais le matériel réel a **deux cœurs** ; un
-swap concomitant d'un accès mémoire peut produire un *tearing*.
+**The question.** When a bank is switched **while** a bus cycle is in
+progress, what does the 6502 latch? In the single-threaded emulator, the swap is **atomic**:
+invisible, the question does not arise. But the real hardware has **two cores**; a
+swap concurrent with a memory access can produce *tearing*.
 
-**La réponse : modéliser explicitement le pire cas.** Avec `--loci-bank-tearing`,
-un hot-swap `$A8 MAP` concomitant d'une **course de bus PHI2 perdue** fait latcher
-l'**open-bus** au 6502 sur la **première lecture** de la fenêtre (comportement
-one-shot), puis la banque prend le relais.
+**The answer: explicitly model the worst case.** With `--loci-bank-tearing`,
+an `$A8 MAP` hot swap concurrent with a **lost PHI2 bus race** makes the 6502 latch
+**open-bus** on the **first read** of the window (one-shot
+behaviour), after which the bank takes over.
 
 ```
-   Cycle bus PHI2  ─┬─ course gagnée ─► banque servie proprement (atomique)
+   PHI2 bus cycle  ─┬─ race won  ─► bank served cleanly (atomic)
                     │
-                    └─ course PERDUE ─► 1re lecture = OPEN-BUS (valeur latchée)
-                                        puis  ─► banque   (one-shot consommé)
-   (réutilise loci_mia_serve_lost_sampled + jitter seedé, déterministe)
+                    └─ race LOST ─► 1st read = OPEN-BUS (latched value)
+                                        then  ─► bank   (one-shot consumed)
+   (reuses loci_mia_serve_lost_sampled + seeded jitter, deterministic)
 ```
 
-Le test associé est **auto-diagnostiquant** : il vérifie d'abord la **précondition**
-(la course est bien perdue), puis que le modèle **arme** le drapeau de *tearing*,
-puis que le one-shot est **consommé**. Un build incomplet échoue désormais sur une
-assertion claire plutôt qu'un cryptique `torn != pat[0]`. Déterministe (jitter 0) :
-trois builds propres, résultats identiques. `test-loci-bank-e2e` **8/8**.
+The associated test is **self-diagnosing**: it first checks the **precondition**
+(the race is indeed lost), then that the model **arms** the *tearing* flag,
+then that the one-shot is **consumed**. An incomplete build now fails on a
+clear assertion rather than a cryptic `torn != pat[0]`. Deterministic (jitter 0):
+three clean builds, identical results. `test-loci-bank-e2e` **8/8**.
 
-## 8. Ce que l'exercice apprend
+## 8. What the exercise teaches
 
-Cinq extensions, cinq additions **minimales** à une ABI existante, **zéro
-régression** sur le comportement par défaut. Chacune est réversible (drapeau à
-l'appui), gatée `ENOSYS` sans son opt-in, et adossée à des tests **déterministes**.
+Five extensions, five **minimal** additions to an existing ABI, **zero
+regressions** in the default behaviour. Each one is reversible (behind a flag),
+gated with `ENOSYS` without its opt-in, and backed by **deterministic** tests.
 
-Le vrai enseignement tient peut-être là : sur une machine de 1983, la difficulté
-n'est pas d'imaginer des fonctions modernes, mais de les **greffer sans trahir** le
-comportement d'origine — et de le **prouver** avant de sortir le fer à souder.
+Perhaps the real lesson is this: on a 1983 machine, the difficulty
+is not imagining modern features, but **grafting them on without betraying** the
+original behaviour — and **proving** it before getting the soldering iron out.
 
-L'émulateur précis au cycle bus cesse d'être un simple musée jouable : il devient un **banc
-de prototypage matériel**. On y écrit la spec, on y code l'extension, on y passe les
-tests… et le silicium n'arrive qu'en dernier, cahier de recette déjà rempli.
+The bus-cycle-accurate emulator stops being a mere playable museum: it becomes a **hardware
+prototyping bench**. You write the spec there, code the extension there, run the
+tests there… and the silicon only comes last, with the acceptance checklist already filled in.
 
 ---
 
-*Les cinq extensions vivent sur la branche `experiment/loci-coproc-acia-reliable`
-de Phosphoric — opt-in, réversibles, hors version stable. À tester, critiquer,
-améliorer.*
+*The five extensions live on Phosphoric's `experiment/loci-coproc-acia-reliable`
+branch — opt-in, reversible, outside the stable release. Test them, criticise them,
+improve them.*
 
-### Sources & liens
+### Sources & links
 
-- Firmware / matériel LOCI (sodiumlb) : <https://github.com/sodiumlb/loci-firmware>,
+- LOCI firmware / hardware (sodiumlb): <https://github.com/sodiumlb/loci-firmware>,
   <https://github.com/sodiumlb/loci-hardware>, <https://github.com/sodiumlb/loci-rom>
-- Manuel utilisateur (FR) : <https://github.com/sodiumlb/loci-hardware/wiki/LOCI-Mode-d'emploi>
-  et <https://ceo.oric.org/loci-mode-demploi/>
-- Revendeur & photos : <https://www.raxiss.com/article/id/38-LOCI>,
+- User manual (FR): <https://github.com/sodiumlb/loci-hardware/wiki/LOCI-Mode-d'emploi>
+  and <https://ceo.oric.org/loci-mode-demploi/>
+- Reseller & photos: <https://www.raxiss.com/article/id/38-LOCI>,
   <https://www.tindie.com/products/8bitclub/loci-oric-bus-expansion-port-and-floppy-emulator/>
-- Fil de développement : <https://forum.defence-force.org/viewtopic.php?t=2593>
-- Émulateur Phosphoric : <https://github.com/benedictemarty/Phosphoric>
+- Development thread: <https://forum.defence-force.org/viewtopic.php?t=2593>
+- Phosphoric emulator: <https://github.com/benedictemarty/Phosphoric>

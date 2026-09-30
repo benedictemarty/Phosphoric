@@ -1,8 +1,8 @@
-// Phosphoric WebAssembly — logique de la page (Module, UI, clavier, drag&drop).
-// Externalisé du <script> inline de shell.html pour être compatible avec une
-// Content-Security-Policy stricte (script-src 'self' 'wasm-unsafe-eval') : un
-// script inline serait bloqué (script-src-elem) -> Module.canvas undefined ->
-// 'canvas is undefined' au createContext WebGL. Chargé via <script src>.
+// Phosphoric WebAssembly — page logic (Module, UI, keyboard, drag&drop).
+// Moved out of the inline <script> of shell.html to be compatible with a
+// strict Content-Security-Policy (script-src 'self' 'wasm-unsafe-eval'): an
+// inline script would be blocked (script-src-elem) -> Module.canvas undefined ->
+// 'canvas is undefined' at WebGL createContext. Loaded via <script src>.
 
 //  ── config ───────────────────────────────────────────────────────────────
 var ROMS = { atmos: '/roms/basic11b.rom', oric1: '/roms/basic10.rom' };
@@ -11,25 +11,25 @@ var ROMS = { atmos: '/roms/basic11b.rom', oric1: '/roms/basic10.rom' };
 var urlRom = new URLSearchParams(location.search).get('rom');
 var rom = (urlRom==='oric1'||urlRom==='atmos') ? urlRom : (sessionStorage.getItem('phos_rom') || 'atmos');
 var mediaName = sessionStorage.getItem('phos_media_name') || '';
-// Type du média : sessionStorage (drag&drop / rechargement) OU déduit de l'URL ?media=
-// dès le PREMIER chargement — sinon un ?media=X.dsk démarrerait sans Microdisc
-// (has_microdisc=false) et web_insert_disk échouerait.
+// Media type: sessionStorage (drag&drop / reload) OR inferred from the URL ?media=
+// from the FIRST load — otherwise a ?media=X.dsk would boot without Microdisc
+// (has_microdisc=false) and web_insert_disk would fail.
 var urlMedia = new URLSearchParams(location.search).get('media') || '';
 var urlKind = /\.dsk$/i.test(urlMedia) ? 'dsk' : (/\.tap$/i.test(urlMedia) ? 'tap' : '');
 var mediaKind = sessionStorage.getItem('phos_media_kind') || urlKind;
 var args = ['-r', ROMS[rom] || ROMS.atmos];
 if (mediaName && mediaKind === 'tap') args.push('-t', '/media/' + mediaName, '-f');
-// Active le contrôleur Microdisc au boot dès qu'une disquette est visée (session ou URL)
-// afin que l'insertion différée du .dsk (web_insert_disk) réussisse.
+// Enables the Microdisc controller at boot as soon as a floppy is targeted (session or URL)
+// so that the deferred insertion of the .dsk (web_insert_disk) succeeds.
 if (mediaKind === 'dsk') args.push('--disk-rom', '/roms/microdis.rom');
 if (mediaName && mediaKind === 'dsk') args.push('-d', '/media/' + mediaName);
 
-// ── Mode LOCI (?loci=1 ou bouton LOCI) ────────────────────────────────────
-// La cartouche LOCI est émulée en HLE (--loci) : boot direct sur le menu
-// LOCI (roms/loci/locirom), stockage « flash interne » = /loci, un IDBFS
-// persistant dans IndexedDB. Les ROM système y sont semées au premier
-// lancement ; les fichiers déposés (.tap/.dsk/.rom…) y sont copiés et se
-// choisissent ensuite dans le menu LOCI, comme sur la vraie cartouche.
+// ── LOCI mode (?loci=1 or LOCI button) ────────────────────────────────────
+// The LOCI cartridge is emulated in HLE (--loci): direct boot into the LOCI
+// menu (roms/loci/locirom), « internal flash » storage = /loci, an IDBFS
+// persisted in IndexedDB. The system ROMs are seeded there on the first
+// launch; dropped files (.tap/.dsk/.rom…) are copied there and are then
+// picked from the LOCI menu, as on the real cartridge.
 var urlLoci = new URLSearchParams(location.search).get('loci');
 var loci = (urlLoci !== null) ? (urlLoci === '1') : (sessionStorage.getItem('phos_loci') === '1');
 var LOCI_DIR = '/loci';
@@ -37,9 +37,9 @@ var LOCI_SEED = ['basic11b.rom', 'basic10.rom', 'microdis.rom'];
 if (loci) {
   args.length = 0;
   if (mediaKind === 'tap') {
-    // LOCI + cassette (?loci=1&media=x.tap) : boot BASIC direct sur la cassette,
-    // cartouche présente (ACIA picowifi en $0380, flash persistant) — comme
-    // `-t x.tap -f --loci --loci-flash …` en natif. Sans cassette : menu LOCI.
+    // LOCI + cassette (?loci=1&media=x.tap): direct BASIC boot on the cassette,
+    // cartridge present (picowifi ACIA at $0380, persistent flash) — like
+    // `-t x.tap -f --loci --loci-flash …` natively. Without a cassette: LOCI menu.
     args.push('-r', ROMS[rom] || ROMS.atmos);
     if (mediaName) args.push('-t', '/media/' + mediaName, '-f');
   } else {
@@ -48,31 +48,31 @@ if (loci) {
   }
   args.push('--loci', '--loci-flash', LOCI_DIR);
 }
-// ── Modem picowifi (?modem=1 ou bouton MODEM) ─────────────────────────────
-// ACIA 6551 + firmware PicoWiFiModemUSB émulé (--serial picowifi). Le TCP passe
-// par un relais WebSocket (tools/picowifi_ws_relay.py) : ?relay=ws://hôte:port/
-// (défaut ws://127.0.0.1:8766/, mémorisé). WiFi simulé « Web » ; la NVRAM du
-// modem (AT&W) est persistée dans le flash LOCI quand il est actif.
+// ── picowifi modem (?modem=1 or MODEM button) ─────────────────────────────
+// ACIA 6551 + emulated PicoWiFiModemUSB firmware (--serial picowifi). TCP goes
+// through a WebSocket relay (tools/picowifi_ws_relay.py): ?relay=ws://host:port/
+// (default ws://127.0.0.1:8766/, remembered). Simulated WiFi « Web »; the modem's
+// NVRAM (AT&W) is persisted in the LOCI flash when it is active.
 var urlModem = new URLSearchParams(location.search).get('modem');
 var modem = (urlModem !== null) ? (urlModem === '1') : (sessionStorage.getItem('phos_modem') === '1');
 var urlRelay = new URLSearchParams(location.search).get('relay');
 if (urlRelay) { try{ localStorage.setItem('phos_relay', urlRelay); }catch(e){} }
 var relay = urlRelay || (function(){ try{ return localStorage.getItem('phos_relay'); }catch(e){ return null; } })()
             || 'ws://127.0.0.1:8766/';
-// ?relay=none : sans relais (web/picowifi_js.js — HTTP via fetch(), heure locale) ;
-// ?httpproxy=/proxy?url= : préfixe de proxy HTTP pour les sites sans CORS.
+// ?relay=none: no relay (web/picowifi_js.js — HTTP via fetch(), local time);
+// ?httpproxy=/proxy?url= : HTTP proxy prefix for sites without CORS.
 var httpProxy = new URLSearchParams(location.search).get('httpproxy') || '';
-// ?httpsame=h1,h2 : requêtes HTTP vers ces hôtes envoyées à l'origine de la page.
+// ?httpsame=h1,h2 : HTTP requests to these hosts are sent to the page's origin.
 var sameHosts = (new URLSearchParams(location.search).get('httpsame') || '')
   .split(',').map(function(h){ return h.trim().toLowerCase(); }).filter(Boolean);
 if (modem) args.push('--serial', 'picowifi:Web:web');
-// Sous LOCI, l'ACIA $0380 est servie par le firmware, qui la précède d'un anneau
-// RX de 32 octets (loci-firmware src/mia/oric/acia.c, ACIA_RX_BUFFER_SIZE) :
-// sans lui l'écho « ATZ\r\r\nOK » déborde et ProphetOric conclut « pas de modem ».
-// Un 6551 nu ($031C, sans LOCI) n'a pas de FIFO : rien d'ajouté.
+// Under LOCI, the ACIA at $0380 is served by the firmware, which puts a 32-byte
+// RX ring in front of it (loci-firmware src/mia/oric/acia.c, ACIA_RX_BUFFER_SIZE):
+// without it the echo « ATZ\r\r\nOK » overflows and ProphetOric concludes « no modem ».
+// A bare 6551 ($031C, without LOCI) has no FIFO: nothing added.
 if (modem && loci) args.push('--serial-buffer', '32');
-// Arguments CLI supplémentaires (tests e2e : --type-keys…), posés en
-// sessionStorage 'phos_extra_args' (tableau JSON) avant le chargement.
+// Extra CLI arguments (e2e tests: --type-keys…), set in
+// sessionStorage 'phos_extra_args' (JSON array) before loading.
 try{ var extraArgs=JSON.parse(sessionStorage.getItem('phos_extra_args')||'[]');
   if(Array.isArray(extraArgs)) extraArgs.forEach(function(a){ args.push(String(a)); }); }catch(e){}
 function lociSync(populate, cb){
@@ -103,7 +103,7 @@ var Module = {
   print:function(t){console.log(t);}, printErr:function(t){console.warn(t);},
   preRun: [function(){ if(modem && loci) ENV.PHOSPHORIC_PICOWIFI_NVRAM = LOCI_DIR + '/picowifi.cfg'; },
     function(){ if(!loci) return;
-    // Monte le flash LOCI persistant avant main() et le recharge depuis IndexedDB.
+    // Mounts the persistent LOCI flash before main() and reloads it from IndexedDB.
     try{ FS.mkdir(LOCI_DIR); }catch(e){}
     FS.mount(FS.filesystems.IDBFS, {}, LOCI_DIR);
     addRunDependency('loci-flash');
@@ -113,7 +113,7 @@ var Module = {
       FS.writeFile('/media/'+mediaName, new Uint8Array(buf)); } }catch(e){console.warn(e);}
       removeRunDependency('media-file'); }); }],
   onRuntimeInitialized: function(){
-    // Les ROM préchargées (/roms) n'existent qu'à ce stade : semis du flash ici.
+    // The preloaded ROMs (/roms) only exist at this stage: seed the flash here.
     if(loci){ try{ lociSeed(); }catch(e){ console.warn('LOCI seed:', e); } lociSync(false); }
     ready=true; refreshUI(); maybeLoadUrlMedia(); }
 };
@@ -160,13 +160,13 @@ function refreshUI(){
 }
 document.getElementById('btn-machine').onclick=function(){ sessionStorage.setItem('phos_rom', rom==='oric1'?'atmos':'oric1'); location.reload(); };
 document.getElementById('btn-loci').onclick=function(){
-  // Bascule LOCI : l'URL ?loci= prime sur la session, on la retire pour que le choix tienne.
+  // LOCI toggle: the URL ?loci= takes precedence over the session, it is removed so the choice sticks.
   sessionStorage.setItem('phos_loci', loci?'0':'1');
   var u=new URL(location.href); u.searchParams.delete('loci'); location.href=u.toString(); };
 document.getElementById('btn-modem').onclick=function(){
   sessionStorage.setItem('phos_modem', modem?'0':'1');
   var u=new URL(location.href); u.searchParams.delete('modem'); location.href=u.toString(); };
-// Persistance du flash LOCI : écritures faites par le menu (sauvegardes, copies…).
+// LOCI flash persistence: writes made by the menu (saves, copies…).
 if(loci){ setInterval(function(){ if(ready) lociSync(false); }, 5000);
   window.addEventListener('pagehide', function(){ if(ready) lociSync(false); }); }
 document.getElementById('btn-reset').onclick=function(){ location.reload(); };
@@ -242,7 +242,7 @@ function loadMedia(file){
     location.reload();
   }); });
 }
-// Mode LOCI : tout fichier déposé va dans le flash (/loci), à choisir dans le menu.
+// LOCI mode: every dropped file goes into the flash (/loci), to be picked from the menu.
 function lociImport(file){
   if(!ready){ alert('LOCI pas encore prêt'); return; }
   var name=file.name.replace(/[\/\\]/g,'_');
@@ -314,7 +314,7 @@ function buildKbd(){
 }
 buildKbd(); refreshUI();
 
-// Remplace l'ancien attribut inline oncontextmenu du <canvas> (bloqué par CSP
-// script-src-attr) par un écouteur DOM équivalent.
+// Replaces the old inline oncontextmenu attribute of the <canvas> (blocked by CSP
+// script-src-attr) with an equivalent DOM listener.
 (function(){ var c=document.getElementById('canvas');
   if(c) c.addEventListener('contextmenu', function(e){ e.preventDefault(); }); })();

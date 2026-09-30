@@ -30,7 +30,7 @@ bool video_export_ppm(const video_t* vid, const char* filename);
 bool video_export_bmp(const video_t* vid, const char* filename);
 
 /**
- * @brief Export framebuffer as PNG (RGB888, compressé, via stb_image_write)
+ * @brief Export framebuffer as PNG (RGB888, compressed, via stb_image_write)
  * @param vid Video context with rendered framebuffer
  * @param filename Output file path (.png)
  * @return true on success
@@ -48,30 +48,30 @@ bool video_export_png(const video_t* vid, const char* filename);
 bool video_export_ascii(const video_t* vid, FILE* fp, unsigned int scale_x, unsigned int scale_y);
 
 /**
- * @brief Comme video_export_ascii() mais ouvre/ferme le fichier lui-même.
+ * @brief Like video_export_ascii() but opens/closes the file itself.
  * @param vid Video context with rendered framebuffer
- * @param filename Chemin du fichier de sortie (texte, échappements ANSI)
- * @param scale_x Regroupement horizontal de pixels (0 => défaut 2)
- * @param scale_y Regroupement vertical de pixels (0 => défaut 2)
+ * @param filename Output file path (text, ANSI escapes)
+ * @param scale_x Horizontal pixel grouping (0 => default 2)
+ * @param scale_y Vertical pixel grouping (0 => default 2)
  * @return true on success
  */
 bool video_export_ascii_file(const video_t* vid, const char* filename,
                              unsigned int scale_x, unsigned int scale_y);
 
 /**
- * @brief Exporte le CONTENU TEXTE réel de l'écran ($BB80, 40x28) en ASCII lisible.
+ * @brief Exports the actual TEXT CONTENT of the screen ($BB80, 40x28) as readable ASCII.
  *
- * Lit directement le buffer texte ORIC en RAM (pas le framebuffer). Chaque octet
- * est décodé par `octet & 0x7F` (suppression du bit vidéo inverse) ; les codes de
- * contrôle/attributs (< 0x20) deviennent des espaces. Chaque ligne est écrite sur
- * 40 colonnes maximum, espaces de fin supprimés, terminée par '\n'.
+ * Reads the ORIC text buffer directly from RAM (not the framebuffer). Each byte
+ * is decoded as `byte & 0x7F` (stripping the inverse-video bit); control/attribute
+ * codes (< 0x20) become spaces. Each line is written over at most 40 columns,
+ * trailing spaces removed, terminated by '\n'.
  *
- * @note Approximation : suppose le jeu de caractères standard ORIC, pour lequel
- *       0x20-0x7F coïncide avec l'ASCII. Les charsets redéfinis ne sont pas résolus.
- * @note Lit toujours les 28 lignes de $BB80, indépendamment du mode (TEXT/HIRES).
+ * @note Approximation: assumes the standard ORIC character set, for which
+ *       0x20-0x7F matches ASCII. Redefined charsets are not resolved.
+ * @note Always reads the 28 lines of $BB80, regardless of mode (TEXT/HIRES).
  *
- * @param memory Pointeur sur la RAM 64KB (index $BB80 lu directement)
- * @param fp Fichier de sortie (ex. stdout)
+ * @param memory Pointer to the 64KB RAM (index $BB80 read directly)
+ * @param fp Output file (e.g. stdout)
  * @return true on success
  */
 bool video_export_screen_text(const uint8_t* memory, FILE* fp);

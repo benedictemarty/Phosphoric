@@ -1,25 +1,25 @@
 /*
- * loci_gfx.c — émulation de l'assist graphique LOCI (opcode MIA $AE), lot 1
- *              « composition-pure » (spec extensions/graphics-assist-AE §8).
+ * loci_gfx.c — emulation of the LOCI graphics assist (MIA opcode $AE), batch 1
+ *              "pure composition" (spec extensions/graphics-assist-AE §8).
  *
- * Miroir de la logique du firmware (firmware/src/mia/api/gfx.c/.h) et des tests
- * natifs (extensions/graphics-assist-AE/tests/gfx_ops_test.c) : back-buffer en
- * banque XRAM 16 Ko (loci->xram[(bank<<14)+off]), carte des *dirty spans*
- * déterministe, primitives d'octets (clear/blit/compose) + collision bbox. Le
- * blit final vers l'écran reste au 6502 (aucun DMA) — non concerné ici.
+ * Mirror of the firmware logic (firmware/src/mia/api/gfx.c/.h) and of the native
+ * tests (extensions/graphics-assist-AE/tests/gfx_ops_test.c): back buffer in a
+ * 16 KB XRAM bank (loci->xram[(bank<<14)+off]), deterministic *dirty spans*
+ * map, byte primitives (clear/blit/compose) + bbox collision. The
+ * final blit to the screen stays with the 6502 (no DMA) — not covered here.
  *
- * Sous-code dans API_A ; paramètres/retours sur le xstack, mêmes conventions
- * que les autres op_* (memcpy top-of-stack, xstack_push_n, api_return_*).
+ * Sub-code in API_A; parameters/returns on the xstack, same conventions
+ * as the other op_* (memcpy top-of-stack, xstack_push_n, api_return_*).
  *
- * Ceci est la 3e implémentation (firmware C, test natif C, émulateur C) — les
- * trois partagent EXACTEMENT la sémantique pure, seule change la couche d'accès.
+ * This is the 3rd implementation (C firmware, C native test, C emulator) — all
+ * three share EXACTLY the same pure semantics, only the access layer differs.
  */
 
 #include "io/loci.h"
 #include "io/loci_internal.h"
 #include <string.h>
 
-/* ---- sous-codes (API_A) — spec §4 ---- */
+/* ---- sub-codes (API_A) — spec §4 ---- */
 #define GFX_INIT          0x00
 #define GFX_RESET_DIRTY   0x01
 #define GFX_GET_DIRTY     0x02
@@ -43,7 +43,7 @@
 
 typedef struct { uint16_t off, len; } gfx_span;
 
-/* ---- état (une seule LOCI émulée → statique, comme le firmware) ---- */
+/* ---- state (a single emulated LOCI → static, like the firmware) ---- */
 static uint8_t  g_dirty[GFX_DIRTY_LEN];
 static uint8_t  g_bank  = 0;
 static uint16_t g_wb    = GFX_HIRES_WB;
@@ -51,7 +51,7 @@ static uint16_t g_rows  = GFX_HIRES_ROWS;
 static uint16_t g_bytes = GFX_HIRES_WB * GFX_HIRES_ROWS;
 static int      g_ready = 0;
 
-/* ================= logique PURE (miroir gfx.h / gfx_ops_test.c) ============ */
+/* ================= PURE logic (mirror of gfx.h / gfx_ops_test.c) ============ */
 
 static inline void d_set(uint8_t *d, uint16_t off) { d[off >> 3] |= (uint8_t)(1u << (off & 7u)); }
 static inline int  d_get(const uint8_t *d, uint16_t off) { return (d[off >> 3] >> (off & 7u)) & 1; }
@@ -112,7 +112,7 @@ static int collide_bbox(int ax, int ay, int aw, int ah, int bx, int by, int bw, 
     return 1;
 }
 
-/* ================= couche ABI émulateur ============ */
+/* ================= emulator ABI layer ============ */
 
 static uint8_t *gfx_base(loci_t *loci) { return &loci->xram[(uint32_t)g_bank << 14]; }
 
@@ -122,7 +122,7 @@ static int rect_ok(uint16_t off, uint16_t w, uint16_t h) {
     return last <= g_bytes;
 }
 
-/* pop n octets du sommet du xstack (idiome op_read_xram). */
+/* pop n bytes from the top of the xstack (op_read_xram idiom). */
 static int gfx_pop(loci_t *loci, void *dst, size_t n) {
     if (loci->xstack_ptr + n > LOCI_XSTACK_SIZE) return 0;
     memcpy(dst, &loci->xstack[loci->xstack_ptr], n);

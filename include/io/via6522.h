@@ -74,10 +74,10 @@ typedef struct via6522_s {
                                  keeps decrementing at φ2 (datasheet p.8: lets the
                                  host read the time since interrupt). */
     bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
-    bool     t1_reload;     /**< V2-E3 : un cycle de rechargement est dû. En mode
-                                 continu, le 6522 ne recharge le compteur que le
-                                 cycle APRÈS le sous-dépassement — c'est ce cycle
-                                 mort qui donne la période N+2 (et non N+1). */
+    bool     t1_reload;     /**< V2-E3: a reload cycle is pending. In free-run
+                                 mode, the 6522 reloads the counter only on the
+                                 cycle AFTER the underflow -- this dead cycle is
+                                 what gives the N+2 period (and not N+1). */
 
     /* Shift Register */
     uint8_t sr;         /**< Shift Register */

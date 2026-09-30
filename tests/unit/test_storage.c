@@ -89,8 +89,8 @@ TEST(test_sedoric_create) {
     sedoric_destroy(disk);
 }
 
-/* Blank double face + inférence de géométrie raw au rechargement (la géométrie
- * que formate INIT B de Sedoric ; un blank simple face était sous-dimensionné). */
+/* Blank double-sided + raw geometry inference on reload (the geometry
+ * that Sedoric's INIT B formats; a single-sided blank was undersized). */
 TEST(test_sedoric_create_blank_double_sided) {
     sedoric_disk_t* disk = sedoric_create_blank(42, 2);
     ASSERT_TRUE(disk != NULL);
@@ -99,7 +99,7 @@ TEST(test_sedoric_create_blank_double_sided) {
     ASSERT_EQ(disk->sectors, 17);
     ASSERT_EQ(disk->size, (uint32_t)(2 * 42 * 17 * 256));  /* 365568 */
 
-    /* Round-trip : la géométrie double face doit être ré-inférée à la taille. */
+    /* Round-trip: the double-sided geometry must be re-inferred from the size. */
     const char* path = "test_blank_ds.dsk";
     ASSERT_TRUE(sedoric_save(disk, path));
     sedoric_destroy(disk);
@@ -429,13 +429,13 @@ TEST(test_fdc_write_sector) {
     free(disk_data);
 }
 
-/* Formate une piste via la commande Write Track (0xF0) : on injecte un flux
- * IBM/MFM synthétique (gaps, sync, A1, IDAM, ID, DAM, données) et on vérifie
- * que les champs de données atterrissent dans les bons secteurs de l'image. */
+/* Formats a track via the Write Track command (0xF0): a synthetic IBM/MFM
+ * stream is injected (gaps, sync, A1, IDAM, ID, DAM, data) and we check
+ * that the data fields land in the right sectors of the image. */
 TEST(test_fdc_write_track) {
     fdc_t fdc;
     fdc_init_test(&fdc);
-    const int SPT = 4;                 /* secteurs/piste pour ce test */
+    const int SPT = 4;                 /* sectors/track for this test */
     fdc.tracks = 1;
     fdc.sectors_per_track = (uint8_t)SPT;
     uint32_t sz = (uint32_t)SPT * 256;
@@ -446,7 +446,7 @@ TEST(test_fdc_write_track) {
     fdc_write(&fdc, 0, 0xF0);          /* Write Track */
     ASSERT_EQ(fdc.currentop, FDC_OP_WRITE_TRACK);
 
-    /* Construit + injecte le flux piste, secteur par secteur. */
+    /* Build + inject the track stream, sector by sector. */
     for (int s = 1; s <= SPT; s++) {
         uint8_t pre[] = { 0x4E, 0x4E, 0x00, 0x00, 0xF5, 0xF5, 0xF5 };
         for (size_t i = 0; i < sizeof(pre); i++) fdc_write(&fdc, 3, pre[i]);
@@ -460,14 +460,14 @@ TEST(test_fdc_write_track) {
         for (size_t i = 0; i < sizeof(gap); i++) fdc_write(&fdc, 3, gap[i]);
         fdc_write(&fdc, 3, 0xFB);                       /* DAM */
         for (int i = 0; i < 256; i++)
-            fdc_write(&fdc, 3, (uint8_t)(s * 16 + (i & 0x0F)));  /* motif/secteur */
+            fdc_write(&fdc, 3, (uint8_t)(s * 16 + (i & 0x0F)));  /* pattern/sector */
         fdc_write(&fdc, 3, 0xF7);                       /* CRC */
     }
 
-    /* La piste complète (SPT champs de données) doit terminer la commande. */
+    /* The complete track (SPT data fields) must terminate the command. */
     ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
 
-    /* Chaque secteur logique doit porter son motif au bon offset. */
+    /* Each logical sector must carry its pattern at the right offset. */
     for (int s = 1; s <= SPT; s++) {
         uint8_t* sec = &disk_data[(uint32_t)(s - 1) * 256];
         ASSERT_EQ(sec[0],   (uint8_t)(s * 16 + 0));
@@ -754,12 +754,12 @@ TEST(test_fdc_web_read_sector) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  FIDÉLITÉ WD1793 (V2-E6) — déviations réexaminées                   */
+/*  WD1793 FIDELITY (V2-E6) — deviations re-examined                   */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* LOST DATA (S2) : le plateau n'attend pas le CPU. Si le DRQ précédent n'a pas
- * été servi quand l'octet suivant arrive, le WD1793 lève S2 et poursuit. À
- * 250 kbit/s, le programme n'a que 32 µs par octet. */
+/* LOST DATA (S2): the platter does not wait for the CPU. If the previous DRQ has
+ * not been serviced when the next byte arrives, the WD1793 raises S2 and carries on.
+ * At 250 kbit/s, the program has only 32 µs per byte. */
 TEST(test_fdc_lost_data_when_cpu_too_slow) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -771,8 +771,8 @@ TEST(test_fdc_lost_data_when_cpu_too_slow) {
     fdc_write(&fdc, FDC_SECTOR, 1);
     fdc_write(&fdc, FDC_COMMAND, 0x80);      /* Read Sector */
 
-    /* On laisse filer le temps sans jamais lire le registre de données :
-     * chaque DRQ non servi doit coûter un octet perdu. */
+    /* Let time run without ever reading the data register:
+     * each unserviced DRQ must cost one lost byte. */
     for (int i = 0; i < 20; i++) fdc_ticktock(&fdc, 64);
 
     ASSERT_TRUE((fdc_read(&fdc, FDC_STATUS) & FDC_ST_LOST_DATA) != 0);
@@ -780,7 +780,7 @@ TEST(test_fdc_lost_data_when_cpu_too_slow) {
     free(disk);
 }
 
-/* …et le transfert reste propre quand le CPU lit à temps : aucun octet perdu. */
+/* …and the transfer stays clean when the CPU reads in time: no lost byte. */
 TEST(test_fdc_no_lost_data_when_cpu_keeps_up) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -796,15 +796,15 @@ TEST(test_fdc_no_lost_data_when_cpu_keeps_up) {
         int guard = 0;
         while (!(fdc.status & FDC_ST_DRQ) && guard++ < 10000) fdc_ticktock(&fdc, 1);
         if (!(fdc.status & FDC_ST_DRQ)) break;
-        (void)fdc_read(&fdc, FDC_DATA);      /* servi immédiatement */
+        (void)fdc_read(&fdc, FDC_DATA);      /* serviced immediately */
     }
     ASSERT_EQ(fdc.lost_data_count, 0u);
     ASSERT_TRUE((fdc.status & FDC_ST_LOST_DATA) == 0);
     free(disk);
 }
 
-/* Languette de protection (S6) : la commande d'écriture n'est pas exécutée, le
- * statut porte le bit 6, et le contenu du disque reste intact. */
+/* Write-protect tab (S6): the write command is not executed, the
+ * status carries bit 6, and the disk content stays intact. */
 TEST(test_fdc_write_protect_refuses_write) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -818,13 +818,13 @@ TEST(test_fdc_write_protect_refuses_write) {
     fdc_write(&fdc, FDC_COMMAND, 0xA0);      /* Write Sector */
 
     ASSERT_TRUE((fdc.status & FDC_ST_WRITE_PROT) != 0);
-    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);   /* commande non exécutée */
-    fdc_write(&fdc, FDC_DATA, 0x5A);         /* une écriture égarée ne passe pas */
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);   /* command not executed */
+    fdc_write(&fdc, FDC_DATA, 0x5A);         /* a stray write does not get through */
     ASSERT_EQ(disk[0], before);
     free(disk);
 }
 
-/* Sans languette, la même séquence écrit bien. */
+/* Without the tab, the same sequence does write. */
 TEST(test_fdc_write_allowed_without_protect) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -840,7 +840,7 @@ TEST(test_fdc_write_allowed_without_protect) {
     free(disk);
 }
 
-/* En Type I, le bit 6 du statut reporte lui aussi la languette. */
+/* In Type I, status bit 6 also reports the tab. */
 TEST(test_fdc_write_protect_visible_in_type1_status) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);

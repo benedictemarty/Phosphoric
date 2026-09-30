@@ -1,29 +1,29 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 #define _POSIX_C_SOURCE 200809L
 /*
- * loci_hw.c — backend LOCI « MATÉRIEL RÉEL » de Phosphoric (--loci-hw DEV).
+ * loci_hw.c — Phosphoric's "REAL HARDWARE" LOCI backend (--loci-hw DEV).
  *
- * Même interface que loci_emu.h, mais au lieu d'exécuter le firmware dans
- * l'émulateur RP2040 (loci_emu.c) ou de ne rien faire (loci_emu_stub.c), chaque
- * accès du 6502 émulé à la page LOCI ($03xx) ou à la ROM servie ($C000-$FFFF sous
- * nROMDIS) devient un VRAI cycle de bus sur la cartouche, via le pont Pico
- * loci-usb (bridge/) branché sur CN1 et parlant proto/loci_usb_proto.h sur USB CDC.
+ * Same interface as loci_emu.h, but instead of running the firmware in the
+ * RP2040 emulator (loci_emu.c) or doing nothing (loci_emu_stub.c), every
+ * access of the emulated 6502 to the LOCI page ($03xx) or to the served ROM ($C000-$FFFF under
+ * nROMDIS) becomes a REAL bus cycle on the cartridge, through the loci-usb Pico
+ * bridge (bridge/) plugged into CN1 and speaking proto/loci_usb_proto.h over USB CDC.
  *
- * Choisi à la compilation : `make LOCI_HW=1` (remplace loci_emu.c ; un binaire
- * Phosphoric = un backend). Source de vérité : ~/loci/loci-usb/phosphoric/loci_hw.c.
+ * Selected at build time: `make LOCI_HW=1` (replaces loci_emu.c; one Phosphoric
+ * binary = one backend). Source of truth: ~/loci/loci-usb/phosphoric/loci_hw.c.
  *
- * Modèle :
- *  - le firmware réel tourne en continu : « booté » dès que le pont répond (PING) ;
- *  - $03xx : un aller-retour USB par accès (stop-and-wait, ~0,1-1 ms) ;
- *  - ROM servie : CACHE hôte de 16 Ko rempli par RDN (une banque en une requête),
- *    avec les flags nROMDIS/nMAP par adresse. Invalidé quand la GÉNÉRATION de la vue
- *    ROM (gen8, renvoyée par chaque réponse : base/MAP/trap/chargement changés côté
- *    firmware) bouge, à chaque front nRESET et à chaque changement de nROMDIS.
- *    LOCI_HW_ROM_NOCACHE=1 : pas de cache (un cycle par fetch, exact, lent) ;
- *  - nIRQ / nRESET : fronts comptés par le pont, drainés une fois par frame
- *    (loci_emu_irq_take / loci_emu_reset_take) ; le bouton MENU est PHYSIQUE : l'hôte
- *    voit le nRESET qui en résulte et resette son 6502 ;
- *  - clavier/souris USB : ceux branchés sur la cartouche (pas d'injection possible).
+ * Model:
+ *  - the real firmware runs continuously: "booted" as soon as the bridge answers (PING);
+ *  - $03xx: one USB round trip per access (stop-and-wait, ~0.1-1 ms);
+ *  - served ROM: 16 KB host CACHE filled by RDN (one bank in one request),
+ *    with the nROMDIS/nMAP flags per address. Invalidated when the GENERATION of the ROM
+ *    view (gen8, returned by every response: base/MAP/trap/loading changed on the
+ *    firmware side) moves, on every nRESET edge and on every nROMDIS change.
+ *    LOCI_HW_ROM_NOCACHE=1: no cache (one cycle per fetch, exact, slow);
+ *  - nIRQ / nRESET: edges counted by the bridge, drained once per frame
+ *    (loci_emu_irq_take / loci_emu_reset_take); the MENU button is PHYSICAL: the host
+ *    sees the resulting nRESET and resets its 6502;
+ *  - USB keyboard/mouse: those plugged into the cartridge (no injection possible).
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -35,16 +35,16 @@
 #include <time.h>
 
 static lup_client_t g_c;
-static int  g_active;             /* pont ouvert et PING OK */
-static int  g_romdis;             /* dernier état connu de nROMDIS (1 = actif) */
-static int  g_reset_pending;      /* fronts nRESET vus depuis le dernier loci_emu_reset_take */
+static int  g_active;             /* bridge open and PING OK */
+static int  g_romdis;             /* last known nROMDIS state (1 = active) */
+static int  g_reset_pending;      /* nRESET edges seen since the last loci_emu_reset_take */
 static int  g_link_err_logged;
-static long g_settle_us;          /* LOCI_HW_SETTLE_US : pause après chaque accès $03xx (banc émulé) */
-static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL : cycles sans accès LOCI avant un LINES (0 = jamais) */
-static long g_idle_cycles;        /* cycles 6502 écoulés depuis le dernier accès LOCI */
+static long g_settle_us;          /* LOCI_HW_SETTLE_US: pause after each $03xx access (emulated bench) */
+static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL: cycles without LOCI access before a LINES (0 = never) */
+static long g_idle_cycles;        /* 6502 cycles elapsed since the last LOCI access */
 static unsigned long g_idle_polls, g_idle_polls_hit;
 
-/* Cache de la ROM servie ($C000-$FFFF) */
+/* Cache of the served ROM ($C000-$FFFF) */
 static uint8_t g_rom[16384], g_rom_flags[16384];
 static int     g_rom_valid, g_rom_nocache;
 static unsigned long g_rom_refills;
@@ -64,7 +64,7 @@ static void rom_invalidate(const char *why)
     g_rom_valid = 0;
 }
 
-static uint8_t g_gen;          /* génération de la vue ROM du cache */
+static uint8_t g_gen;          /* generation of the cached ROM view */
 static void note_gen(void)
 {
     if (g_c.gen != g_gen) { g_gen = g_c.gen; rom_invalidate("génération"); }
@@ -76,8 +76,8 @@ static void note_flags(uint8_t flags)
     note_gen();
 }
 
-/* Trace des accès : LOCI_HW_TRACE=<fichier> (ou "-" = stderr) — une ligne par accès
- * $03xx (R/W, adresse, valeur, flags) ; les lectures répétées identiques sont comptées. */
+/* Access trace: LOCI_HW_TRACE=<file> (or "-" = stderr) — one line per $03xx
+ * access (R/W, address, value, flags); identical repeated reads are counted. */
 static FILE *g_trace; static int g_trace_init;
 static void trace_access(char dir, uint16_t addr, uint8_t v, uint8_t f)
 {
@@ -91,16 +91,16 @@ static void trace_access(char dir, uint16_t addr, uint8_t v, uint8_t f)
     fprintf(g_trace, "%c $%04X %02X f=%02X\n", dir, addr, v, f);
 }
 
-/* Banc ÉMULÉ (loci_usb_emul) : le firmware y est bien plus lent que sur silicium
- * alors que le 6502 de Phosphoric court ; une IRQ de fin de secteur peut alors
- * arriver « en retard » par rapport au vrai matériel. LOCI_HW_SETTLE_US=n laisse au
- * firmware n µs de temps réel après chaque accès (0 = rien, défaut ; inutile sur silicium). */
+/* EMULATED bench (loci_usb_emul): the firmware there is much slower than on silicon
+ * while Phosphoric's 6502 keeps running; an end-of-sector IRQ may then
+ * arrive "late" compared with the real hardware. LOCI_HW_SETTLE_US=n gives the
+ * firmware n µs of real time after each access (0 = none, default; useless on silicon). */
 static void settle(void)
 {
     if (g_settle_us > 0) { struct timespec ts = { 0, g_settle_us * 1000L }; nanosleep(&ts, NULL); }
 }
 
-/* Cycle de bus générique (page $03xx). */
+/* Generic bus cycle ($03xx page). */
 static uint8_t bus_rd(uint16_t addr)
 {
     uint8_t d = 0xFF, f;
@@ -124,7 +124,7 @@ static void bus_wr(uint16_t addr, uint8_t v)
     g_idle_cycles = 0;
 }
 
-/* ── cycle de vie ── */
+/* ── lifecycle ── */
 int loci_emu_start(const char *dev)
 {
     g_rom_nocache = getenv("LOCI_HW_ROM_NOCACHE") != NULL;
@@ -168,18 +168,18 @@ void loci_emu_stop(void)
 bool loci_emu_active(void)     { return g_active != 0; }
 bool loci_emu_wait_boot(void)  { return g_active != 0; }
 
-/* ── bouton MENU : logiciel (protocole v2, firmware LOCI_USB) ou physique ──
- * Dans les deux cas le firmware pilote nRESET : l'hôte le voit au prochain
- * loci_emu_reset_take() et resette alors son 6502 — on renvoie donc false ici. */
+/* ── MENU button: software (protocol v2, LOCI_USB firmware) or physical ──
+ * In both cases the firmware drives nRESET: the host sees it at the next
+ * loci_emu_reset_take() and then resets its 6502 — so false is returned here. */
 static bool press_button(uint8_t action)
 {
     if (!g_active) return false;
     if (g_c.caps & LUP_CAP_FIRMWARE) {
         if (lup_btn(&g_c, action) != 0) { link_error_once("BTN"); return false; }
-        /* Le firmware traite le bouton et charge sa ROM en TEMPS RÉEL (secondes en
-         * émulation, dizaines de ms sur silicium) pendant que l'Oric émulé, lui, court :
-         * on attend ici le relâchement de nRESET (au plus 10 s) pour que le reset du 6502
-         * tombe sur une ROM complète — comme un vrai Oric maintenu en reset par LOCI. */
+        /* The firmware handles the button and loads its ROM in REAL TIME (seconds in
+         * emulation, tens of ms on silicon) while the emulated Oric keeps running:
+         * we wait here for nRESET to be released (at most 10 s) so that the 6502 reset
+         * lands on a complete ROM — like a real Oric held in reset by LOCI. */
         struct timespec ts = { 0, 20 * 1000 * 1000 };
         for (int i = 0; i < 500; i++) {
             uint8_t lines = 0, irqs = 0, rsts = 0;
@@ -202,12 +202,12 @@ bool loci_emu_menu_button(void)     { return press_button(1); }
 bool loci_emu_button_was_warm(void) { return false; }
 bool loci_emu_diag_button(void)     { return press_button(2); }
 
-/* ── overlay ROM ── */
+/* ── ROM overlay ── */
 static int rom_refill(void)
 {
     if (lup_rdn(&g_c, 0xC000, 16384, g_rom, g_rom_flags) != 0) { link_error_once("RDN ROM"); return 0; }
     g_rom_valid = 1; g_rom_refills++;
-    g_gen = g_c.gen;                     /* l'image est cohérente avec cette génération */
+    g_gen = g_c.gen;                     /* the image is consistent with this generation */
     int romdis = (g_rom_flags[0] & LUP_F_NROMDIS) != 0;
     if (romdis != g_romdis) g_romdis = romdis;
     return 1;
@@ -224,7 +224,7 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
         if (!g_rom_valid && !rom_refill()) return false;
         d = g_rom[address - 0xC000]; f = g_rom_flags[address - 0xC000];
     }
-    if (!(f & LUP_F_NROMDIS) || (f & LUP_F_NMAP)) return false;   /* sous MAP : RAM overlay Oric */
+    if (!(f & LUP_F_NROMDIS) || (f & LUP_F_NMAP)) return false;   /* under MAP: Oric RAM overlay */
     *out = d;
     return true;
 }
@@ -240,17 +240,17 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
     if (nromdis) *nromdis = (lines & LUP_L_NROMDIS) != 0;
 }
 
-/* ── page $03xx : API, Microdisc, cassette, ACIA — tous de vrais cycles ── */
+/* ── $03xx page: API, Microdisc, tape, ACIA — all real cycles ── */
 void    loci_emu_api_write(uint16_t address, uint8_t value) { bus_wr(address, value); }
 uint8_t loci_emu_api_read(uint16_t address)                 { return bus_rd(address); }
 void    loci_emu_dsk_write(uint16_t address, uint8_t value) { bus_wr(address, value); }
 uint8_t loci_emu_dsk_read(uint16_t address)                 { return bus_rd(address); }
 void    loci_emu_tap_write(uint16_t address, uint8_t value) { bus_wr(address, value); }
 uint8_t loci_emu_tap_read(uint16_t address)                 { return bus_rd(address); }
-/* Le moteur cassette (VIA ORB $0300) : sur un vrai bus, LOCI snoope l'écriture
- * en $0300 — on la rejoue (nIO bas : page $03xx), mais SEULEMENT sur un changement
- * de PB6 : la ROM réécrit ORB à chaque colonne du balayage clavier, un aller-retour
- * USB par écriture effondrerait l'émulation. */
+/* The tape motor (VIA ORB $0300): on a real bus, LOCI snoops the write
+ * to $0300 — we replay it (nIO low: $03xx page), but ONLY on a change
+ * of PB6: the ROM rewrites ORB at every column of the keyboard scan, one USB
+ * round trip per write would collapse the emulation. */
 void loci_emu_tap_motor(uint8_t via_orb)
 {
     static int last = -1;
@@ -261,8 +261,8 @@ void loci_emu_tap_motor(uint8_t via_orb)
 }
 void    loci_emu_dsk_tick(void)                             { }
 
-/* Fronts nIRQ comptés par le pont depuis le dernier drain (une fois par frame).
- * Profite du même aller-retour pour relever nROMDIS et les fronts nRESET. */
+/* nIRQ edges counted by the bridge since the last drain (once per frame).
+ * Uses the same round trip to pick up nROMDIS and the nRESET edges. */
 static int lines_drain(void)
 {
     uint8_t lines = 0, irqs = 0, rsts = 0;
@@ -277,9 +277,9 @@ static int lines_drain(void)
 
 int loci_emu_irq_take(void) { return lines_drain(); }
 
-/* Poll « en attente » : sans accès LOCI depuis LOCI_HW_IDLE_POLL cycles, un LINES.
- * Gratuit quand le programme parle à LOCI (le compteur est remis à zéro à chaque
- * accès), borne la latence des IRQ/reset asynchrones à N cycles quand il attend. */
+/* "Idle" poll: with no LOCI access for LOCI_HW_IDLE_POLL cycles, one LINES.
+ * Free when the program talks to LOCI (the counter is reset on every
+ * access), bounds the latency of asynchronous IRQs/resets to N cycles when it waits. */
 int loci_emu_idle_poll(int cycles)
 {
     if (!g_active || g_idle_poll_cycles <= 0) return 0;
@@ -290,11 +290,11 @@ int loci_emu_idle_poll(int cycles)
     int before = g_reset_pending;
     int irqs = lines_drain();
     if (irqs || g_reset_pending != before) g_idle_polls_hit++;
-    return irqs ? irqs : (g_reset_pending != before ? -1 : 0);  /* -1 = reset seul : l'appelant relève loci_emu_reset_take */
+    return irqs ? irqs : (g_reset_pending != before ? -1 : 0);  /* -1 = reset only: the caller picks up loci_emu_reset_take */
 }
 
-/* Fronts nRESET pilotés par LOCI (bouton MENU physique, gel) depuis le dernier
- * appel : l'hôte doit alors réinitialiser son 6502. */
+/* nRESET edges driven by LOCI (physical MENU button, freeze) since the last
+ * call: the host must then reset its 6502. */
 int loci_emu_reset_take(void)
 {
     int n = g_reset_pending;
@@ -303,21 +303,21 @@ int loci_emu_reset_take(void)
     return n;
 }
 
-/* ── ACIA : servie par la cartouche elle-même ($0380-$0383, mode 1) ── */
-bool    loci_emu_acia_active(void)              { return false; }   /* pas de dongle CDC côté hôte */
+/* ── ACIA: served by the cartridge itself ($0380-$0383, mode 1) ── */
+bool    loci_emu_acia_active(void)              { return false; }   /* no CDC dongle on the host side */
 bool    loci_emu_acia_served(uint16_t address)  { return g_active && address >= 0x0380 && address <= 0x0383; }
 void    loci_emu_acia_write(uint16_t address, uint8_t value) { bus_wr(address, value); }
 uint8_t loci_emu_acia_read(uint16_t address)    { return bus_rd(address); }
-/* Observation « non destructive » : sur du vrai matériel, lire $0380 consomme
- * l'octet reçu → on ne le lit pas ; les registres d'état/commande/contrôle, si. */
+/* "Non-destructive" observation: on real hardware, reading $0380 consumes
+ * the received byte → it is not read; the status/command/control registers are. */
 uint8_t loci_emu_acia_peek(uint16_t address)    { return address == 0x0380 ? 0xFF : bus_rd(address); }
 void    loci_emu_acia_tick(void)                { }
 
-void loci_emu_tick(long steps) { (void)steps; }   /* le firmware réel avance tout seul */
+void loci_emu_tick(long steps) { (void)steps; }   /* the real firmware advances on its own */
 
-/* HID : avec le firmware LOCI_USB (caps FIRMWARE), le clavier/la souris de l'hôte
- * sont injectés par le protocole (kbd_report()/mou_report() réels du firmware) ;
- * sinon ce sont les périphériques branchés sur la cartouche. */
+/* HID: with the LOCI_USB firmware (caps FIRMWARE), the host keyboard/mouse
+ * are injected through the protocol (the firmware's real kbd_report()/mou_report());
+ * otherwise it is the devices plugged into the cartridge. */
 bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel, int8_t pan)
 {
     if (!g_active || !(g_c.caps & LUP_CAP_FIRMWARE)) return false;
@@ -335,7 +335,7 @@ bool loci_emu_kbd_armed(void) { return g_active && (g_c.caps & LUP_CAP_FIRMWARE)
 
 bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }
 
-/* Page I/O entière par cycles bus : propre au backend neo (loci-fw). */
+/* Whole I/O page through bus cycles: specific to the neo backend (loci-fw). */
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }

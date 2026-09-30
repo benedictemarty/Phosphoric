@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file netutil.c
- * @brief Utilitaires réseau — implémentation.
+ * @brief Network utilities -- implementation.
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US1, Sprint 125), à l'identique.
+ * Extracted from main.c (Epic 7 / US1, Sprint 125), unchanged.
  */
 #include "utils/netutil.h"
 

@@ -115,7 +115,7 @@ done
     && ok "typed BASIC 'POKE 4096,123' executed (mem[\$1000]=7B)" \
     || ko "keys→BASIC POKE did not take effect"
 
-# ─── Sprint 97: parité debug REST (bridge --control + 7 gaps) ─────────
+# ─── Sprint 97: REST debug parity (bridge --control + 7 gaps) ─────────
 
 # 9. breakpoints: create, list, delete
 curl -s -X POST --data 'addr=0400' "$BASE/break" | grep -q '"reply":"id=0 addr=0400"' \

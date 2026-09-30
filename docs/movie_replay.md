@@ -1,41 +1,40 @@
-# Record / replay déterministe des entrées (movie « TAS »)
+# Deterministic input record / replay ("TAS" movie)
 
-Phosphoric peut **enregistrer** les entrées clavier d'une session et les
-**rejouer** à l'identique. La seule entrée non déterministe de l'émulation est
-la matrice clavier (8 octets) ; en la capturant par frame et en la rejouant
-bit-à-bit, une session se reproduit exactement.
+Phosphoric can **record** the keyboard input of a session and **replay** it
+identically. The only non-deterministic input of the emulation is the keyboard
+matrix (8 bytes); by capturing it per frame and replaying it bit for bit, a
+session is reproduced exactly.
 
-Cas d'usage : tool-assisted runs (TAS), reproduction de bugs, et **régression
-CI** (enregistrer une fois → rejouer headless → comparer une capture d'écran de
-référence).
+Use cases: tool-assisted runs (TAS), bug reproduction, and **CI regression**
+(record once → replay headless → compare against a reference screenshot).
 
-## Utilisation
+## Usage
 
 ```bash
-# Enregistrer (interactif, SDL)
+# Record (interactive, SDL)
 ./oric1-emu -r roms/basic11b.rom --record session.phm
 
-# Rejouer (le clavier live est ignoré)
+# Replay (the live keyboard is ignored)
 ./oric1-emu -r roms/basic11b.rom --replay session.phm
 
-# Régression CI : rejouer headless puis capturer l'écran final
+# CI regression: replay headless then capture the final screen
 ./oric1-emu -r roms/basic11b.rom -n --replay session.phm --screenshot out.ppm
 ```
 
-En mode headless, le rejeu **sort automatiquement** une fois le movie épuisé.
+In headless mode, replay **exits automatically** once the movie is exhausted.
 
-## Garantie de déterminisme
+## Determinism guarantee
 
-Le **rejeu est bit-déterministe** : rejouer le même movie produit toujours la
-même sortie (prouvé : deux rejeus → captures d'écran byte-identiques). C'est ce
-qui rend la régression CI fiable — on commite un movie + une capture de
-référence, et la CI rejoue + compare.
+**Replay is bit-deterministic**: replaying the same movie always produces the
+same output (proven: two replays → byte-identical screenshots). This is what
+makes CI regression reliable — you commit a movie + a reference screenshot,
+and CI replays + compares.
 
-Le déterminisme repose sur : même ROM/modèle, init RAM fixe (compatible
-Oricutron), CPU déterministe au cycle bus. Le movie stocke le modèle (`model 0|1`) et un
-avertissement est émis si le modèle de rejeu diffère.
+Determinism relies on: same ROM/model, fixed RAM init (Oricutron-compatible),
+CPU deterministic at bus-cycle level. The movie stores the model (`model 0|1`) and a
+warning is issued if the replay model differs.
 
-## Format de fichier (texte, diffable)
+## File format (text, diffable)
 
 ```
 PHOSPHORIC-MOVIE 1
@@ -45,17 +44,17 @@ F 1 ff ff ff ff ff f7 ff ff
 F 5 ff fb ff ff ff ff ff ff
 ```
 
-- `F <frame> <m0..m7>` : index de frame + 8 octets de la matrice (hex, active-low).
-- **Changements seulement** : une ligne n'est écrite que lorsque la matrice
-  change ; le rejeu conserve le dernier état entre deux changements.
+- `F <frame> <m0..m7>`: frame index + the 8 matrix bytes (hex, active-low).
+- **Changes only**: a line is written only when the matrix
+  changes; replay keeps the last state between two changes.
 
-## Portée et limite
+## Scope and limitation
 
-- **Exact** pour l'entrée interactive SDL : le clavier est sondé une fois par
-  frame, donc la matrice est constante pendant chaque frame — l'échantillonnage
-  par frame est sans perte.
-- **`--type-keys`** injecte des touches en milieu de frame (granularité cycle).
-  Un movie issu d'un run `--type-keys` rejoue de façon **déterministe**, mais
-  pas nécessairement à l'identique du run `--type-keys` live (l'injection
-  sous-frame est quantifiée à la frame). Pour des entrées scriptées
-  reproductibles, préférez enregistrer puis rejouer le movie.
+- **Exact** for interactive SDL input: the keyboard is polled once per
+  frame, so the matrix is constant during each frame — per-frame sampling
+  is lossless.
+- **`--type-keys`** injects keys in the middle of a frame (cycle granularity).
+  A movie recorded from a `--type-keys` run replays **deterministically**, but
+  not necessarily identically to the live `--type-keys` run (sub-frame
+  injection is quantised to the frame). For reproducible scripted input,
+  prefer recording and then replaying the movie.

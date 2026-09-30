@@ -1,27 +1,27 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_options.h
- * @brief Déclarations des options CLI (enum de codes longs + table getopt).
+ * @brief CLI option declarations (enum of long codes + getopt table).
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US3 partiel, Sprint 127). SÉPARE les *déclarations*
- * d'options (données) de la *logique de parsing* (le switch, resté dans main()).
+ * Extracted from main.c (Epic 7 / partial US3, Sprint 127). SEPARATES the option
+ * *declarations* (data) from the *parsing logic* (the switch, still in main()).
  *
- * Note d'honnêteté : la réécriture déclarative complète (parser générique +
- * `cli_args_t`) n'est PAS faite — 43 des 63 `case` du switch portent des effets
- * de bord au parsing (fopen/malloc/exit/init) et ~89 variables locales seraient
- * à router à la main, ce qui n'est pas prouvable iso-comportement avec le filet
- * de tests actuel. Seule cette relocation de données (sans risque) est livrée.
+ * Honesty note: the full declarative rewrite (generic parser +
+ * `cli_args_t`) is NOT done -- 43 of the 63 `case`s of the switch carry side
+ * effects at parse time (fopen/malloc/exit/init) and ~89 local variables would
+ * have to be routed by hand, which cannot be proven behaviour-identical with the
+ * current test safety net. Only this (risk-free) data relocation is delivered.
  *
- * Inclus par main.c uniquement.
+ * Included by main.c only.
  */
 #ifndef CLI_OPTIONS_H
 #define CLI_OPTIONS_H
 
 #include <getopt.h>
 
-/* Codes des options longues sans équivalent court (>= 256 pour ne pas entrer en
- * collision avec les caractères d'options courtes). */
+/* Codes of the long options without a short equivalent (>= 256 so as not to
+ * collide with the short option characters). */
 enum {
     OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL,
     OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT,
@@ -47,10 +47,10 @@ enum {
     OPT_MEA8000, OPT_MEA8000_ADDR
 };
 
-/* Chaîne d'options courtes passée à getopt_long. */
+/* Short option string passed to getopt_long. */
 #define CLI_SHORT_OPTIONS "t:d:r:h:fnc:vm:k:j:p:b:D?"
 
-/* Table getopt des options longues (terminée par {0,0,0,0}). */
+/* getopt table of the long options (terminated by {0,0,0,0}). */
 static const struct option long_options[] = {
     {"tape",                required_argument, 0, 't'},
     {"disk",                required_argument, 0, 'd'},

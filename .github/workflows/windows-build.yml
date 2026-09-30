@@ -1,5 +1,5 @@
-# Sprint 89 — cross-build Windows x86_64 (MinGW-w64) sur runner Ubuntu.
-# Produit un zip portable : oric1-emu.exe + SDL2.dll + roms/ + docs.
+# Sprint 89 — Windows x86_64 cross-build (MinGW-w64) on an Ubuntu runner.
+# Produces a portable zip: oric1-emu.exe + SDL2.dll + roms/ + docs.
 name: windows-build
 
 on:

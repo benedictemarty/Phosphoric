@@ -1,84 +1,84 @@
 # Senior Engineering Review — LOCI Sedoric boot stage 1 (sprints 34aw → 34ay)
 
-**Date** : 2026-06-07
-**Versions livrées** : v1.16.50 → v1.16.53-alpha (4 versions)
-**Auteur** : bmarty
-**Demande** : review architecturale du bus DSK LOCI + diagnostic du blocage Sedoric stage 2
+**Date**: 2026-06-07
+**Versions delivered**: v1.16.50 → v1.16.53-alpha (4 versions)
+**Author**: bmarty
+**Request**: architectural review of the LOCI DSK bus + diagnosis of the Sedoric stage 2 hang
 
 ---
 
 ## 1. TL;DR
 
-Cette série rebranche complètement le bus DSK (Microdisc) sur LOCI :
-parsing MFM_DISK, WD1793 driven par le `fdc_t` cycle-accurate existant,
-overlay ROM Microdisc activé dynamiquement, et IRQ asynchrone propagé au
-CPU quand le firmware sodiumlb le poll.
+This series fully rewires the DSK (Microdisc) bus onto LOCI:
+MFM_DISK parsing, WD1793 driven by the existing cycle-timed `fdc_t`,
+dynamically enabled Microdisc ROM overlay, and asynchronous IRQ propagated to the
+CPU when the sodiumlb firmware polls it.
 
-**Résultat E2E** : depuis `roms/loci/locirom`, le pipeline complet
-fonctionne :
+**E2E result**: starting from `roms/loci/locirom`, the complete pipeline
+works:
 
 ```
 LOCI MIA_BOOT(FDC) → swap ROM $C000 (basic11b) + overlay $E000 (microdis)
                   → re-reset CPU → boot Microdisc → Restore + Read Sector $01/Track 20
-                  → boot loader Sedoric chargé en RAM $0400-$04FF
-                  → JMP $0400, exécution loader, écran affiche « Booting. »
-                  → STUCK à PC=$04F7 (stage 2 du loader)
+                  → Sedoric boot loader loaded into RAM $0400-$04FF
+                  → JMP $0400, loader runs, screen shows « Booting. »
+                  → STUCK at PC=$04F7 (loader stage 2)
 ```
 
-Le stage 1 (transfert ROM Microdisc → RAM Sedoric loader) est **réussi**.
-Le stage 2 (charge du noyau Sedoric depuis le loader RAM) bloque, hypothèse
-principale : Read Multiple ou DRQ pacing manquant.
+Stage 1 (Microdisc ROM → Sedoric loader in RAM transfer) **succeeds**.
+Stage 2 (loading the Sedoric kernel from the RAM loader) hangs; main
+hypothesis: Read Multiple or DRQ pacing missing.
 
 | PR | Sprint | Version | Files | LOC |
 |----|--------|---------|-------|-----|
-| 1 | 34aw | 1.16.50 | rebranchement `fdc_t` dans loci, MFM_DISK parser | ~400 |
-| 2 | 34ax | 1.16.52 | CTRL register sémantique (INTENA/ROMDIS/EPROM) | ~200 |
-| 3 | 34ay | 1.16.53 | INTRQ asynchrone → cpu_irq | ~30 |
+| 1 | 34aw | 1.16.50 | `fdc_t` rewired into loci, MFM_DISK parser | ~400 |
+| 2 | 34ax | 1.16.52 | CTRL register semantics (INTENA/ROMDIS/EPROM) | ~200 |
+| 3 | 34ay | 1.16.53 | asynchronous INTRQ → cpu_irq | ~30 |
 
-484 tests pass (118 LOCI + 366 core), 0 régression.
+484 tests pass (118 LOCI + 366 core), 0 regressions.
 
 ---
 
-## 2. Contexte amont
+## 2. Upstream context
 
-### Avant cette série
+### Before this series
 
-- Sprint 34av avait livré le `--type-keys loci-hid:` prefix : navigation TUI
-  LOCI automatisable via le HID stack USB synthétique. La sélection d'un
-  disque dans la TUI passait `Espace` (pas `Return`, surprise utilisateur
-  documentée).
-- LOCI ROM acceptait `MIA_BOOT(FDC)` mais le bus DSK n'avait qu'un stub :
-  CTRL/STATUS/SECTOR/DATA en RAM, pas de Microdisc réel derrière. Donc
-  Sedoric ne pouvait pas démarrer.
+- Sprint 34av had delivered the `--type-keys loci-hid:` prefix: LOCI TUI
+  navigation automatable through the synthetic USB HID stack. Selecting a
+  disk in the TUI used `Space` (not `Return`, a documented user
+  surprise).
+- The LOCI ROM accepted `MIA_BOOT(FDC)` but the DSK bus was only a stub:
+  CTRL/STATUS/SECTOR/DATA in RAM, no real Microdisc behind it. So
+  Sedoric could not start.
 
-### Décision architecturale clé
+### Key architectural decision
 
-La question initiale : *réimplémenter un WD1793 dans `loci.c` ou réutiliser
-le `fdc_t` existant de `src/storage/disk.c` ?*
+The initial question: *reimplement a WD1793 in `loci.c` or reuse
+the existing `fdc_t` from `src/storage/disk.c`?*
 
-J'ai choisi **réutiliser**. Justification :
+I chose to **reuse**. Rationale:
 
-| Argument | Choix retenu |
+| Argument | Choice made |
 |----------|--------------|
-| Le `fdc_t` est déjà cycle-accurate, level-triggered, 412 LOC battle-tested via `test-storage` | ✓ Évite la duplication ; cohérence avec Microdisc natif |
-| Le format disque côté LOCI est MFM_DISK (header `MFM_DISK` 256 bytes + tracks MFM raw) — différent de l'image flat attendue par `fdc_t` | Réutiliser le `sedoric_load()` existant pour parser MFM_DISK → array flat, puis injecter dans `fdc_t` |
-| LOCI a son propre layout I/O ($0310-$031F partagé Microdisc/LOCI) | Bridger via callbacks `dsk_cpu_irq_set/clr` + `dsk_sync_overlay` |
+| The `fdc_t` is already cycle-timed, level-triggered, 412 LOC battle-tested through `test-storage` | ✓ Avoids duplication; consistency with the native Microdisc |
+| The disk format on the LOCI side is MFM_DISK (`MFM_DISK` header of 256 bytes + raw MFM tracks) — different from the flat image expected by `fdc_t` | Reuse the existing `sedoric_load()` to parse MFM_DISK → flat array, then inject it into `fdc_t` |
+| LOCI has its own I/O layout ($0310-$031F shared between Microdisc/LOCI) | Bridge through the `dsk_cpu_irq_set/clr` + `dsk_sync_overlay` callbacks |
 
-**Conséquence** : le bus DSK LOCI n'est plus un stub mais un vrai WD1793.
-Trade-off : couplage fort avec `storage/disk.c`. Acceptable vu que le format
-disque est fixé par la ROM Microdisc (un seul standard à supporter).
+**Consequence**: the LOCI DSK bus is no longer a stub but a real WD1793.
+Trade-off: strong coupling with `storage/disk.c`. Acceptable since the disk
+format is fixed by the Microdisc ROM (a single standard to support).
 
 ---
 
-## 3. Architecture livrée
+## 3. Delivered architecture
 
-### 3.1 Sprint 34aw — Rebranchement `fdc_t`
+### 3.1 Sprint 34aw — Rewiring `fdc_t`
 
 ```c
 /* include/io/loci.h */
 typedef struct loci_s {
     /* ... */
-    fdc_t    dsk_fdc;                  /* WD1793 cycle-accurate */
+    fdc_t    dsk_fdc;                  /* WD1793, cycle-timed */
     uint8_t* dsk_image[4];             /* 4 drives, flat sector arrays */
     uint32_t dsk_image_size[4];
     uint8_t  dsk_tracks[4];
@@ -89,31 +89,31 @@ typedef struct loci_s {
 } loci_t;
 ```
 
-`dsk_open(drive, path)` lit le fichier, détecte `MFM_DISK` (memcmp 8 bytes),
-appelle `sedoric_load()` qui retourne un array flat
-`sides * tracks * sectors * 256`. SEDO40U.DSK = 696 320 bytes, 80 tracks,
+`dsk_open(drive, path)` reads the file, detects `MFM_DISK` (memcmp of 8 bytes),
+calls `sedoric_load()` which returns a flat array of
+`sides * tracks * sectors * 256`. SEDO40U.DSK = 696,320 bytes, 80 tracks,
 17 sectors, 2 sides.
 
-Reads $0310-$0317 sont routés vers `fdc_read(&l->dsk_fdc, reg)` ; writes
-vers `fdc_write()`. Le DRQ/INTRQ du `fdc_t` est ponté vers `loci.dsk_drq`
-et `loci.dsk_intrq` via callbacks.
+Reads of $0310-$0317 are routed to `fdc_read(&l->dsk_fdc, reg)`; writes
+to `fdc_write()`. The `fdc_t`'s DRQ/INTRQ are bridged to `loci.dsk_drq`
+and `loci.dsk_intrq` through callbacks.
 
-**Convention active-low** : tous les flags exposés au CPU sont OR'd avec
-`0x7F` (DRQ/INTRQ utilisent uniquement le bit 7, les 7 bits bas sont
-floating sur le bus réel). C'est ce que la ROM Microdisc attend.
+**Active-low convention**: all flags exposed to the CPU are OR'd with
+`0x7F` (DRQ/INTRQ only use bit 7, the 7 low bits are
+floating on the real bus). This is what the Microdisc ROM expects.
 
-### 3.2 Sprint 34ax — Sémantique CTRL $0314
+### 3.2 Sprint 34ax — CTRL $0314 semantics
 
 ```
-Bit 0 : INTENA   — enable IRQ vers CPU
+Bit 0 : INTENA   — enable IRQ to the CPU
 Bit 1 : ROMDIS   — disable BASIC ROM ($C000-$DFFF)
 Bit 3 : DENSITY  — single/double (informational, MFM only)
 Bit 4 : SIDE     — head select
 Bit 5-6 : DRIVE  — 0-3
-Bit 7 : EPROM    — Microdisc overlay $E000 (toggle pendant boot)
+Bit 7 : EPROM    — Microdisc overlay $E000 (toggled during boot)
 ```
 
-Write CTRL synchronise immédiatement via 3 callbacks :
+A CTRL write synchronises immediately through 3 callbacks:
 
 ```c
 void loci_set_dsk_bus_callbacks(loci_t* l,
@@ -123,20 +123,20 @@ void loci_set_dsk_bus_callbacks(loci_t* l,
     void* ctx);
 ```
 
-**Piège évité** : un essai initial où `sync_overlay` mettait
-`basic_rom_disabled = false` selon ROMDIS a régressé en remplaçant le ROM
-Microdisc par le BASIC mid-exécution → écran « insert system disc » de
-retour. Fix : `basic_rom_disabled` reste persistant `true` après MIA_BOOT,
-seul `overlay_active` (EPROM bit) suit dynamiquement.
+**Pitfall avoided**: an initial attempt where `sync_overlay` set
+`basic_rom_disabled = false` according to ROMDIS regressed by replacing the Microdisc
+ROM with BASIC mid-execution → the "insert system disc" screen came
+back. Fix: `basic_rom_disabled` stays persistently `true` after MIA_BOOT;
+only `overlay_active` (EPROM bit) follows dynamically.
 
-### 3.3 Sprint 34ay — IRQ asynchrone
+### 3.3 Sprint 34ay — Asynchronous IRQ
 
-Diagnostic : après Restore puis Read Sector, le `fdc_t` met
-`delayed_int = 20` (cycles). À expiration, `fdc_ticktock()` appelle
-`set_intrq()`. Mon premier code n'asseyait `cpu_irq_set` que dans le
-handler write CTRL — donc l'IRQ asynchrone fired par le FDC n'atteignait
-jamais le CPU. La ROM Microdisc poll $0314 en attendant le bit 7 = 0 et
-tournait infiniment.
+Diagnosis: after Restore then Read Sector, the `fdc_t` sets
+`delayed_int = 20` (cycles). When it expires, `fdc_ticktock()` calls
+`set_intrq()`. My first code only asserted `cpu_irq_set` in the
+CTRL write handler — so the asynchronous IRQ fired by the FDC never reached
+the CPU. The Microdisc ROM polls $0314 waiting for bit 7 = 0 and
+looped forever.
 
 ```c
 static void loci_fdc_set_intrq(void* userdata) {
@@ -157,16 +157,16 @@ static void loci_fdc_clr_intrq(void* userdata) {
 }
 ```
 
-`IRQF_DISK` est level-triggered → set/clr symétriques.
+`IRQF_DISK` is level-triggered → symmetrical set/clr.
 
-**Effet observé** : « Booting. » s'affiche, CPU sort du ROM Microdisc et
-exécute en RAM (`PC=$04F7` au timeout). Stage 1 réussi.
+**Observed effect**: « Booting. » is displayed, the CPU leaves the Microdisc ROM and
+executes from RAM (`PC=$04F7` at timeout). Stage 1 succeeds.
 
 ---
 
-## 4. État actuel — Stage 2 stuck
+## 4. Current state — Stage 2 stuck
 
-E2E reproductible :
+Reproducible E2E:
 
 ```bash
 ./oric1-emu -r roms/loci/locirom --loci \
@@ -175,76 +175,76 @@ E2E reproductible :
     --dump-ram-at 56000000:/tmp/screen.bin
 ```
 
-Sur l'écran texte $BB80 :
+On the $BB80 text screen:
 ```
 14: Booting.
 ```
-Et c'est tout. CPU finit à `PC=$04F7 A:06 X:BA Y:04 SP:AB`.
+And that's all. The CPU ends at `PC=$04F7 A:06 X:BA Y:04 SP:AB`.
 
-### Hypothèses pour le blocage
+### Hypotheses for the hang
 
-1. **Read Multiple non implémenté** : le loader Sedoric pourrait émettre
-   $9C (Read Multiple) au lieu de $80 (Read Sector) pour charger le noyau.
-   Le `fdc_t` ne traite explicitement que Read Single. À vérifier dans
+1. **Read Multiple not implemented**: the Sedoric loader might issue
+   $9C (Read Multiple) instead of $80 (Read Sector) to load the kernel.
+   The `fdc_t` explicitly handles only Read Single. To be checked in the
    `src/storage/disk.c:fdc_write()` opcode dispatch.
-2. **DRQ pacing trop rapide** : le `fdc_t` actuel propose le byte suivant
-   immédiatement après lecture de DATA. Sedoric V4 pourrait avoir une
-   séquence stricte avec attente d'IRQ entre bytes (peu probable mais à
-   éliminer).
-3. **Mauvais sector layout** : MFM_DISK déclare 17 sectors/track mais
-   Sedoric V4.0 attend peut-être un layout interleaved que `sedoric_load`
-   met à plat de façon naïve. À vérifier en dumpant le sector 1/track 20
-   et en le comparant à un boot loader Sedoric connu.
+2. **DRQ pacing too fast**: the current `fdc_t` offers the next byte
+   immediately after DATA is read. Sedoric V4 might have a
+   strict sequence waiting for an IRQ between bytes (unlikely but to be
+   ruled out).
+3. **Wrong sector layout**: MFM_DISK declares 17 sectors/track but
+   Sedoric V4.0 may expect an interleaved layout that `sedoric_load`
+   flattens naively. To be checked by dumping sector 1/track 20
+   and comparing it with a known Sedoric boot loader.
 
-### Diagnostics suggérés
+### Suggested diagnostics
 
-- Trace `--trace dsk.log` filtré sur les opcodes FDC envoyés après PC=$0400
-- Lire `mem[$0400-$04FF]` au moment du stop : si c'est bien le loader
-  Sedoric, désassembler et identifier la boucle à $04F7
-- Comparer à Oricutron : booter le même `SEDO40U.DSK` en flat (sans LOCI)
-  via `--disk-rom roms/microdis.rom -d SEDO40U.DSK`. Si ça boote là mais
-  pas via LOCI, c'est le pont LOCI→FDC qui régresse.
+- Trace `--trace dsk.log` filtered on the FDC opcodes sent after PC=$0400
+- Read `mem[$0400-$04FF]` at the moment of the stop: if it really is the Sedoric
+  loader, disassemble it and identify the loop at $04F7
+- Compare with Oricutron: boot the same `SEDO40U.DSK` flat (without LOCI)
+  via `--disk-rom roms/microdis.rom -d SEDO40U.DSK`. If it boots there but
+  not via LOCI, the LOCI→FDC bridge is what regresses.
 
 ---
 
 ## 5. Tests
 
-| Suite | Avant 34aw | Après 34ay |
+| Suite | Before 34aw | After 34ay |
 |-------|------------|------------|
 | test-loci | 115 | 118 (+3 WD1793 dsk tests) |
-| test-storage | 8 | 8 (régression test_dsk_drq mis à jour pour `0x7F` mask) |
+| test-storage | 8 | 8 (regression test_dsk_drq updated for the `0x7F` mask) |
 | Total | 481 | 484 |
 
-Aucune régression hors test_loci_dsk_drq_register (attente mise à jour
-pour le nouveau masque actif-bas).
+No regressions apart from test_loci_dsk_drq_register (expectation updated
+for the new active-low mask).
 
 ---
 
-## 6. Questions ouvertes pour le senior
+## 6. Open questions for the senior
 
-1. **Stratégie stage 2** : aller plus loin avec instrumentation (trace
-   ciblé loader Sedoric) ou rebrancher LOCI sur le path Microdisc natif
-   (`microdisc_t`) plutôt que `fdc_t` directement ? Microdisc native a
-   plus de plumbing (overlay register $0314 propre, IRQ retire-après-RTI).
-2. **Vendor d'un Sedoric loader binaire de référence** : pour validation
-   E2E déterministe, dumper un loader connu correct (depuis Oricutron par
-   exemple) et comparer aux 256 bytes du secteur 1/track 20 lus par LOCI.
-   Est-ce dans le périmètre légal du projet ?
-3. **`fdc_t` Read Multiple** : si confirmé manquant, l'ajouter au
-   `fdc_t` core (et profite à Microdisc native aussi) ou shimmer dans
-   `loci.c` ?
-
----
-
-## 7. Acceptance critères proposés pour sprint 34az
-
-- Sedoric V4.0 affiche `SEDORIC V4.0 — (C) 1987` puis prompt READY
-- `DIR` liste le contenu de SEDO40U.DSK
-- 484 tests + tests Sedoric V4 boot E2E (un nouveau test-loci-sedoric)
-- Pas de régression Microdisc native (`./oric1-emu --disk-rom -d` existant)
+1. **Stage 2 strategy**: go further with instrumentation (trace
+   targeted at the Sedoric loader) or rewire LOCI onto the native Microdisc path
+   (`microdisc_t`) rather than `fdc_t` directly? The native Microdisc has
+   more plumbing (proper $0314 overlay register, IRQ withdrawn after RTI).
+2. **Vendoring a reference Sedoric loader binary**: for deterministic E2E
+   validation, dump a known-correct loader (from Oricutron for
+   instance) and compare it with the 256 bytes of sector 1/track 20 read by LOCI.
+   Is this within the project's legal scope?
+3. **`fdc_t` Read Multiple**: if confirmed missing, add it to the
+   `fdc_t` core (which also benefits the native Microdisc) or shim it in
+   `loci.c`?
 
 ---
 
-*Branch :* `sprint-34ay`
-*Commits clés :* f967224 (34ay), précédents pour 34aw/34ax
-*Reproductible :* commande E2E section 4
+## 7. Proposed acceptance criteria for sprint 34az
+
+- Sedoric V4.0 displays `SEDORIC V4.0 — (C) 1987` then the READY prompt
+- `DIR` lists the contents of SEDO40U.DSK
+- 484 tests + Sedoric V4 boot E2E tests (a new test-loci-sedoric)
+- No regression of the native Microdisc (existing `./oric1-emu --disk-rom -d`)
+
+---
+
+*Branch:* `sprint-34ay`
+*Key commits:* f967224 (34ay), earlier ones for 34aw/34ax
+*Reproducible:* E2E command in section 4

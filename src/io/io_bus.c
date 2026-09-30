@@ -1,64 +1,64 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file io_bus.c
- * @brief Adaptateur bus I/O — wrappers `io_device_t`, table et dispatch.
+ * @brief I/O bus adapter — `io_device_t` wrappers, table and dispatch.
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US2, Sprint 126), à iso-comportement. Confine le
- * couplage à `emulator_t` dans une seule couche d'adaptation ; les modules de
- * périphériques restent découplés d'`emulator.h`. Voir docs/architecture/io-bus.md.
+ * Extracted from main.c (Epic 7 / US2, Sprint 126), with identical behaviour. Confines
+ * the coupling to `emulator_t` to a single adaptation layer; the peripheral
+ * modules stay decoupled from `emulator.h`. See docs/architecture/io-bus.md.
  */
 #include "io/io_bus.h"
-#include "io/loci_emu.h"   /* backend co-sim : API MIA $03xx servie par le vrai firmware (--loci-emu) */
+#include "io/loci_emu.h"   /* co-sim backend: MIA $03xx API served by the real firmware (--loci-emu) */
 #include "emulator.h"
 
 #include <stdio.h>
 
-/* ── Bus I/O : périphériques enregistrés (docs/architecture/io-bus.md) ──────
- * Chaque périphérique fournit claims/read/write ; le dispatch parcourt la table.
- * L'ordre de la table = la priorité : LOCI en tête (recouvre le Microdisc via
- * TAP $0315-$0317), puis ACIA (possède $031C-$031F si présente) avant Microdisc.
- * L'ULA-NG est en dernier : son écriture doit toujours recevoir l'octet en
- * fenêtre (même verrouillée, pour guetter la séquence 'N','G') et `ula_ng_write`
- * *renvoie* si elle a consommé — sinon repli VIA ; d'où le `claims_write` distinct
- * et le retour booléen de `write`. Pattern « strangler ». */
+/* ── I/O bus: registered peripherals (docs/architecture/io-bus.md) ──────
+ * Each peripheral provides claims/read/write; the dispatch walks the table.
+ * Table order = priority: LOCI first (overlaps the Microdisc via
+ * TAP $0315-$0317), then ACIA (owns $031C-$031F if present) before Microdisc.
+ * The ULA-NG comes last: its write must always receive the byte in its
+ * window (even when locked, to watch for the 'N','G' sequence) and `ula_ng_write`
+ * *returns* whether it consumed it — otherwise fall back to the VIA; hence the
+ * separate `claims_write` and the boolean return of `write`. "Strangler" pattern. */
 
-/* LOCI (sodiumlb) : trois sous-fenêtres disjointes, dispatchées en interne.
- *  - MIA $03A0-$03BF (indépendant des autres périphériques) ;
- *  - TAP $0315-$0317 : remplace l'interface cassette, recouvre le Microdisc
- *    $0310-$031F → priorité (LOCI est en tête de table) ;
- *  - DSK $0310-$0314 + $0318-$0319 : seulement en l'absence de vrai Microdisc
- *    (sinon le Microdisc possède la plage). */
-/* Co-sim : fenêtre + registres de l'expansion RAM $AF ($03C0-$03E4), servis par le
- * firmware (io-page) — inconnus du modèle interne. */
+/* LOCI (sodiumlb): three disjoint sub-windows, dispatched internally.
+ *  - MIA $03A0-$03BF (independent of the other peripherals);
+ *  - TAP $0315-$0317: replaces the tape interface, overlaps the Microdisc
+ *    $0310-$031F → priority (LOCI is at the head of the table);
+ *  - DSK $0310-$0314 + $0318-$0319: only when no real Microdisc is present
+ *    (otherwise the Microdisc owns the range). */
+/* Co-sim: window + registers of the $AF RAM expansion ($03C0-$03E4), served by the
+ * firmware (io-page) — unknown to the internal model. */
 static bool loci_emu_ramx_claims(uint16_t addr) {
     return loci_emu_active() && addr >= 0x03C0 && addr <= 0x03E4;
 }
 static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->has_loci) return false;
-    if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* backend neo : /IO CONTROL */
+    if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* neo backend: /IO CONTROL */
     if (loci_addr_in_mia(addr) || loci_emu_ramx_claims(addr)) return true;
     if (loci_addr_in_tap(addr)) return true;
     if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
     return false;
 }
-/* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
- * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
- * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
- * un poll de NIVEAU le manquerait (déjà retombé). L'émulateur latche chaque front
- * montant ; on draine ces pulses ici, juste après la transaction, et on les délivre
- * au 6502 en EDGE / TIR UNIQUE (cpu_irq_pulse) — une IRQ par pulse, sans maintien
- * de niveau donc sans tempête. main.c draine aussi une fois par frame (filet pour
- * les pulses hors écriture MIA, ex. trap IRQ sur bouton). */
+/* Synchronous nIRQ reflection (co-sim backend --loci-emu). The RP2040 firmware
+ * PULSES the nIRQ line (ext_put(EXT_IRQ,true) then false) in response to a
+ * MIA transaction (the write runs core0+core1 for the duration of the bus dialogue):
+ * a LEVEL poll would miss it (already dropped). The emulator latches every rising
+ * edge; these pulses are drained here, right after the transaction, and delivered
+ * to the 6502 as an EDGE / ONE-SHOT (cpu_irq_pulse) — one IRQ per pulse, with no
+ * level held, hence no storm. main.c also drains once per frame (safety net for
+ * pulses outside MIA writes, e.g. IRQ trap on the button). */
 static void loci_emu_reflect_nirq(emulator_t* emu) {
     int pulses = loci_emu_irq_take();
     for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
 }
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
-     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core).
-     * Pendant le boot arrière-plan (1er lancement d'un ELF), on ATTEND : sinon le
-     * modèle interne répondait à la place du firmware (open("N:…") → FR_NO_FILE). */
+    /* Co-sim backend (--loci-emu): the MIA $03xx window is served by the REAL
+     * RP2040 firmware (emulator) instead of the behavioural backend (loci_core).
+     * During the background boot (first launch of an ELF), we WAIT: otherwise the
+     * internal model answered in place of the firmware (open("N:…") → FR_NO_FILE). */
     loci_emu_wait_boot();
     if (loci_emu_io_page()) {
         uint8_t v;
@@ -71,11 +71,11 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
                                                          : loci_read(&emu->loci, addr);
     if (loci_addr_in_tap(addr)) return loci_emu_active() ? loci_emu_tap_read(addr)
                                                          : loci_tap_read(&emu->loci, addr);
-    /* DSK (claims l'a garanti). En co-sim, le WD1793 est celui du firmware (oric/dsk.c) :
-     * un .dsk monté sur A: dans le VRAI menu LOCI est enfin lu par le 6502. */
+    /* DSK (guaranteed by claims). In co-sim, the WD1793 is the firmware's (oric/dsk.c):
+     * a .dsk mounted on A: in the REAL LOCI menu is finally read by the 6502. */
     if (loci_emu_active()) {
         uint8_t v = loci_emu_dsk_read(addr);
-        loci_emu_reflect_nirq(emu);   /* fin de secteur : l'IRQ naît sur la DERNIÈRE lecture DATA */
+        loci_emu_reflect_nirq(emu);   /* end of sector: the IRQ is raised on the LAST DATA read */
         return v;
     }
     return loci_dsk_read(&emu->loci, addr);
@@ -95,83 +95,83 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* ACIA 6551 ($031C-$031F par défaut, base configurable). */
+/* ACIA 6551 ($031C-$031F by default, configurable base). */
 static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
-    /* Co-sim : le firmware sert sa fenêtre ACIA dès le boot, dongle ou non
-     * (sans modem : $0381 = $70). Sans ce claim, --loci-emu sans --loci-cdc
-     * laissait le miroir du VIA répondre en $0380 — infidèle au matériel. */
+    /* Co-sim: the firmware serves its ACIA window from boot, dongle or not
+     * (without modem: $0381 = $70). Without this claim, --loci-emu without --loci-cdc
+     * let the VIA mirror answer at $0380 — unfaithful to the hardware. */
     if (loci_emu_active() && loci_emu_acia_served(addr)) return true;
     return emu->has_serial && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
 }
-/* picowifi-over-LOCI : l'ACIA 6551 émulée vit à $0380, servie par une COURSE
- * PHI2. Le MIA (RP2040 : PIO core1 + serve logiciel lent, ~I²C/DMA) doit poser
- * l'octet sur le data bus AVANT le front PHI2 montant du 6502. Si la marge de
- * timing `tior` est mal réglée (hors fenêtre auto-tunée par ADJ_SCAN), le serve
- * perd la course. Le VIA étant décodé-inhibé symétriquement sur tout $03x0-$03xF
- * (IO_CONTROL = IO·(A4+A5+A6+A7), prouvé matériellement), RIEN ne pilote alors
- * le bus → le 6502 latche l'OPEN-BUS (dernier octet piloté), PAS le VIA.
+/* picowifi-over-LOCI: the emulated ACIA 6551 lives at $0380, served through a PHI2
+ * RACE. The MIA (RP2040: PIO core1 + slow software serve, ~I²C/DMA) must put
+ * the byte on the data bus BEFORE the 6502's rising PHI2 edge. If the `tior`
+ * timing margin is badly tuned (outside the window auto-tuned by ADJ_SCAN), the serve
+ * loses the race. Since the VIA is decode-inhibited symmetrically over all of $03x0-$03xF
+ * (IO_CONTROL = IO·(A4+A5+A6+A7), proven on hardware), NOTHING then drives
+ * the bus → the 6502 latches the OPEN BUS (last driven byte), NOT the VIA.
  *
- * Asymétrie fidèle au HW (rapport de bug + spec-acia-fiable) :
- *  - ÉCRITURE toujours fiable : `write_enable_map = 0xFFFFFFFF` → une write
- *    $0380-$0383 atteint TOUJOURS l'ACIA, course perdue ou non.
- *  - LECTURE fragile ET, sur le registre DATA, DESTRUCTIVE côté LOCI : le serve
- *    exécute `acia_read()` « en aveugle » (il consomme l'octet RX) pendant que
- *    le 6502 ne latche que du bus flottant → OCTET PERDU, non relisable. C'est
- *    précisément le « modem injoignable ».
- *  - STAT/CMD/CTRL sont idempotents (relisibles) → une course perdue renvoie du
- *    bus flottant CE tour-ci mais le registre reste lisible au suivant (raté
- *    pardonné, comme le polling disque/MIA). D'où : disque OK / modem KO sous la
- *    MÊME marge, sans avoir besoin d'un modèle probabiliste. */
+ * Asymmetry faithful to the HW (bug report + spec-acia-fiable):
+ *  - WRITE always reliable: `write_enable_map = 0xFFFFFFFF` → a write to
+ *    $0380-$0383 ALWAYS reaches the ACIA, race lost or not.
+ *  - READ fragile AND, on the DATA register, DESTRUCTIVE on the LOCI side: the serve
+ *    executes `acia_read()` "blindly" (it consumes the RX byte) while
+ *    the 6502 only latches the floating bus → BYTE LOST, not re-readable. This is
+ *    precisely the "unreachable modem".
+ *  - STAT/CMD/CTRL are idempotent (re-readable) → a lost race returns the
+ *    floating bus THIS time but the register stays readable on the next one (miss
+ *    forgiven, like disk/MIA polling). Hence: disk OK / modem KO under the
+ *    SAME margin, with no need for a probabilistic model. */
 static inline bool acia_serve_lost(const emulator_t* emu) {
     return emu->has_loci && emu->acia_base_addr == 0x0380 &&
            !loci_mia_io_reliable(&emu->loci);
 }
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Backend co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
-     * (oric/acia.c ↔ modem USB CDC) au lieu du 6551 comportemental. */
+    /* Co-sim backend (--loci-cdc): the $0380 ACIA is served by the REAL firmware
+     * (oric/acia.c ↔ USB CDC modem) instead of the behavioural 6551. */
     if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         uint8_t v = loci_emu_acia_read(addr);
         loci_emu_reflect_nirq(emu);
         return v;
     }
-    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
-     * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
-     * nominale déterministe. */
+    /* CPU path: samples the race WITH jitter (advances the PRNG). The jitter
+     * only has an effect in the PHASE model near the latch; otherwise it is the
+     * deterministic nominal decision. */
     bool lost = emu->has_loci && emu->acia_base_addr == 0x0380 &&
                 loci_mia_serve_lost_sampled(&emu->loci);
     if (lost) {
-        /* Course perdue : sur DATA, LOCI a consommé l'octet en aveugle (perdu) ;
-         * le 6502 latche l'open-bus. Sur STAT/CMD/CTRL, rien n'est consommé. */
+        /* Race lost: on DATA, LOCI consumed the byte blindly (lost);
+         * the 6502 latches the open bus. On STAT/CMD/CTRL, nothing is consumed. */
         if ((addr & ACIA_ADDR_MASK) == ACIA_REG_DATA)
-            (void)acia_read(&emu->acia, addr);   /* consomme et jette : octet perdu */
+            (void)acia_read(&emu->acia, addr);   /* consume and discard: byte lost */
         return memory_open_bus(&emu->memory);
     }
     return acia_read(&emu->acia, addr);
 }
 static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    /* Backend co-sim (--loci-cdc) : écriture $0380-$0383 traitée par le vrai firmware. */
+    /* Co-sim backend (--loci-cdc): $0380-$0383 write handled by the real firmware. */
     if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         loci_emu_acia_write(addr, value);
         loci_emu_reflect_nirq(emu);
         return true;
     }
-    /* Écriture toujours fiable (write_enable_map = 0xFFFFFFFF sur le vrai LOCI) :
-     * elle passe même course perdue. */
+    /* Write always reliable (write_enable_map = 0xFFFFFFFF on the real LOCI):
+     * it goes through even when the race is lost. */
     acia_write(&emu->acia, addr, value);
     return true;
 }
-/* Lecture d'observation non destructive (débogueur/moniteur/dump/déporté) :
- * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. Modélise l'open-bus
- * SANS consommer (un observateur ne participe pas à la course PHI2 du 6502). */
+/* Non-destructive observation read (debugger/monitor/dump/remote):
+ * does NOT clear RDRF, does NOT pop the FIFO, does NOT clear the IRQ. Models the open bus
+ * WITHOUT consuming (an observer does not take part in the 6502's PHI2 race). */
 static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
-    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr)))   /* co-sim : peek io-page */
+    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr)))   /* co-sim: io-page peek */
         return loci_emu_acia_peek(addr);
     if (acia_serve_lost(emu))
         return memory_open_bus(&emu->memory);
     return acia_peek(&emu->acia, addr);
 }
 
-/* Mageco / ORICON MIDI (ACIA 6850) : $03FE-$03FF ou $031C-$031E. */
+/* Mageco / ORICON MIDI (ACIA 6850): $03FE-$03FF or $031C-$031E. */
 static bool mageco_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_mageco && mageco_addr_in_range(&emu->mageco, addr);
 }
@@ -182,8 +182,8 @@ static bool mageco_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     mageco_write(&emu->mageco, addr, value);
     return true;
 }
-/* Savestate (section "MAG") : émise seulement si le Mageco est présent →
- * .ost inchangé sinon. Transport hôte non restauré (cf. mageco_save). */
+/* Savestate ("MAG" section): emitted only if the Mageco is present →
+ * .ost unchanged otherwise. Host transport not restored (see mageco_save). */
 static bool mageco_dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->has_mageco) return false;
     return mageco_save(&emu->mageco, fp);
@@ -192,8 +192,8 @@ static void mageco_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     mageco_load(&emu->mageco, fp, size);
 }
 
-/* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
- * $031C-$031F si présente → pas de test interne ici). */
+/* Microdisc WD1793: $0310-$031F (the ACIA, registered earlier, already owns
+ * $031C-$031F if present → no internal test here). */
 static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_microdisc && addr >= 0x0310 && addr <= 0x031F;
 }
@@ -212,8 +212,8 @@ static bool microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* Jasmin WD177x : $03F4-$03FF (mutuellement exclusif avec DTL2000/Mageco, qui
- * recouvrent $03F8-$03FF — garde à l'activation dans main.c). */
+/* Jasmin WD177x: $03F4-$03FF (mutually exclusive with DTL2000/Mageco, which
+ * overlap $03F8-$03FF — guard at activation in main.c). */
 static bool jasmin_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_jasmin && addr >= JASMIN_BASE && addr <= JASMIN_END;
 }
@@ -232,8 +232,8 @@ static bool jasmin_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* SP0256 Mageco "Synthétiseur Vocal" (GI SP0256-AL2) : port unique à
- * emu->sp0256.base_addr (défaut $03F1). Sortie audio mixée au PSG. */
+/* SP0256 Mageco "Synthétiseur Vocal" (GI SP0256-AL2): single port at
+ * emu->sp0256.base_addr (default $03F1). Audio output mixed into the PSG. */
 static bool sp0256_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_sp0256 && addr == emu->sp0256.base_addr;
 }
@@ -245,8 +245,8 @@ static bool sp0256_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* MEA8000 TMPI "Synthétiseur Vocal" (Philips formant) : data à base_addr,
- * commande à base_addr+1 (défaut $03F0/$03F1). Exclusif du SP0256 ($03F1). */
+/* MEA8000 TMPI "Synthétiseur Vocal" (Philips formant): data at base_addr,
+ * command at base_addr+1 (default $03F0/$03F1). Mutually exclusive with the SP0256 ($03F1). */
 static bool mea8000_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_mea8000 &&
            (addr == emu->mea8000.base_addr ||
@@ -260,7 +260,7 @@ static bool mea8000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
+/* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD (exclusive range). */
 static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
 }
@@ -271,8 +271,8 @@ static bool dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     dtl2000_write(&emu->dtl2000, addr, value);
     return true;
 }
-/* Savestate (section "DTL") : émise seulement si le DTL2000 est présent →
- * .ost inchangé sinon. Transport hôte non restauré (cf. dtl2000_save). */
+/* Savestate ("DTL" section): emitted only if the DTL2000 is present →
+ * .ost unchanged otherwise. Host transport not restored (see dtl2000_save). */
 static bool dtl2000_dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->has_dtl2000) return false;
     return dtl2000_save(&emu->dtl2000, fp);
@@ -281,12 +281,12 @@ static void dtl2000_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     dtl2000_load(&emu->dtl2000, fp, size);
 }
 
-/* ULA-NG $0340-$035F : dernier périphérique du bus, avant le repli VIA.
- *  - Lecture : ne répond que déverrouillée (`claims`) ; verrouillée, la fenêtre
- *    retombe sur le miroir VIA (indiscernable).
- *  - Écriture : `claims_write` = fenêtre seule → l'ULA-NG voit les écritures
- *    même verrouillée pour guetter la séquence 'N','G'. `ula_ng_write` renvoie
- *    si elle a consommé ; sinon le dispatch retombe sur le VIA (bit-à-bit). */
+/* ULA-NG $0340-$035F: last peripheral on the bus, before the VIA fallback.
+ *  - Read: answers only when unlocked (`claims`); when locked, the window
+ *    falls back to the VIA mirror (indistinguishable).
+ *  - Write: `claims_write` = window only → the ULA-NG sees the writes
+ *    even when locked, to watch for the 'N','G' sequence. `ula_ng_write` returns
+ *    whether it consumed; otherwise the dispatch falls back to the VIA (bit-exact). */
 static bool ula_ng_dev_claims(emulator_t* emu, uint16_t addr) {
     return ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(addr);
 }
@@ -299,14 +299,14 @@ static uint8_t ula_ng_dev_read(emulator_t* emu, uint16_t addr) {
 }
 static bool ula_ng_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     if (!ula_ng_write(&emu->ula_ng, addr, value))
-        return false;   /* non consommée (verrouillée, octet neutre) → repli VIA */
-    /* Écriture consommée : synchroniser la ligne d'IRQ raster (un write de
-     * NG_STATUS acquitte → désassertion). */
+        return false;   /* not consumed (locked, neutral byte) → VIA fallback */
+    /* Write consumed: synchronise the raster IRQ line (a write to
+     * NG_STATUS acknowledges → deassertion). */
     if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
     else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
     return true;
 }
-/* Savestate (section "UNG") : délégué au module (POD, même-build, garde taille). */
+/* Savestate ("UNG" section): delegated to the module (POD, same build, size guard). */
 static bool ula_ng_dev_save(emulator_t* emu, FILE* fp) {
     return ula_ng_save(&emu->ula_ng, fp);
 }
@@ -315,8 +315,8 @@ static void ula_ng_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
 }
 
 static const io_device_t io_bus[] = {
-    /* (save_tag/save/load à NULL : ces devices n'ont pas encore de section .ost —
-     * à migrer sur le même modèle que l'ULA-NG ; LOCI a la réserve des handles OS.) */
+    /* (save_tag/save/load NULL: these devices have no .ost section yet —
+     * to be migrated on the same model as the ULA-NG; LOCI has the OS-handles caveat.) */
     { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL, NULL, NULL, NULL },
     { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL, NULL, NULL, NULL,
       acia_dev_peek },
@@ -328,9 +328,9 @@ static const io_device_t io_bus[] = {
     { "mea8000",   mea8000_dev_claims,   mea8000_dev_read,   mea8000_dev_write,   NULL, NULL, NULL, NULL },
     { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL,
       "DTL\0",     dtl2000_dev_save,     dtl2000_dev_load },
-    /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
-     * écritures de sa fenêtre même verrouillée (guet 'N','G'). Sérialisée via la
-     * section "UNG" (émise seulement si déverrouillée → .ost inchangé sinon). */
+    /* ULA-NG last (fallback before VIA). Separate claims_write: sees the
+     * writes to its window even when locked ('N','G' watch). Serialised via the
+     * "UNG" section (emitted only if unlocked → .ost unchanged otherwise). */
     { "ula-ng",    ula_ng_dev_claims,    ula_ng_dev_read,    ula_ng_dev_write,    ula_ng_dev_claims_write,
       "UNG\0",     ula_ng_dev_save,      ula_ng_dev_load },
 };
@@ -358,11 +358,11 @@ const io_device_t* io_bus_devices(int* count) {
     return io_bus;
 }
 
-/* Tick des périphériques de bus temporisés. ORDRE HISTORIQUE PRÉSERVÉ à
- * l'identique de l'ancien cpu_cycle_tick (microdisc → loci → acia → dtl → mageco)
- * → iso-comportement par construction (et non par la simple indépendance des
- * ticks). Une boucle générique sur `io_bus[]` réordonnerait ; on ne le fait donc
- * pas ici (cf. docs/architecture/io-bus.md §6 : hooks lifecycle non uniformes). */
+/* Tick of the timed bus peripherals. HISTORICAL ORDER PRESERVED exactly as
+ * in the old cpu_cycle_tick (microdisc → loci → acia → dtl → mageco)
+ * → identical behaviour by construction (and not merely by the independence of the
+ * ticks). A generic loop over `io_bus[]` would reorder them; so it is not done
+ * here (see docs/architecture/io-bus.md §6: non-uniform lifecycle hooks). */
 void io_bus_tick(emulator_t* emu, int cycles) {
     if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
     if (emu->has_jasmin)    fdc_ticktock(&emu->jasmin.fdc, cycles);

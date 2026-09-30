@@ -105,11 +105,11 @@ static const char_entry_t char_map[128] = {
     /* 0x3E '>' */ S(4,2),   /* Shift + . */
     /* 0x3F '?' */ S(7,3),   /* Shift + / */
     /* 0x40 '@' */ S(2,6),   /* Shift + 2 */
-    /* 0x41-0x5A: majuscules ASCII → même position matrice que minuscules (U, pas S).
-     * La ROM BASIC active le SHIFT LOCK au démarrage : sans Shift physique ORIC,
-     * ces touches produisent des majuscules à l'écran.
-     * Si le SHIFT LOCK est désactivé par le programme, l'injection donne des
-     * minuscules. press_char() ne contrôle pas l'état du SHIFT LOCK. */
+    /* 0x41-0x5A: ASCII uppercase → same matrix position as lowercase (U, not S).
+     * The BASIC ROM enables SHIFT LOCK at startup: without a physical ORIC Shift,
+     * these keys produce uppercase letters on screen.
+     * If SHIFT LOCK is disabled by the program, injection yields lowercase
+     * letters. press_char() does not control the SHIFT LOCK state. */
     U(6,5),U(2,2),U(2,7),U(1,7),U(6,3),U(1,3),U(6,2),U(6,1),
     U(5,1),U(1,0),U(3,0),U(7,1),U(2,0),U(0,1),U(5,2),U(5,3),
     U(1,6),U(1,2),U(6,6),U(1,1),U(5,0),U(0,3),U(6,7),U(0,6),
@@ -165,8 +165,8 @@ bool oric_keyboard_press_char(oric_keyboard_t* kb, char c) {
         kb->matrix[1] &= ~(1 << 5);
         return true;
     }
-    /* Sprint 34av : arrow keys (col=4 partagée). Sentinelles internes
-     * (au-dessus de 0x7F = pas de char-mapping conflict). */
+    /* Sprint 34av: arrow keys (col=4 shared). Internal sentinels
+     * (above 0x7F = no char-mapping conflict). */
     if (c == (char)0x80) { kb->matrix[4] &= ~(1 << 3); return true; } /* UP */
     if (c == (char)0x81) { kb->matrix[4] &= ~(1 << 6); return true; } /* DOWN */
     if (c == (char)0x82) { kb->matrix[4] &= ~(1 << 5); return true; } /* LEFT */

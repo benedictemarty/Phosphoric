@@ -22,7 +22,7 @@ def load(path):
     while len(fields) < 3:
         while i < len(data) and data[i : i + 1].isspace():
             i += 1
-        if data[i : i + 1] == b"#":                      # commentaire
+        if data[i : i + 1] == b"#":                      # comment
             while i < len(data) and data[i : i + 1] != b"\n":
                 i += 1
             continue
@@ -31,7 +31,7 @@ def load(path):
             j += 1
         fields.append(int(data[i:j]))
         i = j
-    i += 1                                               # le blanc après maxval
+    i += 1                                               # the whitespace after maxval
     w, h, _maxval = fields
     return w, h, data[i:]
 
@@ -42,7 +42,7 @@ def main():
     w1, h1, a = load(sys.argv[1])
     w2, h2, b = load(sys.argv[2])
     if (w1, h1) != (w2, h2):
-        print("0 0")                                     # dimensions différentes
+        print("0 0")                                     # different dimensions
         return
 
     different = partial = 0

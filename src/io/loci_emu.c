@@ -1,24 +1,24 @@
-/* _DEFAULT_SOURCE : cfmakeraw + B115200 (config raw du dongle CDC, glibc). */
+/* _DEFAULT_SOURCE: cfmakeraw + B115200 (raw config of the CDC dongle, glibc). */
 #define _DEFAULT_SOURCE
-/* loci_emu.c — backend LOCI par émulation du vrai firmware RP2040. Voir loci_emu.h.
+/* loci_emu.c — LOCI backend emulating the real RP2040 firmware. See loci_emu.h.
  *
- * Étape 1 : OVERLAY ROM. Le firmware réel sert la ROM de boot LOCI ($C000-$FFFF)
- * quand nROMDIS est actif ; memory_read() de Phosphoric délègue à loci_emu_rom_read().
- * Étape 2 : API MIA $03xx co-simulée (loci_emu_api_read/write).
+ * Step 1: ROM OVERLAY. The real firmware serves the LOCI boot ROM ($C000-$FFFF)
+ * when nROMDIS is active; Phosphoric's memory_read() delegates to loci_emu_rom_read().
+ * Step 2: co-simulated MIA $03xx API (loci_emu_api_read/write).
  *
- * MODÈLE D'EXÉCUTION — MONO-THREAD (déterministe) : le firmware boote dans un
- * thread au démarrage (zéro attente), puis ce thread REND LA MAIN. Ensuite tout
- * l'accès à l'émulateur se fait depuis le thread principal de Phosphoric :
- *  - `loci_emu_tick()` : free-run BORNÉ (n pas RP2040) une fois par frame, pour que
- *    le firmware progresse (tâches de fond, nIRQ) sans piloter le bus ;
- *  - `loci_emu_api_*` / `loci_emu_rom_read` : accès bus co-simulés.
- * Un thread émulateur DÉDIÉ (free-run continu) a été essayé mais RETIRÉ : sur cette
- * cible il provoque une lourde contention et déstabilise les lignes partagées
- * (régression ×100 + BASIC cassé) — le débit émulateur (~1/10 réel) ne le justifie
- * pas. Le tick borné suffit et reste déterministe. */
+ * EXECUTION MODEL — SINGLE-THREADED (deterministic): the firmware boots in a
+ * thread at startup (zero wait), then that thread HANDS CONTROL BACK. After that,
+ * all access to the emulator happens from Phosphoric's main thread:
+ *  - `loci_emu_tick()`: BOUNDED free-run (n RP2040 steps) once per frame, so that
+ *    the firmware makes progress (background tasks, nIRQ) without driving the bus;
+ *  - `loci_emu_api_*` / `loci_emu_rom_read`: co-simulated bus accesses.
+ * A DEDICATED emulator thread (continuous free-run) was tried but REMOVED: on this
+ * target it causes heavy contention and destabilizes the shared lines
+ * (×100 regression + broken BASIC) — the emulator throughput (~1/10 of real) does
+ * not justify it. The bounded tick is enough and stays deterministic. */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
-#include "emul_lib.h"          /* ~/loci/emul/src (via -I dans le Makefile) */
+#include "emul_lib.h"          /* ~/loci/emul/src (via -I in the Makefile) */
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
@@ -30,15 +30,15 @@
 
 static emul_t    g_emul;
 static pthread_t g_boot_thread;
-static volatile int g_boot_done;   /* 1 quand le firmware a fini de booter (idle) */
+static volatile int g_boot_done;   /* 1 when the firmware has finished booting (idle) */
 static int       g_boot_started, g_joined;
-static char      g_snap_path[512]; /* cache d'état « boot terminé » = <elf>.snap  */
-static char      g_flash_path[1024]; /* image flash persistante = <elf>.flash ("-" = volatile) */
-static char      g_usb_image[1024]; /* image FAT servie comme disque USB émulé (option) */
-static char      g_cdc_dev[1024];  /* dongle CDC (ex. /dev/ttyACM0 ou PTY) servi comme modem $0380 */
-static int       g_cdc_fd = -1;    /* descripteur ouvert du dongle (>=0 = ACIA routée vers le firmware) */
+static char      g_snap_path[512]; /* "boot finished" state cache = <elf>.snap  */
+static char      g_flash_path[1024]; /* persistent flash image = <elf>.flash ("-" = volatile) */
+static char      g_usb_image[1024]; /* FAT image served as emulated USB disk (optional) */
+static char      g_cdc_dev[1024];  /* CDC dongle (e.g. /dev/ttyACM0 or PTY) served as $0380 modem */
+static int       g_cdc_fd = -1;    /* open descriptor of the dongle (>=0 = ACIA routed to the firmware) */
 
-/* Sortie UART0 du firmware -> log Phosphoric (une ligne à la fois). */
+/* Firmware UART0 output -> Phosphoric log (one line at a time). */
 static char g_line[256];
 static int  g_len;
 static void uart_cb(int ch, void *user)
@@ -53,15 +53,15 @@ static void uart_cb(int ch, void *user)
     }
 }
 
-/* Ouvre le dongle CDC. Si c'est un TTY (ex. /dev/ttyACM0), le passe en RAW B115200
- * (le vrai PicoWifiModemUSB) ; sinon (PTY, socket) l'utilise tel quel. Non-bloquant.
- * Renvoie le fd (>=0) ou -1. */
+/* Opens the CDC dongle. If it is a TTY (e.g. /dev/ttyACM0), switches it to RAW B115200
+ * (the real PicoWifiModemUSB); otherwise (PTY, socket) uses it as is. Non-blocking.
+ * Returns the fd (>=0) or -1. */
 static int cdc_open(const char *path)
 {
     int fd = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) return -1;
     struct termios tio;
-    if (tcgetattr(fd, &tio) == 0) {          /* TTY : configuration raw B115200 */
+    if (tcgetattr(fd, &tio) == 0) {          /* TTY: raw B115200 configuration */
         cfmakeraw(&tio);
         cfsetispeed(&tio, B115200);
         cfsetospeed(&tio, B115200);
@@ -74,21 +74,21 @@ static int cdc_open(const char *path)
 static void *boot_thread_fn(void *arg)
 {
     (void)arg;
-    /* Le snapshot (emul_lib, SNAP_VERSION 3) persiste SRAM+bootrom + les PAGES FLASH
-     * écrites par le firmware (littlefs) → FS cohérent au restore (plus de « Corrupted
-     * dir pair » au 2e lancement). Boot instantané conservé. */
+    /* The snapshot (emul_lib, SNAP_VERSION 3) persists SRAM+bootrom + the FLASH PAGES
+     * written by the firmware (littlefs) → consistent FS on restore (no more "Corrupted
+     * dir pair" on the 2nd launch). Instant boot preserved. */
     int cached = emul_loci_boot_cached(&g_emul, g_snap_path[0] ? g_snap_path : NULL);
     log_info("LOCI-emu: %s", cached ? "état restauré depuis le snapshot (boot instantané)"
                                     : "boot complet effectué (snapshot écrit pour la prochaine fois)");
-    /* Monte l'image USB émulée (drive « 1: ») si fournie — après le boot/restore
-     * (le snapshot précède le montage). Sans image, aucun disque USB (inchangé). */
+    /* Mounts the emulated USB image (drive "1:") if provided — after boot/restore
+     * (the snapshot precedes the mount). Without an image, no USB disk (unchanged). */
     if (g_usb_image[0]) {
         int mounted = emul_loci_usb_mount(&g_emul);
         log_info("LOCI-emu: disque USB émulé « %s » -> %s", g_usb_image,
                  mounted ? "monté (drive 1:)" : "échec du montage");
     }
-    /* Modem CDC (dongle réel /dev/ttyACM0 ou PTY) : attache + montage APRÈS le boot.
-     * L'ACIA $0380 du firmware parlera à ce descripteur (au lieu du 6551 comportemental). */
+    /* CDC modem (real /dev/ttyACM0 dongle or PTY): attach + mount AFTER boot.
+     * The firmware's $0380 ACIA will talk to this descriptor (instead of the behavioral 6551). */
     if (g_cdc_dev[0]) {
         g_cdc_fd = cdc_open(g_cdc_dev);
         if (g_cdc_fd >= 0 && emul_loci_cdc_attach_fd(&g_emul, g_cdc_fd)) {
@@ -110,7 +110,7 @@ static void *boot_thread_fn(void *arg)
     return NULL;
 }
 
-/* Attend la fin du boot arrière-plan (idempotent). */
+/* Waits for the background boot to finish (idempotent). */
 static void ensure_booted(void)
 {
     if (g_boot_started && !g_joined) { pthread_join(g_boot_thread, NULL); g_joined = 1; }
@@ -119,14 +119,14 @@ static void ensure_booted(void)
 int loci_emu_start(const char *elf_path)
 {
     g_emul.uart_tx = uart_cb; g_emul.uart_user = NULL;
-    if (emul_init(&g_emul, elf_path, 0x10000100u) != 0) {   /* rapide : charge l'ELF, ne step pas */
+    if (emul_init(&g_emul, elf_path, 0x10000100u) != 0) {   /* fast: loads the ELF, does not step */
         log_error("LOCI-emu: emul_init a échoué (%s)", elf_path);
         return -1;
     }
     snprintf(g_snap_path, sizeof(g_snap_path), "%s.snap", elf_path);
-    /* Flash persistante : réapplique l'image de la session précédente AVANT le
-     * boot/restore. emul_flash_persist_load recalcule la signature → un snapshot
-     * pris sur une autre image flash est refusé (boot complet, puis réécrit). */
+    /* Persistent flash: re-applies the previous session's image BEFORE
+     * boot/restore. emul_flash_persist_load recomputes the signature → a snapshot
+     * taken on another flash image is rejected (full boot, then rewritten). */
     if (!g_flash_path[0]) snprintf(g_flash_path, sizeof(g_flash_path), "%s.flash", elf_path);
     if (strcmp(g_flash_path, "-") != 0) {
         if (emul_flash_persist_load(&g_emul, g_flash_path))
@@ -134,8 +134,8 @@ int loci_emu_start(const char *elf_path)
         else
             log_info("LOCI-emu: pas d'image flash « %s » — FS interne vierge (sera persisté en fin de session)", g_flash_path);
     }
-    /* Enregistre l'HLE USB MSC AVANT le boot (les hooks doivent être posés avant
-     * le montage ; le snapshot restore ne les écrase pas — hors cpu_snap_t). */
+    /* Registers the USB MSC HLE BEFORE boot (the hooks must be installed before
+     * the mount; the snapshot restore does not overwrite them — outside cpu_snap_t). */
     if (g_usb_image[0] && !emul_loci_set_usb_image(&g_emul, g_usb_image)) {
         log_warning("LOCI-emu: image USB « %s » illisible — disque USB désactivé", g_usb_image);
         g_usb_image[0] = '\0';
@@ -143,15 +143,15 @@ int loci_emu_start(const char *elf_path)
     log_info("LOCI-emu: firmware RP2040 (%s) — boot en arrière-plan (LOCI transparent)…", elf_path);
 
     if (pthread_create(&g_boot_thread, NULL, boot_thread_fn, NULL) == 0) {
-        g_boot_started = 1;        /* boot asynchrone : loci_emu_start rend la main tout de suite */
+        g_boot_started = 1;        /* asynchronous boot: loci_emu_start returns immediately */
     } else {
-        boot_thread_fn(NULL);      /* repli synchrone si le thread échoue */
+        boot_thread_fn(NULL);      /* synchronous fallback if the thread fails */
     }
     return 0;
 }
 
-/* Déclare l'image FAT à servir comme disque USB émulé (drive « 1: »). À appeler
- * AVANT loci_emu_start (le montage a lieu juste après le boot). */
+/* Declares the FAT image to serve as emulated USB disk (drive "1:"). To be called
+ * BEFORE loci_emu_start (the mount happens right after boot). */
 void loci_emu_set_usb_image(const char *path)
 {
     if (path) snprintf(g_usb_image, sizeof(g_usb_image), "%s", path);
@@ -162,9 +162,9 @@ void loci_emu_set_flash_image(const char *path)
     if (path) snprintf(g_flash_path, sizeof(g_flash_path), "%s", path);
 }
 
-/* Fin de session : la flash émulée (pages écrites par littlefs) est persistée dans
- * l'image — comme la NOR de la cartouche, le drive 0: survit au prochain lancement.
- * Plus de thread persistant à arrêter (mono-thread post-boot). */
+/* End of session: the emulated flash (pages written by littlefs) is persisted to
+ * the image — like the cartridge's NOR, drive 0: survives to the next launch.
+ * No persistent thread left to stop (single-threaded after boot). */
 void loci_emu_stop(void)
 {
     if (!g_boot_started) return;
@@ -179,12 +179,12 @@ void loci_emu_stop(void)
 bool loci_emu_active(void) { return g_boot_done != 0; }
 const char *loci_emu_backend_name(void) { return "emul"; }
 int loci_emu_reset_take(void) { return 0; }
-int loci_emu_idle_poll(int cycles) { (void)cycles; return 0; }   /* en co-sim, le bouton MENU est simulé par l'hôte */
+int loci_emu_idle_poll(int cycles) { (void)cycles; return 0; }   /* in co-sim, the MENU button is simulated by the host */
 
-/* ── Souris USB HID (co-sim) ─────────────────────────────────────────
- * Pont vers le firmware réel : voir emul_hid.c côté ~/loci/emul. Sans lui,
- * les rapports SDL partaient dans le xram du modèle interne, que le 6502 ne
- * lit plus en co-sim (io_bus.c route tout le MIA vers le firmware). */
+/* ── USB HID mouse (co-sim) ─────────────────────────────────────────
+ * Bridge to the real firmware: see emul_hid.c on the ~/loci/emul side. Without it,
+ * SDL reports went into the internal model's xram, which the 6502 no longer
+ * reads in co-sim (io_bus.c routes the whole MIA to the firmware). */
 bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy,
                          int8_t wheel, int8_t pan)
 {
@@ -210,23 +210,23 @@ bool loci_emu_kbd_armed(void)
     return emul_loci_kbd_armed(&g_emul, NULL) != 0;
 }
 
-static bool g_button_warm;   /* dernier appui MENU = gel à chaud (trap IRQ, pas de reset) */
+static bool g_button_warm;   /* last MENU press = warm freeze (IRQ trap, no reset) */
 bool loci_emu_button_was_warm(void) { return g_button_warm; }
 
 bool loci_emu_menu_button(void)
 {
     if (!g_boot_started) return false;
-    ensure_booted();               /* si l'utilisateur presse MENU avant la fin du boot, on attend */
+    ensure_booted();               /* if the user presses MENU before boot finishes, wait */
 
     int nromdis_before = 0;
     emul_ext_lines(&g_emul, NULL, NULL, &nromdis_before);
     int armed = emul_loci_menu_button(&g_emul);
     int nromdis = 0;
     emul_ext_lines(&g_emul, NULL, NULL, &nromdis);
-    /* Gel À CHAUD (ROM déjà servie) : ext.c a posé le trap IRQ et pulsé nIRQ. Le
-     * pulse reste latché : io_bus/main le délivrent au 6502 en EDGE au prochain
-     * drain (loci_emu_irq_take). Surtout PAS de reset : le 6502 doit spinner en
-     * $03BA jusqu'à ce que le firmware libère le trap vers restore.s du menu. */
+    /* WARM freeze (ROM already served): ext.c has installed the IRQ trap and pulsed nIRQ. The
+     * pulse stays latched: io_bus/main deliver it to the 6502 as an EDGE on the next
+     * drain (loci_emu_irq_take). Above all NO reset: the 6502 must spin at
+     * $03BA until the firmware releases the trap towards the menu's restore.s. */
     g_button_warm = nromdis_before &&
                     (emul_loci_irq_peek(&g_emul) > 0 || emul_loci_irq_trap_armed(&g_emul));
     if (g_button_warm) {
@@ -268,7 +268,7 @@ bool loci_emu_diag_button(void)
 
 bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 {
-    if (!g_boot_done) return false;   /* pendant le boot arrière-plan : Oric transparent */
+    if (!g_boot_done) return false;   /* during the background boot: Oric transparent */
     return emul_loci_serve_read(&g_emul, address, out) != 0;
 }
 
@@ -286,9 +286,9 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
     emul_ext_lines(&g_emul, nirq, nreset, nromdis);
 }
 
-/* ── API MIA $03xx co-simulée (étape 2) ──
- * Trace : LOCI_API_TRACE=<fichier> (ou "-") — chaque appel (op, A, X, octets empilés
- * en ASCII) et son résultat (AX, SREG, errno) au premier poll libéré. */
+/* ── Co-simulated MIA $03xx API (step 2) ──
+ * Trace: LOCI_API_TRACE=<file> (or "-") — each call (op, A, X, pushed bytes
+ * in ASCII) and its result (AX, SREG, errno) at the first released poll. */
 static FILE *g_api_trace; static int g_api_trace_init;
 static char g_api_push[300]; static int g_api_pushn;
 static uint8_t g_api_a, g_api_x; static int g_api_pending;
@@ -311,7 +311,7 @@ static void api_trace_write(uint16_t address, uint8_t value)
     case 0xB6: g_api_x = value; break;
     case 0xAF: {
         fprintf(g_api_trace, "OP %02X A=%02X X=%02X push[%d]=\"", value, g_api_a, g_api_x, g_api_pushn);
-        for (int i = g_api_pushn - 1; i >= 0; i--) {   /* dernier empilé = 1er caractère */
+        for (int i = g_api_pushn - 1; i >= 0; i--) {   /* last pushed = 1st character */
             unsigned char c = (unsigned char)g_api_push[i];
             if (c >= 0x20 && c < 0x7F) fputc(c, g_api_trace); else fprintf(g_api_trace, "\\x%02X", c);
         }
@@ -325,18 +325,18 @@ static void api_trace_result(void)
 {
     if (!g_api_trace || !g_api_pending) return;
     uint8_t *io = g_emul.cpu0.sram + (0x20040000u - 0x20000000u);
-    if (io[0xB2] == 0xFE) return;             /* encore bloqué */
+    if (io[0xB2] == 0xFE) return;             /* still blocked */
     g_api_pending = 0;
     fprintf(g_api_trace, "   -> AX=%04X SREG=%04X errno=%u\n", io[0xB4] | (io[0xB6] << 8),
             io[0xB8] | (io[0xB9] << 8), io[0xAD] | (io[0xAE] << 8));
 }
 
-/* Un accès 6502 à la page MIA pendant le boot arrière-plan (1er lancement d'un
- * ELF, sans snapshot) : on ATTEND la fin du boot plutôt que de servir un bus
- * flottant. Sur matériel, aucun programme chargé de cassette n'appelle l'API
- * avant que LOCI (≈ 1 s) soit prêt ; ici `--tape X.tap -f` y arrive en quelques
- * millions de cycles, et un `open("N:…")` échouait au premier lancement seulement
- * (artefact du banc, pas du firmware). Sans `--loci-emu`, on n'arrive pas ici. */
+/* A 6502 access to the MIA page during the background boot (1st launch of an
+ * ELF, without snapshot): WAIT for the boot to finish rather than serving a
+ * floating bus. On hardware, no program loaded from tape calls the API
+ * before LOCI (≈ 1 s) is ready; here `--tape X.tap -f` gets there within a few
+ * million cycles, and an `open("N:…")` failed on the first launch only
+ * (test-bench artifact, not a firmware issue). Without `--loci-emu`, we never get here. */
 static void api_wait_boot(void)
 {
     if (!g_boot_done && g_boot_started) ensure_booted();
@@ -350,7 +350,7 @@ bool loci_emu_wait_boot(void)
 void loci_emu_api_write(uint16_t address, uint8_t value)
 {
     api_wait_boot();
-    if (!g_boot_done) return;                 /* boot pas fini : LOCI transparent */
+    if (!g_boot_done) return;                 /* boot not finished: LOCI transparent */
     api_trace_write(address, value);
     emul_loci_api_write(&g_emul, address, value);
     api_trace_result();
@@ -359,16 +359,16 @@ void loci_emu_api_write(uint16_t address, uint8_t value)
 uint8_t loci_emu_api_read(uint16_t address)
 {
     api_wait_boot();
-    if (!g_boot_done) return 0xFF;            /* bus flottant tant que non booté */
+    if (!g_boot_done) return 0xFF;            /* floating bus until booted */
     uint8_t v = emul_loci_api_read(&g_emul, address);
     api_trace_result();
     return v;
 }
 
-/* ── Microdisc $031x co-simulé (oric/dsk.c du firmware) ──
- * Trace de diagnostic : LOCI_DSK_TRACE=<fichier> (ou "-" = stderr), un accès par
- * ligne (dir, registre, valeur) — les polls répétés identiques sont comptés, pas
- * répétés. Même esprit que LOCI_ACIA_TRACE. */
+/* ── Co-simulated Microdisc $031x (firmware's oric/dsk.c) ──
+ * Diagnostic trace: LOCI_DSK_TRACE=<file> (or "-" = stderr), one access per
+ * line (dir, register, value) — identical repeated polls are counted, not
+ * repeated. Same spirit as LOCI_ACIA_TRACE. */
 static FILE *g_dsk_trace; static int g_dsk_trace_init;
 static void dsk_trace(char dir, uint16_t address, uint8_t value)
 {
@@ -394,7 +394,7 @@ static void dsk_trace(char dir, uint16_t address, uint8_t value)
             reg[address & 0xF], value, st, pos, start, len);
 }
 
-/* ── Cassette $031x co-simulée (oric/tap.c du firmware) ── */
+/* ── Co-simulated tape $031x (firmware's oric/tap.c) ── */
 void loci_emu_tap_write(uint16_t address, uint8_t value)
 {
     if (!g_boot_done) return;
@@ -409,9 +409,9 @@ uint8_t loci_emu_tap_read(uint16_t address)
 
 void loci_emu_tap_motor(uint8_t via_orb)
 {
-    /* La ROM réécrit ORB à chaque colonne du balayage clavier : ne rejouer
-     * tap_act() (guest-call = coûteux) que sur un CHANGEMENT de PB6, sinon la
-     * co-sim s'effondre (×50) dès que BASIC attend une touche. */
+    /* The ROM rewrites ORB on every keyboard scan column: only replay
+     * tap_act() (guest-call = expensive) on a CHANGE of PB6, otherwise the
+     * co-sim collapses (×50) as soon as BASIC waits for a key. */
     static int last = -1;
     int motor = (via_orb >> 6) & 1;
     if (!g_boot_done || motor == last) return;
@@ -440,35 +440,35 @@ uint8_t loci_emu_dsk_read(uint16_t address)
     return v;
 }
 
-/* Pulses nIRQ captés par l'émulateur depuis le dernier appel (le firmware pulse la
- * ligne : ext_put true→false ; un poll de niveau les manquerait). Modèle EDGE :
- * io_bus.c draine ces pulses juste après chaque transaction MIA (synchrones) et
- * main.c une fois par frame après loci_emu_tick() (asynchrones) → une IRQ EDGE
- * (cpu_irq_pulse) par pulse, sans maintien de niveau donc sans tempête. */
+/* nIRQ pulses captured by the emulator since the last call (the firmware pulses the
+ * line: ext_put true→false; a level poll would miss them). EDGE model:
+ * io_bus.c drains these pulses right after each MIA transaction (synchronous) and
+ * main.c once per frame after loci_emu_tick() (asynchronous) → one EDGE IRQ
+ * (cpu_irq_pulse) per pulse, with no level holding and hence no storm. */
 int loci_emu_irq_take(void)
 {
     if (!g_boot_done) return 0;
     return emul_loci_irq_take(&g_emul);
 }
 
-/* Free-run BORNÉ (déterministe, thread principal) : avance le firmware de `steps`
- * pas RP2040 SANS piloter le bus (Phi2 au repos = HAUT, 1u<<25).
+/* BOUNDED free-run (deterministic, main thread): advances the firmware by `steps`
+ * RP2040 steps WITHOUT driving the bus (Phi2 idle = HIGH, 1u<<25).
  *
- * ⚠️ NE PAS appeler entre deux transactions MIA d'une opération en cours. Avancer le
- * firmware avec Phi2 HAUT désynchronise la machine à états de service du bus pendant
- * une opération multi-étapes (ex. ouverture de fichier) → l'opération ne se termine
- * plus, le 6502 reste bloqué sur `BVC *` → MENU FIGÉ (régression constatée quand
- * main.c l'appelait une fois par frame). Le firmware ne doit avancer QU'EN SYNC avec
- * les transactions. Conservée pour un éventuel usage hors-ligne (aucun accès disque
- * en vol) ; actuellement NON appelée. */
+ * ⚠️ DO NOT call between two MIA transactions of an operation in progress. Advancing the
+ * firmware with Phi2 HIGH desynchronizes the bus service state machine during
+ * a multi-step operation (e.g. opening a file) → the operation never completes,
+ * the 6502 stays stuck on `BVC *` → FROZEN MENU (regression observed when
+ * main.c called it once per frame). The firmware must advance ONLY IN SYNC with
+ * the transactions. Kept for a possible offline use (no disk access
+ * in flight); currently NOT called. */
 void loci_emu_tick(long steps)
 {
     if (!g_boot_done || steps <= 0) return;
-    emul_bus_set(1u << 25, 1u << 25);         /* Phi2 au repos = HAUT */
+    emul_bus_set(1u << 25, 1u << 25);         /* Phi2 idle = HIGH */
     emul_step(&g_emul, steps);
 }
 
-/* ── ACIA $0380-$0383 servie par le firmware (Phase 2 CDC) ── */
+/* ── ACIA $0380-$0383 served by the firmware (CDC Phase 2) ── */
 void loci_emu_set_cdc_device(const char *path)
 {
     if (path) snprintf(g_cdc_dev, sizeof(g_cdc_dev), "%s", path);
@@ -483,13 +483,13 @@ bool loci_emu_acia_served(uint16_t address)
     return base && address >= base && address <= base + 3;
 }
 
-/* ── Trace du dialogue ACIA co-simulé (diagnostic) ───────────────────
- * Activée par la variable d'environnement LOCI_ACIA_TRACE=<fichier> (ou "-" pour
- * stderr). Journalise CHAQUE accès 6502 aux registres $0380-$0383 servis par le
- * firmware : sens, registre, valeur, ASCII, et l'horodatage relatif en ms. C'est
- * l'outil de localisation quand le dialogue AT part de travers en co-sim alors
- * qu'il passe en direct (--serial com:) : on compare ce que le 6502 lit ici avec
- * ce que le dongle a réellement émis. Aucun coût quand la variable est absente. */
+/* ── Co-simulated ACIA dialogue trace (diagnostic) ───────────────────
+ * Enabled by the environment variable LOCI_ACIA_TRACE=<file> (or "-" for
+ * stderr). Logs EVERY 6502 access to the $0380-$0383 registers served by the
+ * firmware: direction, register, value, ASCII, and the relative timestamp in ms. It is
+ * the tool to pinpoint the problem when the AT dialogue goes wrong in co-sim while
+ * it works directly (--serial com:): compare what the 6502 reads here with
+ * what the dongle actually sent. Zero cost when the variable is absent. */
 static FILE  *g_acia_trace;
 static int    g_acia_trace_init;
 static double g_acia_t0;
@@ -511,7 +511,7 @@ static void acia_trace(char dir, uint16_t address, uint8_t value)
             g_acia_trace = (path[0] == '-' && !path[1]) ? stderr : fopen(path, "w");
             if (g_acia_trace) {
                 g_acia_t0 = acia_now_ms();
-                setvbuf(g_acia_trace, NULL, _IOLBF, 0);   /* ligne par ligne : lisible même si l'émulateur est tué */
+                setvbuf(g_acia_trace, NULL, _IOLBF, 0);   /* line by line: readable even if the emulator is killed */
                 fprintf(g_acia_trace, "# trace ACIA co-sim ($0380-$0383) — ms dir reg val ascii\n");
             }
         }
@@ -522,9 +522,9 @@ static void acia_trace(char dir, uint16_t address, uint8_t value)
             (value >= 0x20 && value < 0x7F) ? (char)value : '.');
 }
 
-/* NB : les pulses nIRQ éventuels (ACIA RX/TX/cmd) sont drainés par l'appelant via
- * loci_emu_irq_take() (io_bus.c après l'accès + main.c une fois par frame) — comme
- * pour la fenêtre MIA. loci_emu.c ne touche pas au 6502 hôte. */
+/* NB: any nIRQ pulses (ACIA RX/TX/cmd) are drained by the caller via
+ * loci_emu_irq_take() (io_bus.c after the access + main.c once per frame) — as
+ * for the MIA window. loci_emu.c does not touch the host 6502. */
 void loci_emu_acia_write(uint16_t address, uint8_t value)
 {
     if (!loci_emu_acia_served(address)) return;
@@ -546,8 +546,8 @@ uint8_t loci_emu_acia_peek(uint16_t address)
     return emul_loci_acia_peek(&g_emul, address);
 }
 
-/* Pompe l'échange CDC↔registres (RX asynchrone du dongle) — à appeler une fois par
- * frame quand loci_emu_acia_active(). */
+/* Pumps the CDC↔registers exchange (asynchronous RX from the dongle) — to be called once per
+ * frame when loci_emu_acia_active(). */
 void loci_emu_acia_tick(void)
 {
     if (!loci_emu_acia_active()) return;
@@ -556,7 +556,7 @@ void loci_emu_acia_tick(void)
 
 bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }
 
-/* Page I/O entière par cycles bus : propre au backend neo (loci-fw). */
+/* Whole I/O page by bus cycles: specific to the neo backend (loci-fw). */
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }

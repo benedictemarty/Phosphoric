@@ -305,9 +305,9 @@ TEST(test_ay_mixer) {
     ay_write_reg(&ay, 10, 15);  /* Chan C vol = max */
 
     /* Mixer: all tone AND noise disabled (0x3F) → silence */
-    /* Ce test observe le GÉNÉRATEUR, qui produit ici un niveau continu. L'étage
-     * de sortie de l'ORIC (couplage capacitif) le supprimerait : on le désarme
-     * pour mesurer la source, pas la chaîne. */
+    /* This test observes the GENERATOR, which here produces a DC level. The ORIC
+     * output stage (capacitive coupling) would remove it: it is disarmed
+     * to measure the source, not the chain. */
     ay.dc_block_off = true;
     ay_write_reg(&ay, 7, 0x3F);
     memset(buf, 0xAA, sizeof(buf));
@@ -382,7 +382,7 @@ TEST(test_ay_digidrum_subbuffer_timing) {
      * mid-buffer. Only channel A carries volume (B/C stay 0). */
     ay_write_reg_timed(&ay, 7, 0x3F, 0);   /* mixer: all tone+noise disabled */
     ay_write_reg_timed(&ay, 8, 15, 0);     /* chan A volume = max */
-    ay.dc_block_off = true;                /* on mesure le générateur, pas l'étage de sortie */
+    ay.dc_block_off = true;                /* measure the generator, not the output stage */
     ay_write_reg_timed(&ay, 8, 0, 500);    /* chan A volume -> 0 at cycle 500 */
     ay_write_reg_timed(&ay, 9, 0, 1000);   /* dummy: extend span_end to cycle 1000 */
 
@@ -454,27 +454,27 @@ TEST(test_ay_noise_rate_clock_div16) {
 /* ═══════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  CADENCEMENT MATÉRIEL DU PSG (V2-E5)                                */
+/*  PSG HARDWARE CLOCKING (V2-E5)                                      */
 /*                                                                    */
-/*  Le PSG tourne à clock/8 (125 kHz sur l'ORIC), pas au taux          */
-/*  d'échantillonnage. Ces tests mesurent le SIGNAL produit et le      */
-/*  comparent aux formules de la datasheet, plutôt que de comparer des */
-/*  octets à une référence figée : une comparaison spectrale reste     */
-/*  vraie même si le rendu évolue.                                     */
+/*  The PSG runs at clock/8 (125 kHz on the ORIC), not at the sample   */
+/*  rate. These tests measure the SIGNAL produced and compare it       */
+/*  to the datasheet formulas, rather than comparing bytes             */
+/*  to a frozen reference: a spectral comparison stays                 */
+/*  true even if the rendering evolves.                                */
 /* ═══════════════════════════════════════════════════════════════════ */
 
 #define SPEC_SAMPLES 44100
 static int16_t spec_buf[SPEC_SAMPLES * 2];
 
-/* Fréquence d'un signal, par comptage des passages par sa valeur moyenne. */
+/* Frequency of a signal, by counting the crossings of its mean value. */
 static double measure_tone_hz(int period) {
     ay3891x_t ay;
     ay_init(&ay, 1000000);
-    ay.dc_block_off = true;                /* propriété du générateur */
+    ay.dc_block_off = true;                /* property of the generator */
     ay_write_reg(&ay, 0, period & 0xFF);
     ay_write_reg(&ay, 1, (period >> 8) & 0x0F);
-    ay_write_reg(&ay, 7, 0x3E);            /* canal A : ton seul */
-    ay_write_reg(&ay, 8, 15);              /* volume maximal */
+    ay_write_reg(&ay, 7, 0x3E);            /* channel A: tone only */
+    ay_write_reg(&ay, 8, 15);              /* maximum volume */
     ay_generate(&ay, spec_buf, SPEC_SAMPLES);
 
     long sum = 0;
@@ -483,10 +483,10 @@ static double measure_tone_hz(int period) {
     int crossings = 0;
     for (int i = 1; i < SPEC_SAMPLES; i++)
         if ((spec_buf[(i - 1) * 2] > mean) != (spec_buf[i * 2] > mean)) crossings++;
-    return crossings / 2.0;                /* une période = deux passages */
+    return crossings / 2.0;                /* one period = two crossings */
 }
 
-/* Énergie du signal autour de sa moyenne. */
+/* Energy of the signal around its mean. */
 static double measure_rms(int period) {
     ay3891x_t ay;
     ay_init(&ay, 1000000);
@@ -508,13 +508,13 @@ static double measure_rms(int period) {
     return sqrt(s2 / SPEC_SAMPLES);
 }
 
-/* La fréquence d'un ton doit valoir clock/(16·P) — la formule de la datasheet. */
+/* The frequency of a tone must equal clock/(16·P) — the datasheet formula. */
 TEST(test_ay_tone_frequency_matches_datasheet) {
     static const int periods[] = { 4, 8, 16, 50, 100, 284, 500 };
     for (unsigned i = 0; i < sizeof(periods) / sizeof(periods[0]); i++) {
         double theory = 1000000.0 / (16.0 * periods[i]);
         double measured = measure_tone_hz(periods[i]);
-        /* Tolérance : 0,5 % ou 1 Hz (résolution du comptage sur une seconde). */
+        /* Tolerance: 0.5 % or 1 Hz (counting resolution over one second). */
         double tol = theory * 0.005;
         if (tol < 1.0) tol = 1.0;
         if (fabs(measured - theory) > tol) {
@@ -526,21 +526,21 @@ TEST(test_ay_tone_frequency_matches_datasheet) {
     }
 }
 
-/* L'enveloppe avance d'un pas tous les EP pas d'horloge interne, soit
- * clock/(8·EP) : un cycle de 32 pas dure donc 256·EP/clock, la formule de la
- * datasheet. La forme $00 décroît de 15 à 0 en 15 pas puis se tait : on mesure
- * l'instant d'extinction. Avant la V2, l'enveloppe était DEUX FOIS trop lente. */
+/* The envelope advances one step every EP internal clock steps, i.e.
+ * clock/(8·EP): a 32-step cycle therefore lasts 256·EP/clock, the datasheet
+ * formula. Shape $00 decays from 15 to 0 in 15 steps then goes silent: we measure
+ * the instant it dies out. Before V2, the envelope was TWICE too slow. */
 TEST(test_ay_envelope_period_matches_datasheet) {
     static const int eps[] = { 100, 200, 500, 1000 };
     for (unsigned i = 0; i < sizeof(eps) / sizeof(eps[0]); i++) {
         ay3891x_t ay;
         ay_init(&ay, 1000000);
-        ay.dc_block_off = true;            /* l'enveloppe est une propriété du générateur */
-        ay_write_reg(&ay, 7, 0x3F);        /* ton et bruit coupés */
-        ay_write_reg(&ay, 8, 0x10);        /* volume piloté par l'enveloppe */
+        ay.dc_block_off = true;            /* the envelope is a property of the generator */
+        ay_write_reg(&ay, 7, 0x3F);        /* tone and noise off */
+        ay_write_reg(&ay, 8, 0x10);        /* volume driven by the envelope */
         ay_write_reg(&ay, 11, eps[i] & 0xFF);
         ay_write_reg(&ay, 12, (eps[i] >> 8) & 0xFF);
-        ay_write_reg(&ay, 13, 0x00);       /* décroissance simple puis silence */
+        ay_write_reg(&ay, 13, 0x00);       /* single decay then silence */
         ay_generate(&ay, spec_buf, SPEC_SAMPLES);
 
         int silent_at = -1;
@@ -549,7 +549,7 @@ TEST(test_ay_envelope_period_matches_datasheet) {
         ASSERT_TRUE(silent_at > 0);
 
         double measured = silent_at / (double)AUDIO_SAMPLE_RATE;
-        double theory = 15.0 * 8.0 * eps[i] / 1000000.0;   /* 15 pas */
+        double theory = 15.0 * 8.0 * eps[i] / 1000000.0;   /* 15 steps */
         if (fabs(measured - theory) > theory * 0.02) {
             printf("FAIL\n    EP=%d: attendu %.5f s, mesuré %.5f s\n",
                    eps[i], theory, measured);
@@ -559,29 +559,29 @@ TEST(test_ay_envelope_period_matches_datasheet) {
     }
 }
 
-/* Au-delà de Nyquist, la sortie doit s'ATTÉNUER, pas se replier en bruit : le
- * PSG étant cadencé au matériel, chaque échantillon intègre les transitions
- * qu'il couvre (filtre boîte). P=1 vaut 62,5 kHz, bien au-dessus des 22 kHz
- * représentables — son énergie doit s'effondrer. */
+/* Beyond Nyquist, the output must be ATTENUATED, not fold back as noise: the
+ * PSG being clocked like the hardware, each sample integrates the transitions
+ * it covers (box filter). P=1 is 62.5 kHz, well above the 22 kHz that can be
+ * represented — its energy must collapse. */
 TEST(test_ay_no_aliasing_above_nyquist) {
     double rms_audible = measure_rms(50);     /* 1250 Hz */
-    double rms_ultra   = measure_rms(1);      /* 62,5 kHz */
+    double rms_ultra   = measure_rms(1);      /* 62.5 kHz */
     ASSERT_TRUE(rms_audible > 2000.0);
     ASSERT_TRUE(rms_ultra < rms_audible / 2.0);
 }
 
-/* Le générateur de bruit est un LFSR 17 bits (x^17 + x^14 + 1). Deux propriétés
- * vérifiables sans dépendre de la phase d'échantillonnage : il ne se bloque
- * jamais sur l'état zéro (un LFSR qui y tombe reste muet à jamais), et sa sortie
- * est équilibrée — un bruit blanc, pas un motif. La conformité de la SÉQUENCE
- * est vérifiée séparément par test_ay_noise_rate_clock_div16, qui la compare pas
- * à pas à un LFSR de référence. */
+/* The noise generator is a 17-bit LFSR (x^17 + x^14 + 1). Two properties
+ * checkable without depending on the sampling phase: it never gets stuck
+ * in the zero state (an LFSR that falls into it stays silent forever), and its output
+ * is balanced — white noise, not a pattern. Conformity of the SEQUENCE
+ * is checked separately by test_ay_noise_rate_clock_div16, which compares it step
+ * by step against a reference LFSR. */
 TEST(test_ay_noise_lfsr_is_healthy) {
     ay3891x_t ay;
     ay_init(&ay, 1000000);
     ay.dc_block_off = true;
-    ay_write_reg(&ay, 6, 1);               /* période de bruit minimale */
-    ay_write_reg(&ay, 7, 0x07);            /* bruit sur les trois canaux */
+    ay_write_reg(&ay, 6, 1);               /* minimum noise period */
+    ay_write_reg(&ay, 7, 0x07);            /* noise on all three channels */
     ASSERT_EQ(ay.noise_shift, 1u);
 
     int16_t one[2];
@@ -589,25 +589,25 @@ TEST(test_ay_noise_lfsr_is_healthy) {
     const long total = 200000;
     for (long k = 0; k < total; k++) {
         ay_generate(&ay, one, 1);
-        ASSERT_TRUE(ay.noise_shift != 0u);   /* jamais bloqué à zéro */
+        ASSERT_TRUE(ay.noise_shift != 0u);   /* never stuck at zero */
         ones += ay.noise_output ? 1 : 0;
     }
-    /* Bruit équilibré : la proportion de 1 doit rester proche de la moitié. */
+    /* Balanced noise: the proportion of 1s must stay close to half. */
     double ratio = (double)ones / (double)total;
     ASSERT_TRUE(ratio > 0.45 && ratio < 0.55);
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  ÉTAGE DE SORTIE (V2-E5) — d'après le schéma officiel Oric-1/Atmos   */
+/*  OUTPUT STAGE (V2-E5) — from the official Oric-1/Atmos schematic    */
 /*                                                                    */
-/*  Les trois sorties CH_A/CH_B/CH_C sont reliées ensemble sur une     */
-/*  charge commune (R4 = 1 kΩ) : le mixage parallèle MOYENNE les       */
-/*  tensions au lieu de les additionner. Puis un condensateur de       */
-/*  couplage (C4) rejoint l'ampli LM386 : il bloque le continu.        */
+/*  The three outputs CH_A/CH_B/CH_C are tied together on a            */
+/*  common load (R4 = 1 kΩ): the parallel mixing AVERAGES the          */
+/*  voltages instead of adding them. Then a coupling capacitor         */
+/*  (C4) feeds the LM386 amplifier: it blocks the DC component.        */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Mesure (moyenne, min, max, RMS) sur la seconde moitié du rendu, une fois le
- * blocage de continu convergé (sa constante de temps vaut 4096 échantillons). */
+/* Measures (mean, min, max, RMS) over the second half of the render, once the
+ * DC blocking has converged (its time constant is 4096 samples). */
 static void measure_output(ay3891x_t* ay, double* mean, double* mn, double* mx,
                            double* rms) {
     ay_generate(ay, spec_buf, SPEC_SAMPLES);
@@ -633,39 +633,39 @@ static void measure_output(ay3891x_t* ay, double* mean, double* mn, double* mx,
 
 static void setup_three_tones(ay3891x_t* ay, int nch, int vol) {
     ay_init(ay, 1000000);
-    ay_write_reg(ay, 0, 100);              /* trois périodes distinctes */
+    ay_write_reg(ay, 0, 100);              /* three distinct periods */
     ay_write_reg(ay, 2, 120);
     ay_write_reg(ay, 4, 150);
-    uint8_t mixer = 0x3F;                  /* tout coupé */
+    uint8_t mixer = 0x3F;                  /* everything off */
     for (int c = 0; c < nch; c++) mixer &= (uint8_t)~(1 << c);
     ay_write_reg(ay, 7, mixer);
     for (int c = 0; c < 3; c++) ay_write_reg(ay, 8 + c, c < nch ? vol : 0);
 }
 
-/* La sortie ne doit pas porter de composante continue : sur la machine, le
- * condensateur de couplage C4 la bloque avant l'ampli. Sans ce blocage, le
- * signal du PSG est unipolaire (0 → +max) et son continu vaut la moitié de son
- * amplitude — un décalage qu'aucun haut-parleur ne restitue. */
+/* The output must not carry a DC component: on the machine, the
+ * coupling capacitor C4 blocks it before the amplifier. Without this blocking, the
+ * PSG signal is unipolar (0 → +max) and its DC equals half of its
+ * amplitude — an offset that no loudspeaker reproduces. */
 TEST(test_ay_output_has_no_dc_offset) {
     for (int nch = 1; nch <= 3; nch++) {
         ay3891x_t ay;
         setup_three_tones(&ay, nch, 15);
         double mean, mn, mx, rms;
         measure_output(&ay, &mean, &mn, &mx, &rms);
-        /* Continu résiduel négligeable devant l'amplitude du signal. */
+        /* Residual DC negligible compared with the signal amplitude. */
         ASSERT_TRUE(fabs(mean) < rms * 0.02);
-        /* …et signal centré : les excursions sont symétriques à 5 % près. */
+        /* …and a centred signal: the excursions are symmetric within 5 %. */
         ASSERT_TRUE(fabs(mx + mn) < (mx - mn) * 0.05);
     }
 }
 
-/* Le blocage du continu ne doit rien retirer d'audible : coupant à ~1,7 Hz, il
- * laisse le contenu intact. On compare l'énergie avec et sans. */
+/* DC blocking must not remove anything audible: cutting at ~1.7 Hz, it
+ * leaves the content intact. The energy is compared with and without it. */
 TEST(test_ay_dc_block_preserves_audio) {
     ay3891x_t a, b;
     setup_three_tones(&a, 3, 15);
     setup_three_tones(&b, 3, 15);
-    b.dc_block_off = true;                 /* sortie brute, pour comparaison */
+    b.dc_block_off = true;                 /* raw output, for comparison */
 
     double rms_filtered, rms_raw;
     measure_output(&a, NULL, NULL, NULL, &rms_filtered);
@@ -673,11 +673,11 @@ TEST(test_ay_dc_block_preserves_audio) {
     ASSERT_TRUE(fabs(rms_filtered - rms_raw) < rms_raw * 0.02);
 }
 
-/* Mixage parallèle : sur le PCB de l'ORIC, les trois sorties sont reliées à une
- * charge commune, ce qui MOYENNE les tensions au lieu de les sommer — un canal
- * seul à 1 V donne ≈ 0,33 V, mesure rapportée sur le forum Defence Force. La
- * dynamique crête à crête de trois canaux doit donc valoir trois fois celle d'un
- * seul, et non rester identique. */
+/* Parallel mixing: on the ORIC PCB, the three outputs are tied to a
+ * common load, which AVERAGES the voltages instead of summing them — a single
+ * channel at 1 V gives ≈ 0.33 V, a measurement reported on the Defence Force forum. The
+ * peak-to-peak range of three channels must therefore be three times that of a
+ * single one, and not stay identical. */
 TEST(test_ay_parallel_mixing_averages_channels) {
     double pp[4];
     for (int nch = 1; nch <= 3; nch++) {
@@ -688,7 +688,7 @@ TEST(test_ay_parallel_mixing_averages_channels) {
         pp[nch] = mx - mn;
     }
     ASSERT_TRUE(pp[1] > 0);
-    /* rapports 2/1 et 3/1 à 5 % près */
+    /* ratios 2/1 and 3/1 within 5 % */
     ASSERT_TRUE(fabs(pp[2] / pp[1] - 2.0) < 0.05);
     ASSERT_TRUE(fabs(pp[3] / pp[1] - 3.0) < 0.05);
 }

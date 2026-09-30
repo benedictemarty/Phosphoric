@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_neo.c
- * @brief Backend co-sim pour le NOUVEAU firmware LOCI « loci-fw » (reprise de zéro)
+ * @brief Co-sim backend for the NEW LOCI firmware "loci-fw" (rewritten from scratch)
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-09-17
  *
- * Même interface que loci_emu.c (backend du firmware amont) mais aucun symbole de ce
- * firmware : tout passe par le pont `emul_neo` de ~/loci/emul (contrat d'émulation
- * ADR-003 : `loci_rom_image`/`loci_rom_base`, expandeur I²C, cycles bus PIO).
- *   - lectures $C000-$FFFF : servies O(1) quand /ROMDIS est actif ;
- *   - écritures $C000-$FFFF (page BAL $FF, ADR-002) : vrais cycles bus vers le PIO ;
- *   - page $03xx : non décodée par loci-fw pour l'instant → bus flottant ($FF).
- * Sélection : `make LOCI_NEO=1`, puis `--loci-emu <loci-fw.elf>`.
+ * Same interface as loci_emu.c (backend of the upstream firmware) but no symbol from
+ * that firmware: everything goes through the `emul_neo` bridge of ~/loci/emul (emulation
+ * contract ADR-003: `loci_rom_image`/`loci_rom_base`, I²C expander, PIO bus cycles).
+ *   - reads $C000-$FFFF: served in O(1) when /ROMDIS is active;
+ *   - writes $C000-$FFFF (BAL page $FF, ADR-002): real bus cycles to the PIO;
+ *   - page $03xx: not decoded by loci-fw for now → floating bus ($FF).
+ * Selection: `make LOCI_NEO=1`, then `--loci-emu <loci-fw.elf>`.
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -27,12 +27,12 @@
 
 static emul_t g_emul;
 static int    g_active;
-static int    g_reset_pending;   /* /RESET Oric affirmé par le firmware, à livrer au 6502 */
-static char   g_usb_image[1024]; /* --loci-usb-image : clé USB émulée (image FAT) */
-static int    g_hid;             /* clavier/souris USB émulés (hooks usbhid_*) */
-static char   g_cdc_dev[1024];   /* --loci-cdc : dongle série émulé (PTY) */
+static int    g_reset_pending;   /* Oric /RESET asserted by the firmware, to be delivered to the 6502 */
+static char   g_usb_image[1024]; /* --loci-usb-image: emulated USB stick (FAT image) */
+static int    g_hid;             /* emulated USB keyboard/mouse (usbhid_* hooks) */
+static char   g_cdc_dev[1024];   /* --loci-cdc: emulated serial dongle (PTY) */
 
-/* Observe la ligne /RESET pendant que le firmware tourne (14/5 : ROM tierce). */
+/* Watches the /RESET line while the firmware runs (14/5: third-party ROM). */
 static void neo_run(long steps)
 {
     emul_step(&g_emul, steps);
@@ -40,8 +40,8 @@ static void neo_run(long steps)
     if (nreset) g_reset_pending = 1;
 }
 
-/* Préchargement de fichiers dans le FS interne (test) : LOCI_NEO_FILES="NOM=chemin,NOM=chemin".
- * Écrit chaque fichier par la BAL (groupe 3, canal 7, tranches de 190 octets via $FF10). */
+/* Preloading of files into the internal FS (test): LOCI_NEO_FILES="NAME=path,NAME=path".
+ * Writes each file through the BAL (group 3, channel 7, 190-byte chunks via $FF10). */
 static void neo_preload_files(void)
 {
     const char *spec = getenv("LOCI_NEO_FILES");
@@ -80,7 +80,7 @@ int loci_emu_start(const char *elf_path)
     }
     if (g_cdc_dev[0]) {
         int fd = open(g_cdc_dev, O_RDWR | O_NOCTTY | O_NONBLOCK);
-        if (fd >= 0) { struct termios t; if (tcgetattr(fd, &t) == 0) { t.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ISIG | IEXTEN); t.c_iflag &= ~(tcflag_t)(ICRNL | INLCR | IXON | ISTRIP); t.c_oflag &= ~(tcflag_t)OPOST; tcsetattr(fd, TCSANOW, &t); } }   /* brut : un PTY est canonique par défaut */
+        if (fd >= 0) { struct termios t; if (tcgetattr(fd, &t) == 0) { t.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ISIG | IEXTEN); t.c_iflag &= ~(tcflag_t)(ICRNL | INLCR | IXON | ISTRIP); t.c_oflag &= ~(tcflag_t)OPOST; tcsetattr(fd, TCSANOW, &t); } }   /* raw: a PTY is canonical by default */
         if (fd >= 0 && neo_serial_attach_fd(&g_emul, fd)) log_info("LOCI-neo: dongle série émulé sur « %s » (groupe 10)", g_cdc_dev);
         else log_warning("LOCI-neo: dongle série « %s » indisponible", g_cdc_dev);
     }
@@ -112,7 +112,7 @@ const char *loci_emu_backend_name(void) { return "neo"; }
 int  loci_emu_reset_take(void)
 {
     if (!g_reset_pending) return 0;
-    /* attendre le relâchement de /RESET par le firmware */
+    /* wait for the firmware to release /RESET */
     for (int k = 0; k < 200; k++) {
         int nreset = 0; emul_ext_lines(&g_emul, NULL, &nreset, NULL);
         if (!nreset) break;
@@ -124,12 +124,12 @@ int  loci_emu_reset_take(void)
 }
 int  loci_emu_idle_poll(int cycles) { (void)cycles; return 0; }
 bool loci_emu_wait_boot(void) { return g_active != 0; }
-/* Bouton de la cartouche (Ctrl+Alt+M) : appui court → le firmware ramène l'Oric sur le
- * kernel (/RESET). Le firmware scrute le bouton toutes les 20 ms : on avance le temps émulé. */
+/* Cartridge button (Ctrl+Alt+M): short press → the firmware brings the Oric back to the
+ * kernel (/RESET). The firmware polls the button every 20 ms: we advance emulated time. */
 bool loci_emu_menu_button(void)
 {
     if (!g_active) return false;
-    emul_ioexp_set(&g_emul, EXT_REG_IN, 0x00);            /* appuyé (actif bas) */
+    emul_ioexp_set(&g_emul, EXT_REG_IN, 0x00);            /* pressed (active low) */
     int seen = 0, nreset = 0;
     for (int k = 0; k < 4000; k++) {
         soc_timer_advance_us(5000);
@@ -138,9 +138,9 @@ bool loci_emu_menu_button(void)
         if (nreset) seen = 1;
         if (seen && !nreset) break;
     }
-    emul_ioexp_set(&g_emul, EXT_REG_IN, 0x04);            /* relâché */
+    emul_ioexp_set(&g_emul, EXT_REG_IN, 0x04);            /* released */
     emul_step(&g_emul, 100000L);
-    g_reset_pending = 0;                                   /* livré ici : l'appelant fait cpu_reset */
+    g_reset_pending = 0;                                   /* delivered here: the caller does cpu_reset */
     if (seen) log_info("LOCI-neo: bouton → retour au kernel (/RESET)");
     return seen != 0;
 }
@@ -151,9 +151,9 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 {
     if (!g_active) return false;
     int served = neo_serve_read(&g_emul, address, out);
-    /* Scrutation de $FF00 pendant une commande (WaitMessage) : le modèle est événementiel,
-     * le firmware ne tourne pas entre deux accès → l'avancer à chaque lecture, sinon une
-     * commande longue (commit littlefs) ne se termine jamais (même principe que le poll de
+    /* Polling of $FF00 during a command (WaitMessage): the model is event-driven,
+     * the firmware does not run between two accesses → advance it on each read, otherwise a
+     * long command (littlefs commit) never completes (same principle as the poll in
      * loci_emu.c). */
     if (served && address == 0xFF00u && out && *out != 0 && !g_reset_pending) {
         neo_run(2000L);
@@ -165,12 +165,12 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
 bool loci_emu_rom_write(uint16_t address, uint8_t value)
 {
     if (!g_active || address < 0xC000u) return false;
-    /* Seule la page $FF est capturée par LOCI (BAL) : cycle bus réel. Ailleurs, la carte
-     * ignore l'écriture. */
+    /* Only page $FF is captured by LOCI (BAL): real bus cycle. Elsewhere, the board
+     * ignores the write. */
     if ((address & 0xFF00u) == 0xFF00u) neo_bus_write(&g_emul, address, value);
-    /* Écriture du groupe = début de commande : faire avancer le firmware jusqu'à la fin
-     * ($FF00 = 0) ou un plafond — le modèle est événementiel, le firmware ne tourne pas
-     * entre deux accès du 6502 (même principe que le poll de loci_emu.c). */
+    /* Group write = start of command: advance the firmware until completion
+     * ($FF00 = 0) or a ceiling — the model is event-driven, the firmware does not run
+     * between two 6502 accesses (same principle as the poll in loci_emu.c). */
     if (address == 0xFF00u && value) {
         for (int k = 0; k < 500; k++) {
             uint8_t g = 0xFF;
@@ -179,8 +179,8 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
             neo_run(1000L);
         }
     }
-    /* Adresse servie par LOCI : l'écriture s'arrête là (la ROM masque la RAM). Fenêtre /MAP
-     * (lot 8.2) : non servie → false, memory.c écrit la RAM overlay de l'Oric. */
+    /* Address served by LOCI: the write stops here (the ROM masks the RAM). /MAP window
+     * (batch 8.2): not served → false, memory.c writes the Oric overlay RAM. */
     return neo_serve_read(&g_emul, address, NULL) != 0;
 }
 
@@ -198,11 +198,11 @@ void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
     emul_ext_lines(&g_emul, nirq, nreset, nromdis);
 }
 
-/* Page $03xx : rien de décodé par loci-fw au lot 1. */
+/* Page $03xx: nothing decoded by loci-fw in batch 1. */
 void    loci_emu_api_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_api_read(uint16_t address) { (void)address; return 0xFF; }
-/* Page I/O $0310-$03FF (lot 8.0) : vrais cycles bus ; le firmware avance ensuite un peu
- * (son cœur 1 traite l'accès capturé, le cœur 0 prépare la suite). */
+/* I/O page $0310-$03FF (batch 8.0): real bus cycles; the firmware then advances a little
+ * (its core 1 handles the captured access, core 0 prepares what follows). */
 bool loci_emu_io_page(void) { return g_active != 0; }
 bool loci_emu_io_read(uint16_t address, uint8_t *out)
 {
@@ -221,8 +221,8 @@ void    loci_emu_dsk_write(uint16_t address, uint8_t value) { (void)address; (vo
 uint8_t loci_emu_dsk_read(uint16_t address) { (void)address; return 0xFF; }
 void    loci_emu_tap_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 uint8_t loci_emu_tap_read(uint16_t address) { (void)address; return 0xFF; }
-/* Moteur cassette (VIA ORB PB6) : LOCI espionne les écritures en $0300 sur le vrai bus ;
- * rejouées ici seulement sur changement de PB6 (la ROM réécrit ORB à chaque colonne clavier). */
+/* Cassette motor (VIA ORB PB6): LOCI snoops writes to $0300 on the real bus;
+ * replayed here only when PB6 changes (the ROM rewrites ORB at each keyboard column). */
 void loci_emu_tap_motor(uint8_t via_orb)
 {
     static int last = -1;
@@ -231,19 +231,19 @@ void loci_emu_tap_motor(uint8_t via_orb)
     last = motor;
     neo_bus_write(&g_emul, 0x0300, via_orb);
 }
-/* Une fois par trame : le firmware avance aussi quand le 6502 n'accède pas à LOCI (il peut
- * attendre l'IRQ de fin de commande du WD1793 sans rien lire — lot 8.2). Φ2 reste au repos
- * haut : les SM de service attendent le prochain front, rien n'est désynchronisé. */
+/* Once per frame: the firmware also advances when the 6502 does not access LOCI (it may
+ * wait for the WD1793 end-of-command IRQ without reading anything — batch 8.2). Φ2 idles
+ * high: the service SMs wait for the next edge, nothing gets desynchronized. */
 void    loci_emu_dsk_tick(void)
 {
     if (!g_active) return;
-    /* Appelé une fois par trame (20 ms de l'Oric) : le temps du firmware suit celui de l'Oric
-     * (sinon il n'avance que d'1 µs par lecture du timer — le moteur son, cadencé à 50 Hz,
-     * ne progressait pas ; lot 9.1). */
+    /* Called once per frame (20 ms of Oric time): the firmware time follows the Oric's
+     * (otherwise it only advances by 1 µs per timer read — the sound engine, clocked at 50 Hz,
+     * made no progress; batch 9.1). */
     soc_timer_advance_us(20000);
     neo_run(20000L);
 }
-/* Impulsions /IRQ du firmware (expandeur, bit 5), comptées par soc.c au front montant. */
+/* Firmware /IRQ pulses (expander, bit 5), counted by soc.c on the rising edge. */
 int     loci_emu_irq_take(void) { return g_active ? emul_loci_irq_take(&g_emul) : 0; }
 bool    loci_emu_acia_active(void) { return false; }
 bool    loci_emu_acia_served(uint16_t address) { (void)address; return false; }
@@ -252,10 +252,10 @@ uint8_t loci_emu_acia_read(uint16_t address) { (void)address; return 0xFF; }
 uint8_t loci_emu_acia_peek(uint16_t address) { (void)address; return 0xFF; }
 void    loci_emu_acia_tick(void) { }
 
-/* Fond de tâche : le firmware avance librement (boucle principale) une fois par trame. */
+/* Background task: the firmware runs freely (main loop) once per frame. */
 void loci_emu_tick(long steps) { if (g_active) neo_run(steps); }
 
-/* HID USB émulé (clavier/souris de l'hôte → contrat usbhid_* du firmware). */
+/* Emulated USB HID (host keyboard/mouse → firmware usbhid_* contract). */
 bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel, int8_t pan)
 { (void)pan; if (!g_hid) return false; neo_hid_mouse_report(buttons, dx, dy, wheel, 1); return true; }
 bool loci_emu_mou_armed(void) { return g_hid != 0; }

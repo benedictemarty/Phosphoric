@@ -34,47 +34,47 @@ uint8_t cpu_pull(cpu6502_t* cpu);
 void cpu_push_word(cpu6502_t* cpu, uint16_t val);
 uint16_t cpu_pull_word(cpu6502_t* cpu);
 
-/* ─── Sémantique ALU partagée entre le moteur historique (opcodes.c) et le
- * micro-séquenceur cycle par cycle (microseq.c, V2-E1).
+/* ─── ALU semantics shared between the historical engine (opcodes.c) and the
+ * cycle-by-cycle micro-sequencer (microseq.c, V2-E1).
  *
- * Une seule implémentation de chaque opération : les deux moteurs diffèrent par
- * l'ORDONNANCEMENT des accès bus, jamais par le calcul. C'est ce qui garantit
- * qu'un correctif de sémantique (p. ex. les drapeaux BCD) profite aux deux. */
+ * A single implementation of each operation: the two engines differ in the
+ * ORDERING of bus accesses, never in the computation. This is what guarantees
+ * that a semantics fix (e.g. the BCD flags) benefits both. */
 
-/** Opérations lecture-modification-écriture (officielles et illégales) */
+/** Read-modify-write operations (official and illegal) */
 typedef enum {
     RMW_ASL, RMW_LSR, RMW_ROL, RMW_ROR, RMW_INC, RMW_DEC,
     RMW_SLO, RMW_RLA, RMW_SRE, RMW_RRA, RMW_DCP, RMW_ISC
 } cpu_rmw_t;
 
 /**
- * @brief Applique une opération RMW à une valeur déjà lue
+ * @brief Applies an RMW operation to an already-read value
  *
- * Met à jour les drapeaux (et l'accumulateur pour les formes combinées
- * illégales) et renvoie la valeur à réécrire. N'effectue AUCUN accès bus :
- * l'appelant place les cycles de lecture et d'écriture lui-même.
+ * Updates the flags (and the accumulator for the illegal combined
+ * forms) and returns the value to write back. Performs NO bus access:
+ * the caller places the read and write cycles itself.
  */
 uint8_t cpu_rmw_apply(cpu6502_t* cpu, cpu_rmw_t op, uint8_t v);
 
-/** Met à jour N et Z d'après une valeur */
+/** Updates N and Z from a value */
 void cpu_update_nz(cpu6502_t* cpu, uint8_t val);
-/** ADC / SBC (mode décimal NMOS inclus) et comparaison, sans accès bus */
+/** ADC / SBC (NMOS decimal mode included) and compare, without bus access */
 void cpu_op_adc(cpu6502_t* cpu, uint8_t val);
 void cpu_op_sbc(cpu6502_t* cpu, uint8_t val);
 void cpu_op_cmp(cpu6502_t* cpu, uint8_t reg, uint8_t val);
-/** LAX : A = X = valeur */
+/** LAX: A = X = value */
 void cpu_op_lax(cpu6502_t* cpu, uint8_t v);
 /**
- * @brief Valeur et destination réelles d'un store « instable » (SHA/SHX/SHY/SHS)
+ * @brief Actual value and destination of an « unstable » store (SHA/SHX/SHY/SHS)
  *
- * `base` = adresse avant index, `addr` = adresse indexée corrigée, `reg` = la
- * source déjà combinée. En cas de traversée de page l'octet haut émis est la
- * valeur elle-même : la destination n'est PAS `addr`.
+ * `base` = address before indexing, `addr` = corrected indexed address, `reg` = the
+ * already-combined source. On a page crossing the emitted high byte is the
+ * value itself: the destination is NOT `addr`.
  */
 void cpu_sh_unstable(uint16_t base, uint16_t addr, uint8_t reg,
                      uint8_t* out_value, uint16_t* out_target);
 
-/** Traces --trace-irq, partagées par les deux moteurs */
+/** --trace-irq traces, shared by both engines */
 void cpu_irq_trace_entry(cpu6502_t* cpu, uint16_t pc_before);
 void cpu_irq_trace_rti(cpu6502_t* cpu);
 

@@ -12,10 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Crée une disquette vierge plate à la géométrie demandée. tracks = pistes par
- * face, sides = 1 ou 2 ; 17 secteurs/256 octets fixes (standard Sedoric). Le
- * contenu est nul (un INIT Sedoric écrira le vrai format) avec une signature
- * « SED » minimale. */
+/* Creates a blank flat floppy with the requested geometry. tracks = tracks per
+ * side, sides = 1 or 2; fixed 17 sectors/256 bytes (Sedoric standard). The
+ * contents are zeroed (a Sedoric INIT will write the real format) with a
+ * minimal "SED" signature. */
 sedoric_disk_t* sedoric_create_blank(uint8_t tracks, uint8_t sides) {
     if (tracks == 0) tracks = SEDORIC_TRACKS;
     if (sides == 0 || sides > 2) sides = 1;
@@ -30,7 +30,7 @@ sedoric_disk_t* sedoric_create_blank(uint8_t tracks, uint8_t sides) {
     disk->sides = sides;
     disk->modified = false;
 
-    /* Signature minimale (Track 0, Sector 1) ; sera écrasée par INIT. */
+    /* Minimal signature (Track 0, Sector 1); will be overwritten by INIT. */
     uint8_t* sys = disk->data;
     sys[0] = 'S'; sys[1] = 'E'; sys[2] = 'D';
     sys[3] = tracks;
@@ -211,10 +211,10 @@ sedoric_disk_t* sedoric_load(const char* filename) {
         return disk;
     }
 
-    /* Raw sector format (legacy). On infère la géométrie depuis la taille quand
-     * elle est un multiple exact d'une piste 17×256 (4352 o) ; au-delà de 42
-     * pistes (et taille paire) → double face. Sinon on garde les valeurs par
-     * défaut (42 pistes / 1 face). */
+    /* Raw sector format (legacy). The geometry is inferred from the size when
+     * it is an exact multiple of a 17×256 track (4352 bytes); beyond 42
+     * tracks (and an even size) → double-sided. Otherwise the defaults are
+     * kept (42 tracks / 1 side). */
     disk->data = raw;
     disk->size = (uint32_t)fsize;
     disk->sectors = SEDORIC_SECTORS;

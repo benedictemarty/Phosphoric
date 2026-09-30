@@ -4,7 +4,7 @@
  * @brief LOCI MIA_BOOT runtime ROM swap + Sprint 34au tuning / config stubs
  *        (CPU_PHI2, OEM_CODEPAGE, STDIN_OPT, MAP_TUNE_*).
  *
- * Sprint 34c R4 : mechanical split of loci.c.
+ * Sprint 34c R4: mechanical split of loci.c.
  */
 
 #include "io/loci.h"
@@ -78,7 +78,7 @@ void op_mia_boot(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
-/* ─── Sprint 34au : tuning / config stubs ──────────────────────── */
+/* ─── Sprint 34au: tuning / config stubs ──────────────────────── */
 
 void op_cpu_phi2(loci_t* loci) {
     /* Firmware returns the PHI2 clock in kHz in AX (cpu.c cpu_api_phi2),
@@ -120,12 +120,12 @@ static void op_map_tune_store(loci_t* loci, const char* name, uint8_t* field) {
 
 bool loci_mia_io_reliable(const loci_t* loci) {
     if (loci->mia_timing_model == LOCI_TIMING_PHASE) {
-        /* Course PHI2 sous-cycle : le serve arrive au subtick (tior + serve) ;
-         * propre ssi il gagne le latch 6502 (bus_timing.h). */
+        /* Sub-cycle PHI2 race: the serve arrives at subtick (tior + serve);
+         * clean iff it wins the 6502 latch (bus_timing.h). */
         uint16_t valid = (uint16_t)loci->mia_tior + loci->mia_serve_subticks;
         return bus_serve_wins_race(valid, loci->mia_latch_subtick);
     }
-    /* WINDOW (défaut) : calibration par carte, fiable ssi tior ∈ [lo,hi]. */
+    /* WINDOW (default): per-board calibration, reliable iff tior ∈ [lo,hi]. */
     return loci->mia_tior >= loci->mia_tior_lo && loci->mia_tior <= loci->mia_tior_hi;
 }
 
@@ -150,11 +150,11 @@ void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed) {
 }
 
 bool loci_mia_serve_lost_sampled(loci_t* loci) {
-    /* Sans jitter (ou hors PHASE) : décision nominale déterministe. */
+    /* Without jitter (or outside PHASE): deterministic nominal decision. */
     if (loci->mia_serve_jitter == 0 || loci->mia_timing_model != LOCI_TIMING_PHASE)
         return !loci_mia_io_reliable(loci);
-    /* PHASE + jitter : le subtick de validité du serve est bruité autour de sa
-     * valeur nominale → près du latch, la course est perdue occasionnellement. */
+    /* PHASE + jitter: the serve's validity subtick is noisy around its
+     * nominal value → near the latch, the race is occasionally lost. */
     int j = bus_jitter_sample(&loci->mia_jitter_state, loci->mia_serve_jitter);
     int valid = (int)loci->mia_tior + (int)loci->mia_serve_subticks + j;
     if (valid < 0) valid = 0;

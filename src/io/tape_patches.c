@@ -32,25 +32,25 @@ void tape_patches(emulator_t* emu) {
     if (!emu->rom_patches)
         return;
 
-    /* Mode capture tape-OUT (voie A CSAVE) : la ROM bit-bange la vraie broche
-     * PB7 (Timer 1). Neutraliser TOUS les hooks CSAVE PC-1.1, sinon ils
-     * court-circuitent l'encodeur (cf. SPEC-voie-A §1). */
+    /* Tape-OUT capture mode (CSAVE path A): the ROM bit-bangs the real PB7
+     * pin (Timer 1). Disable ALL the PC-1.1 CSAVE hooks, otherwise they
+     * short-circuit the encoder (see SPEC-voie-A §1). */
     if (emu->tape_capture.active)
         return;
 
-    /* Co-sim LOCI (--loci-emu) : la ROM est SERVIE par le firmware (BASIC 1.0 ou
-     * 1.1 au choix du menu) et le haut de mémoire peut être de la RAM overlay
-     * (Sedoric). Les hooks par PC ne savent pas ce qui s'exécute à ces adresses :
-     * le patch « writeleader » BASIC 1.0 ($E6BA→$E6C9) sautait 15 octets du code
-     * d'allocation de Sedoric (SAVE → « WRITE FAULT » sur un secteur fantôme). Les
-     * cassettes en co-sim passent par le device TAP du firmware, pas par ces hooks. */
+    /* LOCI co-sim (--loci-emu): the ROM is SERVED by the firmware (BASIC 1.0 or
+     * 1.1, chosen from the menu) and the top of memory may be overlay RAM
+     * (Sedoric). PC-based hooks cannot know what is executing at these addresses:
+     * the BASIC 1.0 "writeleader" patch ($E6BA→$E6C9) skipped 15 bytes of Sedoric's
+     * allocation code (SAVE → "WRITE FAULT" on a phantom sector). Tapes in
+     * co-sim go through the firmware's TAP device, not through these hooks. */
     if (loci_emu_active()) {
-        /* Les hooks ne sont légitimes que si l'octet à PC est bien la ROM que
-         * Phosphoric connaît : (1) LOCI sert la ROM à cette adresse (pas de RAM
-         * overlay sous MAP), (2) l'octet servi est celui de la ROM chargée par -r
-         * (même version → mêmes adresses). Sinon le PC appartient à du code
-         * étranger (Sedoric, menu LOCI) et le hook sauterait des instructions.
-         * `--tape X.tap -f` reste donc utilisable en co-sim avec -r (nettest). */
+        /* The hooks are only legitimate if the byte at PC really is the ROM
+         * Phosphoric knows: (1) LOCI serves the ROM at this address (no overlay
+         * RAM under MAP), (2) the byte served is that of the ROM loaded with -r
+         * (same version → same addresses). Otherwise the PC belongs to foreign
+         * code (Sedoric, LOCI menu) and the hook would skip instructions.
+         * `--tape X.tap -f` therefore remains usable in co-sim with -r (nettest). */
         uint8_t served;
         uint16_t pc0 = emu->cpu.PC;
         if (pc0 < 0xC000 || !loci_emu_rom_read(pc0, &served) ||
@@ -78,8 +78,8 @@ void tape_patches(emulator_t* emu) {
      * pauses (position preserved) while the caller processes a byte or block —
      * exactly what multi-block custom loaders need. */
     if (emu->cassette.signal_mode) {
-        /* --tape-signal-free : le moteur est piloté par ORB PB6 (cf. via write),
-         * pas par le PC 1.1 -> ne pas l'écraser ici (ROM clean-room). */
+        /* --tape-signal-free: the motor is driven by ORB PB6 (see via write),
+         * not by the 1.1 PC -> do not overwrite it here (clean-room ROM). */
         if (emu->cassette.free_gate)
             return;
         bool reading = (pc >= p->readbyte_entry && pc <= p->getsync_end);

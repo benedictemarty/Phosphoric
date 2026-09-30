@@ -20,16 +20,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Encodeur PNG partagé (stb_image_write). L'implémentation vit dans une seule
- * unité de traduction (src/video/stb_image_write_impl.c) ; ici on n'a besoin
- * que de la déclaration de stbi_write_png. */
+/* Shared PNG encoder (stb_image_write). The implementation lives in a single
+ * translation unit (src/video/stb_image_write_impl.c); here only the
+ * declaration of stbi_write_png is needed. */
 #include "../../third_party/stb_image_write.h"
 
 /* ── low-level encoders: raw RGB888 buffer (w*h*3) ───────────────── */
 
-/* stb_image_write est compilé avec STBI_WRITE_NO_STDIO (voir
- * stb_image_write_impl.c) : seules les variantes *_to_func existent. On ouvre
- * donc le fichier nous-mêmes et on relaie les blocs vers fwrite via ce callback. */
+/* stb_image_write is compiled with STBI_WRITE_NO_STDIO (see
+ * stb_image_write_impl.c): only the *_to_func variants exist. So we open
+ * the file ourselves and relay the blocks to fwrite through this callback. */
 static void png_write_cb(void* context, void* data, int size) {
     fwrite(data, 1, (size_t)size, (FILE*)context);
 }
@@ -37,9 +37,9 @@ static void png_write_cb(void* context, void* data, int size) {
 static bool write_png_buffer(const uint8_t* rgb, int w, int h, const char* filename) {
     FILE* fp = fopen(filename, "wb");
     if (!fp) return false;
-    /* stride = w*3 (RGB888 contigu), 3 composantes */
+    /* stride = w*3 (contiguous RGB888), 3 components */
     int ok = stbi_write_png_to_func(png_write_cb, fp, w, h, 3, rgb, w * 3);
-    /* succès = encodage OK ET flush disque sans erreur */
+    /* success = encoding OK AND disk flush without error */
     return (fclose(fp) == 0) && ok != 0;
 }
 
@@ -159,8 +159,8 @@ bool video_export_ascii_file(const video_t* vid, const char* filename,
     return ok;
 }
 
-/* Contenu texte réel de l'écran ORIC ($BB80, 40x28). Voir export.h pour le
- * décodage (octet & 0x7F ; codes < 0x20 -> espace) et ses limites. */
+/* Actual text content of the ORIC screen ($BB80, 40x28). See export.h for the
+ * decoding (byte & 0x7F; codes < 0x20 -> space) and its limits. */
 bool video_export_screen_text(const uint8_t* memory, FILE* fp) {
     if (!memory || !fp) return false;
 
@@ -174,9 +174,9 @@ bool video_export_screen_text(const uint8_t* memory, FILE* fp) {
         for (int col = 0; col < COLS; col++) {
             uint8_t ch = (uint8_t)(memory[TEXT_BASE + row * COLS + col] & 0x7F);
             line[col] = (ch < 0x20) ? ' ' : (char)ch;
-            if (line[col] != ' ') len = col + 1;   /* dernière colonne non blanche */
+            if (line[col] != ' ') len = col + 1;   /* last non-blank column */
         }
-        line[len] = '\0';                          /* rtrim des espaces de fin */
+        line[len] = '\0';                          /* rtrim of trailing spaces */
         fprintf(fp, "%s\n", line);
     }
     return true;
