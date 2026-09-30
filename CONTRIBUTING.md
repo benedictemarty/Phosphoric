@@ -109,6 +109,28 @@ make static-analysis    # Compiler warnings analysis
 6. Commit with a descriptive message
 7. Submit a pull request
 
+## Language Mirrors
+
+The project is published in two languages from one history:
+
+| Branch | Language | Pushed to |
+|---|---|---|
+| `main` | French (source of truth) | Framagit, self-hosted (`origin`) |
+| `main-en` | English | GitHub, Codeberg (as their `main`) |
+
+`main-en` is `main` plus translation commits: only the documentation (`*.md`)
+and the **comments** of the source code differ. Code, identifiers, program
+messages and tests are identical. To synchronise after new work on `main`:
+
+1. `git checkout main-en && git merge main`
+2. translate the documents and comments changed by the merge;
+3. `tools/check_comment_only_diff.py` (no argument: every code file that
+   differs from `main`) must report `0 en échec`;
+4. `make tests`, commit in English, push `main-en` to `github main` and
+   `codeberg main`.
+
+`make test-comment-diff` self-tests the checker.
+
 ## Commit Messages
 
 Follow conventional commit format:
