@@ -224,8 +224,9 @@ atteint dans le budget de cycles → un `--screenshot-*-when` qui échoue fait �
   des injections → ajouter `--realtime`.
 - **`--screenshot-at` avec une seule variable** : le *dernier* déclencheur gagne. Pour
   plusieurs instants, utiliser plusieurs `--screenshot-*-at`/`-when` (ils sont répétables).
-- **Objets stale après changement de mode de build** (`make SDL2=0` puis `make tests`) :
-  toujours revalider via `make clean && make tests`.
+- **Changement de mode de build** (`make SDL2=0` puis `make tests`) : sans risque
+  depuis 2.2.0, les objets de chaque configuration vivent dans `build/<config>/`
+  (auparavant, objets mélangés → fausses régressions, il fallait `make clean`).
 - **Fenêtre de cycles** : trop court = programme pas encore prêt ; préférer `*-when` sur un
   état mémoire plutôt que deviner un cycle absolu.
 

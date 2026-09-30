@@ -30,8 +30,16 @@ make DEBUG=1 SDL2=1
 make tests
 ```
 
-Le `Makefile` est le seul système de build du projet (l'ancien `CMakeLists.txt`,
-qui ne compilait plus, a été retiré en 2.1.3).
+The `Makefile` is the only build system (the former `CMakeLists.txt`, which no
+longer compiled, was removed in 2.1.3).
+
+Objects are built **out of the source tree**, one directory per configuration:
+`build/<config>/` (e.g. `build/host-sdl1-http0-cast0-midi0-tls1-tui0-lociemu/`).
+Switching options (`SDL2=0`, `HTTPAPI=1`, `DEBUG=1`, LOCI backend…) never mixes
+objects, so no `make clean` is needed between variants. Final binaries
+(`oric1-emu`, tools) are copied to the repository root, where scripts expect
+them; unit-test binaries stay in `build/<config>/tests/`. `make clean` removes
+`build/` entirely.
 
 ## Project Layout
 
@@ -86,10 +94,13 @@ Every change should include tests. The test framework uses simple C macros:
 ### Running Tests
 
 ```bash
-make tests              # All test suites (155 tests)
+make tests              # All test suites (builds the tools first)
+make tests-strict       # Same, and fails if a test is skipped without an
+                        # allowed reason (tests/allowed_skips.txt) — used by CI
 make test-cpu           # CPU tests only
 make test-audio         # Audio tests only
 make valgrind           # Memory leak check
+make valgrind-core      # Core suites under Valgrind (CI job)
 make static-analysis    # Compiler warnings analysis
 ```
 
@@ -98,6 +109,17 @@ make static-analysis    # Compiler warnings analysis
 1. Add test function in the appropriate `tests/unit/test_*.c` file
 2. Add `RUN(test_name);` in `main()`
 3. Verify with `make test-<suite>`
+
+A new unit-test suite is declared with the `UNIT_TEST` macro of the `Makefile`
+(sources are compiled once per configuration and linked from `build/`):
+
+```make
+TEST_FOO_SRCS = tests/unit/test_foo.c src/io/foo.c src/utils/logging.c
+$(eval $(call UNIT_TEST,test-foo,test_foo,$(TEST_FOO_SRCS),,))
+```
+
+then add `test-foo` to the `tests` target. A test that is skipped for a new
+legitimate reason must be justified in `tests/allowed_skips.txt`.
 
 ## Development Workflow
 

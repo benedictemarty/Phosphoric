@@ -55,10 +55,11 @@ jobs:
       - name: Build with SDL2 (default)
         run: make clean && make -j4
 
-      # Suite complète (le mélange d'objets SDL2=0/1 casse test-control-dispatch :
-      # on repart toujours d'un `make clean` avant `make tests`).
-      - name: Run test suite
-        run: make tests
+      # Suite complète ; échoue aussi si un test saute sans raison autorisée
+      # (tests/allowed_skips.txt). Objets rangés par configuration dans build/ :
+      # plus de mélange SDL2=0/1 entre les étapes.
+      - name: Run test suite (strict skips)
+        run: make tests-strict
 
       - name: CPU oracle (cycle-by-cycle) and Dormann
         run: |
@@ -72,8 +73,4 @@ jobs:
         run: BENCH_STRICT=1 BENCH_BUDGET_US=2000 make test-bench
 
       - name: Valgrind (core suites)
-        run: |
-          make test-cpu test-memory test-io test-clock test-savestate test-audio
-          for t in test_cpu test_memory test_io test_clock test_savestate test_audio; do
-            valgrind --leak-check=full --error-exitcode=1 --quiet ./$t >/dev/null
-          done
+        run: make valgrind-core
