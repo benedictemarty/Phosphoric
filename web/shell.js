@@ -66,6 +66,11 @@ var httpProxy = new URLSearchParams(location.search).get('httpproxy') || '';
 var sameHosts = (new URLSearchParams(location.search).get('httpsame') || '')
   .split(',').map(function(h){ return h.trim().toLowerCase(); }).filter(Boolean);
 if (modem) args.push('--serial', 'picowifi:Web:web');
+// Sous LOCI, l'ACIA $0380 est servie par le firmware, qui la précède d'un anneau
+// RX de 32 octets (loci-firmware src/mia/oric/acia.c, ACIA_RX_BUFFER_SIZE) :
+// sans lui l'écho « ATZ\r\r\nOK » déborde et ProphetOric conclut « pas de modem ».
+// Un 6551 nu ($031C, sans LOCI) n'a pas de FIFO : rien d'ajouté.
+if (modem && loci) args.push('--serial-buffer', '32');
 // Arguments CLI supplémentaires (tests e2e : --type-keys…), posés en
 // sessionStorage 'phos_extra_args' (tableau JSON) avant le chargement.
 try{ var extraArgs=JSON.parse(sessionStorage.getItem('phos_extra_args')||'[]');

@@ -106,7 +106,10 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
   firmware (`--loci-emu`), clés USB de l'hôte et image SD (`--loci-sdimg`).
 - **MODEM** (ou `?modem=1`) — modem **picowifi** (firmware PicoWiFiModemUSB
   émulé, `--serial picowifi:Web:web`, WiFi simulé « Web ») sur l'ACIA 6551 :
-  `$0380` avec LOCI, `$031C` sinon. Le navigateur n'ouvrant pas de TCP, chaque
+  `$0380` avec LOCI, `$031C` sinon. Avec LOCI, `--serial-buffer 32` est ajouté :
+  c'est l'anneau RX de 32 octets du firmware LOCI (`acia.c`,
+  `ACIA_RX_BUFFER_SIZE`), sans lequel l'écho `ATZ` déborde (ProphetOric : « pas
+  de modem »). Sans LOCI, 6551 nu : pas de FIFO. Le navigateur n'ouvrant pas de TCP, chaque
   connexion (ATDT, ATGET, ATRD/ATRT, ATDISKRD…) passe par un **relais
   WebSocket** à lancer sur la machine : `python3 tools/picowifi_ws_relay.py`
   (défaut `ws://127.0.0.1:8766/`, autre relais : `?relay=ws://hôte:port/`,
@@ -185,13 +188,14 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
   flash semé, import + persistance au rechargement, fichier listé par le
   sélecteur, et montage + boot d'un vrai `.dsk` si `disks/3dfongus.dsk` existe).
   SKIP si emsdk, node, Playwright ou Chrome manquent ; hors `make tests`.
-- **Test e2e modem** : `make test-web-picowifi` (7/7), programmes BASIC
+- **Test e2e modem** : `make test-web-picowifi` (9/9), programmes BASIC
   tokenisés en `.tap` auto-run (`bas2tap`) et chargés par `?media=` :
   1. relais : BASIC → ACIA `$031C` → picowifi WASM → WebSocket → relais →
      serveur TCP local, et retour ;
   2. sans relais : `ATGET` rejoué par `fetch()` (serveur CORS), `ATRD` local ;
   3. LOCI + cassette + `?httpsame=` : ACIA `$0380`, `ATD-` puis HTTP brut
-     réécrit vers l'origine, `ResponseFormat` reçu par le serveur.
+     réécrit vers l'origine, `ResponseFormat` reçu par le serveur ;
+  4. LOCI + modem par défaut : anneau RX de 32 octets ; sans LOCI, aucun.
 - **Arguments de test** : un tableau JSON dans `sessionStorage`
   `phos_extra_args` est ajouté à la ligne de commande (ex. `--type-keys`).
 

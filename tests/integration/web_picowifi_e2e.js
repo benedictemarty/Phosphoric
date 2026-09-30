@@ -12,7 +12,9 @@
 //      fetch(), puis ATRD = heure du navigateur ;
 //   3. cas ProphetOric (?loci=1&media=…&relay=none&httpsame=…) : cassette +
 //      LOCI (ACIA en $0380), ATD-hôte:8998 puis HTTP brut avec ResponseFormat,
-//      réécrit vers l'origine de la page ; l'en-tête doit arriver au serveur.
+//      réécrit vers l'origine de la page ; l'en-tête doit arriver au serveur ;
+//   4. LOCI + modem par défaut : --serial-buffer 32 (anneau RX du firmware
+//      LOCI) ; sans LOCI, pas de FIFO.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -102,6 +104,24 @@ async function scenario(browser, title, query, until, checks, after) {
       [/CONNECT/, 'ATD-prophet.example:8998 -> CONNECT (ACIA $0380 sous LOCI)'],
       [/FORMAT=cli/, 'requête réécrite vers l\'origine, en-tête ResponseFormat transmis'],
     ]);
+
+  // 4. Réglage par défaut LOCI + modem, sans argument de test : FIFO RX de
+  //    32 octets comme le firmware LOCI (acia.c, ACIA_RX_BUFFER_SIZE).
+  console.log('4. LOCI + modem : FIFO RX du firmware');
+  {
+    const p = await (await browser.newContext()).newPage();
+    const logs = []; p.on('console', m => logs.push(m.text()));
+    await p.goto(base + '/phosphoric.html?rom=atmos&loci=1&modem=1&relay=none');
+    for (let i = 0; i < 80 && !logs.some(l => /RX FIFO enabled/.test(l)); i++) await p.waitForTimeout(250);
+    check(logs.some(l => /ACIA RX FIFO enabled: 32 bytes/.test(l)), 'anneau RX 32 octets actif (--serial-buffer 32)');
+    await p.close();
+    const q = await (await browser.newContext()).newPage();
+    const logs2 = []; q.on('console', m => logs2.push(m.text()));
+    await q.goto(base + '/phosphoric.html?rom=atmos&loci=0&modem=1&relay=none');
+    for (let i = 0; i < 80 && !logs2.some(l => /Serial interface enabled/.test(l)); i++) await q.waitForTimeout(250);
+    check(!logs2.some(l => /RX FIFO enabled/.test(l)), 'sans LOCI (6551 nu en $031C) : pas de FIFO');
+    await q.close();
+  }
 
   await browser.close();
   process.exit(failures ? 1 : 0);
