@@ -47,6 +47,7 @@
 #define SP0256_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -122,6 +123,14 @@ typedef struct sp0256_s {
 void sp0256_init(sp0256_t* sp, uint16_t base_addr);
 void sp0256_reset(sp0256_t* sp);
 bool sp0256_load_rom(sp0256_t* sp, const uint8_t* data, uint32_t size);
+
+/* Section .ost « SPO » (sprint D) : état du microséquenceur et du filtre LPC-12,
+ * plus les échantillons en attente de mixage. Hors section : l'adresse (option),
+ * la ROM (rechargée depuis --sp0256-rom), le pointeur vers l'émulateur.
+ * sp0256_load ignore une section de version ou de taille inattendue. */
+#define SP0256_SAVE_VERSION 1
+bool sp0256_save(const sp0256_t* sp, FILE* fp);
+void sp0256_load(sp0256_t* sp, FILE* fp, uint32_t size);
 
 /* CPU I/O (routed by io_bus for the base address) */
 uint8_t sp0256_read(sp0256_t* sp, uint16_t addr);

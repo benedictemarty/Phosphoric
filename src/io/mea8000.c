@@ -24,6 +24,7 @@
  */
 
 #include "io/mea8000.h"
+#include "utils/binio.h"
 #include "audio/audio.h"   /* AUDIO_SAMPLE_RATE */
 
 #include <string.h>
@@ -332,4 +333,67 @@ void mea8000_generate(mea8000_t* m, int16_t* out, int count)
 bool mea8000_speaking(const mea8000_t* m)
 {
     return m->state == MEA8000_STARTED || m->state == MEA8000_SLOWING;
+}
+
+/* ── Section .ost « MEA » ─────────────────────────────────────────────────── */
+/* version + état(1) + buf(4) + bufpos/cont/roe(3) + 3 × u16 + 2 × i16 + i32 + u32
+ * + 4 filtres × (4 × u16 + 2 × i32) + 4 × u16 + u8 + anneau + 2 × u32 + i32 + u32 + i16 */
+#define MEA8000_SAVE_SIZE (1 + 1 + 4 + 3 + 6 + 4 + 4 + 4 + 4 * (8 + 8) + 8 + 1 \
+                           + MEA8000_RING_SIZE * 2 + 8 + 4 + 4 + 2)
+
+bool mea8000_save(const mea8000_t* m, FILE* fp)
+{
+    bin_w_u8(fp, MEA8000_SAVE_VERSION);
+    bin_w_u8(fp, (uint8_t)m->state);
+    fwrite(m->buf, 1, sizeof(m->buf), fp);
+    bin_w_u8(fp, m->bufpos); bin_w_u8(fp, m->cont); bin_w_u8(fp, m->roe);
+    bin_w_u16(fp, m->framelength); bin_w_u16(fp, m->framepos); bin_w_u16(fp, m->framelog);
+    bin_w_i16(fp, m->lastsample); bin_w_i16(fp, m->sample);
+    bin_w_i32(fp, m->output);
+    bin_w_u32(fp, m->phi);
+    for (int i = 0; i < 4; i++) {
+        const mea8000_filter_t* f = &m->f[i];
+        bin_w_u16(fp, f->fm); bin_w_u16(fp, f->last_fm);
+        bin_w_u16(fp, f->bw); bin_w_u16(fp, f->last_bw);
+        bin_w_i32(fp, f->output); bin_w_i32(fp, f->last_output);
+    }
+    bin_w_u16(fp, m->last_ampl); bin_w_u16(fp, m->ampl);
+    bin_w_u16(fp, m->last_pitch); bin_w_u16(fp, m->pitch);
+    bin_w_u8(fp, m->noise);
+    for (int i = 0; i < MEA8000_RING_SIZE; i++) bin_w_i16(fp, m->ring[i]);
+    bin_w_u32(fp, m->rhead); bin_w_u32(fp, m->rtail);   /* compteurs libres */
+    bin_w_i32(fp, m->cycle_acc);
+    bin_w_u32(fp, m->resample_acc);
+    bin_w_i16(fp, m->last_out);
+    return true;
+}
+
+void mea8000_load(mea8000_t* m, FILE* fp, uint32_t size)
+{
+    if (size != MEA8000_SAVE_SIZE) return;
+    if (bin_r_u8(fp) != MEA8000_SAVE_VERSION) return;
+    uint8_t st = bin_r_u8(fp);
+    m->state = (st <= MEA8000_SLOWING) ? (mea8000_state_t)st : MEA8000_STOPPED;
+    if (fread(m->buf, 1, sizeof(m->buf), fp) != sizeof(m->buf)) memset(m->buf, 0, sizeof(m->buf));
+    m->bufpos = bin_r_u8(fp);                      /* 0..4 (4 = trame complète) */
+    if (m->bufpos > 4) m->bufpos = 4;
+    m->cont = bin_r_u8(fp); m->roe = bin_r_u8(fp);
+    m->framelength = bin_r_u16(fp); m->framepos = bin_r_u16(fp); m->framelog = bin_r_u16(fp);
+    m->lastsample = bin_r_i16(fp); m->sample = bin_r_i16(fp);
+    m->output = bin_r_i32(fp);
+    m->phi = bin_r_u32(fp);
+    for (int i = 0; i < 4; i++) {
+        mea8000_filter_t* f = &m->f[i];
+        f->fm = bin_r_u16(fp); f->last_fm = bin_r_u16(fp);
+        f->bw = bin_r_u16(fp); f->last_bw = bin_r_u16(fp);
+        f->output = bin_r_i32(fp); f->last_output = bin_r_i32(fp);
+    }
+    m->last_ampl = bin_r_u16(fp); m->ampl = bin_r_u16(fp);
+    m->last_pitch = bin_r_u16(fp); m->pitch = bin_r_u16(fp);
+    m->noise = bin_r_u8(fp);
+    for (int i = 0; i < MEA8000_RING_SIZE; i++) m->ring[i] = bin_r_i16(fp);
+    m->rhead = bin_r_u32(fp); m->rtail = bin_r_u32(fp);
+    m->cycle_acc = bin_r_i32(fp);
+    m->resample_acc = bin_r_u32(fp);
+    m->last_out = bin_r_i16(fp);
 }

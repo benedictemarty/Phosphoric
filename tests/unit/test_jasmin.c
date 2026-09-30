@@ -16,6 +16,7 @@
 #define _DEFAULT_SOURCE   /* mkstemp under -std=c11 -pedantic */
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -258,6 +259,87 @@ TEST(test_jasmin_side_select_double_sided) {
     sedoric_destroy(disk);
 }
 
+/* ── Section .ost « JAS » (sprint D). ─────────────────────────────────────── */
+static long jas_bytes(FILE* fp, unsigned char* buf, long cap) {
+    long n = ftell(fp);
+    if (n > cap) return -1;
+    rewind(fp);
+    if (fread(buf, 1, (size_t)n, fp) != (size_t)n) return -1;
+    return n;
+}
+
+/* Chaque champ sauvegardé est restauré : registres FDC et verrous remplis d'un
+ * motif, cartes de secteurs défectueux non vides ; copie neuve rechargée puis
+ * resauvegardée → mêmes octets. */
+TEST(test_jasmin_save_load_restores_every_field) {
+    static uint8_t img[4][16 * 17 * 256];
+    jasmin_t a, b;
+    memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b));
+    jasmin_init(&a); jasmin_init(&b);
+    for (int d = 0; d < JASMIN_MAX_DRIVES; d++) {
+        jasmin_set_disk(&a, (uint8_t)d, img[d], sizeof(img[d]), 16, 17);
+        jasmin_set_disk(&b, (uint8_t)d, img[d], sizeof(img[d]), 16, 17);
+    }
+    /* État source distinctif (valeurs bornées là où le chargement borne). */
+    /* Chaque champ écrit par fdc_state_save reçoit une valeur distincte. */
+    a.fdc.status = 0x91; a.fdc.command = 0x8C; a.fdc.track = 33; a.fdc.sector = 7;
+    a.fdc.data = 0xA5; a.fdc.direction = 1; a.fdc.c_track = 34; a.fdc.c_sector = 8;
+    a.fdc.side = 1; a.fdc.currentop = (fdc_op_t)2;
+    a.fdc.cur_sector_len = 256; a.fdc.cur_offset = 77; a.fdc.sec_type = 0x20;
+    a.fdc.delayed_drq = 31; a.fdc.delayed_int = 1203; a.fdc.di_status = 0x44;
+    a.fdc.dd_status = 0x03; a.fdc.status_type1 = true; a.fdc.rot_pos = 12345;
+    a.fdc.drq_age = 29; a.fdc.wt_state = 1; a.fdc.wt_field_idx = 2;
+    a.fdc.wt_id[0] = 5; a.fdc.wt_id[1] = 1; a.fdc.wt_id[2] = 9; a.fdc.wt_id[3] = 1;
+    a.fdc.wt_data_len = 256; a.fdc.wt_sectors_done = 4;
+    a.romdis = true; a.olay = true; a.drive = 2; a.side = 1; a.fdc.side = 1;
+    a.intrq = 0x00; a.drq = 0x00; a.autoboot_done = true;
+    ASSERT_EQ(jasmin_add_bad_sector(&a, 1, 0, 7, 4), 0);
+    ASSERT_EQ(jasmin_add_bad_sector(&a, 3, 1, 2, 9), 0);
+
+    FILE* f1 = tmpfile(); FILE* f2 = tmpfile();
+    ASSERT_TRUE(f1 && f2);
+    ASSERT_TRUE(jasmin_save(&a, f1));
+    long n1 = ftell(f1);
+    rewind(f1);
+    jasmin_load(&b, f1, (uint32_t)n1);
+    jasmin_save(&b, f2);
+    static unsigned char s1[512], s2[512];
+    long m1 = jas_bytes(f1, s1, sizeof(s1));
+    long m2 = jas_bytes(f2, s2, sizeof(s2));
+    fclose(f1); fclose(f2);
+    ASSERT_TRUE(m1 > 0);
+    ASSERT_EQ(m2, m1);
+    ASSERT_EQ(memcmp(s1, s2, (size_t)m1), 0);
+
+    /* Le FDC est re-pointé sur le disque du lecteur restauré, carte comprise. */
+    ASSERT_EQ(b.drive, 2);
+    ASSERT_TRUE(b.fdc.disk_data == img[2]);
+    ASSERT_EQ(b.fdc.side, 1);
+    ASSERT_EQ(b.bad_map[3].count, 1);
+    ASSERT_EQ(b.bad_map[3].entry[0].sector, 9);
+}
+
+/* Version inconnue ou section tronquée : l'état courant n'est pas touché. */
+TEST(test_jasmin_load_rejects_bad_section) {
+    jasmin_t a, b;
+    memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b));
+    jasmin_init(&a); jasmin_init(&b);
+    a.drive = 3; a.romdis = true;
+    FILE* fp = tmpfile();
+    ASSERT_TRUE(fp != NULL);
+    jasmin_save(&a, fp);
+    long n = ftell(fp);
+    rewind(fp);
+    jasmin_load(&b, fp, 10);                              /* tronquée */
+    ASSERT_EQ(b.drive, 0);
+    rewind(fp); fputc(JASMIN_SAVE_VERSION + 1, fp);       /* version inconnue */
+    rewind(fp);
+    jasmin_load(&b, fp, (uint32_t)n);
+    ASSERT_EQ(b.drive, 0);
+    ASSERT_FALSE(b.romdis);
+    fclose(fp);
+}
+
 int main(void) {
     printf("Jasmin disk interface tests\n");
     printf("═══════════════════════════════════════════════════════\n");
@@ -266,6 +348,8 @@ int main(void) {
     RUN(test_jasmin_bad_sector_injection);
     RUN(test_jasmin_side_select_double_sided);
     RUN(test_jasmin_guest_write_persists);
+    RUN(test_jasmin_save_load_restores_every_field);
+    RUN(test_jasmin_load_rejects_bad_section);
     printf("═══════════════════════════════════════════════════════\n");
     printf("  %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

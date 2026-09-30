@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>   /* FILE* pour les hooks de sérialisation */
+#include <stddef.h>  /* size_t, offsetof */
 
 struct emulator_s;   /* contexte complet (forward-decl : évite le cycle d'includes) */
 
@@ -73,6 +74,16 @@ typedef struct io_device_s {
      * au comportement historique). Seuls les devices à lecture destructive
      * (ACIA) fournissent un `peek`. */
     uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);
+
+    /* ── Cycle de vie : avance temporelle (optionnelle) ─────────────────────
+     * `tick` avance le périphérique de `cycles` cycles CPU (FDC, ACIA, synthèse
+     * vocale…). io_bus_tick() appelle les ticks dans un ORDRE EXPLICITE
+     * (io_bus_tick_order, distinct de l'ordre de dispatch) et seulement pour les
+     * périphériques présents : `present_off` est la position du drapeau `has_X`
+     * dans emulator_t (offsetof), testé sans appel de fonction — un périphérique
+     * absent ne coûte qu'une lecture par cycle. NULL → pas de tick. */
+    size_t  present_off;
+    void    (*tick)(struct emulator_s* emu, int cycles);
 } io_device_t;
 
 #endif /* IO_DEVICE_H */

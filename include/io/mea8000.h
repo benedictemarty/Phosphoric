@@ -39,6 +39,7 @@
 #define MEA8000_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -117,6 +118,14 @@ typedef struct mea8000_s {
 /* Lifecycle */
 void mea8000_init(mea8000_t* m, uint16_t base_addr);
 void mea8000_reset(mea8000_t* m);
+
+/* Section .ost « MEA » (sprint D) : état du séquenceur, des 4 filtres de formants
+ * et échantillons en attente de mixage. Hors section : l'adresse (option), les
+ * tables cos/exp/bruit (recalculées par mea8000_init), le pointeur vers
+ * l'émulateur. mea8000_load ignore une section de version ou de taille inattendue. */
+#define MEA8000_SAVE_VERSION 1
+bool mea8000_save(const mea8000_t* m, FILE* fp);
+void mea8000_load(mea8000_t* m, FILE* fp, uint32_t size);
 
 /* CPU I/O (routed by io_bus for base_addr and base_addr+1) */
 uint8_t mea8000_read(mea8000_t* m, uint16_t addr);

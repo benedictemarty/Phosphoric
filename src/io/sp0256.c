@@ -28,6 +28,7 @@
  */
 
 #include "io/sp0256.h"
+#include "utils/binio.h"
 #include "audio/audio.h"   /* AUDIO_SAMPLE_RATE */
 
 #include <string.h>
@@ -721,4 +722,53 @@ void sp0256_generate(sp0256_t* sp, int16_t* out, int count)
 bool sp0256_speaking(const sp0256_t* sp)
 {
     return sp->rom_valid && !sp->sby;
+}
+
+/* ── Section .ost « SPO » ─────────────────────────────────────────────────── */
+/* version + 9 × i32 (séquenceur) + filtre (6 × i32 + 12 × i16 + 12 × i16 + 16 o)
+ * + tampon (4096 × i16 + 2 × u32) + i32 + u32 + i16 */
+#define SP0256_SAVE_SIZE (1 + 9 * 4 + (6 * 4 + 12 * 2 + 12 * 2 + 16) \
+                          + (SP0256_SCBUF_SIZE * 2 + 8) + 4 + 4 + 2)
+
+bool sp0256_save(const sp0256_t* sp, FILE* fp)
+{
+    bin_w_u8(fp, SP0256_SAVE_VERSION);
+    bin_w_i32(fp, sp->halted); bin_w_i32(fp, sp->lrq);   bin_w_i32(fp, sp->sby);
+    bin_w_i32(fp, sp->ald);    bin_w_i32(fp, sp->pc);    bin_w_i32(fp, sp->stack);
+    bin_w_i32(fp, sp->mode);   bin_w_i32(fp, sp->page);  bin_w_i32(fp, sp->silent);
+    const sp0256_lpc12_t* f = &sp->filt;
+    bin_w_i32(fp, f->rpt); bin_w_i32(fp, f->cnt); bin_w_i32(fp, f->per);
+    bin_w_i32(fp, f->rng); bin_w_i32(fp, f->amp); bin_w_i32(fp, f->interp);
+    for (int i = 0; i < 6; i++) bin_w_i16(fp, f->f_coef[i]);
+    for (int i = 0; i < 6; i++) bin_w_i16(fp, f->b_coef[i]);
+    for (int i = 0; i < 6; i++) { bin_w_i16(fp, f->z_data[i][0]); bin_w_i16(fp, f->z_data[i][1]); }
+    fwrite(f->r, 1, sizeof(f->r), fp);
+    for (int i = 0; i < SP0256_SCBUF_SIZE; i++) bin_w_i16(fp, sp->scratch[i]);
+    bin_w_u32(fp, sp->sc_head); bin_w_u32(fp, sp->sc_tail);
+    bin_w_i32(fp, sp->cycle_acc);
+    bin_w_u32(fp, sp->resample_acc);
+    bin_w_i16(fp, sp->last_sample);
+    return true;
+}
+
+void sp0256_load(sp0256_t* sp, FILE* fp, uint32_t size)
+{
+    if (size != SP0256_SAVE_SIZE) return;
+    if (bin_r_u8(fp) != SP0256_SAVE_VERSION) return;
+    sp->halted = bin_r_i32(fp); sp->lrq   = bin_r_i32(fp); sp->sby   = bin_r_i32(fp);
+    sp->ald    = bin_r_i32(fp); sp->pc    = bin_r_i32(fp); sp->stack = bin_r_i32(fp);
+    sp->mode   = bin_r_i32(fp); sp->page  = bin_r_i32(fp); sp->silent = bin_r_i32(fp);
+    sp0256_lpc12_t* f = &sp->filt;
+    f->rpt = bin_r_i32(fp); f->cnt = bin_r_i32(fp); f->per = bin_r_i32(fp);
+    f->rng = bin_r_i32(fp); f->amp = bin_r_i32(fp); f->interp = bin_r_i32(fp);
+    for (int i = 0; i < 6; i++) f->f_coef[i] = bin_r_i16(fp);
+    for (int i = 0; i < 6; i++) f->b_coef[i] = bin_r_i16(fp);
+    for (int i = 0; i < 6; i++) { f->z_data[i][0] = bin_r_i16(fp); f->z_data[i][1] = bin_r_i16(fp); }
+    if (fread(f->r, 1, sizeof(f->r), fp) != sizeof(f->r)) memset(f->r, 0, sizeof(f->r));
+    for (int i = 0; i < SP0256_SCBUF_SIZE; i++) sp->scratch[i] = bin_r_i16(fp);
+    sp->sc_head = bin_r_u32(fp);   /* compteurs libres : head - tail = occupation */
+    sp->sc_tail = bin_r_u32(fp);
+    sp->cycle_acc = bin_r_i32(fp);
+    sp->resample_acc = bin_r_u32(fp);
+    sp->last_sample = bin_r_i16(fp);
 }

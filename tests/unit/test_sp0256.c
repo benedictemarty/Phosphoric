@@ -235,6 +235,132 @@ TEST(test_real_rom_speaks) {
     printf("(peak=%d, %d frames)  ", max_abs, finished_frame);
 }
 
+/* Relit la section dans un tampon mémoire (comparaison octet à octet). */
+static long section_bytes(FILE* fp, unsigned char* buf, long cap) {
+    long n = ftell(fp);
+    if (n > cap) return -1;
+    rewind(fp);
+    if (fread(buf, 1, (size_t)n, fp) != (size_t)n) return -1;
+    return n;
+}
+
+/* ── Section .ost « SPO » (sprint D) ─────────────────────────────────────── */
+
+/* ROM pseudo-aléatoire à graine fixe : le microséquenceur y exécute un « code »
+ * quelconque mais déterministe, ce qui exerce tout l'état (séquenceur, filtre,
+ * tampon) sans la vraie ROM (non distribuable). */
+static void fill_prng_rom(uint8_t* rom) {
+    uint32_t x = 0x12345678u;
+    for (int i = 0; i < SP0256_ROM_SIZE; i++) {
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        rom[i] = (uint8_t)x;
+    }
+}
+
+TEST(test_save_load_resumes_identically) {
+    static uint8_t rom[SP0256_ROM_SIZE];
+    fill_prng_rom(rom);
+    sp0256_t* a = calloc(1, sizeof(*a));
+    sp0256_t* b = calloc(1, sizeof(*b));
+    ASSERT_TRUE(a && b);
+    sp0256_init(a, 0x03F1); sp0256_load_rom(a, rom, SP0256_ROM_SIZE);
+    sp0256_write(a, 0x03F1, 0x18);
+    int16_t oa[882], ob[882];
+    sp0256_tick(a, 19968);
+    sp0256_generate(a, oa, 441);              /* laisse des échantillons en attente */
+
+    FILE* fp = tmpfile();
+    ASSERT_TRUE(fp != NULL);
+    ASSERT_TRUE(sp0256_save(a, fp));
+    long size = ftell(fp);
+    rewind(fp);
+    sp0256_init(b, 0x03F1); sp0256_load_rom(b, rom, SP0256_ROM_SIZE);
+    sp0256_load(b, fp, (uint32_t)size);
+    /* Identité aller-retour : resauvegarder la copie rechargée redonne les
+     * mêmes octets — tout champ oublié au chargement apparaît ici. */
+    static unsigned char s1[40000], s2[40000];
+    long n1 = section_bytes(fp, s1, sizeof(s1));
+    FILE* fp2 = tmpfile();
+    ASSERT_TRUE(fp2 != NULL);
+    sp0256_save(b, fp2);
+    long n2 = section_bytes(fp2, s2, sizeof(s2));
+    fclose(fp2);
+    fclose(fp);
+    ASSERT_TRUE(n1 > 0);
+    ASSERT_EQ(n2, n1);
+    ASSERT_EQ(memcmp(s1, s2, (size_t)n1), 0);
+
+    ASSERT_EQ(b->pc, a->pc);
+    ASSERT_EQ(b->sc_head - b->sc_tail, a->sc_head - a->sc_tail);
+    int differ = 0;
+    for (int f = 0; f < 10; f++) {
+        sp0256_tick(a, 19968); sp0256_tick(b, 19968);
+        sp0256_generate(a, oa, 882); sp0256_generate(b, ob, 882);
+        if (memcmp(oa, ob, sizeof(oa)) != 0) differ++;
+        if (a->pc != b->pc || a->lrq != b->lrq || a->sby != b->sby) differ++;
+    }
+    ASSERT_EQ(differ, 0);
+    free(a); free(b);
+}
+
+/* Version inconnue ou taille inattendue : l'état courant n'est pas touché. */
+TEST(test_load_rejects_bad_section) {
+    static uint8_t rom[SP0256_ROM_SIZE];
+    fill_prng_rom(rom);
+    sp0256_t* a = calloc(1, sizeof(*a));
+    sp0256_t* b = calloc(1, sizeof(*b));
+    ASSERT_TRUE(a && b);
+    sp0256_init(a, 0x03F1); sp0256_load_rom(a, rom, SP0256_ROM_SIZE);
+    sp0256_write(a, 0x03F1, 0x18);
+    sp0256_tick(a, 19968);
+    FILE* fp = tmpfile();
+    ASSERT_TRUE(fp != NULL);
+    sp0256_save(a, fp);
+    long size = ftell(fp);
+
+    sp0256_init(b, 0x03F1);
+    rewind(fp);
+    sp0256_load(b, fp, (uint32_t)size + 1);             /* taille fausse */
+    ASSERT_EQ(b->halted, 1);
+    rewind(fp); fputc(SP0256_SAVE_VERSION + 1, fp);     /* version inconnue */
+    rewind(fp);
+    sp0256_load(b, fp, (uint32_t)size);
+    ASSERT_EQ(b->halted, 1);
+    ASSERT_EQ(b->sby, 1);
+    fclose(fp);
+    free(a); free(b);
+}
+
+/* Chaque champ sauvegardé est restauré : état source rempli d'un motif (hors
+ * champs bornés au chargement), copie neuve rechargée puis resauvegardée → mêmes
+ * octets. Un champ oublié garderait sa valeur par défaut et ferait diverger. */
+TEST(test_load_restores_every_field) {
+    sp0256_t* a = calloc(1, sizeof(*a));
+    sp0256_t* b = calloc(1, sizeof(*b));
+    ASSERT_TRUE(a && b);
+    memset(a, 0x5A, sizeof(*a));
+    a->emu = NULL;
+    FILE* f1 = tmpfile(); FILE* f2 = tmpfile();
+    ASSERT_TRUE(f1 && f2);
+    sp0256_save(a, f1);
+    long n1 = ftell(f1);
+    rewind(f1);
+    sp0256_init(b, 0);
+    sp0256_load(b, f1, (uint32_t)n1);
+    sp0256_save(b, f2);
+    static unsigned char s1[40000], s2[40000];
+    long m1 = section_bytes(f1, s1, sizeof(s1));
+    long m2 = section_bytes(f2, s2, sizeof(s2));
+    fclose(f1); fclose(f2);
+    ASSERT_TRUE(m1 > 0);
+    ASSERT_EQ(m2, m1);
+    long first = -1;
+    for (long i = 0; i < m1; i++) if (s1[i] != s2[i]) { first = i; break; }
+    if (first >= 0) printf("(1er écart à l'octet %ld)  ", first);
+    ASSERT_EQ(first, -1);
+    free(a); free(b);
+}
+
 int main(void) {
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
@@ -256,6 +382,9 @@ int main(void) {
     RUN(test_generate_silence_without_rom);
     RUN(test_generate_silence_when_idle);
     RUN(test_real_rom_speaks);
+    RUN(test_save_load_resumes_identically);
+    RUN(test_load_rejects_bad_section);
+    RUN(test_load_restores_every_field);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

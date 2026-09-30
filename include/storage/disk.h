@@ -14,6 +14,7 @@
 #define DISK_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 
 /* FDC Registers */
@@ -209,6 +210,19 @@ void fdc_set_bad_map(fdc_t* fdc, const fdc_bad_map_t* map);
 uint8_t fdc_read(fdc_t* fdc, uint8_t reg);
 void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value);
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles);
+
+/* État sérialisable du WD1793/WD177x (sections .ost « FDC » et « JAS ») : registres,
+ * opération en cours, modèle mécanique, âge du DRQ et analyseur de formatage. Les
+ * pointeurs vers les images disque ne sont PAS écrits : le contrôleur les
+ * re-pointe après chargement, puis appelle fdc_state_resume() qui recalcule le
+ * pointeur du secteur en cours. FDC_STATE_SIZE = taille écrite (v2) ;
+ * fdc_state_load lit `size` octets : un .ost antérieur (36 octets, ou 31 avant
+ * v1.42) se relit, les champs absents prenant leur valeur neutre. */
+#define FDC_STATE_SIZE_V1 36
+#define FDC_STATE_SIZE    49
+void fdc_state_save(const fdc_t* fdc, FILE* fp);
+void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size);
+void fdc_state_resume(fdc_t* fdc);
 
 /* Trace FDC sur stderr si la variable d'env FDC_TRACE est définie (debug) */
 int fdc_trace_enabled(void);

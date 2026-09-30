@@ -466,7 +466,7 @@ TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/ca
 
 $(eval $(call DIRECT_TEST,test-cast,test_cast,$(TEST_CAST_SRCS),-DHAS_CAST,-lpthread -lssl -lcrypto))
 
-TEST_SAVESTATE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_savestate.c src/savestate.c \
+TEST_SAVESTATE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_savestate.c src/savestate.c src/io/jasmin.c \
                       $(CPU_SRCS) \
                       $(MEM_SRCS) \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
@@ -631,7 +631,7 @@ TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c $(
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c src/storage/disk_http.c \
-                     src/savestate.c src/debugger.c \
+                     src/savestate.c src/io/jasmin.c src/debugger.c \
                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 

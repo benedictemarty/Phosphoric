@@ -855,6 +855,70 @@ TEST(test_fdc_write_protect_visible_in_type1_status) {
     free(disk);
 }
 
+/* ── Savestate du FDC (2.4.0) : reprise en plein transfert ────────────────
+ * Avant 2.4.0, le pointeur du secteur en cours était remis à NULL au
+ * chargement : la lecture suivante tombait en RECORD NOT FOUND. */
+TEST(test_fdc_state_resume_mid_sector_read) {
+    uint8_t* disk_data = calloc(80 * 17 * 256, 1);
+    ASSERT_TRUE(disk_data != NULL);
+    for (int i = 0; i < 80 * 17 * 256; i++) disk_data[i] = (uint8_t)(i * 7 + i / 256);
+    fdc_t a, b;
+    fdc_init_test(&a);
+    fdc_set_disk(&a, disk_data, 80 * 17 * 256);
+    a.tracks = 80; a.sectors_per_track = 17;
+    a.c_track = 0; a.track = 0; a.sector = 3;
+    fdc_write(&a, 0, 0x80);                    /* READ SECTOR 3 */
+    fdc_ticktock(&a, 65);
+    for (int i = 0; i < 100; i++) { (void)fdc_read(&a, 3); fdc_ticktock(&a, 33); }
+
+    FILE* fp = tmpfile();
+    ASSERT_TRUE(fp != NULL);
+    fdc_state_save(&a, fp);
+    long n = ftell(fp);
+    ASSERT_EQ(n, FDC_STATE_SIZE);
+    rewind(fp);
+    fdc_init_test(&b);
+    fdc_set_disk(&b, disk_data, 80 * 17 * 256);
+    b.tracks = 80; b.sectors_per_track = 17;
+    fdc_state_load(&b, fp, (uint32_t)n);
+    fclose(fp);
+    fdc_state_resume(&b);
+
+    ASSERT_TRUE(b.cur_sector_data == a.cur_sector_data);
+    ASSERT_EQ(b.cur_offset, 100);
+    int differ = 0;
+    for (int i = 100; i < 256; i++) {
+        uint8_t va = fdc_read(&a, 3), vb = fdc_read(&b, 3);
+        if (va != vb || vb != disk_data[2 * 256 + i]) differ++;
+        fdc_ticktock(&a, 33); fdc_ticktock(&b, 33);
+    }
+    ASSERT_EQ(differ, 0);
+    ASSERT_FALSE(b.status & FDC_ST_NOT_FOUND);
+    ASSERT_EQ(b.currentop, a.currentop);
+    free(disk_data);
+}
+
+/* Un état v1 (36 octets, .ost antérieur à 2.4.0) se relit ; les champs v2
+ * absents prennent leur valeur neutre. */
+TEST(test_fdc_state_load_v1_compat) {
+    fdc_t a, b;
+    fdc_init_test(&a);
+    a.status = 0x81; a.track = 12; a.rot_pos = 4321; a.drq_age = 17; a.wt_state = 2;
+    FILE* fp = tmpfile();
+    ASSERT_TRUE(fp != NULL);
+    fdc_state_save(&a, fp);
+    rewind(fp);
+    fdc_init_test(&b);
+    b.drq_age = 99; b.wt_state = 1;
+    fdc_state_load(&b, fp, FDC_STATE_SIZE_V1);
+    fclose(fp);
+    ASSERT_EQ(b.status, 0x81);
+    ASSERT_EQ(b.track, 12);
+    ASSERT_EQ(b.rot_pos, 4321);
+    ASSERT_EQ(b.drq_age, 0);
+    ASSERT_EQ(b.wt_state, 0);
+}
+
 int main(void) {
     printf("Running Storage tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -897,6 +961,8 @@ int main(void) {
     RUN(test_fdc_write_protect_refuses_write);
     RUN(test_fdc_write_allowed_without_protect);
     RUN(test_fdc_write_protect_visible_in_type1_status);
+    RUN(test_fdc_state_resume_mid_sector_read);
+    RUN(test_fdc_state_load_v1_compat);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

@@ -40,8 +40,19 @@ typedef struct io_device_s {
     uint8_t (*read)(struct emulator_s* emu, uint16_t addr);
     bool    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value); /* true = consommé, false = repli VIA */
     bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);  /* optionnel (NULL → claims) */
+    const char* save_tag;                                            /* section .ost (NULL → aucune) */
+    bool    (*save)(struct emulator_s* emu, FILE* fp);               /* false → pas de section */
+    void    (*load)(struct emulator_s* emu, FILE* fp, uint32_t size);
+    uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);          /* lecture sans effet de bord */
+    size_t  present_off;                                             /* offsetof(emulator_t, has_X) */
+    void    (*tick)(struct emulator_s* emu, int cycles);             /* avance temporelle (optionnelle) */
 } io_device_t;
 ```
+
+La table `io_bus[]` (`src/io/io_bus.c`) est écrite en **initialiseurs désignés**
+indexés par un `enum` (`DEV_LOCI`, `DEV_ACIA`…) : l'ordre de dispatch se lit dans
+l'`enum`, et l'ordre des ticks (`io_bus_tick_order[]`) référence les entrées par
+ce même nom.
 
 **Pourquoi `emulator_t*` et pas un simple `self` ?** Parce que les `claims`
 sont conditionnels/croisés : `microdisc.claims` doit savoir si l'ACIA est
@@ -119,22 +130,49 @@ Le même principe s'étend à ce qui rend main.c monolithique :
   émulé en blob + **pointeurs hôte préservés** au chargement (backend/trace/
   callbacks non sérialisables) ; transport live non restauré (même-build). Reste
   **LOCI** : réserve réelle (montages/descripteurs OS).
-- **tick** (Epic 7/US5) : ✅ *déplacé* de `main.c` vers `io_bus_tick(emu, cycles)`
-  (ce module). L'ORDRE HISTORIQUE est **préservé à l'identique** (microdisc → loci
-  → acia → dtl → mageco) → iso-comportement par construction. Le VIA et la
-  cassette (cœur/port) restent dans `main.c`. **Choix assumé** : PAS de boucle
-  générique sur `io_bus[]` — son ordre (priorité de dispatch) diffère de l'ordre
-  de tick, et bien que les ticks soient probablement indépendants dans un même
-  lot, je ne le prouve pas byte-identique pour le timing série avec le filet
-  actuel ; on préserve donc l'ordre explicitement.
+- **tick** (Epic 7/US5, puis sprint D 2.4.0) : ✅ *dans le contrat*. Chaque
+  device fournit `tick` et `present_off` ; `io_bus_tick()` parcourt
+  `io_bus_tick_order[]`, un ordre **explicite, distinct de l'ordre de dispatch**
+  et identique à l'ordre historique (microdisc → jasmin → loci → acia → dtl →
+  mageco → sp0256 → mea8000) → iso-comportement par construction
+  (`tools/cli_golden.sh` : 0 écart). Coût mesuré, car la fonction tourne à
+  **chaque cycle** : boucle naïve +22 % par trame, déroulée +7 %, déroulée avec
+  `__builtin_expect(présent, 0)` → dans le bruit (le compilateur la replie en
+  tests de drapeaux et appels directs, disposition identique à l'ancien code).
+- **savestate, sprint D (2.4.0)** : sections **« JAS »** (Jasmin : état FDC,
+  verrous, cartes de secteurs défectueux ; les images passent par « DSK »,
+  désormais écrite aussi pour le Jasmin), **« SPO »** (SP0256 : séquenceur,
+  filtre LPC-12, échantillons en attente) et **« MEA »** (MEA8000 : séquenceur,
+  4 formants, anneau audio). Sérialisation **champ par champ, petit-boutiste,
+  versionnée** (`include/utils/binio.h`) — pas de blob : ni ROM, ni tables
+  recalculables (~92 Ko pour le MEA8000), ni pointeurs hôte dans le fichier ;
+  section de version ou de taille inattendue ignorée. L'état du WD1793 est
+  factorisé (`fdc_state_save/load`, format **v2** : + âge du DRQ et analyseur de
+  formatage, un `.ost` v1 se relit) et `fdc_state_resume()` recalcule le
+  pointeur du secteur en cours : une reprise **en plein transfert disque** lisait
+  « Record Not Found » (défaut ancien, Microdisc compris), corrigé et couvert par
+  `test-savestate-determinism` (Jasmin sauvé en plein boot TDOS).
+- **Restent hors savestate** : **LOCI** (handles de fichiers OS, montages) et
+  l'ACIA, dont la section « SER » reste écrite en dur par `savestate.c`
+  (registres seulement, le transport hôte n'est pas restauré).
 - **init / reset / cleanup** : hooks *non ajoutés au contrat*. Raison honnête :
   le reset n'est **pas uniforme** (le warm reset F5 ne reset que CPU + LOCI, ce
   dernier « garde les montages ») → une boucle de reset générique changerait le
-  comportement. Ajouter un champ de contrat non câblable serait du poids mort.
+  comportement. Décider quels périphériques voient la ligne /RESET relève de la
+  fidélité matérielle (schémas à l'appui), pas d'un refactor.
 
-Ces extensions se font **une étape à la fois**, chacune vérifiée verte. Le
-contrat `io_device_t` reste volontairement limité à ce qui s'itère uniformément
-(claims/read/write/save/load) ; le tick, ordonné, est orchestré à part.
+## 6 bis. Définition de « terminé » pour un nouveau périphérique de bus
+
+1. une entrée dans `io_bus[]` (et l'`enum` `DEV_*`) avec `claims`/`read`/`write`,
+   `present_off` et, s'il avance dans le temps, `tick` placé à sa position dans
+   `io_bus_tick_order[]` ;
+2. une section `.ost` (`save_tag`/`save`/`load`) sérialisant **l'état émulé
+   seulement**, versionnée, qui ignore une section inconnue ;
+3. un test unitaire dédié, dont un test « chaque champ est restauré » (état
+   source rempli de valeurs distinctives → rechargé → resauvegardé → mêmes octets) ;
+4. un scénario dans `tests/integration/test_savestate_determinism.py` si le
+   périphérique influence l'exécution du 6502 ;
+5. un cas dans `tests/cli_golden/cases.txt` pour ses options.
 
 ## 7. Contrainte opérationnelle
 
