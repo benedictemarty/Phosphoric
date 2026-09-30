@@ -198,7 +198,7 @@ void via_sync(via6522_t* via);
  * @brief Neo6502Vic20 (US-31) : un cycle, chemin « paresseux » exact : tant
  * qu'aucun événement ne peut survenir, le cycle est seulement compté ; il est
  * appliqué au prochain accès ou au prochain pas complet. VIA_NO_LAZY
- * désactive ce chemin (rejeu de référence, tests/test_lazy.sh).
+ * désactive ce chemin (rejeu de référence, `make test-via-lazy`).
  */
 static inline void via_tick(via6522_t* via) {
 #ifndef VIA_NO_LAZY
