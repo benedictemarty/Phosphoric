@@ -214,5 +214,5 @@ test_clock
 /changelog.md
 /roadmap.md
 
-# Build hors des sources : un sous-répertoire par configuration
+# Out-of-tree build: one subdirectory per configuration
 /build/

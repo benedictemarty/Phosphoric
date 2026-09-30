@@ -1,10 +1,10 @@
 #!/bin/sh
-# check_skips.sh — refuse les tests sautés sans raison autorisée.
+# check_skips.sh — rejects tests skipped without an allowed reason.
 #
-# Usage : tools/check_skips.sh JOURNAL [LISTE]
-# Relève dans JOURNAL (sortie de `make tests`) chaque ligne de saut (SKIP,
-# Skipped, « — skipping ») et la confronte aux expressions de LISTE
-# (défaut : tests/allowed_skips.txt). Code de sortie 1 si un saut n'est pas couvert.
+# Usage: tools/check_skips.sh LOG [LIST]
+# Collects every skip line of LOG (output of `make tests`: SKIP, Skipped,
+# "— skipping") and matches it against the expressions of LIST
+# (default: tests/allowed_skips.txt). Exit code 1 if a skip is not covered.
 set -u
 LOG=${1:?usage: check_skips.sh JOURNAL [LISTE]}
 ALLOW=${2:-tests/allowed_skips.txt}

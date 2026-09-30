@@ -239,15 +239,15 @@ ifeq ($(TUI), 1)
     LDFLAGS += -lncursesw
 endif
 
-# Build hors des sources, un répertoire par configuration : les objets d'une
-# variante (SDL2=0, HTTPAPI=1, backend LOCI…) ne se mélangent jamais avec ceux
-# d'une autre. Les binaires finaux sont recopiés à la racine (chemins attendus
-# par les scripts), seulement quand leur contenu change.
+# Out-of-tree build, one directory per configuration: the objects of one
+# variant (SDL2=0, HTTPAPI=1, LOCI backend…) never mix with those of another.
+# Final binaries are copied to the repository root (paths expected by the
+# scripts), only when their content changes.
 LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_HW)),hw,$(if $(filter 1,$(LOCI_EMU)),emu,stub)))
 CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)
 BUILD ?= build/$(CONFIG)
 TBIN = $(BUILD)/tests
-# $(call obj,sources.c) → objets correspondants dans $(BUILD)
+# $(call obj,sources.c) → matching objects in $(BUILD)
 obj = $(patsubst %.c,$(BUILD)/%.o,$(1))
 
 OBJECTS = $(call obj,$(SOURCES))
@@ -279,8 +279,8 @@ $(BUILD)/bin/$(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
 	@mkdir -p $(@D)
 	$(CC) $(OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o $@
 
-# Copie à la racine, refaite à chaque appel mais seulement si le binaire de la
-# configuration courante diffère (changer de configuration change de binaire).
+# Copy to the root, redone on every call but only if the binary of the current
+# configuration differs (switching configuration switches binary).
 $(TARGET): $(BUILD)/bin/$(TARGET) FORCE
 	@cmp -s $< $@ || cp $< $@
 
@@ -314,8 +314,8 @@ dist:
 
 tools: $(TOOLS)
 
-# Outil = binaire lié dans $(BUILD)/bin puis recopié à la racine.
-#   $(1) nom   $(2) sources
+# Tool = binary linked in $(BUILD)/bin then copied to the root.
+#   $(1) name   $(2) sources
 define TOOL_BIN
 $(BUILD)/bin/$(1): $(call obj,$(2))
 	@mkdir -p $$(@D)
@@ -342,9 +342,9 @@ $(BUILD)/%.o: %.c
 #  TESTS
 # ═══════════════════════════════════════════════════════════════
 
-# Tests unitaires : chaque source est compilée UNE fois par configuration dans
-# $(BUILD) ; le binaire de test lie exactement la liste d'objets donnée.
-#   $(1) cible   $(2) binaire   $(3) sources   $(4) ldflags en plus   $(5) archives
+# Unit tests: each source is compiled ONCE per configuration into $(BUILD);
+# the test binary links exactly the given list of objects.
+#   $(1) target   $(2) binary   $(3) sources   $(4) extra ldflags   $(5) archives
 define UNIT_TEST
 $(TBIN)/$(2): $(call obj,$(3)) $(5)
 	@mkdir -p $$(@D)
@@ -353,9 +353,9 @@ $(1): $(TBIN)/$(2)
 	@$(TBIN)/$(2)
 endef
 
-# Tests dont les sources exigent des drapeaux PROPRES ($(4)), indépendants de la
-# configuration (clavier toujours avec SDL2, cast toujours avec HAS_CAST) :
-# compilation directe, refaite à chaque appel comme auparavant.
+# Tests whose sources need their OWN flags ($(4)), independent of the
+# configuration (keyboard always with SDL2, cast always with HAS_CAST):
+# direct compilation, redone on every call as before.
 define DIRECT_TEST
 $(TBIN)/$(2): $(3) FORCE
 	@mkdir -p $$(@D)
@@ -364,7 +364,7 @@ $(1): $(TBIN)/$(2)
 	@$(TBIN)/$(2)
 endef
 
-# Briques partagées par les listes de sources des tests
+# Building blocks shared by the test source lists
 CPU_SRCS = src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c
 MEM_SRCS = src/memory/memory.c src/memory/banking.c
 DISK_SRCS = src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c
@@ -753,7 +753,7 @@ test-docs-claims:
 test-comment-diff:
 	@sh tests/integration/test_comment_only_diff.sh
 
-# Auto-test de tools/check_skips.sh (vérificateur de `make tests-strict`).
+# Self-test of tools/check_skips.sh (the `make tests-strict` checker).
 test-check-skips:
 	@sh tests/integration/test_check_skips.sh
 
@@ -796,8 +796,8 @@ tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin 
 	@echo "  All test suites completed!"
 	@echo "═══════════════════════════════════════════════════════"
 
-# Suite complète + refus des tests sautés sans raison autorisée
-# (tests/allowed_skips.txt). Journal : $(BUILD)/tests.log. Utilisé par la CI.
+# Full suite + rejection of tests skipped without an allowed reason
+# (tests/allowed_skips.txt). Log: $(BUILD)/tests.log. Used by CI.
 tests-strict:
 	@mkdir -p $(BUILD)
 	@{ $(MAKE) --no-print-directory tests; echo $$? > $(BUILD)/tests.rc; } 2>&1 | tee $(BUILD)/tests.log
@@ -867,7 +867,7 @@ valgrind: test-cpu test-memory test-io test-jasmin test-jasmin test-storage test
 	@echo "  Valgrind: No memory leaks detected!"
 	@echo "═══════════════════════════════════════════════════════"
 
-# Suites cœur sous Valgrind (job CI) : binaires pris dans $(TBIN).
+# Core suites under Valgrind (CI job): binaries taken from $(TBIN).
 VALGRIND_CORE = test_cpu test_memory test_io test_clock test_savestate test_audio
 valgrind-core: test-cpu test-memory test-io test-clock test-savestate test-audio
 	@for t in $(VALGRIND_CORE); do \
