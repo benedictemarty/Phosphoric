@@ -55,9 +55,10 @@
 #include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
 #include "io/loci_internal.h"  /* loci_dsk_open_web (loci-webdisk archi B) */
 #include "io/loci_emu.h"       /* backend émulation du vrai firmware RP2040 (--loci-emu) */
-#include "cli/cli_options.h"  /* enum OPT_* + long_options[] (Epic 7/US3) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
+#include "cli/cli_opts.h"     /* cli_opts_t : options de la ligne de commande (sprint C) */
+#include "cli/cli_args.h"     /* cli_parse_args : boucle getopt (sprint C) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -2579,407 +2580,13 @@ static void emulator_run(emulator_t* emu) {
 
 
 
-int main(int argc, char* argv[]) {
-    emulator_t emu;
-    memset(&emu, 0, sizeof(emu));
-    emu.breakpoint = -1;
+/* ── Étapes de main() (sprint C) : extraites à l'identique, dans l'ordre ── */
 
-    const char* tape_file = NULL;
-    const char* disk_files[MICRODISC_MAX_DRIVES] = {NULL, NULL, NULL, NULL};
-    const char* disk_create_file = NULL;
-    const char* disk_web_url = NULL;   /* loci-webdisk archi B: disque servi par HTTP */
-    bool disk_writeback = false;
-    bool disk_write_protect = false;
-    const char* rom_file = NULL;
-    const char* hostfs_path = NULL;
-    bool fast_load = false;
-    bool tape_signal = false;   /* --tape-signal: signal-level cassette (Sprint 90) */
-    bool tape_signal_free = false; /* --tape-signal-free: gate moteur sur ORB PB6 (clean-room ROM) */
-    const char* tape_out_capture_arg = NULL; /* --tape-out-capture FILE: capture PB7 -> .TAP */
-    bool verbose = false;
-    bool headless = false;
-    int64_t max_cycles = -1;
-    const char* screenshot_file = NULL;
-    const char* ula_ng_poke = NULL;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
-    /* Captures -at RÉPÉTABLES : on collecte (arg, type) au parsing, puis on
-     * résout chaque "CYCLES:FILE" après la boucle getopt (comme --poke-at). */
-    struct { const char* arg; timed_capture_type_t type; } tcap_cli[TIMED_CAPTURE_MAX];
-    int tcap_cli_count = 0;
-    const char* screenshot_text_file = NULL;
-    const char* screenshot_ansi_file = NULL;
-    const char* frame_dump_dir = NULL;
-    int frame_dump_interval = 50;
-    const char* video_avi_file = NULL;
-    int video_avi_fps = 50;
-    int video_avi_quality = 85;
-    bool gdb_enabled = false;
-    int gdb_port = GDB_DEFAULT_PORT;
-    const char* movie_record_file = NULL;
-    const char* movie_replay_file = NULL;
-    const char* keyboard_layout = NULL;
-
-    const char* type_keys_args[TYPE_KEYS_SEQ_MAX];
-    int type_keys_arg_count = 0;
-    /* --poke-at / --poke-when : arguments collectés pendant getopt puis parsés
-     * après emulator_init (les pokes vivent dans emu, initialisé plus tard). */
-    struct { const char* arg; bool is_when; } poke_args[POKE_MAX];
-    int poke_arg_count = 0;
-    const char* disk_rom_file = NULL;
-    const char* jasmin_rom_file = NULL;  /* --jasmin-rom : Jasmin boot ROM (2 KB) */
-    const char* sp0256_rom_file = NULL;  /* --sp0256-rom : SP0256-AL2 ROM (2 KB) */
-    uint16_t    sp0256_base_addr = SP0256_BASE_DEFAULT;  /* --sp0256-addr (hex) */
-    bool        mea8000_enabled = false;                 /* --mea8000 (TMPI, no ROM) */
-    uint16_t    mea8000_base_addr = MEA8000_BASE_DEFAULT; /* --mea8000-addr (hex)   */
-    bool debug_mode = false;
-    const char* debug_break_addr = NULL;
-    bool cast_server_enabled = false;
-    uint16_t cast_server_port = 0;
-    /* HTTP control API (sprint 94) */
-    bool http_api_enabled = false;
-    uint16_t http_api_port = 0;            /* 0 → HTTP_API_DEFAULT_PORT */
-    const char* http_api_bind = NULL;      /* NULL → 127.0.0.1          */
-    const char* http_api_root = NULL;      /* NULL → "." (CWD)          */
-    bool cast_discover = false;
-    bool cast_to_enabled = false;
-    const char* cast_to_device = NULL;
-    const char* save_state_file = NULL;
-    const char* load_state_file = NULL;
-    const char* model_arg = NULL;
-    const char* joystick_mode = NULL;
-    const char* printer_file = NULL;
-    const char* printer_type_arg = NULL;
-    int scale_factor = 3;
-    bool render_software = false;
-    const char* trace_file = NULL;
-    const char* cycle_trace_file = NULL;
-    bool cpu_microseq = true;   /* V2-E1/US1.4 : cœur cycle-par-cycle par défaut */
-    bool ula_per_cycle = true;  /* V2-E4/US4.2 : ULA au fetch par cycle par défaut */
-    int  ula_fetch_offset = 0;
-    uint64_t cycle_trace_max = 0;
-    const char* screenshot_when_arg = NULL;
-    const char* dump_ram_when_arg = NULL;
-    const char* screenshot_text_when_arg = NULL;
-    const char* type_keys_when_arg = NULL;
-    const char* bad_sector_args[FDC_MAX_BAD_SECTORS];
-    int bad_sector_arg_count = 0;
-    const char* fdc_timing_arg = NULL;
-    const char* loci_usb_args[LOCI_USB_DEV_MAX];
-    int  loci_usb_count = 0;
-    bool loci_usb_autoscan = true;
-    const char* trace_irq_file = NULL;
-    const char* psg_trace_file = NULL;
-    const char* kbd_trace_file = NULL;
-    const char* audio_wav_file = NULL;
-    const char* symbols_file = NULL;
-    bool tui_mode = false;
-    bool control_mode = false;
-    bool bench_mode = false;
-    bool loci_enabled = false;
-    const char* loci_flash_root = NULL;
-    const char* loci_emu_path = NULL;   /* --loci-emu : exécute le vrai firmware RP2040 (émulateur) */
-    const char* loci_hw_dev = NULL;     /* --loci-hw : VRAIE cartouche via le pont USB loci-usb (backend loci_hw.c) */
-    const char* loci_emu_usb_image = NULL;  /* --loci-usb-image : image FAT servie comme disque USB émulé */
-    const char* loci_emu_cdc_dev = NULL;    /* --loci-cdc : dongle CDC (ex. /dev/ttyACM0) servi comme ACIA $0380 */
-    const char* loci_emu_flash = NULL;      /* --loci-flash : image flash persistante (FS interne 0:) */
-    const char* loci_sdimg_path = NULL;
-    const char* loci_web_url = NULL;   /* loci-webdisk archi B : disque web natif LOCI */
-    const char* loci_web_base = NULL;  /* Route B : racine serveur pour le device « W: Web disks » */
-    int loci_mia_win_lo = -1, loci_mia_win_hi = -1;  /* -1 = not set (open window) */
-    int loci_serve_subticks = -1, loci_latch_subtick = -1;  /* -1 = phase model off */
-    int loci_serve_jitter = -1; unsigned loci_jitter_seed = 0;  /* -1 = no jitter */
-    int64_t trace_max = 0;
-    int64_t trace_ring = 0;   /* --trace-ring N : garder les N DERNIÈRES instructions */
-    const char* profile_file = NULL;
-    const char* rom_info_file = NULL;
-    bool rom_info_enabled = false;
-    const char* serial_arg = NULL;
-    const char* acia_addr_arg = NULL;
-    const char* dtl2000_arg = NULL;
-    const char* dtl2000_addr_arg = NULL;
-    const char* mageco_arg = NULL;
-    const char* mageco_addr_arg = NULL;
-    bool mageco_oricon = false;
-    bool serial_v23 = false;
-    int serial_buffer_size = 0;
-    int serial_baud = 0;
-    bool serial_irq_on_rdrf = false;
-    const char* serial_trace_file = NULL;
-    bool serial_tcp_backpressure = false;  /* --serial-tcp-backpressure */
-    int  serial_tcp_rcvbuf = 0;            /* explicit SO_RCVBUF cap (0 = auto) */
-    long loci_irq_latency_us = 0;          /* --loci-irq-latency (LOCI I2C IRQ cost) */
-
-    int opt;
-    int option_index = 0;
-
-    while ((opt = getopt_long(argc, argv, CLI_SHORT_OPTIONS, long_options, &option_index)) != -1) {
-        switch (opt) {
-            case 't': tape_file = optarg; break;
-            case 'd': disk_files[0] = optarg; break;
-            case OPT_DISK1: disk_files[1] = optarg; break;
-            case OPT_DISK2: disk_files[2] = optarg; break;
-            case OPT_DISK3: disk_files[3] = optarg; break;
-            case OPT_DISK_WRITEBACK: disk_writeback = true; break;
-            case OPT_DISK_WRITE_PROTECT: disk_write_protect = true; break;
-            case OPT_DISK_CREATE: disk_create_file = optarg; disk_writeback = true; break;
-            case OPT_DISK_WEB: disk_web_url = optarg; break;
-            case 'r': rom_file = optarg; break;
-            case 'h': hostfs_path = optarg; break;
-            case 'f': fast_load = true; break;
-            case 'n': headless = true; break;
-            case 'c': max_cycles = atoll(optarg); break;
-            case 'v': verbose = true; break;
-            case OPT_SCREENSHOT: screenshot_file = optarg; break;
-            case OPT_SCREENSHOT_TEXT: screenshot_text_file = optarg; break;
-            case OPT_SCREENSHOT_ANSI: screenshot_ansi_file = optarg; break;
-            case OPT_SCREENSHOT_TEXT_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_TEXT;} break;
-            case OPT_SCREENSHOT_ANSI_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_ANSI;} break;
-            case OPT_ULA_NG_POKE: ula_ng_poke = optarg; break;
-            case OPT_SCREENSHOT_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_IMAGE;} break;
-            case OPT_SCREENSHOT_WHEN: screenshot_when_arg = optarg; break;
-            case OPT_SCREENSHOT_TEXT_WHEN: screenshot_text_when_arg = optarg; break;
-            case OPT_DUMP_RAM_WHEN: dump_ram_when_arg = optarg; break;
-            case OPT_POKE_AT:
-            case OPT_POKE_WHEN:
-                if (poke_arg_count >= POKE_MAX) {
-                    log_error("Too many --poke-at/--poke-when (max %d)", POKE_MAX);
-                    return 1;
-                }
-                poke_args[poke_arg_count].arg = optarg;
-                poke_args[poke_arg_count].is_when = (opt == OPT_POKE_WHEN);
-                poke_arg_count++;
-                break;
-            case OPT_TYPE_KEYS_WHEN: type_keys_when_arg = optarg; break;
-            case OPT_FRAME_DUMP: frame_dump_dir = optarg; break;
-            case OPT_FRAME_DUMP_INTERVAL: frame_dump_interval = atoi(optarg); break;
-            case OPT_VIDEO: video_avi_file = optarg; break;
-            case OPT_VIDEO_FPS: video_avi_fps = atoi(optarg); break;
-            case OPT_VIDEO_QUALITY: video_avi_quality = atoi(optarg); break;
-            case OPT_GDB:
-                gdb_enabled = true;
-                if (optarg) gdb_port = atoi(optarg);
-                break;
-            case OPT_RECORD: movie_record_file = optarg; break;
-            case OPT_REPLAY: movie_replay_file = optarg; break;
-            case 'k': keyboard_layout = optarg; break;
-            case OPT_TYPE_KEYS:
-                if (type_keys_arg_count < TYPE_KEYS_SEQ_MAX) {
-                    type_keys_args[type_keys_arg_count++] = optarg;
-                } else {
-                    log_warning("Too many --type-keys (max %d), ignoring extra",
-                                TYPE_KEYS_SEQ_MAX);
-                }
-                break;
-            case OPT_DISK_ROM: disk_rom_file = optarg; break;
-            case OPT_JASMIN_ROM: jasmin_rom_file = optarg; break;
-            case OPT_SP0256_ROM: sp0256_rom_file = optarg; break;
-            case OPT_SP0256_ADDR: sp0256_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
-            case OPT_MEA8000: mea8000_enabled = true; break;
-            case OPT_MEA8000_ADDR: mea8000_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
-            case 'b': emu.breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
-            case 'D': debug_mode = true; break;
-            case OPT_DEBUG_BREAK: debug_break_addr = optarg; break;
-            case OPT_CAST_SERVER:
-                cast_server_enabled = true;
-                if (optarg) cast_server_port = (uint16_t)atoi(optarg);
-                break;
-            case OPT_HTTP_API:
-                http_api_enabled = true;
-                if (optarg) http_api_port = (uint16_t)atoi(optarg);
-                break;
-            case OPT_HTTP_API_BIND: http_api_bind = optarg; break;
-            case OPT_HTTP_API_ROOT: http_api_root = optarg; break;
-            case OPT_CAST_TO:
-                cast_to_enabled = true;
-                if (optarg) cast_to_device = optarg;
-                break;
-            case OPT_CAST_DISCOVER: cast_discover = true; break;
-            case OPT_SAVE_STATE: save_state_file = optarg; break;
-            case OPT_LOAD_STATE: load_state_file = optarg; break;
-            case 'm': model_arg = optarg; break;
-            case 'j': joystick_mode = optarg; break;
-            case 'p': printer_file = optarg; break;
-            case OPT_PRINTER_TYPE: printer_type_arg = optarg; break;
-            case OPT_SCALE:
-                scale_factor = atoi(optarg);
-                if (scale_factor < 1 || scale_factor > 4) {
-                    fprintf(stderr, "Invalid scale factor: %s (must be 1-4)\n", optarg);
-                    return 1;
-                }
-                break;
-            case OPT_RENDER_SOFTWARE: render_software = true; break;
-            case OPT_NO_BORDER: emu.no_border = true; break;
-            case OPT_EXPORT_BORDER: emu.export_border = true; break;
-            case OPT_REALTIME: emu.realtime = true; break;
-            case OPT_TAPE_SIGNAL: tape_signal = true; break;
-            case OPT_TAPE_SIGNAL_FREE: tape_signal = true; tape_signal_free = true; break;
-            case OPT_TAPE_OUT_CAPTURE: tape_out_capture_arg = optarg; break;
-            case OPT_TRACE: trace_file = optarg; break;
-            case OPT_CPU_MICROSEQ: cpu_microseq = true; break;   /* défaut, conservé pour les scripts */
-            case OPT_CPU_LEGACY: cpu_microseq = false; break;
-            case OPT_ULA_CYCLE: ula_per_cycle = true; break;   /* défaut, conservé pour les scripts */
-            case OPT_ULA_LINE: ula_per_cycle = false; break;
-            case OPT_ULA_FETCH_OFFSET: ula_fetch_offset = atoi(optarg); break;
-            case OPT_CYCLE_TRACE: cycle_trace_file = optarg; break;
-            case OPT_CYCLE_TRACE_MAX: cycle_trace_max = strtoull(optarg, NULL, 10); break;
-            case OPT_TRACE_MAX: trace_max = atoll(optarg); break;
-            case OPT_TRACE_RING: trace_ring = atoll(optarg); break;
-            case OPT_PROFILE: profile_file = optarg; break;
-            case OPT_ROM_INFO:
-                rom_info_enabled = true;
-                if (optarg) rom_info_file = optarg;
-                break;
-            case OPT_SERIAL:
-                serial_arg = optarg;
-                break;
-            case OPT_SERIAL_V23:
-                serial_v23 = true;
-                break;
-            case OPT_SERIAL_BUFFER:
-                serial_buffer_size = atoi(optarg);
-                break;
-            case OPT_SERIAL_BAUD:
-                serial_baud = atoi(optarg);
-                if (serial_baud < 0) serial_baud = 0;
-                break;
-            case OPT_SERIAL_IRQ_RDRF:
-                serial_irq_on_rdrf = true;
-                break;
-            case OPT_SERIAL_TRACE:
-                serial_trace_file = optarg;
-                break;
-            case OPT_SERIAL_TCP_BACKPRESSURE:
-                serial_tcp_backpressure = true;
-                if (optarg) {
-                    serial_tcp_rcvbuf = atoi(optarg);
-                    if (serial_tcp_rcvbuf < 0) serial_tcp_rcvbuf = 0;
-                }
-                break;
-            case OPT_LOCI_IRQ_LATENCY:
-                loci_irq_latency_us = atol(optarg);
-                if (loci_irq_latency_us < 0) loci_irq_latency_us = 0;
-                break;
-            case OPT_DUMP_RAM_AT: if (tcap_cli_count<TIMED_CAPTURE_MAX){tcap_cli[tcap_cli_count].arg=optarg;tcap_cli[tcap_cli_count++].type=TCAP_DUMP_RAM;} break;
-            case OPT_BAD_SECTOR:
-                if (bad_sector_arg_count < FDC_MAX_BAD_SECTORS)
-                    bad_sector_args[bad_sector_arg_count++] = optarg;
-                else
-                    log_error("--bad-sector: map full (%d max), ignoring %s",
-                              FDC_MAX_BAD_SECTORS, optarg);
-                break;
-            case OPT_FDC_TIMING: fdc_timing_arg = optarg; break;
-            case OPT_TRACE_IRQ: trace_irq_file = optarg; break;
-            case OPT_PSG_TRACE: psg_trace_file = optarg; break;
-            case OPT_KBD_TRACE: kbd_trace_file = optarg; break;
-            case OPT_AUDIO_WAV: audio_wav_file = optarg; break;
-            case OPT_SYMBOLS: symbols_file = optarg; break;
-            case OPT_TUI: tui_mode = true; debug_mode = true; break;
-            case OPT_CONTROL:
-                control_mode = true;
-                debug_mode = true;
-                headless = true;
-                /* Redirect logs to stderr as early as possible so the
-                 * init banner doesn't pollute the protocol channel. */
-                log_set_stream(stderr);
-                break;
-            case OPT_BENCH:
-                bench_mode = true;
-                headless = true;
-                /* Logs to stderr so the single-line BENCH report on
-                 * stdout is easy to grep / pipe / parse. */
-                log_set_stream(stderr);
-                break;
-            case OPT_LOCI: loci_enabled = true; break;
-            case OPT_LOCI_FLASH: loci_flash_root = optarg; loci_enabled = true; break;
-            case OPT_LOCI_EMU: loci_emu_path = optarg; loci_enabled = true; break;
-            case OPT_LOCI_EMU_USB_IMAGE: loci_emu_usb_image = optarg; break;
-            case OPT_LOCI_EMU_CDC: loci_emu_cdc_dev = optarg; break;
-            case OPT_LOCI_EMU_FLASH: loci_emu_flash = optarg; break;
-            case OPT_LOCI_HW: loci_hw_dev = optarg; loci_enabled = true; break;
-            case OPT_LOCI_MENU_AT: g_loci_menu_at = strtoull(optarg, NULL, 0); break;
-            case OPT_LOCI_SDIMG: loci_sdimg_path = optarg; loci_enabled = true; break;
-            case OPT_LOCI_WEB: loci_web_url = optarg; loci_enabled = true; break;
-            case OPT_LOCI_WEB_BASE: loci_web_base = optarg; loci_enabled = true; break;
-            case OPT_LOCI_USB:
-                if (strcmp(optarg, "none") == 0) {
-                    loci_usb_autoscan = false;
-                } else if (loci_usb_count < LOCI_USB_DEV_MAX) {
-                    loci_usb_args[loci_usb_count++] = optarg;
-                    loci_enabled = true;
-                } else {
-                    log_error("--loci-usb: table full (%d max), ignoring %s",
-                              LOCI_USB_DEV_MAX, optarg);
-                }
-                break;
-            case OPT_LOCI_MIA_WINDOW: {
-                /* Models the reliable tior range of a real LOCI/Oric pairing:
-                 * "LO-HI" (0-31). picowifi ACIA accesses outside it corrupt. */
-                int lo = 0, hi = 31;
-                if (sscanf(optarg, "%d-%d", &lo, &hi) == 2) {
-                    loci_mia_win_lo = lo;
-                    loci_mia_win_hi = hi;
-                } else {
-                    log_error("--loci-mia-window: expected LO-HI (e.g. 12-18)");
-                    return 1;
-                }
-                break;
-            }
-            case OPT_LOCI_SERVE_TIMING: {
-                /* Modèle de course PHI2 sous-cycle (bus_timing.h, épic B) :
-                 * "SERVE[,LATCH]" en subticks PHI2×30. Le serve arrive à
-                 * (tior + SERVE) ; propre ssi ≤ LATCH (défaut 27). SERVE court
-                 * (build -Os ≈ 26) passe, long (-O2 ≈ 36) rate. */
-                int serve = 0, latch = BUS_LATCH_SUBTICK_DEFAULT;
-                int n = sscanf(optarg, "%d,%d", &serve, &latch);
-                if (n >= 1 && serve >= 0) {
-                    loci_serve_subticks = serve;
-                    loci_latch_subtick = (n == 2) ? latch : BUS_LATCH_SUBTICK_DEFAULT;
-                } else {
-                    log_error("--loci-serve-timing: expected SERVE[,LATCH] (e.g. 26,27)");
-                    return 1;
-                }
-                break;
-            }
-            case OPT_LOCI_SERVE_JITTER: {
-                /* "AMP[,SEED]" : amplitude du jitter (subticks) + graine PRNG.
-                 * Rend les ratés occasionnels près du latch, reproductibles. */
-                int amp = 0; unsigned seed = 0;
-                int n = sscanf(optarg, "%d,%u", &amp, &seed);
-                if (n >= 1 && amp >= 0) {
-                    loci_serve_jitter = amp;
-                    loci_jitter_seed = (n == 2) ? seed : 0;
-                } else {
-                    log_error("--loci-serve-jitter: expected AMP[,SEED] (e.g. 3,12345)");
-                    return 1;
-                }
-                break;
-            }
-            case OPT_ACIA_ADDR:
-                acia_addr_arg = optarg;
-                break;
-            case OPT_MAGECO:
-                mageco_arg = optarg;
-                break;
-            case OPT_MAGECO_ADDR:
-                mageco_addr_arg = optarg;
-                break;
-            case OPT_ORICON:
-                mageco_arg = optarg;
-                mageco_oricon = true;
-                break;
-            case OPT_DTL2000:
-                dtl2000_arg = optarg;
-                break;
-            case OPT_DTL2000_ADDR:
-                dtl2000_addr_arg = optarg;
-                break;
-            case '?':
-            default:
-                cli_print_usage(argv[0]);
-                return 0;
-        }
-    }
-
-    log_init(verbose ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO);
+/* Journal, signaux, SIGPIPE ; --cast-discover (liste les appareils et sort).
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_process(emulator_t* emu, cli_opts_t* cfg) {
+    (void)emu;  /* signature commune des étapes */
+    log_init(cfg->verbose ? LOG_LEVEL_DEBUG : LOG_LEVEL_INFO);
 
     app_install_signal_handlers();
     /* Pilotage par un agent (--control) : stdout/stdin sont des *pipes*, pas un
@@ -2991,7 +2598,7 @@ int main(int argc, char* argv[]) {
     oscompat_ignore_sigpipe();
 
     /* Cast discover: standalone mode, list devices and exit */
-    if (cast_discover) {
+    if (cfg->cast_discover) {
 #ifdef HAS_CAST
         cast_server_discover_devices(3000);
 #else
@@ -2999,13 +2606,18 @@ int main(int argc, char* argv[]) {
 #endif
         return 0;
     }
+    return -1;
+}
 
+/* Initialise l'émulateur ; --ula-ng-poke ; options d'exécution et de capture copiées dans emu.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_machine(emulator_t* emu, cli_opts_t* cfg) {
     /* Set headless and scale before init so renderer is configured correctly */
-    emu.headless = headless;
-    emu.scale_factor = scale_factor;
-    emu.render_software = render_software;
+    emu->headless = cfg->headless;
+    emu->scale_factor = cfg->scale_factor;
+    emu->render_software = cfg->render_software;
 
-    if (!emulator_init(&emu)) {
+    if (!emulator_init(emu)) {
         log_error("Failed to initialize emulator");
         return 1;
     }
@@ -3013,14 +2625,14 @@ int main(int argc, char* argv[]) {
     /* --ula-ng-poke "AAA=VV,..." : programme directement les registres ULA-NG
      * ($0340-$035F) au démarrage (déverrouillage, palette, copper, raster…),
      * sans passer par des POKE BASIC lents. Idéal pour démos/tests/captures. */
-    if (ula_ng_poke) {
-        const char* p = ula_ng_poke;
+    if (cfg->ula_ng_poke) {
+        const char* p = cfg->ula_ng_poke;
         int n = 0;
         while (*p) {
             unsigned addr = 0, val = 0;
             if (sscanf(p, "%x=%x", &addr, &val) == 2 &&
                 ula_ng_addr_in_window((uint16_t)addr)) {
-                ula_ng_write(&emu.ula_ng, (uint16_t)addr, (uint8_t)val);
+                ula_ng_write(&emu->ula_ng, (uint16_t)addr, (uint8_t)val);
                 n++;
             }
             const char* comma = strchr(p, ',');
@@ -3031,98 +2643,108 @@ int main(int argc, char* argv[]) {
     }
 
 
-    emu.fast_load = fast_load;
+    emu->fast_load = cfg->fast_load;
 
-    emu.max_cycles = max_cycles;
-    emu.screenshot_file = screenshot_file;
-    emu.screenshot_text_file = screenshot_text_file;
-    emu.screenshot_ansi_file = screenshot_ansi_file;
+    emu->max_cycles = cfg->max_cycles;
+    emu->screenshot_file = cfg->screenshot_file;
+    emu->screenshot_text_file = cfg->screenshot_text_file;
+    emu->screenshot_ansi_file = cfg->screenshot_ansi_file;
+    return -1;
+}
 
+/* Clavier, joystick, imprimante / traceur.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_input_printer(emulator_t* emu, cli_opts_t* cfg) {
     /* Set keyboard layout */
-    if (keyboard_layout && strcasecmp(keyboard_layout, "azerty") == 0) {
-        oric_keyboard_set_layout(&emu.keyboard, ORIC_KB_AZERTY);
+    if (cfg->keyboard_layout && strcasecmp(cfg->keyboard_layout, "azerty") == 0) {
+        oric_keyboard_set_layout(&emu->keyboard, ORIC_KB_AZERTY);
         log_info("Keyboard layout: AZERTY");
     } else {
         log_info("Keyboard layout: QWERTY");
     }
     /* Set joystick mode */
-    if (joystick_mode) {
-        if (strcasecmp(joystick_mode, "keys") == 0 || strcasecmp(joystick_mode, "keyboard") == 0) {
-            oric_joystick_set_mode(&emu.joystick, ORIC_JOY_KEYBOARD);
-        } else if (strcasecmp(joystick_mode, "gamepad") == 0 || strcasecmp(joystick_mode, "sdl") == 0) {
-            oric_joystick_set_mode(&emu.joystick, ORIC_JOY_SDL_GAMEPAD);
+    if (cfg->joystick_mode) {
+        if (strcasecmp(cfg->joystick_mode, "keys") == 0 || strcasecmp(cfg->joystick_mode, "keyboard") == 0) {
+            oric_joystick_set_mode(&emu->joystick, ORIC_JOY_KEYBOARD);
+        } else if (strcasecmp(cfg->joystick_mode, "gamepad") == 0 || strcasecmp(cfg->joystick_mode, "sdl") == 0) {
+            oric_joystick_set_mode(&emu->joystick, ORIC_JOY_SDL_GAMEPAD);
 #ifdef HAS_SDL2
             if (SDL_NumJoysticks() > 0) {
-                oric_joystick_open_sdl(&emu.joystick, 0);
+                oric_joystick_open_sdl(&emu->joystick, 0);
             } else {
                 log_info("Joystick: no SDL game controller found, waiting for hot-plug");
             }
 #endif
         } else {
-            log_error("Unknown joystick mode '%s'. Use: keys, gamepad", joystick_mode);
+            log_error("Unknown joystick mode '%s'. Use: keys, gamepad", cfg->joystick_mode);
         }
     }
 
     /* Set printer type and open output */
-    if (printer_file) {
-        if (printer_type_arg && strcasecmp(printer_type_arg, "mcp40") == 0) {
-            emu.printer.type = PRINTER_MCP40;
+    if (cfg->printer_file) {
+        if (cfg->printer_type_arg && strcasecmp(cfg->printer_type_arg, "mcp40") == 0) {
+            emu->printer.type = PRINTER_MCP40;
             log_info("Printer type: MCP-40 plotter");
         } else {
-            emu.printer.type = PRINTER_TEXT;
+            emu->printer.type = PRINTER_TEXT;
             log_info("Printer type: text");
         }
-        if (!oric_printer_open(&emu.printer, printer_file)) {
-            log_error("Failed to open printer output: %s", printer_file);
+        if (!oric_printer_open(&emu->printer, cfg->printer_file)) {
+            log_error("Failed to open printer output: %s", cfg->printer_file);
         }
     }
+    return -1;
+}
 
+/* ACIA 6551 et backends série, Digitelec DTL 2000, Mageco / ORICON (MIDI).
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_serial_cards(emulator_t* emu, cli_opts_t* cfg) {
     /* Serial interface (ACIA 6551) */
-    if (acia_addr_arg) {
-        emu.acia_base_addr = parse_hex16(acia_addr_arg);
-        log_info("ACIA base address: $%04X", emu.acia_base_addr);
-    } else if (loci_enabled && serial_arg) {
+    if (cfg->acia_addr_arg) {
+        emu->acia_base_addr = parse_hex16(cfg->acia_addr_arg);
+        log_info("ACIA base address: $%04X", emu->acia_base_addr);
+    } else if (cfg->loci_enabled && cfg->serial_arg) {
         /* LOCI firmware exposes its ACIA at $0380-$0383 (acia.c). Under
          * --loci, default there so LOCI client software finds it. */
-        emu.acia_base_addr = 0x0380;
+        emu->acia_base_addr = 0x0380;
         log_info("ACIA base address: $0380 (LOCI default — override with --acia-addr)");
-    } else if (loci_emu_cdc_dev) {
+    } else if (cfg->loci_emu_cdc_dev) {
         /* Co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
          * (oric/acia.c ↔ dongle CDC) — pas de backend série comportemental. */
-        emu.acia_base_addr = 0x0380;
-        log_info("ACIA base address: $0380 (co-sim firmware via --loci-cdc %s)", loci_emu_cdc_dev);
+        emu->acia_base_addr = 0x0380;
+        log_info("ACIA base address: $0380 (co-sim firmware via --loci-cdc %s)", cfg->loci_emu_cdc_dev);
     } else {
-        emu.acia_base_addr = ACIA_DEFAULT_BASE;
+        emu->acia_base_addr = ACIA_DEFAULT_BASE;
     }
     /* Co-sim (--loci-cdc) : active l'ACIA sans backend (le firmware réel la sert via
      * loci_emu_acia_*). has_serial doit être vrai pour que le device ACIA claim $0380. */
-    if (loci_emu_cdc_dev && loci_emu_path) emu.has_serial = true;
+    if (cfg->loci_emu_cdc_dev && cfg->loci_emu_path) emu->has_serial = true;
     /* Garde-fou : sous --loci, la MIA occupe $03A0-$03BF et est routée AVANT
      * l'ACIA dans les callbacks I/O. Si l'ACIA y est forcée (--acia-addr dans
      * cette plage), la MIA la masque ET pilote le PSG/clavier → le scan clavier
      * lit du vide et get_key boucle → terminal « figé » (annuaire BBS gelé).
      * Le vrai LOCI expose son modem USB-CDC à $0380, pas dans la MIA. */
-    if (loci_enabled && serial_arg &&
-        emu.acia_base_addr <= LOCI_MIA_END &&
-        (uint16_t)(emu.acia_base_addr + 3) >= LOCI_MIA_BASE) {
+    if (cfg->loci_enabled && cfg->serial_arg &&
+        emu->acia_base_addr <= LOCI_MIA_END &&
+        (uint16_t)(emu->acia_base_addr + 3) >= LOCI_MIA_BASE) {
         log_warning("--acia-addr $%04X force l'ACIA dans la MIA LOCI ($%04X-$%04X) : "
                     "la MIA la masque ET casse le scan clavier (PSG) -> terminal fige.",
-                    emu.acia_base_addr, LOCI_MIA_BASE, LOCI_MIA_END);
+                    emu->acia_base_addr, LOCI_MIA_BASE, LOCI_MIA_END);
         log_warning("  Le modem LOCI (picowifi) est expose a $0380 sur le vrai LOCI : "
                     "laissez --loci SANS --acia-addr (ACIA -> $0380) et adressez $0380.");
     }
-    if (serial_arg) {
+    if (cfg->serial_arg) {
         /* First try the shared transparent transports (loopback/tcp/pty/com),
          * then the ACIA-6551-specific protocol backends (Hayes modem, digitelec,
          * picowifi) that inject their own command/UART layer. */
-        serial_backend_t* sb = serial_transport_create(serial_arg);
-        if (!sb && (strcmp(serial_arg, "modem") == 0 ||
-                    strncmp(serial_arg, "modem:", 6) == 0)) {
+        serial_backend_t* sb = serial_transport_create(cfg->serial_arg);
+        if (!sb && (strcmp(cfg->serial_arg, "modem") == 0 ||
+                    strncmp(cfg->serial_arg, "modem:", 6) == 0)) {
             /* Hayes AT modem. Modes:
              *   --serial modem              Pure command mode (use ATD to dial)
              *   --serial modem:host:port    Preset host (ATD without args connects here)
              *   --serial modem:listen:port  Server mode (ATA to accept) */
-            const char* hp = (serial_arg[5] == ':') ? serial_arg + 6 : "";
+            const char* hp = (cfg->serial_arg[5] == ':') ? cfg->serial_arg + 6 : "";
             bool listen_mode = false;
             char host[256] = {0};
             uint16_t port = 23;
@@ -3133,7 +2755,7 @@ int main(int argc, char* argv[]) {
                 parse_host_port(hp, host, sizeof(host), &port, 23);
             }
             sb = serial_backend_modem_create(host, port, listen_mode);
-        } else if (!sb && strncmp(serial_arg, "digitelec:", 10) == 0) {
+        } else if (!sb && strncmp(cfg->serial_arg, "digitelec:", 10) == 0) {
             /* digitelec:host:port — DEPRECATED behavioural model. It treats the
              * DTL 2000 as an external V23 modem hanging off the emulated ACIA
              * 6551 ($031C), which is *not* how the real card works: the actual
@@ -3143,22 +2765,22 @@ int main(int argc, char* argv[]) {
             log_warning("--serial digitelec: is DEPRECATED — it models the DTL 2000 as a");
             log_warning("  6551 external modem ($031C), not the real PIA+ACIA-6850 card.");
             log_warning("  Use --dtl2000 tcp:%s for the faithful DTL 2000 card,",
-                        serial_arg + 10);
+                        cfg->serial_arg + 10);
             log_warning("  or --serial modem:/tcp: for a generic ACIA 6551 modem.");
             char host[256];
             uint16_t port;
-            parse_host_port(serial_arg + 10, host, sizeof(host), &port, 23);
-            sb = serial_backend_digitelec_create(host, port, &emu.acia);
-        } else if (!sb && (strcmp(serial_arg, "picowifi") == 0 ||
-                           strncmp(serial_arg, "picowifi:", 9) == 0)) {
+            parse_host_port(cfg->serial_arg + 10, host, sizeof(host), &port, 23);
+            sb = serial_backend_digitelec_create(host, port, &emu->acia);
+        } else if (!sb && (strcmp(cfg->serial_arg, "picowifi") == 0 ||
+                           strncmp(cfg->serial_arg, "picowifi:", 9) == 0)) {
             /* PicoWiFiModemUSB (sodiumlb) — WiFi modem exposed via LOCI.
              *   --serial picowifi                Credentials set via AT$SSID=
              *   --serial picowifi:SSID           Pre-set SSID, no password
              *   --serial picowifi:SSID:PASS      Pre-set SSID + password */
             char ssid[64] = {0};
             char pass[64] = {0};
-            if (serial_arg[8] == ':') {
-                const char* sp = serial_arg + 9;
+            if (cfg->serial_arg[8] == ':') {
+                const char* sp = cfg->serial_arg + 9;
                 const char* colon = strchr(sp, ':');
                 if (colon) {
                     size_t sl = (size_t)(colon - sp);
@@ -3173,11 +2795,11 @@ int main(int argc, char* argv[]) {
             sb = serial_backend_picowifi_create(ssid[0] ? ssid : NULL,
                                                 pass[0] ? pass : NULL);
         } else if (!sb) {
-            log_error("Unknown serial backend: %s", serial_arg);
+            log_error("Unknown serial backend: %s", cfg->serial_arg);
             log_error("  loopback, tcp:host:port, pty, modem:host:port,");
             log_error("  modem:listen:port, com:baud,bits,P,stop,device,");
             log_error("  file:in[:out], digitelec:host:port, picowifi[:SSID[:PASS]]");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
 
@@ -3185,53 +2807,53 @@ int main(int argc, char* argv[]) {
             /* Bounded RX (--serial-tcp-backpressure): cap the kernel socket
              * buffer BEFORE open() so it takes effect on the live fd. Default
              * cap tracks the RX FIFO depth (or 512) when N is not given. */
-            if (serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
-                int cap = serial_tcp_rcvbuf;
-                if (cap <= 0) cap = (serial_buffer_size > 0) ? serial_buffer_size : 512;
+            if (cfg->serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
+                int cap = cfg->serial_tcp_rcvbuf;
+                if (cap <= 0) cap = (cfg->serial_buffer_size > 0) ? cfg->serial_buffer_size : 512;
                 serial_backend_tcp_set_rcvbuf(sb, cap);
-            } else if (serial_tcp_backpressure) {
+            } else if (cfg->serial_tcp_backpressure) {
                 log_warning("--serial-tcp-backpressure has no effect on non-TCP backend '%s' "
-                            "(only tcp: has a kernel socket buffer to bound)", serial_arg);
+                            "(only tcp: has a kernel socket buffer to bound)", cfg->serial_arg);
             }
             if (sb->open(sb)) {
-                acia_set_backend(&emu.acia, sb);
-                emu.serial_backend = sb;
-                emu.has_serial = true;
-                if (serial_v23 || sb->type == SERIAL_BACKEND_DIGITELEC) {
-                    acia_set_v23_mode(&emu.acia, true);
+                acia_set_backend(&emu->acia, sb);
+                emu->serial_backend = sb;
+                emu->has_serial = true;
+                if (cfg->serial_v23 || sb->type == SERIAL_BACKEND_DIGITELEC) {
+                    acia_set_v23_mode(&emu->acia, true);
                 }
-                if (serial_buffer_size > 0) {
-                    acia_set_rx_fifo(&emu.acia, serial_buffer_size);
+                if (cfg->serial_buffer_size > 0) {
+                    acia_set_rx_fifo(&emu->acia, cfg->serial_buffer_size);
                 }
-                if (serial_baud > 0) {
-                    acia_set_ext_clock_baud(&emu.acia, (uint32_t)serial_baud);
+                if (cfg->serial_baud > 0) {
+                    acia_set_ext_clock_baud(&emu->acia, (uint32_t)cfg->serial_baud);
                 }
-                if (serial_irq_on_rdrf) {
-                    acia_set_irq_on_rdrf(&emu.acia, true);
+                if (cfg->serial_irq_on_rdrf) {
+                    acia_set_irq_on_rdrf(&emu->acia, true);
                 }
-                if (loci_irq_latency_us > 0) {
+                if (cfg->loci_irq_latency_us > 0) {
                     /* LOCI I2C IRQ transport cost. At 1 MHz, 1 µs = 1 cycle;
                      * compute from the master clock so it stays correct if the
                      * clock ever changes. LOCI-context only: warn on a bare 6551
                      * so nobody penalizes a plain ACIA card by accident. */
-                    uint32_t cyc = (uint32_t)((uint64_t)loci_irq_latency_us *
+                    uint32_t cyc = (uint32_t)((uint64_t)cfg->loci_irq_latency_us *
                                               ORIC_CLOCK_HZ / 1000000u);
-                    if (!loci_enabled) {
+                    if (!cfg->loci_enabled) {
                         log_warning("--loci-irq-latency models a LOCI I2C artifact but "
                                     "--loci is not set; applying to the ACIA anyway "
                                     "(a real bare 6551 has no such transport cost)");
                     }
-                    acia_set_irq_latency(&emu.acia, cyc);
+                    acia_set_irq_latency(&emu->acia, cyc);
                 }
-                if (serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
-                    acia_set_rx_backpressure(&emu.acia, true);
+                if (cfg->serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
+                    acia_set_rx_backpressure(&emu->acia, true);
                 }
-                if (serial_trace_file) {
-                    acia_set_trace(&emu.acia, serial_trace_file);
+                if (cfg->serial_trace_file) {
+                    acia_set_trace(&emu->acia, cfg->serial_trace_file);
                 }
-                log_info("Serial interface enabled: %s", serial_arg);
+                log_info("Serial interface enabled: %s", cfg->serial_arg);
             } else {
-                log_error("Failed to open serial backend: %s", serial_arg);
+                log_error("Failed to open serial backend: %s", cfg->serial_arg);
                 serial_backend_destroy(sb);
             }
         }
@@ -3239,12 +2861,12 @@ int main(int argc, char* argv[]) {
 
     /* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 modem card.
      * The transport backend reuses the generic serial backends. */
-    if (dtl2000_arg) {
+    if (cfg->dtl2000_arg) {
         uint16_t base = DTL2000_DEFAULT_BASE;
-        if (dtl2000_addr_arg) {
-            base = parse_hex16(dtl2000_addr_arg);
+        if (cfg->dtl2000_addr_arg) {
+            base = parse_hex16(cfg->dtl2000_addr_arg);
         }
-        if (emu.has_microdisc) {
+        if (emu->has_microdisc) {
             log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
                         "(Jasmin) — not faithful to coexist on real hardware", base);
         }
@@ -3254,32 +2876,32 @@ int main(int argc, char* argv[]) {
          * protocol-injecting backends (Hayes modem, digitelec, picowifi) are
          * intentionally excluded: a Hayes AT layer behind the DTL would be
          * unfaithful (the host software never issues AT commands). */
-        serial_backend_t* db = serial_transport_create(dtl2000_arg);
+        serial_backend_t* db = serial_transport_create(cfg->dtl2000_arg);
         if (!db) {
-            log_error("Unknown DTL 2000 transport: %s", dtl2000_arg);
+            log_error("Unknown DTL 2000 transport: %s", cfg->dtl2000_arg);
             log_error("  loopback, tcp:host:port, pty, com:baud,bits,P,stop,device, file:in[:out]");
             log_error("  (the DTL is dialled via its PIA, not Hayes AT — no 'modem')");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
 
         if (db) {
             if (db->open(db)) {
-                dtl2000_init(&emu.dtl2000, base);
+                dtl2000_init(&emu->dtl2000, base);
                 /* dtl2000_init() zeroes the struct — re-wire the CPU IRQ hooks */
-                emu.dtl2000.irq_set = dtl2000_cpu_irq_set;
-                emu.dtl2000.irq_clr = dtl2000_cpu_irq_clr;
-                emu.dtl2000.irq_userdata = &emu;
-                dtl2000_set_backend(&emu.dtl2000, db);
-                emu.dtl2000_backend = db;
-                emu.has_dtl2000 = true;
-                if (serial_trace_file) {
-                    dtl2000_set_trace(&emu.dtl2000, serial_trace_file);
+                emu->dtl2000.irq_set = dtl2000_cpu_irq_set;
+                emu->dtl2000.irq_clr = dtl2000_cpu_irq_clr;
+                emu->dtl2000.irq_userdata = emu;
+                dtl2000_set_backend(&emu->dtl2000, db);
+                emu->dtl2000_backend = db;
+                emu->has_dtl2000 = true;
+                if (cfg->serial_trace_file) {
+                    dtl2000_set_trace(&emu->dtl2000, cfg->serial_trace_file);
                 }
                 log_info("Digitelec DTL 2000 enabled at $%04X (transport: %s)",
-                         base, dtl2000_arg);
+                         base, cfg->dtl2000_arg);
             } else {
-                log_error("Failed to open DTL 2000 transport: %s", dtl2000_arg);
+                log_error("Failed to open DTL 2000 transport: %s", cfg->dtl2000_arg);
                 serial_backend_destroy(db);
             }
         }
@@ -3292,232 +2914,242 @@ int main(int argc, char* argv[]) {
      * Both reuse the transparent serial backends: file: captures/replays the
      * raw MIDI stream, smf: plays a .mid into the Oric, midi: bridges a live
      * host MIDI port. The byte stream is identical to the real card. */
-    if (mageco_arg) {
-        uint16_t base = mageco_oricon ? MAGECO_ORICON_BASE : MAGECO_DEFAULT_BASE;
-        if (mageco_addr_arg) {
-            base = parse_hex16(mageco_addr_arg);
+    if (cfg->mageco_arg) {
+        uint16_t base = cfg->mageco_oricon ? MAGECO_ORICON_BASE : MAGECO_DEFAULT_BASE;
+        if (cfg->mageco_addr_arg) {
+            base = parse_hex16(cfg->mageco_addr_arg);
         }
-        const char* mode = mageco_oricon ? "ORICON" : "Mageco";
-        if (emu.has_microdisc) {
+        const char* mode = cfg->mageco_oricon ? "ORICON" : "Mageco";
+        if (emu->has_microdisc) {
             log_warning("%s MIDI at $%04X shares page 3 with the disc electronics "
                         "— possible clash with other extensions (forum t=2525)",
                         mode, base);
         }
-        if (mageco_oricon && emu.has_serial && base == emu.acia_base_addr) {
+        if (cfg->mageco_oricon && emu->has_serial && base == emu->acia_base_addr) {
             log_warning("ORICON at $%04X overlaps the ACIA 6551 serial (--serial) "
                         "— disable one of them", base);
         }
-        serial_backend_t* mb = serial_transport_create(mageco_arg);
+        serial_backend_t* mb = serial_transport_create(cfg->mageco_arg);
         if (!mb) {
-            log_error("Unknown %s transport: %s", mode, mageco_arg);
+            log_error("Unknown %s transport: %s", mode, cfg->mageco_arg);
             log_error("  file:in[:out], smf:FILE[:loop], midi[:TARGET], loopback, tcp:host:port, pty");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
         if (mb->open(mb)) {
-            if (mageco_oricon) mageco_init_oricon(&emu.mageco, base);
-            else               mageco_init(&emu.mageco, base);
+            if (cfg->mageco_oricon) mageco_init_oricon(&emu->mageco, base);
+            else               mageco_init(&emu->mageco, base);
             /* mageco_init*() zeroes the struct — re-wire the CPU IRQ hooks */
-            emu.mageco.irq_set = mageco_cpu_irq_set;
-            emu.mageco.irq_clr = mageco_cpu_irq_clr;
-            emu.mageco.irq_userdata = &emu;
-            mageco_set_backend(&emu.mageco, mb);
-            emu.mageco_backend = mb;
-            emu.has_mageco = true;
-            if (serial_trace_file) {
-                mageco_set_trace(&emu.mageco, serial_trace_file);
+            emu->mageco.irq_set = mageco_cpu_irq_set;
+            emu->mageco.irq_clr = mageco_cpu_irq_clr;
+            emu->mageco.irq_userdata = emu;
+            mageco_set_backend(&emu->mageco, mb);
+            emu->mageco_backend = mb;
+            emu->has_mageco = true;
+            if (cfg->serial_trace_file) {
+                mageco_set_trace(&emu->mageco, cfg->serial_trace_file);
             }
             log_info("%s MIDI enabled at $%04X (31250 baud, transport: %s)",
-                     mode, base, mageco_arg);
+                     mode, base, cfg->mageco_arg);
         } else {
-            log_error("Failed to open %s transport: %s", mode, mageco_arg);
+            log_error("Failed to open %s transport: %s", mode, cfg->mageco_arg);
             serial_backend_destroy(mb);
         }
     }
+    return -1;
+}
 
-    emu.frame_dump_dir = frame_dump_dir;
-    emu.frame_dump_interval = (frame_dump_interval > 0) ? frame_dump_interval : 50;
+/* Frame dump, vidéo AVI, traces IRQ / PSG / clavier, capture WAV.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_recordings(emulator_t* emu, cli_opts_t* cfg) {
+    emu->frame_dump_dir = cfg->frame_dump_dir;
+    emu->frame_dump_interval = (cfg->frame_dump_interval > 0) ? cfg->frame_dump_interval : 50;
 
-    emu.video_avi_file = video_avi_file;
-    emu.video_avi_fps = (video_avi_fps > 0) ? video_avi_fps : 50;
-    emu.video_avi_quality = (video_avi_quality > 0) ? video_avi_quality : 85;
-    emu.video_avi_active = false;
-    if (video_avi_file) {
+    emu->video_avi_file = cfg->video_avi_file;
+    emu->video_avi_fps = (cfg->video_avi_fps > 0) ? cfg->video_avi_fps : 50;
+    emu->video_avi_quality = (cfg->video_avi_quality > 0) ? cfg->video_avi_quality : 85;
+    emu->video_avi_active = false;
+    if (cfg->video_avi_file) {
         /* With --export-border the recorded frames carry the overscan
          * border, so the stream geometry grows by the border on each side. */
-        int avi_w = emu.export_border ? ORIC_SCREEN_W + 2 * VIDEO_BORDER_W : ORIC_SCREEN_W;
-        int avi_h = emu.export_border ? ORIC_SCREEN_H + 2 * VIDEO_BORDER_H : ORIC_SCREEN_H;
+        int avi_w = emu->export_border ? ORIC_SCREEN_W + 2 * VIDEO_BORDER_W : ORIC_SCREEN_W;
+        int avi_h = emu->export_border ? ORIC_SCREEN_H + 2 * VIDEO_BORDER_H : ORIC_SCREEN_H;
         /* Audio muxing. Headless generates PCM inline (ay_generate) in the main
          * loop. GUI can't : the SDL audio callback owns the PSG generator, so we
          * tap the PCM it produces via a thread-safe ring (audio_avi_tap_*) and
          * drain it per frame. Either path declares a 44.1 kHz stereo stream. */
-        bool avi_gui_audio = !emu.headless && audio_avi_tap_enable();
-        int avi_arate = (emu.headless || avi_gui_audio) ? AUDIO_SAMPLE_RATE : 0;
-        int avi_achan = (emu.headless || avi_gui_audio) ? 2 : 0;
-        if (avi_recorder_open_av(&emu.video_avi_rec, video_avi_file,
+        bool avi_gui_audio = !emu->headless && audio_avi_tap_enable();
+        int avi_arate = (emu->headless || avi_gui_audio) ? AUDIO_SAMPLE_RATE : 0;
+        int avi_achan = (emu->headless || avi_gui_audio) ? 2 : 0;
+        if (avi_recorder_open_av(&emu->video_avi_rec, cfg->video_avi_file,
                                  avi_w, avi_h,
-                                 emu.video_avi_fps, emu.video_avi_quality,
+                                 emu->video_avi_fps, emu->video_avi_quality,
                                  avi_arate, avi_achan)) {
-            emu.video_avi_active = true;
+            emu->video_avi_active = true;
             log_info("Video recording (MJPEG AVI%s) -> %s (%d fps, q%d)",
-                     (emu.headless || avi_gui_audio) ? " + PCM audio" : "",
-                     video_avi_file, emu.video_avi_fps, emu.video_avi_quality);
+                     (emu->headless || avi_gui_audio) ? " + PCM audio" : "",
+                     cfg->video_avi_file, emu->video_avi_fps, emu->video_avi_quality);
         } else {
             if (avi_gui_audio) audio_avi_tap_disable();
-            log_error("Cannot open video file for recording: %s", video_avi_file);
+            log_error("Cannot open video file for recording: %s", cfg->video_avi_file);
         }
     }
 
     /* Open --trace-irq FILE */
-    if (trace_irq_file) {
-        FILE* fp = cli_open_out(trace_irq_file, "w", "trace-irq");
-        if (!fp) { emulator_cleanup(&emu); return 1; }
+    if (cfg->trace_irq_file) {
+        FILE* fp = cli_open_out(cfg->trace_irq_file, "w", "trace-irq");
+        if (!fp) { emulator_cleanup(emu); return 1; }
         fprintf(fp, "# Phosphoric IRQ trace — Oric-1/Atmos\n");
         fprintf(fp, "# Format: <cycle> <event> <details>\n");
         fprintf(fp, "# IRQ-ENTRY: PC before, target (= vector at $FFFE/F), IFR/IER snapshot, srcmask\n");
         fprintf(fp, "# RTI: PC after RTI, P flags, SP\n");
-        emu.irq_trace_fp = fp;
-        emu.irq_trace_active = true;
-        emu.cpu.irq_trace_fp = fp;
-        log_info("IRQ trace → %s", trace_irq_file);
+        emu->irq_trace_fp = fp;
+        emu->irq_trace_active = true;
+        emu->cpu.irq_trace_fp = fp;
+        log_info("IRQ trace → %s", cfg->trace_irq_file);
     }
 
     /* Open --psg-trace FILE (log of AY sound-register writes) */
-    if (psg_trace_file) {
-        FILE* fp = cli_open_out(psg_trace_file, "w", "psg-trace");
-        if (!fp) { emulator_cleanup(&emu); return 1; }
+    if (cfg->psg_trace_file) {
+        FILE* fp = cli_open_out(cfg->psg_trace_file, "w", "psg-trace");
+        if (!fp) { emulator_cleanup(emu); return 1; }
         fprintf(fp, "# Phosphoric PSG trace — AY-3-8910 sound-register writes\n");
         fprintf(fp, "# Format: <cpu_cycle> R<reg>=<hex>  (reg 0-13 ; ports 14/15 = keyboard, excluded)\n");
         fprintf(fp, "# NB: reg 7 (mixer) is hammered to 7F by the keyboard scan — kept as measured.\n");
-        emu.psg_trace_fp = fp;
-        log_info("PSG trace → %s", psg_trace_file);
+        emu->psg_trace_fp = fp;
+        log_info("PSG trace → %s", cfg->psg_trace_file);
     }
 
     /* Open --kbd-scan-trace FILE (log of every VIA Port B keyboard read) */
-    if (kbd_trace_file) {
-        FILE* fp = cli_open_out(kbd_trace_file, "w", "kbd-scan-trace");
-        if (!fp) { emulator_cleanup(&emu); return 1; }
+    if (cfg->kbd_trace_file) {
+        FILE* fp = cli_open_out(cfg->kbd_trace_file, "w", "kbd-scan-trace");
+        if (!fp) { emulator_cleanup(emu); return 1; }
         fprintf(fp, "# Phosphoric keyboard-scan trace — one line per VIA Port B ($0300) read\n");
         fprintf(fp, "# Format: <cpu_cycle> col=<0-7> reg7=<hex> reg14=<hex> matrix=<hex> PB3=<0|1>\n");
         fprintf(fp, "# reg7 bit6 must be 1 (Port A input) and matrix=FF means no key in that column.\n");
-        emu.kbd_trace_fp = fp;
-        log_info("Keyboard-scan trace → %s", kbd_trace_file);
+        emu->kbd_trace_fp = fp;
+        log_info("Keyboard-scan trace → %s", cfg->kbd_trace_file);
     }
 
     /* Open --audio-wav FILE (PCM capture ; headless only to avoid racing the
      * SDL audio thread, which is the other consumer of the PSG generator). */
-    if (audio_wav_file) {
-        if (!emu.headless) {
+    if (cfg->audio_wav_file) {
+        if (!emu->headless) {
             log_error("--audio-wav requires --headless (SDL audio owns the PSG generator)");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
-        FILE* fp = cli_open_out(audio_wav_file, "wb", "audio-wav");
-        if (!fp) { emulator_cleanup(&emu); return 1; }
+        FILE* fp = cli_open_out(cfg->audio_wav_file, "wb", "audio-wav");
+        if (!fp) { emulator_cleanup(emu); return 1; }
         wav_write_header(fp, 0);   /* placeholder — sizes patched at cleanup */
-        emu.audio_wav_fp = fp;
-        emu.audio_wav_data_bytes = 0;
-        log_info("Audio WAV → %s (16-bit stereo %d Hz)", audio_wav_file, AUDIO_SAMPLE_RATE);
+        emu->audio_wav_fp = fp;
+        emu->audio_wav_data_bytes = 0;
+        log_info("Audio WAV → %s (16-bit stereo %d Hz)", cfg->audio_wav_file, AUDIO_SAMPLE_RATE);
     }
+    return -1;
+}
 
+/* Cartouche LOCI : co-simulation du firmware, matériel réel, modèle HLE.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_loci(emulator_t* emu, cli_opts_t* cfg) {
     /* --loci-emu : exécuter le VRAI firmware RP2040 dans l'émulateur (smoke test :
      * boot + bannière). Co-sim bus non encore câblé -> le backend comportemental
      * reste actif en parallèle pour le runtime. */
-    if (loci_emu_path) {
-        if (loci_emu_usb_image) loci_emu_set_usb_image(loci_emu_usb_image);
-        if (loci_emu_cdc_dev) loci_emu_set_cdc_device(loci_emu_cdc_dev);
-        if (loci_emu_flash) loci_emu_set_flash_image(loci_emu_flash);
-        loci_emu_start(loci_emu_path);
+    if (cfg->loci_emu_path) {
+        if (cfg->loci_emu_usb_image) loci_emu_set_usb_image(cfg->loci_emu_usb_image);
+        if (cfg->loci_emu_cdc_dev) loci_emu_set_cdc_device(cfg->loci_emu_cdc_dev);
+        if (cfg->loci_emu_flash) loci_emu_set_flash_image(cfg->loci_emu_flash);
+        loci_emu_start(cfg->loci_emu_path);
     }
     /* --loci-hw : la VRAIE cartouche derrière le pont USB (loci-usb). Le backend
      * loci_hw.c partage l'interface loci_emu.h : même chemin io_bus/memory, mais
      * chaque accès est un vrai cycle de bus. Exige un binaire `make LOCI_HW=1`. */
-    if (loci_hw_dev) {
+    if (cfg->loci_hw_dev) {
         if (strcmp(loci_emu_backend_name(), "hw") != 0) {
             log_error("--loci-hw : ce binaire embarque le backend LOCI « %s », pas « hw » — "
                       "recompiler avec `make LOCI_HW=1`", loci_emu_backend_name());
             return 1;
         }
-        if (loci_emu_start(loci_hw_dev) != 0) return 1;
+        if (loci_emu_start(cfg->loci_hw_dev) != 0) return 1;
     }
 
     /* Enable LOCI peripheral (--loci) */
-    if (loci_enabled) {
-        loci_init(&emu.loci);
-        emu.loci.enabled = true;
-        emu.has_loci = true;
+    if (cfg->loci_enabled) {
+        loci_init(&emu->loci);
+        emu->loci.enabled = true;
+        emu->has_loci = true;
         /* Route B : base du serveur pour le pseudo-device « W: Web disks ». */
-        if (loci_web_base) {
-            snprintf(emu.loci.web_base, sizeof(emu.loci.web_base), "%s", loci_web_base);
+        if (cfg->loci_web_base) {
+            snprintf(emu->loci.web_base, sizeof(emu->loci.web_base), "%s", cfg->loci_web_base);
             log_info("LOCI: device web « W: Web disks » -> %s (menu: opendir/readdir GET /disks)",
-                     loci_web_base);
+                     cfg->loci_web_base);
         }
-        if (loci_mia_win_lo >= 0) {
-            loci_set_mia_window(&emu.loci, (uint8_t)loci_mia_win_lo, (uint8_t)loci_mia_win_hi);
+        if (cfg->loci_mia_win_lo >= 0) {
+            loci_set_mia_window(&emu->loci, (uint8_t)cfg->loci_mia_win_lo, (uint8_t)cfg->loci_mia_win_hi);
             log_info("LOCI MIA reliable tior window: %d-%d (picowifi ACIA $0380 "
                      "corrupted outside it; tune via MAP_TUNE_TIOR / ADJ_SCAN)",
-                     emu.loci.mia_tior_lo, emu.loci.mia_tior_hi);
+                     emu->loci.mia_tior_lo, emu->loci.mia_tior_hi);
         }
-        if (loci_serve_subticks >= 0) {
+        if (cfg->loci_serve_subticks >= 0) {
             /* Modèle de course PHI2 sous-cycle (épic B) — remplace la fenêtre. */
-            loci_set_serve_timing(&emu.loci, (uint8_t)loci_serve_subticks,
-                                  (uint8_t)loci_latch_subtick);
+            loci_set_serve_timing(&emu->loci, (uint8_t)cfg->loci_serve_subticks,
+                                  (uint8_t)cfg->loci_latch_subtick);
             log_info("LOCI MIA phase model: serve=%d latch=%d subticks (PHI2x%d) — "
                      "picowifi $0380 propre ssi tior+serve<=latch",
-                     emu.loci.mia_serve_subticks, emu.loci.mia_latch_subtick,
+                     emu->loci.mia_serve_subticks, emu->loci.mia_latch_subtick,
                      BUS_PHI2_SUBTICKS);
         }
-        if (loci_serve_jitter >= 0) {
-            loci_set_serve_jitter(&emu.loci, (uint8_t)loci_serve_jitter, loci_jitter_seed);
+        if (cfg->loci_serve_jitter >= 0) {
+            loci_set_serve_jitter(&emu->loci, (uint8_t)cfg->loci_serve_jitter, cfg->loci_jitter_seed);
             log_info("LOCI MIA serve jitter: +/-%d subticks (seed=%u) — ratés "
                      "occasionnels reproductibles pres du latch",
-                     emu.loci.mia_serve_jitter, loci_jitter_seed);
+                     emu->loci.mia_serve_jitter, cfg->loci_jitter_seed);
         }
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
-        loci_set_rom_swap_callback(&emu.loci, loci_rom_swap_cb, &emu);
+        loci_set_rom_swap_callback(&emu->loci, loci_rom_swap_cb, emu);
         /* Session-resume callback: menu "resume" → MIA_BOOT RESUME (Sprint 85). */
-        loci_set_resume_callback(&emu.loci, loci_resume_session_cb, &emu);
+        loci_set_resume_callback(&emu->loci, loci_resume_session_cb, emu);
         /* Live ROM poke: ADJ_SCAN progress byte polled by the menu ROM. */
-        loci_set_rom_poke_callback(&emu.loci, loci_rom_poke_hook, &emu);
+        loci_set_rom_poke_callback(&emu->loci, loci_rom_poke_hook, emu);
 
         /* Device list served by opendir("") (menu file browser: internal
          * storage first, then one line per mounted USB device — firmware
          * usb_set_status strings). */
-        if (loci_sdimg_path) {
+        if (cfg->loci_sdimg_path) {
             struct stat st;
             char msc[64];
-            double mb = (stat(loci_sdimg_path, &st) == 0)
+            double mb = (stat(cfg->loci_sdimg_path, &st) == 0)
                       ? (double)st.st_size / (1024.0 * 1024.0) : 0.0;
             if (mb >= 1024.0)
                 snprintf(msc, sizeof(msc), "MSC %.1f GB PHOSPHOR SDIMG rev 1.0",
                          mb / 1024.0);
             else
                 snprintf(msc, sizeof(msc), "MSC %.1f MB PHOSPHOR SDIMG rev 1.0", mb);
-            loci_add_usb_device(&emu.loci, msc);
+            loci_add_usb_device(&emu->loci, msc);
         }
-        if (serial_arg && strncmp(serial_arg, "picowifi", 8) == 0) {
+        if (cfg->serial_arg && strncmp(cfg->serial_arg, "picowifi", 8) == 0) {
             /* firmware cdc.c: the picowifi enumerates as a CDC modem */
-            loci_add_usb_device(&emu.loci, "CDC modem mounted");
+            loci_add_usb_device(&emu->loci, "CDC modem mounted");
         }
         /* Real USB keys: explicit --loci-usb DIRs, then media mounted on
          * the host (udisks: /media/$USER, /run/media/$USER). Their "N:"
          * paths are served from the host directory. NOTE: with
          * --loci-sdimg, file ops are owned by the SD image backend — the
          * keys still appear in the list but are not browsable. */
-        for (int i = 0; i < loci_usb_count; i++)
-            loci_attach_usb_dir(&emu, loci_usb_args[i]);
-        if (loci_usb_autoscan)
-            loci_scan_host_usb(&emu);
-        loci_set_dsk_bus_callbacks(&emu.loci, loci_dsk_cpu_irq_set,
+        for (int i = 0; i < cfg->loci_usb_count; i++)
+            loci_attach_usb_dir(emu, cfg->loci_usb_args[i]);
+        if (cfg->loci_usb_autoscan)
+            loci_scan_host_usb(emu);
+        loci_set_dsk_bus_callbacks(&emu->loci, loci_dsk_cpu_irq_set,
                                    loci_dsk_cpu_irq_clr,
-                                   loci_dsk_sync_overlay, &emu);
+                                   loci_dsk_sync_overlay, emu);
         /* Tape-mount callback used by op_mount on LOCI_MNT_TAP (Sprint 34ao). */
-        loci_set_tape_mount_callback(&emu.loci, loci_tape_mount_cb, &emu);
+        loci_set_tape_mount_callback(&emu->loci, loci_tape_mount_cb, emu);
         /* Action-button hooks (Sprint 34ai). */
-        loci_set_action_callbacks(&emu.loci,
+        loci_set_action_callbacks(&emu->loci,
             loci_action_install_irq_trap,
             loci_action_release_irq_trap,
-            &emu);
+            emu);
         /* Sprint 34am fix: the real LOCI hardware's Pi Pico firmware
          * pre-initialises the AY-3-8910 R7 (mixer) to enable Port A as
          * output for keyboard scanning. The LOCI ROM relies on that
@@ -3525,23 +3157,23 @@ int main(int argc, char* argv[]) {
          * keyboard scan callback's R7-bit-6 check always rejects, and
          * no key reaches the LOCI TUI. Mirror the firmware setup so
          * the ROM's ReadKeyboard sees a working PSG. */
-        emu.psg.registers[7] = 0x7F;
+        emu->psg.registers[7] = 0x7F;
         log_info("LOCI: pre-seeded PSG R7=$7F (firmware AY init for keyboard)");
-        if (loci_flash_root && loci_sdimg_path) {
+        if (cfg->loci_flash_root && cfg->loci_sdimg_path) {
             log_error("--loci-flash and --loci-sdimg are mutually exclusive");
             return 1;
         }
-        if (loci_sdimg_path) {
-            if (!loci_attach_sdimg(&emu.loci, loci_sdimg_path)) {
-                log_error("Failed to attach LOCI SD image: %s", loci_sdimg_path);
+        if (cfg->loci_sdimg_path) {
+            if (!loci_attach_sdimg(&emu->loci, cfg->loci_sdimg_path)) {
+                log_error("Failed to attach LOCI SD image: %s", cfg->loci_sdimg_path);
                 return 1;
             }
             log_info("LOCI MIA enabled at $%04X-$%04X (SD image: %s)",
-                     LOCI_MIA_BASE, LOCI_MIA_END, loci_sdimg_path);
-        } else if (loci_flash_root) {
-            loci_set_flash_root(&emu.loci, loci_flash_root);
+                     LOCI_MIA_BASE, LOCI_MIA_END, cfg->loci_sdimg_path);
+        } else if (cfg->loci_flash_root) {
+            loci_set_flash_root(&emu->loci, cfg->loci_flash_root);
             log_info("LOCI MIA enabled at $%04X-$%04X (flash root: %s)",
-                     LOCI_MIA_BASE, LOCI_MIA_END, loci_flash_root);
+                     LOCI_MIA_BASE, LOCI_MIA_END, cfg->loci_flash_root);
         } else {
             log_info("LOCI MIA enabled at $%04X-$%04X (flash root: CWD)",
                      LOCI_MIA_BASE, LOCI_MIA_END);
@@ -3551,49 +3183,59 @@ int main(int argc, char* argv[]) {
          * lecteur A (loci-webdisk archi B). Jumeau de --disk-web (Microdisc),
          * mais sur le FDC propre de la LOCI. Les pistes MFM 6400 o sont
          * récupérées à la demande. */
-        if (loci_web_url) {
-            if (!loci_dsk_open_web(&emu.loci, 0, loci_web_url)) {
-                log_error("--loci-web: montage du disque web impossible (%s)", loci_web_url);
+        if (cfg->loci_web_url) {
+            if (!loci_dsk_open_web(&emu->loci, 0, cfg->loci_web_url)) {
+                log_error("--loci-web: montage du disque web impossible (%s)", cfg->loci_web_url);
                 return 1;
             }
         }
     }
+    return -1;
+}
 
+/* Table de symboles, mode --control, TUI.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_debug_frontends(emulator_t* emu, cli_opts_t* cfg) {
     /* Load symbol table (--symbols FILE) */
-    symbol_table_init(&emu.symbols);
+    symbol_table_init(&emu->symbols);
 
     /* Sprint 35a — IPC control mode for OricForge. Logs go to stderr so
      * stdout stays a clean protocol channel. Forces headless so SDL output
      * never collides with stdout traffic. */
-    emu.control_mode = control_mode;
-    emu.bench_mode = bench_mode;
-    if (control_mode) {
+    emu->control_mode = cfg->control_mode;
+    emu->bench_mode = cfg->bench_mode;
+    if (cfg->control_mode) {
         log_set_stream(stderr);
-        emu.headless = true;
-        emu.debugger.active = true;   /* wait for first client command */
+        emu->headless = true;
+        emu->debugger.active = true;   /* wait for first client command */
     }
 
     /* Route debugger break into ncurses TUI when --tui is set
      * (requires build with TUI=1). Init done lazily on first break. */
-    emu.tui_mode = tui_mode;
-    if (tui_mode) {
+    emu->tui_mode = cfg->tui_mode;
+    if (cfg->tui_mode) {
 #ifdef HAS_TUI
         if (!tui_init()) {
             log_error("Failed to initialise ncurses TUI");
-            emu.tui_mode = false;
+            emu->tui_mode = false;
         }
 #else
         log_error("--tui requires a build with TUI=1 (ncurses)");
-        emu.tui_mode = false;
+        emu->tui_mode = false;
 #endif
     }
-    if (symbols_file) {
-        if (symbol_table_load(&emu.symbols, symbols_file) < 0) {
-            emulator_cleanup(&emu);
+    if (cfg->symbols_file) {
+        if (symbol_table_load(&emu->symbols, cfg->symbols_file) < 0) {
+            emulator_cleanup(emu);
             return 1;
         }
     }
+    return -1;
+}
 
+/* Captures -at / -when, pokes, --type-keys(-when), chemins des médias.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_captures_input(emulator_t* emu, cli_opts_t* cfg) {
     /* Résolution des captures -at RÉPÉTABLES (--screenshot-at / -text-at /
      * -ansi-at / --dump-ram-at) collectées dans tcap_cli : chaque "CYCLES:FILE"
      * devient une entrée timed_captures[]. Format malformé = fatal (comme avant). */
@@ -3601,78 +3243,78 @@ int main(int argc, char* argv[]) {
         static const char* const tcap_optname[] = {
             "screenshot-at", "screenshot-text-at", "screenshot-ansi-at", "dump-ram-at"
         };
-        for (int i = 0; i < tcap_cli_count; i++) {
+        for (int i = 0; i < cfg->tcap_cli_count; i++) {
             int64_t cyc; const char* file;
-            if (!cli_split_cycles_file(tcap_cli[i].arg, tcap_optname[tcap_cli[i].type],
+            if (!cli_split_cycles_file(cfg->tcap_cli[i].arg, tcap_optname[cfg->tcap_cli[i].type],
                                        &cyc, &file)) {
-                emulator_cleanup(&emu);
+                emulator_cleanup(emu);
                 return 1;
             }
-            if (emu.timed_capture_count < TIMED_CAPTURE_MAX) {
-                timed_capture_t* t = &emu.timed_captures[emu.timed_capture_count++];
-                t->cycles = cyc; t->file = file; t->type = tcap_cli[i].type; t->done = false;
+            if (emu->timed_capture_count < TIMED_CAPTURE_MAX) {
+                timed_capture_t* t = &emu->timed_captures[emu->timed_capture_count++];
+                t->cycles = cyc; t->file = file; t->type = cfg->tcap_cli[i].type; t->done = false;
             }
             log_info("Capture %s armée à %lld cycles -> %s",
-                     tcap_optname[tcap_cli[i].type], (long long)cyc, file);
+                     tcap_optname[cfg->tcap_cli[i].type], (long long)cyc, file);
         }
     }
 
     /* Parse des captures déclenchées par état ADDR:VAL:FILE */
-    if (screenshot_when_arg) {
-        if (!cli_split_addr_val_file(screenshot_when_arg, "screenshot-when",
-                                     &emu.screenshot_when_addr, &emu.screenshot_when_val,
-                                     &emu.screenshot_when_file)) {
-            emulator_cleanup(&emu);
+    if (cfg->screenshot_when_arg) {
+        if (!cli_split_addr_val_file(cfg->screenshot_when_arg, "screenshot-when",
+                                     &emu->screenshot_when_addr, &emu->screenshot_when_val,
+                                     &emu->screenshot_when_file)) {
+            emulator_cleanup(emu);
             return 1;
         }
     }
-    if (screenshot_text_when_arg) {
-        if (!cli_split_addr_val_file(screenshot_text_when_arg, "screenshot-text-when",
-                                     &emu.screenshot_text_when_addr, &emu.screenshot_text_when_val,
-                                     &emu.screenshot_text_when_file)) {
-            emulator_cleanup(&emu);
+    if (cfg->screenshot_text_when_arg) {
+        if (!cli_split_addr_val_file(cfg->screenshot_text_when_arg, "screenshot-text-when",
+                                     &emu->screenshot_text_when_addr, &emu->screenshot_text_when_val,
+                                     &emu->screenshot_text_when_file)) {
+            emulator_cleanup(emu);
             return 1;
         }
     }
-    if (dump_ram_when_arg) {
-        if (!cli_split_addr_val_file(dump_ram_when_arg, "dump-ram-when",
-                                     &emu.dump_ram_when_addr, &emu.dump_ram_when_val,
-                                     &emu.dump_ram_when_file)) {
-            emulator_cleanup(&emu);
+    if (cfg->dump_ram_when_arg) {
+        if (!cli_split_addr_val_file(cfg->dump_ram_when_arg, "dump-ram-when",
+                                     &emu->dump_ram_when_addr, &emu->dump_ram_when_val,
+                                     &emu->dump_ram_when_file)) {
+            emulator_cleanup(emu);
             return 1;
         }
     }
     /* --poke-at / --poke-when : parsés maintenant que emu (et emu.poke_count=0)
      * est initialisé. Chaque entrée est ajoutée à emu.pokes[] dans l'ordre de la
      * ligne de commande, préservant le regroupement voulu (ex. cx, cy, clic). */
-    for (int i = 0; i < poke_arg_count; i++) {
-        bool ok = poke_args[i].is_when
-                    ? cli_add_poke_when(&emu, poke_args[i].arg)
-                    : cli_add_poke_at(&emu, poke_args[i].arg);
+    for (int i = 0; i < cfg->poke_arg_count; i++) {
+        bool ok = cfg->poke_args[i].is_when
+                    ? cli_add_poke_when(emu, cfg->poke_args[i].arg)
+                    : cli_add_poke_at(emu, cfg->poke_args[i].arg);
         if (!ok) {
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
     }
     /* --type-keys-when ADDR:VAL:TEXT : arm the auto-typer when RAM[ADDR]==VAL
      * instead of guessing a boot cycle. TEXT keeps the same escapes as
      * --type-keys and may start with "loci-hid:" to route via the LOCI HID. */
-    if (type_keys_when_arg) {
+    if (cfg->type_keys_when_arg) {
         const char* text = NULL;
-        if (!cli_split_addr_val_file(type_keys_when_arg, "type-keys-when",
-                                     &emu.type_keys_when_addr, &emu.type_keys_when_val,
+        if (!cli_split_addr_val_file(cfg->type_keys_when_arg, "type-keys-when",
+                                     &emu->type_keys_when_addr, &emu->type_keys_when_val,
                                      &text)) {
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
         if (strncmp(text, "loci-hid:", 9) == 0) {
-            emu.type_keys_when_loci_hid = true;
+            emu->type_keys_when_loci_hid = true;
             text += 9;
         }
-        emu.type_keys_when_text = text;
+        emu->type_keys_when_text = text;
         log_info("Auto-type armed when RAM[$%04X]==$%02X (%s): \"%s\"",
-                 (unsigned)emu.type_keys_when_addr, emu.type_keys_when_val,
-                 emu.type_keys_when_loci_hid ? "LOCI HID" : "ORIC matrix", text);
+                 (unsigned)emu->type_keys_when_addr, emu->type_keys_when_val,
+                 emu->type_keys_when_loci_hid ? "LOCI HID" : "ORIC matrix", text);
     }
 
     /* Parse --type-keys CYCLES:TEXT (Sprint 34av: TEXT may start with
@@ -3684,12 +3326,12 @@ int main(int argc, char* argv[]) {
      * fois le précédent terminé. Cela remplace l'ancien « un seul --type-keys
      * retenu » et permet de séquencer proprement un parcours multi-écrans à
      * touches répétées (1 au cycle X, 1 au cycle Y, …). */
-    for (int i = 0; i < type_keys_arg_count; i++) {
-        const char* arg = type_keys_args[i];
+    for (int i = 0; i < cfg->type_keys_arg_count; i++) {
+        const char* arg = cfg->type_keys_args[i];
         const char* colon = strchr(arg, ':');
         if (!colon) {
             log_error("Invalid --type-keys format. Use CYCLES:TEXT (e.g. 3000000:CLOAD\"\"\\n)");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
         const char* text = colon + 1;
@@ -3698,70 +3340,75 @@ int main(int argc, char* argv[]) {
             loci_hid = true;
             text += 9;
         }
-        emu.type_keys_seq[emu.type_keys_seq_count].at = atoll(arg);
-        emu.type_keys_seq[emu.type_keys_seq_count].text = text;
-        emu.type_keys_seq[emu.type_keys_seq_count].loci_hid = loci_hid;
-        emu.type_keys_seq_count++;
+        emu->type_keys_seq[emu->type_keys_seq_count].at = atoll(arg);
+        emu->type_keys_seq[emu->type_keys_seq_count].text = text;
+        emu->type_keys_seq[emu->type_keys_seq_count].loci_hid = loci_hid;
+        emu->type_keys_seq_count++;
     }
-    if (emu.type_keys_seq_count > 0) {
+    if (emu->type_keys_seq_count > 0) {
         /* Tri stable par cycle d'armement croissant (insertion : N <= 16). */
-        for (int i = 1; i < emu.type_keys_seq_count; i++) {
+        for (int i = 1; i < emu->type_keys_seq_count; i++) {
             for (int j = i; j > 0 &&
-                 emu.type_keys_seq[j].at < emu.type_keys_seq[j-1].at; j--) {
-                int64_t tat = emu.type_keys_seq[j].at;
-                const char* ttext = emu.type_keys_seq[j].text;
-                bool thid = emu.type_keys_seq[j].loci_hid;
-                emu.type_keys_seq[j] = emu.type_keys_seq[j-1];
-                emu.type_keys_seq[j-1].at = tat;
-                emu.type_keys_seq[j-1].text = ttext;
-                emu.type_keys_seq[j-1].loci_hid = thid;
+                 emu->type_keys_seq[j].at < emu->type_keys_seq[j-1].at; j--) {
+                int64_t tat = emu->type_keys_seq[j].at;
+                const char* ttext = emu->type_keys_seq[j].text;
+                bool thid = emu->type_keys_seq[j].loci_hid;
+                emu->type_keys_seq[j] = emu->type_keys_seq[j-1];
+                emu->type_keys_seq[j-1].at = tat;
+                emu->type_keys_seq[j-1].text = ttext;
+                emu->type_keys_seq[j-1].loci_hid = thid;
             }
         }
         /* Active la première entrée ; les suivantes le seront dans la boucle
          * d'émulation par activate-next quand leur cycle sera atteint. */
-        emu.type_keys_at = emu.type_keys_seq[0].at;
-        emu.type_keys_text = emu.type_keys_seq[0].text;
-        emu.type_keys_loci_hid = emu.type_keys_seq[0].loci_hid;
-        emu.type_keys_idx = 0;
-        emu.type_keys_next_cycle = emu.type_keys_at;
-        emu.type_keys_done = false;
-        emu.type_keys_seq_idx = 1;
-        for (int i = 0; i < emu.type_keys_seq_count; i++) {
+        emu->type_keys_at = emu->type_keys_seq[0].at;
+        emu->type_keys_text = emu->type_keys_seq[0].text;
+        emu->type_keys_loci_hid = emu->type_keys_seq[0].loci_hid;
+        emu->type_keys_idx = 0;
+        emu->type_keys_next_cycle = emu->type_keys_at;
+        emu->type_keys_done = false;
+        emu->type_keys_seq_idx = 1;
+        for (int i = 0; i < emu->type_keys_seq_count; i++) {
             log_info("Auto-type[%d] at %lld cycles (%s): \"%s\"", i,
-                     (long long)emu.type_keys_seq[i].at,
-                     emu.type_keys_seq[i].loci_hid ? "LOCI HID" : "ORIC matrix",
-                     emu.type_keys_seq[i].text);
+                     (long long)emu->type_keys_seq[i].at,
+                     emu->type_keys_seq[i].loci_hid ? "LOCI HID" : "ORIC matrix",
+                     emu->type_keys_seq[i].text);
         }
     }
 
     /* Create frame dump directory if specified */
-    if (frame_dump_dir) {
-        oscompat_mkdir(frame_dump_dir, 0755);
+    if (cfg->frame_dump_dir) {
+        oscompat_mkdir(cfg->frame_dump_dir, 0755);
     }
 
     /* Store file paths for save state metadata */
-    emu.rom_path = rom_file;
-    emu.disk_path = disk_files[0];
-    emu.diskrom_path = disk_rom_file;
-    emu.tape_path = tape_file;
+    emu->rom_path = cfg->rom_file;
+    emu->disk_path = cfg->disk_files[0];
+    emu->diskrom_path = cfg->disk_rom_file;
+    emu->tape_path = cfg->tape_file;
 
     /* Suivi par lecteur pour le write-back / l'éjection depuis l'OSD. */
-    emu.disk_writeback = disk_writeback;
+    emu->disk_writeback = cfg->disk_writeback;
     for (int i = 0; i < MICRODISC_MAX_DRIVES; i++)
-        emu.disk_paths[i] = disk_files[i];
+        emu->disk_paths[i] = cfg->disk_files[i];
+    return -1;
+}
 
+/* ROM système, garde-fou ROM, --rom-info, modèle de machine, hostfs.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_rom_model(emulator_t* emu, cli_opts_t* cfg) {
     /* Load ROM if specified */
-    if (rom_file) {
-        log_info("Loading ROM: %s", rom_file);
-        if (!memory_load_rom(&emu.memory, rom_file, 0)) {
-            log_error("Failed to load ROM: %s", rom_file);
-            emulator_cleanup(&emu);
+    if (cfg->rom_file) {
+        log_info("Loading ROM: %s", cfg->rom_file);
+        if (!memory_load_rom(&emu->memory, cfg->rom_file, 0)) {
+            log_error("Failed to load ROM: %s", cfg->rom_file);
+            emulator_cleanup(emu);
             return 1;
         }
         /* Direct LOCI menu ROM boot (-r roms/loci/locirom --loci): patch
          * the firmware version/timing placeholders like the real MIA. */
-        if (emu.has_loci)
-            loci_patch_rom_info(&emu);
+        if (emu->has_loci)
+            loci_patch_rom_info(emu);
     }
 
     /* Guard: the base system (BASIC) ROM must be present.
@@ -3774,13 +3421,13 @@ int main(int argc, char* argv[]) {
      * that looks like a banking bug but is just a missing -r. Fail fast with a
      * clear message instead. (--load-state keeps only a warning: a state may be
      * paired with a ROM-less workflow, and the ROM area is not serialized.) */
-    if (!rom_file && !load_state_file) {
-        if (disk_rom_file) {
+    if (!cfg->rom_file && !cfg->load_state_file) {
+        if (cfg->disk_rom_file) {
             log_error("--disk-rom requires the base system ROM (-r ROM): the "
                       "BASIC ROM area $C000-$FFFF would be empty and the machine "
                       "cannot boot (code mapping the ROM reads $00 = BRK). "
                       "Add e.g. -r roms/basic11b.rom");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
         log_warning("No system ROM loaded (-r ROM): $C000-$FFFF is empty, the "
@@ -3788,63 +3435,68 @@ int main(int argc, char* argv[]) {
     }
 
     /* ROM analysis (if requested) */
-    if (rom_info_enabled && rom_file) {
+    if (cfg->rom_info_enabled && cfg->rom_file) {
         rom_analysis_t rom_analysis;
-        rominfo_analyze(&rom_analysis, emu.memory.rom, ROM_SIZE);
-        if (rom_info_file) {
-            rominfo_report_to_file(&rom_analysis, emu.memory.rom, ROM_SIZE, rom_info_file);
+        rominfo_analyze(&rom_analysis, emu->memory.rom, ROM_SIZE);
+        if (cfg->rom_info_file) {
+            rominfo_report_to_file(&rom_analysis, emu->memory.rom, ROM_SIZE, cfg->rom_info_file);
         } else {
-            rominfo_report(&rom_analysis, emu.memory.rom, ROM_SIZE, stdout);
+            rominfo_report(&rom_analysis, emu->memory.rom, ROM_SIZE, stdout);
         }
-    } else if (rom_info_enabled && !rom_file) {
+    } else if (cfg->rom_info_enabled && !cfg->rom_file) {
         log_error("--rom-info requires a ROM file (-r ROM)");
     }
 
     /* Detect or set machine model */
-    if (model_arg) {
-        if (strcasecmp(model_arg, "atmos") == 0 || strcmp(model_arg, "1.1") == 0) {
-            emu.model = ORIC_MODEL_ATMOS;
-        } else if (strcasecmp(model_arg, "oric1") == 0 || strcmp(model_arg, "1.0") == 0) {
-            emu.model = ORIC_MODEL_ORIC1;
+    if (cfg->model_arg) {
+        if (strcasecmp(cfg->model_arg, "atmos") == 0 || strcmp(cfg->model_arg, "1.1") == 0) {
+            emu->model = ORIC_MODEL_ATMOS;
+        } else if (strcasecmp(cfg->model_arg, "oric1") == 0 || strcmp(cfg->model_arg, "1.0") == 0) {
+            emu->model = ORIC_MODEL_ORIC1;
         } else {
-            log_error("Unknown model '%s'. Use: oric1, atmos, 1.0, or 1.1", model_arg);
-            emulator_cleanup(&emu);
+            log_error("Unknown model '%s'. Use: oric1, atmos, 1.0, or 1.1", cfg->model_arg);
+            emulator_cleanup(emu);
             return 1;
         }
         log_info("Machine model: %s (user-specified)",
-                 emu.model == ORIC_MODEL_ATMOS ? "ORIC Atmos" : "ORIC-1");
-    } else if (rom_file) {
-        emu.model = detect_rom_version(&emu.memory);
+                 emu->model == ORIC_MODEL_ATMOS ? "ORIC Atmos" : "ORIC-1");
+    } else if (cfg->rom_file) {
+        emu->model = detect_rom_version(&emu->memory);
         log_info("Machine model: %s (auto-detected from ROM)",
-                 emu.model == ORIC_MODEL_ATMOS ? "ORIC Atmos" : "ORIC-1");
+                 emu->model == ORIC_MODEL_ATMOS ? "ORIC Atmos" : "ORIC-1");
     } else {
-        emu.model = ORIC_MODEL_ORIC1;
+        emu->model = ORIC_MODEL_ORIC1;
     }
-    emu.rom_patches = get_rom_patches(emu.model);
-    log_info("ROM patches: %s", emu.rom_patches->name);
+    emu->rom_patches = get_rom_patches(emu->model);
+    log_info("ROM patches: %s", emu->rom_patches->name);
 
     /* Mount host filesystem */
-    if (hostfs_path) {
-        log_info("Mounting host filesystem: %s", hostfs_path);
-        if (!hostfs_mount(&emu.hostfs, hostfs_path, false)) {
-            log_error("Failed to mount host filesystem: %s", hostfs_path);
-            emulator_cleanup(&emu);
+    if (cfg->hostfs_path) {
+        log_info("Mounting host filesystem: %s", cfg->hostfs_path);
+        if (!hostfs_mount(&emu->hostfs, cfg->hostfs_path, false)) {
+            log_error("Failed to mount host filesystem: %s", cfg->hostfs_path);
+            emulator_cleanup(emu);
             return 1;
         }
     }
+    return -1;
+}
 
+/* Cassette : chargement du .TAP et modes de lecture.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_tape(emulator_t* emu, cli_opts_t* cfg) {
     /* Load tape */
-    if (tape_file) {
-        log_info("Loading tape: %s", tape_file);
-        if (tape_signal && fast_load) {
+    if (cfg->tape_file) {
+        log_info("Loading tape: %s", cfg->tape_file);
+        if (cfg->tape_signal && cfg->fast_load) {
             log_warning("--tape-signal is incompatible with -f/--fast-load; "
                         "using signal-level load");
-            fast_load = false;
-            emu.fast_load = false;
+            cfg->fast_load = false;
+            emu->fast_load = false;
         }
-        if (fast_load) {
+        if (cfg->fast_load) {
             /* Fast load: buffer TAP data for deferred injection after RAM test */
-            tap_file_t* tap = tap_open_read(tape_file, true);
+            tap_file_t* tap = tap_open_read(cfg->tape_file, true);
             if (tap) {
                 tap_header_t header;
                 if (tap_read_header(tap, &header)) {
@@ -3855,13 +3507,13 @@ int main(int argc, char* argv[]) {
                     if (buf) {
                         int rd = tap_read_data(tap, buf, size);
                         if (rd > 0) {
-                            emu.fastload_buf = buf;
-                            emu.fastload_addr = header.start_addr;
-                            emu.fastload_end = header.end_addr;
-                            emu.fastload_size = (uint16_t)rd;
-                            emu.fastload_type = header.type;
-                            emu.fastload_auto_run = header.auto_run;
-                            emu.fastload_pending = true;
+                            emu->fastload_buf = buf;
+                            emu->fastload_addr = header.start_addr;
+                            emu->fastload_end = header.end_addr;
+                            emu->fastload_size = (uint16_t)rd;
+                            emu->fastload_type = header.type;
+                            emu->fastload_auto_run = header.auto_run;
+                            emu->fastload_pending = true;
                             log_info("Buffered %d bytes for deferred injection to $%04X-$%04X",
                                      rd, header.start_addr, header.start_addr + rd - 1);
                         } else {
@@ -3877,268 +3529,273 @@ int main(int argc, char* argv[]) {
                  * any padding bytes so the ROM parses headers correctly. */
                 uint32_t remaining_pos = tap_tell(tap);
                 if (remaining_pos < tap_size(tap) && tap->data) {
-                    emu.tapelen = (int)tap_size(tap);
-                    emu.tapebuf = (uint8_t*)malloc((size_t)emu.tapelen);
-                    if (emu.tapebuf) {
-                        memcpy(emu.tapebuf, tap->data, (size_t)emu.tapelen);
-                        emu.tapeoffs = (int)remaining_pos;
-                        emu.tape_loaded = true;
-                        emu.tape_syncstack = -1;
+                    emu->tapelen = (int)tap_size(tap);
+                    emu->tapebuf = (uint8_t*)malloc((size_t)emu->tapelen);
+                    if (emu->tapebuf) {
+                        memcpy(emu->tapebuf, tap->data, (size_t)emu->tapelen);
+                        emu->tapeoffs = (int)remaining_pos;
+                        emu->tape_loaded = true;
+                        emu->tape_syncstack = -1;
                         log_info("Tape buffered for CLOAD: %d bytes, offset=%d",
-                                 emu.tapelen, emu.tapeoffs);
+                                 emu->tapelen, emu->tapeoffs);
                     }
                 }
 
                 tap_close(tap);
             } else {
-                log_warning("Failed to open tape: %s", tape_file);
+                log_warning("Failed to open tape: %s", cfg->tape_file);
             }
         } else {
             /* Normal load: buffer TAP for CLOAD via ROM patching */
-            FILE* f = fopen(tape_file, "rb");
+            FILE* f = fopen(cfg->tape_file, "rb");
             if (f) {
                 fseek(f, 0, SEEK_END);
-                emu.tapelen = ftell(f);
+                emu->tapelen = ftell(f);
                 fseek(f, 0, SEEK_SET);
-                emu.tapebuf = (uint8_t*)malloc(emu.tapelen);
-                if (emu.tapebuf) {
-                    size_t rd = fread(emu.tapebuf, 1, emu.tapelen, f);
-                    if ((int)rd == emu.tapelen) {
-                        emu.tapeoffs = 0;
-                        emu.tape_loaded = true;
-                        emu.tape_syncstack = -1;
-                        emu.tape_auto_cload_pending = true;
-                        log_info("Tape buffered for CLOAD: %d bytes", emu.tapelen);
-                        if (tape_signal) {
-                            cassette_signal_begin(&emu.cassette, emu.tapebuf,
-                                                  emu.tapelen);
-                            emu.cassette.free_gate = tape_signal_free;
+                emu->tapebuf = (uint8_t*)malloc(emu->tapelen);
+                if (emu->tapebuf) {
+                    size_t rd = fread(emu->tapebuf, 1, emu->tapelen, f);
+                    if ((int)rd == emu->tapelen) {
+                        emu->tapeoffs = 0;
+                        emu->tape_loaded = true;
+                        emu->tape_syncstack = -1;
+                        emu->tape_auto_cload_pending = true;
+                        log_info("Tape buffered for CLOAD: %d bytes", emu->tapelen);
+                        if (cfg->tape_signal) {
+                            cassette_signal_begin(&emu->cassette, emu->tapebuf,
+                                                  emu->tapelen);
+                            emu->cassette.free_gate = cfg->tape_signal_free;
                             log_info("Signal-level cassette enabled: %d bytes on "
-                                     "CB1 waveform (real ROM read)%s", emu.tapelen,
-                                     tape_signal_free ? " [free-gate ORB PB6]" : "");
+                                     "CB1 waveform (real ROM read)%s", emu->tapelen,
+                                     cfg->tape_signal_free ? " [free-gate ORB PB6]" : "");
                         }
                     } else {
-                        log_warning("Tape read incomplete: %zu/%d bytes", rd, emu.tapelen);
-                        free(emu.tapebuf);
-                        emu.tapebuf = NULL;
+                        log_warning("Tape read incomplete: %zu/%d bytes", rd, emu->tapelen);
+                        free(emu->tapebuf);
+                        emu->tapebuf = NULL;
                     }
                 }
                 fclose(f);
             } else {
-                log_warning("Failed to open tape: %s", tape_file);
+                log_warning("Failed to open tape: %s", cfg->tape_file);
             }
         }
     }
+    return -1;
+}
 
+/* Jasmin, synthèses vocales SP0256 / MEA8000, Microdisc et disques, disque web LOCI, secteurs défectueux.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
     /* Jasmin disk interface (--jasmin-rom): the 2nd Oric disk standard (WD177x
      * at $03F4-$03FF, 2 KB boot ROM at $F800). Alternative to the Microdisc and
      * mutually exclusive with it and with DTL2000/Mageco ($03F8-$03FF overlap). */
-    if (jasmin_rom_file) {
-        if (disk_rom_file) {
+    if (cfg->jasmin_rom_file) {
+        if (cfg->disk_rom_file) {
             log_error("--jasmin-rom and --disk-rom are mutually exclusive "
                       "(Jasmin vs Microdisc)");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
-        if (emu.has_dtl2000 || emu.has_mageco) {
+        if (emu->has_dtl2000 || emu->has_mageco) {
             log_error("--jasmin-rom conflicts with --dtl2000/--mageco "
                       "(both claim $03F8-$03FF)");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
         /* Load the 2 KB Jasmin boot ROM. */
-        FILE* jf = fopen(jasmin_rom_file, "rb");
+        FILE* jf = fopen(cfg->jasmin_rom_file, "rb");
         if (!jf) {
-            log_error("Failed to open Jasmin ROM: %s", jasmin_rom_file);
-            emulator_cleanup(&emu);
+            log_error("Failed to open Jasmin ROM: %s", cfg->jasmin_rom_file);
+            emulator_cleanup(emu);
             return 1;
         }
         uint8_t jbuf[JASMIN_ROM_SIZE];
         size_t jrd = fread(jbuf, 1, JASMIN_ROM_SIZE, jf);
         fclose(jf);
 
-        jasmin_init(&emu.jasmin);
-        if (jrd != JASMIN_ROM_SIZE || !jasmin_load_rom(&emu.jasmin, jbuf, (uint32_t)jrd)) {
+        jasmin_init(&emu->jasmin);
+        if (jrd != JASMIN_ROM_SIZE || !jasmin_load_rom(&emu->jasmin, jbuf, (uint32_t)jrd)) {
             log_error("Jasmin ROM must be exactly %d bytes (got %zu): %s",
-                      JASMIN_ROM_SIZE, jrd, jasmin_rom_file);
-            emulator_cleanup(&emu);
+                      JASMIN_ROM_SIZE, jrd, cfg->jasmin_rom_file);
+            emulator_cleanup(emu);
             return 1;
         }
-        emu.jasmin.cpu_irq_set = microdisc_cpu_irq_set;   /* IRQF_DISK (shared) */
-        emu.jasmin.cpu_irq_clr = microdisc_cpu_irq_clr;
-        emu.jasmin.cpu_userdata = &emu;
-        emu.has_jasmin = true;
+        emu->jasmin.cpu_irq_set = microdisc_cpu_irq_set;   /* IRQF_DISK (shared) */
+        emu->jasmin.cpu_irq_clr = microdisc_cpu_irq_clr;
+        emu->jasmin.cpu_userdata = emu;
+        emu->has_jasmin = true;
 
         /* Wire the Jasmin banking into the memory system. At boot the Jasmin
          * ROM is NOT paged (romdis=olay=0 → BASIC ROM visible); the auto-boot
          * PC-trap pages it in ($3FB=1) at $EB78/$E905. */
-        emu.memory.jasmin_active = true;
-        emu.memory.jasmin_rom = emu.jasmin.rom;
-        emu.memory.jasmin_olay = emu.jasmin.olay;
-        emu.memory.jasmin_romdis = emu.jasmin.romdis;
+        emu->memory.jasmin_active = true;
+        emu->memory.jasmin_rom = emu->jasmin.rom;
+        emu->memory.jasmin_olay = emu->jasmin.olay;
+        emu->memory.jasmin_romdis = emu->jasmin.romdis;
 
-        if (fdc_timing_arg && strcmp(fdc_timing_arg, "fast") == 0)
-            emu.jasmin.fdc.timing_mode = FDC_TIMING_FAST;
+        if (cfg->fdc_timing_arg && strcmp(cfg->fdc_timing_arg, "fast") == 0)
+            emu->jasmin.fdc.timing_mode = FDC_TIMING_FAST;
 
         log_info("Jasmin disk interface enabled (WD177x $03F4-$03FF, ROM $F800)");
 
         /* Load disk images into drives A-D (same MFM_DISK container as the
          * Microdisc — sedoric_load). */
         for (int i = 0; i < JASMIN_MAX_DRIVES; i++) {
-            if (!disk_files[i]) continue;
-            log_info("Loading Jasmin disk drive %c: %s", 'A' + i, disk_files[i]);
-            emu.disks[i] = sedoric_load(disk_files[i]);
-            if (!emu.disks[i]) {
-                log_error("Failed to load disk image: %s", disk_files[i]);
-                emulator_cleanup(&emu);
+            if (!cfg->disk_files[i]) continue;
+            log_info("Loading Jasmin disk drive %c: %s", 'A' + i, cfg->disk_files[i]);
+            emu->disks[i] = sedoric_load(cfg->disk_files[i]);
+            if (!emu->disks[i]) {
+                log_error("Failed to load disk image: %s", cfg->disk_files[i]);
+                emulator_cleanup(emu);
                 return 1;
             }
-            emu.disk_paths[i] = disk_files[i];
-            jasmin_set_disk(&emu.jasmin, (uint8_t)i,
-                            emu.disks[i]->data, emu.disks[i]->size,
-                            emu.disks[i]->tracks, emu.disks[i]->sectors);
+            emu->disk_paths[i] = cfg->disk_files[i];
+            jasmin_set_disk(&emu->jasmin, (uint8_t)i,
+                            emu->disks[i]->data, emu->disks[i]->size,
+                            emu->disks[i]->tracks, emu->disks[i]->sectors);
             log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
-                     'A' + i, emu.disks[i]->size, emu.disks[i]->sides,
-                     emu.disks[i]->tracks, emu.disks[i]->sectors);
+                     'A' + i, emu->disks[i]->size, emu->disks[i]->sides,
+                     emu->disks[i]->tracks, emu->disks[i]->sectors);
         }
     }
 
     /* SP0256 Mageco "Synthétiseur Vocal" (--sp0256-rom): GI SP0256-AL2 speech
      * chip at $03F1 (or --sp0256-addr). Loads the 2 KB allophone ROM; output is
      * mixed into the PSG audio. Used by Frelon, Cobra Pinball, … */
-    if (sp0256_rom_file) {
-        FILE* sf = fopen(sp0256_rom_file, "rb");
+    if (cfg->sp0256_rom_file) {
+        FILE* sf = fopen(cfg->sp0256_rom_file, "rb");
         if (!sf) {
-            log_error("Failed to open SP0256 ROM: %s", sp0256_rom_file);
-            emulator_cleanup(&emu);
+            log_error("Failed to open SP0256 ROM: %s", cfg->sp0256_rom_file);
+            emulator_cleanup(emu);
             return 1;
         }
         uint8_t sbuf[SP0256_ROM_SIZE];
         size_t srd = fread(sbuf, 1, SP0256_ROM_SIZE, sf);
         fclose(sf);
 
-        sp0256_init(&emu.sp0256, sp0256_base_addr);
-        if (srd != SP0256_ROM_SIZE || !sp0256_load_rom(&emu.sp0256, sbuf, (uint32_t)srd)) {
+        sp0256_init(&emu->sp0256, cfg->sp0256_base_addr);
+        if (srd != SP0256_ROM_SIZE || !sp0256_load_rom(&emu->sp0256, sbuf, (uint32_t)srd)) {
             log_error("SP0256 ROM must be exactly %d bytes (got %zu): %s",
-                      SP0256_ROM_SIZE, srd, sp0256_rom_file);
-            emulator_cleanup(&emu);
+                      SP0256_ROM_SIZE, srd, cfg->sp0256_rom_file);
+            emulator_cleanup(emu);
             return 1;
         }
-        emu.sp0256.emu = &emu;
-        emu.has_sp0256 = true;
-        audio_set_sp0256(&emu.sp0256);   /* mix speech into the GUI audio callback */
+        emu->sp0256.emu = emu;
+        emu->has_sp0256 = true;
+        audio_set_sp0256(&emu->sp0256);   /* mix speech into the GUI audio callback */
         log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
-                 sp0256_base_addr);
+                 cfg->sp0256_base_addr);
     }
 
     /* MEA8000 TMPI "Synthétiseur Vocal" (--mea8000): Philips/Signetics formant
      * speech chip at $03FE/$03FF (TMPI card, confirmed in-game via SYNTHOR;
      * configurable). No ROM — the host streams frame parameters. Output mixed
      * into the PSG. Mutually exclusive with the SP0256 speech card. */
-    if (mea8000_enabled) {
-        if (emu.has_sp0256) {
+    if (cfg->mea8000_enabled) {
+        if (emu->has_sp0256) {
             log_error("--mea8000 and --sp0256-rom are mutually exclusive "
                       "(both are speech cards)");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
         /* Default $03FE/$03FF overlaps the Mageco MIDI interface ($03FE-$03FF).
          * Relocate one of them (--mea8000-addr / --mageco-addr) to coexist. */
-        if (emu.has_mageco && mea8000_base_addr >= 0x03FE) {
+        if (emu->has_mageco && cfg->mea8000_base_addr >= 0x03FE) {
             log_error("--mea8000 (default $03FE/$03FF) overlaps the Mageco MIDI "
                       "interface — relocate with --mea8000-addr or --mageco-addr");
-            emulator_cleanup(&emu);
+            emulator_cleanup(emu);
             return 1;
         }
-        mea8000_init(&emu.mea8000, mea8000_base_addr);
-        emu.mea8000.emu = &emu;
-        emu.has_mea8000 = true;
-        audio_set_mea8000(&emu.mea8000);
+        mea8000_init(&emu->mea8000, cfg->mea8000_base_addr);
+        emu->mea8000.emu = emu;
+        emu->has_mea8000 = true;
+        audio_set_mea8000(&emu->mea8000);
         log_info("MEA8000 TMPI speech synthesizer enabled at $%04X/$%04X (formant, no ROM)",
-                 mea8000_base_addr, (uint16_t)(mea8000_base_addr + 1));
+                 cfg->mea8000_base_addr, (uint16_t)(cfg->mea8000_base_addr + 1));
     }
 
     /* Load disks with Microdisc controller. A Microdisc ROM on its own is
      * enough to bring the controller up (a real Microdisc is present even with
      * no disk in the drives) — this enables hot-swapping a .dsk in later via
      * the OSD or the --control `load-disk` command. */
-    bool any_disk = !jasmin_rom_file &&
-                    ((disk_create_file != NULL) || (disk_rom_file != NULL));
-    for (int i = 0; !jasmin_rom_file && i < MICRODISC_MAX_DRIVES; i++) {
-        if (disk_files[i]) { any_disk = true; break; }
+    bool any_disk = !cfg->jasmin_rom_file &&
+                    ((cfg->disk_create_file != NULL) || (cfg->disk_rom_file != NULL));
+    for (int i = 0; !cfg->jasmin_rom_file && i < MICRODISC_MAX_DRIVES; i++) {
+        if (cfg->disk_files[i]) { any_disk = true; break; }
     }
 
     if (any_disk) {
         /* Initialize Microdisc controller */
-        microdisc_init(&emu.microdisc);
-        emu.microdisc.cpu_irq_set = microdisc_cpu_irq_set;
-        emu.microdisc.cpu_irq_clr = microdisc_cpu_irq_clr;
-        emu.microdisc.cpu_userdata = &emu;
-        emu.has_microdisc = true;
+        microdisc_init(&emu->microdisc);
+        emu->microdisc.cpu_irq_set = microdisc_cpu_irq_set;
+        emu->microdisc.cpu_irq_clr = microdisc_cpu_irq_clr;
+        emu->microdisc.cpu_userdata = emu;
+        emu->has_microdisc = true;
 
         /* Languette de protection en écriture : posée explicitement, ou déduite
          * du fichier lui-même — un .dsk en lecture seule sur l'hôte se comporte
          * comme une disquette dont la languette est ouverte. */
         {
-            bool wp = disk_write_protect;
-            if (!wp && disk_files[0] && access(disk_files[0], W_OK) != 0)
+            bool wp = cfg->disk_write_protect;
+            if (!wp && cfg->disk_files[0] && access(cfg->disk_files[0], W_OK) != 0)
                 wp = true;
             if (wp) {
-                fdc_set_write_protect(&emu.microdisc.fdc, true);
+                fdc_set_write_protect(&emu->microdisc.fdc, true);
                 log_info("Disque protégé en écriture (statut WD1793 bit 6)%s",
-                         disk_write_protect ? "" : " — fichier en lecture seule");
+                         cfg->disk_write_protect ? "" : " — fichier en lecture seule");
             }
         }
 
         /* WD1793 timing profile: mechanical (real) by default, --fdc-timing
          * fast restores the legacy short delays (instant-feel loading). */
-        if (fdc_timing_arg) {
-            if (strcmp(fdc_timing_arg, "fast") == 0) {
-                emu.microdisc.fdc.timing_mode = FDC_TIMING_FAST;
-            } else if (strcmp(fdc_timing_arg, "real") == 0) {
-                emu.microdisc.fdc.timing_mode = FDC_TIMING_REAL;
+        if (cfg->fdc_timing_arg) {
+            if (strcmp(cfg->fdc_timing_arg, "fast") == 0) {
+                emu->microdisc.fdc.timing_mode = FDC_TIMING_FAST;
+            } else if (strcmp(cfg->fdc_timing_arg, "real") == 0) {
+                emu->microdisc.fdc.timing_mode = FDC_TIMING_REAL;
             } else {
-                log_error("Invalid --fdc-timing '%s' (use real or fast)", fdc_timing_arg);
-                emulator_cleanup(&emu);
+                log_error("Invalid --fdc-timing '%s' (use real or fast)", cfg->fdc_timing_arg);
+                emulator_cleanup(emu);
                 return 1;
             }
         }
 
         /* Load Microdisc ROM if specified */
-        if (disk_rom_file) {
-            log_info("Loading Microdisc ROM: %s", disk_rom_file);
-            if (!microdisc_load_rom(&emu.microdisc, disk_rom_file)) {
-                log_error("Failed to load Microdisc ROM: %s", disk_rom_file);
-                emulator_cleanup(&emu);
+        if (cfg->disk_rom_file) {
+            log_info("Loading Microdisc ROM: %s", cfg->disk_rom_file);
+            if (!microdisc_load_rom(&emu->microdisc, cfg->disk_rom_file)) {
+                log_error("Failed to load Microdisc ROM: %s", cfg->disk_rom_file);
+                emulator_cleanup(emu);
                 return 1;
             }
             /* Set overlay ROM in memory system */
-            emu.memory.overlay_rom = emu.microdisc.diskrom_data;
-            emu.memory.overlay_rom_size = emu.microdisc.diskrom_size;
-            emu.memory.overlay_active = true;
-            emu.memory.basic_rom_disabled = true;
-            log_info("Microdisc ROM loaded (%u bytes), overlay active", emu.microdisc.diskrom_size);
+            emu->memory.overlay_rom = emu->microdisc.diskrom_data;
+            emu->memory.overlay_rom_size = emu->microdisc.diskrom_size;
+            emu->memory.overlay_active = true;
+            emu->memory.basic_rom_disabled = true;
+            log_info("Microdisc ROM loaded (%u bytes), overlay active", emu->microdisc.diskrom_size);
         }
 
         /* Load disk images into drives A-D */
         for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
-            if (!disk_files[i]) continue;
+            if (!cfg->disk_files[i]) continue;
 
-            log_info("Loading disk drive %c: %s", 'A' + i, disk_files[i]);
-            emu.disks[i] = sedoric_load(disk_files[i]);
-            if (!emu.disks[i]) {
-                log_error("Failed to load disk image: %s", disk_files[i]);
-                emulator_cleanup(&emu);
+            log_info("Loading disk drive %c: %s", 'A' + i, cfg->disk_files[i]);
+            emu->disks[i] = sedoric_load(cfg->disk_files[i]);
+            if (!emu->disks[i]) {
+                log_error("Failed to load disk image: %s", cfg->disk_files[i]);
+                emulator_cleanup(emu);
                 return 1;
             }
 
             /* Connect disk data to Microdisc drive slot */
-            microdisc_set_disk(&emu.microdisc, (uint8_t)i,
-                               emu.disks[i]->data, emu.disks[i]->size,
-                               emu.disks[i]->tracks, emu.disks[i]->sectors);
+            microdisc_set_disk(&emu->microdisc, (uint8_t)i,
+                               emu->disks[i]->data, emu->disks[i]->size,
+                               emu->disks[i]->tracks, emu->disks[i]->sectors);
             log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
-                     'A' + i, emu.disks[i]->size, emu.disks[i]->sides,
-                     emu.disks[i]->tracks, emu.disks[i]->sectors);
+                     'A' + i, emu->disks[i]->size, emu->disks[i]->sides,
+                     emu->disks[i]->tracks, emu->disks[i]->sectors);
         }
 
         /* --disk-web URL : monte en lecteur A un disque dont les secteurs sont
@@ -4146,13 +3803,13 @@ int main(int argc, char* argv[]) {
          * lit d'abord l'en-tête MFM_DISK distant (256 o) pour la géométrie, on
          * alloue une image à plat VIDE, et le FDC va chercher chaque piste MFM
          * de 6400 o à la demande (fidèle au chemin réel LOCI dsk_web / ATDISKRD). */
-        if (disk_web_url && !emu.disks[0]) {
+        if (cfg->disk_web_url && !emu->disks[0]) {
             uint8_t hdr[MFM_DISK_HEADER_SIZE];
-            long hn = disk_http_get(disk_web_url, 0, MFM_DISK_HEADER_SIZE,
+            long hn = disk_http_get(cfg->disk_web_url, 0, MFM_DISK_HEADER_SIZE,
                                     hdr, sizeof(hdr));
             if (hn < 16 || memcmp(hdr, "MFM_DISK", 8) != 0) {
-                log_error("--disk-web: en-tête MFM_DISK illisible depuis %s", disk_web_url);
-                emulator_cleanup(&emu);
+                log_error("--disk-web: en-tête MFM_DISK illisible depuis %s", cfg->disk_web_url);
+                emulator_cleanup(emu);
                 return 1;
             }
             uint32_t sides  = hdr[8]  | ((uint32_t)hdr[9]  << 8) |
@@ -4164,48 +3821,48 @@ int main(int argc, char* argv[]) {
             if (tracks > MFM_MAX_TRACKS) tracks = MFM_MAX_TRACKS;
             uint8_t spt = MFM_MAX_SECTORS;   /* 17 */
 
-            emu.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+            emu->disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
             uint32_t flat = sides * tracks * spt * SEDORIC_SECTOR_SIZE;
-            if (!emu.disks[0] || !(emu.disks[0]->data = (uint8_t*)calloc(1, flat))) {
+            if (!emu->disks[0] || !(emu->disks[0]->data = (uint8_t*)calloc(1, flat))) {
                 log_error("--disk-web: allocation image à plat impossible");
-                emulator_cleanup(&emu);
+                emulator_cleanup(emu);
                 return 1;
             }
-            emu.disks[0]->size    = flat;
-            emu.disks[0]->tracks  = (uint8_t)tracks;
-            emu.disks[0]->sectors = spt;
-            emu.disks[0]->sides   = (uint8_t)sides;
-            emu.disks[0]->is_mfm  = false;   /* pas de write-back local */
+            emu->disks[0]->size    = flat;
+            emu->disks[0]->tracks  = (uint8_t)tracks;
+            emu->disks[0]->sectors = spt;
+            emu->disks[0]->sides   = (uint8_t)sides;
+            emu->disks[0]->is_mfm  = false;   /* pas de write-back local */
 
-            microdisc_set_disk(&emu.microdisc, 0, emu.disks[0]->data, emu.disks[0]->size,
-                               emu.disks[0]->tracks, emu.disks[0]->sectors);
-            fdc_set_web(&emu.microdisc.fdc, disk_web_url);   /* après set_disk */
+            microdisc_set_disk(&emu->microdisc, 0, emu->disks[0]->data, emu->disks[0]->size,
+                               emu->disks[0]->tracks, emu->disks[0]->sectors);
+            fdc_set_web(&emu->microdisc.fdc, cfg->disk_web_url);   /* après set_disk */
             log_info("--disk-web: lecteur A servi par %s (%u faces x %u pistes x %u s., "
-                     "pistes chargées à la demande)", disk_web_url, sides, tracks, spt);
+                     "pistes chargées à la demande)", cfg->disk_web_url, sides, tracks, spt);
         }
 
         /* --disk-create : monte une disquette Sedoric vierge en lecteur A et
          * l'écrit aussitôt sur FILE. INIT/format à l'intérieur ; le write-back
          * de sortie (armé avec cette option) persiste les changements. */
-        if (disk_create_file && !emu.disks[0]) {
+        if (cfg->disk_create_file && !emu->disks[0]) {
             /* Double face 42 pistes : géométrie que formate INIT B de Sedoric
              * (un blank simple face était sous-dimensionné, Sprint 66). */
-            emu.disks[0] = sedoric_create_blank(SEDORIC_TRACKS, 2);
-            if (!emu.disks[0]) {
+            emu->disks[0] = sedoric_create_blank(SEDORIC_TRACKS, 2);
+            if (!emu->disks[0]) {
                 log_error("disk-create: allocation de la disquette vierge impossible");
-                emulator_cleanup(&emu);
+                emulator_cleanup(emu);
                 return 1;
             }
-            if (!sedoric_save(emu.disks[0], disk_create_file))
-                log_error("disk-create: écriture impossible vers %s", disk_create_file);
+            if (!sedoric_save(emu->disks[0], cfg->disk_create_file))
+                log_error("disk-create: écriture impossible vers %s", cfg->disk_create_file);
             else
                 log_info("disk-create: disquette vierge -> %s (%u octets), lecteur A",
-                         disk_create_file, emu.disks[0]->size);
-            microdisc_set_disk(&emu.microdisc, 0, emu.disks[0]->data, emu.disks[0]->size,
-                               emu.disks[0]->tracks, emu.disks[0]->sectors);
-            emu.disk_paths[0] = disk_create_file;
-            emu.disk_path = disk_create_file;
-        } else if (disk_create_file && emu.disks[0]) {
+                         cfg->disk_create_file, emu->disks[0]->size);
+            microdisc_set_disk(&emu->microdisc, 0, emu->disks[0]->data, emu->disks[0]->size,
+                               emu->disks[0]->tracks, emu->disks[0]->sectors);
+            emu->disk_paths[0] = cfg->disk_create_file;
+            emu->disk_path = cfg->disk_create_file;
+        } else if (cfg->disk_create_file && emu->disks[0]) {
             log_warning("disk-create ignoré : le lecteur A est déjà occupé par -d");
         }
     }
@@ -4216,20 +3873,20 @@ int main(int argc, char* argv[]) {
      * pour que le code de boot lise le disque via $0310 (routé vers le FDC LOCI,
      * web-backed sous --loci) et démarre Sedoric sans passer par le menu. Le ROM
      * -r (BASIC) est déjà chargé à $C000 ; on ne touche donc que $A000. */
-    if (loci_web_url && emu.has_loci) {
+    if (cfg->loci_web_url && emu->has_loci) {
         char disc[512] = {0};
-        const char* cand = disk_rom_file;                 /* --disk-rom si fourni */
-        if ((!cand || access(cand, R_OK) != 0) && rom_file) {
-            const char* slash = strrchr(rom_file, '/');   /* voisin de la ROM -r */
+        const char* cand = cfg->disk_rom_file;                 /* --disk-rom si fourni */
+        if ((!cand || access(cand, R_OK) != 0) && cfg->rom_file) {
+            const char* slash = strrchr(cfg->rom_file, '/');   /* voisin de la ROM -r */
             if (slash) {
                 snprintf(disc, sizeof(disc), "%.*s/microdis.rom",
-                         (int)(slash - rom_file), rom_file);
+                         (int)(slash - cfg->rom_file), cfg->rom_file);
                 if (access(disc, R_OK) == 0) cand = disc;
             }
         }
         if (!cand || access(cand, R_OK) != 0) { if (access("roms/microdis.rom", R_OK) == 0) cand = "roms/microdis.rom"; }
         if (!cand || access(cand, R_OK) != 0) { if (access("microdis.rom", R_OK) == 0) cand = "microdis.rom"; }
-        if (cand && access(cand, R_OK) == 0 && loci_rom_swap_cb(&emu, cand, 0xA000)) {
+        if (cand && access(cand, R_OK) == 0 && loci_rom_swap_cb(emu, cand, 0xA000)) {
             log_info("--loci-web: autoboot LOCI (overlay Microdisc %s → boot depuis le FDC web)", cand);
         } else {
             log_warning("--loci-web: microdis.rom introuvable — disque monté mais "
@@ -4241,23 +3898,23 @@ int main(int argc, char* argv[]) {
      * media: the maps live per drive at the controller layer (Microdisc
      * and/or LOCI) and are wiped when a new disk is inserted. Applied after
      * the initial disk loads so the injections stick to the loaded media. */
-    for (int i = 0; i < bad_sector_arg_count; i++) {
+    for (int i = 0; i < cfg->bad_sector_arg_count; i++) {
         unsigned d = 0, s, trk, sec;
-        int nf = sscanf(bad_sector_args[i], "%u:%u:%u:%u", &d, &s, &trk, &sec);
+        int nf = sscanf(cfg->bad_sector_args[i], "%u:%u:%u:%u", &d, &s, &trk, &sec);
         if (nf == 3) { sec = trk; trk = s; s = d; d = 0; }   /* S:T:N → drive A */
         if ((nf == 3 || nf == 4) &&
             d < MICRODISC_MAX_DRIVES && s <= 1 && trk < 256 && sec >= 1 && sec < 256) {
             int rc = -1;
-            if (emu.has_microdisc)
-                rc = microdisc_add_bad_sector(&emu.microdisc, (uint8_t)d,
+            if (emu->has_microdisc)
+                rc = microdisc_add_bad_sector(&emu->microdisc, (uint8_t)d,
                                               (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
-            if (emu.has_jasmin) {
-                int rc2 = jasmin_add_bad_sector(&emu.jasmin, (uint8_t)d,
+            if (emu->has_jasmin) {
+                int rc2 = jasmin_add_bad_sector(&emu->jasmin, (uint8_t)d,
                                                 (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
                 if (rc != 0) rc = rc2;
             }
-            if (emu.has_loci) {
-                int rc2 = loci_add_bad_sector(&emu.loci, (uint8_t)d,
+            if (emu->has_loci) {
+                int rc2 = loci_add_bad_sector(&emu->loci, (uint8_t)d,
                                               (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
                 if (rc != 0) rc = rc2;
             }
@@ -4266,42 +3923,47 @@ int main(int argc, char* argv[]) {
                          'A' + d, s, trk, sec);
             } else {
                 log_error("--bad-sector %s: no disk subsystem (use -d/--disk-rom, --jasmin-rom or --loci)",
-                          bad_sector_args[i]);
-                emulator_cleanup(&emu);
+                          cfg->bad_sector_args[i]);
+                emulator_cleanup(emu);
                 return 1;
             }
         } else {
             log_error("Invalid --bad-sector format '%s'. Use [D:]S:T:N "
                       "(drive 0-3, side 0-1, track, sector 1-255)",
-                      bad_sector_args[i]);
-            emulator_cleanup(&emu);
+                      cfg->bad_sector_args[i]);
+            emulator_cleanup(emu);
             return 1;
         }
     }
+    return -1;
+}
 
+/* Débogueur, serveur cast, API HTTP, client CASTV2, reprise d'un état sauvegardé.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_services(emulator_t* emu, cli_opts_t* cfg) {
     /* Setup debugger if requested */
-    if (debug_mode) {
-        emu.debugger.active = true;
+    if (cfg->debug_mode) {
+        emu->debugger.active = true;
         log_info("Debugger mode enabled (will break at first instruction)");
     }
-    if (debug_break_addr) {
-        uint16_t addr = parse_hex16(debug_break_addr);
-        debugger_add_breakpoint(&emu.debugger, addr);
+    if (cfg->debug_break_addr) {
+        uint16_t addr = parse_hex16(cfg->debug_break_addr);
+        debugger_add_breakpoint(&emu->debugger, addr);
         log_info("Debugger breakpoint set at $%04X", addr);
     }
 
     /* --cast-to implicitly enables --cast-server */
-    if (cast_to_enabled && !cast_server_enabled) {
-        cast_server_enabled = true;
+    if (cfg->cast_to_enabled && !cfg->cast_server_enabled) {
+        cfg->cast_server_enabled = true;
     }
 
     /* Initialize cast server if requested */
-    if (cast_server_enabled) {
+    if (cfg->cast_server_enabled) {
 #ifdef HAS_CAST
-        if (cast_server_init(&emu.cast_server, cast_server_port)) {
-            emu.has_cast_server = true;
+        if (cast_server_init(&emu->cast_server, cfg->cast_server_port)) {
+            emu->has_cast_server = true;
             /* Connect audio output to cast server for WAV streaming */
-            audio_set_cast_server(&emu.cast_server);
+            audio_set_cast_server(&emu->cast_server);
         } else {
             log_error("Failed to start cast server");
         }
@@ -4313,18 +3975,18 @@ int main(int argc, char* argv[]) {
     /* Initialize HTTP control API if requested (sprint 94). Creates the
      * frame-boundary command queue and starts the server thread; commands are
      * executed on this (emulator) thread when the main loop drains the queue. */
-    if (http_api_enabled) {
+    if (cfg->http_api_enabled) {
 #ifdef HAS_HTTPAPI
-        emu.control_queue = control_queue_create();
-        emu.http_api = emu.control_queue
-            ? http_api_start(&emu, emu.control_queue, http_api_port,
-                             http_api_bind, http_api_root)
+        emu->control_queue = control_queue_create();
+        emu->http_api = emu->control_queue
+            ? http_api_start(emu, emu->control_queue, cfg->http_api_port,
+                             cfg->http_api_bind, cfg->http_api_root)
             : NULL;
-        if (emu.http_api) {
-            emu.has_http_api = true;
+        if (emu->http_api) {
+            emu->has_http_api = true;
         } else {
             log_error("Failed to start HTTP API server");
-            if (emu.control_queue) { control_queue_destroy(emu.control_queue); emu.control_queue = NULL; }
+            if (emu->control_queue) { control_queue_destroy(emu->control_queue); emu->control_queue = NULL; }
         }
 #else
         fprintf(stderr, "HTTP API not compiled in. Build with HTTPAPI=1.\n");
@@ -4332,22 +3994,22 @@ int main(int argc, char* argv[]) {
     }
 
     /* Initialize CASTV2 client: discover device and cast */
-    if (cast_to_enabled && emu.has_cast_server) {
+    if (cfg->cast_to_enabled && emu->has_cast_server) {
 #ifdef HAS_CAST
         char device_ip[64] = "";
         bool discovered = false;
 
-        if (cast_to_device && cast_to_device[0]) {
+        if (cfg->cast_to_device && cfg->cast_to_device[0]) {
             /* Try to parse as IP address first */
             struct in_addr test_addr;
-            if (inet_pton(AF_INET, cast_to_device, &test_addr) == 1) {
-                strncpy(device_ip, cast_to_device, sizeof(device_ip) - 1);
+            if (inet_pton(AF_INET, cfg->cast_to_device, &test_addr) == 1) {
+                strncpy(device_ip, cfg->cast_to_device, sizeof(device_ip) - 1);
                 discovered = true;
             }
         }
 
         if (!discovered) {
-            discovered = castv2_discover_device(device_ip, cast_to_device, 5000);
+            discovered = castv2_discover_device(device_ip, cfg->cast_to_device, 5000);
         }
 
         if (discovered) {
@@ -4358,20 +4020,20 @@ int main(int argc, char* argv[]) {
             }
             char stream_url[256];
             snprintf(stream_url, sizeof(stream_url), "http://%s:%d/",
-                     local_ip, emu.cast_server.port);
+                     local_ip, emu->cast_server.port);
 
             log_info("Casting to %s, stream URL: %s", device_ip, stream_url);
 
-            if (castv2_connect_and_cast(&emu.castv2_client, device_ip, stream_url)) {
-                emu.has_castv2 = true;
+            if (castv2_connect_and_cast(&emu->castv2_client, device_ip, stream_url)) {
+                emu->has_castv2 = true;
             } else {
                 log_error("Failed to connect CASTV2 to %s", device_ip);
             }
         } else {
             log_error("No Chromecast device found%s%s",
-                      cast_to_device ? " matching '" : "",
-                      cast_to_device ? cast_to_device : "");
-            if (cast_to_device) log_error("'");
+                      cfg->cast_to_device ? " matching '" : "",
+                      cfg->cast_to_device ? cfg->cast_to_device : "");
+            if (cfg->cast_to_device) log_error("'");
         }
 #else
         fprintf(stderr, "Cast support not compiled in. Build with CAST=1.\n");
@@ -4379,48 +4041,53 @@ int main(int argc, char* argv[]) {
     }
 
     /* Load save state if specified */
-    if (load_state_file) {
-        log_info("Loading save state: %s", load_state_file);
-        if (!savestate_load(&emu, load_state_file)) {
-            log_error("Failed to load save state: %s", load_state_file);
+    if (cfg->load_state_file) {
+        log_info("Loading save state: %s", cfg->load_state_file);
+        if (!savestate_load(emu, cfg->load_state_file)) {
+            log_error("Failed to load save state: %s", cfg->load_state_file);
         } else {
             /* Prevent emulator_run()'s power-on cpu_reset from wiping the
              * restored PC/cycles (bug: --load-state landed back at reset,
              * cycles=0, most visible under --control). */
-            emu.startup_state_loaded = true;
+            emu->startup_state_loaded = true;
         }
     }
+    return -1;
+}
 
-    if (!headless) {
+/* Bannière, traces CPU / bus, cœur et ULA, profileur, film TAS, stub GDB, capture tape-out.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_tracing(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
+    if (!cfg->headless) {
         printf("\n");
         printf("Phosphoric v%s\n", EMU_VERSION);
         printf("Press Ctrl+C to quit\n\n");
     }
 
     /* CPU trace logging */
-    trace_init(&emu.trace);
-    if (trace_file) {
+    trace_init(&emu->trace);
+    if (cfg->trace_file) {
         /* --symbols annote la trace avec les labels, dans LES DEUX modes.
          * (Avant : seuls le trace conditionnel IPC/debugger l'exploitaient ; le
          * --trace streaming ignorait --symbols.) */
-        bool trace_syms = (symbols_file != NULL);
-        if (trace_syms) trace_set_symbols(&emu.trace, &emu.symbols);
-        if (trace_ring > 0) {
+        bool trace_syms = (cfg->symbols_file != NULL);
+        if (trace_syms) trace_set_symbols(&emu->trace, &emu->symbols);
+        if (cfg->trace_ring > 0) {
             /* Mode ring/tail : garde en mémoire les N DERNIÈRES instructions
              * (idéal pour un hang profond, là où --trace-max ne garde que les
              * PREMIÈRES) et les écrit à la sortie via trace_save_ring(). */
-            trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
-                      (uint32_t)trace_ring, trace_syms);
+            trace_arm(&emu->trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
+                      (uint32_t)cfg->trace_ring, trace_syms);
             log_info("CPU trace ring armed (last %lld instructions) -> %s",
-                     (long long)trace_ring, trace_file);
+                     (long long)cfg->trace_ring, cfg->trace_file);
         } else {
-            if (trace_max > 0) trace_set_max(&emu.trace, (uint64_t)trace_max);
-            if (!trace_open(&emu.trace, trace_file)) {
-                log_error("Failed to open trace file: %s", trace_file);
+            if (cfg->trace_max > 0) trace_set_max(&emu->trace, (uint64_t)cfg->trace_max);
+            if (!trace_open(&emu->trace, cfg->trace_file)) {
+                log_error("Failed to open trace file: %s", cfg->trace_file);
             } else if (trace_syms) {
                 /* Streaming + symboles : (re)arme en mode "now" (ring_cap=0) pour
                  * activer l'annotation symbolique sur le fp déjà ouvert. */
-                trace_arm(&emu.trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
+                trace_arm(&emu->trace, TRACE_START_NOW, 0, TRACE_STOP_NONE, 0, 0,
                           0, true);
             }
         }
@@ -4430,151 +4097,152 @@ int main(int argc, char* argv[]) {
      * propre accès bus, accès factices du NMOS inclus. Opt-in le temps de la
      * migration ; sémantique identique au moteur historique (mêmes fonctions
      * de calcul), seul l'ordonnancement des cycles change. */
-    cpu_set_microseq(&emu.cpu, cpu_microseq);
+    cpu_set_microseq(&emu->cpu, cfg->cpu_microseq);
     /* ULA au cycle (V2-E4) : une cellule fetchée par cycle, à l'instant où le
      * vrai ULA la lit. Opt-in le temps de la validation. */
-    emu.ula_per_cycle = ula_per_cycle;
-    emu.ula_fetch_offset = ula_fetch_offset;
-    if (!ula_per_cycle)
+    emu->ula_per_cycle = cfg->ula_per_cycle;
+    emu->ula_fetch_offset = cfg->ula_fetch_offset;
+    if (!cfg->ula_per_cycle)
         log_info("ULA: rendu par ligne (--ula-line) — pas de split en milieu de ligne");
-    else if (!cpu_microseq)
+    else if (!cfg->cpu_microseq)
         log_warning("ULA: --cpu-legacy impose le rendu par ligne "
                     "(une instruction y est indivisible)");
-    if (!cpu_microseq)
+    if (!cfg->cpu_microseq)
         log_info("CPU: cœur historique (--cpu-legacy) — pas d'accès factices");
 
     /* Trace bus cycle par cycle (--cycle-trace) — instrument de la V2.
      * Branchée sur le crochet d'accès bus du CPU ; les cycles internes sont
      * émis par cpu_cycle_tick(), qui appelle cycle_trace_cycles(). */
-    if (cycle_trace_file) {
-        if (!cycle_trace_open(cycle_trace_file, cycle_trace_max)) {
-            log_error("Failed to open cycle trace file: %s", cycle_trace_file);
+    if (cfg->cycle_trace_file) {
+        if (!cycle_trace_open(cfg->cycle_trace_file, cfg->cycle_trace_max)) {
+            log_error("Failed to open cycle trace file: %s", cfg->cycle_trace_file);
         } else {
-            cpu_set_bus_callback(&emu.cpu, cycle_trace_bus, NULL);
-            log_info("Cycle trace -> %s%s", cycle_trace_file,
-                     cycle_trace_max ? " (capped)" : "");
+            cpu_set_bus_callback(&emu->cpu, cycle_trace_bus, NULL);
+            log_info("Cycle trace -> %s%s", cfg->cycle_trace_file,
+                     cfg->cycle_trace_max ? " (capped)" : "");
         }
     }
 
     /* CPU performance profiler */
-    profiler_init(&emu.profiler);
-    if (profile_file) {
-        profiler_start(&emu.profiler);
-        log_info("CPU profiling enabled, report will be written to %s", profile_file);
+    profiler_init(&emu->profiler);
+    if (cfg->profile_file) {
+        profiler_start(&emu->profiler);
+        log_info("CPU profiling enabled, report will be written to %s", cfg->profile_file);
     }
 
     /* Deterministic input record/replay (TAS movie). */
-    if (movie_replay_file) {
+    if (cfg->movie_replay_file) {
         uint8_t mv_model = 0;
-        if (movie_replay_open(&emu.movie, movie_replay_file, &mv_model)) {
-            if ((oric_model_t)mv_model != emu.model) {
+        if (movie_replay_open(&emu->movie, cfg->movie_replay_file, &mv_model)) {
+            if ((oric_model_t)mv_model != emu->model) {
                 log_warning("movie recorded for model %u but running model %u — "
-                            "replay may diverge", mv_model, (unsigned)emu.model);
+                            "replay may diverge", mv_model, (unsigned)emu->model);
             }
         }
-    } else if (movie_record_file) {
-        movie_record_open(&emu.movie, movie_record_file, (uint8_t)emu.model);
+    } else if (cfg->movie_record_file) {
+        movie_record_open(&emu->movie, cfg->movie_record_file, (uint8_t)emu->model);
     }
 
     /* GDB remote stub: open the listener and block until a client attaches,
      * then start the CPU halted so GDB drives execution from the reset vector. */
-    gdb_stub_t gdb_stub;
-    if (gdb_enabled) {
-        if (gdb_stub_init(&gdb_stub, (uint16_t)gdb_port)) {
-            emu.gdb_mode = true;
-            emu.gdb_stub = &gdb_stub;
-            emu.debugger.active = true;   /* stop at entry, wait for GDB */
+    if (cfg->gdb_enabled) {
+        if (gdb_stub_init(gdb_stub, (uint16_t)cfg->gdb_port)) {
+            emu->gdb_mode = true;
+            emu->gdb_stub = gdb_stub;
+            emu->debugger.active = true;   /* stop at entry, wait for GDB */
         } else {
-            log_error("GDB stub: failed to start on port %d", gdb_port);
+            log_error("GDB stub: failed to start on port %d", cfg->gdb_port);
         }
     }
 
 #ifdef __EMSCRIPTEN__
     /* Expose the running machine to the JS virtual keyboard. */
-    g_web_emu = &emu;
+    g_web_emu = emu;
 #endif
 
     /* --tape-out-capture : arme la capture de l'onde tape-OUT (PB7 piloté par
      * Timer 1). Indépendant de -t (CSAVE écrit, aucun tape d'entrée requis). En
      * mode capture, les hooks CSAVE PC-1.1 sont neutralisés (cf. tape write). */
-    if (tape_out_capture_arg) {
-        emu.tape_out_path = tape_out_capture_arg;
-        tape_capture_begin(&emu.tape_capture);
-        log_info("Tape-OUT capture armed (PB7/Timer1) -> %s", tape_out_capture_arg);
+    if (cfg->tape_out_capture_arg) {
+        emu->tape_out_path = cfg->tape_out_capture_arg;
+        tape_capture_begin(&emu->tape_capture);
+        log_info("Tape-OUT capture armed (PB7/Timer1) -> %s", cfg->tape_out_capture_arg);
     }
+    return -1;
+}
 
-    /* Run emulation */
-    emulator_run(&emu);
-
+/* Fin de run : .TAP capturé, GDB, film, AVI, état, write-back disques, profileur, traces ; code de sortie.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_finish(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
     /* Écrit le .TAP reconstruit depuis l'onde PB7 capturée. */
-    if (tape_out_capture_arg && emu.tape_capture.active) {
-        FILE* tf = fopen(tape_out_capture_arg, "wb");
+    if (cfg->tape_out_capture_arg && emu->tape_capture.active) {
+        FILE* tf = fopen(cfg->tape_out_capture_arg, "wb");
         if (tf) {
-            if (emu.tape_capture.out_len > 0)
-                fwrite(emu.tape_capture.out, 1, (size_t)emu.tape_capture.out_len, tf);
+            if (emu->tape_capture.out_len > 0)
+                fwrite(emu->tape_capture.out, 1, (size_t)emu->tape_capture.out_len, tf);
             fclose(tf);
             log_info("Tape-OUT capture written: %d bytes -> %s",
-                     emu.tape_capture.out_len, tape_out_capture_arg);
+                     emu->tape_capture.out_len, cfg->tape_out_capture_arg);
         } else {
-            log_error("Tape-OUT capture: cannot write %s", tape_out_capture_arg);
+            log_error("Tape-OUT capture: cannot write %s", cfg->tape_out_capture_arg);
         }
-        tape_capture_free(&emu.tape_capture);
+        tape_capture_free(&emu->tape_capture);
     }
 
-    if (gdb_enabled && emu.gdb_stub) {
-        gdb_stub_close(&gdb_stub);
+    if (cfg->gdb_enabled && emu->gdb_stub) {
+        gdb_stub_close(gdb_stub);
     }
 
     /* Flush a recording / free replay buffers. */
-    if (emu.movie.mode != MOVIE_OFF) {
-        movie_close(&emu.movie);
+    if (emu->movie.mode != MOVIE_OFF) {
+        movie_close(&emu->movie);
     }
 
     /* Finalize video recording (write index, back-patch sizes). */
-    if (emu.video_avi_active) {
-        uint32_t nframes = emu.video_avi_rec.frame_count;
+    if (emu->video_avi_active) {
+        uint32_t nframes = emu->video_avi_rec.frame_count;
         /* GUI: flush any PCM still in the tap so the tail of the sound isn't
          * dropped, then release the ring (still safe: audio device is alive). */
-        if (!emu.headless && emu.video_avi_rec.has_audio) {
+        if (!emu->headless && emu->video_avi_rec.has_audio) {
             enum { TAP_DRAIN_MAX = (AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE) * 4 };
             static int16_t tap_pcm[TAP_DRAIN_MAX * 2];
             int got;
             while ((got = audio_avi_tap_drain(tap_pcm, TAP_DRAIN_MAX)) > 0)
-                avi_recorder_add_audio(&emu.video_avi_rec, tap_pcm, got);
+                avi_recorder_add_audio(&emu->video_avi_rec, tap_pcm, got);
             audio_avi_tap_disable();
         }
-        if (avi_recorder_close(&emu.video_avi_rec)) {
+        if (avi_recorder_close(&emu->video_avi_rec)) {
             log_info("Video recording finalized: %s (%u frames)",
-                     video_avi_file, nframes);
+                     cfg->video_avi_file, nframes);
         } else {
-            log_error("Error finalizing video recording: %s", video_avi_file);
+            log_error("Error finalizing video recording: %s", cfg->video_avi_file);
         }
-        emu.video_avi_active = false;
+        emu->video_avi_active = false;
     }
 
     /* Save state on exit if specified */
-    if (save_state_file) {
-        log_info("Saving state on exit: %s", save_state_file);
-        savestate_save(&emu, save_state_file);
+    if (cfg->save_state_file) {
+        log_info("Saving state on exit: %s", cfg->save_state_file);
+        savestate_save(emu, cfg->save_state_file);
     }
 
     /* Write modified disk images back to their .dsk files (opt-in). A drive is
      * dirty only if the guest actually wrote a sector to it this session. The
      * original file is overwritten in place, so this is gated behind an explicit
      * flag to never clobber a .dsk by accident. */
-    if (disk_writeback && (emu.has_microdisc || emu.has_jasmin)) {
-        for (int i = 0; i < emu_disk_max_drives(&emu); i++) {
+    if (cfg->disk_writeback && (emu->has_microdisc || emu->has_jasmin)) {
+        for (int i = 0; i < emu_disk_max_drives(emu); i++) {
             /* disk_paths[] suit les swaps OSD ; disk_files[] ne voit qu'argv. */
-            const char* path = emu.disk_paths[i];
-            if (!emu_disk_dirty(&emu, i) || !path || !emu.disks[i])
+            const char* path = emu->disk_paths[i];
+            if (!emu_disk_dirty(emu, i) || !path || !emu->disks[i])
                 continue;
-            if (sedoric_save(emu.disks[i], path)) {
+            if (sedoric_save(emu->disks[i], path)) {
                 /* Report the bytes actually written to the file: an MFM image
                  * writes its mfm_raw container, a raw image writes the flat
                  * sector buffer. (disks[i]->size is always the flat buffer.) */
-                uint32_t written = emu.disks[i]->is_mfm
-                                       ? emu.disks[i]->mfm_raw_size
-                                       : emu.disks[i]->size;
+                uint32_t written = emu->disks[i]->is_mfm
+                                       ? emu->disks[i]->mfm_raw_size
+                                       : emu->disks[i]->size;
                 log_info("Disk write-back: drive %c -> %s (%u bytes)",
                          'A' + i, path, written);
             } else {
@@ -4585,40 +4253,73 @@ int main(int argc, char* argv[]) {
     }
 
     /* Write profiler report if enabled */
-    if (profile_file) {
-        profiler_stop(&emu.profiler);
-        profiler_report_to_file(&emu.profiler, profile_file);
+    if (cfg->profile_file) {
+        profiler_stop(&emu->profiler);
+        profiler_report_to_file(&emu->profiler, cfg->profile_file);
     }
 
     /* --trace-ring : à la fin du run, écrire les N dernières instructions
      * gardées en mémoire (ordre ancien → récent) dans le fichier de trace. */
-    if (trace_file && trace_ring > 0) {
-        if (trace_save_ring(&emu.trace, trace_file))
+    if (cfg->trace_file && cfg->trace_ring > 0) {
+        if (trace_save_ring(&emu->trace, cfg->trace_file))
             log_info("CPU trace ring saved (%u instructions) -> %s",
-                     trace_ring_count(&emu.trace), trace_file);
+                     trace_ring_count(&emu->trace), cfg->trace_file);
         else
             log_warning("CPU trace ring empty (no instructions recorded) -> %s",
-                        trace_file);
+                        cfg->trace_file);
     }
     /* Diagnostic : un transfert disque sain ne perd aucun octet. Si le compteur
      * n'est pas nul, le logiciel a servi un DRQ trop tard (ou le modèle dérive). */
-    if (emu.has_microdisc && emu.microdisc.fdc.lost_data_count)
+    if (emu->has_microdisc && emu->microdisc.fdc.lost_data_count)
         log_warning("FDC: %u octet(s) signalé(s) perdus (LOST DATA) pendant la session",
-                    emu.microdisc.fdc.lost_data_count);
+                    emu->microdisc.fdc.lost_data_count);
 
-    trace_close(&emu.trace);
-    if (cycle_trace_file) {
+    trace_close(&emu->trace);
+    if (cfg->cycle_trace_file) {
         uint64_t ct_lines = cycle_trace_close();
         log_info("Cycle trace: %llu lines -> %s",
-                 (unsigned long long)ct_lines, cycle_trace_file);
+                 (unsigned long long)ct_lines, cfg->cycle_trace_file);
     }
 
     /* Un --*-when armé mais jamais déclenché = échec explicite (exit 2), pour
      * que le CI SCUMM distingue « état de jeu jamais atteint » d'une erreur
      * d'usage (exit 1) ou d'un succès (exit 0). */
-    bool when_unmet = emu.when_condition_unmet;
-    emulator_cleanup(&emu);
+    bool when_unmet = emu->when_condition_unmet;
+    emulator_cleanup(emu);
     log_cleanup();
 
     return when_unmet ? 2 : 0;
+}
+
+int main(int argc, char* argv[]) {
+    emulator_t emu;
+    memset(&emu, 0, sizeof(emu));
+    emu.breakpoint = -1;
+    cli_opts_t cfg_storage;
+    cli_opts_t* cfg = &cfg_storage;
+    cli_opts_init(cfg);
+    int parse_rc = cli_parse_args(argc, argv, cfg, &emu);
+    if (parse_rc >= 0) return parse_rc;
+    g_loci_menu_at = cfg->loci_menu_at;
+
+    int rc;
+    gdb_stub_t gdb_stub;  /* adresse gardée dans emu.gdb_stub jusqu'à main_finish */
+
+    if ((rc = main_setup_process(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_machine(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_input_printer(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_serial_cards(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_recordings(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_loci(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_debug_frontends(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_captures_input(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_rom_model(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_tape(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_disks_speech(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_services(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_tracing(&emu, cfg, &gdb_stub)) >= 0) return rc;
+    /* Run emulation */
+    emulator_run(&emu);
+
+    return main_finish(&emu, cfg, &gdb_stub);
 }

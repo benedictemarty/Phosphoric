@@ -1,0 +1,133 @@
+# Corpus de tools/cli_golden.sh : une ligne d'arguments par cas, @OUT@ = sortie.
+# Couvre le parsing (erreurs fatales / non fatales) et chaque famille d'options
+# appliquées après le parsing (mise en place des périphériques, médias, captures).
+
+# --- Aide, options inconnues, erreurs de parsing
+--help
+-r roms/basic11b.rom -n --bogus-xyz -c 1000
+-r roms/basic11b.rom -n --scale 99 -c 1000
+-r roms/basic11b.rom -n --scale 2 -c 1000
+-r roms/basic11b.rom -n --loci-mia-window bad -c 1000
+-r roms/basic11b.rom -n --loci-serve-timing x -c 1000
+-r roms/basic11b.rom -n --loci-serve-jitter x -c 1000
+-r roms/basic11b.rom -n --dump-ram-at NOCOLON -c 1000
+-r roms/basic11b.rom -n --screenshot-at NOCOLON -c 1000
+-r roms/basic11b.rom -n --type-keys NOCOLON -c 1000
+-r roms/basic11b.rom -n --screenshot-when NOCOLON -c 1000
+-r roms/basic11b.rom -n --poke-at NOCOLON -c 1000
+-r roms/basic11b.rom -n --poke-when 9C55:AB:04FA -c 1000
+-r roms/basic11b.rom -n --joystick BOGUS -c 1000
+-r roms/basic11b.rom -n --serial BOGUS -c 1000
+-r roms/basic11b.rom -n -m BOGUS -c 1000
+-r roms/basic11b.rom -n --dtl2000 BOGUS -c 1000
+-r roms/basic11b.rom -n -k BOGUS -c 1000
+-r roms/basic11b.rom -n --acia-addr ZZZZ -c 1000
+-r roms/basic11b.rom -n --load-state /nonexistent.ost -c 1000
+-r roms/basic11b.rom -n --tape /nonexistent.tap -c 1000
+-r roms/basic11b.rom -n --disk /nonexistent.dsk -c 1000
+-r roms/basic11b.rom -n --symbols /nonexistent.sym -c 1000
+-r roms/basic11b.rom -n --breakpoint ZZZZ -c 1000
+-r roms/basic11b.rom -n --trace /proc/nonexistent-dir/x.log -c 1000
+-r roms/basic11b.rom -n --trace-irq /proc/nonexistent-dir/x.log -c 1000
+-r roms/basic11b.rom -n --psg-trace /proc/nonexistent-dir/x.psg -c 1000
+-r roms/basic11b.rom -n --audio-wav /proc/nonexistent-dir/x.wav -c 1000
+-r roms/basic11b.rom -n --fdc-timing bogus -c 1000
+-r roms/basic11b.rom -n --disk-rom roms/microdis.rom -c 1000
+--disk-rom roms/microdis.rom -n -c 1000
+-n -c 1000
+-r /nonexistent.rom -n -c 1000
+
+# --- Machines, ROM, affichage, clavier
+-r roms/basic11b.rom -n -m atmos -c 2000000 --screenshot-text @OUT@/atmos.txt
+-r roms/basic10.rom -n -m oric1 -c 2000000 --screenshot-text @OUT@/oric1.txt
+-r roms/basic11b.rom -n -k azerty -c 1000
+-r roms/basic11b.rom -n -j ijk -c 1000
+-r roms/basic11b.rom -n --no-border --export-border -c 1000
+-r roms/basic11b.rom -n --rom-info -c 1000
+-r roms/basic11b.rom -n --rom-info @OUT@/rominfo.txt -c 1000
+-r roms/basic11b.rom -n --verbose -c 1000
+-r roms/basic11b.rom -n --cpu-legacy -c 2000000 --screenshot @OUT@/legacy.ppm
+-r roms/basic11b.rom -n --ula-line -c 2000000 --screenshot @OUT@/line.ppm
+-r roms/basic11b.rom -n --ula-fetch-offset 3 -c 2000000 --screenshot @OUT@/off.ppm
+-r roms/basic11b.rom -n --ula-ng-poke 0340=01 -c 1000
+-r roms/basic11b.rom -n --ula-ng-poke bad -c 1000
+
+# --- Captures et sorties
+-r roms/basic11b.rom -n --screenshot @OUT@/ss.ppm -c 2000000
+-r roms/basic11b.rom -n --screenshot-text @OUT@/st.txt -c 2000000
+-r roms/basic11b.rom -n --screenshot-ansi @OUT@/sa.txt -c 2000000
+-r roms/basic11b.rom -n --dump-ram-at 500000:@OUT@/ram.bin -c 600000
+-r roms/basic11b.rom -n --screenshot-at 1500000:@OUT@/a.ppm --screenshot-text-at 1600000:@OUT@/b.txt --screenshot-ansi-at 1700000:@OUT@/c.ansi -c 1800000
+-r roms/basic11b.rom -n --dump-ram-when 0000:00:@OUT@/when.bin -c 2000000
+-r roms/basic11b.rom -n --screenshot-text-when 0000:00:@OUT@/when.txt -c 2000000
+-r roms/basic11b.rom -n --screenshot-when 9C55:AB:@OUT@/never.ppm -c 500000
+-r roms/basic11b.rom -n --frame-dump @OUT@/frames --frame-dump-interval 30 -c 2000000
+-r roms/basic11b.rom -n --video @OUT@/v.avi --video-fps 25 --video-quality 60 -c 2000000
+-r roms/basic11b.rom -n --video @OUT@/vdef.avi -c 2000000
+-r roms/basic11b.rom -n --audio-wav @OUT@/a.wav -c 1000000
+-r roms/basic11b.rom -n --psg-trace @OUT@/p.psg -c 1000000
+-r roms/basic11b.rom -n --trace-irq @OUT@/irq.log -c 300000
+-r roms/basic11b.rom -n --kbd-scan-trace @OUT@/kbd.log -c 300000
+-r roms/basic11b.rom -n --trace @OUT@/t.log --trace-max 100 -c 100000
+-r roms/basic11b.rom -n --trace @OUT@/ring.log --trace-ring 12 -c 300000
+-r roms/basic11b.rom -n --cycle-trace @OUT@/cy.log --cycle-trace-max 500 -c 100000
+-r roms/basic11b.rom -n --profile @OUT@/pr.txt -c 200000
+-r roms/basic11b.rom -n --save-state @OUT@/s.ost -c 1000000
+-r roms/basic11b.rom -n --record @OUT@/m.phm -c 500000
+-r roms/basic11b.rom -n --printer @OUT@/pr.txt -c 1000
+-r roms/basic11b.rom -n --printer @OUT@/pl.txt --printer-type mcp40 -c 1000
+
+# --- Clavier injecté, pokes
+-r roms/basic11b.rom -n --type-keys '2500000:PRINT 6*7\n' -c 4000000 --screenshot-text @OUT@/tk.txt
+-r roms/basic11b.rom -n --type-keys-when 'BC9A:52:PRINT 1\n' -c 3000000 --screenshot-text @OUT@/tkw.txt
+-r roms/basic11b.rom -n --poke-at 1000:04FA=12 -c 2000 --dump-ram-at 1500:@OUT@/pk.bin
+-r roms/basic11b.rom -n --poke-when 0000:00:04FB=34 -c 20000 --dump-ram-at 15000:@OUT@/pw.bin
+
+# --- Cassette
+-r roms/basic11b.rom -n -t examples/hello.tap -f -c 3000000 --screenshot-text @OUT@/hello.txt
+-r roms/basic11b.rom -n -t examples/hello.tap --tape-signal -c 1000
+-r roms/basic11b.rom -n -t examples/hello.tap --tape-signal-free -c 1000
+-r roms/basic11b.rom -n --tape-out-capture @OUT@/cap.tap -c 1000
+
+# --- Disques
+-r roms/basic11b.rom -n --disk-create @OUT@/blank.dsk -c 500000
+-r roms/basic11b.rom -n --disk-rom roms/microdis.rom -d disks/Citadelle.dsk -c 3000000 --screenshot-text @OUT@/cit.txt
+-r roms/basic11b.rom -n --disk-rom roms/microdis.rom -d disks/Citadelle.dsk --disk-write-protect --fdc-timing real -c 1000
+-r roms/basic11b.rom -n --disk-rom roms/microdis.rom -d disks/Citadelle.dsk --bad-sector 0:0:1 -c 1000
+-r roms/basic11b.rom -n --jasmin-rom roms/jasmin.rom -d disks/Citadelle.dsk -c 1000
+-r roms/basic11b.rom -n --hostfs /tmp -c 1000
+
+# --- Série et cartes
+-r roms/basic11b.rom -n --serial loopback --serial-baud 1200 -c 1000
+-r roms/basic11b.rom -n --serial loopback --acia-addr 031C --serial-irq-on-rdrf --serial-buffer 32 -c 1000
+-r roms/basic11b.rom -n --serial file:/nonexistent-in:@OUT@/tx.bin -c 1000
+-r roms/basic11b.rom -n --serial loopback --serial-trace @OUT@/st.log -c 1000
+-r roms/basic11b.rom -n --serial loopback --serial-v23 -c 1000
+-r roms/basic11b.rom -n --dtl2000 loopback -c 1000
+-r roms/basic11b.rom -n --dtl2000 loopback --dtl2000-addr 0400 -c 1000
+-r roms/basic11b.rom -n --dtl2000-addr zz -c 1000
+-r roms/basic11b.rom -n --mageco loopback -c 1000
+-r roms/basic11b.rom -n --mageco loopback --mageco-addr 0320 -c 1000
+-r roms/basic11b.rom -n --oricon loopback -c 1000
+-r roms/basic11b.rom -n --sp0256-rom /nonexistent.bin -c 1000
+-r roms/basic11b.rom -n --mea8000 -c 1000
+-r roms/basic11b.rom -n --mea8000 --mea8000-addr 03F0 -c 1000
+
+# --- LOCI
+-r roms/loci/locirom -n --loci -c 3000000 --screenshot-text @OUT@/loci.txt
+-r roms/loci/locirom -n --loci --loci-flash /nonexistent-flash -c 1000
+-r roms/basic11b.rom -n --loci --serial loopback -c 1000
+-r roms/basic11b.rom -n --loci --acia-addr 03A0 --serial loopback -c 1000
+-r roms/basic11b.rom -n --loci --loci-mia-window 12-18 --loci-serve-timing 26,27 --loci-serve-jitter 3,12345 -c 1000
+-r roms/basic11b.rom -n --loci --loci-usb none -c 1000
+-r roms/basic11b.rom -n --loci --loci-irq-latency 50 -c 1000
+
+# --- Débogage, pilotage
+-r roms/basic11b.rom -n --break C000 -c 1000
+-r roms/basic11b.rom -n -b C000 -c 1000
+-r roms/basic11b.rom -n --symbols tests/data/nonexistent.sym -c 1000
+-r roms/basic11b.rom -n --bench -c 1000000
+-r roms/basic11b.rom -n --realtime -c 1000
+-r roms/basic11b.rom -n --replay /nonexistent.phm -c 1000
+-r roms/basic11b.rom -n --http-api -c 1000
+-r roms/basic11b.rom -n --cast-server -c 1000

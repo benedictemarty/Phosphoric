@@ -212,6 +212,8 @@ SOURCES = src/main.c \
           src/utils/appsignal.c \
           src/cli/cli_usage.c \
           src/cli/cli_parse.c \
+          src/cli/cli_opts.c \
+          src/cli/cli_args.c \
           src/io/tape_patches.c \
           src/io/loci_glue.c
 
@@ -269,7 +271,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -281,8 +283,10 @@ $(BUILD)/bin/$(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
 
 # Copie à la racine, refaite à chaque appel mais seulement si le binaire de la
 # configuration courante diffère (changer de configuration change de binaire).
+# Copie + renommage : `cp` échouerait (« Text file busy ») si un autre processus
+# exécute le binaire racine ; `mv` remplace l'entrée sans toucher au fichier ouvert.
 $(TARGET): $(BUILD)/bin/$(TARGET) FORCE
-	@cmp -s $< $@ || cp $< $@
+	@cmp -s $< $@ || { cp $< $@.tmp && mv -f $@.tmp $@; }
 
 # Construit la bibliothèque de l'émulateur RP2040 si absente (LOCI_EMU=1 seulement).
 ifeq ($(LOCI_EMU),1)
@@ -321,7 +325,7 @@ $(BUILD)/bin/$(1): $(call obj,$(2))
 	@mkdir -p $$(@D)
 	$$(CC) $$(CFLAGS) $$^ $$(LDFLAGS) -o $$@
 $(1): $(BUILD)/bin/$(1) FORCE
-	@cmp -s $$< $$@ || cp $$< $$@
+	@cmp -s $$< $$@ || { cp $$< $$@.tmp && mv -f $$@.tmp $$@; }
 endef
 $(eval $(call TOOL_BIN,bas2tap,tools/bas2tap.c $(TOOL_SOURCES)))
 $(eval $(call TOOL_BIN,bin2tap,tools/bin2tap.c $(TOOL_SOURCES)))
@@ -757,6 +761,18 @@ test-comment-diff:
 test-check-skips:
 	@sh tests/integration/test_check_skips.sh
 
+# Garde-fou des refactors de main()/du parseur : rejoue tests/cli_golden/cases.txt
+# sur un binaire de RÉFÉRENCE (ex. construit depuis le commit précédent) et sur
+# celui de la configuration courante ; tout écart (code, sorties, fichiers) échoue.
+#   make test-cli-golden GOLDEN_REF=/chemin/vers/oric1-emu-de-reference
+test-cli-golden: $(BUILD)/bin/$(TARGET)
+	@test -n "$(GOLDEN_REF)" || { echo "GOLDEN_REF=/chemin/binaire/de/reference requis"; exit 1; }
+	@sh tools/cli_golden.sh "$(GOLDEN_REF)" $(BUILD)/bin/$(TARGET)
+
+# Auto-test du harnais cli_golden (détecte un écart, n'en invente pas).
+test-cli-golden-self: $(TARGET)
+	@sh tests/integration/test_cli_golden.sh
+
 # Sprint 36a — throughput benchmark. Runs 4 scenarios headless and
 # reports MHz-equivalent / speed ratio vs real ORIC (1 MHz).
 # Usage: `make bench`               human-readable table
@@ -790,7 +806,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
