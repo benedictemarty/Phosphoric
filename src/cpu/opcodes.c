@@ -652,7 +652,12 @@ int cpu_execute_opcode(cpu6502_t* cpu, uint8_t opcode) {
         cpu_push_word(cpu, cpu->PC);
         cpu_push(cpu, cpu->P | FLAG_BREAK | FLAG_UNUSED);
         cpu_set_flag(cpu, FLAG_INTERRUPT, true);
-        cpu->PC = cpu_mem_read(cpu, 0xFFFE) | ((uint16_t)cpu_mem_read(cpu, 0xFFFF) << 8);
+        {   /* octet bas d'abord : dans une même expression, l'ordre des deux
+             * lectures n'est pas spécifié en C (inversé sous -fsanitize) */
+            uint8_t lo = cpu_mem_read(cpu, 0xFFFE);
+            uint8_t hi = cpu_mem_read(cpu, 0xFFFF);
+            cpu->PC = (uint16_t)(lo | (hi << 8));
+        }
         break;
 
     /* ── Flag instructions ── */

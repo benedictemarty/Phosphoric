@@ -499,7 +499,7 @@ void loci_mou_report(loci_t* loci, uint8_t buttons,
 
 void op_rng_lrand(loci_t* loci) {
     uint32_t v = (uint32_t)rand();
-    v ^= (uint32_t)(rand() << 16);
+    v ^= (uint32_t)rand() << 16;
     v &= 0x7FFFFFFFu;
     api_return_axsreg(loci, v);
 }

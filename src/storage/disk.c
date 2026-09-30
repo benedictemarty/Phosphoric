@@ -121,7 +121,7 @@ static void fdc_web_ensure_track(fdc_t* fdc, uint8_t side, uint8_t track) {
     uint8_t raw[MFM_TRACK_SIZE];
     long n = disk_http_get(fdc->web_url, off, MFM_TRACK_SIZE, raw, sizeof(raw));
     if (n == MFM_TRACK_SIZE) {
-        int got = sedoric_mfm_extract_track(raw, fdc->disk_data,
+        int got = sedoric_mfm_extract_track(raw, fdc->disk_data, fdc->disk_size,
                                             fdc->sectors_per_track, fdc->tracks);
         log_info("disk_http: track s%u/t%u fetched (%d sectors)", side, track, got);
     } else {

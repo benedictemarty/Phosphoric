@@ -12,9 +12,9 @@
 #include "network/gdbstub.h"
 #include "utils/logging.h"
 
-bool gdb_stub_init(gdb_stub_t* stub, uint16_t port)
+bool gdb_stub_init(gdb_stub_t* stub, uint16_t port, const char* bind_addr)
 {
-    (void)stub; (void)port;
+    (void)stub; (void)port; (void)bind_addr;
     log_error("GDB stub: non disponible dans le build Windows v1 "
               "(sockets POSIX) — utilisez la version Linux/WSL2");
     return false;

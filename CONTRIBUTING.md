@@ -102,7 +102,26 @@ make test-audio         # Audio tests only
 make valgrind           # Memory leak check
 make valgrind-core      # Core suites under Valgrind (CI job)
 make static-analysis    # Compiler warnings analysis
+make SANITIZE=1 tests   # Whole suite under ASan + UBSan (build/<config>-san)
+make fuzz               # libFuzzer (clang), FUZZ_TIME seconds per target
 ```
+
+### Sanitizers and Fuzzing
+
+- `SANITIZE=1` builds with AddressSanitizer + UndefinedBehaviorSanitizer in its own
+  build directory; any UBSan report aborts the program, so the test that triggers
+  it fails. The only exemption is `third_party/stb_image_write.h` (left intact),
+  for signed shifts, in its own compilation unit.
+- `tests/fuzz/` holds one `LLVMFuzzerTestOneInput()` per file reader: `.dsk`
+  (`sedoric_load` + FDC reads), `.tap`, `.ost`, `.mid`, symbol files and
+  `phosphoric.cfg`. `make fuzz` runs them with libFuzzer; `make test-fuzz-replay`
+  (part of `make tests`, gcc) replays the synthetic seeds (`tools/fuzz_seeds.sh`)
+  and `tests/fuzz/regressions/<target>/`.
+- When `make fuzz` finds an input, it is written to `build/fuzz/crashes/`: fix the
+  bug, then copy the input into `tests/fuzz/regressions/<target>/` so it replays
+  in every run of the suite.
+- CI (`linux-ci.yml`, job `sanitizers`) runs `make SANITIZE=1 tests-strict` and
+  `make fuzz FUZZ_TIME=30`.
 
 ### Adding a Test
 

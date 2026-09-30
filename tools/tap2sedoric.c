@@ -429,5 +429,7 @@ int main(int argc, char **argv) {
     if (is_auto) printf("  AUTO exec $%04X\n", execaddr);
     if (inist)   printf("  INIST=\"%s\"\n", inist);
     printf("  base=%s  free=%d  files=%d\n", base, freecnt, filecnt);
+    free(tbuf);
+    free(disk);
     return 0;
 }

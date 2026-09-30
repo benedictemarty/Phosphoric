@@ -164,7 +164,7 @@ static void mea8000_shift_frame(mea8000_t* m)
 static void mea8000_decode_frame(mea8000_t* m)
 {
     int fd = (m->buf[3] >> 5) & 3;            /* 0=8ms,1=16,2=32,3=64 */
-    int pi = pi_table[m->buf[3] & 0x1f] << fd;
+    int pi = pi_table[m->buf[3] & 0x1f] * (1 << fd);   /* signed table: no << */
     m->noise = ((m->buf[3] & 0x1f) == 16);
     m->pitch = (uint16_t)(m->last_pitch + pi);
     m->f[0].bw = (uint16_t)bw_table[m->buf[0] >> 6];

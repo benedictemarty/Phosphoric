@@ -71,6 +71,7 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 cfg->gdb_enabled = true;
                 if (optarg) cfg->gdb_port = atoi(optarg);
                 break;
+            case OPT_GDB_BIND: cfg->gdb_bind = optarg; break;
             case OPT_RECORD: cfg->movie_record_file = optarg; break;
             case OPT_REPLAY: cfg->movie_replay_file = optarg; break;
             case 'k': cfg->keyboard_layout = optarg; break;

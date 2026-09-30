@@ -47,11 +47,17 @@ typedef struct {
     int      stop_signal;   /**< signal number to report (5=TRAP, 2=INT) */
 } gdb_stub_t;
 
+/** Adresse d'écoute par défaut : la machine locale seulement. Le stub donne
+ *  un accès complet (mémoire, registres, exécution) sans authentification ;
+ *  l'ouvrir au réseau se demande explicitement (--gdb-bind 0.0.0.0). */
+#define GDB_DEFAULT_BIND "127.0.0.1"
+
 /**
  * @brief Open the listening socket and block until a GDB client connects.
+ * @param bind_addr IPv4 address to listen on (NULL or "" → GDB_DEFAULT_BIND)
  * @return true on success (client attached)
  */
-bool gdb_stub_init(gdb_stub_t* stub, uint16_t port);
+bool gdb_stub_init(gdb_stub_t* stub, uint16_t port, const char* bind_addr);
 
 /** @brief Close connection and listening socket. */
 void gdb_stub_close(gdb_stub_t* stub);

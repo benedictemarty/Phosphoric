@@ -207,7 +207,8 @@ bool smf_parse(const uint8_t* data, size_t size, smf_t* out)
     if (!ok) { free(pool.p); free(recs.p); return false; }
 
     /* Merge all tracks onto one timeline (stable by tick, then parse order). */
-    qsort(recs.p, recs.len, sizeof(rec_t), rec_cmp);
+    if (recs.len > 1)   /* no event: recs.p may be NULL, which qsort forbids */
+        qsort(recs.p, recs.len, sizeof(rec_t), rec_cmp);
 
     /* SMPTE vs PPQN division → microseconds-per-tick model. */
     bool smpte = (division & 0x8000) != 0;
@@ -216,6 +217,9 @@ bool smf_parse(const uint8_t* data, size_t size, smf_t* out)
     if (smpte) {
         int frames = -(int8_t)(division >> 8);     /* 24/25/29/30 */
         int subfr  = division & 0xFF;
+        if (frames <= 0 || subfr == 0) {           /* malformed: no finite tick length */
+            free(pool.p); free(recs.p); return false;
+        }
         double fps = (frames == 29) ? 29.97 : (double)frames;
         us_per_tick = 1.0e6 / (fps * (double)subfr);
     } else {
@@ -245,7 +249,10 @@ bool smf_parse(const uint8_t* data, size_t size, smf_t* out)
             if (!ne) { free(evs); free(pool.p); free(recs.p); return false; }
             evs = ne;
         }
-        evs[nev].t_us = (uint32_t)(now_us + 0.5);
+        /* µs on 32 bits (~71 min): later events saturate instead of an
+         * undefined out-of-range conversion (malformed delta-times). */
+        evs[nev].t_us = (now_us + 0.5 >= (double)UINT32_MAX) ? UINT32_MAX
+                                                             : (uint32_t)(now_us + 0.5);
         evs[nev].len  = r->len;
         evs[nev].off  = r->off;
         nev++;
@@ -258,7 +265,7 @@ bool smf_parse(const uint8_t* data, size_t size, smf_t* out)
     out->pool_len = pool.len;
     out->format   = format;
     out->ntracks  = ntracks;
-    out->total_us = nev ? evs[nev - 1].t_us + 1 : 0;
+    out->total_us = !nev ? 0 : (evs[nev - 1].t_us < UINT32_MAX ? evs[nev - 1].t_us + 1 : UINT32_MAX);
     return true;
 }
 

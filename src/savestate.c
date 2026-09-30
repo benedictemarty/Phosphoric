@@ -713,7 +713,10 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 uint8_t dtracks = read_u8(fp);
                 uint8_t dsectors = read_u8(fp);
                 uint8_t dsides = read_u8(fp);
-                if (drive >= MICRODISC_MAX_DRIVES) {  /* defensive: skip payload */
+                /* Taille venue du fichier : bornée (2 faces × 256 pistes × 256
+                 * secteurs × 256 o, au-delà de toute géométrie réelle). */
+                if (drive >= MICRODISC_MAX_DRIVES || dsize == 0 ||
+                    dsize > 2u * 256u * 256u * 256u) {  /* defensive: skip payload */
                     fseek(fp, dsize, SEEK_CUR);
                     continue;
                 }
@@ -721,13 +724,14 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 if (!emu->disks[drive]) {
                     emu->disks[drive] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
                 }
-                if (emu->disks[drive] &&
-                    (emu->disks[drive]->data == NULL ||
-                     emu->disks[drive]->size != dsize)) {
+                bool sized = emu->disks[drive] && emu->disks[drive]->data &&
+                             emu->disks[drive]->size == dsize;
+                if (emu->disks[drive] && !sized) {
                     uint8_t* nd = (uint8_t*)realloc(emu->disks[drive]->data, dsize);
-                    if (nd) emu->disks[drive]->data = nd;
+                    if (nd) { emu->disks[drive]->data = nd; sized = true; }
+                    /* échec : l'ancien tampon, trop petit, ne reçoit rien */
                 }
-                if (emu->disks[drive] && emu->disks[drive]->data) {
+                if (sized) {
                     fread(emu->disks[drive]->data, 1, dsize, fp);
                     emu->disks[drive]->size = dsize;
                     emu->disks[drive]->tracks = dtracks;

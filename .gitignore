@@ -224,3 +224,7 @@ test_clock
 /snapshots/
 /impression.txt
 /traceur.bmp
+
+# Entrées de fuzzing ayant fait tomber un analyseur (synthétiques, rejouées par
+# make test-fuzz-replay) : versionnées malgré *.dsk / *.tap / *.ost.
+!tests/fuzz/regressions/*/*
