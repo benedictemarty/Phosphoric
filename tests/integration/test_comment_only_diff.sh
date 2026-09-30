@@ -39,9 +39,9 @@ expect() {  # expect <expected rc> <label>
     git checkout -q -- .
 }
 
-# Remplacement littéral portable : le `sed -i` de BSD/macOS n'a pas la syntaxe
-# GNU (il prendrait le script pour un suffixe et ne modifierait rien).
-edit() {  # edit <fichier> <ancien> <nouveau>
+# Portable literal replacement: BSD/macOS `sed -i` does not take the GNU
+# syntax (it would read the script as a suffix and change nothing).
+edit() {  # edit <file> <old> <new>
     python3 - "$@" <<'PY' || echo "edit impossible : $2" >&2
 import sys
 p, a, b = sys.argv[1:4]
