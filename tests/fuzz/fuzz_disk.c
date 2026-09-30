@@ -14,6 +14,8 @@
 #include "storage/sedoric.h"
 #include "storage/disk.h"
 
+FUZZ_NO_SEED()
+
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     FUZZ_QUIET_LOGS();
     sedoric_disk_t* d = sedoric_load(fuzz_tmpfile(data, size));

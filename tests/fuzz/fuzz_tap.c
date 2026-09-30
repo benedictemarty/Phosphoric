@@ -11,6 +11,8 @@
 #include "utils/logging.h"
 #include "storage/tap.h"
 
+FUZZ_NO_SEED()
+
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     FUZZ_QUIET_LOGS();
     tap_file_t* tap = tap_open_read(fuzz_tmpfile(data, size), true);

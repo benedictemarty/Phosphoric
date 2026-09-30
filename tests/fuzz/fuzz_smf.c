@@ -8,6 +8,8 @@
 #include "io/smf.h"
 #include <string.h>
 
+FUZZ_NO_SEED()
+
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     smf_t s;
     memset(&s, 0, sizeof s);

@@ -40,8 +40,9 @@ static int replay_file(const char* path) {
 
 int main(int argc, char** argv) {
     if (argc == 3 && strcmp(argv[1], "--seed") == 0) {
-        if (!fuzz_make_seed) { fprintf(stderr, "fuzz_replay: pas de graine pour cette cible\n"); return 1; }
-        return fuzz_make_seed(argv[2]) == 0 ? 0 : 1;
+        int rc = fuzz_make_seed(argv[2]);
+        if (rc < 0) fprintf(stderr, "fuzz_replay: pas de graine pour cette cible\n");
+        return rc == 0 ? 0 : 1;
     }
     int files = 0, errors = 0;
     for (int i = 1; i < argc; i++) {

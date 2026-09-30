@@ -1,0 +1,7 @@
+# Suppressions LeakSanitizer pour `make SANITIZE=1` (LSAN_OPTIONS, Makefile).
+# Uniquement des fuites de bibliothèques tierces, jamais du code de Phosphoric.
+#
+# SDL2 : SDL_Init / SDL_CreateWindow chargent des pilotes vidéo (dlopen) qui
+# gardent des allocations jusqu'à la sortie ; vu sur le runner Ubuntu de la CI
+# (test-renderer, renderer_init), pas sur tous les hôtes.
+leak:libSDL2

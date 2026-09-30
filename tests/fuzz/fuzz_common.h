@@ -6,8 +6,8 @@
  *
  * Each target defines LLVMFuzzerTestOneInput(): with clang
  * (-fsanitize=fuzzer, `make fuzz`) libFuzzer provides main(); with gcc,
- * fuzz_replay.c replays a corpus (`make test-fuzz-replay`). A target may
- * also define fuzz_make_seed() to build a valid seed.
+ * fuzz_replay.c replays a corpus (`make test-fuzz-replay`). Each target
+ * also defines fuzz_make_seed(): a valid seed, or FUZZ_NO_SEED().
  *
  * Phosphoric's parsers take paths: the input is written to a temporary file,
  * reused from one call to the next.
@@ -23,8 +23,11 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
 
-/* Optional seed (fuzz_replay --seed PATH): 0 = written. */
-int fuzz_make_seed(const char* path) __attribute__((weak));
+/* Seed (fuzz_replay --seed PATH): 0 = written. No weak symbol: the macOS
+ * linker rejects an undefined weak symbol. */
+int fuzz_make_seed(const char* path);
+#define FUZZ_NO_SEED() \
+    int fuzz_make_seed(const char* path) { (void)path; return -1; }
 
 static char fuzz_tmp_path[64];
 static void fuzz_tmp_remove(void) { if (fuzz_tmp_path[0]) unlink(fuzz_tmp_path); }
