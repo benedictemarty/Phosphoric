@@ -8,6 +8,8 @@
 #include "utils/logging.h"
 #include "utils/symbols.h"
 
+FUZZ_NO_SEED()
+
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     FUZZ_QUIET_LOGS();
     static symbol_table_t tbl;

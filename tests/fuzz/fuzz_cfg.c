@@ -9,6 +9,8 @@
 #include "cli/cli_opts.h"
 #include "iomenu_glue.h"
 
+FUZZ_NO_SEED()
+
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     FUZZ_QUIET_LOGS();
     static cli_opts_t cfg;

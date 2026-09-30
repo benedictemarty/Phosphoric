@@ -6,8 +6,8 @@
  *
  * Chaque cible définit LLVMFuzzerTestOneInput() : avec clang
  * (-fsanitize=fuzzer, `make fuzz`) libFuzzer fournit main() ; avec gcc,
- * fuzz_replay.c rejoue un corpus (`make test-fuzz-replay`). Une cible peut
- * aussi définir fuzz_make_seed() pour fabriquer une graine valide.
+ * fuzz_replay.c rejoue un corpus (`make test-fuzz-replay`). Chaque cible
+ * définit aussi fuzz_make_seed() : une graine valide, ou FUZZ_NO_SEED().
  *
  * Les analyseurs de Phosphoric prennent des chemins : l'entrée est écrite dans
  * un fichier temporaire, réutilisé d'un appel à l'autre.
@@ -23,8 +23,11 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
 
-/* Graine optionnelle (fuzz_replay --seed CHEMIN) : 0 = écrite. */
-int fuzz_make_seed(const char* path) __attribute__((weak));
+/* Graine (fuzz_replay --seed CHEMIN) : 0 = écrite. Pas de symbole faible :
+ * l'éditeur de liens de macOS refuse un symbole faible non défini. */
+int fuzz_make_seed(const char* path);
+#define FUZZ_NO_SEED() \
+    int fuzz_make_seed(const char* path) { (void)path; return -1; }
 
 static char fuzz_tmp_path[64];
 static void fuzz_tmp_remove(void) { if (fuzz_tmp_path[0]) unlink(fuzz_tmp_path); }

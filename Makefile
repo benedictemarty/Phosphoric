@@ -153,6 +153,8 @@ ifeq ($(SANITIZE), 1)
     # au-delà de son bit de signe dans l'écriture des bits JPEG
     # (stbiw__jpg_writeBits) : exemption limitée à son unité de compilation.
     STB_SAN_CFLAGS = -fno-sanitize=shift
+    # Fuites de bibliothèques tierces (SDL2) ignorées : tests/lsan.supp.
+    export LSAN_OPTIONS = suppressions=$(CURDIR)/tests/lsan.supp:print_suppressions=0
 endif
 
 # Source files
