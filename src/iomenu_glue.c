@@ -16,6 +16,7 @@
 #include "io/printer.h"
 #include "io/loci_emu.h"
 #include "utils/logging.h"
+#include "utils/oscompat.h"   /* mkdir portable (MinGW : un seul argument) */
 #include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -208,7 +209,7 @@ static const char* media_error(media_result_t r) {
 
 /* Prochain nom libre snapshots/etatNNNN.ost. */
 static bool next_snapshot_path(char* out, size_t n) {
-    if (mkdir("snapshots", 0755) != 0 && errno != EEXIST) return false;
+    if (oscompat_mkdir("snapshots", 0755) != 0 && errno != EEXIST) return false;
     for (int i = 1; i < 10000; i++) {
         snprintf(out, n, "snapshots/etat%04d.ost", i);
         if (access(out, F_OK) != 0) return true;
@@ -419,6 +420,9 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
                                 : emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD ? "manette" : "aucun");
     fprintf(out, "clavier=%s\n", emu->keyboard.layout == ORIC_KB_AZERTY ? "azerty" : "qwerty");
     bool ok = fclose(out) == 0;
+#ifdef _WIN32
+    if (ok) remove(path);   /* rename() de Windows n'écrase pas un fichier existant */
+#endif
     if (ok) ok = rename(tmp, path) == 0;
     if (!ok) remove(tmp);
     log_info("Configuration %s : %s", ok ? "enregistrée" : "NON enregistrée", path);
