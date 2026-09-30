@@ -57,7 +57,7 @@ d'interruption indépendants CA2/CB2 ; latch d'entrée (ACR 0-1) ;
 handshake/pulse CA2/CB2 ; les 8 modes du registre à décalage (rotation
 MSB→bit0, cadence T2=N+2, φ2=÷2, mode 4 free-run sans flag).
 
-### Corrigé (v1.98.0-alpha)
+### Corrigé (v1.98.0-alpha) — deux points annulés en 2.6.0 par la mesure (voir « Corrigé (2.6.0) »)
 | Écart | Détail | Correctif |
 |-------|--------|-----------|
 | **One-shot T1/T2 gelait après timeout** | Datasheet p.8/p.9 : le compteur continue à décrémenter (seul le flag cesse de se réarmer) pour laisser l'hôte lire le temps écoulé depuis l'interruption. | Nouveau champ `t1_active/t2_active` (compteur qui compte) distinct de `t1_running/t2_running` (tir encore possible). Le décompte est gaté sur `*_active` (reste vrai après timeout) ; le tir/reload sur `*_running`. Sémantique `t1_running=false` après timeout **préservée** (savestate/control/debugger + tests existants intacts). Tests `test_timer1/2_one_shot_counter_continues`. |
@@ -68,10 +68,33 @@ MSB→bit0, cadence T2=N+2, φ2=÷2, mode 4 free-run sans flag).
 |-------|--------|-----------|
 | **Période du Timer 1 trop courte de 2 cycles** (ancienne déviation assumée n° 2) | Fig 16 : période **N+2**. Le sous-dépassement du 6522 n'est pas l'atteinte de zéro mais le passage de `$0000` à `$FFFF` (un cycle plus tard), et le rechargement depuis le latch consomme encore un cycle. Le code tirait dès zéro et rechargeait dans le même cycle : période **N**. Erreur de 0,02 % à 100 Hz, mais **20 % pour N=10** — audible sur les sons courts et les digidrums. | Décompte **cycle par cycle** avec sous-dépassement sur `$0000 → $FFFF` et nouveau champ `t1_reload` pour le cycle de rechargement (`via6522.c`). Idem Timer 2 (sans rechargement). **La raison invoquée pour ne pas corriger s'est révélée infondée** : les baselines byte-exact sont intactes — boot Atmos identique, **13 programmes réels** (6 disquettes, 7 cassettes) identiques à l'écran, `make tests` intégralement vert dont le roundtrip cassette qui exerce PB7 à 416/624 cycles. Ce qui a rendu la correction sûre : la machine avance désormais cycle par cycle (épics V2-E1/E2), donc le timer n'est plus approché à ±6 cycles par les paquets. Vecteurs : `test_via_t1_freerun_period_is_n_plus_2` (N = 1, 2, 5, 10, 100, 999, 9998), `test_via_t1_oneshot_timeout_cycle`, `test_via_pb7_square_wave_period`, `test_via_t1_counter_readback`, `test_via_ca2_pulse_lasts_one_cycle`, et l'intégration `test_via_t1_frame_rate_over_50_frames` (exactement 50 interruptions en 50 trames — un seul cycle de dérive la ferait échouer). |
 
+### Corrigé (2.6.0) — comportement mesuré sur un vrai 6522
+
+Report des correctifs de Neo6502Vic20 (US-30), qui a repris cette VIA et l'a confrontée
+aux programmes de test VIC-20 de VICE (`testprogs/VIC20` : viavarious, via_sr, via_pb7,
+via_wrap, via_t1crash, via_t1irqack, via_mapping), dont les références sont **mesurées
+sur matériel réel** : 61/61 là-bas (≈ 12 avant). Là où la mesure contredit la datasheet,
+la mesure l'emporte ; deux correctifs de la v1.98.0 (ci-dessus) sont ainsi **annulés**.
+Ces programmes tournent sur la machine VIC-20 de Neo6502Vic20, pas dans la CI de
+Phosphoric ; ici, les règles sont verrouillées par des tests unitaires (`test-io`).
+
+| Écart | Mesure | Correctif | Test |
+|-------|--------|-----------|------|
+| One-shot : le compteur s'enroulait après le time-out | viavarious via1, via4 : T1 se **recharge depuis le latch** à chaque sous-dépassement, en one-shot aussi (seule l'IRQ est unique) — contredit la datasheet et la v1.98.0 | rechargement dans tous les modes | `test_via_t1_oneshot_reloads_from_latch` |
+| Compteurs en avance d'un cycle | viavarious via1-5 : T1/T2 ne décomptent qu'au cycle **suivant** l'écriture de T1C-H / T2C-H (IRQ à N+2 cycles de l'écriture) | `t1_reload` à l'écriture, champ `t2_hold` | `test_via_t1_underflow_one_cycle_after_zero`, `…_t2_…`, `…_oneshot_timeout_cycle`, `…_counter_readback` |
+| Bascule du mode de T2 immédiate | via1 G, via2, via9 : le mode (φ2 / PB6, ACR bit 5) change au cycle suivant, dans les deux sens | champ `t2_phi2` | `test_via_t2_mode_switch_next_cycle` |
+| T2 sur 16 bits quand il cadence le SR | via20, via21 : T2 compte sur **8 bits** (octet bas rechargé, période latch + 2), IRQ unique au passage des 16 bits à `$FFFF` | champ `t2_reload` | `test_via_t2_8bit_when_sr_uses_t2` |
+| PB7 conditionnée à DDRB.7 | via10-13, via_pb7 : PB7 est la sortie de T1 dès que ACR bit 7 = 1, **même avec DDRB.7 = 0** ; bascule à 1 au RESET, 0 à l'écriture de T1C-H, 1 quand ACR bit 7 passe à 1, change d'état à chaque IRQ T1 — contredit la datasheet et la v1.98.0 | conditions DDRB retirées | `test_pb7_timer_output_ignores_ddrb7`, `test_via_pb7_toggle_rules` ; CSAVE réel : `test-tape-roundtrip` vert |
+| Registre à décalage | via_sr (8 modes) : 16 demi-périodes de CB1 démarrées par toute lecture **ou** écriture du SR ; sortie aux états pairs, entrée aux impairs ; T2 : événement 2 cycles après chaque sous-dépassement de l'octet bas ; φ2 : un événement par cycle, le premier 3 cycles après l'ACR (1 après l'accès) ; ACR = 000 tient le drapeau à 0 | SR réécrit (événements) | `test_sr_shift_out_phi2`, `test_sr_shift_in_phi2`, `test_via_sr_any_access_starts_and_acr0_clears_flag` |
+
+Sur l'Oric : corpus de 36 programmes réels identique à l'écran, boots, CSAVE/CLOAD et
+chargement au signal inchangés ; la section `.ost` VIA gagne 5 octets (état T2 / SR ;
+un `.ost` antérieur se relit). Coût mesuré : ≈ +4 % par trame.
+
 ### Déviations assumées (restantes)
 | # | Écart | Datasheet | Raison |
 |---|-------|-----------|--------|
-| 2b | Le demi-cycle du time-out one-shot (N+1,5) n'est pas modélisé : le flag est posé au cycle N+1 | « N+1,5 cycles après l'écriture de T1C-H » | Un demi-cycle n'est pas représentable à la granularité du cycle entier (il faudrait le niveau N4, cf. `docs/ACCURACY.md`). La **période** du mode continu, elle, est exacte — c'est elle qui fixe les fréquences. |
+| 2b | Le demi-cycle du time-out one-shot (N+1,5) n'est pas représenté ; depuis 2.6.0 le drapeau tombe au cycle mesuré sur vrai 6522 (N+2 cycles après le cycle d'écriture, référence viavarious) | « N+1,5 cycles après l'écriture de T1C-H » | Un demi-cycle n'est pas représentable à la granularité du cycle entier (il faudrait le niveau N4, cf. `docs/ACCURACY.md`). La **période** du mode continu, elle, est exacte — c'est elle qui fixe les fréquences. |
 | 4 | Écriture T1L-H (reg 7) efface le flag T1 | Fig 12/13 : seule l'écriture T1C-H (reg 5) l'efface explicitement | Comportement exact de reg 7 sur le flag **incertain** (divergence entre datasheets MOS et Rockwell) → pas de correction sans confirmation (principe : ne pas inventer). |
 | 5 | RESET efface compteurs/latches/SR | La datasheet dit qu'ils sont **préservés** | Sans conséquence (état power-on indéfini) ; `test_via_reset` verrouille l'état actuel. |
 
