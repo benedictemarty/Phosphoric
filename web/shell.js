@@ -170,7 +170,7 @@ document.getElementById('btn-modem').onclick=function(){
 if(loci){ setInterval(function(){ if(ready) lociSync(false); }, 5000);
   window.addEventListener('pagehide', function(){ if(ready) lociSync(false); }); }
 document.getElementById('btn-reset').onclick=function(){ location.reload(); };
-// Menu des périphériques (F1) : bouton I/O, et F1 soustrait au navigateur (aide).
+// Peripherals menu (F1): I/O button, and F1 withheld from the browser (help).
 function toggleIomenu(){ if(!ready) return;
   var open=0; try{ open=Module.ccall('web_iomenu_toggle','number',[],[]); }catch(e){}
   document.getElementById('btn-iomenu').classList.toggle('on', !!open);
@@ -203,7 +203,7 @@ if(localStorage.getItem('phos_crt')==='1'){ frame.classList.add('crt'); btnCrt.c
 btnCrt.onclick=function(){ var on=frame.classList.toggle('crt'); btnCrt.classList.toggle('on',on);
   localStorage.setItem('phos_crt', on?'1':'0'); };
 
-// I/O activity LEDs (poll bit0=tape, bit1=disk, bit2=menu F1 ouvert)
+// I/O activity LEDs (poll bit0=tape, bit1=disk, bit2=F1 menu open)
 var ledTape=document.getElementById('led-tape'), ledDisk=document.getElementById('led-disk');
 setInterval(function(){ if(!ready) return;
   var b=0; try{ b=Module.ccall('web_io_activity',null,[],[])||0; }catch(e){}

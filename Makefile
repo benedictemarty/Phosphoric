@@ -665,8 +665,8 @@ test-web-loci:
 test-web-picowifi:
 	@bash tests/integration/test_web_picowifi.sh
 
-# E2E web : menu des périphériques (F1) dans la build WASM (F1 soustrait au
-# navigateur, pause, clavier virtuel, bouton I/O). Mêmes prérequis/SKIP, hors `make tests`.
+# Web E2E: peripherals menu (F1) in the WASM build (F1 withheld from the
+# browser, pause, on-screen keyboard, I/O button). Same prerequisites/SKIP, not in `make tests`.
 test-web-iomenu:
 	@bash tests/integration/test_web_iomenu.sh
 

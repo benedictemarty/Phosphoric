@@ -116,7 +116,7 @@ static void s_frame(iom_surface_t* s, int row, int col, int rows, int cols, uint
  *  File picker
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* « media » : là où la page web dépose les fichiers chargés (/media). */
+/* "media": where the web page drops loaded files (/media). */
 static const char* const default_dirs[] = { "tapes", "disks", "snapshots", "media", "demos/ula-ng", ".", NULL };
 
 static bool has_ext(const char* name, const char* ext) {

@@ -91,10 +91,10 @@
  * reach the canvas; the on-screen keyboard routes through these exports instead,
  * writing the ORIC matrix directly — so Ctrl/Funct combos always work. */
 static emulator_t* g_web_emu = NULL;
-static void iomenu_toggle(emulator_t* emu);   /* menu F1, défini plus bas */
+static void iomenu_toggle(emulator_t* emu);   /* F1 menu, defined below */
 
-/* Menu F1 ouvert : les touches du clavier virtuel le pilotent (flèches,
- * RETURN, ESC, DEL, lettres) au lieu d'aller à la matrice de l'Oric. */
+/* F1 menu open: the on-screen keyboard keys drive it (arrows,
+ * RETURN, ESC, DEL, letters) instead of going to the Oric matrix. */
 static void web_iomenu_key(int c) {
     int k = c == 0x80 ? IOM_KEY_UP : c == 0x81 ? IOM_KEY_DOWN : c == 0x82 ? IOM_KEY_LEFT
           : c == 0x83 ? IOM_KEY_RIGHT : c == 0x0D ? IOM_KEY_ENTER : c == 0x1B ? IOM_KEY_ESC
@@ -105,8 +105,8 @@ static void web_iomenu_key(int c) {
         iomenu_toggle(g_web_emu);
 }
 
-/* Ouvre / ferme le menu des périphériques (bouton E/S de la page). Renvoie 1 si
- * le menu est maintenant ouvert. */
+/* Opens / closes the peripherals menu (the page's I/O button). Returns 1 if
+ * the menu is now open. */
 EMSCRIPTEN_KEEPALIVE int web_iomenu_toggle(void) {
     if (!g_web_emu) return 0;
     iomenu_toggle(g_web_emu);
@@ -137,7 +137,7 @@ EMSCRIPTEN_KEEPALIVE void web_key_release_all(void) {
 }
 
 /* I/O activity bitmap for the on-screen LEDs: bit0 = tape (CLOAD in progress),
- * bit1 = disk (WD1793 BUSY), bit2 = menu F1 ouvert (bouton I/O allumé). Polled
+ * bit1 = disk (WD1793 BUSY), bit2 = F1 menu open (I/O button lit). Polled
  * by the web UI. */
 EMSCRIPTEN_KEEPALIVE int web_io_activity(void) {
     if (!g_web_emu) return 0;

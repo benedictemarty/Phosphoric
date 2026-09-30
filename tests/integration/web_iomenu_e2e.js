@@ -1,14 +1,14 @@
-// web_iomenu_e2e.js — menu des périphériques (F1) dans la build WASM (Chrome headless).
+// web_iomenu_e2e.js — peripherals menu (F1) in the WASM build (headless Chrome).
 //
-// Usage : node web_iomenu_e2e.js <base-url> [capture.png]
-// Code de sortie : 0 = OK, 1 = échec, 77 = SKIP (Playwright / Chrome introuvable).
+// Usage: node web_iomenu_e2e.js <base-url> [capture.png]
+// Exit code: 0 = OK, 1 = failure, 77 = SKIP (Playwright / Chrome not found).
 //
-// Vérifie, dans le navigateur :
-//   1. F1 (clavier physique) ouvre le menu et n'atteint pas le navigateur
-//      (preventDefault : pas d'aide) ; le bouton I/O s'allume ;
-//   2. machine figée menu ouvert (Timer 1 du VIA immobile), relancée à la fermeture ;
-//   3. les touches du clavier virtuel pilotent le menu (RETURN sur « Reprendre ») ;
-//   4. le bouton I/O ouvre et ferme le menu.
+// Checks, in the browser:
+//   1. F1 (physical keyboard) opens the menu and does not reach the browser
+//      (preventDefault: no help); the I/O button lights up;
+//   2. machine frozen while the menu is open (VIA Timer 1 still), resumed on close;
+//   3. the on-screen keyboard keys drive the menu (RETURN on "Reprendre");
+//   4. the I/O button opens and closes the menu.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -32,7 +32,7 @@ function check(ok, msg) { console.log((ok ? '  PASS ' : '  FAIL ') + msg); if (!
 
 const activity = p => p.evaluate(() => Module.ccall('web_io_activity', 'number', [], []) || 0);
 const menuOpen = async p => ((await activity(p)) & 4) !== 0;
-// Timer 1 du VIA ($0304/$0305) : décompte à chaque cycle quand la machine tourne.
+// VIA Timer 1 ($0304/$0305): counts down every cycle while the machine runs.
 const t1 = p => p.evaluate(() => Module.ccall('web_peek', 'number', ['number'], [0x0304]) |
                               (Module.ccall('web_peek', 'number', ['number'], [0x0305]) << 8));
 async function running(p) {
@@ -51,10 +51,10 @@ async function running(p) {
   try {
     await p.goto(base + '/phosphoric.html');
     await p.waitForFunction(() => typeof ready !== 'undefined' && ready, null, { timeout: 20000 });
-    await p.waitForTimeout(3000);                       // boot BASIC
+    await p.waitForTimeout(3000);                       // BASIC boot
     check(await running(p), 'machine en marche avant le menu');
 
-    // F1 : l'événement est « consommé » (pas d'aide du navigateur).
+    // F1: the event is "consumed" (no browser help).
     await p.evaluate(() => { window.__f1 = null;
       window.addEventListener('keydown', e => { if (e.key === 'F1') window.__f1 = e.defaultPrevented; }); });
     await p.click('#canvas');
@@ -67,14 +67,14 @@ async function running(p) {
     check(!(await running(p)), 'machine figée pendant le menu');
     if (shot) await p.screenshot({ path: shot });
 
-    // Clavier virtuel : RETURN sur « Reprendre » (curseur à l'ouverture) ferme le menu.
+    // On-screen keyboard: RETURN on "Reprendre" (cursor on open) closes the menu.
     await p.evaluate(() => { Module.ccall('web_key', null, ['number','number','number','number','number'], [13,0,0,0,1]);
                              Module.ccall('web_key', null, ['number','number','number','number','number'], [13,0,0,0,0]); });
     await p.waitForTimeout(400);
     check(!(await menuOpen(p)), 'clavier virtuel : RETURN sur « Reprendre » ferme le menu');
     check(await running(p), 'machine relancée après fermeture');
 
-    // Bouton I/O : ouvre puis ferme.
+    // I/O button: opens then closes.
     await p.click('#btn-iomenu');
     await p.waitForTimeout(400);
     check(await menuOpen(p), 'bouton I/O ouvre le menu');
