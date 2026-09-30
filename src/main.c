@@ -601,7 +601,11 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     /* --cycle-trace : une ligne par cycle (l'accès bus mémorisé, puis les
      * cycles internes du lot). No-op quand la trace n'est pas armée. */
     if (cycle_trace_active()) cycle_trace_cycles(&emu->cpu, cycles);
-    via_update(&emu->via, cycles);
+    /* VIA : chemin paresseux exact (via_tick, report Neo6502Vic20 US-31) —
+     * un cycle sans événement possible est seulement compté, appliqué au
+     * prochain accès. Le cœur --cpu-legacy passe des lots : pas complet. */
+    if (cycles == 1) via_tick(&emu->via);
+    else             via_update(&emu->via, cycles);
     if (emu->cassette.signal_mode)
         cassette_tick(&emu->cassette, &emu->via, cycles);
     /* Tape-OUT capture : échantillonne PB7 (Timer1) pour reconstruire le .TAP.

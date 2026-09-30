@@ -223,46 +223,50 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     end_section(fp, sec);
 
     /* ── VIA Section ── */
+    /* Copie synchronisée : les cycles sautés par via_tick() y sont appliqués,
+     * l'émulateur (const) n'est pas modifié. */
+    via6522_t via = emu->via;
+    via_sync(&via);
     sec = begin_section(fp, "VIA\0");
-    write_u8(fp, emu->via.ora);
-    write_u8(fp, emu->via.orb);
-    write_u8(fp, emu->via.ira);
-    write_u8(fp, emu->via.irb);
-    write_u8(fp, emu->via.ddra);
-    write_u8(fp, emu->via.ddrb);
-    write_u16le(fp, emu->via.t1_counter);
-    write_u16le(fp, emu->via.t1_latch);
-    write_u16le(fp, emu->via.t2_counter);
-    write_u8(fp, emu->via.t2_latch);
-    write_bool(fp, emu->via.t1_running);
-    write_bool(fp, emu->via.t2_running);
-    write_u8(fp, emu->via.sr);
-    write_u8(fp, emu->via.sr_count);
-    write_u8(fp, emu->via.acr);
-    write_u8(fp, emu->via.pcr);
-    write_u8(fp, emu->via.ifr);
-    write_u8(fp, emu->via.ier);
-    write_bool(fp, emu->via.cb1_pin);
-    write_bool(fp, emu->via.irq_line);
+    write_u8(fp, via.ora);
+    write_u8(fp, via.orb);
+    write_u8(fp, via.ira);
+    write_u8(fp, via.irb);
+    write_u8(fp, via.ddra);
+    write_u8(fp, via.ddrb);
+    write_u16le(fp, via.t1_counter);
+    write_u16le(fp, via.t1_latch);
+    write_u16le(fp, via.t2_counter);
+    write_u8(fp, via.t2_latch);
+    write_bool(fp, via.t1_running);
+    write_bool(fp, via.t2_running);
+    write_u8(fp, via.sr);
+    write_u8(fp, via.sr_count);
+    write_u8(fp, via.acr);
+    write_u8(fp, via.pcr);
+    write_u8(fp, via.ifr);
+    write_u8(fp, via.ier);
+    write_bool(fp, via.cb1_pin);
+    write_bool(fp, via.irq_line);
     /* V2-E7 : état au cycle des timers (V2-E3) et des broches, absent des .ost
      * antérieurs. `t1_reload` est le cycle mort qui fait la période N+2. */
-    write_bool(fp, emu->via.t1_active);
-    write_bool(fp, emu->via.t2_active);
-    write_bool(fp, emu->via.t1_reload);
-    write_bool(fp, emu->via.pb7_pin);
-    write_bool(fp, emu->via.pb6_pin);
-    write_bool(fp, emu->via.ca1_pin);
-    write_bool(fp, emu->via.ca2_in);
-    write_bool(fp, emu->via.sr_active);
-    write_u32le(fp, emu->via.sr_clk_acc);
+    write_bool(fp, via.t1_active);
+    write_bool(fp, via.t2_active);
+    write_bool(fp, via.t1_reload);
+    write_bool(fp, via.pb7_pin);
+    write_bool(fp, via.pb6_pin);
+    write_bool(fp, via.ca1_pin);
+    write_bool(fp, via.ca2_in);
+    write_bool(fp, via.sr_active);
+    write_u32le(fp, via.sr_clk_acc);
     /* 2.6.0 (VIA mesurée sur vrai 6522, report Neo6502Vic20) : mode de T2
      * effectif, cycle de retenue après T2C-H, T2 sur 8 bits (registre à décalage)
      * et délais du registre à décalage. */
-    write_bool(fp, emu->via.t2_phi2);
-    write_bool(fp, emu->via.t2_hold);
-    write_bool(fp, emu->via.t2_reload);
-    write_u8(fp, emu->via.sr_t2_pending);
-    write_u8(fp, emu->via.sr_delay);
+    write_bool(fp, via.t2_phi2);
+    write_bool(fp, via.t2_hold);
+    write_bool(fp, via.t2_reload);
+    write_u8(fp, via.sr_t2_pending);
+    write_u8(fp, via.sr_delay);
     end_section(fp, sec);
 
     /* ── PSG Section ── */
@@ -586,6 +590,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->memory.overlay_active = read_bool(fp);
             emu->memory.basic_rom_disabled = read_bool(fp);
         } else if (memcmp(tag, "VIA\0", 4) == 0) {
+            via_sync(&emu->via);   /* rien en attente avant d'écraser l'état */
             emu->via.ora = read_u8(fp);
             emu->via.orb = read_u8(fp);
             emu->via.ira = read_u8(fp);

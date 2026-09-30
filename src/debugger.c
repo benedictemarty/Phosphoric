@@ -752,6 +752,7 @@ static void show_stack(emulator_t* emu) {
 
 static void show_via_state(emulator_t* emu) {
     via6522_t* via = &emu->via;
+    via_sync(via);   /* compteurs à jour (cycles sautés par via_tick) */
     printf("  VIA 6522 State:\n");
     printf("    ORA=$%02X ORB=$%02X  IRA=$%02X IRB=$%02X\n",
            via->ora, via->orb, via->ira, via->irb);

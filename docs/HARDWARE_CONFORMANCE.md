@@ -91,6 +91,27 @@ Sur l'Oric : corpus de 36 programmes réels identique à l'écran, boots, CSAVE/
 chargement au signal inchangés ; la section `.ost` VIA gagne 5 octets (état T2 / SR ;
 un `.ost` antérieur se relit). Coût mesuré : ≈ +4 % par trame.
 
+### Chemin paresseux exact (2.7.0)
+
+Report de Neo6502Vic20 (US-31). `via_quiet()` borne le nombre de cycles à venir pendant
+lesquels `via_update()` ne ferait que décrémenter les compteurs : aucun sous-dépassement,
+aucune impulsion CA2/CB2, aucun événement du registre à décalage, aucun changement de mode
+de T2 en attente. Pendant ces cycles, `via_tick()` se contente de les compter ;
+`via_sync()` les applique d'un bloc au début de chaque accès (lecture, écriture, broches
+CA1/CA2/CB1/CB2/PB6) et avant les lectures directes des champs (sauvegarde d'état,
+débogueur, `peek via`). Le comportement observable ne change pas : ce n'est pas une
+approximation.
+
+| Preuve | Résultat |
+|--------|----------|
+| `make test-via-lazy` : 116 lignes de commande (`tools/cli_golden.sh`) sur le binaire courant et sur une build `VIA_NO_LAZY=1` (pas-à-pas), comparées à l'octet (code de sortie, sorties, fichiers produits) | 0 écart |
+| `test_via_lazy_matches_stepwise` (`test-io`) : 2 millions de cycles d'accès pseudo-aléatoires sur deux VIA ; lectures, /IRQ, PB7, CA2 et CB2 comparés à chaque cycle | identiques ; un mutant (borne de silence d'un cycle trop longue) est détecté |
+| `test-savestate-determinism`, corpus de 36 programmes, `test-clock` | verts |
+
+Débit (`make bench`, 3 passes, 100 M cycles) : +20 à +30 % selon la charge (BASIC au
+repos 13-15× → 18-20× le temps réel), ce qui efface largement le +4 % de la 2.6.0. Le
+cœur `--cpu-legacy`, qui passe des lots de cycles, garde le pas complet.
+
 ### Déviations assumées (restantes)
 | # | Écart | Datasheet | Raison |
 |---|-------|-----------|--------|

@@ -131,6 +131,56 @@ static uint8_t via_pa_pins(via6522_t* via) {
     return (uint8_t)(via->ira & pins);
 }
 
+/* ── Neo6502Vic20 (US-31) : chemin paresseux exact ────────────────────
+ * via_quiet() borne le nombre de cycles à venir pendant lesquels via_update()
+ * ne ferait que décrémenter les compteurs (aucun sous-dépassement, aucune
+ * impulsion, aucun événement du registre à décalage, aucun changement de mode
+ * en attente). via_tick() se contente alors de compter ces cycles ;
+ * via_sync() les applique d'un bloc avant tout accès. Équivalence prouvée
+ * par rejeu contre VIA_NO_LAZY (`make test-via-lazy`) et par
+ * test_via_lazy_matches_stepwise (tests/unit/test_io.c). */
+static bool via_t2_8bit(const via6522_t* via) {
+    uint8_t m = via->acr & 0x1C;
+    return m == 0x04 || m == 0x10 || m == 0x14;
+}
+
+static uint16_t via_quiet(const via6522_t* via) {
+    uint32_t q = 0xFFFF;
+    uint8_t srm = via->acr & 0x1C;
+    if (via->ca2_pulse > 0 || via->cb2_pulse > 0) return 0;
+    if (via->sr_t2_pending || via->sr_delay) return 0;
+    if ((srm == 0x08 || srm == 0x18) && via->sr_active) return 0;
+    if (via->t1_active) {
+        if (via->t1_reload) return 0;
+        if (via->t1_counter < q) q = via->t1_counter;
+    }
+    if (via->t2_hold || via->t2_phi2 != !(via->acr & 0x20)) return 0;
+    if (via->t2_active && via->t2_phi2) {
+        if (via_t2_8bit(via)) {
+            if (via->t2_reload) return 0;
+            uint8_t lo = (uint8_t)via->t2_counter;
+            if (lo < q) q = lo;
+        } else if (via->t2_counter < q) {
+            q = via->t2_counter;
+        }
+    }
+    return (uint16_t)q;
+}
+
+void via_sync(via6522_t* via) {
+    uint16_t n = via->pending;
+    via->quiet = 0;          /* l'accès qui suit peut tout changer : recalcul au prochain pas */
+    if (!n) return;
+    via->pending = 0;
+    if (via->t1_active) via->t1_counter = (uint16_t)(via->t1_counter - n);
+    if (via->t2_active && via->t2_phi2) {
+        if (via_t2_8bit(via))
+            via->t2_counter = (uint16_t)((via->t2_counter & 0xFF00) | (uint8_t)(via->t2_counter - n));
+        else
+            via->t2_counter = (uint16_t)(via->t2_counter - n);
+    }
+}
+
 void via_init(via6522_t* via) {
     memset(via, 0, sizeof(via6522_t));
     via->cb1_pin = true;   /* CB1 idle high (not driven on Oric) */
@@ -139,6 +189,7 @@ void via_init(via6522_t* via) {
 }
 
 void via_reset(via6522_t* via) {
+    via_sync(via);
     via->ora = via->orb = 0;
     via->ira = via->irb = 0xFF;
     via->ddra = via->ddrb = 0;
@@ -180,6 +231,7 @@ void via_reset(via6522_t* via) {
 }
 
 uint8_t via_read(via6522_t* via, uint8_t reg) {
+    via_sync(via);
     reg &= 0x0F;
     switch (reg) {
     case VIA_ORB: {
@@ -273,6 +325,7 @@ uint8_t via_read(via6522_t* via, uint8_t reg) {
 }
 
 void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
+    via_sync(via);
     reg &= 0x0F;
     switch (reg) {
     case VIA_ORB:
@@ -386,6 +439,7 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value) {
 }
 
 void via_update(via6522_t* via, int cycles) {
+    via_sync(via);
     /* CA2/CB2 pulse output (PCR mode 101): restore high after one cycle */
     if (via->ca2_pulse > 0) {
         via->ca2_pulse -= cycles;
@@ -524,6 +578,7 @@ void via_update(via6522_t* via, int cycles) {
             }
         }
     }
+    via->quiet = via_quiet(via);
 }
 
 void via_set_port_callbacks(via6522_t* via,
@@ -547,11 +602,13 @@ void via_set_irq_callback(via6522_t* via,
 }
 
 void via_trigger_ca1(via6522_t* via) {
+    via_sync(via);
     via->ifr |= VIA_INT_CA1;
     via_check_irq(via);
 }
 
 void via_set_ca1(via6522_t* via, bool state) {
+    via_sync(via);
     bool old = via->ca1_pin;
     via->ca1_pin = state;
     if (old == state) return;
@@ -575,6 +632,7 @@ void via_set_ca1(via6522_t* via, bool state) {
 }
 
 void via_set_ca2_input(via6522_t* via, bool level) {
+    via_sync(via);
     bool old = via->ca2_in;
     via->ca2_in = level;
     if ((via->pcr & 0x08) != 0) return;   /* output modes: pin is driven */
@@ -589,11 +647,13 @@ void via_set_ca2_input(via6522_t* via, bool level) {
 }
 
 void via_trigger_ca2(via6522_t* via) {
+    via_sync(via);
     via->ifr |= VIA_INT_CA2;
     via_check_irq(via);
 }
 
 void via_set_cb1(via6522_t* via, bool state) {
+    via_sync(via);
     bool old = via->cb1_pin;
     via->cb1_pin = state;
 
@@ -619,17 +679,20 @@ void via_set_cb1(via6522_t* via, bool state) {
 }
 
 void via_trigger_cb1(via6522_t* via) {
+    via_sync(via);
     /* Legacy pulse: high→low→high (always triggers regardless of PCR) */
     via_set_cb1(via, false);
     via_set_cb1(via, true);
 }
 
 void via_trigger_cb2(via6522_t* via) {
+    via_sync(via);
     via->ifr |= VIA_INT_CB2;
     via_check_irq(via);
 }
 
 void via_shift_clock(via6522_t* via) {
+    via_sync(via);
     uint8_t mode = via->acr & 0x1C;
     if (mode != 0x0C && mode != 0x1C) return; /* external-clock modes only */
     if (!via->sr_active) return;
@@ -637,6 +700,7 @@ void via_shift_clock(via6522_t* via) {
 }
 
 void via_set_cb2_input(via6522_t* via, bool level) {
+    via_sync(via);
     bool old = via->cb2_in;
     via->cb2_in = level;
     if ((via->pcr & 0x80) != 0) return;   /* output modes: pin is driven */
@@ -651,6 +715,7 @@ void via_set_cb2_input(via6522_t* via, bool level) {
 }
 
 void via_pb6_pulse(via6522_t* via) {
+    via_sync(via);
     /* Each call models one PB6 negative edge. The counter keeps counting pulses
      * even after a one-shot time-out (t2_active); only the first underflow with
      * t2_running set raises the flag (datasheet Fig 19). */

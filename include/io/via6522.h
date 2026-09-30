@@ -76,6 +76,9 @@ typedef struct via6522_s {
     bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
     bool     t2_phi2;       /**< Neo6502Vic20 : mode de T2 effectif (φ2), l'ACR
                                  ne prenant effet qu'au cycle suivant */
+    uint16_t quiet;         /**< Neo6502Vic20 (US-31) : cycles à venir sans aucun
+                                 événement (simples décomptes) */
+    uint16_t pending;       /**< Neo6502Vic20 (US-31) : cycles sautés, à appliquer */
     uint8_t  sr_t2_pending; /**< Neo6502Vic20 : cycles avant l'événement SR dû à T2 */
     uint8_t  sr_delay;      /**< Neo6502Vic20 : cycles avant le premier événement φ2 */
     bool     t2_reload;     /**< Neo6502Vic20 : rechargement de l'octet bas de T2
@@ -183,6 +186,30 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value);
  * @param cycles Number of cycles elapsed
  */
 void via_update(via6522_t* via, int cycles);
+
+/**
+ * @brief Neo6502Vic20 (US-31) : applique les cycles sautés par via_tick().
+ * Appelée par toutes les fonctions d'accès ; à appeler avant de lire l'état
+ * interne directement.
+ */
+void via_sync(via6522_t* via);
+
+/**
+ * @brief Neo6502Vic20 (US-31) : un cycle, chemin « paresseux » exact : tant
+ * qu'aucun événement ne peut survenir, le cycle est seulement compté ; il est
+ * appliqué au prochain accès ou au prochain pas complet. VIA_NO_LAZY
+ * désactive ce chemin (rejeu de référence, tests/test_lazy.sh).
+ */
+static inline void via_tick(via6522_t* via) {
+#ifndef VIA_NO_LAZY
+    if (via->quiet) {
+        via->quiet--;
+        via->pending++;
+        return;
+    }
+#endif
+    via_update(via, 1);
+}
 
 /**
  * @brief Set port callbacks
