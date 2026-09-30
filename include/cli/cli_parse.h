@@ -4,9 +4,9 @@
  * @brief Small CLI argument-parsing helpers, extracted from main.c (Epic 7/US3).
  * @author bmarty <bmarty@mailo.com>
  *
- * Pure helpers shared by the option-parsing switch in main(); moved out to keep
- * main.c from growing. Behaviour is verbatim — covered by
- * tests/integration/test_cli_parsing.sh.
+ * Pure helpers used after the option-parsing switch (src/cli/cli_args.c) by the
+ * set-up steps of main(). Behaviour is verbatim — covered by
+ * tests/integration/test_cli_parsing.sh and tools/cli_golden.sh.
  */
 #ifndef CLI_PARSE_H
 #define CLI_PARSE_H

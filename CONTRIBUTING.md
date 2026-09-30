@@ -172,6 +172,20 @@ When reporting bugs, please include:
 - ROM/program used (if applicable)
 - Build configuration (SDL2, DEBUG, etc.)
 
+## Command Line and `main()`
+
+`main()` (in `src/main.c`) only sequences named steps: `cli_parse_args()`
+(`src/cli/cli_args.c`, the getopt switch) fills a `cli_opts_t`
+(`include/cli/cli_opts.h`, defaults in `cli_opts_init()`), then
+`main_setup_*()` steps configure the machine, `emulator_run()` runs it and
+`main_finish()` writes the outputs. Each step returns -1 to continue, or the
+program's exit code.
+
+Before changing the parser or a set-up step, keep a reference binary and
+compare: `make test-cli-golden GOLDEN_REF=/path/to/old/oric1-emu` replays
+`tests/cli_golden/cases.txt` on both and fails on any difference in exit code,
+stdout, stderr or produced files. Add a case there for every new option.
+
 ## Architecture Notes
 
 - The emulator is designed to be modular: each subsystem (CPU, memory, VIA, video, audio, storage) is independent

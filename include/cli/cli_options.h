@@ -5,15 +5,16 @@
  * @author bmarty <bmarty@mailo.com>
  *
  * Extracted from main.c (Epic 7 / partial US3, Sprint 127). SEPARATES the option
- * *declarations* (data) from the *parsing logic* (the switch, still in main()).
+ * *declarations* (data) from the *parsing logic* (the getopt switch, in
+ * src/cli/cli_args.c since sprint C).
  *
- * Honesty note: the full declarative rewrite (generic parser +
- * `cli_args_t`) is NOT done -- 43 of the 63 `case`s of the switch carry side
- * effects at parse time (fopen/malloc/exit/init) and ~89 local variables would
- * have to be routed by hand, which cannot be proven behaviour-identical with the
- * current test safety net. Only this (risk-free) data relocation is delivered.
+ * Sprint C (2.3.0): the option variables live in cli_opts_t (cli/cli_opts.h),
+ * the switch is in cli_parse_args(), verbatim. Deliberately NOT done: the
+ * *declarative* parser (a generic table replacing the switch) -- no measurable
+ * benefit while the `case`s remain plain assignments, and any behaviour change
+ * would have to be justified against tools/cli_golden.sh.
  *
- * Included by main.c only.
+ * Included by src/cli/cli_args.c only (defines long_options[] as static).
  */
 #ifndef CLI_OPTIONS_H
 #define CLI_OPTIONS_H
