@@ -232,20 +232,32 @@ ifeq ($(WIN), 1)
                src/storage/disk_http_win.c
 endif
 
+TUI ?= 0
 ifeq ($(TUI), 1)
     SOURCES += src/tui.c
     CFLAGS  += -DHAS_TUI
     LDFLAGS += -lncursesw
 endif
 
-OBJECTS = $(SOURCES:.c=.o)
+# Build hors des sources, un répertoire par configuration : les objets d'une
+# variante (SDL2=0, HTTPAPI=1, backend LOCI…) ne se mélangent jamais avec ceux
+# d'une autre. Les binaires finaux sont recopiés à la racine (chemins attendus
+# par les scripts), seulement quand leur contenu change.
+LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_HW)),hw,$(if $(filter 1,$(LOCI_EMU)),emu,stub)))
+CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)
+BUILD ?= build/$(CONFIG)
+TBIN = $(BUILD)/tests
+# $(call obj,sources.c) → objets correspondants dans $(BUILD)
+obj = $(patsubst %.c,$(BUILD)/%.o,$(1))
+
+OBJECTS = $(call obj,$(SOURCES))
 
 # Core libraries (no main)
 LIB_SOURCES = $(filter-out src/main.c, $(SOURCES))
-LIB_OBJECTS = $(LIB_SOURCES:.c=.o)
+LIB_OBJECTS = $(call obj,$(LIB_SOURCES))
 
 # Tools
-TOOL_OBJECTS = src/storage/tap.o src/utils/logging.o
+TOOL_SOURCES = src/storage/tap.c src/utils/logging.c
 
 # Targets
 TARGET = oric1-emu$(EXE)
@@ -257,12 +269,20 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
-$(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
-	$(CC) $(OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o $(TARGET)
+FORCE:
+
+$(BUILD)/bin/$(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
+	@mkdir -p $(@D)
+	$(CC) $(OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o $@
+
+# Copie à la racine, refaite à chaque appel mais seulement si le binaire de la
+# configuration courante diffère (changer de configuration change de binaire).
+$(TARGET): $(BUILD)/bin/$(TARGET) FORCE
+	@cmp -s $< $@ || cp $< $@
 
 # Builds the RP2040 emulator library if missing (LOCI_EMU=1 only).
 ifeq ($(LOCI_EMU),1)
@@ -294,38 +314,64 @@ dist:
 
 tools: $(TOOLS)
 
-bas2tap: tools/bas2tap.c $(TOOL_OBJECTS)
-	$(CC) $(CFLAGS) tools/bas2tap.c $(TOOL_OBJECTS) $(LDFLAGS) -o bas2tap
+# Outil = binaire lié dans $(BUILD)/bin puis recopié à la racine.
+#   $(1) nom   $(2) sources
+define TOOL_BIN
+$(BUILD)/bin/$(1): $(call obj,$(2))
+	@mkdir -p $$(@D)
+	$$(CC) $$(CFLAGS) $$^ $$(LDFLAGS) -o $$@
+$(1): $(BUILD)/bin/$(1) FORCE
+	@cmp -s $$< $$@ || cp $$< $$@
+endef
+$(eval $(call TOOL_BIN,bas2tap,tools/bas2tap.c $(TOOL_SOURCES)))
+$(eval $(call TOOL_BIN,bin2tap,tools/bin2tap.c $(TOOL_SOURCES)))
+$(eval $(call TOOL_BIN,tap2sedoric,tools/tap2sedoric.c $(TOOL_SOURCES) src/storage/sedoric.c))
+$(eval $(call TOOL_BIN,sedoric-info,tools/sedoric_info.c))
+$(eval $(call TOOL_BIN,tap2wav,tools/tap2wav.c))
+$(eval $(call TOOL_BIN,dsk2hfe,tools/dsk2hfe.c))
 
-bin2tap: tools/bin2tap.c $(TOOL_OBJECTS)
-	$(CC) $(CFLAGS) tools/bin2tap.c $(TOOL_OBJECTS) $(LDFLAGS) -o bin2tap
-
-tap2sedoric: tools/tap2sedoric.c $(TOOL_OBJECTS) src/storage/sedoric.o
-	$(CC) $(CFLAGS) tools/tap2sedoric.c $(TOOL_OBJECTS) src/storage/sedoric.o $(LDFLAGS) -o tap2sedoric
-
-sedoric-info: tools/sedoric_info.c
-	$(CC) $(CFLAGS) tools/sedoric_info.c $(LDFLAGS) -o sedoric-info
-
-tap2wav: tools/tap2wav.c
-	$(CC) $(CFLAGS) tools/tap2wav.c $(LDFLAGS) -o tap2wav
-
-dsk2hfe: tools/dsk2hfe.c
-	$(CC) $(CFLAGS) tools/dsk2hfe.c $(LDFLAGS) -o dsk2hfe
-
-%.o: %.c
+$(BUILD)/%.o: %.c
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Include auto-generated header-dependency files (-MMD output).
 # Silent if absent (first build / after clean).
--include $(OBJECTS:.o=.d)
--include $(TOOL_OBJECTS:.o=.d)
+-include $(shell find $(BUILD) -name '*.d' 2>/dev/null)
 
 # ═══════════════════════════════════════════════════════════════
 #  TESTS
 # ═══════════════════════════════════════════════════════════════
 
-TEST_CPU_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c src/memory/banking.c \
+# Tests unitaires : chaque source est compilée UNE fois par configuration dans
+# $(BUILD) ; le binaire de test lie exactement la liste d'objets donnée.
+#   $(1) cible   $(2) binaire   $(3) sources   $(4) ldflags en plus   $(5) archives
+define UNIT_TEST
+$(TBIN)/$(2): $(call obj,$(3)) $(5)
+	@mkdir -p $$(@D)
+	@$$(CC) $$(CFLAGS) $(call obj,$(3)) $(5) $$(LDFLAGS) $(4) -o $$@
+$(1): $(TBIN)/$(2)
+	@$(TBIN)/$(2)
+endef
+
+# Tests dont les sources exigent des drapeaux PROPRES ($(4)), indépendants de la
+# configuration (clavier toujours avec SDL2, cast toujours avec HAS_CAST) :
+# compilation directe, refaite à chaque appel comme auparavant.
+define DIRECT_TEST
+$(TBIN)/$(2): $(3) FORCE
+	@mkdir -p $$(@D)
+	@$$(CC) $$(filter-out -MMD -MP,$$(CFLAGS)) $(4) $(3) $$(LDFLAGS) $(5) -o $$@
+$(1): $(TBIN)/$(2)
+	@$(TBIN)/$(2)
+endef
+
+# Briques partagées par les listes de sources des tests
+CPU_SRCS = src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c
+MEM_SRCS = src/memory/memory.c src/memory/banking.c
+DISK_SRCS = src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c
+LOCI_STUB = tests/support/loci_emu_stub.c
+
+TEST_CPU_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu.c $(CPU_SRCS) \
+                 $(MEM_SRCS) \
                 src/utils/logging.c
 
 TEST_MEM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_memory.c src/memory/memory.c \
@@ -349,210 +395,150 @@ TEST_SYSTEM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_full_system.c s
                    src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c \
                    src/memory/banking.c src/io/via6522.c src/utils/logging.c
 
-test-cpu: $(TEST_CPU_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_CPU_SRCS) $(LDFLAGS) -o test_cpu
-	@./test_cpu
+$(eval $(call UNIT_TEST,test-cpu,test_cpu,$(TEST_CPU_SRCS),,))
 
-test-memory: $(TEST_MEM_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_MEM_SRCS) $(LDFLAGS) -o test_memory
-	@./test_memory
+$(eval $(call UNIT_TEST,test-memory,test_memory,$(TEST_MEM_SRCS),,))
 
-test-ula-ng: $(TEST_ULA_NG_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_ULA_NG_SRCS) $(LDFLAGS) -o test_ula_ng
-	@./test_ula_ng
+$(eval $(call UNIT_TEST,test-ula-ng,test_ula_ng,$(TEST_ULA_NG_SRCS),,))
 
-test-io: $(TEST_IO_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_IO_SRCS) $(LDFLAGS) -o test_io
-	@./test_io
+$(eval $(call UNIT_TEST,test-io,test_io,$(TEST_IO_SRCS),,))
 
-test-cassette: $(TEST_CASSETTE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_CASSETTE_SRCS) $(LDFLAGS) -o test_cassette
-	@./test_cassette
+$(eval $(call UNIT_TEST,test-cassette,test_cassette,$(TEST_CASSETTE_SRCS),,))
 
-test-jasmin: $(TEST_JASMIN_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_JASMIN_SRCS) $(LDFLAGS) -o test_jasmin
-	@./test_jasmin
+$(eval $(call UNIT_TEST,test-jasmin,test_jasmin,$(TEST_JASMIN_SRCS),,))
 
-test-storage: $(TEST_STORAGE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_STORAGE_SRCS) $(LDFLAGS) -o test_storage
-	@./test_storage
+$(eval $(call UNIT_TEST,test-storage,test_storage,$(TEST_STORAGE_SRCS),,))
 
-test-system: $(TEST_SYSTEM_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_SYSTEM_SRCS) $(LDFLAGS) -o test_system
-	@./test_system
+$(eval $(call UNIT_TEST,test-system,test_system,$(TEST_SYSTEM_SRCS),,))
 
-TEST_ROM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rom.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c src/memory/banking.c \
+TEST_ROM_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rom.c $(CPU_SRCS) \
+                 $(MEM_SRCS) \
                 src/io/via6522.c src/utils/logging.c
 
-test-rom: $(TEST_ROM_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_ROM_SRCS) $(LDFLAGS) -o test_rom
-	@./test_rom
+$(eval $(call UNIT_TEST,test-rom,test_rom,$(TEST_ROM_SRCS),,))
 
 TEST_VIDEO_SRCS = tests/support/loci_emu_stub.c tests/unit/test_video.c src/video/video.c src/video/export.c \
                   src/video/stb_image_write_impl.c \
-                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                  src/memory/memory.c src/memory/banking.c src/io/via6522.c \
+                  $(CPU_SRCS) \
+                  $(MEM_SRCS) src/io/via6522.c \
                   src/io/ula_ng.c src/utils/logging.c
 
-test-video: $(TEST_VIDEO_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_VIDEO_SRCS) $(LDFLAGS) -o test_video
-	@./test_video
+$(eval $(call UNIT_TEST,test-video,test_video,$(TEST_VIDEO_SRCS),,))
 
 TEST_AVI_SRCS = tests/unit/test_avi.c src/video/avi_recorder.c \
                 src/video/stb_image_write_impl.c
 
-test-avi: $(TEST_AVI_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_AVI_SRCS) $(LDFLAGS) -o test_avi
-	@./test_avi
+$(eval $(call UNIT_TEST,test-avi,test_avi,$(TEST_AVI_SRCS),,))
 
 TEST_MOVIE_SRCS = tests/unit/test_movie.c src/utils/movie.c src/utils/logging.c
 
-test-movie: $(TEST_MOVIE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_MOVIE_SRCS) $(LDFLAGS) -o test_movie
-	@./test_movie
+$(eval $(call UNIT_TEST,test-movie,test_movie,$(TEST_MOVIE_SRCS),,))
 
 test-movie-replay: $(TARGET)
 	@bash tests/integration/test_movie_replay.sh
 
 TEST_GDB_SRCS = tests/support/loci_emu_stub.c tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
-                src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                src/memory/memory.c src/memory/banking.c \
+                $(CPU_SRCS) \
+                $(MEM_SRCS) \
                 src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
                 src/utils/trace.c
 
-test-gdbstub: $(TEST_GDB_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_GDB_SRCS) $(LDFLAGS) -o test_gdbstub
-	@./test_gdbstub
+$(eval $(call UNIT_TEST,test-gdbstub,test_gdbstub,$(TEST_GDB_SRCS),,))
 
 TEST_AUDIO_SRCS = tests/unit/test_audio.c src/audio/ay3891x.c src/utils/logging.c
 
-test-audio: $(TEST_AUDIO_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_AUDIO_SRCS) $(LDFLAGS) -o test_audio
-	@./test_audio
+$(eval $(call UNIT_TEST,test-audio,test_audio,$(TEST_AUDIO_SRCS),,))
 
 TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c src/debugger.c \
-                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                     src/memory/memory.c src/memory/banking.c \
+                     $(CPU_SRCS) \
+                     $(MEM_SRCS) \
                      src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
                      src/utils/trace.c
 
-test-debugger: $(TEST_DEBUGGER_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_DEBUGGER_SRCS) $(LDFLAGS) -o test_debugger
-	@./test_debugger
+$(eval $(call UNIT_TEST,test-debugger,test_debugger,$(TEST_DEBUGGER_SRCS),,))
 
 TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c \
                  src/video/stb_image_write_impl.c src/utils/logging.c
 
-test-cast: $(TEST_CAST_SRCS)
-	@$(CC) $(CFLAGS) -DHAS_CAST $(TEST_CAST_SRCS) $(LDFLAGS) -lpthread -lssl -lcrypto -o test_cast
-	@./test_cast
+$(eval $(call DIRECT_TEST,test-cast,test_cast,$(TEST_CAST_SRCS),-DHAS_CAST,-lpthread -lssl -lcrypto))
 
 TEST_SAVESTATE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_savestate.c src/savestate.c \
-                      src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                      src/memory/memory.c src/memory/banking.c \
+                      $(CPU_SRCS) \
+                      $(MEM_SRCS) \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
                       src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
-                      src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
+                      $(DISK_SRCS) \
                       src/utils/logging.c
 
-test-savestate: $(TEST_SAVESTATE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_SAVESTATE_SRCS) $(LDFLAGS) -o test_savestate
-	@./test_savestate
+$(eval $(call UNIT_TEST,test-savestate,test_savestate,$(TEST_SAVESTATE_SRCS),,))
 
 TEST_ATMOS_SRCS = tests/support/loci_emu_stub.c tests/unit/test_atmos.c src/memory/memory.c \
                   src/memory/banking.c src/utils/logging.c
 
-test-atmos: $(TEST_ATMOS_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_ATMOS_SRCS) $(LDFLAGS) -o test_atmos
-	@./test_atmos
+$(eval $(call UNIT_TEST,test-atmos,test_atmos,$(TEST_ATMOS_SRCS),,))
 
 TEST_MCP40_SRCS = tests/unit/test_mcp40.c src/io/mcp40.c src/utils/logging.c
 
-test-mcp40: $(TEST_MCP40_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_MCP40_SRCS) $(LDFLAGS) -o test_mcp40
-	@./test_mcp40
+$(eval $(call UNIT_TEST,test-mcp40,test_mcp40,$(TEST_MCP40_SRCS),,))
 
 TEST_PRINTER_SRCS = tests/unit/test_printer.c src/io/printer.c src/io/mcp40.c src/utils/logging.c
 
-test-printer: $(TEST_PRINTER_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_PRINTER_SRCS) $(LDFLAGS) -o test_printer
-	@./test_printer
+$(eval $(call UNIT_TEST,test-printer,test_printer,$(TEST_PRINTER_SRCS),,))
 
 TEST_JOYSTICK_SRCS = tests/unit/test_joystick.c src/io/joystick.c src/io/via6522.c src/utils/logging.c
 
-test-joystick: $(TEST_JOYSTICK_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_JOYSTICK_SRCS) $(LDFLAGS) -o test_joystick
-	@./test_joystick
+$(eval $(call UNIT_TEST,test-joystick,test_joystick,$(TEST_JOYSTICK_SRCS),,))
 
 TEST_SP0256_SRCS = tests/unit/test_sp0256.c src/io/sp0256.c
 
-test-sp0256: $(TEST_SP0256_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_SP0256_SRCS) $(LDFLAGS) -o test_sp0256
-	@./test_sp0256
+$(eval $(call UNIT_TEST,test-sp0256,test_sp0256,$(TEST_SP0256_SRCS),,))
 
 TEST_MEA8000_SRCS = tests/unit/test_mea8000.c src/io/mea8000.c
 
-test-mea8000: $(TEST_MEA8000_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_MEA8000_SRCS) $(LDFLAGS) -lm -o test_mea8000
-	@./test_mea8000
+$(eval $(call UNIT_TEST,test-mea8000,test_mea8000,$(TEST_MEA8000_SRCS),-lm,))
 
 TEST_RENDERER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_renderer.c src/video/video.c src/video/renderer.c \
                      src/io/ula_ng.c \
-                     src/memory/memory.c src/memory/banking.c src/utils/logging.c
+                     $(MEM_SRCS) src/utils/logging.c
 
-test-renderer: $(TEST_RENDERER_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_RENDERER_SRCS) $(LDFLAGS) -o test_renderer
-	@./test_renderer
+$(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
-test-osd: $(TEST_OSD_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_OSD_SRCS) $(LDFLAGS) -o test_osd
-	@./test_osd
+$(eval $(call UNIT_TEST,test-osd,test_osd,$(TEST_OSD_SRCS),,))
 
 
 TEST_TRACE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_trace.c src/utils/trace.c \
-                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                  src/memory/memory.c src/memory/banking.c src/utils/logging.c \
+                  $(CPU_SRCS) \
+                  $(MEM_SRCS) src/utils/logging.c \
                   src/utils/symbols.c
 
-test-trace: $(TEST_TRACE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_TRACE_SRCS) $(LDFLAGS) -o test_trace
-	@./test_trace
+$(eval $(call UNIT_TEST,test-trace,test_trace,$(TEST_TRACE_SRCS),,))
 
 TEST_PROFILER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_profiler.c src/utils/profiler.c \
-                     src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                     src/memory/memory.c src/memory/banking.c src/utils/logging.c
+                     $(CPU_SRCS) \
+                     $(MEM_SRCS) src/utils/logging.c
 
-test-profiler: $(TEST_PROFILER_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_PROFILER_SRCS) $(LDFLAGS) -o test_profiler
-	@./test_profiler
+$(eval $(call UNIT_TEST,test-profiler,test_profiler,$(TEST_PROFILER_SRCS),,))
 
 TEST_ROMINFO_SRCS = tests/support/loci_emu_stub.c tests/unit/test_rominfo.c src/utils/rominfo.c \
-                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                    src/memory/memory.c src/memory/banking.c src/utils/logging.c
+                    $(CPU_SRCS) \
+                    $(MEM_SRCS) src/utils/logging.c
 
-test-rominfo: $(TEST_ROMINFO_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_ROMINFO_SRCS) $(LDFLAGS) -o test_rominfo
-	@./test_rominfo
+$(eval $(call UNIT_TEST,test-rominfo,test_rominfo,$(TEST_ROMINFO_SRCS),,))
 
 TEST_SYMBOLS_SRCS = tests/unit/test_symbols.c src/utils/symbols.c src/utils/logging.c
 
-test-symbols: $(TEST_SYMBOLS_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_SYMBOLS_SRCS) $(LDFLAGS) -o test_symbols
-	@./test_symbols
+$(eval $(call UNIT_TEST,test-symbols,test_symbols,$(TEST_SYMBOLS_SRCS),,))
 
 TEST_LOCI_SRCS = tests/support/loci_emu_stub.c tests/unit/test_loci.c \
                  src/io/loci_core.c src/io/loci_gfx.c src/io/loci_fs.c \
                  src/io/loci_bus.c src/io/loci_boot.c src/io/loci_sdimg.c \
-                 src/utils/logging.c src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
-                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                 src/memory/memory.c src/memory/banking.c
+                 src/utils/logging.c $(DISK_SRCS) \
+                 $(CPU_SRCS) \
+                 $(MEM_SRCS)
 
-test-loci: $(TEST_LOCI_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_LOCI_SRCS) $(LDFLAGS) -o test_loci
-	@./test_loci
+$(eval $(call UNIT_TEST,test-loci,test_loci,$(TEST_LOCI_SRCS),,))
 
 # LOCI PHI2 race on the $0380 ACIA (picowifi) — full io_bus dispatch, so
 # the whole page 3 peripheral tree is linked.
@@ -565,70 +551,52 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  src/io/pia6821.c src/io/acia6850.c src/io/dtl2000.c \
                  src/io/sp0256.c src/io/mea8000.c src/io/ula_ng.c \
                  src/video/video.c src/audio/ay3891x.c \
-                 src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                 src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c \
-                 src/memory/memory.c src/memory/banking.c \
+                 $(CPU_SRCS) \
+                 $(DISK_SRCS) \
+                 $(MEM_SRCS) \
                  src/utils/logging.c src/utils/netutil.c
 
-test-loci-acia-miss: $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_LIB)
-	@$(CC) $(CFLAGS) $(TEST_LOCI_ACIA_MISS_SRCS) $(LOCI_EMUL_LIB) $(LDFLAGS) -lutil -o test_loci_acia_miss
-	@./test_loci_acia_miss
+$(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 
 TEST_LOCI_SDIMG_SRCS = tests/unit/test_loci_sdimg.c src/io/loci_sdimg.c \
                        src/utils/logging.c
 
-test-loci-sdimg: $(TEST_LOCI_SDIMG_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_LOCI_SDIMG_SRCS) $(LDFLAGS) -o test_loci_sdimg
-	@./test_loci_sdimg
+$(eval $(call UNIT_TEST,test-loci-sdimg,test_loci_sdimg,$(TEST_LOCI_SDIMG_SRCS),,))
 
 TEST_LOCI_SDIMG_WRITE_SRCS = tests/unit/test_loci_sdimg_write.c \
                              src/io/loci_sdimg.c src/utils/logging.c
 
-test-loci-sdimg-write: $(TEST_LOCI_SDIMG_WRITE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_LOCI_SDIMG_WRITE_SRCS) $(LDFLAGS) -o test_loci_sdimg_write
-	@./test_loci_sdimg_write
+$(eval $(call UNIT_TEST,test-loci-sdimg-write,test_loci_sdimg_write,$(TEST_LOCI_SDIMG_WRITE_SRCS),,))
 
 TEST_SERIAL_SRCS = tests/unit/test_serial.c src/io/acia6551.c \
                    src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/utils/logging.c
 
-test-serial: $(TEST_SERIAL_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_SERIAL_SRCS) $(LDFLAGS) -lutil -o test_serial
-	@./test_serial
+$(eval $(call UNIT_TEST,test-serial,test_serial,$(TEST_SERIAL_SRCS),-lutil,))
 
 TEST_PIA6821_SRCS = tests/unit/test_pia6821.c src/io/pia6821.c
 
-test-pia6821: $(TEST_PIA6821_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_PIA6821_SRCS) $(LDFLAGS) -o test_pia6821
-	@./test_pia6821
+$(eval $(call UNIT_TEST,test-pia6821,test_pia6821,$(TEST_PIA6821_SRCS),,))
 
 TEST_ACIA6850_SRCS = tests/unit/test_acia6850.c src/io/acia6850.c
 
-test-acia6850: $(TEST_ACIA6850_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_ACIA6850_SRCS) $(LDFLAGS) -o test_acia6850
-	@./test_acia6850
+$(eval $(call UNIT_TEST,test-acia6850,test_acia6850,$(TEST_ACIA6850_SRCS),,))
 
 TEST_DTL2000_SRCS = tests/unit/test_dtl2000.c src/io/dtl2000.c src/io/pia6821.c \
                     src/io/acia6850.c \
                     src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/io/acia6551.c src/utils/logging.c
 
-test-dtl2000: $(TEST_DTL2000_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_DTL2000_SRCS) $(LDFLAGS) -lutil -o test_dtl2000
-	@./test_dtl2000
+$(eval $(call UNIT_TEST,test-dtl2000,test_dtl2000,$(TEST_DTL2000_SRCS),-lutil,))
 
 # Mageco MIDI interface — MC6850 ACIA at $03FE, 31250 baud (forum t=2525)
 TEST_MIDI_SRCS = tests/unit/test_midi.c src/io/mageco.c src/io/acia6850.c \
                  src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/io/acia6551.c src/utils/logging.c
 
-test-midi: $(TEST_MIDI_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_MIDI_SRCS) $(LDFLAGS) -lutil -o test_midi
-	@./test_midi
+$(eval $(call UNIT_TEST,test-midi,test_midi,$(TEST_MIDI_SRCS),-lutil,))
 
 # Standard MIDI File (.mid) parser — timed MIDI IN replay source
 TEST_SMF_SRCS = tests/unit/test_smf.c src/io/smf.c
 
-test-smf: $(TEST_SMF_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_SMF_SRCS) $(LDFLAGS) -o test_smf
-	@./test_smf
+$(eval $(call UNIT_TEST,test-smf,test_smf,$(TEST_SMF_SRCS),,))
 
 # DTL 2000 TX/RX loopback e2e: boots the BASIC driver on the faithful PIA/ACIA
 # card and asserts the --serial-trace shows every TX byte echoed back on RX.
@@ -644,24 +612,18 @@ test-serial-file: $(TARGET)
 TEST_PICOWIFI_SRCS = tests/unit/test_picowifi.c src/io/serial_picowifi.c \
                      src/utils/logging.c
 
-test-picowifi: $(TEST_PICOWIFI_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_PICOWIFI_SRCS) $(LDFLAGS) -o test_picowifi
-	@./test_picowifi
+$(eval $(call UNIT_TEST,test-picowifi,test_picowifi,$(TEST_PICOWIFI_SRCS),,))
 
 TEST_KEYBOARD_SRCS = tests/unit/test_keyboard.c src/io/keyboard.c src/utils/logging.c
 
-test-keyboard: $(TEST_KEYBOARD_SRCS)
-	@$(CC) $(CFLAGS) -DHAS_SDL2 $(shell pkg-config --cflags sdl2 2>/dev/null) $(TEST_KEYBOARD_SRCS) $(LDFLAGS) $(shell pkg-config --libs sdl2 2>/dev/null) -o test_keyboard
-	@./test_keyboard
+$(eval $(call DIRECT_TEST,test-keyboard,test_keyboard,$(TEST_KEYBOARD_SRCS),-DHAS_SDL2 $(shell pkg-config --cflags sdl2 2>/dev/null),$(shell pkg-config --libs sdl2 2>/dev/null)))
 
 TEST_AUTOTYPE_SRCS = tests/unit/test_autotype.c
 
-test-autotype: $(TEST_AUTOTYPE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_AUTOTYPE_SRCS) $(LDFLAGS) -o test_autotype
-	@./test_autotype
+$(eval $(call UNIT_TEST,test-autotype,test_autotype,$(TEST_AUTOTYPE_SRCS),,))
 
-TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                     src/cpu/addressing.c src/cpu/microseq.c src/memory/memory.c src/memory/banking.c \
+TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c $(CPU_SRCS) \
+                      $(MEM_SRCS) \
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c src/storage/disk_http.c \
@@ -669,9 +631,7 @@ TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c sr
                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 
-test-coverage: $(TEST_COVERAGE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_COVERAGE_SRCS) $(LDFLAGS) -o test_coverage
-	@./test_coverage
+$(eval $(call UNIT_TEST,test-coverage,test_coverage,$(TEST_COVERAGE_SRCS),,))
 
 # E2E regression of the LOCI/Sedoric pipe (sprints 34b0/b1/b2).
 # Skipped gracefully when required ROM/disk assets are absent.
@@ -703,16 +663,12 @@ test-control: $(TARGET)
 # Sprint 92 (Epic 1) — transport-agnostic control_dispatch via a buffer sink.
 # Links the core library objects (no main) and drives control_dispatch()
 # directly, asserting byte-exact replies + CONTINUE/RESUME/QUIT results.
-test-control-dispatch: $(LIB_OBJECTS) $(LOCI_EMUL_LIB)
-	@$(CC) $(CFLAGS) tests/unit/test_control_dispatch.c $(LIB_OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o test_control_dispatch
-	@./test_control_dispatch
+$(eval $(call UNIT_TEST,test-control-dispatch,test_control_dispatch,tests/unit/test_control_dispatch.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 # Sprint 93 (Epic 2) — thread-safe command queue. Spawns producer threads that
 # submit() concurrently while a consumer thread drain()s per "frame", asserting
 # correct per-producer routing (unique addr write/read) and zero corruption.
-test-control-queue: $(LIB_OBJECTS) $(LOCI_EMUL_LIB)
-	@$(CC) $(CFLAGS) tests/unit/test_control_queue.c $(LIB_OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o test_control_queue
-	@./test_control_queue
+$(eval $(call UNIT_TEST,test-control-queue,test_control_queue,tests/unit/test_control_queue.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 # Sprint 94 (Epic 3) — HTTP control API end-to-end (curl vs a live headless
 # emulator). Skips gracefully unless the emulator was built with HTTPAPI=1.
@@ -759,14 +715,12 @@ test-raster-split: $(TARGET) tools
 
 # V2-S4 — master clock: one call = one cycle of the whole machine.
 TEST_CLOCK_SRCS = tests/support/loci_emu_stub.c tests/unit/test_clock.c \
-                  src/emu_clock.c src/cpu/cpu6502.c src/cpu/opcodes.c \
-                  src/cpu/addressing.c src/cpu/microseq.c \
-                  src/memory/memory.c src/memory/banking.c src/io/via6522.c \
+                  src/emu_clock.c $(CPU_SRCS) \
+                   \
+                  $(MEM_SRCS) src/io/via6522.c \
                   src/video/video.c src/io/ula_ng.c src/utils/logging.c
 
-test-clock: $(TEST_CLOCK_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_CLOCK_SRCS) $(LDFLAGS) -o test_clock
-	@./test_clock
+$(eval $(call UNIT_TEST,test-clock,test_clock,$(TEST_CLOCK_SRCS),,))
 
 # V2-S1 — cycle-by-cycle conformance oracle (SingleStepTests/65x02) and Klaus
 # Dormann's functional test. The vectors are not versioned: both
@@ -775,20 +729,16 @@ test-clock: $(TEST_CLOCK_SRCS)
 #   make test-cycle CYCLE_MAX_CASES=0    all 10,000 cases per opcode
 #   make test-cycle CYCLE_OPCODES=a9,b1  a subset, with useful verbose output
 TEST_CYCLE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu_cycles.c \
-                  src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                  src/memory/memory.c src/memory/banking.c src/utils/logging.c
+                  $(CPU_SRCS) \
+                  $(MEM_SRCS) src/utils/logging.c
 
-test-cycle: $(TEST_CYCLE_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_CYCLE_SRCS) $(LDFLAGS) -o test_cpu_cycles
-	@./test_cpu_cycles
+$(eval $(call UNIT_TEST,test-cycle,test_cpu_cycles,$(TEST_CYCLE_SRCS),,))
 
 TEST_DORMANN_SRCS = tests/support/loci_emu_stub.c tests/unit/test_dormann.c \
-                    src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c \
-                    src/memory/memory.c src/memory/banking.c src/utils/logging.c
+                    $(CPU_SRCS) \
+                    $(MEM_SRCS) src/utils/logging.c
 
-test-dormann: $(TEST_DORMANN_SRCS)
-	@$(CC) $(CFLAGS) $(TEST_DORMANN_SRCS) $(LDFLAGS) -o test_dormann
-	@./test_dormann
+$(eval $(call UNIT_TEST,test-dormann,test_dormann,$(TEST_DORMANN_SRCS),,))
 
 # Fetching the oracle vectors (third-party, unversioned, ~1 GB).
 fetch-vectors:
@@ -802,6 +752,10 @@ test-docs-claims:
 # English mirror main-en: only the text of comments may differ from main.
 test-comment-diff:
 	@sh tests/integration/test_comment_only_diff.sh
+
+# Auto-test de tools/check_skips.sh (vérificateur de `make tests-strict`).
+test-check-skips:
+	@sh tests/integration/test_check_skips.sh
 
 # Sprint 36a — throughput benchmark. Runs 4 scenarios headless and
 # reports MHz-equivalent / speed ratio vs real ORIC (1 MHz).
@@ -836,11 +790,19 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
 	@echo "═══════════════════════════════════════════════════════"
+
+# Suite complète + refus des tests sautés sans raison autorisée
+# (tests/allowed_skips.txt). Journal : $(BUILD)/tests.log. Utilisé par la CI.
+tests-strict:
+	@mkdir -p $(BUILD)
+	@{ $(MAKE) --no-print-directory tests; echo $$? > $(BUILD)/tests.rc; } 2>&1 | tee $(BUILD)/tests.log
+	@test "$$(cat $(BUILD)/tests.rc)" = 0 || { echo "FAIL: make tests (rc=$$(cat $(BUILD)/tests.rc))"; exit 1; }
+	@sh tools/check_skips.sh $(BUILD)/tests.log
 
 # ═══════════════════════════════════════════════════════════════
 #  QUALITY TARGETS
@@ -890,20 +852,28 @@ security-check: cppcheck flawfinder
 
 valgrind: test-cpu test-memory test-io test-jasmin test-jasmin test-storage test-system test-rom test-video test-audio test-debugger test-cast
 	@echo "Running tests under Valgrind..."
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_cpu
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_memory
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_io
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_storage
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_system
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_rom
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_video
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_audio
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_debugger
-	@valgrind --leak-check=full --error-exitcode=1 --quiet ./test_cast
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_cpu
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_memory
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_io
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_storage
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_system
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_rom
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_video
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_audio
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_debugger
+	@valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/test_cast
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  Valgrind: No memory leaks detected!"
 	@echo "═══════════════════════════════════════════════════════"
+
+# Suites cœur sous Valgrind (job CI) : binaires pris dans $(TBIN).
+VALGRIND_CORE = test_cpu test_memory test_io test_clock test_savestate test_audio
+valgrind-core: test-cpu test-memory test-io test-clock test-savestate test-audio
+	@for t in $(VALGRIND_CORE); do \
+		valgrind --leak-check=full --error-exitcode=1 --quiet $(TBIN)/$$t >/dev/null || exit 1; \
+	done
+	@echo "Valgrind (core suites): OK"
 
 # ═══════════════════════════════════════════════════════════════
 #  CODE COVERAGE
@@ -915,7 +885,7 @@ coverage:
 	@$(MAKE) tests COVERAGE=1 --no-print-directory
 	@echo ""
 	@echo "Generating coverage report..."
-	@$(MAKE) coverage-report --no-print-directory
+	@$(MAKE) coverage-report COVERAGE=1 --no-print-directory
 
 coverage-report:
 	@echo "═══════════════════════════════════════════════════════"
@@ -925,10 +895,10 @@ coverage-report:
 	@total_lines=0; covered_lines=0; \
 	echo "File                                      Lines   Covered   Coverage"; \
 	echo "────────────────────────────────────────────────────────────────────"; \
-	for gcno in $$(find src/ -name '*.gcno' 2>/dev/null); do \
-		src=$$(echo $$gcno | sed 's/\.gcno$$/.c/'); \
+	for gcno in $$(find $(BUILD)/src -name '*.gcno' 2>/dev/null); do \
+		src=$$(echo $$gcno | sed 's|^$(BUILD)/||; s/\.gcno$$/.c/'); \
 		if [ -f "$$src" ]; then \
-			gcov -n "$$src" 2>/dev/null | grep -A1 "^File '$$src'" | tail -1 | \
+			gcov -n -o "$$(dirname $$gcno)" "$$src" 2>/dev/null | grep -A1 "^File '$$src'" | tail -1 | \
 			while read line; do \
 				pct=$$(echo "$$line" | grep -oP '[0-9]+\.[0-9]+%' | head -1); \
 				lines=$$(echo "$$line" | grep -oP 'of [0-9]+' | grep -oP '[0-9]+' | head -1); \
@@ -942,7 +912,9 @@ coverage-report:
 	done
 	@echo ""
 	@echo "Generating aggregate summary..."
-	@gcov -n src/**/*.c src/*.c 2>/dev/null | grep -E "^Lines executed:" | \
+	@for gcno in $$(find $(BUILD)/src -name '*.gcno' 2>/dev/null); do \
+		gcov -n -o "$$(dirname $$gcno)" "$$(echo $$gcno | sed 's|^$(BUILD)/||; s/\.gcno$$/.c/')" 2>/dev/null; \
+	done | grep -E "^Lines executed:" | \
 		awk -F'[:%]' 'BEGIN{tl=0;te=0;n=0} {split($$3,a," of "); te+=$$2*a[2]/100; tl+=a[2]; n++} \
 		END{if(tl>0) printf "TOTAL: %.1f%% (%d/%d lines in %d files)\n", te/tl*100, te, tl, n; \
 		else print "No coverage data found"}'
@@ -950,7 +922,7 @@ coverage-report:
 	@echo "═══════════════════════════════════════════════════════"
 
 coverage-clean:
-	@find . -name '*.gcno' -o -name '*.gcda' -o -name '*.gcov' | xargs rm -f 2>/dev/null
+	@find build . -maxdepth 1 -name '*.gcov' -delete 2>/dev/null; find build -name '*.gcda' -delete 2>/dev/null; true
 	@echo "Coverage data cleaned."
 
 install: $(TARGET)
@@ -967,11 +939,12 @@ uninstall:
 	rm -rf $(DESTDIR)$(DOCDIR)
 
 clean:
-	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TOOLS)
-	rm -f test_cpu test_memory test_io test_storage test_system test_rom test_video test_avi test_audio test_debugger test_gdbstub test_movie test_cast test_savestate test_atmos test_joystick test_printer test_mcp40 test_renderer test_trace test_profiler test_rominfo test_serial test_picowifi test_keyboard test_autotype test_coverage
-	rm -f tools/*.o tools/*.d
+	rm -rf build
+	rm -f $(TARGET) $(TARGET)-release $(TARGET)-dist $(TOOLS)
 	rm -f web/phosphoric.html web/phosphoric.js web/phosphoric.wasm web/phosphoric.data
-	find . -name '*.gcno' -o -name '*.gcda' -o -name '*.gcov' -o -name '*.d' | xargs rm -f 2>/dev/null
+	@# Restes de l'ancien build dans l'arbre des sources (avant 2.2.0)
+	@find src tests tools -name '*.o' -delete -o -name '*.d' -delete -o -name '*.gcno' -delete -o -name '*.gcda' -delete 2>/dev/null; true
+	@find . -maxdepth 1 -type f \( -name 'test_*' -perm -u+x -o -name '*.d' -o -name '*.gcov' \) -delete 2>/dev/null; true
 
 # ═══════════════════════════════════════════════════════════════
 #  WEBASSEMBLY (Emscripten)
@@ -1006,6 +979,9 @@ help:
 	@echo "  release      - Strip current build into a distribution copy"
 	@echo "  tools        - Build conversion tools"
 	@echo "  tests        - Build and run all tests"
+	@echo "  tests-strict - Run all tests, fail on skips not allowed by tests/allowed_skips.txt"
+	@echo "  valgrind-core- Run the core suites under Valgrind (CI)"
+	@echo "  (objects live in build/<config>/, one directory per option set)"
 	@echo "  test-cpu     - Run CPU tests only"
 	@echo "  test-memory  - Run memory tests only"
 	@echo "  test-io      - Run VIA/I/O tests only"

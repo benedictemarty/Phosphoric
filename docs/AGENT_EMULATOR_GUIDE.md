@@ -224,8 +224,9 @@ reached within the cycle budget → a failing `--screenshot-*-when` makes the te
   timing → add `--realtime`.
 - **`--screenshot-at` with a single variable**: the *last* trigger wins. For
   several instants, use several `--screenshot-*-at`/`-when` (they are repeatable).
-- **Stale objects after changing build mode** (`make SDL2=0` then `make tests`):
-  always re-validate with `make clean && make tests`.
+- **Changing build mode** (`make SDL2=0` then `make tests`): safe since 2.2.0,
+  the objects of each configuration live in `build/<config>/` (previously, mixed
+  objects → false regressions, `make clean` was required).
 - **Cycle window**: too short = program not ready yet; prefer `*-when` on a
   memory state rather than guessing an absolute cycle.
 

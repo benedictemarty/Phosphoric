@@ -213,3 +213,6 @@ test_clock
 /ROADMAP.md
 /changelog.md
 /roadmap.md
+
+# Build hors des sources : un sous-répertoire par configuration
+/build/
