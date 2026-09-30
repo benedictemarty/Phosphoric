@@ -39,27 +39,48 @@ expect() {  # expect <rc attendu> <libellé>
     git checkout -q -- .
 }
 
+# Remplacement littéral portable : le `sed -i` de BSD/macOS n'a pas la syntaxe
+# GNU (il prendrait le script pour un suffixe et ne modifierait rien).
+edit() {  # edit <fichier> <ancien> <nouveau>
+    python3 - "$@" <<'PY' || echo "edit impossible : $2" >&2
+import sys
+p, a, b = sys.argv[1:4]
+s = open(p, encoding="utf-8").read()
+assert a in s
+open(p, "w", encoding="utf-8").write(s.replace(a, b, 1))
+PY
+}
+NL='
+'
+
 expect 0 "arbre identique accepté"
 
-sed -i 's|/\* Initialise le compteur|/* Initialises the frame\n * counter (one more line)|; s|// valeur de départ|// start value|' a.c
-sed -i 's|# Lance le test|# Runs the test|; s|# vrai commentaire|# real comment|' b.sh
-sed -i 's|# Calcule la somme|# Computes the sum|; s|# commentaire|# comment|' c.py
-sed -i 's|# fin|# end|; s|# règle par défaut|# default rule|' Makefile
+edit a.c '/* Initialise le compteur' "/* Initialises the frame${NL} * counter (one more line)"
+edit a.c '// valeur de départ' '// start value'
+edit b.sh '# Lance le test' '# Runs the test'
+edit b.sh '# vrai commentaire' '# real comment'
+edit c.py '# Calcule la somme' '# Computes the sum'
+edit c.py '  # commentaire' '  # comment'
+edit Makefile '# fin' '# end'
+edit Makefile '# règle par défaut' '# default rule'
+if git diff --quiet; then
+    echo "FAIL: les modifications de commentaires n'ont pas été appliquées"; fail=$((fail+1))
+fi
 expect 0 "commentaires traduits (C, sh, py, Makefile) acceptés"
 
-sed -i 's|Disque inséré|Disk inserted|' a.c
+edit a.c 'Disque inséré' 'Disk inserted'
 expect 1 "chaîne C modifiée refusée"
 
-sed -i 's|int n = 0|int n = 1|' a.c
+edit a.c 'int n = 0' 'int n = 1'
 expect 1 "code C modifié refusé"
 
-sed -i 's|# pas un commentaire|# not a comment|' b.sh
+edit b.sh '# pas un commentaire' '# not a comment'
 expect 1 "« # » dans une chaîne shell modifiée refusé"
 
-sed -i 's|"texte"|"text"|' c.py
+edit c.py '"texte"' '"text"'
 expect 1 "chaîne Python modifiée refusée"
 
-sed -i 's|@echo ok|@echo OK|' Makefile
+edit Makefile '@echo ok' '@echo OK'
 expect 1 "commande Makefile modifiée refusée"
 
 echo "Tests: $((pass+fail)), Passed: $pass, Failed: $fail"
