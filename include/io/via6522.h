@@ -74,6 +74,14 @@ typedef struct via6522_s {
                                  keeps decrementing at φ2 (datasheet p.8: lets the
                                  host read the time since interrupt). */
     bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
+    bool     t2_phi2;       /**< Neo6502Vic20 : mode de T2 effectif (φ2), l'ACR
+                                 ne prenant effet qu'au cycle suivant */
+    uint8_t  sr_t2_pending; /**< Neo6502Vic20 : cycles avant l'événement SR dû à T2 */
+    uint8_t  sr_delay;      /**< Neo6502Vic20 : cycles avant le premier événement φ2 */
+    bool     t2_reload;     /**< Neo6502Vic20 : rechargement de l'octet bas de T2
+                                 dû (T2 sur 8 bits, registre à décalage) */
+    bool     t2_hold;       /**< Neo6502Vic20 : T2 ne décompte pas ce cycle
+                                 (chargement de T2C-H, ou retour au mode φ2) */
     bool     t1_reload;     /**< V2-E3: a reload cycle is pending. In free-run
                                  mode, the 6522 reloads the counter only on the
                                  cycle AFTER the underflow -- this dead cycle is
@@ -108,7 +116,8 @@ typedef struct via6522_s {
     bool     ca2_in;      /**< CA2 input level (PCR input modes 000-011) */
     bool     ca1_pin;     /**< CA1 pin level (edge detection, idle high) */
     bool     sr_active;   /**< a shift sequence is in progress */
-    uint32_t sr_clk_acc;  /**< cycle accumulator for φ2/T2 shift clocking */
+    uint32_t sr_clk_acc;  /**< ancien accumulateur d'horloge du SR : inutilisé depuis 2.6.0
+                               (SR piloté par événements), gardé pour le format .ost */
     bool     pb6_pin;     /**< last PB6 level (T2 pulse-count edge detection) */
     bool     pb7_pin;     /**< PB7 output level when driven by Timer 1 (ACR bit7):
                                square-wave (bit6=1, toggles on each T1 underflow) or

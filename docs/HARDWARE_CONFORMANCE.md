@@ -57,8 +57,8 @@ CA2/CB2 interrupt modes; input latch (ACR 0-1);
 CA2/CB2 handshake/pulse; the 8 shift-register modes (rotation
 MSB→bit0, T2 rate=N+2, φ2=÷2, mode 4 free-run without flag).
 
-### Fixed (v1.98.0-alpha)
-| Discrepancy | Detail | Fix |
+### Corrigé (v1.98.0-alpha) — deux points annulés en 2.6.0 par la mesure (voir « Corrigé (2.6.0) »)
+| Écart | Détail | Correctif |
 |-------|--------|-----------|
 | **One-shot T1/T2 froze after timeout** | Datasheet p.8/p.9: the counter keeps decrementing (only the flag stops re-arming) so that the host can read the time elapsed since the interrupt. | New field `t1_active/t2_active` (counter is counting) distinct from `t1_running/t2_running` (firing still possible). Counting is gated on `*_active` (stays true after timeout); firing/reload on `*_running`. The `t1_running=false` after timeout semantics is **preserved** (savestate/control/debugger + existing tests untouched). Tests `test_timer1/2_one_shot_counter_continues`. |
 | **PB7 timer output: missing DDRB.7 condition** | Datasheet p.9: PB7 is the Timer 1 output only if **DDRB.7 AND ACR.7 = 1**; the code only tested ACR.7. | Gate `(acr & 0x80) && (ddrb & 0x80)` at the 4 sites (ORB read, T1CH pull-low, underflow toggle, `via_get_pb7`). Evidence: **unit test `test_pb7_timer_requires_ddrb7`** (DDRB.7=0 → normal pin; =1 → timer output) **+ strong integration evidence** (v1.99.1): the CSAVE→`--tape-out-capture`→CLOAD roundtrip passes end to end (`test-tape-roundtrip`), which really exercises the PB7 Timer 1 output under the DDRB.7 gate during a real ROM CSAVE. |
@@ -68,12 +68,35 @@ MSB→bit0, T2 rate=N+2, φ2=÷2, mode 4 free-run without flag).
 |-------|--------|-----------|
 | **Timer 1 period 2 cycles too short** (former accepted deviation no. 2) | Fig 16: period **N+2**. The 6522 underflow is not reaching zero but the transition from `$0000` to `$FFFF` (one cycle later), and reloading from the latch takes one more cycle. The code fired as soon as it hit zero and reloaded in the same cycle: period **N**. An error of 0.02 % at 100 Hz, but **20 % for N=10** — audible on short sounds and digidrums. | **Cycle-by-cycle** counting with underflow on `$0000 → $FFFF` and a new field `t1_reload` for the reload cycle (`via6522.c`). Same for Timer 2 (without reload). **The reason given for not fixing it turned out to be unfounded**: the byte-exact baselines are intact — identical Atmos boot, **13 real programs** (6 disks, 7 tapes) identical on screen, `make tests` fully green including the tape roundtrip that exercises PB7 at 416/624 cycles. What made the fix safe: the machine now advances cycle by cycle (epics V2-E1/E2), so the timer is no longer approximated to ±6 cycles by the batches. Vectors: `test_via_t1_freerun_period_is_n_plus_2` (N = 1, 2, 5, 10, 100, 999, 9998), `test_via_t1_oneshot_timeout_cycle`, `test_via_pb7_square_wave_period`, `test_via_t1_counter_readback`, `test_via_ca2_pulse_lasts_one_cycle`, and the integration test `test_via_t1_frame_rate_over_50_frames` (exactly 50 interrupts in 50 frames — a single cycle of drift would make it fail). |
 
-### Accepted deviations (remaining)
-| # | Discrepancy | Datasheet | Reason |
+### Corrigé (2.6.0) — comportement mesuré sur un vrai 6522
+
+Report des correctifs de Neo6502Vic20 (US-30), qui a repris cette VIA et l'a confrontée
+aux programmes de test VIC-20 de VICE (`testprogs/VIC20` : viavarious, via_sr, via_pb7,
+via_wrap, via_t1crash, via_t1irqack, via_mapping), dont les références sont **mesurées
+sur matériel réel** : 61/61 là-bas (≈ 12 avant). Là où la mesure contredit la datasheet,
+la mesure l'emporte ; deux correctifs de la v1.98.0 (ci-dessus) sont ainsi **annulés**.
+Ces programmes tournent sur la machine VIC-20 de Neo6502Vic20, pas dans la CI de
+Phosphoric ; ici, les règles sont verrouillées par des tests unitaires (`test-io`).
+
+| Écart | Mesure | Correctif | Test |
+|-------|--------|-----------|------|
+| One-shot : le compteur s'enroulait après le time-out | viavarious via1, via4 : T1 se **recharge depuis le latch** à chaque sous-dépassement, en one-shot aussi (seule l'IRQ est unique) — contredit la datasheet et la v1.98.0 | rechargement dans tous les modes | `test_via_t1_oneshot_reloads_from_latch` |
+| Compteurs en avance d'un cycle | viavarious via1-5 : T1/T2 ne décomptent qu'au cycle **suivant** l'écriture de T1C-H / T2C-H (IRQ à N+2 cycles de l'écriture) | `t1_reload` à l'écriture, champ `t2_hold` | `test_via_t1_underflow_one_cycle_after_zero`, `…_t2_…`, `…_oneshot_timeout_cycle`, `…_counter_readback` |
+| Bascule du mode de T2 immédiate | via1 G, via2, via9 : le mode (φ2 / PB6, ACR bit 5) change au cycle suivant, dans les deux sens | champ `t2_phi2` | `test_via_t2_mode_switch_next_cycle` |
+| T2 sur 16 bits quand il cadence le SR | via20, via21 : T2 compte sur **8 bits** (octet bas rechargé, période latch + 2), IRQ unique au passage des 16 bits à `$FFFF` | champ `t2_reload` | `test_via_t2_8bit_when_sr_uses_t2` |
+| PB7 conditionnée à DDRB.7 | via10-13, via_pb7 : PB7 est la sortie de T1 dès que ACR bit 7 = 1, **même avec DDRB.7 = 0** ; bascule à 1 au RESET, 0 à l'écriture de T1C-H, 1 quand ACR bit 7 passe à 1, change d'état à chaque IRQ T1 — contredit la datasheet et la v1.98.0 | conditions DDRB retirées | `test_pb7_timer_output_ignores_ddrb7`, `test_via_pb7_toggle_rules` ; CSAVE réel : `test-tape-roundtrip` vert |
+| Registre à décalage | via_sr (8 modes) : 16 demi-périodes de CB1 démarrées par toute lecture **ou** écriture du SR ; sortie aux états pairs, entrée aux impairs ; T2 : événement 2 cycles après chaque sous-dépassement de l'octet bas ; φ2 : un événement par cycle, le premier 3 cycles après l'ACR (1 après l'accès) ; ACR = 000 tient le drapeau à 0 | SR réécrit (événements) | `test_sr_shift_out_phi2`, `test_sr_shift_in_phi2`, `test_via_sr_any_access_starts_and_acr0_clears_flag` |
+
+Sur l'Oric : corpus de 36 programmes réels identique à l'écran, boots, CSAVE/CLOAD et
+chargement au signal inchangés ; la section `.ost` VIA gagne 5 octets (état T2 / SR ;
+un `.ost` antérieur se relit). Coût mesuré : ≈ +4 % par trame.
+
+### Déviations assumées (restantes)
+| # | Écart | Datasheet | Raison |
 |---|-------|-----------|--------|
-| 2b | The half-cycle of the one-shot time-out (N+1.5) is not modelled: the flag is set at cycle N+1 | "N+1.5 cycles after the T1C-H write" | A half-cycle cannot be represented at whole-cycle granularity (it would require level N4, see `docs/ACCURACY.md`). The **period** of continuous mode, on the other hand, is exact — and it is what sets the frequencies. |
-| 4 | Writing T1L-H (reg 7) clears the T1 flag | Fig 12/13: only the T1C-H write (reg 5) explicitly clears it | Exact behaviour of reg 7 on the flag is **uncertain** (discrepancy between MOS and Rockwell datasheets) → no fix without confirmation (principle: do not invent). |
-| 5 | RESET clears counters/latches/SR | The datasheet says they are **preserved** | No consequence (power-on state undefined); `test_via_reset` locks in the current state. |
+| 2b | Le demi-cycle du time-out one-shot (N+1,5) n'est pas représenté ; depuis 2.6.0 le drapeau tombe au cycle mesuré sur vrai 6522 (N+2 cycles après le cycle d'écriture, référence viavarious) | « N+1,5 cycles après l'écriture de T1C-H » | Un demi-cycle n'est pas représentable à la granularité du cycle entier (il faudrait le niveau N4, cf. `docs/ACCURACY.md`). La **période** du mode continu, elle, est exacte — c'est elle qui fixe les fréquences. |
+| 4 | Écriture T1L-H (reg 7) efface le flag T1 | Fig 12/13 : seule l'écriture T1C-H (reg 5) l'efface explicitement | Comportement exact de reg 7 sur le flag **incertain** (divergence entre datasheets MOS et Rockwell) → pas de correction sans confirmation (principe : ne pas inventer). |
+| 5 | RESET efface compteurs/latches/SR | La datasheet dit qu'ils sont **préservés** | Sans conséquence (état power-on indéfini) ; `test_via_reset` verrouille l'état actuel. |
 
 ---
 

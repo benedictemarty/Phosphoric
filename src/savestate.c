@@ -255,6 +255,14 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_bool(fp, emu->via.ca2_in);
     write_bool(fp, emu->via.sr_active);
     write_u32le(fp, emu->via.sr_clk_acc);
+    /* 2.6.0 (VIA mesurée sur vrai 6522, report Neo6502Vic20) : mode de T2
+     * effectif, cycle de retenue après T2C-H, T2 sur 8 bits (registre à décalage)
+     * et délais du registre à décalage. */
+    write_bool(fp, emu->via.t2_phi2);
+    write_bool(fp, emu->via.t2_hold);
+    write_bool(fp, emu->via.t2_reload);
+    write_u8(fp, emu->via.sr_t2_pending);
+    write_u8(fp, emu->via.sr_delay);
     end_section(fp, sec);
 
     /* ── PSG Section ── */
@@ -614,6 +622,20 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 emu->via.t1_active = emu->via.t1_running;
                 emu->via.t2_active = emu->via.t2_running;
                 emu->via.t1_reload = false;
+            }
+            if (sec_size >= 40) {   /* 2.6.0 : état T2 / registre à décalage */
+                emu->via.t2_phi2       = read_bool(fp);
+                emu->via.t2_hold       = read_bool(fp);
+                emu->via.t2_reload     = read_bool(fp);
+                emu->via.sr_t2_pending = read_u8(fp);
+                emu->via.sr_delay      = read_u8(fp);
+            } else {
+                /* .ost antérieur : mode de T2 déduit de l'ACR, rien en attente. */
+                emu->via.t2_phi2       = !(emu->via.acr & 0x20);
+                emu->via.t2_hold       = false;
+                emu->via.t2_reload     = false;
+                emu->via.sr_t2_pending = 0;
+                emu->via.sr_delay      = 0;
             }
         } else if (memcmp(tag, "PSG\0", 4) == 0) {
             fread(emu->psg.registers, 1, AY_NUM_REGISTERS, fp);
