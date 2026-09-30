@@ -13,24 +13,25 @@
 #include "emulator.h"
 
 #include <stdio.h>
+#include <stddef.h>   /* offsetof */
 
-/* ── I/O bus: registered peripherals (docs/architecture/io-bus.md) ──────
- * Each peripheral provides claims/read/write; the dispatch walks the table.
- * Table order = priority: LOCI first (overlaps the Microdisc via
- * TAP $0315-$0317), then ACIA (owns $031C-$031F if present) before Microdisc.
- * The ULA-NG comes last: its write must always receive the byte in its
- * window (even when locked, to watch for the 'N','G' sequence) and `ula_ng_write`
- * *returns* whether it consumed it — otherwise fall back to the VIA; hence the
- * separate `claims_write` and the boolean return of `write`. "Strangler" pattern. */
+/* ── Bus I/O : périphériques enregistrés (docs/architecture/io-bus.md) ──────
+ * Chaque périphérique fournit claims/read/write ; le dispatch parcourt la table.
+ * L'ordre de la table = la priorité : LOCI en tête (recouvre le Microdisc via
+ * TAP $0315-$0317), puis ACIA (possède $031C-$031F si présente) avant Microdisc.
+ * L'ULA-NG est en dernier : son écriture doit toujours recevoir l'octet en
+ * fenêtre (même verrouillée, pour guetter la séquence 'N','G') et `ula_ng_write`
+ * *renvoie* si elle a consommé — sinon repli VIA ; d'où le `claims_write` distinct
+ * et le retour booléen de `write`. Pattern « strangler ». */
 
-/* LOCI (sodiumlb): three disjoint sub-windows, dispatched internally.
- *  - MIA $03A0-$03BF (independent of the other peripherals);
- *  - TAP $0315-$0317: replaces the tape interface, overlaps the Microdisc
- *    $0310-$031F → priority (LOCI is at the head of the table);
- *  - DSK $0310-$0314 + $0318-$0319: only when no real Microdisc is present
- *    (otherwise the Microdisc owns the range). */
-/* Co-sim: window + registers of the $AF RAM expansion ($03C0-$03E4), served by the
- * firmware (io-page) — unknown to the internal model. */
+/* LOCI (sodiumlb) : trois sous-fenêtres disjointes, dispatchées en interne.
+ *  - MIA $03A0-$03BF (indépendant des autres périphériques) ;
+ *  - TAP $0315-$0317 : remplace l'interface cassette, recouvre le Microdisc
+ *    $0310-$031F → priorité (LOCI est en tête de table) ;
+ *  - DSK $0310-$0314 + $0318-$0319 : seulement en l'absence de vrai Microdisc
+ *    (sinon le Microdisc possède la plage). */
+/* Co-sim : fenêtre + registres de l'expansion RAM $AF ($03C0-$03E4), servis par le
+ * firmware (io-page) — inconnus du modèle interne. */
 static bool loci_emu_ramx_claims(uint16_t addr) {
     return loci_emu_active() && addr >= 0x03C0 && addr <= 0x03E4;
 }
@@ -232,6 +233,18 @@ static bool jasmin_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
+/* Savestate (section "JAS") : émise seulement si le Jasmin est présent. Les
+ * images disque passent par la section DSK (savestate.c), lue AVANT. */
+static bool jasmin_dev_save(emulator_t* emu, FILE* fp) {
+    if (!emu->has_jasmin) return false;
+    return jasmin_save(&emu->jasmin, fp);
+}
+static void jasmin_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    jasmin_load(&emu->jasmin, fp, size);
+    /* Même synchronisation des verrous vers la mémoire que jasmin_dev_write. */
+    emu->memory.jasmin_olay   = emu->jasmin.olay;
+    emu->memory.jasmin_romdis = emu->jasmin.romdis;
+}
 /* SP0256 Mageco "Synthétiseur Vocal" (GI SP0256-AL2): single port at
  * emu->sp0256.base_addr (default $03F1). Audio output mixed into the PSG. */
 static bool sp0256_dev_claims(emulator_t* emu, uint16_t addr) {
@@ -245,6 +258,21 @@ static bool sp0256_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
+/* Savestate (sections "SPO" / "MEA") : émises seulement si la carte est présente. */
+static bool sp0256_dev_save(emulator_t* emu, FILE* fp) {
+    if (!emu->has_sp0256) return false;
+    return sp0256_save(&emu->sp0256, fp);
+}
+static void sp0256_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    sp0256_load(&emu->sp0256, fp, size);
+}
+static bool mea8000_dev_save(emulator_t* emu, FILE* fp) {
+    if (!emu->has_mea8000) return false;
+    return mea8000_save(&emu->mea8000, fp);
+}
+static void mea8000_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
+    mea8000_load(&emu->mea8000, fp, size);
+}
 /* MEA8000 TMPI "Synthétiseur Vocal" (Philips formant): data at base_addr,
  * command at base_addr+1 (default $03F0/$03F1). Mutually exclusive with the SP0256 ($03F1). */
 static bool mea8000_dev_claims(emulator_t* emu, uint16_t addr) {
@@ -314,26 +342,82 @@ static void ula_ng_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     ula_ng_load(&emu->ula_ng, fp, size);
 }
 
-static const io_device_t io_bus[] = {
-    /* (save_tag/save/load NULL: these devices have no .ost section yet —
-     * to be migrated on the same model as the ULA-NG; LOCI has the OS-handles caveat.) */
-    { "loci",      loci_dev_claims,      loci_dev_read,      loci_dev_write,      NULL, NULL, NULL, NULL },
-    { "acia",      acia_dev_claims,      acia_dev_read,      acia_dev_write,      NULL, NULL, NULL, NULL,
-      acia_dev_peek },
-    { "mageco",    mageco_dev_claims,    mageco_dev_read,    mageco_dev_write,    NULL,
-      "MAG\0",     mageco_dev_save,      mageco_dev_load },
-    { "microdisc", microdisc_dev_claims, microdisc_dev_read, microdisc_dev_write, NULL, NULL, NULL, NULL },
-    { "jasmin",    jasmin_dev_claims,    jasmin_dev_read,    jasmin_dev_write,    NULL, NULL, NULL, NULL },
-    { "sp0256",    sp0256_dev_claims,    sp0256_dev_read,    sp0256_dev_write,    NULL, NULL, NULL, NULL },
-    { "mea8000",   mea8000_dev_claims,   mea8000_dev_read,   mea8000_dev_write,   NULL, NULL, NULL, NULL },
-    { "dtl2000",   dtl2000_dev_claims,   dtl2000_dev_read,   dtl2000_dev_write,   NULL,
-      "DTL\0",     dtl2000_dev_save,     dtl2000_dev_load },
-    /* ULA-NG last (fallback before VIA). Separate claims_write: sees the
-     * writes to its window even when locked ('N','G' watch). Serialised via the
-     * "UNG" section (emitted only if unlocked → .ost unchanged otherwise). */
-    { "ula-ng",    ula_ng_dev_claims,    ula_ng_dev_read,    ula_ng_dev_write,    ula_ng_dev_claims_write,
-      "UNG\0",     ula_ng_dev_save,      ula_ng_dev_load },
+/* ── Ticks : exactement les opérations de l'ancien io_bus_tick, par device ── */
+static void microdisc_dev_tick(emulator_t* emu, int cycles) {
+    fdc_ticktock(&emu->microdisc.fdc, cycles);
+}
+static void jasmin_dev_tick(emulator_t* emu, int cycles) {
+    fdc_ticktock(&emu->jasmin.fdc, cycles);
+}
+static void loci_dev_tick(emulator_t* emu, int cycles) {
+    fdc_ticktock(&emu->loci.dsk_fdc, cycles);
+    loci_adj_tick(&emu->loci, cycles);
+}
+static void acia_dev_tick(emulator_t* emu, int cycles) {
+    acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
+    acia_tick(&emu->acia, cycles);
+}
+static void dtl2000_dev_tick(emulator_t* emu, int cycles) { dtl2000_tick(&emu->dtl2000, cycles); }
+static void mageco_dev_tick(emulator_t* emu, int cycles)  { mageco_tick(&emu->mageco, cycles); }
+static void sp0256_dev_tick(emulator_t* emu, int cycles)  { sp0256_tick(&emu->sp0256, cycles); }
+static void mea8000_dev_tick(emulator_t* emu, int cycles) { mea8000_tick(&emu->mea8000, cycles); }
+
+/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
+enum { DEV_LOCI, DEV_ACIA, DEV_MAGECO, DEV_MICRODISC, DEV_JASMIN, DEV_SP0256,
+       DEV_MEA8000, DEV_DTL2000, DEV_ULA_NG, DEV_COUNT };
+
+#define PRESENT(flag) offsetof(emulator_t, flag)
+
+static const io_device_t io_bus[DEV_COUNT] = {
+    /* (LOCI : pas de section .ost — réserve des handles OS du backend fichiers.) */
+    [DEV_LOCI] = { .name = "loci", .claims = loci_dev_claims, .read = loci_dev_read,
+                   .write = loci_dev_write,
+                   .present_off = PRESENT(has_loci), .tick = loci_dev_tick },
+    /* ACIA : sa section « SER » est écrite par savestate.c (historique). */
+    [DEV_ACIA] = { .name = "acia", .claims = acia_dev_claims, .read = acia_dev_read,
+                   .write = acia_dev_write, .peek = acia_dev_peek,
+                   .present_off = PRESENT(has_serial), .tick = acia_dev_tick },
+    [DEV_MAGECO] = { .name = "mageco", .claims = mageco_dev_claims, .read = mageco_dev_read,
+                     .write = mageco_dev_write,
+                     .save_tag = "MAG\0", .save = mageco_dev_save, .load = mageco_dev_load,
+                     .present_off = PRESENT(has_mageco), .tick = mageco_dev_tick },
+    /* Microdisc : sections FDC/MDC/DSK/BAD écrites par savestate.c (historique). */
+    [DEV_MICRODISC] = { .name = "microdisc", .claims = microdisc_dev_claims,
+                        .read = microdisc_dev_read, .write = microdisc_dev_write,
+                        .present_off = PRESENT(has_microdisc), .tick = microdisc_dev_tick },
+    [DEV_JASMIN] = { .name = "jasmin", .claims = jasmin_dev_claims, .read = jasmin_dev_read,
+                     .write = jasmin_dev_write,
+                     .save_tag = "JAS\0", .save = jasmin_dev_save, .load = jasmin_dev_load,
+                     .present_off = PRESENT(has_jasmin), .tick = jasmin_dev_tick },
+    [DEV_SP0256] = { .name = "sp0256", .claims = sp0256_dev_claims, .read = sp0256_dev_read,
+                     .write = sp0256_dev_write,
+                     .save_tag = "SPO\0", .save = sp0256_dev_save, .load = sp0256_dev_load,
+                     .present_off = PRESENT(has_sp0256), .tick = sp0256_dev_tick },
+    [DEV_MEA8000] = { .name = "mea8000", .claims = mea8000_dev_claims, .read = mea8000_dev_read,
+                      .write = mea8000_dev_write,
+                      .save_tag = "MEA\0", .save = mea8000_dev_save, .load = mea8000_dev_load,
+                      .present_off = PRESENT(has_mea8000), .tick = mea8000_dev_tick },
+    [DEV_DTL2000] = { .name = "dtl2000", .claims = dtl2000_dev_claims, .read = dtl2000_dev_read,
+                      .write = dtl2000_dev_write,
+                      .save_tag = "DTL\0", .save = dtl2000_dev_save, .load = dtl2000_dev_load,
+                      .present_off = PRESENT(has_dtl2000), .tick = dtl2000_dev_tick },
+    /* ULA-NG en dernier (repli avant VIA). claims_write distinct : voit les
+     * écritures de sa fenêtre même verrouillée (guet 'N','G'). Sérialisée via la
+     * section "UNG" (émise seulement si déverrouillée → .ost inchangé sinon).
+     * Pas de tick : l'ULA-NG avance avec la vidéo. */
+    [DEV_ULA_NG] = { .name = "ula-ng", .claims = ula_ng_dev_claims, .read = ula_ng_dev_read,
+                     .write = ula_ng_dev_write, .claims_write = ula_ng_dev_claims_write,
+                     .save_tag = "UNG\0", .save = ula_ng_dev_save, .load = ula_ng_dev_load },
 };
+
+/* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
+ * l'ancien cpu_cycle_tick (microdisc → jasmin → loci → acia → dtl → mageco →
+ * sp0256 → mea8000) : iso-comportement par construction. */
+static const io_device_t* const io_bus_tick_order[] = {
+    &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI], &io_bus[DEV_ACIA],
+    &io_bus[DEV_DTL2000], &io_bus[DEV_MAGECO], &io_bus[DEV_SP0256], &io_bus[DEV_MEA8000],
+};
+
 static const int io_bus_count = (int)(sizeof(io_bus) / sizeof(io_bus[0]));
 
 const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
@@ -358,24 +442,17 @@ const io_device_t* io_bus_devices(int* count) {
     return io_bus;
 }
 
-/* Tick of the timed bus peripherals. HISTORICAL ORDER PRESERVED exactly as
- * in the old cpu_cycle_tick (microdisc → loci → acia → dtl → mageco)
- * → identical behaviour by construction (and not merely by the independence of the
- * ticks). A generic loop over `io_bus[]` would reorder them; so it is not done
- * here (see docs/architecture/io-bus.md §6: non-uniform lifecycle hooks). */
+/* Tick des périphériques de bus temporisés, dans io_bus_tick_order. */
 void io_bus_tick(emulator_t* emu, int cycles) {
-    if (emu->has_microdisc) fdc_ticktock(&emu->microdisc.fdc, cycles);
-    if (emu->has_jasmin)    fdc_ticktock(&emu->jasmin.fdc, cycles);
-    if (emu->has_loci) {
-        fdc_ticktock(&emu->loci.dsk_fdc, cycles);
-        loci_adj_tick(&emu->loci, cycles);
+    const char* base = (const char*)emu;
+    /* Appelé à CHAQUE cycle : déroulée, la boucle sur une table constante se
+     * replie en tests de drapeaux + appels directs (coût mesuré : +22 % par
+     * trame sans déroulage). `expect(…, 0)` garde le cas courant — aucun
+     * périphérique — en ligne droite, appels hors chemin (+7 % sans). */
+#pragma GCC unroll 16
+    for (size_t i = 0; i < sizeof(io_bus_tick_order) / sizeof(io_bus_tick_order[0]); i++) {
+        const io_device_t* d = io_bus_tick_order[i];
+        if (__builtin_expect(*(const bool*)(base + d->present_off), 0))
+            d->tick(emu, cycles);
     }
-    if (emu->has_serial) {
-        acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
-        acia_tick(&emu->acia, cycles);
-    }
-    if (emu->has_dtl2000) dtl2000_tick(&emu->dtl2000, cycles);
-    if (emu->has_mageco)  mageco_tick(&emu->mageco, cycles);
-    if (emu->has_sp0256)  sp0256_tick(&emu->sp0256, cycles);
-    if (emu->has_mea8000) mea8000_tick(&emu->mea8000, cycles);
 }

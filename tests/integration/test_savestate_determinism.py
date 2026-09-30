@@ -70,6 +70,32 @@ def run_stops(c, ram_path):
     return stops, via
 
 
+# Scénarios : (nom, arguments en plus, trames avant la sauvegarde, médias requis).
+# Les cartes à section .ost propre (sprint D) sont reprises dans la même machine :
+# un champ oublié au chargement ferait diverger les arrêts, le VIA ou la RAM.
+SCENARIOS = [
+    ("machine de base", [], 0, []),
+    # FTDOS (disque Jasmin TDOS, média local) : à 100 trames le boot vient de
+    # commencer, à 250 un secteur est EN COURS de lecture (reprise en plein
+    # transfert : cur_sector_data + drq_age, défaut corrigé en 2.4.0).
+    ("Jasmin en début de boot TDOS",
+     ["--jasmin-rom", "roms/jasmin.rom", "-d", "disks/FTDOS.dsk"], 100,
+     ["roms/jasmin.rom", "disks/FTDOS.dsk"]),
+    ("Jasmin en plein transfert disque (TDOS)",
+     ["--jasmin-rom", "roms/jasmin.rom", "-d", "disks/FTDOS.dsk"], 250,
+     ["roms/jasmin.rom", "disks/FTDOS.dsk"]),
+    # Microdisc + Sedoric (Citadelle, média local) : même défaut de reprise en
+    # plein transfert ; la 2.3.0 divergeait à 100 et 200 trames.
+    ("Microdisc en plein boot Sedoric (100 trames)",
+     ["--disk-rom", "roms/microdis.rom", "-d", "disks/Citadelle.dsk"], 100,
+     ["roms/microdis.rom", "disks/Citadelle.dsk"]),
+    ("Microdisc en plein boot Sedoric (200 trames)",
+     ["--disk-rom", "roms/microdis.rom", "-d", "disks/Citadelle.dsk"], 200,
+     ["roms/microdis.rom", "disks/Citadelle.dsk"]),
+    ("synthèse MEA8000 présente", ["--mea8000"], 60, []),
+]
+
+
 def main():
     if not os.path.exists(EMU):
         print(f"  [SKIP] {EMU} non construit")
@@ -77,16 +103,32 @@ def main():
     if not os.path.exists(ROM):
         print("  [SKIP] aucune ROM BASIC")
         return 0
+    for name, extra, warm, media in SCENARIOS:
+        missing = [m for m in media if not os.path.exists(m)]
+        if missing:
+            print(f"  [SKIP] {name} : {', '.join(missing)} absent")
+            continue
+        run_scenario(name, extra, warm)
+    print(f"=== result: {passed} passed, {failed} failed ===")
+    return 1 if failed else 0
 
-    print("=== Savestate = point de reprise exact (V2-E7, US7.2) ===")
+
+def run_scenario(name, extra, warm):
+    print(f"=== Savestate = point de reprise exact (V2-E7, US7.2) : {name} ===")
     with tempfile.TemporaryDirectory() as tmp:
         ost = os.path.join(tmp, "mid.ost")
         ram_ref = os.path.join(tmp, "ref.bin")
         ram_res = os.path.join(tmp, "res.bin")
 
-        # 1. Reference: step×N, save mid-frame, then CONTINUE.
-        with PhosClient.spawn([EMU, "-r", ROM, "-n"]) as c:
+        # 1. Référence : step×N, sauvegarde en pleine trame, puis on CONTINUE.
+        with PhosClient.spawn([EMU, "-r", ROM, "-n"] + extra) as c:
             c.wait_ready()
+            if warm:                                   # machine en activité
+                c.ok(f"raster {RASTER_LINE}")
+                for _ in range(warm):
+                    c.cont()
+                    if c.wait_stopped(timeout=10.0) is None:
+                        raise RuntimeError("no stop event (warm-up)")
             for _ in range(STEPS_BEFORE_SAVE):
                 c.step()
             at_save = c.regs()
@@ -98,10 +140,10 @@ def main():
         ok(f"sauvegarde en pleine trame (cycle {cyc}, ligne {cyc % 19968 // 64})")
         if not os.path.exists(ost):
             ko("state-save n'a rien écrit")
-            return 1
+            return
 
-        # 2. Resume: --load-state, then the SAME run.
-        with PhosClient.spawn([EMU, "-r", ROM, "-n", "--load-state", ost]) as c:
+        # 2. Reprise : --load-state, puis le MÊME parcours.
+        with PhosClient.spawn([EMU, "-r", ROM, "-n", "--load-state", ost] + extra) as c:
             c.wait_ready()
             at_load = c.regs()
             res_stops, res_via = run_stops(c, ram_res)
@@ -137,8 +179,6 @@ def main():
             ko(f"RAM diverge (tailles {len(a)}/{len(b)}, premier écart à ${first:04X})"
                if first is not None else f"RAM diverge (tailles {len(a)}/{len(b)})")
 
-    print(f"=== result: {passed} passed, {failed} failed ===")
-    return 1 if failed else 0
 
 
 if __name__ == "__main__":

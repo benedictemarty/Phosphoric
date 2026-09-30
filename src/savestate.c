@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "savestate.h"
+#include "io/jasmin.h"
 #include "emulator.h"
 #include "utils/logging.h"
 
@@ -305,27 +306,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     /* ── FDC Section (if Microdisc present) ── */
     if (emu->has_microdisc) {
         sec = begin_section(fp, "FDC\0");
-        const fdc_t* fdc = &emu->microdisc.fdc;
-        write_u8(fp, fdc->status);
-        write_u8(fp, fdc->command);
-        write_u8(fp, fdc->track);
-        write_u8(fp, fdc->sector);
-        write_u8(fp, fdc->data);
-        write_u8(fp, fdc->direction);
-        write_u8(fp, fdc->c_track);
-        write_u8(fp, fdc->c_sector);
-        write_u8(fp, fdc->side);
-        write_u8(fp, (uint8_t)fdc->currentop);
-        write_u16le(fp, fdc->cur_sector_len);
-        write_u16le(fp, fdc->cur_offset);
-        write_u8(fp, fdc->sec_type);
-        write_i32le(fp, fdc->delayed_drq);
-        write_i32le(fp, fdc->delayed_int);
-        write_i32le(fp, fdc->di_status);
-        write_i32le(fp, fdc->dd_status);
-        /* Mechanical timing model state (v1.42+): disk angle + Type I view */
-        write_u8(fp, fdc->status_type1 ? 1 : 0);
-        write_u32le(fp, fdc->rot_pos);
+        fdc_state_save(&emu->microdisc.fdc, fp);
         end_section(fp, sec);
 
         /* ── MDC Section ── */
@@ -340,9 +321,14 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         write_u8(fp, emu->microdisc.side);
         end_section(fp, sec);
 
-        /* ── DSK Section: the actual disk images, so in-game saves (sectors the
-         * guest wrote this session) survive save/load. One record per loaded
-         * drive: index, geometry, size, then the raw bytes. ── */
+    }
+
+    /* ── DSK Section: the actual disk images, so in-game saves (sectors the
+     * guest wrote this session) survive save/load. One record per loaded
+     * drive: index, geometry, size, then the raw bytes. Shared by the
+     * Microdisc and the Jasmin (same emu->disks[]); for the Microdisc the
+     * section keeps its historical place, right after MDC. ── */
+    if (emu->has_microdisc || emu->has_jasmin) {
         sec = begin_section(fp, "DSK\0");
         uint8_t ndrives = 0;
         for (int i = 0; i < MICRODISC_MAX_DRIVES; i++)
@@ -359,6 +345,9 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         }
         end_section(fp, sec);
 
+    }
+
+    if (emu->has_microdisc) {
         /* ── BAD Section: per-drive media bad-sector maps (fault injection).
          * Written after DSK because loading DSK re-points the media and
          * would wipe freshly restored maps. ── */
@@ -667,28 +656,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
         } else if (memcmp(tag, "KBD\0", 4) == 0) {
             fread(emu->keyboard.matrix, 1, 8, fp);
         } else if (memcmp(tag, "FDC\0", 4) == 0) {
-            fdc_t* fdc = &emu->microdisc.fdc;
-            fdc->status = read_u8(fp);
-            fdc->command = read_u8(fp);
-            fdc->track = read_u8(fp);
-            fdc->sector = read_u8(fp);
-            fdc->data = read_u8(fp);
-            fdc->direction = read_u8(fp);
-            fdc->c_track = read_u8(fp);
-            fdc->c_sector = read_u8(fp);
-            fdc->side = read_u8(fp);
-            fdc->currentop = (fdc_op_t)read_u8(fp);
-            fdc->cur_sector_len = read_u16le(fp);
-            fdc->cur_offset = read_u16le(fp);
-            fdc->sec_type = read_u8(fp);
-            fdc->delayed_drq = read_i32le(fp);
-            fdc->delayed_int = read_i32le(fp);
-            fdc->di_status = read_i32le(fp);
-            fdc->dd_status = read_i32le(fp);
-            if (sec_size >= 36) {   /* v1.42+: mechanical timing state */
-                fdc->status_type1 = read_u8(fp) != 0;
-                fdc->rot_pos = read_u32le(fp) % FDC_REV_CYCLES;
-            }
+            fdc_state_load(&emu->microdisc.fdc, fp, sec_size);
         } else if (memcmp(tag, "MDC\0", 4) == 0) {
             emu->microdisc.status = read_u8(fp);
             emu->microdisc.intrq = read_u8(fp);
@@ -743,6 +711,10 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                     microdisc_set_disk(&emu->microdisc, drive,
                                        emu->disks[drive]->data, dsize,
                                        dtracks, dsectors);
+                    if (emu->has_jasmin && drive < JASMIN_MAX_DRIVES)
+                        jasmin_set_disk(&emu->jasmin, drive,
+                                        emu->disks[drive]->data, dsize,
+                                        dtracks, dsectors);
                 } else {
                     fseek(fp, dsize, SEEK_CUR);  /* allocation failed — skip */
                 }
@@ -825,6 +797,10 @@ bool savestate_load(emulator_t* emu, const char* filename) {
 
     /* ── Restore internal pointers ── */
     emu->cpu.memory = &emu->memory;
+    /* Secteur en cours du Microdisc : recalculé une fois les images (DSK) et la
+     * carte des secteurs défectueux (BAD) en place — reprise en plein transfert. */
+    if (emu->has_microdisc)
+        fdc_state_resume(&emu->microdisc.fdc);
 
     log_info("savestate: loaded successfully from '%s'", filename);
     return true;

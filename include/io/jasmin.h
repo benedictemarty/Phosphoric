@@ -30,6 +30,7 @@
 #define JASMIN_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include "storage/disk.h"
 
@@ -103,6 +104,15 @@ void    jasmin_write(jasmin_t* j, uint16_t addr, uint8_t value);
 
 /* ROM + media */
 bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size);
+
+/* Section .ost « JAS » (sprint D) : état du FDC, verrous du contrôleur et cartes de
+ * secteurs défectueux. Ni la ROM (rechargée depuis --jasmin-rom) ni les images
+ * disque (section « DSK », partagée avec le Microdisc) n'y figurent. jasmin_load
+ * ignore une section de version inconnue ou tronquée, puis re-pointe le FDC sur
+ * le disque du lecteur sélectionné. */
+#define JASMIN_SAVE_VERSION 1
+bool jasmin_save(const jasmin_t* j, FILE* fp);
+void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size);
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
                      uint8_t tracks, uint8_t sectors_per_track);
 

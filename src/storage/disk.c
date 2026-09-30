@@ -17,6 +17,7 @@
  */
 
 #include "storage/disk.h"
+#include "utils/binio.h"
 #include "storage/sedoric.h"     /* SEDORIC/MFM constants + sedoric_mfm_extract_track */
 #include "storage/disk_http.h"   /* web-backed disk (loci-webdisk archi B) */
 #include "utils/logging.h"
@@ -726,6 +727,102 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
         default:
             break;
         }
+        break;
+    }
+}
+
+/* ── État sérialisable (sections .ost « FDC » et « JAS ») ─────────────────
+ * Ordre et encodage repris à l'identique de l'ancienne section FDC de
+ * savestate.c : un .ost existant se relit sans changement. */
+void fdc_state_save(const fdc_t* fdc, FILE* fp) {
+    bin_w_u8(fp, fdc->status);
+    bin_w_u8(fp, fdc->command);
+    bin_w_u8(fp, fdc->track);
+    bin_w_u8(fp, fdc->sector);
+    bin_w_u8(fp, fdc->data);
+    bin_w_u8(fp, fdc->direction);
+    bin_w_u8(fp, fdc->c_track);
+    bin_w_u8(fp, fdc->c_sector);
+    bin_w_u8(fp, fdc->side);
+    bin_w_u8(fp, (uint8_t)fdc->currentop);
+    bin_w_u16(fp, fdc->cur_sector_len);
+    bin_w_u16(fp, fdc->cur_offset);
+    bin_w_u8(fp, fdc->sec_type);
+    bin_w_i32(fp, fdc->delayed_drq);
+    bin_w_i32(fp, fdc->delayed_int);
+    bin_w_i32(fp, fdc->di_status);
+    bin_w_i32(fp, fdc->dd_status);
+    /* Mechanical timing model state (v1.42+): disk angle + Type I view */
+    bin_w_u8(fp, fdc->status_type1 ? 1 : 0);
+    bin_w_u32(fp, fdc->rot_pos);
+    /* v2 (2.4.0) : âge du DRQ en attente (décide LOST DATA, S2) et analyseur du
+     * formatage de piste — sans eux, une reprise en plein transfert divergeait. */
+    bin_w_i32(fp, fdc->drq_age);
+    bin_w_u8(fp, fdc->wt_state);
+    bin_w_u8(fp, fdc->wt_field_idx);
+    fwrite(fdc->wt_id, 1, sizeof(fdc->wt_id), fp);
+    bin_w_u16(fp, fdc->wt_data_len);
+    bin_w_u8(fp, fdc->wt_sectors_done);
+}
+
+void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
+    fdc->status = bin_r_u8(fp);
+    fdc->command = bin_r_u8(fp);
+    fdc->track = bin_r_u8(fp);
+    fdc->sector = bin_r_u8(fp);
+    fdc->data = bin_r_u8(fp);
+    fdc->direction = bin_r_u8(fp);
+    fdc->c_track = bin_r_u8(fp);
+    fdc->c_sector = bin_r_u8(fp);
+    fdc->side = bin_r_u8(fp);
+    fdc->currentop = (fdc_op_t)bin_r_u8(fp);
+    fdc->cur_sector_len = bin_r_u16(fp);
+    fdc->cur_offset = bin_r_u16(fp);
+    fdc->sec_type = bin_r_u8(fp);
+    fdc->delayed_drq = bin_r_i32(fp);
+    fdc->delayed_int = bin_r_i32(fp);
+    fdc->di_status = bin_r_i32(fp);
+    fdc->dd_status = bin_r_i32(fp);
+    if (size >= FDC_STATE_SIZE_V1) {   /* v1.42+: mechanical timing state */
+        fdc->status_type1 = bin_r_u8(fp) != 0;
+        fdc->rot_pos = bin_r_u32(fp) % FDC_REV_CYCLES;
+    }
+    if (size >= FDC_STATE_SIZE) {      /* v2 : DRQ en attente + formatage */
+        fdc->drq_age = bin_r_i32(fp);
+        fdc->wt_state = bin_r_u8(fp);
+        fdc->wt_field_idx = bin_r_u8(fp) & 3;
+        if (fread(fdc->wt_id, 1, sizeof(fdc->wt_id), fp) != sizeof(fdc->wt_id))
+            memset(fdc->wt_id, 0, sizeof(fdc->wt_id));
+        fdc->wt_data_len = bin_r_u16(fp);
+        fdc->wt_sectors_done = bin_r_u8(fp);
+    } else {                           /* .ost antérieur : valeurs neutres */
+        fdc->drq_age = 0;
+        fdc->wt_state = 0;
+        fdc->wt_field_idx = 0;
+        fdc->wt_data_len = 0;
+        fdc->wt_sectors_done = 0;
+    }
+}
+
+/* Le pointeur de secteur n'est pas sauvegardé : il se déduit de l'état restauré
+ * (opération, piste, face, registre secteur) exactement comme la commande l'a
+ * calculé. Sans lui, une reprise en plein transfert lisait « Record Not Found ». */
+void fdc_state_resume(fdc_t* fdc) {
+    switch (fdc->currentop) {
+    case FDC_OP_READ_SECTOR:
+    case FDC_OP_READ_SECTORS:
+    case FDC_OP_WRITE_SECTOR:
+    case FDC_OP_WRITE_SECTORS:
+        fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
+        break;
+    case FDC_OP_READ_ADDRESS:
+        fdc->cur_sector_data = fdc_find_sector(fdc, 1);
+        break;
+    case FDC_OP_WRITE_TRACK:
+        fdc->cur_sector_data = (fdc->wt_state == 2) ? fdc_find_sector(fdc, fdc->wt_id[2]) : NULL;
+        break;
+    default:
+        fdc->cur_sector_data = NULL;
         break;
     }
 }

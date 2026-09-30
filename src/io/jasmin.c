@@ -14,6 +14,7 @@
  */
 
 #include "io/jasmin.h"
+#include "utils/binio.h"
 #include <string.h>
 
 /* ── FDC → Jasmin callbacks ──────────────────────────────────────────
@@ -170,4 +171,59 @@ void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
         j->fdc.sectors_per_track = sectors_per_track;
         fdc_set_bad_map(&j->fdc, &j->bad_map[drive]);
     }
+}
+
+/* ── Section .ost « JAS » ─────────────────────────────────────────────────── */
+#define JASMIN_SAVE_FIXED (1 + FDC_STATE_SIZE + 7)   /* version + FDC + verrous */
+
+bool jasmin_save(const jasmin_t* j, FILE* fp) {
+    bin_w_u8(fp, JASMIN_SAVE_VERSION);
+    fdc_state_save(&j->fdc, fp);
+    bin_w_bool(fp, j->romdis);
+    bin_w_bool(fp, j->olay);
+    bin_w_u8(fp, j->drive);
+    bin_w_u8(fp, j->side);
+    bin_w_u8(fp, j->intrq);
+    bin_w_u8(fp, j->drq);
+    bin_w_bool(fp, j->autoboot_done);
+    for (int d = 0; d < JASMIN_MAX_DRIVES; d++) {
+        const fdc_bad_map_t* m = &j->bad_map[d];
+        bin_w_u8(fp, m->count);
+        for (uint8_t k = 0; k < m->count; k++) {
+            bin_w_u8(fp, m->entry[k].side);
+            bin_w_u8(fp, m->entry[k].track);
+            bin_w_u8(fp, m->entry[k].sector);
+        }
+    }
+    return true;
+}
+
+void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size) {
+    if (size < JASMIN_SAVE_FIXED + JASMIN_MAX_DRIVES) return;   /* tronquée */
+    if (bin_r_u8(fp) != JASMIN_SAVE_VERSION) return;             /* inconnue */
+    fdc_state_load(&j->fdc, fp, FDC_STATE_SIZE);
+    j->romdis = bin_r_bool(fp);
+    j->olay = bin_r_bool(fp);
+    uint8_t drive = bin_r_u8(fp);
+    j->side = bin_r_u8(fp) & 1;
+    j->intrq = bin_r_u8(fp);
+    j->drq = bin_r_u8(fp);
+    j->autoboot_done = bin_r_bool(fp);
+    for (int d = 0; d < JASMIN_MAX_DRIVES; d++) {
+        fdc_bad_map_t* m = &j->bad_map[d];
+        memset(m, 0, sizeof(*m));
+        uint8_t n = bin_r_u8(fp);
+        if (n > FDC_MAX_BAD_SECTORS) n = FDC_MAX_BAD_SECTORS;
+        for (uint8_t k = 0; k < n; k++) {
+            m->entry[k].side = bin_r_u8(fp);
+            m->entry[k].track = bin_r_u8(fp);
+            m->entry[k].sector = bin_r_u8(fp);
+        }
+        m->count = n;
+    }
+    /* Re-pointe le FDC sur le disque du lecteur restauré (les images ont été
+     * remises en place par la section DSK, lue avant). */
+    jasmin_select_drive(j, drive < JASMIN_MAX_DRIVES ? drive : 0);
+    j->fdc.side = j->side;
+    fdc_state_resume(&j->fdc);       /* secteur en cours : reprise en plein transfert */
 }
