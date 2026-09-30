@@ -183,16 +183,16 @@ In AZERTY mode, the emulator uses SDL2 text events, so typing works naturally wh
 
 | Key | Function |
 |--------|----------|
-| F1 | Menu des périphériques E/S (disquettes, cassette, instantanés, imprimante, joystick, clavier ; voir le README) |
-| F2 | Sauvegarde rapide (quicksave) |
-| F3 | Changer l'echelle d'affichage (x1 -> x2 -> x3 -> x4) |
-| F4 | Chargement rapide (quickload) |
-| F5 | Reset a chaud |
-| F7 | Dump memoire (64 Ko RAM dans fichier .bin horodate) |
-| F9 | Entrer dans le debogueur |
-| F10 | Quitter |
-| F11 | Plein ecran |
-| F12 | Capture d'ecran |
+| F1 | I/O peripherals menu (floppies, tape, snapshots, printer, joystick, keyboard; see the README) |
+| F2 | Quicksave |
+| F3 | Change the display scale (x1 -> x2 -> x3 -> x4) |
+| F4 | Quickload |
+| F5 | Warm reset |
+| F7 | Memory dump (64 KB of RAM into a timestamped .bin file) |
+| F9 | Enter the debugger |
+| F10 | Quit |
+| F11 | Full screen |
+| F12 | Screenshot |
 
 ---
 
@@ -963,10 +963,10 @@ HTTP API (build HTTPAPI=1):
 Help:
   -?, --help                 Show help
 
-Touches de fonction (fenetre SDL) :
-  F1 Menu des peripheriques  F2 Save rapide  F3 Echelle  F4 Load rapide  F5 Reset
-  F6 OSD cassette/disquette a chaud  F8 Bouton Action LOCI  F9 Debogueur
-  F10 Quitter  F11 Plein ecran  F12 Capture d'ecran
+Function keys (SDL window):
+  F1 Peripherals menu  F2 Quicksave  F3 Scale  F4 Quickload  F5 Reset
+  F6 Hot tape/disk OSD  F8 LOCI Action button  F9 Debugger
+  F10 Quit  F11 Full screen  F12 Screenshot
 ```
 
 ---

@@ -154,12 +154,12 @@ typedef struct {
     int serial_tcp_rcvbuf;   /* explicit SO_RCVBUF cap (0 = auto) */
     long loci_irq_latency_us;   /* --loci-irq-latency (LOCI I2C IRQ cost) */
 
-    uint64_t loci_menu_at;
-    /* Menu des périphériques (F1) et phosphoric.cfg. */
-    const char* config_path;        /* --config FILE (NULL : phosphoric.cfg) */
+    uint64_t loci_menu_at;   /* --loci-menu-at: copied into g_loci_menu_at (main.c) */
+    /* Peripherals menu (F1) and phosphoric.cfg. */
+    const char* config_path;        /* --config FILE (NULL: phosphoric.cfg) */
     bool no_config;                 /* --no-config */
     bool disk_protect[4];           /* protection_x=oui (phosphoric.cfg) */
-    const char* menu_screenshot;    /* --menu-screenshot FILE (PPM, fin de run) */   /* --loci-menu-at : recopié dans g_loci_menu_at (main.c) */
+    const char* menu_screenshot;    /* --menu-screenshot FILE (PPM, end of run) */
 } cli_opts_t;
 
 /* Default values (those of main()'s former local variables). */

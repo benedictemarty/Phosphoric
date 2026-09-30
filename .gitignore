@@ -112,7 +112,7 @@ tools/debug_*
 *.png
 sedoric_text.txt
 screenshot.png
-# … mais les illustrations de la documentation sont versionnées
+# … but documentation illustrations are tracked
 !docs/images/*.png
 
 # User disk images
@@ -199,7 +199,7 @@ test_movie
 *.ost
 test_ula_ng
 
-# US1 : binaire de distribution strippé
+# US1: stripped distribution binary
 oric1-emu-release
 test_loci_acia_miss
 
@@ -208,7 +208,7 @@ third_party/vectors/
 
 test_clock
 
-# Suivi agile tenu en local uniquement (jamais versionné)
+# Agile tracking kept local only (never versioned)
 /CHANGELOG
 /ROADMAP
 /CHANGELOG.md
@@ -219,7 +219,7 @@ test_clock
 # Out-of-tree build: one subdirectory per configuration
 /build/
 
-# Menu des périphériques (F1) : configuration et sorties locales
+# Peripherals menu (F1): local configuration and outputs
 /phosphoric.cfg
 /snapshots/
 /impression.txt

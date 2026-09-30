@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file iomenu.c
- * @brief Menu des périphériques d'entrée/sortie (F1) : modèle, touches, dessin.
+ * @brief Input/output peripherals menu (F1): model, keys, drawing.
  * @author bmarty <bmarty@mailo.com>
  *
- * Présentation et navigation reprises du menu de Neo6502TeleStrat
- * (src/osd/osd_menu.h, licence zlib/libpng), réécrites pour une grille de
- * 80 × 40 et les périphériques de l'Oric. Voir include/video/iomenu.h.
+ * Layout and navigation taken from the Neo6502TeleStrat menu
+ * (src/osd/osd_menu.h, zlib/libpng licence), rewritten for an 80 × 40 grid
+ * and the Oric's peripherals. See include/video/iomenu.h.
  */
 #include "video/iomenu.h"
 #include "video/iom_font.h"
@@ -19,7 +19,7 @@
 #include <sys/stat.h>
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Surface texte
+ *  Text surface
  * ═══════════════════════════════════════════════════════════════════════ */
 
 static void s_clear(iom_surface_t* s, uint8_t attr) {
@@ -47,8 +47,8 @@ static void s_putc(iom_surface_t* s, int row, int col, uint8_t ch, uint8_t attr)
     s->big[row][col] = 0;
 }
 
-/* Caractère suivant d'une chaîne UTF-8, ramené au codage de la police
- * (Latin-1 ; tirets, points de suspension et flèche ont un glyphe propre). */
+/* Next character of a UTF-8 string, mapped to the font encoding
+ * (Latin-1; dashes, ellipsis and arrow have a glyph of their own). */
 static uint8_t next_char(const char** p) {
     const uint8_t* s = (const uint8_t*)*p;
     uint32_t c = s[0];
@@ -113,7 +113,7 @@ static void s_frame(iom_surface_t* s, int row, int col, int rows, int cols, uint
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Sélecteur de fichiers
+ *  File picker
  * ═══════════════════════════════════════════════════════════════════════ */
 
 static const char* const default_dirs[] = { "tapes", "disks", "snapshots", "demos/ula-ng", ".", NULL };
@@ -149,7 +149,7 @@ static void scan_files(iom_menu_t* m, iom_file_kind_t kind) {
             snprintf(f->name, sizeof(f->name), "%.*s", (int)sizeof(f->name) - 1, de->d_name);
             struct stat sb;
             f->size = (stat(f->path, &sb) == 0) ? (uint32_t)sb.st_size : 0;
-            /* Même nom dans deux dossiers : on garde le premier. */
+            /* Same name in two directories: keep the first one. */
             bool dup = false;
             for (int k = 0; k < m->nfiles; k++)
                 if (strcmp(m->files[k].name, f->name) == 0) { dup = true; break; }
@@ -174,7 +174,7 @@ static void open_browser(iom_menu_t* m, int item) {
     m->browse_target = item;
     m->browse_cursor = 0;
     m->browse_scroll = 0;
-    /* Curseur sur le média en place. */
+    /* Cursor on the media currently inserted. */
     const char* cur = item < IOM_ITEM_TAPE ? m->st.drive[item]
                     : item == IOM_ITEM_TAPE ? m->st.tape : m->st.snapshot_last;
     for (int k = 0; k < m->nfiles; k++)
@@ -184,7 +184,7 @@ static void open_browser(iom_menu_t* m, int item) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Cycle de vie et touches
+ *  Life cycle and keys
  * ═══════════════════════════════════════════════════════════════════════ */
 
 void iom_init(iom_menu_t* m) {
@@ -238,8 +238,8 @@ static iom_action_t browse_key(iom_menu_t* m, int key) {
         if (is_drive(item)) {
             a.type = none ? IOM_ACT_DISK_EJECT : IOM_ACT_DISK_INSERT;
             a.target = item - IOM_ITEM_DRIVE0;
-            /* Même image déjà dans un autre lecteur : refusé (deux lecteurs
-             * écriraient la même image). */
+            /* Same image already in another drive: refused (two drives
+             * would write the same image). */
             if (!none) {
                 for (int d = 0; d < 4; d++) {
                     if (d != a.target && m->st.drive[d][0] &&
@@ -261,7 +261,7 @@ static iom_action_t browse_key(iom_menu_t* m, int key) {
         return a;
     }
     default:
-        /* Lettre : saut au fichier suivant qui commence par cette initiale. */
+        /* Letter: jump to the next file starting with that initial. */
         if (key > ' ' && key < 0x100 && m->nfiles > 0) {
             for (int k = 1; k <= m->nfiles; k++) {
                 const int idx = (m->browse_cursor - 1 + k + m->nfiles) % m->nfiles;
@@ -336,7 +336,7 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Dessin
+ *  Drawing
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #define A_BG        IOM_ATTR(IOM_WHITE, IOM_BLACK)
@@ -352,7 +352,7 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
 #define A_SEL_OK    IOM_ATTR(IOM_GREEN, IOM_BLUE)
 #define A_SEL_ERR   IOM_ATTR(IOM_RED, IOM_BLUE)
 
-/* Jeu d'attributs d'une ligne, selon qu'elle porte la sélection. */
+/* Attribute set of a line, depending on whether it holds the selection. */
 typedef struct { uint8_t base, dim, acc, ok, err; } row_attrs_t;
 static row_attrs_t attrs_for(bool sel) {
     row_attrs_t r = { sel ? A_SEL : A_PANEL, sel ? A_SEL_DIM : A_PANEL_DIM, sel ? A_SEL_ACC : A_PANEL_ACC,
@@ -374,7 +374,7 @@ static void panel(iom_surface_t* s, int row, int col, int rows, int cols, uint8_
     s_putc(s, row, c, ' ', A_EDGE);
 }
 
-/* Barre de sélection pleine, marqueur ▶. */
+/* Full selection bar, ▶ marker. */
 static void item_bar(iom_surface_t* s, int row, int col, int cols, bool sel) {
     s_fill(s, row, col, 1, cols, sel ? A_SEL : A_PANEL);
     if (sel) s_putc(s, row, col, IOM_TRI_R, A_SEL_ACC);
@@ -391,7 +391,7 @@ static void size_str(char* buf, size_t n, uint32_t size) {
     else snprintf(buf, n, "%u Ko", (size + 1023) >> 10);
 }
 
-/* Pastille d'état + libellé ; renvoie la largeur écrite. */
+/* Status dot + label; returns the width written. */
 static int state(iom_surface_t* s, int row, int col, bool on, const char* text, const row_attrs_t* ra) {
     s_putc(s, row, col, on ? IOM_DOT : IOM_CROSS, on ? ra->ok : ra->err);
     return 2 + iom_puts(s, row, col + 2, text, on ? ra->ok : ra->err, -1);
@@ -462,7 +462,7 @@ static void draw_devices(const iom_menu_t* m, iom_surface_t* s) {
     const iom_state_t* st = &m->st;
     char buf[96];
     panel(s, 27, 2, 6, 76, 0, "Périphériques");
-    {   /* Instantanés */
+    {   /* Snapshots */
         const bool on = !m->browsing && m->cursor == IOM_ITEM_SNAPSHOT;
         const row_attrs_t ra = attrs_for(on);
         item_bar(s, 28, 4, 72, on);
@@ -473,7 +473,7 @@ static void draw_devices(const iom_menu_t* m, iom_surface_t* s) {
             iom_puts(s, 28, 20 + n, buf, ra.dim, 76 - 20 - n);
         }
     }
-    {   /* Imprimante (port parallèle, pleine largeur : le fichier de sortie) */
+    {   /* Printer (parallel port, full width: the output file) */
         const bool on = !m->browsing && m->cursor == IOM_ITEM_PRINTER;
         const row_attrs_t ra = attrs_for(on);
         item_bar(s, 29, 4, 72, on);
@@ -485,7 +485,7 @@ static void draw_devices(const iom_menu_t* m, iom_surface_t* s) {
             iom_puts(s, 29, 20 + n, buf, ra.dim, 76 - 20 - n);
         }
     }
-    {   /* Joystick | Clavier */
+    {   /* Joystick | Keyboard */
         const bool on_j = !m->browsing && m->cursor == IOM_ITEM_JOYSTICK;
         const bool on_k = !m->browsing && m->cursor == IOM_ITEM_KEYBOARD;
         const row_attrs_t rj = attrs_for(on_j), rk = attrs_for(on_k);
@@ -498,8 +498,8 @@ static void draw_devices(const iom_menu_t* m, iom_surface_t* s) {
         s_putc(s, 30, 53, IOM_DOT, rk.ok);
         iom_puts(s, 30, 55, st->azerty ? "AZERTY" : "QWERTY", rk.ok, -1);
     }
-    {   /* Cassette : mode de chargement au lancement (-f), pris en compte au
-         * prochain démarrage (phosphoric.cfg) */
+    {   /* Cassette: loading mode at startup (-f), taken into account at the
+         * next start (phosphoric.cfg) */
         const bool on = !m->browsing && m->cursor == IOM_ITEM_TAPE_FAST;
         const row_attrs_t ra = attrs_for(on);
         item_bar(s, 31, 4, 72, on);
@@ -518,7 +518,7 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
     else if (tape) snprintf(buf, sizeof(buf), "Cassette (la même : rembobinée)");
     else snprintf(buf, sizeof(buf), "Instantanés (reprendre : la machine revient à cet instant)");
     const int top = 7, left = 6, width = 68, height = IOM_BROWSE_VISIBLE + 4;
-    s_fill(s, top + 1, left + 2, height, width, IOM_ATTR(IOM_WHITE, IOM_BLUE | IOM_DITHER));  /* ombre */
+    s_fill(s, top + 1, left + 2, height, width, IOM_ATTR(IOM_WHITE, IOM_BLUE | IOM_DITHER));  /* shadow */
     s_fill(s, top, left, height, width, IOM_ATTR(IOM_WHITE, IOM_BLACK));
     s_frame(s, top, left, height, width, IOM_ATTR(IOM_YELLOW, IOM_BLACK));
     const uint8_t icon = drive ? IOM_FLOP_L : tape ? IOM_TAPE_L : IOM_USB_L;
@@ -556,7 +556,7 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
                                        : tape ? "Aucune cassette .tap (dossiers tapes, disks, .)"
                                               : "Aucun instantané .ost (dossiers snapshots, .)",
                  IOM_ATTR(IOM_RED, IOM_BLACK), width - 8);
-    if (n > IOM_BROWSE_VISIBLE) {   /* barre de défilement */
+    if (n > IOM_BROWSE_VISIBLE) {   /* scroll bar */
         const int bar = left + width - 2;
         for (int k = 0; k < IOM_BROWSE_VISIBLE; k++) s_putc(s, top + 2 + k, bar, IOM_SHADE, IOM_ATTR(IOM_BLUE, IOM_BLACK));
         const int thumb = m->browse_scroll * (IOM_BROWSE_VISIBLE - 1) / (n - IOM_BROWSE_VISIBLE);
@@ -569,7 +569,7 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
     char buf[96];
     s_clear(s, A_BG);
 
-    /* En-tête */
+    /* Header */
     s_fill(s, 0, 0, 3, IOM_COLS, IOM_ATTR(IOM_WHITE, IOM_BLUE));
     s_puts_big(s, 1, 3, "PHOSPHORIC", IOM_ATTR(IOM_WHITE, IOM_BLUE));
     iom_puts(s, 1, 25, st->machine, IOM_ATTR(IOM_YELLOW, IOM_BLUE), 22);
@@ -581,20 +581,20 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
     draw_cards(m, s);
     draw_devices(m, s);
 
-    /* Boutons */
+    /* Buttons */
     static const char* const labels[3] = { "Redémarrer (RESET)", "Enregistrer la configuration", "Reprendre" };
     static const int bcol[3] = { 2, 27, 58 }, bw[3] = { 22, 29, 20 };
     for (int i = 0; i < 3; i++)
         button(s, 34, bcol[i], bw[i], labels[i], !m->browsing && m->cursor == IOM_ITEM_RESET + i);
 
-    /* Message du dernier résultat */
+    /* Message of the last result */
     if (m->message[0]) {
         s_putc(s, 36, 3, m->message_error ? IOM_CROSS : IOM_CHECK,
                IOM_ATTR(m->message_error ? IOM_RED : IOM_GREEN, IOM_BLACK));
         iom_puts(s, 36, 5, m->message, IOM_ATTR(m->message_error ? IOM_RED : IOM_YELLOW, IOM_BLACK), 73);
     }
 
-    /* Pied : aide des touches */
+    /* Footer: key help */
     s_fill(s, 37, 0, 3, IOM_COLS, IOM_ATTR(IOM_WHITE, IOM_BLUE | IOM_DITHER));
     const uint8_t key = IOM_ATTR(IOM_BLACK, IOM_CYAN), txt = IOM_ATTR(IOM_WHITE, IOM_BLUE | IOM_DITHER);
     static const char* const help_main[4][2] = { { " Flèches ", "choisir" }, { " Entrée ", "activer" },
@@ -613,8 +613,8 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Rastérisation RGB888 (lignes doublées ; trame en damier sur la ligne de
- *  la grille, comme le Neo6502)
+ *  RGB888 rasterisation (doubled lines; checkerboard dithering on the grid
+ *  line, like the Neo6502)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 void iom_rasterize(const iom_surface_t* s, uint8_t* rgb) {
@@ -623,7 +623,7 @@ void iom_rasterize(const iom_surface_t* s, uint8_t* rgb) {
         uint8_t* out = rgb + (size_t)(line * 2) * IOM_WIDTH * 3;
         for (int col = 0; col < IOM_COLS; col++) {
             uint8_t bits = iom_font[s->ch[row][col]][y];
-            if (s->big[row][col]) {   /* grandes lettres : pixels doublés en largeur */
+            if (s->big[row][col]) {   /* large letters: pixels doubled in width */
                 uint16_t wide = 0;
                 for (int i = 0; i < 8; i++)
                     if (bits >> i & 1) wide |= (uint16_t)(3u << (2 * i));
@@ -636,7 +636,7 @@ void iom_rasterize(const iom_surface_t* s, uint8_t* rgb) {
                 const int px = col * 8 + x;
                 int color;
                 if (bits >> x & 1) color = ink;
-                else if (dither && ((px + line) & 1)) color = IOM_BLACK;   /* un pixel sur deux */
+                else if (dither && ((px + line) & 1)) color = IOM_BLACK;   /* every other pixel */
                 else color = paper;
                 uint8_t* p = out + (size_t)px * 3;
                 p[0] = (color & 1) ? 255 : 0;
@@ -644,6 +644,6 @@ void iom_rasterize(const iom_surface_t* s, uint8_t* rgb) {
                 p[2] = (color & 4) ? 255 : 0;
             }
         }
-        memcpy(out + (size_t)IOM_WIDTH * 3, out, (size_t)IOM_WIDTH * 3);   /* ligne doublée */
+        memcpy(out + (size_t)IOM_WIDTH * 3, out, (size_t)IOM_WIDTH * 3);   /* doubled line */
     }
 }

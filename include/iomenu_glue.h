@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file iomenu_glue.h
- * @brief Liaison entre le menu des périphériques (F1) et l'émulateur.
+ * @brief Glue between the peripherals menu (F1) and the emulator.
  * @author bmarty <bmarty@mailo.com>
  *
- * - Opérations sur les médias, partagées par le menu F1 et le sélecteur F6 :
- *   insérer / éjecter une disquette ou une cassette.
- * - iomenu_refresh() : remplit l'état affiché depuis emulator_t.
- * - iomenu_apply() : exécute une action renvoyée par le menu.
- * - phosphoric.cfg : enregistrement (bouton du menu) et relecture au lancement.
+ * - Media operations, shared by the F1 menu and the F6 picker:
+ *   insert / eject a floppy or a cassette.
+ * - iomenu_refresh(): fills the displayed state from emulator_t.
+ * - iomenu_apply(): executes an action returned by the menu.
+ * - phosphoric.cfg: saving (menu button) and reloading at startup.
  */
 #ifndef IOMENU_GLUE_H
 #define IOMENU_GLUE_H
@@ -21,13 +21,13 @@
 
 typedef enum {
     MEDIA_OK = 0,
-    MEDIA_NO_IFACE,        /* pas d'interface disque (Microdisc / Jasmin) */
-    MEDIA_BAD_DRIVE,       /* lecteur hors de l'interface */
-    MEDIA_EMPTY,           /* rien à éjecter */
-    MEDIA_LOAD_FAILED      /* fichier illisible / invalide */
+    MEDIA_NO_IFACE,        /* no disk interface (Microdisc / Jasmin) */
+    MEDIA_BAD_DRIVE,       /* drive outside the interface */
+    MEDIA_EMPTY,           /* nothing to eject */
+    MEDIA_LOAD_FAILED      /* unreadable / invalid file */
 } media_result_t;
 
-/* Réécrit l'image du lecteur si elle a été modifiée et que --disk-writeback est actif. */
+/* Rewrites the drive image if it was modified and --disk-writeback is active. */
 bool           media_disk_writeback(emulator_t* emu, int drv);
 media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path);
 media_result_t media_disk_eject(emulator_t* emu, int drv);
@@ -35,21 +35,21 @@ media_result_t media_tape_insert(emulator_t* emu, const char* path);
 media_result_t media_tape_eject(emulator_t* emu);
 
 void iomenu_refresh(emulator_t* emu);
-/* Exécute l'action ; renvoie true si le menu doit se fermer. */
+/* Executes the action; returns true if the menu must close. */
 bool iomenu_apply(emulator_t* emu, const iom_action_t* act);
 
-/* Fichier de configuration par défaut (dossier courant). */
+/* Default configuration file (current directory). */
 #define IOMENU_CONFIG_DEFAULT "phosphoric.cfg"
 
-/* Enregistre les réglages gérés par le menu dans `path`, en gardant les autres
- * lignes du fichier (commentaires, clés inconnues). */
+/* Saves the settings managed by the menu to `path`, keeping the file's other
+ * lines (comments, unknown keys). */
 bool iomenu_config_save(emulator_t* emu, const char* path);
-/* Relit `path` et complète `cfg` : une option déjà donnée en ligne de commande
- * est prioritaire. Renvoie le nombre de réglages appliqués, -1 si le fichier
- * n'existe pas. */
+/* Reads `path` back and completes `cfg`: an option already given on the command
+ * line takes priority. Returns the number of settings applied, -1 if the file
+ * does not exist. */
 int  iomenu_config_load(const char* path, cli_opts_t* cfg);
 
-/* Rend le menu (état courant de l'émulateur) dans un fichier PPM 640 × 640. */
+/* Renders the menu (current emulator state) to a 640 × 640 PPM file. */
 bool iomenu_screenshot(emulator_t* emu, const char* path);
 
 #endif /* IOMENU_GLUE_H */

@@ -59,7 +59,7 @@
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
 #include "cli/cli_opts.h"     /* cli_opts_t: command-line options (sprint C) */
 #include "cli/cli_args.h"     /* cli_parse_args: getopt loop (sprint C) */
-#include "iomenu_glue.h"       /* menu des périphériques E/S (F1) */
+#include "iomenu_glue.h"       /* I/O peripherals menu (F1) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -629,10 +629,10 @@ static void mageco_cpu_irq_clr(emulator_t* emu) {
 
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
-/* Réécrit le .dsk du lecteur @p drv sur disque s'il a été modifié par le jeu
- * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
- * pas perdre les écritures. Retourne true si une sauvegarde a eu lieu. */
-/* OSD : éjecte la disquette du lecteur cible (write-back préalable si activé). */
+/* Rewrites drive @p drv's .dsk to disk if the game modified it and
+ * --disk-writeback is active. Called before any swap/eject so that no
+ * writes are lost. Returns true if a save took place. */
+/* OSD: ejects the floppy from the target drive (prior write-back if enabled). */
 static void osd_do_eject(emulator_t* emu) {
     int drv = emu->osd.disk_drive;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
@@ -661,9 +661,9 @@ static void osd_do_eject_tape(emulator_t* emu) {
     osd_close(&emu->osd);
 }
 
-/* OSD hot-swap : charge le média sélectionné dans l'overlay (cassette ou
- * disquette du lecteur cible) sans quitter l'émulateur. Opérations partagées
- * avec le menu F1 (src/iomenu_glue.c). */
+/* OSD hot-swap: loads the selected media into the overlay (cassette or
+ * target drive floppy) without leaving the emulator. Operations shared
+ * with the F1 menu (src/iomenu_glue.c). */
 static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
     if (e->is_disk) {
         int drv = emu->osd.disk_drive;
@@ -691,8 +691,8 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
     osd_close(&emu->osd);
 }
 
-/* Menu des périphériques E/S (F1) : ouvert, la machine est figée (boucle
- * principale) et le son coupé. */
+/* I/O peripherals menu (F1): while it is open, the machine is frozen (main
+ * loop) and sound is muted. */
 static void iomenu_toggle(emulator_t* emu) {
     if (emu->iomenu.open) {
         iom_close(&emu->iomenu);
@@ -1812,9 +1812,7 @@ static void run_autotype_step(emulator_t* emu, uint64_t total_executed) {
 /* LOCI Action button (F8): press instant, to distinguish short / long. */
 static Uint32 loci_f8_down_ms;
 
-/* OSD média (F6) ouvert : les flèches / Entrée / Échap le pilotent et
- * n'atteignent pas l'Oric. Renvoie true si l'événement est consommé. */
-/* Menu F1 ouvert : toutes les touches vont au menu (rien n'atteint l'Oric). */
+/* F1 menu open: every key goes to the menu (nothing reaches the Oric). */
 static bool sdl_iomenu_key(emulator_t* emu, SDL_Keycode sym) {
     if (!emu->iomenu.open) return false;
     int k = 0;
@@ -1833,17 +1831,19 @@ static bool sdl_iomenu_key(emulator_t* emu, SDL_Keycode sym) {
     case SDLK_PAGEUP:    k = IOM_KEY_PGUP;  break;
     case SDLK_PAGEDOWN:  k = IOM_KEY_PGDN;  break;
     default:
-        if (sym > ' ' && sym < 0x7F) k = (int)sym;   /* lettre : saut à l'initiale */
+        if (sym > ' ' && sym < 0x7F) k = (int)sym;   /* letter: jump to initial */
         break;
     }
     if (k) {
         iom_action_t act = iom_key(&emu->iomenu, k);
         if (iomenu_apply(emu, &act))
-            iomenu_toggle(emu);                 /* Reprendre / Reset / instantané repris */
+            iomenu_toggle(emu);                 /* Resume / Reset / snapshot restored */
     }
     return true;
 }
 
+/* Media OSD (F6) open: the arrows / Enter / Escape drive it and
+ * do not reach the Oric. Returns true if the event is consumed. */
 static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
     if (!emu->osd.open) return false;
     int k = 0;
@@ -2042,7 +2042,7 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
         if (!emu->video.hires_mode)
             osd_snapshot_font(&emu->osd, emu->memory.ram);
         if (emu->iomenu.open) {
-            /* Menu F1 : plein écran, à la place de l'image de la machine. */
+            /* F1 menu: full screen, in place of the machine image. */
             static iom_surface_t iom_surf;
             static uint8_t iom_rgb[IOM_WIDTH * IOM_HEIGHT * 3];
             iomenu_refresh(emu);
@@ -2062,16 +2062,16 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 emu->running = false;
                 break;
             case SDL_KEYDOWN:
-                /* OSD média (F6) : quand l'overlay est ouvert, les flèches /
-                 * Entrée / Échap le pilotent et n'atteignent pas l'Oric. */
-                /* Menu des périphériques (F1) : bascule ; ouvert, il prend
-                 * toutes les touches. */
+                /* Peripherals menu (F1): toggle; while open, it takes
+                 * every key. */
                 if (event.key.keysym.sym == SDLK_F1 && !event.key.repeat) {
                     iomenu_toggle(emu);
                     break;
                 }
                 if (sdl_iomenu_key(emu, event.key.keysym.sym))
                     break;
+                /* Media OSD (F6): when the overlay is open, the arrows /
+                 * Enter / Escape drive it and do not reach the Oric. */
                 if (event.key.keysym.sym == SDLK_F6) {
                     osd_toggle(&emu->osd);
                     break;
@@ -2122,7 +2122,7 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 break;
             case SDL_TEXTINPUT:
                 /* Symbolic mode: character -> ORIC key mapping */
-                if (emu->iomenu.open) break;   /* menu F1 : pas de frappe vers l'Oric */
+                if (emu->iomenu.open) break;   /* F1 menu: no typing to the Oric */
                 oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
                 break;
             /* Sprint 34al: bridge SDL mouse → LOCI mou_xram. */
@@ -2501,8 +2501,8 @@ static void emulator_run(emulator_t* emu) {
 #ifdef HAS_SDL2
         rs.frame_start_ticks = SDL_GetTicks();
 #endif
-        /* Menu F1 ouvert : la machine est figée ; on ne fait que présenter le
-         * menu, traiter les touches et tenir la cadence de 50 Hz. */
+        /* F1 menu open: the machine is frozen; we only present the menu,
+         * handle keys and keep the 50 Hz pace. */
         if (emu->iomenu.open) {
             run_present_and_events(emu, rs.total_executed);
             run_frame_pacing(emu, &rs);
@@ -2632,17 +2632,17 @@ static int main_setup_process(emulator_t* emu, cli_opts_t* cfg) {
     return -1;
 }
 
-/* Menu des périphériques (F1) : phosphoric.cfg complète la ligne de commande
- * (qui reste prioritaire), puis le menu et ses informations d'affichage.
- * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+/* Peripherals menu (F1): phosphoric.cfg complements the command line
+ * (which keeps priority), then the menu and its display information.
+ * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
     const bool explicit_cfg = cfg->config_path != NULL;
-    /* PHOSPHORIC_NO_CONFIG (exporté par `make tests`) : même effet que
-     * --no-config, pour qu'un phosphoric.cfg personnel n'influence aucun test. */
+    /* PHOSPHORIC_NO_CONFIG (exported by `make tests`): same effect as
+     * --no-config, so that a personal phosphoric.cfg influences no test. */
     const char* nocfg = getenv("PHOSPHORIC_NO_CONFIG");
     if (nocfg && *nocfg && strcmp(nocfg, "0") != 0 && !explicit_cfg) cfg->no_config = true;
-    /* En headless (tests, automates), seule une configuration explicitement
-     * demandée est lue : un phosphoric.cfg personnel ne change pas les runs. */
+    /* In headless mode (tests, automation), only an explicitly requested
+     * configuration is read: a personal phosphoric.cfg does not alter runs. */
     if (!cfg->no_config && (explicit_cfg || !cfg->headless)) {
         const char* path = explicit_cfg ? cfg->config_path : IOMENU_CONFIG_DEFAULT;
         int n = iomenu_config_load(path, cfg);
@@ -3795,8 +3795,8 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
             if (!wp && cfg->disk_files[0] && access(cfg->disk_files[0], W_OK) != 0)
                 wp = true;
             if (wp) {
-                /* Languette posée sur les 4 lecteurs : même effet que l'ancien
-                 * drapeau global du WD1793 (toutes les disquettes protégées). */
+                /* Tab set on all 4 drives: same effect as the former global
+                 * WD1793 flag (every floppy protected). */
                 for (uint8_t d = 0; d < MICRODISC_MAX_DRIVES; d++)
                     microdisc_set_write_protect(&emu->microdisc, d, true);
                 log_info("Disque protégé en écriture (statut WD1793 bit 6)%s",
@@ -3998,8 +3998,8 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
 /* Debugger, cast server, HTTP API, CASTV2 client, resuming a saved state.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_services(emulator_t* emu, cli_opts_t* cfg) {
-    /* Languettes posées par phosphoric.cfg (protection_x=oui), une fois les
-     * disquettes en place. */
+    /* Tabs set by phosphoric.cfg (protection_x=oui), once the floppies
+     * are in place. */
     for (int d = 0; d < 4; d++)
         if (cfg->disk_protect[d] && emu_has_disk_iface(emu) && d < emu_disk_max_drives(emu))
             emu_disk_set_protected(emu, d, true);
@@ -4237,7 +4237,7 @@ static int main_setup_tracing(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_
 /* End of run: captured .TAP, GDB, movie, AVI, state, disk write-back, profiler, traces; exit code.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_finish(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
-    /* --menu-screenshot : le menu F1 tel qu'il apparaîtrait maintenant. */
+    /* --menu-screenshot: the F1 menu as it would appear right now. */
     if (cfg->menu_screenshot) {
         if (iomenu_screenshot(emu, cfg->menu_screenshot))
             log_info("Menu des périphériques : %s", cfg->menu_screenshot);

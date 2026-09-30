@@ -348,12 +348,12 @@ $(BUILD)/%.o: %.c
 #  TESTS
 # ═══════════════════════════════════════════════════════════════
 
-# Aucun test ne doit dépendre d'un phosphoric.cfg personnel (menu F1).
+# No test may depend on a personal phosphoric.cfg (F1 menu).
 export PHOSPHORIC_NO_CONFIG = 1
 
-# Tests unitaires : chaque source est compilée UNE fois par configuration dans
-# $(BUILD) ; le binaire de test lie exactement la liste d'objets donnée.
-#   $(1) cible   $(2) binaire   $(3) sources   $(4) ldflags en plus   $(5) archives
+# Unit tests: each source is compiled ONCE per configuration into $(BUILD);
+# the test binary links exactly the given list of objects.
+#   $(1) target   $(2) binary   $(3) sources   $(4) extra ldflags   $(5) archives
 define UNIT_TEST
 $(TBIN)/$(2): $(call obj,$(3)) $(5)
 	@mkdir -p $$(@D)
@@ -514,11 +514,11 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
-# Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
+# I/O peripherals menu (F1): model, keys, file picker, drawing.
 TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c
 $(eval $(call UNIT_TEST,test-iomenu,test_iomenu,$(TEST_IOMENU_SRCS),,))
 
-# Liaison menu F1 ↔ émulateur (médias, réglages, phosphoric.cfg) : lie le cœur.
+# F1 menu <-> emulator glue (media, settings, phosphoric.cfg): links the core.
 $(eval $(call UNIT_TEST,test-iomenu-glue,test_iomenu_glue,tests/unit/test_iomenu_glue.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 $(eval $(call UNIT_TEST,test-osd,test_osd,$(TEST_OSD_SRCS),,))
@@ -769,11 +769,11 @@ test-docs-claims:
 test-comment-diff:
 	@sh tests/integration/test_comment_only_diff.sh
 
-# Menu des périphériques (F1) : --menu-screenshot, --config, phosphoric.cfg.
+# Peripherals menu (F1): --menu-screenshot, --config, phosphoric.cfg.
 test-iomenu-cli: $(TARGET)
 	@sh tests/integration/test_iomenu_cli.sh
 
-# Auto-test de tools/check_skips.sh (vérificateur de `make tests-strict`).
+# Self-test of tools/check_skips.sh (the `make tests-strict` checker).
 test-check-skips:
 	@sh tests/integration/test_check_skips.sh
 

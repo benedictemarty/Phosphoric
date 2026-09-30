@@ -86,8 +86,8 @@ typedef struct jasmin_s {
 
     /* Per-drive bad-sector map: damage belongs to the inserted media. */
     fdc_bad_map_t bad_map[JASMIN_MAX_DRIVES];
-    /* Languette de protection en écriture, par disquette (appliquée au FDC à
-     * chaque sélection de lecteur). */
+    /* Write-protect tab, per floppy (applied to the FDC on every drive
+     * select). */
     bool write_protect[JASMIN_MAX_DRIVES];
 
     /* CPU IRQ line (IRQF_DISK). Driven by DRQ on the Jasmin. Wired in main.c
@@ -119,11 +119,11 @@ void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size);
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
                      uint8_t tracks, uint8_t sectors_per_track);
 
+/* Write protection of drive `drive` (takes effect at once if it is selected). */
+void jasmin_set_write_protect(jasmin_t* j, uint8_t drive, bool on);
 /* Mark a sector unreadable (RNF/CRC) on @p drive — mirrors the Microdisc; the
  * damage belongs to the media and is swapped in on drive select. Returns 0 on
  * success, -1 on out-of-range drive or a full map. */
-/* Protection en écriture du lecteur `drive` (effet immédiat s'il est sélectionné). */
-void jasmin_set_write_protect(jasmin_t* j, uint8_t drive, bool on);
 int jasmin_add_bad_sector(jasmin_t* j, uint8_t drive,
                           uint8_t side, uint8_t track, uint8_t sector);
 

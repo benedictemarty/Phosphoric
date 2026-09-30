@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file iomenu_glue.c
- * @brief Liaison menu des périphériques (F1) ↔ émulateur ; phosphoric.cfg.
+ * @brief Peripherals menu (F1) ↔ emulator glue; phosphoric.cfg.
  * @author bmarty <bmarty@mailo.com>
  *
- * Voir include/iomenu_glue.h. Les opérations sur les médias viennent de l'OSD
- * F6 (main.c), déplacées ici pour être partagées, sans changement de fond.
+ * See include/iomenu_glue.h. The media operations come from the F6 OSD
+ * (main.c), moved here to be shared, with no change in substance.
  */
 #define _POSIX_C_SOURCE 200809L   /* strdup */
 #include "iomenu_glue.h"
@@ -30,7 +30,7 @@
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Médias
+ *  Media
  * ═══════════════════════════════════════════════════════════════════════ */
 
 bool media_disk_writeback(emulator_t* emu, int drv) {
@@ -49,14 +49,14 @@ media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     sedoric_disk_t* nd = sedoric_load(path);
     if (!nd) return MEDIA_LOAD_FAILED;
-    /* Sauve l'ancien disque s'il a été modifié, avant de l'écraser. */
+    /* Save the old disk if it was modified, before overwriting it. */
     media_disk_writeback(emu, drv);
     if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = nd;
     emu_disk_clear_dirty(emu, drv);
     emu_disk_wire(emu, drv, nd);
-    /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). Les
-     * pointeurs initiaux viennent d'argv (non libérables) → on réaffecte. */
+    /* Per-drive path tracking (later write-back/eject). The initial
+     * pointers come from argv (not freeable) → reassign. */
     emu->disk_paths[drv] = strdup(path);
     if (drv == 0)
         emu->disk_path = emu->disk_paths[drv];
@@ -111,7 +111,7 @@ media_result_t media_tape_eject(emulator_t* emu) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  État affiché
+ *  Displayed state
  * ═══════════════════════════════════════════════════════════════════════ */
 
 static const char* base_name(const char* path) {
@@ -164,7 +164,7 @@ void iomenu_refresh(emulator_t* emu) {
                  : emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD ? IOM_JOY_GAMEPAD : IOM_JOY_NONE;
     st->azerty = emu->keyboard.layout == ORIC_KB_AZERTY;
 
-    /* Cartes d'extension (état au lancement ; lecture seule dans le menu). */
+    /* Expansion cards (state at startup; read-only in the menu). */
     st->cards = 0;
     add_card(st, "Microdisc", emu->has_microdisc, "$0310  %s", base_name(emu->diskrom_path));
     add_card(st, "Jasmin", emu->has_jasmin, "$03F4  %s", base_name(emu->jasmin_rom_path));
@@ -206,7 +206,7 @@ static const char* media_error(media_result_t r) {
     }
 }
 
-/* Prochain nom libre snapshots/etatNNNN.ost. */
+/* Next free name snapshots/etatNNNN.ost. */
 static bool next_snapshot_path(char* out, size_t n) {
     if (mkdir("snapshots", 0755) != 0 && errno != EEXIST) return false;
     for (int i = 1; i < 10000; i++) {
@@ -219,18 +219,18 @@ static bool next_snapshot_path(char* out, size_t n) {
 static void printer_cycle(emulator_t* emu) {
     oric_printer_t* p = &emu->printer;
     const bool active = oric_printer_is_active(p);
-    if (!active) {                                   /* coupée → texte */
+    if (!active) {                                   /* off → text */
         p->type = PRINTER_TEXT;
         if (oric_printer_open(p, "impression.txt"))
             msg(emu, false, "Imprimante texte → impression.txt (LPRINT, LLIST)");
         else
             msg(emu, true, "Impossible d'ouvrir impression.txt");
-    } else if (p->type == PRINTER_TEXT) {            /* texte → traceur */
+    } else if (p->type == PRINTER_TEXT) {            /* text → plotter */
         oric_printer_close(p);
         p->type = PRINTER_MCP40;
         oric_printer_open(p, "traceur.bmp");
         msg(emu, false, "Traceur MCP-40 → traceur.bmp (écrit à la coupure)");
-    } else {                                         /* traceur → coupée */
+    } else {                                         /* plotter → off */
         oric_printer_close(p);
         p->type = PRINTER_NONE;
         msg(emu, false, "Imprimante coupée");
@@ -313,7 +313,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         if (savestate_load(emu, a->path)) {
             snprintf(emu->iomenu.st.snapshot_last, sizeof(emu->iomenu.st.snapshot_last), "%.60s", base_name(a->path));
             msg(emu, false, "Instantané repris : %s", base_name(a->path));
-            return true;                             /* retour immédiat à la machine */
+            return true;                             /* immediate return to the machine */
         }
         msg(emu, true, "Instantané illisible : %s", base_name(a->path));
         return false;
@@ -330,14 +330,14 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         return false;
     }
     case IOM_ACT_TAPE_FAST_TOGGLE:
-        /* -f n'agit qu'au démarrage (injection du 1er bloc au boot) : le choix
-         * vaut pour le prochain lancement, via « Enregistrer la configuration ». */
+        /* -f only acts at startup (1st block injected at boot): the choice
+         * applies to the next launch, via « Enregistrer la configuration » (Save configuration). */
         emu->fast_load = !emu->fast_load;
         msg(emu, false, "Au prochain lancement : %s (enregistrer la configuration)",
             emu->fast_load ? "injection directe" : "CLOAD par la ROM");
         return false;
     case IOM_ACT_RESET:
-        /* Même effet que F5 : reset du 6502 ; bouton reset du LOCI (montages gardés). */
+        /* Same effect as F5: 6502 reset; LOCI reset button (mounts kept). */
         cpu_reset(&emu->cpu);
         if (emu->has_loci) loci_reset(&emu->loci);
         msg(emu, false, "Machine redémarrée (RESET)");
@@ -353,10 +353,10 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  phosphoric.cfg — une ligne « clé=valeur » par réglage ; « # » = commentaire
+ *  phosphoric.cfg — one « key=value » line per setting; « # » = comment
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* Clés gérées par le menu (les autres lignes du fichier sont conservées). */
+/* Keys managed by the menu (the file's other lines are kept). */
 static const char* const managed_keys[] = {
     "a", "b", "c", "d", "protection_a", "protection_b", "protection_c", "protection_d",
     "interface_disque", "rom_disque", "cassette", "cassette_rapide",
@@ -374,7 +374,7 @@ static bool is_managed(const char* line) {
 }
 
 bool iomenu_config_save(emulator_t* emu, const char* path) {
-    /* Lignes à conserver (tout ce qui n'est pas géré par le menu). */
+    /* Lines to keep (everything not managed by the menu). */
     char* keep = NULL;
     size_t keep_len = 0;
     FILE* in = fopen(path, "r");
@@ -448,7 +448,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
         char* key = trim(s);
         char* val = trim(eq + 1);
         const bool oui = strcasecmp(val, "oui") == 0;
-        /* Chaîne persistante (les options pointent dessus jusqu'à la fin). */
+        /* Persistent string (the options point to it until the end). */
         #define KEEP(v) strdup(v)
         if (strlen(key) == 1 && key[0] >= 'a' && key[0] <= 'd' && *val) {
             int d = key[0] - 'a';
@@ -471,7 +471,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
                 applied++;
             }
         } else if (strcmp(key, "imprimante_fichier") == 0 && *val) {
-            /* Appliqué seulement si l'imprimante vient de ce fichier (pas de la CLI). */
+            /* Applied only if the printer comes from this file (not from the CLI). */
             if (cfg->printer_file && (strcmp(cfg->printer_file, "impression.txt") == 0 ||
                                       strcmp(cfg->printer_file, "traceur.bmp") == 0))
                 cfg->printer_file = KEEP(val);
@@ -484,7 +484,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
         #undef KEEP
     }
     fclose(f);
-    /* Interface disque : seulement si la ligne de commande n'en choisit aucune. */
+    /* Disk interface: only if the command line chooses none. */
     if (rom && !cfg->disk_rom_file && !cfg->jasmin_rom_file) {
         if (strcasecmp(iface, "jasmin") == 0) { cfg->jasmin_rom_file = rom; applied++; rom = NULL; }
         else if (strcasecmp(iface, "microdisc") == 0) { cfg->disk_rom_file = rom; applied++; rom = NULL; }
@@ -494,7 +494,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Capture PPM du menu
+ *  PPM capture of the menu
  * ═══════════════════════════════════════════════════════════════════════ */
 
 bool iomenu_screenshot(emulator_t* emu, const char* path) {

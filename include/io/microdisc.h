@@ -71,8 +71,8 @@ typedef struct microdisc_s {
      * Applied to the FDC on drive select, wiped when a new disk is
      * inserted (microdisc_set_disk), persisted in savestates. */
     fdc_bad_map_t bad_map[MICRODISC_MAX_DRIVES];
-    /* Languette de protection en écriture, par disquette (lecteur) : appliquée
-     * au WD1793 à chaque sélection de lecteur (menu F1, --disk-write-protect). */
+    /* Write-protect tab, per floppy (drive): applied to the WD1793 on every
+     * drive select (F1 menu, --disk-write-protect). */
     bool write_protect[MICRODISC_MAX_DRIVES];
 
     /* Overlay ROM data (microdis.rom, 8KB) */
@@ -91,10 +91,10 @@ uint8_t microdisc_read(microdisc_t* md, uint16_t addr);
 void microdisc_write(microdisc_t* md, uint16_t addr, uint8_t value);
 void microdisc_set_disk(microdisc_t* md, uint8_t drive, uint8_t* data, uint32_t size,
                         uint8_t tracks, uint8_t sectors_per_track);
+/* Write protection of drive `drive` (takes effect at once if it is selected). */
+void microdisc_set_write_protect(microdisc_t* md, uint8_t drive, bool on);
 /* Mark a sector of the media in DRIVE as unreadable (fault injection).
  * Returns 0 on success, -1 on bad drive or full map. */
-/* Protection en écriture du lecteur `drive` (effet immédiat s'il est sélectionné). */
-void microdisc_set_write_protect(microdisc_t* md, uint8_t drive, bool on);
 int microdisc_add_bad_sector(microdisc_t* md, uint8_t drive,
                              uint8_t side, uint8_t track, uint8_t sector);
 /* Re-apply DRIVE's media bad-sector map to the FDC if DRIVE is selected. */
