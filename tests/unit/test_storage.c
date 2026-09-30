@@ -919,6 +919,107 @@ TEST(test_fdc_state_load_v1_compat) {
     ASSERT_EQ(b.wt_state, 0);
 }
 
+/* An MFM track whose ID marks announce a side or a track outside the image
+ * (found by `make fuzz`, tests/fuzz/regressions/disk/): the sector is skipped
+ * instead of writing 256 bytes past the array (extraction) or reading past it
+ * (.dsk write-back). The valid sector is still read. */
+static size_t mfm_put_sector(uint8_t* t, size_t at, uint8_t trk, uint8_t side,
+                             uint8_t sec, uint8_t fill) {
+    static const uint8_t am[3] = { 0xA1, 0xA1, 0xA1 };
+    memcpy(t + at, am, 3); t[at + 3] = 0xFE;
+    t[at + 4] = trk; t[at + 5] = side; t[at + 6] = sec; t[at + 7] = 1;
+    at += 22;                                   /* ID + CRC + gap */
+    memcpy(t + at, am, 3); t[at + 3] = 0xFB;
+    memset(t + at + 4, fill, 256);
+    return at + 4 + 256 + 2 + 30;
+}
+
+TEST(test_mfm_id_marks_outside_image_are_skipped) {
+    uint8_t track[MFM_TRACK_SIZE];
+    memset(track, 0x4E, sizeof track);
+    size_t at = 100;
+    at = mfm_put_sector(track, at, 0, 0, 1, 0x11);     /* valid */
+    at = mfm_put_sector(track, at, 0, 200, 2, 0x22);   /* side 200 */
+    (void)mfm_put_sector(track, at, 250, 0, 3, 0x33);  /* track 250 */
+
+    /* Bounded extraction: a sentinel buffer follows the one-track image. */
+    const uint32_t flat_size = 17 * 256;
+    uint8_t* flat = (uint8_t*)malloc(flat_size + 1024);
+    ASSERT_TRUE(flat != NULL);
+    memset(flat, 0, flat_size);
+    memset(flat + flat_size, 0xCC, 1024);
+    int got = sedoric_mfm_extract_track(track, flat, flat_size, 17, 1);
+    ASSERT_EQ(got, 1);
+    ASSERT_EQ(flat[0], 0x11);
+    for (int i = 0; i < 1024; i++) ASSERT_EQ(flat[flat_size + i], 0xCC);
+    free(flat);
+
+    /* Same track in an MFM_DISK .dsk (1 side, 1 track): load, then write
+     * back without any access outside the image. */
+    const char* path = "/tmp/phosphoric_test_mfm_ids.dsk";
+    FILE* f = fopen(path, "wb");
+    ASSERT_TRUE(f != NULL);
+    uint8_t hdr[MFM_DISK_HEADER_SIZE] = { 'M','F','M','_','D','I','S','K', 1,0,0,0, 1,0,0,0 };
+    fwrite(hdr, 1, sizeof hdr, f);
+    fwrite(track, 1, sizeof track, f);
+    fclose(f);
+    sedoric_disk_t* d = sedoric_load(path);
+    ASSERT_TRUE(d != NULL);
+    ASSERT_EQ(d->size, flat_size);
+    ASSERT_EQ(d->data[0], 0x11);
+    ASSERT_EQ(d->data[256], 0x00);            /* sector 2 (side 200) skipped */
+    d->data[0] = 0x44;
+    d->modified = true;
+    ASSERT_TRUE(sedoric_save(d, path));
+    sedoric_destroy(d);
+    d = sedoric_load(path);
+    ASSERT_TRUE(d != NULL);
+    ASSERT_EQ(d->data[0], 0x44);               /* the valid sector was written back */
+    sedoric_destroy(d);
+    unlink(path);
+}
+
+/* A sector whose CRC would overflow the track (data mark too close to the
+ * end) is neither read nor written back: before 2.8.0, the write-back put the
+ * CRC's 2nd byte on the first byte of the next track (past the file for the
+ * last track). Found by `make fuzz`. */
+TEST(test_mfm_sector_crossing_track_end_is_ignored) {
+    const char* path = "/tmp/phosphoric_test_mfm_end.dsk";
+    uint8_t hdr[MFM_DISK_HEADER_SIZE] = { 'M','F','M','_','D','I','S','K', 1,0,0,0, 2,0,0,0 };
+    uint8_t t0[MFM_TRACK_SIZE], t1[MFM_TRACK_SIZE];
+    memset(t0, 0x4E, sizeof t0);
+    memset(t1, 0x4E, sizeof t1);
+    (void)mfm_put_sector(t0, 100, 0, 0, 1, 0x11);             /* normal sector */
+    size_t j = MFM_TRACK_SIZE - 261;                           /* CRC would overflow by 1 byte */
+    size_t id = j - 22;
+    t0[id] = t0[id + 1] = t0[id + 2] = 0xA1; t0[id + 3] = 0xFE;
+    t0[id + 4] = 0; t0[id + 5] = 0; t0[id + 6] = 2; t0[id + 7] = 1;
+    t0[j] = t0[j + 1] = t0[j + 2] = 0xA1; t0[j + 3] = 0xFB;
+    memset(t0 + j + 4, 0x22, 256);
+    t1[0] = 0x5A;                                              /* sentinel */
+    FILE* f = fopen(path, "wb");
+    ASSERT_TRUE(f != NULL);
+    fwrite(hdr, 1, sizeof hdr, f);
+    fwrite(t0, 1, sizeof t0, f);
+    fwrite(t1, 1, sizeof t1, f);
+    fclose(f);
+
+    sedoric_disk_t* d = sedoric_load(path);
+    ASSERT_TRUE(d != NULL);
+    ASSERT_EQ(d->data[0], 0x11);
+    ASSERT_EQ(d->data[256], 0x00);             /* sector 2 straddles the end: skipped */
+    d->modified = true;
+    ASSERT_TRUE(sedoric_save(d, path));
+    sedoric_destroy(d);
+
+    f = fopen(path, "rb");
+    ASSERT_TRUE(f != NULL);
+    fseek(f, MFM_DISK_HEADER_SIZE + MFM_TRACK_SIZE, SEEK_SET);
+    ASSERT_EQ(fgetc(f), 0x5A);                 /* track 1 untouched */
+    fclose(f);
+    unlink(path);
+}
+
 int main(void) {
     printf("Running Storage tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
@@ -963,6 +1064,8 @@ int main(void) {
     RUN(test_fdc_write_protect_visible_in_type1_status);
     RUN(test_fdc_state_resume_mid_sector_read);
     RUN(test_fdc_state_load_v1_compat);
+    RUN(test_mfm_id_marks_outside_image_are_skipped);
+    RUN(test_mfm_sector_crossing_track_end_is_ignored);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

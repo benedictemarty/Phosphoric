@@ -14,3 +14,5 @@ ROADMAP absent
 machine bridée
 # Dépend de la configuration de build, pas d'un oubli.
 built without HTTPAPI=1|headless build, no SDL2 linked|headless \(SDL2=0\) build
+# Hôte sans adresse IPv4 hors boucle locale (conteneur isolé) : --gdb-bind 0.0.0.0 invérifiable.
+pas d'adresse IPv4 non locale

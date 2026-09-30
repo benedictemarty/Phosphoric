@@ -536,6 +536,73 @@ TEST(test_save_load_disk_image) {
     cleanup_test();
 }
 
+/* DSK section of a malformed .ost: a huge size (beyond any geometry, or an
+ * impossible allocation) is skipped; the disk in place is left untouched.
+ * Before 2.8.0, a refused realloc() let the old, smaller buffer receive
+ * `dsize` bytes (found while re-reading savestate.c during fuzzing). */
+static uint32_t test_crc32(const uint8_t* p, size_t n) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; i++) {
+        crc ^= p[i];
+        for (int b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
+TEST(test_load_dsk_section_oversized_is_skipped) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+    const uint32_t dsize = 256u * 17u;
+    emu1.has_microdisc = emu2.has_microdisc = true;
+    microdisc_init(&emu1.microdisc);
+    microdisc_init(&emu2.microdisc);
+    emu1.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+    emu1.disks[0]->data = (uint8_t*)calloc(1, dsize);
+    emu1.disks[0]->size = dsize; emu1.disks[0]->tracks = 1;
+    emu1.disks[0]->sectors = 17; emu1.disks[0]->sides = 1;
+    emu2.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
+    emu2.disks[0]->data = (uint8_t*)malloc(dsize);
+    emu2.disks[0]->size = dsize;
+    memset(emu2.disks[0]->data, 0xEE, dsize);
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+
+    /* Re-read the file, set drive A's size to 0xFFFFFFF0, redo the CRC. */
+    FILE* fp = fopen(TEST_FILE, "rb");
+    ASSERT_TRUE(fp != NULL);
+    fseek(fp, 0, SEEK_END);
+    long n = ftell(fp);
+    rewind(fp);
+    uint8_t* buf = (uint8_t*)malloc((size_t)n);
+    ASSERT_TRUE(buf != NULL && fread(buf, 1, (size_t)n, fp) == (size_t)n);
+    fclose(fp);
+    long dsk = -1;
+    for (long i = SAVESTATE_HEADER_SIZE; i + 14 < n; i++)
+        if (memcmp(buf + i, "DSK\0", 4) == 0) { dsk = i; break; }
+    ASSERT_TRUE(dsk > 0);
+    uint8_t* e = buf + dsk + 8 + 1;            /* ndrives, then drive / dsize */
+    ASSERT_EQ(e[0], 0);                         /* drive A */
+    e[1] = 0xF0; e[2] = 0xFF; e[3] = 0xFF; e[4] = 0xFF;
+    uint32_t crc = test_crc32(buf + SAVESTATE_HEADER_SIZE, (size_t)(n - SAVESTATE_HEADER_SIZE));
+    for (int i = 0; i < 4; i++) buf[12 + i] = (uint8_t)(crc >> (8 * i));
+    fp = fopen(TEST_FILE, "wb");
+    ASSERT_TRUE(fp != NULL);
+    fwrite(buf, 1, (size_t)n, fp);
+    fclose(fp);
+    free(buf);
+
+    (void)savestate_load(&emu2, TEST_FILE);
+    ASSERT_EQ(emu2.disks[0]->size, dsize);      /* disk in place untouched */
+    ASSERT_EQ(emu2.disks[0]->data[0], 0xEE);
+    ASSERT_EQ(emu2.disks[0]->data[dsize - 1], 0xEE);
+
+    free(emu1.disks[0]->data); free(emu1.disks[0]);
+    free(emu2.disks[0]->data); free(emu2.disks[0]);
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
 /* (Tests 9-11 OCULA — ULA profiles / OCB banking / OGP GPU — removed along with
  * the OCULA code from main. The .ost format stays backward-compatible:
  * absent OCB/OGP sections are simply ignored on load.) */
@@ -639,6 +706,7 @@ int main(void) {
     RUN(test_save_load_with_microdisc);
     RUN(test_save_load_bad_sectors);
     RUN(test_save_load_disk_image);
+    RUN(test_load_dsk_section_oversized_is_skipped);
     RUN(test_save_load_ula_ng_roundtrip);
     RUN(test_save_load_ula_ng_locked_no_section);
 

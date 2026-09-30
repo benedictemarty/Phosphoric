@@ -60,6 +60,7 @@ typedef struct {
     int video_avi_quality;
     bool gdb_enabled;
     int gdb_port;
+    const char* gdb_bind;        /* NULL → 127.0.0.1          */
     const char* movie_record_file;
     const char* movie_replay_file;
     const char* keyboard_layout;
@@ -154,7 +155,8 @@ typedef struct {
     int serial_tcp_rcvbuf;   /* explicit SO_RCVBUF cap (0 = auto) */
     long loci_irq_latency_us;   /* --loci-irq-latency (LOCI I2C IRQ cost) */
 
-    uint64_t loci_menu_at;   /* --loci-menu-at: copied into g_loci_menu_at (main.c) */
+    uint64_t loci_menu_at;
+    /* --loci-menu-at: copied into g_loci_menu_at (main.c) */
     /* Peripherals menu (F1) and phosphoric.cfg. */
     const char* config_path;        /* --config FILE (NULL: phosphoric.cfg) */
     bool no_config;                 /* --no-config */

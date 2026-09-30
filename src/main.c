@@ -4236,7 +4236,7 @@ static int main_setup_tracing(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_
     /* GDB remote stub: open the listener and block until a client attaches,
      * then start the CPU halted so GDB drives execution from the reset vector. */
     if (cfg->gdb_enabled) {
-        if (gdb_stub_init(gdb_stub, (uint16_t)cfg->gdb_port)) {
+        if (gdb_stub_init(gdb_stub, (uint16_t)cfg->gdb_port, cfg->gdb_bind)) {
             emu->gdb_mode = true;
             emu->gdb_stub = gdb_stub;
             emu->debugger.active = true;   /* stop at entry, wait for GDB */

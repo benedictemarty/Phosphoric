@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.7.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.8.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -105,7 +105,7 @@ make SDL2=1
 - **Live peripheral introspection** — `via`, `psg`, `disk`/`fdc`, `acia`/`serial`, `tape`, `loci` snapshots
 - **Symbols** — Load `.sym`/`.lab`/EQU/VICE formats with `--symbols FILE`. Disasm and trace operands auto-annotated.
 - **TUI mode** — ncurses 6-pane interface (regs, stack, disasm, mem, bp+wp, status). Build with `TUI=1`, launch with `--tui`.
-- **GDB remote stub** — debug the 6502 from `gdb`/lldb/IDE (VS Code, CLion): `--gdb[=PORT]` then `target remote :PORT`. Breakpoints, single-step, registers and memory over the GDB RSP. *(No other Oric emulator offers this.)*
+- **GDB remote stub** — debug the 6502 from `gdb`/lldb/IDE (VS Code, CLion): `--gdb[=PORT]` then `target remote :PORT`; listens on 127.0.0.1 only unless `--gdb-bind ADDR` is given (the stub has no authentication). Breakpoints, single-step, registers and memory over the GDB RSP. *(No other Oric emulator offers this.)*
 - **CLI** — `--debug` (break at start), `--break ADDR`
 
 ### IPC Control Mode (OricForge IDE integration)
@@ -393,6 +393,8 @@ Debugger:
   --tui                     Use ncurses TUI debugger (requires TUI=1 build)
   --gdb[=PORT]              GDB remote stub on TCP PORT (default 1234);
                             attach with: gdb -ex 'target remote :PORT'
+  --gdb-bind ADDR           Bind address of the GDB stub (default 127.0.0.1;
+                            0.0.0.0 = every interface, no authentication)
   --control                 IPC control mode for IDE integration (stdin protocol)
 
 LOCI peripheral:
@@ -632,6 +634,10 @@ make test-avi            # Motion-JPEG AVI recorder tests
 make test-audio          # PSG audio tests
 make test-debugger       # Debugger tests (incl. inline assembler + memory search)
 make test-gdbstub        # GDB remote stub (RSP protocol) tests
+make test-gdb-bind       # GDB stub bind address (127.0.0.1 by default, --gdb-bind)
+make test-fuzz-replay    # Replays fuzzing seeds and regressions (tests/fuzz/)
+make fuzz                # libFuzzer on the file readers (clang, FUZZ_TIME s/target)
+make SANITIZE=1 tests    # Whole suite under ASan + UBSan
 make test-movie          # Input record/replay tests
 make test-savestate      # Save state tests
 make test-atmos          # Atmos support tests
@@ -729,6 +735,7 @@ tests/integration/ E2E regression (Sedoric boot, IPC control, Python smoke clien
                  savestate determinism, tape signal, raster split)
 tests/corpus/    Screen fingerprints of the local media corpus (make test-corpus)
 tests/cli_golden/ Command-line corpus for tools/cli_golden.sh (refactor safety net)
+tests/fuzz/      Fuzzing targets (libFuzzer) + regressions/ (inputs that once crashed a reader)
 tools/           bas2tap, bin2tap, tap2sedoric, sedoric-info, sedoric_*.py/dsk_raw2mfm.py,
                  bench.sh / bench_check.sh (perf budget), corpus_replay.sh, fetch_vectors.sh,
                  cli_golden.sh, check_skips.sh, check_comment_only_diff.py
@@ -864,4 +871,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.7.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
+Phosphoric v2.8.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30

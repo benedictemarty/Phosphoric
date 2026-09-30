@@ -433,7 +433,7 @@ static int sp0256_lpc12_update(sp0256_lpc12_t* f, int num_samp,
             f->z_data[j][0] = (int16_t)samp;
         }
 
-        out[oidx++ & SP0256_SCBUF_MASK] = (int16_t)(sp0256_limit((int16_t)samp) << 2);
+        out[oidx++ & SP0256_SCBUF_MASK] = (int16_t)(sp0256_limit((int16_t)samp) * 4);   /* signed: no << */
     }
 
     *optr = oidx;
@@ -556,8 +556,8 @@ static void sp0256_micro(sp0256_t* sp)
                 if (value & (1 << (len - 1)))
                     value = (int8_t)(value | (int8_t)(0xFFu << len));
             }
-            if (shf)
-                value = (int8_t)(value << shf);
+            if (shf)   /* shift the unsigned byte: same result, no UB */
+                value = (int8_t)((uint8_t)value << shf);
 
             sp->silent = 0;
 

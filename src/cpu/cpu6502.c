@@ -59,7 +59,9 @@ static void handle_nmi(cpu6502_t* cpu) {
     cpu_push_word(cpu, cpu->PC);
     cpu_push(cpu, (cpu->P & ~FLAG_BREAK) | FLAG_UNUSED);
     cpu_set_flag(cpu, FLAG_INTERRUPT, true);
-    cpu->PC = cpu_mem_read(cpu, 0xFFFA) | ((uint16_t)cpu_mem_read(cpu, 0xFFFB) << 8);
+    uint8_t lo = cpu_mem_read(cpu, 0xFFFA);   /* low byte first: fixed bus order */
+    uint8_t hi = cpu_mem_read(cpu, 0xFFFB);
+    cpu->PC = (uint16_t)(lo | (hi << 8));
     cpu->nmi_pending = false;
     /* Cycle total (7) is reconciled by cpu_step's padding. */
 }
@@ -90,7 +92,9 @@ static void handle_irq(cpu6502_t* cpu) {
     cpu_push_word(cpu, cpu->PC);
     cpu_push(cpu, (cpu->P & ~FLAG_BREAK) | FLAG_UNUSED);
     cpu_set_flag(cpu, FLAG_INTERRUPT, true);
-    cpu->PC = cpu_mem_read(cpu, 0xFFFE) | ((uint16_t)cpu_mem_read(cpu, 0xFFFF) << 8);
+    uint8_t lo = cpu_mem_read(cpu, 0xFFFE);   /* low byte first: fixed bus order */
+    uint8_t hi = cpu_mem_read(cpu, 0xFFFF);
+    cpu->PC = (uint16_t)(lo | (hi << 8));
     /* Level-triggered: do NOT clear cpu->irq here.
      * The I flag prevents re-entry. The source must deassert
      * its IRQ bit when the CPU acknowledges it (e.g. reading VIA IFR).

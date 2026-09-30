@@ -224,3 +224,7 @@ test_clock
 /snapshots/
 /impression.txt
 /traceur.bmp
+
+# Fuzzing inputs that once crashed a parser (synthetic, replayed by
+# make test-fuzz-replay): versioned despite *.dsk / *.tap / *.ost.
+!tests/fuzz/regressions/*/*

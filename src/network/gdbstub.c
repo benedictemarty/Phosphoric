@@ -31,6 +31,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <arpa/inet.h>
 
 #include "emulator.h"
 #include "cpu/cpu6502.h"
@@ -425,7 +426,7 @@ static int read_packet(gdb_stub_t* stub, char* buf, size_t size) {
 
 /* ─── public API ─────────────────────────────────────────────────────── */
 
-bool gdb_stub_init(gdb_stub_t* stub, uint16_t port) {
+bool gdb_stub_init(gdb_stub_t* stub, uint16_t port, const char* bind_addr) {
     memset(stub, 0, sizeof(*stub));
     stub->listen_fd = -1;
     stub->conn_fd = -1;
@@ -443,11 +444,17 @@ bool gdb_stub_init(gdb_stub_t* stub, uint16_t port) {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    if (!bind_addr || !*bind_addr) bind_addr = GDB_DEFAULT_BIND;
+    if (inet_pton(AF_INET, bind_addr, &addr.sin_addr) != 1) {
+        log_error("GDB stub: invalid bind address '%s'", bind_addr);
+        close(stub->listen_fd);
+        stub->listen_fd = -1;
+        return false;
+    }
     addr.sin_port = htons(stub->port);
     if (bind(stub->listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        log_error("GDB stub: bind() failed on port %d: %s",
-                  stub->port, strerror(errno));
+        log_error("GDB stub: bind() failed on %s:%d: %s",
+                  bind_addr, stub->port, strerror(errno));
         close(stub->listen_fd); stub->listen_fd = -1;
         return false;
     }
@@ -457,8 +464,8 @@ bool gdb_stub_init(gdb_stub_t* stub, uint16_t port) {
         return false;
     }
 
-    log_info("GDB stub: waiting for connection on :%d "
-             "(gdb: target remote :%d)", stub->port, stub->port);
+    log_info("GDB stub: waiting for connection on %s:%d "
+             "(gdb: target remote :%d)", bind_addr, stub->port, stub->port);
     stub->conn_fd = accept(stub->listen_fd, NULL, NULL);
     if (stub->conn_fd < 0) {
         log_error("GDB stub: accept() failed: %s", strerror(errno));

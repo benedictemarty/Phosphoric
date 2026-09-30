@@ -52,7 +52,7 @@ sedoric_disk_t* sedoric_create(void) {
  * Layout in flat array: [side0_track0_sec1..sec17, side0_track1_sec1..sec17, ...,
  *                        side1_track0_sec1..sec17, ...]
  */
-static int mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
+static int mfm_extract_track(const uint8_t* track_data, uint8_t* flat, uint32_t flat_size,
                               uint8_t expected_track, uint8_t expected_side,
                               uint8_t sectors_per_track, uint8_t num_tracks) {
     int found = 0;
@@ -67,8 +67,9 @@ static int mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
 
             if (id_sector < 1 || id_sector > sectors_per_track) continue;
 
-            /* Find data mark ($A1 $A1 $A1 $FB) after ID + CRC + gap */
-            for (int j = i + 10; j < i + 60 && j < MFM_TRACK_SIZE - 260; j++) {
+            /* Find data mark ($A1 $A1 $A1 $FB) after ID + CRC + gap; mark,
+             * data and CRC must fit in the track (same rule as injection). */
+            for (int j = i + 10; j < i + 60 && j + 4 + SEDORIC_SECTOR_SIZE + 2 <= MFM_TRACK_SIZE; j++) {
                 if (track_data[j] == 0xA1 && track_data[j+1] == 0xA1 &&
                     track_data[j+2] == 0xA1 && track_data[j+3] == 0xFB) {
                     /* Calculate flat array offset:
@@ -76,6 +77,9 @@ static int mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
                     uint32_t offset = ((uint32_t)id_side * num_tracks * sectors_per_track +
                                        (uint32_t)id_track * sectors_per_track +
                                        (uint32_t)(id_sector - 1)) * SEDORIC_SECTOR_SIZE;
+                    /* Track and side come from the ID marks, i.e. from the file:
+                     * a sector that would land outside the image is skipped. */
+                    if (offset > flat_size || flat_size - offset < SEDORIC_SECTOR_SIZE) break;
                     memcpy(flat + offset, &track_data[j+4], SEDORIC_SECTOR_SIZE);
                     found++;
                     break;
@@ -112,7 +116,7 @@ static uint16_t mfm_crc16(const uint8_t* data, int len) {
  * overwrites each 256-byte data field from the flat sector array, and
  * recomputes the trailing data CRC so the image stays valid for re-reading.
  */
-static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat,
+static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat, uint32_t flat_size,
                             uint8_t sectors_per_track, uint8_t num_tracks) {
     int written = 0;
     for (int i = 0; i < MFM_TRACK_SIZE - 4; i++) {
@@ -124,12 +128,15 @@ static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat,
 
             if (id_sector < 1 || id_sector > sectors_per_track) continue;
 
-            for (int j = i + 10; j < i + 60 && j < MFM_TRACK_SIZE - 260; j++) {
+            /* mark (4) + data (256) + CRC (2) must fit in the track */
+            for (int j = i + 10; j < i + 60 && j + 4 + SEDORIC_SECTOR_SIZE + 2 <= MFM_TRACK_SIZE; j++) {
                 if (track_data[j] == 0xA1 && track_data[j+1] == 0xA1 &&
                     track_data[j+2] == 0xA1 && track_data[j+3] == 0xFB) {
                     uint32_t offset = ((uint32_t)id_side * num_tracks * sectors_per_track +
                                        (uint32_t)id_track * sectors_per_track +
                                        (uint32_t)(id_sector - 1)) * SEDORIC_SECTOR_SIZE;
+                    /* Same bound as extraction (ID marks come from the file). */
+                    if (offset > flat_size || flat_size - offset < SEDORIC_SECTOR_SIZE) break;
                     /* Overwrite the 256-byte data field */
                     memcpy(&track_data[j+4], flat + offset, SEDORIC_SECTOR_SIZE);
                     /* Recompute CRC over $A1 $A1 $A1 $FB + 256 data bytes */
@@ -145,10 +152,10 @@ static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat,
     return written;
 }
 
-int sedoric_mfm_extract_track(const uint8_t* track_data, uint8_t* flat,
+int sedoric_mfm_extract_track(const uint8_t* track_data, uint8_t* flat, uint32_t flat_size,
                               uint8_t sectors_per_track, uint8_t num_tracks) {
     /* side/track are read from the track's own ID marks → 0 as "expected". */
-    return mfm_extract_track(track_data, flat, 0, 0, sectors_per_track, num_tracks);
+    return mfm_extract_track(track_data, flat, flat_size, 0, 0, sectors_per_track, num_tracks);
 }
 
 sedoric_disk_t* sedoric_load(const char* filename) {
@@ -193,7 +200,7 @@ sedoric_disk_t* sedoric_load(const char* filename) {
                 uint32_t track_idx = s * tracks + t; /* side 0 all tracks, then side 1 all tracks */
                 uint32_t raw_offset = MFM_DISK_HEADER_SIZE + track_idx * MFM_TRACK_SIZE;
                 if (raw_offset + MFM_TRACK_SIZE > (uint32_t)fsize) break;
-                total_sectors += mfm_extract_track(&raw[raw_offset], disk->data,
+                total_sectors += mfm_extract_track(&raw[raw_offset], disk->data, flat_size,
                                                     (uint8_t)t, (uint8_t)s,
                                                     sectors_per_track, (uint8_t)tracks);
             }
@@ -251,7 +258,7 @@ static bool sedoric_save_mfm(sedoric_disk_t* disk, const char* filename) {
             uint32_t track_idx = s * disk->tracks + t;
             uint32_t raw_offset = MFM_DISK_HEADER_SIZE + track_idx * MFM_TRACK_SIZE;
             if (raw_offset + MFM_TRACK_SIZE > disk->mfm_raw_size) break;
-            mfm_inject_track(&disk->mfm_raw[raw_offset], disk->data,
+            mfm_inject_track(&disk->mfm_raw[raw_offset], disk->data, disk->size,
                              disk->sectors, disk->tracks);
         }
     }

@@ -74,3 +74,35 @@ jobs:
 
       - name: Valgrind (core suites)
         run: make valgrind-core
+
+  # Sprint E: the same suite under AddressSanitizer + UndefinedBehaviorSanitizer
+  # (any UBSan error stops the test), then fuzzing of the file readers
+  # (.dsk, .tap, .ost, .mid, symbols, phosphoric.cfg) with libFuzzer.
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2, clang/libFuzzer, Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev pkg-config python3 clang libclang-rt-dev
+
+      - name: Fetch oracle vectors (Dormann + 65x02 sample)
+        run: |
+          tools/fetch_vectors.sh dormann
+          tools/fetch_vectors.sh 65x02 a9 7d 9d fe b1 91 20 60 00 40 48 68 d0 f0 4c 6c 95 e6 3e 1e
+
+      - name: Test suite under ASan + UBSan (strict skips)
+        run: make SANITIZE=1 tests-strict
+
+      - name: Fuzzing (libFuzzer, 30 s per target)
+        run: make fuzz FUZZ_TIME=30
+
+      - name: Keep failing fuzz inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: build/fuzz/crashes/
+          if-no-files-found: ignore
