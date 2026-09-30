@@ -86,6 +86,11 @@ void cli_print_usage(const char* program_name) {
     printf("      --render-software      Force the SDL software renderer (fixes a black window\n");
     printf("                             on some GPU/driver setups; same as SDL_RENDER_DRIVER=software)\n");
     printf("      --no-border            Disable the overscan border in the window (on by default)\n");
+    printf("      --config FILE          Settings saved by the F1 peripherals menu (default:\n");
+    printf("                             phosphoric.cfg, read unless --headless; the command\n");
+    printf("                             line always wins). --config also applies in headless.\n");
+    printf("      --no-config            Do not read phosphoric.cfg\n");
+    printf("      --menu-screenshot FILE Render the F1 peripherals menu to a PPM (end of run)\n");
     printf("      --export-border        Include the overscan border in image/AVI exports (off by default)\n");
     printf("      --ula-ng-poke SEQ      Program ULA-NG registers ($0340-$035F) at startup,\n");
     printf("                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n");
@@ -216,7 +221,8 @@ void cli_print_usage(const char* program_name) {
     printf("  -?, --help                 Show this help\n");
     printf("\n");
     printf("Controls:\n");
-    printf("  F1  - Help menu\n");
+    printf("  F1  - Peripherals menu: floppies, tape, snapshots, printer, joystick,\n");
+    printf("        keyboard; saves phosphoric.cfg (machine paused while open)\n");
     printf("  F2  - Quick save state\n");
     printf("  F3  - Cycle display scale (x1 → x2 → x3 → x4)\n");
     printf("  F4  - Quick load state\n");

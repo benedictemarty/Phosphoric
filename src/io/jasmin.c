@@ -50,6 +50,14 @@ static void jasmin_select_drive(jasmin_t* j, uint8_t drive) {
     j->fdc.tracks = j->disk_tracks[drive];
     j->fdc.sectors_per_track = j->disk_sectors[drive];
     fdc_set_bad_map(&j->fdc, &j->bad_map[drive]);
+    fdc_set_write_protect(&j->fdc, j->write_protect[drive]);
+}
+
+void jasmin_set_write_protect(jasmin_t* j, uint8_t drive, bool on) {
+    if (drive >= JASMIN_MAX_DRIVES) return;
+    j->write_protect[drive] = on;
+    if (drive == j->drive)
+        fdc_set_write_protect(&j->fdc, on);
 }
 
 void jasmin_init(jasmin_t* j) {

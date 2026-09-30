@@ -43,10 +43,11 @@
 #include "utils/profiler.h"
 #include "utils/symbols.h"
 #include "io/loci.h"
+#include "video/iomenu.h"
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.4.0"
+#define EMU_VERSION "2.5.0"
 
 /**
  * @brief ORIC machine model
@@ -526,6 +527,16 @@ typedef struct emulator_s {
     const char* disk_path;
     const char* diskrom_path;
     const char* tape_path;
+
+    /* Menu des périphériques E/S (F1) et ce qu'il affiche des cartes (lecture
+     * seule : renseigné au lancement, sans effet sur l'émulation). */
+    iom_menu_t  iomenu;
+    const char* jasmin_rom_path;
+    const char* sp0256_rom_path;
+    const char* serial_spec;        /* --serial */
+    const char* dtl2000_spec;       /* --dtl2000 */
+    const char* mageco_spec;        /* --mageco / --oricon */
+    const char* config_path;        /* fichier de configuration (NULL : défaut) */
 } emulator_t;
 
 /* ════════════════════════════════════════════════════════════════════
@@ -605,6 +616,17 @@ static inline void emu_disk_wire(emulator_t* emu, int drv, sedoric_disk_t* nd) {
 }
 
 /* True when a disk controller (Microdisc or Jasmin) is present. */
+/* Protection en écriture par lecteur, sur l'interface active. */
+static inline bool emu_disk_protected(const emulator_t* emu, int drv) {
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
+    return emu->has_jasmin ? emu->jasmin.write_protect[drv] : emu->microdisc.write_protect[drv];
+}
+static inline void emu_disk_set_protected(emulator_t* emu, int drv, bool on) {
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) return;
+    if (emu->has_jasmin) jasmin_set_write_protect(&emu->jasmin, (uint8_t)drv, on);
+    else                 microdisc_set_write_protect(&emu->microdisc, (uint8_t)drv, on);
+}
+
 static inline bool emu_has_disk_iface(const emulator_t* emu) {
     return emu->has_microdisc || emu->has_jasmin;
 }

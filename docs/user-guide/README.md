@@ -183,7 +183,7 @@ En mode AZERTY, l'emulateur utilise les evenements texte SDL2, donc la saisie fo
 
 | Touche | Fonction |
 |--------|----------|
-| F1 | Menu aide |
+| F1 | Menu des périphériques E/S (disquettes, cassette, instantanés, imprimante, joystick, clavier ; voir le README) |
 | F2 | Sauvegarde rapide (quicksave) |
 | F3 | Changer l'echelle d'affichage (x1 -> x2 -> x3 -> x4) |
 | F4 | Chargement rapide (quickload) |
@@ -964,7 +964,7 @@ Aide :
   -?, --help                 Afficher l'aide
 
 Touches de fonction (fenetre SDL) :
-  F1 Aide  F2 Save rapide  F3 Echelle  F4 Load rapide  F5 Reset
+  F1 Menu des peripheriques  F2 Save rapide  F3 Echelle  F4 Load rapide  F5 Reset
   F6 OSD cassette/disquette a chaud  F8 Bouton Action LOCI  F9 Debogueur
   F10 Quitter  F11 Plein ecran  F12 Capture d'ecran
 ```

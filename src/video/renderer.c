@@ -79,6 +79,23 @@ void renderer_cleanup(void) {
     SDL_Quit();
 }
 
+/* Présente un tampon RGB888 quelconque à la place de l'image de la machine
+ * (menu des périphériques F1, 640 × 640) : même texture, recréée si les
+ * dimensions changent, étirée à la fenêtre comme l'image Oric. */
+void renderer_present_rgb(const uint8_t* rgb, int w, int h) {
+    if (w != tex_w || h != tex_h) {
+        tex_w = w;
+        tex_h = h;
+        if (texture) SDL_DestroyTexture(texture);
+        texture = SDL_CreateTexture(sdl_renderer,
+            SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, tex_w, tex_h);
+    }
+    SDL_UpdateTexture(texture, NULL, rgb, w * 3);
+    SDL_RenderClear(sdl_renderer);
+    SDL_RenderCopy(sdl_renderer, texture, NULL, NULL);
+    SDL_RenderPresent(sdl_renderer);
+}
+
 void renderer_present(video_t* vid) {
     /* Source pixels + dimensions: either the active framebuffer directly, or
      * the active image composited inside the overscan band. */
@@ -139,6 +156,7 @@ void renderer_cycle_scale(void) {
 bool renderer_init(int scale, bool prefer_software) { (void)scale; (void)prefer_software; return true; }
 void renderer_cleanup(void) {}
 void renderer_present(video_t* vid) { (void)vid; }
+void renderer_present_rgb(const uint8_t* rgb, int w, int h) { (void)rgb; (void)w; (void)h; }
 void renderer_set_border(bool on) { (void)on; }
 bool renderer_get_border(void) { return false; }
 void renderer_toggle_fullscreen(void) {}

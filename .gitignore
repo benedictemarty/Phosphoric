@@ -216,3 +216,9 @@ test_clock
 
 # Build hors des sources : un sous-répertoire par configuration
 /build/
+
+# Menu des périphériques (F1) : configuration et sorties locales
+/phosphoric.cfg
+/snapshots/
+/impression.txt
+/traceur.bmp

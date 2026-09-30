@@ -547,6 +547,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 
 | Key | Function |
 |-----|----------|
+| F1 | Peripherals menu (I/O) — see below |
 | F2 | Quick save state |
 | F3 | Cycle display scale (x1→x2→x3→x4) |
 | F4 | Quick load state |
@@ -559,6 +560,37 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 | F10 | Quit |
 | F11 | Fullscreen |
 | F12 | Screenshot PNG (`screenshot.png`, ou horodaté si déjà présent) |
+
+### Peripherals menu (F1)
+
+![Peripherals menu](docs/images/menu-peripheriques.png)
+
+**F1** opens a full-screen menu (inspired by the Neo6502TeleStrat OSD) that manages
+the Oric's input/output devices while the machine is **paused** (sound muted):
+
+- **Floppies A–D** — insert (file browser over `disks/`, `tapes/`, `snapshots/`,
+  `demos/ula-ng/`, current dir), eject (Del), write-protect tab per drive
+  (→ column). Needs a disk interface (`--disk-rom` / `--jasmin-rom`).
+- **Tape** — insert, eject, rewind.
+- **Snapshots** — save `snapshots/etatNNNN.ost` or resume one.
+- **Printer** — off → text (`impression.txt`, LPRINT/LLIST) → MCP-40 plotter
+  (`traceur.bmp`) → off. **Joystick** — none → arrow keys → gamepad.
+  **Keyboard** — QWERTY ↔ AZERTY. **Tape at startup** — `-f` direct injection
+  or CLOAD through the patched ROM (applies at next launch).
+- **Expansion cards** (Microdisc, Jasmin, LOCI, ACIA, DTL 2000, Mageco/ORICON,
+  SP0256, MEA8000, ULA-NG, hostfs) — shown read-only, as configured at launch.
+- **Reset**, **Save configuration**, **Resume** (or Esc / F1).
+
+Keys: arrows, Enter, Del, Esc; in the file browser, a letter jumps to the next
+name with that initial.
+
+**Save configuration** writes `phosphoric.cfg` (one `key=value` per line:
+`a=`…`d=`, `protection_x=`, `interface_disque=`, `rom_disque=`, `cassette=`,
+`cassette_rapide=`, `imprimante=`, `imprimante_fichier=`, `joystick=`,
+`clavier=`; other lines are kept). It is read at the next launch — the command
+line always wins — except in `--headless` runs (use `--config FILE` there).
+`--no-config` or `PHOSPHORIC_NO_CONFIG=1` ignores it (the test suite does);
+`--menu-screenshot FILE` renders the menu to a PPM at the end of a run.
 
 ## Testing
 
