@@ -131,3 +131,9 @@
 -r roms/basic11b.rom -n --replay /nonexistent.phm -c 1000
 -r roms/basic11b.rom -n --http-api -c 1000
 -r roms/basic11b.rom -n --cast-server -c 1000
+
+# --- Menu des périphériques (F1) et phosphoric.cfg
+-r roms/basic11b.rom -n --no-config -c 1000
+-r roms/basic11b.rom -n --config tests/cli_golden/iomenu.cfg -c 1000
+-r roms/basic11b.rom -n --config /nonexistent.cfg -c 1000
+-r roms/basic11b.rom -n --disk-rom roms/microdis.rom -d disks/Citadelle.dsk -t examples/hello.tap -j keys -c 1000000 --menu-screenshot @OUT@/menu.ppm

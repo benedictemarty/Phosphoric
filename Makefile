@@ -186,6 +186,8 @@ SOURCES = src/main.c \
           src/video/stb_image_write_impl.c \
           src/video/renderer.c \
           src/video/osd.c \
+          src/video/iomenu.c \
+          src/iomenu_glue.c \
           src/audio/ay3891x.c \
           src/audio/audio_output.c \
           src/storage/tap.c \
@@ -271,7 +273,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -346,9 +348,12 @@ $(BUILD)/%.o: %.c
 #  TESTS
 # ═══════════════════════════════════════════════════════════════
 
-# Unit tests: each source is compiled ONCE per configuration into $(BUILD);
-# the test binary links exactly the given list of objects.
-#   $(1) target   $(2) binary   $(3) sources   $(4) extra ldflags   $(5) archives
+# Aucun test ne doit dépendre d'un phosphoric.cfg personnel (menu F1).
+export PHOSPHORIC_NO_CONFIG = 1
+
+# Tests unitaires : chaque source est compilée UNE fois par configuration dans
+# $(BUILD) ; le binaire de test lie exactement la liste d'objets donnée.
+#   $(1) cible   $(2) binaire   $(3) sources   $(4) ldflags en plus   $(5) archives
 define UNIT_TEST
 $(TBIN)/$(2): $(call obj,$(3)) $(5)
 	@mkdir -p $$(@D)
@@ -508,6 +513,13 @@ TEST_RENDERER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_renderer.c sr
 $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
+
+# Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
+TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c
+$(eval $(call UNIT_TEST,test-iomenu,test_iomenu,$(TEST_IOMENU_SRCS),,))
+
+# Liaison menu F1 ↔ émulateur (médias, réglages, phosphoric.cfg) : lie le cœur.
+$(eval $(call UNIT_TEST,test-iomenu-glue,test_iomenu_glue,tests/unit/test_iomenu_glue.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 $(eval $(call UNIT_TEST,test-osd,test_osd,$(TEST_OSD_SRCS),,))
 
@@ -757,7 +769,11 @@ test-docs-claims:
 test-comment-diff:
 	@sh tests/integration/test_comment_only_diff.sh
 
-# Self-test of tools/check_skips.sh (the `make tests-strict` checker).
+# Menu des périphériques (F1) : --menu-screenshot, --config, phosphoric.cfg.
+test-iomenu-cli: $(TARGET)
+	@sh tests/integration/test_iomenu_cli.sh
+
+# Auto-test de tools/check_skips.sh (vérificateur de `make tests-strict`).
 test-check-skips:
 	@sh tests/integration/test_check_skips.sh
 
@@ -806,7 +822,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu-cli test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

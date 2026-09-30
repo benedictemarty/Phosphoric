@@ -59,6 +59,7 @@
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
 #include "cli/cli_opts.h"     /* cli_opts_t: command-line options (sprint C) */
 #include "cli/cli_args.h"     /* cli_parse_args: getopt loop (sprint C) */
+#include "iomenu_glue.h"       /* menu des périphériques E/S (F1) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -214,6 +215,7 @@ EMSCRIPTEN_KEEPALIVE int web_insert_disk(int drive, const char* path) {
 bool renderer_init(int scale, bool prefer_software);
 void renderer_cleanup(void);
 void renderer_present(video_t* vid);
+void renderer_present_rgb(const uint8_t* rgb, int w, int h);
 void renderer_set_border(bool on);
 bool renderer_get_border(void);
 void renderer_toggle_fullscreen(void);
@@ -627,115 +629,80 @@ static void mageco_cpu_irq_clr(emulator_t* emu) {
 
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
-/* Writes the .dsk of drive @p drv back to disk if it was modified by the game
- * and --disk-writeback is active. Called before any swap/eject so as not to
- * lose the writes. Returns true if a save took place. */
-static bool osd_writeback_drive(emulator_t* emu, int drv) {
-    if (!emu->disk_writeback || drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
-    if (!emu_disk_dirty(emu, drv) || !emu->disks[drv] || !emu->disk_paths[drv])
-        return false;
-    bool ok = sedoric_save(emu->disks[drv], emu->disk_paths[drv]);
-    log_info("OSD: write-back lecteur %c -> %s (%s)", 'A' + drv, emu->disk_paths[drv],
-             ok ? "OK" : "ECHEC");
-    emu_disk_clear_dirty(emu, drv);
-    return ok;
-}
-
-/* OSD: ejects the floppy from the target drive (prior write-back if enabled). */
+/* Réécrit le .dsk du lecteur @p drv sur disque s'il a été modifié par le jeu
+ * et que --disk-writeback est actif. Appelé avant tout swap/éjection pour ne
+ * pas perdre les écritures. Retourne true si une sauvegarde a eu lieu. */
+/* OSD : éjecte la disquette du lecteur cible (write-back préalable si activé). */
 static void osd_do_eject(emulator_t* emu) {
-    if (!emu_has_disk_iface(emu)) {
+    int drv = emu->osd.disk_drive;
+    if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
+    switch (media_disk_eject(emu, drv)) {
+    case MEDIA_NO_IFACE:
         snprintf(emu->osd.status, sizeof(emu->osd.status),
                  "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
         return;
-    }
-    int drv = emu->osd.disk_drive;
-    if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
-    if (!emu->disks[drv]) {
+    case MEDIA_EMPTY:
         snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c deja vide", 'A' + drv);
         return;
+    default:
+        break;
     }
-    osd_writeback_drive(emu, drv);
-    sedoric_destroy(emu->disks[drv]);
-    emu->disks[drv] = NULL;
-    emu->disk_paths[drv] = NULL;
-    emu_disk_wire(emu, drv, NULL);
-    if (drv == 0) emu->disk_path = NULL;
     snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c ejecte", 'A' + drv);
-    log_info("OSD: lecteur %c ejecte", 'A' + drv);
     osd_close(&emu->osd);
 }
 
 /* OSD: ejects the cassette (frees the TAP buffer, empties the read bridge). */
 static void osd_do_eject_tape(emulator_t* emu) {
-    if (!emu->tape_loaded && !emu->tapebuf) {
+    if (media_tape_eject(emu) == MEDIA_EMPTY) {
         snprintf(emu->osd.status, sizeof(emu->osd.status), "Aucune cassette");
         return;
     }
-    if (emu->tapebuf) { free(emu->tapebuf); emu->tapebuf = NULL; }
-    emu->tapelen = 0;
-    emu->tapeoffs = 0;
-    emu->tape_loaded = false;
-    emu->tape_path = NULL;
     snprintf(emu->osd.status, sizeof(emu->osd.status), "Cassette ejectee");
-    log_info("OSD: cassette ejectee");
     osd_close(&emu->osd);
 }
 
-/* OSD hot-swap: loads the selected media into the overlay (cassette or
- * drive A floppy) without leaving the emulator. */
+/* OSD hot-swap : charge le média sélectionné dans l'overlay (cassette ou
+ * disquette du lecteur cible) sans quitter l'émulateur. Opérations partagées
+ * avec le menu F1 (src/iomenu_glue.c). */
 static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
     if (e->is_disk) {
-        if (!emu_has_disk_iface(emu)) {
+        int drv = emu->osd.disk_drive;
+        if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
+        media_result_t r = media_disk_insert(emu, drv, e->path);
+        if (r == MEDIA_NO_IFACE) {
             snprintf(emu->osd.status, sizeof(emu->osd.status),
                      "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
             return;
         }
-        int drv = emu->osd.disk_drive;
-        if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
-        sedoric_disk_t* nd = sedoric_load(e->path);
-        if (!nd) {
+        if (r != MEDIA_OK) {
             snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
             return;
         }
-        /* Save the old disk if it was modified, before overwriting it. */
-        osd_writeback_drive(emu, drv);
-        if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
-        emu->disks[drv] = nd;
-        emu_disk_clear_dirty(emu, drv);
-        emu_disk_wire(emu, drv, nd);
-        /* Per-drive path tracking (later write-back/eject). The
-         * initial pointers come from argv (not freeable) → reassign. */
-        emu->disk_paths[drv] = strdup(e->path);
-        if (drv == 0)
-            emu->disk_path = emu->disk_paths[drv];
         snprintf(emu->osd.status, sizeof(emu->osd.status),
                  "Disque %c: %.28s (reboot/DIR)", 'A' + drv, e->name);
-        log_info("OSD: disque %c <- %s", 'A' + drv, e->path);
     } else {
-        FILE* f = fopen(e->path, "rb");
-        if (!f) {
+        if (media_tape_insert(emu, e->path) != MEDIA_OK) {
             snprintf(emu->osd.status, sizeof(emu->osd.status), "Echec: %.40s", e->name);
             return;
         }
-        fseek(f, 0, SEEK_END);
-        long sz = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (sz <= 0 || sz > (1 << 20)) { fclose(f); return; }
-        uint8_t* buf = (uint8_t*)malloc((size_t)sz);
-        if (!buf) { fclose(f); return; }
-        if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { free(buf); fclose(f); return; }
-        fclose(f);
-        if (emu->tapebuf) free(emu->tapebuf);
-        emu->tapebuf = buf;
-        emu->tapelen = (int)sz;
-        emu->tapeoffs = 0;
-        emu->tape_loaded = true;
-        emu->tape_path = strdup(e->path);
         snprintf(emu->osd.status, sizeof(emu->osd.status),
                  "Cassette: %.28s (CLOAD\"\")", e->name);
-        log_info("OSD: cassette <- %s", e->path);
     }
     osd_close(&emu->osd);
+}
+
+/* Menu des périphériques E/S (F1) : ouvert, la machine est figée (boucle
+ * principale) et le son coupé. */
+static void iomenu_toggle(emulator_t* emu) {
+    if (emu->iomenu.open) {
+        iom_close(&emu->iomenu);
+        audio_pause(false);
+    } else {
+        if (emu->osd.open) osd_close(&emu->osd);
+        iomenu_refresh(emu);
+        iom_open(&emu->iomenu);
+        audio_pause(true);
+    }
 }
 
 static bool emulator_init(emulator_t* emu) {
@@ -1845,8 +1812,38 @@ static void run_autotype_step(emulator_t* emu, uint64_t total_executed) {
 /* LOCI Action button (F8): press instant, to distinguish short / long. */
 static Uint32 loci_f8_down_ms;
 
-/* Media OSD (F6) open: the arrows / Enter / Escape drive it and
- * do not reach the Oric. Returns true if the event is consumed. */
+/* OSD média (F6) ouvert : les flèches / Entrée / Échap le pilotent et
+ * n'atteignent pas l'Oric. Renvoie true si l'événement est consommé. */
+/* Menu F1 ouvert : toutes les touches vont au menu (rien n'atteint l'Oric). */
+static bool sdl_iomenu_key(emulator_t* emu, SDL_Keycode sym) {
+    if (!emu->iomenu.open) return false;
+    int k = 0;
+    switch (sym) {
+    case SDLK_UP:        k = IOM_KEY_UP;    break;
+    case SDLK_DOWN:      k = IOM_KEY_DOWN;  break;
+    case SDLK_LEFT:      k = IOM_KEY_LEFT;  break;
+    case SDLK_RIGHT:     k = IOM_KEY_RIGHT; break;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:  k = IOM_KEY_ENTER; break;
+    case SDLK_ESCAPE:    k = IOM_KEY_ESC;   break;
+    case SDLK_DELETE:
+    case SDLK_BACKSPACE: k = IOM_KEY_DEL;   break;
+    case SDLK_HOME:      k = IOM_KEY_HOME;  break;
+    case SDLK_END:       k = IOM_KEY_END;   break;
+    case SDLK_PAGEUP:    k = IOM_KEY_PGUP;  break;
+    case SDLK_PAGEDOWN:  k = IOM_KEY_PGDN;  break;
+    default:
+        if (sym > ' ' && sym < 0x7F) k = (int)sym;   /* lettre : saut à l'initiale */
+        break;
+    }
+    if (k) {
+        iom_action_t act = iom_key(&emu->iomenu, k);
+        if (iomenu_apply(emu, &act))
+            iomenu_toggle(emu);                 /* Reprendre / Reset / instantané repris */
+    }
+    return true;
+}
+
 static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
     if (!emu->osd.open) return false;
     int k = 0;
@@ -2044,8 +2041,18 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
          * mode) then draws the overlay on top of the framebuffer. */
         if (!emu->video.hires_mode)
             osd_snapshot_font(&emu->osd, emu->memory.ram);
-        osd_render(&emu->osd, &emu->video);
-        renderer_present(&emu->video);
+        if (emu->iomenu.open) {
+            /* Menu F1 : plein écran, à la place de l'image de la machine. */
+            static iom_surface_t iom_surf;
+            static uint8_t iom_rgb[IOM_WIDTH * IOM_HEIGHT * 3];
+            iomenu_refresh(emu);
+            iom_draw(&emu->iomenu, &iom_surf);
+            iom_rasterize(&iom_surf, iom_rgb);
+            renderer_present_rgb(iom_rgb, IOM_WIDTH, IOM_HEIGHT);
+        } else {
+            osd_render(&emu->osd, &emu->video);
+            renderer_present(&emu->video);
+        }
 #ifdef HAS_SDL2
         /* Poll SDL events (keyboard, window close, etc.) */
         SDL_Event event;
@@ -2055,8 +2062,16 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 emu->running = false;
                 break;
             case SDL_KEYDOWN:
-                /* Media OSD (F6): when the overlay is open, the arrows /
-                 * Enter / Escape drive it and do not reach the Oric. */
+                /* OSD média (F6) : quand l'overlay est ouvert, les flèches /
+                 * Entrée / Échap le pilotent et n'atteignent pas l'Oric. */
+                /* Menu des périphériques (F1) : bascule ; ouvert, il prend
+                 * toutes les touches. */
+                if (event.key.keysym.sym == SDLK_F1 && !event.key.repeat) {
+                    iomenu_toggle(emu);
+                    break;
+                }
+                if (sdl_iomenu_key(emu, event.key.keysym.sym))
+                    break;
                 if (event.key.keysym.sym == SDLK_F6) {
                     osd_toggle(&emu->osd);
                     break;
@@ -2107,6 +2122,7 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 break;
             case SDL_TEXTINPUT:
                 /* Symbolic mode: character -> ORIC key mapping */
+                if (emu->iomenu.open) break;   /* menu F1 : pas de frappe vers l'Oric */
                 oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
                 break;
             /* Sprint 34al: bridge SDL mouse → LOCI mou_xram. */
@@ -2485,6 +2501,13 @@ static void emulator_run(emulator_t* emu) {
 #ifdef HAS_SDL2
         rs.frame_start_ticks = SDL_GetTicks();
 #endif
+        /* Menu F1 ouvert : la machine est figée ; on ne fait que présenter le
+         * menu, traiter les touches et tenir la cadence de 50 Hz. */
+        if (emu->iomenu.open) {
+            run_present_and_events(emu, rs.total_executed);
+            run_frame_pacing(emu, &rs);
+            continue;
+        }
         /* Movie record/replay: the keyboard matrix is the only deterministic
          * input. Apply this frame's state BEFORE the CPU runs so the VIA scan
          * sees it. Replay overwrites live input; record samples it. */
@@ -2606,6 +2629,37 @@ static int main_setup_process(emulator_t* emu, cli_opts_t* cfg) {
 #endif
         return 0;
     }
+    return -1;
+}
+
+/* Menu des périphériques (F1) : phosphoric.cfg complète la ligne de commande
+ * (qui reste prioritaire), puis le menu et ses informations d'affichage.
+ * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
+static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
+    const bool explicit_cfg = cfg->config_path != NULL;
+    /* PHOSPHORIC_NO_CONFIG (exporté par `make tests`) : même effet que
+     * --no-config, pour qu'un phosphoric.cfg personnel n'influence aucun test. */
+    const char* nocfg = getenv("PHOSPHORIC_NO_CONFIG");
+    if (nocfg && *nocfg && strcmp(nocfg, "0") != 0 && !explicit_cfg) cfg->no_config = true;
+    /* En headless (tests, automates), seule une configuration explicitement
+     * demandée est lue : un phosphoric.cfg personnel ne change pas les runs. */
+    if (!cfg->no_config && (explicit_cfg || !cfg->headless)) {
+        const char* path = explicit_cfg ? cfg->config_path : IOMENU_CONFIG_DEFAULT;
+        int n = iomenu_config_load(path, cfg);
+        if (n >= 0) {
+            log_info("Configuration : %s (%d réglage(s) appliqué(s))", path, n);
+        } else if (explicit_cfg) {
+            log_error("Configuration introuvable : %s", path);
+            return 1;
+        }
+    }
+    iom_init(&emu->iomenu);
+    emu->config_path     = cfg->config_path;
+    emu->jasmin_rom_path = cfg->jasmin_rom_file;
+    emu->sp0256_rom_path = cfg->sp0256_rom_file;
+    emu->serial_spec     = cfg->serial_arg;
+    emu->dtl2000_spec    = cfg->dtl2000_arg;
+    emu->mageco_spec     = cfg->mageco_arg;
     return -1;
 }
 
@@ -3741,7 +3795,10 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
             if (!wp && cfg->disk_files[0] && access(cfg->disk_files[0], W_OK) != 0)
                 wp = true;
             if (wp) {
-                fdc_set_write_protect(&emu->microdisc.fdc, true);
+                /* Languette posée sur les 4 lecteurs : même effet que l'ancien
+                 * drapeau global du WD1793 (toutes les disquettes protégées). */
+                for (uint8_t d = 0; d < MICRODISC_MAX_DRIVES; d++)
+                    microdisc_set_write_protect(&emu->microdisc, d, true);
                 log_info("Disque protégé en écriture (statut WD1793 bit 6)%s",
                          cfg->disk_write_protect ? "" : " — fichier en lecture seule");
             }
@@ -3941,6 +3998,12 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
 /* Debugger, cast server, HTTP API, CASTV2 client, resuming a saved state.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_services(emulator_t* emu, cli_opts_t* cfg) {
+    /* Languettes posées par phosphoric.cfg (protection_x=oui), une fois les
+     * disquettes en place. */
+    for (int d = 0; d < 4; d++)
+        if (cfg->disk_protect[d] && emu_has_disk_iface(emu) && d < emu_disk_max_drives(emu))
+            emu_disk_set_protected(emu, d, true);
+
     /* Setup debugger if requested */
     if (cfg->debug_mode) {
         emu->debugger.active = true;
@@ -4174,6 +4237,13 @@ static int main_setup_tracing(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_
 /* End of run: captured .TAP, GDB, movie, AVI, state, disk write-back, profiler, traces; exit code.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_finish(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
+    /* --menu-screenshot : le menu F1 tel qu'il apparaîtrait maintenant. */
+    if (cfg->menu_screenshot) {
+        if (iomenu_screenshot(emu, cfg->menu_screenshot))
+            log_info("Menu des périphériques : %s", cfg->menu_screenshot);
+        else
+            log_error("Impossible d'écrire %s", cfg->menu_screenshot);
+    }
     /* Writes the .TAP rebuilt from the captured PB7 waveform. */
     if (cfg->tape_out_capture_arg && emu->tape_capture.active) {
         FILE* tf = fopen(cfg->tape_out_capture_arg, "wb");
@@ -4306,6 +4376,7 @@ int main(int argc, char* argv[]) {
     gdb_stub_t gdb_stub;  /* address kept in emu.gdb_stub until main_finish */
 
     if ((rc = main_setup_process(&emu, cfg)) >= 0) return rc;
+    if ((rc = main_setup_config(&emu, cfg)) >= 0) return rc;
     if ((rc = main_setup_machine(&emu, cfg)) >= 0) return rc;
     if ((rc = main_setup_input_printer(&emu, cfg)) >= 0) return rc;
     if ((rc = main_setup_serial_cards(&emu, cfg)) >= 0) return rc;

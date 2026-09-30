@@ -112,6 +112,8 @@ tools/debug_*
 *.png
 sedoric_text.txt
 screenshot.png
+# … mais les illustrations de la documentation sont versionnées
+!docs/images/*.png
 
 # User disk images
 disks/
@@ -216,3 +218,9 @@ test_clock
 
 # Out-of-tree build: one subdirectory per configuration
 /build/
+
+# Menu des périphériques (F1) : configuration et sorties locales
+/phosphoric.cfg
+/snapshots/
+/impression.txt
+/traceur.bmp

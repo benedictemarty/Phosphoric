@@ -55,6 +55,8 @@ static void microdisc_select_drive(microdisc_t* md, uint8_t drive) {
     md->fdc.sectors_per_track = md->disk_sectors[drive];
     /* Damage follows the media: load this drive's media map */
     fdc_set_bad_map(&md->fdc, &md->bad_map[drive]);
+    /* Write-protect tab belongs to the floppy in this drive. */
+    fdc_set_write_protect(&md->fdc, md->write_protect[drive]);
 }
 
 void microdisc_init(microdisc_t* md) {
@@ -197,6 +199,13 @@ void microdisc_set_disk(microdisc_t* md, uint8_t drive, uint8_t* data, uint32_t 
         md->fdc.sectors_per_track = sectors_per_track;
         fdc_set_bad_map(&md->fdc, &md->bad_map[drive]);
     }
+}
+
+void microdisc_set_write_protect(microdisc_t* md, uint8_t drive, bool on) {
+    if (drive >= MICRODISC_MAX_DRIVES) return;
+    md->write_protect[drive] = on;
+    if (drive == md->drive)
+        fdc_set_write_protect(&md->fdc, on);
 }
 
 int microdisc_add_bad_sector(microdisc_t* md, uint8_t drive,

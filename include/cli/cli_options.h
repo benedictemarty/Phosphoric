@@ -45,7 +45,8 @@ enum {
     OPT_DISK_WEB, OPT_LOCI_WEB, OPT_LOCI_WEB_BASE, OPT_JASMIN_ROM,
     OPT_SERIAL_TCP_BACKPRESSURE, OPT_LOCI_IRQ_LATENCY,
     OPT_SP0256_ROM, OPT_SP0256_ADDR,
-    OPT_MEA8000, OPT_MEA8000_ADDR
+    OPT_MEA8000, OPT_MEA8000_ADDR,
+    OPT_CONFIG, OPT_NO_CONFIG, OPT_MENU_SCREENSHOT
 };
 
 /* Short option string passed to getopt_long. */
@@ -151,6 +152,9 @@ static const struct option long_options[] = {
     {"trace-irq",           required_argument, 0, OPT_TRACE_IRQ},
     {"psg-trace",           required_argument, 0, OPT_PSG_TRACE},
     {"kbd-scan-trace",      required_argument, 0, OPT_KBD_TRACE},
+    {"config",              required_argument, 0, OPT_CONFIG},
+    {"no-config",           no_argument,       0, OPT_NO_CONFIG},
+    {"menu-screenshot",     required_argument, 0, OPT_MENU_SCREENSHOT},
     {"audio-wav",           required_argument, 0, OPT_AUDIO_WAV},
     {"symbols",             required_argument, 0, OPT_SYMBOLS},
     {"tui",                 no_argument,       0, OPT_TUI},

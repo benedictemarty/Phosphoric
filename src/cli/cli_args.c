@@ -266,6 +266,9 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 }
                 break;
             }
+            case OPT_CONFIG: cfg->config_path = optarg; break;
+            case OPT_NO_CONFIG: cfg->no_config = true; break;
+            case OPT_MENU_SCREENSHOT: cfg->menu_screenshot = optarg; break;
             case OPT_ACIA_ADDR:
                 cfg->acia_addr_arg = optarg;
                 break;
