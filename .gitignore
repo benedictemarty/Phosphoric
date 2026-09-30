@@ -112,6 +112,8 @@ tools/debug_*
 *.png
 sedoric_text.txt
 screenshot.png
+# … mais les illustrations de la documentation sont versionnées
+!docs/images/*.png
 
 # User disk images
 disks/
