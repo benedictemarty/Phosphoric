@@ -1,6 +1,6 @@
 # Phosphoric User Guide
 
-**Version 1.110.0-alpha** | ORIC-1 / Atmos emulator
+**Version 2.5.2** | ORIC-1 / Atmos emulator
 
 ---
 
@@ -64,7 +64,7 @@ sudo make install              # Install into /usr/local
 ### Verification
 
 ```bash
-make tests                     # 908 tests (100% must pass)
+make tests                     # 70 suites, 1,345 checks (100% must pass)
 ```
 
 ---
@@ -816,7 +816,9 @@ is `.COM` (a `.BIN` would give `?FILE NOT FOUND ERROR`).
 
 ## Complete CLI reference
 
-> Exhaustive list aligned with `./oric1-emu --help` (v1.110.0-alpha).
+> List aligned with `./oric1-emu --help` of v1.110.0-alpha; options added since then
+> (including `--config`, `--no-config`, `--menu-screenshot` of the F1 menu) are described by
+> `./oric1-emu --help`, which is authoritative.
 > Some options require a specific build: `--tui` (TUI=1),
 > `--http-api` (HTTPAPI=1), `--cast-*` (CAST=1), `midi:` backend (MIDI=1).
 
@@ -987,5 +989,5 @@ Function keys (SDL window):
 
 ---
 
-*Phosphoric v1.110.0-alpha — User guide*
+*Phosphoric v2.5.2 — User guide*
 *Last updated: 2026-08-30*

@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.1.2** | **1209 tests in 60 suites, 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.5.2** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -89,9 +89,12 @@ make SDL2=1
 
 ### Save States
 - **`.ost` format** — Binary save state with CRC32 integrity check
-- **14 sections** — CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, DSK, BAD, TAP, SER, META (CRC32, unknown sections ignored = backward/forward-compatible)
+- **20 section types** — CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, DSK, BAD, TAP, SER, META + one per bus device: UNG (ULA-NG), MAG (Mageco), DTL (DTL 2000), JAS (Jasmin), SPO (SP0256), MEA (MEA8000) (CRC32, unknown sections ignored = backward/forward compatible)
 - **Exact resume point** — a state taken mid-frame resumes with the same raster position,
   VIA cycle state and interrupt sample as an uninterrupted run (`make test-savestate-determinism`)
+- **Resume in the middle of a disk transfer** — the sector being read or written is recomputed
+  on load (Microdisc and Jasmin, 2.4.0); device sections are written field by field and
+  versioned, without ROMs, host resources or tables that can be recomputed
 - **Hotkeys** — F2 (quick save), F4 (quick load)
 - **CLI** — `--save-state FILE`, `--load-state FILE`
 
@@ -194,12 +197,22 @@ make SDL2=1
   Brown). Until 2.0.1 the order was inverted and every raster split landed one cell too
   far right. Verified by `make test-clock`.
 
+### Program start (`main`, src/main.c)
+- **`main()` is 32 lines**: `cli_parse_args()` (`src/cli/cli_args.c`, the getopt switch) fills
+  a `cli_opts_t`, then 14 named `main_setup_*` steps configure the machine (process,
+  `phosphoric.cfg`, machine, input/printer, serial cards, recordings, LOCI, debug front-ends,
+  captures, ROM/model, tape, disks/speech, services, tracing), `emulator_run()` runs it and
+  `main_finish()` writes the outputs. Each step returns -1 to continue or the exit code.
+- **Refactor safety net**: `tools/cli_golden.sh` replays `tests/cli_golden/cases.txt`
+  (≈ 116 command lines) on a reference binary and the new one — exit code, stdout, stderr and
+  every produced file must match (`make test-cli-golden GOLDEN_REF=…`).
+
 ### Frame loop (`emulator_run`, src/main.c)
 - **One frame = one instruction loop + named end-of-frame steps**, in a fixed,
   observable order: `run_frame_instructions` (debugger, trace, profiler, tape patches
   around `emu_step`) → LOCI co-sim hooks → headless audio sinks → control/GDB polling →
   fast-load phases → auto-type arming and stepping (native matrix or LOCI HID) → serial
-  trace flush, cast frame, HTTP-API drain, queued keys → `run_present_and_events` (OSD,
+  trace flush, cast frame, HTTP-API drain, queued keys → `run_present_and_events` (F1 peripherals menu, F6 OSD,
   SDL events: `sdl_osd_key`, `sdl_function_key`, `sdl_mouse_event`) → timed captures →
   frame dump / AVI → conditional captures → pokes → pacing (50 Hz limiter or `--realtime`)
   → exit conditions (movie done, `-c` limit, JAM).
@@ -259,9 +272,12 @@ make SDL2=1
     [docs/macos.md](docs/macos.md).
   - **Browser** — the WebAssembly build is live at
     <https://benedictemarty.github.io/Phosphoric/> (zero install).
-- **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, a JOric-style left icon rail (ROM selector, `.tap`/`.dsk` drag-drop, Reset, fullscreen, **CRT filter**, **`.ost` save/restore**), **TAPE/DISK activity LEDs**, and a faithful ORIC-1/Atmos on-screen keyboard — semi-transparent overlay, toggleable, with sticky CTRL/FUNCT/SHIFT (FUNCT hidden on ORIC-1). **Deep-link URL params** `?rom=oric1|atmos` and `?media=<file>.tap|.dsk` boot straight into a program (a `.dsk` auto-enables the Microdisc controller). **LOCI cartridge in the browser** (`?loci=1` or the LOCI rail button): boots the LOCI menu with a persistent internal flash (IndexedDB) — loaded files land in it and mount from the menu (`make test-web-loci`, Chrome headless e2e). Output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
+- **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, a JOric-style left icon rail (ROM selector, `.tap`/`.dsk` drag-drop, Reset, fullscreen, **CRT filter**, **`.ost` save/restore**), **TAPE/DISK activity LEDs**, and a faithful ORIC-1/Atmos on-screen keyboard — semi-transparent overlay, toggleable, with sticky CTRL/FUNCT/SHIFT (FUNCT hidden on ORIC-1). **Deep-link URL params** `?rom=oric1|atmos` and `?media=<file>.tap|.dsk` boot straight into a program (a `.dsk` auto-enables the Microdisc controller). **LOCI cartridge in the browser** (`?loci=1` or the LOCI rail button): boots the LOCI menu with a persistent internal flash (IndexedDB) — loaded files land in it and mount from the menu (`make test-web-loci`, Chrome headless e2e). **I/O** rail button = the F1 peripherals menu (F1 is kept from the browser); **MODEM** (`?modem=1`) = picowifi modem through a WebSocket relay (`tools/picowifi_ws_relay.py`) or `?relay=none` (`make test-web-iomenu`, `test-web-picowifi`). Output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
+- **Peripherals menu (F1)** — full-screen menu to insert/eject floppies A–D (write-protect tab
+  per drive), tape, snapshots, printer, joystick, keyboard layout; settings saved to
+  `phosphoric.cfg` (see [Peripherals menu](#peripherals-menu-f1))
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector), `tap2wav` (`.tap` → cassette-audio `.wav`, playable on real hardware) and `dsk2hfe` (`.dsk` MFM_DISK → magnetic **HFE** image for HxC/Gotek/Greaseweazle) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/TOOLS.md](docs/TOOLS.md) and [docs/SEDORIC.md](docs/SEDORIC.md)
 - **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Key pacing is **synchronised on the real keyboard scanner** (VIA PB3 matrix sweep), so no keystroke is dropped even when the target program polls the matrix slower than a frame. `--type-keys-when ADDR:VAL:TEXT` arms typing when `RAM[ADDR]==VAL` (hex) instead of a guessed boot cycle. With `-f` (fast-load) of a BASIC program, `--type-keys` **no longer cancels the automatic `RUN`**: the auto-RUN stands down only when your own keystrokes fall inside its window (i.e. you are driving the boot yourself, typing your own `RUN`/`CLOAD`); keys aimed at the program's menus fire after it, in order. Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos). Debugging a **custom (non-ROM) keyboard scanner** (a native game that sweeps the VIA+PSG matrix itself)? `--kbd-scan-trace FILE` logs one line per VIA Port B read — `col reg7 reg14 matrix PB3` — so you can see exactly what the emulator returns (`reg7` bit6=0 → PB3 forced low; `matrix`≠`FF` → keys held)
@@ -296,6 +312,11 @@ make wasm                      # WebAssembly/browser build (needs Emscripten; se
 make tools                     # Conversion tools (bas2tap, bin2tap, tap2sedoric, sedoric-info, tap2wav, dsk2hfe)
 sudo make install              # Install to /usr/local
 ```
+
+Objects are built out of the source tree in `build/<config>/`, one directory per option set
+(SDL2, HTTPAPI, CAST, MIDI, TLS, TUI, LOCI backend, DEBUG, COVERAGE): switching options never
+mixes objects. `oric1-emu` and the tools are copied to the repository root. `make clean`
+removes `build/`.
 
 > **Graphical display:** since v1.67, the `Makefile` default is
 > **`SDL2=1`** (real display/audio/keyboard). For a *headless* build
@@ -595,7 +616,8 @@ line always wins — except in `--headless` runs (use `--config FILE` there).
 ## Testing
 
 ```bash
-make tests               # Full suite — 1208 tests, 60 suites (100% pass)
+make tests               # Full suite — 70 suites, 1,345 checks (100% pass)
+make tests-strict        # Same, and fails on a skip not justified in tests/allowed_skips.txt (CI)
 make test-clock          # Master clock: one call = one cycle of the whole machine, never idle
 make test-savestate-determinism  # mid-frame savestate = exact resume point
 make test-bench          # blocking perf budget (≤ 1000 µs/frame; motivated SKIP on a throttled host)
@@ -611,7 +633,6 @@ make test-audio          # PSG audio tests
 make test-debugger       # Debugger tests (incl. inline assembler + memory search)
 make test-gdbstub        # GDB remote stub (RSP protocol) tests
 make test-movie          # Input record/replay tests
-make test-loci           # LOCI MIA tests
 make test-savestate      # Save state tests
 make test-atmos          # Atmos support tests
 make test-joystick       # Joystick tests
@@ -632,6 +653,12 @@ make test-loci           # LOCI MIA tests (163 tests)
 make test-loci-sdimg     # LOCI FAT16/32 SD image tests
 make test-loci-sdimg-write # LOCI write API tests
 make test-loci-e2e       # 12 end-to-end scenarios (Sedoric boot + IPC control)
+make test-iomenu         # F1 peripherals menu: navigation, file browser, drawing
+make test-iomenu-glue    # F1 menu ↔ machine: media, settings, phosphoric.cfg
+make test-iomenu-cli     # --menu-screenshot, --config / --no-config
+make test-web-iomenu     # F1 menu in the WebAssembly build (Chrome headless)
+make test-cli-golden GOLDEN_REF=/path/old/oric1-emu  # differential CLI safety net
+make test-comment-diff   # main-en may differ from main by comments only
 make valgrind            # Memory leak detection
 make static-analysis     # Compiler warnings analysis
 ```
@@ -677,7 +704,9 @@ src/
   memory/        64KB memory map, ROM/RAM banking
   io/            VIA 6522, keyboard, cassette, Microdisc, ACIA 6551,
                  LOCI (loci_core + loci_fs + loci_bus + loci_boot)
-  video/         ULA rendering (text+HIRES), export (PPM/BMP/ASCII)
+  video/         ULA rendering (text+HIRES), export (PPM/BMP/ASCII), OSD (F6),
+                 peripherals menu (F1: iomenu.c)
+  cli/           Command line: option table, cli_parse_args(), cli_opts_t, help
   audio/         AY-3-8910 PSG, SDL2 audio output
   storage/       TAP cassette, Sedoric filesystem, WD1793 FDC
   network/       MJPEG cast server, CASTV2 Chromecast client
@@ -685,9 +714,10 @@ src/
   utils/         Logging, INI config parser, CPU trace, profiler,
                  ROM info, symbols loader
   emu_clock.c    Master clock: emu_cycle() = one cycle of the whole machine
-  main.c         CLI, I/O wiring, and the frame loop (emulator_run: 126 lines
-                 dispatching 17 named per-frame steps, see below)
-  savestate.c    Save/load state (.ost format, 14 sections, exact resume point)
+  main.c         Program start (main: 32 lines — 14 named set-up steps) and the
+                 frame loop (emulator_run: named per-frame steps, see above)
+  iomenu_glue.c  F1 menu ↔ machine: media operations, settings, phosphoric.cfg
+  savestate.c    Save/load state (.ost format, 20 section types, exact resume point)
   debugger.c     Interactive REPL debugger
   control.c      IPC control mode (--control, OricForge integration)
   tui.c          ncurses TUI debugger (TUI=1 build)
@@ -698,10 +728,13 @@ tests/unit/      unit tests across CPU, memory, I/O, video, audio, storage,
 tests/integration/ E2E regression (Sedoric boot, IPC control, Python smoke client,
                  savestate determinism, tape signal, raster split)
 tests/corpus/    Screen fingerprints of the local media corpus (make test-corpus)
+tests/cli_golden/ Command-line corpus for tools/cli_golden.sh (refactor safety net)
 tools/           bas2tap, bin2tap, tap2sedoric, sedoric-info, sedoric_*.py/dsk_raw2mfm.py,
-                 bench.sh / bench_check.sh (perf budget), corpus_replay.sh, fetch_vectors.sh
+                 bench.sh / bench_check.sh (perf budget), corpus_replay.sh, fetch_vectors.sh,
+                 cli_golden.sh, check_skips.sh, check_comment_only_diff.py
 examples/        Example BASIC programs (.bas + .tap)
 roms/            ROM files (not distributed)
+build/           Build output, one subdirectory per configuration (not versioned)
 docs/            User guide, control_protocol.md, CR review docs
 ```
 
@@ -734,7 +767,7 @@ docs/            User guide, control_protocol.md, CR review docs
 ### Warnings
 
 - **No formal verification**: the code has not been audited by a
-  professional software engineer. Although 876 tests (unit +
+  professional software engineer. Although 1,345 checks (unit +
   E2E) pass, test coverage is not exhaustive and
   edge cases may exist.
 - **Not suitable for production**: this is an experimental and
@@ -831,4 +864,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v1.110.0-alpha | 908 tests | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | 2026-08-30
+Phosphoric v2.5.2 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
