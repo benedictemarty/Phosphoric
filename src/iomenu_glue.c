@@ -16,7 +16,7 @@
 #include "io/printer.h"
 #include "io/loci_emu.h"
 #include "utils/logging.h"
-#include "utils/oscompat.h"   /* mkdir portable (MinGW : un seul argument) */
+#include "utils/oscompat.h"   /* portable mkdir (MinGW: a single argument) */
 #include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -421,7 +421,7 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
     fprintf(out, "clavier=%s\n", emu->keyboard.layout == ORIC_KB_AZERTY ? "azerty" : "qwerty");
     bool ok = fclose(out) == 0;
 #ifdef _WIN32
-    if (ok) remove(path);   /* rename() de Windows n'écrase pas un fichier existant */
+    if (ok) remove(path);   /* Windows rename() does not overwrite an existing file */
 #endif
     if (ok) ok = rename(tmp, path) == 0;
     if (!ok) remove(tmp);
