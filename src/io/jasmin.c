@@ -199,8 +199,8 @@ bool jasmin_save(const jasmin_t* j, FILE* fp) {
 }
 
 void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size) {
-    if (size < JASMIN_SAVE_FIXED + JASMIN_MAX_DRIVES) return;   /* tronquée */
-    if (bin_r_u8(fp) != JASMIN_SAVE_VERSION) return;             /* inconnue */
+    if (size < JASMIN_SAVE_FIXED + JASMIN_MAX_DRIVES) return;   /* truncated */
+    if (bin_r_u8(fp) != JASMIN_SAVE_VERSION) return;             /* unknown */
     fdc_state_load(&j->fdc, fp, FDC_STATE_SIZE);
     j->romdis = bin_r_bool(fp);
     j->olay = bin_r_bool(fp);
@@ -221,9 +221,9 @@ void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size) {
         }
         m->count = n;
     }
-    /* Re-pointe le FDC sur le disque du lecteur restauré (les images ont été
-     * remises en place par la section DSK, lue avant). */
+    /* Re-point the FDC to the disk of the restored drive (the images were
+     * put back in place by the DSK section, read before). */
     jasmin_select_drive(j, drive < JASMIN_MAX_DRIVES ? drive : 0);
     j->fdc.side = j->side;
-    fdc_state_resume(&j->fdc);       /* secteur en cours : reprise en plein transfert */
+    fdc_state_resume(&j->fdc);       /* current sector: resume in the middle of a transfer */
 }

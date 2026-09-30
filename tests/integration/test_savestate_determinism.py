@@ -70,22 +70,22 @@ def run_stops(c, ram_path):
     return stops, via
 
 
-# Scénarios : (nom, arguments en plus, trames avant la sauvegarde, médias requis).
-# Les cartes à section .ost propre (sprint D) sont reprises dans la même machine :
-# un champ oublié au chargement ferait diverger les arrêts, le VIA ou la RAM.
+# Scenarios: (name, extra arguments, frames before the save, required media).
+# Cards with their own .ost section (sprint D) are resumed in the same machine:
+# a field forgotten on load would make the stops, the VIA or the RAM diverge.
 SCENARIOS = [
     ("machine de base", [], 0, []),
-    # FTDOS (disque Jasmin TDOS, média local) : à 100 trames le boot vient de
-    # commencer, à 250 un secteur est EN COURS de lecture (reprise en plein
-    # transfert : cur_sector_data + drq_age, défaut corrigé en 2.4.0).
+    # FTDOS (Jasmin TDOS disk, local media): at 100 frames the boot has just
+    # started, at 250 a sector is BEING read (resume in the middle of a
+    # transfer: cur_sector_data + drq_age, defect fixed in 2.4.0).
     ("Jasmin en début de boot TDOS",
      ["--jasmin-rom", "roms/jasmin.rom", "-d", "disks/FTDOS.dsk"], 100,
      ["roms/jasmin.rom", "disks/FTDOS.dsk"]),
     ("Jasmin en plein transfert disque (TDOS)",
      ["--jasmin-rom", "roms/jasmin.rom", "-d", "disks/FTDOS.dsk"], 250,
      ["roms/jasmin.rom", "disks/FTDOS.dsk"]),
-    # Microdisc + Sedoric (Citadelle, média local) : même défaut de reprise en
-    # plein transfert ; la 2.3.0 divergeait à 100 et 200 trames.
+    # Microdisc + Sedoric (Citadelle, local media): same mid-transfer resume
+    # defect; 2.3.0 diverged at 100 and 200 frames.
     ("Microdisc en plein boot Sedoric (100 trames)",
      ["--disk-rom", "roms/microdis.rom", "-d", "disks/Citadelle.dsk"], 100,
      ["roms/microdis.rom", "disks/Citadelle.dsk"]),
@@ -120,10 +120,10 @@ def run_scenario(name, extra, warm):
         ram_ref = os.path.join(tmp, "ref.bin")
         ram_res = os.path.join(tmp, "res.bin")
 
-        # 1. Référence : step×N, sauvegarde en pleine trame, puis on CONTINUE.
+        # 1. Reference: step×N, save mid-frame, then CONTINUE.
         with PhosClient.spawn([EMU, "-r", ROM, "-n"] + extra) as c:
             c.wait_ready()
-            if warm:                                   # machine en activité
+            if warm:                                   # machine running
                 c.ok(f"raster {RASTER_LINE}")
                 for _ in range(warm):
                     c.cont()
@@ -142,14 +142,14 @@ def run_scenario(name, extra, warm):
             ko("state-save n'a rien écrit")
             return
 
-        # 2. Reprise : --load-state, puis le MÊME parcours.
+        # 2. Resume: --load-state, then the SAME path.
         with PhosClient.spawn([EMU, "-r", ROM, "-n", "--load-state", ost] + extra) as c:
             c.wait_ready()
             at_load = c.regs()
             res_stops, res_via = run_stops(c, ram_res)
             c.cmd("quit")
 
-        # 3. Comparaisons.
+        # 3. Comparisons.
         if at_load["PC"] == at_save["PC"] and at_load["cycles"] == at_save["cycles"]:
             ok(f"reprise au même point : PC={at_load['PC']} cycles={at_load['cycles']}")
         else:

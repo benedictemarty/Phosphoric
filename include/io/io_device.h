@@ -75,13 +75,13 @@ typedef struct io_device_s {
      * reads (ACIA) provide a `peek`. */
     uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);
 
-    /* ── Cycle de vie : avance temporelle (optionnelle) ─────────────────────
-     * `tick` avance le périphérique de `cycles` cycles CPU (FDC, ACIA, synthèse
-     * vocale…). io_bus_tick() appelle les ticks dans un ORDRE EXPLICITE
-     * (io_bus_tick_order, distinct de l'ordre de dispatch) et seulement pour les
-     * périphériques présents : `present_off` est la position du drapeau `has_X`
-     * dans emulator_t (offsetof), testé sans appel de fonction — un périphérique
-     * absent ne coûte qu'une lecture par cycle. NULL → pas de tick. */
+    /* ── Life cycle: advancing time (optional) ──────────────────────────────
+     * `tick` advances the device by `cycles` CPU cycles (FDC, ACIA, speech
+     * synthesis…). io_bus_tick() calls the ticks in an EXPLICIT ORDER
+     * (io_bus_tick_order, distinct from the dispatch order) and only for the
+     * devices that are present: `present_off` is the position of the `has_X`
+     * flag in emulator_t (offsetof), tested without a function call — an absent
+     * device costs only one read per cycle. NULL → no tick. */
     size_t  present_off;
     void    (*tick)(struct emulator_s* emu, int cycles);
 } io_device_t;

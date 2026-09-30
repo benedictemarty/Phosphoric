@@ -211,13 +211,13 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg);
 void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value);
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles);
 
-/* État sérialisable du WD1793/WD177x (sections .ost « FDC » et « JAS ») : registres,
- * opération en cours, modèle mécanique, âge du DRQ et analyseur de formatage. Les
- * pointeurs vers les images disque ne sont PAS écrits : le contrôleur les
- * re-pointe après chargement, puis appelle fdc_state_resume() qui recalcule le
- * pointeur du secteur en cours. FDC_STATE_SIZE = taille écrite (v2) ;
- * fdc_state_load lit `size` octets : un .ost antérieur (36 octets, ou 31 avant
- * v1.42) se relit, les champs absents prenant leur valeur neutre. */
+/* Serialisable state of the WD1793/WD177x (.ost sections "FDC" and "JAS"): registers,
+ * current operation, mechanical model, DRQ age and format-track parser. The
+ * pointers to the disk images are NOT written: the controller re-points them
+ * after loading, then calls fdc_state_resume(), which recomputes the pointer to
+ * the current sector. FDC_STATE_SIZE = written size (v2);
+ * fdc_state_load reads `size` bytes: an older .ost (36 bytes, or 31 before
+ * v1.42) still loads, the missing fields taking their neutral value. */
 #define FDC_STATE_SIZE_V1 36
 #define FDC_STATE_SIZE    49
 void fdc_state_save(const fdc_t* fdc, FILE* fp);

@@ -124,10 +124,10 @@ void sp0256_init(sp0256_t* sp, uint16_t base_addr);
 void sp0256_reset(sp0256_t* sp);
 bool sp0256_load_rom(sp0256_t* sp, const uint8_t* data, uint32_t size);
 
-/* Section .ost « SPO » (sprint D) : état du microséquenceur et du filtre LPC-12,
- * plus les échantillons en attente de mixage. Hors section : l'adresse (option),
- * la ROM (rechargée depuis --sp0256-rom), le pointeur vers l'émulateur.
- * sp0256_load ignore une section de version ou de taille inattendue. */
+/* .ost section "SPO" (sprint D): state of the microsequencer and of the LPC-12
+ * filter, plus the samples waiting to be mixed. Not in the section: the address
+ * (option), the ROM (reloaded from --sp0256-rom), the pointer to the emulator.
+ * sp0256_load ignores a section with an unexpected version or size. */
 #define SP0256_SAVE_VERSION 1
 bool sp0256_save(const sp0256_t* sp, FILE* fp);
 void sp0256_load(sp0256_t* sp, FILE* fp, uint32_t size);

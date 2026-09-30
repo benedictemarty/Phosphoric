@@ -855,9 +855,9 @@ TEST(test_fdc_write_protect_visible_in_type1_status) {
     free(disk);
 }
 
-/* ── Savestate du FDC (2.4.0) : reprise en plein transfert ────────────────
- * Avant 2.4.0, le pointeur du secteur en cours était remis à NULL au
- * chargement : la lecture suivante tombait en RECORD NOT FOUND. */
+/* ── FDC savestate (2.4.0): resume in the middle of a transfer ───────────
+ * Before 2.4.0, the current-sector pointer was reset to NULL on load: the
+ * next read ended in RECORD NOT FOUND. */
 TEST(test_fdc_state_resume_mid_sector_read) {
     uint8_t* disk_data = calloc(80 * 17 * 256, 1);
     ASSERT_TRUE(disk_data != NULL);
@@ -898,8 +898,8 @@ TEST(test_fdc_state_resume_mid_sector_read) {
     free(disk_data);
 }
 
-/* Un état v1 (36 octets, .ost antérieur à 2.4.0) se relit ; les champs v2
- * absents prennent leur valeur neutre. */
+/* A v1 state (36 bytes, .ost older than 2.4.0) still loads; the missing v2
+ * fields take their neutral value. */
 TEST(test_fdc_state_load_v1_compat) {
     fdc_t a, b;
     fdc_init_test(&a);

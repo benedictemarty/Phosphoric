@@ -268,9 +268,9 @@ static long jas_bytes(FILE* fp, unsigned char* buf, long cap) {
     return n;
 }
 
-/* Chaque champ sauvegardé est restauré : registres FDC et verrous remplis d'un
- * motif, cartes de secteurs défectueux non vides ; copie neuve rechargée puis
- * resauvegardée → mêmes octets. */
+/* Every saved field is restored: FDC registers and latches filled with a
+ * pattern, non-empty bad-sector maps; fresh copy reloaded then saved
+ * again → same bytes. */
 TEST(test_jasmin_save_load_restores_every_field) {
     static uint8_t img[4][16 * 17 * 256];
     jasmin_t a, b;
@@ -280,8 +280,8 @@ TEST(test_jasmin_save_load_restores_every_field) {
         jasmin_set_disk(&a, (uint8_t)d, img[d], sizeof(img[d]), 16, 17);
         jasmin_set_disk(&b, (uint8_t)d, img[d], sizeof(img[d]), 16, 17);
     }
-    /* État source distinctif (valeurs bornées là où le chargement borne). */
-    /* Chaque champ écrit par fdc_state_save reçoit une valeur distincte. */
+    /* Distinctive source state (values clamped where loading clamps). */
+    /* Every field written by fdc_state_save gets a distinct value. */
     a.fdc.status = 0x91; a.fdc.command = 0x8C; a.fdc.track = 33; a.fdc.sector = 7;
     a.fdc.data = 0xA5; a.fdc.direction = 1; a.fdc.c_track = 34; a.fdc.c_sector = 8;
     a.fdc.side = 1; a.fdc.currentop = (fdc_op_t)2;
@@ -311,7 +311,7 @@ TEST(test_jasmin_save_load_restores_every_field) {
     ASSERT_EQ(m2, m1);
     ASSERT_EQ(memcmp(s1, s2, (size_t)m1), 0);
 
-    /* Le FDC est re-pointé sur le disque du lecteur restauré, carte comprise. */
+    /* The FDC is re-pointed to the disk of the restored drive, map included. */
     ASSERT_EQ(b.drive, 2);
     ASSERT_TRUE(b.fdc.disk_data == img[2]);
     ASSERT_EQ(b.fdc.side, 1);
@@ -319,7 +319,7 @@ TEST(test_jasmin_save_load_restores_every_field) {
     ASSERT_EQ(b.bad_map[3].entry[0].sector, 9);
 }
 
-/* Version inconnue ou section tronquée : l'état courant n'est pas touché. */
+/* Unknown version or truncated section: the current state is left untouched. */
 TEST(test_jasmin_load_rejects_bad_section) {
     jasmin_t a, b;
     memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b));
@@ -330,9 +330,9 @@ TEST(test_jasmin_load_rejects_bad_section) {
     jasmin_save(&a, fp);
     long n = ftell(fp);
     rewind(fp);
-    jasmin_load(&b, fp, 10);                              /* tronquée */
+    jasmin_load(&b, fp, 10);                              /* truncated */
     ASSERT_EQ(b.drive, 0);
-    rewind(fp); fputc(JASMIN_SAVE_VERSION + 1, fp);       /* version inconnue */
+    rewind(fp); fputc(JASMIN_SAVE_VERSION + 1, fp);       /* unknown version */
     rewind(fp);
     jasmin_load(&b, fp, (uint32_t)n);
     ASSERT_EQ(b.drive, 0);

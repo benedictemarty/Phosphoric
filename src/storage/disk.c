@@ -731,9 +731,9 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
     }
 }
 
-/* ── État sérialisable (sections .ost « FDC » et « JAS ») ─────────────────
- * Ordre et encodage repris à l'identique de l'ancienne section FDC de
- * savestate.c : un .ost existant se relit sans changement. */
+/* ── Serialisable state (.ost sections "FDC" and "JAS") ──────────────────
+ * Order and encoding taken over unchanged from the old FDC section of
+ * savestate.c: an existing .ost loads without change. */
 void fdc_state_save(const fdc_t* fdc, FILE* fp) {
     bin_w_u8(fp, fdc->status);
     bin_w_u8(fp, fdc->command);
@@ -755,8 +755,8 @@ void fdc_state_save(const fdc_t* fdc, FILE* fp) {
     /* Mechanical timing model state (v1.42+): disk angle + Type I view */
     bin_w_u8(fp, fdc->status_type1 ? 1 : 0);
     bin_w_u32(fp, fdc->rot_pos);
-    /* v2 (2.4.0) : âge du DRQ en attente (décide LOST DATA, S2) et analyseur du
-     * formatage de piste — sans eux, une reprise en plein transfert divergeait. */
+    /* v2 (2.4.0): age of the pending DRQ (decides LOST DATA, S2) and the
+     * format-track parser — without them, resuming mid-transfer diverged. */
     bin_w_i32(fp, fdc->drq_age);
     bin_w_u8(fp, fdc->wt_state);
     bin_w_u8(fp, fdc->wt_field_idx);
@@ -787,7 +787,7 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
         fdc->status_type1 = bin_r_u8(fp) != 0;
         fdc->rot_pos = bin_r_u32(fp) % FDC_REV_CYCLES;
     }
-    if (size >= FDC_STATE_SIZE) {      /* v2 : DRQ en attente + formatage */
+    if (size >= FDC_STATE_SIZE) {      /* v2: pending DRQ + formatting */
         fdc->drq_age = bin_r_i32(fp);
         fdc->wt_state = bin_r_u8(fp);
         fdc->wt_field_idx = bin_r_u8(fp) & 3;
@@ -795,7 +795,7 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
             memset(fdc->wt_id, 0, sizeof(fdc->wt_id));
         fdc->wt_data_len = bin_r_u16(fp);
         fdc->wt_sectors_done = bin_r_u8(fp);
-    } else {                           /* .ost antérieur : valeurs neutres */
+    } else {                           /* older .ost: neutral values */
         fdc->drq_age = 0;
         fdc->wt_state = 0;
         fdc->wt_field_idx = 0;
@@ -804,9 +804,9 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
     }
 }
 
-/* Le pointeur de secteur n'est pas sauvegardé : il se déduit de l'état restauré
- * (opération, piste, face, registre secteur) exactement comme la commande l'a
- * calculé. Sans lui, une reprise en plein transfert lisait « Record Not Found ». */
+/* The sector pointer is not saved: it is derived from the restored state
+ * (operation, track, side, sector register) exactly as the command computed
+ * it. Without it, resuming mid-transfer read "Record Not Found". */
 void fdc_state_resume(fdc_t* fdc) {
     switch (fdc->currentop) {
     case FDC_OP_READ_SECTOR:
