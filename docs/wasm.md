@@ -77,6 +77,16 @@ La page (`web/shell.html`) présente un **rail d'icônes vertical à gauche**
 
 - **MODEL** — bascule machine ORIC-1 / Atmos (badge `1`/`A`, relance à froid avec
   la ROM choisie).
+- **I/O** (ou **F1**) — **menu des périphériques** (voir le README) : disquettes,
+  cassette, instantanés, imprimante, joystick, clavier ; la machine est figée tant
+  qu'il est ouvert. Le navigateur ne reçoit pas F1 (pas d'aide qui s'ouvre). Au
+  clavier virtuel, les flèches, **RET**, **ESC** et **DEL** pilotent le menu
+  (masquer le clavier avec **KEYS** pour voir tout le menu). Le sélecteur de
+  fichiers liste aussi `/media`, où la page dépose les fichiers chargés ; sans
+  contrôleur disque au boot, les lecteurs sont affichés « absent » (charger un
+  `.dsk` par **LOAD** redémarre avec le Microdisc). `phosphoric.cfg` et
+  `snapshots/` vivent dans le système de fichiers en mémoire de la page (perdus au
+  rechargement). E2E : `make test-web-iomenu`.
 - **LOAD** + **glisser-déposer** d'un `.tap`/`.dsk` sur l'écran : le fichier est
   inséré et la machine redémarre dessus (cassette `-t …-f`, ou disquette
   `--disk-rom microdis.rom -d …`). Bouton **EJECT** pour le retirer.

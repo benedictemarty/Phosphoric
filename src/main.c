@@ -91,12 +91,37 @@
  * reach the canvas; the on-screen keyboard routes through these exports instead,
  * writing the ORIC matrix directly — so Ctrl/Funct combos always work. */
 static emulator_t* g_web_emu = NULL;
+static void iomenu_toggle(emulator_t* emu);   /* menu F1, défini plus bas */
+
+/* Menu F1 ouvert : les touches du clavier virtuel le pilotent (flèches,
+ * RETURN, ESC, DEL, lettres) au lieu d'aller à la matrice de l'Oric. */
+static void web_iomenu_key(int c) {
+    int k = c == 0x80 ? IOM_KEY_UP : c == 0x81 ? IOM_KEY_DOWN : c == 0x82 ? IOM_KEY_LEFT
+          : c == 0x83 ? IOM_KEY_RIGHT : c == 0x0D ? IOM_KEY_ENTER : c == 0x1B ? IOM_KEY_ESC
+          : c == 0x84 ? IOM_KEY_DEL : (c > ' ' && c < 0x7F) ? c : 0;
+    if (!k) return;
+    iom_action_t act = iom_key(&g_web_emu->iomenu, k);
+    if (iomenu_apply(g_web_emu, &act))
+        iomenu_toggle(g_web_emu);
+}
+
+/* Ouvre / ferme le menu des périphériques (bouton E/S de la page). Renvoie 1 si
+ * le menu est maintenant ouvert. */
+EMSCRIPTEN_KEEPALIVE int web_iomenu_toggle(void) {
+    if (!g_web_emu) return 0;
+    iomenu_toggle(g_web_emu);
+    return g_web_emu->iomenu.open ? 1 : 0;
+}
 
 /* Press (down=1) or release (down=0) a key. `c` is an ASCII char or one of the
  * press_char sentinels (0x0D return, 0x1B esc, 0x80-0x83 arrows). `ctrl`/`funct`
  * apply the modifier for this keystroke. Release clears the whole matrix. */
 EMSCRIPTEN_KEEPALIVE void web_key(int c, int ctrl, int funct, int shift, int down) {
     if (!g_web_emu) return;
+    if (g_web_emu->iomenu.open) {
+        if (down) web_iomenu_key(c);
+        return;
+    }
     oric_keyboard_t* kb = &g_web_emu->keyboard;
     oric_keyboard_release_all(kb);
     if (!down) return;
@@ -112,12 +137,14 @@ EMSCRIPTEN_KEEPALIVE void web_key_release_all(void) {
 }
 
 /* I/O activity bitmap for the on-screen LEDs: bit0 = tape (CLOAD in progress),
- * bit1 = disk (WD1793 BUSY). Polled by the web UI. */
+ * bit1 = disk (WD1793 BUSY), bit2 = menu F1 ouvert (bouton I/O allumé). Polled
+ * by the web UI. */
 EMSCRIPTEN_KEEPALIVE int web_io_activity(void) {
     if (!g_web_emu) return 0;
     int bits = 0;
     if (g_web_emu->tape_readbyte_active) bits |= 1;
     if (g_web_emu->microdisc.fdc.status & FDC_ST_BUSY) bits |= 2;
+    if (g_web_emu->iomenu.open) bits |= 4;
     return bits;
 }
 
