@@ -123,6 +123,14 @@ make fuzz               # libFuzzer (clang), FUZZ_TIME seconds per target
 - CI (`linux-ci.yml`, job `sanitizers`) runs `make SANITIZE=1 tests-strict` and
   `make fuzz FUZZ_TIME=30`.
 
+### Coverage
+
+`make coverage` runs the suite with gcov; `make coverage-check COVERAGE=1`
+(`tools/coverage_check.sh`) prints the line coverage of `src/*.c`, the least
+covered files, and fails below `tests/coverage_floor.txt`. The floor is a
+ratchet measured on the CI runner (no ROMs there, so lower than locally): raise it
+by hand, in the commit whose tests made coverage go up, never lower it.
+
 ### Adding a Test
 
 1. Add test function in the appropriate `tests/unit/test_*.c` file

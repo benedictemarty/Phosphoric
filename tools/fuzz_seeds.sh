@@ -13,7 +13,7 @@ set -eu
 OUT=$1
 TBIN=$2
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-mkdir -p "$OUT/disk" "$OUT/tap" "$OUT/ost" "$OUT/smf" "$OUT/sym" "$OUT/cfg"
+mkdir -p "$OUT/disk" "$OUT/tap" "$OUT/ost" "$OUT/smf" "$OUT/sym" "$OUT/cfg" "$OUT/http"
 
 python3 - "$OUT" <<'PY'
 import os, struct, sys
@@ -38,6 +38,18 @@ open(os.path.join(out, "smf", "deux_pistes.mid"), "wb").write(hdr + t0 + t1)
 
 # Symboles (--symbols).
 open(os.path.join(out, "sym", "rom.sym"), "w").write("$F900 RESET\n$E5BD RDBYTE\nC000 BASIC ; commentaire\n")
+
+# Requêtes HTTP de l'API (--http-api) : GET avec paramètres, POST avec corps.
+def http(name, method, target, body=b""):
+    h = method + b" " + target + b" HTTP/1.1\r\nHost: x\r\n"
+    if body: h += b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+    open(os.path.join(out, "http", name), "wb").write(h + b"\r\n" + body)
+http("get_mem", b"GET", b"/mem?addr=0x0400&len=16&bank=ram")
+http("get_peek", b"GET", b"/peek/via")
+http("post_disk", b"POST", b"/disk/A", b"path=jeux%2Fdisque.dsk")
+http("post_break", b"POST", b"/break", b"addr=C000&if=A%3D%3D1")
+http("post_keys", b"POST", b"/keys", b"text=PRINT+%22OK%22%5Cn")
+http("delete_watch", b"DELETE", b"/watch/3")
 
 # Image Sedoric brute : 1 face, 3 pistes, 17 secteurs (convertie en MFM ensuite).
 open(os.path.join(out, "disk", "brute.raw"), "wb").write(bytes((i * 7) & 0xFF for i in range(3 * 17 * 256)))
