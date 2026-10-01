@@ -15,6 +15,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "cpu/cpu6502.h"
 #include "memory/memory.h"
@@ -181,6 +183,7 @@ typedef struct emulator_s {
     microdisc_t microdisc;
     sedoric_disk_t* disks[MICRODISC_MAX_DRIVES]; /* 4 drives: A, B, C, D */
     const char* disk_paths[MICRODISC_MAX_DRIVES]; /* fichier .dsk par lecteur (write-back/éjection) */
+    bool disk_path_owned[MICRODISC_MAX_DRIVES];  /* copie à libérer (emu_set_disk_path) */
     bool disk_writeback;     /* --disk-writeback : réécrire les .dsk modifiés */
     bool has_microdisc;
 
@@ -527,6 +530,7 @@ typedef struct emulator_s {
     const char* disk_path;
     const char* diskrom_path;
     const char* tape_path;
+    bool tape_path_owned;                        /* copie à libérer (emu_set_tape_path) */
 
     /* Menu des périphériques E/S (F1) et ce qu'il affiche des cartes (lecture
      * seule : renseigné au lancement, sans effet sur l'émulation). */
@@ -613,6 +617,29 @@ static inline void emu_disk_wire(emulator_t* emu, int drv, sedoric_disk_t* nd) {
         jasmin_set_disk(&emu->jasmin, (uint8_t)drv, data, size, tracks, sectors);
     else
         microdisc_set_disk(&emu->microdisc, (uint8_t)drv, data, size, tracks, sectors);
+}
+
+/* Chemins de média suivis par l'émulateur. Ceux du lancement viennent d'argv
+ * (jamais libérés) ; une insertion à chaud (menu F1, --control, web) en fait
+ * une copie que l'émulateur possède : libérée au remplacement et à
+ * l'éjection (avant 2.9.1, chaque insertion la perdait). NULL = vider. */
+static inline char* emu_path_copy_(const char* s) {
+    size_t n = strlen(s) + 1;
+    char* d = (char*)malloc(n);
+    if (d) memcpy(d, s, n);
+    return d;
+}
+static inline void emu_set_disk_path(emulator_t* emu, int drv, const char* path) {
+    if (drv < 0 || drv >= MICRODISC_MAX_DRIVES) return;
+    if (emu->disk_path_owned[drv]) free((void*)emu->disk_paths[drv]);
+    emu->disk_paths[drv] = path ? emu_path_copy_(path) : NULL;
+    emu->disk_path_owned[drv] = emu->disk_paths[drv] != NULL;
+    if (drv == 0) emu->disk_path = emu->disk_paths[0];
+}
+static inline void emu_set_tape_path(emulator_t* emu, const char* path) {
+    if (emu->tape_path_owned) free((void*)emu->tape_path);
+    emu->tape_path = path ? emu_path_copy_(path) : NULL;
+    emu->tape_path_owned = emu->tape_path != NULL;
 }
 
 /* True when a disk controller (Microdisc or Jasmin) is present. */

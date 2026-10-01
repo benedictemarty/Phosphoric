@@ -582,7 +582,7 @@ static void cmd_load_tap(emulator_t* emu, control_sink_t* s, const char* path) {
     emu->tapelen = (int)len;
     emu->tapeoffs = 0;
     emu->tape_loaded = true;
-    emu->tape_path = strdup(path);
+    emu_set_tape_path(emu, path);
     sink_ok(s, "size=%zu", len);
 }
 
@@ -634,8 +634,7 @@ static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
     emu->disks[drv] = nd;
     emu_disk_clear_dirty(emu, drv);
     emu_disk_wire(emu, drv, nd);
-    emu->disk_paths[drv] = strdup(path);
-    if (drv == 0) emu->disk_path = emu->disk_paths[drv];
+    emu_set_disk_path(emu, drv, path);
     log_info("control: disk %c <- %s", 'A' + drv, path);
     sink_ok(s, "drive=%c size=%u tracks=%u sectors=%u", 'A' + drv,
             nd->size, nd->tracks, nd->sectors);
@@ -652,9 +651,8 @@ static void cmd_eject_disk(emulator_t* emu, control_sink_t* s,
     bool wb = control_writeback_drive(emu, drv);
     sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = NULL;
-    emu->disk_paths[drv] = NULL;
+    emu_set_disk_path(emu, drv, NULL);
     emu_disk_wire(emu, drv, NULL);
-    if (drv == 0) emu->disk_path = NULL;
     log_info("control: drive %c ejected", 'A' + drv);
     sink_ok(s, "drive=%c ejected writeback=%d", 'A' + drv, wb ? 1 : 0);
 }
@@ -695,7 +693,7 @@ static void cmd_eject_tape(emulator_t* emu, control_sink_t* s) {
     emu->tapelen = 0;
     emu->tapeoffs = 0;
     emu->tape_loaded = false;
-    emu->tape_path = NULL;
+    emu_set_tape_path(emu, NULL);
     log_info("control: tape ejected");
     sink_ok(s, "ejected");
 }

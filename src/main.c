@@ -233,7 +233,7 @@ EMSCRIPTEN_KEEPALIVE int web_insert_disk(int drive, const char* path) {
     g_web_emu->disks[drive] = nd;
     emu_disk_clear_dirty(g_web_emu, drive);
     emu_disk_wire(g_web_emu, drive, nd);
-    g_web_emu->disk_paths[drive] = strdup(path);
+    emu_set_disk_path(g_web_emu, drive, path);
     return 1;
 }
 #endif /* __EMSCRIPTEN__ */
@@ -996,7 +996,9 @@ static void emulator_cleanup(emulator_t* emu) {
             sedoric_destroy(emu->disks[i]);
             emu->disks[i] = NULL;
         }
+        emu_set_disk_path(emu, i, NULL);   /* copies d'insertions à chaud */
     }
+    emu_set_tape_path(emu, NULL);
     log_info("Emulator cleanup complete");
 }
 

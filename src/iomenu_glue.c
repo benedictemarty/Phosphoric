@@ -56,11 +56,8 @@ media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
     emu->disks[drv] = nd;
     emu_disk_clear_dirty(emu, drv);
     emu_disk_wire(emu, drv, nd);
-    /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). Les
-     * pointeurs initiaux viennent d'argv (non libérables) → on réaffecte. */
-    emu->disk_paths[drv] = strdup(path);
-    if (drv == 0)
-        emu->disk_path = emu->disk_paths[drv];
+    /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). */
+    emu_set_disk_path(emu, drv, path);
     log_info("OSD: disque %c <- %s", 'A' + drv, path);
     return MEDIA_OK;
 }
@@ -72,7 +69,7 @@ media_result_t media_disk_eject(emulator_t* emu, int drv) {
     media_disk_writeback(emu, drv);
     sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = NULL;
-    emu->disk_paths[drv] = NULL;
+    emu_set_disk_path(emu, drv, NULL);
     emu_disk_wire(emu, drv, NULL);
     if (drv == 0) emu->disk_path = NULL;
     log_info("OSD: lecteur %c ejecte", 'A' + drv);
@@ -95,7 +92,7 @@ media_result_t media_tape_insert(emulator_t* emu, const char* path) {
     emu->tapelen = (int)sz;
     emu->tapeoffs = 0;
     emu->tape_loaded = true;
-    emu->tape_path = strdup(path);
+    emu_set_tape_path(emu, path);
     log_info("OSD: cassette <- %s", path);
     return MEDIA_OK;
 }
@@ -106,7 +103,7 @@ media_result_t media_tape_eject(emulator_t* emu) {
     emu->tapelen = 0;
     emu->tapeoffs = 0;
     emu->tape_loaded = false;
-    emu->tape_path = NULL;
+    emu_set_tape_path(emu, NULL);
     log_info("OSD: cassette ejectee");
     return MEDIA_OK;
 }

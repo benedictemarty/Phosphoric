@@ -10,6 +10,7 @@
  * temporaire (fichiers d'impression, .dsk, .cfg).
  */
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE   /* mkdtemp sous macOS malgré _POSIX_C_SOURCE */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,8 +39,22 @@ static int tests_failed = 0;
 
 static emulator_t* emu;
 
+/* Libère la machine de test et tout ce que le menu lui a alloué : disquettes,
+ * chemins dupliqués (ici toujours par media_*), cassette. */
+static void machine_free(void) {
+    if (!emu) return;
+    for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
+        if (emu->disks[i]) sedoric_destroy(emu->disks[i]);
+        emu_set_disk_path(emu, i, NULL);
+    }
+    free(emu->tapebuf);
+    emu_set_tape_path(emu, NULL);
+    free(emu);
+    emu = NULL;
+}
+
 static void machine_new(void) {
-    if (emu) free(emu);
+    machine_free();
     emu = calloc(1, sizeof(*emu));
     microdisc_init(&emu->microdisc);
     emu->has_microdisc = true;
@@ -95,6 +110,26 @@ TEST(test_eject_and_errors) {
     ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_OK);
     ASSERT_TRUE(emu->disks[1] == NULL);
     ASSERT_EQ(media_tape_eject(emu), MEDIA_EMPTY);
+}
+
+/* Chemins copiés à l'insertion : possédés, libérés au remplacement et à
+ * l'éjection (fuite avant 2.9.1, vue par LeakSanitizer) ; un chemin venu de la
+ * ligne de commande n'est jamais libéré. */
+TEST(test_disk_path_ownership) {
+    machine_new();
+    emu->disk_paths[1] = "argv.dsk";                 /* comme au lancement */
+    ASSERT_EQ(media_disk_insert(emu, 1, "un.dsk"), MEDIA_OK);
+    ASSERT_TRUE(emu->disk_path_owned[1]);
+    ASSERT_STR(emu->disk_paths[1], "un.dsk");
+    ASSERT_EQ(media_disk_insert(emu, 1, "deux.dsk"), MEDIA_OK);
+    ASSERT_STR(emu->disk_paths[1], "deux.dsk");
+    ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_OK);
+    ASSERT_TRUE(emu->disk_paths[1] == NULL);
+    ASSERT_TRUE(!emu->disk_path_owned[1]);
+    ASSERT_EQ(media_tape_insert(emu, "hello.tap"), MEDIA_OK);
+    ASSERT_TRUE(emu->tape_path_owned);
+    ASSERT_EQ(media_tape_eject(emu), MEDIA_OK);
+    ASSERT_TRUE(emu->tape_path == NULL && !emu->tape_path_owned);
 }
 
 TEST(test_apply_protect_follows_selected_drive) {
@@ -193,6 +228,12 @@ TEST(test_config_roundtrip_and_precedence) {
     ASSERT_STR(cfg.tape_file, "hello.tap");
     ASSERT_STR(cfg.keyboard_layout, "azerty");
     ASSERT_STR(cfg.joystick_mode, "keys");
+    /* Chaînes dupliquées par iomenu_config_load (durée de vie du programme en
+     * usage réel) : libérées ici pour LeakSanitizer. */
+    free((void*)cfg.disk_files[0]);
+    free((void*)cfg.disk_files[3]);
+    free((void*)cfg.disk_rom_file);
+    free((void*)cfg.tape_file);
     /* …mais la ligne de commande est prioritaire. */
     cli_opts_init(&cfg);
     cfg.disk_files[0] = "cli.dsk";
@@ -202,6 +243,8 @@ TEST(test_config_roundtrip_and_precedence) {
     ASSERT_STR(cfg.disk_files[0], "cli.dsk");
     ASSERT_STR(cfg.keyboard_layout, "qwerty");
     ASSERT_TRUE(cfg.disk_rom_file == NULL);             /* interface déjà choisie */
+    free((void*)cfg.disk_files[3]);                     /* [0] vient de la « CLI » */
+    free((void*)cfg.tape_file);
     /* Enregistrer deux fois ne duplique pas les lignes gérées. */
     ASSERT_TRUE(iomenu_config_save(emu, "t.cfg"));
     f = fopen("t.cfg", "r");
@@ -237,6 +280,7 @@ int main(void) {
     RUN(test_refresh_reflects_machine);
     RUN(test_no_disk_interface);
     RUN(test_eject_and_errors);
+    RUN(test_disk_path_ownership);
     RUN(test_apply_protect_follows_selected_drive);
     RUN(test_apply_toggles);
     RUN(test_apply_printer_cycle);
@@ -246,5 +290,6 @@ int main(void) {
     snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);
     if (chdir("/") != 0 || system(cmd) != 0) { /* nettoyage au mieux */ }
     printf("\n  Results: %d passed, %d failed\n", tests_passed, tests_failed);
+    machine_free();
     return tests_failed ? 1 : 0;
 }
