@@ -134,19 +134,24 @@ static iom_file_kind_t kind_of(int item) {
     return IOM_FILE_DSK;
 }
 
+/* ROMs, images, firmwares: directories browsed for a card parameter. */
+static const char* const card_dirs[] = { "roms", "roms/loci", "disks", "tapes", "media", ".", NULL };
+
 static void scan_files(iom_menu_t* m, iom_file_kind_t kind) {
-    static const char* const ext[] = { ".dsk", ".tap", ".ost" };
-    const char* const* dirs = m->dirs ? m->dirs : default_dirs;
+    static const char* const ext[] = { ".dsk", ".tap", ".ost", "" };
+    const char* const* dirs = kind == IOM_FILE_ANY ? card_dirs : m->dirs ? m->dirs : default_dirs;
     m->nfiles = 0;
     for (int d = 0; dirs[d]; d++) {
         DIR* dp = opendir(dirs[d]);
         if (!dp) continue;
         struct dirent* de;
         while ((de = readdir(dp)) != NULL && m->nfiles < IOM_FILES) {
-            if (!has_ext(de->d_name, ext[kind])) continue;
+            if (kind == IOM_FILE_ANY ? de->d_name[0] == '.' : !has_ext(de->d_name, ext[kind])) continue;
             iom_file_t* f = &m->files[m->nfiles];
             if (snprintf(f->path, sizeof(f->path), "%s/%s", dirs[d], de->d_name) >= (int)sizeof(f->path))
                 continue;
+            struct stat ds;
+            if (kind == IOM_FILE_ANY && (stat(f->path, &ds) != 0 || !S_ISREG(ds.st_mode))) continue;
             snprintf(f->name, sizeof(f->name), "%.*s", (int)sizeof(f->name) - 1, de->d_name);
             struct stat sb;
             f->size = (stat(f->path, &sb) == 0) ? (uint32_t)sb.st_size : 0;
@@ -168,6 +173,18 @@ static void browse_clamp(iom_menu_t* m) {
     if (m->browse_cursor < m->browse_scroll) m->browse_scroll = m->browse_cursor;
     if (m->browse_cursor >= m->browse_scroll + IOM_BROWSE_VISIBLE)
         m->browse_scroll = m->browse_cursor - IOM_BROWSE_VISIBLE + 1;
+}
+
+static void open_browser_card(iom_menu_t* m) {
+    scan_files(m, IOM_FILE_ANY);
+    m->browse_target = IOM_BROWSE_CARD;
+    m->browse_cursor = 0;
+    m->browse_scroll = 0;
+    const char* cur = m->cards.card[m->card_sel].value[m->param_cursor - 1];
+    for (int k = 0; k < m->nfiles; k++)
+        if (cur[0] && strcmp(m->files[k].path, cur) == 0) m->browse_cursor = k + 1;
+    browse_clamp(m);
+    m->browsing = true;
 }
 
 static void open_browser(iom_menu_t* m, int item) {
@@ -198,6 +215,8 @@ void iom_init(iom_menu_t* m) {
 void iom_open(iom_menu_t* m) {
     m->open = true;
     m->browsing = false;
+    m->page = IOM_PAGE_MAIN;
+    m->editing = false;
     m->cursor = IOM_ITEM_RESUME;
     m->sub = 0;
     m->message[0] = '\0';
@@ -234,6 +253,12 @@ static iom_action_t browse_key(iom_menu_t* m, int key) {
     case IOM_KEY_ENTER: {
         const int item = m->browse_target;
         const bool none = m->browse_cursor == 0;
+        if (item == IOM_BROWSE_CARD) {   /* card parameter: chosen path */
+            snprintf(m->cards.card[m->card_sel].value[m->param_cursor - 1], CARD_VALUE_MAX, "%s",
+                     none ? "" : m->files[m->browse_cursor - 1].path);
+            m->browsing = false;
+            return a;
+        }
         if (!none)
             snprintf(a.path, sizeof(a.path), "%s", m->files[m->browse_cursor - 1].path);
         if (is_drive(item)) {
@@ -278,10 +303,136 @@ static iom_action_t browse_key(iom_menu_t* m, int key) {
     return a;
 }
 
+/* ── Expansion cards ────────────────────────────────────────────────── */
+
+static bool cards_changed(const iom_menu_t* m) {
+    return memcmp(&m->cards, &m->cards_orig, sizeof(m->cards)) != 0;
+}
+
+/* Parameter editing: printable characters, Del / Backspace erases, Enter
+ * confirms (address checked), Esc cancels. */
+void iom_text(iom_menu_t* m, const char* utf8) {
+    if (!m->open || !m->editing) return;
+    size_t n = strlen(m->edit);
+    while (*utf8 && n + 4 < sizeof(m->edit)) {
+        unsigned char c = (unsigned char)*utf8++;
+        if (c >= 0x20 && c != 0x7F) m->edit[n++] = (char)c;   /* UTF-8 copied as is */
+    }
+    m->edit[n] = '\0';
+}
+
+static void edit_key(iom_menu_t* m, int key) {
+    char* v = m->cards.card[m->card_sel].value[m->param_cursor - 1];
+    const card_param_t* p = &cards_get(m->card_sel)->param[m->param_cursor - 1];
+    size_t n = strlen(m->edit);
+    switch (key) {
+    case IOM_KEY_DEL:
+        while (n > 0 && ((unsigned char)m->edit[n - 1] & 0xC0) == 0x80) n--;   /* UTF-8 continuation byte */
+        if (n > 0) n--;
+        m->edit[n] = '\0';
+        break;
+    case IOM_KEY_ESC:
+        m->editing = false;
+        break;
+    case IOM_KEY_ENTER:
+        if (p->kind == CARD_P_HEX && m->edit[0]) {
+            char* end;
+            unsigned long a = strtoul(m->edit, &end, 16);
+            if (*end || a < 0x0300 || a > 0x03FF) {
+                iom_message(m, true, "Adresse d'E/S hexadécimale entre 0300 et 03FF");
+                return;
+            }
+        }
+        snprintf(v, CARD_VALUE_MAX, "%s", m->edit);
+        m->editing = false;
+        break;
+    default:
+        break;   /* characters arrive via iom_text (typed text) */
+    }
+}
+
+static iom_action_t cards_key(iom_menu_t* m, int key) {
+    iom_action_t a = { IOM_ACT_NONE, 0, "" };
+    const int n = cards_count() + 2;   /* cards, Apply, Cancel */
+    int c = m->card_cursor;
+    switch (key) {
+    case IOM_KEY_UP:   c = (c + n - 1) % n; break;
+    case IOM_KEY_DOWN: c = (c + 1) % n; break;
+    case IOM_KEY_HOME: c = 0; break;
+    case IOM_KEY_END:  c = n - 1; break;
+    case IOM_KEY_LEFT:
+    case IOM_KEY_ESC:  m->page = IOM_PAGE_MAIN; break;
+    case IOM_KEY_ENTER:
+        if (c < cards_count()) {
+            m->card_sel = c;
+            m->param_cursor = 0;
+            m->page = IOM_PAGE_CARD;
+        } else if (c == cards_count()) {
+            char why[96];
+            if (m->cards_readonly)
+                iom_message(m, true, "Version web : les cartes se choisissent au lancement");
+            else if (!cards_changed(m))
+                iom_message(m, false, "Aucun changement de cartes");
+            else if (cards_conflict(&m->cards, why, sizeof(why)))
+                iom_message(m, true, why);
+            else
+                a.type = IOM_ACT_CARDS_APPLY;
+        } else {
+            m->cards = m->cards_orig;
+            iom_message(m, false, "Cartes : retour à la machine en cours");
+        }
+        break;
+    default: break;
+    }
+    m->card_cursor = c;
+    return a;
+}
+
+static void card_key(iom_menu_t* m, int key) {
+    const card_desc_t* d = cards_get(m->card_sel);
+    const int n = 1 + d->nparams;
+    int c = m->param_cursor;
+    switch (key) {
+    case IOM_KEY_UP:   c = (c + n - 1) % n; break;
+    case IOM_KEY_DOWN: c = (c + 1) % n; break;
+    case IOM_KEY_LEFT:
+    case IOM_KEY_ESC:  m->page = IOM_PAGE_CARDS; break;
+    case IOM_KEY_DEL:   /* parameter: back to the default value */
+        if (c > 0 && !m->cards_readonly)
+            snprintf(m->cards.card[m->card_sel].value[c - 1], CARD_VALUE_MAX, "%s", d->param[c - 1].def);
+        break;
+    case IOM_KEY_ENTER:
+        if (m->cards_readonly) {
+            iom_message(m, true, "Version web : les cartes se choisissent au lancement");
+        } else if (c == 0) {
+            if (d->fixed) iom_message(m, false, "Carte toujours présente");
+            else cards_set_on(&m->cards, m->card_sel, !m->cards.card[m->card_sel].on);
+        } else {
+            const card_param_t* p = &d->param[c - 1];
+            char* v = m->cards.card[m->card_sel].value[c - 1];
+            if (p->kind == CARD_P_BOOL) {
+                snprintf(v, CARD_VALUE_MAX, "%s", strcmp(v, "oui") == 0 ? "non" : "oui");
+            } else if (p->kind == CARD_P_FILE) {
+                m->param_cursor = c;
+                open_browser_card(m);
+            } else {
+                snprintf(m->edit, sizeof(m->edit), "%s", v);
+                m->editing = true;
+            }
+        }
+        break;
+    default: break;
+    }
+    if (m->page == IOM_PAGE_CARD) m->param_cursor = c;
+}
+
 iom_action_t iom_key(iom_menu_t* m, int key) {
     iom_action_t a = { IOM_ACT_NONE, 0, "" };
     if (!m->open) return a;
     if (m->browsing) return browse_key(m, key);
+    if (m->editing) { edit_key(m, key); return a; }
+    if (m->page == IOM_PAGE_CARDS) return cards_key(m, key);
+    if (m->page == IOM_PAGE_CARD) { card_key(m, key); return a; }
     int c = m->cursor;
     switch (key) {
     case IOM_KEY_UP:   c = (c + IOM_ITEMS - 1) % IOM_ITEMS; break;
@@ -320,6 +471,9 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
         } else if (c == IOM_ITEM_TAPE) {
             if (m->sub == 1) a.type = IOM_ACT_TAPE_REWIND;
             else open_browser(m, c);
+        } else if (c == IOM_ITEM_CARDS) {
+            m->page = IOM_PAGE_CARDS;
+            m->card_cursor = 0;
         } else if (c == IOM_ITEM_SNAPSHOT)   open_browser(m, c);
         else if (c == IOM_ITEM_PRINTER)   a.type = IOM_ACT_PRINTER_CYCLE;
         else if (c == IOM_ITEM_JOYSTICK)  a.type = IOM_ACT_JOYSTICK_CYCLE;
@@ -448,9 +602,38 @@ static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
     }
 }
 
+/* Text wrapped at spaces over @p width columns, at most @p rows lines. */
+static void wrap(iom_surface_t* s, int row, int col, int width, int rows, const char* text, uint8_t attr) {
+    char line[160];
+    int r = 0;
+    while (*text && r < rows) {
+        while (*text == ' ') text++;
+        const char* end = text;
+        const char* cut = NULL;
+        int w = 0;
+        while (*end) {
+            const char* p = end;
+            next_char(&p);
+            if (*end == ' ') cut = end;
+            if (++w > width) break;
+            end = p;
+        }
+        if (*end && cut && cut > text) end = cut;
+        size_t n = (size_t)(end - text);
+        if (n >= sizeof(line)) n = sizeof(line) - 1;
+        memcpy(line, text, n);
+        line[n] = '\0';
+        iom_puts(s, row + r++, col, line, attr, width);
+        text = end;
+    }
+}
+
 static void draw_cards(const iom_menu_t* m, iom_surface_t* s) {
     const iom_state_t* st = &m->st;
-    panel(s, 19, 2, 7, 76, IOM_CART_L, "Cartes d'extension (lancement)");
+    const bool on = !m->browsing && m->cursor == IOM_ITEM_CARDS;
+    panel(s, 19, 2, 8, 76, IOM_CART_L, on ? "Cartes d'extension — Entrée : choisir, régler"
+                                          : "Cartes d'extension");
+    if (on) s_frame(s, 19, 2, 8, 76, IOM_ATTR(IOM_YELLOW, IOM_BLUE | IOM_DITHER));
     for (int i = 0; i < st->cards && i < IOM_CARDS; i++) {
         const int row = 20 + i / 2, col = (i % 2) ? 41 : 4;
         const iom_card_t* k = &st->card[i];
@@ -516,7 +699,10 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
     const int item = m->browse_target;
     const bool drive = is_drive(item), tape = item == IOM_ITEM_TAPE;
     char buf[96];
-    if (drive) snprintf(buf, sizeof(buf), "Disquette pour le lecteur %c", 'A' + item);
+    if (item == IOM_BROWSE_CARD)
+        snprintf(buf, sizeof(buf), "%s — %s", cards_get(m->card_sel)->name,
+                 cards_get(m->card_sel)->param[m->param_cursor - 1].label);
+    else if (drive) snprintf(buf, sizeof(buf), "Disquette pour le lecteur %c", 'A' + item);
     else if (tape) snprintf(buf, sizeof(buf), "Cassette (la même : rembobinée)");
     else snprintf(buf, sizeof(buf), "Instantanés (reprendre : la machine revient à cet instant)");
     const int top = 7, left = 6, width = 68, height = IOM_BROWSE_VISIBLE + 4;
@@ -537,12 +723,13 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
         const uint8_t dim = sel ? IOM_ATTR(IOM_BLUE, IOM_CYAN) : IOM_ATTR(IOM_CYAN, IOM_BLACK);
         s_fill(s, row, left + 2, 1, width - 5, base);
         if (idx == 0) {
-            iom_puts(s, row, left + 4, drive ? "Éjecter la disquette" : tape ? "Éjecter la cassette"
+            iom_puts(s, row, left + 4, item == IOM_BROWSE_CARD ? "Aucun fichier (vide)"
+                                     : drive ? "Éjecter la disquette" : tape ? "Éjecter la cassette"
                                              : "Enregistrer un nouvel instantané", dim, -1);
             continue;
         }
         const iom_file_t* f = &m->files[idx - 1];
-        iom_puts(s, row, left + 4, f->name, base, 44);
+        iom_puts(s, row, left + 4, item == IOM_BROWSE_CARD ? f->path : f->name, base, 44);
         char sz[16];
         size_str(sz, sizeof(sz), f->size);
         iom_puts(s, row, left + width - 5 - u_strlen(sz), sz, dim, -1);
@@ -553,7 +740,10 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
                      sel ? IOM_ATTR(IOM_RED, IOM_CYAN) : IOM_ATTR(IOM_YELLOW, IOM_BLACK), -1);
         }
     }
-    if (m->nfiles == 0)
+    if (m->nfiles == 0 && item == IOM_BROWSE_CARD)
+        iom_puts(s, top + 4, left + 4, "Aucun fichier (dossiers roms, roms/loci, disks, tapes, .)",
+                 IOM_ATTR(IOM_RED, IOM_BLACK), width - 8);
+    else if (m->nfiles == 0)
         iom_puts(s, top + 4, left + 4, drive ? "Aucune image .dsk (dossiers disks, tapes, snapshots, .)"
                                        : tape ? "Aucune cassette .tap (dossiers tapes, disks, .)"
                                               : "Aucun instantané .ost (dossiers snapshots, .)",
@@ -563,6 +753,105 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
         for (int k = 0; k < IOM_BROWSE_VISIBLE; k++) s_putc(s, top + 2 + k, bar, IOM_SHADE, IOM_ATTR(IOM_BLUE, IOM_BLACK));
         const int thumb = m->browse_scroll * (IOM_BROWSE_VISIBLE - 1) / (n - IOM_BROWSE_VISIBLE);
         s_putc(s, top + 2 + thumb, bar, IOM_FULL, IOM_ATTR(IOM_CYAN, IOM_BLACK));
+    }
+}
+
+/* Displayed value of a parameter (« — » if empty, « oui »/« non »). */
+static const char* param_text(const card_param_t* p, const char* v) {
+    (void)p;
+    return v[0] ? v : "—";
+}
+
+static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
+    const int n = cards_count();
+    char buf[128];
+    panel(s, 5, 2, n + 4, 76, IOM_CART_L, m->cards_readonly ? "Cartes d'extension (lecture seule)"
+                                                            : "Cartes d'extension");
+    for (int i = 0; i < n; i++) {
+        const card_desc_t* d = cards_get(i);
+        const card_choice_t* c = &m->cards.card[i];
+        const int row = 7 + i;
+        const bool sel = !m->browsing && m->card_cursor == i;
+        const row_attrs_t ra = attrs_for(sel);
+        item_bar(s, row, 4, 72, sel);
+        s_putc(s, row, 6, c->on ? IOM_DOT : IOM_CROSS, c->on ? ra.ok : ra.dim);
+        iom_puts(s, row, 8, d->name, c->on ? ra.acc : ra.dim, 17);
+        const bool changed = c->on != m->cards_orig.card[i].on ||
+                             memcmp(c->value, m->cards_orig.card[i].value, sizeof(c->value)) != 0;
+        iom_puts(s, row, 26, d->fixed ? "toujours" : c->on ? "présente" : "absente",
+                 c->on ? ra.ok : ra.dim, -1);
+        if (changed) iom_puts(s, row, 35, "*", ra.err, -1);
+        if (c->on && d->nparams > 0 && (d->enable_param >= 0 || d->io_param >= 0)) {
+            const int p = d->enable_param >= 0 ? d->enable_param : d->io_param;
+            snprintf(buf, sizeof(buf), "%s", param_text(&d->param[p], c->value[p]));
+            iom_puts(s, row, 37, buf, ra.base, 38);
+        } else if (d->group) {
+            snprintf(buf, sizeof(buf), "(une seule carte « %s »)", d->group);
+            iom_puts(s, row, 37, buf, ra.dim, 38);
+        }
+    }
+    /* Role of the card under the cursor. */
+    const int top = 9 + n;
+    panel(s, top, 2, 6, 76, 0, "Rôle de la carte");
+    if (m->card_cursor < n) wrap(s, top + 1, 4, 72, 4, cards_get(m->card_cursor)->role, A_PANEL);
+    else wrap(s, top + 1, 4, 72, 4, m->card_cursor == n
+              ? "Relance l'émulateur avec ces cartes (redémarrage à froid : la mémoire est "
+                "effacée). Les cartes marquées * ont changé. « Enregistrer la configuration » "
+                "les garde pour les prochains lancements."
+              : "Revient aux cartes de la machine en cours.", A_PANEL);
+    char why[96];
+    if (cards_conflict(&m->cards, why, sizeof(why))) {
+        s_putc(s, top + 6, 3, IOM_CROSS, IOM_ATTR(IOM_RED, IOM_BLACK));
+        iom_puts(s, top + 6, 5, why, IOM_ATTR(IOM_RED, IOM_BLACK), 72);
+    }
+    button(s, 34, 6, 32, "Appliquer et redémarrer", !m->browsing && m->card_cursor == n);
+    button(s, 34, 42, 32, "Annuler les changements", !m->browsing && m->card_cursor == n + 1);
+}
+
+static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
+    const card_desc_t* d = cards_get(m->card_sel);
+    const card_choice_t* c = &m->cards.card[m->card_sel];
+    char buf[160];
+    panel(s, 5, 2, 7 + 2 * d->nparams + 2, 76, IOM_CART_L, d->name);
+    wrap(s, 6, 4, 72, 3, d->role, A_PANEL_DIM);
+    {   /* Presence */
+        const bool sel = !m->browsing && m->param_cursor == 0;
+        const row_attrs_t ra = attrs_for(sel);
+        item_bar(s, 10, 4, 72, sel);
+        iom_puts(s, 10, 6, "Carte", ra.acc, -1);
+        state(s, 10, 33, c->on, d->fixed ? "toujours présente" : c->on ? "présente" : "absente", &ra);
+    }
+    for (int p = 0; p < d->nparams; p++) {
+        const int row = 12 + 2 * p;
+        const bool sel = !m->browsing && m->param_cursor == p + 1;
+        const row_attrs_t ra = attrs_for(sel);
+        item_bar(s, row, 4, 72, sel);
+        iom_puts(s, row, 6, d->param[p].label, c->on ? ra.acc : ra.dim, 26);
+        if (sel && m->editing) {
+            int n = iom_puts(s, row, 33, m->edit, ra.base, 41);
+            s_putc(s, row, 33 + n, IOM_FULL, ra.acc);
+        } else {
+            iom_puts(s, row, 33, param_text(&d->param[p], c->value[p]), ra.base, 42);
+        }
+    }
+    /* Explanation of the parameter (or of the presence) under the cursor. */
+    const int top = 14 + 2 * d->nparams;
+    panel(s, top, 2, 8, 76, 0, m->param_cursor == 0 ? "La carte" : d->param[m->param_cursor - 1].label);
+    if (m->param_cursor == 0) {
+        if (d->fixed) snprintf(buf, sizeof(buf), "Toujours présente : rien à régler ici.");
+        else if (d->group)
+            snprintf(buf, sizeof(buf), "Entrée : présente / absente. Une seule carte du groupe "
+                     "« %s » à la fois : en choisir une retire l'autre.", d->group);
+        else snprintf(buf, sizeof(buf), "Entrée : présente / absente.");
+        wrap(s, top + 1, 4, 72, 6, buf, A_PANEL);
+    } else {
+        const card_param_t* p = &d->param[m->param_cursor - 1];
+        wrap(s, top + 1, 4, 72, 5, p->help, A_PANEL);
+        snprintf(buf, sizeof(buf), "Par défaut : %s.  Entrée : %s.  Suppr : valeur par défaut.",
+                 p->def[0] ? p->def : "vide",
+                 p->kind == CARD_P_BOOL ? "oui / non" : p->kind == CARD_P_FILE ? "choisir le fichier"
+                 : "saisir");
+        wrap(s, top + 6, 4, 72, 1, buf, A_PANEL_DIM);
     }
 }
 
@@ -579,15 +868,20 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
     iom_puts(s, 1, IOM_COLS - 3 - u_strlen(buf), buf, IOM_ATTR(IOM_CYAN, IOM_BLUE), -1);
     for (int c = 0; c < IOM_COLS; c++) s_putc(s, 3, c, IOM_HLINE, IOM_ATTR(IOM_CYAN, IOM_BLACK));
 
-    draw_media(m, s);
-    draw_cards(m, s);
-    draw_devices(m, s);
-
-    /* Buttons */
-    static const char* const labels[3] = { "Redémarrer (RESET)", "Enregistrer la configuration", "Reprendre" };
-    static const int bcol[3] = { 2, 27, 58 }, bw[3] = { 22, 29, 20 };
-    for (int i = 0; i < 3; i++)
-        button(s, 34, bcol[i], bw[i], labels[i], !m->browsing && m->cursor == IOM_ITEM_RESET + i);
+    if (m->page == IOM_PAGE_CARDS) {
+        draw_cards_page(m, s);
+    } else if (m->page == IOM_PAGE_CARD) {
+        draw_card_page(m, s);
+    } else {
+        draw_media(m, s);
+        draw_cards(m, s);
+        draw_devices(m, s);
+        /* Buttons */
+        static const char* const labels[3] = { "Redémarrer (RESET)", "Enregistrer la configuration", "Reprendre" };
+        static const int bcol[3] = { 2, 27, 58 }, bw[3] = { 22, 29, 20 };
+        for (int i = 0; i < 3; i++)
+            button(s, 34, bcol[i], bw[i], labels[i], !m->browsing && m->cursor == IOM_ITEM_RESET + i);
+    }
 
     /* Message of the last result */
     if (m->message[0]) {
@@ -603,9 +897,18 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
                                                  { " Suppr ", "éjecter" }, { " Échap ", "reprendre" } };
     static const char* const help_browse[4][2] = { { " Flèches ", "choisir" }, { " Entrée ", "valider" },
                                                    { " Lettre ", "aller à" }, { " Échap ", "retour" } };
-    const char* const (*help)[2] = m->browsing ? help_browse : help_main;
+    static const char* const help_cards[4][2] = { { " Flèches ", "choisir" }, { " Entrée ", "détails" },
+                                                  { " ", "" }, { " Échap ", "retour" } };
+    static const char* const help_card[4][2] = { { " Flèches ", "choisir" }, { " Entrée ", "modifier" },
+                                                 { " Suppr ", "défaut" }, { " Échap ", "retour" } };
+    static const char* const help_edit[4][2] = { { " Clavier ", "saisir" }, { " Entrée ", "valider" },
+                                                 { " Suppr ", "effacer" }, { " Échap ", "annuler" } };
+    const char* const (*help)[2] = m->browsing ? help_browse : m->editing ? help_edit
+                                 : m->page == IOM_PAGE_CARD ? help_card
+                                 : m->page == IOM_PAGE_CARDS ? help_cards : help_main;
     int c = 2;
     for (int i = 0; i < 4; i++) {
+        if (!help[i][1][0]) continue;
         c += iom_puts(s, 38, c, help[i][0], key, -1) + 1;
         c += iom_puts(s, 38, c, help[i][1], txt, -1) + 3;
     }

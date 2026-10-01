@@ -20,6 +20,20 @@
 #include "io/bus_timing.h"    /* BUS_LATCH_SUBTICK_DEFAULT */
 #include "utils/logging.h"
 
+/* Second parse (card options coming from phosphoric.cfg): getopt starts
+ * over from scratch. */
+int cli_parse_more(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
+#ifdef __GLIBC__
+    optind = 0;          /* full reset of the internal state */
+#else
+    optind = 1;
+#endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    optreset = 1;
+#endif
+    return cli_parse_args(argc, argv, cfg, emu);
+}
+
 int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
     int opt;
     int option_index = 0;
@@ -72,6 +86,7 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 if (optarg) cfg->gdb_port = atoi(optarg);
                 break;
             case OPT_GDB_BIND: cfg->gdb_bind = optarg; break;
+            case OPT_NO_CONFIG_CARDS: cfg->no_config_cards = true; break;
             case OPT_RECORD: cfg->movie_record_file = optarg; break;
             case OPT_REPLAY: cfg->movie_replay_file = optarg; break;
             case 'k': cfg->keyboard_layout = optarg; break;

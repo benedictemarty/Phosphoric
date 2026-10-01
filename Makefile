@@ -160,6 +160,7 @@ endif
 # Source files
 SOURCES = src/main.c \
           src/rom_patches.c \
+          src/cards.c \
           src/cpu/cpu6502.c \
           src/cpu/opcodes.c \
           src/cpu/addressing.c \
@@ -295,7 +296,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-http-parse test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -539,7 +540,7 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
 # I/O peripherals menu (F1): model, keys, file picker, drawing.
-TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c
+TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c src/cards.c src/utils/logging.c $(LOCI_STUB)
 $(eval $(call UNIT_TEST,test-iomenu,test_iomenu,$(TEST_IOMENU_SRCS),,))
 
 # F1 menu <-> emulator glue (media, settings, phosphoric.cfg): links the core.
@@ -719,6 +720,9 @@ $(eval $(call UNIT_TEST,test-control-queue,test_control_queue,tests/unit/test_co
 # emulator). Skips gracefully unless the emulator was built with HTTPAPI=1.
 test-httpapi: $(TARGET)
 	@bash tests/integration/test_http_api_e2e.sh
+
+# Expansion card registry (F1 menu): state, conflicts, restart.
+$(eval $(call UNIT_TEST,test-cards,test_cards,tests/unit/test_cards.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 # HTTP parsing/routing without network or emulator (includes http_api.c, every build).
 $(eval $(call UNIT_TEST,test-http-parse,test_http_parse,tests/unit/test_http_parse.c src/utils/logging.c,,))
@@ -929,7 +933,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

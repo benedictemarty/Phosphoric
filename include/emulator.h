@@ -36,6 +36,7 @@
 #include "io/mea8000.h"
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
+#include "cards.h"
 #include "io/dtl2000.h"
 #include "io/mageco.h"
 #include "storage/sedoric.h"
@@ -49,7 +50,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.10.1"
+#define EMU_VERSION "2.11.0"
 
 /**
  * @brief ORIC machine model
@@ -475,6 +476,12 @@ typedef struct emulator_s {
      * Only active when --loci is passed; reserves MIA bus at $03A0-$03BF. */
     loci_t loci;
     bool   has_loci;
+    /* Expansion cards (F1 menu): original launch options, choices being
+     * edited, restart options (NULL: no restart requested). */
+    int    argc;
+    char** argv;
+    cards_state_t cards;
+    char** restart_argv;
     bool   loci_external;   /* --loci-emu / --loci-hw: the firmware (co-simulated or
                                real) handles its floppies, not the internal model */
     /* Sprint 34c hardening — owns the overlay ROM buffer that LOCI's

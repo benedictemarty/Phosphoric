@@ -134,19 +134,6 @@ static const char* base_name(const char* path) {
     return s ? s + 1 : path;
 }
 
-static void add_card(iom_state_t* st, const char* name, bool present, const char* fmt, ...)
-    __attribute__((format(printf, 4, 5)));
-static void add_card(iom_state_t* st, const char* name, bool present, const char* fmt, ...) {
-    if (st->cards >= IOM_CARDS) return;
-    iom_card_t* k = &st->card[st->cards++];
-    snprintf(k->name, sizeof(k->name), "%s", name);
-    k->present = present;
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(k->detail, sizeof(k->detail), fmt, ap);
-    va_end(ap);
-}
-
 void iomenu_refresh(emulator_t* emu) {
     iom_state_t* st = &emu->iomenu.st;
     st->version = EMU_VERSION;
@@ -187,22 +174,32 @@ void iomenu_refresh(emulator_t* emu) {
                  : emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD ? IOM_JOY_GAMEPAD : IOM_JOY_NONE;
     st->azerty = emu->keyboard.layout == ORIC_KB_AZERTY;
 
-    /* Expansion cards (state at startup; read-only in the menu). */
+    /* Expansion cards: list from the registry (cards.h), state of the running
+     * machine. The choices (cards page) are loaded when the menu opens. */
+    iom_menu_t* m = &emu->iomenu;
+    if (!m->open) {
+        cards_state_from(&m->cards_orig, emu, emu->argc, emu->argv);
+        m->cards = m->cards_orig;
+#ifdef __EMSCRIPTEN__
+        m->cards_readonly = true;     /* no restart in the browser */
+#else
+        m->cards_readonly = emu->argv == NULL;
+#endif
+    }
     st->cards = 0;
-    add_card(st, "Microdisc", emu->has_microdisc, "$0310  %s", base_name(emu->diskrom_path));
-    add_card(st, "Jasmin", emu->has_jasmin, "$03F4  %s", base_name(emu->jasmin_rom_path));
-    add_card(st, "LOCI", emu->has_loci, "$03A0  %s", loci_emu_active() ? "firmware" : "modèle HLE");
-    add_card(st, "ACIA 6551", emu->has_serial, "$%04X  %s", emu->acia_base_addr,
-             emu->serial_spec ? emu->serial_spec : "");
-    add_card(st, "DTL 2000", emu->has_dtl2000, "$%04X  %s", emu->dtl2000.base_addr,
-             emu->dtl2000_spec ? emu->dtl2000_spec : "");
-    add_card(st, emu->mageco.oricon ? "ORICON" : "Mageco MIDI", emu->has_mageco, "$%04X  %s",
-             emu->mageco.base_addr, emu->mageco_spec ? emu->mageco_spec : "");
-    add_card(st, "SP0256", emu->has_sp0256, "$%04X  %s", emu->sp0256.base_addr,
-             base_name(emu->sp0256_rom_path));
-    add_card(st, "MEA8000", emu->has_mea8000, "$%04X  formants", emu->mea8000.base_addr);
-    add_card(st, "ULA-NG", ula_ng_active(&emu->ula_ng), "$0340  déverrouillée");
-    add_card(st, "Hôte (hostfs)", emu->hostfs.mounted, "%s", emu->hostfs.mount_path);
+    for (int i = 0; i < cards_count() && st->cards < IOM_CARDS; i++) {
+        const card_desc_t* d = cards_get(i);
+        const card_choice_t* c = &m->cards_orig.card[i];
+        iom_card_t* k = &st->card[st->cards++];
+        snprintf(k->name, sizeof(k->name), "%s", d->name);
+        k->present = c->on;
+        k->detail[0] = '\0';
+        if (!c->on) continue;
+        unsigned addr = d->io_param >= 0 ? (unsigned)strtoul(c->value[d->io_param], NULL, 16) : d->io_base;
+        const char* main_v = d->enable_param >= 0 ? c->value[d->enable_param] : "";
+        if (addr) snprintf(k->detail, sizeof(k->detail), "$%04X  %s", addr, base_name(main_v));
+        else snprintf(k->detail, sizeof(k->detail), "%s", base_name(main_v));
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -291,6 +288,15 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         return false;
     case IOM_ACT_RESUME:
         return true;
+    case IOM_ACT_CARDS_APPLY: {
+        /* Cold restart: the loop stops, main() relaunches the process with
+         * these options (cards_exec). */
+        cards_argv_free(emu->restart_argv);
+        emu->restart_argv = cards_build_argv(&emu->iomenu.cards, emu->argc, emu->argv, NULL);
+        emu->running = false;
+        msg(emu, false, "Redémarrage avec les nouvelles cartes…");
+        return true;
+    }
     case IOM_ACT_DISK_INSERT:
         r = media_disk_insert(emu, a->target, a->path);
         if (r == MEDIA_OK) msg(emu, false, "Lecteur %c : %s", 'A' + a->target, base_name(a->path));
@@ -399,7 +405,7 @@ static bool is_managed(const char* line) {
     while (n > 0 && isspace((unsigned char)line[n - 1])) n--;
     for (int i = 0; managed_keys[i]; i++)
         if (strlen(managed_keys[i]) == n && strncmp(line, managed_keys[i], n) == 0) return true;
-    return false;
+    return cards_cfg_key(line, n);   /* carte.<id> and <id>.<parameter> */
 }
 
 bool iomenu_config_save(emulator_t* emu, const char* path) {
@@ -429,10 +435,15 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
                "# Relu au lancement (sauf --headless / --no-config) ; la ligne de\n"
                "# commande reste prioritaire. Les lignes inconnues sont conservées.\n", out);
     free(keep);
-    const bool jas = emu->has_jasmin, md = emu->has_microdisc;
-    fprintf(out, "interface_disque=%s\n", jas ? "jasmin" : md ? "microdisc" : "aucune");
-    if (jas && emu->jasmin_rom_path) fprintf(out, "rom_disque=%s\n", emu->jasmin_rom_path);
-    else if (md && emu->diskrom_path) fprintf(out, "rom_disque=%s\n", emu->diskrom_path);
+    /* Cards: the menu choice (cards page), as carte.* keys; the legacy
+     * interface_disque / rom_disque keys are still read at startup. */
+    if (emu->iomenu.open) {
+        cards_cfg_write(&emu->iomenu.cards, out);
+    } else {   /* menu never opened: the running machine's cards */
+        cards_state_t cur;
+        cards_state_from(&cur, emu, emu->argc, emu->argv);
+        cards_cfg_write(&cur, out);
+    }
     for (int d = 0; d < 4; d++) {
         if (d < emu_disk_max_drives(emu) && emu->disks[d] && emu->disk_paths[d])
             fprintf(out, "%c=%s\n", 'a' + d, emu->disk_paths[d]);
