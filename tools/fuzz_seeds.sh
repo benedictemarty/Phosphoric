@@ -13,7 +13,7 @@ set -eu
 OUT=$1
 TBIN=$2
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-mkdir -p "$OUT/disk" "$OUT/tap" "$OUT/ost" "$OUT/smf" "$OUT/sym" "$OUT/cfg" "$OUT/http"
+mkdir -p "$OUT/disk" "$OUT/tap" "$OUT/ost" "$OUT/smf" "$OUT/sym" "$OUT/cfg" "$OUT/http" "$OUT/tapenat"
 
 python3 - "$OUT" <<'PY'
 import os, struct, sys
@@ -26,6 +26,10 @@ def tap(start, data, autorun=0x80, kind=0x80, name=b"FUZZ"):
                                      start >> 8, start & 0xFF, 0]) + name + b"\x00"
     return h + data
 open(os.path.join(out, "tap", "code.tap"), "wb").write(tap(0x5000, bytes(range(64))))
+# Cassette pour le chargement natif : octet 0 = modèle (1 : Atmos, 0 : Oric-1).
+open(os.path.join(out, "tapenat", "atmos.tap"), "wb").write(b"\x01" + tap(0x5000, bytes(range(64))))
+open(os.path.join(out, "tapenat", "oric1_deux_blocs.tap"), "wb").write(
+    b"\x00" + tap(0x0501, b"\x0a\x05\x0a\x00\xba\x00\x00\x00", 0, 0x00, b"B") + tap(0x6000, b"\x60" * 8))
 open(os.path.join(out, "tap", "deux_blocs.tap"), "wb").write(
     tap(0x0501, b"\x0a\x05\x0a\x00\xba\x00\x00\x00", 0, 0x00, b"B") + tap(0x6000, b"\x60" * 8))
 
