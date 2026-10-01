@@ -30,6 +30,7 @@
 #include "io/microdisc.h"
 #include "io/acia6551.h"
 #include "io/loci.h"
+#include "io/loci_internal.h"   /* loci_dsk_open / loci_dsk_close */
 #include "storage/disk.h"
 #include "storage/sedoric.h"
 #ifndef _WIN32
@@ -619,11 +620,25 @@ static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
         sink_err(s, "load-disk: usage `load-disk <drive A-D> <path>`");
         return;
     }
-    if (!emu_has_disk_iface(emu)) {
-        sink_err(s, "load-disk: no disk controller (need --disk-rom or --jasmin-rom)");
+    int drv = control_drive_index(drive_s);
+    if (emu_loci_disks(emu)) {   /* LOCI only: its drive, like the F1 menu */
+        if (drv < 0) { sink_err(s, "load-disk: drive must be A-D"); return; }
+        if (!loci_dsk_open(&emu->loci, (uint8_t)drv, path)) {
+            sink_err(s, "load-disk: cannot read `%s`", path);
+            return;
+        }
+        log_info("control: disk %c <- %s (LOCI)", 'A' + drv, path);
+        sink_ok(s, "drive=%c loci=1 size=%u tracks=%u sectors=%u", 'A' + drv,
+                emu->loci.dsk_image_size[drv], emu->loci.dsk_tracks[drv],
+                emu->loci.dsk_sectors[drv]);
         return;
     }
-    int drv = control_drive_index(drive_s);
+    if (!emu_has_disk_iface(emu)) {
+        sink_err(s, emu->has_loci && emu->loci_external
+                 ? "load-disk: LOCI firmware mounts its own images (MENU button)"
+                 : "load-disk: no disk controller (need --disk-rom or --jasmin-rom)");
+        return;
+    }
     if (drv < 0) { sink_err(s, "load-disk: drive must be A-D"); return; }
 
     sedoric_disk_t* nd = sedoric_load(path);
@@ -643,8 +658,19 @@ static void cmd_load_disk(emulator_t* emu, control_sink_t* s,
 /* eject-disk <drive> — empty drive A-D, writing back first if dirty. */
 static void cmd_eject_disk(emulator_t* emu, control_sink_t* s,
                            const char* drive_s) {
-    if (!emu_has_disk_iface(emu)) { sink_err(s, "eject-disk: no disk controller"); return; }
     int drv = control_drive_index(drive_s);
+    if (emu_loci_disks(emu)) {
+        if (drv < 0) { sink_err(s, "eject-disk: usage `eject-disk <drive A-D>`"); return; }
+        if (!emu->loci.dsk_host_path[drv][0] && !emu->loci.dsk_image[drv]) {
+            sink_err(s, "eject-disk: drive %c already empty", 'A' + drv);
+            return;
+        }
+        loci_dsk_close(&emu->loci, (uint8_t)drv);   /* writes the modified sectors */
+        log_info("control: drive %c ejected (LOCI)", 'A' + drv);
+        sink_ok(s, "drive=%c ejected loci=1", 'A' + drv);
+        return;
+    }
+    if (!emu_has_disk_iface(emu)) { sink_err(s, "eject-disk: no disk controller"); return; }
     if (drv < 0) { sink_err(s, "eject-disk: usage `eject-disk <drive A-D>`"); return; }
     if (!emu->disks[drv]) { sink_err(s, "eject-disk: drive %c already empty", 'A' + drv); return; }
 

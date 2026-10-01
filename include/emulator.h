@@ -49,7 +49,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.10.0"
+#define EMU_VERSION "2.10.1"
 
 /**
  * @brief ORIC machine model
@@ -657,6 +657,14 @@ static inline void emu_disk_set_protected(emulator_t* emu, int drv, bool on) {
 
 static inline bool emu_has_disk_iface(const emulator_t* emu) {
     return emu->has_microdisc || emu->has_jasmin;
+}
+
+/* A floppy goes to the card present: Microdisc or Jasmin, otherwise LOCI
+ * (internal model) — they never coexist. With a co-simulated or real LOCI
+ * (loci_external), its firmware mounts its images: nothing from the host.
+ * Rule shared by the F1 menu and --control / HTTP API. */
+static inline bool emu_loci_disks(const emulator_t* emu) {
+    return emu->has_loci && !emu->loci_external && !emu_has_disk_iface(emu);
 }
 
 #endif /* EMULATOR_H */

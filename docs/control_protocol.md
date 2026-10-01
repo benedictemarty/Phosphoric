@@ -75,7 +75,7 @@ and are also exposed through the HTTP API. Replies follow the `OK …`/`ERR …`
 | `load-mem <file> <addr>` | | loads a file into memory at `addr` |
 | `state-save <file>` | | saves the state (`.ost`) |
 | `state-load <file>` | | restores a state (`.ost`) |
-| `load-disk <drive A-D> <path>` | requires `--disk-rom` | hot-inserts a disk |
+| `load-disk <drive A-D> <path>` | disk card: `--disk-rom`, `--jasmin-rom` or `--loci` | hot-inserts a disk into the card present (Microdisc, Jasmin or LOCI drive — reply `loci=1`; co-simulated or real LOCI: refused, its firmware mounts its images) |
 | `eject-disk <drive A-D>` | | ejects the disk from a drive |
 | `eject-tape` | — | ejects the tape |
 | `loci-button [long]` | default = short press | triggers the LOCI Action button (`--loci`) |

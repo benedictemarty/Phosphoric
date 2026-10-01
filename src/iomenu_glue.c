@@ -46,12 +46,8 @@ bool media_disk_writeback(emulator_t* emu, int drv) {
     return ok;
 }
 
-/* A floppy goes to the card present: Microdisc or Jasmin, otherwise LOCI
- * (internal model) — they never coexist. With a co-simulated or real LOCI,
- * its firmware mounts its images: nothing from the host. */
-static bool loci_disks(const emulator_t* emu) {
-    return emu->has_loci && !emu->loci_external && !emu_has_disk_iface(emu);
-}
+/* Routing rule: emu_loci_disks() (emulator.h). */
+#define loci_disks emu_loci_disks
 
 media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
     if (loci_disks(emu)) {
