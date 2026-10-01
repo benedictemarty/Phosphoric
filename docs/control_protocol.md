@@ -75,7 +75,7 @@ et exposées aussi via l'API HTTP. Les réponses suivent la convention `OK …`/
 | `load-mem <file> <addr>` | | charge un fichier en mémoire à `addr` |
 | `state-save <file>` | | sauvegarde l'état (`.ost`) |
 | `state-load <file>` | | restaure un état (`.ost`) |
-| `load-disk <drive A-D> <path>` | nécessite `--disk-rom` | insère une disquette à chaud |
+| `load-disk <drive A-D> <path>` | carte disque : `--disk-rom`, `--jasmin-rom` ou `--loci` | insère une disquette à chaud dans la carte présente (Microdisc, Jasmin ou lecteur LOCI — réponse `loci=1` ; LOCI co-simulé ou réel : refus, son firmware monte ses images) |
 | `eject-disk <drive A-D>` | | éjecte la disquette d'un lecteur |
 | `eject-tape` | — | éjecte la cassette |
 | `loci-button [long]` | défaut = appui court | déclenche le bouton Action LOCI (`--loci`) |

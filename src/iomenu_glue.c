@@ -46,12 +46,8 @@ bool media_disk_writeback(emulator_t* emu, int drv) {
     return ok;
 }
 
-/* Une disquette va à la carte présente : Microdisc ou Jasmin, sinon LOCI
- * (modèle interne) — elles ne coexistent jamais. Avec un LOCI co-simulé ou
- * réel, c'est son firmware qui monte ses images : rien depuis l'hôte. */
-static bool loci_disks(const emulator_t* emu) {
-    return emu->has_loci && !emu->loci_external && !emu_has_disk_iface(emu);
-}
+/* Règle de routage : emu_loci_disks() (emulator.h). */
+#define loci_disks emu_loci_disks
 
 media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
     if (loci_disks(emu)) {

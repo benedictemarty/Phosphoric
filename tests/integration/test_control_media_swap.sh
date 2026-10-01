@@ -92,5 +92,29 @@ echo "$OUT" | grep -q "^ERR eject-tape: no tape loaded" \
     && ok "eject-tape with no tape is rejected" \
     || ko "eject-tape with no tape not rejected"
 
+# --- scenario 4: LOCI seul — la disquette va au lecteur LOCI (2.10.0) -----
+LOCIROM="roms/loci/locirom"
+if [ -f "$LOCIROM" ]; then
+    OUT="$(printf '%b' 'load-disk B '"$DSK"'\neject-disk B\neject-disk B\nquit\n' \
+        | timeout 10 "$EMU" -r "$LOCIROM" --loci --control 2>/dev/null)"
+    echo "$OUT" | grep -q "^OK drive=B loci=1 size=[0-9]" \
+        && ok "LOCI only: load-disk B mounts in the LOCI drive" \
+        || ko "LOCI only: load-disk B not routed to LOCI"
+    echo "$OUT" | grep -q "^OK drive=B ejected loci=1" \
+        && ok "LOCI only: eject-disk B empties the LOCI drive" \
+        || ko "LOCI only: eject-disk B failed"
+    echo "$OUT" | grep -q "^ERR eject-disk: drive B already empty" \
+        && ok "LOCI only: ejecting an empty drive is rejected" \
+        || ko "LOCI only: double eject not rejected"
+else
+    echo "  [SKIP] $LOCIROM absent (LOCI scenario)"
+fi
+
+# --- scenario 5: aucune carte disque — rien n'est monté --------------------
+OUT="$(printf '%b' 'load-disk A '"$DSK"'\nquit\n' | timeout 10 "$EMU" -r "$ROM" --control 2>/dev/null)"
+echo "$OUT" | grep -q "^ERR load-disk: no disk controller" \
+    && ok "no disk card: load-disk is refused" \
+    || ko "no disk card: load-disk not refused"
+
 echo "=== result: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

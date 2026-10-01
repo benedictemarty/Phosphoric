@@ -49,7 +49,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.10.0"
+#define EMU_VERSION "2.10.1"
 
 /**
  * @brief ORIC machine model
@@ -658,6 +658,14 @@ static inline void emu_disk_set_protected(emulator_t* emu, int drv, bool on) {
 
 static inline bool emu_has_disk_iface(const emulator_t* emu) {
     return emu->has_microdisc || emu->has_jasmin;
+}
+
+/* Une disquette va à la carte présente : Microdisc ou Jasmin, sinon LOCI
+ * (modèle interne) — elles ne coexistent jamais. Avec un LOCI co-simulé ou
+ * réel (loci_external), son firmware monte ses images : rien depuis l'hôte.
+ * Règle commune au menu F1 et à --control / API HTTP. */
+static inline bool emu_loci_disks(const emulator_t* emu) {
+    return emu->has_loci && !emu->loci_external && !emu_has_disk_iface(emu);
 }
 
 #endif /* EMULATOR_H */
