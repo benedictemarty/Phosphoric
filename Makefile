@@ -296,7 +296,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -613,6 +613,11 @@ TEST_SERIAL_SRCS = tests/unit/test_serial.c src/io/acia6551.c \
                    src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/utils/logging.c
 
 $(eval $(call UNIT_TEST,test-serial,test_serial,$(TEST_SERIAL_SRCS),-lutil,))
+
+# Transports série (modem AT, tcp, pty, port COM, smf) : hermétique (127.0.0.1, openpty).
+TEST_SERIAL_BACKENDS_SRCS = tests/unit/test_serial_backends.c src/io/acia6551.c \
+                   src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/utils/logging.c
+$(eval $(call UNIT_TEST,test-serial-backends,test_serial_backends,$(TEST_SERIAL_BACKENDS_SRCS),-lutil,))
 
 TEST_PIA6821_SRCS = tests/unit/test_pia6821.c src/io/pia6821.c
 
