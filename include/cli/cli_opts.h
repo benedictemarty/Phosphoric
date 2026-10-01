@@ -61,6 +61,7 @@ typedef struct {
     bool gdb_enabled;
     int gdb_port;
     const char* gdb_bind;        /* NULL → 127.0.0.1          */
+    bool no_config_cards;        /* cartes : ignorer phosphoric.cfg (relance du menu F1) */
     const char* movie_record_file;
     const char* movie_replay_file;
     const char* keyboard_layout;

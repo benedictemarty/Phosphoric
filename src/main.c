@@ -1866,7 +1866,9 @@ static bool sdl_iomenu_key(emulator_t* emu, SDL_Keycode sym) {
     case SDLK_PAGEUP:    k = IOM_KEY_PGUP;  break;
     case SDLK_PAGEDOWN:  k = IOM_KEY_PGDN;  break;
     default:
-        if (sym > ' ' && sym < 0x7F) k = (int)sym;   /* lettre : saut à l'initiale */
+        /* lettre : saut à l'initiale ; pendant une saisie, le texte arrive par
+         * SDL_TEXTINPUT (majuscules, symboles). */
+        if (sym > ' ' && sym < 0x7F && !emu->iomenu.editing) k = (int)sym;
         break;
     }
     if (k) {
@@ -2155,7 +2157,10 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 break;
             case SDL_TEXTINPUT:
                 /* Symbolic mode: character -> ORIC key mapping */
-                if (emu->iomenu.open) break;   /* menu F1 : pas de frappe vers l'Oric */
+                if (emu->iomenu.open) {        /* menu F1 : pas de frappe vers l'Oric */
+                    if (emu->iomenu.editing) iom_text(&emu->iomenu, event.text.text);
+                    break;
+                }
                 oric_keyboard_handle_sdl_event(&emu->keyboard, &event);
                 break;
             /* Sprint 34al: bridge SDL mouse → LOCI mou_xram. */
@@ -2668,16 +2673,22 @@ static int main_setup_process(emulator_t* emu, cli_opts_t* cfg) {
 /* Menu des périphériques (F1) : phosphoric.cfg complète la ligne de commande
  * (qui reste prioritaire), puis le menu et ses informations d'affichage.
  * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
-static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
+/* Fichier de configuration à lire, ou NULL. PHOSPHORIC_NO_CONFIG (exporté par
+ * `make tests`) : même effet que --no-config, pour qu'un phosphoric.cfg
+ * personnel n'influence aucun test. En headless (tests, automates), seule une
+ * configuration explicitement demandée est lue. */
+static const char* config_to_read(cli_opts_t* cfg) {
     const bool explicit_cfg = cfg->config_path != NULL;
-    /* PHOSPHORIC_NO_CONFIG (exporté par `make tests`) : même effet que
-     * --no-config, pour qu'un phosphoric.cfg personnel n'influence aucun test. */
     const char* nocfg = getenv("PHOSPHORIC_NO_CONFIG");
     if (nocfg && *nocfg && strcmp(nocfg, "0") != 0 && !explicit_cfg) cfg->no_config = true;
-    /* En headless (tests, automates), seule une configuration explicitement
-     * demandée est lue : un phosphoric.cfg personnel ne change pas les runs. */
-    if (!cfg->no_config && (explicit_cfg || !cfg->headless)) {
-        const char* path = explicit_cfg ? cfg->config_path : IOMENU_CONFIG_DEFAULT;
+    if (cfg->no_config || (!explicit_cfg && cfg->headless)) return NULL;
+    return explicit_cfg ? cfg->config_path : IOMENU_CONFIG_DEFAULT;
+}
+
+static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
+    const bool explicit_cfg = cfg->config_path != NULL;
+    const char* path = config_to_read(cfg);
+    if (path) {
         int n = iomenu_config_load(path, cfg);
         if (n >= 0) {
             log_info("Configuration : %s (%d réglage(s) appliqué(s))", path, n);
@@ -4405,6 +4416,21 @@ int main(int argc, char* argv[]) {
     cli_opts_init(cfg);
     int parse_rc = cli_parse_args(argc, argv, cfg, &emu);
     if (parse_rc >= 0) return parse_rc;
+    emu.argc = argc;
+    emu.argv = argv;
+    /* Cartes d'extension mémorisées dans phosphoric.cfg (carte.*) : ajoutées
+     * pour celles que la ligne de commande ne mentionne pas. Les chaînes
+     * restent allouées (cli_opts_t les garde jusqu'à la fin). */
+    const char* card_cfg = config_to_read(cfg);
+    if (card_cfg && !cfg->no_config_cards) {
+        int xc = 0;
+        char** xa = cards_config_argv(card_cfg, argc, argv, &xc);
+        if (xa) {
+            log_info("Cartes reprises de %s (%d option(s))", card_cfg, xc - 1);
+            parse_rc = cli_parse_more(xc, xa, cfg, &emu);
+            if (parse_rc >= 0) return parse_rc;
+        }
+    }
     g_loci_menu_at = cfg->loci_menu_at;
 
     int rc;
@@ -4427,5 +4453,8 @@ int main(int argc, char* argv[]) {
     /* Run emulation */
     emulator_run(&emu);
 
-    return main_finish(&emu, cfg, &gdb_stub);
+    rc = main_finish(&emu, cfg, &gdb_stub);
+    /* Menu F1 → cartes changées : redémarrage à froid (nouveau processus). */
+    if (emu.restart_argv) cards_exec(emu.restart_argv);
+    return rc;
 }

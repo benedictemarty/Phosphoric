@@ -15,5 +15,7 @@
  * Retour : -1 = continuer ; sinon code de sortie du programme (0 après
  * --help ou option inconnue, 1 sur argument invalide). */
 int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu);
+/* Seconde analyse sur une autre liste d'options (getopt remis à zéro). */
+int cli_parse_more(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu);
 
 #endif /* CLI_ARGS_H */

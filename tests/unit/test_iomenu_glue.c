@@ -243,17 +243,29 @@ TEST(test_config_roundtrip_and_precedence) {
     ASSERT_TRUE(strstr(buf, "a=un.dsk\n") != NULL);
     ASSERT_TRUE(strstr(buf, "d=deux.dsk\n") != NULL);
     ASSERT_TRUE(strstr(buf, "protection_d=oui\n") != NULL);
-    ASSERT_TRUE(strstr(buf, "rom_disque=roms/microdis.rom\n") != NULL);
+    /* Cartes : clés carte.* (le Microdisc présent, sa ROM par défaut). */
+    ASSERT_TRUE(strstr(buf, "carte.microdisc=oui\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "carte.jasmin=non\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "rom_disque=") == NULL);
+    {   /* Relues au lancement en options de carte (ligne de commande vide). */
+        char* argv0[] = { "oric1-emu", NULL };
+        int xc = 0;
+        char** xa = cards_config_argv("t.cfg", 1, argv0, &xc);
+        ASSERT_TRUE(xa != NULL && xc == 3);
+        ASSERT_STR(xa[1], "--disk-rom");
+        ASSERT_STR(xa[2], "roms/microdis.rom");
+        cards_argv_free(xa);
+    }
 
     /* Relecture : complète une ligne de commande vide… */
     cli_opts_t cfg;
     cli_opts_init(&cfg);
     int applied = iomenu_config_load("t.cfg", &cfg);
-    ASSERT_TRUE(applied >= 7);
+    ASSERT_TRUE(applied >= 6);
     ASSERT_STR(cfg.disk_files[0], "un.dsk");
     ASSERT_STR(cfg.disk_files[3], "deux.dsk");
     ASSERT_TRUE(cfg.disk_protect[3]);
-    ASSERT_STR(cfg.disk_rom_file, "roms/microdis.rom");
+    ASSERT_TRUE(cfg.disk_rom_file == NULL);              /* les cartes passent par cards.c */
     ASSERT_STR(cfg.tape_file, "hello.tap");
     ASSERT_STR(cfg.keyboard_layout, "azerty");
     ASSERT_STR(cfg.joystick_mode, "keys");

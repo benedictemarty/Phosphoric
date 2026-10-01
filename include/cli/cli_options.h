@@ -47,7 +47,7 @@ enum {
     OPT_SERIAL_TCP_BACKPRESSURE, OPT_LOCI_IRQ_LATENCY,
     OPT_SP0256_ROM, OPT_SP0256_ADDR,
     OPT_MEA8000, OPT_MEA8000_ADDR,
-    OPT_CONFIG, OPT_NO_CONFIG, OPT_MENU_SCREENSHOT, OPT_GDB_BIND
+    OPT_CONFIG, OPT_NO_CONFIG, OPT_MENU_SCREENSHOT, OPT_GDB_BIND, OPT_NO_CONFIG_CARDS
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -88,6 +88,7 @@ static const struct option long_options[] = {
     {"video-quality",       required_argument, 0, OPT_VIDEO_QUALITY},
     {"gdb",                 optional_argument, 0, OPT_GDB},
     {"gdb-bind",            required_argument, 0, OPT_GDB_BIND},
+    {"no-config-cards",     no_argument,       0, OPT_NO_CONFIG_CARDS},
     {"record",              required_argument, 0, OPT_RECORD},
     {"replay",              required_argument, 0, OPT_REPLAY},
     {"keyboard",            required_argument, 0, 'k'},

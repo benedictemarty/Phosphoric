@@ -152,6 +152,8 @@ void cli_print_usage(const char* program_name) {
     printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
     printf("      --gdb[=PORT]           GDB remote stub on TCP PORT (default 1234).\n");
     printf("                             Waits for `gdb` ... `target remote :PORT`.\n");
+    printf("      --no-config-cards      Ignore the expansion cards of phosphoric.cfg (used\n");
+    printf("                             when the F1 menu restarts with other cards)\n");
     printf("      --gdb-bind ADDR        Bind address for the GDB stub (default 127.0.0.1;\n");
     printf("                             0.0.0.0 = every interface, no authentication)\n");
     printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");

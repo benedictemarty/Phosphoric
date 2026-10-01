@@ -21,6 +21,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "cards.h"
 
 #define IOM_COLS   80
 #define IOM_ROWS   40
@@ -43,6 +44,7 @@ typedef struct {
 enum {
     IOM_ITEM_DRIVE0 = 0,       /* 0-3 : lecteurs A-D */
     IOM_ITEM_TAPE = 4,
+    IOM_ITEM_CARDS,            /* panneau des cartes : Entrée → page des cartes */
     IOM_ITEM_SNAPSHOT,
     IOM_ITEM_PRINTER,
     IOM_ITEM_JOYSTICK,
@@ -77,7 +79,8 @@ typedef enum {
     IOM_ACT_TAPE_FAST_TOGGLE,  /* chargement rapide ↔ vitesse réelle */
     IOM_ACT_RESET,
     IOM_ACT_SAVE_CONFIG,
-    IOM_ACT_RESUME
+    IOM_ACT_RESUME,
+    IOM_ACT_CARDS_APPLY        /* relancer avec les cartes choisies (m->cards) */
 } iom_act_type_t;
 
 #define IOM_PATH_MAX 256
@@ -90,7 +93,7 @@ typedef struct {
 } iom_action_t;
 
 /* ── État affiché, rempli par l'appelant (iomenu_glue.c) ───────────────── */
-#define IOM_CARDS 10
+#define IOM_CARDS 12
 
 typedef struct {
     char name[24];             /* « Microdisc », « ACIA 6551 »… */
@@ -126,7 +129,12 @@ typedef struct {
 #define IOM_FILES          256
 #define IOM_BROWSE_VISIBLE 20
 
-typedef enum { IOM_FILE_DSK, IOM_FILE_TAP, IOM_FILE_OST } iom_file_kind_t;
+typedef enum { IOM_FILE_DSK, IOM_FILE_TAP, IOM_FILE_OST, IOM_FILE_ANY } iom_file_kind_t;
+
+/* Pages du menu. */
+enum { IOM_PAGE_MAIN = 0, IOM_PAGE_CARDS, IOM_PAGE_CARD };
+/* browse_target du sélecteur ouvert pour un paramètre de carte. */
+#define IOM_BROWSE_CARD 100
 
 typedef struct {
     char name[IOM_NAME_MAX];
@@ -149,6 +157,17 @@ typedef struct {
     const char* const* dirs;   /* dossiers explorés (NULL : dossiers par défaut) */
     char message[96];
     bool message_error;
+    /* Cartes d'extension : liste dynamique du registre (cards.h), choix en
+     * cours d'édition, appliqué par relance (IOM_ACT_CARDS_APPLY). */
+    int  page;                 /* IOM_PAGE_* */
+    int  card_cursor;          /* page des cartes : carte, puis 2 boutons */
+    int  card_sel;             /* page d'une carte : carte affichée */
+    int  param_cursor;         /* page d'une carte : 0 = présence, 1.. = paramètres */
+    cards_state_t cards;       /* choix en cours */
+    cards_state_t cards_orig;  /* machine en cours (Annuler) */
+    bool cards_readonly;       /* version web : pas de relance */
+    bool editing;              /* saisie d'un paramètre texte */
+    char edit[CARD_VALUE_MAX];
 } iom_menu_t;
 
 void iom_init(iom_menu_t* m);
@@ -160,6 +179,8 @@ void iom_set_dirs(iom_menu_t* m, const char* const* dirs);
 /* Traite une touche ; renvoie l'action à exécuter (IOM_ACT_NONE sinon). */
 iom_action_t iom_key(iom_menu_t* m, int key);
 void iom_message(iom_menu_t* m, bool error, const char* text);
+/* Texte tapé (UTF-8) pendant la saisie d'un paramètre de carte (m->editing). */
+void iom_text(iom_menu_t* m, const char* utf8);
 
 /* Dessin : grille, puis RGB888 IOM_WIDTH × IOM_HEIGHT. */
 void iom_draw(const iom_menu_t* m, iom_surface_t* s);

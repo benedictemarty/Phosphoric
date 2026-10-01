@@ -285,6 +285,74 @@ TEST(test_closed_menu_ignores_keys) {
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
 }
 
+/* Cartes d'extension : page de la liste (dynamique, depuis le registre), page
+ * d'une carte, bascule exclusive, saisie contrôlée, sélecteur de fichiers,
+ * Appliquer. */
+TEST(test_cards_pages) {
+    iom_init(&m);
+    fill_state(&m);
+    cards_state_defaults(&m.cards);
+    const int md = cards_find("microdisc"), lo = cards_find("loci"), ac = cards_find("acia");
+    cards_set_on(&m.cards, md, true);
+    m.cards_orig = m.cards;
+    iom_open(&m);
+    m.cursor = IOM_ITEM_CARDS;
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_EQ(m.page, IOM_PAGE_CARDS);
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "Microdisc") && surf_has(&surf, "MEA8000"));
+    ASSERT_TRUE(surf_has(&surf, "Appliquer et red"));
+    /* Rien changé : Appliquer ne relance pas. */
+    m.card_cursor = cards_count();
+    ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
+    /* LOCI : page de la carte, présence → le Microdisc s'en va (même groupe). */
+    m.card_cursor = lo;
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_EQ(m.page, IOM_PAGE_CARD);
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(m.cards.card[lo].on && !m.cards.card[md].on);
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "LOCI") && surf_has(&surf, "menu LOCI"));
+    /* Paramètre fichier : sélecteur ; « Aucun fichier » vide la valeur. */
+    m.param_cursor = 2;                                   /* image SD */
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(m.browsing && m.browse_target == IOM_BROWSE_CARD);
+    m.browse_cursor = 0;
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[1][0] == '\0');
+    iom_key(&m, IOM_KEY_ESC);
+    ASSERT_EQ(m.page, IOM_PAGE_CARDS);
+    /* ACIA : saisie de l'adresse, contrôlée (0300-03FF). */
+    m.card_cursor = ac;
+    iom_key(&m, IOM_KEY_ENTER);
+    iom_key(&m, IOM_KEY_ENTER);                           /* présente */
+    m.param_cursor = 2;                                   /* adresse */
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(m.editing);
+    for (int i = 0; i < 4; i++) iom_key(&m, IOM_KEY_DEL);
+    iom_text(&m, "1234");
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(m.editing && m.message_error);            /* refusée */
+    for (int i = 0; i < 4; i++) iom_key(&m, IOM_KEY_DEL);
+    iom_text(&m, "0380");
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(!m.editing);
+    ASSERT_TRUE(strcmp(m.cards.card[ac].value[1], "0380") == 0);
+    iom_key(&m, IOM_KEY_DEL);                             /* Suppr : valeur par défaut */
+    ASSERT_TRUE(strcmp(m.cards.card[ac].value[1], "031C") == 0);
+    iom_key(&m, IOM_KEY_ESC);
+    /* Appliquer : action de relance ; en lecture seule (web), refus. */
+    m.card_cursor = cards_count();
+    m.cards_readonly = true;
+    ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
+    m.cards_readonly = false;
+    ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_CARDS_APPLY);
+    /* Annuler : retour à la machine en cours. */
+    m.card_cursor = cards_count() + 1;
+    iom_key(&m, IOM_KEY_ENTER);
+    ASSERT_TRUE(m.cards.card[md].on && !m.cards.card[lo].on);
+}
+
 int main(void) {
     printf("\n═══════════════════════════════════════════════════════\n");
     printf("  Menu des périphériques E/S (F1)\n");
@@ -303,6 +371,7 @@ int main(void) {
     RUN(test_utf8_special_glyphs);
     RUN(test_rasterize_colors);
     RUN(test_closed_menu_ignores_keys);
+    RUN(test_cards_pages);
     rm_media();
     printf("\n  Results: %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
