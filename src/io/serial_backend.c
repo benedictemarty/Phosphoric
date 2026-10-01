@@ -682,8 +682,12 @@ static bool modem_send(serial_backend_t* self, uint8_t byte)
     if (self->state.modem.mode == 1) {
         /* +++ escape detection with guard time.
          * Hayes spec: silence → +++ → silence → command mode.
-         * Guard satisfied if last_data_time >= 50 (baud-rate polls). */
-        if (byte == '+' && self->state.modem.last_data_time >= 50) {
+         * The guard (last_data_time >= 50 baud-rate polls) is required
+         * before the FIRST '+' only: the next two follow it directly. The
+         * counter is reset after each '+', so checking it for every '+'
+         * made a "+++" typed in one go never escape. */
+        if (byte == '+' && (self->state.modem.plus_count > 0 ||
+                            self->state.modem.last_data_time >= 50)) {
             self->state.modem.plus_count++;
             if (self->state.modem.plus_count >= 3) {
                 self->state.modem.mode = 0;
