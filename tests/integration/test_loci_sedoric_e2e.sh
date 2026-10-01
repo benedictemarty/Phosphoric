@@ -70,6 +70,12 @@ if [ ! -x "$EMU" ]; then
     exit 0
 fi
 
+# Navigation LOCI : depuis 65d0942 (liste des périphériques, comme le vrai
+# LOCI), le sélecteur ouvre d'abord la liste « 0: Internal storage /
+# 1: image SD / 2+: clés USB de l'hôte ». D'où « \p2 \p2\d\p1 \p2\d\p1  » :
+# ouvrir, bas + ESPACE (périphérique 1 = l'image SD), bas + ESPACE (premier
+# fichier après « /.. »). Avant, les scénarios LOCI restaient bloqués au menu.
+
 # ── Scenario 34b0 — DOS Version (option 6 + drive A) ───────────────
 echo ""
 echo "Scenario 34b0 — DOS Version (option 6 + drive A)"
@@ -82,7 +88,7 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
         --dump-ram-at 59000000:"$NAT_BIN" >/dev/null 2>&1
     "$EMU" -r "$LOCI_ROM" --loci --loci-sdimg "$SDIMG" \
         --headless -c 60000000 \
-        --type-keys '15000000:\p3a\p2 \p2 \p2\e\p9\p2\p36\p3a' \
+        --type-keys '15000000:\p3a\p2 \p2\d\p1 \p2\d\p1 \e\p9\p2\p36\p3a' \
         --dump-ram-at 59000000:"$LOC_BIN" >/dev/null 2>&1
     # Screen text $BB80 length 1120 (40x28)
     cmp_region "34b0 screen text (DOS version)" "$NAT_BIN" "$LOC_BIN" $((0xBB80)) 1120
@@ -101,7 +107,7 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
         --dump-ram-at 54000000:"$NAT_BIN" >/dev/null 2>&1
     "$EMU" -r "$LOCI_ROM" --loci --loci-sdimg "$SDIMG" \
         --headless -c 60000000 \
-        --type-keys '15000000:\p3a\p2 \p2 \p2\e\p9\p9\p2\n\p3DIR\n' \
+        --type-keys '15000000:\p3a\p2 \p2\d\p1 \p2\d\p1 \e\p9\p9\p2\n\p3DIR\n' \
         --dump-ram-at 59000000:"$LOC_BIN" >/dev/null 2>&1
     cmp_region "34b1 screen text (DIR)" "$NAT_BIN" "$LOC_BIN" $((0xBB80)) 1120
     rm -f "$NAT_BIN" "$LOC_BIN"
@@ -119,7 +125,7 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
         --dump-ram-at 79000000:"$NAT_BIN" >/dev/null 2>&1
     "$EMU" -r "$LOCI_ROM" --loci --loci-sdimg "$SDIMG" \
         --headless -c 120000000 \
-        --type-keys '15000000:\p3a\p2 \p2 \p2\e\p9\p9\p2\n\p310PRINT"HELLO LOCI"\n\p9\p3SAVE"TEST.BAS"\n\p9\p9\p9NEW\n\p3LOAD"TEST.BAS"\n\p9\p9\p9LIST\n\p9' \
+        --type-keys '15000000:\p3a\p2 \p2\d\p1 \p2\d\p1 \e\p9\p9\p2\n\p310PRINT"HELLO LOCI"\n\p9\p3SAVE"TEST.BAS"\n\p9\p9\p9NEW\n\p3LOAD"TEST.BAS"\n\p9\p9\p9LIST\n\p9' \
         --dump-ram-at 119000000:"$LOC_BIN" >/dev/null 2>&1
     # BASIC text area $0500 length 0x40 (line link + tokens + chaîne + term)
     cmp_region "34b2 BASIC text \$0500-\$053F" "$NAT_BIN" "$LOC_BIN" $((0x500)) $((0x40))
@@ -138,7 +144,7 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
         --dump-ram-at 79000000:"$NAT_BIN" >/dev/null 2>&1
     "$EMU" -r "$LOCI_ROM" --loci --loci-sdimg "$SDIMG" \
         --headless -c 130000000 \
-        --type-keys '15000000:\p3a\p2 \p2 \p2\e\p9\p9\p2\n\p310PRINT"HELLO LOCI"\n\p9\p3SAVE"TEST.BAS"\n\p9\p9\p9NEW\n\p3LOAD"TEST.BAS"\n\p9\p9\p9RUN\n\p9\p3' \
+        --type-keys '15000000:\p3a\p2 \p2\d\p1 \p2\d\p1 \e\p9\p9\p2\n\p310PRINT"HELLO LOCI"\n\p9\p3SAVE"TEST.BAS"\n\p9\p9\p9NEW\n\p3LOAD"TEST.BAS"\n\p9\p9\p9RUN\n\p9\p3' \
         --dump-ram-at 129000000:"$LOC_BIN" >/dev/null 2>&1
     cmp_region "34b2b screen text after RUN" "$NAT_BIN" "$LOC_BIN" $((0xBB80)) 1120
     rm -f "$NAT_BIN" "$LOC_BIN"
@@ -155,12 +161,13 @@ if skip_if_missing "$NATIVE_ROM" "$LOCI_ROM" "$SDIMG" "$TAP"; then
     "$EMU" -r "$NATIVE_ROM" -t "$TAP" -f \
         --headless -c 30000000 \
         --dump-ram-at 29000000:"$NAT_BIN" >/dev/null 2>&1
-    # LOCI: TUI → 't' tape drive → SPACE picker → SPACE select (007.TAP
-    # is the alphabetically-first TAP on loci_demo.img) → ESC = MIA_BOOT
+    # LOCI: TUI → 't' tape drive → SPACE picker (device list since
+    # v1.40 / 65d0942, like the real LOCI) → DOWN SPACE device 1 (the SD
+    # image) → DOWN SPACE 007.TAP (first TAP after "/..") → ESC = MIA_BOOT
     # → ROM swap BASIC 1.1 → CLOAD"" → auto-run.
     "$EMU" -r "$LOCI_ROM" --loci --loci-sdimg "$SDIMG" \
         --headless -c 60000000 \
-        --type-keys '15000000:\p3t\p2 \p2 \p2\e\p9\p1CLOAD""\n\p9\p9\p9' \
+        --type-keys '15000000:\p3t\p2 \p2\d\p1 \p2\d\p1 \e\p9\p1CLOAD""\n\p9\p9\p9' \
         --dump-ram-at 55000000:"$LOC_BIN" >/dev/null 2>&1
     cmp_region "34b5 screen text (007 intro)" "$NAT_BIN" "$LOC_BIN" $((0xBB80)) 1120
     rm -f "$NAT_BIN" "$LOC_BIN"
