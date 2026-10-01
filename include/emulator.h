@@ -49,7 +49,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.9.2"
+#define EMU_VERSION "2.10.0"
 
 /**
  * @brief ORIC machine model
@@ -475,6 +475,8 @@ typedef struct emulator_s {
      * Only active when --loci is passed; reserves MIA bus at $03A0-$03BF. */
     loci_t loci;
     bool   has_loci;
+    bool   loci_external;   /* --loci-emu / --loci-hw : le firmware (co-simulé ou réel)
+                               gère ses disquettes, pas le modèle interne */
     /* Sprint 34c hardening — owns the overlay ROM buffer that LOCI's
      * rom_swap callback installs into memory.overlay_rom (was a static
      * inside main.c with a comment acknowledging "acceptable leak at

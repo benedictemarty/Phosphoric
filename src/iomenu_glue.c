@@ -15,6 +15,7 @@
 #include "io/joystick.h"
 #include "io/printer.h"
 #include "io/loci_emu.h"
+#include "io/loci_internal.h"   /* loci_dsk_open / loci_dsk_close */
 #include "utils/logging.h"
 #include "utils/oscompat.h"   /* mkdir portable (MinGW : un seul argument) */
 #include <ctype.h>
@@ -45,7 +46,20 @@ bool media_disk_writeback(emulator_t* emu, int drv) {
     return ok;
 }
 
+/* Une disquette va à la carte présente : Microdisc ou Jasmin, sinon LOCI
+ * (modèle interne) — elles ne coexistent jamais. Avec un LOCI co-simulé ou
+ * réel, c'est son firmware qui monte ses images : rien depuis l'hôte. */
+static bool loci_disks(const emulator_t* emu) {
+    return emu->has_loci && !emu->loci_external && !emu_has_disk_iface(emu);
+}
+
 media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
+    if (loci_disks(emu)) {
+        if (drv < 0 || drv >= 4) return MEDIA_BAD_DRIVE;
+        if (!loci_dsk_open(&emu->loci, (uint8_t)drv, path)) return MEDIA_LOAD_FAILED;
+        log_info("OSD: disque %c <- %s (LOCI)", 'A' + drv, path);
+        return MEDIA_OK;
+    }
     if (!emu_has_disk_iface(emu)) return MEDIA_NO_IFACE;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     sedoric_disk_t* nd = sedoric_load(path);
@@ -63,6 +77,12 @@ media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
 }
 
 media_result_t media_disk_eject(emulator_t* emu, int drv) {
+    if (loci_disks(emu)) {
+        if (drv < 0 || drv >= 4) return MEDIA_BAD_DRIVE;
+        if (!emu->loci.dsk_host_path[drv][0] && !emu->loci.dsk_image[drv]) return MEDIA_EMPTY;
+        loci_dsk_close(&emu->loci, (uint8_t)drv);   /* écrit les secteurs modifiés */
+        return MEDIA_OK;
+    }
     if (!emu_has_disk_iface(emu)) return MEDIA_NO_IFACE;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     if (!emu->disks[drv]) return MEDIA_EMPTY;
@@ -135,10 +155,19 @@ void iomenu_refresh(emulator_t* emu) {
     iom_state_t* st = &emu->iomenu.st;
     st->version = EMU_VERSION;
     st->machine = emu->model == ORIC_MODEL_ATMOS ? "Oric Atmos" : "Oric-1";
-    st->disk_iface = emu->has_jasmin ? "Jasmin" : emu->has_microdisc ? "Microdisc" : NULL;
-    st->drives = emu_has_disk_iface(emu) ? emu_disk_max_drives(emu) : 0;
+    st->disk_iface = emu->has_jasmin ? "Jasmin" : emu->has_microdisc ? "Microdisc"
+                   : loci_disks(emu) ? "LOCI" : NULL;
+    st->drives = emu_has_disk_iface(emu) ? emu_disk_max_drives(emu) : loci_disks(emu) ? 4 : 0;
+    st->no_drive_protect = loci_disks(emu);
     if (st->drives > 4) st->drives = 4;
     for (int d = 0; d < 4; d++) {
+        if (loci_disks(emu)) {
+            const char* p = emu->loci.dsk_host_path[d];
+            snprintf(st->drive[d], sizeof(st->drive[d]), "%s",
+                     p[0] ? base_name(p) : emu->loci.dsk_image[d] ? "(image)" : "");
+            st->drive_ro[d] = false;
+            continue;
+        }
         const bool in = d < st->drives && emu->disks[d];
         snprintf(st->drive[d], sizeof(st->drive[d]), "%s",
                  in ? (emu->disk_paths[d] ? base_name(emu->disk_paths[d]) : "(image)") : "");
@@ -269,6 +298,8 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
     case IOM_ACT_DISK_INSERT:
         r = media_disk_insert(emu, a->target, a->path);
         if (r == MEDIA_OK) msg(emu, false, "Lecteur %c : %s", 'A' + a->target, base_name(a->path));
+        else if (r == MEDIA_NO_IFACE && emu->has_loci && emu->loci_external)
+            msg(emu, true, "LOCI : les disquettes se montent depuis son menu (bouton MENU, F8)");
         else msg(emu, true, "Lecteur %c : %s", 'A' + a->target, media_error(r));
         return false;
     case IOM_ACT_DISK_EJECT:
@@ -277,6 +308,10 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         else msg(emu, r == MEDIA_EMPTY ? false : true, "Lecteur %c : %s", 'A' + a->target, media_error(r));
         return false;
     case IOM_ACT_DISK_PROTECT: {
+        if (loci_disks(emu)) {
+            msg(emu, true, "Lecteur %c : pas de protection par lecteur sur LOCI", 'A' + a->target);
+            return false;
+        }
         const bool on = !emu_disk_protected(emu, a->target);
         emu_disk_set_protected(emu, a->target, on);
         msg(emu, false, "Lecteur %c : %s", 'A' + a->target, on ? "protégé en écriture" : "écriture autorisée");

@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include "iomenu_glue.h"
 #include "storage/sedoric.h"
+#include "io/loci_internal.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -130,6 +131,34 @@ TEST(test_disk_path_ownership) {
     ASSERT_TRUE(emu->tape_path_owned);
     ASSERT_EQ(media_tape_eject(emu), MEDIA_OK);
     ASSERT_TRUE(emu->tape_path == NULL && !emu->tape_path_owned);
+}
+
+/* Une disquette va à la carte présente : avec LOCI (modèle interne) et sans
+ * Microdisc/Jasmin, le menu F1 la monte dans le lecteur LOCI. Avec un LOCI
+ * co-simulé ou réel, c'est son firmware qui monte ses images : refus. */
+TEST(test_disk_routed_to_loci) {
+    machine_new();
+    emu->has_microdisc = false;
+    ASSERT_TRUE(loci_init(&emu->loci));
+    emu->has_loci = true;
+    iom_action_t a = { IOM_ACT_DISK_INSERT, 1, "un.dsk" };
+    iomenu_apply(emu, &a);
+    ASSERT_STR(emu->loci.dsk_host_path[1], "un.dsk");
+    ASSERT_TRUE(emu->loci.dsk_image[1] != NULL);
+    ASSERT_TRUE(emu->disks[1] == NULL);                 /* rien côté Microdisc */
+    iomenu_refresh(emu);
+    ASSERT_STR(emu->iomenu.st.disk_iface, "LOCI");
+    ASSERT_EQ(emu->iomenu.st.drives, 4);
+    ASSERT_STR(emu->iomenu.st.drive[1], "un.dsk");
+    ASSERT_TRUE(emu->iomenu.st.no_drive_protect);         /* pas de colonne « écriture » */
+    ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_OK);
+    ASSERT_TRUE(emu->loci.dsk_host_path[1][0] == '\0');
+    ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_EMPTY);
+    emu->loci_external = true;                          /* --loci-emu / --loci-hw */
+    ASSERT_EQ(media_disk_insert(emu, 0, "un.dsk"), MEDIA_NO_IFACE);
+    iomenu_refresh(emu);
+    ASSERT_EQ(emu->iomenu.st.drives, 0);
+    loci_cleanup(&emu->loci);
 }
 
 TEST(test_apply_protect_follows_selected_drive) {
@@ -281,6 +310,7 @@ int main(void) {
     RUN(test_no_disk_interface);
     RUN(test_eject_and_errors);
     RUN(test_disk_path_ownership);
+    RUN(test_disk_routed_to_loci);
     RUN(test_apply_protect_follows_selected_drive);
     RUN(test_apply_toggles);
     RUN(test_apply_printer_cycle);

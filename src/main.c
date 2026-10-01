@@ -3147,6 +3147,7 @@ static int main_setup_loci(emulator_t* emu, cli_opts_t* cfg) {
         if (cfg->loci_emu_cdc_dev) loci_emu_set_cdc_device(cfg->loci_emu_cdc_dev);
         if (cfg->loci_emu_flash) loci_emu_set_flash_image(cfg->loci_emu_flash);
         loci_emu_start(cfg->loci_emu_path);
+        emu->loci_external = true;
     }
     /* --loci-hw : la VRAIE cartouche derrière le pont USB (loci-usb). Le backend
      * loci_hw.c partage l'interface loci_emu.h : même chemin io_bus/memory, mais
@@ -3158,6 +3159,7 @@ static int main_setup_loci(emulator_t* emu, cli_opts_t* cfg) {
             return 1;
         }
         if (loci_emu_start(cfg->loci_hw_dev) != 0) return 1;
+        emu->loci_external = true;
     }
 
     /* Enable LOCI peripheral (--loci) */
