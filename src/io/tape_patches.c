@@ -101,7 +101,9 @@ do_patch:
          * read the sync bytes (ROM confirmation loop needs them).
          * The ORIC ROM reads 9 header bytes after $24, which
          * correctly parses start/end addresses from the raw TAP. */
-        if (emu->tapebuf[emu->tapeoffs] != 0x16) {
+        /* Position checked BEFORE reading: an exhausted tape (tapeoffs ==
+         * tapelen) used to read one byte past the buffer. */
+        if (emu->tapeoffs >= emu->tapelen || emu->tapebuf[emu->tapeoffs] != 0x16) {
             while (emu->tapeoffs < emu->tapelen &&
                    emu->tapebuf[emu->tapeoffs] != 0x16) {
                 emu->tapeoffs++;
@@ -147,7 +149,7 @@ do_patch:
         if (emu->tape_syncstack >= 0) {
             emu->cpu.SP = (uint8_t)emu->tape_syncstack;
             emu->tape_syncstack = -1;
-            if (emu->tapebuf[emu->tapeoffs] != 0x16) {
+            if (emu->tapeoffs >= emu->tapelen || emu->tapebuf[emu->tapeoffs] != 0x16) {
                 while (emu->tapeoffs < emu->tapelen &&
                        emu->tapebuf[emu->tapeoffs] != 0x16)
                     emu->tapeoffs++;

@@ -113,8 +113,9 @@ make fuzz               # libFuzzer (clang), FUZZ_TIME seconds per target
   it fails. The only exemption is `third_party/stb_image_write.h` (left intact),
   for signed shifts, in its own compilation unit.
 - `tests/fuzz/` holds one `LLVMFuzzerTestOneInput()` per file reader: `.dsk`
-  (`sedoric_load` + FDC reads), `.tap`, `.ost`, `.mid`, symbol files and
-  `phosphoric.cfg`. `make fuzz` runs them with libFuzzer; `make test-fuzz-replay`
+  (`sedoric_load` + FDC reads), `.tap` (block reader, and the native CLOAD path
+  through the patched ROM: `tapenat`), `.ost`, `.mid`, symbol files,
+  `phosphoric.cfg` and HTTP API requests. `make fuzz` runs them with libFuzzer; `make test-fuzz-replay`
   (part of `make tests`, gcc) replays the synthetic seeds (`tools/fuzz_seeds.sh`)
   and `tests/fuzz/regressions/<target>/`.
 - When `make fuzz` finds an input, it is written to `build/fuzz/crashes/`: fix the

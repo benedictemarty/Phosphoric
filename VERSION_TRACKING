@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.11.1
+Current Version: 2.11.2
 Release Date: 2026-09-30
-Status: Stable (**Liaison série testée, échappement +++ corrigé — 2.11.1**. test-serial-backends 12 (modem AT, tcp, pty, COM sur openpty, smf, DTL 2000 ; hermétique) ; serial_backend.c 81 % ; +++ tapé d'affilée repasse en mode commande (la garde n'est exigée qu'avant le 1er +).)
+Status: Stable (**Chargement cassette natif fuzzé — 2.11.2**. tape_patches.c lisait un octet après la cassette épuisée (synchro et reprise de synchro), pouvant inventer une synchro ; corrigé. Cible de fuzzing tapenat (1,24 M exécutions), test-tape-patches 3.)
+Status (prev): Stable (**Liaison série testée, échappement +++ corrigé — 2.11.1**. test-serial-backends 12 (modem AT, tcp, pty, COM sur openpty, smf, DTL 2000 ; hermétique) ; serial_backend.c 81 % ; +++ tapé d'affilée repasse en mode commande (la garde n'est exigée qu'avant le 1er +).)
 Status (prev): Stable (**Cartes d'extension modifiables dans le menu F1 — 2.11.0**. Registre de cartes (cards.c, liste dynamique, rôles et paramètres expliqués, groupes exclusifs, conflits d'E/S) ; page des cartes et page par carte (fichiers, saisie, oui/non) ; « Appliquer et redémarrer » = relance du processus (execv) avec options reconstruites ; carte.* dans phosphoric.cfg, --no-config-cards ; web en lecture seule. test-cards 7, test-iomenu 14, test-iomenu-glue 10.)
 Status (prev): Stable (**--control / API HTTP : disquette vers la carte présente — 2.10.1**. load-disk/eject-disk routés vers le lecteur LOCI comme le menu F1 (emu_loci_disks partagée) ; test-control 13.)
 Status (prev): Stable (**Menu F1 : disquette vers la carte présente, LOCI compris — 2.10.0**. Microdisc, Jasmin ou LOCI (loci_dsk_open, comme son propre menu) ; LOCI co-simulé/réel : le firmware monte ses images (message) ; pas de colonne de protection sur LOCI. test_disk_routed_to_loci.)
