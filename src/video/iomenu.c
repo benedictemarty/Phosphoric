@@ -294,7 +294,7 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
         else if (c > IOM_ITEM_RESET) c--;
         break;
     case IOM_KEY_RIGHT:
-        if (c <= IOM_ITEM_TAPE) m->sub = 1;
+        if (c <= IOM_ITEM_TAPE && !(is_drive(c) && m->st.no_drive_protect)) m->sub = 1;
         else if (c == IOM_ITEM_JOYSTICK) c = IOM_ITEM_KEYBOARD;
         else if (c >= IOM_ITEM_RESET && c < IOM_ITEM_RESUME) c++;
         break;
@@ -311,7 +311,7 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
                 iom_message(m, true, m->st.disk_iface
                     ? "Lecteur absent sur cette interface"
                     : "Pas d'interface disque (--disk-rom ou --jasmin-rom au lancement)");
-            } else if (m->sub == 1) {
+            } else if (m->sub == 1 && !m->st.no_drive_protect) {
                 a.type = IOM_ACT_DISK_PROTECT;
                 a.target = c - IOM_ITEM_DRIVE0;
             } else {
@@ -408,7 +408,7 @@ static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
         const int row = 7 + 2 * d;
         const bool on = !m->browsing && m->cursor == IOM_ITEM_DRIVE0 + d;
         item_bar(s, row, 4, 72, on && m->sub == 0);
-        if (on && m->sub == 1) item_bar(s, row, 57, 19, true);
+        if (on && m->sub == 1 && !st->no_drive_protect) item_bar(s, row, 57, 19, true);
         const row_attrs_t ra = attrs_for(on && m->sub == 0), rp = attrs_for(on && m->sub == 1);
         snprintf(buf, sizeof(buf), "%c", 'A' + d);
         iom_puts(s, row, 6, buf, ra.acc, -1);
@@ -418,6 +418,7 @@ static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
         }
         if (st->drive[d][0]) iom_puts(s, row, 9, st->drive[d], ra.base, 46);
         else iom_puts(s, row, 9, "— vide —", ra.dim, -1);
+        if (st->no_drive_protect) continue;
         if (st->drive_ro[d]) {
             s_putc(s, row, 59, IOM_LOCK, rp.err);
             iom_puts(s, row, 61, "protégée", rp.dim, -1);

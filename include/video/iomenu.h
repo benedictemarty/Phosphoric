@@ -104,7 +104,8 @@ typedef enum { IOM_JOY_NONE = 0, IOM_JOY_KEYS, IOM_JOY_GAMEPAD } iom_joy_t;
 typedef struct {
     const char* version;       /* « 2.4.0 » */
     const char* machine;       /* « Oric Atmos », « Oric-1 » */
-    const char* disk_iface;    /* « Microdisc », « Jasmin »; NULL: no drive */
+    const char* disk_iface;    /* « Microdisc », « Jasmin », « LOCI »; NULL: no drive */
+    bool no_drive_protect;     /* the interface has no per-drive write-protect (LOCI) */
     int  drives;               /* usable drives (0 without interface) */
     char drive[4][IOM_NAME_MAX];   /* "": empty */
     bool drive_ro[4];

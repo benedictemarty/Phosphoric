@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.9.2** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.10.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -593,7 +593,11 @@ the Oric's input/output devices while the machine is **paused** (sound muted):
 
 - **Floppies A–D** — insert (file browser over `disks/`, `tapes/`, `snapshots/`,
   `demos/ula-ng/`, current dir), eject (Del), write-protect tab per drive
-  (→ column). Needs a disk interface (`--disk-rom` / `--jasmin-rom`).
+  (→ column). The floppy goes to the disk card present: Microdisc (`--disk-rom`),
+  Jasmin (`--jasmin-rom`) or **LOCI** (`--loci`: mounted in the LOCI drive, like its own
+  menu does; no per-drive write-protect there) — they never coexist. With a co-simulated
+  or real LOCI (`--loci-emu`, `--loci-hw`), its firmware mounts its images (MENU button).
+  No disk card: nothing is mounted.
 - **Tape** — insert, eject, rewind.
 - **Snapshots** — save `snapshots/etatNNNN.ost` or resume one.
 - **Printer** — off → text (`impression.txt`, LPRINT/LLIST) → MCP-40 plotter
@@ -873,4 +877,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.9.2 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
+Phosphoric v2.10.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
