@@ -295,7 +295,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-http-parse test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -720,6 +720,9 @@ $(eval $(call UNIT_TEST,test-control-queue,test_control_queue,tests/unit/test_co
 test-httpapi: $(TARGET)
 	@bash tests/integration/test_http_api_e2e.sh
 
+# HTTP parsing/routing without network or emulator (includes http_api.c, every build).
+$(eval $(call UNIT_TEST,test-http-parse,test_http_parse,tests/unit/test_http_parse.c src/utils/logging.c,,))
+
 # Sprint 36c -- machine-code autorun / rechain-gate regression.
 # Requires the emulator + tools to be built (uses bin2tap/bas2tap).
 test-mc-autorun:
@@ -810,7 +813,7 @@ test-iomenu-cli: $(TARGET)
 #                           clang + libFuzzer + ASan/UBSan, FUZZ_TIME s per target;
 #                           failing inputs in $(FUZZ_DIR)/crashes/ (copy them into
 #                           tests/fuzz/regressions/<target>/ once fixed).
-FUZZ_TARGETS ?= disk tap ost smf sym cfg
+FUZZ_TARGETS ?= disk tap ost smf sym cfg http
 FUZZ_SRCS_disk = tests/fuzz/fuzz_disk.c $(DISK_SRCS) src/utils/logging.c
 FUZZ_SRCS_tap  = tests/fuzz/fuzz_tap.c src/storage/tap.c src/utils/logging.c
 FUZZ_SRCS_ost  = tests/fuzz/fuzz_ost.c $(filter-out tests/unit/test_savestate.c,$(TEST_SAVESTATE_SRCS))
@@ -818,6 +821,7 @@ FUZZ_SRCS_smf  = tests/fuzz/fuzz_smf.c src/io/smf.c
 FUZZ_SRCS_sym  = tests/fuzz/fuzz_sym.c src/utils/symbols.c src/utils/logging.c
 FUZZ_SRCS_cfg  = tests/fuzz/fuzz_cfg.c $(LIB_SOURCES)
 FUZZ_LIBS_cfg  = $(LOCI_EMUL_LIB)
+FUZZ_SRCS_http = tests/fuzz/fuzz_http.c src/utils/logging.c
 FUZZ_OPTS_cfg  = -detect_leaks=0
 FUZZ_DIR   = build/fuzz
 FUZZ_TIME ?= 60
@@ -925,7 +929,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -1021,6 +1025,10 @@ coverage:
 	@echo ""
 	@echo "Generating coverage report..."
 	@$(MAKE) coverage-report COVERAGE=1 --no-print-directory
+
+# Coverage floor (ratchet): run after `make coverage`.
+coverage-check:
+	@sh tools/coverage_check.sh $(BUILD) tests/coverage_floor.txt
 
 coverage-report:
 	@echo "═══════════════════════════════════════════════════════"

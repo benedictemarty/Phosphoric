@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
@@ -63,13 +64,14 @@ static void send_all(int fd, const char* buf, size_t len) {
     }
 }
 
-/* In-place URL-decode (%XX and '+' → space). */
+/* In-place URL-decode (%XX and '+' → space). A '%' not followed by two hex
+ * digits is kept as is (it used to decode garbage, shifting a negative). */
 static void url_decode(char* s) {
     char* w = s;
     for (char* r = s; *r; r++) {
         if (*r == '+') {
             *w++ = ' ';
-        } else if (*r == '%' && r[1] && r[2]) {
+        } else if (*r == '%' && isxdigit((unsigned char)r[1]) && isxdigit((unsigned char)r[2])) {
             int hi = r[1], lo = r[2];
             #define HEXV(c) ((c) <= '9' ? (c) - '0' : ((c) | 0x20) - 'a' + 10)
             *w++ = (char)((HEXV(hi) << 4) | HEXV(lo));
@@ -519,6 +521,44 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
 
 /* ─── per-connection handling ──────────────────────────────────────── */
 
+/* Content-Length announced in the header block, clamped to @p max so that
+ * `body_start + content_len` can never wrap (a hostile value such as
+ * 2^64-1 used to). */
+static size_t content_length(const char* req, size_t max) {
+    const char* cl = strcasestr(req, "Content-Length:");
+    if (!cl) return 0;
+    unsigned long v = strtoul(cl + 15, NULL, 10);
+    return v > max ? max : (size_t)v;
+}
+
+/* Parse and route one request held in @p req (@p total bytes, NUL-terminated,
+ * header terminator present). Answers errors/help itself; returns true with
+ * @p cmd filled when a --control command must run. Pure function of its input
+ * (no socket read): this is what tests/fuzz/fuzz_http.c exercises. */
+static bool handle_request(http_api_server_t* srv, int fd, char* req, size_t total,
+                           char* cmd, size_t cmdsz) {
+    char* h = strstr(req, "\r\n\r\n");
+    if (!h) return false;
+    size_t body_start = (size_t)(h - req) + 4;
+    size_t content_len = content_length(req, total - body_start);
+
+    /* Parse the request line: METHOD SP PATH SP HTTP/x. */
+    char method[16] = {0}, target[2048] = {0};
+    if (sscanf(req, "%15s %2047s", method, target) != 2) {
+        http_send(fd, 400, "Bad Request",
+            "{\"ok\":false,\"error\":\"malformed request line\"}\n");
+        return false;
+    }
+    char* query = strchr(target, '?');
+    if (query) { *query = '\0'; query++; }
+
+    /* NUL-terminate the body at Content-Length (never past what was read). */
+    char* body = req + body_start;
+    body[content_len] = '\0';
+
+    return route(srv, fd, method, target, query, body, cmd, cmdsz);
+}
+
 static void handle_client(http_api_server_t* srv, int fd) {
     char req[HTTP_REQ_MAX];
     size_t total = 0;
@@ -535,8 +575,7 @@ static void handle_client(http_api_server_t* srv, int fd) {
             if (h) {
                 header_end = (size_t)(h - req);
                 body_start = header_end + 4;
-                const char* cl = strcasestr(req, "Content-Length:");
-                if (cl) content_len = (size_t)strtoul(cl + 15, NULL, 10);
+                content_len = content_length(req, sizeof(req));
             }
         }
         if (header_end && total >= body_start + content_len) break;
@@ -544,23 +583,9 @@ static void handle_client(http_api_server_t* srv, int fd) {
     }
     if (!header_end) return;
 
-    /* Parse the request line: METHOD SP PATH SP HTTP/x. */
-    char method[16] = {0}, target[2048] = {0};
-    if (sscanf(req, "%15s %2047s", method, target) != 2) {
-        http_send(fd, 400, "Bad Request",
-            "{\"ok\":false,\"error\":\"malformed request line\"}\n");
-        return;
-    }
-    char* query = strchr(target, '?');
-    if (query) { *query = '\0'; query++; }
-
-    /* NUL-terminate the body at Content-Length. */
-    char* body = req + body_start;
-    if (body_start + content_len < sizeof(req)) body[content_len] = '\0';
-
     char cmd[HTTP_CMD_MAX];
-    if (!route(srv, fd, method, target, query, body, cmd, sizeof(cmd)))
-        return;   /* route() already answered (help/error) */
+    if (!handle_request(srv, fd, req, total, cmd, sizeof(cmd)))
+        return;   /* already answered (help/error) */
 
     /* Execute on the emulator thread via the queue; blocks until drained. */
     char* reply = NULL;

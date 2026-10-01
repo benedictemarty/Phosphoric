@@ -1,0 +1,4 @@
+# Couverture minimale des lignes de src/*.c (tools/coverage_check.sh, job CI coverage).
+# Mesurée sur le runner CI, sans ROM (les tests qui en dépendent sautent) ; ne
+# se relève qu'à la main, dans le commit des tests qui la font monter.
+0
