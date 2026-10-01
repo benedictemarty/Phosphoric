@@ -15,6 +15,7 @@
 #define _DARWIN_C_SOURCE  /* macOS: expose INADDR_LOOPBACK + extensions BSD */
 #endif
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include "cpu/cpu6502.h"
@@ -22,7 +23,9 @@
 #include "memory/memory.h"
 #include "io/via6522.h"
 
-#define ROM_PATH "/home/bmarty/oricutron/roms/basic10.rom"
+/* ROM BASIC 1.0 du dépôt (non versionnée, droits tiers) ; ORIC_ROM la remplace.
+ * Absente : toute la suite saute (CI, clone neuf). */
+static const char* ROM_PATH = "roms/basic10.rom";
 #define ROM_EXPECTED_SIZE 16384
 
 static int tests_passed = 0;
@@ -351,7 +354,15 @@ TEST(test_performance_1m_cycles) {
 /* ═══════════════════════════════════════════════════════════════════ */
 
 int main(void) {
+    const char* env_rom = getenv("ORIC_ROM");
+    if (env_rom && *env_rom) ROM_PATH = env_rom;
     printf("Running ROM Compatibility tests...\n");
+    FILE* probe = fopen(ROM_PATH, "rb");
+    if (!probe) {
+        printf("SKIP: ROM not found: %s\n", ROM_PATH);
+        return 0;
+    }
+    fclose(probe);
     printf("ROM: %s\n", ROM_PATH);
     printf("═══════════════════════════════════════════════════════════════\n");
 
