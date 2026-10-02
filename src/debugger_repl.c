@@ -4,12 +4,12 @@
  * @brief Debugger: command loop (REPL)
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/debugger.c (sprint F du plan d'architecture), sans changement
- * de comportement ; symboles partagés : include/debugger_internal.h.
+ * Split out of src/debugger.c (sprint F of the architecture plan), with no
+ * behaviour change; shared symbols: include/debugger_internal.h.
  *
- * Une commande = un gestionnaire repl_*() ; k_repl_cmds[] associe chaque nom
- * (et ses alias) à son gestionnaire. Ajouter une commande : écrire le
- * gestionnaire, puis l'inscrire dans la table.
+ * One command = one repl_*() handler; k_repl_cmds[] maps each name (and its
+ * aliases) to its handler. To add a command: write the handler, then register
+ * it in the table.
  */
 
 #define _DEFAULT_SOURCE
@@ -33,8 +33,8 @@
 /*  REPL COMMAND LOOP                                                  */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* Arguments d'une ligne de commande : les trois premiers mots, la ligne
- * entière (les commandes à plus de deux arguments la relisent) et le contexte. */
+/* Arguments of a command line: the first three words, the whole line (commands
+ * with more than two arguments re-read it) and the context. */
 typedef struct {
     debugger_t* dbg;
     emulator_t* emu;
@@ -700,7 +700,7 @@ static void repl_loci(repl_args_t* ra) {
     dbg_show_loci_state(emu);
 }
 
-/* ── INSPECTION ÉLARGIE (US 5) ──────────────────── */
+/* ── BROADER INSPECTION (US 5) ─────────────────── */
 static void repl_video(repl_args_t* ra) {
     emulator_t* emu = ra->emu;
     dbg_show_video_state(emu);
@@ -1014,7 +1014,7 @@ static void repl_unknown(repl_args_t* ra) {
     printf("  Unknown command: '%s'. Type 'h' for help.\n", cmd);
 }
 
-/* Table de dispatch : un nom (ou alias) → son gestionnaire. */
+/* Dispatch table: a name (or alias) → its handler. */
 static const struct {
     const char* name;
     void (*fn)(repl_args_t* ra);

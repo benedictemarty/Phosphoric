@@ -5,26 +5,26 @@
 > `file:line` references verified or marked "approx.". This document is
 > deliberately **critical**: it lists what works, but above all the debt.
 
-> **Bilan 2026-10-02 (2.12.0)** — plan d'amélioration (sprints A à F) mené :
-> - **§ 2.1** `main()` : 2 043 → 32 lignes (2.3.0, sprint C) ; options dans
->   `cli_opts_t` / `cli_parse_args()`, 14 étapes `main_setup_*` ; `main.c` reste le
->   fichier d'assemblage (≈ 4 460 l), mais découpé en étapes nommées.
-> - **§ 2.3** contrat `io_device_t` : `tick` + `present_off`, ordre explicite
->   `io_bus_tick_order[]` (2.4.0, sprint D, ADR 0003) ; sections `.ost` par
->   périphérique pour ULA-NG, Mageco, DTL 2000, Jasmin, SP0256, MEA8000 (LOCI et
->   transports série : non sérialisables, § 2.2 inchangé).
-> - **§ 2.4** monolithes secondaires : `control.c` 1 352 → 261 l + `control_util.c`
->   et `control_cmd_{mem,debug,media}.c` ; `debugger.c` 2 395 → 637 l +
->   `debugger_{view,mem,asm,repl}.c` (2.12.0, sprint F). Déplacement mécanique,
->   prouvé par `cli_golden` (116 lignes de commande, 0 écart) et la suite complète.
->   `process_repl_line()` (≈ 850 l, une seule fonction) découpé en 2.12.3 : 40
->   gestionnaires `repl_*()` et une table de 53 noms ; sortie identique sur un script
->   REPL couvrant toutes les commandes.
-> - **§ 4** sécurité des serveurs réseau : auditée (2.8.0-2.9.0) — API HTTP sur
->   127.0.0.1 par défaut, stub GDB passé sur 127.0.0.1, analyse HTTP fuzzée ; cast et
->   modem en écoute exposés par nécessité. Sanitizers ASan/UBSan et fuzzing de tous
->   les lecteurs de fichiers en CI.
-> - Décisions consignées dans `docs/adr/` (0001-0005).
+> **Review 2026-10-02 (2.12.0)** — improvement plan (sprints A to F) carried out:
+> - **§ 2.1** `main()`: 2,043 → 32 lines (2.3.0, sprint C); options in
+>   `cli_opts_t` / `cli_parse_args()`, 14 `main_setup_*` steps; `main.c` remains the
+>   assembly file (≈ 4,460 l), but split into named steps.
+> - **§ 2.3** `io_device_t` contract: `tick` + `present_off`, explicit order
+>   `io_bus_tick_order[]` (2.4.0, sprint D, ADR 0003); per-device `.ost` sections
+>   for ULA-NG, Mageco, DTL 2000, Jasmin, SP0256, MEA8000 (LOCI and serial
+>   transports: not serializable, § 2.2 unchanged).
+> - **§ 2.4** secondary monoliths: `control.c` 1,352 → 261 l + `control_util.c`
+>   and `control_cmd_{mem,debug,media}.c`; `debugger.c` 2,395 → 637 l +
+>   `debugger_{view,mem,asm,repl}.c` (2.12.0, sprint F). Mechanical move, proven
+>   by `cli_golden` (116 command lines, 0 differences) and the full suite.
+>   `process_repl_line()` (≈ 850 l, a single function) split in 2.12.3: 40
+>   `repl_*()` handlers and a table of 53 names; identical output on a REPL script
+>   covering every command.
+> - **§ 4** security of the network servers: audited (2.8.0-2.9.0) — HTTP API on
+>   127.0.0.1 by default, GDB stub moved to 127.0.0.1, HTTP parsing fuzzed; cast
+>   and listening modem exposed by necessity. ASan/UBSan sanitizers and fuzzing of
+>   every file reader in CI.
+> - Decisions recorded in `docs/adr/` (0001-0005).
 
 ## 0. Verdict in one sentence
 
