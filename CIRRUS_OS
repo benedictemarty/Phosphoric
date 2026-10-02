@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos emulator; cycle-stepped machine (CPU N3 oracle-verified; VIA/ULA/PSG cycle-stepped; FDC N1+ — see docs/ACCURACY.md)
-Version: 2.12.4
-Build Status: STABLE (**dsk2hfe fuzzé, lecture hors tampon corrigée — 2.12.4**. Image tronquée → segfault (ou .hfe faux si une piste manque) ; refusée avant d'écrire. Cible de fuzzing hfe (9 cibles, 166 162 exécutions, 0 plantage), test-dsk2hfe 7.)
+Version: 2.12.5
+Build Status: STABLE (**CI : installations apt bornées et relancées — 2.12.5**. Étape MinGW 21-45 s d'habitude mais déjà 10/19/47 min ; tools/ci_apt_install.sh (tentatives bornées, 3 essais) dans linux-ci et windows-build, logique en ligne dans release.yml. test-ci-apt-install 3.)
+Build Status (prev): STABLE (**dsk2hfe fuzzé, lecture hors tampon corrigée — 2.12.4**. Image tronquée → segfault (ou .hfe faux si une piste manque) ; refusée avant d'écrire. Cible de fuzzing hfe (9 cibles, 166 162 exécutions, 0 plantage), test-dsk2hfe 7.)
 Build Status (prev): STABLE (**Débogueur : process_repl_line() découpé — 2.12.3**. 850 l → 40 gestionnaires repl_*() + table k_repl_cmds[] (53 noms) ; sortie REPL identique (script de 109 commandes, 385 lignes).)
 Build Status (prev): STABLE (**Client de test : faux échec de test-savestate-determinism corrigé — 2.12.2**. Second quit envoyé à un émulateur en train de se terminer (BrokenPipe, 1/200 sous charge) ; l'émulateur était hors de cause (valgrind propre, 10 builds rechargent l'état).)
 Build Status (prev): STABLE (**API HTTP : interblocage à l'arrêt corrigé — 2.12.1**. Boucle arrêtée (CPU bloqué, limite, signal) avec une requête en attente : join du serveur sans fin ; control_queue_shutdown() libère les producteurs avant l'arrêt du serveur (corrige aussi « SIGTERM ignoré en headless + HTTP » et un usage après libération). test-httpapi 6/6, test-control-queue 4.)
