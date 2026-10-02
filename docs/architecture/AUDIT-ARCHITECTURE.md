@@ -17,8 +17,9 @@
 >   et `control_cmd_{mem,debug,media}.c` ; `debugger.c` 2 395 → 637 l +
 >   `debugger_{view,mem,asm,repl}.c` (2.12.0, sprint F). Déplacement mécanique,
 >   prouvé par `cli_golden` (116 lignes de commande, 0 écart) et la suite complète.
->   Reste : `process_repl_line()` (≈ 850 l, une seule fonction) dans
->   `debugger_repl.c`.
+>   `process_repl_line()` (≈ 850 l, une seule fonction) découpé en 2.12.3 : 40
+>   gestionnaires `repl_*()` et une table de 53 noms ; sortie identique sur un script
+>   REPL couvrant toutes les commandes.
 > - **§ 4** sécurité des serveurs réseau : auditée (2.8.0-2.9.0) — API HTTP sur
 >   127.0.0.1 par défaut, stub GDB passé sur 127.0.0.1, analyse HTTP fuzzée ; cast et
 >   modem en écoute exposés par nécessité. Sanitizers ASan/UBSan et fuzzing de tous
