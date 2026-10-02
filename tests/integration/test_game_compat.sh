@@ -9,6 +9,10 @@
 # OricProgramsLib is NOT versioned in the Phosphoric repo — set
 # `ORIC_PROGRAMS_LIB=/path/to/lib` to override the default `$HOME/OricProgramsLib`.
 # Missing files are skipped gracefully (so CI without the lib still passes).
+# A second, shorter list runs titles from the local tapes/ folder (not
+# versioned either), so `make tests` checks some games even without the lib.
+# It has its own expected texts: a same-named file may be another game
+# (tapes/BREAKOUT.TAP is Tansoft's Super Advanced Breakout, not the lib's).
 
 set -u
 cd "$(dirname "$0")/../.." || exit 1
@@ -26,8 +30,7 @@ if [ ! -x "$EMU" ]; then
     exit 1
 fi
 if [ ! -d "$LIB" ]; then
-    echo "SKIP all (ORIC_PROGRAMS_LIB not found at $LIB)"
-    exit 0
+    echo "  (ORIC_PROGRAMS_LIB not found at $LIB: local tapes/ titles only)"
 fi
 
 # ── check : <slug> <tap_relpath> <cycles> <expected_text>
@@ -38,6 +41,7 @@ fi
 check_game() {
     local slug="$1" relpath="$2" cycles="$3" expected="$4"
     local tap="$LIB/Programs/$slug/files/$relpath"
+    case "$slug" in local:*) tap="tapes/$relpath";; esac
     if [ ! -f "$tap" ]; then
         echo "  SKIP  ${slug}  (missing: $relpath)"
         skipped=$((skipped+1))
@@ -98,6 +102,10 @@ check_game alien-attack   "ALIENATK.tap"                      25000000 "Do you w
 check_game colditz        "colditz.tap"                       25000000 "VOULEZ-VOUS LES INSTRUCTIONS"
 check_game mr-wimpy       "Mr. Wimpy (UK) (1984).tap"         25000000 "MR WIMPY"
 check_game chess-ii       "Chess II (UK) (1984).tap"          25000000 "CHESS II"
+
+# Local tapes/ titles (see the header).
+check_game local:manic-miner "MANICMINER.TAP"                    30000000 "PRESSEZ 3 FOIS RETURN"
+check_game local:super-breakout "BREAKOUT.TAP"                   25000000 "SUPER ADVANCED BREAKOUT"
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Results: $pass passed, $fail failed, $skipped skipped"
