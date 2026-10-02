@@ -35,12 +35,12 @@ const menuOpen = async p => ((await activity(p)) & 4) !== 0;
 // VIA Timer 1 ($0304/$0305): counts down every cycle while the machine runs.
 const t1 = p => p.evaluate(() => Module.ccall('web_peek', 'number', ['number'], [0x0304]) |
                               (Module.ccall('web_peek', 'number', ['number'], [0x0305]) << 8));
-// La version web avance d'une trame à chaque tour de boucle (≈ 20 ms), mais un
-// Chrome headless chargé peut n'en faire aucune pendant plusieurs centaines de
-// ms : les états attendus (menu ouvert, machine relancée…) sont donc ATTENDUS
-// jusqu'à 10 s au lieu d'être lus après un délai fixe (échec intermittent sous
-// charge). Seule « machine figée » reste une observation sur une durée fixe :
-// sous charge elle ne peut que réussir à tort, jamais échouer à tort.
+// The web build advances one frame per loop turn (≈ 20 ms), but a loaded
+// headless Chrome may run none for several hundred ms: expected states (menu
+// open, machine resumed…) are therefore WAITED FOR, up to 10 s, instead of being
+// read after a fixed delay (intermittent failure under load). Only "machine
+// frozen" remains an observation over a fixed time: under load it can only pass
+// wrongly, never fail wrongly.
 const WAIT_MS = 10000;
 async function until(p, cond) {
   const end = Date.now() + WAIT_MS;
@@ -50,11 +50,11 @@ async function until(p, cond) {
   } while (Date.now() < end);
   return false;
 }
-async function running(p) {           // Timer 1 bouge-t-il ? (jusqu'à WAIT_MS)
+async function running(p) {           // does Timer 1 move? (up to WAIT_MS)
   const a = await t1(p);
   return until(p, async () => (await t1(p)) !== a);
 }
-async function frozen(p) {            // Timer 1 immobile pendant 1 s
+async function frozen(p) {            // Timer 1 still for 1 s
   const a = await t1(p);
   for (let i = 0; i < 10; i++) {
     await p.waitForTimeout(100);

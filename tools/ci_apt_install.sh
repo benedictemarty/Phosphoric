@@ -1,18 +1,18 @@
 #!/bin/sh
 # SPDX-License-Identifier: EUPL-1.2
 #
-# ci_apt_install.sh — installe des paquets apt en CI sans rester bloqué.
+# ci_apt_install.sh — installs apt packages in CI without getting stuck.
 #
-# Usage : tools/ci_apt_install.sh PAQUET...
+# Usage: tools/ci_apt_install.sh PACKAGE...
 #
-# Le dépôt apt des runners GitHub est parfois très lent : l'étape « Install
-# MinGW-w64 » prend 21 à 45 s d'habitude, mais a déjà mis 10, 19 et 47 min
-# (et fini par réussir). Chaque tentative est donc bornée (update 4 min,
-# install 10 min, délais réseau d'apt à 30 s) et relancée jusqu'à 3 fois.
+# The apt mirror of the GitHub runners is sometimes very slow: the "Install
+# MinGW-w64" step usually takes 21 to 45 s, but has already taken 10, 19 and
+# 47 min (and eventually succeeded). Each attempt is therefore bounded (update
+# 4 min, install 10 min, apt network timeouts 30 s) and retried up to 3 times.
 #
 # Author: bmarty <bmarty@mailo.com>
 set -u
-# Délais en secondes, réglables pour le test (tests/integration/test_ci_apt_install.sh).
+# Timeouts in seconds, adjustable for the test (tests/integration/test_ci_apt_install.sh).
 T_UPDATE=${CI_APT_T_UPDATE:-240}
 T_INSTALL=${CI_APT_T_INSTALL:-600}
 PAUSE=${CI_APT_PAUSE:-15}

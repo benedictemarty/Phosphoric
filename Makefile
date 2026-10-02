@@ -857,8 +857,8 @@ $(foreach t,$(FUZZ_TARGETS),$(eval $(call FUZZ_REPLAY,$(t))))
 test-dsk2hfe: tools
 	@bash tests/integration/test_dsk2hfe.sh
 
-# Installation apt de la CI : tentative bloquée coupée puis relancée, abandon
-# après 3 essais (faux sudo, ni réseau ni droits).
+# CI apt install: a stuck attempt is cut and retried, given up after 3 tries
+# (fake sudo, no network, no privileges).
 test-ci-apt-install:
 	@sh tests/integration/test_ci_apt_install.sh
 

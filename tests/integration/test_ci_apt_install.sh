@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: EUPL-1.2
 # tests/integration/test_ci_apt_install.sh
 #
-# tools/ci_apt_install.sh sans réseau ni droits : un faux `sudo` en tête du PATH
-# simule un apt qui répond, qui reste bloqué, ou qui échoue toujours. Vérifie
-# qu'une tentative bloquée est coupée puis relancée, et l'abandon après 3 essais.
+# tools/ci_apt_install.sh without network or privileges: a fake `sudo` first in
+# PATH simulates an apt that answers, that gets stuck, or that always fails.
+# Checks that a stuck attempt is cut and retried, and the give-up after 3 tries.
 #
 # Author: bmarty <bmarty@mailo.com>
 set -u
@@ -17,7 +17,7 @@ fail=0
 ok() { echo "  PASS: $1"; pass=$((pass + 1)); }
 ko() { echo "  FAIL: $1"; fail=$((fail + 1)); }
 
-# Faux sudo : journalise l'appel ; MODE=ok | hang1 (1er install bloqué) | fail.
+# Fake sudo: logs the call; MODE=ok | hang1 (1st install stuck) | fail.
 cat > "$TMP/sudo" <<'SH'
 #!/bin/sh
 echo "$*" >> "$LOG"
@@ -31,7 +31,7 @@ esac
 SH
 chmod +x "$TMP/sudo"
 
-run() {   # run MODE → code de sortie ; journal dans $TMP/MODE.log
+run() {   # run MODE → exit code; log in $TMP/MODE.log
     LOG="$TMP/$1.log" MODE=$1 PATH="$TMP:$PATH" CI_APT_T_UPDATE=2 CI_APT_T_INSTALL=2 \
         CI_APT_PAUSE=0 sh tools/ci_apt_install.sh paquet-a paquet-b 2>/dev/null
 }
