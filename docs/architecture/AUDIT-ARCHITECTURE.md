@@ -5,6 +5,26 @@
 > Références `fichier:ligne` vérifiées ou marquées « approx. ». Ce document est
 > volontairement **critique** : il liste ce qui va, mais surtout la dette.
 
+> **Bilan 2026-10-02 (2.12.0)** — plan d'amélioration (sprints A à F) mené :
+> - **§ 2.1** `main()` : 2 043 → 32 lignes (2.3.0, sprint C) ; options dans
+>   `cli_opts_t` / `cli_parse_args()`, 14 étapes `main_setup_*` ; `main.c` reste le
+>   fichier d'assemblage (≈ 4 460 l), mais découpé en étapes nommées.
+> - **§ 2.3** contrat `io_device_t` : `tick` + `present_off`, ordre explicite
+>   `io_bus_tick_order[]` (2.4.0, sprint D, ADR 0003) ; sections `.ost` par
+>   périphérique pour ULA-NG, Mageco, DTL 2000, Jasmin, SP0256, MEA8000 (LOCI et
+>   transports série : non sérialisables, § 2.2 inchangé).
+> - **§ 2.4** monolithes secondaires : `control.c` 1 352 → 261 l + `control_util.c`
+>   et `control_cmd_{mem,debug,media}.c` ; `debugger.c` 2 395 → 637 l +
+>   `debugger_{view,mem,asm,repl}.c` (2.12.0, sprint F). Déplacement mécanique,
+>   prouvé par `cli_golden` (116 lignes de commande, 0 écart) et la suite complète.
+>   Reste : `process_repl_line()` (≈ 850 l, une seule fonction) dans
+>   `debugger_repl.c`.
+> - **§ 4** sécurité des serveurs réseau : auditée (2.8.0-2.9.0) — API HTTP sur
+>   127.0.0.1 par défaut, stub GDB passé sur 127.0.0.1, analyse HTTP fuzzée ; cast et
+>   modem en écoute exposés par nécessité. Sanitizers ASan/UBSan et fuzzing de tous
+>   les lecteurs de fichiers en CI.
+> - Décisions consignées dans `docs/adr/` (0001-0005).
+
 ## 0. Verdict en une phrase
 
 Le **cœur** de l'émulateur est proprement modularisé (couches découplées, zéro
@@ -90,7 +110,7 @@ dtl→mageco`) **diffère** de l'ordre de la table `io_bus[]`
 boucle exigerait de prouver l'équivalence byte-identique d'abord (le VIA doit
 être tické en premier — il pilote les timers).
 
-### 2.4 🟠 Monolithes secondaires
+### 2.4 🟠 Monolithes secondaires — traité en 2.12.0 (voir bilan en tête)
 `debugger.c` (2382 L) et `control.c` (1290 L) sont des blocs monolithiques
 (REPL de debug ; parseur + 30+ handlers de commandes + dispatch).
 

@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.11.2** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.12.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -743,8 +743,13 @@ src/
                  frame loop (emulator_run: named per-frame steps, see above)
   iomenu_glue.c  F1 menu ↔ machine: media operations, settings, phosphoric.cfg
   savestate.c    Save/load state (.ost format, 20 section types, exact resume point)
-  debugger.c     Interactive REPL debugger
-  control.c      IPC control mode (--control, OricForge integration)
+  debugger.c     Debugger core (breakpoints, watchpoints, access map) — plus
+                 debugger_view.c (display), debugger_mem.c (find, banks, hunt,
+                 save/load), debugger_asm.c (inline assembler), debugger_repl.c (REPL)
+  control.c      IPC control mode (--control, OricForge integration): dispatch and
+                 loop — plus control_util.c (replies, events, parsing) and
+                 control_cmd_{mem,debug,media}.c (command handlers)
+  cards.c        Expansion card registry (F1 menu, restart with other cards)
   tui.c          ncurses TUI debugger (TUI=1 build)
 
 include/         Public headers
@@ -890,4 +895,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.11.2 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
+Phosphoric v2.12.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30

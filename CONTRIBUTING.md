@@ -216,6 +216,11 @@ stdout, stderr or produced files. Add a case there for every new option.
 
 ## Architecture Notes
 
+Architecture decisions are recorded in [`docs/adr/`](docs/adr/README.md) (one file
+per decision: context, decision, consequences); the architecture audit and its
+follow-up live in `docs/architecture/AUDIT-ARCHITECTURE.md`.
+
+
 - The emulator is designed to be modular: each subsystem (CPU, memory, VIA, video, audio, storage) is independent
 - I/O routing uses callbacks: `memory_set_io_callbacks()` wires read/write to VIA and peripherals
 - SDL2 is optional: the emulator can run headless for testing
