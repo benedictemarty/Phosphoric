@@ -53,6 +53,9 @@ class PhosClient:
         self.proc = proc
         # Emulator stderr, kept to explain a crash (see diagnostic()).
         self._stderr_file = stderr_file
+        # A `quit` already went out (cmd("quit")): close() must not send a
+        # second one into a pipe the exiting emulator has already closed.
+        self._quit_sent = False
         self._reps: "queue.Queue[str]" = queue.Queue()
         self._evts: "queue.Queue[str]" = queue.Queue()
         self._evt_handlers: List[Callable[[str], None]] = []
@@ -108,14 +111,23 @@ class PhosClient:
     def close(self):
         try:
             if self.proc.poll() is None:
+                if not self._quit_sent:
+                    try:
+                        self._send_raw(b"quit\n")
+                        self._quit_sent = True
+                    except (BrokenPipeError, OSError, ProtocolError):
+                        pass   # died meanwhile: keep the original error visible
                 try:
-                    self._send_raw(b"quit\n")
-                except (BrokenPipeError, OSError, ProtocolError):
-                    pass   # died meanwhile: keep the original error visible
-                try:
-                    self.proc.wait(timeout=2.0)
+                    self.proc.wait(timeout=5.0)
                 except subprocess.TimeoutExpired:
+                    # Still alive: stop it and reap it, so no emulator outlives
+                    # the test (the next one would race with it).
                     self.proc.terminate()
+                    try:
+                        self.proc.wait(timeout=5.0)
+                    except subprocess.TimeoutExpired:
+                        self.proc.kill()
+                        self.proc.wait()
         finally:
             self._reader_stop.set()
             if self.proc.stdin and not self.proc.stdin.closed:
@@ -198,6 +210,8 @@ class PhosClient:
         """Send a command and return the next REP line (OK or ERR)."""
         timeout = timeout if timeout is not None else self.REQ_TIMEOUT
         self._send_raw((line + "\n").encode("utf-8"))
+        if line.strip() == "quit":
+            self._quit_sent = True
         try:
             return self._reps.get(timeout=timeout)
         except queue.Empty:
