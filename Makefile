@@ -214,9 +214,9 @@ SOURCES = src/main.c \
           src/hostfs/vfs.c \
           src/emu_clock.c \
           src/savestate.c \
-          src/debugger.c \
+          src/debugger.c src/debugger_view.c src/debugger_mem.c src/debugger_asm.c src/debugger_repl.c \
           src/network/gdbstub.c \
-          src/control.c \
+          src/control.c src/control_util.c src/control_cmd_mem.c src/control_cmd_debug.c src/control_cmd_media.c \
           src/control_queue.c \
           src/utils/logging.c \
           src/utils/config.c \
@@ -471,7 +471,7 @@ $(eval $(call UNIT_TEST,test-movie,test_movie,$(TEST_MOVIE_SRCS),,))
 test-movie-replay: $(TARGET)
 	@bash tests/integration/test_movie_replay.sh
 
-TEST_GDB_SRCS = tests/support/loci_emu_stub.c tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c \
+TEST_GDB_SRCS = tests/support/loci_emu_stub.c tests/unit/test_gdbstub.c src/network/gdbstub.c src/debugger.c src/debugger_view.c src/debugger_mem.c src/debugger_asm.c src/debugger_repl.c \
                 $(CPU_SRCS) \
                 $(MEM_SRCS) \
                 src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
@@ -483,7 +483,7 @@ TEST_AUDIO_SRCS = tests/unit/test_audio.c src/audio/ay3891x.c src/utils/logging.
 
 $(eval $(call UNIT_TEST,test-audio,test_audio,$(TEST_AUDIO_SRCS),,))
 
-TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c src/debugger.c \
+TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c src/debugger.c src/debugger_view.c src/debugger_mem.c src/debugger_asm.c src/debugger_repl.c \
                      $(CPU_SRCS) \
                      $(MEM_SRCS) \
                      src/io/via6522.c src/utils/logging.c src/utils/symbols.c \
@@ -673,7 +673,7 @@ TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c $(
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c src/storage/disk_http.c \
-                     src/savestate.c src/io/jasmin.c src/debugger.c \
+                     src/savestate.c src/io/jasmin.c src/debugger.c src/debugger_view.c src/debugger_mem.c src/debugger_asm.c src/debugger_repl.c \
                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 

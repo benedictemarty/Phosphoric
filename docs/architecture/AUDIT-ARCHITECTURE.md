@@ -5,6 +5,26 @@
 > `file:line` references verified or marked "approx.". This document is
 > deliberately **critical**: it lists what works, but above all the debt.
 
+> **Review 2026-10-02 (2.12.0)** — improvement plan (sprints A to F) carried out:
+> - **§ 2.1** `main()`: 2,043 → 32 lines (2.3.0, sprint C); options in
+>   `cli_opts_t` / `cli_parse_args()`, 14 `main_setup_*` steps; `main.c` remains the
+>   assembly file (≈ 4,460 l), but split into named steps.
+> - **§ 2.3** `io_device_t` contract: `tick` + `present_off`, explicit order
+>   `io_bus_tick_order[]` (2.4.0, sprint D, ADR 0003); per-device `.ost` sections
+>   for ULA-NG, Mageco, DTL 2000, Jasmin, SP0256, MEA8000 (LOCI and serial
+>   transports: not serializable, § 2.2 unchanged).
+> - **§ 2.4** secondary monoliths: `control.c` 1,352 → 261 l + `control_util.c`
+>   and `control_cmd_{mem,debug,media}.c`; `debugger.c` 2,395 → 637 l +
+>   `debugger_{view,mem,asm,repl}.c` (2.12.0, sprint F). Mechanical move, proven
+>   by `cli_golden` (116 command lines, 0 differences) and the full suite.
+>   Remaining: `process_repl_line()` (≈ 850 l, a single function) in
+>   `debugger_repl.c`.
+> - **§ 4** security of the network servers: audited (2.8.0-2.9.0) — HTTP API on
+>   127.0.0.1 by default, GDB stub moved to 127.0.0.1, HTTP parsing fuzzed; cast
+>   and listening modem exposed by necessity. ASan/UBSan sanitizers and fuzzing of
+>   every file reader in CI.
+> - Decisions recorded in `docs/adr/` (0001-0005).
+
 ## 0. Verdict in one sentence
 
 The emulator's **core** is cleanly modularised (decoupled layers, zero include
@@ -90,7 +110,7 @@ dtl→mageco`) **differs** from the order of the `io_bus[]` table
 loop would require first proving byte-identical equivalence (the VIA must
 be ticked first — it drives the timers).
 
-### 2.4 🟠 Secondary monoliths
+### 2.4 🟠 Secondary monoliths — addressed in 2.12.0 (see the review at the top)
 `debugger.c` (2382 L) and `control.c` (1290 L) are monolithic blocks
 (debug REPL; parser + 30+ command handlers + dispatch).
 

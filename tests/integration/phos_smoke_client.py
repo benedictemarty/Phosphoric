@@ -28,6 +28,7 @@ import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -48,8 +49,10 @@ class PhosClient:
 
     REQ_TIMEOUT = 5.0   # seconds to wait for a REP after sending a CMD
 
-    def __init__(self, proc: subprocess.Popen):
+    def __init__(self, proc: subprocess.Popen, stderr_file=None):
         self.proc = proc
+        # Emulator stderr, kept to explain a crash (see diagnostic()).
+        self._stderr_file = stderr_file
         self._reps: "queue.Queue[str]" = queue.Queue()
         self._evts: "queue.Queue[str]" = queue.Queue()
         self._evt_handlers: List[Callable[[str], None]] = []
@@ -77,20 +80,38 @@ class PhosClient:
             full_argv.append("--control")
         if extra_args:
             full_argv.extend(extra_args)
+        err = tempfile.TemporaryFile()
         proc = subprocess.Popen(
             full_argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=err,
             bufsize=0,                 # raw, we framing per line
             text=False,                # bytes so bread (binary) is clean
         )
-        return cls(proc)
+        return cls(proc, err)
+
+    def diagnostic(self, lines: int = 15) -> str:
+        """Exit code and last stderr lines of the emulator (crash report)."""
+        rc = self.proc.poll()
+        tail = ""
+        if self._stderr_file is not None:
+            try:
+                self._stderr_file.seek(0)
+                tail = "\n".join(self._stderr_file.read().decode("utf-8", "replace")
+                                 .splitlines()[-lines:])
+            except (OSError, ValueError):
+                pass
+        return f"emulator exit code: {rc}\n{tail}"
+
 
     def close(self):
         try:
             if self.proc.poll() is None:
-                self._send_raw(b"quit\n")
+                try:
+                    self._send_raw(b"quit\n")
+                except (BrokenPipeError, OSError, ProtocolError):
+                    pass   # died meanwhile: keep the original error visible
                 try:
                     self.proc.wait(timeout=2.0)
                 except subprocess.TimeoutExpired:
@@ -103,8 +124,13 @@ class PhosClient:
     def __enter__(self):
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type, exc, tb):
         self.close()
+        # A failure while the emulator is dead: say why it died.
+        if exc_type is not None and self.proc.poll() is not None:
+            print("--- emulator died ---\n" + self.diagnostic(), file=sys.stderr)
+        if self._stderr_file is not None:
+            self._stderr_file.close()
 
     # ── reader thread ──────────────────────────────────────────────────
     def _reader_loop(self):
