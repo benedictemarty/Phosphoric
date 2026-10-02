@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.12.3
+Current Version: 2.12.4
 Release Date: 2026-09-30
-Status: Stable (**Débogueur : process_repl_line() découpé — 2.12.3**. 850 l → 40 gestionnaires repl_*() + table k_repl_cmds[] (53 noms) ; sortie REPL identique (script de 109 commandes, 385 lignes).)
+Status: Stable (**dsk2hfe fuzzé, lecture hors tampon corrigée — 2.12.4**. Image tronquée → segfault (ou .hfe faux si une piste manque) ; refusée avant d'écrire. Cible de fuzzing hfe (9 cibles, 166 162 exécutions, 0 plantage), test-dsk2hfe 7.)
+Status (prev): Stable (**Débogueur : process_repl_line() découpé — 2.12.3**. 850 l → 40 gestionnaires repl_*() + table k_repl_cmds[] (53 noms) ; sortie REPL identique (script de 109 commandes, 385 lignes).)
 Status (prev): Stable (**Client de test : faux échec de test-savestate-determinism corrigé — 2.12.2**. Second quit envoyé à un émulateur en train de se terminer (BrokenPipe, 1/200 sous charge) ; l'émulateur était hors de cause (valgrind propre, 10 builds rechargent l'état).)
 Status (prev): Stable (**API HTTP : interblocage à l'arrêt corrigé — 2.12.1**. Boucle arrêtée (CPU bloqué, limite, signal) avec une requête en attente : join du serveur sans fin ; control_queue_shutdown() libère les producteurs avant l'arrêt du serveur (corrige aussi « SIGTERM ignoré en headless + HTTP » et un usage après libération). test-httpapi 6/6, test-control-queue 4.)
 Status (prev): Stable (**Sprint F : control.c et debugger.c découpés — 2.12.0**. control.c 1 352 → 261 l (+ util et 3 fichiers de commandes), debugger.c 2 395 → 637 l (+ view, mem, asm, repl) ; déplacement mécanique prouvé par cli_golden (116 cas, 0 écart contre le binaire précédent) ; docs/adr (5 décisions), audit mis à jour. Connu : blocage intermittent de test-httpapi, préexistant.)

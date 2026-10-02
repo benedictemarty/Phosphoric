@@ -22,6 +22,9 @@
  * are emitted with their standard missing-clock patterns 0x4489 / 0x5224.
  *
  * Usage: dsk2hfe IN.dsk OUT.hfe [--bitrate KBPS] [--rpm RPM]
+ *
+ * The conversion itself is dsk2hfe_convert() (no file reading), so the fuzzing
+ * harness tests/fuzz/fuzz_hfe.c can include this file with DSK2HFE_NO_MAIN.
  */
 
 #include <stdio.h>
@@ -68,7 +71,8 @@ static void encode_track(const uint8_t* trk, uint8_t* out)
     memset(out, 0, SIDE_BYTES);
 
     /* Mark which bytes are A1/C2 sync marks (part of a triple before a mark). */
-    uint8_t* spec = (uint8_t*)calloc(1, MFM_TRACK);   /* 0=normal 1=A1 2=C2 */
+    uint8_t spec[MFM_TRACK];                       /* 0=normal 1=A1 2=C2 */
+    memset(spec, 0, sizeof(spec));
     for (int i = 0; i + 3 < MFM_TRACK; i++) {
         if (trk[i] == 0xA1 && trk[i+1] == 0xA1 && trk[i+2] == 0xA1 &&
             (trk[i+3] == 0xFE || trk[i+3] == 0xFB || trk[i+3] == 0xFF)) {
@@ -86,56 +90,54 @@ static void encode_track(const uint8_t* trk, uint8_t* out)
         else if (spec[i] == 2) mfm_raw16(out, &pos, &prev, 0x5224, 0); /* C2 */
         else                   mfm_byte(out, &pos, &prev, trk[i]);
     }
-    free(spec);
 }
 
 static void wr16(uint8_t* p, uint16_t v) { p[0] = v & 0xFF; p[1] = (v >> 8) & 0xFF; }
 
-int main(int argc, char** argv)
+/* Check the MFM_DISK image @p raw (@p sz bytes) before converting it: 0 and its
+ * geometry in @p out_sides / @p out_tracks, or 1 with a message in @p err (wrong
+ * magic, implausible geometry, file shorter than its header says). */
+static int dsk2hfe_check(const uint8_t* raw, size_t sz, char* err, size_t errsz,
+                         uint32_t* out_sides, uint32_t* out_tracks)
 {
-    const char* in = NULL; const char* out = NULL;
-    unsigned bitrate = 250, rpm = 300;
-    for (int i = 1; i < argc; i++) {
-        if      (!strcmp(argv[i], "--bitrate") && i + 1 < argc) bitrate = (unsigned)strtoul(argv[++i], NULL, 10);
-        else if (!strcmp(argv[i], "--rpm")     && i + 1 < argc) rpm     = (unsigned)strtoul(argv[++i], NULL, 10);
-        else if (argv[i][0] == '-') { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 2; }
-        else if (!in) in = argv[i]; else if (!out) out = argv[i];
-    }
-    if (!in || !out) {
-        fprintf(stderr, "Usage: %s IN.dsk OUT.hfe [--bitrate KBPS] [--rpm RPM]\n"
-                        "Convert an ORIC MFM_DISK .dsk to an HxC .HFE (v1) magnetic image.\n", argv[0]);
-        return 2;
-    }
-
-    FILE* f = fopen(in, "rb");
-    if (!f) { fprintf(stderr, "dsk2hfe: cannot open %s\n", in); return 1; }
-    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
-    uint8_t* raw = (uint8_t*)malloc((size_t)(sz > 0 ? sz : 1));
-    if (!raw || sz <= 0 || fread(raw, 1, (size_t)sz, f) != (size_t)sz) {
-        fprintf(stderr, "dsk2hfe: read error\n"); fclose(f); free(raw); return 1;
-    }
-    fclose(f);
-
     if (sz <= MFM_HDR || memcmp(raw, "MFM_DISK", 8) != 0) {
-        fprintf(stderr, "dsk2hfe: not an MFM_DISK .dsk (need the raw-MFM Oric format).\n"
-                        "         Convert a flat/Sedoric image to MFM_DISK first.\n");
-        free(raw); return 1;
+        snprintf(err, errsz, "not an MFM_DISK .dsk (need the raw-MFM Oric format).\n"
+                             "         Convert a flat/Sedoric image to MFM_DISK first.");
+        return 1;
     }
     uint32_t sides  = raw[8]  | ((uint32_t)raw[9]  << 8) | ((uint32_t)raw[10] << 16) | ((uint32_t)raw[11] << 24);
     uint32_t tracks = raw[12] | ((uint32_t)raw[13] << 8) | ((uint32_t)raw[14] << 16) | ((uint32_t)raw[15] << 24);
     if (sides < 1 || sides > 2 || tracks < 1 || tracks > 84) {
-        fprintf(stderr, "dsk2hfe: implausible geometry (sides=%u tracks=%u)\n", sides, tracks);
-        free(raw); return 1;
+        snprintf(err, errsz, "implausible geometry (sides=%u tracks=%u)", sides, tracks);
+        return 1;
     }
+    /* Every track the header announces must be in the file: a truncated image
+     * used to be read past the end of the buffer. */
+    const size_t need = MFM_HDR + (size_t)sides * tracks * MFM_TRACK;
+    if (sz < need) {
+        snprintf(err, errsz, "truncated image: %zu bytes, the header announces %u side%s x "
+                 "%u tracks (%zu bytes)", sz, sides, sides > 1 ? "s" : "", tracks, need);
+        return 1;
+    }
+    *out_sides = sides;
+    *out_tracks = tracks;
+    return 0;
+}
+
+/* Convert the MFM_DISK image @p raw (@p sz bytes) to HFE v1 written to @p o.
+ * Returns 0, or 1 with a message in @p err (image rejected by dsk2hfe_check(),
+ * out of memory, write error). */
+static int dsk2hfe_convert(const uint8_t* raw, size_t sz, unsigned bitrate, unsigned rpm,
+                           FILE* o, char* err, size_t errsz)
+{
+    uint32_t sides, tracks;
+    if (dsk2hfe_check(raw, sz, err, errsz, &sides, &tracks) != 0)
+        return 1;
 
     /* Track block: side0 and side1 interleaved in 256-byte chunks. */
     const uint32_t chunks    = SIDE_BYTES / 256;                 /* 50            */
     const uint32_t trk_bytes = chunks * HFE_BLOCK;               /* 25600 / track */
     const uint32_t trk_blocks = trk_bytes / HFE_BLOCK;           /* 50            */
-
-    FILE* o = fopen(out, "wb");
-    if (!o) { fprintf(stderr, "dsk2hfe: cannot write %s\n", out); free(raw); return 1; }
-
     /* ── Block 0: header ── */
     uint8_t hdr[HFE_BLOCK];
     memset(hdr, 0xFF, sizeof(hdr));
@@ -166,6 +168,11 @@ int main(int argc, char** argv)
     uint8_t* s0 = (uint8_t*)malloc(SIDE_BYTES);
     uint8_t* s1 = (uint8_t*)malloc(SIDE_BYTES);
     uint8_t* blk = (uint8_t*)malloc(trk_bytes);
+    if (!s0 || !s1 || !blk) {
+        free(s0); free(s1); free(blk);
+        snprintf(err, errsz, "out of memory");
+        return 1;
+    }
     for (uint32_t t = 0; t < tracks; t++) {
         uint32_t off0 = MFM_HDR + (0 * tracks + t) * MFM_TRACK;
         encode_track(raw + off0, s0);
@@ -183,10 +190,65 @@ int main(int argc, char** argv)
         fwrite(blk, 1, trk_bytes, o);
     }
     free(s0); free(s1); free(blk);
-    fclose(o);
+    if (ferror(o)) {
+        snprintf(err, errsz, "write error");
+        return 1;
+    }
+    return 0;
+}
+
+
+#ifndef DSK2HFE_NO_MAIN
+int main(int argc, char** argv)
+{
+    const char* in = NULL; const char* out = NULL;
+    unsigned bitrate = 250, rpm = 300;
+    for (int i = 1; i < argc; i++) {
+        if      (!strcmp(argv[i], "--bitrate") && i + 1 < argc) bitrate = (unsigned)strtoul(argv[++i], NULL, 10);
+        else if (!strcmp(argv[i], "--rpm")     && i + 1 < argc) rpm     = (unsigned)strtoul(argv[++i], NULL, 10);
+        else if (argv[i][0] == '-') { fprintf(stderr, "Unknown option: %s\n", argv[i]); return 2; }
+        else if (!in) in = argv[i]; else if (!out) out = argv[i];
+    }
+    if (!in || !out) {
+        fprintf(stderr, "Usage: %s IN.dsk OUT.hfe [--bitrate KBPS] [--rpm RPM]\n"
+                        "Convert an ORIC MFM_DISK .dsk to an HxC .HFE (v1) magnetic image.\n", argv[0]);
+        return 2;
+    }
+
+    FILE* f = fopen(in, "rb");
+    if (!f) { fprintf(stderr, "dsk2hfe: cannot open %s\n", in); return 1; }
+    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+    uint8_t* raw = (uint8_t*)malloc((size_t)(sz > 0 ? sz : 1));
+    if (!raw || sz <= 0 || fread(raw, 1, (size_t)sz, f) != (size_t)sz) {
+        fprintf(stderr, "dsk2hfe: read error\n"); fclose(f); free(raw); return 1;
+    }
+    fclose(f);
+
+    /* Reject a bad image before touching OUT: an existing file stays intact. */
+    char err[160];
+    uint32_t sides = 0, tracks = 0;
+    if (dsk2hfe_check(raw, (size_t)sz, err, sizeof(err), &sides, &tracks) != 0) {
+        fprintf(stderr, "dsk2hfe: %s\n", err);
+        free(raw);
+        return 1;
+    }
+    FILE* o = fopen(out, "wb");
+    if (!o) { fprintf(stderr, "dsk2hfe: cannot write %s\n", out); free(raw); return 1; }
+    int rc = dsk2hfe_convert(raw, (size_t)sz, bitrate, rpm, o, err, sizeof(err));
+    if (fclose(o) != 0 && rc == 0) {
+        snprintf(err, sizeof(err), "write error");
+        rc = 1;
+    }
+    if (rc != 0) {
+        fprintf(stderr, "dsk2hfe: %s\n", err);
+        remove(out);                    /* never leave a half-written image */
+        free(raw);
+        return 1;
+    }
 
     printf("dsk2hfe: %s (%u side%s, %u tracks) -> %s  [HFE v1, %u kbit/s, %u RPM]\n",
            in, sides, sides > 1 ? "s" : "", tracks, out, bitrate, rpm);
     free(raw);
     return 0;
 }
+#endif /* DSK2HFE_NO_MAIN */

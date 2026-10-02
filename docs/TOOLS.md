@@ -155,6 +155,11 @@ synchro standard A1=`0x4489` et C2=`0x5224` (clock manquant) devant les address
 marks ; sortie conforme à la spec HxC (en-tête 512 o, table des pistes, faces
 entrelacées par blocs de 256 o, bits **LSB d'abord**).
 
+L'image est vérifiée **avant** d'écrire quoi que ce soit : signature `MFM_DISK`,
+1 ou 2 faces, 1 à 84 pistes, et fichier assez long pour toutes les pistes que
+l'en-tête annonce (« truncated image » sinon). Une image refusée laisse intact un
+`OUT.hfe` existant ; une erreur d'écriture supprime le fichier incomplet.
+
 ```bash
 make dsk2hfe
 ./dsk2hfe jeu.dsk jeu.hfe

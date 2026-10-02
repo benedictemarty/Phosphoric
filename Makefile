@@ -296,7 +296,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -825,7 +825,7 @@ test-iomenu-cli: $(TARGET)
 #                           clang + libFuzzer + ASan/UBSan, FUZZ_TIME s par cible ;
 #                           entrées fautives dans $(FUZZ_DIR)/crashes/ (à recopier
 #                           dans tests/fuzz/regressions/<cible>/ une fois corrigées).
-FUZZ_TARGETS ?= disk tap tapenat ost smf sym cfg http
+FUZZ_TARGETS ?= disk tap tapenat ost smf sym cfg http hfe
 FUZZ_SRCS_disk = tests/fuzz/fuzz_disk.c $(DISK_SRCS) src/utils/logging.c
 FUZZ_SRCS_tap  = tests/fuzz/fuzz_tap.c src/storage/tap.c src/utils/logging.c
 FUZZ_SRCS_ost  = tests/fuzz/fuzz_ost.c $(filter-out tests/unit/test_savestate.c,$(TEST_SAVESTATE_SRCS))
@@ -836,6 +836,7 @@ FUZZ_LIBS_cfg  = $(LOCI_EMUL_LIB)
 FUZZ_SRCS_tapenat = tests/fuzz/fuzz_tapenat.c $(LIB_SOURCES)
 FUZZ_LIBS_tapenat = $(LOCI_EMUL_LIB)
 FUZZ_SRCS_http = tests/fuzz/fuzz_http.c src/utils/logging.c
+FUZZ_SRCS_hfe  = tests/fuzz/fuzz_hfe.c
 FUZZ_OPTS_cfg  = -detect_leaks=0
 FUZZ_DIR   = build/fuzz
 FUZZ_TIME ?= 60
@@ -850,6 +851,11 @@ $(TBIN)/fuzz_$(1): $(call obj,$(FUZZ_SRCS_$(1)) tests/fuzz/fuzz_replay.c) $(FUZZ
 	@$$(CC) $$(CFLAGS) $$^ $$(LDFLAGS) -o $$@
 endef
 $(foreach t,$(FUZZ_TARGETS),$(eval $(call FUZZ_REPLAY,$(t))))
+
+# Outil dsk2hfe : structure HFE produite, images invalides refusées sans
+# toucher à la sortie (lecture hors tampon sur image tronquée avant 2.12.4).
+test-dsk2hfe: tools
+	@bash tests/integration/test_dsk2hfe.sh
 
 test-fuzz-replay: tools $(foreach t,$(FUZZ_TARGETS),$(TBIN)/fuzz_$(t))
 	@echo "=== Fuzzing : rejeu des graines et des régressions ==="
@@ -943,7 +949,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-tape-patches test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-tape-patches test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
