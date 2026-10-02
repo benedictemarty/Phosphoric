@@ -20,11 +20,10 @@ runs each command on its own thread, at a frame boundary.
 
 ## Consequences
 
-- Une commande HTTP attend au plus une trame (20 ms) plus son exécution.
-- Un seul consommateur : la boucle de l'émulateur. Quand elle s'arrête (CPU
-  bloqué, limite de cycles, signal), la file est fermée **avant** l'arrêt du
-  serveur (`control_queue_shutdown`) : les producteurs en attente sont libérés,
-  sinon l'attente de fin du thread serveur ne se terminerait jamais (défaut
-  corrigé en 2.12.1).
-- Les commandes sont découpées par thème depuis 2.12.0 (`control_cmd_*.c`) ;
-  `control_dispatch()` reste l'unique point d'entrée.
+- An HTTP command waits at most one frame (20 ms) plus its execution.
+- A single consumer: the emulator loop. When it stops (CPU jam, cycle limit,
+  signal), the queue is closed **before** the server is stopped
+  (`control_queue_shutdown`): waiting producers are released, otherwise joining
+  the server thread would never finish (defect fixed in 2.12.1).
+- Commands are split by theme since 2.12.0 (`control_cmd_*.c`);
+  `control_dispatch()` remains the single entry point.
