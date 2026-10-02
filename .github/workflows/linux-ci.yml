@@ -30,9 +30,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install SDL2, Valgrind, Python
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsdl2-dev pkg-config valgrind python3
+        timeout-minutes: 45
+        run: sh tools/ci_apt_install.sh libsdl2-dev pkg-config valgrind python3
 
       - name: Toolchain info
         run: |
@@ -84,9 +83,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install SDL2, clang/libFuzzer, Python
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsdl2-dev pkg-config python3 clang libclang-rt-dev
+        timeout-minutes: 45
+        run: sh tools/ci_apt_install.sh libsdl2-dev pkg-config python3 clang libclang-rt-dev
 
       - name: Fetch oracle vectors (Dormann + 65x02 sample)
         run: |
@@ -116,9 +114,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install SDL2, Python
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsdl2-dev pkg-config python3
+        timeout-minutes: 45
+        run: sh tools/ci_apt_install.sh libsdl2-dev pkg-config python3
 
       - name: Fetch oracle vectors (Dormann + 65x02 sample)
         run: |

@@ -35,11 +35,32 @@ const menuOpen = async p => ((await activity(p)) & 4) !== 0;
 // VIA Timer 1 ($0304/$0305): counts down every cycle while the machine runs.
 const t1 = p => p.evaluate(() => Module.ccall('web_peek', 'number', ['number'], [0x0304]) |
                               (Module.ccall('web_peek', 'number', ['number'], [0x0305]) << 8));
-async function running(p) {
-  const a = await t1(p); await p.waitForTimeout(250);
-  const b = await t1(p); await p.waitForTimeout(250);
-  const c = await t1(p);
-  return a !== b || b !== c;
+// La version web avance d'une trame à chaque tour de boucle (≈ 20 ms), mais un
+// Chrome headless chargé peut n'en faire aucune pendant plusieurs centaines de
+// ms : les états attendus (menu ouvert, machine relancée…) sont donc ATTENDUS
+// jusqu'à 10 s au lieu d'être lus après un délai fixe (échec intermittent sous
+// charge). Seule « machine figée » reste une observation sur une durée fixe :
+// sous charge elle ne peut que réussir à tort, jamais échouer à tort.
+const WAIT_MS = 10000;
+async function until(p, cond) {
+  const end = Date.now() + WAIT_MS;
+  do {
+    if (await cond()) return true;
+    await p.waitForTimeout(100);
+  } while (Date.now() < end);
+  return false;
+}
+async function running(p) {           // Timer 1 bouge-t-il ? (jusqu'à WAIT_MS)
+  const a = await t1(p);
+  return until(p, async () => (await t1(p)) !== a);
+}
+async function frozen(p) {            // Timer 1 immobile pendant 1 s
+  const a = await t1(p);
+  for (let i = 0; i < 10; i++) {
+    await p.waitForTimeout(100);
+    if ((await t1(p)) !== a) return false;
+  }
+  return true;
 }
 
 (async () => {
@@ -59,28 +80,25 @@ async function running(p) {
       window.addEventListener('keydown', e => { if (e.key === 'F1') window.__f1 = e.defaultPrevented; }); });
     await p.click('#canvas');
     await p.keyboard.press('F1');
-    await p.waitForTimeout(600);
-    check(await menuOpen(p), 'F1 ouvre le menu');
+    check(await until(p, () => menuOpen(p)), 'F1 ouvre le menu');
     check(await p.evaluate(() => window.__f1) === true, 'F1 soustrait au navigateur (preventDefault)');
     check(await p.evaluate(() => document.getElementById('btn-iomenu').classList.contains('on')),
           'bouton I/O allumé');
-    check(!(await running(p)), 'machine figée pendant le menu');
+    check(await frozen(p), 'machine figée pendant le menu');
     if (shot) await p.screenshot({ path: shot });
 
     // On-screen keyboard: RETURN on "Reprendre" (cursor on open) closes the menu.
     await p.evaluate(() => { Module.ccall('web_key', null, ['number','number','number','number','number'], [13,0,0,0,1]);
                              Module.ccall('web_key', null, ['number','number','number','number','number'], [13,0,0,0,0]); });
-    await p.waitForTimeout(400);
-    check(!(await menuOpen(p)), 'clavier virtuel : RETURN sur « Reprendre » ferme le menu');
+    check(await until(p, async () => !(await menuOpen(p))),
+          'clavier virtuel : RETURN sur « Reprendre » ferme le menu');
     check(await running(p), 'machine relancée après fermeture');
 
     // I/O button: opens then closes.
     await p.click('#btn-iomenu');
-    await p.waitForTimeout(400);
-    check(await menuOpen(p), 'bouton I/O ouvre le menu');
+    check(await until(p, () => menuOpen(p)), 'bouton I/O ouvre le menu');
     await p.click('#btn-iomenu');
-    await p.waitForTimeout(400);
-    check(!(await menuOpen(p)), 'bouton I/O ferme le menu');
+    check(await until(p, async () => !(await menuOpen(p))), 'bouton I/O ferme le menu');
   } catch (e) {
     check(false, 'exception : ' + e.message);
   }
