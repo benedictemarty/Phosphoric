@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: EUPL-1.2
-"""check_test_targets.py — every test-* target of the Makefile is in `make tests`.
+"""check_test_targets.py — toute cible test-* du Makefile est dans `make tests`.
 
-Usage: tools/check_test_targets.py Makefile tests/out_of_suite.txt
+Usage : tools/check_test_targets.py Makefile tests/out_of_suite.txt
 
-A test-* target that is neither a dependency of `tests:` nor listed (with its
-reason) in out_of_suite.txt never runs: test-serial-backends was such a target
-from 2.11.1 to 2.12.6. Exit code 1 in that case, or if an exemption is stale
-(target missing, or already in the suite) or has no reason.
+Une cible test-* qui n'est ni une dépendance de `tests:` ni listée (avec sa
+raison) dans out_of_suite.txt ne tourne jamais : test-serial-backends l'a été
+de 2.11.1 à 2.12.6. Code de sortie 1 dans ce cas, ou si une exemption est
+périmée (cible inexistante, ou déjà dans la suite) ou sans raison.
 
 Author: bmarty <bmarty@mailo.com>
 """
