@@ -6,6 +6,10 @@
 ROM not found|[Rr][Oo][Mm]s? missing|ROM absent|aucune ROM|no BASIC ROM|SP0256_ROM=
 \(missing [^)]*\.rom\)|missing asset|roms/[^ ]* absent
 média absent|\.dsk absent|\.tap absent|\.bas absent|LOCI media missing|\(missing: |pas de manifeste|ORIC_PROGRAMS_LIB
+# Tests web (WASM) : emsdk absent des runners CI (lancés en local, cf. ~/emsdk).
+emcc introuvable
+# Serveur cast sans OpenSSL (runner macOS sans pkg-config openssl).
+OpenSSL absent
 # Vecteurs d'oracle tiers (~1 Go) : récupérés à part (tools/fetch_vectors.sh, étape CI dédiée).
 vecteurs absents|image absente
 # Suivi agile tenu en local, jamais versionné.

@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos emulator; cycle-stepped machine (CPU N3 oracle-verified; VIA/ULA/PSG cycle-stepped; FDC N1+ — see docs/ACCURACY.md)
-Version: 2.12.6
-Build Status: STABLE (**test-web-iomenu stabilisé — 2.12.6**. Délais fixes remplacés par des attentes bornées (10 s) ; sous charge 10/10 échecs avant, 0/10 après ; sans charge 3/3.)
+Version: 2.12.7
+Build Status: STABLE (**Toutes les cibles de test dans la suite — 2.12.7**. test-serial-backends n'y était pas depuis 2.11.1 ; test-cast, test-game-compat (+ 2 jeux de tapes/), 3 tests web intégrés ; garde-fou test-suite-targets (91 cibles, 90 dans la suite, test-cli-golden exempté par écrit).)
+Build Status (prev): STABLE (**test-web-iomenu stabilisé — 2.12.6**. Délais fixes remplacés par des attentes bornées (10 s) ; sous charge 10/10 échecs avant, 0/10 après ; sans charge 3/3.)
 Build Status (prev): STABLE (**CI : installations apt bornées et relancées — 2.12.5**. Étape MinGW 21-45 s d'habitude mais déjà 10/19/47 min ; tools/ci_apt_install.sh (tentatives bornées, 3 essais) dans linux-ci et windows-build, logique en ligne dans release.yml. test-ci-apt-install 3.)
 Build Status (prev): STABLE (**dsk2hfe fuzzé, lecture hors tampon corrigée — 2.12.4**. Image tronquée → segfault (ou .hfe faux si une piste manque) ; refusée avant d'écrire. Cible de fuzzing hfe (9 cibles, 166 162 exécutions, 0 plantage), test-dsk2hfe 7.)
 Build Status (prev): STABLE (**Débogueur : process_repl_line() découpé — 2.12.3**. 850 l → 40 gestionnaires repl_*() + table k_repl_cmds[] (53 noms) ; sortie REPL identique (script de 109 commandes, 385 lignes).)
