@@ -822,9 +822,9 @@ test-iomenu-cli: $(TARGET)
 #   make test-fuzz-replay   gcc (sanitizers if SANITIZE=1): replays the seeds
 #                           (tools/fuzz_seeds.sh) and tests/fuzz/regressions/<target>/
 #   make fuzz [FUZZ_TIME=60] [FUZZ_TARGETS="disk tap"]
-#                           clang + libFuzzer + ASan/UBSan, FUZZ_TIME s par cible ;
-#                           entrées fautives dans $(FUZZ_DIR)/crashes/ (à recopier
-#                           dans tests/fuzz/regressions/<cible>/ une fois corrigées).
+#                           clang + libFuzzer + ASan/UBSan, FUZZ_TIME s per target;
+#                           failing inputs in $(FUZZ_DIR)/crashes/ (copy them into
+#                           tests/fuzz/regressions/<target>/ once fixed).
 FUZZ_TARGETS ?= disk tap tapenat ost smf sym cfg http hfe
 FUZZ_SRCS_disk = tests/fuzz/fuzz_disk.c $(DISK_SRCS) src/utils/logging.c
 FUZZ_SRCS_tap  = tests/fuzz/fuzz_tap.c src/storage/tap.c src/utils/logging.c
@@ -852,8 +852,8 @@ $(TBIN)/fuzz_$(1): $(call obj,$(FUZZ_SRCS_$(1)) tests/fuzz/fuzz_replay.c) $(FUZZ
 endef
 $(foreach t,$(FUZZ_TARGETS),$(eval $(call FUZZ_REPLAY,$(t))))
 
-# Outil dsk2hfe : structure HFE produite, images invalides refusées sans
-# toucher à la sortie (lecture hors tampon sur image tronquée avant 2.12.4).
+# dsk2hfe tool: structure of the HFE produced, invalid images rejected without
+# touching the output (out-of-buffer read on a truncated image before 2.12.4).
 test-dsk2hfe: tools
 	@bash tests/integration/test_dsk2hfe.sh
 

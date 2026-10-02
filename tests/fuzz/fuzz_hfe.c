@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_hfe.c
- * @brief Fuzzing : image .dsk (MFM_DISK) → dsk2hfe_convert (outil dsk2hfe)
+ * @brief Fuzzing: .dsk image (MFM_DISK) → dsk2hfe_convert (dsk2hfe tool)
  * @author bmarty <bmarty@mailo.com>
  *
- * L'outil est inclus tel quel, sans son main() (DSK2HFE_NO_MAIN) ; l'image HFE
- * produite part dans /dev/null : on cherche les lectures hors du .dsk.
+ * The tool is included as is, without its main() (DSK2HFE_NO_MAIN); the HFE
+ * image produced goes to /dev/null: we are looking for reads outside the .dsk.
  */
 #define DSK2HFE_NO_MAIN
 #include "../../tools/dsk2hfe.c"

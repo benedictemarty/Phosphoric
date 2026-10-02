@@ -60,7 +60,7 @@ open(os.path.join(out, "disk", "brute.raw"), "wb").write(bytes((i * 7) & 0xFF fo
 PY
 
 python3 "$ROOT/tools/dsk_raw2mfm.py" "$OUT/disk/brute.raw" "$OUT/disk/mfm.dsk" sidemajor 1 3 17 >/dev/null
-# dsk2hfe ne lit que le format MFM_DISK : la même image sert de graine.
+# dsk2hfe only reads the MFM_DISK format: the same image is its seed.
 cp "$OUT/disk/mfm.dsk" "$OUT/hfe/mfm.dsk"
 cp "$ROOT/tests/cli_golden/iomenu.cfg" "$OUT/cfg/iomenu.cfg"
 "$TBIN/fuzz_ost" --seed "$OUT/ost/machine.ost"
