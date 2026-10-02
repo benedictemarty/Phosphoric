@@ -494,8 +494,8 @@ $(eval $(call UNIT_TEST,test-debugger,test_debugger,$(TEST_DEBUGGER_SRCS),,))
 TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c \
                  src/video/stb_image_write_impl.c src/utils/logging.c
 
-# Le serveur cast chiffre en TLS : sans OpenSSL (pkg-config openssl, cf.
-# PICOTLS), le test est sauté au lieu d'échouer à la compilation.
+# The cast server encrypts with TLS: without OpenSSL (pkg-config openssl, see
+# PICOTLS), the test is skipped instead of failing to compile.
 ifeq ($(PICOTLS),1)
 $(eval $(call DIRECT_TEST,test-cast,test_cast,$(TEST_CAST_SRCS),-DHAS_CAST,-lpthread -lssl -lcrypto))
 else
@@ -924,12 +924,12 @@ test-cli-golden: $(BUILD)/bin/$(TARGET)
 	@test -n "$(GOLDEN_REF)" || { echo "GOLDEN_REF=/chemin/binaire/de/reference requis"; exit 1; }
 	@sh tools/cli_golden.sh "$(GOLDEN_REF)" $(BUILD)/bin/$(TARGET)
 
-# Toute cible test-* est dans `make tests`, ou exemptée par écrit dans
-# tests/out_of_suite.txt (test-serial-backends en était absent depuis 2.11.1).
+# Every test-* target is in `make tests`, or exempted in writing in
+# tests/out_of_suite.txt (test-serial-backends was missing from it since 2.11.1).
 test-suite-targets:
 	@python3 tools/check_test_targets.py Makefile tests/out_of_suite.txt
 
-# Auto-test du harnais cli_golden (détecte un écart, n'en invente pas).
+# Self-test of the cli_golden harness (detects a difference, invents none).
 test-cli-golden-self: $(TARGET)
 	@sh tests/integration/test_cli_golden.sh
 

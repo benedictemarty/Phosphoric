@@ -1,5 +1,5 @@
-# Cibles test-* volontairement hors de `make tests`, une par ligne :
-#   <cible>  <raison>
-# Vérifié par `make test-suite-targets` (tools/check_test_targets.py) : une cible
-# test-* absente de `make tests` et de cette liste fait échouer la suite.
+# test-* targets deliberately outside `make tests`, one per line:
+#   <target>  <reason>
+# Checked by `make test-suite-targets` (tools/check_test_targets.py): a test-*
+# target missing from both `make tests` and this list fails the suite.
 test-cli-golden  comparaison différentielle avec un binaire de RÉFÉRENCE (GOLDEN_REF=) choisi à chaque refactor ; son harnais est testé dans la suite par test-cli-golden-self
