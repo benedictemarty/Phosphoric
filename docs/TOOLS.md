@@ -156,6 +156,11 @@ A1=`0x4489` and C2=`0x5224` (missing clock) in front of the address
 marks; output complies with the HxC spec (512-byte header, track table, sides
 interleaved in 256-byte blocks, bits **LSB first**).
 
+L'image est vérifiée **avant** d'écrire quoi que ce soit : signature `MFM_DISK`,
+1 ou 2 faces, 1 à 84 pistes, et fichier assez long pour toutes les pistes que
+l'en-tête annonce (« truncated image » sinon). Une image refusée laisse intact un
+`OUT.hfe` existant ; une erreur d'écriture supprime le fichier incomplet.
+
 ```bash
 make dsk2hfe
 ./dsk2hfe jeu.dsk jeu.hfe

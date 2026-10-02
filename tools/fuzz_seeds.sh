@@ -13,7 +13,7 @@ set -eu
 OUT=$1
 TBIN=$2
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-mkdir -p "$OUT/disk" "$OUT/tap" "$OUT/ost" "$OUT/smf" "$OUT/sym" "$OUT/cfg" "$OUT/http" "$OUT/tapenat"
+mkdir -p "$OUT/disk" "$OUT/tap" "$OUT/ost" "$OUT/smf" "$OUT/sym" "$OUT/cfg" "$OUT/http" "$OUT/tapenat" "$OUT/hfe"
 
 python3 - "$OUT" <<'PY'
 import os, struct, sys
@@ -60,5 +60,7 @@ open(os.path.join(out, "disk", "brute.raw"), "wb").write(bytes((i * 7) & 0xFF fo
 PY
 
 python3 "$ROOT/tools/dsk_raw2mfm.py" "$OUT/disk/brute.raw" "$OUT/disk/mfm.dsk" sidemajor 1 3 17 >/dev/null
+# dsk2hfe ne lit que le format MFM_DISK : la même image sert de graine.
+cp "$OUT/disk/mfm.dsk" "$OUT/hfe/mfm.dsk"
 cp "$ROOT/tests/cli_golden/iomenu.cfg" "$OUT/cfg/iomenu.cfg"
 "$TBIN/fuzz_ost" --seed "$OUT/ost/machine.ost"
