@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos emulator; cycle-stepped machine (CPU N3 oracle-verified; VIA/ULA/PSG cycle-stepped; FDC N1+ — see docs/ACCURACY.md)
-Version: 2.12.2
-Build Status: STABLE (**Client de test : faux échec de test-savestate-determinism corrigé — 2.12.2**. Second quit envoyé à un émulateur en train de se terminer (BrokenPipe, 1/200 sous charge) ; l'émulateur était hors de cause (valgrind propre, 10 builds rechargent l'état).)
+Version: 2.12.3
+Build Status: STABLE (**Débogueur : process_repl_line() découpé — 2.12.3**. 850 l → 40 gestionnaires repl_*() + table k_repl_cmds[] (53 noms) ; sortie REPL identique (script de 109 commandes, 385 lignes).)
+Build Status (prev): STABLE (**Client de test : faux échec de test-savestate-determinism corrigé — 2.12.2**. Second quit envoyé à un émulateur en train de se terminer (BrokenPipe, 1/200 sous charge) ; l'émulateur était hors de cause (valgrind propre, 10 builds rechargent l'état).)
 Build Status (prev): STABLE (**API HTTP : interblocage à l'arrêt corrigé — 2.12.1**. Boucle arrêtée (CPU bloqué, limite, signal) avec une requête en attente : join du serveur sans fin ; control_queue_shutdown() libère les producteurs avant l'arrêt du serveur (corrige aussi « SIGTERM ignoré en headless + HTTP » et un usage après libération). test-httpapi 6/6, test-control-queue 4.)
 Build Status (prev): STABLE (**Sprint F : control.c et debugger.c découpés — 2.12.0**. control.c 1 352 → 261 l (+ util et 3 fichiers de commandes), debugger.c 2 395 → 637 l (+ view, mem, asm, repl) ; déplacement mécanique prouvé par cli_golden (116 cas, 0 écart contre le binaire précédent) ; docs/adr (5 décisions), audit mis à jour. Connu : blocage intermittent de test-httpapi, préexistant.)
 Build Status (prev): STABLE (**Chargement cassette natif fuzzé — 2.11.2**. tape_patches.c lisait un octet après la cassette épuisée (synchro et reprise de synchro), pouvant inventer une synchro ; corrigé. Cible de fuzzing tapenat (1,24 M exécutions), test-tape-patches 3.)
