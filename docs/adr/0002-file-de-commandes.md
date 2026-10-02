@@ -22,8 +22,10 @@ propre thread, à une frontière de trame.
 ## Conséquences
 
 - Une commande HTTP attend au plus une trame (20 ms) plus son exécution.
-- Un seul consommateur : la boucle de l'émulateur. Si elle s'arrête sans vider la
-  file, les producteurs restent bloqués (cf. ROADMAP : blocage intermittent de
-  `test-httpapi` à l'arrêt, préexistant, à analyser).
+- Un seul consommateur : la boucle de l'émulateur. Quand elle s'arrête (CPU
+  bloqué, limite de cycles, signal), la file est fermée **avant** l'arrêt du
+  serveur (`control_queue_shutdown`) : les producteurs en attente sont libérés,
+  sinon l'attente de fin du thread serveur ne se terminerait jamais (défaut
+  corrigé en 2.12.1).
 - Les commandes sont découpées par thème depuis 2.12.0 (`control_cmd_*.c`) ;
   `control_dispatch()` reste l'unique point d'entrée.

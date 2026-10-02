@@ -176,10 +176,48 @@ static void test_single_thread_roundtrip(void) {
     else { printf("[FAIL] submit reply/result mismatch\n"); tests_failed++; }
 }
 
+/* Boucle arrêtée (CPU bloqué, limite de cycles, signal) avec une commande en
+ * attente : control_queue_shutdown() doit libérer le producteur, sinon le join
+ * du thread serveur attend pour toujours (blocage vu dans test-httpapi). Une
+ * soumission après fermeture répond aussitôt. */
+static atomic_int g_shut_done;
+static void* blocked_producer(void* arg) {
+    char* reply = (char*)1;
+    control_queue_submit((control_queue_t*)arg, "regs", &reply, NULL);
+    atomic_store(&g_shut_done, reply == NULL ? 1 : 2);   /* réponse vide attendue */
+    return NULL;
+}
+
+static void test_shutdown_releases_blocked_producer(void) {
+    printf("  %-42s", "shutdown_releases_blocked_producer");
+    control_queue_t* q = control_queue_create();
+    atomic_store(&g_shut_done, 0);
+    pthread_t prod;
+    pthread_create(&prod, NULL, blocked_producer, q);
+    nap_us(50000);                                  /* il attend : personne ne vide */
+    int waited = atomic_load(&g_shut_done) == 0;
+    control_queue_shutdown(q);
+    int released = 0;
+    for (int i = 0; i < 200 && !released; i++) {     /* au plus 2 s */
+        released = atomic_load(&g_shut_done) != 0;
+        if (!released) nap_us(10000);
+    }
+    if (released) pthread_join(prod, NULL);
+    char* reply = (char*)1;
+    control_result_t r = control_queue_submit(q, "regs", &reply, NULL);   /* après fermeture */
+    int after = (r == CONTROL_CONTINUE) && reply == NULL;
+    if (released) control_queue_destroy(q);
+
+    if (waited && released && atomic_load(&g_shut_done) == 1 && after) { printf("[OK]\n"); tests_passed++; }
+    else { printf("[FAIL] waited=%d released=%d reply=%d after=%d\n", waited, released,
+                  atomic_load(&g_shut_done), after); tests_failed++; }
+}
+
 int main(void) {
     printf("=== control_queue concurrency tests ===\n");
     test_drain_empty_and_teardown();
     test_single_thread_roundtrip();
+    test_shutdown_releases_blocked_producer();
     test_concurrent_routing();
     printf("=== result: %d passed, %d failed ===\n", tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

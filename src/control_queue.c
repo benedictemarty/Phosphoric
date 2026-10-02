@@ -61,7 +61,7 @@ static control_cmd_t* dequeue_locked(control_queue_t* q) {
     return item;
 }
 
-void control_queue_destroy(control_queue_t* q) {
+void control_queue_shutdown(control_queue_t* q) {
     if (!q) return;
     pthread_mutex_lock(&q->mutex);
     q->shutting_down = true;
@@ -76,6 +76,11 @@ void control_queue_destroy(control_queue_t* q) {
     q->head = q->tail = NULL;
     q->count = 0;
     pthread_mutex_unlock(&q->mutex);
+}
+
+void control_queue_destroy(control_queue_t* q) {
+    if (!q) return;
+    control_queue_shutdown(q);
     pthread_mutex_destroy(&q->mutex);
     free(q);
 }

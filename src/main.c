@@ -950,8 +950,12 @@ static void emulator_cleanup(emulator_t* emu) {
     if (emu->has_cast_server) {
         cast_server_stop(&emu->cast_server);
     }
-    /* Stop the HTTP server (joins its thread → no more producers) BEFORE
-     * destroying the queue, so no submit() can touch freed memory. */
+    /* Close the queue first: the HTTP thread may be blocked in submit(),
+     * waiting for a loop that has already stopped (CPU jam, cycle limit,
+     * signal) — joining it would then wait forever (deadlock seen in
+     * test-httpapi). Then stop the server (join → no more producers), and only
+     * then free the queue, so no submit() can touch freed memory. */
+    control_queue_shutdown(emu->control_queue);
     if (emu->has_http_api) {
         http_api_stop(emu->http_api);
         emu->http_api = NULL;

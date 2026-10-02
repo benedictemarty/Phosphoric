@@ -30,10 +30,21 @@ typedef struct control_queue_s control_queue_t;
 control_queue_t* control_queue_create(void);
 
 /**
- * @brief Shut the queue down and free it.
+ * @brief Close the queue without freeing it.
  *
- * Any producers still blocked in submit() are released with an empty reply and
- * a CONTROL_CONTINUE result. Safe to call with NULL.
+ * Producers blocked in submit() are released with an empty reply and a
+ * CONTROL_CONTINUE result; later submits return at once. Call it before
+ * joining the producer threads (HTTP server): a producer waiting for a loop
+ * that has already stopped (CPU jam, cycle limit, signal) would otherwise keep
+ * the join waiting forever. Safe to call with NULL.
+ */
+void control_queue_shutdown(control_queue_t* q);
+
+/**
+ * @brief Shut the queue down (control_queue_shutdown) and free it.
+ *
+ * Only once no producer can still touch it: a released producer re-acquires
+ * the queue lock on wake-up. Safe to call with NULL.
  */
 void control_queue_destroy(control_queue_t* q);
 
