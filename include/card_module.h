@@ -49,12 +49,12 @@ typedef struct {
 /* Setup stages where the core calls the cards (in list order), at the
  * exact place their code used to occupy in main.c. */
 typedef enum {
-    CARD_STAGE_MACHINE,    /* main_setup_machine, juste après emulator_init */
-    CARD_STAGE_SERIAL,     /* main_setup_serial_cards, après l'ACIA 6551 */
-    CARD_STAGE_LOCI,       /* main_setup_loci (tout son contenu) */
-    CARD_STAGE_DISKS_EARLY, /* main_setup_disks_speech, en tête (Jasmin) */
-    CARD_STAGE_SPEECH,     /* main_setup_disks_speech, après le Jasmin */
-    CARD_STAGE_DISKS,      /* main_setup_disks_speech, après la synthèse (Microdisc) */
+    CARD_STAGE_MACHINE,    /* main_setup_machine, right after emulator_init */
+    CARD_STAGE_SERIAL,     /* main_setup_serial_cards, after the ACIA 6551 */
+    CARD_STAGE_LOCI,       /* main_setup_loci (its whole content) */
+    CARD_STAGE_DISKS_EARLY, /* main_setup_disks_speech, at the start (Jasmin) */
+    CARD_STAGE_SPEECH,     /* main_setup_disks_speech, after the Jasmin */
+    CARD_STAGE_DISKS,      /* main_setup_disks_speech, after speech synthesis (Microdisc) */
     CARD_STAGE_COUNT
 } card_stage_t;
 

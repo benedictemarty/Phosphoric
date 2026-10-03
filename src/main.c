@@ -2795,8 +2795,8 @@ static int main_setup_recordings(emulator_t* emu, cli_opts_t* cfg) {
 /* LOCI cartridge: firmware co-simulation, real hardware, HLE model.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_loci(emulator_t* emu, cli_opts_t* cfg) {
-    /* Carte LOCI en module (src/cards/card_loci.c) : son code était ici. Une
-     * erreur s'arrête sans emulator_cleanup, comme avant. */
+    /* LOCI card as a module (src/cards/card_loci.c): its code used to be here. An
+     * error stops without emulator_cleanup, as before. */
     if (card_modules_setup(emu, cfg, CARD_STAGE_LOCI) != 0) return 1;
     return -1;
 }
@@ -3216,12 +3216,12 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         return 1;
     }
 
-    /* --loci-web : autoboot NATIF LOCI. Le disque web est déjà monté sur le FDC
-     * de la LOCI (loci_dsk_open_web) ; il ne reste qu'à installer l'overlay ROM
-     * Microdisc à $A000 — exactement ce que fait MIA_BOOT avec LOCI_BOOT_FDC —
-     * pour que le code de boot lise le disque via $0310 (routé vers le FDC LOCI,
-     * web-backed sous --loci) et démarre Sedoric sans passer par le menu. Le ROM
-     * -r (BASIC) est déjà chargé à $C000 ; on ne touche donc que $A000. */
+    /* --loci-web: NATIVE LOCI autoboot. The web disk is already mounted on the
+     * LOCI's FDC (loci_dsk_open_web); all that remains is to install the Microdisc
+     * ROM overlay at $A000 — exactly what MIA_BOOT does with LOCI_BOOT_FDC —
+     * so that the boot code reads the disk via $0310 (routed to the LOCI FDC,
+     * web-backed under --loci) and boots Sedoric without going through the menu. The
+     * -r ROM (BASIC) is already loaded at $C000; so only $A000 is touched. */
     if (cfg->loci_web_url && emu->card_on[CARD_IDX_loci]) {
         char disc[512] = {0};
         const char* cand = cfg->disk_rom_file;                 /* --disk-rom if provided */

@@ -180,9 +180,9 @@ static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
         loci_emu_reflect_nirq(emu);
         return v;
     }
-    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
-     * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
-     * nominale déterministe. */
+    /* CPU path: samples the race WITH jitter (advances the PRNG). The jitter
+     * only has an effect in the PHASE model near the latch; otherwise it is the
+     * deterministic nominal decision. */
     bool lost = emu->card_on[CARD_IDX_loci] && emu->acia_base_addr == 0x0380 &&
                 loci_mia_serve_lost_sampled(&emu->loci);
     if (lost) {

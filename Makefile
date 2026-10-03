@@ -599,10 +599,10 @@ TEST_LOCI_SRCS = tests/support/loci_emu_stub.c tests/unit/test_loci.c \
 
 $(eval $(call UNIT_TEST,test-loci,test_loci,$(TEST_LOCI_SRCS),,))
 
-# Course PHI2 du LOCI sur l'ACIA $0380 (picowifi) — dispatch io_bus complet, donc
-# tout l'arbre des périphériques de page 3 est lié.
-# Les cartes en modules (dont LOCI et l'ACIA) lient leurs périphériques et leur
-# mise en route : la bibliothèque entière, comme test-cards (2.18.0).
+# LOCI PHI2 race on the $0380 ACIA (picowifi) — full io_bus dispatch, so
+# the whole page 3 peripheral tree is linked.
+# Module cards (including LOCI and the ACIA) link their peripherals and their
+# setup: the whole library, like test-cards (2.18.0).
 TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c $(LIB_SOURCES)
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))

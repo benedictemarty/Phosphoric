@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_loci_emu.c
- * @brief Fiche du menu « LOCI (co-simulation) » : la cartouche servie par le
- *        vrai firmware (--loci-emu), disponible seulement avec le backend
- *        « emul » (make LOCI_EMU=1 ; filtrée par cards.c).
+ * @brief Menu entry « LOCI (co-simulation) »: the cartridge served by the
+ *        real firmware (--loci-emu), available only with the « emul »
+ *        backend (make LOCI_EMU=1; filtered by cards.c).
  * @author bmarty <bmarty@mailo.com>
  *
- * Module à part de card_loci.c parce que sa fiche n'est pas à côté de celle de
- * LOCI dans le menu ; sa mise en route est celle de LOCI (card_loci.c).
+ * Module separate from card_loci.c because its entry is not next to the LOCI
+ * one in the menu; its setup is that of LOCI (card_loci.c).
  */
 #include "card_module.h"
 

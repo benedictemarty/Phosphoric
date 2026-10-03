@@ -27,14 +27,14 @@
  * *returns* whether it consumed it — otherwise VIA fallback; hence the separate
  * `claims_write` and the boolean return of `write`. "Strangler" pattern. */
 
-/* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
- * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
- * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
- * un poll de NIVEAU le manquerait (déjà retombé). L'émulateur latche chaque front
- * montant ; on draine ces pulses ici, juste après la transaction, et on les délivre
- * au 6502 en EDGE / TIR UNIQUE (cpu_irq_pulse) — une IRQ par pulse, sans maintien
- * de niveau donc sans tempête. main.c draine aussi une fois par frame (filet pour
- * les pulses hors écriture MIA, ex. trap IRQ sur bouton). */
+/* Synchronous nIRQ reflection (co-sim backend --loci-emu). The RP2040 firmware
+ * PULSES the nIRQ line (ext_put(EXT_IRQ,true) then false) in response to a
+ * MIA transaction (the write runs core0+core1 for the duration of the bus dialogue):
+ * a LEVEL poll would miss it (already dropped). The emulator latches every rising
+ * edge; these pulses are drained here, right after the transaction, and delivered
+ * to the 6502 as an EDGE / ONE-SHOT (cpu_irq_pulse) — one IRQ per pulse, with no
+ * level held, hence no storm. main.c also drains once per frame (safety net for
+ * pulses outside MIA writes, e.g. IRQ trap on the button). */
 void loci_emu_reflect_nirq(emulator_t* emu) {
     int pulses = loci_emu_irq_take();
     for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
@@ -63,8 +63,8 @@ static void loci_dev_tick(emulator_t* emu, int cycles) {
 static const io_device_t k_jasmin_tick = {
     .name = "jasmin", .present_off = offsetof(emulator_t, card_on[CARD_IDX_jasmin]),
     .tick = jasmin_dev_tick };
-/* LOCI (carte en module, src/cards/card_loci.c) : son état et son horloge restent
- * dans la machine ; le cœur l'avance ici, après les contrôleurs disque. */
+/* LOCI (card as a module, src/cards/card_loci.c): its state and its clock stay
+ * in the machine; the core advances it here, after the disk controllers. */
 static const io_device_t k_loci_tick = {
     .name = "loci", .present_off = offsetof(emulator_t, card_on[CARD_IDX_loci]),
     .tick = loci_dev_tick };
@@ -82,10 +82,10 @@ static const io_device_t* const io_bus_tick_order[] = {
     &k_microdisc_tick, &k_jasmin_tick, &k_loci_tick,
 };
 
-/* Table de répartition effective : périphériques du cœur, avec les cartes en
- * modules insérées avant leur ancre (bus_before), copiés dans un tableau
- * contigu (même forme qu'avant pour savestate.c : l'ordre des sections .ost est
- * celui de cette table). Construite au premier usage. */
+/* Effective dispatch table: core devices, with the cards as modules
+ * inserted before their anchor (bus_before), copied into a contiguous
+ * array (same shape as before for savestate.c: the order of the .ost sections
+ * is that of this table). Built on first use. */
 #define IO_BUS_MAX 32
 static io_device_t s_bus[IO_BUS_MAX];
 static int s_bus_n = -1;
@@ -98,8 +98,8 @@ static void bus_emit(int m, int j, void* ctx) {
     if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = *k_card_modules[m]->bus;
 }
 
-/* Tous les périphériques du bus sont désormais des cartes en modules : la table
- * se construit de leurs seules ancres (aucun élément du cœur). */
+/* All the bus devices are now cards as modules: the table is built from
+ * their anchors alone (no core element). */
 static void io_bus_build(void) {
     s_bus_n = 0;
     card_modules_place(NULL, 0, bus_anchor, bus_count, bus_key, bus_emit, NULL, NULL);

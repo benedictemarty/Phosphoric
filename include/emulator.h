@@ -453,8 +453,8 @@ typedef struct emulator_s {
     /* LOCI peripheral (Lovely Oric Computer Interface, sodiumlb 2024).
      * Only active when --loci is passed; reserves MIA bus at $03A0-$03BF. */
     loci_t loci;
-    /* Cartes d'extension (menu F1) : options de lancement d'origine, choix en
-     * cours d'édition, options de relance (NULL : pas de relance demandée). */
+    /* Expansion cards (F1 menu): original launch options, choices being
+     * edited, restart options (NULL: no restart requested). */
     int    argc;
     char** argv;
     cards_state_t cards;
