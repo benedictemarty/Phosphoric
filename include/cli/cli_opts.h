@@ -134,16 +134,6 @@ typedef struct cli_opts_s {
     const char* profile_file;
     const char* rom_info_file;
     bool rom_info_enabled;
-    const char* serial_arg;
-    const char* acia_addr_arg;
-    bool serial_v23;
-    int serial_buffer_size;
-    int serial_baud;
-    bool serial_irq_on_rdrf;
-    const char* serial_trace_file;
-    bool serial_tcp_backpressure;   /* --serial-tcp-backpressure */
-    int serial_tcp_rcvbuf;   /* explicit SO_RCVBUF cap (0 = auto) */
-    long loci_irq_latency_us;   /* --loci-irq-latency (LOCI I2C IRQ cost) */
 
     uint64_t loci_menu_at;
     /* Menu des périphériques (F1) et phosphoric.cfg. */

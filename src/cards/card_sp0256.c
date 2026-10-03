@@ -47,6 +47,8 @@ static const char k_help[] =
     "                             mixed into the PSG audio (Frelon, Cobra Pinball, …).\n"
     "      --sp0256-addr ADDR     SP0256 I/O address in hex (default 03F1)\n";
 
+static const card_help_t k_helps[] = { { k_help, "mea8000" } };
+
 static const card_desc_t k_desc = {
     "sp0256", "SP0256",
     "Synthétiseur vocal Mageco (GI SP0256-AL2, allophones), mixé au son de "
@@ -129,7 +131,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
 const card_module_t card_sp0256 = {
     .descs = k_descs, .ndescs = 1, .desc_before = "mea8000",
     .opts = k_opts, .nopts = 2, .opts_before = "mea8000",
-    .help = k_help, .help_before = "mea8000",
+    .helps = k_helps, .nhelps = 1,
     .cfg_size = sizeof(sp0256_cfg_t), .cfg_defaults = cfg_defaults,
     .stage = CARD_STAGE_SPEECH, .setup = setup,
     .bus = &k_bus, .bus_before = "mea8000",

@@ -47,6 +47,8 @@ static const char k_help[] =
     "                             speech mixed into the PSG. Exclusive with --sp0256-rom.\n"
     "      --mea8000-addr ADDR    MEA8000 base I/O address in hex (default 03FE)\n";
 
+static const card_help_t k_helps[] = { { k_help, "disk-writeback" } };
+
 static const card_desc_t k_desc = {
     "mea8000", "MEA8000",
     "Synthétiseur vocal TMPI (Philips MEA 8000, synthèse par formants, sans "
@@ -123,7 +125,7 @@ static const card_desc_t* const k_descs[] = { &k_desc };
 const card_module_t card_mea8000 = {
     .descs = k_descs, .ndescs = 1, .desc_before = "hostfs",
     .opts = k_opts, .nopts = 2, .opts_before = "breakpoint",
-    .help = k_help, .help_before = "disk-writeback",
+    .helps = k_helps, .nhelps = 1,
     .cfg_size = sizeof(mea8000_cfg_t), .cfg_defaults = cfg_defaults,
     .stage = CARD_STAGE_SPEECH, .setup = setup,
     .bus = &k_bus, .bus_before = "dtl2000",

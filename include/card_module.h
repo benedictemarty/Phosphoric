@@ -38,6 +38,14 @@ typedef struct {
     void      (*set)(void* cfg, const char* arg);
 } card_opt_t;
 
+/* Bloc d'aide d'une carte, placé juste avant l'aide de l'option @p before
+ * (NULL : en fin de liste des options). Une carte peut en avoir plusieurs quand
+ * ses options sont dispersées dans l'aide (ACIA). */
+typedef struct {
+    const char* text;      /* lignes d'aide, « \n » compris */
+    const char* before;
+} card_help_t;
+
 /* Étapes de mise en route où le cœur appelle les cartes (dans l'ordre de la
  * liste), à la place exacte qu'occupait leur code dans main.c. */
 typedef enum {
@@ -55,8 +63,8 @@ typedef struct card_module_s {
     const card_opt_t*  opts;
     int                nopts;
     const char*        opts_before;  /* option (sans --) qu'elles précèdent dans la table */
-    const char*        help;         /* lignes d'aide, « \n » compris */
-    const char*        help_before;  /* option dont l'aide suit la leur */
+    const card_help_t* helps;        /* blocs d'aide (au moins un si la carte a des options) */
+    int                nhelps;
 
     size_t             cfg_size;
     void             (*cfg_defaults)(void* cfg);

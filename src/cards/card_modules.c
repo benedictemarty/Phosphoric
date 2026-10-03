@@ -133,29 +133,49 @@ const struct option* card_modules_long_options(const struct option* core) {
 
 /* ── Aide ──────────────────────────────────────────────────────────────── */
 
-/* Un module = un bloc d'aide, repéré par sa première option. Les blocs déjà
- * écrits sont notés dans un placeur unique, remis à zéro en fin d'aide. */
-static const char* help_anchor(int m) {
-    return k_card_modules[m]->help ? k_card_modules[m]->help_before : NULL;
+/* L'aide se place par blocs (card_help_t), chacun avec son ancre : un bloc est
+ * repéré par la première option qu'il annonce (« --nom » en tête de ligne), pour
+ * que les blocs ancrés sur lui passent avant. Les blocs écrits sont notés, remis
+ * à zéro en fin d'aide. */
+static bool s_help_done[64][4];
+
+static void help_key(const char* text, char* out, size_t outsz) {
+    const char* p = strstr(text, "--");
+    size_t n = p ? strcspn(p + 2, " =[\n") : 0;
+    if (n >= outsz) n = outsz - 1;
+    if (p) memcpy(out, p + 2, n);
+    out[n] = '\0';
 }
-static int help_count(int m) { return k_card_modules[m]->help ? 1 : 0; }
-static const char* help_key(int m, int j) {
-    (void)j;
-    return k_card_modules[m]->nopts > 0 ? k_card_modules[m]->opts[0].name : "";
+
+static void help_unit(int m, int k);
+
+static void help_before(const char* name) {
+    for (int m = 0; m < k_card_module_count; m++)
+        for (int k = 0; k < k_card_modules[m]->nhelps && k < 4; k++) {
+            const char* a = k_card_modules[m]->helps[k].before;
+            if (!s_help_done[m][k] && a && strcmp(a, name) == 0) help_unit(m, k);
+        }
 }
-static void help_emit(int m, int j, void* ctx) {
-    (void)j; (void)ctx;
-    fputs(k_card_modules[m]->help, stdout);
+
+static void help_unit(int m, int k) {
+    char key[64];
+    s_help_done[m][k] = true;
+    help_key(k_card_modules[m]->helps[k].text, key, sizeof(key));
+    if (key[0]) help_before(key);
+    fputs(k_card_modules[m]->helps[k].text, stdout);
 }
-static placer_t s_help = { help_anchor, help_count, help_key, help_emit, NULL, { false } };
 
 void card_modules_print_help_before(const char* name) {
     if (name) {
-        place_before(&s_help, name);
+        help_before(name);
         return;
     }
-    place_rest(&s_help);
-    memset(s_help.placed, 0, sizeof(s_help.placed));   /* prête pour une autre aide */
+    for (int pass = 0; pass < 2; pass++)              /* sans ancre, puis ancre introuvable */
+        for (int m = 0; m < k_card_module_count; m++)
+            for (int k = 0; k < k_card_modules[m]->nhelps && k < 4; k++)
+                if (!s_help_done[m][k] && (pass == 1 || !k_card_modules[m]->helps[k].before))
+                    help_unit(m, k);
+    memset(s_help_done, 0, sizeof(s_help_done));    /* prête pour une autre aide */
 }
 
 /* ── Cycle de vie ──────────────────────────────────────────────────────── */

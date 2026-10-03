@@ -31,6 +31,11 @@ const io_device_t* io_bus_find_write(struct emulator_s* emu, uint16_t addr);
  *  @param count  reçoit le nombre d'entrées. */
 const io_device_t* io_bus_devices(int* count);
 
+/** Co-simulation LOCI : recopie la ligne nIRQ du vrai firmware sur l'IRQ du CPU,
+ *  après un accès servi par le firmware (DSK, io-page, ACIA $0380 : partagé avec
+ *  la carte ACIA, src/cards/card_acia.c). */
+void loci_emu_reflect_nirq(struct emulator_s* emu);
+
 /** Avance d'un pas de `cycles` cycles CPU les périphériques de bus temporisés
  *  (FDC Microdisc/LOCI, ACIA, DTL2000, Mageco), dans l'ORDRE HISTORIQUE exact de
  *  `cpu_cycle_tick` (iso-comportement). Le VIA et la cassette (cœur/port) restent

@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.15.0"
+#define EMU_VERSION "2.16.0"
 
 /**
  * @brief ORIC machine model
@@ -165,7 +165,6 @@ typedef struct emulator_s {
     acia6551_t acia;
     uint16_t acia_base_addr;
     serial_backend_t* serial_backend;
-    bool has_serial;
 
     /* Microdisc controller */
     microdisc_t microdisc;
@@ -526,7 +525,8 @@ typedef struct emulator_s {
      * seule : renseigné au lancement, sans effet sur l'émulation). */
     iom_menu_t  iomenu;
     const char* jasmin_rom_path;
-    const char* serial_spec;        /* --serial */
+    const char* serial_spec;        /* --serial (lu par la mise en route LOCI : picowifi) */
+    const char* serial_trace_file;  /* --serial-trace (ACIA, DTL 2000, Mageco) */
     const char* config_path;        /* fichier de configuration (NULL : défaut) */
 } emulator_t;
 
