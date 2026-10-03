@@ -11,8 +11,8 @@
 #include "io/io_bus.h"
 #include "io/loci_emu.h"   /* co-sim backend: MIA $03xx API served by the real firmware (--loci-emu) */
 #include "emulator.h"
-#include "card_module.h"   /* cartes en modules : leurs périphériques de bus */
-#include "card_ticks.h"    /* leurs ticks par cycle, en appels directs */
+#include "card_module.h"   /* cards as modules: their bus devices */
+#include "card_ticks.h"    /* their per-cycle ticks, as direct calls */
 
 #include <stdio.h>
 #include <stddef.h>   /* offsetof */
@@ -387,19 +387,19 @@ static const io_device_t io_bus[DEV_COUNT] = {
                      .save_tag = "UNG\0", .save = ula_ng_dev_save, .load = ula_ng_dev_load },
 };
 
-/* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
- * l'ancien cpu_cycle_tick (microdisc → jasmin → loci → acia → dtl → mageco →
- * sp0256), puis les cartes en modules dans l'ordre de k_card_modules (mea8000) :
- * iso-comportement par construction. */
+/* TICK ORDER, distinct from the dispatch order and PRESERVED exactly as in
+ * the old cpu_cycle_tick (microdisc → jasmin → loci → acia → dtl → mageco →
+ * sp0256), then the cards as modules in k_card_modules order (mea8000):
+ * identical behaviour by construction. */
 static const io_device_t* const io_bus_tick_order[] = {
     &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI], &io_bus[DEV_ACIA],
     &io_bus[DEV_DTL2000], &io_bus[DEV_MAGECO], &io_bus[DEV_SP0256],
 };
 
-/* Table de répartition effective : périphériques du cœur, avec les cartes en
- * modules insérées avant leur ancre (bus_before), copiés dans un tableau
- * contigu (même forme qu'avant pour savestate.c : l'ordre des sections .ost est
- * celui de cette table). Construite au premier usage. */
+/* Effective dispatch table: core devices, with the cards as modules
+ * inserted before their anchor (bus_before), copied into a contiguous
+ * array (same shape as before for savestate.c: the order of the .ost sections
+ * is that of this table). Built on first use. */
 #define IO_BUS_MAX (DEV_COUNT + 32)
 static io_device_t s_bus[IO_BUS_MAX];
 static int s_bus_n = -1;
@@ -423,7 +423,7 @@ static void io_bus_build(void) {
         bus_add_modules_before(io_bus[i].name, placed);
         s_bus[s_bus_n++] = io_bus[i];
     }
-    bus_add_modules_before(NULL, placed);          /* sans ancre : en fin de table */
+    bus_add_modules_before(NULL, placed);          /* no anchor: at the end of the table */
 }
 
 const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
@@ -464,7 +464,7 @@ void io_bus_tick(emulator_t* emu, int cycles) {
         if (__builtin_expect(*(const bool*)(base + d->present_off), 0))
             d->tick(emu, cycles);
     }
-    /* Cartes en modules (après le cœur, dans l'ordre de la liste) : appels
-     * directs générés (card_ticks.h). */
+    /* Cards as modules (after the core, in list order): generated direct
+     * calls (card_ticks.h). */
     card_modules_tick(emu, cycles);
 }

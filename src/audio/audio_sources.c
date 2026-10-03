@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file audio_sources.c
- * @brief Sources audio des cartes d'extension en modules, mixées au PSG par le
- *        callback SDL (audio_output.c) et par la capture (main.c). Sans
- *        dépendance : les tests qui lient une carte n'ont pas besoin de SDL.
+ * @brief Audio sources of the expansion cards as modules, mixed into the PSG
+ *        by the SDL callback (audio_output.c) and by the capture (main.c). No
+ *        dependency: the tests that link a card do not need SDL.
  * @author bmarty <bmarty@mailo.com>
  */
 #include "audio/audio.h"
@@ -18,7 +18,7 @@ void audio_add_source(audio_source_fn fn, void* ctx) {
     if (!fn || s_nsources >= AUDIO_SOURCES_MAX) return;
     s_sources[s_nsources].fn = fn;
     s_sources[s_nsources].ctx = ctx;
-    s_nsources++;                      /* après l'entrée : le callback la voit entière */
+    s_nsources++;                      /* after the entry: the callback sees it whole */
 }
 
 void audio_mix_sources(int16_t* stereo, int n, int chunk_max) {

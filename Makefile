@@ -158,10 +158,10 @@ ifeq ($(SANITIZE), 1)
 endif
 
 # Source files
-# Cartes d'extension en modules (ADR 0006) : registre (card_modules.c), une
-# carte par fichier (card_<id>.c, pris par motif : ajouter une carte ne touche
-# pas au Makefile ; sa ligne va dans include/cards_list.h), et le registre des
-# sources audio qu'elles alimentent.
+# Expansion cards as modules (ADR 0006): registry (card_modules.c), one card
+# per file (card_<id>.c, picked up by pattern: adding a card does not touch
+# the Makefile; its line goes in include/cards_list.h), and the registry of
+# the audio sources they feed.
 CARD_MODULE_SRCS = $(sort $(wildcard src/cards/card_*.c)) src/audio/audio_sources.c
 
 SOURCES = src/main.c \
@@ -556,7 +556,7 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
-# Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
+# I/O peripherals menu (F1): model, keys, file picker, drawing.
 TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c src/cards.c src/utils/logging.c $(LOCI_STUB) \
                    $(CARD_MODULE_SRCS) src/io/mea8000.c
 $(eval $(call UNIT_TEST,test-iomenu,test_iomenu,$(TEST_IOMENU_SRCS),,))

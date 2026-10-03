@@ -1,14 +1,14 @@
 #!/bin/sh
 # SPDX-License-Identifier: EUPL-1.2
 #
-# instr_count.sh — instructions exécutées par l'émulateur (valgrind/cachegrind),
-# mesure stable de la performance, insensible au bridage du processeur et à la
-# disposition du code (contrairement au temps de --bench).
+# instr_count.sh — instructions executed by the emulator (valgrind/cachegrind),
+# a stable performance measure, insensitive to CPU throttling and to code
+# layout (unlike the --bench time).
 #
-# Usage : tools/instr_count.sh BINAIRE [arguments en plus...]
-#   ex. : tools/instr_count.sh ./oric1-emu --mea8000
-# Affiche le nombre d'instructions pour 2 M cycles émulés (≈ 100 trames).
-# Utilisé au sprint G (cartes en modules) pour comparer deux binaires.
+# Usage: tools/instr_count.sh BINARY [extra arguments...]
+#   e.g.: tools/instr_count.sh ./oric1-emu --mea8000
+# Prints the instruction count for 2 M emulated cycles (≈ 100 frames).
+# Used in sprint G (cards as modules) to compare two binaries.
 #
 # Author: bmarty <bmarty@mailo.com>
 set -u

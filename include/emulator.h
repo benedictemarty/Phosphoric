@@ -34,7 +34,7 @@
 #include "io/jasmin.h"
 #include "io/sp0256.h"
 #include "io/mea8000.h"
-#include "cards_list.h"   /* CARD_MODULE_COUNT : cartes en modules (ADR 0006) */
+#include "cards_list.h"   /* CARD_MODULE_COUNT: cards as modules (ADR 0006) */
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
 #include "cards.h"
@@ -204,7 +204,7 @@ typedef struct emulator_s {
      * exclusive with the SP0256 ($03F1 overlap). */
     mea8000_t mea8000;
 
-    /* Présence des cartes en modules (index CARD_IDX_<id>, cards_list.h). */
+    /* Presence of the cards as modules (index CARD_IDX_<id>, cards_list.h). */
     bool card_on[CARD_MODULE_COUNT + 1];
 
     /* Tape buffer for ROM patching (CLOAD support) */

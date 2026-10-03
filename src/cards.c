@@ -163,8 +163,8 @@ static const card_desc_t k_cards[] = {
 };
 #define K_CARDS ((int)(sizeof(k_cards) / sizeof(k_cards[0])))
 
-/* Toutes les cartes : celles de k_cards, avec les fiches des cartes en modules
- * insérées avant leur ancre (desc_before), pour garder l'ordre du menu. */
+/* All the cards: those of k_cards, with the entries of the cards as modules
+ * inserted before their anchor (desc_before), to keep the menu order. */
 #define ALL_MAX 32
 static const card_desc_t* g_all[ALL_MAX];
 static int g_all_n = -1;
@@ -189,11 +189,11 @@ static void build_all(void) {
         all_add_modules_before(k_cards[i].id, placed);
         if (g_all_n < ALL_MAX) g_all[g_all_n++] = &k_cards[i];
     }
-    all_add_modules_before(NULL, placed);          /* sans ancre : en fin de menu */
+    all_add_modules_before(NULL, placed);          /* no anchor: at the end of the menu */
 }
 
-/* Disponibilité dans cette build : la co-simulation LOCI exige le backend
- * « emul » (make LOCI_EMU=1). */
+/* Availability in this build: LOCI co-simulation requires the « emul »
+ * backend (make LOCI_EMU=1). */
 static bool card_available(const card_desc_t* c) {
     if (strcmp(c->id, "loci_emu") == 0) return strcmp(loci_emu_backend_name(), "emul") == 0;
     return true;

@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_mea8000.c
- * @brief Carte MEA8000 (synthèse vocale TMPI, Philips MEA 8000) en module :
- *        menu, options, mise en route, bus et son (card_module.h).
+ * @brief MEA8000 card (TMPI speech synth, Philips MEA 8000) as a module:
+ *        menu, options, setup, bus and sound (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  */
 #include "card_module.h"
@@ -15,10 +15,10 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
-    bool     enabled;     /* --mea8000 (TMPI, sans ROM) */
+    bool     enabled;     /* --mea8000 (TMPI, no ROM) */
     uint16_t base_addr;   /* --mea8000-addr (hex) */
 } mea8000_cfg_t;
 
@@ -53,7 +53,7 @@ static const card_desc_t k_desc = {
     1
 };
 
-/* ── Bus : data à base_addr, commande à base_addr+1 ────────────────────── */
+/* ── Bus: data at base_addr, command at base_addr+1 ────────────────────── */
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_mea8000] &&
@@ -82,13 +82,13 @@ static const io_device_t k_bus = {
     .present_off = offsetof(emulator_t, card_on[CARD_IDX_mea8000]), .tick = card_mea8000_tick,
 };
 
-/* ── Son et mise en route ──────────────────────────────────────────────── */
+/* ── Sound and setup ───────────────────────────────────────────────────── */
 
 static void audio_gen(void* ctx, int16_t* out, int n) { mea8000_generate(ctx, out, n); }
 
-/* Puce à formants Philips/Signetics en $03FE/$03FF (carte TMPI, confirmée en jeu
- * avec SYNTHOR ; adresse réglable). Sans ROM : l'hôte envoie les trames.
- * Exclusive de la carte SP0256 (deux synthèses vocales). */
+/* Philips/Signetics formant chip at $03FE/$03FF (TMPI card, confirmed in-game
+ * with SYNTHOR; configurable address). No ROM: the host streams the frames.
+ * Mutually exclusive with the SP0256 card (two speech synths). */
 static int setup(emulator_t* emu, const void* p) {
     const mea8000_cfg_t* cfg = p;
     if (!cfg->enabled) return 0;

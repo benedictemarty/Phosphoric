@@ -17,7 +17,7 @@
 #include "cli/cli_args.h"
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] */
 #include "cli/cli_usage.h"    /* cli_print_usage */
-#include "card_module.h"      /* options des cartes en modules */
+#include "card_module.h"      /* options of the cards as modules */
 #include "io/bus_timing.h"    /* BUS_LATCH_SUBTICK_DEFAULT */
 #include "utils/logging.h"
 
@@ -39,7 +39,7 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
     int opt;
     int option_index = 0;
 
-    /* Table du cœur augmentée des options des cartes en modules (card_module.h). */
+    /* Core table extended with the options of the cards as modules (card_module.h). */
     const struct option* opts = card_modules_long_options(long_options);
     while ((opt = getopt_long(argc, argv, CLI_SHORT_OPTIONS, opts, &option_index)) != -1) {
         if (opt >= CARD_OPT_BASE) {

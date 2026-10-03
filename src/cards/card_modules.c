@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_modules.c
- * @brief Registre des cartes en modules : table getopt, aide, configuration et
- *        mise en route dérivées de k_card_modules[] (voir card_module.h).
+ * @brief Registry of the cards as modules: getopt table, help, configuration
+ *        and setup derived from k_card_modules[] (see card_module.h).
  * @author bmarty <bmarty@mailo.com>
  */
 #include "card_module.h"
@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ── Liste (générée depuis cards_list.h) ─────────────────────────────────── */
+/* ── List (generated from cards_list.h) ──────────────────────────────────── */
 
 #define CARD_LIST_DECL(id, tick) extern const card_module_t card_##id;
 CARD_MODULE_LIST(CARD_LIST_DECL)
@@ -21,8 +21,8 @@ const int k_card_module_count = CARD_MODULE_COUNT;
 
 /* ── Configuration ─────────────────────────────────────────────────────── */
 
-/* Une configuration par module, allouée une fois et gardée (statique : jamais
- * signalée comme fuite) ; chaque appel la remet aux valeurs par défaut. */
+/* One configuration per module, allocated once and kept (static: never
+ * reported as a leak); each call resets it to the default values. */
 static void* s_cfgs[64];
 
 void** card_modules_cfg_new(void) {
@@ -56,9 +56,9 @@ bool card_modules_option_is_flag(const char* opt) {
 
 /* ── Table getopt ──────────────────────────────────────────────────────── */
 
-/* Les options d'un module s'insèrent juste avant leur ancre. Une ancre peut être
- * l'option d'un autre module : chaque option émise laisse d'abord passer les
- * modules ancrés sur elle (récursion bornée par `placed`). */
+/* A module's options are inserted just before their anchor. An anchor may be
+ * another module's option: each emitted option first lets through the
+ * modules anchored on it (recursion bounded by `placed`). */
 static struct option* s_tbl;
 static int s_n;
 static bool s_placed[64];
@@ -97,11 +97,11 @@ const struct option* card_modules_long_options(const struct option* core) {
         s_tbl[s_n++] = core[i];
     }
     for (int m = 0; m < k_card_module_count; m++)
-        if (!s_placed[m]) emit_module(m);          /* sans ancre (ou ancre absente) */
-    return s_tbl;                                   /* terminée par calloc : {0} */
+        if (!s_placed[m]) emit_module(m);          /* no anchor (or anchor missing) */
+    return s_tbl;                                   /* terminated by calloc: {0} */
 }
 
-/* ── Aide ──────────────────────────────────────────────────────────────── */
+/* ── Help ──────────────────────────────────────────────────────────────── */
 
 static bool s_help_done[64];
 
@@ -129,10 +129,10 @@ void card_modules_print_help_before(const char* name) {
     }
     for (int m = 0; m < k_card_module_count; m++)
         if (!s_help_done[m] && k_card_modules[m]->help) help_module(m);
-    memset(s_help_done, 0, sizeof(s_help_done));   /* prête pour une autre aide */
+    memset(s_help_done, 0, sizeof(s_help_done));   /* ready for another help */
 }
 
-/* ── Mise en route ─────────────────────────────────────────────────────── */
+/* ── Setup ─────────────────────────────────────────────────────────────── */
 
 int card_modules_setup(emulator_t* emu, void** cfgs, card_stage_t stage) {
     for (int m = 0; m < k_card_module_count; m++) {

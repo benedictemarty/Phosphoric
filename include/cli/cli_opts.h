@@ -75,7 +75,7 @@ typedef struct {
     const char* jasmin_rom_file;   /* --jasmin-rom : Jasmin boot ROM (2 KB) */
     const char* sp0256_rom_file;   /* --sp0256-rom : SP0256-AL2 ROM (2 KB) */
     uint16_t sp0256_base_addr;   /* --sp0256-addr (hex) */
-    void** card_cfg;        /* configuration de chaque carte en module (card_module.h) */
+    void** card_cfg;        /* configuration of each card module (card_module.h) */
     bool debug_mode;
     const char* debug_break_addr;
     bool cast_server_enabled;

@@ -13,11 +13,11 @@
 #include <string.h>
 #include "emulator.h"       /* EMU_VERSION */
 #include "cli/cli_usage.h"
-#include "card_module.h"    /* aide des cartes en modules */
+#include "card_module.h"    /* help of the cards as modules */
 
-/* Chaque ligne d'aide passe par ici : avant la ligne qui annonce une option
- * (« -x, --nom » ou « --nom » en tête), les cartes en modules ancrées sur cette
- * option écrivent leur bloc (card_modules_print_help_before). */
+/* Every help line goes through here: before the line announcing an option
+ * (« -x, --name » or « --name » at its start), the cards as modules anchored on
+ * that option write their block (card_modules_print_help_before). */
 static void usage_printf(const char* fmt, ...) {
     char line[1024];
     va_list ap;
@@ -246,7 +246,7 @@ void cli_print_usage(const char* program_name) {
     usage_printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     usage_printf("      --load-state FILE      Load emulator state from FILE at startup\n");
     usage_printf("  -?, --help                 Show this help\n");
-    card_modules_print_help_before(NULL);   /* cartes sans ancre */
+    card_modules_print_help_before(NULL);   /* cards without an anchor */
     usage_printf("\n");
     usage_printf("Controls:\n");
     usage_printf("  F1  - Peripherals menu: floppies, tape, snapshots, printer, joystick,\n");

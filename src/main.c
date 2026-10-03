@@ -57,10 +57,10 @@
 #include "io/loci_emu.h"       /* backend emulating the real RP2040 firmware (--loci-emu) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
-#include "cli/cli_opts.h"     /* cli_opts_t : options de la ligne de commande (sprint C) */
-#include "cli/cli_args.h"     /* cli_parse_args : boucle getopt (sprint C) */
-#include "card_module.h"       /* cartes d'extension en modules (ADR 0006) */
-#include "iomenu_glue.h"       /* menu des périphériques E/S (F1) */
+#include "cli/cli_opts.h"     /* cli_opts_t: command-line options (sprint C) */
+#include "cli/cli_args.h"     /* cli_parse_args: getopt loop (sprint C) */
+#include "card_module.h"       /* expansion cards as modules (ADR 0006) */
+#include "iomenu_glue.h"       /* I/O peripherals menu (F1) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -3782,8 +3782,8 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
                  cfg->sp0256_base_addr);
     }
 
-    /* Cartes en modules de l'étape « synthèse vocale » (MEA8000…), à la place
-     * qu'occupait leur code ici (card_module.h). */
+    /* Cards as modules of the « speech » stage (MEA8000…), at the place
+     * their code used to occupy here (card_module.h). */
     if (card_modules_setup(emu, cfg->card_cfg, CARD_STAGE_SPEECH) != 0) {
         emulator_cleanup(emu);
         return 1;
