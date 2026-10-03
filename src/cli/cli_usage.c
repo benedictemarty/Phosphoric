@@ -59,10 +59,6 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                             2 KB boot ROM at $F800). Alternative to the Microdisc;\n");
     usage_printf("                             boots Jasmin/TDOS disks. Shares -d/--disk1..3. Mutually\n");
     usage_printf("                             exclusive with --disk-rom/--dtl2000/--mageco.\n");
-    usage_printf("      --sp0256-rom FILE      Enable the Mageco speech synth (GI SP0256-AL2 at $03F1);\n");
-    usage_printf("                             loads the 2 KB allophone ROM (sp0256-al2.bin). Speech is\n");
-    usage_printf("                             mixed into the PSG audio (Frelon, Cobra Pinball, …).\n");
-    usage_printf("      --sp0256-addr ADDR     SP0256 I/O address in hex (default 03F1)\n");
     usage_printf("      --disk-writeback       Persist in-game disk writes back to the .dsk files on exit\n");
     usage_printf("                             (overwrites in place; only drives actually written are saved)\n");
     usage_printf("      --disk-create FILE     Create a blank Sedoric disk in drive A and write it to FILE\n");
@@ -115,9 +111,6 @@ void cli_print_usage(const char* program_name) {
     usage_printf("      --no-config            Do not read phosphoric.cfg\n");
     usage_printf("      --menu-screenshot FILE Render the F1 peripherals menu to a PPM (end of run)\n");
     usage_printf("      --export-border        Include the overscan border in image/AVI exports (off by default)\n");
-    usage_printf("      --ula-ng-poke SEQ      Program ULA-NG registers ($0340-$035F) at startup,\n");
-    usage_printf("                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n");
-    usage_printf("                             Ex: 340=4E,340=47,341=01,348=07,349=00,34A=F0 (palette)\n");
     usage_printf("      --type-keys C:TEXT     Auto-type TEXT after C cycles. Escapes:\n");
     usage_printf("                             \\n=Return \\e=Esc \\b=Del \\u \\d \\l \\r=arrows\n");
     usage_printf("                             \\Cx=Ctrl+x \\Fx=Funct+x \\Lx=LShift+x\n");
@@ -234,15 +227,6 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                            (binaire compilé avec make LOCI_HW=1 ; implies --loci)\n");
     usage_printf("      --loci-menu-at N      Déclenche le menu LOCI une seule fois au cycle N\n");
     usage_printf("      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n");
-    usage_printf("      --dtl2000 TRANSPORT   Digitelec DTL 2000 (PIA 6821 + ACIA 6850) at $03F8\n");
-    usage_printf("                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n");
-    usage_printf("      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n");
-    usage_printf("      --mageco TRANSPORT    Mageco MIDI interface (ACIA 6850) at $03FE, 31250 baud\n");
-    usage_printf("                            Transports (raw MIDI bytes): file:IN[:OUT], midi[:TARGET], smf:FILE[:loop], loopback, tcp:H:P, pty\n");
-    usage_printf("                            file::out.mid captures Oric MIDI OUT ; midi = live ALSA port (MIDI=1) ; smf:song.mid replays a .mid into the Oric\n");
-    usage_printf("      --mageco-addr ADDR    Mageco base address in hex (default: 03FE)\n");
-    usage_printf("      --oricon TRANSPORT    ORICON MIDI variant (MC6850 at $031C-$031D + clock gen $031E-$031F, LOCI-compat)\n");
-    usage_printf("                            Same transports as --mageco ; overlaps --serial/Microdisc at $031C\n");
     usage_printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     usage_printf("      --load-state FILE      Load emulator state from FILE at startup\n");
     usage_printf("  -?, --help                 Show this help\n");

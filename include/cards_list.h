@@ -18,7 +18,11 @@
 #define CARDS_LIST_H
 
 #define CARD_MODULE_LIST(X) \
-    X(mea8000, 1)
+    X(dtl2000, 1) \
+    X(mageco,  1) \
+    X(sp0256,  1) \
+    X(mea8000, 1) \
+    X(ula_ng,  0)
 
 /* Index de chaque carte : emu->card_on[CARD_IDX_<id>] dit si elle est présente. */
 enum {

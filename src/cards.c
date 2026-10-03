@@ -87,51 +87,6 @@ static const card_desc_t k_cards[] = {
         5
     },
     {
-        "dtl2000", "DTL 2000",
-        "Modem Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : ligne V23 brute vers un "
-        "serveur Minitel.",
-        NULL, "--dtl2000", 0, 1, 0, 6, false,
-        { { "transport", "Ligne V23", CARD_P_TEXT, "--dtl2000", "loopback",
-            "Où va la ligne : " TRANSPORTS_SERIE "." },
-          { "adresse", "Adresse d'E/S", CARD_P_HEX, "--dtl2000-addr", "03F8",
-            "Adresse de base de la carte (03F8 par défaut)." } },
-        2
-    },
-    {
-        "mageco", "Mageco MIDI",
-        "Interface MIDI Mageco (ACIA 6850 à 31250 bauds) : piloter un synthétiseur "
-        "ou jouer un fichier .mid dans l'Oric.",
-        "midi", "--mageco", 0, 1, 0, 2, false,
-        { { "transport", "Liaison MIDI", CARD_P_TEXT, "--mageco", "loopback",
-            "loopback, midi[:cible] (MIDI temps réel, build MIDI=1), "
-            "smf:fichier.mid[:loop] (rejoue un fichier MIDI), tcp:hôte:port, "
-            "file:entrée[:sortie]." },
-          { "adresse", "Adresse d'E/S", CARD_P_HEX, "--mageco-addr", "03FE",
-            "Adresse de base (03FE par défaut ; la MEA8000 utilise aussi 03FE)." } },
-        2
-    },
-    {
-        "oricon", "ORICON",
-        "Variante MIDI ORICON (MC6850 en $031C-$031D, générateur d'horloge "
-        "$031E-$031F, compatible LOCI).",
-        "midi", "--oricon", 0, -1, 0x031C, 4, false,
-        { { "transport", "Liaison MIDI", CARD_P_TEXT, "--oricon", "loopback",
-            "loopback, midi[:cible], smf:fichier.mid[:loop], tcp:hôte:port, "
-            "file:entrée[:sortie]." } },
-        1
-    },
-    {
-        "sp0256", "SP0256",
-        "Synthétiseur vocal Mageco (GI SP0256-AL2, allophones), mixé au son de "
-        "l'Oric.",
-        NULL, "--sp0256-rom", 0, 1, 0, 1, false,
-        { { "rom", "ROM d'allophones", CARD_P_FILE, "--sp0256-rom", "roms/al2.bin",
-            "ROM du SP0256-AL2 (al2.bin) : les 64 sons de base de la parole." },
-          { "adresse", "Adresse d'E/S", CARD_P_HEX, "--sp0256-addr", "03F1",
-            "Adresse du port (03F1 par défaut)." } },
-        2
-    },
-    {
         "hostfs", "Hôte (hostfs)",
         "Dossier de l'ordinateur monté dans l'Oric : ses fichiers sont lus et "
         "écrits directement.",
@@ -154,12 +109,6 @@ static const card_desc_t k_cards[] = {
             "Image FAT servie au firmware comme clé USB ; vide : aucune." } },
         3
     },
-    {
-        "ula_ng", "ULA-NG",
-        "ULA de nouvelle génération (palette, modes étendus), toujours présente ; "
-        "un programme la déverrouille par $0340.",
-        NULL, NULL, -1, -1, 0x0340, 32, true, { { 0 } }, 0
-    },
 };
 #define K_CARDS ((int)(sizeof(k_cards) / sizeof(k_cards[0])))
 
@@ -169,27 +118,25 @@ static const card_desc_t k_cards[] = {
 static const card_desc_t* g_all[ALL_MAX];
 static int g_all_n = -1;
 
-static void all_add_modules_before(const char* id, bool* placed) {
-    for (int m = 0; m < k_card_module_count; m++) {
-        const card_module_t* mod = k_card_modules[m];
-        if (placed[m] || !mod->desc) continue;
-        if (id ? (mod->desc_before && strcmp(mod->desc_before, id) == 0) : true) {
-            placed[m] = true;
-            all_add_modules_before(mod->desc->id, placed);
-            if (g_all_n < ALL_MAX) g_all[g_all_n++] = mod->desc;
-        }
-    }
+static const char* desc_anchor(int m) { return k_card_modules[m]->desc_before; }
+static int desc_count(int m) { return k_card_modules[m]->ndescs; }
+static const char* desc_key(int m, int j) { return k_card_modules[m]->descs[j]->id; }
+static void desc_emit(int m, int j, void* ctx) {
+    (void)ctx;
+    if (g_all_n < ALL_MAX) g_all[g_all_n++] = k_card_modules[m]->descs[j];
+}
+static void desc_emit_core(int i, void* ctx) {
+    (void)ctx;
+    if (g_all_n < ALL_MAX) g_all[g_all_n++] = &k_cards[i];
 }
 
 static void build_all(void) {
     if (g_all_n >= 0) return;
-    bool placed[64] = { false };
+    const char* names[sizeof(k_cards) / sizeof(k_cards[0])];
+    for (int i = 0; i < K_CARDS; i++) names[i] = k_cards[i].id;
     g_all_n = 0;
-    for (int i = 0; i < K_CARDS; i++) {
-        all_add_modules_before(k_cards[i].id, placed);
-        if (g_all_n < ALL_MAX) g_all[g_all_n++] = &k_cards[i];
-    }
-    all_add_modules_before(NULL, placed);          /* sans ancre : en fin de menu */
+    card_modules_place(names, K_CARDS, desc_anchor, desc_count, desc_key,
+                       desc_emit, desc_emit_core, NULL);
 }
 
 /* Disponibilité dans cette build : la co-simulation LOCI exige le backend

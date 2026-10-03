@@ -28,6 +28,7 @@
 #include "io/io_device.h"
 
 typedef struct emulator_s emulator_t;
+struct cli_opts_s;                     /* options du cœur (cli/cli_opts.h) */
 
 /* Option de lancement d'une carte. `set` reçoit la configuration de la carte et
  * l'argument (NULL pour une option sans argument). */
@@ -40,13 +41,16 @@ typedef struct {
 /* Étapes de mise en route où le cœur appelle les cartes (dans l'ordre de la
  * liste), à la place exacte qu'occupait leur code dans main.c. */
 typedef enum {
-    CARD_STAGE_SPEECH,     /* main_setup_disks_speech, après le SP0256 */
+    CARD_STAGE_MACHINE,    /* main_setup_machine, juste après emulator_init */
+    CARD_STAGE_SERIAL,     /* main_setup_serial_cards, après l'ACIA 6551 */
+    CARD_STAGE_SPEECH,     /* main_setup_disks_speech, après le Jasmin */
     CARD_STAGE_COUNT
 } card_stage_t;
 
 typedef struct card_module_s {
-    const card_desc_t* desc;         /* fiche du menu F1 */
-    const char*        desc_before;  /* id de la carte qu'elle précède dans le menu */
+    const card_desc_t* const* descs; /* fiche(s) du menu F1 (une puce, plusieurs cartes) */
+    int                ndescs;
+    const char*        desc_before;  /* id de la fiche qu'elles précèdent dans le menu */
 
     const card_opt_t*  opts;
     int                nopts;
@@ -57,10 +61,16 @@ typedef struct card_module_s {
     size_t             cfg_size;
     void             (*cfg_defaults)(void* cfg);
 
+    /* Appelé par emulator_init pour chaque carte, présente ou non (état de
+     * repos : adresse par défaut, lignes d'IRQ câblées). NULL : rien. */
+    void             (*init)(emulator_t* emu);
     card_stage_t       stage;
     /* 0 : carte absente ou mise en route ; 1 : erreur (déjà journalisée), le
-     * cœur nettoie l'émulateur et s'arrête. */
-    int              (*setup)(emulator_t* emu, const void* cfg);
+     * cœur nettoie l'émulateur et s'arrête. @p core : options du cœur
+     * (--serial-trace…). */
+    int              (*setup)(emulator_t* emu, const void* cfg, const struct cli_opts_s* core);
+    /* Appelé par emulator_cleanup (fermeture des transports…). NULL : rien. */
+    void             (*teardown)(emulator_t* emu);
 
     const io_device_t* bus;          /* NULL : pas de registres d'E/S */
     const char*        bus_before;   /* nom du périphérique qu'elle précède sur le bus */
@@ -85,9 +95,20 @@ const struct option* card_modules_long_options(const struct option* core);
 /* Aide : écrit les blocs des modules ancrés avant l'option @p name ; NULL écrit
  * ceux qui n'ont pas d'ancre (fin de la liste des options). */
 void   card_modules_print_help_before(const char* name);
+/* Crochets init / teardown de toutes les cartes, dans l'ordre de la liste. */
+void   card_modules_init(emulator_t* emu);
+void   card_modules_teardown(emulator_t* emu);
 /* Mise en route des modules de l'étape @p stage ; 1 si l'une échoue. */
-int    card_modules_setup(emulator_t* emu, void** cfgs, card_stage_t stage);
+int    card_modules_setup(emulator_t* emu, const struct cli_opts_s* core, card_stage_t stage);
 /* Vrai si @p opt (« --nom ») est une option de module sans argument. */
 bool   card_modules_option_is_flag(const char* opt);
+/* Placement par ancres (menu, bus) : émet les éléments du cœur (emit_core) en
+ * plaçant avant chacun les éléments des modules ancrés sur lui (emit_module),
+ * puis les modules sans ancre, puis ceux dont l'ancre est introuvable. */
+void   card_modules_place(const char* const* core_names, int ncore,
+                          const char* (*anchor)(int m), int (*count)(int m),
+                          const char* (*key)(int m, int j),
+                          void (*emit_module)(int m, int j, void* ctx),
+                          void (*emit_core)(int i, void* ctx), void* ctx);
 
 #endif /* CARD_MODULE_H */

@@ -15,7 +15,6 @@ void cli_opts_init(cli_opts_t* o) {
     o->video_avi_fps = 50;
     o->video_avi_quality = 85;
     o->gdb_port = GDB_DEFAULT_PORT;
-    o->sp0256_base_addr = SP0256_BASE_DEFAULT;
     o->scale_factor = 3;
     o->cpu_microseq = true;
     o->ula_per_cycle = true;

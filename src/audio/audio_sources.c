@@ -29,7 +29,7 @@ void audio_mix_sources(int16_t* stereo, int n, int chunk_max) {
         while (done < n) {
             int chunk = n - done;
             if (chunk > chunk_max) chunk = chunk_max;
-            s_sources[s].fn(s_sources[s].ctx, mbuf, chunk);
+            if (!s_sources[s].fn(s_sources[s].ctx, mbuf, chunk)) break;
             for (int i = 0; i < chunk; i++) {
                 int idx = (done + i) * 2;
                 stereo[idx]     = (int16_t)((stereo[idx]     + mbuf[i]) / 2);
