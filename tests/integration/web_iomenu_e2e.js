@@ -82,7 +82,9 @@ async function frozen(p) {            // Timer 1 still for 1 s
     await p.keyboard.press('F1');
     check(await until(p, () => menuOpen(p)), 'F1 ouvre le menu');
     check(await p.evaluate(() => window.__f1) === true, 'F1 soustrait au navigateur (preventDefault)');
-    check(await p.evaluate(() => document.getElementById('btn-iomenu').classList.contains('on')),
+    // Le bouton suit l'activité lue périodiquement par la page : attendu aussi.
+    check(await until(p, () => p.evaluate(() =>
+            document.getElementById('btn-iomenu').classList.contains('on'))),
           'bouton I/O allumé');
     check(await frozen(p), 'machine figée pendant le menu');
     if (shot) await p.screenshot({ path: shot });

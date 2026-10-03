@@ -1,11 +1,12 @@
 # Expansion cards as self-registering modules (sprint G)
 
-- **Status**: proposed plan (2026-10-03), not started. Decision: ADR 0006.
-- **Goal**: adding an expansion card = **one file** (the card) **+ one line** (the
-  card list), instead of today's ~10 files.
-- **Out of scope**: dynamic loading (`.so`/`.dll`, `dlopen`). It would require a
-  stable ABI, complicate the WASM and Windows builds, and raise the question of
-  trusting loaded code; with no third-party demand, there is no need.
+- **Statut** : en cours — G1 livré en 2.13.0 (pilote MEA8000). Décision : ADR 0006
+  (acceptée).
+- **But** : ajouter une carte d'extension = **un fichier** (la carte) **+ une ligne**
+  (la liste des cartes), au lieu des ~10 fichiers d'aujourd'hui.
+- **Hors périmètre** : le chargement dynamique (`.so`/`.dll`, `dlopen`). Il exigerait
+  une ABI stable, compliquerait les builds WASM et Windows, et poserait la question
+  de la confiance envers le code chargé ; sans demande de tiers, pas de besoin.
 
 ## 1. Current state (measured on 2.12.9)
 
@@ -66,31 +67,60 @@ constructors, linker sections): these mechanisms are fragile across GCC/MinGW,
 clang/macOS and emscripten (unspecified order, objects dropped from a static
 library). One line per card, readable and deterministic.
 
-## 3. Invariants (checked at every step)
+### Réalisation (G1, 2.13.0)
 
-1. **Identical behaviour**: `cli_golden` (116 command lines, outputs and files
-   produced byte for byte) between the before and after binaries; help (`--help`)
-   identical to the character.
-2. **Save states**: same `.ost` section tags, files identical byte for byte; old
-   `.ost` files read back (`test-loadstate`, `test-savestate-determinism`).
-3. **Performance**: no generic loop in the per-cycle path (+22 % measured, ADR
-   0003). Tables stay `const` and the tick order explicit; `make test-bench`
-   (per-frame budget) at every migration.
-4. **Configuration**: `phosphoric.cfg` keys (`carte.*`, `<id>.<param>`) unchanged;
-   F1 menu identical (`test-iomenu`, `test-cards`, `test-web-iomenu`).
-5. Linux, macOS, Windows (MinGW) and WASM builds; `make SANITIZE=1 tests-strict`.
+Le pilote a fait évoluer la cible sur trois points :
+
+- **La liste est une macro**, `include/cards_list.h` : `X(mea8000, 1)` (id, tick).
+  Une table de pointeurs lue à l'exécution coûtait **+5,3 % d'instructions**
+  (mesuré : `tools/instr_count.sh`) : l'appel du tick d'une carte, à chaque cycle,
+  devenait indirect. Générées depuis la macro, les ticks des cartes sont des
+  appels directs avec un test de présence à position fixe (`include/card_ticks.h`,
+  `emu->card_on[CARD_IDX_<id>]`) : **même nombre d'instructions** que la référence
+  (874 033 056 contre 874 025 099 sans carte, 905 086 069 contre 905 078 314 avec
+  MEA8000, sur 2 M cycles).
+- **Ancres** : chaque carte dit avant quelle option (`opts_before`), quel bloc
+  d'aide (`help_before`), quelle fiche du menu (`desc_before`) et quel
+  périphérique (`bus_before`) elle se place ; l'aide, les messages d'options
+  ambiguës (« possibilities: '--mea8000' '--mea8000-addr' »), le menu et l'ordre
+  des sections `.ost` restent identiques. Sans ancre : en fin de liste.
+- **Le Makefile prend `src/cards/card_*.c` par motif** : une carte = son fichier +
+  sa ligne dans `cards_list.h`.
+- Son : `audio_add_source()` (`src/audio/audio_sources.c`), mixé par le callback SDL
+  et par la capture avec le même découpage qu'avant (sortie identique).
+- Mise en route : `card_modules_setup(emu, cfgs, étape)` à la place exacte du
+  code d'origine (`CARD_STAGE_SPEECH` pour MEA8000).
+
+Preuves G1 : `cli_golden` 125 cas (dont 9 nouveaux : préfixes ambigus, conflits,
+`.ost` et WAV avec la carte) sans écart avec 2.12.9 ; instructions identiques ;
+builds SDL2=0, HTTPAPI=1, WASM ; `make tests-strict` et `SANITIZE=1`.
+
+## 3. Invariants (vérifiés à chaque étape)
+
+1. **Comportement identique** : `cli_golden` (116 lignes de commande, sorties et
+   fichiers produits à l'octet) entre le binaire d'avant et celui d'après ; aide
+   (`--help`) identique au caractère près.
+2. **Sauvegardes d'état** : mêmes tags de section `.ost`, fichiers identiques à
+   l'octet ; anciens `.ost` relus (`test-loadstate`, `test-savestate-determinism`).
+3. **Performance** : pas de boucle générique dans le chemin par cycle (+22 %
+   mesuré, ADR 0003). Les tables restent `const` et l'ordre des ticks explicite ;
+   nombre d'instructions comparé à la référence (`tools/instr_count.sh`, stable,
+   contrairement au temps sur une machine bridée) et `make test-bench`.
+4. **Configuration** : clés de `phosphoric.cfg` (`carte.*`, `<id>.<param>`)
+   inchangées ; menu F1 identique (`test-iomenu`, `test-cards`, `test-web-iomenu`).
+5. Builds Linux, macOS, Windows (MinGW) et WASM ; `make SANITIZE=1 tests-strict`.
 
 ## 4. Steps
 
 | Step | Content | Proof |
 |---|---|---|
-| **G1** Contract + pilot | `card_module_t`, `cards_all.c`; CLI parsing that adds module options; **MEA8000** migrated end to end (its state stays in `emulator_t` at this stage) | invariants 1-5; sound: `--mea8000 --audio-wav` capture identical byte for byte before/after |
-| **G2** Simple cards | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 per card |
-| **G3** Private state | simple cards keep their state behind the module (`emu->card_state[i]`); `has_X` removed from `emulator_t` for them | `emulator.h` no longer knows these 5 cards |
-| **G4** ACIA | serial transports (`--serial`, `--acia-addr`, IRQ…), debugger (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
-| **G5** Disks | Microdisc, Jasmin: media through the existing `emu_disk_*` API | `test-storage`, `test-jasmin`, `test-control-media-swap` |
-| **G6** LOCI | the most coupled card (coprocessor, menu, host files); scope reassessed after G5 | full LOCI suites |
-| **G7** Guard + guide | sample card (`card_demo.c`, outside the default build); test that adds it and checks that one file + one line suffice; "add a card" guide | `make test-card-template` |
+| **G1** ✅ 2.13.0 Contrat + pilote | `card_module_t`, `cards_all.c` ; analyse CLI qui ajoute les options des modules ; **MEA8000** migrée de bout en bout (son état reste dans `emulator_t` à ce stade) | invariants 1-5 ; son : capture `--mea8000 --audio-wav` identique à l'octet avant/après |
+| **G2** Cartes simples | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 par carte |
+| **G3** État privé | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
+| **G4** ACIA | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
+| **G5** Disques | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
+| **G6** LOCI | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |
+| **G7** Garde-fou + guide | carte d'exemple (`card_demo.c`, hors build par défaut) ; test qui l'ajoute et vérifie qu'un fichier + une ligne suffisent ; guide « ajouter une carte » | `make test-card-template` |
 
 Order: G1 alone first. If the MEA8000 pilot costs more in performance or
 readability than it brings, we stop there (decision recorded in ADR 0006).

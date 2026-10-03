@@ -6,6 +6,7 @@
  */
 #include <string.h>
 #include "cli/cli_opts.h"
+#include "card_module.h"
 
 void cli_opts_init(cli_opts_t* o) {
     memset(o, 0, sizeof(*o));
@@ -15,7 +16,6 @@ void cli_opts_init(cli_opts_t* o) {
     o->video_avi_quality = 85;
     o->gdb_port = GDB_DEFAULT_PORT;
     o->sp0256_base_addr = SP0256_BASE_DEFAULT;
-    o->mea8000_base_addr = MEA8000_BASE_DEFAULT;
     o->scale_factor = 3;
     o->cpu_microseq = true;
     o->ula_per_cycle = true;
@@ -25,4 +25,5 @@ void cli_opts_init(cli_opts_t* o) {
     o->loci_serve_subticks = -1;
     o->loci_latch_subtick = -1;
     o->loci_serve_jitter = -1;
+    o->card_cfg = card_modules_cfg_new();
 }

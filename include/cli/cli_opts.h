@@ -18,7 +18,6 @@
 #include "emulator.h"            /* TIMED_CAPTURE_MAX, POKE_MAX, TYPE_KEYS_SEQ_MAX */
 #include "io/microdisc.h"        /* MICRODISC_MAX_DRIVES */
 #include "io/sp0256.h"           /* SP0256_BASE_DEFAULT */
-#include "io/mea8000.h"          /* MEA8000_BASE_DEFAULT */
 #include "io/loci.h"             /* LOCI_USB_DEV_MAX */
 #include "network/gdbstub.h"     /* GDB_DEFAULT_PORT */
 #include "storage/disk.h"        /* FDC_MAX_BAD_SECTORS */
@@ -76,8 +75,7 @@ typedef struct {
     const char* jasmin_rom_file;   /* --jasmin-rom : Jasmin boot ROM (2 KB) */
     const char* sp0256_rom_file;   /* --sp0256-rom : SP0256-AL2 ROM (2 KB) */
     uint16_t sp0256_base_addr;   /* --sp0256-addr (hex) */
-    bool mea8000_enabled;   /* --mea8000 (TMPI, no ROM) */
-    uint16_t mea8000_base_addr;   /* --mea8000-addr (hex)   */
+    void** card_cfg;        /* configuration de chaque carte en module (card_module.h) */
     bool debug_mode;
     const char* debug_break_addr;
     bool cast_server_enabled;

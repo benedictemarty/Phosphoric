@@ -1,6 +1,6 @@
 # 0006 — Expansion cards as self-registering modules, explicit list
 
-- **Status**: proposed (2026-10-03); plan: `docs/specs/CARD_MODULES.md`
+- **Statut** : acceptée (2.13.0, pilote G1 MEA8000) ; plan : `docs/specs/CARD_MODULES.md`
 
 ## Context
 
@@ -24,7 +24,11 @@ configuration, menu and bus tables from it.
 
 ## Consequences
 
-- Adding a card: one file + one line (target, proven by a test in G7).
-- Step-by-step migration (G1 MEA8000 pilot → G6 LOCI), each step proven identical
-  (`cli_golden`, `.ost` byte for byte, performance bench).
-- If the G1 pilot does not pay off, the decision is rejected and recorded here.
+- Ajouter une carte : un fichier + une ligne (cible, prouvée par un test en G7).
+- Réalisation G1 : la liste est une macro (`include/cards_list.h`) et non une table
+  de pointeurs : celle-ci rendait indirect le tick par cycle (+5,3 % d'instructions
+  mesurées) ; générés depuis la macro, les ticks restent des appels directs
+  (instructions identiques à la référence).
+- Migration par étapes (G1 pilote MEA8000 → G6 LOCI), chacune prouvée identique
+  (`cli_golden`, `.ost` à l'octet, banc de performance).
+- Si le pilote G1 n'apporte pas assez, la décision est rejetée et notée ici.

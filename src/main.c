@@ -57,9 +57,10 @@
 #include "io/loci_emu.h"       /* backend emulating the real RP2040 firmware (--loci-emu) */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
-#include "cli/cli_opts.h"     /* cli_opts_t: command-line options (sprint C) */
-#include "cli/cli_args.h"     /* cli_parse_args: getopt loop (sprint C) */
-#include "iomenu_glue.h"       /* I/O peripherals menu (F1) */
+#include "cli/cli_opts.h"     /* cli_opts_t : options de la ligne de commande (sprint C) */
+#include "cli/cli_args.h"     /* cli_parse_args : boucle getopt (sprint C) */
+#include "card_module.h"       /* cartes d'extension en modules (ADR 0006) */
+#include "iomenu_glue.h"       /* menu des périphériques E/S (F1) */
 #include "audio/audio.h"
 #include "io/keyboard.h"
 #include "io/printer.h"
@@ -1376,15 +1377,8 @@ static void run_headless_audio_sinks(emulator_t* emu) {
                 wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + sbuf[i]) / 2);
             }
         }
-        /* Mix in the MEA8000 (TMPI) speech synth, if active. */
-        if (emu->has_mea8000) {
-            int16_t mbuf[WAV_FRAME_SAMPLES];
-            mea8000_generate(&emu->mea8000, mbuf, WAV_FRAME_SAMPLES);
-            for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
-                wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + mbuf[i]) / 2);
-                wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + mbuf[i]) / 2);
-            }
-        }
+        /* Mix in the expansion cards' audio sources (MEA8000…), one block. */
+        audio_mix_sources(wav_buf, WAV_FRAME_SAMPLES, WAV_FRAME_SAMPLES);
         if (emu->audio_wav_fp) {
             fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
             emu->audio_wav_data_bytes +=
@@ -3788,31 +3782,11 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
                  cfg->sp0256_base_addr);
     }
 
-    /* MEA8000 TMPI "Synthétiseur Vocal" (--mea8000): Philips/Signetics formant
-     * speech chip at $03FE/$03FF (TMPI card, confirmed in-game via SYNTHOR;
-     * configurable). No ROM — the host streams frame parameters. Output mixed
-     * into the PSG. Mutually exclusive with the SP0256 speech card. */
-    if (cfg->mea8000_enabled) {
-        if (emu->has_sp0256) {
-            log_error("--mea8000 and --sp0256-rom are mutually exclusive "
-                      "(both are speech cards)");
-            emulator_cleanup(emu);
-            return 1;
-        }
-        /* Default $03FE/$03FF overlaps the Mageco MIDI interface ($03FE-$03FF).
-         * Relocate one of them (--mea8000-addr / --mageco-addr) to coexist. */
-        if (emu->has_mageco && cfg->mea8000_base_addr >= 0x03FE) {
-            log_error("--mea8000 (default $03FE/$03FF) overlaps the Mageco MIDI "
-                      "interface — relocate with --mea8000-addr or --mageco-addr");
-            emulator_cleanup(emu);
-            return 1;
-        }
-        mea8000_init(&emu->mea8000, cfg->mea8000_base_addr);
-        emu->mea8000.emu = emu;
-        emu->has_mea8000 = true;
-        audio_set_mea8000(&emu->mea8000);
-        log_info("MEA8000 TMPI speech synthesizer enabled at $%04X/$%04X (formant, no ROM)",
-                 cfg->mea8000_base_addr, (uint16_t)(cfg->mea8000_base_addr + 1));
+    /* Cartes en modules de l'étape « synthèse vocale » (MEA8000…), à la place
+     * qu'occupait leur code ici (card_module.h). */
+    if (card_modules_setup(emu, cfg->card_cfg, CARD_STAGE_SPEECH) != 0) {
+        emulator_cleanup(emu);
+        return 1;
     }
 
     /* Load disks with Microdisc controller. A Microdisc ROM on its own is

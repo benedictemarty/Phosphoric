@@ -6,6 +6,7 @@
  */
 #define _POSIX_C_SOURCE 200809L   /* strdup */
 #include "cards.h"
+#include "card_module.h"
 #include "emulator.h"
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -131,15 +132,6 @@ static const card_desc_t k_cards[] = {
         2
     },
     {
-        "mea8000", "MEA8000",
-        "Synthétiseur vocal TMPI (Philips MEA 8000, synthèse par formants, sans "
-        "ROM).",
-        NULL, "--mea8000", -1, 0, 0, 2, false,
-        { { "adresse", "Adresse d'E/S", CARD_P_HEX, "--mea8000-addr", "03FE",
-            "Adresse de base (03FE par défaut ; Mageco MIDI utilise aussi 03FE)." } },
-        1
-    },
-    {
         "hostfs", "Hôte (hostfs)",
         "Dossier de l'ordinateur monté dans l'Oric : ses fichiers sont lus et "
         "écrits directement.",
@@ -171,21 +163,51 @@ static const card_desc_t k_cards[] = {
 };
 #define K_CARDS ((int)(sizeof(k_cards) / sizeof(k_cards[0])))
 
-/* Availability in this build: LOCI co-simulation requires the « emul »
- * backend (make LOCI_EMU=1). */
+/* Toutes les cartes : celles de k_cards, avec les fiches des cartes en modules
+ * insérées avant leur ancre (desc_before), pour garder l'ordre du menu. */
+#define ALL_MAX 32
+static const card_desc_t* g_all[ALL_MAX];
+static int g_all_n = -1;
+
+static void all_add_modules_before(const char* id, bool* placed) {
+    for (int m = 0; m < k_card_module_count; m++) {
+        const card_module_t* mod = k_card_modules[m];
+        if (placed[m] || !mod->desc) continue;
+        if (id ? (mod->desc_before && strcmp(mod->desc_before, id) == 0) : true) {
+            placed[m] = true;
+            all_add_modules_before(mod->desc->id, placed);
+            if (g_all_n < ALL_MAX) g_all[g_all_n++] = mod->desc;
+        }
+    }
+}
+
+static void build_all(void) {
+    if (g_all_n >= 0) return;
+    bool placed[64] = { false };
+    g_all_n = 0;
+    for (int i = 0; i < K_CARDS; i++) {
+        all_add_modules_before(k_cards[i].id, placed);
+        if (g_all_n < ALL_MAX) g_all[g_all_n++] = &k_cards[i];
+    }
+    all_add_modules_before(NULL, placed);          /* sans ancre : en fin de menu */
+}
+
+/* Disponibilité dans cette build : la co-simulation LOCI exige le backend
+ * « emul » (make LOCI_EMU=1). */
 static bool card_available(const card_desc_t* c) {
     if (strcmp(c->id, "loci_emu") == 0) return strcmp(loci_emu_backend_name(), "emul") == 0;
     return true;
 }
 
-static const card_desc_t* g_list[sizeof(k_cards) / sizeof(k_cards[0])];
+static const card_desc_t* g_list[ALL_MAX];
 static int g_n = -1;
 
 static void build_list(void) {
     if (g_n >= 0) return;
+    build_all();
     g_n = 0;
-    for (int i = 0; i < K_CARDS; i++)
-        if (card_available(&k_cards[i])) g_list[g_n++] = &k_cards[i];
+    for (int i = 0; i < g_all_n; i++)
+        if (card_available(g_all[i])) g_list[g_n++] = g_all[i];
 }
 
 int cards_count(void) { build_list(); return g_n; }
@@ -225,11 +247,11 @@ void cards_set_on(cards_state_t* st, int i, bool on) {
  * « --opt=v » is recognised everywhere). */
 static bool option_takes_arg(const char* opt) {
     static const char* const flags[] = {
-        "--loci", "--mea8000", "--serial-v23", "--serial-irq-on-rdrf",
+        "--loci", "--serial-v23", "--serial-irq-on-rdrf",
         "--serial-tcp-backpressure", "--no-config-cards", NULL
     };
     for (int i = 0; flags[i]; i++) if (strcmp(opt, flags[i]) == 0) return false;
-    return true;
+    return !card_modules_option_is_flag(opt);
 }
 
 /* Long forms of the cards' short options. */
@@ -254,8 +276,9 @@ static const char* extra_owner(const char* opt) {
 static bool is_card_option(const char* opt) {
     opt = canon(opt);
     if (strcmp(opt, "--no-config-cards") == 0) return true;
-    for (int i = 0; i < K_CARDS; i++) {
-        const card_desc_t* d = &k_cards[i];
+    build_all();
+    for (int i = 0; i < g_all_n; i++) {
+        const card_desc_t* d = g_all[i];
         if (d->enable_cli && strcmp(opt, d->enable_cli) == 0) return true;
         for (int p = 0; p < d->nparams; p++)
             if (d->param[p].cli && strcmp(opt, d->param[p].cli) == 0) return true;
