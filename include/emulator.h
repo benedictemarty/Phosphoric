@@ -525,9 +525,9 @@ typedef struct emulator_s {
      * only: filled in at startup, no effect on emulation). */
     iom_menu_t  iomenu;
     const char* jasmin_rom_path;
-    const char* serial_spec;        /* --serial (lu par la mise en route LOCI : picowifi) */
+    const char* serial_spec;        /* --serial (read by the LOCI setup: picowifi) */
     const char* serial_trace_file;  /* --serial-trace (ACIA, DTL 2000, Mageco) */
-    const char* config_path;        /* fichier de configuration (NULL : défaut) */
+    const char* config_path;        /* configuration file (NULL: default) */
 } emulator_t;
 
 /* ════════════════════════════════════════════════════════════════════

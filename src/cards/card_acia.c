@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_acia.c
- * @brief Carte série ACIA 6551 en module : menu, options, mise en route
- *        (transports, modem Hayes, picowifi…), bus et fermeture (card_module.h).
+ * @brief ACIA 6551 serial card as a module: menu, options, setup
+ *        (transports, Hayes modem, picowifi…), bus and teardown (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  *
- * L'état de l'ACIA (emu->acia) reste dans la machine : la section « SER » des
- * sauvegardes d'état (savestate.c), le débogueur, les commandes de contrôle et
- * LOCI (ACIA en $0380) le lisent directement.
+ * The ACIA state (emu->acia) stays in the machine: the « SER » section of
+ * save states (savestate.c), the debugger, the control commands and
+ * LOCI (ACIA at $0380) read it directly.
  */
 #define _DEFAULT_SOURCE
 #include "card_module.h"
@@ -29,7 +29,7 @@
 #include <string.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     const char* arg;               /* --serial TYPE */
@@ -38,9 +38,9 @@ typedef struct {
     int         buffer_size;       /* --serial-buffer N */
     int         baud;              /* --serial-baud N */
     bool        irq_on_rdrf;       /* --serial-irq-on-rdrf */
-    const char* trace_file;        /* --serial-trace FILE (aussi DTL 2000, Mageco) */
+    const char* trace_file;        /* --serial-trace FILE (also DTL 2000, Mageco) */
     bool        tcp_backpressure;  /* --serial-tcp-backpressure[=N] */
-    int         tcp_rcvbuf;        /* N explicite (0 : auto) */
+    int         tcp_rcvbuf;        /* explicit N (0: auto) */
     long        loci_irq_latency_us; /* --loci-irq-latency US */
 } acia_cfg_t;
 
@@ -68,7 +68,7 @@ static void opt_irq_latency(void* p, const char* arg) {
 static void opt_addr(void* p, const char* arg) { C->addr = arg; }
 #undef C
 
-/* Même ordre que l'ancienne table getopt (préfixes ambigus identiques). */
+/* Same order as the old getopt table (identical ambiguous prefixes). */
 static const card_opt_t k_opts[] = {
     { "serial",                  required_argument, opt_serial },
     { "serial-v23",              no_argument,       opt_v23 },
@@ -81,8 +81,8 @@ static const card_opt_t k_opts[] = {
     { "acia-addr",               required_argument, opt_addr },
 };
 
-/* Deux blocs : les options --serial* (avant celles de la co-simulation LOCI),
- * puis --acia-addr (après les options LOCI). */
+/* Two blocks: the --serial* options (before the LOCI co-simulation ones),
+ * then --acia-addr (after the LOCI options). */
 static const char k_help_serial[] =
     "      --serial TYPE          Serial: loopback, tcp:H:P, pty, modem:H:P, com:B,D,P,S,DEV, file:IN[:OUT], picowifi[:SSID[:PASS]]\n"
     "                            (digitelec:H:P is DEPRECATED — use --dtl2000 for the faithful DTL 2000 card)\n"
@@ -106,7 +106,7 @@ static const card_help_t k_helps[] = {
     { k_help_addr,   "dtl2000" },
 };
 
-/* Transports proposés dans le menu (cf. cards.c, card_dtl2000.c). */
+/* Transports offered in the menu (cf. cards.c, card_dtl2000.c). */
 #define TRANSPORTS_SERIE \
     "loopback (écho local), tcp:hôte:port, modem:hôte:port (appels entrants), " \
     "pty (pseudo-terminal), com:bauds,bits,parité,stop,périphérique (port série " \
@@ -134,83 +134,83 @@ static const card_desc_t k_desc = {
     };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
-/* ── Interruptions ─────────────────────────────────────────────────────── */
+/* ── Interrupts ────────────────────────────────────────────────────────── */
 
 static void irq_set(emulator_t* emu) { cpu_irq_set(&emu->cpu, IRQF_SERIAL); }
 static void irq_clr(emulator_t* emu) { cpu_irq_clear(&emu->cpu, IRQF_SERIAL); }
 
 /* ── Bus ───────────────────────────────────────────────────────────────── */
 
-/* ACIA 6551 ($031C-$031F par défaut, base configurable). */
+/* ACIA 6551 ($031C-$031F by default, configurable base). */
 static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
-    /* Co-sim : le firmware sert sa fenêtre ACIA dès le boot, dongle ou non
-     * (sans modem : $0381 = $70). Sans ce claim, --loci-emu sans --loci-cdc
-     * laissait le miroir du VIA répondre en $0380 — infidèle au matériel. */
+    /* Co-sim: the firmware serves its ACIA window from boot, dongle or not
+     * (without modem: $0381 = $70). Without this claim, --loci-emu without --loci-cdc
+     * let the VIA mirror answer at $0380 — unfaithful to the hardware. */
     if (loci_emu_active() && loci_emu_acia_served(addr)) return true;
     return emu->card_on[CARD_IDX_acia] && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
 }
-/* picowifi-over-LOCI : l'ACIA 6551 émulée vit à $0380, servie par une COURSE
- * PHI2. Le MIA (RP2040 : PIO core1 + serve logiciel lent, ~I²C/DMA) doit poser
- * l'octet sur le data bus AVANT le front PHI2 montant du 6502. Si la marge de
- * timing `tior` est mal réglée (hors fenêtre auto-tunée par ADJ_SCAN), le serve
- * perd la course. Le VIA étant décodé-inhibé symétriquement sur tout $03x0-$03xF
- * (IO_CONTROL = IO·(A4+A5+A6+A7), prouvé matériellement), RIEN ne pilote alors
- * le bus → le 6502 latche l'OPEN-BUS (dernier octet piloté), PAS le VIA.
+/* picowifi-over-LOCI: the emulated ACIA 6551 lives at $0380, served through a PHI2
+ * RACE. The MIA (RP2040: PIO core1 + slow software serve, ~I²C/DMA) must put
+ * the byte on the data bus BEFORE the 6502's rising PHI2 edge. If the `tior`
+ * timing margin is badly tuned (outside the window auto-tuned by ADJ_SCAN), the serve
+ * loses the race. Since the VIA is decode-inhibited symmetrically over all of $03x0-$03xF
+ * (IO_CONTROL = IO·(A4+A5+A6+A7), proven on hardware), NOTHING then drives
+ * the bus → the 6502 latches the OPEN BUS (last driven byte), NOT the VIA.
  *
- * Asymétrie fidèle au HW (rapport de bug + spec-acia-fiable) :
- *  - ÉCRITURE toujours fiable : `write_enable_map = 0xFFFFFFFF` → une write
- *    $0380-$0383 atteint TOUJOURS l'ACIA, course perdue ou non.
- *  - LECTURE fragile ET, sur le registre DATA, DESTRUCTIVE côté LOCI : le serve
- *    exécute `acia_read()` « en aveugle » (il consomme l'octet RX) pendant que
- *    le 6502 ne latche que du bus flottant → OCTET PERDU, non relisable. C'est
- *    précisément le « modem injoignable ».
- *  - STAT/CMD/CTRL sont idempotents (relisibles) → une course perdue renvoie du
- *    bus flottant CE tour-ci mais le registre reste lisible au suivant (raté
- *    pardonné, comme le polling disque/MIA). D'où : disque OK / modem KO sous la
- *    MÊME marge, sans avoir besoin d'un modèle probabiliste. */
+ * Asymmetry faithful to the HW (bug report + spec-acia-fiable):
+ *  - WRITE always reliable: `write_enable_map = 0xFFFFFFFF` → a write to
+ *    $0380-$0383 ALWAYS reaches the ACIA, race lost or not.
+ *  - READ fragile AND, on the DATA register, DESTRUCTIVE on the LOCI side: the serve
+ *    executes `acia_read()` "blindly" (it consumes the RX byte) while
+ *    the 6502 only latches the floating bus → BYTE LOST, not re-readable. This is
+ *    precisely the "unreachable modem".
+ *  - STAT/CMD/CTRL are idempotent (re-readable) → a lost race returns the
+ *    floating bus THIS time but the register stays readable on the next one (miss
+ *    forgiven, like disk/MIA polling). Hence: disk OK / modem KO under the
+ *    SAME margin, with no need for a probabilistic model. */
 static inline bool acia_serve_lost(const emulator_t* emu) {
     return emu->has_loci && emu->acia_base_addr == 0x0380 &&
            !loci_mia_io_reliable(&emu->loci);
 }
 static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Backend co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
-     * (oric/acia.c ↔ modem USB CDC) au lieu du 6551 comportemental. */
+    /* Co-sim backend (--loci-cdc): the $0380 ACIA is served by the REAL firmware
+     * (oric/acia.c ↔ USB CDC modem) instead of the behavioural 6551. */
     if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         uint8_t v = loci_emu_acia_read(addr);
         loci_emu_reflect_nirq(emu);
         return v;
     }
-    /* Chemin CPU : échantillonne la course AVEC jitter (avance le PRNG). Le jitter
-     * n'a d'effet qu'en modèle PHASE près du latch ; sinon c'est la décision
-     * nominale déterministe. */
+    /* CPU path: samples the race WITH jitter (advances the PRNG). The jitter
+     * only has an effect in the PHASE model near the latch; otherwise it is the
+     * deterministic nominal decision. */
     bool lost = emu->has_loci && emu->acia_base_addr == 0x0380 &&
                 loci_mia_serve_lost_sampled(&emu->loci);
     if (lost) {
-        /* Course perdue : sur DATA, LOCI a consommé l'octet en aveugle (perdu) ;
-         * le 6502 latche l'open-bus. Sur STAT/CMD/CTRL, rien n'est consommé. */
+        /* Race lost: on DATA, LOCI consumed the byte blindly (lost);
+         * the 6502 latches the open bus. On STAT/CMD/CTRL, nothing is consumed. */
         if ((addr & ACIA_ADDR_MASK) == ACIA_REG_DATA)
-            (void)acia_read(&emu->acia, addr);   /* consomme et jette : octet perdu */
+            (void)acia_read(&emu->acia, addr);   /* consume and discard: byte lost */
         return memory_open_bus(&emu->memory);
     }
     return acia_read(&emu->acia, addr);
 }
 static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    /* Backend co-sim (--loci-cdc) : écriture $0380-$0383 traitée par le vrai firmware. */
+    /* Co-sim backend (--loci-cdc): $0380-$0383 write handled by the real firmware. */
     if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         loci_emu_acia_write(addr, value);
         loci_emu_reflect_nirq(emu);
         return true;
     }
-    /* Écriture toujours fiable (write_enable_map = 0xFFFFFFFF sur le vrai LOCI) :
-     * elle passe même course perdue. */
+    /* Write always reliable (write_enable_map = 0xFFFFFFFF on the real LOCI):
+     * it goes through even when the race is lost. */
     acia_write(&emu->acia, addr, value);
     return true;
 }
-/* Lecture d'observation non destructive (débogueur/moniteur/dump/déporté) :
- * ne vide PAS RDRF, ne pope PAS la FIFO, n'efface PAS l'IRQ. Modélise l'open-bus
- * SANS consommer (un observateur ne participe pas à la course PHI2 du 6502). */
+/* Non-destructive observation read (debugger/monitor/dump/remote):
+ * does NOT clear RDRF, does NOT pop the FIFO, does NOT clear the IRQ. Models the open bus
+ * WITHOUT consuming (an observer does not take part in the 6502's PHI2 race). */
 static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
-    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr)))   /* co-sim : peek io-page */
+    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr)))   /* co-sim: io-page peek */
         return loci_emu_acia_peek(addr);
     if (acia_serve_lost(emu))
         return memory_open_bus(&emu->memory);
@@ -222,16 +222,16 @@ void card_acia_tick(emulator_t* emu, int cycles) {
     acia_tick(&emu->acia, cycles);
 }
 
-/* Section « SER » : écrite par savestate.c (historique), pas par le module. */
+/* « SER » section: written by savestate.c (historical), not by the module. */
 static const io_device_t k_bus = {
     .name = "acia", .claims = acia_dev_claims, .read = acia_dev_read,
     .write = acia_dev_write, .peek = acia_dev_peek,
     .present_off = offsetof(emulator_t, card_on[CARD_IDX_acia]), .tick = card_acia_tick,
 };
 
-/* ── Cycle de vie ──────────────────────────────────────────────────────── */
+/* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
-/* Au démarrage, présente ou non : 6551 au repos, IRQ câblées. */
+/* At startup, present or not: 6551 idle, IRQs wired. */
 static void init(emulator_t* emu) {
     acia_init(&emu->acia);
     emu->acia.irq_set = irq_set;
@@ -241,8 +241,8 @@ static void init(emulator_t* emu) {
 
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     const acia_cfg_t* c = p;
-    /* Lus aussi par la mise en route LOCI (picowifi) et par les cartes DTL 2000
-     * et Mageco (--serial-trace). */
+    /* Also read by the LOCI setup (picowifi) and by the DTL 2000
+     * and Mageco cards (--serial-trace). */
     emu->serial_spec = c->arg;
     emu->serial_trace_file = c->trace_file;
     /* Serial interface (ACIA 6551) */
@@ -255,21 +255,21 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         emu->acia_base_addr = 0x0380;
         log_info("ACIA base address: $0380 (LOCI default — override with --acia-addr)");
     } else if (core->loci_emu_cdc_dev) {
-        /* Co-sim (--loci-cdc) : l'ACIA $0380 est servie par le VRAI firmware
-         * (oric/acia.c ↔ dongle CDC) — pas de backend série comportemental. */
+        /* Co-sim (--loci-cdc): the ACIA at $0380 is served by the REAL firmware
+         * (oric/acia.c ↔ CDC dongle) — no behavioural serial backend. */
         emu->acia_base_addr = 0x0380;
         log_info("ACIA base address: $0380 (co-sim firmware via --loci-cdc %s)", core->loci_emu_cdc_dev);
     } else {
         emu->acia_base_addr = ACIA_DEFAULT_BASE;
     }
-    /* Co-sim (--loci-cdc) : active l'ACIA sans backend (le firmware réel la sert via
-     * loci_emu_acia_*). has_serial doit être vrai pour que le device ACIA claim $0380. */
+    /* Co-sim (--loci-cdc): enables the ACIA without a backend (the real firmware serves it via
+     * loci_emu_acia_*). has_serial must be true for the ACIA device to claim $0380. */
     if (core->loci_emu_cdc_dev && core->loci_emu_path) emu->card_on[CARD_IDX_acia] = true;
-    /* Garde-fou : sous --loci, la MIA occupe $03A0-$03BF et est routée AVANT
-     * l'ACIA dans les callbacks I/O. Si l'ACIA y est forcée (--acia-addr dans
-     * cette plage), la MIA la masque ET pilote le PSG/clavier → le scan clavier
-     * lit du vide et get_key boucle → terminal « figé » (annuaire BBS gelé).
-     * Le vrai LOCI expose son modem USB-CDC à $0380, pas dans la MIA. */
+    /* Safeguard: under --loci, the MIA occupies $03A0-$03BF and is routed BEFORE
+     * the ACIA in the I/O callbacks. If the ACIA is forced there (--acia-addr in
+     * this range), the MIA masks it AND drives the PSG/keyboard → the keyboard scan
+     * reads nothing and get_key loops → « frozen » terminal (BBS directory frozen).
+     * The real LOCI exposes its USB-CDC modem at $0380, not in the MIA. */
     if (core->loci_enabled && c->arg &&
         emu->acia_base_addr <= LOCI_MIA_END &&
         (uint16_t)(emu->acia_base_addr + 3) >= LOCI_MIA_BASE) {

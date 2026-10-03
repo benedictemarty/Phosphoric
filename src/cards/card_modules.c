@@ -97,7 +97,7 @@ bool card_modules_option_is_flag(const char* opt) {
     return false;
 }
 
-/* ── Table getopt ──────────────────────────────────────────────────────── */
+/* ── getopt table ──────────────────────────────────────────────────────── */
 
 static struct option* s_tbl;
 static int s_n;
@@ -133,10 +133,10 @@ const struct option* card_modules_long_options(const struct option* core) {
 
 /* ── Help ──────────────────────────────────────────────────────────────── */
 
-/* L'aide se place par blocs (card_help_t), chacun avec son ancre : un bloc est
- * repéré par la première option qu'il annonce (« --nom » en tête de ligne), pour
- * que les blocs ancrés sur lui passent avant. Les blocs écrits sont notés, remis
- * à zéro en fin d'aide. */
+/* The help is placed in blocks (card_help_t), each with its anchor: a block is
+ * identified by the first option it announces (« --name » at the start of a line),
+ * so that the blocks anchored on it come first. The blocks already written are
+ * recorded, reset at the end of the help. */
 static bool s_help_done[64][4];
 
 static void help_key(const char* text, char* out, size_t outsz) {
@@ -170,12 +170,12 @@ void card_modules_print_help_before(const char* name) {
         help_before(name);
         return;
     }
-    for (int pass = 0; pass < 2; pass++)              /* sans ancre, puis ancre introuvable */
+    for (int pass = 0; pass < 2; pass++)              /* no anchor, then anchor not found */
         for (int m = 0; m < k_card_module_count; m++)
             for (int k = 0; k < k_card_modules[m]->nhelps && k < 4; k++)
                 if (!s_help_done[m][k] && (pass == 1 || !k_card_modules[m]->helps[k].before))
                     help_unit(m, k);
-    memset(s_help_done, 0, sizeof(s_help_done));    /* prête pour une autre aide */
+    memset(s_help_done, 0, sizeof(s_help_done));    /* ready for another help */
 }
 
 /* ── Lifecycle ─────────────────────────────────────────────────────────── */

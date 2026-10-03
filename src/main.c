@@ -628,10 +628,10 @@ static void microdisc_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_DISK);
 }
 
-/* Sprint 34ax : LOCI DSK bus callbacks — réutilise IRQF_DISK level-triggered
- * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
- * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
- * bloqué après le RESTORE command — il attend l'IRQ et la commutation. */
+/* Sprint 34ax: LOCI DSK bus callbacks — reuses the level-triggered IRQF_DISK
+ * and synchronises overlay/ROMDIS in the memory subsystem on each
+ * CTRL write. Without it the Microdisc ROM (under LOCI MIA_BOOT FDC) stays
+ * stuck after the RESTORE command — it waits for the IRQ and the switch. */
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
 /* Rewrites drive @p drv's .dsk to disk if the game modified it and
@@ -736,8 +736,8 @@ static bool emulator_init(emulator_t* emu) {
     /* Initialize printer (disabled by default) */
     oric_printer_init(&emu->printer);
 
-    /* Cartes en modules, présentes ou non : état de repos (ACIA 6551, DTL 2000,
-     * Mageco : adresse par défaut, IRQ câblées). */
+    /* Card modules, present or not: idle state (ACIA 6551, DTL 2000,
+     * Mageco: default address, IRQs wired). */
     card_modules_init(emu);
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
@@ -930,7 +930,7 @@ static void emulator_cleanup(emulator_t* emu) {
         emu->kbd_inject_buf = NULL;
     }
     oric_printer_close(&emu->printer);
-    card_modules_teardown(emu);   /* transports des cartes (ACIA, DTL 2000, Mageco) */
+    card_modules_teardown(emu);   /* card transports (ACIA, DTL 2000, Mageco) */
 #ifdef HAS_SDL2
     oric_joystick_close_sdl(&emu->joystick);
 #endif
@@ -2705,8 +2705,8 @@ static int main_setup_input_printer(emulator_t* emu, cli_opts_t* cfg) {
 /* ACIA 6551 and serial backends, Digitelec DTL 2000, Mageco / ORICON (MIDI).
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_serial_cards(emulator_t* emu, cli_opts_t* cfg) {
-    /* Cartes en modules de l'étape « série » (ACIA 6551, DTL 2000,
-     * Mageco/ORICON), à la place qu'occupait leur code ici (card_module.h). */
+    /* Cards as modules of the « serial » stage (ACIA 6551, DTL 2000,
+     * Mageco/ORICON), at the place their code used to occupy here (card_module.h). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_SERIAL) != 0) {
         emulator_cleanup(emu);
         return 1;

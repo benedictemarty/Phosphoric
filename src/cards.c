@@ -23,10 +23,10 @@
 #include <mach-o/dyld.h>
 #endif
 
-/* Explications courtes, lues dans le menu : à quoi sert la carte, et ce que
- * chaque paramètre change. Les adresses sont celles de l'Oric ($03xx). */
-/* Les éléments à remplacer sont en minuscules : la police du menu n'a pas de
- * majuscules accentuées. */
+/* Short explanations, read in the menu: what the card is for, and what each
+ * parameter changes. Addresses are Oric addresses ($03xx). */
+/* Placeholders (host, port, file…) are written in lowercase: the menu font
+ * has no accented capital letters. */
 
 static const card_desc_t k_cards[] = {
     {

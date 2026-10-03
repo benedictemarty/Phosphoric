@@ -46,14 +46,14 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
     return false;
 }
-/* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
- * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
- * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
- * un poll de NIVEAU le manquerait (déjà retombé). L'émulateur latche chaque front
- * montant ; on draine ces pulses ici, juste après la transaction, et on les délivre
- * au 6502 en EDGE / TIR UNIQUE (cpu_irq_pulse) — une IRQ par pulse, sans maintien
- * de niveau donc sans tempête. main.c draine aussi une fois par frame (filet pour
- * les pulses hors écriture MIA, ex. trap IRQ sur bouton). */
+/* Synchronous nIRQ reflection (co-sim backend --loci-emu). The RP2040 firmware
+ * PULSES the nIRQ line (ext_put(EXT_IRQ,true) then false) in response to a
+ * MIA transaction (the write runs core0+core1 for the duration of the bus dialogue):
+ * a LEVEL poll would miss it (already dropped). The emulator latches every rising
+ * edge; these pulses are drained here, right after the transaction, and delivered
+ * to the 6502 as an EDGE / ONE-SHOT (cpu_irq_pulse) — one IRQ per pulse, with no
+ * level held, hence no storm. main.c also drains once per frame (safety net for
+ * pulses outside MIA writes, e.g. IRQ trap on the button). */
 void loci_emu_reflect_nirq(emulator_t* emu) {
     int pulses = loci_emu_irq_take();
     for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
@@ -165,7 +165,7 @@ static void loci_dev_tick(emulator_t* emu, int cycles) {
     loci_adj_tick(&emu->loci, cycles);
 }
 
-/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
+/* Position of each device in io_bus[] (= dispatch priority). */
 enum { DEV_LOCI, DEV_MICRODISC, DEV_JASMIN, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
@@ -175,7 +175,7 @@ static const io_device_t io_bus[DEV_COUNT] = {
     [DEV_LOCI] = { .name = "loci", .claims = loci_dev_claims, .read = loci_dev_read,
                    .write = loci_dev_write,
                    .present_off = PRESENT(has_loci), .tick = loci_dev_tick },
-    /* Microdisc : sections FDC/MDC/DSK/BAD écrites par savestate.c (historique). */
+    /* Microdisc: sections FDC/MDC/DSK/BAD written by savestate.c (historical). */
     [DEV_MICRODISC] = { .name = "microdisc", .claims = microdisc_dev_claims,
                         .read = microdisc_dev_read, .write = microdisc_dev_write,
                         .present_off = PRESENT(has_microdisc), .tick = microdisc_dev_tick },
@@ -185,11 +185,11 @@ static const io_device_t io_bus[DEV_COUNT] = {
                      .present_off = PRESENT(has_jasmin), .tick = jasmin_dev_tick },
 };
 
-/* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
- * l'ancien cpu_cycle_tick (microdisc → jasmin → loci), puis les cartes en
- * modules dans l'ordre de cards_list.h (acia → dtl2000 → mageco → sp0256 →
- * mea8000) :
- * iso-comportement par construction. */
+/* TICK ORDER, distinct from the dispatch order and PRESERVED exactly as in
+ * the old cpu_cycle_tick (microdisc → jasmin → loci), then the cards as
+ * modules in cards_list.h order (acia → dtl2000 → mageco → sp0256 →
+ * mea8000):
+ * identical behaviour by construction. */
 static const io_device_t* const io_bus_tick_order[] = {
     &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI],
 };
