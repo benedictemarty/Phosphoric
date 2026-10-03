@@ -30,23 +30,6 @@
 
 static const card_desc_t k_cards[] = {
     {
-        "microdisc", "Microdisc",
-        "Contrôleur de disquettes Oric (WD1793), 4 lecteurs 3\". Les disquettes "
-        "s'insèrent ensuite dans la section Disquettes du menu.",
-        "disque", "--disk-rom", 0, -1, 0x0310, 9, false,   /* $0310-$0313, $0314, $0318 */
-        { { "rom", "ROM du contrôleur", CARD_P_FILE, "--disk-rom", "roms/microdis.rom",
-            "Micrologiciel du Microdisc (microdis.rom) : démarrage du DOS et accès disque." } },
-        1
-    },
-    {
-        "jasmin", "Jasmin",
-        "Contrôleur de disquettes Jasmin (WD177x), autre standard Oric (TDOS).",
-        "disque", "--jasmin-rom", 0, -1, 0x03F4, 12, false,
-        { { "rom", "ROM de démarrage", CARD_P_FILE, "--jasmin-rom", "roms/jasmin.rom",
-            "ROM de démarrage Jasmin (2 Ko, jasmin.rom), servie en $F800." } },
-        1
-    },
-    {
         "loci", "LOCI",
         "Cartouche LOCI (modèle intégré) : menu de fichiers, émulation Microdisc et "
         "cassette depuis une carte SD ou une clé USB, ACIA en $0380.",
@@ -255,11 +238,11 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
     /* 2. Running machine: what phosphoric.cfg added (disk interface). */
     if (emu) {
         int i;
-        if (emu->has_microdisc && (i = cards_find("microdisc")) >= 0) {
+        if (emu->card_on[CARD_IDX_microdisc] && (i = cards_find("microdisc")) >= 0) {
             cards_set_on(st, i, true);
             if (emu->diskrom_path) set_value(&st->card[i], 0, emu->diskrom_path);
         }
-        if (emu->has_jasmin && (i = cards_find("jasmin")) >= 0) {
+        if (emu->card_on[CARD_IDX_jasmin] && (i = cards_find("jasmin")) >= 0) {
             cards_set_on(st, i, true);
             if (emu->jasmin_rom_path) set_value(&st->card[i], 0, emu->jasmin_rom_path);
         }

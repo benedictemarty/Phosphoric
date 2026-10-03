@@ -142,7 +142,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         base = parse_hex16(cfg->addr);
     }
     const char* mode = cfg->oricon ? "ORICON" : "Mageco";
-    if (emu->has_microdisc) {
+    if (emu->card_on[CARD_IDX_microdisc]) {
         log_warning("%s MIDI at $%04X shares page 3 with the disc electronics "
                     "— possible clash with other extensions (forum t=2525)",
                     mode, base);

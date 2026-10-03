@@ -40,7 +40,7 @@ static void fuzz_emu_init(void) {
     oric_keyboard_init(&emu.keyboard);
     microdisc_init(&emu.microdisc);
     emu.tape_syncstack = -1;
-    emu.has_microdisc = true;
+    emu.card_on[CARD_IDX_microdisc] = true;
 }
 
 int fuzz_make_seed(const char* path) {

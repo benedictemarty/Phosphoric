@@ -58,7 +58,7 @@ static void machine_new(void) {
     machine_free();
     emu = calloc(1, sizeof(*emu));
     microdisc_init(&emu->microdisc);
-    emu->has_microdisc = true;
+    emu->card_on[CARD_IDX_microdisc] = true;
     emu->model = ORIC_MODEL_ATMOS;
     oric_printer_init(&emu->printer);
     oric_joystick_init(&emu->joystick);
@@ -95,7 +95,7 @@ TEST(test_refresh_reflects_machine) {
 
 TEST(test_no_disk_interface) {
     machine_new();
-    emu->has_microdisc = false;
+    emu->card_on[CARD_IDX_microdisc] = false;
     ASSERT_EQ(media_disk_insert(emu, 0, "un.dsk"), MEDIA_NO_IFACE);
     iomenu_refresh(emu);
     ASSERT_EQ(emu->iomenu.st.drives, 0);
@@ -138,7 +138,7 @@ TEST(test_disk_path_ownership) {
  * co-simulated or real LOCI, its firmware mounts its images: refused. */
 TEST(test_disk_routed_to_loci) {
     machine_new();
-    emu->has_microdisc = false;
+    emu->card_on[CARD_IDX_microdisc] = false;
     ASSERT_TRUE(loci_init(&emu->loci));
     emu->has_loci = true;
     iom_action_t a = { IOM_ACT_DISK_INSERT, 1, "un.dsk" };

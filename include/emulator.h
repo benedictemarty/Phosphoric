@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.16.0"
+#define EMU_VERSION "2.17.0"
 
 /**
  * @brief ORIC machine model
@@ -169,15 +169,13 @@ typedef struct emulator_s {
     /* Microdisc controller */
     microdisc_t microdisc;
     sedoric_disk_t* disks[MICRODISC_MAX_DRIVES]; /* 4 drives: A, B, C, D */
-    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* .dsk file per drive (write-back/eject) */
-    bool disk_path_owned[MICRODISC_MAX_DRIVES];  /* copy to free (emu_set_disk_path) */
-    bool disk_writeback;     /* --disk-writeback: write modified .dsk files back */
-    bool has_microdisc;
+    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* fichier .dsk par lecteur (write-back/éjection) */
+    bool disk_path_owned[MICRODISC_MAX_DRIVES];  /* copie à libérer (emu_set_disk_path) */
+    bool disk_writeback;     /* --disk-writeback : réécrire les .dsk modifiés */
 
     /* Jasmin disk interface (WD177x at $03F4-$03FF, boot ROM $F800-$FFFF).
      * Alternative to the Microdisc; mutually exclusive at boot. */
     jasmin_t jasmin;
-    bool has_jasmin;
 
     /* Presence of the cards as modules (index CARD_IDX_<id>, cards_list.h).
      * Their state is private to their module (src/cards/card_<id>.c): DTL 2000,
@@ -576,18 +574,18 @@ void emu_raster_pos(const emulator_t* emu, int* line, int* dot);
  * the *active* interface, not hard-code the Microdisc. Both share the flat
  * emu->disks[]/emu->disk_paths[] arrays and the same 4-drive layout. */
 static inline int emu_disk_max_drives(const emulator_t* emu) {
-    return emu->has_jasmin ? JASMIN_MAX_DRIVES : MICRODISC_MAX_DRIVES;
+    return emu->card_on[CARD_IDX_jasmin] ? JASMIN_MAX_DRIVES : MICRODISC_MAX_DRIVES;
 }
 
 static inline bool emu_disk_dirty(const emulator_t* emu, int drv) {
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
-    return emu->has_jasmin ? emu->jasmin.disk_dirty[drv]
+    return emu->card_on[CARD_IDX_jasmin] ? emu->jasmin.disk_dirty[drv]
                            : emu->microdisc.disk_dirty[drv];
 }
 
 static inline void emu_disk_clear_dirty(emulator_t* emu, int drv) {
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return;
-    if (emu->has_jasmin) emu->jasmin.disk_dirty[drv] = false;
+    if (emu->card_on[CARD_IDX_jasmin]) emu->jasmin.disk_dirty[drv] = false;
     else                 emu->microdisc.disk_dirty[drv] = false;
 }
 
@@ -600,7 +598,7 @@ static inline void emu_disk_wire(emulator_t* emu, int drv, sedoric_disk_t* nd) {
     uint32_t size    = nd ? nd->size    : 0;
     uint8_t  tracks  = nd ? nd->tracks  : 0;
     uint8_t  sectors = nd ? nd->sectors : 0;
-    if (emu->has_jasmin)
+    if (emu->card_on[CARD_IDX_jasmin])
         jasmin_set_disk(&emu->jasmin, (uint8_t)drv, data, size, tracks, sectors);
     else
         microdisc_set_disk(&emu->microdisc, (uint8_t)drv, data, size, tracks, sectors);
@@ -632,16 +630,16 @@ static inline void emu_set_tape_path(emulator_t* emu, const char* path) {
 /* Per-drive write protection, on the active interface. */
 static inline bool emu_disk_protected(const emulator_t* emu, int drv) {
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return false;
-    return emu->has_jasmin ? emu->jasmin.write_protect[drv] : emu->microdisc.write_protect[drv];
+    return emu->card_on[CARD_IDX_jasmin] ? emu->jasmin.write_protect[drv] : emu->microdisc.write_protect[drv];
 }
 static inline void emu_disk_set_protected(emulator_t* emu, int drv, bool on) {
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return;
-    if (emu->has_jasmin) jasmin_set_write_protect(&emu->jasmin, (uint8_t)drv, on);
+    if (emu->card_on[CARD_IDX_jasmin]) jasmin_set_write_protect(&emu->jasmin, (uint8_t)drv, on);
     else                 microdisc_set_write_protect(&emu->microdisc, (uint8_t)drv, on);
 }
 
 static inline bool emu_has_disk_iface(const emulator_t* emu) {
-    return emu->has_microdisc || emu->has_jasmin;
+    return emu->card_on[CARD_IDX_microdisc] || emu->card_on[CARD_IDX_jasmin];
 }
 
 /* A floppy goes to the card present: Microdisc or Jasmin, otherwise LOCI

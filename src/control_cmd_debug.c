@@ -298,7 +298,7 @@ void ctl_cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
         sink_flush(s);
     }
     else if (strcmp(sub, "disk") == 0 || strcmp(sub, "fdc") == 0) {
-        if (emu->has_jasmin) {
+        if (emu->card_on[CARD_IDX_jasmin]) {
             /* Jasmin has no diskrom/intena gate; DRQ (not INTRQ) drives the CPU
              * IRQ, and the side is selected externally ($03F8). */
             jasmin_t* j = &emu->jasmin;
@@ -315,7 +315,7 @@ void ctl_cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
                     j->disk_data[2] != NULL, j->disk_data[3] != NULL);
             return;
         }
-        if (!emu->has_microdisc) { sink_err(s, "disk: no disk controller"); return; }
+        if (!emu->card_on[CARD_IDX_microdisc]) { sink_err(s, "disk: no disk controller"); return; }
         microdisc_t* md = &emu->microdisc;
         fdc_t* f = &md->fdc;
         sink_ok(s, "iface=microdisc ctrl=%02X intrq=%d drq=%d diskrom=%d romdis=%d intena=%d "
