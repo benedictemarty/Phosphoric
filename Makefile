@@ -491,9 +491,9 @@ TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c sr
 
 $(eval $(call UNIT_TEST,test-debugger,test_debugger,$(TEST_DEBUGGER_SRCS),,))
 
-# stb_image_write : objet de la build (exempté de -fsanitize=shift, cf.
-# STB_SAN_CFLAGS), pas sa source, que DIRECT_TEST compilerait avec tous les
-# sanitizers (erreur UBSan dans stbiw__jpg_writeBits en CI sanitizers, 2.12.7).
+# stb_image_write: the build's object (exempt from -fsanitize=shift, see
+# STB_SAN_CFLAGS), not its source, which DIRECT_TEST would compile with every
+# sanitizer (UBSan error in stbiw__jpg_writeBits in CI sanitizers, 2.12.7).
 TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c \
                  $(BUILD)/src/video/stb_image_write_impl.o src/utils/logging.c
 
