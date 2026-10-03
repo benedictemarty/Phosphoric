@@ -1,6 +1,6 @@
 # 0006 — Cartes d'extension en modules auto-enregistrés, liste explicite
 
-- **Statut** : proposée (2026-10-03) ; plan : `docs/specs/CARD_MODULES.md`
+- **Statut** : acceptée (2.13.0, pilote G1 MEA8000) ; plan : `docs/specs/CARD_MODULES.md`
 
 ## Contexte
 
@@ -26,6 +26,10 @@ répartition et de tick, audio). Une liste explicite `k_card_modules[]` les
 ## Conséquences
 
 - Ajouter une carte : un fichier + une ligne (cible, prouvée par un test en G7).
+- Réalisation G1 : la liste est une macro (`include/cards_list.h`) et non une table
+  de pointeurs : celle-ci rendait indirect le tick par cycle (+5,3 % d'instructions
+  mesurées) ; générés depuis la macro, les ticks restent des appels directs
+  (instructions identiques à la référence).
 - Migration par étapes (G1 pilote MEA8000 → G6 LOCI), chacune prouvée identique
   (`cli_golden`, `.ost` à l'octet, banc de performance).
 - Si le pilote G1 n'apporte pas assez, la décision est rejetée et notée ici.

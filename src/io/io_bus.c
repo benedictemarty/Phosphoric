@@ -11,9 +11,12 @@
 #include "io/io_bus.h"
 #include "io/loci_emu.h"   /* backend co-sim : API MIA $03xx servie par le vrai firmware (--loci-emu) */
 #include "emulator.h"
+#include "card_module.h"   /* cartes en modules : leurs périphériques de bus */
+#include "card_ticks.h"    /* leurs ticks par cycle, en appels directs */
 
 #include <stdio.h>
 #include <stddef.h>   /* offsetof */
+#include <string.h>
 
 /* ── Bus I/O : périphériques enregistrés (docs/architecture/io-bus.md) ──────
  * Chaque périphérique fournit claims/read/write ; le dispatch parcourt la table.
@@ -266,27 +269,6 @@ static bool sp0256_dev_save(emulator_t* emu, FILE* fp) {
 static void sp0256_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     sp0256_load(&emu->sp0256, fp, size);
 }
-static bool mea8000_dev_save(emulator_t* emu, FILE* fp) {
-    if (!emu->has_mea8000) return false;
-    return mea8000_save(&emu->mea8000, fp);
-}
-static void mea8000_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    mea8000_load(&emu->mea8000, fp, size);
-}
-/* MEA8000 TMPI "Synthétiseur Vocal" (Philips formant) : data à base_addr,
- * commande à base_addr+1 (défaut $03F0/$03F1). Exclusif du SP0256 ($03F1). */
-static bool mea8000_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_mea8000 &&
-           (addr == emu->mea8000.base_addr ||
-            addr == (uint16_t)(emu->mea8000.base_addr + 1));
-}
-static uint8_t mea8000_dev_read(emulator_t* emu, uint16_t addr) {
-    return mea8000_read(&emu->mea8000, addr);
-}
-static bool mea8000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    mea8000_write(&emu->mea8000, addr, value);
-    return true;
-}
 
 /* Digitelec DTL 2000 (PIA 6821 + ACIA 6850) : $03F8-$03FD (plage exclusive). */
 static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
@@ -360,11 +342,10 @@ static void acia_dev_tick(emulator_t* emu, int cycles) {
 static void dtl2000_dev_tick(emulator_t* emu, int cycles) { dtl2000_tick(&emu->dtl2000, cycles); }
 static void mageco_dev_tick(emulator_t* emu, int cycles)  { mageco_tick(&emu->mageco, cycles); }
 static void sp0256_dev_tick(emulator_t* emu, int cycles)  { sp0256_tick(&emu->sp0256, cycles); }
-static void mea8000_dev_tick(emulator_t* emu, int cycles) { mea8000_tick(&emu->mea8000, cycles); }
 
 /* Position de chaque device dans io_bus[] (= priorité de dispatch). */
 enum { DEV_LOCI, DEV_ACIA, DEV_MAGECO, DEV_MICRODISC, DEV_JASMIN, DEV_SP0256,
-       DEV_MEA8000, DEV_DTL2000, DEV_ULA_NG, DEV_COUNT };
+       DEV_DTL2000, DEV_ULA_NG, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
 
@@ -393,10 +374,6 @@ static const io_device_t io_bus[DEV_COUNT] = {
                      .write = sp0256_dev_write,
                      .save_tag = "SPO\0", .save = sp0256_dev_save, .load = sp0256_dev_load,
                      .present_off = PRESENT(has_sp0256), .tick = sp0256_dev_tick },
-    [DEV_MEA8000] = { .name = "mea8000", .claims = mea8000_dev_claims, .read = mea8000_dev_read,
-                      .write = mea8000_dev_write,
-                      .save_tag = "MEA\0", .save = mea8000_dev_save, .load = mea8000_dev_load,
-                      .present_off = PRESENT(has_mea8000), .tick = mea8000_dev_tick },
     [DEV_DTL2000] = { .name = "dtl2000", .claims = dtl2000_dev_claims, .read = dtl2000_dev_read,
                       .write = dtl2000_dev_write,
                       .save_tag = "DTL\0", .save = dtl2000_dev_save, .load = dtl2000_dev_load,
@@ -412,34 +389,66 @@ static const io_device_t io_bus[DEV_COUNT] = {
 
 /* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
  * l'ancien cpu_cycle_tick (microdisc → jasmin → loci → acia → dtl → mageco →
- * sp0256 → mea8000) : iso-comportement par construction. */
+ * sp0256), puis les cartes en modules dans l'ordre de k_card_modules (mea8000) :
+ * iso-comportement par construction. */
 static const io_device_t* const io_bus_tick_order[] = {
     &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI], &io_bus[DEV_ACIA],
-    &io_bus[DEV_DTL2000], &io_bus[DEV_MAGECO], &io_bus[DEV_SP0256], &io_bus[DEV_MEA8000],
+    &io_bus[DEV_DTL2000], &io_bus[DEV_MAGECO], &io_bus[DEV_SP0256],
 };
 
-static const int io_bus_count = (int)(sizeof(io_bus) / sizeof(io_bus[0]));
+/* Table de répartition effective : périphériques du cœur, avec les cartes en
+ * modules insérées avant leur ancre (bus_before), copiés dans un tableau
+ * contigu (même forme qu'avant pour savestate.c : l'ordre des sections .ost est
+ * celui de cette table). Construite au premier usage. */
+#define IO_BUS_MAX (DEV_COUNT + 32)
+static io_device_t s_bus[IO_BUS_MAX];
+static int s_bus_n = -1;
+
+static void bus_add_modules_before(const char* name, bool* placed) {
+    for (int m = 0; m < k_card_module_count; m++) {
+        const card_module_t* mod = k_card_modules[m];
+        if (placed[m] || !mod->bus) continue;
+        if (name ? (mod->bus_before && strcmp(mod->bus_before, name) == 0) : true) {
+            placed[m] = true;
+            bus_add_modules_before(mod->bus->name, placed);
+            if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = *mod->bus;
+        }
+    }
+}
+
+static void io_bus_build(void) {
+    bool placed[64] = { false };
+    s_bus_n = 0;
+    for (int i = 0; i < DEV_COUNT; i++) {
+        bus_add_modules_before(io_bus[i].name, placed);
+        s_bus[s_bus_n++] = io_bus[i];
+    }
+    bus_add_modules_before(NULL, placed);          /* sans ancre : en fin de table */
+}
 
 const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {
-    for (int i = 0; i < io_bus_count; i++)
-        if (io_bus[i].claims(emu, addr))
-            return &io_bus[i];
+    if (__builtin_expect(s_bus_n < 0, 0)) io_bus_build();
+    for (int i = 0; i < s_bus_n; i++)
+        if (s_bus[i].claims(emu, addr))
+            return &s_bus[i];
     return NULL;
 }
 
 const io_device_t* io_bus_find_write(emulator_t* emu, uint16_t addr) {
-    for (int i = 0; i < io_bus_count; i++) {
-        bool (*cw)(emulator_t*, uint16_t) = io_bus[i].claims_write ? io_bus[i].claims_write
-                                                                   : io_bus[i].claims;
+    if (__builtin_expect(s_bus_n < 0, 0)) io_bus_build();
+    for (int i = 0; i < s_bus_n; i++) {
+        bool (*cw)(emulator_t*, uint16_t) = s_bus[i].claims_write ? s_bus[i].claims_write
+                                                                  : s_bus[i].claims;
         if (cw(emu, addr))
-            return &io_bus[i];
+            return &s_bus[i];
     }
     return NULL;
 }
 
 const io_device_t* io_bus_devices(int* count) {
-    if (count) *count = io_bus_count;
-    return io_bus;
+    if (s_bus_n < 0) io_bus_build();
+    if (count) *count = s_bus_n;
+    return s_bus;
 }
 
 /* Tick des périphériques de bus temporisés, dans io_bus_tick_order. */
@@ -455,4 +464,7 @@ void io_bus_tick(emulator_t* emu, int cycles) {
         if (__builtin_expect(*(const bool*)(base + d->present_off), 0))
             d->tick(emu, cycles);
     }
+    /* Cartes en modules (après le cœur, dans l'ordre de la liste) : appels
+     * directs générés (card_ticks.h). */
+    card_modules_tick(emu, cycles);
 }

@@ -17,6 +17,7 @@
 #include "cli/cli_args.h"
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] */
 #include "cli/cli_usage.h"    /* cli_print_usage */
+#include "card_module.h"      /* options des cartes en modules */
 #include "io/bus_timing.h"    /* BUS_LATCH_SUBTICK_DEFAULT */
 #include "utils/logging.h"
 
@@ -38,7 +39,13 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, CLI_SHORT_OPTIONS, long_options, &option_index)) != -1) {
+    /* Table du cœur augmentée des options des cartes en modules (card_module.h). */
+    const struct option* opts = card_modules_long_options(long_options);
+    while ((opt = getopt_long(argc, argv, CLI_SHORT_OPTIONS, opts, &option_index)) != -1) {
+        if (opt >= CARD_OPT_BASE) {
+            card_modules_set_option(cfg->card_cfg, opt, optarg);
+            continue;
+        }
         switch (opt) {
             case 't': cfg->tape_file = optarg; break;
             case 'd': cfg->disk_files[0] = optarg; break;
@@ -102,8 +109,6 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_JASMIN_ROM: cfg->jasmin_rom_file = optarg; break;
             case OPT_SP0256_ROM: cfg->sp0256_rom_file = optarg; break;
             case OPT_SP0256_ADDR: cfg->sp0256_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
-            case OPT_MEA8000: cfg->mea8000_enabled = true; break;
-            case OPT_MEA8000_ADDR: cfg->mea8000_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
             case 'b': emu->breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
             case 'D': cfg->debug_mode = true; break;
             case OPT_DEBUG_BREAK: cfg->debug_break_addr = optarg; break;

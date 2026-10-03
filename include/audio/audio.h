@@ -134,10 +134,16 @@ void audio_pause(bool pause);
 struct sp0256_s;
 void audio_set_sp0256(struct sp0256_s* sp);
 
-/* Optional MEA8000 (TMPI) formant speech synth, mixed into the PSG stream by the
- * GUI audio callback (headless mixing is done inline in main.c). NULL disables. */
-struct mea8000_s;
-void audio_set_mea8000(struct mea8000_s* m);
+/* Sources audio des cartes d'extension (modules, card_module.h) : chacune produit
+ * des échantillons mono, mixés au PSG (moyenne, comme les synthèses vocales)
+ * dans l'ordre d'enregistrement, par le callback SDL comme par la capture
+ * (WAV/AVI/cast). Une même source (fn, ctx) n'est enregistrée qu'une fois. */
+typedef void (*audio_source_fn)(void* ctx, int16_t* out, int n);
+void audio_add_source(audio_source_fn fn, void* ctx);
+/* Mixe les sources dans @p stereo (@p n trames L/R entrelacées), par blocs d'au
+ * plus @p chunk_max échantillons (512 pour le callback SDL ; une trame entière
+ * pour la capture : le découpage reste celui d'avant, sortie identique). */
+void audio_mix_sources(int16_t* stereo, int n, int chunk_max);
 
 /* AVI audio tap (GUI muxing). In GUI the SDL audio callback owns the PSG
  * generator, so --video capture cannot re-run ay_generate on the main thread.

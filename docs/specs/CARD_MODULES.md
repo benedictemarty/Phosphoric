@@ -1,6 +1,7 @@
 # Cartes d'extension en modules auto-enregistrés (sprint G)
 
-- **Statut** : plan proposé (2026-10-03), non commencé. Décision : ADR 0006.
+- **Statut** : en cours — G1 livré en 2.13.0 (pilote MEA8000). Décision : ADR 0006
+  (acceptée).
 - **But** : ajouter une carte d'extension = **un fichier** (la carte) **+ une ligne**
   (la liste des cartes), au lieu des ~10 fichiers d'aujourd'hui.
 - **Hors périmètre** : le chargement dynamique (`.so`/`.dll`, `dlopen`). Il exigerait
@@ -66,6 +67,34 @@ aide, `phosphoric.cfg`, menu F1, `io_bus[]`, ordre des ticks, mixage audio.
 entre GCC/MinGW, clang/macOS et emscripten (ordre non spécifié, objets éliminés
 d'une bibliothèque statique). Une ligne par carte, lisible et déterministe.
 
+### Réalisation (G1, 2.13.0)
+
+Le pilote a fait évoluer la cible sur trois points :
+
+- **La liste est une macro**, `include/cards_list.h` : `X(mea8000, 1)` (id, tick).
+  Une table de pointeurs lue à l'exécution coûtait **+5,3 % d'instructions**
+  (mesuré : `tools/instr_count.sh`) : l'appel du tick d'une carte, à chaque cycle,
+  devenait indirect. Générées depuis la macro, les ticks des cartes sont des
+  appels directs avec un test de présence à position fixe (`include/card_ticks.h`,
+  `emu->card_on[CARD_IDX_<id>]`) : **même nombre d'instructions** que la référence
+  (874 033 056 contre 874 025 099 sans carte, 905 086 069 contre 905 078 314 avec
+  MEA8000, sur 2 M cycles).
+- **Ancres** : chaque carte dit avant quelle option (`opts_before`), quel bloc
+  d'aide (`help_before`), quelle fiche du menu (`desc_before`) et quel
+  périphérique (`bus_before`) elle se place ; l'aide, les messages d'options
+  ambiguës (« possibilities: '--mea8000' '--mea8000-addr' »), le menu et l'ordre
+  des sections `.ost` restent identiques. Sans ancre : en fin de liste.
+- **Le Makefile prend `src/cards/card_*.c` par motif** : une carte = son fichier +
+  sa ligne dans `cards_list.h`.
+- Son : `audio_add_source()` (`src/audio/audio_sources.c`), mixé par le callback SDL
+  et par la capture avec le même découpage qu'avant (sortie identique).
+- Mise en route : `card_modules_setup(emu, cfgs, étape)` à la place exacte du
+  code d'origine (`CARD_STAGE_SPEECH` pour MEA8000).
+
+Preuves G1 : `cli_golden` 125 cas (dont 9 nouveaux : préfixes ambigus, conflits,
+`.ost` et WAV avec la carte) sans écart avec 2.12.9 ; instructions identiques ;
+builds SDL2=0, HTTPAPI=1, WASM ; `make tests-strict` et `SANITIZE=1`.
+
 ## 3. Invariants (vérifiés à chaque étape)
 
 1. **Comportement identique** : `cli_golden` (116 lignes de commande, sorties et
@@ -75,7 +104,8 @@ d'une bibliothèque statique). Une ligne par carte, lisible et déterministe.
    l'octet ; anciens `.ost` relus (`test-loadstate`, `test-savestate-determinism`).
 3. **Performance** : pas de boucle générique dans le chemin par cycle (+22 %
    mesuré, ADR 0003). Les tables restent `const` et l'ordre des ticks explicite ;
-   `make test-bench` (budget par trame) à chaque migration.
+   nombre d'instructions comparé à la référence (`tools/instr_count.sh`, stable,
+   contrairement au temps sur une machine bridée) et `make test-bench`.
 4. **Configuration** : clés de `phosphoric.cfg` (`carte.*`, `<id>.<param>`)
    inchangées ; menu F1 identique (`test-iomenu`, `test-cards`, `test-web-iomenu`).
 5. Builds Linux, macOS, Windows (MinGW) et WASM ; `make SANITIZE=1 tests-strict`.
@@ -84,7 +114,7 @@ d'une bibliothèque statique). Une ligne par carte, lisible et déterministe.
 
 | Étape | Contenu | Preuve |
 |---|---|---|
-| **G1** Contrat + pilote | `card_module_t`, `cards_all.c` ; analyse CLI qui ajoute les options des modules ; **MEA8000** migrée de bout en bout (son état reste dans `emulator_t` à ce stade) | invariants 1-5 ; son : capture `--mea8000 --audio-wav` identique à l'octet avant/après |
+| **G1** ✅ 2.13.0 Contrat + pilote | `card_module_t`, `cards_all.c` ; analyse CLI qui ajoute les options des modules ; **MEA8000** migrée de bout en bout (son état reste dans `emulator_t` à ce stade) | invariants 1-5 ; son : capture `--mea8000 --audio-wav` identique à l'octet avant/après |
 | **G2** Cartes simples | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 par carte |
 | **G3** État privé | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
 | **G4** ACIA | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |

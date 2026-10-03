@@ -158,9 +158,16 @@ ifeq ($(SANITIZE), 1)
 endif
 
 # Source files
+# Cartes d'extension en modules (ADR 0006) : registre (card_modules.c), une
+# carte par fichier (card_<id>.c, pris par motif : ajouter une carte ne touche
+# pas au Makefile ; sa ligne va dans include/cards_list.h), et le registre des
+# sources audio qu'elles alimentent.
+CARD_MODULE_SRCS = $(sort $(wildcard src/cards/card_*.c)) src/audio/audio_sources.c
+
 SOURCES = src/main.c \
           src/rom_patches.c \
           src/cards.c \
+          $(CARD_MODULE_SRCS) \
           src/cpu/cpu6502.c \
           src/cpu/opcodes.c \
           src/cpu/addressing.c \
@@ -550,7 +557,8 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
 # Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
-TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c src/cards.c src/utils/logging.c $(LOCI_STUB)
+TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c src/cards.c src/utils/logging.c $(LOCI_STUB) \
+                   $(CARD_MODULE_SRCS) src/io/mea8000.c
 $(eval $(call UNIT_TEST,test-iomenu,test_iomenu,$(TEST_IOMENU_SRCS),,))
 
 # Liaison menu F1 ↔ émulateur (médias, réglages, phosphoric.cfg) : lie le cœur.
@@ -605,7 +613,7 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  $(CPU_SRCS) \
                  $(DISK_SRCS) \
                  $(MEM_SRCS) \
-                 src/utils/logging.c src/utils/netutil.c
+                 src/utils/logging.c src/utils/netutil.c $(CARD_MODULE_SRCS)
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 

@@ -34,6 +34,7 @@
 #include "io/jasmin.h"
 #include "io/sp0256.h"
 #include "io/mea8000.h"
+#include "cards_list.h"   /* CARD_MODULE_COUNT : cartes en modules (ADR 0006) */
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
 #include "cards.h"
@@ -50,7 +51,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.12.9"
+#define EMU_VERSION "2.13.0"
 
 /**
  * @brief ORIC machine model
@@ -202,7 +203,9 @@ typedef struct emulator_s {
      * No speech ROM (host streams frames); mixed into the PSG audio. Mutually
      * exclusive with the SP0256 ($03F1 overlap). */
     mea8000_t mea8000;
-    bool has_mea8000;
+
+    /* Présence des cartes en modules (index CARD_IDX_<id>, cards_list.h). */
+    bool card_on[CARD_MODULE_COUNT + 1];
 
     /* Tape buffer for ROM patching (CLOAD support) */
     uint8_t* tapebuf;       /* TAP file data loaded in memory */

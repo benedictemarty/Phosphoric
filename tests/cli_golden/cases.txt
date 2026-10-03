@@ -137,3 +137,14 @@
 -r roms/basic11b.rom -n --config tests/cli_golden/iomenu.cfg -c 1000
 -r roms/basic11b.rom -n --config /nonexistent.cfg -c 1000
 -r roms/basic11b.rom -n --disk-rom roms/microdis.rom -d disks/Citadelle.dsk -t examples/hello.tap -j keys -c 1000000 --menu-screenshot @OUT@/menu.ppm
+# Sprint G (cartes en modules) : préfixes d'options, conflits, aide, .ost et WAV
+# des cartes, pour prouver que la migration ne change rien.
+-r roms/basic11b.rom -n --mea -c 1000
+-r roms/basic11b.rom -n --se loopback -c 1000
+-r roms/basic11b.rom -n --d -c 1000
+-r roms/basic11b.rom -n --mea8000 --mageco loopback -c 1000
+-r roms/basic11b.rom -n --mea8000 --mea8000-addr 03F0 --mageco loopback -c 1000
+-r roms/basic11b.rom -n --mea8000 --save-state @OUT@/mea.ost -c 300000
+-r roms/basic11b.rom -n --mea8000 --audio-wav @OUT@/mea.wav -c 300000
+-r roms/basic11b.rom -n -c 1000 --mea8000-addr
+-r roms/basic11b.rom -n --mea8000=1 -c 1000
