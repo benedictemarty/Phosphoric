@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
 
 /* stb header only (implementation is in cast_server.c) */
 #define STBI_WRITE_NO_STDIO
@@ -26,11 +27,13 @@ static int tests_passed = 0;
 static int tests_failed = 0;
 
 #define TEST(name) static void name(void)
+/* Un échec affiche FAIL et ne compte PAS le test comme réussi (avant 2.12.9 :
+ * « FAIL » suivi de « PASS », et le test compté dans les deux colonnes). */
 #define RUN(name) do { \
+    int failed_before = tests_failed; \
     printf("  %-50s", #name); \
     name(); \
-    tests_passed++; \
-    printf("PASS\n"); \
+    if (tests_failed == failed_before) { tests_passed++; printf("PASS\n"); } \
 } while(0)
 
 #define ASSERT_EQ(a, b) do { \
@@ -53,6 +56,36 @@ static int tests_failed = 0;
         tests_failed++; return; \
     } \
 } while(0)
+
+/* Client HTTP de test : se connecte à 127.0.0.1:@p port, attend @p delay_ms
+ * avant d'envoyer @p request, puis lit jusqu'à trouver @p want (ou 3 s sans
+ * données). Une seule lecture ne suffit pas : la réponse peut arriver en
+ * plusieurs morceaux. Retourne true si @p want a été reçu. */
+static bool http_fetch(uint16_t port, const char* request, int delay_ms,
+                       const char* want, char* out, size_t outsz) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return false;
+    struct timeval tv = { 3, 0 };
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    addr.sin_port = htons(port);
+    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) { close(sock); return false; }
+    if (delay_ms > 0) usleep((useconds_t)delay_ms * 1000);
+    send(sock, request, strlen(request), 0);
+    size_t len = 0;
+    out[0] = '\0';
+    while (len + 1 < outsz && !strstr(out, want)) {
+        ssize_t n = recv(sock, out + len, outsz - 1 - len, 0);
+        if (n <= 0) break;                      /* fermé, ou 3 s sans rien */
+        len += (size_t)n;
+        out[len] = '\0';
+    }
+    close(sock);
+    return strstr(out, want) != NULL;
+}
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  JPEG CALLBACK FOR TESTS                                            */
@@ -223,26 +256,12 @@ TEST(test_http_html_page) {
     bool ok = cast_server_init(&server, 18081);
     ASSERT_TRUE(ok);
 
-    /* Connect to server and request / */
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_TRUE(sock >= 0);
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    addr.sin_port = htons(18081);
-
-    int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
-    ASSERT_EQ(ret, 0);
-
-    const char* request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    send(sock, request, strlen(request), 0);
-
-    /* Wait for response */
-    usleep(100000); /* 100ms */
-    char response[8192] = {0};
-    recv(sock, response, sizeof(response) - 1, 0);
+    /* Request / and read until the end of the page */
+    static char response[32768];
+    bool got = http_fetch(18081, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", 0,
+                          "</html>", response, sizeof(response));
+    cast_server_stop(&server);
+    ASSERT_TRUE(got);
 
     /* Check for HTML content */
     ASSERT_TRUE(strstr(response, "text/html") != NULL);
@@ -250,9 +269,6 @@ TEST(test_http_html_page) {
     ASSERT_TRUE(strstr(response, "/snapshot") != NULL);
     ASSERT_TRUE(strstr(response, "AudioContext") != NULL);
     ASSERT_TRUE(strstr(response, "/audio") != NULL);
-
-    close(sock);
-    cast_server_stop(&server);
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -264,31 +280,50 @@ TEST(test_http_mjpeg_stream) {
     bool ok = cast_server_init(&server, 18082);
     ASSERT_TRUE(ok);
 
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_TRUE(sock >= 0);
+    char response[4096];
+    bool got = http_fetch(18082, "GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n", 0,
+                          "boundary=frame", response, sizeof(response));
+    cast_server_stop(&server);
+    ASSERT_TRUE(got);
 
+    /* Check MJPEG boundary header */
+    ASSERT_TRUE(strstr(response, "multipart/x-mixed-replace") != NULL);
+}
+
+/* Requête envoyée APRÈS la connexion (300 ms) : sous macOS/BSD, le socket
+ * accepté héritait du O_NONBLOCK du socket d'écoute, le recv du serveur
+ * rendait EAGAIN et le client était fermé sans réponse (échec CI macOS 2.12.8). */
+TEST(test_http_request_after_connect_delay) {
+    cast_server_t server;
+    ASSERT_TRUE(cast_server_init(&server, 18083));
+    char response[4096];
+    bool got = http_fetch(18083, "GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n", 300,
+                          "boundary=frame", response, sizeof(response));
+    cast_server_stop(&server);
+    ASSERT_TRUE(got);
+}
+
+/* Un client qui se connecte sans rien envoyer ne bloque plus le serveur : avant
+ * 2.12.9, le recv du thread serveur (socket bloquant, sans délai, sous Linux)
+ * attendait indéfiniment et plus aucun client n'était servi. */
+TEST(test_silent_client_does_not_block_server) {
+    cast_server_t server;
+    ASSERT_TRUE(cast_server_init(&server, 18084));
+    int mute = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    addr.sin_port = htons(18082);
-
-    int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
-    ASSERT_EQ(ret, 0);
-
-    const char* request = "GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    send(sock, request, strlen(request), 0);
-
-    usleep(100000);
-    char response[4096] = {0};
-    recv(sock, response, sizeof(response) - 1, 0);
-
-    /* Check MJPEG boundary header */
-    ASSERT_TRUE(strstr(response, "multipart/x-mixed-replace") != NULL);
-    ASSERT_TRUE(strstr(response, "boundary=frame") != NULL);
-
-    close(sock);
+    addr.sin_port = htons(18084);
+    int c = connect(mute, (struct sockaddr*)&addr, sizeof(addr));
+    usleep(100000);                         /* le serveur l'accepte et attend */
+    char response[32768];
+    bool got = http_fetch(18084, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", 0,
+                          "text/html", response, sizeof(response));
+    close(mute);                            /* débloque l'ancien serveur avant l'arrêt */
     cast_server_stop(&server);
+    ASSERT_EQ(c, 0);
+    ASSERT_TRUE(got);
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -576,7 +611,7 @@ int main(void) {
     printf("  Cast Server + CASTV2 + Audio Streaming Unit Tests\n");
     printf("═══════════════════════════════════════════════════════\n\n");
 
-    /* Cast Server tests (13) */
+    /* Cast Server tests (15) */
     RUN(test_upscale_single_pixel);
     RUN(test_upscale_2x2_frame);
     RUN(test_upscale_color_preservation);
@@ -586,6 +621,8 @@ int main(void) {
     RUN(test_server_port_default);
     RUN(test_http_html_page);
     RUN(test_http_mjpeg_stream);
+    RUN(test_http_request_after_connect_delay);
+    RUN(test_silent_client_does_not_block_server);
     RUN(test_mdns_query_build);
     RUN(test_mdns_query_length);
     RUN(test_mdns_query_too_small);
