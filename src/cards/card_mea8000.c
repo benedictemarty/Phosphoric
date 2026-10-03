@@ -15,11 +15,11 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* État de la carte, privé au module (une seule machine par processus :
- * emulator_init n'est appelé qu'une fois, par main). */
+/* Card state, private to the module (a single machine per process:
+ * emulator_init is called only once, by main). */
 static mea8000_t s_dev;
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     bool     enabled;     /* --mea8000 (TMPI, no ROM) */

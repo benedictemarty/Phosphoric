@@ -15,11 +15,11 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* État de la carte, privé au module (une seule machine par processus :
- * emulator_init n'est appelé qu'une fois, par main). */
+/* Card state, private to the module (a single machine per process:
+ * emulator_init is called only once, by main). */
 static sp0256_t s_dev;
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     const char* rom_file;    /* --sp0256-rom FILE */
@@ -120,7 +120,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
     }
     s_dev.emu = emu;
     emu->card_on[CARD_IDX_sp0256] = true;
-    audio_add_source(audio_gen, &s_dev);   /* mixée au son de l'Oric */
+    audio_add_source(audio_gen, &s_dev);   /* mixed into the Oric's sound */
     log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
              cfg->base_addr);
     return 0;
