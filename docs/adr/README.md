@@ -11,3 +11,4 @@ cela coûte. Une décision remplacée n'est pas effacée : sa fiche passe au sta
 | [0003](0003-ordre-des-ticks.md) | Ordre des ticks par cycle explicite, distinct de l'ordre de répartition des E/S | acceptée (2.4.0) |
 | [0004](0004-cartes-par-relance.md) | Changer de cartes d'extension relance le processus | acceptée (2.11.0) |
 | [0005](0005-miroirs-fr-en.md) | Deux branches miroir : français et anglais, qui ne diffèrent que par les commentaires | acceptée (2.1.4) |
+| [0006](0006-cartes-en-modules.md) | Cartes d'extension en modules auto-enregistrés, liste explicite | proposée |
