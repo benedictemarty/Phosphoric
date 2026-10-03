@@ -1,7 +1,8 @@
 # Cartes d'extension en modules auto-enregistrés (sprint G)
 
 - **Statut** : en cours — G1 livré en 2.13.0 (pilote MEA8000), G2 en 2.14.0 (SP0256,
-  Mageco/ORICON, DTL 2000, ULA-NG). Décision : ADR 0006 (acceptée).
+  Mageco/ORICON, DTL 2000, ULA-NG), G3 en 2.15.0 (état privé). Décision : ADR 0006
+  (acceptée).
 - **But** : ajouter une carte d'extension = **un fichier** (la carte) **+ une ligne**
   (la liste des cartes), au lieu des ~10 fichiers d'aujourd'hui.
 - **Hors périmètre** : le chargement dynamique (`.so`/`.dll`, `dlopen`). Il exigerait
@@ -116,7 +117,7 @@ builds SDL2=0, HTTPAPI=1, WASM ; `make tests-strict` et `SANITIZE=1`.
 |---|---|---|
 | **G1** ✅ 2.13.0 Contrat + pilote | `card_module_t`, `cards_all.c` ; analyse CLI qui ajoute les options des modules ; **MEA8000** migrée de bout en bout (son état reste dans `emulator_t` à ce stade) | invariants 1-5 ; son : capture `--mea8000 --audio-wav` identique à l'octet avant/après |
 | **G2** ✅ 2.14.0 Cartes simples | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 par carte |
-| **G3** État privé | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
+| **G3** ✅ 2.15.0 État privé (statique dans le module : une machine par processus, pas d'indirection par cycle ; ULA-NG reste dans la machine) | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
 | **G4** ACIA | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
 | **G5** Disques | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
 | **G6** LOCI | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |

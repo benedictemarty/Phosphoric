@@ -32,14 +32,10 @@
 #include "io/cassette.h"
 #include "io/microdisc.h"
 #include "io/jasmin.h"
-#include "io/sp0256.h"
-#include "io/mea8000.h"
 #include "cards_list.h"   /* CARD_MODULE_COUNT : cartes en modules (ADR 0006) */
 #include "io/acia6551.h"
 #include "io/serial_backend.h"
 #include "cards.h"
-#include "io/dtl2000.h"
-#include "io/mageco.h"
 #include "storage/sedoric.h"
 #include "hostfs/hostfs.h"
 #include "debugger.h"
@@ -51,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.14.0"
+#define EMU_VERSION "2.15.0"
 
 /**
  * @brief ORIC machine model
@@ -171,14 +167,6 @@ typedef struct emulator_s {
     serial_backend_t* serial_backend;
     bool has_serial;
 
-    /* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 at $03F8-$03FD */
-    dtl2000_t dtl2000;
-    serial_backend_t* dtl2000_backend;
-
-    /* Mageco MIDI interface — MC6850 ACIA at $03FE-$03FF (31250 baud MIDI) */
-    mageco_t mageco;
-    serial_backend_t* mageco_backend;
-
     /* Microdisc controller */
     microdisc_t microdisc;
     sedoric_disk_t* disks[MICRODISC_MAX_DRIVES]; /* 4 drives: A, B, C, D */
@@ -192,16 +180,9 @@ typedef struct emulator_s {
     jasmin_t jasmin;
     bool has_jasmin;
 
-    /* SP0256 Mageco "Synthétiseur Vocal" — GI SP0256-AL2 speech chip at $03F1.
-     * Output mixed into the PSG audio; mutually exclusive with a $03F1 conflict. */
-    sp0256_t sp0256;
-
-    /* MEA8000 TMPI "Synthétiseur Vocal" — Philips formant speech at $03F0/$03F1.
-     * No speech ROM (host streams frames); mixed into the PSG audio. Mutually
-     * exclusive with the SP0256 ($03F1 overlap). */
-    mea8000_t mea8000;
-
-    /* Présence des cartes en modules (index CARD_IDX_<id>, cards_list.h). */
+    /* Présence des cartes en modules (index CARD_IDX_<id>, cards_list.h). Leur
+     * état est privé à leur module (src/cards/card_<id>.c) : DTL 2000, Mageco,
+     * SP0256, MEA8000 n'apparaissent plus ici. */
     bool card_on[CARD_MODULE_COUNT + 1];
 
     /* Tape buffer for ROM patching (CLOAD support) */

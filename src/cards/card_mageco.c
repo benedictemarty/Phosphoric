@@ -18,6 +18,11 @@
 #include <stdio.h>
 #include <stddef.h>   /* offsetof */
 
+/* État de la carte, privé au module (une seule machine par processus :
+ * emulator_init n'est appelé qu'une fois, par main). */
+static mageco_t s_dev;
+static serial_backend_t* s_backend;   /* transport ouvert par setup */
+
 /* ── Configuration et options ──────────────────────────────────────────── */
 
 typedef struct {
@@ -78,33 +83,33 @@ static void irq_set(emulator_t* emu) { cpu_irq_set(&emu->cpu, IRQF_MAGECO); }
 static void irq_clr(emulator_t* emu) { cpu_irq_clear(&emu->cpu, IRQF_MAGECO); }
 
 static void wire_irq(emulator_t* emu) {
-    emu->mageco.irq_set = irq_set;
-    emu->mageco.irq_clr = irq_clr;
-    emu->mageco.irq_userdata = emu;
+    s_dev.irq_set = irq_set;
+    s_dev.irq_clr = irq_clr;
+    s_dev.irq_userdata = emu;
 }
 
 /* ── Bus : $03FE-$03FF ou $031C-$031E ──────────────────────────────────── */
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->card_on[CARD_IDX_mageco] && mageco_addr_in_range(&emu->mageco, addr);
+    return emu->card_on[CARD_IDX_mageco] && mageco_addr_in_range(&s_dev, addr);
 }
 static uint8_t dev_read(emulator_t* emu, uint16_t addr) {
-    return mageco_read(&emu->mageco, addr);
+    return mageco_read(&s_dev, addr);
 }
 static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    mageco_write(&emu->mageco, addr, value);
+    mageco_write(&s_dev, addr, value);
     return true;
 }
 /* Section « MAG » : émise seulement si la carte est présente (.ost inchangé
  * sinon). Transport hôte non restauré (cf. mageco_save). */
 static bool dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_mageco]) return false;
-    return mageco_save(&emu->mageco, fp);
+    return mageco_save(&s_dev, fp);
 }
 static void dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    mageco_load(&emu->mageco, fp, size);
+    mageco_load(&s_dev, fp, size);
 }
-void card_mageco_tick(emulator_t* emu, int cycles) { mageco_tick(&emu->mageco, cycles); }
+void card_mageco_tick(emulator_t* emu, int cycles) { mageco_tick(&s_dev, cycles); }
 
 static const io_device_t k_bus = {
     .name = "mageco", .claims = dev_claims, .read = dev_read, .write = dev_write,
@@ -116,7 +121,7 @@ static const io_device_t k_bus = {
 
 /* Au démarrage, présente ou non : adresse par défaut, IRQ câblées. */
 static void init(emulator_t* emu) {
-    mageco_init(&emu->mageco, MAGECO_DEFAULT_BASE);
+    mageco_init(&s_dev, MAGECO_DEFAULT_BASE);
     wire_irq(emu);
 }
 
@@ -151,15 +156,15 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         return 1;
     }
     if (mb->open(mb)) {
-        if (cfg->oricon) mageco_init_oricon(&emu->mageco, base);
-        else             mageco_init(&emu->mageco, base);
+        if (cfg->oricon) mageco_init_oricon(&s_dev, base);
+        else             mageco_init(&s_dev, base);
         /* mageco_init*() zeroes the struct — re-wire the CPU IRQ hooks */
         wire_irq(emu);
-        mageco_set_backend(&emu->mageco, mb);
-        emu->mageco_backend = mb;
+        mageco_set_backend(&s_dev, mb);
+        s_backend = mb;
         emu->card_on[CARD_IDX_mageco] = true;
         if (core->serial_trace_file) {
-            mageco_set_trace(&emu->mageco, core->serial_trace_file);
+            mageco_set_trace(&s_dev, core->serial_trace_file);
         }
         log_info("%s MIDI enabled at $%04X (31250 baud, transport: %s)",
                  mode, base, cfg->transport);
@@ -171,10 +176,10 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
 }
 
 static void teardown(emulator_t* emu) {
-    if (emu->mageco_backend) {
-        mageco_set_trace(&emu->mageco, NULL);
-        serial_backend_destroy(emu->mageco_backend);
-        emu->mageco_backend = NULL;
+    if (s_backend) {
+        mageco_set_trace(&s_dev, NULL);
+        serial_backend_destroy(s_backend);
+        s_backend = NULL;
         emu->card_on[CARD_IDX_mageco] = false;
     }
 }
