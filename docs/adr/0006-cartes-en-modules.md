@@ -25,7 +25,8 @@ répartition et de tick, audio). Une liste explicite `k_card_modules[]` les
 
 ## Conséquences
 
-- Ajouter une carte : un fichier + une ligne (cible, prouvée par un test en G7).
+- Ajouter une carte : un fichier + une ligne — prouvé par `make test-card-template`
+  (2.19.0) ; guide `docs/CARTES.md`.
 - Réalisation G1 : la liste est une macro (`include/cards_list.h`) et non une table
   de pointeurs : celle-ci rendait indirect le tick par cycle (+5,3 % d'instructions
   mesurées) ; générés depuis la macro, les ticks restent des appels directs

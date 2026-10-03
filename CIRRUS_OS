@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos emulator; cycle-stepped machine (CPU N3 oracle-verified; VIA/ULA/PSG cycle-stepped; FDC N1+ — see docs/ACCURACY.md)
-Version: 2.18.0
-Build Status: STABLE (**Sprint G6 : LOCI en module — 2.18.0**. Fiche, bus (MIA/TAP/DSK, co-sim), mise en route ; options, état, tick au cœur ; io_bus.c sans table du cœur ; cli_golden 143 cas 0 écart.)
+Version: 2.19.0
+Build Status: STABLE (**Sprint G terminé — 2.19.0**. G7 : carte d'exemple docs/examples/card_demo.c, make test-card-template (11), guide docs/CARTES.md ; ajouter une carte = un fichier + une ligne.)
+Build Status (prev): STABLE (**Sprint G6 : LOCI en module — 2.18.0**. Fiche, bus (MIA/TAP/DSK, co-sim), mise en route ; options, état, tick au cœur ; io_bus.c sans table du cœur ; cli_golden 143 cas 0 écart.)
 Build Status (prev): STABLE (**Sprint G5 : Microdisc et Jasmin en modules — 2.17.0**. Fiche, mise en route, bus, fermeture ; options, état et tick au cœur ; card_on remplace has_microdisc/has_jasmin ; cli_golden 143 cas 0 écart ; .ost disque identiques.)
 Build Status (prev): STABLE (**Sprint G4 : ACIA 6551 en module — 2.16.0**. 9 options, mise en route, bus (course PHI2 LOCI), tick ; card_on remplace has_serial ; blocs d'aide multiples ; cli_golden 143 cas 0 écart.)
 Build Status (prev): STABLE (**Sprint G3 : état des cartes simples privé — 2.15.0**. DTL 2000, Mageco, SP0256, MEA8000 hors d'emulator_t (statique dans le module) ; cli_golden 136 cas 0 écart ; .ost identiques.)

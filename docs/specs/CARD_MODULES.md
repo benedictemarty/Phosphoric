@@ -1,6 +1,6 @@
 # Cartes d'extension en modules auto-enregistrés (sprint G)
 
-- **Statut** : en cours — G1 livré en 2.13.0 (pilote MEA8000), G2 en 2.14.0 (SP0256,
+- **Statut** : **terminé** (2.19.0, G7 : modèle, test, guide `docs/CARTES.md`) — G1 livré en 2.13.0 (pilote MEA8000), G2 en 2.14.0 (SP0256,
   Mageco/ORICON, DTL 2000, ULA-NG), G3 en 2.15.0 (état privé), G4 en 2.16.0 (ACIA),
   G5 en 2.17.0 (Microdisc, Jasmin), G6 en 2.18.0 (LOCI).
   Décision : ADR 0006 (acceptée).
@@ -122,7 +122,7 @@ builds SDL2=0, HTTPAPI=1, WASM ; `make tests-strict` et `SANITIZE=1`.
 | **G4** ✅ 2.16.0 ACIA (état dans la machine : savestate « SER », débogueur, LOCI ; blocs d'aide multiples) | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
 | **G5** ✅ 2.17.0 Disques (options, état et tick restent au cœur : lus ailleurs, et un appel de plus par cycle coûtait 0,65-1 %) | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
 | **G6** ✅ 2.18.0 LOCI (fiche, bus, mise en route ; options, état et tick au cœur ; io_bus.c sans table du cœur) | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |
-| **G7** Garde-fou + guide | carte d'exemple (`card_demo.c`, hors build par défaut) ; test qui l'ajoute et vérifie qu'un fichier + une ligne suffisent ; guide « ajouter une carte » | `make test-card-template` |
+| **G7** ✅ 2.19.0 Garde-fou + guide (`docs/examples/card_demo.c`, `make test-card-template`, `docs/CARTES.md`) | carte d'exemple (`card_demo.c`, hors build par défaut) ; test qui l'ajoute et vérifie qu'un fichier + une ligne suffisent ; guide « ajouter une carte » | `make test-card-template` |
 
 Ordre : G1 seul d'abord. Si le pilote MEA8000 coûte en performance ou en lisibilité
 plus qu'il ne rapporte, on s'arrête là (décision notée dans l'ADR 0006).
