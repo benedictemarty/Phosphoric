@@ -23,14 +23,10 @@
 #include <mach-o/dyld.h>
 #endif
 
-/* Short explanations, read in the menu: what the card is for, and what each
- * parameter changes. Addresses are Oric addresses ($03xx). */
-/* Placeholders (host, port, file…) are written in lowercase: the menu font
- * has no accented capital letters. */
-#define TRANSPORTS_SERIE \
-    "loopback (écho local), tcp:hôte:port, modem:hôte:port (appels entrants), " \
-    "pty (pseudo-terminal), com:bauds,bits,parité,stop,périphérique (port série " \
-    "réel), file:entrée[:sortie]"
+/* Explications courtes, lues dans le menu : à quoi sert la carte, et ce que
+ * chaque paramètre change. Les adresses sont celles de l'Oric ($03xx). */
+/* Les éléments à remplacer sont en minuscules : la police du menu n'a pas de
+ * majuscules accentuées. */
 
 static const card_desc_t k_cards[] = {
     {
@@ -65,26 +61,6 @@ static const card_desc_t k_cards[] = {
             "Dossier de l'hôte servant de mémoire flash interne (fichiers 0: du LOCI). "
             "Vide : aucun." } },
         3
-    },
-    {
-        "acia", "ACIA 6551",
-        "Port série (MOS 6551) : modem, terminal, Minitel, BBS. Avec LOCI, l'ACIA de "
-        "la carte est en $0380.",
-        NULL, "--serial", 0, 1, 0, 4, false,
-        { { "transport", "Ligne série", CARD_P_TEXT, "--serial", "loopback",
-            "Où va la ligne : " TRANSPORTS_SERIE ", picowifi[:ssid[:mot_de_passe]] "
-            "(modem Wi-Fi émulé)." },
-          { "adresse", "Adresse d'E/S", CARD_P_HEX, "--acia-addr", "031C",
-            "031C : carte série Oric standard ; 0380 : ACIA de la carte LOCI." },
-          { "bauds", "Vitesse (bauds)", CARD_P_TEXT, "--serial-baud", "",
-            "Cadence réaliste quand l'ACIA prend son horloge à l'extérieur ; vide : "
-            "transfert instantané." },
-          { "tampon", "Tampon de réception", CARD_P_TEXT, "--serial-buffer", "",
-            "N octets mis en attente à l'arrivée (évite de perdre des octets) ; vide : "
-            "aucun." },
-          { "v23", "Mode V23 (1200/75)", CARD_P_BOOL, "--serial-v23", "non",
-            "oui : vitesses asymétriques du Minitel et de Prestel." } },
-        5
     },
     {
         "hostfs", "Hôte (hostfs)",

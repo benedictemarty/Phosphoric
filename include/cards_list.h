@@ -18,6 +18,7 @@
 #define CARDS_LIST_H
 
 #define CARD_MODULE_LIST(X) \
+    X(acia,    1) \
     X(dtl2000, 1) \
     X(mageco,  1) \
     X(sp0256,  1) \

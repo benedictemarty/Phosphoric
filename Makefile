@@ -614,7 +614,7 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  $(DISK_SRCS) \
                  $(MEM_SRCS) \
                  src/utils/logging.c src/utils/netutil.c $(CARD_MODULE_SRCS) \
-                 src/cli/cli_parse.c
+                 src/cli/cli_parse.c src/io/serial_picowifi.c
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 

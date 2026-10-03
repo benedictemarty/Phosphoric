@@ -34,6 +34,8 @@ static const char k_help[] =
     "                             SEQ = comma-separated AAA=VV hex pairs (see docs/ula-ng).\n"
     "                             Ex: 340=4E,340=47,341=01,348=07,349=00,34A=F0 (palette)\n";
 
+static const card_help_t k_helps[] = { { k_help, "type-keys" } };
+
 static const card_desc_t k_desc = {
     "ula_ng", "ULA-NG",
     "ULA de nouvelle génération (palette, modes étendus), toujours présente ; "
@@ -112,7 +114,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
 const card_module_t card_ula_ng = {
     .descs = k_descs, .ndescs = 1, .desc_before = NULL,
     .opts = k_opts, .nopts = 1, .opts_before = "control",
-    .help = k_help, .help_before = "type-keys",
+    .helps = k_helps, .nhelps = 1,
     .cfg_size = sizeof(ula_ng_cfg_t),
     .stage = CARD_STAGE_MACHINE, .setup = setup,
     .bus = &k_bus, .bus_before = NULL,

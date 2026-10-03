@@ -160,3 +160,11 @@
 -r roms/basic11b.rom -n --ula-ng-poke 340=4E,340=47,341=01 --save-state @OUT@/ung.ost -c 300000
 -r roms/basic11b.rom -n --dtl2000 bogus:x -c 1000
 -r roms/basic11b.rom -n --mageco bogus:x -c 1000
+# Sprint G4 (ACIA 6551 en module).
+-r roms/basic11b.rom -n --serial-t x -c 1000
+-r roms/basic11b.rom -n --ac 0380 -c 1000
+-r roms/basic11b.rom -n --serial bogus:x -c 1000
+-r roms/basic11b.rom -n --serial loopback --serial-v23 --serial-baud 1200 --serial-irq-on-rdrf --serial-buffer 32 -c 1000
+-r roms/basic11b.rom -n --serial loopback --serial-tcp-backpressure=2048 -c 1000
+-r roms/basic11b.rom -n --serial loopback --loci-irq-latency 500 -c 1000
+-r roms/basic11b.rom -n --serial loopback --acia-addr 0380 --serial-trace @OUT@/ser.log -c 300000

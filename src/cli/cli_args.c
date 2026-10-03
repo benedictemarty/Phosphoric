@@ -159,36 +159,6 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 cfg->rom_info_enabled = true;
                 if (optarg) cfg->rom_info_file = optarg;
                 break;
-            case OPT_SERIAL:
-                cfg->serial_arg = optarg;
-                break;
-            case OPT_SERIAL_V23:
-                cfg->serial_v23 = true;
-                break;
-            case OPT_SERIAL_BUFFER:
-                cfg->serial_buffer_size = atoi(optarg);
-                break;
-            case OPT_SERIAL_BAUD:
-                cfg->serial_baud = atoi(optarg);
-                if (cfg->serial_baud < 0) cfg->serial_baud = 0;
-                break;
-            case OPT_SERIAL_IRQ_RDRF:
-                cfg->serial_irq_on_rdrf = true;
-                break;
-            case OPT_SERIAL_TRACE:
-                cfg->serial_trace_file = optarg;
-                break;
-            case OPT_SERIAL_TCP_BACKPRESSURE:
-                cfg->serial_tcp_backpressure = true;
-                if (optarg) {
-                    cfg->serial_tcp_rcvbuf = atoi(optarg);
-                    if (cfg->serial_tcp_rcvbuf < 0) cfg->serial_tcp_rcvbuf = 0;
-                }
-                break;
-            case OPT_LOCI_IRQ_LATENCY:
-                cfg->loci_irq_latency_us = atol(optarg);
-                if (cfg->loci_irq_latency_us < 0) cfg->loci_irq_latency_us = 0;
-                break;
             case OPT_DUMP_RAM_AT: if (cfg->tcap_cli_count<TIMED_CAPTURE_MAX){cfg->tcap_cli[cfg->tcap_cli_count].arg=optarg;cfg->tcap_cli[cfg->tcap_cli_count++].type=TCAP_DUMP_RAM;} break;
             case OPT_BAD_SECTOR:
                 if (cfg->bad_sector_arg_count < FDC_MAX_BAD_SECTORS)
@@ -287,9 +257,6 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_CONFIG: cfg->config_path = optarg; break;
             case OPT_NO_CONFIG: cfg->no_config = true; break;
             case OPT_MENU_SCREENSHOT: cfg->menu_screenshot = optarg; break;
-            case OPT_ACIA_ADDR:
-                cfg->acia_addr_arg = optarg;
-                break;
             case '?':
             default:
                 cli_print_usage(argv[0]);

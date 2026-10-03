@@ -31,10 +31,15 @@ const io_device_t* io_bus_find_write(struct emulator_s* emu, uint16_t addr);
  *  @param count  receives the number of entries. */
 const io_device_t* io_bus_devices(int* count);
 
-/** Advances the timed bus devices by one step of `cycles` CPU cycles
- *  (Microdisc/LOCI FDC, ACIA, DTL2000, Mageco), in the exact HISTORICAL ORDER of
- *  `cpu_cycle_tick` (same behaviour). The VIA and the cassette (core/port) stay
- *  wired in main.c. Epic 7 / US5. */
+/** Co-simulation LOCI : recopie la ligne nIRQ du vrai firmware sur l'IRQ du CPU,
+ *  après un accès servi par le firmware (DSK, io-page, ACIA $0380 : partagé avec
+ *  la carte ACIA, src/cards/card_acia.c). */
+void loci_emu_reflect_nirq(struct emulator_s* emu);
+
+/** Avance d'un pas de `cycles` cycles CPU les périphériques de bus temporisés
+ *  (FDC Microdisc/LOCI, ACIA, DTL2000, Mageco), dans l'ORDRE HISTORIQUE exact de
+ *  `cpu_cycle_tick` (iso-comportement). Le VIA et la cassette (cœur/port) restent
+ *  câblés dans main.c. Epic 7 / US5. */
 void io_bus_tick(struct emulator_s* emu, int cycles);
 
 #endif /* IO_BUS_H */

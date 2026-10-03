@@ -8,7 +8,6 @@
 #include "card_module.h"
 #include "cards_list.h"
 #include "emulator.h"
-#include "cli/cli_opts.h"      /* --serial-trace */
 #include "cli/cli_parse.h"     /* parse_hex16 */
 #include "cpu/cpu6502.h"
 #include "io/dtl2000.h"
@@ -47,6 +46,8 @@ static const char k_help[] =
     "loopback (écho local), tcp:hôte:port, modem:hôte:port (appels entrants), " \
     "pty (pseudo-terminal), com:bauds,bits,parité,stop,périphérique (port série " \
     "réel), file:entrée[:sortie]"
+
+static const card_help_t k_helps[] = { { k_help, "mageco" } };
 
 static const card_desc_t k_desc = {
     "dtl2000", "DTL 2000",
@@ -141,8 +142,8 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         dtl2000_set_backend(&s_dev, db);
         s_backend = db;
         emu->card_on[CARD_IDX_dtl2000] = true;
-        if (core->serial_trace_file) {
-            dtl2000_set_trace(&s_dev, core->serial_trace_file);
+        if (emu->serial_trace_file) {
+            dtl2000_set_trace(&s_dev, emu->serial_trace_file);
         }
         log_info("Digitelec DTL 2000 enabled at $%04X (transport: %s)",
                  base, cfg->transport);
@@ -164,7 +165,7 @@ static void teardown(emulator_t* emu) {
 const card_module_t card_dtl2000 = {
     .descs = k_descs, .ndescs = 1, .desc_before = "mageco",
     .opts = k_opts, .nopts = 2, .opts_before = "mageco",
-    .help = k_help, .help_before = "mageco",
+    .helps = k_helps, .nhelps = 1,
     .cfg_size = sizeof(dtl2000_cfg_t),
     .init = init, .stage = CARD_STAGE_SERIAL, .setup = setup, .teardown = teardown,
     .bus = &k_bus, .bus_before = "ula-ng",

@@ -628,19 +628,10 @@ static void microdisc_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_DISK);
 }
 
-/* Sprint 34ax: LOCI DSK bus callbacks — reuses the level-triggered IRQF_DISK
- * and synchronises overlay/ROMDIS in the memory subsystem on each
- * CTRL write. Without it the Microdisc ROM (under LOCI MIA_BOOT FDC) stays
- * stuck after the RESTORE command — it waits for the IRQ and the switch. */
-/* ACIA 6551 serial IRQ callbacks */
-static void acia_cpu_irq_set(emulator_t* emu) {
-    cpu_irq_set(&emu->cpu, IRQF_SERIAL);
-}
-
-static void acia_cpu_irq_clr(emulator_t* emu) {
-    cpu_irq_clear(&emu->cpu, IRQF_SERIAL);
-}
-
+/* Sprint 34ax : LOCI DSK bus callbacks — réutilise IRQF_DISK level-triggered
+ * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
+ * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
+ * bloqué après le RESTORE command — il attend l'IRQ et la commutation. */
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
 /* Rewrites drive @p drv's .dsk to disk if the game modified it and
@@ -745,14 +736,8 @@ static bool emulator_init(emulator_t* emu) {
     /* Initialize printer (disabled by default) */
     oric_printer_init(&emu->printer);
 
-    /* Initialize ACIA 6551 serial interface (disabled by default) */
-    acia_init(&emu->acia);
-    emu->acia.irq_set = acia_cpu_irq_set;
-    emu->acia.irq_clr = acia_cpu_irq_clr;
-    emu->acia.irq_userdata = emu;
-
-    /* Card modules, present or not: idle state (DTL 2000, Mageco:
-     * default address, IRQs wired). */
+    /* Cartes en modules, présentes ou non : état de repos (ACIA 6551, DTL 2000,
+     * Mageco : adresse par défaut, IRQ câblées). */
     card_modules_init(emu);
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
@@ -945,15 +930,7 @@ static void emulator_cleanup(emulator_t* emu) {
         emu->kbd_inject_buf = NULL;
     }
     oric_printer_close(&emu->printer);
-    if (emu->serial_backend) {
-        serial_backend_destroy(emu->serial_backend);
-        emu->serial_backend = NULL;
-        emu->has_serial = false;
-    }
-    card_modules_teardown(emu);   /* card transports (DTL 2000, Mageco) */
-    /* Close ACIA trace and free RX FIFO */
-    acia_set_trace(&emu->acia, NULL);
-    acia_set_rx_fifo(&emu->acia, 0);
+    card_modules_teardown(emu);   /* transports des cartes (ACIA, DTL 2000, Mageco) */
 #ifdef HAS_SDL2
     oric_joystick_close_sdl(&emu->joystick);
 #endif
@@ -2527,7 +2504,7 @@ static void emulator_run(emulator_t* emu) {
         run_autotype_step(emu, rs.total_executed);
 
         /* Flush serial trace once per frame (not per byte) */
-        if (emu->has_serial) {
+        if (emu->card_on[CARD_IDX_acia]) {
             acia_trace_flush(&emu->acia);
         }
         /* Video frame already rendered scanline-by-scanline (per-cycle ULA). */
@@ -2649,7 +2626,6 @@ static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
     iom_init(&emu->iomenu);
     emu->config_path     = cfg->config_path;
     emu->jasmin_rom_path = cfg->jasmin_rom_file;
-    emu->serial_spec     = cfg->serial_arg;
     return -1;
 }
 
@@ -2729,168 +2705,8 @@ static int main_setup_input_printer(emulator_t* emu, cli_opts_t* cfg) {
 /* ACIA 6551 and serial backends, Digitelec DTL 2000, Mageco / ORICON (MIDI).
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_serial_cards(emulator_t* emu, cli_opts_t* cfg) {
-    /* Serial interface (ACIA 6551) */
-    if (cfg->acia_addr_arg) {
-        emu->acia_base_addr = parse_hex16(cfg->acia_addr_arg);
-        log_info("ACIA base address: $%04X", emu->acia_base_addr);
-    } else if (cfg->loci_enabled && cfg->serial_arg) {
-        /* LOCI firmware exposes its ACIA at $0380-$0383 (acia.c). Under
-         * --loci, default there so LOCI client software finds it. */
-        emu->acia_base_addr = 0x0380;
-        log_info("ACIA base address: $0380 (LOCI default — override with --acia-addr)");
-    } else if (cfg->loci_emu_cdc_dev) {
-        /* Co-sim (--loci-cdc): the ACIA at $0380 is served by the REAL firmware
-         * (oric/acia.c ↔ CDC dongle) — no behavioural serial backend. */
-        emu->acia_base_addr = 0x0380;
-        log_info("ACIA base address: $0380 (co-sim firmware via --loci-cdc %s)", cfg->loci_emu_cdc_dev);
-    } else {
-        emu->acia_base_addr = ACIA_DEFAULT_BASE;
-    }
-    /* Co-sim (--loci-cdc): enables the ACIA without a backend (the real firmware serves it via
-     * loci_emu_acia_*). has_serial must be true for the ACIA device to claim $0380. */
-    if (cfg->loci_emu_cdc_dev && cfg->loci_emu_path) emu->has_serial = true;
-    /* Safeguard: under --loci, the MIA occupies $03A0-$03BF and is routed BEFORE
-     * the ACIA in the I/O callbacks. If the ACIA is forced there (--acia-addr in
-     * this range), the MIA masks it AND drives the PSG/keyboard → the keyboard scan
-     * reads nothing and get_key loops → « frozen » terminal (BBS directory frozen).
-     * The real LOCI exposes its USB-CDC modem at $0380, not in the MIA. */
-    if (cfg->loci_enabled && cfg->serial_arg &&
-        emu->acia_base_addr <= LOCI_MIA_END &&
-        (uint16_t)(emu->acia_base_addr + 3) >= LOCI_MIA_BASE) {
-        log_warning("--acia-addr $%04X force l'ACIA dans la MIA LOCI ($%04X-$%04X) : "
-                    "la MIA la masque ET casse le scan clavier (PSG) -> terminal fige.",
-                    emu->acia_base_addr, LOCI_MIA_BASE, LOCI_MIA_END);
-        log_warning("  Le modem LOCI (picowifi) est expose a $0380 sur le vrai LOCI : "
-                    "laissez --loci SANS --acia-addr (ACIA -> $0380) et adressez $0380.");
-    }
-    if (cfg->serial_arg) {
-        /* First try the shared transparent transports (loopback/tcp/pty/com),
-         * then the ACIA-6551-specific protocol backends (Hayes modem, digitelec,
-         * picowifi) that inject their own command/UART layer. */
-        serial_backend_t* sb = serial_transport_create(cfg->serial_arg);
-        if (!sb && (strcmp(cfg->serial_arg, "modem") == 0 ||
-                    strncmp(cfg->serial_arg, "modem:", 6) == 0)) {
-            /* Hayes AT modem. Modes:
-             *   --serial modem              Pure command mode (use ATD to dial)
-             *   --serial modem:host:port    Preset host (ATD without args connects here)
-             *   --serial modem:listen:port  Server mode (ATA to accept) */
-            const char* hp = (cfg->serial_arg[5] == ':') ? cfg->serial_arg + 6 : "";
-            bool listen_mode = false;
-            char host[256] = {0};
-            uint16_t port = 23;
-            if (strncmp(hp, "listen:", 7) == 0) {
-                listen_mode = true;
-                port = (uint16_t)atoi(hp + 7);
-            } else {
-                parse_host_port(hp, host, sizeof(host), &port, 23);
-            }
-            sb = serial_backend_modem_create(host, port, listen_mode);
-        } else if (!sb && strncmp(cfg->serial_arg, "digitelec:", 10) == 0) {
-            /* digitelec:host:port — DEPRECATED behavioural model. It treats the
-             * DTL 2000 as an external V23 modem hanging off the emulated ACIA
-             * 6551 ($031C), which is *not* how the real card works: the actual
-             * DTL 2000 is a memory-mapped PIA 6821 + ACIA 6850 at $03F8 (now
-             * faithfully modelled by --dtl2000, validated against OTRM). Kept
-             * functional for one cycle; steer users to the faithful option. */
-            log_warning("--serial digitelec: is DEPRECATED — it models the DTL 2000 as a");
-            log_warning("  6551 external modem ($031C), not the real PIA+ACIA-6850 card.");
-            log_warning("  Use --dtl2000 tcp:%s for the faithful DTL 2000 card,",
-                        cfg->serial_arg + 10);
-            log_warning("  or --serial modem:/tcp: for a generic ACIA 6551 modem.");
-            char host[256];
-            uint16_t port;
-            parse_host_port(cfg->serial_arg + 10, host, sizeof(host), &port, 23);
-            sb = serial_backend_digitelec_create(host, port, &emu->acia);
-        } else if (!sb && (strcmp(cfg->serial_arg, "picowifi") == 0 ||
-                           strncmp(cfg->serial_arg, "picowifi:", 9) == 0)) {
-            /* PicoWiFiModemUSB (sodiumlb) — WiFi modem exposed via LOCI.
-             *   --serial picowifi                Credentials set via AT$SSID=
-             *   --serial picowifi:SSID           Pre-set SSID, no password
-             *   --serial picowifi:SSID:PASS      Pre-set SSID + password */
-            char ssid[64] = {0};
-            char pass[64] = {0};
-            if (cfg->serial_arg[8] == ':') {
-                const char* sp = cfg->serial_arg + 9;
-                const char* colon = strchr(sp, ':');
-                if (colon) {
-                    size_t sl = (size_t)(colon - sp);
-                    if (sl >= sizeof(ssid)) sl = sizeof(ssid) - 1;
-                    memcpy(ssid, sp, sl);
-                    ssid[sl] = '\0';
-                    strncpy(pass, colon + 1, sizeof(pass) - 1);
-                } else {
-                    strncpy(ssid, sp, sizeof(ssid) - 1);
-                }
-            }
-            sb = serial_backend_picowifi_create(ssid[0] ? ssid : NULL,
-                                                pass[0] ? pass : NULL);
-        } else if (!sb) {
-            log_error("Unknown serial backend: %s", cfg->serial_arg);
-            log_error("  loopback, tcp:host:port, pty, modem:host:port,");
-            log_error("  modem:listen:port, com:baud,bits,P,stop,device,");
-            log_error("  file:in[:out], digitelec:host:port, picowifi[:SSID[:PASS]]");
-            emulator_cleanup(emu);
-            return 1;
-        }
-
-        if (sb) {
-            /* Bounded RX (--serial-tcp-backpressure): cap the kernel socket
-             * buffer BEFORE open() so it takes effect on the live fd. Default
-             * cap tracks the RX FIFO depth (or 512) when N is not given. */
-            if (cfg->serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
-                int cap = cfg->serial_tcp_rcvbuf;
-                if (cap <= 0) cap = (cfg->serial_buffer_size > 0) ? cfg->serial_buffer_size : 512;
-                serial_backend_tcp_set_rcvbuf(sb, cap);
-            } else if (cfg->serial_tcp_backpressure) {
-                log_warning("--serial-tcp-backpressure has no effect on non-TCP backend '%s' "
-                            "(only tcp: has a kernel socket buffer to bound)", cfg->serial_arg);
-            }
-            if (sb->open(sb)) {
-                acia_set_backend(&emu->acia, sb);
-                emu->serial_backend = sb;
-                emu->has_serial = true;
-                if (cfg->serial_v23 || sb->type == SERIAL_BACKEND_DIGITELEC) {
-                    acia_set_v23_mode(&emu->acia, true);
-                }
-                if (cfg->serial_buffer_size > 0) {
-                    acia_set_rx_fifo(&emu->acia, cfg->serial_buffer_size);
-                }
-                if (cfg->serial_baud > 0) {
-                    acia_set_ext_clock_baud(&emu->acia, (uint32_t)cfg->serial_baud);
-                }
-                if (cfg->serial_irq_on_rdrf) {
-                    acia_set_irq_on_rdrf(&emu->acia, true);
-                }
-                if (cfg->loci_irq_latency_us > 0) {
-                    /* LOCI I2C IRQ transport cost. At 1 MHz, 1 µs = 1 cycle;
-                     * compute from the master clock so it stays correct if the
-                     * clock ever changes. LOCI-context only: warn on a bare 6551
-                     * so nobody penalizes a plain ACIA card by accident. */
-                    uint32_t cyc = (uint32_t)((uint64_t)cfg->loci_irq_latency_us *
-                                              ORIC_CLOCK_HZ / 1000000u);
-                    if (!cfg->loci_enabled) {
-                        log_warning("--loci-irq-latency models a LOCI I2C artifact but "
-                                    "--loci is not set; applying to the ACIA anyway "
-                                    "(a real bare 6551 has no such transport cost)");
-                    }
-                    acia_set_irq_latency(&emu->acia, cyc);
-                }
-                if (cfg->serial_tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
-                    acia_set_rx_backpressure(&emu->acia, true);
-                }
-                if (cfg->serial_trace_file) {
-                    acia_set_trace(&emu->acia, cfg->serial_trace_file);
-                }
-                log_info("Serial interface enabled: %s", cfg->serial_arg);
-            } else {
-                log_error("Failed to open serial backend: %s", cfg->serial_arg);
-                serial_backend_destroy(sb);
-            }
-        }
-    }
-
-    /* Cards as modules of the « serial » stage (DTL 2000, Mageco/ORICON), at the
-     * place their code used to occupy here (card_module.h). */
+    /* Cartes en modules de l'étape « série » (ACIA 6551, DTL 2000,
+     * Mageco/ORICON), à la place qu'occupait leur code ici (card_module.h). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_SERIAL) != 0) {
         emulator_cleanup(emu);
         return 1;
@@ -3068,7 +2884,7 @@ static int main_setup_loci(emulator_t* emu, cli_opts_t* cfg) {
                 snprintf(msc, sizeof(msc), "MSC %.1f MB PHOSPHOR SDIMG rev 1.0", mb);
             loci_add_usb_device(&emu->loci, msc);
         }
-        if (cfg->serial_arg && strncmp(cfg->serial_arg, "picowifi", 8) == 0) {
+        if (emu->serial_spec && strncmp(emu->serial_spec, "picowifi", 8) == 0) {
             /* firmware cdc.c: the picowifi enumerates as a CDC modem */
             loci_add_usb_device(&emu->loci, "CDC modem mounted");
         }

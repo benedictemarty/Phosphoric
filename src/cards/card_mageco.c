@@ -52,6 +52,8 @@ static const char k_help[] =
     "      --oricon TRANSPORT    ORICON MIDI variant (MC6850 at $031C-$031D + clock gen $031E-$031F, LOCI-compat)\n"
     "                            Same transports as --mageco ; overlaps --serial/Microdisc at $031C\n";
 
+static const card_help_t k_helps[] = { { k_help, "save-state" } };
+
 static const card_desc_t k_desc_mageco = {
     "mageco", "Mageco MIDI",
     "Interface MIDI Mageco (ACIA 6850 à 31250 bauds) : piloter un synthétiseur "
@@ -145,7 +147,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                     "— possible clash with other extensions (forum t=2525)",
                     mode, base);
     }
-    if (cfg->oricon && emu->has_serial && base == emu->acia_base_addr) {
+    if (cfg->oricon && emu->card_on[CARD_IDX_acia] && base == emu->acia_base_addr) {
         log_warning("ORICON at $%04X overlaps the ACIA 6551 serial (--serial) "
                     "— disable one of them", base);
     }
@@ -163,8 +165,8 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         mageco_set_backend(&s_dev, mb);
         s_backend = mb;
         emu->card_on[CARD_IDX_mageco] = true;
-        if (core->serial_trace_file) {
-            mageco_set_trace(&s_dev, core->serial_trace_file);
+        if (emu->serial_trace_file) {
+            mageco_set_trace(&s_dev, emu->serial_trace_file);
         }
         log_info("%s MIDI enabled at $%04X (31250 baud, transport: %s)",
                  mode, base, cfg->transport);
@@ -187,7 +189,7 @@ static void teardown(emulator_t* emu) {
 const card_module_t card_mageco = {
     .descs = k_descs, .ndescs = 2, .desc_before = "sp0256",
     .opts = k_opts, .nopts = 3, .opts_before = "dump-ram-at",
-    .help = k_help, .help_before = "save-state",
+    .helps = k_helps, .nhelps = 1,
     .cfg_size = sizeof(mageco_cfg_t),
     .init = init, .stage = CARD_STAGE_SERIAL, .setup = setup, .teardown = teardown,
     .bus = &k_bus, .bus_before = "microdisc",

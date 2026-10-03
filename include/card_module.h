@@ -38,8 +38,16 @@ typedef struct {
     void      (*set)(void* cfg, const char* arg);
 } card_opt_t;
 
-/* Setup stages where the core calls the cards (in list order), at the
- * exact place their code used to occupy in main.c. */
+/* Bloc d'aide d'une carte, placé juste avant l'aide de l'option @p before
+ * (NULL : en fin de liste des options). Une carte peut en avoir plusieurs quand
+ * ses options sont dispersées dans l'aide (ACIA). */
+typedef struct {
+    const char* text;      /* lignes d'aide, « \n » compris */
+    const char* before;
+} card_help_t;
+
+/* Étapes de mise en route où le cœur appelle les cartes (dans l'ordre de la
+ * liste), à la place exacte qu'occupait leur code dans main.c. */
 typedef enum {
     CARD_STAGE_MACHINE,    /* main_setup_machine, right after emulator_init */
     CARD_STAGE_SERIAL,     /* main_setup_serial_cards, after the ACIA 6551 */
@@ -54,9 +62,9 @@ typedef struct card_module_s {
 
     const card_opt_t*  opts;
     int                nopts;
-    const char*        opts_before;  /* option (without --) they precede in the table */
-    const char*        help;         /* help lines, « \n » included */
-    const char*        help_before;  /* option whose help follows theirs */
+    const char*        opts_before;  /* option (sans --) qu'elles précèdent dans la table */
+    const card_help_t* helps;        /* blocs d'aide (au moins un si la carte a des options) */
+    int                nhelps;
 
     size_t             cfg_size;
     void             (*cfg_defaults)(void* cfg);

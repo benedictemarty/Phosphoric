@@ -46,15 +46,15 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
     return false;
 }
-/* Synchronous nIRQ reflection (co-sim backend --loci-emu). The RP2040 firmware
- * PULSES the nIRQ line (ext_put(EXT_IRQ,true) then false) in response to a
- * MIA transaction (the write runs core0+core1 for the duration of the bus dialogue):
- * a LEVEL poll would miss it (already dropped). The emulator latches every rising
- * edge; these pulses are drained here, right after the transaction, and delivered
- * to the 6502 as an EDGE / ONE-SHOT (cpu_irq_pulse) — one IRQ per pulse, with no
- * level held, hence no storm. main.c also drains once per frame (safety net for
- * pulses outside MIA writes, e.g. IRQ trap on the button). */
-static void loci_emu_reflect_nirq(emulator_t* emu) {
+/* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
+ * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
+ * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
+ * un poll de NIVEAU le manquerait (déjà retombé). L'émulateur latche chaque front
+ * montant ; on draine ces pulses ici, juste après la transaction, et on les délivre
+ * au 6502 en EDGE / TIR UNIQUE (cpu_irq_pulse) — une IRQ par pulse, sans maintien
+ * de niveau donc sans tempête. main.c draine aussi une fois par frame (filet pour
+ * les pulses hors écriture MIA, ex. trap IRQ sur bouton). */
+void loci_emu_reflect_nirq(emulator_t* emu) {
     int pulses = loci_emu_irq_take();
     for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
 }
@@ -99,81 +99,6 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* ACIA 6551 ($031C-$031F by default, configurable base). */
-static bool acia_dev_claims(emulator_t* emu, uint16_t addr) {
-    /* Co-sim: the firmware serves its ACIA window from boot, dongle or not
-     * (without modem: $0381 = $70). Without this claim, --loci-emu without --loci-cdc
-     * let the VIA mirror answer at $0380 — unfaithful to the hardware. */
-    if (loci_emu_active() && loci_emu_acia_served(addr)) return true;
-    return emu->has_serial && addr >= emu->acia_base_addr && addr <= (emu->acia_base_addr + 3);
-}
-/* picowifi-over-LOCI: the emulated ACIA 6551 lives at $0380, served through a PHI2
- * RACE. The MIA (RP2040: PIO core1 + slow software serve, ~I²C/DMA) must put
- * the byte on the data bus BEFORE the 6502's rising PHI2 edge. If the `tior`
- * timing margin is badly tuned (outside the window auto-tuned by ADJ_SCAN), the serve
- * loses the race. Since the VIA is decode-inhibited symmetrically over all of $03x0-$03xF
- * (IO_CONTROL = IO·(A4+A5+A6+A7), proven on hardware), NOTHING then drives
- * the bus → the 6502 latches the OPEN BUS (last driven byte), NOT the VIA.
- *
- * Asymmetry faithful to the HW (bug report + spec-acia-fiable):
- *  - WRITE always reliable: `write_enable_map = 0xFFFFFFFF` → a write to
- *    $0380-$0383 ALWAYS reaches the ACIA, race lost or not.
- *  - READ fragile AND, on the DATA register, DESTRUCTIVE on the LOCI side: the serve
- *    executes `acia_read()` "blindly" (it consumes the RX byte) while
- *    the 6502 only latches the floating bus → BYTE LOST, not re-readable. This is
- *    precisely the "unreachable modem".
- *  - STAT/CMD/CTRL are idempotent (re-readable) → a lost race returns the
- *    floating bus THIS time but the register stays readable on the next one (miss
- *    forgiven, like disk/MIA polling). Hence: disk OK / modem KO under the
- *    SAME margin, with no need for a probabilistic model. */
-static inline bool acia_serve_lost(const emulator_t* emu) {
-    return emu->has_loci && emu->acia_base_addr == 0x0380 &&
-           !loci_mia_io_reliable(&emu->loci);
-}
-static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Co-sim backend (--loci-cdc): the $0380 ACIA is served by the REAL firmware
-     * (oric/acia.c ↔ USB CDC modem) instead of the behavioural 6551. */
-    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
-        uint8_t v = loci_emu_acia_read(addr);
-        loci_emu_reflect_nirq(emu);
-        return v;
-    }
-    /* CPU path: samples the race WITH jitter (advances the PRNG). The jitter
-     * only has an effect in the PHASE model near the latch; otherwise it is the
-     * deterministic nominal decision. */
-    bool lost = emu->has_loci && emu->acia_base_addr == 0x0380 &&
-                loci_mia_serve_lost_sampled(&emu->loci);
-    if (lost) {
-        /* Race lost: on DATA, LOCI consumed the byte blindly (lost);
-         * the 6502 latches the open bus. On STAT/CMD/CTRL, nothing is consumed. */
-        if ((addr & ACIA_ADDR_MASK) == ACIA_REG_DATA)
-            (void)acia_read(&emu->acia, addr);   /* consume and discard: byte lost */
-        return memory_open_bus(&emu->memory);
-    }
-    return acia_read(&emu->acia, addr);
-}
-static bool acia_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    /* Co-sim backend (--loci-cdc): $0380-$0383 write handled by the real firmware. */
-    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
-        loci_emu_acia_write(addr, value);
-        loci_emu_reflect_nirq(emu);
-        return true;
-    }
-    /* Write always reliable (write_enable_map = 0xFFFFFFFF on the real LOCI):
-     * it goes through even when the race is lost. */
-    acia_write(&emu->acia, addr, value);
-    return true;
-}
-/* Non-destructive observation read (debugger/monitor/dump/remote):
- * does NOT clear RDRF, does NOT pop the FIFO, does NOT clear the IRQ. Models the open bus
- * WITHOUT consuming (an observer does not take part in the 6502's PHI2 race). */
-static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
-    if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr)))   /* co-sim: io-page peek */
-        return loci_emu_acia_peek(addr);
-    if (acia_serve_lost(emu))
-        return memory_open_bus(&emu->memory);
-    return acia_peek(&emu->acia, addr);
-}
 
 /* Microdisc WD1793: $0310-$031F (the ACIA, registered earlier, already owns
  * $031C-$031F if present → no internal test here). */
@@ -239,13 +164,9 @@ static void loci_dev_tick(emulator_t* emu, int cycles) {
     fdc_ticktock(&emu->loci.dsk_fdc, cycles);
     loci_adj_tick(&emu->loci, cycles);
 }
-static void acia_dev_tick(emulator_t* emu, int cycles) {
-    acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
-    acia_tick(&emu->acia, cycles);
-}
 
-/* Position of each device in io_bus[] (= dispatch priority). */
-enum { DEV_LOCI, DEV_ACIA, DEV_MICRODISC, DEV_JASMIN, DEV_COUNT };
+/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
+enum { DEV_LOCI, DEV_MICRODISC, DEV_JASMIN, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
 
@@ -254,11 +175,7 @@ static const io_device_t io_bus[DEV_COUNT] = {
     [DEV_LOCI] = { .name = "loci", .claims = loci_dev_claims, .read = loci_dev_read,
                    .write = loci_dev_write,
                    .present_off = PRESENT(has_loci), .tick = loci_dev_tick },
-    /* ACIA: its "SER" section is written by savestate.c (historical). */
-    [DEV_ACIA] = { .name = "acia", .claims = acia_dev_claims, .read = acia_dev_read,
-                   .write = acia_dev_write, .peek = acia_dev_peek,
-                   .present_off = PRESENT(has_serial), .tick = acia_dev_tick },
-    /* Microdisc: sections FDC/MDC/DSK/BAD written by savestate.c (historical). */
+    /* Microdisc : sections FDC/MDC/DSK/BAD écrites par savestate.c (historique). */
     [DEV_MICRODISC] = { .name = "microdisc", .claims = microdisc_dev_claims,
                         .read = microdisc_dev_read, .write = microdisc_dev_write,
                         .present_off = PRESENT(has_microdisc), .tick = microdisc_dev_tick },
@@ -268,12 +185,13 @@ static const io_device_t io_bus[DEV_COUNT] = {
                      .present_off = PRESENT(has_jasmin), .tick = jasmin_dev_tick },
 };
 
-/* TICK ORDER, distinct from the dispatch order and PRESERVED exactly as in
- * the old cpu_cycle_tick (microdisc → jasmin → loci → acia), then the cards as
- * modules in cards_list.h order (dtl2000 → mageco → sp0256 → mea8000):
- * identical behaviour by construction. */
+/* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
+ * l'ancien cpu_cycle_tick (microdisc → jasmin → loci), puis les cartes en
+ * modules dans l'ordre de cards_list.h (acia → dtl2000 → mageco → sp0256 →
+ * mea8000) :
+ * iso-comportement par construction. */
 static const io_device_t* const io_bus_tick_order[] = {
-    &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI], &io_bus[DEV_ACIA],
+    &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI],
 };
 
 /* Effective dispatch table: core devices, with the cards as modules

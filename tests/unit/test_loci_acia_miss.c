@@ -60,7 +60,7 @@ static void setup(void) {
     acia_write(&g_emu->acia, ACIA_REG_CONTROL, 0x1F);
     acia_write(&g_emu->acia, ACIA_REG_COMMAND, 0x01);
 
-    g_emu->has_serial = true;
+    g_emu->card_on[CARD_IDX_acia] = true;
     g_emu->acia_base_addr = 0x0380;
     g_emu->has_loci = true;
     /* Reliable window [5,10]: tior=0 (default) → OUTSIDE the window → race lost. */

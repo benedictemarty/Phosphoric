@@ -385,7 +385,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     end_section(fp, sec);
 
     /* ── SER Section (if serial present) ── */
-    if (emu->has_serial) {
+    if (emu->card_on[CARD_IDX_acia]) {
         sec = begin_section(fp, "SER\0");
         write_u8(fp, emu->acia.tdr);
         write_u8(fp, emu->acia.rdr);
