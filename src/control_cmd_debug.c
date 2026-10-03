@@ -352,7 +352,7 @@ void ctl_cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
                 emu->csave_file != NULL ? 1 : 0);
     }
     else if (strcmp(sub, "loci") == 0) {
-        if (!emu->has_loci) { sink_err(s, "loci: inactive"); return; }
+        if (!emu->card_on[CARD_IDX_loci]) { sink_err(s, "loci: inactive"); return; }
         loci_t* l = &emu->loci;
         uint16_t err = (uint16_t)l->regs[LOCI_REG_API_ERRNO_LO]
                      | ((uint16_t)l->regs[LOCI_REG_API_ERRNO_HI] << 8);

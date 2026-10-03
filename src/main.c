@@ -498,7 +498,7 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
 
     /* LOCI snoops VIA ORB writes ($0300) for the cassette motor line
      * (PB6), like the firmware tap_act() hook (Sprint 36f). */
-    if (emu->has_loci && address == 0x0300) {
+    if (emu->card_on[CARD_IDX_loci] && address == 0x0300) {
         loci_tap_motor(&emu->loci, (value & 0x40) != 0);
         loci_emu_tap_motor(value);     /* co-sim: the firmware's tap_act() (no-op otherwise) */
     }
@@ -841,7 +841,7 @@ static bool emulator_init(emulator_t* emu) {
 }
 
 static void emulator_cleanup(emulator_t* emu) {
-    if (emu->has_loci) {
+    if (emu->card_on[CARD_IDX_loci]) {
         loci_cleanup(&emu->loci);
     }
     loci_emu_stop();   /* co-sim: persists the flash (internal FS 0:) — no-op without --loci-emu */
@@ -1438,7 +1438,7 @@ static void run_autotype_arm(emulator_t* emu, uint64_t total_executed) {
         (int64_t)total_executed >= emu->type_keys_seq[emu->type_keys_seq_idx].at) {
         int s = emu->type_keys_seq_idx++;
         oric_keyboard_release_all(&emu->keyboard);
-        if (emu->has_loci) loci_kbd_clear(&emu->loci);
+        if (emu->card_on[CARD_IDX_loci]) loci_kbd_clear(&emu->loci);
         emu->type_keys_at = emu->type_keys_seq[s].at;
         emu->type_keys_text = emu->type_keys_seq[s].text;
         emu->type_keys_loci_hid = emu->type_keys_seq[s].loci_hid;
@@ -1460,7 +1460,7 @@ static void run_autotype_arm(emulator_t* emu, uint64_t total_executed) {
         when_read(emu, (uint16_t)emu->type_keys_when_addr) ==
             emu->type_keys_when_val) {
         oric_keyboard_release_all(&emu->keyboard);
-        if (emu->has_loci) loci_kbd_clear(&emu->loci);
+        if (emu->card_on[CARD_IDX_loci]) loci_kbd_clear(&emu->loci);
         emu->type_keys_text = emu->type_keys_when_text;
         emu->type_keys_loci_hid = emu->type_keys_when_loci_hid;
         emu->type_keys_at = (int64_t)total_executed;
@@ -1749,7 +1749,7 @@ static void run_autotype_step(emulator_t* emu, uint64_t total_executed) {
             /* Sprint 34av : LOCI HID injection path. Each char/escape
              * yields a HID usage code that's pushed into the LOCI kbd
              * bitmap for ~2 frames, then released. */
-            if (emu->type_keys_loci_hid && emu->has_loci) {
+            if (emu->type_keys_loci_hid && emu->card_on[CARD_IDX_loci]) {
                 autotype_step_loci_hid(emu, total_executed, idx, c);
             } else {
                 autotype_step_native(emu, total_executed, idx, c);
@@ -1831,7 +1831,7 @@ static bool sdl_osd_key(emulator_t* emu, SDL_Keycode sym) {
  * Fn-Lock key of some keyboards. Ctrl+Alt+M = short press (menu),
  * Ctrl+Alt+D = long press (diagnostic ROM); never passed to the Oric. */
 static bool sdl_loci_button_chord(emulator_t* emu, SDL_Keycode sym, uint16_t mod) {
-    if (!emu->has_loci) return false;
+    if (!emu->card_on[CARD_IDX_loci]) return false;
     if (!(mod & KMOD_CTRL) || !(mod & KMOD_ALT)) return false;
     if (sym != SDLK_m && sym != SDLK_d) return false;
     bool longp = (sym == SDLK_d);
@@ -1871,7 +1871,7 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
         break;
     case SDLK_F5:
         cpu_reset(&emu->cpu);
-        if (emu->has_loci) {
+        if (emu->card_on[CARD_IDX_loci]) {
             /* Sprint 34aj: LOCI reset button — clears MIA
              * state (regs/xstack/active_op) but keeps the
              * mount table and open file handles so the
@@ -1887,7 +1887,7 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
          * the LOCI ROM can take over. Release on KEYUP below:
          * short = menu, held ≥ 2 s = diag ROM (firmware
          * EXT_BTN_LONGPRESS_MS). */
-        if (emu->has_loci && !repeat) {
+        if (emu->card_on[CARD_IDX_loci] && !repeat) {
             loci_f8_down_ms = SDL_GetTicks();
             /* Co-simulation (--loci-emu): the REAL firmware owns the
              * button — the internal model must not swap its ROM in parallel
@@ -1950,7 +1950,7 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
 static void sdl_mouse_event(emulator_t* emu, const SDL_Event* event) {
     switch (event->type) {
     case SDL_MOUSEMOTION:
-        if (emu->has_loci) {
+        if (emu->card_on[CARD_IDX_loci]) {
             uint32_t bs = SDL_GetMouseState(NULL, NULL);
             uint8_t btn = 0;
             if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
@@ -1964,7 +1964,7 @@ static void sdl_mouse_event(emulator_t* emu, const SDL_Event* event) {
         break;
     case SDL_MOUSEBUTTONDOWN:
     case SDL_MOUSEBUTTONUP:
-        if (emu->has_loci) {
+        if (emu->card_on[CARD_IDX_loci]) {
             uint32_t bs = SDL_GetMouseState(NULL, NULL);
             uint8_t btn = 0;
             if (bs & SDL_BUTTON(SDL_BUTTON_LEFT))   btn |= 0x01;
@@ -1974,7 +1974,7 @@ static void sdl_mouse_event(emulator_t* emu, const SDL_Event* event) {
         }
         break;
     case SDL_MOUSEWHEEL:
-        if (emu->has_loci) {
+        if (emu->card_on[CARD_IDX_loci]) {
             loci_mou_report(&emu->loci, 0, 0, 0,
                             (int8_t)event->wheel.y,
                             (int8_t)event->wheel.x);
@@ -2042,7 +2042,7 @@ static void run_present_and_events(emulator_t* emu, uint64_t total_executed) {
                 loci_sync_kbd_from_sdl(emu);
                 break;
             case SDL_KEYUP:
-                if (event.key.keysym.sym == SDLK_F8 && emu->has_loci) {
+                if (event.key.keysym.sym == SDLK_F8 && emu->card_on[CARD_IDX_loci]) {
                     bool longp = SDL_GetTicks() - loci_f8_down_ms >= 2000;
                     log_info("LOCI: Action button released (F8%s)",
                              longp ? ", long press" : "");
@@ -2795,146 +2795,9 @@ static int main_setup_recordings(emulator_t* emu, cli_opts_t* cfg) {
 /* LOCI cartridge: firmware co-simulation, real hardware, HLE model.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_loci(emulator_t* emu, cli_opts_t* cfg) {
-    /* --loci-emu: run the REAL RP2040 firmware in the emulator (smoke test:
-     * boot + banner). Bus co-sim not wired yet -> the behavioural backend
-     * stays active in parallel for the runtime. */
-    if (cfg->loci_emu_path) {
-        if (cfg->loci_emu_usb_image) loci_emu_set_usb_image(cfg->loci_emu_usb_image);
-        if (cfg->loci_emu_cdc_dev) loci_emu_set_cdc_device(cfg->loci_emu_cdc_dev);
-        if (cfg->loci_emu_flash) loci_emu_set_flash_image(cfg->loci_emu_flash);
-        loci_emu_start(cfg->loci_emu_path);
-        emu->loci_external = true;
-    }
-    /* --loci-hw: the REAL cartridge behind the USB bridge (loci-usb). The
-     * loci_hw.c backend shares the loci_emu.h interface: same io_bus/memory path, but
-     * each access is a real bus cycle. Requires a `make LOCI_HW=1` binary. */
-    if (cfg->loci_hw_dev) {
-        if (strcmp(loci_emu_backend_name(), "hw") != 0) {
-            log_error("--loci-hw : ce binaire embarque le backend LOCI « %s », pas « hw » — "
-                      "recompiler avec `make LOCI_HW=1`", loci_emu_backend_name());
-            return 1;
-        }
-        if (loci_emu_start(cfg->loci_hw_dev) != 0) return 1;
-        emu->loci_external = true;
-    }
-
-    /* Enable LOCI peripheral (--loci) */
-    if (cfg->loci_enabled) {
-        loci_init(&emu->loci);
-        emu->loci.enabled = true;
-        emu->has_loci = true;
-        /* Route B: server base for the « W: Web disks » pseudo-device. */
-        if (cfg->loci_web_base) {
-            snprintf(emu->loci.web_base, sizeof(emu->loci.web_base), "%s", cfg->loci_web_base);
-            log_info("LOCI: device web « W: Web disks » -> %s (menu: opendir/readdir GET /disks)",
-                     cfg->loci_web_base);
-        }
-        if (cfg->loci_mia_win_lo >= 0) {
-            loci_set_mia_window(&emu->loci, (uint8_t)cfg->loci_mia_win_lo, (uint8_t)cfg->loci_mia_win_hi);
-            log_info("LOCI MIA reliable tior window: %d-%d (picowifi ACIA $0380 "
-                     "corrupted outside it; tune via MAP_TUNE_TIOR / ADJ_SCAN)",
-                     emu->loci.mia_tior_lo, emu->loci.mia_tior_hi);
-        }
-        if (cfg->loci_serve_subticks >= 0) {
-            /* Sub-cycle PHI2 race model (epic B) — replaces the window. */
-            loci_set_serve_timing(&emu->loci, (uint8_t)cfg->loci_serve_subticks,
-                                  (uint8_t)cfg->loci_latch_subtick);
-            log_info("LOCI MIA phase model: serve=%d latch=%d subticks (PHI2x%d) — "
-                     "picowifi $0380 propre ssi tior+serve<=latch",
-                     emu->loci.mia_serve_subticks, emu->loci.mia_latch_subtick,
-                     BUS_PHI2_SUBTICKS);
-        }
-        if (cfg->loci_serve_jitter >= 0) {
-            loci_set_serve_jitter(&emu->loci, (uint8_t)cfg->loci_serve_jitter, cfg->loci_jitter_seed);
-            log_info("LOCI MIA serve jitter: +/-%d subticks (seed=%u) — ratés "
-                     "occasionnels reproductibles pres du latch",
-                     emu->loci.mia_serve_jitter, cfg->loci_jitter_seed);
-        }
-        /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
-        loci_set_rom_swap_callback(&emu->loci, loci_rom_swap_cb, emu);
-        /* Session-resume callback: menu "resume" → MIA_BOOT RESUME (Sprint 85). */
-        loci_set_resume_callback(&emu->loci, loci_resume_session_cb, emu);
-        /* Live ROM poke: ADJ_SCAN progress byte polled by the menu ROM. */
-        loci_set_rom_poke_callback(&emu->loci, loci_rom_poke_hook, emu);
-
-        /* Device list served by opendir("") (menu file browser: internal
-         * storage first, then one line per mounted USB device — firmware
-         * usb_set_status strings). */
-        if (cfg->loci_sdimg_path) {
-            struct stat st;
-            char msc[64];
-            double mb = (stat(cfg->loci_sdimg_path, &st) == 0)
-                      ? (double)st.st_size / (1024.0 * 1024.0) : 0.0;
-            if (mb >= 1024.0)
-                snprintf(msc, sizeof(msc), "MSC %.1f GB PHOSPHOR SDIMG rev 1.0",
-                         mb / 1024.0);
-            else
-                snprintf(msc, sizeof(msc), "MSC %.1f MB PHOSPHOR SDIMG rev 1.0", mb);
-            loci_add_usb_device(&emu->loci, msc);
-        }
-        if (emu->serial_spec && strncmp(emu->serial_spec, "picowifi", 8) == 0) {
-            /* firmware cdc.c: the picowifi enumerates as a CDC modem */
-            loci_add_usb_device(&emu->loci, "CDC modem mounted");
-        }
-        /* Real USB keys: explicit --loci-usb DIRs, then media mounted on
-         * the host (udisks: /media/$USER, /run/media/$USER). Their "N:"
-         * paths are served from the host directory. NOTE: with
-         * --loci-sdimg, file ops are owned by the SD image backend — the
-         * keys still appear in the list but are not browsable. */
-        for (int i = 0; i < cfg->loci_usb_count; i++)
-            loci_attach_usb_dir(emu, cfg->loci_usb_args[i]);
-        if (cfg->loci_usb_autoscan)
-            loci_scan_host_usb(emu);
-        loci_set_dsk_bus_callbacks(&emu->loci, loci_dsk_cpu_irq_set,
-                                   loci_dsk_cpu_irq_clr,
-                                   loci_dsk_sync_overlay, emu);
-        /* Tape-mount callback used by op_mount on LOCI_MNT_TAP (Sprint 34ao). */
-        loci_set_tape_mount_callback(&emu->loci, loci_tape_mount_cb, emu);
-        /* Action-button hooks (Sprint 34ai). */
-        loci_set_action_callbacks(&emu->loci,
-            loci_action_install_irq_trap,
-            loci_action_release_irq_trap,
-            emu);
-        /* Sprint 34am fix: the real LOCI hardware's Pi Pico firmware
-         * pre-initialises the AY-3-8910 R7 (mixer) to enable Port A as
-         * output for keyboard scanning. The LOCI ROM relies on that
-         * state and never writes R7 itself. Without this seed, the
-         * keyboard scan callback's R7-bit-6 check always rejects, and
-         * no key reaches the LOCI TUI. Mirror the firmware setup so
-         * the ROM's ReadKeyboard sees a working PSG. */
-        emu->psg.registers[7] = 0x7F;
-        log_info("LOCI: pre-seeded PSG R7=$7F (firmware AY init for keyboard)");
-        if (cfg->loci_flash_root && cfg->loci_sdimg_path) {
-            log_error("--loci-flash and --loci-sdimg are mutually exclusive");
-            return 1;
-        }
-        if (cfg->loci_sdimg_path) {
-            if (!loci_attach_sdimg(&emu->loci, cfg->loci_sdimg_path)) {
-                log_error("Failed to attach LOCI SD image: %s", cfg->loci_sdimg_path);
-                return 1;
-            }
-            log_info("LOCI MIA enabled at $%04X-$%04X (SD image: %s)",
-                     LOCI_MIA_BASE, LOCI_MIA_END, cfg->loci_sdimg_path);
-        } else if (cfg->loci_flash_root) {
-            loci_set_flash_root(&emu->loci, cfg->loci_flash_root);
-            log_info("LOCI MIA enabled at $%04X-$%04X (flash root: %s)",
-                     LOCI_MIA_BASE, LOCI_MIA_END, cfg->loci_flash_root);
-        } else {
-            log_info("LOCI MIA enabled at $%04X-$%04X (flash root: CWD)",
-                     LOCI_MIA_BASE, LOCI_MIA_END);
-        }
-
-        /* --loci-web URL: NATIVE LOCI mount of a disk served over HTTP as
-         * drive A (loci-webdisk archi B). Twin of --disk-web (Microdisc),
-         * but on the LOCI's own FDC. The 6400-byte MFM tracks are
-         * fetched on demand. */
-        if (cfg->loci_web_url) {
-            if (!loci_dsk_open_web(&emu->loci, 0, cfg->loci_web_url)) {
-                log_error("--loci-web: montage du disque web impossible (%s)", cfg->loci_web_url);
-                return 1;
-            }
-        }
-    }
+    /* Carte LOCI en module (src/cards/card_loci.c) : son code était ici. Une
+     * erreur s'arrête sans emulator_cleanup, comme avant. */
+    if (card_modules_setup(emu, cfg, CARD_STAGE_LOCI) != 0) return 1;
     return -1;
 }
 
@@ -3152,7 +3015,7 @@ static int main_setup_rom_model(emulator_t* emu, cli_opts_t* cfg) {
         }
         /* Direct LOCI menu ROM boot (-r roms/loci/locirom --loci): patch
          * the firmware version/timing placeholders like the real MIA. */
-        if (emu->has_loci)
+        if (emu->card_on[CARD_IDX_loci])
             loci_patch_rom_info(emu);
     }
 
@@ -3353,13 +3216,13 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         return 1;
     }
 
-    /* --loci-web: NATIVE LOCI autoboot. The web disk is already mounted on the
-     * LOCI's FDC (loci_dsk_open_web); all that remains is to install the Microdisc
-     * ROM overlay at $A000 — exactly what MIA_BOOT does with LOCI_BOOT_FDC —
-     * so that the boot code reads the disk via $0310 (routed to the LOCI FDC,
-     * web-backed under --loci) and boots Sedoric without going through the menu. The
-     * -r ROM (BASIC) is already loaded at $C000; so only $A000 is touched. */
-    if (cfg->loci_web_url && emu->has_loci) {
+    /* --loci-web : autoboot NATIF LOCI. Le disque web est déjà monté sur le FDC
+     * de la LOCI (loci_dsk_open_web) ; il ne reste qu'à installer l'overlay ROM
+     * Microdisc à $A000 — exactement ce que fait MIA_BOOT avec LOCI_BOOT_FDC —
+     * pour que le code de boot lise le disque via $0310 (routé vers le FDC LOCI,
+     * web-backed sous --loci) et démarre Sedoric sans passer par le menu. Le ROM
+     * -r (BASIC) est déjà chargé à $C000 ; on ne touche donc que $A000. */
+    if (cfg->loci_web_url && emu->card_on[CARD_IDX_loci]) {
         char disc[512] = {0};
         const char* cand = cfg->disk_rom_file;                 /* --disk-rom if provided */
         if ((!cand || access(cand, R_OK) != 0) && cfg->rom_file) {
@@ -3399,7 +3262,7 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
                                                 (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
                 if (rc != 0) rc = rc2;
             }
-            if (emu->has_loci) {
+            if (emu->card_on[CARD_IDX_loci]) {
                 int rc2 = loci_add_bad_sector(&emu->loci, (uint8_t)d,
                                               (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
                 if (rc != 0) rc = rc2;

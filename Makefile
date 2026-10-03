@@ -599,22 +599,11 @@ TEST_LOCI_SRCS = tests/support/loci_emu_stub.c tests/unit/test_loci.c \
 
 $(eval $(call UNIT_TEST,test-loci,test_loci,$(TEST_LOCI_SRCS),,))
 
-# LOCI PHI2 race on the $0380 ACIA (picowifi) — full io_bus dispatch, so
-# the whole page 3 peripheral tree is linked.
-TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
-                 src/io/acia6551.c src/io/serial_backend.c src/io/smf.c \
-                 $(LOCI_EMU_SRC) src/io/loci_gfx.c \
-                 src/io/loci_core.c src/io/loci_fs.c src/io/loci_bus.c \
-                 src/io/loci_boot.c src/io/loci_sdimg.c \
-                 src/io/microdisc.c src/io/jasmin.c src/io/mageco.c \
-                 src/io/pia6821.c src/io/acia6850.c src/io/dtl2000.c \
-                 src/io/sp0256.c src/io/mea8000.c src/io/ula_ng.c \
-                 src/video/video.c src/audio/ay3891x.c \
-                 $(CPU_SRCS) \
-                 $(DISK_SRCS) \
-                 $(MEM_SRCS) \
-                 src/utils/logging.c src/utils/netutil.c $(CARD_MODULE_SRCS) \
-                 src/cli/cli_parse.c src/io/serial_picowifi.c
+# Course PHI2 du LOCI sur l'ACIA $0380 (picowifi) — dispatch io_bus complet, donc
+# tout l'arbre des périphériques de page 3 est lié.
+# Les cartes en modules (dont LOCI et l'ACIA) lient leurs périphériques et leur
+# mise en route : la bibliothèque entière, comme test-cards (2.18.0).
+TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c $(LIB_SOURCES)
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 

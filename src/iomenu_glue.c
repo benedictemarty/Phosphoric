@@ -300,7 +300,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
     case IOM_ACT_DISK_INSERT:
         r = media_disk_insert(emu, a->target, a->path);
         if (r == MEDIA_OK) msg(emu, false, "Lecteur %c : %s", 'A' + a->target, base_name(a->path));
-        else if (r == MEDIA_NO_IFACE && emu->has_loci && emu->loci_external)
+        else if (r == MEDIA_NO_IFACE && emu->card_on[CARD_IDX_loci] && emu->loci_external)
             msg(emu, true, "LOCI : les disquettes se montent depuis son menu (bouton MENU, F8)");
         else msg(emu, true, "Lecteur %c : %s", 'A' + a->target, media_error(r));
         return false;
@@ -374,7 +374,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
     case IOM_ACT_RESET:
         /* Same effect as F5: 6502 reset; LOCI reset button (mounts kept). */
         cpu_reset(&emu->cpu);
-        if (emu->has_loci) loci_reset(&emu->loci);
+        if (emu->card_on[CARD_IDX_loci]) loci_reset(&emu->loci);
         msg(emu, false, "Machine redémarrée (RESET)");
         return true;
     case IOM_ACT_SAVE_CONFIG: {

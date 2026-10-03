@@ -405,7 +405,7 @@ void loci_action_release_irq_trap(void* ctx) {
  * scancodes map 1:1 to HID usage IDs, so collect the first six down keys +
  * pack the SDL modifiers into the HID modifier byte. Moved from main.c. */
 void loci_sync_kbd_from_sdl(emulator_t* emu) {
-    if (!emu || !emu->has_loci) return;
+    if (!emu || !emu->card_on[CARD_IDX_loci]) return;
 
     int numkeys = 0;
     const Uint8* state = SDL_GetKeyboardState(&numkeys);

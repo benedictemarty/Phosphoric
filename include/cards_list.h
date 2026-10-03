@@ -23,11 +23,13 @@
 #define CARD_MODULE_LIST(X) \
     X(microdisc, 0) \
     X(jasmin,  0) \
+    X(loci,    0) \
     X(acia,    1) \
     X(dtl2000, 1) \
     X(mageco,  1) \
     X(sp0256,  1) \
     X(mea8000, 1) \
+    X(loci_emu, 0) \
     X(ula_ng,  0)
 
 /* Index of each card: emu->card_on[CARD_IDX_<id>] tells whether it is present. */

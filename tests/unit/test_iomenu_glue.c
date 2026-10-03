@@ -140,7 +140,7 @@ TEST(test_disk_routed_to_loci) {
     machine_new();
     emu->card_on[CARD_IDX_microdisc] = false;
     ASSERT_TRUE(loci_init(&emu->loci));
-    emu->has_loci = true;
+    emu->card_on[CARD_IDX_loci] = true;
     iom_action_t a = { IOM_ACT_DISK_INSERT, 1, "un.dsk" };
     iomenu_apply(emu, &a);
     ASSERT_STR(emu->loci.dsk_host_path[1], "un.dsk");
