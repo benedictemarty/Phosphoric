@@ -15,7 +15,11 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── Configuration and options ─────────────────────────────────────────── */
+/* État de la carte, privé au module (une seule machine par processus :
+ * emulator_init n'est appelé qu'une fois, par main). */
+static mea8000_t s_dev;
+
+/* ── Configuration et options ──────────────────────────────────────────── */
 
 typedef struct {
     bool     enabled;     /* --mea8000 (TMPI, no ROM) */
@@ -57,24 +61,24 @@ static const card_desc_t k_desc = {
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_mea8000] &&
-           (addr == emu->mea8000.base_addr ||
-            addr == (uint16_t)(emu->mea8000.base_addr + 1));
+           (addr == s_dev.base_addr ||
+            addr == (uint16_t)(s_dev.base_addr + 1));
 }
 static uint8_t dev_read(emulator_t* emu, uint16_t addr) {
-    return mea8000_read(&emu->mea8000, addr);
+    return mea8000_read(&s_dev, addr);
 }
 static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    mea8000_write(&emu->mea8000, addr, value);
+    mea8000_write(&s_dev, addr, value);
     return true;
 }
 static bool dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_mea8000]) return false;
-    return mea8000_save(&emu->mea8000, fp);
+    return mea8000_save(&s_dev, fp);
 }
 static void dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    mea8000_load(&emu->mea8000, fp, size);
+    mea8000_load(&s_dev, fp, size);
 }
-void card_mea8000_tick(emulator_t* emu, int cycles) { mea8000_tick(&emu->mea8000, cycles); }
+void card_mea8000_tick(emulator_t* emu, int cycles) { mea8000_tick(&s_dev, cycles); }
 
 static const io_device_t k_bus = {
     .name = "mea8000", .claims = dev_claims, .read = dev_read, .write = dev_write,
@@ -105,10 +109,10 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                   "interface — relocate with --mea8000-addr or --mageco-addr");
         return 1;
     }
-    mea8000_init(&emu->mea8000, cfg->base_addr);
-    emu->mea8000.emu = emu;
+    mea8000_init(&s_dev, cfg->base_addr);
+    s_dev.emu = emu;
     emu->card_on[CARD_IDX_mea8000] = true;
-    audio_add_source(audio_gen, &emu->mea8000);
+    audio_add_source(audio_gen, &s_dev);
     log_info("MEA8000 TMPI speech synthesizer enabled at $%04X/$%04X (formant, no ROM)",
              cfg->base_addr, (uint16_t)(cfg->base_addr + 1));
     return 0;

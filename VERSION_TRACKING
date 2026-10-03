@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.14.0
+Current Version: 2.15.0
 Release Date: 2026-09-30
-Status: Stable (**Sprint G2 : cartes simples en modules — 2.14.0**. SP0256, Mageco+ORICON, DTL 2000, ULA-NG ; io_bus.c réduit à LOCI/ACIA/Microdisc/Jasmin ; cli_golden 136 cas 0 écart ; instructions +0,004 %.)
+Status: Stable (**Sprint G3 : état des cartes simples privé — 2.15.0**. DTL 2000, Mageco, SP0256, MEA8000 hors d'emulator_t (statique dans le module) ; cli_golden 136 cas 0 écart ; .ost identiques.)
+Status (prev): Stable (**Sprint G2 : cartes simples en modules — 2.14.0**. SP0256, Mageco+ORICON, DTL 2000, ULA-NG ; io_bus.c réduit à LOCI/ACIA/Microdisc/Jasmin ; cli_golden 136 cas 0 écart ; instructions +0,004 %.)
 Status (prev): Stable (**Sprint G1 : cartes en modules, pilote MEA8000 — 2.13.0**. card_module_t + cards_list.h (macro) ; MEA8000 en un fichier (10 avant) ; cli_golden 125 cas 0 écart ; instructions identiques à 2.12.9.)
 Status (prev): Stable (**Serveur cast : sockets acceptés bloquants avec délai — 2.12.9**. macOS : client fermé sans réponse (accept hérite de O_NONBLOCK) ; Linux : un client muet bloquait le serveur. 2 tests ajoutés, harnais test_cast corrigé (FAIL compté PASS), test-cast 26/26.)
 Status (prev): Stable (**CI sanitizers : test-cast lie l'objet stb exempté — 2.12.8**. UBSan (décalage signé dans stb_image_write, tiers) ; l'exemption STB_SAN_CFLAGS ne s'appliquait pas à la compilation directe de test-cast.)

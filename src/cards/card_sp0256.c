@@ -15,7 +15,11 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── Configuration and options ─────────────────────────────────────────── */
+/* État de la carte, privé au module (une seule machine par processus :
+ * emulator_init n'est appelé qu'une fois, par main). */
+static sp0256_t s_dev;
+
+/* ── Configuration et options ──────────────────────────────────────────── */
 
 typedef struct {
     const char* rom_file;    /* --sp0256-rom FILE */
@@ -59,23 +63,23 @@ static const card_desc_t* const k_descs[] = { &k_desc };
 /* ── Bus: single port at base_addr (default $03F1) ─────────────────────── */
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->card_on[CARD_IDX_sp0256] && addr == emu->sp0256.base_addr;
+    return emu->card_on[CARD_IDX_sp0256] && addr == s_dev.base_addr;
 }
 static uint8_t dev_read(emulator_t* emu, uint16_t addr) {
-    return sp0256_read(&emu->sp0256, addr);
+    return sp0256_read(&s_dev, addr);
 }
 static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    sp0256_write(&emu->sp0256, addr, value);
+    sp0256_write(&s_dev, addr, value);
     return true;
 }
 static bool dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_sp0256]) return false;
-    return sp0256_save(&emu->sp0256, fp);
+    return sp0256_save(&s_dev, fp);
 }
 static void dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    sp0256_load(&emu->sp0256, fp, size);
+    sp0256_load(&s_dev, fp, size);
 }
-void card_sp0256_tick(emulator_t* emu, int cycles) { sp0256_tick(&emu->sp0256, cycles); }
+void card_sp0256_tick(emulator_t* emu, int cycles) { sp0256_tick(&s_dev, cycles); }
 
 static const io_device_t k_bus = {
     .name = "sp0256", .claims = dev_claims, .read = dev_read, .write = dev_write,
@@ -108,15 +112,15 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
     size_t srd = fread(sbuf, 1, SP0256_ROM_SIZE, sf);
     fclose(sf);
 
-    sp0256_init(&emu->sp0256, cfg->base_addr);
-    if (srd != SP0256_ROM_SIZE || !sp0256_load_rom(&emu->sp0256, sbuf, (uint32_t)srd)) {
+    sp0256_init(&s_dev, cfg->base_addr);
+    if (srd != SP0256_ROM_SIZE || !sp0256_load_rom(&s_dev, sbuf, (uint32_t)srd)) {
         log_error("SP0256 ROM must be exactly %d bytes (got %zu): %s",
                   SP0256_ROM_SIZE, srd, cfg->rom_file);
         return 1;
     }
-    emu->sp0256.emu = emu;
+    s_dev.emu = emu;
     emu->card_on[CARD_IDX_sp0256] = true;
-    audio_add_source(audio_gen, &emu->sp0256);   /* mixed into the Oric's sound */
+    audio_add_source(audio_gen, &s_dev);   /* mixée au son de l'Oric */
     log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
              cfg->base_addr);
     return 0;
