@@ -17,7 +17,6 @@
 #include <stdint.h>
 #include "emulator.h"            /* TIMED_CAPTURE_MAX, POKE_MAX, TYPE_KEYS_SEQ_MAX */
 #include "io/microdisc.h"        /* MICRODISC_MAX_DRIVES */
-#include "io/sp0256.h"           /* SP0256_BASE_DEFAULT */
 #include "io/loci.h"             /* LOCI_USB_DEV_MAX */
 #include "network/gdbstub.h"     /* GDB_DEFAULT_PORT */
 #include "storage/disk.h"        /* FDC_MAX_BAD_SECTORS */
@@ -27,7 +26,7 @@ typedef struct { const char* arg; timed_capture_type_t type; } cli_tcap_arg_t;
 /* --poke-at / --poke-when: raw argument + variant. */
 typedef struct { const char* arg; bool is_when; } cli_poke_arg_t;
 
-typedef struct {
+typedef struct cli_opts_s {
 
     const char* tape_file;
     const char* disk_files[MICRODISC_MAX_DRIVES];
@@ -45,9 +44,8 @@ typedef struct {
     bool headless;
     int64_t max_cycles;
     const char* screenshot_file;
-    const char* ula_ng_poke;   /* --ula-ng-poke "AAA=VV,..." (registers $0340-$035F) */
-    /* REPEATABLE -at captures: (arg, type) are collected during parsing, then
-     * each "CYCLES:FILE" is resolved after the getopt loop (like --poke-at). */
+    /* Captures -at RÉPÉTABLES : on collecte (arg, type) au parsing, puis on
+     * résout chaque "CYCLES:FILE" après la boucle getopt (comme --poke-at). */
     cli_tcap_arg_t tcap_cli[TIMED_CAPTURE_MAX];
     int tcap_cli_count;
     const char* screenshot_text_file;
@@ -73,9 +71,7 @@ typedef struct {
     int poke_arg_count;
     const char* disk_rom_file;
     const char* jasmin_rom_file;   /* --jasmin-rom : Jasmin boot ROM (2 KB) */
-    const char* sp0256_rom_file;   /* --sp0256-rom : SP0256-AL2 ROM (2 KB) */
-    uint16_t sp0256_base_addr;   /* --sp0256-addr (hex) */
-    void** card_cfg;        /* configuration of each card module (card_module.h) */
+    void** card_cfg;        /* configuration de chaque carte en module (card_module.h) */
     bool debug_mode;
     const char* debug_break_addr;
     bool cast_server_enabled;
@@ -140,11 +136,6 @@ typedef struct {
     bool rom_info_enabled;
     const char* serial_arg;
     const char* acia_addr_arg;
-    const char* dtl2000_arg;
-    const char* dtl2000_addr_arg;
-    const char* mageco_arg;
-    const char* mageco_addr_arg;
-    bool mageco_oricon;
     bool serial_v23;
     int serial_buffer_size;
     int serial_baud;

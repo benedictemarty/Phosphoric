@@ -175,29 +175,8 @@ static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
     return acia_peek(&emu->acia, addr);
 }
 
-/* Mageco / ORICON MIDI (ACIA 6850): $03FE-$03FF or $031C-$031E. */
-static bool mageco_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_mageco && mageco_addr_in_range(&emu->mageco, addr);
-}
-static uint8_t mageco_dev_read(emulator_t* emu, uint16_t addr) {
-    return mageco_read(&emu->mageco, addr);
-}
-static bool mageco_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    mageco_write(&emu->mageco, addr, value);
-    return true;
-}
-/* Savestate ("MAG" section): emitted only if the Mageco is present →
- * .ost unchanged otherwise. Host transport not restored (see mageco_save). */
-static bool mageco_dev_save(emulator_t* emu, FILE* fp) {
-    if (!emu->has_mageco) return false;
-    return mageco_save(&emu->mageco, fp);
-}
-static void mageco_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    mageco_load(&emu->mageco, fp, size);
-}
-
-/* Microdisc WD1793: $0310-$031F (the ACIA, registered earlier, already owns
- * $031C-$031F if present → no internal test here). */
+/* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
+ * $031C-$031F si présente → pas de test interne ici). */
 static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_microdisc && addr >= 0x0310 && addr <= 0x031F;
 }
@@ -248,81 +227,6 @@ static void jasmin_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     emu->memory.jasmin_olay   = emu->jasmin.olay;
     emu->memory.jasmin_romdis = emu->jasmin.romdis;
 }
-/* SP0256 Mageco "Synthétiseur Vocal" (GI SP0256-AL2): single port at
- * emu->sp0256.base_addr (default $03F1). Audio output mixed into the PSG. */
-static bool sp0256_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_sp0256 && addr == emu->sp0256.base_addr;
-}
-static uint8_t sp0256_dev_read(emulator_t* emu, uint16_t addr) {
-    return sp0256_read(&emu->sp0256, addr);
-}
-static bool sp0256_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    sp0256_write(&emu->sp0256, addr, value);
-    return true;
-}
-
-/* Savestate (sections "SPO" / "MEA"): emitted only when the card is present. */
-static bool sp0256_dev_save(emulator_t* emu, FILE* fp) {
-    if (!emu->has_sp0256) return false;
-    return sp0256_save(&emu->sp0256, fp);
-}
-static void sp0256_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    sp0256_load(&emu->sp0256, fp, size);
-}
-
-/* Digitelec DTL 2000 (PIA 6821 + ACIA 6850): $03F8-$03FD (exclusive range). */
-static bool dtl2000_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_dtl2000 && dtl2000_addr_in_range(&emu->dtl2000, addr);
-}
-static uint8_t dtl2000_dev_read(emulator_t* emu, uint16_t addr) {
-    return dtl2000_read(&emu->dtl2000, addr);
-}
-static bool dtl2000_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    dtl2000_write(&emu->dtl2000, addr, value);
-    return true;
-}
-/* Savestate ("DTL" section): emitted only if the DTL2000 is present →
- * .ost unchanged otherwise. Host transport not restored (see dtl2000_save). */
-static bool dtl2000_dev_save(emulator_t* emu, FILE* fp) {
-    if (!emu->has_dtl2000) return false;
-    return dtl2000_save(&emu->dtl2000, fp);
-}
-static void dtl2000_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    dtl2000_load(&emu->dtl2000, fp, size);
-}
-
-/* ULA-NG $0340-$035F: last peripheral on the bus, before the VIA fallback.
- *  - Read: answers only when unlocked (`claims`); when locked, the window
- *    falls back to the VIA mirror (indistinguishable).
- *  - Write: `claims_write` = window only → the ULA-NG sees the writes
- *    even when locked, to watch for the 'N','G' sequence. `ula_ng_write` returns
- *    whether it consumed; otherwise the dispatch falls back to the VIA (bit-exact). */
-static bool ula_ng_dev_claims(emulator_t* emu, uint16_t addr) {
-    return ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(addr);
-}
-static bool ula_ng_dev_claims_write(emulator_t* emu, uint16_t addr) {
-    (void)emu;
-    return ula_ng_addr_in_window(addr);
-}
-static uint8_t ula_ng_dev_read(emulator_t* emu, uint16_t addr) {
-    return ula_ng_read(&emu->ula_ng, addr);
-}
-static bool ula_ng_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    if (!ula_ng_write(&emu->ula_ng, addr, value))
-        return false;   /* not consumed (locked, neutral byte) → VIA fallback */
-    /* Write consumed: synchronise the raster IRQ line (a write to
-     * NG_STATUS acknowledges → deassertion). */
-    if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
-    else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
-    return true;
-}
-/* Savestate ("UNG" section): delegated to the module (POD, same build, size guard). */
-static bool ula_ng_dev_save(emulator_t* emu, FILE* fp) {
-    return ula_ng_save(&emu->ula_ng, fp);
-}
-static void ula_ng_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    ula_ng_load(&emu->ula_ng, fp, size);
-}
 
 /* ── Ticks: exactly the operations of the old io_bus_tick, per device ─────── */
 static void microdisc_dev_tick(emulator_t* emu, int cycles) {
@@ -339,13 +243,9 @@ static void acia_dev_tick(emulator_t* emu, int cycles) {
     acia_set_trace_cycle(&emu->acia, emu->cpu.cycles);
     acia_tick(&emu->acia, cycles);
 }
-static void dtl2000_dev_tick(emulator_t* emu, int cycles) { dtl2000_tick(&emu->dtl2000, cycles); }
-static void mageco_dev_tick(emulator_t* emu, int cycles)  { mageco_tick(&emu->mageco, cycles); }
-static void sp0256_dev_tick(emulator_t* emu, int cycles)  { sp0256_tick(&emu->sp0256, cycles); }
 
-/* Position of each device in io_bus[] (= dispatch priority). */
-enum { DEV_LOCI, DEV_ACIA, DEV_MAGECO, DEV_MICRODISC, DEV_JASMIN, DEV_SP0256,
-       DEV_DTL2000, DEV_ULA_NG, DEV_COUNT };
+/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
+enum { DEV_LOCI, DEV_ACIA, DEV_MICRODISC, DEV_JASMIN, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
 
@@ -358,11 +258,7 @@ static const io_device_t io_bus[DEV_COUNT] = {
     [DEV_ACIA] = { .name = "acia", .claims = acia_dev_claims, .read = acia_dev_read,
                    .write = acia_dev_write, .peek = acia_dev_peek,
                    .present_off = PRESENT(has_serial), .tick = acia_dev_tick },
-    [DEV_MAGECO] = { .name = "mageco", .claims = mageco_dev_claims, .read = mageco_dev_read,
-                     .write = mageco_dev_write,
-                     .save_tag = "MAG\0", .save = mageco_dev_save, .load = mageco_dev_load,
-                     .present_off = PRESENT(has_mageco), .tick = mageco_dev_tick },
-    /* Microdisc: sections FDC/MDC/DSK/BAD written by savestate.c (historical). */
+    /* Microdisc : sections FDC/MDC/DSK/BAD écrites par savestate.c (historique). */
     [DEV_MICRODISC] = { .name = "microdisc", .claims = microdisc_dev_claims,
                         .read = microdisc_dev_read, .write = microdisc_dev_write,
                         .present_off = PRESENT(has_microdisc), .tick = microdisc_dev_tick },
@@ -370,30 +266,14 @@ static const io_device_t io_bus[DEV_COUNT] = {
                      .write = jasmin_dev_write,
                      .save_tag = "JAS\0", .save = jasmin_dev_save, .load = jasmin_dev_load,
                      .present_off = PRESENT(has_jasmin), .tick = jasmin_dev_tick },
-    [DEV_SP0256] = { .name = "sp0256", .claims = sp0256_dev_claims, .read = sp0256_dev_read,
-                     .write = sp0256_dev_write,
-                     .save_tag = "SPO\0", .save = sp0256_dev_save, .load = sp0256_dev_load,
-                     .present_off = PRESENT(has_sp0256), .tick = sp0256_dev_tick },
-    [DEV_DTL2000] = { .name = "dtl2000", .claims = dtl2000_dev_claims, .read = dtl2000_dev_read,
-                      .write = dtl2000_dev_write,
-                      .save_tag = "DTL\0", .save = dtl2000_dev_save, .load = dtl2000_dev_load,
-                      .present_off = PRESENT(has_dtl2000), .tick = dtl2000_dev_tick },
-    /* ULA-NG last (fallback before VIA). Separate claims_write: sees the
-     * writes to its window even when locked (watching for 'N','G'). Serialised
-     * via the "UNG" section (emitted only when unlocked → .ost unchanged otherwise).
-     * No tick: the ULA-NG advances with the video. */
-    [DEV_ULA_NG] = { .name = "ula-ng", .claims = ula_ng_dev_claims, .read = ula_ng_dev_read,
-                     .write = ula_ng_dev_write, .claims_write = ula_ng_dev_claims_write,
-                     .save_tag = "UNG\0", .save = ula_ng_dev_save, .load = ula_ng_dev_load },
 };
 
-/* TICK ORDER, distinct from the dispatch order and PRESERVED exactly as in
- * the old cpu_cycle_tick (microdisc → jasmin → loci → acia → dtl → mageco →
- * sp0256), then the cards as modules in k_card_modules order (mea8000):
- * identical behaviour by construction. */
+/* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
+ * l'ancien cpu_cycle_tick (microdisc → jasmin → loci → acia), puis les cartes en
+ * modules dans l'ordre de cards_list.h (dtl2000 → mageco → sp0256 → mea8000) :
+ * iso-comportement par construction. */
 static const io_device_t* const io_bus_tick_order[] = {
     &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI], &io_bus[DEV_ACIA],
-    &io_bus[DEV_DTL2000], &io_bus[DEV_MAGECO], &io_bus[DEV_SP0256],
 };
 
 /* Effective dispatch table: core devices, with the cards as modules
@@ -404,26 +284,24 @@ static const io_device_t* const io_bus_tick_order[] = {
 static io_device_t s_bus[IO_BUS_MAX];
 static int s_bus_n = -1;
 
-static void bus_add_modules_before(const char* name, bool* placed) {
-    for (int m = 0; m < k_card_module_count; m++) {
-        const card_module_t* mod = k_card_modules[m];
-        if (placed[m] || !mod->bus) continue;
-        if (name ? (mod->bus_before && strcmp(mod->bus_before, name) == 0) : true) {
-            placed[m] = true;
-            bus_add_modules_before(mod->bus->name, placed);
-            if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = *mod->bus;
-        }
-    }
+static const char* bus_anchor(int m) { return k_card_modules[m]->bus_before; }
+static int bus_count(int m) { return k_card_modules[m]->bus ? 1 : 0; }
+static const char* bus_key(int m, int j) { (void)j; return k_card_modules[m]->bus->name; }
+static void bus_emit(int m, int j, void* ctx) {
+    (void)j; (void)ctx;
+    if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = *k_card_modules[m]->bus;
+}
+static void bus_emit_core(int i, void* ctx) {
+    (void)ctx;
+    if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = io_bus[i];
 }
 
 static void io_bus_build(void) {
-    bool placed[64] = { false };
+    const char* names[DEV_COUNT];
+    for (int i = 0; i < DEV_COUNT; i++) names[i] = io_bus[i].name;
     s_bus_n = 0;
-    for (int i = 0; i < DEV_COUNT; i++) {
-        bus_add_modules_before(io_bus[i].name, placed);
-        s_bus[s_bus_n++] = io_bus[i];
-    }
-    bus_add_modules_before(NULL, placed);          /* no anchor: at the end of the table */
+    card_modules_place(names, DEV_COUNT, bus_anchor, bus_count, bus_key,
+                       bus_emit, bus_emit_core, NULL);
 }
 
 const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {

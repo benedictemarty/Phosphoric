@@ -641,24 +641,6 @@ static void acia_cpu_irq_clr(emulator_t* emu) {
     cpu_irq_clear(&emu->cpu, IRQF_SERIAL);
 }
 
-/* Digitelec DTL 2000 (ACIA 6850) IRQ callbacks */
-static void dtl2000_cpu_irq_set(emulator_t* emu) {
-    cpu_irq_set(&emu->cpu, IRQF_DTL2000);
-}
-
-static void dtl2000_cpu_irq_clr(emulator_t* emu) {
-    cpu_irq_clear(&emu->cpu, IRQF_DTL2000);
-}
-
-/* Mageco MIDI (ACIA 6850) IRQ callbacks */
-static void mageco_cpu_irq_set(emulator_t* emu) {
-    cpu_irq_set(&emu->cpu, IRQF_MAGECO);
-}
-
-static void mageco_cpu_irq_clr(emulator_t* emu) {
-    cpu_irq_clear(&emu->cpu, IRQF_MAGECO);
-}
-
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
 /* Rewrites drive @p drv's .dsk to disk if the game modified it and
@@ -769,17 +751,9 @@ static bool emulator_init(emulator_t* emu) {
     emu->acia.irq_clr = acia_cpu_irq_clr;
     emu->acia.irq_userdata = emu;
 
-    /* Initialize Digitelec DTL 2000 modem card (disabled by default) */
-    dtl2000_init(&emu->dtl2000, DTL2000_DEFAULT_BASE);
-    emu->dtl2000.irq_set = dtl2000_cpu_irq_set;
-    emu->dtl2000.irq_clr = dtl2000_cpu_irq_clr;
-    emu->dtl2000.irq_userdata = emu;
-
-    /* Initialize Mageco MIDI interface (disabled by default) */
-    mageco_init(&emu->mageco, MAGECO_DEFAULT_BASE);
-    emu->mageco.irq_set = mageco_cpu_irq_set;
-    emu->mageco.irq_clr = mageco_cpu_irq_clr;
-    emu->mageco.irq_userdata = emu;
+    /* Cartes en modules, présentes ou non : état de repos (DTL 2000, Mageco :
+     * adresse par défaut, IRQ câblées). */
+    card_modules_init(emu);
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
     ay_init(&emu->psg, ORIC_CLOCK_HZ);
@@ -976,17 +950,7 @@ static void emulator_cleanup(emulator_t* emu) {
         emu->serial_backend = NULL;
         emu->has_serial = false;
     }
-    if (emu->dtl2000_backend) {
-        serial_backend_destroy(emu->dtl2000_backend);
-        emu->dtl2000_backend = NULL;
-        emu->has_dtl2000 = false;
-    }
-    if (emu->mageco_backend) {
-        mageco_set_trace(&emu->mageco, NULL);
-        serial_backend_destroy(emu->mageco_backend);
-        emu->mageco_backend = NULL;
-        emu->has_mageco = false;
-    }
+    card_modules_teardown(emu);   /* transports des cartes (DTL 2000, Mageco) */
     /* Close ACIA trace and free RX FIFO */
     acia_set_trace(&emu->acia, NULL);
     acia_set_rx_fifo(&emu->acia, 0);
@@ -1368,16 +1332,7 @@ static void run_headless_audio_sinks(emulator_t* emu) {
         enum { WAV_FRAME_SAMPLES = AUDIO_SAMPLE_RATE / ORIC_FRAME_RATE };
         int16_t wav_buf[WAV_FRAME_SAMPLES * 2];  /* interleaved L/R */
         ay_generate(&emu->psg, wav_buf, WAV_FRAME_SAMPLES);
-        /* Mix in the SP0256 speech synth (mono → both channels), if active. */
-        if (emu->has_sp0256 && emu->sp0256.rom_valid) {
-            int16_t sbuf[WAV_FRAME_SAMPLES];
-            sp0256_generate(&emu->sp0256, sbuf, WAV_FRAME_SAMPLES);
-            for (int i = 0; i < WAV_FRAME_SAMPLES; i++) {
-                wav_buf[i * 2]     = (int16_t)((wav_buf[i * 2]     + sbuf[i]) / 2);
-                wav_buf[i * 2 + 1] = (int16_t)((wav_buf[i * 2 + 1] + sbuf[i]) / 2);
-            }
-        }
-        /* Mix in the expansion cards' audio sources (MEA8000…), one block. */
+        /* Mix in the expansion cards' audio sources (SP0256, MEA8000…), one block. */
         audio_mix_sources(wav_buf, WAV_FRAME_SAMPLES, WAV_FRAME_SAMPLES);
         if (emu->audio_wav_fp) {
             fwrite(wav_buf, sizeof(int16_t) * 2, WAV_FRAME_SAMPLES, emu->audio_wav_fp);
@@ -2694,10 +2649,7 @@ static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
     iom_init(&emu->iomenu);
     emu->config_path     = cfg->config_path;
     emu->jasmin_rom_path = cfg->jasmin_rom_file;
-    emu->sp0256_rom_path = cfg->sp0256_rom_file;
     emu->serial_spec     = cfg->serial_arg;
-    emu->dtl2000_spec    = cfg->dtl2000_arg;
-    emu->mageco_spec     = cfg->mageco_arg;
     return -1;
 }
 
@@ -2714,24 +2666,10 @@ static int main_setup_machine(emulator_t* emu, cli_opts_t* cfg) {
         return 1;
     }
 
-    /* --ula-ng-poke "AAA=VV,...": programs the ULA-NG registers directly
-     * ($0340-$035F) at startup (unlock, palette, copper, raster…),
-     * without going through slow BASIC POKEs. Ideal for demos/tests/captures. */
-    if (cfg->ula_ng_poke) {
-        const char* p = cfg->ula_ng_poke;
-        int n = 0;
-        while (*p) {
-            unsigned addr = 0, val = 0;
-            if (sscanf(p, "%x=%x", &addr, &val) == 2 &&
-                ula_ng_addr_in_window((uint16_t)addr)) {
-                ula_ng_write(&emu->ula_ng, (uint16_t)addr, (uint8_t)val);
-                n++;
-            }
-            const char* comma = strchr(p, ',');
-            if (!comma) break;
-            p = comma + 1;
-        }
-        log_info("ULA-NG: %d register write(s) applied from --ula-ng-poke", n);
+    /* Cartes en modules de l'étape « machine » (ULA-NG : --ula-ng-poke). */
+    if (card_modules_setup(emu, cfg, CARD_STAGE_MACHINE) != 0) {
+        emulator_cleanup(emu);
+        return 1;
     }
 
 
@@ -2951,102 +2889,11 @@ static int main_setup_serial_cards(emulator_t* emu, cli_opts_t* cfg) {
         }
     }
 
-    /* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 modem card.
-     * The transport backend reuses the generic serial backends. */
-    if (cfg->dtl2000_arg) {
-        uint16_t base = DTL2000_DEFAULT_BASE;
-        if (cfg->dtl2000_addr_arg) {
-            base = parse_hex16(cfg->dtl2000_addr_arg);
-        }
-        if (emu->has_microdisc) {
-            log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
-                        "(Jasmin) — not faithful to coexist on real hardware", base);
-        }
-        /* The DTL card accepts the same *transparent* transports as --serial
-         * (loopback/tcp/pty/com) — raw byte pipes for the V23 line. The DTL 2000
-         * is dialled by its PIA 6821 line bit and carries raw data, so the
-         * protocol-injecting backends (Hayes modem, digitelec, picowifi) are
-         * intentionally excluded: a Hayes AT layer behind the DTL would be
-         * unfaithful (the host software never issues AT commands). */
-        serial_backend_t* db = serial_transport_create(cfg->dtl2000_arg);
-        if (!db) {
-            log_error("Unknown DTL 2000 transport: %s", cfg->dtl2000_arg);
-            log_error("  loopback, tcp:host:port, pty, com:baud,bits,P,stop,device, file:in[:out]");
-            log_error("  (the DTL is dialled via its PIA, not Hayes AT — no 'modem')");
-            emulator_cleanup(emu);
-            return 1;
-        }
-
-        if (db) {
-            if (db->open(db)) {
-                dtl2000_init(&emu->dtl2000, base);
-                /* dtl2000_init() zeroes the struct — re-wire the CPU IRQ hooks */
-                emu->dtl2000.irq_set = dtl2000_cpu_irq_set;
-                emu->dtl2000.irq_clr = dtl2000_cpu_irq_clr;
-                emu->dtl2000.irq_userdata = emu;
-                dtl2000_set_backend(&emu->dtl2000, db);
-                emu->dtl2000_backend = db;
-                emu->has_dtl2000 = true;
-                if (cfg->serial_trace_file) {
-                    dtl2000_set_trace(&emu->dtl2000, cfg->serial_trace_file);
-                }
-                log_info("Digitelec DTL 2000 enabled at $%04X (transport: %s)",
-                         base, cfg->dtl2000_arg);
-            } else {
-                log_error("Failed to open DTL 2000 transport: %s", cfg->dtl2000_arg);
-                serial_backend_destroy(db);
-            }
-        }
-    }
-
-    /* Mageco / ORICON MIDI interface — MC6850 ACIA (forum t=2525).
-     *   --mageco : original Mageco card, 6850 at $03FE-$03FF (thread p.1).
-     *   --oricon : modern ORICON reboot (iss), 6850 at $031C-$031D + clock
-     *              generator at $031E-$031F, LOCI-compatible decoding (p.3).
-     * Both reuse the transparent serial backends: file: captures/replays the
-     * raw MIDI stream, smf: plays a .mid into the Oric, midi: bridges a live
-     * host MIDI port. The byte stream is identical to the real card. */
-    if (cfg->mageco_arg) {
-        uint16_t base = cfg->mageco_oricon ? MAGECO_ORICON_BASE : MAGECO_DEFAULT_BASE;
-        if (cfg->mageco_addr_arg) {
-            base = parse_hex16(cfg->mageco_addr_arg);
-        }
-        const char* mode = cfg->mageco_oricon ? "ORICON" : "Mageco";
-        if (emu->has_microdisc) {
-            log_warning("%s MIDI at $%04X shares page 3 with the disc electronics "
-                        "— possible clash with other extensions (forum t=2525)",
-                        mode, base);
-        }
-        if (cfg->mageco_oricon && emu->has_serial && base == emu->acia_base_addr) {
-            log_warning("ORICON at $%04X overlaps the ACIA 6551 serial (--serial) "
-                        "— disable one of them", base);
-        }
-        serial_backend_t* mb = serial_transport_create(cfg->mageco_arg);
-        if (!mb) {
-            log_error("Unknown %s transport: %s", mode, cfg->mageco_arg);
-            log_error("  file:in[:out], smf:FILE[:loop], midi[:TARGET], loopback, tcp:host:port, pty");
-            emulator_cleanup(emu);
-            return 1;
-        }
-        if (mb->open(mb)) {
-            if (cfg->mageco_oricon) mageco_init_oricon(&emu->mageco, base);
-            else               mageco_init(&emu->mageco, base);
-            /* mageco_init*() zeroes the struct — re-wire the CPU IRQ hooks */
-            emu->mageco.irq_set = mageco_cpu_irq_set;
-            emu->mageco.irq_clr = mageco_cpu_irq_clr;
-            emu->mageco.irq_userdata = emu;
-            mageco_set_backend(&emu->mageco, mb);
-            emu->mageco_backend = mb;
-            emu->has_mageco = true;
-            if (cfg->serial_trace_file) {
-                mageco_set_trace(&emu->mageco, cfg->serial_trace_file);
-            }
-            log_info("%s MIDI enabled at $%04X (31250 baud, transport: %s)",
-                     mode, base, cfg->mageco_arg);
-        } else {
-            log_error("Failed to open %s transport: %s", mode, cfg->mageco_arg);
-            serial_backend_destroy(mb);
-        }
+    /* Cartes en modules de l'étape « série » (DTL 2000, Mageco/ORICON), à la
+     * place qu'occupait leur code ici (card_module.h). */
+    if (card_modules_setup(emu, cfg, CARD_STAGE_SERIAL) != 0) {
+        emulator_cleanup(emu);
+        return 1;
     }
     return -1;
 }
@@ -3691,7 +3538,7 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
             emulator_cleanup(emu);
             return 1;
         }
-        if (emu->has_dtl2000 || emu->has_mageco) {
+        if (emu->card_on[CARD_IDX_dtl2000] || emu->card_on[CARD_IDX_mageco]) {
             log_error("--jasmin-rom conflicts with --dtl2000/--mageco "
                       "(both claim $03F8-$03FF)");
             emulator_cleanup(emu);
@@ -3754,37 +3601,9 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         }
     }
 
-    /* SP0256 Mageco "Synthétiseur Vocal" (--sp0256-rom): GI SP0256-AL2 speech
-     * chip at $03F1 (or --sp0256-addr). Loads the 2 KB allophone ROM; output is
-     * mixed into the PSG audio. Used by Frelon, Cobra Pinball, … */
-    if (cfg->sp0256_rom_file) {
-        FILE* sf = fopen(cfg->sp0256_rom_file, "rb");
-        if (!sf) {
-            log_error("Failed to open SP0256 ROM: %s", cfg->sp0256_rom_file);
-            emulator_cleanup(emu);
-            return 1;
-        }
-        uint8_t sbuf[SP0256_ROM_SIZE];
-        size_t srd = fread(sbuf, 1, SP0256_ROM_SIZE, sf);
-        fclose(sf);
-
-        sp0256_init(&emu->sp0256, cfg->sp0256_base_addr);
-        if (srd != SP0256_ROM_SIZE || !sp0256_load_rom(&emu->sp0256, sbuf, (uint32_t)srd)) {
-            log_error("SP0256 ROM must be exactly %d bytes (got %zu): %s",
-                      SP0256_ROM_SIZE, srd, cfg->sp0256_rom_file);
-            emulator_cleanup(emu);
-            return 1;
-        }
-        emu->sp0256.emu = emu;
-        emu->has_sp0256 = true;
-        audio_set_sp0256(&emu->sp0256);   /* mix speech into the GUI audio callback */
-        log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
-                 cfg->sp0256_base_addr);
-    }
-
-    /* Cards as modules of the « speech » stage (MEA8000…), at the place
-     * their code used to occupy here (card_module.h). */
-    if (card_modules_setup(emu, cfg->card_cfg, CARD_STAGE_SPEECH) != 0) {
+    /* Cartes en modules de l'étape « synthèse vocale » (SP0256, MEA8000), à la
+     * place qu'occupait leur code ici (card_module.h). */
+    if (card_modules_setup(emu, cfg, CARD_STAGE_SPEECH) != 0) {
         emulator_cleanup(emu);
         return 1;
     }

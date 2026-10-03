@@ -148,3 +148,15 @@
 -r roms/basic11b.rom -n --mea8000 --audio-wav @OUT@/mea.wav -c 300000
 -r roms/basic11b.rom -n -c 1000 --mea8000-addr
 -r roms/basic11b.rom -n --mea8000=1 -c 1000
+# Sprint G2 (SP0256, Mageco/ORICON, DTL 2000, ULA-NG en modules).
+-r roms/basic11b.rom -n --m -c 1000
+-r roms/basic11b.rom -n --o loopback -c 1000
+-r roms/basic11b.rom -n --oricon loopback -c 1000
+-r roms/basic11b.rom -n --oricon loopback --mageco-addr 0330 -c 1000
+-r roms/basic11b.rom -n --sp0256-rom roms/al2.bin --save-state @OUT@/sp.ost -c 300000
+-r roms/basic11b.rom -n --sp0256-rom roms/al2.bin --audio-wav @OUT@/sp.wav -c 300000
+-r roms/basic11b.rom -n --sp0256-rom roms/al2.bin --mea8000 -c 1000
+-r roms/basic11b.rom -n --jasmin-rom roms/jasmin.rom --dtl2000 loopback -c 1000
+-r roms/basic11b.rom -n --ula-ng-poke 340=4E,340=47,341=01 --save-state @OUT@/ung.ost -c 300000
+-r roms/basic11b.rom -n --dtl2000 bogus:x -c 1000
+-r roms/basic11b.rom -n --mageco bogus:x -c 1000

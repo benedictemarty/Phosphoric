@@ -51,7 +51,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.13.0"
+#define EMU_VERSION "2.14.0"
 
 /**
  * @brief ORIC machine model
@@ -174,12 +174,10 @@ typedef struct emulator_s {
     /* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 at $03F8-$03FD */
     dtl2000_t dtl2000;
     serial_backend_t* dtl2000_backend;
-    bool has_dtl2000;
 
     /* Mageco MIDI interface — MC6850 ACIA at $03FE-$03FF (31250 baud MIDI) */
     mageco_t mageco;
     serial_backend_t* mageco_backend;
-    bool has_mageco;
 
     /* Microdisc controller */
     microdisc_t microdisc;
@@ -197,7 +195,6 @@ typedef struct emulator_s {
     /* SP0256 Mageco "Synthétiseur Vocal" — GI SP0256-AL2 speech chip at $03F1.
      * Output mixed into the PSG audio; mutually exclusive with a $03F1 conflict. */
     sp0256_t sp0256;
-    bool has_sp0256;
 
     /* MEA8000 TMPI "Synthétiseur Vocal" — Philips formant speech at $03F0/$03F1.
      * No speech ROM (host streams frames); mixed into the PSG audio. Mutually
@@ -548,11 +545,8 @@ typedef struct emulator_s {
      * only: filled in at startup, no effect on emulation). */
     iom_menu_t  iomenu;
     const char* jasmin_rom_path;
-    const char* sp0256_rom_path;
     const char* serial_spec;        /* --serial */
-    const char* dtl2000_spec;       /* --dtl2000 */
-    const char* mageco_spec;        /* --mageco / --oricon */
-    const char* config_path;        /* configuration file (NULL: default) */
+    const char* config_path;        /* fichier de configuration (NULL : défaut) */
 } emulator_t;
 
 /* ════════════════════════════════════════════════════════════════════

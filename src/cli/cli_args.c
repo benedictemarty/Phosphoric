@@ -67,7 +67,6 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_SCREENSHOT_ANSI: cfg->screenshot_ansi_file = optarg; break;
             case OPT_SCREENSHOT_TEXT_AT: if (cfg->tcap_cli_count<TIMED_CAPTURE_MAX){cfg->tcap_cli[cfg->tcap_cli_count].arg=optarg;cfg->tcap_cli[cfg->tcap_cli_count++].type=TCAP_TEXT;} break;
             case OPT_SCREENSHOT_ANSI_AT: if (cfg->tcap_cli_count<TIMED_CAPTURE_MAX){cfg->tcap_cli[cfg->tcap_cli_count].arg=optarg;cfg->tcap_cli[cfg->tcap_cli_count++].type=TCAP_ANSI;} break;
-            case OPT_ULA_NG_POKE: cfg->ula_ng_poke = optarg; break;
             case OPT_SCREENSHOT_AT: if (cfg->tcap_cli_count<TIMED_CAPTURE_MAX){cfg->tcap_cli[cfg->tcap_cli_count].arg=optarg;cfg->tcap_cli[cfg->tcap_cli_count++].type=TCAP_IMAGE;} break;
             case OPT_SCREENSHOT_WHEN: cfg->screenshot_when_arg = optarg; break;
             case OPT_SCREENSHOT_TEXT_WHEN: cfg->screenshot_text_when_arg = optarg; break;
@@ -107,8 +106,6 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             case OPT_DISK_ROM: cfg->disk_rom_file = optarg; break;
             case OPT_JASMIN_ROM: cfg->jasmin_rom_file = optarg; break;
-            case OPT_SP0256_ROM: cfg->sp0256_rom_file = optarg; break;
-            case OPT_SP0256_ADDR: cfg->sp0256_base_addr = (uint16_t)strtol(optarg, NULL, 16); break;
             case 'b': emu->breakpoint = (int32_t)strtol(optarg, NULL, 16); break;
             case 'D': cfg->debug_mode = true; break;
             case OPT_DEBUG_BREAK: cfg->debug_break_addr = optarg; break;
@@ -292,22 +289,6 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_MENU_SCREENSHOT: cfg->menu_screenshot = optarg; break;
             case OPT_ACIA_ADDR:
                 cfg->acia_addr_arg = optarg;
-                break;
-            case OPT_MAGECO:
-                cfg->mageco_arg = optarg;
-                break;
-            case OPT_MAGECO_ADDR:
-                cfg->mageco_addr_arg = optarg;
-                break;
-            case OPT_ORICON:
-                cfg->mageco_arg = optarg;
-                cfg->mageco_oricon = true;
-                break;
-            case OPT_DTL2000:
-                cfg->dtl2000_arg = optarg;
-                break;
-            case OPT_DTL2000_ADDR:
-                cfg->dtl2000_addr_arg = optarg;
                 break;
             case '?':
             default:

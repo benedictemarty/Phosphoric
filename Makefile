@@ -556,10 +556,10 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
-# I/O peripherals menu (F1): model, keys, file picker, drawing.
-TEST_IOMENU_SRCS = tests/unit/test_iomenu.c src/video/iomenu.c src/cards.c src/utils/logging.c $(LOCI_STUB) \
-                   $(CARD_MODULE_SRCS) src/io/mea8000.c
-$(eval $(call UNIT_TEST,test-iomenu,test_iomenu,$(TEST_IOMENU_SRCS),,))
+# Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
+# Le registre des cartes lie les cartes en modules, donc leurs périphériques :
+# la bibliothèque entière, comme test-cards.
+$(eval $(call UNIT_TEST,test-iomenu,test_iomenu,tests/unit/test_iomenu.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 # F1 menu <-> emulator glue (media, settings, phosphoric.cfg): links the core.
 $(eval $(call UNIT_TEST,test-iomenu-glue,test_iomenu_glue,tests/unit/test_iomenu_glue.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
@@ -613,7 +613,8 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c src/io/io_bus.c \
                  $(CPU_SRCS) \
                  $(DISK_SRCS) \
                  $(MEM_SRCS) \
-                 src/utils/logging.c src/utils/netutil.c $(CARD_MODULE_SRCS)
+                 src/utils/logging.c src/utils/netutil.c $(CARD_MODULE_SRCS) \
+                 src/cli/cli_parse.c
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 

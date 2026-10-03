@@ -128,17 +128,13 @@ bool audio_init(ay3891x_t* psg);
 void audio_cleanup(void);
 void audio_pause(bool pause);
 
-/* Optional SP0256 speech synthesizer whose output is mixed into the PSG stream
- * by the GUI audio callback (headless mixing is done inline in main.c). NULL
- * disables mixing. */
-struct sp0256_s;
-void audio_set_sp0256(struct sp0256_s* sp);
 
-/* Audio sources of the expansion cards (modules, card_module.h): each one
- * produces mono samples, mixed into the PSG (averaged, like the speech synths)
- * in registration order, by the SDL callback as well as by the capture
- * (WAV/AVI/cast). A given source (fn, ctx) is registered only once. */
-typedef void (*audio_source_fn)(void* ctx, int16_t* out, int n);
+/* Sources audio des cartes d'extension (modules, card_module.h) : chacune produit
+ * des échantillons mono, mixés au PSG (moyenne, comme les synthèses vocales)
+ * dans l'ordre d'enregistrement, par le callback SDL comme par la capture
+ * (WAV/AVI/cast). Une même source (fn, ctx) n'est enregistrée qu'une fois.
+ * false : rien produit (ex. SP0256 sans ROM valide), pas de mixage. */
+typedef bool (*audio_source_fn)(void* ctx, int16_t* out, int n);
 void audio_add_source(audio_source_fn fn, void* ctx);
 /* Mixes the sources into @p stereo (@p n interleaved L/R frames), in blocks of
  * at most @p chunk_max samples (512 for the SDL callback; a whole frame for

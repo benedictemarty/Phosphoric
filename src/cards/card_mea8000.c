@@ -84,22 +84,23 @@ static const io_device_t k_bus = {
 
 /* ── Sound and setup ───────────────────────────────────────────────────── */
 
-static void audio_gen(void* ctx, int16_t* out, int n) { mea8000_generate(ctx, out, n); }
+static bool audio_gen(void* ctx, int16_t* out, int n) { mea8000_generate(ctx, out, n); return true; }
 
-/* Philips/Signetics formant chip at $03FE/$03FF (TMPI card, confirmed in-game
- * with SYNTHOR; configurable address). No ROM: the host streams the frames.
- * Mutually exclusive with the SP0256 card (two speech synths). */
-static int setup(emulator_t* emu, const void* p) {
+/* Puce à formants Philips/Signetics en $03FE/$03FF (carte TMPI, confirmée en jeu
+ * avec SYNTHOR ; adresse réglable). Sans ROM : l'hôte envoie les trames.
+ * Exclusive de la carte SP0256 (deux synthèses vocales). */
+static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
+    (void)core;
     const mea8000_cfg_t* cfg = p;
     if (!cfg->enabled) return 0;
-    if (emu->has_sp0256) {
+    if (emu->card_on[CARD_IDX_sp0256]) {
         log_error("--mea8000 and --sp0256-rom are mutually exclusive "
                   "(both are speech cards)");
         return 1;
     }
     /* Default $03FE/$03FF overlaps the Mageco MIDI interface ($03FE-$03FF).
      * Relocate one of them (--mea8000-addr / --mageco-addr) to coexist. */
-    if (emu->has_mageco && cfg->base_addr >= 0x03FE) {
+    if (emu->card_on[CARD_IDX_mageco] && cfg->base_addr >= 0x03FE) {
         log_error("--mea8000 (default $03FE/$03FF) overlaps the Mageco MIDI "
                   "interface — relocate with --mea8000-addr or --mageco-addr");
         return 1;
@@ -113,8 +114,10 @@ static int setup(emulator_t* emu, const void* p) {
     return 0;
 }
 
+static const card_desc_t* const k_descs[] = { &k_desc };
+
 const card_module_t card_mea8000 = {
-    .desc = &k_desc, .desc_before = "hostfs",
+    .descs = k_descs, .ndescs = 1, .desc_before = "hostfs",
     .opts = k_opts, .nopts = 2, .opts_before = "breakpoint",
     .help = k_help, .help_before = "disk-writeback",
     .cfg_size = sizeof(mea8000_cfg_t), .cfg_defaults = cfg_defaults,
