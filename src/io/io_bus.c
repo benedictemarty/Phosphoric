@@ -101,10 +101,10 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 
 
 
-/* ── Ticks : exactement les opérations de l'ancien io_bus_tick, par device ── */
-/* Contrôleurs disque : cartes en modules (src/cards/card_{microdisc,jasmin}.c)
- * dont l'état reste dans la machine ; le cœur avance leur FDC ici, avant LOCI,
- * comme avant (un appel de plus par cycle coûtait 0,65 à 1 % d'instructions). */
+/* ── Ticks: exactly the operations of the old io_bus_tick, per device ─────── */
+/* Disk controllers: cards as modules (src/cards/card_{microdisc,jasmin}.c)
+ * whose state stays in the machine; the core advances their FDC here, before
+ * LOCI, as before (one more call per cycle cost 0.65 to 1% of instructions). */
 static void microdisc_dev_tick(emulator_t* emu, int cycles) {
     fdc_ticktock(&emu->microdisc.fdc, cycles);
 }
@@ -123,7 +123,7 @@ static void loci_dev_tick(emulator_t* emu, int cycles) {
     loci_adj_tick(&emu->loci, cycles);
 }
 
-/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
+/* Position of each device in io_bus[] (= dispatch priority). */
 enum { DEV_LOCI, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)

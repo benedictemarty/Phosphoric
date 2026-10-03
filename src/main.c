@@ -619,10 +619,10 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     io_bus_tick(emu, cycles);
 }
 
-/* Sprint 34ax : LOCI DSK bus callbacks — réutilise IRQF_DISK level-triggered
- * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
- * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
- * bloqué après le RESTORE command — il attend l'IRQ et la commutation. */
+/* Sprint 34ax: LOCI DSK bus callbacks — reuses the level-triggered IRQF_DISK
+ * and synchronises overlay/ROMDIS in the memory subsystem on each
+ * CTRL write. Without it the Microdisc ROM (under LOCI MIA_BOOT FDC) stays
+ * stuck after the RESTORE command — it waits for the IRQ and the switch. */
 /* parse_host_port → src/utils/netutil.c (Epic 7/US1, Sprint 125). */
 
 /* Rewrites drive @p drv's .dsk to disk if the game modified it and
@@ -3332,8 +3332,8 @@ static int main_setup_tape(emulator_t* emu, cli_opts_t* cfg) {
 /* Jasmin, SP0256 / MEA8000 speech synthesis, Microdisc and disks, LOCI web disk, bad sectors.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
-    /* Cartes en modules de l'étape « disques, en tête » (Jasmin), à la place
-     * qu'occupait leur code ici (card_module.h). */
+    /* Cards as modules of the « disks, early » stage (Jasmin), at the place
+     * their code used to occupy here (card_module.h). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_DISKS_EARLY) != 0) {
         emulator_cleanup(emu);
         return 1;
@@ -3346,8 +3346,8 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         return 1;
     }
 
-    /* Cartes en modules de l'étape « disques » (Microdisc), à la place
-     * qu'occupait leur code ici (card_module.h). */
+    /* Cards as modules of the « disks » stage (Microdisc), at the place
+     * their code used to occupy here (card_module.h). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_DISKS) != 0) {
         emulator_cleanup(emu);
         return 1;
@@ -3767,8 +3767,8 @@ static int main_finish(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
             log_warning("CPU trace ring empty (no instructions recorded) -> %s",
                         cfg->trace_file);
     }
-    /* Diagnostic : un transfert disque sain ne perd aucun octet. Si le compteur
-     * n'est pas nul, le logiciel a servi un DRQ trop tard (ou le modèle dérive). */
+    /* Diagnostic: a healthy disk transfer loses no byte. If the counter
+     * is non-zero, the software serviced a DRQ too late (or the model drifts). */
     if (emu->card_on[CARD_IDX_microdisc] && emu->microdisc.fdc.lost_data_count)
         log_warning("FDC: %u octet(s) signalé(s) perdus (LOST DATA) pendant la session",
                     emu->microdisc.fdc.lost_data_count);

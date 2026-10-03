@@ -169,9 +169,9 @@ typedef struct emulator_s {
     /* Microdisc controller */
     microdisc_t microdisc;
     sedoric_disk_t* disks[MICRODISC_MAX_DRIVES]; /* 4 drives: A, B, C, D */
-    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* fichier .dsk par lecteur (write-back/éjection) */
-    bool disk_path_owned[MICRODISC_MAX_DRIVES];  /* copie à libérer (emu_set_disk_path) */
-    bool disk_writeback;     /* --disk-writeback : réécrire les .dsk modifiés */
+    const char* disk_paths[MICRODISC_MAX_DRIVES]; /* .dsk file per drive (write-back/eject) */
+    bool disk_path_owned[MICRODISC_MAX_DRIVES];  /* copy to free (emu_set_disk_path) */
+    bool disk_writeback;     /* --disk-writeback: write modified .dsk files back */
 
     /* Jasmin disk interface (WD177x at $03F4-$03FF, boot ROM $F800-$FFFF).
      * Alternative to the Microdisc; mutually exclusive at boot. */

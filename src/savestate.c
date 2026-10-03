@@ -828,8 +828,8 @@ bool savestate_load(emulator_t* emu, const char* filename) {
 
     /* ── Restore internal pointers ── */
     emu->cpu.memory = &emu->memory;
-    /* Secteur en cours du Microdisc : recalculé une fois les images (DSK) et la
-     * carte des secteurs défectueux (BAD) en place — reprise en plein transfert. */
+    /* Current Microdisc sector: recomputed once the images (DSK) and the
+     * bad-sector map (BAD) are in place — resume in the middle of a transfer. */
     if (emu->card_on[CARD_IDX_microdisc])
         fdc_state_resume(&emu->microdisc.fdc);
 

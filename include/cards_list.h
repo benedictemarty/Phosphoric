@@ -5,16 +5,17 @@
  *        (ADR 0006, docs/specs/CARD_MODULES.md).
  * @author bmarty <bmarty@mailo.com>
  *
- * X(id, tick) :
- *   - id   : la carte est src/cards/card_<id>.c, qui définit `card_<id>`
- *            (card_module_t) ;
- *   - tick : 1 si elle avance à chaque cycle CPU (fonction `card_<id>_tick`,
- *            appelée après les périphériques du cœur), 0 sinon. Les contrôleurs
- *            disque (Microdisc, Jasmin), dont l'état reste dans la machine,
- *            sont avancés par le cœur (io_bus.c) : leur tick passait avant LOCI,
- *            et un appel de plus par cycle coûtait 0,65 à 1 % d'instructions.
- * L'ordre de la liste est celui des ticks (ADR 0003). Le Makefile compile src/cards/card_*.c : ajouter une carte, c'est
- * écrire son fichier et ajouter sa ligne ici.
+ * X(id, tick):
+ *   - id   : the card is src/cards/card_<id>.c, which defines `card_<id>`
+ *            (card_module_t);
+ *   - tick : 1 if it advances on every CPU cycle (function `card_<id>_tick`,
+ *            called after the core's peripherals), 0 otherwise. The disk
+ *            controllers (Microdisc, Jasmin), whose state stays in the machine,
+ *            are advanced by the core (io_bus.c): their tick ran before LOCI,
+ *            and one more call per cycle cost 0.65 to 1% of instructions.
+ * The list order is the order of the ticks (ADR 0003). The Makefile compiles
+ * src/cards/card_*.c: adding a card means writing its file and adding its
+ * line here.
  */
 #ifndef CARDS_LIST_H
 #define CARDS_LIST_H
