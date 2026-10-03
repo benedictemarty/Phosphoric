@@ -53,6 +53,13 @@ async function waitScreen(p, re, ms) {
   while (Date.now() - t0 < ms) { txt = await screenText(p); if (re.test(txt)) return txt; await p.waitForTimeout(300); }
   return txt;
 }
+// Charge la page et attend que le moteur soit prêt (`ready`, mis à vrai dans
+// onRuntimeInitialized) : avant, Module.ccall('web_peek') lève « func is not a
+// function » (échec intermittent en suite complète, vu en 2.12.9).
+async function gotoReady(p, url) {
+  await p.goto(url);
+  await p.waitForFunction(() => typeof ready !== 'undefined' && ready, null, { timeout: 30000 });
+}
 async function press(p, keys) {
   for (const k of keys) { await p.keyboard.down(k); await p.waitForTimeout(200); await p.keyboard.up(k); await p.waitForTimeout(500); }
 }
@@ -65,7 +72,7 @@ async function press(p, keys) {
   const p = await ctx.newPage();
   const url = base + '/phosphoric.html?loci=1';
   try {
-    await p.goto(url);
+    await gotoReady(p, url);
     let txt = await waitScreen(p, /LOCI ROM/, 20000);
     check(/LOCI ROM/.test(txt), 'menu LOCI affiché au boot (?loci=1)');
 
@@ -81,7 +88,7 @@ async function press(p, keys) {
     await p.waitForTimeout(1500);
     check((await p.textContent('#status')).includes(name), 'import confirmé dans la barre d\'état');
 
-    await p.goto(url);
+    await gotoReady(p, url);
     await waitScreen(p, /LOCI ROM/, 20000);
     const after = await p.evaluate(() => FS.readdir('/loci'));
     check(after.includes(name), 'fichier importé persistant après rechargement (IndexedDB)');

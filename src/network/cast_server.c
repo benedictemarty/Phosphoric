@@ -380,6 +380,16 @@ static void remove_client(cast_server_t* server, int index) {
 /* ═══════════════════════════════════════════════════════════════════ */
 
 static void route_http_request(cast_server_t* server, int client_fd) {
+    /* Le socket accepté hérite du O_NONBLOCK du socket d'écoute sous macOS/BSD
+     * (pas sous Linux) : le recv rendait EAGAIN si la requête n'était pas encore
+     * arrivée, et le client était fermé sans réponse. Il est donc rendu
+     * bloquant, avec un délai : sous Linux, un client muet bloquait sinon le
+     * thread serveur indéfiniment (plus aucun client servi). */
+    int fl = fcntl(client_fd, F_GETFL, 0);
+    if (fl >= 0) fcntl(client_fd, F_SETFL, fl & ~O_NONBLOCK);
+    struct timeval rcv_to = { 1, 0 };
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_to, sizeof(rcv_to));
+
     char request[1024];
     ssize_t n = recv(client_fd, request, sizeof(request) - 1, 0);
     if (n <= 0) {

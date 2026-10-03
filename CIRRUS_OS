@@ -2,8 +2,9 @@ CIRRUS_OS - Phosphoric Build & Development Status
 ======================================================
 
 Project: Phosphoric — ORIC-1/Atmos emulator; cycle-stepped machine (CPU N3 oracle-verified; VIA/ULA/PSG cycle-stepped; FDC N1+ — see docs/ACCURACY.md)
-Version: 2.12.8
-Build Status: STABLE (**CI sanitizers : test-cast lie l'objet stb exempté — 2.12.8**. UBSan (décalage signé dans stb_image_write, tiers) ; l'exemption STB_SAN_CFLAGS ne s'appliquait pas à la compilation directe de test-cast.)
+Version: 2.12.9
+Build Status: STABLE (**Serveur cast : sockets acceptés bloquants avec délai — 2.12.9**. macOS : client fermé sans réponse (accept hérite de O_NONBLOCK) ; Linux : un client muet bloquait le serveur. 2 tests ajoutés, harnais test_cast corrigé (FAIL compté PASS), test-cast 26/26.)
+Build Status (prev): STABLE (**CI sanitizers : test-cast lie l'objet stb exempté — 2.12.8**. UBSan (décalage signé dans stb_image_write, tiers) ; l'exemption STB_SAN_CFLAGS ne s'appliquait pas à la compilation directe de test-cast.)
 Build Status (prev): STABLE (**Toutes les cibles de test dans la suite — 2.12.7**. test-serial-backends n'y était pas depuis 2.11.1 ; test-cast, test-game-compat (+ 2 jeux de tapes/), 3 tests web intégrés ; garde-fou test-suite-targets (91 cibles, 90 dans la suite, test-cli-golden exempté par écrit).)
 Build Status (prev): STABLE (**test-web-iomenu stabilisé — 2.12.6**. Délais fixes remplacés par des attentes bornées (10 s) ; sous charge 10/10 échecs avant, 0/10 après ; sans charge 3/3.)
 Build Status (prev): STABLE (**CI : installations apt bornées et relancées — 2.12.5**. Étape MinGW 21-45 s d'habitude mais déjà 10/19/47 min ; tools/ci_apt_install.sh (tentatives bornées, 3 essais) dans linux-ci et windows-build, logique en ligne dans release.yml. test-ci-apt-install 3.)
