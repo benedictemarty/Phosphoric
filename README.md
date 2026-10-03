@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.18.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.19.0** | **70 test suites (1,345 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -279,6 +279,7 @@ make SDL2=1
   per drive), tape, snapshots, printer, joystick, keyboard layout; settings saved to
   `phosphoric.cfg` (see [Peripherals menu](#peripherals-menu-f1))
 - **Host filesystem** — Share files with `--hostfs DIR`
+- **Expansion cards as modules** — each card (Microdisc, Jasmin, LOCI, ACIA, DTL 2000, Mageco/ORICON, SP0256, MEA8000, ULA-NG) is one file in `src/cards/` plus one line in `include/cards_list.h`; options, help, F1 menu, bus, ticks, save states and audio derive from it. Adding a card: see [docs/CARTES.md](docs/CARTES.md) (template `docs/examples/card_demo.c`, checked by `make test-card-template`)
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector), `tap2wav` (`.tap` → cassette-audio `.wav`, playable on real hardware) and `dsk2hfe` (`.dsk` MFM_DISK → magnetic **HFE** image for HxC/Gotek/Greaseweazle) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/TOOLS.md](docs/TOOLS.md) and [docs/SEDORIC.md](docs/SEDORIC.md)
 - **Keyboard automation** — `--type-keys CYCLES:TEXT` (escapes: `\n` Return, `\e` Esc, `\u\d\l\r` arrows, `\Cx` Ctrl+x, `\Fx` Funct+x, `\Lx`/`\Rx` Left/Right Shift+x, `\pN` pause). Key pacing is **synchronised on the real keyboard scanner** (VIA PB3 matrix sweep), so no keystroke is dropped even when the target program polls the matrix slower than a frame. `--type-keys-when ADDR:VAL:TEXT` arms typing when `RAM[ADDR]==VAL` (hex) instead of a guessed boot cycle. With `-f` (fast-load) of a BASIC program, `--type-keys` **no longer cancels the automatic `RUN`**: the auto-RUN stands down only when your own keystrokes fall inside its window (i.e. you are driving the boot yourself, typing your own `RUN`/`CLOAD`); keys aimed at the program's menus fire after it, in order. Validation tooling in `tools/keytest/` (172/172 keys on ORIC-1 + Atmos). Debugging a **custom (non-ROM) keyboard scanner** (a native game that sweeps the VIA+PSG matrix itself)? `--kbd-scan-trace FILE` logs one line per VIA Port B read — `col reg7 reg14 matrix PB3` — so you can see exactly what the emulator returns (`reg7` bit6=0 → PB3 forced low; `matrix`≠`FF` → keys held)
 
@@ -895,4 +896,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.18.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30
+Phosphoric v2.19.0 | 70 test suites (1,345 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-09-30

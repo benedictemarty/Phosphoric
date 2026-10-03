@@ -1,14 +1,14 @@
 # Expansion cards as self-registering modules (sprint G)
 
-- **Status**: in progress — G1 delivered in 2.13.0 (MEA8000 pilot), G2 in 2.14.0 (SP0256,
-  Mageco/ORICON, DTL 2000, ULA-NG), G3 in 2.15.0 (private state), G4 in 2.16.0 (ACIA),
-  G5 in 2.17.0 (Microdisc, Jasmin), G6 in 2.18.0 (LOCI).
-  Decision: ADR 0006 (accepted).
-- **Goal**: adding an expansion card = **one file** (the card) **+ one line** (the
-  card list), instead of today's ~10 files.
-- **Out of scope**: dynamic loading (`.so`/`.dll`, `dlopen`). It would require a
-  stable ABI, complicate the WASM and Windows builds, and raise the question of
-  trusting loaded code; with no third-party demand, there is no need.
+- **Statut** : **terminé** (2.19.0, G7 : modèle, test, guide `docs/CARTES.md`) — G1 livré en 2.13.0 (pilote MEA8000), G2 en 2.14.0 (SP0256,
+  Mageco/ORICON, DTL 2000, ULA-NG), G3 en 2.15.0 (état privé), G4 en 2.16.0 (ACIA),
+  G5 en 2.17.0 (Microdisc, Jasmin), G6 en 2.18.0 (LOCI).
+  Décision : ADR 0006 (acceptée).
+- **But** : ajouter une carte d'extension = **un fichier** (la carte) **+ une ligne**
+  (la liste des cartes), au lieu des ~10 fichiers d'aujourd'hui.
+- **Hors périmètre** : le chargement dynamique (`.so`/`.dll`, `dlopen`). Il exigerait
+  une ABI stable, compliquerait les builds WASM et Windows, et poserait la question
+  de la confiance envers le code chargé ; sans demande de tiers, pas de besoin.
 
 ## 1. Current state (measured on 2.12.9)
 
@@ -116,13 +116,13 @@ SDL2=0, HTTPAPI=1, WASM builds; `make tests-strict` and `SANITIZE=1`.
 
 | Step | Content | Proof |
 |---|---|---|
-| **G1** ✅ 2.13.0 Contract + pilot | `card_module_t`, `cards_all.c`; CLI parsing that adds module options; **MEA8000** migrated end to end (its state stays in `emulator_t` at this stage) | invariants 1-5; sound: `--mea8000 --audio-wav` capture identical byte for byte before/after |
-| **G2** ✅ 2.14.0 Simple cards | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 per card |
-| **G3** ✅ 2.15.0 Private state (static in the module: one machine per process, no per-cycle indirection; ULA-NG stays in the machine) | simple cards keep their state behind the module (`emu->card_state[i]`); `has_X` removed from `emulator_t` for them | `emulator.h` no longer knows these 5 cards |
-| **G4** ✅ 2.16.0 ACIA (state in the machine: savestate « SER », debugger, LOCI; multiple help blocks) | serial transports (`--serial`, `--acia-addr`, IRQ…), debugger (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
-| **G5** ✅ 2.17.0 Disks (options, state and tick stay in the core: read elsewhere, and one more call per cycle cost 0.65-1%) | Microdisc, Jasmin: media through the existing `emu_disk_*` API | `test-storage`, `test-jasmin`, `test-control-media-swap` |
-| **G6** ✅ 2.18.0 LOCI (menu entry, bus, setup; options, state and tick stay in the core; io_bus.c without a core table) | the most coupled card (coprocessor, menu, host files); scope reassessed after G5 | full LOCI suites |
-| **G7** Guard + guide | sample card (`card_demo.c`, outside the default build); test that adds it and checks that one file + one line suffice; "add a card" guide | `make test-card-template` |
+| **G1** ✅ 2.13.0 Contrat + pilote | `card_module_t`, `cards_all.c` ; analyse CLI qui ajoute les options des modules ; **MEA8000** migrée de bout en bout (son état reste dans `emulator_t` à ce stade) | invariants 1-5 ; son : capture `--mea8000 --audio-wav` identique à l'octet avant/après |
+| **G2** ✅ 2.14.0 Cartes simples | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 par carte |
+| **G3** ✅ 2.15.0 État privé (statique dans le module : une machine par processus, pas d'indirection par cycle ; ULA-NG reste dans la machine) | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
+| **G4** ✅ 2.16.0 ACIA (état dans la machine : savestate « SER », débogueur, LOCI ; blocs d'aide multiples) | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
+| **G5** ✅ 2.17.0 Disques (options, état et tick restent au cœur : lus ailleurs, et un appel de plus par cycle coûtait 0,65-1 %) | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
+| **G6** ✅ 2.18.0 LOCI (fiche, bus, mise en route ; options, état et tick au cœur ; io_bus.c sans table du cœur) | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |
+| **G7** ✅ 2.19.0 Garde-fou + guide (`docs/examples/card_demo.c`, `make test-card-template`, `docs/CARTES.md`) | carte d'exemple (`card_demo.c`, hors build par défaut) ; test qui l'ajoute et vérifie qu'un fichier + une ligne suffisent ; guide « ajouter une carte » | `make test-card-template` |
 
 Order: G1 alone first. If the MEA8000 pilot costs more in performance or
 readability than it brings, we stop there (decision recorded in ADR 0006).

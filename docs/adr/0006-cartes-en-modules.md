@@ -24,11 +24,12 @@ configuration, menu and bus tables from it.
 
 ## Consequences
 
-- Adding a card: one file + one line (target, proven by a test in G7).
-- G1 implementation: the list is a macro (`include/cards_list.h`) rather than a table
-  of pointers: the latter made the per-cycle tick indirect (+5.3 % measured
-  instructions); generated from the macro, the ticks remain direct calls
-  (instructions identical to the baseline).
-- Step-by-step migration (G1 MEA8000 pilot → G6 LOCI), each step proven identical
-  (`cli_golden`, `.ost` byte for byte, performance bench).
-- If the G1 pilot does not pay off, the decision is rejected and recorded here.
+- Ajouter une carte : un fichier + une ligne — prouvé par `make test-card-template`
+  (2.19.0) ; guide `docs/CARTES.md`.
+- Réalisation G1 : la liste est une macro (`include/cards_list.h`) et non une table
+  de pointeurs : celle-ci rendait indirect le tick par cycle (+5,3 % d'instructions
+  mesurées) ; générés depuis la macro, les ticks restent des appels directs
+  (instructions identiques à la référence).
+- Migration par étapes (G1 pilote MEA8000 → G6 LOCI), chacune prouvée identique
+  (`cli_golden`, `.ost` à l'octet, banc de performance).
+- Si le pilote G1 n'apporte pas assez, la décision est rejetée et notée ici.
