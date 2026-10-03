@@ -925,14 +925,14 @@ test-cli-golden: $(BUILD)/bin/$(TARGET)
 	@test -n "$(GOLDEN_REF)" || { echo "GOLDEN_REF=/chemin/binaire/de/reference requis"; exit 1; }
 	@sh tools/cli_golden.sh "$(GOLDEN_REF)" $(BUILD)/bin/$(TARGET)
 
-# Ajouter une carte = un fichier + une ligne (ADR 0006) : la carte d'exemple
-# docs/examples/card_demo.c, ajoutée à une copie de l'arbre, y fonctionne de
-# bout en bout (aide, options, menu, bus, .ost) sans autre modification.
+# Adding a card = one file + one line (ADR 0006): the sample card
+# docs/examples/card_demo.c, added to a copy of the tree, works there end to
+# end (help, options, menu, bus, .ost) with no other change.
 test-card-template: $(TARGET)
 	@bash tests/integration/test_card_template.sh
 
-# Toute cible test-* est dans `make tests`, ou exemptée par écrit dans
-# tests/out_of_suite.txt (test-serial-backends en était absent depuis 2.11.1).
+# Every test-* target is in `make tests`, or exempted in writing in
+# tests/out_of_suite.txt (test-serial-backends was missing from it since 2.11.1).
 test-suite-targets:
 	@python3 tools/check_test_targets.py Makefile tests/out_of_suite.txt
 

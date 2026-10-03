@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: EUPL-1.2
 # tests/integration/test_card_template.sh
 #
-# « Ajouter une carte = un fichier + une ligne » (ADR 0006, sprint G7) : dans une
-# copie de l'arbre courant, on ajoute la carte d'exemple docs/examples/card_demo.c
-# (src/cards/card_demo.c) et SA ligne dans include/cards_list.h — rien d'autre —,
-# on reconstruit, et on vérifie que la carte est là de bout en bout : aide, option
-# et son adresse, ordre des options (préfixe ambigu), menu F1, registre sur le bus,
-# section .ost, et qu'une ligne de commande sans la carte reste inchangée.
+# "Adding a card = one file + one line" (ADR 0006, sprint G7): in a copy of the
+# current tree, we add the sample card docs/examples/card_demo.c
+# (src/cards/card_demo.c) and ITS line in include/cards_list.h — nothing else —,
+# rebuild, and check that the card is there end to end: help, option and its
+# address, option order (ambiguous prefix), F1 menu, register on the bus,
+# .ost section, and that a command line without the card stays unchanged.
 #
 # Author: bmarty <bmarty@mailo.com>
 set -u
@@ -27,13 +27,13 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 W="$T/arbre"
 mkdir -p "$W"
-# Copie de l'arbre courant (fichiers suivis et nouveaux, sans médias) ; tar
-# plutôt que cp --parents, propre à GNU (le runner macOS lance aussi les tests).
+# Copy of the current tree (tracked and new files, no media); tar rather
+# than cp --parents, which is GNU-specific (the macOS runner also runs the tests).
 git ls-files -co --exclude-standard -z | tar --null -T - -cf - | tar -xf - -C "$W"
 mkdir -p "$W/roms"
 for r in roms/*.rom; do ln -s "$ROOT/$r" "$W/$r"; done
 
-# Les deux seules modifications.
+# The only two changes.
 cp docs/examples/card_demo.c "$W/src/cards/card_demo.c"
 awk '{ if ($0 ~ /^    X\(ula_ng, *0\)$/) { print $0 " \\"; print "    X(demo,    1)" } else print }' \
     "$ROOT/include/cards_list.h" > "$W/include/cards_list.h"
@@ -63,10 +63,10 @@ grep -q "Demo card enabled at \$03D4" <<<"$o" && ok "--demo-addr 03D4" || ko "--
 o=$(run --dem -c 1000)
 grep -q "'--demo' '--demo-addr'" <<<"$o" && ok "--dem : préfixe ambigu, options dans l'ordre de la carte" || ko "--dem : « $o »"
 
-# Registre : écrire $5A, relire $A5 ; puis sauvegarde d'état (section DMO).
-# `bread` lit par les périphériques (memory_peek) ; `read` lirait la RAM sous la
-# page d'E/S (dbg_peek).
-peek03d0() {   # peek03d0 [options] : octet lu en $03D0 après « write 03D0 5A »
+# Register: write $5A, read back $A5; then save state (DMO section).
+# `bread` reads through the peripherals (memory_peek); `read` would read the RAM
+# under the I/O page (dbg_peek).
+peek03d0() {   # peek03d0 [options]: byte read at $03D0 after "write 03D0 5A"
     printf 'write 03D0 5A\nbread 03D0 1\nstate-save %s\nquit\n' "$T/demo.ost" |
         "$E" -r "$ROM" -n --control "$@" 2>/dev/null |
         awk '/^OK bread len=1/ { getline; printf "%s", $0; exit }' | od -An -tx1 | tr -d ' \n'
@@ -78,14 +78,14 @@ rm -f "$T/demo.ost"
 b=$(peek03d0)
 [ "$b" != a5 ] && ok "sans --demo : \$03D0 n'appartient pas à la carte (lu « $b »)" || ko "sans --demo, \$03D0 répond quand même"
 
-# Registre du menu F1 et phosphoric.cfg : « carte.demo=oui » et son paramètre
-# (clé « demo.adresse », nommée par la fiche du menu) suffisent à l'activer.
+# F1 menu and phosphoric.cfg: "carte.demo=oui" and its parameter
+# (key "demo.adresse", named by the menu entry) are enough to enable it.
 printf 'carte.demo=oui\ndemo.adresse=03D8\n' > "$T/demo.cfg"
 o=$(run --config "$T/demo.cfg" -c 1000)
 grep -q "Demo card enabled at \$03D8" <<<"$o" && ok "menu et phosphoric.cfg : carte.demo=oui, demo.adresse=03D8" || ko "phosphoric.cfg : « $o »"
 
-# Sans la carte, la machine est la même : l'arbre d'origine et l'arbre modifié
-# produisent la même sauvegarde d'état.
+# Without the card, the machine is the same: the original tree and the modified
+# tree produce the same save state.
 "$ROOT/oric1-emu" -r "$ROM" -n --save-state "$T/a.ost" -c 300000 >/dev/null 2>&1
 "$E" -r "$ROM" -n --save-state "$T/b.ost" -c 300000 >/dev/null 2>&1
 cmp -s "$T/a.ost" "$T/b.ost" && ok "sans --demo : .ost identique à l'arbre d'origine" || ko ".ost différent sans la carte"

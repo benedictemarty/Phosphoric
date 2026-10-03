@@ -1,90 +1,91 @@
-# Ajouter une carte d'extension
+# Adding an expansion card
 
-Une carte d'extension (synthèse vocale, MIDI, modem, contrôleur…) s'ajoute en
-**un fichier et une ligne** :
+An expansion card (speech synthesis, MIDI, modem, controller…) is added with
+**one file and one line**:
 
-1. écrire `src/cards/card_<id>.c` ;
-2. ajouter `X(<id>, <tick>)` à `CARD_MODULE_LIST` dans `include/cards_list.h`.
+1. write `src/cards/card_<id>.c`;
+2. add `X(<id>, <tick>)` to `CARD_MODULE_LIST` in `include/cards_list.h`.
 
-Rien d'autre : le Makefile compile `src/cards/card_*.c` par motif, et le cœur dérive
-de la liste les options de lancement, l'aide, le menu F1, `phosphoric.cfg`, la table
-du bus d'E/S, les ticks, les sauvegardes d'état et le mixage audio. La carte
-d'exemple [`docs/examples/card_demo.c`](examples/card_demo.c) est le modèle à copier ;
-`make test-card-template` l'ajoute à une copie de l'arbre et vérifie qu'elle
-fonctionne de bout en bout.
+Nothing else: the Makefile compiles `src/cards/card_*.c` by pattern, and the core
+derives from the list the launch options, the help, the F1 menu, `phosphoric.cfg`, the
+I/O bus table, the ticks, the save states and the audio mixing. The sample card
+[`docs/examples/card_demo.c`](examples/card_demo.c) is the template to copy;
+`make test-card-template` adds it to a copy of the tree and checks that it works end
+to end.
 
-Décision : [ADR 0006](adr/0006-cartes-en-modules.md). Plan et mesures :
-[`docs/specs/CARD_MODULES.md`](specs/CARD_MODULES.md). Contrat :
+Decision: [ADR 0006](adr/0006-cartes-en-modules.md). Plan and measurements:
+[`docs/specs/CARD_MODULES.md`](specs/CARD_MODULES.md). Contract:
 [`include/card_module.h`](../include/card_module.h).
 
-## Le descripteur
+## The descriptor
 
-Le fichier définit un `const card_module_t card_<id>` :
+The file defines a `const card_module_t card_<id>`:
 
-| Champ | Rôle |
+| Field | Role |
 |---|---|
-| `descs`, `ndescs` | Fiche(s) du menu F1 (`card_desc_t`, `include/cards.h`) : id, nom, rôle, groupe exclusif, option d'activation, paramètres expliqués. Une puce peut porter plusieurs cartes (Mageco et ORICON). |
-| `opts`, `nopts` | Options de lancement : nom sans `--`, `no_argument` / `required_argument` / `optional_argument`, fonction qui range la valeur dans la configuration de la carte. |
-| `helps`, `nhelps` | Blocs d'aide (`card_help_t`), texte exact affiché par `--help`. |
-| `cfg_size`, `cfg_defaults` | Configuration propre à la carte, allouée et mise aux valeurs par défaut par le cœur. |
-| `init` | Appelé au démarrage, carte présente ou non (état de repos, interruptions câblées). |
-| `stage`, `setup` | Mise en route, à une étape donnée (`card_stage_t`) : lit la configuration de la carte et celle du cœur, vérifie les conflits, allume la carte (`emu->card_on[CARD_IDX_<id>] = true`). Renvoie 0, ou 1 après avoir journalisé l'erreur. |
-| `teardown` | Fermeture (transports, fichiers). |
-| `bus` | Contrat d'E/S existant (`io_device_t`, `include/io/io_device.h`) : `claims`, `read`, `write`, `peek` (lecture sans effet de bord), `save`/`load` d'une section `.ost`, `tick`. |
+| `descs`, `ndescs` | F1 menu entry (or entries) (`card_desc_t`, `include/cards.h`): id, name, role, exclusive group, enabling option, explained parameters. One chip can carry several cards (Mageco and ORICON). |
+| `opts`, `nopts` | Launch options: name without `--`, `no_argument` / `required_argument` / `optional_argument`, function that stores the value in the card's configuration. |
+| `helps`, `nhelps` | Help blocks (`card_help_t`), exact text printed by `--help`. |
+| `cfg_size`, `cfg_defaults` | The card's own configuration, allocated and set to its defaults by the core. |
+| `init` | Called at startup, whether or not the card is present (idle state, wired interrupts). |
+| `stage`, `setup` | Setup, at a given stage (`card_stage_t`): reads the card's configuration and the core's, checks for conflicts, turns the card on (`emu->card_on[CARD_IDX_<id>] = true`). Returns 0, or 1 after logging the error. |
+| `teardown` | Shutdown (transports, files). |
+| `bus` | Existing I/O contract (`io_device_t`, `include/io/io_device.h`): `claims`, `read`, `write`, `peek` (side-effect-free read), `save`/`load` of a `.ost` section, `tick`. |
 
-## Présence, état, tick
+## Presence, state, tick
 
-- **Présence** : `emu->card_on[CARD_IDX_<id>]`, posé par `setup`. `claims`, `save` et
-  le tick le testent.
-- **État** : privé au module, dans une variable `static` (il n'y a qu'une machine par
-  processus). `emulator_t` n'a pas à le connaître.
-- **Tick** : avec `X(<id>, 1)`, le cœur appelle `card_<id>_tick(emu, cycles)` à chaque
-  cycle CPU si la carte est présente. L'appel est **direct**, généré depuis la liste
-  (`include/card_ticks.h`) : une table de pointeurs coûtait 5 % d'instructions.
-  L'ordre de la liste est l'ordre des ticks. Sans tick : `X(<id>, 0)`.
+- **Presence**: `emu->card_on[CARD_IDX_<id>]`, set by `setup`. `claims`, `save` and
+  the tick test it.
+- **State**: private to the module, in a `static` variable (there is only one machine
+  per process). `emulator_t` does not need to know about it.
+- **Tick**: with `X(<id>, 1)`, the core calls `card_<id>_tick(emu, cycles)` on every
+  CPU cycle if the card is present. The call is **direct**, generated from the list
+  (`include/card_ticks.h`): a table of pointers cost 5 % in instructions.
+  The order of the list is the order of the ticks. Without a tick: `X(<id>, 0)`.
 
-## Son
+## Sound
 
-Une carte qui produit du son enregistre, dans `setup`, une source mono :
-`audio_add_source(fn, ctx)` (`include/audio/audio.h`). Elle est mixée au PSG par le
-callback SDL comme par la capture (`--audio-wav`, AVI, cast). Renvoyer `false` signifie
-« rien produit » (pas de mixage).
+A card that produces sound registers, in `setup`, a mono source:
+`audio_add_source(fn, ctx)` (`include/audio/audio.h`). It is mixed with the PSG by the
+SDL callback as well as by capture (`--audio-wav`, AVI, cast). Returning `false` means
+"nothing produced" (no mixing).
 
-## Sauvegardes d'état
+## Save states
 
-`bus->save_tag` (4 octets, ex. `"DMO\0"`) nomme la section ; `save` renvoie `false`
-quand la carte est absente, pour que le `.ost` reste inchangé sans elle. Préférer une
-sérialisation champ par champ à l'écriture brute d'une structure qui contient des
-pointeurs (adresses différentes à chaque lancement : `.ost` non reproductible).
+`bus->save_tag` (4 bytes, e.g. `"DMO\0"`) names the section; `save` returns `false`
+when the card is absent, so that the `.ost` stays unchanged without it. Prefer
+field-by-field serialisation to a raw write of a structure that contains pointers
+(addresses differ on every launch: `.ost` not reproducible).
 
-## Menu F1 et `phosphoric.cfg`
+## F1 menu and `phosphoric.cfg`
 
-La fiche suffit : le menu liste la carte, ses paramètres et leur explication ; la
-configuration la mémorise sous `carte.<id>=oui` et `<id>.<clé>=valeur` (la clé est
-celle du paramètre dans la fiche). Changer de cartes relance l'émulateur (ADR 0004).
+The menu entry is enough: the menu lists the card, its parameters and their
+explanation; the configuration stores it as `carte.<id>=oui` and `<id>.<key>=value`
+(the key is the parameter's key in the menu entry). Changing cards restarts the
+emulator (ADR 0004).
 
-## Ancres : garder une place
+## Anchors: keeping a place
 
-Sans ancre (champs `*_before` à `NULL`), une carte va **en fin** de table d'options,
-d'aide, de menu et de bus. Les cartes historiques gardent leur place exacte grâce à
-des ancres : `opts_before` (option qu'elles précèdent dans la table getopt), le
-`before` de chaque bloc d'aide, `desc_before` (fiche du menu), `bus_before`
-(périphérique du bus). Une ancre peut nommer une autre carte. L'ordre du bus est
-aussi celui de la priorité des accès et de l'ordre des sections `.ost`.
+Without an anchor (`*_before` fields set to `NULL`), a card goes **at the end** of the
+option, help, menu and bus tables. The historical cards keep their exact place thanks
+to anchors: `opts_before` (option they precede in the getopt table), the `before` of
+each help block, `desc_before` (menu entry), `bus_before` (bus device). An anchor can
+name another card. The bus order is also the order of access priority and of the
+`.ost` sections.
 
-## Vérifier
+## Checking
 
-- `make test-card-template` (le modèle) et `make tests-strict`.
-- Comportement inchangé pour qui n'utilise pas la carte : `tools/cli_golden.sh` entre
-  le binaire d'avant et celui d'après (aide, messages, fichiers produits).
-- Performance : `tools/instr_count.sh BINAIRE [options]` compte les instructions
-  exécutées (stable, contrairement au temps sur une machine bridée).
-- Ajouter à `tests/cli_golden/cases.txt` quelques lignes qui exercent la carte.
+- `make test-card-template` (the template) and `make tests-strict`.
+- Behaviour unchanged for anyone not using the card: `tools/cli_golden.sh` between the
+  binary before and the one after (help, messages, files produced).
+- Performance: `tools/instr_count.sh BINARY [options]` counts the executed
+  instructions (stable, unlike timing on a throttled machine).
+- Add to `tests/cli_golden/cases.txt` a few lines that exercise the card.
 
-## Cartes actuelles
+## Current cards
 
 `microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco` (+ ORICON), `sp0256`,
-`mea8000`, `loci_emu` (fiche seule), `ula_ng`. Pour certaines, une partie reste au
-cœur parce que d'autres parties de l'émulateur la lisent : options, état ou tick de
-Microdisc, Jasmin et LOCI ; état de l'ACIA et de l'ULA-NG (détail dans
+`mea8000`, `loci_emu` (menu entry only), `ula_ng`. For some of them, a part stays in
+the core because other parts of the emulator read it: options, state or tick of
+Microdisc, Jasmin and LOCI; state of the ACIA and of the ULA-NG (details in
 `docs/specs/CARD_MODULES.md`).

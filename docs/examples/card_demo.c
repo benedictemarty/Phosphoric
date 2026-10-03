@@ -1,18 +1,18 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_demo.c
- * @brief Carte d'exemple : le modèle à copier pour écrire une carte
- *        d'extension (docs/CARTES.md). Hors de la build par défaut.
+ * @brief Sample card: the template to copy to write an expansion
+ *        card (docs/CARTES.md). Outside the default build.
  * @author bmarty <bmarty@mailo.com>
  *
- * Une carte fictive à un registre, en $03D0 par défaut :
- *   - écrire y range l'octet ; le lire rend son complément (octet ^ $FF) ;
- *   - elle compte les cycles CPU depuis son activation (tick) ;
- *   - son état passe dans les sauvegardes .ost (section « DMO »).
- * Pour l'essayer : copier ce fichier dans src/cards/, ajouter la ligne
- * `X(demo, 1)` à CARD_MODULE_LIST (include/cards_list.h), recompiler, puis
- * lancer avec --demo. `make test-card-template` fait exactement cela dans une
- * copie de l'arbre et vérifie le résultat.
+ * A fictitious one-register card, at $03D0 by default:
+ *   - writing stores the byte; reading returns its complement (byte ^ $FF);
+ *   - it counts CPU cycles since it was enabled (tick);
+ *   - its state goes into .ost save states (section "DMO").
+ * To try it: copy this file into src/cards/, add the line
+ * `X(demo, 1)` to CARD_MODULE_LIST (include/cards_list.h), rebuild, then
+ * run with --demo. `make test-card-template` does exactly that in a
+ * copy of the tree and checks the result.
  */
 #include "card_module.h"
 #include "cards_list.h"
@@ -22,17 +22,17 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── État, privé au module (une seule machine par processus) ──────────── */
+/* ── State, private to the module (only one machine per process) ─────── */
 
 typedef struct {
-    uint16_t base;       /* adresse du registre */
-    uint8_t  value;      /* dernier octet écrit */
-    uint64_t cycles;     /* cycles CPU depuis l'activation */
+    uint16_t base;       /* register address */
+    uint8_t  value;      /* last byte written */
+    uint64_t cycles;     /* CPU cycles since enabled */
 } demo_state_t;
 
 static demo_state_t s_dev;
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     bool     enabled;    /* --demo */
@@ -54,13 +54,13 @@ static const card_opt_t k_opts[] = {
     { "demo-addr", required_argument, opt_addr },
 };
 
-/* Aide : sans ancre, elle va en fin de liste des options. */
+/* Help: without an anchor, it goes at the end of the option list. */
 static const char k_help[] =
     "      --demo                 Enable the demo card (one register at $03D0)\n"
     "      --demo-addr ADDR       Demo card register address in hex (default 03D0)\n";
 static const card_help_t k_helps[] = { { k_help, NULL } };
 
-/* Fiche du menu F1 : id, nom, rôle, groupe, option d'activation, paramètres. */
+/* F1 menu entry: id, name, role, group, enabling option, parameters. */
 static const card_desc_t k_desc = {
     "demo", "Carte d'exemple",
     "Modèle pour écrire une carte : un registre qui rend le complément de ce "
@@ -84,9 +84,9 @@ static uint8_t dev_read(emulator_t* emu, uint16_t addr) {
 static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     (void)emu; (void)addr;
     s_dev.value = value;
-    return true;          /* écriture consommée (sinon : repli sur le VIA) */
+    return true;          /* write consumed (otherwise: falls back to the VIA) */
 }
-/* Section « DMO » : émise seulement si la carte est présente (.ost inchangé sinon). */
+/* "DMO" section: emitted only if the card is present (.ost unchanged otherwise). */
 static bool dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_demo]) return false;
     return fwrite(&s_dev, sizeof(s_dev), 1, fp) == 1;
@@ -96,7 +96,7 @@ static void dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     if (size == sizeof(s_dev) && fread(&s_dev, sizeof(s_dev), 1, fp) != 1)
         log_error("demo: section DMO illisible");
 }
-/* Appelée à chaque cycle si la carte est présente (X(demo, 1) dans la liste). */
+/* Called on every cycle if the card is present (X(demo, 1) in the list). */
 void card_demo_tick(emulator_t* emu, int cycles) {
     (void)emu;
     s_dev.cycles += (uint64_t)cycles;
@@ -108,7 +108,7 @@ static const io_device_t k_bus = {
     .present_off = offsetof(emulator_t, card_on[CARD_IDX_demo]), .tick = card_demo_tick,
 };
 
-/* ── Mise en route ─────────────────────────────────────────────────────── */
+/* ── Setup ─────────────────────────────────────────────────────────────── */
 
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)core;
@@ -122,8 +122,8 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
     return 0;
 }
 
-/* Ancres à NULL : une nouvelle carte se place en fin d'options, d'aide, de menu
- * et de bus (les cartes historiques gardent leur place grâce aux leurs). */
+/* NULL anchors: a new card goes at the end of the options, help, menu
+ * and bus (the historical cards keep their place thanks to theirs). */
 const card_module_t card_demo = {
     .descs = k_descs, .ndescs = 1,
     .opts = k_opts, .nopts = 2,
