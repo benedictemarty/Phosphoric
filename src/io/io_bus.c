@@ -175,8 +175,8 @@ static uint8_t acia_dev_peek(emulator_t* emu, uint16_t addr) {
     return acia_peek(&emu->acia, addr);
 }
 
-/* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
- * $031C-$031F si présente → pas de test interne ici). */
+/* Microdisc WD1793: $0310-$031F (the ACIA, registered earlier, already owns
+ * $031C-$031F if present → no internal test here). */
 static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->has_microdisc && addr >= 0x0310 && addr <= 0x031F;
 }
@@ -244,7 +244,7 @@ static void acia_dev_tick(emulator_t* emu, int cycles) {
     acia_tick(&emu->acia, cycles);
 }
 
-/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
+/* Position of each device in io_bus[] (= dispatch priority). */
 enum { DEV_LOCI, DEV_ACIA, DEV_MICRODISC, DEV_JASMIN, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
@@ -258,7 +258,7 @@ static const io_device_t io_bus[DEV_COUNT] = {
     [DEV_ACIA] = { .name = "acia", .claims = acia_dev_claims, .read = acia_dev_read,
                    .write = acia_dev_write, .peek = acia_dev_peek,
                    .present_off = PRESENT(has_serial), .tick = acia_dev_tick },
-    /* Microdisc : sections FDC/MDC/DSK/BAD écrites par savestate.c (historique). */
+    /* Microdisc: sections FDC/MDC/DSK/BAD written by savestate.c (historical). */
     [DEV_MICRODISC] = { .name = "microdisc", .claims = microdisc_dev_claims,
                         .read = microdisc_dev_read, .write = microdisc_dev_write,
                         .present_off = PRESENT(has_microdisc), .tick = microdisc_dev_tick },
@@ -268,10 +268,10 @@ static const io_device_t io_bus[DEV_COUNT] = {
                      .present_off = PRESENT(has_jasmin), .tick = jasmin_dev_tick },
 };
 
-/* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
- * l'ancien cpu_cycle_tick (microdisc → jasmin → loci → acia), puis les cartes en
- * modules dans l'ordre de cards_list.h (dtl2000 → mageco → sp0256 → mea8000) :
- * iso-comportement par construction. */
+/* TICK ORDER, distinct from the dispatch order and PRESERVED exactly as in
+ * the old cpu_cycle_tick (microdisc → jasmin → loci → acia), then the cards as
+ * modules in cards_list.h order (dtl2000 → mageco → sp0256 → mea8000):
+ * identical behaviour by construction. */
 static const io_device_t* const io_bus_tick_order[] = {
     &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI], &io_bus[DEV_ACIA],
 };

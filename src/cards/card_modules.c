@@ -20,20 +20,20 @@ CARD_MODULE_LIST(CARD_LIST_DECL)
 const card_module_t* const k_card_modules[] = { CARD_MODULE_LIST(CARD_LIST_PTR) NULL };
 const int k_card_module_count = CARD_MODULE_COUNT;
 
-/* ── Placement par ancres (commun aux options, à l'aide, au menu, au bus) ──
+/* ── Placement by anchors (shared by options, help, menu and bus) ─────────
  *
- * Chaque module se place juste avant l'élément que nomme son ancre. Trois passes :
- *   1. en parcourant les éléments du cœur, on place avant chacun les modules
- *      ancrés sur lui ;
- *   2. puis les modules sans ancre, dans l'ordre de la liste ;
- *   3. puis ceux dont l'ancre n'existe pas.
- * Placer un module place d'abord les modules ancrés sur l'un de ses éléments : une
- * ancre peut donc nommer un autre module, quel que soit l'ordre de la liste. */
+ * Each module is placed just before the item its anchor names. Three passes:
+ *   1. walking the core items, the modules anchored on each one are placed
+ *      before it;
+ *   2. then the modules without an anchor, in list order;
+ *   3. then those whose anchor does not exist.
+ * Placing a module first places the modules anchored on one of its items: an
+ * anchor may therefore name another module, whatever the list order. */
 typedef struct {
-    const char* (*anchor)(int m);                  /* ancre du module m (NULL : aucune) */
-    int         (*count)(int m);                   /* nombre d'éléments du module m */
-    const char* (*key)(int m, int j);              /* nom de son élément j */
-    void        (*emit)(int m, int j, void* ctx);  /* émet son élément j */
+    const char* (*anchor)(int m);                  /* anchor of module m (NULL: none) */
+    int         (*count)(int m);                   /* number of items of module m */
+    const char* (*key)(int m, int j);              /* name of its item j */
+    void        (*emit)(int m, int j, void* ctx);  /* emits its item j */
     void*         ctx;
     bool          placed[64];
 } placer_t;
@@ -128,13 +128,13 @@ const struct option* card_modules_long_options(const struct option* core) {
         s_tbl[s_n++] = core[i];
     }
     place_rest(&pl);
-    return s_tbl;                                   /* terminée par calloc : {0} */
+    return s_tbl;                                   /* terminated by calloc: {0} */
 }
 
 /* ── Help ──────────────────────────────────────────────────────────────── */
 
-/* Un module = un bloc d'aide, repéré par sa première option. Les blocs déjà
- * écrits sont notés dans un placeur unique, remis à zéro en fin d'aide. */
+/* One module = one help block, identified by its first option. The blocks
+ * already written are recorded in a single placer, reset at the end of the help. */
 static const char* help_anchor(int m) {
     return k_card_modules[m]->help ? k_card_modules[m]->help_before : NULL;
 }
@@ -155,10 +155,10 @@ void card_modules_print_help_before(const char* name) {
         return;
     }
     place_rest(&s_help);
-    memset(s_help.placed, 0, sizeof(s_help.placed));   /* prête pour une autre aide */
+    memset(s_help.placed, 0, sizeof(s_help.placed));   /* ready for another help */
 }
 
-/* ── Cycle de vie ──────────────────────────────────────────────────────── */
+/* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
 void card_modules_init(emulator_t* emu) {
     for (int m = 0; m < k_card_module_count; m++)
@@ -180,7 +180,7 @@ int card_modules_setup(emulator_t* emu, const struct cli_opts_s* core, card_stag
     return 0;
 }
 
-/* ── Placement générique, pour le menu (cards.c) et le bus (io_bus.c) ──── */
+/* ── Generic placement, for the menu (cards.c) and the bus (io_bus.c) ──── */
 
 void card_modules_place(const char* const* core_names, int ncore,
                         const char* (*anchor)(int m), int (*count)(int m),

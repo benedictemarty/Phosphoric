@@ -546,7 +546,7 @@ typedef struct emulator_s {
     iom_menu_t  iomenu;
     const char* jasmin_rom_path;
     const char* serial_spec;        /* --serial */
-    const char* config_path;        /* fichier de configuration (NULL : défaut) */
+    const char* config_path;        /* configuration file (NULL: default) */
 } emulator_t;
 
 /* ════════════════════════════════════════════════════════════════════

@@ -86,9 +86,9 @@ static const io_device_t k_bus = {
 
 static bool audio_gen(void* ctx, int16_t* out, int n) { mea8000_generate(ctx, out, n); return true; }
 
-/* Puce à formants Philips/Signetics en $03FE/$03FF (carte TMPI, confirmée en jeu
- * avec SYNTHOR ; adresse réglable). Sans ROM : l'hôte envoie les trames.
- * Exclusive de la carte SP0256 (deux synthèses vocales). */
+/* Philips/Signetics formant chip at $03FE/$03FF (TMPI card, confirmed in-game
+ * with SYNTHOR; configurable address). No ROM: the host streams the frames.
+ * Mutually exclusive with the SP0256 card (two speech synths). */
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)core;
     const mea8000_cfg_t* cfg = p;

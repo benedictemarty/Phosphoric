@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_ula_ng.c
- * @brief ULA-NG en module : fiche du menu (toujours présente), option
- *        --ula-ng-poke et accès au bus $0340-$035F (card_module.h).
+ * @brief ULA-NG as a module: menu entry (always present), option
+ *        --ula-ng-poke and bus access at $0340-$035F (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  *
- * Son état (emu->ula_ng) reste dans la machine : la vidéo et l'horloge le lisent
- * directement (palette, modes, raster). Le module porte ce qui la rend
- * « carte » : menu, option, registres.
+ * Its state (emu->ula_ng) stays in the machine: the video and the clock read it
+ * directly (palette, modes, raster). The module carries what makes it a
+ * « card »: menu, option, registers.
  */
 #include "card_module.h"
 #include "emulator.h"
@@ -17,10 +17,10 @@
 #include <stdio.h>
 #include <string.h>
 
-/* ── Configuration et option ───────────────────────────────────────────── */
+/* ── Configuration and option ──────────────────────────────────────────── */
 
 typedef struct {
-    const char* poke;   /* --ula-ng-poke "AAA=VV,..." (registres $0340-$035F) */
+    const char* poke;   /* --ula-ng-poke "AAA=VV,..." (registers $0340-$035F) */
 } ula_ng_cfg_t;
 
 static void opt_poke(void* p, const char* arg) { ((ula_ng_cfg_t*)p)->poke = arg; }
@@ -42,12 +42,12 @@ static const card_desc_t k_desc = {
 };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
-/* ── Bus $0340-$035F : dernier périphérique, avant le repli VIA ──────────
- *  - Lecture : ne répond que déverrouillée (`claims`) ; verrouillée, la fenêtre
- *    retombe sur le miroir VIA (indiscernable).
- *  - Écriture : `claims_write` = fenêtre seule → l'ULA-NG voit les écritures
- *    même verrouillée pour guetter la séquence 'N','G'. `ula_ng_write` renvoie
- *    si elle a consommé ; sinon le dispatch retombe sur le VIA (bit-à-bit). */
+/* ── Bus $0340-$035F: last peripheral, before the VIA fallback ───────────
+ *  - Read: answers only when unlocked (`claims`); when locked, the window
+ *    falls back to the VIA mirror (indistinguishable).
+ *  - Write: `claims_write` = window only → the ULA-NG sees the writes
+ *    even when locked, to watch for the 'N','G' sequence. `ula_ng_write` returns
+ *    whether it consumed; otherwise the dispatch falls back to the VIA (bit-exact). */
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
     return ula_ng_active(&emu->ula_ng) && ula_ng_addr_in_window(addr);
 }
@@ -60,15 +60,15 @@ static uint8_t dev_read(emulator_t* emu, uint16_t addr) {
 }
 static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     if (!ula_ng_write(&emu->ula_ng, addr, value))
-        return false;   /* non consommée (verrouillée, octet neutre) → repli VIA */
-    /* Écriture consommée : synchroniser la ligne d'IRQ raster (un write de
-     * NG_STATUS acquitte → désassertion). */
+        return false;   /* not consumed (locked, neutral byte) → VIA fallback */
+    /* Write consumed: synchronise the raster IRQ line (a write to
+     * NG_STATUS acknowledges → deassertion). */
     if (ula_ng_irq(&emu->ula_ng)) cpu_irq_set(&emu->cpu, IRQF_ULANG);
     else                          cpu_irq_clear(&emu->cpu, IRQF_ULANG);
     return true;
 }
-/* Section « UNG » : déléguée au module (POD, même build, garde de taille) ;
- * émise seulement si déverrouillée (.ost inchangé sinon). */
+/* "UNG" section: delegated to the module (POD, same build, size guard);
+ * emitted only when unlocked (.ost unchanged otherwise). */
 static bool dev_save(emulator_t* emu, FILE* fp) {
     return ula_ng_save(&emu->ula_ng, fp);
 }
@@ -76,18 +76,18 @@ static void dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     ula_ng_load(&emu->ula_ng, fp, size);
 }
 
-/* Pas de tick : l'ULA-NG avance avec la vidéo (emu_clock.c). */
+/* No tick: the ULA-NG advances with the video (emu_clock.c). */
 static const io_device_t k_bus = {
     .name = "ula-ng", .claims = dev_claims, .read = dev_read,
     .write = dev_write, .claims_write = dev_claims_write,
     .save_tag = "UNG\0", .save = dev_save, .load = dev_load,
 };
 
-/* ── Mise en route ─────────────────────────────────────────────────────── */
+/* ── Setup ─────────────────────────────────────────────────────────────── */
 
-/* --ula-ng-poke "AAA=VV,..." : programme directement les registres ULA-NG
- * ($0340-$035F) au démarrage (déverrouillage, palette, copper, raster…),
- * sans passer par des POKE BASIC lents. Idéal pour démos/tests/captures. */
+/* --ula-ng-poke "AAA=VV,...": programs the ULA-NG registers directly
+ * ($0340-$035F) at startup (unlock, palette, copper, raster…),
+ * without going through slow BASIC POKEs. Ideal for demos/tests/captures. */
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)core;
     const ula_ng_cfg_t* cfg = p;

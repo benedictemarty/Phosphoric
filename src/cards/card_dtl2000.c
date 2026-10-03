@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_dtl2000.c
- * @brief Carte Digitelec DTL 2000 (PIA 6821 + ACIA 6850, modem V23) en module :
- *        menu, options, mise en route, bus et fermeture (card_module.h).
+ * @brief Digitelec DTL 2000 card (PIA 6821 + ACIA 6850, V23 modem) as a module:
+ *        menu, options, setup, bus and teardown (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  */
 #include "card_module.h"
@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     const char* transport;   /* --dtl2000 TRANSPORT */
@@ -37,7 +37,7 @@ static const char k_help[] =
     "                            Transports (raw V23 line): loopback, tcp:H:P, pty, com:B,D,P,S,DEV, file:IN[:OUT]\n"
     "      --dtl2000-addr ADDR   DTL 2000 base address in hex (default: 03F8)\n";
 
-/* Explications courtes, lues dans le menu (cf. cards.c). */
+/* Short explanations, read in the menu (see cards.c). */
 #define TRANSPORTS_SERIE \
     "loopback (écho local), tcp:hôte:port, modem:hôte:port (appels entrants), " \
     "pty (pseudo-terminal), com:bauds,bits,parité,stop,périphérique (port série " \
@@ -56,7 +56,7 @@ static const card_desc_t k_desc = {
 };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
-/* ── Interruptions (ACIA 6850 de la carte) ─────────────────────────────── */
+/* ── Interrupts (the card's ACIA 6850) ─────────────────────────────────── */
 
 static void irq_set(emulator_t* emu) { cpu_irq_set(&emu->cpu, IRQF_DTL2000); }
 static void irq_clr(emulator_t* emu) { cpu_irq_clear(&emu->cpu, IRQF_DTL2000); }
@@ -67,7 +67,7 @@ static void wire_irq(emulator_t* emu) {
     emu->dtl2000.irq_userdata = emu;
 }
 
-/* ── Bus : $03F8-$03FD (plage exclusive) ───────────────────────────────── */
+/* ── Bus: $03F8-$03FD (exclusive range) ────────────────────────────────── */
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_dtl2000] && dtl2000_addr_in_range(&emu->dtl2000, addr);
@@ -79,7 +79,7 @@ static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     dtl2000_write(&emu->dtl2000, addr, value);
     return true;
 }
-/* Section « DTL » : émise seulement si la carte est présente (.ost inchangé sinon). */
+/* "DTL" section: emitted only if the card is present (.ost unchanged otherwise). */
 static bool dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_dtl2000]) return false;
     return dtl2000_save(&emu->dtl2000, fp);
@@ -95,16 +95,16 @@ static const io_device_t k_bus = {
     .present_off = offsetof(emulator_t, card_on[CARD_IDX_dtl2000]), .tick = card_dtl2000_tick,
 };
 
-/* ── Cycle de vie ──────────────────────────────────────────────────────── */
+/* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
-/* Au démarrage, présente ou non : adresse par défaut, IRQ câblées. */
+/* At startup, present or not: default address, IRQs wired. */
 static void init(emulator_t* emu) {
     dtl2000_init(&emu->dtl2000, DTL2000_DEFAULT_BASE);
     wire_irq(emu);
 }
 
-/* Modem fidèle (PIA 6821 + ACIA 6850). Le transport réutilise les backends
- * série génériques. */
+/* Digitelec DTL 2000 — faithful PIA 6821 + ACIA 6850 modem card.
+ * The transport backend reuses the generic serial backends. */
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     const dtl2000_cfg_t* cfg = p;
     if (!cfg->transport) return 0;

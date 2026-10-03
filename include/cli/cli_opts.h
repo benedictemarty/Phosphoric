@@ -44,8 +44,8 @@ typedef struct cli_opts_s {
     bool headless;
     int64_t max_cycles;
     const char* screenshot_file;
-    /* Captures -at RÉPÉTABLES : on collecte (arg, type) au parsing, puis on
-     * résout chaque "CYCLES:FILE" après la boucle getopt (comme --poke-at). */
+    /* REPEATABLE -at captures: (arg, type) are collected during parsing, then
+     * each "CYCLES:FILE" is resolved after the getopt loop (like --poke-at). */
     cli_tcap_arg_t tcap_cli[TIMED_CAPTURE_MAX];
     int tcap_cli_count;
     const char* screenshot_text_file;
@@ -58,7 +58,7 @@ typedef struct cli_opts_s {
     bool gdb_enabled;
     int gdb_port;
     const char* gdb_bind;        /* NULL → 127.0.0.1          */
-    bool no_config_cards;        /* cartes : ignorer phosphoric.cfg (relance du menu F1) */
+    bool no_config_cards;        /* cards: ignore phosphoric.cfg (F1 menu relaunch) */
     const char* movie_record_file;
     const char* movie_replay_file;
     const char* keyboard_layout;
@@ -71,7 +71,7 @@ typedef struct cli_opts_s {
     int poke_arg_count;
     const char* disk_rom_file;
     const char* jasmin_rom_file;   /* --jasmin-rom : Jasmin boot ROM (2 KB) */
-    void** card_cfg;        /* configuration de chaque carte en module (card_module.h) */
+    void** card_cfg;        /* configuration of each card module (card_module.h) */
     bool debug_mode;
     const char* debug_break_addr;
     bool cast_server_enabled;

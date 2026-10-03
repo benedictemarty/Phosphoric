@@ -751,8 +751,8 @@ static bool emulator_init(emulator_t* emu) {
     emu->acia.irq_clr = acia_cpu_irq_clr;
     emu->acia.irq_userdata = emu;
 
-    /* Cartes en modules, présentes ou non : état de repos (DTL 2000, Mageco :
-     * adresse par défaut, IRQ câblées). */
+    /* Card modules, present or not: idle state (DTL 2000, Mageco:
+     * default address, IRQs wired). */
     card_modules_init(emu);
 
     /* Initialize PSG (AY-3-8912) with keyboard input callback */
@@ -950,7 +950,7 @@ static void emulator_cleanup(emulator_t* emu) {
         emu->serial_backend = NULL;
         emu->has_serial = false;
     }
-    card_modules_teardown(emu);   /* transports des cartes (DTL 2000, Mageco) */
+    card_modules_teardown(emu);   /* card transports (DTL 2000, Mageco) */
     /* Close ACIA trace and free RX FIFO */
     acia_set_trace(&emu->acia, NULL);
     acia_set_rx_fifo(&emu->acia, 0);
@@ -2666,7 +2666,7 @@ static int main_setup_machine(emulator_t* emu, cli_opts_t* cfg) {
         return 1;
     }
 
-    /* Cartes en modules de l'étape « machine » (ULA-NG : --ula-ng-poke). */
+    /* Cards as modules of the « machine » stage (ULA-NG: --ula-ng-poke). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_MACHINE) != 0) {
         emulator_cleanup(emu);
         return 1;
@@ -2889,8 +2889,8 @@ static int main_setup_serial_cards(emulator_t* emu, cli_opts_t* cfg) {
         }
     }
 
-    /* Cartes en modules de l'étape « série » (DTL 2000, Mageco/ORICON), à la
-     * place qu'occupait leur code ici (card_module.h). */
+    /* Cards as modules of the « serial » stage (DTL 2000, Mageco/ORICON), at the
+     * place their code used to occupy here (card_module.h). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_SERIAL) != 0) {
         emulator_cleanup(emu);
         return 1;
@@ -3601,8 +3601,8 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         }
     }
 
-    /* Cartes en modules de l'étape « synthèse vocale » (SP0256, MEA8000), à la
-     * place qu'occupait leur code ici (card_module.h). */
+    /* Cards as modules of the « speech » stage (SP0256, MEA8000), at the
+     * place their code used to occupy here (card_module.h). */
     if (card_modules_setup(emu, cfg, CARD_STAGE_SPEECH) != 0) {
         emulator_cleanup(emu);
         return 1;

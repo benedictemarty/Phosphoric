@@ -556,9 +556,9 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
-# Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
-# Le registre des cartes lie les cartes en modules, donc leurs périphériques :
-# la bibliothèque entière, comme test-cards.
+# I/O peripherals menu (F1): model, keys, file picker, drawing.
+# The card registry links the card modules, hence their peripherals:
+# the whole library, like test-cards.
 $(eval $(call UNIT_TEST,test-iomenu,test_iomenu,tests/unit/test_iomenu.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
 # F1 menu <-> emulator glue (media, settings, phosphoric.cfg): links the core.

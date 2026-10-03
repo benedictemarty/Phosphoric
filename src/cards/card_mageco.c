@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_mageco.c
- * @brief Interface MIDI Mageco et sa variante ORICON (ACIA MC6850) en module :
- *        deux fiches du menu, une puce ; options, mise en route, bus et
- *        fermeture (card_module.h).
+ * @brief Mageco MIDI interface and its ORICON variant (MC6850 ACIA) as a module:
+ *        two menu entries, one chip; options, setup, bus and
+ *        teardown (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  */
 #include "card_module.h"
@@ -18,12 +18,12 @@
 #include <stdio.h>
 #include <stddef.h>   /* offsetof */
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     const char* transport;   /* --mageco / --oricon TRANSPORT */
     const char* addr;        /* --mageco-addr ADDR (hex) */
-    bool        oricon;      /* --oricon : variante ORICON */
+    bool        oricon;      /* --oricon: ORICON variant */
 } mageco_cfg_t;
 
 static void opt_mageco(void* p, const char* arg) { ((mageco_cfg_t*)p)->transport = arg; }
@@ -72,7 +72,7 @@ static const card_desc_t k_desc_oricon = {
 };
 static const card_desc_t* const k_descs[] = { &k_desc_mageco, &k_desc_oricon };
 
-/* ── Interruptions (ACIA 6850 de la carte) ─────────────────────────────── */
+/* ── Interrupts (the card's ACIA 6850) ─────────────────────────────────── */
 
 static void irq_set(emulator_t* emu) { cpu_irq_set(&emu->cpu, IRQF_MAGECO); }
 static void irq_clr(emulator_t* emu) { cpu_irq_clear(&emu->cpu, IRQF_MAGECO); }
@@ -83,7 +83,7 @@ static void wire_irq(emulator_t* emu) {
     emu->mageco.irq_userdata = emu;
 }
 
-/* ── Bus : $03FE-$03FF ou $031C-$031E ──────────────────────────────────── */
+/* ── Bus: $03FE-$03FF or $031C-$031E ───────────────────────────────────── */
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_mageco] && mageco_addr_in_range(&emu->mageco, addr);
@@ -95,8 +95,8 @@ static bool dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     mageco_write(&emu->mageco, addr, value);
     return true;
 }
-/* Section « MAG » : émise seulement si la carte est présente (.ost inchangé
- * sinon). Transport hôte non restauré (cf. mageco_save). */
+/* Savestate ("MAG" section): emitted only if the Mageco is present →
+ * .ost unchanged otherwise. Host transport not restored (see mageco_save). */
 static bool dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_mageco]) return false;
     return mageco_save(&emu->mageco, fp);
@@ -112,9 +112,9 @@ static const io_device_t k_bus = {
     .present_off = offsetof(emulator_t, card_on[CARD_IDX_mageco]), .tick = card_mageco_tick,
 };
 
-/* ── Cycle de vie ──────────────────────────────────────────────────────── */
+/* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
-/* Au démarrage, présente ou non : adresse par défaut, IRQ câblées. */
+/* At startup, present or not: default address, IRQs wired. */
 static void init(emulator_t* emu) {
     mageco_init(&emu->mageco, MAGECO_DEFAULT_BASE);
     wire_irq(emu);
