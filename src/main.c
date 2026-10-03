@@ -75,6 +75,11 @@
 #include "utils/cycle_trace.h"
 #include "cpu/microseq.h"
 #include "utils/rominfo.h"
+
+/* ROM système du profil minimal quand -r est absent : ORIC-1 nu (BASIC 1.0),
+ * ou BASIC 1.1 si -m atmos le demande. */
+#define DEFAULT_SYSTEM_ROM       "roms/basic10.rom"
+#define DEFAULT_SYSTEM_ROM_ATMOS "roms/basic11b.rom"
 #ifdef HAS_SDL2
 #include <SDL2/SDL.h>
 #endif
@@ -3009,6 +3014,30 @@ static int main_setup_captures_input(emulator_t* emu, cli_opts_t* cfg) {
 /* ROM système, garde-fou ROM, --rom-info, modèle de machine, hostfs.
  * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
 static int main_setup_rom_model(emulator_t* emu, cli_opts_t* cfg) {
+    /* Profil minimal : sans -r ni --load-state, ORIC-1 nu sur sa ROM BASIC 1.0
+     * (BASIC 1.1 sous -m atmos), cherchée dans le dossier courant puis à côté
+     * de l'exécutable. --no-rom garde la zone $C000-$FFFF vide. */
+    static char default_rom[1024 + sizeof(DEFAULT_SYSTEM_ROM_ATMOS) + 1];
+    if (!cfg->rom_file && !cfg->load_state_file && !cfg->no_rom) {
+        const bool atmos = cfg->model_arg && (strcasecmp(cfg->model_arg, "atmos") == 0 ||
+                                              strcmp(cfg->model_arg, "1.1") == 0);
+        const char* rom = atmos ? DEFAULT_SYSTEM_ROM_ATMOS : DEFAULT_SYSTEM_ROM;
+        if (access(rom, R_OK) == 0) {
+            cfg->rom_file = rom;
+        } else {
+            char self[1024];
+            ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
+            char* slash = n > 0 ? (self[n] = '\0', strrchr(self, '/')) : NULL;
+            if (slash) {
+                *slash = '\0';
+                snprintf(default_rom, sizeof(default_rom), "%s/%s", self, rom);
+                if (access(default_rom, R_OK) == 0) cfg->rom_file = default_rom;
+            }
+        }
+        if (cfg->rom_file) log_info("Profil minimal : %s, ROM par défaut %s",
+                                    atmos ? "Atmos" : "ORIC-1", cfg->rom_file);
+    }
+
     /* Load ROM if specified */
     if (cfg->rom_file) {
         log_info("Loading ROM: %s", cfg->rom_file);

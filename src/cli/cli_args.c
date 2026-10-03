@@ -93,6 +93,7 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             case OPT_GDB_BIND: cfg->gdb_bind = optarg; break;
             case OPT_NO_CONFIG_CARDS: cfg->no_config_cards = true; break;
+            case OPT_NO_ROM: cfg->no_rom = true; break;
             case OPT_RECORD: cfg->movie_record_file = optarg; break;
             case OPT_REPLAY: cfg->movie_replay_file = optarg; break;
             case 'k': cfg->keyboard_layout = optarg; break;

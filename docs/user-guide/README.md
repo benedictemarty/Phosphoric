@@ -826,7 +826,10 @@ est `.COM` (un `.BIN` donnerait `?FILE NOT FOUND ERROR`).
 ./oric1-emu [OPTIONS]
 
 ROM, modele et hote :
-  -r, --rom FILE             Charger un fichier ROM (BASIC 1.0/1.1)
+  -r, --rom FILE             Charger un fichier ROM (BASIC 1.0/1.1) ; sans -r :
+                             profil minimal, ORIC-1 nu sur roms/basic10.rom
+                             (roms/basic11b.rom avec -m atmos)
+      --no-rom               Aucune ROM systeme par defaut ($C000-$FFFF vide)
   -m, --model MODEL          Modele : oric1 ou atmos (defaut : auto-detection)
   -k, --keyboard LAYOUT      Disposition clavier : qwerty (defaut) ou azerty
   -h, --hostfs PATH          Monter un repertoire hote (partage de fichiers)

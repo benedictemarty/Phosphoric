@@ -66,7 +66,9 @@ void cli_print_usage(const char* program_name) {
     usage_printf("      --disk-web URL         Drive A servi par un serveur web (loci-webdisk archi B) :\n");
     usage_printf("                             pistes MFM lues par HTTP a la demande, via le Microdisc.\n");
     usage_printf("                             Ex: --disk-rom microdis.rom --disk-web http://h:8091/disk/x.dsk\n");
-    usage_printf("  -r, --rom FILE             Load custom ROM file\n");
+    usage_printf("  -r, --rom FILE             Load custom ROM file (default: roms/basic10.rom,\n");
+    usage_printf("                             bare ORIC-1 minimal profile; basic11b.rom with -m atmos)\n");
+    usage_printf("      --no-rom               No default system ROM ($C000-$FFFF empty)\n");
     usage_printf("  -h, --hostfs PATH          Mount host directory\n");
     usage_printf("  -f, --fast-load            Fast tape loading (inject directly, no CLOAD needed)\n");
     usage_printf("  -n, --headless             Run without display (headless mode)\n");

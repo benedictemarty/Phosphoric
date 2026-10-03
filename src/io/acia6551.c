@@ -300,10 +300,14 @@ void acia_init(acia6551_t* acia)
 
     acia->v23_mode = false;
 
-    /* Calculate timing and initialize cycle counters */
+    /* Calculate timing and initialize cycle counters. Au repos (control=0),
+     * l'horloge externe n'est pas un choix du logiciel : pas d'avertissement
+     * tant qu'aucun registre de contrôle n'a été écrit. */
+    acia->ext_clock_warned = true;
     acia_update_timing(acia);
+    acia->ext_clock_warned = false;
 
-    log_info("ACIA 6551 initialized (xtal %d Hz / %d = %d Hz)",
+    log_debug("ACIA 6551 initialized (xtal %d Hz / %d = %d Hz)",
              ACIA_XTAL_HZ, ACIA_PRESCALER, ACIA_INTERNAL_HZ);
 }
 

@@ -42,7 +42,7 @@ enum {
     OPT_SCREENSHOT_WHEN, OPT_DUMP_RAM_WHEN, OPT_SCREENSHOT_TEXT_WHEN,
     OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE,
     OPT_DISK_WEB, OPT_LOCI_WEB, OPT_LOCI_WEB_BASE, OPT_JASMIN_ROM,
-    OPT_CONFIG, OPT_NO_CONFIG, OPT_MENU_SCREENSHOT, OPT_GDB_BIND, OPT_NO_CONFIG_CARDS
+    OPT_CONFIG, OPT_NO_CONFIG, OPT_MENU_SCREENSHOT, OPT_GDB_BIND, OPT_NO_CONFIG_CARDS, OPT_NO_ROM
 };
 
 /* Chaîne d'options courtes passée à getopt_long. */
@@ -84,6 +84,7 @@ static const struct option long_options[] = {
     {"gdb",                 optional_argument, 0, OPT_GDB},
     {"gdb-bind",            required_argument, 0, OPT_GDB_BIND},
     {"no-config-cards",     no_argument,       0, OPT_NO_CONFIG_CARDS},
+    {"no-rom",              no_argument,       0, OPT_NO_ROM},
     {"record",              required_argument, 0, OPT_RECORD},
     {"replay",              required_argument, 0, OPT_REPLAY},
     {"keyboard",            required_argument, 0, 'k'},
