@@ -138,7 +138,7 @@ void iomenu_refresh(emulator_t* emu) {
     iom_state_t* st = &emu->iomenu.st;
     st->version = EMU_VERSION;
     st->machine = emu->model == ORIC_MODEL_ATMOS ? "Oric Atmos" : "Oric-1";
-    st->disk_iface = emu->has_jasmin ? "Jasmin" : emu->has_microdisc ? "Microdisc"
+    st->disk_iface = emu->card_on[CARD_IDX_jasmin] ? "Jasmin" : emu->card_on[CARD_IDX_microdisc] ? "Microdisc"
                    : loci_disks(emu) ? "LOCI" : NULL;
     st->drives = emu_has_disk_iface(emu) ? emu_disk_max_drives(emu) : loci_disks(emu) ? 4 : 0;
     st->no_drive_protect = loci_disks(emu);

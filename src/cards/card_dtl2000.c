@@ -118,7 +118,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
     if (cfg->addr) {
         base = parse_hex16(cfg->addr);
     }
-    if (emu->has_microdisc) {
+    if (emu->card_on[CARD_IDX_microdisc]) {
         log_warning("DTL 2000 at $%04X shares page 3 with the disc electronics "
                     "(Jasmin) — not faithful to coexist on real hardware", base);
     }

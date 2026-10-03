@@ -68,8 +68,8 @@ TEST(test_emu_disk_helpers_follow_active_iface) {
     ASSERT_TRUE(emu != NULL);
 
     /* Jasmin machine: only jasmin.disk_dirty must count. */
-    emu->has_jasmin = true;
-    emu->has_microdisc = false;
+    emu->card_on[CARD_IDX_jasmin] = true;
+    emu->card_on[CARD_IDX_microdisc] = false;
     ASSERT_EQ(emu_disk_max_drives(emu), JASMIN_MAX_DRIVES);
 
     emu->microdisc.disk_dirty[2] = true;   /* stale Microdisc flag — must be ignored */
@@ -88,8 +88,8 @@ TEST(test_emu_disk_helpers_follow_active_iface) {
     ASSERT_FALSE(emu_disk_dirty(emu, JASMIN_MAX_DRIVES));
 
     /* Microdisc machine: the Microdisc flag counts, Jasmin's is ignored. */
-    emu->has_jasmin = false;
-    emu->has_microdisc = true;
+    emu->card_on[CARD_IDX_jasmin] = false;
+    emu->card_on[CARD_IDX_microdisc] = true;
     ASSERT_EQ(emu_disk_max_drives(emu), MICRODISC_MAX_DRIVES);
     emu->jasmin.disk_dirty[1] = true;      /* leftover — must be ignored now */
     ASSERT_FALSE(emu_disk_dirty(emu, 1));
@@ -163,8 +163,8 @@ TEST(test_jasmin_guest_write_persists) {
 TEST(test_emu_disk_wire_routes_to_active_iface) {
     emulator_t* emu = calloc(1, sizeof(*emu));
     ASSERT_TRUE(emu != NULL);
-    emu->has_jasmin = true;
-    emu->has_microdisc = false;
+    emu->card_on[CARD_IDX_jasmin] = true;
+    emu->card_on[CARD_IDX_microdisc] = false;
     jasmin_init(&emu->jasmin);
 
     sedoric_disk_t* disk = sedoric_create();

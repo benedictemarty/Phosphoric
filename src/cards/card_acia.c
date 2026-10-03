@@ -263,7 +263,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         emu->acia_base_addr = ACIA_DEFAULT_BASE;
     }
     /* Co-sim (--loci-cdc) : active l'ACIA sans backend (le firmware réel la sert via
-     * loci_emu_acia_*). has_serial doit être vrai pour que le device ACIA claim $0380. */
+     * loci_emu_acia_*). La carte doit être présente (card_on) pour que le device ACIA claim $0380. */
     if (core->loci_emu_cdc_dev && core->loci_emu_path) emu->card_on[CARD_IDX_acia] = true;
     /* Garde-fou : sous --loci, la MIA occupe $03A0-$03BF et est routée AVANT
      * l'ACIA dans les callbacks I/O. Si l'ACIA y est forcée (--acia-addr dans

@@ -8,16 +8,20 @@
  * X(id, tick) :
  *   - id   : la carte est src/cards/card_<id>.c, qui définit `card_<id>`
  *            (card_module_t) ;
- *   - tick : 1 si elle avance à chaque cycle CPU (fonction `card_<id>_tick`),
- *            0 sinon.
- * L'ordre de la liste est celui des ticks des cartes, après ceux du cœur
- * (ADR 0003). Le Makefile compile src/cards/card_*.c : ajouter une carte, c'est
+ *   - tick : 1 si elle avance à chaque cycle CPU (fonction `card_<id>_tick`,
+ *            appelée après les périphériques du cœur), 0 sinon. Les contrôleurs
+ *            disque (Microdisc, Jasmin), dont l'état reste dans la machine,
+ *            sont avancés par le cœur (io_bus.c) : leur tick passait avant LOCI,
+ *            et un appel de plus par cycle coûtait 0,65 à 1 % d'instructions.
+ * L'ordre de la liste est celui des ticks (ADR 0003). Le Makefile compile src/cards/card_*.c : ajouter une carte, c'est
  * écrire son fichier et ajouter sa ligne ici.
  */
 #ifndef CARDS_LIST_H
 #define CARDS_LIST_H
 
 #define CARD_MODULE_LIST(X) \
+    X(microdisc, 0) \
+    X(jasmin,  0) \
     X(acia,    1) \
     X(dtl2000, 1) \
     X(mageco,  1) \

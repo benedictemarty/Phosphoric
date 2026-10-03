@@ -316,7 +316,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     end_section(fp, sec);
 
     /* ── FDC Section (if Microdisc present) ── */
-    if (emu->has_microdisc) {
+    if (emu->card_on[CARD_IDX_microdisc]) {
         sec = begin_section(fp, "FDC\0");
         fdc_state_save(&emu->microdisc.fdc, fp);
         end_section(fp, sec);
@@ -340,7 +340,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
      * drive: index, geometry, size, then the raw bytes. Shared by the
      * Microdisc and the Jasmin (same emu->disks[]); for the Microdisc the
      * section keeps its historical place, right after MDC. ── */
-    if (emu->has_microdisc || emu->has_jasmin) {
+    if (emu->card_on[CARD_IDX_microdisc] || emu->card_on[CARD_IDX_jasmin]) {
         sec = begin_section(fp, "DSK\0");
         uint8_t ndrives = 0;
         for (int i = 0; i < MICRODISC_MAX_DRIVES; i++)
@@ -359,7 +359,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
 
     }
 
-    if (emu->has_microdisc) {
+    if (emu->card_on[CARD_IDX_microdisc]) {
         /* ── BAD Section: per-drive media bad-sector maps (fault injection).
          * Written after DSK because loading DSK re-points the media and
          * would wipe freshly restored maps. ── */
@@ -742,7 +742,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                     microdisc_set_disk(&emu->microdisc, drive,
                                        emu->disks[drive]->data, dsize,
                                        dtracks, dsectors);
-                    if (emu->has_jasmin && drive < JASMIN_MAX_DRIVES)
+                    if (emu->card_on[CARD_IDX_jasmin] && drive < JASMIN_MAX_DRIVES)
                         jasmin_set_disk(&emu->jasmin, drive,
                                         emu->disks[drive]->data, dsize,
                                         dtracks, dsectors);
@@ -830,7 +830,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
     emu->cpu.memory = &emu->memory;
     /* Secteur en cours du Microdisc : recalculé une fois les images (DSK) et la
      * carte des secteurs défectueux (BAD) en place — reprise en plein transfert. */
-    if (emu->has_microdisc)
+    if (emu->card_on[CARD_IDX_microdisc])
         fdc_state_resume(&emu->microdisc.fdc);
 
     log_info("savestate: loaded successfully from '%s'", filename);

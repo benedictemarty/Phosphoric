@@ -43,7 +43,7 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* backend neo : /IO CONTROL */
     if (loci_addr_in_mia(addr) || loci_emu_ramx_claims(addr)) return true;
     if (loci_addr_in_tap(addr)) return true;
-    if (!emu->has_microdisc && loci_addr_in_dsk(addr)) return true;
+    if (!emu->card_on[CARD_IDX_microdisc] && loci_addr_in_dsk(addr)) return true;
     return false;
 }
 /* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
@@ -100,73 +100,31 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 }
 
 
-/* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
- * $031C-$031F si présente → pas de test interne ici). */
-static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_microdisc && addr >= 0x0310 && addr <= 0x031F;
-}
-static uint8_t microdisc_dev_read(emulator_t* emu, uint16_t addr) {
-    return microdisc_read(&emu->microdisc, addr);
-}
-static bool microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    if (fdc_trace_enabled()) {
-        fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
-                emu->cpu.PC, (unsigned long long)emu->cpu.cycles, addr, value);
-    }
-    microdisc_write(&emu->microdisc, addr, value);
-    /* Sync overlay flags to memory system */
-    emu->memory.basic_rom_disabled = emu->microdisc.romdis;
-    emu->memory.overlay_active = emu->microdisc.diskrom;
-    return true;
-}
-
-/* Jasmin WD177x : $03F4-$03FF (mutuellement exclusif avec DTL2000/Mageco, qui
- * recouvrent $03F8-$03FF — garde à l'activation dans main.c). */
-static bool jasmin_dev_claims(emulator_t* emu, uint16_t addr) {
-    return emu->has_jasmin && addr >= JASMIN_BASE && addr <= JASMIN_END;
-}
-static uint8_t jasmin_dev_read(emulator_t* emu, uint16_t addr) {
-    return jasmin_read(&emu->jasmin, addr);
-}
-static bool jasmin_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    if (fdc_trace_enabled()) {
-        fprintf(stderr, "[FDC] PC=%04X cyc=%llu write $%04X = %02X\n",
-                emu->cpu.PC, (unsigned long long)emu->cpu.cycles, addr, value);
-    }
-    jasmin_write(&emu->jasmin, addr, value);
-    /* Sync Jasmin banking flags to the memory system. */
-    emu->memory.jasmin_olay   = emu->jasmin.olay;
-    emu->memory.jasmin_romdis = emu->jasmin.romdis;
-    return true;
-}
-
-/* Savestate (section "JAS") : émise seulement si le Jasmin est présent. Les
- * images disque passent par la section DSK (savestate.c), lue AVANT. */
-static bool jasmin_dev_save(emulator_t* emu, FILE* fp) {
-    if (!emu->has_jasmin) return false;
-    return jasmin_save(&emu->jasmin, fp);
-}
-static void jasmin_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
-    jasmin_load(&emu->jasmin, fp, size);
-    /* Même synchronisation des verrous vers la mémoire que jasmin_dev_write. */
-    emu->memory.jasmin_olay   = emu->jasmin.olay;
-    emu->memory.jasmin_romdis = emu->jasmin.romdis;
-}
 
 /* ── Ticks : exactement les opérations de l'ancien io_bus_tick, par device ── */
+/* Contrôleurs disque : cartes en modules (src/cards/card_{microdisc,jasmin}.c)
+ * dont l'état reste dans la machine ; le cœur avance leur FDC ici, avant LOCI,
+ * comme avant (un appel de plus par cycle coûtait 0,65 à 1 % d'instructions). */
 static void microdisc_dev_tick(emulator_t* emu, int cycles) {
     fdc_ticktock(&emu->microdisc.fdc, cycles);
 }
 static void jasmin_dev_tick(emulator_t* emu, int cycles) {
     fdc_ticktock(&emu->jasmin.fdc, cycles);
 }
+static const io_device_t k_microdisc_tick = {
+    .name = "microdisc", .present_off = offsetof(emulator_t, card_on[CARD_IDX_microdisc]),
+    .tick = microdisc_dev_tick };
+static const io_device_t k_jasmin_tick = {
+    .name = "jasmin", .present_off = offsetof(emulator_t, card_on[CARD_IDX_jasmin]),
+    .tick = jasmin_dev_tick };
+
 static void loci_dev_tick(emulator_t* emu, int cycles) {
     fdc_ticktock(&emu->loci.dsk_fdc, cycles);
     loci_adj_tick(&emu->loci, cycles);
 }
 
 /* Position de chaque device dans io_bus[] (= priorité de dispatch). */
-enum { DEV_LOCI, DEV_MICRODISC, DEV_JASMIN, DEV_COUNT };
+enum { DEV_LOCI, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
 
@@ -175,14 +133,6 @@ static const io_device_t io_bus[DEV_COUNT] = {
     [DEV_LOCI] = { .name = "loci", .claims = loci_dev_claims, .read = loci_dev_read,
                    .write = loci_dev_write,
                    .present_off = PRESENT(has_loci), .tick = loci_dev_tick },
-    /* Microdisc : sections FDC/MDC/DSK/BAD écrites par savestate.c (historique). */
-    [DEV_MICRODISC] = { .name = "microdisc", .claims = microdisc_dev_claims,
-                        .read = microdisc_dev_read, .write = microdisc_dev_write,
-                        .present_off = PRESENT(has_microdisc), .tick = microdisc_dev_tick },
-    [DEV_JASMIN] = { .name = "jasmin", .claims = jasmin_dev_claims, .read = jasmin_dev_read,
-                     .write = jasmin_dev_write,
-                     .save_tag = "JAS\0", .save = jasmin_dev_save, .load = jasmin_dev_load,
-                     .present_off = PRESENT(has_jasmin), .tick = jasmin_dev_tick },
 };
 
 /* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
@@ -191,7 +141,7 @@ static const io_device_t io_bus[DEV_COUNT] = {
  * mea8000) :
  * iso-comportement par construction. */
 static const io_device_t* const io_bus_tick_order[] = {
-    &io_bus[DEV_MICRODISC], &io_bus[DEV_JASMIN], &io_bus[DEV_LOCI],
+    &k_microdisc_tick, &k_jasmin_tick, &io_bus[DEV_LOCI],
 };
 
 /* Table de répartition effective : périphériques du cœur, avec les cartes en

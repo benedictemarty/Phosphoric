@@ -1,7 +1,8 @@
 # Cartes d'extension en modules auto-enregistrés (sprint G)
 
 - **Statut** : en cours — G1 livré en 2.13.0 (pilote MEA8000), G2 en 2.14.0 (SP0256,
-  Mageco/ORICON, DTL 2000, ULA-NG), G3 en 2.15.0 (état privé), G4 en 2.16.0 (ACIA).
+  Mageco/ORICON, DTL 2000, ULA-NG), G3 en 2.15.0 (état privé), G4 en 2.16.0 (ACIA),
+  G5 en 2.17.0 (Microdisc, Jasmin).
   Décision : ADR 0006 (acceptée).
 - **But** : ajouter une carte d'extension = **un fichier** (la carte) **+ une ligne**
   (la liste des cartes), au lieu des ~10 fichiers d'aujourd'hui.
@@ -119,7 +120,7 @@ builds SDL2=0, HTTPAPI=1, WASM ; `make tests-strict` et `SANITIZE=1`.
 | **G2** ✅ 2.14.0 Cartes simples | SP0256, Mageco, DTL 2000, ULA-NG | invariants 1-5 par carte |
 | **G3** ✅ 2.15.0 État privé (statique dans le module : une machine par processus, pas d'indirection par cycle ; ULA-NG reste dans la machine) | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
 | **G4** ✅ 2.16.0 ACIA (état dans la machine : savestate « SER », débogueur, LOCI ; blocs d'aide multiples) | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
-| **G5** Disques | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
+| **G5** ✅ 2.17.0 Disques (options, état et tick restent au cœur : lus ailleurs, et un appel de plus par cycle coûtait 0,65-1 %) | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
 | **G6** LOCI | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |
 | **G7** Garde-fou + guide | carte d'exemple (`card_demo.c`, hors build par défaut) ; test qui l'ajoute et vérifie qu'un fichier + une ligne suffisent ; guide « ajouter une carte » | `make test-card-template` |
 

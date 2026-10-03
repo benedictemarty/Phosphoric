@@ -61,7 +61,7 @@ static void init_test_emu(emulator_t* emu) {
     video_init(&emu->video);
     oric_keyboard_init(&emu->keyboard);
     emu->tape_syncstack = -1;
-    emu->has_microdisc = false;
+    emu->card_on[CARD_IDX_microdisc] = false;
 }
 
 static void cleanup_test(void) {
@@ -411,7 +411,7 @@ TEST(test_save_load_with_microdisc) {
     init_test_emu(&emu2);
 
     /* Enable Microdisc */
-    emu1.has_microdisc = true;
+    emu1.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu1.microdisc);
     emu1.microdisc.status = 0x55;
     emu1.microdisc.intrq = 0x80;
@@ -429,7 +429,7 @@ TEST(test_save_load_with_microdisc) {
     emu1.microdisc.fdc.delayed_int = 200;
 
     /* emu2 also needs microdisc flag for loading */
-    emu2.has_microdisc = true;
+    emu2.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu2.microdisc);
 
     ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
@@ -463,13 +463,13 @@ TEST(test_save_load_bad_sectors) {
     init_test_emu(&emu1);
     init_test_emu(&emu2);
 
-    emu1.has_microdisc = true;
+    emu1.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu1.microdisc);
     ASSERT_EQ(microdisc_add_bad_sector(&emu1.microdisc, 0, 0, 0, 5), 0);
     ASSERT_EQ(microdisc_add_bad_sector(&emu1.microdisc, 0, 1, 12, 9), 0);
     ASSERT_EQ(microdisc_add_bad_sector(&emu1.microdisc, 2, 0, 3, 1), 0);
 
-    emu2.has_microdisc = true;
+    emu2.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu2.microdisc);
 
     ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
@@ -500,7 +500,7 @@ TEST(test_save_load_disk_image) {
 
     const uint32_t dsize = 256u * 17u * 2u;   /* small 2-track disk */
 
-    emu1.has_microdisc = true;
+    emu1.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu1.microdisc);
     emu1.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
     emu1.disks[0]->data = (uint8_t*)malloc(dsize);
@@ -513,7 +513,7 @@ TEST(test_save_load_disk_image) {
     emu1.disks[0]->data[2000] = 0xCD;
 
     /* emu2 starts with a DIFFERENT image to prove the restore overwrites it. */
-    emu2.has_microdisc = true;
+    emu2.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu2.microdisc);
     emu2.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
     emu2.disks[0]->data = (uint8_t*)malloc(dsize);
@@ -555,7 +555,7 @@ TEST(test_load_dsk_section_oversized_is_skipped) {
     init_test_emu(&emu1);
     init_test_emu(&emu2);
     const uint32_t dsize = 256u * 17u;
-    emu1.has_microdisc = emu2.has_microdisc = true;
+    emu1.card_on[CARD_IDX_microdisc] = emu2.card_on[CARD_IDX_microdisc] = true;
     microdisc_init(&emu1.microdisc);
     microdisc_init(&emu2.microdisc);
     emu1.disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));

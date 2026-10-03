@@ -619,15 +619,6 @@ static void cpu_cycle_tick(void* ctx, int cycles) {
     io_bus_tick(emu, cycles);
 }
 
-/* Microdisc CPU IRQ callbacks - level-triggered: set/clear DISK IRQ source bit */
-static void microdisc_cpu_irq_set(emulator_t* emu) {
-    cpu_irq_set(&emu->cpu, IRQF_DISK);
-}
-
-static void microdisc_cpu_irq_clr(emulator_t* emu) {
-    cpu_irq_clear(&emu->cpu, IRQF_DISK);
-}
-
 /* Sprint 34ax : LOCI DSK bus callbacks — réutilise IRQF_DISK level-triggered
  * et synchronise overlay/ROMDIS dans le sous-système mémoire à chaque
  * CTRL write. Sans ça le Microdisc ROM (sous LOCI MIA_BOOT FDC) reste
@@ -934,9 +925,6 @@ static void emulator_cleanup(emulator_t* emu) {
 #ifdef HAS_SDL2
     oric_joystick_close_sdl(&emu->joystick);
 #endif
-    if (emu->has_microdisc) {
-        microdisc_cleanup(&emu->microdisc);
-    }
     for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
         if (emu->disks[i]) {
             sedoric_destroy(emu->disks[i]);
@@ -1169,7 +1157,7 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
          * ROM ($3FB=1) and reset — the Jasmin ROM's reset vector then boots
          * the disk. One-shot per boot. Confirmed traps: Atmos $EB78, ORIC-1
          * $E905. */
-        if (emu->has_jasmin && !emu->jasmin.autoboot_done && !emu->jasmin.romdis) {
+        if (emu->card_on[CARD_IDX_jasmin] && !emu->jasmin.autoboot_done && !emu->jasmin.romdis) {
             uint16_t jtrap = (emu->model == ORIC_MODEL_ATMOS) ? 0xEB78 : 0xE905;
             if (emu->cpu.PC == jtrap) {
                 jasmin_write(&emu->jasmin, JASMIN_ROMDIS, 1);
@@ -3348,77 +3336,11 @@ static int main_setup_tape(emulator_t* emu, cli_opts_t* cfg) {
 /* Jasmin, synthèses vocales SP0256 / MEA8000, Microdisc et disques, disque web LOCI, secteurs défectueux.
  * Renvoie -1 pour continuer, sinon le code de sortie du programme. */
 static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
-    /* Jasmin disk interface (--jasmin-rom): the 2nd Oric disk standard (WD177x
-     * at $03F4-$03FF, 2 KB boot ROM at $F800). Alternative to the Microdisc and
-     * mutually exclusive with it and with DTL2000/Mageco ($03F8-$03FF overlap). */
-    if (cfg->jasmin_rom_file) {
-        if (cfg->disk_rom_file) {
-            log_error("--jasmin-rom and --disk-rom are mutually exclusive "
-                      "(Jasmin vs Microdisc)");
-            emulator_cleanup(emu);
-            return 1;
-        }
-        if (emu->card_on[CARD_IDX_dtl2000] || emu->card_on[CARD_IDX_mageco]) {
-            log_error("--jasmin-rom conflicts with --dtl2000/--mageco "
-                      "(both claim $03F8-$03FF)");
-            emulator_cleanup(emu);
-            return 1;
-        }
-        /* Load the 2 KB Jasmin boot ROM. */
-        FILE* jf = fopen(cfg->jasmin_rom_file, "rb");
-        if (!jf) {
-            log_error("Failed to open Jasmin ROM: %s", cfg->jasmin_rom_file);
-            emulator_cleanup(emu);
-            return 1;
-        }
-        uint8_t jbuf[JASMIN_ROM_SIZE];
-        size_t jrd = fread(jbuf, 1, JASMIN_ROM_SIZE, jf);
-        fclose(jf);
-
-        jasmin_init(&emu->jasmin);
-        if (jrd != JASMIN_ROM_SIZE || !jasmin_load_rom(&emu->jasmin, jbuf, (uint32_t)jrd)) {
-            log_error("Jasmin ROM must be exactly %d bytes (got %zu): %s",
-                      JASMIN_ROM_SIZE, jrd, cfg->jasmin_rom_file);
-            emulator_cleanup(emu);
-            return 1;
-        }
-        emu->jasmin.cpu_irq_set = microdisc_cpu_irq_set;   /* IRQF_DISK (shared) */
-        emu->jasmin.cpu_irq_clr = microdisc_cpu_irq_clr;
-        emu->jasmin.cpu_userdata = emu;
-        emu->has_jasmin = true;
-
-        /* Wire the Jasmin banking into the memory system. At boot the Jasmin
-         * ROM is NOT paged (romdis=olay=0 → BASIC ROM visible); the auto-boot
-         * PC-trap pages it in ($3FB=1) at $EB78/$E905. */
-        emu->memory.jasmin_active = true;
-        emu->memory.jasmin_rom = emu->jasmin.rom;
-        emu->memory.jasmin_olay = emu->jasmin.olay;
-        emu->memory.jasmin_romdis = emu->jasmin.romdis;
-
-        if (cfg->fdc_timing_arg && strcmp(cfg->fdc_timing_arg, "fast") == 0)
-            emu->jasmin.fdc.timing_mode = FDC_TIMING_FAST;
-
-        log_info("Jasmin disk interface enabled (WD177x $03F4-$03FF, ROM $F800)");
-
-        /* Load disk images into drives A-D (same MFM_DISK container as the
-         * Microdisc — sedoric_load). */
-        for (int i = 0; i < JASMIN_MAX_DRIVES; i++) {
-            if (!cfg->disk_files[i]) continue;
-            log_info("Loading Jasmin disk drive %c: %s", 'A' + i, cfg->disk_files[i]);
-            emu->disks[i] = sedoric_load(cfg->disk_files[i]);
-            if (!emu->disks[i]) {
-                log_error("Failed to load disk image: %s", cfg->disk_files[i]);
-                emulator_cleanup(emu);
-                return 1;
-            }
-            emu->disk_paths[i] = cfg->disk_files[i];
-            jasmin_set_disk(&emu->jasmin, (uint8_t)i,
-                            emu->disks[i]->data, emu->disks[i]->size,
-                            emu->disks[i]->tracks, emu->disks[i]->sectors);
-            log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
-                     'A' + i, emu->disks[i]->size, emu->disks[i]->sides,
-                     emu->disks[i]->tracks, emu->disks[i]->sectors);
-        }
+    /* Cartes en modules de l'étape « disques, en tête » (Jasmin), à la place
+     * qu'occupait leur code ici (card_module.h). */
+    if (card_modules_setup(emu, cfg, CARD_STAGE_DISKS_EARLY) != 0) {
+        emulator_cleanup(emu);
+        return 1;
     }
 
     /* Cartes en modules de l'étape « synthèse vocale » (SP0256, MEA8000), à la
@@ -3428,159 +3350,11 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         return 1;
     }
 
-    /* Load disks with Microdisc controller. A Microdisc ROM on its own is
-     * enough to bring the controller up (a real Microdisc is present even with
-     * no disk in the drives) — this enables hot-swapping a .dsk in later via
-     * the OSD or the --control `load-disk` command. */
-    bool any_disk = !cfg->jasmin_rom_file &&
-                    ((cfg->disk_create_file != NULL) || (cfg->disk_rom_file != NULL));
-    for (int i = 0; !cfg->jasmin_rom_file && i < MICRODISC_MAX_DRIVES; i++) {
-        if (cfg->disk_files[i]) { any_disk = true; break; }
-    }
-
-    if (any_disk) {
-        /* Initialize Microdisc controller */
-        microdisc_init(&emu->microdisc);
-        emu->microdisc.cpu_irq_set = microdisc_cpu_irq_set;
-        emu->microdisc.cpu_irq_clr = microdisc_cpu_irq_clr;
-        emu->microdisc.cpu_userdata = emu;
-        emu->has_microdisc = true;
-
-        /* Languette de protection en écriture : posée explicitement, ou déduite
-         * du fichier lui-même — un .dsk en lecture seule sur l'hôte se comporte
-         * comme une disquette dont la languette est ouverte. */
-        {
-            bool wp = cfg->disk_write_protect;
-            if (!wp && cfg->disk_files[0] && access(cfg->disk_files[0], W_OK) != 0)
-                wp = true;
-            if (wp) {
-                /* Languette posée sur les 4 lecteurs : même effet que l'ancien
-                 * drapeau global du WD1793 (toutes les disquettes protégées). */
-                for (uint8_t d = 0; d < MICRODISC_MAX_DRIVES; d++)
-                    microdisc_set_write_protect(&emu->microdisc, d, true);
-                log_info("Disque protégé en écriture (statut WD1793 bit 6)%s",
-                         cfg->disk_write_protect ? "" : " — fichier en lecture seule");
-            }
-        }
-
-        /* WD1793 timing profile: mechanical (real) by default, --fdc-timing
-         * fast restores the legacy short delays (instant-feel loading). */
-        if (cfg->fdc_timing_arg) {
-            if (strcmp(cfg->fdc_timing_arg, "fast") == 0) {
-                emu->microdisc.fdc.timing_mode = FDC_TIMING_FAST;
-            } else if (strcmp(cfg->fdc_timing_arg, "real") == 0) {
-                emu->microdisc.fdc.timing_mode = FDC_TIMING_REAL;
-            } else {
-                log_error("Invalid --fdc-timing '%s' (use real or fast)", cfg->fdc_timing_arg);
-                emulator_cleanup(emu);
-                return 1;
-            }
-        }
-
-        /* Load Microdisc ROM if specified */
-        if (cfg->disk_rom_file) {
-            log_info("Loading Microdisc ROM: %s", cfg->disk_rom_file);
-            if (!microdisc_load_rom(&emu->microdisc, cfg->disk_rom_file)) {
-                log_error("Failed to load Microdisc ROM: %s", cfg->disk_rom_file);
-                emulator_cleanup(emu);
-                return 1;
-            }
-            /* Set overlay ROM in memory system */
-            emu->memory.overlay_rom = emu->microdisc.diskrom_data;
-            emu->memory.overlay_rom_size = emu->microdisc.diskrom_size;
-            emu->memory.overlay_active = true;
-            emu->memory.basic_rom_disabled = true;
-            log_info("Microdisc ROM loaded (%u bytes), overlay active", emu->microdisc.diskrom_size);
-        }
-
-        /* Load disk images into drives A-D */
-        for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {
-            if (!cfg->disk_files[i]) continue;
-
-            log_info("Loading disk drive %c: %s", 'A' + i, cfg->disk_files[i]);
-            emu->disks[i] = sedoric_load(cfg->disk_files[i]);
-            if (!emu->disks[i]) {
-                log_error("Failed to load disk image: %s", cfg->disk_files[i]);
-                emulator_cleanup(emu);
-                return 1;
-            }
-
-            /* Connect disk data to Microdisc drive slot */
-            microdisc_set_disk(&emu->microdisc, (uint8_t)i,
-                               emu->disks[i]->data, emu->disks[i]->size,
-                               emu->disks[i]->tracks, emu->disks[i]->sectors);
-            log_info("Drive %c: %u bytes, %d sides x %d tracks x %d sectors",
-                     'A' + i, emu->disks[i]->size, emu->disks[i]->sides,
-                     emu->disks[i]->tracks, emu->disks[i]->sectors);
-        }
-
-        /* --disk-web URL : monte en lecteur A un disque dont les secteurs sont
-         * servis par un serveur HTTP (projet loci-webdisk, architecture B). On
-         * lit d'abord l'en-tête MFM_DISK distant (256 o) pour la géométrie, on
-         * alloue une image à plat VIDE, et le FDC va chercher chaque piste MFM
-         * de 6400 o à la demande (fidèle au chemin réel LOCI dsk_web / ATDISKRD). */
-        if (cfg->disk_web_url && !emu->disks[0]) {
-            uint8_t hdr[MFM_DISK_HEADER_SIZE];
-            long hn = disk_http_get(cfg->disk_web_url, 0, MFM_DISK_HEADER_SIZE,
-                                    hdr, sizeof(hdr));
-            if (hn < 16 || memcmp(hdr, "MFM_DISK", 8) != 0) {
-                log_error("--disk-web: en-tête MFM_DISK illisible depuis %s", cfg->disk_web_url);
-                emulator_cleanup(emu);
-                return 1;
-            }
-            uint32_t sides  = hdr[8]  | ((uint32_t)hdr[9]  << 8) |
-                              ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
-            uint32_t tracks = hdr[12] | ((uint32_t)hdr[13] << 8) |
-                              ((uint32_t)hdr[14] << 16) | ((uint32_t)hdr[15] << 24);
-            if (sides < 1) sides = 1;
-            if (sides > MFM_MAX_SIDES)  sides  = MFM_MAX_SIDES;
-            if (tracks > MFM_MAX_TRACKS) tracks = MFM_MAX_TRACKS;
-            uint8_t spt = MFM_MAX_SECTORS;   /* 17 */
-
-            emu->disks[0] = (sedoric_disk_t*)calloc(1, sizeof(sedoric_disk_t));
-            uint32_t flat = sides * tracks * spt * SEDORIC_SECTOR_SIZE;
-            if (!emu->disks[0] || !(emu->disks[0]->data = (uint8_t*)calloc(1, flat))) {
-                log_error("--disk-web: allocation image à plat impossible");
-                emulator_cleanup(emu);
-                return 1;
-            }
-            emu->disks[0]->size    = flat;
-            emu->disks[0]->tracks  = (uint8_t)tracks;
-            emu->disks[0]->sectors = spt;
-            emu->disks[0]->sides   = (uint8_t)sides;
-            emu->disks[0]->is_mfm  = false;   /* pas de write-back local */
-
-            microdisc_set_disk(&emu->microdisc, 0, emu->disks[0]->data, emu->disks[0]->size,
-                               emu->disks[0]->tracks, emu->disks[0]->sectors);
-            fdc_set_web(&emu->microdisc.fdc, cfg->disk_web_url);   /* après set_disk */
-            log_info("--disk-web: lecteur A servi par %s (%u faces x %u pistes x %u s., "
-                     "pistes chargées à la demande)", cfg->disk_web_url, sides, tracks, spt);
-        }
-
-        /* --disk-create : monte une disquette Sedoric vierge en lecteur A et
-         * l'écrit aussitôt sur FILE. INIT/format à l'intérieur ; le write-back
-         * de sortie (armé avec cette option) persiste les changements. */
-        if (cfg->disk_create_file && !emu->disks[0]) {
-            /* Double face 42 pistes : géométrie que formate INIT B de Sedoric
-             * (un blank simple face était sous-dimensionné, Sprint 66). */
-            emu->disks[0] = sedoric_create_blank(SEDORIC_TRACKS, 2);
-            if (!emu->disks[0]) {
-                log_error("disk-create: allocation de la disquette vierge impossible");
-                emulator_cleanup(emu);
-                return 1;
-            }
-            if (!sedoric_save(emu->disks[0], cfg->disk_create_file))
-                log_error("disk-create: écriture impossible vers %s", cfg->disk_create_file);
-            else
-                log_info("disk-create: disquette vierge -> %s (%u octets), lecteur A",
-                         cfg->disk_create_file, emu->disks[0]->size);
-            microdisc_set_disk(&emu->microdisc, 0, emu->disks[0]->data, emu->disks[0]->size,
-                               emu->disks[0]->tracks, emu->disks[0]->sectors);
-            emu->disk_paths[0] = cfg->disk_create_file;
-            emu->disk_path = cfg->disk_create_file;
-        } else if (cfg->disk_create_file && emu->disks[0]) {
-            log_warning("disk-create ignoré : le lecteur A est déjà occupé par -d");
-        }
+    /* Cartes en modules de l'étape « disques » (Microdisc), à la place
+     * qu'occupait leur code ici (card_module.h). */
+    if (card_modules_setup(emu, cfg, CARD_STAGE_DISKS) != 0) {
+        emulator_cleanup(emu);
+        return 1;
     }
 
     /* --loci-web : autoboot NATIF LOCI. Le disque web est déjà monté sur le FDC
@@ -3621,10 +3395,10 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
         if ((nf == 3 || nf == 4) &&
             d < MICRODISC_MAX_DRIVES && s <= 1 && trk < 256 && sec >= 1 && sec < 256) {
             int rc = -1;
-            if (emu->has_microdisc)
+            if (emu->card_on[CARD_IDX_microdisc])
                 rc = microdisc_add_bad_sector(&emu->microdisc, (uint8_t)d,
                                               (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
-            if (emu->has_jasmin) {
+            if (emu->card_on[CARD_IDX_jasmin]) {
                 int rc2 = jasmin_add_bad_sector(&emu->jasmin, (uint8_t)d,
                                                 (uint8_t)s, (uint8_t)trk, (uint8_t)sec);
                 if (rc != 0) rc = rc2;
@@ -3959,7 +3733,7 @@ static int main_finish(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
      * dirty only if the guest actually wrote a sector to it this session. The
      * original file is overwritten in place, so this is gated behind an explicit
      * flag to never clobber a .dsk by accident. */
-    if (cfg->disk_writeback && (emu->has_microdisc || emu->has_jasmin)) {
+    if (cfg->disk_writeback && (emu->card_on[CARD_IDX_microdisc] || emu->card_on[CARD_IDX_jasmin])) {
         for (int i = 0; i < emu_disk_max_drives(emu); i++) {
             /* disk_paths[] suit les swaps OSD ; disk_files[] ne voit qu'argv. */
             const char* path = emu->disk_paths[i];
@@ -3999,7 +3773,7 @@ static int main_finish(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
     }
     /* Diagnostic : un transfert disque sain ne perd aucun octet. Si le compteur
      * n'est pas nul, le logiciel a servi un DRQ trop tard (ou le modèle dérive). */
-    if (emu->has_microdisc && emu->microdisc.fdc.lost_data_count)
+    if (emu->card_on[CARD_IDX_microdisc] && emu->microdisc.fdc.lost_data_count)
         log_warning("FDC: %u octet(s) signalé(s) perdus (LOST DATA) pendant la session",
                     emu->microdisc.fdc.lost_data_count);
 

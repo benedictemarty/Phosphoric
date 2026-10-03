@@ -199,7 +199,7 @@ void dbg_show_psg_state(emulator_t* emu) {
 
 /* Sprint 34d2 P1-C — WD1793 Microdisc FDC + 4 drives mount info. */
 void dbg_show_disk_state(emulator_t* emu) {
-    if (!emu->has_microdisc) {
+    if (!emu->card_on[CARD_IDX_microdisc]) {
         printf("  Microdisc: not active (use --disk-rom roms/microdis.rom)\n");
         return;
     }
