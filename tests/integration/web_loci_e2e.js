@@ -53,9 +53,9 @@ async function waitScreen(p, re, ms) {
   while (Date.now() - t0 < ms) { txt = await screenText(p); if (re.test(txt)) return txt; await p.waitForTimeout(300); }
   return txt;
 }
-// Charge la page et attend que le moteur soit prêt (`ready`, mis à vrai dans
-// onRuntimeInitialized) : avant, Module.ccall('web_peek') lève « func is not a
-// function » (échec intermittent en suite complète, vu en 2.12.9).
+// Loads the page and waits for the engine to be ready (`ready`, set true in
+// onRuntimeInitialized): before that, Module.ccall('web_peek') throws "func is
+// not a function" (intermittent failure in the full suite, seen in 2.12.9).
 async function gotoReady(p, url) {
   await p.goto(url);
   await p.waitForFunction(() => typeof ready !== 'undefined' && ready, null, { timeout: 30000 });
