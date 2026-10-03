@@ -491,8 +491,11 @@ TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c sr
 
 $(eval $(call UNIT_TEST,test-debugger,test_debugger,$(TEST_DEBUGGER_SRCS),,))
 
+# stb_image_write : objet de la build (exempté de -fsanitize=shift, cf.
+# STB_SAN_CFLAGS), pas sa source, que DIRECT_TEST compilerait avec tous les
+# sanitizers (erreur UBSan dans stbiw__jpg_writeBits en CI sanitizers, 2.12.7).
 TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c \
-                 src/video/stb_image_write_impl.c src/utils/logging.c
+                 $(BUILD)/src/video/stb_image_write_impl.o src/utils/logging.c
 
 # The cast server encrypts with TLS: without OpenSSL (pkg-config openssl, see
 # PICOTLS), the test is skipped instead of failing to compile.
