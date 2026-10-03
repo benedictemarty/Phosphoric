@@ -51,6 +51,7 @@ typedef struct {
 typedef enum {
     CARD_STAGE_MACHINE,    /* main_setup_machine, juste après emulator_init */
     CARD_STAGE_SERIAL,     /* main_setup_serial_cards, après l'ACIA 6551 */
+    CARD_STAGE_LOCI,       /* main_setup_loci (tout son contenu) */
     CARD_STAGE_DISKS_EARLY, /* main_setup_disks_speech, en tête (Jasmin) */
     CARD_STAGE_SPEECH,     /* main_setup_disks_speech, après le Jasmin */
     CARD_STAGE_DISKS,      /* main_setup_disks_speech, après la synthèse (Microdisc) */

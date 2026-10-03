@@ -2,7 +2,7 @@
 
 - **Statut** : en cours — G1 livré en 2.13.0 (pilote MEA8000), G2 en 2.14.0 (SP0256,
   Mageco/ORICON, DTL 2000, ULA-NG), G3 en 2.15.0 (état privé), G4 en 2.16.0 (ACIA),
-  G5 en 2.17.0 (Microdisc, Jasmin).
+  G5 en 2.17.0 (Microdisc, Jasmin), G6 en 2.18.0 (LOCI).
   Décision : ADR 0006 (acceptée).
 - **But** : ajouter une carte d'extension = **un fichier** (la carte) **+ une ligne**
   (la liste des cartes), au lieu des ~10 fichiers d'aujourd'hui.
@@ -121,7 +121,7 @@ builds SDL2=0, HTTPAPI=1, WASM ; `make tests-strict` et `SANITIZE=1`.
 | **G3** ✅ 2.15.0 État privé (statique dans le module : une machine par processus, pas d'indirection par cycle ; ULA-NG reste dans la machine) | les cartes simples gardent leur état derrière le module (`emu->card_state[i]`) ; `has_X` retirés de `emulator_t` pour elles | `emulator.h` ne connaît plus ces 5 cartes |
 | **G4** ✅ 2.16.0 ACIA (état dans la machine : savestate « SER », débogueur, LOCI ; blocs d'aide multiples) | transports série (`--serial`, `--acia-addr`, IRQ…), débogueur (`peek`) | `test-serial-*`, `test-loci-acia-*`, `cli_golden` |
 | **G5** ✅ 2.17.0 Disques (options, état et tick restent au cœur : lus ailleurs, et un appel de plus par cycle coûtait 0,65-1 %) | Microdisc, Jasmin : médias via l'API `emu_disk_*` déjà en place | `test-storage`, `test-jasmin`, `test-control-media-swap` |
-| **G6** LOCI | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |
+| **G6** ✅ 2.18.0 LOCI (fiche, bus, mise en route ; options, état et tick au cœur ; io_bus.c sans table du cœur) | carte la plus couplée (coprocesseur, menu, fichiers hôte) ; périmètre réévalué après G5 | suites LOCI complètes |
 | **G7** Garde-fou + guide | carte d'exemple (`card_demo.c`, hors build par défaut) ; test qui l'ajoute et vérifie qu'un fichier + une ligne suffisent ; guide « ajouter une carte » | `make test-card-template` |
 
 Ordre : G1 seul d'abord. Si le pilote MEA8000 coûte en performance ou en lisibilité

@@ -292,7 +292,7 @@ void dbg_show_tape_state(emulator_t* emu) {
  * xram windows, fd/dir tables, mount table, TAP/DSK backend, errno, top
  * ops by count). 2780 LOC of LOCI had zero debugger surface before. */
 void dbg_show_loci_state(emulator_t* emu) {
-    if (!emu->has_loci) {
+    if (!emu->card_on[CARD_IDX_loci]) {
         printf("  LOCI: not active (use --loci or --loci-sdimg PATH)\n");
         return;
     }

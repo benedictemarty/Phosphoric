@@ -129,7 +129,7 @@ void ctl_cmd_load_disk(emulator_t* emu, control_sink_t* s,
         return;
     }
     if (!emu_has_disk_iface(emu)) {
-        sink_err(s, emu->has_loci && emu->loci_external
+        sink_err(s, emu->card_on[CARD_IDX_loci] && emu->loci_external
                  ? "load-disk: LOCI firmware mounts its own images (MENU button)"
                  : "load-disk: no disk controller (need --disk-rom or --jasmin-rom)");
         return;
@@ -182,7 +182,7 @@ void ctl_cmd_eject_disk(emulator_t* emu, control_sink_t* s,
  * path as F8 in the GUI: session snapshot, IRQ trap, then boot the menu
  * ROM (short) or the test108k diagnostic ROM ("long", ≥ 2 s hold). */
 void ctl_cmd_loci_button(emulator_t* emu, control_sink_t* s, const char* mode) {
-    if (!emu->has_loci) {
+    if (!emu->card_on[CARD_IDX_loci]) {
         sink_err(s, "loci-button: LOCI not enabled (--loci)");
         return;
     }

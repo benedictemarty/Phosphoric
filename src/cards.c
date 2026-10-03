@@ -30,22 +30,6 @@
 
 static const card_desc_t k_cards[] = {
     {
-        "loci", "LOCI",
-        "Cartouche LOCI (modèle intégré) : menu de fichiers, émulation Microdisc et "
-        "cassette depuis une carte SD ou une clé USB, ACIA en $0380.",
-        "disque", "--loci", -1, -1, 0x03A0, 32, false,
-        { { "menu", "Démarrer sur le menu LOCI", CARD_P_BOOL, NULL, "oui",
-            "oui : l'Oric démarre sur le menu de la carte (ROM roms/loci/locirom) ; "
-            "non : BASIC direct, LOCI reste disponible." },
-          { "sd", "Image de carte SD", CARD_P_FILE, "--loci-sdimg", "",
-            "Image FAT16/32 lue par LOCI : ses .dsk et .tap apparaissent dans son menu. "
-            "Vide : aucune." },
-          { "flash", "Dossier flash interne", CARD_P_DIR, "--loci-flash", "",
-            "Dossier de l'hôte servant de mémoire flash interne (fichiers 0: du LOCI). "
-            "Vide : aucun." } },
-        3
-    },
-    {
         "hostfs", "Hôte (hostfs)",
         "Dossier de l'ordinateur monté dans l'Oric : ses fichiers sont lus et "
         "écrits directement.",
@@ -53,20 +37,6 @@ static const card_desc_t k_cards[] = {
         { { "dossier", "Dossier monté", CARD_P_DIR, "-h", ".",
             "Dossier de l'hôte vu par l'Oric." } },
         1
-    },
-    {
-        "loci_emu", "LOCI firmware",
-        "LOCI co-simulé : le vrai firmware RP2040 tourne dans l'émulateur "
-        "(développement du firmware).",
-        "disque", "--loci-emu", 0, -1, 0x03A0, 32, false,
-        { { "elf", "Firmware (ELF)", CARD_P_FILE, "--loci-emu", "",
-            "Fichier loci-firmware.elf compilé pour RP2040." },
-          { "flash", "Image flash", CARD_P_FILE, "--loci-emu-flash", "",
-            "Mémoire flash persistante du firmware ; vide : <ELF>.flash ; « - » : "
-            "volatile." },
-          { "usb", "Image de clé USB", CARD_P_FILE, "--loci-usb-image", "",
-            "Image FAT servie au firmware comme clé USB ; vide : aucune." } },
-        3
     },
 };
 #define K_CARDS ((int)(sizeof(k_cards) / sizeof(k_cards[0])))
@@ -246,7 +216,7 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
             cards_set_on(st, i, true);
             if (emu->jasmin_rom_path) set_value(&st->card[i], 0, emu->jasmin_rom_path);
         }
-        if (emu->has_loci && !emu->loci_external && (i = cards_find("loci")) >= 0) {
+        if (emu->card_on[CARD_IDX_loci] && !emu->loci_external && (i = cards_find("loci")) >= 0) {
             cards_set_on(st, i, true);
             const char* rom = emu->rom_path ? emu->rom_path : "";
             set_value(&st->card[i], 0, strstr(rom, "locirom") ? "oui" : "non");

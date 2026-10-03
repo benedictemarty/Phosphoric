@@ -27,25 +27,6 @@
  * *renvoie* si elle a consommé — sinon repli VIA ; d'où le `claims_write` distinct
  * et le retour booléen de `write`. Pattern « strangler ». */
 
-/* LOCI (sodiumlb) : trois sous-fenêtres disjointes, dispatchées en interne.
- *  - MIA $03A0-$03BF (indépendant des autres périphériques) ;
- *  - TAP $0315-$0317 : remplace l'interface cassette, recouvre le Microdisc
- *    $0310-$031F → priorité (LOCI est en tête de table) ;
- *  - DSK $0310-$0314 + $0318-$0319 : seulement en l'absence de vrai Microdisc
- *    (sinon le Microdisc possède la plage). */
-/* Co-sim : fenêtre + registres de l'expansion RAM $AF ($03C0-$03E4), servis par le
- * firmware (io-page) — inconnus du modèle interne. */
-static bool loci_emu_ramx_claims(uint16_t addr) {
-    return loci_emu_active() && addr >= 0x03C0 && addr <= 0x03E4;
-}
-static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
-    if (!emu->has_loci) return false;
-    if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* backend neo : /IO CONTROL */
-    if (loci_addr_in_mia(addr) || loci_emu_ramx_claims(addr)) return true;
-    if (loci_addr_in_tap(addr)) return true;
-    if (!emu->card_on[CARD_IDX_microdisc] && loci_addr_in_dsk(addr)) return true;
-    return false;
-}
 /* Réflexion du nIRQ synchrone (backend co-sim --loci-emu). Le firmware RP2040
  * PULSE la ligne nIRQ (ext_put(EXT_IRQ,true) puis false) en réaction à une
  * transaction MIA (l'écriture fait tourner core0+core1 le temps du dialogue bus) :
@@ -57,46 +38,6 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
 void loci_emu_reflect_nirq(emulator_t* emu) {
     int pulses = loci_emu_irq_take();
     for (int i = 0; i < pulses; i++) cpu_irq_pulse(&emu->cpu);
-}
-static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
-     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core).
-     * Pendant le boot arrière-plan (1er lancement d'un ELF), on ATTEND : sinon le
-     * modèle interne répondait à la place du firmware (open("N:…") → FR_NO_FILE). */
-    loci_emu_wait_boot();
-    if (loci_emu_io_page()) {
-        uint8_t v;
-        bool drv = loci_emu_io_read(addr, &v);
-        loci_emu_reflect_nirq(emu);
-        return drv ? v : memory_open_bus(&emu->memory);
-    }
-    if (loci_emu_ramx_claims(addr)) return loci_emu_api_read(addr);
-    if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
-                                                         : loci_read(&emu->loci, addr);
-    if (loci_addr_in_tap(addr)) return loci_emu_active() ? loci_emu_tap_read(addr)
-                                                         : loci_tap_read(&emu->loci, addr);
-    /* DSK (claims l'a garanti). En co-sim, le WD1793 est celui du firmware (oric/dsk.c) :
-     * un .dsk monté sur A: dans le VRAI menu LOCI est enfin lu par le 6502. */
-    if (loci_emu_active()) {
-        uint8_t v = loci_emu_dsk_read(addr);
-        loci_emu_reflect_nirq(emu);   /* fin de secteur : l'IRQ naît sur la DERNIÈRE lecture DATA */
-        return v;
-    }
-    return loci_dsk_read(&emu->loci, addr);
-}
-static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
-    loci_emu_wait_boot();
-    if (loci_emu_io_page()) { loci_emu_io_write(addr, value); loci_emu_reflect_nirq(emu); return true; }
-    if (loci_emu_ramx_claims(addr))  loci_emu_api_write(addr, value);
-    else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
-                                                           loci_emu_reflect_nirq(emu); }
-                                  else                   loci_write(&emu->loci, addr, value); }
-    else if (loci_addr_in_tap(addr)) { if (loci_emu_active()) loci_emu_tap_write(addr, value);
-                                       else                   loci_tap_write(&emu->loci, addr, value); }
-    else if (loci_emu_active())    { loci_emu_dsk_write(addr, value);           /* DSK co-sim */
-                                     loci_emu_reflect_nirq(emu); }
-    else                             loci_dsk_write(&emu->loci, addr, value);  /* DSK */
-    return true;
 }
 
 
@@ -114,26 +55,23 @@ static void jasmin_dev_tick(emulator_t* emu, int cycles) {
 static const io_device_t k_microdisc_tick = {
     .name = "microdisc", .present_off = offsetof(emulator_t, card_on[CARD_IDX_microdisc]),
     .tick = microdisc_dev_tick };
-static const io_device_t k_jasmin_tick = {
-    .name = "jasmin", .present_off = offsetof(emulator_t, card_on[CARD_IDX_jasmin]),
-    .tick = jasmin_dev_tick };
 
 static void loci_dev_tick(emulator_t* emu, int cycles) {
     fdc_ticktock(&emu->loci.dsk_fdc, cycles);
     loci_adj_tick(&emu->loci, cycles);
 }
+static const io_device_t k_jasmin_tick = {
+    .name = "jasmin", .present_off = offsetof(emulator_t, card_on[CARD_IDX_jasmin]),
+    .tick = jasmin_dev_tick };
+/* LOCI (carte en module, src/cards/card_loci.c) : son état et son horloge restent
+ * dans la machine ; le cœur l'avance ici, après les contrôleurs disque. */
+static const io_device_t k_loci_tick = {
+    .name = "loci", .present_off = offsetof(emulator_t, card_on[CARD_IDX_loci]),
+    .tick = loci_dev_tick };
 
-/* Position de chaque device dans io_bus[] (= priorité de dispatch). */
-enum { DEV_LOCI, DEV_COUNT };
 
 #define PRESENT(flag) offsetof(emulator_t, flag)
 
-static const io_device_t io_bus[DEV_COUNT] = {
-    /* (LOCI : pas de section .ost — réserve des handles OS du backend fichiers.) */
-    [DEV_LOCI] = { .name = "loci", .claims = loci_dev_claims, .read = loci_dev_read,
-                   .write = loci_dev_write,
-                   .present_off = PRESENT(has_loci), .tick = loci_dev_tick },
-};
 
 /* ORDRE DES TICKS, distinct de l'ordre de dispatch et PRÉSERVÉ à l'identique de
  * l'ancien cpu_cycle_tick (microdisc → jasmin → loci), puis les cartes en
@@ -141,14 +79,14 @@ static const io_device_t io_bus[DEV_COUNT] = {
  * mea8000) :
  * iso-comportement par construction. */
 static const io_device_t* const io_bus_tick_order[] = {
-    &k_microdisc_tick, &k_jasmin_tick, &io_bus[DEV_LOCI],
+    &k_microdisc_tick, &k_jasmin_tick, &k_loci_tick,
 };
 
 /* Table de répartition effective : périphériques du cœur, avec les cartes en
  * modules insérées avant leur ancre (bus_before), copiés dans un tableau
  * contigu (même forme qu'avant pour savestate.c : l'ordre des sections .ost est
  * celui de cette table). Construite au premier usage. */
-#define IO_BUS_MAX (DEV_COUNT + 32)
+#define IO_BUS_MAX 32
 static io_device_t s_bus[IO_BUS_MAX];
 static int s_bus_n = -1;
 
@@ -159,17 +97,12 @@ static void bus_emit(int m, int j, void* ctx) {
     (void)j; (void)ctx;
     if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = *k_card_modules[m]->bus;
 }
-static void bus_emit_core(int i, void* ctx) {
-    (void)ctx;
-    if (s_bus_n < IO_BUS_MAX) s_bus[s_bus_n++] = io_bus[i];
-}
 
+/* Tous les périphériques du bus sont désormais des cartes en modules : la table
+ * se construit de leurs seules ancres (aucun élément du cœur). */
 static void io_bus_build(void) {
-    const char* names[DEV_COUNT];
-    for (int i = 0; i < DEV_COUNT; i++) names[i] = io_bus[i].name;
     s_bus_n = 0;
-    card_modules_place(names, DEV_COUNT, bus_anchor, bus_count, bus_key,
-                       bus_emit, bus_emit_core, NULL);
+    card_modules_place(NULL, 0, bus_anchor, bus_count, bus_key, bus_emit, NULL, NULL);
 }
 
 const io_device_t* io_bus_find(emulator_t* emu, uint16_t addr) {

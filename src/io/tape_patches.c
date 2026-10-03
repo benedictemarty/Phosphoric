@@ -389,7 +389,7 @@ do_patch:
             }
 
             /* Persist to SDIMG so the file survives a restart. */
-            if (emu->has_loci && emu->loci.sdimg && t > 0) {
+            if (emu->card_on[CARD_IDX_loci] && emu->loci.sdimg && t > 0) {
                 char sd_name[16] = {0};
                 int sci = 0;
                 for (int i = 0; clean_name[i] && sci < 8 && clean_name[i] != '.'; i++) {

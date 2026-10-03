@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.17.0
+Current Version: 2.18.0
 Release Date: 2026-09-30
-Status: Stable (**Sprint G5 : Microdisc et Jasmin en modules — 2.17.0**. Fiche, mise en route, bus, fermeture ; options, état et tick au cœur ; card_on remplace has_microdisc/has_jasmin ; cli_golden 143 cas 0 écart ; .ost disque identiques.)
+Status: Stable (**Sprint G6 : LOCI en module — 2.18.0**. Fiche, bus (MIA/TAP/DSK, co-sim), mise en route ; options, état, tick au cœur ; io_bus.c sans table du cœur ; cli_golden 143 cas 0 écart.)
+Status (prev): Stable (**Sprint G5 : Microdisc et Jasmin en modules — 2.17.0**. Fiche, mise en route, bus, fermeture ; options, état et tick au cœur ; card_on remplace has_microdisc/has_jasmin ; cli_golden 143 cas 0 écart ; .ost disque identiques.)
 Status (prev): Stable (**Sprint G4 : ACIA 6551 en module — 2.16.0**. 9 options, mise en route, bus (course PHI2 LOCI), tick ; card_on remplace has_serial ; blocs d'aide multiples ; cli_golden 143 cas 0 écart.)
 Status (prev): Stable (**Sprint G3 : état des cartes simples privé — 2.15.0**. DTL 2000, Mageco, SP0256, MEA8000 hors d'emulator_t (statique dans le module) ; cli_golden 136 cas 0 écart ; .ost identiques.)
 Status (prev): Stable (**Sprint G2 : cartes simples en modules — 2.14.0**. SP0256, Mageco+ORICON, DTL 2000, ULA-NG ; io_bus.c réduit à LOCI/ACIA/Microdisc/Jasmin ; cli_golden 136 cas 0 écart ; instructions +0,004 %.)

@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.17.0"
+#define EMU_VERSION "2.18.0"
 
 /**
  * @brief ORIC machine model
@@ -453,7 +453,6 @@ typedef struct emulator_s {
     /* LOCI peripheral (Lovely Oric Computer Interface, sodiumlb 2024).
      * Only active when --loci is passed; reserves MIA bus at $03A0-$03BF. */
     loci_t loci;
-    bool   has_loci;
     /* Cartes d'extension (menu F1) : options de lancement d'origine, choix en
      * cours d'édition, options de relance (NULL : pas de relance demandée). */
     int    argc;
@@ -648,7 +647,7 @@ static inline bool emu_has_disk_iface(const emulator_t* emu) {
  * réel (loci_external), son firmware monte ses images : rien depuis l'hôte.
  * Règle commune au menu F1 et à --control / API HTTP. */
 static inline bool emu_loci_disks(const emulator_t* emu) {
-    return emu->has_loci && !emu->loci_external && !emu_has_disk_iface(emu);
+    return emu->card_on[CARD_IDX_loci] && !emu->loci_external && !emu_has_disk_iface(emu);
 }
 
 #endif /* EMULATOR_H */

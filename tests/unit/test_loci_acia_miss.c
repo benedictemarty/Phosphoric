@@ -62,7 +62,7 @@ static void setup(void) {
 
     g_emu->card_on[CARD_IDX_acia] = true;
     g_emu->acia_base_addr = 0x0380;
-    g_emu->has_loci = true;
+    g_emu->card_on[CARD_IDX_loci] = true;
     /* Fenêtre fiable [5,10] : tior=0 (défaut) → HORS fenêtre → course perdue. */
     loci_set_mia_window(&g_emu->loci, 5, 10);
     g_emu->loci.mia_tior = 0;
@@ -193,7 +193,7 @@ TEST(test_reliable_read_is_pristine) {
 /* Sans LOCI (ACIA autonome), aucune course : lecture toujours propre même tior=0. */
 TEST(test_no_loci_no_race) {
     setup();
-    g_emu->has_loci = false;                        /* pas de MIA → pas de serve fragile */
+    g_emu->card_on[CARD_IDX_loci] = false;                        /* pas de MIA → pas de serve fragile */
     g_emu->loci.mia_tior = 0;
     inject_rx(0xEE);
     g_emu->memory.last_bus_value = 0x55;
