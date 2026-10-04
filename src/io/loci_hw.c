@@ -14,6 +14,7 @@
  *
  * Modèle :
  *  - le firmware réel tourne en continu : « booté » dès que le pont répond (PING) ;
+ *    au démarrage, POWERON (caps & LUP_CAP_POWERON) le remet à l'état mise sous tension ;
  *  - $03xx : un aller-retour USB par accès (stop-and-wait, ~0,1-1 ms) ;
  *  - ROM servie : CACHE hôte de 16 Ko rempli par RDN (une banque en une requête),
  *    avec les flags nROMDIS/nMAP par adresse. Invalidé quand la GÉNÉRATION de la vue
@@ -133,6 +134,18 @@ int loci_emu_start(const char *dev)
     if (lup_open(&g_c, dev) != 0) {
         log_error("LOCI-hw: impossible d'ouvrir le pont « %s » : %s", dev, lup_client_error(&g_c));
         return -1;
+    }
+    /* La cartouche reste alimentée par l'USB entre deux sessions : sans remise à
+     * l'état « mise sous tension », la session suivante hérite de l'état précédent
+     * (2 fronts nRESET, gen8 instable, 6502 planté en pile). POWERON = l'équivalent de
+     * l'allumage de l'Oric, qui remet aussi la LOCI à zéro. LOCI_HW_NO_POWERON=1 : garder l'état. */
+    if ((g_c.caps & LUP_CAP_POWERON) && !getenv("LOCI_HW_NO_POWERON")) {
+        if (lup_poweron(&g_c) != 0 || lup_reconnect(&g_c, dev, 10000) != 0) {
+            log_error("LOCI-hw: POWERON a échoué : %s", lup_client_error(&g_c));
+            lup_close(&g_c);
+            return -1;
+        }
+        log_info("LOCI-hw: cartouche remise à l'état mise sous tension (POWERON)");
     }
     uint8_t lines = 0, irqs, rsts;
     if (lup_lines(&g_c, &lines, &irqs, &rsts) != 0) {
