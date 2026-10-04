@@ -92,7 +92,8 @@ void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
 
 /* Conflits d'adresses d'E/S entre cartes actives : message dans @p out
  * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false si aucun.
- * Signale aussi un modem LOCI réel introuvable (aucun picowifi branché). */
+ * Signale aussi un modem LOCI réel introuvable (aucun picowifi branché) et une
+ * cartouche LOCI réelle sans pont USB (aucun LOCI-USB branché ni port indiqué). */
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz);
 
 /* Options de lancement pour relancer avec @p st : celles d'@p argv sans aucune

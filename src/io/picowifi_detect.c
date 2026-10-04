@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file picowifi_detect.c
- * @brief Détection d'un modem picowifi réel par son nom de produit USB (/sys)
+ * @brief Détection d'un modem picowifi réel et du pont LOCI-USB (Feather) par
+ *        leur nom de produit USB (/sys)
  * @author bmarty <bmarty@mailo.com>
  */
 #include "io/picowifi_detect.h"
@@ -19,16 +20,19 @@ void picowifi_serial_spec(const char* dev, char* out, size_t outsz) {
 
 #if defined(_WIN32) || defined(__EMSCRIPTEN__)
 
-bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
-    (void)sysfs_root; (void)out; (void)outsz;
+static bool usb_tty_detect(const char* sysfs_root, const char* product, bool prefix,
+                           char* out, size_t outsz) {
+    (void)sysfs_root; (void)product; (void)prefix; (void)out; (void)outsz;
     return false;
 }
 
 #else
 
 /* Produit USB du port @p tty : <root>/class/tty/<tty>/device est l'interface
- * USB, le fichier « product » est dans le périphérique parent. */
-static bool tty_product_matches(const char* root, const char* tty) {
+ * USB, le fichier « product » est dans le périphérique parent. @p prefix : le
+ * produit commence par @p product (sinon : il lui est égal). */
+static bool tty_product_matches(const char* root, const char* tty, const char* product,
+                                bool prefix) {
     char path[512], line[128];
     snprintf(path, sizeof(path), "%.400s/class/tty/%.63s/device/../product", root, tty);
     FILE* f = fopen(path, "r");
@@ -37,14 +41,16 @@ static bool tty_product_matches(const char* root, const char* tty) {
     fclose(f);
     if (!ok) return false;
     line[strcspn(line, "\r\n")] = '\0';
-    return strcmp(line, PICOWIFI_USB_PRODUCT) == 0;
+    return prefix ? strncmp(line, product, strlen(product)) == 0
+                  : strcmp(line, product) == 0;
 }
 
 static int by_name(const void* a, const void* b) {
     return strcmp((const char*)a, (const char*)b);
 }
 
-bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
+static bool usb_tty_detect(const char* sysfs_root, const char* product, bool prefix,
+                           char* out, size_t outsz) {
     const char* env = getenv("PHOSPHORIC_SYSFS_ROOT");    /* tests */
     const char* root = sysfs_root ? sysfs_root : env && *env ? env : "/sys";
     char dir[512];
@@ -60,7 +66,7 @@ bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
     closedir(d);
     qsort(names, (size_t)n, sizeof(names[0]), by_name);
     for (int i = 0; i < n; i++) {
-        if (tty_product_matches(root, names[i])) {
+        if (tty_product_matches(root, names[i], product, prefix)) {
             snprintf(out, outsz, "/dev/%s", names[i]);
             return true;
         }
@@ -69,3 +75,11 @@ bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
 }
 
 #endif
+
+bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
+    return usb_tty_detect(sysfs_root, PICOWIFI_USB_PRODUCT, false, out, outsz);
+}
+
+bool loci_usb_detect(const char* sysfs_root, char* out, size_t outsz) {
+    return usb_tty_detect(sysfs_root, LOCI_USB_PRODUCT_PREFIX, true, out, outsz);
+}

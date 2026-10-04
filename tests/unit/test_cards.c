@@ -338,7 +338,93 @@ TEST(test_loci_modem_cfg) {
     unlink(path);
 }
 
+/* Pont LOCI-USB de la Feather (--loci-hw) : ttyACM2, à côté du picowifi. */
+#define LOCI_USB_FW_PRODUCT "LOCI-USB (bus 6502 pour Phosphoric)"
+
+TEST(test_loci_usb_detect_by_usb_product) {
+    char dev[64];
+    fake_sysfs(true);
+    ASSERT_TRUE(!loci_usb_detect(NULL, dev, sizeof dev));     /* picowifi seul */
+    fake_tty("ttyACM2", LOCI_USB_FW_PRODUCT);
+    ASSERT_TRUE(loci_usb_detect(NULL, dev, sizeof dev));
+    ASSERT_STR(dev, "/dev/ttyACM2");
+    ASSERT_TRUE(picowifi_detect(NULL, dev, sizeof dev));      /* chacun le sien */
+    ASSERT_STR(dev, "/dev/ttyACM1");
+    fake_sysfs(false);
+    fake_tty("ttyACM3", "LOCI-USB loci-fw (bus 6502)");        /* firmware loci-fw-usb */
+    ASSERT_TRUE(loci_usb_detect(NULL, dev, sizeof dev));
+    ASSERT_STR(dev, "/dev/ttyACM3");
+    fake_sysfs_drop();
+}
+
+TEST(test_loci_hw_card) {
+    cards_state_t st;
+    int hw = cards_find("loci_hw"), lo = cards_find("loci");
+    char buf[256], msg[96];
+    ASSERT_TRUE(hw >= 0 && lo >= 0);                 /* backend « hw » (main) */
+    ASSERT_STR(cards_get(hw)->group, "disque");
+    fake_sysfs(true);
+    fake_tty("ttyACM2", LOCI_USB_FW_PRODUCT);
+    /* Ligne de commande : port détecté laissé vide, autre port gardé. */
+    char* a1[] = { "oric1-emu", "--loci-hw", "/dev/ttyACM2", NULL };
+    cards_state_from(&st, NULL, 3, a1);
+    ASSERT_TRUE(st.card[hw].on && !st.card[lo].on);
+    ASSERT_STR(st.card[hw].value[0], "");
+    char* a2[] = { "oric1-emu", "--loci-hw=/dev/ttyUSB9", NULL };
+    cards_state_from(&st, NULL, 2, a2);
+    ASSERT_STR(st.card[hw].value[0], "/dev/ttyUSB9");
+    /* Groupe « disque » : exclusive avec le LOCI simulé. */
+    cards_set_on(&st, lo, true);
+    ASSERT_TRUE(!st.card[hw].on);
+    cards_set_on(&st, hw, true);
+    ASSERT_TRUE(!st.card[lo].on);
+    /* Relance : port détecté, puis port imposé. */
+    char* a0[] = { "oric1-emu", "--loci", "--loci-flash", "f", NULL };
+    st.card[hw].value[0][0] = '\0';
+    ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
+    char** av = cards_build_argv(&st, 4, a0, NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_STR(buf, "oric1-emu --loci-hw /dev/ttyACM2 --no-config-cards");
+    cards_argv_free(av);
+    snprintf(st.card[hw].value[0], CARD_VALUE_MAX, "/dev/ttyUSB9");
+    av = cards_build_argv(&st, 1, a0, NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_STR(buf, "oric1-emu --loci-hw /dev/ttyUSB9 --no-config-cards");
+    cards_argv_free(av);
+    /* Aucun pont branché, port vide : signalé, et la carte n'est pas relancée. */
+    fake_sysfs(false);
+    st.card[hw].value[0][0] = '\0';
+    ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "LOCI-USB"));
+    av = cards_build_argv(&st, 1, a0, NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_STR(buf, "oric1-emu --no-config-cards");
+    cards_argv_free(av);
+    fake_sysfs_drop();
+}
+
+TEST(test_loci_hw_cfg) {
+    cards_state_t st, back;
+    bool seen[16];
+    int hw = cards_find("loci_hw");
+    cards_state_defaults(&st);
+    cards_set_on(&st, hw, true);
+    snprintf(st.card[hw].value[0], CARD_VALUE_MAX, "/dev/ttyACM5");
+    char path[] = "/tmp/phos_cards_hw_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_TRUE(fd >= 0);
+    FILE* f = fdopen(fd, "w");
+    cards_cfg_write(&st, f);
+    fclose(f);
+    ASSERT_TRUE(cards_cfg_read(path, &back, seen));
+    unlink(path);
+    ASSERT_TRUE(back.card[hw].on && seen[hw]);
+    ASSERT_STR(back.card[hw].value[0], "/dev/ttyACM5");
+}
+
 int main(void) {
+    /* test-cards est lié au backend LOCI « stub » : la fiche « LOCI réelle »
+     * n'apparaît qu'avec le backend « hw » (make LOCI_HW=1). */
+    setenv("PHOSPHORIC_TEST_LOCI_BACKEND", "hw", 1);
     printf("=== Registre des cartes d'extension ===\n");
     RUN(test_registry_is_described);
     RUN(test_state_from_cli);
@@ -353,6 +439,9 @@ int main(void) {
     RUN(test_loci_modem_real_missing_is_reported);
     RUN(test_loci_modem_state_from_cli);
     RUN(test_loci_modem_cfg);
+    RUN(test_loci_usb_detect_by_usb_product);
+    RUN(test_loci_hw_card);
+    RUN(test_loci_hw_cfg);
     printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
 }

@@ -559,6 +559,13 @@ detection) ; le reglage **Port du picowifi reel** l'impose (ex. `/dev/ttyACM0`).
 Aucun picowifi detecte : le menu le signale et refuse d'appliquer. Dans
 `phosphoric.cfg` : `loci.modem=simulé`, `loci.port=/dev/ttyACM0`.
 
+Avec un binaire compile par `make LOCI_HW=1`, le menu F1 propose aussi la carte
+**LOCI réelle** : la vraie cartouche LOCI branchee par le pont USB loci-usb
+(Feather RP2040), equivalent de `--loci-hw /dev/ttyACM0`. Son reglage **Port du
+pont USB** est detecte automatiquement sous Linux (produit USB « LOCI-USB… ») ou
+impose. Bouton MENU de la cartouche : F8. Dans `phosphoric.cfg` :
+`carte.loci_hw=oui`, `loci_hw.port=/dev/ttyACM0`.
+
 ### Cartes dediees
 
 - **Digitelec DTL 2000** — `--dtl2000 TRANSPORT` : carte V23 fidele (PIA 6821 +

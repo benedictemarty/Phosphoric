@@ -1,13 +1,15 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_loci_emu.c
- * @brief Fiche du menu « LOCI (co-simulation) » : la cartouche servie par le
- *        vrai firmware (--loci-emu), disponible seulement avec le backend
- *        « emul » (make LOCI_EMU=1 ; filtrée par cards.c).
+ * @brief Fiches du menu « LOCI firmware » (co-simulation, --loci-emu, backend
+ *        « emul » : make LOCI_EMU=1) et « LOCI réelle » (la vraie cartouche
+ *        par le pont USB loci-usb d'une Feather RP2040, --loci-hw, backend
+ *        « hw » : make LOCI_HW=1) ; chacune n'apparaît qu'avec son backend
+ *        (filtrées par cards.c).
  * @author bmarty <bmarty@mailo.com>
  *
- * Module à part de card_loci.c parce que sa fiche n'est pas à côté de celle de
- * LOCI dans le menu ; sa mise en route est celle de LOCI (card_loci.c).
+ * Module à part de card_loci.c parce que ses fiches ne sont pas à côté de celle
+ * de LOCI dans le menu ; leur mise en route est celle de LOCI (card_loci.c).
  */
 #include "card_module.h"
 
@@ -25,8 +27,19 @@ static const card_desc_t k_desc = {
             "Image FAT servie au firmware comme clé USB ; vide : aucune." } },
         3
     };
-static const card_desc_t* const k_descs[] = { &k_desc };
+/* Port vide : cards.c le cherche par le produit USB « LOCI-USB… » (Linux). */
+static const card_desc_t k_desc_hw = {
+        "loci_hw", "LOCI réelle",
+        "La vraie cartouche LOCI branchée par le pont USB loci-usb (Feather RP2040) : "
+        "le 6502 émulé lit et écrit son bus, menu et ROM compris.",
+        "disque", "--loci-hw", 0, -1, 0x03A0, 32, false,
+        { { "port", "Port du pont USB", CARD_P_TEXT, "--loci-hw", "",
+            "Port série de la Feather (ex. /dev/ttyACM0). Vide : détection automatique "
+            "par son nom USB « LOCI-USB » (Linux). Bouton MENU : F8." } },
+        1
+    };
+static const card_desc_t* const k_descs[] = { &k_desc, &k_desc_hw };
 
 const card_module_t card_loci_emu = {
-    .descs = k_descs, .ndescs = 1, .desc_before = "ula_ng",
+    .descs = k_descs, .ndescs = 2, .desc_before = "ula_ng",
 };

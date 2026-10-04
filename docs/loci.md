@@ -24,6 +24,24 @@ vérifiée sur pièces ; les écarts connus sont listés en fin de document.
 ./oric1-emu -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
+### Vraie cartouche par la Feather (`--loci-hw`, menu F1)
+
+Un binaire compilé avec `make LOCI_HW=1` pilote la vraie cartouche LOCI par le pont
+USB loci-usb (Adafruit Feather RP2040, recette `~/loci/loci-usb/docs/RECETTE-FEATHER.md`) :
+
+```bash
+./oric1-emu --loci-hw /dev/ttyACM0
+```
+
+Dans ce binaire, le menu F1 propose la carte **LOCI réelle** (groupe disque, exclusive
+avec LOCI et les autres interfaces disque) et son réglage **Port du pont USB**. Vide,
+le port est détecté sous Linux par le nom de produit USB, qui commence par
+« LOCI-USB » (firmware `feature/loci-usb` ou loci-fw-usb). La détection lit seulement
+`/sys`, sans ouvrir le port. Si aucun pont n'est détecté et qu'aucun port n'est
+indiqué, le menu le signale et refuse d'appliquer. Dans `phosphoric.cfg` :
+`carte.loci_hw=oui`, `loci_hw.port=/dev/ttyACM0`. Les autres binaires n'affichent pas
+cette carte.
+
 ### Dans le navigateur (build WebAssembly)
 
 `phosphoric.html?loci=1` (ou le bouton **LOCI** du rail) démarre sur le menu

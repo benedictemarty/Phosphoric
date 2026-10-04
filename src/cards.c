@@ -69,10 +69,19 @@ static void build_all(void) {
                        desc_emit, desc_emit_core, NULL);
 }
 
+/* Backend LOCI de cette build ; PHOSPHORIC_TEST_LOCI_BACKEND le remplace dans
+ * les tests (test-cards est lié au backend « stub »). */
+static const char* loci_backend(void) {
+    const char* t = getenv("PHOSPHORIC_TEST_LOCI_BACKEND");
+    return t && *t ? t : loci_emu_backend_name();
+}
+
 /* Disponibilité dans cette build : la co-simulation LOCI exige le backend
- * « emul » (make LOCI_EMU=1). */
+ * « emul » (make LOCI_EMU=1), la cartouche réelle le backend « hw »
+ * (make LOCI_HW=1). */
 static bool card_available(const card_desc_t* c) {
-    if (strcmp(c->id, "loci_emu") == 0) return strcmp(loci_emu_backend_name(), "emul") == 0;
+    if (strcmp(c->id, "loci_emu") == 0) return strcmp(loci_backend(), "emul") == 0;
+    if (strcmp(c->id, "loci_hw") == 0) return strcmp(loci_backend(), "hw") == 0;
     return true;
 }
 
@@ -274,6 +283,23 @@ static bool loci_modem_on(const cards_state_t* st) {
            strcmp(st->card[il].value[pm], LOCI_MODEM_NONE) != 0;
 }
 
+/* Port de la cartouche LOCI réelle : celui renseigné, sinon celui que la
+ * détection USB trouve. false si aucun. */
+static bool loci_hw_port(const card_choice_t* c, char* out, size_t outsz) {
+    if (c->value[0][0]) { snprintf(out, outsz, "%s", c->value[0]); return true; }
+    return loci_usb_detect(NULL, out, outsz);
+}
+
+/* Port de --loci-hw égal à celui détecté : laissé vide, la détection le
+ * retrouvera (même s'il change d'un branchement à l'autre). */
+static void loci_hw_normalize(cards_state_t* st) {
+    int ih = cards_find("loci_hw");
+    char found[256];
+    if (ih < 0 || !st->card[ih].on || !st->card[ih].value[0][0]) return;
+    if (loci_usb_detect(NULL, found, sizeof(found)) && strcmp(found, st->card[ih].value[0]) == 0)
+        st->card[ih].value[0][0] = '\0';
+}
+
 void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* const argv[]) {
     cards_state_defaults(st);
     /* 1. Ligne de commande : chaque option de carte, avec sa valeur telle quelle. */
@@ -333,6 +359,7 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
         }
     }
     loci_modem_normalize(st);
+    loci_hw_normalize(st);
 }
 
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
@@ -366,6 +393,14 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
         if (strcmp(st->card[il].value[pm], LOCI_MODEM_REAL) == 0 &&
             !loci_modem_real_port(&st->card[il], pp, dev, sizeof(dev))) {
             snprintf(out, outsz, "Modem LOCI réel : aucun picowifi USB détecté (indiquer le port)");
+            return true;
+        }
+    }
+    int ih = cards_find("loci_hw");
+    if (ih >= 0 && st->card[ih].on) {
+        char dev[256];
+        if (!loci_hw_port(&st->card[ih], dev, sizeof(dev))) {
+            snprintf(out, outsz, "LOCI réelle : aucun pont USB LOCI-USB détecté (indiquer le port)");
             return true;
         }
     }
@@ -426,6 +461,18 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
         const card_desc_t* d = cards_get(i);
         const card_choice_t* c = &st->card[i];
         if (!c->on || d->fixed || !d->enable_cli) continue;
+        char hwdev[CARD_VALUE_MAX];
+        if (strcmp(d->id, "loci_hw") == 0) {
+            if (!loci_hw_port(c, hwdev, sizeof(hwdev))) {
+                log_warning("LOCI réelle : aucun pont USB (« %s… ») détecté, la cartouche "
+                            "n'est pas branchée (indiquer le port : loci_hw.port=/dev/ttyACM0)",
+                            LOCI_USB_PRODUCT_PREFIX);
+                continue;
+            }
+            push(&av, &n, &cap, d->enable_cli);
+            push(&av, &n, &cap, hwdev);
+            continue;
+        }
         if (d->enable_param < 0) push(&av, &n, &cap, d->enable_cli);
         for (int p = 0; p < d->nparams; p++) {
             const card_param_t* pp = &d->param[p];
