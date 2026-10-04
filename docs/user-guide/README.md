@@ -550,6 +550,17 @@ Related options: `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
 ./oric1-emu -r basic11b.rom --loci --serial picowifi:MyWiFi:password
 ```
 
+In the F1 menu, the **LOCI** card has a **Modem Wi-Fi (picowifi)** setting:
+`aucun` (none), `simulé` (emulated picowifi, same as `--loci --serial picowifi`)
+or `réel` (the USB picowifi plugged into the PC, linked at 115200 8N1). For
+`réel`, the port is detected automatically on Linux from the USB product name
+« PicoWifiModemUSB » (reading `/sys`; the port is never opened during
+detection); the **Port du picowifi réel** setting forces it (e.g.
+`/dev/ttyACM0`). No picowifi detected: the menu reports it and refuses to apply.
+In `phosphoric.cfg`: `loci.modem=simulé`, `loci.port=/dev/ttyACM0`. Booting
+Atmos / Oric-1 from the LOCI menu finds `basic11b.rom` / `basic10.rom` in `roms/`
+when the flash directory does not hold them.
+
 ### Dedicated cards
 
 - **Digitelec DTL 2000** — `--dtl2000 TRANSPORT`: faithful V23 card (PIA 6821 +

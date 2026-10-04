@@ -399,7 +399,7 @@ static void card_key(iom_menu_t* m, int key) {
     case IOM_KEY_ESC:  m->page = IOM_PAGE_CARDS; break;
     case IOM_KEY_DEL:   /* parameter: back to the default value */
         if (c > 0 && !m->cards_readonly)
-            snprintf(m->cards.card[m->card_sel].value[c - 1], CARD_VALUE_MAX, "%s", d->param[c - 1].def);
+            cards_param_default(&d->param[c - 1], m->cards.card[m->card_sel].value[c - 1], CARD_VALUE_MAX);
         break;
     case IOM_KEY_ENTER:
         if (m->cards_readonly) {
@@ -412,6 +412,8 @@ static void card_key(iom_menu_t* m, int key) {
             char* v = m->cards.card[m->card_sel].value[c - 1];
             if (p->kind == CARD_P_BOOL) {
                 snprintf(v, CARD_VALUE_MAX, "%s", strcmp(v, "oui") == 0 ? "non" : "oui");
+            } else if (p->kind == CARD_P_CHOICE) {
+                cards_choice_next(p, v, CARD_VALUE_MAX);
             } else if (p->kind == CARD_P_FILE) {
                 m->param_cursor = c;
                 open_browser_card(m);
@@ -781,7 +783,16 @@ static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
         iom_puts(s, row, 26, d->fixed ? "toujours" : c->on ? "présente" : "absente",
                  c->on ? ra.ok : ra.dim, -1);
         if (changed) iom_puts(s, row, 35, "*", ra.err, -1);
-        if (c->on && d->nparams > 0 && (d->enable_param >= 0 || d->io_param >= 0)) {
+        int choice = -1;            /* choice parameter set to a non-default value */
+        for (int p = 0; c->on && choice < 0 && p < d->nparams; p++) {
+            char def[48];
+            cards_param_default(&d->param[p], def, sizeof(def));
+            if (d->param[p].kind == CARD_P_CHOICE && strcmp(c->value[p], def) != 0) choice = p;
+        }
+        if (choice >= 0) {
+            snprintf(buf, sizeof(buf), "%s : %s", d->param[choice].label, c->value[choice]);
+            iom_puts(s, row, 37, buf, ra.base, 38);
+        } else if (c->on && d->nparams > 0 && (d->enable_param >= 0 || d->io_param >= 0)) {
             const int p = d->enable_param >= 0 ? d->enable_param : d->io_param;
             snprintf(buf, sizeof(buf), "%s", param_text(&d->param[p], c->value[p]));
             iom_puts(s, row, 37, buf, ra.base, 38);
@@ -811,7 +822,7 @@ static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
 static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
     const card_desc_t* d = cards_get(m->card_sel);
     const card_choice_t* c = &m->cards.card[m->card_sel];
-    char buf[160];
+    char buf[224];
     panel(s, 5, 2, 7 + 2 * d->nparams + 2, 76, IOM_CART_L, d->name);
     wrap(s, 6, 4, 72, 3, d->role, A_PANEL_DIM);
     {   /* Presence */
@@ -847,10 +858,16 @@ static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
     } else {
         const card_param_t* p = &d->param[m->param_cursor - 1];
         wrap(s, top + 1, 4, 72, 5, p->help, A_PANEL);
-        snprintf(buf, sizeof(buf), "Par défaut : %s.  Entrée : %s.  Suppr : valeur par défaut.",
-                 p->def[0] ? p->def : "vide",
+        char choices[64], def[48];
+        snprintf(choices, sizeof(choices), "%s", p->def);
+        for (char* c = choices; *c; c++) if (*c == '|') *c = '/';
+        cards_param_default(p, def, sizeof(def));
+        snprintf(buf, sizeof(buf), p->kind == CARD_P_CHOICE
+                 ? "Par défaut : %s.  Entrée : %s.  Suppr : défaut."
+                 : "Par défaut : %s.  Entrée : %s.  Suppr : valeur par défaut.",
+                 def[0] ? def : "vide",
                  p->kind == CARD_P_BOOL ? "oui / non" : p->kind == CARD_P_FILE ? "choisir le fichier"
-                 : "saisir");
+                 : p->kind == CARD_P_CHOICE ? choices : "saisir");
         wrap(s, top + 6, 4, 72, 1, buf, A_PANEL_DIM);
     }
 }

@@ -27,7 +27,8 @@ typedef enum {
     CARD_P_DIR,      /* host directory */
     CARD_P_TEXT,     /* free text (transport, number) */
     CARD_P_HEX,      /* hexadecimal I/O address ($0300-$03FF) */
-    CARD_P_BOOL      /* yes / no */
+    CARD_P_BOOL,     /* yes / no */
+    CARD_P_CHOICE    /* one value among those of `def` (« a|b|c », default: a) */
 } card_param_kind_t;
 
 typedef struct {
@@ -35,7 +36,8 @@ typedef struct {
     const char*       label;   /* displayed label */
     card_param_kind_t kind;
     const char*       cli;     /* launch option (NULL: handled separately) */
-    const char*       def;     /* default value ("": none) */
+    const char*       def;     /* default value ("": none); CARD_P_CHOICE:
+                                  the possible values, the first one by default */
     const char*       help;    /* explanation shown under the parameter */
 } card_param_t;
 
@@ -77,8 +79,20 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
 /* Turns a card on / off, honouring its exclusive group. */
 void cards_set_on(cards_state_t* st, int i, bool on);
 
+/* Default value of @p p in @p out (for CARD_P_CHOICE: its first choice). */
+void cards_param_default(const card_param_t* p, char* out, size_t outsz);
+/* Next value of a CARD_P_CHOICE parameter (after the last one: the first). */
+void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
+
+/* Modem of the LOCI card (« modem » parameter): none, simulated picowifi, or
+ * real picowifi plugged into the host (« port » port, empty: USB detection). */
+#define LOCI_MODEM_NONE "aucun"
+#define LOCI_MODEM_SIM  "simulé"
+#define LOCI_MODEM_REAL "réel"
+
 /* I/O address conflicts between active cards: message in @p out
- * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false if none. */
+ * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false if none.
+ * Also reports a real LOCI modem that cannot be found (no picowifi plugged in). */
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz);
 
 /* Launch options to restart with @p st: those of @p argv without any card

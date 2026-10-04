@@ -4,6 +4,7 @@
  * @brief LOCI ↔ emulator adapter callbacks — moved verbatim from main.c (Epic 9).
  * @author bmarty <bmarty@mailo.com>
  */
+#define _DEFAULT_SOURCE    /* readlink */
 #include "io/loci_glue.h"
 #include "cpu/cpu6502.h"   /* cpu_irq_set/clear, IRQF_DISK, cpu_reset */
 #include "memory/memory.h" /* memory_load_rom */
@@ -67,6 +68,40 @@ bool loci_find_rom_file(emulator_t* emu, const char* name,
     }
     snprintf(out, outsz, "roms/loci/%s", name);
     return access(out, R_OK) == 0;
+}
+
+/* Firmware bootstrap seeds basic11b.rom/basic10.rom/microdis.rom into its
+ * internal LittleFS; our flash root may not carry them. Look for the file
+ * (base name of @p rom_path) next to the -r ROM, then in the parent directory
+ * of the -r ROM (menu ROM roms/loci/locirom → roms/), then in roms/ of the
+ * CWD and roms/ next to the executable, so the menu's "boot Atmos / Oric-1"
+ * entries work without --loci-flash tweaking. */
+bool loci_find_system_rom(emulator_t* emu, const char* rom_path, char* out, size_t outsz) {
+    const char* base = strrchr(rom_path, '/');
+    base = base ? base + 1 : rom_path;
+    if (emu->rom_path) {
+        const char* dirend = strrchr(emu->rom_path, '/');
+        if (dirend) {
+            int dlen = (int)(dirend - emu->rom_path);
+            snprintf(out, outsz, "%.*s/%s", dlen, emu->rom_path, base);
+            if (access(out, R_OK) == 0) return true;
+            snprintf(out, outsz, "%.*s/../%s", dlen, emu->rom_path, base);
+            if (access(out, R_OK) == 0) return true;
+        }
+    }
+    snprintf(out, outsz, "roms/%s", base);
+    if (access(out, R_OK) == 0) return true;
+#if defined(__linux__)
+    char self[400];
+    ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
+    char* slash = n > 0 ? (self[n] = '\0', strrchr(self, '/')) : NULL;
+    if (slash) {
+        *slash = '\0';
+        snprintf(out, outsz, "%s/roms/%.80s", self, base);
+        if (access(out, R_OK) == 0) return true;
+    }
+#endif
+    return false;
 }
 
 /* Locate the LOCI menu ROM, mirroring the firmware's boot priority
@@ -153,6 +188,12 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
          * The file is loaded into a persistent buffer and the memory
          * system's overlay is enabled (same mechanism as the Microdisc
          * card with --disk-rom). */
+        char found[512];
+        if (access(rom_path, R_OK) != 0 &&
+            loci_find_system_rom(emu, rom_path, found, sizeof(found))) {
+            log_info("LOCI ROM swap: %s not in flash root, using %s", rom_path, found);
+            rom_path = found;
+        }
         FILE* fp = fopen(rom_path, "rb");
         if (!fp) {
             log_error("LOCI ROM swap: cannot open %s", rom_path);
@@ -201,19 +242,10 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
      * "boot Atmos / Oric-1" entries work without --loci-flash tweaking. */
     char fallback[512];
     const char* load_path = rom_path;
-    if (access(rom_path, R_OK) != 0 && emu->rom_path) {
-        const char* dirend = strrchr(emu->rom_path, '/');
-        const char* base = strrchr(rom_path, '/');
-        base = base ? base + 1 : rom_path;
-        if (dirend) {
-            snprintf(fallback, sizeof(fallback), "%.*s/%s",
-                     (int)(dirend - emu->rom_path), emu->rom_path, base);
-            if (access(fallback, R_OK) == 0) {
-                log_info("LOCI ROM swap: %s not in flash root, using %s",
-                         base, fallback);
-                load_path = fallback;
-            }
-        }
+    if (access(rom_path, R_OK) != 0 &&
+        loci_find_system_rom(emu, rom_path, fallback, sizeof(fallback))) {
+        log_info("LOCI ROM swap: %s not in flash root, using %s", rom_path, fallback);
+        load_path = fallback;
     }
     if (!memory_load_rom(&emu->memory, load_path, 0)) {
         log_error("LOCI ROM swap: failed to load %s", load_path);

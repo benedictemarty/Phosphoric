@@ -64,6 +64,14 @@ explanation; the configuration stores it as `carte.<id>=oui` and `<id>.<key>=val
 (the key is the parameter's key in the menu entry). Changing cards restarts the
 emulator (ADR 0004).
 
+Parameter kinds (`card_param_kind_t`): file, directory, text, hexadecimal
+address, yes/no, and **choice** (`CARD_P_CHOICE`, 2.21.0): `def` gives the
+possible values separated by `|`, the first being the default
+(`"aucun|simulé|réel"`); Enter moves to the next one. A parameter without an
+option (`cli` set to `NULL`) is translated separately in `cards_build_argv`: this
+is the case of the LOCI card's modem, which becomes `--serial picowifi` or
+`--serial com:115200,8,N,1,<port>`.
+
 ## Anchors: keeping a place
 
 Without an anchor (`*_before` fields set to `NULL`), a card goes **at the end** of the

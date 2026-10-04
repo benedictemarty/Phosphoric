@@ -9,6 +9,7 @@
 #include "card_module.h"
 #include "emulator.h"
 #include "io/loci_emu.h"
+#include "io/picowifi_detect.h"
 #include "utils/logging.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,7 +104,8 @@ void cards_state_defaults(cards_state_t* st) {
     for (int i = 0; i < cards_count(); i++) {
         const card_desc_t* d = cards_get(i);
         st->card[i].on = d->fixed;
-        for (int p = 0; p < d->nparams; p++) set_value(&st->card[i], p, d->param[p].def);
+        for (int p = 0; p < d->nparams; p++)
+            cards_param_default(&d->param[p], st->card[i].value[p], CARD_VALUE_MAX);
     }
 }
 
@@ -172,6 +174,107 @@ static const char* split_opt(const char* a, char* name, size_t namesz) {
     return eq ? eq + 1 : NULL;
 }
 
+static int param_find(const card_desc_t* d, const char* key) {
+    for (int p = 0; p < d->nparams; p++) if (strcmp(d->param[p].key, key) == 0) return p;
+    return -1;
+}
+
+void cards_param_default(const card_param_t* p, char* out, size_t outsz) {
+    const char* d = p->def ? p->def : "";
+    snprintf(out, outsz, "%.*s", (int)(p->kind == CARD_P_CHOICE ? strcspn(d, "|") : strlen(d)), d);
+}
+
+/* Value @p v is the default one of parameter @p p. */
+static bool is_default(const card_param_t* p, const char* v) {
+    char def[CARD_VALUE_MAX];
+    cards_param_default(p, def, sizeof(def));
+    return strcmp(v, def) == 0;
+}
+
+void cards_choice_next(const card_param_t* p, char* value, size_t valuesz) {
+    const char* c = p->def ? p->def : "";
+    const char* first = c;
+    size_t vlen = strlen(value);
+    while (*c) {
+        const char* bar = strchr(c, '|');
+        size_t len = bar ? (size_t)(bar - c) : strlen(c);
+        if (len == vlen && strncmp(c, value, len) == 0) {
+            const char* next = bar ? bar + 1 : first;
+            size_t nlen = strcspn(next, "|");
+            snprintf(value, valuesz, "%.*s", (int)nlen, next);
+            return;
+        }
+        if (!bar) break;
+        c = bar + 1;
+    }
+    snprintf(value, valuesz, "%.*s", (int)strcspn(first, "|"), first);   /* unknown */
+}
+
+/* Modem of the LOCI card: indices of the card and of its « modem » / « port »
+ * parameters; false if the card (or the parameter) is missing in this build. */
+static bool loci_modem_params(int* il, int* pm, int* pp) {
+    *il = cards_find("loci");
+    if (*il < 0) return false;
+    *pm = param_find(cards_get(*il), "modem");
+    *pp = param_find(cards_get(*il), "port");
+    return *pm >= 0 && *pp >= 0;
+}
+
+/* Port of the real picowifi chosen for LOCI: the port given, else the one the
+ * USB detection finds. false if none. */
+static bool loci_modem_real_port(const card_choice_t* c, int pp, char* out, size_t outsz) {
+    if (c->value[pp][0]) { snprintf(out, outsz, "%s", c->value[pp]); return true; }
+    return picowifi_detect(NULL, out, outsz);
+}
+
+/* Serial transport @p spec seen as a LOCI modem: « simulé » for picowifi
+ * without credentials, « réel » (+ port) for the serial port at 115200 8N1.
+ * NULL otherwise. */
+static const char* loci_modem_of_spec(const char* spec, char* port, size_t portsz) {
+    static const char com[] = "com:115200,8,N,1,";
+    port[0] = '\0';
+    if (!spec) return NULL;
+    if (strcmp(spec, "picowifi") == 0) return LOCI_MODEM_SIM;
+    if (strncmp(spec, com, sizeof(com) - 1) == 0 && spec[sizeof(com) - 1]) {
+        char found[256];
+        const char* dev = spec + sizeof(com) - 1;
+        /* Detected port: left empty, detection will find it again (even if it changes). */
+        if (!(picowifi_detect(NULL, found, sizeof(found)) && strcmp(found, dev) == 0))
+            snprintf(port, portsz, "%s", dev);
+        return LOCI_MODEM_REAL;
+    }
+    return NULL;
+}
+
+/* LOCI + an ACIA reduced to a picowifi modem ($0380, no other setting): it is
+ * the modem of the LOCI card, not a separate ACIA card. */
+static void loci_modem_normalize(cards_state_t* st) {
+    int il, pm, pp, ia = cards_find("acia");
+    if (!loci_modem_params(&il, &pm, &pp) || ia < 0) return;
+    if (!st->card[il].on || !st->card[ia].on) return;
+    const card_desc_t* a = cards_get(ia);
+    for (int p = 1; p < a->nparams; p++) {
+        const char* v = st->card[ia].value[p];
+        const bool addr_ok = p == a->io_param && strcasecmp(v, "0380") == 0;
+        if (!addr_ok && !is_default(&a->param[p], v)) return;
+    }
+    char port[CARD_VALUE_MAX];
+    const char* m = loci_modem_of_spec(st->card[ia].value[0], port, sizeof(port));
+    if (!m) return;
+    set_value(&st->card[il], pm, m);
+    set_value(&st->card[il], pp, port);
+    for (int p = 0; p < a->nparams; p++)
+        cards_param_default(&a->param[p], st->card[ia].value[p], CARD_VALUE_MAX);
+    st->card[ia].on = false;
+}
+
+/* The LOCI card provides a modem (its --serial-* options remain useful). */
+static bool loci_modem_on(const cards_state_t* st) {
+    int il, pm, pp;
+    return loci_modem_params(&il, &pm, &pp) && st->card[il].on &&
+           strcmp(st->card[il].value[pm], LOCI_MODEM_NONE) != 0;
+}
+
 void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* const argv[]) {
     cards_state_defaults(st);
     /* 1. Command line: each card option, with its value as is. */
@@ -221,7 +324,16 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
             const char* rom = emu->rom_path ? emu->rom_path : "";
             set_value(&st->card[i], 0, strstr(rom, "locirom") ? "oui" : "non");
         }
+        /* LOCI modem coming from phosphoric.cfg (ACIA without an ACIA card in the menu). */
+        int il, pm, pp, ia = cards_find("acia");
+        if (loci_modem_params(&il, &pm, &pp) && ia >= 0 && st->card[il].on &&
+            !st->card[ia].on && emu->card_on[CARD_IDX_acia]) {
+            char port[CARD_VALUE_MAX];
+            const char* m = loci_modem_of_spec(emu->serial_spec, port, sizeof(port));
+            if (m) { set_value(&st->card[il], pm, m); set_value(&st->card[il], pp, port); }
+        }
     }
+    loci_modem_normalize(st);
 }
 
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
@@ -242,6 +354,20 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
                          cards_get(j)->name, d->name, lo[i] > lo[j] ? lo[i] : lo[j]);
                 return true;
             }
+        }
+    }
+    int il, pm, pp, ia = cards_find("acia");
+    if (loci_modem_params(&il, &pm, &pp) && st->card[il].on &&
+        strcmp(st->card[il].value[pm], LOCI_MODEM_NONE) != 0) {
+        char dev[256];
+        if (ia >= 0 && st->card[ia].on) {
+            snprintf(out, outsz, "Modem LOCI et ACIA 6551 : une seule ligne série à la fois");
+            return true;
+        }
+        if (strcmp(st->card[il].value[pm], LOCI_MODEM_REAL) == 0 &&
+            !loci_modem_real_port(&st->card[il], pp, dev, sizeof(dev))) {
+            snprintf(out, outsz, "Modem LOCI réel : aucun picowifi USB détecté (indiquer le port)");
+            return true;
         }
     }
     if (out && outsz) out[0] = '\0';
@@ -277,7 +403,8 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
         const char* owner = extra_owner(name);
         if (owner) {
             int i = cards_find(owner);
-            const bool keep = i >= 0 && st->card[i].on;
+            const bool keep = i >= 0 && (st->card[i].on ||
+                              (strcmp(owner, "acia") == 0 && loci_modem_on(st)));
             if (keep) push(&av, &n, &cap, argv[a]);
             if (takes) { a++; if (keep) push(&av, &n, &cap, argv[a]); }
             continue;
@@ -309,10 +436,29 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
                 push(&av, &n, &cap, c->value[p]);
             } else if (pp->kind == CARD_P_BOOL) {
                 if (strcmp(c->value[p], "oui") == 0) push(&av, &n, &cap, pp->cli);
-            } else if (c->value[p][0] && strcmp(c->value[p], pp->def) != 0) {
+            } else if (c->value[p][0] && !is_default(pp, c->value[p])) {
                 push(&av, &n, &cap, pp->cli);
                 push(&av, &n, &cap, c->value[p]);
             }
+        }
+    }
+    /* 3. Modem of the LOCI card: the ACIA at $0380 (unless an ACIA card is active). */
+    int il, pm, pp, ia = cards_find("acia");
+    if (loci_modem_params(&il, &pm, &pp) && st->card[il].on && !(ia >= 0 && st->card[ia].on)) {
+        const char* m = st->card[il].value[pm];
+        char dev[256], spec[300];
+        if (strcmp(m, LOCI_MODEM_SIM) == 0) {
+            push(&av, &n, &cap, "--serial");
+            push(&av, &n, &cap, "picowifi");
+        } else if (strcmp(m, LOCI_MODEM_REAL) == 0 &&
+                   loci_modem_real_port(&st->card[il], pp, dev, sizeof(dev))) {
+            picowifi_serial_spec(dev, spec, sizeof(spec));
+            push(&av, &n, &cap, "--serial");
+            push(&av, &n, &cap, spec);
+        } else if (strcmp(m, LOCI_MODEM_REAL) == 0) {
+            log_warning("Modem LOCI réel : aucun picowifi USB (« %s ») détecté, LOCI démarre "
+                        "sans modem (indiquer le port : loci.port=/dev/ttyACM0)",
+                        PICOWIFI_USB_PRODUCT);
         }
     }
     push(&av, &n, &cap, "--no-config-cards");
@@ -361,7 +507,7 @@ void cards_cfg_write(const cards_state_t* st, void* file) {
         fprintf(f, "carte.%s=%s\n", d->id, st->card[i].on ? "oui" : "non");
         if (!st->card[i].on) continue;
         for (int p = 0; p < d->nparams; p++)
-            if (st->card[i].value[p][0] && strcmp(st->card[i].value[p], d->param[p].def) != 0)
+            if (st->card[i].value[p][0] && !is_default(&d->param[p], st->card[i].value[p]))
                 fprintf(f, "%s.%s=%s\n", d->id, d->param[p].key, st->card[i].value[p]);
     }
 }
@@ -442,6 +588,10 @@ char** cards_config_argv(const char* path, int argc, char* const argv[], int* ou
         adopted.card[i] = from_cfg.card[i];
         any = true;
     }
+    /* The command line already chooses the serial line: no LOCI modem. */
+    int il, pm, pp, ia = cards_find("acia");
+    if (loci_modem_params(&il, &pm, &pp) && ia >= 0 && mentioned[ia])
+        set_value(&adopted.card[il], pm, LOCI_MODEM_NONE);
     if (!any) return NULL;
     char* argv0[] = { argc > 0 ? argv[0] : "oric1-emu", NULL };
     int n = 0;
