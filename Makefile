@@ -749,7 +749,8 @@ test-mc-autorun:
 	@bash tests/integration/test_mc_autorun_rechain.sh
 
 # Sprint 57 — base ROM presence guard. Checks that --disk-rom without -r
-# fails fast (impossible config) and that no-ROM warns. Fast + hermetic.
+# fails fast (impossible config) and that no-ROM warns ; 2.20.0 : profil
+# minimal (default ROM without -r, --no-rom for the guard). Fast + hermetic.
 test-rom-guard: $(TARGET)
 	@bash tests/integration/test_rom_guard.sh
 
