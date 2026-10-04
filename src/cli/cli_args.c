@@ -18,7 +18,7 @@
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] */
 #include "cli/cli_usage.h"    /* cli_print_usage */
 #include "card_module.h"      /* options des cartes en modules */
-#include "io/bus_timing.h"    /* BUS_LATCH_SUBTICK_DEFAULT */
+#include "io/bus_timing.h"    /* BUS_ORIC_TDSR_NS_DEFAULT */
 #include "utils/logging.h"
 
 /* Seconde analyse (options des cartes venues de phosphoric.cfg) : getopt
@@ -226,23 +226,22 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             }
             case OPT_LOCI_SERVE_TIMING: {
-                /* Modèle de course PHI2 sous-cycle (bus_timing.h, épic B) :
-                 * "SERVE[,LATCH]" en subticks PHI2×30. Le serve arrive à
-                 * (tior + SERVE) ; propre ssi ≤ LATCH (défaut 27). SERVE court
-                 * (build -Os ≈ 26) passe, long (-O2 ≈ 36) rate. */
-                int serve = 0, latch = BUS_LATCH_SUBTICK_DEFAULT;
-                int n = sscanf(optarg, "%d,%d", &serve, &latch);
-                if (n >= 1 && serve >= 0) {
-                    cfg->loci_serve_subticks = serve;
-                    cfg->loci_latch_subtick = (n == 2) ? latch : BUS_LATCH_SUBTICK_DEFAULT;
+                /* Modèle de course PHI2 sous-cycle (bus_timing.h) :
+                 * "SERVE[,TDSR]" : serve en cycles du cœur 1 de la LOCI (120 MHz ;
+                 * 23 mesurés sur matériel réel), TDSR en ns (défaut 100). */
+                int serve = 0, tdsr = BUS_ORIC_TDSR_NS_DEFAULT;
+                int n = sscanf(optarg, "%d,%d", &serve, &tdsr);
+                if (n >= 1 && serve >= 0 && serve <= 65535 && tdsr > 0 && tdsr < 1000) {
+                    cfg->loci_serve_cycles = serve;
+                    cfg->loci_tdsr_ns = (n == 2) ? tdsr : BUS_ORIC_TDSR_NS_DEFAULT;
                 } else {
-                    log_error("--loci-serve-timing: expected SERVE[,LATCH] (e.g. 26,27)");
+                    log_error("--loci-serve-timing: expected SERVE[,TDSR] (e.g. 23,100)");
                     return 1;
                 }
                 break;
             }
             case OPT_LOCI_SERVE_JITTER: {
-                /* "AMP[,SEED]" : amplitude du jitter (subticks) + graine PRNG.
+                /* "AMP[,SEED]" : amplitude du jitter (cycles de serve) + graine PRNG.
                  * Rend les ratés occasionnels près du latch, reproductibles. */
                 int amp = 0; unsigned seed = 0;
                 int n = sscanf(optarg, "%d,%u", &amp, &seed);

@@ -1,40 +1,34 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file bus_timing.h
- * @brief Base de temps sous-cycle du bus d'extension Oric (modèle PHI2). Épic B, Phase 1.
+ * @brief Chronologie sous-cycle d'une lecture LOCI sur le bus d'extension Oric.
  *
  * Le 6502 de l'Oric et les périphériques du port d'extension partagent un bus
- * **asynchrone** cadencé par PHI2. À l'échelle du cycle entier (ce que modélise
- * `cpu_step`/`cpu_tick`), tous les accès « réussissent » : la lecture 6502 et la
- * réponse du périphérique tombent dans le même cycle. Mais certains conflits sont
- * des phénomènes **sous-cycle** : la donnée doit être **stable sur le bus avant
- * l'instant de latch** du 6502 (proche du front descendant de PHI2, après le temps
- * de setup). Un périphérique **lent** (typiquement le LOCI : le RP2040 échantillonne
- * le bus par PIO à `sys_clk = PHI2×30` puis pose la donnée) peut **manquer** ce
- * latch → le 6502 latche un bus non piloté (open-bus).
+ * **asynchrone** cadencé par PHI2, sans RDY : un périphérique ne peut pas ralentir
+ * le cycle, il doit poser sa donnée avant que le 6502 la capture au front
+ * descendant de PHI2 (moins le temps d'établissement tDSR). À l'échelle du cycle
+ * entier (`cpu_step`/`cpu_tick`), toutes les lectures « réussissent » ; un
+ * périphérique trop lent fait en réalité lire un bus non piloté (open-bus).
  *
- * Ce module fournit la grille et le prédicat de course, indépendamment de la
- * fréquence PHI2 (tout est exprimé en **fractions de période**, donc en subticks).
+ * Chronologie d'une lecture `$03xx` servie par la LOCI, en picosecondes depuis le
+ * front descendant de PHI2 qui ouvre le cycle (2.23.0) :
+ *   - le PIO de la LOCI tourne à Φ2cfg × 30, où Φ2cfg est un RÉGLAGE du firmware,
+ *     4000 kHz par défaut (cpu.c, configuration vide) → 1 tick = 8,33 ns. Ce n'est
+ *     pas l'horloge de l'Oric (l'ancienne grille « PHI2×30 » de l'Oric était fausse) ;
+ *   - `mia_action` pousse le mot dans la FIFO (22 + tior) ticks après le front, plus
+ *     2 cycles sys de synchroniseur d'entrée (comptes lus dans mia.pio, estimés) ;
+ *   - `act_loop` le prend (poll, non mesuré) et, SERVE cycles sys plus tard,
+ *     déclenche la DMA de read-serve et l'IRQ 5 de `mia_io_read` ;
+ *   - `mia_io_read` attend PHI2 haut puis pilote le bus (3 + tiod) ticks après :
+ *     donnée = max(prête, montée de PHI2 + synchro) + (3 + tiod) ticks ;
+ *   - PHI2 de l'Oric : haut le dernier tiers du cycle (l'ULA donne 2/3 bas, 1/3
+ *     haut ; forum Defence Force t=2583) ;
+ *   - échéance du 6502 : fin du cycle moins tDSR (100 ns, fiche 6502 à 1 MHz).
  *
- * Modèle (Phase 1) :
- *   - la période PHI2 est divisée en `BUS_PHI2_SUBTICKS` (= 30, car le LOCI cadence
- *     son PIO à PHI2×30, `cpu.c:158`) ;
- *   - le 6502 **latche** la donnée lue au subtick `latch_subtick` (fin de PHI2
- *     haut moins le setup) ;
- *   - un périphérique rend sa donnée **valide** au subtick `valid_subtick` ;
- *   - la lecture est **propre** ssi `valid_subtick <= latch_subtick`, sinon la
- *     course est **perdue** (open-bus).
- *
- * Les périphériques **on-board** (RAM/ROM/VIA/ULA) sont, par définition, valides
- * tôt (`valid_subtick = 0`) → ils gagnent toujours la course → aucun impact. Seuls
- * les périphériques du port d'extension à serve lent (LOCI aujourd'hui) peuvent
- * perdre. C'est la réalisation « globale » mais à coût nul pour l'existant.
- *
- * NB : les constantes sous-cycle (`latch`, budget de serve) sont des valeurs
- * **modélisées/calibrables** dans les plages établies par l'analyse
- * (`~/loci/extensions/analyse/read-serve-et-inhibition-via.md` : serve 26-36 cyc
- * M0+, sys_clk = PHI2×30), à affiner sur matériel réel — elles ne prétendent pas
- * à l'exactitude picoseconde.
+ * Les périphériques **on-board** (RAM/ROM/VIA/ULA) ne passent pas par ce modèle :
+ * ils sont toujours à temps. Restent des estimations, à confirmer sur bus réel :
+ * les comptes PIO, le poll d'act_loop, le tDSR du 6502 à 2 MHz de l'Oric.
+ * Mesure (Feather 5723, firmware LOCI_USB) : serve 23 cycles → donnée à ≈ 708 ns.
  */
 #ifndef BUS_TIMING_H
 #define BUS_TIMING_H
@@ -42,30 +36,71 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/** Subdivisions d'une période PHI2. 30 = rapport sys_clk/PHI2 du LOCI (cpu.c:158). */
-#define BUS_PHI2_SUBTICKS   30
+/** Comptes PIO de mia.pio (mia_action jusqu'au push, mia_io_read après l'IRQ). */
+#define BUS_LOCI_PUSH_TICKS        22
+#define BUS_LOCI_OUT_TICKS         3
+/** Réglage Φ2 du firmware par défaut (kHz) et horloge système qui en découle. */
+#define BUS_LOCI_PHI2CFG_KHZ       4000u
+#define BUS_LOCI_SYS_KHZ           120000u
+/** Oric : période PHI2 1 µs, haut le dernier tiers ; tDSR du 6502. */
+#define BUS_ORIC_PERIOD_PS         1000000
+#define BUS_ORIC_TDSR_NS_DEFAULT   100
 
-/** Instant de latch de la donnée par le 6502, en subticks (fin du cycle moins le
- *  setup). Défaut modélisé : le 6502 échantillonne près du front descendant. */
-#define BUS_LATCH_SUBTICK_DEFAULT   27
+typedef struct {
+    uint32_t sys_khz;      /* horloge du cœur 1 (cycles de serve) */
+    uint32_t pio_khz;      /* horloge PIO = Φ2cfg × 30 */
+    int64_t  period_ps;    /* période PHI2 de l'Oric */
+    int64_t  high_ps;      /* durée de PHI2 haut */
+    int64_t  tdsr_ps;      /* établissement des données du 6502 */
+    int64_t  poll_ps;      /* FIFO → act_loop (non mesuré) */
+} bus_loci_timing_t;
+
+static inline bus_loci_timing_t bus_loci_timing_default(void) {
+    bus_loci_timing_t t;
+    t.sys_khz   = BUS_LOCI_SYS_KHZ;
+    t.pio_khz   = BUS_LOCI_PHI2CFG_KHZ * 30u;
+    t.period_ps = BUS_ORIC_PERIOD_PS;
+    t.high_ps   = BUS_ORIC_PERIOD_PS / 3;
+    t.tdsr_ps   = (int64_t)BUS_ORIC_TDSR_NS_DEFAULT * 1000;
+    t.poll_ps   = 0;
+    return t;
+}
+
+/** n périodes d'une horloge de `khz` kHz, en ps (sans cumul d'arrondi). */
+static inline int64_t bus_ps(int64_t n, uint32_t khz) {
+    return n * 1000000000LL / (int64_t)khz;
+}
 
 /**
- * @brief La donnée du périphérique arrive-t-elle à temps pour le latch 6502 ?
- * @param valid_subtick Subtick auquel la donnée devient stable sur le bus.
- * @param latch_subtick Subtick de latch du 6502.
- * @return true si le serve gagne la course (lecture propre), false s'il la perd
- *         (open-bus). Un périphérique on-board passe `valid_subtick = 0` → toujours true.
+ * @brief Instant (ps après le front descendant de PHI2) où la donnée d'une lecture
+ *        `$03xx` servie en `serve` cycles du cœur 1 est sur le bus.
  */
-static inline bool bus_serve_wins_race(uint16_t valid_subtick, uint8_t latch_subtick) {
-    return valid_subtick <= (uint16_t)latch_subtick;
+static inline int64_t bus_loci_read_valid_ps(const bus_loci_timing_t* t, unsigned tior,
+                                             unsigned tiod, int64_t serve) {
+    int64_t sync  = bus_ps(2, t->sys_khz);
+    int64_t ready = bus_ps(BUS_LOCI_PUSH_TICKS + (int64_t)tior, t->pio_khz) + sync
+                  + t->poll_ps + bus_ps(serve, t->sys_khz);
+    int64_t rise  = t->period_ps - t->high_ps + sync;
+    return (ready > rise ? ready : rise) + bus_ps(BUS_LOCI_OUT_TICKS + (int64_t)tiod, t->pio_khz);
+}
+
+/** Échéance du 6502 : fin du cycle moins tDSR. */
+static inline int64_t bus_loci_deadline_ps(const bus_loci_timing_t* t) {
+    return t->period_ps - t->tdsr_ps;
+}
+
+/** La donnée arrive-t-elle avant l'échéance ? (false = open-bus) */
+static inline bool bus_loci_read_in_time(const bus_loci_timing_t* t, unsigned tior,
+                                         unsigned tiod, int64_t serve) {
+    return bus_loci_read_valid_ps(t, tior, tiod, serve) <= bus_loci_deadline_ps(t);
 }
 
 /* ── Jitter déterministe (Phase 2) ──────────────────────────────────────────
  * Sur le vrai bus, la marge de timing n'est pas binaire : bruit d'horloge,
  * température, tolérances → près de la frontière de latch, certains accès passent
  * et d'autres ratent (le rapport de bug le note : « occasionnel », dépend du
- * build/carte). On modélise ça par un décalage aléatoire du subtick de validité
- * du serve, tiré d'un PRNG **seedé** → reproductible (tests déterministes), pas
+ * build/carte). On modélise ça par un décalage aléatoire de la durée de serve
+ * (en cycles du cœur 1), tiré d'un PRNG **seedé** → reproductible (tests déterministes), pas
  * de dépendance à l'horloge murale. */
 
 /** xorshift32 : PRNG déterministe minimal. `*state` ne doit jamais valoir 0. */
@@ -79,7 +114,7 @@ static inline uint32_t bus_jitter_rand(uint32_t* state) {
 }
 
 /**
- * @brief Tire un décalage de jitter symétrique dans [-amp, +amp] subticks.
+ * @brief Tire un décalage de jitter symétrique dans [-amp, +amp] cycles.
  * @param state PRNG (avancé à chaque appel ; à seeder via bus_jitter_seed()).
  * @param amp Amplitude (0 = pas de jitter → renvoie 0 sans avancer l'état).
  */

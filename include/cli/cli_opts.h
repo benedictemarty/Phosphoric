@@ -128,7 +128,7 @@ typedef struct cli_opts_s {
     const char* loci_web_url;   /* loci-webdisk archi B : disque web natif LOCI */
     const char* loci_web_base;   /* Route B : racine serveur pour le device « W: Web disks » */
     int loci_mia_win_lo; int loci_mia_win_hi;   /* -1 = not set (open window) */
-    int loci_serve_subticks; int loci_latch_subtick;   /* -1 = phase model off */
+    int loci_serve_cycles; int loci_tdsr_ns;   /* -1 = phase model off */
     int loci_serve_jitter; unsigned loci_jitter_seed;   /* -1 = no jitter */
     int64_t trace_max;
     int64_t trace_ring;   /* --trace-ring N : garder les N DERNIÈRES instructions */

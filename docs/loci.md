@@ -106,6 +106,12 @@ symptôme matériel réel reproduit : `--loci-mia-window LO-HI` définit la
 plage fiable (défaut 0-31 = toujours fiable) ; hors fenêtre, `$0380` lit
 `$FF` et ignore les écritures.
 
+`--loci-serve-timing SERVE[,TDSR]` remplace la fenêtre par la chronologie en ns de
+`bus_timing.h` (la même que `--loci-hw`, ci-dessous) : SERVE en cycles du cœur 1 de
+la LOCI (23 mesurés sur matériel), TDSR en ns (100). `tior` et `tiod` y entrent ;
+`--loci-serve-jitter AMP[,SEED]` ajoute ± AMP cycles, seedé. Frontière par défaut :
+81/82 cycles de serve. Détails : [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
+
 ### Course Φ2 sur la vraie cartouche (`--loci-hw`)
 
 Avec `--loci-hw`, chaque accès `$03xx` est un aller-retour USB pendant lequel le

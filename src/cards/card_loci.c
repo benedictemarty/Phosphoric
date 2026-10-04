@@ -176,18 +176,17 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                      "corrupted outside it; tune via MAP_TUNE_TIOR / ADJ_SCAN)",
                      emu->loci.mia_tior_lo, emu->loci.mia_tior_hi);
         }
-        if (core->loci_serve_subticks >= 0) {
-            /* Modèle de course PHI2 sous-cycle (épic B) — remplace la fenêtre. */
-            loci_set_serve_timing(&emu->loci, (uint8_t)core->loci_serve_subticks,
-                                  (uint8_t)core->loci_latch_subtick);
-            log_info("LOCI MIA phase model: serve=%d latch=%d subticks (PHI2x%d) — "
-                     "picowifi $0380 propre ssi tior+serve<=latch",
-                     emu->loci.mia_serve_subticks, emu->loci.mia_latch_subtick,
-                     BUS_PHI2_SUBTICKS);
+        if (core->loci_serve_cycles >= 0) {
+            /* Modèle de course PHI2 sous-cycle (bus_timing.h) — remplace la fenêtre. */
+            loci_set_serve_timing(&emu->loci, (uint16_t)core->loci_serve_cycles,
+                                  (uint16_t)core->loci_tdsr_ns);
+            log_info("LOCI MIA phase model: serve=%d cycles, tDSR=%d ns — picowifi $0380 "
+                     "propre ssi la donnée précède la fin du cycle moins tDSR",
+                     emu->loci.mia_serve_cycles, emu->loci.mia_tdsr_ns);
         }
         if (core->loci_serve_jitter >= 0) {
             loci_set_serve_jitter(&emu->loci, (uint8_t)core->loci_serve_jitter, core->loci_jitter_seed);
-            log_info("LOCI MIA serve jitter: +/-%d subticks (seed=%u) — ratés "
+            log_info("LOCI MIA serve jitter: +/-%d cycles (seed=%u) — ratés "
                      "occasionnels reproductibles pres du latch",
                      emu->loci.mia_serve_jitter, core->loci_jitter_seed);
         }

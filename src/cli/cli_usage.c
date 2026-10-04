@@ -194,11 +194,11 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                             picowifi ACIA $0380 accesses corrupt when tior\n");
     usage_printf("                             is outside it (reproduces real-HW modem block;\n");
     usage_printf("                             software tunes via MAP_TUNE_TIOR / ADJ_SCAN)\n");
-    usage_printf("      --loci-serve-timing SERVE[,LATCH]  Sub-cycle PHI2 race model (PHI2x30):\n");
-    usage_printf("                             MIA read is clean iff tior+SERVE <= LATCH (default\n");
-    usage_printf("                             LATCH=27). Short serve (-Os ~26) works, long\n");
-    usage_printf("                             (-O2 ~36) misses (models the read-serve bug report)\n");
-    usage_printf("      --loci-serve-jitter AMP[,SEED]  Seeded jitter (+/-AMP subticks) on the\n");
+    usage_printf("      --loci-serve-timing SERVE[,TDSR]  Sub-cycle PHI2 race model: LOCI serves a\n");
+    usage_printf("                             read in SERVE core cycles (120 MHz; 23 measured on\n");
+    usage_printf("                             hardware); data lands at max(ready, PHI2 rise)+out,\n");
+    usage_printf("                             clean iff before cycle end - TDSR ns (default 100)\n");
+    usage_printf("      --loci-serve-jitter AMP[,SEED]  Seeded jitter (+/-AMP serve cycles) on the\n");
     usage_printf("                             PHASE model: near the latch, misses become\n");
     usage_printf("                             occasional yet reproducible for a given SEED\n");
     usage_printf("      --loci-emu FILE       Co-simulation : exécute le VRAI firmware LOCI\n");

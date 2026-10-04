@@ -53,6 +53,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "io/bus_timing.h"
 
 static lup_client_t g_c;
 static int  g_active;             /* pont ouvert et PING OK */
@@ -156,15 +157,25 @@ static void timing_load(void)
 static long cyc_to_6502(unsigned cyc) { return (long)(((uint64_t)cyc * (uint64_t)g_phi2_khz + g_tm.sys_khz - 1) / g_tm.sys_khz); }
 
 /* Instant (ns après le front descendant de Φ2) où la donnée d'une lecture servie en
- * `serve` cycles sys est sur le bus, et l'échéance du 6502. Voir l'en-tête. */
+ * `serve` cycles sys est sur le bus, et l'échéance du 6502 : chronologie partagée
+ * avec le modèle émulé (bus_timing.h), paramétrée par les horloges réelles. */
+static bus_loci_timing_t hw_timing(void)
+{
+    bus_loci_timing_t t = bus_loci_timing_default();
+    t.sys_khz   = g_tm.sys_khz;
+    t.pio_khz   = g_tm.phi2_khz * 30u;
+    t.period_ps = (int64_t)(period_ns() * 1000.0);
+    t.high_ps   = (int64_t)(g_high_ns * 1000.0);
+    t.tdsr_ps   = (int64_t)(g_tdsr_ns * 1000.0);
+    t.poll_ps   = (int64_t)(g_poll_ns * 1000.0);
+    return t;
+}
 static double data_valid_ns(unsigned serve)
 {
-    double sys_ns = 1e6 / (double)g_tm.sys_khz, tick = tick_ns(), sync = 2 * sys_ns;
-    double ready  = (22 + g_tm.tior) * tick + sync + g_poll_ns + serve * sys_ns;
-    double rise   = period_ns() - g_high_ns + sync;
-    return (ready > rise ? ready : rise) + (3 + g_tm.tiod) * tick;
+    bus_loci_timing_t t = hw_timing();
+    return bus_loci_read_valid_ps(&t, g_tm.tior, g_tm.tiod, serve) / 1000.0;
 }
-static double deadline_ns(void) { return period_ns() - g_tdsr_ns; }
+static double deadline_ns(void) { bus_loci_timing_t t = hw_timing(); return bus_loci_deadline_ps(&t) / 1000.0; }
 
 /* Accès $03xx arrivé avant la fin des effets de bord du précédent : iopage périmé. */
 static void check_stale(char dir, uint16_t addr)

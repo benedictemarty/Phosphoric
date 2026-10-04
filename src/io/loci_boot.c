@@ -118,12 +118,17 @@ static void op_map_tune_store(loci_t* loci, const char* name, uint8_t* field) {
     api_return_ax(loci, *field);
 }
 
+/* Lecture servie en `serve` cycles du cœur 1 : donnée à temps pour le 6502 ? */
+static bool loci_serve_in_time(const loci_t* loci, int serve) {
+    bus_loci_timing_t t = bus_loci_timing_default();
+    t.tdsr_ps = (int64_t)loci->mia_tdsr_ns * 1000;
+    return bus_loci_read_in_time(&t, loci->mia_tior, loci->mia_tiod, serve);
+}
+
 bool loci_mia_io_reliable(const loci_t* loci) {
     if (loci->mia_timing_model == LOCI_TIMING_PHASE) {
-        /* Course PHI2 sous-cycle : le serve arrive au subtick (tior + serve) ;
-         * propre ssi il gagne le latch 6502 (bus_timing.h). */
-        uint16_t valid = (uint16_t)loci->mia_tior + loci->mia_serve_subticks;
-        return bus_serve_wins_race(valid, loci->mia_latch_subtick);
+        /* Course PHI2 sous-cycle : chronologie en ns de bus_timing.h. */
+        return loci_serve_in_time(loci, loci->mia_serve_cycles);
     }
     /* WINDOW (défaut) : calibration par carte, fiable ssi tior ∈ [lo,hi]. */
     return loci->mia_tior >= loci->mia_tior_lo && loci->mia_tior <= loci->mia_tior_hi;
@@ -138,9 +143,9 @@ void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi) {
     loci->mia_timing_model = LOCI_TIMING_WINDOW;
 }
 
-void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_subtick) {
-    loci->mia_serve_subticks = serve_subticks;
-    loci->mia_latch_subtick = latch_subtick ? latch_subtick : BUS_LATCH_SUBTICK_DEFAULT;
+void loci_set_serve_timing(loci_t* loci, uint16_t serve_cycles, uint16_t tdsr_ns) {
+    loci->mia_serve_cycles = serve_cycles;
+    loci->mia_tdsr_ns = tdsr_ns ? tdsr_ns : BUS_ORIC_TDSR_NS_DEFAULT;
     loci->mia_timing_model = LOCI_TIMING_PHASE;
 }
 
@@ -156,9 +161,9 @@ bool loci_mia_serve_lost_sampled(loci_t* loci) {
     /* PHASE + jitter : le subtick de validité du serve est bruité autour de sa
      * valeur nominale → près du latch, la course est perdue occasionnellement. */
     int j = bus_jitter_sample(&loci->mia_jitter_state, loci->mia_serve_jitter);
-    int valid = (int)loci->mia_tior + (int)loci->mia_serve_subticks + j;
-    if (valid < 0) valid = 0;
-    return !bus_serve_wins_race((uint16_t)valid, loci->mia_latch_subtick);
+    int serve = (int)loci->mia_serve_cycles + j;
+    if (serve < 0) serve = 0;
+    return !loci_serve_in_time(loci, serve);
 }
 
 void op_adj_scan(loci_t* loci) {
