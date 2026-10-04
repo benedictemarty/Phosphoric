@@ -185,6 +185,8 @@ int main(void)
     CHECK(loci_emu_rom_read(0xFF00, &r) && r == 0 && loci_emu_rom_read(0xFF02, &r) && r == 0x07
           && m_rdn_count == 2, "gen8 changé par le dispatcher : cache rechargé, résultats visibles");
     CHECK(!loci_emu_rom_write(0xFFE0, 0x11), "hors BAL ($FFE0) : non captée → false");
+    CHECK(loci_emu_rom_write(0xFF00, 0x02) && m_bal_pending == 3,
+          "groupe 2 (Console, exécuté par le 6502) : captée, pas d'attente");
     loci_emu_stop();
 
     printf("%d/%d vérifications OK\n", g_checks - g_fails, g_checks);

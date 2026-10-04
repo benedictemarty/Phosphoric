@@ -85,6 +85,8 @@ static uint8_t g_rom[16384], g_rom_flags[16384];
 static int     g_rom_valid, g_rom_nocache;
 static unsigned long g_rom_refills;
 static unsigned long g_bal_writes, g_bal_cmds;   /* écritures BAL captées, commandes lancées */
+#define BAL_GROUP_CONSOLE 2               /* groupe BAL exécuté côté 6502 */
+static long g_bal_timeout_ms = 10000;   /* LOCI_HW_BAL_TIMEOUT_MS : attente maximale d'une commande BAL */
 
 const char *loci_emu_backend_name(void) { return "hw"; }
 
@@ -287,6 +289,7 @@ int loci_emu_start(const char *dev)
     g_timed = g_late = g_stale = 0; g_serve_max = g_act_max = 0; g_worst_margin = 1e9;
     g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
     g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0;
+    g_bal_timeout_ms = getenv("LOCI_HW_BAL_TIMEOUT_MS") ? atol(getenv("LOCI_HW_BAL_TIMEOUT_MS")) : 10000;
     log_info("LOCI-hw: pont « %s » prêt (proto %u, firmware pont %u, caps %02X%s) — nROMDIS=%d nRESET=%d ; "
              "cache ROM %s", dev, g_c.proto, g_c.fw, g_c.caps,
              (g_c.caps & LUP_CAP_VIRTUAL) ? ", VIRTUEL" : "", g_romdis, (lines & LUP_L_NRESET) != 0,
@@ -492,11 +495,17 @@ bool loci_emu_kbd_armed(void) { return g_active && (g_c.caps & LUP_CAP_FIRMWARE)
 /* Écriture 6502 en page $FF sous nROMDIS : boîte aux lettres (BAL) de loci-fw. Le
  * firmware recopie l'octet dans l'image servie et répond SERVED (« captée ») sans
  * changer gen8 : le cache est mis à jour ici. Un octet non nul en $FF00 lance une
- * commande ; on attend sa fin ($FF00 relu à 0 par RD non caché) pour que la boucle
+ * commande (sauf le groupe 2, Console, exécuté par le 6502 lui-même) ; on attend
+ * sa fin ($FF00 relu à 0 par RD non caché, 10 s au plus,
+ * LOCI_HW_BAL_TIMEOUT_MS) pour que la boucle
  * d'attente du kernel la voie tout de suite, au lieu du prochain LINES. Le dispatcher
  * change gen8 en rendant ses résultats : le cache est alors invalidé. L'ancien
  * firmware ne répond jamais SERVED ici (écriture ignorée) → false, comme avant. */
-#define BAL_WAIT_POLLS 5000
+static long elapsed_ms(const struct timespec *t0)
+{
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long)(t.tv_sec - t0->tv_sec) * 1000 + (t.tv_nsec - t0->tv_nsec) / 1000000;
+}
 bool loci_emu_rom_write(uint16_t address, uint8_t value)
 {
     if (!g_active || (address & 0xFF00u) != 0xFF00u || !(g_c.caps & LUP_CAP_FIRMWARE)) return false;
@@ -506,16 +515,23 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
     if (!(f & LUP_F_SERVED)) return false;          /* non captée : RAM overlay ou ROM */
     if (g_rom_valid) g_rom[address - 0xC000] = value;
     g_bal_writes++;
-    if (address == 0xFF00u && value) {
-        int k;
-        for (k = 0; k < BAL_WAIT_POLLS; k++) {
+    /* Le groupe 2 (Console) n'est jamais traité par le firmware : c'est le kernel 6502
+     * qui l'exécute (ADR-004 de loci-fw, dispatch.c) ; l'attendre figerait le 6502
+     * jusqu'au délai. */
+    if (address == 0xFF00u && value && value != BAL_GROUP_CONSOLE) {
+        /* Délai en temps réel : une commande MSC (lecture de clé USB) ou console peut
+         * durer des centaines de lectures sur silicium. */
+        struct timespec t0; clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
             uint8_t d = 0xFF, rf;
             if (lup_rd(&g_c, 0xFF00, &d, &rf) != 0) { link_error_once("attente BAL"); break; }
             note_flags(rf);
             if (d == 0) break;
+            if (elapsed_ms(&t0) >= g_bal_timeout_ms) {
+                log_warning("LOCI-hw: commande BAL $%02X toujours en cours après %ld ms", value, g_bal_timeout_ms);
+                break;
+            }
         }
-        if (k == BAL_WAIT_POLLS)
-            log_warning("LOCI-hw: commande BAL $%02X toujours en cours après %d lectures de $FF00", value, k);
         g_bal_cmds++;
     }
     return true;

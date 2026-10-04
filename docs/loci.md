@@ -119,7 +119,9 @@ l'API en écrivant en page `$FF` (`$FF00-$FFCF`). `--loci-hw` transmet ces écri
 (`WR`) ; une écriture captée revient avec `LUP_F_SERVED`, l'octet est recopié dans
 le cache ROM sans le recharger. Un octet non nul en `$FF00` lance une commande :
 Phosphoric relit `$FF00` (`RD` non caché) jusqu'à 0, ce qui évite d'attendre le
-prochain `LINES`. Le dispatcher change `gen8` en rendant ses résultats, le cache
+prochain `LINES` (10 s au plus, `LOCI_HW_BAL_TIMEOUT_MS`). Exception : le groupe 2
+(Console) n'est jamais traité par le firmware, c'est le kernel 6502 qui l'exécute
+(ADR-004 de loci-fw) ; Phosphoric ne l'attend donc pas. Le dispatcher change `gen8` en rendant ses résultats, le cache
 ROM est alors rechargé. L'ancien firmware ne capte jamais ces écritures : rien ne
 change pour lui. Bilan en fin de session : écritures captées, commandes.
 
