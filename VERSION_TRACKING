@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.20.0
+Current Version: 2.21.0
 Release Date: 2026-10-04
-Status: Stable (**Profil minimal au lancement — 2.20.0**. Sans -r : ORIC-1 nu sur roms/basic10.rom (basic11b.rom sous -m atmos ; dossier courant puis à côté de l'exécutable), aucune carte ; --no-rom garde $C000-$FFFF vide ; ACIA absente silencieuse ; test-rom-guard 3→6.)
+Status: Stable (**Modem LOCI dans F1 — 2.21.0**. Réglage Modem Wi-Fi de la carte LOCI : aucun / simulé (--serial picowifi) / réel (picowifi USB, détecté par son produit « PicoWifiModemUSB » dans /sys, ou port imposé) ; paramètre CARD_P_CHOICE ; test-cards 7→13. Corrigé : boot Atmos/Oric-1 du menu LOCI sans flash root (ROM cherchée dans roms/) ; test-rom-guard 6→7.)
+Status (prev): Stable (**Profil minimal au lancement — 2.20.0**. Sans -r : ORIC-1 nu sur roms/basic10.rom (basic11b.rom sous -m atmos ; dossier courant puis à côté de l'exécutable), aucune carte ; --no-rom garde $C000-$FFFF vide ; ACIA absente silencieuse ; test-rom-guard 3→6.)
 Status (prev): Stable (**Sprint G terminé — 2.19.0**. G7 : carte d'exemple docs/examples/card_demo.c, make test-card-template (11), guide docs/CARTES.md ; ajouter une carte = un fichier + une ligne.)
 Status (prev): Stable (**Sprint G6 : LOCI en module — 2.18.0**. Fiche, bus (MIA/TAP/DSK, co-sim), mise en route ; options, état, tick au cœur ; io_bus.c sans table du cœur ; cli_golden 143 cas 0 écart.)
 Status (prev): Stable (**Sprint G5 : Microdisc et Jasmin en modules — 2.17.0**. Fiche, mise en route, bus, fermeture ; options, état et tick au cœur ; card_on remplace has_microdisc/has_jasmin ; cli_golden 143 cas 0 écart ; .ost disque identiques.)

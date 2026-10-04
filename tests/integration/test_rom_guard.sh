@@ -107,6 +107,22 @@ else
     note_fail "default ROM from another cwd (rc=$rc)"
     echo "$out" | tail -3 | sed 's/^/        /'
 fi
+# ── Test 7: LOCI menu (-r roms/loci/locirom) → "boot Atmos" swap ────
+# Without a flash root holding basic11b.rom, the swap falls back to roms/
+# (parent of the menu ROM directory) instead of failing.
+if [ -f roms/loci/locirom ]; then
+    out=$("$EMU" -n -r roms/loci/locirom --loci -c 25000000 \
+          --type-keys '15000000:\e\p9' --screenshot-text "$shot" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ] && ! echo "$out" | grep -q "failed to load" \
+       && echo "$out" | grep -q "using roms/loci/../basic11b.rom" \
+       && grep -q "ORIC EXTENDED BASIC V1.1" "$shot"; then
+        note_pass "LOCI menu boot finds basic11b.rom in roms/"
+    else
+        note_fail "LOCI menu ROM swap (rc=$rc)"
+        echo "$out" | grep -i "rom swap" | tail -3 | sed 's/^/        /'
+    fi
+fi
 rm -f "$shot"
 
 echo ""

@@ -29,6 +29,7 @@ void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val);
 void loci_resume_snapshot_path(emulator_t* emu, char* out, size_t outsz);
 /* Locate a ROM file under the LOCI flash root; true + path in OUT if found. */
 bool loci_find_rom_file(emulator_t* emu, const char* name, char* out, size_t outsz);
+bool loci_find_system_rom(emulator_t* emu, const char* rom_path, char* out, size_t outsz);
 /* Locate the LOCI menu ROM. */
 bool loci_find_menu_rom(emulator_t* emu, char* out, size_t outsz);
 /* Patch the LOCI firmware ROM-info block in memory. */

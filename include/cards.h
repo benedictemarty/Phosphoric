@@ -27,7 +27,8 @@ typedef enum {
     CARD_P_DIR,      /* dossier de l'hôte */
     CARD_P_TEXT,     /* texte libre (transport, nombre) */
     CARD_P_HEX,      /* adresse d'E/S hexadécimale ($0300-$03FF) */
-    CARD_P_BOOL      /* oui / non */
+    CARD_P_BOOL,     /* oui / non */
+    CARD_P_CHOICE    /* une valeur parmi celles de `def` (« a|b|c », défaut : a) */
 } card_param_kind_t;
 
 typedef struct {
@@ -35,7 +36,8 @@ typedef struct {
     const char*       label;   /* libellé affiché */
     card_param_kind_t kind;
     const char*       cli;     /* option de lancement (NULL : traitée à part) */
-    const char*       def;     /* valeur par défaut ("" : aucune) */
+    const char*       def;     /* valeur par défaut ("" : aucune) ; CARD_P_CHOICE :
+                                  les valeurs possibles, la première par défaut */
     const char*       help;    /* explication affichée sous le paramètre */
 } card_param_t;
 
@@ -77,8 +79,20 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
 /* Active / éteint une carte en respectant son groupe exclusif. */
 void cards_set_on(cards_state_t* st, int i, bool on);
 
+/* Valeur par défaut de @p p dans @p out (pour CARD_P_CHOICE : son premier choix). */
+void cards_param_default(const card_param_t* p, char* out, size_t outsz);
+/* Valeur suivante d'un paramètre CARD_P_CHOICE (après la dernière : la première). */
+void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
+
+/* Modem de la carte LOCI (paramètre « modem ») : rien, picowifi simulé, ou
+ * picowifi réel branché sur l'hôte (port « port », vide : détection USB). */
+#define LOCI_MODEM_NONE "aucun"
+#define LOCI_MODEM_SIM  "simulé"
+#define LOCI_MODEM_REAL "réel"
+
 /* Conflits d'adresses d'E/S entre cartes actives : message dans @p out
- * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false si aucun. */
+ * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false si aucun.
+ * Signale aussi un modem LOCI réel introuvable (aucun picowifi branché). */
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz);
 
 /* Options de lancement pour relancer avec @p st : celles d'@p argv sans aucune

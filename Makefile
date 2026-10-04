@@ -193,6 +193,7 @@ SOURCES = src/main.c \
           src/io/loci_sdimg.c \
           src/io/acia6551.c \
           src/io/serial_backend.c \
+          src/io/picowifi_detect.c \
           src/io/smf.c \
           src/io/pia6821.c \
           src/io/acia6850.c \

@@ -6,10 +6,15 @@
  *        configuration
  * @author bmarty <bmarty@mailo.com>
  */
+#define _DEFAULT_SOURCE              /* symlink, setenv, mkstemp */
 #include "cards.h"
 #include "emulator.h"
+#include "io/picowifi_detect.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -153,6 +158,186 @@ TEST(test_cfg_roundtrip) {
     ASSERT_TRUE(!cards_cfg_line(&back, "clavier", "azerty", NULL));   /* pas une carte */
 }
 
+/* /sys factice : ttyACM0 = autre montage TinyUSB, ttyACM1 = picowifi. */
+static char g_sys[256];
+
+static void fake_tty(const char* tty, const char* product) {
+    char p[512], dev[512];
+    snprintf(dev, sizeof dev, "%s/devices/usb1/%s", g_sys, tty);
+    snprintf(p, sizeof p, "%s/1-1:1.0", dev);
+    mkdir(dev, 0755); mkdir(p, 0755);
+    snprintf(p, sizeof p, "%s/product", dev);
+    FILE* f = fopen(p, "w");
+    if (f) { fprintf(f, "%s\n", product); fclose(f); }
+    snprintf(p, sizeof p, "%s/class/tty/%s", g_sys, tty);
+    mkdir(p, 0755);
+    snprintf(p, sizeof p, "%s/class/tty/%s/device", g_sys, tty);
+    snprintf(dev, sizeof dev, "../../../devices/usb1/%s/1-1:1.0", tty);
+    if (symlink(dev, p) != 0) perror("symlink");
+}
+
+static void fake_sysfs(bool with_picowifi) {
+    char cmd[300];
+    snprintf(g_sys, sizeof g_sys, "/tmp/phos_sysfs_%d", (int)getpid());
+    snprintf(cmd, sizeof cmd, "rm -rf %s && mkdir -p %s/class/tty %s/devices/usb1",
+             g_sys, g_sys, g_sys);
+    if (system(cmd) != 0) return;
+    fake_tty("ttyACM0", "TinyUSB Device");
+    if (with_picowifi) fake_tty("ttyACM1", PICOWIFI_USB_PRODUCT);
+    setenv("PHOSPHORIC_SYSFS_ROOT", g_sys, 1);
+}
+
+static void fake_sysfs_drop(void) {
+    char cmd[300];
+    snprintf(cmd, sizeof cmd, "rm -rf %s", g_sys);
+    if (system(cmd) != 0) { /* rien */ }
+    unsetenv("PHOSPHORIC_SYSFS_ROOT");
+}
+
+TEST(test_picowifi_detect_by_usb_product) {
+    char dev[64];
+    fake_sysfs(true);
+    ASSERT_TRUE(picowifi_detect(NULL, dev, sizeof dev));
+    ASSERT_STR(dev, "/dev/ttyACM1");                 /* pas ttyACM0 (autre produit) */
+    fake_sysfs(false);
+    ASSERT_TRUE(!picowifi_detect(NULL, dev, sizeof dev));
+    ASSERT_TRUE(!picowifi_detect("/inexistant", dev, sizeof dev));
+    picowifi_serial_spec("/dev/ttyACM1", dev, sizeof dev);
+    ASSERT_STR(dev, "com:115200,8,N,1,/dev/ttyACM1");
+    fake_sysfs_drop();
+}
+
+TEST(test_choice_param_cycles) {
+    const card_desc_t* d = cards_get(cards_find("loci"));
+    const card_param_t* p = NULL;
+    for (int i = 0; i < d->nparams; i++) if (strcmp(d->param[i].key, "modem") == 0) p = &d->param[i];
+    ASSERT_TRUE(p && p->kind == CARD_P_CHOICE && p->cli == NULL);
+    char v[CARD_VALUE_MAX];
+    cards_param_default(p, v, sizeof v);
+    ASSERT_STR(v, LOCI_MODEM_NONE);
+    cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODEM_SIM);
+    cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODEM_REAL);
+    cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODEM_NONE);
+    snprintf(v, sizeof v, "bizarre");
+    cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODEM_NONE);
+}
+
+TEST(test_loci_modem_build_argv) {
+    char* argv[] = { "oric1-emu", "--serial-trace", "t.log", NULL };
+    cards_state_t st;
+    int lo = cards_find("loci"), ac = cards_find("acia");
+    char buf[512];
+    fake_sysfs(true);
+    cards_state_defaults(&st);
+    cards_set_on(&st, lo, true);
+    snprintf(st.card[lo].value[0], CARD_VALUE_MAX, "non");
+    snprintf(st.card[lo].value[3], CARD_VALUE_MAX, LOCI_MODEM_SIM);
+    char** av = cards_build_argv(&st, 3, argv, NULL);
+    joined(av, buf, sizeof buf);       /* --serial-trace gardée : le modem est une ACIA */
+    ASSERT_STR(buf, "oric1-emu --serial-trace t.log --loci --serial picowifi --no-config-cards");
+    cards_argv_free(av);
+    snprintf(st.card[lo].value[3], CARD_VALUE_MAX, LOCI_MODEM_REAL);   /* port détecté */
+    av = cards_build_argv(&st, 1, argv, NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_STR(buf, "oric1-emu --loci --serial com:115200,8,N,1,/dev/ttyACM1 --no-config-cards");
+    cards_argv_free(av);
+    snprintf(st.card[lo].value[4], CARD_VALUE_MAX, "/dev/ttyUSB3");     /* port imposé */
+    av = cards_build_argv(&st, 1, argv, NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_STR(buf, "oric1-emu --loci --serial com:115200,8,N,1,/dev/ttyUSB3 --no-config-cards");
+    cards_argv_free(av);
+    /* Carte ACIA active : elle garde la ligne série, et le menu le signale. */
+    char msg[96];
+    ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
+    cards_set_on(&st, ac, true);
+    ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "une seule ligne"));
+    fake_sysfs_drop();
+}
+
+TEST(test_loci_modem_real_missing_is_reported) {
+    cards_state_t st;
+    int lo = cards_find("loci");
+    char msg[96];
+    fake_sysfs(false);
+    cards_state_defaults(&st);
+    cards_set_on(&st, lo, true);
+    snprintf(st.card[lo].value[3], CARD_VALUE_MAX, LOCI_MODEM_REAL);
+    ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "aucun picowifi"));
+    char* argv[] = { "oric1-emu", NULL };
+    char** av = cards_build_argv(&st, 1, argv, NULL);
+    char buf[256];
+    joined(av, buf, sizeof buf);
+    ASSERT_STR(buf, "oric1-emu -r roms/loci/locirom --loci --no-config-cards");
+    cards_argv_free(av);
+    snprintf(st.card[lo].value[4], CARD_VALUE_MAX, "/dev/ttyACM7");
+    ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
+    fake_sysfs_drop();
+}
+
+TEST(test_loci_modem_state_from_cli) {
+    cards_state_t st;
+    int lo = cards_find("loci"), ac = cards_find("acia");
+    fake_sysfs(true);
+    char* a1[] = { "oric1-emu", "--loci", "--serial", "picowifi", NULL };
+    cards_state_from(&st, NULL, 4, a1);
+    ASSERT_TRUE(st.card[lo].on && !st.card[ac].on);
+    ASSERT_STR(st.card[lo].value[3], LOCI_MODEM_SIM);
+    char* a2[] = { "oric1-emu", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyACM1", NULL };
+    cards_state_from(&st, NULL, 4, a2);                 /* port détecté : laissé vide */
+    ASSERT_STR(st.card[lo].value[3], LOCI_MODEM_REAL);
+    ASSERT_STR(st.card[lo].value[4], "");
+    char* a3[] = { "oric1-emu", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyS0", NULL };
+    cards_state_from(&st, NULL, 4, a3);
+    ASSERT_STR(st.card[lo].value[4], "/dev/ttyS0");
+    /* ACIA réglée autrement (V23, identifiants, autre adresse) : reste une carte. */
+    char* a4[] = { "oric1-emu", "--loci", "--serial", "picowifi", "--serial-v23", NULL };
+    cards_state_from(&st, NULL, 5, a4);
+    ASSERT_TRUE(st.card[ac].on);
+    ASSERT_STR(st.card[lo].value[3], LOCI_MODEM_NONE);
+    char* a5[] = { "oric1-emu", "--loci", "--serial", "picowifi:box:secret", NULL };
+    cards_state_from(&st, NULL, 4, a5);
+    ASSERT_TRUE(st.card[ac].on);
+    char* a6[] = { "oric1-emu", "--serial", "picowifi", NULL };   /* sans LOCI */
+    cards_state_from(&st, NULL, 3, a6);
+    ASSERT_TRUE(st.card[ac].on && !st.card[lo].on);
+    fake_sysfs_drop();
+}
+
+TEST(test_loci_modem_cfg) {
+    cards_state_t st, back;
+    bool seen[16];
+    int lo = cards_find("loci");
+    cards_state_defaults(&st);
+    cards_set_on(&st, lo, true);
+    snprintf(st.card[lo].value[3], CARD_VALUE_MAX, LOCI_MODEM_SIM);
+    char path[] = "/tmp/phos_cards_cfg_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_TRUE(fd >= 0);
+    FILE* f = fdopen(fd, "w");
+    cards_cfg_write(&st, f);
+    fclose(f);
+    ASSERT_TRUE(cards_cfg_read(path, &back, seen));
+    ASSERT_TRUE(back.card[lo].on);
+    ASSERT_STR(back.card[lo].value[3], LOCI_MODEM_SIM);
+    /* Configuration : LOCI + modem simulé ajoutés au lancement... */
+    char* a1[] = { "oric1-emu", NULL };
+    int n = 0;
+    char** av = cards_config_argv(path, 1, a1, &n);
+    char buf[256];
+    ASSERT_TRUE(av != NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_TRUE(strstr(buf, "--loci") && strstr(buf, "--serial picowifi"));
+    cards_argv_free(av);
+    /* ...sauf si la ligne de commande choisit déjà la ligne série. */
+    char* a2[] = { "oric1-emu", "--serial", "tcp:bbs:23", NULL };
+    av = cards_config_argv(path, 3, a2, &n);
+    ASSERT_TRUE(av != NULL);
+    joined(av, buf, sizeof buf);
+    ASSERT_TRUE(strstr(buf, "--loci") && !strstr(buf, "picowifi"));
+    cards_argv_free(av);
+    unlink(path);
+}
+
 int main(void) {
     printf("=== Registre des cartes d'extension ===\n");
     RUN(test_registry_is_described);
@@ -162,6 +347,12 @@ int main(void) {
     RUN(test_build_argv_replaces_cards);
     RUN(test_build_argv_params);
     RUN(test_cfg_roundtrip);
+    RUN(test_picowifi_detect_by_usb_product);
+    RUN(test_choice_param_cycles);
+    RUN(test_loci_modem_build_argv);
+    RUN(test_loci_modem_real_missing_is_reported);
+    RUN(test_loci_modem_state_from_cli);
+    RUN(test_loci_modem_cfg);
     printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
 }

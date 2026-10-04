@@ -550,6 +550,15 @@ Options associees : `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
 ./oric1-emu -r basic11b.rom --loci --serial picowifi:MonWiFi:motdepasse
 ```
 
+Dans le menu F1, la carte **LOCI** a un reglage **Modem Wi-Fi (picowifi)** :
+`aucun`, `simulé` (picowifi emule, equivaut a `--loci --serial picowifi`) ou
+`réel` (le picowifi USB branche sur le PC, relie en 115200 8N1). Pour `réel`,
+le port est detecte automatiquement sous Linux par le nom de produit USB
+« PicoWifiModemUSB » (lecture de `/sys`, le port n'est jamais ouvert pendant la
+detection) ; le reglage **Port du picowifi reel** l'impose (ex. `/dev/ttyACM0`).
+Aucun picowifi detecte : le menu le signale et refuse d'appliquer. Dans
+`phosphoric.cfg` : `loci.modem=simulé`, `loci.port=/dev/ttyACM0`.
+
 ### Cartes dediees
 
 - **Digitelec DTL 2000** — `--dtl2000 TRANSPORT` : carte V23 fidele (PIA 6821 +

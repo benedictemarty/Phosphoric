@@ -63,6 +63,14 @@ La fiche suffit : le menu liste la carte, ses paramètres et leur explication ; 
 configuration la mémorise sous `carte.<id>=oui` et `<id>.<clé>=valeur` (la clé est
 celle du paramètre dans la fiche). Changer de cartes relance l'émulateur (ADR 0004).
 
+Types de paramètres (`card_param_kind_t`) : fichier, dossier, texte, adresse
+hexadécimale, oui/non, et **choix** (`CARD_P_CHOICE`, 2.21.0) : `def` donne les
+valeurs possibles séparées par `|`, la première étant la valeur par défaut
+(`"aucun|simulé|réel"`) ; Entrée passe à la suivante. Un paramètre sans option
+(`cli` à `NULL`) est traduit à part dans `cards_build_argv` : c'est le cas du
+modem de la carte LOCI, qui devient `--serial picowifi` ou
+`--serial com:115200,8,N,1,<port>`.
+
 ## Ancres : garder une place
 
 Sans ancre (champs `*_before` à `NULL`), une carte va **en fin** de table d'options,

@@ -1,0 +1,71 @@
+/* SPDX-License-Identifier: EUPL-1.2 */
+/**
+ * @file picowifi_detect.c
+ * @brief Détection d'un modem picowifi réel par son nom de produit USB (/sys)
+ * @author bmarty <bmarty@mailo.com>
+ */
+#include "io/picowifi_detect.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#include <dirent.h>
+#endif
+
+void picowifi_serial_spec(const char* dev, char* out, size_t outsz) {
+    snprintf(out, outsz, "com:115200,8,N,1,%s", dev);
+}
+
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
+
+bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
+    (void)sysfs_root; (void)out; (void)outsz;
+    return false;
+}
+
+#else
+
+/* Produit USB du port @p tty : <root>/class/tty/<tty>/device est l'interface
+ * USB, le fichier « product » est dans le périphérique parent. */
+static bool tty_product_matches(const char* root, const char* tty) {
+    char path[512], line[128];
+    snprintf(path, sizeof(path), "%.400s/class/tty/%.63s/device/../product", root, tty);
+    FILE* f = fopen(path, "r");
+    if (!f) return false;
+    bool ok = fgets(line, sizeof(line), f) != NULL;
+    fclose(f);
+    if (!ok) return false;
+    line[strcspn(line, "\r\n")] = '\0';
+    return strcmp(line, PICOWIFI_USB_PRODUCT) == 0;
+}
+
+static int by_name(const void* a, const void* b) {
+    return strcmp((const char*)a, (const char*)b);
+}
+
+bool picowifi_detect(const char* sysfs_root, char* out, size_t outsz) {
+    const char* env = getenv("PHOSPHORIC_SYSFS_ROOT");    /* tests */
+    const char* root = sysfs_root ? sysfs_root : env && *env ? env : "/sys";
+    char dir[512];
+    snprintf(dir, sizeof(dir), "%.480s/class/tty", root);
+    DIR* d = opendir(dir);
+    if (!d) return false;
+    char names[64][64];
+    int n = 0;
+    struct dirent* de;
+    while ((de = readdir(d)) != NULL && n < 64)
+        if (strncmp(de->d_name, "ttyACM", 6) == 0 || strncmp(de->d_name, "ttyUSB", 6) == 0)
+            snprintf(names[n++], sizeof(names[0]), "%.63s", de->d_name);
+    closedir(d);
+    qsort(names, (size_t)n, sizeof(names[0]), by_name);
+    for (int i = 0; i < n; i++) {
+        if (tty_product_matches(root, names[i])) {
+            snprintf(out, outsz, "/dev/%s", names[i]);
+            return true;
+        }
+    }
+    return false;
+}
+
+#endif

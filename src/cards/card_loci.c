@@ -46,8 +46,16 @@ static const card_desc_t k_desc = {
             "Vide : aucune." },
           { "flash", "Dossier flash interne", CARD_P_DIR, "--loci-flash", "",
             "Dossier de l'hôte servant de mémoire flash interne (fichiers 0: du LOCI). "
-            "Vide : aucun." } },
-        3
+            "Vide : aucun." },
+          { "modem", "Modem Wi-Fi (picowifi)", CARD_P_CHOICE, NULL,
+            LOCI_MODEM_NONE "|" LOCI_MODEM_SIM "|" LOCI_MODEM_REAL,
+            "Modem de la carte, vu par l'Oric comme l'ACIA en $0380. simulé : picowifi "
+            "émulé (commandes AT, Wi-Fi par le réseau de l'hôte) ; réel : le picowifi "
+            "USB branché sur ce PC. Remplace la carte ACIA 6551." },
+          { "port", "Port du picowifi réel", CARD_P_TEXT, NULL, "",
+            "Port série du picowifi réel (ex. /dev/ttyACM0). Vide : détection automatique "
+            "par son nom USB « PicoWifiModemUSB » (Linux)." } },
+        5
     };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
