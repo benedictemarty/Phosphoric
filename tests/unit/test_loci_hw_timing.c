@@ -5,8 +5,11 @@
  * TIMING/RDT/WRT du protocole loci-usb).
  *
  * Les durées renvoyées par la maquette sont celles mesurées sur la Feather 5723
- * (serve 23 cycles, act 69-118 en lecture, 429 pour une écriture RAMX) ; les cas
- * en retard sont fabriqués pour franchir le latch.
+ * (sys 120 MHz, Φ2cfg 4000 kHz → tick PIO 8,33 ns ; serve 23 cycles, act 69-118 en
+ * lecture, 429 pour une écriture RAMX) ; les cas en retard sont fabriqués pour
+ * franchir l'échéance (1000 - 100 = 900 ns). Chronologie (loci_hw.c) :
+ *   prêt   = (22 + tior) × 8,33 + 16,7 + serve × 8,33
+ *   donnée = max(prêt, 666,7 + 16,7) + 3 × 8,33
  */
 #define _DEFAULT_SOURCE
 #include "io/loci_emu.h"
@@ -52,8 +55,8 @@ static void *mock_thread(void *arg)
             uint8_t p[3] = { LUP_VERSION, 1, LUP_CAP_FIRMWARE | LUP_CAP_TIMING | LUP_CAP_VIRTUAL };
             mwrite(hdr, 3); mwrite(p, 3); break; }
         case LUP_CMD_LINES: { uint8_t p[4] = { 0, 0, 0, 0 }; mwrite(hdr, 3); mwrite(p, 4); break; }
-        case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2 1000 kHz, tior */
-            uint8_t p[12] = { 0xC0, 0xD4, 0x01, 0, 0xE8, 0x03, 0, 0, m_tior, 0, 0, 0 };
+        case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (défaut du firmware), tior */
+            uint8_t p[12] = { 0xC0, 0xD4, 0x01, 0, 0xA0, 0x0F, 0, 0, m_tior, 0, 0, 0 };
             mwrite(hdr, 3); mwrite(p, 12); break; }
         case LUP_CMD_RDT: {
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread();
@@ -92,12 +95,12 @@ int main(void)
     printf("test_loci_hw_timing — course Φ2 mesurée (--loci-hw, caps TIMING)\n");
     unsigned long timed, late, stale;
 
-    /* Durées réelles de la Feather : serve 23 cycles à 120 MHz = 6 subticks à Φ2 1 MHz. */
+    /* Durées réelles de la Feather : serve 23 → prêt 392 ns, donnée 708 ns (après Φ2 haut). */
     m_serve[0x0381] = 23;  m_act[0x0381] = 118;
     m_serve[0x0319] = 23;  m_act[0x0319] = 73;
-    /* 100 cycles = 25 subticks : à temps avec tior 0, en retard avec tior 3 (28 > 27). */
-    m_serve[0x0382] = 100; m_act[0x0382] = 110;
-    /* 120 cycles = 30 subticks : toujours en retard. */
+    /* 80 cycles : donnée 892 ns, à temps avec tior 0 ; 917 ns avec tior 3, en retard. */
+    m_serve[0x0382] = 80;  m_act[0x0382] = 110;
+    /* 120 cycles : donnée 1225 ns, toujours en retard. */
     m_serve[0x0380] = 120; m_act[0x0380] = 130;
     /* Écriture RAMX : act 429 cycles = 4 cycles 6502. */
     m_act[0x03E0] = 429;
@@ -107,12 +110,12 @@ int main(void)
     loci_emu_api_read(0x0319); loci_emu_idle_poll(10);
     loci_emu_api_read(0x0382); loci_emu_idle_poll(10);
     loci_hw_timing_stats(&timed, &late, &stale);
-    CHECK(timed == 3 && late == 0, "serve 23 et 100 cycles (6 et 25 subticks, tior 0) : à temps");
+    CHECK(timed == 3 && late == 0, "serve 23 et 80 cycles (donnée à 708 et 892 ns, tior 0) : à temps");
     CHECK(!loci_emu_read_lost(), "détection seule : aucune lecture rendue perdue");
 
     uint8_t v = loci_emu_api_read(0x0380); loci_emu_idle_poll(10);
     loci_hw_timing_stats(&timed, &late, &stale);
-    CHECK(late == 1, "serve 120 cycles (30 subticks > latch 27) : lecture en retard comptée");
+    CHECK(late == 1, "serve 120 cycles (donnée à 1225 ns > 900) : lecture en retard comptée");
     CHECK(v == 0x80 && !loci_emu_read_lost(), "sans LOCI_HW_FAITHFUL : la donnée est rendue telle quelle");
 
     /* Iopage périmé : écriture RAMX (act = 4 cycles 6502) puis accès 2 cycles plus tard. */
@@ -127,14 +130,14 @@ int main(void)
     CHECK(stale == 1, "accès 4 cycles après une action de 4 cycles : à temps");
     loci_emu_stop();
 
-    /* Mode fidèle, tior 3 : 25 + 3 = 28 subticks > 27 → open-bus. */
+    /* Mode fidèle, tior 3 : serve 80 → donnée à 917 ns > 900 → open-bus. */
     m_tior = 3;
     start("1");
     loci_emu_api_read(0x0382);
-    CHECK(loci_emu_read_lost(), "fidèle, tior 3 + serve 25 subticks : lecture perdue (open-bus)");
+    CHECK(loci_emu_read_lost(), "fidèle, tior 3 + serve 80 cycles : lecture perdue (open-bus)");
     CHECK(!loci_emu_read_lost(), "le drapeau de lecture perdue est remis à zéro une fois lu");
     loci_emu_api_read(0x0381);
-    CHECK(!loci_emu_read_lost(), "fidèle, serve 6 subticks : lecture propre");
+    CHECK(!loci_emu_read_lost(), "fidèle, serve 23 cycles : lecture propre");
     loci_emu_stop();
 
     printf("%d/%d vérifications OK\n", g_checks - g_fails, g_checks);

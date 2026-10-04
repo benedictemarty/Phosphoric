@@ -110,30 +110,33 @@ plage fiable (défaut 0-31 = toujours fiable) ; hors fenêtre, `$0380` lit
 
 Avec `--loci-hw`, chaque accès `$03xx` est un aller-retour USB pendant lequel le
 6502 émulé est figé : la contrainte Φ2 d'une vraie LOCI (le port d'extension n'a
-pas de RDY, la donnée doit être posée avant le latch du 6502) disparaît. Quand le
-firmware annonce `caps & LUP_CAP_TIMING` (loci-usb, commandes TIMING/RDT/WRT),
-Phosphoric la reconstitue à partir des cycles du cœur 1 mesurés au SysTick :
+pas de RDY, la donnée doit être posée avant que le 6502 la capture) disparaît. Quand
+le firmware annonce `caps & LUP_CAP_TIMING` (loci-usb, commandes TIMING/RDT/WRT),
+Phosphoric la reconstitue à partir des cycles du cœur 1 mesurés au SysTick (`serve`,
+`act`), sur une chronologie en ns dont l'origine est le front descendant de Φ2 :
 
-- **lecture en retard** : `tior + LOCI_HW_SM_SUBTICKS + serve` (en subticks Φ2×30,
-  `serve × 30 × Φ2 / sys`) dépasse le latch (`LOCI_HW_LATCH`, 27 par défaut) ;
-- **iopage périmé** : un accès `$03xx` arrive moins de `act` cycles 6502 après le
-  précédent (effets de bord pas terminés). Granularité : l'instruction.
+| Étape | Instant | Source |
+|---|---|---|
+| mot d'action dans la FIFO | (22 + tior) ticks PIO + 2 cycles sys | comptes de `mia.pio` (estimés) |
+| donnée prête (DMA déclenchée) | + `LOCI_HW_POLL_NS` (0, non mesuré) + `serve` | SysTick |
+| donnée sur le bus | max(prête, montée de Φ2) + (3 + tiod) ticks | `mia_io_read` (estimé) |
+| échéance du 6502 | période − `LOCI_HW_TDSR_NS` (100) | fiche 6502 à 1 MHz |
 
-Détection seule par défaut : journal des 10 premiers cas + bilan en fin de session.
-`LOCI_HW_FAITHFUL=1` rend l'open-bus sur une lecture en retard (comme la course de
-`--loci-serve-timing`). `LOCI_HW_PHI2_KHZ` : Φ2 de l'Oric (1000) ; un écart avec le
-réglage Φ2 du firmware est signalé. `LOCI_HW_SM_SUBTICKS` : latence front Φ2 → FIFO
-du SM, **non mesurée** (0 par défaut). Mesures sur la Feather 5723 : serve 23 cycles
-à 120 MHz (6 subticks à 1 MHz), act 61-118 en lecture, 429 pour une écriture RAMX.
+- **Tick PIO** = 1 / (Φ2cfg × 30), où Φ2cfg est le réglage du firmware (**4000 kHz
+  par défaut**, `cpu.c`) : 8,33 ns. Ce n'est pas l'horloge de l'Oric.
+- **Φ2 de l'Oric** : période 1 / `LOCI_HW_PHI2_KHZ` (1000), haut le dernier tiers
+  (`LOCI_HW_PHI2_HIGH_NS`, période / 3 : l'ULA donne 2/3 bas, 1/3 haut).
+- **Lecture en retard** : la donnée arrive après l'échéance. **Iopage périmé** : un
+  accès `$03xx` arrive moins de `act` cycles 6502 après le précédent (granularité :
+  l'instruction).
 
-⚠️ **Verdict « en retard » non calibré.** L'origine des subticks de `bus_timing.h`
-n'est pas rattachée aux fronts de Φ2. Lu dans `mia.pio` (estimation, pas mesure) :
-le mot d'action arrive dans la FIFO 22 + tior ticks après le front descendant, et
-le bus n'est piloté qu'après le front montant + 3 + tiod ticks ; avec ces comptes et
-le latch au front descendant suivant, une vraie LOCI raterait ses lectures, ce
-qu'elle ne fait pas. Tant qu'une mesure sur un vrai Oric (analyseur logique) ne fixe
-pas l'origine et le latch, seuls les **cycles bruts** (serve, act : comparaison entre
-builds du firmware) et l'**iopage périmé** (durée absolue en µs) sont fiables.
+Détection seule par défaut : journal des 10 premiers cas + bilan en fin de session
+(marge minimale en ns). `LOCI_HW_FAITHFUL=1` rend l'open-bus sur une lecture en
+retard. Mesures sur la Feather 5723 : serve 23 cycles → donnée à ≈ 708 ns, juste
+après la montée de Φ2, marge ≈ 190 ns ; act 61-118 cycles en lecture, 429 pour une
+écriture RAMX (3,6 µs : un accès `$03xx` moins de 4 cycles 6502 après lit un iopage
+périmé). Les comptes PIO et le temps d'établissement du 6502 à 2 MHz de l'Oric sont
+des estimations, à confirmer par une mesure sur bus réel.
 
 ## Divergences connues (hors périmètre)
 
