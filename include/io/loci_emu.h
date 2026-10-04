@@ -103,6 +103,13 @@ bool    loci_emu_io_page(void);
 bool    loci_emu_io_read(uint16_t address, uint8_t *out);
 void    loci_emu_io_write(uint16_t address, uint8_t value);
 
+/* Course Φ2 mesurée sur le matériel réel (--loci-hw, firmware caps TIMING) : true si
+ * la DERNIÈRE lecture $03xx servie par la cartouche a posé sa donnée après le latch
+ * du 6502 ET que le mode fidèle (LOCI_HW_FAITHFUL=1) est actif — l'appelant rend
+ * alors l'open-bus (la cartouche a déjà consommé la lecture). Remis à false à la
+ * lecture. Les autres backends rendent toujours false. */
+bool    loci_emu_read_lost(void);
+
 /* Microdisc $0310-$0314/$0318 co-simulé : le contrôleur WD1793 émulé par le VRAI
  * firmware (oric/dsk.c) sert le 6502 — lecture/écriture de secteurs, seek, RNF,
  * IRQ de fin de commande (drainée comme pour l'API). Tant que le boot n'est pas

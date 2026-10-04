@@ -177,6 +177,7 @@ static uint8_t acia_dev_read(emulator_t* emu, uint16_t addr) {
      * (oric/acia.c ↔ modem USB CDC) au lieu du 6551 comportemental. */
     if (loci_emu_acia_active() || (loci_emu_active() && loci_emu_acia_served(addr))) {
         uint8_t v = loci_emu_acia_read(addr);
+        if (loci_emu_read_lost()) v = memory_open_bus(&emu->memory);   /* --loci-hw fidèle */
         loci_emu_reflect_nirq(emu);
         return v;
     }

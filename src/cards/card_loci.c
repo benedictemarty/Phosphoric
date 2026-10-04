@@ -80,6 +80,10 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->card_on[CARD_IDX_microdisc] && loci_addr_in_dsk(addr)) return true;
     return false;
 }
+/* --loci-hw fidèle : lecture servie après le latch du 6502 → open-bus. */
+static uint8_t hw_lost(emulator_t* emu, uint8_t v) {
+    return loci_emu_read_lost() ? memory_open_bus(&emu->memory) : v;
+}
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
      * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core).
@@ -92,15 +96,15 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
         loci_emu_reflect_nirq(emu);
         return drv ? v : memory_open_bus(&emu->memory);
     }
-    if (loci_emu_ramx_claims(addr)) return loci_emu_api_read(addr);
-    if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
+    if (loci_emu_ramx_claims(addr)) return hw_lost(emu, loci_emu_api_read(addr));
+    if (loci_addr_in_mia(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_api_read(addr))
                                                          : loci_read(&emu->loci, addr);
-    if (loci_addr_in_tap(addr)) return loci_emu_active() ? loci_emu_tap_read(addr)
+    if (loci_addr_in_tap(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_tap_read(addr))
                                                          : loci_tap_read(&emu->loci, addr);
     /* DSK (claims l'a garanti). En co-sim, le WD1793 est celui du firmware (oric/dsk.c) :
      * un .dsk monté sur A: dans le VRAI menu LOCI est enfin lu par le 6502. */
     if (loci_emu_active()) {
-        uint8_t v = loci_emu_dsk_read(addr);
+        uint8_t v = hw_lost(emu, loci_emu_dsk_read(addr));
         loci_emu_reflect_nirq(emu);   /* fin de secteur : l'IRQ naît sur la DERNIÈRE lecture DATA */
         return v;
     }

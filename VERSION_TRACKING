@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.21.1
+Current Version: 2.22.0
 Release Date: 2026-10-04
-Status: Stable (**--loci-hw : POWERON au démarrage — 2.21.1**. La cartouche LOCI-USB, alimentée par l'USB, gardait l'état de la session précédente (2 fronts nRESET, cache ROM rechargé ~30×, 6502 planté en pile) ; loci_emu_start() la remet à l'état mise sous tension (LUP_CMD_POWERON, caps 0x08) puis rouvre le port ; LOCI_HW_NO_POWERON=1 pour garder l'état.)
+Status: Stable (**--loci-hw : course Φ2 mesurée — 2.22.0**. Firmware caps TIMING : RDT/WRT renvoient serve/act (cycles du cœur 1, SysTick) ; lecture en retard si tior+SM+serve > latch 27 (subticks Φ2×30 à Φ2 Oric 1 MHz), iopage périmé si accès avant la fin d'act ; détection + bilan, LOCI_HW_FAITHFUL=1 → open-bus ; loci_emu_read_lost() dans l'interface ; test-loci-hw-timing 9 (SKIP sans loci-usb).)
+Status (prev): Stable (**--loci-hw : POWERON au démarrage — 2.21.1**. La cartouche LOCI-USB, alimentée par l'USB, gardait l'état de la session précédente (2 fronts nRESET, cache ROM rechargé ~30×, 6502 planté en pile) ; loci_emu_start() la remet à l'état mise sous tension (LUP_CMD_POWERON, caps 0x08) puis rouvre le port ; LOCI_HW_NO_POWERON=1 pour garder l'état.)
 Status (prev): Stable (**Modem LOCI dans F1 — 2.21.0**. Réglage Modem Wi-Fi de la carte LOCI : aucun / simulé (--serial picowifi) / réel (picowifi USB, détecté par son produit « PicoWifiModemUSB » dans /sys, ou port imposé) ; paramètre CARD_P_CHOICE ; test-cards 7→13. Corrigé : boot Atmos/Oric-1 du menu LOCI sans flash root (ROM cherchée dans roms/) ; test-rom-guard 6→7.)
 Status (prev): Stable (**Profil minimal au lancement — 2.20.0**. Sans -r : ORIC-1 nu sur roms/basic10.rom (basic11b.rom sous -m atmos ; dossier courant puis à côté de l'exécutable), aucune carte ; --no-rom garde $C000-$FFFF vide ; ACIA absente silencieuse ; test-rom-guard 3→6.)
 Status (prev): Stable (**Sprint G terminé — 2.19.0**. G7 : carte d'exemple docs/examples/card_demo.c, make test-card-template (11), guide docs/CARTES.md ; ajouter une carte = un fichier + une ligne.)

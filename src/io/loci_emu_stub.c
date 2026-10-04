@@ -88,3 +88,4 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
+bool    loci_emu_read_lost(void) { return false; }

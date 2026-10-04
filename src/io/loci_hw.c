@@ -24,7 +24,17 @@
  *  - nIRQ / nRESET : fronts comptés par le pont, drainés une fois par frame
  *    (loci_emu_irq_take / loci_emu_reset_take) ; le bouton MENU est PHYSIQUE : l'hôte
  *    voit le nRESET qui en résulte et resette son 6502 ;
- *  - clavier/souris USB : ceux branchés sur la cartouche (pas d'injection possible).
+ *  - clavier/souris USB : ceux branchés sur la cartouche (pas d'injection possible) ;
+ *  - course Φ2 (caps & LUP_CAP_TIMING) : le stop-and-wait fige le 6502 pendant chaque
+ *    accès, ce qui masque la contrainte Φ2 d'une vraie LOCI. RDT/WRT renvoient les
+ *    cycles d'act_loop mesurés au SysTick du cœur 1 : SERVE (jusqu'au déclenchement de
+ *    la DMA de read-serve) et ACT (jusqu'à la fin des effets de bord). Une lecture est
+ *    EN RETARD si tior + LOCI_HW_SM_SUBTICKS + SERVE (en subticks Φ2×30) dépasse le
+ *    latch du 6502 (LOCI_HW_LATCH, 27 par défaut, cf. bus_timing.h). Conversion avec le
+ *    Φ2 de l'Oric (LOCI_HW_PHI2_KHZ, 1000) : subticks = cycles × 30 × Φ2 / sys ; un accès $03xx
+ *    arrivé moins de ACT cycles 6502 après le précédent lit un iopage PÉRIMÉ. Détection
+ *    seule par défaut (compteurs + journal) ; LOCI_HW_FAITHFUL=1 rend l'open-bus sur une
+ *    lecture en retard, comme la course PHI2 du backend émulé.
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -34,6 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "io/bus_timing.h"
 
 static lup_client_t g_c;
 static int  g_active;             /* pont ouvert et PING OK */
@@ -44,6 +55,20 @@ static long g_settle_us;          /* LOCI_HW_SETTLE_US : pause après chaque acc
 static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL : cycles sans accès LOCI avant un LINES (0 = jamais) */
 static long g_idle_cycles;        /* cycles 6502 écoulés depuis le dernier accès LOCI */
 static unsigned long g_idle_polls, g_idle_polls_hit;
+
+/* Course Φ2 (caps & LUP_CAP_TIMING) */
+static int           g_timing;              /* RDT/WRT utilisés */
+static lup_timing_t  g_tm;                  /* horloges et délais courants de la cartouche */
+static long          g_latch_sub = BUS_LATCH_SUBTICK_DEFAULT;   /* LOCI_HW_LATCH */
+static long          g_phi2_khz = 1000;     /* LOCI_HW_PHI2_KHZ : Φ2 de l'Oric émulé (1 MHz) */
+static long          g_sm_sub;              /* LOCI_HW_SM_SUBTICKS : latence front Φ2 → FIFO du SM, non mesurée */
+static int           g_faithful;            /* LOCI_HW_FAITHFUL : retard → open-bus */
+static int           g_read_lost;           /* dernière lecture perdue (mode fidèle) */
+static long          g_since_access = 1L << 30;   /* cycles 6502 depuis le dernier accès $03xx */
+static long          g_prev_act_cyc;        /* durée d'act du dernier accès, en cycles 6502 */
+static unsigned long g_timed, g_late, g_stale;
+static unsigned      g_serve_max, g_act_max;
+static int           g_worst_margin = 1 << 30;  /* latch - valid minimal (négatif = retard) */
 
 /* Cache de la ROM servie ($C000-$FFFF) */
 static uint8_t g_rom[16384], g_rom_flags[16384];
@@ -101,12 +126,70 @@ static void settle(void)
     if (g_settle_us > 0) { struct timespec ts = { 0, g_settle_us * 1000L }; nanosleep(&ts, NULL); }
 }
 
+/* ── course Φ2 ── */
+static void timing_load(void)
+{
+    if (!g_timing) return;
+    if (lup_timing(&g_c, &g_tm) != 0 || !g_tm.sys_khz || !g_tm.phi2_khz) {
+        log_warning("LOCI-hw: TIMING a échoué (%s) — course Φ2 non mesurée", lup_client_error(&g_c));
+        g_timing = 0;
+        return;
+    }
+    log_info("LOCI-hw: course Φ2 mesurée — sys %lu kHz, Φ2 Oric %ld kHz, tior %u, latch %ld, SM %ld subticks, %s",
+             (unsigned long)g_tm.sys_khz, g_phi2_khz, g_tm.tior, g_latch_sub, g_sm_sub,
+             g_faithful ? "fidèle (retard → open-bus)" : "détection seule");
+    /* Les cycles mesurés sont ceux du cœur 1 à sys_khz ; ils se convertissent avec le Φ2
+     * de l'Oric (celui que voit le 6502), pas avec le réglage Φ2 du firmware. */
+    if ((long)g_tm.phi2_khz != g_phi2_khz)
+        log_warning("LOCI-hw: le firmware est réglé sur Φ2 = %lu kHz, l'Oric tourne à %ld kHz "
+                    "(PIO et tior calibrés pour une autre horloge)", (unsigned long)g_tm.phi2_khz, g_phi2_khz);
+}
+/* Cycles du cœur 1 → subticks Φ2×30 (arrondi supérieur) et → cycles 6502. */
+static long cyc_to_sub(unsigned cyc)  { return (long)(((uint64_t)cyc * 30u * (uint64_t)g_phi2_khz + g_tm.sys_khz - 1) / g_tm.sys_khz); }
+static long cyc_to_6502(unsigned cyc) { return (long)(((uint64_t)cyc * (uint64_t)g_phi2_khz + g_tm.sys_khz - 1) / g_tm.sys_khz); }
+
+/* Accès $03xx arrivé avant la fin des effets de bord du précédent : iopage périmé. */
+static void check_stale(char dir, uint16_t addr)
+{
+    if (g_prev_act_cyc > 0 && g_since_access < g_prev_act_cyc) {
+        if (++g_stale <= 10)
+            log_warning("LOCI-hw: Φ2 %c $%04X %ld cycles après l'accès précédent, dont l'action en dure %ld — iopage périmé",
+                        dir, addr, g_since_access, g_prev_act_cyc);
+    }
+}
+static void note_act(unsigned act)
+{
+    if (act > g_act_max) g_act_max = act;
+    g_prev_act_cyc = act ? cyc_to_6502(act) : 0;
+    g_since_access = 0;
+}
+
 /* Cycle de bus générique (page $03xx). */
 static uint8_t bus_rd(uint16_t addr)
 {
     uint8_t d = 0xFF, f;
     if (!g_active) return 0xFF;
-    if (lup_rd(&g_c, addr, &d, &f) != 0) { link_error_once("lecture"); return 0xFF; }
+    if (g_timing) {
+        uint16_t serve = 0, act = 0;
+        if (lup_rdt(&g_c, addr, &d, &f, &serve, &act) != 0) { link_error_once("lecture"); return 0xFF; }
+        check_stale('R', addr);
+        if (serve) {                         /* 0 : accès hors act_loop, rien à juger */
+            g_timed++;
+            if (serve > g_serve_max) g_serve_max = serve;
+            long valid = (long)g_tm.tior + g_sm_sub + cyc_to_sub(serve);
+            long margin = g_latch_sub - valid;
+            if (margin < g_worst_margin) g_worst_margin = (int)margin;
+            if (!bus_serve_wins_race((uint16_t)valid, (uint8_t)g_latch_sub)) {
+                if (++g_late <= 10)
+                    log_warning("LOCI-hw: Φ2 lecture $%04X EN RETARD — serve %u cycles, donnée au subtick %ld > latch %ld%s",
+                                addr, serve, valid, g_latch_sub, g_faithful ? " → open-bus" : "");
+                if (g_faithful) g_read_lost = 1;
+            }
+        }
+        note_act(act);
+    } else {
+        if (lup_rd(&g_c, addr, &d, &f) != 0) { link_error_once("lecture"); return 0xFF; }
+    }
     note_flags(f);
     trace_access('R', addr, d, f);
     settle();
@@ -118,12 +201,21 @@ static void bus_wr(uint16_t addr, uint8_t v)
 {
     uint8_t f;
     if (!g_active) return;
-    if (lup_wr(&g_c, addr, v, &f) != 0) { link_error_once("écriture"); return; }
+    if (g_timing) {
+        uint16_t act = 0;
+        if (lup_wrt(&g_c, addr, v, &f, &act) != 0) { link_error_once("écriture"); return; }
+        check_stale('W', addr);
+        note_act(act);
+    } else {
+        if (lup_wr(&g_c, addr, v, &f) != 0) { link_error_once("écriture"); return; }
+    }
     note_flags(f);
     trace_access('W', addr, v, f);
     settle();
     g_idle_cycles = 0;
 }
+
+bool loci_emu_read_lost(void) { int l = g_read_lost; g_read_lost = 0; return l != 0; }
 
 /* ── cycle de vie ── */
 int loci_emu_start(const char *dev)
@@ -156,12 +248,22 @@ int loci_emu_start(const char *dev)
     g_romdis = (lines & LUP_L_NROMDIS) != 0;
     g_gen = g_c.gen;
     g_active = 1;
+    g_latch_sub = getenv("LOCI_HW_LATCH") ? atol(getenv("LOCI_HW_LATCH")) : BUS_LATCH_SUBTICK_DEFAULT;
+    g_phi2_khz  = getenv("LOCI_HW_PHI2_KHZ") ? atol(getenv("LOCI_HW_PHI2_KHZ")) : 1000;
+    if (g_phi2_khz <= 0) g_phi2_khz = 1000;
+    g_sm_sub    = getenv("LOCI_HW_SM_SUBTICKS") ? atol(getenv("LOCI_HW_SM_SUBTICKS")) : 0;
+    g_faithful  = getenv("LOCI_HW_FAITHFUL") != NULL;
+    g_timing    = (g_c.caps & LUP_CAP_TIMING) != 0;
+    g_timed = g_late = g_stale = 0; g_serve_max = g_act_max = 0; g_worst_margin = 1 << 30;
+    g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
     log_info("LOCI-hw: pont « %s » prêt (proto %u, firmware pont %u, caps %02X%s) — nROMDIS=%d nRESET=%d ; "
              "cache ROM %s", dev, g_c.proto, g_c.fw, g_c.caps,
              (g_c.caps & LUP_CAP_VIRTUAL) ? ", VIRTUEL" : "", g_romdis, (lines & LUP_L_NRESET) != 0,
              g_rom_nocache ? "désactivé" : "actif");
     if (g_settle_us > 0) log_info("LOCI-hw: stabilisation %ld µs après chaque accès (LOCI_HW_SETTLE_US)", g_settle_us);
     log_info("LOCI-hw: poll en attente %s (LOCI_HW_IDLE_POLL=%ld cycles)", g_idle_poll_cycles > 0 ? "actif" : "désactivé", g_idle_poll_cycles);
+    if (g_timing) timing_load();
+    else log_info("LOCI-hw: course Φ2 non mesurée (firmware sans TIMING)");
     return 0;
 }
 
@@ -174,6 +276,10 @@ void loci_emu_stop(void)
     if (!g_active) return;
     log_info("LOCI-hw: fin de session — %lu requêtes, %lu rechargements du cache ROM, %lu polls en attente (%lu avec événement)",
              g_c.n_req, g_rom_refills, g_idle_polls, g_idle_polls_hit);
+    if (g_timing)
+        log_info("LOCI-hw: course Φ2 — %lu lectures mesurées, %lu EN RETARD, %lu sur iopage périmé ; "
+                 "serve max %u cycles, act max %u cycles, marge minimale %d subticks",
+                 g_timed, g_late, g_stale, g_serve_max, g_act_max, g_timed ? g_worst_margin : 0);
     lup_close(&g_c);
     g_active = 0;
 }
@@ -295,6 +401,7 @@ int loci_emu_irq_take(void) { return lines_drain(); }
  * accès), borne la latence des IRQ/reset asynchrones à N cycles quand il attend. */
 int loci_emu_idle_poll(int cycles)
 {
+    if (g_since_access < (1L << 30)) g_since_access += cycles;
     if (!g_active || g_idle_poll_cycles <= 0) return 0;
     g_idle_cycles += cycles;
     if (g_idle_cycles < g_idle_poll_cycles) return 0;
@@ -312,7 +419,10 @@ int loci_emu_reset_take(void)
 {
     int n = g_reset_pending;
     g_reset_pending = 0;
-    if (n) log_info("LOCI-hw: nRESET piloté par LOCI (%d front%s) → reset du 6502", n, n > 1 ? "s" : "");
+    if (n) {
+        log_info("LOCI-hw: nRESET piloté par LOCI (%d front%s) → reset du 6502", n, n > 1 ? "s" : "");
+        timing_load();                    /* Φ2 et délais ont pu changer dans le menu */
+    }
     return n;
 }
 
@@ -352,3 +462,11 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
+
+/* Compteurs de la course Φ2 (tests ; hors interface loci_emu.h). */
+void loci_hw_timing_stats(unsigned long *timed, unsigned long *late, unsigned long *stale)
+{
+    if (timed) *timed = g_timed;
+    if (late)  *late  = g_late;
+    if (stale) *stale = g_stale;
+}

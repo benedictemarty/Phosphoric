@@ -106,6 +106,35 @@ symptôme matériel réel reproduit : `--loci-mia-window LO-HI` définit la
 plage fiable (défaut 0-31 = toujours fiable) ; hors fenêtre, `$0380` lit
 `$FF` et ignore les écritures.
 
+### Course Φ2 sur la vraie cartouche (`--loci-hw`)
+
+Avec `--loci-hw`, chaque accès `$03xx` est un aller-retour USB pendant lequel le
+6502 émulé est figé : la contrainte Φ2 d'une vraie LOCI (le port d'extension n'a
+pas de RDY, la donnée doit être posée avant le latch du 6502) disparaît. Quand le
+firmware annonce `caps & LUP_CAP_TIMING` (loci-usb, commandes TIMING/RDT/WRT),
+Phosphoric la reconstitue à partir des cycles du cœur 1 mesurés au SysTick :
+
+- **lecture en retard** : `tior + LOCI_HW_SM_SUBTICKS + serve` (en subticks Φ2×30,
+  `serve × 30 × Φ2 / sys`) dépasse le latch (`LOCI_HW_LATCH`, 27 par défaut) ;
+- **iopage périmé** : un accès `$03xx` arrive moins de `act` cycles 6502 après le
+  précédent (effets de bord pas terminés). Granularité : l'instruction.
+
+Détection seule par défaut : journal des 10 premiers cas + bilan en fin de session.
+`LOCI_HW_FAITHFUL=1` rend l'open-bus sur une lecture en retard (comme la course de
+`--loci-serve-timing`). `LOCI_HW_PHI2_KHZ` : Φ2 de l'Oric (1000) ; un écart avec le
+réglage Φ2 du firmware est signalé. `LOCI_HW_SM_SUBTICKS` : latence front Φ2 → FIFO
+du SM, **non mesurée** (0 par défaut). Mesures sur la Feather 5723 : serve 23 cycles
+à 120 MHz (6 subticks à 1 MHz), act 61-118 en lecture, 429 pour une écriture RAMX.
+
+⚠️ **Verdict « en retard » non calibré.** L'origine des subticks de `bus_timing.h`
+n'est pas rattachée aux fronts de Φ2. Lu dans `mia.pio` (estimation, pas mesure) :
+le mot d'action arrive dans la FIFO 22 + tior ticks après le front descendant, et
+le bus n'est piloté qu'après le front montant + 3 + tiod ticks ; avec ces comptes et
+le latch au front descendant suivant, une vraie LOCI raterait ses lectures, ce
+qu'elle ne fait pas. Tant qu'une mesure sur un vrai Oric (analyseur logique) ne fixe
+pas l'origine et le latch, seuls les **cycles bruts** (serve, act : comparaison entre
+builds du firmware) et l'**iopage périmé** (durée absolue en µs) sont fiables.
+
 ## Divergences connues (hors périmètre)
 
 - Flash interne LittleFS non émulée en tant que telle (fichiers LFS 19-20,
