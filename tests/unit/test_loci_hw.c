@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /*
- * test_loci_hw_timing.c — backend --loci-hw (src/io/loci_hw.c) face à une cartouche
+ * test_loci_hw.c — backend --loci-hw (src/io/loci_hw.c) face à une cartouche
  * MAQUETTE sur un pseudo-terminal : course Φ2 mesurée (caps TIMING, commandes
- * TIMING/RDT/WRT du protocole loci-usb).
+ * TIMING/RDT/WRT du protocole loci-usb) et boîte aux lettres BAL de loci-fw
+ * (écritures en page $FF captées, attente de fin de commande, cache ROM).
  *
  * Les durées renvoyées par la maquette sont celles mesurées sur la Feather 5723
  * (sys 120 MHz, Φ2cfg 4000 kHz → tick PIO 8,33 ns ; serve 23 cycles, act 69-118 en
@@ -34,6 +35,10 @@ static int g_fails, g_checks;
 static int      m_fd;
 static uint8_t  m_tior;
 static uint16_t m_serve[65536], m_act[65536];
+/* Image ROM servie et BAL : $FF00-$FFCF captée ; une commande non nulle en $FF00 se
+ * termine après 3 lectures de $FF00 ($FF00 ← 0, $FF02 ← résultat, gen8 + 1). */
+static uint8_t  m_rom[16384], m_gen;
+static int      m_bal_pending, m_rdn_count;
 
 static void mwrite(const uint8_t *p, unsigned n)
 {
@@ -54,7 +59,34 @@ static void *mock_thread(void *arg)
         case LUP_CMD_PING: {
             uint8_t p[3] = { LUP_VERSION, 1, LUP_CAP_FIRMWARE | LUP_CAP_TIMING | LUP_CAP_VIRTUAL };
             mwrite(hdr, 3); mwrite(p, 3); break; }
-        case LUP_CMD_LINES: { uint8_t p[4] = { 0, 0, 0, 0 }; mwrite(hdr, 3); mwrite(p, 4); break; }
+        case LUP_CMD_LINES: { uint8_t p[4] = { LUP_L_NROMDIS, 0, 0, m_gen }; mwrite(hdr, 3); mwrite(p, 4); break; }
+        case LUP_CMD_RD: {
+            a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread();
+            uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
+            if (ad == 0xFF00 && m_bal_pending && --m_bal_pending == 0) {
+                m_rom[0x3F00] = 0; m_rom[0x3F02] = 0x07; m_gen++;
+            }
+            uint8_t p[3] = { ad >= 0xC000 ? m_rom[ad - 0xC000] : 0xFF, LUP_F_NROMDIS | LUP_F_SERVED, m_gen };
+            mwrite(hdr, 3); mwrite(p, 3); break; }
+        case LUP_CMD_RDN: {
+            uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
+            uint16_t ad = (uint16_t)(b[0] | b[1] << 8); unsigned n = (unsigned)(b[2] | b[3] << 8);
+            m_rdn_count++;
+            mwrite(hdr, 3);
+            for (unsigned i = 0; i < n; i++) {
+                uint8_t p[2] = { m_rom[(uint16_t)(ad + i) - 0xC000], LUP_F_NROMDIS | LUP_F_SERVED };
+                mwrite(p, 2);
+            }
+            mwrite(&m_gen, 1); break; }
+        case LUP_CMD_WR: {
+            a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread(); a[2] = (uint8_t)mread();
+            uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
+            uint8_t fl = LUP_F_NROMDIS;
+            if (ad >= 0xFF00 && ad <= 0xFFCF) {
+                m_rom[ad - 0xC000] = a[2]; fl |= LUP_F_SERVED;
+                if (ad == 0xFF00 && a[2]) m_bal_pending = 3;
+            }
+            uint8_t p[2] = { fl, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
         case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (défaut du firmware), tior */
             uint8_t p[12] = { 0xC0, 0xD4, 0x01, 0, 0xA0, 0x0F, 0, 0, m_tior, 0, 0, 0 };
             mwrite(hdr, 3); mwrite(p, 12); break; }
@@ -138,6 +170,21 @@ int main(void)
     CHECK(!loci_emu_read_lost(), "le drapeau de lecture perdue est remis à zéro une fois lu");
     loci_emu_api_read(0x0381);
     CHECK(!loci_emu_read_lost(), "fidèle, serve 23 cycles : lecture propre");
+    loci_emu_stop();
+
+    /* ── BAL de loci-fw ── */
+    m_tior = 0;
+    start(NULL);
+    uint8_t r = 0xFF;
+    CHECK(loci_emu_rom_read(0xFF00, &r) && r == 0 && m_rdn_count == 1, "ROM servie lue par RDN (cache rempli)");
+    CHECK(loci_emu_rom_write(0xFF01, 0x42), "écriture $FF01 captée par la BAL (true : la ROM masque la RAM)");
+    CHECK(loci_emu_rom_read(0xFF01, &r) && r == 0x42 && m_rdn_count == 1,
+          "cache mis à jour sur place, sans RDN (gen8 inchangé)");
+    CHECK(loci_emu_rom_write(0xFF00, 0x05), "écriture du groupe en $FF00 : commande lancée");
+    CHECK(m_bal_pending == 0, "attente de fin de commande ($FF00 relu jusqu'à 0)");
+    CHECK(loci_emu_rom_read(0xFF00, &r) && r == 0 && loci_emu_rom_read(0xFF02, &r) && r == 0x07
+          && m_rdn_count == 2, "gen8 changé par le dispatcher : cache rechargé, résultats visibles");
+    CHECK(!loci_emu_rom_write(0xFFE0, 0x11), "hors BAL ($FFE0) : non captée → false");
     loci_emu_stop();
 
     printf("%d/%d vérifications OK\n", g_checks - g_fails, g_checks);

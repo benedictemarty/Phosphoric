@@ -304,7 +304,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-suite-targets test-card-template fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-hw-timing test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-suite-targets test-card-template fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-hw test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -608,17 +608,17 @@ TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c $(LIB_SOURCES)
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 
-# Course Φ2 du backend --loci-hw (src/io/loci_hw.c) face à une cartouche maquette
-# sur pseudo-terminal (2.22.0). Compilation directe avec le client loci-usb, quelle
+# Backend --loci-hw (src/io/loci_hw.c) face à une cartouche maquette sur
+# pseudo-terminal : course Φ2 (2.22.0), BAL de loci-fw (2.24.0). Compilation directe avec le client loci-usb, quelle
 # que soit la configuration ; SKIP si le dépôt loci-usb n'est pas là (CI).
-test-loci-hw-timing: FORCE
+test-loci-hw: FORCE
 	@if [ ! -f $(LOCI_USB_DIR)/host/loci_usb_client.c ]; then \
-	    echo "  SKIP test-loci-hw-timing: loci-usb absent ($(LOCI_USB_DIR))"; \
+	    echo "  SKIP test-loci-hw: loci-usb absent ($(LOCI_USB_DIR))"; \
 	else mkdir -p $(TBIN) && \
 	    $(CC) -Wall -Wextra -Wpedantic -std=c11 -I./include -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto \
-	        tests/unit/test_loci_hw_timing.c src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c \
-	        src/utils/logging.c -lutil -lpthread -o $(TBIN)/test_loci_hw_timing && \
-	    $(TBIN)/test_loci_hw_timing; fi
+	        tests/unit/test_loci_hw.c src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c \
+	        src/utils/logging.c -lutil -lpthread -o $(TBIN)/test_loci_hw && \
+	    $(TBIN)/test_loci_hw; fi
 
 TEST_LOCI_SDIMG_SRCS = tests/unit/test_loci_sdimg.c src/io/loci_sdimg.c \
                        src/utils/logging.c
@@ -987,7 +987,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-hw-timing test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-tape-patches test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-serial-backends test-cast test-game-compat test-web-loci test-web-iomenu test-web-picowifi test-suite-targets test-card-template test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-hw test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-tape-patches test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-serial-backends test-cast test-game-compat test-web-loci test-web-iomenu test-web-picowifi test-suite-targets test-card-template test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"

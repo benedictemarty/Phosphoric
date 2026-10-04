@@ -112,6 +112,17 @@ la LOCI (23 mesurés sur matériel), TDSR en ns (100). `tior` et `tiod` y entren
 `--loci-serve-jitter AMP[,SEED]` ajoute ± AMP cycles, seedé. Frontière par défaut :
 81/82 cycles de serve. Détails : [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
 
+### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
+
+Avec le firmware **loci-fw** (variante LOCI_USB, caps `FIRMWARE`), le 6502 appelle
+l'API en écrivant en page `$FF` (`$FF00-$FFCF`). `--loci-hw` transmet ces écritures
+(`WR`) ; une écriture captée revient avec `LUP_F_SERVED`, l'octet est recopié dans
+le cache ROM sans le recharger. Un octet non nul en `$FF00` lance une commande :
+Phosphoric relit `$FF00` (`RD` non caché) jusqu'à 0, ce qui évite d'attendre le
+prochain `LINES`. Le dispatcher change `gen8` en rendant ses résultats, le cache
+ROM est alors rechargé. L'ancien firmware ne capte jamais ces écritures : rien ne
+change pour lui. Bilan en fin de session : écritures captées, commandes.
+
 ### Course Φ2 sur la vraie cartouche (`--loci-hw`)
 
 Avec `--loci-hw`, chaque accès `$03xx` est un aller-retour USB pendant lequel le
