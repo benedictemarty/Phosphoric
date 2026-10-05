@@ -2,7 +2,8 @@
 
 Le menu **F1** (« Périphériques E/S ») règle tout ce qui entoure l'Oric : disquettes,
 cassette, cartes d'extension, instantanés, imprimante, joystick, clavier. Il remplace
-la plupart des options de la ligne de commande pendant que la machine tourne.
+la plupart des options de la ligne de commande pendant que la machine tourne. Il
+s'affiche en français ou en anglais (bouton **Langue FR / Language EN**, section 3).
 
 ![Page principale du menu F1](../images/menu-peripheriques.png)
 
@@ -240,7 +241,11 @@ Les lignes que le menu ne connaît pas sont conservées.
 ## 7. Divers
 
 - `--menu-screenshot FICHIER` enregistre une image du menu (PPM 640 × 640) à la fin
-  de l'exécution, menu ouvert ou non.
+  de l'exécution, menu ouvert ou non (dans la langue de `langue=` si `--config` est
+  donné).
+- `--no-auto-loci` : ne pas démarrer sur une LOCI-USB branchée (section 4).
+- Captures en anglais : `docs/images/menu-peripheriques-en.png`, `menu-cartes-en.png`,
+  `menu-carte-loci-en.png`.
 - Dans la version web, le menu fonctionne (médias, périphériques), mais les cartes ne
   se changent qu'au lancement.
 - Les autres touches de fonction (F5 reset, F6 médias rapides, F8 bouton LOCI, F9

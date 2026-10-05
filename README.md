@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.28.0** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.28.1** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -275,9 +275,11 @@ make SDL2=1
 - **WebAssembly build** — runs in the browser (`make wasm`): full machine on a `<canvas>` with Web Audio, a JOric-style left icon rail (ROM selector, `.tap`/`.dsk` drag-drop, Reset, fullscreen, **CRT filter**, **`.ost` save/restore**), **TAPE/DISK activity LEDs**, and a faithful ORIC-1/Atmos on-screen keyboard — semi-transparent overlay, toggleable, with sticky CTRL/FUNCT/SHIFT (FUNCT hidden on ORIC-1). **Deep-link URL params** `?rom=oric1|atmos` and `?media=<file>.tap|.dsk` boot straight into a program (a `.dsk` auto-enables the Microdisc controller). **LOCI cartridge in the browser** (`?loci=1` or the LOCI rail button): boots the LOCI menu with a persistent internal flash (IndexedDB) — loaded files land in it and mount from the menu (`make test-web-loci`, Chrome headless e2e). **I/O** rail button = the F1 peripherals menu (F1 is kept from the browser); **MODEM** (`?modem=1`) = picowifi modem through a WebSocket relay (`tools/picowifi_ws_relay.py`) or `?relay=none` (`make test-web-iomenu`, `test-web-picowifi`). Output byte-identical to native. See [docs/wasm.md](docs/wasm.md).
 - **Keyboard layouts** — QWERTY, AZERTY (`--keyboard azerty`)
 - **Headless mode** — No display, for CI/automation
-- **Peripherals menu (F1)** — full-screen menu to insert/eject floppies A–D (write-protect tab
-  per drive), tape, snapshots, printer, joystick, keyboard layout; settings saved to
-  `phosphoric.cfg` (see [Peripherals menu](#peripherals-menu-f1))
+- **Peripherals menu (F1)** — full-screen menu, in French or English, to insert/eject floppies
+  A–D (write-protect tab per drive), tape, snapshots, printer, joystick, keyboard layout,
+  expansion cards; settings saved to `phosphoric.cfg` (see [Peripherals menu](#peripherals-menu-f1))
+- **LOCI-USB plugged in** — used automatically at launch when no disk card is chosen and its
+  LOCI firmware answers 'L' at `$0319` (`--no-auto-loci` to opt out; see [docs/loci.md](docs/loci.md))
 - **Host filesystem** — Share files with `--hostfs DIR`
 - **Expansion cards as modules** — each card (Microdisc, Jasmin, LOCI, ACIA, DTL 2000, Mageco/ORICON, SP0256, MEA8000, ULA-NG) is one file in `src/cards/` plus one line in `include/cards_list.h`; options, help, F1 menu, bus, ticks, save states and audio derive from it. Adding a card: see [docs/CARTES.md](docs/CARTES.md) (template `docs/examples/card_demo.c`, checked by `make test-card-template`)
 - **Conversion tools** — `bas2tap`, `bin2tap`, `tap2sedoric` (Sedoric file injection: AUTO `.COM`, boot autoexec, multi-file/directory chaining), `sedoric-info` (disk inspector), `tap2wav` (`.tap` → cassette-audio `.wav`, playable on real hardware) and `dsk2hfe` (`.dsk` MFM_DISK → magnetic **HFE** image for HxC/Gotek/Greaseweazle) + RAW-chain scripts `sedoric_inject.py`/`dsk_raw2mfm.py`/`sedoric_mkbare.py` — see [docs/TOOLS.md](docs/TOOLS.md) and [docs/SEDORIC.md](docs/SEDORIC.md)
@@ -591,7 +593,7 @@ TEST 4 LOOPBACK= 10 /10            all bytes echoed back
 
 User manual (French): [docs/user-guide/MENU-F1.md](docs/user-guide/MENU-F1.md).
 
-![Peripherals menu](docs/images/menu-peripheriques.png)
+![Peripherals menu, in English](docs/images/menu-peripheriques-en.png)
 
 **F1** opens a full-screen menu (inspired by the Neo6502TeleStrat OSD) that manages
 the Oric's input/output devices while the machine is **paused** (sound muted):
@@ -601,7 +603,8 @@ the Oric's input/output devices while the machine is **paused** (sound muted):
   (→ column). The floppy goes to the disk card present: Microdisc (`--disk-rom`),
   Jasmin (`--jasmin-rom`) or **LOCI** (`--loci`: mounted in the LOCI drive, like its own
   menu does; no per-drive write-protect there) — they never coexist. With a co-simulated
-  or real LOCI (`--loci-emu`, `--loci-hw`), its firmware mounts its images (MENU button).
+  or real LOCI (`--loci-emu`, `--loci-hw`), its firmware mounts its images (MENU button,
+  F8): drives A–D read « handled by the LOCI » and the cursor skips them.
   No disk card: nothing is mounted.
 - **Tape** — insert, eject, rewind.
 - **Snapshots** — save `snapshots/etatNNNN.ost` or resume one.
@@ -629,14 +632,15 @@ the Oric's input/output devices while the machine is **paused** (sound muted):
   overlaps are flagged. **Apply and restart** relaunches the emulator with those
   cards (cold restart: the process is replaced, same command line minus the card
   options, plus the new ones). Read-only in the web build.
-- **Reset**, **Save configuration**, **Resume** (or Esc / F1).
+- **Reset**, **Save configuration**, **Resume** (or Esc / F1), **Language FR/EN** (the
+  whole menu switches language at once; saved as `langue=fr|en`, French by default).
 
 Keys: arrows, Enter, Del, Esc; in the file browser, a letter jumps to the next
 name with that initial.
 
 **Save configuration** writes `phosphoric.cfg` (one `key=value` per line:
 `a=`…`d=`, `protection_x=`, `cassette=`, `cassette_rapide=`, `imprimante=`,
-`imprimante_fichier=`, `joystick=`, `clavier=`, and the cards: `carte.<id>=oui|non`
+`imprimante_fichier=`, `joystick=`, `clavier=`, `langue=`, and the cards: `carte.<id>=oui|non`
 plus `<id>.<parameter>=value` for non-default parameters; other lines are kept;
 the former `interface_disque=` / `rom_disque=` are still read). Cards from the file
 are added at launch only for cards the command line does not mention
@@ -909,4 +913,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.28.0 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-10-05
+Phosphoric v2.28.1 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu (FR/EN) + phosphoric.cfg | 2026-10-05

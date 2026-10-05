@@ -183,7 +183,7 @@ En mode AZERTY, l'emulateur utilise les evenements texte SDL2, donc la saisie fo
 
 | Touche | Fonction |
 |--------|----------|
-| F1 | Menu des périphériques E/S (disquettes, cassette, cartes, instantanés, imprimante, joystick, clavier ; manuel : [MENU-F1.md](MENU-F1.md)) |
+| F1 | Menu des périphériques E/S (disquettes, cassette, cartes, instantanés, imprimante, joystick, clavier, en français ou en anglais ; manuel : [MENU-F1.md](MENU-F1.md)) |
 | F2 | Sauvegarde rapide (quicksave) |
 | F3 | Changer l'echelle d'affichage (x1 -> x2 -> x3 -> x4) |
 | F4 | Chargement rapide (quickload) |
