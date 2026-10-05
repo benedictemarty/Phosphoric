@@ -220,6 +220,7 @@ SOURCES = src/main.c \
           src/video/renderer.c \
           src/video/osd.c \
           src/video/iomenu.c \
+          src/video/iom_lang.c \
           src/iomenu_glue.c \
           src/audio/ay3891x.c \
           src/audio/audio_output.c \

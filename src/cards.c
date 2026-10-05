@@ -10,6 +10,7 @@
 #include "emulator.h"
 #include "io/loci_emu.h"
 #include "io/picowifi_detect.h"
+#include "video/iom_lang.h"   /* messages de conflit dans la langue du menu */
 #include "utils/logging.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -424,8 +425,8 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
         for (int j = 0; j < i; j++) {
             if (!hi[j]) continue;
             if (lo[i] <= hi[j] && lo[j] <= hi[i]) {
-                snprintf(out, outsz, "%s et %s se chevauchent en $%04X",
-                         cards_get(j)->name, d->name, lo[i] > lo[j] ? lo[i] : lo[j]);
+                snprintf(out, outsz, iom_tr("%s et %s se chevauchent en $%04X"),
+                         iom_tr(cards_get(j)->name), iom_tr(d->name), lo[i] > lo[j] ? lo[i] : lo[j]);
                 return true;
             }
         }
@@ -435,28 +436,28 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
         const char* mode = loci_mode(st);
         char dev[256];
         if (!loci_mode_ok(mode)) {
-            snprintf(out, outsz, "LOCI : mode « %s » absent de ce binaire", mode);
+            snprintf(out, outsz, iom_tr("LOCI : mode « %s » absent de ce binaire"), mode);
             return true;
         }
         if (strcmp(mode, LOCI_MODE_FW) == 0 && !st->card[il].value[loci_param("elf")][0]) {
-            snprintf(out, outsz, "LOCI firmware : indiquer le fichier ELF du firmware");
+            snprintf(out, outsz, "%s", iom_tr("LOCI firmware : indiquer le fichier ELF du firmware"));
             return true;
         }
         if (strcmp(mode, LOCI_MODE_HW) == 0 &&
             !loci_hw_port(st->card[il].value[loci_param("port_usb")], dev, sizeof(dev))) {
-            snprintf(out, outsz, "LOCI-USB : aucune détectée (indiquer le port)");
+            snprintf(out, outsz, "%s", iom_tr("LOCI-USB : aucune détectée (indiquer le port)"));
             return true;
         }
     }
     if (loci_modem_on(st) && loci_modem_params(&il, &pm, &pp)) {
         char dev[256];
         if (ia >= 0 && st->card[ia].on) {
-            snprintf(out, outsz, "Modem LOCI et ACIA 6551 : une seule ligne série à la fois");
+            snprintf(out, outsz, "%s", iom_tr("Modem LOCI et ACIA 6551 : une seule ligne série à la fois"));
             return true;
         }
         if (strcmp(st->card[il].value[pm], LOCI_MODEM_REAL) == 0 &&
             !loci_modem_real_port(&st->card[il], pp, dev, sizeof(dev))) {
-            snprintf(out, outsz, "Modem LOCI réel : aucun picowifi USB détecté (indiquer le port)");
+            snprintf(out, outsz, "%s", iom_tr("Modem LOCI réel : aucun picowifi USB détecté (indiquer le port)"));
             return true;
         }
     }

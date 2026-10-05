@@ -17,6 +17,7 @@
 #include "io/loci_emu.h"
 #include "io/loci_internal.h"   /* loci_dsk_open / loci_dsk_close */
 #include "io/picowifi_detect.h"
+#include "video/iom_lang.h"
 #include "utils/logging.h"
 #include "utils/oscompat.h"   /* mkdir portable (MinGW : un seul argument) */
 #include <ctype.h>
@@ -230,18 +231,18 @@ static void msg(emulator_t* emu, bool err, const char* fmt, ...) {
     char buf[96];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
+    vsnprintf(buf, sizeof(buf), iom_tr(fmt), ap);   /* format dans la langue du menu */
     va_end(ap);
     iom_message(&emu->iomenu, err, buf);
 }
 
 static const char* media_error(media_result_t r) {
     switch (r) {
-    case MEDIA_NO_IFACE:    return "pas d'interface disque (--disk-rom ou --jasmin-rom)";
-    case MEDIA_LOCI_MENU:   return "se monte depuis le menu du LOCI (MENU, F8)";
-    case MEDIA_BAD_DRIVE:   return "lecteur absent sur cette interface";
-    case MEDIA_EMPTY:       return "déjà vide";
-    case MEDIA_LOAD_FAILED: return "fichier illisible";
+    case MEDIA_NO_IFACE:    return iom_tr("pas d'interface disque (--disk-rom ou --jasmin-rom)");
+    case MEDIA_LOCI_MENU:   return iom_tr("se monte depuis le menu du LOCI (MENU, F8)");
+    case MEDIA_BAD_DRIVE:   return iom_tr("lecteur absent sur cette interface");
+    case MEDIA_EMPTY:       return iom_tr("déjà vide");
+    case MEDIA_LOAD_FAILED: return iom_tr("fichier illisible");
     default:                return "";
     }
 }
@@ -334,7 +335,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         }
         const bool on = !emu_disk_protected(emu, a->target);
         emu_disk_set_protected(emu, a->target, on);
-        msg(emu, false, "Lecteur %c : %s", 'A' + a->target, on ? "protégé en écriture" : "écriture autorisée");
+        msg(emu, false, "Lecteur %c : %s", 'A' + a->target, iom_tr(on ? "protégé en écriture" : "écriture autorisée"));
         return false;
     }
     case IOM_ACT_TAPE_INSERT:
@@ -382,12 +383,16 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         msg(emu, false, "Clavier %s", az ? "AZERTY" : "QWERTY");
         return false;
     }
+    case IOM_ACT_LANG_TOGGLE:
+        iom_lang_set(iom_lang() == IOM_LANG_FR ? IOM_LANG_EN : IOM_LANG_FR);
+        msg(emu, false, "Menu en français");
+        return false;
     case IOM_ACT_TAPE_FAST_TOGGLE:
         /* -f n'agit qu'au démarrage (injection du 1er bloc au boot) : le choix
          * vaut pour le prochain lancement, via « Enregistrer la configuration ». */
         emu->fast_load = !emu->fast_load;
         msg(emu, false, "Au prochain lancement : %s (enregistrer la configuration)",
-            emu->fast_load ? "injection directe" : "CLOAD par la ROM");
+            iom_tr(emu->fast_load ? "injection directe" : "CLOAD par la ROM"));
         return false;
     case IOM_ACT_RESET:
         /* Même effet que F5 : reset du 6502 ; bouton reset du LOCI (montages gardés). */
@@ -413,7 +418,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
 static const char* const managed_keys[] = {
     "a", "b", "c", "d", "protection_a", "protection_b", "protection_c", "protection_d",
     "interface_disque", "rom_disque", "cassette", "cassette_rapide",
-    "imprimante", "imprimante_fichier", "joystick", "clavier", NULL
+    "imprimante", "imprimante_fichier", "joystick", "clavier", "langue", NULL
 };
 
 static bool is_managed(const char* line) {
@@ -476,6 +481,7 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
     fprintf(out, "joystick=%s\n", emu->joystick.mode == ORIC_JOY_KEYBOARD ? "clavier"
                                 : emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD ? "manette" : "aucun");
     fprintf(out, "clavier=%s\n", emu->keyboard.layout == ORIC_KB_AZERTY ? "azerty" : "qwerty");
+    fprintf(out, "langue=%s\n", iom_lang_code(iom_lang()));
     bool ok = fclose(out) == 0;
 #ifdef _WIN32
     if (ok) remove(path);   /* rename() de Windows n'écrase pas un fichier existant */
@@ -541,6 +547,9 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
             if (!cfg->joystick_mode && strcasecmp(val, "manette") == 0) { cfg->joystick_mode = "gamepad"; applied++; }
         } else if (strcmp(key, "clavier") == 0) {
             if (!cfg->keyboard_layout && strcasecmp(val, "azerty") == 0) { cfg->keyboard_layout = "azerty"; applied++; }
+        } else if (strcmp(key, "langue") == 0) {
+            iom_lang_t lang;
+            if (iom_lang_parse(val, &lang)) { iom_lang_set(lang); applied++; }
         }
         #undef KEEP
     }

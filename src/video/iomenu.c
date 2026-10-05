@@ -10,6 +10,7 @@
  */
 #include "video/iomenu.h"
 #include "video/iom_font.h"
+#include "video/iom_lang.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -69,8 +70,13 @@ static uint8_t next_char(const char** p) {
     return c < 256 ? (uint8_t)c : '?';
 }
 
+/* Texte du menu dans la langue choisie (iom_lang.h) : les textes fixes sont
+ * traduits ici, un texte formaté traduit son format avant snprintf. */
+#define T(fr) iom_tr(fr)
+
 int iom_puts(iom_surface_t* s, int row, int col, const char* str, uint8_t attr, int max) {
     int n = 0;
+    str = T(str);
     while (*str && (max < 0 || n < max) && col + n < IOM_COLS) {
         s_putc(s, row, col + n, next_char(&str), attr);
         n++;
@@ -79,6 +85,7 @@ int iom_puts(iom_surface_t* s, int row, int col, const char* str, uint8_t attr, 
 }
 
 static int u_strlen(const char* str) {
+    str = T(str);   /* longueur du texte tel qu'iom_puts l'affiche */
     int n = 0;
     while (*str) { next_char(&str); n++; }
     return n;
@@ -277,7 +284,7 @@ static iom_action_t browse_key(iom_menu_t* m, int key) {
                     if (d != a.target && m->st.drive[d][0] &&
                         strcmp(m->st.drive[d], m->files[m->browse_cursor - 1].name) == 0) {
                         char msg[96];
-                        snprintf(msg, sizeof(msg), "Image déjà dans le lecteur %c", 'A' + d);
+                        snprintf(msg, sizeof(msg), T("Image déjà dans le lecteur %c"), 'A' + d);
                         iom_message(m, true, msg);
                         a.type = IOM_ACT_NONE;
                         return a;
@@ -461,7 +468,7 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
     case IOM_KEY_RIGHT:
         if (c <= IOM_ITEM_TAPE && !(is_drive(c) && m->st.no_drive_protect)) m->sub = 1;
         else if (c == IOM_ITEM_JOYSTICK) c = IOM_ITEM_KEYBOARD;
-        else if (c >= IOM_ITEM_RESET && c < IOM_ITEM_RESUME) c++;
+        else if (c >= IOM_ITEM_RESET && c < IOM_ITEM_LANG) c++;
         break;
     case IOM_KEY_ESC:
         a.type = IOM_ACT_RESUME;
@@ -498,6 +505,7 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
         else if (c == IOM_ITEM_TAPE_FAST) a.type = IOM_ACT_TAPE_FAST_TOGGLE;
         else if (c == IOM_ITEM_RESET)     a.type = IOM_ACT_RESET;
         else if (c == IOM_ITEM_SAVE)      a.type = IOM_ACT_SAVE_CONFIG;
+        else if (c == IOM_ITEM_LANG)      a.type = IOM_ACT_LANG_TOGGLE;
         else                              a.type = IOM_ACT_RESUME;
         break;
     default: break;
@@ -559,8 +567,8 @@ static void button(iom_surface_t* s, int row, int col, int cols, const char* lab
 }
 
 static void size_str(char* buf, size_t n, uint32_t size) {
-    if (size >= 1024 * 1024) snprintf(buf, n, "%u,%u Mo", size >> 20, (unsigned)((size % (1u << 20)) * 10 >> 20));
-    else snprintf(buf, n, "%u Ko", (size + 1023) >> 10);
+    if (size >= 1024 * 1024) snprintf(buf, n, T("%u,%u Mo"), size >> 20, (unsigned)((size % (1u << 20)) * 10 >> 20));
+    else snprintf(buf, n, T("%u Ko"), (size + 1023) >> 10);
 }
 
 /* Pastille d'état + libellé ; renvoie la largeur écrite. */
@@ -573,7 +581,7 @@ static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
     const iom_state_t* st = &m->st;
     char title[48], buf[96];
     if (st->disks_by_loci) snprintf(title, sizeof(title), "Disquettes — menu du LOCI (F8)");
-    else if (st->disk_iface) snprintf(title, sizeof(title), "Disquettes — %s", st->disk_iface);
+    else if (st->disk_iface) snprintf(title, sizeof(title), T("Disquettes — %s"), st->disk_iface);
     else snprintf(title, sizeof(title), "Disquettes (pas d'interface disque)");
     panel(s, 5, 2, 13, 76, IOM_FLOP_L, title);
     for (int d = 0; d < 4; d++) {
@@ -627,6 +635,7 @@ static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
 /* Texte coupé aux espaces sur @p width colonnes, au plus @p rows lignes. */
 static void wrap(iom_surface_t* s, int row, int col, int width, int rows, const char* text, uint8_t attr) {
     char line[160];
+    text = T(text);
     int r = 0;
     while (*text && r < rows) {
         while (*text == ' ') text++;
@@ -722,9 +731,9 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
     const bool drive = is_drive(item), tape = item == IOM_ITEM_TAPE;
     char buf[96];
     if (item == IOM_BROWSE_CARD)
-        snprintf(buf, sizeof(buf), "%s — %s", cards_get(m->card_sel)->name,
+        snprintf(buf, sizeof(buf), "%s — %s", T(cards_get(m->card_sel)->name),
                  cards_get(m->card_sel)->param[m->param_cursor - 1].label);
-    else if (drive) snprintf(buf, sizeof(buf), "Disquette pour le lecteur %c", 'A' + item);
+    else if (drive) snprintf(buf, sizeof(buf), T("Disquette pour le lecteur %c"), 'A' + item);
     else if (tape) snprintf(buf, sizeof(buf), "Cassette (la même : rembobinée)");
     else snprintf(buf, sizeof(buf), "Instantanés (reprendre : la machine revient à cet instant)");
     const int top = 7, left = 6, width = 68, height = IOM_BROWSE_VISIBLE + 4;
@@ -757,7 +766,7 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
         iom_puts(s, row, left + width - 5 - u_strlen(sz), sz, dim, -1);
         for (int d = 0; drive && d < 4; d++) {
             if (d == item || strcmp(m->st.drive[d], f->name) != 0) continue;
-            snprintf(buf, sizeof(buf), "en %c", 'A' + d);
+            snprintf(buf, sizeof(buf), T("en %c"), 'A' + d);
             iom_puts(s, row, left + width - 17, buf,
                      sel ? IOM_ATTR(IOM_RED, IOM_CYAN) : IOM_ATTR(IOM_YELLOW, IOM_BLACK), -1);
         }
@@ -793,8 +802,8 @@ static const char* detected_port(const iom_menu_t* m, const card_param_t* p, con
     if (v[0] || (!loci && !pico)) return NULL;
     const char* dev = loci ? m->st.usb_loci : m->st.usb_picowifi;
     *missing = !dev[0];
-    if (dev[0]) snprintf(buf, n, "%s (détecté%s)", dev, loci ? "e" : "");
-    else snprintf(buf, n, "%s", loci ? "aucune détectée" : "aucun détecté");
+    if (dev[0]) snprintf(buf, n, loci ? T("%s (détectée)") : T("%s (détecté)"), dev);
+    else snprintf(buf, n, "%s", loci ? T("aucune détectée") : T("aucun détecté"));
     return buf;
 }
 
@@ -831,7 +840,7 @@ static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
             if (d->param[p].kind == CARD_P_CHOICE && strcmp(c->value[p], def) != 0) choice = p;
         }
         if (choice >= 0) {
-            snprintf(buf, sizeof(buf), "%s : %s", d->param[choice].label, c->value[choice]);
+            snprintf(buf, sizeof(buf), T("%s : %s"), T(d->param[choice].label), T(c->value[choice]));
             const int pu = iom_param_index(d, "port_usb");
             bool missing = false;
             if (pu >= 0 && strcmp(c->value[choice], LOCI_MODE_HW) == 0) {
@@ -847,7 +856,7 @@ static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
             snprintf(buf, sizeof(buf), "%s", param_text(&d->param[p], c->value[p]));
             iom_puts(s, row, 37, buf, ra.base, 38);
         } else if (d->group) {
-            snprintf(buf, sizeof(buf), "(une seule carte « %s »)", d->group);
+            snprintf(buf, sizeof(buf), T("(une seule carte « %s »)"), T(d->group));
             iom_puts(s, row, 37, buf, ra.dim, 38);
         }
     }
@@ -908,23 +917,28 @@ static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
     if (m->param_cursor == 0) {
         if (d->fixed) snprintf(buf, sizeof(buf), "Toujours présente : rien à régler ici.");
         else if (d->group)
-            snprintf(buf, sizeof(buf), "Entrée : présente / absente. Une seule carte du groupe "
-                     "« %s » à la fois : en choisir une retire l'autre.", d->group);
+            snprintf(buf, sizeof(buf), T("Entrée : présente / absente. Une seule carte du groupe "
+                     "« %s » à la fois : en choisir une retire l'autre."), T(d->group));
         else snprintf(buf, sizeof(buf), "Entrée : présente / absente.");
         wrap(s, top + 1, 4, 72, 6, buf, A_PANEL);
     } else {
         const card_param_t* p = &d->param[m->param_cursor - 1];
         wrap(s, top + 1, 4, 72, 5, p->help, A_PANEL);
-        char choices[64], def[48];
-        snprintf(choices, sizeof(choices), "%s", p->def);
-        for (char* c = choices; *c; c++) if (*c == '|') *c = '/';
+        char choices[96] = "", def[48], one[48];
+        for (const char* v = p->def; *v; ) {   /* « a|b|c » → « a/b/c », chaque valeur traduite */
+            const size_t n = strcspn(v, "|");
+            snprintf(one, sizeof(one), "%.*s", (int)n, v);
+            const size_t l = strlen(choices);
+            snprintf(choices + l, sizeof(choices) - l, "%s%s", l ? "/" : "", T(one));
+            v += n + (v[n] == '|');
+        }
         cards_param_default(p, def, sizeof(def));
         snprintf(buf, sizeof(buf), p->kind == CARD_P_CHOICE
-                 ? "Par défaut : %s.  Entrée : %s.  Suppr : défaut."
-                 : "Par défaut : %s.  Entrée : %s.  Suppr : valeur par défaut.",
-                 def[0] ? def : "vide",
-                 p->kind == CARD_P_BOOL ? "oui / non" : p->kind == CARD_P_FILE ? "choisir le fichier"
-                 : p->kind == CARD_P_CHOICE ? choices : "saisir");
+                 ? T("Par défaut : %s.  Entrée : %s.  Suppr : défaut.")
+                 : T("Par défaut : %s.  Entrée : %s.  Suppr : valeur par défaut."),
+                 def[0] ? T(def) : T("vide"),
+                 p->kind == CARD_P_BOOL ? T("oui / non") : p->kind == CARD_P_FILE ? T("choisir le fichier")
+                 : p->kind == CARD_P_CHOICE ? choices : T("saisir"));
         wrap(s, top + 6, 4, 72, 1, buf, A_PANEL_DIM);
     }
 }
@@ -938,7 +952,7 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
     s_fill(s, 0, 0, 3, IOM_COLS, IOM_ATTR(IOM_WHITE, IOM_BLUE));
     s_puts_big(s, 1, 3, "PHOSPHORIC", IOM_ATTR(IOM_WHITE, IOM_BLUE));
     iom_puts(s, 1, 25, st->machine, IOM_ATTR(IOM_YELLOW, IOM_BLUE), 22);
-    snprintf(buf, sizeof(buf), "Périphériques E/S   v%s", st->version);
+    snprintf(buf, sizeof(buf), T("Périphériques E/S   v%s"), st->version);
     iom_puts(s, 1, IOM_COLS - 3 - u_strlen(buf), buf, IOM_ATTR(IOM_CYAN, IOM_BLUE), -1);
     for (int c = 0; c < IOM_COLS; c++) s_putc(s, 3, c, IOM_HLINE, IOM_ATTR(IOM_CYAN, IOM_BLACK));
 
@@ -951,9 +965,10 @@ void iom_draw(const iom_menu_t* m, iom_surface_t* s) {
         draw_cards(m, s);
         draw_devices(m, s);
         /* Boutons */
-        static const char* const labels[3] = { "Redémarrer (RESET)", "Enregistrer la configuration", "Reprendre" };
-        static const int bcol[3] = { 2, 27, 58 }, bw[3] = { 22, 29, 20 };
-        for (int i = 0; i < 3; i++)
+        static const char* const labels[4] = { "Redémarrer (RESET)", "Enregistrer la configuration",
+                                               "Reprendre", "Langue FR" };
+        static const int bcol[4] = { 2, 23, 54, 66 }, bw[4] = { 20, 30, 11, 12 };
+        for (int i = 0; i < 4; i++)
             button(s, 34, bcol[i], bw[i], labels[i], !m->browsing && m->cursor == IOM_ITEM_RESET + i);
     }
 

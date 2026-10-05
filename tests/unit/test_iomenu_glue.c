@@ -16,6 +16,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "iomenu_glue.h"
+#include "video/iom_lang.h"
 #include "storage/sedoric.h"
 #include "io/loci_internal.h"
 
@@ -303,6 +304,39 @@ TEST(test_config_roundtrip_and_precedence) {
     ASSERT_EQ(iomenu_config_load("absent.cfg", &cfg), -1);
 }
 
+/* Bouton de langue : bascule FR ↔ EN, message dans la nouvelle langue, gardée
+ * par « Enregistrer la configuration » (langue=) et relue au lancement. */
+TEST(test_lang_toggle_and_config) {
+    machine_new();
+    iom_lang_set(IOM_LANG_FR);
+    iom_action_t a = { IOM_ACT_LANG_TOGGLE, 0, "" };
+    iomenu_apply(emu, &a);
+    ASSERT_TRUE(iom_lang() == IOM_LANG_EN);
+    ASSERT_STR(emu->iomenu.message, "Menu in English");
+    ASSERT_EQ(media_disk_insert(emu, 0, "absent.dsk"), MEDIA_LOAD_FAILED);
+    a = (iom_action_t){ IOM_ACT_TAPE_REWIND, 0, "" };
+    iomenu_apply(emu, &a);
+    ASSERT_STR(emu->iomenu.message, "No tape");
+    ASSERT_TRUE(iomenu_config_save(emu, "lang.cfg"));
+    ASSERT_TRUE(iomenu_config_save(emu, "lang.cfg"));   /* une seule ligne langue= */
+    char buf[2048] = "";
+    FILE* f = fopen("lang.cfg", "r");
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "langue=en\n") != NULL && strstr(strstr(buf, "langue=") + 1, "langue=") == NULL);
+    a = (iom_action_t){ IOM_ACT_LANG_TOGGLE, 0, "" };
+    iomenu_apply(emu, &a);
+    ASSERT_TRUE(iom_lang() == IOM_LANG_FR);
+    ASSERT_STR(emu->iomenu.message, "Menu en français");
+    cli_opts_t cfg;
+    cli_opts_init(&cfg);
+    ASSERT_TRUE(iomenu_config_load("lang.cfg", &cfg) >= 1);
+    ASSERT_TRUE(iom_lang() == IOM_LANG_EN);
+    iom_lang_set(IOM_LANG_FR);
+    remove("lang.cfg");
+}
+
 TEST(test_screenshot_writes_ppm) {
     machine_new();
     ASSERT_TRUE(iomenu_screenshot(emu, "menu.ppm"));
@@ -334,6 +368,7 @@ int main(void) {
     RUN(test_apply_toggles);
     RUN(test_apply_printer_cycle);
     RUN(test_config_roundtrip_and_precedence);
+    RUN(test_lang_toggle_and_config);
     RUN(test_screenshot_writes_ppm);
     char cmd[64];
     snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);

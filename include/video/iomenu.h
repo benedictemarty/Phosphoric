@@ -53,6 +53,7 @@ enum {
     IOM_ITEM_RESET,
     IOM_ITEM_SAVE,
     IOM_ITEM_RESUME,
+    IOM_ITEM_LANG,             /* bouton « Langue FR » / « Language EN » */
     IOM_ITEMS
 };
 
@@ -80,7 +81,8 @@ typedef enum {
     IOM_ACT_RESET,
     IOM_ACT_SAVE_CONFIG,
     IOM_ACT_RESUME,
-    IOM_ACT_CARDS_APPLY        /* relancer avec les cartes choisies (m->cards) */
+    IOM_ACT_CARDS_APPLY,       /* relancer avec les cartes choisies (m->cards) */
+    IOM_ACT_LANG_TOGGLE        /* menu en français ↔ en anglais */
 } iom_act_type_t;
 
 #define IOM_PATH_MAX 256

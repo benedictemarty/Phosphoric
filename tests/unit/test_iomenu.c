@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include "video/iomenu.h"
 #include "video/iom_font.h"
+#include "video/iom_lang.h"
 #include "io/loci_emu.h"
 
 static int tests_passed = 0;
@@ -85,9 +86,11 @@ TEST(test_open_starts_on_resume) {
 TEST(test_up_down_wrap) {
     iom_init(&m); iom_open(&m);
     iom_key(&m, IOM_KEY_DOWN);
-    ASSERT_EQ(m.cursor, IOM_ITEM_DRIVE0);           /* après Reprendre : retour en tête */
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);             /* Reprendre → bouton de langue */
+    iom_key(&m, IOM_KEY_DOWN);
+    ASSERT_EQ(m.cursor, IOM_ITEM_DRIVE0);           /* dernier bouton : retour en tête */
     iom_key(&m, IOM_KEY_UP);
-    ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);
     iom_key(&m, IOM_KEY_HOME);
     ASSERT_EQ(m.cursor, 0);
     iom_key(&m, IOM_KEY_END);
@@ -110,7 +113,11 @@ TEST(test_left_right_columns) {
     iom_key(&m, IOM_KEY_RIGHT);
     ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);
     iom_key(&m, IOM_KEY_RIGHT);
-    ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);          /* bord : ne boucle pas */
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);
+    iom_key(&m, IOM_KEY_RIGHT);
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);            /* bord : ne boucle pas */
+    iom_key(&m, IOM_KEY_LEFT);
+    ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);
 }
 
 TEST(test_toggles_return_actions) {
@@ -119,6 +126,7 @@ TEST(test_toggles_return_actions) {
         { IOM_ITEM_PRINTER, IOM_ACT_PRINTER_CYCLE }, { IOM_ITEM_JOYSTICK, IOM_ACT_JOYSTICK_CYCLE },
         { IOM_ITEM_KEYBOARD, IOM_ACT_KEYBOARD_TOGGLE }, { IOM_ITEM_TAPE_FAST, IOM_ACT_TAPE_FAST_TOGGLE },
         { IOM_ITEM_RESET, IOM_ACT_RESET }, { IOM_ITEM_SAVE, IOM_ACT_SAVE_CONFIG },
+        { IOM_ITEM_LANG, IOM_ACT_LANG_TOGGLE },
     };
     for (size_t i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
         m.cursor = t[i].item;
@@ -158,10 +166,11 @@ TEST(test_drive_without_interface_refused) {
 TEST(test_drives_skipped_when_loci_manages_disks) {
     iom_init(&m); iom_open(&m);
     m.st.disks_by_loci = true;
-    iom_key(&m, IOM_KEY_DOWN);                     /* Reprendre → lecteurs sautés */
+    m.cursor = IOM_ITEM_LANG;
+    iom_key(&m, IOM_KEY_DOWN);                     /* dernier bouton → lecteurs sautés */
     ASSERT_EQ(m.cursor, IOM_ITEM_TAPE);
     iom_key(&m, IOM_KEY_UP);
-    ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);
     iom_key(&m, IOM_KEY_HOME);
     ASSERT_EQ(m.cursor, IOM_ITEM_TAPE);
     m.cursor = IOM_ITEM_DRIVE0;                    /* même forcé : ni sélecteur ni éjection */
@@ -336,6 +345,88 @@ TEST(test_loci_usb_detected_port_shown) {
     ASSERT_TRUE(surf_has(&surf, "aucune d"));
 }
 
+/* Lettre accentuée (Latin-1 0xC0-0xFF) sur la surface : texte français resté
+ * tel quel. Renvoie la rangée, -1 si aucune. */
+static int accent_row(const iom_surface_t* s) {
+    for (int r = 0; r < IOM_ROWS; r++)
+        for (int c = 0; c < IOM_COLS; c++)
+            if (s->ch[r][c] >= 0xC0) return r;
+    return -1;
+}
+
+/* Spécificateurs % d'un format, dans l'ordre (« %s%c%04X » → « sc04X »). */
+static void conversions(const char* f, char* out, size_t n) {
+    size_t k = 0;
+    for (; *f && k + 1 < n; f++) {
+        if (*f != '%') continue;
+        f++;
+        if (*f == '%') continue;
+        while (*f && !strchr("sdcuxX", *f) && k + 1 < n) out[k++] = *f++;
+        if (*f && k + 1 < n) out[k++] = *f;
+    }
+    out[k] = '\0';
+}
+
+/* Menu en anglais : toutes les pages (principale, cartes, chaque fiche et
+ * chaque réglage, les trois modes LOCI) sans aucun texte français accentué ;
+ * table : mêmes spécificateurs % des deux côtés ; retour au français. */
+TEST(test_menu_in_english) {
+    for (int i = 0; i < iom_lang_entries(); i++) {
+        const char *fr, *en;
+        char a[32], b[32];
+        iom_lang_entry(i, &fr, &en);
+        conversions(fr, a, sizeof(a));
+        conversions(en, b, sizeof(b));
+        if (strcmp(a, b) != 0) printf("    format différent : %s\n", fr);
+        ASSERT_TRUE(strcmp(a, b) == 0);
+    }
+    iom_init(&m);
+    fill_state(&m);
+    cards_state_defaults(&m.cards);
+    for (int i = 0; i < cards_count(); i++) cards_set_on(&m.cards, i, true);
+    m.cards_orig = m.cards;
+    iom_open(&m);
+    m.cursor = IOM_ITEM_LANG;
+    ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_LANG_TOGGLE);
+    iom_lang_set(IOM_LANG_EN);
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "Floppies") && surf_has(&surf, "Language EN") &&
+                surf_has(&surf, "Save configuration"));
+    ASSERT_EQ(accent_row(&surf), -1);
+    m.st.disks_by_loci = true;
+    iom_draw(&m, &surf);
+    ASSERT_EQ(accent_row(&surf), -1);
+    m.page = IOM_PAGE_CARDS;
+    for (m.card_cursor = 0; m.card_cursor <= cards_count() + 1; m.card_cursor++) {
+        iom_draw(&m, &surf);
+        ASSERT_EQ(accent_row(&surf), -1);
+    }
+    m.page = IOM_PAGE_CARD;
+    const int lo = cards_find("loci");
+    static const char* const modes[] = { LOCI_MODE_HLE, LOCI_MODE_FW, LOCI_MODE_HW };
+    for (int i = 0; i < cards_count(); i++) {
+        const card_desc_t* d = cards_get(i);
+        for (int mo = 0; mo < (i == lo ? 3 : 1); mo++) {
+            if (i == lo)
+                snprintf(m.cards.card[i].value[iom_param_index(d, "mode")], CARD_VALUE_MAX, "%s", modes[mo]);
+            m.card_sel = i;
+            for (m.param_cursor = 0; m.param_cursor <= d->nparams; m.param_cursor++) {
+                iom_draw(&m, &surf);
+                const int r = accent_row(&surf);
+                if (r >= 0) printf("    %s, réglage %d : rangée %d\n", d->name, m.param_cursor, r);
+                ASSERT_EQ(r, -1);
+            }
+        }
+    }
+    iom_lang_set(IOM_LANG_FR);
+    m.page = IOM_PAGE_MAIN;
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "Langue FR") && surf_has(&surf, "Reprendre"));
+    ASSERT_TRUE(strcmp(iom_lang_code(IOM_LANG_EN), "en") == 0);
+    iom_lang_t l;
+    ASSERT_TRUE(iom_lang_parse("EN", &l) && l == IOM_LANG_EN && !iom_lang_parse("de", &l));
+}
+
 /* Cartes d'extension : page de la liste (dynamique, depuis le registre), page
  * d'une carte, bascule exclusive, saisie contrôlée, sélecteur de fichiers,
  * Appliquer. */
@@ -442,6 +533,7 @@ int main(void) {
     RUN(test_closed_menu_ignores_keys);
     RUN(test_cards_pages);
     RUN(test_loci_usb_detected_port_shown);
+    RUN(test_menu_in_english);
     rm_media();
     printf("\n  Results: %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;

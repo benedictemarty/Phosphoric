@@ -81,12 +81,16 @@ principal), **✗** absente. **Entrée** sur ce cadre ouvre la liste des cartes
 | **Clavier** | QWERTY ↔ AZERTY | disposition du clavier du PC traduite pour l'Oric. |
 | **Cassette** (au lancement) | CLOAD par la ROM corrigée ↔ injection directe | ne vaut **qu'au prochain lancement** : penser à « Enregistrer la configuration ». |
 
-### Les trois boutons
+### Les quatre boutons
 
 - **Redémarrer (RESET)** : comme F5, redémarre le 6502 (bouton reset de la LOCI si
   elle est là ; les disquettes restent montées) et ferme le menu.
 - **Enregistrer la configuration** : écrit `phosphoric.cfg` (section 6).
 - **Reprendre** : ferme le menu (comme Échap ou F1).
+- **Langue FR** / **Language EN** : passe tout le menu en anglais, ou le remet en
+  français : textes, messages, fiches et réglages des cartes. Le changement est
+  immédiat ; « Enregistrer la configuration » le garde (`langue=en`). Au lancement,
+  sans configuration, le menu est en français.
 
 ## 4. Les cartes d'extension
 
@@ -217,6 +221,7 @@ le fichier donné par `--config FICHIER`), une ligne `clé=valeur` par réglage 
 | `imprimante=non/texte/mcp40`, `imprimante_fichier=` | imprimante |
 | `joystick=aucun/clavier/manette` | joystick |
 | `clavier=qwerty/azerty` | clavier |
+| `langue=fr/en` | langue du menu F1 |
 | `carte.<id>=oui/non` | cartes présentes (`microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco`, `oricon`, `sp0256`, `mea8000`, `hostfs`) |
 | `<id>.<réglage>=valeur` | réglages de carte différents du défaut (ex. `loci.mode=usb`, `acia.adresse=0380`) |
 
