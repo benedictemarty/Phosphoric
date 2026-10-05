@@ -90,6 +90,8 @@ principal), **✗** absente. **Entrée** sur ce cadre ouvre la liste des cartes
 la carte, « présente » ou « absente », et une étoile rouge **\*** si elle a été
 modifiée. Sous la liste, l'explication de la carte sélectionnée.
 
+![Liste des cartes, LOCI sélectionnée en mode usb](../images/menu-cartes.png)
+
 - **Entrée** sur une carte ouvre sa page.
 - **Appliquer et redémarrer** relance l'émulateur avec les cartes choisies. C'est un
   **redémarrage à froid** : le programme se relance avec la même ligne de commande,
@@ -150,7 +152,12 @@ l'un pour les avoir ensemble.
 ### La carte LOCI et ses trois modes
 
 Le premier réglage, **Mode**, choisit quelle LOCI ; **seuls les réglages du mode
-choisi sont affichés** (les autres restent mémorisés, mais ne servent pas) :
+choisi sont affichés** (les autres restent mémorisés, mais ne servent pas). En mode
+`usb`, il ne reste que le port de la LOCI-USB :
+
+![Page de la carte LOCI en mode usb](../images/menu-carte-loci.png)
+
+Les trois modes :
 
 | Mode | Ce que c'est | Réglages |
 |---|---|---|
