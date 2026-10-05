@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /* Compteurs internes du backend (src/io/loci_hw.c), hors interface loci_emu.h. */
@@ -43,6 +44,8 @@ static uint16_t m_serve[65536], m_act[65536];
  * termine après 3 lectures de $FF00 ($FF00 ← 0, $FF02 ← résultat, gen8 + 1). */
 static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
+static int      m_btn_warm_irqs;  /* BTN : impulsions nIRQ rendues par le LINES suivant (appui à chaud) */
+static int      m_lines_irqs;
 static int      m_boot_swap;  /* WRT $03AF=$A0 remplace la ROM servie et fait bouger gen8 */
 static uint8_t  m_id = 'L';   /* $0319 lu par RD (reconnaissance, loci_hw_probe) */
 
@@ -65,7 +68,9 @@ static void *mock_thread(void *arg)
         case LUP_CMD_PING: {
             uint8_t p[3] = { LUP_VERSION, 1, LUP_CAP_FIRMWARE | LUP_CAP_TIMING | LUP_CAP_VIRTUAL };
             mwrite(hdr, 3); mwrite(p, 3); break; }
-        case LUP_CMD_LINES: { uint8_t p[4] = { LUP_L_NROMDIS, 0, 0, m_gen }; mwrite(hdr, 3); mwrite(p, 4); break; }
+        case LUP_CMD_LINES: { uint8_t p[4] = { LUP_L_NROMDIS, (uint8_t)m_lines_irqs, 0, m_gen };
+            m_lines_irqs = 0; mwrite(hdr, 3); mwrite(p, 4); break; }
+        case LUP_CMD_BTN: { (void)mread(); m_lines_irqs = m_btn_warm_irqs; mwrite(hdr, 3); break; }
         case LUP_CMD_RD: {
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
@@ -212,11 +217,37 @@ int main(void)
     loci_emu_api_read(0x03B0);                    /* fetch de MIA_SPIN : premier accès $03xx */
     CHECK(loci_emu_rom_read(0xC124, &r) && r == 0xBB,
           "premier accès $03xx après l'appel : cache rechargé, nouvelle ROM visible");
+    /* RETURN du menu (call_loci_boot) : STA MIA_OP ; LDA MIA_XSTACK $03AC ; PLP ; JMP
+     * MIA_SPIN — la lecture de $03AC ne lève pas le report, seule celle de $03B0. */
+    memset(m_rom, 0x4C, sizeof(m_rom)); m_gen++;
+    loci_emu_api_read(0x03B0);
+    CHECK(loci_emu_rom_read(0xC200, &r) && r == 0x4C, "ROM du menu rechargée");
+    loci_emu_api_write(0x03AF, 0xA0);
+    loci_emu_api_read(0x03AC);
+    CHECK(loci_emu_rom_read(0xC201, &r) && r == 0x4C,
+          "lecture de $03AC après STA $03AF : PLP / JMP encore lus dans la ROM d'avant");
+    loci_emu_api_read(0x03B0);
+    CHECK(loci_emu_rom_read(0xC201, &r) && r == 0xBB, "lecture de MIA_SPIN $03B0 : nouvelle ROM visible");
     loci_emu_api_write(0x03A0, 0x00);             /* autre registre : invalidation immédiate */
     memset(m_rom, 0x11, sizeof(m_rom)); m_gen++;
     loci_emu_api_read(0x03B1);
     CHECK(loci_emu_rom_read(0xC000, &r) && r == 0x11, "hors appel d'API : nouvelle génération prise aussitôt");
     m_boot_swap = 0;
+    loci_emu_stop();
+
+    /* ── Bouton MENU à chaud : nIRQ (piège $03BA du firmware), pas de nRESET ── */
+    start(NULL);
+    m_btn_warm_irqs = 1;
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    loci_emu_menu_button();
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double ms = (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
+    CHECK(ms < 500, "appui à chaud (nIRQ sans nRESET) : la main revient au 6502 sans attendre nRESET");
+    CHECK(loci_emu_irq_take() == 1, "l'impulsion nIRQ du bouton est livrée au 6502 au prochain drain");
+    CHECK(loci_emu_irq_take() == 0, "livrée une seule fois");
+    CHECK(loci_emu_reset_take() == 0, "pas de reset du 6502");
+    m_btn_warm_irqs = 0;
     loci_emu_stop();
 
     /* ── Reconnaissance d'une LOCI-USB (loci_hw_probe) ── */
