@@ -87,6 +87,7 @@ Fondation réutilisable même si l'API REST est abandonnée ensuite.
   | `GET`    | `/mem?addr=&len=[&bank=cpu\|ram\|rom\|overlay]` | `cmd_read`       |
   | `POST`   | `/mem`                             | `cmd_write`                   |
   | `POST`   | `/reset`                           | `cmd_reset`                   |
+  | `POST`   | `/nmi`                             | `nmi` (bouton sous l'Oric)    |
   | `POST`   | `/tape` `{path}` / `DELETE /tape`  | `cmd_load_tap` / `cmd_eject_tape` |
   | `POST`   | `/disk/{A-D}` / `DELETE`           | `cmd_load_disk` / `cmd_eject_disk` |
   | `GET`    | `/peek/{via\|psg\|disk\|acia\|tape\|loci\|video\|kbd\|joy\|printer}` | `cmd_peek` |

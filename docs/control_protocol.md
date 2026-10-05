@@ -48,6 +48,7 @@ decimal-vs-hex surprises.
 | `continue` | `OK` then `EVT stopped reason=break` on break hit | |
 | `pause` | `OK pc=… cycles=…` then `EVT stopped reason=user` | works both when stopped AND while running |
 | `reset` | `OK pc=…` | warm reset |
+| `nmi` | `OK nmi=pending pc=…` | NMI, as the button under the Oric (Shift+F5); taken at the next instruction |
 | `quit` | `OK` then process exits | |
 | `watch <addr> [mode]` | `OK id=N addr=XXXX` | watchpoint ; mode = `w` write (défaut), `r` read, `a` access, `c` change |
 | `unwatch <id>` | `OK` | |

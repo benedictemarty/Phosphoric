@@ -188,6 +188,9 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* s,
     else if (strcmp(cmd, "reset") == 0) {
         ctl_cmd_reset(emu, s);
     }
+    else if (strcmp(cmd, "nmi") == 0) {
+        ctl_cmd_nmi(emu, s);
+    }
     else if (strcmp(cmd, "pause") == 0) {
         /* The REPL is only re-entered when execution is already
          * stopped, so `pause` is informational. */

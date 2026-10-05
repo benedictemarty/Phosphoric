@@ -188,6 +188,7 @@ En mode AZERTY, l'emulateur utilise les evenements texte SDL2, donc la saisie fo
 | F3 | Changer l'echelle d'affichage (x1 -> x2 -> x3 -> x4) |
 | F4 | Chargement rapide (quickload) |
 | F5 | Reset a chaud |
+| Maj+F5 | NMI : le bouton sous l'Oric (redemarrage a chaud par la ROM ; « Press NMI » de la ROM de diagnostic LOCI) |
 | F7 | Dump memoire (64 Ko RAM dans fichier .bin horodate) |
 | F9 | Entrer dans le debogueur |
 | F10 | Quitter |
@@ -993,6 +994,7 @@ Aide :
 
 Touches de fonction (fenetre SDL) :
   F1 Menu des peripheriques  F2 Save rapide  F3 Echelle  F4 Load rapide  F5 Reset
+  Maj+F5 NMI (bouton sous l'Oric)
   F6 OSD cassette/disquette a chaud  F8 Bouton Action LOCI  F9 Debogueur
   F10 Quitter  F11 Plein ecran  F12 Capture d'ecran
 ```

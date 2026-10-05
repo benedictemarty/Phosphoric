@@ -237,6 +237,7 @@ static bool route(http_api_server_t* srv, int fd, const char* method,
     }
     else if (strcmp(method, "POST") == 0) {
         if (strcmp(path, "/reset") == 0) { snprintf(cmd, cmdsz, "reset"); return true; }
+        if (strcmp(path, "/nmi") == 0) { snprintf(cmd, cmdsz, "nmi"); return true; }
         if (strcmp(path, "/keys") == 0) {
             char text[HTTP_CMD_MAX - 16];
             if (!get_param(body, "text", text, sizeof(text))) {

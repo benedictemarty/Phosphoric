@@ -1884,6 +1884,15 @@ static void sdl_function_key(emulator_t* emu, SDL_Keycode sym, bool repeat,
         }
         break;
     case SDLK_F5:
+        /* Maj+F5 : bouton sous l'Oric = NMI (redémarrage à chaud par la ROM ;
+         * « Press NMI » de la ROM de diagnostic). Une NMI par appui. */
+        if (SDL_GetModState() & KMOD_SHIFT) {
+            if (!repeat) {
+                cpu_nmi(&emu->cpu);
+                log_info("NMI (Maj+F5, bouton de l'Oric)");
+            }
+            break;
+        }
         cpu_reset(&emu->cpu);
         if (emu->card_on[CARD_IDX_loci]) {
             /* Sprint 34aj: LOCI reset button — clears MIA

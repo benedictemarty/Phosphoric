@@ -87,6 +87,8 @@ curl -s "$BASE/mem?addr=9000&len=2" | grep -q '"reply":"AB CD"' \
 # 4. reset
 curl -s -X POST "$BASE/reset" | grep -qE '"ok":true.*"reply":"pc=[0-9A-F]{4}"' \
     && ok "POST /reset resets the CPU" || ko "POST /reset"
+curl -s -X POST "$BASE/nmi" | grep -qE '"ok":true.*"reply":"nmi=pending pc=[0-9A-F]{4}"' \
+    && ok "POST /nmi raises the NMI" || ko "POST /nmi"
 
 # 5. peek
 curl -s "$BASE/peek/via" | grep -q 'ora=.*ifr=' \

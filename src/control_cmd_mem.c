@@ -246,11 +246,16 @@ void ctl_cmd_reset(emulator_t* emu, control_sink_t* s) {
     sink_ok(s, "pc=%04X", emu->cpu.PC);
 }
 
+void ctl_cmd_nmi(emulator_t* emu, control_sink_t* s) {
+    cpu_nmi(&emu->cpu);
+    sink_ok(s, "nmi=pending pc=%04X", emu->cpu.PC);
+}
+
 /* Sprint 35a freeze — protocol version + capability list. Bumped whenever
  * an existing command or event changes shape (additive `caps=` extensions
  * do NOT bump the version). */
 #define CONTROL_PROTO_VERSION 1
-#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map,sym-group,stuck-bits"
+#define CONTROL_PROTO_CAPS    "step-out,peek,hello,async-pause,watch,raster,load-tap,load-rom,load-sym,disasm,bread,load-disk,eject-disk,eject-tape,loci-button,keys,watch-mode,break-cond,hunt,save-mem,load-mem,state-save,state-load,set-via,bin-literal,mem-bank,trace-cond,access-map,sym-group,stuck-bits,nmi"
 
 void ctl_cmd_hello(control_sink_t* s, const char* arg1, const char* arg2) {
     (void)arg1; (void)arg2;

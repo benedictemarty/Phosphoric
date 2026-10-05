@@ -468,6 +468,26 @@ TEST(stuck_bits_set_status) {
     PASS();
 }
 
+/* nmi : bouton sous l'Oric (Maj+F5) — NMI en attente, prise à la prochaine
+ * instruction par le vecteur $FFFA, une seule fois. */
+TEST(nmi_pending_then_taken_once) {
+    emulator_t* emu = fresh_emu();
+    control_sink_t s;
+    emu->cpu.PC = 0x0400;
+    control_result_t r = run_one(emu, &s, "nmi");
+    ASSERT_TRUE(r == CONTROL_CONTINUE);
+    ASSERT_STR_EQ(s.buf, "OK nmi=pending pc=0400\n");
+    ASSERT_TRUE(emu->cpu.nmi_pending);
+    control_sink_free(&s);
+    cpu_step(&emu->cpu);
+    ASSERT_TRUE(!emu->cpu.nmi_pending);
+    run_one(emu, &s, "hello");
+    ASSERT_TRUE(strstr(s.buf, "stuck-bits,nmi") != NULL);
+    control_sink_free(&s);
+    free(emu);
+    PASS();
+}
+
 int main(void) {
     printf("=== control_dispatch unit tests ===\n");
     RUN(hello_advertises_caps);
@@ -496,6 +516,7 @@ int main(void) {
     RUN(peek_new_subsystems);
     RUN(sym_group_toggle);
     RUN(stuck_bits_set_status);
+    RUN(nmi_pending_then_taken_once);
     printf("=== result: %d passed, %d failed ===\n",
            tests_passed, tests_failed);
     return tests_failed == 0 ? 0 : 1;

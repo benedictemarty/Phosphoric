@@ -248,5 +248,5 @@ Les lignes que le menu ne connaît pas sont conservées.
   `menu-carte-loci-en.png`.
 - Dans la version web, le menu fonctionne (médias, périphériques), mais les cartes ne
   se changent qu'au lancement.
-- Les autres touches de fonction (F5 reset, F6 médias rapides, F8 bouton LOCI, F9
+- Les autres touches de fonction (F5 reset, Maj+F5 NMI, F6 médias rapides, F8 bouton LOCI, F9
   débogueur, F12 capture…) sont décrites dans le [guide utilisateur](README.md).

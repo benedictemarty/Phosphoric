@@ -229,6 +229,7 @@ void cli_print_usage(const char* program_name) {
     usage_printf("  F3  - Cycle display scale (x1 → x2 → x3 → x4)\n");
     usage_printf("  F4  - Quick load state\n");
     usage_printf("  F5  - Reset (with --loci : also resets MIA state, keeps mounts)\n");
+    usage_printf("  Shift+F5 - NMI (the button under the Oric)\n");
     usage_printf("  F6  - OSD : changer la cassette/disquette a chaud (fleches, RET, ESC)\n");
     usage_printf("  F8  - LOCI Action button (warm short press / release on key up)\n");
     usage_printf("  F9  - Enter debugger\n");
