@@ -16,6 +16,7 @@
 #include "io/printer.h"
 #include "io/loci_emu.h"
 #include "io/loci_internal.h"   /* loci_dsk_open / loci_dsk_close */
+#include "io/picowifi_detect.h"
 #include "utils/logging.h"
 #include "utils/oscompat.h"   /* mkdir portable (MinGW : un seul argument) */
 #include <ctype.h>
@@ -189,6 +190,14 @@ void iomenu_refresh(emulator_t* emu) {
         m->cards_readonly = emu->argv == NULL;
 #endif
     }
+    /* Détection USB à l'ouverture puis toutes les ~50 images : un branchement
+     * menu ouvert apparaît en une seconde, sans parcourir /sys à chaque image. */
+    if (!m->open || --st->usb_scan <= 0) {
+        st->usb_scan = 50;
+        if (!loci_usb_detect(NULL, st->usb_loci, sizeof(st->usb_loci))) st->usb_loci[0] = '\0';
+        if (!picowifi_detect(NULL, st->usb_picowifi, sizeof(st->usb_picowifi)))
+            st->usb_picowifi[0] = '\0';
+    }
     st->cards = 0;
     for (int i = 0; i < cards_count() && st->cards < IOM_CARDS; i++) {
         const card_desc_t* d = cards_get(i);
@@ -202,6 +211,13 @@ void iomenu_refresh(emulator_t* emu) {
         const char* main_v = d->enable_param >= 0 ? c->value[d->enable_param] : "";
         if (addr) snprintf(k->detail, sizeof(k->detail), "$%04X  %s", addr, base_name(main_v));
         else snprintf(k->detail, sizeof(k->detail), "%s", base_name(main_v));
+        /* LOCI-USB : son port (renseigné, sinon détecté). */
+        const int pm = iom_param_index(d, "mode"), pu = iom_param_index(d, "port_usb");
+        if (pm >= 0 && pu >= 0 && strcmp(c->value[pm], LOCI_MODE_HW) == 0) {
+            const char* dev = c->value[pu][0] ? c->value[pu] : st->usb_loci;
+            snprintf(k->detail, sizeof(k->detail), "$%04X  usb %.24s", addr,
+                     dev[0] ? base_name(dev) : "absente");
+        }
     }
 }
 

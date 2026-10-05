@@ -778,6 +778,26 @@ static void draw_browser(const iom_menu_t* m, iom_surface_t* s) {
     }
 }
 
+int iom_param_index(const card_desc_t* d, const char* key) {
+    for (int p = 0; p < d->nparams; p++)
+        if (strcmp(d->param[p].key, key) == 0) return p;
+    return -1;
+}
+
+/* Port USB laissé vide (détection automatique) : celui que la détection a
+ * trouvé, ou « aucune/aucun détecté(e) » (@p missing). NULL : autre paramètre
+ * ou port renseigné. */
+static const char* detected_port(const iom_menu_t* m, const card_param_t* p, const char* v,
+                                 char* buf, size_t n, bool* missing) {
+    const bool loci = strcmp(p->key, "port_usb") == 0, pico = strcmp(p->key, "port") == 0;
+    if (v[0] || (!loci && !pico)) return NULL;
+    const char* dev = loci ? m->st.usb_loci : m->st.usb_picowifi;
+    *missing = !dev[0];
+    if (dev[0]) snprintf(buf, n, "%s (détecté%s)", dev, loci ? "e" : "");
+    else snprintf(buf, n, "%s", loci ? "aucune détectée" : "aucun détecté");
+    return buf;
+}
+
 /* Valeur affichée d'un paramètre (« — » si vide, « oui »/« non »). */
 static const char* param_text(const card_param_t* p, const char* v) {
     (void)p;
@@ -812,7 +832,16 @@ static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
         }
         if (choice >= 0) {
             snprintf(buf, sizeof(buf), "%s : %s", d->param[choice].label, c->value[choice]);
-            iom_puts(s, row, 37, buf, ra.base, 38);
+            const int pu = iom_param_index(d, "port_usb");
+            bool missing = false;
+            if (pu >= 0 && strcmp(c->value[choice], LOCI_MODE_HW) == 0) {
+                char port[96];
+                const char* dev = c->value[pu][0] ? c->value[pu]
+                                : detected_port(m, &d->param[pu], "", port, sizeof(port), &missing);
+                const size_t l = strlen(buf);
+                snprintf(buf + l, sizeof(buf) - l, ", %s", dev);
+            }
+            iom_puts(s, row, 37, buf, missing ? ra.err : ra.base, 38);
         } else if (c->on && d->nparams > 0 && (d->enable_param >= 0 || d->io_param >= 0)) {
             const int p = d->enable_param >= 0 ? d->enable_param : d->io_param;
             snprintf(buf, sizeof(buf), "%s", param_text(&d->param[p], c->value[p]));
@@ -866,7 +895,11 @@ static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
             int n = iom_puts(s, row, 33, m->edit, ra.base, 41);
             s_putc(s, row, 33 + n, IOM_FULL, ra.acc);
         } else {
-            iom_puts(s, row, 33, param_text(&d->param[p], c->value[p]), ra.base, 42);
+            char port[96];
+            bool missing = false;
+            const char* det = detected_port(m, &d->param[p], c->value[p], port, sizeof(port), &missing);
+            if (det) iom_puts(s, row, 33, det, missing ? ra.err : ra.dim, 42);
+            else iom_puts(s, row, 33, param_text(&d->param[p], c->value[p]), ra.base, 42);
         }
     }
     /* Explication du paramètre (ou de la présence) sous le curseur. */

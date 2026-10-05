@@ -169,6 +169,11 @@ Les trois modes :
 | `firmware` | le vrai firmware RP2040 tourne dans l'émulateur (`--loci-emu`), pour développer le firmware | **Firmware (ELF)** (obligatoire), **Image flash du firmware** (vide : `<ELF>.flash`, « - » : volatile), **Image de clé USB** |
 | `usb` | une **LOCI-USB** branchée sur le PC (`--loci-hw`) : une Feather RP2040 fait tourner le firmware LOCI, et Phosphoric joue l'Oric par l'USB | **Port de la LOCI-USB** (vide : détecté) |
 
+- Port laissé vide : le menu affiche celui que la détection trouve, par exemple
+  « /dev/ttyACM0 (détectée) », ou « aucune détectée » en rouge si la LOCI-USB n'est
+  pas branchée (idem pour le picowifi réel). La détection est refaite chaque seconde
+  tant que le menu est ouvert. La liste des cartes et le cadre de la page principale
+  donnent aussi ce port (« Mode : usb, /dev/ttyACM0 », « $03A0  usb ttyACM0 »).
 - La Feather **est** la LOCI : ce n'est pas un pont vers une cartouche LOCI 1.3, et
   elle ne se branche pas sur un vrai Oric.
 - Seuls les modes présents dans ce binaire sont proposés : `firmware` demande que

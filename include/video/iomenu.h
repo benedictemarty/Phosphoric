@@ -124,6 +124,11 @@ typedef struct {
     char snapshot_last[IOM_NAME_MAX];
     iom_card_t card[IOM_CARDS];
     int  cards;
+    /* Ports USB trouvés par la détection (/sys) : LOCI-USB et picowifi réel ("" :
+     * aucun) ; affichés quand le port de la carte LOCI est laissé vide. */
+    char usb_loci[64];
+    char usb_picowifi[64];
+    int  usb_scan;             /* rafraîchissements avant la prochaine détection */
 } iom_state_t;
 
 /* ── Menu ───────────────────────────────────────────────────────────────── */
@@ -185,6 +190,8 @@ void iom_text(iom_menu_t* m, const char* utf8);
 
 /* Dessin : grille, puis RGB888 IOM_WIDTH × IOM_HEIGHT. */
 void iom_draw(const iom_menu_t* m, iom_surface_t* s);
+/* Indice du paramètre @p key de la carte @p d, -1 s'il n'existe pas. */
+int  iom_param_index(const card_desc_t* d, const char* key);
 void iom_rasterize(const iom_surface_t* s, uint8_t* rgb);
 
 /* Utilitaire de surface (exposé pour les tests) : texte UTF-8 → cellules. */

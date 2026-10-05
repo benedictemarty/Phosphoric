@@ -307,6 +307,35 @@ TEST(test_closed_menu_ignores_keys) {
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
 }
 
+/* LOCI-USB, port laissé vide : le port détecté s'affiche (page de la carte et
+ * liste des cartes), « aucune détectée » sinon. */
+TEST(test_loci_usb_detected_port_shown) {
+    iom_init(&m);
+    fill_state(&m);
+    cards_state_defaults(&m.cards);
+    const int lo = cards_find("loci");
+    const card_desc_t* d = cards_get(lo);
+    cards_set_on(&m.cards, lo, true);
+    snprintf(m.cards.card[lo].value[iom_param_index(d, "mode")], CARD_VALUE_MAX, "%s", LOCI_MODE_HW);
+    ASSERT_EQ(m.cards.card[lo].value[iom_param_index(d, "port_usb")][0], '\0');
+    ASSERT_EQ(iom_param_index(d, "inexistant"), -1);
+    m.cards_orig = m.cards;
+    iom_open(&m);
+    snprintf(m.st.usb_loci, sizeof(m.st.usb_loci), "/dev/ttyACM0");
+    m.page = IOM_PAGE_CARD; m.card_sel = lo; m.param_cursor = 0;
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "/dev/ttyACM0 (d"));
+    m.page = IOM_PAGE_CARDS; m.card_cursor = lo;
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "usb, /dev/ttyACM0"));
+    m.st.usb_loci[0] = '\0';                             /* débranchée */
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "usb, aucune d"));
+    m.page = IOM_PAGE_CARD;
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "aucune d"));
+}
+
 /* Cartes d'extension : page de la liste (dynamique, depuis le registre), page
  * d'une carte, bascule exclusive, saisie contrôlée, sélecteur de fichiers,
  * Appliquer. */
@@ -412,6 +441,7 @@ int main(void) {
     RUN(test_rasterize_colors);
     RUN(test_closed_menu_ignores_keys);
     RUN(test_cards_pages);
+    RUN(test_loci_usb_detected_port_shown);
     rm_media();
     printf("\n  Results: %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;
