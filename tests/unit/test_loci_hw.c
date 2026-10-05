@@ -50,6 +50,29 @@ static int      m_lines_irqs;
  * grouped WRN), in arrival order. */
 static uint8_t  m_xw[70000];
 static unsigned m_xw_n, m_xw_single, m_xw_wrn, m_xw_wrn_max;
+/* XRAM ports RW0/RW1 modelled (m_xs_model) as in sys/mia.c: a read returns
+ * xram[ADDR] then ADDR += STEP; a write stores xram[ADDR] then ADDR += STEP;
+ * $03A5/$03A6-7 (STEP0/ADDR0), $03A9/$03AA-B (STEP1/ADDR1). XPEEK without effect,
+ * XADV = k real reads. m_caps_xs announces LUP_CAP_XSTREAM. */
+static int      m_xs_model, m_caps_xs;
+static uint8_t  m_xram[65536];
+static uint16_t m_xaddr[2];
+static int8_t   m_xstep[2];
+static unsigned m_port_reads, m_xpeeks, m_xadvs;
+static int  port_ch(uint16_t ad) { return ad == 0x03A4 ? 0 : ad == 0x03A8 ? 1 : -1; }
+static uint8_t port_read(int ch) { uint8_t v = m_xram[m_xaddr[ch]]; m_xaddr[ch] = (uint16_t)(m_xaddr[ch] + m_xstep[ch]); return v; }
+static void port_write(int ch, uint8_t v) { m_xram[m_xaddr[ch]] = v; m_xaddr[ch] = (uint16_t)(m_xaddr[ch] + m_xstep[ch]); }
+static void reg_write(uint16_t ad, uint8_t v)
+{
+    int ch = port_ch(ad);
+    if (ch >= 0) { port_write(ch, v); return; }
+    if (ad == 0x03A5) m_xstep[0] = (int8_t)v;
+    if (ad == 0x03A6) m_xaddr[0] = (uint16_t)((m_xaddr[0] & 0xFF00) | v);
+    if (ad == 0x03A7) m_xaddr[0] = (uint16_t)((m_xaddr[0] & 0x00FF) | v << 8);
+    if (ad == 0x03A9) m_xstep[1] = (int8_t)v;
+    if (ad == 0x03AA) m_xaddr[1] = (uint16_t)((m_xaddr[1] & 0xFF00) | v);
+    if (ad == 0x03AB) m_xaddr[1] = (uint16_t)((m_xaddr[1] & 0x00FF) | v << 8);
+}
 static int      m_boot_swap;  /* WRT $03AF=$A0 replaces the served ROM and moves gen8 */
 static uint8_t  m_id = 'L';   /* $0319 read by RD (recognition, loci_hw_probe) */
 
@@ -70,7 +93,11 @@ static void *mock_thread(void *arg)
         uint8_t hdr[3] = { LUP_RSP_MAGIC, (uint8_t)cmd, LUP_ST_OK }, a[3];
         switch (cmd) {
         case LUP_CMD_PING: {
-            uint8_t p[3] = { LUP_VERSION, 1, LUP_CAP_FIRMWARE | LUP_CAP_TIMING | LUP_CAP_VIRTUAL };
+            uint8_t caps = LUP_CAP_FIRMWARE | LUP_CAP_TIMING | LUP_CAP_VIRTUAL;
+#ifdef LUP_CAP_XSTREAM
+            if (m_caps_xs) caps |= LUP_CAP_XSTREAM;
+#endif
+            uint8_t p[3] = { LUP_VERSION, 1, caps };
             mwrite(hdr, 3); mwrite(p, 3); break; }
         case LUP_CMD_LINES: { uint8_t p[4] = { LUP_L_NROMDIS, (uint8_t)m_lines_irqs, 0, m_gen };
             m_lines_irqs = 0; mwrite(hdr, 3); mwrite(p, 4); break; }
@@ -80,6 +107,10 @@ static void *mock_thread(void *arg)
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
             if (ad == 0xFF00 && m_bal_pending && --m_bal_pending == 0) {
                 m_rom[0x3F00] = 0; m_rom[0x3F02] = 0x07; m_gen++;
+            }
+            if (m_xs_model && port_ch(ad) >= 0) {
+                uint8_t q[3] = { port_read(port_ch(ad)), LUP_F_NROMDIS | LUP_F_SERVED, m_gen };
+                m_port_reads++; mwrite(hdr, 3); mwrite(q, 3); break;
             }
             uint8_t p[3] = { ad >= 0xC000 ? m_rom[ad - 0xC000] : ad == 0x0319 ? m_id : 0xFF,
                              LUP_F_NROMDIS | LUP_F_SERVED, m_gen };
@@ -98,6 +129,7 @@ static void *mock_thread(void *arg)
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread(); a[2] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
             uint8_t fl = LUP_F_NROMDIS;
+            if (m_xs_model && ad >= 0x03A4 && ad <= 0x03AB) reg_write(ad, a[2]);
             if (ad >= 0xFF00 && ad <= 0xFFCF) {
                 m_rom[ad - 0xC000] = a[2]; fl |= LUP_F_SERVED;
                 if (ad == 0xFF00 && a[2]) m_bal_pending = 3;
@@ -106,7 +138,12 @@ static void *mock_thread(void *arg)
         case LUP_CMD_WRN: {
             uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
             unsigned n = (unsigned)(b[2] | b[3] << 8);
-            for (unsigned i = 0; i < n; i++) { int v = mread(); if (m_xw_n < sizeof(m_xw)) m_xw[m_xw_n++] = (uint8_t)v; }
+            uint16_t wad = (uint16_t)(b[0] | b[1] << 8);
+            for (unsigned i = 0; i < n; i++) {
+                int v = mread();
+                if (m_xw_n < sizeof(m_xw)) m_xw[m_xw_n++] = (uint8_t)v;
+                if (m_xs_model) reg_write(wad, (uint8_t)v);
+            }
             m_xw_wrn++; if (n > m_xw_wrn_max) m_xw_wrn_max = n;
             uint8_t p[2] = { LUP_F_NROMDIS, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
         case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (firmware default), tior */
@@ -115,7 +152,9 @@ static void *mock_thread(void *arg)
         case LUP_CMD_RDT: {
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
-            uint8_t p[7] = { (uint8_t)(ad & 0xFF), LUP_F_NROMDIS | LUP_F_SERVED, m_gen,
+            uint8_t dv = (uint8_t)(ad & 0xFF);
+            if (m_xs_model && port_ch(ad) >= 0) { dv = port_read(port_ch(ad)); m_port_reads++; }
+            uint8_t p[7] = { dv, LUP_F_NROMDIS | LUP_F_SERVED, m_gen,
                              (uint8_t)m_serve[ad], (uint8_t)(m_serve[ad] >> 8),
                              (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 7); break; }
@@ -126,8 +165,27 @@ static void *mock_thread(void *arg)
                 memset(m_rom, 0xBB, sizeof(m_rom)); m_gen++;
             }
             if ((ad == 0x03A4 || ad == 0x03A8) && m_xw_n < sizeof(m_xw)) { m_xw[m_xw_n++] = a[2]; m_xw_single++; }
+            if (m_xs_model && ad >= 0x03A4 && ad <= 0x03AB) reg_write(ad, a[2]);
             uint8_t p[4] = { LUP_F_NROMDIS, m_gen, (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 4); break; }
+#ifdef LUP_CAP_XSTREAM
+        case LUP_CMD_XPEEK: case LUP_CMD_XADV: {
+            uint8_t b[3]; for (int i = 0; i < 3; i++) b[i] = (uint8_t)mread();
+            int ch = b[0] & 1;
+            unsigned n = (unsigned)(b[1] | b[2] << 8);
+            if (cmd == LUP_CMD_XPEEK) {
+                m_xpeeks++;
+                uint8_t q[3] = { (uint8_t)m_xaddr[ch], (uint8_t)(m_xaddr[ch] >> 8), (uint8_t)m_xstep[ch] };
+                mwrite(hdr, 3); mwrite(q, 3);
+                for (unsigned i = 0; i < n; i++) { uint8_t v = m_xram[(uint16_t)(m_xaddr[ch] + (int)i * m_xstep[ch])]; mwrite(&v, 1); }
+                mwrite(&m_gen, 1);
+            } else {
+                m_xadvs++;
+                for (unsigned i = 0; i < n; i++) (void)port_read(ch);
+                uint8_t q[2] = { LUP_F_NROMDIS, m_gen }; mwrite(hdr, 3); mwrite(q, 2);
+            }
+            break; }
+#endif
         default: hdr[2] = LUP_ST_BADCMD; mwrite(hdr, 3);
         }
     }
@@ -293,6 +351,57 @@ int main(void)
     CHECK(m_xw_single == 10 && m_xw_wrn == 0, "LOCI_HW_NO_POST : une requête par écriture");
     loci_emu_stop();
     unsetenv("LOCI_HW_NO_POST");
+
+#ifdef LUP_CAP_XSTREAM
+    /* ── Grouped reads on $03A4 (restore: RETURN in the menu) ── */
+    m_xs_model = 1; m_caps_xs = 1;
+    for (unsigned i = 0; i < 65536; i++) m_xram[i] = (uint8_t)(i * 7 + 3);
+    start(NULL);
+    loci_emu_api_write(0x03A5, 1);                /* STEP0 = 1, ADDR0 = $1000 */
+    loci_emu_api_write(0x03A6, 0x00);
+    loci_emu_api_write(0x03A7, 0x10);
+    m_port_reads = m_xpeeks = m_xadvs = 0;
+    int seq_ok = 1;
+    for (unsigned i = 0; i < 600; i++) {
+        uint8_t v = loci_emu_api_read(0x03A4);
+        loci_emu_irq_take();                      /* like reflect_nirq after each MIA read */
+        if (v != (uint8_t)((0x1000 + i) * 7 + 3)) seq_ok = 0;
+    }
+    CHECK(seq_ok, "600 lectures $03A4 : octets justes, dans l'ordre");
+    CHECK(m_port_reads == 2 && m_xpeeks == 3 && m_xadvs == 2,
+          "600 lectures : 2 réelles puis 3 XPEEK de 256, réarmement par XADV + XPEEK sans lecture réelle");
+    loci_emu_api_read(0x03A0);                    /* another access: XADV settles the served reads */
+    CHECK(m_xaddr[0] == 0x1000 + 600, "XADV avant tout autre accès : ADDR0 = état exact de 600 lectures");
+    /* Port write during a stream: the settlement comes first. */
+    loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4);
+    loci_emu_api_write(0x03A4, 0xEE);
+    loci_emu_api_read(0x03A0);
+    CHECK(m_xaddr[0] == 0x1000 + 604 && m_xram[0x1000 + 603] == 0xEE,
+          "écriture $03A4 en plein flux : lectures soldées d'abord, l'octet va au bon ADDR");
+    /* STEP = 0 (HID keyboard window): never a buffer. */
+    loci_emu_api_write(0x03A5, 0);
+    m_port_reads = m_xpeeks = 0;
+    for (int i = 0; i < 10; i++) loci_emu_api_read(0x03A4);
+    CHECK(m_port_reads == 10 && m_xpeeks == 1,
+          "STEP0 = 0 : lectures unitaires (pas de tampon périmé), un seul XPEEK tenté");
+    loci_emu_api_write(0x03A5, 1);
+    /* Bounded latency: after 2000 cycles without access, the buffer is settled. */
+    uint16_t before = m_xaddr[0];
+    loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4);
+    CHECK(m_xaddr[0] != (uint16_t)(before + 3), "3 lectures dont des servies : la cartouche n'a pas encore avancé");
+    loci_emu_idle_poll(2500);
+    CHECK(m_xaddr[0] == (uint16_t)(before + 3), "2500 cycles sans accès : lectures servies soldées (XADV)");
+    loci_emu_stop();
+    /* Firmware without XSTREAM (caps 1F): one request per read. */
+    m_caps_xs = 0;
+    start(NULL);
+    loci_emu_api_write(0x03A6, 0x00); loci_emu_api_write(0x03A7, 0x20);
+    m_port_reads = m_xpeeks = 0;
+    for (int i = 0; i < 20; i++) loci_emu_api_read(0x03A4);
+    CHECK(m_port_reads == 20 && m_xpeeks == 0, "firmware sans XSTREAM : une requête par lecture");
+    loci_emu_stop();
+    m_xs_model = 0;
+#endif
 
     /* ── Recognising a LOCI-USB (loci_hw_probe) ── */
     {

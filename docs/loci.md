@@ -202,8 +202,21 @@ TIMING, reset, end of session) and after 2000 cycles without access: the order s
 by the firmware is unchanged. The nIRQ drain that follows each MIA write does not
 flush the buffer (the firmware has not seen those writes yet). Measured on the
 Feather: warm save = 17103 bytes in 85 WRN, « Return » menu in ~4 s instead of one to
-two minutes. `LOCI_HW_NO_POST=1` goes back to one request per write. Restoring
-(reads of `$03A4`) is still byte by byte: ~12 s.
+two minutes. `LOCI_HW_NO_POST=1` goes back to one request per write.
+
+**Grouped reads (2.30.0, firmware with `caps & 0x20` = `LUP_CAP_XSTREAM`).** On the 2nd
+consecutive read of a port, `XPEEK` returns in advance the 256 bytes the next reads
+would return, without changing anything on the firmware side; they are served without
+a request. Before any other bridge request, when exhausted (immediately followed by a
+new `XPEEK`) and after 2000 cycles without access, `XADV` replays on the firmware side
+the k served reads: the cartridge is in the exact state of k reads of the 6502. No
+buffer if STEP = 0 (HID keyboard window rewritten in the background); no new attempt
+before a write to the `$03A4`-`$03AB` registers. The nIRQ drain does not settle a
+stream in progress. Measured on the Feather (reflashed firmware, caps `3F`): RETURN →
+BASIC intact in ~4 s (17075 bytes served in 82 `XPEEK`); full cycle BASIC → F8 → menu
+→ RETURN → BASIC in under 10 s. Firmware without `XSTREAM` (caps `1F`): one request
+per read, ~12 s. `LOCI_HW_NO_XSTREAM=1`: one request per read. Built against an older
+loci-usb client (without `LUP_CAP_XSTREAM`), the code is simply absent.
 
 ### loci-fw BAL mailbox (`--loci-hw`)
 
