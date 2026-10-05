@@ -171,6 +171,18 @@ reliable range (default 0-31 = always reliable); outside the window, `$0380` rea
 `--loci-serve-jitter AMP[,SEED]` adds ± AMP cycles, seeded. Default boundary:
 81/82 serve cycles. Details: [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
 
+### API call that replaces the served ROM (`--loci-hw`, 2.29.1)
+
+When the menu ROM writes `MIA_OP` (`$03AF`), then does `JSR MIA_SPIN` (`$03B0`),
+the firmware may replace the served ROM: `mia_api_boot` (ESC in the LOCI menu)
+loads BASIC into the menu bank and moves gen8. On a real Oric, the 6502 is already
+in the iopage loop at that point. Over USB, the reply to the write reports the new
+generation before the emulated 6502 has read the `JSR`: so the ROM cache is only
+invalidated on the **first `$03xx` access following** the `$03AF` write (nROMDIS and
+nRESET-edge invalidations stay immediate). Without this deferral, ESC froze the
+screen on « Booting » (PC=`$0244`). With `LOCI_HW_ROM_NOCACHE=1`, the ROM is read
+directly and the race remains.
+
 ### loci-fw BAL mailbox (`--loci-hw`)
 
 With the **loci-fw** firmware (LOCI_USB variant, caps `FIRMWARE`), the 6502 calls
