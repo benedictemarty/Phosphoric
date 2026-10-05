@@ -43,6 +43,7 @@ static uint16_t m_serve[65536], m_act[65536];
  * termine après 3 lectures de $FF00 ($FF00 ← 0, $FF02 ← résultat, gen8 + 1). */
 static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
+static int      m_boot_swap;  /* WRT $03AF=$A0 remplace la ROM servie et fait bouger gen8 */
 static uint8_t  m_id = 'L';   /* $0319 lu par RD (reconnaissance, loci_hw_probe) */
 
 static void mwrite(const uint8_t *p, unsigned n)
@@ -99,14 +100,17 @@ static void *mock_thread(void *arg)
         case LUP_CMD_RDT: {
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
-            uint8_t p[7] = { (uint8_t)(ad & 0xFF), LUP_F_SERVED, 0,
+            uint8_t p[7] = { (uint8_t)(ad & 0xFF), LUP_F_NROMDIS | LUP_F_SERVED, m_gen,
                              (uint8_t)m_serve[ad], (uint8_t)(m_serve[ad] >> 8),
                              (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 7); break; }
         case LUP_CMD_WRT: {
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread(); a[2] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
-            uint8_t p[4] = { 0, 0, (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
+            if (ad == 0x03AF && a[2] == 0xA0 && m_boot_swap) {   /* mia_api_boot : BASIC dans la banque */
+                memset(m_rom, 0xBB, sizeof(m_rom)); m_gen++;
+            }
+            uint8_t p[4] = { LUP_F_NROMDIS, m_gen, (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 4); break; }
         default: hdr[2] = LUP_ST_BADCMD; mwrite(hdr, 3);
         }
@@ -193,6 +197,26 @@ int main(void)
     CHECK(!loci_emu_rom_write(0xFFE0, 0x11), "hors BAL ($FFE0) : non captée → false");
     CHECK(loci_emu_rom_write(0xFF00, 0x02) && m_bal_pending == 3,
           "groupe 2 (Console, exécuté par le 6502) : captée, pas d'attente");
+    loci_emu_stop();
+
+    /* ── Appel d'API qui remplace la ROM servie (menu LOCI → ESC → mia_api_boot) ── */
+    m_tior = 0;
+    memset(m_rom, 0x4C, sizeof(m_rom));           /* « ROM du menu » */
+    m_boot_swap = 1;
+    start(NULL);
+    r = 0;
+    CHECK(loci_emu_rom_read(0xC123, &r) && r == 0x4C, "ROM du menu en cache");
+    loci_emu_api_write(0x03AF, 0xA0);             /* STA MIA_OP : la réponse porte la nouvelle gen8 */
+    CHECK(loci_emu_rom_read(0xC124, &r) && r == 0x4C,
+          "après STA $03AF : le JSR $03B0 qui suit est lu dans la ROM d'avant (6502 déjà dans le spin)");
+    loci_emu_api_read(0x03B0);                    /* fetch de MIA_SPIN : premier accès $03xx */
+    CHECK(loci_emu_rom_read(0xC124, &r) && r == 0xBB,
+          "premier accès $03xx après l'appel : cache rechargé, nouvelle ROM visible");
+    loci_emu_api_write(0x03A0, 0x00);             /* autre registre : invalidation immédiate */
+    memset(m_rom, 0x11, sizeof(m_rom)); m_gen++;
+    loci_emu_api_read(0x03B1);
+    CHECK(loci_emu_rom_read(0xC000, &r) && r == 0x11, "hors appel d'API : nouvelle génération prise aussitôt");
+    m_boot_swap = 0;
     loci_emu_stop();
 
     /* ── Reconnaissance d'une LOCI-USB (loci_hw_probe) ── */

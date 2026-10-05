@@ -109,10 +109,35 @@ static void rom_invalidate(const char *why)
 }
 
 static uint8_t g_gen;          /* génération de la vue ROM du cache */
+/* Appel d'API LOCI (écriture de MIA_OP $03AF) : sur un vrai Oric, le 6502 est déjà
+ * dans la boucle d'attente de l'iopage ($03B0, `JSR MIA_SPIN` qui suit le STA)
+ * quand le firmware agit, même s'il remplace la ROM servie (mia_api_boot charge
+ * BASIC dans la banque du menu et fait bouger gen8). Ici le pont rapporte la
+ * nouvelle génération dès la réponse à l'écriture : l'invalidation est différée
+ * jusqu'au prochain accès $03xx, sinon les octets du JSR seraient relus dans la
+ * ROM déjà remplacée (menu LOCI → ESC figé sur « Booting », PC=$0244). Les
+ * invalidations nROMDIS et front nRESET restent immédiates. Sans cache
+ * (LOCI_HW_ROM_NOCACHE), la ROM est lue en direct : la course demeure. */
+#define LOCI_HW_MIA_OP 0x03AF
+static int g_op_defer;         /* écriture MIA_OP faite, pas encore d'accès $03xx */
+static int g_gen_pending;      /* changement de génération vu pendant le report */
 static void note_gen(void)
 {
-    if (g_c.gen != g_gen) { g_gen = g_c.gen; rom_invalidate("génération"); }
+    if (g_c.gen != g_gen) {
+        g_gen = g_c.gen;
+        if (g_op_defer) g_gen_pending = 1;
+        else rom_invalidate("génération");
+    }
 }
+/* Premier accès $03xx après l'appel : le 6502 est dans l'iopage, la ROM peut changer. */
+static void op_defer_release(void)
+{
+    if (!g_op_defer) return;
+    g_op_defer = 0;
+    if (g_gen_pending) { g_gen_pending = 0; rom_invalidate("génération (après appel API)"); }
+}
+/* Front nRESET : le cache est de toute façon invalidé, le report n'a plus d'objet. */
+static void op_defer_cancel(void) { g_op_defer = 0; g_gen_pending = 0; }
 static void note_flags(uint8_t flags)
 {
     int romdis = (flags & LUP_F_NROMDIS) != 0;
@@ -206,6 +231,7 @@ static uint8_t bus_rd(uint16_t addr)
 {
     uint8_t d = 0xFF, f;
     if (!g_active) return 0xFF;
+    op_defer_release();
     if (g_timing) {
         uint16_t serve = 0, act = 0;
         if (lup_rdt(&g_c, addr, &d, &f, &serve, &act) != 0) { link_error_once("lecture"); return 0xFF; }
@@ -237,6 +263,8 @@ static void bus_wr(uint16_t addr, uint8_t v)
 {
     uint8_t f;
     if (!g_active) return;
+    op_defer_release();
+    if (addr == LOCI_HW_MIA_OP) g_op_defer = 1;   /* sa réponse peut déjà porter la nouvelle gen8 */
     if (g_timing) {
         uint16_t act = 0;
         if (lup_wrt(&g_c, addr, v, &f, &act) != 0) { link_error_once("écriture"); return; }
@@ -293,7 +321,7 @@ int loci_emu_start(const char *dev)
     g_timing    = (g_c.caps & LUP_CAP_TIMING) != 0;
     g_timed = g_late = g_stale = 0; g_serve_max = g_act_max = 0; g_worst_margin = 1e9;
     g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
-    g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0;
+    g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0; op_defer_cancel();
     g_bal_timeout_ms = getenv("LOCI_HW_BAL_TIMEOUT_MS") ? atol(getenv("LOCI_HW_BAL_TIMEOUT_MS")) : 10000;
     log_info("LOCI-hw: pont « %s » prêt (proto %u, firmware pont %u, caps %02X%s) — nROMDIS=%d nRESET=%d ; "
              "cache ROM %s", dev, g_c.proto, g_c.fw, g_c.caps,
@@ -347,7 +375,7 @@ static bool press_button(uint8_t action)
             int romdis = (lines & LUP_L_NROMDIS) != 0;
             if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate("nROMDIS (bouton)"); }
             note_gen();
-            if (rsts) { g_reset_pending += rsts; rom_invalidate("front nRESET (bouton)");
+            if (rsts) { g_reset_pending += rsts; op_defer_cancel(); rom_invalidate("front nRESET (bouton)");
                         log_info("LOCI-hw: bouton MENU %s → nRESET relâché après %d ms", action == 2 ? "long" : "court", i * 20); return false; }
             nanosleep(&ts, NULL);
         }
@@ -431,7 +459,7 @@ static int lines_drain(void)
     int romdis = (lines & LUP_L_NROMDIS) != 0;
     if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate(romdis ? "nROMDIS actif" : "nROMDIS relâché"); }
     note_gen();
-    if (rsts) { g_reset_pending += rsts; rom_invalidate("front nRESET"); }
+    if (rsts) { g_reset_pending += rsts; op_defer_cancel(); rom_invalidate("front nRESET"); }
     return irqs;
 }
 
