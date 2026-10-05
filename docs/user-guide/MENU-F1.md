@@ -132,7 +132,7 @@ Setting names are shown as they appear in the menu.
 | **Microdisc** | Oric floppy controller (WD1793), 4 drives, at `$0310` | ROM du contrôleur (controller ROM) (`roms/microdis.rom`) |
 | **Jasmin** | Jasmin floppy controller (WD177x, TDOS), at `$03F4` | ROM de démarrage (boot ROM) (`roms/jasmin.rom`) |
 | **LOCI** | LOCI cartridge, at `$03A0`; see below | Mode, then the settings of that mode |
-| **ACIA 6551** | serial port: modem, terminal, Minitel, BBS | Ligne série (serial line) (`loopback`), Adresse d'E/S (I/O address) (`031C`; `0380` for the LOCI's ACIA), Vitesse en bauds (baud rate) (empty: instantaneous), Tampon de réception (receive buffer) (empty), Mode V23 1200/75 (non) |
+| **ACIA 6551** | serial port: modem, terminal, Minitel, BBS | Ligne série (serial line) (`loopback`), Adresse d'E/S (I/O address) (`031C`; `0380` for the LOCI's ACIA), Vitesse (bauds) (baud rate) (empty: instantaneous), Tampon de réception (receive buffer) (empty), Mode V23 (1200/75) (non) |
 | **DTL 2000** | Digitelec modem (PIA 6821 + ACIA 6850), V23 line to a Minitel server | Ligne V23 (V23 line) (`loopback`), Adresse d'E/S (`03F8`) |
 | **Mageco MIDI** | MIDI interface (ACIA 6850 at 31,250 baud) | Liaison MIDI (MIDI link) (`loopback`), Adresse d'E/S (`03FE`) |
 | **ORICON** | MIDI variant at `$031C` | Liaison MIDI (`loopback`) |
