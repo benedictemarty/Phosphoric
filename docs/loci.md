@@ -178,10 +178,22 @@ the firmware may replace the served ROM: `mia_api_boot` (ESC in the LOCI menu)
 loads BASIC into the menu bank and moves gen8. On a real Oric, the 6502 is already
 in the iopage loop at that point. Over USB, the reply to the write reports the new
 generation before the emulated 6502 has read the `JSR`: so the ROM cache is only
-invalidated on the **first `$03xx` access following** the `$03AF` write (nROMDIS and
-nRESET-edge invalidations stay immediate). Without this deferral, ESC froze the
-screen on « Booting » (PC=`$0244`). With `LOCI_HW_ROM_NOCACHE=1`, the ROM is read
-directly and the race remains.
+invalidated when **`MIA_SPIN` (`$03B0`) is read** after the `$03AF` write — not on
+the first `$03xx` access: the RETURN path (`call_loci_boot`) still reads
+`MIA_XSTACK` (`$03AC`) before `PLP` / `JMP MIA_SPIN` (2.29.2). nROMDIS and
+nRESET-edge invalidations stay immediate. Without this deferral, ESC froze the
+screen on « Booting » (PC=`$0244`) and RETURN ended in a jam (`$B5AD`). With
+`LOCI_HW_ROM_NOCACHE=1`, the ROM is read directly and the race remains.
+
+### Warm MENU button (`--loci-hw`, 2.29.2)
+
+With the machine running, pressing F8 is not a reset: the firmware points `$FFFE` at
+its `$03BA` trap, pulses nIRQ and waits for the **running** 6502 to enter it to save
+the RAM (otherwise, after 2 s, fallback reboot). So `--loci-hw` hands control back as
+soon as it sees the nIRQ pulse without an nRESET edge, and delivers it to the 6502 at
+the next drain; only a cold press waits for nRESET (at most 10 s). Saving then
+restoring (« Return » in the menu) go through `$03A4`, one USB round trip per byte:
+about a minute each on the Feather.
 
 ### loci-fw BAL mailbox (`--loci-hw`)
 

@@ -64,6 +64,7 @@ static lup_client_t g_c;
 static int  g_active;             /* bridge open and PING OK */
 static int  g_romdis;             /* last known nROMDIS state (1 = active) */
 static int  g_reset_pending;      /* nRESET edges seen since the last loci_emu_reset_take */
+static int  g_irq_pending;        /* nIRQ pulses picked up outside lines_drain (warm button) */
 static int  g_link_err_logged;
 static long g_settle_us;          /* LOCI_HW_SETTLE_US: pause after each $03xx access (emulated bench) */
 static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL: cycles without LOCI access before a LINES (0 = never) */
@@ -113,13 +114,16 @@ static uint8_t g_gen;          /* generation of the cached ROM view */
  * the iopage wait loop ($03B0, the `JSR MIA_SPIN` following the STA) when the
  * firmware acts, even if it replaces the served ROM (mia_api_boot loads BASIC
  * into the menu bank and moves gen8). Here the bridge reports the new generation
- * in the reply to the write: invalidation is deferred until the next $03xx
- * access, otherwise the JSR bytes would be read again from the already replaced
- * ROM (LOCI menu → ESC frozen on « Booting », PC=$0244). nROMDIS and nRESET-edge
- * invalidations stay immediate. Without a cache (LOCI_HW_ROM_NOCACHE), the ROM is
- * read directly: the race remains. */
-#define LOCI_HW_MIA_OP 0x03AF
-static int g_op_defer;         /* MIA_OP written, no $03xx access yet */
+ * in the reply to the write: invalidation is deferred until MIA_SPIN ($03B0,
+ * actual entry into the loop) is read, otherwise the preceding bytes would be
+ * read again from the already replaced ROM (LOCI menu → ESC frozen on
+ * « Booting », PC=$0244; RETURN: call_loci_boot still reads MIA_XSTACK $03AC then
+ * does PLP / JMP MIA_SPIN → jam $B5AD). nROMDIS and nRESET-edge invalidations stay
+ * immediate. Without a cache (LOCI_HW_ROM_NOCACHE), the ROM is read directly: the
+ * race remains. */
+#define LOCI_HW_MIA_OP   0x03AF
+#define LOCI_HW_MIA_SPIN 0x03B0
+static int g_op_defer;         /* MIA_OP written, MIA_SPIN not read yet */
 static int g_gen_pending;      /* generation change seen during the deferral */
 static void note_gen(void)
 {
@@ -129,7 +133,7 @@ static void note_gen(void)
         else rom_invalidate("génération");
     }
 }
-/* First $03xx access after the call: the 6502 is in the iopage, the ROM may change. */
+/* MIA_SPIN read after the call: the 6502 is in the iopage, the ROM may change. */
 static void op_defer_release(void)
 {
     if (!g_op_defer) return;
@@ -231,7 +235,7 @@ static uint8_t bus_rd(uint16_t addr)
 {
     uint8_t d = 0xFF, f;
     if (!g_active) return 0xFF;
-    op_defer_release();
+    if (addr == LOCI_HW_MIA_SPIN) op_defer_release();   /* entry into the wait loop */
     if (g_timing) {
         uint16_t serve = 0, act = 0;
         if (lup_rdt(&g_c, addr, &d, &f, &serve, &act) != 0) { link_error_once("lecture"); return 0xFF; }
@@ -263,7 +267,6 @@ static void bus_wr(uint16_t addr, uint8_t v)
 {
     uint8_t f;
     if (!g_active) return;
-    op_defer_release();
     if (addr == LOCI_HW_MIA_OP) g_op_defer = 1;   /* its reply may already carry the new gen8 */
     if (g_timing) {
         uint16_t act = 0;
@@ -322,6 +325,7 @@ int loci_emu_start(const char *dev)
     g_timed = g_late = g_stale = 0; g_serve_max = g_act_max = 0; g_worst_margin = 1e9;
     g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
     g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0; op_defer_cancel();
+    g_irq_pending = 0;
     g_bal_timeout_ms = getenv("LOCI_HW_BAL_TIMEOUT_MS") ? atol(getenv("LOCI_HW_BAL_TIMEOUT_MS")) : 10000;
     log_info("LOCI-hw: pont « %s » prêt (proto %u, firmware pont %u, caps %02X%s) — nROMDIS=%d nRESET=%d ; "
              "cache ROM %s", dev, g_c.proto, g_c.fw, g_c.caps,
@@ -375,6 +379,16 @@ static bool press_button(uint8_t action)
             int romdis = (lines & LUP_L_NROMDIS) != 0;
             if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate("nROMDIS (bouton)"); }
             note_gen();
+            /* WARM press (machine running): no reset; the firmware points $FFFE at
+             * its $03BA trap, pulses nIRQ and waits for the RUNNING 6502 to enter it
+             * (otherwise, after 2 s, fallback reboot → jam). So hand control back
+             * at once; lines_drain will deliver the pulse to the 6502. */
+            if (irqs && !rsts) {
+                g_irq_pending += irqs;
+                log_info("LOCI-hw: bouton MENU %s → nIRQ (piège de sauvegarde à chaud) après %d ms",
+                         action == 2 ? "long" : "court", i * 20);
+                return false;
+            }
             if (rsts) { g_reset_pending += rsts; op_defer_cancel(); rom_invalidate("front nRESET (bouton)");
                         log_info("LOCI-hw: bouton MENU %s → nRESET relâché après %d ms", action == 2 ? "long" : "court", i * 20); return false; }
             nanosleep(&ts, NULL);
@@ -455,6 +469,7 @@ static int lines_drain(void)
 {
     uint8_t lines = 0, irqs = 0, rsts = 0;
     if (!g_active) return 0;
+    if (g_irq_pending) { int n = g_irq_pending; g_irq_pending = 0; return n; }   /* warm button */
     if (lup_lines(&g_c, &lines, &irqs, &rsts) != 0) { link_error_once("LINES"); return 0; }
     int romdis = (lines & LUP_L_NROMDIS) != 0;
     if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate(romdis ? "nROMDIS actif" : "nROMDIS relâché"); }

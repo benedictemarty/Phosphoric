@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.29.1
+Current Version: 2.29.2
 Release Date: 2026-10-05
-Status: Stable (**--loci-hw : menu LOCI → ESC n'est plus figé sur « Booting » — 2.29.1**. Invalidation du cache ROM différée après une écriture MIA_OP $03AF jusqu'au premier accès $03xx (mia_api_boot remplace la ROM servie). Vérifié sur la Feather : ESC → BASIC 1.1 Ready. test-loci-hw 22→26.)
+Status: Stable (**--loci-hw : F8 à chaud et RETURN du menu — 2.29.2**. Appui à chaud : nIRQ (piège $03BA) livrée au 6502 sans attendre nRESET (jam $0025 corrigé) ; report d'invalidation levé à la lecture de MIA_SPIN $03B0 seulement (RETURN : jam $B5AD corrigé). Vérifié sur la Feather : BASIC → F8 → menu → RETURN → BASIC intact. test-loci-hw 26→33.)
+Status (prev): Stable (**--loci-hw : menu LOCI → ESC n'est plus figé sur « Booting » — 2.29.1**. Invalidation du cache ROM différée après une écriture MIA_OP $03AF jusqu'au premier accès $03xx (mia_api_boot remplace la ROM servie). Vérifié sur la Feather : ESC → BASIC 1.1 Ready. test-loci-hw 22→26.)
 Status (prev): Stable (**Bouton NMI — 2.29.0**. Maj+F5 = bouton sous l'Oric (cpu_nmi, une NMI par appui) ; commande --control `nmi`, POST /nmi. Vérifié sur la Feather : la ROM de diagnostic passe de « RAM Test Passed » à « Text Test Card ». F5 reste un reset complet.)
 Status (prev): Stable (**Doc du menu F1 à jour — 2.28.1**. Captures refaites (4 boutons, port LOCI-USB détecté) en FR et EN ; README : menu FR/EN, LOCI-USB automatique, lecteurs gérés par la LOCI, clé langue= ; manuel F1 : intro, Divers.)
 Status (prev): Stable (**Menu F1 en français ou en anglais — 2.28.0**. Bouton « Langue FR / Language EN » : textes, messages, fiches et réglages des cartes traduits à l'affichage (iom_lang.c, table FR→EN) ; langue=fr|en dans phosphoric.cfg ; FR par défaut. test-iomenu 16→17, test-iomenu-glue 10→11.)
