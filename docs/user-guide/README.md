@@ -188,6 +188,7 @@ In AZERTY mode, the emulator uses SDL2 text events, so typing works naturally wh
 | F3 | Change the display scale (x1 -> x2 -> x3 -> x4) |
 | F4 | Quickload |
 | F5 | Warm reset |
+| Shift+F5 | NMI: the button under the Oric (warm restart through the ROM; « Press NMI » of the LOCI diag ROM) |
 | F7 | Memory dump (64 KB of RAM into a timestamped .bin file) |
 | F9 | Enter the debugger |
 | F10 | Quit |
@@ -995,6 +996,7 @@ Help:
 
 Function keys (SDL window):
   F1 Peripherals menu  F2 Quicksave  F3 Scale  F4 Quickload  F5 Reset
+  Shift+F5 NMI (button under the Oric)
   F6 Hot tape/disk OSD  F8 LOCI Action button  F9 Debugger
   F10 Quit  F11 Full screen  F12 Screenshot
 ```

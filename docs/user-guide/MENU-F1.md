@@ -254,5 +254,5 @@ When it is read back, at the next launch:
   `menu-carte-loci.png`.
 - In the web version, the menu works (media, peripherals), but cards can only be
   changed at launch.
-- The other function keys (F5 reset, F6 quick media, F8 LOCI button, F9 debugger,
-  F12 screenshot…) are described in the [user guide](README.md).
+- The other function keys (F5 reset, Shift+F5 NMI, F6 quick media, F8 LOCI button,
+  F9 debugger, F12 screenshot…) are described in the [user guide](README.md).

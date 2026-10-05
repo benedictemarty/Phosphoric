@@ -35,6 +35,8 @@ void ctl_cmd_hunt(emulator_t* emu, control_sink_t* s, const char* op, const char
 void ctl_cmd_save_mem(emulator_t* emu, control_sink_t* s, const char* path, const char* addr_s, const char* len_s);
 void ctl_cmd_load_mem(emulator_t* emu, control_sink_t* s, const char* path, const char* addr_s);
 void ctl_cmd_reset(emulator_t* emu, control_sink_t* s);
+/* nmi — the button under the Oric: NMI taken at the next instruction. */
+void ctl_cmd_nmi(emulator_t* emu, control_sink_t* s);
 void ctl_cmd_hello(control_sink_t* s, const char* arg1, const char* arg2);
 void ctl_cmd_keys(emulator_t* emu, control_sink_t* s, const char* text);
 void ctl_cmd_break(emulator_t* emu, control_sink_t* s, const char* addr_s, const char* cond);
