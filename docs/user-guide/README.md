@@ -183,7 +183,7 @@ In AZERTY mode, the emulator uses SDL2 text events, so typing works naturally wh
 
 | Key | Function |
 |--------|----------|
-| F1 | I/O peripherals menu (floppies, tape, cards, snapshots, printer, joystick, keyboard; manual: [MENU-F1.md](MENU-F1.md)) |
+| F1 | I/O peripherals menu (floppies, tape, cards, snapshots, printer, joystick, keyboard, in French or English; manual: [MENU-F1.md](MENU-F1.md)) |
 | F2 | Quicksave |
 | F3 | Change the display scale (x1 -> x2 -> x3 -> x4) |
 | F4 | Quickload |

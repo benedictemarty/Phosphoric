@@ -2,9 +2,11 @@
 
 The **F1** menu (« Périphériques E/S », I/O peripherals) controls everything around
 the Oric: floppies, tape, expansion cards, snapshots, printer, joystick, keyboard. It
-replaces most command-line options while the machine is running.
+replaces most command-line options while the machine is running. It is shown in
+French or in English (**Langue FR / Language EN** button, section 3); the pictures of
+this manual show it in English.
 
-![Main page of the F1 menu](../images/menu-peripheriques.png)
+![Main page of the F1 menu](../images/menu-peripheriques-en.png)
 
 ## 1. Opening and closing
 
@@ -99,7 +101,7 @@ The frame summarizes the cards: **●** present (with its address and main setti
 line shows the card, « présente » (present) or « absente » (absent), and a red star
 **\*** if it has been modified. Below the list, the explanation of the selected card.
 
-![Card list, LOCI selected in usb mode](../images/menu-cartes.png)
+![Card list, LOCI selected in usb mode](../images/menu-cartes-en.png)
 
 - **Enter** on a card opens its page.
 - **Appliquer et redémarrer** (apply and restart) relaunches the emulator with the
@@ -168,7 +170,7 @@ The first setting, **Mode**, chooses which LOCI; **only the settings of the chos
 mode are shown** (the others are remembered, but not used). In `usb` mode, only
 the LOCI-USB port is left:
 
-![LOCI card page in usb mode](../images/menu-carte-loci.png)
+![LOCI card page in usb mode](../images/menu-carte-loci-en.png)
 
 The three modes:
 
@@ -245,7 +247,11 @@ When it is read back, at the next launch:
 ## 7. Miscellaneous
 
 - `--menu-screenshot FICHIER` saves an image of the menu (PPM 640 × 640) at the end
-  of the run, whether the menu is open or not.
+  of the run, whether the menu is open or not (in the `langue=` language when
+  `--config` is given).
+- `--no-auto-loci`: do not start on a plugged LOCI-USB (section 4).
+- French pictures: `docs/images/menu-peripheriques.png`, `menu-cartes.png`,
+  `menu-carte-loci.png`.
 - In the web version, the menu works (media, peripherals), but cards can only be
   changed at launch.
 - The other function keys (F5 reset, F6 quick media, F8 LOCI button, F9 debugger,
