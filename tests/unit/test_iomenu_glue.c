@@ -16,6 +16,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "iomenu_glue.h"
+#include "video/iom_lang.h"
 #include "storage/sedoric.h"
 #include "io/loci_internal.h"
 
@@ -154,10 +155,17 @@ TEST(test_disk_routed_to_loci) {
     ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_OK);
     ASSERT_TRUE(emu->loci.dsk_host_path[1][0] == '\0');
     ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_EMPTY);
+    ASSERT_TRUE(!emu->iomenu.st.disks_by_loci);
     emu->loci_external = true;                          /* --loci-emu / --loci-hw */
-    ASSERT_EQ(media_disk_insert(emu, 0, "un.dsk"), MEDIA_NO_IFACE);
+    ASSERT_EQ(media_disk_insert(emu, 0, "un.dsk"), MEDIA_LOCI_MENU);
+    ASSERT_EQ(media_disk_eject(emu, 0), MEDIA_LOCI_MENU);
     iomenu_refresh(emu);
     ASSERT_EQ(emu->iomenu.st.drives, 0);
+    ASSERT_TRUE(emu->iomenu.st.disks_by_loci);           /* drives greyed out in F1 */
+    emu->card_on[CARD_IDX_microdisc] = true;            /* real card: it takes over */
+    iomenu_refresh(emu);
+    ASSERT_TRUE(!emu->iomenu.st.disks_by_loci);
+    emu->card_on[CARD_IDX_microdisc] = false;
     loci_cleanup(&emu->loci);
 }
 
@@ -296,6 +304,39 @@ TEST(test_config_roundtrip_and_precedence) {
     ASSERT_EQ(iomenu_config_load("absent.cfg", &cfg), -1);
 }
 
+/* Language button: FR ↔ EN toggle, message in the new language, kept by
+ * « Save configuration » (langue=) and read back at launch. */
+TEST(test_lang_toggle_and_config) {
+    machine_new();
+    iom_lang_set(IOM_LANG_FR);
+    iom_action_t a = { IOM_ACT_LANG_TOGGLE, 0, "" };
+    iomenu_apply(emu, &a);
+    ASSERT_TRUE(iom_lang() == IOM_LANG_EN);
+    ASSERT_STR(emu->iomenu.message, "Menu in English");
+    ASSERT_EQ(media_disk_insert(emu, 0, "absent.dsk"), MEDIA_LOAD_FAILED);
+    a = (iom_action_t){ IOM_ACT_TAPE_REWIND, 0, "" };
+    iomenu_apply(emu, &a);
+    ASSERT_STR(emu->iomenu.message, "No tape");
+    ASSERT_TRUE(iomenu_config_save(emu, "lang.cfg"));
+    ASSERT_TRUE(iomenu_config_save(emu, "lang.cfg"));   /* a single langue= line */
+    char buf[2048] = "";
+    FILE* f = fopen("lang.cfg", "r");
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "langue=en\n") != NULL && strstr(strstr(buf, "langue=") + 1, "langue=") == NULL);
+    a = (iom_action_t){ IOM_ACT_LANG_TOGGLE, 0, "" };
+    iomenu_apply(emu, &a);
+    ASSERT_TRUE(iom_lang() == IOM_LANG_FR);
+    ASSERT_STR(emu->iomenu.message, "Menu en français");
+    cli_opts_t cfg;
+    cli_opts_init(&cfg);
+    ASSERT_TRUE(iomenu_config_load("lang.cfg", &cfg) >= 1);
+    ASSERT_TRUE(iom_lang() == IOM_LANG_EN);
+    iom_lang_set(IOM_LANG_FR);
+    remove("lang.cfg");
+}
+
 TEST(test_screenshot_writes_ppm) {
     machine_new();
     ASSERT_TRUE(iomenu_screenshot(emu, "menu.ppm"));
@@ -327,6 +368,7 @@ int main(void) {
     RUN(test_apply_toggles);
     RUN(test_apply_printer_cycle);
     RUN(test_config_roundtrip_and_precedence);
+    RUN(test_lang_toggle_and_config);
     RUN(test_screenshot_writes_ppm);
     char cmd[64];
     snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);

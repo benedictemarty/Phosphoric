@@ -129,7 +129,7 @@ void ctl_cmd_load_disk(emulator_t* emu, control_sink_t* s,
         return;
     }
     if (!emu_has_disk_iface(emu)) {
-        sink_err(s, emu->card_on[CARD_IDX_loci] && emu->loci_external
+        sink_err(s, emu_loci_fw_disks(emu)
                  ? "load-disk: LOCI firmware mounts its own images (MENU button)"
                  : "load-disk: no disk controller (need --disk-rom or --jasmin-rom)");
         return;
@@ -165,7 +165,12 @@ void ctl_cmd_eject_disk(emulator_t* emu, control_sink_t* s,
         sink_ok(s, "drive=%c ejected loci=1", 'A' + drv);
         return;
     }
-    if (!emu_has_disk_iface(emu)) { sink_err(s, "eject-disk: no disk controller"); return; }
+    if (!emu_has_disk_iface(emu)) {
+        sink_err(s, emu_loci_fw_disks(emu)
+                 ? "eject-disk: LOCI firmware mounts its own images (MENU button)"
+                 : "eject-disk: no disk controller");
+        return;
+    }
     if (drv < 0) { sink_err(s, "eject-disk: usage `eject-disk <drive A-D>`"); return; }
     if (!emu->disks[drv]) { sink_err(s, "eject-disk: drive %c already empty", 'A' + drv); return; }
 

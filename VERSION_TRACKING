@@ -1,9 +1,13 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.26.4
+Current Version: 2.28.0
 Release Date: 2026-10-05
-Status: Stable (**Images du manuel F1 — 2.26.4**. Liste des cartes et page de la carte LOCI (mode usb) ajoutées à docs/user-guide/MENU-F1.md.)
+Status: Stable (**Menu F1 en français ou en anglais — 2.28.0**. Bouton « Langue FR / Language EN » : textes, messages, fiches et réglages des cartes traduits à l'affichage (iom_lang.c, table FR→EN) ; langue=fr|en dans phosphoric.cfg ; FR par défaut. test-iomenu 16→17, test-iomenu-glue 10→11.)
+Status (prev): Stable (**LOCI-USB branchée prise d'office — 2.27.0**. Sans carte disque demandée, une LOCI-USB reconnue (produit USB, PING loci-usb, firmware LOCI 'L' en $0319) démarre comme --loci-hw PORT ; port occupé refusé (/proc) ; jamais headless/tests/relance F1 ; --no-auto-loci. loci_hw_probe.c ; test-loci-hw 17→22.)
+Status (prev): Stable (**LOCI-USB détectée affichée dans F1 — 2.26.6**. Port laissé vide : « /dev/ttyACM0 (détectée) » ou « aucune détectée » au lieu de « — » ; port aussi dans la liste des cartes et la page principale.)
+Status (prev): Stable (**Lecteurs F1 grisés sous LOCI firmware/usb — 2.26.5**. Les disquettes se montent depuis le menu du LOCI (F8) : lecteurs A-D « géré par le LOCI », sautés par le curseur ; titre « menu du LOCI (F8) » au lieu de « pas d'interface disque » ; MEDIA_LOCI_MENU.)
+Status (prev): Stable (**Images du manuel F1 — 2.26.4**. Liste des cartes et page de la carte LOCI (mode usb) ajoutées à docs/user-guide/MENU-F1.md.)
 Status (prev): Stable (**Manuel F1 corrigé — 2.26.3**. Libellés ACIA du tableau des cartes alignés sur le menu : « Vitesse (bauds) », « Mode V23 (1200/75) ».)
 Status (prev): Stable (**Manuel du menu F1 — 2.26.2**. docs/user-guide/MENU-F1.md (touches, médias, périphériques, cartes et LOCI à trois modes, erreurs, phosphoric.cfg) ; capture du menu refaite ; liens README et guide.)
 Status (prev): Stable (**LOCI-USB — 2.26.1**. Mode réelle → usb, réglage « Port de la LOCI-USB » (loci.port_usb ; loci.mode=réelle et loci.pont encore lus) ; textes corrigés : la Feather fait tourner le firmware LOCI, Phosphoric joue l'Oric par l'USB, pas un pont vers une LOCI 1.3.)

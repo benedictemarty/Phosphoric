@@ -66,6 +66,23 @@ to apply. In `phosphoric.cfg`: `carte.loci=oui`, `loci.mode=usb`,
 `carte.loci_hw`, `loci_hw.port`, `loci.pont` and the value `loci.mode=réelle` are
 still read.
 
+**Automatic activation.** Launched without a disk card (no `--disk-rom`, no
+`--jasmin-rom`, no LOCI card chosen, on the command line or in `phosphoric.cfg`),
+Phosphoric starts on a plugged LOCI-USB, as with `--loci-hw PORT`, if it passes
+three checks:
+
+1. **hardware**: USB product « LOCI-USB… » (`/sys`);
+2. **protocol**: the loci-usb `PING` answers (protocol version, bridge firmware);
+3. **LOCI firmware**: `$0319` reads `'L'` (`LOCI_DSK_IO_ID`, read-only identity
+   register, no side effect).
+
+The port is not taken if another program already has it open (`/proc/*/fd`).
+Never in `--headless`, under `make tests` (`PHOSPHORIC_NO_CONFIG`) nor when the F1
+menu restarts the emulator (the cards are chosen there). `--no-auto-loci` turns the
+automatic activation off. The log says what was found or why the card was not taken
+(port busy, `$0319` other than `'L'`, no answer). Code: `src/io/loci_hw_probe.c`,
+`main_auto_loci_usb()` (main.c).
+
 ### In the browser (WebAssembly build)
 
 `phosphoric.html?loci=1` (or the **LOCI** button in the rail) starts on the LOCI

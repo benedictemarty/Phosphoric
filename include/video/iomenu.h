@@ -53,6 +53,7 @@ enum {
     IOM_ITEM_RESET,
     IOM_ITEM_SAVE,
     IOM_ITEM_RESUME,
+    IOM_ITEM_LANG,             /* « Langue FR » / « Language EN » button */
     IOM_ITEMS
 };
 
@@ -80,7 +81,8 @@ typedef enum {
     IOM_ACT_RESET,
     IOM_ACT_SAVE_CONFIG,
     IOM_ACT_RESUME,
-    IOM_ACT_CARDS_APPLY        /* restart with the chosen cards (m->cards) */
+    IOM_ACT_CARDS_APPLY,       /* restart with the chosen cards (m->cards) */
+    IOM_ACT_LANG_TOGGLE        /* menu in French <-> in English */
 } iom_act_type_t;
 
 #define IOM_PATH_MAX 256
@@ -109,6 +111,7 @@ typedef struct {
     const char* machine;       /* « Oric Atmos », « Oric-1 » */
     const char* disk_iface;    /* « Microdisc », « Jasmin », « LOCI »; NULL: no drive */
     bool no_drive_protect;     /* the interface has no per-drive write-protect (LOCI) */
+    bool disks_by_loci;        /* co-simulated/real LOCI: drives handled by its menu, not here */
     int  drives;               /* usable drives (0 without interface) */
     char drive[4][IOM_NAME_MAX];   /* "": empty */
     bool drive_ro[4];
@@ -123,6 +126,11 @@ typedef struct {
     char snapshot_last[IOM_NAME_MAX];
     iom_card_t card[IOM_CARDS];
     int  cards;
+    /* USB ports found by the detection (/sys): LOCI-USB and real picowifi ("":
+     * none); shown when the LOCI card port is left empty. */
+    char usb_loci[64];
+    char usb_picowifi[64];
+    int  usb_scan;             /* refreshes before the next detection */
 } iom_state_t;
 
 /* ── Menu ───────────────────────────────────────────────────────────────── */
@@ -184,6 +192,8 @@ void iom_text(iom_menu_t* m, const char* utf8);
 
 /* Drawing: grid, then RGB888 IOM_WIDTH × IOM_HEIGHT. */
 void iom_draw(const iom_menu_t* m, iom_surface_t* s);
+/* Index of parameter @p key of card @p d, -1 if it does not exist. */
+int  iom_param_index(const card_desc_t* d, const char* key);
 void iom_rasterize(const iom_surface_t* s, uint8_t* rgb);
 
 /* Surface helper (exposed for the tests): UTF-8 text → cells. */

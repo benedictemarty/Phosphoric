@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.26.4** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.28.0** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -607,7 +607,9 @@ the Oric's input/output devices while the machine is **paused** (sound muted):
 - **Snapshots** — save `snapshots/etatNNNN.ost` or resume one.
 - **Printer** — off → text (`impression.txt`, LPRINT/LLIST) → MCP-40 plotter
   (`traceur.bmp`) → off. **Joystick** — none → arrow keys → gamepad.
-  **Keyboard** — QWERTY ↔ AZERTY. **Tape at startup** — `-f` direct injection
+  **Keyboard** — QWERTY ↔ AZERTY. **Language** — a fourth button switches the whole menu
+  (texts, messages, card pages) between French and English, kept as `langue=en` in
+  phosphoric.cfg. **Tape at startup** — `-f` direct injection
   or CLOAD through the patched ROM (applies at next launch).
 - **Expansion cards** — the list comes from the card registry (`src/cards.c`):
   Microdisc, Jasmin, LOCI, ACIA 6551, DTL 2000, Mageco MIDI, ORICON, SP0256,
@@ -616,7 +618,9 @@ the Oric's input/output devices while the machine is **paused** (sound muted):
   there at build time) or a **LOCI-USB** (`--loci-hw`, when `~/loci/loci-usb` was
   there): a Feather RP2040 running the LOCI firmware itself, with Phosphoric playing
   the Oric over USB — not a bridge to a LOCI 1.3 cartridge (port auto-detected on
-  Linux from the USB product « LOCI-USB… », or typed); only the settings of the chosen mode are
+  Linux from the USB product « LOCI-USB… », or typed; launched without a disk card, a
+  plugged LOCI-USB whose bridge answers and whose LOCI firmware reads 'L' at `$0319` is
+  used automatically, `--no-auto-loci` to opt out); only the settings of the chosen mode are
   shown. All LOCI backends live in one binary, picked at launch. **Enter** on the panel opens the cards page; each card has its
   own page explaining what it does, whether it is present, and every parameter
   (ROM or image file → file browser, transport/address/number → typed, yes/no →
@@ -905,4 +909,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.26.4 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-10-05
+Phosphoric v2.28.0 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu (French/English) + phosphoric.cfg | 2026-10-05

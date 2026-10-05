@@ -35,8 +35,10 @@ The bottom bar recalls the keys of the current page.
 ### Floppies A to D
 
 The frame title shows the disk interface in place: **Microdisc**, **Jasmin**,
-**LOCI**, or « pas d'interface disque » (no disk interface). Without an interface,
-nothing can be mounted: first enable a disk card (section 4).
+**LOCI**, « menu du LOCI (F8) » (LOCI menu) or « pas d'interface disque » (no disk
+interface). Without an interface, nothing can be mounted: first enable a disk card
+(section 4). The LOCI needs neither the Microdisc card nor its ROM: it plays the
+role of the disk interface itself.
 
 - **Enter** on a drive opens the file selector (`.dsk` images). The first line,
   « Éjecter la disquette » (eject the floppy), empties the drive.
@@ -50,8 +52,10 @@ nothing can be mounted: first enable a disk card (section 4).
   in memory and are lost on ejection. With the LOCI in `intégré` mode, ejecting
   writes the modified sectors.
 - « — absent — »: this drive does not exist on the interface in place.
-- With the LOCI in `firmware` or `usb` mode, its own menu mounts the floppies (MENU
-  button: **F8**); the F1 menu reminds you of this.
+- With the LOCI in `firmware` or `usb` mode (no Microdisc or Jasmin card), its own
+  menu mounts the floppies (MENU button: **F8**). Drives A to D show « — géré par le
+  LOCI — » (handled by the LOCI) and the cursor skips them; only the tape can still be
+  set in this frame.
 
 ### Tape
 
@@ -76,13 +80,18 @@ The frame summarizes the cards: **●** present (with its address and main setti
 | **Clavier** (keyboard) | QWERTY ↔ AZERTY | PC keyboard layout translated for the Oric. |
 | **Cassette** (at launch) | CLOAD through the patched ROM ↔ direct injection | only takes effect **at the next launch**: remember « Enregistrer la configuration » (save configuration). |
 
-### The three buttons
+### The four buttons
 
 - **Redémarrer (RESET)** (restart): like F5, restarts the 6502 (the LOCI reset
   button if it is there; floppies stay mounted) and closes the menu.
 - **Enregistrer la configuration** (save configuration): writes `phosphoric.cfg`
   (section 6).
 - **Reprendre** (resume): closes the menu (like Esc or F1).
+- **Langue FR** / **Language EN**: switches the whole menu to English, or back to
+  French: texts, messages, card pages and settings. The change is immediate; « Save
+  configuration » keeps it (`langue=en`). At launch, without a configuration, the
+  menu is in French. The labels quoted in French in this manual then read in
+  English.
 
 ## 4. Expansion cards
 
@@ -169,6 +178,15 @@ The three modes:
 | `firmware` | the real RP2040 firmware runs inside the emulator (`--loci-emu`), for firmware development | **Firmware (ELF)** (mandatory), **Image flash du firmware** (firmware flash image) (empty: `<ELF>.flash`, « - »: volatile), **Image de clé USB** (USB stick image) |
 | `usb` | a **LOCI-USB** plugged into the PC (`--loci-hw`): a Feather RP2040 runs the LOCI firmware, and Phosphoric plays the Oric over USB | **Port de la LOCI-USB** (LOCI-USB port) (empty: detected) |
 
+- Port left empty: the menu shows the one the detection finds, for example
+  « /dev/ttyACM0 (détectée) » (detected), or « aucune détectée » (none detected) in
+  red if the LOCI-USB is not plugged in (same for the real picowifi). Detection runs
+  again every second while the menu is open. The card list and the main page frame
+  also give this port (« Mode : usb, /dev/ttyACM0 », « $03A0  usb ttyACM0 »).
+- Launched without a disk card, Phosphoric takes a plugged LOCI-USB automatically if
+  its bridge answers and its LOCI firmware answers 'L' at `$0319`: the LOCI card
+  shows up in `usb` mode. `--no-auto-loci` avoids it; removing the card in this menu
+  then « Apply » removes it too (the restart does not bring it back).
 - The Feather **is** the LOCI: it is not a bridge to a LOCI 1.3 cartridge, and it
   does not plug into a real Oric.
 - Only the modes present in this binary are offered: `firmware` requires that
@@ -208,6 +226,7 @@ setting:
 | `imprimante=non/texte/mcp40`, `imprimante_fichier=` | printer |
 | `joystick=aucun/clavier/manette` | joystick |
 | `clavier=qwerty/azerty` | keyboard |
+| `langue=fr/en` | F1 menu language |
 | `carte.<id>=oui/non` | present cards (`microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco`, `oricon`, `sp0256`, `mea8000`, `hostfs`) |
 | `<id>.<réglage>=valeur` | card settings that differ from the default (e.g. `loci.mode=usb`, `acia.adresse=0380`) |
 

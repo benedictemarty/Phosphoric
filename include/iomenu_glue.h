@@ -22,6 +22,7 @@
 typedef enum {
     MEDIA_OK = 0,
     MEDIA_NO_IFACE,        /* no disk interface (Microdisc / Jasmin) */
+    MEDIA_LOCI_MENU,       /* co-simulated/real LOCI: floppies mounted from its own menu */
     MEDIA_BAD_DRIVE,       /* drive outside the interface */
     MEDIA_EMPTY,           /* nothing to eject */
     MEDIA_LOAD_FAILED      /* unreadable / invalid file */

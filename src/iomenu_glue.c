@@ -16,6 +16,8 @@
 #include "io/printer.h"
 #include "io/loci_emu.h"
 #include "io/loci_internal.h"   /* loci_dsk_open / loci_dsk_close */
+#include "io/picowifi_detect.h"
+#include "video/iom_lang.h"
 #include "utils/logging.h"
 #include "utils/oscompat.h"   /* portable mkdir (MinGW: a single argument) */
 #include <ctype.h>
@@ -56,6 +58,7 @@ media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
         log_info("OSD: disque %c <- %s (LOCI)", 'A' + drv, path);
         return MEDIA_OK;
     }
+    if (emu_loci_fw_disks(emu)) return MEDIA_LOCI_MENU;
     if (!emu_has_disk_iface(emu)) return MEDIA_NO_IFACE;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     sedoric_disk_t* nd = sedoric_load(path);
@@ -79,6 +82,7 @@ media_result_t media_disk_eject(emulator_t* emu, int drv) {
         loci_dsk_close(&emu->loci, (uint8_t)drv);   /* writes the modified sectors */
         return MEDIA_OK;
     }
+    if (emu_loci_fw_disks(emu)) return MEDIA_LOCI_MENU;
     if (!emu_has_disk_iface(emu)) return MEDIA_NO_IFACE;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     if (!emu->disks[drv]) return MEDIA_EMPTY;
@@ -142,6 +146,7 @@ void iomenu_refresh(emulator_t* emu) {
                    : loci_disks(emu) ? "LOCI" : NULL;
     st->drives = emu_has_disk_iface(emu) ? emu_disk_max_drives(emu) : loci_disks(emu) ? 4 : 0;
     st->no_drive_protect = loci_disks(emu);
+    st->disks_by_loci = emu_loci_fw_disks(emu);
     if (st->drives > 4) st->drives = 4;
     for (int d = 0; d < 4; d++) {
         if (loci_disks(emu)) {
@@ -186,6 +191,14 @@ void iomenu_refresh(emulator_t* emu) {
         m->cards_readonly = emu->argv == NULL;
 #endif
     }
+    /* USB detection on opening then every ~50 frames: a device plugged in while
+     * the menu is open shows up within a second, without scanning /sys every frame. */
+    if (!m->open || --st->usb_scan <= 0) {
+        st->usb_scan = 50;
+        if (!loci_usb_detect(NULL, st->usb_loci, sizeof(st->usb_loci))) st->usb_loci[0] = '\0';
+        if (!picowifi_detect(NULL, st->usb_picowifi, sizeof(st->usb_picowifi)))
+            st->usb_picowifi[0] = '\0';
+    }
     st->cards = 0;
     for (int i = 0; i < cards_count() && st->cards < IOM_CARDS; i++) {
         const card_desc_t* d = cards_get(i);
@@ -199,6 +212,13 @@ void iomenu_refresh(emulator_t* emu) {
         const char* main_v = d->enable_param >= 0 ? c->value[d->enable_param] : "";
         if (addr) snprintf(k->detail, sizeof(k->detail), "$%04X  %s", addr, base_name(main_v));
         else snprintf(k->detail, sizeof(k->detail), "%s", base_name(main_v));
+        /* LOCI-USB: its port (typed in, otherwise detected). */
+        const int pm = iom_param_index(d, "mode"), pu = iom_param_index(d, "port_usb");
+        if (pm >= 0 && pu >= 0 && strcmp(c->value[pm], LOCI_MODE_HW) == 0) {
+            const char* dev = c->value[pu][0] ? c->value[pu] : st->usb_loci;
+            snprintf(k->detail, sizeof(k->detail), "$%04X  usb %.24s", addr,
+                     dev[0] ? base_name(dev) : "absente");
+        }
     }
 }
 
@@ -211,17 +231,18 @@ static void msg(emulator_t* emu, bool err, const char* fmt, ...) {
     char buf[96];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
+    vsnprintf(buf, sizeof(buf), iom_tr(fmt), ap);   /* format in the menu language */
     va_end(ap);
     iom_message(&emu->iomenu, err, buf);
 }
 
 static const char* media_error(media_result_t r) {
     switch (r) {
-    case MEDIA_NO_IFACE:    return "pas d'interface disque (--disk-rom ou --jasmin-rom)";
-    case MEDIA_BAD_DRIVE:   return "lecteur absent sur cette interface";
-    case MEDIA_EMPTY:       return "déjà vide";
-    case MEDIA_LOAD_FAILED: return "fichier illisible";
+    case MEDIA_NO_IFACE:    return iom_tr("pas d'interface disque (--disk-rom ou --jasmin-rom)");
+    case MEDIA_LOCI_MENU:   return iom_tr("se monte depuis le menu du LOCI (MENU, F8)");
+    case MEDIA_BAD_DRIVE:   return iom_tr("lecteur absent sur cette interface");
+    case MEDIA_EMPTY:       return iom_tr("déjà vide");
+    case MEDIA_LOAD_FAILED: return iom_tr("fichier illisible");
     default:                return "";
     }
 }
@@ -300,8 +321,6 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
     case IOM_ACT_DISK_INSERT:
         r = media_disk_insert(emu, a->target, a->path);
         if (r == MEDIA_OK) msg(emu, false, "Lecteur %c : %s", 'A' + a->target, base_name(a->path));
-        else if (r == MEDIA_NO_IFACE && emu->card_on[CARD_IDX_loci] && emu->loci_external)
-            msg(emu, true, "LOCI : les disquettes se montent depuis son menu (bouton MENU, F8)");
         else msg(emu, true, "Lecteur %c : %s", 'A' + a->target, media_error(r));
         return false;
     case IOM_ACT_DISK_EJECT:
@@ -316,7 +335,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         }
         const bool on = !emu_disk_protected(emu, a->target);
         emu_disk_set_protected(emu, a->target, on);
-        msg(emu, false, "Lecteur %c : %s", 'A' + a->target, on ? "protégé en écriture" : "écriture autorisée");
+        msg(emu, false, "Lecteur %c : %s", 'A' + a->target, iom_tr(on ? "protégé en écriture" : "écriture autorisée"));
         return false;
     }
     case IOM_ACT_TAPE_INSERT:
@@ -364,12 +383,16 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         msg(emu, false, "Clavier %s", az ? "AZERTY" : "QWERTY");
         return false;
     }
+    case IOM_ACT_LANG_TOGGLE:
+        iom_lang_set(iom_lang() == IOM_LANG_FR ? IOM_LANG_EN : IOM_LANG_FR);
+        msg(emu, false, "Menu en français");
+        return false;
     case IOM_ACT_TAPE_FAST_TOGGLE:
         /* -f only acts at startup (1st block injected at boot): the choice
          * applies to the next launch, via « Enregistrer la configuration » (Save configuration). */
         emu->fast_load = !emu->fast_load;
         msg(emu, false, "Au prochain lancement : %s (enregistrer la configuration)",
-            emu->fast_load ? "injection directe" : "CLOAD par la ROM");
+            iom_tr(emu->fast_load ? "injection directe" : "CLOAD par la ROM"));
         return false;
     case IOM_ACT_RESET:
         /* Same effect as F5: 6502 reset; LOCI reset button (mounts kept). */
@@ -395,7 +418,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
 static const char* const managed_keys[] = {
     "a", "b", "c", "d", "protection_a", "protection_b", "protection_c", "protection_d",
     "interface_disque", "rom_disque", "cassette", "cassette_rapide",
-    "imprimante", "imprimante_fichier", "joystick", "clavier", NULL
+    "imprimante", "imprimante_fichier", "joystick", "clavier", "langue", NULL
 };
 
 static bool is_managed(const char* line) {
@@ -458,6 +481,7 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
     fprintf(out, "joystick=%s\n", emu->joystick.mode == ORIC_JOY_KEYBOARD ? "clavier"
                                 : emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD ? "manette" : "aucun");
     fprintf(out, "clavier=%s\n", emu->keyboard.layout == ORIC_KB_AZERTY ? "azerty" : "qwerty");
+    fprintf(out, "langue=%s\n", iom_lang_code(iom_lang()));
     bool ok = fclose(out) == 0;
 #ifdef _WIN32
     if (ok) remove(path);   /* Windows rename() does not overwrite an existing file */
@@ -523,6 +547,9 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
             if (!cfg->joystick_mode && strcasecmp(val, "manette") == 0) { cfg->joystick_mode = "gamepad"; applied++; }
         } else if (strcmp(key, "clavier") == 0) {
             if (!cfg->keyboard_layout && strcasecmp(val, "azerty") == 0) { cfg->keyboard_layout = "azerty"; applied++; }
+        } else if (strcmp(key, "langue") == 0) {
+            iom_lang_t lang;
+            if (iom_lang_parse(val, &lang)) { iom_lang_set(lang); applied++; }
         }
         #undef KEEP
     }

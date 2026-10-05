@@ -59,6 +59,7 @@ typedef struct cli_opts_s {
     int gdb_port;
     const char* gdb_bind;        /* NULL → 127.0.0.1          */
     bool no_rom;                 /* no default system ROM (minimal profile) */
+    bool no_auto_loci;           /* --no-auto-loci: a plugged LOCI-USB is not enabled automatically */
     bool no_config_cards;        /* cards: ignore phosphoric.cfg (F1 menu relaunch) */
     const char* movie_record_file;
     const char* movie_replay_file;
