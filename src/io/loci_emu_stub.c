@@ -7,10 +7,15 @@
  *
  * Le backend `--loci-emu` exécute le vrai firmware LOCI dans un émulateur
  * RP2040 externe (`~/loci/emul`, non versionné dans ce dépôt). Sans lui, le
- * Makefile lie ce fichier à la place : l'émulateur se construit et fonctionne
+ * Makefile ne lie que ce fichier : l'émulateur se construit et fonctionne
  * intégralement — y compris `--loci`, qui est le backend comportemental et ne
  * dépend pas du firmware — et `--loci-emu` échoue proprement au démarrage.
  * `make LOCI_EMU=1 LOCI_EMUL_DIR=...` rétablit la co-simulation.
+ *
+ * Dans un binaire natif, c'est le backend « aucun LOCI externe » de
+ * l'aiguillage (loci_backend.c, fonctions renommées par loci_be_rename.h). La
+ * version web le lie seul, sans aiguillage : il fournit alors aussi
+ * loci_emu_select et loci_emu_backend_available.
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -89,3 +94,8 @@ bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
 bool    loci_emu_read_lost(void) { return false; }
+
+#ifndef LOCI_BE   /* lié seul (version web) : pas d'aiguillage */
+bool loci_emu_select(const char *backend) { (void)backend; return false; }
+bool loci_emu_backend_available(const char *backend) { (void)backend; return false; }
+#endif

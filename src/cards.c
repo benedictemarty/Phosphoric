@@ -69,19 +69,34 @@ static void build_all(void) {
                        desc_emit, desc_emit_core, NULL);
 }
 
-/* Backend LOCI de cette build ; PHOSPHORIC_TEST_LOCI_BACKEND le remplace dans
- * les tests (test-cards est lié au backend « stub »). */
-static const char* loci_backend(void) {
-    const char* t = getenv("PHOSPHORIC_TEST_LOCI_BACKEND");
-    return t && *t ? t : loci_emu_backend_name();
+/* Backend LOCI présent dans ce binaire ; PHOSPHORIC_TEST_LOCI_BACKENDS (liste
+ * « emul,hw ») le remplace dans les tests, liés au seul stub. */
+static bool loci_backend_ok(const char* name) {
+    const char* t = getenv("PHOSPHORIC_TEST_LOCI_BACKENDS");
+    if (t && *t) return strstr(t, name) != NULL;
+    return loci_emu_backend_available(name);
 }
 
-/* Disponibilité dans cette build : la co-simulation LOCI exige le backend
- * « emul » (make LOCI_EMU=1), la cartouche réelle le backend « hw »
- * (make LOCI_HW=1). */
-static bool card_available(const card_desc_t* c) {
-    if (strcmp(c->id, "loci_emu") == 0) return strcmp(loci_backend(), "emul") == 0;
-    if (strcmp(c->id, "loci_hw") == 0) return strcmp(loci_backend(), "hw") == 0;
+/* Paramètres de la carte LOCI propres à un mode (les autres : tous les modes). */
+static const struct { const char* key; const char* mode; } k_loci_mode_params[] = {
+    { "menu", LOCI_MODE_HLE }, { "sd", LOCI_MODE_HLE }, { "flash", LOCI_MODE_HLE },
+    { "modem", LOCI_MODE_HLE }, { "port", LOCI_MODE_HLE },
+    { "elf", LOCI_MODE_FW }, { "fw_flash", LOCI_MODE_FW }, { "fw_usb", LOCI_MODE_FW },
+    { "pont", LOCI_MODE_HW },
+};
+
+/* Mode auquel est propre le paramètre @p p de @p d, NULL s'il n'en a pas. */
+static const char* loci_param_mode(const card_desc_t* d, int p) {
+    if (strcmp(d->id, "loci") != 0 || p < 0 || p >= d->nparams) return NULL;
+    for (size_t i = 0; i < sizeof(k_loci_mode_params) / sizeof(k_loci_mode_params[0]); i++)
+        if (strcmp(d->param[p].key, k_loci_mode_params[i].key) == 0) return k_loci_mode_params[i].mode;
+    return NULL;
+}
+
+/* Le mode LOCI @p mode existe dans ce binaire. */
+static bool loci_mode_ok(const char* mode) {
+    if (strcmp(mode, LOCI_MODE_FW) == 0) return loci_backend_ok("emul");
+    if (strcmp(mode, LOCI_MODE_HW) == 0) return loci_backend_ok("hw");
     return true;
 }
 
@@ -92,8 +107,7 @@ static void build_list(void) {
     if (g_n >= 0) return;
     build_all();
     g_n = 0;
-    for (int i = 0; i < g_all_n; i++)
-        if (card_available(g_all[i])) g_list[g_n++] = g_all[i];
+    for (int i = 0; i < g_all_n; i++) g_list[g_n++] = g_all[i];
 }
 
 int cards_count(void) { build_list(); return g_n; }
@@ -152,9 +166,6 @@ static const char* canon(const char* opt) {
  * (--loci-usb, --loci-web…, --serial-trace…) : gardées si la carte reste
  * active, retirées sinon. NULL si l'option n'appartient à aucune carte. */
 static const char* extra_owner(const char* opt) {
-    if (strncmp(opt, "--loci-emu", 10) == 0 || strcmp(opt, "--loci-usb-image") == 0 ||
-        strcmp(opt, "--loci-cdc") == 0)
-        return "loci_emu";
     if (strncmp(opt, "--loci-", 7) == 0) return "loci";
     if (strncmp(opt, "--serial-", 9) == 0) return "acia";
     return NULL;
@@ -200,7 +211,7 @@ static bool is_default(const card_param_t* p, const char* v) {
     return strcmp(v, def) == 0;
 }
 
-void cards_choice_next(const card_param_t* p, char* value, size_t valuesz) {
+static void choice_next(const card_param_t* p, char* value, size_t valuesz) {
     const char* c = p->def ? p->def : "";
     const char* first = c;
     size_t vlen = strlen(value);
@@ -217,6 +228,37 @@ void cards_choice_next(const card_param_t* p, char* value, size_t valuesz) {
         c = bar + 1;
     }
     snprintf(value, valuesz, "%.*s", (int)strcspn(first, "|"), first);   /* inconnue */
+}
+
+void cards_choice_next(const card_param_t* p, char* value, size_t valuesz) {
+    const bool loci_mode = strcmp(p->key, "mode") == 0;
+    for (int i = 0; i < 8; i++) {   /* au plus une valeur par choix */
+        choice_next(p, value, valuesz);
+        if (!loci_mode || loci_mode_ok(value)) return;
+    }
+}
+
+/* ── Carte LOCI : mode ─────────────────────────────────────────────────── */
+
+static int loci_param(const char* key) {
+    int il = cards_find("loci");
+    return il < 0 ? -1 : param_find(cards_get(il), key);
+}
+
+/* Mode de la carte LOCI dans @p st (LOCI_MODE_HLE si la carte manque). */
+static const char* loci_mode(const cards_state_t* st) {
+    int il = cards_find("loci"), pm = loci_param("mode");
+    return il >= 0 && pm >= 0 ? st->card[il].value[pm] : LOCI_MODE_HLE;
+}
+
+static bool loci_mode_is(const cards_state_t* st, const char* mode) {
+    return strcmp(loci_mode(st), mode) == 0;
+}
+
+bool cards_param_applies(const card_desc_t* d, const card_choice_t* c, int p) {
+    const char* m = loci_param_mode(d, p);
+    int pm = m ? param_find(d, "mode") : -1;
+    return !m || pm < 0 || strcmp(c->value[pm], m) == 0;
 }
 
 /* Modem de la carte LOCI : indices de la carte et de ses paramètres « modem » /
@@ -259,7 +301,7 @@ static const char* loci_modem_of_spec(const char* spec, char* port, size_t ports
 static void loci_modem_normalize(cards_state_t* st) {
     int il, pm, pp, ia = cards_find("acia");
     if (!loci_modem_params(&il, &pm, &pp) || ia < 0) return;
-    if (!st->card[il].on || !st->card[ia].on) return;
+    if (!st->card[il].on || !st->card[ia].on || !loci_mode_is(st, LOCI_MODE_HLE)) return;
     const card_desc_t* a = cards_get(ia);
     for (int p = 1; p < a->nparams; p++) {
         const char* v = st->card[ia].value[p];
@@ -279,25 +321,25 @@ static void loci_modem_normalize(cards_state_t* st) {
 /* La carte LOCI fournit un modem (ses options --serial-* restent utiles). */
 static bool loci_modem_on(const cards_state_t* st) {
     int il, pm, pp;
-    return loci_modem_params(&il, &pm, &pp) && st->card[il].on &&
+    return loci_modem_params(&il, &pm, &pp) && st->card[il].on && loci_mode_is(st, LOCI_MODE_HLE) &&
            strcmp(st->card[il].value[pm], LOCI_MODEM_NONE) != 0;
 }
 
-/* Port de la cartouche LOCI réelle : celui renseigné, sinon celui que la
- * détection USB trouve. false si aucun. */
-static bool loci_hw_port(const card_choice_t* c, char* out, size_t outsz) {
-    if (c->value[0][0]) { snprintf(out, outsz, "%s", c->value[0]); return true; }
+/* Port du pont USB de la cartouche réelle : celui renseigné (@p v), sinon celui
+ * que la détection USB trouve. false si aucun. */
+static bool loci_hw_port(const char* v, char* out, size_t outsz) {
+    if (v[0]) { snprintf(out, outsz, "%s", v); return true; }
     return loci_usb_detect(NULL, out, outsz);
 }
 
-/* Port de --loci-hw égal à celui détecté : laissé vide, la détection le
- * retrouvera (même s'il change d'un branchement à l'autre). */
+/* Port du pont égal à celui détecté : laissé vide, la détection le retrouvera
+ * (même s'il change d'un branchement à l'autre). */
 static void loci_hw_normalize(cards_state_t* st) {
-    int ih = cards_find("loci_hw");
+    int il = cards_find("loci"), pp = loci_param("pont");
     char found[256];
-    if (ih < 0 || !st->card[ih].on || !st->card[ih].value[0][0]) return;
-    if (loci_usb_detect(NULL, found, sizeof(found)) && strcmp(found, st->card[ih].value[0]) == 0)
-        st->card[ih].value[0][0] = '\0';
+    if (il < 0 || pp < 0 || !st->card[il].value[pp][0]) return;
+    if (loci_usb_detect(NULL, found, sizeof(found)) && strcmp(found, st->card[il].value[pp]) == 0)
+        st->card[il].value[pp][0] = '\0';
 }
 
 void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* const argv[]) {
@@ -328,8 +370,14 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
                 if (!d->param[p].cli || strcmp(name, d->param[p].cli) != 0) continue;
                 if (d->param[p].kind == CARD_P_BOOL) set_value(&st->card[i], p, "oui");
                 else if (val) set_value(&st->card[i], p, val);
-                /* Une option propre à la carte l'active (--loci-sdimg implique --loci). */
-                if (strcmp(d->id, "loci") == 0) cards_set_on(st, i, true);
+                /* Une option propre à la carte l'active (--loci-sdimg implique --loci) ;
+                 * propre à un mode, elle le choisit (--loci-hw : réelle). */
+                if (strcmp(d->id, "loci") == 0) {
+                    const char* m = loci_param_mode(d, p);
+                    cards_set_on(st, i, true);
+                    if (m && strcmp(m, LOCI_MODE_HLE) != 0)
+                        set_value(&st->card[i], param_find(d, "mode"), m);
+                }
             }
         }
     }
@@ -347,7 +395,7 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
         if (emu->card_on[CARD_IDX_loci] && !emu->loci_external && (i = cards_find("loci")) >= 0) {
             cards_set_on(st, i, true);
             const char* rom = emu->rom_path ? emu->rom_path : "";
-            set_value(&st->card[i], 0, strstr(rom, "locirom") ? "oui" : "non");
+            set_value(&st->card[i], loci_param("menu"), strstr(rom, "locirom") ? "oui" : "non");
         }
         /* Modem LOCI venu de phosphoric.cfg (ACIA sans carte ACIA au menu). */
         int il, pm, pp, ia = cards_find("acia");
@@ -382,9 +430,25 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
             }
         }
     }
-    int il, pm, pp, ia = cards_find("acia");
-    if (loci_modem_params(&il, &pm, &pp) && st->card[il].on &&
-        strcmp(st->card[il].value[pm], LOCI_MODEM_NONE) != 0) {
+    int il = cards_find("loci"), pm, pp, ia = cards_find("acia");
+    if (il >= 0 && st->card[il].on) {
+        const char* mode = loci_mode(st);
+        char dev[256];
+        if (!loci_mode_ok(mode)) {
+            snprintf(out, outsz, "LOCI : mode « %s » absent de ce binaire", mode);
+            return true;
+        }
+        if (strcmp(mode, LOCI_MODE_FW) == 0 && !st->card[il].value[loci_param("elf")][0]) {
+            snprintf(out, outsz, "LOCI firmware : indiquer le fichier ELF du firmware");
+            return true;
+        }
+        if (strcmp(mode, LOCI_MODE_HW) == 0 &&
+            !loci_hw_port(st->card[il].value[loci_param("pont")], dev, sizeof(dev))) {
+            snprintf(out, outsz, "LOCI réelle : aucun pont USB LOCI-USB détecté (indiquer le port)");
+            return true;
+        }
+    }
+    if (loci_modem_on(st) && loci_modem_params(&il, &pm, &pp)) {
         char dev[256];
         if (ia >= 0 && st->card[ia].on) {
             snprintf(out, outsz, "Modem LOCI et ACIA 6551 : une seule ligne série à la fois");
@@ -393,14 +457,6 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
         if (strcmp(st->card[il].value[pm], LOCI_MODEM_REAL) == 0 &&
             !loci_modem_real_port(&st->card[il], pp, dev, sizeof(dev))) {
             snprintf(out, outsz, "Modem LOCI réel : aucun picowifi USB détecté (indiquer le port)");
-            return true;
-        }
-    }
-    int ih = cards_find("loci_hw");
-    if (ih >= 0 && st->card[ih].on) {
-        char dev[256];
-        if (!loci_hw_port(&st->card[ih], dev, sizeof(dev))) {
-            snprintf(out, outsz, "LOCI réelle : aucun pont USB LOCI-USB détecté (indiquer le port)");
             return true;
         }
     }
@@ -421,8 +477,8 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
     char** av = NULL;
     int n = 0, cap = 0;
     const int iloci = cards_find("loci");
-    const bool loci_menu = iloci >= 0 && st->card[iloci].on &&
-                           strcmp(st->card[iloci].value[0], "oui") == 0;
+    const bool loci_hle = iloci >= 0 && st->card[iloci].on && loci_mode_is(st, LOCI_MODE_HLE);
+    const bool loci_menu = loci_hle && strcmp(st->card[iloci].value[loci_param("menu")], "oui") == 0;
     const char* basic_rom = "roms/basic11b.rom";
     push(&av, &n, &cap, argc > 0 ? argv[0] : "oric1-emu");
     /* 1. Options d'origine, sans celles des cartes (ni -r si LOCI la fixe). */
@@ -448,9 +504,9 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
             a++;
             if (loci_menu) continue;                       /* remplacée ci-dessous */
             push(&av, &n, &cap, "-r");
-            /* LOCI éteinte : sa ROM de menu n'a plus de sens → BASIC 1.1. */
-            push(&av, &n, &cap, strstr(r, "locirom") && (iloci < 0 || !st->card[iloci].on)
-                                ? basic_rom : r);
+            /* LOCI éteinte (ou servie par son firmware) : sa ROM de menu n'a plus
+             * de sens → BASIC 1.1. */
+            push(&av, &n, &cap, strstr(r, "locirom") && !loci_hle ? basic_rom : r);
             continue;
         }
         push(&av, &n, &cap, argv[a]);
@@ -461,22 +517,25 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
         const card_desc_t* d = cards_get(i);
         const card_choice_t* c = &st->card[i];
         if (!c->on || d->fixed || !d->enable_cli) continue;
-        char hwdev[CARD_VALUE_MAX];
-        if (strcmp(d->id, "loci_hw") == 0) {
-            if (!loci_hw_port(c, hwdev, sizeof(hwdev))) {
-                log_warning("LOCI réelle : aucun pont USB (« %s… ») détecté, la cartouche "
-                            "n'est pas branchée (indiquer le port : loci_hw.port=/dev/ttyACM0)",
-                            LOCI_USB_PRODUCT_PREFIX);
-                continue;
-            }
-            push(&av, &n, &cap, d->enable_cli);
-            push(&av, &n, &cap, hwdev);
-            continue;
-        }
-        if (d->enable_param < 0) push(&av, &n, &cap, d->enable_cli);
+        /* LOCI : --loci pour le modèle intégré ; en firmware et réelle, --loci-emu
+         * et --loci-hw (paramètres) l'activent. */
+        const bool is_loci = i == iloci;
+        if (d->enable_param < 0 && (!is_loci || loci_hle)) push(&av, &n, &cap, d->enable_cli);
         for (int p = 0; p < d->nparams; p++) {
             const card_param_t* pp = &d->param[p];
-            if (!pp->cli) continue;
+            if (!pp->cli || !cards_param_applies(d, c, p)) continue;
+            if (is_loci && strcmp(pp->key, "pont") == 0) {
+                char dev[CARD_VALUE_MAX];
+                if (loci_hw_port(c->value[p], dev, sizeof(dev))) {
+                    push(&av, &n, &cap, pp->cli);
+                    push(&av, &n, &cap, dev);
+                } else {
+                    log_warning("LOCI réelle : aucun pont USB (« %s… ») détecté, la cartouche "
+                                "n'est pas branchée (indiquer le port : loci.pont=/dev/ttyACM0)",
+                                LOCI_USB_PRODUCT_PREFIX);
+                }
+                continue;
+            }
             if (p == d->enable_param) {
                 push(&av, &n, &cap, pp->cli);
                 push(&av, &n, &cap, c->value[p]);
@@ -490,7 +549,7 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
     }
     /* 3. Modem de la carte LOCI : l'ACIA en $0380 (sauf carte ACIA active). */
     int il, pm, pp, ia = cards_find("acia");
-    if (loci_modem_params(&il, &pm, &pp) && st->card[il].on && !(ia >= 0 && st->card[ia].on)) {
+    if (loci_modem_params(&il, &pm, &pp) && loci_hle && !(ia >= 0 && st->card[ia].on)) {
         const char* m = st->card[il].value[pm];
         char dev[256], spec[300];
         if (strcmp(m, LOCI_MODEM_SIM) == 0) {
@@ -518,7 +577,32 @@ void cards_argv_free(char** av) {
     free(av);
 }
 
+/* Anciennes fiches LOCI (2.24 et avant : « LOCI firmware », 2.25.0 : « LOCI
+ * réelle »), devenues des modes de la carte LOCI. */
+static const struct { const char* old_key; const char* key; } k_cfg_legacy[] = {
+    { "loci_emu.elf", "loci.elf" }, { "loci_emu.flash", "loci.fw_flash" },
+    { "loci_emu.usb", "loci.fw_usb" }, { "loci_hw.port", "loci.pont" },
+};
+
+/* Carte que désigne « carte.<id> » (ancienne fiche LOCI : loci). */
+static const char* cfg_card_id(const char* id) {
+    return strcmp(id, "loci_emu") == 0 || strcmp(id, "loci_hw") == 0 ? "loci" : id;
+}
+
 bool cards_cfg_line(cards_state_t* st, const char* key, const char* val, bool* card_seen) {
+    for (size_t k = 0; k < sizeof(k_cfg_legacy) / sizeof(k_cfg_legacy[0]); k++)
+        if (strcmp(key, k_cfg_legacy[k].old_key) == 0) key = k_cfg_legacy[k].key;
+    if (strcmp(key, "carte.loci_emu") == 0 || strcmp(key, "carte.loci_hw") == 0) {
+        int i = cards_find("loci");
+        if (i < 0) return false;
+        if (strcasecmp(val, "oui") == 0) {   /* « non » : ne dit rien de la carte LOCI */
+            cards_set_on(st, i, true);
+            set_value(&st->card[i], loci_param("mode"),
+                      strcmp(key + 6, "loci_emu") == 0 ? LOCI_MODE_FW : LOCI_MODE_HW);
+            if (card_seen) *card_seen = true;
+        }
+        return true;
+    }
     if (strncmp(key, "carte.", 6) == 0) {
         int i = cards_find(key + 6);
         if (i < 0) return false;
@@ -553,7 +637,8 @@ void cards_cfg_write(const cards_state_t* st, void* file) {
         fprintf(f, "carte.%s=%s\n", d->id, st->card[i].on ? "oui" : "non");
         if (!st->card[i].on) continue;
         for (int p = 0; p < d->nparams; p++)
-            if (st->card[i].value[p][0] && !is_default(&d->param[p], st->card[i].value[p]))
+            if (st->card[i].value[p][0] && !is_default(&d->param[p], st->card[i].value[p]) &&
+                cards_param_applies(d, &st->card[i], p))
                 fprintf(f, "%s.%s=%s\n", d->id, d->param[p].key, st->card[i].value[p]);
     }
 }
@@ -563,11 +648,11 @@ bool cards_cfg_key(const char* key, size_t keylen) {
     if (keylen >= sizeof(k)) return false;
     memcpy(k, key, keylen);
     k[keylen] = '\0';
-    if (strncmp(k, "carte.", 6) == 0) return cards_find(k + 6) >= 0;
+    if (strncmp(k, "carte.", 6) == 0) return cards_find(cfg_card_id(k + 6)) >= 0;
     char* dot = strchr(k, '.');
     if (!dot) return false;
     *dot = '\0';
-    return cards_find(k) >= 0;
+    return cards_find(cfg_card_id(k)) >= 0;
 }
 
 bool cards_cfg_read(const char* path, cards_state_t* st, bool seen[16]) {
@@ -588,8 +673,10 @@ bool cards_cfg_read(const char* path, cards_state_t* st, bool seen[16]) {
         char* val = eq + 1;
         while (*val == ' ') val++;
         bool card_seen = false;
-        if (cards_cfg_line(st, key, val, &card_seen) && card_seen)
-            seen[cards_find(key + 6)] = true;
+        if (cards_cfg_line(st, key, val, &card_seen) && card_seen) {
+            int i = cards_find(cfg_card_id(key + 6));
+            if (i >= 0) seen[i] = true;
+        }
     }
     fclose(f);
     return true;

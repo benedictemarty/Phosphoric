@@ -559,12 +559,15 @@ detection) ; le reglage **Port du picowifi reel** l'impose (ex. `/dev/ttyACM0`).
 Aucun picowifi detecte : le menu le signale et refuse d'appliquer. Dans
 `phosphoric.cfg` : `loci.modem=simulé`, `loci.port=/dev/ttyACM0`.
 
-Avec un binaire compile par `make LOCI_HW=1`, le menu F1 propose aussi la carte
-**LOCI réelle** : la vraie cartouche LOCI branchee par le pont USB loci-usb
-(Feather RP2040), equivalent de `--loci-hw /dev/ttyACM0`. Son reglage **Port du
-pont USB** est detecte automatiquement sous Linux (produit USB « LOCI-USB… ») ou
-impose. Bouton MENU de la cartouche : F8. Dans `phosphoric.cfg` :
-`carte.loci_hw=oui`, `loci_hw.port=/dev/ttyACM0`.
+La carte **LOCI** du menu F1 a un reglage **Mode** : `intégré` (LOCI emulee,
+`--loci`), `firmware` (vrai firmware co-simule, `--loci-emu ELF`) ou `réelle` (la
+vraie cartouche branchee par le pont USB loci-usb d'une Feather RP2040,
+`--loci-hw /dev/ttyACM0`). Seuls les reglages du mode choisi s'affichent, et
+seuls les modes presents dans le binaire sont proposes (firmware : libemul,
+reelle : depot loci-usb, a la compilation). En mode `réelle`, le **Port du pont
+USB (Feather)** est detecte automatiquement sous Linux (produit USB
+« LOCI-USB… ») ou impose ; bouton MENU de la cartouche : F8. Dans
+`phosphoric.cfg` : `loci.mode=réelle`, `loci.pont=/dev/ttyACM0`.
 
 ### Cartes dediees
 

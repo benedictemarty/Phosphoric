@@ -92,8 +92,10 @@ aussi celui de la priorité des accès et de l'ordre des sections `.ost`.
 ## Cartes actuelles
 
 `microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco` (+ ORICON), `sp0256`,
-`mea8000`, `loci_emu` (fiches seules : « LOCI firmware » avec le backend emul,
-« LOCI réelle » `loci_hw` avec le backend hw, 2.25.0), `ula_ng`. Pour certaines, une partie reste au
+`mea8000`, `ula_ng`. La carte `loci` a trois modes (2.26.0 : les fiches
+`loci_emu` et `loci_hw` sont devenues ses modes `firmware` et `réelle`) ; un
+paramètre propre à un mode n'est montré, relancé et enregistré que dans ce mode
+(`k_loci_mode_params`, `cards_param_applies`). Pour certaines, une partie reste au
 cœur parce que d'autres parties de l'émulateur la lisent : options, état ou tick de
 Microdisc, Jasmin et LOCI ; état de l'ACIA et de l'ULA-NG (détail dans
 `docs/specs/CARD_MODULES.md`).

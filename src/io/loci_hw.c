@@ -9,8 +9,9 @@
  * nROMDIS) devient un VRAI cycle de bus sur la cartouche, via le pont Pico
  * loci-usb (bridge/) branché sur CN1 et parlant proto/loci_usb_proto.h sur USB CDC.
  *
- * Choisi à la compilation : `make LOCI_HW=1` (remplace loci_emu.c ; un binaire
- * Phosphoric = un backend). Source de vérité : ~/loci/loci-usb/phosphoric/loci_hw.c.
+ * Compilé dans Phosphoric dès que le dépôt loci-usb est là (LOCI_HW, fonctions
+ * renommées par loci_be_rename.h) et choisi au lancement par --loci-hw ou le mode
+ * « réelle » de la carte LOCI (aiguillage loci_backend.c). Source de vérité : ~/loci/loci-usb/phosphoric/loci_hw.c.
  *
  * Modèle :
  *  - le firmware réel tourne en continu : « booté » dès que le pont répond (PING) ;

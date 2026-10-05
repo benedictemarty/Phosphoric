@@ -211,7 +211,7 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                            interne 0:) ; défaut <ELF>.flash, « - » = volatile\n");
     usage_printf("      --loci-hw DEV         VRAIE cartouche LOCI par le pont USB loci-usb (ex.\n");
     usage_printf("                            /dev/ttyACM0) : le 6502 émulé accède au silicium\n");
-    usage_printf("                            (binaire compilé avec make LOCI_HW=1 ; implies --loci)\n");
+    usage_printf("                            (binaire construit avec ~/loci/loci-usb ; implies --loci)\n");
     usage_printf("      --loci-menu-at N      Déclenche le menu LOCI une seule fois au cycle N\n");
     usage_printf("      --save-state FILE      Save emulator state to FILE on exit\n");
     usage_printf("      --load-state FILE      Load emulator state from FILE at startup\n");

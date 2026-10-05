@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include "video/iomenu.h"
 #include "video/iom_font.h"
+#include "io/loci_emu.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -313,13 +314,30 @@ TEST(test_cards_pages) {
     ASSERT_TRUE(m.cards.card[lo].on && !m.cards.card[md].on);
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "LOCI") && surf_has(&surf, "menu LOCI"));
+    /* Mode intégré : les réglages du firmware et de la Feather sont cachés. */
+    ASSERT_TRUE(surf_has(&surf, "Mode") && !surf_has(&surf, "Firmware (ELF)") &&
+                !surf_has(&surf, "Port du pont"));
     /* Paramètre fichier : sélecteur ; « Aucun fichier » vide la valeur. */
-    m.param_cursor = 2;                                   /* image SD */
+    m.param_cursor = 3;                                   /* image SD (après Mode, menu) */
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(m.browsing && m.browse_target == IOM_BROWSE_CARD);
     m.browse_cursor = 0;
     iom_key(&m, IOM_KEY_ENTER);
-    ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[1][0] == '\0');
+    ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[2][0] == '\0');
+    /* Mode réelle (si ce binaire l'a) : seul le port du pont reste, et la
+     * navigation saute les réglages cachés. */
+    if (loci_emu_backend_available("hw")) {
+        m.param_cursor = 1;
+        snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HW);
+        iom_draw(&m, &surf);
+        ASSERT_TRUE(surf_has(&surf, "Port du pont") && !surf_has(&surf, "menu LOCI") &&
+                    !surf_has(&surf, "Image de carte SD"));
+        iom_key(&m, IOM_KEY_DOWN);
+        ASSERT_EQ(m.param_cursor, 10);                    /* pont : dernier réglage */
+        iom_key(&m, IOM_KEY_DOWN);
+        ASSERT_EQ(m.param_cursor, 0);                     /* présence */
+        snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HLE);
+    }
     iom_key(&m, IOM_KEY_ESC);
     ASSERT_EQ(m.page, IOM_PAGE_CARDS);
     /* ACIA : saisie de l'adresse, contrôlée (0300-03FF). */

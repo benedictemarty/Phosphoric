@@ -388,13 +388,19 @@ static iom_action_t cards_key(iom_menu_t* m, int key) {
     return a;
 }
 
+/* Ligne @p c de la page d'une carte (0 : présence, p + 1 : paramètre p) affichée :
+ * les paramètres propres à un autre mode (carte LOCI) sont cachés. */
+static bool card_row_shown(const iom_menu_t* m, const card_desc_t* d, int c) {
+    return c == 0 || cards_param_applies(d, &m->cards.card[m->card_sel], c - 1);
+}
+
 static void card_key(iom_menu_t* m, int key) {
     const card_desc_t* d = cards_get(m->card_sel);
     const int n = 1 + d->nparams;
     int c = m->param_cursor;
     switch (key) {
-    case IOM_KEY_UP:   c = (c + n - 1) % n; break;
-    case IOM_KEY_DOWN: c = (c + 1) % n; break;
+    case IOM_KEY_UP:   do c = (c + n - 1) % n; while (!card_row_shown(m, d, c)); break;
+    case IOM_KEY_DOWN: do c = (c + 1) % n; while (!card_row_shown(m, d, c)); break;
     case IOM_KEY_LEFT:
     case IOM_KEY_ESC:  m->page = IOM_PAGE_CARDS; break;
     case IOM_KEY_DEL:   /* paramètre : retour à la valeur par défaut */
@@ -786,6 +792,7 @@ static void draw_cards_page(const iom_menu_t* m, iom_surface_t* s) {
         int choice = -1;            /* paramètre à choix réglé autrement que par défaut */
         for (int p = 0; c->on && choice < 0 && p < d->nparams; p++) {
             char def[48];
+            if (!cards_param_applies(d, c, p)) continue;
             cards_param_default(&d->param[p], def, sizeof(def));
             if (d->param[p].kind == CARD_P_CHOICE && strcmp(c->value[p], def) != 0) choice = p;
         }
@@ -823,7 +830,9 @@ static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
     const card_desc_t* d = cards_get(m->card_sel);
     const card_choice_t* c = &m->cards.card[m->card_sel];
     char buf[224];
-    panel(s, 5, 2, 7 + 2 * d->nparams + 2, 76, IOM_CART_L, d->name);
+    int shown = 0;   /* paramètres affichés (ceux du mode choisi, carte LOCI) */
+    for (int p = 0; p < d->nparams; p++) shown += cards_param_applies(d, c, p);
+    panel(s, 5, 2, 7 + 2 * shown + 2, 76, IOM_CART_L, d->name);
     wrap(s, 6, 4, 72, 3, d->role, A_PANEL_DIM);
     {   /* Présence */
         const bool sel = !m->browsing && m->param_cursor == 0;
@@ -832,8 +841,9 @@ static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
         iom_puts(s, 10, 6, "Carte", ra.acc, -1);
         state(s, 10, 33, c->on, d->fixed ? "toujours présente" : c->on ? "présente" : "absente", &ra);
     }
-    for (int p = 0; p < d->nparams; p++) {
-        const int row = 12 + 2 * p;
+    for (int p = 0, k = 0; p < d->nparams; p++) {
+        if (!cards_param_applies(d, c, p)) continue;
+        const int row = 12 + 2 * k++;
         const bool sel = !m->browsing && m->param_cursor == p + 1;
         const row_attrs_t ra = attrs_for(sel);
         item_bar(s, row, 4, 72, sel);
@@ -846,7 +856,7 @@ static void draw_card_page(const iom_menu_t* m, iom_surface_t* s) {
         }
     }
     /* Explication du paramètre (ou de la présence) sous le curseur. */
-    const int top = 14 + 2 * d->nparams;
+    const int top = 14 + 2 * shown;
     panel(s, top, 2, 8, 76, 0, m->param_cursor == 0 ? "La carte" : d->param[m->param_cursor - 1].label);
     if (m->param_cursor == 0) {
         if (d->fixed) snprintf(buf, sizeof(buf), "Toujours présente : rien à régler ici.");

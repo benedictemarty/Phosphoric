@@ -1185,8 +1185,9 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
         /* Matériel réel (--loci-hw) : « poll en attente » — si le 6502 n'a pas
          * touché LOCI depuis N cycles (boucle d'attente en RAM/ROM cachée), le
          * backend interroge la cartouche (nIRQ, nRESET, nROMDIS) pour borner la
-         * latence des événements asynchrones à ~1 ms Oric. 0 en co-sim/stub. */
-        {
+         * latence des événements asynchrones à ~1 ms Oric. 0 en co-sim/stub :
+         * sans LOCI externe, pas même l'appel (une fois par instruction). */
+        if (emu->loci_external) {
             int ev = loci_emu_idle_poll(step);      /* >0 : impulsions nIRQ ; -1 : reset seul */
             if (ev) {
                 for (int i = 0; i < ev; i++) cpu_irq_pulse(&emu->cpu);

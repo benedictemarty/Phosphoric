@@ -176,9 +176,17 @@ bool loci_emu_mou_armed(void);
  * répliquer serait fragile. `keycodes` = 6 usages HID (0 = vide). */
 bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6]);
 bool loci_emu_kbd_armed(void);
-/* ── Backend MATÉRIEL RÉEL (loci_hw.c, `make LOCI_HW=1`, --loci-hw DEV) ──
- * Nom du backend compilé : "emul" (loci_emu.c), "stub" (loci_emu_stub.c) ou "hw"
- * (loci_hw.c, source ~/loci/loci-usb/phosphoric/). main.c refuse --loci-hw ailleurs. */
+/* ── Choix du backend au lancement (aiguillage loci_backend.c) ──
+ * Un binaire natif contient le stub (aucun LOCI externe) et, selon le build, le
+ * firmware co-simulé "emul" (loci_emu.c, ou loci_neo.c avec LOCI_NEO=1 : même
+ * place) et la vraie cartouche "hw" (loci_hw.c, source
+ * ~/loci/loci-usb/phosphoric/, pont USB loci-usb : --loci-hw DEV). Avant tout
+ * loci_emu_select, c'est le stub. */
+bool loci_emu_backend_available(const char *backend);
+/* Choisit @p backend ("emul" ou "hw") avant loci_emu_start ; false (sans
+ * message : l'appelant le donne) s'il est absent de ce binaire. */
+bool loci_emu_select(const char *backend);
+/* Nom du backend en place : "stub", "emul", "neo" ou "hw". */
 const char *loci_emu_backend_name(void);
 /* Fronts nRESET pilotés par LOCI (bouton MENU physique, gel) depuis le dernier appel :
  * l'hôte réinitialise alors son 6502 (une fois par frame, après loci_emu_irq_take).

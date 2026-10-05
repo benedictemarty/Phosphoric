@@ -24,23 +24,39 @@ vérifiée sur pièces ; les écarts connus sont listés en fin de document.
 ./oric1-emu -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
-### Vraie cartouche par la Feather (`--loci-hw`, menu F1)
+### Une carte, trois modes (menu F1)
 
-Un binaire compilé avec `make LOCI_HW=1` pilote la vraie cartouche LOCI par le pont
-USB loci-usb (Adafruit Feather RP2040, recette `~/loci/loci-usb/docs/RECETTE-FEATHER.md`) :
+Dans le menu F1, la carte **LOCI** a un réglage **Mode** ; seuls les réglages du mode
+choisi sont affichés :
+
+| Mode | Équivaut à | Réglages |
+|------|-----------|----------|
+| `intégré` | `--loci` | menu au démarrage, image SD, dossier flash, modem picowifi |
+| `firmware` | `--loci-emu ELF` | firmware ELF (obligatoire), image flash, image de clé USB |
+| `réelle` | `--loci-hw PORT` | port du pont USB (Feather) |
+
+Un même binaire contient les trois modes : `firmware` existe quand `~/loci/emul`
+(libemul) était là à la compilation, `réelle` quand `~/loci/loci-usb` y était (pas
+sous Windows). Le menu ne propose que les modes présents. Les backends sont choisis
+au lancement (`src/io/loci_backend.c`). `make LOCI_EMU=0` ou `LOCI_HW=0` en retire
+un.
+
+### Vraie cartouche par la Feather (`--loci-hw`, mode `réelle`)
+
+Le mode `réelle` pilote la vraie cartouche LOCI par le pont USB loci-usb (Adafruit
+Feather RP2040, recette `~/loci/loci-usb/docs/RECETTE-FEATHER.md`) :
 
 ```bash
 ./oric1-emu --loci-hw /dev/ttyACM0
 ```
 
-Dans ce binaire, le menu F1 propose la carte **LOCI réelle** (groupe disque, exclusive
-avec LOCI et les autres interfaces disque) et son réglage **Port du pont USB**. Vide,
-le port est détecté sous Linux par le nom de produit USB, qui commence par
-« LOCI-USB » (firmware `feature/loci-usb` ou loci-fw-usb). La détection lit seulement
-`/sys`, sans ouvrir le port. Si aucun pont n'est détecté et qu'aucun port n'est
-indiqué, le menu le signale et refuse d'appliquer. Dans `phosphoric.cfg` :
-`carte.loci_hw=oui`, `loci_hw.port=/dev/ttyACM0`. Les autres binaires n'affichent pas
-cette carte.
+Laissé vide, le réglage **Port du pont USB (Feather)** est détecté sous Linux par le
+nom de produit USB, qui commence par « LOCI-USB » (firmware `feature/loci-usb` ou
+loci-fw-usb). La détection lit seulement `/sys`, sans ouvrir le port. Si aucun pont
+n'est détecté et qu'aucun port n'est indiqué, le menu le signale et refuse
+d'appliquer. Dans `phosphoric.cfg` : `carte.loci=oui`, `loci.mode=réelle`,
+`loci.pont=/dev/ttyACM0`. Les anciennes clés `carte.loci_emu`, `loci_emu.*`,
+`carte.loci_hw` et `loci_hw.port` sont encore lues.
 
 ### Dans le navigateur (build WebAssembly)
 

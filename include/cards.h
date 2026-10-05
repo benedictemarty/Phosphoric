@@ -19,7 +19,7 @@
 
 typedef struct emulator_s emulator_t;
 
-#define CARD_PARAMS_MAX 5
+#define CARD_PARAMS_MAX 10
 #define CARD_VALUE_MAX  192
 
 typedef enum {
@@ -81,8 +81,22 @@ void cards_set_on(cards_state_t* st, int i, bool on);
 
 /* Valeur par défaut de @p p dans @p out (pour CARD_P_CHOICE : son premier choix). */
 void cards_param_default(const card_param_t* p, char* out, size_t outsz);
-/* Valeur suivante d'un paramètre CARD_P_CHOICE (après la dernière : la première). */
+/* Valeur suivante d'un paramètre CARD_P_CHOICE (après la dernière : la première),
+ * en sautant les modes LOCI dont le backend manque dans ce binaire. */
 void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
+
+/* Mode de la carte LOCI (paramètre « mode », le premier) : modèle intégré
+ * (--loci), firmware co-simulé (--loci-emu ELF) ou vraie cartouche par le pont
+ * USB loci-usb d'une Feather (--loci-hw PORT). Les deux derniers n'existent que
+ * si le binaire contient leur backend (loci_emu_backend_available). */
+#define LOCI_MODE_HLE "intégré"
+#define LOCI_MODE_FW  "firmware"
+#define LOCI_MODE_HW  "réelle"
+
+/* Le paramètre @p p de la carte @p d s'applique avec les réglages @p c : les
+ * paramètres propres à un mode LOCI ne s'appliquent que dans ce mode (le menu
+ * ne montre qu'eux, la relance et la configuration n'utilisent qu'eux). */
+bool cards_param_applies(const card_desc_t* d, const card_choice_t* c, int p);
 
 /* Modem de la carte LOCI (paramètre « modem ») : rien, picowifi simulé, ou
  * picowifi réel branché sur l'hôte (port « port », vide : détection USB). */
@@ -92,8 +106,9 @@ void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
 
 /* Conflits d'adresses d'E/S entre cartes actives : message dans @p out
  * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false si aucun.
- * Signale aussi un modem LOCI réel introuvable (aucun picowifi branché) et une
- * cartouche LOCI réelle sans pont USB (aucun LOCI-USB branché ni port indiqué). */
+ * Signale aussi, pour la carte LOCI : un modem réel introuvable (aucun picowifi
+ * branché), un mode absent de ce binaire, le firmware sans fichier ELF et la
+ * cartouche réelle sans pont USB (aucun LOCI-USB branché ni port indiqué). */
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz);
 
 /* Options de lancement pour relancer avec @p st : celles d'@p argv sans aucune

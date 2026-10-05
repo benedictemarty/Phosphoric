@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.25.0** | **70 test suites (1,358 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.26.0** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -609,10 +609,12 @@ the Oric's input/output devices while the machine is **paused** (sound muted):
   or CLOAD through the patched ROM (applies at next launch).
 - **Expansion cards** — the list comes from the card registry (`src/cards.c`):
   Microdisc, Jasmin, LOCI, ACIA 6551, DTL 2000, Mageco MIDI, ORICON, SP0256,
-  MEA8000, hostfs, ULA-NG (always present), and the co-simulated LOCI firmware
-  (`make LOCI_EMU=1`) or the **real LOCI cartridge through the Feather USB bridge**
-  (`make LOCI_HW=1`, `--loci-hw`; port auto-detected on Linux from the USB product
-  « LOCI-USB… », or typed) when the build has it. **Enter** on the panel opens the cards page; each card has its
+  MEA8000, hostfs, ULA-NG (always present). The **LOCI** card has a **Mode**:
+  built-in model (`--loci`), co-simulated firmware (`--loci-emu`, when libemul was
+  there at build time) or the **real cartridge through the Feather USB bridge**
+  (`--loci-hw`, when `~/loci/loci-usb` was there; port auto-detected on Linux from
+  the USB product « LOCI-USB… », or typed); only the settings of the chosen mode are
+  shown. All LOCI backends live in one binary, picked at launch. **Enter** on the panel opens the cards page; each card has its
   own page explaining what it does, whether it is present, and every parameter
   (ROM or image file → file browser, transport/address/number → typed, yes/no →
   toggled), with the explanation of the selected one. Disk cards (Microdisc, Jasmin,
@@ -639,7 +641,7 @@ line always wins — except in `--headless` runs (use `--config FILE` there).
 ## Testing
 
 ```bash
-make tests               # Full suite — 70 suites, 1,358 checks (100% pass)
+make tests               # Full suite — 70 suites, 1,362 checks (100% pass)
 make tests-strict        # Same, and fails on a skip not justified in tests/allowed_skips.txt (CI)
 make test-clock          # Master clock: one call = one cycle of the whole machine, never idle
 make test-savestate-determinism  # mid-frame savestate = exact resume point
@@ -900,4 +902,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.25.0 | 70 test suites (1,358 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-10-05
+Phosphoric v2.26.0 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu + phosphoric.cfg | 2026-10-05

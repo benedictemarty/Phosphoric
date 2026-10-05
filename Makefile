@@ -4,36 +4,44 @@
 CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
-# Émulateur RP2040 embarqué (backend --loci-emu). Chemin surchargeable.
-# Dépendance EXTERNE non versionnée : détectée automatiquement. Sans elle
-# (CI, machine neuve), src/io/loci_emu_stub.c prend la place de loci_emu.c :
-# tout se construit, seul `--loci-emu` refuse de démarrer. Forcer : LOCI_EMU=0/1.
+# Backends LOCI externes, choisis au lancement (aiguillage src/io/loci_backend.c,
+# fonctions renommées par src/io/loci_be_rename.h) : un même binaire contient le
+# stub (aucun LOCI externe) et ceux dont la dépendance est présente.
+#  - Émulateur RP2040 embarqué (--loci-emu, carte LOCI mode « firmware »).
+#    Dépendance EXTERNE non versionnée, détectée automatiquement. Sans elle (CI,
+#    machine neuve), tout se construit, seul `--loci-emu` refuse de démarrer.
+#    Forcer : LOCI_EMU=0/1.
 LOCI_EMUL_DIR ?= $(HOME)/loci/emul
 LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
-# Backend MATÉRIEL RÉEL (--loci-hw DEV) : `make LOCI_HW=1` remplace loci_emu.c par
-# src/io/loci_hw.c (copie de ~/loci/loci-usb/phosphoric/loci_hw.c) + le client du
-# protocole loci-usb. Un binaire = un backend (mêmes symboles loci_emu_*).
+#  - Vraie cartouche par le pont USB loci-usb d'une Feather (--loci-hw, mode
+#    « réelle ») : src/io/loci_hw.c (copie de ~/loci/loci-usb/phosphoric/loci_hw.c)
+#    + le client du protocole, détectés automatiquement (POSIX : pas sous Windows).
+#    Forcer : LOCI_HW=0/1.
 LOCI_USB_DIR ?= $(HOME)/loci/loci-usb
-LOCI_HW ?= 0
-# Backend du NOUVEAU firmware loci-fw (reprise de zéro, ~/loci/reprise) : `make LOCI_NEO=1`
-# remplace loci_emu.c par src/io/loci_neo.c (pont emul_neo de libemul).
+LOCI_HW ?= $(if $(filter 1,$(WIN)),0,$(if $(wildcard $(LOCI_USB_DIR)/host/loci_usb_client.c),1,0))
+#  - NOUVEAU firmware loci-fw (reprise de zéro, ~/loci/reprise) : `make LOCI_NEO=1`
+#    met src/io/loci_neo.c (pont emul_neo de libemul) à la place de loci_emu.c.
 LOCI_NEO ?= 0
+LOCI_EMU_SRC = src/io/loci_backend.c src/io/loci_emu_stub.c
+LOCI_EMUL_LIB =
+LOCI_EMU_CFLAGS =
+LOCI_BE_DEFS =
+LOCI_BE_EMUL_SRC =
 ifeq ($(LOCI_NEO),1)
-LOCI_EMU_SRC = src/io/loci_neo.c
-LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
-LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src
-else ifeq ($(LOCI_HW),1)
-LOCI_EMU_SRC = src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c
-LOCI_EMUL_LIB =
-LOCI_EMU_CFLAGS = -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto -DNO_LOCI_EMU
+LOCI_BE_EMUL_SRC = src/io/loci_neo.c
 else ifeq ($(LOCI_EMU),1)
-LOCI_EMU_SRC = src/io/loci_emu.c
+LOCI_BE_EMUL_SRC = src/io/loci_emu.c
+endif
+ifneq ($(LOCI_BE_EMUL_SRC),)
+LOCI_EMU_SRC += $(LOCI_BE_EMUL_SRC)
 LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
-LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src
-else
-LOCI_EMU_SRC = src/io/loci_emu_stub.c
-LOCI_EMUL_LIB =
-LOCI_EMU_CFLAGS = -DNO_LOCI_EMU
+LOCI_EMU_CFLAGS += -I$(LOCI_EMUL_DIR)/src
+LOCI_BE_DEFS += -DLOCI_BE_HAS_EMUL
+endif
+ifeq ($(LOCI_HW),1)
+LOCI_EMU_SRC += src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c
+LOCI_EMU_CFLAGS += -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto
+LOCI_BE_DEFS += -DLOCI_BE_HAS_HW
 endif
 CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include $(LOCI_EMU_CFLAGS) -MMD -MP
 # -lpthread: control_queue (sprint 93) hands commands from producer threads
@@ -278,7 +286,7 @@ endif
 # variante (SDL2=0, HTTPAPI=1, backend LOCI…) ne se mélangent jamais avec ceux
 # d'une autre. Les binaires finaux sont recopiés à la racine (chemins attendus
 # par les scripts), seulement quand leur contenu change.
-LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_HW)),hw,$(if $(filter 1,$(LOCI_EMU)),emu,stub)))
+LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_EMU)),emu))$(if $(filter 1,$(LOCI_HW)),hw)$(if $(LOCI_BE_EMUL_SRC)$(filter 1,$(LOCI_HW)),,stub)
 CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)$(if $(filter 1,$(VIA_NO_LAZY)),-vianolazy)$(if $(filter 1,$(SANITIZE)),-san)
 BUILD ?= build/$(CONFIG)
 TBIN = $(BUILD)/tests
@@ -372,6 +380,12 @@ $(BUILD)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/src/video/stb_image_write_impl.o: CFLAGS += $(STB_SAN_CFLAGS)
+# Backends LOCI : chacun compilé avec ses fonctions loci_emu_* renommées.
+LOCI_BE_RENAME = -include src/io/loci_be_rename.h
+$(BUILD)/src/io/loci_emu_stub.o: CFLAGS += -DLOCI_BE=lbe_stub $(LOCI_BE_RENAME)
+$(BUILD)/src/io/loci_emu.o $(BUILD)/src/io/loci_neo.o: CFLAGS += -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
+$(BUILD)/src/io/loci_hw.o: CFLAGS += -DLOCI_BE=lbe_hw $(LOCI_BE_RENAME)
+$(BUILD)/src/io/loci_backend.o: CFLAGS += $(LOCI_BE_DEFS)
 
 # Include auto-generated header-dependency files (-MMD output).
 # Silent if absent (first build / after clean).
@@ -1165,7 +1179,9 @@ WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
 
 # La co-simulation RP2040 (libemul, natif) n'existe pas en WebAssembly : le stub
 # prend toujours la place de loci_emu.c ici, quel que soit LOCI_EMU.
-WASM_SOURCES = $(subst src/io/loci_emu.c,src/io/loci_emu_stub.c,$(LIB_SOURCES))
+# Version web : le stub seul, sans aiguillage ni fonctions renommées.
+WASM_SOURCES = $(filter-out src/io/loci_backend.c src/io/loci_emu.c src/io/loci_neo.c \
+                 src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c,$(LIB_SOURCES))
 wasm: web/shell.html
 	$(EMCC) $(WASM_CFLAGS) -DNO_LOCI_EMU $(WASM_SOURCES) src/main.c $(WASM_LDFLAGS) -o $(WASM_OUT)
 	@echo "WASM ready → serve web/ over HTTP and open phosphoric.html"
