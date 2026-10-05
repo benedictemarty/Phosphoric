@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file picowifi_detect.c
- * @brief Détection d'un modem picowifi réel et du pont LOCI-USB (Feather) par
+ * @brief Détection d'un modem picowifi réel et d'une LOCI-USB (Feather) par
  *        leur nom de produit USB (/sys)
  * @author bmarty <bmarty@mailo.com>
  */

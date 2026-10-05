@@ -6,12 +6,16 @@
  * Même interface que loci_emu.h, mais au lieu d'exécuter le firmware dans
  * l'émulateur RP2040 (loci_emu.c) ou de ne rien faire (loci_emu_stub.c), chaque
  * accès du 6502 émulé à la page LOCI ($03xx) ou à la ROM servie ($C000-$FFFF sous
- * nROMDIS) devient un VRAI cycle de bus sur la cartouche, via le pont Pico
- * loci-usb (bridge/) branché sur CN1 et parlant proto/loci_usb_proto.h sur USB CDC.
+ * nROMDIS) devient un VRAI cycle de bus servi par une LOCI-USB : une LOCI sans
+ * interface Oric (Feather RP2040, future carte LOCI-USB) dont le firmware LOCI
+ * (variante LOCI_USB) rejoue ces accès, en parlant proto/loci_usb_proto.h sur USB
+ * CDC. (La première piste, un Pico pont sur CN1 d'une cartouche inchangée, a été
+ * abandonnée le 2026-09-13.)
  *
  * Compilé dans Phosphoric dès que le dépôt loci-usb est là (LOCI_HW, fonctions
  * renommées par loci_be_rename.h) et choisi au lancement par --loci-hw ou le mode
- * « réelle » de la carte LOCI (aiguillage loci_backend.c). Source de vérité : ~/loci/loci-usb/phosphoric/loci_hw.c.
+ * « usb » de la carte LOCI (aiguillage loci_backend.c). Source de vérité : cet
+ * arbre (instantanés dans ~/loci/loci-usb/phosphoric/).
  *
  * Modèle :
  *  - le firmware réel tourne en continu : « booté » dès que le pont répond (PING) ;

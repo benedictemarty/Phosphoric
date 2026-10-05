@@ -86,12 +86,14 @@ void cards_param_default(const card_param_t* p, char* out, size_t outsz);
 void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
 
 /* Mode de la carte LOCI (paramètre « mode », le premier) : modèle intégré
- * (--loci), firmware co-simulé (--loci-emu ELF) ou vraie cartouche par le pont
- * USB loci-usb d'une Feather (--loci-hw PORT). Les deux derniers n'existent que
- * si le binaire contient leur backend (loci_emu_backend_available). */
+ * (--loci), firmware co-simulé (--loci-emu ELF) ou LOCI-USB (--loci-hw PORT) :
+ * une LOCI sans interface Oric (Feather RP2040 aujourd'hui, carte LOCI-USB
+ * demain) qui fait tourner le firmware LOCI, Phosphoric jouant l'Oric par l'USB.
+ * Les deux derniers n'existent que si le binaire contient leur backend
+ * (loci_emu_backend_available). */
 #define LOCI_MODE_HLE "intégré"
 #define LOCI_MODE_FW  "firmware"
-#define LOCI_MODE_HW  "réelle"
+#define LOCI_MODE_HW  "usb"
 
 /* Le paramètre @p p de la carte @p d s'applique avec les réglages @p c : les
  * paramètres propres à un mode LOCI ne s'appliquent que dans ce mode (le menu
@@ -108,7 +110,7 @@ bool cards_param_applies(const card_desc_t* d, const card_choice_t* c, int p);
  * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false si aucun.
  * Signale aussi, pour la carte LOCI : un modem réel introuvable (aucun picowifi
  * branché), un mode absent de ce binaire, le firmware sans fichier ELF et la
- * cartouche réelle sans pont USB (aucun LOCI-USB branché ni port indiqué). */
+ * LOCI-USB introuvable (aucune branchée ni port indiqué). */
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz);
 
 /* Options de lancement pour relancer avec @p st : celles d'@p argv sans aucune

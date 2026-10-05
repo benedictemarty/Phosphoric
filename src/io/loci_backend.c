@@ -3,7 +3,7 @@
  * @file loci_backend.c
  * @brief Aiguillage de l'interface loci_emu.h vers le backend LOCI choisi au
  *        lancement : stub (aucun), emul (firmware co-simulé, --loci-emu) ou hw
- *        (vraie cartouche par le pont USB loci-usb, --loci-hw)
+ *        (LOCI-USB : la Feather fait tourner le firmware LOCI, --loci-hw)
  * @author bmarty <bmarty@mailo.com>
  *
  * Chaque backend est compilé avec ses fonctions renommées (loci_be_rename.h) ;

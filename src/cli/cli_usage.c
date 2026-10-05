@@ -209,8 +209,9 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                            firmware co-simulé comme ACIA $0380 (avec --loci-emu)\n");
     usage_printf("      --loci-emu-flash FILE Image flash persistante du firmware co-simulé (FS\n");
     usage_printf("                            interne 0:) ; défaut <ELF>.flash, « - » = volatile\n");
-    usage_printf("      --loci-hw DEV         VRAIE cartouche LOCI par le pont USB loci-usb (ex.\n");
-    usage_printf("                            /dev/ttyACM0) : le 6502 émulé accède au silicium\n");
+    usage_printf("      --loci-hw DEV         LOCI-USB (Feather RP2040 qui fait tourner le firmware\n");
+    usage_printf("                            LOCI) branchée en USB, ex. /dev/ttyACM0 : le 6502\n");
+    usage_printf("                            émulé accède au silicium\n");
     usage_printf("                            (binaire construit avec ~/loci/loci-usb ; implies --loci)\n");
     usage_printf("      --loci-menu-at N      Déclenche le menu LOCI une seule fois au cycle N\n");
     usage_printf("      --save-state FILE      Save emulator state to FILE on exit\n");

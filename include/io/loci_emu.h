@@ -179,8 +179,8 @@ bool loci_emu_kbd_armed(void);
 /* ── Choix du backend au lancement (aiguillage loci_backend.c) ──
  * Un binaire natif contient le stub (aucun LOCI externe) et, selon le build, le
  * firmware co-simulé "emul" (loci_emu.c, ou loci_neo.c avec LOCI_NEO=1 : même
- * place) et la vraie cartouche "hw" (loci_hw.c, source
- * ~/loci/loci-usb/phosphoric/, pont USB loci-usb : --loci-hw DEV). Avant tout
+ * place) et la LOCI-USB "hw" (loci_hw.c : Feather RP2040 qui fait tourner le
+ * firmware LOCI, protocole loci-usb sur USB : --loci-hw DEV). Avant tout
  * loci_emu_select, c'est le stub. */
 bool loci_emu_backend_available(const char *backend);
 /* Choisit @p backend ("emul" ou "hw") avant loci_emu_start ; false (sans

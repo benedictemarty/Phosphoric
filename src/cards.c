@@ -82,7 +82,7 @@ static const struct { const char* key; const char* mode; } k_loci_mode_params[] 
     { "menu", LOCI_MODE_HLE }, { "sd", LOCI_MODE_HLE }, { "flash", LOCI_MODE_HLE },
     { "modem", LOCI_MODE_HLE }, { "port", LOCI_MODE_HLE },
     { "elf", LOCI_MODE_FW }, { "fw_flash", LOCI_MODE_FW }, { "fw_usb", LOCI_MODE_FW },
-    { "pont", LOCI_MODE_HW },
+    { "port_usb", LOCI_MODE_HW },
 };
 
 /* Mode auquel est propre le paramètre @p p de @p d, NULL s'il n'en a pas. */
@@ -325,17 +325,17 @@ static bool loci_modem_on(const cards_state_t* st) {
            strcmp(st->card[il].value[pm], LOCI_MODEM_NONE) != 0;
 }
 
-/* Port du pont USB de la cartouche réelle : celui renseigné (@p v), sinon celui
+/* Port de la LOCI-USB : celui renseigné (@p v), sinon celui
  * que la détection USB trouve. false si aucun. */
 static bool loci_hw_port(const char* v, char* out, size_t outsz) {
     if (v[0]) { snprintf(out, outsz, "%s", v); return true; }
     return loci_usb_detect(NULL, out, outsz);
 }
 
-/* Port du pont égal à celui détecté : laissé vide, la détection le retrouvera
+/* Port de la LOCI-USB égal à celui détecté : laissé vide, la détection le retrouvera
  * (même s'il change d'un branchement à l'autre). */
 static void loci_hw_normalize(cards_state_t* st) {
-    int il = cards_find("loci"), pp = loci_param("pont");
+    int il = cards_find("loci"), pp = loci_param("port_usb");
     char found[256];
     if (il < 0 || pp < 0 || !st->card[il].value[pp][0]) return;
     if (loci_usb_detect(NULL, found, sizeof(found)) && strcmp(found, st->card[il].value[pp]) == 0)
@@ -371,7 +371,7 @@ void cards_state_from(cards_state_t* st, const emulator_t* emu, int argc, char* 
                 if (d->param[p].kind == CARD_P_BOOL) set_value(&st->card[i], p, "oui");
                 else if (val) set_value(&st->card[i], p, val);
                 /* Une option propre à la carte l'active (--loci-sdimg implique --loci) ;
-                 * propre à un mode, elle le choisit (--loci-hw : réelle). */
+                 * propre à un mode, elle le choisit (--loci-hw : usb). */
                 if (strcmp(d->id, "loci") == 0) {
                     const char* m = loci_param_mode(d, p);
                     cards_set_on(st, i, true);
@@ -443,8 +443,8 @@ bool cards_conflict(const cards_state_t* st, char* out, size_t outsz) {
             return true;
         }
         if (strcmp(mode, LOCI_MODE_HW) == 0 &&
-            !loci_hw_port(st->card[il].value[loci_param("pont")], dev, sizeof(dev))) {
-            snprintf(out, outsz, "LOCI réelle : aucun pont USB LOCI-USB détecté (indiquer le port)");
+            !loci_hw_port(st->card[il].value[loci_param("port_usb")], dev, sizeof(dev))) {
+            snprintf(out, outsz, "LOCI-USB : aucune détectée (indiquer le port)");
             return true;
         }
     }
@@ -517,21 +517,21 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
         const card_desc_t* d = cards_get(i);
         const card_choice_t* c = &st->card[i];
         if (!c->on || d->fixed || !d->enable_cli) continue;
-        /* LOCI : --loci pour le modèle intégré ; en firmware et réelle, --loci-emu
+        /* LOCI : --loci pour le modèle intégré ; en firmware et usb, --loci-emu
          * et --loci-hw (paramètres) l'activent. */
         const bool is_loci = i == iloci;
         if (d->enable_param < 0 && (!is_loci || loci_hle)) push(&av, &n, &cap, d->enable_cli);
         for (int p = 0; p < d->nparams; p++) {
             const card_param_t* pp = &d->param[p];
             if (!pp->cli || !cards_param_applies(d, c, p)) continue;
-            if (is_loci && strcmp(pp->key, "pont") == 0) {
+            if (is_loci && strcmp(pp->key, "port_usb") == 0) {
                 char dev[CARD_VALUE_MAX];
                 if (loci_hw_port(c->value[p], dev, sizeof(dev))) {
                     push(&av, &n, &cap, pp->cli);
                     push(&av, &n, &cap, dev);
                 } else {
-                    log_warning("LOCI réelle : aucun pont USB (« %s… ») détecté, la cartouche "
-                                "n'est pas branchée (indiquer le port : loci.pont=/dev/ttyACM0)",
+                    log_warning("LOCI-USB : aucune (« %s… ») détectée, LOCI n'est pas "
+                                "branchée (indiquer le port : loci.port_usb=/dev/ttyACM0)",
                                 LOCI_USB_PRODUCT_PREFIX);
                 }
                 continue;
@@ -578,10 +578,12 @@ void cards_argv_free(char** av) {
 }
 
 /* Anciennes fiches LOCI (2.24 et avant : « LOCI firmware », 2.25.0 : « LOCI
- * réelle »), devenues des modes de la carte LOCI. */
+ * réelle »), devenues des modes de la carte LOCI ; 2.26.0 : mode « réelle » et
+ * clé « pont », devenus « usb » et « port_usb ». */
 static const struct { const char* old_key; const char* key; } k_cfg_legacy[] = {
     { "loci_emu.elf", "loci.elf" }, { "loci_emu.flash", "loci.fw_flash" },
-    { "loci_emu.usb", "loci.fw_usb" }, { "loci_hw.port", "loci.pont" },
+    { "loci_emu.usb", "loci.fw_usb" }, { "loci_hw.port", "loci.port_usb" },
+    { "loci.pont", "loci.port_usb" },
 };
 
 /* Carte que désigne « carte.<id> » (ancienne fiche LOCI : loci). */
@@ -592,6 +594,7 @@ static const char* cfg_card_id(const char* id) {
 bool cards_cfg_line(cards_state_t* st, const char* key, const char* val, bool* card_seen) {
     for (size_t k = 0; k < sizeof(k_cfg_legacy) / sizeof(k_cfg_legacy[0]); k++)
         if (strcmp(key, k_cfg_legacy[k].old_key) == 0) key = k_cfg_legacy[k].key;
+    if (strcmp(key, "loci.mode") == 0 && strcmp(val, "réelle") == 0) val = LOCI_MODE_HW;
     if (strcmp(key, "carte.loci_emu") == 0 || strcmp(key, "carte.loci_hw") == 0) {
         int i = cards_find("loci");
         if (i < 0) return false;

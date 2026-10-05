@@ -2,7 +2,7 @@
 /**
  * @file card_loci.c
  * @brief Cartouche LOCI en module : fiche du menu (une carte, trois modes :
- *        intégré, firmware co-simulé, cartouche réelle), accès au bus (MIA, TAP,
+ *        intégré, firmware co-simulé, LOCI-USB), accès au bus (MIA, TAP,
  *        DSK, co-simulation) et mise en route (modèle HLE, co-simulation du
  *        firmware, matériel réel) — card_module.h.
  * @author bmarty <bmarty@mailo.com>
@@ -40,13 +40,14 @@ static const card_desc_t k_desc = {
         "loci", "LOCI",
         "Cartouche LOCI : menu de fichiers, émulation Microdisc et cassette depuis une "
         "carte SD ou une clé USB, ACIA en $0380. Modèle intégré, vrai firmware "
-        "co-simulé ou vraie cartouche branchée par une Feather.",
+        "co-simulé ou LOCI-USB (Feather) branchée sur ce PC.",
         "disque", "--loci", -1, -1, 0x03A0, 32, false,
         { { "mode", "Mode", CARD_P_CHOICE, NULL,
             LOCI_MODE_HLE "|" LOCI_MODE_FW "|" LOCI_MODE_HW,
             "intégré : LOCI émulée par Phosphoric. firmware : le vrai firmware RP2040 "
-            "tourne dans l'émulateur (développement). réelle : la vraie cartouche, "
-            "branchée par le pont USB loci-usb (Feather RP2040). Seuls les modes "
+            "tourne dans l'émulateur (développement). usb : une LOCI-USB (Feather "
+            "RP2040) branchée sur ce PC fait tourner le firmware, Phosphoric joue "
+            "l'Oric par l'USB. Seuls les modes "
             "présents dans ce binaire sont proposés." },
           { "menu", "Démarrer sur le menu LOCI", CARD_P_BOOL, NULL, "oui",
             "oui : l'Oric démarre sur le menu de la carte (ROM roms/loci/locirom) ; "
@@ -72,9 +73,9 @@ static const card_desc_t k_desc = {
             "volatile." },
           { "fw_usb", "Image de clé USB", CARD_P_FILE, "--loci-usb-image", "",
             "Image FAT servie au firmware comme clé USB ; vide : aucune." },
-          { "pont", "Port du pont USB (Feather)", CARD_P_TEXT, "--loci-hw", "",
-            "Port série de la Feather (ex. /dev/ttyACM0). Vide : détection automatique "
-            "par son nom USB « LOCI-USB » (Linux). Bouton MENU de la cartouche : F8." } },
+          { "port_usb", "Port de la LOCI-USB", CARD_P_TEXT, "--loci-hw", "",
+            "Port série de la LOCI-USB (Feather, ex. /dev/ttyACM0). Vide : détection "
+            "automatique par son nom USB « LOCI-USB » (Linux). Bouton MENU : F8." } },
         10
     };
 static const card_desc_t* const k_descs[] = { &k_desc };
@@ -171,13 +172,14 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         loci_emu_start(core->loci_emu_path);
         emu->loci_external = true;
     }
-    /* --loci-hw : la VRAIE cartouche derrière le pont USB (loci-usb). Le backend
+    /* --loci-hw : une LOCI-USB (Feather) fait tourner le firmware LOCI, le 6502
+     * émulé lui envoie ses accès par l'USB (protocole loci-usb). Le backend
      * loci_hw.c partage l'interface loci_emu.h : même chemin io_bus/memory, mais
      * chaque accès est un vrai cycle de bus. Présent dans le binaire quand le
      * dépôt loci-usb l'était au build (LOCI_HW, Makefile). */
     if (core->loci_hw_dev) {
         if (!loci_emu_select("hw")) {
-            log_error("--loci-hw : pont USB loci-usb absent de ce binaire (dépôt "
+            log_error("--loci-hw : LOCI-USB absente de ce binaire (dépôt "
                       "~/loci/loci-usb introuvable au build : make LOCI_HW=1 LOCI_USB_DIR=…)");
             return 1;
         }

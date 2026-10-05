@@ -33,30 +33,38 @@ choisi sont affichés :
 |------|-----------|----------|
 | `intégré` | `--loci` | menu au démarrage, image SD, dossier flash, modem picowifi |
 | `firmware` | `--loci-emu ELF` | firmware ELF (obligatoire), image flash, image de clé USB |
-| `réelle` | `--loci-hw PORT` | port du pont USB (Feather) |
+| `usb` | `--loci-hw PORT` | port de la LOCI-USB (Feather) |
 
 Un même binaire contient les trois modes : `firmware` existe quand `~/loci/emul`
-(libemul) était là à la compilation, `réelle` quand `~/loci/loci-usb` y était (pas
+(libemul) était là à la compilation, `usb` quand `~/loci/loci-usb` y était (pas
 sous Windows). Le menu ne propose que les modes présents. Les backends sont choisis
 au lancement (`src/io/loci_backend.c`). `make LOCI_EMU=0` ou `LOCI_HW=0` en retire
 un.
 
-### Vraie cartouche par la Feather (`--loci-hw`, mode `réelle`)
+### LOCI-USB : la Feather (`--loci-hw`, mode `usb`)
 
-Le mode `réelle` pilote la vraie cartouche LOCI par le pont USB loci-usb (Adafruit
-Feather RP2040, recette `~/loci/loci-usb/docs/RECETTE-FEATHER.md`) :
+Une **LOCI-USB** est une LOCI sans interface Oric (ni CN1 ni translateurs), avec un
+second USB : aujourd'hui une Adafruit Feather RP2040 USB Host (5723), demain la carte
+LOCI-USB (`~/loci/loci-usb`). Elle fait tourner le firmware LOCI lui-même (variante
+`LOCI_USB`, ou loci-fw-usb) ; ce n'est **pas** un pont vers une cartouche LOCI 1.3.
+Phosphoric joue l'Oric : son 6502 émulé envoie ses accès `$03xx` et ROM par l'USB-C,
+et le firmware les rejoue dans son chemin de bus habituel ; le port USB-A sert de
+ports USB de la LOCI (clé, clavier, modem). Elle ne s'enfiche pas sur un vrai Oric :
+pour un Oric physique, il faut la LOCI 1.3. Recette :
+`~/loci/loci-usb/docs/RECETTE-FEATHER.md`.
 
 ```bash
 ./oric1-emu --loci-hw /dev/ttyACM0
 ```
 
-Laissé vide, le réglage **Port du pont USB (Feather)** est détecté sous Linux par le
+Laissé vide, le réglage **Port de la LOCI-USB** est détecté sous Linux par le
 nom de produit USB, qui commence par « LOCI-USB » (firmware `feature/loci-usb` ou
-loci-fw-usb). La détection lit seulement `/sys`, sans ouvrir le port. Si aucun pont
-n'est détecté et qu'aucun port n'est indiqué, le menu le signale et refuse
-d'appliquer. Dans `phosphoric.cfg` : `carte.loci=oui`, `loci.mode=réelle`,
-`loci.pont=/dev/ttyACM0`. Les anciennes clés `carte.loci_emu`, `loci_emu.*`,
-`carte.loci_hw` et `loci_hw.port` sont encore lues.
+loci-fw-usb). La détection lit seulement `/sys`, sans ouvrir le port. Si aucune LOCI-USB
+n'est détectée et qu'aucun port n'est indiqué, le menu le signale et refuse
+d'appliquer. Dans `phosphoric.cfg` : `carte.loci=oui`, `loci.mode=usb`,
+`loci.port_usb=/dev/ttyACM0`. Les anciennes clés `carte.loci_emu`, `loci_emu.*`,
+`carte.loci_hw`, `loci_hw.port`, `loci.pont` et la valeur `loci.mode=réelle` sont
+encore lues.
 
 ### Dans le navigateur (build WebAssembly)
 
@@ -159,7 +167,7 @@ prochain `LINES` (10 s au plus, `LOCI_HW_BAL_TIMEOUT_MS`). Exception : le groupe
 ROM est alors rechargé. L'ancien firmware ne capte jamais ces écritures : rien ne
 change pour lui. Bilan en fin de session : écritures captées, commandes.
 
-### Course Φ2 sur la vraie cartouche (`--loci-hw`)
+### Course Φ2 sur la LOCI-USB (`--loci-hw`)
 
 Avec `--loci-hw`, chaque accès `$03xx` est un aller-retour USB pendant lequel le
 6502 émulé est figé : la contrainte Φ2 d'une vraie LOCI (le port d'extension n'a

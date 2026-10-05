@@ -120,7 +120,7 @@ typedef struct cli_opts_s {
     bool loci_enabled;
     const char* loci_flash_root;
     const char* loci_emu_path;   /* --loci-emu : exécute le vrai firmware RP2040 (émulateur) */
-    const char* loci_hw_dev;   /* --loci-hw : VRAIE cartouche via le pont USB loci-usb (backend loci_hw.c) */
+    const char* loci_hw_dev;   /* --loci-hw : LOCI-USB (Feather) par l'USB, protocole loci-usb (backend loci_hw.c) */
     const char* loci_emu_usb_image;   /* --loci-usb-image : image FAT servie comme disque USB émulé */
     const char* loci_emu_cdc_dev;   /* --loci-cdc : dongle CDC (ex. /dev/ttyACM0) servi comme ACIA $0380 */
     const char* loci_emu_flash;   /* --loci-flash : image flash persistante (FS interne 0:) */

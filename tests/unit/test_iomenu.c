@@ -314,9 +314,9 @@ TEST(test_cards_pages) {
     ASSERT_TRUE(m.cards.card[lo].on && !m.cards.card[md].on);
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "LOCI") && surf_has(&surf, "menu LOCI"));
-    /* Mode intégré : les réglages du firmware et de la Feather sont cachés. */
+    /* Mode intégré : les réglages du firmware et de la LOCI-USB sont cachés. */
     ASSERT_TRUE(surf_has(&surf, "Mode") && !surf_has(&surf, "Firmware (ELF)") &&
-                !surf_has(&surf, "Port du pont"));
+                !surf_has(&surf, "Port de la LOCI-USB"));
     /* Paramètre fichier : sélecteur ; « Aucun fichier » vide la valeur. */
     m.param_cursor = 3;                                   /* image SD (après Mode, menu) */
     iom_key(&m, IOM_KEY_ENTER);
@@ -324,16 +324,16 @@ TEST(test_cards_pages) {
     m.browse_cursor = 0;
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[2][0] == '\0');
-    /* Mode réelle (si ce binaire l'a) : seul le port du pont reste, et la
+    /* Mode usb (si ce binaire l'a) : seul le port de la LOCI-USB reste, et la
      * navigation saute les réglages cachés. */
     if (loci_emu_backend_available("hw")) {
         m.param_cursor = 1;
         snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HW);
         iom_draw(&m, &surf);
-        ASSERT_TRUE(surf_has(&surf, "Port du pont") && !surf_has(&surf, "menu LOCI") &&
+        ASSERT_TRUE(surf_has(&surf, "Port de la LOCI-USB") && !surf_has(&surf, "menu LOCI") &&
                     !surf_has(&surf, "Image de carte SD"));
         iom_key(&m, IOM_KEY_DOWN);
-        ASSERT_EQ(m.param_cursor, 10);                    /* pont : dernier réglage */
+        ASSERT_EQ(m.param_cursor, 10);                    /* port_usb : dernier réglage */
         iom_key(&m, IOM_KEY_DOWN);
         ASSERT_EQ(m.param_cursor, 0);                     /* présence */
         snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HLE);

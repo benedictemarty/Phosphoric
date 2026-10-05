@@ -30,7 +30,7 @@ static int tests_failed = 0;
 
 /* Paramètres de la carte LOCI (ordre de la fiche, card_loci.c). */
 enum { LP_MODE, LP_MENU, LP_SD, LP_FLASH, LP_MODEM, LP_PORT, LP_ELF, LP_FW_FLASH, LP_FW_USB,
-       LP_PONT };
+       LP_PORT_USB };
 
 /* Options reconstruites, jointes par des espaces (comparaison simple). */
 static void joined(char** av, char* out, size_t sz) {
@@ -342,7 +342,7 @@ TEST(test_loci_modem_cfg) {
     unlink(path);
 }
 
-/* Pont LOCI-USB de la Feather (--loci-hw) : ttyACM2, à côté du picowifi. */
+/* LOCI-USB (Feather, --loci-hw) : ttyACM2, à côté du picowifi. */
 #define LOCI_USB_FW_PRODUCT "LOCI-USB (bus 6502 pour Phosphoric)"
 
 TEST(test_loci_usb_detect_by_usb_product) {
@@ -364,7 +364,7 @@ TEST(test_loci_usb_detect_by_usb_product) {
 TEST(test_loci_params_order) {
     const card_desc_t* d = cards_get(cards_find("loci"));
     static const char* const keys[] = { "mode", "menu", "sd", "flash", "modem", "port",
-                                        "elf", "fw_flash", "fw_usb", "pont" };
+                                        "elf", "fw_flash", "fw_usb", "port_usb" };
     ASSERT_TRUE(d->nparams == 10);
     for (int p = 0; p < 10; p++) ASSERT_STR(d->param[p].key, keys[p]);
     ASSERT_TRUE(cards_find("loci_emu") < 0 && cards_find("loci_hw") < 0);   /* une seule carte */
@@ -376,12 +376,12 @@ TEST(test_loci_mode_params_shown) {
     memset(&c, 0, sizeof c);
     snprintf(c.value[LP_MODE], CARD_VALUE_MAX, LOCI_MODE_HLE);
     ASSERT_TRUE(cards_param_applies(d, &c, LP_MODE) && cards_param_applies(d, &c, LP_SD));
-    ASSERT_TRUE(!cards_param_applies(d, &c, LP_ELF) && !cards_param_applies(d, &c, LP_PONT));
+    ASSERT_TRUE(!cards_param_applies(d, &c, LP_ELF) && !cards_param_applies(d, &c, LP_PORT_USB));
     snprintf(c.value[LP_MODE], CARD_VALUE_MAX, LOCI_MODE_FW);
     ASSERT_TRUE(cards_param_applies(d, &c, LP_ELF) && cards_param_applies(d, &c, LP_FW_USB));
-    ASSERT_TRUE(!cards_param_applies(d, &c, LP_MODEM) && !cards_param_applies(d, &c, LP_PONT));
+    ASSERT_TRUE(!cards_param_applies(d, &c, LP_MODEM) && !cards_param_applies(d, &c, LP_PORT_USB));
     snprintf(c.value[LP_MODE], CARD_VALUE_MAX, LOCI_MODE_HW);
-    ASSERT_TRUE(cards_param_applies(d, &c, LP_PONT) && cards_param_applies(d, &c, LP_MODE));
+    ASSERT_TRUE(cards_param_applies(d, &c, LP_PORT_USB) && cards_param_applies(d, &c, LP_MODE));
     ASSERT_TRUE(!cards_param_applies(d, &c, LP_MENU) && !cards_param_applies(d, &c, LP_ELF));
     const card_desc_t* md = cards_get(cards_find("microdisc"));   /* autres cartes : tout */
     ASSERT_TRUE(cards_param_applies(md, &c, 0));
@@ -429,7 +429,7 @@ TEST(test_loci_firmware_mode) {
     ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "ELF"));
 }
 
-TEST(test_loci_real_mode) {
+TEST(test_loci_usb_mode) {
     cards_state_t st;
     int lo = cards_find("loci"), md = cards_find("microdisc");
     char buf[256], msg[96];
@@ -440,10 +440,10 @@ TEST(test_loci_real_mode) {
     cards_state_from(&st, NULL, 3, a1);
     ASSERT_TRUE(st.card[lo].on);
     ASSERT_STR(st.card[lo].value[LP_MODE], LOCI_MODE_HW);
-    ASSERT_STR(st.card[lo].value[LP_PONT], "");
+    ASSERT_STR(st.card[lo].value[LP_PORT_USB], "");
     char* a2[] = { "oric1-emu", "--loci-hw=/dev/ttyUSB9", NULL };
     cards_state_from(&st, NULL, 2, a2);
-    ASSERT_STR(st.card[lo].value[LP_PONT], "/dev/ttyUSB9");
+    ASSERT_STR(st.card[lo].value[LP_PORT_USB], "/dev/ttyUSB9");
     /* Groupe « disque » : toujours exclusive avec le Microdisc. */
     cards_set_on(&st, md, true);
     ASSERT_TRUE(!st.card[lo].on);
@@ -452,20 +452,20 @@ TEST(test_loci_real_mode) {
     /* Relance : ni --loci, ni ROM du menu, ni réglages du modèle intégré. */
     char* a0[] = { "oric1-emu", "-r", "roms/loci/locirom", "--loci-flash", "f", NULL };
     snprintf(st.card[lo].value[LP_FLASH], CARD_VALUE_MAX, "f");
-    st.card[lo].value[LP_PONT][0] = '\0';
+    st.card[lo].value[LP_PORT_USB][0] = '\0';
     ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
     char** av = cards_build_argv(&st, 5, a0, NULL);
     joined(av, buf, sizeof buf);
     ASSERT_STR(buf, "oric1-emu -r roms/basic11b.rom --loci-hw /dev/ttyACM2 --no-config-cards");
     cards_argv_free(av);
-    snprintf(st.card[lo].value[LP_PONT], CARD_VALUE_MAX, "/dev/ttyUSB9");
+    snprintf(st.card[lo].value[LP_PORT_USB], CARD_VALUE_MAX, "/dev/ttyUSB9");
     av = cards_build_argv(&st, 1, a0, NULL);
     joined(av, buf, sizeof buf);
     ASSERT_STR(buf, "oric1-emu --loci-hw /dev/ttyUSB9 --no-config-cards");
     cards_argv_free(av);
-    /* Aucun pont branché, port vide : signalé, et la cartouche n'est pas relancée. */
+    /* Aucune LOCI-USB branchée, port vide : signalé, et LOCI n'est pas relancée. */
     fake_sysfs(false);
-    st.card[lo].value[LP_PONT][0] = '\0';
+    st.card[lo].value[LP_PORT_USB][0] = '\0';
     ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "LOCI-USB"));
     av = cards_build_argv(&st, 1, a0, NULL);
     joined(av, buf, sizeof buf);
@@ -485,14 +485,14 @@ TEST(test_loci_mode_cfg) {
     cards_state_defaults(&st);
     cards_set_on(&st, lo, true);
     snprintf(st.card[lo].value[LP_MODE], CARD_VALUE_MAX, LOCI_MODE_HW);
-    snprintf(st.card[lo].value[LP_PONT], CARD_VALUE_MAX, "/dev/ttyACM5");
+    snprintf(st.card[lo].value[LP_PORT_USB], CARD_VALUE_MAX, "/dev/ttyACM5");
     snprintf(st.card[lo].value[LP_SD], CARD_VALUE_MAX, "carte.img");   /* autre mode : pas écrit */
     cards_cfg_write(&st, f);
     fclose(f);
     ASSERT_TRUE(cards_cfg_read(path, &back, seen));
     ASSERT_TRUE(back.card[lo].on && seen[lo]);
     ASSERT_STR(back.card[lo].value[LP_MODE], LOCI_MODE_HW);
-    ASSERT_STR(back.card[lo].value[LP_PONT], "/dev/ttyACM5");
+    ASSERT_STR(back.card[lo].value[LP_PORT_USB], "/dev/ttyACM5");
     ASSERT_STR(back.card[lo].value[LP_SD], "");
     /* Anciennes fiches « LOCI firmware » et « LOCI réelle » : modes de LOCI. */
     f = fopen(path, "w");
@@ -510,12 +510,18 @@ TEST(test_loci_mode_cfg) {
     fclose(f);
     ASSERT_TRUE(cards_cfg_read(path, &back, seen));
     ASSERT_STR(back.card[lo].value[LP_MODE], LOCI_MODE_HW);
-    ASSERT_STR(back.card[lo].value[LP_PONT], "/dev/ttyACM9");
+    ASSERT_STR(back.card[lo].value[LP_PORT_USB], "/dev/ttyACM9");
+    f = fopen(path, "w");                       /* 2.26.0 : mode « réelle », clé « pont » */
+    fprintf(f, "carte.loci=oui\nloci.mode=réelle\nloci.pont=/dev/ttyACM4\n");
+    fclose(f);
+    ASSERT_TRUE(cards_cfg_read(path, &back, seen));
+    ASSERT_STR(back.card[lo].value[LP_MODE], LOCI_MODE_HW);
+    ASSERT_STR(back.card[lo].value[LP_PORT_USB], "/dev/ttyACM4");
     unlink(path);
 }
 
 int main(void) {
-    /* Modes firmware et réelle de LOCI : proposés selon les backends présents ;
+    /* Modes firmware et usb de LOCI : proposés selon les backends présents ;
      * le test fait comme si le binaire avait les deux. */
     setenv("PHOSPHORIC_TEST_LOCI_BACKENDS", "emul,hw", 1);
     printf("=== Registre des cartes d'extension ===\n");
@@ -537,7 +543,7 @@ int main(void) {
     RUN(test_loci_mode_params_shown);
     RUN(test_loci_mode_cycles_available_only);
     RUN(test_loci_firmware_mode);
-    RUN(test_loci_real_mode);
+    RUN(test_loci_usb_mode);
     RUN(test_loci_mode_cfg);
     printf("\nResults: %d passed, %d failed\n", tests_passed, tests_failed);
     return tests_failed ? 1 : 0;

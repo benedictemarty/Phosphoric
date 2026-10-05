@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.26.0
+Current Version: 2.26.1
 Release Date: 2026-10-05
-Status: Stable (**Une carte LOCI, trois modes — 2.26.0**. Réglage Mode de la carte LOCI : intégré (--loci) / firmware (--loci-emu) / réelle (--loci-hw, Feather) ; réglages du mode seuls affichés ; fiches loci_emu/loci_hw retirées (anciennes clés cfg lues). Backends LOCI choisis au lancement (loci_backend.c, loci_be_rename.h) : un binaire contient stub + emul + hw ; LOCI_HW automatique. Vérifié sur la vraie Feather. test-cards 16→20.)
+Status: Stable (**LOCI-USB — 2.26.1**. Mode réelle → usb, réglage « Port de la LOCI-USB » (loci.port_usb ; loci.mode=réelle et loci.pont encore lus) ; textes corrigés : la Feather fait tourner le firmware LOCI, Phosphoric joue l'Oric par l'USB, pas un pont vers une LOCI 1.3.)
+Status (prev): Stable (**Une carte LOCI, trois modes — 2.26.0**. Réglage Mode de la carte LOCI : intégré (--loci) / firmware (--loci-emu) / réelle (--loci-hw, Feather) ; réglages du mode seuls affichés ; fiches loci_emu/loci_hw retirées (anciennes clés cfg lues). Backends LOCI choisis au lancement (loci_backend.c, loci_be_rename.h) : un binaire contient stub + emul + hw ; LOCI_HW automatique. Vérifié sur la vraie Feather. test-cards 16→20.)
 Status (prev): Stable (**LOCI réelle (Feather) dans F1 — 2.25.0**. Fiche loci_hw « LOCI réelle » (--loci-hw), visible avec le backend hw seulement, groupe disque ; port du pont USB détecté par le produit « LOCI-USB… » dans /sys (loci_usb_detect) ou imposé ; pont absent signalé par le menu ; IOM_CARDS 12→16 ; test-cards 13→16.)
 Status (prev): Stable (**--loci-hw : attente BAL corrigée — 2.24.1**. Le groupe 2 (Console, exécuté par le kernel 6502, ADR-004 de loci-fw) n'est plus attendu : la boucle figeait le 6502 jusqu'au plafond (DIR : 368 002 → 31 545 requêtes en co-sim) ; plafond de 5000 lectures remplacé par 10 s réelles (LOCI_HW_BAL_TIMEOUT_MS). test-loci-hw 17.)
 Status (prev): Stable (**--loci-hw : BAL de loci-fw — 2.24.0**. loci_emu_rom_write transmet les écritures $FF00-$FFCF (WR) ; SERVED → cache ROM mis à jour sur place ; commande en $FF00 attendue par RD non caché jusqu'à 0 ; gen8 du dispatcher → rechargement. Kernel loci-fw émulé (lot U1) : « LOCI-FW V0.2.0 » + invite. test-loci-hw-timing → test-loci-hw (16).)
