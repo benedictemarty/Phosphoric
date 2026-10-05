@@ -120,7 +120,7 @@ typedef struct cli_opts_s {
     bool loci_enabled;
     const char* loci_flash_root;
     const char* loci_emu_path;   /* --loci-emu: runs the real RP2040 firmware (emulator) */
-    const char* loci_hw_dev;   /* --loci-hw: REAL cartridge via the loci-usb USB bridge (backend loci_hw.c) */
+    const char* loci_hw_dev;   /* --loci-hw: LOCI-USB (Feather) over USB, loci-usb protocol (backend loci_hw.c) */
     const char* loci_emu_usb_image;   /* --loci-usb-image: FAT image served as the emulated USB disk */
     const char* loci_emu_cdc_dev;   /* --loci-cdc: CDC dongle (e.g. /dev/ttyACM0) served as ACIA $0380 */
     const char* loci_emu_flash;   /* --loci-flash: persistent flash image (internal FS 0:) */
@@ -128,7 +128,7 @@ typedef struct cli_opts_s {
     const char* loci_web_url;   /* loci-webdisk archi B: native LOCI web disk */
     const char* loci_web_base;   /* Route B: server root for the « W: Web disks » device */
     int loci_mia_win_lo; int loci_mia_win_hi;   /* -1 = not set (open window) */
-    int loci_serve_subticks; int loci_latch_subtick;   /* -1 = phase model off */
+    int loci_serve_cycles; int loci_tdsr_ns;   /* -1 = phase model off */
     int loci_serve_jitter; unsigned loci_jitter_seed;   /* -1 = no jitter */
     int64_t trace_max;
     int64_t trace_ring;   /* --trace-ring N: keep the LAST N instructions */

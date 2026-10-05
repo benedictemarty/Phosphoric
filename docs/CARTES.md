@@ -93,7 +93,10 @@ name another card. The bus order is also the order of access priority and of the
 ## Current cards
 
 `microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco` (+ ORICON), `sp0256`,
-`mea8000`, `loci_emu` (menu entry only), `ula_ng`. For some of them, a part stays in
-the core because other parts of the emulator read it: options, state or tick of
-Microdisc, Jasmin and LOCI; state of the ACIA and of the ULA-NG (details in
+`mea8000`, `ula_ng`. The `loci` card has three modes (2.26.0: the `loci_emu` and
+`loci_hw` entries became its `firmware` and `usb` modes); a parameter specific to
+one mode is shown, passed on at restart and saved only in that mode (`k_loci_mode_params`,
+`cards_param_applies`). For some of them, a part stays in the core because other
+parts of the emulator read it: options, state or tick of Microdisc, Jasmin and
+LOCI; state of the ACIA and of the ULA-NG (details in
 `docs/specs/CARD_MODULES.md`).

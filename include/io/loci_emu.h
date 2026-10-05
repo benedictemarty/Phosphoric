@@ -103,6 +103,13 @@ bool    loci_emu_io_page(void);
 bool    loci_emu_io_read(uint16_t address, uint8_t *out);
 void    loci_emu_io_write(uint16_t address, uint8_t value);
 
+/* Φ2 race measured on the real hardware (--loci-hw, firmware caps TIMING): true if
+ * the LAST $03xx read served by the cartridge put its data after the 6502
+ * latch AND the faithful mode (LOCI_HW_FAITHFUL=1) is active — the caller then
+ * returns open-bus (the cartridge has already consumed the read). Reset to false
+ * when read. The other backends always return false. */
+bool    loci_emu_read_lost(void);
+
 /* Co-simulated Microdisc $0310-$0314/$0318: the WD1793 controller emulated by the REAL
  * firmware (oric/dsk.c) serves the 6502 — sector read/write, seek, RNF,
  * end-of-command IRQ (drained as for the API). Until the boot is
@@ -169,9 +176,17 @@ bool loci_emu_mou_armed(void);
  * it would be fragile. `keycodes` = 6 HID usages (0 = empty). */
 bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6]);
 bool loci_emu_kbd_armed(void);
-/* ── REAL HARDWARE backend (loci_hw.c, `make LOCI_HW=1`, --loci-hw DEV) ──
- * Name of the compiled backend: "emul" (loci_emu.c), "stub" (loci_emu_stub.c) or "hw"
- * (loci_hw.c, source ~/loci/loci-usb/phosphoric/). main.c rejects --loci-hw elsewhere. */
+/* ── Backend choice at launch (dispatch in loci_backend.c) ──
+ * A native binary contains the stub (no external LOCI) and, depending on the build, the
+ * co-simulated firmware "emul" (loci_emu.c, or loci_neo.c with LOCI_NEO=1: same
+ * slot) and the LOCI-USB "hw" (loci_hw.c: Feather RP2040 running the
+ * LOCI firmware, loci-usb protocol over USB: --loci-hw DEV). Before any
+ * loci_emu_select, the stub is in place. */
+bool loci_emu_backend_available(const char *backend);
+/* Selects @p backend ("emul" or "hw") before loci_emu_start; false (without
+ * a message: the caller gives it) if it is missing from this binary. */
+bool loci_emu_select(const char *backend);
+/* Name of the backend in place: "stub", "emul", "neo" or "hw". */
 const char *loci_emu_backend_name(void);
 /* nRESET edges driven by LOCI (physical MENU button, freeze) since the last call:
  * the host then resets its 6502 (once per frame, after loci_emu_irq_take).

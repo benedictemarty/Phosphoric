@@ -29,7 +29,6 @@
     X(mageco,  1) \
     X(sp0256,  1) \
     X(mea8000, 1) \
-    X(loci_emu, 0) \
     X(ula_ng,  0)
 
 /* Index of each card: emu->card_on[CARD_IDX_<id>] tells whether it is present. */

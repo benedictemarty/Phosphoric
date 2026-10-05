@@ -24,6 +24,48 @@ verified against it; known discrepancies are listed at the end of this document.
 ./oric1-emu -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
+### One card, three modes (F1 menu)
+
+In the F1 menu, the **LOCI** card has a **Mode** setting; only the settings of the
+selected mode are shown:
+
+| Mode | Equivalent to | Settings |
+|------|-----------|----------|
+| `intégré` | `--loci` | boot menu, SD image, flash folder, picowifi modem |
+| `firmware` | `--loci-emu ELF` | firmware ELF (required), flash image, USB stick image |
+| `usb` | `--loci-hw PORT` | LOCI-USB port (Feather) |
+
+A single binary contains all three modes: `firmware` exists when `~/loci/emul`
+(libemul) was present at build time, `usb` when `~/loci/loci-usb` was (not
+on Windows). The menu only offers the modes that are present. Backends are selected
+at launch (`src/io/loci_backend.c`). `make LOCI_EMU=0` or `LOCI_HW=0` removes
+one.
+
+### LOCI-USB: the Feather (`--loci-hw`, mode `usb`)
+
+A **LOCI-USB** is a LOCI without the Oric interface (no CN1, no level translators), with a
+second USB port: today an Adafruit Feather RP2040 USB Host (5723), tomorrow the
+LOCI-USB board (`~/loci/loci-usb`). It runs the LOCI firmware itself (`LOCI_USB`
+variant, or loci-fw-usb); it is **not** a bridge to a LOCI 1.3 cartridge.
+Phosphoric plays the Oric: its emulated 6502 sends its `$03xx` and ROM accesses over USB-C,
+and the firmware replays them through its usual bus path; the USB-A port serves as
+the LOCI's USB ports (stick, keyboard, modem). It does not plug into a real Oric:
+for a physical Oric, you need the LOCI 1.3. Procedure:
+`~/loci/loci-usb/docs/RECETTE-FEATHER.md`.
+
+```bash
+./oric1-emu --loci-hw /dev/ttyACM0
+```
+
+When left empty, the **Port de la LOCI-USB** (LOCI-USB port) setting is detected on Linux from the
+USB product name, which starts with "LOCI-USB" (firmware `feature/loci-usb` or
+loci-fw-usb). Detection only reads `/sys`, without opening the port. If no LOCI-USB
+is detected and no port is given, the menu reports it and refuses
+to apply. In `phosphoric.cfg`: `carte.loci=oui`, `loci.mode=usb`,
+`loci.port_usb=/dev/ttyACM0`. The legacy keys `carte.loci_emu`, `loci_emu.*`,
+`carte.loci_hw`, `loci_hw.port`, `loci.pont` and the value `loci.mode=réelle` are
+still read.
+
 ### In the browser (WebAssembly build)
 
 `phosphoric.html?loci=1` (or the **LOCI** button in the rail) starts on the LOCI
@@ -105,6 +147,57 @@ by `MAP_TUNE_*`. A badly tuned `tior` corrupts the picowifi ACIA window —
 a real hardware symptom, reproduced: `--loci-mia-window LO-HI` defines the
 reliable range (default 0-31 = always reliable); outside the window, `$0380` reads
 `$FF` and ignores writes.
+
+`--loci-serve-timing SERVE[,TDSR]` replaces the window with the ns timeline of
+`bus_timing.h` (the same one as `--loci-hw`, below): SERVE in LOCI core 1 cycles
+(23 measured on hardware), TDSR in ns (100). `tior` and `tiod` enter into it;
+`--loci-serve-jitter AMP[,SEED]` adds ± AMP cycles, seeded. Default boundary:
+81/82 serve cycles. Details: [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
+
+### loci-fw BAL mailbox (`--loci-hw`)
+
+With the **loci-fw** firmware (LOCI_USB variant, caps `FIRMWARE`), the 6502 calls
+the API by writing to page `$FF` (`$FF00-$FFCF`). `--loci-hw` forwards these writes
+(`WR`); a captured write comes back with `LUP_F_SERVED`, and the byte is copied into
+the ROM cache without reloading it. A non-zero byte at `$FF00` launches a command:
+Phosphoric re-reads `$FF00` (uncached `RD`) until it is 0, which avoids waiting for the
+next `LINES` (10 s at most, `LOCI_HW_BAL_TIMEOUT_MS`). Exception: group 2
+(Console) is never handled by the firmware, the 6502 kernel executes it
+(loci-fw ADR-004); Phosphoric therefore does not wait for it. The dispatcher changes `gen8` when returning its results, and the ROM
+cache is then reloaded. The old firmware never captures these writes: nothing
+changes for it. End-of-session summary: captured writes, commands.
+
+### Φ2 race on the LOCI-USB (`--loci-hw`)
+
+With `--loci-hw`, every `$03xx` access is a USB round trip during which the
+emulated 6502 is frozen: the Φ2 constraint of a real LOCI (the expansion port has
+no RDY, the data must be driven before the 6502 captures it) disappears. When
+the firmware advertises `caps & LUP_CAP_TIMING` (loci-usb, TIMING/RDT/WRT commands),
+Phosphoric reconstructs it from the core 1 cycles measured with SysTick (`serve`,
+`act`), on a ns timeline whose origin is the falling edge of Φ2:
+
+| Step | Instant | Source |
+|---|---|---|
+| action word in the FIFO | (22 + tior) PIO ticks + 2 sys cycles | `mia.pio` counts (estimated) |
+| data ready (DMA triggered) | + `LOCI_HW_POLL_NS` (0, not measured) + `serve` | SysTick |
+| data on the bus | max(ready, Φ2 rise) + (3 + tiod) ticks | `mia_io_read` (estimated) |
+| 6502 deadline | period − `LOCI_HW_TDSR_NS` (100) | 6502 datasheet at 1 MHz |
+
+- **PIO tick** = 1 / (Φ2cfg × 30), where Φ2cfg is the firmware setting (**4000 kHz
+  by default**, `cpu.c`): 8.33 ns. This is not the Oric's clock.
+- **Oric Φ2**: period 1 / `LOCI_HW_PHI2_KHZ` (1000), high during the last third
+  (`LOCI_HW_PHI2_HIGH_NS`, period / 3: the ULA gives 2/3 low, 1/3 high).
+- **Late read**: the data arrives after the deadline. **Stale iopage**: a
+  `$03xx` access arrives less than `act` 6502 cycles after the previous one (granularity:
+  the instruction).
+
+Detection only by default: log of the first 10 cases + end-of-session summary
+(minimum margin in ns). `LOCI_HW_FAITHFUL=1` returns open-bus on a late
+read. Measurements on the Feather 5723: serve 23 cycles → data at ≈ 708 ns, just
+after the Φ2 rise, margin ≈ 190 ns; act 61-118 cycles for a read, 429 for a
+RAMX write (3.6 µs: a `$03xx` access less than 4 6502 cycles later reads a stale
+iopage). The PIO counts and the setup time of the Oric's 6502 at 2 MHz are
+estimates, to be confirmed by a measurement on a real bus.
 
 ## Known discrepancies (out of scope)
 

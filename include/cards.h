@@ -19,7 +19,7 @@
 
 typedef struct emulator_s emulator_t;
 
-#define CARD_PARAMS_MAX 5
+#define CARD_PARAMS_MAX 10
 #define CARD_VALUE_MAX  192
 
 typedef enum {
@@ -81,8 +81,24 @@ void cards_set_on(cards_state_t* st, int i, bool on);
 
 /* Default value of @p p in @p out (for CARD_P_CHOICE: its first choice). */
 void cards_param_default(const card_param_t* p, char* out, size_t outsz);
-/* Next value of a CARD_P_CHOICE parameter (after the last one: the first). */
+/* Next value of a CARD_P_CHOICE parameter (after the last one: the first),
+ * skipping the LOCI modes whose backend is missing from this binary. */
 void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
+
+/* Mode of the LOCI card (« mode » parameter, the first one): built-in model
+ * (--loci), co-simulated firmware (--loci-emu ELF) or LOCI-USB (--loci-hw PORT):
+ * a LOCI without an Oric interface (Feather RP2040 today, LOCI-USB card
+ * tomorrow) running the LOCI firmware, with Phosphoric playing the Oric over USB.
+ * The last two only exist if the binary contains their backend
+ * (loci_emu_backend_available). */
+#define LOCI_MODE_HLE "intégré"
+#define LOCI_MODE_FW  "firmware"
+#define LOCI_MODE_HW  "usb"
+
+/* Parameter @p p of card @p d applies with settings @p c: parameters
+ * specific to a LOCI mode only apply in that mode (the menu only shows
+ * those, the restart and the configuration only use those). */
+bool cards_param_applies(const card_desc_t* d, const card_choice_t* c, int p);
 
 /* Modem of the LOCI card (« modem » parameter): none, simulated picowifi, or
  * real picowifi plugged into the host (« port » port, empty: USB detection). */
@@ -92,7 +108,9 @@ void cards_choice_next(const card_param_t* p, char* value, size_t valuesz);
 
 /* I/O address conflicts between active cards: message in @p out
  * (« Mageco MIDI et MEA8000 se chevauchent en $03FE »), false if none.
- * Also reports a real LOCI modem that cannot be found (no picowifi plugged in). */
+ * Also reports, for the LOCI card: a real modem that cannot be found (no picowifi
+ * plugged in), a mode missing from this binary, the firmware without an ELF file
+ * and a LOCI-USB that cannot be found (none plugged in and no port given). */
 bool cards_conflict(const cards_state_t* st, char* out, size_t outsz);
 
 /* Launch options to restart with @p st: those of @p argv without any card

@@ -93,7 +93,7 @@ typedef struct {
 } iom_action_t;
 
 /* ── Displayed state, filled by the caller (iomenu_glue.c) ─────────────── */
-#define IOM_CARDS 12
+#define IOM_CARDS 16   /* = cards_state_t.card[] */
 
 typedef struct {
     char name[24];             /* « Microdisc », « ACIA 6551 »… */

@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_loci.c
- * @brief LOCI cartridge as a module: menu entry, bus access (MIA, TAP, DSK,
- *        co-simulation) and setup (HLE model, firmware co-simulation,
+ * @brief LOCI cartridge as a module: menu entry (one card, three modes:
+ *        built-in, co-simulated firmware, LOCI-USB), bus access (MIA, TAP,
+ *        DSK, co-simulation) and setup (HLE model, firmware co-simulation,
  *        real hardware) — card_module.h.
  * @author bmarty <bmarty@mailo.com>
  *
@@ -33,12 +34,22 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+/* Mode-specific parameters: cards.c (k_loci_mode_params) says which mode; the
+ * menu only shows those of the selected mode. « mode » must stay first. */
 static const card_desc_t k_desc = {
         "loci", "LOCI",
-        "Cartouche LOCI (modèle intégré) : menu de fichiers, émulation Microdisc et "
-        "cassette depuis une carte SD ou une clé USB, ACIA en $0380.",
+        "Cartouche LOCI : menu de fichiers, émulation Microdisc et cassette depuis une "
+        "carte SD ou une clé USB, ACIA en $0380. Modèle intégré, vrai firmware "
+        "co-simulé ou LOCI-USB (Feather) branchée sur ce PC.",
         "disque", "--loci", -1, -1, 0x03A0, 32, false,
-        { { "menu", "Démarrer sur le menu LOCI", CARD_P_BOOL, NULL, "oui",
+        { { "mode", "Mode", CARD_P_CHOICE, NULL,
+            LOCI_MODE_HLE "|" LOCI_MODE_FW "|" LOCI_MODE_HW,
+            "intégré : LOCI émulée par Phosphoric. firmware : le vrai firmware RP2040 "
+            "tourne dans l'émulateur (développement). usb : une LOCI-USB (Feather "
+            "RP2040) branchée sur ce PC fait tourner le firmware, Phosphoric joue "
+            "l'Oric par l'USB. Seuls les modes "
+            "présents dans ce binaire sont proposés." },
+          { "menu", "Démarrer sur le menu LOCI", CARD_P_BOOL, NULL, "oui",
             "oui : l'Oric démarre sur le menu de la carte (ROM roms/loci/locirom) ; "
             "non : BASIC direct, LOCI reste disponible." },
           { "sd", "Image de carte SD", CARD_P_FILE, "--loci-sdimg", "",
@@ -54,8 +65,18 @@ static const card_desc_t k_desc = {
             "USB branché sur ce PC. Remplace la carte ACIA 6551." },
           { "port", "Port du picowifi réel", CARD_P_TEXT, NULL, "",
             "Port série du picowifi réel (ex. /dev/ttyACM0). Vide : détection automatique "
-            "par son nom USB « PicoWifiModemUSB » (Linux)." } },
-        5
+            "par son nom USB « PicoWifiModemUSB » (Linux)." },
+          { "elf", "Firmware (ELF)", CARD_P_FILE, "--loci-emu", "",
+            "Fichier loci-firmware.elf compilé pour RP2040 (obligatoire)." },
+          { "fw_flash", "Image flash du firmware", CARD_P_FILE, "--loci-emu-flash", "",
+            "Mémoire flash persistante du firmware ; vide : <ELF>.flash ; « - » : "
+            "volatile." },
+          { "fw_usb", "Image de clé USB", CARD_P_FILE, "--loci-usb-image", "",
+            "Image FAT servie au firmware comme clé USB ; vide : aucune." },
+          { "port_usb", "Port de la LOCI-USB", CARD_P_TEXT, "--loci-hw", "",
+            "Port série de la LOCI-USB (Feather, ex. /dev/ttyACM0). Vide : détection "
+            "automatique par son nom USB « LOCI-USB » (Linux). Bouton MENU : F8." } },
+        10
     };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
@@ -80,6 +101,10 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->card_on[CARD_IDX_microdisc] && loci_addr_in_dsk(addr)) return true;
     return false;
 }
+/* Faithful --loci-hw: read served after the 6502 latch → open bus. */
+static uint8_t hw_lost(emulator_t* emu, uint8_t v) {
+    return loci_emu_read_lost() ? memory_open_bus(&emu->memory) : v;
+}
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     /* Co-sim backend (--loci-emu): the MIA $03xx window is served by the REAL
      * RP2040 firmware (emulator) instead of the behavioural backend (loci_core).
@@ -92,15 +117,15 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
         loci_emu_reflect_nirq(emu);
         return drv ? v : memory_open_bus(&emu->memory);
     }
-    if (loci_emu_ramx_claims(addr)) return loci_emu_api_read(addr);
-    if (loci_addr_in_mia(addr)) return loci_emu_active() ? loci_emu_api_read(addr)
+    if (loci_emu_ramx_claims(addr)) return hw_lost(emu, loci_emu_api_read(addr));
+    if (loci_addr_in_mia(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_api_read(addr))
                                                          : loci_read(&emu->loci, addr);
-    if (loci_addr_in_tap(addr)) return loci_emu_active() ? loci_emu_tap_read(addr)
+    if (loci_addr_in_tap(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_tap_read(addr))
                                                          : loci_tap_read(&emu->loci, addr);
     /* DSK (guaranteed by claims). In co-sim, the WD1793 is the firmware's (oric/dsk.c):
      * a .dsk mounted on A: in the REAL LOCI menu is finally read by the 6502. */
     if (loci_emu_active()) {
-        uint8_t v = loci_emu_dsk_read(addr);
+        uint8_t v = hw_lost(emu, loci_emu_dsk_read(addr));
         loci_emu_reflect_nirq(emu);   /* end of sector: the IRQ is raised on the LAST DATA read */
         return v;
     }
@@ -136,19 +161,26 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
      * boot + banner). Bus co-sim not wired yet -> the behavioural backend
      * stays active in parallel for the runtime. */
     if (core->loci_emu_path) {
+        if (!loci_emu_select("emul")) {
+            log_error("--loci-emu : firmware co-simulé absent de ce binaire (libemul "
+                      "introuvable au build : make LOCI_EMU=1 LOCI_EMUL_DIR=…)");
+            return 1;
+        }
         if (core->loci_emu_usb_image) loci_emu_set_usb_image(core->loci_emu_usb_image);
         if (core->loci_emu_cdc_dev) loci_emu_set_cdc_device(core->loci_emu_cdc_dev);
         if (core->loci_emu_flash) loci_emu_set_flash_image(core->loci_emu_flash);
         loci_emu_start(core->loci_emu_path);
         emu->loci_external = true;
     }
-    /* --loci-hw: the REAL cartridge behind the USB bridge (loci-usb). The
-     * loci_hw.c backend shares the loci_emu.h interface: same io_bus/memory path, but
-     * each access is a real bus cycle. Requires a `make LOCI_HW=1` binary. */
+    /* --loci-hw: a LOCI-USB (Feather) runs the LOCI firmware; the emulated 6502
+     * sends it its accesses over USB (loci-usb protocol). The loci_hw.c backend
+     * shares the loci_emu.h interface: same io_bus/memory path, but
+     * each access is a real bus cycle. Present in the binary when the
+     * loci-usb repository was present at build time (LOCI_HW, Makefile). */
     if (core->loci_hw_dev) {
-        if (strcmp(loci_emu_backend_name(), "hw") != 0) {
-            log_error("--loci-hw : ce binaire embarque le backend LOCI « %s », pas « hw » — "
-                      "recompiler avec `make LOCI_HW=1`", loci_emu_backend_name());
+        if (!loci_emu_select("hw")) {
+            log_error("--loci-hw : LOCI-USB absente de ce binaire (dépôt "
+                      "~/loci/loci-usb introuvable au build : make LOCI_HW=1 LOCI_USB_DIR=…)");
             return 1;
         }
         if (loci_emu_start(core->loci_hw_dev) != 0) return 1;
@@ -172,18 +204,17 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                      "corrupted outside it; tune via MAP_TUNE_TIOR / ADJ_SCAN)",
                      emu->loci.mia_tior_lo, emu->loci.mia_tior_hi);
         }
-        if (core->loci_serve_subticks >= 0) {
-            /* Sub-cycle PHI2 race model (epic B) — replaces the window. */
-            loci_set_serve_timing(&emu->loci, (uint8_t)core->loci_serve_subticks,
-                                  (uint8_t)core->loci_latch_subtick);
-            log_info("LOCI MIA phase model: serve=%d latch=%d subticks (PHI2x%d) — "
-                     "picowifi $0380 propre ssi tior+serve<=latch",
-                     emu->loci.mia_serve_subticks, emu->loci.mia_latch_subtick,
-                     BUS_PHI2_SUBTICKS);
+        if (core->loci_serve_cycles >= 0) {
+            /* Sub-cycle PHI2 race model (bus_timing.h) — replaces the window. */
+            loci_set_serve_timing(&emu->loci, (uint16_t)core->loci_serve_cycles,
+                                  (uint16_t)core->loci_tdsr_ns);
+            log_info("LOCI MIA phase model: serve=%d cycles, tDSR=%d ns — picowifi $0380 "
+                     "propre ssi la donnée précède la fin du cycle moins tDSR",
+                     emu->loci.mia_serve_cycles, emu->loci.mia_tdsr_ns);
         }
         if (core->loci_serve_jitter >= 0) {
             loci_set_serve_jitter(&emu->loci, (uint8_t)core->loci_serve_jitter, core->loci_jitter_seed);
-            log_info("LOCI MIA serve jitter: +/-%d subticks (seed=%u) — ratés "
+            log_info("LOCI MIA serve jitter: +/-%d cycles (seed=%u) — ratés "
                      "occasionnels reproductibles pres du latch",
                      emu->loci.mia_serve_jitter, core->loci_jitter_seed);
         }

@@ -202,19 +202,23 @@ TEST(test_no_loci_no_race) {
     PASS();
 }
 
-/* ── Epic B / Phase 1: sub-cycle PHI2 race model (physically grounded) ── */
+/* ── Sub-cycle PHI2 race model (bus_timing.h, ns timeline) ──
+ * PIO tick 8.33 ns (Φ2cfg 4000 kHz), core cycle 8.33 ns (120 MHz), PHI2 high from
+ * 667 to 1000 ns, deadline 900 ns (tDSR 100). Data = max(ready, 683 ns) + 25 ns,
+ * ready = (22 + tior) ticks + 2 cycles + serve. */
 
-/* The serve arrives at subtick (tior + serve_subticks); clean iff ≤ latch. */
+/* tior delays the push: serve 60 cycles clean at tior 0 (725 ns), missed at tior 31
+ * (958 ns). */
 TEST(test_phase_model_serve_race) {
     setup();
-    loci_set_serve_timing(&g_emu->loci, 20, 27);   /* serve=20, latch=27 subticks */
+    loci_set_serve_timing(&g_emu->loci, 60, 100);
 
-    g_emu->loci.mia_tior = 0;                        /* valid=20 ≤ 27 → clean */
+    g_emu->loci.mia_tior = 0;                        /* data at 725 ns → clean */
     ASSERT_TRUE(loci_mia_io_reliable(&g_emu->loci));
     inject_rx(0x7E);
     ASSERT_EQ(bus_read(0x0380), 0x7E);              /* real data */
 
-    g_emu->loci.mia_tior = 8;                        /* valid=28 > 27 → race lost */
+    g_emu->loci.mia_tior = 31;                       /* 958 ns > 900 → race lost */
     ASSERT_FALSE(loci_mia_io_reliable(&g_emu->loci));
     inject_rx(0x99);
     g_emu->memory.last_bus_value = 0x44;
@@ -223,26 +227,36 @@ TEST(test_phase_model_serve_race) {
     PASS();
 }
 
-/* Reproduces the bug report: same board, `-Os` build (short serve) works,
- * `-O2` build (long serve) misses — independently of any tior setting. */
-TEST(test_phase_reproduces_build_os_vs_o2) {
+/* Realistic serve durations all pass: 23 (measured on hardware), 26 and
+ * 36 (the -Os/-O2 hypothesis of the bug report, which the firmware author attributes
+ * to a mapping defect rather than to timing). The boundary is at 81/82 cycles. */
+TEST(test_phase_realistic_serves_are_clean) {
     setup();
     g_emu->loci.mia_tior = 0;
-
-    loci_set_serve_timing(&g_emu->loci, 26, 27);   /* -Os: serve 26 cyc ≤ latch → OK */
+    loci_set_serve_timing(&g_emu->loci, 23, 100);
     ASSERT_TRUE(loci_mia_io_reliable(&g_emu->loci));
-
-    loci_set_serve_timing(&g_emu->loci, 36, 27);   /* -O2: serve 36 cyc > latch → KO */
+    loci_set_serve_timing(&g_emu->loci, 26, 100);
+    ASSERT_TRUE(loci_mia_io_reliable(&g_emu->loci));
+    loci_set_serve_timing(&g_emu->loci, 36, 100);
+    ASSERT_TRUE(loci_mia_io_reliable(&g_emu->loci));
+    loci_set_serve_timing(&g_emu->loci, 82, 100);
     ASSERT_FALSE(loci_mia_io_reliable(&g_emu->loci));
+    loci_set_serve_timing(&g_emu->loci, 82, 50);    /* tDSR 50 ns: deadline 950 → clean */
+    ASSERT_TRUE(loci_mia_io_reliable(&g_emu->loci));
     teardown();
     PASS();
 }
 
-/* The raw race predicate (bus_timing.h): valid ≤ latch wins. */
-TEST(test_bus_serve_wins_race_predicate) {
-    ASSERT_TRUE(bus_serve_wins_race(0, 27));         /* on-board: always */
-    ASSERT_TRUE(bus_serve_wins_race(27, 27));        /* exactly at the latch */
-    ASSERT_FALSE(bus_serve_wins_race(28, 27));       /* misses by one subtick */
+/* The raw timeline (bus_timing.h). */
+TEST(test_bus_loci_chronology) {
+    bus_loci_timing_t t = bus_loci_timing_default();
+    ASSERT_EQ(bus_loci_deadline_ps(&t), 900000);
+    ASSERT_EQ(bus_loci_read_valid_ps(&t, 0, 0, 0), 708333);    /* waits for the PHI2 rise */
+    ASSERT_EQ(bus_loci_read_valid_ps(&t, 0, 0, 23), 708333);   /* measured serve: same */
+    ASSERT_TRUE(bus_loci_read_in_time(&t, 0, 0, 81));          /* 899 999 ps */
+    ASSERT_FALSE(bus_loci_read_in_time(&t, 0, 0, 82));         /* 908 333 ps */
+    ASSERT_TRUE(bus_loci_read_in_time(&t, 0, 0, 75));          /* 850 ns */
+    ASSERT_FALSE(bus_loci_read_in_time(&t, 0, 7, 75));         /* tiod 7: 908 ns */
     PASS();
 }
 
@@ -256,15 +270,15 @@ static int count_losses(int n) {
     return lost;
 }
 
-/* Right on the boundary (tior+serve == latch): without jitter everything passes; with
- * symmetric jitter, a SHARE of accesses miss (occasional, not all-or-nothing). */
+/* Right on the boundary (serve 81: data at 899.999 ns): without jitter everything passes;
+ * with symmetric jitter, a SHARE of accesses miss (occasional, not all-or-nothing). */
 TEST(test_jitter_makes_losses_occasional) {
     setup();
-    loci_set_serve_timing(&g_emu->loci, 27, 27);     /* nominal exactly at the latch → clean */
+    loci_set_serve_timing(&g_emu->loci, 81, 100);    /* nominal exactly at the deadline → clean */
     g_emu->loci.mia_tior = 0;
     ASSERT_EQ(count_losses(200), 0);                  /* without jitter: never missed */
 
-    loci_set_serve_jitter(&g_emu->loci, 3, 12345);    /* ±3 subticks */
+    loci_set_serve_jitter(&g_emu->loci, 3, 12345);    /* ±3 cycles */
     int lost = count_losses(200);
     ASSERT_TRUE(lost > 0 && lost < 200);              /* mix of clean/missed */
     teardown();
@@ -274,7 +288,7 @@ TEST(test_jitter_makes_losses_occasional) {
 /* Reproducibility: same seed → same exact sequence of misses. */
 TEST(test_jitter_is_deterministic_per_seed) {
     setup();
-    loci_set_serve_timing(&g_emu->loci, 27, 27);
+    loci_set_serve_timing(&g_emu->loci, 81, 100);
     loci_set_serve_jitter(&g_emu->loci, 3, 999);
     int a = count_losses(100);
     loci_set_serve_jitter(&g_emu->loci, 3, 999);      /* identical re-seed */
@@ -288,7 +302,7 @@ TEST(test_jitter_is_deterministic_per_seed) {
  * nominal, without advancing the PRNG or stealing a byte. */
 TEST(test_jitter_peek_uses_nominal) {
     setup();
-    loci_set_serve_timing(&g_emu->loci, 20, 27);      /* nominal comfortably clean */
+    loci_set_serve_timing(&g_emu->loci, 23, 100);     /* nominal comfortably clean */
     loci_set_serve_jitter(&g_emu->loci, 3, 7);
     inject_rx(0xC3);
     ASSERT_EQ(bus_peek(0x0380), 0xC3);                /* nominal peek: real data */
@@ -306,8 +320,8 @@ int main(void) {
     RUN(test_reliable_read_is_pristine);
     RUN(test_no_loci_no_race);
     RUN(test_phase_model_serve_race);
-    RUN(test_phase_reproduces_build_os_vs_o2);
-    RUN(test_bus_serve_wins_race_predicate);
+    RUN(test_phase_realistic_serves_are_clean);
+    RUN(test_bus_loci_chronology);
     RUN(test_jitter_makes_losses_occasional);
     RUN(test_jitter_is_deterministic_per_seed);
     RUN(test_jitter_peek_uses_nominal);

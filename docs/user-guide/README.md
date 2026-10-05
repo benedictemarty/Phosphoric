@@ -183,7 +183,7 @@ In AZERTY mode, the emulator uses SDL2 text events, so typing works naturally wh
 
 | Key | Function |
 |--------|----------|
-| F1 | I/O peripherals menu (floppies, tape, snapshots, printer, joystick, keyboard; see the README) |
+| F1 | I/O peripherals menu (floppies, tape, cards, snapshots, printer, joystick, keyboard; manual: [MENU-F1.md](MENU-F1.md)) |
 | F2 | Quicksave |
 | F3 | Change the display scale (x1 -> x2 -> x3 -> x4) |
 | F4 | Quickload |
@@ -560,6 +560,17 @@ detection); the **Port du picowifi réel** setting forces it (e.g.
 In `phosphoric.cfg`: `loci.modem=simulé`, `loci.port=/dev/ttyACM0`. Booting
 Atmos / Oric-1 from the LOCI menu finds `basic11b.rom` / `basic10.rom` in `roms/`
 when the flash directory does not hold them.
+
+In the F1 menu, the **LOCI** card has a **Mode** setting: `intégré` (emulated
+LOCI, `--loci`), `firmware` (real co-simulated firmware, `--loci-emu ELF`) or `usb`
+(a LOCI-USB plugged into the PC: the Feather RP2040 runs the LOCI firmware and
+Phosphoric plays the Oric over USB, `--loci-hw /dev/ttyACM0`; it is not a bridge
+to a LOCI 1.3 cartridge, and it does not plug into a real Oric). Only the settings
+of the chosen mode are shown, and only the modes present in the binary are offered
+(firmware: libemul, usb: loci-usb repository, at build time). In `usb` mode, the
+**Port de la LOCI-USB** (LOCI-USB port) is detected automatically on Linux (USB
+product « LOCI-USB… ») or forced; cartridge MENU button: F8. In
+`phosphoric.cfg`: `loci.mode=usb`, `loci.port_usb=/dev/ttyACM0`.
 
 ### Dedicated cards
 

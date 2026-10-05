@@ -21,8 +21,8 @@ void cli_opts_init(cli_opts_t* o) {
     o->loci_usb_autoscan = true;
     o->loci_mia_win_lo = -1;
     o->loci_mia_win_hi = -1;
-    o->loci_serve_subticks = -1;
-    o->loci_latch_subtick = -1;
+    o->loci_serve_cycles = -1;
+    o->loci_tdsr_ns = -1;
     o->loci_serve_jitter = -1;
     o->card_cfg = card_modules_cfg_new();
 }

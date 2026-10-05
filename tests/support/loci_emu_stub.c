@@ -43,3 +43,5 @@ bool loci_emu_romdis(void) { return false; }
 void loci_emu_tap_motor(uint8_t via_orb) { (void)via_orb; }
 
 bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }
+bool loci_emu_select(const char *backend) { (void)backend; return false; }
+bool loci_emu_backend_available(const char *backend) { (void)backend; return false; }

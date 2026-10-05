@@ -6,14 +6,20 @@
  * Same interface as loci_emu.h, but instead of running the firmware in the
  * RP2040 emulator (loci_emu.c) or doing nothing (loci_emu_stub.c), every
  * access of the emulated 6502 to the LOCI page ($03xx) or to the served ROM ($C000-$FFFF under
- * nROMDIS) becomes a REAL bus cycle on the cartridge, through the loci-usb Pico
- * bridge (bridge/) plugged into CN1 and speaking proto/loci_usb_proto.h over USB CDC.
+ * nROMDIS) becomes a REAL bus cycle served by a LOCI-USB: a LOCI without an
+ * Oric interface (Feather RP2040, future LOCI-USB board) whose LOCI firmware
+ * (LOCI_USB variant) replays these accesses, speaking proto/loci_usb_proto.h over USB
+ * CDC. (The first approach, a Pico bridge on CN1 of an unmodified cartridge, was
+ * abandoned on 2026-09-13.)
  *
- * Selected at build time: `make LOCI_HW=1` (replaces loci_emu.c; one Phosphoric
- * binary = one backend). Source of truth: ~/loci/loci-usb/phosphoric/loci_hw.c.
+ * Built into Phosphoric as soon as the loci-usb repository is present (LOCI_HW, functions
+ * renamed by loci_be_rename.h) and selected at launch by --loci-hw or the « usb »
+ * mode of the LOCI card (dispatch in loci_backend.c). Source of truth: this
+ * tree (snapshots in ~/loci/loci-usb/phosphoric/).
  *
  * Model:
  *  - the real firmware runs continuously: "booted" as soon as the bridge answers (PING);
+ *    at startup, POWERON (caps & LUP_CAP_POWERON) puts it back into its power-on state;
  *  - $03xx: one USB round trip per access (stop-and-wait, ~0.1-1 ms);
  *  - served ROM: 16 KB host CACHE filled by RDN (one bank in one request),
  *    with the nROMDIS/nMAP flags per address. Invalidated when the GENERATION of the ROM
@@ -23,7 +29,26 @@
  *  - nIRQ / nRESET: edges counted by the bridge, drained once per frame
  *    (loci_emu_irq_take / loci_emu_reset_take); the MENU button is PHYSICAL: the host
  *    sees the resulting nRESET and resets its 6502;
- *  - USB keyboard/mouse: those plugged into the cartridge (no injection possible).
+ *  - USB keyboard/mouse: those plugged into the cartridge (no injection possible);
+ *  - Φ2 race (caps & LUP_CAP_TIMING): stop-and-wait freezes the 6502 during each
+ *    access, which hides the Φ2 constraint of a real LOCI. RDT/WRT return the
+ *    act_loop cycles measured with the core-1 SysTick: SERVE (up to the trigger of
+ *    the read-serve DMA) and ACT (up to the end of the side effects). Timeline of a
+ *    $03xx read in ns, origin at the falling edge of Φ2 that opens the cycle:
+ *      - the LOCI's PIO runs at Φ2cfg × 30 (Φ2cfg = firmware setting, 4000 kHz by
+ *        default → 1 tick = 8.33 ns; this is NOT the Oric's clock);
+ *      - mia_action pushes the word into the FIFO at (22 + tior) ticks + 2 sys cycles of
+ *        synchroniser (counts read from mia.pio, not measured);
+ *      - act_loop picks it up (LOCI_HW_POLL_NS, not measured, 0) and triggers the DMA SERVE
+ *        sys cycles later;
+ *      - mia_io_read waits for Φ2 high then drives the bus (3 + tiod) ticks later:
+ *        data = max(Φ2 rise + synchroniser, ready) + (3 + tiod) ticks.
+ *    The Oric's Φ2: period 1/LOCI_HW_PHI2_KHZ (1000), high during the last third of the cycle
+ *    (LOCI_HW_PHI2_HIGH_NS, period/3: the ULA gives 2/3 low, 1/3 high). A read is LATE
+ *    if the data arrives after the end of the cycle minus the 6502 setup time
+ *    (LOCI_HW_TDSR_NS, 100). A $03xx access arriving less than ACT 6502 cycles after the
+ *    previous one reads a STALE iopage. Detection only by default (counters + log);
+ *    LOCI_HW_FAITHFUL=1 returns open-bus on a late read.
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -33,6 +58,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "io/bus_timing.h"
 
 static lup_client_t g_c;
 static int  g_active;             /* bridge open and PING OK */
@@ -44,10 +70,28 @@ static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL: cycles without LOCI acce
 static long g_idle_cycles;        /* 6502 cycles elapsed since the last LOCI access */
 static unsigned long g_idle_polls, g_idle_polls_hit;
 
+/* Φ2 race (caps & LUP_CAP_TIMING) */
+static int           g_timing;              /* RDT/WRT in use */
+static lup_timing_t  g_tm;                  /* current clocks and delays of the cartridge */
+static long          g_phi2_khz = 1000;     /* LOCI_HW_PHI2_KHZ: Φ2 of the emulated Oric (1 MHz) */
+static double        g_high_ns;             /* LOCI_HW_PHI2_HIGH_NS: Φ2 high (period/3) */
+static double        g_tdsr_ns = 100;       /* LOCI_HW_TDSR_NS: 6502 data setup time */
+static double        g_poll_ns;             /* LOCI_HW_POLL_NS: FIFO → act_loop, not measured */
+static int           g_faithful;            /* LOCI_HW_FAITHFUL: late → open-bus */
+static int           g_read_lost;           /* last read lost (faithful mode) */
+static long          g_since_access = 1L << 30;   /* 6502 cycles since the last $03xx access */
+static long          g_prev_act_cyc;        /* act duration of the last access, in 6502 cycles */
+static unsigned long g_timed, g_late, g_stale;
+static unsigned      g_serve_max, g_act_max;
+static double        g_worst_margin = 1e9;  /* deadline - data, in ns (negative = late) */
+
 /* Cache of the served ROM ($C000-$FFFF) */
 static uint8_t g_rom[16384], g_rom_flags[16384];
 static int     g_rom_valid, g_rom_nocache;
 static unsigned long g_rom_refills;
+static unsigned long g_bal_writes, g_bal_cmds;   /* captured BAL writes, commands launched */
+#define BAL_GROUP_CONSOLE 2               /* BAL group executed on the 6502 side */
+static long g_bal_timeout_ms = 10000;   /* LOCI_HW_BAL_TIMEOUT_MS: maximum wait for a BAL command */
 
 const char *loci_emu_backend_name(void) { return "hw"; }
 
@@ -100,12 +144,88 @@ static void settle(void)
     if (g_settle_us > 0) { struct timespec ts = { 0, g_settle_us * 1000L }; nanosleep(&ts, NULL); }
 }
 
+/* ── Φ2 race ── */
+static double period_ns(void) { return 1e6 / (double)g_phi2_khz; }
+static double tick_ns(void)   { return 1e6 / ((double)g_tm.phi2_khz * 30.0); }   /* PIO = Φ2cfg × 30 */
+
+static void timing_load(void)
+{
+    if (!g_timing) return;
+    if (lup_timing(&g_c, &g_tm) != 0 || !g_tm.sys_khz || !g_tm.phi2_khz) {
+        log_warning("LOCI-hw: TIMING a échoué (%s) — course Φ2 non mesurée", lup_client_error(&g_c));
+        g_timing = 0;
+        return;
+    }
+    log_info("LOCI-hw: course Φ2 mesurée — sys %lu kHz, tick PIO %.2f ns (Φ2cfg %lu kHz), tior %u, tiod %u ; "
+             "Oric : période %.0f ns, Φ2 haut %.0f ns, tDSR %.0f ns ; %s",
+             (unsigned long)g_tm.sys_khz, tick_ns(), (unsigned long)g_tm.phi2_khz, g_tm.tior, g_tm.tiod,
+             period_ns(), g_high_ns, g_tdsr_ns, g_faithful ? "fidèle (retard → open-bus)" : "détection seule");
+}
+/* Core-1 cycles → 6502 cycles (rounded up). */
+static long cyc_to_6502(unsigned cyc) { return (long)(((uint64_t)cyc * (uint64_t)g_phi2_khz + g_tm.sys_khz - 1) / g_tm.sys_khz); }
+
+/* Instant (ns after the falling edge of Φ2) at which the data of a read served in
+ * `serve` sys cycles is on the bus, and the 6502 deadline: timeline shared
+ * with the emulated model (bus_timing.h), parameterised by the real clocks. */
+static bus_loci_timing_t hw_timing(void)
+{
+    bus_loci_timing_t t = bus_loci_timing_default();
+    t.sys_khz   = g_tm.sys_khz;
+    t.pio_khz   = g_tm.phi2_khz * 30u;
+    t.period_ps = (int64_t)(period_ns() * 1000.0);
+    t.high_ps   = (int64_t)(g_high_ns * 1000.0);
+    t.tdsr_ps   = (int64_t)(g_tdsr_ns * 1000.0);
+    t.poll_ps   = (int64_t)(g_poll_ns * 1000.0);
+    return t;
+}
+static double data_valid_ns(unsigned serve)
+{
+    bus_loci_timing_t t = hw_timing();
+    return bus_loci_read_valid_ps(&t, g_tm.tior, g_tm.tiod, serve) / 1000.0;
+}
+static double deadline_ns(void) { bus_loci_timing_t t = hw_timing(); return bus_loci_deadline_ps(&t) / 1000.0; }
+
+/* $03xx access arriving before the end of the previous one's side effects: stale iopage. */
+static void check_stale(char dir, uint16_t addr)
+{
+    if (g_prev_act_cyc > 0 && g_since_access < g_prev_act_cyc) {
+        if (++g_stale <= 10)
+            log_warning("LOCI-hw: Φ2 %c $%04X %ld cycles après l'accès précédent, dont l'action en dure %ld — iopage périmé",
+                        dir, addr, g_since_access, g_prev_act_cyc);
+    }
+}
+static void note_act(unsigned act)
+{
+    if (act > g_act_max) g_act_max = act;
+    g_prev_act_cyc = act ? cyc_to_6502(act) : 0;
+    g_since_access = 0;
+}
+
 /* Generic bus cycle ($03xx page). */
 static uint8_t bus_rd(uint16_t addr)
 {
     uint8_t d = 0xFF, f;
     if (!g_active) return 0xFF;
-    if (lup_rd(&g_c, addr, &d, &f) != 0) { link_error_once("lecture"); return 0xFF; }
+    if (g_timing) {
+        uint16_t serve = 0, act = 0;
+        if (lup_rdt(&g_c, addr, &d, &f, &serve, &act) != 0) { link_error_once("lecture"); return 0xFF; }
+        check_stale('R', addr);
+        if (serve) {                         /* 0: access outside act_loop, nothing to judge */
+            g_timed++;
+            if (serve > g_serve_max) g_serve_max = serve;
+            double valid = data_valid_ns(serve), margin = deadline_ns() - valid;
+            if (margin < g_worst_margin) g_worst_margin = margin;
+            if (margin < 0) {
+                if (++g_late <= 10)
+                    log_warning("LOCI-hw: Φ2 lecture $%04X EN RETARD — serve %u cycles, donnée à %.0f ns > échéance %.0f ns%s",
+                                addr, serve, valid, deadline_ns(), g_faithful ? " → open-bus" : "");
+                if (g_faithful) g_read_lost = 1;
+            }
+        }
+        note_act(act);
+    } else {
+        if (lup_rd(&g_c, addr, &d, &f) != 0) { link_error_once("lecture"); return 0xFF; }
+    }
     note_flags(f);
     trace_access('R', addr, d, f);
     settle();
@@ -117,12 +237,21 @@ static void bus_wr(uint16_t addr, uint8_t v)
 {
     uint8_t f;
     if (!g_active) return;
-    if (lup_wr(&g_c, addr, v, &f) != 0) { link_error_once("écriture"); return; }
+    if (g_timing) {
+        uint16_t act = 0;
+        if (lup_wrt(&g_c, addr, v, &f, &act) != 0) { link_error_once("écriture"); return; }
+        check_stale('W', addr);
+        note_act(act);
+    } else {
+        if (lup_wr(&g_c, addr, v, &f) != 0) { link_error_once("écriture"); return; }
+    }
     note_flags(f);
     trace_access('W', addr, v, f);
     settle();
     g_idle_cycles = 0;
 }
+
+bool loci_emu_read_lost(void) { int l = g_read_lost; g_read_lost = 0; return l != 0; }
 
 /* ── lifecycle ── */
 int loci_emu_start(const char *dev)
@@ -134,6 +263,18 @@ int loci_emu_start(const char *dev)
         log_error("LOCI-hw: impossible d'ouvrir le pont « %s » : %s", dev, lup_client_error(&g_c));
         return -1;
     }
+    /* The cartridge stays powered by USB between two sessions: without a reset to
+     * the « power-on » state, the next session inherits the previous state
+     * (2 nRESET edges, unstable gen8, 6502 crashed in the stack). POWERON = the equivalent of
+     * switching on the Oric, which also resets the LOCI. LOCI_HW_NO_POWERON=1: keep the state. */
+    if ((g_c.caps & LUP_CAP_POWERON) && !getenv("LOCI_HW_NO_POWERON")) {
+        if (lup_poweron(&g_c) != 0 || lup_reconnect(&g_c, dev, 10000) != 0) {
+            log_error("LOCI-hw: POWERON a échoué : %s", lup_client_error(&g_c));
+            lup_close(&g_c);
+            return -1;
+        }
+        log_info("LOCI-hw: cartouche remise à l'état mise sous tension (POWERON)");
+    }
     uint8_t lines = 0, irqs, rsts;
     if (lup_lines(&g_c, &lines, &irqs, &rsts) != 0) {
         log_error("LOCI-hw: LINES a échoué : %s", lup_client_error(&g_c));
@@ -143,12 +284,25 @@ int loci_emu_start(const char *dev)
     g_romdis = (lines & LUP_L_NROMDIS) != 0;
     g_gen = g_c.gen;
     g_active = 1;
+    g_phi2_khz  = getenv("LOCI_HW_PHI2_KHZ") ? atol(getenv("LOCI_HW_PHI2_KHZ")) : 1000;
+    if (g_phi2_khz <= 0) g_phi2_khz = 1000;
+    g_high_ns   = getenv("LOCI_HW_PHI2_HIGH_NS") ? atof(getenv("LOCI_HW_PHI2_HIGH_NS")) : period_ns() / 3;
+    g_tdsr_ns   = getenv("LOCI_HW_TDSR_NS") ? atof(getenv("LOCI_HW_TDSR_NS")) : 100;
+    g_poll_ns   = getenv("LOCI_HW_POLL_NS") ? atof(getenv("LOCI_HW_POLL_NS")) : 0;
+    g_faithful  = getenv("LOCI_HW_FAITHFUL") != NULL;
+    g_timing    = (g_c.caps & LUP_CAP_TIMING) != 0;
+    g_timed = g_late = g_stale = 0; g_serve_max = g_act_max = 0; g_worst_margin = 1e9;
+    g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
+    g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0;
+    g_bal_timeout_ms = getenv("LOCI_HW_BAL_TIMEOUT_MS") ? atol(getenv("LOCI_HW_BAL_TIMEOUT_MS")) : 10000;
     log_info("LOCI-hw: pont « %s » prêt (proto %u, firmware pont %u, caps %02X%s) — nROMDIS=%d nRESET=%d ; "
              "cache ROM %s", dev, g_c.proto, g_c.fw, g_c.caps,
              (g_c.caps & LUP_CAP_VIRTUAL) ? ", VIRTUEL" : "", g_romdis, (lines & LUP_L_NRESET) != 0,
              g_rom_nocache ? "désactivé" : "actif");
     if (g_settle_us > 0) log_info("LOCI-hw: stabilisation %ld µs après chaque accès (LOCI_HW_SETTLE_US)", g_settle_us);
     log_info("LOCI-hw: poll en attente %s (LOCI_HW_IDLE_POLL=%ld cycles)", g_idle_poll_cycles > 0 ? "actif" : "désactivé", g_idle_poll_cycles);
+    if (g_timing) timing_load();
+    else log_info("LOCI-hw: course Φ2 non mesurée (firmware sans TIMING)");
     return 0;
 }
 
@@ -161,6 +315,12 @@ void loci_emu_stop(void)
     if (!g_active) return;
     log_info("LOCI-hw: fin de session — %lu requêtes, %lu rechargements du cache ROM, %lu polls en attente (%lu avec événement)",
              g_c.n_req, g_rom_refills, g_idle_polls, g_idle_polls_hit);
+    if (g_bal_writes)
+        log_info("LOCI-hw: BAL — %lu écritures captées, %lu commandes", g_bal_writes, g_bal_cmds);
+    if (g_timing)
+        log_info("LOCI-hw: course Φ2 — %lu lectures mesurées, %lu EN RETARD, %lu sur iopage périmé ; "
+                 "serve max %u cycles, act max %u cycles, marge minimale %.0f ns",
+                 g_timed, g_late, g_stale, g_serve_max, g_act_max, g_timed ? g_worst_margin : 0.0);
     lup_close(&g_c);
     g_active = 0;
 }
@@ -282,6 +442,7 @@ int loci_emu_irq_take(void) { return lines_drain(); }
  * access), bounds the latency of asynchronous IRQs/resets to N cycles when it waits. */
 int loci_emu_idle_poll(int cycles)
 {
+    if (g_since_access < (1L << 30)) g_since_access += cycles;
     if (!g_active || g_idle_poll_cycles <= 0) return 0;
     g_idle_cycles += cycles;
     if (g_idle_cycles < g_idle_poll_cycles) return 0;
@@ -299,7 +460,10 @@ int loci_emu_reset_take(void)
 {
     int n = g_reset_pending;
     g_reset_pending = 0;
-    if (n) log_info("LOCI-hw: nRESET piloté par LOCI (%d front%s) → reset du 6502", n, n > 1 ? "s" : "");
+    if (n) {
+        log_info("LOCI-hw: nRESET piloté par LOCI (%d front%s) → reset du 6502", n, n > 1 ? "s" : "");
+        timing_load();                    /* Φ2 and delays may have changed in the menu */
+    }
     return n;
 }
 
@@ -333,9 +497,60 @@ bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
 }
 bool loci_emu_kbd_armed(void) { return g_active && (g_c.caps & LUP_CAP_FIRMWARE); }
 
-bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)value; return false; }
+/* 6502 write to page $FF under nROMDIS: loci-fw mailbox (BAL). The
+ * firmware copies the byte into the served image and answers SERVED (« captured ») without
+ * changing gen8: the cache is updated here. A non-zero byte at $FF00 launches a
+ * command (except group 2, Console, executed by the 6502 itself); we wait for
+ * its completion ($FF00 read back as 0 by uncached RD, 10 s at most,
+ * LOCI_HW_BAL_TIMEOUT_MS) so that the kernel's wait
+ * loop sees it immediately, instead of at the next LINES. The dispatcher
+ * changes gen8 when returning its results: the cache is then invalidated. Older
+ * firmware never answers SERVED here (write ignored) → false, as before. */
+static long elapsed_ms(const struct timespec *t0)
+{
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long)(t.tv_sec - t0->tv_sec) * 1000 + (t.tv_nsec - t0->tv_nsec) / 1000000;
+}
+bool loci_emu_rom_write(uint16_t address, uint8_t value)
+{
+    if (!g_active || (address & 0xFF00u) != 0xFF00u || !(g_c.caps & LUP_CAP_FIRMWARE)) return false;
+    uint8_t f;
+    if (lup_wr(&g_c, address, value, &f) != 0) { link_error_once("écriture BAL"); return false; }
+    note_flags(f);
+    if (!(f & LUP_F_SERVED)) return false;          /* not captured: overlay RAM or ROM */
+    if (g_rom_valid) g_rom[address - 0xC000] = value;
+    g_bal_writes++;
+    /* Group 2 (Console) is never handled by the firmware: the 6502 kernel
+     * executes it (loci-fw ADR-004, dispatch.c); waiting for it would freeze the 6502
+     * until the timeout. */
+    if (address == 0xFF00u && value && value != BAL_GROUP_CONSOLE) {
+        /* Real-time timeout: an MSC command (USB stick read) or a console command can
+         * last hundreds of reads on silicon. */
+        struct timespec t0; clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            uint8_t d = 0xFF, rf;
+            if (lup_rd(&g_c, 0xFF00, &d, &rf) != 0) { link_error_once("attente BAL"); break; }
+            note_flags(rf);
+            if (d == 0) break;
+            if (elapsed_ms(&t0) >= g_bal_timeout_ms) {
+                log_warning("LOCI-hw: commande BAL $%02X toujours en cours après %ld ms", value, g_bal_timeout_ms);
+                break;
+            }
+        }
+        g_bal_cmds++;
+    }
+    return true;
+}
 
 /* Whole I/O page through bus cycles: specific to the neo backend (loci-fw). */
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
+
+/* Φ2 race counters (tests; outside the loci_emu.h interface). */
+void loci_hw_timing_stats(unsigned long *timed, unsigned long *late, unsigned long *stale)
+{
+    if (timed) *timed = g_timed;
+    if (late)  *late  = g_late;
+    if (stale) *stale = g_stale;
+}

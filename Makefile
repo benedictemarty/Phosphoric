@@ -4,36 +4,44 @@
 CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
-# Embedded RP2040 emulator (--loci-emu backend). Path can be overridden.
-# EXTERNAL, unversioned dependency: detected automatically. Without it
-# (CI, fresh machine), src/io/loci_emu_stub.c replaces loci_emu.c:
-# everything builds, only `--loci-emu` refuses to start. Force: LOCI_EMU=0/1.
+# External LOCI backends, chosen at launch (dispatch in src/io/loci_backend.c,
+# functions renamed by src/io/loci_be_rename.h): a single binary contains the
+# stub (no external LOCI) and those whose dependency is present.
+#  - Embedded RP2040 emulator (--loci-emu, LOCI card in « firmware » mode).
+#    EXTERNAL, unversioned dependency, detected automatically. Without it (CI,
+#    fresh machine), everything builds, only `--loci-emu` refuses to start.
+#    Force: LOCI_EMU=0/1.
 LOCI_EMUL_DIR ?= $(HOME)/loci/emul
 LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
-# REAL HARDWARE backend (--loci-hw DEV): `make LOCI_HW=1` replaces loci_emu.c with
-# src/io/loci_hw.c (copy of ~/loci/loci-usb/phosphoric/loci_hw.c) + the loci-usb
-# protocol client. One binary = one backend (same loci_emu_* symbols).
+#  - Real cartridge via the loci-usb USB bridge of a Feather (--loci-hw, « real »
+#    mode): src/io/loci_hw.c (copy of ~/loci/loci-usb/phosphoric/loci_hw.c)
+#    + the protocol client, detected automatically (POSIX: not on Windows).
+#    Force: LOCI_HW=0/1.
 LOCI_USB_DIR ?= $(HOME)/loci/loci-usb
-LOCI_HW ?= 0
-# Backend for the NEW loci-fw firmware (restart from scratch, ~/loci/reprise): `make LOCI_NEO=1`
-# replaces loci_emu.c with src/io/loci_neo.c (libemul's emul_neo bridge).
+LOCI_HW ?= $(if $(filter 1,$(WIN)),0,$(if $(wildcard $(LOCI_USB_DIR)/host/loci_usb_client.c),1,0))
+#  - NEW loci-fw firmware (restart from scratch, ~/loci/reprise): `make LOCI_NEO=1`
+#    puts src/io/loci_neo.c (libemul's emul_neo bridge) in place of loci_emu.c.
 LOCI_NEO ?= 0
+LOCI_EMU_SRC = src/io/loci_backend.c src/io/loci_emu_stub.c
+LOCI_EMUL_LIB =
+LOCI_EMU_CFLAGS =
+LOCI_BE_DEFS =
+LOCI_BE_EMUL_SRC =
 ifeq ($(LOCI_NEO),1)
-LOCI_EMU_SRC = src/io/loci_neo.c
-LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
-LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src
-else ifeq ($(LOCI_HW),1)
-LOCI_EMU_SRC = src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c
-LOCI_EMUL_LIB =
-LOCI_EMU_CFLAGS = -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto -DNO_LOCI_EMU
+LOCI_BE_EMUL_SRC = src/io/loci_neo.c
 else ifeq ($(LOCI_EMU),1)
-LOCI_EMU_SRC = src/io/loci_emu.c
+LOCI_BE_EMUL_SRC = src/io/loci_emu.c
+endif
+ifneq ($(LOCI_BE_EMUL_SRC),)
+LOCI_EMU_SRC += $(LOCI_BE_EMUL_SRC)
 LOCI_EMUL_LIB = $(LOCI_EMUL_DIR)/libemul.a
-LOCI_EMU_CFLAGS = -I$(LOCI_EMUL_DIR)/src
-else
-LOCI_EMU_SRC = src/io/loci_emu_stub.c
-LOCI_EMUL_LIB =
-LOCI_EMU_CFLAGS = -DNO_LOCI_EMU
+LOCI_EMU_CFLAGS += -I$(LOCI_EMUL_DIR)/src
+LOCI_BE_DEFS += -DLOCI_BE_HAS_EMUL
+endif
+ifeq ($(LOCI_HW),1)
+LOCI_EMU_SRC += src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c
+LOCI_EMU_CFLAGS += -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto
+LOCI_BE_DEFS += -DLOCI_BE_HAS_HW
 endif
 CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I./include $(LOCI_EMU_CFLAGS) -MMD -MP
 # -lpthread: control_queue (sprint 93) hands commands from producer threads
@@ -278,7 +286,7 @@ endif
 # variant (SDL2=0, HTTPAPI=1, LOCI backend…) never mix with those of another.
 # Final binaries are copied to the repository root (paths expected by the
 # scripts), only when their content changes.
-LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_HW)),hw,$(if $(filter 1,$(LOCI_EMU)),emu,stub)))
+LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_EMU)),emu))$(if $(filter 1,$(LOCI_HW)),hw)$(if $(LOCI_BE_EMUL_SRC)$(filter 1,$(LOCI_HW)),,stub)
 CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)$(if $(filter 1,$(VIA_NO_LAZY)),-vianolazy)$(if $(filter 1,$(SANITIZE)),-san)
 BUILD ?= build/$(CONFIG)
 TBIN = $(BUILD)/tests
@@ -304,7 +312,7 @@ BINDIR = $(PREFIX)/bin
 DATADIR = $(PREFIX)/share/phosphoric
 DOCDIR = $(PREFIX)/share/doc/phosphoric
 
-.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-suite-targets test-card-template fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
+.PHONY: all release dist clean tools tests tests-strict valgrind-core coverage-check test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-suite-targets test-card-template fuzz test-http-parse test-cards test-check-skips test-cli-golden test-cli-golden-self FORCE test-cpu test-memory test-io test-ula-ng test-jasmin test-storage test-system test-rom test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-cast test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-iomenu test-iomenu-glue test-trace test-profiler test-rominfo test-serial test-serial-backends test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-hw test-loci-sdimg test-loci-sdimg-write test-loci-e2e test-loci-acia-e2e test-web-loci test-web-picowifi test-web-iomenu test-loci-golden test-control test-game-compat test-mc-autorun test-control-dispatch test-control-queue test-httpapi test-loadstate test-sedoric-tools test-ula-ng-visible test-docs-claims test-comment-diff test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus fetch-vectors bench valgrind static-analysis cppcheck flawfinder security-check coverage coverage-report install uninstall help wasm
 
 all: $(TARGET)
 
@@ -372,6 +380,12 @@ $(BUILD)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/src/video/stb_image_write_impl.o: CFLAGS += $(STB_SAN_CFLAGS)
+# LOCI backends: each compiled with its loci_emu_* functions renamed.
+LOCI_BE_RENAME = -include src/io/loci_be_rename.h
+$(BUILD)/src/io/loci_emu_stub.o: CFLAGS += -DLOCI_BE=lbe_stub $(LOCI_BE_RENAME)
+$(BUILD)/src/io/loci_emu.o $(BUILD)/src/io/loci_neo.o: CFLAGS += -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
+$(BUILD)/src/io/loci_hw.o: CFLAGS += -DLOCI_BE=lbe_hw $(LOCI_BE_RENAME)
+$(BUILD)/src/io/loci_backend.o: CFLAGS += $(LOCI_BE_DEFS)
 
 # Include auto-generated header-dependency files (-MMD output).
 # Silent if absent (first build / after clean).
@@ -607,6 +621,18 @@ $(eval $(call UNIT_TEST,test-loci,test_loci,$(TEST_LOCI_SRCS),,))
 TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c $(LIB_SOURCES)
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
+
+# --loci-hw backend (src/io/loci_hw.c) against a mock cartridge on a
+# pseudo-terminal: Φ2 race (2.22.0), loci-fw BAL (2.24.0). Built directly with the loci-usb client, whatever
+# the configuration; SKIP if the loci-usb repository is not present (CI).
+test-loci-hw: FORCE
+	@if [ ! -f $(LOCI_USB_DIR)/host/loci_usb_client.c ]; then \
+	    echo "  SKIP test-loci-hw: loci-usb absent ($(LOCI_USB_DIR))"; \
+	else mkdir -p $(TBIN) && \
+	    $(CC) -Wall -Wextra -Wpedantic -std=c11 -I./include -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto \
+	        tests/unit/test_loci_hw.c src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c \
+	        src/utils/logging.c -lutil -lpthread -o $(TBIN)/test_loci_hw && \
+	    $(TBIN)/test_loci_hw; fi
 
 TEST_LOCI_SDIMG_SRCS = tests/unit/test_loci_sdimg.c src/io/loci_sdimg.c \
                        src/utils/logging.c
@@ -975,7 +1001,7 @@ test-savestate-determinism: $(TARGET)
 test-game-compat:
 	@bash tests/integration/test_game_compat.sh
 
-tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-tape-patches test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-serial-backends test-cast test-game-compat test-web-loci test-web-iomenu test-web-picowifi test-suite-targets test-card-template test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
+tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin test-storage test-system test-video test-avi test-audio test-debugger test-gdbstub test-movie test-movie-replay test-savestate test-atmos test-joystick test-sp0256 test-mea8000 test-printer test-mcp40 test-renderer test-osd test-trace test-profiler test-rominfo test-serial test-pia6821 test-acia6850 test-dtl2000 test-dtl2000-txrx test-midi test-smf test-serial-file test-picowifi test-keyboard test-autotype test-symbols test-loci test-loci-acia-miss test-loci-hw test-loci-sdimg test-loci-sdimg-write test-loci-acia-e2e test-loci-golden test-control test-control-dispatch test-control-queue test-httpapi test-http-parse test-cards test-tape-patches test-coverage test-rom-guard test-loadstate test-sedoric-tools test-ula-ng-visible test-audio-capture test-tape-roundtrip test-cli-parsing test-docs-claims test-comment-diff test-check-skips test-cli-golden-self test-iomenu test-iomenu-glue test-rom test-mc-autorun test-loci-e2e test-iomenu-cli test-via-lazy test-gdb-bind test-fuzz-replay test-dsk2hfe test-ci-apt-install test-serial-backends test-cast test-game-compat test-web-loci test-web-iomenu test-web-picowifi test-suite-targets test-card-template test-clock test-cycle test-dormann test-raster-split test-tape-signal test-savestate-determinism test-bench test-corpus
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo "  All test suites completed!"
@@ -1153,7 +1179,9 @@ WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
 
 # The RP2040 co-simulation (libemul, native) does not exist in WebAssembly: the stub
 # always replaces loci_emu.c here, whatever LOCI_EMU is.
-WASM_SOURCES = $(subst src/io/loci_emu.c,src/io/loci_emu_stub.c,$(LIB_SOURCES))
+# Web build: the stub alone, with no dispatch and no renamed functions.
+WASM_SOURCES = $(filter-out src/io/loci_backend.c src/io/loci_emu.c src/io/loci_neo.c \
+                 src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c,$(LIB_SOURCES))
 wasm: web/shell.html
 	$(EMCC) $(WASM_CFLAGS) -DNO_LOCI_EMU $(WASM_SOURCES) src/main.c $(WASM_LDFLAGS) -o $(WASM_OUT)
 	@echo "WASM ready → serve web/ over HTTP and open phosphoric.html"

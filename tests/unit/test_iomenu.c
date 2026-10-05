@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include "video/iomenu.h"
 #include "video/iom_font.h"
+#include "io/loci_emu.h"
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -312,13 +313,30 @@ TEST(test_cards_pages) {
     ASSERT_TRUE(m.cards.card[lo].on && !m.cards.card[md].on);
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "LOCI") && surf_has(&surf, "menu LOCI"));
+    /* Built-in mode: the firmware and LOCI-USB settings are hidden. */
+    ASSERT_TRUE(surf_has(&surf, "Mode") && !surf_has(&surf, "Firmware (ELF)") &&
+                !surf_has(&surf, "Port de la LOCI-USB"));
     /* File parameter: browser; « Aucun fichier » clears the value. */
-    m.param_cursor = 2;                                   /* SD image */
+    m.param_cursor = 3;                                   /* SD image (after Mode, menu) */
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(m.browsing && m.browse_target == IOM_BROWSE_CARD);
     m.browse_cursor = 0;
     iom_key(&m, IOM_KEY_ENTER);
-    ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[1][0] == '\0');
+    ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[2][0] == '\0');
+    /* usb mode (if this binary has it): only the LOCI-USB port remains, and
+     * navigation skips the hidden settings. */
+    if (loci_emu_backend_available("hw")) {
+        m.param_cursor = 1;
+        snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HW);
+        iom_draw(&m, &surf);
+        ASSERT_TRUE(surf_has(&surf, "Port de la LOCI-USB") && !surf_has(&surf, "menu LOCI") &&
+                    !surf_has(&surf, "Image de carte SD"));
+        iom_key(&m, IOM_KEY_DOWN);
+        ASSERT_EQ(m.param_cursor, 10);                    /* port_usb: last setting */
+        iom_key(&m, IOM_KEY_DOWN);
+        ASSERT_EQ(m.param_cursor, 0);                     /* presence */
+        snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HLE);
+    }
     iom_key(&m, IOM_KEY_ESC);
     ASSERT_EQ(m.page, IOM_PAGE_CARDS);
     /* ACIA: address input, checked (0300-03FF). */

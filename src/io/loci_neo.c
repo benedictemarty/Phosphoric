@@ -204,6 +204,7 @@ uint8_t loci_emu_api_read(uint16_t address) { (void)address; return 0xFF; }
 /* I/O page $0310-$03FF (batch 8.0): real bus cycles; the firmware then advances a little
  * (its core 1 handles the captured access, core 0 prepares what follows). */
 bool loci_emu_io_page(void) { return g_active != 0; }
+bool loci_emu_read_lost(void) { return false; }
 bool loci_emu_io_read(uint16_t address, uint8_t *out)
 {
     if (!g_active) return false;

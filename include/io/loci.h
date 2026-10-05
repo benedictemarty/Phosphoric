@@ -485,13 +485,13 @@ typedef struct loci_s {
      * Two mutually exclusive reliability models for the MIA serve:
      *  - WINDOW (default, historical): reliable iff tior ∈ [lo,hi]. This is the
      *    per-board calibration (adj_scan finds the range that works). Same behaviour.
-     *  - PHASE (opt-in): physically grounded. The serve arrives at subtick
-     *    (tior + serve_subticks); clean iff ≤ latch_subtick. Makes explicit
-     *    the serve budget (≈ -Os/-O2 build) and the independence from the PHI2 frequency. */
+     *  - PHASE (opt-in): ns timeline from bus_timing.h (2.23.0). The data
+     *    arrives at max(push (22+tior ticks) + serve, PHI2 rise) + (3+tiod)
+     *    ticks; clean iff before the end of the cycle minus tDSR. */
     uint8_t mia_timing_model;   /* 0 = LOCI_TIMING_WINDOW, 1 = LOCI_TIMING_PHASE */
-    uint8_t mia_serve_subticks; /* modelled serve latency (PHI2×30), PHASE model */
-    uint8_t mia_latch_subtick;  /* 6502 latch instant (subticks), PHASE model */
-    uint8_t mia_serve_jitter;   /* serve jitter amplitude (subticks), 0 = off */
+    uint16_t mia_serve_cycles;  /* serve duration (core-1 cycles at 120 MHz), PHASE model */
+    uint16_t mia_tdsr_ns;       /* 6502 setup time (ns), PHASE model */
+    uint8_t mia_serve_jitter;   /* serve jitter amplitude (cycles), 0 = off */
     uint32_t mia_jitter_state;  /* jitter PRNG state (advanced per CPU access) */
 } loci_t;
 
@@ -499,8 +499,8 @@ typedef struct loci_s {
 #define LOCI_TIMING_PHASE   1
 
 /* True when the modelled MIA I/O sampling is reliable. Depending on the active model:
- * WINDOW → tior ∈ [lo,hi]; PHASE → (tior + serve_subticks) ≤ latch_subtick
- * (PHI2 race won, see bus_timing.h). When false, the accesses routed through the
+ * WINDOW → tior ∈ [lo,hi]; PHASE → data on the bus before the 6502 deadline
+ * (timeline from bus_timing.h). When false, the accesses routed through the
  * MIA I/O window (the picowifi ACIA) are corrupted → "modem unreachable". */
 bool loci_mia_io_reliable(const loci_t* loci);
 
@@ -508,12 +508,12 @@ bool loci_mia_io_reliable(const loci_t* loci);
  * Switches the model to WINDOW (historical behaviour). */
 void loci_set_mia_window(loci_t* loci, uint8_t lo, uint8_t hi);
 
-/* Enables the PHASE race model (physically grounded): serve_subticks = serve
- * latency (PHI2×30 grid, ≈ build budget), latch_subtick = 6502 latch
- * instant. Switches the model to PHASE. */
-void loci_set_serve_timing(loci_t* loci, uint8_t serve_subticks, uint8_t latch_subtick);
+/* Enables the PHASE race model: serve_cycles = serve duration in core-1
+ * cycles (measured by RDT on real hardware: 23), tdsr_ns = 6502 setup time
+ * (0 → 100). Switches the model to PHASE. */
+void loci_set_serve_timing(loci_t* loci, uint16_t serve_cycles, uint16_t tdsr_ns);
 
-/* Sets the serve jitter (PHASE model): amplitude in subticks (0 = off),
+/* Sets the serve jitter (PHASE model): amplitude in cycles (0 = off),
  * PRNG seed (0 → default value). Near the latch boundary, reliability
  * becomes occasional but stays reproducible for a given seed. */
 void loci_set_serve_jitter(loci_t* loci, uint8_t amplitude, uint32_t seed);

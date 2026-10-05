@@ -7,10 +7,15 @@
  *
  * The `--loci-emu` backend runs the real LOCI firmware inside an external
  * RP2040 emulator (`~/loci/emul`, not versioned in this repository). Without
- * it, the Makefile links this file instead: the emulator builds and works
+ * it, the Makefile links only this file: the emulator builds and works
  * fully -- including `--loci`, which is the behavioural backend and does not
  * depend on the firmware -- and `--loci-emu` fails cleanly at startup.
  * `make LOCI_EMU=1 LOCI_EMUL_DIR=...` restores the co-simulation.
+ *
+ * In a native binary, this is the « no external LOCI » backend of the
+ * dispatch (loci_backend.c, functions renamed by loci_be_rename.h). The
+ * web build links it alone, without dispatch: it then also provides
+ * loci_emu_select and loci_emu_backend_available.
  */
 #include "io/loci_emu.h"
 #include "utils/logging.h"
@@ -88,3 +93,9 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value) { (void)address; (void)
 bool    loci_emu_io_page(void) { return false; }
 bool    loci_emu_io_read(uint16_t address, uint8_t *out) { (void)address; (void)out; return false; }
 void    loci_emu_io_write(uint16_t address, uint8_t value) { (void)address; (void)value; }
+bool    loci_emu_read_lost(void) { return false; }
+
+#ifndef LOCI_BE   /* linked alone (web build): no dispatch */
+bool loci_emu_select(const char *backend) { (void)backend; return false; }
+bool loci_emu_backend_available(const char *backend) { (void)backend; return false; }
+#endif

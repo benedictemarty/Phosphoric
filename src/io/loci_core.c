@@ -122,11 +122,11 @@ bool loci_init(loci_t* loci) {
     loci->mia_tior_lo = 0;
     loci->mia_tior_hi = 31;
     /* Epic B / Phase 1: PHI2 race model. Default WINDOW [0,31] = every tior
-     * reliable → same behaviour. PHASE parameters preset to « fits » (early serve,
-     * default latch) so it stays reliable if switched without calibration. */
+     * reliable → same behaviour. PHASE parameters preset to « fits » (zero
+     * serve, default tDSR) so it stays reliable if switched without calibration. */
     loci->mia_timing_model = LOCI_TIMING_WINDOW;
-    loci->mia_serve_subticks = 0;
-    loci->mia_latch_subtick = BUS_LATCH_SUBTICK_DEFAULT;
+    loci->mia_serve_cycles = 0;
+    loci->mia_tdsr_ns = BUS_ORIC_TDSR_NS_DEFAULT;
     loci->mia_serve_jitter = 0;                     /* no jitter by default */
     loci->mia_jitter_state = bus_jitter_seed(0);
     loci->dir_dev = -1;    /* device-list iterator closed */
