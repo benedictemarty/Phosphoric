@@ -46,6 +46,10 @@ static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
 static int      m_btn_warm_irqs;  /* BTN : impulsions nIRQ rendues par le LINES suivant (appui à chaud) */
 static int      m_lines_irqs;
+/* Journal des écritures reçues par la maquette sur $03A4/$03A8 (WR/WRT un par un, ou
+ * WRN groupé), dans l'ordre d'arrivée. */
+static uint8_t  m_xw[70000];
+static unsigned m_xw_n, m_xw_single, m_xw_wrn, m_xw_wrn_max;
 static int      m_boot_swap;  /* WRT $03AF=$A0 remplace la ROM servie et fait bouger gen8 */
 static uint8_t  m_id = 'L';   /* $0319 lu par RD (reconnaissance, loci_hw_probe) */
 
@@ -99,6 +103,12 @@ static void *mock_thread(void *arg)
                 if (ad == 0xFF00 && a[2]) m_bal_pending = 3;
             }
             uint8_t p[2] = { fl, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
+        case LUP_CMD_WRN: {
+            uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
+            unsigned n = (unsigned)(b[2] | b[3] << 8);
+            for (unsigned i = 0; i < n; i++) { int v = mread(); if (m_xw_n < sizeof(m_xw)) m_xw[m_xw_n++] = (uint8_t)v; }
+            m_xw_wrn++; if (n > m_xw_wrn_max) m_xw_wrn_max = n;
+            uint8_t p[2] = { LUP_F_NROMDIS, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
         case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (défaut du firmware), tior */
             uint8_t p[12] = { 0xC0, 0xD4, 0x01, 0, 0xA0, 0x0F, 0, 0, m_tior, 0, 0, 0 };
             mwrite(hdr, 3); mwrite(p, 12); break; }
@@ -115,6 +125,7 @@ static void *mock_thread(void *arg)
             if (ad == 0x03AF && a[2] == 0xA0 && m_boot_swap) {   /* mia_api_boot : BASIC dans la banque */
                 memset(m_rom, 0xBB, sizeof(m_rom)); m_gen++;
             }
+            if ((ad == 0x03A4 || ad == 0x03A8) && m_xw_n < sizeof(m_xw)) { m_xw[m_xw_n++] = a[2]; m_xw_single++; }
             uint8_t p[4] = { LUP_F_NROMDIS, m_gen, (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 4); break; }
         default: hdr[2] = LUP_ST_BADCMD; mwrite(hdr, 3);
@@ -249,6 +260,39 @@ int main(void)
     CHECK(loci_emu_reset_take() == 0, "pas de reset du 6502");
     m_btn_warm_irqs = 0;
     loci_emu_stop();
+
+    /* ── Écritures postées sur $03A4 (sauvegarde à chaud : ~48 Ko octet par octet) ── */
+    start(NULL);
+    m_xw_n = m_xw_single = m_xw_wrn = m_xw_wrn_max = 0;
+    unsigned long req0 = 0;
+    for (int i = 0; i < 1000; i++) {
+        loci_emu_api_write(0x03A4, (uint8_t)(i * 7));
+        loci_emu_irq_take();                      /* comme reflect_nirq après chaque écriture MIA */
+    }
+    (void)req0;
+    CHECK(m_xw_single == 0 && m_xw_wrn == 3 && m_xw_wrn_max == 256,
+          "1000 écritures $03A4 (+ drain nIRQ après chacune) : aucune requête unitaire, 3 WRN pleins");
+    loci_emu_api_read(0x03A0);                    /* une lecture vide le tampon avant d'être faite */
+    int order_ok = m_xw_n == 1000;
+    for (int i = 0; order_ok && i < 1000; i++) order_ok = m_xw[i] == (uint8_t)(i * 7);
+    CHECK(order_ok && m_xw_wrn == 4, "lecture $03xx : reste vidé avant elle, 1000 octets dans l'ordre");
+    loci_emu_api_write(0x03A4, 0x11);
+    loci_emu_api_write(0x03A8, 0x22);             /* autre porte : vide d'abord RW0 */
+    loci_emu_api_write(0x03A5, 0x01);             /* autre registre : vide RW1, puis écriture normale */
+    CHECK(m_xw_n == 1002 && m_xw[1000] == 0x11 && m_xw[1001] == 0x22, "changement d'adresse : ordre conservé");
+    loci_emu_api_write(0x03A4, 0x33);
+    loci_emu_idle_poll(1000);
+    CHECK(m_xw_n == 1002, "1000 cycles sans accès : écriture encore en tampon");
+    loci_emu_idle_poll(1500);
+    CHECK(m_xw_n == 1003 && m_xw[1002] == 0x33, "2500 cycles sans accès : tampon vidé (latence bornée)");
+    loci_emu_stop();
+    setenv("LOCI_HW_NO_POST", "1", 1);
+    start(NULL);
+    m_xw_n = m_xw_single = m_xw_wrn = 0;
+    for (int i = 0; i < 10; i++) loci_emu_api_write(0x03A4, (uint8_t)i);
+    CHECK(m_xw_single == 10 && m_xw_wrn == 0, "LOCI_HW_NO_POST : une requête par écriture");
+    loci_emu_stop();
+    unsetenv("LOCI_HW_NO_POST");
 
     /* ── Reconnaissance d'une LOCI-USB (loci_hw_probe) ── */
     {

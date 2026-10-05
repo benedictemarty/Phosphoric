@@ -173,6 +173,8 @@ static void settle(void)
     if (g_settle_us > 0) { struct timespec ts = { 0, g_settle_us * 1000L }; nanosleep(&ts, NULL); }
 }
 
+static void post_flush(void);   /* écritures postées $03A4/$03A8 (plus bas) */
+
 /* ── course Φ2 ── */
 static double period_ns(void) { return 1e6 / (double)g_phi2_khz; }
 static double tick_ns(void)   { return 1e6 / ((double)g_tm.phi2_khz * 30.0); }   /* PIO = Φ2cfg × 30 */
@@ -180,6 +182,7 @@ static double tick_ns(void)   { return 1e6 / ((double)g_tm.phi2_khz * 30.0); }  
 static void timing_load(void)
 {
     if (!g_timing) return;
+    post_flush();
     if (lup_timing(&g_c, &g_tm) != 0 || !g_tm.sys_khz || !g_tm.phi2_khz) {
         log_warning("LOCI-hw: TIMING a échoué (%s) — course Φ2 non mesurée", lup_client_error(&g_c));
         g_timing = 0;
@@ -230,11 +233,57 @@ static void note_act(unsigned act)
     g_since_access = 0;
 }
 
+/* ── Écritures postées sur les portes XRAM RW0 ($03A4) / RW1 ($03A8) ──
+ * La sauvegarde à chaud (mia_save_state de la ROM du menu) écrit ~48 Ko de RAM Oric
+ * dans $03A4, un octet à la fois : un aller-retour USB par octet (~1 min). Ces
+ * écritures ne rendent rien au 6502 : elles sont mises en tampon et envoyées par WRN
+ * (n écritures sur la même adresse, faites dans l'ordre par act_loop côté firmware).
+ * Le tampon est vidé AVANT toute autre requête au pont (lecture, écriture d'une autre
+ * adresse, ROM, BAL, LINES, bouton, HID, TIMING, fin de session, reset) : l'ordre vu
+ * par le firmware est inchangé ; seuls nIRQ/gen8 de ces écritures arrivent en fin de
+ * paquet. Vidé aussi après LOCI_HW_POST_IDLE cycles sans accès (latence bornée).
+ * Pas de mesure de la course Φ2 pour elles (WRN ne renvoie pas act16).
+ * LOCI_HW_NO_POST=1 : une requête par écriture, comme avant. */
+#define LOCI_HW_RW0 0x03A4
+#define LOCI_HW_RW1 0x03A8
+#define LOCI_HW_POST_MAX  256      /* USBBUS_WRN_MAX du firmware */
+#define LOCI_HW_POST_IDLE 2000     /* cycles 6502 sans accès LOCI avant vidage */
+static int           g_post_off;
+static uint8_t       g_post_buf[LOCI_HW_POST_MAX];
+static unsigned      g_post_n;
+static uint16_t      g_post_addr;
+static unsigned long g_posted, g_post_wrn;
+static void post_flush(void)
+{
+    if (!g_post_n) return;
+    uint8_t f = 0;
+    unsigned n = g_post_n;
+    g_post_n = 0;
+    if (lup_wrn(&g_c, g_post_addr, n, g_post_buf, &f) != 0) { link_error_once("écritures groupées (WRN)"); return; }
+    g_post_wrn++;
+    note_flags(f);
+    settle();
+}
+static int post_write(uint16_t addr, uint8_t v)
+{
+    if (g_post_off || (addr != LOCI_HW_RW0 && addr != LOCI_HW_RW1)) return 0;
+    if (g_post_n && g_post_addr != addr) post_flush();
+    g_post_addr = addr;
+    g_post_buf[g_post_n++] = v;
+    g_posted++;
+    trace_access('w', addr, v, 0);
+    g_idle_cycles = 0;
+    g_since_access = 0;
+    if (g_post_n == LOCI_HW_POST_MAX) post_flush();
+    return 1;
+}
+
 /* Cycle de bus générique (page $03xx). */
 static uint8_t bus_rd(uint16_t addr)
 {
     uint8_t d = 0xFF, f;
     if (!g_active) return 0xFF;
+    post_flush();
     if (addr == LOCI_HW_MIA_SPIN) op_defer_release();   /* entrée dans la boucle d'attente */
     if (g_timing) {
         uint16_t serve = 0, act = 0;
@@ -267,6 +316,8 @@ static void bus_wr(uint16_t addr, uint8_t v)
 {
     uint8_t f;
     if (!g_active) return;
+    if (post_write(addr, v)) return;
+    post_flush();
     if (addr == LOCI_HW_MIA_OP) g_op_defer = 1;   /* sa réponse peut déjà porter la nouvelle gen8 */
     if (g_timing) {
         uint16_t act = 0;
@@ -326,6 +377,7 @@ int loci_emu_start(const char *dev)
     g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
     g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0; op_defer_cancel();
     g_irq_pending = 0;
+    g_post_off = getenv("LOCI_HW_NO_POST") != NULL; g_post_n = 0; g_posted = g_post_wrn = 0;
     g_bal_timeout_ms = getenv("LOCI_HW_BAL_TIMEOUT_MS") ? atol(getenv("LOCI_HW_BAL_TIMEOUT_MS")) : 10000;
     log_info("LOCI-hw: pont « %s » prêt (proto %u, firmware pont %u, caps %02X%s) — nROMDIS=%d nRESET=%d ; "
              "cache ROM %s", dev, g_c.proto, g_c.fw, g_c.caps,
@@ -347,8 +399,11 @@ void loci_emu_stop(void)
     if (!g_active) return;
     log_info("LOCI-hw: fin de session — %lu requêtes, %lu rechargements du cache ROM, %lu polls en attente (%lu avec événement)",
              g_c.n_req, g_rom_refills, g_idle_polls, g_idle_polls_hit);
+    post_flush();
     if (g_bal_writes)
         log_info("LOCI-hw: BAL — %lu écritures captées, %lu commandes", g_bal_writes, g_bal_cmds);
+    if (g_posted)
+        log_info("LOCI-hw: écritures postées $03A4/$03A8 — %lu octets en %lu WRN", g_posted, g_post_wrn);
     if (g_timing)
         log_info("LOCI-hw: course Φ2 — %lu lectures mesurées, %lu EN RETARD, %lu sur iopage périmé ; "
                  "serve max %u cycles, act max %u cycles, marge minimale %.0f ns",
@@ -367,6 +422,7 @@ static bool press_button(uint8_t action)
 {
     if (!g_active) return false;
     if (g_c.caps & LUP_CAP_FIRMWARE) {
+        post_flush();
         if (lup_btn(&g_c, action) != 0) { link_error_once("BTN"); return false; }
         /* Le firmware traite le bouton et charge sa ROM en TEMPS RÉEL (secondes en
          * émulation, dizaines de ms sur silicium) pendant que l'Oric émulé, lui, court :
@@ -407,6 +463,7 @@ bool loci_emu_diag_button(void)     { return press_button(2); }
 /* ── overlay ROM ── */
 static int rom_refill(void)
 {
+    post_flush();
     if (lup_rdn(&g_c, 0xC000, 16384, g_rom, g_rom_flags) != 0) { link_error_once("RDN ROM"); return 0; }
     g_rom_valid = 1; g_rom_refills++;
     g_gen = g_c.gen;                     /* l'image est cohérente avec cette génération */
@@ -420,6 +477,7 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
     if (!g_active || address < 0xC000 || !g_romdis) return false;
     uint8_t d, f;
     if (g_rom_nocache) {
+        post_flush();
         if (lup_rd(&g_c, address, &d, &f) != 0) { link_error_once("lecture ROM"); return false; }
         note_flags(f);
     } else {
@@ -436,6 +494,7 @@ bool loci_emu_romdis(void) { return g_active && g_romdis; }
 void loci_emu_ext_lines(int *nirq, int *nreset, int *nromdis)
 {
     uint8_t lines = 0;
+    if (g_active) post_flush();
     if (!g_active || lup_lines(&g_c, &lines, NULL, NULL) != 0) { lines = 0; if (g_active) link_error_once("LINES"); }
     if (nirq)    *nirq    = (lines & LUP_L_NIRQ) != 0;
     if (nreset)  *nreset  = (lines & LUP_L_NRESET) != 0;
@@ -470,6 +529,10 @@ static int lines_drain(void)
     uint8_t lines = 0, irqs = 0, rsts = 0;
     if (!g_active) return 0;
     if (g_irq_pending) { int n = g_irq_pending; g_irq_pending = 0; return n; }   /* bouton à chaud */
+    /* Écritures encore en tampon : le firmware ne les a pas vues, aucune impulsion ne
+     * peut en découler (reflect_nirq suit CHAQUE écriture MIA : vider ici renverrait
+     * à un WRN + un LINES par octet). Relevé après le vidage. */
+    if (g_post_n) return 0;
     if (lup_lines(&g_c, &lines, &irqs, &rsts) != 0) { link_error_once("LINES"); return 0; }
     int romdis = (lines & LUP_L_NROMDIS) != 0;
     if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate(romdis ? "nROMDIS actif" : "nROMDIS relâché"); }
@@ -486,6 +549,7 @@ int loci_emu_irq_take(void) { return lines_drain(); }
 int loci_emu_idle_poll(int cycles)
 {
     if (g_since_access < (1L << 30)) g_since_access += cycles;
+    if (g_post_n && g_since_access >= LOCI_HW_POST_IDLE) post_flush();
     if (!g_active || g_idle_poll_cycles <= 0) return 0;
     g_idle_cycles += cycles;
     if (g_idle_cycles < g_idle_poll_cycles) return 0;
@@ -504,6 +568,7 @@ int loci_emu_reset_take(void)
     int n = g_reset_pending;
     g_reset_pending = 0;
     if (n) {
+        post_flush();
         log_info("LOCI-hw: nRESET piloté par LOCI (%d front%s) → reset du 6502", n, n > 1 ? "s" : "");
         timing_load();                    /* Φ2 et délais ont pu changer dans le menu */
     }
@@ -528,6 +593,7 @@ void loci_emu_tick(long steps) { (void)steps; }   /* le firmware réel avance to
 bool loci_emu_mou_report(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel, int8_t pan)
 {
     if (!g_active || !(g_c.caps & LUP_CAP_FIRMWARE)) return false;
+    post_flush();
     if (lup_mou(&g_c, buttons, dx, dy, wheel, pan) != 0) { link_error_once("MOU"); return false; }
     return true;
 }
@@ -535,6 +601,7 @@ bool loci_emu_mou_armed(void) { return g_active && (g_c.caps & LUP_CAP_FIRMWARE)
 bool loci_emu_kbd_report(uint8_t modifier, const uint8_t keycodes[6])
 {
     if (!g_active || !(g_c.caps & LUP_CAP_FIRMWARE)) return false;
+    post_flush();
     if (lup_kbd(&g_c, modifier, keycodes) != 0) { link_error_once("KBD"); return false; }
     return true;
 }
@@ -558,6 +625,7 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
 {
     if (!g_active || (address & 0xFF00u) != 0xFF00u || !(g_c.caps & LUP_CAP_FIRMWARE)) return false;
     uint8_t f;
+    post_flush();
     if (lup_wr(&g_c, address, value, &f) != 0) { link_error_once("écriture BAL"); return false; }
     note_flags(f);
     if (!(f & LUP_F_SERVED)) return false;          /* non captée : RAM overlay ou ROM */

@@ -193,8 +193,18 @@ son piège `$03BA`, pulse nIRQ et attend que le 6502 **en marche** y entre pour
 sauvegarder la RAM (sinon, après 2 s, reboot de secours). `--loci-hw` rend donc la main
 dès qu'il voit l'impulsion nIRQ sans front nRESET, et la livre au 6502 au drain
 suivant ; seul un appui à froid attend nRESET (au plus 10 s). La sauvegarde puis la
-restauration (« Return » dans le menu) passent par `$03A4`, un aller-retour USB par
-octet : environ une minute chacune sur la Feather.
+restauration (« Return » dans le menu) passent par `$03A4`.
+
+**Écritures postées (2.29.3).** Les écritures sur les portes XRAM `$03A4` (RW0) et
+`$03A8` (RW1) ne rendent rien au 6502 : `--loci-hw` les met en tampon et les envoie par
+paquets de 256 (`WRN`, faites dans l'ordre par le firmware). Le tampon est vidé avant
+toute autre requête au pont (lecture `$03xx`, écriture d'une autre adresse, ROM, BAL,
+LINES, bouton, HID, TIMING, reset, fin de session) et après 2000 cycles sans accès :
+l'ordre vu par le firmware est inchangé. Le drain nIRQ qui suit chaque écriture MIA
+ne vide pas le tampon (le firmware n'a pas encore vu ces écritures). Mesuré sur la
+Feather : sauvegarde à chaud = 17103 octets en 85 WRN, menu « Return » en ~4 s au
+lieu d'une à deux minutes. `LOCI_HW_NO_POST=1` revient à une requête par écriture.
+La restauration (lectures de `$03A4`) reste octet par octet : ~12 s.
 
 ### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 
