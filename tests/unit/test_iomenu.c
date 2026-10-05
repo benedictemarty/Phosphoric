@@ -377,7 +377,7 @@ TEST(test_menu_in_english) {
         iom_lang_entry(i, &fr, &en);
         conversions(fr, a, sizeof(a));
         conversions(en, b, sizeof(b));
-        if (strcmp(a, b) != 0) printf("    format mismatch: %s\n", fr);
+        if (strcmp(a, b) != 0) printf("    format différent : %s\n", fr);
         ASSERT_TRUE(strcmp(a, b) == 0);
     }
     iom_init(&m);
@@ -413,7 +413,7 @@ TEST(test_menu_in_english) {
             for (m.param_cursor = 0; m.param_cursor <= d->nparams; m.param_cursor++) {
                 iom_draw(&m, &surf);
                 const int r = accent_row(&surf);
-                if (r >= 0) printf("    %s, setting %d: row %d\n", d->name, m.param_cursor, r);
+                if (r >= 0) printf("    %s, réglage %d : rangée %d\n", d->name, m.param_cursor, r);
                 ASSERT_EQ(r, -1);
             }
         }
