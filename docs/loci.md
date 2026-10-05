@@ -204,7 +204,20 @@ l'ordre vu par le firmware est inchangé. Le drain nIRQ qui suit chaque écritur
 ne vide pas le tampon (le firmware n'a pas encore vu ces écritures). Mesuré sur la
 Feather : sauvegarde à chaud = 17103 octets en 85 WRN, menu « Return » en ~4 s au
 lieu d'une à deux minutes. `LOCI_HW_NO_POST=1` revient à une requête par écriture.
-La restauration (lectures de `$03A4`) reste octet par octet : ~12 s.
+
+**Lectures groupées (2.30.0, firmware avec `caps & 0x20` = `LUP_CAP_XSTREAM`).** À la
+2e lecture consécutive d'une porte, `XPEEK` rend d'avance les 256 octets que rendraient
+les lectures suivantes, sans rien modifier côté firmware ; elles sont servies sans
+requête. Avant toute autre requête au pont, à l'épuisement (enchaîné aussitôt sur un
+nouveau `XPEEK`) et après 2000 cycles sans accès, `XADV` rejoue côté firmware les k
+lectures servies : la cartouche est dans l'état exact de k lectures du 6502. Pas de
+tampon si STEP = 0 (fenêtre clavier HID réécrite en tâche de fond) ; pas de nouvel
+essai avant une écriture des registres `$03A4`-`$03AB`. Le drain nIRQ ne solde pas un
+flux en cours. Mesuré sur la Feather (firmware reflashé, caps `3F`) : RETURN → BASIC
+intact en ~4 s (17075 octets servis en 82 `XPEEK`) ; cycle complet BASIC → F8 → menu →
+RETURN → BASIC en moins de 10 s. Firmware sans `XSTREAM` (caps `1F`) : lectures
+unitaires, ~12 s. `LOCI_HW_NO_XSTREAM=1` : lectures unitaires. Compilé avec un client
+loci-usb antérieur (sans `LUP_CAP_XSTREAM`), le code est simplement absent.
 
 ### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 

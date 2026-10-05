@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.29.3
+Current Version: 2.30.0
 Release Date: 2026-10-05
-Status: Stable (**--loci-hw : écritures postées $03A4/$03A8 — 2.29.3**. Écritures XRAM en tampon, envoyées par WRN (256) ; vidage avant toute autre requête et après 2000 cycles. Feather : F8 à chaud → menu « Return » ~4 s (17103 octets en 85 WRN) au lieu d'une à deux minutes. test-loci-hw 33→39.)
+Status: Stable (**--loci-hw : lectures groupées $03A4/$03A8 (XPEEK/XADV) — 2.30.0**. Firmware caps 0x20 : lectures de porte servies par tampons de 256, soldées par XADV avant toute autre requête. Feather : RETURN → BASIC en ~4 s (17075 octets en 82 XPEEK) au lieu de ~12 s ; F8 à chaud → menu ~4 s. test-loci-hw 39→47.)
+Status (prev): Stable (**--loci-hw : écritures postées $03A4/$03A8 — 2.29.3**. Écritures XRAM en tampon, envoyées par WRN (256) ; vidage avant toute autre requête et après 2000 cycles. Feather : F8 à chaud → menu « Return » ~4 s (17103 octets en 85 WRN) au lieu d'une à deux minutes. test-loci-hw 33→39.)
 Status (prev): Stable (**--loci-hw : F8 à chaud et RETURN du menu — 2.29.2**. Appui à chaud : nIRQ (piège $03BA) livrée au 6502 sans attendre nRESET (jam $0025 corrigé) ; report d'invalidation levé à la lecture de MIA_SPIN $03B0 seulement (RETURN : jam $B5AD corrigé). Vérifié sur la Feather : BASIC → F8 → menu → RETURN → BASIC intact. test-loci-hw 26→33.)
 Status (prev): Stable (**--loci-hw : menu LOCI → ESC n'est plus figé sur « Booting » — 2.29.1**. Invalidation du cache ROM différée après une écriture MIA_OP $03AF jusqu'au premier accès $03xx (mia_api_boot remplace la ROM servie). Vérifié sur la Feather : ESC → BASIC 1.1 Ready. test-loci-hw 22→26.)
 Status (prev): Stable (**Bouton NMI — 2.29.0**. Maj+F5 = bouton sous l'Oric (cpu_nmi, une NMI par appui) ; commande --control `nmi`, POST /nmi. Vérifié sur la Feather : la ROM de diagnostic passe de « RAM Test Passed » à « Text Test Card ». F5 reste un reset complet.)
