@@ -90,6 +90,8 @@ The frame summarizes the cards: **●** present (with its address and main setti
 line shows the card, « présente » (present) or « absente » (absent), and a red star
 **\*** if it has been modified. Below the list, the explanation of the selected card.
 
+![Card list, LOCI selected in usb mode](../images/menu-cartes.png)
+
 - **Enter** on a card opens its page.
 - **Appliquer et redémarrer** (apply and restart) relaunches the emulator with the
   chosen cards. This is a **cold restart**: the program relaunches itself with the
@@ -154,7 +156,12 @@ them to have both together.
 ### The LOCI card and its three modes
 
 The first setting, **Mode**, chooses which LOCI; **only the settings of the chosen
-mode are shown** (the others are remembered, but not used):
+mode are shown** (the others are remembered, but not used). In `usb` mode, only
+the LOCI-USB port is left:
+
+![LOCI card page in usb mode](../images/menu-carte-loci.png)
+
+The three modes:
 
 | Mode | What it is | Settings |
 |---|---|---|

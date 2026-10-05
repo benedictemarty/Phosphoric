@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.26.3
+Current Version: 2.26.4
 Release Date: 2026-10-05
-Status: Stable (**Manuel F1 corrigé — 2.26.3**. Libellés ACIA du tableau des cartes alignés sur le menu : « Vitesse (bauds) », « Mode V23 (1200/75) ».)
+Status: Stable (**Images du manuel F1 — 2.26.4**. Liste des cartes et page de la carte LOCI (mode usb) ajoutées à docs/user-guide/MENU-F1.md.)
+Status (prev): Stable (**Manuel F1 corrigé — 2.26.3**. Libellés ACIA du tableau des cartes alignés sur le menu : « Vitesse (bauds) », « Mode V23 (1200/75) ».)
 Status (prev): Stable (**Manuel du menu F1 — 2.26.2**. docs/user-guide/MENU-F1.md (touches, médias, périphériques, cartes et LOCI à trois modes, erreurs, phosphoric.cfg) ; capture du menu refaite ; liens README et guide.)
 Status (prev): Stable (**LOCI-USB — 2.26.1**. Mode réelle → usb, réglage « Port de la LOCI-USB » (loci.port_usb ; loci.mode=réelle et loci.pont encore lus) ; textes corrigés : la Feather fait tourner le firmware LOCI, Phosphoric joue l'Oric par l'USB, pas un pont vers une LOCI 1.3.)
 Status (prev): Stable (**Une carte LOCI, trois modes — 2.26.0**. Réglage Mode de la carte LOCI : intégré (--loci) / firmware (--loci-emu) / réelle (--loci-hw, Feather) ; réglages du mode seuls affichés ; fiches loci_emu/loci_hw retirées (anciennes clés cfg lues). Backends LOCI choisis au lancement (loci_backend.c, loci_be_rename.h) : un binaire contient stub + emul + hw ; LOCI_HW automatique. Vérifié sur la vraie Feather. test-cards 16→20.)
