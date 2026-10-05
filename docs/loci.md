@@ -192,8 +192,18 @@ its `$03BA` trap, pulses nIRQ and waits for the **running** 6502 to enter it to 
 the RAM (otherwise, after 2 s, fallback reboot). So `--loci-hw` hands control back as
 soon as it sees the nIRQ pulse without an nRESET edge, and delivers it to the 6502 at
 the next drain; only a cold press waits for nRESET (at most 10 s). Saving then
-restoring (« Return » in the menu) go through `$03A4`, one USB round trip per byte:
-about a minute each on the Feather.
+restoring (« Return » in the menu) go through `$03A4`.
+
+**Posted writes (2.29.3).** Writes to the XRAM ports `$03A4` (RW0) and `$03A8` (RW1)
+return nothing to the 6502: `--loci-hw` buffers them and sends them in packets of 256
+(`WRN`, done in order by the firmware). The buffer is flushed before any other bridge
+request (`$03xx` read, write to another address, ROM, BAL, LINES, button, HID,
+TIMING, reset, end of session) and after 2000 cycles without access: the order seen
+by the firmware is unchanged. The nIRQ drain that follows each MIA write does not
+flush the buffer (the firmware has not seen those writes yet). Measured on the
+Feather: warm save = 17103 bytes in 85 WRN, « Return » menu in ~4 s instead of one to
+two minutes. `LOCI_HW_NO_POST=1` goes back to one request per write. Restoring
+(reads of `$03A4`) is still byte by byte: ~12 s.
 
 ### loci-fw BAL mailbox (`--loci-hw`)
 

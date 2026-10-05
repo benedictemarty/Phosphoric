@@ -46,6 +46,10 @@ static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
 static int      m_btn_warm_irqs;  /* BTN: nIRQ pulses returned by the next LINES (warm press) */
 static int      m_lines_irqs;
+/* Log of the writes received by the mock on $03A4/$03A8 (WR/WRT one by one, or
+ * grouped WRN), in arrival order. */
+static uint8_t  m_xw[70000];
+static unsigned m_xw_n, m_xw_single, m_xw_wrn, m_xw_wrn_max;
 static int      m_boot_swap;  /* WRT $03AF=$A0 replaces the served ROM and moves gen8 */
 static uint8_t  m_id = 'L';   /* $0319 read by RD (recognition, loci_hw_probe) */
 
@@ -99,6 +103,12 @@ static void *mock_thread(void *arg)
                 if (ad == 0xFF00 && a[2]) m_bal_pending = 3;
             }
             uint8_t p[2] = { fl, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
+        case LUP_CMD_WRN: {
+            uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
+            unsigned n = (unsigned)(b[2] | b[3] << 8);
+            for (unsigned i = 0; i < n; i++) { int v = mread(); if (m_xw_n < sizeof(m_xw)) m_xw[m_xw_n++] = (uint8_t)v; }
+            m_xw_wrn++; if (n > m_xw_wrn_max) m_xw_wrn_max = n;
+            uint8_t p[2] = { LUP_F_NROMDIS, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
         case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (firmware default), tior */
             uint8_t p[12] = { 0xC0, 0xD4, 0x01, 0, 0xA0, 0x0F, 0, 0, m_tior, 0, 0, 0 };
             mwrite(hdr, 3); mwrite(p, 12); break; }
@@ -115,6 +125,7 @@ static void *mock_thread(void *arg)
             if (ad == 0x03AF && a[2] == 0xA0 && m_boot_swap) {   /* mia_api_boot: BASIC into the bank */
                 memset(m_rom, 0xBB, sizeof(m_rom)); m_gen++;
             }
+            if ((ad == 0x03A4 || ad == 0x03A8) && m_xw_n < sizeof(m_xw)) { m_xw[m_xw_n++] = a[2]; m_xw_single++; }
             uint8_t p[4] = { LUP_F_NROMDIS, m_gen, (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 4); break; }
         default: hdr[2] = LUP_ST_BADCMD; mwrite(hdr, 3);
@@ -249,6 +260,39 @@ int main(void)
     CHECK(loci_emu_reset_take() == 0, "pas de reset du 6502");
     m_btn_warm_irqs = 0;
     loci_emu_stop();
+
+    /* ── Posted writes on $03A4 (warm save: ~48 KB byte by byte) ── */
+    start(NULL);
+    m_xw_n = m_xw_single = m_xw_wrn = m_xw_wrn_max = 0;
+    unsigned long req0 = 0;
+    for (int i = 0; i < 1000; i++) {
+        loci_emu_api_write(0x03A4, (uint8_t)(i * 7));
+        loci_emu_irq_take();                      /* like reflect_nirq after each MIA write */
+    }
+    (void)req0;
+    CHECK(m_xw_single == 0 && m_xw_wrn == 3 && m_xw_wrn_max == 256,
+          "1000 écritures $03A4 (+ drain nIRQ après chacune) : aucune requête unitaire, 3 WRN pleins");
+    loci_emu_api_read(0x03A0);                    /* a read flushes the buffer before it is done */
+    int order_ok = m_xw_n == 1000;
+    for (int i = 0; order_ok && i < 1000; i++) order_ok = m_xw[i] == (uint8_t)(i * 7);
+    CHECK(order_ok && m_xw_wrn == 4, "lecture $03xx : reste vidé avant elle, 1000 octets dans l'ordre");
+    loci_emu_api_write(0x03A4, 0x11);
+    loci_emu_api_write(0x03A8, 0x22);             /* other port: flushes RW0 first */
+    loci_emu_api_write(0x03A5, 0x01);             /* other register: flushes RW1, then a normal write */
+    CHECK(m_xw_n == 1002 && m_xw[1000] == 0x11 && m_xw[1001] == 0x22, "changement d'adresse : ordre conservé");
+    loci_emu_api_write(0x03A4, 0x33);
+    loci_emu_idle_poll(1000);
+    CHECK(m_xw_n == 1002, "1000 cycles sans accès : écriture encore en tampon");
+    loci_emu_idle_poll(1500);
+    CHECK(m_xw_n == 1003 && m_xw[1002] == 0x33, "2500 cycles sans accès : tampon vidé (latence bornée)");
+    loci_emu_stop();
+    setenv("LOCI_HW_NO_POST", "1", 1);
+    start(NULL);
+    m_xw_n = m_xw_single = m_xw_wrn = 0;
+    for (int i = 0; i < 10; i++) loci_emu_api_write(0x03A4, (uint8_t)i);
+    CHECK(m_xw_single == 10 && m_xw_wrn == 0, "LOCI_HW_NO_POST : une requête par écriture");
+    loci_emu_stop();
+    unsetenv("LOCI_HW_NO_POST");
 
     /* ── Recognising a LOCI-USB (loci_hw_probe) ── */
     {
