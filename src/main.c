@@ -642,6 +642,9 @@ static void osd_do_eject(emulator_t* emu) {
         snprintf(emu->osd.status, sizeof(emu->osd.status),
                  "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
         return;
+    case MEDIA_LOCI_MENU:
+        snprintf(emu->osd.status, sizeof(emu->osd.status), "Disquettes : menu du LOCI (F8)");
+        return;
     case MEDIA_EMPTY:
         snprintf(emu->osd.status, sizeof(emu->osd.status), "Lecteur %c deja vide", 'A' + drv);
         return;
@@ -670,9 +673,10 @@ static void osd_do_load(emulator_t* emu, const osd_entry_t* e) {
         int drv = emu->osd.disk_drive;
         if (drv < 0 || drv >= emu_disk_max_drives(emu)) drv = 0;
         media_result_t r = media_disk_insert(emu, drv, e->path);
-        if (r == MEDIA_NO_IFACE) {
-            snprintf(emu->osd.status, sizeof(emu->osd.status),
-                     "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
+        if (r == MEDIA_NO_IFACE || r == MEDIA_LOCI_MENU) {
+            snprintf(emu->osd.status, sizeof(emu->osd.status), r == MEDIA_LOCI_MENU
+                     ? "Disquettes : menu du LOCI (F8)"
+                     : "Pas de lecteur (--disk-rom ou --jasmin-rom requis)");
             return;
         }
         if (r != MEDIA_OK) {

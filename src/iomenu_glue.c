@@ -56,6 +56,7 @@ media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
         log_info("OSD: disque %c <- %s (LOCI)", 'A' + drv, path);
         return MEDIA_OK;
     }
+    if (emu_loci_fw_disks(emu)) return MEDIA_LOCI_MENU;
     if (!emu_has_disk_iface(emu)) return MEDIA_NO_IFACE;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     sedoric_disk_t* nd = sedoric_load(path);
@@ -79,6 +80,7 @@ media_result_t media_disk_eject(emulator_t* emu, int drv) {
         loci_dsk_close(&emu->loci, (uint8_t)drv);   /* écrit les secteurs modifiés */
         return MEDIA_OK;
     }
+    if (emu_loci_fw_disks(emu)) return MEDIA_LOCI_MENU;
     if (!emu_has_disk_iface(emu)) return MEDIA_NO_IFACE;
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     if (!emu->disks[drv]) return MEDIA_EMPTY;
@@ -142,6 +144,7 @@ void iomenu_refresh(emulator_t* emu) {
                    : loci_disks(emu) ? "LOCI" : NULL;
     st->drives = emu_has_disk_iface(emu) ? emu_disk_max_drives(emu) : loci_disks(emu) ? 4 : 0;
     st->no_drive_protect = loci_disks(emu);
+    st->disks_by_loci = emu_loci_fw_disks(emu);
     if (st->drives > 4) st->drives = 4;
     for (int d = 0; d < 4; d++) {
         if (loci_disks(emu)) {
@@ -219,6 +222,7 @@ static void msg(emulator_t* emu, bool err, const char* fmt, ...) {
 static const char* media_error(media_result_t r) {
     switch (r) {
     case MEDIA_NO_IFACE:    return "pas d'interface disque (--disk-rom ou --jasmin-rom)";
+    case MEDIA_LOCI_MENU:   return "se monte depuis le menu du LOCI (MENU, F8)";
     case MEDIA_BAD_DRIVE:   return "lecteur absent sur cette interface";
     case MEDIA_EMPTY:       return "déjà vide";
     case MEDIA_LOAD_FAILED: return "fichier illisible";
@@ -300,8 +304,6 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
     case IOM_ACT_DISK_INSERT:
         r = media_disk_insert(emu, a->target, a->path);
         if (r == MEDIA_OK) msg(emu, false, "Lecteur %c : %s", 'A' + a->target, base_name(a->path));
-        else if (r == MEDIA_NO_IFACE && emu->card_on[CARD_IDX_loci] && emu->loci_external)
-            msg(emu, true, "LOCI : les disquettes se montent depuis son menu (bouton MENU, F8)");
         else msg(emu, true, "Lecteur %c : %s", 'A' + a->target, media_error(r));
         return false;
     case IOM_ACT_DISK_EJECT:

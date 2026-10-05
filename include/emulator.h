@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.26.4"
+#define EMU_VERSION "2.26.5"
 
 /**
  * @brief ORIC machine model
@@ -648,6 +648,12 @@ static inline bool emu_has_disk_iface(const emulator_t* emu) {
  * Règle commune au menu F1 et à --control / API HTTP. */
 static inline bool emu_loci_disks(const emulator_t* emu) {
     return emu->card_on[CARD_IDX_loci] && !emu->loci_external && !emu_has_disk_iface(emu);
+}
+
+/* LOCI co-simulé ou réel sans Microdisc/Jasmin : les disquettes se montent depuis
+ * le menu du LOCI (bouton MENU, F8), jamais depuis l'hôte. */
+static inline bool emu_loci_fw_disks(const emulator_t* emu) {
+    return emu->card_on[CARD_IDX_loci] && emu->loci_external && !emu_has_disk_iface(emu);
 }
 
 #endif /* EMULATOR_H */

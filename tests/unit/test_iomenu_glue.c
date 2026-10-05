@@ -154,10 +154,17 @@ TEST(test_disk_routed_to_loci) {
     ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_OK);
     ASSERT_TRUE(emu->loci.dsk_host_path[1][0] == '\0');
     ASSERT_EQ(media_disk_eject(emu, 1), MEDIA_EMPTY);
+    ASSERT_TRUE(!emu->iomenu.st.disks_by_loci);
     emu->loci_external = true;                          /* --loci-emu / --loci-hw */
-    ASSERT_EQ(media_disk_insert(emu, 0, "un.dsk"), MEDIA_NO_IFACE);
+    ASSERT_EQ(media_disk_insert(emu, 0, "un.dsk"), MEDIA_LOCI_MENU);
+    ASSERT_EQ(media_disk_eject(emu, 0), MEDIA_LOCI_MENU);
     iomenu_refresh(emu);
     ASSERT_EQ(emu->iomenu.st.drives, 0);
+    ASSERT_TRUE(emu->iomenu.st.disks_by_loci);           /* lecteurs grisés dans F1 */
+    emu->card_on[CARD_IDX_microdisc] = true;            /* vraie carte : elle reprend la main */
+    iomenu_refresh(emu);
+    ASSERT_TRUE(!emu->iomenu.st.disks_by_loci);
+    emu->card_on[CARD_IDX_microdisc] = false;
     loci_cleanup(&emu->loci);
 }
 

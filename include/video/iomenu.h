@@ -109,6 +109,7 @@ typedef struct {
     const char* machine;       /* « Oric Atmos », « Oric-1 » */
     const char* disk_iface;    /* « Microdisc », « Jasmin », « LOCI » ; NULL : pas de lecteur */
     bool no_drive_protect;     /* l'interface n'a pas de protection par lecteur (LOCI) */
+    bool disks_by_loci;        /* LOCI co-simulé/réel : lecteurs gérés par son menu, pas ici */
     int  drives;               /* lecteurs utilisables (0 sans interface) */
     char drive[4][IOM_NAME_MAX];   /* "" : vide */
     bool drive_ro[4];

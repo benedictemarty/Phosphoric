@@ -236,6 +236,12 @@ void iom_message(iom_menu_t* m, bool error, const char* text) {
 
 static bool is_drive(int item) { return item >= IOM_ITEM_DRIVE0 && item < IOM_ITEM_TAPE; }
 
+/* Élément sélectionnable : les lecteurs d'un LOCI co-simulé/réel se gèrent depuis
+ * son propre menu (MENU, F8), le curseur les saute. */
+static bool item_enabled(const iom_menu_t* m, int item) {
+    return !(is_drive(item) && m->st.disks_by_loci);
+}
+
 static iom_action_t browse_key(iom_menu_t* m, int key) {
     iom_action_t a = { IOM_ACT_NONE, 0, "" };
     const int n = m->nfiles + 1;
@@ -443,9 +449,9 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
     if (m->page == IOM_PAGE_CARD) { card_key(m, key); return a; }
     int c = m->cursor;
     switch (key) {
-    case IOM_KEY_UP:   c = (c + IOM_ITEMS - 1) % IOM_ITEMS; break;
-    case IOM_KEY_DOWN: c = (c + 1) % IOM_ITEMS; break;
-    case IOM_KEY_HOME: c = 0; break;
+    case IOM_KEY_UP:   do c = (c + IOM_ITEMS - 1) % IOM_ITEMS; while (!item_enabled(m, c)); break;
+    case IOM_KEY_DOWN: do c = (c + 1) % IOM_ITEMS; while (!item_enabled(m, c)); break;
+    case IOM_KEY_HOME: c = 0; while (!item_enabled(m, c)) c++; break;
     case IOM_KEY_END:  c = IOM_ITEMS - 1; break;
     case IOM_KEY_LEFT:
         if (c <= IOM_ITEM_TAPE) m->sub = 0;
@@ -461,11 +467,14 @@ iom_action_t iom_key(iom_menu_t* m, int key) {
         a.type = IOM_ACT_RESUME;
         break;
     case IOM_KEY_DEL:
+        if (!item_enabled(m, c)) break;
         if (is_drive(c)) { a.type = IOM_ACT_DISK_EJECT; a.target = c - IOM_ITEM_DRIVE0; }
         else if (c == IOM_ITEM_TAPE) a.type = IOM_ACT_TAPE_EJECT;
         break;
     case IOM_KEY_ENTER:
-        if (is_drive(c)) {
+        if (!item_enabled(m, c)) {
+            iom_message(m, true, "Disquettes : menu du LOCI (bouton MENU, F8)");
+        } else if (is_drive(c)) {
             if (c - IOM_ITEM_DRIVE0 >= m->st.drives) {
                 iom_message(m, true, m->st.disk_iface
                     ? "Lecteur absent sur cette interface"
@@ -563,7 +572,8 @@ static int state(iom_surface_t* s, int row, int col, bool on, const char* text, 
 static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
     const iom_state_t* st = &m->st;
     char title[48], buf[96];
-    if (st->disk_iface) snprintf(title, sizeof(title), "Disquettes — %s", st->disk_iface);
+    if (st->disks_by_loci) snprintf(title, sizeof(title), "Disquettes — menu du LOCI (F8)");
+    else if (st->disk_iface) snprintf(title, sizeof(title), "Disquettes — %s", st->disk_iface);
     else snprintf(title, sizeof(title), "Disquettes (pas d'interface disque)");
     panel(s, 5, 2, 13, 76, IOM_FLOP_L, title);
     for (int d = 0; d < 4; d++) {
@@ -574,6 +584,10 @@ static void draw_media(const iom_menu_t* m, iom_surface_t* s) {
         const row_attrs_t ra = attrs_for(on && m->sub == 0), rp = attrs_for(on && m->sub == 1);
         snprintf(buf, sizeof(buf), "%c", 'A' + d);
         iom_puts(s, row, 6, buf, ra.acc, -1);
+        if (st->disks_by_loci) {
+            iom_puts(s, row, 9, "— géré par le LOCI —", ra.dim, -1);
+            continue;
+        }
         if (d >= st->drives) {
             iom_puts(s, row, 9, "— absent —", ra.dim, -1);
             continue;

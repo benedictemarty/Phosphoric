@@ -154,6 +154,27 @@ TEST(test_drive_without_interface_refused) {
     ASSERT_TRUE(m.message_error);
 }
 
+/* LOCI co-simulé/réel : lecteurs grisés, sautés par le curseur, inactifs. */
+TEST(test_drives_skipped_when_loci_manages_disks) {
+    iom_init(&m); iom_open(&m);
+    m.st.disks_by_loci = true;
+    iom_key(&m, IOM_KEY_DOWN);                     /* Reprendre → lecteurs sautés */
+    ASSERT_EQ(m.cursor, IOM_ITEM_TAPE);
+    iom_key(&m, IOM_KEY_UP);
+    ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);
+    iom_key(&m, IOM_KEY_HOME);
+    ASSERT_EQ(m.cursor, IOM_ITEM_TAPE);
+    m.cursor = IOM_ITEM_DRIVE0;                    /* même forcé : ni sélecteur ni éjection */
+    ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
+    ASSERT_TRUE(!m.browsing && m.message_error);
+    ASSERT_EQ(iom_key(&m, IOM_KEY_DEL).type, IOM_ACT_NONE);
+    m.cursor = IOM_ITEM_RESUME;
+    iom_draw(&m, &surf);
+    ASSERT_TRUE(surf_has(&surf, "menu du LOCI (F8)"));
+    ASSERT_TRUE(surf_has(&surf, "par le LOCI"));
+    ASSERT_TRUE(!surf_has(&surf, "pas d'interface disque"));
+}
+
 /* Dossier temporaire de médias pour le sélecteur. */
 static char tmpdir[64];
 static const char* dirs[2];
@@ -385,6 +406,7 @@ int main(void) {
     RUN(test_browser_disk_insert);
     RUN(test_browser_refuses_image_in_other_drive);
     RUN(test_browser_tape_and_snapshot);
+    RUN(test_drives_skipped_when_loci_manages_disks);
     RUN(test_draw_main_page);
     RUN(test_utf8_special_glyphs);
     RUN(test_rasterize_colors);

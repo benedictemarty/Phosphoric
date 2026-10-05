@@ -35,8 +35,10 @@ La barre du bas rappelle les touches de la page en cours.
 ### Disquettes A à D
 
 Le titre du cadre indique l'interface disque en place : **Microdisc**, **Jasmin**,
-**LOCI**, ou « pas d'interface disque ». Sans interface, rien ne se monte : il faut
-d'abord activer une carte disque (section 4).
+**LOCI**, « menu du LOCI (F8) » ou « pas d'interface disque ». Sans interface, rien
+ne se monte : il faut d'abord activer une carte disque (section 4). La LOCI n'a pas
+besoin de la carte Microdisc ni de sa ROM : elle tient elle-même le rôle de
+l'interface disque.
 
 - **Entrée** sur un lecteur ouvre le sélecteur de fichiers (images `.dsk`). La
   première ligne, « Éjecter la disquette », vide le lecteur.
@@ -50,8 +52,10 @@ d'abord activer une carte disque (section 4).
   écritures de l'Oric restent en mémoire et sont perdues à l'éjection. Avec la LOCI
   en mode `intégré`, l'éjection écrit les secteurs modifiés.
 - « — absent — » : ce lecteur n'existe pas sur l'interface en place.
-- Avec la LOCI en mode `firmware` ou `usb`, c'est son propre menu qui monte les
-  disquettes (bouton MENU : **F8**) ; le menu F1 le rappelle.
+- Avec la LOCI en mode `firmware` ou `usb` (sans carte Microdisc ni Jasmin), c'est
+  son propre menu qui monte les disquettes (bouton MENU : **F8**). Les lecteurs A à D
+  affichent « — géré par le LOCI — » et le curseur les saute ; seule la cassette
+  reste réglable dans ce cadre.
 
 ### Cassette
 

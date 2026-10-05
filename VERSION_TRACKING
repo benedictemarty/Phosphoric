@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.26.4
+Current Version: 2.26.5
 Release Date: 2026-10-05
-Status: Stable (**Images du manuel F1 — 2.26.4**. Liste des cartes et page de la carte LOCI (mode usb) ajoutées à docs/user-guide/MENU-F1.md.)
+Status: Stable (**Lecteurs F1 grisés sous LOCI firmware/usb — 2.26.5**. Les disquettes se montent depuis le menu du LOCI (F8) : lecteurs A-D « géré par le LOCI », sautés par le curseur ; titre « menu du LOCI (F8) » au lieu de « pas d'interface disque » ; MEDIA_LOCI_MENU.)
+Status (prev): Stable (**Images du manuel F1 — 2.26.4**. Liste des cartes et page de la carte LOCI (mode usb) ajoutées à docs/user-guide/MENU-F1.md.)
 Status (prev): Stable (**Manuel F1 corrigé — 2.26.3**. Libellés ACIA du tableau des cartes alignés sur le menu : « Vitesse (bauds) », « Mode V23 (1200/75) ».)
 Status (prev): Stable (**Manuel du menu F1 — 2.26.2**. docs/user-guide/MENU-F1.md (touches, médias, périphériques, cartes et LOCI à trois modes, erreurs, phosphoric.cfg) ; capture du menu refaite ; liens README et guide.)
 Status (prev): Stable (**LOCI-USB — 2.26.1**. Mode réelle → usb, réglage « Port de la LOCI-USB » (loci.port_usb ; loci.mode=réelle et loci.pont encore lus) ; textes corrigés : la Feather fait tourner le firmware LOCI, Phosphoric joue l'Oric par l'USB, pas un pont vers une LOCI 1.3.)
