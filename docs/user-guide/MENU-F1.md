@@ -128,7 +128,7 @@ Une seule carte par groupe à la fois ; en activer une éteint l'autre :
 | **Microdisc** | contrôleur de disquettes Oric (WD1793), 4 lecteurs, en `$0310` | ROM du contrôleur (`roms/microdis.rom`) |
 | **Jasmin** | contrôleur de disquettes Jasmin (WD177x, TDOS), en `$03F4` | ROM de démarrage (`roms/jasmin.rom`) |
 | **LOCI** | cartouche LOCI, en `$03A0` ; voir ci-dessous | Mode, puis les réglages de ce mode |
-| **ACIA 6551** | port série : modem, terminal, Minitel, BBS | Ligne série (`loopback`), Adresse d'E/S (`031C` ; `0380` pour l'ACIA de la LOCI), Vitesse en bauds (vide : instantané), Tampon de réception (vide), Mode V23 1200/75 (non) |
+| **ACIA 6551** | port série : modem, terminal, Minitel, BBS | Ligne série (`loopback`), Adresse d'E/S (`031C` ; `0380` pour l'ACIA de la LOCI), Vitesse (bauds) (vide : instantané), Tampon de réception (vide), Mode V23 (1200/75) (non) |
 | **DTL 2000** | modem Digitelec (PIA 6821 + ACIA 6850), ligne V23 vers un serveur Minitel | Ligne V23 (`loopback`), Adresse d'E/S (`03F8`) |
 | **Mageco MIDI** | interface MIDI (ACIA 6850 à 31 250 bauds) | Liaison MIDI (`loopback`), Adresse d'E/S (`03FE`) |
 | **ORICON** | variante MIDI en `$031C` | Liaison MIDI (`loopback`) |
