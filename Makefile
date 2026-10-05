@@ -198,6 +198,7 @@ SOURCES = src/main.c \
           src/io/loci_fs.c \
           src/io/loci_bus.c \
           src/io/loci_boot.c \
+          src/io/loci_hw_probe.c \
           src/io/loci_sdimg.c \
           src/io/acia6551.c \
           src/io/serial_backend.c \
@@ -385,7 +386,7 @@ LOCI_BE_RENAME = -include src/io/loci_be_rename.h
 $(BUILD)/src/io/loci_emu_stub.o: CFLAGS += -DLOCI_BE=lbe_stub $(LOCI_BE_RENAME)
 $(BUILD)/src/io/loci_emu.o $(BUILD)/src/io/loci_neo.o: CFLAGS += -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
 $(BUILD)/src/io/loci_hw.o: CFLAGS += -DLOCI_BE=lbe_hw $(LOCI_BE_RENAME)
-$(BUILD)/src/io/loci_backend.o: CFLAGS += $(LOCI_BE_DEFS)
+$(BUILD)/src/io/loci_backend.o $(BUILD)/src/io/loci_hw_probe.o: CFLAGS += $(LOCI_BE_DEFS)
 
 # Include auto-generated header-dependency files (-MMD output).
 # Silent if absent (first build / after clean).
@@ -629,8 +630,8 @@ test-loci-hw: FORCE
 	@if [ ! -f $(LOCI_USB_DIR)/host/loci_usb_client.c ]; then \
 	    echo "  SKIP test-loci-hw: loci-usb absent ($(LOCI_USB_DIR))"; \
 	else mkdir -p $(TBIN) && \
-	    $(CC) -Wall -Wextra -Wpedantic -std=c11 -I./include -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto \
-	        tests/unit/test_loci_hw.c src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c \
+	    $(CC) -Wall -Wextra -Wpedantic -std=c11 -DLOCI_BE_HAS_HW -I./include -I$(LOCI_USB_DIR)/host -I$(LOCI_USB_DIR)/proto \
+	        tests/unit/test_loci_hw.c src/io/loci_hw.c src/io/loci_hw_probe.c $(LOCI_USB_DIR)/host/loci_usb_client.c \
 	        src/utils/logging.c -lutil -lpthread -o $(TBIN)/test_loci_hw && \
 	    $(TBIN)/test_loci_hw; fi
 

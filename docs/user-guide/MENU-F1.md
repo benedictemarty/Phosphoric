@@ -174,6 +174,10 @@ Les trois modes :
   pas branchée (idem pour le picowifi réel). La détection est refaite chaque seconde
   tant que le menu est ouvert. La liste des cartes et le cadre de la page principale
   donnent aussi ce port (« Mode : usb, /dev/ttyACM0 », « $03A0  usb ttyACM0 »).
+- Lancé sans carte disque, Phosphoric prend d'office une LOCI-USB branchée si son
+  pont répond et que son firmware LOCI répond 'L' en `$0319` : la carte LOCI
+  apparaît en mode `usb`. `--no-auto-loci` l'évite ; retirer la carte dans ce menu
+  puis « Appliquer » la retire aussi (la relance ne la remet pas).
 - La Feather **est** la LOCI : ce n'est pas un pont vers une cartouche LOCI 1.3, et
   elle ne se branche pas sur un vrai Oric.
 - Seuls les modes présents dans ce binaire sont proposés : `firmware` demande que

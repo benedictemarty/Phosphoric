@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.26.6
+Current Version: 2.27.0
 Release Date: 2026-10-05
-Status: Stable (**LOCI-USB détectée affichée dans F1 — 2.26.6**. Port laissé vide : « /dev/ttyACM0 (détectée) » ou « aucune détectée » au lieu de « — » ; port aussi dans la liste des cartes et la page principale.)
+Status: Stable (**LOCI-USB branchée prise d'office — 2.27.0**. Sans carte disque demandée, une LOCI-USB reconnue (produit USB, PING loci-usb, firmware LOCI 'L' en $0319) démarre comme --loci-hw PORT ; port occupé refusé (/proc) ; jamais headless/tests/relance F1 ; --no-auto-loci. loci_hw_probe.c ; test-loci-hw 17→22.)
+Status (prev): Stable (**LOCI-USB détectée affichée dans F1 — 2.26.6**. Port laissé vide : « /dev/ttyACM0 (détectée) » ou « aucune détectée » au lieu de « — » ; port aussi dans la liste des cartes et la page principale.)
 Status (prev): Stable (**Lecteurs F1 grisés sous LOCI firmware/usb — 2.26.5**. Les disquettes se montent depuis le menu du LOCI (F8) : lecteurs A-D « géré par le LOCI », sautés par le curseur ; titre « menu du LOCI (F8) » au lieu de « pas d'interface disque » ; MEDIA_LOCI_MENU.)
 Status (prev): Stable (**Images du manuel F1 — 2.26.4**. Liste des cartes et page de la carte LOCI (mode usb) ajoutées à docs/user-guide/MENU-F1.md.)
 Status (prev): Stable (**Manuel F1 corrigé — 2.26.3**. Libellés ACIA du tableau des cartes alignés sur le menu : « Vitesse (bauds) », « Mode V23 (1200/75) ».)

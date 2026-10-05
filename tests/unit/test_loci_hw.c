@@ -14,9 +14,13 @@
  */
 #define _DEFAULT_SOURCE
 #include "io/loci_emu.h"
+#include "io/loci_hw_probe.h"
 #include "loci_usb_proto.h"
 
+#include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <pty.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +43,7 @@ static uint16_t m_serve[65536], m_act[65536];
  * termine après 3 lectures de $FF00 ($FF00 ← 0, $FF02 ← résultat, gen8 + 1). */
 static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
+static uint8_t  m_id = 'L';   /* $0319 lu par RD (reconnaissance, loci_hw_probe) */
 
 static void mwrite(const uint8_t *p, unsigned n)
 {
@@ -66,7 +71,8 @@ static void *mock_thread(void *arg)
             if (ad == 0xFF00 && m_bal_pending && --m_bal_pending == 0) {
                 m_rom[0x3F00] = 0; m_rom[0x3F02] = 0x07; m_gen++;
             }
-            uint8_t p[3] = { ad >= 0xC000 ? m_rom[ad - 0xC000] : 0xFF, LUP_F_NROMDIS | LUP_F_SERVED, m_gen };
+            uint8_t p[3] = { ad >= 0xC000 ? m_rom[ad - 0xC000] : ad == 0x0319 ? m_id : 0xFF,
+                             LUP_F_NROMDIS | LUP_F_SERVED, m_gen };
             mwrite(hdr, 3); mwrite(p, 3); break; }
         case LUP_CMD_RDN: {
             uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
@@ -188,6 +194,32 @@ int main(void)
     CHECK(loci_emu_rom_write(0xFF00, 0x02) && m_bal_pending == 3,
           "groupe 2 (Console, exécuté par le 6502) : captée, pas d'attente");
     loci_emu_stop();
+
+    /* ── Reconnaissance d'une LOCI-USB (loci_hw_probe) ── */
+    {
+        int master, slave;
+        char name[128];
+        if (openpty(&master, &slave, name, NULL, NULL) != 0) { perror("openpty"); return 1; }
+        struct termios t; tcgetattr(slave, &t); cfmakeraw(&t); tcsetattr(slave, TCSANOW, &t);
+        m_fd = master;
+        pthread_t th; pthread_create(&th, NULL, mock_thread, NULL); pthread_detach(th);
+        loci_probe_info_t info;
+        CHECK(loci_hw_probe_fd(slave, &info) == LOCI_PROBE_OK && info.id == 'L' &&
+              info.proto == LUP_VERSION && info.fw == 1, "PING + 'L' en $0319 : LOCI reconnue");
+        m_id = 0xFF;
+        CHECK(loci_hw_probe_fd(slave, &info) == LOCI_PROBE_NOT_LOCI && info.id == 0xFF,
+              "pont qui répond sans 'L' : pas une LOCI");
+        CHECK(loci_hw_port_user(name) == 0, "port tenu par ce seul processus : libre");
+        pid_t child = fork();
+        if (child == 0) { int fd = open(name, O_RDWR | O_NOCTTY); (void)fd; pause(); _exit(0); }
+        int user = 0;
+        for (int i = 0; i < 100 && !user; i++) { usleep(10000); user = loci_hw_port_user(name); }
+        CHECK(user == (int)child, "port ouvert par un autre processus : son PID est rendu");
+        CHECK(loci_hw_probe(name, &info) == LOCI_PROBE_BUSY && info.busy_pid == (int)child,
+              "port occupé : pas de PING, LOCI_PROBE_BUSY");
+        kill(child, SIGKILL); waitpid(child, NULL, 0);
+        close(slave);
+    }
 
     printf("%d/%d vérifications OK\n", g_checks - g_fails, g_checks);
     return g_fails ? 1 : 0;

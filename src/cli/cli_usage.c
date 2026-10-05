@@ -172,6 +172,9 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                             Waits for `gdb` ... `target remote :PORT`.\n");
     usage_printf("      --no-config-cards      Ignore the expansion cards of phosphoric.cfg (used\n");
     usage_printf("                             when the F1 menu restarts with other cards)\n");
+    usage_printf("      --no-auto-loci         Do not start on a plugged LOCI-USB (by default it is\n");
+    usage_printf("                             used when no disk card is chosen and its LOCI\n");
+    usage_printf("                             firmware answers 'L' at $0319)\n");
     usage_printf("      --gdb-bind ADDR        Bind address for the GDB stub (default 127.0.0.1;\n");
     usage_printf("                             0.0.0.0 = every interface, no authentication)\n");
     usage_printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");

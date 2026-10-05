@@ -568,7 +568,10 @@ seuls les modes presents dans le binaire sont proposes (firmware : libemul,
 usb : depot loci-usb, a la compilation). En mode `usb`, le **Port de la
 LOCI-USB** est detecte automatiquement sous Linux (produit USB
 « LOCI-USB… ») ou impose ; bouton MENU de la cartouche : F8. Dans
-`phosphoric.cfg` : `loci.mode=usb`, `loci.port_usb=/dev/ttyACM0`.
+`phosphoric.cfg` : `loci.mode=usb`, `loci.port_usb=/dev/ttyACM0`. Sans carte
+disque demandee, une LOCI-USB branchee est prise d'office si elle repond au
+protocole loci-usb et que son firmware LOCI repond 'L' en `$0319`
+(`--no-auto-loci` pour l'eviter ; voir docs/loci.md).
 
 ### Cartes dediees
 

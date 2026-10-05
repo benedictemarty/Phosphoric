@@ -55,6 +55,8 @@
 #include "io/loci_glue.h"    /* LOCI adapter callbacks (ex-main.c, Epic 9) */
 #include "io/loci_internal.h"  /* loci_dsk_open_web (loci-webdisk archi B) */
 #include "io/loci_emu.h"       /* backend émulation du vrai firmware RP2040 (--loci-emu) */
+#include "io/loci_hw_probe.h"   /* LOCI-USB branchée : protocole + firmware ('L' en $0319) */
+#include "io/picowifi_detect.h" /* loci_usb_detect */
 #include "cli/cli_usage.h"    /* cli_print_usage (Epic 7/US3) */
 #include "cli/cli_parse.h"    /* cli_* parse helpers (Epic 7/US3) */
 #include "cli/cli_opts.h"     /* cli_opts_t : options de la ligne de commande (sprint C) */
@@ -2613,6 +2615,55 @@ static const char* config_to_read(cli_opts_t* cfg) {
     return explicit_cfg ? cfg->config_path : IOMENU_CONFIG_DEFAULT;
 }
 
+/* LOCI-USB branchée et reconnue (produit USB « LOCI-USB… », PING loci-usb, 'L' en
+ * $0319) : la machine démarre avec la carte LOCI en mode usb, comme avec
+ * --loci-hw PORT. Seulement si rien ne choisit déjà l'interface disque
+ * (Microdisc, Jasmin, LOCI), hors headless et tests (PHOSPHORIC_NO_CONFIG), hors
+ * relance du menu F1 (--no-config-cards : les cartes y sont choisies) et sans
+ * --no-auto-loci. L'option est ajoutée à emu->argv : le menu F1 la voit comme une
+ * carte choisie. Renvoie -1 pour continuer, sinon le code de sortie. */
+static int main_auto_loci_usb(emulator_t* emu, cli_opts_t* cfg) {
+    const char* nocfg = getenv("PHOSPHORIC_NO_CONFIG");
+    if (cfg->headless || cfg->no_auto_loci || cfg->no_config_cards ||
+        (nocfg && *nocfg && strcmp(nocfg, "0") != 0)) return -1;
+    if (cfg->loci_enabled || cfg->loci_emu_path || cfg->loci_hw_dev ||
+        cfg->disk_rom_file || cfg->jasmin_rom_file) return -1;
+    if (!loci_emu_backend_available("hw")) return -1;
+    static char dev[256];
+    if (!loci_usb_detect(NULL, dev, sizeof(dev))) return -1;
+    loci_probe_info_t info;
+    switch (loci_hw_probe(dev, &info)) {
+    case LOCI_PROBE_OK: break;
+    case LOCI_PROBE_BUSY:
+        log_warning("LOCI-USB sur %s : port utilisé par le processus %d, non activée", dev, info.busy_pid);
+        return -1;
+    case LOCI_PROBE_NOT_LOCI:
+        log_warning("LOCI-USB sur %s : le pont répond mais $0319 = $%02X (pas 'L' : firmware "
+                    "LOCI absent ?), non activée", dev, info.id);
+        return -1;
+    default:
+        log_warning("LOCI-USB sur %s : pas de réponse loci-usb (%s), non activée", dev, info.err);
+        return -1;
+    }
+    log_info("LOCI-USB détectée sur %s (protocole %u, firmware du pont %u, 'L' en $0319) : "
+             "carte LOCI en mode usb (--no-auto-loci pour l'éviter)", dev, info.proto, info.fw);
+    static char* extra[4];
+    extra[0] = emu->argc > 0 ? emu->argv[0] : "oric1-emu";
+    extra[1] = "--loci-hw";
+    extra[2] = dev;
+    extra[3] = NULL;
+    int rc = cli_parse_more(3, extra, cfg, emu);
+    if (rc >= 0) return rc;
+    char** av = calloc((size_t)emu->argc + 3, sizeof(char*));
+    if (!av) return -1;
+    for (int i = 0; i < emu->argc; i++) av[i] = emu->argv[i];
+    av[emu->argc] = extra[1];
+    av[emu->argc + 1] = extra[2];
+    emu->argv = av;          /* gardé jusqu'à la fin du processus */
+    emu->argc += 2;
+    return -1;
+}
+
 static int main_setup_config(emulator_t* emu, cli_opts_t* cfg) {
     const bool explicit_cfg = cfg->config_path != NULL;
     const char* path = config_to_read(cfg);
@@ -3715,6 +3766,7 @@ int main(int argc, char* argv[]) {
             if (parse_rc >= 0) return parse_rc;
         }
     }
+    if ((parse_rc = main_auto_loci_usb(&emu, cfg)) >= 0) return parse_rc;
     g_loci_menu_at = cfg->loci_menu_at;
 
     int rc;

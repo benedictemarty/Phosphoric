@@ -66,6 +66,23 @@ d'appliquer. Dans `phosphoric.cfg` : `carte.loci=oui`, `loci.mode=usb`,
 `carte.loci_hw`, `loci_hw.port`, `loci.pont` et la valeur `loci.mode=réelle` sont
 encore lues.
 
+**Activation automatique.** Lancé sans carte disque (ni `--disk-rom`, ni
+`--jasmin-rom`, ni carte LOCI choisie, en ligne de commande ou dans
+`phosphoric.cfg`), Phosphoric démarre sur une LOCI-USB branchée, comme avec
+`--loci-hw PORT`, si elle passe trois vérifications :
+
+1. **matériel** : produit USB « LOCI-USB… » (`/sys`) ;
+2. **protocole** : le `PING` loci-usb répond (version du protocole, firmware du pont) ;
+3. **firmware LOCI** : `$0319` lu = `'L'` (`LOCI_DSK_IO_ID`, registre d'identité en
+   lecture seule, sans effet de bord).
+
+Le port n'est pas pris s'il est déjà ouvert par un autre programme (`/proc/*/fd`).
+Jamais en `--headless`, sous `make tests` (`PHOSPHORIC_NO_CONFIG`) ni à la relance du
+menu F1 (les cartes y sont choisies). `--no-auto-loci` désactive l'activation
+automatique. Le journal dit ce qui a été trouvé ou pourquoi la carte n'est pas prise
+(port occupé, `$0319` différent de `'L'`, pas de réponse). Code :
+`src/io/loci_hw_probe.c`, `main_auto_loci_usb()` (main.c).
+
 ### Dans le navigateur (build WebAssembly)
 
 `phosphoric.html?loci=1` (ou le bouton **LOCI** du rail) démarre sur le menu
