@@ -219,6 +219,12 @@ RETURN → BASIC en moins de 10 s. Firmware sans `XSTREAM` (caps `1F`) : lecture
 unitaires, ~12 s. `LOCI_HW_NO_XSTREAM=1` : lectures unitaires. Compilé avec un client
 loci-usb antérieur (sans `LUP_CAP_XSTREAM`), le code est simplement absent.
 
+Les écritures postées et les lectures groupées ne concernent que l'**ancien firmware
+LOCI** (RAM d'extension et portes `$03A4`/`$03A8`, caps `3F`). **lucia-fw** (caps
+`1E`, firmware actuel de la Feather) n'a ni XRAM ni ces portes : sa page `$03xx` ne
+contient que Microdisc, cassette, son et état Lucia, et son API passe par la BAL
+(page `$FF`). Avec lucia-fw, ces deux mécanismes ne servent jamais.
+
 ### Poll en attente (`--loci-hw`, 2.30.1)
 
 Quand le 6502 ne touche pas LOCI, `--loci-hw` relève quand même nIRQ, nRESET et
@@ -246,8 +252,23 @@ Phosphoric relit `$FF00` (`RD` non caché) jusqu'à 0, ce qui évite d'attendre 
 prochain `LINES` (10 s au plus, `LOCI_HW_BAL_TIMEOUT_MS`). Exception : le groupe 2
 (Console) n'est jamais traité par le firmware, c'est le kernel 6502 qui l'exécute
 (ADR-004 de loci-fw) ; Phosphoric ne l'attend donc pas. Le dispatcher change `gen8` en rendant ses résultats, le cache
-ROM est alors rechargé. L'ancien firmware ne capte jamais ces écritures : rien ne
+ROM est alors périmé. L'ancien firmware ne capte jamais ces écritures : rien ne
 change pour lui. Bilan en fin de session : écritures captées, commandes.
+
+**Cache ROM par pages (2.31.0).** Le cache de la ROM servie (`$C000-$FFFF`) est
+découpé en 64 pages de 256 octets, rechargées chacune à la demande (`RDN` de 256
+octets) quand le 6502 la lit. Une nouvelle génération (commande BAL, appel d'API,
+nROMDIS, front nRESET) périme toutes les pages, mais seules celles qui sont relues
+reviennent par l'USB. Avant 2.31.0, chaque changement de génération rechargeait la
+banque entière : 16 Ko de données + 16 Ko de drapeaux, 64,6 ms mesurés sur la Feather.
+Une génération qui change pendant la lecture d'une page passe par le même chemin que
+les autres (report après `$03AF` compris). Mesuré sur la Feather (lucia-fw, caps
+`1E`), démo de sprites `RN DEMO2` tapée à 800 000 cycles, 2,5 M cycles, 729
+commandes BAL : **55,97 s → 12,92 s**, 730 rechargements de la banque → 2675 pages,
+capture d'écran identique à l'octet. Démarrage seul : temps inchangé (34 pages au lieu
+de 3 banques). Correctif proposé par la session lucia (`loci-usb`,
+`phosphoric/patches/0001-cache-rom-par-pages.patch`). Bilan en fin de session : pages
+rechargées.
 
 ### Course Φ2 sur la LOCI-USB (`--loci-hw`)
 
