@@ -222,6 +222,7 @@ void control_emit_ready(emulator_t* emu) {
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
 #endif
+    control_stdin_unbuffered();
     emit_evt("ready pc=%04X cycles=%llu version=%s",
              emu->cpu.PC, (unsigned long long)emu->cpu.cycles, EMU_VERSION);
     /* If the IDE has already closed its end before we got here, ferror

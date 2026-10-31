@@ -478,8 +478,15 @@ the emulator from an IDE or a script: keyboard injection, memory reads,
 save/load state, media hot-swap, events. It is the foundation of OricForge.
 
 ```bash
-./oric1-emu -r basic11b.rom -n --control
+./oric1-emu -r basic11b.rom -n --control     # no window, unpaced (scripts, CI)
+./oric1-emu -r basic11b.rom --control        # with a window paced at 50 Hz (2.31.2)
 ```
+
+Without `-n`, the window is shown and paced like a normal session, and keeps the
+current screen while the machine is stopped; closing it ends the session. Before
+2.31.2, `--control` always forced headless. After `continue`, wait for
+`EVT stopped` before the next command (otherwise `ERR busy`). `read` on `$0300-$03FF`
+returns the RAM, not the I/O registers: use `peek via`, `peek acia`...
 
 Complete message grammar: [docs/control_protocol.md](../control_protocol.md).
 

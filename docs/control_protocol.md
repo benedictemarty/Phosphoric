@@ -28,6 +28,26 @@ decimal-vs-hex surprises.
 4. When the CPU stops again (breakpoint hit, step terminated, watchpoint),
    emulator emits `EVT stopped …` and waits for the next command.
 
+## Window or headless (2.31.2)
+
+- **`-n --control`**: no window, the machine runs **unpaced** (as fast as the host
+  allows, ~40 M cycles per second) — add `--realtime` for 50 Hz. Config file
+  ignored (as with any `-n`). Recommended for automated clients and CI.
+- **`--control` without `-n`** (since 2.31.2): the window is shown, refreshed and
+  **paced at 50 Hz**, like a normal session; while the machine is stopped, the
+  window keeps showing the current screen (refreshed every ~20 ms while waiting
+  for a command). Closing the window ends the session like `quit`. Keys typed in
+  the window while stopped are ignored. `phosphoric.cfg` is read, as in any
+  windowed session (`--no-config` to avoid it); the LOCI-USB auto-detection stays
+  off under `--control`. Before 2.31.2, `--control` always forced headless.
+- Windows build: the wait for commands stays blocking (no `select()` on stdin),
+  so the window is not refreshed while stopped.
+- stdin is unbuffered in control mode: several command lines sent in one write
+  are each answered.
+- Send the next command only after the `EVT stopped` that follows a
+  `continue`/`step`/`next`: while running, anything but `pause`/`quit` gets
+  `ERR busy` and is dropped.
+
 ## Commands implemented in 35a+35b
 
 | CMD | Reply | Notes |
@@ -35,7 +55,7 @@ decimal-vs-hex surprises.
 | `hello [client=… proto=…]` | `OK server=phosphoric/X.Y proto=N caps=…` | recommended at session start |
 | `regs` | `OK A=XX X=XX Y=XX SP=XX P=XX PC=XXXX cycles=N` | snapshot |
 | `set <reg> <val>` | `OK` | reg = A/X/Y/SP/P/PC |
-| `read <addr> <len> [bank]` | `OK XX XX XX ...` | bulk hex bytes, len ≤ 4096 (HEX!) ; optional bank selector |
+| `read <addr> <len> [bank]` | `OK XX XX XX ...` | bulk hex bytes, len ≤ 4096 (HEX!) ; optional bank selector. **Side-effect free**: `$0300-$03FF` returns the RAM under the I/O page, NOT the VIA/ACIA/disk registers the CPU would see there — use `peek via` (or `peek acia`, `peek fdc`, …) for those |
 | `bread <addr> <len>` | `OK bread len=N\n<N raw bytes>\n` | length-prefixed binary, len ≤ 65536 |
 | `write <addr> <b0> <b1> ...` | `OK count=N` | at least one byte |
 | `peek <subsystem>` | `OK k=v k=v ...` | sub = `via`/`psg`/`disk`/`fdc`/`acia`/`serial`/`tape`/`cassette`/`loci`/`video`/`ula`/`kbd`/`keyboard`/`joy`/`joystick`/`printer`/`mcp40` |

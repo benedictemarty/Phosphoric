@@ -1082,6 +1082,21 @@ typedef struct {
 
 /* One frame of cycles: the per-INSTRUCTION loop (debugger, trace,
  * profiler, tape patches) around the master clock emu_step(). */
+/* --control with a window (2.31.2): machine stopped, waiting for a command.
+ * Called every ~20 ms by control_repl_idle(): the window keeps the current
+ * picture and stays responsive (otherwise the window manager flags it as
+ * frozen). Closing the window ends the session, like `quit`. Keys typed while
+ * stopped are ignored: the machine is not running. */
+static void control_window_idle(emulator_t* emu) {
+    renderer_present(&emu->video);
+#ifdef HAS_SDL2
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) emu->running = false;
+    }
+#endif
+}
+
 static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
     /* Execute one frame worth of CPU cycles */
     emu_clock_frame_begin(emu);   /* master clock: start (or resume) of frame */
@@ -1143,7 +1158,7 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
                                            (unsigned int)emu->video.native_w,
                                            (unsigned int)emu->video.native_h);
                 }
-                control_repl(emu);
+                control_repl_idle(emu, emu->headless ? NULL : control_window_idle);
             } else if (emu->tui_mode) {
                 tui_repl(emu);
             } else if (emu->gdb_mode) {
@@ -2629,7 +2644,9 @@ static const char* config_to_read(cli_opts_t* cfg) {
  * chosen card. Returns -1 to continue, otherwise the exit code. */
 static int main_auto_loci_usb(emulator_t* emu, cli_opts_t* cfg) {
     const char* nocfg = getenv("PHOSPHORIC_NO_CONFIG");
-    if (cfg->headless || cfg->no_auto_loci || cfg->no_config_cards ||
+    /* --control: never automatically, even with a window (2.31.2) — an
+     * automated client does not expect a real cartridge detected on the way. */
+    if (cfg->headless || cfg->control_mode || cfg->no_auto_loci || cfg->no_config_cards ||
         (nocfg && *nocfg && strcmp(nocfg, "0") != 0)) return -1;
     if (cfg->loci_enabled || cfg->loci_emu_path || cfg->loci_hw_dev ||
         cfg->disk_rom_file || cfg->jasmin_rom_file) return -1;
@@ -2878,13 +2895,14 @@ static int main_setup_debug_frontends(emulator_t* emu, cli_opts_t* cfg) {
     symbol_table_init(&emu->symbols);
 
     /* Sprint 35a — IPC control mode for OricForge. Logs go to stderr so
-     * stdout stays a clean protocol channel. Forces headless so SDL output
-     * never collides with stdout traffic. */
+     * stdout stays a clean protocol channel. Since 2.31.2 it no longer
+     * forces headless: without -n the window is shown, refreshed and paced
+     * at 50 Hz (before, it stayed black and the machine ran unpaced). SDL
+     * writes nothing to stdout. Clients that want no window pass -n. */
     emu->control_mode = cfg->control_mode;
     emu->bench_mode = cfg->bench_mode;
     if (cfg->control_mode) {
         log_set_stream(stderr);
-        emu->headless = true;
         emu->debugger.active = true;   /* wait for first client command */
     }
 
@@ -3507,7 +3525,8 @@ static int main_setup_services(emulator_t* emu, cli_opts_t* cfg) {
 /* Banner, CPU / bus traces, core and ULA, profiler, TAS movie, GDB stub, tape-out capture.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_tracing(emulator_t* emu, cli_opts_t* cfg, gdb_stub_t* gdb_stub) {
-    if (!cfg->headless) {
+    /* Never under --control: stdout is the protocol channel (2.31.2). */
+    if (!cfg->headless && !cfg->control_mode) {
         printf("\n");
         printf("Phosphoric v%s\n", EMU_VERSION);
         printf("Press Ctrl+C to quit\n\n");
