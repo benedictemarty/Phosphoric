@@ -179,7 +179,8 @@ void cli_print_usage(const char* program_name) {
     usage_printf("      --gdb-bind ADDR        Bind address for the GDB stub (default 127.0.0.1;\n");
     usage_printf("                             0.0.0.0 = every interface, no authentication)\n");
     usage_printf("      --control              IPC control mode for IDE integration (stdin protocol,\n");
-    usage_printf("                             logs to stderr, see docs/control_protocol.md)\n");
+    usage_printf("                             logs to stderr, see docs/control_protocol.md);\n");
+    usage_printf("                             with a window paced at 50 Hz unless -n (2.31.2)\n");
     usage_printf("      --bench                Headless throughput bench: prints `BENCH cycles=... mhz_eq=... ...`\n");
     usage_printf("                             on stdout at exit. Use with -c N for fixed-cycle run.\n");
     usage_printf("      --loci                 Enable LOCI MIA at $03A0-$03BF\n");

@@ -747,6 +747,7 @@ test-loci-golden: $(TARGET)
 # --control IPC media hot-swap commands (load-disk / eject-disk / eject-tape).
 test-control: $(TARGET)
 	@bash tests/integration/test_control_media_swap.sh
+	@python3 -I tests/integration/test_control_window.py ./$(TARGET) roms/basic11b.rom
 
 # Sprint 92 (Epic 1) — transport-agnostic control_dispatch via a buffer sink.
 # Links the core library objects (no main) and drives control_dispatch()

@@ -72,6 +72,24 @@ control_result_t control_dispatch(emulator_t* emu, control_sink_t* sink,
 void control_repl(emulator_t* emu);
 
 /**
+ * @brief Same as control_repl(), but while no command line is pending,
+ * calls @p idle(emu) about every 20 ms (2.31.2). Used with a window
+ * (--control without -n): the stopped machine keeps its window refreshed
+ * and its events pumped. @p idle may set emu->running = false (window
+ * closed) to end the session. NULL = control_repl(). Windows: select() does
+ * not work on stdin, so the wait stays blocking (idle never called).
+ */
+void control_repl_idle(emulator_t* emu, void (*idle)(emulator_t* emu));
+
+/**
+ * @brief Put stdin in unbuffered mode for the control protocol (2.31.2).
+ * With a stdio buffer, fgets() may pull SEVERAL lines out of the pipe while
+ * select() on the descriptor then reports nothing: the next lines stayed
+ * stuck until more input arrived. Called once by control_emit_ready().
+ */
+void control_stdin_unbuffered(void);
+
+/**
  * @brief Emit the initial banner once the emulator is wired up but before
  * the CPU starts running. Tells the client the IPC channel is ready.
  */

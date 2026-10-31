@@ -478,8 +478,15 @@ l'emulateur depuis un IDE ou un script : injection clavier, lecture memoire,
 save/load state, hot-swap media, evenements. C'est le socle d'OricForge.
 
 ```bash
-./oric1-emu -r basic11b.rom -n --control
+./oric1-emu -r basic11b.rom -n --control     # sans fenetre, non cadence (scripts, CI)
+./oric1-emu -r basic11b.rom --control        # avec fenetre cadencee a 50 Hz (2.31.2)
 ```
+
+Sans `-n`, la fenetre est affichee et cadencee comme une session normale, et garde
+l'ecran courant quand la machine est arretee ; la fermer termine la session. Avant
+2.31.2, `--control` imposait le mode sans fenetre. Apres `continue`, attendre
+`EVT stopped` avant la commande suivante (sinon `ERR busy`). `read` sur `$0300-$03FF`
+rend la RAM, pas les registres d'E/S : utiliser `peek via`, `peek acia`...
 
 Grammaire complete des messages : [docs/control_protocol.md](../control_protocol.md).
 

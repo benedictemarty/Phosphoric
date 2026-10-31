@@ -179,7 +179,8 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_CONTROL:
                 cfg->control_mode = true;
                 cfg->debug_mode = true;
-                cfg->headless = true;
+                /* Plus de headless forcé (2.31.2) : sans -n, la fenêtre est
+                 * affichée et cadencée à 50 Hz ; -n pour s'en passer. */
                 /* Redirect logs to stderr as early as possible so the
                  * init banner doesn't pollute the protocol channel. */
                 log_set_stream(stderr);
