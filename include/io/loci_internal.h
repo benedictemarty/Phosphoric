@@ -119,6 +119,7 @@ void op_tap_read_header(loci_t* loci);
 
 /* In loci_boot.c. */
 void op_mia_boot(loci_t* loci);
+void loci_resume_at_spin(loci_t* loci);   /* MIA_BOOT + RESUME, CPU at $03B0 */
 void op_cpu_phi2(loci_t* loci);
 void op_oem_codepage(loci_t* loci);
 void op_stdin_opt(loci_t* loci);

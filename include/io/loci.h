@@ -416,11 +416,17 @@ typedef struct loci_s {
     void* rom_swap_ctx;
 
     /* Session-resume callback. Invoked by op_mia_boot when the guest
-     * sets LOCI_BOOT_RESUME (the menu's "resume" entry): the host swaps
-     * the pre-warm ROM back and restores the session snapshot taken at
-     * the Action button press. Returns false if no snapshot exists. */
+     * sets LOCI_BOOT_RESUME (the menu's RETURN, after mia_restore_state):
+     * the host maps back the ROM the warm button unmapped. Called once
+     * the 6502 spins at $03B0. Returns false if there is nothing to resume. */
     bool (*resume_cb)(void* ctx);
     void* resume_ctx;
+    /* MIA_BOOT + RESUME accepted, ROM not mapped back yet (2.31.6): the
+     * menu ROM still runs three instructions after the op write (LDA
+     * XSTACK / PLP / JMP $03B0). The firmware works asynchronously while
+     * the 6502 spins at $03B0; here the swap waits for the CPU to fetch
+     * the spin at $03B0 (loci_read). */
+    bool resume_pending;
 
     /* Oric-visible ROM byte poke. On real hardware the MIA serves the
      * ROM from its xram, so firmware writes there (adj sweep progress in

@@ -619,8 +619,10 @@ MIA (memory interface) at `$03A0-$03BF` with `--loci`.
 | `--loci-mia-window LO-HI` | Models the reliable MIA `tior` range (0-31) |
 | `--loci-irq-latency US` | I2C transport cost of LOCI IRQs |
 
-The **Action button** (F8) triggers a session snapshot and then the LOCI menu
-(short press) or the ROM diagnostics (long press). It boots a complete Sedoric V4
+The **Action button** (F8) opens the LOCI menu (short press) or the ROM
+diagnostics (long press). As on the hardware, the menu ROM saves the session
+to XRAM; **RETURN** in the menu resumes it where it stopped (since 2.31.6;
+before, the session was lost), **ESC** restarts BASIC. It boots a complete Sedoric V4
 master via the LOCI firmware.
 
 If F8 no longer reaches Phosphoric (on many laptops F8 is also

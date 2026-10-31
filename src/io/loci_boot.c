@@ -29,13 +29,14 @@ void op_mia_boot(loci_t* loci) {
     loci->boot_settings = settings;
 
     if (settings & LOCI_BOOT_RESUME) {
-        /* Menu "resume" entry: the host swaps the pre-warm ROM back and
-         * restores the session snapshot taken at the Action button press. */
-        if (loci->resume_cb && !loci->resume_cb(loci->resume_ctx)) {
-            api_return_errno(loci, LOCI_ENOENT);   /* no snapshot to resume */
-            return;
-        }
-        api_return_ax(loci, 0);
+        /* Menu RETURN (mia_restore_state): the menu has put RAM, VIA and
+         * registers back from XRAM. The ROM is mapped back once the 6502
+         * spins at $03B0 (loci_resume_at_spin) — the menu ROM still runs
+         * LDA XSTACK / PLP / JMP $03B0 after this write. The xstack is left
+         * alone: that LDA pops A from it. */
+        loci->resume_pending = true;
+        api_install_blocked_stub(loci);
+        set_busy(loci, true);
         return;
     }
 
@@ -78,7 +79,25 @@ void op_mia_boot(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
-/* ─── Sprint 34au: tuning / config stubs ──────────────────────── */
+/* The 6502 fetches the spin at $03B0 while a resume is pending: map back
+ * the session's ROM (host callback), then, like the firmware's
+ * api_return_resume, release the spin through JMP ($FFFE): the restored
+ * IRQ frame on the stack is served by the session's own IRQ handler,
+ * whose RTI returns to the interrupted code. */
+void loci_resume_at_spin(loci_t* loci) {
+    loci->resume_pending = false;
+    if (loci->resume_cb && !loci->resume_cb(loci->resume_ctx)) {
+        api_return_errno(loci, LOCI_ENOENT);   /* nothing to resume */
+        return;
+    }
+    static const uint8_t resume_stub[8] = {
+        0xB8, 0x50, 0x00, 0x6C, 0xFE, 0xFF, 0x00, 0x60   /* CLV BVC+0 JMP ($FFFE) */
+    };
+    memcpy(&loci->regs[LOCI_REG_INJECT0], resume_stub, sizeof(resume_stub));
+    set_busy(loci, false);
+}
+
+/* ─── Sprint 34au : tuning / config stubs ──────────────────────── */
 
 void op_cpu_phi2(loci_t* loci) {
     /* Firmware returns the PHI2 clock in kHz in AX (cpu.c cpu_api_phi2),

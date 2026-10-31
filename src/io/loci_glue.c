@@ -9,7 +9,6 @@
 #include "cpu/cpu6502.h"   /* cpu_irq_set/clear, IRQF_DISK, cpu_reset */
 #include "memory/memory.h" /* memory_load_rom */
 #include "utils/logging.h"
-#include "savestate.h"      /* savestate_load (resume session) */
 #include "rom_patches.h"  /* get_rom_patches (ROM swap) */
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,13 +41,6 @@ void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
 }
 
 /* --- Epic 9 / US3: ROM / tape / resume (moved verbatim from main.c) --- */
-
-/* Host path of the LOCI warm-session snapshot (firmware: the session is
- * captured so the menu can resume it). Lives in the flash root. */
-void loci_resume_snapshot_path(emulator_t* emu, char* out, size_t outsz) {
-    const char* root = emu->loci.flash_root[0] ? emu->loci.flash_root : ".";
-    snprintf(out, outsz, "%s/loci_resume.ost", root);
-}
 
 /* Locate a LOCI system ROM by name: flash root (the internal storage,
  * where the firmware's LittleFS keeps them), then roms/loci/ next to the
@@ -178,6 +170,8 @@ bool loci_tape_mount_cb(void* ctx, const char* host_tape_path) {
     return true;
 }
 
+static bool loci_rom_map_c000(emulator_t* emu, const char* rom_path);
+
 bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu || !rom_path || !*rom_path) return false;
@@ -235,6 +229,15 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
                  base_addr);
         return true;
     }
+    if (!loci_rom_map_c000(emu, rom_path)) return false;
+    /* Reset the 6502 so it re-reads the new $FFFC reset vector. */
+    cpu_reset(&emu->cpu);
+    return true;
+}
+
+/* Map a ROM at $C000 without resetting the 6502 (MIA_BOOT swap, warm
+ * button → menu: the CPU then jumps through the new ROM's vectors). */
+static bool loci_rom_map_c000(emulator_t* emu, const char* rom_path) {
     log_info("LOCI ROM swap: loading %s at $C000", rom_path);
     /* Firmware bootstrap seeds basic11b.rom/basic10.rom/microdis.rom into
      * its internal LittleFS; our flash root may not carry them. Fall back
@@ -272,25 +275,26 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
         emu->model = is_b11 ? ORIC_MODEL_ATMOS : ORIC_MODEL_ORIC1;
         log_info("LOCI ROM swap: patches → %s", emu->rom_patches->name);
     }
-    /* Reset the 6502 so it re-reads the new $FFFC reset vector. */
-    cpu_reset(&emu->cpu);
     return true;
 }
 
-/* LOCI session-resume callback (menu "resume" entry → MIA_BOOT with
- * LOCI_BOOT_RESUME): swap the pre-warm BASIC ROM back, then restore the
- * snapshot taken when the Action button was pressed. */
+/* LOCI session-resume callback (menu RETURN → mia_restore_state → MIA_BOOT
+ * with LOCI_BOOT_RESUME). By then the menu ROM has already copied RAM,
+ * VRAM, zero page, VIA and registers back from XRAM; like the firmware
+ * (mia_set_rom_ram_enable_switch + api_return_resume), the host only maps
+ * back the ROM that the warm button unmapped — as it was, no reset, no
+ * reloading — and the op returns through JMP ($FFFE) (loci_boot.c). */
 bool loci_resume_session_cb(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
-    if (!emu) return false;
-    char snap[512];
-    loci_resume_snapshot_path(emu, snap, sizeof(snap));
-    if (access(snap, R_OK) != 0) return false;
-    if (emu->rom_path && !loci_rom_swap_cb(emu, emu->rom_path, 0xC000))
-        return false;
-    if (!savestate_load(emu, snap)) return false;
+    if (!emu || !emu->loci_warm_valid) return false;
+    memcpy(emu->memory.rom, emu->loci_warm_rom, sizeof(emu->memory.rom));
+    emu->model       = emu->loci_warm_model;
+    emu->rom_patches = emu->loci_warm_patches;
+    emu->memory.overlay_active     = emu->loci_warm_overlay_active;
+    emu->memory.basic_rom_disabled = emu->loci_warm_basic_disabled;
+    emu->loci_warm_valid  = false;
     emu->loci_menu_active = false;
-    log_info("LOCI: session resumed from %s", snap);
+    log_info("LOCI: session resumed (ROM mapped back, state restored by the menu)");
     return true;
 }
 /* --- Epic 9 / US4: USB host scan + IRQ-trap (moved verbatim from main.c) --- */
@@ -350,21 +354,17 @@ void loci_scan_host_usb(emulator_t* emu) {
 }
 
 /* LOCI action-button install hook (Sprint 34ai + 85).
- * Snapshots the session (the menu's "resume" needs the machine exactly
- * as it was — press time is a clean instruction boundary, before the
- * trap hijacks the vectors), saves the current IRQ vector at $FFFE/F,
- * redirects it to the trap at $03BA, then pulses the CPU IRQ line. The
- * trap bytes themselves were already mirrored into the MIA register
- * file by loci_action_button_short. */
+ * Saves the current IRQ vector at $FFFE/F, redirects it to the trap at
+ * $03BA, then pulses the CPU IRQ line. The trap bytes themselves were
+ * already mirrored into the MIA register file by loci_action_button_short.
+ * The session itself is saved by the menu ROM (mia_save_state) once the
+ * release runs the trap's JMP ($FFFA) — as on the hardware (2.31.6). */
 void loci_action_install_irq_trap(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu) return;
-    if (!emu->loci_menu_active) {   /* inside the menu: keep the session snapshot */
-        char snap[512];
-        loci_resume_snapshot_path(emu, snap, sizeof(snap));
-        if (savestate_save(emu, snap))
-            log_info("LOCI: session snapshot -> %s (menu resume)", snap);
-    }
+    /* Inside the menu: no capture (its JMP ($FFFA) would save the menu
+     * over the session kept in XRAM). */
+    if (emu->loci_menu_active) return;
     /* Save current vector. The ORIC IRQ vector lives in ROM at $FFFE/F,
      * backed by mem->rom (offset $3FFE/F since rom starts at $C000). */
     uint8_t lo = emu->memory.rom[0x3FFE];
@@ -378,22 +378,43 @@ void loci_action_install_irq_trap(void* ctx) {
     cpu_irq_set(&emu->cpu, IRQF_VIA);
 }
 
-/* LOCI action-button release hook (Sprint 34ai + 85).
- * Sets the 6502 V flag so the BVC -2 spin falls through, restores the
- * original IRQ vector, then performs the firmware's EXT_CAPTURE_IRQ →
- * EXT_BOOT_LOCI sequence: boot the LOCI menu ROM. On real hardware the
- * trap's JMP ($FFFA) lands in the freshly mapped LOCI ROM whose
- * save-state routine runs before the menu; our snapshot was taken at
- * press time, so we go straight to the menu via the ROM's reset vector. */
+/* Trap exit of the warm button: the CPU leaves the BVC spin at $03BB and
+ * runs JMP ($FFFA) at $03BD through the freshly mapped menu ROM, whose NMI
+ * vector is mia_save_state (copies the session to XRAM, then _init).
+ * The IRQ that entered the trap pushed PC and P; if the CPU had not taken
+ * it yet (button pressed and released between two instructions, or I set),
+ * the same frame is pushed here, as the IRQ entry would have. */
+static void loci_action_enter_nmi(emulator_t* emu) {
+    cpu6502_t* c = &emu->cpu;
+    bool in_trap = c->PC >= 0x03BA && c->PC <= 0x03BF;
+    if (!in_trap) {
+        memory_write(&emu->memory, (uint16_t)(0x0100 | c->SP--), (uint8_t)(c->PC >> 8));
+        memory_write(&emu->memory, (uint16_t)(0x0100 | c->SP--), (uint8_t)(c->PC & 0xFF));
+        memory_write(&emu->memory, (uint16_t)(0x0100 | c->SP--),
+                     (uint8_t)((c->P & ~FLAG_BREAK) | FLAG_UNUSED));
+        c->P |= FLAG_INTERRUPT;
+    }
+    c->P |= FLAG_OVERFLOW;   /* the SO edge that ends the spin */
+    c->PC = 0x03BD;          /* JMP ($FFFA) */
+}
+
+/* LOCI action-button release hook (Sprint 34ai + 85, 2.31.6).
+ * Restores the original IRQ vector, then performs the firmware's
+ * EXT_CAPTURE_IRQ → EXT_BOOT_LOCI sequence: map the LOCI menu ROM and let
+ * the trap's JMP ($FFFA) run its save-state routine (mia_save_state), which
+ * stores the session in XRAM and starts the menu — the menu's RETURN then
+ * restores it (mia_restore_state). */
 void loci_action_release_irq_trap(void* ctx) {
     emulator_t* emu = (emulator_t*)ctx;
     if (!emu) return;
-    emu->cpu.P |= FLAG_OVERFLOW;
-    uint16_t v = emu->loci.saved_irq_vector;
-    emu->memory.rom[0x3FFE] = (uint8_t)(v & 0xFF);
-    emu->memory.rom[0x3FFF] = (uint8_t)(v >> 8);
-    /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
-    cpu_irq_clear(&emu->cpu, IRQF_VIA);
+    bool in_menu = emu->loci_menu_active;
+    if (!in_menu) {   /* inside the menu the trap was not armed */
+        uint16_t v = emu->loci.saved_irq_vector;
+        emu->memory.rom[0x3FFE] = (uint8_t)(v & 0xFF);
+        emu->memory.rom[0x3FFF] = (uint8_t)(v >> 8);
+        /* Clear the IRQ source so it doesn't re-fire on the next instruction. */
+        cpu_irq_clear(&emu->cpu, IRQF_VIA);
+    }
 
     if (emu->loci_button_long) {
         /* Firmware warm long hold (≥ 2 s): EXT_BOOT_DIAG — boot Mike
@@ -414,7 +435,7 @@ void loci_action_release_irq_trap(void* ctx) {
         }
         return;
     }
-    if (emu->loci_menu_active) {
+    if (in_menu) {
         log_info("LOCI: Action button inside the menu — ignored");
         return;
     }
@@ -424,11 +445,21 @@ void loci_action_release_irq_trap(void* ctx) {
                     "root, ou roms/loci/locirom) — bouton Action sans effet");
         return;
     }
-    if (loci_rom_swap_cb(emu, rom, 0xC000)) {
-        emu->loci_menu_active = true;
-        cpu_reset(&emu->cpu);
-        log_info("LOCI: warm boot -> menu ROM %s", rom);
-    }
+    /* The interrupted session's ROM, kept for the resume. */
+    memcpy(emu->loci_warm_rom, emu->memory.rom, sizeof(emu->loci_warm_rom));
+    emu->loci_warm_model          = emu->model;
+    emu->loci_warm_patches        = emu->rom_patches;
+    emu->loci_warm_overlay_active = emu->memory.overlay_active;
+    emu->loci_warm_basic_disabled = emu->memory.basic_rom_disabled;
+    if (!loci_rom_map_c000(emu, rom)) return;
+    /* The menu ROM owns $C000-$FFFF: a Microdisc overlay would hide its
+     * vectors. Restored on resume. */
+    emu->memory.overlay_active     = false;
+    emu->memory.basic_rom_disabled = false;
+    emu->loci_warm_valid  = true;
+    emu->loci_menu_active = true;
+    loci_action_enter_nmi(emu);
+    log_info("LOCI: warm boot -> menu ROM %s (JMP ($FFFA) = save state)", rom);
 }
 /* --- Epic 9 / US5: SDL keyboard sync (only SDL dependency of the glue) --- */
 #ifdef HAS_SDL2

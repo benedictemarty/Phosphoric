@@ -1454,12 +1454,16 @@ TEST(test_mia_boot_resume_no_callback_invocation) {
     loci_set_rom_swap_callback(&l, capture_swap, &cap);
     l.regs[LOCI_REG_API_A] = LOCI_BOOT_RESUME;
     loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
-    ASSERT_EQ(cap.call_count, 0);
-    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
+    (void)loci_read(&l, 0x03B0);
+    ASSERT_EQ(cap.call_count, 0);          /* resume never loads a ROM file */
+    ASSERT_EQ(l.regs[LOCI_REG_INJECT0 + 3], 0x6C);   /* JMP ($FFFE) */
 }
 
-/* MIA_BOOT with LOCI_BOOT_RESUME calls the session-resume callback
- * (menu "resume" entry, Sprint 85); its failure surfaces as ENOENT. */
+/* MIA_BOOT with LOCI_BOOT_RESUME (menu RETURN, after mia_restore_state):
+ * the ROM is mapped back only once the 6502 fetches the spin at $03B0 —
+ * the menu ROM still runs LDA XSTACK / PLP / JMP $03B0 after the op
+ * write (2.31.6). Then the spin exits through JMP ($FFFE), as the
+ * firmware's api_return_resume; a failed callback surfaces as ENOENT. */
 static int  test_resume_calls = 0;
 static bool test_resume_result = true;
 static bool test_resume_cb(void* ctx) { (void)ctx; test_resume_calls++; return test_resume_result; }
@@ -1470,15 +1474,27 @@ TEST(test_mia_boot_resume_invokes_resume_callback) {
     loci_set_resume_callback(&l, test_resume_cb, NULL);
     test_resume_calls = 0;
     test_resume_result = true;
+    loci_write(&l, 0x03AC, 0x5A);          /* A pushed by mia_restore_registers */
     l.regs[LOCI_REG_API_A] = LOCI_BOOT_RESUME;
     loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
+    ASSERT_EQ(test_resume_calls, 0);        /* deferred: menu ROM still running */
+    ASSERT_EQ(l.regs[LOCI_REG_INJECT0 + 2], 0xFE);   /* spin blocked (BVC -2) */
+    ASSERT_EQ(loci_read(&l, 0x03AC), 0x5A); /* xstack left alone (LDA XSTACK) */
+    ASSERT_EQ(test_resume_calls, 0);
+    ASSERT_EQ(loci_read(&l, 0x03B0), 0xB8); /* spin fetch: ROM mapped back */
     ASSERT_EQ(test_resume_calls, 1);
+    ASSERT_EQ(l.regs[LOCI_REG_INJECT0 + 2], 0x00);   /* BVC +0 */
+    ASSERT_EQ(l.regs[LOCI_REG_INJECT0 + 3], 0x6C);   /* JMP ($FFFE) */
+    ASSERT_EQ(l.regs[LOCI_REG_INJECT0 + 4], 0xFE);
+    ASSERT_EQ(l.regs[LOCI_REG_INJECT0 + 5], 0xFF);
     ASSERT_EQ(errno_lo(&l), 0);
-    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0);
-    /* No snapshot to resume → ENOENT */
+    (void)loci_read(&l, 0x03B0);
+    ASSERT_EQ(test_resume_calls, 1);        /* once per op */
+    /* Nothing to resume → ENOENT */
     test_resume_result = false;
     l.regs[LOCI_REG_API_A] = LOCI_BOOT_RESUME;
     loci_write(&l, 0x03AF, LOCI_OP_MIA_BOOT);
+    (void)loci_read(&l, 0x03B0);
     ASSERT_EQ(test_resume_calls, 2);
     ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
 }

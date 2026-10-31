@@ -141,14 +141,35 @@ USB device (the firmware's `usb_set_status` — the MSC stick, the picowifi
 
 Firmware behaviour (`ext.c`) reproduced:
 
-- **Short press**: session snapshot (→ `<flash root>/loci_resume.ost`),
-  IRQ trap `$03BA` (CLV; BVC -2; JMP ($FFFA)), then **boot into the LOCI menu**
-  (`LOCIROM`/`locirom` from the flash root, fallback `roms/loci/locirom`). Like the
-  real firmware, the FW version (0.3.1) and the timings (tmap/tior/tiow/tiod/
-  tadr) are **patched into the ROM** at the placeholders `$FFF7-9` / `$FFEF-F3`.
-  The menu's *resume* entry (`MIA_BOOT` + `LOCI_BOOT_RESUME`) swaps the previous
-  ROM back in and restores the snapshot. Pressing F8 inside the menu is ignored
-  (the session snapshot is preserved).
+- **Short press**: IRQ trap `$03BA` (CLV; BVC -2; JMP ($FFFA)), then the
+  **LOCI menu** (`LOCIROM`/`locirom` from the flash root, fallback
+  `roms/loci/locirom`). Like the real firmware, the FW version (0.3.1) and the
+  timings (tmap/tior/tiow/tiod/tadr) are **patched into the ROM** at the
+  placeholders `$FFF7-9` / `$FFEF-F3`. On release, the menu ROM is mapped
+  **without a reset** and the trap's `JMP ($FFFA)` runs its save routine
+  (`mia_save_state`, the menu ROM's NMI vector): registers, VIA, zero page,
+  RAM `$0100-$1FFF` (minus page 3) and the screen `$A000-$BFFF` go to XRAM,
+  with the `'L'` mark, then the menu starts and offers **RETURN**. If the CPU
+  had not entered the trap yet (`loci-button` command, press and release
+  between two instructions, or `I` set), the IRQ frame (PC, P) is pushed as
+  the IRQ would have done.
+- **RETURN in the menu** (2.31.6): the menu ROM copies the state back from
+  XRAM (`mia_restore_state`) then requests `MIA_BOOT` + `LOCI_BOOT_RESUME`.
+  The session's ROM (bytes, model, Microdisc overlay) is put back **when the
+  6502 spins at `$03B0`** — the op is served on the `$03AF` write while the
+  menu ROM still runs three instructions; the firmware works in parallel.
+  The spin then exits through `JMP ($FFFE)`, like the firmware's
+  `api_return_resume`: the session's IRQ handler serves the restored frame
+  and its `RTI` resumes the interrupted program. Before 2.31.6, the
+  integrated mode reset straight into the menu: the save never ran, RETURN
+  was not offered and the session was lost. The `loci_resume.ost` file no
+  longer exists. Pressing F8 inside the menu is ignored (no capture: the
+  XRAM save is preserved).
+  Known limitation: the firmware's ULA pattern detector (`$03A3`, PIO) is not
+  emulated, so the save always records "text 60 Hz" (the menu shows `T60`);
+  on resume, `mia_restore_vmode` puts that attribute at `$BFDF` for ~20 ms
+  before restoring the original byte — one or two frames at 60 Hz, with no
+  effect on the session.
 - **Long press (≥ 2 s)**: boots **Mike Brown's diag ROM**
   (`roms/loci/test108k.rom`, v1.08k, included in the real firmware builds
   with his permission — 60 Hz variant supplied). Step-by-step
