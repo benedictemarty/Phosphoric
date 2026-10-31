@@ -82,6 +82,33 @@ static inline bool autotype_should_fire(bool loci_hid,
     return cycles >= next_cycle + AUTOTYPE_WATCHDOG_CYCLES;
 }
 
+/* ---- ROM key buffer gate (2.31.5) ---------------------------------------- *
+ *
+ * The scan pacing above guarantees the keyboard scanner SEES each key. It is
+ * not enough when BASIC is busy: the scanner runs in the IRQ handler and
+ * stores the key in the ROM's one-key buffer $02DF (bit 7 = pending) even
+ * while BASIC is storing a long program line; the next key then overwrites
+ * the pending one before BASIC reads it. Typing "10 <46-char line>" RETURN
+ * "CLS:RUN" lost the C. Checked in both ROMs: the key-get routine (Atmos
+ * $EB78, ORIC-1 $E905) does LDA $02DF / BPL, then clears it.
+ *
+ * So, before pressing a NEW key, wait while $02DF bit 7 is set, at most
+ * AUTOTYPE_WATCHDOG_CYCLES; a timeout means the program does not read keys
+ * through the ROM (a game scanning the matrix itself) and the gate is turned
+ * off for the session.
+ */
+#define AUTOTYPE_KEYBUF_ADDR 0x02DF
+
+/**
+ * @return true while the next key press must wait: a key is pending in the
+ *         ROM buffer and the wait has not timed out yet.
+ */
+static inline bool autotype_keybuf_wait(uint8_t keybuf, int64_t cycles,
+                                        int64_t wait_since) {
+    if (!(keybuf & 0x80)) return false;
+    return wait_since < 0 || cycles - wait_since < AUTOTYPE_WATCHDOG_CYCLES;
+}
+
 /* ---- Fast-load auto-RUN arbitration ------------------------------------- *
  *
  * After a `-f` fast-load of a BASIC program, phase 2 auto-types "RUN\n" so

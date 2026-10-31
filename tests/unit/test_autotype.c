@@ -134,6 +134,23 @@ TEST(test_autorun_suppressed_when_user_types_in_window) {
     ASSERT_FALSE(autotype_autorun_allowed(5200000, end));  /* own RUN */
 }
 
+/* ROM key-buffer gate (2.31.5): $02DF bit 7 = key not read yet. */
+TEST(test_keybuf_free_no_wait) {
+    ASSERT_FALSE(autotype_keybuf_wait(0x00, 1000, -1));   /* nothing pending */
+    ASSERT_FALSE(autotype_keybuf_wait(0x43, 1000, 500));  /* consumed (bit 7 clear) */
+}
+
+TEST(test_keybuf_pending_waits) {
+    ASSERT_TRUE(autotype_keybuf_wait(0xC3, 1000, -1));    /* pending, wait just starts */
+    ASSERT_TRUE(autotype_keybuf_wait(0xC3, 1000 + AUTOTYPE_WATCHDOG_CYCLES - 1, 1000));
+}
+
+TEST(test_keybuf_watchdog_gives_up) {
+    /* A program that never reads $02DF (a game scanning the matrix) must
+     * not stall the typing: past the watchdog, no more waiting. */
+    ASSERT_FALSE(autotype_keybuf_wait(0xC3, 1000 + AUTOTYPE_WATCHDOG_CYCLES, 1000));
+}
+
 int main(void) {
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("  Auto-type scan-driven pacing tests\n");
@@ -152,6 +169,11 @@ int main(void) {
     RUN(test_gate_waits_for_scan_passes);
     RUN(test_gate_loci_bypasses_passes);
     RUN(test_gate_watchdog_breaks_stall);
+
+    printf("\n  autotype_keybuf_wait — ROM key buffer $02DF gate:\n");
+    RUN(test_keybuf_free_no_wait);
+    RUN(test_keybuf_pending_waits);
+    RUN(test_keybuf_watchdog_gives_up);
 
     printf("\n  autotype_autorun_allowed — fast-load auto-RUN arbitration:\n");
     RUN(test_autorun_allowed_without_user_keys);

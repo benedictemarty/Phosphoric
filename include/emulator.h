@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.31.4"
+#define EMU_VERSION "2.31.5"
 
 /**
  * @brief ORIC machine model
@@ -404,6 +404,12 @@ typedef struct emulator_s {
     uint32_t kbd_scan_passes;
     uint8_t  kbd_scan_prev_col;   /* last column read (0xFF = none yet) */
     uint32_t type_keys_last_pass; /* kbd_scan_passes at last transition */
+    /* Key-buffer gate (2.31.5): the ROM keeps ONE pending key in $02DF (bit 7
+     * = not read yet). The auto-typer waits for it to be consumed before
+     * pressing the next key; off for the session after a timeout (a program
+     * that reads the matrix itself never clears it). */
+    int64_t  type_keys_pend_since; /* cycle the wait started, -1 = none */
+    bool     type_keys_pend_off;
 
     /* --type-keys-when A:V:TEXT : arm the auto-typer when RAM[A]==V instead of
      * at a guessed cycle count (reuses the --screenshot-when trigger idea).
