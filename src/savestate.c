@@ -671,8 +671,11 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->video.vid_mode = read_u8(fp);
             emu->video.hires_mode = hires;
             if (sec_size >= 3) (void)read_u8(fp);   /* ancien octet profil ULA, ignoré */
-            /* Recalculate video pointers */
-            emu->video.charset = emu->memory.charset;
+            /* Recalculate video pointers. video.charset is NOT touched: in a
+             * running emulator it stays NULL, so the ULA reads the character
+             * set from RAM ($B400/$9800, redefinable). Setting it to
+             * memory.charset (a test-only buffer) made every picture after a
+             * load white (2.31.3, report of the film session). */
             if (hires) {
                 emu->video.screen_ram = emu->memory.ram + 0xA000;
             } else {

@@ -44,7 +44,7 @@ echo "=== --control media hot-swap test ==="
 
 # Run a newline-separated command script through --control, echo the output.
 run_control() {
-    printf '%b' "$1" | timeout 10 "$EMU" -r "$ROM" --disk-rom "$DISKROM" --control 2>/dev/null
+    printf '%b' "$1" | timeout 10 "$EMU" -r "$ROM" --disk-rom "$DISKROM" -n --control 2>/dev/null
 }
 
 # --- scenario 1: caps + load/peek/eject disk ------------------------------
@@ -96,7 +96,7 @@ echo "$OUT" | grep -q "^ERR eject-tape: no tape loaded" \
 LOCIROM="roms/loci/locirom"
 if [ -f "$LOCIROM" ]; then
     OUT="$(printf '%b' 'load-disk B '"$DSK"'\neject-disk B\neject-disk B\nquit\n' \
-        | timeout 10 "$EMU" -r "$LOCIROM" --loci --control 2>/dev/null)"
+        | timeout 10 "$EMU" -r "$LOCIROM" --loci -n --control 2>/dev/null)"
     echo "$OUT" | grep -q "^OK drive=B loci=1 size=[0-9]" \
         && ok "LOCI only: load-disk B mounts in the LOCI drive" \
         || ko "LOCI only: load-disk B not routed to LOCI"
@@ -111,7 +111,7 @@ else
 fi
 
 # --- scenario 5: aucune carte disque — rien n'est monté --------------------
-OUT="$(printf '%b' 'load-disk A '"$DSK"'\nquit\n' | timeout 10 "$EMU" -r "$ROM" --control 2>/dev/null)"
+OUT="$(printf '%b' 'load-disk A '"$DSK"'\nquit\n' | timeout 10 "$EMU" -r "$ROM" -n --control 2>/dev/null)"
 echo "$OUT" | grep -q "^ERR load-disk: no disk controller" \
     && ok "no disk card: load-disk is refused" \
     || ko "no disk card: load-disk not refused"
