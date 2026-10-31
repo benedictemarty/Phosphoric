@@ -169,7 +169,8 @@ void cli_print_usage(const char* program_name) {
     usage_printf("      --symbols FILE         Load symbol table (.sym / .lab / .sym65)\n");
     usage_printf("      --tui                  Use ncurses TUI debugger (requires TUI=1 build)\n");
     usage_printf("      --gdb[=PORT]           GDB remote stub on TCP PORT (default 1234).\n");
-    usage_printf("                             Waits for `gdb` ... `target remote :PORT`.\n");
+    usage_printf("                             Waits for a 6502-aware RSP client (the PC's\n");
+    usage_printf("                             mainline gdb does NOT work: use --control).\n");
     usage_printf("      --no-config-cards      Ignore the expansion cards of phosphoric.cfg (used\n");
     usage_printf("                             when the F1 menu restarts with other cards)\n");
     usage_printf("      --no-auto-loci         Do not start on a plugged LOCI-USB (by default it is\n");
