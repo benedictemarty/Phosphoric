@@ -44,6 +44,7 @@ static uint16_t m_serve[65536], m_act[65536];
  * completes after 3 reads of $FF00 ($FF00 ← 0, $FF02 ← result, gen8 + 1). */
 static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
+static unsigned m_rdn_last_n;     /* size of the last RDN (paged ROM cache: 256) */
 static int      m_btn_warm_irqs;  /* BTN: nIRQ pulses returned by the next LINES (warm press) */
 static int      m_lines_irqs;
 static unsigned m_lines_n;        /* LINES received (idle poll) */
@@ -124,7 +125,7 @@ static void *mock_thread(void *arg)
         case LUP_CMD_RDN: {
             uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(b[0] | b[1] << 8); unsigned n = (unsigned)(b[2] | b[3] << 8);
-            m_rdn_count++;
+            m_rdn_count++; m_rdn_last_n = n;
             mwrite(hdr, 3);
             for (unsigned i = 0; i < n; i++) {
                 uint8_t p[2] = { m_rom[(uint16_t)(ad + i) - 0xC000], LUP_F_NROMDIS | LUP_F_SERVED };
@@ -273,6 +274,9 @@ int main(void)
     CHECK(m_bal_pending == 0, "attente de fin de commande ($FF00 relu jusqu'à 0)");
     CHECK(loci_emu_rom_read(0xFF00, &r) && r == 0 && loci_emu_rom_read(0xFF02, &r) && r == 0x07
           && m_rdn_count == 2, "gen8 changé par le dispatcher : cache rechargé, résultats visibles");
+    CHECK(m_rdn_last_n == 256, "cache ROM par pages : un RDN de 256 octets, pas de la banque entière");
+    CHECK(loci_emu_rom_read(0xC000, &r) && m_rdn_count == 3 && loci_emu_rom_read(0xC0FF, &r) && m_rdn_count == 3,
+          "autre page ($C000) : rechargée à la demande, une seule fois pour toute la page");
     CHECK(!loci_emu_rom_write(0xFFE0, 0x11), "hors BAL ($FFE0) : non captée → false");
     CHECK(loci_emu_rom_write(0xFF00, 0x02) && m_bal_pending == 3,
           "groupe 2 (Console, exécuté par le 6502) : captée, pas d'attente");
@@ -288,6 +292,8 @@ int main(void)
     loci_emu_api_write(0x03AF, 0xA0);             /* STA MIA_OP: the reply carries the new gen8 */
     CHECK(loci_emu_rom_read(0xC124, &r) && r == 0x4C,
           "après STA $03AF : le JSR $03B0 qui suit est lu dans la ROM d'avant (6502 déjà dans le spin)");
+    CHECK(loci_emu_rom_read(0xC300, &r) && r == 0xBB && loci_emu_rom_read(0xC125, &r) && r == 0x4C,
+          "page pas encore en cache lue pendant le report : les pages déjà en cache restent la ROM d'avant");
     loci_emu_api_read(0x03B0);                    /* MIA_SPIN fetch: first $03xx access */
     CHECK(loci_emu_rom_read(0xC124, &r) && r == 0xBB,
           "premier accès $03xx après l'appel : cache rechargé, nouvelle ROM visible");

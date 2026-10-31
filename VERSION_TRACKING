@@ -1,9 +1,10 @@
 VERSION_TRACKING - Phosphoric
 =====================================
 
-Current Version: 2.30.1
+Current Version: 2.31.0
 Release Date: 2026-10-31
-Status: Stable (**--loci-hw : poll en attente cadencé en temps réel — 2.30.1**. LINES « en attente » seulement après 1000 cycles sans accès ET 1 ms réelle (LOCI_HW_IDLE_POLL_US, 0 = comportement 2.30.0). Feather : 20 M cycles headless 9,65 s → 4,69 s, 20 997 → 3 207 requêtes ; --realtime inchangé. test-loci-hw 47→51 + maquette PTY fiabilisée (thread par terminal, échec ~1 sur 2 avant).)
+Status: Stable (**--loci-hw : cache ROM par pages de 256 octets — 2.31.0**. Rechargées à la demande au lieu de la banque entière (16 Ko + 16 Ko de drapeaux) à chaque génération ; changement de génération pendant la lecture d'une page par note_gen (report $03AF respecté). Feather lucia-fw, RN DEMO2 2,5 M cycles, 729 commandes BAL : 55,97 s → 12,92 s, capture identique à l'octet. Correctif de la session lucia (loci-usb ac40b46). Doc : écritures postées / lectures groupées sans objet sous lucia-fw. test-loci-hw 51→54.)
+Status (prev): Stable (**--loci-hw : poll en attente cadencé en temps réel — 2.30.1**. LINES « en attente » seulement après 1000 cycles sans accès ET 1 ms réelle (LOCI_HW_IDLE_POLL_US, 0 = comportement 2.30.0). Feather : 20 M cycles headless 9,65 s → 4,69 s, 20 997 → 3 207 requêtes ; --realtime inchangé. test-loci-hw 47→51 + maquette PTY fiabilisée (thread par terminal, échec ~1 sur 2 avant).)
 Status (prev): Stable (**--loci-hw : lectures groupées $03A4/$03A8 (XPEEK/XADV) — 2.30.0**. Firmware caps 0x20 : lectures de porte servies par tampons de 256, soldées par XADV avant toute autre requête. Feather : RETURN → BASIC en ~4 s (17075 octets en 82 XPEEK) au lieu de ~12 s ; F8 à chaud → menu ~4 s. test-loci-hw 39→47.)
 Status (prev): Stable (**--loci-hw : écritures postées $03A4/$03A8 — 2.29.3**. Écritures XRAM en tampon, envoyées par WRN (256) ; vidage avant toute autre requête et après 2000 cycles. Feather : F8 à chaud → menu « Return » ~4 s (17103 octets en 85 WRN) au lieu d'une à deux minutes. test-loci-hw 33→39.)
 Status (prev): Stable (**--loci-hw : F8 à chaud et RETURN du menu — 2.29.2**. Appui à chaud : nIRQ (piège $03BA) livrée au 6502 sans attendre nRESET (jam $0025 corrigé) ; report d'invalidation levé à la lecture de MIA_SPIN $03B0 seulement (RETURN : jam $B5AD corrigé). Vérifié sur la Feather : BASIC → F8 → menu → RETURN → BASIC intact. test-loci-hw 26→33.)

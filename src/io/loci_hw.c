@@ -91,6 +91,11 @@ static double        g_worst_margin = 1e9;  /* deadline - data, in ns (negative 
 /* Cache of the served ROM ($C000-$FFFF) */
 static uint8_t g_rom[16384], g_rom_flags[16384];
 static int     g_rom_valid, g_rom_nocache;
+/* Cache in 256-byte pages, each reloaded on demand (2.31.0): after a BAL command
+ * the firmware changes generation; reloading the 16 KB + 16 KB of flags (64.6 ms
+ * measured on the Feather) on every command made the bench 23 times slower than
+ * real time, whereas the 6502 then only reads back a few pages. */
+static uint8_t g_page_ok[64];
 static unsigned long g_rom_refills;
 static unsigned long g_bal_writes, g_bal_cmds;   /* captured BAL writes, commands launched */
 #define BAL_GROUP_CONSOLE 2               /* BAL group executed on the 6502 side */
@@ -108,7 +113,7 @@ static void link_error_once(const char *ctx)
 static void rom_invalidate(const char *why)
 {
     if (g_rom_valid) log_debug("LOCI-hw: cache ROM invalidé (%s)", why);
-    g_rom_valid = 0;
+    g_rom_valid = 0; memset(g_page_ok, 0, sizeof g_page_ok);
 }
 
 static uint8_t g_gen;          /* generation of the cached ROM view */
@@ -479,7 +484,7 @@ int loci_emu_start(const char *dev)
     g_timing    = (g_c.caps & LUP_CAP_TIMING) != 0;
     g_timed = g_late = g_stale = 0; g_serve_max = g_act_max = 0; g_worst_margin = 1e9;
     g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
-    g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; g_rom_refills = 0; op_defer_cancel();
+    g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; memset(g_page_ok, 0, sizeof g_page_ok); g_rom_refills = 0; op_defer_cancel();
     g_irq_pending = 0;
     g_post_off = getenv("LOCI_HW_NO_POST") != NULL; g_post_n = 0; g_posted = g_post_wrn = 0;
 #ifdef LUP_CAP_XSTREAM
@@ -506,7 +511,7 @@ void loci_emu_set_cdc_device(const char *path)  { if (path) log_warning("LOCI-hw
 void loci_emu_stop(void)
 {
     if (!g_active) return;
-    log_info("LOCI-hw: fin de session — %lu requêtes, %lu rechargements du cache ROM, %lu polls en attente (%lu avec événement)",
+    log_info("LOCI-hw: fin de session — %lu requêtes, %lu pages du cache ROM rechargées, %lu polls en attente (%lu avec événement)",
              g_c.n_req, g_rom_refills, g_idle_polls, g_idle_polls_hit);
     bridge_sync();
     if (g_bal_writes)
@@ -574,13 +579,16 @@ bool loci_emu_button_was_warm(void) { return false; }
 bool loci_emu_diag_button(void)     { return press_button(2); }
 
 /* ── ROM overlay ── */
-static int rom_refill(void)
+static int rom_refill_page(int pg)
 {
     bridge_sync();
-    if (lup_rdn(&g_c, 0xC000, 16384, g_rom, g_rom_flags) != 0) { link_error_once("RDN ROM"); return 0; }
-    g_rom_valid = 1; g_rom_refills++;
-    g_gen = g_c.gen;                     /* the image is consistent with this generation */
-    int romdis = (g_rom_flags[0] & LUP_F_NROMDIS) != 0;
+    if (lup_rdn(&g_c, (uint16_t)(0xC000 + pg * 256), 256, g_rom + pg * 256, g_rom_flags + pg * 256) != 0) { link_error_once("RDN ROM"); return 0; }
+    /* Generation changed during the read: the other pages are stale. Through
+     * note_gen(), to honour the deferral after an API call ($03AF): pages already in
+     * the cache keep the previous ROM there until MIA_SPIN is read. */
+    note_gen();
+    g_page_ok[pg] = 1; g_rom_valid = 1; g_rom_refills++;
+    int romdis = (g_rom_flags[pg * 256] & LUP_F_NROMDIS) != 0;
     if (romdis != g_romdis) g_romdis = romdis;
     return 1;
 }
@@ -594,7 +602,8 @@ bool loci_emu_rom_read(uint16_t address, uint8_t *out)
         if (lup_rd(&g_c, address, &d, &f) != 0) { link_error_once("lecture ROM"); return false; }
         note_flags(f);
     } else {
-        if (!g_rom_valid && !rom_refill()) return false;
+        int pg = (address - 0xC000) >> 8;
+        if (!g_page_ok[pg] && !rom_refill_page(pg)) return false;
         d = g_rom[address - 0xC000]; f = g_rom_flags[address - 0xC000];
     }
     if (!(f & LUP_F_NROMDIS) || (f & LUP_F_NMAP)) return false;   /* under MAP: Oric RAM overlay */
@@ -753,7 +762,7 @@ bool loci_emu_rom_write(uint16_t address, uint8_t value)
     if (lup_wr(&g_c, address, value, &f) != 0) { link_error_once("écriture BAL"); return false; }
     note_flags(f);
     if (!(f & LUP_F_SERVED)) return false;          /* not captured: overlay RAM or ROM */
-    if (g_rom_valid) g_rom[address - 0xC000] = value;
+    if (g_page_ok[(address - 0xC000) >> 8]) g_rom[address - 0xC000] = value;
     g_bal_writes++;
     /* Group 2 (Console) is never handled by the firmware: the 6502 kernel
      * executes it (loci-fw ADR-004, dispatch.c); waiting for it would freeze the 6502

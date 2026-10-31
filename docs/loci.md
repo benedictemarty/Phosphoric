@@ -218,7 +218,13 @@ BASIC intact in ~4 s (17075 bytes served in 82 `XPEEK`); full cycle BASIC → F8
 per read, ~12 s. `LOCI_HW_NO_XSTREAM=1`: one request per read. Built against an older
 loci-usb client (without `LUP_CAP_XSTREAM`), the code is simply absent.
 
-### Idle poll (`--loci-hw`, 2.30.1)
+Posted writes and grouped reads only concern the **old LOCI firmware** (extension
+RAM and the `$03A4`/`$03A8` ports, caps `3F`). **lucia-fw** (caps `1E`, the Feather's
+current firmware) has neither XRAM nor these ports: its `$03xx` page only holds
+Microdisc, tape, sound and Lucia status, and its API goes through the BAL (page `$FF`).
+With lucia-fw, these two mechanisms are never used.
+
+### Poll en attente (`--loci-hw`, 2.30.1)
 
 When the 6502 does not touch LOCI, `--loci-hw` still samples nIRQ, nRESET and
 nROMDIS with a `LINES` (asynchronous edges from the firmware). Before 2.30.1: one `LINES`
@@ -245,10 +251,24 @@ Phosphoric re-reads `$FF00` (uncached `RD`) until it is 0, which avoids waiting 
 next `LINES` (10 s at most, `LOCI_HW_BAL_TIMEOUT_MS`). Exception: group 2
 (Console) is never handled by the firmware, the 6502 kernel executes it
 (loci-fw ADR-004); Phosphoric therefore does not wait for it. The dispatcher changes `gen8` when returning its results, and the ROM
-cache is then reloaded. The old firmware never captures these writes: nothing
+cache is then stale. The old firmware never captures these writes: nothing
 changes for it. End-of-session summary: captured writes, commands.
 
-### Φ2 race on the LOCI-USB (`--loci-hw`)
+**Paged ROM cache (2.31.0).** The cache of the served ROM (`$C000-$FFFF`) is split
+into 64 pages of 256 bytes, each reloaded on demand (a 256-byte `RDN`) when the 6502
+reads it. A new generation (BAL command, API call, nROMDIS, nRESET edge) makes every
+page stale, but only the pages read again come back over USB. Before 2.31.0, every
+generation change reloaded the whole bank: 16 KB of data + 16 KB of flags, 64.6 ms
+measured on the Feather. A generation that changes while a page is being read goes
+through the same path as the others (including the deferral after `$03AF`). Measured
+on the Feather (lucia-fw, caps `1E`), sprite demo `RN DEMO2` typed at 800,000 cycles,
+2.5 M cycles, 729 BAL commands: **55.97 s → 12.92 s**, 730 bank reloads → 2675 pages,
+byte-identical screenshot. Start-up alone: time unchanged (34 pages instead of 3
+banks). Fix proposed by the lucia session (`loci-usb`,
+`phosphoric/patches/0001-cache-rom-par-pages.patch`). End-of-session summary: pages
+reloaded.
+
+### Course Φ2 sur la LOCI-USB (`--loci-hw`)
 
 With `--loci-hw`, every `$03xx` access is a USB round trip during which the
 emulated 6502 is frozen: the Φ2 constraint of a real LOCI (the expansion port has
