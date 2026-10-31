@@ -219,6 +219,23 @@ RETURN → BASIC en moins de 10 s. Firmware sans `XSTREAM` (caps `1F`) : lecture
 unitaires, ~12 s. `LOCI_HW_NO_XSTREAM=1` : lectures unitaires. Compilé avec un client
 loci-usb antérieur (sans `LUP_CAP_XSTREAM`), le code est simplement absent.
 
+### Poll en attente (`--loci-hw`, 2.30.1)
+
+Quand le 6502 ne touche pas LOCI, `--loci-hw` relève quand même nIRQ, nRESET et
+nROMDIS par un `LINES` (fronts asynchrones du firmware). Avant 2.30.1 : un `LINES`
+tous les 1000 cycles sans accès (`LOCI_HW_IDLE_POLL`), soit ~1000 allers-retours USB
+par seconde Oric. Mesuré sur la Feather (2000 requêtes) : `LINES` médiane 122 µs,
+moyenne 215 µs, p99 2,0 ms ; sans `--realtime`, l'émulation plafonnait à ~2× le temps
+réel même en BASIC. Depuis 2.30.1, il faut AUSSI `LOCI_HW_IDLE_POLL_US` µs de temps
+réel (1000 par défaut) depuis le poll précédent : le firmware vit en temps réel, le
+relever plus souvent n'apporte rien. Mesuré : 20 M cycles en headless 9,65 s → 4,69 s
+(dont ~1,6 s de démarrage), 20 997 → 3 207 requêtes, écran final identique ;
+`--realtime` inchangé (5 M cycles en ~5 s). Contrepartie : la latence d'un front
+asynchrone se borne en temps réel (~1 ms), plus en cycles Oric ; sous `--realtime`, où
+l'émulation avance par rafales d'une trame, elle peut atteindre une trame (20 ms Oric).
+Les fronts nés d'un accès (`reflect_nirq` après une lecture/écriture `$03xx`) et le drain
+par trame ne sont pas concernés. `LOCI_HW_IDLE_POLL_US=0` : seuil en cycles seul (2.30.0).
+
 ### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 
 Avec le firmware **loci-fw** (variante LOCI_USB, caps `FIRMWARE`), le 6502 appelle

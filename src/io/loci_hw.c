@@ -69,6 +69,8 @@ static int  g_link_err_logged;
 static long g_settle_us;          /* LOCI_HW_SETTLE_US : pause après chaque accès $03xx (banc émulé) */
 static long g_idle_poll_cycles;   /* LOCI_HW_IDLE_POLL : cycles sans accès LOCI avant un LINES (0 = jamais) */
 static long g_idle_cycles;        /* cycles 6502 écoulés depuis le dernier accès LOCI */
+static long g_idle_poll_us;       /* LOCI_HW_IDLE_POLL_US : temps réel minimal entre deux polls (0 = pas de seuil) */
+static struct timespec g_idle_last; /* instant du dernier poll en attente */
 static unsigned long g_idle_polls, g_idle_polls_hit;
 
 /* Course Φ2 (caps & LUP_CAP_TIMING) */
@@ -441,6 +443,8 @@ int loci_emu_start(const char *dev)
     g_rom_nocache = getenv("LOCI_HW_ROM_NOCACHE") != NULL;
     g_settle_us = getenv("LOCI_HW_SETTLE_US") ? atol(getenv("LOCI_HW_SETTLE_US")) : 0;
     g_idle_poll_cycles = getenv("LOCI_HW_IDLE_POLL") ? atol(getenv("LOCI_HW_IDLE_POLL")) : 1000;
+    g_idle_poll_us = getenv("LOCI_HW_IDLE_POLL_US") ? atol(getenv("LOCI_HW_IDLE_POLL_US")) : 1000;
+    clock_gettime(CLOCK_MONOTONIC, &g_idle_last);
     if (lup_open(&g_c, dev) != 0) {
         log_error("LOCI-hw: impossible d'ouvrir le pont « %s » : %s", dev, lup_client_error(&g_c));
         return -1;
@@ -488,7 +492,8 @@ int loci_emu_start(const char *dev)
              (g_c.caps & LUP_CAP_VIRTUAL) ? ", VIRTUEL" : "", g_romdis, (lines & LUP_L_NRESET) != 0,
              g_rom_nocache ? "désactivé" : "actif");
     if (g_settle_us > 0) log_info("LOCI-hw: stabilisation %ld µs après chaque accès (LOCI_HW_SETTLE_US)", g_settle_us);
-    log_info("LOCI-hw: poll en attente %s (LOCI_HW_IDLE_POLL=%ld cycles)", g_idle_poll_cycles > 0 ? "actif" : "désactivé", g_idle_poll_cycles);
+    log_info("LOCI-hw: poll en attente %s (LOCI_HW_IDLE_POLL=%ld cycles, LOCI_HW_IDLE_POLL_US=%ld µs)",
+             g_idle_poll_cycles > 0 ? "actif" : "désactivé", g_idle_poll_cycles, g_idle_poll_us);
     if (g_timing) timing_load();
     else log_info("LOCI-hw: course Φ2 non mesurée (firmware sans TIMING)");
     return 0;
@@ -651,9 +656,14 @@ static int lines_drain(void)
 
 int loci_emu_irq_take(void) { return lines_drain(); }
 
-/* Poll « en attente » : sans accès LOCI depuis LOCI_HW_IDLE_POLL cycles, un LINES.
- * Gratuit quand le programme parle à LOCI (le compteur est remis à zéro à chaque
- * accès), borne la latence des IRQ/reset asynchrones à N cycles quand il attend. */
+/* Poll « en attente » : sans accès LOCI depuis LOCI_HW_IDLE_POLL cycles ET depuis
+ * LOCI_HW_IDLE_POLL_US µs de temps réel après le précédent, un LINES. Gratuit quand
+ * le programme parle à LOCI (le compteur est remis à zéro à chaque accès). Le seuil
+ * en temps réel (2.30.1) : un aller-retour USB coûte ~120 µs (médiane mesurée sur la
+ * Feather, ~215 µs en moyenne) ; à 1000 LINES par seconde Oric, l'émulation sans
+ * --realtime plafonnait à ~2× le temps réel même quand le programme ne parlait pas à
+ * LOCI. Le firmware vit en temps réel : le relever plus souvent qu'à la milliseconde
+ * réelle n'apporte rien de neuf. LOCI_HW_IDLE_POLL_US=0 : seuil en cycles seul. */
 int loci_emu_idle_poll(int cycles)
 {
     if (g_since_access < (1L << 30)) g_since_access += cycles;
@@ -662,6 +672,12 @@ int loci_emu_idle_poll(int cycles)
     g_idle_cycles += cycles;
     if (g_idle_cycles < g_idle_poll_cycles) return 0;
     g_idle_cycles = 0;
+    if (g_idle_poll_us > 0) {
+        struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+        long us = (long)(t.tv_sec - g_idle_last.tv_sec) * 1000000L + (t.tv_nsec - g_idle_last.tv_nsec) / 1000L;
+        if (us < g_idle_poll_us) return 0;      /* revu dans LOCI_HW_IDLE_POLL cycles */
+        g_idle_last = t;
+    }
     g_idle_polls++;
     int before = g_reset_pending;
     int irqs = lines_drain();
