@@ -524,10 +524,27 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
      * tape_patches() (Sprint 90), not on ORB PB6 — the keyboard column scan
      * clobbers PB6 identically at the READY prompt and during CLOAD. */
 
-    /* Capture old PCR before VIA write (for printer strobe edge detection) */
-    uint8_t old_pcr = emu->via.pcr;
+    /* Centronics STROBE = PB4 (2.31.4): its output level before the write.
+     * A port B pin not set as output floats high. */
+    const bool pb4_before = !(emu->via.ddrb & PRINTER_STROBE_PB4) ||
+                            (emu->via.orb & PRINTER_STROBE_PB4);
 
     via_write(&emu->via, reg, value);
+
+    /* ORB writes only: the ROM's reset code turns PB4 into an output
+     * (DDRB = $F7 with ORB = 0), then sets ORB = $B7. Electrically PB4 dips
+     * low then high, a real printer would get a NUL; taking it would put a
+     * stray $00 at the start of every capture file. */
+    if (reg == VIA_ORB) {
+        const bool pb4_after = !(emu->via.ddrb & PRINTER_STROBE_PB4) ||
+                               (emu->via.orb & PRINTER_STROBE_PB4);
+        if (oric_printer_check_pb4(&emu->printer, pb4_before, pb4_after, emu->via.ora)) {
+            /* Byte taken: the printer answers with an ACK pulse on CA1,
+             * which the ROM print loop waits for (IFR bit 1). */
+            via_set_ca1(&emu->via, false);
+            via_set_ca1(&emu->via, true);
+        }
+    }
 
     /* Decode PSG bus state ONLY when control lines change.
      * BC1 = CA2, BDIR = CB2, both controlled by PCR bits.
@@ -539,8 +556,6 @@ static void io_write_callback(uint16_t address, uint8_t value, void* userdata) {
      *   3. Write PCR to clear BDIR/BC1 */
     if (reg == VIA_PCR) {
         psg_decode(emu);
-        /* Check for Centronics printer STROBE (CA2 forced low → high) */
-        oric_printer_check_strobe(&emu->printer, old_pcr, value, emu->via.ora);
     }
 }
 

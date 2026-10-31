@@ -47,21 +47,11 @@ static int tests_failed = 0;
 
 #define TEST_FILE "/tmp/oric1_test_printer.txt"
 
-/* Helper: build PCR value from CA2 mode (bits 1-3) */
-static uint8_t pcr_ca2(uint8_t ca2_mode) {
-    return (uint8_t)((ca2_mode << 1) & 0x0E);
-}
-
-/* Helper: simulate one STROBE pulse (forced low → forced high) */
-static void strobe_byte(oric_printer_t* p, uint8_t data) {
-    uint8_t pcr_idle = pcr_ca2(CA2_FORCED_HIGH);
-    uint8_t pcr_low  = pcr_ca2(CA2_FORCED_LOW);
-    uint8_t pcr_high = pcr_ca2(CA2_FORCED_HIGH);
-
-    /* Step 1: STROBE asserted (CA2 forced low) */
-    oric_printer_check_strobe(p, pcr_idle, pcr_low, data);
-    /* Step 2: STROBE released (CA2 forced high) → byte captured */
-    oric_printer_check_strobe(p, pcr_low, pcr_high, data);
+/* Helper: one STROBE pulse on PB4, as the ROM does (2.31.4): PB4 low, then
+ * back high, which latches the byte. Returns the ACK request of the release. */
+static bool strobe_byte(oric_printer_t* p, uint8_t data) {
+    (void)oric_printer_check_pb4(p, true, false, data);   /* STROBE asserted */
+    return oric_printer_check_pb4(p, false, true, data);  /* released → latched */
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -165,33 +155,31 @@ TEST(test_printer_no_strobe_without_low) {
     oric_printer_init(&printer);
     oric_printer_open(&printer, TEST_FILE);
 
-    /* Go directly to forced high without forced low first */
-    uint8_t pcr_idle = pcr_ca2(CA2_FORCED_HIGH);
-    oric_printer_check_strobe(&printer, pcr_idle, pcr_idle, 'Z');
+    /* PB4 stays high, or rises without a prior low level: nothing latched */
+    ASSERT_FALSE(oric_printer_check_pb4(&printer, true, true, 'Z'));
+    ASSERT_FALSE(oric_printer_check_pb4(&printer, false, true, 'Z'));
     ASSERT_EQ(printer.byte_count, 0);
 
     oric_printer_close(&printer);
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 7: CA2 mode bits extraction                                */
+/*  TEST 7: STROBE is PB4 and a latched byte asks for the ACK       */
 /* ═══════════════════════════════════════════════════════════════ */
 
-TEST(test_printer_ca2_bits) {
-    /* Verify CA2 mode extraction from PCR:
-     * PCR bits 1-3 = CA2 control.
-     * CA2_FORCED_LOW = 0x06 → PCR bits 1-3 = 110
-     * CA2_FORCED_HIGH = 0x07 → PCR bits 1-3 = 111 */
-    ASSERT_EQ(CA2_FORCED_LOW, 0x06);
-    ASSERT_EQ(CA2_FORCED_HIGH, 0x07);
-
-    /* PCR for forced low: bits 1-3 = 110 → PCR = 0x0C */
-    uint8_t pcr_low = pcr_ca2(CA2_FORCED_LOW);
-    ASSERT_EQ((pcr_low >> 1) & 0x07, CA2_FORCED_LOW);
-
-    /* PCR for forced high: bits 1-3 = 111 → PCR = 0x0E */
-    uint8_t pcr_high = pcr_ca2(CA2_FORCED_HIGH);
-    ASSERT_EQ((pcr_high >> 1) & 0x07, CA2_FORCED_HIGH);
+TEST(test_printer_pb4_ack) {
+    /* The ROMs pull PB4 (VIA port B bit 4) low then high (Atmos $F5C1,
+     * ORIC-1 $F57B); the caller pulses CA1 when check_pb4 returns true. */
+    ASSERT_EQ(PRINTER_STROBE_PB4, 0x10);
+    oric_printer_t printer;
+    oric_printer_init(&printer);
+    oric_printer_open(&printer, TEST_FILE);
+    ASSERT_FALSE(oric_printer_check_pb4(&printer, true, false, 'A'));  /* low: not yet */
+    ASSERT_TRUE(oric_printer_check_pb4(&printer, false, true, 'A'));   /* release: ACK */
+    ASSERT_EQ(printer.byte_count, 1);
+    ASSERT_FALSE(oric_printer_check_pb4(&printer, true, true, 'B'));   /* no new strobe */
+    ASSERT_EQ(printer.byte_count, 1);
+    oric_printer_close(&printer);
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -294,7 +282,7 @@ int main(void) {
     RUN(test_printer_string);
     RUN(test_printer_disabled_no_output);
     RUN(test_printer_no_strobe_without_low);
-    RUN(test_printer_ca2_bits);
+    RUN(test_printer_pb4_ack);
     RUN(test_printer_flush);
     RUN(test_printer_reopen);
     RUN(test_printer_lprint_simulation);

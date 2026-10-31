@@ -28,10 +28,8 @@
 #include <stdio.h>
 #include "io/mcp40.h"
 
-/** CA2 control mode: forced low (STROBE asserted) */
-#define CA2_FORCED_LOW   0x06
-/** CA2 control mode: forced high (STROBE released) */
-#define CA2_FORCED_HIGH  0x07
+/** Centronics STROBE line: VIA port B bit 4 (PB4), active low */
+#define PRINTER_STROBE_PB4  0x10
 
 /** Printer type */
 typedef enum {
@@ -62,19 +60,27 @@ bool oric_printer_open(oric_printer_t* printer, const char* filename);
 void oric_printer_close(oric_printer_t* printer);
 
 /**
- * @brief Check for STROBE transition on PCR CA2 write
+ * @brief Centronics STROBE on VIA PB4 (2.31.4).
  *
- * Called when the CPU writes to VIA PCR. Detects the CA2 forced-low →
- * forced-high transition that constitutes a Centronics STROBE pulse.
- * When detected, captures the current VIA ORA value to the output file.
+ * Called on every write to VIA ORB with the PB4 output level before and
+ * after it. The Oric ROMs print a byte by writing it to ORA ($0301), then
+ * pulling PB4 low and back high (Atmos $F5C1: AND #$EF / STA $0300, ORA #$10
+ * / STA $0300; ORIC-1 $F57B via the $F56A helper), then wait for the ACK on
+ * CA1 (IFR bit 1). PB4 high after a low level latches @p data.
+ *
+ * Before 2.31.4 the strobe was taken from PCR CA2, which is the PSG BC1
+ * line: the file only got PSG register numbers, and LPRINT hung waiting
+ * for an ACK that never came.
  *
  * @param printer  Printer state
- * @param old_pcr  Previous PCR value (before write)
- * @param new_pcr  New PCR value (being written)
+ * @param old_pb4  PB4 output level before the ORB write
+ * @param new_pb4  PB4 output level after it
  * @param data     VIA ORA value (the data byte on Port A)
+ * @return true when a byte was latched: the caller then pulses the ACK
+ *         (CA1 low then high) so the ROM print loop can go on.
  */
-void oric_printer_check_strobe(oric_printer_t* printer, uint8_t old_pcr,
-                                uint8_t new_pcr, uint8_t data);
+bool oric_printer_check_pb4(oric_printer_t* printer, bool old_pb4,
+                            bool new_pb4, uint8_t data);
 
 /** Flush printer output */
 void oric_printer_flush(oric_printer_t* printer);

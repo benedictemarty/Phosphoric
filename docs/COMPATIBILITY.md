@@ -121,7 +121,7 @@ joystick, printer, mcp40, renderer, trace, profiler, rominfo, serial, loci…).
 | WD1793 FDC | Working | Type I/II commands, sector read/write; persistent in-game saves (--disk-writeback / savestate) |
 | Keyboard | Accurate | 8x8 matrix via VIA + PSG Port A |
 | IJK joystick | Working | PSG Port A active low, keyboard + gamepad |
-| Printer | Working | Centronics, STROBE via CA2 |
+| Printer | Working | Centronics: data on ORA, STROBE on PB4, ACK on CA1 (2.31.4; before: CA2, wrong) |
 | MCP-40 | Working | 8 commands, 4 colours, BMP export |
 | ACIA 6551 | Working | Serial $031C-$031F, loopback/tcp/pty/com/modem backends |
 | Digitelec DTL 2000 | Faithful | PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR'd registers |

@@ -92,48 +92,32 @@ void oric_printer_close(oric_printer_t* printer)
     printer->strobe_low = false;
 }
 
-void oric_printer_check_strobe(oric_printer_t* printer, uint8_t old_pcr,
-                                uint8_t new_pcr, uint8_t data)
+bool oric_printer_check_pb4(oric_printer_t* printer, bool old_pb4,
+                            bool new_pb4, uint8_t data)
 {
-    if (!printer) return;
+    if (!printer) return false;
 
     /* Must have an active printer (text file or MCP-40) */
-    if (printer->type == PRINTER_NONE) return;
-    if (printer->type == PRINTER_TEXT && !printer->output) return;
+    if (printer->type == PRINTER_NONE) return false;
+    if (printer->type == PRINTER_TEXT && !printer->output) return false;
 
-    /* Extract CA2 control mode (PCR bits 1-3) */
-    uint8_t old_ca2 = (old_pcr >> 1) & 0x07;
-    uint8_t new_ca2 = (new_pcr >> 1) & 0x07;
-
-    /*
-     * Detect STROBE sequence:
-     *   Step 1: CA2 forced low (mode 110 = 0x06) — STROBE asserted
-     *   Step 2: CA2 forced high (mode 111 = 0x07) — STROBE released
-     *
-     * The rising edge (low → high) latches the data byte.
-     */
-    if (new_ca2 == CA2_FORCED_LOW) {
+    if (old_pb4 && !new_pb4) {          /* STROBE asserted (PB4 low) */
         printer->strobe_low = true;
-    } else if (new_ca2 == CA2_FORCED_HIGH && printer->strobe_low) {
-        /* Rising edge: capture the byte */
-        printer->byte_count++;
-        printer->strobe_low = false;
-
-        if (printer->type == PRINTER_MCP40) {
-            /* Route byte to MCP-40 command parser */
-            mcp40_receive_byte(&printer->mcp40, data);
-        } else {
-            /* TEXT mode: write byte to file */
-            fputc(data, printer->output);
-            /* Flush periodically (every newline for text readability) */
-            if (data == '\n' || data == '\r') {
-                fflush(printer->output);
-            }
-        }
-    } else if (old_ca2 != new_ca2) {
-        /* CA2 mode changed to something else — reset strobe tracking */
-        printer->strobe_low = false;
+        return false;
     }
+    if (!(!old_pb4 && new_pb4 && printer->strobe_low)) return false;
+
+    /* STROBE released (PB4 back high): latch the byte */
+    printer->strobe_low = false;
+    printer->byte_count++;
+    if (printer->type == PRINTER_MCP40) {
+        mcp40_receive_byte(&printer->mcp40, data);
+    } else {
+        fputc(data, printer->output);
+        /* Flush on line ends for text readability */
+        if (data == '\n' || data == '\r') fflush(printer->output);
+    }
+    return true;
 }
 
 void oric_printer_flush(oric_printer_t* printer)
