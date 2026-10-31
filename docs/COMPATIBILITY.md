@@ -121,7 +121,7 @@ joystick, printer, mcp40, renderer, trace, profiler, rominfo, serial, loci…).
 | WD1793 FDC | Fonctionnel | Commandes Type I/II, lecture/ecriture secteur ; saves in-game persistantes (--disk-writeback / savestate) |
 | Clavier | Precis | Matrice 8x8 via VIA + PSG Port A |
 | Joystick IJK | Fonctionnel | Port A PSG actif bas, clavier + gamepad |
-| Imprimante | Fonctionnel | Centronics, STROBE via CA2 |
+| Imprimante | Fonctionnel | Centronics : donnée sur ORA, STROBE sur PB4, ACK sur CA1 (2.31.4 ; avant : CA2, faux) |
 | MCP-40 | Fonctionnel | 8 commandes, 4 couleurs, export BMP |
 | ACIA 6551 | Fonctionnel | Serie $031C-$031F, backends loopback/tcp/pty/com/modem |
 | Digitelec DTL 2000 | Fidele | PIA 6821 + ACIA 6850 a $03F8-$03FD, registres OCR |

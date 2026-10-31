@@ -488,7 +488,7 @@ typedef enum { PRINTER_NONE, PRINTER_TEXT, PRINTER_MCP40 } oric_printer_type_t;
 | `void oric_printer_init(oric_printer_t* printer)` | Initialise l'imprimante |
 | `bool oric_printer_open(oric_printer_t* printer, const char* filename)` | Ouvre le fichier de sortie |
 | `void oric_printer_close(oric_printer_t* printer)` | Ferme la sortie |
-| `void oric_printer_check_strobe(oric_printer_t* p, uint8_t old_pcr, uint8_t new_pcr, uint8_t data)` | Detecte le signal STROBE (CA2) |
+| `bool oric_printer_check_pb4(oric_printer_t* p, bool old_pb4, bool new_pb4, uint8_t data)` | STROBE Centronics sur PB4 (2.31.4) ; rend `true` quand un octet est pris (l'appelant envoie alors l'ACK sur CA1) |
 | `void oric_printer_flush(oric_printer_t* printer)` | Vide le buffer de sortie |
 | `bool oric_printer_is_active(const oric_printer_t* printer)` | Verifie si l'imprimante est active |
 
