@@ -38,6 +38,8 @@ bool loci_tape_mount_cb(void* ctx, const char* host_tape_path);
 bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
 /* LOCI callback (MIA_BOOT + RESUME): map back the ROM the warm button unmapped. */
 bool loci_resume_session_cb(void* ctx);
+/* LOCI callback: ULA-mode snoop ($03A3) — byte latched after $83 $84 $85 <pattern>. */
+uint8_t loci_ula_snoop_cb(void* ctx, uint8_t pattern);
 
 /* --- Epic 9 / US4 : USB host scan + IRQ-trap actions --- */
 /* Attach a host directory as a LOCI USB mass-storage source. */

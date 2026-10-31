@@ -297,7 +297,34 @@ bool loci_resume_session_cb(void* ctx) {
     log_info("LOCI: session resumed (ROM mapped back, state restored by the menu)");
     return true;
 }
-/* --- Epic 9 / US4: USB host scan + IRQ-trap (moved verbatim from main.c) --- */
+/* LOCI ULA-mode snoop ($03A3, 2.31.7). The firmware's PIO samples the bytes
+ * the ULA reads and, after $83 $84 $85 <pattern>, latches the next one. The
+ * menu ROM's mia_save_vmode plants those bytes where, per mode, the ULA reads
+ * five addresses in a row (restore.s: text 50 Hz BCA0,BCA1,BBB2,BBB3 ; hires
+ * 50 Hz BCA0,BCA1,A032,A033 ; hires 60 Hz BBB0,BBB1,A032,A033 ; text 60 Hz:
+ * no such transition), followed by the mode attribute. Phosphoric does not
+ * model the ULA's blanking-time addresses, so this answers from the current
+ * ULA mode: the sequence of that mode, checked against RAM. */
+uint8_t loci_ula_snoop_cb(void* ctx, uint8_t pattern) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return 0;
+    static const uint16_t seq[3][5] = {
+        { 0xBCA0, 0xBCA1, 0xBBB2, 0xBBB3, 0xBBB4 },   /* text 50 Hz  */
+        { 0xBCA0, 0xBCA1, 0xA032, 0xA033, 0xA034 },   /* hires 50 Hz */
+        { 0xBBB0, 0xBBB1, 0xA032, 0xA033, 0xA034 },   /* hires 60 Hz */
+    };
+    bool hires = (emu->video.vid_mode & 0x04) != 0;
+    bool hz50  = (emu->video.vid_mode & 0x02) != 0;
+    if (!hires && !hz50) return 0;                    /* text 60 Hz */
+    const uint16_t* a = seq[hires ? (hz50 ? 1 : 2) : 0];
+    const uint8_t* ram = emu->memory.ram;
+    if (ram[a[0]] != 0x83 || ram[a[1]] != 0x84 || ram[a[2]] != 0x85 ||
+        ram[a[3]] != pattern)
+        return 0;
+    return ram[a[4]];
+}
+
+/* --- Epic 9 / US4 : USB host scan + IRQ-trap (moved verbatim from main.c) --- */
 
 /* Attach a host directory as a LOCI USB mass-storage device: it appears
  * in the menu's device list with the volume label and its "N:" paths

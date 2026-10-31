@@ -428,6 +428,15 @@ typedef struct loci_s {
      * the spin at $03B0 (loci_read). */
     bool resume_pending;
 
+    /* ULA mode snoop $03A3 (2.31.7). On the hardware a PIO watches the bytes
+     * the ULA reads; when the last four are $83 $84 $85 <pattern> (pattern =
+     * last byte written to $03A3, $86 at power-up), the NEXT byte the ULA
+     * reads lands in $03A3. The host callback answers that byte from the
+     * current ULA mode and RAM (0 = no match). */
+    uint8_t ula_pattern;
+    uint8_t (*ula_snoop_cb)(void* ctx, uint8_t pattern);
+    void* ula_snoop_ctx;
+
     /* Oric-visible ROM byte poke. On real hardware the MIA serves the
      * ROM from its xram, so firmware writes there (adj sweep progress in
      * the menu ROM's TIMINGS byte at $FFF0) are seen live by the 6502.
@@ -597,6 +606,10 @@ void    loci_set_rom_swap_callback(
 /* Register the session-resume callback used by op 0xA0 MIA_BOOT when
  * LOCI_BOOT_RESUME is set (menu "resume" entry). */
 void    loci_set_resume_callback(loci_t* loci, bool (*cb)(void* ctx), void* ctx);
+
+/* Register the ULA-mode snoop callback ($03A3, menu save of the video mode). */
+void    loci_set_ula_snoop_callback(loci_t* loci,
+                                    uint8_t (*cb)(void* ctx, uint8_t pattern), void* ctx);
 
 /* Register the Oric-ROM byte poke hook (live ADJ_SCAN progress). */
 void    loci_set_rom_poke_callback(loci_t* loci,

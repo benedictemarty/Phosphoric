@@ -165,11 +165,20 @@ Firmware behaviour (`ext.c`) reproduced:
   was not offered and the session was lost. The `loci_resume.ost` file no
   longer exists. Pressing F8 inside the menu is ignored (no capture: the
   XRAM save is preserved).
-  Known limitation: the firmware's ULA pattern detector (`$03A3`, PIO) is not
-  emulated, so the save always records "text 60 Hz" (the menu shows `T60`);
-  on resume, `mia_restore_vmode` puts that attribute at `$BFDF` for ~20 ms
-  before restoring the original byte — one or two frames at 60 Hz, with no
-  effect on the session.
+  Saved video mode (2.31.7): the firmware's ULA pattern detector (`$03A3`, a
+  PIO that watches the bytes the ULA reads and, after `$83 $84 $85
+  <pattern>`, copies the next one) is emulated functionally. Phosphoric does
+  not model the addresses the ULA reads during blanking: the answer is
+  computed from the current ULA mode, using the address sequence `restore.s`
+  gives for each mode (text 50 Hz `BCA0,BCA1,BBB2,BBB3`; hires 50 Hz
+  `BCA0,BCA1,A032,A033`; hires 60 Hz `BBB0,BBB1,A032,A033`; text 60 Hz:
+  none), checked against RAM. The menu therefore shows `T50` or `H50`.
+  Before 2.31.7, `$03A3` stayed at 0: the save always recorded "text 60 Hz"
+  (`T60`) and the resume spent one or two frames at 60 Hz. As in the
+  firmware's code, a HIRES 50 Hz session is recorded as `$1F` (alternate
+  character set) and `mia_restore_vmode` only puts back the `$BFDF` byte:
+  after RETURN, the persistent ULA mode carries the "alternate" bit until a
+  mode attribute changes it (not verified on a real Oric).
 - **Long press (≥ 2 s)**: boots **Mike Brown's diag ROM**
   (`roms/loci/test108k.rom`, v1.08k, included in the real firmware builds
   with his permission — 60 Hz variant supplied). Step-by-step

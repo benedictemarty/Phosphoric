@@ -14,13 +14,15 @@ session est remise quand le 6502 tourne dans le spin $03B0, qui sort par
 JMP ($FFFE) (gestionnaire IRQ de la session, puis RTI).
 
 Vérifié ici, avec la commande `loci-button` de --control :
-  1. le menu propose RETURN : il affiche le mode vidéo sauvegardé (« T50 »…),
+  1. le menu propose RETURN : il affiche le mode vidéo sauvegardé (« T50 »),
      ce qu'il ne fait que si le tampon de reprise porte la marque 'L' ;
   2. au retour au BASIC (vecteur JMP ($FFFE), spin $03B3), la mémoire
      $0000-$BFFF est celle d'avant l'appui, à la trame IRQ près ($01xx) ;
   3. les registres A/X/Y sont ceux d'avant l'appui ;
   4. le programme BASIC interrompu continue (son compteur avance) ;
-  5. un nouvel appui puis ESC (Boot) redémarre le BASIC à froid.
+  5. un nouvel appui puis ESC (Boot) redémarre le BASIC à froid ;
+  6. (2.31.7) le mode vidéo sauvegardé passe par le détecteur ULA $03A3 :
+     « T50 » en texte, « H50 » en HIRES, et RETURN ramène l'écran HIRES.
 
 Usage : test_loci_warm_resume.py EMU ROM
 """
@@ -143,8 +145,8 @@ try:
     # Le menu n'écrit le mode vidéo sauvegardé (T/H + 50/60, colonne 34 de
     # la ligne 0) que si mia_restore_buffer_ok() voit la marque 'L'.
     vmode = menu[34:37]
-    check(vmode[:1] in ("T", "H") and vmode[1:] in ("50", "60"),
-          f"le menu propose RETURN (tampon de reprise en XRAM, mode « {vmode} »)")
+    check(vmode == "T50",
+          f"le menu propose RETURN, mode sauvegardé texte 50 Hz via $03A3 (« {vmode} »)")
 
     send("break 03B3")
     until("OK")
@@ -182,6 +184,23 @@ try:
     cold = screen()
     check("BYTES FREE" in cold and counter(cold) == -1,
           "nouvel appui puis ESC : BASIC redémarré à froid")
+
+    # Session en HIRES : la sauvegarde note « H50 » (motif ULA hires 50 Hz,
+    # 2.31.7) et RETURN ramène l'écran HIRES.
+    send(r"keys HIRES\n")
+    until("OK")
+    run(1.0)
+    send("loci-button")
+    until("OK")
+    run(1.5)
+    vmode = screen()[34:37]
+    check(vmode == "H50", f"session HIRES : mode sauvegardé hires 50 Hz (« {vmode} »)")
+    send(r"keys \n")
+    until("OK")
+    run(1.0)
+    send("peek video")
+    vid = until("OK") or ""
+    check("hires=1" in vid, f"RETURN : l'écran HIRES est repris ({vid})")
 finally:
     try:
         send("quit")

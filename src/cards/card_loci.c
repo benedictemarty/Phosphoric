@@ -222,6 +222,8 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         loci_set_rom_swap_callback(&emu->loci, loci_rom_swap_cb, emu);
         /* Session-resume callback: menu "resume" → MIA_BOOT RESUME (Sprint 85). */
         loci_set_resume_callback(&emu->loci, loci_resume_session_cb, emu);
+        /* ULA-mode snoop $03A3: video mode saved by the menu (2.31.7). */
+        loci_set_ula_snoop_callback(&emu->loci, loci_ula_snoop_cb, emu);
         /* Live ROM poke: ADJ_SCAN progress byte polled by the menu ROM. */
         loci_set_rom_poke_callback(&emu->loci, loci_rom_poke_hook, emu);
 
