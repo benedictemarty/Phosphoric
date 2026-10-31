@@ -178,7 +178,7 @@ echo ""
 echo "Scenario 35a — IPC control protocol (OricForge integration)"
 if skip_if_missing "$NATIVE_ROM"; then
     OUT=$(printf "hello\nregs\nread \$F88F 4\npeek via\nbreak \$F893\ncontinue\nquit\n" \
-        | timeout 5 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+        | timeout 5 "$EMU" -r "$NATIVE_ROM" -n --control 2>/dev/null)
     expected_lines=(
         "EVT ready"
         "EVT stopped pc=F88F cycles=0 reason=break"
@@ -208,7 +208,7 @@ if skip_if_missing "$NATIVE_ROM"; then
 
     # Async pause : send continue, sleep, send pause, then quit.
     OUT2=$({ printf "continue\n"; sleep 0.3; printf "pause\nregs\nquit\n"; } \
-        | timeout 5 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+        | timeout 5 "$EMU" -r "$NATIVE_ROM" -n --control 2>/dev/null)
     if grep -qF "reason=user" <<<"$OUT2" && \
        grep -qF "ERR busy" <<<"$OUT2" 2>/dev/null || \
        grep -qF "reason=user" <<<"$OUT2"; then
@@ -222,7 +222,7 @@ if skip_if_missing "$NATIVE_ROM"; then
 
     # Sprint 35b — watchpoints + reason=watch
     OUT3=$(printf "watch \$0500\nwrite \$0500 AA\ncontinue\nquit\n" \
-        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" -n --control 2>/dev/null)
     if grep -qF "reason=watch" <<<"$OUT3"; then
         echo "  [PASS] 35b watchpoint fires reason=watch"
         pass=$((pass+1))
@@ -234,7 +234,7 @@ if skip_if_missing "$NATIVE_ROM"; then
 
     # Sprint 35b — raster bp + reason=raster
     OUT4=$(printf "raster 100\ncontinue\nquit\n" \
-        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" -n --control 2>/dev/null)
     if grep -qF "reason=raster" <<<"$OUT4"; then
         echo "  [PASS] 35b raster bp fires reason=raster"
         pass=$((pass+1))
@@ -246,7 +246,7 @@ if skip_if_missing "$NATIVE_ROM"; then
 
     # Sprint 35b — EVT halt reason=cycle_limit
     OUT5=$(printf "continue\n" \
-        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control -c 1000 2>/dev/null)
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" -n --control -c 1000 2>/dev/null)
     if grep -qF "EVT halt" <<<"$OUT5" && grep -qF "reason=cycle_limit" <<<"$OUT5"; then
         echo "  [PASS] 35b EVT halt reason=cycle_limit"
         pass=$((pass+1))
@@ -258,7 +258,7 @@ if skip_if_missing "$NATIVE_ROM"; then
 
     # Sprint 35b — disasm + load-sym
     OUT6=$(printf "disasm \$F88F 3\nquit\n" \
-        | timeout 3 "$EMU" -r "$NATIVE_ROM" --control 2>/dev/null)
+        | timeout 3 "$EMU" -r "$NATIVE_ROM" -n --control 2>/dev/null)
     if grep -qF 'disasm="LDX #$FF"' <<<"$OUT6"; then
         echo "  [PASS] 35b disasm produces parseable output"
         pass=$((pass+1))
@@ -271,13 +271,13 @@ if skip_if_missing "$NATIVE_ROM"; then
     # Sprint 35c — Python smoke client (handshake + REP/EVT mux + bread)
     if command -v python3 >/dev/null 2>&1; then
         if timeout 10 python3 ./tests/integration/phos_smoke_client.py \
-                "$EMU" -r "$NATIVE_ROM" >/dev/null 2>&1; then
+                "$EMU" -n -r "$NATIVE_ROM" >/dev/null 2>&1; then
             echo "  [PASS] 35c Python smoke client (handshake + bread)"
             pass=$((pass+1))
         else
             echo "  [FAIL] 35c Python smoke client"
             timeout 5 python3 ./tests/integration/phos_smoke_client.py \
-                "$EMU" -r "$NATIVE_ROM" 2>&1 | tail -10 | sed 's/^/    /'
+                "$EMU" -n -r "$NATIVE_ROM" 2>&1 | tail -10 | sed 's/^/    /'
             fail=$((fail+1))
         fi
     else
