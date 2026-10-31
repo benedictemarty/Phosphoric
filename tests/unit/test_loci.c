@@ -1499,6 +1499,33 @@ TEST(test_mia_boot_resume_invokes_resume_callback) {
     ASSERT_EQ(errno_lo(&l), LOCI_ENOENT);
 }
 
+/* ULA-mode snoop $03A3 (2.31.7): a write sets the 4th pattern byte and
+ * clears the register; a read asks the host which byte the ULA reads after
+ * $83 $84 $85 <pattern> (0 = no match, register unchanged). */
+static uint8_t snoop_seen_pattern = 0;
+static uint8_t snoop_answer = 0;
+static uint8_t test_snoop_cb(void* ctx, uint8_t pattern) {
+    (void)ctx; snoop_seen_pattern = pattern; return snoop_answer;
+}
+
+TEST(test_ula_snoop_03a3) {
+    loci_t l; loci_init(&l);
+    l.enabled = true;
+    ASSERT_EQ(loci_read(&l, 0x03A3), 0);           /* no callback: no match */
+    loci_set_ula_snoop_callback(&l, test_snoop_cb, NULL);
+    snoop_answer = 0;
+    ASSERT_EQ(loci_read(&l, 0x03A3), 0);
+    ASSERT_EQ(snoop_seen_pattern, 0x86);           /* power-up pattern $83848586 */
+    loci_write(&l, 0x03A3, 0x86);
+    snoop_answer = 0x5A;                           /* text 50 Hz attribute | $40 */
+    ASSERT_EQ(loci_read(&l, 0x03A3), 0x5A);
+    snoop_answer = 0;
+    ASSERT_EQ(loci_read(&l, 0x03A3), 0x5A);        /* a match is kept */
+    loci_write(&l, 0x03A3, 0x84);                  /* new pattern: register cleared */
+    ASSERT_EQ(loci_read(&l, 0x03A3), 0);
+    ASSERT_EQ(snoop_seen_pattern, 0x84);
+}
+
 TEST(test_mia_boot_basic10_default) {
     rom_swap_capture_t cap = { .result = true };
     loci_t l; loci_init(&l);
@@ -3585,6 +3612,7 @@ int main(void) {
     RUN(test_kbd_set_report_noop_when_xram_unset);
     RUN(test_mia_boot_resume_no_callback_invocation);
     RUN(test_mia_boot_resume_invokes_resume_callback);
+    RUN(test_ula_snoop_03a3);
     RUN(test_mia_boot_basic10_default);
     RUN(test_mia_boot_b11_basic11b);
     RUN(test_mia_boot_uses_mounted_rom_slot);

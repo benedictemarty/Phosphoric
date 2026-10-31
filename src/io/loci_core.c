@@ -130,6 +130,7 @@ bool loci_init(loci_t* loci) {
     loci->mia_serve_jitter = 0;                     /* pas de jitter par défaut */
     loci->mia_jitter_state = bus_jitter_seed(0);
     loci->dir_dev = -1;    /* device-list iterator closed */
+    loci->ula_pattern = 0x86;   /* firmware power-up pattern $83848586 */
     seed_initial_stub(loci);
     fdc_init(&loci->dsk_fdc);
     loci->dsk_fdc.set_drq = loci_fdc_set_drq;
@@ -155,6 +156,7 @@ void loci_reset(loci_t* loci) {
     loci->active_op = 0;
     loci->resume_pending = false;
     loci->clock_start_us = now_us();
+    loci->ula_pattern = 0x86;   /* firmware power-up pattern $83848586 */
     seed_initial_stub(loci);
 }
 
@@ -256,6 +258,13 @@ void loci_set_resume_callback(loci_t* loci, bool (*cb)(void*), void* ctx) {
     if (!loci) return;
     loci->resume_cb = cb;
     loci->resume_ctx = ctx;
+}
+
+void loci_set_ula_snoop_callback(loci_t* loci,
+        uint8_t (*cb)(void*, uint8_t), void* ctx) {
+    if (!loci) return;
+    loci->ula_snoop_cb = cb;
+    loci->ula_snoop_ctx = ctx;
 }
 
 void loci_set_rom_poke_callback(loci_t* loci,
@@ -684,6 +693,15 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
     if (!loci_addr_in_mia(address)) return 0xFF;
     uint8_t off = (uint8_t)(address - LOCI_MIA_BASE);
 
+    if (off == LOCI_REG_ULA_SNOOP && loci->ula_snoop_cb) {
+        /* The ULA scans the whole screen every frame; the menu waits ~20 ms
+         * before reading, so a match is visible at read time. A match keeps
+         * the register (the PIO rewrites it each frame with the same byte). */
+        uint8_t v = loci->ula_snoop_cb(loci->ula_snoop_ctx, loci->ula_pattern);
+        if (v) loci->regs[LOCI_REG_ULA_SNOOP] = v;
+        return loci->regs[LOCI_REG_ULA_SNOOP];
+    }
+
     if (off == LOCI_REG_INJECT0 && loci->resume_pending)
         loci_resume_at_spin(loci);   /* CLV fetch of the spin: ROM safe to swap */
 
@@ -749,8 +767,9 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
         return;
     }
     if (off == LOCI_REG_ULA_SNOOP) {
-        /* Firmware reloads the ULA-attribute pattern matcher and clears
-         * the register; we have no PIO sniffer, so just clear. */
+        /* Firmware: new pattern $838485<value> for the ULA matcher, register
+         * cleared until the next match. */
+        loci->ula_pattern = value;
         loci->regs[LOCI_REG_ULA_SNOOP] = 0;
         return;
     }

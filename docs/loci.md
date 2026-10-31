@@ -166,11 +166,20 @@ Comportement du firmware (`ext.c`) reproduit :
   pas proposé et la session était perdue. Le fichier `loci_resume.ost`
   n'existe plus. Appuyer sur F8 dans le menu est ignoré (pas de capture :
   la sauvegarde en XRAM est préservée).
-  Limite connue : le détecteur de motif ULA du firmware (`$03A3`, PIO) n'est
-  pas émulé, si bien que la sauvegarde note toujours « texte 60 Hz » (le menu
-  affiche `T60`) ; à la reprise, `mia_restore_vmode` pose cet attribut en
-  `$BFDF` pendant ~20 ms avant de remettre l'octet d'origine — une ou deux
-  trames à 60 Hz, sans effet sur la session.
+  Mode vidéo sauvegardé (2.31.7) : le détecteur de motif ULA du firmware
+  (`$03A3`, un PIO qui lit les octets lus par l'ULA et, après `$83 $84 $85
+  <motif>`, recopie l'octet suivant) est émulé de façon fonctionnelle. Phosphoric
+  ne modélise pas les adresses lues par l'ULA pendant le blanking : la réponse
+  est calculée depuis le mode ULA courant, avec la séquence d'adresses que
+  `restore.s` donne pour chaque mode (texte 50 Hz `BCA0,BCA1,BBB2,BBB3` ;
+  hires 50 Hz `BCA0,BCA1,A032,A033` ; hires 60 Hz `BBB0,BBB1,A032,A033` ;
+  texte 60 Hz : aucune), vérifiée contre la RAM. Le menu affiche donc `T50`
+  ou `H50`. Avant 2.31.7, `$03A3` restait à 0 : la sauvegarde notait toujours
+  « texte 60 Hz » (`T60`) et la reprise passait une ou deux trames à 60 Hz.
+  Comme dans le code du firmware, une session HIRES 50 Hz est notée `$1F`
+  (jeu de caractères alternatif) et `mia_restore_vmode` ne remet que l'octet
+  `$BFDF` : après RETURN, le mode ULA persistant porte le bit « alternatif »
+  tant qu'aucun attribut de mode ne le change (non vérifié sur un vrai Oric).
 - **Appui long (≥ 2 s)** : boot de la **diag ROM de Mike Brown**
   (`roms/loci/test108k.rom`, v1.08k, incluse dans les builds firmware réels
   avec sa permission — variante 60 Hz fournie). Test pas-à-pas
