@@ -459,9 +459,11 @@ canaux de pilotage et d'inspection externes.
 
 ### GDB remote (`--gdb`)
 
-Serveur **GDB Remote Serial Protocol** : on attache `gdb`, `lldb` ou un IDE
-(VS Code, CLion) au 6502 emule pour poser des breakpoints, single-stepper et
-lire/ecrire registres et memoire.
+Serveur **GDB Remote Serial Protocol** pour un client qui connait le 6502.
+**Le `gdb` du PC ne fonctionne pas** (architecture `mos6502` inconnue, puis
+« Truncated register » et memoire inaccessible ; teste avec gdb 16.3) ; `lldb` et
+les IDE ne sont pas verifies. Pour deboguer, utiliser `--control` (ci-dessous)
+ou le debogueur integre (F9 / `--debug`).
 
 ```bash
 ./oric1-emu -r basic11b.rom --gdb=1234      # attend `target remote :1234`

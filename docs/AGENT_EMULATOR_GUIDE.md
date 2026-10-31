@@ -171,7 +171,7 @@ Utile pour amener un jeu à une scène précise de façon déterministe :
 --trace-irq irq.log        # log des entrées IRQ + RTI
 --symbols prog.sym         # table de symboles (.sym / .lab / .sym65)
 --rom-info                 # analyse de la ROM
---gdb[=PORT]               # stub GDB distant (target remote :PORT)
+--gdb[=PORT]               # stub GDB distant ; le gdb du PC ne marche PAS (6502 inconnu) → --control
 --profile prof.txt         # profil de performance CPU
 ```
 

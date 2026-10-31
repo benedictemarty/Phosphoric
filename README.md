@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.31.0** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.31.1** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -105,7 +105,7 @@ make SDL2=1
 - **Live peripheral introspection** — `via`, `psg`, `disk`/`fdc`, `acia`/`serial`, `tape`, `loci` snapshots
 - **Symbols** — Load `.sym`/`.lab`/EQU/VICE formats with `--symbols FILE`. Disasm and trace operands auto-annotated.
 - **TUI mode** — ncurses 6-pane interface (regs, stack, disasm, mem, bp+wp, status). Build with `TUI=1`, launch with `--tui`.
-- **GDB remote stub** — debug the 6502 from `gdb`/lldb/IDE (VS Code, CLion): `--gdb[=PORT]` then `target remote :PORT`; listens on 127.0.0.1 only unless `--gdb-bind ADDR` is given (the stub has no authentication). Breakpoints, single-step, registers and memory over the GDB RSP. *(No other Oric emulator offers this.)*
+- **GDB remote stub** — `--gdb[=PORT]`, for an RSP client that knows the 6502. ⚠️ The PC's mainline `gdb` does **not** work (unknown architecture `mos6502`, then « Truncated register », memory unreachable; tested with gdb 16.3); lldb/IDEs unverified — use `--control` instead (see docs/gdb_remote.md). Listens on 127.0.0.1 only unless `--gdb-bind ADDR` is given (the stub has no authentication). Breakpoints, single-step, registers and memory over the GDB RSP. *(No other Oric emulator offers this.)*
 - **CLI** — `--debug` (break at start), `--break ADDR`
 
 ### IPC Control Mode (OricForge IDE integration)
@@ -397,7 +397,8 @@ Debugger:
   --symbols FILE            Load symbol table (.sym / .lab / .sym65 / EQU)
   --tui                     Use ncurses TUI debugger (requires TUI=1 build)
   --gdb[=PORT]              GDB remote stub on TCP PORT (default 1234);
-                            attach with: gdb -ex 'target remote :PORT'
+                            needs a 6502-aware RSP client (mainline gdb
+                            does NOT work: use --control)
   --gdb-bind ADDR           Bind address of the GDB stub (default 127.0.0.1;
                             0.0.0.0 = every interface, no authentication)
   --control                 IPC control mode for IDE integration (stdin protocol)
@@ -914,4 +915,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.31.0 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu (FR/EN) + phosphoric.cfg | 2026-10-31
+Phosphoric v2.31.1 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS natif (CI) + WebAssembly (browser) | VIA 6522 complet (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, cles USB host, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu (FR/EN) + phosphoric.cfg | 2026-10-31
