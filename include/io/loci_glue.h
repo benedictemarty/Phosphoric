@@ -25,8 +25,6 @@ void loci_dsk_sync_overlay(void* ctx, bool basic_disabled, bool overlay_active);
 void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val);
 
 /* --- Epic 9 / US3 : ROM / tape / resume callbacks & host helpers --- */
-/* Fill OUT with the LOCI resume-snapshot path (.ost next to the SD image). */
-void loci_resume_snapshot_path(emulator_t* emu, char* out, size_t outsz);
 /* Locate a ROM file under the LOCI flash root; true + path in OUT if found. */
 bool loci_find_rom_file(emulator_t* emu, const char* name, char* out, size_t outsz);
 bool loci_find_system_rom(emulator_t* emu, const char* rom_path, char* out, size_t outsz);
@@ -38,7 +36,7 @@ void loci_patch_rom_info(emulator_t* emu);
 bool loci_tape_mount_cb(void* ctx, const char* host_tape_path);
 /* LOCI callback: swap a ROM image into memory at base_addr and reset. */
 bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
-/* LOCI callback: restore a resume session snapshot. */
+/* LOCI callback (MIA_BOOT + RESUME): map back the ROM the warm button unmapped. */
 bool loci_resume_session_cb(void* ctx);
 
 /* --- Epic 9 / US4 : USB host scan + IRQ-trap actions --- */

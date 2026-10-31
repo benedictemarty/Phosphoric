@@ -16,7 +16,6 @@ avec les statics de `main.c`).
 | `loci_dsk_cpu_irq_clr`        |  4 | — | — | US2 |
 | `loci_dsk_sync_overlay`       |  5 | — | — | US2 |
 | `loci_rom_poke_hook`          |  5 | — | — | US2 |
-| `loci_resume_snapshot_path`   |  4 | — | — | US3 |
 | `loci_find_rom_file`          | 16 | — | — | US3 |
 | `loci_find_menu_rom`          |  4 | — | — | US3 |
 | `loci_patch_rom_info`         | 20 | — | — | US3 |
@@ -82,7 +81,8 @@ Procédure US2-US6 : après chaque lot, régénérer ce dump et vérifier `md5` 
   `loci_dsk_sync_overlay`, `loci_rom_poke_hook`.
 - **US3** (ROM/tape/resume) : `loci_tape_mount_cb`, `loci_rom_swap_cb`
   (+ exposer `get_rom_patches`), `loci_resume_session_cb`, `loci_patch_rom_info`,
-  `loci_find_rom_file`/`_menu_rom`, `loci_resume_snapshot_path`.
+  `loci_find_rom_file`/`_menu_rom` (`loci_resume_snapshot_path` retiré en 2.31.6 :
+  la session est sauvée en XRAM par la ROM du menu).
 - **US4** (USB + IRQ-trap) : `loci_attach_usb_dir`, `loci_scan_host_usb`,
   `loci_action_install_irq_trap`, `loci_action_release_irq_trap`.
 - **US5** (SDL) : `loci_sync_kbd_from_sdl` sous `#ifdef HAS_SDL2`.

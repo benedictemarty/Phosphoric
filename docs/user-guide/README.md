@@ -617,8 +617,10 @@ MIA (interface memoire) a `$03A0-$03BF` avec `--loci`.
 | `--loci-mia-window LO-HI` | Modelise la plage MIA `tior` fiable (0-31) |
 | `--loci-irq-latency US` | Cout de transport I2C des IRQ LOCI |
 
-Le **bouton Action** (F8) declenche un snapshot de session puis le menu LOCI
-(appui court) ou le diagnostic ROM (appui long). Boote un master Sedoric V4
+Le **bouton Action** (F8) ouvre le menu LOCI (appui court) ou le diagnostic
+ROM (appui long). Comme sur le materiel, la ROM du menu sauve la session en
+XRAM ; **RETURN** dans le menu la reprend la ou elle s'etait arretee (depuis
+2.31.6 ; avant, la session etait perdue), **ESC** redemarre le BASIC. Boote un master Sedoric V4
 complet via le firmware LOCI.
 
 Si F8 ne parvient plus a Phosphoric (sur beaucoup de portables F8 est aussi

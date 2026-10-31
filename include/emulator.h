@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.31.5"
+#define EMU_VERSION "2.31.6"
 
 /**
  * @brief ORIC machine model
@@ -482,6 +482,16 @@ typedef struct emulator_s {
      * EXT_BTN_LONGPRESS_MS): the release boots the diagnostic ROM
      * (test108k) instead of the menu. */
     bool loci_button_long;
+    /* What the warm button unmapped to show the menu (2.31.6): the ROM
+     * bytes, model and overlay flags. The menu's own save routine keeps the
+     * machine (RAM, registers, VIA) in XRAM; resume (MIA_BOOT + RESUME)
+     * maps this ROM back as it was, without reset. */
+    bool     loci_warm_valid;
+    uint8_t  loci_warm_rom[16384];
+    oric_model_t loci_warm_model;
+    const rom_patches_t* loci_warm_patches;
+    bool     loci_warm_overlay_active;
+    bool     loci_warm_basic_disabled;
 
     /* TUI mode flag: when true, breakpoints route to the ncurses TUI
      * instead of the line-based REPL (build with TUI=1). */

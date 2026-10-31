@@ -153,6 +153,7 @@ void loci_reset(loci_t* loci) {
     memset(loci->xstack, 0, sizeof(loci->xstack));
     loci->xstack_ptr = LOCI_XSTACK_SIZE;
     loci->active_op = 0;
+    loci->resume_pending = false;
     loci->clock_start_us = now_us();
     seed_initial_stub(loci);
 }
@@ -682,6 +683,9 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
     if (!loci || !loci->enabled) return 0xFF;
     if (!loci_addr_in_mia(address)) return 0xFF;
     uint8_t off = (uint8_t)(address - LOCI_MIA_BASE);
+
+    if (off == LOCI_REG_INJECT0 && loci->resume_pending)
+        loci_resume_at_spin(loci);   /* CLV fetch of the spin: ROM safe to swap */
 
     if (off == LOCI_REG_CONS_FLAGS) {
         /* Firmware (mia.c): bit 7 = TX writable, bit 6 = RX data ready.
