@@ -218,7 +218,24 @@ BASIC intact in ~4 s (17075 bytes served in 82 `XPEEK`); full cycle BASIC → F8
 per read, ~12 s. `LOCI_HW_NO_XSTREAM=1`: one request per read. Built against an older
 loci-usb client (without `LUP_CAP_XSTREAM`), the code is simply absent.
 
-### loci-fw BAL mailbox (`--loci-hw`)
+### Idle poll (`--loci-hw`, 2.30.1)
+
+When the 6502 does not touch LOCI, `--loci-hw` still samples nIRQ, nRESET and
+nROMDIS with a `LINES` (asynchronous edges from the firmware). Before 2.30.1: one `LINES`
+every 1000 cycles without access (`LOCI_HW_IDLE_POLL`), i.e. ~1000 USB round trips per
+Oric second. Measured on the Feather (2000 requests): `LINES` median 122 µs, mean
+215 µs, p99 2.0 ms; without `--realtime`, emulation topped out at ~2× real time even in
+BASIC. Since 2.30.1, `LOCI_HW_IDLE_POLL_US` µs of real time (1000 by default) must ALSO
+have elapsed since the previous poll: the firmware lives in real time, sampling it more
+often brings nothing. Measured: 20 M cycles headless 9.65 s → 4.69 s (including ~1.6 s
+of start-up), 20,997 → 3,207 requests, identical final screen; `--realtime` unchanged
+(5 M cycles in ~5 s). Trade-off: the latency of an asynchronous edge is now bounded in
+real time (~1 ms), no longer in Oric cycles; under `--realtime`, where emulation runs in
+one-frame bursts, it can reach one frame (20 ms Oric). Edges caused by an access
+(`reflect_nirq` after a `$03xx` read/write) and the per-frame drain are not affected.
+`LOCI_HW_IDLE_POLL_US=0`: cycle threshold only (2.30.0).
+
+### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 
 With the **loci-fw** firmware (LOCI_USB variant, caps `FIRMWARE`), the 6502 calls
 the API by writing to page `$FF` (`$FF00-$FFCF`). `--loci-hw` forwards these writes

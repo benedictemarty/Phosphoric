@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <pty.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +38,6 @@ static int g_fails, g_checks;
                            else { g_fails++; printf("  [FAIL] %s\n", msg); } } while (0)
 
 /* ── mock ── */
-static int      m_fd;
 static uint8_t  m_tior;
 static uint16_t m_serve[65536], m_act[65536];
 /* Served ROM image and BAL: $FF00-$FFCF captured; a non-zero command at $FF00
@@ -46,6 +46,8 @@ static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
 static int      m_btn_warm_irqs;  /* BTN: nIRQ pulses returned by the next LINES (warm press) */
 static int      m_lines_irqs;
+static unsigned m_lines_n;        /* LINES received (idle poll) */
+static const char *m_idle_poll = "0";   /* LOCI_HW_IDLE_POLL passed by start() */
 /* Log of the writes received by the mock on $03A4/$03A8 (WR/WRT one by one, or
  * grouped WRN), in arrival order. */
 static uint8_t  m_xw[70000];
@@ -76,15 +78,19 @@ static void reg_write(uint16_t ad, uint8_t v)
 static int      m_boot_swap;  /* WRT $03AF=$A0 replaces the served ROM and moves gen8 */
 static uint8_t  m_id = 'L';   /* $0319 read by RD (recognition, loci_hw_probe) */
 
+/* Each mock thread keeps ITS OWN pseudo-terminal: re-reading a global let the
+ * thread of a previous session read the next session's terminal and steal bytes
+ * from it (PING cut short → "silent bridge", about one run in two). */
+static _Thread_local int t_fd = -1;
 static void mwrite(const uint8_t *p, unsigned n)
 {
-    while (n) { ssize_t w = write(m_fd, p, n); if (w <= 0) return; p += w; n -= (unsigned)w; }
+    while (n) { ssize_t w = write(t_fd, p, n); if (w <= 0) return; p += w; n -= (unsigned)w; }
 }
-static int mread(void) { uint8_t b; return read(m_fd, &b, 1) == 1 ? b : -1; }
+static int mread(void) { uint8_t b; return read(t_fd, &b, 1) == 1 ? b : -1; }
 
 static void *mock_thread(void *arg)
 {
-    (void)arg;
+    t_fd = (int)(intptr_t)arg;
     int c;
     while ((c = mread()) >= 0) {
         if (c != LUP_REQ_MAGIC) continue;
@@ -99,7 +105,7 @@ static void *mock_thread(void *arg)
 #endif
             uint8_t p[3] = { LUP_VERSION, 1, caps };
             mwrite(hdr, 3); mwrite(p, 3); break; }
-        case LUP_CMD_LINES: { uint8_t p[4] = { LUP_L_NROMDIS, (uint8_t)m_lines_irqs, 0, m_gen };
+        case LUP_CMD_LINES: { m_lines_n++; uint8_t p[4] = { LUP_L_NROMDIS, (uint8_t)m_lines_irqs, 0, m_gen };
             m_lines_irqs = 0; mwrite(hdr, 3); mwrite(p, 4); break; }
         case LUP_CMD_BTN: { (void)mread(); m_lines_irqs = m_btn_warm_irqs; mwrite(hdr, 3); break; }
         case LUP_CMD_RD: {
@@ -198,10 +204,9 @@ static void start(const char *faithful)
     char name[128];
     if (openpty(&master, &slave, name, NULL, NULL) != 0) { perror("openpty"); exit(1); }
     struct termios t; tcgetattr(master, &t); cfmakeraw(&t); tcsetattr(master, TCSANOW, &t);
-    m_fd = master;
-    pthread_t th; pthread_create(&th, NULL, mock_thread, NULL); pthread_detach(th);
+    pthread_t th; pthread_create(&th, NULL, mock_thread, (void *)(intptr_t)master); pthread_detach(th);
     if (faithful) setenv("LOCI_HW_FAITHFUL", "1", 1); else unsetenv("LOCI_HW_FAITHFUL");
-    setenv("LOCI_HW_IDLE_POLL", "0", 1);
+    setenv("LOCI_HW_IDLE_POLL", m_idle_poll, 1);
     if (loci_emu_start(name) != 0) { printf("  [FAIL] loci_emu_start\n"); exit(1); }
     close(slave);
 }
@@ -403,14 +408,35 @@ int main(void)
     m_xs_model = 0;
 #endif
 
+    /* ── Idle poll: real-time threshold (2.30.1) ── */
+    m_idle_poll = "1000";
+    setenv("LOCI_HW_IDLE_POLL_US", "100000", 1);   /* 100 ms: well above the test's duration */
+    start(NULL);
+    m_lines_n = 0;
+    for (int i = 0; i < 50; i++) loci_emu_idle_poll(1000);
+    CHECK(m_lines_n == 0, "50 × 1000 cycles sans accès, moins de 100 ms réelles : aucun LINES");
+    usleep(120000);
+    loci_emu_idle_poll(1000);
+    CHECK(m_lines_n == 1, "100 ms réelles écoulées et 1000 cycles : un LINES");
+    loci_emu_idle_poll(1000);
+    CHECK(m_lines_n == 1, "aussitôt après : pas de nouveau LINES");
+    loci_emu_stop();
+    setenv("LOCI_HW_IDLE_POLL_US", "0", 1);
+    start(NULL);
+    m_lines_n = 0;
+    for (int i = 0; i < 50; i++) loci_emu_idle_poll(1000);
+    CHECK(m_lines_n == 50, "LOCI_HW_IDLE_POLL_US=0 : un LINES tous les 1000 cycles (comportement 2.30.0)");
+    loci_emu_stop();
+    unsetenv("LOCI_HW_IDLE_POLL_US");
+    m_idle_poll = "0";
+
     /* ── Recognising a LOCI-USB (loci_hw_probe) ── */
     {
         int master, slave;
         char name[128];
         if (openpty(&master, &slave, name, NULL, NULL) != 0) { perror("openpty"); return 1; }
         struct termios t; tcgetattr(slave, &t); cfmakeraw(&t); tcsetattr(slave, TCSANOW, &t);
-        m_fd = master;
-        pthread_t th; pthread_create(&th, NULL, mock_thread, NULL); pthread_detach(th);
+        pthread_t th; pthread_create(&th, NULL, mock_thread, (void *)(intptr_t)master); pthread_detach(th);
         loci_probe_info_t info;
         CHECK(loci_hw_probe_fd(slave, &info) == LOCI_PROBE_OK && info.id == 'L' &&
               info.proto == LUP_VERSION && info.fw == 1, "PING + 'L' en $0319 : LOCI reconnue");
