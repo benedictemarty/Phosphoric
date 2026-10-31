@@ -735,6 +735,12 @@ Simulate keystrokes after a delay in cycles:
 #   \pN = pause of N seconds (1-9)
 ```
 
+A real line end in the argument counts as `\n`. Each key is pressed only once
+the ROM has read the previous one (`$02DF` buffer, 2.31.5): after a long BASIC
+line, nothing is lost while the line is being stored. A program that reads the
+matrix itself (a game) never empties that buffer: after ~30 frames of waiting,
+this gate turns off for the session.
+
 ### Verbose output
 
 ```bash

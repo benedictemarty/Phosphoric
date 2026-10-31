@@ -839,6 +839,7 @@ static bool emulator_init(emulator_t* emu) {
     emu->frame_dump_interval = 50;
     emu->kbd_scan_prev_col = 0xFF;   /* sentinel: first read starts no pass */
     emu->type_keys_when_addr = -1;
+    emu->type_keys_pend_since = -1;
     emu->type_keys_when_text = NULL;
     emu->type_keys_when_done = false;
     emu->screenshot_when_addr = -1;
@@ -1631,6 +1632,27 @@ static void autotype_step_loci_hid(emulator_t* emu, uint64_t total_executed,
     }
 }
 
+/* ROM key-buffer gate ($02DF, 2.31.5): before pressing a NEW key, wait for
+ * the previous one to be read (cf. autotype.h). true = wait one frame (keys
+ * released, idx unchanged). */
+static bool autotype_keybuf_hold(emulator_t* emu, uint64_t total_executed) {
+    if (emu->type_keys_pend_off) return false;
+    uint8_t kb = emu->memory.ram[AUTOTYPE_KEYBUF_ADDR];
+    if (!(kb & 0x80)) { emu->type_keys_pend_since = -1; return false; }
+    if (emu->type_keys_pend_since < 0) emu->type_keys_pend_since = (int64_t)total_executed;
+    if (autotype_keybuf_wait(kb, (int64_t)total_executed, emu->type_keys_pend_since)) {
+        oric_keyboard_release_all(&emu->keyboard);
+        emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+        return true;
+    }
+    /* Timed out: the program does not read the keyboard through the ROM. */
+    emu->type_keys_pend_off = true;
+    emu->type_keys_pend_since = -1;
+    log_info("Auto-type: $%04X never read — key-buffer gate off for this session",
+             AUTOTYPE_KEYBUF_ADDR);
+    return false;
+}
+
 /* Automatic typing, native path: the ORIC keyboard matrix, with a release
  * frame between two identical keys so that the ROM scanner tells them apart. */
 static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
@@ -1651,6 +1673,7 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
             /* idx not advanced: this \n will be processed again on the next frame */
             emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
         } else {
+            if (autotype_keybuf_hold(emu, total_executed)) return;
             oric_keyboard_release_all(&emu->keyboard);
             oric_keyboard_press_char(&emu->keyboard, '\n');
             emu->type_keys_last_char = '\n';
@@ -1761,7 +1784,8 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
             emu->type_keys_last_char = 0;
             emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
         } else {
-            /* New character: press immediately */
+            /* New character: press once the previous key was read */
+            if (autotype_keybuf_hold(emu, total_executed)) return;
             oric_keyboard_release_all(&emu->keyboard);
             oric_keyboard_press_char(&emu->keyboard, c);
             emu->type_keys_last_char = c;
