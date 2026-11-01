@@ -271,6 +271,23 @@ one-frame bursts, it can reach one frame (20 ms Oric). Edges caused by an access
 (`reflect_nirq` after a `$03xx` read/write) and the per-frame drain are not affected.
 `LOCI_HW_IDLE_POLL_US=0`: cycle threshold only (2.30.0).
 
+### "Edge pending" bit (`--loci-hw`, 2.31.13)
+
+After each `$03xx` access to the LOCI, Phosphoric collects nIRQ with a `LINES`
+(`reflect_nirq`): the firmware may have pulsed nIRQ in reaction to the access. Since
+the loci-usb protocol 80ebb0b (firmware lucia-feather c29ee4d), the cartridge announces
+`LUP_CAP_EDGE_FLAG` (`0x40`, caps `5E`) and each response carries `LUP_F_EDGE` (`0x10`)
+when an nIRQ (assertion) or nRESET (release) edge is waiting to be collected. The bit
+is sampled AFTER the access: an edge caused by the access is already in its response.
+Phosphoric then only sends the post-access `LINES` if the bit was seen since the
+previous one (including in an `RDN` byte), and at least once per frame (19,968
+cycles). Idle polls stay unconditional: with no access there is no response, hence no
+bit — they are what collects asynchronous edges. Measured on the Feather, 20 M cycles
+headless: 3,860 → 2,540 requests (1,002 `LINES` avoided), 5.4 → 4.65 s.
+`LOCI_HW_NO_EDGE=1` restores the previous behaviour; firmware without the cap:
+unchanged. Not verified on the board: an nIRQ edge from the Microdisc or the ACIA (no
+Oric) — only nRESET edges were, by the loci-usb session.
+
 ### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 
 With the **loci-fw** firmware (LOCI_USB variant, caps `FIRMWARE`), the 6502 calls

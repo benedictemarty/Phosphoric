@@ -73,6 +73,25 @@ static long g_idle_poll_us;       /* LOCI_HW_IDLE_POLL_US: minimum real time bet
 static struct timespec g_idle_last; /* time of the last idle poll */
 static unsigned long g_idle_polls, g_idle_polls_hit;
 
+/* "Edge pending" bit (2.31.13, caps & LUP_CAP_EDGE_FLAG, firmware lucia-feather
+ * c29ee4d / proto loci-usb 80ebb0b): each response carries LUP_F_EDGE when an nIRQ
+ * or nRESET edge is waiting to be collected, sampled AFTER the access (an edge caused
+ * by the access is already in its response). The LINES that follows each LOCI access
+ * (loci_emu_reflect_nirq) is then only sent if the bit was seen — and at least once
+ * per frame. Idle polls stay unconditional: they collect the firmware's asynchronous
+ * edges (no access, no response, no bit). */
+#ifndef LUP_CAP_EDGE_FLAG
+#define LUP_CAP_EDGE_FLAG 0x40
+#endif
+#ifndef LUP_F_EDGE
+#define LUP_F_EDGE        0x10
+#endif
+#define LOCI_HW_FRAME_CYCLES 19968L   /* one Oric PAL frame */
+static int           g_edge_cap;         /* firmware announces LUP_CAP_EDGE_FLAG (and not LOCI_HW_NO_EDGE) */
+static int           g_edge_seen;        /* LUP_F_EDGE seen since the last LINES */
+static long          g_cyc_since_lines;  /* 6502 cycles since the last LINES */
+static unsigned long g_lines_skipped;    /* LINES avoided thanks to the bit */
+
 /* Φ2 race (caps & LUP_CAP_TIMING) */
 static int           g_timing;              /* RDT/WRT in use */
 static lup_timing_t  g_tm;                  /* current clocks and delays of the cartridge */
@@ -151,6 +170,7 @@ static void op_defer_release(void)
 static void op_defer_cancel(void) { g_op_defer = 0; g_gen_pending = 0; }
 static void note_flags(uint8_t flags)
 {
+    if (flags & LUP_F_EDGE) g_edge_seen = 1;
     int romdis = (flags & LUP_F_NROMDIS) != 0;
     if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate(romdis ? "nROMDIS actif" : "nROMDIS relâché"); }
     note_gen();
@@ -486,6 +506,10 @@ int loci_emu_start(const char *dev)
     g_read_lost = 0; g_prev_act_cyc = 0; g_since_access = 1L << 30;
     g_bal_writes = g_bal_cmds = 0; g_rom_valid = 0; memset(g_page_ok, 0, sizeof g_page_ok); g_rom_refills = 0; op_defer_cancel();
     g_irq_pending = 0;
+    { const char *ne = getenv("LOCI_HW_NO_EDGE");    /* empty = absent */
+      g_edge_cap = (g_c.caps & LUP_CAP_EDGE_FLAG) && !(ne && *ne); }
+    g_edge_seen = 1;                       /* first drain: always one LINES */
+    g_cyc_since_lines = 0; g_lines_skipped = 0;
     g_post_off = getenv("LOCI_HW_NO_POST") != NULL; g_post_n = 0; g_posted = g_post_wrn = 0;
 #ifdef LUP_CAP_XSTREAM
     g_xs_off = getenv("LOCI_HW_NO_XSTREAM") != NULL; g_xs_ch = -1; g_xs_last = 0; g_xs_served = g_xs_peeks = 0;
@@ -513,6 +537,8 @@ void loci_emu_stop(void)
     if (!g_active) return;
     log_info("LOCI-hw: fin de session — %lu requêtes, %lu pages du cache ROM rechargées, %lu polls en attente (%lu avec événement)",
              g_c.n_req, g_rom_refills, g_idle_polls, g_idle_polls_hit);
+    if (g_edge_cap)
+        log_info("LOCI-hw: bit front en attente — %lu LINES après accès évités", g_lines_skipped);
     bridge_sync();
     if (g_bal_writes)
         log_info("LOCI-hw: BAL — %lu écritures captées, %lu commandes", g_bal_writes, g_bal_cmds);
@@ -587,6 +613,8 @@ static int rom_refill_page(int pg)
      * note_gen(), to honour the deferral after an API call ($03AF): pages already in
      * the cache keep the previous ROM there until MIA_SPIN is read. */
     note_gen();
+    for (int i = 0; i < 256; i++)          /* "edge pending" bit: per RDN byte */
+        if (g_rom_flags[pg * 256 + i] & LUP_F_EDGE) { g_edge_seen = 1; break; }
     g_page_ok[pg] = 1; g_rom_valid = 1; g_rom_refills++;
     int romdis = (g_rom_flags[pg * 256] & LUP_F_NROMDIS) != 0;
     if (romdis != g_romdis) g_romdis = romdis;
@@ -646,16 +674,23 @@ void    loci_emu_dsk_tick(void)                             { }
 
 /* nIRQ edges counted by the bridge since the last drain (once per frame).
  * Uses the same round trip to pick up nROMDIS and the nRESET edges. */
-static int lines_drain(void)
+static int lines_drain(int skippable)
 {
     uint8_t lines = 0, irqs = 0, rsts = 0;
     if (!g_active) return 0;
     if (g_irq_pending) { int n = g_irq_pending; g_irq_pending = 0; return n; }   /* warm button */
+    if (skippable && g_edge_cap && !g_edge_seen && !g_post_n && !xs_active() &&
+        g_cyc_since_lines < LOCI_HW_FRAME_CYCLES) {   /* drain after an access: nothing pending */
+        g_lines_skipped++;
+        return 0;
+    }
     /* Writes still buffered: the firmware has not seen them, no pulse can result
      * (reflect_nirq follows EVERY MIA write: flushing here would mean one WRN + one
      * LINES per byte). Picked up after the flush. */
     if (g_post_n || xs_active()) return 0;
     if (lup_lines(&g_c, &lines, &irqs, &rsts) != 0) { link_error_once("LINES"); return 0; }
+    g_edge_seen = 0;                       /* LINES resets the bridge counters */
+    g_cyc_since_lines = 0;
     int romdis = (lines & LUP_L_NROMDIS) != 0;
     if (romdis != g_romdis) { g_romdis = romdis; rom_invalidate(romdis ? "nROMDIS actif" : "nROMDIS relâché"); }
     note_gen();
@@ -663,7 +698,7 @@ static int lines_drain(void)
     return irqs;
 }
 
-int loci_emu_irq_take(void) { return lines_drain(); }
+int loci_emu_irq_take(void) { return lines_drain(1); }
 
 /* "Idle" poll: with no LOCI access for LOCI_HW_IDLE_POLL cycles AND at least
  * LOCI_HW_IDLE_POLL_US µs of real time since the previous one, one LINES. Free when
@@ -676,6 +711,7 @@ int loci_emu_irq_take(void) { return lines_drain(); }
 int loci_emu_idle_poll(int cycles)
 {
     if (g_since_access < (1L << 30)) g_since_access += cycles;
+    if (g_cyc_since_lines < (1L << 30)) g_cyc_since_lines += cycles;
     if ((g_post_n || xs_active()) && g_since_access >= LOCI_HW_POST_IDLE) bridge_sync();
     if (!g_active || g_idle_poll_cycles <= 0) return 0;
     g_idle_cycles += cycles;
@@ -689,7 +725,7 @@ int loci_emu_idle_poll(int cycles)
     }
     g_idle_polls++;
     int before = g_reset_pending;
-    int irqs = lines_drain();
+    int irqs = lines_drain(0);
     if (irqs || g_reset_pending != before) g_idle_polls_hit++;
     return irqs ? irqs : (g_reset_pending != before ? -1 : 0);  /* -1 = reset only: the caller picks up loci_emu_reset_take */
 }

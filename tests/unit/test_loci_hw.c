@@ -48,6 +48,11 @@ static unsigned m_rdn_last_n;     /* size of the last RDN (paged ROM cache: 256)
 static int      m_btn_warm_irqs;  /* BTN: nIRQ pulses returned by the next LINES (warm press) */
 static int      m_lines_irqs;
 static unsigned m_lines_n;        /* LINES received (idle poll) */
+/* "Edge pending" bit (2.31.13): m_caps_edge announces LUP_CAP_EDGE_FLAG; m_edge
+ * is carried by the responses (LUP_F_EDGE) until the next LINES. */
+static int      m_caps_edge, m_edge;
+#define LOCI_HW_FRAME_CYCLES_T 19968
+#define M_EDGEF ((uint8_t)((m_caps_edge && m_edge) ? LUP_F_EDGE : 0))
 static const char *m_idle_poll = "0";   /* LOCI_HW_IDLE_POLL passed by start() */
 /* Log of the writes received by the mock on $03A4/$03A8 (WR/WRT one by one, or
  * grouped WRN), in arrival order. */
@@ -104,9 +109,10 @@ static void *mock_thread(void *arg)
 #ifdef LUP_CAP_XSTREAM
             if (m_caps_xs) caps |= LUP_CAP_XSTREAM;
 #endif
+            if (m_caps_edge) caps |= LUP_CAP_EDGE_FLAG;
             uint8_t p[3] = { LUP_VERSION, 1, caps };
             mwrite(hdr, 3); mwrite(p, 3); break; }
-        case LUP_CMD_LINES: { m_lines_n++; uint8_t p[4] = { LUP_L_NROMDIS, (uint8_t)m_lines_irqs, 0, m_gen };
+        case LUP_CMD_LINES: { m_lines_n++; m_edge = 0; uint8_t p[4] = { LUP_L_NROMDIS, (uint8_t)m_lines_irqs, 0, m_gen };
             m_lines_irqs = 0; mwrite(hdr, 3); mwrite(p, 4); break; }
         case LUP_CMD_BTN: { (void)mread(); m_lines_irqs = m_btn_warm_irqs; mwrite(hdr, 3); break; }
         case LUP_CMD_RD: {
@@ -120,7 +126,7 @@ static void *mock_thread(void *arg)
                 m_port_reads++; mwrite(hdr, 3); mwrite(q, 3); break;
             }
             uint8_t p[3] = { ad >= 0xC000 ? m_rom[ad - 0xC000] : ad == 0x0319 ? m_id : 0xFF,
-                             LUP_F_NROMDIS | LUP_F_SERVED, m_gen };
+                             (uint8_t)(LUP_F_NROMDIS | LUP_F_SERVED | M_EDGEF), m_gen };
             mwrite(hdr, 3); mwrite(p, 3); break; }
         case LUP_CMD_RDN: {
             uint8_t b[4]; for (int i = 0; i < 4; i++) b[i] = (uint8_t)mread();
@@ -161,7 +167,7 @@ static void *mock_thread(void *arg)
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
             uint8_t dv = (uint8_t)(ad & 0xFF);
             if (m_xs_model && port_ch(ad) >= 0) { dv = port_read(port_ch(ad)); m_port_reads++; }
-            uint8_t p[7] = { dv, LUP_F_NROMDIS | LUP_F_SERVED, m_gen,
+            uint8_t p[7] = { dv, (uint8_t)(LUP_F_NROMDIS | LUP_F_SERVED | M_EDGEF), m_gen,
                              (uint8_t)m_serve[ad], (uint8_t)(m_serve[ad] >> 8),
                              (uint8_t)m_act[ad], (uint8_t)(m_act[ad] >> 8) };
             mwrite(hdr, 3); mwrite(p, 7); break; }
@@ -413,6 +419,30 @@ int main(void)
     loci_emu_stop();
     m_xs_model = 0;
 #endif
+
+    /* ── "Edge pending" bit (2.31.13) ── */
+    m_caps_edge = 1; m_edge = 0;
+    start(NULL);
+    loci_emu_irq_take();                          /* first drain: always one LINES */
+    m_lines_n = 0;
+    for (int i = 0; i < 20; i++) { loci_emu_api_read(0x03A0); loci_emu_irq_take(); }
+    CHECK(m_lines_n == 0, "cap EDGE, aucun front signalé : pas de LINES après les 20 accès");
+    m_edge = 1;
+    loci_emu_api_read(0x03A0);
+    CHECK(loci_emu_irq_take() == 0 && m_lines_n == 1, "LUP_F_EDGE dans la réponse : un LINES au drain suivant");
+    loci_emu_api_read(0x03A0); loci_emu_irq_take();
+    CHECK(m_lines_n == 1, "bit retombé après LINES : pas de LINES de plus");
+    loci_emu_idle_poll(LOCI_HW_FRAME_CYCLES_T);   /* one frame with no LINES (idle poll off) */
+    loci_emu_api_read(0x03A0); loci_emu_irq_take();
+    CHECK(m_lines_n == 2, "au moins un LINES par trame, même sans bit");
+    loci_emu_stop();
+    m_caps_edge = 0;
+    start(NULL);
+    loci_emu_irq_take();
+    m_lines_n = 0;
+    for (int i = 0; i < 5; i++) { loci_emu_api_read(0x03A0); loci_emu_irq_take(); }
+    CHECK(m_lines_n == 5, "firmware sans la cap : un LINES après chaque accès (comportement d'avant)");
+    loci_emu_stop();
 
     /* ── Idle poll: real-time threshold (2.30.1) ── */
     m_idle_poll = "1000";
