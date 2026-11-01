@@ -143,6 +143,26 @@ dossier est absent.
 
 ---
 
+## Balayage de 484 disquettes (2.31.12)
+
+`tools/dsk_sweep.sh DOSSIER [TACHES]` demarre chaque `.dsk` sur ROM Atmos + ROM
+Microdisc pendant 30 M cycles, deux fois : timing reel du WD1793 (defaut, octets
+au rythme du plateau depuis 2.31.9) et `--fdc-timing fast`. Lance sur
+`~/oriclib/games/dsk` (archive locale, non versionnee) le 2026-11-01 :
+
+| Reel / fast | Nombre | Lecture |
+|-------------|--------|---------|
+| OK / OK | 424 | |
+| OK / octets perdus | 59 | le modele reel ne perd rien ; en `fast`, le chien de garde leve S2 sans perte reelle (octets servis a la demande du CPU) |
+| arret / arret | 1 | `MazeEaterUTS.dsk` : programme ORIC-1 (meme arret en `$1108` que `01.tap` sur ROM Atmos, qui marche sur ROM 1.0) |
+
+**Aucun octet perdu sur les 484 disquettes avec le modele lie au plateau.** Ecrans
+(passage reel) : 398 avec du texte, 51 sur `Ready` (pas de demarrage automatique),
+33 qui demandent une disquette systeme (disquettes de donnees), 1 vide. Limite :
+« OK » veut dire « ni arret, ni perte, ni delai depasse », pas « programme juste ».
+
+---
+
 ## Resultats des tests unitaires
 
 `make tests` : **908 tests, 100% pass** (35 suites), verifie le 2026-08-30.
