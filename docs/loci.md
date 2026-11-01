@@ -330,13 +330,26 @@ RAMX write (3.6 µs: a `$03xx` access less than 4 6502 cycles later reads a stal
 iopage). The PIO counts and the setup time of the Oric's 6502 at 2 MHz are
 estimates, to be confirmed by a measurement on a real bus.
 
+**Limit (checked on 2026-11-01, 2.31.11)**: these measurements only make sense
+with a firmware whose `act_loop` serves the bus through the MIA PIO (the real
+LOCI firmware built as LOCI-USB, where the figures above come from). With
+**lucia-feather** (the Feather's current firmware, caps `1E`, `LOCI_USB` variant of
+`src/bal/bal.c`), there is neither an Oric bus nor a PIO in the loop: each access is
+a USB message that core 0 drops into a mailbox, handled in software by core 1.
+`serve` there measures a memory read and `act` the handler's duration: neither
+describes the Φ2 → PIO → DMA → bus chronology. The `--loci-hw` "Φ2 race" summary
+therefore calibrates nothing with this firmware. Calibrating the race needs a real
+LOCI on a real Oric and a logic analyser (Φ2, D0-D7, R/W), or at least the real
+LOCI firmware on the Feather wired to a bus.
+
 ## Known discrepancies (out of scope)
 
 - The LittleFS internal flash is not emulated as such (LFS files 19-20,
   directories 32+, errno `128-lfs_err`, real "0:" volume) — the flash root
   plays that role with FAT semantics.
-- The firmware's dev directory "0", the real ULA pattern matcher, BUSY observable
-  during a long op.
+- The firmware's dev directory "0", BUSY observable during a long op. The ULA
+  pattern detector (`$03A3`) has been emulated functionally since 2.31.7 (answer
+  computed from the ULA mode, no blanking addresses).
 - USB detection at startup only (no hot-plug).
 - The LOCI's `dsk_fdc` keeps fast FDC timing — faithful: on real
   hardware its "drive" is the RP2040 + SD, with no mechanics (the Microdisc,
