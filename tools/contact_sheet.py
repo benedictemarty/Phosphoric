@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: EUPL-1.2
-"""contact_sheet.py — contact sheets of the screens captured by tap_sweep.sh (2.31.10).
+"""contact_sheet.py — planches contact des écrans capturés par tap_sweep.sh (2.31.10).
 
-Usage: contact_sheet.py SHOTS_DIR OUT_PREFIX [COLS] [ROWS]
+Usage : contact_sheet.py SHOTS_DIR OUT_PREFIX [COLS] [ROWS]
 
-Assembles the captures (*.ppm/*.png) into grids of captioned thumbnails
-(OUT_PREFIX_001.png, …), for a visual review of the HIRES screens that no
-text check can see. Requires Pillow.
+Assemble les captures (*.ppm/*.png) en grilles de vignettes légendées
+(OUT_PREFIX_001.png, …), pour un examen à l'œil des écrans HIRES qu'aucune
+vérification texte ne voit. Nécessite Pillow.
 
 Author: bmarty <bmarty@mailo.com>
 """
