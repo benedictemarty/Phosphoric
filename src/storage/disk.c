@@ -65,6 +65,9 @@ void fdc_reset(fdc_t* fdc) {
     fdc->delayed_int = 0;
     fdc->di_status = -1;
     fdc->dd_status = -1;
+    fdc->stream = false;
+    fdc->stream_crc = false;
+    fdc->stream_due = 0;
 }
 
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size) {
@@ -261,6 +264,119 @@ static bool fdc_not_ready(fdc_t* fdc) {
     return true;
 }
 
+/* Lecture/écriture de secteur en modèle REAL : octets cadencés par le plateau. */
+static bool fdc_streamed(const fdc_t* fdc) {
+    return fdc->timing_mode == FDC_TIMING_REAL &&
+           (fdc->currentop == FDC_OP_READ_SECTOR || fdc->currentop == FDC_OP_READ_SECTORS ||
+            fdc->currentop == FDC_OP_WRITE_SECTOR || fdc->currentop == FDC_OP_WRITE_SECTORS);
+}
+
+static bool fdc_op_is_write(int op) {
+    return op == FDC_OP_WRITE_SECTOR || op == FDC_OP_WRITE_SECTORS;
+}
+
+static void fdc_stream_drq(fdc_t* fdc) {
+    fdc->status |= FDC_ST_DRQ;
+    fdc->drq_age = 0;
+    fdc->set_drq(fdc->drq_userdata);
+}
+
+static void fdc_stream_lost(fdc_t* fdc) {
+    if (!(fdc->status & FDC_ST_LOST_DATA)) fdc->lost_data_count++;
+    fdc->status |= FDC_ST_LOST_DATA;
+}
+
+/* Fin du champ de données (CRC passé) : secteur suivant ou fin de commande.
+ * S2 reste visible dans le statut final, comme sur le WD1793. */
+static void fdc_stream_sector_done(fdc_t* fdc) {
+    uint8_t lost = fdc->status & FDC_ST_LOST_DATA;
+    fdc->stream = false;
+    fdc->stream_crc = false;
+    fdc->status &= ~FDC_ST_DRQ;
+    fdc->clr_drq(fdc->drq_userdata);
+    if (fdc->currentop == FDC_OP_READ_SECTORS || fdc->currentop == FDC_OP_WRITE_SECTORS) {
+        fdc->sector++;
+        fdc->cur_offset = 0;
+        fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
+        if (fdc->cur_sector_data) {
+            fdc->delayed_drq = fdc_rot_wait(fdc, fdc->sector);
+            return;
+        }
+        /* fin de piste : la commande multi-secteur se termine sur RNF */
+        fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND | lost);
+    } else {
+        fdc->di_status = (uint8_t)(fdc->sec_type | lost);
+    }
+    fdc->currentop = FDC_OP_NONE;
+    fdc->delayed_int = 1;
+}
+
+/* Le champ de données arrive sous la tête (DRQ différé échu). */
+static void fdc_stream_start(fdc_t* fdc) {
+    fdc->stream = true;
+    fdc->stream_crc = false;
+    fdc->cur_offset = 0;
+    if (fdc_op_is_write(fdc->currentop)) {
+        /* demande du premier octet ; il doit arriver avant la fin du gap */
+        fdc_stream_drq(fdc);
+        fdc->stream_due = FDC_WRITE_GAP_BYTES * FDC_BYTE_CYCLES;
+    } else {
+        fdc->sec_type = 0;
+        fdc->data = fdc->cur_sector_data[fdc->cur_offset++];
+        fdc_stream_drq(fdc);
+        fdc->stream_due = FDC_BYTE_CYCLES;
+    }
+}
+
+/* Un temps d'octet écoulé : octet suivant sous la tête. */
+static void fdc_stream_step(fdc_t* fdc) {
+    if (fdc->stream_crc) {                       /* CRC passé */
+        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* dernier octet jamais lu/écrit */
+        fdc_stream_sector_done(fdc);
+        return;
+    }
+    if (fdc_op_is_write(fdc->currentop)) {
+        bool served = !(fdc->status & FDC_ST_DRQ);
+        if (fdc->cur_offset == 0 && !served) {
+            /* premier octet absent à la fin du gap : rien n'est écrit */
+            fdc_stream_lost(fdc);
+            fdc->cur_offset = fdc->cur_sector_len;
+            fdc->status &= ~FDC_ST_DRQ;
+            fdc->clr_drq(fdc->drq_userdata);
+            fdc->currentop = (fdc->currentop == FDC_OP_WRITE_SECTORS)
+                           ? FDC_OP_WRITE_SECTOR : fdc->currentop;   /* termine */
+            fdc_stream_sector_done(fdc);
+            return;
+        }
+        uint8_t b = served ? fdc->data : 0x00;   /* octet non fourni : zéros */
+        if (!served) fdc_stream_lost(fdc);
+        fdc->cur_sector_data[fdc->cur_offset++] = b;
+        fdc->disk_modified = true;
+        if (fdc->cur_offset < fdc->cur_sector_len) {
+            fdc_stream_drq(fdc);
+            fdc->stream_due += FDC_BYTE_CYCLES;
+        } else {
+            fdc->status &= ~FDC_ST_DRQ;
+            fdc->clr_drq(fdc->drq_userdata);
+            fdc->stream_crc = true;
+            fdc->stream_due += 2 * FDC_BYTE_CYCLES;
+        }
+        return;
+    }
+    /* lecture */
+    if (fdc->cur_offset < fdc->cur_sector_len) {
+        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* écrasé avant lecture */
+        fdc->data = fdc->cur_sector_data[fdc->cur_offset++];
+        fdc_stream_drq(fdc);
+        fdc->stream_due += FDC_BYTE_CYCLES;
+    } else {
+        /* on est au 1er octet de CRC (un temps d'octet après le dernier) :
+         * le champ se termine après le 2e */
+        fdc->stream_crc = true;
+        fdc->stream_due += FDC_BYTE_CYCLES;
+    }
+}
+
 /**
  * Process FDC timer ticks. Must be called with CPU cycle count
  * after each instruction to handle delayed DRQ/INTRQ.
@@ -291,9 +407,25 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
                 fdc->status = (uint8_t)fdc->dd_status;
                 fdc->dd_status = -1;
             }
-            fdc->status |= FDC_ST_DRQ;
-            fdc->drq_age = 0;
-            fdc->set_drq(fdc->drq_userdata);
+            if (fdc_streamed(fdc) && fdc->cur_sector_data)
+                fdc_stream_start(fdc);           /* 2.31.9 : le plateau cadence */
+            else {
+                fdc->status |= FDC_ST_DRQ;
+                fdc->drq_age = 0;
+                fdc->set_drq(fdc->drq_userdata);
+            }
+        }
+    }
+
+    /* Flux lié au plateau : un octet par FDC_BYTE_CYCLES. */
+    if (fdc->stream) {
+        if (!fdc_streamed(fdc)) {
+            fdc->stream = false;                 /* commande interrompue */
+        } else {
+            fdc->stream_due -= (int)cycles;
+            while (fdc->stream && fdc->stream_due <= 0)
+                fdc_stream_step(fdc);
+            return;                              /* S2 décidé par le flux */
         }
     }
 
@@ -304,12 +436,11 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
      * précédent est perdu. Le WD1793 lève S2 et poursuit le transfert, ce qui
      * permet au logiciel de savoir qu'il a raté le train.
      *
-     * Limite assumée de notre modèle : le bit est signalé au bon moment, mais
-     * l'octet n'est PAS réellement perdu — le modèle d'image plate n'a pas de
-     * flux MFM continu (c'est la même limite qui rend CRC ERROR impossible, cf.
-     * docs/HARDWARE_CONFORMANCE.md). Le logiciel qui teste S2 voit donc la bonne
-     * condition ; celui qui l'ignore obtient des données intactes là où le
-     * matériel lui en donnerait de fausses. */
+     * Ce chien de garde ne sert plus qu'aux transferts servis à la demande du
+     * CPU (profil fast, Read Address) : le bit est signalé au bon moment, mais
+     * l'octet n'est pas réellement perdu. En profil réel, lecture et écriture
+     * de secteur passent par le flux lié au plateau (fdc_stream_*, 2.31.9),
+     * qui perd vraiment l'octet ; on n'arrive pas ici dans ce cas. */
     if ((fdc->status & FDC_ST_DRQ) && fdc_op_transfers_data(fdc->currentop)) {
         fdc->drq_age += (int)cycles;
         if (fdc->drq_age > FDC_BYTE_CYCLES && !(fdc->status & FDC_ST_LOST_DATA)) {
@@ -356,6 +487,14 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                 fdc->status |= FDC_ST_NOT_FOUND;
                 fdc->clr_drq(fdc->drq_userdata);
                 fdc->currentop = FDC_OP_NONE;
+                break;
+            }
+
+            if (fdc->stream) {
+                /* 2.31.9 : l'octet est dans le registre de données depuis son
+                 * passage sous la tête ; la lecture ne fait que servir le DRQ. */
+                fdc->status &= ~FDC_ST_DRQ;
+                fdc->clr_drq(fdc->drq_userdata);
                 break;
             }
 
@@ -447,6 +586,10 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
     case FDC_COMMAND:
         /* Writing command clears INTRQ */
         fdc->clr_intrq(fdc->intrq_userdata);
+        if ((value & 0xF0) != 0xD0) {            /* hors Force Interrupt (fin plus bas) */
+            fdc->stream = false;
+            fdc->stream_crc = false;
+        }
 
         switch (value & 0xE0) {
         case 0x00: /* Restore or Seek */
@@ -637,6 +780,12 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->currentop = FDC_OP_NONE;
                 break;
             }
+            if (fdc->stream) {
+                /* 2.31.9 : l'octet sera pris au passage sous la tête. */
+                fdc->status &= ~FDC_ST_DRQ;
+                fdc->clr_drq(fdc->drq_userdata);
+                break;
+            }
             fdc->cur_sector_data[fdc->cur_offset++] = value;
             fdc->disk_modified = true;   /* in-memory image mutated → drive dirty */
             fdc->status &= ~FDC_ST_DRQ;
@@ -763,6 +912,10 @@ void fdc_state_save(const fdc_t* fdc, FILE* fp) {
     fwrite(fdc->wt_id, 1, sizeof(fdc->wt_id), fp);
     bin_w_u16(fp, fdc->wt_data_len);
     bin_w_u8(fp, fdc->wt_sectors_done);
+    /* v3 (2.31.9) : flux d'octets lié au plateau */
+    bin_w_u8(fp, fdc->stream ? 1 : 0);
+    bin_w_u8(fp, fdc->stream_crc ? 1 : 0);
+    bin_w_i32(fp, fdc->stream_due);
 }
 
 void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
@@ -787,7 +940,7 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
         fdc->status_type1 = bin_r_u8(fp) != 0;
         fdc->rot_pos = bin_r_u32(fp) % FDC_REV_CYCLES;
     }
-    if (size >= FDC_STATE_SIZE) {      /* v2 : DRQ en attente + formatage */
+    if (size >= FDC_STATE_SIZE_V2) {   /* v2 : DRQ en attente + formatage */
         fdc->drq_age = bin_r_i32(fp);
         fdc->wt_state = bin_r_u8(fp);
         fdc->wt_field_idx = bin_r_u8(fp) & 3;
@@ -801,6 +954,15 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
         fdc->wt_field_idx = 0;
         fdc->wt_data_len = 0;
         fdc->wt_sectors_done = 0;
+    }
+    if (size >= FDC_STATE_SIZE) {      /* v3 : flux d'octets */
+        fdc->stream = bin_r_u8(fp) != 0;
+        fdc->stream_crc = bin_r_u8(fp) != 0;
+        fdc->stream_due = bin_r_i32(fp);
+    } else {                           /* .ost antérieur : transfert réglé par le CPU */
+        fdc->stream = false;
+        fdc->stream_crc = false;
+        fdc->stream_due = 0;
     }
 }
 

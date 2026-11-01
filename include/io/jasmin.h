@@ -113,7 +113,7 @@ bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size);
  * disque (section « DSK », partagée avec le Microdisc) n'y figurent. jasmin_load
  * ignore une section de version inconnue ou tronquée, puis re-pointe le FDC sur
  * le disque du lecteur sélectionné. */
-#define JASMIN_SAVE_VERSION 1
+#define JASMIN_SAVE_VERSION 2   /* 2 (2.31.9) : état FDC v3, 55 octets ; 1 = 49 octets */
 bool jasmin_save(const jasmin_t* j, FILE* fp);
 void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size);
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,

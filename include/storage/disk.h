@@ -58,6 +58,10 @@
 #define FDC_BYTE_CYCLES        32
 #define FDC_INDEX_PULSE_CYCLES 4000u    /* index pulse width (~4 ms) */
 #define FDC_SETTLE_CYCLES      30000    /* E/V flag: 30 ms at 1 MHz clock */
+/* Write Sector (datasheet FD179X) : après le champ ID, le contrôleur compte
+ * 22 octets de gap en MFM ; si le premier DRQ n'est pas servi d'ici là, la
+ * commande se termine sur LOST DATA sans rien écrire. */
+#define FDC_WRITE_GAP_BYTES    22
 #define FDC_RNF_CYCLES         (5 * (int)FDC_REV_CYCLES) /* 5 index pulses */
 
 /* Current operation */
@@ -154,6 +158,16 @@ typedef struct fdc_s {
     /* Âge du DRQ courant, en cycles. Au-delà du temps d'un octet, la donnée est
      * considérée perdue (S2). Remis à zéro à chaque pose de DRQ. */
     int drq_age;
+
+    /* Flux d'octets lié au plateau (2.31.9, modèle REAL, lecture/écriture de
+     * secteur). Une fois le champ de données sous la tête, un octet défile
+     * toutes les FDC_BYTE_CYCLES, que le CPU suive ou non : en lecture, un
+     * octet non lu avant le suivant est écrasé (S2) ; en écriture, un octet
+     * non fourni à temps est écrit à $00 (S2). Avant, chaque octet était
+     * réarmé 32 cycles après l'accès du CPU : le disque attendait le CPU. */
+    bool stream;               /* champ de données en cours de défilement */
+    bool stream_crc;           /* tous les octets passés, CRC sous la tête */
+    int  stream_due;           /* cycles jusqu'au prochain octet (ou fin du CRC) */
     bool     status_type1;     /* status register shows Type I bits (live
                                   index pulse / TRK0 patched on read) */
 
@@ -219,7 +233,8 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles);
  * fdc_state_load lit `size` octets : un .ost antérieur (36 octets, ou 31 avant
  * v1.42) se relit, les champs absents prenant leur valeur neutre. */
 #define FDC_STATE_SIZE_V1 36
-#define FDC_STATE_SIZE    49
+#define FDC_STATE_SIZE_V2 49
+#define FDC_STATE_SIZE    55   /* v3 (2.31.9) : flux d'octets lié au plateau */
 void fdc_state_save(const fdc_t* fdc, FILE* fp);
 void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size);
 void fdc_state_resume(fdc_t* fdc);

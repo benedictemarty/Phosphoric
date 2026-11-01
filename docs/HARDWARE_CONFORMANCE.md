@@ -38,10 +38,15 @@ rotationnelle 200 ms/rev, bit BUSY, patch live INDEX/TRK0 en status Type I.
 | **Multi-secteur : pas de RNF terminal** | Une commande multi-secteur s'arrêtait silencieusement en fin de piste. Le WD1793 continue de chercher le secteur suivant et termine sur **RECORD NOT FOUND** : c'est ce qui indique au logiciel où la piste s'achève. | RNF ajouté au statut de fin, en lecture comme en écriture. |
 | **Disque absent en Type II/III → RNF au lieu de NOT READY** | — | Déjà corrigé avant ce sprint (`fdc_not_ready()`, appelé par les quatre commandes Type II/III) ; la ligne de ce document était **périmée**. |
 
+### Corrigé (2.31.9) — le plateau n'attend plus le CPU
+| Écart | Détail | Correctif |
+|-------|--------|-----------|
+| **Octets réarmés par le CPU** | En lecture/écriture de secteur, chaque octet était réarmé 32 cycles *après* l'accès du CPU : le disque attendait le processeur. Un secteur lu par une boucle de ~9 cycles durait ~10 450 cycles au lieu de 256 × 32 + CRC ≈ 8 256 ; un octet non lu à temps levait S2 mais restait intact. | Profil réel : dès que le champ de données passe sous la tête, un octet défile toutes les 32 cycles. **Lecture** : un octet non lu avant le suivant est écrasé (S2). **Écriture** : un octet non fourni à temps est écrit à `$00` (S2) ; si le premier n'est pas fourni avant la fin du gap (22 octets en MFM), rien n'est écrit et la commande se termine sur S2. Fin du champ après les 2 octets de CRC ; S2 reste dans le statut final. 5 tests (`test_fdc_stream_*`). Mesuré : 13 disquettes locales démarrent sans aucun octet perdu ; sur Sedoric 3, le premier secteur finit ~2 260 cycles plus tôt, l'écart se stabilisant ensuite (la rotation domine). Savestate FDC v3 (55 octets), section Jasmin v2 (v1 relue). |
+
 ### Déviations assumées
 | Écart | Raison |
 |-------|--------|
-| **L'octet perdu n'est pas réellement perdu** : S2 est signalé au bon moment, mais les données restent intactes | Notre modèle d'image plate n'a pas de flux MFM continu : les octets sont servis à la demande du CPU, pas par la rotation. Le logiciel qui teste S2 voit la bonne condition ; celui qui l'ignore obtient des données correctes là où le matériel lui en donnerait de fausses. Faire défiler réellement le flux exige le modèle de piste MFM (backlog V2-E6/US6.3) — et ferait courir un risque au chargement disque pour un gain théorique : aucun logiciel Oric connu n'est trop lent. |
+| **Read Address et profil `--fdc-timing fast`** : octets servis à la demande du CPU | Depuis 2.31.9, en profil réel (défaut), Read Sector et Write Sector font défiler les octets au rythme du plateau (voir « Corrigé (2.31.9) »). Read Address (6 octets) et le profil `fast` (médias servis par la LOCI) gardent l'ancien modèle : le contrôleur réarme le DRQ 32 cycles après l'accès du CPU, S2 est signalé mais l'octet n'est pas perdu. |
 | READ TRACK sans complétion (pas de case dans `fdc_read`) | Commande quasi inutilisée par le logiciel Oric, et une implémentation correcte demanderait de **synthétiser une piste MFM** (gaps, marques d'adresse) — c'est le modèle de piste du backlog. |
 | S3 CRC ERROR jamais posé | Impossible structurellement sur image plate ; les secteurs endommagés remontent en RNF (S4). |
 | Flags C/S (side compare) et a0 (Deleted DAM) ignorés | Le side est piloté par le registre de contrôle Microdisc. |
