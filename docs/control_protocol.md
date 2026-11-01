@@ -87,7 +87,7 @@ and are also exposed through the HTTP API. Replies follow the `OK …`/`ERR …`
 
 | CMD | Usage | Role |
 |-----|-------|------|
-| `keys <texte>` | raw rest of the line (spaces preserved) | injects keystrokes; `\n` Return, `\e` Esc, `\s<c>` = `<c>` with SHIFT |
+| `keys <texte>` | raw rest of the line (spaces preserved) | injects keystrokes; `\n` Return, `\e` Esc, `\s<c>` = `<c>` with SHIFT. Since 2.31.8: hold and gap counted in cycles and keyboard-scanner passes (a `pause` no longer shortens a key), SHIFT pressed alone before a character that needs it, and the next key waits until the ROM has read the previous one (`$02DF`, gate off after ~30 frames if the program does not read keys through the ROM) |
 | `hunt` then `hunt <op> [val]` | op ∈ `eq,same,changed,up,down,list,clear` | value search in memory (successive snapshots) |
 | `watch-region <start> <end> [rwx]` | hex bounds, flags a subset of `rwx` | watches a memory range |
 | `watch-region-clear` | — | clears all watched regions |

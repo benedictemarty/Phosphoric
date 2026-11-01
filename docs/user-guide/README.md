@@ -741,7 +741,11 @@ A real line end in the argument counts as `\n`. Each key is pressed only once
 the ROM has read the previous one (`$02DF` buffer, 2.31.5): after a long BASIC
 line, nothing is lost while the line is being stored. A program that reads the
 matrix itself (a game) never empties that buffer: after ~30 frames of waiting,
-this gate turns off for the session.
+this gate turns off for the session. A character that needs SHIFT (`(`, `:`,
+`$`...) is preceded by SHIFT alone (2.31.8): the ROM reads the keyboard rows
+from 7 to 0 and SHIFT is on row 4; pressed together, the key could be seen
+without SHIFT (`:` became `;`). Same rules for the `keys` command of
+`--control`.
 
 ### Verbose output
 

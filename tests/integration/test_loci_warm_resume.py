@@ -93,6 +93,33 @@ def run(seconds):
     until("EVT stopped")
 
 
+def run_until(pred, limit=20.0, step=0.3):
+    """Fait tourner la machine par tranches jusqu'à pred(écran) ; écran final.
+    Attente bornée en temps réel, mais condition sur l'état de la machine :
+    le test ne dépend plus de la vitesse de l'hôte."""
+    t0 = time.time()
+    scr = screen()
+    while not pred(scr) and time.time() - t0 < limit:
+        run(step)
+        scr = screen()
+    return scr
+
+
+def video():
+    send("peek video")
+    return until("OK") or ""
+
+
+def wait_video_hires(limit=20.0):
+    """Fait tourner la machine jusqu'à ce que l'ULA soit en HIRES (borné)."""
+    t0 = time.time()
+    vid = video()
+    while "hires=1" not in vid and time.time() - t0 < limit:
+        run(0.3)
+        vid = video()
+    return vid
+
+
 def regs():
     send("regs")
     line = until("OK A=") or ""
@@ -133,15 +160,14 @@ try:
     run(0.3)
     send(r"keys 10 I=I+1:PLOT 2,10,STR$(I):GOTO 10\nRUN\n")
     until("OK")
-    run(1.0)
+    run_until(lambda sc: counter(sc) > 0)
     before_ram = save_ram("before.bin")
     before_regs = regs()
     before_count = counter(screen())
 
     send("loci-button")
     until("OK")
-    run(1.5)
-    menu = screen()
+    menu = run_until(lambda sc: "LOCI ROM" in sc and sc[34:37].strip() != "")
     # Le menu n'écrit le mode vidéo sauvegardé (T/H + 50/60, colonne 34 de
     # la ligne 0) que si mia_restore_buffer_ok() voit la marque 'L'.
     vmode = menu[34:37]
@@ -170,18 +196,16 @@ try:
                 f"{after_regs.get('Y')})")
     send("unbreak 0")
     until("OK")
-    run(1.0)
-    after_count = counter(screen())
+    after_count = counter(run_until(lambda sc: counter(sc) > before_count))
     check(after_count > before_count > 0,
           f"le programme interrompu continue (compteur {before_count} → {after_count})")
 
     send("loci-button")
     until("OK")
-    run(1.5)
+    run_until(lambda sc: "LOCI ROM" in sc)
     send(r"keys \e")
     until("OK")
-    run(2.0)
-    cold = screen()
+    cold = run_until(lambda sc: "BYTES FREE" in sc and "LOCI ROM" not in sc)
     check("BYTES FREE" in cold and counter(cold) == -1,
           "nouvel appui puis ESC : BASIC redémarré à froid")
 
@@ -189,17 +213,14 @@ try:
     # 2.31.7) et RETURN ramène l'écran HIRES.
     send(r"keys HIRES\n")
     until("OK")
-    run(1.0)
+    wait_video_hires()
     send("loci-button")
     until("OK")
-    run(1.5)
-    vmode = screen()[34:37]
+    vmode = run_until(lambda sc: "LOCI ROM" in sc and sc[34:37].strip() != "")[34:37]
     check(vmode == "H50", f"session HIRES : mode sauvegardé hires 50 Hz (« {vmode} »)")
     send(r"keys \n")
     until("OK")
-    run(1.0)
-    send("peek video")
-    vid = until("OK") or ""
+    vid = wait_video_hires()
     check("hires=1" in vid, f"RETURN : l'écran HIRES est repris ({vid})")
 finally:
     try:

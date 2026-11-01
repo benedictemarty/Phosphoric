@@ -577,6 +577,19 @@ TEST(test_lshift_rshift_distinct) {
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 4));
 }
 
+/* 2.31.8: the injectors press SHIFT alone before a shifted character. */
+TEST(test_char_needs_shift) {
+    ASSERT_TRUE(oric_keyboard_char_needs_shift('('));
+    ASSERT_TRUE(oric_keyboard_char_needs_shift(':'));
+    ASSERT_TRUE(oric_keyboard_char_needs_shift('$'));
+    ASSERT_TRUE(oric_keyboard_char_needs_shift('"'));
+    ASSERT_TRUE(!oric_keyboard_char_needs_shift(';'));
+    ASSERT_TRUE(!oric_keyboard_char_needs_shift('9'));
+    ASSERT_TRUE(!oric_keyboard_char_needs_shift('A'));
+    ASSERT_TRUE(!oric_keyboard_char_needs_shift('\n'));
+    ASSERT_TRUE(!oric_keyboard_char_needs_shift((char)0x84));   /* DEL sentinel */
+}
+
 TEST(test_modifier_release_all_clears) {
     oric_keyboard_t kb;
     oric_keyboard_init(&kb);
@@ -643,6 +656,7 @@ int main(void) {
     RUN(test_press_rshift_position);
     RUN(test_lshift_rshift_distinct);
     RUN(test_modifier_release_all_clears);
+    RUN(test_char_needs_shift);
 
     printf("\n═══════════════════════════════════════════════════════════\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

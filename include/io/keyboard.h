@@ -83,6 +83,16 @@ void oric_keyboard_set_layout(oric_keyboard_t* kb, oric_kb_layout_t layout);
 bool oric_keyboard_press_char(oric_keyboard_t* kb, char c);
 
 /**
+ * @brief true if typing @p c needs SHIFT held (e.g. '(' = SHIFT+9).
+ *
+ * The injectors press SHIFT alone first and let the ROM scan it (2.31.8):
+ * the ROM reads the rows 7 → 0 and SHIFT sits on row 4, so a key that
+ * appears between the reads of row 4 and of its own lower row is seen
+ * without SHIFT in that pass, then held — ':' came out as ';'.
+ */
+bool oric_keyboard_char_needs_shift(char c);
+
+/**
  * @brief Release all keys (clear matrix to 0xFF)
  */
 void oric_keyboard_release_all(oric_keyboard_t* kb);

@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.31.7"
+#define EMU_VERSION "2.31.8"
 
 /**
  * @brief ORIC machine model
@@ -410,6 +410,9 @@ typedef struct emulator_s {
      * that reads the matrix itself never clears it). */
     int64_t  type_keys_pend_since; /* cycle the wait started, -1 = none */
     bool     type_keys_pend_off;
+    /* 2.31.8: SHIFT already pressed alone for the next shifted character
+     * (oric_keyboard_char_needs_shift); the character comes next. */
+    bool     type_keys_shift_staged;
 
     /* --type-keys-when A:V:TEXT : arm the auto-typer when RAM[A]==V instead of
      * at a guessed cycle count (reuses the --screenshot-when trigger idea).
@@ -429,8 +432,17 @@ typedef struct emulator_s {
     size_t kbd_inject_len;
     size_t kbd_inject_cap;
     size_t kbd_inject_pos;   /* next byte to press */
-    int    kbd_inject_delay; /* frames to wait before the next phase */
+    int    kbd_inject_delay; /* unused since 2.31.8 (pacing in cycles, below) */
     bool   kbd_inject_pressed; /* true while the current key is held down */
+    /* 2.31.8: next transition not before this CPU cycle AND not before the
+     * ROM scanner has done AUTOTYPE_MIN_PASS passes (autotype.h) — a frame
+     * cut short by `pause` no longer shortens the hold. */
+    int64_t  kbd_inject_next_cycle;
+    uint32_t kbd_inject_last_pass;
+    bool     kbd_inject_shift_staged;   /* SHIFT pressed alone first (2.31.8) */
+    /* Same $02DF key-buffer gate as --type-keys (2.31.5), for `keys` (2.31.8). */
+    int64_t  kbd_inject_pend_since;     /* cycle the wait started, -1 = none */
+    bool     kbd_inject_pend_off;
 
     /* Breakpoint (legacy single breakpoint, -1 = none) */
     int32_t breakpoint;

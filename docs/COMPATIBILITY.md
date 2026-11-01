@@ -1,6 +1,6 @@
 # Compatibility List — Phosphoric v1.110.0-alpha
 
-Last updated: 2026-08-30
+Last updated: 2026-11-01 (sweep of 1318 tapes, 2.31.8)
 
 ---
 
@@ -85,6 +85,30 @@ Last updated: 2026-08-30
 | Disks (.DSK) | 11 | 11 | **100%** |
 | Demos / tests | 4 | 4 | **100%** |
 | **Total** | **40** | **40** | **100%** |
+
+---
+
+## Sweep of an archive of 1318 tapes (2.31.8)
+
+`tools/tap_sweep.sh DIR [JOBS]` loads every `.tap` of a folder the normal way
+(automatic `CLOAD""`, no `-f`), 25 M cycles on the Atmos ROM, then runs the
+suspicious cases again on the ORIC-1 ROM. Run on `~/oriclib/games/tap` (local
+archive, not versioned) on 2026-11-01:
+
+| Result | Count | Reading |
+|--------|-------|---------|
+| 6502 stopped (JAM) or timeout | **0** | — |
+| Normal screen, no error | 1144 | does not prove the program is right, only that it does not crash |
+| `Ready` after `CLOAD` | 162 | 155 without an auto-run flag in the header (normal behaviour); 5 flagged auto-run but empty or with no program at the BASIC address (ROM behaviour); 2 music players (`SPACEMU2`, `POSDEMO`) that install an interrupt routine and return — the music plays (16,500 PSG writes) |
+| `ERROR` on screen | 12 | 3 false positives (the word is part of the text); 8 ORIC-1 programs that work on ROM 1.0 (including *The Hobbit*); 1 damaged file: `ogp-nim.tap`, BASIC line chain broken after line 710 (a stray "line 32743"), so `GOSUB 1000` is not found — the real ROM would do the same |
+
+No deviation attributable to the emulator was found. Limit: the criterion is
+the CPU state and the text screen; a HIRES game drawn wrongly, wrong sound or a
+game that hangs later on are not detected.
+
+`make test-game-compat` also reads this archive (`ORICLIB_TAP`, default
+`~/oriclib/games/tap`): 10 titles with a known intro screen, skipped when the
+folder is absent.
 
 ---
 

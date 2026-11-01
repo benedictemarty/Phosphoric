@@ -840,6 +840,7 @@ static bool emulator_init(emulator_t* emu) {
     emu->kbd_scan_prev_col = 0xFF;   /* sentinel: first read starts no pass */
     emu->type_keys_when_addr = -1;
     emu->type_keys_pend_since = -1;
+    emu->kbd_inject_pend_since = -1;
     emu->type_keys_when_text = NULL;
     emu->type_keys_when_done = false;
     emu->screenshot_when_addr = -1;
@@ -1018,30 +1019,71 @@ static void basic_rechain(memory_t* mem) {
 
 
 /* Sprint 95 (API REST Epic 4) — feed queued keystrokes (from the `keys`
- * control command / HTTP POST /keys) into the keyboard matrix, one key every
- * few frames: press+hold, then release+gap, so the ROM's per-frame scan sees
- * each key distinctly (and repeated keys are separated). Called once per frame.
- * Runs on the emulator thread, same as the queue drain that fills the buffer. */
+ * control command / HTTP POST /keys) into the keyboard matrix: press+hold,
+ * then release+gap, so the ROM's scan sees each key distinctly (and repeated
+ * keys are separated). Called at each frame boundary, on the emulator thread.
+ *
+ * 2.31.8: the hold (~3 frames) and gap (~2 frames) are counted in CPU cycles
+ * and each transition also waits for AUTOTYPE_MIN_PASS keyboard-scan passes,
+ * like --type-keys (autotype.h). Counted in frames, a `pause` that cut a
+ * frame short shortened the hold: shifted characters came out unshifted
+ * ("(" → "9", ":" → ";"), 3 times in 10 with a pause every 0.3 s. */
 static void feed_kbd_inject(emulator_t* emu) {
     if (!emu->kbd_inject_buf) return;
+    int64_t now = (int64_t)emu->cpu.cycles;
     if (emu->kbd_inject_pos >= emu->kbd_inject_len) {
         if (emu->kbd_inject_len) {          /* just finished a batch → reset */
             oric_keyboard_release_all(&emu->keyboard);
             emu->kbd_inject_len = 0;
             emu->kbd_inject_pos = 0;
             emu->kbd_inject_pressed = false;
-            emu->kbd_inject_delay = 0;
+            emu->kbd_inject_shift_staged = false;
+            emu->kbd_inject_next_cycle = 0;
         }
         return;
     }
-    if (emu->kbd_inject_delay > 0) { emu->kbd_inject_delay--; return; }
+    if (!autotype_should_fire(false, now, emu->kbd_inject_next_cycle,
+                              emu->kbd_scan_passes, emu->kbd_inject_last_pass))
+        return;
+    emu->kbd_inject_last_pass = emu->kbd_scan_passes;
 
     if (!emu->kbd_inject_pressed) {
+        /* $02DF gate (2.31.5 for --type-keys, 2.31.8 here): do not press a
+         * new key until the ROM has read the previous one — otherwise the key
+         * following a RETURN is lost while BASIC stores the line
+         * ("LIST" → "IST"). */
+        if (!emu->kbd_inject_pend_off) {
+            uint8_t kb = emu->memory.ram[AUTOTYPE_KEYBUF_ADDR];
+            if (kb & 0x80) {
+                if (emu->kbd_inject_pend_since < 0) emu->kbd_inject_pend_since = now;
+                if (autotype_keybuf_wait(kb, now, emu->kbd_inject_pend_since)) {
+                    oric_keyboard_release_all(&emu->keyboard);
+                    emu->kbd_inject_shift_staged = false;
+                    emu->kbd_inject_next_cycle = now + CYCLES_PER_FRAME;
+                    return;
+                }
+                emu->kbd_inject_pend_off = true;   /* the program does not read keys through the ROM */
+                log_info("keys: $%04X never read — key-buffer gate off for this session",
+                         AUTOTYPE_KEYBUF_ADDR);
+            }
+            emu->kbd_inject_pend_since = -1;
+        }
+        /* Byte ≥ 0xA0 = 7-bit character + SHIFT (escape \s of `keys`); the
+         * arrow/DEL sentinels stay at 0x80-0x84. */
+        unsigned char ic0 = (unsigned char)emu->kbd_inject_buf[emu->kbd_inject_pos];
+        bool shifted = ic0 >= 0xA0 || oric_keyboard_char_needs_shift((char)ic0);
+        if (shifted && !emu->kbd_inject_shift_staged) {
+            /* SHIFT alone first, seen by the scanner before the key. */
+            oric_keyboard_release_all(&emu->keyboard);
+            oric_keyboard_press_lshift(&emu->keyboard);
+            emu->kbd_inject_shift_staged = true;
+            emu->kbd_inject_next_cycle = now + CYCLES_PER_FRAME;
+            return;
+        }
+        emu->kbd_inject_shift_staged = false;
         oric_keyboard_release_all(&emu->keyboard);
         {
-            /* Byte ≥ 0xA0 = 7-bit character + SHIFT (escape \s of `keys`); the
-             * arrow/DEL sentinels stay 0x80-0x84. */
-            unsigned char ic = (unsigned char)emu->kbd_inject_buf[emu->kbd_inject_pos];
+            unsigned char ic = ic0;
             if (ic >= 0xA0) {
                 oric_keyboard_press_char(&emu->keyboard, (char)(ic & 0x7F));
                 oric_keyboard_press_lshift(&emu->keyboard);
@@ -1049,12 +1091,12 @@ static void feed_kbd_inject(emulator_t* emu) {
                 oric_keyboard_press_char(&emu->keyboard, (char)ic);
         }
         emu->kbd_inject_pressed = true;
-        emu->kbd_inject_delay = 3;          /* hold ~3 frames ≈ 60 ms */
+        emu->kbd_inject_next_cycle = now + 3 * CYCLES_PER_FRAME;   /* hold ≈ 60 ms */
     } else {
         oric_keyboard_release_all(&emu->keyboard);
         emu->kbd_inject_pressed = false;
         emu->kbd_inject_pos++;
-        emu->kbd_inject_delay = 2;          /* gap before the next key */
+        emu->kbd_inject_next_cycle = now + 2 * CYCLES_PER_FRAME;   /* gap */
     }
 }
 
@@ -1786,6 +1828,15 @@ static void autotype_step_native(emulator_t* emu, uint64_t total_executed,
         } else {
             /* New character: press once the previous key was read */
             if (autotype_keybuf_hold(emu, total_executed)) return;
+            if (oric_keyboard_char_needs_shift(c) && !emu->type_keys_shift_staged) {
+                /* SHIFT alone first (2.31.8, see keyboard.h); idx unchanged. */
+                oric_keyboard_release_all(&emu->keyboard);
+                oric_keyboard_press_lshift(&emu->keyboard);
+                emu->type_keys_shift_staged = true;
+                emu->type_keys_next_cycle = (int64_t)total_executed + CYCLES_PER_FRAME;
+                return;
+            }
+            emu->type_keys_shift_staged = false;
             oric_keyboard_release_all(&emu->keyboard);
             oric_keyboard_press_char(&emu->keyboard, c);
             emu->type_keys_last_char = c;
