@@ -202,6 +202,34 @@ la LOCI (23 mesurés sur matériel), TDSR en ns (100). `tior` et `tiod` y entren
 `--loci-serve-jitter AMP[,SEED]` ajoute ± AMP cycles, seedé. Frontière par défaut :
 81/82 cycles de serve. Détails : [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
 
+### Réglages de timing : ce que dit l'auteur de la LOCI (2.31.15)
+
+Relevé sur le forum Defence Force, fil « Loci - my Oric storage emulation project »
+(t=2593), messages de sodiumlb des 28/07/2024 et 10/08/2024. Les cinq réglages sont des
+cycles de la LOCI (**≈ 8,33 ns**) **ajoutés à un délai de base fixé** dans les
+programmes PIO :
+
+| Réglage | Plage | Rôle (définition de l'auteur) |
+|---|---|---|
+| `tior` | 0-31 | délai après la **descente** de Φ2 avant d'échantillonner adresse et R/W (lecture d'E/S) |
+| `tiow` | 0-31 | délai après la **montée** de Φ2 avant d'échantillonner la donnée écrite |
+| `tiod` | 0-7 | délai après la **montée** de Φ2 avant de poser la donnée lue sur le bus — pour éviter le conflit avec la lecture de l'ULA (écran texte corrompu) |
+| `tadr` | 0-7 | délai avant d'échantillonner l'adresse pour servir la ROM émulée |
+| `tmap` | 0-31 | délai du signal MAP (« RV1 ») |
+
+Valeurs par défaut du firmware (`cfg.c`) : `tmap` 10, les autres 0 — celles du modèle
+intégré (le menu affiche « timings 10/0/0/0/0 »). Valeurs relevées sur de vraies
+machines dans le même fil : `tior` 8 à 10 partout (0 jugé « risqué », 5 « limite »,
+10-15 conseillé par l'auteur), `tadr` 10, `tmap` 10 ; `tiod` 7 chez Dbug a corrigé une
+police corrompue. L'auto-réglage (touche `S` du menu) balaie `tior` de 0 à 31, cherche
+les 4 premières valeurs bonnes consécutives et retient la dernière des quatre.
+
+Le modèle de Phosphoric suit ces définitions (donnée posée à « montée de Φ2 +
+(3 + `tiod`) ticks », échantillonnage calé sur `tior`). Ce qui n'est publié nulle part :
+la valeur en ns du **délai de base**, et la **borne haute** de la plage où `tior`
+fonctionne. Par défaut, `--loci-mia-window` reste 0-31 (toujours fiable) : un `tior`
+à 0 marche donc dans Phosphoric, alors qu'il est « risqué » sur une vraie LOCI.
+
 ### Appel d'API qui remplace la ROM servie (`--loci-hw`, 2.29.1)
 
 Quand la ROM du menu écrit `MIA_OP` (`$03AF`), puis fait `JSR MIA_SPIN` (`$03B0`),
