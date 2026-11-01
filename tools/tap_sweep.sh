@@ -3,7 +3,7 @@
 #
 # tap_sweep.sh — run every .tap of a folder and flag the suspicious ones (2.31.8).
 #
-# Usage : tools/tap_sweep.sh DIR [JOBS] > results.txt
+# Usage: tools/tap_sweep.sh DIR [JOBS] > results.txt
 #
 # Each tape is loaded the normal way (auto CLOAD"", no fast-load -f) on the
 # Atmos ROM for 25 M cycles, then classified from the CPU state and the text
@@ -12,20 +12,22 @@
 #   TIMEOUT  the emulator did not finish within 30 s
 #   ERROR    "ERROR" on the screen (BASIC error, TAPE ERROR...)
 #   READY    the screen ends on CLOAD"" / Ready (often: no auto-run flag)
-#   NOSCREEN no screen captured at 24 M cycles (the run ended early)
+#   NOSCREEN no RAM dump at 24 M cycles (run ended early)
 #   OK       none of the above — NOT a proof that the program is right
-# HALT / ERROR / READY tapes are run again on the ORIC-1 ROM (BASIC 1.0):
-# many tapes are ORIC-1 programs. The verdict line gives both results.
-# Output: one line per tape, "verdict11|verdict10|file|detail|screen".
+# HALT / ERROR / READY / TIMEOUT / NOSCREEN tapes are run again on the ORIC-1
+# ROM (BASIC 1.0): many tapes are ORIC-1 programs. The line gives both
+# verdicts: "verdict11|verdict10|file|detail|screen".
 # TAP_SWEEP_SHOTS=DIR also saves the screen of each tape (Atmos run) as
 # DIR/<name>.ppm, for tools/contact_sheet.py (2.31.10) — HIRES screens are
 # invisible to the text checks above.
+# The emulator logs on STDOUT (2.31.10: before, the tool read stderr and saw
+# no stop at all).
 # Not part of `make tests` (1318 tapes ≈ 20 min with 4 jobs).
 #
 # Author: bmarty <bmarty@mailo.com>
 
 set -u
-DIR=${1:?usage: tools/tap_sweep.sh DIR [JOBS]}
+DIR=${1:?usage : tools/tap_sweep.sh DOSSIER [TÂCHES]}
 JOBS=${2:-4}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -76,6 +78,6 @@ sweep_one() {
 export -f one sweep_one
 export ROOT
 
-[ -x "$ROOT/oric1-emu" ] || { echo "oric1-emu not built" >&2; exit 1; }
+[ -x "$ROOT/oric1-emu" ] || { echo "oric1-emu non construit" >&2; exit 1; }
 find "$DIR" -maxdepth 1 -type f -iname '*.tap' -print0 | sort -z |
     xargs -0 -P "$JOBS" -I{} bash -c 'sweep_one "$1"' _ {}

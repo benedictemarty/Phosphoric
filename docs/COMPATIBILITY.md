@@ -141,6 +141,26 @@ folder is absent.
 
 ---
 
+## Sweep of 484 disks (2.31.12)
+
+`tools/dsk_sweep.sh DIR [JOBS]` boots each `.dsk` on the Atmos ROM + Microdisc
+ROM for 30 M cycles, twice: real WD1793 timing (default, bytes paced by the
+platter since 2.31.9) and `--fdc-timing fast`. Run on `~/oriclib/games/dsk`
+(local archive, not versioned) on 2026-11-01:
+
+| Real / fast | Count | Reading |
+|-------------|-------|---------|
+| OK / OK | 424 | |
+| OK / lost bytes | 59 | the real model loses nothing; in `fast`, the watchdog raises S2 without any real loss (bytes served on CPU demand) |
+| stop / stop | 1 | `MazeEaterUTS.dsk`: an ORIC-1 program (same stop at `$1108` as `01.tap` on the Atmos ROM, which works on ROM 1.0) |
+
+**No byte lost on the 484 disks with the platter-paced model.** Screens (real
+run): 398 with text, 51 on `Ready` (no auto-start), 33 asking for a system disk
+(data disks), 1 blank. Limit: "OK" means "no stop, no loss, no timeout", not
+"program correct".
+
+---
+
 ## Unit test results
 
 `make tests`: **908 tests, 100% pass** (35 suites), checked on 2026-08-30.
