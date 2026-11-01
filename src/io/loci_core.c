@@ -706,13 +706,13 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
         loci_resume_at_spin(loci);   /* CLV fetch of the spin: ROM safe to swap */
 
     if (off == LOCI_REG_CONS_FLAGS) {
-        /* Firmware (mia.c CASE_READ(0x03A0)) : bit 7 = TX writable, bit 6 = RX
-         * data ready. The bus is served with the register AS IT WAS, the handler
-         * updates it AFTER (2.31.15) : the first read after a reset returns 0
-         * (registers $03A0-$03BF cleared), the next ones $80 — measured on the
-         * Feather with the real LOCI firmware (00, 80, 80). The handler loads a
-         * waiting byte into $03A2 (bit 6) if none is loaded yet. Our TX sink
-         * never stalls : bit 7 is set by the handler. */
+        /* Firmware (mia.c CASE_READ(0x03A0)) : bit 7 = émission possible, bit 6 =
+         * octet reçu prêt. Le bus est servi avec le registre TEL QU'IL ÉTAIT, le
+         * gestionnaire le met à jour APRÈS (2.31.14) : la 1re lecture après un reset
+         * rend 0 (registres $03A0-$03BF remis à zéro), les suivantes $80 — mesuré sur
+         * la Feather avec le vrai firmware LOCI (00, 80, 80). Le gestionnaire charge
+         * un octet en attente dans $03A2 (bit 6) s'il n'y en a pas déjà un. Notre
+         * sortie ne bloque jamais : le bit 7 est posé par le gestionnaire. */
         uint8_t v = loci->regs[LOCI_REG_CONS_FLAGS];
         if (!(v & 0x40) && cons_rx_pending(loci)) {
             loci->regs[LOCI_REG_CONS_CHAR] = cons_rx_pop(loci);
@@ -722,9 +722,9 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
         return v;
     }
     if (off == LOCI_REG_CONS_CHAR) {
-        /* Firmware (CASE_READ(0x03A2)) : the byte loaded beforehand is served,
-         * then the next waiting byte is loaded (bit 6 kept) or bit 6 is cleared
-         * and $03A2 zeroed. */
+        /* Firmware (CASE_READ(0x03A2)) : l'octet chargé auparavant est servi, puis
+         * l'octet suivant en attente est chargé (bit 6 gardé), sinon le bit 6 est
+         * effacé et $03A2 remis à 0. */
         uint8_t v = loci->regs[LOCI_REG_CONS_CHAR];
         if (cons_rx_pending(loci)) {
             loci->regs[LOCI_REG_CONS_CHAR] = cons_rx_pop(loci);
@@ -775,7 +775,7 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
         /* Console UART TX — accumulate and flush to the log on '\n'. */
         cons_tx_byte(loci, value);
         loci->regs[LOCI_REG_CONS_TX] = value;
-        loci->regs[LOCI_REG_CONS_FLAGS] |= 0x80;   /* firmware : bit 7 recomputed after a TX write */
+        loci->regs[LOCI_REG_CONS_FLAGS] |= 0x80;   /* firmware : bit 7 recalculé après une émission */
         return;
     }
     if (off == LOCI_REG_ULA_SNOOP) {

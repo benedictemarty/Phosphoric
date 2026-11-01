@@ -106,7 +106,7 @@ static uint8_t hw_lost(emulator_t* emu, uint8_t v) {
     return loci_emu_read_lost() ? memory_open_bus(&emu->memory) : v;
 }
 /* Détecteur de mode ULA $03A3 avec un firmware EXTERNE (--loci-hw, --loci-emu),
- * 2.31.15. Sur un vrai Oric, le PIO de la LOCI lit les octets que l'ULA tire du
+ * 2.31.14. Sur un vrai Oric, le PIO de la LOCI lit les octets que l'ULA tire du
  * bus ; le pont USB (et la co-simulation) ne transportent que les accès du 6502 :
  * le firmware ne voit jamais le motif, rend 0 et sauve « texte 60 Hz » — après
  * F8 puis RETURN, l'Oric émulé restait en 60 Hz (vu sur la Feather, firmware
