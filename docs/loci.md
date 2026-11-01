@@ -201,6 +201,33 @@ reliable range (default 0-31 = always reliable); outside the window, `$0380` rea
 `--loci-serve-jitter AMP[,SEED]` adds ± AMP cycles, seeded. Default boundary:
 81/82 serve cycles. Details: [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
 
+### Timing settings: what the LOCI's author says (2.31.15)
+
+Gathered from the Defence Force forum, thread "Loci - my Oric storage emulation
+project" (t=2593), posts by sodiumlb of 28/07/2024 and 10/08/2024. The five settings
+are LOCI cycles (**≈ 8.33 ns**) **added to a fixed base delay** in the PIO programs:
+
+| Setting | Range | Role (author's definition) |
+|---|---|---|
+| `tior` | 0-31 | delay after Φ2 **falls** before sampling address and R/W (IO read) |
+| `tiow` | 0-31 | delay after Φ2 **rises** before sampling the written data |
+| `tiod` | 0-7 | delay after Φ2 **rises** before driving the read data onto the bus — to avoid clashing with the ULA's fetch (corrupted text screen) |
+| `tadr` | 0-7 | delay before sampling the address to serve the emulated ROM |
+| `tmap` | 0-31 | delay of the MAP signal ("RV1") |
+
+Firmware defaults (`cfg.c`): `tmap` 10, the others 0 — those of the integrated model
+(the menu shows "timings 10/0/0/0/0"). Values reported on real machines in the same
+thread: `tior` 8 to 10 everywhere (0 deemed "risky", 5 "marginal", 10-15 advised by
+the author), `tadr` 10, `tmap` 10; `tiod` 7 fixed a corrupted font on Dbug's machine.
+The auto-tune (`S` key in the menu) scans `tior` from 0 to 31, looks for the first 4
+consecutive good values and keeps the last of the four.
+
+Phosphoric's model follows these definitions (data driven at "Φ2 rise + (3 + `tiod`)
+ticks", sampling tied to `tior`). Published nowhere: the **base delay** in ns, and the
+**upper bound** of the range where `tior` works. By default `--loci-mia-window` stays
+0-31 (always reliable): a `tior` of 0 therefore works in Phosphoric, whereas it is
+"risky" on a real LOCI.
+
 ### API call that replaces the served ROM (`--loci-hw`, 2.29.1)
 
 When the menu ROM writes `MIA_OP` (`$03AF`), then does `JSR MIA_SPIN` (`$03B0`),
