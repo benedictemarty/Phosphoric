@@ -182,6 +182,12 @@ bool oric_keyboard_press_char(oric_keyboard_t* kb, char c) {
     return true;
 }
 
+bool oric_keyboard_char_needs_shift(char c) {
+    unsigned char uc = (unsigned char)c;
+    if (uc > 127) return false;
+    return char_map[uc].col >= 0 && char_map[uc].shift;
+}
+
 void oric_keyboard_release_all(oric_keyboard_t* kb) {
     memset(kb->matrix, 0xFF, sizeof(kb->matrix));
 }

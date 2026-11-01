@@ -13,6 +13,9 @@
 # versioned either), so `make tests` checks some games even without the lib.
 # It has its own expected texts: a same-named file may be another game
 # (tapes/BREAKOUT.TAP is Tansoft's Super Advanced Breakout, not the lib's).
+# A third list (2.31.8) runs titles from a flat archive of .tap files,
+# `$HOME/oriclib/games/tap` by default (`ORICLIB_TAP=/path` to override),
+# not versioned either; skipped when the folder is absent.
 
 set -u
 cd "$(dirname "$0")/../.." || exit 1
@@ -20,6 +23,7 @@ cd "$(dirname "$0")/../.." || exit 1
 EMU=./oric1-emu
 BASIC_ROM=${BASIC_ROM:-roms/basic11b.rom}
 LIB=${ORIC_PROGRAMS_LIB:-$HOME/OricProgramsLib}
+ORICLIB=${ORICLIB_TAP:-$HOME/oriclib/games/tap}
 
 pass=0
 fail=0
@@ -41,7 +45,10 @@ fi
 check_game() {
     local slug="$1" relpath="$2" cycles="$3" expected="$4"
     local tap="$LIB/Programs/$slug/files/$relpath"
-    case "$slug" in local:*) tap="tapes/$relpath";; esac
+    case "$slug" in
+        local:*)   tap="tapes/$relpath";;
+        oriclib:*) tap="$ORICLIB/$relpath";;
+    esac
     if [ ! -f "$tap" ]; then
         echo "  SKIP  ${slug}  (missing: $relpath)"
         skipped=$((skipped+1))
@@ -106,6 +113,23 @@ check_game chess-ii       "Chess II (UK) (1984).tap"          25000000 "CHESS II
 # Local tapes/ titles (see the header).
 check_game local:manic-miner "MANICMINER.TAP"                    30000000 "PRESSEZ 3 FOIS RETURN"
 check_game local:super-breakout "BREAKOUT.TAP"                   25000000 "SUPER ADVANCED BREAKOUT"
+
+# Flat archive (oriclib) titles. Same names as the lib list are the same
+# games (the lib's expected text is found); the others are other versions,
+# their text read on screen once (Oric Kong FR, Norsoft's info page shown
+# by cobra-atmos.tap, Exocet with single spacing). Left out: zaxxon.tap
+# (R. Duhel's BASIC version, no auto-run), ALIEN.tap and WIMPY.TAP (HIRES
+# screens, the text check cannot read them).
+check_game oriclib:hopper         "hopper-o.tap"    25000000 "PRESS  [1]  FOR NO SOUND"
+check_game oriclib:harrier-attack "harriera.tap"    25000000 "HIGH  SCORE"
+check_game oriclib:atlantis       "ATLANTIS.tap"    25000000 "ARRETEZ VOTRE MAGNETO"
+check_game oriclib:oric-trek      "OricTrek.tap"    25000000 "Enter Level of Difficulty"
+check_game oriclib:tyrann         "TYRANN.TAP"      25000000 "SI VOTRE ENREGISTREUR NE POSSEDE PAS"
+check_game oriclib:colditz        "colditz.tap"     25000000 "VOULEZ-VOUS LES INSTRUCTIONS"
+check_game oriclib:chess-ii       "chess2.tap"      25000000 "CHESS II"
+check_game oriclib:oric-kong-fr   "OricKong.tap"    25000000 "PRESSEZ UNE TOUCHE"
+check_game oriclib:norsoft-infos  "cobra-atmos.tap" 25000000 "NORSOFT INFOS"
+check_game oriclib:exocet         "EXOCET.tap"      25000000 "SINK THE ENEMY SHIPS"
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Results: $pass passed, $fail failed, $skipped skipped"

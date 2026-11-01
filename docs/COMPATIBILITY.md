@@ -1,6 +1,6 @@
 # Liste de Compatibilite — Phosphoric v1.110.0-alpha
 
-Derniere mise a jour : 2026-08-30
+Derniere mise a jour : 2026-11-01 (balayage de 1318 cassettes, 2.31.8)
 
 ---
 
@@ -85,6 +85,30 @@ Derniere mise a jour : 2026-08-30
 | Disques (.DSK) | 11 | 11 | **100%** |
 | Demos / tests | 4 | 4 | **100%** |
 | **Total** | **40** | **40** | **100%** |
+
+---
+
+## Balayage d'une archive de 1318 cassettes (2.31.8)
+
+`tools/tap_sweep.sh DIR [JOBS]` charge chaque `.tap` d'un dossier par le
+chemin normal (`CLOAD""` automatique, sans `-f`), 25 M cycles sur la ROM Atmos,
+puis relance sur la ROM ORIC-1 les cas suspects. Lance sur
+`~/oriclib/games/tap` (archive locale, non versionnee) le 2026-11-01 :
+
+| Resultat | Nombre | Lecture |
+|----------|--------|---------|
+| Arret du 6502 (JAM) ou delai depasse | **0** | — |
+| Ecran normal, sans erreur | 1144 | ne prouve pas que le programme est juste, seulement qu'il ne plante pas |
+| `Ready` apres `CLOAD` | 162 | 155 sans drapeau d'auto-run dans l'en-tete (comportement normal) ; 5 marques auto-run mais vides ou sans programme a l'adresse BASIC (comportement de la ROM) ; 2 lecteurs de musique (`SPACEMU2`, `POSDEMO`) qui installent une routine d'interruption et rendent la main — la musique joue (16 500 ecritures PSG) |
+| `ERROR` a l'ecran | 12 | 3 faux positifs (le mot fait partie du texte) ; 8 programmes ORIC-1 qui marchent sur la ROM 1.0 (dont *The Hobbit*) ; 1 fichier abime : `ogp-nim.tap`, chaine de lignes BASIC cassee apres la ligne 710 (une « ligne 32743 » parasite), donc `GOSUB 1000` introuvable — la vraie ROM ferait de meme |
+
+Aucun ecart attribuable a l'emulateur n'a ete trouve. Limite : le critere est
+l'etat du CPU et l'ecran texte ; un jeu HIRES qui s'affiche mal, un son faux ou
+un jeu qui bloque plus loin ne sont pas detectes.
+
+`make test-game-compat` lit aussi cette archive (`ORICLIB_TAP`, defaut
+`~/oriclib/games/tap`) : 10 titres a ecran d'accueil connu, ignores si le
+dossier est absent.
 
 ---
 

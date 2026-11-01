@@ -739,7 +739,11 @@ Une vraie fin de ligne dans l'argument vaut `\n`. Chaque touche n'est pressee
 qu'une fois la precedente lue par la ROM (tampon `$02DF`, 2.31.5) : apres une
 longue ligne BASIC, rien ne se perd pendant que la ligne est rangee. Un programme
 qui lit la matrice lui-meme (jeu) ne vide pas ce tampon : apres ~30 trames
-d'attente, cette garde s'eteint pour la session.
+d'attente, cette garde s'eteint pour la session. Un caractere avec SHIFT
+(`(`, `:`, `$`...) est precede de SHIFT seul (2.31.8) : la ROM lit les rangees
+du clavier de 7 a 0 et SHIFT est sur la rangee 4 ; presses ensemble, la touche
+pouvait etre vue sans SHIFT (`:` devenait `;`). Memes regles pour la commande
+`keys` de `--control`.
 
 ### Sortie verbose
 
