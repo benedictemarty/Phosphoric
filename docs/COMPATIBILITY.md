@@ -1,6 +1,6 @@
 # Compatibility List — Phosphoric v1.110.0-alpha
 
-Last updated: 2026-11-01 (sweep of 1318 tapes, 2.31.8)
+Last updated: 2026-11-01 (sweep of 1318 tapes, corrected in 2.31.10)
 
 ---
 
@@ -88,23 +88,52 @@ Last updated: 2026-11-01 (sweep of 1318 tapes, 2.31.8)
 
 ---
 
-## Sweep of an archive of 1318 tapes (2.31.8)
+## Sweep of an archive of 1318 tapes (2.31.8, corrected in 2.31.10)
 
 `tools/tap_sweep.sh DIR [JOBS]` loads every `.tap` of a folder the normal way
 (automatic `CLOAD""`, no `-f`), 25 M cycles on the Atmos ROM, then runs the
 suspicious cases again on the ORIC-1 ROM. Run on `~/oriclib/games/tap` (local
-archive, not versioned) on 2026-11-01:
+archive, not versioned) on 2026-11-01.
 
-| Result | Count | Reading |
-|--------|-------|---------|
-| 6502 stopped (JAM) or timeout | **0** | — |
-| Normal screen, no error | 1144 | does not prove the program is right, only that it does not crash |
-| `Ready` after `CLOAD` | 162 | 155 without an auto-run flag in the header (normal behaviour); 5 flagged auto-run but empty or with no program at the BASIC address (ROM behaviour); 2 music players (`SPACEMU2`, `POSDEMO`) that install an interrupt routine and return — the music plays (16,500 PSG writes) |
-| `ERROR` on screen | 12 | 3 false positives (the word is part of the text); 8 ORIC-1 programs that work on ROM 1.0 (including *The Hobbit*); 1 damaged file: `ogp-nim.tap`, BASIC line chain broken after line 710 (a stray "line 32743"), so `GOSUB 1000` is not found — the real ROM would do the same |
+**Correction (2.31.10)**: the summary published in 2.31.8 claimed "0 stop of
+the 6502". That was wrong: the tool read the emulator logs on stderr, while
+they go to stdout, so it saw no stop at all. Summary redone with the fixed
+tool:
 
-No deviation attributable to the emulator was found. Limit: the criterion is
-the CPU state and the text screen; a HIRES game drawn wrongly, wrong sound or a
-game that hangs later on are not detected.
+| Atmos / ORIC-1 | Count | Reading |
+|----------------|-------|---------|
+| OK | 1053 | does not prove the program is right, only that it does not crash |
+| `Ready` / `Ready` | 160 | mostly tapes with no auto-run flag (normal behaviour); 2 interrupt-driven music players (`SPACEMU2`, `POSDEMO`) |
+| `Ready` / OK | 2 | ORIC-1 programs |
+| stop / OK | 74 | ORIC-1 programs that crash on the Atmos ROM and work on ROM 1.0 |
+| stop / stop | 16 | 13 `os*` tapes (music players) plus `vache.TAP`, `os2kata`, `os2vwtit`: see below |
+| stop / `Ready` | 1 | `assdesasm`: Oricutron crashes too on Atmos |
+| `ERROR` / OK | 10 | ORIC-1 programs, and 3 false positives (the word is part of the text) |
+| `ERROR` / `ERROR` | 2 | including `ogp-nim.tap`, a damaged file (BASIC line chain broken after line 710) |
+
+**Cross-check with Oricutron 1.2.0** (run under Xvfb, same tapes, Phosphoric
+ROMs):
+- `osarkpan`, `oscomman`, `osqix`, `vache`: Oricutron stops in its debugger
+  **at the same address** as Phosphoric (`$B5AC`, `$B5AC`, `$0808`, `$5057`):
+  defects of the files, not of the emulator. The 10 `os*` tapes stopping at
+  `$B5AD` follow the same path (`JSR $023C` into the ROM, then return onto a
+  `$02` byte in the character set area).
+- HIRES screens: the 282 captures with no readable text were reviewed by eye
+  on contact sheets (`tools/contact_sheet.py`). 23 were blank or stuck on
+  "please wait"; 13 show their title with a longer load (80 M cycles). Of the
+  10 left, 7 give the same screen under Oricutron (including 2 ORIC-1 programs
+  and 1 tape waiting for a next file).
+
+**Unresolved divergences** (no real ORIC to decide):
+- `LOADER2.TAP` on the ORIC-1 ROM: Phosphoric stops the 6502 at `$B585` (also
+  with `--tape-signal`, read by the real ROM); Oricutron returns to `Ready`.
+  Neither shows the game.
+- `ALCHIMIE.tap` on the Atmos ROM: Phosphoric runs the program; Oricutron
+  crashes in the ROM (`$E786`, tape routines, possibly an effect of its fast
+  loading).
+
+Limit: the criterion is the CPU state, the text screen and, for HIRES, a visual
+review with no reference; wrong sound or a later hang are not detected.
 
 `make test-game-compat` also reads this archive (`ORICLIB_TAP`, default
 `~/oriclib/games/tap`): 10 titles with a known intro screen, skipped when the
