@@ -271,6 +271,46 @@ one-frame bursts, it can reach one frame (20 ms Oric). Edges caused by an access
 (`reflect_nirq` after a `$03xx` read/write) and the per-frame drain are not affected.
 `LOCI_HW_IDLE_POLL_US=0`: cycle threshold only (2.30.0).
 
+### BASIC pitfall: `POKE` reads before writing (2.31.14)
+
+The ROM writes a `POKE` with `STA ($33),Y`. On an NMOS 6502 this instruction **reads**
+the target address on its 5th cycle before writing it on the 6th (Phosphoric emulates
+that cycle, and a real LOCI sees it too). On the MIA registers that react to a read:
+- `POKE #3AC,v` (xstack) first pops a byte: four `POKE`s of 10, 20, 30, 40 leave
+  only 40;
+- `POKE #3A4,v` (RW0 window) first advances the address: with a step of 1, the bytes
+  land every other address.
+For these registers, write in assembly with absolute addressing (`STA $03AC`), which
+has no prior read. `PEEK` (`LDA ($33),Y` with no page crossing) reads only once.
+Checked with `tools/loci_compare.py` (scenarios `xstack`, `xstack-poke`, `xram`),
+including on the real LOCI firmware.
+
+### Comparing with a real LOCI (`tools/loci_compare.py`, 2.31.14)
+
+`tools/loci_compare.py` plays the same scenarios under `--control` with two sets of
+options (`--a=--loci` and `--b=--loci-hw /dev/ttyACM0` by default) and compares the
+values read by BASIC, line 0 and the video mode: registers (`$0319`, `$03A0`,
+`$03B2`), XRAM through RW0, xstack, Action button then RETURN. Not part of
+`make tests`: it needs a Feather with the real LOCI firmware (not lucia-feather).
+
+Run on 2026-11-01 on the Feather (real LOCI firmware, caps `3F`): xstack identical,
+including `40 0 0 0` through `POKE`; XRAM identical on the written bytes (the others
+keep the board's uninitialised content); registers identical; button then RETURN
+identical, apart from the menu ROM version. Points found:
+- **Warm press**: the firmware only saves the session if it started the machine
+  itself (`main_active()` in `ext.c`), i.e. after "Boot" from its menu. An Oric
+  started directly on its BASIC ROM gets a cold press (nRESET, menu without RETURN)
+  — like a real Oric that did not start through the LOCI.
+- **`$03A3` under `--loci-hw` / `--loci-emu`** (fixed in 2.31.14): the firmware's PIO
+  reads the bytes the ULA fetches from the bus; the USB bridge and the co-simulation
+  only carry the 6502's accesses. The firmware never saw the pattern, saved "text
+  60 Hz", and the emulated Oric stayed at 60 Hz after RETURN. Phosphoric answers in its
+  place when it returns 0 (same computation as the integrated LOCI).
+- **Console `$03A0`/`$03A2`** (fixed in 2.31.14): the firmware serves the read with
+  the previous value then updates the register. After a reset, the first read of
+  `$03A0` is 0 and the following ones `$80` (measured: 00 80 80); a received byte is
+  loaded into `$03A2` by the read of `$03A0` and served on the next read of `$03A2`.
+
 ### "Edge pending" bit (`--loci-hw`, 2.31.13)
 
 After each `$03xx` access to the LOCI, Phosphoric collects nIRQ with a `LINES`

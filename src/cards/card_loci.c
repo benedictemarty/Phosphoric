@@ -105,6 +105,18 @@ static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
 static uint8_t hw_lost(emulator_t* emu, uint8_t v) {
     return loci_emu_read_lost() ? memory_open_bus(&emu->memory) : v;
 }
+/* ULA mode detector $03A3 with an EXTERNAL firmware (--loci-hw, --loci-emu),
+ * 2.31.14. On a real Oric, the LOCI's PIO reads the bytes the ULA fetches from
+ * the bus; the USB bridge (and the co-simulation) only carry the 6502's accesses:
+ * the firmware never sees the pattern, returns 0 and saves "text 60 Hz" — after
+ * F8 then RETURN, the emulated Oric stayed at 60 Hz (seen on the Feather, real
+ * LOCI firmware, caps 3F). Phosphoric plays the part of the missing ULA bus: if
+ * the firmware returns 0, the answer is computed as for the integrated LOCI
+ * (2.31.7); if the firmware found the pattern itself, its value is kept. */
+static uint8_t ula_snoop_stand_in(emulator_t* emu, uint16_t addr, uint8_t v) {
+    if (addr != LOCI_MIA_BASE + LOCI_REG_ULA_SNOOP || v != 0) return v;
+    return loci_ula_snoop_cb(emu, emu->loci.ula_pattern);
+}
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
     /* Co-sim backend (--loci-emu): the MIA $03xx window is served by the REAL
      * RP2040 firmware (emulator) instead of the behavioural backend (loci_core).
@@ -118,8 +130,9 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
         return drv ? v : memory_open_bus(&emu->memory);
     }
     if (loci_emu_ramx_claims(addr)) return hw_lost(emu, loci_emu_api_read(addr));
-    if (loci_addr_in_mia(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_api_read(addr))
-                                                         : loci_read(&emu->loci, addr);
+    if (loci_addr_in_mia(addr)) return loci_emu_active()
+                                     ? ula_snoop_stand_in(emu, addr, hw_lost(emu, loci_emu_api_read(addr)))
+                                     : loci_read(&emu->loci, addr);
     if (loci_addr_in_tap(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_tap_read(addr))
                                                          : loci_tap_read(&emu->loci, addr);
     /* DSK (guaranteed by claims). In co-sim, the WD1793 is the firmware's (oric/dsk.c):
@@ -135,7 +148,10 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     loci_emu_wait_boot();
     if (loci_emu_io_page()) { loci_emu_io_write(addr, value); loci_emu_reflect_nirq(emu); return true; }
     if (loci_emu_ramx_claims(addr))  loci_emu_api_write(addr, value);
-    else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) { loci_emu_api_write(addr, value);
+    else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) {
+                                               if (addr == LOCI_MIA_BASE + LOCI_REG_ULA_SNOOP)
+                                                   emu->loci.ula_pattern = value;   /* pattern, see ula_snoop_stand_in */
+                                               loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }
                                   else                   loci_write(&emu->loci, addr, value); }
     else if (loci_addr_in_tap(addr)) { if (loci_emu_active()) loci_emu_tap_write(addr, value);
