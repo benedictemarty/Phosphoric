@@ -273,6 +273,46 @@ l'émulation avance par rafales d'une trame, elle peut atteindre une trame (20 m
 Les fronts nés d'un accès (`reflect_nirq` après une lecture/écriture `$03xx`) et le drain
 par trame ne sont pas concernés. `LOCI_HW_IDLE_POLL_US=0` : seuil en cycles seul (2.30.0).
 
+### Piège BASIC : `POKE` lit avant d'écrire (2.31.14)
+
+La ROM écrit un `POKE` par `STA ($33),Y`. Sur un 6502 NMOS, cette instruction **lit**
+l'adresse cible au 5e cycle avant d'y écrire au 6e (Phosphoric émule ce cycle, et une
+vraie LOCI le voit aussi). Sur les registres de la MIA qui réagissent à la lecture :
+- `POKE #3AC,v` (xstack) dépile d'abord un octet : quatre `POKE` de 10, 20, 30, 40
+  laissent seulement 40 ;
+- `POKE #3A4,v` (fenêtre RW0) avance d'abord l'adresse : avec un pas de 1, les octets
+  tombent une adresse sur deux.
+Pour ces registres, écrire en assembleur avec un adressage absolu (`STA $03AC`), qui
+n'a pas de lecture préalable. `PEEK` (`LDA ($33),Y` sans franchissement de page) ne
+lit qu'une fois. Vérifié avec `tools/loci_compare.py` (scénarios `xstack`,
+`xstack-poke`, `xram`).
+
+### Comparer à une vraie LOCI (`tools/loci_compare.py`, 2.31.14)
+
+`tools/loci_compare.py` joue les mêmes scénarios sous `--control` avec deux jeux
+d'options (`--a=--loci` et `--b=--loci-hw /dev/ttyACM0` par défaut) et compare les
+valeurs lues par BASIC, la ligne 0 et le mode vidéo : registres (`$0319`, `$03A0`,
+`$03B2`), XRAM par RW0, xstack, bouton Action puis RETURN. Hors `make tests` : il faut
+une Feather avec le vrai firmware LOCI (pas lucia-feather).
+
+Passé le 2026-11-01 sur la Feather (vrai firmware LOCI, caps `3F`) : xstack identique,
+y compris `40 0 0 0` par `POKE` (le piège ci-dessus vaut sur le vrai firmware) ; XRAM
+identique sur les octets écrits (les autres gardent le contenu non initialisé de la
+carte) ; bouton puis RETURN identiques, à la version de la ROM menu près. Deux points :
+- **Appui à chaud** : le firmware ne sauvegarde la session que s'il a lui-même démarré
+  la machine (`main_active()` dans `ext.c`), donc après « Boot » depuis son menu. Un
+  Oric démarré directement sur sa ROM BASIC prend un appui à froid (nRESET, menu sans
+  RETURN) — comme un vrai Oric qui n'aurait pas démarré par la LOCI.
+- **`$03A3` sous `--loci-hw` / `--loci-emu`** (corrigé en 2.31.14) : le PIO du firmware
+  lit les octets que l'ULA tire du bus ; le pont USB et la co-simulation ne transportent
+  que les accès du 6502. Le firmware ne voyait jamais le motif, sauvait « texte 60 Hz »,
+  et l'Oric émulé restait en 60 Hz après RETURN. Phosphoric répond à sa place quand il
+  rend 0 (même calcul que la LOCI intégrée).
+- **Console `$03A0`/`$03A2`** (corrigé en 2.31.14) : le firmware sert la lecture avec
+  la valeur d'avant puis met le registre à jour. Après un reset, la 1re lecture de
+  `$03A0` vaut 0 et les suivantes `$80` (mesuré : 00 80 80) ; un octet reçu est chargé
+  dans `$03A2` par la lecture de `$03A0` et servi à la lecture suivante de `$03A2`.
+
 ### Bit « front en attente » (`--loci-hw`, 2.31.13)
 
 Après chaque accès `$03xx` à la LOCI, Phosphoric relève nIRQ par un `LINES`

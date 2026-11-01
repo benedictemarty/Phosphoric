@@ -2398,16 +2398,20 @@ TEST(test_dsk_irq_register_exact_bytes) {
     ASSERT_EQ(loci_dsk_read(&l, 0x0314), 0x80);
 }
 
+/* Firmware (mia.c CASE_READ(0x03A0)/(0x03A2)) : the bus gets the register AS
+ * IT WAS, the handler updates it afterwards (2.31.15). Measured on the Feather
+ * with the real LOCI firmware : three reads of $03A0 after a reset = 00 80 80. */
 TEST(test_cons_flags_tx_ready_rx_pending) {
     loci_t l; loci_init(&l);
     l.enabled = true;
-    /* Bit 7 (TX writable) always set; bit 6 (RX ready) follows the ring. */
-    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0x00);  /* first read after reset : cleared */
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);  /* bit 7 set by the previous handler */
     loci_cons_inject(&l, 'A');
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);  /* this read loads 'A' into $03A2 */
     ASSERT_EQ(loci_read(&l, 0x03A0), 0xC0);
-    ASSERT_EQ(loci_read(&l, 0x03A2), 'A');   /* read consumes */
-    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);
-    ASSERT_EQ(loci_read(&l, 0x03A2), 0x00);  /* empty queue reads 0 */
+    ASSERT_EQ(loci_read(&l, 0x03A2), 'A');   /* served ; nothing else waiting */
+    ASSERT_EQ(loci_read(&l, 0x03A0), 0x80);  /* bit 6 cleared by the $03A2 read */
+    ASSERT_EQ(loci_read(&l, 0x03A2), 0x00);  /* empty : 0 */
 }
 
 TEST(test_cons_rx_fifo_order) {
@@ -2415,7 +2419,8 @@ TEST(test_cons_rx_fifo_order) {
     l.enabled = true;
     loci_cons_inject(&l, 'O');
     loci_cons_inject(&l, 'K');
-    ASSERT_EQ(loci_read(&l, 0x03A2), 'O');
+    (void)loci_read(&l, 0x03A0);              /* loads 'O' */
+    ASSERT_EQ(loci_read(&l, 0x03A2), 'O');   /* and loads 'K' */
     ASSERT_EQ(loci_read(&l, 0x03A2), 'K');
 }
 

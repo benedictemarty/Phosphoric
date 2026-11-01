@@ -706,22 +706,33 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
         loci_resume_at_spin(loci);   /* CLV fetch of the spin: ROM safe to swap */
 
     if (off == LOCI_REG_CONS_FLAGS) {
-        /* Firmware (mia.c): bit 7 = TX writable, bit 6 = RX data ready.
-         * Our TX sink never stalls, so bit 7 is always set. Reading also
-         * preloads $03A2 with the head of the RX queue. */
-        uint8_t flags = 0x80;
-        if (cons_rx_pending(loci)) {
-            flags |= 0x40;
-            loci->regs[LOCI_REG_CONS_CHAR] = loci->cons_rx[loci->cons_rx_tail];
+        /* Firmware (mia.c CASE_READ(0x03A0)) : bit 7 = TX writable, bit 6 = RX
+         * data ready. The bus is served with the register AS IT WAS, the handler
+         * updates it AFTER (2.31.15) : the first read after a reset returns 0
+         * (registers $03A0-$03BF cleared), the next ones $80 — measured on the
+         * Feather with the real LOCI firmware (00, 80, 80). The handler loads a
+         * waiting byte into $03A2 (bit 6) if none is loaded yet. Our TX sink
+         * never stalls : bit 7 is set by the handler. */
+        uint8_t v = loci->regs[LOCI_REG_CONS_FLAGS];
+        if (!(v & 0x40) && cons_rx_pending(loci)) {
+            loci->regs[LOCI_REG_CONS_CHAR] = cons_rx_pop(loci);
+            loci->regs[LOCI_REG_CONS_FLAGS] |= 0x40;
         }
-        loci->regs[LOCI_REG_CONS_FLAGS] = flags;
-        return flags;
+        loci->regs[LOCI_REG_CONS_FLAGS] |= 0x80;
+        return v;
     }
     if (off == LOCI_REG_CONS_CHAR) {
-        /* Read consumes one RX byte (0 when the queue is empty). */
-        uint8_t v = cons_rx_pop(loci);
-        loci->regs[LOCI_REG_CONS_CHAR] =
-            cons_rx_pending(loci) ? loci->cons_rx[loci->cons_rx_tail] : 0;
+        /* Firmware (CASE_READ(0x03A2)) : the byte loaded beforehand is served,
+         * then the next waiting byte is loaded (bit 6 kept) or bit 6 is cleared
+         * and $03A2 zeroed. */
+        uint8_t v = loci->regs[LOCI_REG_CONS_CHAR];
+        if (cons_rx_pending(loci)) {
+            loci->regs[LOCI_REG_CONS_CHAR] = cons_rx_pop(loci);
+            loci->regs[LOCI_REG_CONS_FLAGS] |= 0x40;
+        } else {
+            loci->regs[LOCI_REG_CONS_FLAGS] &= (uint8_t)~0x40;
+            loci->regs[LOCI_REG_CONS_CHAR] = 0;
+        }
         return v;
     }
 
@@ -764,6 +775,7 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
         /* Console UART TX — accumulate and flush to the log on '\n'. */
         cons_tx_byte(loci, value);
         loci->regs[LOCI_REG_CONS_TX] = value;
+        loci->regs[LOCI_REG_CONS_FLAGS] |= 0x80;   /* firmware : bit 7 recomputed after a TX write */
         return;
     }
     if (off == LOCI_REG_ULA_SNOOP) {
