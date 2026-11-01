@@ -1,6 +1,6 @@
 # Liste de Compatibilite — Phosphoric v1.110.0-alpha
 
-Derniere mise a jour : 2026-11-01 (balayage de 1318 cassettes, 2.31.8)
+Derniere mise a jour : 2026-11-01 (balayage de 1318 cassettes, corrige en 2.31.10)
 
 ---
 
@@ -88,23 +88,54 @@ Derniere mise a jour : 2026-11-01 (balayage de 1318 cassettes, 2.31.8)
 
 ---
 
-## Balayage d'une archive de 1318 cassettes (2.31.8)
+## Balayage d'une archive de 1318 cassettes (2.31.8, corrige en 2.31.10)
 
 `tools/tap_sweep.sh DIR [JOBS]` charge chaque `.tap` d'un dossier par le
 chemin normal (`CLOAD""` automatique, sans `-f`), 25 M cycles sur la ROM Atmos,
 puis relance sur la ROM ORIC-1 les cas suspects. Lance sur
-`~/oriclib/games/tap` (archive locale, non versionnee) le 2026-11-01 :
+`~/oriclib/games/tap` (archive locale, non versionnee) le 2026-11-01.
 
-| Resultat | Nombre | Lecture |
-|----------|--------|---------|
-| Arret du 6502 (JAM) ou delai depasse | **0** | — |
-| Ecran normal, sans erreur | 1144 | ne prouve pas que le programme est juste, seulement qu'il ne plante pas |
-| `Ready` apres `CLOAD` | 162 | 155 sans drapeau d'auto-run dans l'en-tete (comportement normal) ; 5 marques auto-run mais vides ou sans programme a l'adresse BASIC (comportement de la ROM) ; 2 lecteurs de musique (`SPACEMU2`, `POSDEMO`) qui installent une routine d'interruption et rendent la main — la musique joue (16 500 ecritures PSG) |
-| `ERROR` a l'ecran | 12 | 3 faux positifs (le mot fait partie du texte) ; 8 programmes ORIC-1 qui marchent sur la ROM 1.0 (dont *The Hobbit*) ; 1 fichier abime : `ogp-nim.tap`, chaine de lignes BASIC cassee apres la ligne 710 (une « ligne 32743 » parasite), donc `GOSUB 1000` introuvable — la vraie ROM ferait de meme |
+**Correction (2.31.10)** : le bilan publie en 2.31.8 annoncait « 0 arret du
+6502 ». C'etait faux : l'outil lisait les journaux de l'emulateur sur stderr,
+alors qu'ils sortent sur stdout, et ne voyait donc aucun arret. Bilan refait
+avec l'outil corrige :
 
-Aucun ecart attribuable a l'emulateur n'a ete trouve. Limite : le critere est
-l'etat du CPU et l'ecran texte ; un jeu HIRES qui s'affiche mal, un son faux ou
-un jeu qui bloque plus loin ne sont pas detectes.
+| Atmos / ORIC-1 | Nombre | Lecture |
+|----------------|--------|---------|
+| OK | 1053 | ne prouve pas que le programme est juste, seulement qu'il ne plante pas |
+| `Ready` / `Ready` | 160 | surtout des cassettes sans drapeau d'auto-run (comportement normal) ; 2 lecteurs de musique sous interruption (`SPACEMU2`, `POSDEMO`) |
+| `Ready` / OK | 2 | programmes ORIC-1 |
+| arret / OK | 74 | programmes ORIC-1 qui plantent sur la ROM Atmos, et marchent sur la ROM 1.0 |
+| arret / arret | 16 | 13 cassettes `os*` (lecteurs de musique) et `vache.TAP`, `os2kata`, `os2vwtit` : voir ci-dessous |
+| arret / `Ready` | 1 | `assdesasm` : Oricutron plante aussi sur Atmos |
+| `ERROR` / OK | 10 | programmes ORIC-1, et 3 faux positifs (le mot fait partie du texte) |
+| `ERROR` / `ERROR` | 2 | dont `ogp-nim.tap`, fichier abime (chaine de lignes BASIC cassee apres la ligne 710) |
+
+**Contre-verification avec Oricutron 1.2.0** (lance sous Xvfb, memes cassettes,
+ROM Phosphoric) :
+- `osarkpan`, `oscomman`, `osqix`, `vache` : Oricutron s'arrete dans son
+  debogueur **a la meme adresse** que Phosphoric (`$B5AC`, `$B5AC`, `$0808`,
+  `$5057`) : defaut des fichiers, pas de l'emulateur. Les 10 cassettes `os*`
+  arretees en `$B5AD` suivent le meme chemin (`JSR $023C` vers la ROM, puis
+  retour sur un octet `$02` dans la zone du jeu de caracteres).
+- Ecrans HIRES : les 282 captures sans texte lisible ont ete examinees a
+  l'oeil sur planches contact (`tools/contact_sheet.py`). 23 etaient vides ou
+  bloquees sur « patientez » ; 13 affichent leur titre avec un chargement plus
+  long (80 M cycles). Sur les 10 restantes, 7 donnent le meme ecran sous
+  Oricutron (dont 2 programmes ORIC-1 et 1 cassette qui attend un fichier
+  suivant).
+
+**Divergences non resolues** (pas de vrai ORIC pour trancher) :
+- `LOADER2.TAP` sur ROM ORIC-1 : Phosphoric arrete le 6502 en `$B585` (aussi
+  avec `--tape-signal`, lecture par la vraie ROM) ; Oricutron revient a `Ready`.
+  Aucun des deux n'affiche le jeu.
+- `ALCHIMIE.tap` sur ROM Atmos : Phosphoric execute le programme ; Oricutron
+  plante dans la ROM (`$E786`, routines cassette, possible effet de son
+  chargement rapide).
+
+Limite : le critere est l'etat du CPU, l'ecran texte et, pour le HIRES, un
+examen visuel sans reference ; un son faux ou un blocage plus tardif ne sont
+pas detectes.
 
 `make test-game-compat` lit aussi cette archive (`ORICLIB_TAP`, defaut
 `~/oriclib/games/tap`) : 10 titres a ecran d'accueil connu, ignores si le
