@@ -273,6 +273,23 @@ l'émulation avance par rafales d'une trame, elle peut atteindre une trame (20 m
 Les fronts nés d'un accès (`reflect_nirq` après une lecture/écriture `$03xx`) et le drain
 par trame ne sont pas concernés. `LOCI_HW_IDLE_POLL_US=0` : seuil en cycles seul (2.30.0).
 
+### Bit « front en attente » (`--loci-hw`, 2.31.13)
+
+Après chaque accès `$03xx` à la LOCI, Phosphoric relève nIRQ par un `LINES`
+(`reflect_nirq`) : le firmware peut avoir pulsé nIRQ en réaction à l'accès. Depuis le
+protocole loci-usb 80ebb0b (firmware lucia-feather c29ee4d), la cartouche annonce
+`LUP_CAP_EDGE_FLAG` (`0x40`, caps `5E`) et chaque réponse porte `LUP_F_EDGE` (`0x10`)
+quand un front nIRQ (activation) ou nRESET (relâchement) attend d'être relevé. Le bit est
+échantillonné APRÈS l'accès : un front provoqué par l'accès est déjà dans sa réponse.
+Phosphoric n'envoie alors le `LINES` d'après accès que si le bit a été vu depuis le
+précédent (y compris dans un octet de `RDN`), et au moins une fois par trame (19 968
+cycles). Les polls en attente restent inconditionnels : sans accès, pas de réponse,
+donc pas de bit — ce sont eux qui relèvent les fronts asynchrones. Mesuré sur la
+Feather, 20 M cycles en headless : 3 860 → 2 540 requêtes (1 002 `LINES` évités),
+5,4 → 4,65 s. `LOCI_HW_NO_EDGE=1` rend le comportement d'avant ; firmware sans la cap :
+inchangé. Non vérifié sur carte : un front nIRQ Microdisc ou ACIA (pas d'Oric) — seuls
+les fronts nRESET l'ont été par la session loci-usb.
+
 ### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 
 Avec le firmware **loci-fw** (variante LOCI_USB, caps `FIRMWARE`), le 6502 appelle
