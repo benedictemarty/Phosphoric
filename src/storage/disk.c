@@ -65,6 +65,9 @@ void fdc_reset(fdc_t* fdc) {
     fdc->delayed_int = 0;
     fdc->di_status = -1;
     fdc->dd_status = -1;
+    fdc->stream = false;
+    fdc->stream_crc = false;
+    fdc->stream_due = 0;
 }
 
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size) {
@@ -261,6 +264,119 @@ static bool fdc_not_ready(fdc_t* fdc) {
     return true;
 }
 
+/* Sector read/write in the REAL model: bytes paced by the platter. */
+static bool fdc_streamed(const fdc_t* fdc) {
+    return fdc->timing_mode == FDC_TIMING_REAL &&
+           (fdc->currentop == FDC_OP_READ_SECTOR || fdc->currentop == FDC_OP_READ_SECTORS ||
+            fdc->currentop == FDC_OP_WRITE_SECTOR || fdc->currentop == FDC_OP_WRITE_SECTORS);
+}
+
+static bool fdc_op_is_write(int op) {
+    return op == FDC_OP_WRITE_SECTOR || op == FDC_OP_WRITE_SECTORS;
+}
+
+static void fdc_stream_drq(fdc_t* fdc) {
+    fdc->status |= FDC_ST_DRQ;
+    fdc->drq_age = 0;
+    fdc->set_drq(fdc->drq_userdata);
+}
+
+static void fdc_stream_lost(fdc_t* fdc) {
+    if (!(fdc->status & FDC_ST_LOST_DATA)) fdc->lost_data_count++;
+    fdc->status |= FDC_ST_LOST_DATA;
+}
+
+/* End of the data field (CRC passed): next sector or end of command.
+ * S2 stays visible in the final status, as on the WD1793. */
+static void fdc_stream_sector_done(fdc_t* fdc) {
+    uint8_t lost = fdc->status & FDC_ST_LOST_DATA;
+    fdc->stream = false;
+    fdc->stream_crc = false;
+    fdc->status &= ~FDC_ST_DRQ;
+    fdc->clr_drq(fdc->drq_userdata);
+    if (fdc->currentop == FDC_OP_READ_SECTORS || fdc->currentop == FDC_OP_WRITE_SECTORS) {
+        fdc->sector++;
+        fdc->cur_offset = 0;
+        fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
+        if (fdc->cur_sector_data) {
+            fdc->delayed_drq = fdc_rot_wait(fdc, fdc->sector);
+            return;
+        }
+        /* end of track: the multi-sector command ends on RNF */
+        fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND | lost);
+    } else {
+        fdc->di_status = (uint8_t)(fdc->sec_type | lost);
+    }
+    fdc->currentop = FDC_OP_NONE;
+    fdc->delayed_int = 1;
+}
+
+/* The data field reaches the head (delayed DRQ expired). */
+static void fdc_stream_start(fdc_t* fdc) {
+    fdc->stream = true;
+    fdc->stream_crc = false;
+    fdc->cur_offset = 0;
+    if (fdc_op_is_write(fdc->currentop)) {
+        /* request the first byte; it must arrive before the end of the gap */
+        fdc_stream_drq(fdc);
+        fdc->stream_due = FDC_WRITE_GAP_BYTES * FDC_BYTE_CYCLES;
+    } else {
+        fdc->sec_type = 0;
+        fdc->data = fdc->cur_sector_data[fdc->cur_offset++];
+        fdc_stream_drq(fdc);
+        fdc->stream_due = FDC_BYTE_CYCLES;
+    }
+}
+
+/* One byte time elapsed: next byte under the head. */
+static void fdc_stream_step(fdc_t* fdc) {
+    if (fdc->stream_crc) {                       /* CRC passed */
+        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* last byte never read/written */
+        fdc_stream_sector_done(fdc);
+        return;
+    }
+    if (fdc_op_is_write(fdc->currentop)) {
+        bool served = !(fdc->status & FDC_ST_DRQ);
+        if (fdc->cur_offset == 0 && !served) {
+            /* first byte missing at the end of the gap: nothing is written */
+            fdc_stream_lost(fdc);
+            fdc->cur_offset = fdc->cur_sector_len;
+            fdc->status &= ~FDC_ST_DRQ;
+            fdc->clr_drq(fdc->drq_userdata);
+            fdc->currentop = (fdc->currentop == FDC_OP_WRITE_SECTORS)
+                           ? FDC_OP_WRITE_SECTOR : fdc->currentop;   /* ends */
+            fdc_stream_sector_done(fdc);
+            return;
+        }
+        uint8_t b = served ? fdc->data : 0x00;   /* byte not supplied: zeros */
+        if (!served) fdc_stream_lost(fdc);
+        fdc->cur_sector_data[fdc->cur_offset++] = b;
+        fdc->disk_modified = true;
+        if (fdc->cur_offset < fdc->cur_sector_len) {
+            fdc_stream_drq(fdc);
+            fdc->stream_due += FDC_BYTE_CYCLES;
+        } else {
+            fdc->status &= ~FDC_ST_DRQ;
+            fdc->clr_drq(fdc->drq_userdata);
+            fdc->stream_crc = true;
+            fdc->stream_due += 2 * FDC_BYTE_CYCLES;
+        }
+        return;
+    }
+    /* read */
+    if (fdc->cur_offset < fdc->cur_sector_len) {
+        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* overwritten before being read */
+        fdc->data = fdc->cur_sector_data[fdc->cur_offset++];
+        fdc_stream_drq(fdc);
+        fdc->stream_due += FDC_BYTE_CYCLES;
+    } else {
+        /* we are at the 1st CRC byte (one byte time after the last one):
+         * the field ends after the 2nd */
+        fdc->stream_crc = true;
+        fdc->stream_due += FDC_BYTE_CYCLES;
+    }
+}
+
 /**
  * Process FDC timer ticks. Must be called with CPU cycle count
  * after each instruction to handle delayed DRQ/INTRQ.
@@ -291,9 +407,25 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
                 fdc->status = (uint8_t)fdc->dd_status;
                 fdc->dd_status = -1;
             }
-            fdc->status |= FDC_ST_DRQ;
-            fdc->drq_age = 0;
-            fdc->set_drq(fdc->drq_userdata);
+            if (fdc_streamed(fdc) && fdc->cur_sector_data)
+                fdc_stream_start(fdc);           /* 2.31.9: the platter sets the pace */
+            else {
+                fdc->status |= FDC_ST_DRQ;
+                fdc->drq_age = 0;
+                fdc->set_drq(fdc->drq_userdata);
+            }
+        }
+    }
+
+    /* Stream tied to the platter: one byte per FDC_BYTE_CYCLES. */
+    if (fdc->stream) {
+        if (!fdc_streamed(fdc)) {
+            fdc->stream = false;                 /* command interrupted */
+        } else {
+            fdc->stream_due -= (int)cycles;
+            while (fdc->stream && fdc->stream_due <= 0)
+                fdc_stream_step(fdc);
+            return;                              /* S2 decided by the stream */
         }
     }
 
@@ -304,12 +436,11 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
      * previous one is lost. The WD1793 raises S2 and carries on with the
      * transfer, which lets the software know it missed the train.
      *
-     * Accepted limitation of our model: the bit is reported at the right time, but
-     * the byte is NOT actually lost — the flat image model has no continuous
-     * MFM stream (the same limitation that makes CRC ERROR impossible, cf.
-     * docs/HARDWARE_CONFORMANCE.md). Software that tests S2 therefore sees the right
-     * condition; software that ignores it gets intact data where the
-     * hardware would give it wrong data. */
+     * This watchdog now only serves transfers paced by the CPU (fast profile,
+     * Read Address): the bit is reported at the right time, but the byte is
+     * not actually lost. In the real profile, sector read and write go
+     * through the stream tied to the platter (fdc_stream_*, 2.31.9), which
+     * does lose the byte; that case never reaches this point. */
     if ((fdc->status & FDC_ST_DRQ) && fdc_op_transfers_data(fdc->currentop)) {
         fdc->drq_age += (int)cycles;
         if (fdc->drq_age > FDC_BYTE_CYCLES && !(fdc->status & FDC_ST_LOST_DATA)) {
@@ -356,6 +487,14 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                 fdc->status |= FDC_ST_NOT_FOUND;
                 fdc->clr_drq(fdc->drq_userdata);
                 fdc->currentop = FDC_OP_NONE;
+                break;
+            }
+
+            if (fdc->stream) {
+                /* 2.31.9: the byte has been in the data register since it passed
+                 * under the head; the read only services the DRQ. */
+                fdc->status &= ~FDC_ST_DRQ;
+                fdc->clr_drq(fdc->drq_userdata);
                 break;
             }
 
@@ -447,6 +586,10 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
     case FDC_COMMAND:
         /* Writing command clears INTRQ */
         fdc->clr_intrq(fdc->intrq_userdata);
+        if ((value & 0xF0) != 0xD0) {            /* except Force Interrupt (ends below) */
+            fdc->stream = false;
+            fdc->stream_crc = false;
+        }
 
         switch (value & 0xE0) {
         case 0x00: /* Restore or Seek */
@@ -637,6 +780,12 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->currentop = FDC_OP_NONE;
                 break;
             }
+            if (fdc->stream) {
+                /* 2.31.9: the byte will be taken as it passes under the head. */
+                fdc->status &= ~FDC_ST_DRQ;
+                fdc->clr_drq(fdc->drq_userdata);
+                break;
+            }
             fdc->cur_sector_data[fdc->cur_offset++] = value;
             fdc->disk_modified = true;   /* in-memory image mutated → drive dirty */
             fdc->status &= ~FDC_ST_DRQ;
@@ -763,6 +912,10 @@ void fdc_state_save(const fdc_t* fdc, FILE* fp) {
     fwrite(fdc->wt_id, 1, sizeof(fdc->wt_id), fp);
     bin_w_u16(fp, fdc->wt_data_len);
     bin_w_u8(fp, fdc->wt_sectors_done);
+    /* v3 (2.31.9): byte stream tied to the platter */
+    bin_w_u8(fp, fdc->stream ? 1 : 0);
+    bin_w_u8(fp, fdc->stream_crc ? 1 : 0);
+    bin_w_i32(fp, fdc->stream_due);
 }
 
 void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
@@ -787,7 +940,7 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
         fdc->status_type1 = bin_r_u8(fp) != 0;
         fdc->rot_pos = bin_r_u32(fp) % FDC_REV_CYCLES;
     }
-    if (size >= FDC_STATE_SIZE) {      /* v2: pending DRQ + formatting */
+    if (size >= FDC_STATE_SIZE_V2) {   /* v2: pending DRQ + formatting */
         fdc->drq_age = bin_r_i32(fp);
         fdc->wt_state = bin_r_u8(fp);
         fdc->wt_field_idx = bin_r_u8(fp) & 3;
@@ -801,6 +954,15 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
         fdc->wt_field_idx = 0;
         fdc->wt_data_len = 0;
         fdc->wt_sectors_done = 0;
+    }
+    if (size >= FDC_STATE_SIZE) {      /* v3: byte stream */
+        fdc->stream = bin_r_u8(fp) != 0;
+        fdc->stream_crc = bin_r_u8(fp) != 0;
+        fdc->stream_due = bin_r_i32(fp);
+    } else {                           /* older .ost: transfer paced by the CPU */
+        fdc->stream = false;
+        fdc->stream_crc = false;
+        fdc->stream_due = 0;
     }
 }
 

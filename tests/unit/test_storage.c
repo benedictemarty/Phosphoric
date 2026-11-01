@@ -803,6 +803,138 @@ TEST(test_fdc_no_lost_data_when_cpu_keeps_up) {
     free(disk);
 }
 
+/* ── Byte stream tied to the platter (2.31.9, REAL model) ─────────────── */
+
+/* Disk whose sector 1 of track 0 holds 0,1,2…,255. */
+static uint8_t* stream_disk(fdc_t* fdc) {
+    uint8_t* disk = calloc(80 * 17 * 256, 1);
+    for (int i = 0; i < 256; i++) disk[i] = (uint8_t)i;
+    fdc_init_test(fdc);
+    fdc_set_disk(fdc, disk, 80 * 17 * 256);
+    fdc->timing_mode = FDC_TIMING_REAL;
+    fdc->rot_pos = 0;
+    return disk;
+}
+
+/* Advance to the first DRQ; returns the cycles elapsed. */
+static int stream_wait_drq(fdc_t* fdc) {
+    int n = 0;
+    while (!(fdc->status & FDC_ST_DRQ) && n < 400000) { fdc_ticktock(fdc, 1); n++; }
+    return n;
+}
+
+/* Read: a byte not read before the next one is lost (S2), and the data
+ * register holds the byte passing under the head, not the next one in the buffer. */
+TEST(test_fdc_stream_read_loses_unread_bytes) {
+    fdc_t fdc;
+    uint8_t* disk = stream_disk(&fdc);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0x80);
+    stream_wait_drq(&fdc);
+    ASSERT_EQ(fdc_read(&fdc, FDC_DATA), 0);
+    fdc_ticktock(&fdc, 3 * FDC_BYTE_CYCLES);      /* bytes 1 and 2 pass without being read */
+    ASSERT_TRUE(fdc.status & FDC_ST_LOST_DATA);
+    ASSERT_EQ(fdc_read(&fdc, FDC_DATA), 3);       /* the disk did not wait */
+    free(disk);
+}
+
+/* A fast CPU (20 cycles per byte) loses nothing, and the sector lasts as long
+ * as the platter dictates (256 × 32 + CRC), not 256 × (20 + 32) as before 2.31.9. */
+TEST(test_fdc_stream_read_duration_follows_platter) {
+    fdc_t fdc;
+    uint8_t* disk = stream_disk(&fdc);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0x80);
+    stream_wait_drq(&fdc);
+    test_intrq_set = false;
+    int cycles = 0, got = 0, ok = 1;
+    while (!test_intrq_set && cycles < 20000) {
+        if (fdc.status & FDC_ST_DRQ) {
+            fdc_ticktock(&fdc, 20); cycles += 20;   /* the CPU services the DRQ in 20 cycles */
+            if ((fdc.status & FDC_ST_DRQ) && fdc_read(&fdc, FDC_DATA) != (uint8_t)got++) ok = 0;
+        } else {
+            fdc_ticktock(&fdc, 1); cycles++;
+        }
+    }
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(got, 256);
+    ASSERT_EQ(fdc.lost_data_count, 0u);
+    ASSERT_TRUE(cycles >= 256 * FDC_BYTE_CYCLES && cycles <= 258 * FDC_BYTE_CYCLES + 4);
+    ASSERT_TRUE((fdc_read(&fdc, FDC_STATUS) & (FDC_ST_LOST_DATA | FDC_ST_BUSY)) == 0);
+    free(disk);
+}
+
+/* Write: a byte not supplied in time is written as $00 with S2, the others
+ * pass unchanged; S2 stays in the final status. */
+TEST(test_fdc_stream_write_late_byte_is_zero) {
+    fdc_t fdc;
+    uint8_t* disk = stream_disk(&fdc);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0xA0);
+    stream_wait_drq(&fdc);
+    test_intrq_set = false;
+    for (int i = 0; i < 256 && !test_intrq_set; i++) {
+        int guard = 0;
+        while (!(fdc.status & FDC_ST_DRQ) && !test_intrq_set && guard++ < 2000) fdc_ticktock(&fdc, 1);
+        if (i != 10) fdc_write(&fdc, FDC_DATA, 0xA5);   /* byte 10 is never supplied */
+        else fdc_ticktock(&fdc, FDC_BYTE_CYCLES);
+    }
+    int guard = 0;
+    while (!test_intrq_set && guard++ < 5000) fdc_ticktock(&fdc, 1);
+    ASSERT_EQ(disk[9], 0xA5);
+    ASSERT_EQ(disk[10], 0x00);
+    ASSERT_TRUE(fdc_read(&fdc, FDC_STATUS) & FDC_ST_LOST_DATA);
+    free(disk);
+}
+
+/* Write: first byte missing at the end of the gap (22 MFM bytes) → nothing
+ * is written, the command ends on S2. */
+TEST(test_fdc_stream_write_first_byte_missing) {
+    fdc_t fdc;
+    uint8_t* disk = stream_disk(&fdc);
+    fdc_write(&fdc, FDC_SECTOR, 1);
+    fdc_write(&fdc, FDC_COMMAND, 0xA0);
+    stream_wait_drq(&fdc);
+    test_intrq_set = false;
+    fdc_ticktock(&fdc, FDC_WRITE_GAP_BYTES * FDC_BYTE_CYCLES + 4);
+    fdc_ticktock(&fdc, 1);                         /* INTRQ one cycle after the end */
+    ASSERT_TRUE(test_intrq_set);
+    uint8_t st = fdc_read(&fdc, FDC_STATUS);
+    ASSERT_TRUE(st & FDC_ST_LOST_DATA);
+    ASSERT_FALSE(st & FDC_ST_BUSY);
+    ASSERT_EQ(disk[0], 0);                         /* intact */
+    ASSERT_EQ(disk[255], 255);
+    free(disk);
+}
+
+/* Savestate mid-stream: the resume continues at the same byte, same cycle. */
+TEST(test_fdc_stream_state_roundtrip) {
+    fdc_t a, b;
+    uint8_t* disk = stream_disk(&a);
+    fdc_write(&a, FDC_SECTOR, 1);
+    fdc_write(&a, FDC_COMMAND, 0x80);
+    stream_wait_drq(&a);
+    (void)fdc_read(&a, FDC_DATA);
+    fdc_ticktock(&a, FDC_BYTE_CYCLES + 7);        /* in the middle of the 2nd byte */
+    FILE* fp = tmpfile();
+    fdc_state_save(&a, fp);
+    ASSERT_EQ((long)ftell(fp), (long)FDC_STATE_SIZE);
+    rewind(fp);
+    uint8_t* disk2 = calloc(80 * 17 * 256, 1);
+    memcpy(disk2, disk, 80 * 17 * 256);
+    fdc_init_test(&b);
+    fdc_set_disk(&b, disk2, 80 * 17 * 256);
+    b.timing_mode = FDC_TIMING_REAL;
+    fdc_state_load(&b, fp, FDC_STATE_SIZE);
+    fdc_state_resume(&b);
+    fclose(fp);
+    ASSERT_TRUE(b.stream);
+    ASSERT_EQ(b.stream_due, a.stream_due);
+    fdc_ticktock(&a, FDC_BYTE_CYCLES); fdc_ticktock(&b, FDC_BYTE_CYCLES);
+    ASSERT_EQ(fdc_read(&a, FDC_DATA), fdc_read(&b, FDC_DATA));
+    free(disk); free(disk2);
+}
+
 /* Write-protect tab (S6): the write command is not executed, the
  * status carries bit 6, and the disk content stays intact. */
 TEST(test_fdc_write_protect_refuses_write) {
@@ -1059,6 +1191,11 @@ int main(void) {
     printf("\n  Fidélité WD1793 (V2-E6):\n");
     RUN(test_fdc_lost_data_when_cpu_too_slow);
     RUN(test_fdc_no_lost_data_when_cpu_keeps_up);
+    RUN(test_fdc_stream_read_loses_unread_bytes);
+    RUN(test_fdc_stream_read_duration_follows_platter);
+    RUN(test_fdc_stream_write_late_byte_is_zero);
+    RUN(test_fdc_stream_write_first_byte_missing);
+    RUN(test_fdc_stream_state_roundtrip);
     RUN(test_fdc_write_protect_refuses_write);
     RUN(test_fdc_write_allowed_without_protect);
     RUN(test_fdc_write_protect_visible_in_type1_status);

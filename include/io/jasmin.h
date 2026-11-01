@@ -113,7 +113,7 @@ bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size);
  * ("DSK" section, shared with the Microdisc) are stored in it. jasmin_load
  * ignores a section with an unknown version or a truncated one, then re-points
  * the FDC to the disk of the selected drive. */
-#define JASMIN_SAVE_VERSION 1
+#define JASMIN_SAVE_VERSION 2   /* 2 (2.31.9): FDC state v3, 55 bytes; 1 = 49 bytes */
 bool jasmin_save(const jasmin_t* j, FILE* fp);
 void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size);
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,

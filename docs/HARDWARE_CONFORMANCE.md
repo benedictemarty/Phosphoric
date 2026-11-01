@@ -38,10 +38,15 @@ latency 200 ms/rev, BUSY bit, live INDEX/TRK0 patch in the Type I status.
 | **Multi-sector: no terminal RNF** | A multi-sector command silently stopped at the end of the track. The WD1793 keeps searching for the next sector and ends with **RECORD NOT FOUND**: this is what tells the software where the track ends. | RNF added to the final status, for reads as well as writes. |
 | **Missing disk in Type II/III → RNF instead of NOT READY** | — | Already fixed before this sprint (`fdc_not_ready()`, called by the four Type II/III commands); the line in this document was **stale**. |
 
+### Fixed (2.31.9) — the platter no longer waits for the CPU
+| Discrepancy | Detail | Fix |
+|-------|--------|-----------|
+| **Bytes re-armed by the CPU** | On sector read/write, each byte was re-armed 32 cycles *after* the CPU access: the disk waited for the processor. A sector read by a ~9-cycle loop lasted ~10,450 cycles instead of 256 × 32 + CRC ≈ 8,256; a byte not read in time raised S2 but stayed intact. | Real profile: as soon as the data field passes under the head, one byte goes by every 32 cycles. **Read**: a byte not read before the next one is overwritten (S2). **Write**: a byte not supplied in time is written as `$00` (S2); if the first one is not supplied before the end of the gap (22 bytes in MFM), nothing is written and the command ends on S2. End of the field after the 2 CRC bytes; S2 stays in the final status. 5 tests (`test_fdc_stream_*`). Measured: 13 local disks boot without a single lost byte; on Sedoric 3 the first sector finishes ~2,260 cycles earlier, the gap then staying stable (rotation dominates). FDC savestate v3 (55 bytes), Jasmin section v2 (v1 still read). |
+
 ### Accepted deviations
 | Discrepancy | Reason |
 |-------|--------|
-| **The lost byte is not really lost**: S2 is signalled at the right moment, but the data remain intact | Our flat-image model has no continuous MFM stream: bytes are served on CPU demand, not by the rotation. Software that tests S2 sees the right condition; software that ignores it gets correct data where the hardware would give it wrong data. Really scrolling the stream requires the MFM track model (backlog V2-E6/US6.3) — and would put disk loading at risk for a theoretical gain: no known Oric software is too slow. |
+| **Read Address and the `--fdc-timing fast` profile**: bytes served on CPU demand | Since 2.31.9, in the real profile (default), Read Sector and Write Sector stream the bytes at the platter's pace (see "Fixed (2.31.9)"). Read Address (6 bytes) and the `fast` profile (media served by the LOCI) keep the old model: the controller re-arms DRQ 32 cycles after the CPU access, S2 is reported but the byte is not lost. |
 | READ TRACK without completion (no case in `fdc_read`) | Command hardly ever used by Oric software, and a correct implementation would require **synthesising an MFM track** (gaps, address marks) — that is the track model in the backlog. |
 | S3 CRC ERROR never set | Structurally impossible on a flat image; damaged sectors are reported as RNF (S4). |
 | C/S flags (side compare) and a0 (Deleted DAM) ignored | The side is driven by the Microdisc control register. |

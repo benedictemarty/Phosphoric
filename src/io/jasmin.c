@@ -182,7 +182,6 @@ void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
 }
 
 /* ── Section .ost « JAS » ─────────────────────────────────────────────────── */
-#define JASMIN_SAVE_FIXED (1 + FDC_STATE_SIZE + 7)   /* version + FDC + verrous */
 
 bool jasmin_save(const jasmin_t* j, FILE* fp) {
     bin_w_u8(fp, JASMIN_SAVE_VERSION);
@@ -207,9 +206,12 @@ bool jasmin_save(const jasmin_t* j, FILE* fp) {
 }
 
 void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size) {
-    if (size < JASMIN_SAVE_FIXED + JASMIN_MAX_DRIVES) return;   /* truncated */
-    if (bin_r_u8(fp) != JASMIN_SAVE_VERSION) return;             /* unknown */
-    fdc_state_load(&j->fdc, fp, FDC_STATE_SIZE);
+    if (size < 1 + FDC_STATE_SIZE_V2 + 7 + JASMIN_MAX_DRIVES) return;   /* truncated */
+    uint8_t ver = bin_r_u8(fp);
+    uint32_t fdc_size = (ver == 1) ? FDC_STATE_SIZE_V2 : FDC_STATE_SIZE;
+    if (ver != 1 && ver != JASMIN_SAVE_VERSION) return;          /* unknown */
+    if (size < 1 + fdc_size + 7 + JASMIN_MAX_DRIVES) return;     /* truncated */
+    fdc_state_load(&j->fdc, fp, fdc_size);
     j->romdis = bin_r_bool(fp);
     j->olay = bin_r_bool(fp);
     uint8_t drive = bin_r_u8(fp);
