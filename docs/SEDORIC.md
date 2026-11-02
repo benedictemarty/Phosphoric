@@ -237,3 +237,38 @@ sont dans l'overlay.
 > (b7=face B), SECTEUR `$C002`, RWBUF `$C003/$C004`. `$C009` = DRVDEF (lecteur
 > par défaut), `$C00A` = DRVSYS. (⚠ ne pas confondre avec `$C006-$C00A` = compteurs
 > de tentatives XRWTS.)
+
+### Récupérer la main après une erreur Sedoric (appel `JSR $0467`) — mesuré
+
+Constat (trace CPU Phosphoric, Atmos ROM 1.1 + Microdisc + `SEDO40u.DSK`, essai
+automatique du projet Neo6502Chess `make test-emu`, rapporté par ce projet) :
+sur une erreur (p.ex. `?WRITE PROTECTED ERROR` avec `--disk-write-protect`),
+`$0467` **ne fait jamais `RTS`** et il n'existe **pas de vecteur d'erreur**.
+
+- Sedoric appelle le BASIC en `$C496` : routine ROM `LDX #$FE / TXS` (pile
+  réinitialisée) puis affichage de « Ready ».
+- Cet appel passe par le **relais de page 4** commun à tous les appels
+  Sedoric → ROM : routine Sedoric `$D5D8` (l'adresse de la routine ROM suit le
+  `JSR` ; elle est écrite en `$04F0/$04F1` en `$D5FA/$D600`), puis `JMP $0471` :
+  `JSR $0477` (bascule overlay) puis, en `$0474`, `JSR $04EF`, où `$04EF`
+  contient un `JMP` dont l'opérande est `$04F0/$04F1`.
+- Ce relais est en **RAM ordinaire** : l'appelant peut remplacer l'opérande du
+  `JSR` de `$0474` (octets `20 EF 04` en `$0474-$0476`, à contrôler avant) par
+  sa propre routine. Elle doit **conserver A et les drapeaux** (les routines ROM
+  y reçoivent leurs paramètres, sinon `?SYNTAX ERROR`), puis passer la main par
+  `JMP $04EF`. Si `$04F0/$04F1` = `$96/$C4` (`$C496`), c'est la sortie d'erreur :
+  la routine restaure la pile (SP enregistré avant le `JSR $0467`, `LDX/TXS`) et
+  reprend juste après le `JSR $0467`. Le crochet est ôté ensuite. **Vérifié** :
+  le programme survit à l'erreur.
+
+Autres pièges mesurés :
+- `$E2-$F7` (page zéro) contient CHRGET, utilisé par Sedoric : rendre les octets
+  d'origine pendant l'appel si le programme y met des variables.
+- `SAVEM` sur un fichier existant ne libère pas l'ancien (2 secteurs perdus par
+  sauvegarde) ; `SAVEO` le remplace sans fuite.
+- `SEARCH $DB2D` direct (overlay via `JSR $0477`, `BUFNOM $C028` = `$C009` puis
+  nom 9 + ext 3) : entrée trouvée en `$C300+X` ; fichier absent → `X` vaut quand
+  même `$E0` et l'entrée est vide (zéros) : seule la comparaison du nom est fiable.
+
+**Non vérifié** : disque plein, lecteur sans disquette, ROM 1.0 + Microdisc,
+autres versions de Sedoric (`$D5D8`/`$C496` propres à SEDO40u/ROM 1.1).
