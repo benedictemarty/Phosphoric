@@ -18,7 +18,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT" || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 

@@ -55,7 +55,7 @@ TEST(test_registry_is_described) {
 }
 
 TEST(test_state_from_cli) {
-    char* argv[] = { "oric1-emu", "-r", "roms/basic11b.rom", "--disk-rom", "roms/md.rom",
+    char* argv[] = { "phosphoric", "-r", "roms/basic11b.rom", "--disk-rom", "roms/md.rom",
                      "--serial", "tcp:bbs:23", "--acia-addr=0380", "--mea8000", NULL };
     cards_state_t st;
     cards_state_from(&st, NULL, 9, argv);
@@ -96,7 +96,7 @@ TEST(test_io_conflict_detected) {
 }
 
 TEST(test_build_argv_replaces_cards) {
-    char* argv[] = { "oric1-emu", "-r", "roms/basic11b.rom", "--disk-rom", "roms/microdis.rom",
+    char* argv[] = { "phosphoric", "-r", "roms/basic11b.rom", "--disk-rom", "roms/microdis.rom",
                      "-d", "jeu.dsk", "--loci-usb", "cle", "--fast", NULL };
     cards_state_t st;
     cards_state_from(&st, NULL, 10, argv);
@@ -106,22 +106,22 @@ TEST(test_build_argv_replaces_cards) {
     char** av = cards_build_argv(&st, 10, argv, &argc2);
     char buf[512];
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu -d jeu.dsk --loci-usb cle --fast -r roms/loci/locirom --loci "
+    ASSERT_STR(buf, "phosphoric -d jeu.dsk --loci-usb cle --fast -r roms/loci/locirom --loci "
                     "--no-config-cards");
     cards_argv_free(av);
     /* LOCI éteinte : sa ROM de menu redevient le BASIC, --loci-usb disparaît. */
-    char* argv2[] = { "oric1-emu", "-r", "roms/loci/locirom", "--loci", "--loci-usb", "cle", NULL };
+    char* argv2[] = { "phosphoric", "-r", "roms/loci/locirom", "--loci", "--loci-usb", "cle", NULL };
     cards_state_from(&st, NULL, 6, argv2);
     cards_set_on(&st, cards_find("loci"), false);
     av = cards_build_argv(&st, 6, argv2, &argc2);
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu -r roms/basic11b.rom --no-config-cards");
+    ASSERT_STR(buf, "phosphoric -r roms/basic11b.rom --no-config-cards");
     ASSERT_TRUE(argc2 == 4);
     cards_argv_free(av);
 }
 
 TEST(test_build_argv_params) {
-    char* argv[] = { "oric1-emu", NULL };
+    char* argv[] = { "phosphoric", NULL };
     cards_state_t st;
     cards_state_defaults(&st);
     int ac = cards_find("acia");
@@ -132,7 +132,7 @@ TEST(test_build_argv_params) {
     char** av = cards_build_argv(&st, 1, argv, NULL);
     char buf[256];
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu --serial picowifi --acia-addr 0380 --serial-v23 --no-config-cards");
+    ASSERT_STR(buf, "phosphoric --serial picowifi --acia-addr 0380 --serial-v23 --no-config-cards");
     cards_argv_free(av);
 }
 
@@ -227,7 +227,7 @@ TEST(test_choice_param_cycles) {
 }
 
 TEST(test_loci_modem_build_argv) {
-    char* argv[] = { "oric1-emu", "--serial-trace", "t.log", NULL };
+    char* argv[] = { "phosphoric", "--serial-trace", "t.log", NULL };
     cards_state_t st;
     int lo = cards_find("loci"), ac = cards_find("acia");
     char buf[512];
@@ -238,17 +238,17 @@ TEST(test_loci_modem_build_argv) {
     snprintf(st.card[lo].value[LP_MODEM], CARD_VALUE_MAX, LOCI_MODEM_SIM);
     char** av = cards_build_argv(&st, 3, argv, NULL);
     joined(av, buf, sizeof buf);       /* --serial-trace gardée : le modem est une ACIA */
-    ASSERT_STR(buf, "oric1-emu --serial-trace t.log --loci --serial picowifi --no-config-cards");
+    ASSERT_STR(buf, "phosphoric --serial-trace t.log --loci --serial picowifi --no-config-cards");
     cards_argv_free(av);
     snprintf(st.card[lo].value[LP_MODEM], CARD_VALUE_MAX, LOCI_MODEM_REAL);   /* port détecté */
     av = cards_build_argv(&st, 1, argv, NULL);
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu --loci --serial com:115200,8,N,1,/dev/ttyACM1 --no-config-cards");
+    ASSERT_STR(buf, "phosphoric --loci --serial com:115200,8,N,1,/dev/ttyACM1 --no-config-cards");
     cards_argv_free(av);
     snprintf(st.card[lo].value[LP_PORT], CARD_VALUE_MAX, "/dev/ttyUSB3");     /* port imposé */
     av = cards_build_argv(&st, 1, argv, NULL);
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu --loci --serial com:115200,8,N,1,/dev/ttyUSB3 --no-config-cards");
+    ASSERT_STR(buf, "phosphoric --loci --serial com:115200,8,N,1,/dev/ttyUSB3 --no-config-cards");
     cards_argv_free(av);
     /* Carte ACIA active : elle garde la ligne série, et le menu le signale. */
     char msg[96];
@@ -267,11 +267,11 @@ TEST(test_loci_modem_real_missing_is_reported) {
     cards_set_on(&st, lo, true);
     snprintf(st.card[lo].value[LP_MODEM], CARD_VALUE_MAX, LOCI_MODEM_REAL);
     ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "aucun picowifi"));
-    char* argv[] = { "oric1-emu", NULL };
+    char* argv[] = { "phosphoric", NULL };
     char** av = cards_build_argv(&st, 1, argv, NULL);
     char buf[256];
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu -r roms/loci/locirom --loci --no-config-cards");
+    ASSERT_STR(buf, "phosphoric -r roms/loci/locirom --loci --no-config-cards");
     cards_argv_free(av);
     snprintf(st.card[lo].value[LP_PORT], CARD_VALUE_MAX, "/dev/ttyACM7");
     ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
@@ -282,26 +282,26 @@ TEST(test_loci_modem_state_from_cli) {
     cards_state_t st;
     int lo = cards_find("loci"), ac = cards_find("acia");
     fake_sysfs(true);
-    char* a1[] = { "oric1-emu", "--loci", "--serial", "picowifi", NULL };
+    char* a1[] = { "phosphoric", "--loci", "--serial", "picowifi", NULL };
     cards_state_from(&st, NULL, 4, a1);
     ASSERT_TRUE(st.card[lo].on && !st.card[ac].on);
     ASSERT_STR(st.card[lo].value[LP_MODEM], LOCI_MODEM_SIM);
-    char* a2[] = { "oric1-emu", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyACM1", NULL };
+    char* a2[] = { "phosphoric", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyACM1", NULL };
     cards_state_from(&st, NULL, 4, a2);                 /* port détecté : laissé vide */
     ASSERT_STR(st.card[lo].value[LP_MODEM], LOCI_MODEM_REAL);
     ASSERT_STR(st.card[lo].value[LP_PORT], "");
-    char* a3[] = { "oric1-emu", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyS0", NULL };
+    char* a3[] = { "phosphoric", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyS0", NULL };
     cards_state_from(&st, NULL, 4, a3);
     ASSERT_STR(st.card[lo].value[LP_PORT], "/dev/ttyS0");
     /* ACIA réglée autrement (V23, identifiants, autre adresse) : reste une carte. */
-    char* a4[] = { "oric1-emu", "--loci", "--serial", "picowifi", "--serial-v23", NULL };
+    char* a4[] = { "phosphoric", "--loci", "--serial", "picowifi", "--serial-v23", NULL };
     cards_state_from(&st, NULL, 5, a4);
     ASSERT_TRUE(st.card[ac].on);
     ASSERT_STR(st.card[lo].value[LP_MODEM], LOCI_MODEM_NONE);
-    char* a5[] = { "oric1-emu", "--loci", "--serial", "picowifi:box:secret", NULL };
+    char* a5[] = { "phosphoric", "--loci", "--serial", "picowifi:box:secret", NULL };
     cards_state_from(&st, NULL, 4, a5);
     ASSERT_TRUE(st.card[ac].on);
-    char* a6[] = { "oric1-emu", "--serial", "picowifi", NULL };   /* sans LOCI */
+    char* a6[] = { "phosphoric", "--serial", "picowifi", NULL };   /* sans LOCI */
     cards_state_from(&st, NULL, 3, a6);
     ASSERT_TRUE(st.card[ac].on && !st.card[lo].on);
     fake_sysfs_drop();
@@ -324,7 +324,7 @@ TEST(test_loci_modem_cfg) {
     ASSERT_TRUE(back.card[lo].on);
     ASSERT_STR(back.card[lo].value[LP_MODEM], LOCI_MODEM_SIM);
     /* Configuration : LOCI + modem simulé ajoutés au lancement... */
-    char* a1[] = { "oric1-emu", NULL };
+    char* a1[] = { "phosphoric", NULL };
     int n = 0;
     char** av = cards_config_argv(path, 1, a1, &n);
     char buf[256];
@@ -333,7 +333,7 @@ TEST(test_loci_modem_cfg) {
     ASSERT_TRUE(strstr(buf, "--loci") && strstr(buf, "--serial picowifi"));
     cards_argv_free(av);
     /* ...sauf si la ligne de commande choisit déjà la ligne série. */
-    char* a2[] = { "oric1-emu", "--serial", "tcp:bbs:23", NULL };
+    char* a2[] = { "phosphoric", "--serial", "tcp:bbs:23", NULL };
     av = cards_config_argv(path, 3, a2, &n);
     ASSERT_TRUE(av != NULL);
     joined(av, buf, sizeof buf);
@@ -412,7 +412,7 @@ TEST(test_loci_firmware_mode) {
     cards_state_t st;
     int lo = cards_find("loci");
     char buf[256], msg[96];
-    char* a1[] = { "oric1-emu", "--loci-emu", "fw.elf", "--loci-usb-image", "cle.img",
+    char* a1[] = { "phosphoric", "--loci-emu", "fw.elf", "--loci-usb-image", "cle.img",
                    "--loci-cdc", "/dev/ttyACM3", NULL };
     cards_state_from(&st, NULL, 7, a1);
     ASSERT_TRUE(st.card[lo].on);
@@ -422,7 +422,7 @@ TEST(test_loci_firmware_mode) {
     ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
     char** av = cards_build_argv(&st, 7, a1, NULL);   /* --loci-cdc : option secondaire gardée */
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu --loci-cdc /dev/ttyACM3 --loci-emu fw.elf --loci-usb-image cle.img "
+    ASSERT_STR(buf, "phosphoric --loci-cdc /dev/ttyACM3 --loci-emu fw.elf --loci-usb-image cle.img "
                     "--no-config-cards");
     cards_argv_free(av);
     st.card[lo].value[LP_ELF][0] = '\0';
@@ -436,12 +436,12 @@ TEST(test_loci_usb_mode) {
     fake_sysfs(true);
     fake_tty("ttyACM2", LOCI_USB_FW_PRODUCT);
     /* Ligne de commande : port détecté laissé vide, autre port gardé. */
-    char* a1[] = { "oric1-emu", "--loci-hw", "/dev/ttyACM2", NULL };
+    char* a1[] = { "phosphoric", "--loci-hw", "/dev/ttyACM2", NULL };
     cards_state_from(&st, NULL, 3, a1);
     ASSERT_TRUE(st.card[lo].on);
     ASSERT_STR(st.card[lo].value[LP_MODE], LOCI_MODE_HW);
     ASSERT_STR(st.card[lo].value[LP_PORT_USB], "");
-    char* a2[] = { "oric1-emu", "--loci-hw=/dev/ttyUSB9", NULL };
+    char* a2[] = { "phosphoric", "--loci-hw=/dev/ttyUSB9", NULL };
     cards_state_from(&st, NULL, 2, a2);
     ASSERT_STR(st.card[lo].value[LP_PORT_USB], "/dev/ttyUSB9");
     /* Groupe « disque » : toujours exclusive avec le Microdisc. */
@@ -450,18 +450,18 @@ TEST(test_loci_usb_mode) {
     cards_set_on(&st, lo, true);
     ASSERT_TRUE(!st.card[md].on);
     /* Relance : ni --loci, ni ROM du menu, ni réglages du modèle intégré. */
-    char* a0[] = { "oric1-emu", "-r", "roms/loci/locirom", "--loci-flash", "f", NULL };
+    char* a0[] = { "phosphoric", "-r", "roms/loci/locirom", "--loci-flash", "f", NULL };
     snprintf(st.card[lo].value[LP_FLASH], CARD_VALUE_MAX, "f");
     st.card[lo].value[LP_PORT_USB][0] = '\0';
     ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
     char** av = cards_build_argv(&st, 5, a0, NULL);
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu -r roms/basic11b.rom --loci-hw /dev/ttyACM2 --no-config-cards");
+    ASSERT_STR(buf, "phosphoric -r roms/basic11b.rom --loci-hw /dev/ttyACM2 --no-config-cards");
     cards_argv_free(av);
     snprintf(st.card[lo].value[LP_PORT_USB], CARD_VALUE_MAX, "/dev/ttyUSB9");
     av = cards_build_argv(&st, 1, a0, NULL);
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu --loci-hw /dev/ttyUSB9 --no-config-cards");
+    ASSERT_STR(buf, "phosphoric --loci-hw /dev/ttyUSB9 --no-config-cards");
     cards_argv_free(av);
     /* Aucune LOCI-USB branchée, port vide : signalé, et LOCI n'est pas relancée. */
     fake_sysfs(false);
@@ -469,7 +469,7 @@ TEST(test_loci_usb_mode) {
     ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "LOCI-USB"));
     av = cards_build_argv(&st, 1, a0, NULL);
     joined(av, buf, sizeof buf);
-    ASSERT_STR(buf, "oric1-emu --no-config-cards");
+    ASSERT_STR(buf, "phosphoric --no-config-cards");
     cards_argv_free(av);
     fake_sysfs_drop();
 }

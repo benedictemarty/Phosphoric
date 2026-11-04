@@ -19,7 +19,7 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-EMU="./oric1-emu"
+EMU="./phosphoric"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

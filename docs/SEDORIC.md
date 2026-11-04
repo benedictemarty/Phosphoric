@@ -18,7 +18,7 @@ padding `$4E` jusqu'à 6400 o. CRC-16/CCITT (poly `$1021`, init `$FFFF`) sur les
 4 octets de marque + les données.
 
 Une image **RAW** (secteurs 256 o concaténés, même ordre side-major, sans cadrage)
-est acceptée par `sedoric-info` et produite par `oric1-emu --disk-create` /
+est acceptée par `sedoric-info` et produite par `phosphoric --disk-create` /
 `tools/sedoric_inject.py`. `tools/dsk_raw2mfm.py` convertit RAW → MFM_DISK.
 
 ## 2. Secteurs système (piste 20)
@@ -85,8 +85,8 @@ au-delà de ~121 secteurs).
 | `tools/sedoric_inject.py <raw_in> <bin> <load> NAME.EXT <raw_out> [tracks] [sectors] [init] [exec]` | injection en RAW (offsets directs) |
 | `tools/dsk_raw2mfm.py <raw> <out.dsk> [order] [sides] [tracks] [sectors]` | RAW → MFM_DISK (blocs side-major) |
 
-Chaîne RAW type : `oric1-emu --disk-create base.raw` (puis INIT au boot pour une
-vraie VTOC) → `sedoric_inject.py` → `dsk_raw2mfm.py` → `oric1-emu --disk-rom microdis.rom -d`.
+Chaîne RAW type : `phosphoric --disk-create base.raw` (puis INIT au boot pour une
+vraie VTOC) → `sedoric_inject.py` → `dsk_raw2mfm.py` → `phosphoric --disk-rom microdis.rom -d`.
 
 ## 5. Injection multi-fichiers (limite levée)
 

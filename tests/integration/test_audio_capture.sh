@@ -12,7 +12,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 ROM=roms/basic11b.rom
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -23,7 +23,7 @@ note_pass() { echo "  PASS: $1"; pass=$((pass + 1)); }
 note_fail() { echo "  FAIL: $1"; fail=$((fail + 1)); }
 
 if [ ! -x "$EMU" ]; then
-    echo "  oric1-emu not built — skipping (run: make)"
+    echo "  phosphoric not built — skipping (run: make)"
     exit 0
 fi
 if [ ! -f "$ROM" ]; then

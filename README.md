@@ -30,19 +30,19 @@ sudo apt-get install build-essential libsdl2-dev
 make SDL2=1
 
 # Boot ORIC-1 BASIC
-./oric1-emu -r roms/basic10.rom
+./phosphoric -r roms/basic10.rom
 
 # Boot ORIC Atmos BASIC (auto-detected)
-./oric1-emu -r roms/basic11b.rom
+./phosphoric -r roms/basic11b.rom
 
 # Load a tape program (fast load: direct memory injection)
-./oric1-emu -r roms/basic10.rom -t program.tap -f
+./phosphoric -r roms/basic10.rom -t program.tap -f
 
 # Load a tape via the real ROM at signal level (for custom/protected loaders)
-./oric1-emu -r roms/basic10.rom -t soccermanager.tap --tape-signal
+./phosphoric -r roms/basic10.rom -t soccermanager.tap --tape-signal
 
 # Boot Sedoric from disk
-./oric1-emu -r roms/basic10.rom --disk-rom roms/microdis.rom -d SEDO40u.DSK
+./phosphoric -r roms/basic10.rom --disk-rom roms/microdis.rom -d SEDO40u.DSK
 ```
 
 ## Features
@@ -261,7 +261,7 @@ make SDL2=1
   WebAssembly build:
   - **Linux** — the reference platform (`make`; GCC/Clang + SDL2). Full feature set.
   - **Windows 11** — native `.exe` cross-built by CI (`windows-build` workflow:
-    `oric1-emu.exe` + `SDL2.dll` + roms; or `make WIN=1 SDL2=1` with MinGW-w64).
+    `phosphoric.exe` + `SDL2.dll` + roms; or `make WIN=1 SDL2=1` with MinGW-w64).
     Also **WSL2** (full Linux build under WSLg). v1 native limits: serial
     tcp/pty/modem/com/picowifi, `--gdb`, `--control` async-pause, CAST and host
     MIDI are Linux/WSL2-only.
@@ -318,7 +318,7 @@ sudo make install              # Install to /usr/local
 
 Objects are built out of the source tree in `build/<config>/`, one directory per option set
 (SDL2, HTTPAPI, CAST, MIDI, TLS, TUI, LOCI backend, DEBUG, COVERAGE): switching options never
-mixes objects. `oric1-emu` and the tools are copied to the repository root. `make clean`
+mixes objects. `phosphoric` and the tools are copied to the repository root. `make clean`
 removes `build/`.
 
 > **Affichage graphique :** depuis la v1.67, le défaut du `Makefile` est
@@ -330,7 +330,7 @@ removes `build/`.
 ## Usage
 
 ```
-./oric1-emu [OPTIONS]
+./phosphoric [OPTIONS]
 
 ROM & Model:
   -r, --rom FILE            Load BASIC ROM (default: roms/basic10.rom = bare
@@ -533,10 +533,10 @@ as input and capture the program's replies for diffing, with no network or peer:
 
 ```bash
 # Capture everything the program transmits
-./oric1-emu -r roms/basic11b.rom --dtl2000 file::capture.bin -t prog.tap -f
+./phosphoric -r roms/basic11b.rom --dtl2000 file::capture.bin -t prog.tap -f
 
 # Replay a recorded stream as received data, capture the replies
-./oric1-emu -r roms/basic11b.rom --serial file:server.bin:client.bin -t term.tap -f
+./phosphoric -r roms/basic11b.rom --serial file:server.bin:client.bin -t term.tap -f
 ```
 
 ### Digitelec DTL 2000 example
@@ -551,10 +551,10 @@ make tools
 ./bas2tap examples/dtl2000-test.bas -o examples/dtl2000-test.tap --auto-run
 
 # Run the test program with a loopback modem (what you transmit comes back)
-./oric1-emu -r roms/basic11b.rom -t examples/dtl2000-test.tap -f --dtl2000 loopback
+./phosphoric -r roms/basic11b.rom -t examples/dtl2000-test.tap -f --dtl2000 loopback
 
 # Connect the card to a real BBS / Minitel-style host over TCP instead
-./oric1-emu -r roms/basic11b.rom --dtl2000 tcp:bbs.example.org:23
+./phosphoric -r roms/basic11b.rom --dtl2000 tcp:bbs.example.org:23
 ```
 
 The program drives the card exactly as the period software did — PIA Port A
@@ -702,7 +702,7 @@ make test-iomenu         # F1 peripherals menu: navigation, file browser, drawin
 make test-iomenu-glue    # F1 menu ↔ machine: media, settings, phosphoric.cfg
 make test-iomenu-cli     # --menu-screenshot, --config / --no-config
 make test-web-iomenu     # F1 menu in the WebAssembly build (Chrome headless)
-make test-cli-golden GOLDEN_REF=/path/old/oric1-emu  # differential CLI safety net
+make test-cli-golden GOLDEN_REF=/path/old/phosphoric  # differential CLI safety net
 make test-comment-diff   # main-en may differ from main by comments only
 make valgrind            # Memory leak detection
 make static-analysis     # Compiler warnings analysis

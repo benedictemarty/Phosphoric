@@ -1,5 +1,5 @@
 # Sprint 89 — cross-build Windows x86_64 (MinGW-w64) sur runner Ubuntu.
-# Produit un zip portable : oric1-emu.exe + SDL2.dll + roms/ + docs.
+# Produit un zip portable : phosphoric.exe + SDL2.dll + roms/ + docs.
 name: windows-build
 
 on:
@@ -36,7 +36,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/phosphoric-windows
-          cp oric1-emu.exe dist/phosphoric-windows/
+          cp phosphoric.exe dist/phosphoric-windows/
           cp /opt/sdl2-mingw/x86_64-w64-mingw32/bin/SDL2.dll dist/phosphoric-windows/
           # winpthreads runtime (clock_gettime) — posix flavour of MinGW
           cp /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll dist/phosphoric-windows/ 2>/dev/null || \
@@ -47,9 +47,9 @@ jobs:
           cat > dist/phosphoric-windows/LISEZMOI-WINDOWS.txt <<'EOF'
           Phosphoric — émulateur ORIC-1/Atmos pour Windows 11 (x86_64)
 
-          Lancer :  oric1-emu.exe -r roms\basic11b.rom
-          Disque :  oric1-emu.exe -r roms\basic11b.rom --disk-rom roms\microdis.rom -d MONJEU.DSK
-          LOCI  :   oric1-emu.exe -r roms\basic11b.rom --loci    (F8 = menu, F8 long = diag ROM)
+          Lancer :  phosphoric.exe -r roms\basic11b.rom
+          Disque :  phosphoric.exe -r roms\basic11b.rom --disk-rom roms\microdis.rom -d MONJEU.DSK
+          LOCI  :   phosphoric.exe -r roms\basic11b.rom --loci    (F8 = menu, F8 long = diag ROM)
 
           Limites du build Windows v1 (utilisez la version Linux/WSL2 pour) :
           - transports série tcp/pty/modem/com/picowifi (loopback et file: disponibles)

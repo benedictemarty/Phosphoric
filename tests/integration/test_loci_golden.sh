@@ -13,7 +13,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 LOCI_ROM=roms/loci/locirom
 SDIMG=loci_demo.img
 TMP=$(mktemp -d)
@@ -26,7 +26,7 @@ note_fail() { echo "  FAIL: $1"; fail=$((fail + 1)); }
 
 echo "LOCI boot determinism (Epic 9 glue-refactor oracle):"
 
-if [ ! -x "$EMU" ]; then echo "  oric1-emu not built — skipping"; exit 0; fi
+if [ ! -x "$EMU" ]; then echo "  phosphoric not built — skipping"; exit 0; fi
 if [ ! -f "$LOCI_ROM" ] || [ ! -f "$SDIMG" ]; then
     echo "  LOCI media missing ($LOCI_ROM / $SDIMG) — skipping"; exit 0
 fi

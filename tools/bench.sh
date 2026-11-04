@@ -10,7 +10,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 BASIC_ROM=roms/basic11b.rom
 DISK_ROM=roms/microdis.rom
 LOCI_ROM=roms/loci/locirom

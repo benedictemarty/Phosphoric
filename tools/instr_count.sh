@@ -6,7 +6,7 @@
 # disposition du code (contrairement au temps de --bench).
 #
 # Usage : tools/instr_count.sh BINAIRE [arguments en plus...]
-#   ex. : tools/instr_count.sh ./oric1-emu --mea8000
+#   ex. : tools/instr_count.sh ./phosphoric --mea8000
 # Affiche le nombre d'instructions pour 2 M cycles émulés (≈ 100 trames).
 # Utilisé au sprint G (cartes en modules) pour comparer deux binaires.
 #

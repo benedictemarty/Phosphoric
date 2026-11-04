@@ -87,7 +87,7 @@ SCENARIOS = {
 
 class Emu:
     def __init__(self, args):
-        cmd = [os.path.join(ROOT, "oric1-emu"), "-n", "--no-config",
+        cmd = [os.path.join(ROOT, "phosphoric"), "-n", "--no-config",
                "-r", os.path.join(ROOT, "roms", "basic11b.rom"), "--control"] + args
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, bufsize=0)

@@ -1,10 +1,10 @@
 # Piloter l'émulateur Phosphoric depuis un agent de développement
 
 Guide destiné à **un agent de développement** pour développer et **tester automatiquement**
-un programme ORIC-1 / Atmos à l'aide de l'émulateur **Phosphoric** (`oric1-emu`).
+un programme ORIC-1 / Atmos à l'aide de l'émulateur **Phosphoric** (`phosphoric`).
 
 > Copiez ce fichier à la racine (ou dans `docs/`) d'un nouveau projet Oric.
-> Toutes les options citées proviennent de `./oric1-emu --help` — vérifiez-les avec
+> Toutes les options citées proviennent de `./phosphoric --help` — vérifiez-les avec
 > `--help` si une version diffère. **Ne jamais inventer une option : la vérifier d'abord.**
 
 ---
@@ -31,20 +31,20 @@ Donc : `1 seconde émulée ≈ 1 000 000 cycles ≈ 50 frames`.
 
 ```bash
 # Boot BASIC 1.0 (ORIC-1) / BASIC 1.1 (Atmos)
-./oric1-emu -r roms/basic10.rom
-./oric1-emu -r roms/basic11b.rom
+./phosphoric -r roms/basic10.rom
+./phosphoric -r roms/basic11b.rom
 
 # Headless, tourne 5 s émulées puis quitte
-./oric1-emu -r roms/basic10.rom -n -c 5000000
+./phosphoric -r roms/basic10.rom -n -c 5000000
 
 # Charger et lancer une cassette instantanément (pas de CLOAD manuel)
-./oric1-emu -r roms/basic10.rom -t prog.tap -f
+./phosphoric -r roms/basic10.rom -t prog.tap -f
 
 # Charger un disque Sedoric
-./oric1-emu -r roms/basic10.rom --disk-rom roms/microdis.rom -d disque.dsk
+./phosphoric -r roms/basic10.rom --disk-rom roms/microdis.rom -d disque.dsk
 
 # Choisir le modèle explicitement (sinon auto-détection depuis la ROM)
-./oric1-emu -r roms/basic11b.rom -m atmos
+./phosphoric -r roms/basic11b.rom -m atmos
 ```
 
 Options de chargement utiles :
@@ -68,7 +68,7 @@ Pour piloter un programme sans humain :
 
 ```bash
 # Taper une ligne BASIC puis Return, après ~2,7 M cycles (fin du boot)
-./oric1-emu -r roms/basic10.rom -n -c 5000000 \
+./phosphoric -r roms/basic10.rom -n -c 5000000 \
   --type-keys 2700000:'PRINT "HELLO"\n'
 ```
 
@@ -84,7 +84,7 @@ Pour piloter un programme sans humain :
 
 ```bash
 # Attendre que le jeu soit prêt (RAM[$BC9A]==$52) avant de taper
-./oric1-emu -r roms/basic10.rom -n -c 20000000 \
+./phosphoric -r roms/basic10.rom -n -c 20000000 \
   --type-keys-when BC9A:52:'\n'
 ```
 
@@ -106,7 +106,7 @@ Pour piloter un programme sans humain :
 
 ```bash
 # Vide l'écran texte 40x28 ($BB80) en ASCII à la sortie
-./oric1-emu -r roms/basic10.rom -n -c 5000000 --screenshot-text out.txt
+./phosphoric -r roms/basic10.rom -n -c 5000000 --screenshot-text out.txt
 
 # À un instant précis (répétable pour plusieurs instants)
 --screenshot-text-at 3000000:step1.txt --screenshot-text-at 6000000:step2.txt
@@ -195,7 +195,7 @@ Le rejeu d'une `.movie` (couplé à `-c` fixe) donne des runs **reproductibles**
 #!/usr/bin/env bash
 # tests/test_smoke.sh — exemple de test e2e headless
 set -euo pipefail
-EMU=./oric1-emu
+EMU=./phosphoric
 ROM=roms/basic10.rom
 OUT=$(mktemp -d)
 

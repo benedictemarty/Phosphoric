@@ -170,8 +170,8 @@ int main(int argc, char* argv[]) {
     printf("    20 PRINT \"HELLO ORIC!\"\n");
     printf("    30 PRINT \"CLOAD OK\"\n");
     printf("\nUsage:\n");
-    printf("  ./oric1-emu -r basic10.rom -t %s        # then type CLOAD\n", output);
-    printf("  ./oric1-emu -r basic10.rom -t %s -f     # fast-load (direct)\n", output);
+    printf("  ./phosphoric -r basic10.rom -t %s        # then type CLOAD\n", output);
+    printf("  ./phosphoric -r basic10.rom -t %s -f     # fast-load (direct)\n", output);
 
     return 0;
 }

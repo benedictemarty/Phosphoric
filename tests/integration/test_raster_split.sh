@@ -24,7 +24,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT" || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 ROM=roms/basic11b.rom
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT

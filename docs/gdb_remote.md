@@ -21,8 +21,8 @@ inspecter/modifier registres et mémoire.
 ## Démarrer
 
 ```bash
-./oric1-emu -r roms/basic11b.rom --gdb           # port 1234 (défaut)
-./oric1-emu -r roms/basic11b.rom --gdb=3333      # port au choix
+./phosphoric -r roms/basic11b.rom --gdb           # port 1234 (défaut)
+./phosphoric -r roms/basic11b.rom --gdb=3333      # port au choix
 ```
 
 L'émulateur ouvre le port et **attend** la connexion du client. La machine

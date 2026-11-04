@@ -176,10 +176,10 @@ Le même principe s'étend à ce qui rend main.c monolithique :
 
 ## 7. Contrainte opérationnelle
 
-L'exécutable `oric1-emu` est utilisé par d'autres programmes : **jamais de
+L'exécutable `phosphoric` est utilisé par d'autres programmes : **jamais de
 `make clean`** pendant ce chantier (il efface le binaire) ; builds **incrémentaux**
 uniquement (le binaire n'est remplacé qu'en cas de link réussi) ; chaque étape
-laisse un `oric1-emu` fonctionnel et **iso-comportement**.
+laisse un `phosphoric` fonctionnel et **iso-comportement**.
 
 ## 8. Références
 - `include/io/io_device.h`, `src/main.c` (`io_bus[]`, `io_bus_find`).

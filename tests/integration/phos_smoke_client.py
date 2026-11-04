@@ -9,12 +9,12 @@ synchronous REP queueing) on a leaner code budget so it can live in the
 emulator's own regression suite without a third-party dependency.
 
 Usage as a standalone script:
-    ./tests/integration/phos_smoke_client.py path/to/oric1-emu \\
+    ./tests/integration/phos_smoke_client.py path/to/phosphoric \\
         -r roms/basic11b.rom
 
 Usage as a module (for assertions in shell tests):
     from phos_smoke_client import PhosClient
-    with PhosClient.spawn(["./oric1-emu", "-r", "roms/basic11b.rom"]) as c:
+    with PhosClient.spawn(["./phosphoric", "-r", "roms/basic11b.rom"]) as c:
         c.wait_ready()
         regs = c.regs()
         assert regs["PC"] == "F88F"

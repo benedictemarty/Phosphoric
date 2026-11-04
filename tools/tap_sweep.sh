@@ -38,7 +38,7 @@ one() {
     if [ -n "${TAP_SWEEP_SHOTS:-}" ] && [ "$rom" = basic11b.rom ]; then
         shot=(--screenshot-at "24000000:$TAP_SWEEP_SHOTS/$(basename "$tap").ppm")
     fi
-    timeout 30 "$ROOT/oric1-emu" --no-config -r "$ROOT/roms/$rom" -t "$tap" --headless \
+    timeout 30 "$ROOT/phosphoric" --no-config -r "$ROOT/roms/$rom" -t "$tap" --headless \
         -c 25000000 --dump-ram-at "24000000:$bin" "${shot[@]}" >"$log" 2>&1; rc=$?   # journaux sur stdout
     halt=$(grep -o "CPU halted after [0-9]* cycles" "$log" | head -1)
     pc=$(grep -o "PC:[0-9A-F]*" "$log" | tail -1)
@@ -78,6 +78,6 @@ sweep_one() {
 export -f one sweep_one
 export ROOT
 
-[ -x "$ROOT/oric1-emu" ] || { echo "oric1-emu non construit" >&2; exit 1; }
+[ -x "$ROOT/phosphoric" ] || { echo "phosphoric non construit" >&2; exit 1; }
 find "$DIR" -maxdepth 1 -type f -iname '*.tap' -print0 | sort -z |
     xargs -0 -P "$JOBS" -I{} bash -c 'sweep_one "$1"' _ {}

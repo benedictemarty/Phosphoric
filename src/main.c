@@ -2764,7 +2764,7 @@ static int main_auto_loci_usb(emulator_t* emu, cli_opts_t* cfg) {
     log_info("LOCI-USB détectée sur %s (protocole %u, firmware du pont %u, 'L' en $0319) : "
              "carte LOCI en mode usb (--no-auto-loci pour l'éviter)", dev, info.proto, info.fw);
     static char* extra[4];
-    extra[0] = emu->argc > 0 ? emu->argv[0] : "oric1-emu";
+    extra[0] = emu->argc > 0 ? emu->argv[0] : "phosphoric";
     extra[1] = "--loci-hw";
     extra[2] = dev;
     extra[3] = NULL;

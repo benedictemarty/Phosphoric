@@ -14,7 +14,7 @@ make SDL2=1
 make tools                                   # bas2tap
 ./bas2tap tools/modem/modem_term.bas -o tools/modem/modem_term.tap --auto-run
 
-./oric1-emu -r roms/basic11b.rom --loci \
+./phosphoric -r roms/basic11b.rom --loci \
     --serial com:9600,8,N,1,/dev/ttyACM0 --acia-addr 0380 \
     --serial-buffer 1024 \
     -t tools/modem/modem_term.tap -f
@@ -70,7 +70,7 @@ NNTP exige des fins de ligne **CRLF**, alors que le terminal telehack envoie du
 CR seul. Utilise la variante `modem_nntp.bas` (envoie CR+LF sur RETURN) :
 
 ```bash
-./oric1-emu -r roms/basic11b.rom --loci \
+./phosphoric -r roms/basic11b.rom --loci \
     --serial com:9600,8,N,1,/dev/ttyACM0 --acia-addr 0380 --serial-buffer 8192 \
     -t tools/modem/modem_nntp.tap -f
 ```

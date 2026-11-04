@@ -18,7 +18,7 @@ couvrant **toutes les touches et combinaisons** en mode **ORIC-1 (BASIC 1.0)** e
 # Démonstration interactive (affiche les codes à l'écran)
 make tools                                   # build bas2tap
 ./bas2tap tools/keytest/keydetect.bas -o /tmp/kd.tap --auto-run
-./oric1-emu -r roms/basic11b.rom -t /tmp/kd.tap -f   # puis RUN, tapez des touches
+./phosphoric -r roms/basic11b.rom -t /tmp/kd.tap -f   # puis RUN, tapez des touches
 
 # Validation automatisée complète (ORIC-1 + Atmos)
 ./tools/keytest/validate_keys.sh

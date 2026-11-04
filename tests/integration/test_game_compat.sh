@@ -20,7 +20,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 BASIC_ROM=${BASIC_ROM:-roms/basic11b.rom}
 LIB=${ORIC_PROGRAMS_LIB:-$HOME/OricProgramsLib}
 ORICLIB=${ORICLIB_TAP:-$HOME/oriclib/games/tap}

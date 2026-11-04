@@ -135,7 +135,7 @@ Pour 1200 baud 8-N-1 : `POKE 799,24` ($18)
 ### 1. Loopback (test)
 
 ```bash
-./oric1-emu -r roms/basic10.rom --serial loopback
+./phosphoric -r roms/basic10.rom --serial loopback
 ```
 
 TX revient directement en RX. Buffer circulaire 256 octets. Utile pour vérifier que l'ACIA fonctionne sans réseau.
@@ -143,7 +143,7 @@ TX revient directement en RX. Buffer circulaire 256 octets. Utile pour vérifier
 ### 2. TCP brut
 
 ```bash
-./oric1-emu -r roms/basic10.rom --serial tcp:bbs.host:23
+./phosphoric -r roms/basic10.rom --serial tcp:bbs.host:23
 ```
 
 Connexion TCP directe. Pas de commandes AT, pas de flow control modem. Les données sont envoyées/reçues byte par byte sur le socket. Connexion établie au démarrage.
@@ -152,13 +152,13 @@ Connexion TCP directe. Pas de commandes AT, pas de flow control modem. Les donn�
 
 ```bash
 # Mode commande pur — le programme ORIC dial via ATD
-./oric1-emu -r roms/basic10.rom --serial modem
+./phosphoric -r roms/basic10.rom --serial modem
 
 # Host prédéfini — ATD seul connecte ici
-./oric1-emu -r roms/basic10.rom --serial modem:bbs.host:23
+./phosphoric -r roms/basic10.rom --serial modem:bbs.host:23
 
 # Mode serveur — accepte les connexions entrantes
-./oric1-emu -r roms/basic10.rom --serial modem:listen:2323
+./phosphoric -r roms/basic10.rom --serial modem:listen:2323
 ```
 
 Démarre en **mode commande**. L'ACIA voit les réponses AT comme des données reçues.
@@ -206,7 +206,7 @@ Exemple BASIC complet :
 ### 4. Digitelec DTL 2000
 
 ```bash
-./oric1-emu -r roms/basic10.rom --serial digitelec:minitel.host:516
+./phosphoric -r roms/basic10.rom --serial digitelec:minitel.host:516
 ```
 
 Émule le modem externe Digitelec DTL 2000 (1984). Pas de commandes AT. Contrôle par les lignes RS232 :
@@ -219,7 +219,7 @@ Exemple BASIC complet :
 ### 5. PTY (pseudo-terminal)
 
 ```bash
-./oric1-emu -r roms/basic10.rom --serial pty
+./phosphoric -r roms/basic10.rom --serial pty
 ```
 
 Crée un pseudo-terminal. Le log affiche le device path :
@@ -231,7 +231,7 @@ Connectez minicom/screen/picocom sur ce device depuis un autre terminal.
 ### 6. COM (port série réel)
 
 ```bash
-./oric1-emu -r roms/basic10.rom --serial com:9600,8,N,1,/dev/ttyUSB0
+./phosphoric -r roms/basic10.rom --serial com:9600,8,N,1,/dev/ttyUSB0
 ```
 
 Vrai port série via termios (Linux). Format : `baud,databits,parité,stopbits,device`.
@@ -240,7 +240,7 @@ Vrai port série via termios (Linux). Format : `baud,databits,parité,stopbits,d
 
 ```bash
 # Sous --loci, l'ACIA est mappée à $0380 (défaut firmware LOCI)
-./oric1-emu -r roms/basic10.rom --loci --serial picowifi:MonWiFi:motdepasse
+./phosphoric -r roms/basic10.rom --loci --serial picowifi:MonWiFi:motdepasse
 ```
 
 Émule le modem WiFi de sodiumlb (Pico W exposée par LOCI comme ACIA). Le
@@ -265,7 +265,7 @@ reste l'option la plus idiomatique (V23 1200/75 natif, sans commandes AT).
 modem (ATI, AT$SSID, ATC1…) et affiche les réponses :
 
 ```bash
-./oric1-emu -r roms/basic11b.rom \
+./phosphoric -r roms/basic11b.rom \
   --acia-addr 0380 --serial picowifi:HomeNet --serial-buffer 512 \
   -t examples/picowifi_test.tap -f
 ```
@@ -280,7 +280,7 @@ comprise). Pour que l'état WiFi *rapporté* (IP, connectivité, SSID) soit
 réel lui aussi — au lieu de simulé — exporte :
 
 ```bash
-PHOSPHORIC_PICOWIFI_REALNET=1 ./oric1-emu ... --serial picowifi ...
+PHOSPHORIC_PICOWIFI_REALNET=1 ./phosphoric ... --serial picowifi ...
 ```
 
 `ATI` affiche alors l'IP locale réelle (`IP: 192.168.1.19 (host)`), `ATC?`
@@ -365,18 +365,18 @@ Change l'adresse de base (défaut $031C). Pour les interfaces non-standard.
 
 ```bash
 # Minitel via modem Hayes (le programme ORIC fait ATD)
-./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
+./phosphoric -r roms/basic10.rom -t orictel.tap -f \
   --serial modem \
   --serial-buffer 256 \
   --serial-trace serial.log
 
 # Ou via Digitelec (DTR pour connecter, pas de commandes AT)
-./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
+./phosphoric -r roms/basic10.rom -t orictel.tap -f \
   --serial digitelec:pavi.3617.fr:3617 \
   --serial-trace serial.log
 
 # Ou TCP direct (connexion immédiate, pas de modem)
-./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
+./phosphoric -r roms/basic10.rom -t orictel.tap -f \
   --serial tcp:pavi.3617.fr:3617 \
   --serial-v23 \
   --serial-buffer 256 \

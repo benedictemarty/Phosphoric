@@ -18,7 +18,7 @@ encore vivants sur la pile (capture avant le `RETURN`).
 
 ```bash
 PROG='500 FORI=1TO9\n510 GOSUB600\n520 NEXTI\n530 END\n600 POKE767,170\n610 RETURN\nRUN\n'
-./oric1-emu-web -r roms/basic11b.rom --headless \
+./phosphoric-web -r roms/basic11b.rom --headless \
   --type-keys-when BC9A:52:"$PROG" \
   --dump-ram-when 2FF:AA:/tmp/stk.bin -c 30000000
 ```

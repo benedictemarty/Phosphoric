@@ -21,7 +21,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-EMU="./oric1-emu"
+EMU="./phosphoric"
 ROM="roms/basic11b.rom"
 BAS="examples/dtl2000-test.bas"
 TAP="examples/dtl2000-test.tap"

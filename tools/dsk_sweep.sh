@@ -32,7 +32,7 @@ run() {   # run TIMING DSK CAPTURE → « verdict<TAB>détail<TAB>écran »
     bin=$(mktemp); log=$(mktemp)
     local extra=()
     [ -n "$shot" ] && extra=(--screenshot-at "29000000:$shot")
-    timeout 45 "$ROOT/oric1-emu" --no-config -r "$ROOT/roms/basic11b.rom" \
+    timeout 45 "$ROOT/phosphoric" --no-config -r "$ROOT/roms/basic11b.rom" \
         --disk-rom "$ROOT/roms/microdis.rom" -d "$dsk" --fdc-timing "$timing" -n \
         -c 30000000 --dump-ram-at "29000000:$bin" "${extra[@]}" >"$log" 2>&1; rc=$?
     halt=$(grep -o "CPU halted after [0-9]* cycles" "$log" | head -1)
@@ -70,6 +70,6 @@ sweep_one() {
 export -f run sweep_one
 export ROOT
 
-[ -x "$ROOT/oric1-emu" ] || { echo "oric1-emu non construit" >&2; exit 1; }
+[ -x "$ROOT/phosphoric" ] || { echo "phosphoric non construit" >&2; exit 1; }
 find "$DIR" -maxdepth 1 -type f -iname '*.dsk' -print0 | sort -z |
     xargs -0 -P "$JOBS" -I{} bash -c 'sweep_one "$1"' _ {}

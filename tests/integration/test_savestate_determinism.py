@@ -26,7 +26,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from phos_smoke_client import PhosClient  # noqa: E402
 
-EMU = "./oric1-emu"
+EMU = "./phosphoric"
 ROM = "roms/basic11b.rom" if os.path.exists("roms/basic11b.rom") else "roms/basic10.rom"
 STEPS_BEFORE_SAVE = 37       # arbitraire, pas aligné sur une trame ni une ligne
 RASTER_LINE = 100

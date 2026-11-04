@@ -75,14 +75,14 @@ Phosphoric necessite un fichier ROM ORIC pour demarrer. Les ROM ne sont pas dist
 
 ```bash
 # ORIC-1 avec BASIC 1.0
-./oric1-emu -r roms/basic10.rom
+./phosphoric -r roms/basic10.rom
 
 # ORIC Atmos avec BASIC 1.1 (auto-detecte)
-./oric1-emu -r roms/basic11b.rom
+./phosphoric -r roms/basic11b.rom
 
 # Forcer le modele
-./oric1-emu -r roms/basic10.rom --model oric1
-./oric1-emu -r roms/basic11b.rom --model atmos
+./phosphoric -r roms/basic10.rom --model oric1
+./phosphoric -r roms/basic11b.rom --model atmos
 ```
 
 ### ROMs supportees
@@ -101,13 +101,13 @@ Phosphoric necessite un fichier ROM ORIC pour demarrer. Les ROM ne sont pas dist
 
 **Chargement interactif (CLOAD) :**
 ```bash
-./oric1-emu -r basic10.rom -t jeu.tap
+./phosphoric -r basic10.rom -t jeu.tap
 ```
 Au prompt BASIC, tapez `CLOAD""` puis Entree. Le programme se charge depuis la cassette virtuelle.
 
 **Chargement rapide (injection directe) :**
 ```bash
-./oric1-emu -r basic10.rom -t jeu.tap -f
+./phosphoric -r basic10.rom -t jeu.tap -f
 ```
 Le programme est injecte directement en memoire via le patch ROM, sans delai.
 Les programmes multi-blocs (ex: TYRANN.TAP) sont supportes : le premier bloc est injecte,
@@ -116,7 +116,7 @@ stale sont automatiquement recorrigees apres chaque chargement.
 
 **Chargement au niveau signal (`--tape-signal`) :**
 ```bash
-./oric1-emu -r basic10.rom -t jeu.tap --tape-signal
+./phosphoric -r basic10.rom -t jeu.tap --tape-signal
 ```
 Genere la vraie forme d'onde de la bande sur l'entree VIA CB1, lue par la
 routine CLOAD **reelle** de la ROM — comme sur une vraie machine ou sous
@@ -141,10 +141,10 @@ Le boot disquette necessite le BASIC ROM et le Microdisc ROM :
 
 ```bash
 # Un seul lecteur (A:)
-./oric1-emu -r basic10.rom --disk-rom microdis.rom -d SEDORIC.DSK
+./phosphoric -r basic10.rom --disk-rom microdis.rom -d SEDORIC.DSK
 
 # Plusieurs lecteurs (A: B: C: D:)
-./oric1-emu -r basic10.rom --disk-rom microdis.rom \
+./phosphoric -r basic10.rom --disk-rom microdis.rom \
   -d systeme.dsk --disk1 donnees.dsk --disk2 jeux.dsk --disk3 outils.dsk
 ```
 
@@ -152,7 +152,7 @@ Le boot disquette necessite le BASIC ROM et le Microdisc ROM :
 
 Partager un repertoire entre le PC et l'emulateur :
 ```bash
-./oric1-emu -r basic10.rom --hostfs /chemin/vers/dossier
+./phosphoric -r basic10.rom --hostfs /chemin/vers/dossier
 ```
 
 ---
@@ -164,7 +164,7 @@ Partager un repertoire entre le PC et l'emulateur :
 Par defaut, l'emulateur utilise une disposition QWERTY. Pour passer en AZERTY :
 
 ```bash
-./oric1-emu -r basic10.rom --keyboard azerty
+./phosphoric -r basic10.rom --keyboard azerty
 ```
 
 En mode AZERTY, l'emulateur utilise les evenements texte SDL2, donc la saisie fonctionne naturellement quelle que soit la disposition physique du clavier.
@@ -204,7 +204,7 @@ Phosphoric emule l'interface joystick IJK, l'adaptateur le plus courant pour l'O
 ### Mode clavier
 
 ```bash
-./oric1-emu -r basic10.rom -j keys
+./phosphoric -r basic10.rom -j keys
 ```
 
 | Touche | Direction |
@@ -216,7 +216,7 @@ Phosphoric emule l'interface joystick IJK, l'adaptateur le plus courant pour l'O
 ### Mode manette SDL2
 
 ```bash
-./oric1-emu -r basic10.rom -j gamepad
+./phosphoric -r basic10.rom -j gamepad
 ```
 
 Utilise la premiere manette SDL2 detectee. Les boutons A, B et X correspondent au feu. Le D-pad et le stick analogique gauche controlent les directions. Le branchement a chaud est supporte.
@@ -234,7 +234,7 @@ L'ORIC possede deux modes d'affichage :
 ### Echelle d'affichage
 
 ```bash
-./oric1-emu -r basic10.rom --scale 2
+./phosphoric -r basic10.rom --scale 2
 ```
 
 | Echelle | Resolution fenetre |
@@ -250,13 +250,13 @@ Le rendu utilise le scaling nearest-neighbor (pixel-perfect, sans flou). Appuyer
 
 ```bash
 # Capture a la fermeture
-./oric1-emu -r basic10.rom --screenshot sortie.bmp
+./phosphoric -r basic10.rom --screenshot sortie.bmp
 
 # Capture apres N cycles
-./oric1-emu -r basic10.rom --screenshot-at 1000000:sortie.ppm
+./phosphoric -r basic10.rom --screenshot-at 1000000:sortie.ppm
 
 # Dump periodique de frames
-./oric1-emu -r basic10.rom --frame-dump /tmp/frames --frame-dump-interval 50
+./phosphoric -r basic10.rom --frame-dump /tmp/frames --frame-dump-interval 50
 ```
 
 Formats supportes : PPM (P6 binaire) et BMP (24 bits non compresse).
@@ -295,7 +295,7 @@ MUSIC 1,4,1,15 : MUSIC 2,4,5,15 : PLAY 1,0,1,0
 Capture la sortie LPRINT et LLIST dans un fichier texte :
 
 ```bash
-./oric1-emu -r basic10.rom -p sortie.txt
+./phosphoric -r basic10.rom -p sortie.txt
 ```
 
 ```basic
@@ -309,7 +309,7 @@ LLIST
 Emule le traceur 4 couleurs MCP-40 (Sharp CE-150 / CGP-115) :
 
 ```bash
-./oric1-emu -r basic10.rom -p traceur.bmp --printer-type mcp40
+./phosphoric -r basic10.rom -p traceur.bmp --printer-type mcp40
 ```
 
 Le traceur utilise un framebuffer 480x400 pixels et exporte en BMP a la fermeture.
@@ -350,10 +350,10 @@ LPRINT "D0,0"        : REM Fermer le carre
 
 ```bash
 # Sauvegarder a la fermeture
-./oric1-emu -r basic10.rom --save-state partie.ost
+./phosphoric -r basic10.rom --save-state partie.ost
 
 # Charger au demarrage
-./oric1-emu -r basic10.rom --load-state partie.ost
+./phosphoric -r basic10.rom --load-state partie.ost
 ```
 
 ### Format .ost
@@ -372,10 +372,10 @@ Le format binaire `.ost` (Oric Save sTate) contient :
 
 ```bash
 # Entrer dans le debogueur au lancement
-./oric1-emu -r basic10.rom --debug
+./phosphoric -r basic10.rom --debug
 
 # Definir un breakpoint initial
-./oric1-emu -r basic10.rom --break ED8A
+./phosphoric -r basic10.rom --break ED8A
 ```
 
 Pendant l'emulation, appuyer sur **F9** pour entrer dans le debogueur.
@@ -423,10 +423,10 @@ dbg> s               # Step
 Enregistre chaque instruction executee avec le desassemblage et l'etat des registres :
 
 ```bash
-./oric1-emu -r basic10.rom --trace trace.log
+./phosphoric -r basic10.rom --trace trace.log
 
 # Limiter a N instructions
-./oric1-emu -r basic10.rom --trace trace.log --trace-max 10000
+./phosphoric -r basic10.rom --trace trace.log --trace-max 10000
 ```
 
 **Format de sortie** (une ligne par instruction) :
@@ -441,7 +441,7 @@ CCCCCCCC  AAAA  XX XX XX  MNEMONIC OPERAND       A=XX X=XX Y=XX SP=XX P=XX
 Genere un rapport de performance a la fermeture :
 
 ```bash
-./oric1-emu -r basic10.rom --profile profil.txt --cycles 1000000
+./phosphoric -r basic10.rom --profile profil.txt --cycles 1000000
 ```
 
 Le rapport contient :
@@ -466,7 +466,7 @@ les IDE ne sont pas verifies. Pour deboguer, utiliser `--control` (ci-dessous)
 ou le debogueur integre (F9 / `--debug`).
 
 ```bash
-./oric1-emu -r basic11b.rom --gdb=1234      # attend `target remote :1234`
+./phosphoric -r basic11b.rom --gdb=1234      # attend `target remote :1234`
 ```
 
 Details, exemples de session et mapping registres : [docs/gdb_remote.md](../gdb_remote.md).
@@ -478,8 +478,8 @@ l'emulateur depuis un IDE ou un script : injection clavier, lecture memoire,
 save/load state, hot-swap media, evenements. C'est le socle d'OricForge.
 
 ```bash
-./oric1-emu -r basic11b.rom -n --control     # sans fenetre, non cadence (scripts, CI)
-./oric1-emu -r basic11b.rom --control        # avec fenetre cadencee a 50 Hz (2.31.2)
+./phosphoric -r basic11b.rom -n --control     # sans fenetre, non cadence (scripts, CI)
+./phosphoric -r basic11b.rom --control        # avec fenetre cadencee a 50 Hz (2.31.2)
 ```
 
 Sans `-n`, la fenetre est affichee et cadencee comme une session normale, et garde
@@ -497,7 +497,7 @@ fichiers cassette/disque en sandbox.
 
 ```bash
 make HTTPAPI=1
-./oric1-emu -r basic11b.rom -n --http-api=8888 --http-api-root ./sandbox
+./phosphoric -r basic11b.rom -n --http-api=8888 --http-api-root ./sandbox
 ```
 
 `--http-api-bind` (defaut 127.0.0.1), `--http-api-root` (sandbox `/tape`,`/disk`).
@@ -517,10 +517,10 @@ Analyser une ROM pour extraire des informations structurelles :
 
 ```bash
 # Afficher sur stdout
-./oric1-emu -r basic10.rom --rom-info
+./phosphoric -r basic10.rom --rom-info
 
 # Ecrire dans un fichier
-./oric1-emu -r basic10.rom --rom-info rapport.txt
+./phosphoric -r basic10.rom --rom-info rapport.txt
 ```
 
 Le rapport contient :
@@ -554,10 +554,10 @@ Options associees : `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
 
 ```bash
 # BBS via TCP, cadence temps reel (indispensable pour le timing reseau)
-./oric1-emu -r basic11b.rom --serial tcp:bbs.example.org:6502 --realtime
+./phosphoric -r basic11b.rom --serial tcp:bbs.example.org:6502 --realtime
 
 # Modem WiFi LOCI
-./oric1-emu -r basic11b.rom --loci --serial picowifi:MonWiFi:motdepasse
+./phosphoric -r basic11b.rom --loci --serial picowifi:MonWiFi:motdepasse
 ```
 
 Dans le menu F1, la carte **LOCI** a un reglage **Modem Wi-Fi (picowifi)** :
@@ -630,7 +630,7 @@ que le verrouillage Fn bascule), **Ctrl+Alt+M** = appui court (menu) et
 jamais transmis a l'Oric.
 
 ```bash
-./oric1-emu -r basic11b.rom --loci --loci-flash ./loci_files
+./phosphoric -r basic11b.rom --loci --loci-flash ./loci_files
 ```
 
 Documentation complete (menu, ABI firmware, timings, cles USB) :
@@ -652,8 +652,8 @@ Documentation complete (menu, ABI firmware, timings, cles USB) :
 
 ```bash
 # Enregistrer une demo puis la rejouer en video
-./oric1-emu -r basic11b.rom --record demo.phm
-./oric1-emu -r basic11b.rom --replay demo.phm --video demo.avi
+./phosphoric -r basic11b.rom --record demo.phm
+./phosphoric -r basic11b.rom --replay demo.phm --video demo.avi
 ```
 
 Details : [docs/movie_replay.md](../movie_replay.md).
@@ -671,7 +671,7 @@ standard tant qu'elle reste verrouillee**. Registres a `$0340-$035F`.
 `AAA=VV` hex separees par des virgules) :
 
 ```bash
-./oric1-emu -r basic11b.rom --ula-ng-poke 340=4E,340=47,341=01,348=07,349=00,34A=F0
+./phosphoric -r basic11b.rom --ula-ng-poke 340=4E,340=47,341=01,348=07,349=00,34A=F0
 ```
 
 Specification et guide : [docs/ula-ng/](../ula-ng/README-ULA-NG.md).
@@ -685,10 +685,10 @@ Specification et guide : [docs/ula-ng/](../ula-ng/README-ULA-NG.md).
 Diffuse l'ecran de l'emulateur en streaming MJPEG :
 
 ```bash
-./oric1-emu -r basic10.rom --cast-server
+./phosphoric -r basic10.rom --cast-server
 # Serveur demarre sur http://localhost:8080/stream
 
-./oric1-emu -r basic10.rom --cast-server=9090
+./phosphoric -r basic10.rom --cast-server=9090
 # Port personnalise
 ```
 
@@ -700,11 +700,11 @@ Points d'acces :
 
 ```bash
 # Decouvrir les appareils Chromecast sur le reseau
-./oric1-emu -r basic10.rom --cast-discover
+./phosphoric -r basic10.rom --cast-discover
 
 # Caster vers un Chromecast
-./oric1-emu -r basic10.rom --cast-server --cast-to
-./oric1-emu -r basic10.rom --cast-server --cast-to="Salon"
+./phosphoric -r basic10.rom --cast-server --cast-to
+./phosphoric -r basic10.rom --cast-server --cast-to="Salon"
 ```
 
 Le protocole CASTV2 natif inclut : TLS, protobuf, heartbeat PING/PONG, lancement DashCast.
@@ -718,7 +718,7 @@ Le protocole CASTV2 natif inclut : TLS, protobuf, heartbeat PING/PONG, lancement
 Executer sans affichage (pour CI, tests, scripting) :
 
 ```bash
-./oric1-emu -r basic10.rom --headless --cycles 1000000
+./phosphoric -r basic10.rom --headless --cycles 1000000
 ```
 
 ### Saisie clavier automatique
@@ -727,7 +727,7 @@ Simuler des frappes clavier apres un delai en cycles :
 
 ```bash
 # Taper CLOAD"" + Entree apres 3M cycles
-./oric1-emu -r basic10.rom -t jeu.tap --headless \
+./phosphoric -r basic10.rom -t jeu.tap --headless \
   --type-keys '3000000:CLOAD""\n'
 
 # Sequences speciales :
@@ -748,7 +748,7 @@ pouvait etre vue sans SHIFT (`:` devenait `;`). Memes regles pour la commande
 ### Sortie verbose
 
 ```bash
-./oric1-emu -r basic10.rom -v    # Logs DEBUG
+./phosphoric -r basic10.rom -v    # Logs DEBUG
 ```
 
 ---
@@ -861,14 +861,14 @@ est `.COM` (un `.BIN` donnerait `?FILE NOT FOUND ERROR`).
 
 ## Reference CLI complete
 
-> Liste alignee sur `./oric1-emu --help` de la v1.110.0-alpha ; les options ajoutees depuis
+> Liste alignee sur `./phosphoric --help` de la v1.110.0-alpha ; les options ajoutees depuis
 > (dont `--config`, `--no-config`, `--menu-screenshot` du menu F1) sont decrites par
-> `./oric1-emu --help`, qui fait foi.
+> `./phosphoric --help`, qui fait foi.
 > Certaines options exigent un build specifique : `--tui` (TUI=1),
 > `--http-api` (HTTPAPI=1), `--cast-*` (CAST=1), backend `midi:` (MIDI=1).
 
 ```
-./oric1-emu [OPTIONS]
+./phosphoric [OPTIONS]
 
 ROM, modele et hote :
   -r, --rom FILE             Charger un fichier ROM (BASIC 1.0/1.1) ; sans -r :

@@ -29,19 +29,19 @@ Options : `--scale N` (échelle SDL, défaut 2), `--rom CHEMIN` (défaut
 
 ```bash
 # Chunky 4bpp 320x200, 16 couleurs, palette animée (machine code)
-./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_chunky.tap -f --render-software --scale 2
+./phosphoric -r roms/basic11b.rom -t demos/ula-ng/ng_chunky.tap -f --render-software --scale 2
 
 # Texte 80 colonnes (patiente ~30 s : le remplissage de l'écran $A000 est en BASIC)
-./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_text80.tap -f --render-software --scale 2
+./phosphoric -r roms/basic11b.rom -t demos/ula-ng/ng_text80.tap -f --render-software --scale 2
 
 # Attributs parallèles : mosaïque de couleur PAR CELLULE (impossible sans color clash)
-./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_attributes.tap -f --render-software --scale 2
+./phosphoric -r roms/basic11b.rom -t demos/ula-ng/ng_attributes.tap -f --render-software --scale 2
 
 # Copper / palette relatchée par scanline : barres raster arc-en-ciel
-./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_copper.tap -f --render-software --scale 2
+./phosphoric -r roms/basic11b.rom -t demos/ula-ng/ng_copper.tap -f --render-software --scale 2
 
 # Sprite matériel 16x16 : losange qui rebondit
-./oric1-emu -r roms/basic11b.rom -t demos/ula-ng/ng_sprite.tap -f --render-software --scale 2
+./phosphoric -r roms/basic11b.rom -t demos/ula-ng/ng_sprite.tap -f --render-software --scale 2
 ```
 
 ## Les démos
@@ -66,11 +66,11 @@ registres `$0340-$035F` appliquée au démarrage. Exemples (combinables avec
 
 ```bash
 # Chunky : déverrouillage + NG_MODE=$05 + palette index 0 = magenta
-./oric1-emu -r roms/basic11b.rom -n --ula-ng-poke "340=4E,340=47,341=05,348=00,349=0F,34A=0F" \
+./phosphoric -r roms/basic11b.rom -n --ula-ng-poke "340=4E,340=47,341=05,348=00,349=0F,34A=0F" \
     --screenshot-at 4000000:/tmp/chunky.ppm -c 4500000
 
 # 80 colonnes : déverrouillage + NG_MODE=$09
-./oric1-emu -r roms/basic11b.rom -n --ula-ng-poke "340=4E,340=47,341=09" \
+./phosphoric -r roms/basic11b.rom -n --ula-ng-poke "340=4E,340=47,341=09" \
     --screenshot-at 4000000:/tmp/t80.ppm -c 4500000
 ```
 

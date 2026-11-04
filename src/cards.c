@@ -481,7 +481,7 @@ char** cards_build_argv(const cards_state_t* st, int argc, char* const argv[], i
     const bool loci_hle = iloci >= 0 && st->card[iloci].on && loci_mode_is(st, LOCI_MODE_HLE);
     const bool loci_menu = loci_hle && strcmp(st->card[iloci].value[loci_param("menu")], "oui") == 0;
     const char* basic_rom = "roms/basic11b.rom";
-    push(&av, &n, &cap, argc > 0 ? argv[0] : "oric1-emu");
+    push(&av, &n, &cap, argc > 0 ? argv[0] : "phosphoric");
     /* 1. Options d'origine, sans celles des cartes (ni -r si LOCI la fixe). */
     for (int a = 1; a < argc; a++) {
         char name[48];
@@ -730,7 +730,7 @@ char** cards_config_argv(const char* path, int argc, char* const argv[], int* ou
     if (loci_modem_params(&il, &pm, &pp) && ia >= 0 && mentioned[ia])
         set_value(&adopted.card[il], pm, LOCI_MODEM_NONE);
     if (!any) return NULL;
-    char* argv0[] = { argc > 0 ? argv[0] : "oric1-emu", NULL };
+    char* argv0[] = { argc > 0 ? argv[0] : "phosphoric", NULL };
     int n = 0;
     char** av = cards_build_argv(&adopted, 1, argv0, &n);
     /* --no-config-cards final retiré ; -r du menu LOCI retiré si la ligne de

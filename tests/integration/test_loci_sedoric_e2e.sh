@@ -16,7 +16,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 NATIVE_ROM=roms/basic11b.rom
 DISK_ROM=roms/microdis.rom
 LOCI_ROM=roms/loci/locirom
@@ -66,7 +66,7 @@ echo "  LOCI/Sedoric E2E regression tests"
 echo "═══════════════════════════════════════════════════════"
 
 if [ ! -x "$EMU" ]; then
-    echo "  oric1-emu not built — skipping all (run: make SDL2=1 or make)"
+    echo "  phosphoric not built — skipping all (run: make SDL2=1 or make)"
     exit 0
 fi
 

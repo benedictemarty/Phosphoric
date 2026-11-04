@@ -24,7 +24,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-EMU="./oric1-emu"
+EMU="./phosphoric"
 ROM="roms/basic11b.rom"
 BAS2TAP="./bas2tap"
 TMP="$(mktemp -d /tmp/serial_file.XXXXXX)"

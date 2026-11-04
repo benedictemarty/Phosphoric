@@ -21,7 +21,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-EMU=${EMU:-./oric1-emu}
+EMU=${EMU:-./phosphoric}
 ROM=roms/basic11b.rom
 DISK_ROM=roms/microdis.rom
 MANIFEST=tests/corpus/manifest.sha256

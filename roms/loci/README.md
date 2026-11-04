@@ -17,7 +17,7 @@ BSD-3-Clause, Copyright (c) 2024 Sodiumlightbaby — see source repository.
 ## Usage in Phosphoric
 
 ```bash
-./oric1-emu -r roms/loci/locirom --loci
+./phosphoric -r roms/loci/locirom --loci
 ```
 
 Requires Sprint 34y+ (`--loci` flag for MIA emulation at $03A0-$03BF).

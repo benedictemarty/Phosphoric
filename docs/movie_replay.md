@@ -13,13 +13,13 @@ référence).
 
 ```bash
 # Enregistrer (interactif, SDL)
-./oric1-emu -r roms/basic11b.rom --record session.phm
+./phosphoric -r roms/basic11b.rom --record session.phm
 
 # Rejouer (le clavier live est ignoré)
-./oric1-emu -r roms/basic11b.rom --replay session.phm
+./phosphoric -r roms/basic11b.rom --replay session.phm
 
 # Régression CI : rejouer headless puis capturer l'écran final
-./oric1-emu -r roms/basic11b.rom -n --replay session.phm --screenshot out.ppm
+./phosphoric -r roms/basic11b.rom -n --replay session.phm --screenshot out.ppm
 ```
 
 En mode headless, le rejeu **sort automatiquement** une fois le movie épuisé.

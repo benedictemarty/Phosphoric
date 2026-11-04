@@ -39,7 +39,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-EMU="./oric1-emu"
+EMU="./phosphoric"
 ROM="roms/basic11b.rom"
 BAS2TAP="./bas2tap"
 BAS="examples/loci_acia_e2e.bas"

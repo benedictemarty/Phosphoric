@@ -256,7 +256,7 @@ TEST(test_config_roundtrip_and_precedence) {
     ASSERT_TRUE(strstr(buf, "carte.jasmin=non\n") != NULL);
     ASSERT_TRUE(strstr(buf, "rom_disque=") == NULL);
     {   /* Relues au lancement en options de carte (ligne de commande vide). */
-        char* argv0[] = { "oric1-emu", NULL };
+        char* argv0[] = { "phosphoric", NULL };
         int xc = 0;
         char** xa = cards_config_argv("t.cfg", 1, argv0, &xc);
         ASSERT_TRUE(xa != NULL && xc == 3);

@@ -7,7 +7,7 @@
 > Démarrage rapide :
 > ```bash
 > make HTTPAPI=1                       # (ajouter SDL2=1 pour la GUI)
-> ./oric1-emu -r roms/basic11b.rom --http-api=8888 --http-api-root ./disks
+> ./phosphoric -r roms/basic11b.rom --http-api=8888 --http-api-root ./disks
 > curl -s localhost:8888/regs
 > curl -s -X POST --data 'path=game.tap' localhost:8888/tape
 > curl -s -X POST localhost:8888/reset

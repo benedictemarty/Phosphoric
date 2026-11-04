@@ -4,7 +4,7 @@
 # Regression: starting without a base system ROM (-r) must not silently boot
 # into a zeroed $C000-$FFFF ROM area.
 #
-# Bug history: `oric1-emu --disk-rom microdis.rom -d demo.dsk -m atmos` (no -r)
+# Bug history: `phosphoric --disk-rom microdis.rom -d demo.dsk -m atmos` (no -r)
 # left the BASIC ROM area empty. A disc demo (Cybernova/Nova2026) that maps the
 # BASIC ROM back in ($0314=$06) then JMPs into it read $00 = BRK and fell into
 # the $0000 BRK loop around cycle ~349k — a crash that looked like a Microdisc
@@ -19,7 +19,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 ROM=roms/basic11b.rom
 DISKROM=roms/microdis.rom
 
@@ -30,7 +30,7 @@ note_pass() { echo "  PASS: $1"; pass=$((pass + 1)); }
 note_fail() { echo "  FAIL: $1"; fail=$((fail + 1)); }
 
 if [ ! -x "$EMU" ]; then
-    echo "  oric1-emu not built — skipping (run: make)"
+    echo "  phosphoric not built — skipping (run: make)"
     exit 0
 fi
 if [ ! -f "$DISKROM" ] || [ ! -f "$ROM" ]; then

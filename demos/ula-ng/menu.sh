@@ -9,7 +9,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEMO="$ROOT/demos/ula-ng"
-EMU="$ROOT/oric1-emu"
+EMU="$ROOT/phosphoric"
 
 SCALE=2
 ROM="$ROOT/roms/basic11b.rom"

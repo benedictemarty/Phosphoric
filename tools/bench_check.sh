@@ -19,7 +19,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 ROM=roms/basic11b.rom
 [ -f "$ROM" ] || ROM=roms/basic10.rom
 BUDGET=${BENCH_BUDGET_US:-1000}

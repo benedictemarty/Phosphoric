@@ -81,7 +81,7 @@ dumps RAM byte-identiques + écran non vide. Référence figée pour comparer
 avant/après chaque lot :
 
 ```
-./oric1-emu -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
+./phosphoric -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
     --headless -c 40000000 --dump-ram-at 39000000:REF.bin
 # md5(REF.bin) = bf4dff781e05175ad8050815eccd6a42
 ```

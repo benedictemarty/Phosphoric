@@ -68,7 +68,7 @@ Référence figée pour comparer avant/après chaque US (média
 `roms/loci/locirom` + `loci_demo.img`) :
 
 ```
-./oric1-emu -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
+./phosphoric -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
     --headless -c 40000000 --dump-ram-at 39000000:REF.bin
 # md5(REF.bin) = bf4dff781e05175ad8050815eccd6a42   (binaire pré-Epic-9)
 ```

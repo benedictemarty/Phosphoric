@@ -14,7 +14,7 @@
 set -u
 cd "$(dirname "$0")/../.."   # racine du dépôt
 
-EMU=./oric1-emu
+EMU=./phosphoric
 TAP=tools/keytest/keytest.tap
 DUMP=/tmp/keyval_dump.bin
 PASS=0; FAIL=0

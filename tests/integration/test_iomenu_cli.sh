@@ -6,7 +6,7 @@
 # graphique (pas en --headless), sauf --config explicite ; --no-config l'ignore.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-EMU="$ROOT/oric1-emu"
+EMU="$ROOT/phosphoric"
 ROM="$ROOT/roms/basic11b.rom"
 [ -x "$EMU" ] || { echo "SKIP: $EMU non construit"; exit 0; }
 [ -f "$ROM" ] || { echo "SKIP: $ROM absent"; exit 0; }

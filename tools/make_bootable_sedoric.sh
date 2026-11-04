@@ -16,7 +16,7 @@
 # Usage : tools/make_bootable_sedoric.sh [SORTIE.dsk] [SYSTEME_MAITRE.dsk]
 set -euo pipefail
 
-EMU=${EMU:-./oric1-emu}
+EMU=${EMU:-./phosphoric}
 ROM=${ROM:-roms/basic11b.rom}
 DISKROM=${DISKROM:-roms/microdis.rom}
 OUT=${1:-bootable.dsk}

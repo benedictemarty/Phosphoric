@@ -50,7 +50,7 @@ if ! make -s -C "$W" -j4 > "$T/build.log" 2>&1; then
     echo "=== result: $pass passed, $fail failed ==="; exit 1
 fi
 ok "construction sans toucher au Makefile, aux options, au bus ni au menu"
-E="$W/oric1-emu"
+E="$W/phosphoric"
 run() { "$E" -r "$ROM" -n "$@" 2>&1; }
 
 h=$(run --help)
@@ -86,7 +86,7 @@ grep -q "Demo card enabled at \$03D8" <<<"$o" && ok "menu et phosphoric.cfg : ca
 
 # Sans la carte, la machine est la même : l'arbre d'origine et l'arbre modifié
 # produisent la même sauvegarde d'état.
-"$ROOT/oric1-emu" -r "$ROM" -n --save-state "$T/a.ost" -c 300000 >/dev/null 2>&1
+"$ROOT/phosphoric" -r "$ROM" -n --save-state "$T/a.ost" -c 300000 >/dev/null 2>&1
 "$E" -r "$ROM" -n --save-state "$T/b.ost" -c 300000 >/dev/null 2>&1
 cmp -s "$T/a.ost" "$T/b.ost" && ok "sans --demo : .ost identique à l'arbre d'origine" || ko ".ost différent sans la carte"
 

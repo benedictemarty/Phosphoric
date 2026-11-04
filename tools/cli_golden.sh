@@ -29,7 +29,7 @@ command -v timeout >/dev/null 2>&1 && TO="timeout ${GOLDEN_TIMEOUT:-60}"
 
 # Les deux binaires tournent sous le MÊME chemin (lien symbolique) : argv[0]
 # apparaît dans l'aide et dans certains messages.
-BIN="$T/oric1-emu"
+BIN="$T/phosphoric"
 abs() { case "$1" in /*) echo "$1" ;; *) echo "$(pwd)/$1" ;; esac; }
 OLD=$(abs "$OLD"); NEW=$(abs "$NEW")
 

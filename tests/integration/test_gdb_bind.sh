@@ -15,7 +15,7 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-EMU=${EMU:-./oric1-emu}
+EMU=${EMU:-./phosphoric}
 
 echo "=== GDB stub: adresse d'écoute ==="
 exec python3 - "$EMU" <<'PY'

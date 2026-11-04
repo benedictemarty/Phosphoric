@@ -18,7 +18,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 
-EMU=./oric1-emu
+EMU=./phosphoric
 BIN2TAP=./bin2tap
 BAS2TAP=./bas2tap
 

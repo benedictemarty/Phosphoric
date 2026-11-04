@@ -8,13 +8,13 @@ Phosphoric supporte maintenant un modem Hayes complet avec commandes AT, utilisa
 
 ```bash
 # Mode commande pur — le programme ORIC choisit la destination via ATD
-./oric1-emu -r roms/basic10.rom --serial modem
+./phosphoric -r roms/basic10.rom --serial modem
 
 # Host prédéfini — ATD seul connecte à ce host
-./oric1-emu -r roms/basic10.rom --serial modem:bbs.host:23
+./phosphoric -r roms/basic10.rom --serial modem:bbs.host:23
 
 # Mode serveur BBS — attend des connexions entrantes
-./oric1-emu -r roms/basic10.rom --serial modem:listen:2323
+./phosphoric -r roms/basic10.rom --serial modem:listen:2323
 ```
 
 ## Commandes AT supportées

@@ -305,7 +305,7 @@ LIB_OBJECTS = $(call obj,$(LIB_SOURCES))
 TOOL_SOURCES = src/storage/tap.c src/utils/logging.c
 
 # Targets
-TARGET = oric1-emu$(EXE)
+TARGET = phosphoric$(EXE)
 TOOLS = bas2tap bin2tap tap2sedoric sedoric-info tap2wav dsk2hfe
 
 # Install paths
@@ -965,7 +965,7 @@ test-check-skips:
 # Garde-fou des refactors de main()/du parseur : rejoue tests/cli_golden/cases.txt
 # sur un binaire de RÉFÉRENCE (ex. construit depuis le commit précédent) et sur
 # celui de la configuration courante ; tout écart (code, sorties, fichiers) échoue.
-#   make test-cli-golden GOLDEN_REF=/chemin/vers/oric1-emu-de-reference
+#   make test-cli-golden GOLDEN_REF=/chemin/vers/phosphoric-de-reference
 test-cli-golden: $(BUILD)/bin/$(TARGET)
 	@test -n "$(GOLDEN_REF)" || { echo "GOLDEN_REF=/chemin/binaire/de/reference requis"; exit 1; }
 	@sh tools/cli_golden.sh "$(GOLDEN_REF)" $(BUILD)/bin/$(TARGET)

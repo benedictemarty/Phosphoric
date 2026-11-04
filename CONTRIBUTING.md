@@ -37,7 +37,7 @@ Objects are built **out of the source tree**, one directory per configuration:
 `build/<config>/` (e.g. `build/host-sdl1-http0-cast0-midi0-tls1-tui0-lociemu/`).
 Switching options (`SDL2=0`, `HTTPAPI=1`, `DEBUG=1`, LOCI backend…) never mixes
 objects, so no `make clean` is needed between variants. Final binaries
-(`oric1-emu`, tools) are copied to the repository root, where scripts expect
+(`phosphoric`, tools) are copied to the repository root, where scripts expect
 them; unit-test binaries stay in `build/<config>/tests/`. `make clean` removes
 `build/` entirely.
 
@@ -210,7 +210,7 @@ When reporting bugs, please include:
 program's exit code.
 
 Before changing the parser or a set-up step, keep a reference binary and
-compare: `make test-cli-golden GOLDEN_REF=/path/to/old/oric1-emu` replays
+compare: `make test-cli-golden GOLDEN_REF=/path/to/old/phosphoric` replays
 `tests/cli_golden/cases.txt` on both and fails on any difference in exit code,
 stdout, stderr or produced files. Add a case there for every new option.
 

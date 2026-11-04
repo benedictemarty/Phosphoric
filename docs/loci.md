@@ -15,13 +15,13 @@ vérifiée sur pièces ; les écarts connus sont listés en fin de document.
 
 ```bash
 # LOCI + modem WiFi picowifi (ACIA 6551 à $0380, adressez $0380 PAS $03A0)
-./oric1-emu -r roms/basic11b.rom --loci --serial picowifi
+./phosphoric -r roms/basic11b.rom --loci --serial picowifi
 
 # Menu LOCI directement au boot
-./oric1-emu -r roms/loci/locirom --loci
+./phosphoric -r roms/loci/locirom --loci
 
 # Image SD FAT16/32 brute comme stockage
-./oric1-emu -r roms/basic11b.rom --loci --loci-sdimg carte.img
+./phosphoric -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
 ### Une carte, trois modes (menu F1)
@@ -54,7 +54,7 @@ pour un Oric physique, il faut la LOCI 1.3. Recette :
 `~/loci/loci-usb/docs/RECETTE-FEATHER.md`.
 
 ```bash
-./oric1-emu --loci-hw /dev/ttyACM0
+./phosphoric --loci-hw /dev/ttyACM0
 ```
 
 Laissé vide, le réglage **Port de la LOCI-USB** est détecté sous Linux par le

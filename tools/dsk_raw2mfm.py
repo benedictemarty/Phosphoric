@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """dsk_raw2mfm.py -- convertit une image disque Oric BRUTE (secteurs concaténés,
-produite p.ex. par `oric1-emu --disk-create`) en conteneur `MFM_DISK` (cadré
+produite p.ex. par `phosphoric --disk-create`) en conteneur `MFM_DISK` (cadré
 A1 A1 A1 FE/FB + CRC), compatible `tap2sedoric`, `sedoric-info` et les outils MFM.
 
 Ordre des secteurs de l'image RAW :

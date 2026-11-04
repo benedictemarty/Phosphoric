@@ -4,7 +4,7 @@
 # une ligne de plus sur stdout) : écart détecté. Ne demande aucune ROM (--help).
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-EMU="$ROOT/${EMU:-oric1-emu}"
+EMU="$ROOT/${EMU:-phosphoric}"
 [ -x "$EMU" ] || { echo "SKIP: $EMU non construit"; exit 0; }
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT

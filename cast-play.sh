@@ -6,7 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-EMU="$SCRIPT_DIR/oric1-emu"
+EMU="$SCRIPT_DIR/phosphoric"
 ROM="$SCRIPT_DIR/roms/basic10.rom"
 DISK_ROM="$SCRIPT_DIR/roms/microdis.rom"
 CAST_PORT=8080
