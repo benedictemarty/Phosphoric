@@ -84,6 +84,7 @@ typedef enum {
     LOCI_OP_MAP_TUNE_TIOD    = 0xA4,
     LOCI_OP_MAP_TUNE_TADR    = 0xA5,
     LOCI_OP_ADJ_SCAN         = 0xA6,
+    LOCI_OP_SET_BANK         = 0xA7,   /* banking 16 Ko $C000-$FFFF (extension) */
     LOCI_OP_GFX              = 0xAE,
     LOCI_OP_RESET_SENTINEL   = 0xFF
 } loci_op_t;
@@ -415,6 +416,14 @@ typedef struct loci_s {
     bool (*rom_swap_cb)(void* ctx, const char* rom_path, uint16_t base_addr);
     void* rom_swap_ctx;
 
+    /* Banking $A7 (MIA_OP_SET_BANK) : état et rappel. A bit 7 = EN, bits 3:0 = SEL
+     * (replié sur 0..3 comme le firmware : base = xram + (SEL << 14)). Le rappel
+     * reçoit la banque de 16 Ko (data = NULL si EN = 0 : ROM interne rétablie). */
+    uint8_t bank_sel;
+    bool    bank_enabled;
+    void  (*bank_swap_cb)(void* ctx, const uint8_t* data, uint32_t size, bool enable);
+    void*   bank_swap_ctx;
+
     /* Session-resume callback. Invoked by op_mia_boot when the guest
      * sets LOCI_BOOT_RESUME (the menu's RETURN, after mia_restore_state):
      * the host maps back the ROM the warm button unmapped. Called once
@@ -596,6 +605,12 @@ void    loci_set_dsk_bus_callbacks(loci_t* loci,
         void (*cpu_irq_clr)(void*),
         void (*sync_overlay)(void*, bool, bool),
         void* ctx);
+
+/* Register the banking callback used by op 0xA7 SET_BANK. */
+void    loci_set_bank_swap_callback(
+            loci_t* loci,
+            void (*cb)(void* ctx, const uint8_t* data, uint32_t size, bool enable),
+            void* ctx);
 
 /* Register the ROM-swap callback used by op 0xA0 MIA_BOOT. */
 void    loci_set_rom_swap_callback(

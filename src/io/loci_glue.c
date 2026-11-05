@@ -235,6 +235,34 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
     return true;
 }
 
+/* Banking $A7 (SET_BANK) : le module remet une banque de 16 Ko de sa xram (ou NULL
+ * pour désactiver). On la sert comme ROM principale $C000-$FFFF. À la première
+ * activation on sauve la ROM interne et les drapeaux mémoire, rétablis à la
+ * désactivation. PAS de reset du 6502 : le firmware ne le fait pas, et le
+ * programme appelant (qui bascule en cours d'exécution) doit pouvoir continuer. */
+void loci_bank_swap_cb(void* ctx, const uint8_t* data, uint32_t size, bool enable) {
+    emulator_t* emu = (emulator_t*)ctx;
+    if (!emu) return;
+    if (enable && data) {
+        if (!emu->loci_bank_saved) {
+            memcpy(emu->loci_bank_rom_backup, emu->memory.rom, sizeof(emu->loci_bank_rom_backup));
+            emu->loci_bank_prev_overlay = emu->memory.overlay_active;
+            emu->loci_bank_prev_romdis  = emu->memory.basic_rom_disabled;
+            emu->loci_bank_saved = true;
+        }
+        uint32_t n = size < sizeof(emu->loci_bank_rom_backup)
+                   ? size : (uint32_t)sizeof(emu->loci_bank_rom_backup);
+        memcpy(emu->memory.rom, data, n);
+        emu->memory.overlay_active     = false;   /* 16 Ko complets, pas $E000 seul */
+        emu->memory.basic_rom_disabled = false;   /* chemin ROM principal */
+    } else if (emu->loci_bank_saved) {
+        memcpy(emu->memory.rom, emu->loci_bank_rom_backup, sizeof(emu->loci_bank_rom_backup));
+        emu->memory.overlay_active     = emu->loci_bank_prev_overlay;
+        emu->memory.basic_rom_disabled = emu->loci_bank_prev_romdis;
+        emu->loci_bank_saved = false;
+    }
+}
+
 /* Map a ROM at $C000 without resetting the 6502 (MIA_BOOT swap, warm
  * button → menu: the CPU then jumps through the new ROM's vectors). */
 static bool loci_rom_map_c000(emulator_t* emu, const char* rom_path) {

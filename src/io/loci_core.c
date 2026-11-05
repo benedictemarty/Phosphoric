@@ -75,6 +75,7 @@ static const char* op_name(uint8_t op) {
         case LOCI_OP_MAP_TUNE_TIOD:   return "MAP_TUNE_TIOD";
         case LOCI_OP_MAP_TUNE_TADR:   return "MAP_TUNE_TADR";
         case LOCI_OP_ADJ_SCAN:        return "ADJ_SCAN";
+        case LOCI_OP_SET_BANK:        return "SET_BANK";
         default:                      return "?";
     }
 }
@@ -244,6 +245,13 @@ void loci_set_dsk_bus_callbacks(loci_t* loci,
     loci->dsk_cpu_irq_clr = cpu_irq_clr;
     loci->dsk_sync_overlay = sync_overlay;
     loci->dsk_bus_ctx = ctx;
+}
+
+void loci_set_bank_swap_callback(loci_t* loci,
+        void (*cb)(void*, const uint8_t*, uint32_t, bool), void* ctx) {
+    if (!loci) return;
+    loci->bank_swap_cb  = cb;
+    loci->bank_swap_ctx = ctx;
 }
 
 void loci_set_rom_swap_callback(loci_t* loci,
@@ -638,6 +646,7 @@ static void dispatch_op(loci_t* loci, uint8_t op) {
         case LOCI_OP_MAP_TUNE_TIOD:   op_map_tune_tiod(loci);  break;
         case LOCI_OP_MAP_TUNE_TADR:   op_map_tune_tadr(loci);  break;
         case LOCI_OP_ADJ_SCAN:        op_adj_scan(loci);       break;
+        case LOCI_OP_SET_BANK:        op_set_bank(loci);       break;
         case LOCI_OP_GFX:             op_gfx(loci);            break;
         default:
             log_debug("LOCI op $%02X (%s) — stubbed, returns ENOSYS",

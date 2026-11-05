@@ -3535,6 +3535,68 @@ TEST(test_6502_initial_jsr_returns_zero) {
     loci_cleanup(&g_loci_for_diff);
 }
 
+/* ── Banking $A7 (MIA_OP_SET_BANK) ──────────────────────────────── */
+
+static struct { int calls; const uint8_t* data; uint32_t size; bool enable; } g_bank_cb;
+
+static void bank_cb_stub(void* ctx, const uint8_t* data, uint32_t size, bool enable) {
+    (void)ctx;
+    g_bank_cb.calls++;
+    g_bank_cb.data = data;
+    g_bank_cb.size = size;
+    g_bank_cb.enable = enable;
+}
+
+TEST(test_op_set_bank_enable_records_state) {
+    loci_t l; loci_init(&l); l.enabled = true;
+    memset(&g_bank_cb, 0, sizeof(g_bank_cb));
+    loci_set_bank_swap_callback(&l, bank_cb_stub, &l);
+    l.regs[LOCI_REG_API_A] = 0x80 | 2;
+    loci_write(&l, 0x03AF, LOCI_OP_SET_BANK);
+    ASSERT_EQ(l.bank_sel, 2);
+    ASSERT_TRUE(l.bank_enabled);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0x82);          /* écho de A */
+    ASSERT_EQ(g_bank_cb.calls, 1);
+    ASSERT_TRUE(g_bank_cb.enable);
+    ASSERT_EQ(g_bank_cb.size, 0x4000);
+    ASSERT_TRUE(g_bank_cb.data == &l.xram[2 * 0x4000]);
+    ASSERT_EQ(l.op_count[LOCI_OP_SET_BANK], 1);
+}
+
+TEST(test_op_set_bank_disable_passes_null) {
+    loci_t l; loci_init(&l); l.enabled = true;
+    memset(&g_bank_cb, 0, sizeof(g_bank_cb));
+    loci_set_bank_swap_callback(&l, bank_cb_stub, &l);
+    l.regs[LOCI_REG_API_A] = 0x00;
+    loci_write(&l, 0x03AF, LOCI_OP_SET_BANK);
+    ASSERT_TRUE(!l.bank_enabled);
+    ASSERT_EQ(g_bank_cb.calls, 1);
+    ASSERT_TRUE(!g_bank_cb.enable);
+    ASSERT_TRUE(g_bank_cb.data == NULL);
+}
+
+TEST(test_op_set_bank_sel_folds_on_0_3) {
+    /* Comme mia_set_bank() du firmware : SEL & 3, donc SEL 5 = banque 1. */
+    loci_t l; loci_init(&l); l.enabled = true;
+    memset(&g_bank_cb, 0, sizeof(g_bank_cb));
+    loci_set_bank_swap_callback(&l, bank_cb_stub, &l);
+    l.regs[LOCI_REG_API_A] = 0x80 | 5;
+    loci_write(&l, 0x03AF, LOCI_OP_SET_BANK);
+    ASSERT_EQ(l.bank_sel, 1);
+    ASSERT_TRUE(g_bank_cb.data == &l.xram[1 * 0x4000]);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0x85);          /* l'écho garde A intact */
+}
+
+TEST(test_op_set_bank_no_callback_still_acks) {
+    loci_t l; loci_init(&l); l.enabled = true;
+    l.regs[LOCI_REG_API_A] = 0x80 | 1;
+    loci_write(&l, 0x03AF, LOCI_OP_SET_BANK);
+    ASSERT_EQ(l.bank_sel, 1);
+    ASSERT_TRUE(l.bank_enabled);
+    ASSERT_EQ(l.regs[LOCI_REG_API_A], 0x81);
+    ASSERT_EQ(errno_lo(&l), 0);
+}
+
 int main(void) {
     log_init(LOG_LEVEL_ERROR);
     printf("\n");
@@ -3659,6 +3721,10 @@ int main(void) {
     RUN(test_cons_tx_line_buffer_flushes_on_newline);
     RUN(test_ula_snoop_write_clears_register);
     RUN(test_op_adj_scan_reports_completed);
+    RUN(test_op_set_bank_enable_records_state);
+    RUN(test_op_set_bank_disable_passes_null);
+    RUN(test_op_set_bank_sel_folds_on_0_3);
+    RUN(test_op_set_bank_no_callback_still_acks);
     RUN(test_tap_play_lead_in_then_data);
     RUN(test_tap_play_is_motor_protected);
     RUN(test_tap_read_bit_14bit_frame);

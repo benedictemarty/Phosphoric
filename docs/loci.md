@@ -108,6 +108,33 @@ Système (`PIX_XREG`, `CPU_PHI2`→1000 kHz, `OEM_CODEPAGE`, `RNG_LRAND`,
 `SEEK/TELL/READ_HEADER`, `UNAME`), boot/tuning (`MIA_BOOT`, `MAP_TUNE_*`,
 `ADJ_SCAN`), sentinelle `$FF` (exit → spin).
 
+### Banking `$A7` (`MIA_OP_SET_BANK`)
+
+Extension du firmware LOCI de bmarty (`~/loci/firmware`, `mia_set_bank()` ; absente du
+firmware amont sodiumlb, spec dans `~/loci/design-banking/docs/spec-registre-banque.md`).
+Elle choisit ce que le 6502 voit dans **tout** `$C000-$FFFF` (vecteurs et page `$FF`
+compris) : le registre A porte `EN` (bit 7) et `SEL` (bits 3:0), le retour est l'écho de A.
+
+- `EN = 1` : la banque de 16 Ko `xram[SEL << 14]` est servie en **lecture seule**. `SEL` est
+  replié sur 0..3 (`& 3`, comme le firmware) : ces quatre banques sont les 64 Ko de la XRAM.
+- `EN = 0` : retour à la ROM interne (et, dans Phosphoric, aux drapeaux Microdisc d'avant).
+- Phosphoric ne remet **pas** le 6502 à zéro à la commutation (le firmware non plus) : on
+  peut basculer en cours d'exécution. Le code qui bascule doit donc rester hors de la banque
+  visée (RAM `$0000-$BFFF`) ou être recopié à l'identique dans chaque banque, vecteurs
+  `$FFFA-$FFFF` compris, puisqu'un NMI ou un IRQ les lit dans la banque servie.
+- Une banque se remplit par les portes XRAM (`$03A4`/`$03A8`, `RW0`/`RW1`) avant la bascule.
+
+Où c'est géré : mode intégré (`--loci`) = `op_set_bank` (`src/io/loci_boot.c`) +
+`loci_bank_swap_cb` (`src/io/loci_glue.c`) ; `--loci-emu` et `--loci-hw` = le vrai firmware,
+s'il porte le patch. Tests : `make test-loci` (4 cas de l'opcode), `make test-loci-bank`
+(banque lue en `$C000`/`$FF00`/`$FFFA`, hot-switch sans reset, restauration).
+
+**Non prouvé** : le timing du signal MAP pendant une commutation à chaud sur un vrai Oric
+(point ouvert n° 5 de la spec) ; une banque **inscriptible** (`WR`, PIO `mia_write`
+désactivé dans le firmware) ; le streamer `$A8` (non émulé en mode intégré). Ce n'est pas de
+la RAM en plus : avec un Microdisc, `ROMDIS` et la banque LOCI se disputent la même fenêtre,
+et rien n'a été mesuré sur cette combinaison.
+
 ### ABI conforme au firmware (vérifiée sur source)
 
 - **errno** : erreurs filesystem = `32 + FRESULT` FatFS (fichier manquant → 36,

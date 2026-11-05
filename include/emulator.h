@@ -47,7 +47,7 @@
 #include "io/ula_ng.h"
 #include "network/cast_server.h"
 
-#define EMU_VERSION "2.31.15"
+#define EMU_VERSION "2.31.16"
 
 /**
  * @brief ORIC machine model
@@ -484,6 +484,12 @@ typedef struct emulator_s {
      * inside main.c with a comment acknowledging "acceptable leak at
      * shutdown"). Freed by emulator_cleanup. */
     uint8_t* loci_overlay_buf;
+    /* Banking $A7 : ROM interne et drapeaux mémoire sauvés à l'activation d'une
+     * banque, rétablis à sa désactivation (loci_bank_swap_cb). */
+    uint8_t  loci_bank_rom_backup[16384];
+    bool     loci_bank_saved;
+    bool     loci_bank_prev_overlay;
+    bool     loci_bank_prev_romdis;
     /* True while the LOCI menu ROM (warm boot via the Action button) is
      * mapped. Guards the button against re-entry: pressing it inside the
      * menu must NOT re-snapshot (it would clobber the session snapshot

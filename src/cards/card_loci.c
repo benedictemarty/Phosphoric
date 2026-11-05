@@ -236,6 +236,8 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         }
         /* ROM-swap callback used by op 0xA0 MIA_BOOT (Sprint 34ad). */
         loci_set_rom_swap_callback(&emu->loci, loci_rom_swap_cb, emu);
+        /* Banking $A7 : banque xram de 16 Ko servie en $C000-$FFFF. */
+        loci_set_bank_swap_callback(&emu->loci, loci_bank_swap_cb, emu);
         /* Session-resume callback: menu "resume" → MIA_BOOT RESUME (Sprint 85). */
         loci_set_resume_callback(&emu->loci, loci_resume_session_cb, emu);
         /* ULA-mode snoop $03A3: video mode saved by the menu (2.31.7). */

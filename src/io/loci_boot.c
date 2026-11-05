@@ -206,6 +206,27 @@ void op_adj_scan(loci_t* loci) {
     api_return_ax(loci, 0);
 }
 
+/* ─── Banking $A7 (MIA_OP_SET_BANK) ───────────────────────────────
+ * Miroir de mia_set_bank() du firmware (~/loci/firmware, sys/mia.c) :
+ *   A bit 7    = EN : 1 = la banque est servie en $C000-$FFFF, 0 = ROM interne
+ *   A bits 3:0 = SEL : index de banque de 16 Ko ; le firmware masque `& 3`, donc
+ *                SEL 4..15 se replient sur 0..3 (base = xram + (SEL << 14)).
+ * Retour : la valeur A reçue (écho), comme le firmware. Lecture seule. */
+void op_set_bank(loci_t* loci) {
+    uint8_t a      = loci->regs[LOCI_REG_API_A];
+    bool    enable = (a & 0x80) != 0;
+    uint8_t sel    = (uint8_t)(a & 0x03);
+    loci->bank_sel     = sel;
+    loci->bank_enabled = enable;
+    if (loci->bank_swap_cb) {
+        const uint8_t* data = &loci->xram[(uint32_t)sel << 14];
+        loci->bank_swap_cb(loci->bank_swap_ctx, enable ? data : NULL, 0x4000u, enable);
+    }
+    log_debug("LOCI SET_BANK: %s banque %u", enable ? "active" : "inactive", sel);
+    xstack_zero(loci);
+    api_return_ax(loci, a);
+}
+
 void loci_adj_tick(loci_t* loci, unsigned int cycles) {
     if (!loci || loci->adj_state == 0) return;
     loci->adj_acc += cycles;

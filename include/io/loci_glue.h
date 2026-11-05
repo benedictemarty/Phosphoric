@@ -36,6 +36,8 @@ void loci_patch_rom_info(emulator_t* emu);
 bool loci_tape_mount_cb(void* ctx, const char* host_tape_path);
 /* LOCI callback: swap a ROM image into memory at base_addr and reset. */
 bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr);
+/* LOCI callback ($A7 SET_BANK) : sert une banque xram de 16 Ko en $C000-$FFFF. */
+void loci_bank_swap_cb(void* ctx, const uint8_t* data, uint32_t size, bool enable);
 /* LOCI callback (MIA_BOOT + RESUME): map back the ROM the warm button unmapped. */
 bool loci_resume_session_cb(void* ctx);
 /* LOCI callback: ULA-mode snoop ($03A3) — byte latched after $83 $84 $85 <pattern>. */
