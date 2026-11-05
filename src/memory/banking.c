@@ -20,6 +20,12 @@ bool memory_get_rom_enabled(const memory_t* mem) {
     return mem->rom_enabled;
 }
 
+bool memory_basic_rom_visible(const memory_t* mem) {
+    if (mem->jasmin_active)
+        return !mem->jasmin_olay && !mem->jasmin_romdis;
+    return !mem->basic_rom_disabled && mem->rom_enabled;
+}
+
 void memory_set_charset_bank(memory_t* mem, memory_bank_t bank) {
     mem->charset_bank = bank;
 }

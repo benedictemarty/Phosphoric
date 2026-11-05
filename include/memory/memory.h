@@ -251,4 +251,11 @@ void memory_clear_ram(memory_t* mem, uint8_t pattern);
  */
 uint8_t* memory_get_ptr(memory_t* mem, uint16_t address);
 
+/**
+ * @brief ROM BASIC visible en $C000-$FFFF ?
+ * Faux avec la RAM overlay (Microdisc/Jasmin) ou la ROM désactivée : le code à PC
+ * est alors du code utilisateur, pas la ROM.
+ */
+bool memory_basic_rom_visible(const memory_t* mem);
+
 #endif /* MEMORY_H */

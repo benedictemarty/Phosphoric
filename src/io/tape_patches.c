@@ -61,6 +61,11 @@ void tape_patches(emulator_t* emu) {
     const rom_patches_t* p = emu->rom_patches;
     uint16_t pc = emu->cpu.PC;
 
+    /* Les hooks par PC n'ont de sens que si la ROM BASIC est visible : avec la RAM
+     * overlay (Microdisc/Jasmin) l'instruction à PC est du code utilisateur. */
+    if (pc >= 0xC000 && !memory_basic_rom_visible(&emu->memory))
+        return;
+
     /* CSAVE patches work even without a tape loaded */
     if (pc == p->writeleader_entry || pc == p->putbyte_entry || pc == p->csave_end ||
         (p->writefileheader_entry && pc == p->writefileheader_entry)) {

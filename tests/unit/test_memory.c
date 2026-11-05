@@ -308,12 +308,27 @@ TEST(test_ram_stuck_bits) {
     ASSERT_EQ(memory_read(&mem, 0x1000), 0xFF);
 }
 
+TEST(test_basic_rom_visible) {
+    memory_t mem;
+    memory_init(&mem);
+    ASSERT_EQ(memory_basic_rom_visible(&mem), true);
+    mem.basic_rom_disabled = true;              /* RAM overlay Microdisc */
+    ASSERT_EQ(memory_basic_rom_visible(&mem), false);
+    mem.basic_rom_disabled = false;
+    mem.jasmin_active = true;
+    mem.jasmin_olay = true;                     /* RAM overlay Jasmin */
+    ASSERT_EQ(memory_basic_rom_visible(&mem), false);
+    mem.jasmin_olay = false;
+    ASSERT_EQ(memory_basic_rom_visible(&mem), true);
+}
+
 int main(void) {
     printf("Running Memory tests...\n");
     printf("═══════════════════════════════════════════════════════════\n");
 
     printf("\n  Basic Read/Write:\n");
     RUN(test_memory_init);
+    RUN(test_basic_rom_visible);
     RUN(test_ram_read_write);
     RUN(test_zero_page);
     RUN(test_stack_page);

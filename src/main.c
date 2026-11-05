@@ -1280,7 +1280,8 @@ static void run_frame_instructions(emulator_t* emu, run_state_t* rs) {
          * (PC hits cload_data_rts after readbyte was active) and fix
          * all next-line pointers so GOTO/GOSUB can traverse the chain. */
         if (emu->tape_readbyte_active && emu->rom_patches &&
-            emu->cpu.PC == emu->rom_patches->cload_data_rts) {
+            emu->cpu.PC == emu->rom_patches->cload_data_rts &&
+            memory_basic_rom_visible(&emu->memory)) {
             /* Only rechain BASIC programs (header file-type byte $00).
              * Machine code loads ($80, $C0) must not be rechained —
              * rechaining would overwrite program bytes with bogus
