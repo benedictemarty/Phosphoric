@@ -105,7 +105,7 @@ var Module = {
     function(){ if(!loci) return;
     // Monte le flash LOCI persistant avant main() et le recharge depuis IndexedDB.
     try{ FS.mkdir(LOCI_DIR); }catch(e){}
-    FS.mount(FS.filesystems.IDBFS, {}, LOCI_DIR);
+    FS.mount((FS.filesystems && FS.filesystems.IDBFS) || Module.IDBFS, {}, LOCI_DIR);   // Module.IDBFS : FS.filesystems n'est plus exposé par Emscripten 7
     addRunDependency('loci-flash');
     lociSync(true, function(){ removeRunDependency('loci-flash'); }); },
     function(){ if(!mediaName) return; addRunDependency('media-file');
