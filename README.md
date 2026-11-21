@@ -871,6 +871,7 @@ Utilisation à vos propres risques. Les contributions et revues de code sont bie
 
 ### Contributeurs
 - **[Xander Mol (xahmol)](https://github.com/xahmol)** — Conformité du backend LOCI au firmware réel `sodiumlb/loci-firmware`, découverte via les harnais de test [locifilemanager-v2](https://github.com/xahmol/locifilemanager-v2) et [OricScreenEditorLOCI](https://github.com/xahmol/OricScreenEditorLOCI) : `UNLINK` sur dossier vide (PR #10), protocole `WRITE_XSTACK` sans count explicite (PR #19)
+- **ibisum** (forum Defence Force) — Signalement du son muet sur iOS/Safari avec le lecteur web, et confirmation (25/03/2025) que `navigator.audioSession.type = "playback"` le corrige ; correctif non testé par le projet sur iPhone/iPad
 
 ### Émulateurs de référence
 
