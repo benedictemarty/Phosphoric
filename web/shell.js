@@ -269,6 +269,17 @@ window.addEventListener('dragleave',function(e){e.preventDefault(); if(--dd<=0){
 window.addEventListener('drop',function(e){e.preventDefault(); dd=0; document.body.classList.remove('dragging');
   if(e.dataTransfer.files&&e.dataTransfer.files[0]) loadMedia(e.dataTransfer.files[0]);});
 window.addEventListener('click',function(){ if(Module.SDL2&&Module.SDL2.audioContext&&Module.SDL2.audioContext.state==='suspended') Module.SDL2.audioContext.resume(); });
+// iOS/Safari : Web Audio suit le canal « sonnerie » et reste muet quand le commutateur latéral
+// est sur silence. navigator.audioSession (Safari 17+) permet de passer en « playback ».
+(function(){
+  var ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||
+          (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1); // iPadOS se déclare Mac
+  if(ios&&navigator.audioSession){
+    try{ navigator.audioSession.type='playback';
+         console.log('[audio] iOS : navigator.audioSession.type = "playback"'); }
+    catch(e){ console.warn('[audio] audioSession.type refusé :',e); }
+  }
+})();
 
 //  ── ORIC keyboard — layout & shifted symbols derived from the emulator's
 //     keyboard matrix (src/io/keyboard.c char_map): 2→@, 6→^, etc. ──────────
