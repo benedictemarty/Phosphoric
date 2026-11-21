@@ -811,6 +811,29 @@ docs/            User guide, control_protocol.md, CR review docs
 - [Contributing](CONTRIBUTING.md)
 - [Version history](VERSION_TRACKING)
 
+## Contribuer
+
+Les contributions sont bienvenues : correctifs, tests sur matériel réel, mesures, cartes
+d'extension, traductions, documentation. Le guide complet est dans
+[CONTRIBUTING.md](CONTRIBUTING.md) ; l'essentiel :
+
+- **Construire et tester** : `make` puis `make tests` (`make tests-strict` en CI). Toute
+  modification de comportement s'accompagne d'un test (`tests/unit/test_*.c`).
+- **Style** : C11, 4 espaces, K&R, `snake_case`, lignes ≤ 100 colonnes, compilation propre avec
+  `-Wall -Wextra -Wpedantic`.
+- **Ajouter une carte d'extension** : un fichier dans `src/cards/` plus une ligne dans
+  `include/cards_list.h` (voir [docs/CARTES.md](docs/CARTES.md)).
+- **Ne pas inventer** : une valeur matérielle ou un comportement non mesuré ni documenté doit être
+  signalé comme tel (voir le ton de [docs/ACCURACY.md](docs/ACCURACY.md)) ; indiquer la source ou
+  la mesure dans la demande de fusion.
+- **Branches** : `main` (français) et `main-en` (traduction des commentaires et de la doc) ;
+  le code, les chaînes affichées et les données doivent rester identiques
+  (`make test-comment-diff`). Ouvrir les demandes de fusion contre `main`.
+- **Signaler un problème** : décrire la version (`EMU_VERSION`), la commande lancée, les ROMs
+  utilisées et le résultat attendu et observé.
+
+Les contributeurs sont listés dans [Contributeurs](#contributeurs).
+
 ## Code generé par IA
 
 > ⚠️ Avertissement : ce programme est un programme généré par Claude Code sous la supervision d'un être humain : il a été utilisé pour améliorer, développer, rendre compatible ou traduire ce logiciel.
