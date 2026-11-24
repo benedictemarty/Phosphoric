@@ -10,11 +10,17 @@ var ROMS = { atmos: '/roms/basic11b.rom', oric1: '/roms/basic10.rom' };
 // linking a tape that needs a specific BASIC, e.g. ORIC-1-only games).
 var urlRom = new URLSearchParams(location.search).get('rom');
 var rom = (urlRom==='oric1'||urlRom==='atmos') ? urlRom : (sessionStorage.getItem('phos_rom') || 'atmos');
+var urlMedia = new URLSearchParams(location.search).get('media') || '';
+// Un ?media= qui désigne un AUTRE fichier que le média mémorisé l'emporte : sinon l'ancien
+// média (ex. une démo lancée plus tôt dans l'onglet) démarre et le nouveau, inséré à chaud,
+// ne redémarre jamais la machine.
+if (urlMedia && sessionStorage.getItem('phos_media_name') !== urlMedia.split('/').pop()) {
+  sessionStorage.removeItem('phos_media_name'); sessionStorage.removeItem('phos_media_kind');
+}
 var mediaName = sessionStorage.getItem('phos_media_name') || '';
 // Type du média : sessionStorage (drag&drop / rechargement) OU déduit de l'URL ?media=
 // dès le PREMIER chargement — sinon un ?media=X.dsk démarrerait sans Microdisc
 // (has_microdisc=false) et web_insert_disk échouerait.
-var urlMedia = new URLSearchParams(location.search).get('media') || '';
 var urlKind = /\.dsk$/i.test(urlMedia) ? 'dsk' : (/\.tap$/i.test(urlMedia) ? 'tap' : '');
 var mediaKind = sessionStorage.getItem('phos_media_kind') || urlKind;
 var args = ['-r', ROMS[rom] || ROMS.atmos];
