@@ -92,7 +92,7 @@ echo "$OUT" | grep -q "^ERR eject-tape: no tape loaded" \
     && ok "eject-tape with no tape is rejected" \
     || ko "eject-tape with no tape not rejected"
 
-# --- scenario 4: LOCI seul — la disquette va au lecteur LOCI (2.10.0) -----
+# --- scenario 4: LOCI only — the floppy goes to the LOCI drive (2.10.0) ---
 LOCIROM="roms/loci/locirom"
 if [ -f "$LOCIROM" ]; then
     OUT="$(printf '%b' 'load-disk B '"$DSK"'\neject-disk B\neject-disk B\nquit\n' \
@@ -110,7 +110,7 @@ else
     echo "  [SKIP] $LOCIROM absent (LOCI scenario)"
 fi
 
-# --- scenario 5: aucune carte disque — rien n'est monté --------------------
+# --- scenario 5: no disk card — nothing is mounted -------------------------
 OUT="$(printf '%b' 'load-disk A '"$DSK"'\nquit\n' | timeout 10 "$EMU" -r "$ROM" -n --control 2>/dev/null)"
 echo "$OUT" | grep -q "^ERR load-disk: no disk controller" \
     && ok "no disk card: load-disk is refused" \

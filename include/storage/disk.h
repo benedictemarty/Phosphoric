@@ -53,14 +53,14 @@
 #define FDC_TIMING_REAL 1
 
 #define FDC_REV_CYCLES         200000u  /* one revolution at 300 RPM, 1 MHz */
-/* Durée d'un octet à 250 kbit/s en MFM (double densité) : 32 µs, soit 32 cycles
- * à 1 MHz. C'est le budget dont dispose le CPU pour servir chaque DRQ. */
+/* Duration of one byte at 250 kbit/s in MFM (double density): 32 µs, i.e. 32 cycles
+ * at 1 MHz. This is the budget the CPU has to service each DRQ. */
 #define FDC_BYTE_CYCLES        32
 #define FDC_INDEX_PULSE_CYCLES 4000u    /* index pulse width (~4 ms) */
 #define FDC_SETTLE_CYCLES      30000    /* E/V flag: 30 ms at 1 MHz clock */
-/* Write Sector (datasheet FD179X) : après le champ ID, le contrôleur compte
- * 22 octets de gap en MFM ; si le premier DRQ n'est pas servi d'ici là, la
- * commande se termine sur LOST DATA sans rien écrire. */
+/* Write Sector (FD179X datasheet): after the ID field, the controller counts
+ * 22 gap bytes in MFM; if the first DRQ is not serviced by then, the command
+ * ends on LOST DATA without writing anything. */
 #define FDC_WRITE_GAP_BYTES    22
 #define FDC_RNF_CYCLES         (5 * (int)FDC_REV_CYCLES) /* 5 index pulses */
 
@@ -144,30 +144,30 @@ typedef struct fdc_s {
     uint8_t  timing_mode;      /* FDC_TIMING_FAST (default) or FDC_TIMING_REAL */
     uint32_t rot_pos;          /* disk angle in cycles, 0..FDC_REV_CYCLES-1 */
 
-    /* Compteur d'octets perdus (S2 LOST DATA) depuis le dernier reset. Un
-     * transfert sain doit rester à zéro : c'est un indicateur de diagnostic,
-     * pas un état matériel. */
+    /* Count of lost bytes (S2 LOST DATA) since the last reset. A healthy
+     * transfer must stay at zero: this is a diagnostic indicator,
+     * not a hardware state. */
     uint32_t lost_data_count;
 
-    /* Languette de protection en écriture (S6). Sur un lecteur réel c'est un
-     * capteur mécanique : le contrôleur refuse toute commande d'écriture et
-     * lève le bit 6 du statut. Câblée par fdc_set_write_protect() — sur le
-     * fichier .dsk en lecture seule, ou par --disk-write-protect. */
+    /* Write-protect tab (S6). On a real drive this is a mechanical
+     * sensor: the controller rejects any write command and raises
+     * bit 6 of the status. Wired by fdc_set_write_protect() — on a
+     * read-only .dsk file, or by --disk-write-protect. */
     bool write_protected;
 
-    /* Âge du DRQ courant, en cycles. Au-delà du temps d'un octet, la donnée est
-     * considérée perdue (S2). Remis à zéro à chaque pose de DRQ. */
+    /* Age of the current DRQ, in cycles. Beyond one byte time, the data is
+     * considered lost (S2). Reset each time DRQ is raised. */
     int drq_age;
 
-    /* Flux d'octets lié au plateau (2.31.9, modèle REAL, lecture/écriture de
-     * secteur). Une fois le champ de données sous la tête, un octet défile
-     * toutes les FDC_BYTE_CYCLES, que le CPU suive ou non : en lecture, un
-     * octet non lu avant le suivant est écrasé (S2) ; en écriture, un octet
-     * non fourni à temps est écrit à $00 (S2). Avant, chaque octet était
-     * réarmé 32 cycles après l'accès du CPU : le disque attendait le CPU. */
-    bool stream;               /* champ de données en cours de défilement */
-    bool stream_crc;           /* tous les octets passés, CRC sous la tête */
-    int  stream_due;           /* cycles jusqu'au prochain octet (ou fin du CRC) */
+    /* Byte stream tied to the platter (2.31.9, REAL model, sector read/write).
+     * Once the data field is under the head, one byte passes every
+     * FDC_BYTE_CYCLES whether the CPU keeps up or not: on read, a byte not read
+     * before the next one is overwritten (S2); on write, a byte not supplied in
+     * time is written as $00 (S2). Before, each byte was re-armed 32 cycles
+     * after the CPU access: the disk waited for the CPU. */
+    bool stream;               /* data field currently passing */
+    bool stream_crc;           /* all bytes passed, CRC under the head */
+    int  stream_due;           /* cycles until the next byte (or end of CRC) */
     bool     status_type1;     /* status register shows Type I bits (live
                                   index pulse / TRK0 patched on read) */
 
@@ -204,10 +204,10 @@ void fdc_reset(fdc_t* fdc);
 void fdc_set_disk(fdc_t* fdc, uint8_t* data, uint32_t size);
 
 /**
- * @brief Pose ou retire la languette de protection en écriture (S6)
+ * @brief Sets or removes the write-protect tab (S6)
  *
- * Les commandes Write Sector / Write Track sont alors refusées, sans rien
- * modifier, avec le bit WRITE PROTECT et une interruption — comme le WD1793.
+ * Write Sector / Write Track commands are then rejected, without modifying
+ * anything, with the WRITE PROTECT bit and an interrupt — like the WD1793.
  */
 void fdc_set_write_protect(fdc_t* fdc, bool protect);
 /* loci-webdisk (archi B): make the current media web-backed (raw MFM tracks
@@ -225,21 +225,21 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg);
 void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value);
 void fdc_ticktock(fdc_t* fdc, unsigned int cycles);
 
-/* État sérialisable du WD1793/WD177x (sections .ost « FDC » et « JAS ») : registres,
- * opération en cours, modèle mécanique, âge du DRQ et analyseur de formatage. Les
- * pointeurs vers les images disque ne sont PAS écrits : le contrôleur les
- * re-pointe après chargement, puis appelle fdc_state_resume() qui recalcule le
- * pointeur du secteur en cours. FDC_STATE_SIZE = taille écrite (v2) ;
- * fdc_state_load lit `size` octets : un .ost antérieur (36 octets, ou 31 avant
- * v1.42) se relit, les champs absents prenant leur valeur neutre. */
+/* Serialisable state of the WD1793/WD177x (.ost sections "FDC" and "JAS"): registers,
+ * current operation, mechanical model, DRQ age and format-track parser. The
+ * pointers to the disk images are NOT written: the controller re-points them
+ * after loading, then calls fdc_state_resume(), which recomputes the pointer to
+ * the current sector. FDC_STATE_SIZE = written size (v2);
+ * fdc_state_load reads `size` bytes: an older .ost (36 bytes, or 31 before
+ * v1.42) still loads, the missing fields taking their neutral value. */
 #define FDC_STATE_SIZE_V1 36
 #define FDC_STATE_SIZE_V2 49
-#define FDC_STATE_SIZE    55   /* v3 (2.31.9) : flux d'octets lié au plateau */
+#define FDC_STATE_SIZE    55   /* v3 (2.31.9): byte stream tied to the platter */
 void fdc_state_save(const fdc_t* fdc, FILE* fp);
 void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size);
 void fdc_state_resume(fdc_t* fdc);
 
-/* Trace FDC sur stderr si la variable d'env FDC_TRACE est définie (debug) */
+/* FDC trace on stderr if the env variable FDC_TRACE is set (debug) */
 int fdc_trace_enabled(void);
 
 #endif /* DISK_H */

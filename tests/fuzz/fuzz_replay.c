@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_replay.c
- * @brief Rejoue un corpus sur une cible de fuzzing, sans libFuzzer
+ * @brief Replays a corpus on a fuzzing target, without libFuzzer
  * @author bmarty <bmarty@mailo.com>
  *
- * Usage : fuzz_<cible> FICHIER|DOSSIER...   (rejoue chaque fichier)
- *         fuzz_<cible> --seed CHEMIN        (écrit la graine de la cible)
- * Sert à `make test-fuzz-replay` (gcc, sanitizers facultatifs) : les graines et
- * les entrées ayant déjà fait tomber un analyseur (tests/fuzz/regressions/)
- * repassent à chaque exécution de la suite.
+ * Usage: fuzz_<target> FILE|DIRECTORY...   (replays each file)
+ *        fuzz_<target> --seed PATH           (writes the target's seed)
+ * Used by `make test-fuzz-replay` (gcc, sanitizers optional): the seeds and
+ * the inputs that once crashed a parser (tests/fuzz/regressions/) are
+ * replayed on every run of the suite.
  */
 #define _POSIX_C_SOURCE 200809L
 #include "fuzz_common.h"
@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
     int files = 0, errors = 0;
     for (int i = 1; i < argc; i++) {
         struct stat st;
-        if (stat(argv[i], &st) != 0) continue;           /* dossier absent : rien à rejouer */
+        if (stat(argv[i], &st) != 0) continue;           /* missing directory: nothing to replay */
         if (S_ISDIR(st.st_mode)) {
             DIR* d = opendir(argv[i]);
             if (!d) continue;

@@ -1,47 +1,47 @@
-# Compte-rendu — Fermeture LOCI / Fix ABI 2026-06-07
+# Report — LOCI closeout / ABI fix 2026-06-07
 
-**Auteur** : bmarty
-**Branche** : `fix/mia-spin-abi` → mergée sur `main` (commit `26a3977`)
-**Version livrée** : v1.16.39-alpha
-
----
-
-## 1. Contexte
-
-Suite au CR du 2026-06-06 (Sprint 34am, pre-seed PSG R7=$7F) qui
-laissait le clavier inopérant malgré le fix R7, l'ingé principal a
-mené une review approfondie du code source LOCI ROM + firmware Pi Pico,
-puis identifié la **vraie cause racine** : l'ABI de la spin window
-`$03B0-$03B9` n'était pas matérialisée.
+**Author**: bmarty
+**Branch**: `fix/mia-spin-abi` → merged into `main` (commit `26a3977`)
+**Version delivered**: v1.16.39-alpha
 
 ---
 
-## 2. Cause racine (analyse de l'ingé principal)
+## 1. Context
 
-### Le contract MIA n'est pas un register file
+Following the report of 2026-06-06 (Sprint 34am, PSG R7=$7F pre-seed), which
+left the keyboard non-functional despite the R7 fix, the lead engineer
+carried out an in-depth review of the LOCI ROM + Pi Pico firmware source code,
+and then identified the **real root cause**: the ABI of the spin window
+`$03B0-$03B9` was not materialised.
 
-La fenêtre `$03B0-$03B9` du firmware LOCI est **du code 6502
-auto-modifiant** que le coprocesseur Pi Pico réécrit à chaque
-transition d'opération. Le 6502 ABI est :
+---
+
+## 2. Root cause (lead engineer's analysis)
+
+### The MIA contract is not a register file
+
+The `$03B0-$03B9` window of the LOCI firmware is **self-modifying 6502
+code** that the Pi Pico coprocessor rewrites at every operation
+transition. The 6502 ABI is:
 
 ```asm
 STA  $03AF       ; trigger op
-JSR  $03B0       ; CALL la spin window
+JSR  $03B0       ; CALL the spin window
 ; on return: A = result_lo, X = result_hi
-;            $03B8/B9 contiennent SREG (high 16 bits pour AXSREG)
+;            $03B8/B9 hold SREG (high 16 bits for AXSREG)
 ```
 
 ### Blocked stub (op queued, BUSY=1)
 
 ```
 $03B0  B8           CLV
-$03B1  50 FE        BVC -2     (rebouclage permanent sur $03B0)
-$03B3  A9 --        LDA #--    (operand A à patcher par release)
+$03B1  50 FE        BVC -2     (loops back forever onto $03B0)
+$03B3  A9 --        LDA #--    (operand A to be patched on release)
 ```
 
-L'octet `$03B2 = $FE` encode **simultanément** :
-- l'opérande de BVC (= -2, branche en arrière)
-- le flag BUSY (bit 7 = 1)
+The byte `$03B2 = $FE` **simultaneously** encodes:
+- the BVC operand (= -2, backward branch)
+- the BUSY flag (bit 7 = 1)
 
 ### Released stub (op done, BUSY=0)
 
@@ -55,45 +55,45 @@ $03B8  <SREG_lo>
 $03B9  <SREG_hi>
 ```
 
-L'octet `$03B2 = $00` encode :
-- l'opérande de BVC (= +0, donc fall-through)
-- le flag BUSY (bit 7 = 0)
+The byte `$03B2 = $00` encodes:
+- the BVC operand (= +0, hence fall-through)
+- the BUSY flag (bit 7 = 0)
 
-### Le bug
+### The bug
 
-Phosphoric prior à ce fix :
-- Écrivait `$03B4` (A), `$03B6` (X), `$03B8`/`$03B9` (SREG)
-- **Ne écrivait jamais** `$03B0`/`$03B1`/`$03B2`/`$03B3`/`$03B5`/`$03B7`
+Phosphoric before this fix:
+- Wrote `$03B4` (A), `$03B6` (X), `$03B8`/`$03B9` (SREG)
+- **Never wrote** `$03B0`/`$03B1`/`$03B2`/`$03B3`/`$03B5`/`$03B7`
 
-Conséquence : à `loci_init`, `regs[0x10..0x1F]` valait `$00..$00` après
-le `memset`. Un `JSR $03B0` du 6502 fetchait `0x00 0x00 0x00 0x00 ...`
-= `BRK BRK BRK ...`. Le 6502 vectorise via `$FFFE/F` (vecteur IRQ) et
-diverge.
+Consequence: at `loci_init`, `regs[0x10..0x1F]` was `$00..$00` after
+the `memset`. A 6502 `JSR $03B0` fetched `0x00 0x00 0x00 0x00 ...`
+= `BRK BRK BRK ...`. The 6502 vectors through `$FFFE/F` (IRQ vector) and
+diverges.
 
-Le premier fastcall du boot LOCI est `tap_tell()` à `main.c:1159` via
-`update_tap_counter()` — AVANT `InitKeyboard()` (l.1186) et le `while(1)`
-(l.1188). Donc :
-1. `tap_tell` jamais retourné
-2. `main()` bloqué
-3. `InitKeyboard` jamais appelée → PSG R7 jamais programmée
-4. `while(1)` jamais atteint → pas de spinner
-5. Le clavier semble "ne pas marcher" alors qu'il scanne correctement
+The first fastcall of the LOCI boot is `tap_tell()` at `main.c:1159` via
+`update_tap_counter()` — BEFORE `InitKeyboard()` (l.1186) and the `while(1)`
+(l.1188). Therefore:
+1. `tap_tell` never returned
+2. `main()` stuck
+3. `InitKeyboard` never called → PSG R7 never programmed
+4. `while(1)` never reached → no spinner
+5. The keyboard seems "not to work" even though it scans correctly
 
-Le pre-seed R7 du Sprint 34am masquait le symptôme R7 mais laissait
-l'ABI cassée. Le released stub étant inexistant, `main()` restait bloqué.
+The R7 pre-seed of Sprint 34am masked the R7 symptom but left the
+ABI broken. Since the released stub did not exist, `main()` stayed stuck.
 
-### Pourquoi les 105 tests existants passaient
+### Why the 105 existing tests passed
 
-Mes tests appelaient `loci_write(..., 0x03AF, op)` puis vérifiaient les
-registres `regs[0x14]` (A), `regs[0x16]` (X). Ils **court-circuitaient
-le `JSR $03B0`** en lisant directement les registres post-dispatch. Le
-vrai 6502, lui, devait passer par la spin window — qui n'existait pas.
+My tests called `loci_write(..., 0x03AF, op)` and then checked the
+registers `regs[0x14]` (A), `regs[0x16]` (X). They **short-circuited
+the `JSR $03B0`** by reading the post-dispatch registers directly. The
+real 6502, on the other hand, had to go through the spin window — which did not exist.
 
 ---
 
-## 3. Patch livré (Option B)
+## 3. Patch delivered (Option B)
 
-### Nouvelles helpers
+### New helpers
 
 ```c
 static void api_install_blocked_stub(loci_t* loci) {
@@ -111,9 +111,9 @@ static void api_install_released_stub(loci_t* loci) {
 }
 ```
 
-### api_set_ax étendu
+### api_set_ax extended
 
-Mirror byte-pour-byte du firmware `api.h:183-186` :
+Byte-for-byte mirror of the firmware's `api.h:183-186`:
 
 ```c
 static void api_set_ax(loci_t* loci, uint16_t val) {
@@ -124,7 +124,7 @@ static void api_set_ax(loci_t* loci, uint16_t val) {
 }
 ```
 
-### Dispatch $03AF refactorisé
+### $03AF dispatch refactored
 
 ```c
 if (off == LOCI_REG_API_OP) {
@@ -134,7 +134,7 @@ if (off == LOCI_REG_API_OP) {
         return;
     }
     if (value == 0xFF) {
-        api_install_blocked_stub(loci);  // 6502 spin permanent
+        api_install_blocked_stub(loci);  // 6502 spins forever
         return;
     }
     api_install_blocked_stub(loci);
@@ -144,26 +144,26 @@ if (off == LOCI_REG_API_OP) {
 
 ### Init/Reset
 
-`loci_init` et `loci_reset` appellent maintenant `seed_initial_stub()`
-qui pose un released no-op stub (A=X=SREG=0) — protège contre les
-probes pré-op.
+`loci_init` and `loci_reset` now call `seed_initial_stub()`,
+which installs a released no-op stub (A=X=SREG=0) — protecting against
+pre-op probes.
 
 ### Default ENOSYS
 
-L'ancien fallback dans `dispatch_op` faisait `set_errno + set_busy(false)`
-— mais ne posait pas le released stub. Remplacé par `api_return_errno`
-qui passe par la chaîne complète.
+The old fallback in `dispatch_op` did `set_errno + set_busy(false)`
+— but did not install the released stub. Replaced by `api_return_errno`,
+which goes through the full chain.
 
 ---
 
-## 4. Tests différentiels 6502
+## 4. 6502 differential tests
 
-3 nouveaux tests qui exécutent un **vrai `cpu_step()`** sur un programme
-6502 minimal et exercent l'ABI complète :
+3 new tests that run a **real `cpu_step()`** on a minimal 6502 program
+and exercise the complete ABI:
 
 ### `test_6502_initial_jsr_returns_zero`
-Pré-op, vérifie que `JSR $03B0` revient cleanly avec A=X=0 grâce au
-seed initial.
+Before any op, checks that `JSR $03B0` returns cleanly with A=X=0 thanks to the
+initial seed.
 
 ### `test_6502_jsr_spin_zxstack_op_00`
 ```asm
@@ -174,81 +174,81 @@ STA $0200       ; record A
 STX $0201       ; record X
 BRK             ; halt
 ```
-Vérifie : xstack_ptr revient à 256, A=0, X=0.
+Checks: xstack_ptr goes back to 256, A=0, X=0.
 
 ### `test_6502_jsr_spin_returns_via_released_stub`
-Op `RNG_LRAND` (0x04). Vérifie : retour 31-bit positif via AXSREG,
-BUSY clear, PC à la sentinelle BRK ($041A).
+Op `RNG_LRAND` (0x04). Checks: positive 31-bit return via AXSREG,
+BUSY clear, PC at the BRK sentinel ($041A).
 
-### Plomberie Makefile
+### Makefile plumbing
 
-`TEST_LOCI_SRCS` link maintenant cpu6502 + memory + addressing + banking
-pour permettre l'exécution réelle de 6502.
+`TEST_LOCI_SRCS` now links cpu6502 + memory + addressing + banking
+to allow real 6502 execution.
 
 ---
 
-## 5. Validation utilisateur
+## 5. User validation
 
-Sessions interactives du 2026-06-07 ont confirmé :
+Interactive sessions on 2026-06-07 confirmed:
 
-| Test | Avant | Après |
+| Test | Before | After |
 |------|-------|-------|
-| Boot ROM LOCI v0.3.0 | atteint $C354 (IRQ) | atteint while(1) |
-| Spinner TUI visible | ❌ | ✅ |
-| Lettres a/b/c/d/t/k/m/o | ❌ | ✅ |
-| Flèches ↑↓←→ | ❌ | ✅ |
-| Toggle widgets | ❌ | ✅ |
+| LOCI ROM v0.3.0 boot | reaches $C354 (IRQ) | reaches while(1) |
+| TUI spinner visible | ❌ | ✅ |
+| Letters a/b/c/d/t/k/m/o | ❌ | ✅ |
+| Arrows ↑↓←→ | ❌ | ✅ |
+| Widget toggles | ❌ | ✅ |
 | ESC → fresh boot | ❌ | ✅ |
 | MIA_BOOT op 0xA0 | ❌ | ✅ |
-| ROM swap vers BASIC 1.0/1.1 | ❌ | ✅ |
-| Scénario E2E complet | ❌ | ✅ |
+| ROM swap to BASIC 1.0/1.1 | ❌ | ✅ |
+| Complete E2E scenario | ❌ | ✅ |
 
-**Phosphoric est officiellement le premier émulateur grand public à
-supporter LOCI en bout-en-bout** : la ROM LOCI v0.3.0 boote, affiche
-son TUI, accepte la navigation au clavier, exécute MIA_BOOT, et swappe
-vers la ROM BASIC sélectionnée (1.0 / 1.1) en chargeant depuis le
-sandbox `--loci-flash DIR`.
+**Phosphoric is officially the first mainstream emulator to
+support LOCI end to end**: the LOCI v0.3.0 ROM boots, displays
+its TUI, accepts keyboard navigation, runs MIA_BOOT, and swaps
+to the selected BASIC ROM (1.0 / 1.1), loading it from the
+`--loci-flash DIR` sandbox.
 
 ---
 
-## 6. Sémantique UI LOCI (quirk découvert lors des tests)
+## 6. LOCI UI semantics (quirk discovered during testing)
 
-Convention non-intuitive du LOCI ROM (loci-rom/src/main.c:901-938) :
+Non-intuitive convention of the LOCI ROM (loci-rom/src/main.c:901-938):
 
-| Touche | Action |
+| Key | Action |
 |--------|--------|
-| **ESC** | Boot fresh selon config courante (`boot(false)`) |
-| **Return** sur button `BOOT` | Boot fresh idem (`boot(false)`) |
-| **Return** sur menu général | Resume save state (`boot(true)`) — no-op sans save state |
+| **ESC** | Fresh boot according to the current config (`boot(false)`) |
+| **Return** on the `BOOT` button | Fresh boot likewise (`boot(false)`) |
+| **Return** on the general menu | Resume save state (`boot(true)`) — no-op without a save state |
 
-Ce n'est pas un bug Phosphoric, c'est le design choisi par sodiumlb.
+This is not a Phosphoric bug; it is the design chosen by sodiumlb.
 
 ---
 
-## 7. Métriques finales
+## 7. Final metrics
 
-| Indicateur | Valeur |
+| Indicator | Value |
 |------------|--------|
-| Tests test-loci | 108 (105 unitaires + 3 différentiels 6502) |
-| Tests global Phosphoric | 448 |
-| Régression sur autres modules | 0 |
-| Ops API LOCI implémentées | 28/36 (78%) |
-| Bug critique résolu | ABI MIA spin window |
-| Validation E2E utilisateur | ✅ Confirmée |
+| test-loci tests | 108 (105 unit + 3 6502 differential) |
+| Phosphoric global tests | 448 |
+| Regressions in other modules | 0 |
+| LOCI API ops implemented | 28/36 (78%) |
+| Critical bug resolved | MIA spin window ABI |
+| User E2E validation | ✅ Confirmed |
 
 ---
 
-## 8. Crédits
+## 8. Credits
 
-- **bmarty** (Phosphoric) : implémentation sprints 34y-34am + intégration patch
-- **Ingé principal** : analyse cause racine ABI, suggestion Option B,
-  contract firmware déchiffré
-- **sodiumlb** : ROM LOCI v0.3.0 + firmware open-source (BSD-3-Clause)
-- **rumbledethumps** : architecture RP6502 ancestrale dont LOCI hérite
+- **bmarty** (Phosphoric): implementation of sprints 34y-34am + patch integration
+- **Lead engineer**: ABI root-cause analysis, Option B suggestion,
+  firmware contract deciphered
+- **sodiumlb**: LOCI ROM v0.3.0 + open-source firmware (BSD-3-Clause)
+- **rumbledethumps**: ancestral RP6502 architecture that LOCI inherits from
 
 ---
 
-## 9. Reproductibilité
+## 9. Reproducibility
 
 ```bash
 git clone <repo> && cd Oric1
@@ -256,26 +256,26 @@ git checkout main
 make clean && make SDL2=1
 make tests   # 448 pass
 
-# Preparer le sandbox
+# Prepare the sandbox
 mkdir -p ~/loci-vfs
 cp roms/basic1*.rom roms/microdis.rom ~/loci-vfs/
 
-# Lancer LOCI ROM complet
+# Launch the full LOCI ROM
 ./oric1-emu -r roms/loci/locirom --loci --loci-flash ~/loci-vfs
 
-# Dans le TUI :
+# In the TUI:
 #   ↑↓←→ : navigation
 #   b    : toggle BASIC 1.0/1.1
 #   t    : toggle TAP
 #   f    : toggle FDC
-#   ESC  : boot fresh selon config
-# → bascule dans BASIC 1.0/1.1 Atmos !
+#   ESC  : fresh boot according to config
+# → switches into BASIC 1.0/1.1 Atmos!
 ```
 
 ---
 
-**Statut** : LOCI scénario E2E **validé**. La série de 14 sprints
-(34y → 34an) est officiellement terminée. Reste comme polish optionnel :
-WD1793 cycle-accurate, TAP bit-streamer $0317, diag ROM via `--loci-diag`.
+**Status**: LOCI E2E scenario **validated**. The series of 14 sprints
+(34y → 34an) is officially complete. Remaining optional polish:
+WD1793 timing exact to the cycle, TAP bit-streamer $0317, ROM diagnostics via `--loci-diag`.
 
-— Fin du CR
+— End of report

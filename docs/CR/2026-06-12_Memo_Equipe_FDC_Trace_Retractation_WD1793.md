@@ -1,111 +1,111 @@
-# Mémo équipe — Rétractation du bug report WD1793 « track+1 » + outillage FDC_TRACE (v1.16.84-alpha)
+# Team memo — Retraction of the WD1793 "track+1" bug report + FDC_TRACE tooling (v1.16.84-alpha)
 
-**Date** : 2026-06-12
-**Sprint** : 38
-**Audience** : équipe Phosphoric
-**TL;DR** : le bug report externe « WD1793 lit la piste N+1 après un scroll VRAM »
-(SCUMM-Oric, 2026-05-19) est **rétracté — Phosphoric n'a jamais eu ce bug**.
-L'enquête a livré un nouvel outil de diagnostic (`FDC_TRACE=1`) et révélé une
-**vraie** régression de contrat sur `--dump-ram-at` (48 Ko au lieu de 64 Ko),
-corrigée. Deux leçons process en §5.
+**Date**: 2026-06-12
+**Sprint**: 38
+**Audience**: Phosphoric team
+**TL;DR**: the external bug report "WD1793 reads track N+1 after a VRAM scroll"
+(SCUMM-Oric, 2026-05-19) is **retracted — Phosphoric never had this bug**.
+The investigation delivered a new diagnostic tool (`FDC_TRACE=1`) and revealed a
+**real** contract regression in `--dump-ram-at` (48 KB instead of 64 KB),
+now fixed. Two process lessons in §5.
 
 ---
 
-## 1. Le bug rapporté
+## 1. The reported bug
 
-Le projet SCUMM-Oric rapportait (rapport formel + bisection) : après une
-routine de scroll VRAM pure (~130k cycles, zéro accès I/O), tout
-`fdc_load_room` lisait la piste N+1. Ni Force Interrupt ($D0) ni RESTORE ne
-« corrigeaient ». L'hypothèse pointait notre machine à états WD1793
-(timeout moteur, STEP parasite cycle-based).
+The SCUMM-Oric project reported (formal report + bisection): after a pure VRAM
+scroll routine (~130k cycles, zero I/O access), every `fdc_load_room` read
+track N+1. Neither Force Interrupt ($D0) nor RESTORE "fixed" it. The hypothesis
+pointed at our WD1793 state machine (motor timeout, spurious cycle-based
+STEP).
 
-Le rapport était crédible : symptôme reproductible, bisection propre,
-données byte-exact à l'appui (LOAD_BUF = contenu piste 3 vérifié 5300/5300).
+The report was credible: reproducible symptom, clean bisection,
+byte-exact data to back it up (LOAD_BUF = track 3 contents verified 5300/5300).
 
-## 2. La méthode : trace FDC avec PC 6502
+## 2. The method: FDC trace with the 6502 PC
 
-Plutôt que d'auditer la machine à états à l'aveugle, on a instrumenté :
+Rather than auditing the state machine blindly, we instrumented it:
 
 ```
 FDC_TRACE=1 ./oric1-emu --headless ... 2>trace.log
 ```
 
-Sortie (nouveau, sprint 38) :
+Output (new, sprint 38):
 
 ```
-[FDC] PC=055F cyc=8692214 write $0313 = 02      ← qui écrit, quand, quoi
+[FDC] PC=055F cyc=8692214 write $0313 = 02      ← who writes, when, what
 [FDC] seek target=2 (c_track=0 track_reg=0 data=02)
 [FDC] READ c_track=2 sector=1 side=0 ok
 ```
 
-- **main.c** (`io_write_callback`) : chaque écriture $0310-$031F avec PC + cycle ;
-- **storage/disk.c** : chaque SEEK (cible + état interne) et chaque READ
-  (piste/secteur/side, found/NOT_FOUND) ;
-- coût nul si la variable d'env est absente (`getenv` évalué une fois).
+- **main.c** (`io_write_callback`): every $0310-$031F write with PC + cycle;
+- **storage/disk.c**: every SEEK (target + internal state) and every READ
+  (track/sector/side, found/NOT_FOUND);
+- zero cost if the environment variable is absent (`getenv` evaluated once).
 
-## 3. Verdict : le 6502 ne nous parlait plus
+## 3. Verdict: the 6502 had stopped talking to us
 
-La trace du scénario incriminé montrait le premier chargement (piste 3,
-21 secteurs, nominal)… puis **plus rien**. Aucune commande FDC après les
-scrolls. Le « mauvais contenu » était le résidu du chargement précédent.
+The trace of the incriminated scenario showed the first load (track 3,
+21 sectors, nominal)… then **nothing more**. No FDC command after the
+scrolls. The "wrong content" was the leftover of the previous load.
 
-Cause racine côté SCUMM-Oric : leur harnais de test comptait sa boucle de
-scroll dans le registre X, clobbré par une routine appelée en `jsr` →
-boucle infinie → le second chargement n'était jamais exécuté (variable
-témoin `cam_x` = 170 au lieu de 20 dans le dump RAM). Compteur déplacé en
-mémoire → seek piste 2 + 9 READ corrects, byte-exact 2273/2273.
+Root cause on the SCUMM-Oric side: their test harness counted its scroll loop
+in the X register, clobbered by a routine called with `jsr` →
+infinite loop → the second load was never executed (witness variable
+`cam_x` = 170 instead of 20 in the RAM dump). Counter moved to
+memory → seek to track 2 + 9 correct READs, byte-exact 2273/2273.
 
-Rétractation formelle archivée côté rapporteur :
+Formal retraction archived on the reporter's side:
 `SCUMM/docs/phosphoric_bug_report_wd1793_scroll.md`.
 
-**Phosphoric est hors de cause. Aucune modification de l'émulation WD1793
-n'a été nécessaire — et aucune ne devait l'être.**
+**Phosphoric is cleared. No change to the WD1793 emulation
+was needed — and none should have been.**
 
-## 4. La vraie trouvaille : régression de contrat `--dump-ram-at`
+## 4. The real finding: `--dump-ram-at` contract regression
 
-En route, les validations memdump du rapporteur cassaient avec « dump trop
-court (49152, attendu 65536) ». Chaîne causale :
+Along the way, the reporter's memdump validations were failing with "dump too
+short (49152, expected 65536)". Causal chain:
 
-1. **Origine** : `fwrite(emu->memory.ram, 1, 0x10000, f)` sur un tableau de
-   49152 octets — *buffer over-read* (UB) qui dumpait « par chance » 64 Ko
-   en lisant `rom[]` adjacent dans la struct. Les consommateurs se sont
-   construits sur ce comportement.
-2. **b2af997** (2026-05-14, passe cppcheck) : l'overflow est tronqué à 48 Ko.
-   Fix mémoire **correct**, mais le contrat documenté (`--help` : « Dump
-   64KB RAM ») n'a pas été mis à jour ni les consommateurs vérifiés.
-3. **Un mois d'invisibilité** : le binaire déployé n'avait pas été rebuilé
-   depuis — la régression dormait dans HEAD sans être livrée.
-4. **Sprint 38** : contrat 64 Ko restauré proprement — $0000-$BFFF = RAM
-   brute, $C000-$FFFF = **vue CPU bankée** (BASIC ROM / overlay Microdisc /
-   upper RAM), lue sans effet de bord (la page I/O n'est pas traversée).
-   Le dump interactif **F7** est aligné sur le même contrat.
+1. **Origin**: `fwrite(emu->memory.ram, 1, 0x10000, f)` on an array of
+   49152 bytes — a *buffer over-read* (UB) that "by luck" dumped 64 KB
+   by reading the adjacent `rom[]` in the struct. Consumers were
+   built on this behaviour.
+2. **b2af997** (2026-05-14, cppcheck pass): the overflow is truncated to 48 KB.
+   A **correct** memory fix, but the documented contract (`--help`: "Dump
+   64KB RAM") was not updated, nor were the consumers checked.
+3. **A month of invisibility**: the deployed binary had not been rebuilt
+   since — the regression lay dormant in HEAD without being shipped.
+4. **Sprint 38**: 64 KB contract properly restored — $0000-$BFFF = raw
+   RAM, $C000-$FFFF = **banked CPU view** (BASIC ROM / Microdisc overlay /
+   upper RAM), read without side effects (the I/O page is not traversed).
+   The interactive **F7** dump is aligned on the same contract.
 
-## 5. Leçons process
+## 5. Process lessons
 
-1. **Binaire déployé ≠ HEAD.** La régression dump a vécu un mois parce que
-   `oric1-emu` n'était pas rebuilé après chaque commit. Proposition :
-   rebuild systématique en fin de sprint (ou CI qui produit le binaire), et
-   les suites externes (SCUMM-Oric) tournent contre ce binaire-là.
-2. **Un fix de sécurité mémoire peut casser un contrat.** Quand on corrige
-   un overflow détecté par un outil, vérifier ce que le code *voulait*
-   faire (ici : dumper 64 Ko) et mettre `--help`/doc/consommateurs en
-   cohérence — pas seulement faire taire l'outil.
-3. **Exiger une trace pour tout bug report FDC.** Politique proposée :
-   tout rapport externe sur le sous-système disque doit joindre une sortie
-   `FDC_TRACE=1`. Ça aurait tué celui-ci en dix minutes au lieu de trois
-   semaines de fausse piste côté rapporteur.
+1. **Deployed binary ≠ HEAD.** The dump regression lived for a month because
+   `oric1-emu` was not rebuilt after each commit. Proposal:
+   systematic rebuild at the end of each sprint (or CI producing the binary), and
+   external suites (SCUMM-Oric) run against that binary.
+2. **A memory-safety fix can break a contract.** When fixing
+   an overflow detected by a tool, check what the code *meant* to
+   do (here: dump 64 KB) and make `--help`/docs/consumers
+   consistent — not just silence the tool.
+3. **Require a trace for every FDC bug report.** Proposed policy:
+   every external report on the disk subsystem must attach a
+   `FDC_TRACE=1` output. It would have killed this one in ten minutes instead of three
+   weeks of false leads on the reporter's side.
 
-## 6. Backlog ouvert
+## 6. Open backlog
 
-- [ ] `test_renderer_init_headless` échoue en profil `SDL2=1` (mode 0x3 vs
-  0x1 attendu) — pré-existant, indépendant du sprint 38, tracé au ROADMAP.
+- [ ] `test_renderer_init_headless` fails in the `SDL2=1` profile (mode 0x3 vs
+  0x1 expected) — pre-existing, independent of sprint 38, tracked in the ROADMAP.
 
-## 7. Références
+## 7. References
 
-| Quoi | Où |
+| What | Where |
 |------|-----|
-| Trace FDC | `src/storage/disk.c` (`fdc_trace_enabled`, SEEK, READ), `src/main.c` (écritures + PC) |
-| Fix dump 64 Ko | `src/main.c` (`--dump-ram-at` + F7) |
-| Commits | `f7f988c` (sprint 38), `b2af997` (origine régression, 2026-05-14) |
-| Rétractation côté rapporteur | `SCUMM/docs/phosphoric_bug_report_wd1793_scroll.md` |
-| Version | 1.16.84-alpha — CHANGELOG / ROADMAP / VERSION_TRACKING à jour |
+| FDC trace | `src/storage/disk.c` (`fdc_trace_enabled`, SEEK, READ), `src/main.c` (writes + PC) |
+| 64 KB dump fix | `src/main.c` (`--dump-ram-at` + F7) |
+| Commits | `f7f988c` (sprint 38), `b2af997` (origin of the regression, 2026-05-14) |
+| Retraction on the reporter's side | `SCUMM/docs/phosphoric_bug_report_wd1793_scroll.md` |
+| Version | 1.16.84-alpha — CHANGELOG / ROADMAP / VERSION_TRACKING up to date |

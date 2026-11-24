@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_iomenu.c
- * @brief Tests du menu des périphériques E/S (F1) : navigation, actions,
- *        sélecteur de fichiers, dessin et rastérisation.
+ * @brief Tests of the I/O peripherals menu (F1): navigation, actions,
+ *        file picker, drawing and rasterisation.
  * @author bmarty <bmarty@mailo.com>
  *
- * IOM_PPM=fichier.ppm écrit en plus le rendu de la page principale (aperçu).
+ * IOM_PPM=file.ppm also writes the rendering of the main page (preview).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,7 +33,7 @@ static int tests_failed = 0;
     printf("FAIL\n    %s:%d: %lld != %lld\n", __FILE__, __LINE__, (long long)(a), (long long)(b)); \
     tests_failed++; return; } } while (0)
 
-static iom_menu_t m;          /* gros (liste de fichiers) : hors pile */
+static iom_menu_t m;          /* large (file list): off the stack */
 static iom_surface_t surf;
 
 static void fill_state(iom_menu_t* mm) {
@@ -59,7 +59,7 @@ static void fill_state(iom_menu_t* mm) {
     st->card[1].present = false;
 }
 
-/* Cherche un texte ASCII sur une rangée de la surface. */
+/* Looks for an ASCII text on a row of the surface. */
 static bool row_has(const iom_surface_t* s, int row, const char* text) {
     size_t n = strlen(text);
     for (int c = 0; c + (int)n <= IOM_COLS; c++)
@@ -86,9 +86,9 @@ TEST(test_open_starts_on_resume) {
 TEST(test_up_down_wrap) {
     iom_init(&m); iom_open(&m);
     iom_key(&m, IOM_KEY_DOWN);
-    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);             /* Reprendre → bouton de langue */
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);             /* Resume → language button */
     iom_key(&m, IOM_KEY_DOWN);
-    ASSERT_EQ(m.cursor, IOM_ITEM_DRIVE0);           /* dernier bouton : retour en tête */
+    ASSERT_EQ(m.cursor, IOM_ITEM_DRIVE0);           /* last button: back to the top */
     iom_key(&m, IOM_KEY_UP);
     ASSERT_EQ(m.cursor, IOM_ITEM_LANG);
     iom_key(&m, IOM_KEY_HOME);
@@ -106,7 +106,7 @@ TEST(test_left_right_columns) {
     ASSERT_EQ(m.cursor, IOM_ITEM_JOYSTICK);
     m.cursor = IOM_ITEM_PRINTER;
     iom_key(&m, IOM_KEY_RIGHT);
-    ASSERT_EQ(m.cursor, IOM_ITEM_PRINTER);          /* ligne pleine : pas de colonne */
+    ASSERT_EQ(m.cursor, IOM_ITEM_PRINTER);          /* full-width line: no column */
     m.cursor = IOM_ITEM_RESET;
     iom_key(&m, IOM_KEY_RIGHT);
     ASSERT_EQ(m.cursor, IOM_ITEM_SAVE);
@@ -115,7 +115,7 @@ TEST(test_left_right_columns) {
     iom_key(&m, IOM_KEY_RIGHT);
     ASSERT_EQ(m.cursor, IOM_ITEM_LANG);
     iom_key(&m, IOM_KEY_RIGHT);
-    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);            /* bord : ne boucle pas */
+    ASSERT_EQ(m.cursor, IOM_ITEM_LANG);            /* edge: does not wrap */
     iom_key(&m, IOM_KEY_LEFT);
     ASSERT_EQ(m.cursor, IOM_ITEM_RESUME);
 }
@@ -137,7 +137,7 @@ TEST(test_toggles_return_actions) {
 TEST(test_drive_columns_protect_and_eject) {
     iom_init(&m); fill_state(&m); iom_open(&m);
     m.cursor = IOM_ITEM_DRIVE0 + 2;
-    iom_key(&m, IOM_KEY_RIGHT);                    /* colonne protection */
+    iom_key(&m, IOM_KEY_RIGHT);                    /* protection column */
     ASSERT_EQ(m.sub, 1);
     iom_action_t a = iom_key(&m, IOM_KEY_ENTER);
     ASSERT_EQ(a.type, IOM_ACT_DISK_PROTECT);
@@ -145,11 +145,11 @@ TEST(test_drive_columns_protect_and_eject) {
     a = iom_key(&m, IOM_KEY_DEL);
     ASSERT_EQ(a.type, IOM_ACT_DISK_EJECT);
     ASSERT_EQ(a.target, 2);
-    iom_key(&m, IOM_KEY_DOWN);                     /* lecteur D : colonne gardée */
+    iom_key(&m, IOM_KEY_DOWN);                     /* drive D: column kept */
     ASSERT_EQ(m.sub, 1);
     m.cursor = IOM_ITEM_TAPE;
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_TAPE_REWIND);
-    iom_key(&m, IOM_KEY_DOWN);                     /* hors médias : colonne remise à 0 */
+    iom_key(&m, IOM_KEY_DOWN);                     /* outside media: column reset to 0 */
     ASSERT_EQ(m.sub, 0);
 }
 
@@ -162,18 +162,18 @@ TEST(test_drive_without_interface_refused) {
     ASSERT_TRUE(m.message_error);
 }
 
-/* LOCI co-simulé/réel : lecteurs grisés, sautés par le curseur, inactifs. */
+/* Co-simulated/real LOCI: drives greyed out, skipped by the cursor, inactive. */
 TEST(test_drives_skipped_when_loci_manages_disks) {
     iom_init(&m); iom_open(&m);
     m.st.disks_by_loci = true;
     m.cursor = IOM_ITEM_LANG;
-    iom_key(&m, IOM_KEY_DOWN);                     /* dernier bouton → lecteurs sautés */
+    iom_key(&m, IOM_KEY_DOWN);                     /* last button → drives skipped */
     ASSERT_EQ(m.cursor, IOM_ITEM_TAPE);
     iom_key(&m, IOM_KEY_UP);
     ASSERT_EQ(m.cursor, IOM_ITEM_LANG);
     iom_key(&m, IOM_KEY_HOME);
     ASSERT_EQ(m.cursor, IOM_ITEM_TAPE);
-    m.cursor = IOM_ITEM_DRIVE0;                    /* même forcé : ni sélecteur ni éjection */
+    m.cursor = IOM_ITEM_DRIVE0;                    /* even when forced: no file picker, no eject */
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
     ASSERT_TRUE(!m.browsing && m.message_error);
     ASSERT_EQ(iom_key(&m, IOM_KEY_DEL).type, IOM_ACT_NONE);
@@ -184,7 +184,7 @@ TEST(test_drives_skipped_when_loci_manages_disks) {
     ASSERT_TRUE(!surf_has(&surf, "pas d'interface disque"));
 }
 
-/* Dossier temporaire de médias pour le sélecteur. */
+/* Temporary media directory for the file picker. */
 static char tmpdir[64];
 static const char* dirs[2];
 static void make_media(void) {
@@ -202,17 +202,17 @@ static void make_media(void) {
 static void rm_media(void) {
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "rm -rf %s", tmpdir);
-    if (system(cmd) != 0) { /* nettoyage au mieux */ }
+    if (system(cmd) != 0) { /* best-effort cleanup */ }
 }
 
 TEST(test_browser_disk_insert) {
     iom_init(&m); fill_state(&m); iom_set_dirs(&m, dirs); iom_open(&m);
-    m.cursor = IOM_ITEM_DRIVE0 + 2;                /* lecteur C, vide */
+    m.cursor = IOM_ITEM_DRIVE0 + 2;                /* drive C, empty */
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(m.browsing);
-    ASSERT_EQ(m.nfiles, 2);                        /* seulement les .dsk */
-    ASSERT_EQ(m.browse_cursor, 0);                 /* « Éjecter » */
-    iom_key(&m, 'z');                              /* saut à l'initiale */
+    ASSERT_EQ(m.nfiles, 2);                        /* only the .dsk files */
+    ASSERT_EQ(m.browse_cursor, 0);                 /* « Éjecter » (Eject) */
+    iom_key(&m, 'z');                              /* jump to initial */
     ASSERT_TRUE(strcmp(m.files[m.browse_cursor - 1].name, "zork.dsk") == 0);
     iom_action_t a = iom_key(&m, IOM_KEY_ENTER);
     ASSERT_EQ(a.type, IOM_ACT_DISK_INSERT);
@@ -225,19 +225,19 @@ TEST(test_browser_refuses_image_in_other_drive) {
     iom_init(&m); fill_state(&m); iom_set_dirs(&m, dirs); iom_open(&m);
     m.cursor = IOM_ITEM_DRIVE0 + 3;
     iom_key(&m, IOM_KEY_ENTER);
-    iom_key(&m, 'c');                              /* Citadelle.dsk, déjà en A */
+    iom_key(&m, 'c');                              /* Citadelle.dsk, already in A */
     iom_action_t a = iom_key(&m, IOM_KEY_ENTER);
     ASSERT_EQ(a.type, IOM_ACT_NONE);
     ASSERT_TRUE(m.message_error);
-    ASSERT_TRUE(m.browsing);                       /* reste dans le sélecteur */
+    ASSERT_TRUE(m.browsing);                       /* stays in the file picker */
 }
 
 TEST(test_browser_tape_and_snapshot) {
     iom_init(&m); fill_state(&m); iom_set_dirs(&m, dirs); iom_open(&m);
     m.cursor = IOM_ITEM_TAPE;
     iom_key(&m, IOM_KEY_ENTER);
-    ASSERT_EQ(m.nfiles, 2);                        /* .tap, casse ignorée */
-    ASSERT_TRUE(m.browse_cursor > 0);              /* curseur sur la cassette en place */
+    ASSERT_EQ(m.nfiles, 2);                        /* .tap, case ignored */
+    ASSERT_TRUE(m.browse_cursor > 0);              /* cursor on the inserted cassette */
     ASSERT_TRUE(strcmp(m.files[m.browse_cursor - 1].name, "AIGLE.TAP") == 0);
     iom_key(&m, IOM_KEY_HOME);
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_TAPE_EJECT);
@@ -252,7 +252,7 @@ TEST(test_browser_tape_and_snapshot) {
     ASSERT_TRUE(strstr(a.path, "etat0001.ost") != NULL);
     m.cursor = IOM_ITEM_TAPE;
     iom_key(&m, IOM_KEY_ENTER);
-    iom_key(&m, IOM_KEY_ESC);                      /* retour sans action */
+    iom_key(&m, IOM_KEY_ESC);                      /* back without action */
     ASSERT_TRUE(!m.browsing);
     ASSERT_TRUE(m.open);
 }
@@ -269,11 +269,11 @@ TEST(test_draw_main_page) {
     ASSERT_TRUE(surf_has(&surf, "QWERTY"));
     ASSERT_TRUE(surf_has(&surf, "Reprendre"));
     ASSERT_TRUE(surf_has(&surf, "Disque A: Citadelle.dsk"));
-    /* Grandes lettres de l'en-tête : « P » sur deux cellules. */
+    /* Large header letters: « P » over two cells. */
     ASSERT_EQ(surf.ch[1][3], 'P');
     ASSERT_EQ(surf.big[1][3], 1);
     ASSERT_EQ(surf.big[1][4], 2);
-    /* Accents convertis en Latin-1 (é = 0xE9). */
+    /* Accents converted to Latin-1 (é = 0xE9). */
     ASSERT_TRUE(surf_has(&surf, "P\xE9riph\xE9riques"));
 }
 
@@ -292,12 +292,12 @@ TEST(test_rasterize_colors) {
     iom_init(&m); fill_state(&m); iom_open(&m);
     iom_draw(&m, &surf);
     iom_rasterize(&surf, rgb);
-    /* En-tête : fond bleu plein (pixel (0,0)). */
+    /* Header: solid blue paper (pixel (0,0)). */
     ASSERT_EQ(rgb[0], 0); ASSERT_EQ(rgb[1], 0); ASSERT_EQ(rgb[2], 255);
-    /* Lignes doublées : ligne 1 = ligne 0. */
+    /* Doubled lines: line 1 = line 0. */
     ASSERT_TRUE(memcmp(rgb, rgb + IOM_WIDTH * 3, IOM_WIDTH * 3) == 0);
-    /* Panneau tramé : deux pixels voisins d'une cellule vide alternent bleu / noir. */
-    const int y = 6 * 16, x = 60 * 8;              /* rangée 6, intérieur du panneau disquettes */
+    /* Dithered panel: two neighbouring pixels of an empty cell alternate blue / black. */
+    const int y = 6 * 16, x = 60 * 8;              /* row 6, inside the floppy panel */
     const uint8_t* p0 = rgb + ((size_t)y * IOM_WIDTH + x) * 3;
     const uint8_t* p1 = p0 + 3;
     ASSERT_TRUE(p0[2] != p1[2]);
@@ -316,8 +316,8 @@ TEST(test_closed_menu_ignores_keys) {
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
 }
 
-/* LOCI-USB, port laissé vide : le port détecté s'affiche (page de la carte et
- * liste des cartes), « aucune détectée » sinon. */
+/* LOCI-USB, port left empty: the detected port is shown (card page and card
+ * list), « aucune détectée » otherwise. */
 TEST(test_loci_usb_detected_port_shown) {
     iom_init(&m);
     fill_state(&m);
@@ -337,7 +337,7 @@ TEST(test_loci_usb_detected_port_shown) {
     m.page = IOM_PAGE_CARDS; m.card_cursor = lo;
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "usb, /dev/ttyACM0"));
-    m.st.usb_loci[0] = '\0';                             /* débranchée */
+    m.st.usb_loci[0] = '\0';                             /* unplugged */
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "usb, aucune d"));
     m.page = IOM_PAGE_CARD;
@@ -345,8 +345,8 @@ TEST(test_loci_usb_detected_port_shown) {
     ASSERT_TRUE(surf_has(&surf, "aucune d"));
 }
 
-/* Lettre accentuée (Latin-1 0xC0-0xFF) sur la surface : texte français resté
- * tel quel. Renvoie la rangée, -1 si aucune. */
+/* Accented letter (Latin-1 0xC0-0xFF) on the surface: French text left
+ * untranslated. Returns the row, -1 if none. */
 static int accent_row(const iom_surface_t* s) {
     for (int r = 0; r < IOM_ROWS; r++)
         for (int c = 0; c < IOM_COLS; c++)
@@ -354,7 +354,7 @@ static int accent_row(const iom_surface_t* s) {
     return -1;
 }
 
-/* Spécificateurs % d'un format, dans l'ordre (« %s%c%04X » → « sc04X »). */
+/* % conversions of a format, in order (« %s%c%04X » → « sc04X »). */
 static void conversions(const char* f, char* out, size_t n) {
     size_t k = 0;
     for (; *f && k + 1 < n; f++) {
@@ -367,9 +367,9 @@ static void conversions(const char* f, char* out, size_t n) {
     out[k] = '\0';
 }
 
-/* Menu en anglais : toutes les pages (principale, cartes, chaque fiche et
- * chaque réglage, les trois modes LOCI) sans aucun texte français accentué ;
- * table : mêmes spécificateurs % des deux côtés ; retour au français. */
+/* Menu in English: every page (main, cards, each card page and each setting,
+ * the three LOCI modes) without any accented French text; table: same %
+ * conversions on both sides; back to French. */
 TEST(test_menu_in_english) {
     for (int i = 0; i < iom_lang_entries(); i++) {
         const char *fr, *en;
@@ -427,9 +427,8 @@ TEST(test_menu_in_english) {
     ASSERT_TRUE(iom_lang_parse("EN", &l) && l == IOM_LANG_EN && !iom_lang_parse("de", &l));
 }
 
-/* Cartes d'extension : page de la liste (dynamique, depuis le registre), page
- * d'une carte, bascule exclusive, saisie contrôlée, sélecteur de fichiers,
- * Appliquer. */
+/* Expansion cards: list page (dynamic, from the registry), card page,
+ * exclusive toggle, checked input, file browser, Apply. */
 TEST(test_cards_pages) {
     iom_init(&m);
     fill_state(&m);
@@ -444,10 +443,10 @@ TEST(test_cards_pages) {
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "Microdisc") && surf_has(&surf, "MEA8000"));
     ASSERT_TRUE(surf_has(&surf, "Appliquer et red"));
-    /* Rien changé : Appliquer ne relance pas. */
+    /* Nothing changed: Apply does not restart. */
     m.card_cursor = cards_count();
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
-    /* LOCI : page de la carte, présence → le Microdisc s'en va (même groupe). */
+    /* LOCI: card page, presence → the Microdisc goes away (same group). */
     m.card_cursor = lo;
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_EQ(m.page, IOM_PAGE_CARD);
@@ -455,18 +454,18 @@ TEST(test_cards_pages) {
     ASSERT_TRUE(m.cards.card[lo].on && !m.cards.card[md].on);
     iom_draw(&m, &surf);
     ASSERT_TRUE(surf_has(&surf, "LOCI") && surf_has(&surf, "menu LOCI"));
-    /* Mode intégré : les réglages du firmware et de la LOCI-USB sont cachés. */
+    /* Built-in mode: the firmware and LOCI-USB settings are hidden. */
     ASSERT_TRUE(surf_has(&surf, "Mode") && !surf_has(&surf, "Firmware (ELF)") &&
                 !surf_has(&surf, "Port de la LOCI-USB"));
-    /* Paramètre fichier : sélecteur ; « Aucun fichier » vide la valeur. */
-    m.param_cursor = 3;                                   /* image SD (après Mode, menu) */
+    /* File parameter: browser; « Aucun fichier » clears the value. */
+    m.param_cursor = 3;                                   /* SD image (after Mode, menu) */
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(m.browsing && m.browse_target == IOM_BROWSE_CARD);
     m.browse_cursor = 0;
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(!m.browsing && m.cards.card[lo].value[2][0] == '\0');
-    /* Mode usb (si ce binaire l'a) : seul le port de la LOCI-USB reste, et la
-     * navigation saute les réglages cachés. */
+    /* usb mode (if this binary has it): only the LOCI-USB port remains, and
+     * navigation skips the hidden settings. */
     if (loci_emu_backend_available("hw")) {
         m.param_cursor = 1;
         snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HW);
@@ -474,39 +473,39 @@ TEST(test_cards_pages) {
         ASSERT_TRUE(surf_has(&surf, "Port de la LOCI-USB") && !surf_has(&surf, "menu LOCI") &&
                     !surf_has(&surf, "Image de carte SD"));
         iom_key(&m, IOM_KEY_DOWN);
-        ASSERT_EQ(m.param_cursor, 10);                    /* port_usb : dernier réglage */
+        ASSERT_EQ(m.param_cursor, 10);                    /* port_usb: last setting */
         iom_key(&m, IOM_KEY_DOWN);
-        ASSERT_EQ(m.param_cursor, 0);                     /* présence */
+        ASSERT_EQ(m.param_cursor, 0);                     /* presence */
         snprintf(m.cards.card[lo].value[0], CARD_VALUE_MAX, LOCI_MODE_HLE);
     }
     iom_key(&m, IOM_KEY_ESC);
     ASSERT_EQ(m.page, IOM_PAGE_CARDS);
-    /* ACIA : saisie de l'adresse, contrôlée (0300-03FF). */
+    /* ACIA: address input, checked (0300-03FF). */
     m.card_cursor = ac;
     iom_key(&m, IOM_KEY_ENTER);
-    iom_key(&m, IOM_KEY_ENTER);                           /* présente */
-    m.param_cursor = 2;                                   /* adresse */
+    iom_key(&m, IOM_KEY_ENTER);                           /* present */
+    m.param_cursor = 2;                                   /* address */
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(m.editing);
     for (int i = 0; i < 4; i++) iom_key(&m, IOM_KEY_DEL);
     iom_text(&m, "1234");
     iom_key(&m, IOM_KEY_ENTER);
-    ASSERT_TRUE(m.editing && m.message_error);            /* refusée */
+    ASSERT_TRUE(m.editing && m.message_error);            /* rejected */
     for (int i = 0; i < 4; i++) iom_key(&m, IOM_KEY_DEL);
     iom_text(&m, "0380");
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(!m.editing);
     ASSERT_TRUE(strcmp(m.cards.card[ac].value[1], "0380") == 0);
-    iom_key(&m, IOM_KEY_DEL);                             /* Suppr : valeur par défaut */
+    iom_key(&m, IOM_KEY_DEL);                             /* Del: default value */
     ASSERT_TRUE(strcmp(m.cards.card[ac].value[1], "031C") == 0);
     iom_key(&m, IOM_KEY_ESC);
-    /* Appliquer : action de relance ; en lecture seule (web), refus. */
+    /* Apply: restart action; refused when read-only (web). */
     m.card_cursor = cards_count();
     m.cards_readonly = true;
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_NONE);
     m.cards_readonly = false;
     ASSERT_EQ(iom_key(&m, IOM_KEY_ENTER).type, IOM_ACT_CARDS_APPLY);
-    /* Annuler : retour à la machine en cours. */
+    /* Cancel: back to the running machine. */
     m.card_cursor = cards_count() + 1;
     iom_key(&m, IOM_KEY_ENTER);
     ASSERT_TRUE(m.cards.card[md].on && !m.cards.card[lo].on);

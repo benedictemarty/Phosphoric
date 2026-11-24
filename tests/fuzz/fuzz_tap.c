@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_tap.c
- * @brief Fuzzing : cassette .tap → lecteur de blocs (storage/tap.c)
+ * @brief Fuzzing: .tap cassette → block reader (storage/tap.c)
  * @author bmarty <bmarty@mailo.com>
  *
- * Même enchaînement que l'insertion d'une cassette dans la version web
- * (web_insert_tap) : en-tête, puis données de start à end, bloc après bloc.
+ * Same sequence as inserting a tape in the web build (web_insert_tap):
+ * header, then data from start to end, block after block.
  */
 #include "fuzz_common.h"
 #include "utils/logging.h"

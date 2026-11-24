@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_sym.c
- * @brief Fuzzing : fichier de symboles (--symbols) → symbol_table_load
+ * @brief Fuzzing: symbol file (--symbols) → symbol_table_load
  * @author bmarty <bmarty@mailo.com>
  */
 #include "fuzz_common.h"

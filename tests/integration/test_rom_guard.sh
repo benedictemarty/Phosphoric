@@ -12,9 +12,9 @@
 # --disk-rom without -r (impossible on real hardware: the BASIC ROM is soldered,
 # the Microdisc EPROM is additional) and warns when no ROM is given at all.
 #
-# 2.20.0 — profil minimal : sans -r, la ROM système par défaut est chargée
-# (roms/basic10.rom, ORIC-1 nu ; roms/basic11b.rom sous -m atmos). La garde
-# ne s'applique plus qu'avec --no-rom (zone $C000-$FFFF volontairement vide).
+# 2.20.0 — minimal profile: without -r, the default system ROM is loaded
+# (roms/basic10.rom, bare ORIC-1; roms/basic11b.rom under -m atmos). The guard
+# now only applies with --no-rom ($C000-$FFFF deliberately left empty).
 
 set -u
 cd "$(dirname "$0")/../.." || exit 1

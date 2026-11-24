@@ -1,233 +1,231 @@
-# Liste de Compatibilite — Phosphoric v1.110.0-alpha
+# Compatibility List — Phosphoric v1.110.0-alpha
 
-Derniere mise a jour : 2026-11-01 (balayage de 1318 cassettes, corrige en 2.31.10)
+Last updated: 2026-11-01 (sweep of 1318 tapes, corrected in 2.31.10)
 
 ---
 
-## Systemes d'exploitation
+## Operating systems
 
-| Programme | Format | Modele | Statut | Notes |
+| Program | Format | Model | Status | Notes |
 |-----------|--------|--------|--------|-------|
-| BASIC 1.0 ROM | .ROM | ORIC-1 | Fonctionnel | Interpreteur BASIC complet |
-| BASIC 1.1 ROM | .ROM | Atmos | Fonctionnel | Auto-detection via JMP $ECCC |
-| Sedoric V4.0 | .DSK | ORIC-1/Atmos | Fonctionnel | Boot, clavier, commandes DOS |
-| Sedoric V3.0 | .DSK | ORIC-1/Atmos | Fonctionnel | Boot et commandes DOS |
+| BASIC 1.0 ROM | .ROM | ORIC-1 | Working | Full BASIC interpreter |
+| BASIC 1.1 ROM | .ROM | Atmos | Working | Auto-detection via JMP $ECCC |
+| Sedoric V4.0 | .DSK | ORIC-1/Atmos | Working | Boot, keyboard, DOS commands |
+| Sedoric V3.0 | .DSK | ORIC-1/Atmos | Working | Boot and DOS commands |
 
 ---
 
-## Jeux cassette (.TAP) — 26/26 fonctionnels
+## Tape games (.TAP) — 26/26 working
 
-| Programme | Format | Taille | Statut | Notes |
+| Program | Format | Size | Status | Notes |
 |-----------|--------|--------|--------|-------|
-| 007 | .TAP | 28 KB | Fonctionnel | Fast load $0180-$7148 |
-| Acheron's Rage | .TAP | 43 KB | Fonctionnel | Fast load |
-| Aigle d'Or | .TAP | 54 KB | Fonctionnel | Fast load |
-| Andromeda | .TAP | 35 KB | Fonctionnel | Fast load |
-| Airline | .TAP | 24 KB | Fonctionnel | Fast load |
-| Atlantis | .TAP | 46 KB | Fonctionnel | Chargement OK |
-| Author | .TAP | 10 KB | Fonctionnel | Chargement OK |
-| Bat Fly | .TAP | 20 KB | Fonctionnel | Chargement OK |
-| Bataille Navale | .TAP | 6 KB | Fonctionnel | Fast load |
-| Breakout | .TAP | 4 KB | Fonctionnel | Fast load $15BB-$2637, BASIC |
-| Bricky | .TAP | 11 KB | Fonctionnel | Fast load |
-| Centipede | .TAP | 5 KB | Fonctionnel | Chargement OK |
-| Chopper | .TAP | 40 KB | Fonctionnel | Fast load (SCREEN mode) |
-| Citadel | .TAP | 49 KB | Fonctionnel | 32 KB charges |
-| Cite | .TAP | 47 KB | Fonctionnel | Chargement OK |
-| Defender | .TAP | 58 KB | Fonctionnel | Fast load $69FF-$80C7 |
-| Johnny | .TAP | 17 KB | Fonctionnel | Chargement OK |
-| Loi du West | .TAP | 47 KB | Fonctionnel | Chargement OK |
-| Manic Miner | .TAP | 39 KB | Fonctionnel | Chargement OK |
-| Manic Miner (proper) | .TAP | 39 KB | Fonctionnel | 24 KB charges |
-| Pasta Blasta | .TAP | 22 KB | Fonctionnel | Fast load |
-| Psy | .TAP | 33 KB | Fonctionnel | Fast load |
-| Poker (poker-asn.tap) | .TAP | — | Fonctionnel | Graphismes HIRES corrects |
-| Soccer Manager | .TAP | 44 KB | Fonctionnel | **Chargeur maison + dechiffrement EOR #$55 → `--tape-signal`** (echoue en fast load, comme Oricutron) |
-| Spooky | .TAP | 24 KB | Fonctionnel | Chargement OK |
-| Spooky (cracked) | .TAP | 24 KB | Fonctionnel | Fast load |
+| 007 | .TAP | 28 KB | Working | Fast load $0180-$7148 |
+| Acheron's Rage | .TAP | 43 KB | Working | Fast load |
+| Aigle d'Or | .TAP | 54 KB | Working | Fast load |
+| Andromeda | .TAP | 35 KB | Working | Fast load |
+| Airline | .TAP | 24 KB | Working | Fast load |
+| Atlantis | .TAP | 46 KB | Working | Loads OK |
+| Author | .TAP | 10 KB | Working | Loads OK |
+| Bat Fly | .TAP | 20 KB | Working | Loads OK |
+| Bataille Navale | .TAP | 6 KB | Working | Fast load |
+| Breakout | .TAP | 4 KB | Working | Fast load $15BB-$2637, BASIC |
+| Bricky | .TAP | 11 KB | Working | Fast load |
+| Centipede | .TAP | 5 KB | Working | Loads OK |
+| Chopper | .TAP | 40 KB | Working | Fast load (SCREEN mode) |
+| Citadel | .TAP | 49 KB | Working | 32 KB loaded |
+| Cite | .TAP | 47 KB | Working | Loads OK |
+| Defender | .TAP | 58 KB | Working | Fast load $69FF-$80C7 |
+| Johnny | .TAP | 17 KB | Working | Loads OK |
+| Loi du West | .TAP | 47 KB | Working | Loads OK |
+| Manic Miner | .TAP | 39 KB | Working | Loads OK |
+| Manic Miner (proper) | .TAP | 39 KB | Working | 24 KB loaded |
+| Pasta Blasta | .TAP | 22 KB | Working | Fast load |
+| Psy | .TAP | 33 KB | Working | Fast load |
+| Poker (poker-asn.tap) | .TAP | — | Working | Correct HIRES graphics |
+| Soccer Manager | .TAP | 44 KB | Working | **Custom loader + EOR #$55 decryption → `--tape-signal`** (fails with fast load, as in Oricutron) |
+| Spooky | .TAP | 24 KB | Working | Loads OK |
+| Spooky (cracked) | .TAP | 24 KB | Working | Fast load |
 
 ---
 
-## Jeux disque (.DSK) — 11/11 fonctionnels
+## Disk games (.DSK) — 11/11 working
 
-| Programme | Format | Taille | Geometrie | Statut | Notes |
+| Program | Format | Size | Geometry | Status | Notes |
 |-----------|--------|--------|-----------|--------|-------|
-| 3D Fongus | .DSK | 1 MB | — | Fonctionnel | Boot Sedoric |
-| Aigle d'Or | .DSK | 537 KB | 2 faces x 42 pistes | Fonctionnel | Boot Sedoric |
-| Citadelle | .DSK | 141 KB | 1 face x 22 pistes | Fonctionnel | Boot Sedoric |
-| Le Manoir du Dr Genius | .DSK | 141 KB | 1 face x 22 pistes | Fonctionnel | Boot Sedoric |
-| Manic Miner (Telestrat EN) | .DSK | 537 KB | — | Fonctionnel | Boot Sedoric |
-| Manic Miner (Telestrat FR) | .DSK | 537 KB | — | Fonctionnel | Boot Sedoric |
-| Oric Chess | .DSK | 141 KB | 1 face x 22 pistes | Fonctionnel | Boot Sedoric |
-| Manic Miner | .DSK | 269 KB | — | Fonctionnel | Boot Sedoric |
-| Pasta Blasta | .DSK | 1.2 MB | — | Fonctionnel | Boot Sedoric |
-| Sedoric V4.0 | .DSK | 1 MB | 2 faces x 80 pistes | Fonctionnel | Systeme Sedoric |
-| Sedoric V3.0 | .DSK | 1 MB | — | Fonctionnel | Systeme Sedoric |
+| 3D Fongus | .DSK | 1 MB | — | Working | Sedoric boot |
+| Aigle d'Or | .DSK | 537 KB | 2 sides x 42 tracks | Working | Sedoric boot |
+| Citadelle | .DSK | 141 KB | 1 side x 22 tracks | Working | Sedoric boot |
+| Le Manoir du Dr Genius | .DSK | 141 KB | 1 side x 22 tracks | Working | Sedoric boot |
+| Manic Miner (Telestrat EN) | .DSK | 537 KB | — | Working | Sedoric boot |
+| Manic Miner (Telestrat FR) | .DSK | 537 KB | — | Working | Sedoric boot |
+| Oric Chess | .DSK | 141 KB | 1 side x 22 tracks | Working | Sedoric boot |
+| Manic Miner | .DSK | 269 KB | — | Working | Sedoric boot |
+| Pasta Blasta | .DSK | 1.2 MB | — | Working | Sedoric boot |
+| Sedoric V4.0 | .DSK | 1 MB | 2 sides x 80 tracks | Working | Sedoric system |
+| Sedoric V3.0 | .DSK | 1 MB | — | Working | Sedoric system |
 
 ---
 
-## Demos / Programmes de test
+## Demos / test programs
 
-| Programme | Format | Statut | Notes |
+| Program | Format | Status | Notes |
 |-----------|--------|--------|-------|
-| Hello World | .TAP | Fonctionnel | Mode texte, sortie PRINT |
-| Demo sonore | .TAP | Fonctionnel | Generation PSG tone/enveloppe |
-| Demo graphique HIRES | .TAP | Fonctionnel | Rendu 240x200 |
-| Explode | .TAP | Fonctionnel | CLOAD, gameplay fonctionnel |
+| Hello World | .TAP | Working | Text mode, PRINT output |
+| Sound demo | .TAP | Working | PSG tone/envelope generation |
+| HIRES graphics demo | .TAP | Working | 240x200 rendering |
+| Explode | .TAP | Working | CLOAD, gameplay working |
 
 ---
 
-## Taux de compatibilite
+## Compatibility rate
 
-| Categorie | Testes | Fonctionnels | Taux |
+| Category | Tested | Working | Rate |
 |-----------|--------|-------------|------|
-| Cassettes (.TAP) | 25 | 25 | **100%** |
-| Disques (.DSK) | 11 | 11 | **100%** |
+| Tapes (.TAP) | 25 | 25 | **100%** |
+| Disks (.DSK) | 11 | 11 | **100%** |
 | Demos / tests | 4 | 4 | **100%** |
 | **Total** | **40** | **40** | **100%** |
 
 ---
 
-## Balayage d'une archive de 1318 cassettes (2.31.8, corrige en 2.31.10)
+## Sweep of an archive of 1318 tapes (2.31.8, corrected in 2.31.10)
 
-`tools/tap_sweep.sh DIR [JOBS]` charge chaque `.tap` d'un dossier par le
-chemin normal (`CLOAD""` automatique, sans `-f`), 25 M cycles sur la ROM Atmos,
-puis relance sur la ROM ORIC-1 les cas suspects. Lance sur
-`~/oriclib/games/tap` (archive locale, non versionnee) le 2026-11-01.
+`tools/tap_sweep.sh DIR [JOBS]` loads every `.tap` of a folder the normal way
+(automatic `CLOAD""`, no `-f`), 25 M cycles on the Atmos ROM, then runs the
+suspicious cases again on the ORIC-1 ROM. Run on `~/oriclib/games/tap` (local
+archive, not versioned) on 2026-11-01.
 
-**Correction (2.31.10)** : le bilan publie en 2.31.8 annoncait « 0 arret du
-6502 ». C'etait faux : l'outil lisait les journaux de l'emulateur sur stderr,
-alors qu'ils sortent sur stdout, et ne voyait donc aucun arret. Bilan refait
-avec l'outil corrige :
+**Correction (2.31.10)**: the summary published in 2.31.8 claimed "0 stop of
+the 6502". That was wrong: the tool read the emulator logs on stderr, while
+they go to stdout, so it saw no stop at all. Summary redone with the fixed
+tool:
 
-| Atmos / ORIC-1 | Nombre | Lecture |
-|----------------|--------|---------|
-| OK | 1053 | ne prouve pas que le programme est juste, seulement qu'il ne plante pas |
-| `Ready` / `Ready` | 160 | surtout des cassettes sans drapeau d'auto-run (comportement normal) ; 2 lecteurs de musique sous interruption (`SPACEMU2`, `POSDEMO`) |
-| `Ready` / OK | 2 | programmes ORIC-1 |
-| arret / OK | 74 | programmes ORIC-1 qui plantent sur la ROM Atmos, et marchent sur la ROM 1.0 |
-| arret / arret | 16 | 13 cassettes `os*` (lecteurs de musique) et `vache.TAP`, `os2kata`, `os2vwtit` : voir ci-dessous |
-| arret / `Ready` | 1 | `assdesasm` : Oricutron plante aussi sur Atmos |
-| `ERROR` / OK | 10 | programmes ORIC-1, et 3 faux positifs (le mot fait partie du texte) |
-| `ERROR` / `ERROR` | 2 | dont `ogp-nim.tap`, fichier abime (chaine de lignes BASIC cassee apres la ligne 710) |
+| Atmos / ORIC-1 | Count | Reading |
+|----------------|-------|---------|
+| OK | 1053 | does not prove the program is right, only that it does not crash |
+| `Ready` / `Ready` | 160 | mostly tapes with no auto-run flag (normal behaviour); 2 interrupt-driven music players (`SPACEMU2`, `POSDEMO`) |
+| `Ready` / OK | 2 | ORIC-1 programs |
+| stop / OK | 74 | ORIC-1 programs that crash on the Atmos ROM and work on ROM 1.0 |
+| stop / stop | 16 | 13 `os*` tapes (music players) plus `vache.TAP`, `os2kata`, `os2vwtit`: see below |
+| stop / `Ready` | 1 | `assdesasm`: Oricutron crashes too on Atmos |
+| `ERROR` / OK | 10 | ORIC-1 programs, and 3 false positives (the word is part of the text) |
+| `ERROR` / `ERROR` | 2 | including `ogp-nim.tap`, a damaged file (BASIC line chain broken after line 710) |
 
-**Contre-verification avec Oricutron 1.2.0** (lance sous Xvfb, memes cassettes,
-ROM Phosphoric) :
-- `osarkpan`, `oscomman`, `osqix`, `vache` : Oricutron s'arrete dans son
-  debogueur **a la meme adresse** que Phosphoric (`$B5AC`, `$B5AC`, `$0808`,
-  `$5057`) : defaut des fichiers, pas de l'emulateur. Les 10 cassettes `os*`
-  arretees en `$B5AD` suivent le meme chemin (`JSR $023C` vers la ROM, puis
-  retour sur un octet `$02` dans la zone du jeu de caracteres).
-- Ecrans HIRES : les 282 captures sans texte lisible ont ete examinees a
-  l'oeil sur planches contact (`tools/contact_sheet.py`). 23 etaient vides ou
-  bloquees sur « patientez » ; 13 affichent leur titre avec un chargement plus
-  long (80 M cycles). Sur les 10 restantes, 7 donnent le meme ecran sous
-  Oricutron (dont 2 programmes ORIC-1 et 1 cassette qui attend un fichier
-  suivant).
+**Cross-check with Oricutron 1.2.0** (run under Xvfb, same tapes, Phosphoric
+ROMs):
+- `osarkpan`, `oscomman`, `osqix`, `vache`: Oricutron stops in its debugger
+  **at the same address** as Phosphoric (`$B5AC`, `$B5AC`, `$0808`, `$5057`):
+  defects of the files, not of the emulator. The 10 `os*` tapes stopping at
+  `$B5AD` follow the same path (`JSR $023C` into the ROM, then return onto a
+  `$02` byte in the character set area).
+- HIRES screens: the 282 captures with no readable text were reviewed by eye
+  on contact sheets (`tools/contact_sheet.py`). 23 were blank or stuck on
+  "please wait"; 13 show their title with a longer load (80 M cycles). Of the
+  10 left, 7 give the same screen under Oricutron (including 2 ORIC-1 programs
+  and 1 tape waiting for a next file).
 
-**Divergences non resolues** (pas de vrai ORIC pour trancher) :
-- `LOADER2.TAP` sur ROM ORIC-1 : Phosphoric arrete le 6502 en `$B585` (aussi
-  avec `--tape-signal`, lecture par la vraie ROM) ; Oricutron revient a `Ready`.
-  Aucun des deux n'affiche le jeu.
-- `ALCHIMIE.tap` sur ROM Atmos : Phosphoric execute le programme ; Oricutron
-  plante dans la ROM (`$E786`, routines cassette, possible effet de son
-  chargement rapide).
+**Unresolved divergences** (no real ORIC to decide):
+- `LOADER2.TAP` on the ORIC-1 ROM: Phosphoric stops the 6502 at `$B585` (also
+  with `--tape-signal`, read by the real ROM); Oricutron returns to `Ready`.
+  Neither shows the game.
+- `ALCHIMIE.tap` on the Atmos ROM: Phosphoric runs the program; Oricutron
+  crashes in the ROM (`$E786`, tape routines, possibly an effect of its fast
+  loading).
 
-Limite : le critere est l'etat du CPU, l'ecran texte et, pour le HIRES, un
-examen visuel sans reference ; un son faux ou un blocage plus tardif ne sont
-pas detectes.
+Limit: the criterion is the CPU state, the text screen and, for HIRES, a visual
+review with no reference; wrong sound or a later hang are not detected.
 
-`make test-game-compat` lit aussi cette archive (`ORICLIB_TAP`, defaut
-`~/oriclib/games/tap`) : 10 titres a ecran d'accueil connu, ignores si le
-dossier est absent.
+`make test-game-compat` also reads this archive (`ORICLIB_TAP`, default
+`~/oriclib/games/tap`): 10 titles with a known intro screen, skipped when the
+folder is absent.
 
 ---
 
-## Balayage de 484 disquettes (2.31.12)
+## Sweep of 484 disks (2.31.12)
 
-`tools/dsk_sweep.sh DOSSIER [TACHES]` demarre chaque `.dsk` sur ROM Atmos + ROM
-Microdisc pendant 30 M cycles, deux fois : timing reel du WD1793 (defaut, octets
-au rythme du plateau depuis 2.31.9) et `--fdc-timing fast`. Lance sur
-`~/oriclib/games/dsk` (archive locale, non versionnee) le 2026-11-01 :
+`tools/dsk_sweep.sh DIR [JOBS]` boots each `.dsk` on the Atmos ROM + Microdisc
+ROM for 30 M cycles, twice: real WD1793 timing (default, bytes paced by the
+platter since 2.31.9) and `--fdc-timing fast`. Run on `~/oriclib/games/dsk`
+(local archive, not versioned) on 2026-11-01:
 
-| Reel / fast | Nombre | Lecture |
-|-------------|--------|---------|
+| Real / fast | Count | Reading |
+|-------------|-------|---------|
 | OK / OK | 424 | |
-| OK / octets perdus | 59 | le modele reel ne perd rien ; en `fast`, le chien de garde leve S2 sans perte reelle (octets servis a la demande du CPU) |
-| arret / arret | 1 | `MazeEaterUTS.dsk` : programme ORIC-1 (meme arret en `$1108` que `01.tap` sur ROM Atmos, qui marche sur ROM 1.0) |
+| OK / lost bytes | 59 | the real model loses nothing; in `fast`, the watchdog raises S2 without any real loss (bytes served on CPU demand) |
+| stop / stop | 1 | `MazeEaterUTS.dsk`: an ORIC-1 program (same stop at `$1108` as `01.tap` on the Atmos ROM, which works on ROM 1.0) |
 
-**Aucun octet perdu sur les 484 disquettes avec le modele lie au plateau.** Ecrans
-(passage reel) : 398 avec du texte, 51 sur `Ready` (pas de demarrage automatique),
-33 qui demandent une disquette systeme (disquettes de donnees), 1 vide. Limite :
-« OK » veut dire « ni arret, ni perte, ni delai depasse », pas « programme juste ».
+**No byte lost on the 484 disks with the platter-paced model.** Screens (real
+run): 398 with text, 51 on `Ready` (no auto-start), 33 asking for a system disk
+(data disks), 1 blank. Limit: "OK" means "no stop, no loss, no timeout", not
+"program correct".
 
 ---
 
-## Resultats des tests unitaires
+## Unit test results
 
-`make tests` : **908 tests, 100% pass** (35 suites), verifie le 2026-08-30.
+`make tests`: **908 tests, 100% pass** (35 suites), checked on 2026-08-30.
 
-Le detail par suite evolue a chaque version ; la source faisant autorite
-(compteur total + statut par composant) est maintenue dans **VERSION_TRACKING**
-et **CIRRUS_OS** a la racine du depot. Voir aussi `make test-<suite>` (cpu,
+The per-suite breakdown changes with every version; the authoritative source
+(total count + status per component) is maintained in **VERSION_TRACKING**
+and **CIRRUS_OS** at the root of the repository. See also `make test-<suite>` (cpu,
 memory, io, storage, system, video, audio, debugger, savestate, atmos,
 joystick, printer, mcp40, renderer, trace, profiler, rominfo, serial, loci…).
 
 ---
 
-## Compatibilite ROM
+## ROM compatibility
 
-| ROM | Taille | Vecteur RESET | Modele | Statut |
+| ROM | Size | RESET vector | Model | Status |
 |-----|--------|--------------|--------|--------|
-| basic10.rom (BASIC 1.0) | 16384 octets | $EA59 | ORIC-1 | Valide |
-| basic11b.rom (BASIC 1.1) | 16384 octets | $ECCC | Atmos | Valide |
-| microdis.rom (Microdisc) | 8192 octets | N/A | Overlay $E000 | Fonctionnel |
+| basic10.rom (BASIC 1.0) | 16384 bytes | $EA59 | ORIC-1 | Valid |
+| basic11b.rom (BASIC 1.1) | 16384 bytes | $ECCC | Atmos | Valid |
+| microdis.rom (Microdisc) | 8192 bytes | N/A | Overlay $E000 | Working |
 
 ---
 
-## Precision de l'emulation
+## Emulation accuracy
 
-| Composant | Precision | Notes |
+| Component | Accuracy | Notes |
 |-----------|----------|-------|
-| 6502 CPU | Précis au cycle bus | 151 opcodes officiels, BCD, bug JMP indirect |
-| VIA 6522 | Fonctionnel | Timers, interruptions, callbacks ports, CB1 edge |
-| AY-3-8910 PSG | Precis | Courbe DAC Oricutron, diviseurs d'horloge |
-| ULA Video | Fonctionnel | Texte + HIRES, attributs serie, timing PAL |
-| WD1793 FDC | Fonctionnel | Commandes Type I/II, lecture/ecriture secteur ; saves in-game persistantes (--disk-writeback / savestate) |
-| Clavier | Precis | Matrice 8x8 via VIA + PSG Port A |
-| Joystick IJK | Fonctionnel | Port A PSG actif bas, clavier + gamepad |
-| Imprimante | Fonctionnel | Centronics : donnée sur ORA, STROBE sur PB4, ACK sur CA1 (2.31.4 ; avant : CA2, faux) |
-| MCP-40 | Fonctionnel | 8 commandes, 4 couleurs, export BMP |
-| ACIA 6551 | Fonctionnel | Serie $031C-$031F, backends loopback/tcp/pty/com/modem |
-| Digitelec DTL 2000 | Fidele | PIA 6821 + ACIA 6850 a $03F8-$03FD, registres OCR |
-| MIDI Mageco | Fonctionnel | MC6850 a $03FE-$03FF, 31250 baud, `--mageco` (carte d'origine, forum t=2525 p.1) |
-| MIDI ORICON | Fonctionnel | MC6850 a $031C-$031D + generateur d'horloge $031E-$031F, `--oricon` (reboot moderne, p.3, compatible LOCI) |
-| MIDI temps reel | Fonctionnel | Port MIDI hote `--mageco midi[:TARGET]` (build `MIDI=1`) : ALSA (Linux, verifie), CoreMIDI/WinMM (ecrits, non verifies) |
-| Lecteur .mid (SMF) | Fonctionnel | `--mageco smf:FILE[:loop]` rejoue un fichier .mid dans l'Oric en MIDI IN cadence (format 0/1, carte de tempo) |
+| 6502 CPU | Bus-cycle-accurate | 151 official opcodes, BCD, indirect JMP bug |
+| VIA 6522 | Working | Timers, interrupts, port callbacks, CB1 edge |
+| AY-3-8910 PSG | Accurate | Oricutron DAC curve, clock dividers |
+| ULA Video | Working | Text + HIRES, serial attributes, PAL timing |
+| WD1793 FDC | Working | Type I/II commands, sector read/write; persistent in-game saves (--disk-writeback / savestate) |
+| Keyboard | Accurate | 8x8 matrix via VIA + PSG Port A |
+| IJK joystick | Working | PSG Port A active low, keyboard + gamepad |
+| Printer | Working | Centronics: data on ORA, STROBE on PB4, ACK on CA1 (2.31.4; before: CA2, wrong) |
+| MCP-40 | Working | 8 commands, 4 colours, BMP export |
+| ACIA 6551 | Working | Serial $031C-$031F, loopback/tcp/pty/com/modem backends |
+| Digitelec DTL 2000 | Faithful | PIA 6821 + ACIA 6850 at $03F8-$03FD, OCR'd registers |
+| Mageco MIDI | Working | MC6850 at $03FE-$03FF, 31250 baud, `--mageco` (original card, forum t=2525 p.1) |
+| ORICON MIDI | Working | MC6850 at $031C-$031D + clock generator $031E-$031F, `--oricon` (modern reboot, p.3, LOCI-compatible) |
+| Real-time MIDI | Working | Host MIDI port `--mageco midi[:TARGET]` (`MIDI=1` build): ALSA (Linux, verified), CoreMIDI/WinMM (written, not verified) |
+| .mid (SMF) player | Working | `--mageco smf:FILE[:loop]` replays a .mid file into the Oric as paced MIDI IN (format 0/1, tempo map) |
 
 ---
 
-## Limitations connues
+## Known limitations
 
-- Le support Telestrat n'est pas encore implemente
-- Certains programmes avec protection anti-copie peuvent ne pas se charger
-- La couverture de code n'a pas ete mesuree formellement (estimation > 80%)
-- Les tests visuels (rendu HIRES, couleurs) sont valides par screenshot headless
-- Les ecritures disque du jeu (saves in-game) ne sont ecrites dans le fichier .dsk
-  qu'avec --disk-writeback (opt-in, ecrase en place) ; sinon elles vivent dans la
-  session ou dans un savestate (.ost capture l'image disque)
-- La carte MIDI Mageko occupe $03FE/$03FF : sur vrai materiel, le forum t=2525
-  signale un risque de conflit d'adresses avec d'autres extensions (l'emulateur
-  avertit si le Microdisc est present). Le backend MIDI temps reel `--mageco midi`
-  necessite un build `MIDI=1` ; la branche ALSA (Linux) est verifiee, les portages
-  CoreMIDI (macOS) / WinMM (Windows) sont ecrits mais non verifies sur materiel reel
+- Telestrat support is not implemented yet
+- Some copy-protected programs may fail to load
+- Code coverage has not been formally measured (estimate > 80%)
+- Visual tests (HIRES rendering, colours) are validated by headless screenshot
+- The game's disk writes (in-game saves) are only written to the .dsk file
+  with --disk-writeback (opt-in, overwrites in place); otherwise they live in the
+  session or in a savestate (.ost captures the disk image)
+- The Mageko MIDI card occupies $03FE/$03FF: on real hardware, forum t=2525
+  reports a risk of address conflicts with other expansions (the emulator
+  warns if the Microdisc is present). The real-time MIDI backend `--mageco midi`
+  requires a `MIDI=1` build; the ALSA branch (Linux) is verified, the
+  CoreMIDI (macOS) / WinMM (Windows) ports are written but not verified on real hardware
 
 ---
 
-## Signaler la compatibilite
+## Reporting compatibility
 
-Si vous testez un programme non liste ici, merci de signaler :
-- Nom du programme et format (.TAP/.DSK)
-- S'il se charge et s'execute correctement
-- Tout glitch visuel ou audio observe
-- Etapes pour reproduire tout probleme
+If you test a program not listed here, please report:
+- Program name and format (.TAP/.DSK)
+- Whether it loads and runs correctly
+- Any visual or audio glitch observed
+- Steps to reproduce any problem

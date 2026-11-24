@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# test_web_iomenu.sh — menu des périphériques (F1) dans la build WebAssembly
+# test_web_iomenu.sh — peripherals menu (F1) in the WebAssembly build
 #
-# Construit la build web (make wasm, emsdk requis), la sert en HTTP local et la
-# pilote dans Chrome headless (Playwright) : F1 ouvre le menu sans atteindre le
-# navigateur, machine figée pendant le menu, clavier virtuel qui le pilote,
-# bouton I/O de la barre latérale.
+# Builds the web build (make wasm, emsdk required), serves it over local HTTP and
+# drives it in headless Chrome (Playwright): F1 opens the menu without reaching the
+# browser, machine frozen while the menu is open, on-screen keyboard driving it,
+# sidebar I/O button.
 #
-# SKIP (exit 0) si emcc, node, Playwright ou Chrome sont absents : outils
-# optionnels, hors CI par défaut.
+# SKIP (exit 0) if emcc, node, Playwright or Chrome are missing: optional
+# tools, outside CI by default.
 set -u
 cd "$(dirname "$0")/../.."
 

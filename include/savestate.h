@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "io/io_device.h"   /* io_device_t : hooks de sérialisation par device */
+#include "io/io_device.h"   /* io_device_t: per-device serialization hooks */
 
 #define SAVESTATE_MAGIC    "OST1"
 #define SAVESTATE_VERSION  1
@@ -26,13 +26,13 @@
 typedef struct emulator_s emulator_t;
 
 /**
- * @brief Enregistre la table des périphériques de bus pour la sérialisation.
+ * @brief Registers the bus device table for serialization.
  *
- * Appelé une fois à l'initialisation (par main.c). savestate_save/load itèrent
- * ensuite cette table et appellent les hooks save/load des devices qui en
- * fournissent (save_tag != NULL) — sans que savestate.c connaisse io_bus.
- * `devices` doit rester valide pendant toute la durée de vie de l'émulateur
- * (la table io_bus est statique). count <= 0 ou devices NULL = aucun hook.
+ * Called once at initialization (by main.c). savestate_save/load then iterate
+ * over this table and call the save/load hooks of the devices that provide
+ * them (save_tag != NULL) -- without savestate.c knowing about io_bus.
+ * `devices` must remain valid for the whole lifetime of the emulator
+ * (the io_bus table is static). count <= 0 or devices NULL = no hook.
  */
 void savestate_set_io_devices(const io_device_t* devices, int count);
 

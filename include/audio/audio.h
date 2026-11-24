@@ -46,9 +46,9 @@ typedef struct {
     uint8_t  env_step;
     uint8_t  env_volume;
     bool     env_holding;
-    /* V2-E5 : accumulateur fractionnaire (Q16) du nombre de pas d'horloge
-     * interne (clock/8) à exécuter pour produire un échantillon de sortie.
-     * Le PSG est cadencé au matériel, pas au taux d'échantillonnage. */
+    /* V2-E5: fractional accumulator (Q16) of the number of internal clock
+     * steps (clock/8) to run to produce one output sample.
+     * The PSG is clocked like the hardware, not at the sample rate. */
     uint32_t step_acc;
 } ay_play_t;
 
@@ -56,18 +56,18 @@ typedef struct ay3891x_s {
     uint8_t registers[AY_NUM_REGISTERS];
     uint8_t selected_reg;
 
-    /* ─── Étage de sortie (V2-E5, d'après le schéma officiel Oric-1/Atmos) ───
-     * Les trois sorties CH_A/CH_B/CH_C de l'AY-3-8912 sont reliées ensemble sur
-     * une charge commune (R4 = 1 kΩ), puis le signal traverse un condensateur de
-     * COUPLAGE (C4) avant l'ampli LM386. Ce couplage bloque la composante
-     * continue : le signal du PSG est unipolaire (0 → +max), et sans ce blocage
-     * on enverrait au DAC un décalage continu qu'aucun haut-parleur ne restitue.
+    /* ─── Output stage (V2-E5, from the official Oric-1/Atmos schematic) ───
+     * The three outputs CH_A/CH_B/CH_C of the AY-3-8912 are tied together on
+     * a common load (R4 = 1 kΩ), then the signal goes through a COUPLING
+     * capacitor (C4) before the LM386 amplifier. This coupling blocks the DC
+     * component: the PSG signal is unipolar (0 → +max), and without this
+     * blocking a DC offset that no loudspeaker reproduces would be sent to the DAC.
      *
-     * Estimateur de continu en virgule fixe Q16, constante de temps 2^12
-     * échantillons (≈ 1,7 Hz à 44,1 kHz) : assez bas pour être inaudible, assez
-     * haut pour suivre les changements de niveau. Entier, donc déterministe. */
+     * DC estimator in Q16 fixed point, time constant 2^12 samples
+     * (≈ 1.7 Hz at 44.1 kHz): low enough to be inaudible, high enough
+     * to follow level changes. Integer, hence deterministic. */
     int32_t dc_acc;
-    bool    dc_block_off;   /* true = sortie brute, sans blocage (diagnostic) */
+    bool    dc_block_off;   /* true = raw output, no DC blocking (diagnostic) */
 
     /* Tone generators */
     uint16_t tone_period[3];
@@ -129,16 +129,16 @@ void audio_cleanup(void);
 void audio_pause(bool pause);
 
 
-/* Sources audio des cartes d'extension (modules, card_module.h) : chacune produit
- * des échantillons mono, mixés au PSG (moyenne, comme les synthèses vocales)
- * dans l'ordre d'enregistrement, par le callback SDL comme par la capture
- * (WAV/AVI/cast). Une même source (fn, ctx) n'est enregistrée qu'une fois.
- * false : rien produit (ex. SP0256 sans ROM valide), pas de mixage. */
+/* Audio sources of the expansion cards (modules, card_module.h): each one
+ * produces mono samples, mixed into the PSG (averaged, like the speech synths)
+ * in registration order, by the SDL callback as well as by the capture
+ * (WAV/AVI/cast). A given source (fn, ctx) is registered only once.
+ * false: nothing produced (e.g. SP0256 without a valid ROM), no mixing. */
 typedef bool (*audio_source_fn)(void* ctx, int16_t* out, int n);
 void audio_add_source(audio_source_fn fn, void* ctx);
-/* Mixe les sources dans @p stereo (@p n trames L/R entrelacées), par blocs d'au
- * plus @p chunk_max échantillons (512 pour le callback SDL ; une trame entière
- * pour la capture : le découpage reste celui d'avant, sortie identique). */
+/* Mixes the sources into @p stereo (@p n interleaved L/R frames), in blocks of
+ * at most @p chunk_max samples (512 for the SDL callback; a whole frame for
+ * the capture: the chunking stays as before, identical output). */
 void audio_mix_sources(int16_t* stereo, int n, int chunk_max);
 
 /* AVI audio tap (GUI muxing). In GUI the SDL audio callback owns the PSG

@@ -126,8 +126,8 @@ bool mageco_addr_in_range(const mageco_t* dev, uint16_t addr)
 }
 
 /* ── Savestate (Epic 7 / US4) ───────────────────────────────────────────────
- * État émulé en blob (même-build, garde par taille) ; transport hôte (backend,
- * trace, callbacks) préservé depuis l'instance vivante — cf. dtl2000_save. */
+ * Emulated state as a blob (same-build, size-guarded); host transport (backend,
+ * trace, callbacks) preserved from the live instance — cf. dtl2000_save. */
 bool mageco_save(const mageco_t* dev, FILE* fp)
 {
     return fwrite(dev, sizeof(*dev), 1, fp) == 1;

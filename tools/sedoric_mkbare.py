@@ -58,7 +58,7 @@ def main():
 
     if len(d) > MFM_HDR and d[:8] == b"MFM_DISK":
         tracks = d[12] | d[13] << 8
-        # bloc side-major : face 0, piste 20
+        # side-major block: side 0, track 20
         base = MFM_HDR + (0 * tracks + DIR_TRACK) * TRK_RAW
         td = d[base:base + TRK_RAW]
         off = None
@@ -78,8 +78,8 @@ def main():
         d[off + SECSZ + 1] = crc & 0xFF
         fmt = "MFM_DISK"
     else:
-        # RAW side-major : t20 s1 face 0 = (0*tracks + 20)*17 + 0
-        # géométrie inférée : 17 secteurs/piste, 2 faces si taille le permet
+        # RAW side-major: t20 s1 side 0 = (0*tracks + 20)*17 + 0
+        # inferred geometry: 17 sectors/track, 2 sides if the size allows it
         sectors = 17
         n = len(d) // (sectors * SECSZ)
         tracks = n // 2 if n % 2 == 0 and n > DIR_TRACK * 2 else n

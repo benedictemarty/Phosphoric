@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 AND Zlib */
 /**
  * @file iom_font.h
- * @brief Police 8x8 du menu des périphériques (F1).
+ * @brief 8x8 font of the peripherals menu (F1).
  *
- * Reprise de Neo6502TeleStrat (src/osd/osd_font.h, licence zlib/libpng,
- * copyright bmarty) : texte unscii-8 de Viznut (domaine public,
- * http://viznut.fi/unscii/), filets et icônes 0x80-0x9F dessinés par ce projet.
- * Version modifiée : symboles renommés (IOM_), aucune donnée changée.
- * Codage : Latin-1 ; bit 0 d'un octet = pixel de gauche.
+ * Taken from Neo6502TeleStrat (src/osd/osd_font.h, zlib/libpng licence,
+ * copyright bmarty): unscii-8 text by Viznut (public domain,
+ * http://viznut.fi/unscii/), rules and icons 0x80-0x9F drawn by that project.
+ * Modified version: symbols renamed (IOM_), no data changed.
+ * Encoding: Latin-1; bit 0 of a byte = leftmost pixel.
  */
 #ifndef IOM_FONT_H
 #define IOM_FONT_H

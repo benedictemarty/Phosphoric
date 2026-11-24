@@ -194,7 +194,7 @@ TEST(test_bonjour_sequence) {
     ASSERT_FALSE(mea8000_speaking(&m));  /* eventually idle */
 }
 
-/* Relit la section dans un tampon mémoire (comparaison octet à octet). */
+/* Reads the section back into a memory buffer (byte-by-byte comparison). */
 static long section_bytes(FILE* fp, unsigned char* buf, long cap) {
     long n = ftell(fp);
     if (n > cap) return -1;
@@ -205,15 +205,15 @@ static long section_bytes(FILE* fp, unsigned char* buf, long cap) {
 
 /* ── Section .ost « MEA » (sprint D) ─────────────────────────────────────── */
 
-/* Sauvegarde en pleine parole, rechargement dans une instance neuve : les deux
- * doivent ensuite produire exactement les mêmes échantillons. */
+/* Save in mid-speech, reload into a fresh instance: both must then produce
+ * exactly the same samples. */
 TEST(test_save_load_resumes_identically) {
     mea8000_t a, b;
     mea8000_init(&a, 0x03F0);
     feed_frame(&a, 60, VOICED_FRAME);
     int16_t oa[882], ob[882];
     mea8000_tick(&a, 19968);
-    mea8000_generate(&a, oa, 441);            /* laisse des échantillons en attente */
+    mea8000_generate(&a, oa, 441);            /* leaves samples pending */
 
     FILE* fp = tmpfile();
     ASSERT_TRUE(fp != NULL);
@@ -222,8 +222,8 @@ TEST(test_save_load_resumes_identically) {
     rewind(fp);
     mea8000_init(&b, 0x03F0);
     mea8000_load(&b, fp, (uint32_t)size);
-    /* Identité aller-retour : resauvegarder la copie rechargée redonne les
-     * mêmes octets — tout champ oublié au chargement apparaît ici. */
+    /* Round-trip identity: saving the reloaded copy again yields the same
+     * bytes — any field forgotten on load shows up here. */
     static unsigned char s1[40000], s2[40000];
     long n1 = section_bytes(fp, s1, sizeof(s1));
     FILE* fp2 = tmpfile();
@@ -248,7 +248,7 @@ TEST(test_save_load_resumes_identically) {
     ASSERT_EQ(mea8000_speaking(&b), mea8000_speaking(&a));
 }
 
-/* Version inconnue ou taille inattendue : l'état courant n'est pas touché. */
+/* Unknown version or unexpected size: the current state is left untouched. */
 TEST(test_load_rejects_bad_section) {
     mea8000_t a, b;
     mea8000_init(&a, 0x03F0);
@@ -260,17 +260,17 @@ TEST(test_load_rejects_bad_section) {
 
     mea8000_init(&b, 0x03F0);
     rewind(fp);
-    mea8000_load(&b, fp, (uint32_t)size - 1);          /* taille fausse */
+    mea8000_load(&b, fp, (uint32_t)size - 1);          /* wrong size */
     ASSERT_EQ(b.state, MEA8000_STOPPED);
 
-    rewind(fp); fputc(MEA8000_SAVE_VERSION + 1, fp);    /* version inconnue */
+    rewind(fp); fputc(MEA8000_SAVE_VERSION + 1, fp);    /* unknown version */
     rewind(fp);
     mea8000_load(&b, fp, (uint32_t)size);
     ASSERT_EQ(b.state, MEA8000_STOPPED);
     fclose(fp);
 }
 
-/* La section n'embarque ni les tables (~92 Ko) ni le pointeur hôte. */
+/* The section carries neither the tables (~92 KB) nor the host pointer. */
 TEST(test_save_size_excludes_tables) {
     mea8000_t m;
     mea8000_init(&m, 0x03F0);
@@ -279,13 +279,13 @@ TEST(test_save_size_excludes_tables) {
     mea8000_save(&m, fp);
     long size = ftell(fp);
     fclose(fp);
-    ASSERT_TRUE(size > 16000 && size < 17000);          /* anneau 16 Ko + état */
+    ASSERT_TRUE(size > 16000 && size < 17000);          /* 16 KB ring + state */
     ASSERT_TRUE((size_t)size < sizeof(m) / 4);
 }
 
-/* Chaque champ sauvegardé est restauré : état source rempli d'un motif (hors
- * champs bornés au chargement), copie neuve rechargée puis resauvegardée → mêmes
- * octets. Un champ oublié garderait sa valeur par défaut et ferait diverger. */
+/* Every saved field is restored: source state filled with a pattern (except
+ * fields clamped on load), fresh copy reloaded then saved again → same
+ * bytes. A forgotten field would keep its default value and diverge. */
 TEST(test_load_restores_every_field) {
     mea8000_t* a = calloc(1, sizeof(*a));
     mea8000_t* b = calloc(1, sizeof(*b));

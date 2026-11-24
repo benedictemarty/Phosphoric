@@ -1,71 +1,71 @@
-> **RÉSOLU (2026-09-02, branche `experiment/loci-coproc-acia-reliable`).** Le bloc
-> de génération audio headless par frame (`src/main.c`) s'arme désormais aussi
-> quand `emu->has_cast_server` et pousse le buffer stéréo de la frame au cast via
-> `cast_server_push_audio()` — pendant headless exact du callback SDL. **Aucun flag
-> ajouté** : gaté sur le serveur cast (déjà opt-in via `--cast-server`) ; le coût
-> `ay_generate`/frame est négligeable. Vérifié e2e : `-n --realtime --cast-server`
-> + `10 SOUND 1,1000,15:20 GOTO 20` → `/audio` diffuse du PCM (baseline muet →
-> ~100 k échantillons, crête 5461). oriced peut brancher son proxy `/emu/audio`.
+> **RESOLVED (2026-09-02, branch `experiment/loci-coproc-acia-reliable`).** The
+> per-frame headless audio generation block (`src/main.c`) now also arms itself
+> when `emu->has_cast_server` and pushes the frame's stereo buffer to the cast via
+> `cast_server_push_audio()` — the exact headless counterpart of the SDL callback. **No flag
+> added**: gated on the cast server (already opt-in via `--cast-server`); the
+> `ay_generate`/frame cost is negligible. Verified e2e: `-n --realtime --cast-server`
+> + `10 SOUND 1,1000,15:20 GOTO 20` → `/audio` streams PCM (silent baseline →
+> ~100 k samples, peak 5461). oriced can plug in its `/emu/audio` proxy.
 
-# Un mot à l'équipe Phosphoric — le flux audio du cast (`/audio`) est muet en headless (`-n`)
+# A word to the Phosphoric team — the cast audio stream (`/audio`) is silent in headless mode (`-n`)
 
-**Date** : 2026-09-02
-**De** : bmarty <bmarty@mailo.com>
-**Objet** : oriced embarque Phosphoric en **headless** et reçoit bien la vidéo (`/stream`) mais
-**aucun son** via `/audio`. Cause racine identifiée dans le code : le push audio vers le cast est
-piloté par le **callback SDL**, inactif en headless. Demande de correctif précise ci-dessous.
+**Date**: 2026-09-02
+**From**: bmarty <bmarty@mailo.com>
+**Subject**: oriced embeds Phosphoric in **headless** mode and does receive the video (`/stream`) but
+**no sound** via `/audio`. Root cause identified in the code: the audio push to the cast is
+driven by the **SDL callback**, which is inactive in headless mode. Precise fix request below.
 
 ---
 
-## En deux mots
+## In a nutshell
 
-oriced (l'éditeur/IDE BASIC) lance l'émulateur en `-n --realtime --cast-server=… --http-api=…` et
-affiche la sortie **live** dans la page (MJPEG). On voudrait aussi le **son**, exposé par le serveur
-cast sur `/audio` (WAV mono 44,1 kHz 16-bit). En headless, ce flux ne porte **aucun échantillon** —
-y compris avec un programme qui joue (`10 SOUND 1,1000,15 : 20 GOTO 20`).
+oriced (the BASIC editor/IDE) launches the emulator with `-n --realtime --cast-server=… --http-api=…` and
+shows the **live** output in the page (MJPEG). We would also like the **sound**, exposed by the cast
+server on `/audio` (mono WAV 44.1 kHz 16-bit). In headless mode, this stream carries **no samples** —
+even with a program that plays sound (`10 SOUND 1,1000,15 : 20 GOTO 20`).
 
-## Cause racine (vérifiée dans le code)
+## Root cause (verified in the code)
 
-- Le **seul appelant** de `cast_server_push_audio()` est **`audio_callback()`**
+- The **only caller** of `cast_server_push_audio()` is **`audio_callback()`**
   (`src/audio/audio_output.c`, ~l.116).
-- Or `audio_callback` est le **callback du périphérique audio SDL** :
-  `want.callback = audio_callback;` puis `SDL_OpenAudioDevice(...)` (`src/audio/audio_output.c`, ~l.168-170).
-- En **headless**, le device SDL audio n'est pas ouvert → `audio_callback` **n'est jamais invoqué**
-  → le ring buffer audio du cast reste vide → `/audio` ne diffuse rien.
-- La génération PSG **par frame** existe pourtant déjà en headless (`src/main.c`, ~l.1298-1305), via
-  `ay_generate` (le commentaire dit *« the same routine the SDL callback uses »*), **mais seulement**
-  quand on enregistre en WAV/AVI (`emu->audio_wav_fp || avi_audio`), et elle **ne pousse pas** au cast.
+- But `audio_callback` is the **SDL audio device callback**:
+  `want.callback = audio_callback;` then `SDL_OpenAudioDevice(...)` (`src/audio/audio_output.c`, ~l.168-170).
+- In **headless** mode, the SDL audio device is not opened → `audio_callback` **is never invoked**
+  → the cast audio ring buffer stays empty → `/audio` streams nothing.
+- **Per-frame** PSG generation does already exist in headless mode (`src/main.c`, ~l.1298-1305), via
+  `ay_generate` (the comment says *"the same routine the SDL callback uses"*), **but only**
+  when recording to WAV/AVI (`emu->audio_wav_fp || avi_audio`), and it **does not push** to the cast.
 
-## Preuve
+## Proof
 
-En headless avec `--cast-server`, une connexion à `/audio` pendant un `SOUND` actif ne fournit aucun
-PCM. À l'inverse, en mode GUI (SDL ouvert) le son du cast fonctionne — cohérent avec le fait que le
-push dépend du callback SDL.
+In headless mode with `--cast-server`, a connection to `/audio` during an active `SOUND` delivers no
+PCM. Conversely, in GUI mode (SDL open) the cast sound works — consistent with the fact that the
+push depends on the SDL callback.
 
-## Demande concrète
+## Concrete request
 
-Dans le bloc de génération audio headless par frame (`src/main.c`, ~l.1304) :
+In the per-frame headless audio generation block (`src/main.c`, ~l.1304):
 
-1. **déclencher aussi** ce bloc quand `emu->has_cast_server` (aujourd'hui : seulement `audio_wav_fp ||
-   avi_audio`) ;
-2. **pousser** les échantillons de la frame au cast :
+1. **also trigger** this block when `emu->has_cast_server` (today: only `audio_wav_fp ||
+   avi_audio`);
+2. **push** the frame's samples to the cast:
    `cast_server_push_audio(&emu->cast_server, frame_pcm, WAV_FRAME_SAMPLES)`.
 
-C'est l'exact pendant headless de ce que fait déjà le callback SDL en GUI (même routine `ay_generate`,
-même push). Réversible, sans impact sur le mode GUI ni sur l'enregistrement WAV/AVI existant.
+This is the exact headless counterpart of what the SDL callback already does in GUI mode (same `ay_generate` routine,
+same push). Reversible, with no impact on GUI mode or on the existing WAV/AVI recording.
 
-Idéalement : générer **une seule fois** par frame et alimenter *à la fois* le tap WAV/AVI **et** le
-cast (le commentaire existant insiste déjà : `ay_generate` consomme les événements PSG, ne pas
-générer deux fois).
+Ideally: generate **only once** per frame and feed *both* the WAV/AVI tap **and** the
+cast (the existing comment already insists: `ay_generate` consumes the PSG events, do not
+generate twice).
 
-## Ce que fera oriced ensuite
+## What oriced will do next
 
-Une fois le flux `/audio` alimenté en headless : proxy `/emu/audio` (même origine, comme
-`/emu/stream`) + balise `<audio>` dans la page, démarrée sur un geste utilisateur (politique
-autoplay des navigateurs). Rien de plus n'est requis côté émulateur.
+Once the `/audio` stream is fed in headless mode: an `/emu/audio` proxy (same origin, like
+`/emu/stream`) + an `<audio>` tag in the page, started on a user gesture (browser autoplay
+policy). Nothing more is required on the emulator side.
 
-## Question ouverte
+## Open question
 
-Y a-t-il une raison délibérée de **ne pas** générer/pousser l'audio en headless hors enregistrement
-(coût CPU par frame, réservé aux artefacts) ? Si oui, un **flag opt-in** (ex. `--cast-audio`)
-conviendrait parfaitement à oriced.
+Is there a deliberate reason **not** to generate/push audio in headless mode outside recording
+(per-frame CPU cost, reserved for artefacts)? If so, an **opt-in flag** (e.g. `--cast-audio`)
+would suit oriced perfectly.

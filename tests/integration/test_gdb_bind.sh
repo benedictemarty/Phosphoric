@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
 #
-# test_gdb_bind.sh — adresse d'écoute du stub GDB (--gdb, --gdb-bind).
+# test_gdb_bind.sh — bind address of the GDB stub (--gdb, --gdb-bind).
 #
-# Le stub donne un accès complet à la machine (mémoire, registres, exécution)
-# sans authentification : par défaut il n'écoute que sur 127.0.0.1. On le
-# vérifie par des connexions réelles :
-#   1. défaut : 127.0.0.1 accepte, l'adresse réseau de l'hôte est refusée ;
-#   2. --gdb-bind 0.0.0.0 : l'adresse réseau de l'hôte est acceptée ;
-#   3. --gdb-bind invalide : refus explicite, pas d'écoute.
+# The stub grants full access to the machine (memory, registers, execution)
+# without authentication: by default it listens on 127.0.0.1 only. Checked
+# with real connections:
+#   1. default: 127.0.0.1 accepted, the host's network address refused;
+#   2. --gdb-bind 0.0.0.0: the host's network address accepted;
+#   3. invalid --gdb-bind: explicit refusal, no listening.
 #
 # Author: bmarty <bmarty@mailo.com>
 
@@ -37,7 +37,7 @@ def host_ip():
     """Adresse IPv4 non locale de l'hôte (route par défaut), sans envoyer de paquet."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("192.0.2.1", 9))          # TEST-NET-1 : aucune émission (UDP)
+        s.connect(("192.0.2.1", 9))          # TEST-NET-1: nothing is sent (UDP)
         ip = s.getsockname()[0]
     except OSError:
         ip = None
@@ -71,16 +71,16 @@ def stop(p):
 
 ip = host_ip()
 
-# 1. défaut : écoute locale seulement.
+# 1. default: local listening only.
 p, port = start([])
 if ip:
-    # D'abord l'adresse réseau (le stub se referme après le premier client).
+    # Network address first (the stub closes after the first client).
     check(not can_connect(ip, port, wait=2.0), "défaut : %s refusée" % ip)
 check(can_connect("127.0.0.1", port), "défaut : 127.0.0.1 acceptée")
 out = stop(p)
 check("127.0.0.1:%d" % port in out, "défaut : journal « waiting for connection on 127.0.0.1 »")
 
-# 2. --gdb-bind 0.0.0.0 : toutes les interfaces.
+# 2. --gdb-bind 0.0.0.0: every interface.
 if ip:
     p, port = start(["--gdb-bind", "0.0.0.0"])
     check(can_connect(ip, port), "--gdb-bind 0.0.0.0 : %s acceptée" % ip)
@@ -88,7 +88,7 @@ if ip:
 else:
     print("  SKIP: pas d'adresse IPv4 non locale sur cet hôte (cas 0.0.0.0 non vérifiable)")
 
-# 3. adresse invalide : aucune écoute, message explicite.
+# 3. invalid address: no listening, explicit message.
 p, port = start(["--gdb-bind", "pas.une.adresse"])
 check(not can_connect("127.0.0.1", port, wait=1.5), "adresse invalide : pas d'écoute")
 out = stop(p)

@@ -78,10 +78,10 @@ a, b = ppm(sys.argv[1]), ppm(sys.argv[2])
 n = min(len(a), len(b)) // 3
 px = lambda d, k: d[3*k:3*k+3]
 diff = sum(1 for k in range(n) if px(a, k) != px(b, k))
-# Pixels "d'encre" de l'écran sauvegardé : ceux qui ne sont pas de la couleur
-# majoritaire (le papier). L'écart est rapporté à eux : un écran blanc après
-# chargement efface tout le texte, soit un écart voisin de 30 % de l'encre ou
-# plus, alors que le clignotement du curseur seul reste sous 5 %.
+# "Ink" pixels of the saved screen: those not of the majority colour (the
+# paper). The difference is measured against them: a white screen after the
+# load wipes all the text, a difference of about 30 % of the ink or more,
+# whereas the cursor blink alone stays under 5 %.
 from collections import Counter
 paper = Counter(px(a, k) for k in range(n)).most_common(1)[0][0]
 ink = sum(1 for k in range(n) if px(a, k) != paper)

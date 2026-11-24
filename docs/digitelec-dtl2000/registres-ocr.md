@@ -1,125 +1,125 @@
-# DTL 2000 — Registres extraits par OCR (source primaire)
+# DTL 2000 — Registers extracted by OCR (primary source)
 
-> Extrait par OCR (Tesseract `fra`, 300 dpi) des 3 PDF Digitelec depuis
-> le mirror apple2.org.za. **Tous trois sont la version Apple II / RS232**,
-> PAS la version Oric. Mais les chips sont identiques (PIA EF6821 + ACIA
-> EF6850) et le découpage des 6 octets est offset-pour-offset le même que
-> l'Oric `#3F8`–`#3FD`. Les valeurs ci-dessous sont donc **directement
-> transposables** à l'Oric (seule l'adresse de base change).
+> Extracted by OCR (Tesseract `fra`, 300 dpi) from the 3 Digitelec PDFs on
+> the apple2.org.za mirror. **All three are the Apple II / RS232 version**,
+> NOT the Oric version. But the chips are identical (PIA EF6821 + ACIA
+> EF6850) and the layout of the 6 bytes is offset-for-offset the same as
+> the Oric's `#3F8`–`#3FD`. The values below can therefore be **transposed
+> directly** to the Oric (only the base address changes).
 
-## Sources OCR
+## OCR sources
 
-| PDF | Pages | Version | Contenu utile |
+| PDF | Pages | Version | Useful content |
 |-----|-------|---------|---------------|
-| `prog_v23.pdf` | 7 | Apple II | **Valeurs de registres exactes** (POKE/PEEK) |
-| `notice.pdf` | 5 | Apple II | Mise en route, touches Minitel, logiciel COM |
-| `manuel.pdf` | 10 | RS232/V24 | Micro-interrupteurs + circuits 108/105/106/109 |
+| `prog_v23.pdf` | 7 | Apple II | **Exact register values** (POKE/PEEK) |
+| `notice.pdf` | 5 | Apple II | Getting started, Minitel keys, COM software |
+| `manuel.pdf` | 10 | RS232/V24 | DIP switches + circuits 108/105/106/109 |
 
-## Mapping des 6 octets (Apple `$C0n8` → Oric `#3F8`)
+## Mapping of the 6 bytes (Apple `$C0n8` → Oric `#3F8`)
 
-| Off | Apple | Oric | Composant | Registre |
+| Off | Apple | Oric | Component | Register |
 |-----|-------|------|-----------|----------|
-| 0 | `$C0n8` | `#3F8` | PIA 6821 | Port A (OR) / DDRA — selon CRA bit2 |
-| 1 | `$C0n9` | `#3F9` | PIA 6821 | Contrôle A (CRA) |
-| 2 | `$C0nA` | `#3FA` | PIA 6821 | Port B — **NON UTILISÉ** par DTL V23 |
-| 3 | `$C0nB` | `#3FB` | PIA 6821 | Contrôle B — **NON UTILISÉ** |
-| 4 | `$C0nC` | `#3FC` | ACIA 6850 | Contrôle (W) / État (R) |
+| 0 | `$C0n8` | `#3F8` | PIA 6821 | Port A (OR) / DDRA — depending on CRA bit2 |
+| 1 | `$C0n9` | `#3F9` | PIA 6821 | Control A (CRA) |
+| 2 | `$C0nA` | `#3FA` | PIA 6821 | Port B — **NOT USED** by DTL V23 |
+| 3 | `$C0nB` | `#3FB` | PIA 6821 | Control B — **NOT USED** |
+| 4 | `$C0nC` | `#3FC` | ACIA 6850 | Control (W) / Status (R) |
 | 5 | `$C0nD` | `#3FD` | ACIA 6850 | Tx (W) / Rx (R) data |
 
-(« n » Apple = numéro de slot + 8. Confirme le §4.1 du doc de contexte.)
+(Apple "n" = slot number + 8. Confirms §4.1 of the context document.)
 
-## Initialisation — mode ASYMÉTRIQUE (V23 Appel, terminal Minitel/Télétel)
+## Initialisation — ASYMMETRIC mode (V23 Call, Minitel/Télétel terminal)
 
 ```basic
-POKE #3F9, 0      : REM CRA=0  -> accès DDRA
-POKE #3F8, 244    : REM DDRA = $F4 = %11110100 (entrées: b0,b1,b3 ; sorties: b2,b4-b7)
+POKE #3F9, 0      : REM CRA=0  -> access DDRA
+POKE #3F8, 244    : REM DDRA = $F4 = %11110100 (inputs: b0,b1,b3 ; outputs: b2,b4-b7)
 POKE #3FC, 3      : REM ACIA master reset
-POKE #3F9, 4      : REM CRA=4 (CR2=1) -> accès Port A (OR)
-POKE #3F8, 212    : REM OR = $D4 (ligne ouverte = déconnecté)
-POKE #3FC, 73     : REM ACIA contrôle = $49 = 7 bits + parité paire + 1 stop, ÷16
+POKE #3F9, 4      : REM CRA=4 (CR2=1) -> access Port A (OR)
+POKE #3F8, 212    : REM OR = $D4 (line open = disconnected)
+POKE #3FC, 73     : REM ACIA control = $49 = 7 bits + even parity + 1 stop, /16
 ```
 
-## Initialisation — mode SYMÉTRIQUE (V23 Half-Duplex 1200, Oric↔Oric)
+## Initialisation — SYMMETRIC mode (V23 Half-Duplex 1200, Oric↔Oric)
 
 ```basic
 POKE #3F9, 0      : REM CRA=0 -> DDRA
 POKE #3F8, 244    : REM DDRA = $F4
-POKE #3FC, 3      : REM ACIA master reset   (OCR avait interverti 3/4 lignes 30-40)
+POKE #3FC, 3      : REM ACIA master reset   (OCR had swapped 3/4 on lines 30-40)
 POKE #3F9, 4      : REM CRA=4 -> OR
-POKE #3F8, 196    : REM OR = $C4 (ligne ouverte, mode symétrique)
-POKE #3FC, 85     : REM ACIA contrôle = $55 = 8 bits sans parité 1 stop, ÷16
+POKE #3F8, 196    : REM OR = $C4 (line open, symmetric mode)
+POKE #3FC, 85     : REM ACIA control = $55 = 8 bits no parity 1 stop, /16
 ```
 
-## PIA Port A (OR, `#3F8`) — sémantique des bits confirmée
+## PIA Port A (OR, `#3F8`) — confirmed bit semantics
 
-- **bit 2 = connexion ligne** (circuit 108 / "fermeture de la ligne") :
-  - `0` → ligne fermée = **connecté**
-  - `1` → ligne ouverte = **déconnecté**
-- **bit 4 = sélection mode** : asymétrique (`1`, valeurs $Dx) vs symétrique (`0`, valeurs $Cx).
-- Valeurs concrètes :
-  | Action | Asymétrique | Symétrique |
+- **bit 2 = line connection** (circuit 108 / "closing the line"):
+  - `0` → line closed = **connected**
+  - `1` → line open = **disconnected**
+- **bit 4 = mode select**: asymmetric (`1`, values $Dx) vs symmetric (`0`, values $Cx).
+- Concrete values:
+  | Action | Asymmetric | Symmetric |
   |--------|-------------|------------|
-  | Connecter (ligne fermée) | `208` ($D0) | `192` ($C0) |
-  | Déconnecter (ligne ouverte) | `212` ($D4) | `196` ($C4) |
-- **Numérotation par impulsions** : alterner ouvert(`212`)/fermé(`208`).
-  Une impulsion = ouverture ~66 ms + fermeture ~33 ms ; n impulsions = chiffre n
-  (le « 0 » = 10 impulsions). ~1 s ligne fermée entre deux trains.
+  | Connect (line closed) | `208` ($D0) | `192` ($C0) |
+  | Disconnect (line open) | `212` ($D4) | `196` ($C4) |
+- **Pulse dialling**: alternate open(`212`)/closed(`208`).
+  One pulse = open ~66 ms + closed ~33 ms; n pulses = digit n
+  ("0" = 10 pulses). ~1 s of closed line between two pulse trains.
 
-## ACIA `#3FC` — écriture (contrôle)
+## ACIA `#3FC` — write (control)
 
-| Valeur | Hex | Effet |
+| Value | Hex | Effect |
 |--------|-----|-------|
-| 3  | $03 | Master reset (obligatoire avant config) |
-| 73 | $49 | Config V23 asym (7E1, ÷16) **sans émission** (RTS haut, CR6/bit6=1) |
-| 9  | $09 | **Démarrer émission porteuse** (RTS bas, bit6=0) |
-| 85 | $55 | Config symétrique (8N1, ÷16) **sans émission** |
-| 21 | $15 | Démarrer émission (mode symétrique) |
+| 3  | $03 | Master reset (mandatory before configuration) |
+| 73 | $49 | V23 asym config (7E1, ÷16) **without transmitting** (RTS high, CR6/bit6=1) |
+| 9  | $09 | **Start carrier transmission** (RTS low, bit6=0) |
+| 85 | $55 | Symmetric config (8N1, ÷16) **without transmitting** |
+| 21 | $15 | Start transmission (symmetric mode) |
 
-Le **bit 6** porte l'ordre d'émission porteuse (= circuit 105 RTS) :
-`0` = émet, `1` = silence.
+**Bit 6** carries the carrier-transmit order (= circuit 105 RTS):
+`0` = transmit, `1` = silent.
 
-## ACIA `#3FC` — lecture (état)
+## ACIA `#3FC` — read (status)
 
-| Bit | Signification | Actif |
+| Bit | Meaning | Active |
 |-----|---------------|-------|
-| 0 | Caractère reçu (RDRF) — remis à 0 par lecture de `#3FD` | `1` = dispo |
-| 1 | Caractère émis effectivement parti (TDRE) | `1` = prêt à écrire |
-| 2 | Porteuse du modem distant présente (DCD / circuit 109) | **`0` = présente** (actif bas) |
-| 3 | Modem prêt à émettre (CTS / circuit 106) | **`0` = prêt** (actif bas) |
+| 0 | Character received (RDRF) — cleared by reading `#3FD` | `1` = available |
+| 1 | Transmitted character actually sent (TDRE) | `1` = ready to write |
+| 2 | Remote modem carrier present (DCD / circuit 109) | **`0` = present** (active low) |
+| 3 | Modem ready to transmit (CTS / circuit 106) | **`0` = ready** (active low) |
 
-> ⚠️ Détection porteuse (bit 2) : après lecture de `#3FC`, faire une **lecture
-> "blanche" de `#3FD`** pour réinitialiser le bit 2.
+> ⚠️ Carrier detection (bit 2): after reading `#3FC`, do a **dummy
+> read of `#3FD`** to reset bit 2.
 
-## ACIA `#3FD` — données
+## ACIA `#3FD` — data
 
-- **Lecture** : dernier caractère reçu (lire quand état bit0=1).
-- **Écriture** : caractère à émettre (écrire quand état bit1=1).
-- 7 bits ASCII en V23 Minitel (bit7 toujours à 1) ; 8 bits en symétrique.
+- **Read**: last character received (read when status bit0=1).
+- **Write**: character to transmit (write when status bit1=1).
+- 7-bit ASCII in V23 Minitel (bit7 always 1); 8 bits in symmetric mode.
 
-## Modes & micro-interrupteurs (manuel RS232, sélecteurs 3-4-5)
+## Modes & DIP switches (RS232 manual, switches 3-4-5)
 
-| Mode | int3 | int4 | int5 | Débit Tx/Rx |
+| Mode | sw3 | sw4 | sw5 | Tx/Rx rate |
 |------|:----:|:----:|:----:|-------------|
-| V23 Appel    | 0 | 1 | 1 | 75 / 1200 |
-| V23 Réponse  | 1 | 1 | 1 | 1200 / 75 (serveur) |
-| V21 Appel    | 0 | 0 | 1 | 300 / 300 |
-| V21 Réponse  | 1 | 0 | 1 | 300 / 300 |
+| V23 Call     | 0 | 1 | 1 | 75 / 1200 |
+| V23 Answer   | 1 | 1 | 1 | 1200 / 75 (server) |
+| V21 Call     | 0 | 0 | 1 | 300 / 300 |
+| V21 Answer   | 1 | 0 | 1 | 300 / 300 |
 | V23 Half Dpx | 0 | 1 | 0 | 1200 / 1200 |
 
-> Carte **DTL V23** seule : uniquement **V23 Appel** + **V23 Half Duplex**.
-> V23/V21 Réponse (= serveur) nécessite la carte **DTL PLUS**.
+> **DTL V23** card alone: only **V23 Call** + **V23 Half Duplex**.
+> V23/V21 Answer (= server) requires the **DTL PLUS** card.
 
-## Correspondances circuits V24 ↔ bits (cohérence émulation)
+## V24 circuit ↔ bit correspondence (emulation consistency)
 
-| Circuit V24 | Rôle | Bit Phosphoric |
+| V24 circuit | Role | Phosphoric bit |
 |-------------|------|----------------|
-| 108 (DTR) | connexion ligne | PIA OR bit 2 |
-| 105 (RTS) | demande émission porteuse | ACIA ctrl bit 6 |
-| 106 (CTS) | prêt à émettre | ACIA état bit 3 (actif bas) |
-| 109 (DCD) | détection porteuse reçue | ACIA état bit 2 (actif bas) |
+| 108 (DTR) | line connection | PIA OR bit 2 |
+| 105 (RTS) | request to send carrier | ACIA ctrl bit 6 |
+| 106 (CTS) | clear to send | ACIA status bit 3 (active low) |
+| 109 (DCD) | received carrier detect | ACIA status bit 2 (active low) |
 
-## Note bouclage (mode symétrique)
+## Loopback note (symmetric mode)
 
-En V23 symétrique, un **bouclage interne** fait que les voyants Détection +
-Réception s'allument pendant l'émission : l'émetteur reçoit simultanément ce
-qu'il envoie (utile pour contrôle de transmission). À modéliser si fidélité.
+In symmetric V23, an **internal loopback** makes the Detection +
+Reception LEDs light up during transmission: the transmitter simultaneously receives
+what it sends (useful for transmission checking). To be modelled if aiming for fidelity.

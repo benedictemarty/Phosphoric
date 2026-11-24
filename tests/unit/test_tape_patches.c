@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_tape_patches.c
- * @brief Chargement cassette natif (CLOAD par la ROM corrigée) : synchro,
- *        lecture d'octet, cassette épuisée
+ * @brief Native tape loading (CLOAD through the patched ROM): sync,
+ *        byte read, exhausted tape
  * @author bmarty <bmarty@mailo.com>
  *
- * Sans ROM : le PC est placé sur les points d'entrée corrigés comme la ROM le
- * ferait pendant un CLOAD, et tape_patches() agit sur le tampon cassette.
+ * Without ROM: the PC is put on the patched entry points as the ROM would
+ * during a CLOAD, and tape_patches() acts on the tape buffer.
  */
 #include "emulator.h"
 #include "rom_patches.h"
@@ -28,7 +28,7 @@ static int tests_failed = 0;
 static emulator_t emu;
 static uint8_t tape[64];
 
-/* Cassette de @p len octets dans @p tape, modèle @p model. */
+/* Tape of @p len bytes in @p tape, model @p model. */
 static const rom_patches_t* load(oric_model_t model, int len) {
     const rom_patches_t* p = get_rom_patches(model);
     emu.rom_patches = p;
@@ -47,7 +47,7 @@ TEST(test_getsync_skips_noise_to_first_sync) {
     const rom_patches_t* p = load(ORIC_MODEL_ATMOS, (int)sizeof t);
     emu.cpu.PC = p->getsync_entry;
     tape_patches(&emu);
-    ASSERT_TRUE(emu.tapeoffs == 3);                 /* sur le premier $16 */
+    ASSERT_TRUE(emu.tapeoffs == 3);                 /* on the first $16 */
     ASSERT_TRUE(emu.cpu.PC == p->getsync_end);
     ASSERT_TRUE(emu.tape_syncstack == 0xF0);
 }
@@ -67,7 +67,7 @@ TEST(test_readbyte_feeds_rom) {
         tape_patches(&emu);
         ASSERT_TRUE(emu.cpu.A == 0x42 && !(emu.cpu.P & FLAG_ZERO));
         ASSERT_TRUE(memory_read(&emu.memory, p->readbyte_store) == 0x42);
-        /* Épuisée : la routine de la ROM n'est plus court-circuitée. */
+        /* Exhausted: the ROM routine is no longer short-circuited. */
         emu.cpu.PC = p->readbyte_entry;
         tape_patches(&emu);
         ASSERT_TRUE(emu.cpu.PC == p->readbyte_entry);
@@ -75,16 +75,16 @@ TEST(test_readbyte_feeds_rom) {
     }
 }
 
-/* Cassette épuisée : un $16 posé JUSTE APRÈS la fin du tampon ne doit pas être
- * pris pour une synchro (avant 2.11.2, tapebuf[tapelen] était lu). */
+/* Exhausted tape: a $16 placed JUST AFTER the end of the buffer must not be
+ * taken for a sync (before 2.11.2, tapebuf[tapelen] was read). */
 TEST(test_exhausted_tape_ignores_byte_past_end) {
-    memset(tape, 0x16, sizeof tape);                /* $16 partout, y compris après */
+    memset(tape, 0x16, sizeof tape);                /* $16 everywhere, including after */
     const rom_patches_t* p = load(ORIC_MODEL_ATMOS, 12);
-    emu.tapeoffs = 12;                              /* tout a été lu */
+    emu.tapeoffs = 12;                              /* everything has been read */
     emu.cpu.PC = p->getsync_entry;
     tape_patches(&emu);
-    ASSERT_TRUE(emu.cpu.PC == p->getsync_entry);    /* pas de synchro inventée */
-    /* Reprise de synchro sur cassette épuisée : la cassette est terminée. */
+    ASSERT_TRUE(emu.cpu.PC == p->getsync_entry);    /* no invented sync */
+    /* Sync recovery on an exhausted tape: the tape is over. */
     emu.tape_syncstack = 0xE0;
     emu.cpu.PC = p->getsync_loop;
     tape_patches(&emu);

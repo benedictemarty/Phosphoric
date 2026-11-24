@@ -725,8 +725,8 @@ bool sp0256_speaking(const sp0256_t* sp)
 }
 
 /* ── Section .ost « SPO » ─────────────────────────────────────────────────── */
-/* version + 9 × i32 (séquenceur) + filtre (6 × i32 + 12 × i16 + 12 × i16 + 16 o)
- * + tampon (4096 × i16 + 2 × u32) + i32 + u32 + i16 */
+/* version + 9 × i32 (sequencer) + filter (6 × i32 + 12 × i16 + 12 × i16 + 16 bytes)
+ * + buffer (4096 × i16 + 2 × u32) + i32 + u32 + i16 */
 #define SP0256_SAVE_SIZE (1 + 9 * 4 + (6 * 4 + 12 * 2 + 12 * 2 + 16) \
                           + (SP0256_SCBUF_SIZE * 2 + 8) + 4 + 4 + 2)
 

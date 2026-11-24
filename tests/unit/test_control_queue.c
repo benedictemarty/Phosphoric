@@ -176,15 +176,15 @@ static void test_single_thread_roundtrip(void) {
     else { printf("[FAIL] submit reply/result mismatch\n"); tests_failed++; }
 }
 
-/* Boucle arrêtée (CPU bloqué, limite de cycles, signal) avec une commande en
- * attente : control_queue_shutdown() doit libérer le producteur, sinon le join
- * du thread serveur attend pour toujours (blocage vu dans test-httpapi). Une
- * soumission après fermeture répond aussitôt. */
+/* Loop stopped (CPU jam, cycle limit, signal) with a command pending:
+ * control_queue_shutdown() must release the producer, otherwise joining the
+ * server thread waits forever (hang seen in test-httpapi). A submit after
+ * shutdown returns at once. */
 static atomic_int g_shut_done;
 static void* blocked_producer(void* arg) {
     char* reply = (char*)1;
     control_queue_submit((control_queue_t*)arg, "regs", &reply, NULL);
-    atomic_store(&g_shut_done, reply == NULL ? 1 : 2);   /* réponse vide attendue */
+    atomic_store(&g_shut_done, reply == NULL ? 1 : 2);   /* empty reply expected */
     return NULL;
 }
 
@@ -194,17 +194,17 @@ static void test_shutdown_releases_blocked_producer(void) {
     atomic_store(&g_shut_done, 0);
     pthread_t prod;
     pthread_create(&prod, NULL, blocked_producer, q);
-    nap_us(50000);                                  /* il attend : personne ne vide */
+    nap_us(50000);                                  /* it waits: nobody drains */
     int waited = atomic_load(&g_shut_done) == 0;
     control_queue_shutdown(q);
     int released = 0;
-    for (int i = 0; i < 200 && !released; i++) {     /* au plus 2 s */
+    for (int i = 0; i < 200 && !released; i++) {     /* at most 2 s */
         released = atomic_load(&g_shut_done) != 0;
         if (!released) nap_us(10000);
     }
     if (released) pthread_join(prod, NULL);
     char* reply = (char*)1;
-    control_result_t r = control_queue_submit(q, "regs", &reply, NULL);   /* après fermeture */
+    control_result_t r = control_queue_submit(q, "regs", &reply, NULL);   /* after shutdown */
     int after = (r == CONTROL_CONTINUE) && reply == NULL;
     if (released) control_queue_destroy(q);
 

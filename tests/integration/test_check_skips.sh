@@ -1,12 +1,12 @@
 #!/bin/sh
-# test_check_skips.sh — auto-test de tools/check_skips.sh (make tests-strict).
+# test_check_skips.sh — self-test of tools/check_skips.sh (make tests-strict).
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT
 pass=0
 fail=0
-expect() {  # expect <rc attendu> <libellé> <contenu du journal>
+expect() {  # expect <expected rc> <label> <log content>
     printf '%b' "$3" > "$T/log"
     sh "$ROOT/tools/check_skips.sh" "$T/log" "$ROOT/tests/allowed_skips.txt" >/dev/null 2>&1
     rc=$?

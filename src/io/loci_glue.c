@@ -40,7 +40,7 @@ void loci_rom_poke_hook(void* ctx, uint16_t addr, uint8_t val) {
         emu->memory.rom[addr - 0xC000] = val;
 }
 
-/* --- Epic 9 / US3 : ROM / tape / resume (moved verbatim from main.c) --- */
+/* --- Epic 9 / US3: ROM / tape / resume (moved verbatim from main.c) --- */
 
 /* Locate a LOCI system ROM by name: flash root (the internal storage,
  * where the firmware's LittleFS keeps them), then roms/loci/ next to the
@@ -177,11 +177,11 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
     if (!emu || !rom_path || !*rom_path) return false;
 
     if (base_addr == 0xA000) {
-        /* Sprint 34aw : LOCI MIA_BOOT FDC flag → microdis.rom overlay.
-         * Le mapping réel Microdisc place l'overlay à $E000-$FFFF (8 KB).
-         * On charge le fichier dans un buffer persistant et on active
-         * l'overlay du système mémoire (même mécanisme que Microdisc
-         * card avec --disk-rom). */
+        /* Sprint 34aw: LOCI MIA_BOOT FDC flag → microdis.rom overlay.
+         * The real Microdisc mapping places the overlay at $E000-$FFFF (8 KB).
+         * The file is loaded into a persistent buffer and the memory
+         * system's overlay is enabled (same mechanism as the Microdisc
+         * card with --disk-rom). */
         char found[512];
         if (access(rom_path, R_OK) != 0 &&
             loci_find_system_rom(emu, rom_path, found, sizeof(found))) {
@@ -197,7 +197,7 @@ bool loci_rom_swap_cb(void* ctx, const char* rom_path, uint16_t base_addr) {
         long sz = ftell(fp);
         fseek(fp, 0, SEEK_SET);
         if (sz <= 0 || sz > 16384) { fclose(fp); return false; }
-        /* Sprint 34c hardening : buffer owned by emulator_t now (was a
+        /* Sprint 34c hardening: buffer owned by emulator_t now (was a
          * function-scope static with an "acceptable leak at shutdown"
          * comment). Freed by emulator_cleanup. */
         if (emu->loci_overlay_buf) {
@@ -516,7 +516,7 @@ void loci_action_release_irq_trap(void* ctx) {
     loci_action_enter_nmi(emu);
     log_info("LOCI: warm boot -> menu ROM %s (JMP ($FFFA) = save state)", rom);
 }
-/* --- Epic 9 / US5 : SDL keyboard sync (only SDL dependency of the glue) --- */
+/* --- Epic 9 / US5: SDL keyboard sync (only SDL dependency of the glue) --- */
 #ifdef HAS_SDL2
 #include <SDL2/SDL.h>
 /* Sync the LOCI keyboard report from the current SDL keyboard state: SDL

@@ -11,8 +11,8 @@
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 500
 #endif
-/* macOS : _XOPEN_SOURCE seul restreint le namespace et masque snprintf + les
- * extensions BSD dans <stdio.h>. _DARWIN_C_SOURCE réexpose l'API complète. */
+/* macOS: _XOPEN_SOURCE alone restricts the namespace and hides snprintf + the
+ * BSD extensions in <stdio.h>. _DARWIN_C_SOURCE re-exposes the full API. */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
 #endif
@@ -21,7 +21,7 @@
 #include "io/loci.h"
 #include "io/loci_internal.h"
 #include "io/loci_sdimg.h"
-#include "storage/disk_http.h"   /* Route B : device « W: Web disks » (GET /disks) */
+#include "storage/disk_http.h"   /* Route B: "W: Web disks" device (GET /disks) */
 #include "utils/logging.h"
 
 #include <string.h>
@@ -659,15 +659,15 @@ void op_mount(loci_t* loci) {
         api_return_errno(loci, LOCI_EINVAL);
         return;
     }
-    /* loci-webdisk (archi B) : une URL http(s):// monte un disque servi par le
-     * web, exactement comme le vrai firmware (mnt.c::mnt_mount). Réservé aux
-     * lecteurs 0..3. Permet à un programme Oric (ex. WEBMOUNT) d'indiquer l'URL
-     * du disque via l'op MOUNT — le même chemin qu'une disquette ordinaire. */
-    /* Pseudo-device web (Route B) : "W:/nom" → {web_base}/disk/nom. Le menu non
-     * modifié aboutit ici après avoir sélectionné le device W: puis un .dsk. */
+    /* loci-webdisk (archi B): an http(s):// URL mounts a disk served over the
+     * web, exactly like the real firmware (mnt.c::mnt_mount). Restricted to
+     * drives 0..3. Lets an Oric program (e.g. WEBMOUNT) give the disk URL
+     * through the MOUNT op — the same path as an ordinary floppy. */
+    /* Web pseudo-device (Route B): "W:/nom" → {web_base}/disk/nom. The unmodified
+     * menu ends up here after selecting the W: device and then a .dsk. */
     if (loci->web_base[0] && (path[0] == 'W' || path[0] == 'w') && path[1] == ':') {
         const char* nm = path + 2;
-        while (*nm == '/') nm++;                /* mount() insère un '/' */
+        while (*nm == '/') nm++;                /* mount() inserts a '/' */
         char url[512];
         snprintf(url, sizeof(url), "%s/disk/%s", loci->web_base, nm);
         if (drive >= 4 || !loci_dsk_open_web(loci, drive, url)) {
@@ -683,7 +683,7 @@ void op_mount(loci_t* loci) {
     if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
         if (drive >= 4) { api_return_errno(loci, LOCI_EINVAL); return; }
         if (!loci_dsk_open_web(loci, drive, path)) {
-            api_return_errno(loci, LOCI_EIO);   /* pas de serveur / en-tête invalide */
+            api_return_errno(loci, LOCI_EIO);   /* no server / invalid header */
             return;
         }
         loci->mnt_mounted[drive] = true;
@@ -843,12 +843,12 @@ static DIR* dir_fd_to_handle(loci_t* loci, int fd) {
     return (DIR*)loci->dirs[idx];
 }
 
-/* Route B (loci-webdisk) — pseudo-périphérique « W: Web disks ». Le fd renvoyé
- * par opendir("W:") ; distinct des fd de répertoires réels (LOCI_DIR_OFFSET+). */
+/* Route B (loci-webdisk) — "W: Web disks" pseudo-device. The fd returned
+ * by opendir("W:"); distinct from real directory fds (LOCI_DIR_OFFSET+). */
 #define LOCI_WEB_DIR_FD 200
 
-/* Récupère GET {web_base}/disks et extrait les noms "name":"...". Renvoie le
- * nombre de disques (0 possible). Réutilise le client HTTP disk_http. */
+/* Fetches GET {web_base}/disks and extracts the "name":"..." names. Returns the
+ * number of disks (0 possible). Reuses the disk_http HTTP client. */
 static int web_fetch_disklist(loci_t* loci) {
     loci->web_disk_count = 0;
     if (!loci->web_base[0]) return 0;
@@ -858,12 +858,12 @@ static int web_fetch_disklist(loci_t* loci) {
     long n = disk_http_get(url, 0, (long)sizeof(body) - 1, body, (long)sizeof(body) - 1);
     if (n <= 0) return 0;
     body[n] = '\0';
-    /* JSON simple : {"disks":[{"name":"x.dsk","size":..},..]} — on scanne "name". */
+    /* Simple JSON: {"disks":[{"name":"x.dsk","size":..},..]} — scan for "name". */
     const char* p = (const char*)body;
     while ((p = strstr(p, "\"name\"")) != NULL && loci->web_disk_count < 32) {
         p = strchr(p + 6, ':');            if (!p) break;
-        p = strchr(p, '"');                if (!p) break;   /* ouverture valeur */
-        const char* q = strchr(p + 1, '"'); if (!q) break;  /* fermeture */
+        p = strchr(p, '"');                if (!p) break;   /* value opening quote */
+        const char* q = strchr(p + 1, '"'); if (!q) break;  /* closing quote */
         size_t len = (size_t)(q - (p + 1));
         if (len >= sizeof(loci->web_disks[0])) len = sizeof(loci->web_disks[0]) - 1;
         memcpy(loci->web_disks[loci->web_disk_count], p + 1, len);
@@ -874,7 +874,7 @@ static int web_fetch_disklist(loci_t* loci) {
     return loci->web_disk_count;
 }
 
-/* readdir du device web (fd LOCI_WEB_DIR_FD) : un .dsk par appel, puis vide. */
+/* readdir of the web device (fd LOCI_WEB_DIR_FD): one .dsk per call, then empty. */
 static void op_readdir_web(loci_t* loci) {
     uint8_t dirent_buf[LOCI_DIRENT_SIZE] = {0};
     dirent_buf[0] = (uint8_t)(LOCI_WEB_DIR_FD & 0xFF);
@@ -883,7 +883,7 @@ static void op_readdir_web(loci_t* loci) {
         const char* nm = loci->web_disks[loci->web_dir_pos++];
         size_t nl = strlen(nm);
         if (nl > LOCI_DIR_NAME_LEN - 1) nl = LOCI_DIR_NAME_LEN - 1;
-        memcpy(&dirent_buf[2], nm, nl);        /* fichier ordinaire (pas AM_DIR) */
+        memcpy(&dirent_buf[2], nm, nl);        /* regular file (not AM_DIR) */
     }
     xstack_zero(loci);
     loci->xstack_ptr = (uint16_t)(LOCI_XSTACK_SIZE - LOCI_DIRENT_SIZE);
@@ -906,7 +906,7 @@ void op_opendir(loci_t* loci) {
         api_return_ax(loci, 0);                /* fd = FD_OFFS_DEV = 0 */
         return;
     }
-    /* Pseudo-device web (Route B) : opendir("W:") liste GET {web_base}/disks. */
+    /* Web pseudo-device (Route B): opendir("W:") lists GET {web_base}/disks. */
     if (loci->web_base[0] && (path[0] == 'W' || path[0] == 'w') && path[1] == ':') {
         web_fetch_disklist(loci);
         loci->web_dir_pos = 0;
@@ -976,7 +976,7 @@ static void op_readdir_dev(loci_t* loci) {
         snprintf(name, sizeof(name), "%s", loci->usb_dev[loci->dir_dev - 1]);
     } else if (loci->web_base[0] &&
                loci->dir_dev - 1 == (int)loci->usb_dev_count) {
-        /* Route B : pseudo-device web, listé juste après les clés USB. */
+        /* Route B: web pseudo-device, listed right after the USB keys. */
         snprintf(name, sizeof(name), "W: Web disks");
     }
     loci->dir_dev++;

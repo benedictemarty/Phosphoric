@@ -47,9 +47,9 @@ typedef struct {
     int      stop_signal;   /**< signal number to report (5=TRAP, 2=INT) */
 } gdb_stub_t;
 
-/** Adresse d'écoute par défaut : la machine locale seulement. Le stub donne
- *  un accès complet (mémoire, registres, exécution) sans authentification ;
- *  l'ouvrir au réseau se demande explicitement (--gdb-bind 0.0.0.0). */
+/** Default bind address: the local machine only. The stub grants full access
+ *  (memory, registers, execution) without authentication; opening it to the
+ *  network must be asked for explicitly (--gdb-bind 0.0.0.0). */
 #define GDB_DEFAULT_BIND "127.0.0.1"
 
 /**

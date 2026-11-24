@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_ost.c
- * @brief Fuzzing : sauvegarde d'état (.ost) → savestate_load
+ * @brief Fuzzing: save state (.ost) → savestate_load
  * @author bmarty <bmarty@mailo.com>
  *
- * Machine minimale (même montage que tests/unit/test_savestate.c), Microdisc
- * présent pour que les sections MDC/FDC/DSK/BAD soient lues. La graine est
- * l'état de cette machine sauvegardé (fuzz_make_seed).
+ * Minimal machine (same set-up as tests/unit/test_savestate.c), Microdisc
+ * present so that the MDC/FDC/DSK/BAD sections are parsed. The seed is this
+ * machine's saved state (fuzz_make_seed).
  *
- * L'en-tête (signature, version, CRC32 des données) est recalculé sur chaque
- * entrée : sans cela, presque toute mutation échouerait au CRC et les sections
- * ne seraient jamais analysées.
+ * The header (magic, version, CRC32 of the data) is recomputed on every
+ * input: otherwise almost every mutation would fail the CRC and the sections
+ * would never be parsed.
  */
 #include "fuzz_common.h"
 #include "utils/logging.h"
@@ -45,7 +45,7 @@ static void fuzz_emu_init(void) {
 
 int fuzz_make_seed(const char* path) {
     fuzz_emu_init();
-    /* Une petite disquette dans A: pour que la graine porte une section DSK. */
+    /* A small floppy in A: so that the seed carries a DSK section. */
     emu.disks[0] = sedoric_create_blank(3, 1);
     if (!emu.disks[0]) return 1;
     microdisc_set_disk(&emu.microdisc, 0, emu.disks[0]->data, emu.disks[0]->size,
@@ -72,7 +72,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         (void)savestate_load(&emu, fuzz_tmpfile(buf, size));
         free(buf);
     }
-    for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {   /* disques créés par la section DSK */
+    for (int i = 0; i < MICRODISC_MAX_DRIVES; i++) {   /* disks created by the DSK section */
         if (emu.disks[i]) { free(emu.disks[i]->data); free(emu.disks[i]); }
     }
     memory_cleanup(&emu.memory);

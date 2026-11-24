@@ -1,41 +1,41 @@
-# Digitelec DTL 2000 — documentation source
+# Digitelec DTL 2000 — source documentation
 
-Dossier d'archives pour l'émulation fidèle du modem **Digitelec DTL 2000**
-(carte V23, PIA 6821 + ACIA 6850, memory-mapped `$03F8-$03FD`).
-Voir l'implémentation : `src/io/dtl2000.c`, `include/io/dtl2000.h`,
-tests `tests/unit/test_dtl2000.c`, exemple `examples/dtl2000-test.bas`.
+Archive folder for the faithful emulation of the **Digitelec DTL 2000** modem
+(V23 board, PIA 6821 + ACIA 6850, memory-mapped `$03F8-$03FD`).
+See the implementation: `src/io/dtl2000.c`, `include/io/dtl2000.h`,
+tests `tests/unit/test_dtl2000.c`, example `examples/dtl2000-test.bas`.
 
-## Contenu
+## Contents
 
-| Fichier | Description |
-|---------|-------------|
-| [`registres-ocr.md`](registres-ocr.md) | **Référence figée** des registres (PIA + ACIA), valeurs bit-à-bit, modes, conflit page 3 — consolidée depuis l'OCR |
-| [`contexte.md`](contexte.md) | Document de contexte initial (presse + manuels d'époque), avec les points qui étaient « à confirmer » |
-| [`ocr/`](ocr/) | OCR brut (Tesseract `fra`, 300 dpi) des 22 pages des manuels d'époque |
+| File | Description |
+|------|-------------|
+| [`registres-ocr.md`](registres-ocr.md) | **Frozen reference** of the registers (PIA + ACIA), bit-by-bit values, modes, page 3 conflict — consolidated from the OCR |
+| [`contexte.md`](contexte.md) | Initial context document (press + period manuals), with the points that were still "to be confirmed" |
+| [`ocr/`](ocr/) | Raw OCR (Tesseract `fra`, 300 dpi) of the 22 pages of the period manuals |
 
 ## Provenance
 
-Les 3 manuels d'époque (scans image non océrisables) ont été récupérés depuis
-le mirror **apple2.org.za** (Apple II Documentation Project), puis rasterisés
-(300 dpi, niveaux de gris) et océrisés avec **Tesseract `fra`** :
+The 3 period manuals (image scans without a text layer) were retrieved from
+the **apple2.org.za** mirror (Apple II Documentation Project), then rasterised
+(300 dpi, greyscale) and OCR'd with **Tesseract `fra`**:
 
-- `prog_v23-*.txt` — « Programmation carte DTL V23 » (7 pages) → **valeurs de
-  registres exactes** (POKE/PEEK), c'est la source primaire des constantes.
-- `notice-*.txt` — « Notice d'utilisation » (5 pages) → mise en route, touches
-  Minitel simulées, logiciel de communication inter-machines.
-- `manuel-*.txt` — manuel RS232/V24 générique (10 pages) → micro-interrupteurs
-  + correspondance circuits 108/105/106/109 (DTR/RTS/CTS/DCD).
+- `prog_v23-*.txt` — « Programmation carte DTL V23 » (*Programming the DTL V23 board*, 7 pages) → **exact
+  register values** (POKE/PEEK); this is the primary source for the constants.
+- `notice-*.txt` — « Notice d'utilisation » (*User guide*, 5 pages) → getting started, simulated
+  Minitel keys, machine-to-machine communication software.
+- `manuel-*.txt` — generic RS232/V24 manual (10 pages) → DIP switches
+  + mapping of circuits 108/105/106/109 (DTR/RTS/CTS/DCD).
 
-> ⚠️ Les 3 PDF sont la variante **Apple II / RS232**, *pas* Oric. Les chips sont
-> identiques (PIA EF6821 + ACIA EF6850) et le découpage des 6 octets est
-> offset-pour-offset le même que l'Oric `$03F8-$03FD` : les valeurs transposent
-> directement (seule l'adresse de base change, Apple `$C0n8` → Oric `$03F8`).
+> ⚠️ The 3 PDFs are the **Apple II / RS232** variant, *not* Oric. The chips are
+> identical (PIA EF6821 + ACIA EF6850) and the layout of the 6 bytes is
+> offset-for-offset the same as the Oric `$03F8-$03FD`: the values carry over
+> directly (only the base address changes, Apple `$C0n8` → Oric `$03F8`).
 
-## Non inclus (volontairement)
+## Not included (on purpose)
 
-- Les **PDF** sources (~19 Mo) et les **PNG** 300 dpi : trop volumineux pour le
-  dépôt et toujours disponibles en ligne (URLs dans `contexte.md` §12).
-- Aucun **logiciel Oric d'origine** du DTL 2000 n'a pu être localisé (la cassette
-  livrée n'est pas archivée publiquement ; Loritel/Tortosa pilotent le Minitel
-  via RS-232, pas la carte `$03F8`). D'où le programme de test maison
-  `examples/dtl2000-test.bas`, dérivé des séquences POKE/PEEK de l'OCR.
+- The source **PDFs** (~19 MB) and the 300 dpi **PNGs**: too large for the
+  repository and still available online (URLs in `contexte.md` §12).
+- No **original Oric software** for the DTL 2000 could be located (the bundled
+  cassette is not publicly archived; Loritel/Tortosa drive the Minitel
+  over RS-232, not the `$03F8` board). Hence the home-made test program
+  `examples/dtl2000-test.bas`, derived from the POKE/PEEK sequences in the OCR.

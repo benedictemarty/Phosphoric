@@ -1,26 +1,25 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_http.c
- * @brief Fuzzing : requête HTTP → analyse et routage de l'API (http_api.c)
+ * @brief Fuzzing: HTTP request → API parsing and routing (http_api.c)
  * @author bmarty <bmarty@mailo.com>
  *
- * Inclut http_api.c pour atteindre ses fonctions static : handle_request()
- * (ligne de requête, Content-Length, paramètres, bac à sable des chemins,
- * fabrication de la commande --control) puis respond_reply() (échappement JSON)
- * sur la commande produite. Rien n'est exécuté : la commande n'est pas
- * transmise à l'émulateur. Les réponses partent dans une paire de sockets
- * vidée après chaque entrée.
+ * Includes http_api.c to reach its static functions: handle_request()
+ * (request line, Content-Length, parameters, path sandbox, building the
+ * --control command) then respond_reply() (JSON escaping) on the produced
+ * command. Nothing is executed: the command is not handed to the emulator.
+ * Responses go to a socket pair drained after every input.
  */
 #ifndef HAS_HTTPAPI
-#define HAS_HTTPAPI 1   /* le serveur est compilé quelle que soit la build */
+#define HAS_HTTPAPI 1   /* the server is compiled whatever the build */
 #endif
-#include "../../src/network/http_api.c"   /* en premier : _GNU_SOURCE */
+#include "../../src/network/http_api.c"   /* first: _GNU_SOURCE */
 #include "fuzz_common.h"
 
 FUZZ_NO_SEED()
 
-/* La file vers l'émulateur n'est jamais atteinte (handle_client n'est pas
- * appelé) ; ce bouchon évite de lier tout le répartiteur control.c. */
+/* The queue to the emulator is never reached (handle_client is not
+ * called); this stub avoids linking the whole control.c dispatcher. */
 control_result_t control_queue_submit(control_queue_t* q, const char* line,
                                       char** reply_out, size_t* reply_len) {
     (void)q; (void)line;

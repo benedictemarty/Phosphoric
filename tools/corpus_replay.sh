@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# tools/corpus_replay.sh — corpus de non-régression sur programmes réels (V2-E7, US7.3).
+# tools/corpus_replay.sh -- non-regression corpus on real programs (V2-E7, US7.3).
 #
-# Rejoue chaque cassette de tapes/ (CLOAD"" tapé au prompt, chemin ROM patché)
-# et chaque disquette de disks/ (boot Microdisc) pendant un nombre fixe de cycles, capture l'écran (PPM + texte) et compare son empreinte
-# au manifeste versionné tests/corpus/manifest.sha256. Les médias, eux, ne sont
-# pas versionnés (droits) : un programme absent est SKIP, pas FAIL.
+# Replays each tape from tapes/ (CLOAD"" typed at the prompt, patched ROM path)
+# and each disk from disks/ (Microdisc boot) for a fixed number of cycles, captures the screen (PPM + text) and compares its fingerprint
+# with the versioned manifest tests/corpus/manifest.sha256. The media themselves
+# are not versioned (rights): a missing program is SKIP, not FAIL.
 #
-# Ce que ça prouve : à cycle égal, l'image est la même qu'à la baseline — donc
-# aucun épic n'a déplacé un accès, une interruption ou un fetch ULA visible.
-# Ce que ça ne prouve pas : que l'image est celle du vrai matériel.
+# What it proves: at an equal cycle count, the image is the same as the baseline --
+# so no epic has moved an access, an interrupt or a visible ULA fetch.
+# What it does not prove: that the image is the one of the real hardware.
 #
-#   tools/corpus_replay.sh check              # verdict contre le manifeste
-#   tools/corpus_replay.sh snapshot           # RE-BASELINE (après un changement voulu)
-#   tools/corpus_replay.sh check OUTDIR       # garde les captures pour inspection
+#   tools/corpus_replay.sh check              # verdict against the manifest
+#   tools/corpus_replay.sh snapshot           # RE-BASELINE (after an intended change)
+#   tools/corpus_replay.sh check OUTDIR       # keep the captures for inspection
 #
-# Chaque entrée du manifeste : <sha256 du PPM>  <nom>  <cycles>  <type>
-# Le nombre de cycles est fixé à la baseline et relu depuis le manifeste : on
-# compare toujours au même instant.
+# Each manifest entry: <sha256 of the PPM>  <name>  <cycles>  <type>
+# The cycle count is fixed at baseline time and read back from the manifest: we
+# always compare at the same instant.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -38,7 +38,7 @@ if [ -z "$OUT" ]; then OUT=$(mktemp -d); keep=0; fi
 mkdir -p "$OUT"
 trap '[ "$keep" = 0 ] && rm -rf "$OUT"' EXIT
 
-capture() { # name type media cycles → écrit $OUT/name.ppm et .txt, affiche le sha
+capture() { # name type media cycles → writes $OUT/name.ppm and .txt, prints the sha
     local name="$1" type="$2" media="$3" cycles="$4"
     case "$type" in
         tape) "$EMU" -r "$ROM" -n -t "$media" -c "$cycles" \
@@ -50,7 +50,7 @@ capture() { # name type media cycles → écrit $OUT/name.ppm et .txt, affiche l
     [ -f "$OUT/$name.ppm" ] && sha256sum "$OUT/$name.ppm" | cut -d' ' -f1
 }
 
-media_of() { # name type → chemin du média, ou vide
+media_of() { # name type → path of the media, or empty
     local name="$1" type="$2" f
     if [ "$type" = tape ]; then
         for f in "tapes/$name".tap "tapes/$name".TAP; do [ -f "$f" ] && { echo "$f"; return; }; done

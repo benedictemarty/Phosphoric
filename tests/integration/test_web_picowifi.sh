@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# test_web_picowifi.sh — e2e du modem picowifi dans la build WebAssembly
+# test_web_picowifi.sh -- e2e of the picowifi modem in the WebAssembly build
 #
-# Chrome headless (Playwright) sur la page servie localement, trois scénarios
-# (détail dans web_picowifi_e2e.js) :
-#   1. relais WebSocket : BASIC -> ACIA $031C -> picowifi -> WebSocket ->
-#      tools/picowifi_ws_relay.py -> serveur TCP local, et retour ;
-#   2. sans relais (?relay=none) : ATGET rejoué par fetch() (serveur CORS),
-#      ATRD = heure du navigateur ;
-#   3. LOCI + cassette + ?httpsame= (cas ProphetOric) : ACIA $0380, ATD- puis
-#      HTTP brut réécrit vers l'origine de la page, ResponseFormat transmis.
-# Les programmes BASIC sont tokenisés en .tap auto-run (bas2tap) et chargés par
-# ?media= : pas de frappe clavier simulée.
+# Headless Chrome (Playwright) on the locally served page, three scenarios
+# (details in web_picowifi_e2e.js):
+#   1. WebSocket relay: BASIC -> ACIA $031C -> picowifi -> WebSocket ->
+#      tools/picowifi_ws_relay.py -> local TCP server, and back;
+#   2. without relay (?relay=none): ATGET replayed by fetch() (CORS server),
+#      ATRD = browser time;
+#   3. LOCI + tape + ?httpsame= (ProphetOric case): ACIA $0380, ATD- then
+#      raw HTTP rewritten to the page's origin, ResponseFormat forwarded.
+# The BASIC programs are tokenized into auto-run .tap files (bas2tap) and loaded
+# via ?media=: no simulated keyboard typing.
 #
-# SKIP (exit 0) si emcc, node, Playwright ou Chrome sont absents.
+# SKIP (exit 0) if emcc, node, Playwright or Chrome are missing.
 set -u
 cd "$(dirname "$0")/../.."
 
@@ -42,9 +42,9 @@ trap cleanup EXIT
 
 for f in web/*; do ln -s "$PWD/$f" "$WWW/"; done
 
-# Tronc commun : ACIA à l'adresse AC (control $1E, command 3), envoi de S$ par
-# GOSUB 100 (en rangeant l'écho), réception par GOSUB 200 jusqu'à ~1500 tours
-# de silence. Tout octet reçu va en #4000+N.
+# Common core: ACIA at address AC (control $1E, command 3), sending S$ via
+# GOSUB 100 (storing the echo), receiving via GOSUB 200 until ~1500 loops
+# of silence. Every received byte goes to #4000+N.
 common() { cat <<'BAS'
 100 FOR I=1 TO LEN(S$)
 110 IF (PEEK(A+1) AND 16)=0 THEN 110
@@ -57,7 +57,7 @@ common() { cat <<'BAS'
 230 RETURN
 BAS
 }
-mktap() {   # $1 = nom, stdin = lignes propres au scénario
+mktap() {   # $1 = name, stdin = scenario-specific lines
     { cat; common; } > "$TMP/$1.bas"
     ./bas2tap "$TMP/$1.bas" -o "$WWW/$1.tap" --auto-run >/dev/null || { echo "FAIL: bas2tap $1"; exit 1; }
 }
@@ -82,7 +82,7 @@ mktap same <<'BAS'
 60 GOSUB 200:END
 BAS
 
-# Serveur de la page : fichiers de $WWW + /echo (renvoie l'en-tête ResponseFormat).
+# Page server: files from $WWW + /echo (returns the ResponseFormat header).
 python3 - "$HTTP" "$WWW" <<'PY' & PIDS+=($!)
 import functools, http.server, sys
 class H(http.server.SimpleHTTPRequestHandler):
@@ -97,9 +97,9 @@ class H(http.server.SimpleHTTPRequestHandler):
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])),
     functools.partial(H, directory=sys.argv[2])).serve_forever()
 PY
-# Relais WebSocket (scénario 1), restreint au serveur TCP de test.
+# WebSocket relay (scenario 1), restricted to the test TCP server.
 python3 tools/picowifi_ws_relay.py --port "$RELAY" --allow "127.0.0.1:$TCP" 2>"$TMP/relay.log" & PIDS+=($!)
-# Serveur TCP : bannière à la connexion, trace de tout ce qu'il reçoit.
+# TCP server: banner on connection, log of everything it receives.
 python3 - "$TCP" "$RXLOG" <<'PY' & PIDS+=($!)
 import socket, sys
 srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -114,7 +114,7 @@ while True:
             f.write(d); f.flush()
     c.close()
 PY
-# Serveur HTTP autre origine avec CORS (scénario 2, fetch() direct).
+# Cross-origin HTTP server with CORS (scenario 2, direct fetch()).
 python3 - "$FETCH" <<'PY' & PIDS+=($!)
 import http.server, sys
 class H(http.server.BaseHTTPRequestHandler):

@@ -1,21 +1,21 @@
 #!/bin/sh
-# fetch_vectors.sh — récupère les jeux de vecteurs d'oracle CPU (V2-S1).
+# fetch_vectors.sh — fetches the CPU oracle vector sets (V2-S1).
 #
-# Rien de tout cela n'est versionné : ce sont des dépôts tiers volumineux
-# (~1 Go pour 65x02) sous leurs propres licences. Les tests `make test-cycle`
-# et `make test-dormann` se mettent en SKIP quand les vecteurs sont absents.
+# None of this is version-controlled: these are large third-party repositories
+# (~1 GB for 65x02) under their own licences. The `make test-cycle` and
+# `make test-dormann` tests SKIP when the vectors are missing.
 #
-#   1. SingleStepTests/65x02 — 10 000 cas par opcode, avec la trace bus
-#      cycle par cycle attendue (256 fichiers JSON).
-#   2. Klaus2m5/6502_65C02_functional_tests — test fonctionnel 6502 (+ son
-#      listing, qui donne l'adresse de succès). Le test décimal n'est publié
-#      qu'en source .a65 (pas de binaire) : il faudrait l'assembler avec as65,
-#      hors périmètre — le test fonctionnel couvre déjà le mode décimal.
+#   1. SingleStepTests/65x02 — 10,000 cases per opcode, with the expected
+#      cycle-by-cycle bus trace (256 JSON files).
+#   2. Klaus2m5/6502_65C02_functional_tests — 6502 functional test (+ its
+#      listing, which gives the success address). The decimal test is only
+#      published as .a65 source (no binary): it would have to be assembled with
+#      as65, out of scope — the functional test already covers decimal mode.
 #
-# Usage :
-#   tools/fetch_vectors.sh              # tout (65x02 + Dormann)
-#   tools/fetch_vectors.sh dormann      # seulement Dormann (~150 Ko)
-#   tools/fetch_vectors.sh 65x02 a9 b1  # seulement ces opcodes
+# Usage:
+#   tools/fetch_vectors.sh              # everything (65x02 + Dormann)
+#   tools/fetch_vectors.sh dormann      # Dormann only (~150 KB)
+#   tools/fetch_vectors.sh 65x02 a9 b1  # only these opcodes
 
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -55,7 +55,7 @@ fetch_65x02() {
         if fetch "$BASE65/$op.json" "$V65/$op.json"; then
             ok=$((ok+1))
         else
-            # 26 opcodes JAM/KIL n'ont pas de fichier en amont : c'est normal.
+            # 26 JAM/KIL opcodes have no upstream file: this is expected.
             echo "  (absent en amont: $op)"
         fi
         [ $((n % 32)) -eq 0 ] && echo "  ... $n/256"

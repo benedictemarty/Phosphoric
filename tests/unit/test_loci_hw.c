@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /*
- * test_loci_hw.c — backend --loci-hw (src/io/loci_hw.c) face à une cartouche
- * MAQUETTE sur un pseudo-terminal : course Φ2 mesurée (caps TIMING, commandes
- * TIMING/RDT/WRT du protocole loci-usb) et boîte aux lettres BAL de loci-fw
- * (écritures en page $FF captées, attente de fin de commande, cache ROM).
+ * test_loci_hw.c — --loci-hw backend (src/io/loci_hw.c) against a MOCK
+ * cartridge on a pseudo-terminal: measured Φ2 race (TIMING caps, TIMING/RDT/WRT
+ * commands of the loci-usb protocol) and loci-fw BAL mailbox
+ * (captured page $FF writes, wait for command completion, ROM cache).
  *
- * Les durées renvoyées par la maquette sont celles mesurées sur la Feather 5723
- * (sys 120 MHz, Φ2cfg 4000 kHz → tick PIO 8,33 ns ; serve 23 cycles, act 69-118 en
- * lecture, 429 pour une écriture RAMX) ; les cas en retard sont fabriqués pour
- * franchir l'échéance (1000 - 100 = 900 ns). Chronologie (loci_hw.c) :
- *   prêt   = (22 + tior) × 8,33 + 16,7 + serve × 8,33
- *   donnée = max(prêt, 666,7 + 16,7) + 3 × 8,33
+ * The durations returned by the mock are those measured on Feather 5723
+ * (sys 120 MHz, Φ2cfg 4000 kHz → PIO tick 8.33 ns; serve 23 cycles, act 69-118 for
+ * a read, 429 for a RAMX write); the late cases are crafted to
+ * cross the deadline (1000 - 100 = 900 ns). Timeline (loci_hw.c):
+ *   ready = (22 + tior) × 8.33 + 16.7 + serve × 8.33
+ *   data  = max(ready, 666.7 + 16.7) + 3 × 8.33
  */
 #define _DEFAULT_SOURCE
 #include "io/loci_emu.h"
@@ -30,38 +30,38 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Compteurs internes du backend (src/io/loci_hw.c), hors interface loci_emu.h. */
+/* Internal backend counters (src/io/loci_hw.c), outside the loci_emu.h interface. */
 void loci_hw_timing_stats(unsigned long *timed, unsigned long *late, unsigned long *stale);
 
 static int g_fails, g_checks;
 #define CHECK(c, msg) do { g_checks++; if (c) printf("  [OK]   %s\n", msg); \
                            else { g_fails++; printf("  [FAIL] %s\n", msg); } } while (0)
 
-/* ── maquette ── */
+/* ── mock ── */
 static uint8_t  m_tior;
 static uint16_t m_serve[65536], m_act[65536];
-/* Image ROM servie et BAL : $FF00-$FFCF captée ; une commande non nulle en $FF00 se
- * termine après 3 lectures de $FF00 ($FF00 ← 0, $FF02 ← résultat, gen8 + 1). */
+/* Served ROM image and BAL: $FF00-$FFCF captured; a non-zero command at $FF00
+ * completes after 3 reads of $FF00 ($FF00 ← 0, $FF02 ← result, gen8 + 1). */
 static uint8_t  m_rom[16384], m_gen;
 static int      m_bal_pending, m_rdn_count;
-static unsigned m_rdn_last_n;     /* taille du dernier RDN (cache ROM par pages : 256) */
-static int      m_btn_warm_irqs;  /* BTN : impulsions nIRQ rendues par le LINES suivant (appui à chaud) */
+static unsigned m_rdn_last_n;     /* size of the last RDN (paged ROM cache: 256) */
+static int      m_btn_warm_irqs;  /* BTN: nIRQ pulses returned by the next LINES (warm press) */
 static int      m_lines_irqs;
-static unsigned m_lines_n;        /* LINES reçus (poll en attente) */
-/* Bit « front en attente » (2.31.13) : m_caps_edge annonce LUP_CAP_EDGE_FLAG ; m_edge
- * est porté par les réponses (LUP_F_EDGE) jusqu'au LINES suivant. */
+static unsigned m_lines_n;        /* LINES received (idle poll) */
+/* "Edge pending" bit (2.31.13): m_caps_edge announces LUP_CAP_EDGE_FLAG; m_edge
+ * is carried by the responses (LUP_F_EDGE) until the next LINES. */
 static int      m_caps_edge, m_edge;
 #define LOCI_HW_FRAME_CYCLES_T 19968
 #define M_EDGEF ((uint8_t)((m_caps_edge && m_edge) ? LUP_F_EDGE : 0))
-static const char *m_idle_poll = "0";   /* LOCI_HW_IDLE_POLL passé par start() */
-/* Journal des écritures reçues par la maquette sur $03A4/$03A8 (WR/WRT un par un, ou
- * WRN groupé), dans l'ordre d'arrivée. */
+static const char *m_idle_poll = "0";   /* LOCI_HW_IDLE_POLL passed by start() */
+/* Log of the writes received by the mock on $03A4/$03A8 (WR/WRT one by one, or
+ * grouped WRN), in arrival order. */
 static uint8_t  m_xw[70000];
 static unsigned m_xw_n, m_xw_single, m_xw_wrn, m_xw_wrn_max;
-/* Portes XRAM RW0/RW1 modélisées (m_xs_model) comme dans sys/mia.c : une lecture rend
- * xram[ADDR] puis ADDR += STEP ; une écriture pose xram[ADDR] puis ADDR += STEP ;
- * $03A5/$03A6-7 (STEP0/ADDR0), $03A9/$03AA-B (STEP1/ADDR1). XPEEK sans effet, XADV =
- * k lectures réelles. m_caps_xs annonce LUP_CAP_XSTREAM. */
+/* XRAM ports RW0/RW1 modelled (m_xs_model) as in sys/mia.c: a read returns
+ * xram[ADDR] then ADDR += STEP; a write stores xram[ADDR] then ADDR += STEP;
+ * $03A5/$03A6-7 (STEP0/ADDR0), $03A9/$03AA-B (STEP1/ADDR1). XPEEK without effect,
+ * XADV = k real reads. m_caps_xs announces LUP_CAP_XSTREAM. */
 static int      m_xs_model, m_caps_xs;
 static uint8_t  m_xram[65536];
 static uint16_t m_xaddr[2];
@@ -81,12 +81,12 @@ static void reg_write(uint16_t ad, uint8_t v)
     if (ad == 0x03AA) m_xaddr[1] = (uint16_t)((m_xaddr[1] & 0xFF00) | v);
     if (ad == 0x03AB) m_xaddr[1] = (uint16_t)((m_xaddr[1] & 0x00FF) | v << 8);
 }
-static int      m_boot_swap;  /* WRT $03AF=$A0 remplace la ROM servie et fait bouger gen8 */
-static uint8_t  m_id = 'L';   /* $0319 lu par RD (reconnaissance, loci_hw_probe) */
+static int      m_boot_swap;  /* WRT $03AF=$A0 replaces the served ROM and moves gen8 */
+static uint8_t  m_id = 'L';   /* $0319 read by RD (recognition, loci_hw_probe) */
 
-/* Chaque thread de la maquette garde SON pseudo-terminal : relire une globale
- * laissait le thread d'une session précédente lire le terminal de la suivante et y
- * voler des octets (PING coupé → « pont muet », environ un lancement sur deux). */
+/* Each mock thread keeps ITS OWN pseudo-terminal: re-reading a global let the
+ * thread of a previous session read the next session's terminal and steal bytes
+ * from it (PING cut short → "silent bridge", about one run in two). */
 static _Thread_local int t_fd = -1;
 static void mwrite(const uint8_t *p, unsigned n)
 {
@@ -159,7 +159,7 @@ static void *mock_thread(void *arg)
             }
             m_xw_wrn++; if (n > m_xw_wrn_max) m_xw_wrn_max = n;
             uint8_t p[2] = { LUP_F_NROMDIS, m_gen }; mwrite(hdr, 3); mwrite(p, 2); break; }
-        case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (défaut du firmware), tior */
+        case LUP_CMD_TIMING: {   /* sys 120000 kHz, Φ2cfg 4000 kHz (firmware default), tior */
             uint8_t p[12] = { 0xC0, 0xD4, 0x01, 0, 0xA0, 0x0F, 0, 0, m_tior, 0, 0, 0 };
             mwrite(hdr, 3); mwrite(p, 12); break; }
         case LUP_CMD_RDT: {
@@ -174,7 +174,7 @@ static void *mock_thread(void *arg)
         case LUP_CMD_WRT: {
             a[0] = (uint8_t)mread(); a[1] = (uint8_t)mread(); a[2] = (uint8_t)mread();
             uint16_t ad = (uint16_t)(a[0] | a[1] << 8);
-            if (ad == 0x03AF && a[2] == 0xA0 && m_boot_swap) {   /* mia_api_boot : BASIC dans la banque */
+            if (ad == 0x03AF && a[2] == 0xA0 && m_boot_swap) {   /* mia_api_boot: BASIC into the bank */
                 memset(m_rom, 0xBB, sizeof(m_rom)); m_gen++;
             }
             if ((ad == 0x03A4 || ad == 0x03A8) && m_xw_n < sizeof(m_xw)) { m_xw[m_xw_n++] = a[2]; m_xw_single++; }
@@ -223,14 +223,14 @@ int main(void)
     printf("test_loci_hw_timing — course Φ2 mesurée (--loci-hw, caps TIMING)\n");
     unsigned long timed, late, stale;
 
-    /* Durées réelles de la Feather : serve 23 → prêt 392 ns, donnée 708 ns (après Φ2 haut). */
+    /* Real Feather durations: serve 23 → ready 392 ns, data 708 ns (after Φ2 high). */
     m_serve[0x0381] = 23;  m_act[0x0381] = 118;
     m_serve[0x0319] = 23;  m_act[0x0319] = 73;
-    /* 80 cycles : donnée 892 ns, à temps avec tior 0 ; 917 ns avec tior 3, en retard. */
+    /* 80 cycles: data 892 ns, in time with tior 0; 917 ns with tior 3, late. */
     m_serve[0x0382] = 80;  m_act[0x0382] = 110;
-    /* 120 cycles : donnée 1225 ns, toujours en retard. */
+    /* 120 cycles: data 1225 ns, always late. */
     m_serve[0x0380] = 120; m_act[0x0380] = 130;
-    /* Écriture RAMX : act 429 cycles = 4 cycles 6502. */
+    /* RAMX write: act 429 cycles = 4 6502 cycles. */
     m_act[0x03E0] = 429;
 
     start(NULL);
@@ -246,7 +246,7 @@ int main(void)
     CHECK(late == 1, "serve 120 cycles (donnée à 1225 ns > 900) : lecture en retard comptée");
     CHECK(v == 0x80 && !loci_emu_read_lost(), "sans LOCI_HW_FAITHFUL : la donnée est rendue telle quelle");
 
-    /* Iopage périmé : écriture RAMX (act = 4 cycles 6502) puis accès 2 cycles plus tard. */
+    /* Stale iopage: RAMX write (act = 4 6502 cycles) then access 2 cycles later. */
     loci_emu_api_write(0x03E0, 0); loci_emu_idle_poll(2);
     loci_emu_api_read(0x0319);
     loci_hw_timing_stats(&timed, &late, &stale);
@@ -258,7 +258,7 @@ int main(void)
     CHECK(stale == 1, "accès 4 cycles après une action de 4 cycles : à temps");
     loci_emu_stop();
 
-    /* Mode fidèle, tior 3 : serve 80 → donnée à 917 ns > 900 → open-bus. */
+    /* Faithful mode, tior 3: serve 80 → data at 917 ns > 900 → open-bus. */
     m_tior = 3;
     start("1");
     loci_emu_api_read(0x0382);
@@ -268,7 +268,7 @@ int main(void)
     CHECK(!loci_emu_read_lost(), "fidèle, serve 23 cycles : lecture propre");
     loci_emu_stop();
 
-    /* ── BAL de loci-fw ── */
+    /* ── loci-fw BAL ── */
     m_tior = 0;
     start(NULL);
     uint8_t r = 0xFF;
@@ -288,23 +288,23 @@ int main(void)
           "groupe 2 (Console, exécuté par le 6502) : captée, pas d'attente");
     loci_emu_stop();
 
-    /* ── Appel d'API qui remplace la ROM servie (menu LOCI → ESC → mia_api_boot) ── */
+    /* ── API call that replaces the served ROM (LOCI menu → ESC → mia_api_boot) ── */
     m_tior = 0;
-    memset(m_rom, 0x4C, sizeof(m_rom));           /* « ROM du menu » */
+    memset(m_rom, 0x4C, sizeof(m_rom));           /* « menu ROM » */
     m_boot_swap = 1;
     start(NULL);
     r = 0;
     CHECK(loci_emu_rom_read(0xC123, &r) && r == 0x4C, "ROM du menu en cache");
-    loci_emu_api_write(0x03AF, 0xA0);             /* STA MIA_OP : la réponse porte la nouvelle gen8 */
+    loci_emu_api_write(0x03AF, 0xA0);             /* STA MIA_OP: the reply carries the new gen8 */
     CHECK(loci_emu_rom_read(0xC124, &r) && r == 0x4C,
           "après STA $03AF : le JSR $03B0 qui suit est lu dans la ROM d'avant (6502 déjà dans le spin)");
     CHECK(loci_emu_rom_read(0xC300, &r) && r == 0xBB && loci_emu_rom_read(0xC125, &r) && r == 0x4C,
           "page pas encore en cache lue pendant le report : les pages déjà en cache restent la ROM d'avant");
-    loci_emu_api_read(0x03B0);                    /* fetch de MIA_SPIN : premier accès $03xx */
+    loci_emu_api_read(0x03B0);                    /* MIA_SPIN fetch: first $03xx access */
     CHECK(loci_emu_rom_read(0xC124, &r) && r == 0xBB,
           "premier accès $03xx après l'appel : cache rechargé, nouvelle ROM visible");
-    /* RETURN du menu (call_loci_boot) : STA MIA_OP ; LDA MIA_XSTACK $03AC ; PLP ; JMP
-     * MIA_SPIN — la lecture de $03AC ne lève pas le report, seule celle de $03B0. */
+    /* RETURN from the menu (call_loci_boot): STA MIA_OP ; LDA MIA_XSTACK $03AC ; PLP ;
+     * JMP MIA_SPIN — reading $03AC does not lift the deferral, only reading $03B0. */
     memset(m_rom, 0x4C, sizeof(m_rom)); m_gen++;
     loci_emu_api_read(0x03B0);
     CHECK(loci_emu_rom_read(0xC200, &r) && r == 0x4C, "ROM du menu rechargée");
@@ -314,14 +314,14 @@ int main(void)
           "lecture de $03AC après STA $03AF : PLP / JMP encore lus dans la ROM d'avant");
     loci_emu_api_read(0x03B0);
     CHECK(loci_emu_rom_read(0xC201, &r) && r == 0xBB, "lecture de MIA_SPIN $03B0 : nouvelle ROM visible");
-    loci_emu_api_write(0x03A0, 0x00);             /* autre registre : invalidation immédiate */
+    loci_emu_api_write(0x03A0, 0x00);             /* another register: immediate invalidation */
     memset(m_rom, 0x11, sizeof(m_rom)); m_gen++;
     loci_emu_api_read(0x03B1);
     CHECK(loci_emu_rom_read(0xC000, &r) && r == 0x11, "hors appel d'API : nouvelle génération prise aussitôt");
     m_boot_swap = 0;
     loci_emu_stop();
 
-    /* ── Bouton MENU à chaud : nIRQ (piège $03BA du firmware), pas de nRESET ── */
+    /* ── Warm MENU button: nIRQ (firmware $03BA trap), no nRESET ── */
     start(NULL);
     m_btn_warm_irqs = 1;
     struct timespec t0, t1;
@@ -336,24 +336,24 @@ int main(void)
     m_btn_warm_irqs = 0;
     loci_emu_stop();
 
-    /* ── Écritures postées sur $03A4 (sauvegarde à chaud : ~48 Ko octet par octet) ── */
+    /* ── Posted writes on $03A4 (warm save: ~48 KB byte by byte) ── */
     start(NULL);
     m_xw_n = m_xw_single = m_xw_wrn = m_xw_wrn_max = 0;
     unsigned long req0 = 0;
     for (int i = 0; i < 1000; i++) {
         loci_emu_api_write(0x03A4, (uint8_t)(i * 7));
-        loci_emu_irq_take();                      /* comme reflect_nirq après chaque écriture MIA */
+        loci_emu_irq_take();                      /* like reflect_nirq after each MIA write */
     }
     (void)req0;
     CHECK(m_xw_single == 0 && m_xw_wrn == 3 && m_xw_wrn_max == 256,
           "1000 écritures $03A4 (+ drain nIRQ après chacune) : aucune requête unitaire, 3 WRN pleins");
-    loci_emu_api_read(0x03A0);                    /* une lecture vide le tampon avant d'être faite */
+    loci_emu_api_read(0x03A0);                    /* a read flushes the buffer before it is done */
     int order_ok = m_xw_n == 1000;
     for (int i = 0; order_ok && i < 1000; i++) order_ok = m_xw[i] == (uint8_t)(i * 7);
     CHECK(order_ok && m_xw_wrn == 4, "lecture $03xx : reste vidé avant elle, 1000 octets dans l'ordre");
     loci_emu_api_write(0x03A4, 0x11);
-    loci_emu_api_write(0x03A8, 0x22);             /* autre porte : vide d'abord RW0 */
-    loci_emu_api_write(0x03A5, 0x01);             /* autre registre : vide RW1, puis écriture normale */
+    loci_emu_api_write(0x03A8, 0x22);             /* other port: flushes RW0 first */
+    loci_emu_api_write(0x03A5, 0x01);             /* other register: flushes RW1, then a normal write */
     CHECK(m_xw_n == 1002 && m_xw[1000] == 0x11 && m_xw[1001] == 0x22, "changement d'adresse : ordre conservé");
     loci_emu_api_write(0x03A4, 0x33);
     loci_emu_idle_poll(1000);
@@ -370,7 +370,7 @@ int main(void)
     unsetenv("LOCI_HW_NO_POST");
 
 #ifdef LUP_CAP_XSTREAM
-    /* ── Lectures groupées sur $03A4 (restauration : RETURN dans le menu) ── */
+    /* ── Grouped reads on $03A4 (restore: RETURN in the menu) ── */
     m_xs_model = 1; m_caps_xs = 1;
     for (unsigned i = 0; i < 65536; i++) m_xram[i] = (uint8_t)(i * 7 + 3);
     start(NULL);
@@ -381,35 +381,35 @@ int main(void)
     int seq_ok = 1;
     for (unsigned i = 0; i < 600; i++) {
         uint8_t v = loci_emu_api_read(0x03A4);
-        loci_emu_irq_take();                      /* comme reflect_nirq après chaque lecture MIA */
+        loci_emu_irq_take();                      /* like reflect_nirq after each MIA read */
         if (v != (uint8_t)((0x1000 + i) * 7 + 3)) seq_ok = 0;
     }
     CHECK(seq_ok, "600 lectures $03A4 : octets justes, dans l'ordre");
     CHECK(m_port_reads == 2 && m_xpeeks == 3 && m_xadvs == 2,
           "600 lectures : 2 réelles puis 3 XPEEK de 256, réarmement par XADV + XPEEK sans lecture réelle");
-    loci_emu_api_read(0x03A0);                    /* autre accès : XADV solde les lectures servies */
+    loci_emu_api_read(0x03A0);                    /* another access: XADV settles the served reads */
     CHECK(m_xaddr[0] == 0x1000 + 600, "XADV avant tout autre accès : ADDR0 = état exact de 600 lectures");
-    /* Écriture de la porte pendant un flux : le solde passe avant. */
+    /* Port write during a stream: the settlement comes first. */
     loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4);
     loci_emu_api_write(0x03A4, 0xEE);
     loci_emu_api_read(0x03A0);
     CHECK(m_xaddr[0] == 0x1000 + 604 && m_xram[0x1000 + 603] == 0xEE,
           "écriture $03A4 en plein flux : lectures soldées d'abord, l'octet va au bon ADDR");
-    /* STEP = 0 (fenêtre clavier HID) : jamais de tampon. */
+    /* STEP = 0 (HID keyboard window): never a buffer. */
     loci_emu_api_write(0x03A5, 0);
     m_port_reads = m_xpeeks = 0;
     for (int i = 0; i < 10; i++) loci_emu_api_read(0x03A4);
     CHECK(m_port_reads == 10 && m_xpeeks == 1,
           "STEP0 = 0 : lectures unitaires (pas de tampon périmé), un seul XPEEK tenté");
     loci_emu_api_write(0x03A5, 1);
-    /* Latence bornée : après 2000 cycles sans accès, le tampon est soldé. */
+    /* Bounded latency: after 2000 cycles without access, the buffer is settled. */
     uint16_t before = m_xaddr[0];
     loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4); loci_emu_api_read(0x03A4);
     CHECK(m_xaddr[0] != (uint16_t)(before + 3), "3 lectures dont des servies : la cartouche n'a pas encore avancé");
     loci_emu_idle_poll(2500);
     CHECK(m_xaddr[0] == (uint16_t)(before + 3), "2500 cycles sans accès : lectures servies soldées (XADV)");
     loci_emu_stop();
-    /* Firmware sans XSTREAM (caps 1F) : lectures unitaires. */
+    /* Firmware without XSTREAM (caps 1F): one request per read. */
     m_caps_xs = 0;
     start(NULL);
     loci_emu_api_write(0x03A6, 0x00); loci_emu_api_write(0x03A7, 0x20);
@@ -420,10 +420,10 @@ int main(void)
     m_xs_model = 0;
 #endif
 
-    /* ── Bit « front en attente » (2.31.13) ── */
+    /* ── "Edge pending" bit (2.31.13) ── */
     m_caps_edge = 1; m_edge = 0;
     start(NULL);
-    loci_emu_irq_take();                          /* premier drain : toujours un LINES */
+    loci_emu_irq_take();                          /* first drain: always one LINES */
     m_lines_n = 0;
     for (int i = 0; i < 20; i++) { loci_emu_api_read(0x03A0); loci_emu_irq_take(); }
     CHECK(m_lines_n == 0, "cap EDGE, aucun front signalé : pas de LINES après les 20 accès");
@@ -432,7 +432,7 @@ int main(void)
     CHECK(loci_emu_irq_take() == 0 && m_lines_n == 1, "LUP_F_EDGE dans la réponse : un LINES au drain suivant");
     loci_emu_api_read(0x03A0); loci_emu_irq_take();
     CHECK(m_lines_n == 1, "bit retombé après LINES : pas de LINES de plus");
-    loci_emu_idle_poll(LOCI_HW_FRAME_CYCLES_T);   /* une trame sans LINES (poll en attente coupé) */
+    loci_emu_idle_poll(LOCI_HW_FRAME_CYCLES_T);   /* one frame with no LINES (idle poll off) */
     loci_emu_api_read(0x03A0); loci_emu_irq_take();
     CHECK(m_lines_n == 2, "au moins un LINES par trame, même sans bit");
     loci_emu_stop();
@@ -444,9 +444,9 @@ int main(void)
     CHECK(m_lines_n == 5, "firmware sans la cap : un LINES après chaque accès (comportement d'avant)");
     loci_emu_stop();
 
-    /* ── Poll en attente : seuil en temps réel (2.30.1) ── */
+    /* ── Idle poll: real-time threshold (2.30.1) ── */
     m_idle_poll = "1000";
-    setenv("LOCI_HW_IDLE_POLL_US", "100000", 1);   /* 100 ms : large devant la durée du test */
+    setenv("LOCI_HW_IDLE_POLL_US", "100000", 1);   /* 100 ms: well above the test's duration */
     start(NULL);
     m_lines_n = 0;
     for (int i = 0; i < 50; i++) loci_emu_idle_poll(1000);
@@ -466,7 +466,7 @@ int main(void)
     unsetenv("LOCI_HW_IDLE_POLL_US");
     m_idle_poll = "0";
 
-    /* ── Reconnaissance d'une LOCI-USB (loci_hw_probe) ── */
+    /* ── Recognising a LOCI-USB (loci_hw_probe) ── */
     {
         int master, slave;
         char name[128];

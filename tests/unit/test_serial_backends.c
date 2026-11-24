@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_serial_backends.c
- * @brief Transports de la liaison série : modem AT, tcp, pty, port COM, smf,
- *        analyse des spécifications
+ * @brief Serial line transports: AT modem, tcp, pty, COM port, smf,
+ *        spec parsing
  * @author bmarty <bmarty@mailo.com>
  *
- * Hermétique : tout passe par 127.0.0.1 et des pseudo-terminaux (openpty), sans
- * matériel ni réseau extérieur. Les transports sont pilotés comme le fait
- * l'ACIA : send() octet par octet, recv()/poll() à chaque sondage.
+ * Hermetic: everything goes through 127.0.0.1 and pseudo-terminals (openpty),
+ * no hardware nor outside network. The transports are driven the way the
+ * ACIA does: send() byte by byte, recv()/poll() on every poll.
  */
 #define _DEFAULT_SOURCE   /* openpty, usleep */
 #include "io/serial_backend.h"
@@ -41,9 +41,9 @@ static int tests_failed = 0;
     printf("FAIL\n    %s:%d: « %s » absent de « %s »\n", __FILE__, __LINE__, (needle), (hay)); \
     tests_failed++; return; } } while (0)
 
-/* ── Outils ──────────────────────────────────────────────────────────── */
+/* ── Helpers ─────────────────────────────────────────────────────────── */
 
-/* Serveur TCP local sur un port libre ; renvoie le descripteur d'écoute. */
+/* Local TCP server on a free port; returns the listening descriptor. */
 static int listen_local(uint16_t* port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a;
@@ -60,7 +60,7 @@ static int listen_local(uint16_t* port) {
     return fd;
 }
 
-/* Port libre (lié puis relâché) pour un transport qui écoute lui-même. */
+/* Free port (bound then released) for a transport that listens itself. */
 static uint16_t free_port(void) {
     uint16_t p = 0;
     int fd = listen_local(&p);
@@ -86,8 +86,8 @@ static void send_str(serial_backend_t* b, const char* s) {
     while (*s) b->send(b, (uint8_t)*s++);
 }
 
-/* Lit ce que le transport rend pendant au plus @p ms (s'arrête dès que
- * @p until apparaît, si non NULL). */
+/* Reads what the transport returns for at most @p ms (stops as soon as
+ * @p until shows up, if not NULL). */
 static void drain(serial_backend_t* b, char* out, size_t sz, int ms, const char* until) {
     size_t n = 0;
     out[0] = '\0';
@@ -99,7 +99,7 @@ static void drain(serial_backend_t* b, char* out, size_t sz, int ms, const char*
     }
 }
 
-/* Lit un descripteur (non bloquant) pendant au plus @p ms. */
+/* Reads a descriptor (non-blocking) for at most @p ms. */
 static size_t read_fd(int fd, char* out, size_t sz, int ms, const char* until) {
     size_t n = 0;
     out[0] = '\0';
@@ -130,23 +130,23 @@ TEST(test_modem_at_commands) {
     ASSERT_TRUE(!m->connected(m));
     send_str(m, "AT\r");
     drain(m, out, sizeof out, 200, "OK\r\n");
-    ASSERT_HAS(out, "AT\r");                 /* écho actif par défaut */
+    ASSERT_HAS(out, "AT\r");                 /* echo on by default */
     ASSERT_HAS(out, "OK\r\n");
     send_str(m, "ATE0\r");
     drain(m, out, sizeof out, 200, "OK\r\n");
     ASSERT_HAS(out, "OK");
     send_str(m, "ATS0=2\r");
     drain(m, out, sizeof out, 200, "OK\r\n");
-    ASSERT_TRUE(strncmp(out, "OK\r\n", 4) == 0);   /* plus d'écho */
+    ASSERT_TRUE(strncmp(out, "OK\r\n", 4) == 0);   /* no more echo */
     ASSERT_TRUE(m->state.modem.s0_rings == 2);
-    send_str(m, "ATX\bZ\r");                 /* retour arrière : « ATZ » */
+    send_str(m, "ATX\bZ\r");                 /* backspace: "ATZ" */
     drain(m, out, sizeof out, 200, "OK\r\n");
     ASSERT_HAS(out, "OK");
     ASSERT_TRUE(m->state.modem.echo && m->state.modem.s0_rings == 0);
-    send_str(m, "ATQ\r");                     /* inconnue */
+    send_str(m, "ATQ\r");                     /* unknown */
     drain(m, out, sizeof out, 200, "ERROR");
     ASSERT_HAS(out, "ERROR\r\n");
-    send_str(m, "ATA\r");                     /* pas en écoute */
+    send_str(m, "ATA\r");                     /* not listening */
     drain(m, out, sizeof out, 200, "ERROR");
     ASSERT_HAS(out, "ERROR\r\n");
     serial_backend_destroy(m);
@@ -166,13 +166,13 @@ TEST(test_modem_dial_data_and_peer_hangup) {
     ASSERT_TRUE(m->connected(m));
     int peer = accept(srv, NULL, NULL);
     ASSERT_TRUE(peer >= 0);
-    send_str(m, "HELLO");                     /* Oric → serveur */
+    send_str(m, "HELLO");                     /* Oric → server */
     read_fd(peer, out, sizeof out, 500, "HELLO");
     ASSERT_HAS(out, "HELLO");
-    ASSERT_TRUE(write(peer, "BBS>", 4) == 4); /* serveur → Oric */
+    ASSERT_TRUE(write(peer, "BBS>", 4) == 4); /* server → Oric */
     drain(m, out, sizeof out, 500, "BBS>");
     ASSERT_HAS(out, "BBS>");
-    close(peer);                              /* le serveur raccroche */
+    close(peer);                              /* the server hangs up */
     drain(m, out, sizeof out, 500, "NO CARRIER");
     ASSERT_HAS(out, "NO CARRIER");
     ASSERT_TRUE(!m->connected(m));
@@ -184,7 +184,7 @@ TEST(test_modem_dial_refused) {
     serial_backend_t* m = modem_open(0, false);
     char cmd[64], out[256];
     ASSERT_TRUE(m != NULL);
-    snprintf(cmd, sizeof cmd, "ATD127.0.0.1:%u\r", free_port());   /* personne n'écoute */
+    snprintf(cmd, sizeof cmd, "ATD127.0.0.1:%u\r", free_port());   /* nobody listens */
     send_str(m, cmd);
     drain(m, out, sizeof out, 500, "NO CARRIER");
     ASSERT_HAS(out, "NO CARRIER");
@@ -192,7 +192,7 @@ TEST(test_modem_dial_refused) {
     serial_backend_destroy(m);
 }
 
-/* Hayes : silence, « +++ » tapé d'affilée → mode commande (OK) ; ATH raccroche. */
+/* Hayes: silence, "+++" typed in one go → command mode (OK); ATH hangs up. */
 TEST(test_modem_escape_and_hangup) {
     uint16_t port = 0;
     int srv = listen_local(&port);
@@ -204,12 +204,12 @@ TEST(test_modem_escape_and_hangup) {
     drain(m, out, sizeof out, 500, "CONNECT");
     int peer = accept(srv, NULL, NULL);
     ASSERT_TRUE(peer >= 0 && m->connected(m));
-    /* Sans silence avant, « x+++ » est une donnée : envoyée telle quelle. */
+    /* Without silence before, "x+++" is data: sent as is. */
     send_str(m, "x+++");
     read_fd(peer, out, sizeof out, 300, "x+++");
     ASSERT_HAS(out, "x+++");
     ASSERT_TRUE(m->connected(m));
-    for (int i = 0; i < 100; i++) { uint8_t c; m->recv(m, &c); }   /* silence (garde) */
+    for (int i = 0; i < 100; i++) { uint8_t c; m->recv(m, &c); }   /* silence (guard) */
     send_str(m, "+++");
     drain(m, out, sizeof out, 300, "OK");
     ASSERT_HAS(out, "OK");
@@ -217,7 +217,7 @@ TEST(test_modem_escape_and_hangup) {
     drain(m, out, sizeof out, 300, "OK");
     ASSERT_HAS(out, "OK");
     ASSERT_TRUE(!m->connected(m));
-    /* Après la donnée, le serveur n'a reçu aucun « + » de l'échappement. */
+    /* After the data, the server received no "+" of the escape. */
     read_fd(peer, out, sizeof out, 100, NULL);
     ASSERT_TRUE(strchr(out, '+') == NULL);
     close(peer);
@@ -230,7 +230,7 @@ TEST(test_modem_listen_and_answer) {
     serial_backend_t* m = modem_open(port, true);
     char out[256];
     ASSERT_TRUE(m != NULL && m->state.modem.listen_fd >= 0);
-    int caller = connect_local(port);         /* appel entrant */
+    int caller = connect_local(port);         /* incoming call */
     ASSERT_TRUE(caller >= 0);
     usleep(20000);
     send_str(m, "ATA\r");
@@ -276,7 +276,7 @@ TEST(test_tcp_refused) {
     serial_backend_destroy(t);
 }
 
-/* ── pty et port COM ─────────────────────────────────────────────────── */
+/* ── pty and COM port ────────────────────────────────────────────────── */
 
 TEST(test_pty_both_ways) {
     serial_backend_t* p = serial_backend_pty_create();
@@ -325,15 +325,15 @@ TEST(test_com_on_pseudo_terminal) {
     close(master);
 }
 
-/* ── smf : fichier MIDI rejoué en MIDI IN cadencé ────────────────────── */
+/* ── smf: MIDI file replayed as timed MIDI IN ────────────────────────── */
 
 TEST(test_smf_replays_in_order) {
     static const uint8_t mid[] = {
         'M','T','h','d', 0,0,0,6, 0,0, 0,1, 0,96,          /* format 0, 96 PPQN */
         'M','T','r','k', 0,0,0,12,
         0x00, 0x90, 0x3C, 0x7F,                            /* Note On  C4 */
-        0x10, 0x80, 0x3C, 0x00,                            /* Note Off (16 tics) */
-        0x00, 0xFF, 0x2F, 0x00                             /* fin de piste */
+        0x10, 0x80, 0x3C, 0x00,                            /* Note Off (16 ticks) */
+        0x00, 0xFF, 0x2F, 0x00                             /* end of track */
     };
     char path[] = "/tmp/phosphoric_test_smf_XXXXXX";
     int fd = mkstemp(path);
@@ -351,12 +351,12 @@ TEST(test_smf_replays_in_order) {
     ASSERT_TRUE(n == 6);
     ASSERT_TRUE(got[0] == 0x90 && got[1] == 0x3C && got[2] == 0x7F);
     ASSERT_TRUE(got[3] == 0x80 && got[4] == 0x3C && got[5] == 0x00);
-    ASSERT_TRUE(s->send(s, 0xF8));            /* TX de l'Oric : ignoré, sans erreur */
+    ASSERT_TRUE(s->send(s, 0xF8));            /* Oric TX: ignored, no error */
     serial_backend_destroy(s);
     unlink(path);
 }
 
-/* ── Digitelec DTL 2000 : DTR monte → appel, DTR tombe → raccroché ───── */
+/* ── Digitelec DTL 2000: DTR rises → call, DTR falls → hung up ──────── */
 
 TEST(test_digitelec_dtr_dials_and_hangs_up) {
     static acia6551_t acia;
@@ -368,11 +368,11 @@ TEST(test_digitelec_dtr_dials_and_hangs_up) {
     serial_backend_t* d = serial_backend_digitelec_create("127.0.0.1", port, &acia);
     ASSERT_TRUE(d != NULL && d->open(d));
     ASSERT_TRUE(!d->connected(d));
-    ASSERT_TRUE(!d->send(d, 'X'));            /* DTR bas : pas de porteuse */
-    acia.command |= ACIA_CMD_DTR;             /* l'Oric décroche */
+    ASSERT_TRUE(!d->send(d, 'X'));            /* DTR low: no carrier */
+    acia.command |= ACIA_CMD_DTR;             /* the Oric goes off-hook */
     d->poll(d);
     ASSERT_TRUE(d->connected(d));
-    ASSERT_TRUE((acia.status & ACIA_STATUS_DCD) == 0);   /* porteuse (active basse) */
+    ASSERT_TRUE((acia.status & ACIA_STATUS_DCD) == 0);   /* carrier (active low) */
     int peer = accept(srv, NULL, NULL);
     ASSERT_TRUE(peer >= 0);
     send_str(d, "V23");
@@ -381,7 +381,7 @@ TEST(test_digitelec_dtr_dials_and_hangs_up) {
     ASSERT_TRUE(write(peer, "3615", 4) == 4);
     drain(d, out, sizeof out, 500, "3615");
     ASSERT_HAS(out, "3615");
-    acia.command &= (uint8_t)~ACIA_CMD_DTR;   /* l'Oric raccroche */
+    acia.command &= (uint8_t)~ACIA_CMD_DTR;   /* the Oric hangs up */
     d->poll(d);
     ASSERT_TRUE(!d->connected(d));
     ASSERT_TRUE((acia.status & ACIA_STATUS_DCD) != 0);
@@ -390,7 +390,7 @@ TEST(test_digitelec_dtr_dials_and_hangs_up) {
     serial_backend_destroy(d);
 }
 
-/* ── Analyse des spécifications (--serial, --dtl2000, --mageco) ──────── */
+/* ── Spec parsing (--serial, --dtl2000, --mageco) ───────────────────── */
 
 TEST(test_transport_specs) {
     static const struct { const char* spec; serial_backend_type_t type; } ok[] = {

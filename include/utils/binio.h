@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file binio.h
- * @brief Lecture/écriture binaire petit-boutiste pour les sections .ost.
+ * @brief Little-endian binary read/write for .ost sections.
  * @author bmarty <bmarty@mailo.com>
  *
- * Même encodage que les helpers historiques de savestate.c ; partagé par les
- * modules de périphériques qui sérialisent leur propre état (sprint D). Les
- * lectures renvoient 0 en fin de fichier : l'appelant contrôle la taille de
- * section avant de lire.
+ * Same encoding as the historical helpers of savestate.c; shared by the
+ * device modules that serialise their own state (sprint D). Reads return 0 at
+ * end of file: the caller checks the section size before reading.
  */
 #ifndef UTILS_BINIO_H
 #define UTILS_BINIO_H

@@ -30,8 +30,8 @@ if [ ! -x "$EMU" ]; then
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────
-# ENGINE=microseq → ajoute --cpu-microseq à tous les scénarios, pour comparer le
-# coût du cœur cycle-par-cycle (V2-E1) au cœur historique.
+# ENGINE=microseq → adds --cpu-microseq to every scenario, to compare the
+# cost of the cycle-by-cycle core (V2-E1) with the historical core.
 EXTRA_ARGS=()
 [ "${ENGINE:-legacy}" = "microseq" ] && EXTRA_ARGS=(--cpu-microseq)
 

@@ -28,7 +28,7 @@ import struct
 
 TRK_RAW = 6400
 SECSZ = 256
-SIZE_CODE = 0x01  # 256 octets/secteur
+SIZE_CODE = 0x01  # 256 bytes/sector
 
 
 def crc16(data):
@@ -43,7 +43,7 @@ def crc16(data):
 def build_track(track, side, sectors_data):
     """sectors_data : liste de N blocs de 256 octets (secteurs 1..N)."""
     out = bytearray()
-    out += b"\x4E" * 60                       # gap initial
+    out += b"\x4E" * 60                       # initial gap
     for si, data in enumerate(sectors_data):
         sec = si + 1
         out += b"\x00" * 12                   # sync
@@ -60,7 +60,7 @@ def build_track(track, side, sectors_data):
         out += b"\x4E" * 38                   # gap3
     if len(out) > TRK_RAW:
         raise SystemExit("piste trop longue: %d > %d" % (len(out), TRK_RAW))
-    out += b"\x4E" * (TRK_RAW - len(out))     # padding fin de piste
+    out += b"\x4E" * (TRK_RAW - len(out))     # end-of-track padding
     return bytes(out)
 
 
@@ -84,15 +84,15 @@ def main():
     hdr += b"\x00" * (256 - len(hdr))
 
     out = bytearray(hdr)
-    # Blocs du conteneur MFM émis en SIDE-MAJOR (face 0 entière puis face 1),
-    # position fichier = side*tracks+track — l'ordre lu par l'émulateur Phosphoric.
-    # `order` sélectionne l'interprétation de l'image RAW en entrée.
+    # MFM container blocks emitted SIDE-MAJOR (all of side 0, then side 1),
+    # file position = side*tracks+track — the order read by the Phosphoric emulator.
+    # `order` selects how the input RAW image is interpreted.
     for side in range(sides):
         for track in range(tracks):
             if order == "sidemajor":
-                block = side * tracks + track  # RAW : toutes pistes face0 puis face1
+                block = side * tracks + track  # RAW: all side-0 tracks then side 1
             else:
-                block = track * sides + side   # RAW : track-major side-interleaved
+                block = track * sides + side   # RAW: track-major side-interleaved
             base = block * sectors * SECSZ
             secs = [raw[base + i * SECSZ: base + (i + 1) * SECSZ] for i in range(sectors)]
             out += build_track(track, side, secs)

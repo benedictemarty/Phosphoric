@@ -1,77 +1,77 @@
-# Mon journal — démarche & méthodologie sur Phosphoric
+# My journal — approach & methodology on Phosphoric
 
-> Fichier tenu **en temps réel** : il décrit comment je travaille sur l'émulateur
-> Phosphoric (investigation, implémentation, tests), les **difficultés** rencontrées
-> et comment je les tranche. Objectif : que tu puisses comprendre et reproduire ma
-> démarche.
+> File kept **in real time**: it describes how I work on the Phosphoric
+> emulator (investigation, implementation, tests), the **difficulties** encountered
+> and how I resolve them. Goal: to let you understand and reproduce my
+> approach.
 >
-> Règle de conduite que j'applique ici : **mesurer, ne pas inventer, ne pas supposer.**
-> Quand je ne sais pas, je le dis ; quand j'affirme, c'est que je l'ai mesuré.
+> Rule of conduct I apply here: **measure, do not invent, do not assume.**
+> When I don't know, I say so; when I assert something, it is because I measured it.
 
 ---
 
-## Principes de méthode (constants)
+## Method principles (constant)
 
-1. **Lire avant d'écrire.** Je localise le code existant (grep + lecture ciblée)
-   avant de proposer quoi que ce soit. Je ne décris jamais une fonctionnalité sans
-   avoir vu la fonction dans le source.
-2. **Mesurer plutôt que supposer.** Une hypothèse (« l'écran devrait afficher X »)
-   n'a de valeur qu'une fois vérifiée par une exécution réelle (dump mémoire,
+1. **Read before writing.** I locate the existing code (grep + targeted reading)
+   before proposing anything. I never describe a feature without
+   having seen the function in the source.
+2. **Measure rather than assume.** A hypothesis ("the screen should show X")
+   only has value once verified by an actual run (memory dump,
    screenshot, test).
-3. **Isoler la cause avant d'accuser un composant.** Un échec de test ou de build
-   est d'abord suspecté d'être un artefact (build incrémental, objets stale) avant
-   d'être imputé au code métier. Je le prouve par `git stash` / `make clean`.
-4. **Distinguer faux positifs et vrais problèmes.** Les diagnostics du linter LSP
-   isolé (chemins d'include non résolus) ne sont pas des erreurs de compilation ;
-   seul le build réel `make` fait foi.
-5. **Tout tracer.** Tests + CHANGELOG + fichiers de suivi à chaque modification,
-   conformément aux règles du projet.
+3. **Isolate the cause before blaming a component.** A test or build failure
+   is first suspected to be an artefact (incremental build, stale objects) before
+   being blamed on the business code. I prove it with `git stash` / `make clean`.
+4. **Tell false positives from real problems.** Diagnostics from the isolated LSP
+   linter (unresolved include paths) are not compilation errors;
+   only the real `make` build is authoritative.
+5. **Trace everything.** Tests + CHANGELOG + tracking files on every change,
+   in accordance with the project rules.
 
 ---
 
-## Session en cours — Ajout d'un « screenshot texte »
+## Current session — Adding a "text screenshot"
 
-### 1. La demande
-« Existe-t-il un screenshot texte ? » puis « implémente les deux » :
-- **A** — exporter l'écran comme **image ANSI true-color** (pixels → couleurs de fond
-  ANSI dans un terminal) ;
-- **B** — exporter le **contenu texte réel** de l'écran (les caractères affichés).
+### 1. The request
+"Is there a text screenshot?" then "implement both":
+- **A** — export the screen as an **ANSI true-colour image** (pixels → ANSI background
+  colours in a terminal);
+- **B** — export the **actual text content** of the screen (the characters displayed).
 
-### 2. Ce que j'ai trouvé en explorant (mesuré, pas supposé)
-- `video_export_ascii()` **existait déjà** dans `src/video/export.c` mais :
-  - n'était **pas** branché au CLI (`--help` ne le mentionnait pas) ;
-  - n'était appelé **que** par les tests ;
-  - produit une **image ANSI** (chaque pixel = un espace coloré), pas un dump texte.
-- Le **contenu texte réel** (option B) n'existait pas.
-- Les helpers `textmode_*` (`src/video/textmode.c`, base écran `$BB80`, 40×28)
-  existent mais sont **orphelins** (aucun header, aucun appelant) → je ne m'appuie
-  pas dessus, je mets la logique dans le module d'export.
+### 2. What I found while exploring (measured, not assumed)
+- `video_export_ascii()` **already existed** in `src/video/export.c` but:
+  - was **not** wired to the CLI (`--help` did not mention it);
+  - was called **only** by the tests;
+  - produces an **ANSI image** (each pixel = a coloured space), not a text dump.
+- The **actual text content** (option B) did not exist.
+- The `textmode_*` helpers (`src/video/textmode.c`, screen base `$BB80`, 40×28)
+  exist but are **orphaned** (no header, no caller) → I don't rely
+  on them, I put the logic in the export module.
 
-### 3. Conception (minimale, testable, sans surface inutile)
-Deux nouvelles fonctions dans `export.c` / `export.h` :
-- `video_export_ascii_file(vid, filename, sx, sy)` — wrapper fichier de l'existant (A) ;
-- `video_export_screen_text(memory, fp)` — lit `$BB80` (40×28), décode chaque octet
-  par `octet & 0x7F` (masque le bit vidéo inverse), remplace les codes de contrôle
-  (< 0x20) par un espace, rtrim des espaces de fin (B).
+### 3. Design (minimal, testable, no unnecessary surface)
+Two new functions in `export.c` / `export.h`:
+- `video_export_ascii_file(vid, filename, sx, sy)` — file wrapper around the existing function (A);
+- `video_export_screen_text(memory, fp)` — reads `$BB80` (40×28), decodes each byte
+  with `byte & 0x7F` (masks the inverse-video bit), replaces control codes
+  (< 0x20) with a space, rtrims trailing spaces (B).
 
-Deux options CLI de sortie, calquées sur `--screenshot` :
-- `--screenshot-text FILE` (B) ;
+Two CLI output options, modelled on `--screenshot`:
+- `--screenshot-text FILE` (B);
 - `--screenshot-ansi FILE` (A).
 
-### 4. Difficultés rencontrées et comment je les ai tranchées
+### 4. Difficulties encountered and how I resolved them
 
-| # | Difficulté | Diagnostic | Résolution |
+| # | Difficulty | Diagnosis | Resolution |
 |---|-----------|-----------|-----------|
-| 1 | Build headless en échec de **link** (`SDL_*` indéfinis) | Objets `.o` d'un build SDL2 antérieur mélangés avec un link headless | `make clean` puis rebuild propre |
-| 2 | Diagnostics **clang** « file not found / unknown type » en rafale | Faux positifs : le LSP isolé n'a pas `-Iinclude` | Ignorés ; **le build réel `make` est l'autorité** |
-| 3 | **Dump texte quasi vide** à 2 000 000 cycles | Mesure du contenu brut `$BB80` = `$FF` partout → écran pas encore rempli, pas un bug de décodage | Mesuré à 3M/5M/8M cycles → écran de boot stable et lisible |
-| 4 | Le `©` d'« © 1983 TANGERINE » sort en `` ` `` | Charset ORIC : code `0x60`. Mon décodage suppose l'ASCII standard | **Limite assumée et documentée** (approximation ASCII), pas un défaut caché |
-| 5 | `test-control-dispatch` : **7 échecs** dans `make tests` | Suspicion d'artefact plutôt que régression | Prouvé par la mesure : `make clean && make tests` (séquence canonique) → **0 échec**. L'échec n'apparaît **que** si l'on précède d'un `make SDL2=0` (mélange d'objets headless/SDL2). Reproduit **à l'identique sur HEAD propre** (`git stash` + même séquence → 19/7) → **artefact préexistant du Makefile, PAS mon code ni une régression** |
+| 1 | Headless build fails at **link** (undefined `SDL_*`) | `.o` objects from an earlier SDL2 build mixed into a headless link | `make clean` then clean rebuild |
+| 2 | Bursts of **clang** diagnostics "file not found / unknown type" | False positives: the isolated LSP does not have `-Iinclude` | Ignored; **the real `make` build is the authority** |
+| 3 | **Nearly empty text dump** at 2,000,000 cycles | Measuring the raw `$BB80` content = `$FF` everywhere → screen not yet filled, not a decoding bug | Measured at 3M/5M/8M cycles → stable, readable boot screen |
+| 4 | The `©` of "© 1983 TANGERINE" comes out as `` ` `` | ORIC charset: code `0x60`. My decoding assumes standard ASCII | **Accepted and documented limitation** (ASCII approximation), not a hidden defect |
+| 5 | `test-control-dispatch`: **7 failures** in `make tests` | Suspected artefact rather than regression | Proven by measurement: `make clean && make tests` (canonical sequence) → **0 failures**. The failure only appears if preceded by a `make SDL2=0` (mix of headless/SDL2 objects). Reproduced **identically on a clean HEAD** (`git stash` + same sequence → 19/7) → **pre-existing Makefile artefact, NOT my code nor a regression** |
 
-### 5. Validation par la mesure
-- `make test-video` : **16/16** (dont 2 nouveaux tests : `test_ascii_export_file`,
+### 5. Validation by measurement
+- `make test-video`: **16/16** (including 2 new tests: `test_ascii_export_file`,
   `test_screen_text_export`).
-- Exécution réelle Atmos à 3M cycles, `--screenshot-text` :
+- Real Atmos run at 3M cycles, `--screenshot-text`:
   ```
                                       CAPS
     ORIC EXTENDED BASIC V1.1
@@ -79,37 +79,37 @@ Deux options CLI de sortie, calquées sur `--screenshot` :
 
      37631 BYTES FREE
   ```
-- `--screenshot-ansi` : ~264 Ko, séquences `ESC[48;2;R;G;Bm` présentes, structure de
-  l'écran visible dans le terminal.
-- Suite complète `make clean && make tests` (séquence canonique) : **0 échec**.
-- Découverte annexe (mesurée) : un `make SDL2=0` suivi d'un `make tests` fait échouer
-  `test-control-dispatch` (7/26) par mélange d'objets ; **artefact du Makefile
-  préexistant** (reproduit sur HEAD propre), sans lien avec cette fonctionnalité.
+- `--screenshot-ansi`: ~264 KB, `ESC[48;2;R;G;Bm` sequences present, screen
+  structure visible in the terminal.
+- Full suite `make clean && make tests` (canonical sequence): **0 failures**.
+- Side discovery (measured): a `make SDL2=0` followed by `make tests` makes
+  `test-control-dispatch` fail (7/26) through object mixing; **pre-existing
+  Makefile artefact** (reproduced on a clean HEAD), unrelated to this feature.
 
-### 6. Ce que je ne sais pas / limites honnêtes
-- Le dump texte **suppose le jeu de caractères standard ORIC** ; un charset
-  redéfini par un programme ne sera pas résolu (les octets restent interprétés en
-  ASCII). C'est documenté dans l'en-tête de la fonction.
-- Le dump lit toujours les 28 lignes de `$BB80`, quel que soit le mode (TEXT/HIRES) :
-  en HIRES seules les 3 dernières lignes texte sont réellement à l'écran, mais le
-  buffer `$BB80` est lu tel quel.
-- ~~Les options sont de sortie, pas encore « à un cycle donné ».~~ **Comblé** :
-  voir l'itération 2 ci-dessous.
+### 6. What I don't know / honest limits
+- The text dump **assumes the standard ORIC character set**; a charset
+  redefined by a program will not be resolved (the bytes are still interpreted as
+  ASCII). This is documented in the function header.
+- The dump always reads the 28 lines of `$BB80`, whatever the mode (TEXT/HIRES):
+  in HIRES only the last 3 text lines are actually on screen, but the
+  `$BB80` buffer is read as is.
+- ~~The options are output-only, not yet "at a given cycle".~~ **Filled**:
+  see iteration 2 below.
 
-### 7. Itération 2 — variantes « à un cycle donné » (v1.93.0-alpha)
-La limite notée au point 6 (« pas d'équivalent `--screenshot-at` ») est **comblée** :
-- `--screenshot-text-at C:FILE` et `--screenshot-ansi-at C:FILE`, calqués sur le
-  `--screenshot-at` existant, **réutilisant** le helper `cli_split_cycles_file()` déjà
-  mutualisé (v1.91.1) — pas de duplication du parsing `CYCLES:FILE`.
-- **Méthode** : je suis parti du code exact de `--screenshot-at` (parsing + bloc dans la
-  boucle) et je l'ai décliné, pour garantir un comportement d'erreur **identique**
-  (format sans `:` → fatal rc 1, même message via `optname`).
-- **Mesuré** : `--screenshot-text-at 3000000:FILE` écrit au cycle 3015456 le même écran
-  Atmos lisible ; malformés → rc 1 vérifié **sans pipe** (un `| grep` aurait masqué le
-  vrai code retour — piège évité).
-- **Tests** : filet CLI `test-cli-parsing` **29/29** (+4 cas : 2 malformés fatals + 2
-  contrôles positifs « fichier non vide »), sur le modèle des cas `--screenshot-at`.
+### 7. Iteration 2 — "at a given cycle" variants (v1.93.0-alpha)
+The limit noted in point 6 ("no `--screenshot-at` equivalent") is **filled**:
+- `--screenshot-text-at C:FILE` and `--screenshot-ansi-at C:FILE`, modelled on the
+  existing `--screenshot-at`, **reusing** the already shared helper
+  `cli_split_cycles_file()` (v1.91.1) — no duplication of the `CYCLES:FILE` parsing.
+- **Method**: I started from the exact code of `--screenshot-at` (parsing + block in the
+  loop) and derived variants from it, to guarantee **identical** error behaviour
+  (format without `:` → fatal rc 1, same message via `optname`).
+- **Measured**: `--screenshot-text-at 3000000:FILE` writes the same readable Atmos screen
+  at cycle 3015456; malformed input → rc 1 verified **without a pipe** (a `| grep` would have hidden the
+  real return code — trap avoided).
+- **Tests**: CLI safety net `test-cli-parsing` **29/29** (+4 cases: 2 fatal malformed + 2
+  positive "non-empty file" checks), modelled on the `--screenshot-at` cases.
 
 ---
 
-_Dernière mise à jour : itération 2 (screenshot texte/ANSI à un cycle donné, v1.93.0)._
+_Last updated: iteration 2 (text/ANSI screenshot at a given cycle, v1.93.0)._

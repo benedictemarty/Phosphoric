@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file osd.c
- * @brief On-Screen Display — overlay de changement de média à chaud.
+ * @brief On-Screen Display -- hot-swap media change overlay.
  * @author bmarty <bmarty@mailo.com>
  */
 #include "video/osd.h"
@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 
-/* ── Liste de fichiers ────────────────────────────────────────────── */
+/* ── File list ────────────────────────────────────────────────────── */
 
 static bool has_ext(const char* name, const char* ext) {
     size_t n = strlen(name), e = strlen(ext);
@@ -28,7 +28,7 @@ static bool has_ext(const char* name, const char* ext) {
 static int entry_cmp(const void* a, const void* b) {
     const osd_entry_t* ea = (const osd_entry_t*)a;
     const osd_entry_t* eb = (const osd_entry_t*)b;
-    if (ea->is_disk != eb->is_disk) return ea->is_disk - eb->is_disk; /* cassettes d'abord */
+    if (ea->is_disk != eb->is_disk) return ea->is_disk - eb->is_disk; /* tapes first */
     return strcasecmp(ea->name, eb->name);
 }
 
@@ -45,10 +45,10 @@ void osd_scan(osd_t* osd, const char* const* dirs) {
             bool tape = has_ext(de->d_name, ".tap");
             if (!disk && !tape) continue;
             osd_entry_t* e = &osd->entries[osd->count];
-            /* Chemin "dir/nom" : ignore l'entrée si elle ne tient pas. */
+            /* Path "dir/name": skip the entry if it does not fit. */
             if (snprintf(e->path, OSD_PATH_MAX, "%s/%s", dirs[d], de->d_name) >= OSD_PATH_MAX)
                 continue;
-            /* Nom d'affichage : troncature propre (sans warning format). */
+            /* Display name: clean truncation (no format warning). */
             size_t nl = strlen(de->d_name);
             if (nl >= OSD_NAME_MAX) nl = OSD_NAME_MAX - 1;
             memcpy(e->name, de->d_name, nl);
@@ -62,7 +62,7 @@ void osd_scan(osd_t* osd, const char* const* dirs) {
         qsort(osd->entries, (size_t)osd->count, sizeof(osd_entry_t), entry_cmp);
 }
 
-/* ── Cycle de vie ─────────────────────────────────────────────────── */
+/* ── Lifecycle ────────────────────────────────────────────────────── */
 
 void osd_init(osd_t* osd) {
     memset(osd, 0, sizeof(*osd));
@@ -111,20 +111,20 @@ osd_action_t osd_key(osd_t* osd, int key) {
             if (osd->count > 0) return OSD_ACTIVATE;
             break;
         case OSD_KEY_EJECT:
-            /* Éjecte selon le média surligné : cassette si l'entrée est un .tap,
-             * sinon le disque du lecteur cible (défaut si liste vide). */
+            /* Eject according to the highlighted media: tape if the entry is a .tap,
+             * otherwise the disk of the target drive (default if the list is empty). */
             if (osd->count > 0 && !osd->entries[osd->selected].is_disk)
                 return OSD_EJECT_TAPE;
             return OSD_EJECT;
         default: break;
     }
-    /* garde la sélection visible */
+    /* keep the selection visible */
     if (osd->selected < osd->scroll) osd->scroll = osd->selected;
     if (osd->selected >= osd->scroll + OSD_VISIBLE) osd->scroll = osd->selected - OSD_VISIBLE + 1;
     return OSD_NONE;
 }
 
-/* ── Rendu ────────────────────────────────────────────────────────── */
+/* ── Render ───────────────────────────────────────────────────────── */
 
 static void put_px(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (x < 0 || x >= vid->native_w || y < 0 || y >= vid->native_h) return;
@@ -132,7 +132,7 @@ static void put_px(video_t* vid, int x, int y, uint8_t r, uint8_t g, uint8_t b) 
     vid->framebuffer[off] = r; vid->framebuffer[off + 1] = g; vid->framebuffer[off + 2] = b;
 }
 
-/* Assombrit un rectangle (panneau translucide). */
+/* Darken a rectangle (translucent panel). */
 static void dim_rect(video_t* vid, int x0, int y0, int x1, int y1) {
     for (int y = y0; y < y1; y++) {
         if (y < 0 || y >= vid->native_h) continue;
@@ -146,7 +146,7 @@ static void dim_rect(video_t* vid, int x0, int y0, int x1, int y1) {
     }
 }
 
-/* Dessine un glyphe 6x8 depuis le charset Oric (bits 5..0). */
+/* Draw a 6x8 glyph from the Oric charset (bits 5..0). */
 static void draw_char(osd_t* osd, video_t* vid, int x, int y, char c,
                       uint8_t fr, uint8_t fg, uint8_t fb) {
     unsigned ch = (unsigned char)c;

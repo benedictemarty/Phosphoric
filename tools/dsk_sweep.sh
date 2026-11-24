@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
 #
-# dsk_sweep.sh — démarre deux fois chaque .dsk d'un dossier et signale les suspects (2.31.12).
+# dsk_sweep.sh — boot every .dsk of a folder twice and flag the suspicious ones (2.31.12).
 #
-# Usage : tools/dsk_sweep.sh DOSSIER [TÂCHES] > resultats.txt
+# Usage: tools/dsk_sweep.sh DIR [JOBS] > results.txt
 #
-# Chaque disquette démarre sur ROM Atmos + ROM Microdisc pendant 30 M cycles,
-# une fois avec le timing réel du WD1793 (défaut : octets au rythme du plateau
-# depuis 2.31.9) et une fois avec --fdc-timing fast (octets servis à la demande
-# du CPU). Verdict par passage :
-#   HALT     le 6502 s'est arrêté (opcode JAM) avant la fin
-#   TIMEOUT  l'émulateur n'a pas fini en 45 s
-#   LOST     le FDC a signalé des octets perdus (LOST DATA, S2) pendant la session
-#   NOSCREEN pas de vidage mémoire à 29 M cycles (passage terminé plus tôt)
-#   OK       rien de tout cela — ce n'est PAS une preuve que le programme est juste
-# Une disquette OK en fast mais pas en réel désigne le modèle du plateau.
-# Sortie : « réel|fast|fichier|détail|écran » (écran = texte en $BB80, passage réel).
-# DSK_SWEEP_SHOTS=DOSSIER enregistre l'écran du passage réel en DOSSIER/<nom>.ppm
-# (tools/contact_sheet.py en fait des planches contact).
-# L'émulateur journalise sur la SORTIE STANDARD : capturer les deux flux.
+# Each disk boots on the Atmos ROM + Microdisc ROM for 30 M cycles, once with
+# the real WD1793 timing (default: bytes paced by the platter since 2.31.9)
+# and once with --fdc-timing fast (bytes served on CPU demand). Per run:
+#   HALT     the 6502 stopped (JAM opcode) before the end
+#   TIMEOUT  the emulator did not finish within 45 s
+#   LOST     the FDC reported lost bytes (LOST DATA, S2) during the session
+#   NOSCREEN no RAM dump at 29 M cycles (run ended early)
+#   OK       none of the above — NOT a proof that the program is right
+# A disk that is OK in fast but not in real points at the platter model.
+# Output: "real|fast|file|detail|screen" (screen = text at $BB80, real run).
+# DSK_SWEEP_SHOTS=DIR saves the real-timing screen as DIR/<name>.ppm
+# (tools/contact_sheet.py builds contact sheets from them).
+# The emulator logs on STDOUT: capture both streams.
 #
 # Author: bmarty <bmarty@mailo.com>
 
@@ -27,7 +26,7 @@ DIR=${1:?usage : tools/dsk_sweep.sh DOSSIER [TÂCHES]}
 JOBS=${2:-4}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-run() {   # run TIMING DSK CAPTURE → « verdict<TAB>détail<TAB>écran »
+run() {   # run TIMING DSK SHOT → "verdict<TAB>detail<TAB>screen"
     local timing="$1" dsk="$2" shot="$3" bin log rc halt pc lost scr st n dumped=0
     bin=$(mktemp); log=$(mktemp)
     local extra=()

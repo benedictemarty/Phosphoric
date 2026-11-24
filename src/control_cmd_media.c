@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_cmd_media.c
- * @brief Commandes --control : cassette, disquettes, ROM, symboles, états, bouton LOCI
+ * @brief --control commands: tape, floppies, ROM, symbols, states, LOCI button
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/control.c (sprint F du plan d'architecture), sans changement
- * de comportement ; fonctions partagées : include/control_internal.h.
+ * Split out of src/control.c (sprint F of the architecture plan), with no
+ * behaviour change; shared functions: include/control_internal.h.
  */
 
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
 #include "io/loci_emu.h"
@@ -116,7 +116,7 @@ void ctl_cmd_load_disk(emulator_t* emu, control_sink_t* s,
         return;
     }
     int drv = control_drive_index(drive_s);
-    if (emu_loci_disks(emu)) {   /* LOCI seul : son lecteur, comme le menu F1 */
+    if (emu_loci_disks(emu)) {   /* LOCI only: its drive, like the F1 menu */
         if (drv < 0) { sink_err(s, "load-disk: drive must be A-D"); return; }
         if (!loci_dsk_open(&emu->loci, (uint8_t)drv, path)) {
             sink_err(s, "load-disk: cannot read `%s`", path);
@@ -160,7 +160,7 @@ void ctl_cmd_eject_disk(emulator_t* emu, control_sink_t* s,
             sink_err(s, "eject-disk: drive %c already empty", 'A' + drv);
             return;
         }
-        loci_dsk_close(&emu->loci, (uint8_t)drv);   /* écrit les secteurs modifiés */
+        loci_dsk_close(&emu->loci, (uint8_t)drv);   /* writes the modified sectors */
         log_info("control: drive %c ejected (LOCI)", 'A' + drv);
         sink_ok(s, "drive=%c ejected loci=1", 'A' + drv);
         return;
@@ -193,8 +193,8 @@ void ctl_cmd_loci_button(emulator_t* emu, control_sink_t* s, const char* mode) {
     }
     bool longp = (mode && strcmp(mode, "long") == 0);
     if (loci_emu_active()) {
-        /* Co-simulation : le vrai firmware possède le bouton (même règle que F8
-         * dans la GUI) — court = menu, long = ROM de diagnostic embarquée. */
+        /* Co-simulation: the real firmware owns the button (same rule as F8
+         * in the GUI) -- short = menu, long = embedded diagnostic ROM. */
         bool armed = longp ? loci_emu_diag_button() : loci_emu_menu_button();
         if (armed) cpu_reset(&emu->cpu);
         sink_ok(s, "action-button pulsed%s (firmware, %s)", longp ? " (long)" : "",

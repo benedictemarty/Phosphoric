@@ -1,16 +1,16 @@
 #!/bin/sh
 # SPDX-License-Identifier: EUPL-1.2
 #
-# coverage_check.sh — couverture des lignes de src/ et seuil qui ne descend pas.
+# coverage_check.sh — line coverage of src/ and a floor that never goes down.
 #
-# Usage : tools/coverage_check.sh BUILD [FICHIER_SEUIL]
-#   BUILD          dossier de build instrumenté (make coverage, COVERAGE=1)
-#   FICHIER_SEUIL  pourcentage minimal (défaut tests/coverage_floor.txt)
+# Usage: tools/coverage_check.sh BUILD [FLOOR_FILE]
+#   BUILD       instrumented build directory (make coverage, COVERAGE=1)
+#   FLOOR_FILE  minimum percentage (default tests/coverage_floor.txt)
 #
-# Échoue si la couverture totale de src/*.c passe sous le seuil. Quand elle le
-# dépasse d'au moins un point, propose la nouvelle valeur : le seuil se relève
-# à la main, dans le même commit que les tests qui l'ont fait monter (cliquet).
-# Portable (sh + awk + gcov), sans gcovr ni lcov.
+# Fails if the total coverage of src/*.c drops below the floor. When it beats
+# the floor by at least one point, suggests the new value: the floor is raised
+# by hand, in the same commit as the tests that raised it (ratchet).
+# Portable (sh + awk + gcov), no gcovr nor lcov.
 #
 # Author: bmarty <bmarty@mailo.com>
 set -eu
@@ -46,7 +46,7 @@ awk -v floor="$FLOOR" '
         total = te / tl * 100
         printf "Couverture de src/*.c : %.1f %% (%d/%d lignes, %d fichiers) — seuil %.1f %%\n",
                total, te, tl, files, floor
-        # Les moins couverts parmi les fichiers de plus de 100 lignes.
+        # Least covered among the files of more than 100 lines.
         print "Fichiers les moins couverts (> 100 lignes) :"
         for (k = 0; k < 8; k++) {
             best = ""; bp = 101

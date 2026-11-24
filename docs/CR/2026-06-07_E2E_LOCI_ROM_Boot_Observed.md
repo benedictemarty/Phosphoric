@@ -1,18 +1,18 @@
-# Test E2E LOCI ROM réel — Findings 2026-06-07
+# Real LOCI ROM E2E test — Findings 2026-06-07
 
-**Contexte** : valider en bout-en-bout que la pile LOCI (sprints 34an
-→ 34au) tient avec le firmware LOCI ROM 0.3.0 / image SD réelle.
-**Méthode** : instrumentation temporaire (op_count dump à
-`loci_cleanup`, first-call trace dans `dispatch_op`).
-**Image** : `loci_demo.img` (FAT16 16 MB) populée avec BASIC 1.0,
+**Context**: validate end to end that the LOCI stack (sprints 34an
+→ 34au) holds up with the LOCI ROM 0.3.0 firmware / a real SD image.
+**Method**: temporary instrumentation (op_count dump at
+`loci_cleanup`, first-call trace in `dispatch_op`).
+**Image**: `loci_demo.img` (FAT16 16 MB) populated with BASIC 1.0,
 BASIC 1.1, microdis.rom, AIGLE.TAP, 007.TAP.
 
 ---
 
-## 1. Observation principale
+## 1. Main observation
 
-À **12 secondes** wall-clock après boot (~11.7M cycles 6502), avec ZÉRO
-keypress simulé :
+**12 seconds** wall-clock after boot (~11.7M 6502 cycles), with ZERO
+simulated keypresses:
 
 ```
 === Écran LOCI ===
@@ -31,109 +31,109 @@ keypress simulé :
                               ..Boot
 ```
 
-**TUI complètement rendu**, position cassette à `0+`, statuts par
-défaut affichés. Cohérent avec une session d'utilisateur normale au
-moment de la première vue après boot.
+**TUI fully rendered**, cassette position at `0+`, default statuses
+displayed. Consistent with a normal user session at the
+moment of the first view after boot.
 
 ---
 
-## 2. Compteur d'ops MIA pendant ce boot
+## 2. MIA op counter during this boot
 
 ```
 $93 TAP_TELL : 1
 ```
 
-**Une seule op appelée, une seule fois.** Aucune autre — ni `CLOCK`,
-ni `OPENDIR`, ni `READ_XRAM`, ni `MIA_BOOT`, ni les 7 nouvelles
+**A single op called, only once.** No other — neither `CLOCK`,
+nor `OPENDIR`, nor `READ_XRAM`, nor `MIA_BOOT`, nor the 7 new ones
 (`CPU_PHI2`, `OEM_CODEPAGE`, `STDIN_OPT`, `MAP_TUNE_*`).
 
 ---
 
-## 3. Interprétation
+## 3. Interpretation
 
-### Pourquoi si peu d'ops au boot ?
+### Why so few ops at boot?
 
-Le firmware LOCI ROM 0.3.0 est une ROM **6502 cartouche** (16 KB
-`$C000-$FFFF`) qui pilote uniquement le TUI Oric. La majorité des ops
-MIA qui figurent dans le header (`CPU_PHI2`, `OEM_CODEPAGE`, etc.)
-sont en réalité des **API destinées au firmware Pi Pico**, lequel
-tourne sur l'autre côté du bus MIA. Phosphoric n'émule pas le Pi Pico
-— on lui sert juste les ops MIA quand le 6502 les déclenche.
+The LOCI ROM 0.3.0 firmware is a **6502 cartridge** ROM (16 KB
+`$C000-$FFFF`) that only drives the Oric TUI. Most of the MIA ops
+listed in the header (`CPU_PHI2`, `OEM_CODEPAGE`, etc.)
+are actually **APIs intended for the Pi Pico firmware**, which
+runs on the other side of the MIA bus. Phosphoric does not emulate the Pi Pico
+— it just serves the MIA ops when the 6502 triggers them.
 
-La ROM 6502 LOCI, elle, ne fait que :
-- Lire/écrire les registres MIA pour communiquer (peu fréquent — on
-  voit `TAP_TELL` au boot pour rendre la position cassette dans le
+The LOCI 6502 ROM itself only:
+- Reads/writes the MIA registers to communicate (infrequent — we
+  see `TAP_TELL` at boot to render the cassette position in the
   TUI)
-- Dessiner le TUI en HIRES (toutes les manipulations sont locales,
-  pas d'ops MIA)
-- Attendre les keypress utilisateur (qui passent par les HID buffers
-  via les ops `PIX_XREG` ou via `RW0`/`RW1` DMA windows si la ROM est
-  configurée pour utiliser le HID xram bitmap)
+- Draws the TUI in HIRES (all manipulations are local,
+  no MIA ops)
+- Waits for user keypresses (which go through the HID buffers
+  via the `PIX_XREG` ops or via the `RW0`/`RW1` DMA windows if the ROM is
+  configured to use the HID xram bitmap)
 
-### Conclusion sur le sprint 34au
+### Conclusion on sprint 34au
 
-Les 7 ops implémentées au sprint 34au (`CPU_PHI2`, `OEM_CODEPAGE`,
-`STDIN_OPT`, `MAP_TUNE_*`) ne sont **probablement jamais appelées**
-par la ROM 6502 LOCI 0.3.0 dans une session normale. Elles sont
-implémentées de manière défensive — si une future version de la ROM
-ou un firmware Pi Pico modifié les invoque, on répond proprement au
-lieu d'envoyer ENOSYS (ce qui pouvait bloquer la spin window MIA pour
-les ops "stateful").
+The 7 ops implemented in sprint 34au (`CPU_PHI2`, `OEM_CODEPAGE`,
+`STDIN_OPT`, `MAP_TUNE_*`) are **probably never called**
+by the LOCI 0.3.0 6502 ROM in a normal session. They are
+implemented defensively — if a future version of the ROM
+or a modified Pi Pico firmware invokes them, we reply cleanly instead
+of sending ENOSYS (which could block the MIA spin window for
+"stateful" ops).
 
-**Ce n'est pas du travail perdu** :
-- Coverage tests sur les API contracts (8 nouveaux tests)
-- Pas d'ENOSYS → pas de chemin d'erreur surprise dans le firmware
-- Si un PR upstream LOCI évolue, on a déjà la pile pour répondre
+**This is not wasted work**:
+- Test coverage of the API contracts (8 new tests)
+- No ENOSYS → no surprise error path in the firmware
+- If an upstream LOCI PR evolves, we already have the stack to respond
 
-### Pour aller plus loin sur l'E2E
+### Going further with the E2E
 
-L'observation des autres ops MIA requiert des interactions utilisateur
-qui passent par SDL_KEYDOWN / loci_kbd_set_report. Notre flag
-`--type-keys` cible la matrice clavier ORIC standard, pas le HID xram
-LOCI — donc les interactions automatisées du TUI nécessitent un
-mécanisme d'injection clavier différent.
+Observing the other MIA ops requires user interactions
+that go through SDL_KEYDOWN / loci_kbd_set_report. Our
+`--type-keys` flag targets the standard ORIC keyboard matrix, not the LOCI HID
+xram — so automated TUI interactions require a
+different keyboard injection mechanism.
 
-Pistes :
-- Étendre `--type-keys` pour gérer un mode "loci-hid:" qui pousse
-  directement dans la bitmap LOCI au lieu de la matrice ORIC
-- Ou capturer une session interactive (utilisateur appuie sur ESC →
-  MIA_BOOT → BASIC 1.1) et comparer avec ce baseline
-- Ou écrire un test scripté qui simule les `loci_kbd_set_report`
-  successifs depuis `tests/unit/` (le hook existe, juste pas exposé
-  côté CLI)
+Leads:
+- Extend `--type-keys` with a "loci-hid:" mode that pushes
+  directly into the LOCI bitmap instead of the ORIC matrix
+- Or capture an interactive session (user presses ESC →
+  MIA_BOOT → BASIC 1.1) and compare against this baseline
+- Or write a scripted test that simulates successive `loci_kbd_set_report`
+  calls from `tests/unit/` (the hook exists, just not exposed
+  on the CLI side)
 
 ---
 
-## 4. Validation pile LOCI complète
+## 4. Full LOCI stack validation
 
-Même avec une seule op MIA observée au boot, **toute la pile derrière
-est exercée** :
+Even with a single MIA op observed at boot, **the whole stack behind it
+is exercised**:
 
-| Composant | Validé indirectement par |
+| Component | Indirectly validated by |
 |-----------|--------------------------|
-| MIA spin window ABI (sprint 34an) | TUI rendered = la ROM exécute son code 6502 normalement |
-| SDIMG read backend (34ao) | TUI rendered = sectors SD lus correctement (image FAT16 acceptée) |
-| Boot pipeline (34ao+) | LOCI ROM swap path traversé (registres, callbacks `rom_swap_cb` testés en unit) |
-| fd_kind cleanup (34ar) | Pas de crash au shutdown, fds correctement libérés |
-| mkstemp (34ar) | Aucun usage déclenché ici (pas d'extract) — mais code path inchangé |
-| MBR parser (34as) | Pas testé ici (image superfloppy), mais 3 tests dédiés valident |
-| 7 nouvelles ops (34au) | Pas appelées dans ce flow mais répondent sans ENOSYS si déclenchées (8 tests dédiés) |
+| MIA spin window ABI (sprint 34an) | TUI rendered = the ROM runs its 6502 code normally |
+| SDIMG read backend (34ao) | TUI rendered = SD sectors read correctly (FAT16 image accepted) |
+| Boot pipeline (34ao+) | LOCI ROM swap path traversed (registers, `rom_swap_cb` callbacks tested in unit tests) |
+| fd_kind cleanup (34ar) | No crash at shutdown, fds correctly released |
+| mkstemp (34ar) | Not triggered here (no extract) — but code path unchanged |
+| MBR parser (34as) | Not tested here (superfloppy image), but 3 dedicated tests validate it |
+| 7 new ops (34au) | Not called in this flow but answer without ENOSYS if triggered (8 dedicated tests) |
 
 ---
 
-## 5. Décision
+## 5. Decision
 
-- ✅ E2E baseline confirmé : LOCI ROM boote, TUI rendered, pas de
-  régression visible
-- ✅ Sprint 34au accepté : pas de retour en ENOSYS si le firmware
-  jamais invoque ces ops (futur-proof)
-- 🔧 Pour avoir un E2E plus profond avec interactions clavier, il
-  faudrait un mécanisme d'injection HID LOCI — proposé comme sprint
-  futur si besoin
+- ✅ E2E baseline confirmed: LOCI ROM boots, TUI rendered, no
+  visible regression
+- ✅ Sprint 34au accepted: no fall back to ENOSYS if the firmware
+  ever invokes these ops (future-proof)
+- 🔧 To get a deeper E2E with keyboard interactions, a
+  LOCI HID injection mechanism would be needed — proposed as a future
+  sprint if required
 
 ---
 
-## 6. Reproductibilité
+## 6. Reproducibility
 
 ```bash
 git checkout main           # v1.16.47-alpha
@@ -144,7 +144,7 @@ make SDL2=1
 timeout 12 ./oric1-emu -r roms/loci/locirom --loci \
     --loci-sdimg loci_demo.img --keyboard azerty \
     --dump-ram-at 10000000:/tmp/screen.bin > /dev/null 2>&1
-# → /tmp/screen.bin contient le framebuffer texte LOCI
+# → /tmp/screen.bin contains the LOCI text framebuffer
 python3 -c "import sys; d=open('/tmp/screen.bin','rb').read(); \
     t=d[0xBB80:0xBFE8]; \
     print(*[bytes(b if 32<=b<127 else 46 for b in t[r*40:r*40+40]).decode() \
@@ -153,7 +153,7 @@ python3 -c "import sys; d=open('/tmp/screen.bin','rb').read(); \
 
 ---
 
-**Statut** : pile LOCI v1.16.47-alpha **OK pour usage interactif normal**.
-Les 7 ops 34au sont prêtes mais non exercées au boot passif.
+**Status**: LOCI stack v1.16.47-alpha **OK for normal interactive use**.
+The 7 34au ops are ready but not exercised during a passive boot.
 
-— Fin du CR
+— End of report

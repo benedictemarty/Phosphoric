@@ -1,30 +1,30 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_dormann.c
- * @brief Test fonctionnel 6502 de Klaus Dormann (V2-S1)
+ * @brief Klaus Dormann's 6502 functional test (V2-S1)
  * @author bmarty <bmarty@mailo.com>
  *
- * Exécute `6502_functional_test.bin` (Klaus2m5/6502_65C02_functional_tests) :
- * ~30 millions de cycles qui exercent les 151 opcodes officiels, tous les modes
- * d'adressage, les drapeaux, le mode décimal et les interruptions logicielles.
+ * Runs `6502_functional_test.bin` (Klaus2m5/6502_65C02_functional_tests):
+ * ~30 million cycles exercising the 151 official opcodes, all addressing
+ * modes, the flags, decimal mode and software interrupts.
  *
- * Complément de l'oracle 65x02 (`test_cpu_cycles.c`) : celui-ci mesure la
- * conformité **cycle par cycle** instruction par instruction, celui-là vérifie
- * la cohérence **fonctionnelle** du cœur sur un programme réel et long. Les deux
- * sont des instruments de la V2 (docs/specs/V2_CYCLE_ACCURACY.md).
+ * Complement to the 65x02 oracle (`test_cpu_cycles.c`): the latter measures
+ * **cycle-by-cycle** conformance instruction by instruction, this one checks
+ * the **functional** consistency of the core on a real, long program. Both
+ * are V2 instruments (docs/specs/V2_CYCLE_ACCURACY.md).
  *
- * Convention du test : l'image se charge à $0000, démarre en $0400, et se
- * termine toujours par un `jmp *` (saut sur soi-même). L'adresse de ce piège
- * dit tout : $3469 = succès complet, toute autre adresse = le test a attrapé
- * une erreur à cet endroit (le listing .lst donne la ligne exacte).
+ * Test convention: the image loads at $0000, starts at $0400, and always
+ * ends with a `jmp *` (jump to itself). The address of this trap tells
+ * everything: $3469 = full success, any other address = the test caught
+ * an error at that location (the .lst listing gives the exact line).
  *
- * Le binaire n'est pas versionné : `tools/fetch_vectors.sh dormann`. Absent,
- * la suite se met en SKIP.
+ * The binary is not versioned: `tools/fetch_vectors.sh dormann`. When it is
+ * absent, the suite goes to SKIP.
  *
- * Variables d'environnement :
- *   DORMANN_DIR        répertoire du binaire (défaut third_party/vectors/dormann)
- *   DORMANN_MAX_CYCLES plafond de sécurité     (défaut 120 000 000)
- *   DORMANN_ENGINE     « legacy » (défaut) ou « microseq » — quel cœur exécute
+ * Environment variables:
+ *   DORMANN_DIR        directory of the binary (default third_party/vectors/dormann)
+ *   DORMANN_MAX_CYCLES safety cap              (default 120 000 000)
+ *   DORMANN_ENGINE     "legacy" (default) or "microseq" -- which core runs
  */
 
 #include "cpu/cpu6502.h"
@@ -35,10 +35,10 @@
 #include <string.h>
 #include <stdbool.h>
 
-/* Adresse du `jmp *` de succès, lue dans 6502_functional_test.lst :
+/* Address of the success `jmp *`, read from 6502_functional_test.lst:
  *   3469 : 4c6934   >   jmp *      ;test passed, no errors
- * Le test l'affiche en cas d'échec, donc une évolution du binaire amont se
- * diagnostique immédiatement au lieu de produire un échec opaque. */
+ * The test prints it on failure, so a change in the upstream binary is
+ * diagnosed immediately instead of producing an opaque failure. */
 #define DORMANN_SUCCESS_PC  0x3469
 #define DORMANN_START_PC    0x0400
 
@@ -61,9 +61,9 @@ static int tests_failed = 0;
 static memory_t  mem;
 static cpu6502_t cpu;
 
-/* 64 Ko plats : cf. test_cpu_cycles.c — ROM désactivée pour rendre
- * $C000-$FFFF inscriptible, et I/O $0300-$03FF renvoyée vers la RAM pour
- * qu'elle ne soit pas avalée par le bus de l'ORIC. */
+/* Flat 64 KB: see test_cpu_cycles.c -- ROM disabled to make
+ * $C000-$FFFF writable, and I/O $0300-$03FF redirected to RAM so that
+ * it is not swallowed by the ORIC bus. */
 static uint8_t flat_io_read(uint16_t addr, void* ud) {
     return ((memory_t*)ud)->ram[addr];
 }
@@ -107,8 +107,8 @@ static uint16_t g_trap_pc = 0xFFFF;
 static uint64_t g_cycles = 0;
 static bool g_trapped = false;
 
-/* Exécute jusqu'au `jmp *` (PC inchangé après une instruction) ou jusqu'au
- * plafond de cycles. */
+/* Runs until the `jmp *` (PC unchanged after an instruction) or until the
+ * cycle cap. */
 static void run_until_trap(uint64_t max_cycles) {
     uint16_t prev_pc = cpu.PC;
     while (cpu.cycles < max_cycles && !cpu.halted) {
@@ -138,7 +138,7 @@ TEST(test_functional_test_reaches_success_trap) {
 }
 
 TEST(test_cpu_did_not_halt) {
-    /* Un JAM rencontré ici signalerait un décodage d'opcode parti en vrille. */
+    /* A JAM hit here would indicate opcode decoding gone haywire. */
     ASSERT_TRUE(!cpu.halted);
 }
 

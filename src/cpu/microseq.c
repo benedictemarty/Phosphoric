@@ -1,21 +1,21 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file microseq.c
- * @brief Cœur 6502 micro-séquencé — un cycle, un accès (V2-E1)
+ * @brief Micro-sequenced 6502 core — one cycle, one access (V2-E1)
  * @author bmarty <bmarty@mailo.com>
  * @date 2026-09-11
  *
- * Voir include/cpu/microseq.h pour le contrat et la raison d'être.
+ * See include/cpu/microseq.h for the contract and rationale.
  *
- * Principe : au premier cycle, l'opcode est lu et on construit un **plan** de
- * micro-opérations — une par cycle restant. Chaque appel de cpu_cycle()
- * exécute une micro-op, donc émet exactement un accès bus (ou un cycle interne
- * explicite). Les accès factices du NMOS sont des micro-ops de plein droit :
- * c'est ce qui distingue ce moteur du moteur historique.
+ * Principle: on the first cycle, the opcode is read and a **plan** of
+ * micro-operations is built — one per remaining cycle. Each call to cpu_cycle()
+ * executes one micro-op, hence emits exactly one bus access (or an explicit
+ * internal cycle). The NMOS dummy accesses are micro-ops in their own right:
+ * this is what sets this engine apart from the historical one.
  *
- * La sémantique de calcul n'est PAS réimplémentée ici : elle vient de
+ * The computation semantics are NOT reimplemented here: they come from
  * cpu_rmw_apply / cpu_op_adc / cpu_op_sbc / cpu_op_cmp / cpu_op_lax /
- * cpu_sh_unstable (opcodes.c). Un seul endroit où réside la vérité.
+ * cpu_sh_unstable (opcodes.c). A single place where the truth lives.
  */
 
 #include "cpu/microseq.h"
@@ -23,40 +23,40 @@
 #include "memory/memory.h"
 #include <string.h>
 
-/* ─── Micro-opérations (une par cycle) ─── */
+/* ─── Micro-operations (one per cycle) ─── */
 enum {
     M_END = 0,
     M_FETCH_LO,     /* ptr/adl = read(PC++) */
-    M_FETCH_HI,     /* adh = read(PC++) ; addr = adh:adl ; applique l'index */
-    M_DUMMY_PC,     /* read(PC), sans incrément — cycle interne du NMOS */
-    M_ZP_INDEX,     /* read(ptr) FACTICE, puis ptr += X ou Y (reste 8 bits) */
+    M_FETCH_HI,     /* adh = read(PC++) ; addr = adh:adl ; applies the index */
+    M_DUMMY_PC,     /* read(PC), no increment — NMOS internal cycle */
+    M_ZP_INDEX,     /* DUMMY read(ptr), then ptr += X or Y (stays 8-bit) */
     M_PTR_LO,       /* adl = read(ptr) */
-    M_PTR_HI,       /* adh = read(ptr+1 sur 8 bits) ; addr = adh:adl ; index */
-    M_DUMMY_UNFIXED,/* read à l'adresse NON corrigée (factice d'indexation) */
-    M_READ_FIXUP,   /* lecture : factice non corrigée si traversée, sinon rien */
-    M_READ_DATA,    /* data = read(addr) puis ALU de lecture */
-    M_WRITE_DATA,   /* write(addr, valeur du store) */
-    M_RMW_ORIG,     /* write(addr, valeur lue) — écriture-retour NMOS */
-    M_RMW_NEW,      /* applique l'opération RMW puis write(addr, résultat) */
-    M_IMPLIED,      /* read(PC) factice + opération sur registres */
-    M_IMM,          /* data = read(PC++) puis ALU de lecture */
-    M_BRANCH_TAKEN, /* read(PC) factice ; applique l'octet bas du saut */
-    M_BRANCH_PAGE,  /* read à l'adresse partiellement corrigée ; corrige PCH */
+    M_PTR_HI,       /* adh = read(ptr+1 on 8 bits) ; addr = adh:adl ; index */
+    M_DUMMY_UNFIXED,/* read at the UNCORRECTED address (indexing dummy) */
+    M_READ_FIXUP,   /* read: uncorrected dummy if page crossed, otherwise nothing */
+    M_READ_DATA,    /* data = read(addr) then read ALU */
+    M_WRITE_DATA,   /* write(addr, store value) */
+    M_RMW_ORIG,     /* write(addr, value read) — NMOS write-back */
+    M_RMW_NEW,      /* applies the RMW operation then write(addr, result) */
+    M_IMPLIED,      /* dummy read(PC) + register operation */
+    M_IMM,          /* data = read(PC++) then read ALU */
+    M_BRANCH_TAKEN, /* dummy read(PC) ; applies the low byte of the jump */
+    M_BRANCH_PAGE,  /* read at the partially corrected address ; fixes PCH */
     M_JMP_HI,       /* adh = read(PC++) ; PC = adh:adl */
     M_JMP_IND_LO,   /* adl = read(ptr16) */
-    M_JMP_IND_HI,   /* adh = read(ptr16 avec bug de page) ; PC = adh:adl */
-    M_STACK_DUMMY,  /* read($0100+SP) factice */
+    M_JMP_IND_HI,   /* adh = read(ptr16 with page bug) ; PC = adh:adl */
+    M_STACK_DUMMY,  /* dummy read($0100+SP) */
     M_PUSH_PCH, M_PUSH_PCL, M_PUSH_P, M_PUSH_P_BRK, M_PUSH_A,
     M_PULL_PCL, M_PULL_PCH, M_PULL_P, M_PULL_A,
-    M_RTS_FIXUP,    /* read(PC) factice puis PC++ (RTS) */
-    M_JSR_HI,       /* adh = read(PC++) ; PC = adh:adl (après les empilements) */
-    M_BRK_SIGN,     /* read(PC++) : l'octet de signature de BRK */
-    M_VEC_LO,       /* PCL = read(vecteur) */
-    M_VEC_HI,       /* PCH = read(vecteur+1) */
-    M_JAM           /* gèle le CPU */
+    M_RTS_FIXUP,    /* dummy read(PC) then PC++ (RTS) */
+    M_JSR_HI,       /* adh = read(PC++) ; PC = adh:adl (after the pushes) */
+    M_BRK_SIGN,     /* read(PC++): the BRK signature byte */
+    M_VEC_LO,       /* PCL = read(vector) */
+    M_VEC_HI,       /* PCH = read(vector+1) */
+    M_JAM           /* freezes the CPU */
 };
 
-/* ─── Classes d'instruction ─── */
+/* ─── Instruction classes ─── */
 enum {
     C_IMPLIED = 0, C_READ, C_WRITE, C_WRITE_UNSTABLE, C_RMW,
     C_BRANCH, C_JMP, C_JMP_IND, C_JSR, C_RTS, C_RTI,
@@ -65,18 +65,18 @@ enum {
 
 typedef struct {
     uint8_t cls;
-    uint8_t rmw;    /* cpu_rmw_t, pour C_RMW */
+    uint8_t rmw;    /* cpu_rmw_t, for C_RMW */
 } ms_info_t;
 
-/* Vecteur d'interruption en cours (NMI = $FFFA, IRQ/BRK = $FFFE) */
+/* Current interrupt vector (NMI = $FFFA, IRQ/BRK = $FFFE) */
 static uint16_t ms_vector;
 
 /* ════════════════════════════════════════════════════════════════════
- *  Classement des 256 opcodes
+ *  Classification of the 256 opcodes
  *
- *  Le MODE d'adressage vient d'opcode_table (opcodes.c) — une seule source.
- *  Ici on ne donne que la CLASSE (quelle forme de séquence) et, pour les RMW,
- *  quelle opération appliquer.
+ *  The addressing MODE comes from opcode_table (opcodes.c) — a single source.
+ *  Here we only give the CLASS (which sequence shape) and, for RMW,
+ *  which operation to apply.
  * ══════════════════════════════════════════════════════════════════ */
 static ms_info_t ms_table[256];
 static bool ms_table_ready = false;
@@ -87,10 +87,10 @@ static void ms_set(uint8_t op, uint8_t cls, uint8_t rmw) {
 }
 
 static void ms_build_table(void) {
-    /* Par défaut : implicite (couvre CLC/SEC/TAX/NOP/ASL A… et sert de repli) */
+    /* Default: implied (covers CLC/SEC/TAX/NOP/ASL A… and serves as fallback) */
     for (int i = 0; i < 256; i++) ms_set((uint8_t)i, C_IMPLIED, 0);
 
-    /* ─── Lectures (l'opérande est lu, puis replié dans un registre/des drapeaux) */
+    /* ─── Reads (the operand is read, then folded into a register/flags) */
     static const uint8_t reads[] = {
         /* ORA */ 0x09,0x05,0x15,0x0D,0x1D,0x19,0x01,0x11,
         /* AND */ 0x29,0x25,0x35,0x2D,0x3D,0x39,0x21,0x31,
@@ -105,9 +105,9 @@ static void ms_build_table(void) {
         /* LDY */ 0xA0,0xA4,0xB4,0xAC,0xBC,
         /* BIT */ 0x24,0x2C,
         /* LAX */ 0xA7,0xB7,0xAF,0xBF,0xA3,0xB3,
-        /* immédiats « magiques » */ 0x0B,0x2B,0x4B,0x6B,0x8B,0xAB,0xCB,
+        /* "magic" immediates */ 0x0B,0x2B,0x4B,0x6B,0x8B,0xAB,0xCB,
         /* LAS */ 0xBB,
-        /* NOP à opérande (lecture factice réelle) */
+        /* NOP with operand (real dummy read) */
         0x80,0x82,0x89,0xC2,0xE2,
         0x04,0x44,0x64,
         0x14,0x34,0x54,0x74,0xD4,0xF4,
@@ -116,7 +116,7 @@ static void ms_build_table(void) {
     };
     for (size_t i = 0; i < sizeof(reads); i++) ms_set(reads[i], C_READ, 0);
 
-    /* ─── Écritures */
+    /* ─── Writes */
     static const uint8_t writes[] = {
         /* STA */ 0x85,0x95,0x8D,0x9D,0x99,0x81,0x91,
         /* STX */ 0x86,0x96,0x8E,
@@ -125,11 +125,11 @@ static void ms_build_table(void) {
     };
     for (size_t i = 0; i < sizeof(writes); i++) ms_set(writes[i], C_WRITE, 0);
 
-    /* Stores instables : la destination dépend de la valeur en cas de traversée */
+    /* Unstable stores: the destination depends on the value on a page crossing */
     static const uint8_t unstable[] = { 0x93,0x9B,0x9C,0x9E,0x9F };
     for (size_t i = 0; i < sizeof(unstable); i++) ms_set(unstable[i], C_WRITE_UNSTABLE, 0);
 
-    /* ─── Lecture-modification-écriture */
+    /* ─── Read-modify-write */
     struct { uint8_t op; uint8_t rmw; } rmws[] = {
         {0x06,RMW_ASL},{0x16,RMW_ASL},{0x0E,RMW_ASL},{0x1E,RMW_ASL},
         {0x46,RMW_LSR},{0x56,RMW_LSR},{0x4E,RMW_LSR},{0x5E,RMW_LSR},
@@ -147,7 +147,7 @@ static void ms_build_table(void) {
     for (size_t i = 0; i < sizeof(rmws) / sizeof(rmws[0]); i++)
         ms_set(rmws[i].op, C_RMW, rmws[i].rmw);
 
-    /* ─── Contrôle et pile */
+    /* ─── Control and stack */
     static const uint8_t branches[] = { 0x10,0x30,0x50,0x70,0x90,0xB0,0xD0,0xF0 };
     for (size_t i = 0; i < sizeof(branches); i++) ms_set(branches[i], C_BRANCH, 0);
     ms_set(0x4C, C_JMP, 0);
@@ -169,20 +169,20 @@ static void ms_build_table(void) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  Construction du plan
+ *  Plan construction
  * ══════════════════════════════════════════════════════════════════ */
 
 static void plan_add(cpu6502_t* cpu, uint8_t mop) {
     if (cpu->ms_len < sizeof(cpu->ms_plan)) cpu->ms_plan[cpu->ms_len++] = mop;
 }
 
-/* Phase d'adressage commune. `dummy_always` : les écritures et les RMW paient
- * TOUJOURS le cycle factice d'indexation, les lectures seulement en cas de
- * traversée de page (micro-op conditionnelle M_READ_FIXUP). */
+/* Common addressing phase. `dummy_always`: writes and RMW ALWAYS pay the
+ * indexing dummy cycle, reads only on a page crossing (conditional micro-op
+ * M_READ_FIXUP). */
 static void plan_addressing(cpu6502_t* cpu, addressing_mode_t mode, bool dummy_always) {
     switch (mode) {
     case ADDR_IMMEDIATE:
-        break;                                   /* l'opérande est lu par M_IMM */
+        break;                                   /* the operand is read by M_IMM */
     case ADDR_ZERO_PAGE:
         plan_add(cpu, M_FETCH_LO);
         break;
@@ -261,9 +261,9 @@ static void ms_build_plan(cpu6502_t* cpu, uint8_t opcode) {
         }
         break;
     case C_BRANCH:
-        plan_add(cpu, M_FETCH_LO);               /* l'offset */
-        plan_add(cpu, M_BRANCH_TAKEN);           /* sauté si la condition est fausse */
-        plan_add(cpu, M_BRANCH_PAGE);            /* sauté s'il n'y a pas de traversée */
+        plan_add(cpu, M_FETCH_LO);               /* the offset */
+        plan_add(cpu, M_BRANCH_TAKEN);           /* skipped if the condition is false */
+        plan_add(cpu, M_BRANCH_PAGE);            /* skipped if there is no page crossing */
         break;
     case C_JMP:
         plan_add(cpu, M_FETCH_LO);
@@ -302,7 +302,7 @@ static void ms_build_plan(cpu6502_t* cpu, uint8_t opcode) {
         break;
     case C_PUSH_P:
         plan_add(cpu, M_DUMMY_PC);
-        plan_add(cpu, M_PUSH_P_BRK);             /* PHP empile B à 1 */
+        plan_add(cpu, M_PUSH_P_BRK);             /* PHP pushes B set to 1 */
         break;
     case C_PULL_A:
         plan_add(cpu, M_DUMMY_PC);
@@ -333,17 +333,17 @@ static void ms_build_plan(cpu6502_t* cpu, uint8_t opcode) {
     }
 }
 
-/* Séquence d'interruption matérielle : 7 cycles (2 cycles internes, 3
- * empilements, 2 lectures de vecteur). */
+/* Hardware interrupt sequence: 7 cycles (2 internal cycles, 3 pushes,
+ * 2 vector reads). */
 static void ms_build_interrupt(cpu6502_t* cpu, uint16_t vector) {
     cpu->ms_len = 0;
     cpu->ms_pc = 0;
     cpu->ms_opcode = 0;
     cpu->ms_crossed = false;
     ms_vector = vector;
-    cpu->ms_base = cpu->PC;   /* PC d'avant l'interruption, pour --trace-irq */
-    /* 7 cycles au total : le premier (lecture morte) est émis par le bloc de
-     * démarrage de cpu_cycle(), ce plan porte les 6 suivants. */
+    cpu->ms_base = cpu->PC;   /* PC before the interrupt, for --trace-irq */
+    /* 7 cycles in total: the first one (dead read) is emitted by the start
+     * block of cpu_cycle(), this plan carries the next 6. */
     plan_add(cpu, M_DUMMY_PC);
     plan_add(cpu, M_PUSH_PCH);
     plan_add(cpu, M_PUSH_PCL);
@@ -353,8 +353,8 @@ static void ms_build_interrupt(cpu6502_t* cpu, uint16_t vector) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  Sémantique : repliement de l'opérande, valeur des stores, implicites
- *  (le calcul vient d'opcodes.c — ici on ne fait que router)
+ *  Semantics: operand folding, store values, implied instructions
+ *  (the computation comes from opcodes.c — here we only route)
  * ══════════════════════════════════════════════════════════════════ */
 
 static void ms_alu_read(cpu6502_t* cpu, uint8_t op, uint8_t v) {
@@ -376,13 +376,13 @@ static void ms_alu_read(cpu6502_t* cpu, uint8_t op, uint8_t v) {
     case 0xE9: case 0xEB: case 0xE5: case 0xF5: case 0xED: case 0xFD:
     case 0xF9: case 0xE1: case 0xF1:
         cpu_op_sbc(cpu, v); break;
-    /* Comparaisons */
+    /* Comparisons */
     case 0xC9: case 0xC5: case 0xD5: case 0xCD: case 0xDD: case 0xD9:
     case 0xC1: case 0xD1:
         cpu_op_cmp(cpu, cpu->A, v); break;
     case 0xE0: case 0xE4: case 0xEC: cpu_op_cmp(cpu, cpu->X, v); break;
     case 0xC0: case 0xC4: case 0xCC: cpu_op_cmp(cpu, cpu->Y, v); break;
-    /* Chargements */
+    /* Loads */
     case 0xA9: case 0xA5: case 0xB5: case 0xAD: case 0xBD: case 0xB9:
     case 0xA1: case 0xB1:
         cpu->A = v; cpu_update_nz(cpu, v); break;
@@ -399,19 +399,19 @@ static void ms_alu_read(cpu6502_t* cpu, uint8_t op, uint8_t v) {
     /* LAX */
     case 0xA7: case 0xB7: case 0xAF: case 0xBF: case 0xA3: case 0xB3:
         cpu_op_lax(cpu, v); break;
-    /* ANC : AND puis C = N */
+    /* ANC: AND then C = N */
     case 0x0B: case 0x2B:
         cpu->A &= v; cpu_update_nz(cpu, cpu->A);
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x80) != 0);
         break;
-    /* ALR : AND puis LSR A */
+    /* ALR: AND then LSR A */
     case 0x4B:
         cpu->A &= v;
         cpu_set_flag(cpu, FLAG_CARRY, (cpu->A & 0x01) != 0);
         cpu->A = (uint8_t)(cpu->A >> 1);
         cpu_update_nz(cpu, cpu->A);
         break;
-    /* ARR : AND puis ROR, avec la correction BCD du NMOS */
+    /* ARR: AND then ROR, with the NMOS BCD correction */
     case 0x6B: {
         uint8_t t = (uint8_t)(cpu->A & v);
         uint8_t c = cpu_get_flag(cpu, FLAG_CARRY) ? 0x80 : 0;
@@ -433,18 +433,18 @@ static void ms_alu_read(cpu6502_t* cpu, uint8_t op, uint8_t v) {
         cpu->A = r;
         break;
     }
-    /* ANE/XAA : A = (A | magie) & X & imm — la « magie » vaut $EE en pratique */
+    /* ANE/XAA: A = (A | magic) & X & imm — the "magic" is $EE in practice */
     case 0x8B:
         cpu->A = (uint8_t)((cpu->A | 0xEE) & cpu->X & v);
         cpu_update_nz(cpu, cpu->A);
         break;
-    /* LXA/ATX : A = X = (A | magie) & imm */
+    /* LXA/ATX: A = X = (A | magic) & imm */
     case 0xAB:
         cpu->A = (uint8_t)((cpu->A | 0xEE) & v);
         cpu->X = cpu->A;
         cpu_update_nz(cpu, cpu->A);
         break;
-    /* SBX/AXS : X = (A & X) - imm, C comme une comparaison */
+    /* SBX/AXS: X = (A & X) - imm, C as for a comparison */
     case 0xCB: {
         uint8_t tmp = (uint8_t)(cpu->A & cpu->X);
         cpu_set_flag(cpu, FLAG_CARRY, tmp >= v);
@@ -452,7 +452,7 @@ static void ms_alu_read(cpu6502_t* cpu, uint8_t op, uint8_t v) {
         cpu_update_nz(cpu, cpu->X);
         break;
     }
-    /* LAS/LAR : A = X = SP = mem & SP */
+    /* LAS/LAR: A = X = SP = mem & SP */
     case 0xBB: {
         uint8_t r = (uint8_t)(v & cpu->SP);
         cpu->A = r; cpu->X = r; cpu->SP = r;
@@ -460,7 +460,7 @@ static void ms_alu_read(cpu6502_t* cpu, uint8_t op, uint8_t v) {
         break;
     }
     default:
-        break;   /* NOP à opérande : la lecture a eu lieu, rien d'autre */
+        break;   /* NOP with operand: the read happened, nothing else */
     }
 }
 
@@ -498,7 +498,7 @@ static void ms_implied(cpu6502_t* cpu, uint8_t op) {
     case 0x4A: cpu->A = cpu_rmw_apply(cpu, RMW_LSR, cpu->A); break; /* LSR A */
     case 0x2A: cpu->A = cpu_rmw_apply(cpu, RMW_ROL, cpu->A); break; /* ROL A */
     case 0x6A: cpu->A = cpu_rmw_apply(cpu, RMW_ROR, cpu->A); break; /* ROR A */
-    default: break;                                                 /* NOP implicites */
+    default: break;                                                 /* implied NOPs */
     }
 }
 
@@ -517,7 +517,7 @@ static bool ms_branch_taken(const cpu6502_t* cpu, uint8_t op) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  Exécution d'un cycle
+ *  Execution of one cycle
  * ══════════════════════════════════════════════════════════════════ */
 
 static void ms_apply_index(cpu6502_t* cpu) {
@@ -531,10 +531,10 @@ static uint16_t ms_unfixed(const cpu6502_t* cpu) {
     return (uint16_t)((cpu->ms_base & 0xFF00) | (cpu->ms_addr & 0x00FF));
 }
 
-/* Détournement par la NMI : si /NMI tombe avant le cycle qui empile P d'un BRK
- * ou d'une séquence d'IRQ, c'est le vecteur NMI qui est lu — l'interruption
- * basse priorité est « détournée ». Le drapeau B empilé reste celui de la
- * séquence d'origine (BRK garde son B à 1). */
+/* NMI hijacking: if /NMI falls before the cycle that pushes P of a BRK or of
+ * an IRQ sequence, the NMI vector is read — the low-priority interrupt is
+ * "hijacked". The pushed B flag remains that of the original sequence (BRK
+ * keeps its B set to 1). */
 static void ms_nmi_hijack(cpu6502_t* cpu) {
     if (cpu->nmi_pending && ms_vector != 0xFFFA) {
         ms_vector = 0xFFFA;
@@ -553,9 +553,9 @@ bool cpu_microseq_enabled(const cpu6502_t* cpu) {
     return cpu->ms_enabled;
 }
 
-/* Échantillonne /NMI et /IRQ à la fin d'un cycle. Le dernier cycle d'une
- * instruction n'échantillonne PAS : la décision qui suit doit se fonder sur
- * l'état du cycle pénultième (US1.3). */
+/* Samples /NMI and /IRQ at the end of a cycle. The last cycle of an
+ * instruction does NOT sample: the following decision must be based on the
+ * state of the penultimate cycle (US1.3). */
 static void ms_sample_interrupts(cpu6502_t* cpu, bool last_cycle) {
     if (last_cycle) return;
     cpu->ms_nmi_sampled = cpu->nmi_pending;
@@ -566,23 +566,23 @@ static void ms_sample_interrupts(cpu6502_t* cpu, bool last_cycle) {
 bool cpu_cycle(cpu6502_t* cpu) {
     if (cpu->halted) return true;
 
-    /* ─── Premier cycle : interruption ou lecture de l'opcode ─── */
+    /* ─── First cycle: interrupt or opcode read ─── */
     if (!cpu->ms_active) {
-        /* Décision prise sur l'échantillon du cycle PÉNULTIÈME de l'instruction
-         * précédente, pas sur l'état courant des lignes. */
+        /* Decision taken on the sample of the PENULTIMATE cycle of the
+         * previous instruction, not on the current state of the lines. */
         if (cpu->ms_nmi_sampled && cpu->nmi_pending) {
             cpu->nmi_pending = false;
             cpu->ms_nmi_sampled = false;
             ms_build_interrupt(cpu, 0xFFFA);
-            (void)cpu_mem_read(cpu, cpu->PC);    /* cycle 1 : lecture morte */
+            (void)cpu_mem_read(cpu, cpu->PC);    /* cycle 1: dead read */
             cpu->ms_active = true;
             ms_sample_interrupts(cpu, false);
             return false;
         }
-        /* Noter l'absence de test sur FLAG_INTERRUPT : le masque a déjà été
-         * pris en compte au moment de l'échantillonnage (cycle pénultième). Le
-         * retester ici ferait protéger l'instruction suivante par un SEI, ce que
-         * le matériel ne fait pas. */
+        /* Note the absence of a FLAG_INTERRUPT test: the mask was already
+         * taken into account at sampling time (penultimate cycle). Testing it
+         * again here would make a SEI protect the next instruction, which the
+         * hardware does not do. */
         if (cpu->ms_irq_sampled) {
             if (cpu->irq_pulse) cpu->irq_pulse--;
             cpu->ms_irq_sampled = false;
@@ -592,11 +592,11 @@ bool cpu_cycle(cpu6502_t* cpu) {
             ms_sample_interrupts(cpu, false);
             return false;
         }
-        uint8_t opcode = cpu_fetch_byte(cpu);    /* cycle 1 : fetch opcode */
+        uint8_t opcode = cpu_fetch_byte(cpu);    /* cycle 1: fetch opcode */
         ms_build_plan(cpu, opcode);
         cpu->ms_active = true;
-        /* Une instruction d'un seul cycle n'existe pas : ce cycle n'est jamais
-         * le dernier, on échantillonne donc toujours. */
+        /* A single-cycle instruction does not exist: this cycle is never
+         * the last one, so we always sample. */
         ms_sample_interrupts(cpu, false);
         return false;
     }
@@ -609,14 +609,14 @@ bool cpu_cycle(cpu6502_t* cpu) {
     case M_FETCH_LO:
         cpu->ms_ptr = cpu_fetch_byte(cpu);
         cpu->ms_adl = cpu->ms_ptr;
-        cpu->ms_addr = cpu->ms_ptr;              /* utile en page zéro */
+        cpu->ms_addr = cpu->ms_ptr;              /* useful in zero page */
         cpu->ms_base = cpu->ms_addr;
-        /* Branchement non pris : l'instruction fait 2 cycles et CELUI-CI est le
-         * dernier — la décision se prend ici, pas au cycle suivant. Décider un
-         * cycle plus tard coûtait un appel à cpu_cycle() sans accès bus : le
-         * compteur CPU restait juste (l'oracle ne voyait rien) mais l'horloge
-         * maître avait avancé d'un cycle de plus — l'ULA prenait ~410 cycles
-         * d'avance par trame sur le CPU et le VIA (V2-E7, US7.3). */
+        /* Branch not taken: the instruction takes 2 cycles and THIS one is the
+         * last — the decision is taken here, not on the next cycle. Deciding one
+         * cycle later cost a call to cpu_cycle() without bus access: the CPU
+         * counter stayed right (the oracle saw nothing) but the master clock
+         * had advanced by one extra cycle — the ULA got ~410 cycles ahead per
+         * frame of the CPU and the VIA (V2-E7, US7.3). */
         if (ms_table[op].cls == C_BRANCH && !ms_branch_taken(cpu, op)) {
             cpu->ms_active = false;
             ms_sample_interrupts(cpu, true);
@@ -628,10 +628,10 @@ bool cpu_cycle(cpu6502_t* cpu) {
         ms_apply_index(cpu);
         break;
     case M_ZP_INDEX: {
-        (void)cpu_mem_read(cpu, cpu->ms_ptr);    /* lecture FACTICE à la base */
+        (void)cpu_mem_read(cpu, cpu->ms_ptr);    /* DUMMY read at the base */
         uint8_t idx = (cpu->ms_idx == 1) ? cpu->X : cpu->Y;
         cpu->ms_ptr = (uint8_t)(cpu->ms_ptr + idx);
-        cpu->ms_addr = cpu->ms_ptr;              /* reste en page zéro */
+        cpu->ms_addr = cpu->ms_ptr;              /* stays in zero page */
         cpu->ms_base = cpu->ms_addr;
         cpu->ms_crossed = false;
         break;
@@ -649,13 +649,13 @@ bool cpu_cycle(cpu6502_t* cpu) {
         (void)cpu_mem_read(cpu, ms_unfixed(cpu));
         break;
     case M_READ_FIXUP:
-        /* Lecture indexée : le cycle n'existe QUE si la page a été franchie ;
-         * sinon on enchaîne immédiatement sur la vraie lecture. */
+        /* Indexed read: the cycle exists ONLY if the page was crossed;
+         * otherwise we chain immediately to the real read. */
         if (cpu->ms_crossed) {
             (void)cpu_mem_read(cpu, ms_unfixed(cpu));
             break;
         }
-        cpu->ms_pc++;                            /* pas de cycle : passe à M_READ_DATA */
+        cpu->ms_pc++;                            /* no cycle: moves on to M_READ_DATA */
         return cpu_cycle(cpu);
     case M_READ_DATA:
         cpu->ms_data = cpu_mem_read(cpu, cpu->ms_addr);
@@ -675,7 +675,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         }
         break;
     case M_RMW_ORIG:
-        cpu_mem_write(cpu, cpu->ms_addr, cpu->ms_data);   /* écriture-retour NMOS */
+        cpu_mem_write(cpu, cpu->ms_addr, cpu->ms_data);   /* NMOS write-back */
         break;
     case M_RMW_NEW:
         cpu->ms_data = cpu_rmw_apply(cpu, (cpu_rmw_t)cpu->ms_rmw, cpu->ms_data);
@@ -686,11 +686,11 @@ bool cpu_cycle(cpu6502_t* cpu) {
         ms_alu_read(cpu, op, cpu->ms_data);
         break;
     case M_IMPLIED:
-        (void)cpu_mem_read(cpu, cpu->PC);        /* lecture morte, PC inchangé */
+        (void)cpu_mem_read(cpu, cpu->PC);        /* dead read, PC unchanged */
         ms_implied(cpu, op);
         break;
-    case M_BRANCH_TAKEN:                         /* la condition est vraie (cf. M_FETCH_LO) */
-        (void)cpu_mem_read(cpu, cpu->PC);        /* lecture morte de l'opcode suivant */
+    case M_BRANCH_TAKEN:                         /* the condition is true (cf. M_FETCH_LO) */
+        (void)cpu_mem_read(cpu, cpu->PC);        /* dead read of the next opcode */
         {
             uint16_t target = (uint16_t)(cpu->PC + (int8_t)cpu->ms_ptr);
             cpu->ms_crossed = ((cpu->PC & 0xFF00) != (target & 0xFF00));
@@ -705,7 +705,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         }
         break;
     case M_BRANCH_PAGE:
-        (void)cpu_mem_read(cpu, cpu->PC);        /* lecture à l'adresse mal corrigée */
+        (void)cpu_mem_read(cpu, cpu->PC);        /* read at the incorrectly fixed-up address */
         cpu->PC = cpu->ms_addr;
         break;
     case M_JMP_HI:
@@ -715,7 +715,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         cpu->ms_data = cpu_mem_read(cpu, cpu->ms_addr);
         break;
     case M_JMP_IND_HI: {
-        /* Bug de page du 6502 : l'octet haut est lu dans la MÊME page. */
+        /* 6502 page bug: the high byte is read from the SAME page. */
         uint16_t hi_addr = (uint16_t)((cpu->ms_addr & 0xFF00) |
                                       ((cpu->ms_addr + 1) & 0x00FF));
         cpu->PC = (uint16_t)((cpu_mem_read(cpu, hi_addr) << 8) | cpu->ms_data);
@@ -725,7 +725,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         (void)cpu_mem_read(cpu, cpu->PC);
         break;
     case M_BRK_SIGN:
-        (void)cpu_fetch_byte(cpu);               /* l'octet de signature, ignoré */
+        (void)cpu_fetch_byte(cpu);               /* the signature byte, ignored */
         break;
     case M_STACK_DUMMY:
         (void)cpu_mem_read(cpu, (uint16_t)(0x0100 + cpu->SP));
@@ -749,7 +749,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         cpu_mem_write(cpu, (uint16_t)(0x0100 + cpu->SP),
                       (uint8_t)(cpu->P | FLAG_BREAK | FLAG_UNUSED));
         cpu->SP--;
-        if (op == 0x00) {                          /* BRK, pas PHP */
+        if (op == 0x00) {                          /* BRK, not PHP */
             cpu_set_flag(cpu, FLAG_INTERRUPT, true);
             ms_nmi_hijack(cpu);
         }
@@ -779,7 +779,7 @@ bool cpu_cycle(cpu6502_t* cpu) {
         if (op == 0x40) cpu_irq_trace_rti(cpu);   /* RTI */
         break;
     case M_RTS_FIXUP:
-        (void)cpu_mem_read(cpu, cpu->PC);        /* lecture morte, puis PC++ */
+        (void)cpu_mem_read(cpu, cpu->PC);        /* dead read, then PC++ */
         cpu->PC++;
         break;
     case M_JSR_HI:
@@ -791,8 +791,8 @@ bool cpu_cycle(cpu6502_t* cpu) {
     case M_VEC_HI:
         cpu->PC = (uint16_t)((cpu_mem_read(cpu, (uint16_t)(ms_vector + 1)) << 8)
                              | cpu->ms_adl);
-        /* --trace-irq : même ligne que sur le moteur historique (BRK exclu,
-         * qui n'est pas une interruption matérielle). */
+        /* --trace-irq: same line as on the historical engine (BRK excluded,
+         * as it is not a hardware interrupt). */
         if (op != 0x00) cpu_irq_trace_entry(cpu, cpu->ms_base);
         break;
     case M_JAM:

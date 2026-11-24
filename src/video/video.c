@@ -12,7 +12,7 @@
  */
 
 #include "video/video.h"
-#include "io/ula_ng.h"   /* composition sprites §5.7 (ng_dev) */
+#include "io/ula_ng.h"   /* sprite compositing §5.7 (ng_dev) */
 #include <string.h>
 #include <strings.h>
 
@@ -21,11 +21,11 @@ static const uint8_t palette[8][3] = {
     {0x00,0x00,0xFF},{0xFF,0x00,0xFF},{0x00,0xFF,0xFF},{0xFF,0xFF,0xFF},
 };
 
-/* Active resolution : suit les latches de mode ULA-NG (chunky 320 / 80col 480),
- * sinon 240 standard. */
+/* Active resolution: follows the ULA-NG mode latches (chunky 320 / 80col 480),
+ * otherwise standard 240. */
 static void apply_profile_resolution(video_t* vid) {
-    if (vid->ng_text80)           vid->native_w = VIDEO_MAX_W;   /* §5.8 : 80 col × 6 = 480 */
-    else if (vid->ng_chunky)      vid->native_w = VIDEO_WIDE_W;  /* §5.8 : 160 chunky × 2 = 320 */
+    if (vid->ng_text80)           vid->native_w = VIDEO_MAX_W;   /* §5.8: 80 col × 6 = 480 */
+    else if (vid->ng_chunky)      vid->native_w = VIDEO_WIDE_W;  /* §5.8: 160 chunky × 2 = 320 */
     else                          vid->native_w = ORIC_SCREEN_W;
     vid->native_h = ORIC_SCREEN_H;
 }
@@ -34,8 +34,8 @@ static void palette_reset(video_t* vid) {
     memcpy(vid->pal_rgb, palette, sizeof(vid->pal_rgb));
 }
 
-/* Palette relue au début de scanline : LUT ULA-NG (§5.1) si active, sinon
- * palette Oric standard. */
+/* Palette re-read at the start of the scanline: ULA-NG LUT (§5.1) if active,
+ * otherwise the standard Oric palette. */
 static void palette_latch(video_t* vid, const uint8_t* memory) {
     (void)memory;
     if (vid->ng_active && *vid->ng_active && vid->ng_pal) {
@@ -114,8 +114,8 @@ static uint8_t get_charset_byte(video_t* vid, const uint8_t* mem, int char_idx, 
     return mem[base + char_idx * 8 + row];
 }
 
-/* Compositing overscan (bordure) — générique, toujours compilé (lit
- * video_border[], qui reste noir). */
+/* Overscan (border) compositing — generic, always compiled (reads
+ * video_border[], which stays black). */
 void video_get_border_rgb(const video_t* vid, int y,
                           uint8_t* r, uint8_t* g, uint8_t* b) {
     if (y < 0 || y >= VIDEO_MAX_H) { *r = *g = *b = 0; return; }
@@ -272,11 +272,11 @@ static bool blink_phase_on(video_t* vid) {
     return (vid->text_attr & 0x04) && (vid->frame_counter & 0x10);
 }
 
-/* Rangées de statut 200-223 : toujours TEXT depuis $BB80 (rows 25-27). Factorisé
- * pour être réutilisé par le mode chunky NG (§5.8), dont seules les lignes
- * 0-199 sont chunky. */
-/* Une cellule du pied de texte (lignes 200-223, toujours TEXT depuis $BB80).
- * L'encre et le papier viennent de l'état sériel de la ligne (vid->line_*). */
+/* Status rows 200-223: always TEXT from $BB80 (rows 25-27). Factored out
+ * to be reused by the NG chunky mode (§5.8), where only lines
+ * 0-199 are chunky. */
+/* One cell of the text footer (lines 200-223, always TEXT from $BB80).
+ * Ink and paper come from the line's serial state (vid->line_*). */
 static void render_bottom_text_cell(video_t* vid, const uint8_t* memory, int y, int col) {
     int row = 25 + (y - 200) / 8;
     int chline = (y - 200) & 7;
@@ -304,13 +304,13 @@ static void render_bottom_text_cell(video_t* vid, const uint8_t* memory, int y, 
     }
 }
 
-/* ULA-NG chunky 4bpp (§5.8) : 160 pixels/rangée × 200, chacun 4 bits = index
- * dans la LUT palette NG (16 entrées, RGB888). Données : NG_SCRSTART (défaut
- * $A000), 80 octets/rangée (2 quartets/octet : quartet haut = pixel gauche).
- * Chaque pixel chunky occupe 2 pixels framebuffer (160×2 = 320). */
+/* ULA-NG chunky 4bpp (§5.8): 160 pixels/row × 200, each 4 bits = index
+ * into the NG palette LUT (16 entries, RGB888). Data: NG_SCRSTART (default
+ * $A000), 80 bytes/row (2 nibbles/byte: high nibble = left pixel).
+ * Each chunky pixel takes 2 framebuffer pixels (160×2 = 320). */
 static void render_ng_chunky_scanline(video_t* vid, const uint8_t* memory, int y) {
-    /* Source des pixels : VRAM portée par l'ULA-NG (VDU v0.2) si active, sinon
-     * la RAM CPU à NG_SCRSTART (défaut $A000). */
+    /* Pixel source: VRAM held by the ULA-NG (VDU v0.2) if active, otherwise
+     * CPU RAM at NG_SCRSTART (default $A000). */
     const uint8_t* rowbytes;
     if (vid->ng_vram_active && *vid->ng_vram_active && vid->ng_vram) {
         rowbytes = vid->ng_vram + y * 80;
@@ -325,7 +325,7 @@ static void render_ng_chunky_scanline(video_t* vid, const uint8_t* memory, int y
             uint8_t idx = half == 0 ? (uint8_t)(byte >> 4) : (uint8_t)(byte & 0x0F);
             uint8_t r, g, b;
             if (vid->ng_pal) { r = vid->ng_pal[idx][0]; g = vid->ng_pal[idx][1]; b = vid->ng_pal[idx][2]; }
-            else             { get_rgb(vid, idx, &r, &g, &b); }   /* fallback 8 couleurs */
+            else             { get_rgb(vid, idx, &r, &g, &b); }   /* 8-colour fallback */
             int x0 = (col * 2 + half) * 2;
             set_pixel(vid, x0,     y, r, g, b);
             set_pixel(vid, x0 + 1, y, r, g, b);
@@ -333,10 +333,10 @@ static void render_ng_chunky_scanline(video_t* vid, const uint8_t* memory, int y
     }
 }
 
-/* ULA-NG texte 80 colonnes (§5.8) : 80 caractères × 6 px = 480. Charset RAM
- * (redéfinissable, $B400/$B800 via get_charset_byte). Données : NG_SCRSTART
- * (défaut $A000), 80 octets/rangée. Attributs série et couleurs (LUT NG 0-7)
- * comme en texte standard. */
+/* ULA-NG 80-column text (§5.8): 80 characters × 6 px = 480. RAM charset
+ * (redefinable, $B400/$B800 via get_charset_byte). Data: NG_SCRSTART
+ * (default $A000), 80 bytes/row. Serial attributes and colours (NG LUT 0-7)
+ * as in standard text. */
 static void render_ng_text80_scanline(video_t* vid, const uint8_t* memory, int y) {
     uint16_t base = 0xA000;
     if (vid->ng_scrstart && *vid->ng_scrstart) base = *vid->ng_scrstart;
@@ -369,29 +369,29 @@ static void render_ng_text80_scanline(video_t* vid, const uint8_t* memory, int y
     }
 }
 
-/* Une cellule de la zone principale (lignes 0-199 : TEXT ou HIRES selon
- * vid_mode, qui peut changer en plein milieu de ligne par un attribut sériel).
- * L'encre, le papier et le mode viennent de l'état de ligne : c'est ce qui rend
- * le rendu cellule-par-cellule équivalent au rendu ligne-par-ligne. */
+/* One cell of the main area (lines 0-199: TEXT or HIRES depending on
+ * vid_mode, which may change mid-line through a serial attribute).
+ * Ink, paper and mode come from the line state: this is what makes
+ * cell-by-cell rendering equivalent to line-by-line rendering. */
 static void render_main_cell(video_t* vid, const uint8_t* memory, int y, int col) {
-    int src_y = y + vid->line_sy;     /* scroll fin Y : décale la ligne source */
+    int src_y = y + vid->line_sy;     /* fine Y scroll: shifts the source line */
     int row = src_y / 8;
     int chline = src_y & 7;
     int sx = vid->line_sx;
 
     bool hires = (vid->vid_mode & 0x04) != 0;
-    /* ULA-NG start-address (§5.3) : remplace la base du fetch ($A000 HIRES /
-     * $BB80 TEXT) quand actif (double buffer / scroll vertical grossier). */
+    /* ULA-NG start-address (§5.3): replaces the fetch base ($A000 HIRES /
+     * $BB80 TEXT) when active (double buffer / coarse vertical scroll). */
     uint16_t scr_base = hires ? 0xA000 : 0xBB80;
     if (vid->ng_active && *vid->ng_active && vid->ng_scrstart && *vid->ng_scrstart)
         scr_base = *vid->ng_scrstart;
     uint16_t base = hires ? (uint16_t)(scr_base + src_y * 40)
                           : (uint16_t)(scr_base + row * 40);
     uint8_t byte = memory[base + col];
-    int px = col * 6 - sx;            /* scroll fin X (set_pixel clippe) */
+    int px = col * 6 - sx;            /* fine X scroll (set_pixel clips) */
 
-    /* ULA-NG attributs parallèles (§5.6) : encre+papier par cellule depuis le
-     * plan NG, indépendamment du flux pixel (pas de color clash sériel). */
+    /* ULA-NG parallel attributes (§5.6): per-cell ink+paper from the
+     * NG plane, independent of the pixel stream (no serial colour clash). */
     bool ng_attr_on = vid->ng_attr_active && *vid->ng_attr_active && vid->ng_attr;
     if (ng_attr_on) {
         uint8_t a = vid->ng_attr[(y * 40 + col) & (ORIC_NG_ATTR_MASK)];
@@ -408,7 +408,7 @@ static void render_main_cell(video_t* vid, const uint8_t* memory, int y, int col
     } else {
         bool char_inv = (byte & 0x80) != 0;
         if (blink_phase_on(vid)) char_inv = !char_inv;
-        /* L'inverse complémente encre et papier (XOR 7), il ne les échange pas. */
+        /* Inverse complements ink and paper (XOR 7), it does not swap them. */
         uint8_t fg = char_inv ? (uint8_t)(vid->line_ink ^ 0x07) : vid->line_ink;
         uint8_t bg = char_inv ? (uint8_t)(vid->line_paper ^ 0x07) : vid->line_paper;
         uint8_t ir, ig, ib, pr, pg, pb;
@@ -430,9 +430,9 @@ void video_line_begin(video_t* vid, const uint8_t* memory, int y) {
     if (y == 0) {
         vid->frame_counter++;
 
-        /* ULA-NG modes étendus (§5.8) : latchés au début de trame (résolution
-         * stable une trame entière). Live via les caches ula_ng ; NULL en test
-         * unitaire. */
+        /* ULA-NG extended modes (§5.8): latched at the start of the frame (resolution
+         * stable for a whole frame). Live via the ula_ng caches; NULL in unit
+         * tests. */
         bool want_ng_chunky = vid->ng_chunky_active && *vid->ng_chunky_active;
         bool want_ng_text80 = vid->ng_text80_active && *vid->ng_text80_active;
         if (want_ng_chunky != vid->ng_chunky ||
@@ -445,29 +445,29 @@ void video_line_begin(video_t* vid, const uint8_t* memory, int y) {
         }
     }
 
-    /* Palette relue au début de chaque scanline (LUT ULA-NG §5.1 si active). */
+    /* Palette re-read at the start of each scanline (ULA-NG LUT §5.1 if active). */
     palette_latch(vid, memory);
 
-    /* L'ULA réinitialise encre, papier et attributs texte à chaque début de
-     * ligne : c'est ce qui rend le color clash « sériel » propre à l'ORIC. */
+    /* The ULA resets ink, paper and text attributes at the start of each
+     * line: this is what produces the ORIC's own "serial" colour clash. */
     vid->text_attr = 0;
     vid->line_ink = ORIC_WHITE;
     vid->line_paper = ORIC_BLACK;
 
-    /* ULA-NG scroll fin (§5.5) : latché pour toute la ligne. */
+    /* ULA-NG fine scroll (§5.5): latched for the whole line. */
     vid->line_sx = 0;
     vid->line_sy = 0;
     if (vid->ng_active && *vid->ng_active) {
         if (vid->ng_scrollx) vid->line_sx = *vid->ng_scrollx;
         if (vid->ng_scrolly) vid->line_sy = *vid->ng_scrolly;
     }
-    /* Une cellule de plus à fetcher quand le scroll X découvre le bord droit. */
+    /* One more cell to fetch when the X scroll uncovers the right edge. */
     vid->line_last_col = vid->line_sx > 0 ? 40 : 39;
 }
 
 void video_render_cell(video_t* vid, const uint8_t* memory, int y, int col) {
     if (!memory || y < 0 || y >= 224) return;
-    if (vid->ng_text80 || vid->ng_chunky) return;   /* rendus en bloc en fin de ligne */
+    if (vid->ng_text80 || vid->ng_chunky) return;   /* rendered as a block at end of line */
     if (y < 200) {
         if (col < 0 || col > vid->line_last_col) return;
         render_main_cell(vid, memory, y, col);
@@ -480,9 +480,9 @@ void video_render_cell(video_t* vid, const uint8_t* memory, int y, int col) {
 void video_line_end(video_t* vid, const uint8_t* memory, int y) {
     if (!memory || y < 0 || y >= 224) return;
 
-    /* ULA-NG modes étendus (§5.8) : chunky 4bpp (320) / texte 80 col (480).
-     * Plein écran (0-223), pas de pied de texte 40 col. Ces modes ne sont pas du
-     * matériel d'origine : ils restent rendus en bloc, pas cellule par cycle. */
+    /* ULA-NG extended modes (§5.8): chunky 4bpp (320) / 80-col text (480).
+     * Full screen (0-223), no 40-col text footer. These modes are not original
+     * hardware: they stay rendered as a block, not cell by cycle. */
     if (vid->ng_text80) {
         render_ng_text80_scanline(vid, memory, y);
     } else if (vid->ng_chunky) {
@@ -492,9 +492,9 @@ void video_line_end(video_t* vid, const uint8_t* memory, int y) {
     }
     if (y == 223) vid->need_refresh = false;
 
-    /* ULA-NG sprites (§5.7) : composition sur le fond de cette scanline (après
-     * le fond, avant présentation) — no-op si inactif. Le module ula_ng possède
-     * l'état sprite, la palette et la collision. */
+    /* ULA-NG sprites (§5.7): compositing over this scanline's background (after
+     * the background, before presentation) — no-op if inactive. The ula_ng module
+     * owns the sprite state, the palette and the collision. */
     if (vid->ng_dev)
         ula_ng_composite_scanline(vid->ng_dev, vid->framebuffer,
                                   vid->native_w, vid->native_h, y);
@@ -504,9 +504,9 @@ void video_render_scanline(video_t* vid, const uint8_t* memory, int y) {
     if (!memory) return;
     if (y < 0 || y >= 224) return;
 
-    /* Chemin « par ligne » : la ligne entière est échantillonnée au même
-     * instant. Conservé pour l'export d'images statiques, le cœur historique et
-     * comme référence d'équivalence du chemin par cycle (V2-E4). */
+    /* "Per-line" path: the whole line is sampled at the same
+     * instant. Kept for static image export, the historical core and
+     * as the equivalence reference for the per-cycle path (V2-E4). */
     video_line_begin(vid, memory, y);
     int last = (y < 200) ? vid->line_last_col : 39;
     for (int col = 0; col <= last; col++)

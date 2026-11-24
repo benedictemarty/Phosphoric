@@ -235,7 +235,7 @@ TEST(test_real_rom_speaks) {
     printf("(peak=%d, %d frames)  ", max_abs, finished_frame);
 }
 
-/* Relit la section dans un tampon mémoire (comparaison octet à octet). */
+/* Reads the section back into a memory buffer (byte-by-byte comparison). */
 static long section_bytes(FILE* fp, unsigned char* buf, long cap) {
     long n = ftell(fp);
     if (n > cap) return -1;
@@ -246,9 +246,9 @@ static long section_bytes(FILE* fp, unsigned char* buf, long cap) {
 
 /* ── Section .ost « SPO » (sprint D) ─────────────────────────────────────── */
 
-/* ROM pseudo-aléatoire à graine fixe : le microséquenceur y exécute un « code »
- * quelconque mais déterministe, ce qui exerce tout l'état (séquenceur, filtre,
- * tampon) sans la vraie ROM (non distribuable). */
+/* Pseudo-random ROM with a fixed seed: the microsequencer runs arbitrary but
+ * deterministic "code" from it, which exercises the whole state (sequencer,
+ * filter, buffer) without the real ROM (not redistributable). */
 static void fill_prng_rom(uint8_t* rom) {
     uint32_t x = 0x12345678u;
     for (int i = 0; i < SP0256_ROM_SIZE; i++) {
@@ -267,7 +267,7 @@ TEST(test_save_load_resumes_identically) {
     sp0256_write(a, 0x03F1, 0x18);
     int16_t oa[882], ob[882];
     sp0256_tick(a, 19968);
-    sp0256_generate(a, oa, 441);              /* laisse des échantillons en attente */
+    sp0256_generate(a, oa, 441);              /* leaves samples pending */
 
     FILE* fp = tmpfile();
     ASSERT_TRUE(fp != NULL);
@@ -276,8 +276,8 @@ TEST(test_save_load_resumes_identically) {
     rewind(fp);
     sp0256_init(b, 0x03F1); sp0256_load_rom(b, rom, SP0256_ROM_SIZE);
     sp0256_load(b, fp, (uint32_t)size);
-    /* Identité aller-retour : resauvegarder la copie rechargée redonne les
-     * mêmes octets — tout champ oublié au chargement apparaît ici. */
+    /* Round-trip identity: saving the reloaded copy again yields the same
+     * bytes — any field forgotten on load shows up here. */
     static unsigned char s1[40000], s2[40000];
     long n1 = section_bytes(fp, s1, sizeof(s1));
     FILE* fp2 = tmpfile();
@@ -303,7 +303,7 @@ TEST(test_save_load_resumes_identically) {
     free(a); free(b);
 }
 
-/* Version inconnue ou taille inattendue : l'état courant n'est pas touché. */
+/* Unknown version or unexpected size: the current state is left untouched. */
 TEST(test_load_rejects_bad_section) {
     static uint8_t rom[SP0256_ROM_SIZE];
     fill_prng_rom(rom);
@@ -320,9 +320,9 @@ TEST(test_load_rejects_bad_section) {
 
     sp0256_init(b, 0x03F1);
     rewind(fp);
-    sp0256_load(b, fp, (uint32_t)size + 1);             /* taille fausse */
+    sp0256_load(b, fp, (uint32_t)size + 1);             /* wrong size */
     ASSERT_EQ(b->halted, 1);
-    rewind(fp); fputc(SP0256_SAVE_VERSION + 1, fp);     /* version inconnue */
+    rewind(fp); fputc(SP0256_SAVE_VERSION + 1, fp);     /* unknown version */
     rewind(fp);
     sp0256_load(b, fp, (uint32_t)size);
     ASSERT_EQ(b->halted, 1);
@@ -331,9 +331,9 @@ TEST(test_load_rejects_bad_section) {
     free(a); free(b);
 }
 
-/* Chaque champ sauvegardé est restauré : état source rempli d'un motif (hors
- * champs bornés au chargement), copie neuve rechargée puis resauvegardée → mêmes
- * octets. Un champ oublié garderait sa valeur par défaut et ferait diverger. */
+/* Every saved field is restored: source state filled with a pattern (except
+ * fields clamped on load), fresh copy reloaded then saved again → same
+ * bytes. A forgotten field would keep its default value and diverge. */
 TEST(test_load_restores_every_field) {
     sp0256_t* a = calloc(1, sizeof(*a));
     sp0256_t* b = calloc(1, sizeof(*b));

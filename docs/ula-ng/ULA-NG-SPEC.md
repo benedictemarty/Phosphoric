@@ -1,254 +1,254 @@
-# ULA-NG — Cahier des charges d'implémentation
+# ULA-NG — Implementation specification
 
-**Projet :** ajouter une ULA « next-gen » (ULA-NG) à l'émulateur **Phosphoric** (émulateur Oric-1 / Atmos de benedictemarty).
-**Cible finale :** cette implémentation logicielle est la *référence* d'une future implémentation Verilog sur FPGA (**Sipeed Tang Primer 20K**, Gowin **GW2A-18**). Le comportement défini ici devra être reproductible bit à bit en HDL. Chaque choix doit donc rester **synthétisable en pensée** : pas de virgule flottante dans le chemin vidéo, pas de structure impossible à câbler.
+**Project:** add a "next-gen" ULA (ULA-NG) to the **Phosphoric** emulator (benedictemarty's Oric-1 / Atmos emulator).
+**Final target:** this software implementation is the *reference* for a future Verilog implementation on FPGA (**Sipeed Tang Primer 20K**, Gowin **GW2A-18**). The behaviour defined here must be reproducible bit for bit in HDL. Every choice must therefore remain **synthesisable in spirit**: no floating point in the video path, no structure that cannot be wired.
 
-> **Cible confirmée (photo produit + wiki Sipeed)** : bundle **20K Core Board +
-> 20K Dock ext-board**, FPGA **GW2A-LV18PG256C8/I7** (marquage puce vérifié) —
-> 20 736 LUT4, 15 552 FF, **BSRAM 828 Kbit** (46 blocs), **DDR3 128 Mbit** + NOR
-> flash 32 Mbit sur la carte cœur, format SODIMM 204 broches.
-> **Répartition mémoire visée** — à respecter dès le modèle logiciel :
-> - **DDR3 128 Mbit sur la carte cœur** (le GW2A n'a pas de RAM in-package) : plan d'attributs parallèles (§5.6), banques VRAM, tables de sprites — *toute* mémoire volumineuse, hors des 64 Ko du 6502.
-> - **Block RAM (BSRAM ~828 Kbit, budget serré)** : line buffers de composition, LUT palette (16×12 b), charset, petits caches sprites — *jamais* un framebuffer complet.
-> - **Sortie vidéo : HDMI disponible via le dock ext-board** (également RGB565 FPC, Ethernet, USB-OTG/JTAG, GPIO). Le timing pixel visera le mode HDMI retenu ; sans impact sur le comportement de référence défini ici.
-
----
-
-## Révisions post-audit (décisions figées)
-
-Ces décisions découlent de l'audit `AUDIT.md` et **priment** sur le texte d'origine ci-dessous en cas de divergence :
-
-1. **Détection robuste** (§3) : pas de test « ≠ 0 » (la fenêtre `$0340` recouvre le miroir du VIA → faux positif). Handshake exact `NG_ID == version` **+** registre complément `NG_IDCHK` (`$034F`) = `~NG_ID`.
-2. **Lignes raster** (§5.2) : `ula_ng_scanline` piloté sur la **ligne trame complète 0-311** (découplé du rendu visible 0-223). `NG_RASTERLINE` 8 bits couvre 0-255 (visible + haut vblank) ; 9ᵉ bit réservé dans `NG_MODE` si besoin futur.
-3. **LUT palette** (§5.1) : **16 entrées × 12 bits** (RGB444), expansion RGB444→888 par réplication de quartet (`c8 = c4*0x11`). Couvre standard (8) et chunky (16).
-4. **Sémantique registres** (§9) : tout registre à effet visuel s'applique à la **ligne suivante** (latch en hblank) ; **exception** `NG_STATUS` (acquit IRQ) = immédiat. Tableau détaillé en §9.
-5. **Plan d'attributs / banques / sprites** (§5.6, §5.7) : **mémoire additionnelle portée par `ula_ng`** (miroir de la SDRAM externe), hors des 64 Ko du 6502.
+> **Confirmed target (product photo + Sipeed wiki)**: **20K Core Board +
+> 20K Dock ext-board** bundle, FPGA **GW2A-LV18PG256C8/I7** (chip marking checked) —
+> 20,736 LUT4, 15,552 FF, **BSRAM 828 Kbit** (46 blocks), **DDR3 128 Mbit** + 32 Mbit NOR
+> flash on the core board, 204-pin SODIMM form factor.
+> **Target memory split** — to be respected from the software model onwards:
+> - **DDR3 128 Mbit on the core board** (the GW2A has no in-package RAM): parallel attribute plane (§5.6), VRAM banks, sprite tables — *any* large memory, outside the 6502's 64 KB.
+> - **Block RAM (BSRAM ~828 Kbit, tight budget)**: composition line buffers, palette LUT (16×12 b), charset, small sprite caches — *never* a full framebuffer.
+> - **Video output: HDMI available through the dock ext-board** (also RGB565 FPC, Ethernet, USB-OTG/JTAG, GPIO). Pixel timing will target the chosen HDMI mode; no impact on the reference behaviour defined here.
 
 ---
 
-## 0. Avant toute chose — audit du code (première tâche obligatoire)
+## Post-audit revisions (frozen decisions)
 
-Cette spec contient des marqueurs `[À CONFIRMER]`. **Ne pas écrire de code fonctionnel avant d'avoir rempli ces trous.** Produire d'abord un court rapport `AUDIT.md` répondant à :
+These decisions follow from the `AUDIT.md` audit and **take precedence** over the original text below in case of discrepancy:
 
-1. **Langage et build.** Quel langage (C / C++ / Rust / autre) ? Comment se compile et se lance l'émulateur ? Y a-t-il déjà des tests ?
-2. **Granularité du rendu vidéo.** Le rendu se fait-il :
-   - (a) **frame-based** : la VRAM est lue d'un bloc en fin de trame ;
-   - (b) **scanline-based** : une ligne est composée à chaque ligne balayée ;
-   - (c) **cycle-exact** : la ULA lit la mémoire au fil des cycles du 6502.
-   Localiser la fonction concernée (nom + fichier + lignes).
-3. **Interception des accès mémoire.** Comment sont routées les lectures/écritures CPU ? Existe-t-il un dispatch sur l'adresse (switch, table de handlers) ou un tableau mémoire plat ? Où précisément la page 3 (`#0300`-`#03FF`) est-elle traitée (le VIA, notamment) ?
-4. **Structure de la couleur.** Où se fait la conversion des 8 couleurs Oric vers les pixels de sortie (RGB) ? Palette codée en dur ?
-5. **Horloge / IRQ.** Comment le 6502 émulé reçoit-il une IRQ ? Quelle est la source de temps (compteur de cycles, de scanlines) accessible depuis le code vidéo ?
-
-Le reste de la spec suppose qu'on peut passer à un rendu **au moins scanline-based** (b). Si Phosphoric est frame-based (a), **la première étape d'implémentation est de convertir le pipeline vidéo en scanline** — le signaler dans `AUDIT.md` comme préalable, car les fonctions raster (IRQ ligne, palette par ligne) en dépendent.
+1. **Robust detection** (§3): no "≠ 0" test (the `$0340` window overlaps the VIA mirror → false positive). Exact handshake `NG_ID == version` **+** complement register `NG_IDCHK` (`$034F`) = `~NG_ID`.
+2. **Raster lines** (§5.2): `ula_ng_scanline` driven over the **full frame line range 0-311** (decoupled from the visible rendering 0-223). The 8-bit `NG_RASTERLINE` covers 0-255 (visible + top of vblank); a 9th bit reserved in `NG_MODE` if needed in the future.
+3. **Palette LUT** (§5.1): **16 entries × 12 bits** (RGB444), RGB444→888 expansion by nibble replication (`c8 = c4*0x11`). Covers standard (8) and chunky (16).
+4. **Register semantics** (§9): every register with a visual effect applies on the **next line** (latched in hblank); **exception** `NG_STATUS` (IRQ acknowledge) = immediate. Detailed table in §9.
+5. **Attribute plane / banks / sprites** (§5.6, §5.7): **additional memory carried by `ula_ng`** (mirror of the external SDRAM), outside the 6502's 64 KB.
 
 ---
 
-## 1. Principes directeurs
+## 0. First of all — code audit (mandatory first task)
 
-1. **Compatibilité d'abord.** Au reset, l'ULA-NG est indiscernable d'une HCS10017 : attributs série, 8 couleurs, 50 Hz, quirks inclus. Aucun programme existant ne doit voir de différence.
-2. **Activation explicite.** Les extensions ne s'activent qu'après une **séquence de déverrouillage** (voir §3). Objectif : qu'aucun logiciel balayant la page 3 ne déclenche une extension par accident.
-3. **Modularité miroir FPGA.** Tout le nouveau code vit dans un module isolé `ula_ng` (fichier(s) dédié(s)), avec des frontières qui correspondent à ce que seront les frontières du module Verilog. Trois interfaces seulement :
-   - `ula_ng_write(addr, value)` / `ula_ng_read(addr)` — accès registres (page 3) ;
-   - `ula_ng_scanline(line_number)` — appelé par la boucle vidéo à chaque ligne ;
-   - une sortie **ligne d'IRQ** vers le cœur 6502.
-4. **Testabilité.** Tout comportement observable doit pouvoir être capturé en trace (voir §6) pour servir de golden reference au banc de test Verilog.
+This spec contains `[TO BE CONFIRMED]` markers. **Do not write functional code before filling these gaps.** First produce a short `AUDIT.md` report answering:
+
+1. **Language and build.** Which language (C / C++ / Rust / other)? How is the emulator built and launched? Are there already tests?
+2. **Video rendering granularity.** Is rendering:
+   - (a) **frame-based**: the VRAM is read in one block at the end of the frame;
+   - (b) **scanline-based**: a line is composed for each scanned line;
+   - (c) **cycle-exact**: the ULA reads memory as the 6502's cycles go by.
+   Locate the relevant function (name + file + lines).
+3. **Intercepting memory accesses.** How are CPU reads/writes routed? Is there a dispatch on the address (switch, handler table) or a flat memory array? Where exactly is page 3 (`#0300`-`#03FF`) handled (the VIA, in particular)?
+4. **Colour structure.** Where are the 8 Oric colours converted into output pixels (RGB)? Hard-coded palette?
+5. **Clock / IRQ.** How does the emulated 6502 receive an IRQ? What is the time source (cycle counter, scanline counter) accessible from the video code?
+
+The rest of the spec assumes rendering can be made **at least scanline-based** (b). If Phosphoric is frame-based (a), **the first implementation step is to convert the video pipeline to scanline** — report it in `AUDIT.md` as a prerequisite, because the raster functions (line IRQ, per-line palette) depend on it.
 
 ---
 
-## 2. Carte des registres
+## 1. Guiding principles
 
-Fenêtre proposée : **`#0340`-`#035F`** dans la page 3 (libre dans la cartographie communautaire : VIA `#0300`-`#030F`, Microdisc `#0310`-`#031F`, ACIA `#031C`, Jasmin `#03F4`+).
-**`[À CONFIRMER]`** : vérifier qu'aucune extension émulée par Phosphoric n'occupe déjà `#0340`-`#035F`. Si conflit, décaler la fenêtre et mettre à jour ce tableau.
+1. **Compatibility first.** At reset, the ULA-NG is indistinguishable from an HCS10017: serial attributes, 8 colours, 50 Hz, quirks included. No existing program must see any difference.
+2. **Explicit activation.** The extensions only become active after an **unlock sequence** (see §3). Goal: no software scanning page 3 should trigger an extension by accident.
+3. **FPGA-mirror modularity.** All the new code lives in an isolated `ula_ng` module (dedicated file(s)), with boundaries that match what the boundaries of the Verilog module will be. Only three interfaces:
+   - `ula_ng_write(addr, value)` / `ula_ng_read(addr)` — register access (page 3);
+   - `ula_ng_scanline(line_number)` — called by the video loop on every line;
+   - an **IRQ line** output to the 6502 core.
+4. **Testability.** Every observable behaviour must be capturable as a trace (see §6) to serve as a golden reference for the Verilog test bench.
 
-| Adresse | Nom | Accès | Rôle |
+---
+
+## 2. Register map
+
+Proposed window: **`#0340`-`#035F`** in page 3 (free in the community address map: VIA `#0300`-`#030F`, Microdisc `#0310`-`#031F`, ACIA `#031C`, Jasmin `#03F4`+).
+**`[TO BE CONFIRMED]`**: check that no expansion emulated by Phosphoric already occupies `#0340`-`#035F`. In case of conflict, shift the window and update this table.
+
+| Address | Name | Access | Role |
 |---|---|---|---|
-| `#0340` | `NG_LOCK` / `NG_ID` | W / R | Écriture : séquence de déverrouillage. Lecture : **verrouillé → passthrough VIA** (indiscernable) ; déverrouillé → octet de version (**`0x1E` = v1.0**). |
-| `#034F` | `NG_IDCHK` | R | Complément de `NG_ID` : `~NG_ID` (`0xE1` déverrouillé, `0x00`→`0xFF` verrouillé). Handshake anti-faux-positif (voir §3). |
-| `#0341` | `NG_MODE` | R/W | Bits de mode : b0 = extensions actives, b1 = mode attributs parallèles, b2-3 = mode vidéo (00 = std, 01 = chunky 4bpp, 10 = texte 80col), b4-5 = banque VRAM, b6 = 50/60 Hz, b7 = réservé. |
-| `#0342`-`#0343` | `NG_SCRSTART` | R/W | Adresse de début d'écran (16 bits, LSB puis MSB). |
-| `#0344` | `NG_SCROLLX` | R/W | Décalage fin X (0-5 pixels). |
-| `#0345` | `NG_SCROLLY` | R/W | Décalage fin Y (0-7 pixels). |
-| `#0346` | `NG_RASTERLINE` | R/W | Numéro de ligne déclenchant l'IRQ raster. |
-| `#0347` | `NG_STATUS` | R/W | Lecture : b7 = IRQ raster en attente. Écriture : **acquittement** (clear b7) **+ b0 = enable IRQ raster** (persistant). |
-| `#0348` | `NG_PAL_IDX` | R/W | Index de palette à programmer (**0-15**, LUT 16 entrées), auto-incrément optionnel. |
-| `#0349`-`#034A` | `NG_PAL_DATA` | R/W | Couleur 12 bits (4096 teintes) : `#0349` = `0000RRRR`, `#034A` = `GGGGBBBB`. |
-| `#034B` | `NG_COP_CTRL` | W | Copper (§5.4) : écriture = reset du pointeur de flux (vide la liste). |
-| `#034C` | `NG_COP_DATA` | W | Copper : flux 3 octets/entrée — `ligne`, `(index<<4)|R`, `(G<<4)|B` (64 entrées max). |
-| `#034D` | `NG_ATTR_FILL` | W | Attributs // (§5.6) : remplit tout le plan 8 Ko avec l'octet écrit `(paper<<3)|ink` + reset du pointeur de flux. |
-| `#034E` | `NG_ATTR_DATA` | W | Attributs // : écrit une cellule au pointeur `(paper<<3)|ink` puis auto-incrémente (modulo 8192). |
-| `#0350` | `NG_SPR_CTRL` | W | Sprites (§5.7) : b0 = enable global. |
-| `#0351` | `NG_SPR_SEL` | W | Sprite sélectionné pour la programmation (0-15) + reset du pointeur de motif. |
-| `#0352` | `NG_SPR_X` | W | Position X (0-255) du sprite sélectionné. |
-| `#0353` | `NG_SPR_Y` | W | Position Y (0-255). |
+| `#0340` | `NG_LOCK` / `NG_ID` | W / R | Write: unlock sequence. Read: **locked → VIA passthrough** (indistinguishable); unlocked → version byte (**`0x1E` = v1.0**). |
+| `#034F` | `NG_IDCHK` | R | Complement of `NG_ID`: `~NG_ID` (`0xE1` unlocked, `0x00`→`0xFF` locked). Anti-false-positive handshake (see §3). |
+| `#0341` | `NG_MODE` | R/W | Mode bits: b0 = extensions active, b1 = parallel attribute mode, b2-3 = video mode (00 = std, 01 = chunky 4bpp, 10 = 80-col text), b4-5 = VRAM bank, b6 = 50/60 Hz, b7 = reserved. |
+| `#0342`-`#0343` | `NG_SCRSTART` | R/W | Screen start address (16 bits, LSB then MSB). |
+| `#0344` | `NG_SCROLLX` | R/W | Fine X offset (0-5 pixels). |
+| `#0345` | `NG_SCROLLY` | R/W | Fine Y offset (0-7 pixels). |
+| `#0346` | `NG_RASTERLINE` | R/W | Line number that triggers the raster IRQ. |
+| `#0347` | `NG_STATUS` | R/W | Read: b7 = raster IRQ pending. Write: **acknowledge** (clear b7) **+ b0 = raster IRQ enable** (persistent). |
+| `#0348` | `NG_PAL_IDX` | R/W | Palette index to program (**0-15**, 16-entry LUT), optional auto-increment. |
+| `#0349`-`#034A` | `NG_PAL_DATA` | R/W | 12-bit colour (4096 shades): `#0349` = `0000RRRR`, `#034A` = `GGGGBBBB`. |
+| `#034B` | `NG_COP_CTRL` | W | Copper (§5.4): write = reset of the stream pointer (empties the list). |
+| `#034C` | `NG_COP_DATA` | W | Copper: 3-byte-per-entry stream — `line`, `(index<<4)|R`, `(G<<4)|B` (64 entries max). |
+| `#034D` | `NG_ATTR_FILL` | W | Parallel attributes (§5.6): fills the whole 8 KB plane with the written byte `(paper<<3)|ink` + resets the stream pointer. |
+| `#034E` | `NG_ATTR_DATA` | W | Parallel attributes: writes one cell at the pointer `(paper<<3)|ink` then auto-increments (modulo 8192). |
+| `#0350` | `NG_SPR_CTRL` | W | Sprites (§5.7): b0 = global enable. |
+| `#0351` | `NG_SPR_SEL` | W | Sprite selected for programming (0-15) + reset of the pattern pointer. |
+| `#0352` | `NG_SPR_X` | W | X position (0-255) of the selected sprite. |
+| `#0353` | `NG_SPR_Y` | W | Y position (0-255). |
 | `#0354` | `NG_SPR_ATTR` | W | b0 = sprite visible. |
-| `#0355` | `NG_SPR_DATA` | W | Flux motif : 1 octet/pixel (`0` = transparent, `1`-`7` = index palette), auto-incrément (mod 256). |
-| `#0356` | `NG_SPR_STATUS` | R | b7 = collision sprite-sprite depuis la dernière lecture (clear on read). |
+| `#0355` | `NG_SPR_DATA` | W | Pattern stream: 1 byte/pixel (`0` = transparent, `1`-`7` = palette index), auto-increment (mod 256). |
+| `#0356` | `NG_SPR_STATUS` | R | b7 = sprite-sprite collision since the last read (clear on read). |
 
-Toute adresse de la fenêtre non listée : lecture `0xFF`, écriture ignorée (mais réserver pour extension).
+Any unlisted address in the window: read `0xFF`, write ignored (but reserved for extension).
 
 ---
 
-## 3. Séquence de déverrouillage (`NG_LOCK`)
+## 3. Unlock sequence (`NG_LOCK`)
 
-Objectif : signature improbable en fonctionnement normal.
+Goal: a signature that is unlikely in normal operation.
 
-- Écrire successivement `0x4E` ('N') puis `0x47` ('G') dans `#0340`, **sans autre écriture dans la fenêtre `#0340`-`#035F` entre les deux**.
-- À la bonne séquence : `NG_ID` (`$0340`) renvoie la version (`0x1E`), `NG_IDCHK` (`$034F`) renvoie son complément (`0xE1`), et `NG_MODE.b0` devient inscriptible. Tant que verrouillé, écrire dans `#0341`-`#035F` est **sans effet**.
-- Un reset re-verrouille tout et remet tous les registres à 0 (état HCS10017).
+- Write `0x4E` ('N') then `0x47` ('G') to `#0340` in succession, **with no other write to the `#0340`-`#035F` window in between**.
+- On the right sequence: `NG_ID` (`$0340`) returns the version (`0x1E`), `NG_IDCHK` (`$034F`) returns its complement (`0xE1`), and `NG_MODE.b0` becomes writable. While locked, writing to `#0341`-`#035F` has **no effect**.
+- A reset re-locks everything and sets all registers back to 0 (HCS10017 state).
 
-> **Passthrough verrouillé (décision d'implémentation, étape 1).** Pour une
-> non-régression **bit-à-bit**, en état verrouillé l'ULA-NG **ne pilote pas** la
-> fenêtre `$0340-$035F` : les lectures **retombent sur le VIA** et les écritures
-> y tombent aussi (le module surveille seulement `$0340` pour la séquence). Elle
-> ne « possède » la fenêtre qu'après déverrouillage. Côté FPGA = tristate
-> (`drive_bus = unlocked && addr_in_window`). Conséquence : la détection ci-dessous
-> marche à l'identique (avant déverrouillage, `LDA $0340` lit le VIA → `≠ 0x1E` →
-> `no_ng` ; après, `0x1E`).
+> **Locked passthrough (implementation decision, step 1).** For **bit-for-bit**
+> non-regression, in the locked state the ULA-NG **does not drive** the
+> `$0340-$035F` window: reads **fall through to the VIA** and so do writes
+> (the module only watches `$0340` for the sequence). It
+> only "owns" the window after unlocking. On the FPGA side = tristate
+> (`drive_bus = unlocked && addr_in_window`). Consequence: the detection below
+> works identically (before unlocking, `LDA $0340` reads the VIA → `≠ 0x1E` →
+> `no_ng`; afterwards, `0x1E`).
 
-> **Détection robuste (révision post-audit).** `$0340` recouvre le **miroir du VIA**
-> (le VIA répond en fallback sur tout `$0300-$03FF`). Sur une machine **sans**
-> ULA-NG, `LDA $0340` lit l'ORB du VIA (latch colonne clavier) → valeur non nulle
-> → un test « ≠ 0 » donnerait un **faux positif**. Il faut donc (a) comparer à la
-> **valeur exacte** `0x1E`, **et** (b) vérifier la cohérence `NG_ID XOR NG_IDCHK
-> == 0xFF`, que le VIA ne peut pas produire sur deux adresses. Les écritures
-> `'N'/'G'` frappent l'ORB du VIA sur machine nue (inoffensif : latch colonne).
+> **Robust detection (post-audit revision).** `$0340` overlaps the **VIA mirror**
+> (the VIA answers as fallback over all of `$0300-$03FF`). On a machine **without**
+> ULA-NG, `LDA $0340` reads the VIA's ORB (keyboard column latch) → non-zero value
+> → a "≠ 0" test would give a **false positive**. It is therefore necessary to (a) compare with the
+> **exact value** `0x1E`, **and** (b) check the consistency `NG_ID XOR NG_IDCHK
+> == 0xFF`, which the VIA cannot produce on two addresses. The
+> `'N'/'G'` writes hit the VIA's ORB on a bare machine (harmless: column latch).
 
-Détection côté logiciel Oric (à documenter pour les codeurs) :
+Detection on the Oric software side (to be documented for coders):
 ```asm
     LDA #$4E : STA $0340        ; 'N'
-    LDA #$47 : STA $0340        ; 'G'  (aucune autre écriture $0340-$035F entre les deux)
-    LDA $0340 : CMP #$1E : BNE no_ng     ; version exacte ?
-    LDA $034F : EOR $0340 : CMP #$FF : BNE no_ng   ; NG_ID XOR NG_IDCHK = $FF ?
-    ; ULA-NG présente et déverrouillée
+    LDA #$47 : STA $0340        ; 'G'  (no other write to $0340-$035F in between)
+    LDA $0340 : CMP #$1E : BNE no_ng     ; exact version?
+    LDA $034F : EOR $0340 : CMP #$FF : BNE no_ng   ; NG_ID XOR NG_IDCHK = $FF?
+    ; ULA-NG present and unlocked
 no_ng:
 ```
 
 ---
 
-## 4. Ordre d'implémentation
+## 4. Implementation order
 
-Implémenter et **valider une feature avant de passer à la suivante** (chaque étape a un test visible) :
+Implement and **validate one feature before moving on to the next** (each step has a visible test):
 
-1. `NG_LOCK` / `NG_ID` + plomberie d'interception page 3.
-2. **Palette indirection** (§5.1) — les 8 couleurs passent par une LUT.
-3. **IRQ raster** (§5.2) — la feature la plus demandée.
-4. **Start address** (§5.3) — double buffer / scroll grossier.
-5. Palette par scanline (§5.4).
-6. Scroll fin X/Y (§5.5).
-7. Attributs parallèles (§5.6).
+1. `NG_LOCK` / `NG_ID` + page 3 interception plumbing.
+2. **Palette indirection** (§5.1) — the 8 colours go through a LUT.
+3. **Raster IRQ** (§5.2) — the most requested feature.
+4. **Start address** (§5.3) — double buffering / coarse scroll.
+5. Per-scanline palette (§5.4).
+6. Fine X/Y scroll (§5.5).
+7. Parallel attributes (§5.6).
 8. Sprites (§5.7).
-9. Modes chunky / 80 colonnes (§5.8).
+9. Chunky / 80-column modes (§5.8).
 
 ---
 
-## 5. Spécification des fonctionnalités
+## 5. Feature specification
 
 ### 5.1 Palette indirection
-Les couleurs logiques deviennent des index dans une **LUT de 16 entrées × 12 bits** (RGB444) — 8 suffisent au mode standard, 16 servent au chunky 4bpp (§5.8). Au reset, les 8 premières entrées contiennent les 8 couleurs Oric d'origine (mapping identité → compatibilité). Le chemin de rendu remplace tout accès direct « couleur → RGB » par « couleur → LUT → RGB ». Expansion **RGB444 → RGB888 par réplication de quartet** (`c8 = c4 * 0x11`), aucune interpolation (synthétisable).
+Logical colours become indices into a **LUT of 16 entries × 12 bits** (RGB444) — 8 are enough for the standard mode, 16 are used by chunky 4bpp (§5.8). At reset, the first 8 entries hold the 8 original Oric colours (identity mapping → compatibility). The rendering path replaces every direct "colour → RGB" access with "colour → LUT → RGB". **RGB444 → RGB888 expansion by nibble replication** (`c8 = c4 * 0x11`), no interpolation (synthesisable).
 
-**Point de conversion (résolu par l'audit) :** `get_rgb()` dans `src/video/video.c` (≈ l.109-113) lit déjà `vid->pal_rgb[c][3]` — **c'est le seul endroit à faire pointer sur la LUT NG**. `pal_rgb` EST la LUT ; il suffit de l'alimenter depuis `NG_PAL_*` (16×12 bits) au lieu de la table fixe quand les extensions sont actives.
+**Conversion point (resolved by the audit):** `get_rgb()` in `src/video/video.c` (≈ l.109-113) already reads `vid->pal_rgb[c][3]` — **it is the only place to point at the NG LUT**. `pal_rgb` IS the LUT; it only needs to be fed from `NG_PAL_*` (16×12 bits) instead of the fixed table when the extensions are active.
 
-### 5.2 IRQ raster
-`NG_RASTERLINE` fixe une ligne ; quand `ula_ng_scanline(n)` reçoit `n == NG_RASTERLINE`, lever `NG_STATUS.b7` et asserter la ligne d'IRQ vers le 6502. L'IRQ reste active jusqu'à écriture d'acquittement dans `NG_STATUS`.
+### 5.2 Raster IRQ
+`NG_RASTERLINE` sets a line; when `ula_ng_scanline(n)` receives `n == NG_RASTERLINE`, raise `NG_STATUS.b7` and assert the IRQ line to the 6502. The IRQ stays active until an acknowledge write to `NG_STATUS`.
 
-**Numérotation (révision post-audit) :** `ula_ng_scanline` est piloté sur la **ligne trame complète 0-311** (`frame_cycles / 64`), découplé du rendu visible 0-223, pour permettre aussi les IRQ en zone vblank. `NG_RASTERLINE` 8 bits couvre 0-255 (tout le visible + haut vblank) ; un 9ᵉ bit reste réservé dans `NG_MODE` pour 256-311 si besoin.
+**Numbering (post-audit revision):** `ula_ng_scanline` is driven over the **full frame line range 0-311** (`frame_cycles / 64`), decoupled from the visible rendering 0-223, so as to allow IRQs in the vblank area too. The 8-bit `NG_RASTERLINE` covers 0-255 (all of the visible area + top of vblank); a 9th bit remains reserved in `NG_MODE` for 256-311 if needed.
 
-**Raccord IRQ (résolu par l'audit) :** IRQ 6502 = bitfield **level-triggered OU-câblé** (`cpu.irq`, `include/cpu/cpu6502.h`). Ajouter `IRQF_ULANG = 0x20` (prochain bit libre) et asserter/acquitter via `cpu_irq_set/clear(&emu->cpu, IRQF_ULANG)`. Chaque source garde son bit → **on combine, on n'écrase pas** (exigence respectée par construction).
+**IRQ hook-up (resolved by the audit):** 6502 IRQ = **level-triggered, wired-OR** bitfield (`cpu.irq`, `include/cpu/cpu6502.h`). Add `IRQF_ULANG = 0x20` (next free bit) and assert/acknowledge via `cpu_irq_set/clear(&emu->cpu, IRQF_ULANG)`. Each source keeps its own bit → **we combine, we do not overwrite** (requirement met by construction).
 
-**Enable (décision d'implémentation, étape 3) :** un bit d'activation évite les IRQ parasites (au reset `NG_RASTERLINE`=0). **`NG_STATUS.b0` (écriture) = enable** (persistant) ; toute écriture de `NG_STATUS` acquitte aussi (clear b7). L'IRQ n'est levée que si **déverrouillé && NG_MODE.b0 && enable**. En BASIC nu (vecteur IRQ en ROM), armer l'IRQ sans ISR gèle la machine (boucle d'IRQ non acquittée) — c'est le comportement attendu ; une barre raster propre requiert un ISR (redirection du vecteur sous Sedoric/overlay).
+**Enable (implementation decision, step 3):** an enable bit avoids spurious IRQs (at reset `NG_RASTERLINE`=0). **`NG_STATUS.b0` (write) = enable** (persistent); any write to `NG_STATUS` also acknowledges (clear b7). The IRQ is only raised if **unlocked && NG_MODE.b0 && enable**. In bare BASIC (IRQ vector in ROM), arming the IRQ without an ISR freezes the machine (unacknowledged IRQ loop) — this is the expected behaviour; a clean raster bar requires an ISR (vector redirection under Sedoric/overlay).
 
-**Implémenté (étape 3, validé)** : `ula_ng_scanline(line)` piloté par la boucle vidéo sur la trame 0-311, `NG_STATUS.b7`/acquit, `IRQF_ULANG`. Unit tests + observable end-to-end (BASIC gelé quand armé sans ISR).
+**Implemented (step 3, validated)**: `ula_ng_scanline(line)` driven by the video loop over frame lines 0-311, `NG_STATUS.b7`/acknowledge, `IRQF_ULANG`. Unit tests + observable end to end (BASIC frozen when armed without an ISR).
 
 ### 5.3 Start address
-`NG_SCRSTART` remplace l'adresse de base fixe du fetch vidéo (`#A000` en HIRES, `#BB80` en TEXT). Par défaut = valeur d'origine. Permet double buffering (basculer entre deux buffers) et scroll vertical grossier (incrément par ligne).
+`NG_SCRSTART` replaces the fixed base address of the video fetch (`#A000` in HIRES, `#BB80` in TEXT). Default = original value. Allows double buffering (switching between two buffers) and coarse vertical scrolling (increment per line).
 
-**Implémenté (étape 4, validé)** : `NG_SCRSTART` (`$0342` LSB / `$0343` MSB, 16 bits) est appliqué au **fetch de la zone principale** (lignes 0-199 : `$A000`+y·40 en HIRES, `$BB80`+row·40 en TEXT) quand actif (`déverrouillé && NG_MODE.b0`). **`$0000` = base par défaut du mode** (compat, pas de blank au reset ; `$0000` n'est jamais un écran valide). Les 3 rangées de statut (lignes 200-223) restent fixes à `$BB80`. Câblage `video_t` par pointeur (`ng_scrstart`). Test visible : `NG_SCRSTART = $BB80+40` → l'écran remonte d'une rangée (comparaison pixel-exacte du framebuffer).
+**Implemented (step 4, validated)**: `NG_SCRSTART` (`$0342` LSB / `$0343` MSB, 16 bits) is applied to the **fetch of the main area** (lines 0-199: `$A000`+y·40 in HIRES, `$BB80`+row·40 in TEXT) when active (`unlocked && NG_MODE.b0`). **`$0000` = default base of the mode** (compatibility, no blank screen at reset; `$0000` is never a valid screen). The 3 status rows (lines 200-223) stay fixed at `$BB80`. Wired into `video_t` through a pointer (`ng_scrstart`). Visible test: `NG_SCRSTART = $BB80+40` → the screen moves up by one row (pixel-exact comparison of the framebuffer).
 
-### 5.4 Palette par scanline
-Une petite liste d'instructions palette (mini-copper) en RAM, appliquée pendant le hblank par `ula_ng_scanline`. Format à définir simplement : table de (ligne, index, couleur) triée. Garder trivialement synthétisable (une FIFO relue par ligne).
+### 5.4 Per-scanline palette
+A small list of palette instructions (mini-copper) in RAM, applied during hblank by `ula_ng_scanline`. Format to be kept simple: a sorted table of (line, index, colour). Keep it trivially synthesisable (a FIFO re-read per line).
 
-**Implémenté (étape 5, validé)** : liste copper de 64 entrées max, chaque entrée = `(ligne, index LUT, couleur RGB444)`. Programmation par flux : `NG_COP_CTRL` (`$034B`) en écriture réinitialise la liste ; `NG_COP_DATA` (`$034C`) reçoit **3 octets par entrée** : `[0]=ligne`, `[1]=(index<<4)|R`, `[2]=(G<<4)|B` (commit à chaque 3ᵉ octet). `ula_ng_scanline(line)` applique à la LUT (`u->pal[index]`) toute entrée dont `ligne == line` (actif si `déverrouillé && NG_MODE.b0`). Le hook vidéo relit la LUT → effet **ligne suivante** (cohérent §9). Prévoir une entrée « ligne 0 » pour poser la base à chaque trame. Test visible : couleur 7 rouge (ligne 0) puis bleue (ligne 30) → bandes de couleur verticales (framebuffer).
+**Implemented (step 5, validated)**: copper list of 64 entries max, each entry = `(line, LUT index, RGB444 colour)`. Programming by stream: a write to `NG_COP_CTRL` (`$034B`) resets the list; `NG_COP_DATA` (`$034C`) receives **3 bytes per entry**: `[0]=line`, `[1]=(index<<4)|R`, `[2]=(G<<4)|B` (committed on every 3rd byte). `ula_ng_scanline(line)` applies to the LUT (`u->pal[index]`) every entry whose `line == line` (active if `unlocked && NG_MODE.b0`). The video hook re-reads the LUT → effect on the **next line** (consistent with §9). Provide a "line 0" entry to set the base on every frame. Visible test: colour 7 red (line 0) then blue (line 30) → vertical colour bands (framebuffer).
 
-### 5.5 Scroll fin X/Y
-`NG_SCROLLX` (0-5) et `NG_SCROLLY` (0-7) décalent le pipeline de fetch au niveau pixel. En pratique : offset appliqué au moment de composer la ligne.
+### 5.5 Fine X/Y scroll
+`NG_SCROLLX` (0-5) and `NG_SCROLLY` (0-7) shift the fetch pipeline at pixel level. In practice: an offset applied when composing the line.
 
-**Implémenté (étape 6, validé)** : `NG_SCROLLX` (`$0344`, clampé 0-5 = largeur cellule 6 px), `NG_SCROLLY` (`$0345`, masqué 0-7 = hauteur 8 px). Appliqué à la composition de la zone principale (0-199) quand actif (`déverrouillé && NG_MODE.b0`) : **Y** décale la ligne source (`src_y = y + scrolly`, contenu vers le haut) ; **X** décale l'affichage (`px = col·6 - scrollx`, `set_pixel` clippe hors écran, une cellule de plus fetchée pour combler le bord droit). Combiné au scroll grossier (§5.3) → défilement lisse. Inactif / 0 → rendu bit-à-bit inchangé. Test visible : `NG_SCROLLY=4` / `NG_SCROLLX=3` → décalage pixel-exact vérifié au framebuffer.
+**Implemented (step 6, validated)**: `NG_SCROLLX` (`$0344`, clamped 0-5 = cell width 6 px), `NG_SCROLLY` (`$0345`, masked 0-7 = height 8 px). Applied when composing the main area (0-199) when active (`unlocked && NG_MODE.b0`): **Y** shifts the source line (`src_y = y + scrolly`, content moves up); **X** shifts the display (`px = col·6 - scrollx`, `set_pixel` clips off-screen, one extra cell fetched to fill the right edge). Combined with coarse scroll (§5.3) → smooth scrolling. Inactive / 0 → rendering bit-for-bit unchanged. Visible test: `NG_SCROLLY=4` / `NG_SCROLLX=3` → pixel-exact shift checked on the framebuffer.
 
-### 5.6 Attributs parallèles
-Un second plan mémoire de 8 Ko (banque sélectionnée par `NG_MODE.b4-5`) fournit encre+papier par cellule 8×1 **sans consommer d'octets pixel dans le flux** — supprime le color clash sériel. Actif seulement si `NG_MODE.b1`.
+### 5.6 Parallel attributes
+A second 8 KB memory plane (bank selected by `NG_MODE.b4-5`) provides ink+paper per 8×1 cell **without consuming pixel bytes in the stream** — removes serial colour clash. Only active if `NG_MODE.b1`.
 
-**Localisation mémoire (révision post-audit) :** ce plan (et les banques VRAM, et les tables de sprites §5.7) vit dans une **mémoire additionnelle portée par le module `ula_ng`** — miroir de la **DDR3 externe** (128 Mbit) de la carte cœur Tang Primer 20K — **hors des 64 Ko** adressables par le 6502. Accès par une fenêtre de registres NG (adresse + auto-incrément), jamais mappé dans l'espace CPU. Côté émulateur : un buffer dans `ula_ng_t` ; côté FPGA : la DDR3.
+**Memory location (post-audit revision):** this plane (as well as the VRAM banks and the sprite tables §5.7) lives in **additional memory carried by the `ula_ng` module** — a mirror of the **external DDR3** (128 Mbit) of the Tang Primer 20K core board — **outside the 64 KB** addressable by the 6502. Accessed through a window of NG registers (address + auto-increment), never mapped into the CPU space. Emulator side: a buffer in `ula_ng_t`; FPGA side: the DDR3.
 
-**Implémenté (étape 7, validé)** : plan `ula_ng.attr[8192]` (octet par cellule, `(paper<<3)|ink`, 3 bits chacun), indexé `y·40 + col` (0-7999 sur les 8192). Programmation par flux : `NG_ATTR_FILL` (`$034D`) remplit tout le plan d'un octet uniforme + remet le pointeur à 0 (une écriture = un fond complet, pratique pour les démos) ; `NG_ATTR_DATA` (`$034E`) écrit la cellule courante et auto-incrémente (modulo 8192). Actif seulement si `déverrouillé && NG_MODE.b1` (`ula_ng.attr_active`). Quand actif, la composition de la zone principale (0-199) tire encre+papier **du plan** au lieu des attributs sériels (les octets `#00-#1F` ne sont plus interprétés comme attributs → **plus de color clash**). Inactif → rendu bit-à-bit inchangé. Test visible : `NG_MODE.b1` + `NG_ATTR_FILL=$21` (papier bleu 4, encre rouge 1) → zone principale entièrement bleu+rouge (aucune autre couleur), vérifié au framebuffer.
+**Implemented (step 7, validated)**: plane `ula_ng.attr[8192]` (one byte per cell, `(paper<<3)|ink`, 3 bits each), indexed `y·40 + col` (0-7999 out of 8192). Programming by stream: `NG_ATTR_FILL` (`$034D`) fills the whole plane with a uniform byte + resets the pointer to 0 (one write = one full background, handy for demos); `NG_ATTR_DATA` (`$034E`) writes the current cell and auto-increments (modulo 8192). Only active if `unlocked && NG_MODE.b1` (`ula_ng.attr_active`). When active, composing the main area (0-199) takes ink+paper **from the plane** instead of the serial attributes (bytes `#00-#1F` are no longer interpreted as attributes → **no more colour clash**). Inactive → rendering bit-for-bit unchanged. Visible test: `NG_MODE.b1` + `NG_ATTR_FILL=$21` (blue paper 4, red ink 1) → main area entirely blue+red (no other colour), checked on the framebuffer.
 
-### 5.7 Sprites matériels
-Jusqu'à 16 sprites 16×16, 3 bpp (index palette), avec priorité et détection de collision. Table de sprites en RAM pointée par un registre de `#0350`-`#035F`. Composition dans le pipeline de sortie (après le fond, avant conversion RGB) — invisibles pour la VRAM. Bit de collision lisible dans la zone `#0350`-`#035F`.
+### 5.7 Hardware sprites
+Up to 16 sprites of 16×16, 3 bpp (palette index), with priority and collision detection. Sprite table in RAM pointed to by a register in `#0350`-`#035F`. Composition in the output pipeline (after the background, before RGB conversion) — invisible to the VRAM. Collision bit readable in the `#0350`-`#035F` area.
 
-**Implémenté (étape 8, validé)** : 16 sprites 16×16 dans la mémoire additionnelle `ula_ng.sprites[16]` (motif 1 octet/px, `0` = transparent, `1`-`7` = index LUT palette ; hors des 64 Ko du 6502, miroir DDR3). Programmation par flux via la fenêtre : `NG_SPR_CTRL` ($0350, b0 = enable global), `NG_SPR_SEL` ($0351, sprite courant + reset pointeur motif), `NG_SPR_X`/`NG_SPR_Y` ($0352/$0353, position écran), `NG_SPR_ATTR` ($0354, b0 = visible), `NG_SPR_DATA` ($0355, flux motif auto-incrémenté). Composition dans `ula_ng_composite_scanline()` appelée par le hook vidéo après le rendu du fond de chaque scanline (couleur = LUT palette NG). **Priorité par index** : les sprites sont composés 15→0, donc le sprite 0 finit au-dessus. **Détection de collision** sprite-sprite (recouvrement de pixels opaques sur une scanline) → `NG_SPR_STATUS` ($0356, b7, clear on read). Gate `unlocked && NG_SPR_CTRL.b0` (`spr_active`) ; inactif → rendu inchangé. Test visible : sprite 0 (16×16 rempli d'index 1 = rouge) à (100,100) → bloc rouge de 256 px pixel-exact au framebuffer. *Non encore implémenté (raffinement futur)* : priorité vis-à-vis du fond (le bit « derrière le fond » nécessite un tampon d'index de fond ; les sprites sont pour l'instant toujours au premier plan), 3 bpp compact côté FPGA (émulateur = 1 octet/px).
+**Implemented (step 8, validated)**: 16 sprites of 16×16 in the additional memory `ula_ng.sprites[16]` (pattern 1 byte/px, `0` = transparent, `1`-`7` = palette LUT index; outside the 6502's 64 KB, DDR3 mirror). Programming by stream through the window: `NG_SPR_CTRL` ($0350, b0 = global enable), `NG_SPR_SEL` ($0351, current sprite + pattern pointer reset), `NG_SPR_X`/`NG_SPR_Y` ($0352/$0353, screen position), `NG_SPR_ATTR` ($0354, b0 = visible), `NG_SPR_DATA` ($0355, auto-incremented pattern stream). Composition in `ula_ng_composite_scanline()`, called by the video hook after rendering the background of each scanline (colour = NG palette LUT). **Priority by index**: sprites are composed 15→0, so sprite 0 ends up on top. Sprite-sprite **collision detection** (overlap of opaque pixels on a scanline) → `NG_SPR_STATUS` ($0356, b7, clear on read). Gate `unlocked && NG_SPR_CTRL.b0` (`spr_active`); inactive → rendering unchanged. Visible test: sprite 0 (16×16 filled with index 1 = red) at (100,100) → pixel-exact 256-px red block on the framebuffer. *Not implemented yet (future refinement)*: priority relative to the background (the "behind background" bit requires a background index buffer; sprites are always in the foreground for now), compact 3 bpp on the FPGA side (emulator = 1 byte/px).
 
-### 5.8 Modes chunky / 80 colonnes
-- **Chunky 4bpp** : 160×200, 16 couleurs parmi 4096 (via LUT étendue si besoin).
-- **Texte 80 colonnes** : police redéfinissable en RAM. Utile pour Sedoric.
-Sélection par `NG_MODE.b2-3`.
+### 5.8 Chunky / 80-column modes
+- **Chunky 4bpp**: 160×200, 16 colours out of 4096 (via an extended LUT if needed).
+- **80-column text**: font redefinable in RAM. Useful for Sedoric.
+Selected by `NG_MODE.b2-3`.
 
-**Implémenté (étape 9, validé)** : sélection par `NG_MODE.b2-3` (`01` = chunky, `10` = 80 col ; caches `ula_ng.chunky_active` / `text80_active` = `active && vidmode`, donc gate `unlocked && NG_MODE.b0`). Les modes sont **latchés au début de trame** (comme les modes OCULA) : la largeur du framebuffer reste stable une trame entière. Données lues depuis `NG_SCRSTART` (§5.3, défaut `$A000`).
-- **Chunky 4bpp** : 160 px/rangée, chacun 4 bits = index dans la **LUT palette NG 16 entrées** (RGB888, §5.1). 80 octets/rangée (quartet haut = pixel gauche). Chaque pixel chunky occupe 2 px framebuffer → **320 px** de large (`VIDEO_WIDE_W`). **Plein écran** : le mode couvre toute la hauteur visible (rangées 0-223 lues depuis le buffer), **sans pied de texte 40 colonnes** — contrairement aux modes dérivés du HIRES, un mode bitmap moderne n'a pas de bande de statut (ce qui évitait un trou noir 240-319 en bas). Test visible : `NG_MODE=$05` + palette index 0 = magenta → framebuffer **320×224**, magenta dominant (zones à zéro) + autres couleurs des données = 16 couleurs.
-- **Texte 80 colonnes** : 80 caractères × 6 px = **480 px** (`VIDEO_MAX_W`). Charset RAM redéfinissable (`$B400`/`$B800` via `get_charset_byte`, mécanisme natif Oric — aucune police inventée) ; attributs série et couleurs (LUT NG 0-7) comme en texte standard. Test visible : `NG_MODE=$09` → framebuffer **480×224**, caractères rendus depuis `$A000`.
+**Implemented (step 9, validated)**: selected by `NG_MODE.b2-3` (`01` = chunky, `10` = 80 col; caches `ula_ng.chunky_active` / `text80_active` = `active && vidmode`, hence gate `unlocked && NG_MODE.b0`). The modes are **latched at the start of the frame** (like the OCULA modes): the framebuffer width stays stable for a whole frame. Data read from `NG_SCRSTART` (§5.3, default `$A000`).
+- **Chunky 4bpp**: 160 px/row, each 4 bits = index into the **16-entry NG palette LUT** (RGB888, §5.1). 80 bytes/row (high nibble = left pixel). Each chunky pixel takes 2 framebuffer px → **320 px** wide (`VIDEO_WIDE_W`). **Full screen**: the mode covers the whole visible height (rows 0-223 read from the buffer), **with no 40-column text footer** — unlike the modes derived from HIRES, a modern bitmap mode has no status band (which avoided a black hole 240-319 at the bottom). Visible test: `NG_MODE=$05` + palette index 0 = magenta → **320×224** framebuffer, dominant magenta (zeroed areas) + other colours from the data = 16 colours.
+- **80-column text**: 80 characters × 6 px = **480 px** (`VIDEO_MAX_W`). Redefinable RAM charset (`$B400`/`$B800` via `get_charset_byte`, the native Oric mechanism — no invented font); serial attributes and colours (NG LUT 0-7) as in standard text. Visible test: `NG_MODE=$09` → **480×224** framebuffer, characters rendered from `$A000`.
 
-Composition parallèle avec les sprites (§5.7) : `ula_ng_composite_scanline` est appelée après le rendu du fond dans les deux modes. Inactif → rendu bit-à-bit inchangé (largeur 240). *Non implémenté (raffinement futur)* : la variante 160×200 « stretchée » à 240 px (choix : 2× vers 320 px, mapping entier exact) ; le 3 bpp/4096 teintes suppose une LUT étendue côté FPGA (émulateur = 4 bits/px + LUT 16 entrées).
-
----
-
-## 6. Traces (« golden reference »)
-
-Ajouter un mode debug (flag CLI, ex. `--ula-trace=fichier`) qui, **par frame**, sérialise :
-- l'état des registres `#0340`-`#035F` ;
-- la sortie RGB **ligne par ligne** (ou un hash par ligne pour alléger) ;
-- les cycles/lignes où l'IRQ raster est assertée.
-
-Format texte simple, déterministe, diffable. Ces traces serviront de référence : le futur banc de test Verilog rejouera les mêmes programmes et comparera. Toute divergence localise le bug à la ligne près.
+Parallel composition with sprites (§5.7): `ula_ng_composite_scanline` is called after rendering the background in both modes. Inactive → rendering bit-for-bit unchanged (width 240). *Not implemented (future refinement)*: the 160×200 variant "stretched" to 240 px (choice: 2× to 320 px, exact integer mapping); 3 bpp/4096 shades assumes an extended LUT on the FPGA side (emulator = 4 bits/px + 16-entry LUT).
 
 ---
 
-## 7. Compatibilité — non-régression
+## 6. Traces ("golden reference")
 
-Avant de considérer une étape terminée, vérifier que **le mode verrouillé (extensions off) est bit-à-bit identique** au comportement d'avant modification. Idéalement :
-- capturer des traces de référence de quelques programmes (démos utilisant les attributs, double hauteur, lores) **avant** tout changement ;
-- rejouer après chaque étape ; le mode classique doit produire des traces identiques.
-Programmes de test suggérés : la demonstration tape de l'Atmos (beaucoup d'attributs, double taille, lores 1), et un jeu utilisant les caractères double hauteur.
+Add a debug mode (CLI flag, e.g. `--ula-trace=fichier`) which, **per frame**, serialises:
+- the state of registers `#0340`-`#035F`;
+- the RGB output **line by line** (or a hash per line to keep it light);
+- the cycles/lines at which the raster IRQ is asserted.
 
----
-
-## 8. Livrables attendus
-
-1. `AUDIT.md` — réponses au §0.
-2. Module `ula_ng` (fichier(s) séparé(s)) avec les 3 interfaces du §1.3.
-3. Modifications minimales du pipeline vidéo et du dispatch page 3, clairement isolées et commentées.
-4. Mode trace du §6.
-5. `README-ULA-NG.md` côté utilisateur : séquence de déverrouillage, carte des registres, 3 exemples assembleur commentés (activer le mode, charger une palette, poser une IRQ raster).
-6. Jeux/snippets de test pour chaque feature.
+Simple, deterministic, diffable text format. These traces will serve as the reference: the future Verilog test bench will replay the same programs and compare. Any divergence pinpoints the bug to the exact line.
 
 ---
 
-## 9. Contraintes « pensées FPGA » (à respecter dès le logiciel)
+## 7. Compatibility — non-regression
 
-- Pas de flottant dans le chemin vidéo ; couleurs et offsets en entiers.
-- Toute structure de données du module `ula_ng` doit avoir un équivalent matériel évident (registre, petite RAM, LUT, FIFO). Éviter allocations dynamiques dans le chemin temps réel.
-- Les signaux de contrôle type `#0340`-`#035F` sont échantillonnés de façon déterministe (une fois par accès / par ligne), jamais « quand ça arrive ».
-- Documenter, pour chaque registre, s'il est lu de façon combinatoire (dans la ligne courante) ou synchrone (effet à la ligne/trame suivante) — ce détail conditionne la fidélité FPGA.
+Before considering a step finished, check that **locked mode (extensions off) is bit-for-bit identical** to the behaviour before the change. Ideally:
+- capture reference traces of a few programs (demos using attributes, double height, lores) **before** any change;
+- replay after each step; classic mode must produce identical traces.
+Suggested test programs: the Atmos demonstration tape (lots of attributes, double size, lores 1), and a game using double-height characters.
 
-### Sémantique par registre (décision post-audit)
+---
 
-Règle : **tout registre à effet visuel s'applique à la ligne SUIVANTE** (latch en hblank), cohérent avec le rendu scanline qui fige la VRAM à l'instant CPU. **Exceptions** immédiates (combinatoires) : acquit d'IRQ et déverrouillage.
+## 8. Expected deliverables
 
-| Registre | Effet | Échantillonnage |
+1. `AUDIT.md` — answers to §0.
+2. `ula_ng` module (separate file(s)) with the 3 interfaces of §1.3.
+3. Minimal changes to the video pipeline and the page 3 dispatch, clearly isolated and commented.
+4. The trace mode of §6.
+5. User-facing `README-ULA-NG.md`: unlock sequence, register map, 3 commented assembly examples (enable the mode, load a palette, set up a raster IRQ).
+6. Test games/snippets for each feature.
+
+---
+
+## 9. "FPGA thinking" constraints (to respect from the software stage)
+
+- No floating point in the video path; colours and offsets as integers.
+- Every data structure of the `ula_ng` module must have an obvious hardware equivalent (register, small RAM, LUT, FIFO). Avoid dynamic allocation in the real-time path.
+- Control signals such as `#0340`-`#035F` are sampled deterministically (once per access / per line), never "whenever it happens".
+- Document, for each register, whether it is read combinationally (within the current line) or synchronously (effect on the next line/frame) — this detail determines FPGA fidelity.
+
+### Per-register semantics (post-audit decision)
+
+Rule: **every register with a visual effect applies on the NEXT line** (latched in hblank), consistent with scanline rendering, which freezes the VRAM at the CPU instant. Immediate (combinational) **exceptions**: IRQ acknowledge and unlocking.
+
+| Register | Effect | Sampling |
 |---|---|---|
-| `NG_LOCK`/`NG_ID`/`NG_IDCHK` | verrou / identité | **combinatoire** (immédiat) |
-| `NG_MODE` | mode vidéo, banques | **synchrone** — ligne suivante (b0 activation : immédiate) |
-| `NG_SCRSTART` | base de fetch | **synchrone** — trame suivante (double buffer) |
-| `NG_SCROLLX/Y` | décalage pixel | **synchrone** — ligne suivante |
-| `NG_RASTERLINE` | ligne d'IRQ | **synchrone** — comparé par `ula_ng_scanline` |
-| `NG_STATUS` (écriture) | acquit IRQ | **combinatoire** (immédiat) |
-| `NG_PAL_IDX`/`NG_PAL_DATA` | LUT palette | **synchrone** — ligne suivante (permet le split raster) |
-| `NG_SPRITE_*` | contrôle sprites | **synchrone** — ligne suivante ; `collision` en lecture = **combinatoire** |
+| `NG_LOCK`/`NG_ID`/`NG_IDCHK` | lock / identity | **combinational** (immediate) |
+| `NG_MODE` | video mode, banks | **synchronous** — next line (b0 activation: immediate) |
+| `NG_SCRSTART` | fetch base | **synchronous** — next frame (double buffering) |
+| `NG_SCROLLX/Y` | pixel offset | **synchronous** — next line |
+| `NG_RASTERLINE` | IRQ line | **synchronous** — compared by `ula_ng_scanline` |
+| `NG_STATUS` (write) | IRQ acknowledge | **combinational** (immediate) |
+| `NG_PAL_IDX`/`NG_PAL_DATA` | palette LUT | **synchronous** — next line (allows raster splits) |
+| `NG_SPRITE_*` | sprite control | **synchronous** — next line; `collision` on read = **combinational** |

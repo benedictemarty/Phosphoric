@@ -1,72 +1,73 @@
-# Phosphoric v1.15.1 — Corrections ACIA pour OricTel
+# Phosphoric v1.15.1 — ACIA fixes for OricTel
 
-Bonjour,
+Hello,
 
-Suite à vos retours sur les problèmes de timing de l'ACIA 6551 rencontrés avec OricTel, nous avons implémenté plusieurs corrections dans Phosphoric. Voici le résumé.
+Following your feedback on the ACIA 6551 timing problems encountered with OricTel, we have implemented several fixes in Phosphoric. Here is the summary.
 
 ---
 
-## Nouveau : Backend Digitelec DTL 2000 (recommandé)
+## New: Digitelec DTL 2000 backend (recommended)
 
-Le plus gros changement : un backend modem qui émule le comportement du Digitelec DTL 2000. L'ACIA 6551 reste 100% fidèle au datasheet MOS, et c'est le modem qui gère le buffering et le flow control — comme sur le vrai hardware.
+The biggest change: a modem backend that emulates the behaviour of the Digitelec DTL 2000. The ACIA 6551 stays 100% faithful to the MOS datasheet, and it is the modem that handles buffering and flow control — as on the real hardware.
 
 ```bash
 ./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
   --serial digitelec:minitel.3614.fr:516
 ```
 
-Ce que fait le backend :
-- **Buffer interne 512 octets** (le vrai DTL 2000 avait sa propre RAM) → plus d'overrun pendant les clear screen ou les commandes REP Vidéotex
-- **Flow control CTS automatique** : le modem coupe CTS quand son buffer dépasse 400 octets, le réactive sous 256 → le serveur distant est naturellement freiné
-- **DCD piloté par la connexion TCP** : PEEK($031D) bit 5 = état de la porteuse
-- **DTR pour connecter/déconnecter** : POKE $031E,3 = décrocher (TCP connect), POKE $031E,0 = raccrocher
-- **V23 activé automatiquement** (1200 RX / 75 TX)
-- **Pas de commandes AT** (fidèle au Digitelec qui n'était pas Hayes)
+What the backend does:
+- **512-byte internal buffer** (the real DTL 2000 had its own RAM) → no more overruns during clear screen or Vidéotex REP commands
+- **Automatic CTS flow control**: the modem drops CTS when its buffer exceeds 400 bytes and raises it again below 256 → the remote server is naturally throttled
+- **DCD driven by the TCP connection**: PEEK($031D) bit 5 = carrier state
+- **DTR to connect/disconnect**: POKE $031E,3 = go off-hook (TCP connect), POKE $031E,0 = hang up
+- **V23 enabled automatically** (1200 RX / 75 TX)
+- **No AT commands** (faithful to the Digitelec, which was not Hayes-compatible)
 
-Côté programme ORIC, la connexion est simple :
+On the ORIC program side, connecting is simple:
 ```basic
 10 POKE 798,3:REM DTR ON = DECROCHER
 20 S=PEEK(797):IF (S AND 32)=32 THEN 20:REM ATTENDRE DCD
 30 REM ... CONNECTE, LIRE/ECRIRE SUR 796 ...
 40 POKE 798,0:REM DTR OFF = RACCROCHER
 ```
+(The BASIC REM comments mean: DTR ON = go off-hook; wait for DCD; connected, read/write at 796; DTR OFF = hang up.)
 
 ---
 
-## Alternative : Patchs ACIA (si vous préférez garder votre architecture actuelle)
+## Alternative: ACIA patches (if you prefer to keep your current architecture)
 
-Si vous ne voulez pas changer de backend, les 3 problèmes que vous aviez identifiés sont aussi corrigés via des options CLI :
+If you do not want to change backend, the 3 problems you had identified are also fixed through CLI options:
 
-### 1. Overrun (buffer 1 octet)
+### 1. Overrun (1-byte buffer)
 
 ```bash
 --serial-buffer 256
 ```
 
-Ajoute un FIFO RX transparent de 256 octets dans l'ACIA. Quand le CPU lit RDR ($031C), le byte suivant est automatiquement chargé depuis la file. RDRF reste à 1 tant que la file n'est pas vide. Pas fidèle au MOS 6551 mais fonctionnel.
+Adds a transparent 256-byte RX FIFO inside the ACIA. When the CPU reads RDR ($031C), the next byte is automatically loaded from the queue. RDRF stays at 1 as long as the queue is not empty. Not faithful to the MOS 6551 but functional.
 
-### 2. IRQ perdue en TX+RX simultané
+### 2. IRQ lost with simultaneous TX+RX
 
 ```bash
 --serial-irq-on-rdrf
 ```
 
-Mode WDC 65C51 : l'IRQ re-fire tant que RDRF est set, même après lecture du Status Register. Résout le problème où lire $031D pour vérifier TDRE efface l'IRQ d'un byte RX en attente.
+WDC 65C51 mode: the IRQ re-fires as long as RDRF is set, even after the Status Register has been read. Solves the problem where reading $031D to check TDRE clears the IRQ of a pending RX byte.
 
-### 3. Timing premier byte
+### 3. First-byte timing
 
-Corrigé par défaut (pas d'option nécessaire). `tx_cycles` et `rx_cycles` sont maintenant initialisés à `tx_reload`/`rx_reload` au lieu de 0. Le changement de baud rate resynchronise aussi les compteurs.
+Fixed by default (no option needed). `tx_cycles` and `rx_cycles` are now initialised to `tx_reload`/`rx_reload` instead of 0. Changing the baud rate also resynchronises the counters.
 
 ---
 
-## Ligne de commande complète (avec patchs ACIA)
+## Full command line (with ACIA patches)
 
 ```bash
-# Option A : Backend Digitelec (recommandé, résout tout naturellement)
+# Option A: Digitelec backend (recommended, solves everything naturally)
 ./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
   --serial digitelec:minitel.3614.fr:516
 
-# Option B : TCP direct + patchs ACIA (votre architecture actuelle)
+# Option B: direct TCP + ACIA patches (your current architecture)
 ./oric1-emu -r roms/basic10.rom -t orictel.tap -f \
   --serial tcp:minitel.3614.fr:516 \
   --serial-v23 \
@@ -74,19 +75,19 @@ Corrigé par défaut (pas d'option nécessaire). `tx_cycles` et `rx_cycles` sont
   --serial-irq-on-rdrf
 ```
 
-L'option A est recommandée car elle résout les problèmes de timing architecturalement (le buffer est dans le modem, pas dans l'ACIA).
+Option A is recommended because it solves the timing problems architecturally (the buffer is in the modem, not in the ACIA).
 
 ---
 
-## Autres améliorations ACIA dans cette version
+## Other ACIA improvements in this release
 
-- Horloge ACIA corrigée : cristal 1.8432 MHz / 16 = 115200 Hz (était approximé à 1 MHz)
-- Frame format variable : 5-8 databits + parité + 1-2 stopbits (était fixe à 10)
-- Bitmask appliqué sur TX/RX (mode 7 bits masque le bit 7)
-- DCD transition génère un IRQ (conforme datasheet)
-- Savestate : état ACIA sauvé dans les fichiers .ost (section SER)
-- Offset ACIA configurable : --acia-addr (défaut $031C)
-- bas2tap corrigé : tokenizer BASIC avec table de 120 tokens extraite de la ROM
+- ACIA clock fixed: 1.8432 MHz crystal / 16 = 115200 Hz (was approximated to 1 MHz)
+- Variable frame format: 5-8 data bits + parity + 1-2 stop bits (was fixed at 10)
+- Bitmask applied on TX/RX (7-bit mode masks bit 7)
+- DCD transition generates an IRQ (as per the datasheet)
+- Savestate: ACIA state saved in .ost files (SER section)
+- Configurable ACIA offset: --acia-addr (default $031C)
+- bas2tap fixed: BASIC tokenizer with a 120-token table extracted from the ROM
 
 ## Build
 
@@ -96,10 +97,10 @@ cd Phosphoric
 make SDL2=1
 ```
 
-303 tests unitaires, 100% pass.
+303 unit tests, 100% pass.
 
 ---
 
-N'hésitez pas si vous avez des questions ou si vous rencontrez d'autres problèmes de timing.
+Do not hesitate to get in touch if you have questions or run into other timing problems.
 
 bmarty

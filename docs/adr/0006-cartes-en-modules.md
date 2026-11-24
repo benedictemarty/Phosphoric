@@ -1,36 +1,35 @@
-# 0006 — Cartes d'extension en modules auto-enregistrés, liste explicite
+# 0006 — Expansion cards as self-registering modules, explicit list
 
-- **Statut** : acceptée (2.13.0, pilote G1 MEA8000) ; plan : `docs/specs/CARD_MODULES.md`
+- **Status**: accepted (2.13.0, G1 MEA8000 pilot); plan: `docs/specs/CARD_MODULES.md`
 
-## Contexte
+## Context
 
-Les périphériques d'extension partagent déjà un contrat d'E/S (`io_device_t`) et
-un registre pour le menu F1 (`cards.c`), mais restent assemblés à la main : une
-carte simple comme MEA8000 touche une dizaine de fichiers (options de lancement,
-état dans `emulator_t`, bus, mise en route, audio, menu). Ajouter une carte est
-long et sujet aux oublis.
+Expansion peripherals already share an I/O contract (`io_device_t`) and a
+registry for the F1 menu (`cards.c`), but they are still assembled by hand: a
+simple card such as MEA8000 touches about ten files (launch options, state in
+`emulator_t`, bus, setup, audio, menu). Adding a card is slow and error-prone.
 
-## Décision proposée
+## Proposed decision
 
-Chaque carte est décrite par un descripteur `card_module_t` dans son propre
-fichier (menu, options, configuration, mise en route, contrat de bus, rangs de
-répartition et de tick, audio). Une liste explicite `k_card_modules[]` les
-énumère ; le cœur en dérive options, aide, configuration, menu et tables du bus.
+Each card is described by a `card_module_t` descriptor in its own file (menu,
+options, configuration, setup, bus contract, dispatch and tick ranks, audio). An
+explicit list `k_card_modules[]` enumerates them; the core derives options, help,
+configuration, menu and bus tables from it.
 
-- Pas de chargement dynamique (`dlopen`) : ABI stable, WASM, Windows, confiance.
-- Pas d'enregistrement par constructeur ou section du linker : non portable
-  entre GCC/MinGW, clang/macOS et emscripten ; une ligne par carte suffit.
-- Les ordres de répartition et de tick restent explicites (ADR 0003), et le
-  chemin par cycle reste sans boucle générique.
+- No dynamic loading (`dlopen`): stable ABI, WASM, Windows, trust.
+- No registration through constructors or linker sections: not portable across
+  GCC/MinGW, clang/macOS and emscripten; one line per card is enough.
+- Dispatch and tick orders stay explicit (ADR 0003), and the per-cycle path stays
+  free of any generic loop.
 
-## Conséquences
+## Consequences
 
-- Ajouter une carte : un fichier + une ligne — prouvé par `make test-card-template`
-  (2.19.0) ; guide `docs/CARTES.md`.
-- Réalisation G1 : la liste est une macro (`include/cards_list.h`) et non une table
-  de pointeurs : celle-ci rendait indirect le tick par cycle (+5,3 % d'instructions
-  mesurées) ; générés depuis la macro, les ticks restent des appels directs
-  (instructions identiques à la référence).
-- Migration par étapes (G1 pilote MEA8000 → G6 LOCI), chacune prouvée identique
-  (`cli_golden`, `.ost` à l'octet, banc de performance).
-- Si le pilote G1 n'apporte pas assez, la décision est rejetée et notée ici.
+- Adding a card: one file + one line — proven by `make test-card-template`
+  (2.19.0); guide `docs/CARTES.md`.
+- G1 implementation: the list is a macro (`include/cards_list.h`) rather than a table
+  of pointers: the latter made the per-cycle tick indirect (+5.3 % measured
+  instructions); generated from the macro, the ticks remain direct calls
+  (instructions identical to the baseline).
+- Step-by-step migration (G1 MEA8000 pilot → G6 LOCI), each step proven identical
+  (`cli_golden`, `.ost` byte for byte, performance bench).
+- If the G1 pilot does not pay off, the decision is rejected and recorded here.

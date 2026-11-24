@@ -57,7 +57,7 @@ typedef enum {
     IRQF_DTL2000 = 0x08,  /**< Digitelec DTL 2000 ACIA 6850 IRQ */
     IRQF_MAGECO  = 0x10,  /**< Mageco MIDI interface ACIA 6850 IRQ */
     IRQF_ULANG   = 0x20,  /**< ULA-NG raster IRQ (NG_RASTERLINE / NG_STATUS) */
-    IRQF_LOCI    = 0x40   /**< LOCI cartouche nIRQ (backend co-sim --loci-emu : ligne pilotée par le vrai firmware) */
+    IRQF_LOCI    = 0x40   /**< LOCI cartridge nIRQ (co-sim backend --loci-emu: line driven by the real firmware) */
 } cpu_irq_source_t;
 
 /**
@@ -77,9 +77,9 @@ typedef struct {
     bool     halted;        /**< CPU halted flag */
     bool     nmi_pending;   /**< Non-Maskable Interrupt pending */
     uint8_t  irq;           /**< IRQ source bitfield (level-triggered) */
-    uint8_t  irq_pulse;     /**< IRQ à tir unique en attente (edge/pulse) : décrémenté à la prise.
-                                 Pour les sources qui PULSENT la ligne (ex. LOCI nIRQ) — une IRQ
-                                 par pulse, sans maintien de niveau (pas de tempête). */
+    uint8_t  irq_pulse;     /**< Pending one-shot IRQ (edge/pulse): decremented when taken.
+                                 For sources that PULSE the line (e.g. LOCI nIRQ) — one IRQ
+                                 per pulse, with no level holding (no storm). */
 
     memory_t* memory;       /**< Pointer to memory subsystem */
 
@@ -106,32 +106,32 @@ typedef struct {
     void (*on_bus)(void* ctx, uint16_t addr, uint8_t value, bool write);
     void* bus_ctx;
 
-    /* ─── Micro-séquenceur (V2-E1, include/cpu/microseq.h) ───
-     * État du cœur cycle-par-cycle. Inerte tant que ms_enabled est faux : le
-     * chemin par défaut reste le moteur historique. */
-    bool     ms_enabled;   /**< moteur micro-séquencé actif */
-    bool     ms_active;    /**< une instruction/séquence est en cours */
-    uint8_t  ms_opcode;    /**< opcode en cours */
-    uint8_t  ms_pc;        /**< index de la micro-op courante dans le plan */
-    uint8_t  ms_plan[10];  /**< plan de micro-opérations (une par cycle) */
-    uint8_t  ms_len;       /**< longueur du plan */
-    uint8_t  ms_rmw;       /**< cpu_rmw_t de l'instruction, si RMW */
-    uint8_t  ms_idx;       /**< index appliqué après l'adresse : 0 aucun, 1 X, 2 Y */
-    uint8_t  ms_ptr;       /**< pointeur page zéro en construction */
-    uint8_t  ms_adl;       /**< octet bas de l'adresse effective */
-    uint8_t  ms_data;      /**< donnée lue (opérande, valeur RMW) */
-    uint16_t ms_addr;      /**< adresse effective (après index) */
-    uint16_t ms_base;      /**< adresse avant index (pour factices et stores instables) */
-    bool     ms_crossed;   /**< l'indexation a franchi une page */
+    /* ─── Micro-sequencer (V2-E1, include/cpu/microseq.h) ───
+     * State of the cycle-by-cycle core. Inert while ms_enabled is false: the
+     * default path remains the legacy engine. */
+    bool     ms_enabled;   /**< micro-sequenced engine active */
+    bool     ms_active;    /**< an instruction/sequence is in progress */
+    uint8_t  ms_opcode;    /**< current opcode */
+    uint8_t  ms_pc;        /**< index of the current micro-op in the plan */
+    uint8_t  ms_plan[10];  /**< micro-operation plan (one per cycle) */
+    uint8_t  ms_len;       /**< plan length */
+    uint8_t  ms_rmw;       /**< cpu_rmw_t of the instruction, if RMW */
+    uint8_t  ms_idx;       /**< index applied after the address: 0 none, 1 X, 2 Y */
+    uint8_t  ms_ptr;       /**< zero-page pointer being built */
+    uint8_t  ms_adl;       /**< low byte of the effective address */
+    uint8_t  ms_data;      /**< data read (operand, RMW value) */
+    uint16_t ms_addr;      /**< effective address (after indexing) */
+    uint16_t ms_base;      /**< address before indexing (for dummy accesses and unstable stores) */
+    bool     ms_crossed;   /**< indexing crossed a page */
 
-    /* Échantillonnage des lignes d'interruption (V2-E1, US1.3).
-     * Le 6502 NMOS échantillonne /IRQ et /NMI à chaque cycle, mais la décision
-     * de prendre l'interruption à la fin d'une instruction se fonde sur
-     * l'échantillon du cycle **pénultième** : une ligne qui s'active pendant le
-     * DERNIER cycle arrive trop tard et l'interruption ne sera prise qu'après
-     * l'instruction suivante. Ces deux champs portent cet échantillon retardé —
-     * c'est aussi ce qui produit « gratuitement » le drapeau I retardé de
-     * CLI/SEI/PLP, qui modifient I à leur dernier cycle. */
+    /* Interrupt line sampling (V2-E1, US1.3).
+     * The NMOS 6502 samples /IRQ and /NMI on every cycle, but the decision
+     * to take the interrupt at the end of an instruction is based on the
+     * sample from the **penultimate** cycle: a line that becomes active during
+     * the LAST cycle arrives too late and the interrupt will only be taken after
+     * the next instruction. These two fields carry that delayed sample —
+     * this is also what "for free" produces the delayed I flag of
+     * CLI/SEI/PLP, which modify I on their last cycle. */
     bool     ms_nmi_sampled;
     bool     ms_irq_sampled;
 } cpu6502_t;
@@ -237,14 +237,14 @@ void cpu_irq_set(cpu6502_t* cpu, cpu_irq_source_t source);
 void cpu_irq_clear(cpu6502_t* cpu, cpu_irq_source_t source);
 
 /**
- * @brief Met en attente une IRQ à TIR UNIQUE (pulse/edge)
+ * @brief Queues a ONE-SHOT IRQ (pulse/edge)
  *
- * Pour les sources qui PULSENT physiquement la ligne nIRQ (le firmware LOCI :
- * ext_put(EXT_IRQ,true) puis false) : une IRQ sera prise dès que le drapeau I est
- * bas, PUIS l'attente est consommée (pas de maintien de niveau → pas de tempête).
- * Compteur saturant (plusieurs pulses → plusieurs IRQ).
+ * For sources that physically PULSE the nIRQ line (the LOCI firmware:
+ * ext_put(EXT_IRQ,true) then false): an IRQ will be taken as soon as the I flag
+ * is clear, THEN the pending request is consumed (no level holding → no storm).
+ * Saturating counter (several pulses → several IRQs).
  *
- * @param cpu Pointeur sur la structure CPU
+ * @param cpu Pointer to the CPU structure
  */
 void cpu_irq_pulse(cpu6502_t* cpu);
 

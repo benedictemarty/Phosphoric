@@ -23,8 +23,8 @@
 #include "memory/memory.h"
 #include "io/via6522.h"
 
-/* ROM BASIC 1.0 du dépôt (non versionnée, droits tiers) ; ORIC_ROM la remplace.
- * Absente : toute la suite saute (CI, clone neuf). */
+/* BASIC 1.0 ROM of the repository (not versioned, third-party rights);
+ * ORIC_ROM overrides it. Missing: the whole suite skips (CI, fresh clone). */
 static const char* ROM_PATH = "roms/basic10.rom";
 #define ROM_EXPECTED_SIZE 16384
 

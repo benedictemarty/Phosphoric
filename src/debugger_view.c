@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file debugger_view.c
- * @brief Débogueur : affichage (registres, mémoire, désassemblage, état des périphériques)
+ * @brief Debugger: display (registers, memory, disassembly, peripheral state)
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/debugger.c (sprint F du plan d'architecture), sans changement
- * de comportement ; symboles partagés : include/debugger_internal.h.
+ * Split out of src/debugger.c (sprint F of the architecture plan), with no
+ * behaviour change; shared symbols: include/debugger_internal.h.
  */
 
 #define _DEFAULT_SOURCE
@@ -143,7 +143,7 @@ void dbg_show_stack(emulator_t* emu) {
 
 void dbg_show_via_state(emulator_t* emu) {
     via6522_t* via = &emu->via;
-    via_sync(via);   /* compteurs à jour (cycles sautés par via_tick) */
+    via_sync(via);   /* up-to-date counters (cycles skipped by via_tick) */
     printf("  VIA 6522 State:\n");
     printf("    ORA=$%02X ORB=$%02X  IRA=$%02X IRB=$%02X\n",
            via->ora, via->orb, via->ira, via->irb);
@@ -451,7 +451,7 @@ void dbg_show_loci_state(emulator_t* emu) {
     }
 }
 
-/* US 5 — élargissement de la couverture d'inspection (parité fenêtres b2). */
+/* US 5 — broadening the inspection coverage (b2 window parity). */
 void dbg_show_video_state(emulator_t* emu) {
     video_t* v = &emu->video;
     printf("  ULA / Video State:\n");

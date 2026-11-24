@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_osd.c
- * @brief Tests de l'OSD (overlay changement de média) — logique + rendu.
+ * @brief OSD tests (media change overlay) -- logic + rendering.
  */
 #include <stdio.h>
 #include <string.h>
@@ -20,7 +20,7 @@ static int tests_passed = 0, tests_failed = 0;
 #define ASSERT_EQ(a,b) do { if ((long)(a)!=(long)(b)) { printf("FAIL (%s:%d: %s != %s -> %ld != %ld)\n", __FILE__, __LINE__, #a,#b,(long)(a),(long)(b)); tests_failed++; return; } } while (0)
 #define PASS() do { printf("PASS\n"); tests_passed++; } while (0)
 
-/* Crée un dossier temporaire avec quelques médias. */
+/* Creates a temporary directory with a few media. */
 static void make_media_dir(const char* dir) {
     mkdir(dir, 0755);
     const char* files[] = { "zeta.tap", "alpha.tap", "game.dsk", "readme.txt", NULL };
@@ -36,9 +36,9 @@ TEST(test_osd_scan_filters_and_sorts) {
     osd_t osd; osd_init(&osd);
     const char* dirs[] = { dir, NULL };
     osd_scan(&osd, dirs);
-    /* 3 médias (2 .tap + 1 .dsk), le .txt ignoré */
+    /* 3 media (2 .tap + 1 .dsk), the .txt ignored */
     ASSERT_EQ(osd.count, 3);
-    /* cassettes d'abord, triées alpha : alpha.tap, zeta.tap, puis game.dsk */
+    /* tapes first, sorted alphabetically: alpha.tap, zeta.tap, then game.dsk */
     ASSERT_TRUE(!osd.entries[0].is_disk);
     ASSERT_TRUE(strcmp(osd.entries[0].name, "alpha.tap") == 0);
     ASSERT_TRUE(strcmp(osd.entries[1].name, "zeta.tap") == 0);
@@ -54,12 +54,12 @@ TEST(test_osd_navigation_clamps) {
     osd_scan(&osd, dirs);
     osd.open = true;
     ASSERT_EQ(osd.selected, 0);
-    osd_key(&osd, OSD_KEY_UP);              /* déjà en haut : reste 0 */
+    osd_key(&osd, OSD_KEY_UP);              /* already at the top: stays 0 */
     ASSERT_EQ(osd.selected, 0);
     osd_key(&osd, OSD_KEY_DOWN);
     ASSERT_EQ(osd.selected, 1);
     osd_key(&osd, OSD_KEY_DOWN);
-    osd_key(&osd, OSD_KEY_DOWN);            /* clamp au dernier (index 2) */
+    osd_key(&osd, OSD_KEY_DOWN);            /* clamp to the last one (index 2) */
     ASSERT_EQ(osd.selected, 2);
     PASS();
 }
@@ -67,7 +67,7 @@ TEST(test_osd_navigation_clamps) {
 TEST(test_osd_left_right_cycle_drive) {
     osd_t osd; osd_init(&osd);
     osd.open = true;
-    ASSERT_EQ(osd.disk_drive, 0);            /* A par défaut */
+    ASSERT_EQ(osd.disk_drive, 0);            /* A by default */
     osd_key(&osd, OSD_KEY_RIGHT);            /* A -> B */
     ASSERT_EQ(osd.disk_drive, 1);
     osd_key(&osd, OSD_KEY_RIGHT);
@@ -75,19 +75,19 @@ TEST(test_osd_left_right_cycle_drive) {
     ASSERT_EQ(osd.disk_drive, 3);
     osd_key(&osd, OSD_KEY_RIGHT);            /* D -> A (wrap) */
     ASSERT_EQ(osd.disk_drive, 0);
-    osd_key(&osd, OSD_KEY_LEFT);             /* A -> D (wrap arrière) */
+    osd_key(&osd, OSD_KEY_LEFT);             /* A -> D (backward wrap) */
     ASSERT_EQ(osd.disk_drive, 3);
     PASS();
 }
 
 TEST(test_osd_eject_returns_action) {
     osd_t osd; osd_init(&osd);
-    /* fermé : la touche est ignorée */
+    /* closed: the key is ignored */
     ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_NONE);
     osd.open = true;
-    /* ouvert : Suppr demande une éjection (l'appelant décide du lecteur cible) */
+    /* open: Del requests an eject (the caller decides the target drive) */
     ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_EJECT);
-    /* éjecter ne ferme pas l'overlay côté OSD (c'est l'appelant qui ferme) */
+    /* ejecting does not close the overlay on the OSD side (the caller closes it) */
     ASSERT_TRUE(osd.open);
     PASS();
 }
@@ -98,11 +98,11 @@ TEST(test_osd_eject_depends_on_selected_media) {
     const char* dirs[] = { dir, NULL };
     osd_scan(&osd, dirs);          /* alpha.tap, zeta.tap (K), game.dsk (D) */
     osd.open = true;
-    /* entrée 0 = cassette → Suppr demande l'éjection cassette */
+    /* entry 0 = tape → Del requests the tape eject */
     osd.selected = 0;
     ASSERT_TRUE(!osd.entries[0].is_disk);
     ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_EJECT_TAPE);
-    /* entrée 2 = disque → Suppr demande l'éjection disque (lecteur cible) */
+    /* entry 2 = disk → Del requests the disk eject (target drive) */
     osd.selected = 2;
     ASSERT_TRUE(osd.entries[2].is_disk);
     ASSERT_EQ(osd_key(&osd, OSD_KEY_EJECT), OSD_EJECT);
@@ -116,7 +116,7 @@ TEST(test_osd_enter_returns_activate) {
     osd_scan(&osd, dirs);
     osd.open = true;
     ASSERT_EQ(osd_key(&osd, OSD_KEY_ENTER), OSD_ACTIVATE);
-    /* Échap ferme et signale la fermeture */
+    /* Esc closes and reports the closing */
     ASSERT_EQ(osd_key(&osd, OSD_KEY_ESC), OSD_CLOSED);
     ASSERT_TRUE(!osd.open);
     PASS();
@@ -134,25 +134,25 @@ TEST(test_osd_render_draws_text) {
     const char* dirs[] = { dir, NULL };
     osd_scan(&osd, dirs);
     osd.open = true;
-    /* police synthétique : chaque glyphe = toutes lignes pleines (0x3F) */
+    /* synthetic font: each glyph = all rows full (0x3F) */
     for (int i = 0; i < 128 * 8; i++) osd.font[i] = 0x3F;
     osd.font_ready = true;
 
     video_t* vid = calloc(1, sizeof(video_t));
     vid->native_w = 240; vid->native_h = 224;
-    /* fond blanc pour vérifier l'assombrissement + le texte */
+    /* white background to check the darkening + the text */
     memset(vid->framebuffer, 255, (size_t)vid->native_w * vid->native_h * 3);
 
     osd_render(&osd, vid);
 
-    /* Le panneau doit avoir assombri une grande partie de l'écran. */
+    /* The panel must have darkened a large part of the screen. */
     long dark = 0, lit = 0;
     for (int i = 0; i < vid->native_w * vid->native_h * 3; i += 3) {
         if (vid->framebuffer[i] < 80) dark++;
         else lit++;
     }
-    ASSERT_TRUE(dark > 1000);   /* le panneau translucide a assombri */
-    ASSERT_TRUE(lit > 100);     /* du texte (pixels clairs) a été dessiné */
+    ASSERT_TRUE(dark > 1000);   /* the translucent panel has darkened */
+    ASSERT_TRUE(lit > 100);     /* some text (light pixels) has been drawn */
     free(vid);
     PASS();
 }

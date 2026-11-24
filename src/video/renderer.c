@@ -79,9 +79,9 @@ void renderer_cleanup(void) {
     SDL_Quit();
 }
 
-/* Présente un tampon RGB888 quelconque à la place de l'image de la machine
- * (menu des périphériques F1, 640 × 640) : même texture, recréée si les
- * dimensions changent, étirée à la fenêtre comme l'image Oric. */
+/* Present an arbitrary RGB888 buffer in place of the machine image
+ * (F1 peripherals menu, 640 × 640): same texture, recreated if the
+ * dimensions change, stretched to the window like the Oric image. */
 void renderer_present_rgb(const uint8_t* rgb, int w, int h) {
     if (w != tex_w || h != tex_h) {
         tex_w = w;

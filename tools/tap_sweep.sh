@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
 #
-# tap_sweep.sh — charge chaque .tap d'un dossier et signale les suspects (2.31.8).
+# tap_sweep.sh — run every .tap of a folder and flag the suspicious ones (2.31.8).
 #
-# Usage : tools/tap_sweep.sh DOSSIER [TÂCHES] > resultats.txt
+# Usage: tools/tap_sweep.sh DIR [JOBS] > results.txt
 #
-# Chaque cassette est chargée par le chemin normal (CLOAD"" automatique, sans
-# fast-load -f) sur la ROM Atmos pendant 25 M cycles, puis classée d'après l'état
-# du CPU et l'écran texte ($BB80) à 24 M cycles :
-#   HALT     le 6502 s'est arrêté (opcode JAM) avant la fin
-#   TIMEOUT  l'émulateur n'a pas fini en 30 s
-#   ERROR    « ERROR » à l'écran (erreur BASIC, TAPE ERROR...)
-#   READY    l'écran finit sur CLOAD"" / Ready (souvent : pas d'auto-run)
-#   NOSCREEN pas de vidage mémoire à 24 M cycles (passage terminé plus tôt)
-#   OK       rien de tout cela — ce n'est PAS une preuve que le programme est juste
-# Les cassettes HALT / ERROR / READY / TIMEOUT / NOSCREEN sont relancées sur la
-# ROM ORIC-1 (BASIC 1.0) : beaucoup sont des programmes ORIC-1. La ligne donne
-# les deux verdicts : « verdict11|verdict10|fichier|détail|écran ».
-# TAP_SWEEP_SHOTS=DOSSIER enregistre aussi l'écran de chaque cassette (passage
-# Atmos) en DOSSIER/<nom>.ppm, pour tools/contact_sheet.py (2.31.10) — les écrans
-# HIRES échappent aux vérifications texte ci-dessus.
-# L'émulateur journalise sur la SORTIE STANDARD (2.31.10 : avant, l'outil lisait
-# stderr et ne voyait aucun arrêt).
-# Hors `make tests` (1318 cassettes ≈ 20 min avec 4 tâches).
+# Each tape is loaded the normal way (auto CLOAD"", no fast-load -f) on the
+# Atmos ROM for 25 M cycles, then classified from the CPU state and the text
+# screen ($BB80) at 24 M cycles:
+#   HALT     the 6502 stopped (JAM opcode) before the end
+#   TIMEOUT  the emulator did not finish within 30 s
+#   ERROR    "ERROR" on the screen (BASIC error, TAPE ERROR...)
+#   READY    the screen ends on CLOAD"" / Ready (often: no auto-run flag)
+#   NOSCREEN no RAM dump at 24 M cycles (run ended early)
+#   OK       none of the above — NOT a proof that the program is right
+# HALT / ERROR / READY / TIMEOUT / NOSCREEN tapes are run again on the ORIC-1
+# ROM (BASIC 1.0): many tapes are ORIC-1 programs. The line gives both
+# verdicts: "verdict11|verdict10|file|detail|screen".
+# TAP_SWEEP_SHOTS=DIR also saves the screen of each tape (Atmos run) as
+# DIR/<name>.ppm, for tools/contact_sheet.py (2.31.10) — HIRES screens are
+# invisible to the text checks above.
+# The emulator logs on STDOUT (2.31.10: before, the tool read stderr and saw
+# no stop at all).
+# Not part of `make tests` (1318 tapes ≈ 20 min with 4 jobs).
 #
 # Author: bmarty <bmarty@mailo.com>
 
@@ -39,7 +39,7 @@ one() {
         shot=(--screenshot-at "24000000:$TAP_SWEEP_SHOTS/$(basename "$tap").ppm")
     fi
     timeout 30 "$ROOT/phosphoric" --no-config -r "$ROOT/roms/$rom" -t "$tap" --headless \
-        -c 25000000 --dump-ram-at "24000000:$bin" "${shot[@]}" >"$log" 2>&1; rc=$?   # journaux sur stdout
+        -c 25000000 --dump-ram-at "24000000:$bin" "${shot[@]}" >"$log" 2>&1; rc=$?   # logs on stdout
     halt=$(grep -o "CPU halted after [0-9]* cycles" "$log" | head -1)
     pc=$(grep -o "PC:[0-9A-F]*" "$log" | tail -1)
     scr=$(python3 -I -c "
@@ -58,7 +58,7 @@ print(' / '.join(x for x in rows if x))" "$bin" 2>/dev/null)
         n=${halt//[!0-9]/}
         [ "$n" -lt 24900000 ] && st=HALT
     fi
-    [ "$st" = OK ] && [ "$dumped" = 0 ] && st=NOSCREEN   # pas de vidage à 24 M : passage terminé plus tôt
+    [ "$st" = OK ] && [ "$dumped" = 0 ] && st=NOSCREEN   # no RAM dump at 24 M: run ended early
     [ "$st" = OK ] && echo "$scr" | grep -q "ERROR" && st=ERROR
     [ "$st" = OK ] && echo "$scr" | grep -qE 'CLOAD"" / Ready *$' && st=READY
     printf '%s\t%s\t%s\n' "$st" "$halt $pc" "${scr:0:200}"

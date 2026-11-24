@@ -1,79 +1,79 @@
-# Build sur macOS
+# Building on macOS
 
-Phosphoric compile et tourne nativement sur macOS (Intel et Apple Silicon) via
-les Command Line Tools d'Apple (clang) et SDL2 installé par Homebrew.
+Phosphoric builds and runs natively on macOS (Intel and Apple Silicon) using
+Apple's Command Line Tools (clang) and SDL2 installed through Homebrew.
 
-> **Statut** : **vérifié sur du vrai macOS** (Apple Silicon) par la CI
-> `macos-build` (`.github/workflows/macos-build.yml`, runner `macos-latest`) :
-> build headless (`SDL2=0`), build complet (`SDL2=1`), **suite de tests complète**
-> et build `HTTPAPI=1` passent tous au vert. La CI a d'ailleurs révélé plusieurs
-> écarts macOS invisibles sous Linux (voir « Détails de portabilité »).
+> **Status**: **verified on real macOS** (Apple Silicon) by the
+> `macos-build` CI (`.github/workflows/macos-build.yml`, runner `macos-latest`):
+> headless build (`SDL2=0`), full build (`SDL2=1`), **full test suite**
+> and `HTTPAPI=1` build all pass green. The CI also exposed several
+> macOS discrepancies that are invisible on Linux (see "Portability details").
 
-## Dépendances
+## Dependencies
 
 ```bash
-# Command Line Tools (fournit clang, make, git)
+# Command Line Tools (provides clang, make, git)
 xcode-select --install
 
 # Homebrew : https://brew.sh
-brew install sdl2 pkg-config      # affichage/audio/clavier
-brew install openssl@3            # optionnel : PicoWiFi TLS (PICOTLS)
+brew install sdl2 pkg-config      # display/audio/keyboard
+brew install openssl@3            # optional: PicoWiFi TLS (PICOTLS)
 ```
 
-`gcc` sur macOS est un alias de **clang** (via les Command Line Tools) : le
-Makefile fonctionne tel quel. Pour être explicite : `make CC=clang`.
+`gcc` on macOS is an alias for **clang** (via the Command Line Tools): the
+Makefile works as-is. To be explicit: `make CC=clang`.
 
-## Compilation
+## Building
 
 ```bash
-make                     # build standard avec SDL2 (Homebrew)
-make SDL2=0              # build headless (sans SDL2)
-make tests               # suite de tests complète
+make                     # standard build with SDL2 (Homebrew)
+make SDL2=0              # headless build (without SDL2)
+make tests               # full test suite
 ```
 
-Le Makefile détecte SDL2 via `pkg-config`, avec repli sur **`sdl2-config`**
-(livré par `brew install sdl2`) si `PKG_CONFIG_PATH` ne pointe pas sur le keg —
-robuste sur Apple Silicon (Homebrew dans `/opt/homebrew`).
+The Makefile detects SDL2 through `pkg-config`, falling back to **`sdl2-config`**
+(shipped by `brew install sdl2`) when `PKG_CONFIG_PATH` does not point to the keg —
+robust on Apple Silicon (Homebrew under `/opt/homebrew`).
 
-## Options spécifiques macOS
+## macOS-specific options
 
-| Build | Remarque macOS |
-|-------|----------------|
-| `make MIDI=1` | MIDI temps réel via **CoreMIDI** (frameworks liés automatiquement). Le backend CoreMIDI est écrit selon l'API documentée mais reste à valider sur Mac. |
-| `make CAST=1` | Chromecast MJPEG ; nécessite OpenSSL (`brew install openssl@3`, exporter `PKG_CONFIG_PATH` vers son `lib/pkgconfig`). |
-| `--serial com:…` | Port série réel via **termios** (POSIX) — désormais activé sur macOS comme sur Linux. |
-| `--serial pty` | Pseudo-terminal via `openpty()` (`<util.h>` sur macOS). |
+| Build | macOS note |
+|-------|------------|
+| `make MIDI=1` | Real-time MIDI through **CoreMIDI** (frameworks linked automatically). The CoreMIDI backend is written against the documented API but still has to be validated on a Mac. |
+| `make CAST=1` | Chromecast MJPEG; requires OpenSSL (`brew install openssl@3`, export `PKG_CONFIG_PATH` to its `lib/pkgconfig`). |
+| `--serial com:…` | Real serial port through **termios** (POSIX) — now enabled on macOS as on Linux. |
+| `--serial pty` | Pseudo-terminal via `openpty()` (`<util.h>` on macOS). |
 
-## Détails de portabilité
+## Portability details
 
-Les adaptations qui rendent le build macOS possible :
+The adaptations that make the macOS build possible:
 
-- **PTY** : `openpty()` est déclaré dans `<util.h>` sur macOS/BSD (et non
-  `<pty.h>` comme sur Linux) — inclusion conditionnelle dans
+- **PTY**: `openpty()` is declared in `<util.h>` on macOS/BSD (not
+  `<pty.h>` as on Linux) — conditional include in
   `src/io/serial_backend.c`.
-- **COM série** : `HAS_COM` couvre maintenant `__APPLE__` (termios POSIX complet
-  sur macOS), plus seulement Linux.
-- **`MSG_NOSIGNAL`** : absent sur macOS/BSD ; repli sur `0` dans
-  `include/utils/oscompat.h`. SIGPIPE étant ignoré au niveau du process
-  (`oscompat_ignore_sigpipe()`), écrire sur une socket morte renvoie `EPIPE`
-  au lieu de tuer l'émulateur.
-- **SDL2** : détection `pkg-config` → repli `sdl2-config` dans le `Makefile`.
-- **`clock_nanosleep`/`TIMER_ABSTIME`** : absents sur macOS ; le pacing
-  `--realtime` retombe sur un `nanosleep` relatif (`src/main.c`, garde
+- **Serial COM**: `HAS_COM` now covers `__APPLE__` (full POSIX termios
+  on macOS), not only Linux.
+- **`MSG_NOSIGNAL`**: missing on macOS/BSD; falls back to `0` in
+  `include/utils/oscompat.h`. Since SIGPIPE is ignored at process level
+  (`oscompat_ignore_sigpipe()`), writing to a dead socket returns `EPIPE`
+  instead of killing the emulator.
+- **SDL2**: `pkg-config` detection → `sdl2-config` fallback in the `Makefile`.
+- **`clock_nanosleep`/`TIMER_ABSTIME`**: missing on macOS; the `--realtime`
+  pacing falls back to a relative `nanosleep` (`src/main.c`, guarded by
   `__APPLE__`).
-- **`_DARWIN_C_SOURCE`** : les fichiers définissant `_POSIX_C_SOURCE`/
-  `_XOPEN_SOURCE` (loci, gdbstub, control, plusieurs tests…) ajoutent
-  `_DARWIN_C_SOURCE` sous `__APPLE__` — sans lui, macOS masque `snprintf`,
-  `MSG_DONTWAIT`, `INADDR_LOOPBACK` et autres extensions BSD dans `<stdio.h>`/
+- **`_DARWIN_C_SOURCE`**: files defining `_POSIX_C_SOURCE`/
+  `_XOPEN_SOURCE` (loci, gdbstub, control, several tests…) add
+  `_DARWIN_C_SOURCE` under `__APPLE__` — without it, macOS hides `snprintf`,
+  `MSG_DONTWAIT`, `INADDR_LOOPBACK` and other BSD extensions in `<stdio.h>`/
   `<netinet/in.h>`.
-- **Symbole `weak` optionnel** : un *undefined weak* résolu à NULL marche en ELF
-  mais pas en Mach-O ; le save-state optionnel de `debugger.c` utilise une
-  *définition* weak (portable), écrasée par le vrai `savestate.c`.
-- **bash** : macOS ne fournit que bash 3.2 ; les scripts de test d'intégration
-  ciblent bash moderne → la CI installe `bash` par Homebrew.
+- **Optional `weak` symbol**: an *undefined weak* resolved to NULL works in ELF
+  but not in Mach-O; the optional save-state of `debugger.c` uses a weak
+  *definition* (portable), overridden by the real `savestate.c`.
+- **bash**: macOS only ships bash 3.2; the integration test scripts
+  target modern bash → the CI installs `bash` from Homebrew.
 
-## Non couvert (backends Linux-only)
+## Not covered (Linux-only backends)
 
-Le backend `--serial com:` s'appuie sur les constantes de baud POSIX standard ;
-les débits non standard (au-delà de `B230400`) ne sont pas exposés. Aucune autre
-fonctionnalité n'est désactivée sur macOS.
+The `--serial com:` backend relies on the standard POSIX baud constants;
+non-standard rates (above `B230400`) are not exposed. No other
+feature is disabled on macOS.

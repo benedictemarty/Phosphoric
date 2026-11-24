@@ -27,8 +27,8 @@ static int tests_passed = 0;
 static int tests_failed = 0;
 
 #define TEST(name) static void name(void)
-/* Un échec affiche FAIL et ne compte PAS le test comme réussi (avant 2.12.9 :
- * « FAIL » suivi de « PASS », et le test compté dans les deux colonnes). */
+/* A failure prints FAIL and does NOT count the test as passed (before 2.12.9:
+ * "FAIL" followed by "PASS", and the test counted in both columns). */
 #define RUN(name) do { \
     int failed_before = tests_failed; \
     printf("  %-50s", #name); \
@@ -57,10 +57,10 @@ static int tests_failed = 0;
     } \
 } while(0)
 
-/* Client HTTP de test : se connecte à 127.0.0.1:@p port, attend @p delay_ms
- * avant d'envoyer @p request, puis lit jusqu'à trouver @p want (ou 3 s sans
- * données). Une seule lecture ne suffit pas : la réponse peut arriver en
- * plusieurs morceaux. Retourne true si @p want a été reçu. */
+/* Test HTTP client: connects to 127.0.0.1:@p port, waits @p delay_ms before
+ * sending @p request, then reads until @p want is found (or 3 s without data).
+ * A single read is not enough: the reply may arrive in several pieces.
+ * Returns true if @p want was received. */
 static bool http_fetch(uint16_t port, const char* request, int delay_ms,
                        const char* want, char* out, size_t outsz) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -79,7 +79,7 @@ static bool http_fetch(uint16_t port, const char* request, int delay_ms,
     out[0] = '\0';
     while (len + 1 < outsz && !strstr(out, want)) {
         ssize_t n = recv(sock, out + len, outsz - 1 - len, 0);
-        if (n <= 0) break;                      /* fermé, ou 3 s sans rien */
+        if (n <= 0) break;                      /* closed, or 3 s with nothing */
         len += (size_t)n;
         out[len] = '\0';
     }
@@ -290,9 +290,9 @@ TEST(test_http_mjpeg_stream) {
     ASSERT_TRUE(strstr(response, "multipart/x-mixed-replace") != NULL);
 }
 
-/* Requête envoyée APRÈS la connexion (300 ms) : sous macOS/BSD, le socket
- * accepté héritait du O_NONBLOCK du socket d'écoute, le recv du serveur
- * rendait EAGAIN et le client était fermé sans réponse (échec CI macOS 2.12.8). */
+/* Request sent AFTER the connection (300 ms): on macOS/BSD the accepted socket
+ * inherited O_NONBLOCK from the listening socket, the server's recv returned
+ * EAGAIN and the client was closed without a reply (CI macOS failure 2.12.8). */
 TEST(test_http_request_after_connect_delay) {
     cast_server_t server;
     ASSERT_TRUE(cast_server_init(&server, 18083));
@@ -303,9 +303,9 @@ TEST(test_http_request_after_connect_delay) {
     ASSERT_TRUE(got);
 }
 
-/* Un client qui se connecte sans rien envoyer ne bloque plus le serveur : avant
- * 2.12.9, le recv du thread serveur (socket bloquant, sans délai, sous Linux)
- * attendait indéfiniment et plus aucun client n'était servi. */
+/* A client that connects without sending anything no longer blocks the server:
+ * before 2.12.9 the server thread's recv (blocking socket, no timeout, on Linux)
+ * waited forever and no other client was served. */
 TEST(test_silent_client_does_not_block_server) {
     cast_server_t server;
     ASSERT_TRUE(cast_server_init(&server, 18084));
@@ -316,11 +316,11 @@ TEST(test_silent_client_does_not_block_server) {
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     addr.sin_port = htons(18084);
     int c = connect(mute, (struct sockaddr*)&addr, sizeof(addr));
-    usleep(100000);                         /* le serveur l'accepte et attend */
+    usleep(100000);                         /* the server accepts it and waits */
     char response[32768];
     bool got = http_fetch(18084, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", 0,
                           "text/html", response, sizeof(response));
-    close(mute);                            /* débloque l'ancien serveur avant l'arrêt */
+    close(mute);                            /* unblocks the old server before stopping */
     cast_server_stop(&server);
     ASSERT_EQ(c, 0);
     ASSERT_TRUE(got);

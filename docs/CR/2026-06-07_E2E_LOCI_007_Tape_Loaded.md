@@ -1,53 +1,53 @@
-# E2E LOCI complet : 007 "Dangereusement Vôtre" chargé automatiquement
+# Full LOCI E2E: 007 "Dangereusement Vôtre" loaded automatically
 
-**Date** : 2026-06-07
-**Version** : v1.16.49-alpha (suite immédiate du sprint 34av)
-**Source documentation** : [LOCI User Manual sodiumlb](https://github.com/sodiumlb/loci-hardware/wiki/LOCI-User-Manual)
-
----
-
-## 1. Contexte
-
-Sprint 34av avait livré l'auto-typing matrix avec `\e` ESC + flèches
-`\u/\d/\l/\r`. Mais l'automatisation de la navigation TUI LOCI restait
-floue : la sélection « 007.TAP via picker » ne marchait pas en aveugle.
-
-L'utilisateur m'a demandé d'aller chercher la doc officielle.
+**Date**: 2026-06-07
+**Version**: v1.16.49-alpha (direct follow-up of sprint 34av)
+**Documentation source**: [LOCI User Manual sodiumlb](https://github.com/sodiumlb/loci-hardware/wiki/LOCI-User-Manual)
 
 ---
 
-## 2. Documentation récupérée
+## 1. Context
 
-Trouvée sur le wiki sodiumlb. Raccourcis clavier décisifs :
+Sprint 34av had delivered matrix auto-typing with `\e` ESC + arrows
+`\u/\d/\l/\r`. But automating the LOCI TUI navigation was still
+unclear: selecting "007.TAP via picker" did not work blind.
 
-| Touche | Action |
+The user asked me to go and find the official documentation.
+
+---
+
+## 2. Documentation retrieved
+
+Found on the sodiumlb wiki. Decisive keyboard shortcuts:
+
+| Key | Action |
 |--------|--------|
-| **`T`** | Saut direct vers le slot tape drive |
-| **`A`-`D`** | Saut direct vers les drives Microdisc |
+| **`T`** | Jump straight to the tape drive slot |
+| **`A`-`D`** | Jump straight to the Microdisc drives |
 | **`K`** | Tape counter |
 | **`M`** | Mouse on/off |
 | **`O`** | ROM select |
 | **`R`** | RV1 adjust |
-| **SPACE** | Sélectionne (file ou toggle) |
-| **ESC** | Boot (si au top menu) ou ferme popup |
-| **RETURN** | Reprend une appli suspendue (save state) |
-| **`/`** | Parent directory dans le file browser |
-| **`F`** | Champ filtre dans le file browser |
+| **SPACE** | Select (file or toggle) |
+| **ESC** | Boot (if at top menu) or close popup |
+| **RETURN** | Resume a suspended application (save state) |
+| **`/`** | Parent directory in the file browser |
+| **`F`** | Filter field in the file browser |
 | **+/-** | Increase/decrease (RV1) |
 
-**Workflow officiel pour monter un TAP** :
-1. Press **T** → ouvre le tape drive
-2. File browser s'ouvre avec les devices
-3. Up/Down pour sélectionner le device (USB ou SD)
-4. SPACE pour entrer dans le device
-5. F + filter `.TAP` (optionnel ; le picker peut filtrer auto)
-6. Up/Down pour highlight le fichier
-7. SPACE pour sélectionner
-8. ESC pour booter
+**Official workflow to mount a TAP**:
+1. Press **T** → opens the tape drive
+2. The file browser opens with the devices
+3. Up/Down to select the device (USB or SD)
+4. SPACE to enter the device
+5. F + filter `.TAP` (optional; the picker can filter automatically)
+6. Up/Down to highlight the file
+7. SPACE to select
+8. ESC to boot
 
 ---
 
-## 3. Validation E2E avec 007 "Dangereusement Vôtre"
+## 3. E2E validation with 007 "Dangereusement Vôtre"
 
 ```bash
 ./oric1-emu -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
@@ -55,19 +55,19 @@ Trouvée sur le wiki sodiumlb. Raccourcis clavier décisifs :
     --type-keys '15000000:\p3t\p2 \p2 \p2\e\p9\p1CLOAD""\n\p9\p9\p9'
 ```
 
-Décodé :
-- `\p3` : 3s pour stabiliser le TUI LOCI
-- `t` : saut au tape drive
-- `\p2 ` : 2s puis SPACE → ouvre file picker (seule SD = pas besoin de
-  device selection intermédiaire)
-- `\p2 ` : 2s puis SPACE → sélectionne le 1er fichier listé (007.TAP,
-  alphabétique avant AIGLE.TAP car '0' < 'A')
-- `\p2\e` : 2s puis ESC → MIA_BOOT
-- `\p9\p1` : 10s pour BASIC 1.1 init
-- `CLOAD""\n` : tape la commande CLOAD
-- `\p9\p9\p9` : 27s pour le chargement complet du tape
+Decoded:
+- `\p3`: 3 s to let the LOCI TUI settle
+- `t`: jump to the tape drive
+- `\p2 `: 2 s then SPACE → opens the file picker (SD only = no need for
+  an intermediate device selection)
+- `\p2 `: 2 s then SPACE → selects the first listed file (007.TAP,
+  alphabetically before AIGLE.TAP since '0' < 'A')
+- `\p2\e`: 2 s then ESC → MIA_BOOT
+- `\p9\p1`: 10 s for BASIC 1.1 init
+- `CLOAD""\n`: types the CLOAD command
+- `\p9\p9\p9`: 27 s for the complete tape load
 
-### Logs LOCI clés
+### Key LOCI logs
 
 ```
 LOCI SDIMG extract: '007.TAP' → '/tmp/loci_007.TAP_Hw2PS4'
@@ -80,11 +80,11 @@ TAPE: getsync at tapeoffs=137/28630
 TAPE: getsync at tapeoffs=8322/28630
 ```
 
-3 getsync = multi-block TAP (header + segments code). Le 1er sync trouve
-le tape ; le 2e à offset 137 = après le header (16 leader + name + start
-of data block) ; le 3e à 8322 = entre les blocks de données.
+3 getsyncs = multi-block TAP (header + code segments). The 1st sync finds
+the tape; the 2nd at offset 137 = after the header (16 leader + name + start
+of data block); the 3rd at 8322 = between the data blocks.
 
-### Écran final (titre du jeu)
+### Final screen (game title)
 
 ```
 DOMARK ET EUREKA INFORMATIQUE PRESENTENT
@@ -110,27 +110,34 @@ beaucoup a cette fille!
         "RETURN" - DEBUT DU JEU
 ```
 
-**Le jeu James Bond 007 "Dangereusement Vôtre" (DOMARK 1985) tourne
-automatiquement** — première fois qu'un programme commercial Oric tape
-est chargé bout-en-bout via le firmware LOCI dans Phosphoric.
+(On-screen text of the French edition of the game, kept as displayed:
+"Domark and Eureka Informatique present 007 'A View to a Kill', the computer
+game [...] Now, James, your mission begins! Note from 'Q': Stop fooling
+around, Bond, you have work to do! Remember: use the gadgets I entrusted to
+you with care, some of them are very dangerous! Note from 'M': Don't fail,
+Bond, I am very fond of that girl! 'RETURN' - start the game".)
+
+**The James Bond game 007 "Dangereusement Vôtre" (DOMARK 1985) runs
+automatically** — the first time a commercial Oric tape program has been
+loaded end-to-end through the LOCI firmware in Phosphoric.
 
 ---
 
-## 4. Pile validée
+## 4. Validated stack
 
-| Composant | Validé par |
+| Component | Validated by |
 |-----------|------------|
-| MIA spin ABI (sprint 34an) | LOCI ROM boote et reste responsive |
-| SDIMG FAT16 read (34ao) | Picker liste les fichiers, mount extract |
-| SDIMG `mkstemp` (34ar) | Path `/tmp/loci_007.TAP_Hw2PS4` randomisé |
-| ROM swap + BASIC patches (34ao+) | BASIC 1.1 booté avec les bons patches |
-| CSAVE/CLOAD format (34aq-34at) | Le CLOAD trouve sync à offset 0, 137, 8322 |
-| `\e` ESC + `t` shortcut (34av) | Navigation TUI automatique |
-| 7 ops tuning stubbées (34au) | Pas appelées par 007 mais prêtes |
+| MIA spin ABI (sprint 34an) | The LOCI ROM boots and stays responsive |
+| SDIMG FAT16 read (34ao) | The picker lists the files, mount extracts |
+| SDIMG `mkstemp` (34ar) | Path `/tmp/loci_007.TAP_Hw2PS4` randomised |
+| ROM swap + BASIC patches (34ao+) | BASIC 1.1 booted with the right patches |
+| CSAVE/CLOAD format (34aq-34at) | CLOAD finds sync at offsets 0, 137, 8322 |
+| `\e` ESC + `t` shortcut (34av) | Automatic TUI navigation |
+| 7 stubbed tuning ops (34au) | Not called by 007 but ready |
 
 ---
 
-## 5. Reproductibilité
+## 5. Reproducibility
 
 ```bash
 git checkout main           # v1.16.49-alpha
@@ -141,23 +148,23 @@ make SDL2=1
 ./oric1-emu -r roms/loci/locirom --loci --loci-sdimg loci_demo.img \
     --keyboard azerty \
     --type-keys '15000000:\p3t\p2 \p2 \p2\e\p9\p1CLOAD""\n\p9\p9\p9'
-# → 60-90 secondes après, l'écran montre le titre 007 DOMARK
+# → 60-90 seconds later, the screen shows the DOMARK 007 title
 ```
 
 ---
 
-## 6. Crédits
+## 6. Credits
 
-- **sodiumlb** : LOCI hardware + ROM + firmware + documentation TUI sur
-  le wiki. Sans cette doc, l'automatisation de la navigation aurait
-  exigé du reverse engineering du firmware 6502.
-- **xahmol** : `locifilemanager` (firmware alternatif, cité dans la
-  recherche, pour info).
+- **sodiumlb**: LOCI hardware + ROM + firmware + TUI documentation on
+  the wiki. Without that documentation, automating the navigation would
+  have required reverse engineering the 6502 firmware.
+- **xahmol**: `locifilemanager` (alternative firmware, cited in the
+  research, for information).
 
 ---
 
-**Statut** : E2E LOCI **entièrement automatisé** — boot → mount TAP →
-swap BASIC → CLOAD → run program. Premier émulateur grand public à
-supporter ce flow de bout-en-bout.
+**Status**: LOCI E2E **fully automated** — boot → mount TAP →
+swap BASIC → CLOAD → run program. First mainstream emulator to
+support this flow end-to-end.
 
-— Fin du CR
+— End of report

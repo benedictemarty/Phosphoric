@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file iomenu_glue.c
- * @brief Liaison menu des périphériques (F1) ↔ émulateur ; phosphoric.cfg.
+ * @brief Peripherals menu (F1) ↔ emulator glue; phosphoric.cfg.
  * @author bmarty <bmarty@mailo.com>
  *
- * Voir include/iomenu_glue.h. Les opérations sur les médias viennent de l'OSD
- * F6 (main.c), déplacées ici pour être partagées, sans changement de fond.
+ * See include/iomenu_glue.h. The media operations come from the F6 OSD
+ * (main.c), moved here to be shared, with no change in substance.
  */
 #define _POSIX_C_SOURCE 200809L   /* strdup */
 #include "iomenu_glue.h"
@@ -19,7 +19,7 @@
 #include "io/picowifi_detect.h"
 #include "video/iom_lang.h"
 #include "utils/logging.h"
-#include "utils/oscompat.h"   /* mkdir portable (MinGW : un seul argument) */
+#include "utils/oscompat.h"   /* portable mkdir (MinGW: a single argument) */
 #include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -34,7 +34,7 @@
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Médias
+ *  Media
  * ═══════════════════════════════════════════════════════════════════════ */
 
 bool media_disk_writeback(emulator_t* emu, int drv) {
@@ -48,7 +48,7 @@ bool media_disk_writeback(emulator_t* emu, int drv) {
     return ok;
 }
 
-/* Règle de routage : emu_loci_disks() (emulator.h). */
+/* Routing rule: emu_loci_disks() (emulator.h). */
 #define loci_disks emu_loci_disks
 
 media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
@@ -63,13 +63,13 @@ media_result_t media_disk_insert(emulator_t* emu, int drv, const char* path) {
     if (drv < 0 || drv >= emu_disk_max_drives(emu)) return MEDIA_BAD_DRIVE;
     sedoric_disk_t* nd = sedoric_load(path);
     if (!nd) return MEDIA_LOAD_FAILED;
-    /* Sauve l'ancien disque s'il a été modifié, avant de l'écraser. */
+    /* Save the old disk if it was modified, before overwriting it. */
     media_disk_writeback(emu, drv);
     if (emu->disks[drv]) sedoric_destroy(emu->disks[drv]);
     emu->disks[drv] = nd;
     emu_disk_clear_dirty(emu, drv);
     emu_disk_wire(emu, drv, nd);
-    /* Suivi du chemin par lecteur (write-back/éjection ultérieurs). */
+    /* Track the per-drive path (later write-back/eject). */
     emu_set_disk_path(emu, drv, path);
     log_info("OSD: disque %c <- %s", 'A' + drv, path);
     return MEDIA_OK;
@@ -79,7 +79,7 @@ media_result_t media_disk_eject(emulator_t* emu, int drv) {
     if (loci_disks(emu)) {
         if (drv < 0 || drv >= 4) return MEDIA_BAD_DRIVE;
         if (!emu->loci.dsk_host_path[drv][0] && !emu->loci.dsk_image[drv]) return MEDIA_EMPTY;
-        loci_dsk_close(&emu->loci, (uint8_t)drv);   /* écrit les secteurs modifiés */
+        loci_dsk_close(&emu->loci, (uint8_t)drv);   /* writes the modified sectors */
         return MEDIA_OK;
     }
     if (emu_loci_fw_disks(emu)) return MEDIA_LOCI_MENU;
@@ -129,7 +129,7 @@ media_result_t media_tape_eject(emulator_t* emu) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  État affiché
+ *  Displayed state
  * ═══════════════════════════════════════════════════════════════════════ */
 
 static const char* base_name(const char* path) {
@@ -179,20 +179,20 @@ void iomenu_refresh(emulator_t* emu) {
                  : emu->joystick.mode == ORIC_JOY_SDL_GAMEPAD ? IOM_JOY_GAMEPAD : IOM_JOY_NONE;
     st->azerty = emu->keyboard.layout == ORIC_KB_AZERTY;
 
-    /* Cartes d'extension : liste du registre (cards.h), état de la machine en
-     * cours. Les choix (page des cartes) sont chargés à l'ouverture du menu. */
+    /* Expansion cards: list from the registry (cards.h), state of the running
+     * machine. The choices (cards page) are loaded when the menu opens. */
     iom_menu_t* m = &emu->iomenu;
     if (!m->open) {
         cards_state_from(&m->cards_orig, emu, emu->argc, emu->argv);
         m->cards = m->cards_orig;
 #ifdef __EMSCRIPTEN__
-        m->cards_readonly = true;     /* pas de relance dans le navigateur */
+        m->cards_readonly = true;     /* no restart in the browser */
 #else
         m->cards_readonly = emu->argv == NULL;
 #endif
     }
-    /* Détection USB à l'ouverture puis toutes les ~50 images : un branchement
-     * menu ouvert apparaît en une seconde, sans parcourir /sys à chaque image. */
+    /* USB detection on opening then every ~50 frames: a device plugged in while
+     * the menu is open shows up within a second, without scanning /sys every frame. */
     if (!m->open || --st->usb_scan <= 0) {
         st->usb_scan = 50;
         if (!loci_usb_detect(NULL, st->usb_loci, sizeof(st->usb_loci))) st->usb_loci[0] = '\0';
@@ -212,7 +212,7 @@ void iomenu_refresh(emulator_t* emu) {
         const char* main_v = d->enable_param >= 0 ? c->value[d->enable_param] : "";
         if (addr) snprintf(k->detail, sizeof(k->detail), "$%04X  %s", addr, base_name(main_v));
         else snprintf(k->detail, sizeof(k->detail), "%s", base_name(main_v));
-        /* LOCI-USB : son port (renseigné, sinon détecté). */
+        /* LOCI-USB: its port (typed in, otherwise detected). */
         const int pm = iom_param_index(d, "mode"), pu = iom_param_index(d, "port_usb");
         if (pm >= 0 && pu >= 0 && strcmp(c->value[pm], LOCI_MODE_HW) == 0) {
             const char* dev = c->value[pu][0] ? c->value[pu] : st->usb_loci;
@@ -231,7 +231,7 @@ static void msg(emulator_t* emu, bool err, const char* fmt, ...) {
     char buf[96];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), iom_tr(fmt), ap);   /* format dans la langue du menu */
+    vsnprintf(buf, sizeof(buf), iom_tr(fmt), ap);   /* format in the menu language */
     va_end(ap);
     iom_message(&emu->iomenu, err, buf);
 }
@@ -247,7 +247,7 @@ static const char* media_error(media_result_t r) {
     }
 }
 
-/* Prochain nom libre snapshots/etatNNNN.ost. */
+/* Next free name snapshots/etatNNNN.ost. */
 static bool next_snapshot_path(char* out, size_t n) {
     if (oscompat_mkdir("snapshots", 0755) != 0 && errno != EEXIST) return false;
     for (int i = 1; i < 10000; i++) {
@@ -260,18 +260,18 @@ static bool next_snapshot_path(char* out, size_t n) {
 static void printer_cycle(emulator_t* emu) {
     oric_printer_t* p = &emu->printer;
     const bool active = oric_printer_is_active(p);
-    if (!active) {                                   /* coupée → texte */
+    if (!active) {                                   /* off → text */
         p->type = PRINTER_TEXT;
         if (oric_printer_open(p, "impression.txt"))
             msg(emu, false, "Imprimante texte → impression.txt (LPRINT, LLIST)");
         else
             msg(emu, true, "Impossible d'ouvrir impression.txt");
-    } else if (p->type == PRINTER_TEXT) {            /* texte → traceur */
+    } else if (p->type == PRINTER_TEXT) {            /* text → plotter */
         oric_printer_close(p);
         p->type = PRINTER_MCP40;
         oric_printer_open(p, "traceur.bmp");
         msg(emu, false, "Traceur MCP-40 → traceur.bmp (écrit à la coupure)");
-    } else {                                         /* traceur → coupée */
+    } else {                                         /* plotter → off */
         oric_printer_close(p);
         p->type = PRINTER_NONE;
         msg(emu, false, "Imprimante coupée");
@@ -310,8 +310,8 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
     case IOM_ACT_RESUME:
         return true;
     case IOM_ACT_CARDS_APPLY: {
-        /* Redémarrage à froid : la boucle s'arrête, main() relance le processus
-         * avec ces options (cards_exec). */
+        /* Cold restart: the loop stops, main() relaunches the process with
+         * these options (cards_exec). */
         cards_argv_free(emu->restart_argv);
         emu->restart_argv = cards_build_argv(&emu->iomenu.cards, emu->argc, emu->argv, NULL);
         emu->running = false;
@@ -367,7 +367,7 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         if (savestate_load(emu, a->path)) {
             snprintf(emu->iomenu.st.snapshot_last, sizeof(emu->iomenu.st.snapshot_last), "%.60s", base_name(a->path));
             msg(emu, false, "Instantané repris : %s", base_name(a->path));
-            return true;                             /* retour immédiat à la machine */
+            return true;                             /* immediate return to the machine */
         }
         msg(emu, true, "Instantané illisible : %s", base_name(a->path));
         return false;
@@ -388,14 +388,14 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
         msg(emu, false, "Menu en français");
         return false;
     case IOM_ACT_TAPE_FAST_TOGGLE:
-        /* -f n'agit qu'au démarrage (injection du 1er bloc au boot) : le choix
-         * vaut pour le prochain lancement, via « Enregistrer la configuration ». */
+        /* -f only acts at startup (1st block injected at boot): the choice
+         * applies to the next launch, via « Enregistrer la configuration » (Save configuration). */
         emu->fast_load = !emu->fast_load;
         msg(emu, false, "Au prochain lancement : %s (enregistrer la configuration)",
             iom_tr(emu->fast_load ? "injection directe" : "CLOAD par la ROM"));
         return false;
     case IOM_ACT_RESET:
-        /* Même effet que F5 : reset du 6502 ; bouton reset du LOCI (montages gardés). */
+        /* Same effect as F5: 6502 reset; LOCI reset button (mounts kept). */
         cpu_reset(&emu->cpu);
         if (emu->card_on[CARD_IDX_loci]) loci_reset(&emu->loci);
         msg(emu, false, "Machine redémarrée (RESET)");
@@ -411,10 +411,10 @@ bool iomenu_apply(emulator_t* emu, const iom_action_t* a) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  phosphoric.cfg — une ligne « clé=valeur » par réglage ; « # » = commentaire
+ *  phosphoric.cfg — one « key=value » line per setting; « # » = comment
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* Clés gérées par le menu (les autres lignes du fichier sont conservées). */
+/* Keys managed by the menu (the file's other lines are kept). */
 static const char* const managed_keys[] = {
     "a", "b", "c", "d", "protection_a", "protection_b", "protection_c", "protection_d",
     "interface_disque", "rom_disque", "cassette", "cassette_rapide",
@@ -428,11 +428,11 @@ static bool is_managed(const char* line) {
     while (n > 0 && isspace((unsigned char)line[n - 1])) n--;
     for (int i = 0; managed_keys[i]; i++)
         if (strlen(managed_keys[i]) == n && strncmp(line, managed_keys[i], n) == 0) return true;
-    return cards_cfg_key(line, n);   /* carte.<id> et <id>.<paramètre> */
+    return cards_cfg_key(line, n);   /* carte.<id> and <id>.<parameter> */
 }
 
 bool iomenu_config_save(emulator_t* emu, const char* path) {
-    /* Lignes à conserver (tout ce qui n'est pas géré par le menu). */
+    /* Lines to keep (everything not managed by the menu). */
     char* keep = NULL;
     size_t keep_len = 0;
     FILE* in = fopen(path, "r");
@@ -458,11 +458,11 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
                "# Relu au lancement (sauf --headless / --no-config) ; la ligne de\n"
                "# commande reste prioritaire. Les lignes inconnues sont conservées.\n", out);
     free(keep);
-    /* Cartes : le choix du menu (page des cartes), en clés carte.* ; les
-     * anciennes clés interface_disque / rom_disque restent lues au lancement. */
+    /* Cards: the menu choice (cards page), as carte.* keys; the legacy
+     * interface_disque / rom_disque keys are still read at startup. */
     if (emu->iomenu.open) {
         cards_cfg_write(&emu->iomenu.cards, out);
-    } else {   /* menu jamais ouvert : les cartes de la machine en cours */
+    } else {   /* menu never opened: the running machine's cards */
         cards_state_t cur;
         cards_state_from(&cur, emu, emu->argc, emu->argv);
         cards_cfg_write(&cur, out);
@@ -484,7 +484,7 @@ bool iomenu_config_save(emulator_t* emu, const char* path) {
     fprintf(out, "langue=%s\n", iom_lang_code(iom_lang()));
     bool ok = fclose(out) == 0;
 #ifdef _WIN32
-    if (ok) remove(path);   /* rename() de Windows n'écrase pas un fichier existant */
+    if (ok) remove(path);   /* Windows rename() does not overwrite an existing file */
 #endif
     if (ok) ok = rename(tmp, path) == 0;
     if (!ok) remove(tmp);
@@ -515,7 +515,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
         char* key = trim(s);
         char* val = trim(eq + 1);
         const bool oui = strcasecmp(val, "oui") == 0;
-        /* Chaîne persistante (les options pointent dessus jusqu'à la fin). */
+        /* Persistent string (the options point to it until the end). */
         #define KEEP(v) strdup(v)
         if (strlen(key) == 1 && key[0] >= 'a' && key[0] <= 'd' && *val) {
             int d = key[0] - 'a';
@@ -538,7 +538,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
                 applied++;
             }
         } else if (strcmp(key, "imprimante_fichier") == 0 && *val) {
-            /* Appliqué seulement si l'imprimante vient de ce fichier (pas de la CLI). */
+            /* Applied only if the printer comes from this file (not from the CLI). */
             if (cfg->printer_file && (strcmp(cfg->printer_file, "impression.txt") == 0 ||
                                       strcmp(cfg->printer_file, "traceur.bmp") == 0))
                 cfg->printer_file = KEEP(val);
@@ -554,7 +554,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
         #undef KEEP
     }
     fclose(f);
-    /* Interface disque : seulement si la ligne de commande n'en choisit aucune. */
+    /* Disk interface: only if the command line chooses none. */
     if (rom && !cfg->disk_rom_file && !cfg->jasmin_rom_file) {
         if (strcasecmp(iface, "jasmin") == 0) { cfg->jasmin_rom_file = rom; applied++; rom = NULL; }
         else if (strcasecmp(iface, "microdisc") == 0) { cfg->disk_rom_file = rom; applied++; rom = NULL; }
@@ -564,7 +564,7 @@ int iomenu_config_load(const char* path, cli_opts_t* cfg) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- *  Capture PPM du menu
+ *  PPM capture of the menu
  * ═══════════════════════════════════════════════════════════════════════ */
 
 bool iomenu_screenshot(emulator_t* emu, const char* path) {

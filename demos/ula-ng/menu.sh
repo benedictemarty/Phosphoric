@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Menu de lancement des démos ULA-NG de Phosphoric.
-# Usage : demos/ula-ng/menu.sh [--scale N] [--rom CHEMIN] [--accel]
-#   --scale N    facteur d'échelle SDL (défaut 2)
-#   --rom FILE   ROM à utiliser (défaut roms/basic11b.rom)
-#   --accel      utilise le renderer SDL accéléré (défaut : --render-software,
-#                qui évite l'écran noir sur certaines configs GPU)
+# Launch menu for the Phosphoric ULA-NG demos.
+# Usage: demos/ula-ng/menu.sh [--scale N] [--rom PATH] [--accel]
+#   --scale N    SDL scale factor (default 2)
+#   --rom FILE   ROM to use (default roms/basic11b.rom)
+#   --accel      use the accelerated SDL renderer (default: --render-software,
+#                which avoids the black screen on some GPU setups)
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -35,7 +35,7 @@ if [ ! -f "$ROM" ]; then
     exit 1
 fi
 
-# Lance l'émulateur. $1 = fichier .tap. L'ULA-NG se déverrouille elle-même.
+# Launches the emulator. $1 = .tap file. The ULA-NG unlocks itself.
 launch() {
     local tap="$1"
     echo

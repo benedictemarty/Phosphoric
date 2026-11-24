@@ -240,17 +240,17 @@ typedef struct {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 #ifdef __EMSCRIPTEN__
-/* ── Transport navigateur (build WASM) ─────────────────────────────────────
- * Un navigateur n'ouvre pas de socket TCP : chaque connexion du modem passe
- * par un WebSocket vers un relais (tools/picowifi_ws_relay.py) qui ouvre le
- * TCP — et termine le TLS quand `tls=1` — côté hôte :
- *   <relais>?host=H&port=P&tls=0|1   (relais : Module.picowifiRelay,
- *                                     défaut ws://127.0.0.1:8766/)
- * Module.picowifiRelay === 'none' : pas de relais, sockets virtuelles de
- * web/picowifi_js.js (HTTP rejoué par fetch(), DAYTIME local, rien d'autre).
- * Les « fd » rendus sont PW_WS_FD_BASE + id. Les attentes (connexion,
- * lectures bornées) rendent la main au navigateur via emscripten_sleep
- * (Asyncify) : c'est là que les messages WebSocket arrivent. */
+/* ── Browser transport (WASM build) ────────────────────────────────────────
+ * A browser does not open TCP sockets: each modem connection goes through
+ * a WebSocket to a relay (tools/picowifi_ws_relay.py) which opens the
+ * TCP connection -- and terminates TLS when `tls=1` -- on the host side:
+ *   <relay>?host=H&port=P&tls=0|1    (relay: Module.picowifiRelay,
+ *                                     default ws://127.0.0.1:8766/)
+ * Module.picowifiRelay === 'none': no relay, virtual sockets from
+ * web/picowifi_js.js (HTTP replayed by fetch(), local DAYTIME, nothing else).
+ * The returned "fd"s are PW_WS_FD_BASE + id. Waits (connection,
+ * bounded reads) yield to the browser via emscripten_sleep
+ * (Asyncify): that is where the WebSocket messages arrive. */
 #define PW_WS_FD_BASE 0x100000
 
 EM_JS(int, pw_js_open, (const char* host, int port, int secure), {
@@ -258,7 +258,7 @@ EM_JS(int, pw_js_open, (const char* host, int port, int secure), {
     var S = Module.pwSocks || (Module.pwSocks = { next: 1, socks: {} });
     var s;
     if (base === 'none') {
-        /* Sans relais : sockets virtuelles de web/picowifi_js.js (HTTP via fetch). */
+        /* No relay: virtual sockets from web/picowifi_js.js (HTTP via fetch). */
         if (typeof PicoWifiJS === 'undefined') return -1;
         s = PicoWifiJS.open(UTF8ToString(host), port, !!secure,
                             { httpProxy: Module.picowifiHttpProxy || '',
@@ -268,7 +268,7 @@ EM_JS(int, pw_js_open, (const char* host, int port, int secure), {
         var url = base + (base.indexOf('?') < 0 ? '?' : '&') +
                   'host=' + encodeURIComponent(UTF8ToString(host)) +
                   '&port=' + port + '&tls=' + (secure ? 1 : 0);
-        s = { q: [], state: 0 };            /* 0 connexion, 1 ouvert, 2 fermé, 3 échec */
+        s = { q: [], state: 0 };            /* 0 connecting, 1 open, 2 closed, 3 failed */
         var ws;
         try { ws = new WebSocket(url); } catch (e) { return -1; }
         ws.binaryType = 'arraybuffer';
@@ -290,7 +290,7 @@ EM_JS(int, pw_js_state, (int id), {
 EM_JS(int, pw_js_avail, (int id), {
     var s = Module.pwSocks && Module.pwSocks.socks[id]; return (s && s.q.length) ? 1 : 0;
 });
-/* >0 octets lus ; 0 = pair fermé et file vide ; -1 = rien pour l'instant. */
+/* >0 bytes read; 0 = peer closed and queue empty; -1 = nothing for now. */
 EM_JS(int, pw_js_read, (int id, unsigned char* buf, int n), {
     var s = Module.pwSocks && Module.pwSocks.socks[id];
     if (!s) return 0;
@@ -301,7 +301,7 @@ EM_JS(int, pw_js_read, (int id, unsigned char* buf, int n), {
         if (k === c.length) s.q.shift(); else s.q[0] = c.subarray(k);
     }
     if (got) return got;
-    if (s.drainClose) s.state = 2;          /* socket virtuelle : fermée une fois vidée */
+    if (s.drainClose) s.state = 2;          /* virtual socket: closed once drained */
     return (s.state >= 2) ? 0 : -1;
 });
 EM_JS(int, pw_js_write, (int id, const unsigned char* buf, int n), {
@@ -321,7 +321,7 @@ EM_JS(int, pw_js_online, (void), {
 
 static bool pw_is_ws(int fd) { return fd >= PW_WS_FD_BASE; }
 
-/* Ouvre host:port via le relais ; attend l'ouverture (≤ 10 s). */
+/* Opens host:port through the relay; waits for it to open (≤ 10 s). */
 static int pw_ws_connect(const char* host, uint16_t port, bool secure)
 {
     int id = pw_js_open(host, port, secure ? 1 : 0);
@@ -367,7 +367,7 @@ static ssize_t pw_write(int fd, const void* buf, size_t n)
     return r;
 }
 
-/* Ferme une connexion du modem (socket natif ou WebSocket du navigateur). */
+/* Closes a modem connection (native socket or browser WebSocket). */
 static void pw_close(int fd)
 {
 #ifdef __EMSCRIPTEN__
@@ -376,8 +376,8 @@ static void pw_close(int fd)
     close(fd);
 }
 
-/* Attend jusqu'à `ms` que fd soit prêt pour `events` (POLLIN/POLLOUT). Dans le
- * navigateur, rend la main à la boucle d'événements pendant l'attente. */
+/* Waits up to `ms` for fd to be ready for `events` (POLLIN/POLLOUT). In the
+ * browser, yields to the event loop while waiting. */
 static bool pw_wait(int fd, short events, int ms)
 {
 #ifdef __EMSCRIPTEN__
@@ -1176,7 +1176,7 @@ static void pw_dial(picowifi_t* pw, const char* host, uint16_t port, bool secure
         return;
     }
 #ifdef __EMSCRIPTEN__
-    /* Navigateur : le relais WebSocket termine lui-même le TLS (tls=1). */
+    /* Browser: the WebSocket relay terminates TLS itself (tls=1). */
     int fd = pw_ws_connect(host, port, secure);
 #else
     int fd = pw_tcp_connect(host, port);

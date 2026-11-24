@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_sp0256.c
- * @brief Carte SP0256 (synthèse vocale Mageco, GI SP0256-AL2) en module :
- *        menu, options, mise en route, bus et son (card_module.h).
+ * @brief SP0256 card (Mageco speech synth, GI SP0256-AL2) as a module:
+ *        menu, options, setup, bus and sound (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  */
 #include "card_module.h"
@@ -15,11 +15,11 @@
 #include <stdlib.h>
 #include <stddef.h>   /* offsetof */
 
-/* État de la carte, privé au module (une seule machine par processus :
- * emulator_init n'est appelé qu'une fois, par main). */
+/* Card state, private to the module (a single machine per process:
+ * emulator_init is called only once, by main). */
 static sp0256_t s_dev;
 
-/* ── Configuration et options ──────────────────────────────────────────── */
+/* ── Configuration and options ─────────────────────────────────────────── */
 
 typedef struct {
     const char* rom_file;    /* --sp0256-rom FILE */
@@ -62,7 +62,7 @@ static const card_desc_t k_desc = {
 };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
-/* ── Bus : port unique à base_addr (défaut $03F1) ──────────────────────── */
+/* ── Bus: single port at base_addr (default $03F1) ─────────────────────── */
 
 static bool dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_sp0256] && addr == s_dev.base_addr;
@@ -89,9 +89,9 @@ static const io_device_t k_bus = {
     .present_off = offsetof(emulator_t, card_on[CARD_IDX_sp0256]), .tick = card_sp0256_tick,
 };
 
-/* ── Son et mise en route ──────────────────────────────────────────────── */
+/* ── Sound and setup ───────────────────────────────────────────────────── */
 
-/* Mixée seulement avec une ROM valide (comme avant : rien produit sinon). */
+/* Mixed only with a valid ROM (as before: nothing produced otherwise). */
 static bool audio_gen(void* ctx, int16_t* out, int n) {
     sp0256_t* sp = ctx;
     if (!sp->rom_valid) return false;
@@ -99,8 +99,8 @@ static bool audio_gen(void* ctx, int16_t* out, int n) {
     return true;
 }
 
-/* Puce GI SP0256-AL2 en $03F1 (ou --sp0256-addr). Charge la ROM de 2 Ko des
- * allophones ; le son est mixé au PSG. Utilisée par Frelon, Cobra Pinball… */
+/* GI SP0256-AL2 speech chip at $03F1 (or --sp0256-addr). Loads the 2 KB
+ * allophone ROM; output is mixed into the PSG audio. Used by Frelon, Cobra Pinball, … */
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)core;
     const sp0256_cfg_t* cfg = p;
@@ -122,7 +122,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
     }
     s_dev.emu = emu;
     emu->card_on[CARD_IDX_sp0256] = true;
-    audio_add_source(audio_gen, &s_dev);   /* mixée au son de l'Oric */
+    audio_add_source(audio_gen, &s_dev);   /* mixed into the Oric's sound */
     log_info("SP0256 Mageco speech synthesizer enabled at $%04X (SP0256-AL2)",
              cfg->base_addr);
     return 0;

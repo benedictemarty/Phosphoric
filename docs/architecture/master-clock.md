@@ -1,166 +1,166 @@
-# Horloge maître — contrat de `emu_cycle()`
+# Master clock — the `emu_cycle()` contract
 
-**Module** : `src/emu_clock.c` · **Déclaration** : `include/emulator.h`
-**Livré en** : V2-S4 (2.0.0-alpha.1) · **Plan** : [V2, épic E2](../specs/V2_CYCLE_ACCURACY.md)
+**Module**: `src/emu_clock.c` · **Declaration**: `include/emulator.h`
+**Delivered in**: V2-S4 (2.0.0-alpha.1) · **Plan**: [V2, epic E2](../specs/V2_CYCLE_ACCURACY.md)
 
-## Pourquoi
+## Why
 
-Avant ce module, le temps de la machine était réparti entre trois endroits :
+Before this module, the machine's time was spread across three places:
 
-1. le CPU avançait sa propre horloge (`cpu_tick`) ;
-2. un rappel par cycle défini **dans `main.c`** (`cpu_cycle_tick`) faisait avancer
-   les périphériques φ2 ;
-3. **la boucle principale calculait elle-même la position du balayage**
-   (`frame_cycles / 64`) pour décider quand émettre une scanline.
+1. the CPU advanced its own clock (`cpu_tick`);
+2. a per-cycle callback defined **in `main.c`** (`cpu_cycle_tick`) advanced
+   the φ2 peripherals;
+3. **the main loop computed the beam position itself**
+   (`frame_cycles / 64`) to decide when to emit a scanline.
 
-Conséquence : seule la boucle principale savait cadencer la machine. Le
-débogueur, les tests, le replay et les outils ne pouvaient pas demander « avance
-d'un cycle » — ils ne pouvaient qu'exécuter une instruction et espérer que le
-reste suive.
+Consequence: only the main loop knew how to clock the machine. The
+debugger, the tests, the replay and the tools could not ask "advance
+by one cycle" — they could only execute one instruction and hope that the
+rest would follow.
 
-## Le contrat
+## The contract
 
 ```c
-bool emu_cycle(emulator_t* emu);   /* un cycle de TOUTE la machine */
-int  emu_step (emulator_t* emu);   /* une instruction, via emu_cycle */
+bool emu_cycle(emulator_t* emu);   /* one cycle of the WHOLE machine */
+int  emu_step (emulator_t* emu);   /* one instruction, via emu_cycle */
 ```
 
-`emu_cycle()` renvoie `true` quand le cycle exécuté terminait une instruction.
-L'ordre intra-cycle est **figé** :
+`emu_cycle()` returns `true` when the executed cycle completed an instruction.
+The intra-cycle order is **fixed**:
 
-| Ordre | Qui | Quoi |
+| Order | Who | What |
 |-------|-----|------|
-| 1 | CPU | l'unique accès bus du cycle (lecture, écriture, ou accès factice du NMOS) — sur le matériel, c'est le premier événement après le front montant de l'horloge 1 MHz |
-| 2 | périphériques φ2 | VIA, FDC, ACIA, DTL, Mageco, cassette — avancés d'exactement **un** cycle par le rappel d'horloge du CPU, juste après l'accès bus |
-| 3 | ULA | fetch d'**une cellule de 6 pixels** (la colonne = le count horizontal de ce cycle), puis avancement du balayage, tick raster ULA-NG |
+| 1 | CPU | the cycle's single bus access (read, write, or NMOS dummy access) — on the hardware, this is the first event after the rising edge of the 1 MHz clock |
+| 2 | φ2 peripherals | VIA, FDC, ACIA, DTL, Mageco, cassette — advanced by exactly **one** cycle by the CPU clock callback, right after the bus access |
+| 3 | ULA | fetch of **one 6-pixel cell** (the column = the horizontal count of this cycle), then beam advance, ULA-NG raster tick |
 
-### Pourquoi le CPU avant l'ULA — c'est mesuré, pas choisi
+### Why the CPU before the ULA — it is measured, not chosen
 
-Le vrai ULA de l'ORIC et le 6502 se partagent la DRAM en deux moitiés du même
-cycle de 1 µs, sans jamais se la disputer (pas de vol de cycle à modéliser,
-contrairement à un ZX Spectrum). **L'ordre des deux moitiés a été mesuré à
-l'oscilloscope** par Mike Brown (*ORIC 1/ATMOS Unofficial ULA Guide* 1.02,
-§ Control and Sequencing) : au front montant de l'horloge 1 MHz, le compteur
-horizontal s'incrémente et le 6502 fait son accès (« *it is asserting CAS here
-that performs the write* ») ; **ensuite** « *the ULA access cycle begins* » —
-l'ULA fetche l'octet écran de ce même count pendant la moitié basse, plus longue
-(d'où l'horloge 1 MHz asymétrique). Conséquence observable : une écriture du CPU
-au cycle *c* est vue par la cellule *c*. Vérifié par
-`test_cpu_write_visible_in_the_same_cell` (`make test-clock`), qui échoue sur
-l'ordre inverse.
+The ORIC's real ULA and the 6502 share the DRAM in two halves of the same
+1 µs cycle, without ever contending for it (no cycle stealing to model,
+unlike on a ZX Spectrum). **The order of the two halves was measured with an
+oscilloscope** by Mike Brown (*ORIC 1/ATMOS Unofficial ULA Guide* 1.02,
+§ Control and Sequencing): on the rising edge of the 1 MHz clock, the horizontal
+counter increments and the 6502 performs its access ("*it is asserting CAS here
+that performs the write*"); **then** "*the ULA access cycle begins*" —
+the ULA fetches the screen byte for that same count during the low half, which is longer
+(hence the asymmetric 1 MHz clock). Observable consequence: a CPU write
+at cycle *c* is seen by cell *c*. Verified by
+`test_cpu_write_visible_in_the_same_cell` (`make test-clock`), which fails with
+the reverse order.
 
-Jusqu'en 2.0.1, Phosphoric faisait l'inverse (ULA d'abord, écriture visible en
-*c+1*) : chaque split raster tombait **une cellule (6 pixels) trop à droite**.
+Up to 2.0.1, Phosphoric did the opposite (ULA first, write visible at
+*c+1*): every raster split landed **one cell (6 pixels) too far right**.
 
-Le même guide fixe le **repère horizontal** : le compteur de l'ULA compte 0-63,
-les colonnes 0-39 sont fetchées aux counts 0-39, le blanking occupe 40-63 et
-l'impulsion de synchro les counts 49-52. « Colonne 0 au cycle 0 de la ligne »
-n'est donc pas une convention de l'émulateur mais le compteur du chip ;
-`--ula-fetch-offset` reste un outil d'expérimentation, sa valeur juste est 0.
-Quant à la **phase absolue** (quel cycle CPU depuis le reset tombe sur le count 0
-de la ligne 0) : les compteurs de l'ULA tournent librement et le reset du 6502
-est asynchrone, donc aucun logiciel ne peut l'observer sur un ORIC non modifié —
-seul le « VSYNC hack » (fil ULA → VIA), non émulé, la rendrait visible.
+The same guide fixes the **horizontal reference**: the ULA counter counts 0-63,
+columns 0-39 are fetched at counts 0-39, blanking occupies 40-63 and
+the sync pulse counts 49-52. "Column 0 at cycle 0 of the line"
+is therefore not an emulator convention but the chip's counter;
+`--ula-fetch-offset` remains an experimentation tool, its correct value is 0.
+As for the **absolute phase** (which CPU cycle since reset lands on count 0
+of line 0): the ULA counters run freely and the 6502 reset
+is asynchronous, so no software can observe it on an unmodified ORIC —
+only the "VSYNC hack" (ULA → VIA wire), not emulated, would make it visible.
 
-### Pas de paquets
+### No batches
 
-Avec le cœur micro-séquencé (le défaut depuis la v1.124.0), chaque cycle est un
-accès bus : le rappel d'horloge reçoit donc toujours `cycles = 1`, et les
-périphériques φ2 sont avancés **un cycle à la fois**. C'est vérifié par
-`test_peripherals_get_one_cycle_at_a_time`, qui échouerait si un paquet
-réapparaissait.
+With the micro-sequenced core (the default since v1.124.0), every cycle is a
+bus access: the clock callback therefore always receives `cycles = 1`, and the
+φ2 peripherals are advanced **one cycle at a time**. This is verified by
+`test_peripherals_get_one_cycle_at_a_time`, which would fail if a batch
+reappeared.
 
-### Jamais d'appel à vide
+### Never an idle call
 
-Le contrat a une réciproque : **chaque appel à `emu_cycle()` coûte exactement un
-cycle au CPU**. Une micro-op qui rendrait la main sans accès bus ferait avancer
-l'ULA d'un cycle que ni le CPU ni le VIA n'auraient vécu — le compteur du CPU
-resterait juste, l'oracle 65x02 ne verrait rien, et pourtant l'image dériverait.
-C'est arrivé (2.0.0-alpha.8) : la décision « branchement non pris » était prise
-un cycle trop tard, à vide, soit ~410 cycles d'avance du balayage par trame sur
-la ROM BASIC. Depuis, `test_branch_not_taken_costs_no_phantom_cycle` et
-`test_raster_and_cpu_stay_in_step_over_a_frame` (compteur CPU **=** position
-raster sur une trame entière) le verrouillent.
+The contract has a converse: **each call to `emu_cycle()` costs the CPU exactly
+one cycle**. A micro-op that returned without a bus access would advance
+the ULA by a cycle that neither the CPU nor the VIA had lived through — the CPU counter
+would stay correct, the 65x02 oracle would see nothing, and yet the image would drift.
+It happened (2.0.0-alpha.8): the "branch not taken" decision was taken
+one cycle too late, idle, i.e. the beam ran ~410 cycles ahead per frame on
+the BASIC ROM. Since then, `test_branch_not_taken_costs_no_phantom_cycle` and
+`test_raster_and_cpu_stay_in_step_over_a_frame` (CPU counter **=** raster
+position over a whole frame) lock it down.
 
-### Sous-cycle (φ2 subdivisé)
+### Sub-cycle (subdivided φ2)
 
-La phase φ2 est elle-même subdivisée en **30 sous-ticks** pour le bus
-d'extension (épic B, `include/io/bus_timing.h`) : c'est là que se joue la course
-entre la carte et le front PHI2 suivant. Voir
-[phi2-bus-timing.md](phi2-bus-timing.md). Les périphériques de la carte mère
-n'en ont pas besoin (ils gagnent toujours la course), le coût est donc nul pour
-eux.
+The φ2 phase is itself subdivided into **30 sub-ticks** for the expansion
+bus (epic B, `include/io/bus_timing.h`): this is where the race
+between the card and the next PHI2 edge is played out. See
+[phi2-bus-timing.md](phi2-bus-timing.md). The motherboard peripherals
+do not need it (they always win the race), so the cost is zero for
+them.
 
-## État porté par l'émulateur
+## State carried by the emulator
 
-Ces compteurs étaient des variables locales de la boucle principale ; les porter
-dans `emulator_t` est précisément ce qui permet à n'importe quel appelant de
-cadencer la machine :
+These counters used to be local variables of the main loop; moving them
+into `emulator_t` is precisely what allows any caller to
+clock the machine:
 
-| Champ | Rôle |
+| Field | Role |
 |-------|------|
-| `raster_cycle` | cycle courant dans la trame (0 … 19967) |
-| `raster_rendered` | scanlines visibles déjà émises (0 … 224) |
-| `raster_ng_line` | ligne ULA-NG déjà traitée (0 … 311) |
-| `raster_next_line` | cycle du prochain franchissement de ligne (sortie rapide) |
-| `frame_cycles` | copie de `raster_cycle`, exposée aux points d'arrêt raster |
+| `raster_cycle` | current cycle within the frame (0 … 19967) |
+| `raster_rendered` | visible scanlines already emitted (0 … 224) |
+| `raster_ng_line` | ULA-NG line already processed (0 … 311) |
+| `raster_next_line` | cycle of the next line crossing (fast exit) |
+| `frame_cycles` | copy of `raster_cycle`, exposed to raster breakpoints |
 
-`emu_raster_pos(emu, &line, &dot)` donne la position du faisceau : ligne PAL
-(0-311) et cycle dans la ligne (0-63). C'est la base du fetch octet par cycle de
-l'épic E4.
+`emu_raster_pos(emu, &line, &dot)` gives the beam position: PAL line
+(0-311) and cycle within the line (0-63). It is the basis of the byte-per-cycle
+fetch of epic E4.
 
-## Cadrage de trame
+## Frame framing
 
 ```c
-emu_clock_frame_begin(emu);   /* remet le balayage à zéro */
-while (...) emu_step(emu);    /* une trame de cycles */
-emu_clock_frame_end(emu);     /* termine les lignes restantes */
+emu_clock_frame_begin(emu);   /* resets the beam to zero */
+while (...) emu_step(emu);    /* one frame's worth of cycles */
+emu_clock_frame_end(emu);     /* finishes the remaining lines */
 ```
 
-`emu_clock_frame_end()` existe pour le cas où le CPU s'arrête en plein écran
-(halt, point d'arrêt) : l'image affichée doit rester complète.
+`emu_clock_frame_end()` exists for the case where the CPU stops in mid-screen
+(halt, breakpoint): the displayed image must remain complete.
 
-La boucle principale ne compte pas ses propres cycles : elle lit `raster_cycle`.
-C'est ce qui permet la **reprise d'un savestate en pleine trame** (V2-E7) : la
-section `CLK` du `.ost` restaure `raster_cycle` / `raster_rendered` /
-`raster_ng_line` et arme `clock_resume_pending` ; `emu_clock_resume()` — appelé
-par `emu_clock_frame_begin()` ou par la boucle si le chargement a eu lieu en
-cours de trame — recale `raster_next_line`, reconstruit depuis la RAM les lignes
-déjà balayées (le framebuffer n'est pas sauvé) et, en mode ULA au cycle, rejoue
-les cellules déjà fetchées de la ligne en cours pour retrouver l'état série de
-ligne. Un état sauvé après une fin de trame (`-c`, `--save-state`) repart
-simplement à zéro. Vérifié par `make test-savestate-determinism` : mêmes arrêts
-raster, même VIA, même RAM qu'un run ininterrompu.
+The main loop does not count its own cycles: it reads `raster_cycle`.
+This is what allows **resuming a savestate mid-frame** (V2-E7): the
+`CLK` section of the `.ost` restores `raster_cycle` / `raster_rendered` /
+`raster_ng_line` and arms `clock_resume_pending`; `emu_clock_resume()` — called
+by `emu_clock_frame_begin()` or by the loop if loading took place during
+the frame — realigns `raster_next_line`, rebuilds from RAM the lines
+already scanned (the framebuffer is not saved) and, in per-cycle ULA mode, replays
+the already fetched cells of the current line to recover the line's serial
+state. A state saved after the end of a frame (`-c`, `--save-state`) simply
+restarts from zero. Verified by `make test-savestate-determinism`: same raster
+stops, same VIA, same RAM as an uninterrupted run.
 
-### La boucle principale, par étapes
+### The main loop, step by step
 
-Depuis la 2.0.3, `emulator_run()` (src/main.c) ne fait plus que dérouler, pour
-chaque trame, des **étapes nommées** — `run_frame_instructions` (la boucle par
-instruction autour de `emu_step`), puis les hooks de fin de trame (LOCI, son
-headless, fast-load, frappe automatique, présentation et événements SDL,
-captures, enregistrement, pokes, cadence) — en partageant un `run_state_t`
-(cycles exécutés, trames, horloges). L'ordre des étapes est **observable** (une
-capture `--screenshot-at` voit l'écran après la frappe automatique de la même
-trame, jamais avant) : il est celui de la boucle historique et ne doit pas être
-réordonné sans raison mesurée.
+Since 2.0.3, `emulator_run()` (src/main.c) merely unrolls, for
+each frame, **named steps** — `run_frame_instructions` (the per-instruction
+loop around `emu_step`), then the end-of-frame hooks (LOCI, headless
+sound, fast-load, automatic typing, SDL presentation and events,
+captures, recording, pokes, pacing) — sharing a `run_state_t`
+(executed cycles, frames, clocks). The order of the steps is **observable** (a
+`--screenshot-at` capture sees the screen after the automatic typing of the same
+frame, never before): it is that of the historical loop and must not be
+reordered without a measured reason.
 
-## Cœur historique
+## Historical core
 
-`--cpu-legacy` exécute une instruction d'un bloc et ne sait pas s'arrêter entre
-deux cycles. `emu_cycle()` y exécute alors l'instruction entière puis rattrape le
-balayage du même nombre de cycles, et renvoie toujours `true`. Le résultat est
-identique à l'ancienne boucle — vérifié par
-`test_legacy_core_advances_by_instruction` et par l'égalité des captures d'écran
-sur le corpus.
+`--cpu-legacy` executes an instruction in one block and cannot stop between
+two cycles. `emu_cycle()` then executes the whole instruction and catches up the
+beam by the same number of cycles, and always returns `true`. The result is
+identical to the old loop — verified by
+`test_legacy_core_advances_by_instruction` and by the equality of screen captures
+over the corpus.
 
 ## Performance
 
-L'horloge est appelée un million de fois par seconde émulée. Deux précautions :
+The clock is called a million times per emulated second. Two precautions:
 
-- la division par 64 a été remplacée par une **sortie rapide** sur
-  `raster_next_line` : 63 cycles sur 64 ne font que deux additions et un test ;
-- le fetch par cycle (épic E4) n'a coûté que **+4 %** : le travail total est le
-  même (40 cellules par ligne), seule sa répartition change.
+- the division by 64 was replaced by a **fast exit** on
+  `raster_next_line`: 63 cycles out of 64 only do two additions and one test;
+- per-cycle fetch (epic E4) cost only **+4 %**: the total work is the
+  same (40 cells per line), only its distribution changes.
 
-Mesuré : **601 µs par trame émulée** sur la machine de référence, soit **3,0 %**
-du budget de 20 ms — le plafond fixé par le plan est de 5 %.
+Measured: **601 µs per emulated frame** on the reference machine, i.e. **3.0 %**
+of the 20 ms budget — the ceiling set by the plan is 5 %.

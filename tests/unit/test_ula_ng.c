@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_ula_ng.c
- * @brief ULA-NG étape 1 : déverrouillage NG_LOCK/NG_ID + garde verrou.
+ * @brief ULA-NG step 1: NG_LOCK/NG_ID unlocking + lock guard.
  * @author bmarty <bmarty@mailo.com>
  *
- * Vérifie : état verrouillé au reset (indiscernable, passthrough VIA), séquence
- * de déverrouillage 'N','G', handshake NG_ID/NG_IDCHK, robustesse (séquences
- * cassées), re-verrouillage au reset. Cf docs/ula-ng/AUDIT.md, ULA-NG-SPEC.md §3.
+ * Checks: locked state at reset (indistinguishable, VIA passthrough), 'N','G'
+ * unlock sequence, NG_ID/NG_IDCHK handshake, robustness (broken
+ * sequences), re-locking at reset. Cf docs/ula-ng/AUDIT.md, ULA-NG-SPEC.md §3.
  */
 
 #include <stdio.h>
@@ -39,7 +39,7 @@ static int tests_failed = 0;
     if ((x)) { printf("FAIL\n    %s:%d: expected false\n", __FILE__, __LINE__); tests_failed++; return; } \
 } while(0)
 
-/* Déverrouille proprement un module fraîchement reset. */
+/* Cleanly unlocks a freshly reset module. */
 static void unlock(ula_ng_t* u) {
     ula_ng_write(u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_N);
     ula_ng_write(u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_G);
@@ -47,7 +47,7 @@ static void unlock(ula_ng_t* u) {
 
 TEST(test_reset_is_locked) {
     ula_ng_t u; ula_ng_init(&u);
-    ASSERT_FALSE(ula_ng_active(&u));   /* verrouillé → n'intercepte pas */
+    ASSERT_FALSE(ula_ng_active(&u));   /* locked → does not intercept */
 }
 
 TEST(test_addr_window) {
@@ -56,11 +56,11 @@ TEST(test_addr_window) {
     ASSERT_TRUE(ula_ng_addr_in_window(0x034F));
     ASSERT_TRUE(ula_ng_addr_in_window(0x035F));
     ASSERT_FALSE(ula_ng_addr_in_window(0x0360));
-    ASSERT_FALSE(ula_ng_addr_in_window(0x0300));   /* VIA, pas ULA-NG */
+    ASSERT_FALSE(ula_ng_addr_in_window(0x0300));   /* VIA, not ULA-NG */
 }
 
 TEST(test_locked_writes_passthrough) {
-    /* Verrouillé : toute écriture fenêtre renvoie 0 (passthrough VIA). */
+    /* Locked: any window write returns 0 (VIA passthrough). */
     ula_ng_t u; ula_ng_init(&u);
     ASSERT_EQ(ula_ng_write(&u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_N), 0);
     ASSERT_EQ(ula_ng_write(&u, 0x0341, 0xAB), 0);
@@ -73,36 +73,36 @@ TEST(test_unlock_sequence) {
     ASSERT_TRUE(ula_ng_active(&u));
     ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_LOCK),  ULA_NG_VERSION);         /* NG_ID = 0x1E */
     ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_IDCHK), (uint8_t)~ULA_NG_VERSION); /* NG_IDCHK = 0xE1 */
-    /* handshake : NG_ID XOR NG_IDCHK == 0xFF */
+    /* handshake: NG_ID XOR NG_IDCHK == 0xFF */
     ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_LOCK) ^ ula_ng_read(&u, ULA_NG_REG_IDCHK), 0xFF);
 }
 
 TEST(test_unlocked_writes_consumed) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    /* déverrouillé : écriture d'un registre → consommée (renvoie 1) + relue */
+    /* unlocked: register write → consumed (returns 1) + read back */
     ASSERT_EQ(ula_ng_write(&u, 0x0341, 0x5A), 1);
     ASSERT_EQ(ula_ng_read(&u, 0x0341), 0x5A);
-    /* NG_ID/NG_IDCHK restent en lecture seule malgré une écriture */
+    /* NG_ID/NG_IDCHK remain read-only despite a write */
     ASSERT_EQ(ula_ng_write(&u, ULA_NG_REG_LOCK, 0x99), 1);
     ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_LOCK), ULA_NG_VERSION);
 }
 
 TEST(test_wrong_second_byte) {
-    /* 'N' puis autre chose que 'G' → reste verrouillé */
+    /* 'N' then something other than 'G' → stays locked */
     ula_ng_t u; ula_ng_init(&u);
     ula_ng_write(&u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_N);
     ula_ng_write(&u, ULA_NG_REG_LOCK, 0x00);
     ASSERT_FALSE(ula_ng_active(&u));
-    ula_ng_write(&u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_G);   /* 'G' seul ne suffit pas */
+    ula_ng_write(&u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_G);   /* 'G' alone is not enough */
     ASSERT_FALSE(ula_ng_active(&u));
 }
 
 TEST(test_sequence_broken_by_window_write) {
-    /* 'N', puis une écriture ailleurs dans la fenêtre casse la séquence (SPEC §3) */
+    /* 'N', then a write elsewhere in the window breaks the sequence (SPEC §3) */
     ula_ng_t u; ula_ng_init(&u);
     ula_ng_write(&u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_N);
-    ula_ng_write(&u, 0x0345, 0x12);                      /* écriture intercalée */
+    ula_ng_write(&u, 0x0345, 0x12);                      /* interleaved write */
     ula_ng_write(&u, ULA_NG_REG_LOCK, ULA_NG_UNLOCK_G);
     ASSERT_FALSE(ula_ng_active(&u));
 }
@@ -112,49 +112,49 @@ TEST(test_reset_relocks) {
     unlock(&u);
     ASSERT_TRUE(ula_ng_active(&u));
     ula_ng_write(&u, 0x0341, 0x77);
-    ula_ng_reset(&u);                                    /* reset matériel */
+    ula_ng_reset(&u);                                    /* hardware reset */
     ASSERT_FALSE(ula_ng_active(&u));
-    ASSERT_EQ(u.regs[0x0341 - ULA_NG_WINDOW_LO], 0);     /* registres remis à 0 */
+    ASSERT_EQ(u.regs[0x0341 - ULA_NG_WINDOW_LO], 0);     /* registers cleared to 0 */
 }
 
-/* ── Étape 2 : palette-indirection (§5.1) ─────────────────────────────── */
+/* ── Step 2: palette indirection (§5.1) ──────────────────────────────── */
 
 TEST(test_palette_default_identity) {
-    /* Au reset : LUT 0-7 = couleurs Oric (identité). */
+    /* At reset: LUT 0-7 = Oric colors (identity). */
     ula_ng_t u; ula_ng_init(&u);
-    ASSERT_EQ(u.pal[0][0], 0x00); ASSERT_EQ(u.pal[0][1], 0x00); ASSERT_EQ(u.pal[0][2], 0x00);  /* noir */
-    ASSERT_EQ(u.pal[1][0], 0xFF); ASSERT_EQ(u.pal[1][1], 0x00); ASSERT_EQ(u.pal[1][2], 0x00);  /* rouge */
-    ASSERT_EQ(u.pal[7][0], 0xFF); ASSERT_EQ(u.pal[7][1], 0xFF); ASSERT_EQ(u.pal[7][2], 0xFF);  /* blanc */
+    ASSERT_EQ(u.pal[0][0], 0x00); ASSERT_EQ(u.pal[0][1], 0x00); ASSERT_EQ(u.pal[0][2], 0x00);  /* black */
+    ASSERT_EQ(u.pal[1][0], 0xFF); ASSERT_EQ(u.pal[1][1], 0x00); ASSERT_EQ(u.pal[1][2], 0x00);  /* red */
+    ASSERT_EQ(u.pal[7][0], 0xFF); ASSERT_EQ(u.pal[7][1], 0xFF); ASSERT_EQ(u.pal[7][2], 0xFF);  /* white */
 }
 
 TEST(test_palette_gating) {
     ula_ng_t u; ula_ng_init(&u);
-    ASSERT_FALSE(u.active);                 /* verrouillé */
+    ASSERT_FALSE(u.active);                 /* locked */
     unlock(&u);
-    ASSERT_FALSE(u.active);                 /* déverrouillé mais NG_MODE.b0=0 */
+    ASSERT_FALSE(u.active);                 /* unlocked but NG_MODE.b0=0 */
     ula_ng_write(&u, ULA_NG_REG_MODE, 0x01);    /* NG_MODE.b0 = 1 */
     ASSERT_TRUE(u.active);
-    ula_ng_write(&u, ULA_NG_REG_MODE, 0x00);    /* désactive */
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x00);    /* disables */
     ASSERT_FALSE(u.active);
     ula_ng_write(&u, ULA_NG_REG_MODE, 0x01);
-    ula_ng_reset(&u);                           /* reset re-verrouille */
+    ula_ng_reset(&u);                           /* reset re-locks */
     ASSERT_FALSE(u.active);
 }
 
 TEST(test_palette_program) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    /* programmer l'entrée 2 = ($F,$0,$0) -> RGB888 (FF,00,00) */
+    /* program entry 2 = ($F,$0,$0) -> RGB888 (FF,00,00) */
     ula_ng_write(&u, ULA_NG_REG_PAL_IDX, 2);
     ula_ng_write(&u, ULA_NG_REG_PAL_LO, 0x0F);      /* 0000RRRR : R=15 */
     ula_ng_write(&u, ULA_NG_REG_PAL_HI, 0x00);      /* GGGGBBBB : G=0,B=0 -> commit */
     ASSERT_EQ(u.pal[2][0], 0xFF); ASSERT_EQ(u.pal[2][1], 0x00); ASSERT_EQ(u.pal[2][2], 0x00);
-    /* auto-incrément : l'index passe à 3 */
+    /* auto-increment: the index moves to 3 */
     ASSERT_EQ(u.pal_idx, 3);
 }
 
 TEST(test_palette_expand_nibble) {
-    /* RGB444 -> RGB888 par réplication : $8 -> $88, $A -> $AA, $F -> $FF */
+    /* RGB444 -> RGB888 by replication: $8 -> $88, $A -> $AA, $F -> $FF */
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_PAL_IDX, 5);
@@ -166,18 +166,18 @@ TEST(test_palette_expand_nibble) {
 }
 
 TEST(test_palette_locked_no_effect) {
-    /* Verrouillé : écrire les registres palette ne change rien (passthrough). */
+    /* Locked: writing the palette registers changes nothing (passthrough). */
     ula_ng_t u; ula_ng_init(&u);
     ula_ng_write(&u, ULA_NG_REG_PAL_IDX, 3);
     ula_ng_write(&u, ULA_NG_REG_PAL_LO, 0x0F);
     ula_ng_write(&u, ULA_NG_REG_PAL_HI, 0xFF);
-    ASSERT_EQ(u.pal[3][0], 0xFF); ASSERT_EQ(u.pal[3][1], 0xFF); ASSERT_EQ(u.pal[3][2], 0x00); /* Oric jaune inchangé */
+    ASSERT_EQ(u.pal[3][0], 0xFF); ASSERT_EQ(u.pal[3][1], 0xFF); ASSERT_EQ(u.pal[3][2], 0x00); /* Oric yellow unchanged */
     ASSERT_EQ(u.pal_idx, 0);
 }
 
-/* ── Étape 3 : IRQ raster (§5.2) ──────────────────────────────────────── */
+/* ── Step 3: raster IRQ (§5.2) ───────────────────────────────────────── */
 
-/* Déverrouille + arme l'IRQ raster à la ligne `line`. */
+/* Unlocks + arms the raster IRQ at line `line`. */
 static void arm_raster(ula_ng_t* u, int line) {
     unlock(u);
     ula_ng_write(u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);   /* NG_MODE.b0 */
@@ -189,9 +189,9 @@ TEST(test_raster_fires_at_line) {
     ula_ng_t u; ula_ng_init(&u);
     arm_raster(&u, 100);
     ula_ng_scanline(&u, 99);
-    ASSERT_FALSE(ula_ng_irq(&u));               /* pas encore */
+    ASSERT_FALSE(ula_ng_irq(&u));               /* not yet */
     ula_ng_scanline(&u, 100);
-    ASSERT_TRUE(ula_ng_irq(&u));                /* IRQ levée */
+    ASSERT_TRUE(ula_ng_irq(&u));                /* IRQ raised */
     ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_STATUS), ULA_NG_STATUS_IRQ);  /* b7 */
 }
 
@@ -200,12 +200,12 @@ TEST(test_raster_level_until_ack) {
     arm_raster(&u, 50);
     ula_ng_scanline(&u, 50);
     ASSERT_TRUE(ula_ng_irq(&u));
-    ula_ng_scanline(&u, 60);                    /* d'autres lignes : reste levée */
+    ula_ng_scanline(&u, 60);                    /* other lines: stays raised */
     ASSERT_TRUE(ula_ng_irq(&u));
-    ula_ng_write(&u, ULA_NG_REG_STATUS, ULA_NG_STATUS_EN);  /* acquit (reste armée) */
-    ASSERT_FALSE(ula_ng_irq(&u));               /* acquittée */
+    ula_ng_write(&u, ULA_NG_REG_STATUS, ULA_NG_STATUS_EN);  /* acknowledge (stays armed) */
+    ASSERT_FALSE(ula_ng_irq(&u));               /* acknowledged */
     ASSERT_EQ(ula_ng_read(&u, ULA_NG_REG_STATUS), 0x00);
-    ula_ng_scanline(&u, 50);                    /* re-déclenche à la ligne */
+    ula_ng_scanline(&u, 50);                    /* re-triggers at the line */
     ASSERT_TRUE(ula_ng_irq(&u));
 }
 
@@ -218,16 +218,16 @@ TEST(test_raster_wrong_line) {
 
 TEST(test_raster_gating) {
     ula_ng_t u; ula_ng_init(&u);
-    /* verrouillé : aucune IRQ */
+    /* locked: no IRQ */
     ula_ng_scanline(&u, 0);
     ASSERT_FALSE(ula_ng_irq(&u));
-    /* déverrouillé + NG_MODE.b0 mais enable=0 : aucune IRQ */
+    /* unlocked + NG_MODE.b0 but enable=0: no IRQ */
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
     ula_ng_write(&u, ULA_NG_REG_RASTER, 10);
     ula_ng_scanline(&u, 10);
     ASSERT_FALSE(ula_ng_irq(&u));
-    /* enable mais NG_MODE.b0=0 : aucune IRQ */
+    /* enable but NG_MODE.b0=0: no IRQ */
     ula_ng_write(&u, ULA_NG_REG_STATUS, ULA_NG_STATUS_EN);
     ula_ng_write(&u, ULA_NG_REG_MODE, 0x00);
     ula_ng_scanline(&u, 10);
@@ -244,11 +244,11 @@ TEST(test_raster_reset_clears) {
     ASSERT_FALSE(u.raster_enable);
 }
 
-/* ── Étape 4 : start-address (§5.3) ───────────────────────────────────── */
+/* ── Step 4: start address (§5.3) ─────────────────────────────────────── */
 
 TEST(test_scrstart_default_zero) {
     ula_ng_t u; ula_ng_init(&u);
-    ASSERT_EQ(u.scrstart, 0);                   /* 0 = base par défaut */
+    ASSERT_EQ(u.scrstart, 0);                   /* 0 = default base */
 }
 
 TEST(test_scrstart_program) {
@@ -257,14 +257,14 @@ TEST(test_scrstart_program) {
     ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0x00);  /* LSB */
     ula_ng_write(&u, ULA_NG_REG_SCR_HI, 0x90);  /* MSB -> $9000 */
     ASSERT_EQ(u.scrstart, 0x9000);
-    /* modifier seulement le LSB */
+    /* modify only the LSB */
     ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0x28);
     ASSERT_EQ(u.scrstart, 0x9028);
 }
 
 TEST(test_scrstart_locked_no_effect) {
     ula_ng_t u; ula_ng_init(&u);
-    ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0xA8);  /* verrouillé : passthrough */
+    ula_ng_write(&u, ULA_NG_REG_SCR_LO, 0xA8);  /* locked: passthrough */
     ula_ng_write(&u, ULA_NG_REG_SCR_HI, 0xBB);
     ASSERT_EQ(u.scrstart, 0);
 }
@@ -279,9 +279,9 @@ TEST(test_scrstart_reset_clears) {
     ASSERT_EQ(u.scrstart, 0);
 }
 
-/* ── Étape 5 : palette par scanline / copper (§5.4) ───────────────────── */
+/* ── Step 5: per-scanline palette / copper (§5.4) ─────────────────────── */
 
-/* Programme une entrée copper (ligne, index, R4,G4,B4). */
+/* Programs a copper entry (line, index, R4,G4,B4). */
 static void cop_entry(ula_ng_t* u, int line, int idx, int r, int g, int b) {
     ula_ng_write(u, ULA_NG_REG_COP_DATA, (uint8_t)line);
     ula_ng_write(u, ULA_NG_REG_COP_DATA, (uint8_t)((idx << 4) | (r & 0x0F)));
@@ -292,8 +292,8 @@ TEST(test_copper_program) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
-    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);       /* reset liste */
-    cop_entry(&u, 10, 3, 0xF, 0, 0);                /* ligne 10, index 3, rouge */
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);       /* reset list */
+    cop_entry(&u, 10, 3, 0xF, 0, 0);                /* line 10, index 3, red */
     ASSERT_EQ(u.copper_count, 1);
     ASSERT_EQ(u.copper[0].line, 10);
     ASSERT_EQ(u.copper[0].index, 3);
@@ -305,40 +305,40 @@ TEST(test_copper_apply_at_line) {
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
     ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
-    cop_entry(&u, 50, 7, 0, 0xF, 0);                /* ligne 50 : couleur 7 -> vert */
+    cop_entry(&u, 50, 7, 0, 0xF, 0);                /* line 50: color 7 -> green */
     ula_ng_scanline(&u, 49);
-    ASSERT_EQ(u.pal[7][1], 0xFF);                   /* pal[7] = blanc (identité) */
+    ASSERT_EQ(u.pal[7][1], 0xFF);                   /* pal[7] = white (identity) */
     ASSERT_EQ(u.pal[7][0], 0xFF);
-    ula_ng_scanline(&u, 50);                        /* applique l'entrée */
+    ula_ng_scanline(&u, 50);                        /* applies the entry */
     ASSERT_EQ(u.pal[7][0], 0x00); ASSERT_EQ(u.pal[7][1], 0xFF); ASSERT_EQ(u.pal[7][2], 0x00);
 }
 
 TEST(test_copper_gradient) {
-    /* Même index, couleurs différentes selon la ligne. */
+    /* Same index, different colors depending on the line. */
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_MODE, ULA_NG_MODE_ENABLE);
     ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
-    cop_entry(&u, 0,   1, 0xF, 0, 0);               /* ligne 0 : couleur 1 rouge */
-    cop_entry(&u, 100, 1, 0, 0, 0xF);               /* ligne 100 : couleur 1 bleu */
+    cop_entry(&u, 0,   1, 0xF, 0, 0);               /* line 0: color 1 red */
+    cop_entry(&u, 100, 1, 0, 0, 0xF);               /* line 100: color 1 blue */
     ula_ng_scanline(&u, 0);
-    ASSERT_EQ(u.pal[1][0], 0xFF); ASSERT_EQ(u.pal[1][2], 0x00);   /* rouge */
+    ASSERT_EQ(u.pal[1][0], 0xFF); ASSERT_EQ(u.pal[1][2], 0x00);   /* red */
     ula_ng_scanline(&u, 100);
-    ASSERT_EQ(u.pal[1][0], 0x00); ASSERT_EQ(u.pal[1][2], 0xFF);   /* bleu */
+    ASSERT_EQ(u.pal[1][0], 0x00); ASSERT_EQ(u.pal[1][2], 0xFF);   /* blue */
 }
 
 TEST(test_copper_gating) {
     ula_ng_t u; ula_ng_init(&u);
-    /* verrouillé : le flux copper est passthrough, rien programmé */
+    /* locked: the copper stream is passthrough, nothing programmed */
     ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
     cop_entry(&u, 10, 0, 0xF, 0xF, 0xF);
     ASSERT_EQ(u.copper_count, 0);
-    /* déverrouillé + copper programmé mais NG_MODE.b0=0 : scanline n'applique pas */
+    /* unlocked + copper programmed but NG_MODE.b0=0: scanline does not apply */
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
     cop_entry(&u, 5, 2, 0xF, 0, 0);
     ula_ng_scanline(&u, 5);
-    ASSERT_EQ(u.pal[2][0], 0x00);                   /* couleur 2 (vert Oric) inchangée */
+    ASSERT_EQ(u.pal[2][0], 0x00);                   /* color 2 (Oric green) unchanged */
 }
 
 TEST(test_copper_reset) {
@@ -348,14 +348,14 @@ TEST(test_copper_reset) {
     ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);
     cop_entry(&u, 1, 0, 0xF, 0, 0);
     ASSERT_EQ(u.copper_count, 1);
-    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);       /* reset liste */
+    ula_ng_write(&u, ULA_NG_REG_COP_CTRL, 0);       /* reset list */
     ASSERT_EQ(u.copper_count, 0);
     cop_entry(&u, 2, 0, 0, 0xF, 0);
-    ula_ng_reset(&u);                               /* reset matériel */
+    ula_ng_reset(&u);                               /* hardware reset */
     ASSERT_EQ(u.copper_count, 0);
 }
 
-/* ── Étape 6 : scroll fin X/Y (§5.5) ──────────────────────────────────── */
+/* ── Step 6: fine X/Y scroll (§5.5) ───────────────────────────────────── */
 
 TEST(test_scroll_default_zero) {
     ula_ng_t u; ula_ng_init(&u);
@@ -373,8 +373,8 @@ TEST(test_scroll_program) {
 TEST(test_scroll_clamp) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    ula_ng_write(&u, ULA_NG_REG_SCROLLX, 9);   /* X clampé à 5 (cellule 6 px) */
-    ula_ng_write(&u, ULA_NG_REG_SCROLLY, 9);   /* Y masqué 0-7 : 9&7 = 1 */
+    ula_ng_write(&u, ULA_NG_REG_SCROLLX, 9);   /* X clamped to 5 (6 px cell) */
+    ula_ng_write(&u, ULA_NG_REG_SCROLLY, 9);   /* Y masked 0-7: 9&7 = 1 */
     ASSERT_EQ(u.scrollx, 5); ASSERT_EQ(u.scrolly, 1);
 }
 
@@ -385,7 +385,7 @@ TEST(test_scroll_locked_no_effect) {
     ASSERT_EQ(u.scrollx, 0); ASSERT_EQ(u.scrolly, 0);
 }
 
-/* ── Étape 7 : attributs parallèles (§5.6) ────────────────────────────── */
+/* ── Step 7: parallel attributes (§5.6) ───────────────────────────────── */
 
 TEST(test_attr_default) {
     ula_ng_t u; ula_ng_init(&u);
@@ -414,7 +414,7 @@ TEST(test_attr_fill) {
 TEST(test_attr_stream) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0x00);    /* reset ptr + plan à 0 */
+    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0x00);    /* reset ptr + plane to 0 */
     ula_ng_write(&u, ULA_NG_REG_ATTR_DATA, 0x11);
     ula_ng_write(&u, ULA_NG_REG_ATTR_DATA, 0x22);
     ula_ng_write(&u, ULA_NG_REG_ATTR_DATA, 0x33);
@@ -424,12 +424,12 @@ TEST(test_attr_stream) {
 
 TEST(test_attr_locked_no_effect) {
     ula_ng_t u; ula_ng_init(&u);
-    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0xFF);    /* verrouillé : passthrough */
+    ula_ng_write(&u, ULA_NG_REG_ATTR_FILL, 0xFF);    /* locked: passthrough */
     ASSERT_EQ(u.attr[0], 0);
     ASSERT_FALSE(u.attr_active);
 }
 
-/* ── Étape 8 : sprites matériels (§5.7) ─────────────────────────────────── */
+/* ── Step 8: hardware sprites (§5.7) ──────────────────────────────────── */
 
 static uint8_t g_fb[32 * 32 * 3];
 
@@ -444,7 +444,7 @@ TEST(test_spr_gating) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
     ASSERT_FALSE(u.spr_active);
-    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);   /* enable global */
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);   /* global enable */
     ASSERT_TRUE(u.spr_active);
     ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x00);
     ASSERT_FALSE(u.spr_active);
@@ -465,7 +465,7 @@ TEST(test_spr_program) {
     ASSERT_EQ(u.sprites[3].pattern[0], 5);
     ASSERT_EQ(u.sprites[3].pattern[1], 2);
     ASSERT_EQ(u.spr_wp, 2);
-    ula_ng_write(&u, ULA_NG_REG_SPR_SEL, 3);   /* SEL remet le pointeur motif à 0 */
+    ula_ng_write(&u, ULA_NG_REG_SPR_SEL, 3);   /* SEL resets the pattern pointer to 0 */
     ASSERT_EQ(u.spr_wp, 0);
 }
 
@@ -478,9 +478,9 @@ TEST(test_spr_composite_and_transparency) {
     ula_ng_write(&u, ULA_NG_REG_SPR_Y, 4);
     ula_ng_write(&u, ULA_NG_REG_SPR_ATTR, 0x01);
     ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 0);   /* px (row0,col0) transparent */
-    ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 1);   /* px (row0,col1) index 1 = rouge */
+    ula_ng_write(&u, ULA_NG_REG_SPR_DATA, 1);   /* px (row0,col1) index 1 = red */
     memset(g_fb, 0, sizeof(g_fb));
-    ula_ng_composite_scanline(&u, g_fb, 32, 32, 4);   /* y=4 = row0 du sprite */
+    ula_ng_composite_scanline(&u, g_fb, 32, 32, 4);   /* y=4 = sprite row0 */
     int o0 = (4 * 32 + 4) * 3, o1 = (4 * 32 + 5) * 3;
     ASSERT_EQ(g_fb[o0], 0); ASSERT_EQ(g_fb[o0 + 1], 0); ASSERT_EQ(g_fb[o0 + 2], 0);
     ASSERT_EQ(g_fb[o1], u.pal[1][0]);
@@ -492,7 +492,7 @@ TEST(test_spr_collision) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
     ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);
-    for (int s = 0; s < 2; s++) {               /* 2 sprites opaques superposés */
+    for (int s = 0; s < 2; s++) {               /* 2 overlapping opaque sprites */
         ula_ng_write(&u, ULA_NG_REG_SPR_SEL, (uint8_t)s);
         ula_ng_write(&u, ULA_NG_REG_SPR_X, 8);
         ula_ng_write(&u, ULA_NG_REG_SPR_Y, 8);
@@ -510,14 +510,14 @@ TEST(test_spr_collision) {
 
 TEST(test_spr_locked_no_composite) {
     ula_ng_t u; ula_ng_init(&u);
-    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);   /* verrouillé : passthrough */
+    ula_ng_write(&u, ULA_NG_REG_SPR_CTRL, 0x01);   /* locked: passthrough */
     ASSERT_FALSE(u.spr_active);
     memset(g_fb, 0xAB, sizeof(g_fb));
     ula_ng_composite_scanline(&u, g_fb, 32, 32, 0);   /* no-op */
     ASSERT_EQ(g_fb[0], 0xAB);
 }
 
-/* ── Étape 9 : modes vidéo étendus §5.8 (chunky 4bpp / texte 80col) ──────── */
+/* ── Step 9: extended video modes §5.8 (chunky 4bpp / 80col text) ───────── */
 
 TEST(test_mode_default) {
     ula_ng_t u; ula_ng_init(&u);
@@ -544,19 +544,19 @@ TEST(test_mode_text80) {
 TEST(test_mode_needs_enable) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    ula_ng_write(&u, ULA_NG_REG_MODE, 0x04);   /* b2 sans b0 : extensions inactives */
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x04);   /* b2 without b0: extensions inactive */
     ASSERT_FALSE(u.chunky_active);
     ASSERT_FALSE(u.text80_active);
 }
 
 TEST(test_mode_locked_no_effect) {
     ula_ng_t u; ula_ng_init(&u);
-    ula_ng_write(&u, ULA_NG_REG_MODE, 0x05);   /* verrouillé : passthrough */
+    ula_ng_write(&u, ULA_NG_REG_MODE, 0x05);   /* locked: passthrough */
     ASSERT_FALSE(u.chunky_active);
     ASSERT_FALSE(u.text80_active);
 }
 
-/* ── VDU intégré (docs/ula-ng/VDU.md) ───────────────────────────────────── */
+/* ── Built-in VDU (docs/ula-ng/VDU.md) ─────────────────────────────────── */
 
 static void vdu(ula_ng_t* u, uint8_t b) { ula_ng_write(u, ULA_NG_REG_VDU, b); }
 
@@ -571,20 +571,20 @@ TEST(test_vdu_mode) {
     vdu(&u, 22); vdu(&u, 0);          /* MODE 0 = std */
     ASSERT_FALSE(u.chunky_active);
     ASSERT_FALSE(u.text80_active);
-    ASSERT_TRUE(u.active);            /* b0 actif */
+    ASSERT_TRUE(u.active);            /* b0 active */
 }
 
 TEST(test_vdu_palette) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    vdu(&u, 19); vdu(&u, 7); vdu(&u, 15); vdu(&u, 0); vdu(&u, 0);  /* LUT[7] = rouge */
+    vdu(&u, 19); vdu(&u, 7); vdu(&u, 15); vdu(&u, 0); vdu(&u, 0);  /* LUT[7] = red */
     ASSERT_EQ(u.pal[7][0], 0xFF); ASSERT_EQ(u.pal[7][1], 0x00); ASSERT_EQ(u.pal[7][2], 0x00);
 }
 
 TEST(test_vdu_fill) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    vdu(&u, 18); vdu(&u, 0x21);       /* fond couleur par cellule = $21 */
+    vdu(&u, 18); vdu(&u, 0x21);       /* per-cell background color = $21 */
     ASSERT_TRUE(u.attr_active);
     ASSERT_EQ(u.attr[0], 0x21); ASSERT_EQ(u.attr[100], 0x21);
 }
@@ -596,7 +596,7 @@ TEST(test_vdu_cell) {
     ASSERT_TRUE(u.attr_active);
     ASSERT_EQ(u.attr[16 * 40 + 5], 0x1A);
     ASSERT_EQ(u.attr[23 * 40 + 5], 0x1A);
-    ASSERT_EQ(u.attr[15 * 40 + 5], 0x00);   /* hors cellule : inchangé */
+    ASSERT_EQ(u.attr[15 * 40 + 5], 0x00);   /* outside the cell: unchanged */
 }
 
 TEST(test_vdu_reset) {
@@ -612,23 +612,23 @@ TEST(test_vdu_reset) {
 TEST(test_vdu_unknown_ignored) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    vdu(&u, 99);                      /* commande inconnue : ignorée, pas de crash */
-    vdu(&u, 22); vdu(&u, 1);          /* le flux reste sain ensuite */
+    vdu(&u, 99);                      /* unknown command: ignored, no crash */
+    vdu(&u, 22); vdu(&u, 1);          /* the stream stays sane afterwards */
     ASSERT_TRUE(u.chunky_active);
 }
 
 TEST(test_vdu_locked_no_effect) {
     ula_ng_t u; ula_ng_init(&u);
-    vdu(&u, 22); vdu(&u, 1);          /* verrouillé : passthrough, aucun effet */
+    vdu(&u, 22); vdu(&u, 1);          /* locked: passthrough, no effect */
     ASSERT_FALSE(u.chunky_active);
 }
 
-/* VDU v0.2 : graphiques dans la VRAM portée par l'ULA-NG */
+/* VDU v0.2: graphics in the VRAM held by the ULA-NG */
 
 TEST(test_vdu_gfx_clg) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    u.vram[0] = 0xAB;                 /* sale */
+    u.vram[0] = 0xAB;                 /* dirty */
     vdu(&u, 16);                      /* CLG */
     ASSERT_TRUE(u.vram_active);
     ASSERT_TRUE(u.chunky_active);
@@ -639,11 +639,11 @@ TEST(test_vdu_gfx_plot) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
     vdu(&u, 16);
-    vdu(&u, 17); vdu(&u, 5);          /* couleur 5 */
-    vdu(&u, 25); vdu(&u, 10); vdu(&u, 20);  /* PLOT (10,20) : x pair -> quartet haut */
+    vdu(&u, 17); vdu(&u, 5);          /* color 5 */
+    vdu(&u, 25); vdu(&u, 10); vdu(&u, 20);  /* PLOT (10,20): even x -> high nibble */
     ASSERT_EQ(u.vram[20 * 80 + 5], 0x50);
     vdu(&u, 17); vdu(&u, 7);
-    vdu(&u, 25); vdu(&u, 11); vdu(&u, 20);  /* PLOT (11,20) : x impair -> quartet bas */
+    vdu(&u, 25); vdu(&u, 11); vdu(&u, 20);  /* PLOT (11,20): odd x -> low nibble */
     ASSERT_EQ(u.vram[20 * 80 + 5], 0x57);
 }
 
@@ -663,25 +663,25 @@ TEST(test_vdu_gfx_reset) {
     unlock(&u);
     vdu(&u, 16);
     ASSERT_TRUE(u.vram_active);
-    vdu(&u, 20);                      /* reset -> VRAM désactivée */
+    vdu(&u, 20);                      /* reset -> VRAM disabled */
     ASSERT_FALSE(u.vram_active);
 }
 
-/* VDU v0.3 : protocole d'upload (sprite via flux) */
+/* VDU v0.3: upload protocol (sprite via stream) */
 
 TEST(test_vdu_sprite_upload) {
     ula_ng_t u; ula_ng_init(&u);
     unlock(&u);
-    vdu(&u, 23); vdu(&u, 0);          /* begin upload motif sprite 0 */
-    for (int i = 0; i < 256; i++) vdu(&u, 3);  /* motif = index 3 */
-    ASSERT_EQ(u.vdu_upload, 0);       /* upload terminé */
+    vdu(&u, 23); vdu(&u, 0);          /* begin upload of sprite 0 pattern */
+    for (int i = 0; i < 256; i++) vdu(&u, 3);  /* pattern = index 3 */
+    ASSERT_EQ(u.vdu_upload, 0);       /* upload finished */
     ASSERT_EQ(u.sprites[0].pattern[0], 3);
     ASSERT_EQ(u.sprites[0].pattern[255], 3);
     vdu(&u, 24); vdu(&u, 0); vdu(&u, 40); vdu(&u, 50); vdu(&u, 1);  /* pos + enable */
     ASSERT_EQ(u.sprites[0].x, 40);
     ASSERT_EQ(u.sprites[0].y, 50);
     ASSERT_TRUE(u.sprites[0].enable);
-    ASSERT_TRUE(u.spr_active);        /* enable global posé par VDU 24 */
+    ASSERT_TRUE(u.spr_active);        /* global enable set by VDU 24 */
 }
 
 TEST(test_vdu_upload_then_command) {
@@ -689,7 +689,7 @@ TEST(test_vdu_upload_then_command) {
     unlock(&u);
     vdu(&u, 23); vdu(&u, 1);
     for (int i = 0; i < 256; i++) vdu(&u, 5);
-    vdu(&u, 22); vdu(&u, 1);          /* stream fini -> commande normale reconnue */
+    vdu(&u, 22); vdu(&u, 1);          /* stream finished -> normal command recognized */
     ASSERT_TRUE(u.chunky_active);
     ASSERT_EQ(u.sprites[1].pattern[10], 5);
 }

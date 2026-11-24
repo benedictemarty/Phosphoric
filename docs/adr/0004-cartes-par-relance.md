@@ -1,26 +1,25 @@
-# 0004 — Changer de cartes d'extension relance le processus
+# 0004 — Changing expansion cards restarts the process
 
-- **Statut** : acceptée (2.11.0)
+- **Status**: accepted (2.11.0)
 
-## Contexte
+## Context
 
-Le menu F1 permet de changer les cartes d'extension (Microdisc, Jasmin, LOCI,
-ACIA…). Une carte se branche au démarrage : ROM servie, overlay, périphérique sur
-le bus, transport série ouvert, et pour le LOCI co-simulé des threads et un
-firmware en cours d'exécution. Réinitialiser tout cela dans le même processus
-réutiliserait des états globaux et des ressources de l'hôte.
+The F1 menu lets the user change the expansion cards (Microdisc, Jasmin, LOCI,
+ACIA…). A card is wired at startup: served ROM, overlay, peripheral on the bus,
+open serial transport, and for the co-simulated LOCI threads and a running
+firmware. Resetting all of that inside the same process would reuse global
+state and host resources.
 
-## Décision
+## Decision
 
-« Appliquer et redémarrer » remplace le processus (`execv` ; `_execv` sous
-Windows) par l'émulateur relancé avec la ligne de commande d'origine, sans les
-options de cartes, plus celles des cartes choisies et `--no-config-cards`
-(`src/cards.c`, `cards_build_argv`, `cards_exec`). Les cartes sont décrites par
-un registre de données (`k_cards[]`) que le menu affiche tel quel.
+"Apply and restart" replaces the process (`execv`; `_execv` on Windows) with the
+emulator restarted with the original command line, minus the card options, plus
+those of the chosen cards and `--no-config-cards` (`src/cards.c`,
+`cards_build_argv`, `cards_exec`). Cards are described by a data registry
+(`k_cards[]`) that the menu displays as is.
 
-## Conséquences
+## Consequences
 
-- C'est un vrai redémarrage à froid : la mémoire de l'Oric est perdue (le menu
-  le dit).
-- La version web ne peut pas se relancer : ses cartes sont en lecture seule.
-- Une carte ajoutée au registre apparaît dans le menu sans autre changement.
+- It is a real cold restart: the Oric memory is lost (the menu says so).
+- The web build cannot restart itself: its cards are read-only.
+- A card added to the registry appears in the menu with no other change.

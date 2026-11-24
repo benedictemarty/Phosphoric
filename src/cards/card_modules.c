@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_modules.c
- * @brief Registre des cartes en modules : table getopt, aide, configuration et
- *        mise en route dérivées de k_card_modules[] (voir card_module.h).
+ * @brief Registry of the cards as modules: getopt table, help, configuration
+ *        and setup derived from k_card_modules[] (see card_module.h).
  * @author bmarty <bmarty@mailo.com>
  */
 #include "card_module.h"
@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ── Liste (générée depuis cards_list.h) ─────────────────────────────────── */
+/* ── List (generated from cards_list.h) ──────────────────────────────────── */
 
 #define CARD_LIST_DECL(id, tick) extern const card_module_t card_##id;
 CARD_MODULE_LIST(CARD_LIST_DECL)
@@ -20,20 +20,20 @@ CARD_MODULE_LIST(CARD_LIST_DECL)
 const card_module_t* const k_card_modules[] = { CARD_MODULE_LIST(CARD_LIST_PTR) NULL };
 const int k_card_module_count = CARD_MODULE_COUNT;
 
-/* ── Placement par ancres (commun aux options, à l'aide, au menu, au bus) ──
+/* ── Placement by anchors (shared by options, help, menu and bus) ─────────
  *
- * Chaque module se place juste avant l'élément que nomme son ancre. Trois passes :
- *   1. en parcourant les éléments du cœur, on place avant chacun les modules
- *      ancrés sur lui ;
- *   2. puis les modules sans ancre, dans l'ordre de la liste ;
- *   3. puis ceux dont l'ancre n'existe pas.
- * Placer un module place d'abord les modules ancrés sur l'un de ses éléments : une
- * ancre peut donc nommer un autre module, quel que soit l'ordre de la liste. */
+ * Each module is placed just before the item its anchor names. Three passes:
+ *   1. walking the core items, the modules anchored on each one are placed
+ *      before it;
+ *   2. then the modules without an anchor, in list order;
+ *   3. then those whose anchor does not exist.
+ * Placing a module first places the modules anchored on one of its items: an
+ * anchor may therefore name another module, whatever the list order. */
 typedef struct {
-    const char* (*anchor)(int m);                  /* ancre du module m (NULL : aucune) */
-    int         (*count)(int m);                   /* nombre d'éléments du module m */
-    const char* (*key)(int m, int j);              /* nom de son élément j */
-    void        (*emit)(int m, int j, void* ctx);  /* émet son élément j */
+    const char* (*anchor)(int m);                  /* anchor of module m (NULL: none) */
+    int         (*count)(int m);                   /* number of items of module m */
+    const char* (*key)(int m, int j);              /* name of its item j */
+    void        (*emit)(int m, int j, void* ctx);  /* emits its item j */
     void*         ctx;
     bool          placed[64];
 } placer_t;
@@ -64,8 +64,8 @@ static void place_rest(placer_t* pl) {
 
 /* ── Configuration ─────────────────────────────────────────────────────── */
 
-/* Une configuration par module, allouée une fois et gardée (statique : jamais
- * signalée comme fuite) ; chaque appel la remet aux valeurs par défaut. */
+/* One configuration per module, allocated once and kept (static: never
+ * reported as a leak); each call resets it to the default values. */
 static void* s_cfgs[64];
 
 void** card_modules_cfg_new(void) {
@@ -97,7 +97,7 @@ bool card_modules_option_is_flag(const char* opt) {
     return false;
 }
 
-/* ── Table getopt ──────────────────────────────────────────────────────── */
+/* ── getopt table ──────────────────────────────────────────────────────── */
 
 static struct option* s_tbl;
 static int s_n;
@@ -128,15 +128,15 @@ const struct option* card_modules_long_options(const struct option* core) {
         s_tbl[s_n++] = core[i];
     }
     place_rest(&pl);
-    return s_tbl;                                   /* terminée par calloc : {0} */
+    return s_tbl;                                   /* terminated by calloc: {0} */
 }
 
-/* ── Aide ──────────────────────────────────────────────────────────────── */
+/* ── Help ──────────────────────────────────────────────────────────────── */
 
-/* L'aide se place par blocs (card_help_t), chacun avec son ancre : un bloc est
- * repéré par la première option qu'il annonce (« --nom » en tête de ligne), pour
- * que les blocs ancrés sur lui passent avant. Les blocs écrits sont notés, remis
- * à zéro en fin d'aide. */
+/* The help is placed in blocks (card_help_t), each with its anchor: a block is
+ * identified by the first option it announces (« --name » at the start of a line),
+ * so that the blocks anchored on it come first. The blocks already written are
+ * recorded, reset at the end of the help. */
 static bool s_help_done[64][4];
 
 static void help_key(const char* text, char* out, size_t outsz) {
@@ -170,15 +170,15 @@ void card_modules_print_help_before(const char* name) {
         help_before(name);
         return;
     }
-    for (int pass = 0; pass < 2; pass++)              /* sans ancre, puis ancre introuvable */
+    for (int pass = 0; pass < 2; pass++)              /* no anchor, then anchor not found */
         for (int m = 0; m < k_card_module_count; m++)
             for (int k = 0; k < k_card_modules[m]->nhelps && k < 4; k++)
                 if (!s_help_done[m][k] && (pass == 1 || !k_card_modules[m]->helps[k].before))
                     help_unit(m, k);
-    memset(s_help_done, 0, sizeof(s_help_done));    /* prête pour une autre aide */
+    memset(s_help_done, 0, sizeof(s_help_done));    /* ready for another help */
 }
 
-/* ── Cycle de vie ──────────────────────────────────────────────────────── */
+/* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
 void card_modules_init(emulator_t* emu) {
     for (int m = 0; m < k_card_module_count; m++)
@@ -200,7 +200,7 @@ int card_modules_setup(emulator_t* emu, const struct cli_opts_s* core, card_stag
     return 0;
 }
 
-/* ── Placement générique, pour le menu (cards.c) et le bus (io_bus.c) ──── */
+/* ── Generic placement, for the menu (cards.c) and the bus (io_bus.c) ──── */
 
 void card_modules_place(const char* const* core_names, int ncore,
                         const char* (*anchor)(int m), int (*count)(int m),

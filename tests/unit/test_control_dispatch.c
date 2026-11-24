@@ -243,7 +243,7 @@ TEST(buffer_sink_accumulates_across_calls) {
     PASS();
 }
 
-/* ─── Sprint 97: parité debug REST (couche --control) ──────────────── */
+/* ─── Sprint 97: REST debug parity (--control layer) ──────────────── */
 
 TEST(watch_mode_read) {
     emulator_t* emu = fresh_emu();
@@ -468,8 +468,8 @@ TEST(stuck_bits_set_status) {
     PASS();
 }
 
-/* nmi : bouton sous l'Oric (Maj+F5) — NMI en attente, prise à la prochaine
- * instruction par le vecteur $FFFA, une seule fois. */
+/* nmi: the button under the Oric (Shift+F5) — NMI pending, taken at the next
+ * instruction through the $FFFA vector, only once. */
 TEST(nmi_pending_then_taken_once) {
     emulator_t* emu = fresh_emu();
     control_sink_t s;

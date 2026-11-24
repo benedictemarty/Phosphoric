@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_cmd_debug.c
- * @brief Commandes --control : points d'arrêt, surveillances, raster, désassemblage, trace, peek
+ * @brief --control commands: breakpoints, watches, raster, disassembly, trace, peek
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/control.c (sprint F du plan d'architecture), sans changement
- * de comportement ; fonctions partagées : include/control_internal.h.
+ * Split out of src/control.c (sprint F of the architecture plan), with no
+ * behaviour change; shared functions: include/control_internal.h.
  */
 
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
 #include "io/loci_emu.h"
@@ -278,7 +278,7 @@ void ctl_cmd_peek(emulator_t* emu, control_sink_t* s, const char* sub) {
     if (!sub) { sink_err(s, "peek: usage `peek <subsystem>`"); return; }
     if (strcmp(sub, "via") == 0) {
         via6522_t* v = &emu->via;
-        via_sync(v);   /* compteurs à jour (cycles sautés par via_tick) */
+        via_sync(v);   /* up-to-date counters (cycles skipped by via_tick) */
         sink_ok(s, "ora=%02X orb=%02X ddra=%02X ddrb=%02X "
                 "t1c=%04X t1l=%04X t2c=%04X t2l=%02X "
                 "acr=%02X pcr=%02X ifr=%02X ier=%02X sr=%02X "

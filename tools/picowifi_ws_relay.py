@@ -124,9 +124,9 @@ async def handle(reader, writer, args):
         log(peer, "destination refusée :", f"{host}:{port}")
         return await http_error(writer, 403, "Forbidden")
 
-    # Connexion TCP (et TLS) AVANT d'accepter le WebSocket : un échec devient
-    # une réponse HTTP 502, que le navigateur voit comme un échec d'ouverture
-    # (le modem répond alors NO CARRIER).
+    # TCP (and TLS) connection BEFORE accepting the WebSocket: a failure becomes
+    # an HTTP 502 response, which the browser sees as a failed open
+    # (the modem then answers NO CARRIER).
     try:
         ctx = ssl.create_default_context() if use_tls else None
         treader, twriter = await asyncio.wait_for(

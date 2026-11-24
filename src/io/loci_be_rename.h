@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_be_rename.h
- * @brief Renomme l'interface loci_emu_* d'un backend LOCI en LOCI_BE_<nom>
+ * @brief Renames the loci_emu_* interface of a LOCI backend to LOCI_BE_<name>
  * @author bmarty <bmarty@mailo.com>
  *
- * Inclus d'office (-include) par le Makefile dans loci_emu.c / loci_neo.c,
- * loci_hw.c et loci_emu_stub.c, compilés avec -DLOCI_BE=lbe_emul, lbe_hw ou
- * lbe_stub : les backends gardent leur source inchangée (loci_hw.c reste la
- * copie de ~/loci/loci-usb/phosphoric/) et cohabitent dans un même binaire ;
- * loci_backend.c définit les vraies fonctions loci_emu_* et aiguille vers le
- * backend choisi au lancement. Liste : celle de loci_be_api.h.
+ * Force-included (-include) by the Makefile into loci_emu.c / loci_neo.c,
+ * loci_hw.c and loci_emu_stub.c, compiled with -DLOCI_BE=lbe_emul, lbe_hw or
+ * lbe_stub: the backends keep their source unchanged (loci_hw.c remains the
+ * copy of ~/loci/loci-usb/phosphoric/) and coexist in a single binary;
+ * loci_backend.c defines the real loci_emu_* functions and dispatches to the
+ * backend chosen at launch. List: the one in loci_be_api.h.
  */
 #ifndef LOCI_BE_RENAME_H
 #define LOCI_BE_RENAME_H

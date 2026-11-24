@@ -13,15 +13,15 @@
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 500
 #endif
-/* macOS : _XOPEN_SOURCE seul restreint le namespace et masque snprintf + les
- * extensions BSD dans <stdio.h>. _DARWIN_C_SOURCE réexpose l'API complète. */
+/* macOS: _XOPEN_SOURCE alone restricts the namespace and hides snprintf + the
+ * BSD extensions in <stdio.h>. _DARWIN_C_SOURCE re-exposes the full API. */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
 #endif
 
 #include "io/loci.h"
 #include "io/loci_internal.h"
-#include "io/loci_emu.h"   /* routage HID vers le firmware en co-sim */
+#include "io/loci_emu.h"   /* HID routing to the firmware in co-sim */
 #include "io/loci_sdimg.h"
 #include "io/bus_timing.h"
 #include "utils/logging.h"
@@ -122,13 +122,13 @@ bool loci_init(loci_t* loci) {
     loci->mia_tadr = 0;
     loci->mia_tior_lo = 0;
     loci->mia_tior_hi = 31;
-    /* Épic B / Phase 1 : modèle de course PHI2. Défaut WINDOW [0,31] = tout tior
-     * fiable → iso-comportement. Paramètres PHASE pré-réglés « fits » (serve
-     * nul, tDSR défaut) pour rester fiable si on bascule sans calibrer. */
+    /* Epic B / Phase 1: PHI2 race model. Default WINDOW [0,31] = every tior
+     * reliable → same behaviour. PHASE parameters preset to « fits » (zero
+     * serve, default tDSR) so it stays reliable if switched without calibration. */
     loci->mia_timing_model = LOCI_TIMING_WINDOW;
     loci->mia_serve_cycles = 0;
     loci->mia_tdsr_ns = BUS_ORIC_TDSR_NS_DEFAULT;
-    loci->mia_serve_jitter = 0;                     /* pas de jitter par défaut */
+    loci->mia_serve_jitter = 0;                     /* no jitter by default */
     loci->mia_jitter_state = bus_jitter_seed(0);
     loci->dir_dev = -1;    /* device-list iterator closed */
     loci->ula_pattern = 0x86;   /* firmware power-up pattern $83848586 */
@@ -465,12 +465,12 @@ void op_pix_xreg(loci_t* loci) {
 
 void loci_kbd_set_report(loci_t* loci, uint8_t modifier,
                           const uint8_t keycodes[6]) {
-    /* Co-simulation : le 6502 ne lit plus ce xram (io_bus.c route tout le MIA
-     * vers le firmware réel) — le rapport doit donc partir au vrai kbd_report()
-     * du firmware, qui fait bien plus que remplir un bitmap (layouts, file
-     * stdio, répétition, LED). Routé ici plutôt qu'à chaque appelant pour que
-     * TOUS les chemins d'injection en profitent : glue SDL et --type-keys
-     * loci-hid:. Modèle interne inchangé hors co-sim. */
+    /* Co-simulation: the 6502 no longer reads this xram (io_bus.c routes the whole
+     * MIA to the real firmware) — so the report must go to the firmware's real
+     * kbd_report(), which does far more than fill a bitmap (layouts, stdio
+     * queue, repeat, LED). Routed here rather than in each caller so that ALL
+     * injection paths benefit: SDL glue and --type-keys loci-hid:. Internal
+     * model unchanged outside co-sim. */
     if (loci_emu_active()) { loci_emu_kbd_report(modifier, keycodes); return; }
     if (!loci || !loci->enabled) return;
     if (loci->kbd_xram == 0xFFFF) return;
@@ -498,7 +498,7 @@ void loci_kbd_clear(loci_t* loci) {
 void loci_mou_report(loci_t* loci, uint8_t buttons,
                      int8_t dx, int8_t dy,
                      int8_t wheel, int8_t pan) {
-    /* Idem clavier : en co-sim le rapport va au firmware (cf. emul_hid.c). */
+    /* Same as the keyboard: in co-sim the report goes to the firmware (cf. emul_hid.c). */
     if (loci_emu_active()) {
         loci_emu_mou_report(buttons, dx, dy, wheel, pan);
         return;
@@ -715,13 +715,13 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
         loci_resume_at_spin(loci);   /* CLV fetch of the spin: ROM safe to swap */
 
     if (off == LOCI_REG_CONS_FLAGS) {
-        /* Firmware (mia.c CASE_READ(0x03A0)) : bit 7 = émission possible, bit 6 =
-         * octet reçu prêt. Le bus est servi avec le registre TEL QU'IL ÉTAIT, le
-         * gestionnaire le met à jour APRÈS (2.31.14) : la 1re lecture après un reset
-         * rend 0 (registres $03A0-$03BF remis à zéro), les suivantes $80 — mesuré sur
-         * la Feather avec le vrai firmware LOCI (00, 80, 80). Le gestionnaire charge
-         * un octet en attente dans $03A2 (bit 6) s'il n'y en a pas déjà un. Notre
-         * sortie ne bloque jamais : le bit 7 est posé par le gestionnaire. */
+        /* Firmware (mia.c CASE_READ(0x03A0)): bit 7 = TX writable, bit 6 = RX
+         * data ready. The bus is served with the register AS IT WAS, the handler
+         * updates it AFTERWARDS (2.31.14): the first read after a reset returns 0
+         * (registers $03A0-$03BF cleared), the next ones $80 — measured on the
+         * Feather with the real LOCI firmware (00, 80, 80). The handler loads a
+         * waiting byte into $03A2 (bit 6) if none is loaded yet. Our TX sink
+         * never stalls: bit 7 is set by the handler. */
         uint8_t v = loci->regs[LOCI_REG_CONS_FLAGS];
         if (!(v & 0x40) && cons_rx_pending(loci)) {
             loci->regs[LOCI_REG_CONS_CHAR] = cons_rx_pop(loci);
@@ -731,9 +731,9 @@ uint8_t loci_read(loci_t* loci, uint16_t address) {
         return v;
     }
     if (off == LOCI_REG_CONS_CHAR) {
-        /* Firmware (CASE_READ(0x03A2)) : l'octet chargé auparavant est servi, puis
-         * l'octet suivant en attente est chargé (bit 6 gardé), sinon le bit 6 est
-         * effacé et $03A2 remis à 0. */
+        /* Firmware (CASE_READ(0x03A2)): the byte loaded beforehand is served,
+         * then the next waiting byte is loaded (bit 6 kept), otherwise bit 6 is
+         * cleared and $03A2 zeroed. */
         uint8_t v = loci->regs[LOCI_REG_CONS_CHAR];
         if (cons_rx_pending(loci)) {
             loci->regs[LOCI_REG_CONS_CHAR] = cons_rx_pop(loci);
@@ -784,7 +784,7 @@ void loci_write(loci_t* loci, uint16_t address, uint8_t value) {
         /* Console UART TX — accumulate and flush to the log on '\n'. */
         cons_tx_byte(loci, value);
         loci->regs[LOCI_REG_CONS_TX] = value;
-        loci->regs[LOCI_REG_CONS_FLAGS] |= 0x80;   /* firmware : bit 7 recalculé après une émission */
+        loci->regs[LOCI_REG_CONS_FLAGS] |= 0x80;   /* firmware: bit 7 recomputed after a TX write */
         return;
     }
     if (off == LOCI_REG_ULA_SNOOP) {

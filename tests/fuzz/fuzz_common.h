@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_common.h
- * @brief Outils communs aux cibles de fuzzing (tests/fuzz/)
+ * @brief Helpers shared by the fuzzing targets (tests/fuzz/)
  * @author bmarty <bmarty@mailo.com>
  *
- * Chaque cible définit LLVMFuzzerTestOneInput() : avec clang
- * (-fsanitize=fuzzer, `make fuzz`) libFuzzer fournit main() ; avec gcc,
- * fuzz_replay.c rejoue un corpus (`make test-fuzz-replay`). Chaque cible
- * définit aussi fuzz_make_seed() : une graine valide, ou FUZZ_NO_SEED().
+ * Each target defines LLVMFuzzerTestOneInput(): with clang
+ * (-fsanitize=fuzzer, `make fuzz`) libFuzzer provides main(); with gcc,
+ * fuzz_replay.c replays a corpus (`make test-fuzz-replay`). Each target
+ * also defines fuzz_make_seed(): a valid seed, or FUZZ_NO_SEED().
  *
- * Les analyseurs de Phosphoric prennent des chemins : l'entrée est écrite dans
- * un fichier temporaire, réutilisé d'un appel à l'autre.
+ * Phosphoric's parsers take paths: the input is written to a temporary file,
+ * reused from one call to the next.
  */
 #ifndef FUZZ_COMMON_H
 #define FUZZ_COMMON_H
@@ -23,8 +23,8 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);
 
-/* Graine (fuzz_replay --seed CHEMIN) : 0 = écrite. Pas de symbole faible :
- * l'éditeur de liens de macOS refuse un symbole faible non défini. */
+/* Seed (fuzz_replay --seed PATH): 0 = written. No weak symbol: the macOS
+ * linker rejects an undefined weak symbol. */
 int fuzz_make_seed(const char* path);
 #define FUZZ_NO_SEED() \
     int fuzz_make_seed(const char* path) { (void)path; return -1; }
@@ -45,8 +45,8 @@ static inline const char* fuzz_tmpfile(const uint8_t* data, size_t size) {
     return path;
 }
 
-/* Journal muet : une entrée invalide produit des erreurs attendues, et les
- * écrire ralentirait le fuzzing. Pour les cibles qui lient utils/logging.c. */
+/* Silent log: an invalid input produces expected errors, and writing them
+ * would slow fuzzing down. For the targets that link utils/logging.c. */
 #define FUZZ_QUIET_LOGS() do {                              \
         static int fuzz_quiet_done;                         \
         if (!fuzz_quiet_done) {                             \

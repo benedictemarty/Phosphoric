@@ -1,186 +1,186 @@
-# Architecture — Bus I/O & périphériques (`io_device_t`)
+# Architecture — I/O bus & peripherals (`io_device_t`)
 
-> **Branche `feature/io-device-bus`.** Sort de `main.c` la cascade de `if
-> (has_X && X_addr_in_range(addr)) return X_read(...)` (le dispatch page 3 câblé
-> en dur, ~25 périphériques) au profit d'une **table de périphériques**. But :
-> ajouter/retirer un périphérique = enregistrer/retirer **une entrée**, sans
-> toucher au cœur. Le retrait d'OCULA a montré le coût de l'absence de cette
-> abstraction (code saupoudré dans main/memory/video/savestate).
+> **Branch `feature/io-device-bus`.** Moves out of `main.c` the cascade of `if
+> (has_X && X_addr_in_range(addr)) return X_read(...)` (the hard-wired page 3
+> dispatch, ~25 peripherals) in favour of a **peripheral table**. Goal:
+> adding/removing a peripheral = registering/removing **one entry**, without
+> touching the core. Removing OCULA showed the cost of lacking this
+> abstraction (code sprinkled across main/memory/video/savestate).
 
-## 1. Le problème
+## 1. The problem
 
-`main.c` (~4600 lignes) est un god-object : chaque périphérique y est recâblé à
-la main en 5+ endroits (CLI, init, **dispatch I/O**, boucle principale,
-savestate, glue). `io_read_callback`/`io_write_callback` sont deux cascades de
-`if` avec priorités et **interdépendances croisées** (ACIA↔Microdisc, fenêtre
-ORICON qui recouvre le Microdisc, fiabilité MIA du LOCI pour l'ACIA à $0380…).
+`main.c` (~4600 lines) is a god object: every peripheral is re-wired into it by
+hand in 5+ places (CLI, init, **I/O dispatch**, main loop,
+savestate, glue). `io_read_callback`/`io_write_callback` are two cascades of
+`if`s with priorities and **cross-dependencies** (ACIA↔Microdisc, ORICON window
+overlapping the Microdisc, LOCI MIA reliability for the ACIA at $0380…).
 
-## 2. Ce qui est un « périphérique de bus » (et ce qui ne l'est pas)
+## 2. What is a "bus peripheral" (and what is not)
 
-Critère : **revendique une plage d'adresses en page 3** (± ROM overlay).
+Criterion: **claims an address range in page 3** (± overlay ROM).
 
-- **Cœur** (NE PAS traiter comme périphérique) : 6502, mémoire, **VIA**, ULA,
-  PSG, clavier. Soudés, c'est l'Oric.
-- **Devices bus** (cible de `io_device_t`) : **Microdisc** ($0310-$031F),
+- **Core** (do NOT treat as a peripheral): 6502, memory, **VIA**, ULA,
+  PSG, keyboard. Soldered in, they are the Oric.
+- **Bus devices** (target of `io_device_t`): **Microdisc** ($0310-$031F),
   **ACIA 6551** ($031C-$031F), **ULA-NG** ($0340-$035F), **LOCI**
   ($03A0-$03BF + TAP/DSK), **DTL 2000** ($03F8-$03FD), **Mageco/ORICON**
   ($03FE-$03FF / $031C-$031E).
-- **Port-attached** (périphériques, mais PAS des devices bus) : joystick
-  (PSG Port A), imprimante/MCP-40 (VIA Port A + CA2), cassette (VIA CB1). Ils
-  se pilotent via les callbacks de port existants — **hors** de cette abstraction.
+- **Port-attached** (peripherals, but NOT bus devices): joystick
+  (PSG Port A), printer/MCP-40 (VIA Port A + CA2), cassette (VIA CB1). They
+  are driven through the existing port callbacks — **outside** this abstraction.
 
-## 3. Le contrat
+## 3. The contract
 
-`include/io/io_device.h` :
+`include/io/io_device.h`:
 
 ```c
 typedef struct io_device_s {
     const char* name;
-    bool    (*claims)(struct emulator_s* emu, uint16_t addr);        /* claim LECTURE (+ écriture par défaut) */
+    bool    (*claims)(struct emulator_s* emu, uint16_t addr);        /* READ claim (+ write by default) */
     uint8_t (*read)(struct emulator_s* emu, uint16_t addr);
-    bool    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value); /* true = consommé, false = repli VIA */
-    bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);  /* optionnel (NULL → claims) */
-    const char* save_tag;                                            /* section .ost (NULL → aucune) */
-    bool    (*save)(struct emulator_s* emu, FILE* fp);               /* false → pas de section */
+    bool    (*write)(struct emulator_s* emu, uint16_t addr, uint8_t value); /* true = consumed, false = VIA fallback */
+    bool    (*claims_write)(struct emulator_s* emu, uint16_t addr);  /* optional (NULL → claims) */
+    const char* save_tag;                                            /* .ost section (NULL → none) */
+    bool    (*save)(struct emulator_s* emu, FILE* fp);               /* false → no section */
     void    (*load)(struct emulator_s* emu, FILE* fp, uint32_t size);
-    uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);          /* lecture sans effet de bord */
+    uint8_t (*peek)(struct emulator_s* emu, uint16_t addr);          /* side-effect-free read */
     size_t  present_off;                                             /* offsetof(emulator_t, has_X) */
-    void    (*tick)(struct emulator_s* emu, int cycles);             /* avance temporelle (optionnelle) */
+    void    (*tick)(struct emulator_s* emu, int cycles);             /* advancing time (optional) */
 } io_device_t;
 ```
 
-La table `io_bus[]` (`src/io/io_bus.c`) est écrite en **initialiseurs désignés**
-indexés par un `enum` (`DEV_LOCI`, `DEV_ACIA`…) : l'ordre de dispatch se lit dans
-l'`enum`, et l'ordre des ticks (`io_bus_tick_order[]`) référence les entrées par
-ce même nom.
+The `io_bus[]` table (`src/io/io_bus.c`) is written with **designated initialisers**
+indexed by an `enum` (`DEV_LOCI`, `DEV_ACIA`…): the dispatch order can be read from
+the `enum`, and the tick order (`io_bus_tick_order[]`) refers to the entries by
+that same name.
 
-**Pourquoi `emulator_t*` et pas un simple `self` ?** Parce que les `claims`
-sont conditionnels/croisés : `microdisc.claims` doit savoir si l'ACIA est
-présente ; l'ACIA à $0380 doit consulter la fiabilité MIA du LOCI. Le contexte
-complet est nécessaire. (Un `self` seul suffirait pour un device isolé, mais
-pas pour le graphe de priorités réel.)
+**Why `emulator_t*` rather than a plain `self`?** Because the `claims`
+are conditional/cross-dependent: `microdisc.claims` must know whether the ACIA is
+present; the ACIA at $0380 must consult the LOCI MIA reliability. The full
+context is required. (A `self` alone would do for an isolated device, but
+not for the real priority graph.)
 
-**`write` renvoie « consommé »**, `claims_write` distinct.** L'écriture peut
-**décliner** (renvoyer `false`) pour retomber sur le VIA — indispensable à
-l'ULA-NG, qui doit *voir* les écritures de sa fenêtre même verrouillée (pour
-guetter la séquence de déverrouillage 'N','G') tout en laissant passer les
-octets neutres à l'identique du VIA. Comme son claim d'écriture (fenêtre seule)
-diffère de son claim de lecture (déverrouillée + fenêtre), un `claims_write`
-optionnel s'ajoute (NULL → réutilise `claims`). Les périphériques à plage
-exclusive laissent `claims_write` à NULL et renvoient toujours `true`.
+**`write` returns "consumed"**, with a separate `claims_write`.** A write can
+**decline** (return `false`) to fall back to the VIA — essential for the
+ULA-NG, which must *see* writes to its window even while locked (to
+watch for the 'N','G' unlock sequence) while letting neutral
+bytes through exactly as the VIA would. Since its write claim (window only)
+differs from its read claim (unlocked + window), an optional `claims_write`
+is added (NULL → reuses `claims`). Peripherals with an exclusive range
+leave `claims_write` NULL and always return `true`.
 
-**Dispatch** (`main.c`) : une table `io_bus[]`. En lecture, `io_bus_find(emu, addr)`
-renvoie le **premier** device qui `claims()` ; en écriture, `io_bus_find_write`
-utilise `claims_write ?: claims`, puis le dispatch respecte le verdict de `write`
-(false → repli VIA). L'ordre de la table = la priorité. `io_read/write_callback`
-se réduisent à **la boucle du bus + le repli VIA** — tous les périphériques à
-plage sont désormais dans la table (**pattern strangler** mené à son terme).
+**Dispatch** (`main.c`): an `io_bus[]` table. On read, `io_bus_find(emu, addr)`
+returns the **first** device whose `claims()` matches; on write, `io_bus_find_write`
+uses `claims_write ?: claims`, then the dispatch honours the verdict of `write`
+(false → fall back to VIA). Table order = priority. `io_read/write_callback`
+shrink to **the bus loop + the VIA fallback** — all range-based peripherals are
+now in the table (**strangler pattern** carried through to the end).
 
-## 4. Étape 1 réalisée — preuve du modèle
+## 4. Step 1 done — proof of the model
 
-**Digitelec DTL 2000** ($03F8-$03FD, **plage exclusive** → migration
-iso-comportement, aucun risque de priorité) migré derrière `io_device_t` :
-wrappers `dtl2000_dev_{claims,read,write}`, entrée dans `io_bus[]`, `if` en dur
-retirés des 2 callbacks. **Suite complète verte** (test-dtl2000 15/15 + intégration).
+**Digitelec DTL 2000** ($03F8-$03FD, **exclusive range** → behaviour-identical
+migration, no priority risk) migrated behind `io_device_t`:
+wrappers `dtl2000_dev_{claims,read,write}`, entry in `io_bus[]`, hard-wired `if`s
+removed from the 2 callbacks. **Full suite green** (test-dtl2000 15/15 + integration).
 
-## 5. Ordre de migration
+## 5. Migration order
 
-1. ✅ **DTL 2000** (fait — plage exclusive, valide le contrat).
-2. ✅ **ACIA 6551**, **Mageco / ORICON** : petites plages recouvrant le Microdisc
-   → priorité encodée dans l'ordre de la table + les `claims` (ACIA possède
-   $031C-$031F si présente ; l'ACIA à $0380 consulte la fiabilité MIA du LOCI).
-3. ✅ **Microdisc** : `claims` = `has_microdisc && 0x0310-0x031F` (l'ACIA, placée
-   avant, possède déjà $031C-$031F si présente). Le wrapper conserve `fdc_trace`
-   et la synchro des drapeaux d'overlay (`basic_rom_disabled`/`overlay_active`).
+1. ✅ **DTL 2000** (done — exclusive range, validates the contract).
+2. ✅ **ACIA 6551**, **Mageco / ORICON**: small ranges overlapping the Microdisc
+   → priority encoded in the table order + the `claims` (the ACIA owns
+   $031C-$031F if present; the ACIA at $0380 consults the LOCI MIA reliability).
+3. ✅ **Microdisc**: `claims` = `has_microdisc && 0x0310-0x031F` (the ACIA, placed
+   earlier, already owns $031C-$031F if present). The wrapper keeps `fdc_trace`
+   and the synchronisation of the overlay flags (`basic_rom_disabled`/`overlay_active`).
 4. ✅ **LOCI** (MIA $03A0-$03BF + TAP $0315-$0317 + DSK $0310-$0314/$0318-$0319,
-   3 sous-plages **disjointes**) : un seul `io_device_t` **en tête de table** qui
-   dispatche en interne. Le `claims` encode la priorité (TAP recouvre toujours le
-   Microdisc ; DSK seulement `!has_microdisc`). Le snoop VIA ORB $0300
-   (`loci_tap_motor`, ligne moteur cassette) n'est **pas** un claim → reste dans
-   le chemin VIA.
-5. ✅ **ULA-NG** : migrée grâce à l'extension du contrat (`write` renvoyant
-   « consommé » + `claims_write` distinct). Lecture : `claims` = déverrouillée &&
-   en fenêtre. Écriture : `claims_write` = en fenêtre (toujours) ; `ula_ng_dev_write`
-   renvoie le verdict de `ula_ng_write` (false verrouillée → repli VIA) et
-   synchronise l'IRQ raster quand l'écriture est consommée. Placée **en dernier**
-   dans la table (repli avant VIA). Non-régression : boots déverrouillage+palette
-   byte-identiques au pré-migration, `test-ula-ng` 60/60, garde visible 2/2.
+   3 **disjoint** sub-ranges): a single `io_device_t` **at the head of the table** that
+   dispatches internally. Its `claims` encodes the priority (TAP always overlaps the
+   Microdisc; DSK only when `!has_microdisc`). The VIA ORB $0300 snoop
+   (`loci_tap_motor`, cassette motor line) is **not** a claim → it stays in
+   the VIA path.
+5. ✅ **ULA-NG**: migrated thanks to the contract extension (`write` returning
+   "consumed" + separate `claims_write`). Read: `claims` = unlocked &&
+   in window. Write: `claims_write` = in window (always); `ula_ng_dev_write`
+   returns the verdict of `ula_ng_write` (false when locked → fall back to VIA) and
+   synchronises the raster IRQ when the write is consumed. Placed **last**
+   in the table (fallback before the VIA). Non-regression: unlock+palette boots
+   byte-identical to pre-migration, `test-ula-ng` 60/60, visible guard 2/2.
 
-Aujourd'hui, `io_read/write_callback` = **la boucle du bus + le repli VIA**. Tous
-les périphériques à plage (LOCI et ULA-NG compris) sont sur `io_device_t`.
+Today, `io_read/write_callback` = **the bus loop + the VIA fallback**. All
+range-based peripherals (LOCI and ULA-NG included) are on `io_device_t`.
 
-## 6. Étapes suivantes (au-delà du dispatch I/O)
+## 6. Next steps (beyond I/O dispatch)
 
-Le même principe s'étend à ce qui rend main.c monolithique :
+The same principle extends to what makes main.c monolithic:
 
-- **savestate** : ✅ *hook amorcé*. Le contrat porte `save_tag` + `save(emu,fp)`
-  + `load(emu,fp,size)`. `savestate.c` reçoit la table via
-  `savestate_set_io_devices()` (couplage évité), écrit une section par device qui
-  fournit un hook, et au chargement route les tags inconnus vers le `load` du
-  device correspondant. `save` peut renvoyer **false → aucune section** (état par
-  défaut → `.ost` byte-identique, zéro régression). **Premier device migré :
-  l'ULA-NG** (section « UNG ») — comble une vraie lacune (son état n'était pas
-  persisté). Sérialisation en **blob** (POD sans pointeur) avec **garde par
-  taille** au chargement ⇒ savestate *même-build* (le cas quicksave/load ; un
-  `.ost` d'un autre build/arch est ignoré, jamais corrompu). Restent à migrer sur
-  ce modèle : DTL2000, Mageco (petits jeux de registres) ; **LOCI a une réserve
-  réelle** — ses handles de fichiers OS ne sont pas sérialisables tels quels.
-  À terme, on pourra retirer les sections codées en dur (le mal OCB/OGP).
-  **DTL2000 et Mageco migrés (Epic 7/US4)** : sections « DTL »/« MAG », état
-  émulé en blob + **pointeurs hôte préservés** au chargement (backend/trace/
-  callbacks non sérialisables) ; transport live non restauré (même-build). Reste
-  **LOCI** : réserve réelle (montages/descripteurs OS).
-- **tick** (Epic 7/US5, puis sprint D 2.4.0) : ✅ *dans le contrat*. Chaque
-  device fournit `tick` et `present_off` ; `io_bus_tick()` parcourt
-  `io_bus_tick_order[]`, un ordre **explicite, distinct de l'ordre de dispatch**
-  et identique à l'ordre historique (microdisc → jasmin → loci → acia → dtl →
-  mageco → sp0256 → mea8000) → iso-comportement par construction
-  (`tools/cli_golden.sh` : 0 écart). Coût mesuré, car la fonction tourne à
-  **chaque cycle** : boucle naïve +22 % par trame, déroulée +7 %, déroulée avec
-  `__builtin_expect(présent, 0)` → dans le bruit (le compilateur la replie en
-  tests de drapeaux et appels directs, disposition identique à l'ancien code).
-- **savestate, sprint D (2.4.0)** : sections **« JAS »** (Jasmin : état FDC,
-  verrous, cartes de secteurs défectueux ; les images passent par « DSK »,
-  désormais écrite aussi pour le Jasmin), **« SPO »** (SP0256 : séquenceur,
-  filtre LPC-12, échantillons en attente) et **« MEA »** (MEA8000 : séquenceur,
-  4 formants, anneau audio). Sérialisation **champ par champ, petit-boutiste,
-  versionnée** (`include/utils/binio.h`) — pas de blob : ni ROM, ni tables
-  recalculables (~92 Ko pour le MEA8000), ni pointeurs hôte dans le fichier ;
-  section de version ou de taille inattendue ignorée. L'état du WD1793 est
-  factorisé (`fdc_state_save/load`, format **v2** : + âge du DRQ et analyseur de
-  formatage, un `.ost` v1 se relit) et `fdc_state_resume()` recalcule le
-  pointeur du secteur en cours : une reprise **en plein transfert disque** lisait
-  « Record Not Found » (défaut ancien, Microdisc compris), corrigé et couvert par
-  `test-savestate-determinism` (Jasmin sauvé en plein boot TDOS).
-- **Restent hors savestate** : **LOCI** (handles de fichiers OS, montages) et
-  l'ACIA, dont la section « SER » reste écrite en dur par `savestate.c`
-  (registres seulement, le transport hôte n'est pas restauré).
-- **init / reset / cleanup** : hooks *non ajoutés au contrat*. Raison honnête :
-  le reset n'est **pas uniforme** (le warm reset F5 ne reset que CPU + LOCI, ce
-  dernier « garde les montages ») → une boucle de reset générique changerait le
-  comportement. Décider quels périphériques voient la ligne /RESET relève de la
-  fidélité matérielle (schémas à l'appui), pas d'un refactor.
+- **savestate**: ✅ *hook in place*. The contract carries `save_tag` + `save(emu,fp)`
+  + `load(emu,fp,size)`. `savestate.c` receives the table via
+  `savestate_set_io_devices()` (avoiding coupling), writes one section per device that
+  provides a hook, and on load routes unknown tags to the `load` of the
+  matching device. `save` may return **false → no section** (default
+  state → byte-identical `.ost`, zero regression). **First device migrated:
+  the ULA-NG** ("UNG" section) — fills a real gap (its state was not
+  persisted). Serialised as a **blob** (pointer-free POD) with a **size
+  guard** on load ⇒ *same-build* savestate (the quicksave/load case; a
+  `.ost` from another build/arch is ignored, never corrupted). Still to migrate to
+  this model: DTL2000, Mageco (small register sets); **LOCI has a real
+  caveat** — its OS file handles cannot be serialised as they are.
+  Eventually the hard-coded sections can be removed (the OCB/OGP pain).
+  **DTL2000 and Mageco migrated (Epic 7/US4)**: "DTL"/"MAG" sections, emulated
+  state as a blob + **host pointers preserved** on load (non-serialisable
+  backend/trace/callbacks); live transport not restored (same-build). Remaining:
+  **LOCI**: real caveat (OS mounts/descriptors).
+- **tick** (Epic 7/US5, then sprint D 2.4.0): ✅ *in the contract*. Each
+  device provides `tick` and `present_off`; `io_bus_tick()` walks
+  `io_bus_tick_order[]`, an **explicit order, distinct from the dispatch order**
+  and identical to the historical order (microdisc → jasmin → loci → acia → dtl →
+  mageco → sp0256 → mea8000) → identical behaviour by construction
+  (`tools/cli_golden.sh`: 0 differences). Cost measured, since the function runs on
+  **every cycle**: naive loop +22 % per frame, unrolled +7 %, unrolled with
+  `__builtin_expect(présent, 0)` → within noise (the compiler folds it into
+  flag tests and direct calls, the same layout as the old code).
+- **savestate, sprint D (2.4.0)**: sections **"JAS"** (Jasmin: FDC state,
+  latches, bad-sector maps; the images go through "DSK",
+  now also written for the Jasmin), **"SPO"** (SP0256: sequencer,
+  LPC-12 filter, pending samples) and **"MEA"** (MEA8000: sequencer,
+  4 formants, audio ring). Serialisation **field by field, little-endian,
+  versioned** (`include/utils/binio.h`) — no blob: no ROM, no recomputable
+  tables (~92 KB for the MEA8000), no host pointers in the file;
+  a section with an unexpected version or size is ignored. The WD1793 state is
+  factored out (`fdc_state_save/load`, format **v2**: + DRQ age and format-track
+  parser, a v1 `.ost` still loads) and `fdc_state_resume()` recomputes the
+  pointer to the current sector: resuming **in the middle of a disk transfer** read
+  "Record Not Found" (an old defect, Microdisc included), now fixed and covered by
+  `test-savestate-determinism` (Jasmin saved mid-way through the TDOS boot).
+- **Still outside savestate**: **LOCI** (OS file handles, mounts) and
+  the ACIA, whose "SER" section is still hard-coded in `savestate.c`
+  (registers only, the host transport is not restored).
+- **init / reset / cleanup**: hooks *not added to the contract*. Honest reason:
+  reset is **not uniform** (the F5 warm reset only resets CPU + LOCI, the
+  latter "keeping its mounts") → a generic reset loop would change
+  behaviour. Deciding which peripherals see the /RESET line is a matter of
+  hardware fidelity (backed by schematics), not of a refactor.
 
-## 6 bis. Définition de « terminé » pour un nouveau périphérique de bus
+## 6 bis. Definition of "done" for a new bus peripheral
 
-1. une entrée dans `io_bus[]` (et l'`enum` `DEV_*`) avec `claims`/`read`/`write`,
-   `present_off` et, s'il avance dans le temps, `tick` placé à sa position dans
-   `io_bus_tick_order[]` ;
-2. une section `.ost` (`save_tag`/`save`/`load`) sérialisant **l'état émulé
-   seulement**, versionnée, qui ignore une section inconnue ;
-3. un test unitaire dédié, dont un test « chaque champ est restauré » (état
-   source rempli de valeurs distinctives → rechargé → resauvegardé → mêmes octets) ;
-4. un scénario dans `tests/integration/test_savestate_determinism.py` si le
-   périphérique influence l'exécution du 6502 ;
-5. un cas dans `tests/cli_golden/cases.txt` pour ses options.
+1. an entry in `io_bus[]` (and in the `DEV_*` `enum`) with `claims`/`read`/`write`,
+   `present_off` and, if it advances in time, a `tick` placed at its position in
+   `io_bus_tick_order[]`;
+2. an `.ost` section (`save_tag`/`save`/`load`) serialising **the emulated state
+   only**, versioned, which ignores an unknown section;
+3. a dedicated unit test, including an "every field is restored" test (source
+   state filled with distinctive values → reloaded → saved again → same bytes);
+4. a scenario in `tests/integration/test_savestate_determinism.py` if the
+   peripheral affects 6502 execution;
+5. a case in `tests/cli_golden/cases.txt` for its options.
 
-## 7. Contrainte opérationnelle
+## 7. Operational constraint
 
-L'exécutable `phosphoric` est utilisé par d'autres programmes : **jamais de
-`make clean`** pendant ce chantier (il efface le binaire) ; builds **incrémentaux**
-uniquement (le binaire n'est remplacé qu'en cas de link réussi) ; chaque étape
-laisse un `phosphoric` fonctionnel et **iso-comportement**.
+The `phosphoric` executable is used by other programs: **never
+`make clean`** during this work (it deletes the binary); **incremental** builds
+only (the binary is only replaced on a successful link); each step
+leaves a working, **behaviour-identical** `phosphoric`.
 
-## 8. Références
+## 8. References
 - `include/io/io_device.h`, `src/main.c` (`io_bus[]`, `io_bus_find`).
-- Symptôme d'origine : `docs/ocula/CODE-MAP.md` (retrait OCULA, même mal).
+- Original symptom: `docs/ocula/CODE-MAP.md` (OCULA removal, same problem).

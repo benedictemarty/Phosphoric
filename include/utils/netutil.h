@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file netutil.h
- * @brief Utilitaires réseau — parsing d'adresses hôte:port.
+ * @brief Network utilities -- parsing of host:port addresses.
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US1, Sprint 125) : fonction pure, sans état ni
- * dépendance au cœur de l'émulateur.
+ * Extracted from main.c (Epic 7 / US1, Sprint 125): pure function, with no state
+ * and no dependency on the emulator core.
  */
 #ifndef NETUTIL_H
 #define NETUTIL_H
@@ -14,17 +14,17 @@
 #include <stdint.h>
 
 /**
- * @brief Parse une spécification "host[:port]".
+ * @brief Parses a "host[:port]" specification.
  *
- * Si un ':' est présent (et pas en tête), la partie gauche est l'hôte et la
- * partie droite le port ; sinon toute la chaîne est l'hôte et `def_port` est
- * utilisé. `host` est toujours terminé par NUL et tronqué à `host_sz`.
+ * If a ':' is present (and not at the start), the left part is the host and the
+ * right part the port; otherwise the whole string is the host and `def_port` is
+ * used. `host` is always NUL-terminated and truncated to `host_sz`.
  *
- * @param spec      Chaîne d'entrée (ex. "127.0.0.1:6551" ou "localhost").
- * @param host      Buffer de sortie pour l'hôte.
- * @param host_sz   Taille du buffer host.
- * @param port      Sortie : port parsé (ou def_port).
- * @param def_port  Port par défaut si absent.
+ * @param spec      Input string (e.g. "127.0.0.1:6551" or "localhost").
+ * @param host      Output buffer for the host.
+ * @param host_sz   Size of the host buffer.
+ * @param port      Output: parsed port (or def_port).
+ * @param def_port  Default port if absent.
  */
 void parse_host_port(const char* spec, char* host, size_t host_sz,
                      uint16_t* port, uint16_t def_port);

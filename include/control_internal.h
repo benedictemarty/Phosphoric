@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_internal.h
- * @brief Fonctions partagées entre les fichiers du protocole --control
- *        (control.c, control_util.c, control_cmd_*.c) ; pas une API publique
+ * @brief Functions shared between the files of the --control protocol
+ *        (control.c, control_util.c, control_cmd_*.c); not a public API
  * @author bmarty <bmarty@mailo.com>
  */
 #ifndef CONTROL_INTERNAL_H
@@ -35,7 +35,7 @@ void ctl_cmd_hunt(emulator_t* emu, control_sink_t* s, const char* op, const char
 void ctl_cmd_save_mem(emulator_t* emu, control_sink_t* s, const char* path, const char* addr_s, const char* len_s);
 void ctl_cmd_load_mem(emulator_t* emu, control_sink_t* s, const char* path, const char* addr_s);
 void ctl_cmd_reset(emulator_t* emu, control_sink_t* s);
-/* nmi — bouton sous l'Oric : NMI prise à la prochaine instruction. */
+/* nmi — the button under the Oric: NMI taken at the next instruction. */
 void ctl_cmd_nmi(emulator_t* emu, control_sink_t* s);
 void ctl_cmd_hello(control_sink_t* s, const char* arg1, const char* arg2);
 void ctl_cmd_keys(emulator_t* emu, control_sink_t* s, const char* text);

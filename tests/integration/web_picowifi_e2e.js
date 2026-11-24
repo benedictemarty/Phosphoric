@@ -1,20 +1,20 @@
-// web_picowifi_e2e.js — modem picowifi de la build WASM (Chrome headless, Playwright).
+// web_picowifi_e2e.js -- picowifi modem of the WASM build (headless Chrome, Playwright).
 //
-// Usage : node web_picowifi_e2e.js <base-url> <relay-ws-url> <rx-log>
-// Code de sortie : 0 = OK, 1 = échec, 77 = SKIP (Playwright/Chrome introuvable).
+// Usage: node web_picowifi_e2e.js <base-url> <relay-ws-url> <rx-log>
+// Exit code: 0 = OK, 1 = failure, 77 = SKIP (Playwright/Chrome not found).
 //
-// Les programmes BASIC (générés en .tap auto-run par test_web_picowifi.sh et
-// servis à côté de la page) rangent tout octet reçu de l'ACIA à partir de
-// #4000 ; on le relit via web_peek. Trois scénarios :
-//   1. relais WebSocket (?relay=ws://…) : ATDT vers un serveur TCP local →
-//      CONNECT, bannière reçue, puis émission Oric → serveur (trace rx-log) ;
-//   2. sans relais (?relay=none) : ATGET vers un serveur HTTP CORS rejoué par
-//      fetch(), puis ATRD = heure du navigateur ;
-//   3. cas ProphetOric (?loci=1&media=…&relay=none&httpsame=…) : cassette +
-//      LOCI (ACIA en $0380), ATD-hôte:8998 puis HTTP brut avec ResponseFormat,
-//      réécrit vers l'origine de la page ; l'en-tête doit arriver au serveur ;
-//   4. LOCI + modem par défaut : --serial-buffer 32 (anneau RX du firmware
-//      LOCI) ; sans LOCI, pas de FIFO.
+// The BASIC programs (generated as auto-run .tap by test_web_picowifi.sh and
+// served next to the page) store every byte received from the ACIA starting at
+// #4000; it is read back via web_peek. Three scenarios:
+//   1. WebSocket relay (?relay=ws://…): ATDT to a local TCP server →
+//      CONNECT, banner received, then Oric → server transmission (rx-log trace);
+//   2. without relay (?relay=none): ATGET to a CORS HTTP server replayed by
+//      fetch(), then ATRD = browser time;
+//   3. ProphetOric case (?loci=1&media=…&relay=none&httpsame=…): tape +
+//      LOCI (ACIA at $0380), ATD-host:8998 then raw HTTP with ResponseFormat,
+//      rewritten to the page's origin; the header must reach the server;
+//   4. LOCI + modem by default: --serial-buffer 32 (RX ring of the LOCI
+//      firmware); without LOCI, no FIFO.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -35,7 +35,7 @@ const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 let failures = 0;
 function check(ok, msg) { console.log((ok ? '  PASS ' : '  FAIL ') + msg); if (!ok) failures++; }
 
-// Octets reçus par l'Oric (#4000…), jusqu'au remplissage RAM initial ($55).
+// Bytes received by the Oric (#4000…), up to the initial RAM fill ($55).
 async function rxMem(p) {
   return p.evaluate(() => {
     let s = '';
@@ -58,7 +58,7 @@ async function scenario(browser, title, query, until, checks, after) {
     await p.goto(base + '/phosphoric.html?' + query);
     for (let i = 0; i < 480 && !until.test(rx); i++) {
       await p.waitForTimeout(250);
-      try { rx = await rxMem(p); } catch (e) {}      // moteur pas encore prêt
+      try { rx = await rxMem(p); } catch (e) {}      // engine not ready yet
     }
   } catch (e) { check(false, 'exception : ' + e.message); }
   let ok = true;
@@ -67,7 +67,7 @@ async function scenario(browser, title, query, until, checks, after) {
     console.log('  --- reçu ---\n  ' + JSON.stringify(rx.slice(0, 400)));
     console.log('  --- logs ---\n' + logs.filter(l => /PicoWiFi|picowifi-js|ACIA|LOCI|media|tap/i.test(l)).slice(-12).join('\n'));
   }
-  if (after) await after();                         // avant fermeture : la page doit tourner
+  if (after) await after();                         // before closing: the page must be running
   await p.close();
   return rx;
 }
@@ -105,8 +105,8 @@ async function scenario(browser, title, query, until, checks, after) {
       [/FORMAT=cli/, 'requête réécrite vers l\'origine, en-tête ResponseFormat transmis'],
     ]);
 
-  // 4. Réglage par défaut LOCI + modem, sans argument de test : FIFO RX de
-  //    32 octets comme le firmware LOCI (acia.c, ACIA_RX_BUFFER_SIZE).
+  // 4. Default LOCI + modem setting, without test argument: 32-byte RX FIFO
+  //    like the LOCI firmware (acia.c, ACIA_RX_BUFFER_SIZE).
   console.log('4. LOCI + modem : FIFO RX du firmware');
   {
     const p = await (await browser.newContext()).newPage();

@@ -1,10 +1,10 @@
 #!/bin/sh
-# test_comment_only_diff.sh — auto-test de tools/check_comment_only_diff.py.
+# test_comment_only_diff.sh — self-test of tools/check_comment_only_diff.py.
 #
-# L'outil garde la branche miroir anglaise `main-en` identique à `main` hors
-# commentaires. On le vérifie dans un dépôt git jetable : un commentaire traduit
-# (même sur un autre nombre de lignes) doit passer ; une chaîne, un identifiant
-# ou une commande modifiés doivent échouer, pour chaque famille de fichiers.
+# The tool keeps the English mirror branch `main-en` identical to `main` apart
+# from comments. It is checked in a throwaway git repository: a translated
+# comment (even over a different number of lines) must pass; a modified string,
+# identifier or command must fail, for each family of files.
 set -u
 TOOL="$(cd "$(dirname "$0")/../.." && pwd)/tools/check_comment_only_diff.py"
 T=$(mktemp -d) || exit 1
@@ -32,16 +32,16 @@ EOF
 printf 'all:\n\t@echo ok # fin\n# règle par défaut\n' > Makefile
 git add -A && git commit -q -m base
 
-expect() {  # expect <rc attendu> <libellé>
+expect() {  # expect <expected rc> <label>
     if python3 "$TOOL" a.c b.sh c.py Makefile >/dev/null 2>&1; then rc=0; else rc=1; fi
     if [ "$rc" = "$1" ]; then echo "PASS: $2"; pass=$((pass+1));
     else echo "FAIL: $2 (rc=$rc, attendu $1)"; fail=$((fail+1)); fi
     git checkout -q -- .
 }
 
-# Remplacement littéral portable : le `sed -i` de BSD/macOS n'a pas la syntaxe
-# GNU (il prendrait le script pour un suffixe et ne modifierait rien).
-edit() {  # edit <fichier> <ancien> <nouveau>
+# Portable literal replacement: BSD/macOS `sed -i` does not take the GNU
+# syntax (it would read the script as a suffix and change nothing).
+edit() {  # edit <file> <old> <new>
     python3 - "$@" <<'PY' || echo "edit impossible : $2" >&2
 import sys
 p, a, b = sys.argv[1:4]

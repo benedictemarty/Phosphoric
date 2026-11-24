@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
 #
-# test_type_keys_long_line.sh — --type-keys après une ligne BASIC longue (2.31.5).
+# test_type_keys_long_line.sh — --type-keys after a long BASIC line (2.31.5).
 #
-# Une ligne de plus de 40 colonnes, puis RETURN, puis « CLS:RUN » : pendant que
-# le BASIC range la longue ligne, le scanner clavier (sous IRQ) continue de
-# déposer les touches dans le tampon d'UNE touche de la ROM ($02DF) ; la touche
-# suivante écrasait la précédente avant sa lecture, et « CLS:RUN » devenait
-# « LS:RUN » (?SYNTAX ERROR). Rapport de la session du film. Depuis 2.31.5,
-# l'auto-typer attend que la ROM ait lu la touche avant d'en presser une autre.
+# A line wider than 40 columns, then RETURN, then "CLS:RUN": while BASIC stores
+# the long line, the keyboard scanner (in the IRQ) keeps putting keys into the
+# ROM's ONE-key buffer ($02DF); the next key overwrote the previous one before
+# it was read, and "CLS:RUN" became "LS:RUN" (?SYNTAX ERROR). Report of the
+# film session. Since 2.31.5 the auto-typer waits for the ROM to read a key
+# before pressing another.
 #
-# Vérifie, pour chaque ROM présente : pas de ?SYNTAX ERROR, et le programme
-# tourne (« COUNT » affiché). Avec une vraie fin de ligne et avec la séquence \n.
+# Checks, for each ROM present: no ?SYNTAX ERROR, and the program runs
+# ("COUNT" shown). With a real line end and with the \n sequence.
 #
 # Author: bmarty <bmarty@mailo.com>
 

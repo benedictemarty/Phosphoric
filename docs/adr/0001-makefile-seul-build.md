@@ -1,26 +1,26 @@
-# 0001 — Le Makefile est le seul système de build
+# 0001 — The Makefile is the only build system
 
-- **Statut** : acceptée (2.1.3, sprint A du plan d'architecture)
+- **Status**: accepted (2.1.3, sprint A of the architecture plan)
 
-## Contexte
+## Context
 
-Le dépôt avait un `Makefile` et un `CMakeLists.txt`. Le second n'était plus
-entretenu : vingt sources y manquaient et l'édition de liens échouait. Deux
-systèmes de build divergent toujours ; un seul était réellement utilisé (CI,
-tests, distribution Windows, WebAssembly).
+The repository had both a `Makefile` and a `CMakeLists.txt`. The latter was no
+longer maintained: twenty sources were missing from it and linking failed. Two
+build systems always drift apart; only one was actually used (CI, tests, Windows
+distribution, WebAssembly).
 
-## Décision
+## Decision
 
-`CMakeLists.txt` est supprimé ; le `Makefile` est le seul build. Depuis 2.2.0
-(sprint B), les objets sont construits hors des sources, un dossier par
-configuration (`build/<config>/` : SDL2, HTTPAPI, CAST, MIDI, TLS, TUI, backend
-LOCI, DEBUG, COVERAGE, SANITIZE, VIA_NO_LAZY), et les tests lient des objets
-(macros `UNIT_TEST` / `DIRECT_TEST`).
+`CMakeLists.txt` is removed; the `Makefile` is the only build. Since 2.2.0
+(sprint B), objects are built out of the source tree, one directory per
+configuration (`build/<config>/`: SDL2, HTTPAPI, CAST, MIDI, TLS, TUI, LOCI
+backend, DEBUG, COVERAGE, SANITIZE, VIA_NO_LAZY), and tests link objects
+(`UNIT_TEST` / `DIRECT_TEST` macros).
 
-## Conséquences
+## Consequences
 
-- Pas de génération de projets d'IDE (CMake les produisait).
-- Changer d'options ne mélange jamais des objets de configurations différentes
-  (le piège « `make SDL2=0` puis `make tests` » disparaît par construction).
-- Toute nouvelle source doit être ajoutée au `Makefile` (listes `SOURCES` et,
-  si un test la compile directement, sa liste de test).
+- No IDE project generation (CMake produced them).
+- Changing options never mixes objects from different configurations (the
+  "`make SDL2=0` then `make tests`" trap is gone by construction).
+- Every new source must be added to the `Makefile` (`SOURCES` list and, if a test
+  compiles it directly, that test's list).

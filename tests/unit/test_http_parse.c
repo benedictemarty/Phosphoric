@@ -1,19 +1,18 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_http_parse.c
- * @brief Analyse et routage des requêtes de l'API HTTP, sans réseau ni émulateur
+ * @brief Parsing and routing of HTTP API requests, without network or emulator
  * @author bmarty <bmarty@mailo.com>
  *
- * Inclut src/network/http_api.c pour atteindre ses fonctions static (même
- * principe que tests/fuzz/fuzz_http.c) : décodage d'URL, paramètres, bac à
- * sable des chemins, Content-Length, commande --control produite. Compilé dans
- * toutes les builds (HAS_HTTPAPI forcé ici), contrairement à test-httpapi
- * (bout en bout, build HTTPAPI=1 seulement).
+ * Includes src/network/http_api.c to reach its static functions (same idea
+ * as tests/fuzz/fuzz_http.c): URL decoding, parameters, path sandbox,
+ * Content-Length, produced --control command. Built in every configuration
+ * (HAS_HTTPAPI forced here), unlike test-httpapi (end to end, HTTPAPI=1 only).
  */
 #ifndef HAS_HTTPAPI
 #define HAS_HTTPAPI 1
 #endif
-#include "../../src/network/http_api.c"   /* en premier : _GNU_SOURCE */
+#include "../../src/network/http_api.c"   /* first: _GNU_SOURCE */
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -26,7 +25,7 @@ static int tests_failed = 0;
         printf("FAIL\n    %s:%d: attendu \"%s\", obtenu \"%s\"\n", __FILE__, __LINE__, (b), (a)); \
         tests_failed++; return; } } while (0)
 
-/* La file vers l'émulateur n'est pas utilisée ici. */
+/* The queue to the emulator is not used here. */
 control_result_t control_queue_submit(control_queue_t* q, const char* line,
                                       char** reply_out, size_t* reply_len) {
     (void)q; (void)line;
@@ -38,8 +37,8 @@ control_result_t control_queue_submit(control_queue_t* q, const char* line,
 static http_api_server_t g_srv;
 static int g_sv[2] = { -1, -1 };
 
-/* Envoie @p raw à handle_request(). Renvoie true si une commande est produite
- * (dans @p cmd) ; sinon la réponse HTTP envoyée est recopiée dans @p resp. */
+/* Sends @p raw to handle_request(). Returns true if a command is produced
+ * (in @p cmd); otherwise the HTTP response sent is copied into @p resp. */
 static bool request(const char* raw, char* cmd, size_t cmdsz, char* resp, size_t respsz) {
     char req[HTTP_REQ_MAX];
     size_t n = strlen(raw);
@@ -54,10 +53,10 @@ TEST(test_url_decode) {
     char a[] = "A%20B+C%2fd";
     url_decode(a);
     ASSERT_STR(a, "A B C/d");
-    char b[] = "100%zz%4";              /* % sans deux chiffres hexa : gardé */
+    char b[] = "100%zz%4";              /* % without two hex digits: kept */
     url_decode(b);
     ASSERT_STR(b, "100%zz%4");
-    char c[] = "%\x01" "1";             /* ancien code : décalage d'une valeur négative */
+    char c[] = "%\x01" "1";             /* old code: shifted a negative value */
     url_decode(c);
     ASSERT_STR(c, "%\x01" "1");
 }
@@ -68,7 +67,7 @@ TEST(test_get_param) {
     ASSERT_STR(out, "16");
     ASSERT_TRUE(!get_param("addr=1", "len", out, sizeof out));
     ASSERT_TRUE(get_param("text=0123456789ABCDEFGHIJ", "text", out, sizeof out));
-    ASSERT_STR(out, "0123456789ABCDE");  /* tronqué à la taille du tampon */
+    ASSERT_STR(out, "0123456789ABCDE");  /* truncated to the buffer size */
 }
 
 TEST(test_sandbox_path) {
@@ -92,7 +91,7 @@ TEST(test_route_post_disk_sandboxed) {
     ASSERT_TRUE(request("POST /disk/A HTTP/1.1\r\nContent-Length: 19\r\n\r\npath=jeux%2Fa.dsk&x",
                         cmd, sizeof cmd, resp, sizeof resp));
     ASSERT_STR(cmd, "load-disk A /srv/oric/jeux/a.dsk");
-    /* %2F%2E%2E décodé en "/.." : refusé comme un ".." en clair. */
+    /* %2F%2E%2E decoded to "/..": refused like a plain "..". */
     ASSERT_TRUE(!request("POST /disk/A HTTP/1.1\r\nContent-Length: 22\r\n\r\npath=a%2F%2E%2E%2Fetc",
                          cmd, sizeof cmd, resp, sizeof resp));
     ASSERT_TRUE(strstr(resp, "403") != NULL);
@@ -100,12 +99,12 @@ TEST(test_route_post_disk_sandboxed) {
 
 TEST(test_content_length_clamped) {
     char cmd[HTTP_CMD_MAX], resp[4096];
-    /* Longueur annoncée énorme : bornée à ce qui a été reçu (ancien code :
-     * body_start + content_len débordait). */
+    /* Huge announced length: clamped to what was received (old code:
+     * body_start + content_len overflowed). */
     ASSERT_TRUE(request("POST /keys HTTP/1.1\r\nContent-Length: 18446744073709551615\r\n\r\ntext=AB",
                         cmd, sizeof cmd, resp, sizeof resp));
     ASSERT_STR(cmd, "keys AB");
-    /* Longueur plus courte que le corps : le corps est coupé. */
+    /* Length shorter than the body: the body is cut. */
     ASSERT_TRUE(request("POST /keys HTTP/1.1\r\nContent-Length: 6\r\n\r\ntext=ABCD",
                         cmd, sizeof cmd, resp, sizeof resp));
     ASSERT_STR(cmd, "keys A");
@@ -117,7 +116,7 @@ TEST(test_malformed_and_unknown) {
     ASSERT_TRUE(strstr(resp, "400") != NULL);
     ASSERT_TRUE(!request("POST /exec/rm HTTP/1.1\r\n\r\n", cmd, sizeof cmd, resp, sizeof resp));
     ASSERT_TRUE(strstr(resp, "404") != NULL);
-    ASSERT_TRUE(!request("GET /mem HTTP/1.1\r\n", cmd, sizeof cmd, resp, sizeof resp));  /* en-tête incomplet */
+    ASSERT_TRUE(!request("GET /mem HTTP/1.1\r\n", cmd, sizeof cmd, resp, sizeof resp));  /* incomplete header */
 }
 
 int main(void) {

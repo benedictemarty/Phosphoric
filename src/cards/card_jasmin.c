@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_jasmin.c
- * @brief Interface disque Jasmin (WD177x) en module : menu, mise en route, bus,
+ * @brief Jasmin disk interface (WD177x) as a module: menu, setup, bus,
  *        tick (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  *
- * Son option --jasmin-rom reste une option du cœur (lue aussi par le chargement de
- * phosphoric.cfg et par le Microdisc pour leur exclusion mutuelle) ; son état
- * (emu->jasmin) reste dans la machine (mémoire paginée, sauvegardes d'état).
+ * Its --jasmin-rom option stays a core option (also read when loading
+ * phosphoric.cfg and by the Microdisc for their mutual exclusion); its state
+ * (emu->jasmin) stays in the machine (paged memory, save states).
  */
 #define _DEFAULT_SOURCE   /* access() */
 #include "card_module.h"
@@ -35,15 +35,15 @@ static const card_desc_t k_desc = {
     };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
-/* ── Interruption IRQF_DISK (partagée par les contrôleurs disque et LOCI) ── */
+/* ── IRQF_DISK interrupt (shared by the disk controllers and LOCI) ─────── */
 
 static void irq_set(emulator_t* emu) { cpu_irq_set(&emu->cpu, IRQF_DISK); }
 static void irq_clr(emulator_t* emu) { cpu_irq_clear(&emu->cpu, IRQF_DISK); }
 
 /* ── Bus ───────────────────────────────────────────────────────────────── */
 
-/* Jasmin WD177x : $03F4-$03FF (mutuellement exclusif avec DTL2000/Mageco, qui
- * recouvrent $03F8-$03FF — garde à l'activation dans main.c). */
+/* Jasmin WD177x: $03F4-$03FF (mutually exclusive with DTL2000/Mageco, which
+ * overlap $03F8-$03FF — guard at activation in main.c). */
 static bool jasmin_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_jasmin] && addr >= JASMIN_BASE && addr <= JASMIN_END;
 }
@@ -62,15 +62,15 @@ static bool jasmin_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* Savestate (section "JAS") : émise seulement si le Jasmin est présent. Les
- * images disque passent par la section DSK (savestate.c), lue AVANT. */
+/* Savestate (section "JAS"): emitted only when the Jasmin is present. The
+ * disk images go through the DSK section (savestate.c), read BEFORE it. */
 static bool jasmin_dev_save(emulator_t* emu, FILE* fp) {
     if (!emu->card_on[CARD_IDX_jasmin]) return false;
     return jasmin_save(&emu->jasmin, fp);
 }
 static void jasmin_dev_load(emulator_t* emu, FILE* fp, uint32_t size) {
     jasmin_load(&emu->jasmin, fp, size);
-    /* Même synchronisation des verrous vers la mémoire que jasmin_dev_write. */
+    /* Same latch-to-memory synchronisation as jasmin_dev_write. */
     emu->memory.jasmin_olay   = emu->jasmin.olay;
     emu->memory.jasmin_romdis = emu->jasmin.romdis;
 }
@@ -80,10 +80,10 @@ static const io_device_t k_bus = {
     .name = "jasmin", .claims = jasmin_dev_claims, .read = jasmin_dev_read,
     .write = jasmin_dev_write,
     .save_tag = "JAS\0", .save = jasmin_dev_save, .load = jasmin_dev_load,
-    /* Pas de tick ici : le cœur avance le FDC (io_bus.c), état dans la machine. */
+    /* No tick here: the core advances the FDC (io_bus.c), state in the machine. */
 };
 
-/* ── Mise en route ─────────────────────────────────────────────────────── */
+/* ── Setup ─────────────────────────────────────────────────────────────── */
 
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)p;

@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_cmd_mem.c
- * @brief Commandes --control : registres, mémoire, recherche, clavier, reset
+ * @brief --control commands: registers, memory, search, keyboard, reset
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/control.c (sprint F du plan d'architecture), sans changement
- * de comportement ; fonctions partagées : include/control_internal.h.
+ * Split out of src/control.c (sprint F of the architecture plan), with no
+ * behaviour change; shared functions: include/control_internal.h.
  */
 
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
 #include "io/loci_emu.h"
@@ -283,7 +283,7 @@ void ctl_cmd_keys(emulator_t* emu, control_sink_t* s, const char* text) {
                 case 'n': case 'r': c = '\n'; break;   /* RETURN */
                 case 't': c = '\t'; break;
                 case 'e': c = (char)0x1B; break;       /* ESC */
-                case 's':                              /* \s<c> : <c> avec SHIFT (ex. \sn) */
+                case 's':                              /* \s<c>: <c> with SHIFT (e.g. \sn) */
                     if (p[1] && (unsigned char)p[1] >= 0x20 && (unsigned char)p[1] < 0x80) {
                         p++; c = (char)((unsigned char)*p | 0x80); break;
                     }

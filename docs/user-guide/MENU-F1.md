@@ -1,252 +1,258 @@
-# Le menu F1 — manuel utilisateur
+# The F1 menu — user manual
 
-Le menu **F1** (« Périphériques E/S ») règle tout ce qui entoure l'Oric : disquettes,
-cassette, cartes d'extension, instantanés, imprimante, joystick, clavier. Il remplace
-la plupart des options de la ligne de commande pendant que la machine tourne. Il
-s'affiche en français ou en anglais (bouton **Langue FR / Language EN**, section 3).
+The **F1** menu (« Périphériques E/S », I/O peripherals) controls everything around
+the Oric: floppies, tape, expansion cards, snapshots, printer, joystick, keyboard. It
+replaces most command-line options while the machine is running. It is shown in
+French or in English (**Langue FR / Language EN** button, section 3); the pictures of
+this manual show it in English.
 
-![Page principale du menu F1](../images/menu-peripheriques.png)
+![Main page of the F1 menu](../images/menu-peripheriques-en.png)
 
-## 1. Ouvrir et fermer
+## 1. Opening and closing
 
-- **F1** ouvre le menu ; **F1** ou **Échap** le referme.
-- Pendant que le menu est ouvert, **la machine est figée et le son coupé**. Elle
-  reprend exactement où elle en était.
-- Le menu occupe tout l'écran. Les touches tapées ne vont pas à l'Oric.
-- Le dernier résultat (réussite en jaune, erreur en rouge) s'affiche au-dessus de la
-  barre d'aide, par exemple « Lecteur A : SEDORIC.DSK ».
+- **F1** opens the menu; **F1** or **Esc** closes it.
+- While the menu is open, **the machine is frozen and the sound is muted**. It
+  resumes exactly where it was.
+- The menu takes up the whole screen. Keys typed do not go to the Oric.
+- The last result (success in yellow, error in red) is shown above the help bar,
+  for example « Lecteur A : SEDORIC.DSK ».
 
-## 2. Les touches
+## 2. Keys
 
-La barre du bas rappelle les touches de la page en cours.
+The bottom bar recalls the keys of the current page.
 
-| Touche | Page principale | Sélecteur de fichiers | Page d'une carte |
+| Key | Main page | File selector | Card page |
 |---|---|---|---|
-| ↑ ↓ | changer de ligne | changer de fichier | changer de réglage |
-| ← → | colonne d'une ligne (média / protection, rembobiner), passer d'un bouton à l'autre | ← : fermer le sélecteur | ← : revenir à la liste des cartes |
-| Entrée | activer la ligne | choisir le fichier | modifier le réglage |
-| Suppr ou Retour arrière | éjecter (lecteur, cassette) | — | remettre le réglage par défaut |
-| Échap | reprendre la machine | fermer le sélecteur | revenir à la liste des cartes |
-| Début / Fin | première / dernière ligne | premier / dernier fichier | — |
-| Page préc. / Page suiv. | — | 20 fichiers plus haut / plus bas | — |
-| Une lettre | — | aller au fichier suivant qui commence par cette lettre | — |
+| ↑ ↓ | change line | change file | change setting |
+| ← → | column within a line (media / protection, rewind), move from one button to another | ←: close the selector | ←: back to the card list |
+| Enter | activate the line | choose the file | change the setting |
+| Delete or Backspace | eject (drive, tape) | — | restore the default setting |
+| Esc | resume the machine | close the selector | back to the card list |
+| Home / End | first / last line | first / last file | — |
+| Page Up / Page Down | — | 20 files up / down | — |
+| A letter | — | go to the next file starting with that letter | — |
 
-## 3. La page principale
+## 3. The main page
 
-### Disquettes A à D
+### Floppies A to D
 
-Le titre du cadre indique l'interface disque en place : **Microdisc**, **Jasmin**,
-**LOCI**, « menu du LOCI (F8) » ou « pas d'interface disque ». Sans interface, rien
-ne se monte : il faut d'abord activer une carte disque (section 4). La LOCI n'a pas
-besoin de la carte Microdisc ni de sa ROM : elle tient elle-même le rôle de
-l'interface disque.
+The frame title shows the disk interface in place: **Microdisc**, **Jasmin**,
+**LOCI**, « menu du LOCI (F8) » (LOCI menu) or « pas d'interface disque » (no disk
+interface). Without an interface, nothing can be mounted: first enable a disk card
+(section 4). The LOCI needs neither the Microdisc card nor its ROM: it plays the
+role of the disk interface itself.
 
-- **Entrée** sur un lecteur ouvre le sélecteur de fichiers (images `.dsk`). La
-  première ligne, « Éjecter la disquette », vide le lecteur.
-- **Suppr** éjecte directement.
-- **→** puis **Entrée** bascule la **protection en écriture** du lecteur
-  (« écriture » / « protégée »). Avec LOCI, il n'y a pas de protection par lecteur :
-  cette colonne n'apparaît pas.
-- Une même image ne peut pas être dans deux lecteurs à la fois (le menu refuse).
-- Avec `--disk-writeback` au lancement, une disquette modifiée est réécrite dans son
-  fichier `.dsk` quand on l'éjecte ou qu'on la remplace. Sans cette option, les
-  écritures de l'Oric restent en mémoire et sont perdues à l'éjection. Avec la LOCI
-  en mode `intégré`, l'éjection écrit les secteurs modifiés.
-- « — absent — » : ce lecteur n'existe pas sur l'interface en place.
-- Avec la LOCI en mode `firmware` ou `usb` (sans carte Microdisc ni Jasmin), c'est
-  son propre menu qui monte les disquettes (bouton MENU : **F8**). Les lecteurs A à D
-  affichent « — géré par le LOCI — » et le curseur les saute ; seule la cassette
-  reste réglable dans ce cadre.
+- **Enter** on a drive opens the file selector (`.dsk` images). The first line,
+  « Éjecter la disquette » (eject the floppy), empties the drive.
+- **Delete** ejects directly.
+- **→** then **Enter** toggles the drive's **write protection**
+  (« écriture » (writable) / « protégée » (protected)). With LOCI, there is no
+  per-drive protection: this column does not appear.
+- The same image cannot be in two drives at once (the menu refuses).
+- With `--disk-writeback` at launch, a modified floppy is written back to its `.dsk`
+  file when it is ejected or replaced. Without this option, the Oric's writes stay
+  in memory and are lost on ejection. With the LOCI in `intégré` mode, ejecting
+  writes the modified sectors.
+- « — absent — »: this drive does not exist on the interface in place.
+- With the LOCI in `firmware` or `usb` mode (no Microdisc or Jasmin card), its own
+  menu mounts the floppies (MENU button: **F8**). Drives A to D show « — géré par le
+  LOCI — » (handled by the LOCI) and the cursor skips them; only the tape can still be
+  set in this frame.
 
-### Cassette
+### Tape
 
-- **Entrée** ouvre le sélecteur (fichiers `.tap`). La première ligne éjecte.
-- **Suppr** éjecte.
-- **→** puis **Entrée** rembobine la cassette au début.
-- La ligne montre le nom, l'état du moteur, le pourcentage lu et une jauge.
-- Une fois la cassette insérée, taper `CLOAD""` dans l'Oric.
+- **Enter** opens the selector (`.tap` files). The first line ejects.
+- **Delete** ejects.
+- **→** then **Enter** rewinds the tape to the start.
+- The line shows the name, the motor state, the percentage read and a gauge.
+- Once the tape is inserted, type `CLOAD""` on the Oric.
 
-### Cartes d'extension
+### Expansion cards
 
-Le cadre résume les cartes : **●** présente (avec son adresse et son réglage
-principal), **✗** absente. **Entrée** sur ce cadre ouvre la liste des cartes
-(section 4).
+The frame summarizes the cards: **●** present (with its address and main setting),
+**✗** absent. **Enter** on this frame opens the card list (section 4).
 
-### Périphériques
+### Peripherals
 
-| Ligne | Entrée fait | Détail |
+| Line | Enter does | Detail |
 |---|---|---|
-| **Instantanés** | ouvre le sélecteur des `.ost` | première ligne « Enregistrer un nouvel instantané » → `snapshots/etatNNNN.ost` (numéro libre suivant). Choisir un instantané **reprend la machine à cet instant** et ferme le menu. |
-| **Imprimante** | coupée → texte → traceur MCP-40 → coupée | texte : `LPRINT`, `LLIST` vont dans `impression.txt` ; traceur : `traceur.bmp`, écrit à la coupure. |
-| **Joystick** | aucun → clavier → manette → aucun | clavier : flèches du clavier + tir ; manette : la première manette branchée (sinon elle est attendue). |
-| **Clavier** | QWERTY ↔ AZERTY | disposition du clavier du PC traduite pour l'Oric. |
-| **Cassette** (au lancement) | CLOAD par la ROM corrigée ↔ injection directe | ne vaut **qu'au prochain lancement** : penser à « Enregistrer la configuration ». |
+| **Instantanés** (snapshots) | opens the `.ost` selector | first line « Enregistrer un nouvel instantané » (save a new snapshot) → `snapshots/etatNNNN.ost` (next free number). Choosing a snapshot **resumes the machine at that instant** and closes the menu. |
+| **Imprimante** (printer) | coupée → texte → traceur MCP-40 → coupée (off → text → MCP-40 plotter → off) | text: `LPRINT`, `LLIST` go to `impression.txt`; plotter: `traceur.bmp`, written when switched off. |
+| **Joystick** | aucun → clavier → manette → aucun (none → keyboard → gamepad → none) | keyboard: keyboard arrows + fire; gamepad: the first gamepad plugged in (otherwise it is waited for). |
+| **Clavier** (keyboard) | QWERTY ↔ AZERTY | PC keyboard layout translated for the Oric. |
+| **Cassette** (at launch) | CLOAD through the patched ROM ↔ direct injection | only takes effect **at the next launch**: remember « Enregistrer la configuration » (save configuration). |
 
-### Les quatre boutons
+### The four buttons
 
-- **Redémarrer (RESET)** : comme F5, redémarre le 6502 (bouton reset de la LOCI si
-  elle est là ; les disquettes restent montées) et ferme le menu.
-- **Enregistrer la configuration** : écrit `phosphoric.cfg` (section 6).
-- **Reprendre** : ferme le menu (comme Échap ou F1).
-- **Langue FR** / **Language EN** : passe tout le menu en anglais, ou le remet en
-  français : textes, messages, fiches et réglages des cartes. Le changement est
-  immédiat ; « Enregistrer la configuration » le garde (`langue=en`). Au lancement,
-  sans configuration, le menu est en français.
+- **Redémarrer (RESET)** (restart): like F5, restarts the 6502 (the LOCI reset
+  button if it is there; floppies stay mounted) and closes the menu.
+- **Enregistrer la configuration** (save configuration): writes `phosphoric.cfg`
+  (section 6).
+- **Reprendre** (resume): closes the menu (like Esc or F1).
+- **Langue FR** / **Language EN**: switches the whole menu to English, or back to
+  French: texts, messages, card pages and settings. The change is immediate; « Save
+  configuration » keeps it (`langue=en`). At launch, without a configuration, the
+  menu is in French. The labels quoted in French in this manual then read in
+  English.
 
-## 4. Les cartes d'extension
+## 4. Expansion cards
 
-**Entrée** sur le cadre « Cartes d'extension » ouvre la liste. Chaque ligne montre
-la carte, « présente » ou « absente », et une étoile rouge **\*** si elle a été
-modifiée. Sous la liste, l'explication de la carte sélectionnée.
+**Enter** on the « Cartes d'extension » (expansion cards) frame opens the list. Each
+line shows the card, « présente » (present) or « absente » (absent), and a red star
+**\*** if it has been modified. Below the list, the explanation of the selected card.
 
-![Liste des cartes, LOCI sélectionnée en mode usb](../images/menu-cartes.png)
+![Card list, LOCI selected in usb mode](../images/menu-cartes-en.png)
 
-- **Entrée** sur une carte ouvre sa page.
-- **Appliquer et redémarrer** relance l'émulateur avec les cartes choisies. C'est un
-  **redémarrage à froid** : le programme se relance avec la même ligne de commande,
-  moins les options de cartes, plus les nouvelles. La machine repart de zéro.
-- **Annuler les changements** revient aux cartes de la machine en cours.
-- Si deux cartes se chevauchent en mémoire, ou si un réglage manque, le menu
-  l'indique en rouge et **refuse d'appliquer** (voir section 5).
+- **Enter** on a card opens its page.
+- **Appliquer et redémarrer** (apply and restart) relaunches the emulator with the
+  chosen cards. This is a **cold restart**: the program relaunches itself with the
+  same command line, minus the card options, plus the new ones. The machine starts
+  from scratch.
+- **Annuler les changements** (cancel changes) goes back to the cards of the running
+  machine.
+- If two cards overlap in memory, or if a setting is missing, the menu says so in
+  red and **refuses to apply** (see section 5).
 
-### Page d'une carte
+### Card page
 
-- Première ligne **Carte** : **Entrée** la rend présente ou absente.
-- Puis un réglage par ligne, avec son explication en bas de page, sa valeur par
-  défaut et ce que fait Entrée :
+- First line **Carte** (card): **Enter** makes it present or absent.
+- Then one setting per line, with its explanation at the bottom of the page, its
+  default value and what Enter does:
 
-| Type de réglage | Entrée fait |
+| Setting type | Enter does |
 |---|---|
-| fichier (ROM, image) | ouvre le sélecteur (dossiers `roms`, `roms/loci`, `disks`, `tapes`, `media` et le dossier courant) ; « Aucun fichier » vide la valeur |
-| texte, dossier, nombre | ouvre la saisie : taper, **Entrée** valide, **Suppr** efface, **Échap** annule |
-| adresse d'E/S | saisie en hexadécimal, contrôlée entre `0300` et `03FF` |
-| oui / non | bascule |
-| choix | passe à la valeur suivante |
+| file (ROM, image) | opens the selector (folders `roms`, `roms/loci`, `disks`, `tapes`, `media` and the current folder); « Aucun fichier » (no file) clears the value |
+| text, folder, number | opens the input field: type, **Enter** confirms, **Delete** erases, **Esc** cancels |
+| I/O address | hexadecimal input, checked between `0300` and `03FF` |
+| yes / no | toggles |
+| choice | moves to the next value |
 
-**Suppr** remet le réglage à sa valeur par défaut.
+**Delete** restores the setting to its default value.
 
-### Groupes exclusifs
+### Exclusive groups
 
-Une seule carte par groupe à la fois ; en activer une éteint l'autre :
+Only one card per group at a time; enabling one turns the other off:
 
-- groupe **disque** : Microdisc, Jasmin, LOCI ;
-- groupe **midi** : Mageco MIDI, ORICON.
+- **disk** group: Microdisc, Jasmin, LOCI;
+- **midi** group: Mageco MIDI, ORICON.
 
-### Les cartes et leurs réglages
+### Cards and their settings
 
-| Carte | Rôle | Réglages (valeur par défaut) |
+Setting names are shown as they appear in the menu.
+
+| Card | Role | Settings (default value) |
 |---|---|---|
-| **Microdisc** | contrôleur de disquettes Oric (WD1793), 4 lecteurs, en `$0310` | ROM du contrôleur (`roms/microdis.rom`) |
-| **Jasmin** | contrôleur de disquettes Jasmin (WD177x, TDOS), en `$03F4` | ROM de démarrage (`roms/jasmin.rom`) |
-| **LOCI** | cartouche LOCI, en `$03A0` ; voir ci-dessous | Mode, puis les réglages de ce mode |
-| **ACIA 6551** | port série : modem, terminal, Minitel, BBS | Ligne série (`loopback`), Adresse d'E/S (`031C` ; `0380` pour l'ACIA de la LOCI), Vitesse (bauds) (vide : instantané), Tampon de réception (vide), Mode V23 (1200/75) (non) |
-| **DTL 2000** | modem Digitelec (PIA 6821 + ACIA 6850), ligne V23 vers un serveur Minitel | Ligne V23 (`loopback`), Adresse d'E/S (`03F8`) |
-| **Mageco MIDI** | interface MIDI (ACIA 6850 à 31 250 bauds) | Liaison MIDI (`loopback`), Adresse d'E/S (`03FE`) |
-| **ORICON** | variante MIDI en `$031C` | Liaison MIDI (`loopback`) |
-| **SP0256** | synthèse vocale Mageco (SP0256-AL2, allophones) | ROM d'allophones (`roms/al2.bin`), Adresse d'E/S (`03F1`) |
-| **MEA8000** | synthèse vocale TMPI (formants, sans ROM) | Adresse d'E/S (`03FE`) |
-| **Hôte (hostfs)** | dossier du PC monté dans l'Oric | Dossier monté (`.`) |
-| **ULA-NG** | ULA étendue (palette, modes), toujours présente en `$0340` | aucun |
+| **Microdisc** | Oric floppy controller (WD1793), 4 drives, at `$0310` | ROM du contrôleur (controller ROM) (`roms/microdis.rom`) |
+| **Jasmin** | Jasmin floppy controller (WD177x, TDOS), at `$03F4` | ROM de démarrage (boot ROM) (`roms/jasmin.rom`) |
+| **LOCI** | LOCI cartridge, at `$03A0`; see below | Mode, then the settings of that mode |
+| **ACIA 6551** | serial port: modem, terminal, Minitel, BBS | Ligne série (serial line) (`loopback`), Adresse d'E/S (I/O address) (`031C`; `0380` for the LOCI's ACIA), Vitesse (bauds) (baud rate) (empty: instantaneous), Tampon de réception (receive buffer) (empty), Mode V23 (1200/75) (non) |
+| **DTL 2000** | Digitelec modem (PIA 6821 + ACIA 6850), V23 line to a Minitel server | Ligne V23 (V23 line) (`loopback`), Adresse d'E/S (`03F8`) |
+| **Mageco MIDI** | MIDI interface (ACIA 6850 at 31,250 baud) | Liaison MIDI (MIDI link) (`loopback`), Adresse d'E/S (`03FE`) |
+| **ORICON** | MIDI variant at `$031C` | Liaison MIDI (`loopback`) |
+| **SP0256** | Mageco speech synthesis (SP0256-AL2, allophones) | ROM d'allophones (allophone ROM) (`roms/al2.bin`), Adresse d'E/S (`03F1`) |
+| **MEA8000** | TMPI speech synthesis (formants, no ROM) | Adresse d'E/S (`03FE`) |
+| **Hôte (hostfs)** | PC folder mounted in the Oric | Dossier monté (mounted folder) (`.`) |
+| **ULA-NG** | extended ULA (palette, modes), always present at `$0340` | none |
 
-Valeurs possibles d'une **ligne série** (ACIA, DTL 2000) : `loopback` (écho local),
-`tcp:hôte:port`, `modem:hôte:port` (appels entrants), `pty` (pseudo-terminal),
-`com:bauds,bits,parité,stop,périphérique` (port série réel), `file:entrée[:sortie]`,
-et pour l'ACIA seulement `picowifi[:ssid[:mot_de_passe]]` (modem Wi-Fi émulé).
-**Liaison MIDI** : `loopback`, `midi[:cible]` (MIDI temps réel, si le binaire l'a),
+Possible values of a **serial line** (ACIA, DTL 2000): `loopback` (local echo),
+`tcp:hôte:port`, `modem:hôte:port` (incoming calls), `pty` (pseudo-terminal),
+`com:bauds,bits,parité,stop,périphérique` (real serial port), `file:entrée[:sortie]`,
+and for the ACIA only `picowifi[:ssid[:mot_de_passe]]` (emulated Wi-Fi modem).
+**MIDI link**: `loopback`, `midi[:cible]` (real-time MIDI, if the binary has it),
 `smf:fichier.mid[:loop]`, `tcp:hôte:port`, `file:entrée[:sortie]`.
 
-Mageco MIDI et MEA8000 utilisent tous deux `$03FE` par défaut : changer l'adresse de
-l'un pour les avoir ensemble.
+Mageco MIDI and MEA8000 both use `$03FE` by default: change the address of one of
+them to have both together.
 
-### La carte LOCI et ses trois modes
+### The LOCI card and its three modes
 
-Le premier réglage, **Mode**, choisit quelle LOCI ; **seuls les réglages du mode
-choisi sont affichés** (les autres restent mémorisés, mais ne servent pas). En mode
-`usb`, il ne reste que le port de la LOCI-USB :
+The first setting, **Mode**, chooses which LOCI; **only the settings of the chosen
+mode are shown** (the others are remembered, but not used). In `usb` mode, only
+the LOCI-USB port is left:
 
-![Page de la carte LOCI en mode usb](../images/menu-carte-loci.png)
+![LOCI card page in usb mode](../images/menu-carte-loci-en.png)
 
-Les trois modes :
+The three modes:
 
-| Mode | Ce que c'est | Réglages |
+| Mode | What it is | Settings |
 |---|---|---|
-| `intégré` | LOCI émulée par Phosphoric (`--loci`) | **Démarrer sur le menu LOCI** (oui), **Image de carte SD**, **Dossier flash interne**, **Modem Wi-Fi (picowifi)** : aucun / simulé / réel, **Port du picowifi réel** (vide : détecté) |
-| `firmware` | le vrai firmware RP2040 tourne dans l'émulateur (`--loci-emu`), pour développer le firmware | **Firmware (ELF)** (obligatoire), **Image flash du firmware** (vide : `<ELF>.flash`, « - » : volatile), **Image de clé USB** |
-| `usb` | une **LOCI-USB** branchée sur le PC (`--loci-hw`) : une Feather RP2040 fait tourner le firmware LOCI, et Phosphoric joue l'Oric par l'USB | **Port de la LOCI-USB** (vide : détecté) |
+| `intégré` | LOCI emulated by Phosphoric (`--loci`) | **Démarrer sur le menu LOCI** (boot into the LOCI menu) (oui), **Image de carte SD** (SD card image), **Dossier flash interne** (internal flash folder), **Modem Wi-Fi (picowifi)**: aucun / simulé / réel (none / emulated / real), **Port du picowifi réel** (real picowifi port) (empty: detected) |
+| `firmware` | the real RP2040 firmware runs inside the emulator (`--loci-emu`), for firmware development | **Firmware (ELF)** (mandatory), **Image flash du firmware** (firmware flash image) (empty: `<ELF>.flash`, « - »: volatile), **Image de clé USB** (USB stick image) |
+| `usb` | a **LOCI-USB** plugged into the PC (`--loci-hw`): a Feather RP2040 runs the LOCI firmware, and Phosphoric plays the Oric over USB | **Port de la LOCI-USB** (LOCI-USB port) (empty: detected) |
 
-- Port laissé vide : le menu affiche celui que la détection trouve, par exemple
-  « /dev/ttyACM0 (détectée) », ou « aucune détectée » en rouge si la LOCI-USB n'est
-  pas branchée (idem pour le picowifi réel). La détection est refaite chaque seconde
-  tant que le menu est ouvert. La liste des cartes et le cadre de la page principale
-  donnent aussi ce port (« Mode : usb, /dev/ttyACM0 », « $03A0  usb ttyACM0 »).
-- Lancé sans carte disque, Phosphoric prend d'office une LOCI-USB branchée si son
-  pont répond et que son firmware LOCI répond 'L' en `$0319` : la carte LOCI
-  apparaît en mode `usb`. `--no-auto-loci` l'évite ; retirer la carte dans ce menu
-  puis « Appliquer » la retire aussi (la relance ne la remet pas).
-- La Feather **est** la LOCI : ce n'est pas un pont vers une cartouche LOCI 1.3, et
-  elle ne se branche pas sur un vrai Oric.
-- Seuls les modes présents dans ce binaire sont proposés : `firmware` demande que
-  `~/loci/emul` ait été là à la compilation, `usb` que `~/loci/loci-usb` y ait été
-  (pas sous Windows).
-- **Détection automatique** (Linux) : un port laissé vide est cherché d'après le nom
-  USB de l'appareil (« PicoWifiModemUSB » pour le picowifi, « LOCI-USB… » pour la
-  Feather). La recherche lit `/sys` sans ouvrir le port.
-- Le **bouton MENU** de la LOCI est **F8** ; un appui de 2 secondes ou plus est un
-  appui long (diagnostic).
-- Modem LOCI et carte ACIA 6551 ne vont pas ensemble : une seule ligne série à la
-  fois.
+- Port left empty: the menu shows the one the detection finds, for example
+  « /dev/ttyACM0 (détectée) » (detected), or « aucune détectée » (none detected) in
+  red if the LOCI-USB is not plugged in (same for the real picowifi). Detection runs
+  again every second while the menu is open. The card list and the main page frame
+  also give this port (« Mode : usb, /dev/ttyACM0 », « $03A0  usb ttyACM0 »).
+- Launched without a disk card, Phosphoric takes a plugged LOCI-USB automatically if
+  its bridge answers and its LOCI firmware answers 'L' at `$0319`: the LOCI card
+  shows up in `usb` mode. `--no-auto-loci` avoids it; removing the card in this menu
+  then « Apply » removes it too (the restart does not bring it back).
+- The Feather **is** the LOCI: it is not a bridge to a LOCI 1.3 cartridge, and it
+  does not plug into a real Oric.
+- Only the modes present in this binary are offered: `firmware` requires that
+  `~/loci/emul` was there at build time, `usb` that `~/loci/loci-usb` was (not on
+  Windows).
+- **Automatic detection** (Linux): a port left empty is searched for from the
+  device's USB name (« PicoWifiModemUSB » for the picowifi, « LOCI-USB… » for the
+  Feather). The search reads `/sys` without opening the port.
+- The LOCI **MENU button** is **F8**; a press of 2 seconds or more is a long press
+  (diagnostics).
+- LOCI modem and ACIA 6551 card do not go together: only one serial line at a time.
 
-## 5. Messages d'erreur des cartes
+## 5. Card error messages
 
-| Message | Que faire |
+| Message | What to do |
 |---|---|
-| « X et Y se chevauchent en $03xx » | changer l'adresse d'E/S de l'une des deux |
-| « Modem LOCI et ACIA 6551 : une seule ligne série à la fois » | retirer la carte ACIA, ou mettre le modem LOCI à « aucun » |
-| « Modem LOCI réel : aucun picowifi USB détecté » | brancher le picowifi, ou indiquer son port |
-| « LOCI : mode « … » absent de ce binaire » | choisir un autre mode (backend non compilé) |
-| « LOCI firmware : indiquer le fichier ELF du firmware » | renseigner **Firmware (ELF)** |
-| « LOCI-USB : aucune détectée (indiquer le port) » | brancher la Feather, ou indiquer son port |
-| « Version web : les cartes se choisissent au lancement » | dans le navigateur, les cartes sont en lecture seule |
+| « X et Y se chevauchent en $03xx » | X and Y overlap: change the I/O address of one of the two |
+| « Modem LOCI et ACIA 6551 : une seule ligne série à la fois » | only one serial line at a time: remove the ACIA card, or set the LOCI modem to « aucun » (none) |
+| « Modem LOCI réel : aucun picowifi USB détecté » | no USB picowifi detected: plug in the picowifi, or give its port |
+| « LOCI : mode « … » absent de ce binaire » | mode not in this binary: choose another mode (backend not compiled in) |
+| « LOCI firmware : indiquer le fichier ELF du firmware » | firmware ELF file missing: fill in **Firmware (ELF)** |
+| « LOCI-USB : aucune détectée (indiquer le port) » | no LOCI-USB detected: plug in the Feather, or give its port |
+| « Version web : les cartes se choisissent au lancement » | web version, cards are chosen at launch: in the browser, the cards are read-only |
 
-## 6. Enregistrer la configuration (`phosphoric.cfg`)
+## 6. Saving the configuration (`phosphoric.cfg`)
 
-**Enregistrer la configuration** écrit `phosphoric.cfg` dans le dossier courant (ou
-le fichier donné par `--config FICHIER`), une ligne `clé=valeur` par réglage :
+**Enregistrer la configuration** (save configuration) writes `phosphoric.cfg` in the
+current folder (or the file given by `--config FICHIER`), one `clé=valeur` line per
+setting:
 
-| Clés | Contenu |
+| Keys | Content |
 |---|---|
-| `a=` … `d=` | images dans les lecteurs |
-| `protection_a=oui` … | lecteurs protégés en écriture |
-| `cassette=` | cassette insérée |
-| `cassette_rapide=oui/non` | injection directe au lancement |
-| `imprimante=non/texte/mcp40`, `imprimante_fichier=` | imprimante |
+| `a=` … `d=` | images in the drives |
+| `protection_a=oui` … | write-protected drives |
+| `cassette=` | inserted tape |
+| `cassette_rapide=oui/non` | direct injection at launch |
+| `imprimante=non/texte/mcp40`, `imprimante_fichier=` | printer |
 | `joystick=aucun/clavier/manette` | joystick |
-| `clavier=qwerty/azerty` | clavier |
-| `langue=fr/en` | langue du menu F1 |
-| `carte.<id>=oui/non` | cartes présentes (`microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco`, `oricon`, `sp0256`, `mea8000`, `hostfs`) |
-| `<id>.<réglage>=valeur` | réglages de carte différents du défaut (ex. `loci.mode=usb`, `acia.adresse=0380`) |
+| `clavier=qwerty/azerty` | keyboard |
+| `langue=fr/en` | F1 menu language |
+| `carte.<id>=oui/non` | present cards (`microdisc`, `jasmin`, `loci`, `acia`, `dtl2000`, `mageco`, `oricon`, `sp0256`, `mea8000`, `hostfs`) |
+| `<id>.<réglage>=valeur` | card settings that differ from the default (e.g. `loci.mode=usb`, `acia.adresse=0380`) |
 
-Les lignes que le menu ne connaît pas sont conservées.
+Lines the menu does not know are kept.
 
-À la relecture, au lancement suivant :
+When it is read back, at the next launch:
 
-- **la ligne de commande reste prioritaire** ; les cartes du fichier ne sont ajoutées
-  que pour celles que la ligne de commande ne mentionne pas (`--no-config-cards` les
-  ignore) ;
-- le fichier n'est **pas lu en `--headless`**, sauf `--config FICHIER` explicite ;
-- `--no-config` ou `PHOSPHORIC_NO_CONFIG=1` l'ignorent ;
-- les anciennes clés restent lues (`interface_disque=`, `rom_disque=`,
+- **the command line takes precedence**; cards from the file are only added for
+  those the command line does not mention (`--no-config-cards` ignores them);
+- the file is **not read in `--headless`**, except with an explicit
+  `--config FICHIER`;
+- `--no-config` or `PHOSPHORIC_NO_CONFIG=1` ignore it;
+- old keys are still read (`interface_disque=`, `rom_disque=`,
   `carte.loci_emu`, `carte.loci_hw`, `loci.mode=réelle`, `loci.pont`…).
 
-## 7. Divers
+## 7. Miscellaneous
 
-- `--menu-screenshot FICHIER` enregistre une image du menu (PPM 640 × 640) à la fin
-  de l'exécution, menu ouvert ou non (dans la langue de `langue=` si `--config` est
-  donné).
-- `--no-auto-loci` : ne pas démarrer sur une LOCI-USB branchée (section 4).
-- Captures en anglais : `docs/images/menu-peripheriques-en.png`, `menu-cartes-en.png`,
-  `menu-carte-loci-en.png`.
-- Dans la version web, le menu fonctionne (médias, périphériques), mais les cartes ne
-  se changent qu'au lancement.
-- Les autres touches de fonction (F5 reset, Maj+F5 NMI, F6 médias rapides, F8 bouton LOCI, F9
-  débogueur, F12 capture…) sont décrites dans le [guide utilisateur](README.md).
+- `--menu-screenshot FICHIER` saves an image of the menu (PPM 640 × 640) at the end
+  of the run, whether the menu is open or not (in the `langue=` language when
+  `--config` is given).
+- `--no-auto-loci`: do not start on a plugged LOCI-USB (section 4).
+- French pictures: `docs/images/menu-peripheriques.png`, `menu-cartes.png`,
+  `menu-carte-loci.png`.
+- In the web version, the menu works (media, peripherals), but cards can only be
+  changed at launch.
+- The other function keys (F5 reset, Shift+F5 NMI, F6 quick media, F8 LOCI button,
+  F9 debugger, F12 screenshot…) are described in the [user guide](README.md).

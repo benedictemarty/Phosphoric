@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file debugger_internal.h
- * @brief Symboles partagés entre les fichiers du débogueur (debugger.c,
- *        debugger_view.c, debugger_mem.c, debugger_asm.c, debugger_repl.c) ;
- *        pas une API publique
+ * @brief Symbols shared between the debugger files (debugger.c,
+ *        debugger_view.c, debugger_mem.c, debugger_asm.c, debugger_repl.c);
+ *        not a public API
  * @author bmarty <bmarty@mailo.com>
  */
 #ifndef DEBUGGER_INTERNAL_H

@@ -1,481 +1,450 @@
 # LOCI — Lovely Oric Computer Interface
 
-Émulation du périphérique LOCI de **Sodiumlightbaby** (sodiumlb, 2024) : une
-cartouche RP2040 qui se branche sur le bus de l'Oric et fournit stockage de
-masse (USB / SD / flash interne), clavier-souris-manettes USB HID, modem WiFi
-(PicoWiFiModemUSB), swap de ROM à chaud et menu intégré.
+Emulation of the LOCI peripheral by **Sodiumlightbaby** (sodiumlb, 2024): an
+RP2040 cartridge that plugs into the Oric bus and provides mass
+storage (USB / SD / internal flash), USB HID keyboard-mouse-gamepads, a WiFi modem
+(PicoWiFiModemUSB), hot ROM swapping and a built-in menu.
 
-Références : [loci-hardware](https://github.com/sodiumlb/loci-hardware) ·
+References: [loci-hardware](https://github.com/sodiumlb/loci-hardware) ·
 [loci-firmware](https://github.com/sodiumlb/loci-firmware) ·
-[loci-rom](https://github.com/sodiumlb/loci-rom) (menu). L'émulation est
-alignée sur la source du firmware (release de référence : **v0.3.1**) et
-vérifiée sur pièces ; les écarts connus sont listés en fin de document.
+[loci-rom](https://github.com/sodiumlb/loci-rom) (menu). The emulation is
+aligned with the firmware source (reference release: **v0.3.1**) and
+verified against it; known discrepancies are listed at the end of this document.
 
-## Démarrage rapide
+## Quick start
 
 ```bash
-# LOCI + modem WiFi picowifi (ACIA 6551 à $0380, adressez $0380 PAS $03A0)
+# LOCI + picowifi WiFi modem (ACIA 6551 at $0380, address $0380 NOT $03A0)
 ./phosphoric -r roms/basic11b.rom --loci --serial picowifi
 
-# Menu LOCI directement au boot
+# LOCI menu straight at boot
 ./phosphoric -r roms/loci/locirom --loci
 
-# Image SD FAT16/32 brute comme stockage
+# Raw FAT16/32 SD image as storage
 ./phosphoric -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
 
-### Une carte, trois modes (menu F1)
+### One card, three modes (F1 menu)
 
-Dans le menu F1, la carte **LOCI** a un réglage **Mode** ; seuls les réglages du mode
-choisi sont affichés :
+In the F1 menu, the **LOCI** card has a **Mode** setting; only the settings of the
+selected mode are shown:
 
-| Mode | Équivaut à | Réglages |
+| Mode | Equivalent to | Settings |
 |------|-----------|----------|
-| `intégré` | `--loci` | menu au démarrage, image SD, dossier flash, modem picowifi |
-| `firmware` | `--loci-emu ELF` | firmware ELF (obligatoire), image flash, image de clé USB |
-| `usb` | `--loci-hw PORT` | port de la LOCI-USB (Feather) |
+| `intégré` | `--loci` | boot menu, SD image, flash folder, picowifi modem |
+| `firmware` | `--loci-emu ELF` | firmware ELF (required), flash image, USB stick image |
+| `usb` | `--loci-hw PORT` | LOCI-USB port (Feather) |
 
-Un même binaire contient les trois modes : `firmware` existe quand `~/loci/emul`
-(libemul) était là à la compilation, `usb` quand `~/loci/loci-usb` y était (pas
-sous Windows). Le menu ne propose que les modes présents. Les backends sont choisis
-au lancement (`src/io/loci_backend.c`). `make LOCI_EMU=0` ou `LOCI_HW=0` en retire
-un.
+A single binary contains all three modes: `firmware` exists when `~/loci/emul`
+(libemul) was present at build time, `usb` when `~/loci/loci-usb` was (not
+on Windows). The menu only offers the modes that are present. Backends are selected
+at launch (`src/io/loci_backend.c`). `make LOCI_EMU=0` or `LOCI_HW=0` removes
+one.
 
-### LOCI-USB : la Feather (`--loci-hw`, mode `usb`)
+### LOCI-USB: the Feather (`--loci-hw`, mode `usb`)
 
-Une **LOCI-USB** est une LOCI sans interface Oric (ni CN1 ni translateurs), avec un
-second USB : aujourd'hui une Adafruit Feather RP2040 USB Host (5723), demain la carte
-LOCI-USB (`~/loci/loci-usb`). Elle fait tourner le firmware LOCI lui-même (variante
-`LOCI_USB`, ou loci-fw-usb) ; ce n'est **pas** un pont vers une cartouche LOCI 1.3.
-Phosphoric joue l'Oric : son 6502 émulé envoie ses accès `$03xx` et ROM par l'USB-C,
-et le firmware les rejoue dans son chemin de bus habituel ; le port USB-A sert de
-ports USB de la LOCI (clé, clavier, modem). Elle ne s'enfiche pas sur un vrai Oric :
-pour un Oric physique, il faut la LOCI 1.3. Recette :
+A **LOCI-USB** is a LOCI without the Oric interface (no CN1, no level translators), with a
+second USB port: today an Adafruit Feather RP2040 USB Host (5723), tomorrow the
+LOCI-USB board (`~/loci/loci-usb`). It runs the LOCI firmware itself (`LOCI_USB`
+variant, or loci-fw-usb); it is **not** a bridge to a LOCI 1.3 cartridge.
+Phosphoric plays the Oric: its emulated 6502 sends its `$03xx` and ROM accesses over USB-C,
+and the firmware replays them through its usual bus path; the USB-A port serves as
+the LOCI's USB ports (stick, keyboard, modem). It does not plug into a real Oric:
+for a physical Oric, you need the LOCI 1.3. Procedure:
 `~/loci/loci-usb/docs/RECETTE-FEATHER.md`.
 
 ```bash
 ./phosphoric --loci-hw /dev/ttyACM0
 ```
 
-Laissé vide, le réglage **Port de la LOCI-USB** est détecté sous Linux par le
-nom de produit USB, qui commence par « LOCI-USB » (firmware `feature/loci-usb` ou
-loci-fw-usb). La détection lit seulement `/sys`, sans ouvrir le port. Si aucune LOCI-USB
-n'est détectée et qu'aucun port n'est indiqué, le menu le signale et refuse
-d'appliquer. Dans `phosphoric.cfg` : `carte.loci=oui`, `loci.mode=usb`,
-`loci.port_usb=/dev/ttyACM0`. Les anciennes clés `carte.loci_emu`, `loci_emu.*`,
-`carte.loci_hw`, `loci_hw.port`, `loci.pont` et la valeur `loci.mode=réelle` sont
-encore lues.
+When left empty, the **Port de la LOCI-USB** (LOCI-USB port) setting is detected on Linux from the
+USB product name, which starts with "LOCI-USB" (firmware `feature/loci-usb` or
+loci-fw-usb). Detection only reads `/sys`, without opening the port. If no LOCI-USB
+is detected and no port is given, the menu reports it and refuses
+to apply. In `phosphoric.cfg`: `carte.loci=oui`, `loci.mode=usb`,
+`loci.port_usb=/dev/ttyACM0`. The legacy keys `carte.loci_emu`, `loci_emu.*`,
+`carte.loci_hw`, `loci_hw.port`, `loci.pont` and the value `loci.mode=réelle` are
+still read.
 
-**Activation automatique.** Lancé sans carte disque (ni `--disk-rom`, ni
-`--jasmin-rom`, ni carte LOCI choisie, en ligne de commande ou dans
-`phosphoric.cfg`), Phosphoric démarre sur une LOCI-USB branchée, comme avec
-`--loci-hw PORT`, si elle passe trois vérifications :
+**Automatic activation.** Launched without a disk card (no `--disk-rom`, no
+`--jasmin-rom`, no LOCI card chosen, on the command line or in `phosphoric.cfg`),
+Phosphoric starts on a plugged LOCI-USB, as with `--loci-hw PORT`, if it passes
+three checks:
 
-1. **matériel** : produit USB « LOCI-USB… » (`/sys`) ;
-2. **protocole** : le `PING` loci-usb répond (version du protocole, firmware du pont) ;
-3. **firmware LOCI** : `$0319` lu = `'L'` (`LOCI_DSK_IO_ID`, registre d'identité en
-   lecture seule, sans effet de bord).
+1. **hardware**: USB product « LOCI-USB… » (`/sys`);
+2. **protocol**: the loci-usb `PING` answers (protocol version, bridge firmware);
+3. **LOCI firmware**: `$0319` reads `'L'` (`LOCI_DSK_IO_ID`, read-only identity
+   register, no side effect).
 
-Le port n'est pas pris s'il est déjà ouvert par un autre programme (`/proc/*/fd`).
-Jamais en `--headless`, sous `make tests` (`PHOSPHORIC_NO_CONFIG`) ni à la relance du
-menu F1 (les cartes y sont choisies). `--no-auto-loci` désactive l'activation
-automatique. Le journal dit ce qui a été trouvé ou pourquoi la carte n'est pas prise
-(port occupé, `$0319` différent de `'L'`, pas de réponse). Code :
-`src/io/loci_hw_probe.c`, `main_auto_loci_usb()` (main.c).
+The port is not taken if another program already has it open (`/proc/*/fd`).
+Never in `--headless`, under `make tests` (`PHOSPHORIC_NO_CONFIG`) nor when the F1
+menu restarts the emulator (the cards are chosen there). `--no-auto-loci` turns the
+automatic activation off. The log says what was found or why the card was not taken
+(port busy, `$0319` other than `'L'`, no answer). Code: `src/io/loci_hw_probe.c`,
+`main_auto_loci_usb()` (main.c).
 
-### Dans le navigateur (build WebAssembly)
+### In the browser (WebAssembly build)
 
-`phosphoric.html?loci=1` (ou le bouton **LOCI** du rail) démarre sur le menu
-LOCI, avec un flash interne persistant dans IndexedDB ; les fichiers chargés y
-sont copiés et se montent depuis le menu. Détails et limites (pas de picowifi,
-de clés USB ni d'image SD en web) : [wasm.md](wasm.md).
+`phosphoric.html?loci=1` (or the **LOCI** button in the rail) starts on the LOCI
+menu, with an internal flash persisted in IndexedDB; loaded files are
+copied into it and can be mounted from the menu. Details and limits (no picowifi,
+USB sticks or SD image on the web): [wasm.md](wasm.md).
 
-## Cartographie mémoire
+## Memory map
 
-| Fenêtre | Contenu |
-|---------|---------|
-| `$0310-$031F` | WD1793 + contrôle DSK (mode Microdisc du LOCI ; `$0319` = 'L') |
-| `$0315-$0317` | Protocole TAP bas niveau (PLAY/REC/READ_BIT, trame 14 bits) |
-| `$0380-$0383` | ACIA 6551 (modem picowifi) — défaut sous `--loci` |
-| `$03A0-$03BF` | MIA : console UART, registres API (xstack `$03AC`, errno `$03AD/E`, op `$03AF`), stub `$03B0` (spin/BLOCKED), BUSY `$03B2` bit 7, trap bouton `$03BA-$03BF` |
+| Window | Contents |
+|--------|----------|
+| `$0310-$031F` | WD1793 + DSK control (LOCI Microdisc mode; `$0319` = 'L') |
+| `$0315-$0317` | Low-level TAP protocol (PLAY/REC/READ_BIT, 14-bit frame) |
+| `$0380-$0383` | ACIA 6551 (picowifi modem) — default under `--loci` |
+| `$03A0-$03BF` | MIA: UART console, API registers (xstack `$03AC`, errno `$03AD/E`, op `$03AF`), stub `$03B0` (spin/BLOCKED), BUSY `$03B2` bit 7, button trap `$03BA-$03BF` |
 
-## API (op `$03AF`) — 36/36 ops implémentées
+## API (op `$03AF`) — 36/36 ops implemented
 
-Système (`PIX_XREG`, `CPU_PHI2`→1000 kHz, `OEM_CODEPAGE`, `RNG_LRAND`,
-`STDIN_OPT`), horloge (`CLOCK`, `CLK_GET/SETTIME`, `GETRES`), fichiers
-(`OPEN/CLOSE/READ/WRITE_XSTACK/XRAM/LSEEK/UNLINK/RENAME`), répertoires
-(`OPENDIR/CLOSEDIR/READDIR/MKDIR/GETCWD`), montage (`MOUNT/UMOUNT`, TAP
+System (`PIX_XREG`, `CPU_PHI2`→1000 kHz, `OEM_CODEPAGE`, `RNG_LRAND`,
+`STDIN_OPT`), clock (`CLOCK`, `CLK_GET/SETTIME`, `GETRES`), files
+(`OPEN/CLOSE/READ/WRITE_XSTACK/XRAM/LSEEK/UNLINK/RENAME`), directories
+(`OPENDIR/CLOSEDIR/READDIR/MKDIR/GETCWD`), mounting (`MOUNT/UMOUNT`, TAP
 `SEEK/TELL/READ_HEADER`, `UNAME`), boot/tuning (`MIA_BOOT`, `MAP_TUNE_*`,
-`ADJ_SCAN`), sentinelle `$FF` (exit → spin).
+`ADJ_SCAN`), `$FF` sentinel (exit → spin).
 
-### Banking `$A7` (`MIA_OP_SET_BANK`)
+### Firmware-compliant ABI (checked against the source)
 
-Extension du firmware LOCI de bmarty (`~/loci/firmware`, `mia_set_bank()` ; absente du
-firmware amont sodiumlb, spec dans `~/loci/design-banking/docs/spec-registre-banque.md`).
-Elle choisit ce que le 6502 voit dans **tout** `$C000-$FFFF` (vecteurs et page `$FF`
-compris) : le registre A porte `EN` (bit 7) et `SEL` (bits 3:0), le retour est l'écho de A.
+- **errno**: filesystem errors = `32 + FRESULT` FatFS (missing file → 36,
+  missing directory → 37, denied/not empty/full → 39, already exists → 40…);
+  codes 1-18 are reserved for API errors (`EBADF`, `EMFILE`, `ENODEV`,
+  `ENOSYS`, anti-escape guard) — exactly as in the firmware's `api.h`.
+- **Descriptors**: files 3-18 (FAT, `STD_FIL_OFFS=3`), directories 64+
+  (`FD_OFFS_FAT`); the device iterator is fd 0 (`FD_OFFS_DEV`).
+- **xstack**: 512 bytes, compliant push/pop and NUL-less strings.
+- **`MAP_TUNE_*`**: value in register A; A ≤ 31 sets the delay, any
+  other value is a *query*; the op always returns the current value
+  in AX. `ADJ_SCAN` sweeps tior 0-31 (~100 ms + 5 ms/step) with progress
+  visible in ROM byte `$FFF0` (`0x80|tior` then the configured tior).
 
-- `EN = 1` : la banque de 16 Ko `xram[SEL << 14]` est servie en **lecture seule**. `SEL` est
-  replié sur 0..3 (`& 3`, comme le firmware) : ces quatre banques sont les 64 Ko de la XRAM.
-- `EN = 0` : retour à la ROM interne (et, dans Phosphoric, aux drapeaux Microdisc d'avant).
-- Phosphoric ne remet **pas** le 6502 à zéro à la commutation (le firmware non plus) : on
-  peut basculer en cours d'exécution. Le code qui bascule doit donc rester hors de la banque
-  visée (RAM `$0000-$BFFF`) ou être recopié à l'identique dans chaque banque, vecteurs
-  `$FFFA-$FFFF` compris, puisqu'un NMI ou un IRQ les lit dans la banque servie.
-- Une banque se remplit par les portes XRAM (`$03A4`/`$03A8`, `RW0`/`RW1`) avant la bascule.
+## Storage
 
-Où c'est géré : mode intégré (`--loci`) = `op_set_bank` (`src/io/loci_boot.c`) +
-`loci_bank_swap_cb` (`src/io/loci_glue.c`) ; `--loci-emu` et `--loci-hw` = le vrai firmware,
-s'il porte le patch. Tests : `make test-loci` (4 cas de l'opcode), `make test-loci-bank`
-(banque lue en `$C000`/`$FF00`/`$FFFA`, hot-switch sans reset, restauration).
+The real LOCI has three tiers; their equivalents in Phosphoric:
 
-**Non prouvé** : le timing du signal MAP pendant une commutation à chaud sur un vrai Oric
-(point ouvert n° 5 de la spec) ; une banque **inscriptible** (`WR`, PIO `mia_write`
-désactivé dans le firmware) ; le streamer `$A8` (non émulé en mode intégré). Ce n'est pas de
-la RAM en plus : avec un Microdisc, `ROMDIS` et la banque LOCI se disputent la même fenêtre,
-et rien n'a été mesuré sur cette combinaison.
-
-### ABI conforme au firmware (vérifiée sur source)
-
-- **errno** : erreurs filesystem = `32 + FRESULT` FatFS (fichier manquant → 36,
-  répertoire manquant → 37, refusé/non-vide/plein → 39, existe déjà → 40…) ;
-  les codes 1-18 sont réservés aux erreurs API (`EBADF`, `EMFILE`, `ENODEV`,
-  `ENOSYS`, garde anti-échappement) — exactement comme `api.h` du firmware.
-- **Descripteurs** : fichiers 3-18 (FAT, `STD_FIL_OFFS=3`), répertoires 64+
-  (`FD_OFFS_FAT`) ; l'itérateur de périphériques est le fd 0 (`FD_OFFS_DEV`).
-- **xstack** : 512 octets, push/pop et chaînes sans NUL conformes.
-- **`MAP_TUNE_*`** : valeur dans le registre A ; A ≤ 31 règle le délai, toute
-  autre valeur est une *requête* ; l'op renvoie toujours la valeur courante
-  dans AX. `ADJ_SCAN` balaye tior 0-31 (~100 ms + 5 ms/pas) avec progression
-  visible dans l'octet ROM `$FFF0` (`0x80|tior` puis tior configuré).
-
-## Stockage
-
-Le vrai LOCI a trois étages ; leurs équivalents dans Phosphoric :
-
-| Matériel réel | Émulation |
+| Real hardware | Emulation |
 |---------------|-----------|
-| **Flash interne** (LittleFS du RP2040, pré-semée `basic11b.rom`, `basic10.rom`, `microdis.rom`, `locirom`) | **flash root** : `--loci-flash DIR` (défaut : répertoire courant). Chemins `0:` et nus. Les ROM système absentes du flash root sont résolues en repli dans le dossier de la ROM `-r` (donc `roms/`) |
-| **Clé USB** (FAT, port USB host) | `--loci-usb DIR` (répétable, 4 max) **ou auto-détection** des médias montés dans `/media/$USER` et `/run/media/$USER` au lancement. Chemins volume `1:`-`4:`. Label + taille affichés dans le menu (`N: MSC x.x GB <label>`). Pas de hot-plug : brancher avant de lancer |
-| **Carte SD** (image brute) | `--loci-sdimg PATH` (FAT16/32). NOTE : quand actif, ce backend possède toutes les ops fichiers (les clés USB restent listées mais non navigables) |
+| **Internal flash** (RP2040 LittleFS, pre-seeded with `basic11b.rom`, `basic10.rom`, `microdis.rom`, `locirom`) | **flash root**: `--loci-flash DIR` (default: current directory). `0:` and bare paths. System ROMs missing from the flash root are resolved as a fallback in the folder of the `-r` ROM (hence `roms/`) |
+| **USB stick** (FAT, USB host port) | `--loci-usb DIR` (repeatable, 4 max) **or auto-detection** of media mounted under `/media/$USER` and `/run/media/$USER` at startup. Volume paths `1:`-`4:`. Label + size shown in the menu (`N: MSC x.x GB <label>`). No hot-plug: plug in before launching |
+| **SD card** (raw image) | `--loci-sdimg PATH` (FAT16/32). NOTE: when active, this backend owns all file ops (USB sticks remain listed but cannot be browsed) |
 
-La **liste des périphériques** (sélecteur du menu) est servie par
-`opendir("")` : « 0: Internal storage [15MB] », puis une ligne par
-périphérique USB (`usb_set_status` du firmware — la clé MSC, le picowifi
-« CDC modem mounted »), puis un nom vide.
+The **device list** (menu selector) is served by
+`opendir("")`: "0: Internal storage [15MB]", then one line per
+USB device (the firmware's `usb_set_status` — the MSC stick, the picowifi
+"CDC modem mounted"), then an empty name.
 
-## Bouton Action (F8)
+## Action button (F8)
 
-Comportement du firmware (`ext.c`) reproduit :
+Firmware behaviour (`ext.c`) reproduced:
 
-- **Appui court** : trap IRQ `$03BA` (CLV; BVC -2; JMP ($FFFA)), puis
-  **menu LOCI** (`LOCIROM`/`locirom` du flash root, repli
-  `roms/loci/locirom`). Comme le vrai firmware, la version FW (0.3.1) et les
-  timings (tmap/tior/tiow/tiod/tadr) sont **patchés dans la ROM** aux
-  placeholders `$FFF7-9` / `$FFEF-F3`. Au relâchement, la ROM du menu est
-  mappée **sans reset** et le `JMP ($FFFA)` du piège exécute sa routine de
-  sauvegarde (`mia_save_state`, vecteur NMI de la ROM du menu) : registres,
-  VIA, page zéro, RAM `$0100-$1FFF` (sans la page 3) et écran `$A000-$BFFF`
-  vont en XRAM, avec la marque `'L'`, puis le menu démarre et propose
-  **RETURN**. Si le CPU n'était pas encore entré dans le piège (commande
-  `loci-button`, appui et relâchement entre deux instructions, ou `I`
-  positionné), la trame IRQ (PC, P) est empilée comme l'aurait fait l'IRQ.
-- **RETURN dans le menu** (2.31.6) : la ROM du menu recopie l'état depuis la
-  XRAM (`mia_restore_state`) puis demande `MIA_BOOT` + `LOCI_BOOT_RESUME`.
-  La ROM de la session (octets, modèle, overlay Microdisc) est remise **quand
-  le 6502 tourne dans le spin `$03B0`** — l'opération est servie à
-  l'écriture de `$03AF` alors que la ROM du menu exécute encore trois
-  instructions ; le firmware, lui, travaille en parallèle. Le spin sort
-  ensuite par `JMP ($FFFE)` comme `api_return_resume` du firmware : le
-  gestionnaire IRQ de la session sert la trame restaurée et son `RTI`
-  reprend le programme interrompu. Avant 2.31.6, le mode intégré faisait un
-  reset direct vers le menu : la sauvegarde ne tournait pas, RETURN n'était
-  pas proposé et la session était perdue. Le fichier `loci_resume.ost`
-  n'existe plus. Appuyer sur F8 dans le menu est ignoré (pas de capture :
-  la sauvegarde en XRAM est préservée).
-  Mode vidéo sauvegardé (2.31.7) : le détecteur de motif ULA du firmware
-  (`$03A3`, un PIO qui lit les octets lus par l'ULA et, après `$83 $84 $85
-  <motif>`, recopie l'octet suivant) est émulé de façon fonctionnelle. Phosphoric
-  ne modélise pas les adresses lues par l'ULA pendant le blanking : la réponse
-  est calculée depuis le mode ULA courant, avec la séquence d'adresses que
-  `restore.s` donne pour chaque mode (texte 50 Hz `BCA0,BCA1,BBB2,BBB3` ;
-  hires 50 Hz `BCA0,BCA1,A032,A033` ; hires 60 Hz `BBB0,BBB1,A032,A033` ;
-  texte 60 Hz : aucune), vérifiée contre la RAM. Le menu affiche donc `T50`
-  ou `H50`. Avant 2.31.7, `$03A3` restait à 0 : la sauvegarde notait toujours
-  « texte 60 Hz » (`T60`) et la reprise passait une ou deux trames à 60 Hz.
-  Comme dans le code du firmware, une session HIRES 50 Hz est notée `$1F`
-  (jeu de caractères alternatif) et `mia_restore_vmode` ne remet que l'octet
-  `$BFDF` : après RETURN, le mode ULA persistant porte le bit « alternatif »
-  tant qu'aucun attribut de mode ne le change (non vérifié sur un vrai Oric).
-- **Appui long (≥ 2 s)** : boot de la **diag ROM de Mike Brown**
-  (`roms/loci/test108k.rom`, v1.08k, incluse dans les builds firmware réels
-  avec sa permission — variante 60 Hz fournie). Test pas-à-pas
-  CPU/ULA/DRAM/VIA/PSG.
-- En mode `--control` : commande `loci-button [long]`.
-- F5 = reset MIA (registres/xstack/op) en conservant les montages, comme le
-  bouton reset du Pico.
+- **Short press**: IRQ trap `$03BA` (CLV; BVC -2; JMP ($FFFA)), then the
+  **LOCI menu** (`LOCIROM`/`locirom` from the flash root, fallback
+  `roms/loci/locirom`). Like the real firmware, the FW version (0.3.1) and the
+  timings (tmap/tior/tiow/tiod/tadr) are **patched into the ROM** at the
+  placeholders `$FFF7-9` / `$FFEF-F3`. On release, the menu ROM is mapped
+  **without a reset** and the trap's `JMP ($FFFA)` runs its save routine
+  (`mia_save_state`, the menu ROM's NMI vector): registers, VIA, zero page,
+  RAM `$0100-$1FFF` (minus page 3) and the screen `$A000-$BFFF` go to XRAM,
+  with the `'L'` mark, then the menu starts and offers **RETURN**. If the CPU
+  had not entered the trap yet (`loci-button` command, press and release
+  between two instructions, or `I` set), the IRQ frame (PC, P) is pushed as
+  the IRQ would have done.
+- **RETURN in the menu** (2.31.6): the menu ROM copies the state back from
+  XRAM (`mia_restore_state`) then requests `MIA_BOOT` + `LOCI_BOOT_RESUME`.
+  The session's ROM (bytes, model, Microdisc overlay) is put back **when the
+  6502 spins at `$03B0`** — the op is served on the `$03AF` write while the
+  menu ROM still runs three instructions; the firmware works in parallel.
+  The spin then exits through `JMP ($FFFE)`, like the firmware's
+  `api_return_resume`: the session's IRQ handler serves the restored frame
+  and its `RTI` resumes the interrupted program. Before 2.31.6, the
+  integrated mode reset straight into the menu: the save never ran, RETURN
+  was not offered and the session was lost. The `loci_resume.ost` file no
+  longer exists. Pressing F8 inside the menu is ignored (no capture: the
+  XRAM save is preserved).
+  Saved video mode (2.31.7): the firmware's ULA pattern detector (`$03A3`, a
+  PIO that watches the bytes the ULA reads and, after `$83 $84 $85
+  <pattern>`, copies the next one) is emulated functionally. Phosphoric does
+  not model the addresses the ULA reads during blanking: the answer is
+  computed from the current ULA mode, using the address sequence `restore.s`
+  gives for each mode (text 50 Hz `BCA0,BCA1,BBB2,BBB3`; hires 50 Hz
+  `BCA0,BCA1,A032,A033`; hires 60 Hz `BBB0,BBB1,A032,A033`; text 60 Hz:
+  none), checked against RAM. The menu therefore shows `T50` or `H50`.
+  Before 2.31.7, `$03A3` stayed at 0: the save always recorded "text 60 Hz"
+  (`T60`) and the resume spent one or two frames at 60 Hz. As in the
+  firmware's code, a HIRES 50 Hz session is recorded as `$1F` (alternate
+  character set) and `mia_restore_vmode` only puts back the `$BFDF` byte:
+  after RETURN, the persistent ULA mode carries the "alternate" bit until a
+  mode attribute changes it (not verified on a real Oric).
+- **Long press (≥ 2 s)**: boots **Mike Brown's diag ROM**
+  (`roms/loci/test108k.rom`, v1.08k, included in the real firmware builds
+  with his permission — 60 Hz variant supplied). Step-by-step
+  CPU/ULA/DRAM/VIA/PSG test.
+- In `--control` mode: command `loci-button [long]`.
+- F5 = MIA reset (registers/xstack/op) keeping the mounts, like the
+  Pico's reset button.
 
-## Timing du bus MIA
+## MIA bus timing
 
-La MIA échantillonne le bus 6502 par PIO à des décalages sous-cycle réglés
-par `MAP_TUNE_*`. Un `tior` mal calé corrompt la fenêtre ACIA du picowifi —
-symptôme matériel réel reproduit : `--loci-mia-window LO-HI` définit la
-plage fiable (défaut 0-31 = toujours fiable) ; hors fenêtre, `$0380` lit
-`$FF` et ignore les écritures.
+The MIA samples the 6502 bus through PIO at sub-cycle offsets set
+by `MAP_TUNE_*`. A badly tuned `tior` corrupts the picowifi ACIA window —
+a real hardware symptom, reproduced: `--loci-mia-window LO-HI` defines the
+reliable range (default 0-31 = always reliable); outside the window, `$0380` reads
+`$FF` and ignores writes.
 
-`--loci-serve-timing SERVE[,TDSR]` remplace la fenêtre par la chronologie en ns de
-`bus_timing.h` (la même que `--loci-hw`, ci-dessous) : SERVE en cycles du cœur 1 de
-la LOCI (23 mesurés sur matériel), TDSR en ns (100). `tior` et `tiod` y entrent ;
-`--loci-serve-jitter AMP[,SEED]` ajoute ± AMP cycles, seedé. Frontière par défaut :
-81/82 cycles de serve. Détails : [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
+`--loci-serve-timing SERVE[,TDSR]` replaces the window with the ns timeline of
+`bus_timing.h` (the same one as `--loci-hw`, below): SERVE in LOCI core 1 cycles
+(23 measured on hardware), TDSR in ns (100). `tior` and `tiod` enter into it;
+`--loci-serve-jitter AMP[,SEED]` adds ± AMP cycles, seeded. Default boundary:
+81/82 serve cycles. Details: [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).
 
-### Réglages de timing : ce que dit l'auteur de la LOCI (2.31.15)
+### Timing settings: what the LOCI's author says (2.31.15)
 
-Relevé sur le forum Defence Force, fil « Loci - my Oric storage emulation project »
-(t=2593), messages de sodiumlb des 28/07/2024 et 10/08/2024. Les cinq réglages sont des
-cycles de la LOCI (**≈ 8,33 ns**) **ajoutés à un délai de base fixé** dans les
-programmes PIO :
+Gathered from the Defence Force forum, thread "Loci - my Oric storage emulation
+project" (t=2593), posts by sodiumlb of 28/07/2024 and 10/08/2024. The five settings
+are LOCI cycles (**≈ 8.33 ns**) **added to a fixed base delay** in the PIO programs:
 
-| Réglage | Plage | Rôle (définition de l'auteur) |
+| Setting | Range | Role (author's definition) |
 |---|---|---|
-| `tior` | 0-31 | délai après la **descente** de Φ2 avant d'échantillonner adresse et R/W (lecture d'E/S) |
-| `tiow` | 0-31 | délai après la **montée** de Φ2 avant d'échantillonner la donnée écrite |
-| `tiod` | 0-7 | délai après la **montée** de Φ2 avant de poser la donnée lue sur le bus — pour éviter le conflit avec la lecture de l'ULA (écran texte corrompu) |
-| `tadr` | 0-7 | délai avant d'échantillonner l'adresse pour servir la ROM émulée |
-| `tmap` | 0-31 | délai du signal MAP (« RV1 ») |
+| `tior` | 0-31 | delay after Φ2 **falls** before sampling address and R/W (IO read) |
+| `tiow` | 0-31 | delay after Φ2 **rises** before sampling the written data |
+| `tiod` | 0-7 | delay after Φ2 **rises** before driving the read data onto the bus — to avoid clashing with the ULA's fetch (corrupted text screen) |
+| `tadr` | 0-7 | delay before sampling the address to serve the emulated ROM |
+| `tmap` | 0-31 | delay of the MAP signal ("RV1") |
 
-Valeurs par défaut du firmware (`cfg.c`) : `tmap` 10, les autres 0 — celles du modèle
-intégré (le menu affiche « timings 10/0/0/0/0 »). Valeurs relevées sur de vraies
-machines dans le même fil : `tior` 8 à 10 partout (0 jugé « risqué », 5 « limite »,
-10-15 conseillé par l'auteur), `tadr` 10, `tmap` 10 ; `tiod` 7 chez Dbug a corrigé une
-police corrompue. L'auto-réglage (touche `S` du menu) balaie `tior` de 0 à 31, cherche
-les 4 premières valeurs bonnes consécutives et retient la dernière des quatre.
+Firmware defaults (`cfg.c`): `tmap` 10, the others 0 — those of the integrated model
+(the menu shows "timings 10/0/0/0/0"). Values reported on real machines in the same
+thread: `tior` 8 to 10 everywhere (0 deemed "risky", 5 "marginal", 10-15 advised by
+the author), `tadr` 10, `tmap` 10; `tiod` 7 fixed a corrupted font on Dbug's machine.
+The auto-tune (`S` key in the menu) scans `tior` from 0 to 31, looks for the first 4
+consecutive good values and keeps the last of the four.
 
-Le modèle de Phosphoric suit ces définitions (donnée posée à « montée de Φ2 +
-(3 + `tiod`) ticks », échantillonnage calé sur `tior`). Ce qui n'est publié nulle part :
-la valeur en ns du **délai de base**, et la **borne haute** de la plage où `tior`
-fonctionne. Par défaut, `--loci-mia-window` reste 0-31 (toujours fiable) : un `tior`
-à 0 marche donc dans Phosphoric, alors qu'il est « risqué » sur une vraie LOCI.
+Phosphoric's model follows these definitions (data driven at "Φ2 rise + (3 + `tiod`)
+ticks", sampling tied to `tior`). Published nowhere: the **base delay** in ns, and the
+**upper bound** of the range where `tior` works. By default `--loci-mia-window` stays
+0-31 (always reliable): a `tior` of 0 therefore works in Phosphoric, whereas it is
+"risky" on a real LOCI.
 
-### Appel d'API qui remplace la ROM servie (`--loci-hw`, 2.29.1)
+### API call that replaces the served ROM (`--loci-hw`, 2.29.1)
 
-Quand la ROM du menu écrit `MIA_OP` (`$03AF`), puis fait `JSR MIA_SPIN` (`$03B0`),
-le firmware peut remplacer la ROM servie : `mia_api_boot` (ESC dans le menu LOCI)
-charge BASIC dans la banque du menu et fait bouger gen8. Sur un vrai Oric, le 6502
-est déjà dans la boucle de l'iopage à ce moment. Par l'USB, la réponse à l'écriture
-rapporte la nouvelle génération avant que le 6502 émulé ait lu le `JSR` : le cache
-ROM n'est donc invalidé qu'à la **lecture de `MIA_SPIN` (`$03B0`)** qui suit
-l'écriture de `$03AF` — pas au premier accès `$03xx` : le chemin RETURN
-(`call_loci_boot`) lit encore `MIA_XSTACK` (`$03AC`) avant `PLP` / `JMP MIA_SPIN`
-(2.29.2). Les invalidations nROMDIS et front nRESET restent immédiates. Sans ce
-report, ESC figeait l'écran sur « Booting » (PC=`$0244`) et RETURN finissait en jam
-(`$B5AD`). Avec `LOCI_HW_ROM_NOCACHE=1`, la ROM est lue en direct et la course
-demeure.
+When the menu ROM writes `MIA_OP` (`$03AF`), then does `JSR MIA_SPIN` (`$03B0`),
+the firmware may replace the served ROM: `mia_api_boot` (ESC in the LOCI menu)
+loads BASIC into the menu bank and moves gen8. On a real Oric, the 6502 is already
+in the iopage loop at that point. Over USB, the reply to the write reports the new
+generation before the emulated 6502 has read the `JSR`: so the ROM cache is only
+invalidated when **`MIA_SPIN` (`$03B0`) is read** after the `$03AF` write — not on
+the first `$03xx` access: the RETURN path (`call_loci_boot`) still reads
+`MIA_XSTACK` (`$03AC`) before `PLP` / `JMP MIA_SPIN` (2.29.2). nROMDIS and
+nRESET-edge invalidations stay immediate. Without this deferral, ESC froze the
+screen on « Booting » (PC=`$0244`) and RETURN ended in a jam (`$B5AD`). With
+`LOCI_HW_ROM_NOCACHE=1`, the ROM is read directly and the race remains.
 
-### Bouton MENU à chaud (`--loci-hw`, 2.29.2)
+### Warm MENU button (`--loci-hw`, 2.29.2)
 
-Machine en marche, un appui sur F8 n'est pas un reset : le firmware pointe `$FFFE` sur
-son piège `$03BA`, pulse nIRQ et attend que le 6502 **en marche** y entre pour
-sauvegarder la RAM (sinon, après 2 s, reboot de secours). `--loci-hw` rend donc la main
-dès qu'il voit l'impulsion nIRQ sans front nRESET, et la livre au 6502 au drain
-suivant ; seul un appui à froid attend nRESET (au plus 10 s). La sauvegarde puis la
-restauration (« Return » dans le menu) passent par `$03A4`.
+With the machine running, pressing F8 is not a reset: the firmware points `$FFFE` at
+its `$03BA` trap, pulses nIRQ and waits for the **running** 6502 to enter it to save
+the RAM (otherwise, after 2 s, fallback reboot). So `--loci-hw` hands control back as
+soon as it sees the nIRQ pulse without an nRESET edge, and delivers it to the 6502 at
+the next drain; only a cold press waits for nRESET (at most 10 s). Saving then
+restoring (« Return » in the menu) go through `$03A4`.
 
-**Écritures postées (2.29.3).** Les écritures sur les portes XRAM `$03A4` (RW0) et
-`$03A8` (RW1) ne rendent rien au 6502 : `--loci-hw` les met en tampon et les envoie par
-paquets de 256 (`WRN`, faites dans l'ordre par le firmware). Le tampon est vidé avant
-toute autre requête au pont (lecture `$03xx`, écriture d'une autre adresse, ROM, BAL,
-LINES, bouton, HID, TIMING, reset, fin de session) et après 2000 cycles sans accès :
-l'ordre vu par le firmware est inchangé. Le drain nIRQ qui suit chaque écriture MIA
-ne vide pas le tampon (le firmware n'a pas encore vu ces écritures). Mesuré sur la
-Feather : sauvegarde à chaud = 17103 octets en 85 WRN, menu « Return » en ~4 s au
-lieu d'une à deux minutes. `LOCI_HW_NO_POST=1` revient à une requête par écriture.
+**Posted writes (2.29.3).** Writes to the XRAM ports `$03A4` (RW0) and `$03A8` (RW1)
+return nothing to the 6502: `--loci-hw` buffers them and sends them in packets of 256
+(`WRN`, done in order by the firmware). The buffer is flushed before any other bridge
+request (`$03xx` read, write to another address, ROM, BAL, LINES, button, HID,
+TIMING, reset, end of session) and after 2000 cycles without access: the order seen
+by the firmware is unchanged. The nIRQ drain that follows each MIA write does not
+flush the buffer (the firmware has not seen those writes yet). Measured on the
+Feather: warm save = 17103 bytes in 85 WRN, « Return » menu in ~4 s instead of one to
+two minutes. `LOCI_HW_NO_POST=1` goes back to one request per write.
 
-**Lectures groupées (2.30.0, firmware avec `caps & 0x20` = `LUP_CAP_XSTREAM`).** À la
-2e lecture consécutive d'une porte, `XPEEK` rend d'avance les 256 octets que rendraient
-les lectures suivantes, sans rien modifier côté firmware ; elles sont servies sans
-requête. Avant toute autre requête au pont, à l'épuisement (enchaîné aussitôt sur un
-nouveau `XPEEK`) et après 2000 cycles sans accès, `XADV` rejoue côté firmware les k
-lectures servies : la cartouche est dans l'état exact de k lectures du 6502. Pas de
-tampon si STEP = 0 (fenêtre clavier HID réécrite en tâche de fond) ; pas de nouvel
-essai avant une écriture des registres `$03A4`-`$03AB`. Le drain nIRQ ne solde pas un
-flux en cours. Mesuré sur la Feather (firmware reflashé, caps `3F`) : RETURN → BASIC
-intact en ~4 s (17075 octets servis en 82 `XPEEK`) ; cycle complet BASIC → F8 → menu →
-RETURN → BASIC en moins de 10 s. Firmware sans `XSTREAM` (caps `1F`) : lectures
-unitaires, ~12 s. `LOCI_HW_NO_XSTREAM=1` : lectures unitaires. Compilé avec un client
-loci-usb antérieur (sans `LUP_CAP_XSTREAM`), le code est simplement absent.
+**Grouped reads (2.30.0, firmware with `caps & 0x20` = `LUP_CAP_XSTREAM`).** On the 2nd
+consecutive read of a port, `XPEEK` returns in advance the 256 bytes the next reads
+would return, without changing anything on the firmware side; they are served without
+a request. Before any other bridge request, when exhausted (immediately followed by a
+new `XPEEK`) and after 2000 cycles without access, `XADV` replays on the firmware side
+the k served reads: the cartridge is in the exact state of k reads of the 6502. No
+buffer if STEP = 0 (HID keyboard window rewritten in the background); no new attempt
+before a write to the `$03A4`-`$03AB` registers. The nIRQ drain does not settle a
+stream in progress. Measured on the Feather (reflashed firmware, caps `3F`): RETURN →
+BASIC intact in ~4 s (17075 bytes served in 82 `XPEEK`); full cycle BASIC → F8 → menu
+→ RETURN → BASIC in under 10 s. Firmware without `XSTREAM` (caps `1F`): one request
+per read, ~12 s. `LOCI_HW_NO_XSTREAM=1`: one request per read. Built against an older
+loci-usb client (without `LUP_CAP_XSTREAM`), the code is simply absent.
 
-Les écritures postées et les lectures groupées ne concernent que l'**ancien firmware
-LOCI** (RAM d'extension et portes `$03A4`/`$03A8`, caps `3F`). **lucia-fw** (caps
-`1E`, firmware actuel de la Feather) n'a ni XRAM ni ces portes : sa page `$03xx` ne
-contient que Microdisc, cassette, son et état Lucia, et son API passe par la BAL
-(page `$FF`). Avec lucia-fw, ces deux mécanismes ne servent jamais.
+Posted writes and grouped reads only concern the **old LOCI firmware** (extension
+RAM and the `$03A4`/`$03A8` ports, caps `3F`). **lucia-fw** (caps `1E`, the Feather's
+current firmware) has neither XRAM nor these ports: its `$03xx` page only holds
+Microdisc, tape, sound and Lucia status, and its API goes through the BAL (page `$FF`).
+With lucia-fw, these two mechanisms are never used.
 
 ### Poll en attente (`--loci-hw`, 2.30.1)
 
-Quand le 6502 ne touche pas LOCI, `--loci-hw` relève quand même nIRQ, nRESET et
-nROMDIS par un `LINES` (fronts asynchrones du firmware). Avant 2.30.1 : un `LINES`
-tous les 1000 cycles sans accès (`LOCI_HW_IDLE_POLL`), soit ~1000 allers-retours USB
-par seconde Oric. Mesuré sur la Feather (2000 requêtes) : `LINES` médiane 122 µs,
-moyenne 215 µs, p99 2,0 ms ; sans `--realtime`, l'émulation plafonnait à ~2× le temps
-réel même en BASIC. Depuis 2.30.1, il faut AUSSI `LOCI_HW_IDLE_POLL_US` µs de temps
-réel (1000 par défaut) depuis le poll précédent : le firmware vit en temps réel, le
-relever plus souvent n'apporte rien. Mesuré : 20 M cycles en headless 9,65 s → 4,69 s
-(dont ~1,6 s de démarrage), 20 997 → 3 207 requêtes, écran final identique ;
-`--realtime` inchangé (5 M cycles en ~5 s). Contrepartie : la latence d'un front
-asynchrone se borne en temps réel (~1 ms), plus en cycles Oric ; sous `--realtime`, où
-l'émulation avance par rafales d'une trame, elle peut atteindre une trame (20 ms Oric).
-Les fronts nés d'un accès (`reflect_nirq` après une lecture/écriture `$03xx`) et le drain
-par trame ne sont pas concernés. `LOCI_HW_IDLE_POLL_US=0` : seuil en cycles seul (2.30.0).
+When the 6502 does not touch LOCI, `--loci-hw` still samples nIRQ, nRESET and
+nROMDIS with a `LINES` (asynchronous edges from the firmware). Before 2.30.1: one `LINES`
+every 1000 cycles without access (`LOCI_HW_IDLE_POLL`), i.e. ~1000 USB round trips per
+Oric second. Measured on the Feather (2000 requests): `LINES` median 122 µs, mean
+215 µs, p99 2.0 ms; without `--realtime`, emulation topped out at ~2× real time even in
+BASIC. Since 2.30.1, `LOCI_HW_IDLE_POLL_US` µs of real time (1000 by default) must ALSO
+have elapsed since the previous poll: the firmware lives in real time, sampling it more
+often brings nothing. Measured: 20 M cycles headless 9.65 s → 4.69 s (including ~1.6 s
+of start-up), 20,997 → 3,207 requests, identical final screen; `--realtime` unchanged
+(5 M cycles in ~5 s). Trade-off: the latency of an asynchronous edge is now bounded in
+real time (~1 ms), no longer in Oric cycles; under `--realtime`, where emulation runs in
+one-frame bursts, it can reach one frame (20 ms Oric). Edges caused by an access
+(`reflect_nirq` after a `$03xx` read/write) and the per-frame drain are not affected.
+`LOCI_HW_IDLE_POLL_US=0`: cycle threshold only (2.30.0).
 
-### Piège BASIC : `POKE` lit avant d'écrire (2.31.14)
+### BASIC pitfall: `POKE` reads before writing (2.31.14)
 
-La ROM écrit un `POKE` par `STA ($33),Y`. Sur un 6502 NMOS, cette instruction **lit**
-l'adresse cible au 5e cycle avant d'y écrire au 6e (Phosphoric émule ce cycle, et une
-vraie LOCI le voit aussi). Sur les registres de la MIA qui réagissent à la lecture :
-- `POKE #3AC,v` (xstack) dépile d'abord un octet : quatre `POKE` de 10, 20, 30, 40
-  laissent seulement 40 ;
-- `POKE #3A4,v` (fenêtre RW0) avance d'abord l'adresse : avec un pas de 1, les octets
-  tombent une adresse sur deux.
-Pour ces registres, écrire en assembleur avec un adressage absolu (`STA $03AC`), qui
-n'a pas de lecture préalable. `PEEK` (`LDA ($33),Y` sans franchissement de page) ne
-lit qu'une fois. Vérifié avec `tools/loci_compare.py` (scénarios `xstack`,
-`xstack-poke`, `xram`).
+The ROM writes a `POKE` with `STA ($33),Y`. On an NMOS 6502 this instruction **reads**
+the target address on its 5th cycle before writing it on the 6th (Phosphoric emulates
+that cycle, and a real LOCI sees it too). On the MIA registers that react to a read:
+- `POKE #3AC,v` (xstack) first pops a byte: four `POKE`s of 10, 20, 30, 40 leave
+  only 40;
+- `POKE #3A4,v` (RW0 window) first advances the address: with a step of 1, the bytes
+  land every other address.
+For these registers, write in assembly with absolute addressing (`STA $03AC`), which
+has no prior read. `PEEK` (`LDA ($33),Y` with no page crossing) reads only once.
+Checked with `tools/loci_compare.py` (scenarios `xstack`, `xstack-poke`, `xram`),
+including on the real LOCI firmware.
 
-### Comparer à une vraie LOCI (`tools/loci_compare.py`, 2.31.14)
+### Comparing with a real LOCI (`tools/loci_compare.py`, 2.31.14)
 
-`tools/loci_compare.py` joue les mêmes scénarios sous `--control` avec deux jeux
-d'options (`--a=--loci` et `--b=--loci-hw /dev/ttyACM0` par défaut) et compare les
-valeurs lues par BASIC, la ligne 0 et le mode vidéo : registres (`$0319`, `$03A0`,
-`$03B2`), XRAM par RW0, xstack, bouton Action puis RETURN. Hors `make tests` : il faut
-une Feather avec le vrai firmware LOCI (pas lucia-feather).
+`tools/loci_compare.py` plays the same scenarios under `--control` with two sets of
+options (`--a=--loci` and `--b=--loci-hw /dev/ttyACM0` by default) and compares the
+values read by BASIC, line 0 and the video mode: registers (`$0319`, `$03A0`,
+`$03B2`), XRAM through RW0, xstack, Action button then RETURN. Not part of
+`make tests`: it needs a Feather with the real LOCI firmware (not lucia-feather).
 
-Passé le 2026-11-01 sur la Feather (vrai firmware LOCI, caps `3F`) : xstack identique,
-y compris `40 0 0 0` par `POKE` (le piège ci-dessus vaut sur le vrai firmware) ; XRAM
-identique sur les octets écrits (les autres gardent le contenu non initialisé de la
-carte) ; bouton puis RETURN identiques, à la version de la ROM menu près. Deux points :
-- **Appui à chaud** : le firmware ne sauvegarde la session que s'il a lui-même démarré
-  la machine (`main_active()` dans `ext.c`), donc après « Boot » depuis son menu. Un
-  Oric démarré directement sur sa ROM BASIC prend un appui à froid (nRESET, menu sans
-  RETURN) — comme un vrai Oric qui n'aurait pas démarré par la LOCI.
-- **`$03A3` sous `--loci-hw` / `--loci-emu`** (corrigé en 2.31.14) : le PIO du firmware
-  lit les octets que l'ULA tire du bus ; le pont USB et la co-simulation ne transportent
-  que les accès du 6502. Le firmware ne voyait jamais le motif, sauvait « texte 60 Hz »,
-  et l'Oric émulé restait en 60 Hz après RETURN. Phosphoric répond à sa place quand il
-  rend 0 (même calcul que la LOCI intégrée).
-- **Console `$03A0`/`$03A2`** (corrigé en 2.31.14) : le firmware sert la lecture avec
-  la valeur d'avant puis met le registre à jour. Après un reset, la 1re lecture de
-  `$03A0` vaut 0 et les suivantes `$80` (mesuré : 00 80 80) ; un octet reçu est chargé
-  dans `$03A2` par la lecture de `$03A0` et servi à la lecture suivante de `$03A2`.
+Run on 2026-11-01 on the Feather (real LOCI firmware, caps `3F`): xstack identical,
+including `40 0 0 0` through `POKE`; XRAM identical on the written bytes (the others
+keep the board's uninitialised content); registers identical; button then RETURN
+identical, apart from the menu ROM version. Points found:
+- **Warm press**: the firmware only saves the session if it started the machine
+  itself (`main_active()` in `ext.c`), i.e. after "Boot" from its menu. An Oric
+  started directly on its BASIC ROM gets a cold press (nRESET, menu without RETURN)
+  — like a real Oric that did not start through the LOCI.
+- **`$03A3` under `--loci-hw` / `--loci-emu`** (fixed in 2.31.14): the firmware's PIO
+  reads the bytes the ULA fetches from the bus; the USB bridge and the co-simulation
+  only carry the 6502's accesses. The firmware never saw the pattern, saved "text
+  60 Hz", and the emulated Oric stayed at 60 Hz after RETURN. Phosphoric answers in its
+  place when it returns 0 (same computation as the integrated LOCI).
+- **Console `$03A0`/`$03A2`** (fixed in 2.31.14): the firmware serves the read with
+  the previous value then updates the register. After a reset, the first read of
+  `$03A0` is 0 and the following ones `$80` (measured: 00 80 80); a received byte is
+  loaded into `$03A2` by the read of `$03A0` and served on the next read of `$03A2`.
 
-### Bit « front en attente » (`--loci-hw`, 2.31.13)
+### "Edge pending" bit (`--loci-hw`, 2.31.13)
 
-Après chaque accès `$03xx` à la LOCI, Phosphoric relève nIRQ par un `LINES`
-(`reflect_nirq`) : le firmware peut avoir pulsé nIRQ en réaction à l'accès. Depuis le
-protocole loci-usb 80ebb0b (firmware lucia-feather c29ee4d), la cartouche annonce
-`LUP_CAP_EDGE_FLAG` (`0x40`, caps `5E`) et chaque réponse porte `LUP_F_EDGE` (`0x10`)
-quand un front nIRQ (activation) ou nRESET (relâchement) attend d'être relevé. Le bit est
-échantillonné APRÈS l'accès : un front provoqué par l'accès est déjà dans sa réponse.
-Phosphoric n'envoie alors le `LINES` d'après accès que si le bit a été vu depuis le
-précédent (y compris dans un octet de `RDN`), et au moins une fois par trame (19 968
-cycles). Les polls en attente restent inconditionnels : sans accès, pas de réponse,
-donc pas de bit — ce sont eux qui relèvent les fronts asynchrones. Mesuré sur la
-Feather, 20 M cycles en headless : 3 860 → 2 540 requêtes (1 002 `LINES` évités),
-5,4 → 4,65 s. `LOCI_HW_NO_EDGE=1` rend le comportement d'avant ; firmware sans la cap :
-inchangé. Non vérifié sur carte : un front nIRQ Microdisc ou ACIA (pas d'Oric) — seuls
-les fronts nRESET l'ont été par la session loci-usb.
+After each `$03xx` access to the LOCI, Phosphoric collects nIRQ with a `LINES`
+(`reflect_nirq`): the firmware may have pulsed nIRQ in reaction to the access. Since
+the loci-usb protocol 80ebb0b (firmware lucia-feather c29ee4d), the cartridge announces
+`LUP_CAP_EDGE_FLAG` (`0x40`, caps `5E`) and each response carries `LUP_F_EDGE` (`0x10`)
+when an nIRQ (assertion) or nRESET (release) edge is waiting to be collected. The bit
+is sampled AFTER the access: an edge caused by the access is already in its response.
+Phosphoric then only sends the post-access `LINES` if the bit was seen since the
+previous one (including in an `RDN` byte), and at least once per frame (19,968
+cycles). Idle polls stay unconditional: with no access there is no response, hence no
+bit — they are what collects asynchronous edges. Measured on the Feather, 20 M cycles
+headless: 3,860 → 2,540 requests (1,002 `LINES` avoided), 5.4 → 4.65 s.
+`LOCI_HW_NO_EDGE=1` restores the previous behaviour; firmware without the cap:
+unchanged. Not verified on the board: an nIRQ edge from the Microdisc or the ACIA (no
+Oric) — only nRESET edges were, by the loci-usb session.
 
 ### Boîte aux lettres BAL de loci-fw (`--loci-hw`)
 
-Avec le firmware **loci-fw** (variante LOCI_USB, caps `FIRMWARE`), le 6502 appelle
-l'API en écrivant en page `$FF` (`$FF00-$FFCF`). `--loci-hw` transmet ces écritures
-(`WR`) ; une écriture captée revient avec `LUP_F_SERVED`, l'octet est recopié dans
-le cache ROM sans le recharger. Un octet non nul en `$FF00` lance une commande :
-Phosphoric relit `$FF00` (`RD` non caché) jusqu'à 0, ce qui évite d'attendre le
-prochain `LINES` (10 s au plus, `LOCI_HW_BAL_TIMEOUT_MS`). Exception : le groupe 2
-(Console) n'est jamais traité par le firmware, c'est le kernel 6502 qui l'exécute
-(ADR-004 de loci-fw) ; Phosphoric ne l'attend donc pas. Le dispatcher change `gen8` en rendant ses résultats, le cache
-ROM est alors périmé. L'ancien firmware ne capte jamais ces écritures : rien ne
-change pour lui. Bilan en fin de session : écritures captées, commandes.
+With the **loci-fw** firmware (LOCI_USB variant, caps `FIRMWARE`), the 6502 calls
+the API by writing to page `$FF` (`$FF00-$FFCF`). `--loci-hw` forwards these writes
+(`WR`); a captured write comes back with `LUP_F_SERVED`, and the byte is copied into
+the ROM cache without reloading it. A non-zero byte at `$FF00` launches a command:
+Phosphoric re-reads `$FF00` (uncached `RD`) until it is 0, which avoids waiting for the
+next `LINES` (10 s at most, `LOCI_HW_BAL_TIMEOUT_MS`). Exception: group 2
+(Console) is never handled by the firmware, the 6502 kernel executes it
+(loci-fw ADR-004); Phosphoric therefore does not wait for it. The dispatcher changes `gen8` when returning its results, and the ROM
+cache is then stale. The old firmware never captures these writes: nothing
+changes for it. End-of-session summary: captured writes, commands.
 
-**Cache ROM par pages (2.31.0).** Le cache de la ROM servie (`$C000-$FFFF`) est
-découpé en 64 pages de 256 octets, rechargées chacune à la demande (`RDN` de 256
-octets) quand le 6502 la lit. Une nouvelle génération (commande BAL, appel d'API,
-nROMDIS, front nRESET) périme toutes les pages, mais seules celles qui sont relues
-reviennent par l'USB. Avant 2.31.0, chaque changement de génération rechargeait la
-banque entière : 16 Ko de données + 16 Ko de drapeaux, 64,6 ms mesurés sur la Feather.
-Une génération qui change pendant la lecture d'une page passe par le même chemin que
-les autres (report après `$03AF` compris). Mesuré sur la Feather (lucia-fw, caps
-`1E`), démo de sprites `RN DEMO2` tapée à 800 000 cycles, 2,5 M cycles, 729
-commandes BAL : **55,97 s → 12,92 s**, 730 rechargements de la banque → 2675 pages,
-capture d'écran identique à l'octet. Démarrage seul : temps inchangé (34 pages au lieu
-de 3 banques). Correctif proposé par la session lucia (`loci-usb`,
-`phosphoric/patches/0001-cache-rom-par-pages.patch`). Bilan en fin de session : pages
-rechargées.
+**Paged ROM cache (2.31.0).** The cache of the served ROM (`$C000-$FFFF`) is split
+into 64 pages of 256 bytes, each reloaded on demand (a 256-byte `RDN`) when the 6502
+reads it. A new generation (BAL command, API call, nROMDIS, nRESET edge) makes every
+page stale, but only the pages read again come back over USB. Before 2.31.0, every
+generation change reloaded the whole bank: 16 KB of data + 16 KB of flags, 64.6 ms
+measured on the Feather. A generation that changes while a page is being read goes
+through the same path as the others (including the deferral after `$03AF`). Measured
+on the Feather (lucia-fw, caps `1E`), sprite demo `RN DEMO2` typed at 800,000 cycles,
+2.5 M cycles, 729 BAL commands: **55.97 s → 12.92 s**, 730 bank reloads → 2675 pages,
+byte-identical screenshot. Start-up alone: time unchanged (34 pages instead of 3
+banks). Fix proposed by the lucia session (`loci-usb`,
+`phosphoric/patches/0001-cache-rom-par-pages.patch`). End-of-session summary: pages
+reloaded.
 
 ### Course Φ2 sur la LOCI-USB (`--loci-hw`)
 
-Avec `--loci-hw`, chaque accès `$03xx` est un aller-retour USB pendant lequel le
-6502 émulé est figé : la contrainte Φ2 d'une vraie LOCI (le port d'extension n'a
-pas de RDY, la donnée doit être posée avant que le 6502 la capture) disparaît. Quand
-le firmware annonce `caps & LUP_CAP_TIMING` (loci-usb, commandes TIMING/RDT/WRT),
-Phosphoric la reconstitue à partir des cycles du cœur 1 mesurés au SysTick (`serve`,
-`act`), sur une chronologie en ns dont l'origine est le front descendant de Φ2 :
+With `--loci-hw`, every `$03xx` access is a USB round trip during which the
+emulated 6502 is frozen: the Φ2 constraint of a real LOCI (the expansion port has
+no RDY, the data must be driven before the 6502 captures it) disappears. When
+the firmware advertises `caps & LUP_CAP_TIMING` (loci-usb, TIMING/RDT/WRT commands),
+Phosphoric reconstructs it from the core 1 cycles measured with SysTick (`serve`,
+`act`), on a ns timeline whose origin is the falling edge of Φ2:
 
-| Étape | Instant | Source |
+| Step | Instant | Source |
 |---|---|---|
-| mot d'action dans la FIFO | (22 + tior) ticks PIO + 2 cycles sys | comptes de `mia.pio` (estimés) |
-| donnée prête (DMA déclenchée) | + `LOCI_HW_POLL_NS` (0, non mesuré) + `serve` | SysTick |
-| donnée sur le bus | max(prête, montée de Φ2) + (3 + tiod) ticks | `mia_io_read` (estimé) |
-| échéance du 6502 | période − `LOCI_HW_TDSR_NS` (100) | fiche 6502 à 1 MHz |
+| action word in the FIFO | (22 + tior) PIO ticks + 2 sys cycles | `mia.pio` counts (estimated) |
+| data ready (DMA triggered) | + `LOCI_HW_POLL_NS` (0, not measured) + `serve` | SysTick |
+| data on the bus | max(ready, Φ2 rise) + (3 + tiod) ticks | `mia_io_read` (estimated) |
+| 6502 deadline | period − `LOCI_HW_TDSR_NS` (100) | 6502 datasheet at 1 MHz |
 
-- **Tick PIO** = 1 / (Φ2cfg × 30), où Φ2cfg est le réglage du firmware (**4000 kHz
-  par défaut**, `cpu.c`) : 8,33 ns. Ce n'est pas l'horloge de l'Oric.
-- **Φ2 de l'Oric** : période 1 / `LOCI_HW_PHI2_KHZ` (1000), haut le dernier tiers
-  (`LOCI_HW_PHI2_HIGH_NS`, période / 3 : l'ULA donne 2/3 bas, 1/3 haut).
-- **Lecture en retard** : la donnée arrive après l'échéance. **Iopage périmé** : un
-  accès `$03xx` arrive moins de `act` cycles 6502 après le précédent (granularité :
-  l'instruction).
+- **PIO tick** = 1 / (Φ2cfg × 30), where Φ2cfg is the firmware setting (**4000 kHz
+  by default**, `cpu.c`): 8.33 ns. This is not the Oric's clock.
+- **Oric Φ2**: period 1 / `LOCI_HW_PHI2_KHZ` (1000), high during the last third
+  (`LOCI_HW_PHI2_HIGH_NS`, period / 3: the ULA gives 2/3 low, 1/3 high).
+- **Late read**: the data arrives after the deadline. **Stale iopage**: a
+  `$03xx` access arrives less than `act` 6502 cycles after the previous one (granularity:
+  the instruction).
 
-Détection seule par défaut : journal des 10 premiers cas + bilan en fin de session
-(marge minimale en ns). `LOCI_HW_FAITHFUL=1` rend l'open-bus sur une lecture en
-retard. Mesures sur la Feather 5723 : serve 23 cycles → donnée à ≈ 708 ns, juste
-après la montée de Φ2, marge ≈ 190 ns ; act 61-118 cycles en lecture, 429 pour une
-écriture RAMX (3,6 µs : un accès `$03xx` moins de 4 cycles 6502 après lit un iopage
-périmé). Les comptes PIO et le temps d'établissement du 6502 à 2 MHz de l'Oric sont
-des estimations, à confirmer par une mesure sur bus réel.
+Detection only by default: log of the first 10 cases + end-of-session summary
+(minimum margin in ns). `LOCI_HW_FAITHFUL=1` returns open-bus on a late
+read. Measurements on the Feather 5723: serve 23 cycles → data at ≈ 708 ns, just
+after the Φ2 rise, margin ≈ 190 ns; act 61-118 cycles for a read, 429 for a
+RAMX write (3.6 µs: a `$03xx` access less than 4 6502 cycles later reads a stale
+iopage). The PIO counts and the setup time of the Oric's 6502 at 2 MHz are
+estimates, to be confirmed by a measurement on a real bus.
 
-**Limite (vérifiée le 2026-11-01, 2.31.11)** : ces mesures n'ont de sens qu'avec
-un firmware dont l'`act_loop` sert le bus par le PIO de la MIA (le firmware LOCI
-réel compilé en LOCI-USB, d'où viennent les chiffres ci-dessus). Avec
-**lucia-feather** (firmware actuel de la Feather, caps `1E`, variante `LOCI_USB` de
-`src/bal/bal.c`), il n'y a ni bus Oric ni PIO dans la boucle : chaque accès est un
-message USB que le cœur 0 dépose dans une boîte aux lettres, traité en logiciel par
-le cœur 1. `serve` y mesure la lecture d'un octet en mémoire et `act` la durée du
-gestionnaire : ni l'un ni l'autre ne décrit la chronologie Φ2 → PIO → DMA → bus. Le
-bilan « course Φ2 » de `--loci-hw` ne calibre donc rien avec ce firmware. Calibrer
-la course demande une vraie LOCI sur un vrai Oric et un analyseur logique (Φ2, D0-D7,
-R/W), ou au minimum le firmware LOCI réel sur la Feather câblée à un bus.
+**Limit (checked on 2026-11-01, 2.31.11)**: these measurements only make sense
+with a firmware whose `act_loop` serves the bus through the MIA PIO (the real
+LOCI firmware built as LOCI-USB, where the figures above come from). With
+**lucia-feather** (the Feather's current firmware, caps `1E`, `LOCI_USB` variant of
+`src/bal/bal.c`), there is neither an Oric bus nor a PIO in the loop: each access is
+a USB message that core 0 drops into a mailbox, handled in software by core 1.
+`serve` there measures a memory read and `act` the handler's duration: neither
+describes the Φ2 → PIO → DMA → bus chronology. The `--loci-hw` "Φ2 race" summary
+therefore calibrates nothing with this firmware. Calibrating the race needs a real
+LOCI on a real Oric and a logic analyser (Φ2, D0-D7, R/W), or at least the real
+LOCI firmware on the Feather wired to a bus.
 
-## Divergences connues (hors périmètre)
+## Known discrepancies (out of scope)
 
-- Flash interne LittleFS non émulée en tant que telle (fichiers LFS 19-20,
-  répertoires 32+, errno `128-lfs_err`, volume « 0: » réel) — le flash root
-  joue ce rôle avec la sémantique FAT.
-- Répertoire dev « 0 » du firmware, BUSY observable pendant une op longue. Le
-  détecteur de motif ULA (`$03A3`) est émulé de façon fonctionnelle depuis
-  2.31.7 (réponse calculée depuis le mode ULA, pas d'adresses de blanking).
-- Détection USB au démarrage uniquement (pas de hot-plug).
-- Le `dsk_fdc` du LOCI reste en timing FDC rapide — fidèle : sur le vrai
-  matériel son « lecteur » est le RP2040 + SD, sans mécanique (le Microdisc,
-  lui, est en timing mécanique réel par défaut).
+- The LittleFS internal flash is not emulated as such (LFS files 19-20,
+  directories 32+, errno `128-lfs_err`, real "0:" volume) — the flash root
+  plays that role with FAT semantics.
+- The firmware's dev directory "0", BUSY observable during a long op. The ULA
+  pattern detector (`$03A3`) has been emulated functionally since 2.31.7 (answer
+  computed from the ULA mode, no blanking addresses).
+- USB detection at startup only (no hot-plug).
+- The LOCI's `dsk_fdc` keeps fast FDC timing — faithful: on real
+  hardware its "drive" is the RP2040 + SD, with no mechanics (the Microdisc,
+  on the other hand, uses real mechanical timing by default).
 
-## Pour aller plus loin
+## Going further
 
-- **Article de vulgarisation** — [Cinq extensions expérimentales pour la carte
-  LOCI](articles/loci-extensions-tachibana.md) (ABI *fastcall*, carte des registres
-  MIA, schémas) : coprocesseur `$A9`, ACIA fiable `$AA`, banque `$A7`, streamer
-  `$A8`, modèle de *tearing*. Ces extensions sont **expérimentales, opt-in et hors
-  `main`** (branche `experiment/loci-coproc-acia-reliable`).
-- **Architecture interne** — [`architecture/loci-glue.md`](architecture/loci-glue.md),
+- **Popular-science article** — [Five experimental extensions for the LOCI
+  board](articles/loci-extensions-tachibana.md) (*fastcall* ABI, MIA register map,
+  diagrams): `$A9` coprocessor, reliable ACIA `$AA`, `$A7` bank, `$A8`
+  streamer, *tearing* model. These extensions are **experimental, opt-in and not in
+  `main`** (branch `experiment/loci-coproc-acia-reliable`).
+- **Internal architecture** — [`architecture/loci-glue.md`](architecture/loci-glue.md),
   [`architecture/phi2-bus-timing.md`](architecture/phi2-bus-timing.md).

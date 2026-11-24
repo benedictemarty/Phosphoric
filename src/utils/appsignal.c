@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file appsignal.c
- * @brief Gestion des signaux d'arrêt — implémentation.
+ * @brief Shutdown-signal handling — implementation.
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US1, Sprint 125), à l'identique.
+ * Extracted from main.c (Epic 7 / US1, Sprint 125), unchanged.
  */
 #include "utils/appsignal.h"
 

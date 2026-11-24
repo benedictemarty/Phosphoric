@@ -336,8 +336,8 @@ bool mea8000_speaking(const mea8000_t* m)
 }
 
 /* ── Section .ost « MEA » ─────────────────────────────────────────────────── */
-/* version + état(1) + buf(4) + bufpos/cont/roe(3) + 3 × u16 + 2 × i16 + i32 + u32
- * + 4 filtres × (4 × u16 + 2 × i32) + 4 × u16 + u8 + anneau + 2 × u32 + i32 + u32 + i16 */
+/* version + state(1) + buf(4) + bufpos/cont/roe(3) + 3 × u16 + 2 × i16 + i32 + u32
+ * + 4 filters × (4 × u16 + 2 × i32) + 4 × u16 + u8 + ring + 2 × u32 + i32 + u32 + i16 */
 #define MEA8000_SAVE_SIZE (1 + 1 + 4 + 3 + 6 + 4 + 4 + 4 + 4 * (8 + 8) + 8 + 1 \
                            + MEA8000_RING_SIZE * 2 + 8 + 4 + 4 + 2)
 
@@ -361,7 +361,7 @@ bool mea8000_save(const mea8000_t* m, FILE* fp)
     bin_w_u16(fp, m->last_pitch); bin_w_u16(fp, m->pitch);
     bin_w_u8(fp, m->noise);
     for (int i = 0; i < MEA8000_RING_SIZE; i++) bin_w_i16(fp, m->ring[i]);
-    bin_w_u32(fp, m->rhead); bin_w_u32(fp, m->rtail);   /* compteurs libres */
+    bin_w_u32(fp, m->rhead); bin_w_u32(fp, m->rtail);   /* free-running counters */
     bin_w_i32(fp, m->cycle_acc);
     bin_w_u32(fp, m->resample_acc);
     bin_w_i16(fp, m->last_out);
@@ -375,7 +375,7 @@ void mea8000_load(mea8000_t* m, FILE* fp, uint32_t size)
     uint8_t st = bin_r_u8(fp);
     m->state = (st <= MEA8000_SLOWING) ? (mea8000_state_t)st : MEA8000_STOPPED;
     if (fread(m->buf, 1, sizeof(m->buf), fp) != sizeof(m->buf)) memset(m->buf, 0, sizeof(m->buf));
-    m->bufpos = bin_r_u8(fp);                      /* 0..4 (4 = trame complète) */
+    m->bufpos = bin_r_u8(fp);                      /* 0..4 (4 = complete frame) */
     if (m->bufpos > 4) m->bufpos = 4;
     m->cont = bin_r_u8(fp); m->roe = bin_r_u8(fp);
     m->framelength = bin_r_u16(fp); m->framepos = bin_r_u16(fp); m->framelog = bin_r_u16(fp);

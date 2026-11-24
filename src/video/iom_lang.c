@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file iom_lang.c
- * @brief Langue du menu F1 : table français → anglais. Voir iom_lang.h.
+ * @brief F1 menu language: French → English table. See iom_lang.h.
  * @author bmarty <bmarty@mailo.com>
  *
- * Une entrée = la chaîne française exacte telle qu'affichée ou passée à
- * snprintf (mêmes spécificateurs %, dans le même ordre, côté anglais).
+ * One entry = the exact French string as displayed or passed to snprintf
+ * (same % conversions, in the same order, on the English side).
  */
 #include "video/iom_lang.h"
 
@@ -15,7 +15,7 @@
 typedef struct { const char* fr; const char* en; } iom_tr_t;
 
 static const iom_tr_t k_tr[] = {
-    /* ── En-tête, pied, boutons ── */
+    /* ── Header, footer, buttons ── */
     { "Périphériques E/S   v%s", "I/O devices   v%s" },
     { "Redémarrer (RESET)", "Restart (RESET)" },
     { "Enregistrer la configuration", "Save configuration" },
@@ -42,7 +42,7 @@ static const iom_tr_t k_tr[] = {
     { "effacer", "clear" },
     { "annuler", "cancel" },
 
-    /* ── Disquettes et cassette ── */
+    /* ── Floppies and tape ── */
     { "Disquettes — %s", "Floppies — %s" },
     { "Disquettes (pas d'interface disque)", "Floppies (no disk interface)" },
     { "Disquettes — menu du LOCI (F8)", "Floppies — LOCI menu (F8)" },
@@ -76,7 +76,7 @@ static const iom_tr_t k_tr[] = {
     { "%u Ko", "%u KB" },
     { "%s : %s", "%s: %s" },
 
-    /* ── Périphériques ── */
+    /* ── Devices ── */
     { "Périphériques", "Devices" },
     { "Instantanés", "Snapshots" },
     { "enregistrer ou reprendre la machine", "save or resume the machine" },
@@ -94,7 +94,7 @@ static const iom_tr_t k_tr[] = {
     { "CLOAD par la ROM corrigée", "CLOAD through the patched ROM" },
     { "au lancement", "at launch" },
 
-    /* ── Cartes : liste et page d'une carte ── */
+    /* ── Cards: list and card page ── */
     { "Cartes d'extension", "Expansion cards" },
     { "Cartes d'extension — Entrée : choisir, régler", "Expansion cards — Enter: choose, set up" },
     { "Cartes d'extension (lecture seule)", "Expansion cards (read-only)" },
@@ -138,7 +138,7 @@ static const iom_tr_t k_tr[] = {
     { "Aucun changement de cartes", "No card change" },
     { "Version web : les cartes se choisissent au lancement", "Web version: cards are chosen at launch" },
     { "Adresse d'E/S hexadécimale entre 0300 et 03FF", "Hexadecimal I/O address between 0300 and 03FF" },
-    /* Conflits (cards.c) */
+    /* Conflicts (cards.c) */
     { "%s et %s se chevauchent en $%04X", "%s and %s overlap at $%04X" },
     { "LOCI : mode « %s » absent de ce binaire", "LOCI: mode « %s » not in this binary" },
     { "LOCI firmware : indiquer le fichier ELF du firmware", "LOCI firmware: give the firmware ELF file" },
@@ -148,7 +148,7 @@ static const iom_tr_t k_tr[] = {
     { "Modem LOCI réel : aucun picowifi USB détecté (indiquer le port)",
       "Real LOCI modem: no USB picowifi detected (give the port)" },
 
-    /* ── Fiches des cartes (cards/card_*.c) ── */
+    /* ── Card pages (cards/card_*.c) ── */
     { "Contrôleur de disquettes Oric (WD1793), 4 lecteurs 3\". Les disquettes s'insèrent ensuite "
       "dans la section Disquettes du menu.",
       "Oric floppy controller (WD1793), 4 3\" drives. Floppies are then inserted in the Floppies "

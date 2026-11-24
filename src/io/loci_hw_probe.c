@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_hw_probe.c
- * @brief Reconnaissance d'une LOCI-USB : protocole loci-usb + firmware LOCI
- *        ('L' en $0319). Voir include/io/loci_hw_probe.h.
+ * @brief Recognising a LOCI-USB: loci-usb protocol + LOCI firmware ('L' at
+ *        $0319). See include/io/loci_hw_probe.h.
  * @author bmarty <bmarty@mailo.com>
  *
- * Compilé partout ; le client loci-usb n'est utilisé que si le binaire contient
- * le backend LOCI-USB (LOCI_BE_HAS_HW, Makefile), sinon LOCI_PROBE_NO_BACKEND.
+ * Built everywhere; the loci-usb client is only used when the binary contains
+ * the LOCI-USB backend (LOCI_BE_HAS_HW, Makefile), LOCI_PROBE_NO_BACKEND otherwise.
  */
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
 #define _DEFAULT_SOURCE   /* readlink, DT_* */
@@ -45,7 +45,7 @@ int loci_hw_port_user(const char* dev) {
         if (pid <= 0 || pid == self) continue;
         char fdpath[64];
         snprintf(fdpath, sizeof(fdpath), "/proc/%d/fd", pid);
-        DIR* fds = opendir(fdpath);   /* processus d'autres utilisateurs : illisible, ignoré */
+        DIR* fds = opendir(fdpath);   /* other users' processes: unreadable, skipped */
         if (!fds) continue;
         struct dirent* f;
         while ((f = readdir(fds)) != NULL) {
@@ -66,7 +66,7 @@ int loci_hw_port_user(const char* dev) {
 }
 
 #ifdef LOCI_BE_HAS_HW
-/* PING déjà fait par lup_open/lup_open_fd : lit le marqueur LOCI. */
+/* PING already done by lup_open/lup_open_fd: reads the LOCI marker. */
 static loci_probe_result_t check_id(lup_client_t* c, loci_probe_info_t* info) {
     uint8_t flags = 0;
     info->proto = c->proto;

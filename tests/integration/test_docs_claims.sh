@@ -1,17 +1,17 @@
 #!/bin/sh
-# test_docs_claims.sh — garde-fou sur les allégations de précision temporelle.
+# test_docs_claims.sh — safeguard on timing-accuracy claims.
 #
-# Le projet a communiqué « cycle-accurate » alors que l'implémentation est au
-# niveau N2 (ordonné au cycle bus) — voir docs/ACCURACY.md. Ce test empêche la
-# récidive dans les documents de vitrine : toute occurrence de
-# « cycle-accurate » / « cycle accurate » doit être qualifiée par « bus- »
-# (bus-cycle-accurate), seule formulation autorisée tant que la V2
-# (docs/specs/V2_CYCLE_ACCURACY.md) n'a pas livré son harnais de preuve.
+# The project advertised « cycle-accurate » while the implementation is at
+# level N2 (ordered at the bus cycle) — see docs/ACCURACY.md. This test prevents
+# a relapse in the showcase documents: every occurrence of
+# « cycle-accurate » / « cycle accurate » must be qualified by « bus- »
+# (bus-cycle-accurate), the only wording allowed until V2
+# (docs/specs/V2_CYCLE_ACCURACY.md) has delivered its proof harness.
 #
-# Hors périmètre volontairement : ROADMAP/CIRRUS_OS au-delà de l'en-tête et
-# docs/CR/** sont des journaux historiques — on ne réécrit pas l'histoire.
-# Le ROADMAP est tenu en local (non versionné) : il n'est vérifié que s'il est
-# présent, un checkout propre (CI) ne l'a pas.
+# Deliberately out of scope: ROADMAP/CIRRUS_OS beyond the header and
+# docs/CR/** are historical logs — history is not rewritten.
+# The ROADMAP is kept locally (not versioned): it is only checked if it is
+# present, a clean checkout (CI) does not have it.
 
 ROOT=$(dirname "$0")/../..
 cd "$ROOT" || exit 1
@@ -21,14 +21,14 @@ fail=0
 
 check_file() {
     file="$1"
-    lines="$2"   # vide = tout le fichier, sinon nombre de lignes d'en-tête
+    lines="$2"   # empty = whole file, otherwise number of header lines
     [ -f "$file" ] || { echo "FAIL: fichier absent: $file"; fail=$((fail+1)); return; }
     if [ -n "$lines" ]; then
         content=$(head -n "$lines" "$file")
     else
         content=$(cat "$file")
     fi
-    # Occurrences NON précédées de "bus-" (insensible à la casse).
+    # Occurrences NOT preceded by "bus-" (case-insensitive).
     bad=$(printf '%s\n' "$content" \
         | grep -n -i -E 'cycle[- ]accurate' \
         | grep -v -i -E 'bus-cycle-accurate|bus-cycle accurate')
@@ -51,8 +51,8 @@ else
     echo "SKIP: ROADMAP absent (tenu en local, non versionné)"
 fi
 
-# CIRRUS_OS : seule la ligne d'identité du projet est une allégation ; le reste du
-# fichier est un journal de build qui peut légitimement CITER le terme fautif.
+# CIRRUS_OS: only the project identity line is a claim; the rest of the
+# file is a build log that may legitimately QUOTE the offending term.
 proj=$(grep '^Project:' CIRRUS_OS 2>/dev/null)
 if printf '%s\n' "$proj" | grep -q -i -E 'cycle[- ]accurate' \
    && ! printf '%s\n' "$proj" | grep -q -i -E 'bus-cycle-accurate'; then
@@ -64,7 +64,7 @@ else
     pass=$((pass+1))
 fi
 
-# docs/ACCURACY.md doit exister et définir l'échelle : c'est la référence citée.
+# docs/ACCURACY.md must exist and define the scale: it is the cited reference.
 if [ -f docs/ACCURACY.md ] && grep -q 'N3' docs/ACCURACY.md; then
     echo "PASS: docs/ACCURACY.md définit l'échelle N1→N4"
     pass=$((pass+1))
@@ -73,7 +73,7 @@ else
     fail=$((fail+1))
 fi
 
-# Le plan V2 doit exister et être référencé par docs/ACCURACY.md (versionné).
+# The V2 plan must exist and be referenced by docs/ACCURACY.md (versioned).
 if [ -f docs/specs/V2_CYCLE_ACCURACY.md ] && grep -q 'V2_CYCLE_ACCURACY.md' docs/ACCURACY.md; then
     echo "PASS: plan V2 présent et référencé par docs/ACCURACY.md"
     pass=$((pass+1))

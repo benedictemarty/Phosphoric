@@ -300,9 +300,9 @@ void acia_init(acia6551_t* acia)
 
     acia->v23_mode = false;
 
-    /* Calculate timing and initialize cycle counters. Au repos (control=0),
-     * l'horloge externe n'est pas un choix du logiciel : pas d'avertissement
-     * tant qu'aucun registre de contrôle n'a été écrit. */
+    /* Calculate timing and initialize cycle counters. At rest (control=0),
+     * the external clock is not a choice made by software: no warning
+     * until a control register has been written. */
     acia->ext_clock_warned = true;
     acia_update_timing(acia);
     acia->ext_clock_warned = false;

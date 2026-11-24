@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_microdisc.c
- * @brief Contrôleur de disquettes Microdisc (WD1793) en module : menu, mise en
- *        route (ROM, disquettes, protection, --disk-web, --disk-create), bus,
- *        tick, fermeture (card_module.h).
+ * @brief Microdisc floppy disk controller (WD1793) as a module: menu, setup
+ *        (ROM, floppies, write protection, --disk-web, --disk-create), bus,
+ *        tick, teardown (card_module.h).
  * @author bmarty <bmarty@mailo.com>
  *
- * Ses options (--disk-rom et les options de disquette) restent des options du
- * cœur, partagées avec le Jasmin et LOCI ; son état (emu->microdisc) reste dans la
- * machine (sauvegardes d'état FDC/MDC/DSK, LOCI, débogueur, menu).
+ * Its options (--disk-rom and the floppy options) stay core options, shared
+ * with the Jasmin and LOCI; its state (emu->microdisc) stays in the machine
+ * (FDC/MDC/DSK save states, LOCI, debugger, menu).
  */
 #define _DEFAULT_SOURCE   /* access() */
 #include "card_module.h"
@@ -38,15 +38,15 @@ static const card_desc_t k_desc = {
     };
 static const card_desc_t* const k_descs[] = { &k_desc };
 
-/* ── Interruption IRQF_DISK (partagée par les contrôleurs disque et LOCI) ── */
+/* ── IRQF_DISK interrupt (shared by the disk controllers and LOCI) ─────── */
 
 static void irq_set(emulator_t* emu) { cpu_irq_set(&emu->cpu, IRQF_DISK); }
 static void irq_clr(emulator_t* emu) { cpu_irq_clear(&emu->cpu, IRQF_DISK); }
 
 /* ── Bus ───────────────────────────────────────────────────────────────── */
 
-/* Microdisc WD1793 : $0310-$031F (l'ACIA, enregistrée avant, possède déjà
- * $031C-$031F si présente → pas de test interne ici). */
+/* Microdisc WD1793: $0310-$031F (the ACIA, registered earlier, already owns
+ * $031C-$031F if present → no internal test here). */
 static bool microdisc_dev_claims(emulator_t* emu, uint16_t addr) {
     return emu->card_on[CARD_IDX_microdisc] && addr >= 0x0310 && addr <= 0x031F;
 }
@@ -66,14 +66,14 @@ static bool microdisc_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
 }
 
 
-/* Sections FDC/MDC/DSK/BAD : écrites par savestate.c (historique). */
+/* Sections FDC/MDC/DSK/BAD written by savestate.c (historical). */
 static const io_device_t k_bus = {
     .name = "microdisc", .claims = microdisc_dev_claims,
     .read = microdisc_dev_read, .write = microdisc_dev_write,
-    /* Pas de tick ici : le cœur avance le FDC (io_bus.c), état dans la machine. */
+    /* No tick here: the core advances the FDC (io_bus.c), state in the machine. */
 };
 
-/* ── Mise en route et fermeture ────────────────────────────────────────── */
+/* ── Setup and teardown ────────────────────────────────────────────────── */
 
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)p;
@@ -95,16 +95,16 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         emu->microdisc.cpu_userdata = emu;
         emu->card_on[CARD_IDX_microdisc] = true;
 
-        /* Languette de protection en écriture : posée explicitement, ou déduite
-         * du fichier lui-même — un .dsk en lecture seule sur l'hôte se comporte
-         * comme une disquette dont la languette est ouverte. */
+        /* Write-protect tab: set explicitly, or inferred
+         * from the file itself — a .dsk that is read-only on the host behaves
+         * like a floppy whose tab is open. */
         {
             bool wp = core->disk_write_protect;
             if (!wp && core->disk_files[0] && access(core->disk_files[0], W_OK) != 0)
                 wp = true;
             if (wp) {
-                /* Languette posée sur les 4 lecteurs : même effet que l'ancien
-                 * drapeau global du WD1793 (toutes les disquettes protégées). */
+                /* Tab set on all 4 drives: same effect as the former global
+                 * WD1793 flag (every floppy protected). */
                 for (uint8_t d = 0; d < MICRODISC_MAX_DRIVES; d++)
                     microdisc_set_write_protect(&emu->microdisc, d, true);
                 log_info("Disque protégé en écriture (statut WD1793 bit 6)%s",
@@ -160,11 +160,11 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                      emu->disks[i]->tracks, emu->disks[i]->sectors);
         }
 
-        /* --disk-web URL : monte en lecteur A un disque dont les secteurs sont
-         * servis par un serveur HTTP (projet loci-webdisk, architecture B). On
-         * lit d'abord l'en-tête MFM_DISK distant (256 o) pour la géométrie, on
-         * alloue une image à plat VIDE, et le FDC va chercher chaque piste MFM
-         * de 6400 o à la demande (fidèle au chemin réel LOCI dsk_web / ATDISKRD). */
+        /* --disk-web URL: mounts as drive A a disk whose sectors are
+         * served by an HTTP server (loci-webdisk project, architecture B). The
+         * remote MFM_DISK header (256 bytes) is read first for the geometry, an
+         * EMPTY flat image is allocated, and the FDC fetches each 6400-byte MFM track
+         * on demand (faithful to the real LOCI dsk_web / ATDISKRD path). */
         if (core->disk_web_url && !emu->disks[0]) {
             uint8_t hdr[MFM_DISK_HEADER_SIZE];
             long hn = disk_http_get(core->disk_web_url, 0, MFM_DISK_HEADER_SIZE,
@@ -192,21 +192,21 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
             emu->disks[0]->tracks  = (uint8_t)tracks;
             emu->disks[0]->sectors = spt;
             emu->disks[0]->sides   = (uint8_t)sides;
-            emu->disks[0]->is_mfm  = false;   /* pas de write-back local */
+            emu->disks[0]->is_mfm  = false;   /* no local write-back */
 
             microdisc_set_disk(&emu->microdisc, 0, emu->disks[0]->data, emu->disks[0]->size,
                                emu->disks[0]->tracks, emu->disks[0]->sectors);
-            fdc_set_web(&emu->microdisc.fdc, core->disk_web_url);   /* après set_disk */
+            fdc_set_web(&emu->microdisc.fdc, core->disk_web_url);   /* after set_disk */
             log_info("--disk-web: lecteur A servi par %s (%u faces x %u pistes x %u s., "
                      "pistes chargées à la demande)", core->disk_web_url, sides, tracks, spt);
         }
 
-        /* --disk-create : monte une disquette Sedoric vierge en lecteur A et
-         * l'écrit aussitôt sur FILE. INIT/format à l'intérieur ; le write-back
-         * de sortie (armé avec cette option) persiste les changements. */
+        /* --disk-create: mounts a blank Sedoric floppy as drive A and
+         * writes it immediately to FILE. INIT/format inside; the exit
+         * write-back (armed with this option) persists the changes. */
         if (core->disk_create_file && !emu->disks[0]) {
-            /* Double face 42 pistes : géométrie que formate INIT B de Sedoric
-             * (un blank simple face était sous-dimensionné, Sprint 66). */
+            /* Double-sided 42 tracks: the geometry that Sedoric's INIT B formats
+             * (a single-sided blank was undersized, Sprint 66). */
             emu->disks[0] = sedoric_create_blank(SEDORIC_TRACKS, 2);
             if (!emu->disks[0]) {
                 log_error("disk-create: allocation de la disquette vierge impossible");

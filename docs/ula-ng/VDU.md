@@ -1,179 +1,179 @@
-# ULA-NG — VDU intégré (v0.1)
+# ULA-NG — Built-in VDU (v0.1)
 
-> **Statut : v0.1 + v0.2 (graphiques) + v0.3 (upload) IMPLÉMENTÉES ET VALIDÉES.**
-> Port de commandes de style VDU exposé par l'ULA-NG (`NG_VDU` $0357), dont
-> l'interpréteur **et la VRAM** vivent **dans l'ULA-NG** — pas dans les 64 Ko du
-> 6502. Interpréteur dans `src/io/ula_ng.c` (stand-in du firmware soft-core FPGA) ;
-> tests `test-ula-ng` ; démos `ng_vdu.s` (mosaïque), `ng_vdu_gfx.s` (tracé de
-> lignes), `ng_vdu_spr.s` (sprite défini par flux) — pilotées **uniquement par le
-> flux**, sans pilote 6502. Le hook OSWRCH transparent a été investigué et écarté
-> (§4 : l'Oric n'a pas de vecteur de sortie par caractère ; piste ROM « 1.2 » en
-> branche `feature/ula-ng-rom12-vdu`). Reste : fontes/bitmaps upload, PLOT étendu.
+> **Status: v0.1 + v0.2 (graphics) + v0.3 (upload) IMPLEMENTED AND VALIDATED.**
+> VDU-style command port exposed by the ULA-NG (`NG_VDU` $0357), whose
+> interpreter **and VRAM** live **inside the ULA-NG** — not in the 6502's
+> 64 KB. Interpreter in `src/io/ula_ng.c` (stand-in for the FPGA soft-core firmware);
+> tests `test-ula-ng`; demos `ng_vdu.s` (mosaic), `ng_vdu_gfx.s` (line
+> drawing), `ng_vdu_spr.s` (sprite defined through the stream) — driven **only by the
+> stream**, with no 6502 driver. A transparent OSWRCH hook was investigated and ruled out
+> (§4: the Oric has no per-character output vector; "1.2" ROM avenue in the
+> `feature/ula-ng-rom12-vdu` branch). Remaining: font/bitmap upload, extended PLOT.
 
-## 1. Objectif
+## 1. Goal
 
-Piloter l'ULA-NG par un **flux d'octets de commande** (comme on `PRINT CHR$(…)`)
-au lieu d'écritures de registres brutes, et loger l'**interpréteur + les buffers**
-dans la mémoire de l'ULA-NG. Le 6502 ne porte **aucun code pilote** : il *stream*
-des octets, l'ULA-NG interprète.
+Drive the ULA-NG with a **stream of command bytes** (as with `PRINT CHR$(…)`)
+instead of raw register writes, and host the **interpreter + buffers**
+in the ULA-NG's memory. The 6502 carries **no driver code**: it *streams*
+bytes, the ULA-NG interprets them.
 
-## 2. État de l'art (référence de conception, ~2026)
+## 2. State of the art (design reference, ~2026)
 
-Ce modèle « coprocesseur d'affichage piloté par flux VDU, à mémoire propre » est
-le courant dominant des machines 8-bit modernes et des ré-implémentations FPGA :
+This "display coprocessor driven by a VDU stream, with its own memory" model is
+the dominant trend in modern 8-bit machines and FPGA re-implementations:
 
-- **Agon Light — VDP** : le CPU (eZ80) envoie un flux **VDU** (lignée BBC BASIC)
-  à un ESP32 qui exécute un firmware vidéo avec **sa propre mémoire** ; modes,
-  palette, sprites, bitmaps, audio. Notion clé reprise ici : les **« buffered
-  commands »** (uploader des données dans la mémoire du VDP, réutilisables par
-  ID). → *la référence directe de ce document*.
-- **VERA (Commander X16)** : puce vidéo FPGA moderne, interface **registres +
-  data-port à auto-incrément**, sprites, couches, palette. → valide l'idiome
-  data-port que l'ULA-NG utilise déjà (attributs/sprites en streaming).
-- **OCULA-GPU (ce projet)** : fenêtre de commandes `$03E8-$03EF` (INFO, FILL,
-  COPY, SCROLL, WAIT_VBL) interprétées **dans l'ULA**. → précédent maison direct
-  du pattern « port de commandes + interpréteur ».
-- **Copper / display-list** (héritage Amiga) : déjà présent (ULA-NG §5.4).
+- **Agon Light — VDP**: the CPU (eZ80) sends a **VDU** stream (BBC BASIC lineage)
+  to an ESP32 running video firmware with **its own memory**; modes,
+  palette, sprites, bitmaps, audio. Key notion adopted here: **"buffered
+  commands"** (uploading data into the VDP's memory, reusable by
+  ID). → *the direct reference for this document*.
+- **VERA (Commander X16)**: modern FPGA video chip, **registers +
+  auto-increment data port** interface, sprites, layers, palette. → validates the
+  data-port idiom the ULA-NG already uses (streamed attributes/sprites).
+- **OCULA-GPU (this project)**: command window `$03E8-$03EF` (INFO, FILL,
+  COPY, SCROLL, WAIT_VBL) interpreted **inside the ULA**. → direct in-house precedent
+  for the "command port + interpreter" pattern.
+- **Copper / display list** (Amiga heritage): already present (ULA-NG §5.4).
 
-**Choix d'architecture qui en découle** (cible FPGA Tang Primer 20K / GW2A-18) :
-*split hard/soft*. Le **datapath temps réel** (fetch scanline, palette, sprites,
-copper) reste en **RTL dur** ; l'**interpréteur VDU** tourne en **firmware sur
-soft-core RISC-V** (le GW2A peut en héberger un) ou sur le MCU compagnon — comme
-OCULA le fait avec son RP2350. On ne câble pas un interpréteur VDU en FSM pure.
+**Resulting architecture choice** (FPGA target Tang Primer 20K / GW2A-18):
+*hard/soft split*. The **real-time datapath** (scanline fetch, palette, sprites,
+copper) stays in **hard RTL**; the **VDU interpreter** runs as **firmware on a
+RISC-V soft-core** (the GW2A can host one) or on the companion MCU — as
+OCULA does with its RP2350. A VDU interpreter is not hard-wired as a pure FSM.
 
-> Connaissances arrêtées début 2026 — des sorties très récentes peuvent manquer.
+> Knowledge frozen at early 2026 — very recent releases may be missing.
 
-## 3. Le port `NG_VDU`
+## 3. The `NG_VDU` port
 
-| Adr | Nom | R/W | Rôle |
+| Addr | Name | R/W | Role |
 |---|---|---|---|
-| `$0357` | `NG_VDU` | W | Écrire un octet dans le flux de commandes VDU. |
+| `$0357` | `NG_VDU` | W | Write a byte to the VDU command stream. |
 
-Nécessite l'ULA-NG **déverrouillée** (comme toute la fenêtre `$0340-$035F`).
-Depuis le BASIC : `POKE#357,octet` ; en code machine : `STA $0357` ; le flux se
-« streame » octet par octet, exactement comme un `OSWRCH`/VDU.
+Requires the ULA-NG to be **unlocked** (like the whole `$0340-$035F` window).
+From BASIC: `POKE#357,byte`; in machine code: `STA $0357`; the stream is
+"streamed" byte by byte, exactly like an `OSWRCH`/VDU.
 
-## 4. Jeu de commandes v0.1 (minimal, à valider)
+## 4. v0.1 command set (minimal, to be validated)
 
-Vocabulaire aligné sur le VDU BBC/Agon quand ça a un sens, traduit en actions
-ULA-NG. Chaque commande = un **code** + N octets de **paramètres**.
+Vocabulary aligned with the BBC/Agon VDU where it makes sense, translated into ULA-NG
+actions. Each command = a **code** + N **parameter** bytes.
 
-| Code | Params | Action ULA-NG | Analogue BBC/Agon |
+| Code | Params | ULA-NG action | BBC/Agon analogue |
 |---|---|---|---|
-| `20` | — | **Reset** : `NG_MODE=0` → retour au rendu normal. | `VDU 20` (restore) |
-| `22 n` | 1 | **MODE** : `n`=0 std, 1 chunky (320), 2 texte 80col → `NG_MODE`. | `VDU 22,n` (MODE) |
-| `19 l r g b` | 4 | **Palette** : LUT[`l`] = RGB444 (`r,g,b` sur 4 bits). | `VDU 19` (palette) |
-| `18 a` | 1 | **Couleur de fond par cellule** : active les attributs // et remplit le plan avec `a`=`(paper<<3)\|ink`. | `VDU 18` (GCOL) |
-| `31 col row a` | 3 | **Colorer une cellule** (`col` 0-39, `row` 0-24) avec l'attribut `a` — sans color clash. | `VDU 31` (TAB) |
+| `20` | — | **Reset**: `NG_MODE=0` → back to normal rendering. | `VDU 20` (restore) |
+| `22 n` | 1 | **MODE**: `n`=0 std, 1 chunky (320), 2 text 80col → `NG_MODE`. | `VDU 22,n` (MODE) |
+| `19 l r g b` | 4 | **Palette**: LUT[`l`] = RGB444 (`r,g,b` on 4 bits). | `VDU 19` (palette) |
+| `18 a` | 1 | **Per-cell background colour**: enables the // attributes and fills the plane with `a`=`(paper<<3)\|ink`. | `VDU 18` (GCOL) |
+| `31 col row a` | 3 | **Colour a cell** (`col` 0-39, `row` 0-24) with attribute `a` — without colour clash. | `VDU 31` (TAB) |
 
-### Graphiques v0.2 (VRAM chunky portée par l'ULA-NG)
+### v0.2 graphics (chunky VRAM carried by the ULA-NG)
 
-| Code | Params | Action ULA-NG | Analogue BBC/Agon |
+| Code | Params | ULA-NG action | BBC/Agon analogue |
 |---|---|---|---|
-| `16` | — | **CLG** : active le mode chunky + la **VRAM ULA-NG**, l'efface. | `VDU 16` (CLG) |
-| `17 c` | 1 | **Couleur de tracé** courante (`c` 0-15, index LUT). | `VDU 18`/GCOL |
-| `25 x y` | 2 | **PLOT** un point (`x` 0-159, `y` 0-223) — *simplifié* : point seul, coords 8 bits (le `VDU 25` BBC complet gère modes/lignes/coords 16 bits). | `VDU 25` (PLOT) |
-| `26 x0 y0 x1 y1` | 4 | **DRAW** une ligne (Bresenham) dans la VRAM. | `VDU 25` DRAW |
+| `16` | — | **CLG**: enables chunky mode + the **ULA-NG VRAM**, clears it. | `VDU 16` (CLG) |
+| `17 c` | 1 | Current **drawing colour** (`c` 0-15, LUT index). | `VDU 18`/GCOL |
+| `25 x y` | 2 | **PLOT** a point (`x` 0-159, `y` 0-223) — *simplified*: single point, 8-bit coords (the full BBC `VDU 25` handles modes/lines/16-bit coords). | `VDU 25` (PLOT) |
+| `26 x0 y0 x1 y1` | 4 | **DRAW** a line (Bresenham) into the VRAM. | `VDU 25` DRAW |
 
-Codes inconnus : ignorés (0 paramètre) — comme un VDU qui absorbe l'inconnu.
+Unknown codes: ignored (0 parameters) — like a VDU that swallows the unknown.
 
-### Upload v0.3 (sprites via flux) — voir §5
+### v0.3 upload (sprites via the stream) — see §5
 
-`23 id` (begin upload motif sprite) + `24 id x y f` (position + enable).
+`23 id` (begin sprite pattern upload) + `24 id x y f` (position + enable).
 
-**Prévu ensuite** (hors périmètre actuel) :
-- fontes / bitmaps chunky via le même protocole d'upload (§5) ;
-- fenêtres (`28`) → `NG_SCRSTART`/scroll ; PLOT étendu (triangles, coords 16 bits).
+**Planned next** (outside the current scope):
+- chunky fonts / bitmaps through the same upload protocol (§5);
+- windows (`28`) → `NG_SCRSTART`/scroll; extended PLOT (triangles, 16-bit coords).
 
-### Ergonomie d'entrée : conclusion sur le hook OSWRCH (investigué)
+### Input ergonomics: conclusion on the OSWRCH hook (investigated)
 
-Objectif visé : `PRINT CHR$(…)` alimente `NG_VDU` **sans POKE**, façon BBC.
-Investigation menée (désassemblage ROM Atmos `basic11b.rom` + tests) :
+Intended goal: `PRINT CHR$(…)` feeds `NG_VDU` **without POKE**, BBC-style.
+Investigation carried out (disassembly of the Atmos ROM `basic11b.rom` + tests):
 
-- **Pas de vecteur OSWRCH par caractère propre sur l'Oric.** La sortie caractère
-  BASIC (`$CCD9`) contient bien un hook `BIT $02F1 / JSR ($023E)`, mais `$02F1`
-  bit7 (redirection) est **remis à 0 en continu par l'IRQ 50 Hz** ; ni `PRINT`
-  (flag forcé) ni `LPRINT` n'ont appelé un wedge installé en `$023E` (compteur
-  resté à 0 — l'imprimante de l'émulateur capte au niveau matériel Centronics,
-  pas par ce vecteur). Voie **abandonnée** (aucun code cassé livré).
-- **Problème de vitesse** : rediriger par le port imprimante (Centronics, poignée
-  de main) est ~1000× plus lent qu'un `STA $0357` direct → inutilisable pour les
-  données en masse (sprites 256 o, images 16 000 o). Bon uniquement pour de
-  petites commandes.
+- **No proper per-character OSWRCH vector on the Oric.** The BASIC character output
+  (`$CCD9`) does contain a hook `BIT $02F1 / JSR ($023E)`, but `$02F1`
+  bit7 (redirection) is **continuously reset to 0 by the 50 Hz IRQ**; neither `PRINT`
+  (forced flag) nor `LPRINT` called a wedge installed at `$023E` (counter
+  stayed at 0 — the emulator's printer captures at the Centronics hardware level,
+  not through this vector). Avenue **abandoned** (no broken code shipped).
+- **Speed problem**: redirecting through the printer port (Centronics, handshake)
+  is ~1000× slower than a direct `STA $0357` → unusable for
+  bulk data (256-byte sprites, 16,000-byte images). Only good for
+  small commands.
 
-**Conclusion** : le chemin **rapide et fiable reste le pilotage direct**
-(`STA $0357` en ML, `POKE #357` en BASIC), déjà en place. Le confort « BBC »
-(vecteur de sortie RAM revectorable, pleine vitesse) suppose de **patcher une
-ROM « BASIC 1.2 »** qui *ajoute* ce vecteur (l'Oric ne l'a pas). C'est une piste
-réelle mais volumineuse (couture 6502 dans la ROM, œuvre dérivée sous copyright)
-→ **explorée hors `main`, dans la branche `feature/ula-ng-rom12-vdu`**
-(design : `docs/ula-ng/ROM12-VDU.md`).
+**Conclusion**: the **fast and reliable path remains direct driving**
+(`STA $0357` in ML, `POKE #357` in BASIC), already in place. The "BBC" comfort
+(re-vectorable RAM output vector, full speed) requires **patching a
+"BASIC 1.2" ROM** that *adds* this vector (the Oric does not have one). It is a real
+but large avenue (6502 stitching into the ROM, copyrighted derivative work)
+→ **explored outside `main`, in the `feature/ula-ng-rom12-vdu` branch**
+(design: `docs/ula-ng/ROM12-VDU.md`).
 
-## 5. Protocole d'upload (« buffered commands », v0.3 — sprites)
+## 5. Upload protocol ("buffered commands", v0.3 — sprites)
 
-Pour les données volumineuses (motifs de sprites 256 o, plus tard bitmaps/fontes),
-on reprend le modèle Agon, calqué sur le **streaming auto-incrémenté** de l'ULA-NG.
-**Implémenté pour les sprites** :
+For large data (256-byte sprite patterns, later bitmaps/fonts),
+we adopt the Agon model, modelled on the ULA-NG's **auto-increment streaming**.
+**Implemented for sprites**:
 
 | Code | Params | Action |
 |---|---|---|
-| `23 id` | 1 | **SELECT + BEGIN UPLOAD** : sprite `id` (0-15) ; les **256 octets suivants** sont streamés dans son motif (1 o/px, 0-7). |
-| `24 id x y f` | 4 | **USE** : position (`x`,`y`) + `f` b0 = visible ; active aussi les sprites globalement. |
+| `23 id` | 1 | **SELECT + BEGIN UPLOAD**: sprite `id` (0-15); the **next 256 bytes** are streamed into its pattern (1 byte/px, 0-7). |
+| `24 id x y f` | 4 | **USE**: position (`x`,`y`) + `f` b0 = visible; also enables sprites globally. |
 
-Séquence : `VDU 23,id` → 256 octets de motif → `VDU 24,id,x,y,1`. L'interpréteur
-tient un compteur `vdu_upload` : tant qu'il est non nul, chaque octet reçu va dans
-le motif (pas interprété comme commande). Extensible plus tard aux fontes/bitmaps
-(même mécanisme, autre cible).
+Sequence: `VDU 23,id` → 256 pattern bytes → `VDU 24,id,x,y,1`. The interpreter
+keeps a `vdu_upload` counter: while it is non-zero, each received byte goes into
+the pattern (not interpreted as a command). Extensible later to fonts/bitmaps
+(same mechanism, different target).
 
-## 6. Mémoire & VRAM
+## 6. Memory & VRAM
 
-- v0.1 pilote l'**état existant** de l'ULA-NG (mode, palette, plan d'attributs) —
-  aucune nouvelle mémoire.
-- **v0.2 (fait)** : `ula_ng.vram` (160×224 4bpp = 17920 o, 2 px/octet) — la vraie
-  étape « le VDU possède ses pixels ». Quand `vram_active` (posé par `CLG`), le
-  mode chunky lit **cette VRAM** au lieu de la RAM CPU (`NG_SCRSTART`). `PLOT`/
-  `DRAW` écrivent dedans (Bresenham). `reset`/`20` la désactive. Côté FPGA :
-  ce buffer vit dans la DDR3/BSRAM de l'ULA-NG.
+- v0.1 drives the **existing state** of the ULA-NG (mode, palette, attribute plane) —
+  no new memory.
+- **v0.2 (done)**: `ula_ng.vram` (160×224 4bpp = 17920 bytes, 2 px/byte) — the real
+  "the VDU owns its pixels" step. When `vram_active` (set by `CLG`), the
+  chunky mode reads **this VRAM** instead of the CPU RAM (`NG_SCRSTART`). `PLOT`/
+  `DRAW` write into it (Bresenham). `reset`/`20` disables it. On the FPGA side:
+  this buffer lives in the ULA-NG's DDR3/BSRAM.
 
-## 7. Interpréteur (FSM)
+## 7. Interpreter (FSM)
 
-État minimal, sans allocation : `vdu_cmd`, `vdu_params[ULA_NG_VDU_MAXPARAMS]`
+Minimal state, no allocation: `vdu_cmd`, `vdu_params[ULA_NG_VDU_MAXPARAMS]`
 (= `vdu_params[4]`), `vdu_need`,
-`vdu_got`. Quand `vdu_need==0` l'octet reçu est un **code** (on lit son nombre de
-paramètres) ; sinon c'est un **paramètre** ; à `got==need` on **exécute** puis on
-repart en attente de code. L'exécution se contente d'appeler la logique de
-registres **déjà existante** (`ula_ng_write` sur `NG_MODE`, `NG_PAL_*`,
-`NG_ATTR_*`) → intégration minimale, zéro duplication.
+`vdu_got`. When `vdu_need==0` the received byte is a **code** (its number of
+parameters is looked up); otherwise it is a **parameter**; when `got==need` we **execute** and then
+go back to waiting for a code. Execution simply calls the **already existing**
+register logic (`ula_ng_write` on `NG_MODE`, `NG_PAL_*`,
+`NG_ATTR_*`) → minimal integration, zero duplication.
 
-## 8. Modélisation émulateur
+## 8. Emulator modelling
 
-L'interpréteur en **C dans `ula_ng.c`** représente fidèlement le **firmware
-soft-core** de la cible FPGA. Le 6502 émulé n'exécute aucun pilote : il écrit des
-octets dans `$0357`. C'est la même abstraction que celle utilisée pour modéliser
-l'OCULA-GPU.
+The interpreter in **C in `ula_ng.c`** faithfully represents the **soft-core
+firmware** of the FPGA target. The emulated 6502 runs no driver: it writes
+bytes to `$0357`. It is the same abstraction as the one used to model
+the OCULA-GPU.
 
-## 9. Périmètre & risques (honnêteté)
+## 9. Scope & risks (honesty)
 
-- Adopter le modèle VDU complet (façon Agon VDP) = **un vrai sous-système** :
-  on **commence minimal** (v0.1 ci-dessus) et on n'étend que sur besoin.
-- La mémoire additionnelle de l'ULA-NG **n'est pas adressable par le CPU**
-  (streaming only) : cohérent avec un port de commandes, mais le PLOT/VRAM (v0.2)
-  demandera un buffer dédié.
-- Ce port fait **grandir le rôle** de l'ULA-NG (d'« ULA » vers « ULA + VDU ») —
-  choix d'architecture assumé, dans la lignée de l'OCULA-GPU.
+- Adopting the full VDU model (Agon VDP style) = **a real subsystem**:
+  we **start minimal** (v0.1 above) and only extend when needed.
+- The ULA-NG's additional memory **is not addressable by the CPU**
+  (streaming only): consistent with a command port, but PLOT/VRAM (v0.2)
+  will need a dedicated buffer.
+- This port **expands the role** of the ULA-NG (from "ULA" to "ULA + VDU") —
+  a deliberate architecture choice, in line with the OCULA-GPU.
 
-## 10. Plan d'implémentation proposé (v0.1)
+## 10. Proposed implementation plan (v0.1)
 
-1. Registre `NG_VDU` ($0357) + FSM dans `ula_ng.c` (appelle `ula_ng_write`).
-2. Tests unitaires (MODE, palette, fill, cellule, reset, commande inconnue).
-3. Démo `ng_vdu.s` : déverrouille puis **stream une « VDU program »** (palette +
-   mosaïque de couleur par cellule) — aucune logique d'interprétation côté 6502.
-4. Garde visible + doc `README-ULA-NG.md` §VDU + spec §5.9.
+1. `NG_VDU` register ($0357) + FSM in `ula_ng.c` (calls `ula_ng_write`).
+2. Unit tests (MODE, palette, fill, cell, reset, unknown command).
+3. Demo `ng_vdu.s`: unlocks then **streams a "VDU program"** (palette +
+   per-cell colour mosaic) — no interpretation logic on the 6502 side.
+4. Visible guard + doc `README-ULA-NG.md` §VDU + spec §5.9.
 
-## 11. Références
+## 11. References
 
-- Agon Light — documentation VDP / VDU (Console8/Quark firmware).
+- Agon Light — VDP / VDU documentation (Console8/Quark firmware).
 - Commander X16 — VERA programmer's reference.
-- `docs/ocula_extensions.md` — OCULA-GPU (précédent maison).
+- `docs/ocula_extensions.md` — OCULA-GPU (in-house precedent).
 - BBC Micro — VDU drivers (MOS), RISC OS VDU.
 - `docs/ula-ng/ULA-NG-SPEC.md` (§5), `README-ULA-NG.md`.

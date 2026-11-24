@@ -89,8 +89,8 @@ TEST(test_sedoric_create) {
     sedoric_destroy(disk);
 }
 
-/* Blank double face + inférence de géométrie raw au rechargement (la géométrie
- * que formate INIT B de Sedoric ; un blank simple face était sous-dimensionné). */
+/* Blank double-sided + raw geometry inference on reload (the geometry
+ * that Sedoric's INIT B formats; a single-sided blank was undersized). */
 TEST(test_sedoric_create_blank_double_sided) {
     sedoric_disk_t* disk = sedoric_create_blank(42, 2);
     ASSERT_TRUE(disk != NULL);
@@ -99,7 +99,7 @@ TEST(test_sedoric_create_blank_double_sided) {
     ASSERT_EQ(disk->sectors, 17);
     ASSERT_EQ(disk->size, (uint32_t)(2 * 42 * 17 * 256));  /* 365568 */
 
-    /* Round-trip : la géométrie double face doit être ré-inférée à la taille. */
+    /* Round-trip: the double-sided geometry must be re-inferred from the size. */
     const char* path = "test_blank_ds.dsk";
     ASSERT_TRUE(sedoric_save(disk, path));
     sedoric_destroy(disk);
@@ -429,13 +429,13 @@ TEST(test_fdc_write_sector) {
     free(disk_data);
 }
 
-/* Formate une piste via la commande Write Track (0xF0) : on injecte un flux
- * IBM/MFM synthétique (gaps, sync, A1, IDAM, ID, DAM, données) et on vérifie
- * que les champs de données atterrissent dans les bons secteurs de l'image. */
+/* Formats a track via the Write Track command (0xF0): a synthetic IBM/MFM
+ * stream is injected (gaps, sync, A1, IDAM, ID, DAM, data) and we check
+ * that the data fields land in the right sectors of the image. */
 TEST(test_fdc_write_track) {
     fdc_t fdc;
     fdc_init_test(&fdc);
-    const int SPT = 4;                 /* secteurs/piste pour ce test */
+    const int SPT = 4;                 /* sectors/track for this test */
     fdc.tracks = 1;
     fdc.sectors_per_track = (uint8_t)SPT;
     uint32_t sz = (uint32_t)SPT * 256;
@@ -446,7 +446,7 @@ TEST(test_fdc_write_track) {
     fdc_write(&fdc, 0, 0xF0);          /* Write Track */
     ASSERT_EQ(fdc.currentop, FDC_OP_WRITE_TRACK);
 
-    /* Construit + injecte le flux piste, secteur par secteur. */
+    /* Build + inject the track stream, sector by sector. */
     for (int s = 1; s <= SPT; s++) {
         uint8_t pre[] = { 0x4E, 0x4E, 0x00, 0x00, 0xF5, 0xF5, 0xF5 };
         for (size_t i = 0; i < sizeof(pre); i++) fdc_write(&fdc, 3, pre[i]);
@@ -460,14 +460,14 @@ TEST(test_fdc_write_track) {
         for (size_t i = 0; i < sizeof(gap); i++) fdc_write(&fdc, 3, gap[i]);
         fdc_write(&fdc, 3, 0xFB);                       /* DAM */
         for (int i = 0; i < 256; i++)
-            fdc_write(&fdc, 3, (uint8_t)(s * 16 + (i & 0x0F)));  /* motif/secteur */
+            fdc_write(&fdc, 3, (uint8_t)(s * 16 + (i & 0x0F)));  /* pattern/sector */
         fdc_write(&fdc, 3, 0xF7);                       /* CRC */
     }
 
-    /* La piste complète (SPT champs de données) doit terminer la commande. */
+    /* The complete track (SPT data fields) must terminate the command. */
     ASSERT_EQ(fdc.currentop, FDC_OP_NONE);
 
-    /* Chaque secteur logique doit porter son motif au bon offset. */
+    /* Each logical sector must carry its pattern at the right offset. */
     for (int s = 1; s <= SPT; s++) {
         uint8_t* sec = &disk_data[(uint32_t)(s - 1) * 256];
         ASSERT_EQ(sec[0],   (uint8_t)(s * 16 + 0));
@@ -754,12 +754,12 @@ TEST(test_fdc_web_read_sector) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  FIDÉLITÉ WD1793 (V2-E6) — déviations réexaminées                   */
+/*  WD1793 FIDELITY (V2-E6) — deviations re-examined                   */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-/* LOST DATA (S2) : le plateau n'attend pas le CPU. Si le DRQ précédent n'a pas
- * été servi quand l'octet suivant arrive, le WD1793 lève S2 et poursuit. À
- * 250 kbit/s, le programme n'a que 32 µs par octet. */
+/* LOST DATA (S2): the platter does not wait for the CPU. If the previous DRQ has
+ * not been serviced when the next byte arrives, the WD1793 raises S2 and carries on.
+ * At 250 kbit/s, the program has only 32 µs per byte. */
 TEST(test_fdc_lost_data_when_cpu_too_slow) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -771,8 +771,8 @@ TEST(test_fdc_lost_data_when_cpu_too_slow) {
     fdc_write(&fdc, FDC_SECTOR, 1);
     fdc_write(&fdc, FDC_COMMAND, 0x80);      /* Read Sector */
 
-    /* On laisse filer le temps sans jamais lire le registre de données :
-     * chaque DRQ non servi doit coûter un octet perdu. */
+    /* Let time run without ever reading the data register:
+     * each unserviced DRQ must cost one lost byte. */
     for (int i = 0; i < 20; i++) fdc_ticktock(&fdc, 64);
 
     ASSERT_TRUE((fdc_read(&fdc, FDC_STATUS) & FDC_ST_LOST_DATA) != 0);
@@ -780,7 +780,7 @@ TEST(test_fdc_lost_data_when_cpu_too_slow) {
     free(disk);
 }
 
-/* …et le transfert reste propre quand le CPU lit à temps : aucun octet perdu. */
+/* …and the transfer stays clean when the CPU reads in time: no lost byte. */
 TEST(test_fdc_no_lost_data_when_cpu_keeps_up) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -796,16 +796,16 @@ TEST(test_fdc_no_lost_data_when_cpu_keeps_up) {
         int guard = 0;
         while (!(fdc.status & FDC_ST_DRQ) && guard++ < 10000) fdc_ticktock(&fdc, 1);
         if (!(fdc.status & FDC_ST_DRQ)) break;
-        (void)fdc_read(&fdc, FDC_DATA);      /* servi immédiatement */
+        (void)fdc_read(&fdc, FDC_DATA);      /* serviced immediately */
     }
     ASSERT_EQ(fdc.lost_data_count, 0u);
     ASSERT_TRUE((fdc.status & FDC_ST_LOST_DATA) == 0);
     free(disk);
 }
 
-/* ── Flux d'octets lié au plateau (2.31.9, modèle REAL) ─────────────── */
+/* ── Byte stream tied to the platter (2.31.9, REAL model) ─────────────── */
 
-/* Disque dont le secteur 1 de la piste 0 contient 0,1,2…,255. */
+/* Disk whose sector 1 of track 0 holds 0,1,2…,255. */
 static uint8_t* stream_disk(fdc_t* fdc) {
     uint8_t* disk = calloc(80 * 17 * 256, 1);
     for (int i = 0; i < 256; i++) disk[i] = (uint8_t)i;
@@ -816,15 +816,15 @@ static uint8_t* stream_disk(fdc_t* fdc) {
     return disk;
 }
 
-/* Avance jusqu'au premier DRQ ; renvoie les cycles écoulés. */
+/* Advance to the first DRQ; returns the cycles elapsed. */
 static int stream_wait_drq(fdc_t* fdc) {
     int n = 0;
     while (!(fdc->status & FDC_ST_DRQ) && n < 400000) { fdc_ticktock(fdc, 1); n++; }
     return n;
 }
 
-/* Lecture : un octet non lu avant le suivant est perdu (S2), et le registre
- * de données porte l'octet qui passe sous la tête, pas le suivant du tampon. */
+/* Read: a byte not read before the next one is lost (S2), and the data
+ * register holds the byte passing under the head, not the next one in the buffer. */
 TEST(test_fdc_stream_read_loses_unread_bytes) {
     fdc_t fdc;
     uint8_t* disk = stream_disk(&fdc);
@@ -832,14 +832,14 @@ TEST(test_fdc_stream_read_loses_unread_bytes) {
     fdc_write(&fdc, FDC_COMMAND, 0x80);
     stream_wait_drq(&fdc);
     ASSERT_EQ(fdc_read(&fdc, FDC_DATA), 0);
-    fdc_ticktock(&fdc, 3 * FDC_BYTE_CYCLES);      /* octets 1 et 2 défilent sans lecture */
+    fdc_ticktock(&fdc, 3 * FDC_BYTE_CYCLES);      /* bytes 1 and 2 pass without being read */
     ASSERT_TRUE(fdc.status & FDC_ST_LOST_DATA);
-    ASSERT_EQ(fdc_read(&fdc, FDC_DATA), 3);       /* le disque n'a pas attendu */
+    ASSERT_EQ(fdc_read(&fdc, FDC_DATA), 3);       /* the disk did not wait */
     free(disk);
 }
 
-/* Un CPU rapide (20 cycles par octet) ne perd rien, et la durée du secteur est
- * celle du plateau (256 × 32 + CRC), pas 256 × (20 + 32) comme avant 2.31.9. */
+/* A fast CPU (20 cycles per byte) loses nothing, and the sector lasts as long
+ * as the platter dictates (256 × 32 + CRC), not 256 × (20 + 32) as before 2.31.9. */
 TEST(test_fdc_stream_read_duration_follows_platter) {
     fdc_t fdc;
     uint8_t* disk = stream_disk(&fdc);
@@ -850,7 +850,7 @@ TEST(test_fdc_stream_read_duration_follows_platter) {
     int cycles = 0, got = 0, ok = 1;
     while (!test_intrq_set && cycles < 20000) {
         if (fdc.status & FDC_ST_DRQ) {
-            fdc_ticktock(&fdc, 20); cycles += 20;   /* le CPU sert le DRQ en 20 cycles */
+            fdc_ticktock(&fdc, 20); cycles += 20;   /* the CPU services the DRQ in 20 cycles */
             if ((fdc.status & FDC_ST_DRQ) && fdc_read(&fdc, FDC_DATA) != (uint8_t)got++) ok = 0;
         } else {
             fdc_ticktock(&fdc, 1); cycles++;
@@ -864,8 +864,8 @@ TEST(test_fdc_stream_read_duration_follows_platter) {
     free(disk);
 }
 
-/* Écriture : un octet non fourni à temps est écrit à $00 avec S2, les autres
- * passent tels quels ; S2 reste dans le statut final. */
+/* Write: a byte not supplied in time is written as $00 with S2, the others
+ * pass unchanged; S2 stays in the final status. */
 TEST(test_fdc_stream_write_late_byte_is_zero) {
     fdc_t fdc;
     uint8_t* disk = stream_disk(&fdc);
@@ -876,7 +876,7 @@ TEST(test_fdc_stream_write_late_byte_is_zero) {
     for (int i = 0; i < 256 && !test_intrq_set; i++) {
         int guard = 0;
         while (!(fdc.status & FDC_ST_DRQ) && !test_intrq_set && guard++ < 2000) fdc_ticktock(&fdc, 1);
-        if (i != 10) fdc_write(&fdc, FDC_DATA, 0xA5);   /* l'octet 10 n'est jamais fourni */
+        if (i != 10) fdc_write(&fdc, FDC_DATA, 0xA5);   /* byte 10 is never supplied */
         else fdc_ticktock(&fdc, FDC_BYTE_CYCLES);
     }
     int guard = 0;
@@ -887,8 +887,8 @@ TEST(test_fdc_stream_write_late_byte_is_zero) {
     free(disk);
 }
 
-/* Écriture : premier octet absent à la fin du gap (22 octets MFM) → rien
- * n'est écrit, la commande se termine sur S2. */
+/* Write: first byte missing at the end of the gap (22 MFM bytes) → nothing
+ * is written, the command ends on S2. */
 TEST(test_fdc_stream_write_first_byte_missing) {
     fdc_t fdc;
     uint8_t* disk = stream_disk(&fdc);
@@ -897,7 +897,7 @@ TEST(test_fdc_stream_write_first_byte_missing) {
     stream_wait_drq(&fdc);
     test_intrq_set = false;
     fdc_ticktock(&fdc, FDC_WRITE_GAP_BYTES * FDC_BYTE_CYCLES + 4);
-    fdc_ticktock(&fdc, 1);                         /* INTRQ un cycle après la fin */
+    fdc_ticktock(&fdc, 1);                         /* INTRQ one cycle after the end */
     ASSERT_TRUE(test_intrq_set);
     uint8_t st = fdc_read(&fdc, FDC_STATUS);
     ASSERT_TRUE(st & FDC_ST_LOST_DATA);
@@ -907,7 +907,7 @@ TEST(test_fdc_stream_write_first_byte_missing) {
     free(disk);
 }
 
-/* Savestate en plein flux : la reprise continue au même octet, au même cycle. */
+/* Savestate mid-stream: the resume continues at the same byte, same cycle. */
 TEST(test_fdc_stream_state_roundtrip) {
     fdc_t a, b;
     uint8_t* disk = stream_disk(&a);
@@ -915,7 +915,7 @@ TEST(test_fdc_stream_state_roundtrip) {
     fdc_write(&a, FDC_COMMAND, 0x80);
     stream_wait_drq(&a);
     (void)fdc_read(&a, FDC_DATA);
-    fdc_ticktock(&a, FDC_BYTE_CYCLES + 7);        /* au milieu du 2e octet */
+    fdc_ticktock(&a, FDC_BYTE_CYCLES + 7);        /* in the middle of the 2nd byte */
     FILE* fp = tmpfile();
     fdc_state_save(&a, fp);
     ASSERT_EQ((long)ftell(fp), (long)FDC_STATE_SIZE);
@@ -935,8 +935,8 @@ TEST(test_fdc_stream_state_roundtrip) {
     free(disk); free(disk2);
 }
 
-/* Languette de protection (S6) : la commande d'écriture n'est pas exécutée, le
- * statut porte le bit 6, et le contenu du disque reste intact. */
+/* Write-protect tab (S6): the write command is not executed, the
+ * status carries bit 6, and the disk content stays intact. */
 TEST(test_fdc_write_protect_refuses_write) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -950,13 +950,13 @@ TEST(test_fdc_write_protect_refuses_write) {
     fdc_write(&fdc, FDC_COMMAND, 0xA0);      /* Write Sector */
 
     ASSERT_TRUE((fdc.status & FDC_ST_WRITE_PROT) != 0);
-    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);   /* commande non exécutée */
-    fdc_write(&fdc, FDC_DATA, 0x5A);         /* une écriture égarée ne passe pas */
+    ASSERT_EQ(fdc.currentop, FDC_OP_NONE);   /* command not executed */
+    fdc_write(&fdc, FDC_DATA, 0x5A);         /* a stray write does not get through */
     ASSERT_EQ(disk[0], before);
     free(disk);
 }
 
-/* Sans languette, la même séquence écrit bien. */
+/* Without the tab, the same sequence does write. */
 TEST(test_fdc_write_allowed_without_protect) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -972,7 +972,7 @@ TEST(test_fdc_write_allowed_without_protect) {
     free(disk);
 }
 
-/* En Type I, le bit 6 du statut reporte lui aussi la languette. */
+/* In Type I, status bit 6 also reports the tab. */
 TEST(test_fdc_write_protect_visible_in_type1_status) {
     fdc_t fdc;
     uint8_t* disk = calloc(80 * 17 * 256, 1);
@@ -987,9 +987,9 @@ TEST(test_fdc_write_protect_visible_in_type1_status) {
     free(disk);
 }
 
-/* ── Savestate du FDC (2.4.0) : reprise en plein transfert ────────────────
- * Avant 2.4.0, le pointeur du secteur en cours était remis à NULL au
- * chargement : la lecture suivante tombait en RECORD NOT FOUND. */
+/* ── FDC savestate (2.4.0): resume in the middle of a transfer ───────────
+ * Before 2.4.0, the current-sector pointer was reset to NULL on load: the
+ * next read ended in RECORD NOT FOUND. */
 TEST(test_fdc_state_resume_mid_sector_read) {
     uint8_t* disk_data = calloc(80 * 17 * 256, 1);
     ASSERT_TRUE(disk_data != NULL);
@@ -1030,8 +1030,8 @@ TEST(test_fdc_state_resume_mid_sector_read) {
     free(disk_data);
 }
 
-/* Un état v1 (36 octets, .ost antérieur à 2.4.0) se relit ; les champs v2
- * absents prennent leur valeur neutre. */
+/* A v1 state (36 bytes, .ost older than 2.4.0) still loads; the missing v2
+ * fields take their neutral value. */
 TEST(test_fdc_state_load_v1_compat) {
     fdc_t a, b;
     fdc_init_test(&a);
@@ -1051,10 +1051,10 @@ TEST(test_fdc_state_load_v1_compat) {
     ASSERT_EQ(b.wt_state, 0);
 }
 
-/* Une piste MFM dont les marques ID annoncent une face ou une piste hors de
- * l'image (trouvé par `make fuzz`, tests/fuzz/regressions/disk/) : le secteur
- * est ignoré au lieu d'écrire 256 octets hors du tableau (extraction) ou d'en
- * lire hors du tableau (réécriture du .dsk). Le secteur valide reste lu. */
+/* An MFM track whose ID marks announce a side or a track outside the image
+ * (found by `make fuzz`, tests/fuzz/regressions/disk/): the sector is skipped
+ * instead of writing 256 bytes past the array (extraction) or reading past it
+ * (.dsk write-back). The valid sector is still read. */
 static size_t mfm_put_sector(uint8_t* t, size_t at, uint8_t trk, uint8_t side,
                              uint8_t sec, uint8_t fill) {
     static const uint8_t am[3] = { 0xA1, 0xA1, 0xA1 };
@@ -1070,11 +1070,11 @@ TEST(test_mfm_id_marks_outside_image_are_skipped) {
     uint8_t track[MFM_TRACK_SIZE];
     memset(track, 0x4E, sizeof track);
     size_t at = 100;
-    at = mfm_put_sector(track, at, 0, 0, 1, 0x11);     /* valide */
-    at = mfm_put_sector(track, at, 0, 200, 2, 0x22);   /* face 200 */
-    (void)mfm_put_sector(track, at, 250, 0, 3, 0x33);  /* piste 250 */
+    at = mfm_put_sector(track, at, 0, 0, 1, 0x11);     /* valid */
+    at = mfm_put_sector(track, at, 0, 200, 2, 0x22);   /* side 200 */
+    (void)mfm_put_sector(track, at, 250, 0, 3, 0x33);  /* track 250 */
 
-    /* Extraction bornée : un tampon sentinelle suit l'image d'une piste. */
+    /* Bounded extraction: a sentinel buffer follows the one-track image. */
     const uint32_t flat_size = 17 * 256;
     uint8_t* flat = (uint8_t*)malloc(flat_size + 1024);
     ASSERT_TRUE(flat != NULL);
@@ -1086,8 +1086,8 @@ TEST(test_mfm_id_marks_outside_image_are_skipped) {
     for (int i = 0; i < 1024; i++) ASSERT_EQ(flat[flat_size + i], 0xCC);
     free(flat);
 
-    /* Même piste dans un .dsk MFM_DISK (1 face, 1 piste) : chargement puis
-     * réécriture sans accès hors image. */
+    /* Same track in an MFM_DISK .dsk (1 side, 1 track): load, then write
+     * back without any access outside the image. */
     const char* path = "/tmp/phosphoric_test_mfm_ids.dsk";
     FILE* f = fopen(path, "wb");
     ASSERT_TRUE(f != NULL);
@@ -1099,36 +1099,36 @@ TEST(test_mfm_id_marks_outside_image_are_skipped) {
     ASSERT_TRUE(d != NULL);
     ASSERT_EQ(d->size, flat_size);
     ASSERT_EQ(d->data[0], 0x11);
-    ASSERT_EQ(d->data[256], 0x00);            /* secteur 2 (face 200) ignoré */
+    ASSERT_EQ(d->data[256], 0x00);            /* sector 2 (side 200) skipped */
     d->data[0] = 0x44;
     d->modified = true;
     ASSERT_TRUE(sedoric_save(d, path));
     sedoric_destroy(d);
     d = sedoric_load(path);
     ASSERT_TRUE(d != NULL);
-    ASSERT_EQ(d->data[0], 0x44);               /* réécriture du secteur valide */
+    ASSERT_EQ(d->data[0], 0x44);               /* the valid sector was written back */
     sedoric_destroy(d);
     unlink(path);
 }
 
-/* Un secteur dont le CRC déborderait de la piste (marque de données trop près
- * de la fin) n'est ni lu ni réécrit : avant 2.8.0, la réécriture posait le 2e
- * octet du CRC sur le premier octet de la piste suivante (hors du fichier pour
- * la dernière piste). Trouvé par `make fuzz`. */
+/* A sector whose CRC would overflow the track (data mark too close to the
+ * end) is neither read nor written back: before 2.8.0, the write-back put the
+ * CRC's 2nd byte on the first byte of the next track (past the file for the
+ * last track). Found by `make fuzz`. */
 TEST(test_mfm_sector_crossing_track_end_is_ignored) {
     const char* path = "/tmp/phosphoric_test_mfm_end.dsk";
     uint8_t hdr[MFM_DISK_HEADER_SIZE] = { 'M','F','M','_','D','I','S','K', 1,0,0,0, 2,0,0,0 };
     uint8_t t0[MFM_TRACK_SIZE], t1[MFM_TRACK_SIZE];
     memset(t0, 0x4E, sizeof t0);
     memset(t1, 0x4E, sizeof t1);
-    (void)mfm_put_sector(t0, 100, 0, 0, 1, 0x11);             /* secteur normal */
-    size_t j = MFM_TRACK_SIZE - 261;                           /* CRC déborderait d'1 octet */
+    (void)mfm_put_sector(t0, 100, 0, 0, 1, 0x11);             /* normal sector */
+    size_t j = MFM_TRACK_SIZE - 261;                           /* CRC would overflow by 1 byte */
     size_t id = j - 22;
     t0[id] = t0[id + 1] = t0[id + 2] = 0xA1; t0[id + 3] = 0xFE;
     t0[id + 4] = 0; t0[id + 5] = 0; t0[id + 6] = 2; t0[id + 7] = 1;
     t0[j] = t0[j + 1] = t0[j + 2] = 0xA1; t0[j + 3] = 0xFB;
     memset(t0 + j + 4, 0x22, 256);
-    t1[0] = 0x5A;                                              /* sentinelle */
+    t1[0] = 0x5A;                                              /* sentinel */
     FILE* f = fopen(path, "wb");
     ASSERT_TRUE(f != NULL);
     fwrite(hdr, 1, sizeof hdr, f);
@@ -1139,7 +1139,7 @@ TEST(test_mfm_sector_crossing_track_end_is_ignored) {
     sedoric_disk_t* d = sedoric_load(path);
     ASSERT_TRUE(d != NULL);
     ASSERT_EQ(d->data[0], 0x11);
-    ASSERT_EQ(d->data[256], 0x00);             /* secteur 2 à cheval : ignoré */
+    ASSERT_EQ(d->data[256], 0x00);             /* sector 2 straddles the end: skipped */
     d->modified = true;
     ASSERT_TRUE(sedoric_save(d, path));
     sedoric_destroy(d);
@@ -1147,7 +1147,7 @@ TEST(test_mfm_sector_crossing_track_end_is_ignored) {
     f = fopen(path, "rb");
     ASSERT_TRUE(f != NULL);
     fseek(f, MFM_DISK_HEADER_SIZE + MFM_TRACK_SIZE, SEEK_SET);
-    ASSERT_EQ(fgetc(f), 0x5A);                 /* piste 1 intacte */
+    ASSERT_EQ(fgetc(f), 0x5A);                 /* track 1 untouched */
     fclose(f);
     unlink(path);
 }

@@ -1,26 +1,26 @@
-# 0003 — Ordre des ticks par cycle explicite, distinct de l'ordre de répartition des E/S
+# 0003 — Explicit per-cycle tick order, distinct from the I/O dispatch order
 
-- **Statut** : acceptée (2.4.0, sprint D du plan d'architecture)
+- **Status**: accepted (2.4.0, sprint D of the architecture plan)
 
-## Contexte
+## Context
 
-À chaque cycle CPU, les périphériques avancent d'un pas (`cpu_cycle_tick`,
-`src/main.c`) : VIA d'abord (il pilote les timers et l'interruption), puis la
-cassette, puis les périphériques du bus d'E/S. La table `io_bus[]`
-(`src/io/io_bus.c`) donne, elle, l'ordre de **répartition** des accès
-($0300-$03FF) : quel périphérique répond à une adresse. Ces deux ordres
-diffèrent historiquement, et l'ordre des ticks a des effets observables.
+On every CPU cycle, peripherals advance one step (`cpu_cycle_tick`,
+`src/main.c`): VIA first (it drives the timers and the interrupt), then the
+tape, then the peripherals of the I/O bus. The `io_bus[]` table
+(`src/io/io_bus.c`) gives the **dispatch** order of accesses ($0300-$03FF):
+which peripheral answers an address. These two orders differ historically, and
+the tick order has observable effects.
 
-## Décision
+## Decision
 
-L'ordre des ticks est une table à part, `io_bus_tick_order[]` (Microdisc,
-Jasmin, LOCI, ACIA, DTL 2000, Mageco, SP0256, MEA8000), précédée par VIA et
-cassette dans `cpu_cycle_tick`. `io_bus_tick()` la parcourt, boucle déroulée
-avec `__builtin_expect` (une boucle générique coûtait +22 % par trame).
+The tick order is a separate table, `io_bus_tick_order[]` (Microdisc, Jasmin,
+LOCI, ACIA, DTL 2000, Mageco, SP0256, MEA8000), preceded by VIA and tape in
+`cpu_cycle_tick`. `io_bus_tick()` walks it, as an unrolled loop with
+`__builtin_expect` (a generic loop cost +22 % per frame).
 
-## Conséquences
+## Consequences
 
-- Unifier les deux ordres demanderait d'abord de prouver l'équivalence octet par
-  octet (corpus, sauvegardes d'état, `cli_golden`).
-- Un nouveau périphérique temporisé s'ajoute à `io_bus_tick_order[]`, à la place
-  qui conserve le comportement mesuré.
+- Unifying the two orders would first require proving byte-for-byte
+  equivalence (corpus, save states, `cli_golden`).
+- A new timed peripheral is added to `io_bus_tick_order[]`, at the position that
+  keeps the measured behaviour.

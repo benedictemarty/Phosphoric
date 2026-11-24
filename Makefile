@@ -4,23 +4,23 @@
 CC = gcc
 # -MMD -MP : generate per-object .d files capturing header dependencies so
 # touching include/*.h triggers recompilation of the .c files that use them.
-# Backends LOCI externes, choisis au lancement (aiguillage src/io/loci_backend.c,
-# fonctions renommées par src/io/loci_be_rename.h) : un même binaire contient le
-# stub (aucun LOCI externe) et ceux dont la dépendance est présente.
-#  - Émulateur RP2040 embarqué (--loci-emu, carte LOCI mode « firmware »).
-#    Dépendance EXTERNE non versionnée, détectée automatiquement. Sans elle (CI,
-#    machine neuve), tout se construit, seul `--loci-emu` refuse de démarrer.
-#    Forcer : LOCI_EMU=0/1.
+# External LOCI backends, chosen at launch (dispatch in src/io/loci_backend.c,
+# functions renamed by src/io/loci_be_rename.h): a single binary contains the
+# stub (no external LOCI) and those whose dependency is present.
+#  - Embedded RP2040 emulator (--loci-emu, LOCI card in « firmware » mode).
+#    EXTERNAL, unversioned dependency, detected automatically. Without it (CI,
+#    fresh machine), everything builds, only `--loci-emu` refuses to start.
+#    Force: LOCI_EMU=0/1.
 LOCI_EMUL_DIR ?= $(HOME)/loci/emul
 LOCI_EMU ?= $(if $(wildcard $(LOCI_EMUL_DIR)/src/emul_lib.h),1,0)
-#  - Vraie cartouche par le pont USB loci-usb d'une Feather (--loci-hw, mode
-#    « réelle ») : src/io/loci_hw.c (copie de ~/loci/loci-usb/phosphoric/loci_hw.c)
-#    + le client du protocole, détectés automatiquement (POSIX : pas sous Windows).
-#    Forcer : LOCI_HW=0/1.
+#  - Real cartridge via the loci-usb USB bridge of a Feather (--loci-hw, « real »
+#    mode): src/io/loci_hw.c (copy of ~/loci/loci-usb/phosphoric/loci_hw.c)
+#    + the protocol client, detected automatically (POSIX: not on Windows).
+#    Force: LOCI_HW=0/1.
 LOCI_USB_DIR ?= $(HOME)/loci/loci-usb
 LOCI_HW ?= $(if $(filter 1,$(WIN)),0,$(if $(wildcard $(LOCI_USB_DIR)/host/loci_usb_client.c),1,0))
-#  - NOUVEAU firmware loci-fw (reprise de zéro, ~/loci/reprise) : `make LOCI_NEO=1`
-#    met src/io/loci_neo.c (pont emul_neo de libemul) à la place de loci_emu.c.
+#  - NEW loci-fw firmware (restart from scratch, ~/loci/reprise): `make LOCI_NEO=1`
+#    puts src/io/loci_neo.c (libemul's emul_neo bridge) in place of loci_emu.c.
 LOCI_NEO ?= 0
 LOCI_EMU_SRC = src/io/loci_backend.c src/io/loci_emu_stub.c
 LOCI_EMUL_LIB =
@@ -73,8 +73,8 @@ else
     CFLAGS += -O2 -DNDEBUG
 endif
 
-# SDL2 support — ON by default (affichage/audio/clavier réels). Pour un build
-# headless (CI/automation, sans libSDL2), passer explicitement SDL2=0.
+# SDL2 support — ON by default (real display/audio/keyboard). For a
+# headless build (CI/automation, without libSDL2), pass SDL2=0 explicitly.
 SDL2 ?= 1
 ifeq ($(SDL2), 1)
 ifeq ($(WIN), 1)
@@ -150,26 +150,26 @@ ifeq ($(COVERAGE), 1)
     LDFLAGS += --coverage
 endif
 
-# SANITIZE=1 : AddressSanitizer + UndefinedBehaviorSanitizer (dossier de build
-# `-san`). Toute erreur UBSan arrête le programme (-fno-sanitize-recover) : un
-# test qui la déclenche échoue au lieu de seulement l'afficher.
+# SANITIZE=1: AddressSanitizer + UndefinedBehaviorSanitizer (build directory
+# `-san`). Any UBSan error stops the program (-fno-sanitize-recover): a test
+# that triggers one fails instead of merely printing it.
 SANITIZE ?= 0
 ifeq ($(SANITIZE), 1)
     CFLAGS += -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -O1
     LDFLAGS += -fsanitize=address,undefined
-    # third_party/stb_image_write.h (v1.16, laissé intact) décale un `int` signé
-    # au-delà de son bit de signe dans l'écriture des bits JPEG
-    # (stbiw__jpg_writeBits) : exemption limitée à son unité de compilation.
+    # third_party/stb_image_write.h (v1.16, left intact) shifts a signed `int`
+    # past its sign bit when writing JPEG bits (stbiw__jpg_writeBits):
+    # exemption limited to its own compilation unit.
     STB_SAN_CFLAGS = -fno-sanitize=shift
-    # Fuites de bibliothèques tierces (SDL2) ignorées : tests/lsan.supp.
+    # Third-party library leaks (SDL2) ignored: tests/lsan.supp.
     export LSAN_OPTIONS = suppressions=$(CURDIR)/tests/lsan.supp:print_suppressions=0
 endif
 
 # Source files
-# Cartes d'extension en modules (ADR 0006) : registre (card_modules.c), une
-# carte par fichier (card_<id>.c, pris par motif : ajouter une carte ne touche
-# pas au Makefile ; sa ligne va dans include/cards_list.h), et le registre des
-# sources audio qu'elles alimentent.
+# Expansion cards as modules (ADR 0006): registry (card_modules.c), one card
+# per file (card_<id>.c, picked up by pattern: adding a card does not touch
+# the Makefile; its line goes in include/cards_list.h), and the registry of
+# the audio sources they feed.
 CARD_MODULE_SRCS = $(sort $(wildcard src/cards/card_*.c)) src/audio/audio_sources.c
 
 SOURCES = src/main.c \
@@ -277,22 +277,22 @@ ifeq ($(TUI), 1)
     LDFLAGS += -lncursesw
 endif
 
-# VIA_NO_LAZY=1 : VIA pas-à-pas à chaque cycle (référence de la preuve
-# d'équivalence du chemin paresseux, `make test-via-lazy`).
+# VIA_NO_LAZY=1: VIA stepped on every cycle (reference for the equivalence
+# proof of the lazy path, `make test-via-lazy`).
 VIA_NO_LAZY ?= 0
 ifeq ($(VIA_NO_LAZY), 1)
     CFLAGS += -DVIA_NO_LAZY
 endif
 
-# Build hors des sources, un répertoire par configuration : les objets d'une
-# variante (SDL2=0, HTTPAPI=1, backend LOCI…) ne se mélangent jamais avec ceux
-# d'une autre. Les binaires finaux sont recopiés à la racine (chemins attendus
-# par les scripts), seulement quand leur contenu change.
+# Out-of-tree build, one directory per configuration: the objects of one
+# variant (SDL2=0, HTTPAPI=1, LOCI backend…) never mix with those of another.
+# Final binaries are copied to the repository root (paths expected by the
+# scripts), only when their content changes.
 LOCI_BACKEND = $(if $(filter 1,$(LOCI_NEO)),neo,$(if $(filter 1,$(LOCI_EMU)),emu))$(if $(filter 1,$(LOCI_HW)),hw)$(if $(LOCI_BE_EMUL_SRC)$(filter 1,$(LOCI_HW)),,stub)
 CONFIG := $(if $(filter 1,$(WIN)),win,host)-sdl$(SDL2)-http$(HTTPAPI)-cast$(CAST)-midi$(MIDI)-tls$(PICOTLS)-tui$(TUI)-loci$(LOCI_BACKEND)$(if $(filter 1,$(DEBUG)),-debug)$(if $(filter 1,$(COVERAGE)),-cov)$(if $(filter 1,$(VIA_NO_LAZY)),-vianolazy)$(if $(filter 1,$(SANITIZE)),-san)
 BUILD ?= build/$(CONFIG)
 TBIN = $(BUILD)/tests
-# $(call obj,sources.c) → objets correspondants dans $(BUILD)
+# $(call obj,sources.c) → matching objects in $(BUILD)
 obj = $(patsubst %.c,$(BUILD)/%.o,$(1))
 
 OBJECTS = $(call obj,$(SOURCES))
@@ -324,34 +324,34 @@ $(BUILD)/bin/$(TARGET): $(OBJECTS) $(LOCI_EMUL_LIB)
 	@mkdir -p $(@D)
 	$(CC) $(OBJECTS) $(LOCI_EMUL_LIB) $(LDFLAGS) -o $@
 
-# Copie à la racine, refaite à chaque appel mais seulement si le binaire de la
-# configuration courante diffère (changer de configuration change de binaire).
-# Copie + renommage : `cp` échouerait (« Text file busy ») si un autre processus
-# exécute le binaire racine ; `mv` remplace l'entrée sans toucher au fichier ouvert.
+# Copy to the root, redone on every call but only if the binary of the current
+# configuration differs (switching configuration switches binary).
+# Copy + rename: `cp` would fail ("Text file busy") if another process runs the
+# root binary; `mv` replaces the directory entry without touching the open file.
 $(TARGET): $(BUILD)/bin/$(TARGET) FORCE
 	@cmp -s $< $@ || { cp $< $@.tmp && mv -f $@.tmp $@; }
 
-# Construit la bibliothèque de l'émulateur RP2040 si absente (LOCI_EMU=1 seulement).
+# Builds the RP2040 emulator library if missing (LOCI_EMU=1 only).
 ifeq ($(LOCI_EMU),1)
 $(LOCI_EMUL_DIR)/libemul.a:
 	$(MAKE) -C $(LOCI_EMUL_DIR) lib
 endif
 
-# Copie strippée pour la distribution (symboles retirés → binaire plus petit).
-# Produit $(TARGET)-release SANS toucher au binaire de travail $(TARGET)
-# (utilisé par d'autres programmes). Epic 7 / US1, Sprint 125.
+# Stripped copy for distribution (symbols removed → smaller binary).
+# Produces $(TARGET)-release WITHOUT touching the working binary $(TARGET)
+# (used by other programs). Epic 7 / US1, Sprint 125.
 release: $(TARGET)
 	cp $(TARGET) $(TARGET)-release
 	strip $(TARGET)-release
 	@echo "Binaire de distribution : $(TARGET)-release ($$(stat -c%s $(TARGET)-release) o, vs $$(stat -c%s $(TARGET)) o non strippé)"
 
-# Binaire de distribution UNIQUE : une seule version « riche » au lieu d'une
-# multitude de variantes de build. TOUTES les fonctionnalités optionnelles sont
-# compilées (SDL2, CAST, HTTPAPI, MIDI, PICOTLS) ; c'est ensuite au runtime que
-# les flags CLI (--http-api, --cast, --serial midi/picowifi…) décident de ce qui
-# est actif. Link dynamique : SDL2/OpenSSL/ALSA restent des dépendances système
-# à déclarer dans le paquet (.deb/.rpm). Produit $(TARGET)-dist strippé.
-# Rappel : Linux, Windows (WIN=1) et WASM restent des cibles distinctes.
+# SINGLE distribution binary: one "full-featured" version instead of a
+# multitude of build variants. ALL optional features are
+# compiled in (SDL2, CAST, HTTPAPI, MIDI, PICOTLS); it is then at runtime that
+# the CLI flags (--http-api, --cast, --serial midi/picowifi…) decide what
+# is active. Dynamic link: SDL2/OpenSSL/ALSA remain system dependencies
+# to be declared in the package (.deb/.rpm). Produces a stripped $(TARGET)-dist.
+# Reminder: Linux, Windows (WIN=1) and WASM remain separate targets.
 dist:
 	$(MAKE) SDL2=1 CAST=1 HTTPAPI=1 MIDI=1 PICOTLS=1
 	cp $(TARGET) $(TARGET)-dist
@@ -361,8 +361,8 @@ dist:
 
 tools: $(TOOLS)
 
-# Outil = binaire lié dans $(BUILD)/bin puis recopié à la racine.
-#   $(1) nom   $(2) sources
+# Tool = binary linked in $(BUILD)/bin then copied to the root.
+#   $(1) name   $(2) sources
 define TOOL_BIN
 $(BUILD)/bin/$(1): $(call obj,$(2))
 	@mkdir -p $$(@D)
@@ -382,7 +382,7 @@ $(BUILD)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/src/video/stb_image_write_impl.o: CFLAGS += $(STB_SAN_CFLAGS)
-# Backends LOCI : chacun compilé avec ses fonctions loci_emu_* renommées.
+# LOCI backends: each compiled with its loci_emu_* functions renamed.
 LOCI_BE_RENAME = -include src/io/loci_be_rename.h
 $(BUILD)/src/io/loci_emu_stub.o: CFLAGS += -DLOCI_BE=lbe_stub $(LOCI_BE_RENAME)
 $(BUILD)/src/io/loci_emu.o $(BUILD)/src/io/loci_neo.o: CFLAGS += -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
@@ -397,12 +397,12 @@ $(BUILD)/src/io/loci_backend.o $(BUILD)/src/io/loci_hw_probe.o: CFLAGS += $(LOCI
 #  TESTS
 # ═══════════════════════════════════════════════════════════════
 
-# Aucun test ne doit dépendre d'un phosphoric.cfg personnel (menu F1).
+# No test may depend on a personal phosphoric.cfg (F1 menu).
 export PHOSPHORIC_NO_CONFIG = 1
 
-# Tests unitaires : chaque source est compilée UNE fois par configuration dans
-# $(BUILD) ; le binaire de test lie exactement la liste d'objets donnée.
-#   $(1) cible   $(2) binaire   $(3) sources   $(4) ldflags en plus   $(5) archives
+# Unit tests: each source is compiled ONCE per configuration into $(BUILD);
+# the test binary links exactly the given list of objects.
+#   $(1) target   $(2) binary   $(3) sources   $(4) extra ldflags   $(5) archives
 define UNIT_TEST
 $(TBIN)/$(2): $(call obj,$(3)) $(5)
 	@mkdir -p $$(@D)
@@ -411,9 +411,9 @@ $(1): $(TBIN)/$(2)
 	@$(TBIN)/$(2)
 endef
 
-# Tests dont les sources exigent des drapeaux PROPRES ($(4)), indépendants de la
-# configuration (clavier toujours avec SDL2, cast toujours avec HAS_CAST) :
-# compilation directe, refaite à chaque appel comme auparavant.
+# Tests whose sources need their OWN flags ($(4)), independent of the
+# configuration (keyboard always with SDL2, cast always with HAS_CAST):
+# direct compilation, redone on every call as before.
 define DIRECT_TEST
 $(TBIN)/$(2): $(3) FORCE
 	@mkdir -p $$(@D)
@@ -422,7 +422,7 @@ $(1): $(TBIN)/$(2)
 	@$(TBIN)/$(2)
 endef
 
-# Briques partagées par les listes de sources des tests
+# Building blocks shared by the test source lists
 CPU_SRCS = src/cpu/cpu6502.c src/cpu/opcodes.c src/cpu/addressing.c src/cpu/microseq.c
 MEM_SRCS = src/memory/memory.c src/memory/banking.c
 DISK_SRCS = src/storage/disk.c src/storage/disk_http.c src/storage/sedoric.c
@@ -515,14 +515,14 @@ TEST_DEBUGGER_SRCS = tests/support/loci_emu_stub.c tests/unit/test_debugger.c sr
 
 $(eval $(call UNIT_TEST,test-debugger,test_debugger,$(TEST_DEBUGGER_SRCS),,))
 
-# stb_image_write : objet de la build (exempté de -fsanitize=shift, cf.
-# STB_SAN_CFLAGS), pas sa source, que DIRECT_TEST compilerait avec tous les
-# sanitizers (erreur UBSan dans stbiw__jpg_writeBits en CI sanitizers, 2.12.7).
+# stb_image_write: the build's object (exempt from -fsanitize=shift, see
+# STB_SAN_CFLAGS), not its source, which DIRECT_TEST would compile with every
+# sanitizer (UBSan error in stbiw__jpg_writeBits in CI sanitizers, 2.12.7).
 TEST_CAST_SRCS = tests/unit/test_cast.c src/network/cast_server.c src/network/castv2.c \
                  $(BUILD)/src/video/stb_image_write_impl.o src/utils/logging.c
 
-# Le serveur cast chiffre en TLS : sans OpenSSL (pkg-config openssl, cf.
-# PICOTLS), le test est sauté au lieu d'échouer à la compilation.
+# The cast server encrypts with TLS: without OpenSSL (pkg-config openssl, see
+# PICOTLS), the test is skipped instead of failing to compile.
 ifeq ($(PICOTLS),1)
 $(eval $(call DIRECT_TEST,test-cast,test_cast,$(TEST_CAST_SRCS),-DHAS_CAST,-lpthread -lssl -lcrypto))
 else
@@ -553,11 +553,11 @@ TEST_PRINTER_SRCS = tests/unit/test_printer.c src/io/printer.c src/io/mcp40.c sr
 
 $(eval $(call UNIT_TEST,test-printer,test_printer,$(TEST_PRINTER_SRCS),,))
 
-# --type-keys après une ligne BASIC longue (tampon clavier $02DF, 2.31.5).
+# --type-keys after a long BASIC line (ROM key buffer $02DF, 2.31.5).
 test-type-keys-e2e: $(TARGET)
 	@bash tests/integration/test_type_keys_long_line.sh
 
-# LPRINT de bout en bout avec les vraies ROM (STROBE PB4 + ACK CA1, 2.31.4).
+# End-to-end LPRINT with the real ROMs (STROBE PB4 + ACK CA1, 2.31.4).
 test-printer-e2e: $(TARGET)
 	@bash tests/integration/test_printer_lprint.sh
 
@@ -581,12 +581,12 @@ $(eval $(call UNIT_TEST,test-renderer,test_renderer,$(TEST_RENDERER_SRCS),,))
 
 TEST_OSD_SRCS = tests/unit/test_osd.c src/video/osd.c
 
-# Menu des périphériques E/S (F1) : modèle, touches, sélecteur, dessin.
-# Le registre des cartes lie les cartes en modules, donc leurs périphériques :
-# la bibliothèque entière, comme test-cards.
+# I/O peripherals menu (F1): model, keys, file picker, drawing.
+# The card registry links the card modules, hence their peripherals:
+# the whole library, like test-cards.
 $(eval $(call UNIT_TEST,test-iomenu,test_iomenu,tests/unit/test_iomenu.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
-# Liaison menu F1 ↔ émulateur (médias, réglages, phosphoric.cfg) : lie le cœur.
+# F1 menu <-> emulator glue (media, settings, phosphoric.cfg): links the core.
 $(eval $(call UNIT_TEST,test-iomenu-glue,test_iomenu_glue,tests/unit/test_iomenu_glue.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 $(eval $(call UNIT_TEST,test-loci-bank,test_loci_bank,tests/unit/test_loci_bank.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
@@ -625,17 +625,17 @@ TEST_LOCI_SRCS = tests/support/loci_emu_stub.c tests/unit/test_loci.c \
 
 $(eval $(call UNIT_TEST,test-loci,test_loci,$(TEST_LOCI_SRCS),,))
 
-# Course PHI2 du LOCI sur l'ACIA $0380 (picowifi) — dispatch io_bus complet, donc
-# tout l'arbre des périphériques de page 3 est lié.
-# Les cartes en modules (dont LOCI et l'ACIA) lient leurs périphériques et leur
-# mise en route : la bibliothèque entière, comme test-cards (2.18.0).
+# LOCI PHI2 race on the $0380 ACIA (picowifi) — full io_bus dispatch, so
+# the whole page 3 peripheral tree is linked.
+# Module cards (including LOCI and the ACIA) link their peripherals and their
+# setup: the whole library, like test-cards (2.18.0).
 TEST_LOCI_ACIA_MISS_SRCS = tests/unit/test_loci_acia_miss.c $(LIB_SOURCES)
 
 $(eval $(call UNIT_TEST,test-loci-acia-miss,test_loci_acia_miss,$(TEST_LOCI_ACIA_MISS_SRCS),-lutil,$(LOCI_EMUL_LIB)))
 
-# Backend --loci-hw (src/io/loci_hw.c) face à une cartouche maquette sur
-# pseudo-terminal : course Φ2 (2.22.0), BAL de loci-fw (2.24.0). Compilation directe avec le client loci-usb, quelle
-# que soit la configuration ; SKIP si le dépôt loci-usb n'est pas là (CI).
+# --loci-hw backend (src/io/loci_hw.c) against a mock cartridge on a
+# pseudo-terminal: Φ2 race (2.22.0), loci-fw BAL (2.24.0). Built directly with the loci-usb client, whatever
+# the configuration; SKIP if the loci-usb repository is not present (CI).
 test-loci-hw: FORCE
 	@if [ ! -f $(LOCI_USB_DIR)/host/loci_usb_client.c ]; then \
 	    echo "  SKIP test-loci-hw: loci-usb absent ($(LOCI_USB_DIR))"; \
@@ -660,7 +660,7 @@ TEST_SERIAL_SRCS = tests/unit/test_serial.c src/io/acia6551.c \
 
 $(eval $(call UNIT_TEST,test-serial,test_serial,$(TEST_SERIAL_SRCS),-lutil,))
 
-# Transports série (modem AT, tcp, pty, port COM, smf) : hermétique (127.0.0.1, openpty).
+# Serial transports (AT modem, tcp, pty, COM port, smf): hermetic (127.0.0.1, openpty).
 TEST_SERIAL_BACKENDS_SRCS = tests/unit/test_serial_backends.c src/io/acia6551.c \
                    src/io/serial_backend.c src/io/smf.c src/utils/netutil.c src/utils/logging.c
 $(eval $(call UNIT_TEST,test-serial-backends,test_serial_backends,$(TEST_SERIAL_BACKENDS_SRCS),-lutil,))
@@ -730,19 +730,19 @@ $(eval $(call UNIT_TEST,test-coverage,test_coverage,$(TEST_COVERAGE_SRCS),,))
 test-loci-e2e:
 	@bash tests/integration/test_loci_sedoric_e2e.sh
 
-# E2E web : cartouche LOCI dans la build WASM (Chrome headless + Playwright ;
-# SKIP si emcc/node/Playwright/Chrome absents). Hors `make tests` (lourd).
+# Web E2E: LOCI cartridge in the WASM build (headless Chrome + Playwright;
+# SKIP if emcc/node/Playwright/Chrome are missing). Not part of `make tests` (heavy).
 test-web-loci:
 	@bash tests/integration/test_web_loci.sh
 
-# E2E web : modem picowifi WASM via tools/picowifi_ws_relay.py (BASIC -> ACIA ->
-# WebSocket -> relais -> TCP local, et retour ; sans relais : fetch, httpsame, LOCI+cassette).
-# Mêmes prérequis/SKIP, hors `make tests`.
+# Web E2E: WASM picowifi modem via tools/picowifi_ws_relay.py (BASIC -> ACIA ->
+# WebSocket -> relay -> local TCP, and back; without relay: fetch, httpsame, LOCI+cassette).
+# Same prerequisites/SKIP, not part of `make tests`.
 test-web-picowifi:
 	@bash tests/integration/test_web_picowifi.sh
 
-# E2E web : menu des périphériques (F1) dans la build WASM (F1 soustrait au
-# navigateur, pause, clavier virtuel, bouton I/O). Mêmes prérequis/SKIP, hors `make tests`.
+# Web E2E: peripherals menu (F1) in the WASM build (F1 withheld from the
+# browser, pause, on-screen keyboard, I/O button). Same prerequisites/SKIP, not in `make tests`.
 test-web-iomenu:
 	@bash tests/integration/test_web_iomenu.sh
 
@@ -753,8 +753,8 @@ test-loci-acia-e2e: $(TARGET)
 test-loci-golden: $(TARGET)
 	@bash tests/integration/test_loci_golden.sh
 
-# LOCI intégré : bouton Action → menu (mia_save_state en XRAM) → RETURN →
-# session reprise (MIA_BOOT + RESUME, spin $03B0, JMP ($FFFE)) — 2.31.6.
+# Integrated LOCI: Action button → menu (mia_save_state to XRAM) → RETURN →
+# session resumed (MIA_BOOT + RESUME, spin $03B0, JMP ($FFFE)) — 2.31.6.
 test-loci-resume: $(TARGET)
 	@python3 -I tests/integration/test_loci_warm_resume.py ./$(TARGET) roms/basic11b.rom
 
@@ -779,13 +779,13 @@ $(eval $(call UNIT_TEST,test-control-queue,test_control_queue,tests/unit/test_co
 test-httpapi: $(TARGET)
 	@bash tests/integration/test_http_api_e2e.sh
 
-# Chargement cassette natif (tape_patches.c) : synchro, lecture, cassette épuisée.
+# Native tape loading (tape_patches.c): sync, read, exhausted tape.
 $(eval $(call UNIT_TEST,test-tape-patches,test_tape_patches,tests/unit/test_tape_patches.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
-# Registre des cartes d'extension (menu F1) : état, conflits, relance.
+# Expansion card registry (F1 menu): state, conflicts, restart.
 $(eval $(call UNIT_TEST,test-cards,test_cards,tests/unit/test_cards.c $(LIB_SOURCES),,$(LOCI_EMUL_LIB)))
 
-# Analyse/routage HTTP sans réseau ni émulateur (inclut http_api.c, toutes builds).
+# HTTP parsing/routing without network or emulator (includes http_api.c, every build).
 $(eval $(call UNIT_TEST,test-http-parse,test_http_parse,tests/unit/test_http_parse.c src/utils/logging.c,,))
 
 # Sprint 36c -- machine-code autorun / rechain-gate regression.
@@ -795,7 +795,7 @@ test-mc-autorun:
 
 # Sprint 57 — base ROM presence guard. Checks that --disk-rom without -r
 # fails fast (impossible config) and that no-ROM warns ; 2.20.0 : profil
-# minimal (ROM par défaut sans -r, --no-rom pour la garde). Fast + hermetic.
+# minimal (default ROM without -r, --no-rom for the guard). Fast + hermetic.
 test-rom-guard: $(TARGET)
 	@bash tests/integration/test_rom_guard.sh
 
@@ -817,17 +817,17 @@ test-tape-roundtrip: $(TARGET)
 test-cli-parsing: $(TARGET)
 	@bash tests/integration/test_cli_parsing.sh
 
-# V2-E6 — CLOAD au niveau signal sur les deux ROM (chemin non couvert jusque-là :
-# test_tape_roundtrip recharge en fast-load).
+# V2-E6 — signal-level CLOAD on both ROMs (path not covered until now:
+# test_tape_roundtrip reloads through fast-load).
 test-tape-signal: $(TARGET) tools
 	@bash tests/integration/test_tape_signal_load.sh
 
-# V2-E4 — preuve du fetch ULA par cycle : un programme 6502 réécrit l'écran
-# pendant le balayage ; la coupure doit tomber au milieu d'une ligne.
+# V2-E4 — proof of the per-cycle ULA fetch: a 6502 program rewrites the screen
+# during the scan; the split must fall in the middle of a line.
 test-raster-split: $(TARGET) tools
 	@bash tests/integration/test_raster_split.sh
 
-# V2-S4 — horloge maître : un appel = un cycle de toute la machine.
+# V2-S4 — master clock: one call = one cycle of the whole machine.
 TEST_CLOCK_SRCS = tests/support/loci_emu_stub.c tests/unit/test_clock.c \
                   src/emu_clock.c $(CPU_SRCS) \
                    \
@@ -836,12 +836,12 @@ TEST_CLOCK_SRCS = tests/support/loci_emu_stub.c tests/unit/test_clock.c \
 
 $(eval $(call UNIT_TEST,test-clock,test_clock,$(TEST_CLOCK_SRCS),,))
 
-# V2-S1 — oracle de conformité cycle par cycle (SingleStepTests/65x02) et test
-# fonctionnel de Klaus Dormann. Les vecteurs ne sont pas versionnés : les deux
-# cibles se mettent en SKIP quand ils sont absents (`tools/fetch_vectors.sh`).
-#   make test-cycle                      200 cas par opcode (défaut)
-#   make test-cycle CYCLE_MAX_CASES=0    les 10 000 cas par opcode
-#   make test-cycle CYCLE_OPCODES=a9,b1  un sous-ensemble, en verbeux utile
+# V2-S1 — cycle-by-cycle conformance oracle (SingleStepTests/65x02) and Klaus
+# Dormann's functional test. The vectors are not versioned: both
+# targets SKIP when they are missing (`tools/fetch_vectors.sh`).
+#   make test-cycle                      200 cases per opcode (default)
+#   make test-cycle CYCLE_MAX_CASES=0    all 10,000 cases per opcode
+#   make test-cycle CYCLE_OPCODES=a9,b1  a subset, with useful verbose output
 TEST_CYCLE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_cpu_cycles.c \
                   $(CPU_SRCS) \
                   $(MEM_SRCS) src/utils/logging.c
@@ -854,31 +854,31 @@ TEST_DORMANN_SRCS = tests/support/loci_emu_stub.c tests/unit/test_dormann.c \
 
 $(eval $(call UNIT_TEST,test-dormann,test_dormann,$(TEST_DORMANN_SRCS),,))
 
-# Récupération des vecteurs d'oracle (tiers, non versionnés, ~1 Go).
+# Fetching the oracle vectors (third-party, unversioned, ~1 GB).
 fetch-vectors:
 	@bash tools/fetch_vectors.sh $(VECTORS)
 
-# V2-S0 — garde-fou sur les allégations de précision temporelle (docs/ACCURACY.md).
-# Échoue si « cycle-accurate » réapparaît non qualifié dans un document de vitrine.
+# V2-S0 — safeguard on timing-accuracy claims (docs/ACCURACY.md).
+# Fails if an unqualified "cycle-accurate" reappears in a showcase document.
 test-docs-claims:
 	@bash tests/integration/test_docs_claims.sh
 
-# Miroir anglais main-en : seul le texte des commentaires peut différer de main.
+# English mirror main-en: only the text of comments may differ from main.
 test-comment-diff:
 	@sh tests/integration/test_comment_only_diff.sh
 
-# Menu des périphériques (F1) : --menu-screenshot, --config, phosphoric.cfg.
+# Peripherals menu (F1): --menu-screenshot, --config, phosphoric.cfg.
 test-iomenu-cli: $(TARGET)
 	@sh tests/integration/test_iomenu_cli.sh
 
-# ─── Fuzzing des lecteurs de fichiers (tests/fuzz/, sprint E) ───────────────
-# Une cible = un LLVMFuzzerTestOneInput(). Deux usages :
-#   make test-fuzz-replay   gcc (sanitizers si SANITIZE=1) : rejoue les graines
-#                           (tools/fuzz_seeds.sh) et tests/fuzz/regressions/<cible>/
+# ─── Fuzzing the file readers (tests/fuzz/, sprint E) ──────────────────────
+# One target = one LLVMFuzzerTestOneInput(). Two uses:
+#   make test-fuzz-replay   gcc (sanitizers if SANITIZE=1): replays the seeds
+#                           (tools/fuzz_seeds.sh) and tests/fuzz/regressions/<target>/
 #   make fuzz [FUZZ_TIME=60] [FUZZ_TARGETS="disk tap"]
-#                           clang + libFuzzer + ASan/UBSan, FUZZ_TIME s par cible ;
-#                           entrées fautives dans $(FUZZ_DIR)/crashes/ (à recopier
-#                           dans tests/fuzz/regressions/<cible>/ une fois corrigées).
+#                           clang + libFuzzer + ASan/UBSan, FUZZ_TIME s per target;
+#                           failing inputs in $(FUZZ_DIR)/crashes/ (copy them into
+#                           tests/fuzz/regressions/<target>/ once fixed).
 FUZZ_TARGETS ?= disk tap tapenat ost smf sym cfg http hfe
 FUZZ_SRCS_disk = tests/fuzz/fuzz_disk.c $(DISK_SRCS) src/utils/logging.c
 FUZZ_SRCS_tap  = tests/fuzz/fuzz_tap.c src/storage/tap.c src/utils/logging.c
@@ -906,13 +906,13 @@ $(TBIN)/fuzz_$(1): $(call obj,$(FUZZ_SRCS_$(1)) tests/fuzz/fuzz_replay.c) $(FUZZ
 endef
 $(foreach t,$(FUZZ_TARGETS),$(eval $(call FUZZ_REPLAY,$(t))))
 
-# Outil dsk2hfe : structure HFE produite, images invalides refusées sans
-# toucher à la sortie (lecture hors tampon sur image tronquée avant 2.12.4).
+# dsk2hfe tool: structure of the HFE produced, invalid images rejected without
+# touching the output (out-of-buffer read on a truncated image before 2.12.4).
 test-dsk2hfe: tools
 	@bash tests/integration/test_dsk2hfe.sh
 
-# Installation apt de la CI : tentative bloquée coupée puis relancée, abandon
-# après 3 essais (faux sudo, ni réseau ni droits).
+# CI apt install: a stuck attempt is cut and retried, given up after 3 tries
+# (fake sudo, no network, no privileges).
 test-ci-apt-install:
 	@sh tests/integration/test_ci_apt_install.sh
 
@@ -948,41 +948,41 @@ $(FUZZ_DIR)/fuzz_%: FORCE
 	@mkdir -p $(@D)
 	@$(FUZZ_CC) $(FUZZ_CFLAGS) $(FUZZ_SRCS_$*) $(FUZZ_LIBS_$*) $(filter-out -fsanitize=%,$(LDFLAGS)) -o $@
 
-# Stub GDB : écoute sur 127.0.0.1 par défaut, --gdb-bind pour l'ouvrir.
+# GDB stub: listens on 127.0.0.1 by default, --gdb-bind to open it.
 test-gdb-bind: $(TARGET)
 	@bash tests/integration/test_gdb_bind.sh
 
-# Preuve d'équivalence du chemin paresseux de la VIA : même corpus de lignes de
-# commande (tools/cli_golden.sh) sur le binaire courant et sur un binaire
-# VIA_NO_LAZY=1 (pas-à-pas) — codes, sorties, fichiers produits à l'octet.
+# Equivalence proof of the VIA lazy path: same command-line corpus
+# (tools/cli_golden.sh) on the current binary and on a VIA_NO_LAZY=1
+# (stepped) binary — exit codes, outputs, produced files byte for byte.
 test-via-lazy: $(BUILD)/bin/$(TARGET)
 	@$(MAKE) --no-print-directory VIA_NO_LAZY=1 BUILD=$(BUILD)-vianolazy $(BUILD)-vianolazy/bin/$(TARGET) >/dev/null
 	@sh tools/cli_golden.sh $(BUILD)-vianolazy/bin/$(TARGET) $(BUILD)/bin/$(TARGET)
 
-# Auto-test de tools/check_skips.sh (vérificateur de `make tests-strict`).
+# Self-test of tools/check_skips.sh (the `make tests-strict` checker).
 test-check-skips:
 	@sh tests/integration/test_check_skips.sh
 
-# Garde-fou des refactors de main()/du parseur : rejoue tests/cli_golden/cases.txt
-# sur un binaire de RÉFÉRENCE (ex. construit depuis le commit précédent) et sur
-# celui de la configuration courante ; tout écart (code, sorties, fichiers) échoue.
+# Safety net for refactors of main()/the parser: replays tests/cli_golden/cases.txt
+# on a REFERENCE binary (e.g. built from the previous commit) and on the one of
+# the current configuration; any difference (exit code, outputs, files) fails.
 #   make test-cli-golden GOLDEN_REF=/chemin/vers/phosphoric-de-reference
 test-cli-golden: $(BUILD)/bin/$(TARGET)
 	@test -n "$(GOLDEN_REF)" || { echo "GOLDEN_REF=/chemin/binaire/de/reference requis"; exit 1; }
 	@sh tools/cli_golden.sh "$(GOLDEN_REF)" $(BUILD)/bin/$(TARGET)
 
-# Ajouter une carte = un fichier + une ligne (ADR 0006) : la carte d'exemple
-# docs/examples/card_demo.c, ajoutée à une copie de l'arbre, y fonctionne de
-# bout en bout (aide, options, menu, bus, .ost) sans autre modification.
+# Adding a card = one file + one line (ADR 0006): the sample card
+# docs/examples/card_demo.c, added to a copy of the tree, works there end to
+# end (help, options, menu, bus, .ost) with no other change.
 test-card-template: $(TARGET)
 	@bash tests/integration/test_card_template.sh
 
-# Toute cible test-* est dans `make tests`, ou exemptée par écrit dans
-# tests/out_of_suite.txt (test-serial-backends en était absent depuis 2.11.1).
+# Every test-* target is in `make tests`, or exempted in writing in
+# tests/out_of_suite.txt (test-serial-backends was missing from it since 2.11.1).
 test-suite-targets:
 	@python3 tools/check_test_targets.py Makefile tests/out_of_suite.txt
 
-# Auto-test du harnais cli_golden (détecte un écart, n'en invente pas).
+# Self-test of the cli_golden harness (detects a difference, invents none).
 test-cli-golden-self: $(TARGET)
 	@sh tests/integration/test_cli_golden.sh
 
@@ -994,21 +994,21 @@ test-cli-golden-self: $(TARGET)
 bench:
 	@bash tools/bench.sh $(if $(BENCH_TSV),--tsv,)
 
-# V2-E7 (US7.1) — budget de performance BLOQUANT : ≤ 5 % de la trame (1000 µs)
-# sur le scénario boot BASIC. SKIP explicite sur machine bridée (batterie,
-# fréquence effondrée) ; BENCH_STRICT=1 pour trancher quand même.
-#   make test-bench BENCH_BUDGET_US=1500     # relever le plafond (CI lente)
+# V2-E7 (US7.1) — BLOCKING performance budget: ≤ 5 % of the frame (1000 µs)
+# on the BASIC boot scenario. Explicit SKIP on a throttled machine (battery,
+# collapsed frequency); BENCH_STRICT=1 to decide anyway.
+#   make test-bench BENCH_BUDGET_US=1500     # raise the ceiling (slow CI)
 test-bench: $(TARGET)
 	@bash tools/bench_check.sh
 
-# V2-E7 (US7.3) — corpus de non-régression : chaque média local rejoué un
-# nombre fixe de cycles, écran comparé au manifeste tests/corpus/manifest.sha256.
-# Re-baseline après un changement VOULU : tools/corpus_replay.sh snapshot
+# V2-E7 (US7.3) — non-regression corpus: each local medium is replayed for a
+# fixed number of cycles, screen compared to the manifest tests/corpus/manifest.sha256.
+# Re-baseline after an INTENDED change: tools/corpus_replay.sh snapshot
 test-corpus: $(TARGET)
 	@bash tools/corpus_replay.sh check
 
-# V2-E7 (US7.2) — un savestate pris en PLEINE trame est un point de reprise
-# exact : mêmes arrêts raster, même VIA, même RAM qu'un run ininterrompu.
+# V2-E7 (US7.2) — a savestate taken in the MIDDLE of a frame is an exact
+# resume point: same raster stops, same VIA, same RAM as an uninterrupted run.
 test-savestate-determinism: $(TARGET)
 	@python3 tests/integration/test_savestate_determinism.py
 
@@ -1025,8 +1025,8 @@ tests: tools test-cpu test-memory test-io test-ula-ng test-cassette test-jasmin 
 	@echo "  All test suites completed!"
 	@echo "═══════════════════════════════════════════════════════"
 
-# Suite complète + refus des tests sautés sans raison autorisée
-# (tests/allowed_skips.txt). Journal : $(BUILD)/tests.log. Utilisé par la CI.
+# Full suite + rejection of tests skipped without an allowed reason
+# (tests/allowed_skips.txt). Log: $(BUILD)/tests.log. Used by CI.
 tests-strict:
 	@mkdir -p $(BUILD)
 	@{ $(MAKE) --no-print-directory tests; echo $$? > $(BUILD)/tests.rc; } 2>&1 | tee $(BUILD)/tests.log
@@ -1096,7 +1096,7 @@ valgrind: test-cpu test-memory test-io test-jasmin test-jasmin test-storage test
 	@echo "  Valgrind: No memory leaks detected!"
 	@echo "═══════════════════════════════════════════════════════"
 
-# Suites cœur sous Valgrind (job CI) : binaires pris dans $(TBIN).
+# Core suites under Valgrind (CI job): binaries taken from $(TBIN).
 VALGRIND_CORE = test_cpu test_memory test_io test_clock test_savestate test_audio
 valgrind-core: test-cpu test-memory test-io test-clock test-savestate test-audio
 	@for t in $(VALGRIND_CORE); do \
@@ -1116,7 +1116,7 @@ coverage:
 	@echo "Generating coverage report..."
 	@$(MAKE) coverage-report COVERAGE=1 --no-print-directory
 
-# Seuil de couverture (cliquet) : à lancer après `make coverage`.
+# Coverage floor (ratchet): run after `make coverage`.
 coverage-check:
 	@sh tools/coverage_check.sh $(BUILD) tests/coverage_floor.txt
 
@@ -1195,9 +1195,9 @@ WASM_LDFLAGS = -sUSE_SDL=2 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB \
                -sEXPORTED_FUNCTIONS=_main,_web_key,_web_key_release_all,_web_io_activity,_web_peek,_web_save_state,_web_load_state,_web_insert_tap,_web_insert_disk,_web_iomenu_toggle,_malloc,_free \
                -lidbfs.js --preload-file roms@/roms --shell-file web/shell.html
 
-# La co-simulation RP2040 (libemul, natif) n'existe pas en WebAssembly : le stub
-# prend toujours la place de loci_emu.c ici, quel que soit LOCI_EMU.
-# Version web : le stub seul, sans aiguillage ni fonctions renommées.
+# The RP2040 co-simulation (libemul, native) does not exist in WebAssembly: the stub
+# always replaces loci_emu.c here, whatever LOCI_EMU is.
+# Web build: the stub alone, with no dispatch and no renamed functions.
 WASM_SOURCES = $(filter-out src/io/loci_backend.c src/io/loci_emu.c src/io/loci_neo.c \
                  src/io/loci_hw.c $(LOCI_USB_DIR)/host/loci_usb_client.c,$(LIB_SOURCES))
 wasm: web/shell.html

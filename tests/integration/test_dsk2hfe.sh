@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: EUPL-1.2
 # tests/integration/test_dsk2hfe.sh
 #
-# Outil dsk2hfe (.dsk MFM_DISK → image magnétique HFE v1) : structure du fichier
-# produit (en-tête HXCPICFE, table des pistes, taille, entrelacement des faces,
-# marques de synchronisation 0x4489), et refus des images invalides SANS toucher
-# au fichier de sortie existant. Une image tronquée faisait lire hors du tampon
-# avant 2.12.4 (régression : tests/fuzz/regressions/hfe/).
+# dsk2hfe tool (.dsk MFM_DISK → HFE v1 magnetic image): structure of the file
+# produced (HXCPICFE header, track table, size, side interleaving, 0x4489 sync
+# marks), and rejection of invalid images WITHOUT touching an existing output
+# file. A truncated image caused an out-of-buffer read before 2.12.4
+# (regression: tests/fuzz/regressions/hfe/).
 #
 # Author: bmarty <bmarty@mailo.com>
 set -u
@@ -23,13 +23,13 @@ ko() { echo "  FAIL: $1"; fail=$((fail + 1)); }
 echo "=== dsk2hfe : .dsk MFM_DISK → HFE v1 ==="
 [ -x "$TOOL" ] || { echo "  SKIP: $TOOL non construit (make tools)"; exit 0; }
 
-# Images synthétiques : 1 face × 3 pistes et 2 faces × 2 pistes, 17 secteurs.
+# Synthetic images: 1 side × 3 tracks and 2 sides × 2 tracks, 17 sectors.
 python3 -c "import sys; open(sys.argv[1],'wb').write(bytes((i*7)&255 for i in range(3*17*256)))" "$TMP/a.raw"
 python3 -c "import sys; open(sys.argv[1],'wb').write(bytes((i*5+1)&255 for i in range(2*2*17*256)))" "$TMP/b.raw"
 python3 tools/dsk_raw2mfm.py "$TMP/a.raw" "$TMP/a.dsk" sidemajor 1 3 17 >/dev/null
 python3 tools/dsk_raw2mfm.py "$TMP/b.raw" "$TMP/b.dsk" sidemajor 2 2 17 >/dev/null
 
-check() {   # check NOM DSK FACES PISTES
+check() {   # check NAME DSK SIDES TRACKS
     local name=$1 dsk=$2 sides=$3 tracks=$4 hfe="$TMP/$1.hfe"
     if ! "$TOOL" "$dsk" "$hfe" >/dev/null; then ko "$name : conversion refusée"; return; fi
     python3 - "$hfe" "$sides" "$tracks" <<'PY'
@@ -44,10 +44,10 @@ if len(d) != 1024 + tracks * 25600: errs.append(f"taille {len(d)}")
 for t in range(tracks):
     blk, ln = struct.unpack_from("<HH", d, 512 + 4 * t)
     if blk != 2 + 50 * t or ln != 25600: errs.append(f"table piste {t}")
-# Face 0 = 256 premiers octets de chaque bloc de 512 ; on recolle la piste 0.
+# Side 0 = first 256 bytes of each 512-byte block; track 0 is reassembled.
 side0 = b"".join(d[1024 + k * 512: 1024 + k * 512 + 256] for k in range(50))
 side1 = b"".join(d[1024 + k * 512 + 256: 1024 + k * 512 + 512] for k in range(50))
-bits = "".join(format(b, "08b")[::-1] for b in side0)      # LSb d'abord
+bits = "".join(format(b, "08b")[::-1] for b in side0)      # LSb first
 if "0100010010001001" not in bits: errs.append("marque A1 (0x4489) absente")
 if sides == 1 and any(side1): errs.append("face 1 non vide")
 if sides == 2 and not any(side1): errs.append("face 1 vide")
@@ -62,7 +62,7 @@ check "2 faces, 2 pistes" "$TMP/b.dsk" 2 2
 "$TOOL" "$TMP/a.dsk" "$TMP/again.hfe" >/dev/null
 cmp -s "$TMP/1 face, 3 pistes.hfe" "$TMP/again.hfe" && ok "sortie déterministe" || ko "sortie différente d'un lancement à l'autre"
 
-refuse() {  # refuse NOM FICHIER MOTIF
+refuse() {  # refuse NAME FILE PATTERN
     echo "garder" > "$TMP/out.hfe"
     msg=$("$TOOL" "$2" "$TMP/out.hfe" 2>&1 >/dev/null); rc=$?
     if [ $rc -eq 1 ] && grep -q "$3" <<<"$msg" && [ "$(cat "$TMP/out.hfe")" = garder ]; then

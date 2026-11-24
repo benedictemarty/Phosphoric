@@ -1,13 +1,13 @@
-# V2-E7 (US7.4) — intégration continue Linux : la suite complète, les deux
-# builds (SDL2=0/1), l'oracle CPU (Dormann + un échantillon 65x02), le budget
-# de performance et Valgrind sur les suites cœur.
+# V2-E7 (US7.4) — Linux continuous integration: the full suite, both
+# builds (SDL2=0/1), the CPU oracle (Dormann + a 65x02 sample), the performance
+# budget and Valgrind on the core suites.
 #
-# Les ROMs ne sont pas versionnées (*.rom ignoré) : les tests qui en dépendent
-# se mettent en SKIP d'eux-mêmes ; la CI valide donc le cœur (CPU, horloge
-# maître, VIA, ULA, PSG, savestate, FDC sur images synthétiques), pas le boot
-# BASIC — le budget de performance (qui boote la ROM) se met donc en SKIP ici ;
-# BENCH_STRICT et le plafond relevé ne serviraient que si une ROM était fournie
-# au runner (un runner partagé n'est pas la machine de référence).
+# ROMs are not versioned (*.rom ignored): the tests that depend on them
+# SKIP themselves; the CI therefore validates the core (CPU, master
+# clock, VIA, ULA, PSG, savestate, FDC on synthetic images), not the BASIC
+# boot — the performance budget (which boots the ROM) therefore SKIPs here;
+# BENCH_STRICT and the raised ceiling would only matter if a ROM were provided
+# to the runner (a shared runner is not the reference machine).
 name: linux-ci
 
 on:
@@ -39,10 +39,10 @@ jobs:
           make --version | head -1
           pkg-config --modversion sdl2
 
-      # Vecteurs d'oracle : Dormann en entier (~150 Ko) et un échantillon 65x02
-      # d'opcodes où le cœur historique diffère du micro-séquencé (accès
-      # factices d'indexation, écriture-retour RMW, pile, BRK/RTI, branchements)
-      # — assez pour que `make test-cycle` tranche, sans le Go complet.
+      # Oracle vectors: Dormann in full (~150 KB) and a 65x02 sample
+      # of opcodes where the historical core differs from the micro-sequenced one
+      # (indexing dummy accesses, RMW write-back, stack, BRK/RTI, branches)
+      # — enough for `make test-cycle` to decide, without the full GB set.
       - name: Fetch oracle vectors (Dormann + 65x02 sample)
         run: |
           tools/fetch_vectors.sh dormann
@@ -54,9 +54,9 @@ jobs:
       - name: Build with SDL2 (default)
         run: make clean && make -j4
 
-      # Suite complète ; échoue aussi si un test saute sans raison autorisée
-      # (tests/allowed_skips.txt). Objets rangés par configuration dans build/ :
-      # plus de mélange SDL2=0/1 entre les étapes.
+      # Full suite; also fails if a test is skipped without an allowed reason
+      # (tests/allowed_skips.txt). Objects are kept per configuration in build/:
+      # no more SDL2=0/1 mixing between steps.
       - name: Run test suite (strict skips)
         run: make tests-strict
 
@@ -65,18 +65,18 @@ jobs:
           make test-cycle CYCLE_MAX_CASES=0
           make test-dormann
 
-      # Budget de performance : verdict forcé (BENCH_STRICT), plafond relevé à
-      # 2000 µs (10 % de la trame) pour un runner partagé — le chiffre de
-      # référence (≤ 1000 µs) se lit sur la machine de référence.
+      # Performance budget: forced verdict (BENCH_STRICT), ceiling raised to
+      # 2000 µs (10 % of the frame) for a shared runner — the reference
+      # figure (≤ 1000 µs) is read on the reference machine.
       - name: Performance budget
         run: BENCH_STRICT=1 BENCH_BUDGET_US=2000 make test-bench
 
       - name: Valgrind (core suites)
         run: make valgrind-core
 
-  # Sprint E : la même suite sous AddressSanitizer + UndefinedBehaviorSanitizer
-  # (toute erreur UBSan arrête le test), puis le fuzzing des lecteurs de fichiers
-  # (.dsk, .tap, .ost, .mid, symboles, phosphoric.cfg) avec libFuzzer.
+  # Sprint E: the same suite under AddressSanitizer + UndefinedBehaviorSanitizer
+  # (any UBSan error stops the test), then fuzzing of the file readers
+  # (.dsk, .tap, .ost, .mid, symbols, phosphoric.cfg) with libFuzzer.
   sanitizers:
     runs-on: ubuntu-latest
     steps:
@@ -105,9 +105,9 @@ jobs:
           path: build/fuzz/crashes/
           if-no-files-found: ignore
 
-  # Sprint E : couverture des lignes de src/*.c (gcov), seuil en cliquet
-  # (tests/coverage_floor.txt) — la CI n'a pas les ROM, d'où un chiffre plus bas
-  # qu'en local.
+  # Sprint E: line coverage of src/*.c (gcov), ratchet floor
+  # (tests/coverage_floor.txt) — CI has no ROMs, hence a lower figure than
+  # locally.
   coverage:
     runs-on: ubuntu-latest
     steps:

@@ -41,31 +41,31 @@ shot() { # <name> <ula-ng-poke seq | ""> -> $TMP/<name>.ppm
 shot base "" || { ko "baseline screenshot"; echo "=== result: $pass passed, $fail failed ==="; [ "$fail" -eq 0 ]; exit; }
 ok "baseline screenshot rendered"
 
-# palette : couleur 7 (blanc) -> vert
+# palette: colour 7 (white) -> green
 shot pal "340=4E,340=47,341=01,348=07,349=00,34A=F0"
-# copper : couleur 7 rouge (ligne 0) puis bleu (ligne $1E=30)
+# copper: colour 7 red (line 0) then blue (line $1E=30)
 shot cop "340=4E,340=47,341=01,34B=00,34C=00,34C=7F,34C=00,34C=1E,34C=70,34C=0F"
-# start-address : scroll d'une rangée ($BB80+40 = $BBA8)
+# start-address: scroll by one row ($BB80+40 = $BBA8)
 shot scr "340=4E,340=47,341=01,342=A8,343=BB"
-# scroll fin Y = 4 px ($0345=04)
+# fine scroll Y = 4 px ($0345=04)
 shot scy "340=4E,340=47,341=01,345=04"
-# scroll fin X = 3 px ($0344=03)
+# fine scroll X = 3 px ($0344=03)
 shot scx "340=4E,340=47,341=01,344=03"
-# attributs parallèles : NG_MODE.b1 + fill papier bleu(4)/encre rouge(1) = $21
+# parallel attributes: NG_MODE.b1 + fill paper blue(4)/ink red(1) = $21
 shot atr "340=4E,340=47,341=02,34D=21"
-# sprites : sprite 0 (16x16) rempli d'index 1 (rouge), enable global + sprite, à (100,100)
+# sprites: sprite 0 (16x16) filled with index 1 (red), global + sprite enable, at (100,100)
 SPRSEQ="340=4E,340=47,350=01,351=00,352=64,353=64,354=01"
 for _i in $(seq 1 256); do SPRSEQ="$SPRSEQ,355=01"; done
 shot spr "$SPRSEQ"
-# chunky 4bpp (§5.8) : NG_MODE=0x05 (enable+chunky) + palette index 0 = magenta → 320px
+# chunky 4bpp (§5.8): NG_MODE=0x05 (enable+chunky) + palette index 0 = magenta → 320px
 shot chunky "340=4E,340=47,341=05,348=00,349=0F,34A=0F"
-# texte 80 colonnes (§5.8) : NG_MODE=0x09 (enable+text80) → 480px
+# 80-column text (§5.8): NG_MODE=0x09 (enable+text80) → 480px
 shot t80 "340=4E,340=47,341=09"
-# VDU intégré : stream VDU 18 (=$12) puis $21 (papier bleu/encre rouge) via NG_VDU ($0357)
+# built-in VDU: stream VDU 18 (=$12) then $21 (paper blue/ink red) via NG_VDU ($0357)
 shot vdu "340=4E,340=47,357=12,357=21"
-# VDU graphique (v0.2) : CLG (16=$10) + GCOL 7 (17=$11) + DRAW (26=$1A) ligne (0,50)-(100,50)
+# graphics VDU (v0.2): CLG (16=$10) + GCOL 7 (17=$11) + DRAW (26=$1A) line (0,50)-(100,50)
 shot vdugfx "340=4E,340=47,357=10,357=11,357=07,357=1A,357=00,357=32,357=64,357=32"
-# VDU upload (v0.3) : VDU 23 (=$17) sprite 0 + 256 o motif (index 3) + VDU 24 (=$18) pos (100,80) enable
+# VDU upload (v0.3): VDU 23 (=$17) sprite 0 + 256-byte pattern (index 3) + VDU 24 (=$18) pos (100,80) enable
 VDUSPR="340=4E,340=47,357=17,357=00"
 for _i in $(seq 1 256); do VDUSPR="$VDUSPR,357=03"; done
 VDUSPR="$VDUSPR,357=18,357=00,357=64,357=50,357=01"
@@ -97,10 +97,10 @@ _,_,vdu=load(f"{TMP}/vdu.ppm")
 gW,gH,vdugfx=load(f"{TMP}/vdugfx.ppm")
 _,_,vduspr=load(f"{TMP}/vduspr.ppm")
 res=[]
-# palette : les blancs de la ref deviennent verts
+# palette: the whites of the ref become green
 g=sum(1 for o in range(0,W*H*3,3) if base[o]==0xFF and base[o+1]==0xFF and base[o+2]==0xFF and (pal[o],pal[o+1],pal[o+2])==(0,0xFF,0))
 res.append(("palette: white->green (%d px)"%g, g>1000))
-# copper : bandeau rouge (haut), bytes-free bleu (bas)
+# copper: red band (top), bytes-free blue (bottom)
 def band(fb,y0,y1,col):
     n=0
     for y in range(y0,y1):
@@ -110,18 +110,18 @@ def band(fb,y0,y1,col):
     return n
 red=band(cop,8,24,(0xFF,0,0)); blue=band(cop,40,48,(0,0,0xFF))
 res.append(("copper: red top (%d) + blue bottom (%d)"%(red,blue), red>100 and blue>50))
-# start-address : rangee texte 0 du decale == rangee 1 de la ref
+# start-address: text row 0 of the shifted image == row 1 of the ref
 row=W*3
 res.append(("start-address: scrolled row0 == base row1", scr[0:8*row]==base[8*row:16*row]))
-# scroll fin Y=4 : contenu decale de 4 px vers le haut (scy[R] == base[R+4])
+# fine scroll Y=4: content shifted up by 4 px (scy[R] == base[R+4])
 res.append(("fine scroll Y=4: content shifted up 4px", scy[8*row:40*row]==base[12*row:44*row]))
-# scroll fin X=3 : contenu decale de 3 px vers la gauche (scx[x] == base[x+3])
+# fine scroll X=3: content shifted left by 3 px (scx[x] == base[x+3])
 okX=True
 for y in range(8,40):
     b=y*W*3
     if scx[b:b+(W-3)*3] != base[b+9:b+9+(W-3)*3]: okX=False; break
 res.append(("fine scroll X=3: content shifted left 3px", okX))
-# attributs // : zone principale (y<200) entierement papier bleu + encre rouge (aucun clash)
+# parallel attributes: main area (y<200) entirely paper blue + ink red (no clash)
 ablue=ared=aother=0
 for y in range(200):
     for x in range(W):
@@ -132,28 +132,28 @@ for y in range(200):
         else: aother+=1
 res.append(("parallel attrs: main area = blue paper(%d)+red ink(%d), other=%d"%(ablue,ared,aother),
             ablue>40000 and ared>500 and aother==0))
-# sprites : bloc 16x16 rouge (index 1) à (100,100), composé sur le fond
+# sprites: 16x16 red block (index 1) at (100,100), composited over the background
 sred=0
 for y in range(100,116):
     for x in range(100,116):
         o=(y*W+x)*3
         if (spr[o],spr[o+1],spr[o+2])==(0xFF,0,0): sred+=1
 res.append(("sprite: 16x16 red block at (100,100) = %d/256 px"%sred, sred==256))
-# chunky 4bpp : résolution 320 large + palette index 0 (magenta) dominant
+# chunky 4bpp: 320-wide resolution + palette index 0 (magenta) dominant
 cmag=sum(1 for o in range(0,cW*cH*3,3) if (chunky[o],chunky[o+1],chunky[o+2])==(0xFF,0,0xFF))
 res.append(("chunky 4bpp: %dx%d, magenta(idx0)=%d px"%(cW,cH,cmag), cW==320 and cmag>10000))
-# texte 80 colonnes : résolution 480 large + caractères rendus (pixels non-noirs)
+# 80-column text: 480-wide resolution + rendered characters (non-black pixels)
 tnb=sum(1 for o in range(0,tW*tH*3,3) if (t80[o],t80[o+1],t80[o+2])!=(0,0,0))
 res.append(("text 80col: %dx%d, %d non-black px"%(tW,tH,tnb), tW==480 and tnb>1000))
-# VDU intégré : VDU 18 = fond bleu par cellule (papier bleu dominant, comme attributs //)
+# built-in VDU: VDU 18 = blue background per cell (blue paper dominant, like parallel attributes)
 vblue=sum(1 for y in range(200) for x in range(W)
           if (vdu[(y*W+x)*3],vdu[(y*W+x)*3+1],vdu[(y*W+x)*3+2])==(0,0,0xFF))
 res.append(("VDU port: stream 18/$21 -> blue paper fill (%d px)"%vblue, vblue>40000))
-# VDU graphique : ligne blanche y=50 tracée dans la VRAM ULA-NG (mode chunky 320px)
+# graphics VDU: white line y=50 drawn into the ULA-NG VRAM (chunky 320px mode)
 gwhite=sum(1 for x in range(gW)
            if (vdugfx[(50*gW+x)*3],vdugfx[(50*gW+x)*3+1],vdugfx[(50*gW+x)*3+2])==(0xFF,0xFF,0xFF))
 res.append(("VDU gfx: %dx%d, white line y=50 (%d px in VRAM)"%(gW,gH,gwhite), gW==320 and gwhite>100))
-# VDU upload : sprite 16x16 plein (index 3 = jaune) uploadé par flux, à (100,80)
+# VDU upload: solid 16x16 sprite (index 3 = yellow) uploaded via the stream, at (100,80)
 syellow=sum(1 for y in range(80,96) for x in range(100,116)
             if (vduspr[(y*240+x)*3],vduspr[(y*240+x)*3+1],vduspr[(y*240+x)*3+2])==(0xFF,0xFF,0))
 res.append(("VDU upload: 16x16 sprite via stream at (100,80) = %d/256 px"%syellow, syellow==256))

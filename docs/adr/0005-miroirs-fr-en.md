@@ -1,25 +1,24 @@
-# 0005 — Deux branches miroir : français et anglais, qui ne diffèrent que par les commentaires
+# 0005 — Two mirror branches, French and English, differing only in comments
 
-- **Statut** : acceptée (2.1.4)
+- **Status**: accepted (2.1.4)
 
-## Contexte
+## Context
 
-Le projet est écrit en français (commentaires, documentation, messages de
-commit), mais publié aussi pour un public anglophone.
+The project is written in French (comments, documentation, commit messages), but
+also published for an English-speaking audience.
 
-## Décision
+## Decision
 
-- `main` (français) est poussée sur Framagit et `origin`.
-- `main-en` (anglais) = `main` + des commits de traduction ; elle est poussée en
-  `main` sur GitHub et Codeberg. `main` n'est jamais poussée sur ces deux miroirs.
-- Seuls les commentaires et la documentation diffèrent : le code, les chaînes
-  (textes affichés compris) et les fichiers de données sont identiques.
-  `tools/check_comment_only_diff.py` le vérifie (commentaires retirés, chaque
-  fichier doit être identique à celui de `main`) ; `make test-comment-diff`
-  auto-teste ce vérificateur.
+- `main` (French) is pushed to Framagit and `origin`.
+- `main-en` (English) = `main` + translation commits; it is pushed as `main` to
+  GitHub and Codeberg. `main` is never pushed to those two mirrors.
+- Only comments and documentation differ: code, strings (displayed texts
+  included) and data files are identical. `tools/check_comment_only_diff.py`
+  checks it (comments stripped, each file must equal the one in `main`);
+  `make test-comment-diff` self-tests that checker.
 
-## Conséquences
+## Consequences
 
-- Chaque livraison se fait en deux temps : `main`, puis fusion dans `main-en` et
-  traduction des nouveaux commentaires.
-- La CI GitHub tourne sur la branche anglaise, au code identique.
+- Every delivery happens in two steps: `main`, then a merge into `main-en` and
+  the translation of the new comments.
+- GitHub CI runs on the English branch, whose code is identical.

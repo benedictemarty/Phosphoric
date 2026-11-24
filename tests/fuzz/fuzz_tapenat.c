@@ -1,16 +1,15 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_tapenat.c
- * @brief Fuzzing : chargement cassette natif (CLOAD par la ROM corrigée,
+ * @brief Fuzzing: native tape loading (CLOAD through the patched ROM,
  *        tape_patches.c)
  * @author bmarty <bmarty@mailo.com>
  *
- * Sans ROM : on joue ce que fait la ROM pendant un CLOAD en plaçant le PC sur
- * les points d'entrée corrigés (recherche de synchro, lecture d'octet, reprise
- * de synchro) et tape_patches() lit la cassette fuzzée, jusqu'à l'épuiser puis
- * au-delà. Octet 0 : modèle (bit 0 : Atmos / Oric-1) ; le reste : le .tap.
- * La cassette est copiée dans un tampon de taille exacte : toute lecture
- * au-delà est vue par ASan.
+ * Without ROM: we play what the ROM does during a CLOAD by putting the PC on
+ * the patched entry points (sync search, byte read, sync recovery) and
+ * tape_patches() reads the fuzzed tape, until it is exhausted and beyond.
+ * Byte 0: model (bit 0: Atmos / Oric-1); the rest: the .tap. The tape is
+ * copied into an exactly-sized buffer: any read past it is seen by ASan.
  */
 #include "fuzz_common.h"
 #include "utils/logging.h"
@@ -40,8 +39,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     emu.tape_syncstack = -1;
     emu.cpu.SP = 0xFF;
 
-    /* Synchro, 12 octets, reprise de synchro… tant que la cassette a des
-     * octets, puis quelques tours de plus sur une cassette épuisée. */
+    /* Sync, 12 bytes, sync recovery… while the tape has bytes, then a few
+     * more rounds on an exhausted tape. */
     int extra = 8;
     for (int step = 0; step < 20000 && emu.tape_loaded && extra > 0; step++) {
         if (emu.tapeoffs >= emu.tapelen) extra--;

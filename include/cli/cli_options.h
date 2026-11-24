@@ -1,29 +1,28 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_options.h
- * @brief Déclarations des options CLI (enum de codes longs + table getopt).
+ * @brief CLI option declarations (enum of long codes + getopt table).
  * @author bmarty <bmarty@mailo.com>
  *
- * Extrait de main.c (Epic 7 / US3 partiel, Sprint 127). SÉPARE les *déclarations*
- * d'options (données) de la *logique de parsing* (le switch getopt, dans
- * src/cli/cli_args.c depuis le sprint C).
+ * Extracted from main.c (Epic 7 / partial US3, Sprint 127). SEPARATES the option
+ * *declarations* (data) from the *parsing logic* (the getopt switch, in
+ * src/cli/cli_args.c since sprint C).
  *
- * Sprint C (2.3.0) : les variables d'options vivent dans cli_opts_t
- * (cli/cli_opts.h), le switch est dans cli_parse_args(), à l'identique. Reste
- * NON fait, volontairement : le parseur *déclaratif* (table générique remplaçant
- * le switch) — sans bénéfice mesurable tant que les `case` restent de simples
- * affectations, et chaque changement de comportement devrait être justifié
- * contre tools/cli_golden.sh.
+ * Sprint C (2.3.0): the option variables live in cli_opts_t (cli/cli_opts.h),
+ * the switch is in cli_parse_args(), verbatim. Deliberately NOT done: the
+ * *declarative* parser (a generic table replacing the switch) -- no measurable
+ * benefit while the `case`s remain plain assignments, and any behaviour change
+ * would have to be justified against tools/cli_golden.sh.
  *
- * Inclus par src/cli/cli_args.c uniquement (définit long_options[] en static).
+ * Included by src/cli/cli_args.c only (defines long_options[] as static).
  */
 #ifndef CLI_OPTIONS_H
 #define CLI_OPTIONS_H
 
 #include <getopt.h>
 
-/* Codes des options longues sans équivalent court (>= 256 pour ne pas entrer en
- * collision avec les caractères d'options courtes). */
+/* Codes of the long options without a short equivalent (>= 256 so as not to
+ * collide with the short option characters). */
 enum {
     OPT_SCREENSHOT = 256, OPT_SCREENSHOT_AT, OPT_FRAME_DUMP, OPT_FRAME_DUMP_INTERVAL,
     OPT_TYPE_KEYS, OPT_DISK_ROM, OPT_DISK1, OPT_DISK2, OPT_DISK3, OPT_BREAKPOINT,
@@ -46,10 +45,10 @@ enum {
     OPT_NO_AUTO_LOCI
 };
 
-/* Chaîne d'options courtes passée à getopt_long. */
+/* Short option string passed to getopt_long. */
 #define CLI_SHORT_OPTIONS "t:d:r:h:fnc:vm:k:j:p:b:D?"
 
-/* Table getopt des options longues (terminée par {0,0,0,0}). */
+/* getopt table of the long options (terminated by {0,0,0,0}). */
 static const struct option long_options[] = {
     {"tape",                required_argument, 0, 't'},
     {"disk",                required_argument, 0, 'd'},

@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
 #
-# test_printer_lprint.sh — LPRINT de bout en bout avec les vraies ROM (2.31.4).
+# test_printer_lprint.sh — end-to-end LPRINT with the real ROMs (2.31.4).
 #
-# Avant 2.31.4, le STROBE de l'imprimante était pris sur CA2 du VIA, qui est la
-# ligne BC1 du PSG : le fichier ne recevait que des numéros de registre du PSG
-# ($0E, $00-$0D) et LPRINT bloquait la machine en attendant un ACK sur CA1 qui
-# ne venait jamais. Les ROM impriment par ORA ($0301) + impulsion basse sur PB4
-# (Atmos $F5C1, ORIC-1 $F57B), puis attendent l'ACK sur CA1.
+# Before 2.31.4, the printer STROBE was taken from the VIA's CA2, which is the
+# PSG BC1 line: the file only got PSG register numbers ($0E, $00-$0D) and
+# LPRINT hung the machine waiting for an ACK on CA1 that never came. The ROMs
+# print through ORA ($0301) + a low pulse on PB4 (Atmos $F5C1, ORIC-1 $F57B),
+# then wait for the ACK on CA1.
 #
-# Vérifie, pour chaque ROM présente : le fichier contient exactement
-# "HELLO\r\n", la machine continue après LPRINT (PRINT 77 → 77), et une
-# session sans impression laisse le fichier vide (pas d'octet parasite au
-# démarrage).
+# Checks, for each ROM present: the file holds exactly "HELLO\r\n", the
+# machine goes on after LPRINT (PRINT 77 → 77), and a session without
+# printing leaves the file empty (no stray byte at start-up).
 #
 # Author: bmarty <bmarty@mailo.com>
 

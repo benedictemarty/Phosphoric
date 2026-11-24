@@ -56,25 +56,25 @@ got="$(tr -d '\0' < "$cap")"
 
 # --- 2) round-trip: replay RX -> echo -> capture TX ------------------------
 #
-# L'écho est en ASSEMBLEUR, pas en BASIC, et c'est une contrainte matérielle, pas
-# un confort : sur 6502 NMOS, un POKE passe par un mode indexé qui fait une
-# LECTURE FACTICE de l'adresse avant d'écrire. Sur le registre de données d'un
-# ACIA, cette lecture **consomme** l'octet reçu — le programme BASIC
-# examples/dtl2000-echo.bas perd donc des octets, sur émulateur comme sur machine
-# réelle (il garde une valeur pédagogique, avec son avertissement). Un pilote
-# série s'écrit avec des STA/STY ABSOLUS, qui n'ont pas de cycle factice.
+# The echo is in ASSEMBLY, not BASIC, and this is a hardware constraint, not a
+# convenience: on an NMOS 6502, a POKE goes through an indexed mode that performs a
+# DUMMY READ of the address before writing. On the data register of an
+# ACIA, this read **consumes** the received byte — the BASIC program
+# examples/dtl2000-echo.bas therefore loses bytes, on the emulator as on a real
+# machine (it keeps an educational value, with its warning). A serial driver
+# is written with ABSOLUTE STA/STY, which have no dummy cycle.
 #
-#   0500  A9 00 8D F9 03   LDA #$00 / STA $03F9   ; CRA: sélection DDRA
+#   0500  A9 00 8D F9 03   LDA #$00 / STA $03F9   ; CRA: select DDRA
 #   0505  A9 F4 8D F8 03   LDA #$F4 / STA $03F8   ; DDRA = $F4
-#   050A  A9 04 8D F9 03   LDA #$04 / STA $03F9   ; CRA: sélection OR
-#   050F  A9 C0 8D F8 03   LDA #$C0 / STA $03F8   ; OR  = $C0 (ligne fermée)
+#   050A  A9 04 8D F9 03   LDA #$04 / STA $03F9   ; CRA: select OR
+#   050F  A9 C0 8D F8 03   LDA #$C0 / STA $03F8   ; OR  = $C0 (line closed)
 #   0514  A9 03 8D FC 03   LDA #$03 / STA $03FC   ; ACIA master reset
-#   0519  A9 15 8D FC 03   LDA #$15 / STA $03FC   ; 8N1, div16, RTS bas
-#   051E  A2 05            LDX #$05               ; 5 octets
-#   0520  AD FC 03 29 01 F0 F9   attendre RDRF
-#   0527  AD FD 03 A8            LDA $03FD / TAY  ; octet reçu
-#   052B  AD FC 03 29 02 F0 F9   attendre TDRE
-#   0532  8C FD 03               STY $03FD        ; émettre, SANS cycle factice
+#   0519  A9 15 8D FC 03   LDA #$15 / STA $03FC   ; 8N1, div16, RTS low
+#   051E  A2 05            LDX #$05               ; 5 bytes
+#   0520  AD FC 03 29 01 F0 F9   wait for RDRF
+#   0527  AD FD 03 A8            LDA $03FD / TAY  ; received byte
+#   052B  AD FC 03 29 02 F0 F9   wait for TDRE
+#   0532  8C FD 03               STY $03FD        ; send, WITHOUT a dummy cycle
 #   0535  CA D0 E8 60            DEX / BNE / RTS
 printf '\251\000\215\371\003\251\364\215\370\003\251\004\215\371\003\251\300\215\370\003\251\003\215\374\003\251\025\215\374\003\242\005\255\374\003\051\001\360\371\255\375\003\250\255\374\003\051\002\360\371\214\375\003\312\320\350\140' \
     > "$TMP/echo.bin"

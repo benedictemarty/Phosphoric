@@ -1,112 +1,112 @@
-# Phosphoric 2.0 : une machine cadencée au cycle — et l'annonce qu'on retire
+# Phosphoric 2.0: a machine clocked per cycle — and the claim we are withdrawing
 
-*Note technique publique, 2026-09-11 (2.0.0-beta.1). Version française ; les
-noms de tests et d'options sont ceux du dépôt.*
+*Public technical note, 2026-09-11 (2.0.0-beta.1). English version; the
+test and option names are those of the repository.*
 
-## Ce qu'on avait dit, et pourquoi c'était faux
+## What we had said, and why it was wrong
 
-Jusqu'à la 1.120.0-alpha, Phosphoric se présentait comme « cycle-accurate ».
-Ce n'était pas vrai au sens que les émulateurs de référence donnent à ce mot.
-Le cœur 6502 exécutait une instruction d'un bloc : les accès bus sortaient dans
-le bon ordre et le total de cycles par opcode était juste, mais les cycles
-internes étaient **rattrapés par bourrage en fin d'instruction**, les accès
-factices du NMOS n'existaient pas, et les interruptions étaient prises aux
-frontières d'instruction. Le VIA recevait des paquets de cycles, l'ULA rendait
-une ligne entière d'un coup, le PSG tournait au taux d'échantillonnage audio.
+Up to 1.120.0-alpha, Phosphoric described itself as accurate "to the cycle".
+That was not true in the sense reference emulators give to the term.
+The 6502 core executed an instruction in one block: the bus accesses came out in
+the right order and the total cycle count per opcode was right, but the internal
+cycles were **caught up by padding at the end of the instruction**, the NMOS
+dummy accesses did not exist, and interrupts were taken at instruction
+boundaries. The VIA received batches of cycles, the ULA rendered
+a whole line at once, the PSG ran at the audio sample rate.
 
-C'est un niveau honorable — nous l'avons nommé **N2, « ordonné au cycle bus »** —
-mais ce n'est pas « exact au cycle ». Nous avons retiré la formulation, écrit une
-[échelle vérifiable](../ACCURACY.md) (N1 à N4, chaque niveau adossé au test qui
-le prouve), et un garde-fou automatique (`make test-docs-claims`) qui refuse tout
-« cycle-accurate » non qualifié dans les documents de vitrine. Puis nous avons
-fait la V2.
+That is a respectable level — we named it **N2, "ordered at bus-cycle level"** —
+but it is not "exact to the cycle". We withdrew the wording, wrote a
+[verifiable scale](../ACCURACY.md) (N1 to N4, each level backed by the test that
+proves it), and an automatic safeguard (`make test-docs-claims`) that rejects any
+unqualified claim of cycle accuracy in the showcase documents. Then we
+built V2.
 
-## Ce que la V2 a changé
+## What V2 changed
 
-**Un oracle d'abord.** Avant de toucher au cœur, `make test-cycle` rejoue les
-vecteurs SingleStepTests/65x02 — 10 000 cas par opcode, avec la trace bus
-attendue cycle par cycle — et note quatre propriétés séparément. Le point de
-départ, mesuré et publié : **44,26 %** de séquences bus exactes. L'oracle a
-d'ailleurs révélé cinq défauts logiques du cœur, corrigés avant même de
-commencer.
+**An oracle first.** Before touching the core, `make test-cycle` replays the
+SingleStepTests/65x02 vectors — 10,000 cases per opcode, with the expected bus
+trace cycle by cycle — and scores four properties separately. The starting
+point, measured and published: **44.26 %** of exact bus sequences. The oracle
+also revealed five logic defects in the core, fixed before we even
+started.
 
-**Un cœur micro-séquencé.** Chaque instruction devient un plan de micro-opérations,
-une par cycle, chacune faisant exactement son accès bus — y compris les accès
-factices (index page zéro, traversée de page, écriture-retour des RMW, lectures
-de pile mortes). Résultat : **100,00 %** sur 2 440 000 cas. Les interruptions
-sont échantillonnées au **cycle pénultième**, ce qui donne gratuitement le
-drapeau I retardé de `CLI`/`SEI`/`PLP` et le détournement d'un `BRK` par une NMI.
-Les deux cœurs partagent le même calcul (drapeaux, BCD, opcodes illégaux) :
-seul l'ordonnancement diffère. L'ancien reste disponible (`--cpu-legacy`).
+**A micro-sequenced core.** Each instruction becomes a plan of micro-operations,
+one per cycle, each doing exactly its bus access — including the dummy
+accesses (zero-page indexing, page crossing, RMW write-back, dead stack
+reads). Result: **100.00 %** over 2,440,000 cases. Interrupts
+are sampled on the **penultimate cycle**, which gives for free the
+delayed I flag of `CLI`/`SEI`/`PLP` and the hijacking of a `BRK` by an NMI.
+Both cores share the same computation (flags, BCD, illegal opcodes):
+only the scheduling differs. The old one remains available (`--cpu-legacy`).
 
-**Une horloge maître.** `emu_cycle()` fait avancer **toute** la machine d'un
-cycle, dans un ordre figé : le CPU fait son accès bus, les périphériques
-avancent d'un cycle — jamais d'un paquet —, puis l'ULA fetche la cellule de ce
-même cycle (l'ordre mesuré sur le matériel par Mike Brown ; jusqu'en 2.0.1
-l'ULA passait avant, et chaque split tombait une cellule trop à droite). La
-boucle principale ne calcule plus rien : elle demande.
+**A master clock.** `emu_cycle()` advances **the whole** machine by one
+cycle, in a fixed order: the CPU makes its bus access, the peripherals
+advance by one cycle — never by a batch — then the ULA fetches the cell of that
+same cycle (the order measured on the hardware by Mike Brown; up to 2.0.1
+the ULA went first, and every split landed one cell too far to the right). The
+main loop no longer computes anything: it asks.
 
-**Les composants, un par un.** Le VIA compte au cycle et son Timer 1 a retrouvé
-sa période **N+2** (l'ancien modèle donnait N : 20 % d'erreur pour N=10). L'ULA
-fetche **une cellule de 6 pixels par cycle**, à l'instant où le faisceau la lit :
-une écriture en milieu de ligne n'atteint que les cellules pas encore balayées —
-les splits raster deviennent possibles. Le PSG tourne à `horloge/8` (125 kHz) et
-sa sortie est intégrée : un ton programmé au-dessus de Nyquist s'atténue au lieu
-de replier, et l'**enveloppe, deux fois trop lente depuis toujours**, est à la
-bonne vitesse. L'étage de sortie analogique a été relevé sur le schéma officiel.
-Le WD1793 signale `LOST DATA` et la protection en écriture. La cassette au
-signal a retrouvé sa **parité impaire**.
+**The components, one by one.** The VIA counts per cycle and its Timer 1 is back to
+its **N+2** period (the old model gave N: a 20 % error for N=10). The ULA
+fetches **one 6-pixel cell per cycle**, at the instant the beam reads it:
+a write in the middle of a line only reaches the cells not yet scanned —
+raster splits become possible. The PSG runs at `clock/8` (125 kHz) and
+its output is integrated: a tone programmed above Nyquist is attenuated instead
+of aliasing, and the **envelope, twice too slow since forever**, runs at the
+right speed. The analogue output stage was read from the official schematic.
+The WD1793 signals `LOST DATA` and write protection. The signal-level tape
+has recovered its **odd parity**.
 
-## Ce que ça change de visible
+## What changes visibly
 
-- **Les splits raster** : un programme qui change l'encre ou le mode en milieu de
-  ligne obtient ce que le matériel donnerait, pas une ligne uniforme.
-- **Le son** : enveloppes à la bonne durée, plus de sifflement fantôme sur les
-  tons très aigus, signal centré (continu bloqué comme sur la carte).
-- **Les IRQ** : une interruption ne peut plus être prise *avant* l'instruction en
-  cours ; `SEI` ne protège pas l'instruction qui le suit d'une IRQ déjà pendante.
-- **Les registres à lecture destructive** : un `POKE` BASIC vers le registre de
-  données d'un ACIA **perd un octet**, parce que `STA (zp),Y` fait une lecture
-  factice avant d'écrire — sur l'émulateur comme sur la machine. Phosphoric
-  était plus permissif que le matériel ; il ne l'est plus.
-- **Les savestates** : un état pris en pleine trame reprend exactement où il
-  s'est arrêté (position du balayage, timers, échantillon d'interruption).
+- **Raster splits**: a program that changes the ink or the mode in the middle of
+  a line gets what the hardware would give, not a uniform line.
+- **Sound**: envelopes with the right duration, no more ghost whistling on
+  very high tones, centred signal (DC blocked as on the board).
+- **IRQs**: an interrupt can no longer be taken *before* the current
+  instruction; `SEI` does not protect the instruction that follows it from an already pending IRQ.
+- **Destructive-read registers**: a BASIC `POKE` to the data register
+  of an ACIA **loses a byte**, because `STA (zp),Y` does a dummy
+  read before writing — on the emulator as on the machine. Phosphoric
+  was more permissive than the hardware; it no longer is.
+- **Savestates**: a state taken mid-frame resumes exactly where it
+  stopped (beam position, timers, interrupt sample).
 
-## Ce qu'on a appris en route
+## What we learned along the way
 
-Deux défauts n'auraient jamais été vus sans changer de méthode.
+Two defects would never have been seen without changing method.
 
-L'enveloppe du PSG était déclarée conforme « par recalcul » — un recalcul qui
-supposait 16 états au lieu de 32. Une hypothèse fausse est invisible à la
-relecture ; elle ne se voit qu'en **mesurant le signal**. Les tests audio
-mesurent désormais fréquences et durées au lieu de comparer des octets.
+The PSG envelope was declared conformant "by recalculation" — a recalculation that
+assumed 16 states instead of 32. A wrong assumption is invisible on
+re-reading; it only shows up by **measuring the signal**. The audio tests
+now measure frequencies and durations instead of comparing bytes.
 
-Le second est plus instructif encore. Un branchement non pris prenait sa
-décision **un cycle trop tard**, dans une micro-op sans accès bus. Le compteur
-du CPU restait juste, donc l'oracle était vert à 100 %. Mais l'horloge maître
-avait été appelée une fois de plus : l'ULA avançait d'un cycle que ni le CPU ni
-le VIA n'avaient vécu — environ 410 fois par trame sur la ROM BASIC, soit une
-trame de dérive par seconde entre l'image et le reste de la machine. Un oracle
-qui ne regarde que le CPU ne prouve pas la synchronisation de la machine. Ce
-qui l'a révélé : un test de déterminisme des savestates, qui exigeait que les
-arrêts raster tombent exactement au même cycle.
+The second is even more instructive. A branch not taken made its
+decision **one cycle too late**, in a micro-op with no bus access. The CPU's
+counter stayed right, so the oracle was 100 % green. But the master clock
+had been called one extra time: the ULA advanced by a cycle that neither the CPU nor
+the VIA had lived through — about 410 times per frame on the BASIC ROM, i.e. one
+frame of drift per second between the picture and the rest of the machine. An oracle
+that looks only at the CPU does not prove the synchronisation of the machine. What
+revealed it: a savestate determinism test, which required
+raster stops to land on exactly the same cycle.
 
-## Ce qu'on ne dit pas
+## What we do not claim
 
-« Phosphoric est exact au cycle » — non. Le FDC reste cadencé par des délais
-forfaitaires sur une image plate (pas de flux MFM, donc pas de vraie perte
-d'octet ni de CRC). Le repère horizontal, lui, n'est plus une convention : le
-compteur de l'ULA (mesuré) place la colonne 0 au count 0 — mais la phase
-absolue entre ce compteur et le CPU n'est observable sur un vrai ORIC qu'avec
-le « VSYNC hack », que nous n'émulons pas. Le demi-cycle du
-one-shot du VIA n'est pas représenté. Le chargement de cassette par défaut
-reste le patch ROM, par choix : même contenu chargé, 2,4× moins de cycles.
+"Phosphoric is exact to the cycle" — no. The FDC is still paced by fixed
+delays on a flat image (no MFM stream, so no real byte
+loss and no CRC). The horizontal reference, on the other hand, is no longer a convention: the
+ULA counter (measured) puts column 0 at count 0 — but the absolute
+phase between that counter and the CPU can only be observed on a real ORIC with
+the "VSYNC hack", which we do not emulate. The half-cycle of the
+VIA one-shot is not represented. Default tape loading
+remains the ROM patch, by choice: same content loaded, 2.4× fewer cycles.
 
-La formulation exacte autorisée, et le test qui ferait tomber chacune de ses
-lignes, sont dans [docs/ACCURACY.md](../ACCURACY.md).
+The exact authorised wording, and the test that would bring down each of its
+lines, are in [docs/ACCURACY.md](../ACCURACY.md).
 
-## Coût
+## Cost
 
-Le passage au cycle a coûté, sur la machine de référence à pleine vitesse,
-491 → 611 µs par trame émulée : **3 % du budget de 20 ms**. `make test-bench`
-refuse désormais tout dépassement de 5 %.
+Moving to per-cycle stepping cost, on the reference machine at full speed,
+491 → 611 µs per emulated frame: **3 % of the 20 ms budget**. `make test-bench`
+now rejects any overrun beyond 5 %.

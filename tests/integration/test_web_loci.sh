@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# test_web_loci.sh — e2e de la cartouche LOCI dans la build WebAssembly
+# test_web_loci.sh — e2e of the LOCI cartridge in the WebAssembly build
 #
-# Construit la build web (make wasm, emsdk requis), la sert en HTTP local et la
-# pilote dans Chrome headless (Playwright) : menu LOCI au boot via ?loci=1,
-# flash persistant IDBFS semé, import d'un fichier, persistance au rechargement,
-# fichier listé par le sélecteur du menu, et — si disks/3dfongus.dsk existe
-# localement — montage en A: puis démarrage du disque.
+# Builds the web build (make wasm, emsdk required), serves it over local HTTP and
+# drives it in headless Chrome (Playwright): LOCI menu at boot via ?loci=1,
+# seeded persistent IDBFS flash, file import, persistence across reload,
+# file listed by the menu's selector, and — if disks/3dfongus.dsk exists
+# locally — mounting as A: then booting the disk.
 #
-# SKIP (exit 0) si emcc, node, Playwright ou Chrome sont absents : outils
-# optionnels, hors CI par défaut.
+# SKIP (exit 0) if emcc, node, Playwright or Chrome are missing: optional
+# tools, outside CI by default.
 set -u
 cd "$(dirname "$0")/../.."
 

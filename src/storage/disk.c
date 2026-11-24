@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Trace FDC sur stderr si FDC_TRACE est définie (évalué une seule fois) */
+/* FDC trace on stderr if FDC_TRACE is set (evaluated only once) */
 int fdc_trace_enabled(void) {
     static int enabled = -1;
     if (enabled < 0) enabled = (getenv("FDC_TRACE") != NULL);
@@ -227,8 +227,8 @@ static void fdc_record_not_found(fdc_t* fdc) {
     }
 }
 
-/* Opérations qui font défiler des octets : ce sont celles dont un DRQ non servi
- * coûte une donnée. */
+/* Operations that stream bytes past the head: these are the ones where an
+ * unserviced DRQ costs a data byte. */
 static bool fdc_op_transfers_data(int op) {
     return op == FDC_OP_READ_SECTOR || op == FDC_OP_READ_SECTORS ||
            op == FDC_OP_WRITE_SECTOR || op == FDC_OP_WRITE_SECTORS ||
@@ -239,9 +239,9 @@ void fdc_set_write_protect(fdc_t* fdc, bool protect) {
     fdc->write_protected = protect;
 }
 
-/* Commandes d'écriture sur un support protégé (datasheet p.7) : la commande
- * n'est PAS exécutée, le statut porte WRITE PROTECT (S6) et l'interruption part
- * immédiatement. Renvoie true si la commande doit être abandonnée. */
+/* Write commands on a protected medium (datasheet p.7): the command
+ * is NOT executed, the status carries WRITE PROTECT (S6) and the interrupt fires
+ * immediately. Returns true if the command must be aborted. */
 static bool fdc_write_protected(fdc_t* fdc) {
     if (!fdc->write_protected) return false;
     fdc->clr_drq(fdc->drq_userdata);
@@ -264,7 +264,7 @@ static bool fdc_not_ready(fdc_t* fdc) {
     return true;
 }
 
-/* Lecture/écriture de secteur en modèle REAL : octets cadencés par le plateau. */
+/* Sector read/write in the REAL model: bytes paced by the platter. */
 static bool fdc_streamed(const fdc_t* fdc) {
     return fdc->timing_mode == FDC_TIMING_REAL &&
            (fdc->currentop == FDC_OP_READ_SECTOR || fdc->currentop == FDC_OP_READ_SECTORS ||
@@ -286,8 +286,8 @@ static void fdc_stream_lost(fdc_t* fdc) {
     fdc->status |= FDC_ST_LOST_DATA;
 }
 
-/* Fin du champ de données (CRC passé) : secteur suivant ou fin de commande.
- * S2 reste visible dans le statut final, comme sur le WD1793. */
+/* End of the data field (CRC passed): next sector or end of command.
+ * S2 stays visible in the final status, as on the WD1793. */
 static void fdc_stream_sector_done(fdc_t* fdc) {
     uint8_t lost = fdc->status & FDC_ST_LOST_DATA;
     fdc->stream = false;
@@ -302,7 +302,7 @@ static void fdc_stream_sector_done(fdc_t* fdc) {
             fdc->delayed_drq = fdc_rot_wait(fdc, fdc->sector);
             return;
         }
-        /* fin de piste : la commande multi-secteur se termine sur RNF */
+        /* end of track: the multi-sector command ends on RNF */
         fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND | lost);
     } else {
         fdc->di_status = (uint8_t)(fdc->sec_type | lost);
@@ -311,13 +311,13 @@ static void fdc_stream_sector_done(fdc_t* fdc) {
     fdc->delayed_int = 1;
 }
 
-/* Le champ de données arrive sous la tête (DRQ différé échu). */
+/* The data field reaches the head (delayed DRQ expired). */
 static void fdc_stream_start(fdc_t* fdc) {
     fdc->stream = true;
     fdc->stream_crc = false;
     fdc->cur_offset = 0;
     if (fdc_op_is_write(fdc->currentop)) {
-        /* demande du premier octet ; il doit arriver avant la fin du gap */
+        /* request the first byte; it must arrive before the end of the gap */
         fdc_stream_drq(fdc);
         fdc->stream_due = FDC_WRITE_GAP_BYTES * FDC_BYTE_CYCLES;
     } else {
@@ -328,27 +328,27 @@ static void fdc_stream_start(fdc_t* fdc) {
     }
 }
 
-/* Un temps d'octet écoulé : octet suivant sous la tête. */
+/* One byte time elapsed: next byte under the head. */
 static void fdc_stream_step(fdc_t* fdc) {
-    if (fdc->stream_crc) {                       /* CRC passé */
-        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* dernier octet jamais lu/écrit */
+    if (fdc->stream_crc) {                       /* CRC passed */
+        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* last byte never read/written */
         fdc_stream_sector_done(fdc);
         return;
     }
     if (fdc_op_is_write(fdc->currentop)) {
         bool served = !(fdc->status & FDC_ST_DRQ);
         if (fdc->cur_offset == 0 && !served) {
-            /* premier octet absent à la fin du gap : rien n'est écrit */
+            /* first byte missing at the end of the gap: nothing is written */
             fdc_stream_lost(fdc);
             fdc->cur_offset = fdc->cur_sector_len;
             fdc->status &= ~FDC_ST_DRQ;
             fdc->clr_drq(fdc->drq_userdata);
             fdc->currentop = (fdc->currentop == FDC_OP_WRITE_SECTORS)
-                           ? FDC_OP_WRITE_SECTOR : fdc->currentop;   /* termine */
+                           ? FDC_OP_WRITE_SECTOR : fdc->currentop;   /* ends */
             fdc_stream_sector_done(fdc);
             return;
         }
-        uint8_t b = served ? fdc->data : 0x00;   /* octet non fourni : zéros */
+        uint8_t b = served ? fdc->data : 0x00;   /* byte not supplied: zeros */
         if (!served) fdc_stream_lost(fdc);
         fdc->cur_sector_data[fdc->cur_offset++] = b;
         fdc->disk_modified = true;
@@ -363,15 +363,15 @@ static void fdc_stream_step(fdc_t* fdc) {
         }
         return;
     }
-    /* lecture */
+    /* read */
     if (fdc->cur_offset < fdc->cur_sector_len) {
-        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* écrasé avant lecture */
+        if (fdc->status & FDC_ST_DRQ) fdc_stream_lost(fdc);   /* overwritten before being read */
         fdc->data = fdc->cur_sector_data[fdc->cur_offset++];
         fdc_stream_drq(fdc);
         fdc->stream_due += FDC_BYTE_CYCLES;
     } else {
-        /* on est au 1er octet de CRC (un temps d'octet après le dernier) :
-         * le champ se termine après le 2e */
+        /* we are at the 1st CRC byte (one byte time after the last one):
+         * the field ends after the 2nd */
         fdc->stream_crc = true;
         fdc->stream_due += FDC_BYTE_CYCLES;
     }
@@ -408,7 +408,7 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
                 fdc->dd_status = -1;
             }
             if (fdc_streamed(fdc) && fdc->cur_sector_data)
-                fdc_stream_start(fdc);           /* 2.31.9 : le plateau cadence */
+                fdc_stream_start(fdc);           /* 2.31.9: the platter sets the pace */
             else {
                 fdc->status |= FDC_ST_DRQ;
                 fdc->drq_age = 0;
@@ -417,30 +417,30 @@ void fdc_ticktock(fdc_t* fdc, unsigned int cycles) {
         }
     }
 
-    /* Flux lié au plateau : un octet par FDC_BYTE_CYCLES. */
+    /* Stream tied to the platter: one byte per FDC_BYTE_CYCLES. */
     if (fdc->stream) {
         if (!fdc_streamed(fdc)) {
-            fdc->stream = false;                 /* commande interrompue */
+            fdc->stream = false;                 /* command interrupted */
         } else {
             fdc->stream_due -= (int)cycles;
             while (fdc->stream && fdc->stream_due <= 0)
                 fdc_stream_step(fdc);
-            return;                              /* S2 décidé par le flux */
+            return;                              /* S2 decided by the stream */
         }
     }
 
-    /* LOST DATA (S2) — le plateau n'attend pas le CPU.
+    /* LOST DATA (S2) — the platter does not wait for the CPU.
      *
-     * À 250 kbit/s en MFM, un octet défile toutes les 32 µs : passé ce délai,
-     * un DRQ non servi signifie que l'octet suivant est déjà là et que le
-     * précédent est perdu. Le WD1793 lève S2 et poursuit le transfert, ce qui
-     * permet au logiciel de savoir qu'il a raté le train.
+     * At 250 kbit/s in MFM, one byte passes every 32 µs: past that delay,
+     * an unserviced DRQ means the next byte is already there and the
+     * previous one is lost. The WD1793 raises S2 and carries on with the
+     * transfer, which lets the software know it missed the train.
      *
-     * Ce chien de garde ne sert plus qu'aux transferts servis à la demande du
-     * CPU (profil fast, Read Address) : le bit est signalé au bon moment, mais
-     * l'octet n'est pas réellement perdu. En profil réel, lecture et écriture
-     * de secteur passent par le flux lié au plateau (fdc_stream_*, 2.31.9),
-     * qui perd vraiment l'octet ; on n'arrive pas ici dans ce cas. */
+     * This watchdog now only serves transfers paced by the CPU (fast profile,
+     * Read Address): the bit is reported at the right time, but the byte is
+     * not actually lost. In the real profile, sector read and write go
+     * through the stream tied to the platter (fdc_stream_*, 2.31.9), which
+     * does lose the byte; that case never reaches this point. */
     if ((fdc->status & FDC_ST_DRQ) && fdc_op_transfers_data(fdc->currentop)) {
         fdc->drq_age += (int)cycles;
         if (fdc->drq_age > FDC_BYTE_CYCLES && !(fdc->status & FDC_ST_LOST_DATA)) {
@@ -466,7 +466,7 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                 st |= FDC_STI_PULSE;
             if (fdc->c_track == 0)
                 st |= FDC_STI_TRK0;
-            /* En Type I, le bit 6 reporte la languette de protection. */
+            /* In Type I, bit 6 reports the write-protect tab. */
             if (fdc->write_protected) st |= FDC_ST_WRITE_PROT;
             return st;
         }
@@ -491,8 +491,8 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
             }
 
             if (fdc->stream) {
-                /* 2.31.9 : l'octet est dans le registre de données depuis son
-                 * passage sous la tête ; la lecture ne fait que servir le DRQ. */
+                /* 2.31.9: the byte has been in the data register since it passed
+                 * under the head; the read only services the DRQ. */
                 fdc->status &= ~FDC_ST_DRQ;
                 fdc->clr_drq(fdc->drq_userdata);
                 break;
@@ -518,10 +518,10 @@ uint8_t fdc_read(fdc_t* fdc, uint8_t reg) {
                     fdc->cur_offset = 0;
                     fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
                     if (!fdc->cur_sector_data) {
-                        /* Fin de piste : une commande multi-secteur ne s'arrête
-                         * pas d'elle-même. Le WD1793 continue de chercher le
-                         * secteur suivant et termine sur RECORD NOT FOUND — c'est
-                         * ainsi que le logiciel sait où la piste s'achève. */
+                        /* End of track: a multi-sector command does not stop
+                         * by itself. The WD1793 keeps searching for the
+                         * next sector and ends with RECORD NOT FOUND — this is
+                         * how the software knows where the track ends. */
                         fdc->delayed_int = 20;
                         fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND);
                         fdc->currentop = FDC_OP_NONE;
@@ -586,7 +586,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
     case FDC_COMMAND:
         /* Writing command clears INTRQ */
         fdc->clr_intrq(fdc->intrq_userdata);
-        if ((value & 0xF0) != 0xD0) {            /* hors Force Interrupt (fin plus bas) */
+        if ((value & 0xF0) != 0xD0) {            /* except Force Interrupt (ends below) */
             fdc->stream = false;
             fdc->stream_crc = false;
         }
@@ -668,7 +668,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
         case 0xA0: /* Write sector (Type II) */
             fdc->status_type1 = false;
             if (fdc_not_ready(fdc)) break;   /* no media → NOT READY, not RNF */
-            if (fdc_write_protected(fdc)) break;   /* languette → S6, rien écrit */
+            if (fdc_write_protected(fdc)) break;   /* tab → S6, nothing written */
             fdc->cur_offset = 0;
             fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
             if (!fdc->cur_sector_data) {
@@ -739,7 +739,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 fdc->delayed_drq = 60;
                 fdc->currentop = FDC_OP_READ_TRACK;
             } else {
-                if (fdc_write_protected(fdc)) break;   /* languette → S6, rien écrit */
+                if (fdc_write_protected(fdc)) break;   /* tab → S6, nothing written */
                 /* Write Track (Type III) - track formatting. The ROM streams a
                  * raw IBM/MFM track; fdc_write() DATA parses it into sectors.
                  * On real hardware formatting starts at the index pulse. */
@@ -781,7 +781,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                 break;
             }
             if (fdc->stream) {
-                /* 2.31.9 : l'octet sera pris au passage sous la tête. */
+                /* 2.31.9: the byte will be taken as it passes under the head. */
                 fdc->status &= ~FDC_ST_DRQ;
                 fdc->clr_drq(fdc->drq_userdata);
                 break;
@@ -797,7 +797,7 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
                     fdc->cur_offset = 0;
                     fdc->cur_sector_data = fdc_find_sector(fdc, fdc->sector);
                     if (!fdc->cur_sector_data) {
-                        /* Idem en écriture : la commande se termine sur RNF. */
+                        /* Same for writes: the command ends with RNF. */
                         fdc->delayed_int = 20;
                         fdc->di_status = (uint8_t)(fdc->sec_type | FDC_ST_NOT_FOUND);
                         fdc->currentop = FDC_OP_NONE;
@@ -880,9 +880,9 @@ void fdc_write(fdc_t* fdc, uint8_t reg, uint8_t value) {
     }
 }
 
-/* ── État sérialisable (sections .ost « FDC » et « JAS ») ─────────────────
- * Ordre et encodage repris à l'identique de l'ancienne section FDC de
- * savestate.c : un .ost existant se relit sans changement. */
+/* ── Serialisable state (.ost sections "FDC" and "JAS") ──────────────────
+ * Order and encoding taken over unchanged from the old FDC section of
+ * savestate.c: an existing .ost loads without change. */
 void fdc_state_save(const fdc_t* fdc, FILE* fp) {
     bin_w_u8(fp, fdc->status);
     bin_w_u8(fp, fdc->command);
@@ -904,15 +904,15 @@ void fdc_state_save(const fdc_t* fdc, FILE* fp) {
     /* Mechanical timing model state (v1.42+): disk angle + Type I view */
     bin_w_u8(fp, fdc->status_type1 ? 1 : 0);
     bin_w_u32(fp, fdc->rot_pos);
-    /* v2 (2.4.0) : âge du DRQ en attente (décide LOST DATA, S2) et analyseur du
-     * formatage de piste — sans eux, une reprise en plein transfert divergeait. */
+    /* v2 (2.4.0): age of the pending DRQ (decides LOST DATA, S2) and the
+     * format-track parser — without them, resuming mid-transfer diverged. */
     bin_w_i32(fp, fdc->drq_age);
     bin_w_u8(fp, fdc->wt_state);
     bin_w_u8(fp, fdc->wt_field_idx);
     fwrite(fdc->wt_id, 1, sizeof(fdc->wt_id), fp);
     bin_w_u16(fp, fdc->wt_data_len);
     bin_w_u8(fp, fdc->wt_sectors_done);
-    /* v3 (2.31.9) : flux d'octets lié au plateau */
+    /* v3 (2.31.9): byte stream tied to the platter */
     bin_w_u8(fp, fdc->stream ? 1 : 0);
     bin_w_u8(fp, fdc->stream_crc ? 1 : 0);
     bin_w_i32(fp, fdc->stream_due);
@@ -940,7 +940,7 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
         fdc->status_type1 = bin_r_u8(fp) != 0;
         fdc->rot_pos = bin_r_u32(fp) % FDC_REV_CYCLES;
     }
-    if (size >= FDC_STATE_SIZE_V2) {   /* v2 : DRQ en attente + formatage */
+    if (size >= FDC_STATE_SIZE_V2) {   /* v2: pending DRQ + formatting */
         fdc->drq_age = bin_r_i32(fp);
         fdc->wt_state = bin_r_u8(fp);
         fdc->wt_field_idx = bin_r_u8(fp) & 3;
@@ -948,27 +948,27 @@ void fdc_state_load(fdc_t* fdc, FILE* fp, uint32_t size) {
             memset(fdc->wt_id, 0, sizeof(fdc->wt_id));
         fdc->wt_data_len = bin_r_u16(fp);
         fdc->wt_sectors_done = bin_r_u8(fp);
-    } else {                           /* .ost antérieur : valeurs neutres */
+    } else {                           /* older .ost: neutral values */
         fdc->drq_age = 0;
         fdc->wt_state = 0;
         fdc->wt_field_idx = 0;
         fdc->wt_data_len = 0;
         fdc->wt_sectors_done = 0;
     }
-    if (size >= FDC_STATE_SIZE) {      /* v3 : flux d'octets */
+    if (size >= FDC_STATE_SIZE) {      /* v3: byte stream */
         fdc->stream = bin_r_u8(fp) != 0;
         fdc->stream_crc = bin_r_u8(fp) != 0;
         fdc->stream_due = bin_r_i32(fp);
-    } else {                           /* .ost antérieur : transfert réglé par le CPU */
+    } else {                           /* older .ost: transfer paced by the CPU */
         fdc->stream = false;
         fdc->stream_crc = false;
         fdc->stream_due = 0;
     }
 }
 
-/* Le pointeur de secteur n'est pas sauvegardé : il se déduit de l'état restauré
- * (opération, piste, face, registre secteur) exactement comme la commande l'a
- * calculé. Sans lui, une reprise en plein transfert lisait « Record Not Found ». */
+/* The sector pointer is not saved: it is derived from the restored state
+ * (operation, track, side, sector register) exactly as the command computed
+ * it. Without it, resuming mid-transfer read "Record Not Found". */
 void fdc_state_resume(fdc_t* fdc) {
     switch (fdc->currentop) {
     case FDC_OP_READ_SECTOR:

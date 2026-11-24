@@ -14,7 +14,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
 #include "io/loci_emu.h"
@@ -255,9 +255,8 @@ void control_repl(emulator_t* emu) { control_repl_idle(emu, NULL); }
 
 void control_stdin_unbuffered(void) { setvbuf(stdin, NULL, _IONBF, 0); }
 
-/* Attente d'une ligne sur stdin ; avec idle, réveil toutes les ~20 ms pour
- * rafraîchir la fenêtre (2.31.2). 1 = des données sont là, 0 = idle a mis fin
- * à la session. */
+/* Wait for a line on stdin; with idle, wake up every ~20 ms to refresh the
+ * window (2.31.2). 1 = data is there, 0 = idle ended the session. */
 static int wait_line(emulator_t* emu, void (*idle)(emulator_t* emu))
 {
 #ifndef _WIN32
@@ -268,7 +267,7 @@ static int wait_line(emulator_t* emu, void (*idle)(emulator_t* emu))
         struct timeval tv = {0, 20000};
         int r = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
         if (r > 0) return 1;
-        if (r < 0 && errno != EINTR) return 1;     /* laisser fgets rapporter l'erreur */
+        if (r < 0 && errno != EINTR) return 1;     /* let fgets report the error */
         idle(emu);
         if (!emu->running) return 0;
     }

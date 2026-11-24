@@ -70,11 +70,11 @@ if [ ! -x "$EMU" ]; then
     exit 0
 fi
 
-# Navigation LOCI : depuis 65d0942 (liste des périphériques, comme le vrai
-# LOCI), le sélecteur ouvre d'abord la liste « 0: Internal storage /
-# 1: image SD / 2+: clés USB de l'hôte ». D'où « \p2 \p2\d\p1 \p2\d\p1  » :
-# ouvrir, bas + ESPACE (périphérique 1 = l'image SD), bas + ESPACE (premier
-# fichier après « /.. »). Avant, les scénarios LOCI restaient bloqués au menu.
+# LOCI navigation: since 65d0942 (device list, like the real LOCI), the
+# picker first opens the list "0: Internal storage / 1: SD image / 2+: host
+# USB keys". Hence "\p2 \p2\d\p1 \p2\d\p1 ": open, DOWN + SPACE (device 1
+# = the SD image), DOWN + SPACE (first file after "/.."). Before, the LOCI
+# scenarios stayed stuck in the menu.
 
 # ── Scenario 34b0 — DOS Version (option 6 + drive A) ───────────────
 echo ""
@@ -127,7 +127,7 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
         --headless -c 120000000 \
         --type-keys '15000000:\p3a\p2 \p2\d\p1 \p2\d\p1 \e\p9\p9\p2\n\p310PRINT"HELLO LOCI"\n\p9\p3SAVE"TEST.BAS"\n\p9\p9\p9NEW\n\p3LOAD"TEST.BAS"\n\p9\p9\p9LIST\n\p9' \
         --dump-ram-at 119000000:"$LOC_BIN" >/dev/null 2>&1
-    # BASIC text area $0500 length 0x40 (line link + tokens + chaîne + term)
+    # BASIC text area $0500 length 0x40 (line link + tokens + string + term)
     cmp_region "34b2 BASIC text \$0500-\$053F" "$NAT_BIN" "$LOC_BIN" $((0x500)) $((0x40))
     rm -f "$NAT_BIN" "$LOC_BIN"
 fi

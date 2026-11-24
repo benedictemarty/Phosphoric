@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file ula_ng.c
- * @brief ULA-NG étape 1 : déverrouillage NG_LOCK/NG_ID + garde verrou.
+ * @brief ULA-NG step 1: NG_LOCK/NG_ID unlock + lock guard.
  * @author bmarty <bmarty@mailo.com>
  *
- * Cf docs/ula-ng/AUDIT.md (§0) et ULA-NG-SPEC.md (§3, §4.1).
+ * See docs/ula-ng/AUDIT.md (§0) and ULA-NG-SPEC.md (§3, §4.1).
  */
 
 #include "io/ula_ng.h"
 #include <string.h>
 
-/* 8 couleurs Oric (RGB888), identité de la LUT au reset → compatibilité. */
+/* 8 Oric colours (RGB888), identity LUT at reset → compatibility. */
 static const uint8_t oric_palette[8][3] = {
     {0x00,0x00,0x00},{0xFF,0x00,0x00},{0x00,0xFF,0x00},{0xFF,0xFF,0x00},
     {0x00,0x00,0xFF},{0xFF,0x00,0xFF},{0x00,0xFF,0xFF},{0xFF,0xFF,0xFF},
@@ -20,7 +20,7 @@ void ula_ng_reset(ula_ng_t* u) {
     u->unlocked = false;
     u->unlock_step = 0;
     memset(u->regs, 0, sizeof(u->regs));
-    /* LUT : entrées 0-7 = couleurs Oric (identité), 8-15 = noir. */
+    /* LUT: entries 0-7 = Oric colours (identity), 8-15 = black. */
     memset(u->pal, 0, sizeof(u->pal));
     memcpy(u->pal, oric_palette, sizeof(oric_palette));
     u->pal_idx = 0;
@@ -60,21 +60,21 @@ void ula_ng_init(ula_ng_t* u) {
 }
 
 /* ── Savestate (hooks io_device_t) ──────────────────────────────────────────
- * L'état ULA-NG est un POD sans pointeur ni handle OS : on le sérialise en blob.
- * C'est un savestate *même-build* (quicksave/load dans une session) ; le
- * chargement est gardé par taille, donc un .ost d'un autre build/arch/version
- * (layout différent) est ignoré proprement au lieu de corrompre l'état. */
+ * The ULA-NG state is a POD with no pointer nor OS handle: it is serialized as a blob.
+ * It is a *same-build* savestate (quicksave/load within a session); loading
+ * is guarded by size, so a .ost from another build/arch/version
+ * (different layout) is cleanly ignored instead of corrupting the state. */
 bool ula_ng_save(const ula_ng_t* u, FILE* fp) {
     if (!u->unlocked)
-        return false;   /* verrouillée = état par défaut → n'émet aucune section */
+        return false;   /* locked = default state → emits no section */
     return fwrite(u, sizeof(*u), 1, fp) == 1;
 }
 
 void ula_ng_load(ula_ng_t* u, FILE* fp, uint32_t size) {
     if (size != sizeof(*u))
-        return;         /* layout différent → on n'écrase pas (garde par taille) */
+        return;         /* different layout → do not overwrite (size guard) */
     if (fread(u, sizeof(*u), 1, fp) != 1) {
-        /* Lecture partielle : réinitialiser pour éviter un état incohérent. */
+        /* Partial read: reset to avoid an inconsistent state. */
         ula_ng_reset(u);
     }
 }
@@ -84,7 +84,7 @@ bool ula_ng_active(const ula_ng_t* u) {
 }
 
 uint8_t ula_ng_read(ula_ng_t* u, uint16_t addr) {
-    /* Le dispatcher n'appelle cette fonction que déverrouillé. */
+    /* The dispatcher only calls this function when unlocked. */
     switch (addr) {
         case ULA_NG_REG_LOCK:  return ULA_NG_VERSION;                 /* NG_ID */
         case ULA_NG_REG_IDCHK: return (uint8_t)(~ULA_NG_VERSION);     /* NG_IDCHK = ~NG_ID */
@@ -98,13 +98,13 @@ uint8_t ula_ng_read(ula_ng_t* u, uint16_t addr) {
     }
 }
 
-/* ── VDU intégré (docs/ula-ng/VDU.md) ───────────────────────────────────────
- * Interpréteur de flux de commandes (stand-in du firmware soft-core FPGA).
- * L'exécution se contente d'appeler la logique de registres déjà existante. */
+/* ── Built-in VDU (docs/ula-ng/VDU.md) ───────────────────────────────────────
+ * Command stream interpreter (stand-in for the FPGA soft-core firmware).
+ * Execution merely calls the already existing register logic. */
 
 static int iabs(int v) { return v < 0 ? -v : v; }
 
-/* Trace un pixel dans la VRAM chunky (x 0-159, y 0-223, c index 0-15). */
+/* Plots a pixel in the chunky VRAM (x 0-159, y 0-223, c index 0-15). */
 static void vram_plot(ula_ng_t* u, int x, int y, uint8_t c) {
     if (x < 0 || x >= ULA_NG_VRAM_W || y < 0 || y >= ULA_NG_VRAM_H) return;
     int idx = y * ULA_NG_VRAM_STRIDE + (x >> 1);
@@ -112,7 +112,7 @@ static void vram_plot(ula_ng_t* u, int x, int y, uint8_t c) {
     else       u->vram[idx] = (uint8_t)((u->vram[idx] & 0x0F) | ((c & 0x0F) << 4));
 }
 
-/* Trace une ligne (Bresenham) dans la VRAM chunky. */
+/* Draws a line (Bresenham) in the chunky VRAM. */
 static void vram_line(ula_ng_t* u, int x0, int y0, int x1, int y1, uint8_t c) {
     int dx = iabs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -iabs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -130,49 +130,49 @@ static uint8_t vdu_need_for(uint8_t cmd) {
     switch (cmd) {
         case 16: case 20: return 0;   /* CLG / reset */
         case 17: case 18: case 22: return 1;  /* GCOL / fill / MODE */
-        case 23: return 1;            /* begin upload motif sprite (id) */
+        case 23: return 1;            /* begin sprite pattern upload (id) */
         case 25: return 2;            /* PLOT point (x,y) */
-        case 31: return 3;            /* colorer une cellule (col,row,attr) */
+        case 31: return 3;            /* colour one cell (col,row,attr) */
         case 19: case 24: case 26: return 4;  /* palette / sprite pos (id,x,y,f) / DRAW */
-        default: return 0;            /* inconnu : ignoré */
+        default: return 0;            /* unknown: ignored */
     }
 }
 
 static void vdu_exec(ula_ng_t* u) {
     switch (u->vdu_cmd) {
-        case 20:                                    /* reset -> rendu normal */
+        case 20:                                    /* reset -> normal rendering */
             u->vram_active = false;
             ula_ng_write(u, ULA_NG_REG_MODE, 0x00);
             break;
-        case 16:                                    /* CLG : chunky + VRAM ULA-NG, efface */
+        case 16:                                    /* CLG: chunky + ULA-NG VRAM, clear */
             memset(u->vram, 0, sizeof(u->vram));
             u->vram_active = true;
             ula_ng_write(u, ULA_NG_REG_MODE, 0x05); /* chunky */
             break;
-        case 17:                                    /* couleur de tracé courante (0-15) */
+        case 17:                                    /* current drawing colour (0-15) */
             u->vdu_gcol = u->vdu_params[0] & 0x0F;
             break;
         case 25:                                    /* PLOT point (x,y) */
             vram_plot(u, u->vdu_params[0], u->vdu_params[1], u->vdu_gcol);
             break;
-        case 26:                                    /* DRAW ligne (x0,y0,x1,y1) */
+        case 26:                                    /* DRAW line (x0,y0,x1,y1) */
             vram_line(u, u->vdu_params[0], u->vdu_params[1],
                       u->vdu_params[2], u->vdu_params[3], u->vdu_gcol);
             break;
-        case 23:                                    /* begin upload motif sprite (id) */
+        case 23:                                    /* begin sprite pattern upload (id) */
             u->spr_sel = u->vdu_params[0] & (ULA_NG_SPRITES - 1);
             u->spr_wp = 0;
-            u->vdu_upload = ULA_NG_SPR_PIXELS;      /* 256 octets suivants = motif */
+            u->vdu_upload = ULA_NG_SPR_PIXELS;      /* next 256 bytes = pattern */
             break;
-        case 24: {                                  /* sprite : position + enable (id,x,y,f) */
+        case 24: {                                  /* sprite: position + enable (id,x,y,f) */
             uint8_t id = u->vdu_params[0] & (ULA_NG_SPRITES - 1);
             u->sprites[id].x = u->vdu_params[1];
             u->sprites[id].y = u->vdu_params[2];
             u->sprites[id].enable = (u->vdu_params[3] & 0x01u) != 0;
-            u->spr_enable = true;                   /* active les sprites (cache recalc. après) */
+            u->spr_enable = true;                   /* enables sprites (cache recomputed afterwards) */
             break;
         }
-        case 22: {                                  /* MODE : 0 std/1 chunky/2 80col */
+        case 22: {                                  /* MODE: 0 std/1 chunky/2 80col */
             uint8_t n = u->vdu_params[0];
             uint8_t m = (n == 1) ? 0x05u : (n == 2) ? 0x09u : 0x01u;
             ula_ng_write(u, ULA_NG_REG_MODE, m);
@@ -184,13 +184,13 @@ static void vdu_exec(ula_ng_t* u) {
             ula_ng_write(u, ULA_NG_REG_PAL_HI,
                 (uint8_t)(((u->vdu_params[2] & 0x0F) << 4) | (u->vdu_params[3] & 0x0F)));
             break;
-        case 18: {                                  /* fond couleur par cellule : attr // + fill */
+        case 18: {                                  /* per-cell background colour: parallel attr + fill */
             uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] | ULA_NG_MODE_ATTR;
             ula_ng_write(u, ULA_NG_REG_MODE, mode);
             ula_ng_write(u, ULA_NG_REG_ATTR_FILL, u->vdu_params[0]);
             break;
         }
-        case 31: {                                  /* colorer une cellule (col,row,attr) */
+        case 31: {                                  /* colour one cell (col,row,attr) */
             uint8_t col = u->vdu_params[0], row = u->vdu_params[1], a = u->vdu_params[2];
             uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO] | ULA_NG_MODE_ATTR;
             ula_ng_write(u, ULA_NG_REG_MODE, mode);
@@ -200,23 +200,23 @@ static void vdu_exec(ula_ng_t* u) {
             }
             break;
         }
-        default: break;                             /* commande inconnue : ignorée */
+        default: break;                             /* unknown command: ignored */
     }
 }
 
 static void vdu_feed(ula_ng_t* u, uint8_t b) {
-    if (u->vdu_upload > 0) {                         /* upload en cours : octet = motif sprite */
+    if (u->vdu_upload > 0) {                         /* upload in progress: byte = sprite pattern */
         u->sprites[u->spr_sel].pattern[u->spr_wp] = (uint8_t)(b & 0x07);
         u->spr_wp = (uint16_t)((u->spr_wp + 1) % ULA_NG_SPR_PIXELS);
         u->vdu_upload--;
         return;
     }
-    if (u->vdu_need == 0) {                          /* attend un code de commande */
+    if (u->vdu_need == 0) {                          /* waiting for a command code */
         u->vdu_cmd = b;
         u->vdu_got = 0;
         u->vdu_need = vdu_need_for(b);
-        if (u->vdu_need == 0) vdu_exec(u);           /* commande sans paramètre */
-    } else {                                         /* octet de paramètre */
+        if (u->vdu_need == 0) vdu_exec(u);           /* command without parameter */
+    } else {                                         /* parameter byte */
         if (u->vdu_got < ULA_NG_VDU_MAXPARAMS)
             u->vdu_params[u->vdu_got] = b;
         u->vdu_got++;
@@ -229,10 +229,10 @@ static void vdu_feed(ula_ng_t* u, uint8_t b) {
 
 int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
     if (!u->unlocked) {
-        /* Verrouillé : surveiller la séquence 'N','G' sur $0340. Toute autre
-         * écriture dans la fenêtre entre les deux octets casse la séquence
-         * (SPEC §3). Ne JAMAIS consommer l'écriture → passthrough VIA
-         * (indiscernable, bit-à-bit). */
+        /* Locked: watch for the 'N','G' sequence on $0340. Any other
+         * write in the window between the two bytes breaks the sequence
+         * (SPEC §3). NEVER consume the write → VIA passthrough
+         * (indistinguishable, bit for bit). */
         if (addr == ULA_NG_REG_LOCK) {
             if (value == ULA_NG_UNLOCK_N) {
                 u->unlock_step = 1;
@@ -243,13 +243,13 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
                 u->unlock_step = 0;
             }
         } else {
-            u->unlock_step = 0;   /* autre écriture fenêtre : séquence rompue */
+            u->unlock_step = 0;   /* other window write: sequence broken */
         }
         return 0;                 /* passthrough VIA */
     }
 
-    /* Déverrouillé : ULA-NG possède la fenêtre. NG_ID/NG_IDCHK sont en lecture
-     * seule. */
+    /* Unlocked: ULA-NG owns the window. NG_ID/NG_IDCHK are
+     * read-only. */
     if (addr != ULA_NG_REG_LOCK && addr != ULA_NG_REG_IDCHK) {
         u->regs[addr - ULA_NG_WINDOW_LO] = value;
 
@@ -263,7 +263,7 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         case ULA_NG_REG_PAL_HI: {               /* GGGGBBBB : commit + auto-incr */
             uint8_t g = (uint8_t)((value >> 4) & 0x0F);
             uint8_t b = (uint8_t)(value & 0x0F);
-            /* RGB444 → RGB888 par réplication de quartet (c8 = c4*0x11) */
+            /* RGB444 → RGB888 by nibble replication (c8 = c4*0x11) */
             u->pal[u->pal_idx][0] = (uint8_t)(u->pal_r * 0x11);
             u->pal[u->pal_idx][1] = (uint8_t)(g * 0x11);
             u->pal[u->pal_idx][2] = (uint8_t)(b * 0x11);
@@ -276,17 +276,17 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         case ULA_NG_REG_SCR_HI:                 /* NG_SCRSTART MSB */
             u->scrstart = (uint16_t)((u->scrstart & 0x00FF) | (value << 8));
             break;
-        case ULA_NG_REG_SCROLLX:                /* décalage fin X, cellule 6 px */
+        case ULA_NG_REG_SCROLLX:                /* fine X offset, 6 px cell */
             u->scrollx = (uint8_t)(value > 5 ? 5 : value);
             break;
-        case ULA_NG_REG_SCROLLY:                /* décalage fin Y, cellule 8 px */
+        case ULA_NG_REG_SCROLLY:                /* fine Y offset, 8 px cell */
             u->scrolly = (uint8_t)(value & 0x07);
             break;
-        case ULA_NG_REG_COP_CTRL:               /* reset de la liste copper */
+        case ULA_NG_REG_COP_CTRL:               /* reset of the copper list */
             u->copper_count = 0;
             u->copper_phase = 0;
             break;
-        case ULA_NG_REG_COP_DATA:               /* flux 3 o/entrée (§5.4) */
+        case ULA_NG_REG_COP_DATA:               /* stream of 3 bytes/entry (§5.4) */
             if (u->copper_phase == 0) {
                 u->cop_line = value;
                 u->copper_phase = 1;
@@ -294,7 +294,7 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
                 u->cop_index = (uint8_t)((value >> 4) & 0x0F);
                 u->cop_r = (uint8_t)(value & 0x0F);
                 u->copper_phase = 2;
-            } else {                            /* GGGGBBBB : commit de l'entrée */
+            } else {                            /* GGGGBBBB: entry commit */
                 uint8_t g = (uint8_t)((value >> 4) & 0x0F);
                 uint8_t b = (uint8_t)(value & 0x0F);
                 if (u->copper_count < ULA_NG_COP_MAX) {
@@ -308,18 +308,18 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
                 u->copper_phase = 0;
             }
             break;
-        case ULA_NG_REG_ATTR_FILL:              /* remplit tout le plan + reset ptr */
+        case ULA_NG_REG_ATTR_FILL:              /* fills the whole plane + reset ptr */
             memset(u->attr, value, sizeof(u->attr));
             u->attr_wp = 0;
             break;
-        case ULA_NG_REG_ATTR_DATA:              /* flux 1 o/cellule, auto-incrément */
+        case ULA_NG_REG_ATTR_DATA:              /* stream of 1 byte/cell, auto-increment */
             u->attr[u->attr_wp] = value;
             u->attr_wp = (uint16_t)((u->attr_wp + 1) % ULA_NG_ATTR_SIZE);
             break;
         case ULA_NG_REG_SPR_CTRL:               /* enable global sprites (§5.7) */
             u->spr_enable = (value & 0x01u) != 0;
             break;
-        case ULA_NG_REG_SPR_SEL:                /* sélection sprite + reset ptr motif */
+        case ULA_NG_REG_SPR_SEL:                /* sprite selection + reset pattern ptr */
             u->spr_sel = value & (ULA_NG_SPRITES - 1);
             u->spr_wp = 0;
             break;
@@ -332,17 +332,17 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
         case ULA_NG_REG_SPR_ATTR:               /* b0 = visible */
             u->sprites[u->spr_sel].enable = (value & 0x01u) != 0;
             break;
-        case ULA_NG_REG_SPR_DATA:               /* flux motif : 0=transparent, 1-7=index */
+        case ULA_NG_REG_SPR_DATA:               /* pattern stream: 0=transparent, 1-7=index */
             u->sprites[u->spr_sel].pattern[u->spr_wp] = value & 0x07u;
             u->spr_wp = (uint16_t)((u->spr_wp + 1) % ULA_NG_SPR_PIXELS);
             break;
-        case ULA_NG_REG_VDU:                    /* flux de commandes VDU (§VDU) */
+        case ULA_NG_REG_VDU:                    /* VDU command stream (§VDU) */
             vdu_feed(u, value);
             break;
         case ULA_NG_REG_RASTER:                 /* NG_RASTERLINE */
             u->raster_line = value;
             break;
-        case ULA_NG_REG_STATUS:                 /* acquit (b7=0) + enable (b0) */
+        case ULA_NG_REG_STATUS:                 /* acknowledge (b7=0) + enable (b0) */
             u->raster_enable = (value & ULA_NG_STATUS_EN) != 0;
             u->raster_pending = false;
             break;
@@ -350,30 +350,30 @@ int ula_ng_write(ula_ng_t* u, uint16_t addr, uint8_t value) {
             break;
         }
     }
-    /* Recalcule les caches d'activation (unlocked && NG_MODE.bx). */
+    /* Recomputes the activation caches (unlocked && NG_MODE.bx). */
     {
         uint8_t mode = u->regs[ULA_NG_REG_MODE - ULA_NG_WINDOW_LO];
-        u->active = u->unlocked && (mode & ULA_NG_MODE_ENABLE);   /* b0 : palette/copper/scroll/scrstart */
-        u->attr_active = u->unlocked && (mode & ULA_NG_MODE_ATTR);/* b1 : attributs parallèles */
-        u->spr_active = u->unlocked && u->spr_enable;             /* §5.7 : NG_SPR_CTRL.b0 */
-        uint8_t vidmode = mode & ULA_NG_MODE_VIDMASK;             /* §5.8 : b2-3 */
+        u->active = u->unlocked && (mode & ULA_NG_MODE_ENABLE);   /* b0: palette/copper/scroll/scrstart */
+        u->attr_active = u->unlocked && (mode & ULA_NG_MODE_ATTR);/* b1: parallel attributes */
+        u->spr_active = u->unlocked && u->spr_enable;             /* §5.7: NG_SPR_CTRL.b0 */
+        uint8_t vidmode = mode & ULA_NG_MODE_VIDMASK;             /* §5.8: b2-3 */
         u->chunky_active = u->active && (vidmode == ULA_NG_VIDMODE_CHUNKY);
         u->text80_active = u->active && (vidmode == ULA_NG_VIDMODE_TEXT80);
     }
-    return 1;                     /* consommée */
+    return 1;                     /* consumed */
 }
 
 void ula_ng_scanline(ula_ng_t* u, int line) {
-    /* Actif = déverrouillé + extensions actives (NG_MODE.b0). */
+    /* Active = unlocked + extensions enabled (NG_MODE.b0). */
     if (!u->active) return;
 
-    /* IRQ raster (§5.2) : niveau, reste jusqu'à acquittement. */
+    /* Raster IRQ (§5.2): level-triggered, stays until acknowledged. */
     if (u->raster_enable && line == (int)u->raster_line) {
         u->raster_pending = true;
     }
 
-    /* Palette par scanline (§5.4) : applique les entrées copper de cette ligne
-     * à la LUT (le hook vidéo relit u->pal la ligne suivante). */
+    /* Per-scanline palette (§5.4): applies this line's copper entries
+     * to the LUT (the video hook reads u->pal again on the next line). */
     for (uint8_t i = 0; i < u->copper_count; i++) {
         if (u->copper[i].line == (uint8_t)line) {
             uint8_t idx = u->copper[i].index & 0x0F;
@@ -393,18 +393,18 @@ void ula_ng_composite_scanline(ula_ng_t* u, uint8_t* fb, int w, int h, int y) {
     if (y < 0 || y >= h) return;
     if (w > ULA_NG_SPR_MAXW) w = ULA_NG_SPR_MAXW;
 
-    /* Occupancy de la scanline : marque les pixels déjà couverts par un sprite
-     * opaque → collision sprite-sprite quand deux sprites se recouvrent. */
+    /* Scanline occupancy: marks the pixels already covered by an opaque
+     * sprite → sprite-sprite collision when two sprites overlap. */
     uint8_t occ[ULA_NG_SPR_MAXW];
     memset(occ, 0, (size_t)w);
 
-    /* Dessin des sprites 15→0 : le sprite 0 est écrit en dernier → au-dessus
-     * (priorité par index). L'occupancy détecte le recouvrement quel que soit
-     * l'ordre. */
+    /* Sprites drawn 15→0: sprite 0 is written last → on top
+     * (priority by index). Occupancy detects overlap whatever the
+     * order. */
     for (int s = ULA_NG_SPRITES - 1; s >= 0; s--) {
         if (!u->sprites[s].enable) continue;
         int sy = (int)u->sprites[s].y;
-        int row = y - sy;                         /* ligne du sprite couvrant y */
+        int row = y - sy;                         /* sprite row covering y */
         if (row < 0 || row >= ULA_NG_SPR_DIM) continue;
         int sx = (int)u->sprites[s].x;
         const uint8_t* pat = &u->sprites[s].pattern[row * ULA_NG_SPR_DIM];
@@ -413,7 +413,7 @@ void ula_ng_composite_scanline(ula_ng_t* u, uint8_t* fb, int w, int h, int y) {
             if (idx == 0) continue;               /* transparent */
             int x = sx + col;
             if (x < 0 || x >= w) continue;        /* clip horizontal */
-            if (occ[x]) u->spr_collision = true;  /* recouvrement sprite-sprite */
+            if (occ[x]) u->spr_collision = true;  /* sprite-sprite overlap */
             occ[x] = 1;
             int off = (y * w + x) * 3;
             fb[off + 0] = u->pal[idx][0];

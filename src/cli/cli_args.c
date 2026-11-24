@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file cli_args.c
- * @brief Lecture de la ligne de commande (boucle getopt) dans un cli_opts_t.
+ * @brief Reading the command line (getopt loop) into a cli_opts_t.
  * @author bmarty <bmarty@mailo.com>
  *
- * Sprint C du plan d'architecture : la boucle getopt_long de main() est
- * déplacée ici À L'IDENTIQUE (mêmes cas, même ordre, mêmes messages, mêmes
- * codes de sortie). Seuls changent l'accès aux options (cfg->…), à l'émulateur
- * (emu->…) et --loci-menu-at, stocké dans cfg puis recopié par main().
- * Comportement verrouillé par tools/cli_golden.sh et test_cli_parsing.sh.
+ * Sprint C of the architecture plan: main()'s getopt_long loop is moved here
+ * VERBATIM (same cases, same order, same messages, same exit codes). Only the
+ * access to the options (cfg->…), to the emulator (emu->…) and --loci-menu-at,
+ * stored in cfg then copied by main(), change. Behaviour locked by
+ * tools/cli_golden.sh and test_cli_parsing.sh.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,15 +17,15 @@
 #include "cli/cli_args.h"
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] */
 #include "cli/cli_usage.h"    /* cli_print_usage */
-#include "card_module.h"      /* options des cartes en modules */
+#include "card_module.h"      /* options of the cards as modules */
 #include "io/bus_timing.h"    /* BUS_ORIC_TDSR_NS_DEFAULT */
 #include "utils/logging.h"
 
-/* Seconde analyse (options des cartes venues de phosphoric.cfg) : getopt
- * repart de zéro. */
+/* Second parse (card options coming from phosphoric.cfg): getopt starts
+ * over from scratch. */
 int cli_parse_more(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
 #ifdef __GLIBC__
-    optind = 0;          /* réinitialisation complète de l'état interne */
+    optind = 0;          /* full reset of the internal state */
 #else
     optind = 1;
 #endif
@@ -39,7 +39,7 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
     int opt;
     int option_index = 0;
 
-    /* Table du cœur augmentée des options des cartes en modules (card_module.h). */
+    /* Core table extended with the options of the cards as modules (card_module.h). */
     const struct option* opts = card_modules_long_options(long_options);
     while ((opt = getopt_long(argc, argv, CLI_SHORT_OPTIONS, opts, &option_index)) != -1) {
         if (opt >= CARD_OPT_BASE) {
@@ -147,9 +147,9 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_TAPE_SIGNAL_FREE: cfg->tape_signal = true; cfg->tape_signal_free = true; break;
             case OPT_TAPE_OUT_CAPTURE: cfg->tape_out_capture_arg = optarg; break;
             case OPT_TRACE: cfg->trace_file = optarg; break;
-            case OPT_CPU_MICROSEQ: cfg->cpu_microseq = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_CPU_MICROSEQ: cfg->cpu_microseq = true; break;   /* default, kept for scripts */
             case OPT_CPU_LEGACY: cfg->cpu_microseq = false; break;
-            case OPT_ULA_CYCLE: cfg->ula_per_cycle = true; break;   /* défaut, conservé pour les scripts */
+            case OPT_ULA_CYCLE: cfg->ula_per_cycle = true; break;   /* default, kept for scripts */
             case OPT_ULA_LINE: cfg->ula_per_cycle = false; break;
             case OPT_ULA_FETCH_OFFSET: cfg->ula_fetch_offset = atoi(optarg); break;
             case OPT_CYCLE_TRACE: cfg->cycle_trace_file = optarg; break;
@@ -179,8 +179,8 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_CONTROL:
                 cfg->control_mode = true;
                 cfg->debug_mode = true;
-                /* Plus de headless forcé (2.31.2) : sans -n, la fenêtre est
-                 * affichée et cadencée à 50 Hz ; -n pour s'en passer. */
+                /* No more forced headless (2.31.2): without -n the window
+                 * is shown and paced at 50 Hz; -n to do without it. */
                 /* Redirect logs to stderr as early as possible so the
                  * init banner doesn't pollute the protocol channel. */
                 log_set_stream(stderr);
@@ -228,9 +228,9 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             }
             case OPT_LOCI_SERVE_TIMING: {
-                /* Modèle de course PHI2 sous-cycle (bus_timing.h) :
-                 * "SERVE[,TDSR]" : serve en cycles du cœur 1 de la LOCI (120 MHz ;
-                 * 23 mesurés sur matériel réel), TDSR en ns (défaut 100). */
+                /* Sub-cycle PHI2 race model (bus_timing.h):
+                 * "SERVE[,TDSR]": serve in cycles of LOCI core 1 (120 MHz;
+                 * 23 measured on real hardware), TDSR in ns (default 100). */
                 int serve = 0, tdsr = BUS_ORIC_TDSR_NS_DEFAULT;
                 int n = sscanf(optarg, "%d,%d", &serve, &tdsr);
                 if (n >= 1 && serve >= 0 && serve <= 65535 && tdsr > 0 && tdsr < 1000) {
@@ -243,8 +243,8 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
                 break;
             }
             case OPT_LOCI_SERVE_JITTER: {
-                /* "AMP[,SEED]" : amplitude du jitter (cycles de serve) + graine PRNG.
-                 * Rend les ratés occasionnels près du latch, reproductibles. */
+                /* "AMP[,SEED]": jitter amplitude (serve cycles) + PRNG seed.
+                 * Makes the occasional misses near the latch reproducible. */
                 int amp = 0; unsigned seed = 0;
                 int n = sscanf(optarg, "%d,%u", &amp, &seed);
                 if (n >= 1 && amp >= 0) {

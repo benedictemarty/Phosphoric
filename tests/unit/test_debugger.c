@@ -9,7 +9,7 @@
 
 #define _POSIX_C_SOURCE 200809L   /* fileno, dup, dup2 under -std=c11 */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: expose INADDR_LOOPBACK + extensions BSD */
+#define _DARWIN_C_SOURCE  /* macOS: expose INADDR_LOOPBACK + BSD extensions */
 #endif
 #include <stdio.h>
 #include <string.h>
@@ -695,7 +695,7 @@ TEST(test_access_map) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/*  EPIC 6 / US 5: COUVERTURE D'INSPECTION ÉLARGIE                    */
+/*  EPIC 6 / US 5: BROADER INSPECTION COVERAGE                        */
 /* ═══════════════════════════════════════════════════════════════════ */
 
 TEST(test_inspect_coverage) {

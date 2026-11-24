@@ -1,59 +1,59 @@
-# Popeye Issue #1 — Fast-load écrasé par le test RAM
+# Popeye Issue #1 — Fast-load overwritten by the RAM test
 
-**Date** : 2026-03-04
-**Statut** : Corrigé (v1.14.1-alpha)
+**Date**: 2026-03-04
+**Status**: Fixed (v1.14.1-alpha)
 
-## Problème signalé
+## Reported problem
 
-Le mode fast-load (`-f`) injecte les données TAP en RAM **avant** le `cpu_reset()`.
-La ROM BASIC 1.0 exécute ensuite un test RAM complet ($FA1F-$FA45, ~2.5M cycles) qui
-écrase toute la zone $0000-$BFFF, détruisant le code injecté.
+Fast-load mode (`-f`) injects the TAP data into RAM **before** `cpu_reset()`.
+The BASIC 1.0 ROM then runs a full RAM test ($FA1F-$FA45, ~2.5M cycles) which
+overwrites the whole $0000-$BFFF area, destroying the injected code.
 
-## Cause racine
+## Root cause
 
-L'injection immédiate par `memory_write()` dans la boucle de parsing CLI se fait
-avant que l'émulation ne démarre. Le `cpu_reset()` au début de `emulator_run()`
-réinitialise le PC et la ROM exécute son test RAM qui balaie toute la mémoire basse.
+The immediate injection through `memory_write()` in the CLI parsing loop happens
+before emulation starts. The `cpu_reset()` at the beginning of `emulator_run()`
+resets the PC and the ROM runs its RAM test, which sweeps all of low memory.
 
-## Correction appliquée
+## Fix applied
 
-**Approche : Injection différée par seuil de cycles**
+**Approach: deferred injection based on a cycle threshold**
 
-1. **`emulator.h`** : Ajout de 4 champs dans `emulator_t` :
-   - `fastload_buf` : buffer des données TAP
-   - `fastload_addr` : adresse de destination
-   - `fastload_size` : taille en octets
-   - `fastload_pending` : flag d'injection en attente
+1. **`emulator.h`**: 4 fields added to `emulator_t`:
+   - `fastload_buf`: buffer holding the TAP data
+   - `fastload_addr`: destination address
+   - `fastload_size`: size in bytes
+   - `fastload_pending`: pending-injection flag
 
-2. **`main.c`** (section fast-load) : Au lieu d'injecter immédiatement via
-   `memory_write()`, les données sont stockées dans le buffer dédié.
+2. **`main.c`** (fast-load section): instead of injecting immediately via
+   `memory_write()`, the data are stored in the dedicated buffer.
 
-3. **`main.c`** (boucle `emulator_run()`) : Après chaque frame, si
-   `total_executed > 3_000_000` et `fastload_pending == true`, les données
-   sont injectées en RAM et le buffer est libéré. Le seuil de 3M cycles
-   garantit que le test RAM de la ROM (~2.5M cycles) est terminé.
+3. **`main.c`** (`emulator_run()` loop): after each frame, if
+   `total_executed > 3_000_000` and `fastload_pending == true`, the data
+   are injected into RAM and the buffer is freed. The 3M-cycle threshold
+   guarantees that the ROM's RAM test (~2.5M cycles) has finished.
 
-4. **Cleanup** : Le buffer est libéré dans `emulator_cleanup()` en cas
-   d'arrêt prématuré.
+4. **Cleanup**: the buffer is freed in `emulator_cleanup()` in case of
+   early shutdown.
 
-## Tests ajoutés
+## Tests added
 
-- `test_deferred_fastload_fields` : vérification des valeurs initiales
-- `test_deferred_fastload_buffer` : vérification du buffering et de l'injection
-- `test_deferred_fastload_survives_ram_clear` : le buffer survit à un effacement RAM
+- `test_deferred_fastload_fields`: checks the initial values
+- `test_deferred_fastload_buffer`: checks buffering and injection
+- `test_deferred_fastload_survives_ram_clear`: the buffer survives a RAM clear
 
-## Vérification
+## Verification
 
 ```bash
-# Compilation et tests
+# Build and tests
 make tests    # 283 tests, 100% pass
 
-# Test manuel
+# Manual test
 ./oric1-emu -r roms/basic10.rom -t prog.tap -f
-# Log attendu : "Deferred fast-load: injected N bytes at $XXXX-$YYYY (after ZZZZ cycles)"
+# Expected log: "Deferred fast-load: injected N bytes at $XXXX-$YYYY (after ZZZZ cycles)"
 ```
 
 ## Version
 
 - **v1.14.1-alpha** — Sprint 32 bugfix
-- Commit : fix: deferred fast-load to survive ROM RAM test (Popeye #1)
+- Commit: fix: deferred fast-load to survive ROM RAM test (Popeye #1)

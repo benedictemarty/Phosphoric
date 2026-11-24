@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_smf.c
- * @brief Fuzzing : fichier MIDI standard (.mid) → smf_parse (transport smf:)
+ * @brief Fuzzing: Standard MIDI File (.mid) → smf_parse (smf: transport)
  * @author bmarty <bmarty@mailo.com>
  */
 #include "fuzz_common.h"

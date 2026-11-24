@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_ticks.h
- * @brief Tick par cycle des cartes en modules, généré depuis cards_list.h.
+ * @brief Per-cycle tick of the cards as modules, generated from cards_list.h.
  * @author bmarty <bmarty@mailo.com>
  *
- * Inclus par src/io/io_bus.c seulement. Appelé à CHAQUE cycle : le test de
- * présence lit un drapeau à position fixe (emu->card_on[CARD_IDX_<id>]) et
- * l'appel est direct. C'est le même code qu'une carte câblée dans io_bus.c ;
- * une table de pointeurs parcourue à l'exécution coûtait 2 % par trame avec
- * une seule carte présente (mesuré en G1).
+ * Included by src/io/io_bus.c only. Called on EVERY cycle: the presence
+ * test reads a flag at a fixed position (emu->card_on[CARD_IDX_<id>]) and
+ * the call is direct. It is the same code as a card wired into io_bus.c;
+ * a pointer table walked at run time cost 2 % per frame with a single
+ * card present (measured in G1).
  */
 #ifndef CARD_TICKS_H
 #define CARD_TICKS_H

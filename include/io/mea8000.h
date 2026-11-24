@@ -119,10 +119,10 @@ typedef struct mea8000_s {
 void mea8000_init(mea8000_t* m, uint16_t base_addr);
 void mea8000_reset(mea8000_t* m);
 
-/* Section .ost « MEA » (sprint D) : état du séquenceur, des 4 filtres de formants
- * et échantillons en attente de mixage. Hors section : l'adresse (option), les
- * tables cos/exp/bruit (recalculées par mea8000_init), le pointeur vers
- * l'émulateur. mea8000_load ignore une section de version ou de taille inattendue. */
+/* .ost section "MEA" (sprint D): state of the sequencer, of the 4 formant filters
+ * and samples waiting to be mixed. Not in the section: the address (option), the
+ * cos/exp/noise tables (recomputed by mea8000_init), the pointer to the
+ * emulator. mea8000_load ignores a section with an unexpected version or size. */
 #define MEA8000_SAVE_VERSION 1
 bool mea8000_save(const mea8000_t* m, FILE* fp);
 void mea8000_load(mea8000_t* m, FILE* fp, uint32_t size);

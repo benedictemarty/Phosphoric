@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file picowifi_detect.c
- * @brief Détection d'un modem picowifi réel et d'une LOCI-USB (Feather) par
- *        leur nom de produit USB (/sys)
+ * @brief Detection of a real picowifi modem and of a LOCI-USB (Feather) by
+ *        their USB product name (/sys)
  * @author bmarty <bmarty@mailo.com>
  */
 #include "io/picowifi_detect.h"
@@ -28,9 +28,9 @@ static bool usb_tty_detect(const char* sysfs_root, const char* product, bool pre
 
 #else
 
-/* Produit USB du port @p tty : <root>/class/tty/<tty>/device est l'interface
- * USB, le fichier « product » est dans le périphérique parent. @p prefix : le
- * produit commence par @p product (sinon : il lui est égal). */
+/* USB product of port @p tty: <root>/class/tty/<tty>/device is the USB
+ * interface, the « product » file is in the parent device. @p prefix: the
+ * product starts with @p product (otherwise: it is equal to it). */
 static bool tty_product_matches(const char* root, const char* tty, const char* product,
                                 bool prefix) {
     char path[512], line[128];

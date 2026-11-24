@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file debugger_mem.c
- * @brief Débogueur : recherche en mémoire, banques, hunt, sauvegarde/chargement de zones
+ * @brief Debugger: memory search, banks, hunt, region save/load
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/debugger.c (sprint F du plan d'architecture), sans changement
- * de comportement ; symboles partagés : include/debugger_internal.h.
+ * Split out of src/debugger.c (sprint F of the architecture plan), with no
+ * behaviour change; shared symbols: include/debugger_internal.h.
  */
 
 #define _DEFAULT_SOURCE

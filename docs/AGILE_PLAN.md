@@ -1,58 +1,58 @@
-# PLAN AGILE - Phosphoric
-## Document de Planification Agile Complet
+# AGILE PLAN - Phosphoric
+## Complete Agile Planning Document
 
-**Projet**: Phosphoric — Emulateur ORIC-1/Atmos précis au cycle bus
-**Version du document**: 1.0.0
-**Date de création**: 2026-02-22
-**Responsable**: bmarty <bmarty@mailo.com>
-**Méthodologie**: Scrum / Agile
-**Durée des sprints**: 2 semaines
-
----
-
-## Vision Produit
-
-> Créer Phosphoric, un émulateur ORIC-1/Atmos précis au cycle bus, écrit en C,
-> intégrant des fonctionnalités modernes (partage de fichiers hôte, outils de
-> conversion) pour préserver et faire revivre l'écosystème logiciel de l'ORIC (1983).
+**Project**: Phosphoric — bus-cycle-accurate ORIC-1/Atmos emulator
+**Document version**: 1.0.0
+**Creation date**: 2026-02-22
+**Owner**: bmarty <bmarty@mailo.com>
+**Methodology**: Scrum / Agile
+**Sprint length**: 2 weeks
 
 ---
 
-## Product Backlog - Vue d'ensemble des Epics
+## Product Vision
 
-| # | Epic | Priorité | Phase | Sprints | Version cible |
+> Create Phosphoric, a bus-cycle-accurate ORIC-1/Atmos emulator written in C,
+> with modern features (host file sharing, conversion
+> tools) to preserve and revive the ORIC (1983) software ecosystem.
+
+---
+
+## Product Backlog - Epics Overview
+
+| # | Epic | Priority | Phase | Sprints | Target version |
 |---|------|----------|-------|---------|---------------|
-| E0 | Infrastructure & Build | Critique | 0 | S0 | 0.1.0-alpha |
-| E1 | CPU 6502 | Critique | 1 | S1-S2 | 0.2.0-alpha |
-| E2 | Système Mémoire | Critique | 1 | S3 | 0.3.0-alpha |
-| E3 | Système I/O (VIA 6522) | Critique | 1 | S3-S4 | 0.3.0-alpha |
-| E4 | Système Vidéo | Haute | 2 | S5-S6 | 0.4.0-alpha |
-| E5 | Système Audio (AY-3-8910) | Haute | 2 | S7 | 0.5.0-alpha |
-| E6 | Stockage Cassette (.TAP) | Haute | 3 | S8 | 0.6.0-alpha |
-| E7 | Stockage Disque (Sedoric) | Moyenne | 3 | S9 | 0.7.0-alpha |
-| E8 | Système de Fichiers Hôte | Moyenne | 3 | S10 | 0.8.0-alpha |
-| E9 | Outils de Conversion | Moyenne | 4 | S11 | 0.9.0-alpha |
-| E10 | Débogueur & Outils Dev | Basse | 4 | S12 | 0.9.5-beta |
-| E11 | Optimisation & Stabilisation | Haute | 5 | S13-S14 | 0.9.9-rc |
-| E12 | Release v1.0.0 | Critique | 5 | S15 | 1.0.0 |
-| E13 | Extensions Post-Release | Basse | 6+ | S16+ | 1.x.x |
+| E0 | Infrastructure & Build | Critical | 0 | S0 | 0.1.0-alpha |
+| E1 | 6502 CPU | Critical | 1 | S1-S2 | 0.2.0-alpha |
+| E2 | Memory System | Critical | 1 | S3 | 0.3.0-alpha |
+| E3 | I/O System (VIA 6522) | Critical | 1 | S3-S4 | 0.3.0-alpha |
+| E4 | Video System | High | 2 | S5-S6 | 0.4.0-alpha |
+| E5 | Audio System (AY-3-8910) | High | 2 | S7 | 0.5.0-alpha |
+| E6 | Cassette Storage (.TAP) | High | 3 | S8 | 0.6.0-alpha |
+| E7 | Disk Storage (Sedoric) | Medium | 3 | S9 | 0.7.0-alpha |
+| E8 | Host File System | Medium | 3 | S10 | 0.8.0-alpha |
+| E9 | Conversion Tools | Medium | 4 | S11 | 0.9.0-alpha |
+| E10 | Debugger & Dev Tools | Low | 4 | S12 | 0.9.5-beta |
+| E11 | Optimisation & Stabilisation | High | 5 | S13-S14 | 0.9.9-rc |
+| E12 | Release v1.0.0 | Critical | 5 | S15 | 1.0.0 |
+| E13 | Post-Release Extensions | Low | 6+ | S16+ | 1.x.x |
 
 ---
 
-## Diagramme de dépendances entre Epics
+## Epic Dependency Diagram
 
 ```
 E0 (Infrastructure)
  └──► E1 (CPU 6502)
-       ├──► E2 (Mémoire)
+       ├──► E2 (Memory)
        │     ├──► E3 (I/O VIA 6522)
-       │     │     ├──► E4 (Vidéo)
+       │     │     ├──► E4 (Video)
        │     │     ├──► E5 (Audio)
-       │     │     └──► E6 (Stockage Cassette)
-       │     │           └──► E7 (Stockage Disque)
+       │     │     └──► E6 (Cassette Storage)
+       │     │           └──► E7 (Disk Storage)
        │     └──► E8 (HostFS)
-       └──► E10 (Débogueur)
- E6 + E7 ──► E9 (Outils Conversion)
+       └──► E10 (Debugger)
+ E6 + E7 ──► E9 (Conversion Tools)
  E4 + E5 + E6 + E7 + E8 ──► E11 (Optimisation)
  E11 ──► E12 (Release)
  E12 ──► E13 (Extensions)
@@ -60,165 +60,165 @@ E0 (Infrastructure)
 
 ---
 
-# EPIC E0 : Infrastructure & Build System
+# EPIC E0: Infrastructure & Build System
 
-**Priorité**: Critique
-**Statut**: En cours (30%)
-**Version cible**: 0.1.0-alpha
+**Priority**: Critical
+**Status**: In progress (30%)
+**Target version**: 0.1.0-alpha
 **Sprint**: S0 (Sprint 0)
 
 ## Description
-Mise en place de l'infrastructure du projet : dépôt Git, système de build,
-structure de répertoires, documentation agile, CI/CD.
+Setting up the project infrastructure: Git repository, build system,
+directory structure, agile documentation, CI/CD.
 
 ## User Stories
 
-### US-E0-01 : Structure du projet
-> En tant que développeur, je veux une structure de projet modulaire pour
-> organiser le code par composant (CPU, mémoire, I/O, vidéo, audio, stockage).
+### US-E0-01: Project structure
+> As a developer, I want a modular project structure to
+> organise the code by component (CPU, memory, I/O, video, audio, storage).
 
 **Story Points**: 3
-**Statut**: Done
+**Status**: Done
 
-**Critères d'acceptation**:
-- [x] Répertoires src/, include/, tests/, tools/, docs/, roms/ créés
-- [x] Sous-répertoires par module (cpu, memory, io, video, audio, storage, hostfs, utils)
-- [x] Headers et fichiers source squelettes en place
+**Acceptance criteria**:
+- [x] Directories src/, include/, tests/, tools/, docs/, roms/ created
+- [x] Per-module subdirectories (cpu, memory, io, video, audio, storage, hostfs, utils)
+- [x] Skeleton headers and source files in place
 
-**Tâches**:
-- [x] T-001 : Créer l'arborescence de répertoires
-- [x] T-002 : Créer les fichiers header (.h) avec interfaces
-- [x] T-003 : Créer les fichiers source (.c) squelettes
-- [x] T-004 : Créer le .gitignore
+**Tasks**:
+- [x] T-001: Create the directory tree
+- [x] T-002: Create the header files (.h) with interfaces
+- [x] T-003: Create the skeleton source files (.c)
+- [x] T-004: Create the .gitignore
 
-### US-E0-02 : Système de build
-> En tant que développeur, je veux un système de build fiable pour compiler
-> l'émulateur et les tests rapidement.
+### US-E0-02: Build system
+> As a developer, I want a reliable build system to compile
+> the emulator and the tests quickly.
 
 **Story Points**: 5
-**Statut**: En cours
+**Status**: In progress
 
-**Critères d'acceptation**:
-- [x] Makefile fonctionnel (compilation sans CMake)
-- [x] CMakeLists.txt configuré (retiré en 2.1.3, désynchronisé du Makefile)
-- [ ] Compilation sans warnings (-Wall -Wextra -Wpedantic)
-- [ ] Targets : all, tests, tools, clean, coverage
-- [ ] Build debug et release
+**Acceptance criteria**:
+- [x] Working Makefile (builds without CMake)
+- [x] CMakeLists.txt configured (removed in 2.1.3, out of sync with the Makefile)
+- [ ] Build without warnings (-Wall -Wextra -Wpedantic)
+- [ ] Targets: all, tests, tools, clean, coverage
+- [ ] Debug and release builds
 
-**Tâches**:
-- [x] T-005 : Créer le Makefile
-- [x] T-006 : Créer CMakeLists.txt
-- [ ] T-007 : Corriger les warnings de compilation (12 warnings actuels)
-- [ ] T-008 : Ajouter target coverage dans Makefile
+**Tasks**:
+- [x] T-005: Create the Makefile
+- [x] T-006: Create CMakeLists.txt
+- [ ] T-007: Fix the compilation warnings (12 warnings currently)
+- [ ] T-008: Add a coverage target to the Makefile
 
-### US-E0-03 : Documentation agile
-> En tant que chef de projet, je veux une documentation agile complète pour
-> suivre l'avancement du projet.
+### US-E0-03: Agile documentation
+> As a project manager, I want complete agile documentation to
+> track the progress of the project.
 
 **Story Points**: 3
-**Statut**: Done
+**Status**: Done
 
-**Critères d'acceptation**:
-- [x] README.md complet
-- [x] CHANGELOG initialisé
-- [x] ROADMAP définie
-- [x] VERSION_TRACKING en place
+**Acceptance criteria**:
+- [x] Complete README.md
+- [x] CHANGELOG initialised
+- [x] ROADMAP defined
+- [x] VERSION_TRACKING in place
 - [x] CIRRUS_OS status file
-- [x] AGILE_PLAN (ce document)
+- [x] AGILE_PLAN (this document)
 
-**Tâches**:
-- [x] T-009 : Rédiger README.md
-- [x] T-010 : Créer CHANGELOG
-- [x] T-011 : Créer ROADMAP
-- [x] T-012 : Créer VERSION_TRACKING
-- [x] T-013 : Créer CIRRUS_OS
-- [x] T-014 : Créer AGILE_PLAN.md
+**Tasks**:
+- [x] T-009: Write README.md
+- [x] T-010: Create CHANGELOG
+- [x] T-011: Create ROADMAP
+- [x] T-012: Create VERSION_TRACKING
+- [x] T-013: Create CIRRUS_OS
+- [x] T-014: Create AGILE_PLAN.md
 
-### US-E0-04 : Dépôt Git
-> En tant que développeur, je veux un dépôt Git configuré avec un remote
-> pour versionner et sauvegarder le code.
+### US-E0-04: Git repository
+> As a developer, I want a Git repository configured with a remote
+> to version and back up the code.
 
 **Story Points**: 2
-**Statut**: Partiel
+**Status**: Partial
 
-**Critères d'acceptation**:
-- [x] Dépôt local initialisé
-- [x] Configuration user/email (bmarty / bmarty@mailo.com)
-- [ ] Remote configuré et fonctionnel
-- [ ] Branche main comme branche principale
-- [ ] Convention de commit définie
+**Acceptance criteria**:
+- [x] Local repository initialised
+- [x] user/email configuration (bmarty / bmarty@mailo.com)
+- [ ] Remote configured and working
+- [ ] main branch as the primary branch
+- [ ] Commit convention defined
 
-**Tâches**:
-- [x] T-015 : Initialiser le dépôt Git
-- [ ] T-016 : Configurer le remote
-- [ ] T-017 : Fusionner master vers main
-- [ ] T-018 : Définir convention de nommage des branches
+**Tasks**:
+- [x] T-015: Initialise the Git repository
+- [ ] T-016: Configure the remote
+- [ ] T-017: Merge master into main
+- [ ] T-018: Define a branch naming convention
 
-### US-E0-05 : Framework de tests
-> En tant que développeur, je veux un framework de tests unitaires et
-> d'intégration pour valider chaque composant.
+### US-E0-05: Test framework
+> As a developer, I want a unit and integration test framework
+> to validate each component.
 
 **Story Points**: 3
-**Statut**: Partiel
+**Status**: Partial
 
-**Critères d'acceptation**:
-- [x] Structure tests/unit/ et tests/integration/
-- [x] Tests CPU basiques (init, reset)
-- [x] Tests mémoire basiques (init, read/write)
-- [x] Tests I/O basiques (init)
-- [ ] Macro ASSERT personnalisée avec messages clairs
-- [ ] Rapport de tests automatisé
-- [ ] Couverture de code mesurable
+**Acceptance criteria**:
+- [x] tests/unit/ and tests/integration/ structure
+- [x] Basic CPU tests (init, reset)
+- [x] Basic memory tests (init, read/write)
+- [x] Basic I/O tests (init)
+- [ ] Custom ASSERT macro with clear messages
+- [ ] Automated test report
+- [ ] Measurable code coverage
 
-**Tâches**:
-- [x] T-019 : Créer la structure de tests
-- [x] T-020 : Écrire test_cpu.c initial
-- [x] T-021 : Écrire test_memory.c initial
-- [x] T-022 : Écrire test_io.c initial
-- [ ] T-023 : Créer un mini-framework de test (assert macros, reporting)
-- [ ] T-024 : Intégrer gcov/lcov pour la couverture
+**Tasks**:
+- [x] T-019: Create the test structure
+- [x] T-020: Write initial test_cpu.c
+- [x] T-021: Write initial test_memory.c
+- [x] T-022: Write initial test_io.c
+- [ ] T-023: Create a mini test framework (assert macros, reporting)
+- [ ] T-024: Integrate gcov/lcov for coverage
 
 ### Definition of Done - Epic E0
-- [x] Structure projet complète
-- [x] Build fonctionnel
-- [ ] 0 warnings de compilation
-- [x] Tests de base passent
-- [x] Documentation agile en place
-- [ ] Remote Git configuré
+- [x] Complete project structure
+- [x] Working build
+- [ ] 0 compilation warnings
+- [x] Basic tests pass
+- [x] Agile documentation in place
+- [ ] Git remote configured
 
 ---
 
-# EPIC E1 : CPU 6502 - Coeur du processeur
+# EPIC E1: 6502 CPU - Processor core
 
-**Priorité**: Critique (bloquant pour tous les autres epics)
-**Statut**: A faire
-**Version cible**: 0.2.0-alpha
+**Priority**: Critical (blocking for all the other epics)
+**Status**: To do
+**Target version**: 0.2.0-alpha
 **Sprints**: S1, S2
 
 ## Description
-Implémentation complète et précise au cycle bus du processeur MOS Technology
-6502 cadencé à 1 MHz tel qu'utilisé dans l'ORIC-1 (comptage de cycles exact
-par opcode et accès bus cadencés au bon cycle ; les cycles internes non-bus
-sont rattrapés en fin d'instruction plutôt que micro-cyclés). C'est le composant le plus
-critique de l'émulateur.
+Complete, bus-cycle-accurate implementation of the MOS Technology 6502
+processor clocked at 1 MHz as used in the ORIC-1 (exact cycle counting
+per opcode and bus accesses timed on the right cycle; internal non-bus
+cycles are caught up at the end of the instruction rather than micro-cycled). It is the most
+critical component of the emulator.
 
 ## User Stories
 
-### US-E1-01 : Modes d'adressage
-> En tant que développeur, je veux les 13 modes d'adressage du 6502
-> implémentés pour que les opcodes puissent résoudre leurs opérandes.
+### US-E1-01: Addressing modes
+> As a developer, I want the 13 addressing modes of the 6502
+> implemented so that opcodes can resolve their operands.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S1
 
-**Critères d'acceptation**:
-- [ ] Les 13 modes d'adressage fonctionnels
-- [ ] Tests unitaires pour chaque mode
-- [ ] Gestion du page boundary crossing (cycle supplémentaire)
+**Acceptance criteria**:
+- [ ] All 13 addressing modes working
+- [ ] Unit tests for each mode
+- [ ] Page boundary crossing handled (extra cycle)
 
-**Modes d'adressage**:
-| # | Mode | Syntaxe | Exemple |
+**Addressing modes**:
+| # | Mode | Syntax | Example |
 |---|------|---------|---------|
 | 1 | Implicit | impl | `CLC` |
 | 2 | Accumulator | A | `ASL A` |
@@ -234,38 +234,38 @@ critique de l'émulateur.
 | 12 | (Indirect),Y | (zpg),Y | `LDA ($42),Y` |
 | 13 | Relative | rel | `BEQ label` |
 
-**Tâches**:
-- [ ] T-100 : Implémenter addr_implicit()
-- [ ] T-101 : Implémenter addr_accumulator()
-- [ ] T-102 : Implémenter addr_immediate()
-- [ ] T-103 : Implémenter addr_zero_page()
-- [ ] T-104 : Implémenter addr_zero_page_x()
-- [ ] T-105 : Implémenter addr_zero_page_y()
-- [ ] T-106 : Implémenter addr_absolute()
-- [ ] T-107 : Implémenter addr_absolute_x()
-- [ ] T-108 : Implémenter addr_absolute_y()
-- [ ] T-109 : Implémenter addr_indirect()
-- [ ] T-110 : Implémenter addr_indexed_indirect() (Indirect,X)
-- [ ] T-111 : Implémenter addr_indirect_indexed() (Indirect),Y
-- [ ] T-112 : Implémenter addr_relative()
-- [ ] T-113 : Écrire tests unitaires modes d'adressage
+**Tasks**:
+- [ ] T-100: Implement addr_implicit()
+- [ ] T-101: Implement addr_accumulator()
+- [ ] T-102: Implement addr_immediate()
+- [ ] T-103: Implement addr_zero_page()
+- [ ] T-104: Implement addr_zero_page_x()
+- [ ] T-105: Implement addr_zero_page_y()
+- [ ] T-106: Implement addr_absolute()
+- [ ] T-107: Implement addr_absolute_x()
+- [ ] T-108: Implement addr_absolute_y()
+- [ ] T-109: Implement addr_indirect()
+- [ ] T-110: Implement addr_indexed_indirect() (Indirect,X)
+- [ ] T-111: Implement addr_indirect_indexed() (Indirect),Y
+- [ ] T-112: Implement addr_relative()
+- [ ] T-113: Write addressing-mode unit tests
 
-### US-E1-02 : Instructions de chargement/stockage
-> En tant que développeur, je veux les instructions Load/Store pour
-> déplacer des données entre registres et mémoire.
+### US-E1-02: Load/store instructions
+> As a developer, I want the Load/Store instructions to
+> move data between registers and memory.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S1
 
-**Critères d'acceptation**:
-- [ ] LDA, LDX, LDY fonctionnels
-- [ ] STA, STX, STY fonctionnels
-- [ ] Flags N et Z mis à jour correctement
-- [ ] Tests unitaires pour chaque instruction
+**Acceptance criteria**:
+- [ ] LDA, LDX, LDY working
+- [ ] STA, STX, STY working
+- [ ] N and Z flags updated correctly
+- [ ] Unit tests for each instruction
 
 **Instructions**:
-| Opcode | Nom | Description | Flags |
+| Opcode | Name | Description | Flags |
 |--------|-----|-------------|-------|
 | LDA | Load Accumulator | A ← M | N, Z |
 | LDX | Load X Register | X ← M | N, Z |
@@ -274,28 +274,28 @@ critique de l'émulateur.
 | STX | Store X Register | M ← X | - |
 | STY | Store Y Register | M ← Y | - |
 
-**Tâches**:
-- [ ] T-114 : Implémenter LDA (8 modes d'adressage)
-- [ ] T-115 : Implémenter LDX (5 modes d'adressage)
-- [ ] T-116 : Implémenter LDY (5 modes d'adressage)
-- [ ] T-117 : Implémenter STA (7 modes d'adressage)
-- [ ] T-118 : Implémenter STX (3 modes d'adressage)
-- [ ] T-119 : Implémenter STY (3 modes d'adressage)
-- [ ] T-120 : Tests unitaires Load/Store
+**Tasks**:
+- [ ] T-114: Implement LDA (8 addressing modes)
+- [ ] T-115: Implement LDX (5 addressing modes)
+- [ ] T-116: Implement LDY (5 addressing modes)
+- [ ] T-117: Implement STA (7 addressing modes)
+- [ ] T-118: Implement STX (3 addressing modes)
+- [ ] T-119: Implement STY (3 addressing modes)
+- [ ] T-120: Load/Store unit tests
 
-### US-E1-03 : Instructions arithmétiques
-> En tant que développeur, je veux les instructions arithmétiques pour
-> effectuer additions, soustractions et comparaisons.
+### US-E1-03: Arithmetic instructions
+> As a developer, I want the arithmetic instructions to
+> perform additions, subtractions and comparisons.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S1
 
-**Critères d'acceptation**:
-- [ ] ADC, SBC fonctionnels (mode binaire et décimal)
-- [ ] CMP, CPX, CPY fonctionnels
-- [ ] INC, DEC, INX, INY, DEX, DEY fonctionnels
-- [ ] Flags correctement mis à jour (N, Z, C, V)
+**Acceptance criteria**:
+- [ ] ADC, SBC working (binary and decimal mode)
+- [ ] CMP, CPX, CPY working
+- [ ] INC, DEC, INX, INY, DEX, DEY working
+- [ ] Flags updated correctly (N, Z, C, V)
 
 **Instructions**:
 | Opcode | Description | Flags |
@@ -312,29 +312,29 @@ critique de l'émulateur.
 | DEX | Decrement X | N, Z |
 | DEY | Decrement Y | N, Z |
 
-**Tâches**:
-- [ ] T-121 : Implémenter ADC (mode binaire)
-- [ ] T-122 : Implémenter ADC (mode décimal BCD)
-- [ ] T-123 : Implémenter SBC (mode binaire)
-- [ ] T-124 : Implémenter SBC (mode décimal BCD)
-- [ ] T-125 : Implémenter CMP, CPX, CPY
-- [ ] T-126 : Implémenter INC, DEC
-- [ ] T-127 : Implémenter INX, INY, DEX, DEY
-- [ ] T-128 : Tests arithmétiques complets (overflow, carry, BCD)
+**Tasks**:
+- [ ] T-121: Implement ADC (binary mode)
+- [ ] T-122: Implement ADC (BCD decimal mode)
+- [ ] T-123: Implement SBC (binary mode)
+- [ ] T-124: Implement SBC (BCD decimal mode)
+- [ ] T-125: Implement CMP, CPX, CPY
+- [ ] T-126: Implement INC, DEC
+- [ ] T-127: Implement INX, INY, DEX, DEY
+- [ ] T-128: Complete arithmetic tests (overflow, carry, BCD)
 
-### US-E1-04 : Instructions logiques
-> En tant que développeur, je veux les instructions logiques (AND, OR, XOR,
-> shifts, rotations) pour la manipulation de bits.
+### US-E1-04: Logical instructions
+> As a developer, I want the logical instructions (AND, OR, XOR,
+> shifts, rotations) for bit manipulation.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S1
 
-**Critères d'acceptation**:
-- [ ] AND, ORA, EOR fonctionnels
-- [ ] ASL, LSR, ROL, ROR fonctionnels
-- [ ] BIT fonctionnel
-- [ ] Flags correctement mis à jour
+**Acceptance criteria**:
+- [ ] AND, ORA, EOR working
+- [ ] ASL, LSR, ROL, ROR working
+- [ ] BIT working
+- [ ] Flags updated correctly
 
 **Instructions**:
 | Opcode | Description | Flags |
@@ -348,28 +348,28 @@ critique de l'émulateur.
 | ROR | Rotate Right | N, Z, C |
 | BIT | Bit Test | N, V, Z |
 
-**Tâches**:
-- [ ] T-129 : Implémenter AND, ORA, EOR
-- [ ] T-130 : Implémenter ASL, LSR (accumulateur et mémoire)
-- [ ] T-131 : Implémenter ROL, ROR (accumulateur et mémoire)
-- [ ] T-132 : Implémenter BIT
-- [ ] T-133 : Tests logiques complets
+**Tasks**:
+- [ ] T-129: Implement AND, ORA, EOR
+- [ ] T-130: Implement ASL, LSR (accumulator and memory)
+- [ ] T-131: Implement ROL, ROR (accumulator and memory)
+- [ ] T-132: Implement BIT
+- [ ] T-133: Complete logical tests
 
-### US-E1-05 : Instructions de branchement
-> En tant que développeur, je veux les instructions de branchement conditionnel
-> pour le contrôle de flux.
+### US-E1-05: Branch instructions
+> As a developer, I want the conditional branch instructions
+> for flow control.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S1
 
-**Critères d'acceptation**:
-- [ ] Les 8 branches conditionnelles fonctionnelles
-- [ ] Cycle supplémentaire si branchement pris
-- [ ] Cycle supplémentaire si franchissement de page
+**Acceptance criteria**:
+- [ ] All 8 conditional branches working
+- [ ] Extra cycle if the branch is taken
+- [ ] Extra cycle if a page boundary is crossed
 
 **Instructions**:
-| Opcode | Condition | Signification |
+| Opcode | Condition | Meaning |
 |--------|-----------|---------------|
 | BCC | C=0 | Branch if Carry Clear |
 | BCS | C=1 | Branch if Carry Set |
@@ -380,55 +380,55 @@ critique de l'émulateur.
 | BVS | V=1 | Branch if Overflow Set |
 | BVC | V=0 | Branch if Overflow Clear |
 
-**Tâches**:
-- [ ] T-134 : Implémenter les 8 instructions de branchement
-- [ ] T-135 : Gérer cycle supplémentaire (branch taken)
-- [ ] T-136 : Gérer cycle supplémentaire (page crossing)
-- [ ] T-137 : Tests de branchement complets
+**Tasks**:
+- [ ] T-134: Implement the 8 branch instructions
+- [ ] T-135: Handle the extra cycle (branch taken)
+- [ ] T-136: Handle the extra cycle (page crossing)
+- [ ] T-137: Complete branch tests
 
-### US-E1-06 : Instructions de saut et sous-programme
-> En tant que développeur, je veux JMP, JSR, RTS, RTI pour la gestion
-> des sauts et des appels de sous-programmes.
+### US-E1-06: Jump and subroutine instructions
+> As a developer, I want JMP, JSR, RTS, RTI to handle
+> jumps and subroutine calls.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S1
 
-**Critères d'acceptation**:
-- [ ] JMP (absolute et indirect) fonctionnel
-- [ ] JSR/RTS fonctionnels avec pile
-- [ ] RTI fonctionnel (retour d'interruption)
-- [ ] Bug JMP indirect à la frontière de page reproduit (hardware bug)
+**Acceptance criteria**:
+- [ ] JMP (absolute and indirect) working
+- [ ] JSR/RTS working with the stack
+- [ ] RTI working (return from interrupt)
+- [ ] JMP indirect page-boundary bug reproduced (hardware bug)
 
 **Instructions**:
 | Opcode | Description | Notes |
 |--------|-------------|-------|
-| JMP | Jump | Abs et (Indirect) |
-| JSR | Jump to Subroutine | Push PC-1 sur pile |
-| RTS | Return from Subroutine | Pull PC+1 de pile |
-| RTI | Return from Interrupt | Pull P puis PC |
+| JMP | Jump | Abs and (Indirect) |
+| JSR | Jump to Subroutine | Push PC-1 onto stack |
+| RTS | Return from Subroutine | Pull PC+1 from stack |
+| RTI | Return from Interrupt | Pull P then PC |
 
-**Tâches**:
-- [ ] T-138 : Implémenter JMP absolute
-- [ ] T-139 : Implémenter JMP indirect (avec bug hardware page boundary)
-- [ ] T-140 : Implémenter JSR
-- [ ] T-141 : Implémenter RTS
-- [ ] T-142 : Implémenter RTI
-- [ ] T-143 : Tests sauts et sous-programmes
+**Tasks**:
+- [ ] T-138: Implement JMP absolute
+- [ ] T-139: Implement JMP indirect (with page-boundary hardware bug)
+- [ ] T-140: Implement JSR
+- [ ] T-141: Implement RTS
+- [ ] T-142: Implement RTI
+- [ ] T-143: Jump and subroutine tests
 
-### US-E1-07 : Instructions de pile
-> En tant que développeur, je veux les instructions de manipulation de pile
-> pour sauvegarder/restaurer registres et flags.
+### US-E1-07: Stack instructions
+> As a developer, I want the stack manipulation instructions
+> to save/restore registers and flags.
 
 **Story Points**: 3
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S2
 
-**Critères d'acceptation**:
-- [ ] PHA, PLA fonctionnels
-- [ ] PHP, PLP fonctionnels
-- [ ] TXS, TSX fonctionnels
-- [ ] Pile en page $01xx
+**Acceptance criteria**:
+- [ ] PHA, PLA working
+- [ ] PHP, PLP working
+- [ ] TXS, TSX working
+- [ ] Stack in page $01xx
 
 **Instructions**:
 | Opcode | Description | Flags |
@@ -440,40 +440,40 @@ critique de l'émulateur.
 | TXS | Transfer X to SP | - |
 | TSX | Transfer SP to X | N, Z |
 
-**Tâches**:
-- [ ] T-144 : Implémenter PHA, PLA
-- [ ] T-145 : Implémenter PHP, PLP
-- [ ] T-146 : Implémenter TXS, TSX
-- [ ] T-147 : Tests pile complets
+**Tasks**:
+- [ ] T-144: Implement PHA, PLA
+- [ ] T-145: Implement PHP, PLP
+- [ ] T-146: Implement TXS, TSX
+- [ ] T-147: Complete stack tests
 
-### US-E1-08 : Instructions de transfert registre
-> En tant que développeur, je veux les instructions de transfert entre
-> registres (TAX, TXA, TAY, TYA).
-
-**Story Points**: 2
-**Statut**: A faire
-**Sprint**: S2
-
-**Critères d'acceptation**:
-- [ ] TAX, TXA, TAY, TYA fonctionnels
-- [ ] Flags N, Z mis à jour
-
-**Tâches**:
-- [ ] T-148 : Implémenter TAX, TXA, TAY, TYA
-- [ ] T-149 : Tests transferts registres
-
-### US-E1-09 : Instructions de contrôle flags
-> En tant que développeur, je veux les instructions de manipulation des flags
-> processeur (SEC, CLC, SEI, CLI, SED, CLD, CLV).
+### US-E1-08: Register transfer instructions
+> As a developer, I want the instructions that transfer between
+> registers (TAX, TXA, TAY, TYA).
 
 **Story Points**: 2
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S2
 
-**Critères d'acceptation**:
-- [ ] SEC, CLC, SEI, CLI, SED, CLD, CLV fonctionnels
-- [ ] NOP fonctionnel
-- [ ] BRK fonctionnel (software interrupt)
+**Acceptance criteria**:
+- [ ] TAX, TXA, TAY, TYA working
+- [ ] N, Z flags updated
+
+**Tasks**:
+- [ ] T-148: Implement TAX, TXA, TAY, TYA
+- [ ] T-149: Register transfer tests
+
+### US-E1-09: Flag control instructions
+> As a developer, I want the instructions that manipulate the processor
+> flags (SEC, CLC, SEI, CLI, SED, CLD, CLV).
+
+**Story Points**: 2
+**Status**: To do
+**Sprint**: S2
+
+**Acceptance criteria**:
+- [ ] SEC, CLC, SEI, CLI, SED, CLD, CLV working
+- [ ] NOP working
+- [ ] BRK working (software interrupt)
 
 **Instructions**:
 | Opcode | Description |
@@ -488,117 +488,117 @@ critique de l'émulateur.
 | NOP | No Operation |
 | BRK | Force Break (IRQ) |
 
-**Tâches**:
-- [ ] T-150 : Implémenter CLC, SEC, CLI, SEI, CLD, SED, CLV
-- [ ] T-151 : Implémenter NOP
-- [ ] T-152 : Implémenter BRK (vecteur $FFFE)
-- [ ] T-153 : Tests flags et contrôle
+**Tasks**:
+- [ ] T-150: Implement CLC, SEC, CLI, SEI, CLD, SED, CLV
+- [ ] T-151: Implement NOP
+- [ ] T-152: Implement BRK (vector $FFFE)
+- [ ] T-153: Flag and control tests
 
-### US-E1-10 : Système d'interruptions
-> En tant que développeur, je veux la gestion des interruptions (IRQ, NMI,
-> RESET) pour que le CPU réagisse aux événements matériels.
+### US-E1-10: Interrupt system
+> As a developer, I want interrupt handling (IRQ, NMI,
+> RESET) so that the CPU reacts to hardware events.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S2
 
-**Critères d'acceptation**:
-- [ ] IRQ fonctionnel (maskable, vecteur $FFFE)
-- [ ] NMI fonctionnel (non-maskable, vecteur $FFFA)
-- [ ] RESET fonctionnel (vecteur $FFFC)
-- [ ] Priorité correcte : RESET > NMI > IRQ
-- [ ] Flag I respecté pour IRQ
+**Acceptance criteria**:
+- [ ] IRQ working (maskable, vector $FFFE)
+- [ ] NMI working (non-maskable, vector $FFFA)
+- [ ] RESET working (vector $FFFC)
+- [ ] Correct priority: RESET > NMI > IRQ
+- [ ] I flag honoured for IRQ
 
-**Tâches**:
-- [ ] T-154 : Implémenter le mécanisme IRQ complet
-- [ ] T-155 : Implémenter le mécanisme NMI complet
-- [ ] T-156 : Implémenter la séquence RESET
-- [ ] T-157 : Implémenter la priorité des interruptions
-- [ ] T-158 : Tests interruptions complets
+**Tasks**:
+- [ ] T-154: Implement the complete IRQ mechanism
+- [ ] T-155: Implement the complete NMI mechanism
+- [ ] T-156: Implement the RESET sequence
+- [ ] T-157: Implement interrupt priority
+- [ ] T-158: Complete interrupt tests
 
-### US-E1-11 : Table de décodage des opcodes
-> En tant que développeur, je veux une table de décodage des 256 opcodes
-> pour exécuter les instructions efficacement.
+### US-E1-11: Opcode decoding table
+> As a developer, I want a decoding table for the 256 opcodes
+> to execute instructions efficiently.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S2
 
-**Critères d'acceptation**:
-- [ ] Table de 256 entrées (opcode → handler)
-- [ ] 151 opcodes officiels mappés
-- [ ] 105 opcodes illégaux gérés (NOP ou trap)
-- [ ] Comptage de cycles correct pour chaque opcode
+**Acceptance criteria**:
+- [ ] 256-entry table (opcode → handler)
+- [ ] 151 official opcodes mapped
+- [ ] 105 illegal opcodes handled (NOP or trap)
+- [ ] Correct cycle count for every opcode
 
-**Tâches**:
-- [ ] T-159 : Créer la structure opcode_entry_t (handler, mode, cycles, nom)
-- [ ] T-160 : Remplir la table des 256 opcodes
-- [ ] T-161 : Implémenter cpu_step() avec fetch-decode-execute
-- [ ] T-162 : Vérifier les cycle counts contre la documentation hardware
-- [ ] T-163 : Tests de la table de décodage
+**Tasks**:
+- [ ] T-159: Create the opcode_entry_t structure (handler, mode, cycles, name)
+- [ ] T-160: Fill the 256-opcode table
+- [ ] T-161: Implement cpu_step() with fetch-decode-execute
+- [ ] T-162: Check the cycle counts against the hardware documentation
+- [ ] T-163: Decoding table tests
 
-### US-E1-12 : Boucle d'exécution principale
-> En tant que développeur, je veux une boucle d'exécution CPU fonctionnelle
-> pour que l'émulateur puisse exécuter des programmes.
+### US-E1-12: Main execution loop
+> As a developer, I want a working CPU execution loop
+> so that the emulator can run programs.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S2
 
-**Critères d'acceptation**:
-- [ ] cpu_step() exécute un cycle complet fetch-decode-execute
-- [ ] cpu_execute_cycles() exécute N cycles
-- [ ] Timing correct (1 MHz = 1 000 000 cycles/seconde)
-- [ ] Passe les test ROMs de validation 6502
+**Acceptance criteria**:
+- [ ] cpu_step() runs one complete fetch-decode-execute cycle
+- [ ] cpu_execute_cycles() runs N cycles
+- [ ] Correct timing (1 MHz = 1,000,000 cycles/second)
+- [ ] Passes the 6502 validation test ROMs
 
-**Tâches**:
-- [ ] T-164 : Implémenter le cycle fetch-decode-execute
-- [ ] T-165 : Intégrer les modes d'adressage dans l'exécution
-- [ ] T-166 : Valider avec Klaus Dormann's 6502 test suite
-- [ ] T-167 : Tests d'intégration CPU
+**Tasks**:
+- [ ] T-164: Implement the fetch-decode-execute cycle
+- [ ] T-165: Integrate the addressing modes into execution
+- [ ] T-166: Validate with Klaus Dormann's 6502 test suite
+- [ ] T-167: CPU integration tests
 
-### US-E1-13 : Désassembleur
-> En tant que développeur, je veux un désassembleur intégré pour afficher
-> les instructions en mnémoniques lisibles.
+### US-E1-13: Disassembler
+> As a developer, I want a built-in disassembler to display
+> instructions as readable mnemonics.
 
 **Story Points**: 3
-**Statut**: A faire
+**Status**: To do
 **Sprint**: S2
 
-**Critères d'acceptation**:
-- [ ] cpu_disassemble() retourne le mnémonique correct
-- [ ] Affichage des opérandes selon le mode d'adressage
-- [ ] Format standard : "ADDR  HEX  MNEMONIC OPERAND"
+**Acceptance criteria**:
+- [ ] cpu_disassemble() returns the correct mnemonic
+- [ ] Operands displayed according to the addressing mode
+- [ ] Standard format: "ADDR  HEX  MNEMONIC OPERAND"
 
-**Tâches**:
-- [ ] T-168 : Implémenter la table des mnémoniques
-- [ ] T-169 : Formater la sortie du désassembleur
-- [ ] T-170 : Tests désassembleur
+**Tasks**:
+- [ ] T-168: Implement the mnemonic table
+- [ ] T-169: Format the disassembler output
+- [ ] T-170: Disassembler tests
 
 ### Definition of Done - Epic E1
-- [ ] 151 opcodes officiels implémentés et testés
-- [ ] 13 modes d'adressage fonctionnels
-- [ ] Cycle counts vérifiés (±0 cycle vs hardware)
-- [ ] Interruptions (IRQ, NMI, RESET) fonctionnelles
-- [ ] Passe Klaus Dormann's 6502 test suite
-- [ ] 100% couverture du code CPU
-- [ ] Documentation API complète
-- [ ] 0 warnings de compilation
+- [ ] 151 official opcodes implemented and tested
+- [ ] 13 addressing modes working
+- [ ] Cycle counts checked (±0 cycle vs hardware)
+- [ ] Interrupts (IRQ, NMI, RESET) working
+- [ ] Passes Klaus Dormann's 6502 test suite
+- [ ] 100% coverage of the CPU code
+- [ ] Complete API documentation
+- [ ] 0 compilation warnings
 
 ---
 
-# EPIC E2 : Système Mémoire
+# EPIC E2: Memory System
 
-**Priorité**: Critique
-**Statut**: Partiel (70% base)
-**Version cible**: 0.3.0-alpha
+**Priority**: Critical
+**Status**: Partial (70% base)
+**Target version**: 0.3.0-alpha
 **Sprint**: S3
 
 ## Description
-Gestion complète de l'espace mémoire 64KB de l'ORIC-1, incluant le banking
-ROM/RAM, l'espace I/O mappé en mémoire, et la carte mémoire spécifique.
+Complete management of the ORIC-1's 64KB memory space, including ROM/RAM
+banking, the memory-mapped I/O space, and the machine-specific memory map.
 
-## Carte mémoire ORIC-1
+## ORIC-1 memory map
 ```
 $FFFF ┌──────────────────────┐
       │   ROM BASIC (16KB)   │
@@ -622,114 +622,114 @@ $0000 └──────────────────────┘
 
 ## User Stories
 
-### US-E2-01 : Accès mémoire complet
-> En tant que développeur, je veux un accès lecture/écriture correct à tout
-> l'espace d'adressage 64KB avec le mapping ORIC-1.
+### US-E2-01: Full memory access
+> As a developer, I want correct read/write access to the whole
+> 64KB address space with the ORIC-1 mapping.
 
 **Story Points**: 5
-**Statut**: Partiel
+**Status**: Partial
 
-**Critères d'acceptation**:
-- [x] Lecture/écriture RAM fonctionnelle
-- [ ] Espace I/O ($B000-$BFFF) routé vers les périphériques
-- [ ] Protection écriture ROM
-- [ ] Wrapping Zero Page correct
+**Acceptance criteria**:
+- [x] RAM read/write working
+- [ ] I/O space ($B000-$BFFF) routed to the peripherals
+- [ ] ROM write protection
+- [ ] Correct Zero Page wrapping
 
-**Tâches**:
-- [x] T-200 : Lecture/écriture RAM basique
-- [ ] T-201 : Routage I/O space vers callbacks VIA
-- [ ] T-202 : Protection ROM en écriture (avec logging optionnel)
-- [ ] T-203 : Tests d'accès mémoire complets
+**Tasks**:
+- [x] T-200: Basic RAM read/write
+- [ ] T-201: Route the I/O space to the VIA callbacks
+- [ ] T-202: ROM write protection (with optional logging)
+- [ ] T-203: Complete memory access tests
 
-### US-E2-02 : Banking ROM/RAM
-> En tant que développeur, je veux le mécanisme de banking pour commuter
-> entre ROM et RAM dans la zone $C000-$FFFF.
+### US-E2-02: ROM/RAM banking
+> As a developer, I want the banking mechanism to switch
+> between ROM and RAM in the $C000-$FFFF area.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Overlay RAM sous la ROM possible
-- [ ] Commutation ROM/RAM via registre
-- [ ] Vecteurs d'interruption toujours accessibles en ROM
+**Acceptance criteria**:
+- [ ] RAM overlay under the ROM possible
+- [ ] ROM/RAM switching through a register
+- [ ] Interrupt vectors always reachable in ROM
 
-**Tâches**:
-- [ ] T-204 : Implémenter le mécanisme d'overlay
-- [ ] T-205 : Implémenter la commutation via registre I/O
-- [ ] T-206 : Gérer l'accès aux vecteurs d'interruption
-- [ ] T-207 : Tests banking complets
+**Tasks**:
+- [ ] T-204: Implement the overlay mechanism
+- [ ] T-205: Implement switching through an I/O register
+- [ ] T-206: Handle access to the interrupt vectors
+- [ ] T-207: Complete banking tests
 
-### US-E2-03 : Chargement ROM
-> En tant qu'utilisateur, je veux charger les ROMs ORIC-1 (BASIC 1.0,
-> charset) pour faire fonctionner l'émulateur.
-
-**Story Points**: 3
-**Statut**: Partiel
-
-**Critères d'acceptation**:
-- [x] Chargement ROM depuis fichier
-- [x] Chargement charset depuis fichier
-- [ ] Vérification checksum ROM
-- [ ] ROM BASIC 1.0 par défaut si disponible
-
-**Tâches**:
-- [x] T-208 : Implémenter memory_load_rom()
-- [x] T-209 : Implémenter memory_load_charset()
-- [ ] T-210 : Ajouter vérification checksum
-- [ ] T-211 : Tests chargement ROM
-
-### US-E2-04 : Tracing mémoire
-> En tant que développeur, je veux tracer les accès mémoire pour le
-> débogage de programmes ORIC.
+### US-E2-03: ROM loading
+> As a user, I want to load the ORIC-1 ROMs (BASIC 1.0,
+> charset) to make the emulator work.
 
 **Story Points**: 3
-**Statut**: Partiel
+**Status**: Partial
 
-**Critères d'acceptation**:
-- [x] Infrastructure de tracing en place
-- [ ] Callbacks sur lecture/écriture par plage d'adresses
-- [ ] Breakpoints mémoire (watch)
-- [ ] Log des accès I/O
+**Acceptance criteria**:
+- [x] ROM loading from a file
+- [x] Charset loading from a file
+- [ ] ROM checksum verification
+- [ ] BASIC 1.0 ROM by default when available
 
-**Tâches**:
-- [ ] T-212 : Implémenter callbacks par plage d'adresses
-- [ ] T-213 : Implémenter les breakpoints mémoire
-- [ ] T-214 : Logger les accès I/O
-- [ ] T-215 : Tests tracing
+**Tasks**:
+- [x] T-208: Implement memory_load_rom()
+- [x] T-209: Implement memory_load_charset()
+- [ ] T-210: Add checksum verification
+- [ ] T-211: ROM loading tests
+
+### US-E2-04: Memory tracing
+> As a developer, I want to trace memory accesses to
+> debug ORIC programs.
+
+**Story Points**: 3
+**Status**: Partial
+
+**Acceptance criteria**:
+- [x] Tracing infrastructure in place
+- [ ] Read/write callbacks per address range
+- [ ] Memory breakpoints (watch)
+- [ ] I/O access log
+
+**Tasks**:
+- [ ] T-212: Implement per-address-range callbacks
+- [ ] T-213: Implement memory breakpoints
+- [ ] T-214: Log I/O accesses
+- [ ] T-215: Tracing tests
 
 ### Definition of Done - Epic E2
-- [ ] Carte mémoire ORIC-1 complète et correcte
-- [ ] Banking ROM/RAM fonctionnel
-- [ ] I/O space correctement routé
-- [ ] Tracing mémoire opérationnel
-- [ ] Tests couvrant tous les cas limites
-- [ ] Documentation carte mémoire
+- [ ] Complete and correct ORIC-1 memory map
+- [ ] ROM/RAM banking working
+- [ ] I/O space correctly routed
+- [ ] Memory tracing operational
+- [ ] Tests covering all edge cases
+- [ ] Memory map documentation
 
 ---
 
-# EPIC E3 : Système I/O (VIA 6522)
+# EPIC E3: I/O System (VIA 6522)
 
-**Priorité**: Critique
-**Statut**: Stub (15%)
-**Version cible**: 0.3.0-alpha
+**Priority**: Critical
+**Status**: Stub (15%)
+**Target version**: 0.3.0-alpha
 **Sprints**: S3, S4
 
 ## Description
-Émulation du contrôleur d'entrées/sorties MOS 6522 VIA (Versatile Interface
-Adapter) utilisé dans l'ORIC-1 pour le clavier, la cassette, l'imprimante,
-et comme pont vers le PSG AY-3-8910.
+Emulation of the MOS 6522 VIA (Versatile Interface Adapter) input/output
+controller used in the ORIC-1 for the keyboard, the cassette, the printer,
+and as a bridge to the AY-3-8910 PSG.
 
 ## User Stories
 
-### US-E3-01 : Registres VIA 6522
-> En tant que développeur, je veux les 16 registres du VIA 6522 correctement
-> émulés pour que les périphériques fonctionnent.
+### US-E3-01: VIA 6522 registers
+> As a developer, I want the 16 VIA 6522 registers correctly
+> emulated so that the peripherals work.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Registres**:
-| Offset | Nom | Description |
+**Registers**:
+| Offset | Name | Description |
 |--------|-----|-------------|
 | $00 | ORB/IRB | Port B Output/Input |
 | $01 | ORA/IRA | Port A Output/Input |
@@ -748,64 +748,64 @@ et comme pont vers le PSG AY-3-8910.
 | $0E | IER | Interrupt Enable Register |
 | $0F | ORA-NH | Port A (no handshake) |
 
-**Tâches**:
-- [ ] T-300 : Implémenter lecture des 16 registres
-- [ ] T-301 : Implémenter écriture des 16 registres
-- [ ] T-302 : Implémenter les DDR (data direction)
-- [ ] T-303 : Tests registres complets
+**Tasks**:
+- [ ] T-300: Implement reading of the 16 registers
+- [ ] T-301: Implement writing of the 16 registers
+- [ ] T-302: Implement the DDRs (data direction)
+- [ ] T-303: Complete register tests
 
-### US-E3-02 : Timers VIA
-> En tant que développeur, je veux les deux timers du VIA fonctionnels
-> pour le timing des périphériques et la génération d'interruptions.
+### US-E3-02: VIA timers
+> As a developer, I want both VIA timers working
+> for peripheral timing and interrupt generation.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Timer 1 : mode one-shot et free-running
-- [ ] Timer 2 : mode one-shot et pulse counting
-- [ ] Génération d'IRQ sur timeout
-- [ ] Latches fonctionnels
+**Acceptance criteria**:
+- [ ] Timer 1: one-shot and free-running modes
+- [ ] Timer 2: one-shot and pulse counting modes
+- [ ] IRQ generation on timeout
+- [ ] Latches working
 
-**Tâches**:
-- [ ] T-304 : Implémenter Timer 1 (one-shot)
-- [ ] T-305 : Implémenter Timer 1 (free-running)
-- [ ] T-306 : Implémenter Timer 2 (one-shot)
-- [ ] T-307 : Implémenter Timer 2 (pulse counting)
-- [ ] T-308 : Implémenter la génération d'IRQ timer
-- [ ] T-309 : Tests timers complets
+**Tasks**:
+- [ ] T-304: Implement Timer 1 (one-shot)
+- [ ] T-305: Implement Timer 1 (free-running)
+- [ ] T-306: Implement Timer 2 (one-shot)
+- [ ] T-307: Implement Timer 2 (pulse counting)
+- [ ] T-308: Implement timer IRQ generation
+- [ ] T-309: Complete timer tests
 
-### US-E3-03 : Shift Register
-> En tant que développeur, je veux le shift register du VIA pour la
-> communication série (cassette, imprimante).
+### US-E3-03: Shift Register
+> As a developer, I want the VIA shift register for
+> serial communication (cassette, printer).
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] 8 modes du shift register fonctionnels
-- [ ] Génération IRQ sur transfert complet
+**Acceptance criteria**:
+- [ ] 8 shift register modes working
+- [ ] IRQ generation on transfer complete
 
-**Tâches**:
-- [ ] T-310 : Implémenter les 8 modes du shift register
-- [ ] T-311 : Implémenter IRQ shift register
-- [ ] T-312 : Tests shift register
+**Tasks**:
+- [ ] T-310: Implement the 8 shift register modes
+- [ ] T-311: Implement the shift register IRQ
+- [ ] T-312: Shift register tests
 
-### US-E3-04 : Clavier ORIC
-> En tant qu'utilisateur, je veux taper sur mon clavier PC et voir les
-> touches correspondantes sur l'ORIC.
+### US-E3-04: ORIC keyboard
+> As a user, I want to type on my PC keyboard and see the
+> matching keys on the ORIC.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Matrice clavier 8x8 émulée
-- [ ] Mapping PC → ORIC correct
-- [ ] Scan par colonnes via Port B
-- [ ] Lecture par Port A
-- [ ] Touches spéciales (FUNCT, CTRL, SHIFT)
+**Acceptance criteria**:
+- [ ] 8x8 keyboard matrix emulated
+- [ ] Correct PC → ORIC mapping
+- [ ] Column scan through Port B
+- [ ] Read through Port A
+- [ ] Special keys (FUNCT, CTRL, SHIFT)
 
-**Matrice clavier ORIC-1** (8 colonnes x 8 lignes):
+**ORIC-1 keyboard matrix** (8 columns x 8 rows):
 ```
         Col 0   Col 1   Col 2   Col 3   Col 4   Col 5   Col 6   Col 7
 Row 0:  7       N       5       V       1       X       3       -
@@ -818,943 +818,943 @@ Row 6:  Y       H       G       E       D       W       S       A
 Row 7:  8       L       0       ESC     RET     (none)  SHIFT   (none)
 ```
 
-**Tâches**:
-- [ ] T-313 : Implémenter la matrice clavier 8x8
-- [ ] T-314 : Créer la table de mapping PC → ORIC
-- [ ] T-315 : Intégrer le scan clavier avec le VIA (Port A/B)
-- [ ] T-316 : Gérer les touches spéciales
-- [ ] T-317 : Intégrer SDL2 pour la capture clavier
-- [ ] T-318 : Tests clavier
+**Tasks**:
+- [ ] T-313: Implement the 8x8 keyboard matrix
+- [ ] T-314: Create the PC → ORIC mapping table
+- [ ] T-315: Integrate the keyboard scan with the VIA (Port A/B)
+- [ ] T-316: Handle the special keys
+- [ ] T-317: Integrate SDL2 for keyboard capture
+- [ ] T-318: Keyboard tests
 
-### US-E3-05 : Interface cassette via VIA
-> En tant que développeur, je veux l'interface cassette du VIA pour
-> charger et sauvegarder des programmes sur bande.
-
-**Story Points**: 5
-**Statut**: A faire
-
-**Critères d'acceptation**:
-- [ ] Signal cassette via CB1/CB2
-- [ ] Contrôle moteur cassette
-- [ ] Lecture/écriture bits série
-
-**Tâches**:
-- [ ] T-319 : Implémenter le signal cassette CB1/CB2
-- [ ] T-320 : Implémenter le contrôle moteur
-- [ ] T-321 : Implémenter la sérialisation bits
-- [ ] T-322 : Tests interface cassette
-
-### US-E3-06 : Interruptions VIA
-> En tant que développeur, je veux le système d'interruptions complet du
-> VIA pour les événements asynchrones.
+### US-E3-05: Cassette interface through the VIA
+> As a developer, I want the VIA cassette interface to
+> load and save programs on tape.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] IFR (Interrupt Flag Register) fonctionnel
-- [ ] IER (Interrupt Enable Register) fonctionnel
-- [ ] Génération IRQ vers CPU
-- [ ] Sources : Timer 1, Timer 2, CB1, CB2, SR, CA1, CA2
+**Acceptance criteria**:
+- [ ] Cassette signal through CB1/CB2
+- [ ] Cassette motor control
+- [ ] Serial bit read/write
 
-**Tâches**:
-- [ ] T-323 : Implémenter IFR (lecture et clear)
-- [ ] T-324 : Implémenter IER (set et clear)
-- [ ] T-325 : Connecter les sources d'interruption
-- [ ] T-326 : Implémenter via_update() pour le tick par cycle
-- [ ] T-327 : Tests interruptions VIA
+**Tasks**:
+- [ ] T-319: Implement the CB1/CB2 cassette signal
+- [ ] T-320: Implement motor control
+- [ ] T-321: Implement bit serialisation
+- [ ] T-322: Cassette interface tests
+
+### US-E3-06: VIA interrupts
+> As a developer, I want the complete VIA interrupt system
+> for asynchronous events.
+
+**Story Points**: 5
+**Status**: To do
+
+**Acceptance criteria**:
+- [ ] IFR (Interrupt Flag Register) working
+- [ ] IER (Interrupt Enable Register) working
+- [ ] IRQ generation to the CPU
+- [ ] Sources: Timer 1, Timer 2, CB1, CB2, SR, CA1, CA2
+
+**Tasks**:
+- [ ] T-323: Implement IFR (read and clear)
+- [ ] T-324: Implement IER (set and clear)
+- [ ] T-325: Connect the interrupt sources
+- [ ] T-326: Implement via_update() for the per-cycle tick
+- [ ] T-327: VIA interrupt tests
 
 ### Definition of Done - Epic E3
-- [ ] 16 registres VIA lus/écrits correctement
-- [ ] Timers 1 et 2 fonctionnels dans tous les modes
-- [ ] Shift register opérationnel
-- [ ] Clavier fonctionnel avec mapping complet
-- [ ] Interface cassette fonctionnelle
-- [ ] Système d'interruptions complet
-- [ ] Tests couvrant tous les modes
-- [ ] Documentation VIA 6522
+- [ ] 16 VIA registers read/written correctly
+- [ ] Timers 1 and 2 working in all modes
+- [ ] Shift register operational
+- [ ] Keyboard working with complete mapping
+- [ ] Cassette interface working
+- [ ] Complete interrupt system
+- [ ] Tests covering all modes
+- [ ] VIA 6522 documentation
 
 ---
 
-# EPIC E4 : Système Vidéo
+# EPIC E4: Video System
 
-**Priorité**: Haute
-**Statut**: A faire (0%)
-**Version cible**: 0.4.0-alpha
+**Priority**: High
+**Status**: To do (0%)
+**Target version**: 0.4.0-alpha
 **Sprints**: S5, S6
 
 ## Description
-Émulation du système vidéo de l'ORIC-1 basé sur l'ULA (Uncommitted Logic
-Array), supportant le mode texte 40x28 et le mode HIRES 240x200, avec
-gestion des attributs de couleur et rendu via SDL2.
+Emulation of the ORIC-1 video system based on the ULA (Uncommitted Logic
+Array), supporting the 40x28 text mode and the 240x200 HIRES mode, with
+colour attribute handling and rendering through SDL2.
 
 ## User Stories
 
-### US-E4-01 : Mode texte (40x28)
-> En tant qu'utilisateur, je veux voir l'affichage texte de l'ORIC pour
-> interagir avec le BASIC et les programmes textuels.
+### US-E4-01: Text mode (40x28)
+> As a user, I want to see the ORIC text display in order
+> to interact with BASIC and text-based programs.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Affichage 40 colonnes x 28 lignes
-- [ ] Police de caractères ORIC (charset ROM 6x8)
-- [ ] Jeu de caractères standard et alternatif
-- [ ] Curseur clignotant
+**Acceptance criteria**:
+- [ ] 40 columns x 28 lines display
+- [ ] ORIC character font (6x8 ROM charset)
+- [ ] Standard and alternate character sets
+- [ ] Blinking cursor
 
-**Tâches**:
-- [ ] T-400 : Implémenter le rendu texte 40x28
-- [ ] T-401 : Charger et utiliser le charset ROM
-- [ ] T-402 : Implémenter le jeu alternatif
-- [ ] T-403 : Implémenter le curseur clignotant
-- [ ] T-404 : Tests mode texte
+**Tasks**:
+- [ ] T-400: Implement 40x28 text rendering
+- [ ] T-401: Load and use the ROM charset
+- [ ] T-402: Implement the alternate charset
+- [ ] T-403: Implement the blinking cursor
+- [ ] T-404: Text mode tests
 
-### US-E4-02 : Mode HIRES (240x200)
-> En tant qu'utilisateur, je veux voir les graphiques haute résolution
-> pour les jeux et programmes graphiques ORIC.
-
-**Story Points**: 8
-**Statut**: A faire
-
-**Critères d'acceptation**:
-- [ ] Résolution 240x200 pixels
-- [ ] 6 couleurs (noir, rouge, vert, jaune, bleu, magenta, cyan, blanc)
-- [ ] Mode mixte texte+hires possible
-- [ ] Adressage correct de la mémoire vidéo ($A000-$BF3F)
-
-**Tâches**:
-- [ ] T-405 : Implémenter le rendu HIRES 240x200
-- [ ] T-406 : Implémenter le décodage des lignes vidéo
-- [ ] T-407 : Gérer le mode mixte
-- [ ] T-408 : Tests mode HIRES
-
-### US-E4-03 : Attributs de couleur
-> En tant qu'utilisateur, je veux les couleurs correctes à l'écran avec
-> le système d'attributs sérialisés de l'ORIC.
+### US-E4-02: HIRES mode (240x200)
+> As a user, I want to see high-resolution graphics
+> for ORIC games and graphics programs.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Attributs sérialisés en début de ligne
-- [ ] Couleurs encre et papier (foreground/background)
-- [ ] Attributs inversés
-- [ ] Clignotement (blink)
-- [ ] Double hauteur
+**Acceptance criteria**:
+- [ ] 240x200 pixel resolution
+- [ ] 6 colours (black, red, green, yellow, blue, magenta, cyan, white)
+- [ ] Mixed text+hires mode possible
+- [ ] Correct video memory addressing ($A000-$BF3F)
 
-**Attributs ORIC**:
-| Code | Signification |
+**Tasks**:
+- [ ] T-405: Implement 240x200 HIRES rendering
+- [ ] T-406: Implement video line decoding
+- [ ] T-407: Handle the mixed mode
+- [ ] T-408: HIRES mode tests
+
+### US-E4-03: Colour attributes
+> As a user, I want correct colours on screen with
+> the ORIC serial attribute system.
+
+**Story Points**: 8
+**Status**: To do
+
+**Acceptance criteria**:
+- [ ] Serial attributes at the start of a line
+- [ ] Ink and paper colours (foreground/background)
+- [ ] Inverse attributes
+- [ ] Blinking (blink)
+- [ ] Double height
+
+**ORIC attributes**:
+| Code | Meaning |
 |------|---------------|
-| 0-7 | Couleur encre (ink) |
+| 0-7 | Ink colour (ink) |
 | 8-15 | Style (normal, alt charset, double, blink) |
-| 16-23 | Couleur papier (paper) |
-| 24-31 | Contrôle (60Hz, flash, etc.) |
+| 16-23 | Paper colour (paper) |
+| 24-31 | Control (60Hz, flash, etc.) |
 
-**Tâches**:
-- [ ] T-409 : Implémenter le parsing des attributs sérialisés
-- [ ] T-410 : Implémenter ink/paper
-- [ ] T-411 : Implémenter inverse et blink
-- [ ] T-412 : Implémenter double hauteur
-- [ ] T-413 : Tests attributs couleur
+**Tasks**:
+- [ ] T-409: Implement serial attribute parsing
+- [ ] T-410: Implement ink/paper
+- [ ] T-411: Implement inverse and blink
+- [ ] T-412: Implement double height
+- [ ] T-413: Colour attribute tests
 
-### US-E4-04 : Backend SDL2 vidéo
-> En tant que développeur, je veux un rendu SDL2 performant pour afficher
-> la sortie vidéo de l'émulateur.
+### US-E4-04: SDL2 video backend
+> As a developer, I want efficient SDL2 rendering to display
+> the emulator's video output.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Fenêtre SDL2 avec taille configurable
-- [ ] Rendu 50Hz (PAL)
-- [ ] Mode plein écran (F11)
-- [ ] Capture d'écran (F12)
-- [ ] Filtres optionnels (scanlines, CRT)
+**Acceptance criteria**:
+- [ ] SDL2 window with configurable size
+- [ ] 50Hz rendering (PAL)
+- [ ] Fullscreen mode (F11)
+- [ ] Screenshot (F12)
+- [ ] Optional filters (scanlines, CRT)
 
-**Tâches**:
-- [ ] T-414 : Créer la fenêtre SDL2 et le renderer
-- [ ] T-415 : Implémenter le rendu framebuffer → texture
-- [ ] T-416 : Implémenter le vsync à 50Hz
-- [ ] T-417 : Implémenter le mode plein écran
-- [ ] T-418 : Implémenter la capture d'écran (PNG)
-- [ ] T-419 : Tests rendu vidéo
+**Tasks**:
+- [ ] T-414: Create the SDL2 window and renderer
+- [ ] T-415: Implement framebuffer → texture rendering
+- [ ] T-416: Implement 50Hz vsync
+- [ ] T-417: Implement fullscreen mode
+- [ ] T-418: Implement screenshots (PNG)
+- [ ] T-419: Video rendering tests
 
 ### Definition of Done - Epic E4
-- [ ] Mode texte 40x28 avec charset correct
-- [ ] Mode HIRES 240x200 fonctionnel
-- [ ] Couleurs et attributs corrects
-- [ ] Rendu SDL2 à 50Hz stable
-- [ ] Screenshots fonctionnels
-- [ ] Tests vidéo complets
-- [ ] Documentation système vidéo
+- [ ] 40x28 text mode with correct charset
+- [ ] Working 240x200 HIRES mode
+- [ ] Correct colours and attributes
+- [ ] Stable 50Hz SDL2 rendering
+- [ ] Working screenshots
+- [ ] Complete video tests
+- [ ] Video system documentation
 
 ---
 
-# EPIC E5 : Système Audio (AY-3-8910)
+# EPIC E5: Audio System (AY-3-8910)
 
-**Priorité**: Haute
-**Statut**: A faire (0%)
-**Version cible**: 0.5.0-alpha
+**Priority**: High
+**Status**: To do (0%)
+**Target version**: 0.5.0-alpha
 **Sprint**: S7
 
 ## Description
-Émulation du chip sonore General Instrument AY-3-8910 PSG (Programmable Sound
-Generator), connecté via le VIA 6522 Port A.
+Emulation of the General Instrument AY-3-8910 PSG sound chip (Programmable Sound
+Generator), connected through Port A of the VIA 6522.
 
 ## User Stories
 
-### US-E5-01 : Générateurs de tonalité
-> En tant qu'utilisateur, je veux entendre les sons et musiques des programmes
-> ORIC avec les 3 canaux de tonalité du PSG.
+### US-E5-01: Tone generators
+> As a user, I want to hear the sounds and music of ORIC
+> programs with the 3 tone channels of the PSG.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] 3 canaux de tonalité indépendants (A, B, C)
-- [ ] Fréquence réglable (12 bits par canal)
-- [ ] Mixage correct des canaux
+**Acceptance criteria**:
+- [ ] 3 independent tone channels (A, B, C)
+- [ ] Adjustable frequency (12 bits per channel)
+- [ ] Correct channel mixing
 
-**Tâches**:
-- [ ] T-500 : Implémenter les 3 générateurs de tonalité
-- [ ] T-501 : Implémenter le réglage de fréquence (registres R0-R5)
-- [ ] T-502 : Implémenter le mixage des canaux
-- [ ] T-503 : Tests tonalité
+**Tasks**:
+- [ ] T-500: Implement the 3 tone generators
+- [ ] T-501: Implement frequency setting (registers R0-R5)
+- [ ] T-502: Implement channel mixing
+- [ ] T-503: Tone tests
 
-### US-E5-02 : Générateur de bruit
-> En tant qu'utilisateur, je veux le générateur de bruit pour les effets
-> sonores (explosions, tirs, etc.).
-
-**Story Points**: 5
-**Statut**: A faire
-
-**Critères d'acceptation**:
-- [ ] Générateur de bruit pseudo-aléatoire
-- [ ] Fréquence réglable (5 bits)
-- [ ] Mixable avec les canaux de tonalité
-
-**Tâches**:
-- [ ] T-504 : Implémenter le LFSR (Linear Feedback Shift Register)
-- [ ] T-505 : Implémenter le réglage de fréquence bruit (R6)
-- [ ] T-506 : Implémenter le mixer tonalité/bruit (R7)
-- [ ] T-507 : Tests bruit
-
-### US-E5-03 : Enveloppes
-> En tant qu'utilisateur, je veux les enveloppes de volume pour des sons
-> dynamiques et expressifs.
+### US-E5-02: Noise generator
+> As a user, I want the noise generator for sound
+> effects (explosions, gunshots, etc.).
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] 16 formes d'enveloppe (registre R13)
-- [ ] Période réglable (16 bits, R11-R12)
-- [ ] Volume fixe ou enveloppe par canal (R8-R10)
+**Acceptance criteria**:
+- [ ] Pseudo-random noise generator
+- [ ] Adjustable frequency (5 bits)
+- [ ] Mixable with the tone channels
 
-**Tâches**:
-- [ ] T-508 : Implémenter les 16 formes d'enveloppe
-- [ ] T-509 : Implémenter le contrôle de période
-- [ ] T-510 : Implémenter le sélecteur volume fixe/enveloppe
-- [ ] T-511 : Tests enveloppes
+**Tasks**:
+- [ ] T-504: Implement the LFSR (Linear Feedback Shift Register)
+- [ ] T-505: Implement noise frequency setting (R6)
+- [ ] T-506: Implement the tone/noise mixer (R7)
+- [ ] T-507: Noise tests
 
-### US-E5-04 : Interface VIA → PSG
-> En tant que développeur, je veux la connexion VIA → AY-3-8910 pour
-> que le CPU puisse contrôler le PSG.
-
-**Story Points**: 5
-**Statut**: A faire
-
-**Critères d'acceptation**:
-- [ ] Communication via Port A du VIA
-- [ ] Protocole BDIR/BC1 (Inactive, Read, Write, Latch Address)
-- [ ] 14 registres PSG accessibles
-
-**Tâches**:
-- [ ] T-512 : Implémenter le protocole BDIR/BC1
-- [ ] T-513 : Connecter VIA Port A au PSG
-- [ ] T-514 : Implémenter lecture/écriture des 14 registres PSG
-- [ ] T-515 : Tests interface VIA-PSG
-
-### US-E5-05 : Backend SDL2 audio
-> En tant que développeur, je veux la sortie audio via SDL2 pour produire
-> le son sur le système hôte.
+### US-E5-03: Envelopes
+> As a user, I want volume envelopes for dynamic
+> and expressive sounds.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Sortie audio SDL2 (44100 Hz, 16 bits, stéréo)
-- [ ] Buffer audio avec latence minimale
-- [ ] Contrôle du volume global
+**Acceptance criteria**:
+- [ ] 16 envelope shapes (register R13)
+- [ ] Adjustable period (16 bits, R11-R12)
+- [ ] Fixed volume or envelope per channel (R8-R10)
+
+**Tasks**:
+- [ ] T-508: Implement the 16 envelope shapes
+- [ ] T-509: Implement period control
+- [ ] T-510: Implement the fixed volume/envelope selector
+- [ ] T-511: Envelope tests
+
+### US-E5-04: VIA → PSG interface
+> As a developer, I want the VIA → AY-3-8910 connection so
+> that the CPU can control the PSG.
+
+**Story Points**: 5
+**Status**: To do
+
+**Acceptance criteria**:
+- [ ] Communication through VIA Port A
+- [ ] BDIR/BC1 protocol (Inactive, Read, Write, Latch Address)
+- [ ] 14 accessible PSG registers
+
+**Tasks**:
+- [ ] T-512: Implement the BDIR/BC1 protocol
+- [ ] T-513: Connect VIA Port A to the PSG
+- [ ] T-514: Implement read/write of the 14 PSG registers
+- [ ] T-515: VIA-PSG interface tests
+
+### US-E5-05: SDL2 audio backend
+> As a developer, I want audio output through SDL2 to produce
+> sound on the host system.
+
+**Story Points**: 5
+**Status**: To do
+
+**Acceptance criteria**:
+- [ ] SDL2 audio output (44100 Hz, 16 bits, stereo)
+- [ ] Audio buffer with minimal latency
+- [ ] Global volume control
 - [ ] Mute/unmute
 
-**Tâches**:
-- [ ] T-516 : Initialiser SDL2 Audio
-- [ ] T-517 : Implémenter le callback audio (génération samples)
-- [ ] T-518 : Implémenter le ring buffer audio
-- [ ] T-519 : Implémenter volume et mute
-- [ ] T-520 : Tests sortie audio
+**Tasks**:
+- [ ] T-516: Initialise SDL2 Audio
+- [ ] T-517: Implement the audio callback (sample generation)
+- [ ] T-518: Implement the audio ring buffer
+- [ ] T-519: Implement volume and mute
+- [ ] T-520: Audio output tests
 
 ### Definition of Done - Epic E5
-- [ ] 3 canaux de tonalité fonctionnels
-- [ ] Générateur de bruit fonctionnel
-- [ ] 16 enveloppes fonctionnelles
-- [ ] Interface VIA-PSG correcte
-- [ ] Sortie SDL2 sans craquements
-- [ ] Tests audio complets
-- [ ] Documentation PSG
+- [ ] 3 working tone channels
+- [ ] Working noise generator
+- [ ] 16 working envelopes
+- [ ] Correct VIA-PSG interface
+- [ ] SDL2 output without crackling
+- [ ] Complete audio tests
+- [ ] PSG documentation
 
 ---
 
-# EPIC E6 : Stockage Cassette (.TAP)
+# EPIC E6: Cassette Storage (.TAP)
 
-**Priorité**: Haute
-**Statut**: Partiel (30% structure)
-**Version cible**: 0.6.0-alpha
+**Priority**: High
+**Status**: Partial (30% structure)
+**Target version**: 0.6.0-alpha
 **Sprint**: S8
 
 ## Description
-Support complet du format de fichier cassette .TAP pour charger et sauvegarder
-des programmes ORIC, incluant le mode turbo (fast load).
+Full support for the .TAP cassette file format to load and save
+ORIC programs, including turbo mode (fast load).
 
 ## User Stories
 
-### US-E6-01 : Lecture de fichiers .TAP
-> En tant qu'utilisateur, je veux charger des fichiers .TAP pour exécuter
-> des programmes et jeux ORIC.
+### US-E6-01: Reading .TAP files
+> As a user, I want to load .TAP files to run
+> ORIC programs and games.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Parsing complet du format .TAP
-- [ ] Support multi-programmes par fichier
-- [ ] Lecture des headers (nom, type, adresses)
-- [ ] Chargement des données en mémoire
+**Acceptance criteria**:
+- [ ] Complete parsing of the .TAP format
+- [ ] Support for multiple programs per file
+- [ ] Reading of headers (name, type, addresses)
+- [ ] Loading of data into memory
 
-**Format TAP**:
+**TAP format**:
 ```
 [Sync bytes: $16 x N] [Header: $24 bytes] [Data: variable] [Checksum]
 Header: sync | type | autorun | end_addr_hi | end_addr_lo |
         start_addr_hi | start_addr_lo | $00 | name[16]
 ```
 
-**Tâches**:
-- [ ] T-600 : Implémenter tap_open_read() (parsing fichier)
-- [ ] T-601 : Implémenter tap_read_header() (décodage header)
-- [ ] T-602 : Implémenter tap_read_data() (lecture données)
-- [ ] T-603 : Implémenter la vérification checksum
-- [ ] T-604 : Gérer les fichiers multi-programmes
-- [ ] T-605 : Tests lecture TAP
+**Tasks**:
+- [ ] T-600: Implement tap_open_read() (file parsing)
+- [ ] T-601: Implement tap_read_header() (header decoding)
+- [ ] T-602: Implement tap_read_data() (data reading)
+- [ ] T-603: Implement checksum verification
+- [ ] T-604: Handle multi-program files
+- [ ] T-605: TAP reading tests
 
-### US-E6-02 : Écriture de fichiers .TAP
-> En tant qu'utilisateur, je veux sauvegarder mes programmes au format .TAP.
-
-**Story Points**: 5
-**Statut**: A faire
-
-**Critères d'acceptation**:
-- [ ] Création de fichiers .TAP valides
-- [ ] Écriture des headers corrects
-- [ ] Calcul et écriture checksum
-
-**Tâches**:
-- [ ] T-606 : Implémenter tap_open_write()
-- [ ] T-607 : Implémenter tap_write_header()
-- [ ] T-608 : Implémenter tap_write_data()
-- [ ] T-609 : Implémenter le calcul checksum à l'écriture
-- [ ] T-610 : Tests écriture TAP
-
-### US-E6-03 : Fast Load (Turbo Tape)
-> En tant qu'utilisateur, je veux un mode de chargement rapide pour ne
-> pas attendre les temps de chargement réels de la cassette.
+### US-E6-02: Writing .TAP files
+> As a user, I want to save my programs in .TAP format.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Chargement instantané en mémoire (bypass timing cassette)
-- [ ] Patch des routines ROM de chargement
-- [ ] Toggle fast/normal load
+**Acceptance criteria**:
+- [ ] Creation of valid .TAP files
+- [ ] Writing of correct headers
+- [ ] Checksum computation and writing
 
-**Tâches**:
-- [ ] T-611 : Implémenter le chargement direct en mémoire
-- [ ] T-612 : Implémenter le patch ROM pour fast load
-- [ ] T-613 : Ajouter l'option --fast-load
-- [ ] T-614 : Tests fast load
+**Tasks**:
+- [ ] T-606: Implement tap_open_write()
+- [ ] T-607: Implement tap_write_header()
+- [ ] T-608: Implement tap_write_data()
+- [ ] T-609: Implement checksum computation on write
+- [ ] T-610: TAP writing tests
 
-### US-E6-04 : Simulation timing cassette
-> En tant que développeur, je veux simuler le timing réel de la cassette
-> pour la compatibilité avec les protections anti-copie.
+### US-E6-03: Fast Load (Turbo Tape)
+> As a user, I want a fast loading mode so as not
+> to wait for the real cassette loading times.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Critères d'acceptation**:
-- [ ] Timing réaliste des bits (2400/1200 baud)
-- [ ] Signaux CB1/CB2 via VIA corrects
-- [ ] Compatible avec les loaders custom
+**Acceptance criteria**:
+- [ ] Instant loading into memory (bypassing cassette timing)
+- [ ] Patching of the ROM loading routines
+- [ ] Fast/normal load toggle
 
-**Tâches**:
-- [ ] T-615 : Implémenter le timing 2400/1200 baud
-- [ ] T-616 : Générer les signaux via VIA CB1/CB2
-- [ ] T-617 : Tests timing cassette
+**Tasks**:
+- [ ] T-611: Implement direct loading into memory
+- [ ] T-612: Implement the ROM patch for fast load
+- [ ] T-613: Add the --fast-load option
+- [ ] T-614: Fast load tests
+
+### US-E6-04: Cassette timing simulation
+> As a developer, I want to simulate real cassette timing
+> for compatibility with copy protections.
+
+**Story Points**: 5
+**Status**: To do
+
+**Acceptance criteria**:
+- [ ] Realistic bit timing (2400/1200 baud)
+- [ ] Correct CB1/CB2 signals through the VIA
+- [ ] Compatible with custom loaders
+
+**Tasks**:
+- [ ] T-615: Implement 2400/1200 baud timing
+- [ ] T-616: Generate the signals through VIA CB1/CB2
+- [ ] T-617: Cassette timing tests
 
 ### Definition of Done - Epic E6
-- [ ] Lecture/écriture .TAP fonctionnelle
-- [ ] Fast load opérationnel
-- [ ] Timing cassette réaliste
-- [ ] Compatible avec les principaux programmes ORIC
-- [ ] Tests complets
-- [ ] Documentation format TAP
+- [ ] Working .TAP read/write
+- [ ] Operational fast load
+- [ ] Realistic cassette timing
+- [ ] Compatible with the main ORIC programs
+- [ ] Complete tests
+- [ ] TAP format documentation
 
 ---
 
-# EPIC E7 : Stockage Disque (Sedoric)
+# EPIC E7: Disk Storage (Sedoric)
 
-**Priorité**: Moyenne
-**Statut**: A faire (0%)
-**Version cible**: 0.7.0-alpha
+**Priority**: Medium
+**Status**: To do (0%)
+**Target version**: 0.7.0-alpha
 **Sprint**: S9
 
 ## Description
-Support des images disque (.DSK) avec le système de fichiers Sedoric et
-l'émulation du contrôleur Microdisc.
+Support for disk images (.DSK) with the Sedoric file system and
+emulation of the Microdisc controller.
 
 ## User Stories
 
-### US-E7-01 : Contrôleur Microdisc
-> En tant que développeur, je veux émuler le contrôleur Microdisc pour
-> accéder aux lecteurs de disquettes virtuels.
+### US-E7-01: Microdisc controller
+> As a developer, I want to emulate the Microdisc controller to
+> access virtual floppy drives.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-700 : Implémenter les registres du contrôleur FDC (WD1793)
-- [ ] T-701 : Implémenter les commandes de lecture secteur
-- [ ] T-702 : Implémenter les commandes d'écriture secteur
-- [ ] T-703 : Implémenter seek/step/restore
-- [ ] T-704 : Implémenter la gestion des pistes et secteurs
-- [ ] T-705 : Tests contrôleur FDC
+**Tasks**:
+- [ ] T-700: Implement the FDC controller registers (WD1793)
+- [ ] T-701: Implement the sector read commands
+- [ ] T-702: Implement the sector write commands
+- [ ] T-703: Implement seek/step/restore
+- [ ] T-704: Implement track and sector handling
+- [ ] T-705: FDC controller tests
 
-### US-E7-02 : Format .DSK
-> En tant qu'utilisateur, je veux charger des images disque .DSK pour
-> accéder aux programmes sur disquette.
+### US-E7-02: .DSK format
+> As a user, I want to load .DSK disk images to
+> access programs on floppy disk.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-706 : Implémenter le parsing du format .DSK
-- [ ] T-707 : Implémenter la lecture de secteurs
-- [ ] T-708 : Implémenter l'écriture de secteurs
-- [ ] T-709 : Gérer les formats simple/double face
-- [ ] T-710 : Tests format DSK
+**Tasks**:
+- [ ] T-706: Implement .DSK format parsing
+- [ ] T-707: Implement sector reading
+- [ ] T-708: Implement sector writing
+- [ ] T-709: Handle single/double-sided formats
+- [ ] T-710: DSK format tests
 
-### US-E7-03 : Système de fichiers Sedoric
-> En tant qu'utilisateur, je veux naviguer et accéder aux fichiers
-> sur les disquettes Sedoric.
+### US-E7-03: Sedoric file system
+> As a user, I want to browse and access files
+> on Sedoric floppy disks.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-711 : Implémenter la lecture du répertoire Sedoric
-- [ ] T-712 : Implémenter la lecture de fichiers
-- [ ] T-713 : Implémenter l'écriture de fichiers
-- [ ] T-714 : Implémenter la gestion de l'espace libre (FAT)
-- [ ] T-715 : Implémenter le formatage de disque
-- [ ] T-716 : Tests Sedoric
+**Tasks**:
+- [ ] T-711: Implement Sedoric directory reading
+- [ ] T-712: Implement file reading
+- [ ] T-713: Implement file writing
+- [ ] T-714: Implement free space management (FAT)
+- [ ] T-715: Implement disk formatting
+- [ ] T-716: Sedoric tests
 
 ### Definition of Done - Epic E7
-- [ ] Contrôleur FDC WD1793 fonctionnel
-- [ ] Lecture/écriture .DSK
-- [ ] Navigation Sedoric fonctionnelle
-- [ ] Compatible avec les images courantes
-- [ ] Tests complets
-- [ ] Documentation Sedoric
+- [ ] Working WD1793 FDC controller
+- [ ] .DSK read/write
+- [ ] Working Sedoric browsing
+- [ ] Compatible with common images
+- [ ] Complete tests
+- [ ] Sedoric documentation
 
 ---
 
-# EPIC E8 : Système de Fichiers Hôte (HostFS)
+# EPIC E8: Host File System (HostFS)
 
-**Priorité**: Moyenne
-**Statut**: Partiel (40% structure)
-**Version cible**: 0.8.0-alpha
+**Priority**: Medium
+**Status**: Partial (40% structure)
+**Target version**: 0.8.0-alpha
 **Sprint**: S10
 
 ## Description
-Partage de fichiers entre le système hôte (Linux) et l'émulateur ORIC,
-permettant un échange transparent de programmes et données.
+File sharing between the host system (Linux) and the ORIC emulator,
+allowing transparent exchange of programs and data.
 
 ## User Stories
 
-### US-E8-01 : Montage de répertoire hôte
-> En tant qu'utilisateur, je veux monter un répertoire de mon PC pour
-> y accéder depuis l'émulateur ORIC.
+### US-E8-01: Mounting a host directory
+> As a user, I want to mount a directory from my PC in order
+> to access it from the ORIC emulator.
 
 **Story Points**: 5
-**Statut**: Partiel
+**Status**: Partial
 
-**Tâches**:
-- [x] T-800 : Implémenter hostfs_mount() / hostfs_unmount()
-- [ ] T-801 : Implémenter la vérification du répertoire
-- [ ] T-802 : Gérer les permissions
-- [ ] T-803 : Tests montage
+**Tasks**:
+- [x] T-800: Implement hostfs_mount() / hostfs_unmount()
+- [ ] T-801: Implement directory verification
+- [ ] T-802: Handle permissions
+- [ ] T-803: Mounting tests
 
-### US-E8-02 : Opérations sur fichiers
-> En tant qu'utilisateur, je veux lire, écrire, supprimer et renommer
-> des fichiers partagés.
+### US-E8-02: File operations
+> As a user, I want to read, write, delete and rename
+> shared files.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-804 : Implémenter hostfs_open()
-- [ ] T-805 : Implémenter hostfs_read() / hostfs_write()
-- [ ] T-806 : Implémenter hostfs_seek() / hostfs_close()
-- [ ] T-807 : Implémenter hostfs_delete() / hostfs_rename()
-- [ ] T-808 : Implémenter hostfs_list() (listing répertoire)
-- [ ] T-809 : Tests opérations fichiers
+**Tasks**:
+- [ ] T-804: Implement hostfs_open()
+- [ ] T-805: Implement hostfs_read() / hostfs_write()
+- [ ] T-806: Implement hostfs_seek() / hostfs_close()
+- [ ] T-807: Implement hostfs_delete() / hostfs_rename()
+- [ ] T-808: Implement hostfs_list() (directory listing)
+- [ ] T-809: File operation tests
 
-### US-E8-03 : Conversion de chemins
-> En tant que développeur, je veux une conversion transparente entre
-> les noms de fichiers ORIC et les chemins hôte.
+### US-E8-03: Path conversion
+> As a developer, I want transparent conversion between
+> ORIC file names and host paths.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-810 : Implémenter oric_to_host_path()
-- [ ] T-811 : Implémenter host_to_oric_name()
-- [ ] T-812 : Gérer les caractères spéciaux et longueurs de noms
-- [ ] T-813 : Tests conversion chemins
+**Tasks**:
+- [ ] T-810: Implement oric_to_host_path()
+- [ ] T-811: Implement host_to_oric_name()
+- [ ] T-812: Handle special characters and name lengths
+- [ ] T-813: Path conversion tests
 
-### US-E8-04 : Couche VFS (Virtual File System)
-> En tant que développeur, je veux une couche d'abstraction VFS pour
-> unifier l'accès aux fichiers (cassette, disque, hôte).
+### US-E8-04: VFS layer (Virtual File System)
+> As a developer, I want a VFS abstraction layer to
+> unify file access (cassette, disk, host).
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-814 : Définir l'interface VFS abstraite
-- [ ] T-815 : Implémenter le backend HostFS
-- [ ] T-816 : Implémenter le backend TAP
-- [ ] T-817 : Implémenter le backend Sedoric
-- [ ] T-818 : Tests VFS
+**Tasks**:
+- [ ] T-814: Define the abstract VFS interface
+- [ ] T-815: Implement the HostFS backend
+- [ ] T-816: Implement the TAP backend
+- [ ] T-817: Implement the Sedoric backend
+- [ ] T-818: VFS tests
 
 ### Definition of Done - Epic E8
-- [ ] Montage/démontage de répertoires
-- [ ] CRUD fichiers fonctionnel
-- [ ] Conversion de chemins
-- [ ] VFS unifié
-- [ ] Tests complets
-- [ ] Documentation HostFS
+- [ ] Directory mounting/unmounting
+- [ ] Working file CRUD
+- [ ] Path conversion
+- [ ] Unified VFS
+- [ ] Complete tests
+- [ ] HostFS documentation
 
 ---
 
-# EPIC E9 : Outils de Conversion
+# EPIC E9: Conversion Tools
 
-**Priorité**: Moyenne
-**Statut**: CLI fait, backends A faire
-**Version cible**: 0.9.0-alpha
+**Priority**: Medium
+**Status**: CLI done, backends to do
+**Target version**: 0.9.0-alpha
 **Sprint**: S11
 
 ## Description
-Outils en ligne de commande pour convertir des programmes entre les
-différents formats de l'ORIC (BASIC, binaire, .TAP, Sedoric).
+Command-line tools to convert programs between the
+various ORIC formats (BASIC, binary, .TAP, Sedoric).
 
 ## User Stories
 
-### US-E9-01 : bas2tap - Convertisseur BASIC → TAP
-> En tant qu'utilisateur, je veux convertir mes programmes BASIC en
-> fichier .TAP pour les charger dans l'émulateur.
+### US-E9-01: bas2tap - BASIC → TAP converter
+> As a user, I want to convert my BASIC programs into
+> .TAP files to load them into the emulator.
 
 **Story Points**: 8
-**Statut**: CLI fait, backend A faire
+**Status**: CLI done, backend to do
 
-**Tâches**:
-- [x] T-900 : Créer le CLI bas2tap (argument parsing)
-- [ ] T-901 : Implémenter le tokenizer BASIC ORIC
-- [ ] T-902 : Implémenter tap_from_basic()
-- [ ] T-903 : Gérer l'option auto-run
-- [ ] T-904 : Tests bas2tap
+**Tasks**:
+- [x] T-900: Create the bas2tap CLI (argument parsing)
+- [ ] T-901: Implement the ORIC BASIC tokenizer
+- [ ] T-902: Implement tap_from_basic()
+- [ ] T-903: Handle the auto-run option
+- [ ] T-904: bas2tap tests
 
-### US-E9-02 : bin2tap - Convertisseur binaire → TAP
-> En tant qu'utilisateur, je veux convertir du code machine en .TAP
-> avec les adresses de chargement et d'exécution.
-
-**Story Points**: 5
-**Statut**: CLI fait, backend A faire
-
-**Tâches**:
-- [x] T-905 : Créer le CLI bin2tap (argument parsing)
-- [ ] T-906 : Implémenter tap_from_binary()
-- [ ] T-907 : Gérer adresses start/exec
-- [ ] T-908 : Tests bin2tap
-
-### US-E9-03 : tap2sedoric - Convertisseur TAP → Sedoric
-> En tant qu'utilisateur, je veux convertir des fichiers .TAP en image
-> disque Sedoric pour les utiliser avec le lecteur de disquettes.
+### US-E9-02: bin2tap - Binary → TAP converter
+> As a user, I want to convert machine code into .TAP
+> with the load and execution addresses.
 
 **Story Points**: 5
-**Statut**: CLI fait, backend A faire
+**Status**: CLI done, backend to do
 
-**Tâches**:
-- [x] T-909 : Créer le CLI tap2sedoric (argument parsing)
-- [ ] T-910 : Implémenter la conversion TAP → Sedoric
-- [ ] T-911 : Créer l'image disque avec fichier
-- [ ] T-912 : Tests tap2sedoric
+**Tasks**:
+- [x] T-905: Create the bin2tap CLI (argument parsing)
+- [ ] T-906: Implement tap_from_binary()
+- [ ] T-907: Handle start/exec addresses
+- [ ] T-908: bin2tap tests
 
-### US-E9-04 : Support hybride BASIC + code machine
-> En tant qu'utilisateur, je veux créer des programmes hybrides
-> BASIC + machine code en un seul .TAP.
+### US-E9-03: tap2sedoric - TAP → Sedoric converter
+> As a user, I want to convert .TAP files into a Sedoric disk
+> image to use them with the floppy disk drive.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: CLI done, backend to do
 
-**Tâches**:
-- [ ] T-913 : Implémenter l'attachement de binaire au BASIC
-- [ ] T-914 : Implémenter le multi-bloc dans un .TAP
-- [ ] T-915 : Tests programmes hybrides
+**Tasks**:
+- [x] T-909: Create the tap2sedoric CLI (argument parsing)
+- [ ] T-910: Implement the TAP → Sedoric conversion
+- [ ] T-911: Create the disk image containing the file
+- [ ] T-912: tap2sedoric tests
+
+### US-E9-04: Hybrid BASIC + machine code support
+> As a user, I want to create hybrid
+> BASIC + machine code programs in a single .TAP.
+
+**Story Points**: 5
+**Status**: To do
+
+**Tasks**:
+- [ ] T-913: Implement attaching a binary to the BASIC program
+- [ ] T-914: Implement multi-block support in a .TAP
+- [ ] T-915: Hybrid program tests
 
 ### Definition of Done - Epic E9
-- [ ] bas2tap convertit correctement les programmes BASIC
-- [ ] bin2tap convertit correctement les binaires
-- [ ] tap2sedoric crée des images disque valides
-- [ ] Support hybride fonctionnel
-- [ ] Tests complets pour chaque outil
-- [ ] Documentation et man pages
+- [ ] bas2tap correctly converts BASIC programs
+- [ ] bin2tap correctly converts binaries
+- [ ] tap2sedoric creates valid disk images
+- [ ] Working hybrid support
+- [ ] Complete tests for each tool
+- [ ] Documentation and man pages
 
 ---
 
-# EPIC E10 : Débogueur & Outils Développeur
+# EPIC E10: Debugger & Developer Tools
 
-**Priorité**: Basse
-**Statut**: A faire (0%)
-**Version cible**: 0.9.5-beta
+**Priority**: Low
+**Status**: To do (0%)
+**Target version**: 0.9.5-beta
 **Sprint**: S12
 
 ## Description
-Outils de débogage intégrés pour les développeurs de programmes ORIC :
-breakpoints, step, visualisation mémoire, trace.
+Built-in debugging tools for ORIC program developers:
+breakpoints, step, memory view, trace.
 
 ## User Stories
 
-### US-E10-01 : Breakpoints et Step
-> En tant que développeur ORIC, je veux poser des breakpoints et
-> exécuter le code pas à pas.
+### US-E10-01: Breakpoints and Step
+> As an ORIC developer, I want to set breakpoints and
+> step through the code.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1000 : Implémenter les breakpoints par adresse
-- [ ] T-1001 : Implémenter step (1 instruction)
-- [ ] T-1002 : Implémenter step over (passer les JSR)
-- [ ] T-1003 : Implémenter run until (exécuter jusqu'à adresse)
-- [ ] T-1004 : Implémenter les breakpoints conditionnels
-- [ ] T-1005 : Tests breakpoints
+**Tasks**:
+- [ ] T-1000: Implement address breakpoints
+- [ ] T-1001: Implement step (1 instruction)
+- [ ] T-1002: Implement step over (skip JSRs)
+- [ ] T-1003: Implement run until (run up to an address)
+- [ ] T-1004: Implement conditional breakpoints
+- [ ] T-1005: Breakpoint tests
 
-### US-E10-02 : Visualisation mémoire
-> En tant que développeur ORIC, je veux visualiser la mémoire en temps
-> réel pour comprendre le comportement des programmes.
+### US-E10-02: Memory view
+> As an ORIC developer, I want to view memory in real
+> time to understand how programs behave.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1006 : Implémenter l'affichage hex dump
-- [ ] T-1007 : Implémenter la recherche en mémoire
-- [ ] T-1008 : Implémenter les watchpoints (break on read/write)
-- [ ] T-1009 : Tests visualisation mémoire
+**Tasks**:
+- [ ] T-1006: Implement the hex dump display
+- [ ] T-1007: Implement memory search
+- [ ] T-1008: Implement watchpoints (break on read/write)
+- [ ] T-1009: Memory view tests
 
-### US-E10-03 : Inspecteur de registres
-> En tant que développeur ORIC, je veux voir l'état des registres CPU
-> et VIA en temps réel.
+### US-E10-03: Register inspector
+> As an ORIC developer, I want to see the state of the CPU
+> and VIA registers in real time.
 
 **Story Points**: 3
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1010 : Affichage registres CPU (A, X, Y, SP, PC, P)
-- [ ] T-1011 : Affichage flags détaillé (N V - B D I Z C)
-- [ ] T-1012 : Affichage registres VIA
-- [ ] T-1013 : Affichage registres PSG
-- [ ] T-1014 : Tests inspecteur
+**Tasks**:
+- [ ] T-1010: CPU register display (A, X, Y, SP, PC, P)
+- [ ] T-1011: Detailed flag display (N V - B D I Z C)
+- [ ] T-1012: VIA register display
+- [ ] T-1013: PSG register display
+- [ ] T-1014: Inspector tests
 
-### US-E10-04 : Trace et logging
-> En tant que développeur ORIC, je veux tracer l'exécution pour analyser
-> le comportement d'un programme.
+### US-E10-04: Trace and logging
+> As an ORIC developer, I want to trace execution to analyse
+> a program's behaviour.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1015 : Implémenter le trace logging (chaque instruction)
-- [ ] T-1016 : Implémenter le filtrage par plage d'adresses
-- [ ] T-1017 : Implémenter l'export vers fichier
-- [ ] T-1018 : Implémenter le compteur de cycles
-- [ ] T-1019 : Tests trace
+**Tasks**:
+- [ ] T-1015: Implement trace logging (every instruction)
+- [ ] T-1016: Implement filtering by address range
+- [ ] T-1017: Implement export to file
+- [ ] T-1018: Implement the cycle counter
+- [ ] T-1019: Trace tests
 
-### US-E10-05 : Interface débogueur
-> En tant que développeur ORIC, je veux une interface de débogage
-> accessible via F9 ou ligne de commande.
+### US-E10-05: Debugger interface
+> As an ORIC developer, I want a debugging interface
+> reachable via F9 or the command line.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1020 : Créer l'interface console du débogueur
-- [ ] T-1021 : Implémenter le parser de commandes
-- [ ] T-1022 : Implémenter les commandes (break, step, mem, reg, trace, etc.)
-- [ ] T-1023 : Intégrer le désassembleur en temps réel
-- [ ] T-1024 : Tests interface débogueur
+**Tasks**:
+- [ ] T-1020: Create the debugger console interface
+- [ ] T-1021: Implement the command parser
+- [ ] T-1022: Implement the commands (break, step, mem, reg, trace, etc.)
+- [ ] T-1023: Integrate the real-time disassembler
+- [ ] T-1024: Debugger interface tests
 
 ### Definition of Done - Epic E10
-- [ ] Breakpoints fonctionnels (adresse, condition)
+- [ ] Working breakpoints (address, condition)
 - [ ] Step / Step Over / Run Until
-- [ ] Visualisation mémoire et registres
-- [ ] Trace logging avec filtres
-- [ ] Interface débogueur utilisable
-- [ ] Documentation débogueur
+- [ ] Memory and register view
+- [ ] Trace logging with filters
+- [ ] Usable debugger interface
+- [ ] Debugger documentation
 
 ---
 
-# EPIC E11 : Optimisation & Stabilisation
+# EPIC E11: Optimisation & Stabilisation
 
-**Priorité**: Haute
-**Statut**: A faire
-**Version cible**: 0.9.9-rc
+**Priority**: High
+**Status**: To do
+**Target version**: 0.9.9-rc
 **Sprints**: S13, S14
 
 ## Description
-Optimisation des performances, correction des bugs, stabilisation de
-l'ensemble de l'émulateur avant la release v1.0.0.
+Performance optimisation, bug fixing, stabilisation of
+the whole emulator before the v1.0.0 release.
 
 ## User Stories
 
-### US-E11-01 : Optimisation CPU
-> En tant qu'utilisateur, je veux que l'émulateur soit fluide et ne
-> consomme pas trop de ressources.
+### US-E11-01: CPU optimisation
+> As a user, I want the emulator to run smoothly and not
+> consume too many resources.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1100 : Profiler l'exécution CPU
-- [ ] T-1101 : Optimiser la boucle fetch-decode-execute
-- [ ] T-1102 : Optimiser les accès mémoire
-- [ ] T-1103 : Benchmark : cible <5% CPU usage
+**Tasks**:
+- [ ] T-1100: Profile CPU execution
+- [ ] T-1101: Optimise the fetch-decode-execute loop
+- [ ] T-1102: Optimise memory accesses
+- [ ] T-1103: Benchmark: target <5% CPU usage
 
-### US-E11-02 : Optimisation vidéo
-> En tant qu'utilisateur, je veux un rendu vidéo fluide sans saccades.
-
-**Story Points**: 5
-**Statut**: A faire
-
-**Tâches**:
-- [ ] T-1104 : Optimiser le rendu (dirty rectangles)
-- [ ] T-1105 : Optimiser la copie framebuffer → texture
-- [ ] T-1106 : Benchmark : 50 FPS constant
-
-### US-E11-03 : Système de configuration
-> En tant qu'utilisateur, je veux pouvoir configurer l'émulateur
-> (chemins ROM, résolution, audio, contrôles).
+### US-E11-02: Video optimisation
+> As a user, I want smooth video rendering without stutter.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1107 : Implémenter le parsing de fichier .ini
-- [ ] T-1108 : Implémenter les options en ligne de commande
-- [ ] T-1109 : Sauvegarder/charger la configuration
-- [ ] T-1110 : Tests configuration
+**Tasks**:
+- [ ] T-1104: Optimise rendering (dirty rectangles)
+- [ ] T-1105: Optimise the framebuffer → texture copy
+- [ ] T-1106: Benchmark: constant 50 FPS
 
-### US-E11-04 : Gestion d'erreurs robuste
-> En tant que développeur, je veux une gestion d'erreurs complète
-> pour que l'émulateur ne crashe pas.
+### US-E11-03: Configuration system
+> As a user, I want to be able to configure the emulator
+> (ROM paths, resolution, audio, controls).
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1111 : Audit de toutes les fonctions pour les cas d'erreur
-- [ ] T-1112 : Ajouter les vérifications manquantes
-- [ ] T-1113 : Implémenter la récupération gracieuse
-- [ ] T-1114 : Tests de robustesse (fuzzing)
+**Tasks**:
+- [ ] T-1107: Implement .ini file parsing
+- [ ] T-1108: Implement command-line options
+- [ ] T-1109: Save/load the configuration
+- [ ] T-1110: Configuration tests
 
-### US-E11-05 : Audit qualité
-> En tant que chef de projet, je veux un audit complet avant la release.
+### US-E11-04: Robust error handling
+> As a developer, I want complete error handling
+> so that the emulator does not crash.
+
+**Story Points**: 5
+**Status**: To do
+
+**Tasks**:
+- [ ] T-1111: Audit every function for error cases
+- [ ] T-1112: Add the missing checks
+- [ ] T-1113: Implement graceful recovery
+- [ ] T-1114: Robustness tests (fuzzing)
+
+### US-E11-05: Quality audit
+> As project manager, I want a complete audit before the release.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1115 : Analyse statique (cppcheck, clang-tidy)
-- [ ] T-1116 : Détection fuites mémoire (Valgrind)
-- [ ] T-1117 : Audit sécurité (buffer overflows, format strings)
-- [ ] T-1118 : Couverture de code > 90%
-- [ ] T-1119 : Correction de tous les bugs connus
+**Tasks**:
+- [ ] T-1115: Static analysis (cppcheck, clang-tidy)
+- [ ] T-1116: Memory leak detection (Valgrind)
+- [ ] T-1117: Security audit (buffer overflows, format strings)
+- [ ] T-1118: Code coverage > 90%
+- [ ] T-1119: Fix all known bugs
 
 ### Definition of Done - Epic E11
-- [ ] Performance : <5% CPU, 50 FPS stable
-- [ ] 0 fuite mémoire (Valgrind clean)
-- [ ] 0 warning compilation
-- [ ] Analyse statique clean
-- [ ] Couverture > 90%
-- [ ] Configuration fonctionnelle
-- [ ] Tous bugs critiques corrigés
+- [ ] Performance: <5% CPU, stable 50 FPS
+- [ ] 0 memory leaks (Valgrind clean)
+- [ ] 0 compilation warnings
+- [ ] Static analysis clean
+- [ ] Coverage > 90%
+- [ ] Working configuration
+- [ ] All critical bugs fixed
 
 ---
 
-# EPIC E12 : Release v1.0.0
+# EPIC E12: Release v1.0.0
 
-**Priorité**: Critique
-**Statut**: A faire
-**Version cible**: 1.0.0
+**Priority**: Critical
+**Status**: To do
+**Target version**: 1.0.0
 **Sprint**: S15
 
 ## Description
-Préparation et publication de la version 1.0.0 stable de l'émulateur.
+Preparation and publication of the stable 1.0.0 version of the emulator.
 
 ## User Stories
 
-### US-E12-01 : Documentation utilisateur
-> En tant qu'utilisateur, je veux un guide complet pour utiliser l'émulateur.
+### US-E12-01: User documentation
+> As a user, I want a complete guide to using the emulator.
 
 **Story Points**: 8
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1200 : Rédiger le guide utilisateur complet
-- [ ] T-1201 : Créer les pages de manuel (man pages)
-- [ ] T-1202 : Documenter les raccourcis clavier
-- [ ] T-1203 : Créer un FAQ
+**Tasks**:
+- [ ] T-1200: Write the complete user guide
+- [ ] T-1201: Create the manual pages (man pages)
+- [ ] T-1202: Document the keyboard shortcuts
+- [ ] T-1203: Create a FAQ
 
-### US-E12-02 : Empaquetage
-> En tant qu'utilisateur, je veux installer l'émulateur facilement sur ma
-> distribution Linux.
+### US-E12-02: Packaging
+> As a user, I want to install the emulator easily on my
+> Linux distribution.
 
 **Story Points**: 5
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1204 : Créer le paquet .deb (Debian/Ubuntu)
-- [ ] T-1205 : Créer le paquet .rpm (Fedora/RHEL)
-- [ ] T-1206 : Créer l'archive .tar.gz
-- [ ] T-1207 : Créer l'AppImage
-- [ ] T-1208 : Tests d'installation sur distributions cibles
+**Tasks**:
+- [ ] T-1204: Create the .deb package (Debian/Ubuntu)
+- [ ] T-1205: Create the .rpm package (Fedora/RHEL)
+- [ ] T-1206: Create the .tar.gz archive
+- [ ] T-1207: Create the AppImage
+- [ ] T-1208: Installation tests on target distributions
 
-### US-E12-03 : Programmes d'exemple
-> En tant qu'utilisateur, je veux des exemples pour découvrir les
-> capacités de l'ORIC.
-
-**Story Points**: 3
-**Statut**: A faire
-
-**Tâches**:
-- [ ] T-1209 : Créer un programme BASIC de démonstration
-- [ ] T-1210 : Créer un programme graphique HIRES
-- [ ] T-1211 : Créer un programme sonore
-- [ ] T-1212 : Packager les exemples avec l'émulateur
-
-### US-E12-04 : Publication
-> En tant que chef de projet, je veux publier la v1.0.0 officiellement.
+### US-E12-03: Example programs
+> As a user, I want examples to discover the
+> capabilities of the ORIC.
 
 **Story Points**: 3
-**Statut**: A faire
+**Status**: To do
 
-**Tâches**:
-- [ ] T-1213 : Créer le tag Git v1.0.0
-- [ ] T-1214 : Rédiger les release notes
-- [ ] T-1215 : Publier sur GitHub
-- [ ] T-1216 : Annoncer sur les forums ORIC (Defence Force, etc.)
+**Tasks**:
+- [ ] T-1209: Create a BASIC demonstration program
+- [ ] T-1210: Create a HIRES graphics program
+- [ ] T-1211: Create a sound program
+- [ ] T-1212: Package the examples with the emulator
+
+### US-E12-04: Publication
+> As project manager, I want to officially publish v1.0.0.
+
+**Story Points**: 3
+**Status**: To do
+
+**Tasks**:
+- [ ] T-1213: Create the Git tag v1.0.0
+- [ ] T-1214: Write the release notes
+- [ ] T-1215: Publish on GitHub
+- [ ] T-1216: Announce on the ORIC forums (Defence Force, etc.)
 
 ### Definition of Done - Epic E12
-- [ ] Documentation complète et relue
-- [ ] Paquets testés sur 3+ distributions
-- [ ] Exemples fonctionnels inclus
-- [ ] Release publiée sur GitHub
-- [ ] Annonce communautaire
+- [ ] Complete, proofread documentation
+- [ ] Packages tested on 3+ distributions
+- [ ] Working examples included
+- [ ] Release published on GitHub
+- [ ] Community announcement
 
 ---
 
-# EPIC E13 : Extensions Post-Release
+# EPIC E13: Post-Release Extensions
 
-**Priorité**: Basse
-**Statut**: Planifié
-**Version cible**: 1.x.x
+**Priority**: Low
+**Status**: Planned
+**Target version**: 1.x.x
 **Sprints**: S16+
 
 ## Description
-Fonctionnalités additionnelles prévues après la v1.0.0, guidées par les
-retours de la communauté.
+Additional features planned after v1.0.0, driven by
+community feedback.
 
-## Features planifiées
+## Planned features
 
-### Compatibilité étendue
-| Feature | Priorité | Story Points |
+### Extended compatibility
+| Feature | Priority | Story Points |
 |---------|----------|-------------|
-| Support ORIC Atmos | Haute | 13 |
-| Support Telestrat | Moyenne | 21 |
-| Support Pravetz-8D | Basse | 8 |
+| ORIC Atmos support | High | 13 |
+| Telestrat support | Medium | 21 |
+| Pravetz-8D support | Low | 8 |
 
-### Fonctionnalités avancées
-| Feature | Priorité | Story Points |
+### Advanced features
+| Feature | Priority | Story Points |
 |---------|----------|-------------|
-| Save States | Haute | 8 |
-| Joystick support | Moyenne | 3 |
-| Printer emulation | Basse | 5 |
-| Network (TCP/IP overlay) | Basse | 13 |
+| Save States | High | 8 |
+| Joystick support | Medium | 3 |
+| Printer emulation | Low | 5 |
+| Network (TCP/IP overlay) | Low | 13 |
 
-### Outils développeur
-| Feature | Priorité | Story Points |
+### Developer tools
+| Feature | Priority | Story Points |
 |---------|----------|-------------|
-| Profiler de performance | Moyenne | 8 |
-| ROM analysis tools | Basse | 5 |
-| Sprite editor | Basse | 8 |
+| Performance profiler | Medium | 8 |
+| ROM analysis tools | Low | 5 |
+| Sprite editor | Low | 8 |
 
-### Communauté
-| Feature | Priorité | Story Points |
+### Community
+| Feature | Priority | Story Points |
 |---------|----------|-------------|
-| Plugin system | Moyenne | 13 |
-| Game compatibility DB | Haute | 5 |
-| Contribution guide | Haute | 3 |
+| Plugin system | Medium | 13 |
+| Game compatibility DB | High | 5 |
+| Contribution guide | High | 3 |
 
 ---
 
-# Planification des Sprints
+# Sprint Planning
 
-## Timeline globale
+## Overall timeline
 
 ```
 2026
-├── Fév    S0  ████░░░░░░ Infrastructure (E0) ← NOUS SOMMES ICI
-├── Mars   S1  ░░░░░░░░░░ CPU Modes d'adressage + Load/Store/Arith (E1)
-│          S2  ░░░░░░░░░░ CPU Logique/Branch/Pile/Interruptions (E1)
-├── Avr    S3  ░░░░░░░░░░ Mémoire complète + VIA registres (E2+E3)
-│          S4  ░░░░░░░░░░ VIA timers + clavier + cassette (E3)
-├── Mai    S5  ░░░░░░░░░░ Vidéo texte + attributs (E4)
-│          S6  ░░░░░░░░░░ Vidéo HIRES + SDL2 backend (E4)
-├── Juin   S7  ░░░░░░░░░░ Audio AY-3-8910 + SDL2 audio (E5)
-├── Juil   S8  ░░░░░░░░░░ Stockage cassette .TAP (E6)
-│          S9  ░░░░░░░░░░ Stockage disque Sedoric (E7)
-├── Août   S10 ░░░░░░░░░░ Filesystem hôte (E8)
-├── Sept   S11 ░░░░░░░░░░ Outils de conversion (E9)
-│          S12 ░░░░░░░░░░ Débogueur (E10)
+├── Feb    S0  ████░░░░░░ Infrastructure (E0) ← WE ARE HERE
+├── Mar    S1  ░░░░░░░░░░ CPU Addressing modes + Load/Store/Arith (E1)
+│          S2  ░░░░░░░░░░ CPU Logic/Branch/Stack/Interrupts (E1)
+├── Apr    S3  ░░░░░░░░░░ Complete memory + VIA registers (E2+E3)
+│          S4  ░░░░░░░░░░ VIA timers + keyboard + cassette (E3)
+├── May    S5  ░░░░░░░░░░ Text video + attributes (E4)
+│          S6  ░░░░░░░░░░ HIRES video + SDL2 backend (E4)
+├── Jun    S7  ░░░░░░░░░░ AY-3-8910 audio + SDL2 audio (E5)
+├── Jul    S8  ░░░░░░░░░░ .TAP cassette storage (E6)
+│          S9  ░░░░░░░░░░ Sedoric disk storage (E7)
+├── Aug    S10 ░░░░░░░░░░ Host filesystem (E8)
+├── Sep    S11 ░░░░░░░░░░ Conversion tools (E9)
+│          S12 ░░░░░░░░░░ Debugger (E10)
 ├── Oct    S13 ░░░░░░░░░░ Optimisation (E11)
 │          S14 ░░░░░░░░░░ Stabilisation (E11)
 ├── Nov    S15 ░░░░░░░░░░ Release v1.0.0 (E12)
-├── Déc+   S16 ░░░░░░░░░░ Extensions (E13)
+├── Dec+   S16 ░░░░░░░░░░ Extensions (E13)
 ```
 
-## Vélocité estimée
+## Estimated velocity
 
-| Sprint | Story Points planifiés | Cumulé |
+| Sprint | Planned Story Points | Cumulative |
 |--------|----------------------|--------|
 | S0 | 16 | 16 |
 | S1 | 31 | 47 |
@@ -1796,43 +1796,43 @@ SP
 
 ---
 
-# Métriques de suivi
+# Tracking Metrics
 
-## KPIs du projet
+## Project KPIs
 
-| Métrique | Cible | Actuel |
+| Metric | Target | Current |
 |----------|-------|--------|
-| Vélocité moyenne/sprint | 24 SP | N/A |
-| Couverture de code | >90% | 0% |
-| Bugs ouverts critiques | 0 | 0 |
-| Bugs ouverts totaux | <10 | 0 |
-| Warnings compilation | 0 | 12 |
-| Tests unitaires | >200 | 5 |
-| Tests d'intégration | >20 | 0 |
+| Average velocity/sprint | 24 SP | N/A |
+| Code coverage | >90% | 0% |
+| Open critical bugs | 0 | 0 |
+| Total open bugs | <10 | 0 |
+| Compilation warnings | 0 | 12 |
+| Unit tests | >200 | 5 |
+| Integration tests | >20 | 0 |
 | Documentation pages | >30 | 5 |
 
-## Définition des priorités
+## Priority definitions
 
-| Priorité | Signification |
+| Priority | Meaning |
 |----------|---------------|
-| **Critique** | Bloquant - sans ce composant l'émulateur ne fonctionne pas |
-| **Haute** | Essentiel - fonctionnalité core attendue par les utilisateurs |
-| **Moyenne** | Important - valeur ajoutée significative |
-| **Basse** | Souhaitable - amélioration de l'expérience |
+| **Critical** | Blocking - without this component the emulator does not work |
+| **High** | Essential - core feature expected by users |
+| **Medium** | Important - significant added value |
+| **Low** | Nice to have - improves the experience |
 
-## Risques et mitigations
+## Risks and mitigations
 
-| Risque | Impact | Probabilité | Mitigation |
+| Risk | Impact | Probability | Mitigation |
 |--------|--------|-------------|------------|
-| Timing CPU incorrect | Critique | Moyenne | Test suite Klaus Dormann |
-| Incompatibilité programmes | Haute | Haute | Base de test large |
-| Performance insuffisante | Moyenne | Basse | Profiling régulier |
-| Scope creep | Moyenne | Haute | Sprint planning strict |
-| Dépendance SDL2 | Basse | Basse | Abstraction renderer |
+| Incorrect CPU timing | Critical | Medium | Klaus Dormann test suite |
+| Program incompatibility | High | High | Broad test base |
+| Insufficient performance | Medium | Low | Regular profiling |
+| Scope creep | Medium | High | Strict sprint planning |
+| SDL2 dependency | Low | Low | Renderer abstraction |
 
 ---
 
-# Conventions du projet
+# Project Conventions
 
 ## Git
 - **Branches**: feature/<epic>-<description>, bugfix/<description>
@@ -1840,20 +1840,20 @@ SP
 - **Tags**: v<MAJOR>.<MINOR>.<PATCH>-<label>
 
 ## Code
-- **Langage**: C11
-- **Style**: snake_case fonctions, UPPER_CASE constantes
-- **Headers**: include guards, documentation Doxygen
-- **Tests**: 1 fichier test par module, nommage test_<module>.c
+- **Language**: C11
+- **Style**: snake_case functions, UPPER_CASE constants
+- **Headers**: include guards, Doxygen documentation
+- **Tests**: 1 test file per module, named test_<module>.c
 
 ## Documentation
-- **CHANGELOG**: Mis à jour à chaque commit
-- **ROADMAP**: Revu à chaque fin de sprint
-- **CIRRUS_OS**: Mis à jour après chaque build/test
-- **VERSION_TRACKING**: Mis à jour à chaque release
-- **AGILE_PLAN**: Mis à jour à chaque sprint planning
+- **CHANGELOG**: Updated on every commit
+- **ROADMAP**: Reviewed at the end of every sprint
+- **CIRRUS_OS**: Updated after every build/test
+- **VERSION_TRACKING**: Updated on every release
+- **AGILE_PLAN**: Updated at every sprint planning
 
 ---
 
-**Document généré le**: 2026-02-22
-**Prochain Sprint Planning**: Sprint 1 (S1) - CPU 6502
-**Prochaine rétrospective**: Fin Sprint 0
+**Document generated on**: 2026-02-22
+**Next Sprint Planning**: Sprint 1 (S1) - CPU 6502
+**Next retrospective**: End of Sprint 0

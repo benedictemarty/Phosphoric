@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file test_cards.c
- * @brief Registre des cartes d'extension (menu F1) : état lu depuis la ligne
- *        de commande, groupes exclusifs, conflits d'E/S, options de relance,
+ * @brief Expansion card registry (F1 menu): state read from the command
+ *        line, exclusive groups, I/O conflicts, restart options,
  *        configuration
  * @author bmarty <bmarty@mailo.com>
  */
@@ -28,11 +28,11 @@ static int tests_failed = 0;
     printf("FAIL\n    %s:%d: \"%s\" != \"%s\"\n", __FILE__, __LINE__, (a), (b)); \
     tests_failed++; return; } } while (0)
 
-/* Paramètres de la carte LOCI (ordre de la fiche, card_loci.c). */
+/* Parameters of the LOCI card (order of the entry, card_loci.c). */
 enum { LP_MODE, LP_MENU, LP_SD, LP_FLASH, LP_MODEM, LP_PORT, LP_ELF, LP_FW_FLASH, LP_FW_USB,
        LP_PORT_USB };
 
-/* Options reconstruites, jointes par des espaces (comparaison simple). */
+/* Rebuilt options, joined with spaces (simple comparison). */
 static void joined(char** av, char* out, size_t sz) {
     out[0] = '\0';
     for (char** p = av; *p; p++) {
@@ -67,7 +67,7 @@ TEST(test_state_from_cli) {
     ASSERT_STR(st.card[ac].value[1], "0380");
     ASSERT_TRUE(st.card[me].on);
     ASSERT_TRUE(!st.card[cards_find("jasmin")].on);
-    ASSERT_TRUE(st.card[cards_find("ula_ng")].on);          /* toujours présente */
+    ASSERT_TRUE(st.card[cards_find("ula_ng")].on);          /* always present */
 }
 
 TEST(test_disk_group_is_exclusive) {
@@ -79,7 +79,7 @@ TEST(test_disk_group_is_exclusive) {
     ASSERT_TRUE(st.card[lo].on && !st.card[md].on);
     cards_set_on(&st, ja, true);
     ASSERT_TRUE(st.card[ja].on && !st.card[lo].on);
-    cards_set_on(&st, cards_find("ula_ng"), false);         /* fixe : inchangée */
+    cards_set_on(&st, cards_find("ula_ng"), false);         /* fixed: unchanged */
     ASSERT_TRUE(st.card[cards_find("ula_ng")].on);
 }
 
@@ -88,7 +88,7 @@ TEST(test_io_conflict_detected) {
     char msg[96];
     cards_state_defaults(&st);
     cards_set_on(&st, cards_find("mageco"), true);
-    cards_set_on(&st, cards_find("mea8000"), true);          /* toutes deux en $03FE */
+    cards_set_on(&st, cards_find("mea8000"), true);          /* both at $03FE */
     ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg));
     ASSERT_TRUE(strstr(msg, "Mageco MIDI") && strstr(msg, "MEA8000") && strstr(msg, "$03FE"));
     snprintf(st.card[cards_find("mea8000")].value[0], CARD_VALUE_MAX, "03F0");
@@ -100,7 +100,7 @@ TEST(test_build_argv_replaces_cards) {
                      "-d", "jeu.dsk", "--loci-usb", "cle", "--fast", NULL };
     cards_state_t st;
     cards_state_from(&st, NULL, 10, argv);
-    /* LOCI à la place du Microdisc, menu LOCI au démarrage. */
+    /* LOCI instead of the Microdisc, LOCI menu at startup. */
     cards_set_on(&st, cards_find("loci"), true);
     int argc2;
     char** av = cards_build_argv(&st, 10, argv, &argc2);
@@ -109,7 +109,7 @@ TEST(test_build_argv_replaces_cards) {
     ASSERT_STR(buf, "phosphoric -d jeu.dsk --loci-usb cle --fast -r roms/loci/locirom --loci "
                     "--no-config-cards");
     cards_argv_free(av);
-    /* LOCI éteinte : sa ROM de menu redevient le BASIC, --loci-usb disparaît. */
+    /* LOCI off: its menu ROM reverts to BASIC, --loci-usb goes away. */
     char* argv2[] = { "phosphoric", "-r", "roms/loci/locirom", "--loci", "--loci-usb", "cle", NULL };
     cards_state_from(&st, NULL, 6, argv2);
     cards_set_on(&st, cards_find("loci"), false);
@@ -159,10 +159,10 @@ TEST(test_cfg_roundtrip) {
     fclose(f);
     ASSERT_TRUE(seen && back.card[sp].on);
     ASSERT_STR(back.card[sp].value[1], "03F2");
-    ASSERT_TRUE(!cards_cfg_line(&back, "clavier", "azerty", NULL));   /* pas une carte */
+    ASSERT_TRUE(!cards_cfg_line(&back, "clavier", "azerty", NULL));   /* not a card */
 }
 
-/* /sys factice : ttyACM0 = autre montage TinyUSB, ttyACM1 = picowifi. */
+/* Fake /sys: ttyACM0 = other TinyUSB build, ttyACM1 = picowifi. */
 static char g_sys[256];
 
 static void fake_tty(const char* tty, const char* product) {
@@ -194,7 +194,7 @@ static void fake_sysfs(bool with_picowifi) {
 static void fake_sysfs_drop(void) {
     char cmd[300];
     snprintf(cmd, sizeof cmd, "rm -rf %s", g_sys);
-    if (system(cmd) != 0) { /* rien */ }
+    if (system(cmd) != 0) { /* nothing */ }
     unsetenv("PHOSPHORIC_SYSFS_ROOT");
 }
 
@@ -202,7 +202,7 @@ TEST(test_picowifi_detect_by_usb_product) {
     char dev[64];
     fake_sysfs(true);
     ASSERT_TRUE(picowifi_detect(NULL, dev, sizeof dev));
-    ASSERT_STR(dev, "/dev/ttyACM1");                 /* pas ttyACM0 (autre produit) */
+    ASSERT_STR(dev, "/dev/ttyACM1");                 /* not ttyACM0 (other product) */
     fake_sysfs(false);
     ASSERT_TRUE(!picowifi_detect(NULL, dev, sizeof dev));
     ASSERT_TRUE(!picowifi_detect("/inexistant", dev, sizeof dev));
@@ -237,20 +237,20 @@ TEST(test_loci_modem_build_argv) {
     snprintf(st.card[lo].value[LP_MENU], CARD_VALUE_MAX, "non");
     snprintf(st.card[lo].value[LP_MODEM], CARD_VALUE_MAX, LOCI_MODEM_SIM);
     char** av = cards_build_argv(&st, 3, argv, NULL);
-    joined(av, buf, sizeof buf);       /* --serial-trace gardée : le modem est une ACIA */
+    joined(av, buf, sizeof buf);       /* --serial-trace kept: the modem is an ACIA */
     ASSERT_STR(buf, "phosphoric --serial-trace t.log --loci --serial picowifi --no-config-cards");
     cards_argv_free(av);
-    snprintf(st.card[lo].value[LP_MODEM], CARD_VALUE_MAX, LOCI_MODEM_REAL);   /* port détecté */
+    snprintf(st.card[lo].value[LP_MODEM], CARD_VALUE_MAX, LOCI_MODEM_REAL);   /* detected port */
     av = cards_build_argv(&st, 1, argv, NULL);
     joined(av, buf, sizeof buf);
     ASSERT_STR(buf, "phosphoric --loci --serial com:115200,8,N,1,/dev/ttyACM1 --no-config-cards");
     cards_argv_free(av);
-    snprintf(st.card[lo].value[LP_PORT], CARD_VALUE_MAX, "/dev/ttyUSB3");     /* port imposé */
+    snprintf(st.card[lo].value[LP_PORT], CARD_VALUE_MAX, "/dev/ttyUSB3");     /* forced port */
     av = cards_build_argv(&st, 1, argv, NULL);
     joined(av, buf, sizeof buf);
     ASSERT_STR(buf, "phosphoric --loci --serial com:115200,8,N,1,/dev/ttyUSB3 --no-config-cards");
     cards_argv_free(av);
-    /* Carte ACIA active : elle garde la ligne série, et le menu le signale. */
+    /* Active ACIA card: it keeps the serial line, and the menu reports it. */
     char msg[96];
     ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
     cards_set_on(&st, ac, true);
@@ -287,13 +287,13 @@ TEST(test_loci_modem_state_from_cli) {
     ASSERT_TRUE(st.card[lo].on && !st.card[ac].on);
     ASSERT_STR(st.card[lo].value[LP_MODEM], LOCI_MODEM_SIM);
     char* a2[] = { "phosphoric", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyACM1", NULL };
-    cards_state_from(&st, NULL, 4, a2);                 /* port détecté : laissé vide */
+    cards_state_from(&st, NULL, 4, a2);                 /* detected port: left empty */
     ASSERT_STR(st.card[lo].value[LP_MODEM], LOCI_MODEM_REAL);
     ASSERT_STR(st.card[lo].value[LP_PORT], "");
     char* a3[] = { "phosphoric", "--loci", "--serial", "com:115200,8,N,1,/dev/ttyS0", NULL };
     cards_state_from(&st, NULL, 4, a3);
     ASSERT_STR(st.card[lo].value[LP_PORT], "/dev/ttyS0");
-    /* ACIA réglée autrement (V23, identifiants, autre adresse) : reste une carte. */
+    /* ACIA set otherwise (V23, credentials, other address): stays a card. */
     char* a4[] = { "phosphoric", "--loci", "--serial", "picowifi", "--serial-v23", NULL };
     cards_state_from(&st, NULL, 5, a4);
     ASSERT_TRUE(st.card[ac].on);
@@ -301,7 +301,7 @@ TEST(test_loci_modem_state_from_cli) {
     char* a5[] = { "phosphoric", "--loci", "--serial", "picowifi:box:secret", NULL };
     cards_state_from(&st, NULL, 4, a5);
     ASSERT_TRUE(st.card[ac].on);
-    char* a6[] = { "phosphoric", "--serial", "picowifi", NULL };   /* sans LOCI */
+    char* a6[] = { "phosphoric", "--serial", "picowifi", NULL };   /* without LOCI */
     cards_state_from(&st, NULL, 3, a6);
     ASSERT_TRUE(st.card[ac].on && !st.card[lo].on);
     fake_sysfs_drop();
@@ -323,7 +323,7 @@ TEST(test_loci_modem_cfg) {
     ASSERT_TRUE(cards_cfg_read(path, &back, seen));
     ASSERT_TRUE(back.card[lo].on);
     ASSERT_STR(back.card[lo].value[LP_MODEM], LOCI_MODEM_SIM);
-    /* Configuration : LOCI + modem simulé ajoutés au lancement... */
+    /* Configuration: LOCI + simulated modem added at launch... */
     char* a1[] = { "phosphoric", NULL };
     int n = 0;
     char** av = cards_config_argv(path, 1, a1, &n);
@@ -332,7 +332,7 @@ TEST(test_loci_modem_cfg) {
     joined(av, buf, sizeof buf);
     ASSERT_TRUE(strstr(buf, "--loci") && strstr(buf, "--serial picowifi"));
     cards_argv_free(av);
-    /* ...sauf si la ligne de commande choisit déjà la ligne série. */
+    /* ...unless the command line already chooses the serial line. */
     char* a2[] = { "phosphoric", "--serial", "tcp:bbs:23", NULL };
     av = cards_config_argv(path, 3, a2, &n);
     ASSERT_TRUE(av != NULL);
@@ -342,20 +342,20 @@ TEST(test_loci_modem_cfg) {
     unlink(path);
 }
 
-/* LOCI-USB (Feather, --loci-hw) : ttyACM2, à côté du picowifi. */
+/* LOCI-USB (Feather, --loci-hw): ttyACM2, next to the picowifi. */
 #define LOCI_USB_FW_PRODUCT "LOCI-USB (bus 6502 pour Phosphoric)"
 
 TEST(test_loci_usb_detect_by_usb_product) {
     char dev[64];
     fake_sysfs(true);
-    ASSERT_TRUE(!loci_usb_detect(NULL, dev, sizeof dev));     /* picowifi seul */
+    ASSERT_TRUE(!loci_usb_detect(NULL, dev, sizeof dev));     /* picowifi only */
     fake_tty("ttyACM2", LOCI_USB_FW_PRODUCT);
     ASSERT_TRUE(loci_usb_detect(NULL, dev, sizeof dev));
     ASSERT_STR(dev, "/dev/ttyACM2");
-    ASSERT_TRUE(picowifi_detect(NULL, dev, sizeof dev));      /* chacun le sien */
+    ASSERT_TRUE(picowifi_detect(NULL, dev, sizeof dev));      /* each finds its own */
     ASSERT_STR(dev, "/dev/ttyACM1");
     fake_sysfs(false);
-    fake_tty("ttyACM3", "LOCI-USB loci-fw (bus 6502)");        /* firmware loci-fw-usb */
+    fake_tty("ttyACM3", "LOCI-USB loci-fw (bus 6502)");        /* loci-fw-usb firmware */
     ASSERT_TRUE(loci_usb_detect(NULL, dev, sizeof dev));
     ASSERT_STR(dev, "/dev/ttyACM3");
     fake_sysfs_drop();
@@ -367,7 +367,7 @@ TEST(test_loci_params_order) {
                                         "elf", "fw_flash", "fw_usb", "port_usb" };
     ASSERT_TRUE(d->nparams == 10);
     for (int p = 0; p < 10; p++) ASSERT_STR(d->param[p].key, keys[p]);
-    ASSERT_TRUE(cards_find("loci_emu") < 0 && cards_find("loci_hw") < 0);   /* une seule carte */
+    ASSERT_TRUE(cards_find("loci_emu") < 0 && cards_find("loci_hw") < 0);   /* a single card */
 }
 
 TEST(test_loci_mode_params_shown) {
@@ -383,7 +383,7 @@ TEST(test_loci_mode_params_shown) {
     snprintf(c.value[LP_MODE], CARD_VALUE_MAX, LOCI_MODE_HW);
     ASSERT_TRUE(cards_param_applies(d, &c, LP_PORT_USB) && cards_param_applies(d, &c, LP_MODE));
     ASSERT_TRUE(!cards_param_applies(d, &c, LP_MENU) && !cards_param_applies(d, &c, LP_ELF));
-    const card_desc_t* md = cards_get(cards_find("microdisc"));   /* autres cartes : tout */
+    const card_desc_t* md = cards_get(cards_find("microdisc"));   /* other cards: everything */
     ASSERT_TRUE(cards_param_applies(md, &c, 0));
 }
 
@@ -395,9 +395,9 @@ TEST(test_loci_mode_cycles_available_only) {
     cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODE_FW);
     cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODE_HW);
     cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODE_HLE);
-    setenv("PHOSPHORIC_TEST_LOCI_BACKENDS", "hw", 1);           /* binaire sans libemul */
+    setenv("PHOSPHORIC_TEST_LOCI_BACKENDS", "hw", 1);           /* binary without libemul */
     cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODE_HW);
-    setenv("PHOSPHORIC_TEST_LOCI_BACKENDS", "aucun", 1);        /* ni l'un ni l'autre */
+    setenv("PHOSPHORIC_TEST_LOCI_BACKENDS", "aucun", 1);        /* neither one */
     cards_choice_next(p, v, sizeof v); ASSERT_STR(v, LOCI_MODE_HLE);
     cards_state_t st;
     char msg[96];
@@ -420,7 +420,7 @@ TEST(test_loci_firmware_mode) {
     ASSERT_STR(st.card[lo].value[LP_ELF], "fw.elf");
     ASSERT_STR(st.card[lo].value[LP_FW_USB], "cle.img");
     ASSERT_TRUE(!cards_conflict(&st, msg, sizeof msg));
-    char** av = cards_build_argv(&st, 7, a1, NULL);   /* --loci-cdc : option secondaire gardée */
+    char** av = cards_build_argv(&st, 7, a1, NULL);   /* --loci-cdc: secondary option kept */
     joined(av, buf, sizeof buf);
     ASSERT_STR(buf, "phosphoric --loci-cdc /dev/ttyACM3 --loci-emu fw.elf --loci-usb-image cle.img "
                     "--no-config-cards");
@@ -435,7 +435,7 @@ TEST(test_loci_usb_mode) {
     char buf[256], msg[96];
     fake_sysfs(true);
     fake_tty("ttyACM2", LOCI_USB_FW_PRODUCT);
-    /* Ligne de commande : port détecté laissé vide, autre port gardé. */
+    /* Command line: detected port left empty, other port kept. */
     char* a1[] = { "phosphoric", "--loci-hw", "/dev/ttyACM2", NULL };
     cards_state_from(&st, NULL, 3, a1);
     ASSERT_TRUE(st.card[lo].on);
@@ -444,12 +444,12 @@ TEST(test_loci_usb_mode) {
     char* a2[] = { "phosphoric", "--loci-hw=/dev/ttyUSB9", NULL };
     cards_state_from(&st, NULL, 2, a2);
     ASSERT_STR(st.card[lo].value[LP_PORT_USB], "/dev/ttyUSB9");
-    /* Groupe « disque » : toujours exclusive avec le Microdisc. */
+    /* « disque » group: always mutually exclusive with the Microdisc. */
     cards_set_on(&st, md, true);
     ASSERT_TRUE(!st.card[lo].on);
     cards_set_on(&st, lo, true);
     ASSERT_TRUE(!st.card[md].on);
-    /* Relance : ni --loci, ni ROM du menu, ni réglages du modèle intégré. */
+    /* Relaunch: no --loci, no menu ROM, no settings of the built-in model. */
     char* a0[] = { "phosphoric", "-r", "roms/loci/locirom", "--loci-flash", "f", NULL };
     snprintf(st.card[lo].value[LP_FLASH], CARD_VALUE_MAX, "f");
     st.card[lo].value[LP_PORT_USB][0] = '\0';
@@ -463,7 +463,7 @@ TEST(test_loci_usb_mode) {
     joined(av, buf, sizeof buf);
     ASSERT_STR(buf, "phosphoric --loci-hw /dev/ttyUSB9 --no-config-cards");
     cards_argv_free(av);
-    /* Aucune LOCI-USB branchée, port vide : signalé, et LOCI n'est pas relancée. */
+    /* No LOCI-USB plugged in, empty port: reported, and LOCI is not relaunched. */
     fake_sysfs(false);
     st.card[lo].value[LP_PORT_USB][0] = '\0';
     ASSERT_TRUE(cards_conflict(&st, msg, sizeof msg) && strstr(msg, "LOCI-USB"));
@@ -486,7 +486,7 @@ TEST(test_loci_mode_cfg) {
     cards_set_on(&st, lo, true);
     snprintf(st.card[lo].value[LP_MODE], CARD_VALUE_MAX, LOCI_MODE_HW);
     snprintf(st.card[lo].value[LP_PORT_USB], CARD_VALUE_MAX, "/dev/ttyACM5");
-    snprintf(st.card[lo].value[LP_SD], CARD_VALUE_MAX, "carte.img");   /* autre mode : pas écrit */
+    snprintf(st.card[lo].value[LP_SD], CARD_VALUE_MAX, "carte.img");   /* other mode: not written */
     cards_cfg_write(&st, f);
     fclose(f);
     ASSERT_TRUE(cards_cfg_read(path, &back, seen));
@@ -494,7 +494,7 @@ TEST(test_loci_mode_cfg) {
     ASSERT_STR(back.card[lo].value[LP_MODE], LOCI_MODE_HW);
     ASSERT_STR(back.card[lo].value[LP_PORT_USB], "/dev/ttyACM5");
     ASSERT_STR(back.card[lo].value[LP_SD], "");
-    /* Anciennes fiches « LOCI firmware » et « LOCI réelle » : modes de LOCI. */
+    /* Former « LOCI firmware » and « LOCI réelle » entries: modes of LOCI. */
     f = fopen(path, "w");
     fprintf(f, "carte.loci=non\ncarte.loci_emu=oui\nloci_emu.elf=fw.elf\nloci_emu.flash=-\n"
                "carte.loci_hw=non\n");
@@ -511,7 +511,7 @@ TEST(test_loci_mode_cfg) {
     ASSERT_TRUE(cards_cfg_read(path, &back, seen));
     ASSERT_STR(back.card[lo].value[LP_MODE], LOCI_MODE_HW);
     ASSERT_STR(back.card[lo].value[LP_PORT_USB], "/dev/ttyACM9");
-    f = fopen(path, "w");                       /* 2.26.0 : mode « réelle », clé « pont » */
+    f = fopen(path, "w");                       /* 2.26.0: mode « réelle », key « pont » */
     fprintf(f, "carte.loci=oui\nloci.mode=réelle\nloci.pont=/dev/ttyACM4\n");
     fclose(f);
     ASSERT_TRUE(cards_cfg_read(path, &back, seen));
@@ -521,8 +521,8 @@ TEST(test_loci_mode_cfg) {
 }
 
 int main(void) {
-    /* Modes firmware et usb de LOCI : proposés selon les backends présents ;
-     * le test fait comme si le binaire avait les deux. */
+    /* LOCI firmware and usb modes: offered depending on the backends present;
+     * the test pretends the binary has both. */
     setenv("PHOSPHORIC_TEST_LOCI_BACKENDS", "emul,hw", 1);
     printf("=== Registre des cartes d'extension ===\n");
     RUN(test_registry_is_described);

@@ -1,101 +1,101 @@
-# Base de temps sous-cycle du bus d'extension (modèle PHI2) — Épic B
+# Sub-cycle time base for the expansion bus (PHI2 model) — Epic B
 
-- **Statut** : architecture (v2.0, 2.23.0) — chronologie en ns ; Phase 1 livrée
-- **Auteur** : bmarty
-- **Modules** : `include/io/bus_timing.h`, `src/io/loci_boot.c` (client LOCI),
-  `src/io/io_bus.c` (point de décision ACIA `$0380`)
-- **Grounding** : `~/loci/extensions/analyse/read-serve-et-inhibition-via.md`,
-  `robustesse-lien-6502.md` (firmware `sodiumlb/loci-firmware`, schéma LOCI 1.3).
+- **Status**: architecture (v2.0, 2.23.0) — timeline in ns; Phase 1 delivered
+- **Author**: bmarty
+- **Modules**: `include/io/bus_timing.h`, `src/io/loci_boot.c` (LOCI client),
+  `src/io/io_bus.c` (ACIA `$0380` decision point)
+- **Grounding**: `~/loci/extensions/analyse/read-serve-et-inhibition-via.md`,
+  `robustesse-lien-6502.md` (firmware `sodiumlb/loci-firmware`, LOCI 1.3 schematic).
 
-## 1. Problème
+## 1. Problem
 
-Le 6502 de l'Oric et les périphériques du **port d'extension** partagent un bus
-**asynchrone** cadencé par PHI2. Phosphoric modélise le temps à la granularité du
-**cycle entier** : `cpu_tick()` avance l'horloge à chaque accès bus (`cpu->cycles`
-est exact à chaque lecture), mais il n'existe **aucune notion de phase intra-PHI2**.
+The Oric's 6502 and the **expansion port** peripherals share an
+**asynchronous** bus clocked by PHI2. Phosphoric models time at the granularity of the
+**whole cycle**: `cpu_tick()` advances the clock on every bus access (`cpu->cycles`
+is exact at every read), but there is **no notion of intra-PHI2 phase**.
 
-Or certains conflits sont **sous-cycle** : la donnée doit être **stable sur le bus
-avant l'instant de latch** du 6502 (proche du front descendant de PHI2, après le
-setup). Un périphérique **lent** — typiquement le LOCI, dont le RP2040 lit l'adresse
-par PIO, la traite en logiciel (`act_loop`) puis pose la donnée par PIO — peut
-**manquer** ce latch (le port d'extension n'a pas de RDY). Le VIA étant décodé-inhibé (cf. `io-bus.md`), **rien ne pilote
-alors le bus** → le 6502 latche l'open-bus. À l'échelle du cycle entier, ce
-phénomène est **invisible** : la lecture 6502 et le serve tombent « dans le même
-cycle ». Il faut donc une base de temps **sous-cycle** pour le reproduire.
+Yet some conflicts are **sub-cycle**: the data must be **stable on the bus
+before the 6502's latch instant** (close to the falling edge of PHI2, after the
+setup time). A **slow** peripheral — typically the LOCI, whose RP2040 reads the address
+through PIO, processes it in software (`act_loop`) and then drives the data through PIO — can
+**miss** that latch (the expansion port has no RDY). Since the VIA is decode-inhibited (see `io-bus.md`), **nothing drives
+the bus** at that point → the 6502 latches open-bus. At whole-cycle scale, this
+phenomenon is **invisible**: the 6502 read and the serve fall "in the same
+cycle". A **sub-cycle** time base is therefore needed to reproduce it.
 
-## 2. Modèle : chronologie en ns (2.23.0)
+## 2. Model: timeline in ns (2.23.0)
 
-> **Correction 2.23.0.** La v1 divisait la période PHI2 **de l'Oric** en 30
-> « subticks » en lisant `sys_clk = PHI2×30` (`cpu.c:158`). Or le Φ2 de `cpu.c` est
-> un **réglage du firmware**, 4000 kHz par défaut (configuration vide) : le PIO
-> tourne à 120 MHz, 1 tick = 8,33 ns, quatre fois plus fin. Avec la v1, une vraie
-> LOCI aurait raté toutes ses lectures. Le « budget 26/36 cycles » du rapport de bug
-> était en plus pris pour des subticks.
+> **Correction 2.23.0.** v1 divided the **Oric's** PHI2 period into 30
+> "subticks", reading `sys_clk = PHI2×30` (`cpu.c:158`). But the Φ2 in `cpu.c` is
+> a **firmware setting**, 4000 kHz by default (empty configuration): the PIO
+> runs at 120 MHz, 1 tick = 8.33 ns, four times finer. With v1, a real
+> LOCI would have missed all its reads. On top of that, the "26/36 cycle budget" from the bug report
+> was taken to be subticks.
 
-Origine : front descendant de PHI2 qui ouvre le cycle (`bus_timing.h`,
-`bus_loci_read_valid_ps`, en picosecondes) :
+Origin: the falling edge of PHI2 that opens the cycle (`bus_timing.h`,
+`bus_loci_read_valid_ps`, in picoseconds):
 
-| Étape | Instant | Source |
+| Step | Instant | Source |
 |---|---|---|
-| mot d'action dans la FIFO | (22 + tior) ticks + 2 cycles sys | `mia.pio` (estimé) |
-| donnée prête (DMA + IRQ 5) | + poll (0, non mesuré) + `serve` cycles sys | SysTick (`--loci-hw`) |
-| donnée sur le bus | max(prête, montée de PHI2 + 2 cycles) + (3 + tiod) ticks | `mia_io_read` (estimé) |
-| échéance du 6502 | période − tDSR (100 ns) | fiche 6502 à 1 MHz |
+| action word in the FIFO | (22 + tior) ticks + 2 sys cycles | `mia.pio` (estimated) |
+| data ready (DMA + IRQ 5) | + poll (0, not measured) + `serve` sys cycles | SysTick (`--loci-hw`) |
+| data on the bus | max(ready, PHI2 rise + 2 cycles) + (3 + tiod) ticks | `mia_io_read` (estimated) |
+| 6502 deadline | period − tDSR (100 ns) | 6502 datasheet at 1 MHz |
 
-PHI2 de l'Oric : haut le **dernier tiers** du cycle (l'ULA à 12 MHz découpe le cycle
-en 3 créneaux de 4 cycles, deux pour la vidéo, un pour le processeur ; forum Defence
-Force t=2583). Avec les défauts : donnée à 708 ns tant que serve ≤ 58 cycles (elle
-attend la montée de PHI2), échéance 900 ns, frontière à **81/82 cycles** de serve.
-Mesure sur matériel (Feather 5723, `--loci-hw`) : serve 23 cycles → marge ≈ 190 ns.
+The Oric's PHI2 is high during the **last third** of the cycle (the 12 MHz ULA splits the cycle
+into 3 slots of 4 cycles, two for video, one for the processor; Defence
+Force forum t=2583). With the defaults: data at 708 ns as long as serve ≤ 58 cycles (it
+waits for the PHI2 rise), deadline 900 ns, boundary at **81/82 cycles** of serve.
+Hardware measurement (Feather 5723, `--loci-hw`): serve 23 cycles → margin ≈ 190 ns.
 
-Les périphériques **on-board** (RAM/ROM/VIA/ULA) ne passent pas par ce modèle : ils
-sont toujours à temps, **aucun impact** sur l'existant.
+**On-board** peripherals (RAM/ROM/VIA/ULA) do not go through this model: they
+are always on time, **no impact** on existing code.
 
-### Client LOCI (`loci_mia_io_reliable`)
+### LOCI client (`loci_mia_io_reliable`)
 
-Deux modèles exclusifs de fiabilité du serve MIA :
+Two mutually exclusive reliability models for the MIA serve:
 
-- **WINDOW** (défaut, historique) : fiable ssi `tior ∈ [lo,hi]`. C'est la
-  **calibration par carte** (le firmware `adj_scan` balaie tior 0-31 pour trouver
-  la plage qui marche). Iso-comportement ; `--loci-mia-window LO-HI`.
-- **PHASE** (opt-in) : chronologie ci-dessus, `--loci-serve-timing SERVE[,TDSR]`
-  (SERVE en cycles du cœur 1, TDSR en ns) et `--loci-serve-jitter AMP[,SEED]`
-  (± AMP cycles, seedé). `tior` et `tiod` (`MAP_TUNE_*`) entrent dans le calcul.
-  Les durées réalistes (23 mesurés, 26/36 de l'analyse) sont **toutes propres** :
-  la v1 « reproduisait » le rapport de bug `-Os`/`-O2` avec une grille fausse, et
-  l'auteur du firmware attribue ce bug à un défaut de *mapping* d'adresse, pas au
-  timing (`read-serve-et-inhibition-via.md`, correction du 2026-09-01).
+- **WINDOW** (default, historical): reliable iff `tior ∈ [lo,hi]`. This is the
+  **per-board calibration** (the firmware's `adj_scan` sweeps tior 0-31 to find
+  the working range). Behaviour unchanged; `--loci-mia-window LO-HI`.
+- **PHASE** (opt-in): the timeline above, `--loci-serve-timing SERVE[,TDSR]`
+  (SERVE in core 1 cycles, TDSR in ns) and `--loci-serve-jitter AMP[,SEED]`
+  (± AMP cycles, seeded). `tior` and `tiod` (`MAP_TUNE_*`) enter the computation.
+  Realistic durations (23 measured, 26/36 from the analysis) are **all clean**:
+  v1 "reproduced" the `-Os`/`-O2` bug report with a wrong grid, and
+  the firmware author attributes that bug to an address *mapping* defect, not to
+  timing (`read-serve-et-inhibition-via.md`, correction of 2026-09-01).
 
-`loci_set_mia_window()` bascule sur WINDOW, `loci_set_serve_timing()` sur PHASE.
-Défaut au reset : WINDOW `[0,31]` → tout tior fiable.
+`loci_set_mia_window()` switches to WINDOW, `loci_set_serve_timing()` to PHASE.
+Default at reset: WINDOW `[0,31]` → every tior is reliable.
 
-## 3. Ce que la Phase 1 ne fait pas (encore)
+## 3. What Phase 1 does not do (yet)
 
-- **Pas de réécriture sous-cycle du 6502.** `cpu_step` exécute une instruction
-  entière ; le modèle de phase vit au **point de décision de l'accès bus** (lecture
-  mémoire → périphérique io), là où la course compte. Une intégration sous-cycle
-  profonde du CPU (chaque accès = un cycle bus horodaté en phase) est une phase
-  ultérieure.
-- **Un seul client** (LOCI, émulé et `--loci-hw`). Les autres périphériques du
-  port d'extension auraient leur propre chronologie.
+- **No sub-cycle rewrite of the 6502.** `cpu_step` executes a whole
+  instruction; the phase model lives at the **bus access decision point** (memory
+  read → io peripheral), where the race matters. A deep sub-cycle integration
+  of the CPU (each access = one bus cycle timestamped with its phase) is a later
+  phase.
+- **A single client** (LOCI, emulated and `--loci-hw`). Other expansion-port
+  peripherals would have their own timeline.
 
-## 4. Feuille de route (épic B)
+## 4. Roadmap (epic B)
 
-- [x] **Phase 1** — socle `bus_timing.h` + client LOCI (modèle PHASE opt-in, CLI
-      `--loci-serve-timing`) + tests ; jitter seedé. Iso-comportement par défaut.
-      2.23.0 : chronologie en ns partagée avec `--loci-hw`.
-- [ ] **Phase 2** — autres périphériques du port d'extension.
-- [ ] **Phase 3** — horodatage sous-cycle des accès au niveau CPU (chaque accès
-      porte sa phase) ; setup/hold on-board si un cas réel l'exige.
-- [ ] **Phase 4** — calibration contre un bus réel : comptes PIO, poll d'act_loop,
-      tDSR du 6502 à 2 MHz (serve et act sont déjà mesurés par `--loci-hw`).
+- [x] **Phase 1** — `bus_timing.h` foundation + LOCI client (opt-in PHASE model, CLI
+      `--loci-serve-timing`) + tests; seeded jitter. Behaviour unchanged by default.
+      2.23.0: ns timeline shared with `--loci-hw`.
+- [ ] **Phase 2** — other expansion-port peripherals.
+- [ ] **Phase 3** — sub-cycle timestamping of accesses at CPU level (each access
+      carries its phase); on-board setup/hold if a real case requires it.
+- [ ] **Phase 4** — calibration against a real bus: PIO counts, act_loop poll,
+      6502 tDSR at 2 MHz (serve and act are already measured by `--loci-hw`).
 
-## 5. Références
+## 5. References
 
-- `include/io/bus_timing.h` — chronologie, échéance, jitter.
+- `include/io/bus_timing.h` — timeline, deadline, jitter.
 - `src/io/loci_boot.c` — `loci_mia_io_reliable`, `loci_set_serve_timing`.
-- `src/io/io_bus.c` — application à l'ACIA `$0380` (open-bus + lecture destructive).
-- `~/loci/extensions/analyse/read-serve-et-inhibition-via.md` — hypothèse
-  `-Os`/`-O2` (caduque, cause = mapping d'adresse).
-- `src/io/loci_hw.c` — mesures serve/act sur matériel réel ; `docs/loci.md`.
-- `docs/architecture/io-bus.md` — dispatch page 3, inhibition VIA.
+- `src/io/io_bus.c` — application to the ACIA `$0380` (open-bus + destructive read).
+- `~/loci/extensions/analyse/read-serve-et-inhibition-via.md` — `-Os`/`-O2`
+  hypothesis (obsolete, cause = address mapping).
+- `src/io/loci_hw.c` — serve/act measurements on real hardware; `docs/loci.md`.
+- `docs/architecture/io-bus.md` — page 3 dispatch, VIA inhibition.

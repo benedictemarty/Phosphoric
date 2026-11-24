@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file loci_be_api.h
- * @brief Liste des fonctions de l'interface loci_emu.h servies par chaque backend
- *        LOCI (aiguillage au lancement, loci_backend.c)
+ * @brief List of the loci_emu.h interface functions served by each LOCI
+ *        backend (dispatch at launch, loci_backend.c)
  * @author bmarty <bmarty@mailo.com>
  *
- * LOCI_BE_API(F, V, H) : F(type, nom, (paramètres), (arguments)) pour une
- * fonction qui rend une valeur, V(nom, (paramètres), (arguments)) pour une
- * fonction void, H comme F pour les deux fonctions appelées très souvent
- * (active, idle_poll), que loci_backend.c aiguille à la main.
- * Même liste, dans le même ordre, que les #define de loci_be_rename.h : une
- * fonction ajoutée à loci_emu.h s'ajoute aux deux (sinon l'édition de liens
- * échoue : symbole en double ou manquant).
+ * LOCI_BE_API(F, V, H): F(type, name, (parameters), (arguments)) for a
+ * function that returns a value, V(name, (parameters), (arguments)) for a
+ * void function, H like F for the two very frequently called functions
+ * (active, idle_poll), which loci_backend.c dispatches by hand.
+ * Same list, in the same order, as the #defines of loci_be_rename.h: a
+ * function added to loci_emu.h is added to both (otherwise linking
+ * fails: duplicate or missing symbol).
  */
 #ifndef LOCI_BE_API_H
 #define LOCI_BE_API_H

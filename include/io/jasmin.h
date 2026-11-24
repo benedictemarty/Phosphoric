@@ -86,8 +86,8 @@ typedef struct jasmin_s {
 
     /* Per-drive bad-sector map: damage belongs to the inserted media. */
     fdc_bad_map_t bad_map[JASMIN_MAX_DRIVES];
-    /* Languette de protection en écriture, par disquette (appliquée au FDC à
-     * chaque sélection de lecteur). */
+    /* Write-protect tab, per floppy (applied to the FDC on every drive
+     * select). */
     bool write_protect[JASMIN_MAX_DRIVES];
 
     /* CPU IRQ line (IRQF_DISK). Driven by DRQ on the Jasmin. Wired in main.c
@@ -108,22 +108,22 @@ void    jasmin_write(jasmin_t* j, uint16_t addr, uint8_t value);
 /* ROM + media */
 bool jasmin_load_rom(jasmin_t* j, const uint8_t* data, uint32_t size);
 
-/* Section .ost « JAS » (sprint D) : état du FDC, verrous du contrôleur et cartes de
- * secteurs défectueux. Ni la ROM (rechargée depuis --jasmin-rom) ni les images
- * disque (section « DSK », partagée avec le Microdisc) n'y figurent. jasmin_load
- * ignore une section de version inconnue ou tronquée, puis re-pointe le FDC sur
- * le disque du lecteur sélectionné. */
-#define JASMIN_SAVE_VERSION 2   /* 2 (2.31.9) : état FDC v3, 55 octets ; 1 = 49 octets */
+/* .ost section "JAS" (sprint D): FDC state, controller latches and bad-sector
+ * maps. Neither the ROM (reloaded from --jasmin-rom) nor the disk images
+ * ("DSK" section, shared with the Microdisc) are stored in it. jasmin_load
+ * ignores a section with an unknown version or a truncated one, then re-points
+ * the FDC to the disk of the selected drive. */
+#define JASMIN_SAVE_VERSION 2   /* 2 (2.31.9): FDC state v3, 55 bytes; 1 = 49 bytes */
 bool jasmin_save(const jasmin_t* j, FILE* fp);
 void jasmin_load(jasmin_t* j, FILE* fp, uint32_t size);
 void jasmin_set_disk(jasmin_t* j, uint8_t drive, uint8_t* data, uint32_t size,
                      uint8_t tracks, uint8_t sectors_per_track);
 
+/* Write protection of drive `drive` (takes effect at once if it is selected). */
+void jasmin_set_write_protect(jasmin_t* j, uint8_t drive, bool on);
 /* Mark a sector unreadable (RNF/CRC) on @p drive — mirrors the Microdisc; the
  * damage belongs to the media and is swapped in on drive select. Returns 0 on
  * success, -1 on out-of-range drive or a full map. */
-/* Protection en écriture du lecteur `drive` (effet immédiat s'il est sélectionné). */
-void jasmin_set_write_protect(jasmin_t* j, uint8_t drive, bool on);
 int jasmin_add_bad_sector(jasmin_t* j, uint8_t drive,
                           uint8_t side, uint8_t track, uint8_t sector);
 

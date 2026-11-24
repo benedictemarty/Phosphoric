@@ -74,21 +74,21 @@ typedef struct via6522_s {
                                  keeps decrementing at φ2 (datasheet p.8: lets the
                                  host read the time since interrupt). */
     bool     t2_active;     /**< Timer 2 counter is counting (idem, datasheet p.9) */
-    bool     t2_phi2;       /**< Neo6502Vic20 : mode de T2 effectif (φ2), l'ACR
-                                 ne prenant effet qu'au cycle suivant */
-    uint16_t quiet;         /**< Neo6502Vic20 (US-31) : cycles à venir sans aucun
-                                 événement (simples décomptes) */
-    uint16_t pending;       /**< Neo6502Vic20 (US-31) : cycles sautés, à appliquer */
-    uint8_t  sr_t2_pending; /**< Neo6502Vic20 : cycles avant l'événement SR dû à T2 */
-    uint8_t  sr_delay;      /**< Neo6502Vic20 : cycles avant le premier événement φ2 */
-    bool     t2_reload;     /**< Neo6502Vic20 : rechargement de l'octet bas de T2
-                                 dû (T2 sur 8 bits, registre à décalage) */
-    bool     t2_hold;       /**< Neo6502Vic20 : T2 ne décompte pas ce cycle
-                                 (chargement de T2C-H, ou retour au mode φ2) */
-    bool     t1_reload;     /**< V2-E3 : un cycle de rechargement est dû. En mode
-                                 continu, le 6522 ne recharge le compteur que le
-                                 cycle APRÈS le sous-dépassement — c'est ce cycle
-                                 mort qui donne la période N+2 (et non N+1). */
+    bool     t2_phi2;       /**< Neo6502Vic20: effective T2 mode (φ2), since the ACR
+                                 only takes effect on the next cycle */
+    uint16_t quiet;         /**< Neo6502Vic20 (US-31): upcoming cycles without any
+                                 event (plain countdowns) */
+    uint16_t pending;       /**< Neo6502Vic20 (US-31): skipped cycles, still to apply */
+    uint8_t  sr_t2_pending; /**< Neo6502Vic20: cycles before the T2-driven SR event */
+    uint8_t  sr_delay;      /**< Neo6502Vic20: cycles before the first φ2 event */
+    bool     t2_reload;     /**< Neo6502Vic20: reload of the T2 low byte is
+                                 due (8-bit T2, shift register) */
+    bool     t2_hold;       /**< Neo6502Vic20: T2 does not count down this cycle
+                                 (T2C-H load, or return to φ2 mode) */
+    bool     t1_reload;     /**< V2-E3: a reload cycle is pending. In free-run
+                                 mode, the 6522 reloads the counter only on the
+                                 cycle AFTER the underflow -- this dead cycle is
+                                 what gives the N+2 period (and not N+1). */
 
     /* Shift Register */
     uint8_t sr;         /**< Shift Register */
@@ -119,8 +119,8 @@ typedef struct via6522_s {
     bool     ca2_in;      /**< CA2 input level (PCR input modes 000-011) */
     bool     ca1_pin;     /**< CA1 pin level (edge detection, idle high) */
     bool     sr_active;   /**< a shift sequence is in progress */
-    uint32_t sr_clk_acc;  /**< ancien accumulateur d'horloge du SR : inutilisé depuis 2.6.0
-                               (SR piloté par événements), gardé pour le format .ost */
+    uint32_t sr_clk_acc;  /**< former SR clock accumulator: unused since 2.6.0
+                               (event-driven SR), kept for the .ost format */
     bool     pb6_pin;     /**< last PB6 level (T2 pulse-count edge detection) */
     bool     pb7_pin;     /**< PB7 output level when driven by Timer 1 (ACR bit7):
                                square-wave (bit6=1, toggles on each T1 underflow) or
@@ -188,17 +188,17 @@ void via_write(via6522_t* via, uint8_t reg, uint8_t value);
 void via_update(via6522_t* via, int cycles);
 
 /**
- * @brief Neo6502Vic20 (US-31) : applique les cycles sautés par via_tick().
- * Appelée par toutes les fonctions d'accès ; à appeler avant de lire l'état
- * interne directement.
+ * @brief Neo6502Vic20 (US-31): applies the cycles skipped by via_tick().
+ * Called by every access function; call it before reading the internal
+ * state directly.
  */
 void via_sync(via6522_t* via);
 
 /**
- * @brief Neo6502Vic20 (US-31) : un cycle, chemin « paresseux » exact : tant
- * qu'aucun événement ne peut survenir, le cycle est seulement compté ; il est
- * appliqué au prochain accès ou au prochain pas complet. VIA_NO_LAZY
- * désactive ce chemin (rejeu de référence, `make test-via-lazy`).
+ * @brief Neo6502Vic20 (US-31): one cycle, exact "lazy" path: as long as no
+ * event can happen, the cycle is only counted; it is applied at the next
+ * access or the next full step. VIA_NO_LAZY disables this path (reference
+ * replay, `make test-via-lazy`).
  */
 static inline void via_tick(via6522_t* via) {
 #ifndef VIA_NO_LAZY

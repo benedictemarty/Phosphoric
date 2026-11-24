@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# tools/bench_check.sh — budget de performance BLOQUANT (V2-E7, US7.1).
+# tools/bench_check.sh — BLOCKING performance budget (V2-E7, US7.1).
 #
-# `make bench` mesure ; ce script TRANCHE. Une trame PAL émulée dispose de
-# 20 ms de temps réel ; la V2 s'engage à ce que l'émulation en consomme au
-# plus 5 % (1000 µs) sur la machine de référence — de la marge pour le rendu,
-# le son et les périphériques, et une alerte franche si un épic « au cycle »
-# fait exploser le coût.
+# `make bench` measures; this script DECIDES. An emulated PAL frame has
+# 20 ms of real time; V2 commits to the emulation consuming at most
+# 5 % of it (1000 µs) on the reference machine — leaving headroom for rendering,
+# sound and peripherals, and a clear alarm if a "per-cycle" epic
+# makes the cost explode.
 #
-# Mesure : le scénario le plus léger (boot BASIC, headless), qui isole le
-# cœur CPU + horloge maître + ULA + VIA + PSG sans I/O disque. Le chiffre
-# suivi de sprint en sprint est ce frame_us-là (491 → 521 → 555 → 611 µs).
+# Measurement: the lightest scenario (BASIC boot, headless), which isolates the
+# CPU core + master clock + ULA + VIA + PSG with no disk I/O. The figure
+# tracked from sprint to sprint is that frame_us (491 → 521 → 555 → 611 µs).
 #
-# Usage : tools/bench_check.sh                 (budget 1000 µs, 20 M cycles)
-#         BENCH_BUDGET_US=1500 tools/bench_check.sh   (CI lente : relever)
+# Usage: tools/bench_check.sh                  (budget 1000 µs, 20 M cycles)
+#         BENCH_BUDGET_US=1500 tools/bench_check.sh   (slow CI: raise it)
 #         BENCH_CYCLES=100000000 tools/bench_check.sh
-# Sortie : 0 si sous budget, 1 sinon, 0 + SKIP si la ROM ou le binaire manquent.
+# Exit: 0 if under budget, 1 otherwise, 0 + SKIP if the ROM or the binary is missing.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -30,11 +30,11 @@ echo "=== Budget de performance (V2-E7, US7.1) : ≤ ${BUDGET} µs/trame ==="
 [ -x "$EMU" ] || { echo "  SKIP: $EMU non construit"; exit 0; }
 [ -f "$ROM" ] || { echo "  SKIP: aucune ROM BASIC"; exit 0; }
 
-# Une machine bridée (portable sur batterie, profil « low-power », fréquence
-# effondrée) ne mesure pas l'émulateur mais sa propre économie d'énergie : le
-# même binaire y coûte 1040 µs contre 601 µs à pleine vitesse. Dans ce cas on
-# mesure et on AFFICHE, mais on ne tranche pas (SKIP, pas FAIL). BENCH_STRICT=1
-# force le verdict quand même (CI, machine de référence).
+# A throttled machine (laptop on battery, "low-power" profile, collapsed
+# frequency) measures not the emulator but its own power saving: the
+# same binary costs 1040 µs there versus 601 µs at full speed. In that case we
+# measure and DISPLAY, but do not decide (SKIP, not FAIL). BENCH_STRICT=1
+# forces the verdict anyway (CI, reference machine).
 throttled=""
 prof=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null)
 [ "$prof" = "low-power" ] && throttled="profil d'énergie « low-power »"
@@ -48,7 +48,7 @@ if [ -n "$cur" ] && [ -n "$max" ] && [ "$cur" -lt $((max / 2)) ]; then
 fi
 [ "${BENCH_STRICT:-0}" = 1 ] && throttled=""
 
-# Le meilleur de RUNS mesures : on juge l'émulateur, pas la charge de la machine.
+# Best of RUNS measurements: we judge the emulator, not the machine's load.
 best=""
 for i in $(seq 1 "$RUNS"); do
     out=$("$EMU" -r "$ROM" -n --bench -c "$CYCLES" 2>/dev/null | grep -F "BENCH " | head -n 1)
@@ -58,7 +58,7 @@ for i in $(seq 1 "$RUNS"); do
     if [ -z "$best" ] || awk "BEGIN{exit !($us < $best)}"; then best=$us; fi
 done
 
-pct=$(awk "BEGIN{printf \"%.1f\", $best / 200.0}")   # 20 000 µs = 100 %
+pct=$(awk "BEGIN{printf \"%.1f\", $best / 200.0}")   # 20,000 µs = 100 %
 if awk "BEGIN{exit !($best <= $BUDGET)}"; then
     echo "  PASS: ${best} µs/trame (${pct} % du budget de 20 ms, plafond ${BUDGET} µs)"
     exit 0

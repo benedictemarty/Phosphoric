@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file card_loci.c
- * @brief Cartouche LOCI en module : fiche du menu (une carte, trois modes :
- *        intégré, firmware co-simulé, LOCI-USB), accès au bus (MIA, TAP,
- *        DSK, co-simulation) et mise en route (modèle HLE, co-simulation du
- *        firmware, matériel réel) — card_module.h.
+ * @brief LOCI cartridge as a module: menu entry (one card, three modes:
+ *        built-in, co-simulated firmware, LOCI-USB), bus access (MIA, TAP,
+ *        DSK, co-simulation) and setup (HLE model, firmware co-simulation,
+ *        real hardware) — card_module.h.
  * @author bmarty <bmarty@mailo.com>
  *
- * Ses options (--loci*) restent des options du cœur (deux sont lues par les
- * cartes ACIA et Microdisc, mises en route avant elle) ; son état (emu->loci) et
- * son tick restent dans la machine (cassette, menu, médias, débogueur, LOCI
- * lui-même : io_bus.c, loci_glue.c, tape_patches.c…).
+ * Its options (--loci*) remain core options (two are read by the ACIA and
+ * Microdisc cards, set up before it); its state (emu->loci) and its tick stay
+ * in the machine (tape, menu, media, debugger, LOCI itself: io_bus.c,
+ * loci_glue.c, tape_patches.c…).
  */
 #define _DEFAULT_SOURCE
 #include "card_module.h"
@@ -34,8 +34,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-/* Paramètres propres à un mode : cards.c (k_loci_mode_params) dit lequel ; le
- * menu ne montre que ceux du mode choisi. « mode » doit rester le premier. */
+/* Mode-specific parameters: cards.c (k_loci_mode_params) says which mode; the
+ * menu only shows those of the selected mode. « mode » must stay first. */
 static const card_desc_t k_desc = {
         "loci", "LOCI",
         "Cartouche LOCI : menu de fichiers, émulation Microdisc et cassette depuis une "
@@ -82,46 +82,46 @@ static const card_desc_t* const k_descs[] = { &k_desc };
 
 /* ── Bus ───────────────────────────────────────────────────────────────── */
 
-/* LOCI (sodiumlb) : trois sous-fenêtres disjointes, dispatchées en interne.
- *  - MIA $03A0-$03BF (indépendant des autres périphériques) ;
- *  - TAP $0315-$0317 : remplace l'interface cassette, recouvre le Microdisc
- *    $0310-$031F → priorité (LOCI est en tête de table) ;
- *  - DSK $0310-$0314 + $0318-$0319 : seulement en l'absence de vrai Microdisc
- *    (sinon le Microdisc possède la plage). */
-/* Co-sim : fenêtre + registres de l'expansion RAM $AF ($03C0-$03E4), servis par le
- * firmware (io-page) — inconnus du modèle interne. */
+/* LOCI (sodiumlb): three disjoint sub-windows, dispatched internally.
+ *  - MIA $03A0-$03BF (independent of the other devices);
+ *  - TAP $0315-$0317: replaces the cassette interface, overlaps the Microdisc
+ *    $0310-$031F → priority (LOCI is first in the table);
+ *  - DSK $0310-$0314 + $0318-$0319: only when no real Microdisc is present
+ *    (otherwise the Microdisc owns the range). */
+/* Co-sim: window + registers of the $AF RAM expansion ($03C0-$03E4), served by the
+ * firmware (io-page) — unknown to the internal model. */
 static bool loci_emu_ramx_claims(uint16_t addr) {
     return loci_emu_active() && addr >= 0x03C0 && addr <= 0x03E4;
 }
 static bool loci_dev_claims(emulator_t* emu, uint16_t addr) {
     if (!emu->card_on[CARD_IDX_loci]) return false;
-    if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* backend neo : /IO CONTROL */
+    if (loci_emu_io_page()) return addr >= 0x0310 && addr <= 0x03FF;   /* neo backend: /IO CONTROL */
     if (loci_addr_in_mia(addr) || loci_emu_ramx_claims(addr)) return true;
     if (loci_addr_in_tap(addr)) return true;
     if (!emu->card_on[CARD_IDX_microdisc] && loci_addr_in_dsk(addr)) return true;
     return false;
 }
-/* --loci-hw fidèle : lecture servie après le latch du 6502 → open-bus. */
+/* Faithful --loci-hw: read served after the 6502 latch → open bus. */
 static uint8_t hw_lost(emulator_t* emu, uint8_t v) {
     return loci_emu_read_lost() ? memory_open_bus(&emu->memory) : v;
 }
-/* Détecteur de mode ULA $03A3 avec un firmware EXTERNE (--loci-hw, --loci-emu),
- * 2.31.14. Sur un vrai Oric, le PIO de la LOCI lit les octets que l'ULA tire du
- * bus ; le pont USB (et la co-simulation) ne transportent que les accès du 6502 :
- * le firmware ne voit jamais le motif, rend 0 et sauve « texte 60 Hz » — après
- * F8 puis RETURN, l'Oric émulé restait en 60 Hz (vu sur la Feather, firmware
- * LOCI réel, caps 3F). Phosphoric tient le rôle du bus ULA manquant : si le
- * firmware rend 0, la réponse est calculée comme pour la LOCI intégrée (2.31.7) ;
- * si le firmware a trouvé le motif lui-même, sa valeur est gardée. */
+/* ULA mode detector $03A3 with an EXTERNAL firmware (--loci-hw, --loci-emu),
+ * 2.31.14. On a real Oric, the LOCI's PIO reads the bytes the ULA fetches from
+ * the bus; the USB bridge (and the co-simulation) only carry the 6502's accesses:
+ * the firmware never sees the pattern, returns 0 and saves "text 60 Hz" — after
+ * F8 then RETURN, the emulated Oric stayed at 60 Hz (seen on the Feather, real
+ * LOCI firmware, caps 3F). Phosphoric plays the part of the missing ULA bus: if
+ * the firmware returns 0, the answer is computed as for the integrated LOCI
+ * (2.31.7); if the firmware found the pattern itself, its value is kept. */
 static uint8_t ula_snoop_stand_in(emulator_t* emu, uint16_t addr, uint8_t v) {
     if (addr != LOCI_MIA_BASE + LOCI_REG_ULA_SNOOP || v != 0) return v;
     return loci_ula_snoop_cb(emu, emu->loci.ula_pattern);
 }
 static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
-    /* Backend co-sim (--loci-emu) : la fenêtre MIA $03xx est servie par le VRAI
-     * firmware RP2040 (émulateur) au lieu du backend comportemental (loci_core).
-     * Pendant le boot arrière-plan (1er lancement d'un ELF), on ATTEND : sinon le
-     * modèle interne répondait à la place du firmware (open("N:…") → FR_NO_FILE). */
+    /* Co-sim backend (--loci-emu): the MIA $03xx window is served by the REAL
+     * RP2040 firmware (emulator) instead of the behavioural backend (loci_core).
+     * During the background boot (first launch of an ELF), we WAIT: otherwise the
+     * internal model answered in place of the firmware (open("N:…") → FR_NO_FILE). */
     loci_emu_wait_boot();
     if (loci_emu_io_page()) {
         uint8_t v;
@@ -135,11 +135,11 @@ static uint8_t loci_dev_read(emulator_t* emu, uint16_t addr) {
                                      : loci_read(&emu->loci, addr);
     if (loci_addr_in_tap(addr)) return loci_emu_active() ? hw_lost(emu, loci_emu_tap_read(addr))
                                                          : loci_tap_read(&emu->loci, addr);
-    /* DSK (claims l'a garanti). En co-sim, le WD1793 est celui du firmware (oric/dsk.c) :
-     * un .dsk monté sur A: dans le VRAI menu LOCI est enfin lu par le 6502. */
+    /* DSK (guaranteed by claims). In co-sim, the WD1793 is the firmware's (oric/dsk.c):
+     * a .dsk mounted on A: in the REAL LOCI menu is finally read by the 6502. */
     if (loci_emu_active()) {
         uint8_t v = hw_lost(emu, loci_emu_dsk_read(addr));
-        loci_emu_reflect_nirq(emu);   /* fin de secteur : l'IRQ naît sur la DERNIÈRE lecture DATA */
+        loci_emu_reflect_nirq(emu);   /* end of sector: the IRQ is raised on the LAST DATA read */
         return v;
     }
     return loci_dsk_read(&emu->loci, addr);
@@ -150,7 +150,7 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     if (loci_emu_ramx_claims(addr))  loci_emu_api_write(addr, value);
     else if (loci_addr_in_mia(addr)) { if (loci_emu_active()) {
                                                if (addr == LOCI_MIA_BASE + LOCI_REG_ULA_SNOOP)
-                                                   emu->loci.ula_pattern = value;   /* motif, cf. ula_snoop_stand_in */
+                                                   emu->loci.ula_pattern = value;   /* pattern, see ula_snoop_stand_in */
                                                loci_emu_api_write(addr, value);
                                                            loci_emu_reflect_nirq(emu); }
                                   else                   loci_write(&emu->loci, addr, value); }
@@ -162,20 +162,20 @@ static bool loci_dev_write(emulator_t* emu, uint16_t addr, uint8_t value) {
     return true;
 }
 
-/* Pas de section .ost (réserve des handles OS du backend fichiers) ; pas de
- * tick ici : le cœur avance le FDC et l'horloge LOCI (io_bus.c). */
+/* No .ost section (caveat of the file backend's OS handles); no tick
+ * here: the core advances the FDC and the LOCI clock (io_bus.c). */
 static const io_device_t k_bus = {
     .name = "loci", .claims = loci_dev_claims, .read = loci_dev_read,
     .write = loci_dev_write,
 };
 
-/* ── Mise en route : co-simulation du firmware, matériel réel, modèle HLE ── */
+/* ── Setup: firmware co-simulation, real hardware, HLE model ───────────── */
 
 static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) {
     (void)p;
-    /* --loci-emu : exécuter le VRAI firmware RP2040 dans l'émulateur (smoke test :
-     * boot + bannière). Co-sim bus non encore câblé -> le backend comportemental
-     * reste actif en parallèle pour le runtime. */
+    /* --loci-emu: run the REAL RP2040 firmware in the emulator (smoke test:
+     * boot + banner). Bus co-sim not wired yet -> the behavioural backend
+     * stays active in parallel for the runtime. */
     if (core->loci_emu_path) {
         if (!loci_emu_select("emul")) {
             log_error("--loci-emu : firmware co-simulé absent de ce binaire (libemul "
@@ -188,11 +188,11 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         loci_emu_start(core->loci_emu_path);
         emu->loci_external = true;
     }
-    /* --loci-hw : une LOCI-USB (Feather) fait tourner le firmware LOCI, le 6502
-     * émulé lui envoie ses accès par l'USB (protocole loci-usb). Le backend
-     * loci_hw.c partage l'interface loci_emu.h : même chemin io_bus/memory, mais
-     * chaque accès est un vrai cycle de bus. Présent dans le binaire quand le
-     * dépôt loci-usb l'était au build (LOCI_HW, Makefile). */
+    /* --loci-hw: a LOCI-USB (Feather) runs the LOCI firmware; the emulated 6502
+     * sends it its accesses over USB (loci-usb protocol). The loci_hw.c backend
+     * shares the loci_emu.h interface: same io_bus/memory path, but
+     * each access is a real bus cycle. Present in the binary when the
+     * loci-usb repository was present at build time (LOCI_HW, Makefile). */
     if (core->loci_hw_dev) {
         if (!loci_emu_select("hw")) {
             log_error("--loci-hw : LOCI-USB absente de ce binaire (dépôt "
@@ -208,7 +208,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
         loci_init(&emu->loci);
         emu->loci.enabled = true;
         emu->card_on[CARD_IDX_loci] = true;
-        /* Route B : base du serveur pour le pseudo-device « W: Web disks ». */
+        /* Route B: server base for the « W: Web disks » pseudo-device. */
         if (core->loci_web_base) {
             snprintf(emu->loci.web_base, sizeof(emu->loci.web_base), "%s", core->loci_web_base);
             log_info("LOCI: device web « W: Web disks » -> %s (menu: opendir/readdir GET /disks)",
@@ -221,7 +221,7 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                      emu->loci.mia_tior_lo, emu->loci.mia_tior_hi);
         }
         if (core->loci_serve_cycles >= 0) {
-            /* Modèle de course PHI2 sous-cycle (bus_timing.h) — remplace la fenêtre. */
+            /* Sub-cycle PHI2 race model (bus_timing.h) — replaces the window. */
             loci_set_serve_timing(&emu->loci, (uint16_t)core->loci_serve_cycles,
                                   (uint16_t)core->loci_tdsr_ns);
             log_info("LOCI MIA phase model: serve=%d cycles, tDSR=%d ns — picowifi $0380 "
@@ -312,10 +312,10 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                      LOCI_MIA_BASE, LOCI_MIA_END);
         }
 
-        /* --loci-web URL : montage NATIF LOCI d'un disque servi par HTTP en
-         * lecteur A (loci-webdisk archi B). Jumeau de --disk-web (Microdisc),
-         * mais sur le FDC propre de la LOCI. Les pistes MFM 6400 o sont
-         * récupérées à la demande. */
+        /* --loci-web URL: NATIVE LOCI mount of a disk served over HTTP as
+         * drive A (loci-webdisk archi B). Twin of --disk-web (Microdisc),
+         * but on the LOCI's own FDC. The 6400-byte MFM tracks are
+         * fetched on demand. */
         if (core->loci_web_url) {
             if (!loci_dsk_open_web(&emu->loci, 0, core->loci_web_url)) {
                 log_error("--loci-web: montage du disque web impossible (%s)", core->loci_web_url);

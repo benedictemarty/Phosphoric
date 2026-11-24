@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file control_util.c
- * @brief Commandes --control : tampons de réponse, événements, analyse des arguments
+ * @brief --control commands: reply buffers, events, argument parsing
  * @author bmarty <bmarty@mailo.com>
  *
- * Découpé de src/control.c (sprint F du plan d'architecture), sans changement
- * de comportement ; fonctions partagées : include/control_internal.h.
+ * Split out of src/control.c (sprint F of the architecture plan), with no
+ * behaviour change; shared functions: include/control_internal.h.
  */
 
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE masque les extensions BSD (MSG_DONTWAIT...) */
+#define _DARWIN_C_SOURCE  /* macOS: _POSIX_C_SOURCE hides the BSD extensions (MSG_DONTWAIT...) */
 #endif
 #include "control.h"
 #include "io/loci_emu.h"

@@ -444,31 +444,31 @@ TEST(test_press_char_unmapped) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 21: Double RETURN nécessite un gap (release_all) entre   */
-/*  les deux — c'est la responsabilité de l'appelant (type_keys). */
+/*  TEST 21: A double RETURN needs a gap (release_all) between    */
+/*  the two — this is the caller's responsibility (type_keys).    */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_press_char_double_return_needs_gap) {
     oric_keyboard_t kb;
     oric_keyboard_init(&kb);
 
-    /* Premier RETURN */
+    /* First RETURN */
     ASSERT_TRUE(oric_keyboard_press_char(&kb, '\n'));
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 5));
 
-    /* Gap obligatoire : release_all entre deux RETURN consécutifs */
+    /* Mandatory gap: release_all between two consecutive RETURNs */
     oric_keyboard_release_all(&kb);
     ASSERT_TRUE(KEY_IS_RELEASED(kb, 7, 5));
 
-    /* Second RETURN visible après le gap */
+    /* Second RETURN visible after the gap */
     ASSERT_TRUE(oric_keyboard_press_char(&kb, '\n'));
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 7, 5));
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 22: Majuscules et minuscules → même position matrice.    */
-/*  Le SHIFT LOCK ORIC (actif par défaut ROM) détermine la casse, */
-/*  pas un bit Shift dans la matrice pour les lettres.            */
+/*  TEST 22: Upper and lower case → same matrix position.         */
+/*  The ORIC SHIFT LOCK (on by default in ROM) sets the case,     */
+/*  not a Shift bit in the matrix for letters.                    */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_press_char_upper_lower_same_position) {
@@ -476,20 +476,20 @@ TEST(test_press_char_upper_lower_same_position) {
     oric_keyboard_init(&kb);
 
     oric_keyboard_press_char(&kb, 'A');
-    /* 'A' → Col 6 Row 5, sans activer LSHIFT (SHIFT LOCK gère la casse) */
+    /* 'A' → Col 6 Row 5, without pressing LSHIFT (SHIFT LOCK handles case) */
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 6, 5));
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT non injecté */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT not injected */
 
     oric_keyboard_release_all(&kb);
 
     oric_keyboard_press_char(&kb, 'a');
-    /* 'a' → même position que 'A' */
+    /* 'a' → same position as 'A' */
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 6, 5));
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT non injecté */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 4, 4));  /* LSHIFT not injected */
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*  TEST 23: Caractère shifté n'active que LSHIFT, pas RSHIFT.   */
+/*  TEST 23: A shifted character presses LSHIFT only, not RSHIFT. */
 /* ═══════════════════════════════════════════════════════════════ */
 
 TEST(test_press_char_shifted_lshift_only) {
@@ -499,7 +499,7 @@ TEST(test_press_char_shifted_lshift_only) {
     /* '!' = Shift + 1 */
     ASSERT_TRUE(oric_keyboard_press_char(&kb, '!'));
     ASSERT_TRUE(KEY_IS_PRESSED(kb, 4, 4));   /* LSHIFT col=4 row=4 */
-    ASSERT_TRUE(KEY_IS_RELEASED(kb, 7, 4));  /* RSHIFT col=7 row=4 non touché */
+    ASSERT_TRUE(KEY_IS_RELEASED(kb, 7, 4));  /* RSHIFT col=7 row=4 untouched */
 }
 
 /* ═══════════════════════════════════════════════════════════════ */

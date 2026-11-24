@@ -1,17 +1,17 @@
-# L'étage de sortie audio de l'ORIC — ce que dit le schéma
+# The ORIC audio output stage — what the schematic says
 
-**Relevé le** : 2026-09-11 (V2-E5, 2.0.0-alpha.5)
-**Source** : schéma Oric-1 / Atmos reconstitué sous KiCad par Manoël Trapier
-(986 Studio), feuille *PSG 1 Keyboard* (`audio.sch`), révision **Issue 6.1** —
+**Read on**: 2026-09-11 (V2-E5, 2.0.0-alpha.5)
+**Source**: Oric-1 / Atmos schematic redrawn in KiCad by Manoël Trapier
+(986 Studio), sheet *PSG 1 Keyboard* (`audio.sch`), revision **Issue 6.1** —
 [OricSchematics.pdf](https://www.986-studio.com/wp-content/uploads/2014/09/OricSchematics.pdf)
-Complément : fil [« Oric's 8912 volume scale »](https://forum.defence-force.com/viewtopic.php?t=1357)
-du forum Defence Force (mesure du mixage).
+Supplement: thread ["Oric's 8912 volume scale"](https://forum.defence-force.com/viewtopic.php?t=1357)
+on the Defence Force forum (measurement of the mixing).
 
-Ce document existe parce que deux « déviations assumées » du PSG reposaient sur
-une incertitude qu'on pouvait lever en lisant le schéma. L'une était **fausse**,
-l'autre **sans objet**. Une troisième reste ouverte, et on dit pourquoi.
+This document exists because two "accepted deviations" of the PSG rested on
+an uncertainty that could be removed by reading the schematic. One was **wrong**,
+the other **irrelevant**. A third one remains open, and we say why.
 
-## Le circuit
+## The circuit
 
 ```
    AY-3-8912 (IC4)
@@ -23,87 +23,87 @@ l'autre **sans objet**. Une troisième reste ouverte, et on dit pourquoi.
                                      AGND AGND
 ```
 
-| Référence | Valeur | Rôle |
+| Reference | Value | Role |
 |-----------|--------|------|
-| `R4` | 1 kΩ | charge commune : les **trois sorties sont reliées ensemble** dessus |
-| `R2` | 4,7 kΩ | résistance série du diviseur de sortie |
-| `R3` | 470 Ω | shunt du diviseur |
-| `C5` | 10 nF | passe-bas, en parallèle sur `R3` |
-| `C4` | *ambiguë* (notée « 2k2 ») | couplage vers l'ampli — bloque le continu |
-| `R33` | 22 kΩ | polarisation de l'entrée + du LM386 |
-| `IC2` | LM386 | ampli de puissance (gain 20 par défaut) |
-| `C1` | 220 µF | couplage vers le haut-parleur `SP1` |
+| `R4` | 1 kΩ | common load: the **three outputs are tied together** on it |
+| `R2` | 4.7 kΩ | series resistor of the output divider |
+| `R3` | 470 Ω | shunt of the divider |
+| `C5` | 10 nF | low-pass, in parallel with `R3` |
+| `C4` | *ambiguous* (marked "2k2") | coupling to the amplifier — blocks DC |
+| `R33` | 22 kΩ | bias of the LM386 + input |
+| `IC2` | LM386 | power amplifier (default gain 20) |
+| `C1` | 220 µF | coupling to the speaker `SP1` |
 
-## Ce qu'on en tire, et ce qu'on en fait
+## What we learn from it, and what we do with it
 
-### 1. Le mixage moyenne les canaux — notre `somme / 3` est correcte
+### 1. The mixing averages the channels — our `sum / 3` is correct
 
-Les trois sorties ne passent pas par des résistances de sommation séparées :
-elles sont **directement reliées** au même point, chargé par `R4`. Deux sorties
-au repos « tirent » donc sur celle qui est active. La mesure rapportée sur le
-forum Defence Force le dit sans ambiguïté : un canal seul à 1 V donne **≈ 0,33 V**
-au point de mixage, pas 1 V.
+The three outputs do not go through separate summing resistors:
+they are **directly tied** to the same point, loaded by `R4`. Two idle outputs
+therefore "pull" on the active one. The measurement reported on the
+Defence Force forum says it unambiguously: a single channel at 1 V gives **≈ 0.33 V**
+at the mixing point, not 1 V.
 
-C'est exactement ce que fait le modèle : chaque canal traverse la table de volume
-(non linéaire, mesurée), puis la somme est divisée par 3. La déviation
-« le vrai AY somme des courants, donc la somme n'est pas linéaire » était
-**infondée**. Verrouillé par `test_ay_parallel_mixing_averages_channels`.
+This is exactly what the model does: each channel goes through the volume table
+(non-linear, measured), then the sum is divided by 3. The deviation
+"the real AY sums currents, so the sum is not linear" was
+**unfounded**. Locked in by `test_ay_parallel_mixing_averages_channels`.
 
-### 2. Le passe-bas coupe à 37 kHz — hors sujet à 44,1 kHz
+### 2. The low-pass cuts off at 37 kHz — irrelevant at 44.1 kHz
 
-`C5` voit `R2 ∥ R3` = 427 Ω, d'où :
+`C5` sees `R2 ∥ R3` = 427 Ω, hence:
 
 ```
 f_c = 1 / (2π · 427 Ω · 10 nF) ≈ 37,2 kHz
 ```
 
-C'est **au-dessus de Nyquist** (22,05 kHz) : ce filtre ne façonne rien dans la
-bande qu'on peut restituer. Et depuis que le PSG est cadencé au matériel avec
-intégration par échantillon (V2-E5), l'ultrasonique est déjà traité. Rien à
-modéliser : la déviation « pas de filtre passe-bas analogique » est **sans objet**.
+That is **above Nyquist** (22.05 kHz): this filter shapes nothing in the
+band we can reproduce. And since the PSG is clocked like the hardware with
+per-sample integration (V2-E5), the ultrasonic range is already handled. Nothing to
+model: the "no analogue low-pass filter" deviation is **irrelevant**.
 
-Le diviseur `R2`/`R3` atténue de **−20,8 dB**, mais c'est du **gain**, repris par
-le LM386 (×20) : ça ne change pas la forme du signal.
+The `R2`/`R3` divider attenuates by **−20.8 dB**, but that is **gain**, made up by
+the LM386 (×20): it does not change the shape of the signal.
 
-### 3. Le couplage bloque le continu — et c'est la seule certitude sur `C4`
+### 3. The coupling blocks DC — and that is the only certainty about `C4`
 
-Le signal du PSG est **unipolaire** : il va de 0 à +max, jamais en dessous.
-Mesuré avant correction, trois canaux à plein volume donnaient un continu de
-**+8188** — la moitié de l'amplitude. Aucun haut-parleur ne restitue ça, et
-`C4` l'empêche de sortir.
+The PSG signal is **unipolar**: it goes from 0 to +max, never below.
+Measured before the fix, three channels at full volume gave a DC offset of
+**+8188** — half the amplitude. No speaker reproduces that, and
+`C4` prevents it from getting out.
 
-L'émulateur bloque donc le continu (estimateur en virgule fixe, coupure
-**≈ 1,7 Hz**, inaudible). Mesuré après : continu **+15**, signal **symétrique**
-(−8232 / +8252 au lieu de 0 / +16383).
+The emulator therefore blocks DC (fixed-point estimator, cutoff
+**≈ 1.7 Hz**, inaudible). Measured afterwards: DC **+15**, **symmetrical** signal
+(−8232 / +8252 instead of 0 / +16383).
 
-**Ce qu'on ne fait pas, et pourquoi.** La valeur de `C4` n'est pas déterminable
-sur ce document : elle y est notée « **2k2** », sans unité, alors que tous les
-autres condensateurs de la feuille portent la leur (`10n`, `47n`, `220uF`,
-`10uF`). Les deux lectures plausibles donnent des circuits radicalement
-différents :
+**What we do not do, and why.** The value of `C4` cannot be determined
+from this document: it is marked "**2k2**" there, with no unit, whereas all the
+other capacitors on the sheet carry theirs (`10n`, `47n`, `220uF`,
+`10uF`). The two plausible readings give radically different
+circuits:
 
-| Hypothèse | `f_c` avec `R33 ∥ Z_in(LM386)` ≈ 15,4 kΩ | Conséquence |
+| Hypothesis | `f_c` with `R33 ∥ Z_in(LM386)` ≈ 15.4 kΩ | Consequence |
 |-----------|------------------------------------------|-------------|
-| `C4` = 2,2 nF | ≈ **4,7 kHz** | passe-haut sévère : le son perd tous ses graves |
-| `C4` = 2,2 µF | ≈ **4,7 Hz** | simple blocage du continu |
+| `C4` = 2.2 nF | ≈ **4.7 kHz** | severe high-pass: the sound loses all its bass |
+| `C4` = 2.2 µF | ≈ **4.7 Hz** | plain DC blocking |
 
-Un écart d'un facteur mille sur le résultat audible. On ne tranche pas au jugé :
-seul l'effet **certain** (le blocage du continu) est modélisé. Une mesure sur
-machine réelle, ou une photo lisible du PCB, lèverait le doute — et c'est la
-seule chose qui le lèvera.
+A factor of a thousand on the audible result. We do not decide by guesswork:
+only the **certain** effect (DC blocking) is modelled. A measurement on a
+real machine, or a legible photo of the PCB, would settle it — and it is the
+only thing that will.
 
-### 4. L'ampli et le haut-parleur ne sont pas modélisés
+### 4. The amplifier and the speaker are not modelled
 
-Le LM386 et le petit haut-parleur `SP1` ont leur propre réponse, non mesurée. Ce
-que l'émulateur restitue est le **signal électrique** — ce qu'attend quiconque
-écoute au casque ou sur des enceintes. Modéliser la réponse du haut-parleur
-interne serait un autre travail, et il demanderait des mesures.
+The LM386 and the small speaker `SP1` have their own response, not measured. What
+the emulator reproduces is the **electrical signal** — what anyone listening
+on headphones or speakers expects. Modelling the response of the internal
+speaker would be a separate piece of work, and it would require measurements.
 
-## Résumé
+## Summary
 
-| Question ouverte avant | Après lecture du schéma |
+| Open question before | After reading the schematic |
 |------------------------|--------------------------|
-| Le mixage est-il non linéaire ? | **Non** : parallèle → moyenne. Le modèle était déjà juste. |
-| Manque-t-il un passe-bas analogique ? | **Sans objet** : il coupe à 37 kHz. |
-| Faut-il bloquer le continu ? | **Oui**, `C4` le fait sur la machine. Corrigé. |
-| Quelle est la coupure exacte du couplage ? | **Indéterminée** sur ce document (facteur 1000 d'incertitude). Non modélisée. |
+| Is the mixing non-linear? | **No**: parallel → average. The model was already right. |
+| Is an analogue low-pass missing? | **Irrelevant**: it cuts off at 37 kHz. |
+| Should DC be blocked? | **Yes**, `C4` does it on the machine. Fixed. |
+| What is the exact cutoff of the coupling? | **Undetermined** from this document (factor-of-1000 uncertainty). Not modelled. |

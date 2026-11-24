@@ -1,102 +1,102 @@
-# CR — Jam Pinforic (chargement disque de jeu) : Phosphoric hors de cause
+# Report — Pinforic jam (game disk loading): Phosphoric not at fault
 
-**Date** : 2026-08-20
-**Statut** : **Clos — aucun correctif Phosphoric requis** (bug côté Pinforic, confirmé par vérif croisée Oricutron)
-**Composants** : Microdisc/WD1793 (`src/storage/disk.c`), protocole `--control` (`load-disk`, `keys`), traces `--fdc-trace` / `--trace-ring`
+**Date**: 2026-08-20
+**Status**: **Closed — no Phosphoric fix required** (bug on the Pinforic side, confirmed by an Oricutron cross-check)
+**Components**: Microdisc/WD1793 (`src/storage/disk.c`), `--control` protocol (`load-disk`, `keys`), `--fdc-trace` / `--trace-ring` traces
 
-## Contexte
+## Context
 
-Démonstration de l'interpréteur Infocom **Pinforic** (design *deux disquettes* : disque
-programme `pinforic.dsk`, puis disque de jeu). Scénario :
+Demonstration of the **Pinforic** Infocom interpreter (*two-disk* design: program
+disk `pinforic.dsk`, then game disk). Scenario:
 
-1. Boot `pinforic.dsk` (Sedoric V3.0) → lancement `INFOCOM` → splash Pinforic
+1. Boot `pinforic.dsk` (Sedoric V3.0) → run `INFOCOM` → Pinforic splash screen
    « Insert game disk & press a key ».
-2. Échange à chaud drive A : `pinforic.dsk` → `zork1.dsk`.
-3. Appui touche → Pinforic lit le jeu → **le CPU jamme** (opcode illégal `$02`),
-   PC ≈ `$30F0` (variable selon les runs), l'émulation s'arrête.
+2. Hot swap of drive A: `pinforic.dsk` → `zork1.dsk`.
+3. Key press → Pinforic reads the game → **the CPU jams** (illegal opcode `$02`),
+   PC ≈ `$30F0` (varies between runs), emulation stops.
 
-Hypothèse initiale (équipe) : le hot-swap laisserait l'état FDC incohérent, ou Pinforic
-lirait sans **RESTORE** en supposant la tête en piste 0.
+Initial hypothesis (team): the hot swap would leave the FDC state inconsistent, or Pinforic
+would read without a **RESTORE**, assuming the head is on track 0.
 
-## Démarche & outils Phosphoric utilisés
+## Approach & Phosphoric tools used
 
-- **`--control`** : `load-disk A zork1.dsk` (hot-swap déterministe), `keys`, `read`, `regs`,
+- **`--control`**: `load-disk A zork1.dsk` (deterministic hot swap), `keys`, `read`, `regs`,
   `break`, `peek disk`.
-- **`FDC_TRACE=1`** (`--fdc-trace`) : séquence exacte des commandes WD1793.
-- **`--trace-ring 50`** : 50 dernières instructions avant le hang (idéal pour ce type de saut).
+- **`FDC_TRACE=1`** (`--fdc-trace`): exact sequence of WD1793 commands.
+- **`--trace-ring 50`**: last 50 instructions before the hang (ideal for this kind of jump).
 
-## Preuves (mesurées)
+## Evidence (measured)
 
-### 1. Le FDC lit correctement — hypothèses « no RESTORE » / « état FDC » réfutées
+### 1. The FDC reads correctly — "no RESTORE" / "FDC state" hypotheses refuted
 
-`peek disk` avant/après `load-disk` : état inchangé (`c_track=0A`, `cur_off=0100`) — **fidèle
-au matériel** (un vrai swap laisse aussi le registre de piste tel quel ; le programme doit
-faire un RESTORE). Et le trace FDC après l'appui touche montre que **Pinforic FAIT le RESTORE** :
+`peek disk` before/after `load-disk`: state unchanged (`c_track=0A`, `cur_off=0100`) — **faithful
+to the hardware** (a real swap also leaves the track register as it is; the program has to
+issue a RESTORE). And the FDC trace after the key press shows that **Pinforic DOES issue the RESTORE**:
 
 ```
-[FDC] seek target=0 (c_track=10 track_reg=10 data=00)   ← RESTORE piste 0
+[FDC] seek target=0 (c_track=10 track_reg=10 data=00)   ← RESTORE track 0
 [FDC] READ c_track=0 sector=1 side=0 ok
-[FDC] READ c_track=1 sector=1..9 side=0/1 ok            ← lecture séquentielle
+[FDC] READ c_track=1 sector=1..9 side=0/1 ok            ← sequential read
 [FDC] READ c_track=2 sector=1..9 side=0/1 ok
 ```
 
-**Toutes les lectures `ok`, 0 `NOT_FOUND`.** Le hot-swap et le positionnement FDC sont corrects.
+**All reads `ok`, 0 `NOT_FOUND`.** The hot swap and the FDC positioning are correct.
 
-### 2. Le jam est une IRQ vecteurisée dans des données chargées (`--trace-ring`)
+### 2. The jam is an IRQ vectored into loaded data (`--trace-ring`)
 
 ```
-203D  STA $58              ← dernier code Pinforic légitime (page $20)
-30EB  RLA ($91),Y          ← SP F8→F5 : 3 octets empilés = IRQ matériel
-30ED  NOP $A0,X            ← octets 33 91 54 A0 02 = DONNÉES du jeu, pas du code
+203D  STA $58              ← last legitimate Pinforic code (page $20)
+30EB  RLA ($91),Y          ← SP F8→F5: 3 bytes pushed = hardware IRQ
+30ED  NOP $A0,X            ← bytes 33 91 54 A0 02 = game DATA, not code
 30EF  JAM ($02)            ← halt
 ```
 
-Entre `$203D` et `$30EB`, **SP décrémente de 3 (PC+P)** = signature d'un **IRQ matériel**.
-Le CPU sert l'interruption et **vecteurise vers `$30EB`, qui est de la donnée chargée depuis
-`zork1.dsk`** → exécution de garbage → JAM. Le vecteur/handler d'IRQ a donc été **écrasé par
-les données du jeu** (buffer overrun). L'IRQ tombant à un cycle variable → **PC de jam non
-déterministe** (`$30EB`/`$30EF`/`$30F0`).
+Between `$203D` and `$30EB`, **SP decreases by 3 (PC+P)** = the signature of a **hardware IRQ**.
+The CPU services the interrupt and **vectors to `$30EB`, which is data loaded from
+`zork1.dsk`** → garbage is executed → JAM. The IRQ vector/handler has therefore been **overwritten by
+the game data** (buffer overrun). Since the IRQ lands on a variable cycle → **the jam PC is not
+deterministic** (`$30EB`/`$30EF`/`$30F0`).
 
-## Vérification croisée — Oricutron 1.2.0
+## Cross-check — Oricutron 1.2.0
 
-Même couple `pinforic.dsk` + `zork1.dsk`, piloté dans Oricutron (menu F1 → *Insert disk 0* →
-`zork1.dsk`, puis touche) :
+Same `pinforic.dsk` + `zork1.dsk` pair, driven in Oricutron (F1 menu → *Insert disk 0* →
+`zork1.dsk`, then a key):
 
-| Émulateur | Résultat au chargement de `zork1.dsk` |
+| Emulator | Result when loading `zork1.dsk` |
 |---|---|
-| **Phosphoric** | JAM — IRQ dans données chargées, `PC≈$30F0`, opcode `$02` |
-| **Oricutron**  | **Crash identique** — CPU échappé en `$0002`, exécute `$FF` (illégal) ; débogueur auto sur JAM |
+| **Phosphoric** | JAM — IRQ into loaded data, `PC≈$30F0`, opcode `$02` |
+| **Oricutron**  | **Identical crash** — CPU escaped to `$0002`, executes `$FF` (illegal); debugger opens automatically on JAM |
 
-Écran de garbage figé identique, même mode de défaillance. L'adresse exacte varie
-(`$30F0` / `$0002` / `$FFFF`) — signature du **pointeur corrompu / IRQ dans du garbage**.
+Identical frozen garbage screen, same failure mode. The exact address varies
+(`$30F0` / `$0002` / `$FFFF`) — the signature of a **corrupted pointer / IRQ into garbage**.
 
-## Cause racine
+## Root cause
 
-**Bug Pinforic** : lors du chargement de `zork1.dsk`, Pinforic écrit les données du jeu au
-mauvais endroit (incompatibilité de **format/layout** entre ce binaire `INFOCOM.COM` /
-`PINFORIC.BIN` et l'image `zork1.dsk` fournie — versions/placement secteur divergents),
-**écrasant le vecteur/handler d'interruption**. À la première IRQ (VIA/Microdisc), le CPU
-saute dans du garbage → JAM.
+**Pinforic bug**: when loading `zork1.dsk`, Pinforic writes the game data to the
+wrong place (a **format/layout** mismatch between this `INFOCOM.COM` /
+`PINFORIC.BIN` binary and the supplied `zork1.dsk` image — diverging versions/sector placement),
+**overwriting the interrupt vector/handler**. At the first IRQ (VIA/Microdisc), the CPU
+jumps into garbage → JAM.
 
 ## Conclusion
 
-**Phosphoric n'est pas en cause.** Le FDC WD1793 lit correctement le disque hot-swappé
-(RESTORE émis par le programme, secteurs `ok`, 0 `NOT_FOUND`), et **deux émulateurs
-cycle-accurate indépendants (Phosphoric, Oricutron) crashent de façon identique** →
-défaut 100 % côté Pinforic (placement des données de jeu). **Aucun correctif émulateur requis.**
+**Phosphoric is not at fault.** The WD1793 FDC reads the hot-swapped disk correctly
+(RESTORE issued by the program, sectors `ok`, 0 `NOT_FOUND`), and **two independent
+emulators timed at cycle level (Phosphoric, Oricutron) crash in the same way** →
+the defect is 100 % on the Pinforic side (placement of the game data). **No emulator fix required.**
 
-Les outils `--fdc-trace` et surtout `--trace-ring` ont permis d'isoler la cause en un run.
+The `--fdc-trace` and above all `--trace-ring` tools isolated the cause in a single run.
 
 ## Repro
 
 ```bash
-# Phosphoric (control) :
+# Phosphoric (control):
 oric1-emu --control -m atmos -r roms/basic11b.rom --disk-rom roms/microdis.rom \
           --fdc-timing fast -d pinforic.dsk --type-keys "9000000:INFOCOM\n"
-#   > continue ; (au splash) load-disk A zork1.dsk ; keys \n
-#   Diagnostic : FDC_TRACE=1 …  +  --trace /tmp/ring.log --trace-ring 50
+#   > continue ; (at the splash) load-disk A zork1.dsk ; keys \n
+#   Diagnostics: FDC_TRACE=1 …  +  --trace /tmp/ring.log --trace-ring 50
 
-# Oricutron :
+# Oricutron:
 oricutron -m atmos -k microdisc -w -d pinforic.dsk
-#   INFOCOM ⏎ ; F1 → Insert disk 0 → zork1.dsk ; (splash) une touche ; F2 = moniteur
+#   INFOCOM ⏎ ; F1 → Insert disk 0 → zork1.dsk ; (splash) any key ; F2 = monitor
 ```

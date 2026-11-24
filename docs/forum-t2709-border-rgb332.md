@@ -1,23 +1,23 @@
-# Brouillons de posts — forum.defence-force.org t=2709
+# Draft posts — forum.defence-force.org t=2709
 
-Suivi des échanges OCULA (palette/bordure/registres). Langue : anglais.
+Tracking of the OCULA exchanges (palette/border/registers). Language: English.
 
-## Post #1 — POSTÉ le 2026-06-25 (p≈34924-aligné, réponse à sodiumlb)
+## Post #1 — POSTED on 2026-06-25 (p≈34924-aligned, reply to sodiumlb)
 
-Proposait de déplacer palette + bordure de l'in-band `$BFE0-$BFFF` vers les
-registres write-only ROM de sodiumlb (zéro DRAM, clôt l'objection de Dbug).
-→ Réponses obtenues le 25 juin :
-- **sodiumlb (p=34926)** : « page 3 RAM solution with writeable locations for
+Proposed moving palette + border from the in-band `$BFE0-$BFFF` to
+sodiumlb's write-only ROM registers (zero DRAM, closes Dbug's objection).
+→ Replies received on 25 June:
+- **sodiumlb (p=34926)**: « page 3 RAM solution with writeable locations for
   palette and border gives the same capability as the 32 bytes solution just
-  with more space and mapping flexibility » ; « ROM space writes is the only
+  with more space and mapping flexibility »; « ROM space writes is the only
   solution so far (for this mode) that allows instant response ». → **Direction
-  validée** : page-3 RAM = stockage/config, écritures ROM = chemin instantané
+  validated**: page-3 RAM = storage/config, ROM writes = instant path
   (rasters).
-- **Dbug (p=34925)** : « VSync / HSync is absolutely necessary to get proper
-  rasters and color changes that don't flash crazily » + question 80 col
-  (écran/charset en place + page flipping, ou descendus en mémoire ?).
+- **Dbug (p=34925)**: « VSync / HSync is absolutely necessary to get proper
+  rasters and color changes that don't flash crazily » + an 80-column question
+  (screen/charset kept in place + page flipping, or moved down in memory?).
 
-## Post #2 — POSTÉ le 2026-06-25 (p=34927, réponse à sodiumlb + Dbug)
+## Post #2 — POSTED on 2026-06-25 (p=34927, reply to sodiumlb + Dbug)
 
 Great, thanks both — that pins it down.
 
@@ -43,7 +43,7 @@ charsets, which stay exactly where they are ($B400 standard, $B800 alternate).
 No page flipping for the text itself; it's just a wider framebuffer read from a
 lower base.
 
-## Post #3 — À POSTER (layout concret du page-3 RAM, pour validation sodiumlb)
+## Post #3 — TO BE POSTED (concrete page-3 RAM layout, for sodiumlb's validation)
 
 @Sodiumlightbaby — I went ahead and wired your page-3 RAM idea into Phosphoric
 so there's something concrete to shoot at rather than hand-waving. Here's the

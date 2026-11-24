@@ -9,9 +9,9 @@
  * Implements .ost (Oric Save sTate) format:
  * - 48-byte header (magic, version, file size, CRC32, emu version)
  * - Sequential sections: CPU, MEM, VIA, PSG, VID, CLK, KBD, FDC, MDC, TAP, SER, META
- *   (CLK = horloge maître, V2-E7 ; CPU/VIA/PSG étendus en queue de section,
- *   lecture rétrocompatible des .ost antérieurs par la taille de section)
- *   (sections OCULA OCB/OGP retirées ; ignorées si présentes dans un ancien .ost)
+ *   (CLK = master clock, V2-E7; CPU/VIA/PSG extended at the end of the section,
+ *   older .ost files read back-compatibly thanks to the section size)
+ *   (OCULA sections OCB/OGP removed; ignored if present in an old .ost)
  *  
  * - CRC32 integrity check over all data after the header
  */
@@ -24,8 +24,8 @@
 #include "emulator.h"
 #include "utils/logging.h"
 
-/* Table des périphériques de bus enregistrée par main.c (hooks save/load).
- * savestate.c ne connaît pas io_bus : il itère cette table opaque. */
+/* Bus peripheral table registered by main.c (save/load hooks).
+ * savestate.c does not know io_bus: it iterates over this opaque table. */
 static const io_device_t* s_io_devices = NULL;
 static int                 s_io_device_count = 0;
 
@@ -205,9 +205,9 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->cpu.P);
     write_u64le(fp, emu->cpu.cycles);
     write_u8(fp, emu->cpu.irq);
-    /* V2-E7 (US7.2) : l'échantillon d'interruption du cycle pénultième survit à
-     * la frontière d'instruction — sans lui, une IRQ déjà échantillonnée serait
-     * prise une instruction trop tard après reprise. */
+    /* V2-E7 (US7.2): the interrupt sample of the penultimate cycle survives
+     * the instruction boundary — without it, an already sampled IRQ would be
+     * taken one instruction too late after resuming. */
     write_bool(fp, emu->cpu.ms_irq_sampled);
     write_bool(fp, emu->cpu.ms_nmi_sampled);
     end_section(fp, sec);
@@ -223,8 +223,8 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     end_section(fp, sec);
 
     /* ── VIA Section ── */
-    /* Copie synchronisée : les cycles sautés par via_tick() y sont appliqués,
-     * l'émulateur (const) n'est pas modifié. */
+    /* Synchronised copy: the cycles skipped by via_tick() are applied to it,
+     * the (const) emulator is left untouched. */
     via6522_t via = emu->via;
     via_sync(&via);
     sec = begin_section(fp, "VIA\0");
@@ -248,8 +248,8 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, via.ier);
     write_bool(fp, via.cb1_pin);
     write_bool(fp, via.irq_line);
-    /* V2-E7 : état au cycle des timers (V2-E3) et des broches, absent des .ost
-     * antérieurs. `t1_reload` est le cycle mort qui fait la période N+2. */
+    /* V2-E7: per-cycle state of the timers (V2-E3) and pins, absent from older
+     * .ost files. `t1_reload` is the dead cycle that makes the N+2 period. */
     write_bool(fp, via.t1_active);
     write_bool(fp, via.t2_active);
     write_bool(fp, via.t1_reload);
@@ -259,9 +259,9 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_bool(fp, via.ca2_in);
     write_bool(fp, via.sr_active);
     write_u32le(fp, via.sr_clk_acc);
-    /* 2.6.0 (VIA mesurée sur vrai 6522, report Neo6502Vic20) : mode de T2
-     * effectif, cycle de retenue après T2C-H, T2 sur 8 bits (registre à décalage)
-     * et délais du registre à décalage. */
+    /* 2.6.0 (VIA measured on a real 6522, ported from Neo6502Vic20): effective
+     * T2 mode, hold cycle after T2C-H, 8-bit T2 (shift register)
+     * and shift-register delays. */
     write_bool(fp, via.t2_phi2);
     write_bool(fp, via.t2_hold);
     write_bool(fp, via.t2_reload);
@@ -287,9 +287,9 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     write_u8(fp, emu->psg.env_volume);
     write_bool(fp, emu->psg.env_holding);
     write_u32le(fp, emu->psg.clock_rate);
-    /* V2-E7 : phase fractionnaire du cadencement au matériel (V2-E5) et
-     * estimateur de continu de l'étage de sortie — pour qu'une reprise produise
-     * le même signal qu'un run ininterrompu. */
+    /* V2-E7: fractional phase of the hardware clocking (V2-E5) and
+     * DC estimator of the output stage — so that a resume produces
+     * the same signal as an uninterrupted run. */
     write_u32le(fp, emu->psg.play.step_acc);
     write_i32le(fp, emu->psg.dc_acc);
     end_section(fp, sec);
@@ -298,12 +298,12 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
     sec = begin_section(fp, "VID\0");
     write_u8(fp, emu->video.hires_mode ? 1 : 0);
     write_u8(fp, emu->video.vid_mode);
-    write_u8(fp, 0);   /* réservé (ancien profil ULA, retiré) */
+    write_u8(fp, 0);   /* reserved (old ULA profile, removed) */
     end_section(fp, sec);
 
-    /* ── CLK Section (V2-E7) ── position de l'horloge maître dans la trame.
-     * Sans elle, une reprise repartait en début de trame : même CPU, même VIA,
-     * mais un balayage décalé — captures et son différaient d'un run continu. */
+    /* ── CLK Section (V2-E7) ── position of the master clock within the frame.
+     * Without it, a resume restarted at the start of the frame: same CPU, same VIA,
+     * but a shifted scan — captures and sound differed from a continuous run. */
     sec = begin_section(fp, "CLK\0");
     write_i32le(fp, emu->raster_cycle);
     write_i32le(fp, emu->raster_rendered);
@@ -404,10 +404,10 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         end_section(fp, sec);
     }
 
-    /* ── Sections des périphériques de bus (hooks io_device_t) ──────────────
-     * Chaque device enregistré qui fournit save_tag+save écrit SA section. Le
-     * hook peut renvoyer false → aucune section émise (état par défaut), ce qui
-     * laisse le .ost byte-identique pour l'usage courant (zéro régression). */
+    /* ── Bus peripheral sections (io_device_t hooks) ─────────────────────────
+     * Each registered device that provides save_tag+save writes ITS section. The
+     * hook may return false → no section emitted (default state), which
+     * leaves the .ost byte-identical for the usual use (zero regression). */
     for (int i = 0; i < s_io_device_count; i++) {
         const io_device_t* dev = &s_io_devices[i];
         if (!dev->save_tag || !dev->save) continue;
@@ -415,7 +415,7 @@ bool savestate_save(const emulator_t* emu, const char* filename) {
         if (dev->save((emulator_t*)emu, fp)) {
             end_section(fp, dpos);
         } else {
-            fseek(fp, dpos, SEEK_SET);   /* rembobine : pas de section */
+            fseek(fp, dpos, SEEK_SET);   /* rewind: no section */
         }
     }
 
@@ -574,11 +574,11 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->cpu.P = read_u8(fp);
             emu->cpu.cycles = read_u64le(fp);
             emu->cpu.irq = read_u8(fp);
-            /* Les savestates sont pris en frontière d'instruction : le plan de
-             * micro-opérations n'a rien à persister. Seul l'échantillon
-             * d'interruption du cycle pénultième traverse la frontière ; un .ost
-             * antérieur (16 octets) ne l'a pas → échantillons neutres, l'IRQ
-             * pendante est alors prise une instruction plus tard. */
+            /* Savestates are taken at an instruction boundary: the
+             * micro-operation plan has nothing to persist. Only the interrupt
+             * sample of the penultimate cycle crosses the boundary; an older
+             * .ost (16 bytes) lacks it → neutral samples, the pending IRQ
+             * is then taken one instruction later. */
             emu->cpu.ms_active = false;
             emu->cpu.ms_irq_sampled = (sec_size >= 18) ? read_bool(fp) : false;
             emu->cpu.ms_nmi_sampled = (sec_size >= 18) ? read_bool(fp) : false;
@@ -590,7 +590,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->memory.overlay_active = read_bool(fp);
             emu->memory.basic_rom_disabled = read_bool(fp);
         } else if (memcmp(tag, "VIA\0", 4) == 0) {
-            via_sync(&emu->via);   /* rien en attente avant d'écraser l'état */
+            via_sync(&emu->via);   /* nothing pending before overwriting the state */
             emu->via.ora = read_u8(fp);
             emu->via.orb = read_u8(fp);
             emu->via.ira = read_u8(fp);
@@ -622,20 +622,20 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 emu->via.sr_active  = read_bool(fp);
                 emu->via.sr_clk_acc = read_u32le(fp);
             } else {
-                /* .ost antérieur : un timer dont le compteur a été sauvé comptait ;
-                 * le reste repart neutre. */
+                /* Older .ost: a timer whose counter was saved was counting;
+                 * the rest restarts neutral. */
                 emu->via.t1_active = emu->via.t1_running;
                 emu->via.t2_active = emu->via.t2_running;
                 emu->via.t1_reload = false;
             }
-            if (sec_size >= 40) {   /* 2.6.0 : état T2 / registre à décalage */
+            if (sec_size >= 40) {   /* 2.6.0: T2 / shift-register state */
                 emu->via.t2_phi2       = read_bool(fp);
                 emu->via.t2_hold       = read_bool(fp);
                 emu->via.t2_reload     = read_bool(fp);
                 emu->via.sr_t2_pending = read_u8(fp);
                 emu->via.sr_delay      = read_u8(fp);
             } else {
-                /* .ost antérieur : mode de T2 déduit de l'ACR, rien en attente. */
+                /* older .ost: T2 mode derived from the ACR, nothing pending. */
                 emu->via.t2_phi2       = !(emu->via.acr & 0x20);
                 emu->via.t2_hold       = false;
                 emu->via.t2_reload     = false;
@@ -670,7 +670,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             bool hires = read_u8(fp) != 0;
             emu->video.vid_mode = read_u8(fp);
             emu->video.hires_mode = hires;
-            if (sec_size >= 3) (void)read_u8(fp);   /* ancien octet profil ULA, ignoré */
+            if (sec_size >= 3) (void)read_u8(fp);   /* old ULA profile byte, ignored */
             /* Recalculate video pointers. video.charset is NOT touched: in a
              * running emulator it stays NULL, so the ULA reads the character
              * set from RAM ($B400/$9800, redefinable). Setting it to
@@ -716,8 +716,8 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 uint8_t dtracks = read_u8(fp);
                 uint8_t dsectors = read_u8(fp);
                 uint8_t dsides = read_u8(fp);
-                /* Taille venue du fichier : bornée (2 faces × 256 pistes × 256
-                 * secteurs × 256 o, au-delà de toute géométrie réelle). */
+                /* Size comes from the file: bounded (2 sides × 256 tracks × 256
+                 * sectors × 256 B, beyond any real geometry). */
                 if (drive >= MICRODISC_MAX_DRIVES || dsize == 0 ||
                     dsize > 2u * 256u * 256u * 256u) {  /* defensive: skip payload */
                     fseek(fp, dsize, SEEK_CUR);
@@ -732,7 +732,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
                 if (emu->disks[drive] && !sized) {
                     uint8_t* nd = (uint8_t*)realloc(emu->disks[drive]->data, dsize);
                     if (nd) { emu->disks[drive]->data = nd; sized = true; }
-                    /* échec : l'ancien tampon, trop petit, ne reçoit rien */
+                    /* failure: the old, too small buffer receives nothing */
                 }
                 if (sized) {
                     fread(emu->disks[drive]->data, 1, dsize, fp);
@@ -795,8 +795,8 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->raster_cycle    = (int)read_u32le(fp);
             emu->raster_rendered = (int)read_u32le(fp);
             emu->raster_ng_line  = (int)read_u32le(fp);
-            /* Normalisation (fin de trame, valeurs hors bornes) : emu_clock_resume() */
-            emu->clock_resume_pending = true;   /* consommé par emu_clock_resume() */
+            /* Normalisation (end of frame, out-of-range values): emu_clock_resume() */
+            emu->clock_resume_pending = true;   /* consumed by emu_clock_resume() */
         } else if (memcmp(tag, "META", 4) == 0) {
             /* Read and log metadata (info only, don't override loaded paths) */
             char meta_buf[1024] = {0};
@@ -804,8 +804,8 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             fread(meta_buf, 1, to_read, fp);
             log_info("savestate: metadata: rom='%s'", meta_buf);
         } else {
-            /* Section non gérée en dur : la proposer aux hooks des devices bus
-             * (save_tag) avant de la considérer comme inconnue. */
+            /* Section not hard-coded: offer it to the bus device hooks
+             * (save_tag) before treating it as unknown. */
             const io_device_t* dev = NULL;
             for (int i = 0; i < s_io_device_count; i++) {
                 if (s_io_devices[i].save_tag && s_io_devices[i].load &&
@@ -831,8 +831,8 @@ bool savestate_load(emulator_t* emu, const char* filename) {
 
     /* ── Restore internal pointers ── */
     emu->cpu.memory = &emu->memory;
-    /* Secteur en cours du Microdisc : recalculé une fois les images (DSK) et la
-     * carte des secteurs défectueux (BAD) en place — reprise en plein transfert. */
+    /* Current Microdisc sector: recomputed once the images (DSK) and the
+     * bad-sector map (BAD) are in place — resume in the middle of a transfer. */
     if (emu->card_on[CARD_IDX_microdisc])
         fdc_state_resume(&emu->microdisc.fdc);
 

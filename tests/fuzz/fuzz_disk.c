@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: EUPL-1.2 */
 /**
  * @file fuzz_disk.c
- * @brief Fuzzing : image disque (.dsk MFM_DISK ou brute) → sedoric_load
+ * @brief Fuzzing: disk image (.dsk MFM_DISK or raw) → sedoric_load
  * @author bmarty <bmarty@mailo.com>
  *
- * Charge l'image comme le font le Microdisc et le Jasmin, lit chaque secteur
- * de la géométrie annoncée, puis quelques secteurs par les registres du FDC
- * (géométrie incohérente avec la taille : lecture hors image), et enfin la
- * réécrit (réinjection dans le conteneur MFM, comme --disk-writeback).
+ * Loads the image as the Microdisc and the Jasmin do, reads every sector of
+ * the announced geometry, then a few sectors through the FDC registers
+ * (geometry inconsistent with the size: read past the image), and finally
+ * writes it back (re-injection into the MFM container, like --disk-writeback).
  */
 #include "fuzz_common.h"
 #include "utils/logging.h"
@@ -33,7 +33,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     fdc.sectors_per_track = d->sectors;
     const uint8_t tracks[] = { 0, 1, (uint8_t)(d->tracks ? d->tracks - 1 : 0), d->tracks };
     for (unsigned i = 0; i < sizeof tracks; i++) {
-        fdc_write(&fdc, 3, tracks[i]);          /* registre de données : piste visée */
+        fdc_write(&fdc, 3, tracks[i]);          /* data register: target track */
         fdc_write(&fdc, 0, 0x10);               /* SEEK */
         fdc_ticktock(&fdc, 200000);
         for (unsigned s = 1; s <= (unsigned)d->sectors + 1 && s <= 33; s++) {
