@@ -312,18 +312,35 @@ int loci_add_bad_sector(loci_t* loci, uint8_t drive,
     return 0;
 }
 
-bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
-    if (drive >= 4) return false;
+/* Frees the media of a drive (no write-back: flush first). The FDC no longer
+ * points into the freed image. */
+static void loci_dsk_release(loci_t* loci, uint8_t drive) {
     if (loci->dsk_fp[drive]) {
         fclose((FILE*)loci->dsk_fp[drive]);
         loci->dsk_fp[drive] = NULL;
     }
-    if (loci->dsk_image[drive]) {
-        free(loci->dsk_image[drive]);
-        loci->dsk_image[drive] = NULL;
-        loci->dsk_image_size[drive] = 0;
+    free(loci->dsk_image[drive]);
+    free(loci->dsk_shadow[drive]);
+    free(loci->dsk_mfm[drive]);
+    loci->dsk_image[drive] = NULL;
+    loci->dsk_shadow[drive] = NULL;
+    loci->dsk_mfm[drive] = NULL;
+    loci->dsk_image_size[drive] = 0;
+    loci->dsk_mfm_size[drive] = 0;
+    loci->dsk_host_path[drive][0] = '\0';
+    loci->dsk_is_mfm[drive] = false;
+    loci->dsk_web[drive] = false;
+    loci->dsk_write_failed[drive] = false;
+    if (loci->dsk_selected == drive) {
+        fdc_set_disk(&loci->dsk_fdc, NULL, 0);
+        fdc_set_bad_map(&loci->dsk_fdc, NULL);
     }
-    loci->dsk_web[drive] = false;   /* a file mount replaces any web backing */
+}
+
+bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
+    if (drive >= 4) return false;
+    loci_dsk_flush(loci, drive);    /* the outgoing disk keeps its writes */
+    loci_dsk_release(loci, drive);
     size_t pn = strlen(host_path);
     if (pn >= sizeof(loci->dsk_host_path[drive])) pn = sizeof(loci->dsk_host_path[drive]) - 1;
     memcpy(loci->dsk_host_path[drive], host_path, pn);
@@ -335,20 +352,12 @@ bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
         loci->dsk_image_size[drive] = sd->size;
         loci->dsk_tracks[drive]     = sd->tracks;
         loci->dsk_sectors[drive]    = sd->sectors;
+        loci->dsk_is_mfm[drive]     = sd->is_mfm;
+        loci->dsk_mfm[drive]        = sd->mfm_raw;        /* NULL if flat */
+        loci->dsk_mfm_size[drive]   = sd->mfm_raw_size;
         free(sd);
         loci->dsk_fp[drive] = fopen(host_path, "r+b");
         if (!loci->dsk_fp[drive]) loci->dsk_fp[drive] = fopen(host_path, "rb");
-        FILE* probe = fopen(host_path, "rb");
-        char hdr[8] = {0};
-        if (probe) {
-            (void)!fread(hdr, 1, 8, probe);
-            fclose(probe);
-        }
-        loci->dsk_is_mfm[drive] = (memcmp(hdr, "MFM_DISK", 8) == 0);
-        if (loci->dsk_is_mfm[drive]) {
-            log_warning("LOCI dsk drive %d: MFM_DISK format — writes are session-only "
-                     "(no MFM re-encoder)", drive);
-        }
     } else {
         FILE* fp = fopen(host_path, "rb");
         if (!fp) return false;
@@ -365,6 +374,13 @@ bool loci_dsk_open(loci_t* loci, uint8_t drive, const char* host_path) {
         loci->dsk_image[drive]      = buf;
         loci->dsk_image_size[drive] = (uint32_t)sz;
         loci->dsk_is_mfm[drive]     = false;
+    }
+    loci->dsk_shadow[drive] = (uint8_t*)malloc(loci->dsk_image_size[drive]);
+    if (loci->dsk_shadow[drive]) {
+        memcpy(loci->dsk_shadow[drive], loci->dsk_image[drive], loci->dsk_image_size[drive]);
+    } else if (loci->dsk_image_size[drive]) {
+        log_warning("LOCI dsk drive %d: out of memory, writes will not reach '%s'",
+                 drive, host_path);
     }
     /* Fresh media in the slot: pristine surface, plus any CLI-injected
      * damage destined for this drive (--bad-sector parsed before mounts). */
@@ -401,8 +417,8 @@ bool loci_dsk_open_web(loci_t* loci, uint8_t drive, const char* url) {
     if (tracks > 82) tracks = 82;
     uint8_t spt = 17;
 
-    if (loci->dsk_fp[drive]) { fclose((FILE*)loci->dsk_fp[drive]); loci->dsk_fp[drive] = NULL; }
-    if (loci->dsk_image[drive]) { free(loci->dsk_image[drive]); loci->dsk_image[drive] = NULL; }
+    loci_dsk_flush(loci, drive);    /* the outgoing disk keeps its writes */
+    loci_dsk_release(loci, drive);
 
     uint32_t flat = sides * tracks * spt * 256u;
     uint8_t* buf = (uint8_t*)calloc(1, flat);
@@ -425,51 +441,81 @@ bool loci_dsk_open_web(loci_t* loci, uint8_t drive, const char* url) {
     return true;
 }
 
+/* Writes the changed 256-byte blocks of a flat image. Returns false on I/O error. */
+static bool dsk_write_flat(FILE* out, const uint8_t* img, const uint8_t* ref, uint32_t size) {
+    for (uint32_t off = 0; off < size; off += 256) {
+        uint32_t n = size - off < 256 ? size - off : 256;
+        if (memcmp(img + off, ref + off, n) == 0) continue;
+        if (fseek(out, (long)off, SEEK_SET) != 0 || fwrite(img + off, 1, n, out) != n)
+            return false;
+    }
+    return true;
+}
+
+/* Writes the changed sectors into the MFM container. Returns false on I/O error. */
+static bool dsk_write_mfm(loci_t* loci, uint8_t drive, FILE* out) {
+    const uint8_t* img = loci->dsk_image[drive];
+    const uint8_t* ref = loci->dsk_shadow[drive];
+    uint32_t size = loci->dsk_image_size[drive];
+    int changed = 0;
+    for (uint32_t off = 0; off + 256 <= size; off += 256)
+        if (memcmp(img + off, ref + off, 256) != 0) changed++;
+    int written = sedoric_mfm_write_changes(out, loci->dsk_mfm[drive],
+                                            loci->dsk_mfm_size[drive], img, ref, size,
+                                            loci->dsk_sectors[drive],
+                                            loci->dsk_tracks[drive]);
+    if (written < 0) return false;
+    if (written < changed)
+        log_warning("LOCI dsk drive %d: %d modified sector(s) have no sector in the "
+                 "MFM tracks of '%s', not saved",
+                 drive, changed - written, loci->dsk_host_path[drive]);
+    return true;
+}
+
+/* Writes to the host file what differs from it. Nothing changed: file untouched. */
 void loci_dsk_flush(loci_t* loci, uint8_t drive) {
     if (drive >= 4) return;
-    if (loci->dsk_is_mfm[drive]) return;
-    if (!loci->dsk_image[drive]) return;
-    if (!loci->dsk_host_path[drive][0]) return;
-    FILE* out = fopen(loci->dsk_host_path[drive], "wb");
-    if (!out) {
-        log_warning("LOCI dsk drive %d: cannot open '%s' for write-back",
-                 drive, loci->dsk_host_path[drive]);
+    uint8_t* img = loci->dsk_image[drive];
+    uint8_t* ref = loci->dsk_shadow[drive];
+    uint32_t size = loci->dsk_image_size[drive];
+    if (!img || !ref || !loci->dsk_host_path[drive][0]) return;
+    if (memcmp(img, ref, size) == 0) return;
+
+    FILE* out = fopen(loci->dsk_host_path[drive], "r+b");
+    bool ok = out != NULL;
+    if (ok) {
+        ok = loci->dsk_is_mfm[drive] ? dsk_write_mfm(loci, drive, out)
+                                     : dsk_write_flat(out, img, ref, size);
+        if (fclose(out) != 0) ok = false;
+    }
+    if (!ok) {
+        if (!loci->dsk_write_failed[drive])
+            log_warning("LOCI dsk drive %d: cannot write back to '%s', changes are "
+                     "kept in memory only", drive, loci->dsk_host_path[drive]);
+        loci->dsk_write_failed[drive] = true;
         return;
     }
-    size_t n = fwrite(loci->dsk_image[drive], 1,
-                      loci->dsk_image_size[drive], out);
-    fclose(out);
-    if (n != loci->dsk_image_size[drive]) {
-        log_warning("LOCI dsk drive %d: short write %zu/%u to '%s'",
-                 drive, n, loci->dsk_image_size[drive],
-                 loci->dsk_host_path[drive]);
-    } else {
-        log_info("LOCI dsk drive %d: %u bytes flushed to '%s'",
-                 drive, loci->dsk_image_size[drive],
-                 loci->dsk_host_path[drive]);
-    }
+    loci->dsk_write_failed[drive] = false;
+    memcpy(ref, img, size);
+    log_debug("LOCI dsk drive %d: written back to '%s'", drive, loci->dsk_host_path[drive]);
+}
+
+/* Once no write command is running, persists what the FDC changed. All drives
+ * are compared: the drive select may have moved during the command. */
+static void loci_dsk_sync(loci_t* loci) {
+    fdc_t* fdc = &loci->dsk_fdc;
+    if (!fdc->disk_modified) return;
+    if (fdc->currentop == FDC_OP_WRITE_SECTOR || fdc->currentop == FDC_OP_WRITE_SECTORS ||
+        fdc->currentop == FDC_OP_WRITE_TRACK) return;
+    fdc->disk_modified = false;
+    for (uint8_t d = 0; d < 4; d++) loci_dsk_flush(loci, d);
 }
 
 void loci_dsk_close(loci_t* loci, uint8_t drive) {
     if (drive >= 4) return;
     loci_dsk_flush(loci, drive);
-    if (loci->dsk_fp[drive]) {
-        fclose((FILE*)loci->dsk_fp[drive]);
-        loci->dsk_fp[drive] = NULL;
-    }
-    if (loci->dsk_image[drive]) {
-        free(loci->dsk_image[drive]);
-        loci->dsk_image[drive] = NULL;
-        loci->dsk_image_size[drive] = 0;
-    }
-    loci->dsk_host_path[drive][0] = '\0';
-    loci->dsk_is_mfm[drive] = false;
-    loci->dsk_web[drive] = false;
+    loci_dsk_release(loci, drive);
     memset(&loci->dsk_bad_map[drive], 0, sizeof(loci->dsk_bad_map[drive]));
-    if (loci->dsk_selected == drive) {
-        fdc_set_disk(&loci->dsk_fdc, NULL, 0);
-        fdc_set_bad_map(&loci->dsk_fdc, NULL);
-    }
 }
 
 uint8_t loci_dsk_read(loci_t* loci, uint16_t address) {
@@ -494,6 +540,11 @@ uint8_t loci_dsk_read(loci_t* loci, uint16_t address) {
         case LOCI_DSK_IO_SPARE1: return loci->dsk_spare[1];
     }
     return 0xFF;
+}
+
+void loci_dsk_tick(loci_t* loci, int cycles) {
+    fdc_ticktock(&loci->dsk_fdc, cycles);
+    loci_dsk_sync(loci);
 }
 
 void loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value) {
@@ -530,4 +581,5 @@ void loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value) {
         case LOCI_DSK_IO_SPARE0: loci->dsk_spare[0] = value; break;
         case LOCI_DSK_IO_SPARE1: loci->dsk_spare[1] = value; break;
     }
+    loci_dsk_sync(loci);   /* last data byte or force interrupt */
 }

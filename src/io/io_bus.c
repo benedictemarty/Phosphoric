@@ -57,7 +57,7 @@ static const io_device_t k_microdisc_tick = {
     .tick = microdisc_dev_tick };
 
 static void loci_dev_tick(emulator_t* emu, int cycles) {
-    fdc_ticktock(&emu->loci.dsk_fdc, cycles);
+    loci_dsk_tick(&emu->loci, cycles);
     loci_adj_tick(&emu->loci, cycles);
 }
 static const io_device_t k_jasmin_tick = {

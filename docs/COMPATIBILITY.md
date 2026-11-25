@@ -213,7 +213,9 @@ joystick, printer, mcp40, renderer, trace, profiler, rominfo, serial, loci…).
 - Visual tests (HIRES rendering, colours) are validated by headless screenshot
 - The game's disk writes (in-game saves) are only written to the .dsk file
   with --disk-writeback (opt-in, overwrites in place); otherwise they live in the
-  session or in a savestate (.ost captures the disk image)
+  session or in a savestate (.ost captures the disk image). LOCI floppies are
+  different: they are written as the guest writes, like the real board
+  (docs/loci.md)
 - The Mageko MIDI card occupies $03FE/$03FF: on real hardware, forum t=2525
   reports a risk of address conflicts with other expansions (the emulator
   warns if the Microdisc is present). The real-time MIDI backend `--mageco midi`

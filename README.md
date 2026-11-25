@@ -9,7 +9,7 @@ FDC is still timed by fixed delays, the absolute raster/CPU phase is unobservabl
 on a stock ORIC and therefore not modelled) — is spelled out component by component in
 [docs/ACCURACY.md](docs/ACCURACY.md), with the test that would falsify each line.
 
-**Version: 2.31.16** | **70 test suites (1,362 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
+**Version: 2.31.17** | **70 test suites (1,368 checks), 100% pass** | **Zero memory leaks** | **Runs natively on Linux / Windows / macOS (CI-verified) & in the browser (WebAssembly)**
 
 ```
  ____  _                      _                _
@@ -348,7 +348,9 @@ Tape & Disk:
   --disk-rom FILE           Load Microdisc ROM
   --disk1/2/3 FILE          Drives B/C/D
   --disk-writeback          Persist in-game disk writes back to the .dsk on exit
-                            (opt-in; overwrites in place; only written drives saved)
+                            (opt-in; overwrites in place; only written drives saved).
+                            Microdisc/Jasmin only: LOCI floppies are always
+                            written back (docs/loci.md)
   --fdc-timing MODE         Microdisc WD1793 timing: real (default, mechanical 3"
                             drive) or fast (legacy short delays)
   --bad-sector [D:]S:T:N    Mark drive D (default A) side S track T sector N
@@ -654,7 +656,7 @@ line always wins — except in `--headless` runs (use `--config FILE` there).
 ## Testing
 
 ```bash
-make tests               # Full suite — 70 suites, 1,362 checks (100% pass)
+make tests               # Full suite — 70 suites, 1,368 checks (100% pass)
 make tests-strict        # Same, and fails on a skip not justified in tests/allowed_skips.txt (CI)
 make test-clock          # Master clock: one call = one cycle of the whole machine, never idle
 make test-savestate-determinism  # mid-frame savestate = exact resume point
@@ -915,4 +917,4 @@ the MIT Licence retain their MIT notice (MIT permits their inclusion here).
 
 ---
 
-Phosphoric v2.31.15 | 70 test suites (1,362 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu (FR/EN) + phosphoric.cfg | 2026-10-31
+Phosphoric v2.31.17 | 70 test suites (1,368 checks) | ORIC-1 + Atmos | Linux/Windows/macOS native (CI) + WebAssembly (browser) | VIA 6522 complete (CA2/CB2 8 modes + latching) + WD1793 (Microdisc) + WD177x (Jasmin, boot TDOS) + bad-sector injection + LOCI (menu F8 + resume, diag ROM Mike Brown, host USB sticks, ABI firmware) boot Sedoric V4 + ACIA 6551/6850 + DTL 2000/Minitel V23 + PicoWiFi/TLS + MIDI Mageco/ORICON | GDB remote stub + inline assembler + memory search + Conditional/Raster BPs + Rewind + Symbols + TUI + IPC control (OricForge) + live peripheral introspection | deterministic record/replay + MJPEG/AVI capture + Chromecast | MCP-40 + Printer + Joystick | F1 peripherals menu (FR/EN) + phosphoric.cfg | 2026-11-25

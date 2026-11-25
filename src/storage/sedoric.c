@@ -115,8 +115,11 @@ static uint16_t mfm_crc16(const uint8_t* data, int len) {
  * Inverse of mfm_extract_track(): scans the track for sector ID/data marks,
  * overwrites each 256-byte data field from the flat sector array, and
  * recomputes the trailing data CRC so the image stays valid for re-reading.
+ * With @p previous (same size as @p flat), only the sectors that differ from
+ * it are written, so untouched sectors keep their bytes, CRC included.
  */
-static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat, uint32_t flat_size,
+static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat,
+                            const uint8_t* previous, uint32_t flat_size,
                             uint8_t sectors_per_track, uint8_t num_tracks) {
     int written = 0;
     for (int i = 0; i < MFM_TRACK_SIZE - 4; i++) {
@@ -137,6 +140,8 @@ static int mfm_inject_track(uint8_t* track_data, const uint8_t* flat, uint32_t f
                                        (uint32_t)(id_sector - 1)) * SEDORIC_SECTOR_SIZE;
                     /* Same bound as extraction (ID marks come from the file). */
                     if (offset > flat_size || flat_size - offset < SEDORIC_SECTOR_SIZE) break;
+                    if (previous && memcmp(flat + offset, previous + offset,
+                                           SEDORIC_SECTOR_SIZE) == 0) break;
                     /* Overwrite the 256-byte data field */
                     memcpy(&track_data[j+4], flat + offset, SEDORIC_SECTOR_SIZE);
                     /* Recompute CRC over $A1 $A1 $A1 $FB + 256 data bytes */
@@ -258,7 +263,7 @@ static bool sedoric_save_mfm(sedoric_disk_t* disk, const char* filename) {
             uint32_t track_idx = s * disk->tracks + t;
             uint32_t raw_offset = MFM_DISK_HEADER_SIZE + track_idx * MFM_TRACK_SIZE;
             if (raw_offset + MFM_TRACK_SIZE > disk->mfm_raw_size) break;
-            mfm_inject_track(&disk->mfm_raw[raw_offset], disk->data, disk->size,
+            mfm_inject_track(&disk->mfm_raw[raw_offset], disk->data, NULL, disk->size,
                              disk->sectors, disk->tracks);
         }
     }
@@ -269,6 +274,27 @@ static bool sedoric_save_mfm(sedoric_disk_t* disk, const char* filename) {
     fclose(fp);
     if (ok) disk->modified = false;
     return ok;
+}
+
+int sedoric_mfm_write_changes(FILE* fp, uint8_t* mfm, uint32_t mfm_size,
+                              const uint8_t* flat, const uint8_t* previous,
+                              uint32_t flat_size, uint8_t sectors_per_track,
+                              uint8_t num_tracks) {
+    uint32_t per_side = (uint32_t)num_tracks * sectors_per_track * SEDORIC_SECTOR_SIZE;
+    if (!fp || !mfm || !flat || !previous || per_side == 0) return -1;
+    uint32_t raw_tracks = (flat_size / per_side) * num_tracks;
+    int written = 0;
+    for (uint32_t i = 0; i < raw_tracks; i++) {
+        uint32_t off = MFM_DISK_HEADER_SIZE + i * MFM_TRACK_SIZE;
+        if (off + MFM_TRACK_SIZE > mfm_size) break;
+        int n = mfm_inject_track(&mfm[off], flat, previous, flat_size,
+                                 sectors_per_track, num_tracks);
+        if (n == 0) continue;
+        if (fseek(fp, (long)off, SEEK_SET) != 0 ||
+            fwrite(&mfm[off], 1, MFM_TRACK_SIZE, fp) != MFM_TRACK_SIZE) return -1;
+        written += n;
+    }
+    return written;
 }
 
 bool sedoric_save(sedoric_disk_t* disk, const char* filename) {

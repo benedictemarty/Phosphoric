@@ -10,6 +10,7 @@
 #ifndef SEDORIC_H
 #define SEDORIC_H
 
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -76,5 +77,21 @@ bool sedoric_write_sector(sedoric_disk_t* disk, uint8_t track, uint8_t sector, c
  */
 int sedoric_mfm_extract_track(const uint8_t* track_data, uint8_t* flat, uint32_t flat_size,
                               uint8_t sectors_per_track, uint8_t num_tracks);
+
+/**
+ * @brief Write into an open MFM_DISK file the tracks whose sectors changed.
+ *
+ * Every sector of @p flat that differs from @p previous is injected into the
+ * in-memory container @p mfm (data field and CRC), then each touched 6400-byte
+ * track is written at its offset in @p fp. @p previous is not updated: the
+ * caller does it once the file is safely written.
+ *
+ * @return number of sectors written, or -1 on I/O error. Fewer sectors than
+ *         changed means some have no sector in the container.
+ */
+int sedoric_mfm_write_changes(FILE* fp, uint8_t* mfm, uint32_t mfm_size,
+                              const uint8_t* flat, const uint8_t* previous,
+                              uint32_t flat_size, uint8_t sectors_per_track,
+                              uint8_t num_tracks);
 
 #endif /* SEDORIC_H */

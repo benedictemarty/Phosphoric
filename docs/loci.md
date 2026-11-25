@@ -137,6 +137,27 @@ The **device list** (menu selector) is served by
 USB device (the firmware's `usb_set_status` — the MSC stick, the picowifi
 "CDC modem mounted"), then an empty name.
 
+### Writes to floppy images (2.31.17)
+
+As on the real LOCI, where the firmware writes the track to the stick and calls
+`f_sync`, what the Oric writes to a mounted `.dsk` goes to the host file **as
+soon as the write command ends**: no unmount or exit needed. This does not
+depend on `--disk-writeback`, which concerns the Microdisc and Jasmin only.
+
+- Flat and `MFM_DISK` images. In an MFM file only the data field and CRC of the
+  changed sectors are rewritten; the rest of the container is untouched.
+- Only what the guest changed is written: an image that was only read is never
+  rewritten.
+- Mounting another image on an occupied drive keeps the outgoing disk's writes.
+- A file that cannot be opened for writing is left alone, with one warning; the
+  changes stay in memory and are lost at unmount.
+
+Limits: `--disk-write-protect` is ignored by the LOCI's drives (protect the
+`.dsk` with host file permissions or work on a copy); images mounted from
+`--loci-sdimg` are temporary copies, so the SD image never changes; formatting
+an `MFM_DISK` file with another sector layout is not saved (the container's
+sectors are kept, and a warning reports modified sectors it cannot hold).
+
 ## Action button (F8)
 
 Firmware behaviour (`ext.c`) reproduced:

@@ -181,20 +181,7 @@ void loci_cleanup(loci_t* loci) {
         fclose((FILE*)loci->tap_fp);
         loci->tap_fp = NULL;
     }
-    for (int i = 0; i < 4; i++) {
-        loci_dsk_flush(loci, (uint8_t)i);
-        if (loci->dsk_fp[i]) {
-            fclose((FILE*)loci->dsk_fp[i]);
-            loci->dsk_fp[i] = NULL;
-        }
-        if (loci->dsk_image[i]) {
-            free(loci->dsk_image[i]);
-            loci->dsk_image[i] = NULL;
-            loci->dsk_image_size[i] = 0;
-        }
-        loci->dsk_host_path[i][0] = '\0';
-        loci->dsk_is_mfm[i] = false;
-    }
+    for (int i = 0; i < 4; i++) loci_dsk_close(loci, (uint8_t)i);   /* writes back */
     loci_detach_sdimg(loci);
 }
 

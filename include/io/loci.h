@@ -351,12 +351,16 @@ typedef struct loci_s {
     uint32_t dsk_image_size[4];/* size in bytes per drive */
     uint8_t  dsk_tracks[4];    /* derived from DSK header (default 41) */
     uint8_t  dsk_sectors[4];   /* sectors per track (default 17 Oric) */
-    /* Sprint 34c R3 : track input format + host path so dsk_close can
-     * flush flat sectors back to the host file. MFM_DISK input requires
-     * re-encoding (not implemented), so writes there stay session-only
-     * with a warning logged at mount-time. */
+    /* Write-back (US-98-3): like the real LOCI, what the guest writes goes to
+     * the host file when the write command ends. dsk_shadow is the flat image
+     * as the file holds it; only the sectors that differ are written. For an
+     * MFM_DISK file, dsk_mfm keeps the container they are injected into. */
     bool     dsk_is_mfm[4];          /* true = sedoric_load MFM→flat path */
     char     dsk_host_path[4][256];  /* host path used for write-back */
+    uint8_t* dsk_shadow[4];
+    uint8_t* dsk_mfm[4];
+    uint32_t dsk_mfm_size[4];
+    bool     dsk_write_failed[4];    /* failure already reported */
     /* loci-webdisk (archi B): disk served over HTTP. dsk_image[] is allocated
      * empty; the 6400-byte MFM tracks are fetched on demand by the FDC
      * (fdc_set_web on dsk_fdc at selection time). See loci_dsk_open_web. */
@@ -715,6 +719,9 @@ void    loci_cons_inject(loci_t* loci, uint8_t ch);
 /* DSK register access — stub WD1793 (Sprint 34ae). */
 uint8_t loci_dsk_read(loci_t* loci, uint16_t address);
 void    loci_dsk_write(loci_t* loci, uint16_t address, uint8_t value);
+/* Advances the LOCI FDC by `cycles`; writes back to the host file what a
+ * finished write command changed. */
+void    loci_dsk_tick(loci_t* loci, int cycles);
 
 /* Mark a sector of DRIVE's media as unreadable (fault injection). Also
  * seeds the CLI map so media mounted later in DRIVE carry the damage.

@@ -783,8 +783,7 @@ TEST(test_umount_clears_slot) {
 
 /* Sprint 34c R3 — raw .dsk mounts must flush their in-RAM image back
  * to the host file at umount / cleanup so SAVEs survive an emulator
- * exit. (MFM_DISK input stays session-only — covered by a separate
- * limitation note in the CHANGELOG, not testable without a re-encoder.) */
+ * exit. (MFM_DISK and write-through: US-98-3 tests below.) */
 TEST(test_dsk_raw_writes_persisted_on_umount) {
     char* tmpdir = make_tmpdir();
     char path[300];
@@ -829,6 +828,222 @@ TEST(test_dsk_raw_writes_persisted_on_umount) {
     free(round); free(original);
     unlink(path); rmdir(tmpdir);
     loci_cleanup(&l); free(tmpdir);
+}
+
+/* ─── US-98-3: LOCI floppy write-back ──────────────────────────── */
+
+#define WB_TRACKS   2
+#define WB_SPT      17
+#define WB_MFM_SIZE (256u + WB_TRACKS * 6400u)
+
+/* Offset, inside a track, of the data field of sector `sec` (1-based) of the
+ * images built below: gap, then 358 bytes per sector. */
+static uint32_t wb_mfm_data_off(int track, int sec) {
+    return 256u + (uint32_t)track * 6400u + 100u + (uint32_t)(sec - 1) * 358u + 36u;
+}
+
+static void wb_make_mfm(const char* path) {
+    uint8_t* img = (uint8_t*)malloc(WB_MFM_SIZE);
+    memset(img, 0x4E, WB_MFM_SIZE);
+    memset(img, 0, 256);
+    memcpy(img, "MFM_DISK", 8);
+    img[8] = 1;             /* sides */
+    img[12] = WB_TRACKS;    /* tracks */
+    img[16] = 1;            /* geometry */
+    for (int t = 0; t < WB_TRACKS; t++) {
+        for (int sec = 1; sec <= WB_SPT; sec++) {
+            uint8_t* p = &img[wb_mfm_data_off(t, sec) - 36u];
+            const uint8_t id[10] = { 0xA1, 0xA1, 0xA1, 0xFE, (uint8_t)t, 0,
+                                     (uint8_t)sec, 1, 0, 0 };
+            memcpy(p, id, sizeof(id));
+            memcpy(p + 32, "\xA1\xA1\xA1\xFB", 4);
+            memset(p + 36, t * 32 + sec, 256);
+        }
+    }
+    FILE* fp = fopen(path, "wb"); fwrite(img, 1, WB_MFM_SIZE, fp); fclose(fp);
+    free(img);
+}
+
+static void wb_make_raw(const char* path, uint8_t fill) {
+    uint8_t sec[256];
+    memset(sec, fill, sizeof(sec));
+    FILE* fp = fopen(path, "wb");
+    for (int i = 0; i < WB_TRACKS * WB_SPT; i++) fwrite(sec, 1, sizeof(sec), fp);
+    fclose(fp);
+}
+
+static size_t wb_slurp(const char* path, uint8_t* out, size_t max) {
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return 0;
+    size_t n = fread(out, 1, max, fp);
+    fclose(fp);
+    return n;
+}
+
+/* Waits for DRQ, then hands `count` bytes to the FDC, as the guest would. */
+static bool wb_feed(loci_t* l, uint8_t value, int count) {
+    for (int i = 0; i < count; i++) {
+        int guard = 100000;
+        while (loci_dsk_read(l, LOCI_DSK_IO_DRQ) != 0x00 && guard > 0) {
+            loci_dsk_tick(l, 1);
+            guard--;
+        }
+        if (guard == 0) return false;
+        loci_dsk_write(l, LOCI_DSK_IO_DATA, value);
+    }
+    return true;
+}
+
+static bool wb_write_sector(loci_t* l, int track, int sec, uint8_t value) {
+    loci_dsk_write(l, LOCI_DSK_IO_DATA, (uint8_t)track);
+    loci_dsk_write(l, LOCI_DSK_IO_CMD, 0x10);           /* SEEK */
+    loci_dsk_tick(l, 100000);
+    loci_dsk_write(l, LOCI_DSK_IO_SECT, (uint8_t)sec);
+    loci_dsk_write(l, LOCI_DSK_IO_CMD, 0xA0);           /* WRITE SECTOR */
+    return wb_feed(l, value, 256);
+}
+
+/* The guest's sector is in the host file as soon as the command ends, without
+ * unmount (the real firmware writes the track then f_sync). */
+TEST(test_dsk_raw_write_through) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/raw.dsk", tmpdir);
+    wb_make_raw(path, 0x11);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    ASSERT_TRUE(loci_dsk_open(&l, 0, path));
+    ASSERT_TRUE(wb_write_sector(&l, 1, 3, 0x5A));
+
+    uint8_t file[WB_TRACKS * WB_SPT * 256 + 1];
+    ASSERT_EQ(wb_slurp(path, file, sizeof(file)), sizeof(file) - 1);
+    const uint32_t off = (1 * WB_SPT + 2) * 256;
+    ASSERT_EQ(file[off], 0x5A);
+    ASSERT_EQ(file[off + 255], 0x5A);
+    ASSERT_EQ(file[off - 1], 0x11);
+    ASSERT_EQ(file[off + 256], 0x11);
+
+    loci_cleanup(&l); unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
+/* MFM: only the data field and its CRC change; the container is preserved. */
+TEST(test_dsk_mfm_write_through) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/mfm.dsk", tmpdir);
+    wb_make_mfm(path);
+    uint8_t* before = (uint8_t*)malloc(WB_MFM_SIZE);
+    uint8_t* after  = (uint8_t*)malloc(WB_MFM_SIZE + 1);
+    ASSERT_EQ(wb_slurp(path, before, WB_MFM_SIZE), WB_MFM_SIZE);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    ASSERT_TRUE(loci_dsk_open(&l, 0, path));
+    ASSERT_TRUE(l.dsk_is_mfm[0]);
+    ASSERT_TRUE(wb_write_sector(&l, 1, 5, 0xC3));
+
+    ASSERT_EQ(wb_slurp(path, after, WB_MFM_SIZE + 1), WB_MFM_SIZE);
+    const uint32_t off = wb_mfm_data_off(1, 5);
+    for (uint32_t i = 0; i < WB_MFM_SIZE; i++) {
+        if (i >= off && i < off + 256) ASSERT_EQ(after[i], 0xC3);
+        else if (i < off + 256 || i > off + 257) ASSERT_EQ(after[i], before[i]);
+    }
+    ASSERT_TRUE(after[off + 256] != before[off + 256] ||
+                after[off + 257] != before[off + 257]);   /* CRC recomputed */
+
+    /* Read back through the same loader as a fresh mount. */
+    ASSERT_TRUE(loci_dsk_open(&l, 1, path));
+    ASSERT_EQ(l.dsk_image[1][(1 * WB_SPT + 4) * 256], 0xC3);
+
+    free(before); free(after);
+    loci_cleanup(&l); unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
+/* Multi-sector write: persisted when the command ends (record not found). */
+TEST(test_dsk_multi_sector_write_through) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/mfm.dsk", tmpdir);
+    wb_make_mfm(path);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    ASSERT_TRUE(loci_dsk_open(&l, 0, path));
+    loci_dsk_write(&l, LOCI_DSK_IO_SECT, WB_SPT - 1);
+    loci_dsk_write(&l, LOCI_DSK_IO_CMD, 0xB0);          /* WRITE SECTORS */
+    ASSERT_TRUE(wb_feed(&l, 0x77, 512));
+    loci_dsk_tick(&l, 100000);
+
+    uint8_t* after = (uint8_t*)malloc(WB_MFM_SIZE);
+    ASSERT_EQ(wb_slurp(path, after, WB_MFM_SIZE), WB_MFM_SIZE);
+    ASSERT_EQ(after[wb_mfm_data_off(0, WB_SPT - 1)], 0x77);
+    ASSERT_EQ(after[wb_mfm_data_off(0, WB_SPT) + 255], 0x77);
+    ASSERT_EQ(after[wb_mfm_data_off(0, WB_SPT - 2)], WB_SPT - 2);
+
+    free(after);
+    loci_cleanup(&l); unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
+/* Mounting over an occupied drive must not lose what was not yet written. */
+TEST(test_dsk_remount_keeps_writes) {
+    char* tmpdir = make_tmpdir();
+    char a[300], b[300];
+    snprintf(a, sizeof(a), "%s/a.dsk", tmpdir);
+    snprintf(b, sizeof(b), "%s/b.dsk", tmpdir);
+    wb_make_mfm(a);
+    wb_make_raw(b, 0x22);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    ASSERT_TRUE(loci_dsk_open(&l, 0, a));
+    l.dsk_image[0][0] = 0x99;               /* change still in memory only */
+    ASSERT_TRUE(loci_dsk_open(&l, 0, b));
+
+    uint8_t* after = (uint8_t*)malloc(WB_MFM_SIZE);
+    ASSERT_EQ(wb_slurp(a, after, WB_MFM_SIZE), WB_MFM_SIZE);
+    ASSERT_EQ(after[wb_mfm_data_off(0, 1)], 0x99);
+
+    free(after);
+    loci_cleanup(&l); unlink(a); unlink(b); rmdir(tmpdir); free(tmpdir);
+}
+
+/* An image the guest did not write is never rewritten: a change made on the
+ * host while it is mounted survives the unmount. */
+TEST(test_dsk_unchanged_image_not_rewritten) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/raw.dsk", tmpdir);
+    wb_make_raw(path, 0x11);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    ASSERT_TRUE(loci_dsk_open(&l, 0, path));
+    wb_make_raw(path, 0x33);                /* host-side change */
+    loci_dsk_close(&l, 0);
+
+    uint8_t first = 0;
+    ASSERT_EQ(wb_slurp(path, &first, 1), 1);
+    ASSERT_EQ(first, 0x33);
+
+    loci_cleanup(&l); unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
+/* A file that cannot be written: the host file is left alone, no crash. */
+TEST(test_dsk_read_only_file_untouched) {
+    if (geteuid() == 0) return;             /* root ignores file modes */
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/ro.dsk", tmpdir);
+    wb_make_mfm(path);
+    ASSERT_EQ(chmod(path, 0400), 0);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    ASSERT_TRUE(loci_dsk_open(&l, 0, path));
+    ASSERT_TRUE(wb_write_sector(&l, 0, 1, 0xEE));
+    loci_dsk_close(&l, 0);
+
+    uint8_t* after = (uint8_t*)malloc(WB_MFM_SIZE);
+    ASSERT_EQ(wb_slurp(path, after, WB_MFM_SIZE), WB_MFM_SIZE);
+    ASSERT_EQ(after[wb_mfm_data_off(0, 1)], 1);
+
+    free(after);
+    loci_cleanup(&l); chmod(path, 0600); unlink(path); rmdir(tmpdir); free(tmpdir);
 }
 
 TEST(test_read_xram_from_file) {
@@ -3644,6 +3859,12 @@ int main(void) {
     RUN(test_mount_bad_drive_einval);
     RUN(test_umount_clears_slot);
     RUN(test_dsk_raw_writes_persisted_on_umount);
+    RUN(test_dsk_raw_write_through);
+    RUN(test_dsk_mfm_write_through);
+    RUN(test_dsk_multi_sector_write_through);
+    RUN(test_dsk_remount_keeps_writes);
+    RUN(test_dsk_unchanged_image_not_rewritten);
+    RUN(test_dsk_read_only_file_untouched);
     RUN(test_read_xram_from_file);
     RUN(test_getcwd_returns_path);
     RUN(test_getcwd_255_derives_rom);
