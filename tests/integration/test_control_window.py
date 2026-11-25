@@ -83,6 +83,9 @@ class Emu:
 
 
 print("test_control_window — --control avec fenêtre (2.31.2)")
+if not os.path.exists(ROM):          # ROMs are not versioned (absent in CI)
+    print(f"  SKIP : ROM absent ({ROM})")
+    sys.exit(0)
 
 # Build sans SDL (SDL2=0) : pas de fenêtre possible, la partie fenêtrée est sautée.
 has_sdl = b"libSDL2" in subprocess.run(["ldd", EMU], capture_output=True).stdout

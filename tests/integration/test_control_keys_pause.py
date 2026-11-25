@@ -20,11 +20,15 @@ différents.
 
 Usage : test_control_keys_pause.py EMU ROM
 """
+import os
 import subprocess
 import sys
 import time
 
 EMU, ROM = sys.argv[1], sys.argv[2]
+if not os.path.exists(ROM):          # ROMs are not versioned (absent in CI)
+    print(f"test_control_keys_pause\n  SKIP : ROM absent ({ROM})")
+    sys.exit(0)
 LINE = '10 A$="(X):Y";B=1+2:PRINT A$;STR$(B)'
 SESSIONS = 4
 checks = fails = 0

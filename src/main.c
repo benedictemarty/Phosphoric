@@ -3196,8 +3196,13 @@ static int main_setup_rom_model(emulator_t* emu, cli_opts_t* cfg) {
             cfg->rom_file = rom;
         } else {
             char self[1024];
+#ifdef _WIN32
+            DWORD len = GetModuleFileNameA(NULL, self, sizeof(self));
+            char* slash = len > 0 && len < sizeof(self) ? strrchr(self, '\\') : NULL;
+#else
             ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
             char* slash = n > 0 ? (self[n] = '\0', strrchr(self, '/')) : NULL;
+#endif
             if (slash) {
                 *slash = '\0';
                 snprintf(default_rom, sizeof(default_rom), "%s/%s", self, rom);

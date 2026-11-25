@@ -47,9 +47,10 @@ def check(cond, msg):
 
 
 print("test_loci_warm_resume — LOCI intégré : bouton Action puis RETURN (2.31.6)")
-if not os.path.exists(MENU):
-    print(f"  SKIP : ROM du menu LOCI absente ({MENU})")
-    sys.exit(0)
+for needed in (ROM, MENU):          # ROMs are not versioned (absent in CI)
+    if not os.path.exists(needed):
+        print(f"  SKIP : ROM absent ({needed})")
+        sys.exit(0)
 
 tmpdir = tempfile.TemporaryDirectory()
 tmp = tmpdir.name
