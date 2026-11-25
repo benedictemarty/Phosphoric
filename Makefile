@@ -384,10 +384,16 @@ $(BUILD)/%.o: %.c
 $(BUILD)/src/video/stb_image_write_impl.o: CFLAGS += $(STB_SAN_CFLAGS)
 # LOCI backends: each compiled with its loci_emu_* functions renamed.
 LOCI_BE_RENAME = -include src/io/loci_be_rename.h
-$(BUILD)/src/io/loci_emu_stub.o: CFLAGS += -DLOCI_BE=lbe_stub $(LOCI_BE_RENAME)
-$(BUILD)/src/io/loci_emu.o $(BUILD)/src/io/loci_neo.o: CFLAGS += -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
-$(BUILD)/src/io/loci_hw.o: CFLAGS += -DLOCI_BE=lbe_hw $(LOCI_BE_RENAME)
-$(BUILD)/src/io/loci_backend.o $(BUILD)/src/io/loci_hw_probe.o: CFLAGS += $(LOCI_BE_DEFS)
+# Per-file flags, shared by the object builds and the fuzzing builds.
+LOCI_BE_FLAGS_loci_emu_stub = -DLOCI_BE=lbe_stub $(LOCI_BE_RENAME)
+LOCI_BE_FLAGS_loci_emu      = -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
+LOCI_BE_FLAGS_loci_neo      = -DLOCI_BE=lbe_emul $(LOCI_BE_RENAME)
+LOCI_BE_FLAGS_loci_hw       = -DLOCI_BE=lbe_hw $(LOCI_BE_RENAME)
+LOCI_BE_FLAGS_loci_backend  = $(LOCI_BE_DEFS)
+LOCI_BE_FLAGS_loci_hw_probe = $(LOCI_BE_DEFS)
+LOCI_BE_UNITS = loci_emu_stub loci_emu loci_neo loci_hw loci_backend loci_hw_probe
+LOCI_BE_SRCS = $(patsubst %,src/io/%.c,$(LOCI_BE_UNITS))
+$(foreach u,$(LOCI_BE_UNITS),$(eval $(BUILD)/src/io/$(u).o: CFLAGS += $$(LOCI_BE_FLAGS_$(u))))
 
 # Include auto-generated header-dependency files (-MMD output).
 # Silent if absent (first build / after clean).
@@ -944,9 +950,16 @@ fuzz: tools $(foreach t,$(FUZZ_TARGETS),$(TBIN)/fuzz_$(t))
 	        echo "fuzz_$$t : entrée fautive (journal : $(FUZZ_DIR)/$$t.log)"; exit 1; fi; \
 	done
 
+# The LOCI backends need their own flags: compiled one by one, then linked.
+FUZZ_BE = $(basename $(notdir $(filter $(LOCI_BE_SRCS),$(FUZZ_SRCS_$*))))
+
 $(FUZZ_DIR)/fuzz_%: FORCE
-	@mkdir -p $(@D)
-	@$(FUZZ_CC) $(FUZZ_CFLAGS) $(FUZZ_SRCS_$*) $(FUZZ_LIBS_$*) $(filter-out -fsanitize=%,$(LDFLAGS)) -o $@
+	@mkdir -p $(@D) $@.be
+	@$(foreach u,$(FUZZ_BE),$(FUZZ_CC) $(FUZZ_CFLAGS) $(LOCI_BE_FLAGS_$(u)) \
+	    -c src/io/$(u).c -o $@.be/$(u).o &&) true
+	@$(FUZZ_CC) $(FUZZ_CFLAGS) $(filter-out $(LOCI_BE_SRCS),$(FUZZ_SRCS_$*)) \
+	    $(patsubst %,$@.be/%.o,$(FUZZ_BE)) $(FUZZ_LIBS_$*) \
+	    $(filter-out -fsanitize=%,$(LDFLAGS)) -o $@
 
 # GDB stub: listens on 127.0.0.1 by default, --gdb-bind to open it.
 test-gdb-bind: $(TARGET)
