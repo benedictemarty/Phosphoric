@@ -467,6 +467,8 @@ void acia_tick(acia6551_t* acia, int cycles)
     }
 
     if (!acia->backend) return;
+    /* The backend's clock runs whatever the state of DTR. */
+    if (acia->backend->tick) acia->backend->tick(acia->backend, cycles);
     if (!(acia->command & ACIA_CMD_DTR)) return;
 
     /* ── TX path ── */

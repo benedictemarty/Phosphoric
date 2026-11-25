@@ -99,6 +99,17 @@ USB sticks or SD image on the web): [wasm.md](wasm.md).
 | `$0380-$0383` | ACIA 6551 (picowifi modem) — default under `--loci` |
 | `$03A0-$03BF` | MIA: UART console, API registers (xstack `$03AC`, errno `$03AD/E`, op `$03AF`), stub `$03B0` (spin/BLOCKED), BUSY `$03B2` bit 7, button trap `$03BA-$03BF` |
 
+### picowifi: leaving a call with `+++` (2.31.20)
+
+As in the PicoWiFiModemUSB firmware, `+++` brings the modem back to command mode
+only with **one second of silence before** the first `+`, **less than one second
+between** the characters and **one second of silence after** the third; the modem
+then answers `OK`, and `ATO` resumes the call. Silence means nothing sent by the
+Oric: bytes received from the line do not count. The three characters also reach
+the peer. The second is measured in emulated time (1 000 000 CPU cycles), so it
+follows the machine when it runs faster than real time. `ATS2` changes the
+escape character (128 and above disables it).
+
 ## API (op `$03AF`) — 36/36 ops implemented
 
 System (`PIX_XREG`, `CPU_PHI2`→1000 kHz, `OEM_CODEPAGE`, `RNG_LRAND`,

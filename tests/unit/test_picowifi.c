@@ -708,14 +708,23 @@ TEST(test_net0_default_via_atnet) {
  *  AT$BM, +++ escape
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* Drive +++ from data mode back to command mode (poll-count guard: pump
- * recv between each '+' so the silence threshold is met each time). */
+#define PW_SECOND 1000000   /* cycles: the firmware's guard time */
+
+/* Emulated time passes without any byte. */
+static void pw_quiet(int cycles) {
+    if (pw->tick) pw->tick(pw, cycles);
+}
+
+/* Drive +++ from data mode back to command mode: one second of silence, the
+ * three characters in a row, one second of silence. */
 static void tn_escape_to_command(void) {
     uint8_t b;
+    pw_quiet(PW_SECOND + 1000);
     for (int k = 0; k < 3; k++) {
-        for (int i = 0; i < 80; i++) pw->recv(pw, &b);
         pw->send(pw, '+');
+        pw_quiet(1200);                  /* one byte at 9600 baud */
     }
+    pw_quiet(PW_SECOND + 1000);
     for (int i = 0; i < 40; i++) pw->recv(pw, &b);   /* drain the OK */
 }
 
@@ -967,6 +976,74 @@ TEST(test_plus_plus_plus_escape) {
     char r[256];
     pw_cmd("ATO", r, sizeof(r));
     ASSERT_CONTAINS(r, "CONNECT");
+    tn_disconnect();
+}
+
+/* In a call, with the guard before already elapsed. */
+static void esc_start(void) {
+    tn_connect("-");
+    pw_quiet(PW_SECOND + 1000);
+}
+
+/* Sends the text with `gap` cycles between characters. */
+static void esc_send(const char* text, int gap) {
+    for (const char* c = text; *c; c++) {
+        pw->send(pw, (uint8_t)*c);
+        pw_quiet(gap);
+    }
+}
+
+/* Issue #98: a quiet line (no recv() call at all) and three '+' in a row. The
+ * escape waits for the second of silence that follows. */
+TEST(test_escape_on_quiet_line) {
+    esc_start();
+    esc_send("+++", 1200);
+    pw_quiet(PW_SECOND / 2);
+    ASSERT_TRUE(pw->connected(pw));      /* guard after not elapsed */
+    pw_quiet(PW_SECOND / 2 + 1000);
+    ASSERT_FALSE(pw->connected(pw));
+    char r[64];
+    pw_drain(r, sizeof(r));
+    ASSERT_CONTAINS(r, "OK");
+    /* Like the firmware, the three characters also reached the peer. */
+    char got[16] = {0};
+    ASSERT_TRUE(read(g_srv, got, sizeof(got) - 1) == 3);
+    ASSERT_CONTAINS(got, "+++");
+    tn_disconnect();
+}
+
+TEST(test_escape_needs_silence_before) {
+    esc_start();
+    esc_send("x", 1200);
+    esc_send("+++", 1200);
+    pw_quiet(2 * PW_SECOND);
+    ASSERT_TRUE(pw->connected(pw));
+    tn_disconnect();
+}
+
+TEST(test_escape_gap_between_plus_too_long) {
+    esc_start();
+    esc_send("+++", PW_SECOND + 1000);
+    pw_quiet(2 * PW_SECOND);
+    ASSERT_TRUE(pw->connected(pw));
+    tn_disconnect();
+}
+
+TEST(test_escape_cancelled_by_data_after) {
+    esc_start();
+    esc_send("+++", 1200);
+    pw_quiet(PW_SECOND / 2);
+    esc_send("x", 1200);
+    pw_quiet(2 * PW_SECOND);
+    ASSERT_TRUE(pw->connected(pw));
+    tn_disconnect();
+}
+
+TEST(test_escape_four_plus_is_data) {
+    esc_start();
+    esc_send("++++", 1200);
+    pw_quiet(2 * PW_SECOND);
+    ASSERT_TRUE(pw->connected(pw));
     tn_disconnect();
 }
 
@@ -1319,6 +1396,11 @@ int main(void) {
     RUN(test_dial_host_starting_with_p);
     RUN(test_dial_uppercase_modifier_keeps_host);
     RUN(test_plus_plus_plus_escape);
+    RUN(test_escape_on_quiet_line);
+    RUN(test_escape_needs_silence_before);
+    RUN(test_escape_gap_between_plus_too_long);
+    RUN(test_escape_cancelled_by_data_after);
+    RUN(test_escape_four_plus_is_data);
     RUN(test_atrd_in_call_errors);
 
     /* Sprint 49 — NVRAM persistence + boot */

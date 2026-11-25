@@ -82,6 +82,8 @@
 #define PW_DIAL_SLOTS   10         /* AT&Z0..9 speed-dial entries */
 #define PW_DEFAULT_PORT 23         /* telnet */
 #define PW_DEFAULT_BAUD 9600       /* firmware DEFAULT_SPEED */
+#define PW_ESC_COUNT    3          /* firmware ESC_COUNT */
+#define PW_GUARD_CYCLES 1000000u   /* firmware GUARD_TIME, 1 s of the 1 MHz CPU */
 
 /* Telnet protocol (sprint 47). Modes: 0=none, 1=real (CR+NUL), 2=fake. */
 #define TN_NONE   0
@@ -148,7 +150,8 @@ typedef struct {
 
     /* ── +++ escape (guard-timed, S2 char) ── */
     int      plus_count;
-    int64_t  silence;               /* poll-based silence counter */
+    uint64_t now;                   /* emulated time, in CPU cycles */
+    uint64_t last_tx;               /* last byte the Oric sent in data mode */
 
     /* ── WiFi configuration / state ── */
     char     ssid[64];
@@ -1622,6 +1625,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
             uint8_t s[2] = { TN_IAC, TN_AYT };
             pw_sock_write(pw, s, 2);
             pw->mode = 1;          /* back online */
+            pw->plus_count = 0;
             return a;              /* no OK: we are online again */
         }
         pw_result(pw, PW_ERROR);
@@ -1951,7 +1955,7 @@ static const char* pw_dispatch_one(picowifi_t* pw, const char* p)
         return pw_end(pw, (*a == '0') ? a + 1 : a);
     }
     if ((a = pw_match(p, "O"))) {
-        if (pw->sockfd >= 0) { pw->mode = 1; pw_result(pw, PW_CONNECT); }
+        if (pw->sockfd >= 0) { pw->mode = 1; pw->plus_count = 0; pw_result(pw, PW_CONNECT); }
         else pw_result(pw, PW_NO_CARRIER);
         return a;
     }
@@ -2052,7 +2056,8 @@ static bool picowifi_open(serial_backend_t* self)
     pw->mode = 0;
     pw->cmd_len = 0;
     pw->plus_count = 0;
-    pw->silence = 0;
+    pw->now = 0;
+    pw->last_tx = 0;
     pw->connect_time = 0;
     pw->tn_state = TN_ST_NORMAL;
     pw->tn_prev_cr = false;
@@ -2116,30 +2121,18 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
 
     /* ── Data mode ── */
     if (pw->mode == 1) {
-        /* +++ escape with guard time (escape char is S2-configurable;
-         * values >= 128 disable the escape per firmware). Real 1 s guard
-         * timing is sprint 47; this is a poll-count approximation. */
-        if (pw->esc_char < 128 && (int)byte == pw->esc_char && pw->silence >= 50) {
-            pw->plus_count++;
-            if (pw->plus_count >= 3) {
-                pw->mode = 0;
-                pw->plus_count = 0;
-                pw->cmd_len = 0;
-                pw->silence = 0;
-                log_info("PicoWiFi: +++ escape → command mode");
-                pw_result(pw, PW_OK);
-                return true;
-            }
-            pw->silence = 0;
-            return true;
+        /* +++ escape, as the firmware (sendSerialData): one second without
+         * data before the first escape character, less than one second
+         * between them; picowifi_tick() then waits for one second of silence.
+         * The characters are sent to the peer like any other. S2 sets the
+         * character, values >= 128 disable the escape. */
+        uint64_t interval = pw->now - pw->last_tx;
+        pw->last_tx = pw->now;
+        if (interval >= PW_GUARD_CYCLES) pw->plus_count = 0;
+        if (pw->esc_char < 128 && (pw->plus_count > 0 || interval >= PW_GUARD_CYCLES)) {
+            if ((int)byte != pw->esc_char) pw->plus_count = 0;
+            else if (pw->plus_count <= PW_ESC_COUNT) pw->plus_count++;
         }
-        if (pw->sockfd >= 0 && pw->plus_count > 0) {
-            uint8_t e = (uint8_t)pw->esc_char;
-            for (int i = 0; i < pw->plus_count && i < 3; i++)
-                (void)pw_tn_out_byte(pw, e);
-        }
-        pw->plus_count = 0;
-        pw->silence = 0;
 
         if (pw->sockfd >= 0) {
             if (!pw_tn_out_byte(pw, byte)) {
@@ -2216,10 +2209,24 @@ static bool picowifi_send(serial_backend_t* self, uint8_t byte)
     return true;
 }
 
+/* Emulated time: completes the +++ escape after the trailing second of silence. */
+static void picowifi_tick(serial_backend_t* self, int cycles)
+{
+    picowifi_t* pw = (picowifi_t*)self->state.picowifi.impl;
+    pw->now += (uint64_t)cycles;
+    if (pw->mode == 1 && pw->plus_count == PW_ESC_COUNT &&
+        pw->now - pw->last_tx > PW_GUARD_CYCLES) {
+        pw->mode = 0;
+        pw->plus_count = 0;
+        pw->cmd_len = 0;
+        log_info("PicoWiFi: +++ escape → command mode");
+        pw_result(pw, PW_OK);
+    }
+}
+
 static bool picowifi_recv(serial_backend_t* self, uint8_t* byte)
 {
     picowifi_t* pw = (picowifi_t*)self->state.picowifi.impl;
-    pw->silence++;
 
     /* Flow control: only pull from the socket what the ring can hold. A
      * chunk left unread stays in the kernel buffer, whose TCP window then
@@ -2286,6 +2293,7 @@ serial_backend_t* serial_backend_picowifi_create(const char* ssid, const char* p
     b->recv = picowifi_recv;
     b->poll = picowifi_poll;
     b->connected = picowifi_connected;
+    b->tick = picowifi_tick;
     b->state.picowifi.impl = pw;
     return b;
 }

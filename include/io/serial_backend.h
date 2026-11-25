@@ -86,6 +86,14 @@ typedef struct serial_backend_s {
      */
     bool (*connected)(struct serial_backend_s* self);
 
+    /**
+     * @brief Advance the backend's emulated time (optional, may be NULL)
+     *
+     * Called by the ACIA on every tick, DTR or not: guard times (picowifi
+     * "+++") are measured in CPU cycles, not in calls to recv().
+     */
+    void (*tick)(struct serial_backend_s* self, int cycles);
+
     /* ── Backend-specific state (union) ── */
     union {
         /* Loopback */

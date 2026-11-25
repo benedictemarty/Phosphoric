@@ -821,6 +821,26 @@ static bool auto_recv(serial_backend_t* self, uint8_t* byte) {
 static bool auto_send(serial_backend_t* self, uint8_t b) { (void)self; (void)b; return true; }
 static bool auto_connected(serial_backend_t* self) { (void)self; return g_auto_carrier; }
 
+static int g_ticked;
+static void count_tick(serial_backend_t* self, int cycles) { (void)self; g_ticked += cycles; }
+
+/* The backend's time advances with the ACIA, DTR asserted or not. */
+TEST(test_backend_tick_follows_acia) {
+    acia6551_t a;
+    acia_init(&a);
+
+    serial_backend_t mock;
+    memset(&mock, 0, sizeof(mock));
+    mock.tick = count_tick;
+    acia_set_backend(&a, &mock);
+    g_ticked = 0;
+
+    acia_tick(&a, 7);                    /* DTR off */
+    acia_write(&a, 2, ACIA_CMD_DTR);
+    acia_tick(&a, 5);
+    ASSERT_EQ(g_ticked, 12);
+}
+
 TEST(test_dcd_deadlock_autodial) {
     acia6551_t a;
     acia_init(&a);
@@ -896,6 +916,7 @@ int main(void) {
     RUN(test_loci_irq_latency_throughput_cap);
     RUN(test_state_preservation);
     RUN(test_dcd_deadlock_autodial);
+    RUN(test_backend_tick_follows_acia);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");
