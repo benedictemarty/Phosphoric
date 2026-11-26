@@ -29,7 +29,7 @@ Phosphoric now supports a complete Hayes modem with AT commands, usable from BAS
 | `ATDT host:port` | Same (T ignored) | `CONNECT` or `NO CARRIER` |
 | `ATA` | Accept incoming connection (listen mode) | `CONNECT` or `ERROR` |
 | `ATS0=N` | Auto-answer after N rings | `OK` |
-| `+++` | Escape data → command mode (guard time) | `OK` |
+| `+++` | Escape data → command mode: 1 s of silence before, less than 1 s between the `+`, 1 s after (emulated time) | `OK` |
 
 ## BASIC example
 

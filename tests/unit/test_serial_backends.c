@@ -192,37 +192,83 @@ TEST(test_modem_dial_refused) {
     serial_backend_destroy(m);
 }
 
-/* Hayes: silence, "+++" typed in one go → command mode (OK); ATH hangs up. */
-TEST(test_modem_escape_and_hangup) {
+#define MODEM_SECOND 1000000   /* cycles: the Hayes guard time */
+
+/* Emulated time passes without any byte. */
+static void quiet(serial_backend_t* b, int cycles) {
+    if (b->tick) b->tick(b, cycles);
+}
+
+/* Sends the text with `gap` cycles between characters. */
+static void send_gap(serial_backend_t* b, const char* s, int gap) {
+    while (*s) { b->send(b, (uint8_t)*s++); quiet(b, gap); }
+}
+
+/* A connected modem, the guard before already elapsed. */
+static serial_backend_t* modem_in_call(int* srv, int* peer) {
     uint16_t port = 0;
-    int srv = listen_local(&port);
+    *srv = listen_local(&port);
     serial_backend_t* m = modem_open(0, false);
+    if (*srv < 0 || !m) return NULL;
     char cmd[64], out[256];
-    ASSERT_TRUE(srv >= 0 && m != NULL);
     snprintf(cmd, sizeof cmd, "ATD127.0.0.1:%u\r", port);
     send_str(m, cmd);
     drain(m, out, sizeof out, 500, "CONNECT");
-    int peer = accept(srv, NULL, NULL);
-    ASSERT_TRUE(peer >= 0 && m->connected(m));
-    /* Without silence before, "x+++" is data: sent as is. */
-    send_str(m, "x+++");
-    read_fd(peer, out, sizeof out, 300, "x+++");
-    ASSERT_HAS(out, "x+++");
-    ASSERT_TRUE(m->connected(m));
-    for (int i = 0; i < 100; i++) { uint8_t c; m->recv(m, &c); }   /* silence (guard) */
-    send_str(m, "+++");
-    drain(m, out, sizeof out, 300, "OK");
-    ASSERT_HAS(out, "OK");
-    send_str(m, "ATH\r");
+    *peer = accept(*srv, NULL, NULL);
+    quiet(m, MODEM_SECOND + 1000);
+    return m;
+}
+
+/* Hayes: silence, "+++", silence → command mode (OK); ATH hangs up. No recv()
+ * call in between: a quiet line (issue #98). */
+TEST(test_modem_escape_and_hangup) {
+    int srv = -1, peer = -1;
+    serial_backend_t* m = modem_in_call(&srv, &peer);
+    char out[256];
+    ASSERT_TRUE(m != NULL && peer >= 0 && m->connected(m));
+    send_gap(m, "+++", 1200);
+    quiet(m, MODEM_SECOND / 2);
+    ASSERT_TRUE(m->connected(m));            /* guard after not elapsed */
+    quiet(m, MODEM_SECOND / 2 + 1000);
     drain(m, out, sizeof out, 300, "OK");
     ASSERT_HAS(out, "OK");
     ASSERT_TRUE(!m->connected(m));
-    /* After the data, the server received no "+" of the escape. */
+    send_str(m, "ATH\r");
+    drain(m, out, sizeof out, 300, "OK");
+    ASSERT_HAS(out, "OK");
+    /* The server received no "+" of the escape. */
     read_fd(peer, out, sizeof out, 100, NULL);
     ASSERT_TRUE(strchr(out, '+') == NULL);
     close(peer);
     close(srv);
     serial_backend_destroy(m);
+}
+
+/* Whatever breaks the guard is data, held "+" included, in order. */
+static bool modem_keeps_call(const char* a, int gap, const char* b, const char* expect) {
+    int srv = -1, peer = -1;
+    serial_backend_t* m = modem_in_call(&srv, &peer);
+    char out[256];
+    if (!m || peer < 0) return false;
+    send_gap(m, a, gap);
+    if (b) { quiet(m, MODEM_SECOND / 2); send_gap(m, b, 1200); }
+    quiet(m, 2 * MODEM_SECOND);
+    read_fd(peer, out, sizeof out, 300, expect);
+    bool ok = m->connected(m) && strcmp(out, expect) == 0;
+    if (!ok) printf("[connected=%d peer=\"%s\"] ", m->connected(m), out);
+    close(peer);
+    close(srv);
+    serial_backend_destroy(m);
+    return ok;
+}
+
+TEST(test_modem_escape_guard_broken) {
+    ASSERT_TRUE(modem_keeps_call("x+++", 1200, NULL, "x+++"));       /* no silence before */
+    ASSERT_TRUE(modem_keeps_call("+++", MODEM_SECOND + 1000, NULL, "+++")); /* too slow */
+    ASSERT_TRUE(modem_keeps_call("+++", 1200, "x", "+++x"));         /* data right after */
+    ASSERT_TRUE(modem_keeps_call("++++", 1200, NULL, "++++"));       /* four */
+    ASSERT_TRUE(modem_keeps_call("+", 1200, NULL, "+"));             /* a lone "+" is */
+    ASSERT_TRUE(modem_keeps_call("++", 1200, NULL, "++"));           /* released */
 }
 
 TEST(test_modem_listen_and_answer) {
@@ -420,6 +466,7 @@ int main(void) {
     RUN(test_modem_dial_data_and_peer_hangup);
     RUN(test_modem_dial_refused);
     RUN(test_modem_escape_and_hangup);
+    RUN(test_modem_escape_guard_broken);
     RUN(test_modem_listen_and_answer);
     RUN(test_tcp_both_ways);
     RUN(test_tcp_refused);

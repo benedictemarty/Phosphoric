@@ -137,9 +137,9 @@ typedef struct serial_backend_s {
             char     cmd_buf[256];  /**< AT command accumulator */
             int      cmd_len;
             /* +++ escape detection */
-            int      plus_count;
-            int64_t  last_data_time;
-            int64_t  last_plus_time;
+            int      plus_count;    /**< escape characters held back */
+            uint64_t now;           /**< emulated time, in CPU cycles */
+            uint64_t last_tx;       /**< last byte the Oric sent in data mode */
             /* Auto-answer */
             int      s0_rings;      /**< ATS0= auto-answer ring count (0=disabled) */
             bool     echo;          /**< ATE echo on/off */

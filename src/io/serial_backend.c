@@ -400,6 +400,8 @@ serial_backend_t* serial_backend_pty_create(void)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 /* Ring-buffer helpers for modem RX buffer */
+#define MODEM_GUARD_CYCLES 1000000u   /* "+++" guard: 1 s of the 1 MHz CPU */
+
 static void modem_rx_push(serial_backend_t* self, uint8_t byte)
 {
     if (self->state.modem.rx_count >= SERIAL_MODEM_BUFSZ) return;
@@ -600,6 +602,8 @@ static bool modem_open(serial_backend_t* self)
     self->state.modem.cmd_len = 0;
     self->state.modem.echo = true;
     self->state.modem.plus_count = 0;
+    self->state.modem.now = 0;
+    self->state.modem.last_tx = 0;
     self->state.modem.sockfd = -1;
 
     /* Server mode: create listening socket */
@@ -672,46 +676,52 @@ static void modem_close(serial_backend_t* self)
     log_info("Serial Modem: backend closed");
 }
 
+/* Sends to the peer the "+" held back while they could be an escape. */
+static void modem_release_plus(serial_backend_t* self)
+{
+    if (self->state.modem.sockfd >= 0 && self->state.modem.plus_count > 0)
+        (void)safe_write(self->state.modem.sockfd, "+++",
+                         (size_t)self->state.modem.plus_count);
+    self->state.modem.plus_count = 0;
+}
+
+/* Emulated time: after a second of silence, three held "+" are the escape,
+ * fewer are data. */
+static void modem_tick(serial_backend_t* self, int cycles)
+{
+    self->state.modem.now += (uint64_t)cycles;
+    if (self->state.modem.mode != 1 || self->state.modem.plus_count == 0 ||
+        self->state.modem.now - self->state.modem.last_tx < MODEM_GUARD_CYCLES)
+        return;
+    if (self->state.modem.plus_count < 3) {
+        modem_release_plus(self);
+        return;
+    }
+    self->state.modem.mode = 0;
+    self->state.modem.plus_count = 0;
+    self->state.modem.cmd_len = 0;
+    log_info("Serial Modem: +++ escape -> command mode");
+    modem_rx_push_str(self, "\r\nOK\r\n");
+}
+
 static bool modem_send(serial_backend_t* self, uint8_t byte)
 {
     /* Data mode: send to socket, detect +++ escape with guard time.
-     * Hayes spec: 1 second silence, then "+++", then 1 second silence.
-     * We use last_data_time to track silence periods. At 1 MHz CPU,
-     * 1 second = 1000000 cycles. We approximate with a counter that
-     * increments each time modem_send is called (baud-rate limited). */
+     * Hayes: one second of silence, "+++" with less than one second between
+     * the characters, one second of silence (completed by modem_tick). */
     if (self->state.modem.mode == 1) {
-        /* +++ escape detection with guard time.
-         * Hayes spec: silence → +++ → silence → command mode.
-         * The guard (last_data_time >= 50 baud-rate polls) is required
-         * before the FIRST '+' only: the next two follow it directly. The
-         * counter is reset after each '+', so checking it for every '+'
-         * made a "+++" typed in one go never escape. */
-        if (byte == '+' && (self->state.modem.plus_count > 0 ||
-                            self->state.modem.last_data_time >= 50)) {
+        uint64_t interval = self->state.modem.now - self->state.modem.last_tx;
+        self->state.modem.last_tx = self->state.modem.now;
+        if (interval >= MODEM_GUARD_CYCLES) modem_release_plus(self);
+        bool hold = byte == '+' &&
+                    (self->state.modem.plus_count == 0
+                         ? interval >= MODEM_GUARD_CYCLES
+                         : self->state.modem.plus_count < 3);
+        if (hold) {
             self->state.modem.plus_count++;
-            if (self->state.modem.plus_count >= 3) {
-                self->state.modem.mode = 0;
-                self->state.modem.plus_count = 0;
-                self->state.modem.cmd_len = 0;
-                self->state.modem.last_data_time = 0;
-                log_info("Serial Modem: +++ escape -> command mode");
-                modem_rx_push_str(self, "\r\nOK\r\n");
-                return true;
-            }
-            self->state.modem.last_data_time = 0;
             return true;
         }
-
-        /* Non-escape or '+' without guard: flush pending '+' and send data */
-        if (self->state.modem.sockfd >= 0 && self->state.modem.plus_count > 0) {
-            uint8_t buf[3];
-            for (int i = 0; i < self->state.modem.plus_count && i < 3; i++)
-                buf[i] = '+';
-            (void)safe_write(self->state.modem.sockfd, buf,
-                        (size_t)self->state.modem.plus_count);
-        }
-        self->state.modem.plus_count = 0;
-        self->state.modem.last_data_time = 0;
+        modem_release_plus(self);   /* not an escape after all */
 
         if (self->state.modem.sockfd >= 0) {
             ssize_t n = safe_write(self->state.modem.sockfd, &byte, 1);
@@ -756,9 +766,6 @@ static bool modem_send(serial_backend_t* self, uint8_t byte)
 
 static bool modem_recv(serial_backend_t* self, uint8_t* byte)
 {
-    /* Increment silence counter for +++ guard time detection */
-    self->state.modem.last_data_time++;
-
     /* In data mode, bulk-read from socket into rx_buf */
     if (self->state.modem.mode == 1 && self->state.modem.sockfd >= 0) {
         uint8_t tmp[256];
@@ -812,6 +819,7 @@ serial_backend_t* serial_backend_modem_create(const char* host, uint16_t port, b
     b->recv = modem_recv;
     b->poll = modem_poll;
     b->connected = modem_connected;
+    b->tick = modem_tick;
 
     if (host) {
         strncpy(b->state.modem.host, host, sizeof(b->state.modem.host) - 1);

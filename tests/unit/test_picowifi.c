@@ -1006,9 +1006,9 @@ TEST(test_escape_on_quiet_line) {
     pw_drain(r, sizeof(r));
     ASSERT_CONTAINS(r, "OK");
     /* Like the firmware, the three characters also reached the peer. */
-    char got[16] = {0};
-    ASSERT_TRUE(read(g_srv, got, sizeof(got) - 1) == 3);
-    ASSERT_CONTAINS(got, "+++");
+    uint8_t got[16] = {0};
+    ASSERT_TRUE(tn_srv_read(got, sizeof(got) - 1) == 3);   /* waits for delivery */
+    ASSERT_CONTAINS((char*)got, "+++");
     tn_disconnect();
 }
 

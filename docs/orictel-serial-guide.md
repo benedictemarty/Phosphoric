@@ -174,7 +174,7 @@ Supported commands:
 - `ATDT host:port` → same (T ignored)
 - `ATA` → accept connection (listen mode) → `CONNECT` or `ERROR`
 - `ATS0=N` → auto-answer after N rings → `OK`
-- `+++` → back to command mode (guard time) → `OK`
+- `+++` → back to command mode → `OK` (1 s of silence before, less than 1 s between the `+`, 1 s after, in emulated time)
 
 64 KB internal RX/TX buffers.
 
