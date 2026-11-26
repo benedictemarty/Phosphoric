@@ -3400,6 +3400,44 @@ static int main_setup_tape(emulator_t* emu, cli_opts_t* cfg) {
     return -1;
 }
 
+/* --loci-mount: what the LOCI menu would do before booting, without it. */
+static int main_loci_mounts(emulator_t* emu, const cli_opts_t* cfg) {
+    bool any = false;
+    for (int d = 0; d < 4; d++) any = any || cfg->loci_mount_paths[d];
+    if (!any) return 0;
+    /* Not an error: the F1 menu keeps the option when it switches the LOCI
+     * card to its firmware or USB mode. */
+    if (cfg->loci_hw_dev || cfg->loci_emu_path || !emu->card_on[CARD_IDX_loci]) {
+        log_warning("--loci-mount ignored: it needs the built-in LOCI (--loci), "
+                    "not --loci-hw or --loci-emu");
+        return 0;
+    }
+    if (cfg->loci_web_url && cfg->loci_mount_paths[0]) {
+        log_error("--loci-web and --loci-mount A: both target drive A");
+        return -1;
+    }
+    for (int d = 0; d < 4; d++) {
+        const char* path = cfg->loci_mount_paths[d];
+        if (!path) continue;
+        uint16_t err = loci_mount_drive(&emu->loci, (uint8_t)d, path);
+        if (err) {
+            log_error("--loci-mount %c:%s: cannot mount (LOCI errno %u)",
+                      'A' + d, path, err);
+            return -1;
+        }
+        log_info("--loci-mount: drive %c = %s", 'A' + d, path);
+    }
+    /* BASIC of the machine; with the menu ROM as -r, the menu's default (1.1). */
+    bool menu_rom = !cfg->model_arg && cfg->rom_file && strstr(cfg->rom_file, "locirom");
+    if (!loci_startup_boot(&emu->loci, menu_rom || emu->model == ORIC_MODEL_ATMOS)) {
+        log_error("--loci-mount: boot failed (BASIC or microdis.rom not found)");
+        return -1;
+    }
+    if (!cfg->loci_mount_paths[0] && !cfg->loci_web_url)
+        log_info("--loci-mount: nothing on drive A, no disk boot");
+    return 0;
+}
+
 /* Jasmin, SP0256 / MEA8000 speech synthesis, Microdisc and disks, LOCI web disk, bad sectors.
  * Returns -1 to continue, otherwise the program's exit code. */
 static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
@@ -3449,6 +3487,11 @@ static int main_setup_disks_speech(emulator_t* emu, cli_opts_t* cfg) {
             log_warning("--loci-web: microdis.rom introuvable — disque monté mais "
                         "pas d'autoboot (bootez via le menu LOCI ou fournissez --disk-rom)");
         }
+    }
+
+    if (main_loci_mounts(emu, cfg) != 0) {
+        emulator_cleanup(emu);
+        return 1;
     }
 
     /* Apply --bad-sector [D:]S:T:N fault injections. Damage follows the

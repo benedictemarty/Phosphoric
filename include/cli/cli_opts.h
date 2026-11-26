@@ -126,6 +126,7 @@ typedef struct cli_opts_s {
     const char* loci_emu_cdc_dev;   /* --loci-cdc: CDC dongle (e.g. /dev/ttyACM0) served as ACIA $0380 */
     const char* loci_emu_flash;   /* --loci-flash: persistent flash image (internal FS 0:) */
     const char* loci_sdimg_path;
+    const char* loci_mount_paths[4]; /* --loci-mount D:PATH, drives A-D (NULL = none) */
     const char* loci_web_url;   /* loci-webdisk archi B: native LOCI web disk */
     const char* loci_web_base;   /* Route B: server root for the « W: Web disks » device */
     int loci_mia_win_lo; int loci_mia_win_hi;   /* -1 = not set (open window) */

@@ -648,17 +648,8 @@ void op_getcwd(loci_t* loci) {
     api_return_ax(loci, (uint16_t)len);
 }
 
-void op_mount(loci_t* loci) {
-    uint8_t drive = loci->regs[LOCI_REG_API_A];
-    char path[256];
-    if (!pop_zstring(loci, path, sizeof(path))) {
-        api_return_errno(loci, LOCI_EINVAL);
-        return;
-    }
-    if (drive >= LOCI_MNT_MAX) {
-        api_return_errno(loci, LOCI_EINVAL);
-        return;
-    }
+uint16_t loci_mount_drive(loci_t* loci, uint8_t drive, const char* path) {
+    if (drive >= LOCI_MNT_MAX) return LOCI_EINVAL;
     /* loci-webdisk (archi B): an http(s):// URL mounts a disk served over the
      * web, exactly like the real firmware (mnt.c::mnt_mount). Restricted to
      * drives 0..3. Lets an Oric program (e.g. WEBMOUNT) give the disk URL
@@ -670,65 +661,60 @@ void op_mount(loci_t* loci) {
         while (*nm == '/') nm++;                /* mount() inserts a '/' */
         char url[512];
         snprintf(url, sizeof(url), "%s/disk/%s", loci->web_base, nm);
-        if (drive >= 4 || !loci_dsk_open_web(loci, drive, url)) {
-            api_return_errno(loci, LOCI_EIO);
-            return;
-        }
+        if (drive >= 4 || !loci_dsk_open_web(loci, drive, url)) return LOCI_EIO;
         loci->mnt_mounted[drive] = true;
         strncpy(loci->mnt_paths[drive], url, sizeof(loci->mnt_paths[drive]) - 1);
         loci->mnt_paths[drive][sizeof(loci->mnt_paths[drive]) - 1] = '\0';
-        api_return_ax(loci, 0);
-        return;
+        return 0;
     }
     if (strncmp(path, "http://", 7) == 0 || strncmp(path, "https://", 8) == 0) {
-        if (drive >= 4) { api_return_errno(loci, LOCI_EINVAL); return; }
-        if (!loci_dsk_open_web(loci, drive, path)) {
-            api_return_errno(loci, LOCI_EIO);   /* no server / invalid header */
-            return;
-        }
+        if (drive >= 4) return LOCI_EINVAL;
+        if (!loci_dsk_open_web(loci, drive, path))
+            return LOCI_EIO;   /* no server / invalid header */
         loci->mnt_mounted[drive] = true;
         strncpy(loci->mnt_paths[drive], path, sizeof(loci->mnt_paths[drive]) - 1);
         loci->mnt_paths[drive][sizeof(loci->mnt_paths[drive]) - 1] = '\0';
-        api_return_ax(loci, 0);
-        return;
+        return 0;
     }
     char host_path[512];
     if (loci->sdimg) {
         if (!sdimg_extract_to_temp(loci, path, host_path, sizeof(host_path))) {
             /* firmware: f_open failure inside mount → EFATFS encoding */
-            api_return_errno(loci, LOCI_EFATFS(LOCI_FR_NO_FILE));
-            return;
+            return LOCI_EFATFS(LOCI_FR_NO_FILE);
         }
     } else {
-        if (!resolve_path(loci, path, host_path, sizeof(host_path))) {
-            api_return_errno(loci, LOCI_EACCES);
-            return;
-        }
+        if (!resolve_path(loci, path, host_path, sizeof(host_path)))
+            return LOCI_EACCES;
         if (access(host_path, F_OK) != 0) {
             /* firmware: f_open failure inside mount → EFATFS encoding */
-            api_return_errno(loci, LOCI_EFATFS(LOCI_FR_NO_FILE));
-            return;
+            return LOCI_EFATFS(LOCI_FR_NO_FILE);
         }
     }
     if (drive == LOCI_MNT_TAP) {
-        if (!loci_tap_open(loci, host_path)) {
-            api_return_errno(loci, LOCI_EIO);
-            return;
-        }
+        if (!loci_tap_open(loci, host_path)) return LOCI_EIO;
         if (loci->tape_mount_cb) {
             loci->tape_mount_cb(loci->tape_mount_ctx, host_path);
         }
     }
     if (drive < 4) {
-        if (!loci_dsk_open(loci, drive, host_path)) {
-            api_return_errno(loci, LOCI_EIO);
-            return;
-        }
+        if (!loci_dsk_open(loci, drive, host_path)) return LOCI_EIO;
     }
     loci->mnt_mounted[drive] = true;
     strncpy(loci->mnt_paths[drive], path, sizeof(loci->mnt_paths[drive]) - 1);
     loci->mnt_paths[drive][sizeof(loci->mnt_paths[drive]) - 1] = '\0';
-    api_return_ax(loci, 0);
+    return 0;
+}
+
+void op_mount(loci_t* loci) {
+    uint8_t drive = loci->regs[LOCI_REG_API_A];
+    char path[256];
+    if (!pop_zstring(loci, path, sizeof(path))) {
+        api_return_errno(loci, LOCI_EINVAL);
+        return;
+    }
+    uint16_t err = loci_mount_drive(loci, drive, path);
+    if (err) api_return_errno(loci, err);
+    else     api_return_ax(loci, 0);
 }
 
 void op_umount(loci_t* loci) {

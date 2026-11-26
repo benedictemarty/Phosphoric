@@ -189,6 +189,9 @@ void cli_print_usage(const char* program_name) {
     usage_printf("                             Mutually exclusive with --loci-flash\n");
     usage_printf("      --loci-usb DIR|none    Attach DIR as a LOCI USB key (repeatable, 4 max);\n");
     usage_printf("                             host media in /media/$USER auto-attach — 'none' disables\n");
+    usage_printf("      --loci-mount D:PATH    Mount a floppy on LOCI drive D (A-D) at startup, as the\n");
+    usage_printf("                             menu would; drive A boots without the menu (implies\n");
+    usage_printf("                             --loci, repeatable). Ex: --loci-mount A:0:/disk.dsk\n");
     usage_printf("      --loci-web URL         Drive A LOCI servi par un serveur web (loci-webdisk archi B) :\n");
     usage_printf("                             pistes MFM par HTTP a la demande + autoboot Sedoric natif LOCI.\n");
     usage_printf("                             Ex: --loci --loci-web http://h:8092/disk/x.dsk (implies --loci)\n");

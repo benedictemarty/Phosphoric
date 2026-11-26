@@ -618,6 +618,7 @@ MIA (memory interface) at `$03A0-$03BF` with `--loci`.
 | `--loci-flash DIR` | Sandbox root for LOCI file operations |
 | `--loci-sdimg PATH` | Raw FAT16/32 SD image (read-only) |
 | `--loci-usb DIR\|none` | Attaches DIR as a USB stick (repeatable, 4 max) |
+| `--loci-mount D:PATH` | Mounts a floppy on drive A-D at startup; drive A boots without the menu |
 | `--loci-web URL` | Drive A served by a web server + native Sedoric autoboot |
 | `--loci-web-base URL` | "W: Web disks" pseudo-device in the LOCI menu |
 | `--loci-mia-window LO-HI` | Models the reliable MIA `tior` range (0-31) |
@@ -1001,6 +1002,7 @@ LOCI (Lovely Oric Computer Interface):
       --loci-flash DIR       Sandbox root for LOCI file ops (implies --loci)
       --loci-sdimg PATH      Raw FAT16/32 SD image (read-only; excludes --loci-flash)
       --loci-usb DIR|none    Attach DIR as a LOCI USB stick (repeatable, 4 max; 'none' disables)
+      --loci-mount D:PATH    Mount a floppy on LOCI drive A-D; drive A boots (no menu)
       --loci-web URL         LOCI drive A served by a web server + native Sedoric autoboot
       --loci-web-base URL    "W: Web disks" pseudo-device in the LOCI menu
       --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31)

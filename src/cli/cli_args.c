@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <getopt.h>
 #include "cli/cli_args.h"
 #include "cli/cli_options.h"  /* enum OPT_* + long_options[] */
@@ -201,6 +202,18 @@ int cli_parse_args(int argc, char* argv[], cli_opts_t* cfg, emulator_t* emu) {
             case OPT_LOCI_HW: cfg->loci_hw_dev = optarg; cfg->loci_enabled = true; break;
             case OPT_LOCI_MENU_AT: cfg->loci_menu_at = strtoull(optarg, NULL, 0); break;
             case OPT_LOCI_SDIMG: cfg->loci_sdimg_path = optarg; cfg->loci_enabled = true; break;
+            case OPT_LOCI_MOUNT: {
+                /* "D:PATH": D = A-D, PATH = LOCI path ("0:/x.dsk"). */
+                int d = toupper((unsigned char)optarg[0]) - 'A';
+                if (d < 0 || d > 3 || optarg[1] != ':' || !optarg[2]) {
+                    log_error("--loci-mount: expected D:PATH with D = A-D "
+                              "(e.g. A:0:/disk.dsk)");
+                    return 1;
+                }
+                cfg->loci_mount_paths[d] = optarg + 2;
+                cfg->loci_enabled = true;
+                break;
+            }
             case OPT_LOCI_WEB: cfg->loci_web_url = optarg; cfg->loci_enabled = true; break;
             case OPT_LOCI_WEB_BASE: cfg->loci_web_base = optarg; cfg->loci_enabled = true; break;
             case OPT_LOCI_USB:

@@ -20,6 +20,9 @@ verified against it; known discrepancies are listed at the end of this document.
 # LOCI menu straight at boot
 ./phosphoric -r roms/loci/locirom --loci
 
+# Boot a floppy without going through the menu (2.31.23)
+./phosphoric -r roms/basic11b.rom --loci-flash disks --loci-mount A:0:/sedoric3.dsk
+
 # Raw FAT16/32 SD image as storage
 ./phosphoric -r roms/basic11b.rom --loci --loci-sdimg carte.img
 ```
@@ -160,6 +163,25 @@ The **device list** (menu selector) is served by
 `opendir("")`: "0: Internal storage [15MB]", then one line per
 USB device (the firmware's `usb_set_status` — the MSC stick, the picowifi
 "CDC modem mounted"), then an empty name.
+
+### Mounting a floppy at startup (2.31.23)
+
+`--loci-mount D:PATH` does what the LOCI menu does before booting: it mounts
+the image on drive `D` (`A` to `D`, repeatable) and stores the menu settings in
+XRAM (`"LOCI"` at `$8000`, the menu ROM's `loci_cfg_t`). With something on drive
+A, it then boots as the menu's `MIA_BOOT` with `LOCI_BOOT_FDC` would: BASIC and
+the Microdisc ROM, without showing the menu. Without drive A, nothing is booted:
+the disks are only mounted and the machine starts on the `-r` ROM.
+
+- `PATH` is a LOCI path: `0:/name.dsk` (or `name.dsk`) in the flash root,
+  `1:/…` to `4:/…` on a USB stick, or a file of the `--loci-sdimg` image; an
+  `http://` URL works as in the menu.
+- BASIC follows the machine model (`-r` ROM or `-m`); with the menu ROM as
+  `-r`, it is the menu's default, BASIC 1.1.
+- The Action button (F8) then opens the menu, which shows the mounted images.
+- The option implies `--loci`. It is ignored, with a warning, under
+  `--loci-hw` or `--loci-emu`. A missing image or ROM stops the start-up.
+- Writes go to the host file (see below): use a copy to keep the original.
 
 ### Writes to floppy images (2.31.17)
 

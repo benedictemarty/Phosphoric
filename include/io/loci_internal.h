@@ -104,6 +104,8 @@ void op_rename(loci_t* loci);
 void op_read_xram(loci_t* loci);
 void op_write_xram(loci_t* loci);
 void op_mount(loci_t* loci);
+/* Mount @p path (LOCI path or http URL) on @p drive: 0 or a LOCI errno. */
+uint16_t loci_mount_drive(loci_t* loci, uint8_t drive, const char* path);
 void op_umount(loci_t* loci);
 void op_getcwd(loci_t* loci);
 void op_opendir(loci_t* loci);
@@ -119,6 +121,10 @@ void op_tap_read_header(loci_t* loci);
 
 /* In loci_boot.c. */
 void op_mia_boot(loci_t* loci);
+/* Boot at startup (--loci-mount): writes the menu settings to XRAM and, if
+ * drive A is mounted, boots on it as MIA_BOOT with LOCI_BOOT_FDC. false if a
+ * boot was due and failed. */
+bool loci_startup_boot(loci_t* loci, bool basic11);
 void loci_resume_at_spin(loci_t* loci);   /* MIA_BOOT + RESUME, CPU at $03B0 */
 void op_cpu_phi2(loci_t* loci);
 void op_oem_codepage(loci_t* loci);

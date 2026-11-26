@@ -42,7 +42,7 @@ enum {
     OPT_TYPE_KEYS_WHEN, OPT_POKE_AT, OPT_POKE_WHEN, OPT_TAPE_OUT_CAPTURE,
     OPT_DISK_WEB, OPT_LOCI_WEB, OPT_LOCI_WEB_BASE, OPT_JASMIN_ROM,
     OPT_CONFIG, OPT_NO_CONFIG, OPT_MENU_SCREENSHOT, OPT_GDB_BIND, OPT_NO_CONFIG_CARDS, OPT_NO_ROM,
-    OPT_NO_AUTO_LOCI
+    OPT_NO_AUTO_LOCI, OPT_LOCI_MOUNT
 };
 
 /* Short option string passed to getopt_long. */
@@ -149,6 +149,7 @@ static const struct option long_options[] = {
     {"loci-hw",             required_argument, 0, OPT_LOCI_HW},
     {"loci-sdimg",          required_argument, 0, OPT_LOCI_SDIMG},
     {"loci-usb",            required_argument, 0, OPT_LOCI_USB},
+    {"loci-mount",          required_argument, 0, OPT_LOCI_MOUNT},
     {"loci-web",            required_argument, 0, OPT_LOCI_WEB},
     {"loci-web-base",       required_argument, 0, OPT_LOCI_WEB_BASE},
     {"loci-mia-window",     required_argument, 0, OPT_LOCI_MIA_WINDOW},

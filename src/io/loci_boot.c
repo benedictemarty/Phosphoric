@@ -24,6 +24,95 @@ static const char* derive_basic_rom_path(loci_t* loci, uint8_t settings) {
     return (settings & LOCI_BOOT_B11) ? "basic11b.rom" : "basic10.rom";
 }
 
+/* Cold boot of MIA_BOOT: BASIC (or the mounted ROM) at $C000, then the
+ * Microdisc ROM if LOCI_BOOT_FDC. Returns 0 or an errno; as before, a missing
+ * Microdisc ROM is not an error for the op — @p disc_ok reports it. */
+static uint16_t boot_roms(loci_t* loci, uint8_t settings, bool* disc_ok) {
+    if (disc_ok) *disc_ok = false;
+    if (!loci->rom_swap_cb) return 0;
+
+    const char* guest_rom = derive_basic_rom_path(loci, settings);
+    char host_rom[512];
+    if (loci->sdimg) {
+        if (!sdimg_extract_to_temp(loci, guest_rom, host_rom, sizeof(host_rom)))
+            return LOCI_ENOENT;
+    } else if (!resolve_path(loci, guest_rom, host_rom, sizeof(host_rom))) {
+        return LOCI_EACCES;
+    }
+
+    if (!loci->rom_swap_cb(loci->rom_swap_ctx, host_rom, 0xC000))
+        return LOCI_EIO;
+
+    if (settings & LOCI_BOOT_FDC) {
+        const char* disc_path = "microdis.rom";
+        char host_disc[512];
+        bool ok = false;
+        if (loci->sdimg) {
+            ok = sdimg_extract_to_temp(loci, disc_path, host_disc, sizeof(host_disc));
+        } else {
+            ok = resolve_path(loci, disc_path, host_disc, sizeof(host_disc));
+        }
+        if (ok)
+            ok = loci->rom_swap_cb(loci->rom_swap_ctx, host_disc, 0xA000);
+        if (disc_ok) *disc_ok = ok;
+    }
+    return 0;
+}
+
+/* ─── Boot at startup (--loci-mount) ─────────────────────────── */
+
+/* The menu ROM keeps its settings in XRAM (loci-rom persist.c): "LOCI" at
+ * $8000, then loci_cfg_t. Writing them lets the menu, opened later with the
+ * Action button, show what --loci-mount mounted. */
+#define MENU_CFG_ADDR    0x8000
+#define MENU_PATH_LEN    256
+#define MENU_NAME_LEN    35      /* drv_names[6][35], 32 characters used */
+#define MENU_IDX_DF0     5       /* widget selected by default */
+
+static void write_menu_cfg(loci_t* loci, uint8_t settings) {
+    uint8_t* p = &loci->xram[MENU_CFG_ADDR];
+    memset(p, 0, 4 + 9 + MENU_PATH_LEN + LOCI_MNT_MAX * MENU_NAME_LEN);
+    memcpy(p, "LOCI", 4);
+    p += 4;
+    uint8_t mounts = 0;
+    for (int d = 0; d < LOCI_MNT_MAX; d++)
+        if (loci->mnt_mounted[d]) mounts |= (uint8_t)(1u << d);
+    p[0] = (settings & LOCI_BOOT_FDC) ? 1 : 0;   /* fdc_on */
+    p[4] = (settings & LOCI_BOOT_B11) ? 1 : 0;   /* b11_on */
+    p[5] = 1;                                    /* ser_on (menu default) */
+    p[7] = mounts;
+    p[8] = MENU_IDX_DF0;                         /* tui_pos */
+    char* dir   = (char*)p + 9;
+    char* names = dir + MENU_PATH_LEN;
+    bool have_dir = false;
+    for (int d = 0; d < LOCI_MNT_MAX; d++) {
+        if (!loci->mnt_mounted[d]) continue;
+        const char* path = loci->mnt_paths[d];
+        /* The menu mounts "path/name": split at the last '/', or after "N:". */
+        const char* slash = strrchr(path, '/');
+        const char* name = slash ? slash + 1
+                         : (path[0] && path[1] == ':') ? path + 2 : path;
+        snprintf(names + d * MENU_NAME_LEN, 33, "%s", name);
+        if (!have_dir) {   /* browse directory: the first mounted image's */
+            size_t n = slash ? (size_t)(slash - path) : (size_t)(name - path);
+            if (n >= MENU_PATH_LEN) n = MENU_PATH_LEN - 1;
+            memcpy(dir, path, n);
+            have_dir = true;
+        }
+    }
+}
+
+bool loci_startup_boot(loci_t* loci, bool basic11) {
+    uint8_t settings = LOCI_BOOT_FAST;
+    if (basic11) settings |= LOCI_BOOT_B11;
+    if (loci->mnt_mounted[0]) settings |= LOCI_BOOT_FDC;
+    write_menu_cfg(loci, settings);
+    if (!(settings & LOCI_BOOT_FDC)) return true;   /* nothing to boot from */
+    loci->boot_settings = settings;
+    bool disc_ok = false;
+    return boot_roms(loci, settings, &disc_ok) == 0 && disc_ok;
+}
+
 void op_mia_boot(loci_t* loci) {
     uint8_t settings = loci->regs[LOCI_REG_API_A];
     loci->boot_settings = settings;
@@ -40,43 +129,9 @@ void op_mia_boot(loci_t* loci) {
         return;
     }
 
-    if (!loci->rom_swap_cb) {
-        api_return_ax(loci, 0);
-        return;
-    }
-
-    const char* guest_rom = derive_basic_rom_path(loci, settings);
-    char host_rom[512];
-    if (loci->sdimg) {
-        if (!sdimg_extract_to_temp(loci, guest_rom, host_rom, sizeof(host_rom))) {
-            api_return_errno(loci, LOCI_ENOENT);
-            return;
-        }
-    } else if (!resolve_path(loci, guest_rom, host_rom, sizeof(host_rom))) {
-        api_return_errno(loci, LOCI_EACCES);
-        return;
-    }
-
-    if (!loci->rom_swap_cb(loci->rom_swap_ctx, host_rom, 0xC000)) {
-        api_return_errno(loci, LOCI_EIO);
-        return;
-    }
-
-    if (settings & LOCI_BOOT_FDC) {
-        const char* disc_path = "microdis.rom";
-        char host_disc[512];
-        bool ok = false;
-        if (loci->sdimg) {
-            ok = sdimg_extract_to_temp(loci, disc_path, host_disc, sizeof(host_disc));
-        } else {
-            ok = resolve_path(loci, disc_path, host_disc, sizeof(host_disc));
-        }
-        if (ok) {
-            loci->rom_swap_cb(loci->rom_swap_ctx, host_disc, 0xA000);
-        }
-    }
-
-    api_return_ax(loci, 0);
+    uint16_t err = boot_roms(loci, settings, NULL);
+    if (err) api_return_errno(loci, err);
+    else     api_return_ax(loci, 0);
 }
 
 /* The 6502 fetches the spin at $03B0 while a resume is pending: map back

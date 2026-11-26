@@ -150,6 +150,24 @@ if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$LOCI_ROM" "$DSK" "$SDIMG"; then
     rm -f "$NAT_BIN" "$LOC_BIN"
 fi
 
+# ── Scenario 98-4 — --loci-mount boots drive A without the menu ────
+echo ""
+echo "Scenario 98-4 — --loci-mount A: boots Sedoric without the menu"
+if skip_if_missing "$NATIVE_ROM" "$DISK_ROM" "$DSK"; then
+    NAT_BIN=$(mktemp)
+    LOC_BIN=$(mktemp)
+    FLASH=$(mktemp -d)
+    cp "$DSK" "$FLASH/boot.dsk"          # LOCI writes go to the host file
+    "$EMU" -r "$NATIVE_ROM" --disk-rom "$DISK_ROM" -d "$DSK" \
+        --headless -c 40000000 \
+        --dump-ram-at 39000000:"$NAT_BIN" >/dev/null 2>&1
+    "$EMU" -r "$NATIVE_ROM" --loci-flash "$FLASH" --loci-mount A:0:/boot.dsk \
+        --headless -c 40000000 \
+        --dump-ram-at 39000000:"$LOC_BIN" >/dev/null 2>&1
+    cmp_region "98-4 screen text (Sedoric menu)" "$NAT_BIN" "$LOC_BIN" $((0xBB80)) 1120
+    rm -rf "$NAT_BIN" "$LOC_BIN" "$FLASH"
+fi
+
 # ── Scenario 34b5 — 007 TAP via LOCI (game load) ──────────────────
 echo ""
 echo "Scenario 34b5 — 007 « Dangereusement Vôtre » via LOCI/TAP"

@@ -110,6 +110,12 @@ expect "--joystick bogus is non-fatal (exit 0)" 0 "Unknown joystick mode"
 run "$EMU" -r "$ROM" -n --serial BOGUS -c 1000
 expect "--serial bogus is fatal (exit 1)" 1 "Unknown serial backend"
 
+run "$EMU" -r "$ROM" -n --loci-mount E:0:/x.dsk -c 1000
+expect "--loci-mount drive E is fatal (exit 1)" 1 "expected D:PATH"
+
+run "$EMU" -r "$ROM" -n --loci-mount A:0:/no-such-file.dsk -c 1000
+expect "--loci-mount missing image is fatal (exit 1)" 1 "cannot mount"
+
 # ── enum / range / value validation (all measured) ────────────────────
 run "$EMU" -r "$ROM" -n -m BOGUS -c 1000
 expect "--model bogus is fatal (exit 1)" 1 "Unknown model"

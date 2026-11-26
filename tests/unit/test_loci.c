@@ -903,6 +903,77 @@ static bool wb_write_sector(loci_t* l, int track, int sec, uint8_t value) {
     return wb_feed(l, value, 256);
 }
 
+/* --loci-mount (2.31.23): same mounts and menu settings as the LOCI menu,
+ * then the MIA_BOOT it would request. */
+typedef struct { int n; uint16_t base[4]; bool fail_disc; } boot_capture_t;
+
+static bool capture_boot(void* ctx, const char* rom_path, uint16_t base_addr) {
+    boot_capture_t* c = (boot_capture_t*)ctx;
+    (void)rom_path;
+    if (c->n < 4) c->base[c->n] = base_addr;
+    c->n++;
+    return !(c->fail_disc && base_addr == 0xA000);
+}
+
+TEST(test_startup_mount_and_boot) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/a.dsk", tmpdir);
+    wb_make_raw(path, 0x11);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    boot_capture_t cap = { 0 };
+    loci_set_rom_swap_callback(&l, capture_boot, &cap);
+
+    ASSERT_EQ(loci_mount_drive(&l, 0, "0:/absent.dsk"), LOCI_EFATFS(LOCI_FR_NO_FILE));
+    ASSERT_TRUE(!l.mnt_mounted[0]);
+    ASSERT_EQ(loci_mount_drive(&l, 0, "0:/a.dsk"), 0);
+    ASSERT_EQ(loci_mount_drive(&l, 2, "a.dsk"), 0);
+    ASSERT_TRUE(l.mnt_mounted[0] && l.mnt_mounted[2]);
+    ASSERT_TRUE(loci_startup_boot(&l, true));
+    ASSERT_EQ(cap.n, 2);
+    ASSERT_EQ(cap.base[0], 0xC000);               /* BASIC */
+    ASSERT_EQ(cap.base[1], 0xA000);               /* Microdisc ROM */
+    ASSERT_EQ(l.boot_settings, LOCI_BOOT_FAST | LOCI_BOOT_B11 | LOCI_BOOT_FDC);
+
+    /* loci-rom persist.c: "LOCI" at $8000, then loci_cfg_t. */
+    const uint8_t* x = &l.xram[0x8000];
+    ASSERT_TRUE(memcmp(x, "LOCI", 4) == 0);
+    ASSERT_EQ(x[4], 1);                           /* fdc_on */
+    ASSERT_EQ(x[8], 1);                           /* b11_on */
+    ASSERT_EQ(x[11], 0x05);                       /* mounts: A and C */
+    ASSERT_TRUE(strcmp((const char*)&x[13], "0:") == 0);            /* path */
+    ASSERT_TRUE(strcmp((const char*)&x[13 + 256], "a.dsk") == 0);   /* A */
+    ASSERT_EQ(x[13 + 256 + 35], 0);                                 /* B */
+    ASSERT_TRUE(strcmp((const char*)&x[13 + 256 + 70], "a.dsk") == 0);
+
+    loci_cleanup(&l); unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
+TEST(test_startup_boot_needs_drive_a_and_disc_rom) {
+    char* tmpdir = make_tmpdir();
+    char path[300];
+    snprintf(path, sizeof(path), "%s/b.dsk", tmpdir);
+    wb_make_raw(path, 0x11);
+
+    loci_t l; loci_init(&l); l.enabled = true;
+    loci_set_flash_root(&l, tmpdir);
+    boot_capture_t cap = { .fail_disc = true };
+    loci_set_rom_swap_callback(&l, capture_boot, &cap);
+
+    ASSERT_EQ(loci_mount_drive(&l, 1, "0:/b.dsk"), 0);
+    ASSERT_TRUE(loci_startup_boot(&l, false));    /* nothing on A: no boot */
+    ASSERT_EQ(cap.n, 0);
+    ASSERT_EQ(l.xram[0x8000 + 4], 0);             /* fdc_on */
+    ASSERT_EQ(l.xram[0x8000 + 11], 0x02);         /* mounts: B */
+
+    ASSERT_EQ(loci_mount_drive(&l, 0, "0:/b.dsk"), 0);
+    ASSERT_TRUE(!loci_startup_boot(&l, false));   /* Microdisc ROM refused */
+
+    loci_cleanup(&l); unlink(path); rmdir(tmpdir); free(tmpdir);
+}
+
 /* The guest's sector is in the host file as soon as the command ends, without
  * unmount (the real firmware writes the track then f_sync). */
 TEST(test_dsk_raw_write_through) {
@@ -3859,6 +3930,8 @@ int main(void) {
     RUN(test_mount_bad_drive_einval);
     RUN(test_umount_clears_slot);
     RUN(test_dsk_raw_writes_persisted_on_umount);
+    RUN(test_startup_mount_and_boot);
+    RUN(test_startup_boot_needs_drive_a_and_disc_rom);
     RUN(test_dsk_raw_write_through);
     RUN(test_dsk_mfm_write_through);
     RUN(test_dsk_multi_sector_write_through);
