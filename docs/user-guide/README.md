@@ -554,7 +554,8 @@ Related options: `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
 
 With `--loci --serial picowifi` (ACIA at `$0380`) reception is flow-controlled
 by default, as on the real LOCI: a program that reads slower than the line loses
-nothing (see [loci.md](../loci.md)).
+nothing. Since 2.31.24 transfers are not timed on the baud rate either;
+`--loci-acia-pacing` restores that timing (see [loci.md](../loci.md)).
 
 ```bash
 # BBS over TCP, real-time pacing (essential for network timing)
@@ -623,6 +624,7 @@ MIA (memory interface) at `$03A0-$03BF` with `--loci`.
 | `--loci-web-base URL` | "W: Web disks" pseudo-device in the LOCI menu |
 | `--loci-mia-window LO-HI` | Models the reliable MIA `tior` range (0-31) |
 | `--loci-irq-latency US` | I2C transport cost of LOCI IRQs |
+| `--loci-acia-pacing` | Times the LOCI ACIA on the baud rate (with picowifi it is not by default) |
 
 The **Action button** (F8) opens the LOCI menu (short press) or the ROM
 diagnostics (long press). As on the hardware, the menu ROM saves the session
@@ -1007,6 +1009,7 @@ LOCI (Lovely Oric Computer Interface):
       --loci-web-base URL    "W: Web disks" pseudo-device in the LOCI menu
       --loci-mia-window LO-HI  Model the reliable MIA tior range (0-31)
       --loci-irq-latency US  I2C transport cost of LOCI IRQs (delays each /IRQ by US µs)
+      --loci-acia-pacing     Time the LOCI ACIA on the baud rate (picowifi: off by default)
 
 Chromecast:
       --cast-server[=PORT]   MJPEG server (default 8080)

@@ -877,6 +877,44 @@ TEST(test_dcd_deadlock_autodial) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  Pacing off (LOCI ACIA with its modem)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* At 300 baud a byte takes ~33,000 cycles; unpaced, TX completes on the next
+ * tick and the byte comes back within a few tens of cycles. */
+TEST(test_unpaced_ignores_baud_rate) {
+    setup();
+    acia_set_unpaced(&acia, true);
+    acia_write(&acia, ACIA_REG_CONTROL, 0x16);  /* 300 8N1 */
+    acia_write(&acia, ACIA_REG_COMMAND, 0x03);  /* DTR, no IRQ */
+
+    acia_write(&acia, ACIA_REG_DATA, 0x41);
+    acia_tick(&acia, 2);
+    ASSERT_TRUE(acia.status & ACIA_STATUS_TDRE);
+
+    for (int i = 0; i < 50; i++) acia_tick(&acia, 2);
+    ASSERT_TRUE(acia.status & ACIA_STATUS_RDRF);
+    ASSERT_EQ(acia_read(&acia, ACIA_REG_DATA), 0x41);
+    ASSERT_EQ(acia.baud_rate, 300);             /* decoded rate still reported */
+    teardown();
+}
+
+/* Turning pacing back on restores the baud-rate timing. */
+TEST(test_unpaced_off_restores_pacing) {
+    setup();
+    acia_write(&acia, ACIA_REG_CONTROL, 0x16);
+    acia_write(&acia, ACIA_REG_COMMAND, 0x03);
+    int32_t paced = acia.tx_reload;
+    acia_set_unpaced(&acia, true);
+    ASSERT_EQ(acia.tx_reload, 1);
+    ASSERT_EQ(acia.rx_reload, 1);
+    acia_set_unpaced(&acia, false);
+    ASSERT_EQ(acia.tx_reload, paced);
+    ASSERT_EQ(acia.rx_reload, paced);
+    teardown();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  Main
  * ═══════════════════════════════════════════════════════════════════════ */
 
@@ -917,6 +955,8 @@ int main(void) {
     RUN(test_state_preservation);
     RUN(test_dcd_deadlock_autodial);
     RUN(test_backend_tick_follows_acia);
+    RUN(test_unpaced_ignores_baud_rate);
+    RUN(test_unpaced_off_restores_pacing);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

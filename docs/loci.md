@@ -115,6 +115,22 @@ is full. A picowifi on a plain 6551 (without `--loci`, or at another
 is set. Other transports (`com:`, `tcp:`…) are unchanged, including a real
 picowifi driven through `com:`.
 
+### picowifi: not timed on the baud rate (2.31.24)
+
+The LOCI firmware accepts the baud rate written to the control register, passes
+it to the USB modem, and does not time bytes on it (`oric/acia.c`). With `--loci
+--serial picowifi` and the ACIA at `$0380`, Phosphoric no longer does either: a
+transmitted byte leaves at once (TDRE is back on the next instruction) and the
+next received byte is offered a few tens of cycles after the previous one has
+been read. `--loci-acia-pacing` restores the baud-rate timing (about 1040 cycles
+per byte at 9600 8N1); `--serial-baud N` and `--serial-v23`, which ask for a
+given timing, keep it too. A picowifi on a plain 6551 and the other transports
+are still paced.
+
+The throughput of a real LOCI has not been measured here: the emulated one may
+be faster. A program that uses the byte time as a delay, or that counts on a
+slow line, needs `--loci-acia-pacing`.
+
 ### picowifi: leaving a call with `+++` (2.31.20)
 
 As in the PicoWiFiModemUSB firmware, `+++` brings the modem back to command mode

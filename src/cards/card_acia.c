@@ -42,6 +42,7 @@ typedef struct {
     bool        tcp_backpressure;  /* --serial-tcp-backpressure[=N] */
     int         tcp_rcvbuf;        /* explicit N (0: auto) */
     long        loci_irq_latency_us; /* --loci-irq-latency US */
+    bool        loci_pacing;       /* --loci-acia-pacing */
 } acia_cfg_t;
 
 #define C ((acia_cfg_t*)p)
@@ -66,6 +67,7 @@ static void opt_irq_latency(void* p, const char* arg) {
     if (C->loci_irq_latency_us < 0) C->loci_irq_latency_us = 0;
 }
 static void opt_addr(void* p, const char* arg) { C->addr = arg; }
+static void opt_loci_pacing(void* p, const char* arg) { (void)arg; C->loci_pacing = true; }
 #undef C
 
 /* Same order as the old getopt table (identical ambiguous prefixes). */
@@ -78,6 +80,7 @@ static const card_opt_t k_opts[] = {
     { "serial-trace",            required_argument, opt_trace },
     { "serial-tcp-backpressure", optional_argument, opt_backpressure },
     { "loci-irq-latency",        required_argument, opt_irq_latency },
+    { "loci-acia-pacing",        no_argument,       opt_loci_pacing },
     { "acia-addr",               required_argument, opt_addr },
 };
 
@@ -98,7 +101,9 @@ static const char k_help_serial[] =
     "                            bytes (default N=FIFO size or 512) → real TCP flow control\n"
     "      --loci-irq-latency US LOCI I2C IRQ transport cost: defer each ACIA /IRQ\n"
     "                            by US microseconds (e.g. 10000 → ~100 B/s IRQ-driven\n"
-    "                            RX cap; polling stays fast). LOCI-context only.\n";
+    "                            RX cap; polling stays fast). LOCI-context only.\n"
+    "      --loci-acia-pacing    Time the LOCI ACIA on the baud rate. With picowifi\n"
+    "                            it is not by default (the LOCI firmware does not).\n";
 static const char k_help_addr[] =
     "      --acia-addr ADDR      ACIA base address in hex (default: 031C)\n";
 static const card_help_t k_helps[] = {
@@ -401,6 +406,14 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                     (c->tcp_backpressure && sb->type == SERIAL_BACKEND_TCP)) {
                     acia_set_rx_backpressure(&emu->acia, true);
                 }
+                /* Nor does the firmware time bytes on the baud rate. An explicit
+                 * timing request (--serial-v23, --serial-baud) keeps the pacing. */
+                if (loci_modem && !c->loci_pacing && !c->v23 && c->baud == 0) {
+                    acia_set_unpaced(&emu->acia, true);
+                } else if (c->loci_pacing && !loci_modem) {
+                    log_warning("--loci-acia-pacing has no effect: only the LOCI ACIA "
+                                "with picowifi is unpaced");
+                }
                 if (c->trace_file) {
                     acia_set_trace(&emu->acia, c->trace_file);
                 }
@@ -428,7 +441,7 @@ static void teardown(emulator_t* emu) {
 
 const card_module_t card_acia = {
     .descs = k_descs, .ndescs = 1, .desc_before = "dtl2000",
-    .opts = k_opts, .nopts = 9, .opts_before = "dtl2000",
+    .opts = k_opts, .nopts = 10, .opts_before = "dtl2000",
     .helps = k_helps, .nhelps = 2,
     .cfg_size = sizeof(acia_cfg_t),
     .init = init, .stage = CARD_STAGE_SERIAL, .setup = setup, .teardown = teardown,

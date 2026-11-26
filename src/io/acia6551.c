@@ -263,11 +263,16 @@ static void acia_update_timing(acia6551_t* acia)
         acia->baud_rate = (uint32_t)baud;
         acia->rx_reload = cycles_per_byte(baud, acia->framebits);
         acia->tx_reload = cycles_per_byte(baud, acia->framebits);
-        if (baud == 0 && !acia->ext_clock_warned) {
+        if (baud == 0 && !acia->ext_clock_warned && !acia->unpaced) {
             log_warning("ACIA: baud rate 0 (external clock) — using instant transfer "
                         "(set --serial-baud N for realistic timing)");
             acia->ext_clock_warned = true;
         }
+    }
+
+    if (acia->unpaced) {
+        acia->rx_reload = 1;
+        acia->tx_reload = 1;
     }
 
     /* Resynchronize counters when timing changes */
@@ -651,6 +656,15 @@ void acia_set_rx_backpressure(acia6551_t* acia, bool enabled)
     acia->rx_backpressure = enabled;
     if (enabled) {
         log_info("ACIA RX backpressure: bounded FIFO (backend not drained when full)");
+    }
+}
+
+void acia_set_unpaced(acia6551_t* acia, bool enabled)
+{
+    acia->unpaced = enabled;
+    acia_update_timing(acia);
+    if (enabled) {
+        log_info("ACIA pacing off: transfers not timed on the baud rate");
     }
 }
 

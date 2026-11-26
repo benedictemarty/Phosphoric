@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""LOCI ACIA flow control with the picowifi modem (end to end, no system ROM).
+"""LOCI ACIA flow control and pacing with the picowifi modem (end to end, no system ROM).
 
 A tiny ROM built here sends "AT?" to the modem through the ACIA at $0380, then
 reads the answer about five times slower than the 9600-baud line and stores it
 at $4000. On the real LOCI the firmware only hands over the next byte once the
 6502 has read the previous one, so nothing is lost under --loci. The same ROM on
 a plain 6551 (no --loci) must still lose bytes: the check discriminates.
+
+A second ROM reads as fast as it can. Early in the run, the whole answer is
+already there under --loci (the firmware does not time bytes on the baud rate),
+but not with --loci-acia-pacing, which paces the ACIA at 9600 baud again.
 
 Usage:  test_loci_acia_flow.py ./phosphoric
 Author: bmarty <bmarty@mailo.com>
@@ -19,8 +23,8 @@ BUF = 0x4000
 HELP = b"PicoWiFiModemUSB AT set: $SSID $PASS $CV $CA C D NET S0 S2 E Q V X &Z &V I"
 
 
-def build_rom():
-    """16 KB ROM at $C000: send "AT?\\r", then slow polled reception."""
+def build_rom(slow=True):
+    """16 KB ROM at $C000: send "AT?\\r", then polled reception (slow or not)."""
     code = bytearray()
 
     def op(*b):
@@ -43,12 +47,13 @@ def build_rom():
     rel(0xD0, send)
     op(0xA9, BUF & 0xFF, 0x85, 0x10, 0xA9, BUF >> 8, 0x85, 0x11, 0xA0, 0x00)
     read = len(code)
-    op(0xA2, 0x04, 0x86, 0x12, 0xA2, 0x00)  # ~5100 cycles between two reads
-    delay = len(code)
-    op(0xCA)                                # DEX
-    rel(0xD0, delay)
-    op(0xC6, 0x12)                          # DEC $12
-    rel(0xD0, delay)
+    if slow:
+        op(0xA2, 0x04, 0x86, 0x12, 0xA2, 0x00)  # ~5100 cycles between two reads
+        delay = len(code)
+        op(0xCA)                            # DEX
+        rel(0xD0, delay)
+        op(0xC6, 0x12)                      # DEC $12
+        rel(0xD0, delay)
     op(0xAD, 0x81, 0x03, 0x29, 0x08)        # RDRF ?
     rel(0xF0, read)
     op(0xAD, 0x80, 0x03, 0x91, 0x10)        # LDA $0380 : STA ($10),Y
@@ -69,15 +74,15 @@ def build_rom():
     return bytes(rom)
 
 
-def received(emu, tmp, extra):
-    rom = os.path.join(tmp, "acia.rom")
+def received(emu, tmp, extra, rom="acia.rom", cycles=3000000):
+    rom = os.path.join(tmp, rom)
     ram = os.path.join(tmp, "ram.bin")
     if os.path.exists(ram):
         os.unlink(ram)
     env = dict(os.environ, PHOSPHORIC_PICOWIFI_NVRAM=os.path.join(tmp, "nvram"))
     subprocess.run([emu, "-r", rom, "--no-config-cards", *extra,
-                    "--serial", "picowifi", "-n", "-c", "3000000",
-                    "--dump-ram-at", "2900000:" + ram],
+                    "--serial", "picowifi", "-n", "-c", str(cycles),
+                    "--dump-ram-at", "%d:%s" % (cycles - 5000, ram)],
                    env=env, check=True, timeout=60,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     with open(ram, "rb") as f:
@@ -90,19 +95,28 @@ def main():
     if not os.access(emu, os.X_OK):
         print("SKIP : émulateur non construit")
         return 0
-    print("=== Contrôle de flux de l'ACIA LOCI avec le picowifi ===")
+    print("=== Contrôle de flux et cadence de l'ACIA LOCI avec le picowifi ===")
     fails = 0
     with tempfile.TemporaryDirectory() as tmp:
-        with open(os.path.join(tmp, "acia.rom"), "wb") as f:
-            f.write(build_rom())
-        loci = received(emu, tmp, ["--loci", "--loci-flash", tmp])
+        for name, slow in (("acia.rom", True), ("fast.rom", False)):
+            with open(os.path.join(tmp, name), "wb") as f:
+                f.write(build_rom(slow))
+        opts = ["--loci", "--loci-flash", tmp]
+        loci = received(emu, tmp, opts)
         plain = received(emu, tmp, ["--acia-addr", "0380"])
+        slow_paced = received(emu, tmp, opts + ["--loci-acia-pacing"])
+        fast = received(emu, tmp, opts, "fast.rom", 30000)
+        fast_paced = received(emu, tmp, opts + ["--loci-acia-pacing"], "fast.rom", 30000)
 
     checks = [
         ("--loci : réponse complète (aide puis OK)",
          HELP in loci and loci.endswith(b"OK\r\n")),
         ("6551 seule : des octets sont perdus",
          0 < len(plain) < len(loci)),
+        ("--loci-acia-pacing, lecteur lent : réponse complète", slow_paced == loci),
+        ("--loci : sans cadence, tout est reçu en 25 000 cycles", fast == loci),
+        ("--loci-acia-pacing : cadencé à 9600 bauds, réponse partielle",
+         0 < len(fast_paced) < len(loci) // 2 and loci.startswith(fast_paced)),
     ]
     for name, good in checks:
         print("  [%s] %s" % ("OK" if good else "FAIL", name))
@@ -110,6 +124,9 @@ def main():
     if fails:
         print("  --loci  : %d octets %r" % (len(loci), loci))
         print("  sans    : %d octets %r" % (len(plain), plain))
+        for label, data in (("lent cadencé", slow_paced), ("rapide", fast),
+                            ("rapide cadencé", fast_paced)):
+            print("  %s : %d octets %r" % (label, len(data), data))
     print("=== %d réussi(s), %d échec(s) ===" % (len(checks) - fails, fails))
     return 1 if fails else 0
 

@@ -207,6 +207,11 @@ typedef struct acia6551_s {
      * preserves the faithful 6551 behavior (read-then-drop with OVRN). */
     bool    rx_backpressure;
 
+    /* Pacing off: TX and RX are not timed on the baud rate, whatever the
+     * control register says (the LOCI ACIA with its modem, whose firmware
+     * does not time bytes). Default false: a 6551 is paced. */
+    bool    unpaced;
+
     /* External-clock baud rate (--serial-baud N). When the control register
      * selects the external clock (baud index 0), the default is "instant
      * transfer" (1 cycle/byte); a non-zero value here substitutes a realistic
@@ -344,6 +349,16 @@ void acia_set_irq_latency(acia6551_t* acia, uint32_t cycles);
  * Default (false) keeps the faithful 6551 read-then-drop OVRN behavior.
  */
 void acia_set_rx_backpressure(acia6551_t* acia, bool enabled);
+
+/**
+ * @brief Stop timing transfers on the baud rate.
+ *
+ * When enabled, a transmitted byte leaves on the next tick and a received byte
+ * is offered as soon as the backend has one (polled every few tens of cycles),
+ * whatever the control register selects. Pair with acia_set_rx_backpressure(),
+ * otherwise a program slower than that loses bytes. Default (false): paced.
+ */
+void acia_set_unpaced(acia6551_t* acia, bool enabled);
 
 /**
  * @brief Set the baud rate used when the program selects the external clock.
