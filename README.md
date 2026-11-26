@@ -854,6 +854,7 @@ Use at your own risk. Contributions and code reviews are welcome.
 
 ### Contributors
 - **[Xander Mol (xahmol)](https://github.com/xahmol)** — Compliance of the LOCI backend with the real `sodiumlb/loci-firmware` firmware, found through the [locifilemanager-v2](https://github.com/xahmol/locifilemanager-v2) and [OricScreenEditorLOCI](https://github.com/xahmol/OricScreenEditorLOCI) test harnesses: `UNLINK` on an empty folder (PR #10), `WRITE_XSTACK` protocol without an explicit count (PR #19)
+- **ibisum** (Defence Force forum) — Reported the silent sound on iOS/Safari with the web player, and confirmed (25/03/2025) that `navigator.audioSession.type = "playback"` fixes it; fix not tested by the project on iPhone/iPad
 - **[drpsy (drpsy77)](https://github.com/drpsy77)** — Detailed report ([issue #98](https://github.com/benedictemarty/Phosphoric/issues/98)) from a CP/A port running on a Raspberry Pi 3B+: LOCI ACIA byte loss and pacing, floppy writes never saved to the host, mounting a disk at startup, modem `+++` escape (addressed in 2.31.17 to 2.31.24)
 
 ### Reference emulators
