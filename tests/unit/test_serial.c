@@ -64,6 +64,7 @@ static void setup(void) {
 }
 
 static void teardown(void) {
+    acia_set_rx_fifo(&acia, 0);                 /* the next setup() would orphan it */
     if (loopback) {
         serial_backend_destroy(loopback);
         loopback = NULL;
