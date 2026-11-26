@@ -552,6 +552,10 @@ Related options: `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
 `--serial-irq-on-rdrf` (WDC 65C51 mode), `--serial-tcp-backpressure`
 (bounded TCP back-pressure), `--serial-trace FILE` (timestamped TX/RX trace).
 
+With `--loci --serial picowifi` (ACIA at `$0380`) reception is flow-controlled
+by default, as on the real LOCI: a program that reads slower than the line loses
+nothing (see [loci.md](../loci.md)).
+
 ```bash
 # BBS over TCP, real-time pacing (essential for network timing)
 ./phosphoric -r basic11b.rom --serial tcp:bbs.example.org:6502 --realtime

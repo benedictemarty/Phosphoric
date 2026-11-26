@@ -99,6 +99,19 @@ USB sticks or SD image on the web): [wasm.md](wasm.md).
 | `$0380-$0383` | ACIA 6551 (picowifi modem) — default under `--loci` |
 | `$03A0-$03BF` | MIA: UART console, API registers (xstack `$03AC`, errno `$03AD/E`, op `$03AF`), stub `$03B0` (spin/BLOCKED), BUSY `$03B2` bit 7, button trap `$03BA-$03BF` |
 
+### picowifi: no byte lost on reception (2.31.22)
+
+The LOCI ACIA is served by the firmware (`oric/acia.c`): it hands the next byte
+to the 6502 only once the previous one has been read, and USB flow control holds
+the rest in the modem. A slow reader therefore loses nothing. With `--loci
+--serial picowifi` and the ACIA at `$0380`, Phosphoric does the same: while the
+receive register (and the `--serial-buffer` FIFO, if any) is full, the next byte
+stays in the modem, which stops reading the TCP connection once its own buffer
+is full. A picowifi on a plain 6551 (without `--loci`, or at another
+`--acia-addr`) keeps the 6551 behavior: the unread byte is overwritten and OVRN
+is set. Other transports (`com:`, `tcp:`…) are unchanged, including a real
+picowifi driven through `com:`.
+
 ### picowifi: leaving a call with `+++` (2.31.20)
 
 As in the PicoWiFiModemUSB firmware, `+++` brings the modem back to command mode

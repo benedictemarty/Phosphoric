@@ -391,7 +391,14 @@ static int setup(emulator_t* emu, const void* p, const struct cli_opts_s* core) 
                     }
                     acia_set_irq_latency(&emu->acia, cyc);
                 }
-                if (c->tcp_backpressure && sb->type == SERIAL_BACKEND_TCP) {
+                /* The LOCI ACIA never overruns with its modem: the firmware
+                 * (oric/acia.c) only hands over the next byte once the 6502 has
+                 * read the previous one, and USB flow control holds the rest. A
+                 * picowifi on a plain 6551 keeps the read-then-drop behavior. */
+                bool loci_modem = core->loci_enabled && emu->acia_base_addr == 0x0380 &&
+                                  sb->type == SERIAL_BACKEND_PICOWIFI;
+                if (loci_modem ||
+                    (c->tcp_backpressure && sb->type == SERIAL_BACKEND_TCP)) {
                     acia_set_rx_backpressure(&emu->acia, true);
                 }
                 if (c->trace_file) {

@@ -752,9 +752,11 @@ test-web-picowifi:
 test-web-iomenu:
 	@bash tests/integration/test_web_iomenu.sh
 
-# E2E: BASIC drives the LOCI ACIA 6551 at $0380 (TX + RX round-trip).
+# E2E: BASIC drives the LOCI ACIA 6551 at $0380 (TX + RX round-trip), then a
+# test ROM reads the picowifi slower than the line (no byte lost under --loci).
 test-loci-acia-e2e: $(TARGET)
 	@bash tests/integration/test_loci_acia_e2e.sh
+	@python3 -I tests/integration/test_loci_acia_flow.py ./$(TARGET)
 
 test-loci-golden: $(TARGET)
 	@bash tests/integration/test_loci_golden.sh
