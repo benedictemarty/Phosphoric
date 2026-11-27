@@ -687,6 +687,42 @@ TEST(test_save_load_ula_ng_locked_no_section) {
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                               */
+/* The ACIA timing follows the restored registers (it was left as found). */
+TEST(test_load_restores_acia_timing) {
+    emulator_t emu1, emu2;
+    init_test_emu(&emu1);
+    init_test_emu(&emu2);
+    acia_init(&emu1.acia);
+    acia_init(&emu2.acia);
+    emu1.card_on[CARD_IDX_acia] = true;
+    emu2.card_on[CARD_IDX_acia] = true;
+
+    acia_write(&emu1.acia, ACIA_REG_CONTROL, 0x36);     /* 300 baud, 7 data bits */
+    acia_write(&emu1.acia, ACIA_REG_COMMAND, 0x0B);
+    emu1.acia.rx_cycles = 1234;                         /* countdown in progress */
+    emu1.acia.tx_cycles = 567;
+
+    ASSERT_TRUE(savestate_save(&emu1, TEST_FILE));
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+
+    ASSERT_EQ(emu2.acia.rx_reload, emu1.acia.rx_reload);
+    ASSERT_EQ(emu2.acia.tx_reload, emu1.acia.tx_reload);
+    ASSERT_EQ(emu2.acia.baud_rate, 300);
+    ASSERT_EQ(emu2.acia.bitmask, 0x7F);
+    ASSERT_EQ(emu2.acia.rx_cycles, 1234);
+    ASSERT_EQ(emu2.acia.tx_cycles, 567);
+
+    /* Same state loaded into an unpaced ACIA: it stays unpaced. */
+    acia_set_unpaced(&emu2.acia, true);
+    ASSERT_TRUE(savestate_load(&emu2, TEST_FILE));
+    ASSERT_EQ(emu2.acia.rx_reload, 1);
+    ASSERT_EQ(emu2.acia.tx_cycles, 1);
+
+    memory_cleanup(&emu1.memory);
+    memory_cleanup(&emu2.memory);
+    cleanup_test();
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 
 int main(void) {
@@ -709,6 +745,7 @@ int main(void) {
     RUN(test_load_dsk_section_oversized_is_skipped);
     RUN(test_save_load_ula_ng_roundtrip);
     RUN(test_save_load_ula_ng_locked_no_section);
+    RUN(test_load_restores_acia_timing);
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════\n");

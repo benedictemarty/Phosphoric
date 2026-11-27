@@ -282,6 +282,22 @@ static void acia_update_timing(acia6551_t* acia)
         acia->rx_cycles = acia->rx_reload;
 }
 
+void acia_restore_timing(acia6551_t* acia)
+{
+    int32_t tx = acia->tx_cycles;
+    int32_t rx = acia->rx_cycles;
+    bool warned = acia->ext_clock_warned;
+
+    acia->ext_clock_warned = true;      /* restoring is not a software choice */
+    acia_update_timing(acia);
+    acia->ext_clock_warned = warned;
+
+    int32_t rx_max = (acia->rx_reload > ACIA_RX_POLL_FLOOR)
+                     ? acia->rx_reload : ACIA_RX_POLL_FLOOR;
+    acia->tx_cycles = (tx > acia->tx_reload) ? acia->tx_reload : tx;
+    acia->rx_cycles = (rx > rx_max) ? rx_max : rx;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  Init / Reset
  * ═══════════════════════════════════════════════════════════════════════ */

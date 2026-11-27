@@ -552,9 +552,9 @@ Related options: `--serial-v23` (1200/75, Minitel/Prestel), `--serial-baud`
 `--serial-irq-on-rdrf` (WDC 65C51 mode), `--serial-tcp-backpressure`
 (bounded TCP back-pressure), `--serial-trace FILE` (timestamped TX/RX trace).
 
-With `--loci --serial picowifi` (ACIA at `$0380`) reception is flow-controlled
-by default, as on the real LOCI: a program that reads slower than the line loses
-nothing. Since 2.31.24 transfers are not timed on the baud rate either;
+With `--loci` and `--serial picowifi` or a real modem on `com:` (ACIA at
+`$0380`), reception is flow-controlled by default, as on the real LOCI: a program that reads slower than the line loses
+nothing. Since 2.31.24 the emulated picowifi is not timed on the baud rate either;
 `--loci-acia-pacing` restores that timing (see [loci.md](../loci.md)).
 
 ```bash

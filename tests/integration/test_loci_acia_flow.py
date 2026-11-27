@@ -11,13 +11,18 @@ A second ROM reads as fast as it can. Early in the run, the whole answer is
 already there under --loci (the firmware does not time bytes on the baud rate),
 but not with --loci-acia-pacing, which paces the ACIA at 9600 baud again.
 
+On Linux, a pseudo-terminal then plays a real modem (--serial com:): it answers
+at once, and the slow ROM must receive everything under --loci only.
+
 Usage:  test_loci_acia_flow.py ./phosphoric
 Author: bmarty <bmarty@mailo.com>
 """
 import os
+import select
 import subprocess
 import sys
 import tempfile
+import threading
 
 BUF = 0x4000
 HELP = b"PicoWiFiModemUSB AT set: $SSID $PASS $CV $CA C D NET S0 S2 E Q V X &Z &V I"
@@ -74,14 +79,41 @@ def build_rom(slow=True):
     return bytes(rom)
 
 
-def received(emu, tmp, extra, rom="acia.rom", cycles=3000000):
+def play_modem(master, stop, answer):
+    """Answer once on the pseudo-terminal, as soon as the command is complete."""
+    got = b""
+    while not stop.is_set():
+        if select.select([master], [], [], 0.02)[0]:
+            got += os.read(master, 64)
+            if got.endswith(b"\r"):
+                os.write(master, answer)
+                return
+
+
+def received_com(emu, tmp, extra, answer):
+    """Same as received(), the modem being a real port (a pseudo-terminal)."""
+    master, slave = os.openpty()
+    stop = threading.Event()
+    modem = threading.Thread(target=play_modem, args=(master, stop, answer))
+    modem.start()
+    try:
+        port = "com:115200,8,N,1," + os.ttyname(slave)
+        return received(emu, tmp, [*extra, "--realtime"], serial=port)
+    finally:
+        stop.set()
+        modem.join()
+        os.close(master)
+        os.close(slave)
+
+
+def received(emu, tmp, extra, rom="acia.rom", cycles=3000000, serial="picowifi"):
     rom = os.path.join(tmp, rom)
     ram = os.path.join(tmp, "ram.bin")
     if os.path.exists(ram):
         os.unlink(ram)
     env = dict(os.environ, PHOSPHORIC_PICOWIFI_NVRAM=os.path.join(tmp, "nvram"))
     subprocess.run([emu, "-r", rom, "--no-config-cards", *extra,
-                    "--serial", "picowifi", "-n", "-c", str(cycles),
+                    "--serial", serial, "-n", "-c", str(cycles),
                     "--dump-ram-at", "%d:%s" % (cycles - 5000, ram)],
                    env=env, check=True, timeout=60,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -107,6 +139,11 @@ def main():
         slow_paced = received(emu, tmp, opts + ["--loci-acia-pacing"])
         fast = received(emu, tmp, opts, "fast.rom", 30000)
         fast_paced = received(emu, tmp, opts + ["--loci-acia-pacing"], "fast.rom", 30000)
+        real = None
+        if sys.platform.startswith("linux"):
+            answer = HELP + b"\r\nOK\r\n"
+            real = (answer, received_com(emu, tmp, opts, answer),
+                    received_com(emu, tmp, ["--acia-addr", "0380"], answer))
 
     checks = [
         ("--loci : réponse complète (aide puis OK)",
@@ -118,6 +155,14 @@ def main():
         ("--loci-acia-pacing : cadencé à 9600 bauds, réponse partielle",
          0 < len(fast_paced) < len(loci) // 2 and loci.startswith(fast_paced)),
     ]
+    if real:
+        answer, com_loci, com_plain = real
+        checks += [
+            ("--loci, modem réel (com:) : réponse complète", com_loci == answer),
+            ("6551 seule, com: : des octets sont perdus", 0 < len(com_plain) < len(answer)),
+        ]
+    else:
+        print("  (modem réel par pseudo-terminal : vérifié sous Linux seulement)")
     for name, good in checks:
         print("  [%s] %s" % ("OK" if good else "FAIL", name))
         fails += not good
@@ -127,6 +172,8 @@ def main():
         for label, data in (("lent cadencé", slow_paced), ("rapide", fast),
                             ("rapide cadencé", fast_paced)):
             print("  %s : %d octets %r" % (label, len(data), data))
+        for data in (real or ())[1:]:
+            print("  com: : %d octets %r" % (len(data), data))
     print("=== %d réussi(s), %d échec(s) ===" % (len(checks) - fails, fails))
     return 1 if fails else 0
 

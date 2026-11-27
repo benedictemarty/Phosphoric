@@ -361,6 +361,15 @@ void acia_set_rx_backpressure(acia6551_t* acia, bool enabled);
 void acia_set_unpaced(acia6551_t* acia, bool enabled);
 
 /**
+ * @brief Recompute the timing after the registers were restored (save state)
+ *
+ * Reload values and frame format follow the restored control/command registers
+ * and the current options; the restored countdowns are kept, shortened only if
+ * they exceed what this timing allows.
+ */
+void acia_restore_timing(acia6551_t* acia);
+
+/**
  * @brief Set the baud rate used when the program selects the external clock.
  *
  * By default an external-clock selection (baud index 0) means "instant

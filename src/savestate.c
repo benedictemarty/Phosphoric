@@ -789,8 +789,7 @@ bool savestate_load(emulator_t* emu, const char* filename) {
             emu->acia.dcd = read_bool(fp);
             emu->acia.dsr = read_bool(fp);
             emu->acia.cts = read_bool(fp);
-            /* Recalculate timing from restored registers */
-            // Note: acia_update_timing needs to exist - just call it if possible
+            acia_restore_timing(&emu->acia);
         } else if (memcmp(tag, "CLK\0", 4) == 0) {
             emu->raster_cycle    = (int)read_u32le(fp);
             emu->raster_rendered = (int)read_u32le(fp);

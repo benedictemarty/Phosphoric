@@ -110,10 +110,13 @@ the rest in the modem. A slow reader therefore loses nothing. With `--loci
 --serial picowifi` and the ACIA at `$0380`, Phosphoric does the same: while the
 receive register (and the `--serial-buffer` FIFO, if any) is full, the next byte
 stays in the modem, which stops reading the TCP connection once its own buffer
-is full. A picowifi on a plain 6551 (without `--loci`, or at another
-`--acia-addr`) keeps the 6551 behavior: the unread byte is overwritten and OVRN
-is set. Other transports (`com:`, `tcp:`…) are unchanged, including a real
-picowifi driven through `com:`.
+is full. Since 2.31.26 the same applies to a real modem driven through `com:`
+under `--loci` (the unread bytes wait in the host port; a USB modem is then
+flow-controlled by the system, while a UART without hardware flow control may
+still lose bytes once the host buffer is full — not tested on real hardware).
+On a plain 6551 (without `--loci`, or at another `--acia-addr`) both keep the
+6551 behavior: the unread byte is overwritten and OVRN is set. Other transports
+(`tcp:`, `modem:`…) are unchanged.
 
 ### picowifi: not timed on the baud rate (2.31.24)
 

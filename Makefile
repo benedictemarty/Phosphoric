@@ -537,6 +537,7 @@ test-cast:
 endif
 
 TEST_SAVESTATE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_savestate.c src/savestate.c src/io/jasmin.c \
+                      src/io/acia6551.c \
                       $(CPU_SRCS) \
                       $(MEM_SRCS) \
                       src/io/via6522.c src/io/keyboard.c src/io/microdisc.c \
@@ -725,7 +726,7 @@ TEST_COVERAGE_SRCS = tests/support/loci_emu_stub.c tests/unit/test_coverage.c $(
                      src/io/via6522.c src/io/keyboard.c src/io/joystick.c \
                      src/io/printer.c src/io/mcp40.c src/io/microdisc.c \
                      src/storage/sedoric.c src/storage/disk.c src/storage/disk_http.c \
-                     src/savestate.c src/io/jasmin.c src/debugger.c src/debugger_view.c src/debugger_mem.c src/debugger_asm.c src/debugger_repl.c \
+                     src/savestate.c src/io/acia6551.c src/io/jasmin.c src/debugger.c src/debugger_view.c src/debugger_mem.c src/debugger_asm.c src/debugger_repl.c \
                      src/audio/ay3891x.c src/video/video.c src/io/ula_ng.c \
                      src/utils/logging.c src/utils/symbols.c src/utils/trace.c
 
